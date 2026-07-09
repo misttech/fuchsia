@@ -25,7 +25,7 @@ use fidl_fuchsia_net_filter as fnet_filter;
 use fuchsia_component::client::connect_to_protocol_sync;
 use linux_uapi::{bpf_sockopt, uaddr};
 use starnix_logging::{log_error, log_warn, track_stub};
-use starnix_sync::{EbpfStateLock, FileOpsCore, Locked, OrderedRwLock, Unlocked};
+use starnix_sync::{EbpfStateLock, LockDepRwLock};
 use starnix_syscalls::{SUCCESS, SyscallResult};
 use starnix_uapi::auth::{CAP_NET_ADMIN, CAP_SYS_ADMIN, Capabilities};
 use starnix_uapi::errors::{Errno, ErrnoCode, is_error_return_value};
@@ -39,16 +39,11 @@ use zerocopy::FromBytes;
 
 pub type BpfAttachAttr = bpf_attr__bindgen_ty_6;
 
-fn check_root_cgroup_fd(
-    locked: &mut Locked<Unlocked>,
-    current_task: &CurrentTask,
-    cgroup_fd: FdNumber,
-) -> Result<(), Errno> {
+fn check_root_cgroup_fd(current_task: &CurrentTask, cgroup_fd: FdNumber) -> Result<(), Errno> {
     let file = current_task.files().get(cgroup_fd)?;
 
     // Check that `cgroup_fd` is from the CGROUP2 file system.
-    let is_cgroup =
-        file.node().fs().statfs(locked, current_task)?.f_type == CGROUP2_SUPER_MAGIC as i64;
+    let is_cgroup = file.node().fs().statfs(current_task)?.f_type == CGROUP2_SUPER_MAGIC as i64;
     if !is_cgroup {
         log_warn!("bpf_prog_attach(BPF_PROG_ATTACH) is called with an invalid cgroup2 FD.");
         return error!(EINVAL);
@@ -72,7 +67,6 @@ fn check_root_cgroup_fd(
 }
 
 pub fn bpf_prog_attach(
-    locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
     attr: BpfAttachAttr,
 ) -> Result<SyscallResult, Errno> {
@@ -115,7 +109,6 @@ pub fn bpf_prog_attach(
     let target_fd = FdNumber::from_raw(target_fd as i32);
 
     current_task.kernel().ebpf_state.attachments.attach_prog(
-        locked,
         current_task,
         attach_type,
         target_fd,
@@ -124,7 +117,6 @@ pub fn bpf_prog_attach(
 }
 
 pub fn bpf_prog_detach(
-    locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
     attr: BpfAttachAttr,
 ) -> Result<SyscallResult, Errno> {
@@ -134,12 +126,7 @@ pub fn bpf_prog_detach(
     let target_fd = unsafe { attr.__bindgen_anon_1.target_fd };
     let target_fd = FdNumber::from_raw(target_fd as i32);
 
-    current_task.kernel().ebpf_state.attachments.detach_prog(
-        locked,
-        current_task,
-        attach_type,
-        target_fd,
-    )
+    current_task.kernel().ebpf_state.attachments.detach_prog(current_task, attach_type, target_fd)
 }
 
 // Wrapper for `bpf_sock_addr` used to implement `ProgramArgument` trait.
@@ -205,12 +192,11 @@ pub enum SockAddrProgramResult {
 impl SockAddrProgram {
     fn run<'a>(
         &self,
-        locked: &'a mut Locked<EbpfStateLock>,
         current_task: &'a CurrentTask,
         addr: &'a mut BpfSockAddr<'a>,
         can_block: bool,
     ) -> SockAddrProgramResult {
-        let mut run_context = EbpfRunContextImpl::new(locked, current_task);
+        let mut run_context = EbpfRunContextImpl::new(current_task);
         match self.0.run_with_1_argument(&mut run_context, addr) {
             // UDP_RECVMSG programs are not allowed to block the packet.
             0 if can_block => SockAddrProgramResult::Block,
@@ -225,7 +211,7 @@ impl SockAddrProgram {
     }
 }
 
-type AttachedSockAddrProgramCell = OrderedRwLock<Option<SockAddrProgram>, EbpfStateLock>;
+type AttachedSockAddrProgramCell = LockDepRwLock<Option<SockAddrProgram>, EbpfStateLock>;
 
 // Wrapper for `bpf_sock` used to implement `ProgramArgument` trait.
 #[repr(C)]
@@ -308,13 +294,8 @@ pub enum SockProgramResult {
 }
 
 impl SockProgram {
-    fn run<'a>(
-        &self,
-        locked: &mut Locked<EbpfStateLock>,
-        current_task: &'a CurrentTask,
-        sock: &'a BpfSock<'a>,
-    ) -> SockProgramResult {
-        let mut run_context = EbpfRunContextImpl::new(locked, current_task);
+    fn run<'a>(&self, current_task: &'a CurrentTask, sock: &'a BpfSock<'a>) -> SockProgramResult {
+        let mut run_context = EbpfRunContextImpl::new(current_task);
         if self.0.run_with_1_argument(&mut run_context, sock) == 0 {
             SockProgramResult::Block
         } else {
@@ -323,7 +304,7 @@ impl SockProgram {
     }
 }
 
-type AttachedSockProgramCell = OrderedRwLock<Option<SockProgram>, EbpfStateLock>;
+type AttachedSockProgramCell = LockDepRwLock<Option<SockProgram>, EbpfStateLock>;
 
 mod internal {
     use super::BpfSock;
@@ -427,12 +408,8 @@ pub struct SockOptEbpfRunContextImpl<'a> {
 const BPF_SOCKOPT_RETVAL_OFFSET: usize = std::mem::offset_of!(bpf_sockopt, retval);
 
 impl<'a> SockOptEbpfRunContextImpl<'a> {
-    pub fn new(
-        locked: &'a mut Locked<EbpfStateLock>,
-        current_task: &'a CurrentTask,
-        sockopt: EbpfPtr<'a, BpfSockOpt>,
-    ) -> Self {
-        Self { ebpf_run_context: EbpfRunContextImpl::new(locked, current_task), sockopt }
+    pub fn new(current_task: &'a CurrentTask, sockopt: EbpfPtr<'a, BpfSockOpt>) -> Self {
+        Self { ebpf_run_context: EbpfRunContextImpl::new(current_task), sockopt }
     }
 }
 
@@ -498,19 +475,14 @@ pub enum SetSockOptProgramResult {
 }
 
 impl SockOptProgram {
-    fn run<'a>(
-        &self,
-        locked: &mut Locked<EbpfStateLock>,
-        current_task: &'a CurrentTask,
-        sockopt: &'a mut BpfSockOptWithValue,
-    ) -> u64 {
+    fn run<'a>(&self, current_task: &'a CurrentTask, sockopt: &'a mut BpfSockOptWithValue) -> u64 {
         let sockopt_ptr = sockopt.as_ptr();
-        let mut run_context = SockOptEbpfRunContextImpl::new(locked, current_task, sockopt_ptr);
+        let mut run_context = SockOptEbpfRunContextImpl::new(current_task, sockopt_ptr);
         self.0.run_with_1_argument(&mut run_context, sockopt_ptr)
     }
 }
 
-type AttachedSockOptProgramCell = OrderedRwLock<Option<SockOptProgram>, EbpfStateLock>;
+type AttachedSockOptProgramCell = LockDepRwLock<Option<SockOptProgram>, EbpfStateLock>;
 
 #[derive(Default)]
 pub struct CgroupEbpfProgramSet {
@@ -589,7 +561,6 @@ impl CgroupEbpfProgramSet {
     // socket address as a `sockaddr` struct.
     pub fn run_sock_addr_prog(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         current_task: &CurrentTask,
         op: SockAddrOp,
         domain: SocketDomain,
@@ -610,7 +581,7 @@ impl CgroupEbpfProgramSet {
             _ => return Ok(SockAddrProgramResult::Allow),
         };
 
-        let (prog_guard, locked) = prog_cell.read_and(locked);
+        let prog_guard = prog_cell.read();
         let Some(prog) = prog_guard.as_ref() else {
             return Ok(SockAddrProgramResult::Allow);
         };
@@ -652,12 +623,11 @@ impl CgroupEbpfProgramSet {
 
         // UDP recvmsg programs are not allowed to filter packets.
         let can_block = op != SockAddrOp::UdpRecvMsg;
-        Ok(prog.run(locked, current_task, &mut bpf_sockaddr, can_block))
+        Ok(prog.run(current_task, &mut bpf_sockaddr, can_block))
     }
 
     pub fn run_sock_prog(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         current_task: &CurrentTask,
         op: SockOp,
         domain: SocketDomain,
@@ -669,7 +639,7 @@ impl CgroupEbpfProgramSet {
             SockOp::Create => &self.sock_create,
             SockOp::Release => &self.sock_release,
         };
-        let (prog_guard, locked) = prog_cell.read_and(locked);
+        let prog_guard = prog_cell.read();
         let Some(prog) = prog_guard.as_ref() else {
             return SockProgramResult::Allow;
         };
@@ -684,12 +654,11 @@ impl CgroupEbpfProgramSet {
             socket: Some(socket),
         };
 
-        prog.run(locked, current_task, &bpf_sock)
+        prog.run(current_task, &bpf_sock)
     }
 
     pub fn run_getsockopt_prog(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         current_task: &CurrentTask,
         level: u32,
         optname: u32,
@@ -698,7 +667,7 @@ impl CgroupEbpfProgramSet {
         error: Option<Errno>,
         socket: &Socket,
     ) -> Result<(Vec<u8>, usize), Errno> {
-        let (prog_guard, locked) = self.get_sockopt.read_and(locked);
+        let prog_guard = self.get_sockopt.read();
         let Some(prog) = prog_guard.as_ref() else {
             return error.map(|e| Err(e)).unwrap_or_else(|| Ok((value_buf, optlen)));
         };
@@ -716,7 +685,7 @@ impl CgroupEbpfProgramSet {
         );
 
         // Run the program.
-        let result = prog.run(locked, current_task, &mut bpf_sockopt);
+        let result = prog.run(current_task, &mut bpf_sockopt);
 
         let retval = bpf_sockopt.retval;
 
@@ -752,14 +721,13 @@ impl CgroupEbpfProgramSet {
 
     pub fn run_setsockopt_prog(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         current_task: &CurrentTask,
         level: u32,
         optname: u32,
         value: SockOptValue,
         socket: &Socket,
     ) -> SetSockOptProgramResult {
-        let (prog_guard, locked) = self.set_sockopt.read_and(locked);
+        let prog_guard = self.set_sockopt.read();
         let Some(prog) = prog_guard.as_ref() else {
             return SetSockOptProgramResult::Allow(value);
         };
@@ -779,7 +747,7 @@ impl CgroupEbpfProgramSet {
         let optlen = value.len();
         let mut bpf_sockopt =
             BpfSockOptWithValue::new(level, optname, buffer, optlen as u32, 0, &bpf_sock);
-        let result = prog.run(locked.cast_locked(), current_task, &mut bpf_sockopt);
+        let result = prog.run(current_task, &mut bpf_sockopt);
 
         let retval = bpf_sockopt.retval;
 
@@ -990,7 +958,6 @@ impl EbpfAttachments {
 
     fn attach_prog(
         &self,
-        locked: &mut Locked<Unlocked>,
         current_task: &CurrentTask,
         attach_type: AttachType,
         target_fd: FdNumber,
@@ -1000,31 +967,29 @@ impl EbpfAttachments {
         let program_type = attach_type.get_program_type();
         match (location, program_type) {
             (AttachLocation::Kernel, ProgramType::CgroupSockAddr) => {
-                check_root_cgroup_fd(locked, current_task, target_fd)?;
+                check_root_cgroup_fd(current_task, target_fd)?;
 
                 let linked_program = SockAddrProgram(program.link(attach_type.get_program_type())?);
-                *self.root_cgroup.get_sock_addr_program(attach_type)?.write(locked) =
+                *self.root_cgroup.get_sock_addr_program(attach_type)?.write() =
                     Some(linked_program);
 
                 Ok(SUCCESS)
             }
 
             (AttachLocation::Kernel, ProgramType::CgroupSock) => {
-                check_root_cgroup_fd(locked, current_task, target_fd)?;
+                check_root_cgroup_fd(current_task, target_fd)?;
 
                 let linked_program = SockProgram(program.link(attach_type.get_program_type())?);
-                *self.root_cgroup.get_sock_program(attach_type)?.write(locked) =
-                    Some(linked_program);
+                *self.root_cgroup.get_sock_program(attach_type)?.write() = Some(linked_program);
 
                 Ok(SUCCESS)
             }
 
             (AttachLocation::Kernel, ProgramType::CgroupSockopt) => {
-                check_root_cgroup_fd(locked, current_task, target_fd)?;
+                check_root_cgroup_fd(current_task, target_fd)?;
 
                 let linked_program = SockOptProgram(program.link(attach_type.get_program_type())?);
-                *self.root_cgroup.get_sock_opt_program(attach_type)?.write(locked) =
-                    Some(linked_program);
+                *self.root_cgroup.get_sock_opt_program(attach_type)?.write() = Some(linked_program);
 
                 Ok(SUCCESS)
             }
@@ -1034,7 +999,7 @@ impl EbpfAttachments {
             }
 
             (AttachLocation::Netstack, _) => {
-                check_root_cgroup_fd(locked, current_task, target_fd)?;
+                check_root_cgroup_fd(current_task, target_fd)?;
                 self.attach_prog_in_netstack(attach_type, program)
             }
         }
@@ -1042,7 +1007,6 @@ impl EbpfAttachments {
 
     fn detach_prog(
         &self,
-        locked: &mut Locked<Unlocked>,
         current_task: &CurrentTask,
         attach_type: AttachType,
         target_fd: FdNumber,
@@ -1051,10 +1015,9 @@ impl EbpfAttachments {
         let program_type = attach_type.get_program_type();
         match (location, program_type) {
             (AttachLocation::Kernel, ProgramType::CgroupSockAddr) => {
-                check_root_cgroup_fd(locked, current_task, target_fd)?;
+                check_root_cgroup_fd(current_task, target_fd)?;
 
-                let mut prog_guard =
-                    self.root_cgroup.get_sock_addr_program(attach_type)?.write(locked);
+                let mut prog_guard = self.root_cgroup.get_sock_addr_program(attach_type)?.write();
                 if prog_guard.is_none() {
                     return error!(ENOENT);
                 }
@@ -1065,9 +1028,9 @@ impl EbpfAttachments {
             }
 
             (AttachLocation::Kernel, ProgramType::CgroupSock) => {
-                check_root_cgroup_fd(locked, current_task, target_fd)?;
+                check_root_cgroup_fd(current_task, target_fd)?;
 
-                let mut prog_guard = self.root_cgroup.get_sock_program(attach_type)?.write(locked);
+                let mut prog_guard = self.root_cgroup.get_sock_program(attach_type)?.write();
                 if prog_guard.is_none() {
                     return error!(ENOENT);
                 }
@@ -1078,10 +1041,9 @@ impl EbpfAttachments {
             }
 
             (AttachLocation::Kernel, ProgramType::CgroupSockopt) => {
-                check_root_cgroup_fd(locked, current_task, target_fd)?;
+                check_root_cgroup_fd(current_task, target_fd)?;
 
-                let mut prog_guard =
-                    self.root_cgroup.get_sock_opt_program(attach_type)?.write(locked);
+                let mut prog_guard = self.root_cgroup.get_sock_opt_program(attach_type)?.write();
                 if prog_guard.is_none() {
                     return error!(ENOENT);
                 }
@@ -1096,7 +1058,7 @@ impl EbpfAttachments {
             }
 
             (AttachLocation::Netstack, _) => {
-                check_root_cgroup_fd(locked, current_task, target_fd)?;
+                check_root_cgroup_fd(current_task, target_fd)?;
                 self.detach_prog_in_netstack(attach_type)
             }
         }

@@ -21,7 +21,6 @@ use selinux::{
     UnixStreamSocketPermission,
 };
 use starnix_logging::track_stub;
-use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked};
 use starnix_uapi::errors::Errno;
 
 /// Checks that `current_task` has the specified `permission` for the `socket_node`.
@@ -144,26 +143,22 @@ fn compute_socket_security_class(
 /// Checks that `current_task` has permission to create a socket with `domain`, `socket_type` and
 /// `protocol`.
 
-pub(in crate::security) fn check_socket_create_access<L>(
-    locked: &mut Locked<L>,
+pub(in crate::security) fn check_socket_create_access(
     security_server: &SecurityServer,
     current_task: &CurrentTask,
     domain: SocketDomain,
     socket_type: SocketType,
     protocol: SocketProtocol,
     kernel_private: bool,
-) -> Result<(), Errno>
-where
-    L: LockEqualOrBefore<FileOpsCore>,
-{
+) -> Result<(), Errno> {
     // Creating kernel sockets is allowed.
     if kernel_private {
         return Ok(());
     }
 
-    let sockfs = socket_fs(locked, current_task.kernel());
+    let sockfs = socket_fs(current_task.kernel());
     // Ensure sockfs gets labeled, in case it was mounted after the SELinux policy has been loaded.
-    superblock::file_system_resolve_security(locked, security_server, &current_task, &sockfs)
+    superblock::file_system_resolve_security(security_server, &current_task, &sockfs)
         .expect("resolve fs security");
     let current_sid = current_task_state(current_task).current_sid;
     let new_socket_class =
@@ -591,78 +586,68 @@ mod tests {
 
     #[fuchsia::test]
     async fn socket_post_create() {
-        spawn_kernel_with_selinux_hooks_test_policy_and_run(
-            |locked, current_task, security_server| {
-                let task_sid = security_server
-                    .security_context_to_sid(b"u:object_r:test_socket_create_yes_t:s0".into())
-                    .expect("invalid security context");
-                mutate_attrs_for_test(current_task, |attrs| attrs.current_sid = task_sid);
+        spawn_kernel_with_selinux_hooks_test_policy_and_run(|current_task, security_server| {
+            let task_sid = security_server
+                .security_context_to_sid(b"u:object_r:test_socket_create_yes_t:s0".into())
+                .expect("invalid security context");
+            mutate_attrs_for_test(current_task, |attrs| attrs.current_sid = task_sid);
 
-                let socket_node = SocketFile::new_socket(
-                    locked,
-                    current_task,
-                    SocketDomain::Unix,
-                    SocketType::Stream,
-                    OpenFlags::RDWR,
-                    SocketProtocol::IP,
-                    /* kernel_private=*/ false,
-                )
-                .expect("failed to create socket");
+            let socket_node = SocketFile::new_socket(
+                current_task,
+                SocketDomain::Unix,
+                SocketType::Stream,
+                OpenFlags::RDWR,
+                SocketProtocol::IP,
+                /* kernel_private=*/ false,
+            )
+            .expect("failed to create socket");
 
-                let socket_label = socket_node.node().security_state.0.read();
-                assert_eq!(socket_label.class(), SocketClass::UnixStreamSocket.into());
-                assert_eq!(get_cached_sid(socket_node.node()), Some(task_sid));
-            },
-        )
+            let socket_label = socket_node.node().security_state.0.read();
+            assert_eq!(socket_label.class(), SocketClass::UnixStreamSocket.into());
+            assert_eq!(get_cached_sid(socket_node.node()), Some(task_sid));
+        })
         .await;
     }
 
     #[fuchsia::test]
     async fn socket_create_is_allowed() {
-        spawn_kernel_with_selinux_hooks_test_policy_and_run(
-            |locked, current_task, security_server| {
-                let task_sid = security_server
-                    .security_context_to_sid(b"u:object_r:test_socket_create_yes_t:s0".into())
-                    .expect("invalid security context");
-                mutate_attrs_for_test(current_task, |attrs| attrs.current_sid = task_sid);
+        spawn_kernel_with_selinux_hooks_test_policy_and_run(|current_task, security_server| {
+            let task_sid = security_server
+                .security_context_to_sid(b"u:object_r:test_socket_create_yes_t:s0".into())
+                .expect("invalid security context");
+            mutate_attrs_for_test(current_task, |attrs| attrs.current_sid = task_sid);
 
-                assert_matches!(
-                    SocketFile::new_socket(
-                        locked,
-                        current_task,
-                        SocketDomain::Unix,
-                        SocketType::Stream,
-                        OpenFlags::RDWR,
-                        SocketProtocol::IP,
-                        /* kernel_private= */ false,
-                    ),
-                    Ok(_)
-                );
-            },
-        )
-        .await;
-    }
-
-    #[fuchsia::test]
-    async fn socket_create_is_denied() {
-        spawn_kernel_with_selinux_hooks_test_policy_and_run(
-            |locked, current_task, security_server| {
-                let task_sid = security_server
-                    .security_context_to_sid(b"u:object_r:test_socket_create_no_t:s0".into())
-                    .expect("invalid security context");
-                mutate_attrs_for_test(current_task, |attrs| attrs.current_sid = task_sid);
-
-                assert_matches!(SocketFile::new_socket(
-                    locked,
+            assert_matches!(
+                SocketFile::new_socket(
                     current_task,
                     SocketDomain::Unix,
                     SocketType::Stream,
                     OpenFlags::RDWR,
                     SocketProtocol::IP,
                     /* kernel_private= */ false,
+                ),
+                Ok(_)
+            );
+        })
+        .await;
+    }
+
+    #[fuchsia::test]
+    async fn socket_create_is_denied() {
+        spawn_kernel_with_selinux_hooks_test_policy_and_run(|current_task, security_server| {
+            let task_sid = security_server
+                .security_context_to_sid(b"u:object_r:test_socket_create_no_t:s0".into())
+                .expect("invalid security context");
+            mutate_attrs_for_test(current_task, |attrs| attrs.current_sid = task_sid);
+
+            assert_matches!(SocketFile::new_socket(current_task,
+                    SocketDomain::Unix,
+                    SocketType::Stream,
+                    OpenFlags::RDWR,
+                    SocketProtocol::IP,
+                    /* kernel_private= */ false,
                 ), Err(errno) if errno == EACCES);
-            },
-        )
+        })
         .await;
     }
 }

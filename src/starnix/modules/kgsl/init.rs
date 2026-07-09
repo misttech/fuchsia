@@ -7,7 +7,7 @@ use starnix_core::device::DeviceOps;
 use starnix_core::task::{CurrentTask, Kernel};
 use starnix_core::vfs::{FileOps, NamespaceNode};
 use starnix_logging::log_info;
-use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked};
+
 use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
@@ -18,7 +18,6 @@ struct KgslDeviceBuilder {}
 impl DeviceOps for KgslDeviceBuilder {
     fn open(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         current_task: &CurrentTask,
         id: DeviceId,
         node: &NamespaceNode,
@@ -29,10 +28,7 @@ impl DeviceOps for KgslDeviceBuilder {
     }
 }
 
-pub fn kgsl_device_init<L>(locked: &mut Locked<L>, kernel: &Kernel)
-where
-    L: LockEqualOrBefore<FileOpsCore>,
-{
+pub fn kgsl_device_init(kernel: &Kernel) {
     log_info!("kgsl: kgsl_device_init");
 
     let registry = &kernel.device_registry;
@@ -40,6 +36,6 @@ where
     let builder = KgslDeviceBuilder {};
 
     registry
-        .register_dyn_device(locked, kernel, "kgsl-3d0".into(), class, builder)
+        .register_dyn_device(kernel, "kgsl-3d0".into(), class, builder)
         .expect("can register kgsl-3d0");
 }

@@ -21,7 +21,6 @@ use starnix_types::time::{duration_from_timespec, timespec_from_duration};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::{SI_TIMER, itimerspec};
 use std::fmt::Debug;
-use std::ops::DerefMut;
 use std::pin::pin;
 use std::sync::{Arc, Weak};
 
@@ -324,12 +323,7 @@ impl IntervalTimer {
                                     tid;
                                     "sending signal for timer"
                                 );
-                                send_signal(
-                                    kernel.kthreads.unlocked_for_async().deref_mut(),
-                                    &target,
-                                    signal_info,
-                                )
-                                .unwrap_or_else(|e| {
+                                send_signal(&target, signal_info).unwrap_or_else(|e| {
                                     log_warn!("Failed to queue timer signal: {}", e)
                                 });
                             }

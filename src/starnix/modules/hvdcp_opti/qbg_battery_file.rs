@@ -11,7 +11,7 @@ use starnix_core::vfs::{
     fileops_impl_noop_sync,
 };
 use starnix_logging::{log_error, track_stub};
-use starnix_sync::{FileOpsCore, Locked, Unlocked};
+
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::Errno;
@@ -24,7 +24,6 @@ pub const BPIOCXBP: u32 = 0xC1304201;
 pub const BPIOCXBPTABLE: u32 = 0xC00C4202;
 
 pub fn create_battery_profile_device(
-    _locked: &mut Locked<FileOpsCore>,
     _current_task: &CurrentTask,
     _id: DeviceId,
     _node: &NamespaceNode,
@@ -55,7 +54,6 @@ impl FileOps for BatteryProfileFile {
 
     fn ioctl(
         &self,
-        _locked: &mut Locked<Unlocked>,
         _file: &FileObject,
         current_task: &CurrentTask,
         request: u32,

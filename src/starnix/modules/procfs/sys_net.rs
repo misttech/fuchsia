@@ -5,6 +5,9 @@
 use std::sync::atomic::Ordering;
 
 use fidl::endpoints::DiscoverableProtocolMarker as _;
+use fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin;
+use fidl_fuchsia_net_root as fnet_root;
+use fidl_fuchsia_net_settings as fnet_settings;
 use fuchsia_component::client::connect_to_protocol_sync;
 use net_types::ip::{Ip, IpVersion, Ipv4, Ipv6};
 use netlink::{SysctlError, SysctlInterfaceSelector};
@@ -20,27 +23,22 @@ use starnix_core::vfs::{
     fs_node_impl_dir_readonly,
 };
 use starnix_logging::{bug_ref, log_error, log_warn};
-use starnix_sync::{FileOpsCore, Locked};
+
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::{FileMode, mode};
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::vfs::FdEvents;
 use starnix_uapi::{errno, error};
 use std::borrow::Cow;
-use {
-    fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin, fidl_fuchsia_net_root as fnet_root,
-    fidl_fuchsia_net_settings as fnet_settings,
-};
 
 const FILE_MODE: FileMode = mode!(IFREG, 0o644);
 
 fn netstack_devices_readdir(
-    locked: &mut Locked<FileOpsCore>,
     file: &FileObject,
     current_task: &CurrentTask,
     sink: &mut dyn DirentSink,
 ) -> Result<(), Errno> {
-    file.blocking_op(locked, current_task, FdEvents::empty(), None, |_locked| {
+    file.blocking_op(current_task, FdEvents::empty(), None, || {
         let (initialized, _) = &current_task.kernel().netstack_devices.initialized_and_wq;
         if !initialized.load(Ordering::SeqCst) {
             // Kick off the initialization of the netlink worker if not yet.
@@ -85,17 +83,15 @@ macro_rules! fileops_impl_netstack_devices {
     () => {
         fn readdir(
             &self,
-            locked: &mut Locked<FileOpsCore>,
             file: &FileObject,
             current_task: &CurrentTask,
             sink: &mut dyn DirentSink,
         ) -> Result<(), Errno> {
-            netstack_devices_readdir(locked, file, current_task, sink)
+            netstack_devices_readdir(file, current_task, sink)
         }
 
         fn wait_async(
             &self,
-            _locked: &mut Locked<FileOpsCore>,
             _file: &FileObject,
             current_task: &CurrentTask,
             waiter: &starnix_core::task::Waiter,
@@ -143,7 +139,6 @@ impl FsNodeOps for ProcSysNetIpv4Conf {
 
     fn create_file_ops(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _node: &FsNode,
         _current_task: &CurrentTask,
         _flags: OpenFlags,
@@ -153,7 +148,6 @@ impl FsNodeOps for ProcSysNetIpv4Conf {
 
     fn lookup(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         node: &FsNode,
         current_task: &CurrentTask,
         name: &FsStr,
@@ -190,7 +184,6 @@ impl FsNodeOps for ProcSysNetIpv4Neigh {
 
     fn create_file_ops(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _node: &FsNode,
         _current_task: &CurrentTask,
         _flags: OpenFlags,
@@ -200,7 +193,6 @@ impl FsNodeOps for ProcSysNetIpv4Neigh {
 
     fn lookup(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         node: &FsNode,
         current_task: &CurrentTask,
         name: &FsStr,
@@ -252,7 +244,6 @@ impl FsNodeOps for ProcSysNetIpv6Conf {
 
     fn create_file_ops(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _node: &FsNode,
         _current_task: &CurrentTask,
         _flags: OpenFlags,
@@ -262,7 +253,6 @@ impl FsNodeOps for ProcSysNetIpv6Conf {
 
     fn lookup(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         node: &FsNode,
         current_task: &CurrentTask,
         name: &FsStr,
@@ -369,7 +359,6 @@ impl FsNodeOps for ProcSysNetIpv6Neigh {
 
     fn create_file_ops(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _node: &FsNode,
         _current_task: &CurrentTask,
         _flags: OpenFlags,
@@ -379,7 +368,6 @@ impl FsNodeOps for ProcSysNetIpv6Neigh {
 
     fn lookup(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         node: &FsNode,
         current_task: &CurrentTask,
         name: &FsStr,
@@ -429,7 +417,7 @@ struct NetworkNetlinkSysctlFile {
 
 impl NetworkNetlinkSysctlFile {
     fn new_node(interface: SysctlInterfaceSelector) -> impl FsNodeOps {
-        SimpleFileNode::new(move |_, _| Ok(BytesFile::new(Self { interface })))
+        SimpleFileNode::new(move |_| Ok(BytesFile::new(Self { interface })))
     }
 }
 
@@ -533,7 +521,7 @@ fn new_interface_config_file_node<Config>(selector: SysctlInterfaceSelector) -> 
 where
     Config: InterfaceConfig,
 {
-    SimpleFileNode::new(move |_, _| {
+    SimpleFileNode::new(move |_| {
         Ok(BytesFile::new(InterfaceConfigFile {
             selector,
             _marker: std::marker::PhantomData::<Config>,

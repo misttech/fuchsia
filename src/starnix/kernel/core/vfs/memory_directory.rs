@@ -7,7 +7,7 @@ use crate::vfs::{
     DirectoryEntryType, DirentSink, FileObject, FileOps, FsString, SeekTarget, default_seek,
     fileops_impl_directory, fileops_impl_noop_sync,
 };
-use starnix_sync::{FileOpsCore, LockDepMutex, Locked, MemoryDirectoryReaddirPositionLock};
+use starnix_sync::{LockDepMutex, MemoryDirectoryReaddirPositionLock};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::{error, off_t};
 use std::ops::Bound;
@@ -60,7 +60,6 @@ impl FileOps for MemoryDirectoryFile {
 
     fn seek(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         file: &FileObject,
         _current_task: &CurrentTask,
         current_offset: off_t,
@@ -93,7 +92,6 @@ impl FileOps for MemoryDirectoryFile {
 
     fn readdir(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         file: &FileObject,
         _current_task: &CurrentTask,
         sink: &mut dyn DirentSink,

@@ -11,7 +11,6 @@ use crate::task::CurrentTask;
 use crate::vfs::FileHandle;
 use selinux::{InitialSid, PolicyCap, SecurityPermission, SecurityServer};
 use starnix_logging::{log_info, log_warn};
-use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked};
 use starnix_uapi::errors::Errno;
 use std::sync::atomic::Ordering;
 use strum::VariantArray as _;
@@ -38,12 +37,7 @@ pub(in crate::security) fn selinuxfs_init_null(
 
 /// Called by the "selinuxfs" when a policy has been successfully loaded, to allow policy-dependent
 /// initialization to be completed.
-pub(in crate::security) fn selinuxfs_policy_loaded<L>(
-    locked: &mut Locked<L>,
-    current_task: &CurrentTask,
-) where
-    L: LockEqualOrBefore<FileOpsCore>,
-{
+pub(in crate::security) fn selinuxfs_policy_loaded(current_task: &CurrentTask) {
     let kernel_state = current_task.kernel().security_state.state.as_ref().unwrap();
     let security_server = &kernel_state.server;
     assert!(security_server.has_policy(), "selinuxfs_policy_loaded() without policy");
@@ -79,15 +73,10 @@ pub(in crate::security) fn selinuxfs_policy_loaded<L>(
     let pending_file_systems = std::mem::take(&mut *kernel_state.pending_file_systems.lock());
     for file_system in pending_file_systems {
         if let Some(file_system) = file_system.0.upgrade() {
-            superblock::file_system_resolve_security(
-                locked,
-                security_server,
-                current_task,
-                &file_system,
-            )
-            .unwrap_or_else(|e| {
-                panic!("Failed to resolve {} FileSystem label: {:?}", file_system.name(), e)
-            });
+            superblock::file_system_resolve_security(security_server, current_task, &file_system)
+                .unwrap_or_else(|e| {
+                    panic!("Failed to resolve {} FileSystem label: {:?}", file_system.name(), e)
+                });
         }
     }
 

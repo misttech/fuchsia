@@ -4,11 +4,9 @@
 
 use crate::signals::{SignalDetail, SignalInfo};
 use crate::task::{CurrentTask, ExceptionResult, PageFaultExceptionReport};
-use starnix_sync::{Locked, Unlocked};
 use starnix_uapi::signals::{SIGBUS, SIGFPE, SIGILL, SIGSEGV, SIGTRAP};
 
 pub fn handle_hardware_exception(
-    locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
     report: &zx::ExceptionReport,
 ) -> Option<ExceptionResult> {
@@ -39,7 +37,7 @@ pub fn handle_hardware_exception(
         },
         zx::ExceptionType::FatalPageFault { status } => {
             let decoded = decode_page_fault_exception_report(&report.arch);
-            Some(current_task.handle_page_fault(locked, decoded, status))
+            Some(current_task.handle_page_fault(decoded, status))
         }
         zx::ExceptionType::UndefinedInstruction => {
             Some(ExceptionResult::Signal(SignalInfo::with_detail(

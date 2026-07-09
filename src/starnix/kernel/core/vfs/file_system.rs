@@ -16,8 +16,8 @@ use ref_cast::RefCast;
 use smallvec::SmallVec;
 use starnix_crypt::CryptService;
 use starnix_sync::{
-    DynamicLockDepMutex, FileOpsCore, FileSystemEntriesLock, FileSystemPermanentLock, FsRename,
-    FsRenameRecursive, FuseFsRenameLevel, LockDepMutex, LockEqualOrBefore, Locked,
+    DynamicLockDepMutex, FileSystemEntriesLock, FileSystemPermanentLock, FsRename,
+    FsRenameRecursive, FuseFsRenameLevel, LockDepMutex,
 };
 use starnix_uapi::arc_key::ArcKey;
 use starnix_uapi::as_any::AsAny;
@@ -160,16 +160,12 @@ pub enum CacheMode {
 
 impl FileSystem {
     /// Create a new filesystem.
-    pub fn new<L>(
-        locked: &mut Locked<L>,
+    pub fn new(
         kernel: &Kernel,
         cache_mode: CacheMode,
         ops: impl FileSystemOps,
         mut options: FileSystemOptions,
-    ) -> Result<FileSystemHandle, Errno>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
+    ) -> Result<FileSystemHandle, Errno> {
         let uses_external_node_ids = ops.uses_external_node_ids();
         let node_cache = Arc::new(FsNodeCache::new(uses_external_node_ids));
         assert_eq!(ops.uses_external_node_ids(), node_cache.uses_external_node_ids());
@@ -184,7 +180,7 @@ impl FileSystem {
             root: OnceLock::new(),
             ops: Box::new(ops),
             options,
-            dev_id: kernel.device_registry.next_anonymous_dev_id(locked),
+            dev_id: kernel.device_registry.next_anonymous_dev_id(),
             rename_mutex: match fs_lockdep_type {
                 FsLockDepType::Normal => {
                     DynamicLockDepMutex::new::<FsRename>(FileSystemRenameToken::default())
@@ -371,19 +367,14 @@ impl FileSystem {
     /// replacing |replaced|.
     /// If |replaced| exists and is a directory, this function must check that |renamed| is n
     /// directory and that |replaced| is empty.
-    pub fn rename<L>(
+    pub fn rename(
         &self,
-        locked: &mut Locked<L>,
         current_task: &CurrentTask,
         context: &mut RenameContext<'_>,
         old_name: &FsStr,
         new_name: &FsStr,
-    ) -> Result<(), Errno>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
-        let locked = locked.cast_locked::<FileOpsCore>();
-        self.ops.rename(locked, self, current_task, context, old_name, new_name)
+    ) -> Result<(), Errno> {
+        self.ops.rename(self, current_task, context, old_name, new_name)
     }
 
     /// Exchanges the two nodes identified by `name1` and `name2` in the context.
@@ -411,28 +402,17 @@ impl FileSystem {
     /// the filesystem.
     ///
     /// Returns `ENOSYS` if the `FileSystemOps` don't implement `stat`.
-    pub fn statfs<L>(
-        &self,
-        locked: &mut Locked<L>,
-        current_task: &CurrentTask,
-    ) -> Result<statfs, Errno>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
+    pub fn statfs(&self, current_task: &CurrentTask) -> Result<statfs, Errno> {
         security::sb_statfs(current_task, &self)?;
-        let locked = locked.cast_locked::<FileOpsCore>();
-        let mut stat = self.ops.statfs(locked, self, current_task)?;
+        let mut stat = self.ops.statfs(self, current_task)?;
         if stat.f_frsize == 0 {
             stat.f_frsize = stat.f_bsize as i64;
         }
         Ok(stat)
     }
 
-    pub fn sync<L>(&self, locked: &mut Locked<L>, current_task: &CurrentTask) -> Result<(), Errno>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
-        self.ops.sync(locked.cast_locked::<FileOpsCore>(), self, current_task)
+    pub fn sync(&self, current_task: &CurrentTask) -> Result<(), Errno> {
+        self.ops.sync(self, current_task)
     }
 
     pub fn did_create_dir_entry(&self, entry: &DirEntryHandle) {
@@ -539,12 +519,7 @@ pub trait FileSystemOps: AsAny + Send + Sync + 'static {
     ///     ..statfs::default(FILE_SYSTEM_MAGIC)
     /// })
     /// ```
-    fn statfs(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        _fs: &FileSystem,
-        _current_task: &CurrentTask,
-    ) -> Result<statfs, Errno>;
+    fn statfs(&self, _fs: &FileSystem, _current_task: &CurrentTask) -> Result<statfs, Errno>;
 
     /// Reconfigure the filesystem with the given flags.
     ///
@@ -586,7 +561,6 @@ pub trait FileSystemOps: AsAny + Send + Sync + 'static {
     /// not in the DirEntry cache).
     fn rename(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _fs: &FileSystem,
         _current_task: &CurrentTask,
         _context: &mut RenameContext<'_>,
@@ -630,12 +604,7 @@ pub trait FileSystemOps: AsAny + Send + Sync + 'static {
         None
     }
 
-    fn sync(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        _fs: &FileSystem,
-        _current_task: &CurrentTask,
-    ) -> Result<(), Errno> {
+    fn sync(&self, _fs: &FileSystem, _current_task: &CurrentTask) -> Result<(), Errno> {
         Ok(())
     }
 }

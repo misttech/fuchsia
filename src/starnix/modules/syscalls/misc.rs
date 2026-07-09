@@ -10,7 +10,7 @@ use starnix_core::security;
 use starnix_core::task::CurrentTask;
 use starnix_core::vfs::FsString;
 use starnix_logging::{log_error, track_stub};
-use starnix_sync::{Locked, Unlocked};
+
 use starnix_syscalls::decls::SyscallDecl;
 use starnix_syscalls::{SUCCESS, SyscallResult};
 use starnix_types::user_buffer::MAX_RW_COUNT;
@@ -34,11 +34,7 @@ uapi::check_arch_independent_layout! {
     }
 }
 
-pub fn do_uname(
-    _locked: &mut Locked<Unlocked>,
-    current_task: &CurrentTask,
-    result: &mut utsname,
-) -> Result<(), Errno> {
+pub fn do_uname(current_task: &CurrentTask, result: &mut utsname) -> Result<(), Errno> {
     fn init_array(fixed: &mut [c_char; 65], init: &[u8]) {
         let len = init.len();
         #[allow(
@@ -85,11 +81,7 @@ pub fn do_uname(
     Ok(())
 }
 
-pub fn sys_uname(
-    locked: &mut Locked<Unlocked>,
-    current_task: &CurrentTask,
-    name: UserRef<utsname>,
-) -> Result<(), Errno> {
+pub fn sys_uname(current_task: &CurrentTask, name: UserRef<utsname>) -> Result<(), Errno> {
     let mut result = utsname {
         sysname: [0; 65],
         nodename: [0; 65],
@@ -98,13 +90,12 @@ pub fn sys_uname(
         machine: [0; 65],
         domainname: [0; 65],
     };
-    do_uname(locked, current_task, &mut result)?;
+    do_uname(current_task, &mut result)?;
     current_task.write_object(name, &result)?;
     Ok(())
 }
 
 pub fn sys_sysinfo(
-    _locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
     info: MultiArchUserRef<uapi::sysinfo, uapi::arch32::sysinfo>,
 ) -> Result<(), Errno> {
@@ -152,7 +143,6 @@ fn read_name(current_task: &CurrentTask, name: UserCString, len: u64) -> Result<
 }
 
 pub fn sys_sethostname(
-    _locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
     hostname: UserCString,
     len: u64,
@@ -169,7 +159,6 @@ pub fn sys_sethostname(
 }
 
 pub fn sys_setdomainname(
-    _locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
     domainname: UserCString,
     len: u64,
@@ -186,7 +175,6 @@ pub fn sys_setdomainname(
 }
 
 pub fn sys_getrandom(
-    _locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
     start_addr: UserAddress,
     size: usize,
@@ -229,18 +217,14 @@ pub fn sys_getrandom(
     Ok(bytes_written)
 }
 
-pub fn sys_sched_yield(
-    _locked: &mut Locked<Unlocked>,
-    _current_task: &CurrentTask,
-) -> Result<(), Errno> {
+pub fn sys_sched_yield(_current_task: &CurrentTask) -> Result<(), Errno> {
     // SAFETY: This is unsafe because it is a syscall. zx_thread_legacy_yield is always safe.
     let status = unsafe { zx::sys::zx_thread_legacy_yield(0) };
     zx::Status::ok(status).map_err(|status| from_status_like_fdio!(status))
 }
 
 pub fn sys_unknown(
-    _locked: &mut Locked<Unlocked>,
-    #[allow(unused_variables)] current_task: &CurrentTask,
+    current_task: &CurrentTask,
     syscall_number: u64,
 ) -> Result<SyscallResult, Errno> {
     let decl = SyscallDecl::from_number(syscall_number, current_task.thread_state.arch_width());
@@ -250,18 +234,13 @@ pub fn sys_unknown(
     error!(ENOSYS)
 }
 
-pub fn sys_personality(
-    _locked: &mut Locked<Unlocked>,
-    current_task: &CurrentTask,
-    persona: u32,
-) -> Result<SyscallResult, Errno> {
+pub fn sys_personality(current_task: &CurrentTask, persona: u32) -> Result<SyscallResult, Errno> {
     let mut state = current_task.task.thread_group().write();
     let previous_value = state.personality.update_from_syscall(persona);
     Ok(previous_value.into())
 }
 
 pub fn sys_delete_module(
-    _locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
     user_name: UserCString,
     _flags: u32,

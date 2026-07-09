@@ -13,7 +13,7 @@ use starnix_core::fs_node_impl_not_dir;
 use starnix_core::task::{CgroupOps, CurrentTask, Kernel, ProcessEntryRef};
 use starnix_core::vfs::pseudo::dynamic_file::{DynamicFile, DynamicFileBuf, DynamicFileSource};
 use starnix_core::vfs::{AppendLockWriteGuard, FileOps, FsNode, FsNodeOps, InputBuffer};
-use starnix_sync::{FileOpsCore, Locked};
+
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::{errno, error, pid_t};
@@ -34,7 +34,6 @@ impl FsNodeOps for ControlGroupNode {
 
     fn create_file_ops(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _node: &FsNode,
         current_task: &CurrentTask,
         _flags: OpenFlags,
@@ -44,7 +43,6 @@ impl FsNodeOps for ControlGroupNode {
 
     fn truncate(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _guard: &AppendLockWriteGuard<'_>,
         _node: &FsNode,
         _current_task: &CurrentTask,
@@ -69,7 +67,6 @@ impl DynamicFileSource for ControlGroupFile {
 
     fn write(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         current_task: &CurrentTask,
         _offset: usize,
         data: &mut dyn InputBuffer,
@@ -87,7 +84,7 @@ impl DynamicFileSource for ControlGroupFile {
             return error!(ESRCH);
         };
 
-        self.cgroup()?.add_process(locked, &thread_group)?;
+        self.cgroup()?.add_process(&thread_group)?;
 
         Ok(bytes.len())
     }

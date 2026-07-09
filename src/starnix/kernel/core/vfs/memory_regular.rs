@@ -17,7 +17,6 @@ use crate::vfs::{
 };
 use linux_uapi::{ASHMEM_GET_SIZE, ASHMEM_SET_SIZE};
 use starnix_logging::{impossible_error, track_stub};
-use starnix_sync::{FileOpsCore, Locked, Unlocked};
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_types::math::round_up_to_system_page_size;
 use starnix_uapi::errors::{EFBIG, Errno};
@@ -64,7 +63,6 @@ impl FsNodeOps for MemoryRegularNode {
 
     fn create_file_ops(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         node: &FsNode,
         _current_task: &CurrentTask,
         flags: OpenFlags,
@@ -91,7 +89,6 @@ impl FsNodeOps for MemoryRegularNode {
 
     fn truncate(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _guard: &AppendLockWriteGuard<'_>,
         node: &FsNode,
         _current_task: &CurrentTask,
@@ -133,7 +130,6 @@ impl FsNodeOps for MemoryRegularNode {
 
     fn allocate(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _guard: &AppendLockWriteGuard<'_>,
         node: &FsNode,
         _current_task: &CurrentTask,
@@ -233,7 +229,6 @@ impl MemoryRegularFile {
     }
 
     pub fn write(
-        locked: &mut Locked<FileOpsCore>,
         memory: &Arc<MemoryObject>,
         file: &FileObject,
         current_task: &CurrentTask,
@@ -287,8 +282,7 @@ impl MemoryRegularFile {
             }
 
             // Check against the FSIZE limit
-            let fsize_limit =
-                current_task.thread_group().get_rlimit(locked, Resource::FSIZE) as usize;
+            let fsize_limit = current_task.thread_group().get_rlimit(Resource::FSIZE) as usize;
             if write_end > fsize_limit {
                 if offset >= fsize_limit {
                     // Write starts beyond the FSIZE limit.
@@ -319,7 +313,7 @@ impl MemoryRegularFile {
         {
             // EFBIG must trigger a signal. Sending the signal must be done outside of the
             // update_info method to ensure no deadlock.
-            send_standard_signal(locked, current_task, SignalInfo::kernel(SIGXFSZ));
+            send_standard_signal(current_task, SignalInfo::kernel(SIGXFSZ));
         }
         result
     }
@@ -362,7 +356,6 @@ macro_rules! fileops_impl_memory {
 
         fn read(
             &$self,
-            _locked: &mut starnix_sync::Locked<starnix_sync::FileOpsCore>,
             file: &$crate::vfs::FileObject,
             _current_task: &$crate::task::CurrentTask,
             offset: usize,
@@ -373,18 +366,16 @@ macro_rules! fileops_impl_memory {
 
         fn write(
             &$self,
-            locked: &mut starnix_sync::Locked<starnix_sync::FileOpsCore>,
             file: &$crate::vfs::FileObject,
             current_task: &$crate::task::CurrentTask,
             offset: usize,
             data: &mut dyn $crate::vfs::buffers::InputBuffer,
         ) -> Result<usize, starnix_uapi::errors::Errno> {
-            $crate::vfs::MemoryRegularFile::write(locked, $memory, file, current_task, offset, data)
+            $crate::vfs::MemoryRegularFile::write($memory, file, current_task, offset, data)
         }
 
         fn get_memory(
             &$self,
-            _locked: &mut starnix_sync::Locked<starnix_sync::FileOpsCore>,
             file: &$crate::vfs::FileObject,
             current_task: &$crate::task::CurrentTask,
             _length: Option<usize>,
@@ -413,7 +404,6 @@ impl FileOps for MemoryRegularFile {
 
     fn ioctl(
         &self,
-        _locked: &mut Locked<Unlocked>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         request: u32,
@@ -435,7 +425,6 @@ impl FileOps for MemoryRegularFile {
 }
 
 pub fn new_memfd(
-    locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
     mut name: FsString,
     seals: SealFlags,
@@ -447,9 +436,8 @@ pub fn new_memfd(
     }
 
     let fs = current_task.kernel().expando.get_or_init(|| {
-        let tmpfs = TmpFs::new_fs(locked, current_task.kernel());
-        security::file_system_resolve_security(locked, &current_task, &tmpfs)
-            .expect("resolve fs security");
+        let tmpfs = TmpFs::new_fs(current_task.kernel());
+        security::file_system_resolve_security(&current_task, &tmpfs).expect("resolve fs security");
         let mounts_guard = current_task.kernel().mounts_lock.lock();
         let mount = Mount::new(&mounts_guard, WhatToMount::Fs(tmpfs.clone()), Default::default());
         MemFdTmpfs { tmpfs, mount }
@@ -462,7 +450,6 @@ pub fn new_memfd(
         security::creds_start_internal_operation(current_task),
         || {
             fs.tmpfs.root().node.create_tmpfile(
-                locked,
                 current_task,
                 &MountInfo::detached(),
                 mode!(IFREG, 0o600),
@@ -482,10 +469,10 @@ pub fn new_memfd(
     let mut local_name = FsString::from("memfd:");
     local_name.append(&mut name);
     let dir_entry = DirEntry::new_deleted(fs_node, Some(fs.tmpfs.root().clone()), local_name);
-    security::fs_node_init_with_dentry(locked, current_task, &dir_entry)?;
+    security::fs_node_init_with_dentry(current_task, &dir_entry)?;
 
     let name = NamespaceNode::new(fs.mount.clone(), dir_entry);
-    name.open(locked, current_task, flags, AccessCheck::skip())
+    name.open(current_task, flags, AccessCheck::skip())
 }
 
 /// Sets memory size to `min_size` rounded to whole pages. Returns the new size of the VMO in bytes.

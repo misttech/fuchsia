@@ -24,14 +24,13 @@ use starnix_core::execution::{create_init_child_process, execute_task_with_preru
 use starnix_core::fs::devpts::create_main_and_replica;
 use starnix_core::fs::fuchsia::create_fuchsia_pipe;
 use starnix_core::task::dynamic_thread_spawner::SpawnRequestBuilder;
-use starnix_core::task::{CurrentTask, ExitStatus, Kernel, LockedAndTask, ProcessEntryRef};
+use starnix_core::task::{CurrentTask, ExitStatus, Kernel, ProcessEntryRef};
 use starnix_core::vfs::buffers::{VecInputBuffer, VecOutputBuffer};
 use starnix_core::vfs::file_server::serve_file_at;
 use starnix_core::vfs::socket::VsockSocket;
 use starnix_core::vfs::{FdFlags, FileHandle};
 use starnix_logging::{log_error, log_warn};
 use starnix_modules_framebuffer::Framebuffer;
-use starnix_sync::{Locked, Unlocked};
 use starnix_task_command::TaskCommand;
 use starnix_uapi::auth::Credentials;
 use starnix_uapi::errors::Errno;
@@ -39,16 +38,14 @@ use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::signals::UncheckedSignal;
 use starnix_uapi::{errno, error, uapi};
 use std::ffi::CString;
-use std::ops::DerefMut;
 
 use super::start_component;
 
 pub fn expose_root(
-    locked: &mut Locked<Unlocked>,
     system_task: &CurrentTask,
     server_end: ServerEnd<fio::DirectoryMarker>,
 ) -> Result<(), Error> {
-    let root_file = system_task.open_file(locked, "/".into(), OpenFlags::RDONLY)?;
+    let root_file = system_task.open_file("/".into(), OpenFlags::RDONLY)?;
     serve_file_at(server_end.into_channel().into(), system_task, &root_file, Credentials::root())?;
     Ok(())
 }
@@ -108,7 +105,6 @@ async fn spawn_console(
             .collect::<Result<Vec<_>, _>>()?;
         let window_size = to_winsize(payload.window_size);
         let current_task = create_init_child_process(
-            kernel.kthreads.unlocked_for_async().deref_mut(),
             &kernel.weak_self.upgrade().expect("Kernel must still be alive"),
             TaskCommand::new(binary_path.as_bytes()),
             Credentials::with_ids(0, 0),
@@ -116,20 +112,16 @@ async fn spawn_console(
         )?;
         let (sender, receiver) = oneshot::channel();
         let pty = execute_task_with_prerun_result(
-            kernel.kthreads.unlocked_for_async().deref_mut(),
             current_task,
-            move |locked, current_task| {
-                let executable = current_task.open_file(
-                    locked,
-                    binary_path.as_bytes().into(),
-                    OpenFlags::RDONLY,
-                )?;
-                current_task.exec(locked, executable, binary_path, argv, environ)?;
-                let (pty, pts) = create_main_and_replica(locked, &current_task, window_size)?;
+            move |current_task| {
+                let executable =
+                    current_task.open_file(binary_path.as_bytes().into(), OpenFlags::RDONLY)?;
+                current_task.exec(executable, binary_path, argv, environ)?;
+                let (pty, pts) = create_main_and_replica(&current_task, window_size)?;
                 let fd_flags = FdFlags::empty();
-                assert_eq!(0, current_task.add_file(locked, pts.clone(), fd_flags)?.raw());
-                assert_eq!(1, current_task.add_file(locked, pts.clone(), fd_flags)?.raw());
-                assert_eq!(2, current_task.add_file(locked, pts, fd_flags)?.raw());
+                assert_eq!(0, current_task.add_file(pts.clone(), fd_flags)?.raw());
+                assert_eq!(1, current_task.add_file(pts.clone(), fd_flags)?.raw());
+                assert_eq!(2, current_task.add_file(pts, fd_flags)?.raw());
                 Ok(pty)
             },
             move |result| {
@@ -189,11 +181,6 @@ pub async fn serve_container_controller(
                                     for fd in fds {
                                         if let Ok(file) = files.get(fd) {
                                             if let Ok(memory) = file.get_memory(
-                                                system_task
-                                                    .kernel()
-                                                    .kthreads
-                                                    .unlocked_for_async()
-                                                    .deref_mut(),
                                                 system_task,
                                                 None,
                                                 starnix_core::mm::ProtectionFlags::READ,
@@ -314,14 +301,9 @@ async fn connect_to_vsock(
         fasync::Timer::new(fasync::MonotonicDuration::from_millis(100).after_now()).await;
     };
 
-    let pipe = create_fuchsia_pipe(
-        system_task.kernel().kthreads.unlocked_for_async().deref_mut(),
-        system_task,
-        bridge_socket,
-        OpenFlags::RDWR | OpenFlags::NONBLOCK,
-    )?;
+    let pipe =
+        create_fuchsia_pipe(system_task, bridge_socket, OpenFlags::RDWR | OpenFlags::NONBLOCK)?;
     socket.downcast_socket::<VsockSocket>().unwrap().remote_connection(
-        system_task.kernel().kthreads.unlocked_for_async().deref_mut(),
         &socket,
         system_task,
         pipe,
@@ -342,7 +324,7 @@ fn forward_to_pty(
     let mut rx = fuchsia_async::Socket::from_socket(console_in);
     let mut tx = fuchsia_async::Socket::from_socket(console_out);
     let pty_sink = pty.clone();
-    let closure = async move |locked_and_task: LockedAndTask<'_>| {
+    let closure = async move |current_task: &CurrentTask| {
         let _result: Result<(), Error> = (async || {
             let mut buffer = vec![0u8; BUFFER_CAPACITY];
             loop {
@@ -350,11 +332,7 @@ fn forward_to_pty(
                 if bytes == 0 {
                     return Ok(());
                 }
-                pty_sink.write(
-                    &mut locked_and_task.unlocked(),
-                    locked_and_task.current_task(),
-                    &mut VecInputBuffer::new(&buffer[..bytes]),
-                )?;
+                pty_sink.write(current_task, &mut VecInputBuffer::new(&buffer[..bytes]))?;
             }
         })()
         .await;
@@ -366,13 +344,13 @@ fn forward_to_pty(
     kernel.kthreads.spawner().spawn_from_request(req);
 
     let pty_source = pty;
-    let closure = move |locked: &mut Locked<Unlocked>, current_task: &CurrentTask| {
+    let closure = move |current_task: &CurrentTask| {
         let _result: Result<(), Error> =
             fasync::LocalExecutor::default().run_singlethreaded(async {
                 let mut buffer = VecOutputBuffer::new(BUFFER_CAPACITY);
                 loop {
                     buffer.reset();
-                    let bytes = pty_source.read(locked, current_task, &mut buffer)?;
+                    let bytes = pty_source.read(current_task, &mut buffer)?;
                     if bytes == 0 {
                         return Ok(());
                     }
@@ -492,7 +470,6 @@ pub async fn serve_lutex_controller(
             match event {
                 fbinder::LutexControllerRequest::WaitBitset { payload, responder } => {
                     let deadline_and_receiver = (|| {
-                        let mut unlocked = kernel.kthreads.unlocked_for_async();
                         let vmo = payload.vmo.ok_or_else(|| errno!(EINVAL))?;
                         let offset = payload.offset.ok_or_else(|| errno!(EINVAL))?;
                         let value = payload.value.ok_or_else(|| errno!(EINVAL))?;
@@ -500,7 +477,7 @@ pub async fn serve_lutex_controller(
                         let deadline = payload.deadline.map(zx::MonotonicInstant::from_nanos);
                         kernel
                             .shared_futexes
-                            .external_wait(&mut unlocked, vmo.into(), offset, value, mask)
+                            .external_wait(vmo.into(), offset, value, mask)
                             .map(|(event, receiver)| (deadline, event, receiver))
                     })();
                     let result = match deadline_and_receiver {
@@ -537,13 +514,11 @@ pub async fn serve_lutex_controller(
                 }
                 fbinder::LutexControllerRequest::WakeBitset { payload, responder } => {
                     let result = (|| {
-                        let mut unlocked = kernel.kthreads.unlocked_for_async();
                         let vmo = payload.vmo.ok_or_else(|| errno!(EINVAL))?;
                         let offset = payload.offset.ok_or_else(|| errno!(EINVAL))?;
                         let count = payload.count.ok_or_else(|| errno!(EINVAL))?;
                         let mask = payload.mask.unwrap_or(u32::MAX);
                         kernel.shared_futexes.external_wake(
-                            &mut unlocked,
                             vmo.into(),
                             offset,
                             count as usize,
@@ -565,7 +540,6 @@ pub async fn serve_lutex_controller(
                 }
                 fbinder::LutexControllerRequest::CmpRequeue { payload, responder } => {
                     let result = (|| {
-                        let mut unlocked = kernel.kthreads.unlocked_for_async();
                         let first_vmo = payload.first_vmo.ok_or_else(|| errno!(EINVAL))?;
                         let first_offset = payload.first_offset.ok_or_else(|| errno!(EINVAL))?;
                         let second_vmo = payload.second_vmo;
@@ -574,7 +548,6 @@ pub async fn serve_lutex_controller(
                         let requeue_count = payload.requeue_count.ok_or_else(|| errno!(EINVAL))?;
                         let cmp_val = payload.cmp_val;
                         kernel.shared_futexes.external_requeue(
-                            &mut unlocked,
                             first_vmo.into(),
                             first_offset,
                             second_vmo.map(Into::into),
@@ -617,7 +590,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn lutex_controller_test() {
-        spawn_kernel_and_run(async |mut _locked, current_task| {
+        spawn_kernel_and_run(async |current_task| {
             let (sender, receiver) = oneshot::channel::<()>();
             current_task.kernel.kthreads.spawn_future(
                 {

@@ -6,7 +6,7 @@ use crate::task::dynamic_thread_spawner::SpawnRequestBuilder;
 use attribution_server::{AttributionServer, AttributionServerHandle};
 use fidl_fuchsia_memory_attribution as fattribution;
 use starnix_logging::log_error;
-use starnix_sync::{LockDepMutex, Locked, MemoryAttributionPublisherLock, Unlocked};
+use starnix_sync::{LockDepMutex, MemoryAttributionPublisherLock};
 use starnix_uapi::pid_t;
 use starnix_uapi::restricted_aspace::{RESTRICTED_ASPACE_BASE, RESTRICTED_ASPACE_SIZE};
 use std::collections::{HashMap, HashSet};
@@ -98,7 +98,7 @@ impl MemoryAttributionManager {
                 pids.set_thread_group_notifier(pid_sender);
                 drop(pids);
 
-                let closure = move |_: &mut Locked<Unlocked>, _: &CurrentTask| {
+                let closure = move |_: &CurrentTask| {
                     Self::run(weak_kernel, publisher_rx, initial_state_rx, pid_receiver);
                 };
                 let req = SpawnRequestBuilder::new()

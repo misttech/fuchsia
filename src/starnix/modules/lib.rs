@@ -33,15 +33,13 @@ use starnix_modules_selinuxfs::selinux_fs;
 use starnix_modules_tracefs::trace_fs;
 use starnix_modules_tun::DevTun;
 use starnix_modules_zram::zram_device_init;
-use starnix_sync::{Locked, Unlocked};
 use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::Errno;
 
-fn misc_device_init(locked: &mut Locked<Unlocked>, kernel: &Kernel) -> Result<(), Errno> {
+fn misc_device_init(kernel: &Kernel) -> Result<(), Errno> {
     let registry = &kernel.device_registry;
     let misc_class = registry.objects.misc_class();
     registry.register_device(
-        locked,
         kernel,
         // TODO(https://fxbug.dev/322365477) consider making this configurable
         "hw_random".into(),
@@ -50,7 +48,6 @@ fn misc_device_init(locked: &mut Locked<Unlocked>, kernel: &Kernel) -> Result<()
         simple_device_ops::<DevRandom>,
     )?;
     registry.register_device(
-        locked,
         kernel,
         "fuse".into(),
         DeviceMetadata::new("fuse".into(), DeviceId::FUSE, DeviceMode::Char),
@@ -58,7 +55,6 @@ fn misc_device_init(locked: &mut Locked<Unlocked>, kernel: &Kernel) -> Result<()
         open_fuse_device,
     )?;
     registry.register_device(
-        locked,
         kernel,
         "device-mapper".into(),
         DeviceMetadata::new("mapper/control".into(), DeviceId::DEVICE_MAPPER, DeviceMode::Char),
@@ -66,7 +62,6 @@ fn misc_device_init(locked: &mut Locked<Unlocked>, kernel: &Kernel) -> Result<()
         create_device_mapper,
     )?;
     registry.register_device(
-        locked,
         kernel,
         "loop-control".into(),
         DeviceMetadata::new("loop-control".into(), DeviceId::LOOP_CONTROL, DeviceMode::Char),
@@ -74,7 +69,6 @@ fn misc_device_init(locked: &mut Locked<Unlocked>, kernel: &Kernel) -> Result<()
         create_loop_control_device,
     )?;
     registry.register_device(
-        locked,
         kernel,
         "tun".into(),
         DeviceMetadata::new("tun".into(), DeviceId::TUN, DeviceMode::Char),
@@ -89,17 +83,17 @@ fn misc_device_init(locked: &mut Locked<Unlocked>, kernel: &Kernel) -> Result<()
 /// Adding device nodes to devtmpfs requires the current running task. The `Kernel` constructor does
 /// not create an initial task, so this function should be triggered after a `CurrentTask` has been
 /// initialized.
-pub fn init_common_devices(locked: &mut Locked<Unlocked>, kernel: &Kernel) -> Result<(), Errno> {
-    misc_device_init(locked, kernel)?;
-    mem_device_init(locked, kernel)?;
-    tty_device_init(locked, kernel)?;
-    loop_device_init(locked, kernel)?;
-    device_mapper_init(locked, kernel)?;
-    zram_device_init(locked, kernel)?;
+pub fn init_common_devices(kernel: &Kernel) -> Result<(), Errno> {
+    misc_device_init(kernel)?;
+    mem_device_init(kernel)?;
+    tty_device_init(kernel)?;
+    loop_device_init(kernel)?;
+    device_mapper_init(kernel)?;
+    zram_device_init(kernel)?;
     Ok(())
 }
 
-pub fn register_common_file_systems(_locked: &mut Locked<Unlocked>, kernel: &Kernel) {
+pub fn register_common_file_systems(kernel: &Kernel) {
     let registry = kernel.expando.get::<FsRegistry>();
     registry.register(b"binder".into(), BinderFs::new_fs);
     registry.register(b"bpf".into(), BpfFs::new_fs);

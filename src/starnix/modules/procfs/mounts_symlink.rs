@@ -4,7 +4,7 @@
 
 use starnix_core::task::CurrentTask;
 use starnix_core::vfs::{FsNode, FsNodeOps, SymlinkTarget, fs_node_impl_symlink};
-use starnix_sync::{FileOpsCore, Locked};
+
 use starnix_uapi::errors::Errno;
 
 /// A node that represents a link to `self/mounts`.
@@ -21,7 +21,6 @@ impl FsNodeOps for MountsSymlink {
 
     fn readlink(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _node: &FsNode,
         _current_task: &CurrentTask,
     ) -> Result<SymlinkTarget, Errno> {

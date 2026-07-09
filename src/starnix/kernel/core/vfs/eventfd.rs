@@ -7,7 +7,7 @@ use crate::vfs::buffers::{InputBuffer, InputBufferExt as _, OutputBuffer};
 use crate::vfs::{
     Anon, FileHandle, FileObject, FileOps, fileops_impl_nonseekable, fileops_impl_noop_sync,
 };
-use starnix_sync::{EventFdInnerLock, FileOpsCore, LockDepMutex, LockEqualOrBefore, Locked};
+use starnix_sync::{EventFdInnerLock, LockDepMutex};
 use starnix_uapi::error;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
@@ -32,19 +32,14 @@ pub struct EventFdFileObject {
     wait_queue: WaitQueue,
 }
 
-pub fn new_eventfd<L>(
-    locked: &mut Locked<L>,
+pub fn new_eventfd(
     current_task: &CurrentTask,
     value: u32,
     eventfd_type: EventFdType,
     blocking: bool,
-) -> FileHandle
-where
-    L: LockEqualOrBefore<FileOpsCore>,
-{
+) -> FileHandle {
     let open_flags = if blocking { OpenFlags::RDWR } else { OpenFlags::RDWR | OpenFlags::NONBLOCK };
     Anon::new_private_file(
-        locked,
         current_task,
         Box::new(EventFdFileObject {
             inner: LockDepMutex::new(value.into()),
@@ -62,14 +57,13 @@ impl FileOps for EventFdFileObject {
 
     fn write(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         file: &FileObject,
         current_task: &CurrentTask,
         offset: usize,
         data: &mut dyn InputBuffer,
     ) -> Result<usize, Errno> {
         debug_assert!(offset == 0);
-        file.blocking_op(locked, current_task, FdEvents::POLLOUT | FdEvents::POLLHUP, None, |_| {
+        file.blocking_op(current_task, FdEvents::POLLOUT | FdEvents::POLLHUP, None, || {
             if data.available() != DATA_SIZE {
                 return error!(EINVAL);
             }
@@ -97,14 +91,13 @@ impl FileOps for EventFdFileObject {
 
     fn read(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         file: &FileObject,
         current_task: &CurrentTask,
         offset: usize,
         data: &mut dyn OutputBuffer,
     ) -> Result<usize, Errno> {
         debug_assert!(offset == 0);
-        file.blocking_op(locked, current_task, FdEvents::POLLIN | FdEvents::POLLHUP, None, |_| {
+        file.blocking_op(current_task, FdEvents::POLLIN | FdEvents::POLLHUP, None, || {
             if data.available() < DATA_SIZE {
                 return error!(EINVAL);
             }
@@ -136,7 +129,6 @@ impl FileOps for EventFdFileObject {
 
     fn wait_async(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         waiter: &Waiter,
@@ -148,7 +140,6 @@ impl FileOps for EventFdFileObject {
 
     fn query_events(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
     ) -> Result<FdEvents, Errno> {

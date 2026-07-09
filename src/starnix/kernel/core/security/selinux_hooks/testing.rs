@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #![cfg(test)]
+use crate::security::selinux_hooks::selinuxfs::selinuxfs_policy_loaded;
 
 use crate::mm::memory::MemoryObject;
 use crate::security::SecurityServer;
@@ -11,7 +12,6 @@ use crate::task::loader::ResolvedElf;
 use crate::testing::spawn_kernel_with_selinux_and_run;
 use crate::vfs::{FileWriteGuardMode, FsStr, NamespaceNode};
 use selinux::TaskAttrs;
-use starnix_sync::{Locked, Unlocked};
 use starnix_types::arch::ArchWidth;
 use starnix_uapi::auth::Credentials;
 use starnix_uapi::device_id::DeviceId;
@@ -27,14 +27,11 @@ pub const TEST_FILE_NAME: &str = "file";
 /// Creates a new file named [`TEST_FILE_NAME`] under the root of the filesystem.
 /// Note that this will exercise the file-labeling scheme specified for the root
 /// filesystem by the current policy.
-pub(in crate::security) fn create_test_file(
-    locked: &mut Locked<Unlocked>,
-    current_task: &CurrentTask,
-) -> NamespaceNode {
+pub(in crate::security) fn create_test_file(current_task: &CurrentTask) -> NamespaceNode {
     current_task
         .fs()
         .root()
-        .create_node(locked, &current_task, TEST_FILE_NAME.into(), FileMode::IFREG, DeviceId::NONE)
+        .create_node(&current_task, TEST_FILE_NAME.into(), FileMode::IFREG, DeviceId::NONE)
         .expect("create_node(file)")
 }
 
@@ -43,13 +40,12 @@ pub(in crate::security) fn create_test_file(
 /// root filesystem by the current policy.
 pub(in crate::security) fn create_directory_with_parents(
     dir_names: Vec<&FsStr>,
-    locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
 ) -> NamespaceNode {
     let mut current_dir = current_task.fs().root();
     for dir_name in dir_names {
         current_dir = current_dir
-            .create_node(locked, &current_task, dir_name, FileMode::IFDIR, DeviceId::NONE)
+            .create_node(&current_task, dir_name, FileMode::IFDIR, DeviceId::NONE)
             .expect("create_node(file)");
     }
     current_dir
@@ -68,22 +64,18 @@ pub(in crate::security) fn spawn_kernel_with_selinux_hooks_test_policy_and_run<F
     callback: F,
 ) -> impl Future<Output = ()>
 where
-    F: FnOnce(&mut Locked<Unlocked>, &mut CurrentTask, &Arc<SecurityServer>)
-        + Send
-        + Sync
-        + 'static,
+    F: FnOnce(&mut CurrentTask, &Arc<SecurityServer>) + Send + Sync + 'static,
 {
-    spawn_kernel_with_selinux_and_run(async |locked, current_task, security_server| {
+    spawn_kernel_with_selinux_and_run(async |current_task, security_server| {
         let policy_bytes = HOOKS_TESTS_BINARY_POLICY.to_vec();
         security_server.set_enforcing(true);
         security_server.load_policy(policy_bytes).expect("policy load failed");
-        crate::security::selinuxfs_policy_loaded(locked, current_task);
-        callback(locked, current_task, security_server)
+        selinuxfs_policy_loaded(current_task);
+        callback(current_task, security_server)
     })
 }
 
 pub(in crate::security) fn create_test_executable(
-    locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
     security_context: &[u8],
 ) -> NamespaceNode {
@@ -97,13 +89,7 @@ pub(in crate::security) fn create_test_executable(
         current_task
             .fs()
             .root()
-            .create_node(
-                locked,
-                &current_task,
-                "executable".into(),
-                FileMode::IFREG,
-                DeviceId::NONE,
-            )
+            .create_node(&current_task, "executable".into(), FileMode::IFREG, DeviceId::NONE)
             .expect("create_node(file)")
     })
 }
@@ -118,7 +104,6 @@ pub(in crate::security) fn mutate_attrs_for_test(
 }
 
 pub(in crate::security) fn make_resolved_elf(
-    _locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
     executable: NamespaceNode,
 ) -> ResolvedElf {
@@ -146,17 +131,13 @@ mod tests {
 
     #[fuchsia::test]
     async fn create_test_executable_sets_context() {
-        spawn_kernel_with_selinux_hooks_test_policy_and_run(
-            |locked, current_task, security_server| {
-                let dir_entry =
-                    &create_test_executable(locked, current_task, VALID_SECURITY_CONTEXT).entry;
+        spawn_kernel_with_selinux_hooks_test_policy_and_run(|current_task, security_server| {
+            let dir_entry = &create_test_executable(current_task, VALID_SECURITY_CONTEXT).entry;
 
-                let effective_sid = fs_node_effective_sid_and_class(&dir_entry.node).sid;
-                let effective_context =
-                    security_server.sid_to_security_context(effective_sid).unwrap();
-                assert_eq!(effective_context, VALID_SECURITY_CONTEXT);
-            },
-        )
+            let effective_sid = fs_node_effective_sid_and_class(&dir_entry.node).sid;
+            let effective_context = security_server.sid_to_security_context(effective_sid).unwrap();
+            assert_eq!(effective_context, VALID_SECURITY_CONTEXT);
+        })
         .await;
     }
 }

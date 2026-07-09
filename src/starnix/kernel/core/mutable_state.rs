@@ -174,7 +174,7 @@ macro_rules! state_accessor {
 }
 
 /// Create the read() and write() accessor to respectively access the read guard and write guard
-/// of an OrderedRwLock using a Locked context.
+/// of an LockDepRwLock using a Locked context.
 ///
 /// For a base struct named `Foo`, the read guard will be a struct named `FooReadGuard` and the
 /// write guard a struct named `FooWriteGuard`.
@@ -182,18 +182,14 @@ macro_rules! ordered_state_accessor {
     ($base_name:ident, $field_name:ident, $base_type:ty, $lock_level:ident) => {
         paste::paste! {
         #[allow(dead_code)]
-        pub fn read<'a, L>(self: &'a $base_type, locked: &'a mut starnix_sync::Locked<L>) -> [<$base_name ReadGuard>]<'a>
-        where
-            L: starnix_sync::LockBefore<$lock_level>
+        pub fn read<'a>(self: &'a $base_type) -> [<$base_name ReadGuard>]<'a>
         {
-            $crate::mutable_state::Guard::new(self, self.$field_name.read(locked))
+            $crate::mutable_state::Guard::new(self, self.$field_name.read())
         }
         #[allow(dead_code)]
-        pub fn write<'a, L>(self: &'a $base_type, locked: &'a mut starnix_sync::Locked<L>) -> [<$base_name WriteGuard>]<'a>
-        where
-            L: starnix_sync::LockBefore<$lock_level>
+        pub fn write<'a>(self: &'a $base_type) -> [<$base_name WriteGuard>]<'a>
         {
-            $crate::mutable_state::Guard::new(self, self.$field_name.write(locked))
+            $crate::mutable_state::Guard::new(self, self.$field_name.write())
         }
         }
     };

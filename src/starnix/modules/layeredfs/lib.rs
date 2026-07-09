@@ -11,7 +11,7 @@ use starnix_core::vfs::{
     SeekTarget, ValueOrSize, WhatToMount, XattrOp, fileops_impl_directory, fileops_impl_noop_sync,
     fs_node_impl_dir_readonly, unbounded_seek,
 };
-use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Unlocked};
+
 use starnix_uapi::errors::Errno;
 use starnix_uapi::mount_flags::{FileSystemFlags, MountpointFlags};
 use starnix_uapi::open_flags::OpenFlags;
@@ -30,8 +30,7 @@ struct LayeredMountAction {
 /// After the `FileSystem` has been created by [`LayeredFsBuilder::build`], this closure
 /// must be invoked to create the sub-mounts that layer the additional filesystems
 /// at their specified paths.
-pub type LayeredFsMounts =
-    Box<dyn FnOnce(&mut Locked<Unlocked>, &CurrentTask) -> Result<(), Errno>>;
+pub type LayeredFsMounts = Box<dyn FnOnce(&CurrentTask) -> Result<(), Errno>>;
 
 /// `FileSystem` builder that allows a set of auxiliary `FileSystem`s to be mounted at specified
 /// paths relative to the base filesystem, regardless of whether the base filesystem has directories
@@ -81,20 +80,12 @@ impl LayeredFsBuilder {
     /// The underlying base `FileSystem` will be returned directly if no sub-mounts were specified
     /// via `add()`. Otherwise a `LayeredFs` instance will be returned, to provide stub directory
     /// entries for the sub-mounts to be mounted onto.
-    pub fn build<L>(
-        self,
-        locked: &mut Locked<L>,
-        kernel: &Kernel,
-    ) -> (FileSystemHandle, LayeredFsMounts)
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
-        let (fs, actions) = self.build_internal(locked, kernel, Default::default());
-        let cb = Box::new(move |locked: &mut Locked<Unlocked>, current_task: &CurrentTask| {
+    pub fn build(self, kernel: &Kernel) -> (FileSystemHandle, LayeredFsMounts) {
+        let (fs, actions) = self.build_internal(kernel, Default::default());
+        let cb = Box::new(move |current_task: &CurrentTask| {
             for action in actions {
-                let mount_point = current_task
-                    .lookup_path_from_root(locked, action.path.as_ref())
-                    .map_err(|e| {
+                let mount_point =
+                    current_task.lookup_path_from_root(action.path.as_ref()).map_err(|e| {
                         Errno::with_context(
                             e.code,
                             format!("lookup path from root: {}", action.path),
@@ -111,27 +102,23 @@ impl LayeredFsBuilder {
         (fs, cb)
     }
 
-    fn build_internal<L>(
+    fn build_internal(
         self,
-        locked: &mut Locked<L>,
         kernel: &Kernel,
         prefix: &FsStr,
-    ) -> (FileSystemHandle, Vec<LayeredMountAction>)
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
+    ) -> (FileSystemHandle, Vec<LayeredMountAction>) {
         if self.subdirs.is_empty() {
             return (self.fs, Vec::new());
         }
 
         let names =
             self.subdirs.iter().map(|(name, entry)| (name.clone(), entry.fs.clone())).collect();
-        let fs = LayeredFs::new_fs(locked, kernel, self.fs, names);
+        let fs = LayeredFs::new_fs(kernel, self.fs, names);
 
         let mut mount_actions = Vec::new();
         for (subpath, builder) in self.subdirs {
             let path = FsString::from(format!("{}/{}", prefix, subpath));
-            let (fs, subdir_actions) = builder.build_internal(locked, kernel, path.as_ref());
+            let (fs, subdir_actions) = builder.build_internal(kernel, path.as_ref());
             mount_actions.push(LayeredMountAction { path, fs });
             mount_actions.extend(subdir_actions.into_iter());
         }
@@ -153,19 +140,14 @@ impl LayeredFs {
     /// `base_fs`: The base file system that this file system will delegate to.
     /// `mappings`: The map of top level directory to filesystems that will be layered on top of
     /// `base_fs`.
-    fn new_fs<L>(
-        locked: &mut Locked<L>,
+    fn new_fs(
         kernel: &Kernel,
         base_fs: FileSystemHandle,
         mappings: BTreeMap<FsString, FileSystemHandle>,
-    ) -> FileSystemHandle
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
+    ) -> FileSystemHandle {
         let options = base_fs.options.clone();
         let layered_fs = Arc::new(LayeredFs { base_fs, mappings });
         let fs = FileSystem::new(
-            locked,
             kernel,
             CacheMode::Uncached,
             LayeredFileSystemOps { fs: layered_fs.clone() },
@@ -183,13 +165,8 @@ struct LayeredFileSystemOps {
 }
 
 impl FileSystemOps for LayeredFileSystemOps {
-    fn statfs(
-        &self,
-        locked: &mut Locked<FileOpsCore>,
-        _fs: &FileSystem,
-        current_task: &CurrentTask,
-    ) -> Result<statfs, Errno> {
-        self.fs.base_fs.statfs(locked, current_task)
+    fn statfs(&self, _fs: &FileSystem, current_task: &CurrentTask) -> Result<statfs, Errno> {
+        self.fs.base_fs.statfs(current_task)
     }
     fn name(&self) -> &'static FsStr {
         self.fs.base_fs.name()
@@ -216,20 +193,18 @@ impl FsNodeOps for LayeredNodeOps {
 
     fn create_file_ops(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         _node: &FsNode,
         current_task: &CurrentTask,
         flags: OpenFlags,
     ) -> Result<Box<dyn FileOps>, Errno> {
         Ok(Box::new(LayeredFileOps {
             fs: self.fs.clone(),
-            root_file: self.fs.base_fs.root().open_anonymous(locked, current_task, flags)?,
+            root_file: self.fs.base_fs.root().open_anonymous(current_task, flags)?,
         }))
     }
 
     fn lookup(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         _node: &FsNode,
         current_task: &CurrentTask,
         name: &FsStr,
@@ -237,20 +212,18 @@ impl FsNodeOps for LayeredNodeOps {
         if let Some(fs) = self.fs.mappings.get(name) {
             Ok(fs.root().node.clone())
         } else {
-            self.fs.base_fs.root().node.lookup(locked, current_task, &MountInfo::detached(), name)
+            self.fs.base_fs.root().node.lookup(current_task, &MountInfo::detached(), name)
         }
     }
 
     fn get_xattr(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         _node: &FsNode,
         current_task: &CurrentTask,
         name: &FsStr,
         max_size: usize,
     ) -> Result<ValueOrSize<FsString>, Errno> {
         self.fs.base_fs.root().node.ops().get_xattr(
-            locked,
             &*self.fs.base_fs.root().node,
             current_task,
             name,
@@ -261,41 +234,31 @@ impl FsNodeOps for LayeredNodeOps {
     /// Set an extended attribute on the node.
     fn set_xattr(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         _node: &FsNode,
         current_task: &CurrentTask,
         name: &FsStr,
         value: &FsStr,
         op: XattrOp,
     ) -> Result<(), Errno> {
-        self.fs.base_fs.root().node.set_xattr(
-            locked,
-            current_task,
-            &MountInfo::detached(),
-            name,
-            value,
-            op,
-        )
+        self.fs.base_fs.root().node.set_xattr(current_task, &MountInfo::detached(), name, value, op)
     }
 
     fn remove_xattr(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         _node: &FsNode,
         current_task: &CurrentTask,
         name: &FsStr,
     ) -> Result<(), Errno> {
-        self.fs.base_fs.root().node.remove_xattr(locked, current_task, &MountInfo::detached(), name)
+        self.fs.base_fs.root().node.remove_xattr(current_task, &MountInfo::detached(), name)
     }
 
     fn list_xattrs(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         _node: &FsNode,
         current_task: &CurrentTask,
         max_size: usize,
     ) -> Result<ValueOrSize<Vec<FsString>>, Errno> {
-        self.fs.base_fs.root().node.list_xattrs(locked, current_task, max_size)
+        self.fs.base_fs.root().node.list_xattrs(current_task, max_size)
     }
 }
 
@@ -310,7 +273,6 @@ impl FileOps for LayeredFileOps {
 
     fn seek(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         current_task: &CurrentTask,
         current_offset: off_t,
@@ -320,11 +282,7 @@ impl FileOps for LayeredFileOps {
         if new_offset >= self.fs.mappings.len() as off_t {
             new_offset = self
                 .root_file
-                .seek(
-                    locked,
-                    current_task,
-                    SeekTarget::Set(new_offset - self.fs.mappings.len() as off_t),
-                )?
+                .seek(current_task, SeekTarget::Set(new_offset - self.fs.mappings.len() as off_t))?
                 .checked_add(self.fs.mappings.len() as off_t)
                 .ok_or_else(|| errno!(EINVAL))?;
         }
@@ -333,7 +291,6 @@ impl FileOps for LayeredFileOps {
 
     fn readdir(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         current_task: &CurrentTask,
         sink: &mut dyn DirentSink,
@@ -382,7 +339,7 @@ impl FileOps for LayeredFileOps {
         let mut wrapper =
             DirentSinkWrapper { sink, mappings: &self.fs.mappings, offset: &mut *root_file_offset };
 
-        self.root_file.readdir(locked, current_task, &mut wrapper)?;
+        self.root_file.readdir(current_task, &mut wrapper)?;
         root_file_offset.update();
         Ok(())
     }
@@ -393,13 +350,8 @@ mod test {
     use super::*;
     use starnix_core::fs::tmpfs::TmpFs;
     use starnix_core::testing::*;
-    use starnix_sync::Unlocked;
 
-    fn get_root_entry_names(
-        locked: &mut Locked<Unlocked>,
-        current_task: &CurrentTask,
-        fs: &FileSystem,
-    ) -> Vec<Vec<u8>> {
+    fn get_root_entry_names(current_task: &CurrentTask, fs: &FileSystem) -> Vec<Vec<u8>> {
         struct DirentNameCapturer {
             pub names: Vec<Vec<u8>>,
             offset: off_t,
@@ -422,9 +374,9 @@ mod test {
         }
         let mut sink = DirentNameCapturer { names: vec![], offset: 0 };
         fs.root()
-            .open_anonymous(locked, current_task, OpenFlags::RDONLY)
+            .open_anonymous(current_task, OpenFlags::RDONLY)
             .expect("open")
-            .readdir(locked, current_task, &mut sink)
+            .readdir(current_task, &mut sink)
             .expect("readdir");
         std::mem::take(&mut sink.names)
     }
@@ -432,26 +384,25 @@ mod test {
     #[::fuchsia::test]
     async fn test_remove_duplicates() {
         #[allow(deprecated, reason = "pre-existing usage")]
-        let (kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        let base = TmpFs::new_fs(locked, &kernel);
-        base.root().create_dir_for_testing(locked, &current_task, "d1".into()).expect("create_dir");
-        base.root().create_dir_for_testing(locked, &current_task, "d2".into()).expect("create_dir");
-        let base_entries = get_root_entry_names(locked, &current_task, &base);
+        let (kernel, current_task) = create_kernel_and_task();
+        let base = TmpFs::new_fs(&kernel);
+        base.root().create_dir_for_testing(&current_task, "d1".into()).expect("create_dir");
+        base.root().create_dir_for_testing(&current_task, "d2".into()).expect("create_dir");
+        let base_entries = get_root_entry_names(&current_task, &base);
         assert_eq!(base_entries.len(), 4);
         assert!(base_entries.contains(&b".".to_vec()));
         assert!(base_entries.contains(&b"..".to_vec()));
         assert!(base_entries.contains(&b"d1".to_vec()));
         assert!(base_entries.contains(&b"d2".to_vec()));
 
-        let tmpfs1 = TmpFs::new_fs(locked, &kernel);
-        let tmpfs2 = TmpFs::new_fs(locked, &kernel);
+        let tmpfs1 = TmpFs::new_fs(&kernel);
+        let tmpfs2 = TmpFs::new_fs(&kernel);
         let layered_fs = LayeredFs::new_fs(
-            locked,
             &kernel,
             base,
             BTreeMap::from([("d1".into(), tmpfs1), ("d3".into(), tmpfs2)]),
         );
-        let layered_fs_entries = get_root_entry_names(locked, &current_task, &layered_fs);
+        let layered_fs_entries = get_root_entry_names(&current_task, &layered_fs);
         assert_eq!(layered_fs_entries.len(), 5);
         assert!(layered_fs_entries.contains(&b".".to_vec()));
         assert!(layered_fs_entries.contains(&b"..".to_vec()));

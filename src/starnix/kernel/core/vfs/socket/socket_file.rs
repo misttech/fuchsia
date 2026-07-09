@@ -14,7 +14,6 @@ use crate::vfs::{
     Anon, DowncastedFile, FileHandle, FileObject, FileObjectState, FileOps, FsNodeFlags,
     FsNodeInfo, fileops_impl_nonseekable, fileops_impl_noop_sync,
 };
-use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Unlocked};
 use starnix_syscalls::{SyscallArg, SyscallResult};
 use starnix_uapi::auth::Credentials;
 use starnix_uapi::error;
@@ -38,17 +37,13 @@ impl SocketFile {
     /// - `open_flags`: The `OpenFlags` which are used to create the `FileObject`.
     /// - `kernel_private`: `true` if the socket will be used internally by the kernel, and should
     ///   therefore not be security labeled nor access-checked.
-    pub fn from_socket<L>(
-        locked: &mut Locked<L>,
+    pub fn from_socket(
         current_task: &CurrentTask,
         socket: SocketHandle,
         open_flags: OpenFlags,
         kernel_private: bool,
-    ) -> Result<FileHandle, Errno>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
-        let fs = socket_fs(locked, current_task.kernel());
+    ) -> Result<FileHandle, Errno> {
+        let fs = socket_fs(current_task.kernel());
         let mode = mode!(IFSOCK, 0o777);
         let flags = if kernel_private { FsNodeFlags::IS_PRIVATE } else { FsNodeFlags::empty() };
         let node = fs.create_node_with_flags(
@@ -59,32 +54,21 @@ impl SocketFile {
         );
         socket.set_fs_node(&node);
         security::socket_post_create(current_task, &socket);
-        Ok(FileObject::new_anonymous(
-            locked,
-            current_task,
-            SocketFile::new(socket),
-            node,
-            open_flags,
-        ))
+        Ok(FileObject::new_anonymous(current_task, SocketFile::new(socket), node, open_flags))
     }
 
     /// Shortcut for Socket::new plus SocketFile::from_socket.
-    pub fn new_socket<L>(
-        locked: &mut Locked<L>,
+    pub fn new_socket(
         current_task: &CurrentTask,
         domain: SocketDomain,
         socket_type: SocketType,
         open_flags: OpenFlags,
         protocol: SocketProtocol,
         kernel_private: bool,
-    ) -> Result<FileHandle, Errno>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
+    ) -> Result<FileHandle, Errno> {
         {
-            let socket =
-                Socket::new(locked, current_task, domain, socket_type, protocol, kernel_private)?;
-            SocketFile::from_socket(locked, current_task, socket, open_flags, kernel_private)
+            let socket = Socket::new(current_task, domain, socket_type, protocol, kernel_private)?;
+            SocketFile::from_socket(current_task, socket, open_flags, kernel_private)
         }
     }
 
@@ -103,7 +87,6 @@ impl FileOps for SocketFile {
 
     fn read(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         file: &FileObject,
         current_task: &CurrentTask,
         offset: usize,
@@ -115,62 +98,52 @@ impl FileOps for SocketFile {
         if data.available() == 0 {
             return Ok(0);
         }
-        let info =
-            self.recvmsg(locked, current_task, file, data, SocketMessageFlags::empty(), None)?;
+        let info = self.recvmsg(current_task, file, data, SocketMessageFlags::empty(), None)?;
         Ok(info.bytes_read)
     }
 
     fn write(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         file: &FileObject,
         current_task: &CurrentTask,
         offset: usize,
         data: &mut dyn InputBuffer,
     ) -> Result<usize, Errno> {
         debug_assert!(offset == 0);
-        self.sendmsg(locked, current_task, file, data, None, vec![], SocketMessageFlags::empty())
+        self.sendmsg(current_task, file, data, None, vec![], SocketMessageFlags::empty())
     }
 
     fn wait_async(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         current_task: &CurrentTask,
         waiter: &Waiter,
         events: FdEvents,
         handler: EventHandler,
     ) -> Option<WaitCanceler> {
-        Some(self.socket.wait_async(locked, current_task, waiter, events, handler))
+        Some(self.socket.wait_async(current_task, waiter, events, handler))
     }
 
     fn query_events(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         current_task: &CurrentTask,
     ) -> Result<FdEvents, Errno> {
-        self.socket.query_events(locked, current_task)
+        self.socket.query_events(current_task)
     }
 
     fn ioctl(
         &self,
-        locked: &mut Locked<Unlocked>,
         file: &FileObject,
         current_task: &CurrentTask,
         request: u32,
         arg: SyscallArg,
     ) -> Result<SyscallResult, Errno> {
-        self.socket.ioctl(locked, file, current_task, request, arg)
+        self.socket.ioctl(file, current_task, request, arg)
     }
 
-    fn close(
-        self: Box<Self>,
-        locked: &mut Locked<FileOpsCore>,
-        _file: &FileObjectState,
-        current_task: &CurrentTask,
-    ) {
-        self.socket.close(locked, current_task);
+    fn close(self: Box<Self>, _file: &FileObjectState, current_task: &CurrentTask) {
+        self.socket.close(current_task);
     }
 
     /// Return a handle that allows access to this file descritor through the zxio protocols.
@@ -204,31 +177,22 @@ impl SocketFile {
     /// - `file`: The file that will be used for the `blocking_op`.
     /// - `data`: The user buffers to read data from.
     /// - `control_bytes`: Control message bytes to write to the socket.
-    pub fn sendmsg<L>(
+    pub fn sendmsg(
         &self,
-        locked: &mut Locked<L>,
         current_task: &CurrentTask,
         file: &FileObject,
         data: &mut dyn InputBuffer,
         mut dest_address: Option<SocketAddress>,
         mut ancillary_data: Vec<AncillaryData>,
         flags: SocketMessageFlags,
-    ) -> Result<usize, Errno>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
+    ) -> Result<usize, Errno> {
         let bytes_read_before = data.bytes_read();
 
         // TODO: Implement more `flags`.
-        let mut op = |locked: &mut Locked<L>| {
+        let mut op = || {
             let offset_before = data.bytes_read();
-            let sent_bytes = self.socket.write(
-                locked,
-                current_task,
-                data,
-                &mut dest_address,
-                &mut ancillary_data,
-            )?;
+            let sent_bytes =
+                self.socket.write(current_task, data, &mut dest_address, &mut ancillary_data)?;
             debug_assert!(data.bytes_read() - offset_before == sent_bytes);
             if data.available() > 0 {
                 return error!(EAGAIN);
@@ -237,16 +201,10 @@ impl SocketFile {
         };
 
         let result = if flags.contains(SocketMessageFlags::DONTWAIT) {
-            op(locked)
+            op()
         } else {
             let deadline = self.socket.send_timeout().map(zx::MonotonicInstant::after);
-            file.blocking_op(
-                locked,
-                current_task,
-                FdEvents::POLLOUT | FdEvents::POLLHUP,
-                deadline,
-                op,
-            )
+            file.blocking_op(current_task, FdEvents::POLLOUT | FdEvents::POLLHUP, deadline, op)
         };
 
         let bytes_written = data.bytes_read() - bytes_read_before;
@@ -266,29 +224,25 @@ impl SocketFile {
     /// - `data`: The user buffers to write to.
     ///
     /// Returns the number of bytes read, as well as any control message that was encountered.
-    pub fn recvmsg<L>(
+    pub fn recvmsg(
         &self,
-        locked: &mut Locked<L>,
         current_task: &CurrentTask,
         file: &FileObject,
         data: &mut dyn OutputBuffer,
         flags: SocketMessageFlags,
         deadline: Option<zx::MonotonicInstant>,
-    ) -> Result<MessageReadInfo, Errno>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
+    ) -> Result<MessageReadInfo, Errno> {
         // TODO: Implement more `flags`.
         let mut read_info = MessageReadInfo::default();
 
-        let mut op = |locked: &mut Locked<L>| {
-            let mut info = self.socket.read(locked, current_task, data, flags)?;
+        let mut op = || {
+            let mut info = self.socket.read(current_task, data, flags)?;
             read_info.append(&mut info);
             read_info.address = info.address;
 
             let should_wait_all = self.socket.socket_type == SocketType::Stream
                 && flags.contains(SocketMessageFlags::WAITALL)
-                && !self.socket.query_events(locked, current_task)?.contains(FdEvents::POLLHUP);
+                && !self.socket.query_events(current_task)?.contains(FdEvents::POLLHUP);
             if should_wait_all && data.available() > 0 {
                 return error!(EAGAIN);
             }
@@ -298,17 +252,11 @@ impl SocketFile {
         let dont_wait =
             flags.intersects(SocketMessageFlags::DONTWAIT | SocketMessageFlags::ERRQUEUE);
         let result = if dont_wait {
-            op(locked)
+            op()
         } else {
             let deadline =
                 deadline.or_else(|| self.socket.receive_timeout().map(zx::MonotonicInstant::after));
-            file.blocking_op(
-                locked,
-                current_task,
-                FdEvents::POLLIN | FdEvents::POLLHUP,
-                deadline,
-                op,
-            )
+            file.blocking_op(current_task, FdEvents::POLLIN | FdEvents::POLLHUP, deadline, op)
         };
 
         if read_info.bytes_read == 0 {

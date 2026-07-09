@@ -18,7 +18,7 @@ use crate::vfs::{
     fileops_impl_seekless,
 };
 use starnix_logging::{Level, track_stub};
-use starnix_sync::{DevKmsgLock, FileOpsCore, LockDepMutex, LockEqualOrBefore, Locked, Unlocked};
+use starnix_sync::{DevKmsgLock, LockDepMutex};
 use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::error;
 use starnix_uapi::errors::Errno;
@@ -30,15 +30,8 @@ use std::mem::MaybeUninit;
 #[derive(Default)]
 pub struct DevNull;
 
-pub fn new_null_file<L>(
-    locked: &mut Locked<L>,
-    current_task: &CurrentTask,
-    flags: OpenFlags,
-) -> FileHandle
-where
-    L: LockEqualOrBefore<FileOpsCore>,
-{
-    Anon::new_private_file(locked, current_task, Box::new(DevNull), flags, "[fuchsia:null]")
+pub fn new_null_file(current_task: &CurrentTask, flags: OpenFlags) -> FileHandle {
+    Anon::new_private_file(current_task, Box::new(DevNull), flags, "[fuchsia:null]")
 }
 
 impl FileOps for DevNull {
@@ -47,7 +40,6 @@ impl FileOps for DevNull {
 
     fn write(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         _offset: usize,
@@ -68,7 +60,6 @@ impl FileOps for DevNull {
 
     fn read(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         _offset: usize,
@@ -94,7 +85,6 @@ impl FileOps for DevZero {
 
     fn mmap(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         file: &FileObject,
         current_task: &CurrentTask,
         addr: DesiredAddress,
@@ -135,7 +125,6 @@ impl FileOps for DevZero {
 
     fn write(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         _offset: usize,
@@ -146,7 +135,6 @@ impl FileOps for DevZero {
 
     fn read(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         _offset: usize,
@@ -164,7 +152,6 @@ impl FileOps for DevFull {
 
     fn write(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         _offset: usize,
@@ -175,7 +162,6 @@ impl FileOps for DevFull {
 
     fn read(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         _offset: usize,
@@ -196,7 +182,6 @@ impl FileOps for DevRandom {
 
     fn write(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         _offset: usize,
@@ -207,7 +192,6 @@ impl FileOps for DevRandom {
 
     fn read(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         _offset: usize,
@@ -220,7 +204,6 @@ impl FileOps for DevRandom {
 
     fn ioctl(
         &self,
-        _locked: &mut Locked<Unlocked>,
         _file: &FileObject,
         current_task: &CurrentTask,
         request: u32,
@@ -239,7 +222,6 @@ impl FileOps for DevRandom {
 }
 
 pub fn open_kmsg(
-    _locked: &mut Locked<FileOpsCore>,
     current_task: &CurrentTask,
     _id: DeviceId,
     _node: &NamespaceNode,
@@ -271,7 +253,6 @@ impl FileOps for DevKmsg {
 
     fn seek(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &crate::vfs::FileObject,
         current_task: &crate::task::CurrentTask,
         _current_offset: starnix_uapi::off_t,
@@ -314,7 +295,6 @@ impl FileOps for DevKmsg {
 
     fn wait_async(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         waiter: &Waiter,
@@ -326,7 +306,6 @@ impl FileOps for DevKmsg {
 
     fn query_events(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
     ) -> Result<FdEvents, Errno> {
@@ -341,13 +320,12 @@ impl FileOps for DevKmsg {
 
     fn read(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         file: &FileObject,
         current_task: &CurrentTask,
         _offset: usize,
         data: &mut dyn OutputBuffer,
     ) -> Result<usize, Errno> {
-        file.blocking_op(locked, current_task, FdEvents::POLLIN | FdEvents::POLLHUP, None, |_| {
+        file.blocking_op(current_task, FdEvents::POLLIN | FdEvents::POLLHUP, None, || {
             match self.0.as_ref().unwrap().lock().next() {
                 Some(Ok(log)) => data.write(&log),
                 Some(Err(err)) => Err(err),
@@ -358,7 +336,6 @@ impl FileOps for DevKmsg {
 
     fn write(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         _offset: usize,
@@ -423,15 +400,11 @@ impl<'a> starnix_logging::ToValue for LogOutputTag<'a> {
     }
 }
 
-pub fn mem_device_init<'a, L>(locked: &mut Locked<L>, kernel: &Kernel) -> Result<(), Errno>
-where
-    L: LockEqualOrBefore<FileOpsCore>,
-{
+pub fn mem_device_init<'a>(kernel: &Kernel) -> Result<(), Errno> {
     let registry = &kernel.device_registry;
 
     let mem_class = registry.objects.mem_class();
     registry.register_device(
-        locked,
         kernel,
         "null".into(),
         DeviceMetadata::new("null".into(), DeviceId::NULL, DeviceMode::Char),
@@ -439,7 +412,6 @@ where
         simple_device_ops::<DevNull>,
     )?;
     registry.register_device(
-        locked,
         kernel,
         "zero".into(),
         DeviceMetadata::new("zero".into(), DeviceId::ZERO, DeviceMode::Char),
@@ -447,7 +419,6 @@ where
         simple_device_ops::<DevZero>,
     )?;
     registry.register_device(
-        locked,
         kernel,
         "full".into(),
         DeviceMetadata::new("full".into(), DeviceId::FULL, DeviceMode::Char),
@@ -455,7 +426,6 @@ where
         simple_device_ops::<DevFull>,
     )?;
     registry.register_device(
-        locked,
         kernel,
         "random".into(),
         DeviceMetadata::new("random".into(), DeviceId::RANDOM, DeviceMode::Char),
@@ -463,7 +433,6 @@ where
         simple_device_ops::<DevRandom>,
     )?;
     registry.register_device(
-        locked,
         kernel,
         "urandom".into(),
         DeviceMetadata::new("urandom".into(), DeviceId::URANDOM, DeviceMode::Char),
@@ -471,7 +440,6 @@ where
         simple_device_ops::<DevRandom>,
     )?;
     registry.register_device(
-        locked,
         kernel,
         "kmsg".into(),
         DeviceMetadata::new("kmsg".into(), DeviceId::KMSG, DeviceMode::Char),

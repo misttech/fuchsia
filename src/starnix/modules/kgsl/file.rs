@@ -22,7 +22,6 @@ use starnix_core::{fileops_impl_dataless, fileops_impl_nonseekable, fileops_impl
 use starnix_logging::{log_error, log_info, log_warn, track_stub};
 use starnix_sync::{
     KgslAllocatorLock, KgslContextsLock, KgslGpuObjsLock, KgslSyncSourcesLock, LockDepMutex,
-    Locked, Unlocked,
 };
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_uapi::device_id::DeviceId;
@@ -637,7 +636,6 @@ impl FileOps for KgslFile {
 
     fn ioctl(
         &self,
-        _locked: &mut Locked<Unlocked>,
         _file: &FileObject,
         current_task: &CurrentTask,
         request: u32,
@@ -673,7 +671,6 @@ impl FileOps for KgslFile {
 
     fn mmap(
         &self,
-        _locked: &mut Locked<starnix_sync::FileOpsCore>,
         file: &FileObject,
         current_task: &CurrentTask,
         addr: starnix_core::mm::DesiredAddress,

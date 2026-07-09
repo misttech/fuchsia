@@ -14,9 +14,7 @@ use starnix_core::vfs::{
 };
 use starnix_core::{fileops_impl_nonseekable, fileops_impl_noop_sync};
 use starnix_logging::{CATEGORY_TRACE_META, track_stub};
-use starnix_sync::{
-    FileOpsCore, LockDepMutex, LockEqualOrBefore, Locked, TraceFsDataLock, Unlocked,
-};
+use starnix_sync::{LockDepMutex, TraceFsDataLock};
 use starnix_types::PAGE_SIZE;
 use starnix_types::vfs::default_statfs;
 use starnix_uapi::errors::Errno;
@@ -26,7 +24,6 @@ use std::borrow::Cow;
 use std::sync::{Arc, LazyLock};
 
 pub fn trace_fs(
-    locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
     options: FileSystemOptions,
 ) -> Result<FileSystemHandle, Errno> {
@@ -34,8 +31,7 @@ pub fn trace_fs(
 
     let handle = current_task.kernel().expando.get_or_init(|| {
         TraceFsHandle(
-            TraceFs::new_fs(locked, current_task, options)
-                .expect("tracefs constructed with valid options"),
+            TraceFs::new_fs(current_task, options).expect("tracefs constructed with valid options"),
         )
     });
     Ok(handle.0.clone())
@@ -44,12 +40,7 @@ pub fn trace_fs(
 pub struct TraceFs;
 
 impl FileSystemOps for TraceFs {
-    fn statfs(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        _fs: &FileSystem,
-        _current_task: &CurrentTask,
-    ) -> Result<statfs, Errno> {
+    fn statfs(&self, _fs: &FileSystem, _current_task: &CurrentTask) -> Result<statfs, Errno> {
         Ok(default_statfs(TRACEFS_MAGIC))
     }
 
@@ -59,17 +50,13 @@ impl FileSystemOps for TraceFs {
 }
 
 impl TraceFs {
-    pub fn new_fs<L>(
-        locked: &mut Locked<L>,
+    pub fn new_fs(
         current_task: &CurrentTask,
         options: FileSystemOptions,
-    ) -> Result<FileSystemHandle, Errno>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
+    ) -> Result<FileSystemHandle, Errno> {
         let kernel = current_task.kernel();
         let event_queue_collection = TraceEventQueueList::from(kernel);
-        let fs = FileSystem::new(locked, kernel, CacheMode::Uncached, TraceFs, options)?;
+        let fs = FileSystem::new(kernel, CacheMode::Uncached, TraceFs, options)?;
         let dir = SimpleDirectory::new();
         dir.edit(&fs, |dir| {
             dir.entry("trace", TraceFile::new_node(), mode!(IFREG, 0o755));
@@ -147,7 +134,7 @@ struct TraceBytesFile {
 impl TraceBytesFile {
     #[track_caller]
     fn new_node() -> impl FsNodeOps {
-        SimpleFileNode::new(move |_, _| Ok(BytesFile::new(Self::default())))
+        SimpleFileNode::new(move |_| Ok(BytesFile::new(Self::default())))
     }
 }
 
@@ -169,7 +156,7 @@ struct TraceRawFile {
 
 impl TraceRawFile {
     pub fn new_node(queue: Arc<TraceEventQueue>) -> impl FsNodeOps {
-        SimpleFileNode::new(move |_, _| Ok(Self { queue: queue.clone() }))
+        SimpleFileNode::new(move |_| Ok(Self { queue: queue.clone() }))
     }
 }
 
@@ -179,7 +166,6 @@ impl FileOps for TraceRawFile {
 
     fn read(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         current_task: &CurrentTask,
         _offset: usize,
@@ -200,7 +186,6 @@ impl FileOps for TraceRawFile {
 
     fn write(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         _offset: usize,

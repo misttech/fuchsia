@@ -17,7 +17,7 @@ use starnix_core::fs_node_impl_not_dir;
 use starnix_core::task::{CurrentTask, Kernel};
 use starnix_core::vfs::pseudo::simple_directory::SimpleDirectoryMutator;
 use starnix_core::vfs::{FileOps, FsNode, FsNodeOps, FsStr, FsString};
-use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked};
+
 use starnix_uapi::auth::Credentials;
 use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errno;
@@ -59,7 +59,6 @@ impl FsNodeOps for FirmwareFile {
 
     fn create_file_ops(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _node: &FsNode,
         _current_task: &CurrentTask,
         _flags: OpenFlags,
@@ -96,7 +95,6 @@ fn connect(
 impl DeviceOps for SocketTunnelFile {
     fn open(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         current_task: &CurrentTask,
         _id: DeviceId,
         _node: &NamespaceNode,
@@ -111,7 +109,6 @@ impl FsNodeOps for SocketTunnelSysfsFile {
 
     fn create_file_ops(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _node: &FsNode,
         current_task: &CurrentTask,
         _flags: OpenFlags,
@@ -121,16 +118,13 @@ impl FsNodeOps for SocketTunnelSysfsFile {
 }
 
 /// Create and register a device node backed by a SocketTunnelFile
-pub fn register_socket_tunnel_device<L>(
-    locked: &mut Locked<L>,
+pub fn register_socket_tunnel_device(
     kernel: &Kernel,
     socket_label: &FsStr,
     dev_node_name: &FsStr,
     dev_class_name: &FsStr,
     build_directory: impl FnOnce(&Device, &SimpleDirectoryMutator),
-) where
-    L: LockEqualOrBefore<FileOpsCore>,
-{
+) {
     let registry = &kernel.device_registry;
 
     let device_class =
@@ -138,7 +132,6 @@ pub fn register_socket_tunnel_device<L>(
 
     registry
         .register_dyn_device_with_dir(
-            locked,
             kernel,
             dev_node_name.into(),
             device_class,

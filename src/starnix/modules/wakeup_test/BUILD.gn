@@ -25,7 +25,6 @@ rustc_library("wakeup_test") {
     "//src/starnix/kernel/core",
     "//src/starnix/lib/linux_uapi",
     "//src/starnix/lib/starnix_logging",
-    "//src/starnix/lib/starnix_sync",
     "//src/starnix/lib/starnix_syscalls",
     "//src/starnix/lib/starnix_uapi",
     "//third_party/rust_crates:anyhow",

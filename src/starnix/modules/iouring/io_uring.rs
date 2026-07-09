@@ -24,9 +24,7 @@ use starnix_core::vfs::{
     fileops_impl_nonseekable, fileops_impl_noop_sync,
 };
 use starnix_logging::{set_zx_name, track_stub};
-use starnix_sync::{
-    FileOpsCore, IoUringStateLock, LockEqualOrBefore, Locked, OrderedMutex, Unlocked,
-};
+use starnix_sync::{IoUringStateLock, LockDepMutex};
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_types::user_buffer::{UserBuffer, UserBuffers};
 use starnix_uapi::errors::Errno;
@@ -652,7 +650,7 @@ impl IoUringQueue {
 
 pub struct IoUringFileObject {
     queue: IoUringQueue,
-    state: OrderedMutex<IoUringFileMutableState, IoUringStateLock>,
+    state: LockDepMutex<IoUringFileMutableState, IoUringStateLock>,
     _flags: IoRingSetupFlags,
 }
 
@@ -663,15 +661,11 @@ struct IoUringFileMutableState {
 }
 
 impl IoUringFileObject {
-    pub fn new_file<L>(
-        locked: &mut Locked<L>,
+    pub fn new_file(
         current_task: &CurrentTask,
         entries: u32,
         params: &mut io_uring_params,
-    ) -> Result<FileHandle, Errno>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
+    ) -> Result<FileHandle, Errno> {
         let flags = IoRingSetupFlags::build_and_validate_from(params.flags)?;
 
         let sq_entries = entries.next_power_of_two();
@@ -723,24 +717,23 @@ impl IoUringFileObject {
 
         let object =
             Box::new(IoUringFileObject { queue, state: Default::default(), _flags: flags });
-        Anon::new_file(locked, current_task, object, OpenFlags::RDWR, "[io_uring]")
+        Anon::new_file(current_task, object, OpenFlags::RDWR, "[io_uring]")
     }
 
-    pub fn register_buffers(&self, locked: &mut Locked<Unlocked>, buffers: UserBuffers) {
+    pub fn register_buffers(&self, buffers: UserBuffers) {
         // The docs for io_uring_register imply that the kernel should actually map this memory
         // into its own address space when these buffers are registered. That's probably observable
         // if the client changes the mappings for these addresses between the time they are
         // registered and they are used. For now, we just store the addresses.
-        self.state.lock(locked).registered_buffers = buffers;
+        self.state.lock().registered_buffers = buffers;
     }
 
-    pub fn unregister_buffers(&self, locked: &mut Locked<Unlocked>) {
-        self.state.lock(locked).registered_buffers.clear();
+    pub fn unregister_buffers(&self) {
+        self.state.lock().registered_buffers.clear();
     }
 
     pub fn register_ring_buffers(
         &self,
-        locked: &mut Locked<Unlocked>,
         buffer_definition: uapi::io_uring_buf_reg,
     ) -> Result<(), Errno> {
         track_stub!(
@@ -757,7 +750,7 @@ impl IoUringFileObject {
             return error!(EINVAL);
         }
         self.state
-            .lock(locked)
+            .lock()
             .registered_iobuffers
             .push(IoUringProviderRingBuffer::new(buffer_definition)?);
         Ok(())
@@ -765,12 +758,11 @@ impl IoUringFileObject {
 
     pub fn unregister_ring_buffers(
         &self,
-        locked: &mut Locked<Unlocked>,
         buffer_definition: uapi::io_uring_buf_reg,
     ) -> Result<(), Errno> {
         if self
             .state
-            .lock(locked)
+            .lock()
             .registered_iobuffers
             .extract_if(.., |buffer| buffer.config.bgid == buffer_definition.bgid)
             .next()
@@ -783,10 +775,9 @@ impl IoUringFileObject {
 
     pub fn ring_buffer_status(
         &self,
-        locked: &mut Locked<Unlocked>,
         buffer_status: &mut uapi::io_uring_buf_status,
     ) -> Result<(), Errno> {
-        let state = self.state.lock(locked);
+        let state = self.state.lock();
         let Some(buffer) = state
             .registered_iobuffers
             .iter()
@@ -800,7 +791,6 @@ impl IoUringFileObject {
 
     pub fn enter(
         &self,
-        locked: &mut Locked<Unlocked>,
         current_task: &CurrentTask,
         to_submit: u32,
         _min_complete: u32,
@@ -811,7 +801,7 @@ impl IoUringFileObject {
             submitted += 1;
             // We currently act as if every SqEntry has IOSQE_IO_DRAIN.
             let mut complete_flags: u32 = 0;
-            let result = self.execute(locked, current_task, &sq_entry, &mut complete_flags);
+            let result = self.execute(current_task, &sq_entry, &mut complete_flags);
             let cq_entry = sq_entry.complete(result, complete_flags);
             self.queue.push_cq_entry(&cq_entry)?;
             if submitted >= to_submit {
@@ -821,13 +811,13 @@ impl IoUringFileObject {
         Ok(submitted)
     }
 
-    fn has_registered_buffers(&self, locked: &mut Locked<Unlocked>) -> bool {
-        !self.state.lock(locked).registered_buffers.is_empty()
+    fn has_registered_buffers(&self) -> bool {
+        !self.state.lock().registered_buffers.is_empty()
     }
 
-    fn check_buffer(&self, locked: &mut Locked<Unlocked>, entry: &SqEntry) -> Result<(), Errno> {
+    fn check_buffer(&self, entry: &SqEntry) -> Result<(), Errno> {
         let index = entry.buf_index();
-        let state = self.state.lock(locked);
+        let state = self.state.lock();
         let buffers = &state.registered_buffers;
         if buffers.is_empty() {
             return error!(EFAULT);
@@ -838,7 +828,6 @@ impl IoUringFileObject {
 
     fn execute(
         &self,
-        locked: &mut Locked<Unlocked>,
         current_task: &CurrentTask,
         entry: &SqEntry,
         complete_flags: &mut u32,
@@ -856,7 +845,6 @@ impl IoUringFileObject {
                     return error!(EINVAL);
                 }
                 sys_preadv2(
-                    locked,
                     current_task,
                     entry.fd(),
                     entry.iovec_addr(current_task),
@@ -875,7 +863,6 @@ impl IoUringFileObject {
                     return error!(EINVAL);
                 }
                 sys_pwritev2(
-                    locked,
                     current_task,
                     entry.fd(),
                     entry.iovec_addr(current_task),
@@ -896,8 +883,8 @@ impl IoUringFileObject {
                 // TODO(https://fxbug.dev/297431387): We're supposed to make a kernel mapping
                 // when the buffers are registered and we should be performing this operation using
                 // those kernel mappings rather than using the userspace mappings.
-                self.check_buffer(locked, entry)?;
-                do_read(locked, current_task, entry)
+                self.check_buffer(entry)?;
+                do_read(current_task, entry)
             }
             Op::WriteFixed => {
                 if !flags.is_empty() {
@@ -909,26 +896,26 @@ impl IoUringFileObject {
                 // TODO(https://fxbug.dev/297431387): We're supposed to make a kernel mapping
                 // when the buffers are registered and we should be performing this operation using
                 // those kernel mappings rather than using the userspace mappings.
-                self.check_buffer(locked, entry)?;
-                do_write(locked, current_task, entry)
+                self.check_buffer(entry)?;
+                do_write(current_task, entry)
             }
             Op::Read => {
                 if !flags.is_empty() {
                     return error!(EINVAL);
                 }
-                if self.has_registered_buffers(locked) {
+                if self.has_registered_buffers() {
                     return error!(EINVAL);
                 }
-                do_read(locked, current_task, entry)
+                do_read(current_task, entry)
             }
             Op::Write => {
                 if !flags.is_empty() {
                     return error!(EINVAL);
                 }
-                if self.has_registered_buffers(locked) {
+                if self.has_registered_buffers() {
                     return error!(EINVAL);
                 }
-                do_write(locked, current_task, entry)
+                do_write(current_task, entry)
             }
             Op::SendMsg => {
                 if !flags.is_empty() {
@@ -938,7 +925,6 @@ impl IoUringFileObject {
                     return error!(EINVAL);
                 }
                 sys_sendmsg(
-                    locked,
                     current_task,
                     entry.fd(),
                     MsgHdrPtr::new(current_task, entry.address()),
@@ -965,12 +951,8 @@ impl IoUringFileObject {
                     flags -= SqEntryFlags::BUFFER_SELECT;
                     // If BUFFER_SELECT is set, the application is providing a buffer for the
                     // recvmsg operation.
-                    let buffer = self.claim_next_buffer(
-                        locked,
-                        current_task,
-                        entry.group(),
-                        complete_flags,
-                    )?;
+                    let buffer =
+                        self.claim_next_buffer(current_task, entry.group(), complete_flags)?;
                     let mut msg_hdr = current_task.read_multi_arch_object(msg_hdr_ptr)?;
                     // The buffer is laid out as follows:
                     // - io_uring_recvmsg_out
@@ -1032,13 +1014,8 @@ impl IoUringFileObject {
                 if ioprio != 0 {
                     return error!(EINVAL);
                 }
-                let mut count = recvmsg_impl(
-                    locked,
-                    current_task,
-                    entry.fd(),
-                    &mut msg_hdr_ref,
-                    entry.op_flags,
-                )?;
+                let mut count =
+                    recvmsg_impl(current_task, entry.fd(), &mut msg_hdr_ref, entry.op_flags)?;
                 if let Some(recv_msg_buffer_info) = recv_msg_buffer_info {
                     // The result from `recvmsg_impl` is the number of bytes written to the
                     // payload. The result of the io_uring operation is the number of bytes
@@ -1061,7 +1038,6 @@ impl IoUringFileObject {
                     return error!(EINVAL);
                 }
                 sys_sendto(
-                    locked,
                     current_task,
                     entry.fd(),
                     entry.address(),
@@ -1080,7 +1056,6 @@ impl IoUringFileObject {
                     return error!(EINVAL);
                 }
                 sys_recvfrom(
-                    locked,
                     current_task,
                     entry.fd(),
                     entry.address(),
@@ -1115,12 +1090,11 @@ impl IoUringFileObject {
 
     fn claim_next_buffer(
         &self,
-        locked: &mut Locked<Unlocked>,
         current_task: &CurrentTask,
         bgid: u16,
         complete_flags: &mut u32,
     ) -> Result<UserBuffer, Errno> {
-        let mut state = self.state.lock(locked);
+        let mut state = self.state.lock();
         let Some(buffer) =
             state.registered_iobuffers.iter_mut().find(|buffer| buffer.config.bgid == bgid)
         else {
@@ -1168,38 +1142,23 @@ impl IoUringProviderRingBuffer {
     }
 }
 
-fn do_read(
-    locked: &mut Locked<Unlocked>,
-    current_task: &CurrentTask,
-    entry: &SqEntry,
-) -> Result<SyscallResult, Errno> {
+fn do_read(current_task: &CurrentTask, entry: &SqEntry) -> Result<SyscallResult, Errno> {
     let offset = entry.offset();
     if offset == -1 {
-        sys_read(locked, current_task, entry.fd(), entry.address(), entry.length()).map(Into::into)
+        sys_read(current_task, entry.fd(), entry.address(), entry.length()).map(Into::into)
     } else {
-        sys_pread64(locked, current_task, entry.fd(), entry.address(), entry.length(), offset)
+        sys_pread64(current_task, entry.fd(), entry.address(), entry.length(), offset)
             .map(Into::into)
     }
 }
 
-fn do_write(
-    locked: &mut Locked<Unlocked>,
-    current_task: &CurrentTask,
-    entry: &SqEntry,
-) -> Result<SyscallResult, Errno> {
+fn do_write(current_task: &CurrentTask, entry: &SqEntry) -> Result<SyscallResult, Errno> {
     let offset = entry.offset();
     if offset == -1 {
-        sys_write(locked, current_task, entry.fd(), entry.address(), entry.length()).map(Into::into)
+        sys_write(current_task, entry.fd(), entry.address(), entry.length()).map(Into::into)
     } else {
-        sys_pwrite64(
-            locked,
-            current_task,
-            entry.fd(),
-            entry.address(),
-            entry.length(),
-            entry.offset(),
-        )
-        .map(Into::into)
+        sys_pwrite64(current_task, entry.fd(), entry.address(), entry.length(), entry.offset())
+            .map(Into::into)
     }
 }
 
@@ -1210,7 +1169,6 @@ impl FileOps for IoUringFileObject {
 
     fn mmap(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         current_task: &CurrentTask,
         addr: DesiredAddress,

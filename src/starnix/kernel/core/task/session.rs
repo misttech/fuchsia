@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use starnix_sync::{LockBefore, LockDepRwLock, Locked, ProcessGroupState, SessionMutableStateLock};
+use starnix_sync::{LockDepRwLock, SessionMutableStateLock};
 use std::collections::BTreeMap;
 use std::sync::{Arc, Weak};
 
@@ -71,10 +71,7 @@ impl Session {
     }
 
     /// Disassociates the controlling terminal from the session.
-    pub fn disassociate_controlling_terminal<L>(&self, locked: &mut Locked<L>)
-    where
-        L: LockBefore<ProcessGroupState>,
-    {
+    pub fn disassociate_controlling_terminal(&self) {
         loop {
             // THREAD SAFETY: The controlling terminal must be extracted from the Session state
             // lock. Respect Terminal => Session lock ordering by dropping the Session lock before
@@ -104,7 +101,7 @@ impl Session {
             drop(state);
             drop(terminal_state);
             if let Some(pg) = process_group {
-                pg.send_signals(locked, &[SIGHUP, SIGCONT]);
+                pg.send_signals(&[SIGHUP, SIGCONT]);
             }
             return;
         }
@@ -187,12 +184,9 @@ impl SessionDisassociation {
     /// the exiting thread group is no longer in the process group when attempting to send
     /// SIGHUP/SIGCONT to the foreground process group, avoiding a self-deadlock where the
     /// exiting thread group attempts to write-lock itself.
-    pub fn disassociate_controlling_terminal<L>(self, locked: &mut Locked<L>)
-    where
-        L: LockBefore<ProcessGroupState>,
-    {
+    pub fn disassociate_controlling_terminal(self) {
         if let Some(session) = self.session {
-            session.disassociate_controlling_terminal(locked);
+            session.disassociate_controlling_terminal();
         }
     }
 }

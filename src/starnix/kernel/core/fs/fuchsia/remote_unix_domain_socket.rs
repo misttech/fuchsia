@@ -16,7 +16,6 @@ use fidl::endpoints::SynchronousProxy;
 use fidl_fuchsia_io as fio;
 use fidl_fuchsia_starnix_binder as fbinder;
 use linux_uapi::{SO_LINGER, SOL_SOCKET};
-use starnix_sync::{FileOpsCore, Locked};
 use starnix_uapi::auth::Credentials;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::vfs::FdEvents;
@@ -86,7 +85,6 @@ impl SocketOps for RemoteUnixDomainSocket {
 
     fn connect(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _socket: &SocketHandle,
         _current_task: &CurrentTask,
         _peer: SocketPeer,
@@ -94,28 +92,16 @@ impl SocketOps for RemoteUnixDomainSocket {
         error!(EISCONN)
     }
 
-    fn listen(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        _socket: &Socket,
-        _backlog: i32,
-        _credentials: ucred,
-    ) -> Result<(), Errno> {
+    fn listen(&self, _socket: &Socket, _backlog: i32, _credentials: ucred) -> Result<(), Errno> {
         error!(EOPNOTSUPP)
     }
 
-    fn accept(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        _socket: &Socket,
-        _current_task: &CurrentTask,
-    ) -> Result<SocketHandle, Errno> {
+    fn accept(&self, _socket: &Socket, _current_task: &CurrentTask) -> Result<SocketHandle, Errno> {
         error!(EOPNOTSUPP)
     }
 
     fn bind(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _socket: &Socket,
         _current_task: &CurrentTask,
         _socket_address: SocketAddress,
@@ -125,7 +111,6 @@ impl SocketOps for RemoteUnixDomainSocket {
 
     fn read(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         _socket: &Socket,
         current_task: &CurrentTask,
         data: &mut dyn OutputBuffer,
@@ -168,12 +153,7 @@ impl SocketOps for RemoteUnixDomainSocket {
             // that the SID associated to the fd is set to the correct value.
             self.with_remote_creds(current_task, || {
                 for handle in handles {
-                    file_handles.push(new_remote_file(
-                        locked,
-                        current_task,
-                        handle,
-                        OpenFlags::RDWR,
-                    )?);
+                    file_handles.push(new_remote_file(current_task, handle, OpenFlags::RDWR)?);
                 }
                 Ok(())
             })?;
@@ -187,7 +167,6 @@ impl SocketOps for RemoteUnixDomainSocket {
 
     fn write(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _socket: &Socket,
         current_task: &CurrentTask,
         data: &mut dyn InputBuffer,
@@ -238,7 +217,6 @@ impl SocketOps for RemoteUnixDomainSocket {
 
     fn wait_async(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _socket: &Socket,
         _current_task: &CurrentTask,
         waiter: &Waiter,
@@ -262,7 +240,6 @@ impl SocketOps for RemoteUnixDomainSocket {
 
     fn query_events(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _socket: &Socket,
         _current_task: &CurrentTask,
     ) -> Result<FdEvents, Errno> {
@@ -274,43 +251,24 @@ impl SocketOps for RemoteUnixDomainSocket {
         Ok(Self::get_events_from_signals(signals))
     }
 
-    fn shutdown(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        _socket: &Socket,
-        _how: SocketShutdownFlags,
-    ) -> Result<(), Errno> {
+    fn shutdown(&self, _socket: &Socket, _how: SocketShutdownFlags) -> Result<(), Errno> {
         Ok(())
     }
 
-    fn close(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        _current_task: &CurrentTask,
-        _socket: &Socket,
-    ) {
+    fn close(&self, _current_task: &CurrentTask, _socket: &Socket) {
         let _ = self.client.close(zx::MonotonicInstant::INFINITE);
     }
 
-    fn getsockname(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        _socket: &Socket,
-    ) -> Result<SocketAddress, Errno> {
+    fn getsockname(&self, _socket: &Socket) -> Result<SocketAddress, Errno> {
         Ok(SocketAddress::default_for_domain(SocketDomain::Unix))
     }
 
-    fn getpeername(
-        &self,
-        locked: &mut Locked<FileOpsCore>,
-        socket: &Socket,
-    ) -> Result<SocketAddress, Errno> {
-        self.getsockname(locked, socket)
+    fn getpeername(&self, socket: &Socket) -> Result<SocketAddress, Errno> {
+        self.getsockname(socket)
     }
 
     fn setsockopt(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _socket: &Socket,
         _current_task: &CurrentTask,
         _level: u32,
@@ -322,7 +280,6 @@ impl SocketOps for RemoteUnixDomainSocket {
 
     fn getsockopt(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _socket: &Socket,
         _current_task: &CurrentTask,
         level: u32,
@@ -554,13 +511,11 @@ mod tests {
                 Arc::new(uds_impl).serve(server).await;
             });
         });
-        spawn_kernel_and_run(async move |locked, current_task| {
-            let original_file =
-                new_remote_file(locked, current_task, client.into(), OpenFlags::RDWR)
-                    .expect("new_remote_file");
+        spawn_kernel_and_run(async move |current_task| {
+            let original_file = new_remote_file(current_task, client.into(), OpenFlags::RDWR)
+                .expect("new_remote_file");
             assert!(original_file.node().is_sock());
             let file = new_remote_file(
-                locked,
                 current_task,
                 original_file.to_handle(current_task).expect("to_handle").expect("has_handle"),
                 OpenFlags::RDWR,
@@ -573,7 +528,6 @@ mod tests {
             let mut input_buffer = VecInputBuffer::new(data.as_bytes());
             assert_eq!(
                 socket_ops.sendmsg(
-                    locked,
                     current_task,
                     &file,
                     &mut input_buffer,
@@ -591,14 +545,7 @@ mod tests {
 
             let mut buffer = VecOutputBuffer::new(1024);
             let info = socket_ops
-                .recvmsg(
-                    locked,
-                    &current_task,
-                    &file,
-                    &mut buffer,
-                    flags | SocketMessageFlags::PEEK,
-                    None,
-                )
+                .recvmsg(&current_task, &file, &mut buffer, flags | SocketMessageFlags::PEEK, None)
                 .expect("recvmsg");
 
             assert_eq!(info.ancillary_data.len(), 1);
@@ -606,7 +553,7 @@ mod tests {
 
             let mut buffer = VecOutputBuffer::new(1024);
             let info = socket_ops
-                .recvmsg(locked, &current_task, &file, &mut buffer, flags, None)
+                .recvmsg(&current_task, &file, &mut buffer, flags, None)
                 .expect("recvmsg");
 
             assert_eq!(info.ancillary_data.len(), 1);
@@ -615,7 +562,6 @@ mod tests {
             let mut buffer = VecOutputBuffer::new(1024);
             let err = socket_ops
                 .recvmsg(
-                    locked,
                     &current_task,
                     &file,
                     &mut buffer,
@@ -639,21 +585,14 @@ mod tests {
                 Arc::new(uds_impl).serve(server).await;
             });
         });
-        spawn_kernel_and_run(async move |locked, current_task| {
-            let file = new_remote_file(locked, current_task, client.into(), OpenFlags::RDWR)
+        spawn_kernel_and_run(async move |current_task| {
+            let file = new_remote_file(current_task, client.into(), OpenFlags::RDWR)
                 .expect("new_remote_file");
             let socket_ops = file.downcast_file::<SocketFile>().unwrap();
 
             let mut buffer = VecOutputBuffer::new(1024);
             let err = socket_ops
-                .recvmsg(
-                    locked,
-                    &current_task,
-                    &file,
-                    &mut buffer,
-                    SocketMessageFlags::empty(),
-                    None,
-                )
+                .recvmsg(&current_task, &file, &mut buffer, SocketMessageFlags::empty(), None)
                 .unwrap_err();
             assert_eq!(err, errno!(ECONNRESET));
         })

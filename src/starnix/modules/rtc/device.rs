@@ -7,7 +7,7 @@ use starnix_core::device::DeviceOps;
 use starnix_core::task::CurrentTask;
 use starnix_core::vfs::{FileOps, NamespaceNode};
 use starnix_logging::log_debug;
-use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked};
+
 use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
@@ -18,7 +18,6 @@ struct RtcDevice;
 impl DeviceOps for RtcDevice {
     fn open(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         current_task: &CurrentTask,
         _id: DeviceId,
         _node: &NamespaceNode,
@@ -31,15 +30,11 @@ impl DeviceOps for RtcDevice {
 /// Initialize a RTC device.
 ///
 /// It will be available at `/dev/rtc0`.
-pub fn rtc_device_init<L>(locked: &mut Locked<L>, current_task: &CurrentTask) -> Result<(), Errno>
-where
-    L: LockEqualOrBefore<FileOpsCore>,
-{
+pub fn rtc_device_init(current_task: &CurrentTask) -> Result<(), Errno> {
     let kernel = current_task.kernel();
     let registry = &kernel.device_registry;
     registry
         .register_dyn_device(
-            locked,
             current_task.kernel(),
             "rtc0".into(),
             registry.objects.rtc_class(),

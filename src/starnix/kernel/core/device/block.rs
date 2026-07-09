@@ -8,7 +8,6 @@ use crate::fs::sysfs::{BlockDeviceInfo, build_block_device_directory};
 use crate::task::{CurrentTask, Kernel};
 use crate::vfs::{FileOps, FsString, NamespaceNode};
 use starnix_logging::track_stub;
-use starnix_sync::{FileOpsCore, Locked, Unlocked};
 use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
@@ -37,7 +36,6 @@ impl BlockDeviceInfo for MmcBlockDevice {
 }
 
 fn open_mmc_block_device(
-    _locked: &mut Locked<FileOpsCore>,
     _current_task: &CurrentTask,
     _id: DeviceId,
     _node: &NamespaceNode,
@@ -49,16 +47,12 @@ fn open_mmc_block_device(
 
 /// Adds an mmc block device at /dev/block/mmcblk0. The current implementation is just a stub that
 /// exports the typical sysfs layout for block devices, but cannot be read from or written to.
-pub fn add_mmc_block_device(
-    locked: &mut Locked<Unlocked>,
-    kernel: &Kernel,
-) -> Result<Arc<MmcBlockDevice>, Errno> {
+pub fn add_mmc_block_device(kernel: &Kernel) -> Result<Arc<MmcBlockDevice>, Errno> {
     let name = FsString::from("mmcblk0");
     let class = kernel.device_registry.objects.virtual_block_class();
     let device = Arc::new(MmcBlockDevice);
     let device_weak = Arc::downgrade(&device);
     kernel.device_registry.register_device_with_dir(
-        locked,
         kernel,
         name.as_ref(),
         DeviceMetadata::new(name.clone(), DeviceId::MMCBLK0, DeviceMode::Block),
@@ -78,19 +72,18 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_mmc_block_device() {
-        spawn_kernel_and_run(async |locked, current_task| {
-            let _device = add_mmc_block_device(locked, current_task.kernel()).unwrap();
+        spawn_kernel_and_run(async |current_task| {
+            let _device = add_mmc_block_device(current_task.kernel()).unwrap();
             let class = current_task.kernel().device_registry.objects.virtual_block_class();
             // The device should have a typical sysfs layout for block devices.
             assert!(class.dir.lookup(b"mmcblk0/holders".into()).is_some());
             // We should be able to open the size node of the stub device, but reading it will fail
             // since right now it is just a stub implementation.
             let size_node = class.dir.lookup(b"mmcblk0/size".into()).unwrap();
-            let file_ops =
-                size_node.create_file_ops(locked, &current_task, OpenFlags::RDONLY).unwrap();
-            let file = anon_test_file(locked, &current_task, file_ops, OpenFlags::RDONLY);
+            let file_ops = size_node.create_file_ops(&current_task, OpenFlags::RDONLY).unwrap();
+            let file = anon_test_file(&current_task, file_ops, OpenFlags::RDONLY);
             let mut buf = VecOutputBuffer::new(10);
-            assert_eq!(file.read(locked, &current_task, &mut buf).unwrap_err(), errno!(ENOTSUP));
+            assert_eq!(file.read(&current_task, &mut buf).unwrap_err(), errno!(ENOTSUP));
         })
         .await;
     }

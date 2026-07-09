@@ -14,7 +14,6 @@ use crate::task::{
 };
 use starnix_logging::{log_info, log_trace, log_warn};
 use starnix_registers::{RegisterState, RegisterStorageEnum};
-use starnix_sync::{LockBefore, Locked, ThreadGroupLimits, Unlocked};
 use starnix_syscalls::SyscallResult;
 use starnix_types::arch::ArchWidth;
 use starnix_uapi::errors::{EINTR, ERESTART_RESTARTBLOCK, Errno};
@@ -40,67 +39,36 @@ enum SignalPriority {
 
 // `send_signal*()` calls below may fail only for real-time signals (with EAGAIN). They are
 // expected to succeed for all other signals.
-pub fn send_signal_first<L>(
-    locked: &mut Locked<L>,
-    task: &Task,
-    task_state: TaskWriteGuard<'_>,
-    siginfo: SignalInfo,
-) where
-    L: LockBefore<ThreadGroupLimits>,
-{
-    send_signal_prio(locked, task, task_state, siginfo.into(), SignalPriority::First, true)
+pub fn send_signal_first(task: &Task, task_state: TaskWriteGuard<'_>, siginfo: SignalInfo) {
+    send_signal_prio(task, task_state, siginfo.into(), SignalPriority::First, true)
         .expect("send_signal(SignalPriority::First) is not expected to fail")
 }
 
 // Sends `signal` to `task`. The signal must be a standard (i.e. not real-time) signal.
-pub fn send_standard_signal<L>(locked: &mut Locked<L>, task: &Task, siginfo: SignalInfo)
-where
-    L: LockBefore<ThreadGroupLimits>,
-{
+pub fn send_standard_signal(task: &Task, siginfo: SignalInfo) {
     debug_assert!(!siginfo.signal.is_real_time());
     let state = task.write();
-    send_signal_prio(locked, task, state, siginfo.into(), SignalPriority::Last, false)
+    send_signal_prio(task, state, siginfo.into(), SignalPriority::Last, false)
         .expect("send_signal(SignalPriority::Last) is not expected to fail for standard signals.")
 }
 
-pub fn send_signal<L>(locked: &mut Locked<L>, task: &Task, siginfo: SignalInfo) -> Result<(), Errno>
-where
-    L: LockBefore<ThreadGroupLimits>,
-{
+pub fn send_signal(task: &Task, siginfo: SignalInfo) -> Result<(), Errno> {
     let state = task.write();
-    send_signal_prio(locked, task, state, siginfo.into(), SignalPriority::Last, false)
+    send_signal_prio(task, state, siginfo.into(), SignalPriority::Last, false)
 }
 
-pub fn send_freeze_signal<L>(
-    locked: &mut Locked<L>,
-    task: &Task,
-    waiter: Waiter,
-) -> Result<(), Errno>
-where
-    L: LockBefore<ThreadGroupLimits>,
-{
+pub fn send_freeze_signal(task: &Task, waiter: Waiter) -> Result<(), Errno> {
     let state = task.write();
-    send_signal_prio(
-        locked,
-        task,
-        state,
-        KernelSignalInfo::Freeze(waiter),
-        SignalPriority::First,
-        true,
-    )
+    send_signal_prio(task, state, KernelSignalInfo::Freeze(waiter), SignalPriority::First, true)
 }
 
-fn send_signal_prio<L>(
-    locked: &mut Locked<L>,
+fn send_signal_prio(
     task: &Task,
     mut task_state: TaskWriteGuard<'_>,
     kernel_siginfo: KernelSignalInfo,
     prio: SignalPriority,
     force_wake: bool,
-) -> Result<(), Errno>
-where
-    L: LockBefore<ThreadGroupLimits>,
-{
+) -> Result<(), Errno> {
     let (siginfo, signal, is_masked, was_masked, is_real_time, sigaction, action) =
         match kernel_siginfo {
             KernelSignalInfo::User(ref user_siginfo) => {
@@ -124,7 +92,7 @@ where
 
     if is_real_time && prio != SignalPriority::First {
         if task_state.pending_signal_count()
-            >= task.thread_group().get_rlimit(locked, Resource::SIGPENDING) as usize
+            >= task.thread_group().get_rlimit(Resource::SIGPENDING) as usize
         {
             return error!(EAGAIN);
         }
@@ -230,7 +198,7 @@ pub fn action_for_signal(siginfo: &SignalInfo, sigaction: sigaction_t) -> Delive
 }
 
 /// Dequeues and handles a pending signal for `current_task`.
-pub fn dequeue_signal(locked: &mut Locked<Unlocked>, current_task: &mut CurrentTask) {
+pub fn dequeue_signal(current_task: &mut CurrentTask) {
     let &mut CurrentTask { ref task, ref mut thread_state, .. } = current_task;
     if !task.should_check_for_pending_signals() {
         return;
@@ -282,7 +250,7 @@ pub fn dequeue_signal(locked: &mut Locked<Unlocked>, current_task: &mut CurrentT
         let KernelSignal::Freeze(waiter) = kernel_signal;
         drop(task_state);
 
-        waiter.freeze(locked, current_task);
+        waiter.freeze(current_task);
     } else if let Some(ref siginfo) = siginfo {
         if let SignalDetail::Timer { timer } = &siginfo.detail {
             timer.on_signal_delivered();
@@ -296,7 +264,7 @@ pub fn dequeue_signal(locked: &mut Locked<Unlocked>, current_task: &mut CurrentT
             &current_task.thread_state.extended_pstate,
             None,
         ) {
-            current_task.kill_thread_group(locked, status);
+            current_task.kill_thread_group(status);
         }
     };
 }
@@ -556,12 +524,9 @@ pub fn prepare_to_restart_syscall(
     }
 }
 
-pub fn sys_restart_syscall(
-    locked: &mut Locked<Unlocked>,
-    current_task: &mut CurrentTask,
-) -> Result<SyscallResult, Errno> {
+pub fn sys_restart_syscall(current_task: &mut CurrentTask) -> Result<SyscallResult, Errno> {
     match current_task.thread_state.syscall_restart_func.take() {
-        Some(f) => f(locked, current_task),
+        Some(f) => f(current_task),
         None => {
             // This may indicate a bug where a syscall returns ERESTART_RESTARTBLOCK without
             // setting a restart func. But it can also be triggered by userspace, e.g. by directly
@@ -579,10 +544,7 @@ pub(crate) mod testing {
     use crate::testing::AutoReleasableTask;
     use std::ops::DerefMut as _;
 
-    pub(crate) fn dequeue_signal_for_test(
-        locked: &mut Locked<Unlocked>,
-        current_task: &mut AutoReleasableTask,
-    ) {
-        dequeue_signal(locked, current_task.deref_mut());
+    pub(crate) fn dequeue_signal_for_test(current_task: &mut AutoReleasableTask) {
+        dequeue_signal(current_task.deref_mut());
     }
 }

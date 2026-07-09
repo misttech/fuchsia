@@ -7,7 +7,7 @@ use starnix_core::vfs::{
     FileObject, FileOps, InputBuffer, OutputBuffer, SeekTarget, fileops_impl_noop_sync,
 };
 use starnix_logging::{log_debug, track_stub};
-use starnix_sync::{FileOpsCore, Locked, Unlocked};
+
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_uapi::RTC_SET_TIME;
 use starnix_uapi::errors::{Errno, error};
@@ -31,7 +31,6 @@ impl FileOps for RtcFile {
 
     fn seek(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         _current_offset: starnix_uapi::off_t,
@@ -42,7 +41,6 @@ impl FileOps for RtcFile {
 
     fn ioctl(
         &self,
-        _locked: &mut Locked<Unlocked>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         request: u32,
@@ -71,7 +69,6 @@ impl FileOps for RtcFile {
 
     fn read(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         offset: usize,
@@ -84,7 +81,6 @@ impl FileOps for RtcFile {
 
     fn write(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         offset: usize,

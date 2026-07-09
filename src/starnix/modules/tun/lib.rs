@@ -17,7 +17,7 @@ use starnix_core::task::{CurrentTask, RunState, WaiterRef};
 use starnix_core::vfs::socket::IfReqPtr;
 use starnix_core::vfs::{FileObject, FileObjectState, FileOps, call_fidl_and_await_close};
 use starnix_logging::{log_info, log_warn};
-use starnix_sync::{FileOpsCore, LockDepMutex, Locked, TunDevTunLock, Unlocked};
+use starnix_sync::{LockDepMutex, TunDevTunLock};
 use starnix_uapi::error;
 use starnix_uapi::errors::Errno;
 use std::num::NonZeroU64;
@@ -331,12 +331,7 @@ impl FileOps for DevTun {
     starnix_core::fileops_impl_nonseekable!();
     starnix_core::fileops_impl_noop_sync!();
 
-    fn close(
-        self: Box<Self>,
-        _locked: &mut Locked<FileOpsCore>,
-        _file: &FileObjectState,
-        _current_task: &CurrentTask,
-    ) {
+    fn close(self: Box<Self>, _file: &FileObjectState, _current_task: &CurrentTask) {
         // Ensure that these TUN resources are available for reuse by explicitly `remove()`ing the
         // port and waiting for that to be acknowledged, via the channel closing.
         let Some(state) = self.0.lock().take() else {
@@ -347,7 +342,6 @@ impl FileOps for DevTun {
 
     fn write(
         &self,
-        _locked: &mut Locked<starnix_sync::FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         _offset: usize,
@@ -360,7 +354,6 @@ impl FileOps for DevTun {
 
     fn read(
         &self,
-        _locked: &mut Locked<starnix_sync::FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         _offset: usize,
@@ -373,7 +366,6 @@ impl FileOps for DevTun {
 
     fn ioctl(
         &self,
-        _locked: &mut Locked<Unlocked>,
         _file: &FileObject,
         current_task: &CurrentTask,
         request: u32,

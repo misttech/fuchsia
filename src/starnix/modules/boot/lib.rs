@@ -17,7 +17,7 @@ use starnix_core::vfs::{
     fileops_impl_noop_sync,
 };
 use starnix_logging::{log_error, log_info, log_warn};
-use starnix_sync::{BootedLock, FileOpsCore, LockDepMutex, LockEqualOrBefore, Locked, Unlocked};
+use starnix_sync::{BootedLock, LockDepMutex};
 use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::error;
 use starnix_uapi::errors::Errno;
@@ -27,16 +27,12 @@ use std::sync::mpsc::Sender;
 use zerocopy::IntoBytes;
 
 /// Initializes the boot notifier device.
-pub fn booted_device_init(
-    locked: &mut Locked<Unlocked>,
-    kernel: &Kernel,
-    cpu_boost_duration: Option<zx::MonotonicDuration>,
-) {
+pub fn booted_device_init(kernel: &Kernel, cpu_boost_duration: Option<zx::MonotonicDuration>) {
     let (booted_sender, booted_receiver) = ThreadLockupDetector::tracked_channel::<bool>();
     let node = fuchsia_inspect::component::inspector().root().create_child("boot");
     let device = BootedDevice::new(kernel, booted_sender, node, cpu_boost_duration)
         .expect("must be able to initialize booted device");
-    device.clone().register(locked, kernel);
+    device.clone().register(kernel);
     device.start_relay(kernel, booted_receiver);
 }
 
@@ -92,25 +88,16 @@ impl BootedDevice {
         })
     }
 
-    pub fn register<L>(self, locked: &mut Locked<L>, kernel: &Kernel)
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
+    pub fn register(self, kernel: &Kernel) {
         let registry = &kernel.device_registry;
         registry
-            .register_dyn_device(
-                locked,
-                kernel,
-                "booted".into(),
-                registry.objects.starnix_class(),
-                self,
-            )
+            .register_dyn_device(kernel, "booted".into(), registry.objects.starnix_class(), self)
             .expect("can register booted device");
     }
 
     pub fn start_relay(&self, kernel: &Kernel, booted_receiver: LockupDetectorReceiver<bool>) {
         let this = self.inner.clone();
-        let closure = move |_lock_context: &mut Locked<Unlocked>, _current_task: &CurrentTask| {
+        let closure = move |_current_task: &CurrentTask| {
             let mut prev_booted = false;
             while let Ok(booted) = booted_receiver.recv() {
                 if booted && !prev_booted {
@@ -171,7 +158,6 @@ impl FileOps for File {
 
     fn read(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         offset: usize,
@@ -184,7 +170,6 @@ impl FileOps for File {
 
     fn write(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         _offset: usize,
@@ -210,7 +195,6 @@ impl FileOps for File {
 impl DeviceOps for BootedDevice {
     fn open(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _current_task: &CurrentTask,
         _devt: DeviceId,
         _node: &NamespaceNode,

@@ -9,7 +9,7 @@ use starnix_core::vfs::{
     Anon, FdFlags, FileObject, FileOps, NamespaceNode, fileops_impl_dataless,
     fileops_impl_nonseekable, fileops_impl_noop_sync,
 };
-use starnix_sync::{FileOpsCore, Locked, Unlocked};
+
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::{Errno, error};
@@ -76,7 +76,6 @@ struct GpioChipDevice;
 impl DeviceOps for GpioChipDevice {
     fn open(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _current_task: &CurrentTask,
         _id: DeviceId,
         _node: &NamespaceNode,
@@ -95,7 +94,6 @@ impl FileOps for GpioChipFile {
 
     fn ioctl(
         &self,
-        locked: &mut Locked<Unlocked>,
         _file: &FileObject,
         current_task: &CurrentTask,
         request: u32,
@@ -111,13 +109,12 @@ impl FileOps for GpioChipFile {
                 let line_file = GpioLineFile {};
 
                 let handle = Anon::new_private_file(
-                    locked,
                     current_task,
                     Box::new(line_file),
                     OpenFlags::RDONLY | OpenFlags::CLOEXEC,
                     "gpiochipwake0",
                 );
-                let fd = current_task.add_file(locked, handle, FdFlags::empty())?;
+                let fd = current_task.add_file(handle, FdFlags::empty())?;
                 req.fd = fd.raw();
 
                 current_task.write_object(arg.into(), &req)?;
@@ -137,7 +134,6 @@ impl FileOps for GpioLineFile {
 
     fn ioctl(
         &self,
-        _locked: &mut Locked<Unlocked>,
         _file: &FileObject,
         current_task: &CurrentTask,
         request: u32,
@@ -157,7 +153,6 @@ impl FileOps for GpioLineFile {
 
     fn query_events(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
     ) -> Result<FdEvents, Errno> {
@@ -166,7 +161,6 @@ impl FileOps for GpioLineFile {
 
     fn wait_async(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         waiter: &Waiter,
@@ -177,11 +171,11 @@ impl FileOps for GpioLineFile {
     }
 }
 
-pub fn register_gpio_chip_device(locked: &mut Locked<Unlocked>, kernel: &Kernel, name: &str) {
+pub fn register_gpio_chip_device(kernel: &Kernel, name: &str) {
     let registry = &kernel.device_registry;
     let device_class =
         registry.objects.get_or_create_class("gpio".into(), registry.objects.virtual_bus());
     registry
-        .register_dyn_device(locked, kernel, name.as_bytes().into(), device_class, GpioChipDevice)
+        .register_dyn_device(kernel, name.as_bytes().into(), device_class, GpioChipDevice)
         .expect("Can register GPIO chip device");
 }

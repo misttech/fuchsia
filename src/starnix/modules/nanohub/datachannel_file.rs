@@ -12,7 +12,7 @@ use starnix_core::task::{
 use starnix_core::vfs::{FileObject, FileObjectState, FileOps, InputBufferExt, NamespaceNode};
 use starnix_core::{fileops_impl_noop_sync, fileops_impl_seekable};
 use starnix_logging::{impossible_error, log_error, log_warn};
-use starnix_sync::{FileOpsCore, Locked};
+
 use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::error;
 use starnix_uapi::errors::{EIO, Errno, errno};
@@ -39,7 +39,6 @@ impl DataChannelDevice {
 impl DeviceOps for DataChannelDevice {
     fn open(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _current_task: &CurrentTask,
         _id: DeviceId,
         _node: &NamespaceNode,
@@ -111,12 +110,7 @@ impl FileOps for DataChannelFile {
     fileops_impl_seekable!();
     fileops_impl_noop_sync!();
 
-    fn close(
-        self: Box<Self>,
-        _locked: &mut Locked<FileOpsCore>,
-        _file: &FileObjectState,
-        _current_task: &CurrentTask,
-    ) {
+    fn close(self: Box<Self>, _file: &FileObjectState, _current_task: &CurrentTask) {
         let event =
             self.event.duplicate_handle(Rights::SAME_RIGHTS).expect("Failed to duplicate event");
         let _ =
@@ -127,13 +121,12 @@ impl FileOps for DataChannelFile {
 
     fn read(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         file: &FileObject,
         current_task: &CurrentTask,
         _offset: usize,
         data: &mut dyn starnix_core::vfs::OutputBuffer,
     ) -> Result<usize, Errno> {
-        file.blocking_op(locked, current_task, FdEvents::POLLIN | FdEvents::POLLHUP, None, |_| {
+        file.blocking_op(current_task, FdEvents::POLLIN | FdEvents::POLLHUP, None, || {
             match self
                 .waitable_client
                 .read(zx::MonotonicInstant::INFINITE)
@@ -160,7 +153,6 @@ impl FileOps for DataChannelFile {
 
     fn write(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         file: &FileObject,
         current_task: &CurrentTask,
         _offset: usize,
@@ -170,7 +162,7 @@ impl FileOps for DataChannelFile {
 
         let len = data_vector.len();
 
-        file.blocking_op(locked, current_task, FdEvents::POLLOUT | FdEvents::POLLHUP, None, |_| {
+        file.blocking_op(current_task, FdEvents::POLLOUT | FdEvents::POLLHUP, None, || {
             let request = fnanohub::WaitableDataChannelWriteRequest {
                 data: Some(data_vector.clone()),
                 ..Default::default()
@@ -189,7 +181,6 @@ impl FileOps for DataChannelFile {
 
     fn query_events(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
     ) -> Result<FdEvents, Errno> {
@@ -211,7 +202,6 @@ impl FileOps for DataChannelFile {
 
     fn wait_async(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         waiter: &Waiter,

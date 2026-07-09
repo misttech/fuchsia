@@ -8,7 +8,7 @@ use starnix_core::task::{CurrentTask, Kernel};
 use starnix_core::vfs::FileOps;
 use starnix_core::vfs::pseudo::simple_file::{BytesFile, BytesFileOps};
 use starnix_logging::log_error;
-use starnix_sync::{FileOpsCore, Locked};
+
 use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::error;
 use starnix_uapi::errors::Errno;
@@ -24,7 +24,6 @@ struct ConsentSyncHandle(Arc<ConsentSyncFileBackend>);
 impl DeviceOps for ConsentSyncHandle {
     fn open(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _current_task: &CurrentTask,
         _device_id: DeviceId,
         _node: &starnix_core::vfs::NamespaceNode,
@@ -96,7 +95,7 @@ impl BytesFileOps for ConsentSyncFileBackend {
     }
 }
 
-pub fn init(locked: &mut Locked<starnix_sync::Unlocked>, kernel: &Arc<Kernel>) {
+pub fn init(kernel: &Arc<Kernel>) {
     let registry = &kernel.device_registry;
 
     let privacy_proxy = fsettings::PrivacySynchronousProxy::new(
@@ -112,12 +111,6 @@ pub fn init(locked: &mut Locked<starnix_sync::Unlocked>, kernel: &Arc<Kernel>) {
     let device = ConsentSyncHandle(file_backend);
 
     registry
-        .register_dyn_device(
-            locked,
-            kernel,
-            "consent".into(),
-            registry.objects.starnix_class(),
-            device,
-        )
+        .register_dyn_device(kernel, "consent".into(), registry.objects.starnix_class(), device)
         .expect("can register consent device");
 }

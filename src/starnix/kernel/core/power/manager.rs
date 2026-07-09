@@ -21,8 +21,8 @@ use futures::stream::{FusedStream, Next};
 use futures::{FutureExt, StreamExt};
 use starnix_logging::{log_info, log_warn};
 use starnix_sync::{
-    EbpfSuspendLock, FileOpsCore, LockBefore, LockDepGuard, LockDepMutex, LockDepReadGuard, Locked,
-    OrderedRwLock, PowerMessageCountersLock, SuspendResumeManagerInnerLock,
+    EbpfSuspendLock, LockDepGuard, LockDepMutex, LockDepReadGuard, LockDepRwLock,
+    PowerMessageCountersLock, SuspendResumeManagerInnerLock,
 };
 use starnix_uapi::arc_key::WeakKey;
 use starnix_uapi::errors::Errno;
@@ -107,7 +107,7 @@ pub struct SuspendResumeManager {
         Arc<LockDepMutex<HashSet<WeakKey<OwnedMessageCounter>>, PowerMessageCountersLock>>,
 
     /// The lock used to to avoid suspension while holding eBPF locks.
-    ebpf_suspend_lock: OrderedRwLock<(), EbpfSuspendLock>,
+    ebpf_suspend_lock: LockDepRwLock<(), EbpfSuspendLock>,
 }
 
 /// Manager for suspend and resume.
@@ -560,11 +560,7 @@ impl SuspendResumeManager {
         HashSet::from([SuspendState::Idle])
     }
 
-    pub fn suspend(
-        &self,
-        locked: &mut Locked<FileOpsCore>,
-        suspend_state: SuspendState,
-    ) -> Result<(), Errno> {
+    pub fn suspend(&self, suspend_state: SuspendState) -> Result<(), Errno> {
         let suspend_start_time = zx::BootInstant::get();
         let mut state = self.lock();
         state.add_suspend_event(SuspendEvent::Attempt {
@@ -599,7 +595,7 @@ impl SuspendResumeManager {
 
         // Take the ebpf lock to ensure that ebpf is not preventing suspension. This is necessary
         // because other components in the system might be executing ebpf programs on our behalf.
-        let _ebpf_lock = self.ebpf_suspend_lock.write(locked);
+        let _ebpf_lock = self.ebpf_suspend_lock.write();
 
         let manager = connect_to_protocol_sync::<frunner::ManagerMarker>()
             .expect("Failed to connect to manager");
@@ -709,14 +705,8 @@ impl SuspendResumeManager {
         fuchsia_trace::instant!("power", "suspend_container:error", fuchsia_trace::Scope::Process);
     }
 
-    pub fn acquire_ebpf_suspend_lock<'a, L>(
-        &'a self,
-        locked: &'a mut Locked<L>,
-    ) -> EbpfSuspendGuard<'a>
-    where
-        L: LockBefore<EbpfSuspendLock>,
-    {
-        self.ebpf_suspend_lock.read(locked)
+    pub fn acquire_ebpf_suspend_lock<'a>(&'a self) -> EbpfSuspendGuard<'a> {
+        self.ebpf_suspend_lock.read()
     }
 }
 

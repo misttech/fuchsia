@@ -11,7 +11,7 @@ use starnix_core::vfs::pseudo::simple_file::BytesFile;
 use starnix_core::vfs::{
     CacheMode, FileSystem, FileSystemHandle, FileSystemOps, FileSystemOptions, FsStr,
 };
-use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Unlocked};
+
 use starnix_types::vfs::default_statfs;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::mode;
@@ -22,12 +22,11 @@ struct PstoreFsHandle {
 }
 
 pub fn pstore_fs(
-    locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
     options: FileSystemOptions,
 ) -> Result<FileSystemHandle, Errno> {
     let handle = current_task.kernel().expando.get_or_try_init(|| {
-        Ok(PstoreFsHandle { fs_handle: PstoreFs::new_fs(locked, current_task, options)? })
+        Ok(PstoreFsHandle { fs_handle: PstoreFs::new_fs(current_task, options)? })
     })?;
     Ok(handle.fs_handle.clone())
 }
@@ -35,12 +34,7 @@ pub fn pstore_fs(
 pub struct PstoreFs;
 
 impl FileSystemOps for PstoreFs {
-    fn statfs(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        _fs: &FileSystem,
-        _current_task: &CurrentTask,
-    ) -> Result<statfs, Errno> {
+    fn statfs(&self, _fs: &FileSystem, _current_task: &CurrentTask) -> Result<statfs, Errno> {
         Ok(default_statfs(PSTOREFS_MAGIC))
     }
 
@@ -50,16 +44,12 @@ impl FileSystemOps for PstoreFs {
 }
 
 impl PstoreFs {
-    pub fn new_fs<L>(
-        locked: &mut Locked<L>,
+    pub fn new_fs(
         current_task: &CurrentTask,
         options: FileSystemOptions,
-    ) -> Result<FileSystemHandle, Errno>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
+    ) -> Result<FileSystemHandle, Errno> {
         let kernel = current_task.kernel();
-        let fs = FileSystem::new(locked, kernel, CacheMode::Permanent, PstoreFs, options)?;
+        let fs = FileSystem::new(kernel, CacheMode::Permanent, PstoreFs, options)?;
 
         let dir = SimpleDirectory::new();
         dir.edit(&fs, |dir| {

@@ -10,17 +10,13 @@ use futures_util::{FutureExt, select};
 use starnix_core::mm::MemoryAccessorExt;
 use starnix_core::power::{ContainerWakingStream, create_proxy_for_wake_events_counter};
 use starnix_core::task::dynamic_thread_spawner::SpawnRequestBuilder;
-use starnix_core::task::{
-    CurrentTask, EventHandler, LockedAndTask, WaitCanceler, WaitQueue, Waiter,
-};
+use starnix_core::task::{CurrentTask, EventHandler, WaitCanceler, WaitQueue, Waiter};
 use starnix_core::vfs::{
     FileObject, FileObjectState, FileOps, InputBuffer, NamespaceNode, OutputBuffer, VecInputBuffer,
     fileops_impl_nonseekable, fileops_impl_noop_sync,
 };
 use starnix_logging::{log_error, log_warn, track_stub};
-use starnix_sync::{
-    FileOpsCore, LockDepMutex, Locked, QbgReadQueueLock, QbgShutdownLock, Unlocked,
-};
+use starnix_sync::{LockDepMutex, QbgReadQueueLock, QbgShutdownLock};
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::Errno;
@@ -37,7 +33,6 @@ pub const QBGIOCXEPW: u32 = 0xC0304203;
 pub const QBGIOCXSTEPCHGCFG: u32 = 0xC0F74204;
 
 pub fn create_qbg_device(
-    _locked: &mut Locked<FileOpsCore>,
     _current_task: &CurrentTask,
     _id: DeviceId,
     _node: &NamespaceNode,
@@ -110,12 +105,11 @@ fn spawn_qbg_device_tasks(
     }
     let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
     *device_state.shutdown.lock() = Some(shutdown_tx);
-    let closure = async move |locked_and_task: LockedAndTask<'_>| {
+    let closure = async move |current_task: &CurrentTask| {
         let counter_name = "hvdcp_opti";
         let (proxy_channel, counter) =
             create_proxy_for_wake_events_counter(channel, counter_name.to_string());
-        let message_counter = locked_and_task
-            .current_task()
+        let message_counter = current_task
             .kernel()
             .suspend_resume_manager
             .add_message_counter(counter_name, Some(counter));
@@ -156,12 +150,7 @@ impl FileOps for QbgDeviceFile {
     fileops_impl_nonseekable!();
     fileops_impl_noop_sync!();
 
-    fn open(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        _file: &FileObject,
-        current_task: &CurrentTask,
-    ) -> Result<(), Errno> {
+    fn open(&self, _file: &FileObject, current_task: &CurrentTask) -> Result<(), Errno> {
         let data_provider = self
             .hvdcpopti
             .get_data_provider(zx::MonotonicInstant::INFINITE)
@@ -170,12 +159,7 @@ impl FileOps for QbgDeviceFile {
         Ok(())
     }
 
-    fn close(
-        self: Box<Self>,
-        _locked: &mut Locked<FileOpsCore>,
-        _file: &FileObjectState,
-        _current_task: &CurrentTask,
-    ) {
+    fn close(self: Box<Self>, _file: &FileObjectState, _current_task: &CurrentTask) {
         if let Some(shutdown) = self.state.shutdown.lock().take() {
             let _ = shutdown.send(());
         }
@@ -183,7 +167,6 @@ impl FileOps for QbgDeviceFile {
 
     fn ioctl(
         &self,
-        _locked: &mut Locked<Unlocked>,
         _file: &FileObject,
         current_task: &CurrentTask,
         request: u32,
@@ -265,13 +248,12 @@ impl FileOps for QbgDeviceFile {
 
     fn read(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         file: &FileObject,
         current_task: &CurrentTask,
         _offset: usize,
         buffer: &mut dyn OutputBuffer,
     ) -> Result<usize, Errno> {
-        file.blocking_op(locked, current_task, FdEvents::POLLIN | FdEvents::POLLHUP, None, |_| {
+        file.blocking_op(current_task, FdEvents::POLLIN | FdEvents::POLLHUP, None, || {
             let mut queue = self.state.read_queue.lock();
             if queue.is_empty() {
                 return error!(EAGAIN);
@@ -295,7 +277,6 @@ impl FileOps for QbgDeviceFile {
 
     fn write(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         _offset: usize,
@@ -315,7 +296,6 @@ impl FileOps for QbgDeviceFile {
 
     fn wait_async(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         waiter: &Waiter,
@@ -327,7 +307,6 @@ impl FileOps for QbgDeviceFile {
 
     fn query_events(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
     ) -> Result<FdEvents, Errno> {

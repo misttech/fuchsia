@@ -11,7 +11,7 @@ use starnix_core::vfs::{
     FdNumber, FileObject, FileOps, fileops_impl_nonseekable, fileops_impl_noop_sync,
 };
 use starnix_logging::{impossible_error, log_error};
-use starnix_sync::{FileOpsCore, Locked, Unlocked};
+
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::{Access, AccessCheck, FileMode};
 use starnix_uapi::open_flags::OpenFlags;
@@ -58,7 +58,6 @@ impl FileOps for NanohubFirmwareFile {
 
     fn read(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         _offset: usize,
@@ -69,7 +68,6 @@ impl FileOps for NanohubFirmwareFile {
 
     fn write(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         current_task: &CurrentTask,
         _offset: usize,
@@ -82,21 +80,9 @@ impl FileOps for NanohubFirmwareFile {
 
         let (file_name, offset) = split_filename_and_offset(&input_string)?;
 
-        // WARNING: Creating an Unlocked::new() here is incorrect and
-        // could introduce deadlocks. Please do not copy this pattern.
-        //
-        // For full context see the discussion on
-        // https://fuchsia-review.googlesource.com/c/fuchsia/+/1221058
-        #[allow(
-            clippy::undocumented_unsafe_blocks,
-            reason = "Force documented unsafe blocks in Starnix"
-        )]
-        let mut unlocked = unsafe { Unlocked::new() };
-
         for prefix_path in FIRMWARE_DIRECTORIES {
             let firmware_full_path = prefix_path.to_string() + file_name;
             let firmware_open_result = current_task.open_file_at(
-                &mut unlocked,
                 FdNumber::AT_FDCWD,
                 firmware_full_path.as_bytes().into(),
                 OpenFlags::RDONLY,
@@ -109,7 +95,6 @@ impl FileOps for NanohubFirmwareFile {
             }
 
             let memory = firmware_open_result.unwrap().get_memory(
-                locked,
                 current_task,
                 None,
                 ProtectionFlags::READ | ProtectionFlags::EXEC,

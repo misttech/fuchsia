@@ -8,11 +8,8 @@ use starnix_uapi::errors::Errno;
 use starnix_uapi::user_address::{UserAddress, UserRef};
 use starnix_uapi::{CSIGNAL, clone_args, tid_t};
 
-use starnix_sync::{Locked, Unlocked};
-
 /// The parameter order for `clone` varies by architecture.
 pub fn sys_clone(
-    locked: &mut Locked<Unlocked>,
     current_task: &mut CurrentTask,
     flags: u64,
     user_stack: UserAddress,
@@ -23,7 +20,6 @@ pub fn sys_clone(
     // Our flags parameter uses the low 8 bits (CSIGNAL mask) of flags to indicate the exit
     // signal. The CloneArgs struct separates these as `flags` and `exit_signal`.
     do_clone(
-        locked,
         current_task,
         &clone_args {
             flags: flags & !(CSIGNAL as u64),

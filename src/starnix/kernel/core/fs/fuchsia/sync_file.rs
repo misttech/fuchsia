@@ -16,7 +16,6 @@ use crate::vfs::{
 
 use starnix_lifecycle::AtomicCounter;
 use starnix_logging::{impossible_error, log_warn};
-use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Unlocked};
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
@@ -99,19 +98,14 @@ impl SyncFile {
     const SIGNALS: zx::Signals = zx::Signals::COUNTER_SIGNALED;
 
     /// Returns a `FileHandle` with the specified `name` and `fence`.
-    pub fn new_file<L>(
-        locked: &mut Locked<L>,
+    pub fn new_file(
         current_task: &CurrentTask,
         name: [u8; 32],
         fence: SyncFence,
-    ) -> Result<FileHandle, Errno>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
+    ) -> Result<FileHandle, Errno> {
         // The Linux `create_sync_file()` helper is described as using `anon_inode_getfile()` to
         // wrap the file-ops into a file, which means using the singleton private anonymous inode.
         Ok(Anon::new_private_file(
-            locked,
             current_task,
             Box::new(SyncFile::new(name, fence)),
             OpenFlags::RDWR,
@@ -169,7 +163,6 @@ impl FileOps for SyncFile {
 
     fn ioctl(
         &self,
-        locked: &mut Locked<Unlocked>,
         _file: &FileObject,
         current_task: &CurrentTask,
         request: u32,
@@ -250,9 +243,9 @@ impl FileOps for SyncFile {
                 }
 
                 let name = merge_data.name.map(|x| x as u8);
-                let file = SyncFile::new_file(locked, current_task, name, fence)?;
+                let file = SyncFile::new_file(current_task, name, fence)?;
 
-                let fd = current_task.add_file(locked, file, FdFlags::empty())?;
+                let fd = current_task.add_file(file, FdFlags::empty())?;
                 merge_data.fence = fd.raw();
 
                 current_task.write_object(user_ref, &merge_data)?;
@@ -318,7 +311,6 @@ impl FileOps for SyncFile {
 
     fn wait_async(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         waiter: &Waiter,
@@ -381,7 +373,6 @@ impl FileOps for SyncFile {
 
     fn query_events(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
     ) -> Result<FdEvents, Errno> {
@@ -398,7 +389,6 @@ impl FileOps for SyncFile {
 
     fn read(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         _offset: usize,
@@ -409,7 +399,6 @@ impl FileOps for SyncFile {
 
     fn write(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         _offset: usize,
@@ -430,7 +419,7 @@ mod test {
 
     #[::fuchsia::test]
     async fn test_sync_file_merge() {
-        spawn_kernel_and_run(async |locked, current_task| {
+        spawn_kernel_and_run(async |current_task| {
             let counter1 = zx::Counter::create();
             let counter2 = zx::Counter::create();
 
@@ -438,33 +427,30 @@ mod test {
             let sp2 = SyncPoint::new(Timeline::Hwc, counter2);
 
             let file1 = SyncFile::new_file(
-                locked,
                 &current_task,
                 [0; 32],
                 SyncFence { sync_points: vec![sp1.clone()] },
             )
             .unwrap();
             let file2 = SyncFile::new_file(
-                locked,
                 &current_task,
                 [0; 32],
                 SyncFence { sync_points: vec![sp2.clone()] },
             )
             .unwrap();
 
-            let fd2 = current_task.add_file(locked, file2, FdFlags::empty()).unwrap();
+            let fd2 = current_task.add_file(file2, FdFlags::empty()).unwrap();
 
             let merge_data =
                 sync_merge_data { name: [0; 32], fd2: fd2.raw(), fence: 0, flags: 0, pad: 0 };
 
-            let user_addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
+            let user_addr = map_memory(&current_task, UserAddress::default(), *PAGE_SIZE);
             current_task.write_object(UserRef::new(user_addr), &merge_data).unwrap();
 
             let request = ((SYNC_IOC_MAGIC as u32) << 8) | (SYNC_IOC_MERGE as u32);
 
             let sync_file1 = file1.downcast_file::<SyncFile>().unwrap();
-            let res =
-                sync_file1.ioctl(locked, &file1, &current_task, request, user_addr.into()).unwrap();
+            let res = sync_file1.ioctl(&file1, &current_task, request, user_addr.into()).unwrap();
             assert_eq!(res, SUCCESS);
 
             let updated_merge_data: sync_merge_data =

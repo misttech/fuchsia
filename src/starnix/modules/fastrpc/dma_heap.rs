@@ -10,7 +10,7 @@ use starnix_core::task::{CurrentTask, Kernel};
 use starnix_core::vfs::{FdFlags, FdNumber, FileObject, FileOps, NamespaceNode};
 use starnix_core::{fileops_impl_dataless, fileops_impl_noop_sync, fileops_impl_seekless};
 use starnix_logging::log_debug;
-use starnix_sync::{FileOpsCore, Locked, Unlocked};
+
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::error;
@@ -22,7 +22,6 @@ use std::sync::Arc;
 pub trait Alloc: Send + Sync + 'static {
     fn alloc(
         &self,
-        locked: &mut Locked<Unlocked>,
         current_task: &CurrentTask,
         len: u64,
         flags: FdFlags,
@@ -46,7 +45,6 @@ impl<A: Alloc> FileOps for DmaHeapFile<A> {
 
     fn ioctl(
         &self,
-        locked: &mut Locked<Unlocked>,
         _file: &FileObject,
         current_task: &CurrentTask,
         request: u32,
@@ -59,7 +57,7 @@ impl<A: Alloc> FileOps for DmaHeapFile<A> {
                 let user_info = UserRef::<dma_heap_allocation_data>::from(arg);
                 let info = current_task.read_object(user_info)?;
                 log_debug!("DmaHeapFile ioctl alloc {:?}", info);
-                let fd = self.allocator.alloc(locked, current_task, info.len, FdFlags::CLOEXEC)?;
+                let fd = self.allocator.alloc(current_task, info.len, FdFlags::CLOEXEC)?;
                 let to_user = dma_heap_allocation_data {
                     len: info.len,
                     fd: fd.raw() as u32,
@@ -93,7 +91,6 @@ impl<A: Alloc> Clone for DmaHeapDevice<A> {
 impl<A: Alloc> DeviceOps for DmaHeapDevice<A> {
     fn open(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _current_task: &CurrentTask,
         _id: DeviceId,
         _node: &NamespaceNode,
@@ -105,17 +102,11 @@ impl<A: Alloc> DeviceOps for DmaHeapDevice<A> {
 
 // This module can eventually live in starnix/kernel if it needs to be shared by other modules.
 // For now it's only used by the fastrpc module so they are alongside each other.
-pub fn dma_heap_device_register<A: Alloc>(
-    locked: &mut Locked<Unlocked>,
-    kernel: &Kernel,
-    name: &str,
-    allocator: A,
-) {
+pub fn dma_heap_device_register<A: Alloc>(kernel: &Kernel, name: &str, allocator: A) {
     let device = DmaHeapDevice::new(allocator);
     let registry = &kernel.device_registry;
     registry
         .register_dyn_device_with_devname(
-            locked,
             kernel,
             name.into(),
             format!("dma_heap/{}", name).as_str().into(),

@@ -5,17 +5,13 @@
 use crate::security;
 use crate::task::CurrentTask;
 use crate::vfs::{FileSystemHandle, FileSystemOptions, FsStr, FsString};
-use starnix_sync::{FsRegistryLock, LockDepMutex, Locked, Unlocked};
+use starnix_sync::{FsRegistryLock, LockDepMutex};
 use starnix_uapi::errors::Errno;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
 type CreateFs = Arc<
-    dyn Fn(
-            &mut Locked<Unlocked>,
-            &CurrentTask,
-            FileSystemOptions,
-        ) -> Result<FileSystemHandle, Errno>
+    dyn Fn(&CurrentTask, FileSystemOptions) -> Result<FileSystemHandle, Errno>
         + Send
         + Sync
         + 'static,
@@ -29,11 +25,7 @@ pub struct FsRegistry {
 impl FsRegistry {
     pub fn register<F>(&self, fs_type: &FsStr, create_fs: F)
     where
-        F: Fn(
-                &mut Locked<Unlocked>,
-                &CurrentTask,
-                FileSystemOptions,
-            ) -> Result<FileSystemHandle, Errno>
+        F: Fn(&CurrentTask, FileSystemOptions) -> Result<FileSystemHandle, Errno>
             + Send
             + Sync
             + 'static,
@@ -44,15 +36,14 @@ impl FsRegistry {
 
     pub fn create(
         &self,
-        locked: &mut Locked<Unlocked>,
         current_task: &CurrentTask,
         fs_type: &FsStr,
         options: FileSystemOptions,
     ) -> Option<Result<FileSystemHandle, Errno>> {
         let create_fs = self.registry.lock().get(fs_type).map(Arc::clone)?;
-        Some(create_fs(locked, current_task, options).and_then(|fs| {
+        Some(create_fs(current_task, options).and_then(|fs| {
             assert_eq!(fs_type, fs.name(), "FileSystem::name() must match the registered name.");
-            security::file_system_resolve_security(locked, &current_task, &fs)?;
+            security::file_system_resolve_security(&current_task, &fs)?;
             Ok(fs)
         }))
     }

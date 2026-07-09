@@ -5,7 +5,6 @@
 use crate::task::CurrentTask;
 use extended_pstate::{ExtendedPstatePointer, ExtendedPstateState};
 use starnix_registers::{HeapRegs, RegisterState, RegisterStorage, RegisterStorageEnum};
-use starnix_sync::{Locked, Unlocked};
 use starnix_syscalls::SyscallResult;
 use starnix_types::arch::ArchWidth;
 use starnix_uapi::errors::{Errno, ErrnoCode};
@@ -171,6 +170,5 @@ impl<T: RegisterStorage> ArchSpecific for ThreadState<T> {
     }
 }
 
-pub type SyscallRestartFunc = dyn FnOnce(&mut Locked<Unlocked>, &mut CurrentTask) -> Result<SyscallResult, Errno>
-    + Send
-    + Sync;
+pub type SyscallRestartFunc =
+    dyn FnOnce(&mut CurrentTask) -> Result<SyscallResult, Errno> + Send + Sync;

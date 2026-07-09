@@ -17,7 +17,6 @@ use crate::vfs::socket::{
 };
 use crate::vfs::{FdFlags, FdNumber, FileHandle, FsString, LookupContext};
 use starnix_logging::{log_trace, track_stub};
-use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Unlocked};
 use starnix_types::augmented::Augmented;
 use starnix_types::time::duration_from_timespec;
 use starnix_types::user_buffer::{UserBuffer, UserBuffers};
@@ -107,7 +106,6 @@ uapi::arch_map_data! {
 pub type CMsgHdrPtr = MultiArchUserRef<uapi::cmsghdr, uapi::arch32::cmsghdr>;
 
 pub fn sys_socket(
-    locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
     domain: u32,
     socket_type: u32,
@@ -120,7 +118,6 @@ pub fn sys_socket(
     let protocol = SocketProtocol::from_raw(protocol);
     let open_flags = socket_flags_to_open_flags(flags);
     let socket_file = SocketFile::new_socket(
-        locked,
         current_task,
         domain,
         socket_type,
@@ -130,7 +127,7 @@ pub fn sys_socket(
     )?;
 
     let fd_flags = socket_flags_to_fd_flags(flags);
-    let fd = current_task.add_file(locked, socket_file, fd_flags)?;
+    let fd = current_task.add_file(socket_file, fd_flags)?;
     Ok(fd)
 }
 
@@ -223,7 +220,6 @@ fn generate_autobind_address() -> FsString {
 }
 
 pub fn sys_bind(
-    locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
     fd: FdNumber,
     user_socket_address: UserAddress,
@@ -270,7 +266,6 @@ pub fn sys_bind(
             // address is abstract.
             if name[0] == b'\0' {
                 current_task.running_state().abstract_socket_namespace.bind(
-                    locked,
                     current_task,
                     name,
                     socket,
@@ -279,7 +274,6 @@ pub fn sys_bind(
                 let mode = file.node().info().mode;
                 let mode = current_task.fs().apply_umask(mode).with_type(FileMode::IFSOCK);
                 let (parent, basename) = current_task.lookup_parent_at(
-                    locked,
                     &mut LookupContext::default(),
                     FdNumber::AT_FDCWD,
                     name.as_ref(),
@@ -287,7 +281,6 @@ pub fn sys_bind(
 
                 parent
                     .bind_socket(
-                        locked,
                         current_task,
                         basename,
                         socket.clone(),
@@ -299,7 +292,6 @@ pub fn sys_bind(
         }
         SocketAddress::Vsock { port, .. } => {
             current_task.running_state().abstract_vsock_namespace.bind(
-                locked,
                 current_task,
                 port,
                 socket,
@@ -309,36 +301,29 @@ pub fn sys_bind(
         | SocketAddress::Inet6(_)
         | SocketAddress::Netlink(_)
         | SocketAddress::Packet(_)
-        | SocketAddress::Qipcrtr(_) => socket.bind(locked, current_task, address)?,
+        | SocketAddress::Qipcrtr(_) => socket.bind(current_task, address)?,
     }
 
     Ok(())
 }
 
-pub fn sys_listen(
-    locked: &mut Locked<Unlocked>,
-    current_task: &CurrentTask,
-    fd: FdNumber,
-    backlog: i32,
-) -> Result<(), Errno> {
+pub fn sys_listen(current_task: &CurrentTask, fd: FdNumber, backlog: i32) -> Result<(), Errno> {
     let file = current_task.files().get(fd)?;
     let socket = Socket::get_from_file(&file)?;
-    socket.listen(locked, current_task, backlog)?;
+    socket.listen(current_task, backlog)?;
     Ok(())
 }
 
 pub fn sys_accept(
-    locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
     fd: FdNumber,
     user_socket_address: UserAddress,
     user_address_length: UserRef<socklen_t>,
 ) -> Result<FdNumber, Errno> {
-    sys_accept4(locked, current_task, fd, user_socket_address, user_address_length, 0)
+    sys_accept4(current_task, fd, user_socket_address, user_address_length, 0)
 }
 
 pub fn sys_accept4(
-    locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
     fd: FdNumber,
     user_socket_address: UserAddress,
@@ -347,16 +332,13 @@ pub fn sys_accept4(
 ) -> Result<FdNumber, Errno> {
     let file = current_task.files().get(fd)?;
     let listening_socket = Socket::get_from_file(&file)?;
-    let accepted_socket = file.blocking_op(
-        locked,
-        current_task,
-        FdEvents::POLLIN | FdEvents::POLLHUP,
-        None,
-        |locked| listening_socket.accept(locked, current_task),
-    )?;
+    let accepted_socket =
+        file.blocking_op(current_task, FdEvents::POLLIN | FdEvents::POLLHUP, None, || {
+            listening_socket.accept(current_task)
+        })?;
 
     if !user_socket_address.is_null() {
-        let address_bytes = accepted_socket.getpeername(locked)?.to_bytes();
+        let address_bytes = accepted_socket.getpeername()?.to_bytes();
         write_socket_address(
             current_task,
             user_socket_address,
@@ -367,7 +349,6 @@ pub fn sys_accept4(
 
     let open_flags = socket_flags_to_open_flags(flags);
     let accepted_socket_file = SocketFile::from_socket(
-        locked,
         current_task,
         accepted_socket,
         open_flags,
@@ -377,12 +358,11 @@ pub fn sys_accept4(
     let accepted_socket = SocketFile::get_from_file(&accepted_socket_file)?;
     security::socket_accept(current_task, listening_socket, accepted_socket)?;
     let fd_flags = if flags & SOCK_CLOEXEC != 0 { FdFlags::CLOEXEC } else { FdFlags::empty() };
-    let accepted_fd = current_task.add_file(locked, accepted_socket_file, fd_flags)?;
+    let accepted_fd = current_task.add_file(accepted_socket_file, fd_flags)?;
     Ok(accepted_fd)
 }
 
 pub fn sys_connect(
-    locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
     fd: FdNumber,
     user_socket_address: UserAddress,
@@ -398,7 +378,7 @@ pub fn sys_connect(
             if name.is_empty() {
                 return error!(ECONNREFUSED);
             }
-            SocketPeer::Handle(resolve_unix_socket_address(locked, current_task, name.as_ref())?)
+            SocketPeer::Handle(resolve_unix_socket_address(current_task, name.as_ref())?)
         }
         // TODO(https://fxbug.dev/445433238): Connect not available for AF_VSOCK
         SocketAddress::Vsock { .. } => return error!(ENOSYS),
@@ -416,7 +396,7 @@ pub fn sys_connect(
             SocketPeer::Address(address)
         }
     };
-    let result = client.connect(locked, current_task, peer.clone());
+    let result = client.connect(current_task, peer.clone());
 
     if client.file().is_non_blocking() {
         return result;
@@ -428,16 +408,15 @@ pub fn sys_connect(
         Err(errno) if errno.code == EINPROGRESS => {
             let waiter = Waiter::new();
             client.file().wait_async(
-                locked,
                 current_task,
                 &waiter,
                 FdEvents::POLLOUT,
                 WaitCallback::none(),
             );
-            if !client.file().query_events(locked, current_task)?.contains(FdEvents::POLLOUT) {
-                waiter.wait(locked, current_task)?;
+            if !client.file().query_events(current_task)?.contains(FdEvents::POLLOUT) {
+                waiter.wait(current_task)?;
             }
-            client.connect(locked, current_task, peer)
+            client.connect(current_task, peer)
         }
         // TODO(tbodt): Support blocking when the UNIX domain socket queue fills up. This one's
         // weird because as far as I can tell, removing a socket from the queue does not actually
@@ -466,7 +445,6 @@ fn write_socket_address(
 }
 
 pub fn sys_getsockname(
-    locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
     fd: FdNumber,
     user_socket_address: UserAddress,
@@ -475,7 +453,7 @@ pub fn sys_getsockname(
     let file = current_task.files().get(fd)?;
     let socket = Socket::get_from_file(&file)?;
     security::check_socket_getsockname_access(current_task, socket)?;
-    let address_bytes = socket.getsockname(locked)?.to_bytes();
+    let address_bytes = socket.getsockname()?.to_bytes();
 
     write_socket_address(current_task, user_socket_address, user_address_length, &address_bytes)?;
 
@@ -483,7 +461,6 @@ pub fn sys_getsockname(
 }
 
 pub fn sys_getpeername(
-    locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
     fd: FdNumber,
     user_socket_address: UserAddress,
@@ -492,7 +469,7 @@ pub fn sys_getpeername(
     let file = current_task.files().get(fd)?;
     let socket = Socket::get_from_file(&file)?;
     security::check_socket_getpeername_access(current_task, socket)?;
-    let address_bytes = socket.getpeername(locked)?.to_bytes();
+    let address_bytes = socket.getpeername()?.to_bytes();
 
     write_socket_address(current_task, user_socket_address, user_address_length, &address_bytes)?;
 
@@ -500,7 +477,6 @@ pub fn sys_getpeername(
 }
 
 pub fn sys_socketpair(
-    locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
     domain: u32,
     socket_type: u32,
@@ -519,15 +495,14 @@ pub fn sys_socketpair(
     }
     let open_flags = socket_flags_to_open_flags(flags);
 
-    let (left, right) =
-        UnixSocket::new_pair(locked, current_task, domain, socket_type, open_flags)?;
+    let (left, right) = UnixSocket::new_pair(current_task, domain, socket_type, open_flags)?;
 
     let fd_flags = socket_flags_to_fd_flags(flags);
     // TODO: Eventually this will need to allocate two fd numbers (each of which could
     // potentially fail), and only populate the fd numbers (which can't fail) if both allocations
     // succeed.
-    let left_fd = current_task.add_file(locked, left, fd_flags)?;
-    let right_fd = current_task.add_file(locked, right, fd_flags)?;
+    let left_fd = current_task.add_file(left, fd_flags)?;
+    let right_fd = current_task.add_file(right, fd_flags)?;
 
     let fds = [left_fd, right_fd];
     log_trace!("socketpair -> [{:#x}, {:#x}]", fds[0].raw(), fds[1].raw());
@@ -555,29 +530,19 @@ fn read_iovec_from_msghdr(
     current_task.read_iovec(message_header.iov, iovec_count)
 }
 
-fn recvmsg_internal<L>(
-    locked: &mut Locked<L>,
+fn recvmsg_internal(
     current_task: &CurrentTask,
     file: &FileHandle,
     user_message_header: &mut MsgHdrRef,
     flags: u32,
     deadline: Option<zx::MonotonicInstant>,
-) -> Result<usize, Errno>
-where
-    L: LockEqualOrBefore<FileOpsCore>,
-{
+) -> Result<usize, Errno> {
     let mut message_header = match *user_message_header {
         MsgHdrRef::Ptr(ptr) => current_task.read_multi_arch_object(ptr)?.into(),
         MsgHdrRef::Value(ref value) => value.clone(),
     };
-    let result = recvmsg_internal_with_header(
-        locked,
-        current_task,
-        file,
-        message_header.as_mut(),
-        flags,
-        deadline,
-    )?;
+    let result =
+        recvmsg_internal_with_header(current_task, file, message_header.as_mut(), flags, deadline)?;
     match *user_message_header {
         MsgHdrRef::Ptr(ptr) => {
             current_task.write_multi_arch_object(ptr, message_header.extract())?;
@@ -589,23 +554,18 @@ where
     Ok(result)
 }
 
-fn recvmsg_internal_with_header<L>(
-    locked: &mut Locked<L>,
+fn recvmsg_internal_with_header(
     current_task: &CurrentTask,
     file: &FileHandle,
     mut message_header: WithAlternateBuffer<&mut MsgHdr>,
     flags: u32,
     deadline: Option<zx::MonotonicInstant>,
-) -> Result<usize, Errno>
-where
-    L: LockEqualOrBefore<FileOpsCore>,
-{
+) -> Result<usize, Errno> {
     let iovec = read_iovec_from_msghdr(current_task, message_header.as_unmut())?;
 
     let flags = SocketMessageFlags::from_bits(flags).ok_or_else(|| errno!(EINVAL))?;
     let socket_ops = file.downcast_file::<SocketFile>().unwrap();
     let info = socket_ops.recvmsg(
-        locked,
         current_task,
         file,
         &mut UserBuffersOutputBuffer::unified_new(current_task, iovec)?,
@@ -630,7 +590,6 @@ where
 
         let expected_size = header_size + ancillary_data.total_size(current_task);
         let message_bytes = ancillary_data.into_bytes(
-            locked,
             current_task,
             flags,
             cmsg_buffer_size - cmsg_bytes_written,
@@ -685,13 +644,12 @@ where
 }
 
 pub fn sys_recvmsg(
-    locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
     fd: FdNumber,
     user_message_header: MsgHdrPtr,
     flags: u32,
 ) -> Result<usize, Errno> {
-    recvmsg_impl(locked, current_task, fd, &mut user_message_header.into(), flags)
+    recvmsg_impl(current_task, fd, &mut user_message_header.into(), flags)
 }
 
 /// Implementation of `recvmsg`.
@@ -700,7 +658,6 @@ pub fn sys_recvmsg(
 /// that need to override the `iovec` from the `msghdr`. For example, when using `io_uring` with
 /// ring buffers.
 pub fn recvmsg_impl(
-    locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
     fd: FdNumber,
     user_message_header: &mut MsgHdrRef,
@@ -710,11 +667,10 @@ pub fn recvmsg_impl(
     if !file.node().is_sock() {
         return error!(ENOTSOCK);
     }
-    recvmsg_internal(locked, current_task, &file, user_message_header, flags, None)
+    recvmsg_internal(current_task, &file, user_message_header, flags, None)
 }
 
 pub fn sys_recvmmsg(
-    locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
     fd: FdNumber,
     user_mmsgvec: MMsgHdrPtr,
@@ -743,7 +699,6 @@ pub fn sys_recvmmsg(
         let current_ptr = user_mmsgvec.at(index)?;
         let mut current_mmsghdr = current_task.read_multi_arch_object(current_ptr)?;
         match recvmsg_internal_with_header(
-            locked,
             current_task,
             &file,
             (&mut current_mmsghdr.hdr).into(),
@@ -770,7 +725,6 @@ pub fn sys_recvmmsg(
 }
 
 pub fn sys_recvfrom(
-    locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
     fd: FdNumber,
     user_buffer: UserAddress,
@@ -787,7 +741,6 @@ pub fn sys_recvfrom(
     let flags = SocketMessageFlags::from_bits(flags).ok_or_else(|| errno!(EINVAL))?;
     let socket_ops = file.downcast_file::<SocketFile>().unwrap();
     let info = socket_ops.recvmsg(
-        locked,
         current_task,
         &file,
         &mut UserBuffersOutputBuffer::unified_new_at(current_task, user_buffer, buffer_length)?,
@@ -807,30 +760,22 @@ pub fn sys_recvfrom(
     }
 }
 
-fn sendmsg_internal<L>(
-    locked: &mut Locked<L>,
+fn sendmsg_internal(
     current_task: &CurrentTask,
     file: &FileHandle,
     user_message_header: MsgHdrPtr,
     flags: u32,
-) -> Result<usize, Errno>
-where
-    L: LockEqualOrBefore<FileOpsCore>,
-{
+) -> Result<usize, Errno> {
     let message_header = current_task.read_multi_arch_object(user_message_header)?;
-    sendmsg_internal_with_header(locked, current_task, file, &message_header, flags)
+    sendmsg_internal_with_header(current_task, file, &message_header, flags)
 }
 
-fn sendmsg_internal_with_header<L>(
-    locked: &mut Locked<L>,
+fn sendmsg_internal_with_header(
     current_task: &CurrentTask,
     file: &FileHandle,
     message_header: &MsgHdr,
     flags: u32,
-) -> Result<usize, Errno>
-where
-    L: LockEqualOrBefore<FileOpsCore>,
-{
+) -> Result<usize, Errno> {
     if message_header.name_len > i32::MAX as u32 {
         return error!(EINVAL);
     }
@@ -879,7 +824,6 @@ where
     let flags = SocketMessageFlags::from_bits(flags).ok_or_else(|| errno!(EOPNOTSUPP))?;
     let socket_ops = file.downcast_file::<SocketFile>().unwrap();
     socket_ops.sendmsg(
-        locked,
         current_task,
         file,
         &mut UserBuffersInputBuffer::unified_new(current_task, iovec)?,
@@ -890,7 +834,6 @@ where
 }
 
 pub fn sys_sendmsg(
-    locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
     fd: FdNumber,
     user_message_header: MsgHdrPtr,
@@ -900,11 +843,10 @@ pub fn sys_sendmsg(
     if !file.node().is_sock() {
         return error!(ENOTSOCK);
     }
-    sendmsg_internal(locked, current_task, &file, user_message_header, flags)
+    sendmsg_internal(current_task, &file, user_message_header, flags)
 }
 
 pub fn sys_sendmmsg(
-    locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
     fd: FdNumber,
     user_mmsgvec: MMsgHdrPtr,
@@ -925,8 +867,7 @@ pub fn sys_sendmmsg(
     while index < vlen as usize {
         let current_ptr = user_mmsgvec.at(index)?;
         let mut current_mmsghdr = current_task.read_multi_arch_object(current_ptr)?;
-        match sendmsg_internal_with_header(locked, current_task, &file, &current_mmsghdr.hdr, flags)
-        {
+        match sendmsg_internal_with_header(current_task, &file, &current_mmsghdr.hdr, flags) {
             Err(error) => {
                 if index == 0 {
                     return Err(error);
@@ -944,7 +885,6 @@ pub fn sys_sendmmsg(
 }
 
 pub fn sys_sendto(
-    locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
     fd: FdNumber,
     user_buffer: UserAddress,
@@ -968,11 +908,10 @@ pub fn sys_sendto(
 
     let flags = SocketMessageFlags::from_bits(flags).ok_or_else(|| errno!(EOPNOTSUPP))?;
     let socket_file = file.downcast_file::<SocketFile>().unwrap();
-    socket_file.sendmsg(locked, current_task, &file, &mut data, dest_address, vec![], flags)
+    socket_file.sendmsg(current_task, &file, &mut data, dest_address, vec![], flags)
 }
 
 pub fn sys_getsockopt(
-    locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
     fd: FdNumber,
     level: u32,
@@ -988,15 +927,9 @@ pub fn sys_getsockopt(
     let mut optval = current_task.read_memory_to_vec(user_optval, optlen as usize)?;
 
     let result = if socket.domain.is_inet() && IpTables::can_handle_getsockopt(level, optname) {
-        current_task.kernel().iptables().getsockopt(
-            locked,
-            current_task,
-            socket,
-            optname,
-            optval.clone(),
-        )
+        current_task.kernel().iptables().getsockopt(current_task, socket, optname, optval.clone())
     } else {
-        socket.getsockopt(locked, current_task, level, optname, optlen as u32)
+        socket.getsockopt(current_task, level, optname, optlen as u32)
     };
 
     // Even if `getsockopt()` above returned an error we still need to run
@@ -1018,7 +951,6 @@ pub fn sys_getsockopt(
 
     let root_cgroup = current_task.kernel().ebpf_state.attachments.root_cgroup();
     let (optval, optlen) = root_cgroup.run_getsockopt_prog(
-        locked.cast_locked(),
         current_task,
         level,
         optname,
@@ -1036,7 +968,6 @@ pub fn sys_getsockopt(
 }
 
 pub fn sys_setsockopt(
-    locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
     fd: FdNumber,
     level: u32,
@@ -1052,7 +983,6 @@ pub fn sys_setsockopt(
     // Run eBPF program if any.
     let root_cgroup = current_task.kernel().ebpf_state.attachments.root_cgroup();
     let optval = match root_cgroup.run_setsockopt_prog(
-        locked.cast_locked(),
         current_task,
         level,
         optname,
@@ -1065,18 +995,13 @@ pub fn sys_setsockopt(
     };
 
     if socket.domain.is_inet() && IpTables::can_handle_setsockopt(level, optname) {
-        current_task.kernel().iptables().setsockopt(locked, current_task, socket, optname, optval)
+        current_task.kernel().iptables().setsockopt(current_task, socket, optname, optval)
     } else {
-        socket.setsockopt(locked, current_task, level, optname, optval)
+        socket.setsockopt(current_task, level, optname, optval)
     }
 }
 
-pub fn sys_shutdown(
-    locked: &mut Locked<Unlocked>,
-    current_task: &CurrentTask,
-    fd: FdNumber,
-    how: u32,
-) -> Result<(), Errno> {
+pub fn sys_shutdown(current_task: &CurrentTask, fd: FdNumber, how: u32) -> Result<(), Errno> {
     let file = current_task.files().get(fd)?;
     let socket = Socket::get_from_file(&file)?;
     let how = match how {
@@ -1085,7 +1010,7 @@ pub fn sys_shutdown(
         SHUT_RDWR => SocketShutdownFlags::READ | SocketShutdownFlags::WRITE,
         _ => return error!(EINVAL),
     };
-    socket.shutdown(locked, current_task, how)?;
+    socket.shutdown(current_task, how)?;
     Ok(())
 }
 
@@ -1099,7 +1024,6 @@ pub fn cmsg_align(current_task: &CurrentTask, value: usize) -> Result<usize, Err
 mod arch32 {
     use crate::task::CurrentTask;
     use crate::vfs::FdNumber;
-    use starnix_sync::{Locked, Unlocked};
     use starnix_uapi::errors::Errno;
     use starnix_uapi::user_address::UserAddress;
 
@@ -1115,7 +1039,6 @@ mod arch32 {
     };
 
     pub fn sys_arch32_send(
-        locked: &mut Locked<Unlocked>,
         current_task: &CurrentTask,
         fd: FdNumber,
         user_buffer: UserAddress,
@@ -1123,7 +1046,6 @@ mod arch32 {
         flags: u32,
     ) -> Result<usize, Errno> {
         super::sys_sendto(
-            locked,
             current_task,
             fd,
             user_buffer,
@@ -1135,7 +1057,6 @@ mod arch32 {
     }
 
     pub fn sys_arch32_recv(
-        locked: &mut Locked<Unlocked>,
         current_task: &CurrentTask,
         fd: FdNumber,
         user_buffer: UserAddress,
@@ -1143,7 +1064,6 @@ mod arch32 {
         flags: u32,
     ) -> Result<usize, Errno> {
         super::sys_recvfrom(
-            locked,
             current_task,
             fd,
             user_buffer,
@@ -1166,10 +1086,9 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_socketpair_invalid_arguments() {
-        spawn_kernel_and_run(async |locked, current_task| {
+        spawn_kernel_and_run(async |current_task| {
             assert_eq!(
                 sys_socketpair(
-                    locked,
                     current_task,
                     AF_INET as u32,
                     SOCK_STREAM,
@@ -1180,7 +1099,6 @@ mod tests {
             );
             assert_eq!(
                 sys_socketpair(
-                    locked,
                     current_task,
                     AF_UNIX as u32,
                     7,
@@ -1191,7 +1109,6 @@ mod tests {
             );
             assert_eq!(
                 sys_socketpair(
-                    locked,
                     current_task,
                     AF_UNIX as u32,
                     SOCK_STREAM,

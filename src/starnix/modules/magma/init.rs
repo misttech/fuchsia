@@ -6,7 +6,7 @@ use crate::MagmaFile;
 use starnix_core::device::DeviceOps;
 use starnix_core::task::{CurrentTask, Kernel};
 use starnix_core::vfs::{FileOps, NamespaceNode};
-use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked};
+
 use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
@@ -19,7 +19,6 @@ struct MagmaDeviceBuilder {
 impl DeviceOps for MagmaDeviceBuilder {
     fn open(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         current_task: &CurrentTask,
         id: DeviceId,
         node: &NamespaceNode,
@@ -35,20 +34,11 @@ impl DeviceOps for MagmaDeviceBuilder {
     }
 }
 
-pub fn magma_device_init<L>(locked: &mut Locked<L>, kernel: &Kernel, supported_vendors: Vec<u16>)
-where
-    L: LockEqualOrBefore<FileOpsCore>,
-{
+pub fn magma_device_init(kernel: &Kernel, supported_vendors: Vec<u16>) {
     let registry = &kernel.device_registry;
     let builder = MagmaDeviceBuilder { supported_vendors };
 
     registry
-        .register_dyn_device(
-            locked,
-            kernel,
-            "magma0".into(),
-            registry.objects.starnix_class(),
-            builder,
-        )
+        .register_dyn_device(kernel, "magma0".into(), registry.objects.starnix_class(), builder)
         .expect("can register magma0");
 }

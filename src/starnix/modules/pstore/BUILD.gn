@@ -17,7 +17,6 @@ rustc_library("pstore") {
   deps = [
     "//src/starnix/kernel/core",
     "//src/starnix/lib/bootreason",
-    "//src/starnix/lib/starnix_sync",
     "//src/starnix/lib/starnix_types",
     "//src/starnix/lib/starnix_uapi",
   ]

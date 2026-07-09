@@ -30,9 +30,7 @@ use starnix_core::vfs::{
 };
 use starnix_core::{security, signals};
 use starnix_logging::{log_debug, log_error, log_info, log_warn};
-use starnix_sync::{
-    ComponentMountRecordLock, FileOpsCore, LockDepMutex, LockEqualOrBefore, Locked, Unlocked,
-};
+use starnix_sync::{ComponentMountRecordLock, LockDepMutex};
 use starnix_task_command::TaskCommand;
 use starnix_uapi::auth::{Capabilities, Credentials};
 use starnix_uapi::device_id::DeviceId;
@@ -44,7 +42,7 @@ use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::signals::{SIGINT, SIGKILL};
 use starnix_uapi::unmount_flags::UnmountFlags;
 use std::ffi::CString;
-use std::ops::DerefMut;
+
 use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
 use std::sync::{Arc, Weak};
@@ -137,10 +135,7 @@ pub async fn start_component(
         security::creds_start_internal_operation(system_task),
         || {
             // TODO(https://fxbug.dev/42076551): We leak the directory created by this function.
-            let component_path = generate_component_path(
-                system_task.kernel().kthreads.unlocked_for_async().deref_mut(),
-                system_task,
-            )?;
+            let component_path = generate_component_path(system_task)?;
             let pkg_path = format!("{component_path}/pkg");
 
             let mount_record =
@@ -177,7 +172,6 @@ pub async fn start_component(
                             mount_record
                                 .lock()
                                 .mount_remote(
-                                    system_task.kernel().kthreads.unlocked_for_async().deref_mut(),
                                     system_task,
                                     &dir_proxy,
                                     &dir_path,
@@ -193,7 +187,6 @@ pub async fn start_component(
                             mount_record
                                 .lock()
                                 .mount_remote(
-                                    system_task.kernel().kthreads.unlocked_for_async().deref_mut(),
                                     system_task,
                                     &dir_proxy,
                                     &format!("{component_path}/{dir_path}"),
@@ -233,7 +226,6 @@ pub async fn start_component(
                 });
 
             let current_task = create_init_child_process(
-                system_task.kernel().kthreads.unlocked_for_async().deref_mut(),
                 system_task.kernel(),
                 TaskCommand::new(program.binary.as_bytes()),
                 credentials,
@@ -241,28 +233,26 @@ pub async fn start_component(
             )?;
 
             execute_task_with_prerun_result(
-                system_task.kernel().kthreads.unlocked_for_async().deref_mut(),
                 current_task,
                 {
                     let mount_record = mount_record.clone();
-                    move |locked, current_task| {
+                    move |current_task| {
                         let cwd_path = FsString::from(program.cwd.unwrap_or(pkg_path));
                         let cwd = current_task.lookup_path(
-                            locked,
                             &mut LookupContext::default(),
                             current_task.fs().root(),
                             cwd_path.as_ref(),
                         )?;
-                        current_task.fs().chdir(locked, current_task, cwd)?;
+                        current_task.fs().chdir(current_task, cwd)?;
 
                         for mount in &program.component_mounts {
-                            let action = MountAction::from_spec(locked, current_task, &pkg, mount)
+                            let action = MountAction::from_spec(current_task, &pkg, mount)
                                 .map_err(|e| {
                                     log_error!("Error while mounting the filesystems: {e:?}");
                                     errno!(EINVAL)
                                 })?;
                             let mount_point =
-                                current_task.lookup_path_from_root(locked, action.path.as_ref())?;
+                                current_task.lookup_path_from_root(action.path.as_ref())?;
                             mount_record.lock().mount(
                                 mount_point,
                                 WhatToMount::Fs(action.fs),
@@ -271,13 +261,8 @@ pub async fn start_component(
                         }
 
                         let files = current_task.files();
-                        parse_numbered_handles(
-                            locked,
-                            current_task,
-                            start_info.numbered_handles,
-                            &files,
-                        )
-                        .map_err(|e| {
+                        parse_numbered_handles(current_task, start_info.numbered_handles, &files)
+                            .map_err(|e| {
                             log_error!("Error while parsing the numbered handles: {e:?}");
                             errno!(EINVAL)
                         })?;
@@ -292,12 +277,9 @@ pub async fn start_component(
                             environ.push(CString::new(env).map_err(|_| errno!(EINVAL))?);
                         }
 
-                        let executable = current_task.open_file(
-                            locked,
-                            program.binary.as_bytes().into(),
-                            OpenFlags::RDONLY,
-                        )?;
-                        current_task.exec(locked, executable, program.binary, argv, environ)?;
+                        let executable = current_task
+                            .open_file(program.binary.as_bytes().into(), OpenFlags::RDONLY)?;
+                        current_task.exec(executable, program.binary, argv, environ)?;
 
                         Ok(Arc::downgrade(&current_task.task))
                     }
@@ -355,7 +337,6 @@ async fn serve_component_controller(
                 Ok(ComponentControllerRequest::Stop { .. }) => {
                     if let Some(task) = task.upgrade() {
                         signals::send_standard_signal(
-                            task.kernel().kthreads.unlocked_for_async().deref_mut(),
                             task.as_ref(),
                             signals::SignalInfo::kernel(SIGINT),
                         );
@@ -364,11 +345,7 @@ async fn serve_component_controller(
                 }
                 Ok(ComponentControllerRequest::Kill { .. }) => {
                     if let Some(task) = task.upgrade() {
-                        signals::send_standard_signal(
-                            task.kernel().kthreads.unlocked_for_async().deref_mut(),
-                            &task,
-                            signals::SignalInfo::kernel(SIGKILL),
-                        );
+                        signals::send_standard_signal(&task, signals::SignalInfo::kernel(SIGKILL));
                         log_info!("Sent SIGKILL to program {}", task.command());
                         controller_handle.shutdown_with_epitaph(zx::Status::from_raw(
                             fcomponent::Error::InstanceDied.into_primitive() as i32,
@@ -399,16 +376,10 @@ async fn serve_component_controller(
 }
 
 /// Returns /container/component/{random} that doesn't already exist
-fn generate_component_path<L>(
-    locked: &mut Locked<L>,
-    system_task: &CurrentTask,
-) -> Result<String, Error>
-where
-    L: LockEqualOrBefore<FileOpsCore>,
-{
+fn generate_component_path(system_task: &CurrentTask) -> Result<String, Error> {
     // Checking container directory already exists.
     // If this lookup fails, the container might not have the "container" feature enabled.
-    let mount_point = system_task.lookup_path_from_root(locked, "/container/component/".into())?;
+    let mount_point = system_task.lookup_path_from_root("/container/component/".into())?;
 
     // Find /container/component/{random} that doesn't already exist
     let component_path = loop {
@@ -418,7 +389,6 @@ where
         // This returns EEXIST if /container/component/{random} already exists.
         // If so, try again with another {random} string.
         match mount_point.create_node(
-            locked,
             system_task,
             random_string.as_str().into(),
             mode!(IFDIR, 0o755),
@@ -441,7 +411,6 @@ where
 /// If there is a `numbered_handles` of type `HandleType::User0`, that is
 /// interpreted as the server end of the ShellController protocol.
 pub fn parse_numbered_handles(
-    locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
     numbered_handles: Option<Vec<fprocess::HandleInfo>>,
     files: &FdTable,
@@ -450,17 +419,17 @@ pub fn parse_numbered_handles(
         for numbered_handle in numbered_handles {
             let info = HandleInfo::try_from(numbered_handle.id)?;
             if info.handle_type() == HandleType::FileDescriptor {
-                let file = create_file_from_handle(locked, current_task, numbered_handle.handle)?;
-                files.insert(locked, current_task, FdNumber::from_raw(info.arg().into()), file)?;
+                let file = create_file_from_handle(current_task, numbered_handle.handle)?;
+                files.insert(current_task, FdNumber::from_raw(info.arg().into()), file)?;
             }
         }
     }
 
-    let stdio = SyslogFile::new_file(locked, current_task);
+    let stdio = SyslogFile::new_file(current_task);
     // If no numbered handle is provided for each stdio handle, default to syslog.
     for i in [0, 1, 2] {
         if files.get(FdNumber::from_raw(i)).is_err() {
-            files.insert(locked, current_task, FdNumber::from_raw(i), stdio.clone())?;
+            files.insert(current_task, FdNumber::from_raw(i), stdio.clone())?;
         }
     }
 
@@ -488,22 +457,18 @@ impl MountRecord {
         Ok(())
     }
 
-    fn mount_remote<L>(
+    fn mount_remote(
         &mut self,
-        locked: &mut Locked<L>,
         system_task: &CurrentTask,
         directory: &fio::DirectorySynchronousProxy,
         path: &str,
         mount_options: Option<&String>,
-    ) -> Result<(), Error>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
+    ) -> Result<(), Error> {
         // The incoming dir_path might not be top level, e.g. it could be /foo/bar.
         // Iterate through each component directory starting from the parent and
         // create it if it doesn't exist.
         let mut current_node =
-            system_task.lookup_path_from_root(locked, ".".into()).context("looking up '.'")?;
+            system_task.lookup_path_from_root(".".into()).context("looking up '.'")?;
         let mut context = LookupContext::default();
 
         // Extract each component using Path::new(path).components(). For example,
@@ -514,7 +479,6 @@ impl MountRecord {
         for sub_dir in Path::new(path).components() {
             let sub_dir_bytes = sub_dir.as_os_str().as_bytes();
             current_node = match current_node.create_node(
-                locked,
                 system_task,
                 sub_dir_bytes.into(),
                 mode!(IFDIR, 0o755),
@@ -522,7 +486,7 @@ impl MountRecord {
             ) {
                 Ok(node) => node,
                 Err(errno) if errno == EEXIST || errno == ENOTDIR => current_node
-                    .lookup_child(locked, system_task, &mut context, sub_dir_bytes.into())
+                    .lookup_child(system_task, &mut context, sub_dir_bytes.into())
                     .with_context(|| format!("looking up {sub_dir:?}"))?,
                 Err(e) => bail!(e),
             };
@@ -548,7 +512,6 @@ impl MountRecord {
         };
 
         let fs = RemoteFs::new_fs(
-            locked,
             system_task.kernel(),
             client_end,
             FileSystemOptions { source: path.into(), params, ..Default::default() },
@@ -556,8 +519,7 @@ impl MountRecord {
         )
         .context("making remote fs")?;
 
-        security::file_system_resolve_security(locked, system_task, &fs)
-            .context("resolving security")?;
+        security::file_system_resolve_security(system_task, &fs).context("resolving security")?;
 
         // Fuchsia doesn't specify mount flags in the incoming namespace, so we need to make
         // up some flags.

@@ -6,7 +6,7 @@ use crate::mm::{MemoryManager, PAGE_SIZE};
 use bitflags::bitflags;
 use range_map::RangeMap;
 use starnix_logging::track_stub;
-use starnix_sync::{LockBefore, Locked, OrderedMutex, UserFaultInner};
+use starnix_sync::{LockDepMutex, UserFaultInner};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::user_address::UserAddress;
 use starnix_uapi::{
@@ -23,7 +23,7 @@ use std::sync::{Arc, Weak};
 #[derive(Debug)]
 pub struct UserFault {
     mm: Weak<MemoryManager>,
-    state: OrderedMutex<UserFaultState, UserFaultInner>,
+    state: LockDepMutex<UserFaultState, UserFaultInner>,
 }
 
 #[derive(Debug, Clone)]
@@ -38,134 +38,85 @@ struct UserFaultState {
 
 impl UserFault {
     pub fn new(mm: Weak<MemoryManager>) -> Self {
-        Self { mm, state: OrderedMutex::new(UserFaultState::new()) }
+        Self { mm, state: LockDepMutex::new(UserFaultState::new()) }
     }
 
-    pub fn insert_pages<L>(&self, locked: &mut Locked<L>, range: Range<UserAddress>, value: bool)
-    where
-        L: LockBefore<UserFaultInner>,
-    {
+    pub fn insert_pages(&self, range: Range<UserAddress>, value: bool) {
         // RangeMap uses #[must_use] for its default usecase but this drop is trivial.
-        let _ = self.state.lock(locked).userfault_pages.insert(range, value);
+        let _ = self.state.lock().userfault_pages.insert(range, value);
     }
 
-    pub fn remove_pages<L>(&self, locked: &mut Locked<L>, range: Range<UserAddress>) -> bool
-    where
-        L: LockBefore<UserFaultInner>,
-    {
-        !self.state.lock(locked).userfault_pages.remove(range).is_empty()
+    pub fn remove_pages(&self, range: Range<UserAddress>) -> bool {
+        !self.state.lock().userfault_pages.remove(range).is_empty()
     }
 
-    pub fn get_registered_pages_overlapping_range<L>(
+    pub fn get_registered_pages_overlapping_range(
         &self,
-        locked: &mut Locked<L>,
         range: Range<UserAddress>,
-    ) -> Vec<Range<UserAddress>>
-    where
-        L: LockBefore<UserFaultInner>,
-    {
-        self.state.lock(locked).userfault_pages.get_keys(range).cloned().collect()
+    ) -> Vec<Range<UserAddress>> {
+        self.state.lock().userfault_pages.get_keys(range).cloned().collect()
     }
 
-    pub fn contains_addr<L>(&self, locked: &mut Locked<L>, addr: UserAddress) -> bool
-    where
-        L: LockBefore<UserFaultInner>,
-    {
-        self.state.lock(locked).userfault_pages.get(addr).is_some()
+    pub fn contains_addr(&self, addr: UserAddress) -> bool {
+        self.state.lock().userfault_pages.get(addr).is_some()
     }
 
-    pub fn get_first_populated_page_after<L>(
-        &self,
-        locked: &mut Locked<L>,
-        addr: UserAddress,
-    ) -> Option<UserAddress>
-    where
-        L: LockBefore<UserFaultInner>,
-    {
-        self.state.lock(locked).userfault_pages.get(addr).map(|(affected_range, is_populated)| {
+    pub fn get_first_populated_page_after(&self, addr: UserAddress) -> Option<UserAddress> {
+        self.state.lock().userfault_pages.get(addr).map(|(affected_range, is_populated)| {
             if *is_populated { addr } else { affected_range.end }
         })
     }
 
-    pub fn is_initialized<L>(self: &Arc<Self>, locked: &mut Locked<L>) -> bool
-    where
-        L: LockBefore<UserFaultInner>,
-    {
-        self.state.lock(locked).features.is_some()
+    pub fn is_initialized(self: &Arc<Self>) -> bool {
+        self.state.lock().features.is_some()
     }
 
-    pub fn has_features<L>(
+    pub fn has_features(self: &Arc<Self>, features: UserFaultFeatures) -> bool {
+        self.state.lock().features.map(|f| f.contains(features)).unwrap_or(false)
+    }
+
+    pub fn initialize(self: &Arc<Self>, features: UserFaultFeatures) {
+        self.state.lock().features = Some(features);
+    }
+
+    pub fn op_register(
         self: &Arc<Self>,
-        locked: &mut Locked<L>,
-        features: UserFaultFeatures,
-    ) -> bool
-    where
-        L: LockBefore<UserFaultInner>,
-    {
-        self.state.lock(locked).features.map(|f| f.contains(features)).unwrap_or(false)
-    }
-
-    pub fn initialize<L>(self: &Arc<Self>, locked: &mut Locked<L>, features: UserFaultFeatures)
-    where
-        L: LockBefore<UserFaultInner>,
-    {
-        self.state.lock(locked).features = Some(features);
-    }
-
-    pub fn op_register<L>(
-        self: &Arc<Self>,
-        locked: &mut Locked<L>,
         start: UserAddress,
         len: u64,
         mode: FaultRegisterMode,
-    ) -> Result<SupportedUserFaultIoctls, Errno>
-    where
-        L: LockBefore<UserFaultInner>,
-    {
-        if !self.is_initialized(locked) {
+    ) -> Result<SupportedUserFaultIoctls, Errno> {
+        if !self.is_initialized() {
             return error!(EINVAL);
         }
-        if !self.has_features(locked, UserFaultFeatures::SIGBUS) {
+        if !self.has_features(UserFaultFeatures::SIGBUS) {
             track_stub!(TODO("https://fxbug.dev/391599171"), "userfault without SIGBUS feature");
             return error!(ENOTSUP);
         }
         check_op_range(start, len)?;
         let mm = self.mm.upgrade().ok_or_else(|| errno!(EINVAL))?;
 
-        mm.register_with_uffd(locked, start, len as usize, self, mode)?;
+        mm.register_with_uffd(start, len as usize, self, mode)?;
         Ok(SupportedUserFaultIoctls::COPY | SupportedUserFaultIoctls::ZERO_PAGE)
     }
 
-    pub fn op_unregister<L>(
-        self: &Arc<Self>,
-        locked: &mut Locked<L>,
-        start: UserAddress,
-        len: u64,
-    ) -> Result<(), Errno>
-    where
-        L: LockBefore<UserFaultInner>,
-    {
-        if !self.is_initialized(locked) {
+    pub fn op_unregister(self: &Arc<Self>, start: UserAddress, len: u64) -> Result<(), Errno> {
+        if !self.is_initialized() {
             return error!(EINVAL);
         }
         check_op_range(start, len)?;
         let mm = self.mm.upgrade().ok_or_else(|| errno!(EINVAL))?;
-        mm.unregister_range_from_uffd(locked, self, start, len as usize)
+        mm.unregister_range_from_uffd(self, start, len as usize)
     }
 
-    pub fn op_copy<L>(
+    pub fn op_copy(
         self: &Arc<Self>,
-        locked: &mut Locked<L>,
         mm_source: &MemoryManager,
         source: UserAddress,
         dest: UserAddress,
         len: u64,
         _mode: FaultCopyMode,
-    ) -> Result<usize, Errno>
-    where
-        L: LockBefore<UserFaultInner>,
-    {
-        if !self.is_initialized(locked) {
+    ) -> Result<usize, Errno> {
+        if !self.is_initialized() {
             return error!(EINVAL);
         }
         check_op_range(source, len)?;
@@ -175,38 +126,31 @@ impl UserFault {
         // If the copy happens inside the same process, do it inside this process' memory manager
         // so that the lock is held throughout the operation.
         if Arc::as_ptr(&mm) == mm_source as *const MemoryManager {
-            mm.copy_from_uffd(locked, source, dest, len as usize, self)
+            mm.copy_from_uffd(source, dest, len as usize, self)
         } else {
             let mut buf = vec![std::mem::MaybeUninit::uninit(); len as usize];
             let buf = mm_source.syscall_read_memory(source, &mut buf)?;
-            mm.fill_from_uffd(locked, dest, buf, len as usize, self)
+            mm.fill_from_uffd(dest, buf, len as usize, self)
         }
     }
 
-    pub fn op_zero<L>(
+    pub fn op_zero(
         self: &Arc<Self>,
-        locked: &mut Locked<L>,
         start: UserAddress,
         len: u64,
         _mode: FaultZeroMode,
-    ) -> Result<usize, Errno>
-    where
-        L: LockBefore<UserFaultInner>,
-    {
-        if !self.is_initialized(locked) {
+    ) -> Result<usize, Errno> {
+        if !self.is_initialized() {
             return error!(EINVAL);
         }
         check_op_range(start, len)?;
         let mm = self.mm.upgrade().ok_or_else(|| errno!(EINVAL))?;
-        mm.zero_from_uffd(locked, start, len as usize, self)
+        mm.zero_from_uffd(start, len as usize, self)
     }
 
-    pub fn cleanup<L>(self: &Arc<Self>, locked: &mut Locked<L>)
-    where
-        L: LockBefore<UserFaultInner>,
-    {
+    pub fn cleanup(self: &Arc<Self>) {
         if let Some(mm) = self.mm.upgrade() {
-            mm.unregister_uffd(locked, self);
+            mm.unregister_uffd(self);
         }
     }
 }

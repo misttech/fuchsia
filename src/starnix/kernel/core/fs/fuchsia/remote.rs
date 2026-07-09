@@ -33,8 +33,8 @@ use smallvec::{SmallVec, smallvec};
 use starnix_crypt::EncryptionKeyId;
 use starnix_logging::{CATEGORY_STARNIX_MM, impossible_error, log_warn};
 use starnix_sync::{
-    DynamicLockDepRwLock, FileOpsCore, FuchsiaRemoteTargetLock, LockDepReadGuard, LockDepRwLock,
-    LockDepWriteGuard, LockEqualOrBefore, Locked, Unlocked,
+    DynamicLockDepRwLock, FuchsiaRemoteTargetLock, LockDepReadGuard, LockDepRwLock,
+    LockDepWriteGuard,
 };
 use starnix_syscalls::{SyscallArg, SyscallResult};
 use starnix_types::vfs::default_statfs;
@@ -80,7 +80,6 @@ fn is_special(file_info: &fio::FileInfo) -> bool {
 }
 
 pub fn new_remote_fs(
-    locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
     options: FileSystemOptions,
 ) -> Result<FileSystemHandle, Errno> {
@@ -101,21 +100,17 @@ pub fn new_remote_fs(
     }
     let mut subdir_options = options;
     subdir_options.source = subdir.into();
-    new_remotefs_in_root(locked, kernel, &root_proxy, subdir_options, open_rights)
+    new_remotefs_in_root(kernel, &root_proxy, subdir_options, open_rights)
 }
 
 /// Create a filesystem to access the content of the fuchsia directory available
 /// at `options.source` inside `root`.
-pub fn new_remotefs_in_root<L>(
-    locked: &mut Locked<L>,
+pub fn new_remotefs_in_root(
     kernel: &Kernel,
     root: &fio::DirectorySynchronousProxy,
     options: FileSystemOptions,
     rights: fio::Flags,
-) -> Result<FileSystemHandle, Errno>
-where
-    L: LockEqualOrBefore<FileOpsCore>,
-{
+) -> Result<FileSystemHandle, Errno> {
     let root = syncio::directory_open_directory_async(
         root,
         std::str::from_utf8(&options.source)
@@ -123,7 +118,7 @@ where
         rights,
     )
     .map_err(|e| errno!(EIO, format!("Failed to open root: {e}")))?;
-    RemoteFs::new_fs(locked, kernel, root.into_channel(), options, rights)
+    RemoteFs::new_fs(kernel, root.into_channel(), options, rights)
 }
 
 pub struct RemoteFs {
@@ -162,12 +157,7 @@ const SYNC_IOC_FILE_INFO: u8 = 4;
 const SYNC_IOC_MERGE: u8 = 3;
 
 impl FileSystemOps for RemoteFs {
-    fn statfs(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        _fs: &FileSystem,
-        _current_task: &CurrentTask,
-    ) -> Result<statfs, Errno> {
+    fn statfs(&self, _fs: &FileSystem, _current_task: &CurrentTask) -> Result<statfs, Errno> {
         let (status, info) = self
             .root_proxy
             .query_filesystem(zx::MonotonicInstant::INFINITE)
@@ -230,7 +220,6 @@ impl FileSystemOps for RemoteFs {
 
     fn rename(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _fs: &FileSystem,
         current_task: &CurrentTask,
         context: &mut RenameContext<'_>,
@@ -271,12 +260,7 @@ impl FileSystemOps for RemoteFs {
         })
     }
 
-    fn sync(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        _fs: &FileSystem,
-        _current_task: &CurrentTask,
-    ) -> Result<(), Errno> {
+    fn sync(&self, _fs: &FileSystem, _current_task: &CurrentTask) -> Result<(), Errno> {
         self.root_proxy
             .sync(zx::MonotonicInstant::INFINITE)
             .map_err(|_| errno!(EIO))?
@@ -553,16 +537,12 @@ impl RemoteFs {
         Ok((RemoteFs { use_remote_ids, root_proxy, root_rights }, remote_node, node_info, node_id))
     }
 
-    pub fn new_fs<L>(
-        locked: &mut Locked<L>,
+    pub fn new_fs(
         kernel: &Kernel,
         root: zx::Channel,
         options: FileSystemOptions,
         rights: fio::Flags,
-    ) -> Result<FileSystemHandle, Errno>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
+    ) -> Result<FileSystemHandle, Errno> {
         let (remotefs, root_node, info, node_id) = RemoteFs::new(root, rights)?;
 
         if !rights.contains(fio::PERM_WRITABLE) {
@@ -570,7 +550,6 @@ impl RemoteFs {
         }
         let use_remote_ids = remotefs.use_remote_ids;
         let fs = FileSystem::new(
-            locked,
             kernel,
             CacheMode::Cached(kernel.fs_cache_config()),
             remotefs,
@@ -682,15 +661,11 @@ impl RemoteNode {
 /// used to open this object. This is not the same as the permissions set if the object was created
 /// using Starnix itself. We use this mainly for interfacing with objects created outside of Starnix
 /// where these flags represent the desired permissions already.
-pub fn new_remote_file<L>(
-    locked: &mut Locked<L>,
+pub fn new_remote_file(
     current_task: &CurrentTask,
     handle: zx::NullableHandle,
     flags: OpenFlags,
-) -> Result<FileHandle, Errno>
-where
-    L: LockEqualOrBefore<FileOpsCore>,
-{
+) -> Result<FileHandle, Errno> {
     let remote_creds = current_task.current_creds().clone();
     let (attrs, ops) = remote_file_attrs_and_ops(current_task, handle, remote_creds)?;
     let mut rights = fio::Flags::empty();
@@ -704,7 +679,7 @@ where
     // TODO: https://fxbug.dev/407611229 - Give these nodes valid labels.
     let mut info = FsNodeInfo::new(mode, FsCred::root());
     update_info_from_attrs(&mut info, &attrs);
-    Ok(Anon::new_private_file_extended(locked, current_task, ops, flags, "[fuchsia:remote]", info))
+    Ok(Anon::new_private_file_extended(current_task, ops, flags, "[fuchsia:remote]", info))
 }
 
 /// Creates a FileOps from a zx::NullableHandle.
@@ -818,16 +793,12 @@ fn remote_file_attrs_and_ops(
     Ok((attrs, ops))
 }
 
-pub fn create_fuchsia_pipe<L>(
-    locked: &mut Locked<L>,
+pub fn create_fuchsia_pipe(
     current_task: &CurrentTask,
     socket: zx::Socket,
     flags: OpenFlags,
-) -> Result<FileHandle, Errno>
-where
-    L: LockEqualOrBefore<FileOpsCore>,
-{
-    new_remote_file(locked, current_task, socket.into(), flags)
+) -> Result<FileHandle, Errno> {
+    new_remote_file(current_task, socket.into(), flags)
 }
 
 // This only needs to include attributes that can be out of date.  There are other attributes that
@@ -991,11 +962,7 @@ fn get_name_str<'a>(name_bytes: &'a FsStr) -> Result<&'a str, Errno> {
 }
 
 impl XattrStorage for BaseNode {
-    fn get_xattr(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        name: &FsStr,
-    ) -> Result<FsString, Errno> {
+    fn get_xattr(&self, name: &FsStr) -> Result<FsString, Errno> {
         Ok(self
             .io
             .xattr_get(name)
@@ -1006,13 +973,7 @@ impl XattrStorage for BaseNode {
             .into())
     }
 
-    fn set_xattr(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        name: &FsStr,
-        value: &FsStr,
-        op: XattrOp,
-    ) -> Result<(), Errno> {
+    fn set_xattr(&self, name: &FsStr, value: &FsStr, op: XattrOp) -> Result<(), Errno> {
         let mode = match op {
             XattrOp::Set => XattrSetMode::Set,
             XattrOp::Create => XattrSetMode::Create,
@@ -1027,7 +988,7 @@ impl XattrStorage for BaseNode {
         })
     }
 
-    fn remove_xattr(&self, _locked: &mut Locked<FileOpsCore>, name: &FsStr) -> Result<(), Errno> {
+    fn remove_xattr(&self, name: &FsStr) -> Result<(), Errno> {
         will_dirty(&[self], || {
             self.io.xattr_remove(name).map_err(|status| match status {
                 zx::Status::NOT_FOUND => errno!(ENODATA),
@@ -1036,7 +997,7 @@ impl XattrStorage for BaseNode {
         })
     }
 
-    fn list_xattrs(&self, _locked: &mut Locked<FileOpsCore>) -> Result<Vec<FsString>, Errno> {
+    fn list_xattrs(&self) -> Result<Vec<FsString>, Errno> {
         self.io
             .xattr_list()
             .map(|attrs| attrs.into_iter().map(FsString::new).collect::<Vec<_>>())
@@ -1049,7 +1010,6 @@ impl FsNodeOps for RemoteNode {
 
     fn create_file_ops(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         node: &FsNode,
         current_task: &CurrentTask,
         flags: OpenFlags,
@@ -1099,7 +1059,6 @@ impl FsNodeOps for RemoteNode {
 
     fn mknod(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         node: &FsNode,
         current_task: &CurrentTask,
         name: &FsStr,
@@ -1148,7 +1107,6 @@ impl FsNodeOps for RemoteNode {
 
     fn mkdir(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         node: &FsNode,
         current_task: &CurrentTask,
         name: &FsStr,
@@ -1191,7 +1149,6 @@ impl FsNodeOps for RemoteNode {
 
     fn lookup(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         node: &FsNode,
         current_task: &CurrentTask,
         name: &FsStr,
@@ -1227,7 +1184,6 @@ impl FsNodeOps for RemoteNode {
 
     fn lookup_pipelined(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         node: &FsNode,
         current_task: &CurrentTask,
         names: &[&FsStr],
@@ -1267,7 +1223,6 @@ impl FsNodeOps for RemoteNode {
 
     fn truncate(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _guard: &AppendLockWriteGuard<'_>,
         node: &FsNode,
         current_task: &CurrentTask,
@@ -1282,7 +1237,6 @@ impl FsNodeOps for RemoteNode {
 
     fn allocate(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _guard: &AppendLockWriteGuard<'_>,
         node: &FsNode,
         current_task: &CurrentTask,
@@ -1308,7 +1262,6 @@ impl FsNodeOps for RemoteNode {
 
     fn fetch_and_refresh_info<'a>(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _node: &FsNode,
         _current_task: &CurrentTask,
         info: &'a DynamicLockDepRwLock<FsNodeInfo>,
@@ -1318,7 +1271,6 @@ impl FsNodeOps for RemoteNode {
 
     fn update_attributes(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _node: &FsNode,
         _current_task: &CurrentTask,
         info: &FsNodeInfo,
@@ -1331,7 +1283,6 @@ impl FsNodeOps for RemoteNode {
 
     fn unlink(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         node: &FsNode,
         _current_task: &CurrentTask,
         name: &FsStr,
@@ -1351,7 +1302,6 @@ impl FsNodeOps for RemoteNode {
 
     fn create_symlink(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         node: &FsNode,
         current_task: &CurrentTask,
         name: &FsStr,
@@ -1438,7 +1388,6 @@ impl FsNodeOps for RemoteNode {
 
     fn link(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         node: &FsNode,
         _current_task: &CurrentTask,
         name: &FsStr,
@@ -1468,12 +1417,7 @@ impl FsNodeOps for RemoteNode {
         })
     }
 
-    fn forget(
-        self: Box<Self>,
-        _locked: &mut Locked<FileOpsCore>,
-        _current_task: &CurrentTask,
-        info: FsNodeInfo,
-    ) -> Result<(), Errno> {
+    fn forget(self: Box<Self>, _current_task: &CurrentTask, info: FsNodeInfo) -> Result<(), Errno> {
         // Before forgetting this node, update atime if we need to.
         if info.pending_time_access_update {
             self.node
@@ -1486,7 +1430,6 @@ impl FsNodeOps for RemoteNode {
 
     fn enable_fsverity(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _node: &FsNode,
         _current_task: &CurrentTask,
         descriptor: &fsverity_descriptor,
@@ -1544,16 +1487,11 @@ impl FsNodeOps for RemoteNode {
         Ok(descriptor)
     }
 
-    fn get_size(
-        &self,
-        locked: &mut Locked<FileOpsCore>,
-        node: &FsNode,
-        current_task: &CurrentTask,
-    ) -> Result<usize, Errno> {
+    fn get_size(&self, node: &FsNode, current_task: &CurrentTask) -> Result<usize, Errno> {
         if self.node.info_state.is_size_accurate() {
             node.info()
         } else {
-            node.fetch_and_refresh_info(locked, current_task)?
+            node.fetch_and_refresh_info(current_task)?
         }
         .size
         .try_into()
@@ -1571,7 +1509,6 @@ impl FsNodeOps for RemoteSpecialNode {
 
     fn create_file_ops(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _node: &FsNode,
         _current_task: &CurrentTask,
         _flags: OpenFlags,
@@ -1581,7 +1518,6 @@ impl FsNodeOps for RemoteSpecialNode {
 
     fn update_attributes(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _node: &FsNode,
         _current_task: &CurrentTask,
         info: &FsNodeInfo,
@@ -1606,7 +1542,6 @@ impl FileOps for RemoteDirectoryObject {
 
     fn seek(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         current_offset: off_t,
@@ -1620,7 +1555,6 @@ impl FileOps for RemoteDirectoryObject {
 
     fn readdir(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         file: &FileObject,
         _current_task: &CurrentTask,
         sink: &mut dyn DirentSink,
@@ -1768,7 +1702,6 @@ impl FileOps for RemoteFileObject {
 
     fn read(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         file: &FileObject,
         _current_task: &CurrentTask,
         offset: usize,
@@ -1779,7 +1712,6 @@ impl FileOps for RemoteFileObject {
 
     fn write(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         file: &FileObject,
         _current_task: &CurrentTask,
         offset: usize,
@@ -1806,7 +1738,6 @@ impl FileOps for RemoteFileObject {
 
     fn get_memory(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         file: &FileObject,
         _current_task: &CurrentTask,
         _length: Option<usize>,
@@ -1862,7 +1793,6 @@ impl FileOps for AnonymousRemoteFileObject {
 
     fn read(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         offset: usize,
@@ -1873,7 +1803,6 @@ impl FileOps for AnonymousRemoteFileObject {
 
     fn write(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         offset: usize,
@@ -1886,7 +1815,6 @@ impl FileOps for AnonymousRemoteFileObject {
 
     fn get_memory(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         _length: Option<usize>,
@@ -1964,7 +1892,6 @@ impl FileOps for RemoteZxioFileObject {
 
     fn read(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         offset: usize,
@@ -1999,7 +1926,6 @@ impl FileOps for RemoteZxioFileObject {
 
     fn write(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         offset: usize,
@@ -2032,7 +1958,6 @@ impl FileOps for RemoteZxioFileObject {
 
     fn get_memory(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         _length: Option<usize>,
@@ -2082,7 +2007,6 @@ impl FsNodeOps for RemoteSymlink {
 
     fn readlink(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _node: &FsNode,
         _current_task: &CurrentTask,
     ) -> Result<SymlinkTarget, Errno> {
@@ -2091,7 +2015,6 @@ impl FsNodeOps for RemoteSymlink {
 
     fn fetch_and_refresh_info<'a>(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _node: &FsNode,
         _current_task: &CurrentTask,
         info: &'a DynamicLockDepRwLock<FsNodeInfo>,
@@ -2099,12 +2022,7 @@ impl FsNodeOps for RemoteSymlink {
         self.node.fetch_and_refresh_info(info)
     }
 
-    fn forget(
-        self: Box<Self>,
-        _locked: &mut Locked<FileOpsCore>,
-        _current_task: &CurrentTask,
-        info: FsNodeInfo,
-    ) -> Result<(), Errno> {
+    fn forget(self: Box<Self>, _current_task: &CurrentTask, info: FsNodeInfo) -> Result<(), Errno> {
         // Before forgetting this node, update atime if we need to.
         if info.pending_time_access_update {
             self.node
@@ -2141,7 +2059,6 @@ impl FileOps for RemoteCounter {
 
     fn read(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         _offset: usize,
@@ -2152,7 +2069,6 @@ impl FileOps for RemoteCounter {
 
     fn write(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         _offset: usize,
@@ -2163,7 +2079,6 @@ impl FileOps for RemoteCounter {
 
     fn ioctl(
         &self,
-        locked: &mut Locked<Unlocked>,
         file: &FileObject,
         current_task: &CurrentTask,
         request: u32,
@@ -2186,7 +2101,7 @@ impl FileOps for RemoteCounter {
             sync_points.push(sp);
             let sync_file_name: &[u8; 32] = b"remote counter\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0";
             let sync_file = SyncFile::new(*sync_file_name, SyncFence { sync_points });
-            return sync_file.ioctl(locked, file, current_task, request, arg);
+            return sync_file.ioctl(file, current_task, request, arg);
         }
 
         error!(EINVAL)
@@ -2416,7 +2331,7 @@ mod test {
     use fuchsia_runtime::UtcDuration;
     use futures::StreamExt;
     use fxfs_testing::{TestFixture, TestFixtureOptions};
-    use starnix_sync::Mutex;
+    use starnix_sync::{FsNodeInfoLevel, Mutex};
     use starnix_uapi::auth::Credentials;
     use starnix_uapi::errors::EINVAL;
     use starnix_uapi::file_mode::{AccessCheck, mode};
@@ -2431,10 +2346,10 @@ mod test {
 
     #[::fuchsia::test]
     async fn test_remote_uds() {
-        spawn_kernel_and_run(async |locked, current_task| {
+        spawn_kernel_and_run(async |current_task| {
             let (s1, s2) = zx::Socket::create_datagram();
             s2.write(&vec![0]).expect("write");
-            let file = new_remote_file(locked, &current_task, s1.into(), OpenFlags::RDWR)
+            let file = new_remote_file(&current_task, s1.into(), OpenFlags::RDWR)
                 .expect("new_remote_file");
             assert!(file.node().is_sock());
             let socket_ops = file.downcast_file::<SocketFile>().unwrap();
@@ -2444,7 +2359,7 @@ mod test {
                 | SocketMessageFlags::CMSG_CLOEXEC;
             let mut buffer = VecOutputBuffer::new(1024);
             let info = socket_ops
-                .recvmsg(locked, &current_task, &file, &mut buffer, flags, None)
+                .recvmsg(&current_task, &file, &mut buffer, flags, None)
                 .expect("recvmsg");
             assert!(info.ancillary_data.is_empty());
             assert_eq!(info.message_length, 1);
@@ -2454,13 +2369,12 @@ mod test {
 
     #[::fuchsia::test]
     async fn test_tree() {
-        spawn_kernel_and_run(async |locked, current_task| {
+        spawn_kernel_and_run(async |current_task| {
             let kernel = current_task.kernel();
             let rights = fio::PERM_READABLE | fio::PERM_EXECUTABLE;
             let (server, client) = zx::Channel::create();
             fdio::open("/pkg", rights, server).expect("failed to open /pkg");
             let fs = RemoteFs::new_fs(
-                locked,
                 &kernel,
                 client,
                 FileSystemOptions { source: FlyByteStr::new(b"/pkg"), ..Default::default() },
@@ -2471,22 +2385,17 @@ mod test {
             let root = ns.root();
             let mut context = LookupContext::default();
             assert_eq!(
-                root.lookup_child(locked, &current_task, &mut context, "nib".into()).err(),
+                root.lookup_child(&current_task, &mut context, "nib".into()).err(),
                 Some(errno!(ENOENT))
             );
             let mut context = LookupContext::default();
-            root.lookup_child(locked, &current_task, &mut context, "lib".into()).unwrap();
+            root.lookup_child(&current_task, &mut context, "lib".into()).unwrap();
 
             let mut context = LookupContext::default();
             let _test_file = root
-                .lookup_child(
-                    locked,
-                    &current_task,
-                    &mut context,
-                    "data/tests/hello_starnix".into(),
-                )
+                .lookup_child(&current_task, &mut context, "data/tests/hello_starnix".into())
                 .unwrap()
-                .open(locked, &current_task, OpenFlags::RDONLY, AccessCheck::default())
+                .open(&current_task, OpenFlags::RDONLY, AccessCheck::default())
                 .unwrap();
         })
         .await;
@@ -2494,16 +2403,15 @@ mod test {
 
     #[::fuchsia::test]
     async fn test_blocking_io() {
-        spawn_kernel_and_run(async |locked, current_task| {
+        spawn_kernel_and_run(async |current_task| {
             let (client, server) = zx::Socket::create_stream();
-            let pipe = create_fuchsia_pipe(locked, &current_task, client, OpenFlags::RDWR).unwrap();
+            let pipe = create_fuchsia_pipe(&current_task, client, OpenFlags::RDWR).unwrap();
 
             let bytes = [0u8; 64];
             assert_eq!(bytes.len(), server.write(&bytes).unwrap());
 
             // Spawn a kthread to get the right lock context.
-            let bytes_read =
-                pipe.read(locked, &current_task, &mut VecOutputBuffer::new(64)).unwrap();
+            let bytes_read = pipe.read(&current_task, &mut VecOutputBuffer::new(64)).unwrap();
 
             assert_eq!(bytes_read, bytes.len());
         })
@@ -2512,55 +2420,44 @@ mod test {
 
     #[::fuchsia::test]
     async fn test_poll() {
-        spawn_kernel_and_run(async |locked, current_task| {
+        spawn_kernel_and_run(async |current_task| {
             let (client, server) = zx::Socket::create_stream();
-            let pipe = create_fuchsia_pipe(locked, &current_task, client, OpenFlags::RDWR)
+            let pipe = create_fuchsia_pipe(&current_task, client, OpenFlags::RDWR)
                 .expect("create_fuchsia_pipe");
             let server_zxio = Zxio::create(server.into_handle()).expect("Zxio::create");
 
             assert_eq!(
-                pipe.query_events(locked, &current_task),
+                pipe.query_events(&current_task),
                 Ok(FdEvents::POLLOUT | FdEvents::POLLWRNORM)
             );
 
-            let epoll_object = EpollFileObject::new_file(locked, &current_task);
+            let epoll_object = EpollFileObject::new_file(&current_task);
             let epoll_file = epoll_object.downcast_file::<EpollFileObject>().unwrap();
             let event = EpollEvent::new(FdEvents::POLLIN, 0);
-            epoll_file
-                .add(locked, &current_task, &pipe, &epoll_object, event)
-                .expect("poll_file.add");
+            epoll_file.add(&current_task, &pipe, &epoll_object, event).expect("poll_file.add");
 
-            let fds = epoll_file
-                .wait(locked, &current_task, 1, zx::MonotonicInstant::ZERO)
-                .expect("wait");
+            let fds = epoll_file.wait(&current_task, 1, zx::MonotonicInstant::ZERO).expect("wait");
             assert!(fds.is_empty());
 
             assert_eq!(server_zxio.write(&[0]).expect("write"), 1);
 
             assert_eq!(
-                pipe.query_events(locked, &current_task),
+                pipe.query_events(&current_task),
                 Ok(FdEvents::POLLOUT
                     | FdEvents::POLLWRNORM
                     | FdEvents::POLLIN
                     | FdEvents::POLLRDNORM)
             );
-            let fds = epoll_file
-                .wait(locked, &current_task, 1, zx::MonotonicInstant::ZERO)
-                .expect("wait");
+            let fds = epoll_file.wait(&current_task, 1, zx::MonotonicInstant::ZERO).expect("wait");
             assert_eq!(fds.len(), 1);
 
-            assert_eq!(
-                pipe.read(locked, &current_task, &mut VecOutputBuffer::new(64)).expect("read"),
-                1
-            );
+            assert_eq!(pipe.read(&current_task, &mut VecOutputBuffer::new(64)).expect("read"), 1);
 
             assert_eq!(
-                pipe.query_events(locked, &current_task),
+                pipe.query_events(&current_task),
                 Ok(FdEvents::POLLOUT | FdEvents::POLLWRNORM)
             );
-            let fds = epoll_file
-                .wait(locked, &current_task, 1, zx::MonotonicInstant::ZERO)
-                .expect("wait");
+            let fds = epoll_file.wait(&current_task, 1, zx::MonotonicInstant::ZERO).expect("wait");
             assert!(fds.is_empty());
         })
         .await;
@@ -2568,12 +2465,12 @@ mod test {
 
     #[::fuchsia::test]
     async fn test_new_remote_directory() {
-        spawn_kernel_and_run(async |locked, current_task| {
+        spawn_kernel_and_run(async |current_task| {
             let (server, client) = zx::Channel::create();
             fdio::open("/pkg", fio::PERM_READABLE | fio::PERM_EXECUTABLE, server)
                 .expect("failed to open /pkg");
 
-            let fd = new_remote_file(locked, &current_task, client.into(), OpenFlags::RDWR)
+            let fd = new_remote_file(&current_task, client.into(), OpenFlags::RDWR)
                 .expect("new_remote_file");
             assert!(fd.node().is_dir());
             assert!(fd.to_handle(&current_task).expect("to_handle").is_some());
@@ -2583,12 +2480,12 @@ mod test {
 
     #[::fuchsia::test]
     async fn test_new_remote_file() {
-        spawn_kernel_and_run(async |locked, current_task| {
+        spawn_kernel_and_run(async |current_task| {
             let (server, client) = zx::Channel::create();
             fdio::open("/pkg/meta/contents", fio::PERM_READABLE, server)
                 .expect("failed to open /pkg/meta/contents");
 
-            let fd = new_remote_file(locked, &current_task, client.into(), OpenFlags::RDONLY)
+            let fd = new_remote_file(&current_task, client.into(), OpenFlags::RDONLY)
                 .expect("new_remote_file");
             assert!(!fd.node().is_dir());
             assert!(fd.to_handle(&current_task).expect("to_handle").is_some());
@@ -2598,10 +2495,10 @@ mod test {
 
     #[::fuchsia::test]
     async fn test_new_remote_counter() {
-        spawn_kernel_and_run(async |locked, current_task| {
+        spawn_kernel_and_run(async |current_task| {
             let counter = zx::Counter::create();
 
-            let fd = new_remote_file(locked, &current_task, counter.into(), OpenFlags::RDONLY)
+            let fd = new_remote_file(&current_task, counter.into(), OpenFlags::RDONLY)
                 .expect("new_remote_file");
             assert!(fd.to_handle(&current_task).expect("to_handle").is_some());
         })
@@ -2610,9 +2507,9 @@ mod test {
 
     #[::fuchsia::test]
     async fn test_new_remote_vmo() {
-        spawn_kernel_and_run(async |locked, current_task| {
+        spawn_kernel_and_run(async |current_task| {
             let vmo = zx::Vmo::create(*PAGE_SIZE).expect("Vmo::create");
-            let fd = new_remote_file(locked, &current_task, vmo.into(), OpenFlags::RDWR)
+            let fd = new_remote_file(&current_task, vmo.into(), OpenFlags::RDWR)
                 .expect("new_remote_file");
             assert!(!fd.node().is_dir());
             assert!(fd.to_handle(&current_task).expect("to_handle").is_some());
@@ -2633,10 +2530,9 @@ mod test {
         const LINK_SIZE: usize = 22;
         assert_eq!(LINK_SIZE, LINK_TARGET.len());
 
-        spawn_kernel_and_run(async move |locked, current_task| {
+        spawn_kernel_and_run(async move |current_task| {
             let kernel = current_task.kernel();
             let fs = RemoteFs::new_fs(
-                locked,
                 &kernel,
                 client,
                 FileSystemOptions { source: FlyByteStr::new(b"/"), ..Default::default() },
@@ -2646,21 +2542,21 @@ mod test {
             let ns = Namespace::new(fs);
             let root = ns.root();
             let symlink_node = root
-                .create_symlink(locked, &current_task, LINK_PATH.into(), LINK_TARGET.into())
+                .create_symlink(&current_task, LINK_PATH.into(), LINK_TARGET.into())
                 .expect("symlink failed");
             assert_matches!(&*symlink_node.entry.node.info(), FsNodeInfo { size: LINK_SIZE, .. });
 
             let mut context = LookupContext::new(SymlinkMode::NoFollow);
             let child = root
-                .lookup_child(locked, &current_task, &mut context, "symlink".into())
+                .lookup_child(&current_task, &mut context, "symlink".into())
                 .expect("lookup_child failed");
 
-            match child.readlink(locked, &current_task).expect("readlink failed") {
+            match child.readlink(&current_task).expect("readlink failed") {
                 SymlinkTarget::Path(path) => assert_eq!(path, LINK_TARGET),
                 SymlinkTarget::Node(_) => panic!("readlink returned SymlinkTarget::Node"),
             }
             // Ensure the size stat reports matches what is expected.
-            let stat_result = child.entry.node.stat(locked, &current_task).expect("stat failed");
+            let stat_result = child.entry.node.stat(&current_task).expect("stat failed");
             assert_eq!(stat_result.st_size as usize, LINK_SIZE);
         })
         .await;
@@ -2674,10 +2570,9 @@ mod test {
         let (server, client) = zx::Channel::create();
         fixture.root().clone(server.into()).expect("clone failed after remount");
 
-        spawn_kernel_and_run(async move |locked, current_task| {
+        spawn_kernel_and_run(async move |current_task| {
             let kernel = current_task.kernel();
             let fs = RemoteFs::new_fs(
-                locked,
                 &kernel,
                 client,
                 FileSystemOptions { source: FlyByteStr::new(b"/"), ..Default::default() },
@@ -2688,10 +2583,10 @@ mod test {
             let root = ns.root();
             let mut context = LookupContext::new(SymlinkMode::NoFollow);
             let child = root
-                .lookup_child(locked, &current_task, &mut context, "symlink".into())
+                .lookup_child(&current_task, &mut context, "symlink".into())
                 .expect("lookup_child failed after remount");
 
-            match child.readlink(locked, &current_task).expect("readlink failed after remount") {
+            match child.readlink(&current_task).expect("readlink failed after remount") {
                 SymlinkTarget::Path(path) => assert_eq!(path, LINK_TARGET),
                 SymlinkTarget::Node(_) => {
                     panic!("readlink returned SymlinkTarget::Node after remount")
@@ -2699,7 +2594,7 @@ mod test {
             }
             // Ensure the size stat reports matches what is expected.
             let stat_result =
-                child.entry.node.stat(locked, &current_task).expect("stat failed after remount");
+                child.entry.node.stat(&current_task).expect("stat failed after remount");
             assert_eq!(stat_result.st_size as usize, LINK_SIZE);
         })
         .await;
@@ -2718,13 +2613,12 @@ mod test {
         fixture.root().clone(server.into()).expect("clone failed");
 
         // Simulate a first run of starnix.
-        spawn_kernel_and_run(async move |locked, current_task| {
+        spawn_kernel_and_run(async move |current_task| {
             let kernel = current_task.kernel();
             let creds = Credentials::clone(&current_task.current_creds());
             current_task.set_creds(Credentials { euid: 1, fsuid: 1, egid: 2, fsgid: 2, ..creds });
             let rights = fio::PERM_READABLE | fio::PERM_WRITABLE;
             let fs = RemoteFs::new_fs(
-                locked,
                 &kernel,
                 client,
                 FileSystemOptions { source: FlyByteStr::new(b"/"), ..Default::default() },
@@ -2734,13 +2628,13 @@ mod test {
             let ns = Namespace::new(fs);
             current_task.fs().set_umask(FileMode::from_bits(0));
             ns.root()
-                .create_node(locked, &current_task, "file".into(), FILE_MODE, DeviceId::NONE)
+                .create_node(&current_task, "file".into(), FILE_MODE, DeviceId::NONE)
                 .expect("create_node failed");
             ns.root()
-                .create_node(locked, &current_task, "dir".into(), DIR_MODE, DeviceId::NONE)
+                .create_node(&current_task, "dir".into(), DIR_MODE, DeviceId::NONE)
                 .expect("create_node failed");
             ns.root()
-                .create_node(locked, &current_task, "dev".into(), BLK_MODE, DeviceId::RANDOM)
+                .create_node(&current_task, "dev".into(), BLK_MODE, DeviceId::RANDOM)
                 .expect("create_node failed");
         })
         .await;
@@ -2755,11 +2649,10 @@ mod test {
         let (server, client) = zx::Channel::create();
         fixture.root().clone(server.into()).expect("clone failed");
 
-        spawn_kernel_and_run(async move |locked, current_task| {
+        spawn_kernel_and_run(async move |current_task| {
             let kernel = current_task.kernel();
             let rights = fio::PERM_READABLE | fio::PERM_WRITABLE;
             let fs = RemoteFs::new_fs(
-                locked,
                 &kernel,
                 client,
                 FileSystemOptions { source: FlyByteStr::new(b"/"), ..Default::default() },
@@ -2770,7 +2663,7 @@ mod test {
             let mut context = LookupContext::new(SymlinkMode::NoFollow);
             let child = ns
                 .root()
-                .lookup_child(locked, &current_task, &mut context, "file".into())
+                .lookup_child(&current_task, &mut context, "file".into())
                 .expect("lookup_child failed");
             assert_matches!(
                 &*child.entry.node.info(),
@@ -2778,7 +2671,7 @@ mod test {
             );
             let child = ns
                 .root()
-                .lookup_child(locked, &current_task, &mut context, "dir".into())
+                .lookup_child(&current_task, &mut context, "dir".into())
                 .expect("lookup_child failed");
             assert_matches!(
                 &*child.entry.node.info(),
@@ -2786,7 +2679,7 @@ mod test {
             );
             let child = ns
                 .root()
-                .lookup_child(locked, &current_task, &mut context, "dev".into())
+                .lookup_child(&current_task, &mut context, "dev".into())
                 .expect("lookup_child failed");
             assert_matches!(
                 &*child.entry.node.info(),
@@ -2805,11 +2698,10 @@ mod test {
 
         const MODE: FileMode = FileMode::from_bits(FileMode::IFDIR.bits() | 0o777);
 
-        spawn_kernel_and_run(async |locked, current_task| {
+        spawn_kernel_and_run(async |current_task| {
             let kernel = current_task.kernel();
             let rights = fio::PERM_READABLE | fio::PERM_WRITABLE;
             let fs = RemoteFs::new_fs(
-                locked,
                 &kernel,
                 client,
                 FileSystemOptions { source: FlyByteStr::new(b"/"), ..Default::default() },
@@ -2820,16 +2712,16 @@ mod test {
             current_task.fs().set_umask(FileMode::from_bits(0));
             let sub_dir1 = ns
                 .root()
-                .create_node(locked, &current_task, "dir".into(), MODE, DeviceId::NONE)
+                .create_node(&current_task, "dir".into(), MODE, DeviceId::NONE)
                 .expect("create_node failed");
             let sub_dir2 = sub_dir1
-                .create_node(locked, &current_task, "dir".into(), MODE, DeviceId::NONE)
+                .create_node(&current_task, "dir".into(), MODE, DeviceId::NONE)
                 .expect("create_node failed");
 
             let dir_handle = ns
                 .root()
                 .entry
-                .open_anonymous(locked, &current_task, OpenFlags::RDONLY)
+                .open_anonymous(&current_task, OpenFlags::RDONLY)
                 .expect("open failed");
 
             #[derive(Default)]
@@ -2857,27 +2749,27 @@ mod test {
                 }
             }
             let mut sink = Sink::default();
-            dir_handle.readdir(locked, &current_task, &mut sink).expect("readdir failed");
+            dir_handle.readdir(&current_task, &mut sink).expect("readdir failed");
 
             // inode_num for .. for the root should be the same as root.
             assert_eq!(sink.dot_dot_inode_num, ns.root().entry.node.ino);
 
             let dir_handle = sub_dir1
                 .entry
-                .open_anonymous(locked, &current_task, OpenFlags::RDONLY)
+                .open_anonymous(&current_task, OpenFlags::RDONLY)
                 .expect("open failed");
             let mut sink = Sink::default();
-            dir_handle.readdir(locked, &current_task, &mut sink).expect("readdir failed");
+            dir_handle.readdir(&current_task, &mut sink).expect("readdir failed");
 
             // inode_num for .. for the first sub directory should be the same as root.
             assert_eq!(sink.dot_dot_inode_num, ns.root().entry.node.ino);
 
             let dir_handle = sub_dir2
                 .entry
-                .open_anonymous(locked, &current_task, OpenFlags::RDONLY)
+                .open_anonymous(&current_task, OpenFlags::RDONLY)
                 .expect("open failed");
             let mut sink = Sink::default();
-            dir_handle.readdir(locked, &current_task, &mut sink).expect("readdir failed");
+            dir_handle.readdir(&current_task, &mut sink).expect("readdir failed");
 
             // inode_num for .. for the second subdir should be the first subdir.
             assert_eq!(sink.dot_dot_inode_num, sub_dir1.entry.node.ino);
@@ -2895,11 +2787,10 @@ mod test {
         const FIFO_MODE: FileMode = FileMode::from_bits(FileMode::IFIFO.bits() | 0o777);
         const REG_MODE: FileMode = FileMode::from_bits(FileMode::IFREG.bits());
 
-        spawn_kernel_and_run(async |locked, current_task| {
+        spawn_kernel_and_run(async |current_task| {
             let kernel = current_task.kernel();
             let rights = fio::PERM_READABLE | fio::PERM_WRITABLE;
             let fs = RemoteFs::new_fs(
-                locked,
                 &kernel,
                 client,
                 FileSystemOptions { source: FlyByteStr::new(b"/"), ..Default::default() },
@@ -2911,16 +2802,16 @@ mod test {
             let root = ns.root();
 
             // Create RemoteSpecialNode (e.g. FIFO)
-            root.create_node(locked, &current_task, "fifo".into(), FIFO_MODE, DeviceId::NONE)
+            root.create_node(&current_task, "fifo".into(), FIFO_MODE, DeviceId::NONE)
                 .expect("create_node failed");
             let mut context = LookupContext::new(SymlinkMode::NoFollow);
             let fifo_node = root
-                .lookup_child(locked, &current_task, &mut context, "fifo".into())
+                .lookup_child(&current_task, &mut context, "fifo".into())
                 .expect("lookup_child failed");
 
             // Test that we get expected behaviour for RemoteSpecialNode operation, e.g.
             // test that truncate should return EINVAL
-            match fifo_node.truncate(locked, &current_task, 0) {
+            match fifo_node.truncate(&current_task, 0) {
                 Ok(_) => {
                     panic!("truncate passed for special node")
                 }
@@ -2931,15 +2822,15 @@ mod test {
             };
 
             // Create regular RemoteNode
-            root.create_node(locked, &current_task, "file".into(), REG_MODE, DeviceId::NONE)
+            root.create_node(&current_task, "file".into(), REG_MODE, DeviceId::NONE)
                 .expect("create_node failed");
             let mut context = LookupContext::new(SymlinkMode::NoFollow);
             let reg_node = root
-                .lookup_child(locked, &current_task, &mut context, "file".into())
+                .lookup_child(&current_task, &mut context, "file".into())
                 .expect("lookup_child failed");
 
             // We should be able to perform truncate on regular files
-            reg_node.truncate(locked, &current_task, 0).expect("truncate failed");
+            reg_node.truncate(&current_task, 0).expect("truncate failed");
         })
         .await;
         fixture.close().await;
@@ -2951,11 +2842,10 @@ mod test {
         let (server, client) = zx::Channel::create();
         fixture.root().clone(server.into()).expect("clone failed");
 
-        spawn_kernel_and_run(async move |locked, current_task| {
+        spawn_kernel_and_run(async move |current_task| {
             let kernel = current_task.kernel();
             let rights = fio::PERM_READABLE | fio::PERM_WRITABLE;
             let fs = RemoteFs::new_fs(
-                locked,
                 &kernel,
                 client,
                 FileSystemOptions { source: FlyByteStr::new(b"/"), ..Default::default() },
@@ -2966,18 +2856,12 @@ mod test {
             current_task.fs().set_umask(FileMode::from_bits(0));
             let node = ns
                 .root()
-                .create_node(
-                    locked,
-                    &current_task,
-                    "file1".into(),
-                    mode!(IFREG, 0o666),
-                    DeviceId::NONE,
-                )
+                .create_node(&current_task, "file1".into(), mode!(IFREG, 0o666), DeviceId::NONE)
                 .expect("create_node failed");
             ns.root()
                 .entry
                 .node
-                .link(locked, &current_task, &ns.root().mount, "file2".into(), &node.entry.node)
+                .link(&current_task, &ns.root().mount, "file2".into(), &node.entry.node)
                 .expect("link failed");
         })
         .await;
@@ -2991,11 +2875,10 @@ mod test {
         let (server, client) = zx::Channel::create();
         fixture.root().clone(server.into()).expect("clone failed");
 
-        spawn_kernel_and_run(async move |locked, current_task| {
+        spawn_kernel_and_run(async move |current_task| {
             let kernel = current_task.kernel();
             let rights = fio::PERM_READABLE | fio::PERM_WRITABLE;
             let fs = RemoteFs::new_fs(
-                locked,
                 &kernel,
                 client,
                 FileSystemOptions { source: FlyByteStr::new(b"/"), ..Default::default() },
@@ -3006,11 +2889,11 @@ mod test {
             let mut context = LookupContext::new(SymlinkMode::NoFollow);
             let child1 = ns
                 .root()
-                .lookup_child(locked, &current_task, &mut context, "file1".into())
+                .lookup_child(&current_task, &mut context, "file1".into())
                 .expect("lookup_child failed");
             let child2 = ns
                 .root()
-                .lookup_child(locked, &current_task, &mut context, "file2".into())
+                .lookup_child(&current_task, &mut context, "file2".into())
                 .expect("lookup_child failed");
             assert!(Arc::ptr_eq(&child1.entry.node, &child2.entry.node));
         })
@@ -3026,11 +2909,10 @@ mod test {
 
         const MODE: FileMode = FileMode::from_bits(FileMode::IFREG.bits() | 0o467);
 
-        spawn_kernel_and_run(async move |locked, current_task| {
+        spawn_kernel_and_run(async move |current_task| {
             let kernel = current_task.kernel();
             let rights = fio::PERM_READABLE | fio::PERM_WRITABLE;
             let fs = RemoteFs::new_fs(
-                locked,
                 &kernel,
                 client,
                 FileSystemOptions { source: FlyByteStr::new(b"/"), ..Default::default() },
@@ -3041,7 +2923,7 @@ mod test {
             current_task.fs().set_umask(FileMode::from_bits(0));
             let file = ns
                 .root()
-                .create_node(locked, &current_task, "file".into(), MODE, DeviceId::NONE)
+                .create_node(&current_task, "file".into(), MODE, DeviceId::NONE)
                 .expect("create_node failed");
             // Enable verity on the file.
             let desc = fsverity_descriptor {
@@ -3051,10 +2933,7 @@ mod test {
                 log_blocksize: 12,
                 ..Default::default()
             };
-            file.entry
-                .node
-                .enable_fsverity(locked, current_task, &desc)
-                .expect("enable fsverity failed");
+            file.entry.node.enable_fsverity(current_task, &desc).expect("enable fsverity failed");
         })
         .await;
 
@@ -3068,11 +2947,10 @@ mod test {
         let (server, client) = zx::Channel::create();
         fixture.root().clone(server.into()).expect("clone failed");
 
-        spawn_kernel_and_run(async move |locked, current_task| {
+        spawn_kernel_and_run(async move |current_task| {
             let kernel = current_task.kernel();
             let rights = fio::PERM_READABLE | fio::PERM_WRITABLE;
             let fs = RemoteFs::new_fs(
-                locked,
                 &kernel,
                 client,
                 FileSystemOptions { source: FlyByteStr::new(b"/"), ..Default::default() },
@@ -3083,7 +2961,7 @@ mod test {
             let mut context = LookupContext::new(SymlinkMode::NoFollow);
             let _child = ns
                 .root()
-                .lookup_child(locked, &current_task, &mut context, "file".into())
+                .lookup_child(&current_task, &mut context, "file".into())
                 .expect("lookup_child failed");
         })
         .await;
@@ -3098,11 +2976,10 @@ mod test {
 
         const MODE: FileMode = FileMode::from_bits(FileMode::IFREG.bits() | 0o467);
 
-        spawn_kernel_and_run(async move |locked, current_task| {
+        spawn_kernel_and_run(async move |current_task| {
             let kernel = current_task.kernel();
             let rights = fio::PERM_READABLE | fio::PERM_WRITABLE;
             let fs = RemoteFs::new_fs(
-                locked,
                 &kernel,
                 client,
                 FileSystemOptions { source: FlyByteStr::new(b"/"), ..Default::default() },
@@ -3113,12 +2990,12 @@ mod test {
             current_task.fs().set_umask(FileMode::from_bits(0));
             let file = ns
                 .root()
-                .create_node(locked, &current_task, "file".into(), MODE, DeviceId::NONE)
+                .create_node(&current_task, "file".into(), MODE, DeviceId::NONE)
                 .expect("create_node failed");
             // Change the mode, this change should persist
             file.entry
                 .node
-                .chmod(locked, &current_task, &file.mount, MODE | FileMode::ALLOW_ALL)
+                .chmod(&current_task, &file.mount, MODE | FileMode::ALLOW_ALL)
                 .expect("chmod failed");
         })
         .await;
@@ -3132,11 +3009,10 @@ mod test {
         let (server, client) = zx::Channel::create();
         fixture.root().clone(server.into()).expect("clone failed");
 
-        spawn_kernel_and_run(async move |locked, current_task| {
+        spawn_kernel_and_run(async move |current_task| {
             let kernel = current_task.kernel();
             let rights = fio::PERM_READABLE | fio::PERM_WRITABLE;
             let fs = RemoteFs::new_fs(
-                locked,
                 &kernel,
                 client,
                 FileSystemOptions { source: FlyByteStr::new(b"/"), ..Default::default() },
@@ -3147,7 +3023,7 @@ mod test {
             let mut context = LookupContext::new(SymlinkMode::NoFollow);
             let child = ns
                 .root()
-                .lookup_child(locked, &current_task, &mut context, "file".into())
+                .lookup_child(&current_task, &mut context, "file".into())
                 .expect("lookup_child failed");
             assert_eq!(child.entry.node.info().mode, MODE | FileMode::ALLOW_ALL);
         })
@@ -3161,11 +3037,10 @@ mod test {
         let (server, client) = zx::Channel::create();
         fixture.root().clone(server.into()).expect("clone failed");
 
-        spawn_kernel_and_run(async move |locked, current_task| {
+        spawn_kernel_and_run(async move |current_task| {
             let kernel = current_task.kernel();
             let rights = fio::PERM_READABLE | fio::PERM_WRITABLE;
             let fs = RemoteFs::new_fs(
-                locked,
                 &kernel,
                 client,
                 FileSystemOptions { source: FlyByteStr::new(b"/"), ..Default::default() },
@@ -3173,7 +3048,7 @@ mod test {
             )
             .expect("new_fs failed");
 
-            let statfs = fs.statfs(locked, &current_task).expect("statfs failed");
+            let statfs = fs.statfs(&current_task).expect("statfs failed");
             assert!(statfs.f_type != 0);
             assert!(statfs.f_bsize > 0);
             assert!(statfs.f_blocks > 0);
@@ -3195,11 +3070,10 @@ mod test {
         let (server, client) = zx::Channel::create();
         fixture.root().clone(server.into()).expect("clone failed");
 
-        spawn_kernel_and_run(async move |locked, current_task| {
+        spawn_kernel_and_run(async move |current_task| {
             let kernel = current_task.kernel();
             let rights = fio::PERM_READABLE | fio::PERM_WRITABLE;
             let fs = RemoteFs::new_fs(
-                locked,
                 &kernel,
                 client,
                 FileSystemOptions { source: FlyByteStr::new(b"/"), ..Default::default() },
@@ -3211,17 +3085,17 @@ mod test {
             let root = ns.root();
 
             const REG_MODE: FileMode = FileMode::from_bits(FileMode::IFREG.bits());
-            root.create_node(locked, &current_task, "file".into(), REG_MODE, DeviceId::NONE)
+            root.create_node(&current_task, "file".into(), REG_MODE, DeviceId::NONE)
                 .expect("create_node failed");
             let mut context = LookupContext::new(SymlinkMode::NoFollow);
             let reg_node = root
-                .lookup_child(locked, &current_task, &mut context, "file".into())
+                .lookup_child(&current_task, &mut context, "file".into())
                 .expect("lookup_child failed");
 
             reg_node
                 .entry
                 .node
-                .fallocate(locked, &current_task, FallocMode::Allocate { keep_size: false }, 0, 20)
+                .fallocate(&current_task, FallocMode::Allocate { keep_size: false }, 0, 20)
                 .expect("truncate failed");
         })
         .await;
@@ -3234,11 +3108,10 @@ mod test {
         let (server, client) = zx::Channel::create();
         fixture.root().clone(server.into()).expect("clone failed");
 
-        spawn_kernel_and_run(async move |locked, current_task| {
+        spawn_kernel_and_run(async move |current_task| {
             let kernel = current_task.kernel();
             let rights = fio::PERM_READABLE | fio::PERM_WRITABLE;
             let fs = RemoteFs::new_fs(
-                locked,
                 &kernel,
                 client,
                 FileSystemOptions { source: FlyByteStr::new(b"/"), ..Default::default() },
@@ -3250,23 +3123,17 @@ mod test {
             let root = ns.root();
 
             const REG_MODE: FileMode = FileMode::from_bits(FileMode::IFREG.bits());
-            root.create_node(locked, &current_task, "file".into(), REG_MODE, DeviceId::NONE)
+            root.create_node(&current_task, "file".into(), REG_MODE, DeviceId::NONE)
                 .expect("create_node failed");
             let mut context = LookupContext::new(SymlinkMode::NoFollow);
             let reg_node = root
-                .lookup_child(locked, &current_task, &mut context, "file".into())
+                .lookup_child(&current_task, &mut context, "file".into())
                 .expect("lookup_child failed");
 
             reg_node
                 .entry
                 .node
-                .fallocate(
-                    locked,
-                    &current_task,
-                    FallocMode::Allocate { keep_size: false },
-                    1,
-                    u64::MAX,
-                )
+                .fallocate(&current_task, FallocMode::Allocate { keep_size: false }, 1, u64::MAX)
                 .expect_err("truncate unexpectedly passed");
         })
         .await;
@@ -3281,11 +3148,10 @@ mod test {
 
         const MODE: FileMode = FileMode::from_bits(FileMode::IFREG.bits() | 0o467);
 
-        let last_modified = spawn_kernel_and_run(async move |locked, current_task| {
+        let last_modified = spawn_kernel_and_run(async move |current_task| {
             let kernel = current_task.kernel();
             let rights = fio::PERM_READABLE | fio::PERM_WRITABLE;
             let fs = RemoteFs::new_fs(
-                locked,
                 &kernel,
                 client,
                 FileSystemOptions { source: FlyByteStr::new(b"/"), ..Default::default() },
@@ -3296,29 +3162,29 @@ mod test {
             current_task.fs().set_umask(FileMode::from_bits(0));
             let child = ns
                 .root()
-                .create_node(locked, &current_task, "file".into(), MODE, DeviceId::NONE)
+                .create_node(&current_task, "file".into(), MODE, DeviceId::NONE)
                 .expect("create_node failed");
             // Write to file (this should update mtime (time_modify))
             let file = child
-                .open(locked, &current_task, OpenFlags::RDWR, AccessCheck::default())
+                .open(&current_task, OpenFlags::RDWR, AccessCheck::default())
                 .expect("open failed");
             // Call `fetch_and_refresh_info(..)` to refresh `time_modify` with the time managed by the
             // underlying filesystem
             let time_before_write = child
                 .entry
                 .node
-                .fetch_and_refresh_info(locked, &current_task)
+                .fetch_and_refresh_info(&current_task)
                 .expect("fetch_and_refresh_info failed")
                 .time_modify;
             let write_bytes: [u8; 5] = [1, 2, 3, 4, 5];
             let written = file
-                .write(locked, &current_task, &mut VecInputBuffer::new(&write_bytes))
+                .write(&current_task, &mut VecInputBuffer::new(&write_bytes))
                 .expect("write failed");
             assert_eq!(written, write_bytes.len());
             let last_modified = child
                 .entry
                 .node
-                .fetch_and_refresh_info(locked, &current_task)
+                .fetch_and_refresh_info(&current_task)
                 .expect("fetch_and_refresh_info failed")
                 .time_modify;
             assert!(last_modified > time_before_write);
@@ -3335,11 +3201,10 @@ mod test {
         .await;
         let (server, client) = zx::Channel::create();
         fixture.root().clone(server.into()).expect("clone failed");
-        let refreshed_modified_time = spawn_kernel_and_run(async move |locked, current_task| {
+        let refreshed_modified_time = spawn_kernel_and_run(async move |current_task| {
             let kernel = current_task.kernel();
             let rights = fio::PERM_READABLE | fio::PERM_WRITABLE;
             let fs = RemoteFs::new_fs(
-                locked,
                 &kernel,
                 client,
                 FileSystemOptions { source: FlyByteStr::new(b"/"), ..Default::default() },
@@ -3350,12 +3215,12 @@ mod test {
             let mut context = LookupContext::new(SymlinkMode::NoFollow);
             let child = ns
                 .root()
-                .lookup_child(locked, &current_task, &mut context, "file".into())
+                .lookup_child(&current_task, &mut context, "file".into())
                 .expect("lookup_child failed");
             let last_modified = child
                 .entry
                 .node
-                .fetch_and_refresh_info(locked, &current_task)
+                .fetch_and_refresh_info(&current_task)
                 .expect("fetch_and_refresh_info failed")
                 .time_modify;
             last_modified
@@ -3374,11 +3239,10 @@ mod test {
 
         const MODE: FileMode = FileMode::from_bits(FileMode::IFREG.bits() | 0o467);
 
-        spawn_kernel_and_run(async move |locked, current_task| {
+        spawn_kernel_and_run(async move |current_task| {
             let kernel = current_task.kernel();
             let rights = fio::PERM_READABLE | fio::PERM_WRITABLE;
             let fs = RemoteFs::new_fs(
-                locked,
                 &kernel,
                 client,
                 FileSystemOptions { source: FlyByteStr::new(b"/"), ..Default::default() },
@@ -3389,13 +3253,13 @@ mod test {
             current_task.fs().set_umask(FileMode::from_bits(0));
             let child = ns
                 .root()
-                .create_node(locked, &current_task, "file".into(), MODE, DeviceId::NONE)
+                .create_node(&current_task, "file".into(), MODE, DeviceId::NONE)
                 .expect("create_node failed");
 
             let info_original = child
                 .entry
                 .node
-                .fetch_and_refresh_info(locked, &current_task)
+                .fetch_and_refresh_info(&current_task)
                 .expect("fetch_and_refresh_info failed")
                 .clone();
 
@@ -3403,7 +3267,6 @@ mod test {
                 .entry
                 .node
                 .update_atime_mtime(
-                    locked,
                     &current_task,
                     &child.mount,
                     TimeUpdateType::Time(UtcInstant::from_nanos(30)),
@@ -3413,7 +3276,7 @@ mod test {
             let info_after_update = child
                 .entry
                 .node
-                .fetch_and_refresh_info(locked, &current_task)
+                .fetch_and_refresh_info(&current_task)
                 .expect("fetch_and_refresh_info failed")
                 .clone();
             assert_eq!(info_after_update.time_modify, info_original.time_modify);
@@ -3423,7 +3286,6 @@ mod test {
                 .entry
                 .node
                 .update_atime_mtime(
-                    locked,
                     &current_task,
                     &child.mount,
                     TimeUpdateType::Omit,
@@ -3433,7 +3295,7 @@ mod test {
             let info_after_update2 = child
                 .entry
                 .node
-                .fetch_and_refresh_info(locked, &current_task)
+                .fetch_and_refresh_info(&current_task)
                 .expect("fetch_and_refresh_info failed")
                 .clone();
             assert_eq!(info_after_update2.time_modify, UtcInstant::from_nanos(50));
@@ -3451,11 +3313,10 @@ mod test {
 
         const MODE: FileMode = FileMode::from_bits(FileMode::IFREG.bits() | 0o467);
 
-        spawn_kernel_and_run(async move |locked, current_task| {
+        spawn_kernel_and_run(async move |current_task| {
             let kernel = current_task.kernel();
             let rights = fio::PERM_READABLE | fio::PERM_WRITABLE;
             let fs = RemoteFs::new_fs(
-                locked,
                 &kernel,
                 client,
                 FileSystemOptions { source: FlyByteStr::new(b"/"), ..Default::default() },
@@ -3466,10 +3327,10 @@ mod test {
             current_task.fs().set_umask(FileMode::from_bits(0));
             let child = ns
                 .root()
-                .create_node(locked, &current_task, "file".into(), MODE, DeviceId::NONE)
+                .create_node(&current_task, "file".into(), MODE, DeviceId::NONE)
                 .expect("create_node failed");
             let file = child
-                .open(locked, &current_task, OpenFlags::RDWR, AccessCheck::default())
+                .open(&current_task, OpenFlags::RDWR, AccessCheck::default())
                 .expect("open failed");
             // Call `fetch_and_refresh_info(..)` to refresh ctime and mtime with the time managed by the
             // underlying filesystem
@@ -3477,7 +3338,7 @@ mod test {
                 let info = child
                     .entry
                     .node
-                    .fetch_and_refresh_info(locked, &current_task)
+                    .fetch_and_refresh_info(&current_task)
                     .expect("fetch_and_refresh_info failed");
                 (info.time_status_change, info.time_modify)
             };
@@ -3485,7 +3346,7 @@ mod test {
             // Writing to a file should update ctime and mtime
             let write_bytes: [u8; 5] = [1, 2, 3, 4, 5];
             let written = file
-                .write(locked, &current_task, &mut VecInputBuffer::new(&write_bytes))
+                .write(&current_task, &mut VecInputBuffer::new(&write_bytes))
                 .expect("write failed");
             assert_eq!(written, write_bytes.len());
 
@@ -3506,7 +3367,7 @@ mod test {
                 let info = child
                     .entry
                     .node
-                    .fetch_and_refresh_info(locked, &current_task)
+                    .fetch_and_refresh_info(&current_task)
                     .expect("fetch_and_refresh_info failed");
                 (info.time_status_change, info.time_modify)
             };
@@ -3523,11 +3384,10 @@ mod test {
         let (server, client) = zx::Channel::create();
         fixture.root().clone(server.into()).expect("clone failed");
 
-        spawn_kernel_and_run(async move |locked, current_task| {
+        spawn_kernel_and_run(async move |current_task| {
             let kernel = current_task.kernel();
             let rights = fio::PERM_READABLE | fio::PERM_WRITABLE;
             let fs = RemoteFs::new_fs(
-                locked,
                 &kernel,
                 client,
                 FileSystemOptions { source: FlyByteStr::new(b"/"), ..Default::default() },
@@ -3538,7 +3398,6 @@ mod test {
             let child = ns
                 .root()
                 .create_node(
-                    locked,
                     &current_task,
                     "dir".into(),
                     FileMode::ALLOW_ALL.with_type(FileMode::IFDIR),
@@ -3548,7 +3407,7 @@ mod test {
             child
                 .entry
                 .node
-                .update_attributes(locked, &current_task, |info| {
+                .update_attributes(&current_task, |info| {
                     info.casefold = true;
                     Ok(())
                 })
@@ -3564,11 +3423,10 @@ mod test {
         .await;
         let (server, client) = zx::Channel::create();
         fixture.root().clone(server.into()).expect("clone failed");
-        let casefold = spawn_kernel_and_run(async move |locked, current_task| {
+        let casefold = spawn_kernel_and_run(async move |current_task| {
             let kernel = current_task.kernel();
             let rights = fio::PERM_READABLE | fio::PERM_WRITABLE;
             let fs = RemoteFs::new_fs(
-                locked,
                 &kernel,
                 client,
                 FileSystemOptions { source: FlyByteStr::new(b"/"), ..Default::default() },
@@ -3579,12 +3437,12 @@ mod test {
             let mut context = LookupContext::new(SymlinkMode::NoFollow);
             let child = ns
                 .root()
-                .lookup_child(locked, &current_task, &mut context, "dir".into())
+                .lookup_child(&current_task, &mut context, "dir".into())
                 .expect("lookup_child failed");
             let casefold = child
                 .entry
                 .node
-                .fetch_and_refresh_info(locked, &current_task)
+                .fetch_and_refresh_info(&current_task)
                 .expect("fetch_and_refresh_info failed")
                 .casefold;
             casefold
@@ -3605,12 +3463,11 @@ mod test {
         let (server, client2) = zx::Channel::create();
         fixture.root().clone(server.into()).expect("clone failed");
 
-        spawn_kernel_and_run(async move |locked, current_task| {
+        spawn_kernel_and_run(async move |current_task| {
             let kernel = current_task.kernel.clone();
 
             let atime3 = {
                 let fs = RemoteFs::new_fs(
-                    locked,
                     &kernel,
                     client,
                     FileSystemOptions {
@@ -3626,7 +3483,6 @@ mod test {
                 let child = ns
                     .root()
                     .open_create_node(
-                        locked,
                         &current_task,
                         TEST_FILE.into(),
                         FileMode::ALLOW_ALL.with_type(FileMode::IFREG),
@@ -3640,11 +3496,11 @@ mod test {
                 std::thread::sleep(std::time::Duration::from_micros(1));
 
                 let file_handle = child
-                    .open(locked, &current_task, OpenFlags::RDWR, AccessCheck::default())
+                    .open(&current_task, OpenFlags::RDWR, AccessCheck::default())
                     .expect("open failed");
 
                 file_handle
-                    .read(locked, &current_task, &mut VecOutputBuffer::new(10))
+                    .read(&current_task, &mut VecOutputBuffer::new(10))
                     .expect("read failed");
 
                 // Expect atime to have changed.
@@ -3654,7 +3510,7 @@ mod test {
                 std::thread::sleep(std::time::Duration::from_micros(1));
 
                 file_handle
-                    .read(locked, &current_task, &mut VecOutputBuffer::new(10))
+                    .read(&current_task, &mut VecOutputBuffer::new(10))
                     .expect("read failed");
 
                 // And again.
@@ -3664,11 +3520,10 @@ mod test {
                 atime3
             };
 
-            kernel.delayed_releaser.apply(locked.cast_locked(), current_task);
+            kernel.delayed_releaser.apply(current_task);
 
             // After dropping the filesystem, the atime should have been persistently updated.
             let fs = RemoteFs::new_fs(
-                locked,
                 &kernel,
                 client2,
                 FileSystemOptions {
@@ -3684,7 +3539,6 @@ mod test {
             let child = ns
                 .root()
                 .lookup_child(
-                    locked,
                     &current_task,
                     &mut LookupContext::new(Default::default()),
                     TEST_FILE.into(),
@@ -3812,8 +3666,7 @@ mod test {
         fasync::unblock(move || {
             let io = RemoteIo::new(client.into_channel().into());
             let node = BaseNode::new(io, false);
-            let info =
-                DynamicLockDepRwLock::new::<starnix_sync::FsNodeInfoLevel>(FsNodeInfo::default());
+            let info = DynamicLockDepRwLock::new::<FsNodeInfoLevel>(FsNodeInfo::default());
 
             // 1. Initial fetch. Should return cached info immediately.
             assert_eq!(get_attrs_count.load(Ordering::SeqCst), 0);
@@ -3932,8 +3785,7 @@ mod test {
         fasync::unblock(move || {
             let io = RemoteIo::new(client.into_channel().into());
             let node = BaseNode::new(io, true);
-            let info =
-                DynamicLockDepRwLock::new::<starnix_sync::FsNodeInfoLevel>(FsNodeInfo::default());
+            let info = DynamicLockDepRwLock::new::<FsNodeInfoLevel>(FsNodeInfo::default());
 
             std::thread::scope(|s| {
                 // 1. Start Refresh Thread
@@ -4071,9 +3923,8 @@ mod test {
             }
         });
 
-        spawn_kernel_and_run(async move |locked, current_task| {
+        spawn_kernel_and_run(async move |current_task| {
             let fs = RemoteFs::new_fs(
-                locked,
                 &current_task.kernel(),
                 client.into_channel(),
                 FileSystemOptions { source: FlyByteStr::new(b"."), ..Default::default() },
@@ -4083,28 +3934,22 @@ mod test {
 
             // 1. Initial fetch.
             {
-                let _info = fs
-                    .root()
-                    .node
-                    .fetch_and_refresh_info(locked, current_task)
-                    .expect("fetch failed");
+                let _info =
+                    fs.root().node.fetch_and_refresh_info(current_task).expect("fetch failed");
             }
             assert_eq!(get_attrs_count.load(Ordering::SeqCst), 1);
 
             // 2. Second time should use cached information.
             {
-                let _info = fs
-                    .root()
-                    .node
-                    .fetch_and_refresh_info(locked, current_task)
-                    .expect("fetch failed");
+                let _info =
+                    fs.root().node.fetch_and_refresh_info(current_task).expect("fetch failed");
             }
             assert_eq!(get_attrs_count.load(Ordering::SeqCst), 1);
 
             // 3. Update attributes. This should dirty the node.
             fs.root()
                 .node
-                .update_attributes(locked, current_task, |attrs| {
+                .update_attributes(current_task, |attrs| {
                     attrs.time_modify += UtcDuration::from_seconds(1);
                     Ok(())
                 })
@@ -4112,11 +3957,8 @@ mod test {
 
             // 4. Fetch again. Should trigger a request.
             {
-                let _info = fs
-                    .root()
-                    .node
-                    .fetch_and_refresh_info(locked, current_task)
-                    .expect("fetch failed");
+                let _info =
+                    fs.root().node.fetch_and_refresh_info(current_task).expect("fetch failed");
             }
             assert_eq!(get_attrs_count.load(Ordering::SeqCst), 2);
         })
@@ -4334,9 +4176,8 @@ mod test {
 
         let server_task = fasync::Task::spawn(Arc::clone(&state).run(stream));
 
-        spawn_kernel_and_run(async move |locked, current_task| {
+        spawn_kernel_and_run(async move |current_task| {
             let fs = RemoteFs::new_fs(
-                locked,
                 &current_task.kernel(),
                 client.into_channel(),
                 FileSystemOptions { source: FlyByteStr::new(b"."), ..Default::default() },
@@ -4349,37 +4190,27 @@ mod test {
 
             let mut context = LookupContext::default();
             let file_node = root
-                .lookup_child(locked, current_task, &mut context, "file".into())
+                .lookup_child(current_task, &mut context, "file".into())
                 .expect("lookup failed");
 
             // 1. Initial get_size.
             assert_eq!(state.get_attrs_count.load(Ordering::SeqCst), 0);
             {
-                let _size =
-                    file_node.entry.node.get_size(locked, current_task).expect("get_size failed");
+                let _size = file_node.entry.node.get_size(current_task).expect("get_size failed");
             }
             assert_eq!(state.get_attrs_count.load(Ordering::SeqCst), 0);
 
             // 2. Open in append mode and write.
             let file_handle = file_node
-                .open(
-                    locked,
-                    current_task,
-                    OpenFlags::RDWR | OpenFlags::APPEND,
-                    AccessCheck::default(),
-                )
+                .open(current_task, OpenFlags::RDWR | OpenFlags::APPEND, AccessCheck::default())
                 .expect("open failed");
 
             {
                 let mut data = VecInputBuffer::new(b"foo");
-                let written =
-                    file_handle.write(locked, current_task, &mut data).expect("write failed");
+                let written = file_handle.write(current_task, &mut data).expect("write failed");
                 assert_eq!(written, 3);
             }
-            assert_eq!(
-                file_node.entry.node.get_size(locked, current_task).expect("get_size failed"),
-                3
-            );
+            assert_eq!(file_node.entry.node.get_size(current_task).expect("get_size failed"), 3);
             assert_eq!(state.get_attrs_count.load(Ordering::SeqCst), 0);
             assert_eq!(*state.write_offsets.lock(), vec![0]);
 
@@ -4387,14 +4218,13 @@ mod test {
             file_node
                 .entry
                 .node
-                .truncate(locked, current_task, &file_node.mount, 0)
+                .truncate(current_task, &file_node.mount, 0)
                 .expect("truncate failed");
             assert_eq!(state.file_size.load(Ordering::SeqCst), 0);
 
             // 4. get_size again. Should trigger a request.
             {
-                let size =
-                    file_node.entry.node.get_size(locked, current_task).expect("get_size failed");
+                let size = file_node.entry.node.get_size(current_task).expect("get_size failed");
                 assert_eq!(size, 0);
             }
             assert_eq!(state.get_attrs_count.load(Ordering::SeqCst), 1);
@@ -4402,14 +4232,10 @@ mod test {
             // 5. Append again. It should append at offset 0.
             {
                 let mut data = VecInputBuffer::new(b"bar");
-                let written =
-                    file_handle.write(locked, current_task, &mut data).expect("write failed");
+                let written = file_handle.write(current_task, &mut data).expect("write failed");
                 assert_eq!(written, 3);
             }
-            assert_eq!(
-                file_node.entry.node.get_size(locked, current_task).expect("get_size failed"),
-                3
-            );
+            assert_eq!(file_node.entry.node.get_size(current_task).expect("get_size failed"), 3);
             // write calls seek(End, 0) which calls get_size, which uses the cache if it was just
             // refreshed.
             assert_eq!(state.get_attrs_count.load(Ordering::SeqCst), 1);
@@ -4419,20 +4245,16 @@ mod test {
             file_node
                 .entry
                 .node
-                .truncate(locked, current_task, &file_node.mount, 10)
+                .truncate(current_task, &file_node.mount, 10)
                 .expect("truncate failed");
             {
                 let mut data = VecInputBuffer::new(b"baz");
-                let written =
-                    file_handle.write(locked, current_task, &mut data).expect("write failed");
+                let written = file_handle.write(current_task, &mut data).expect("write failed");
                 assert_eq!(written, 3);
             }
             // write calls seek(End, 0). Since truncate was called, cache is invalid.
             assert_eq!(state.get_attrs_count.load(Ordering::SeqCst), 2);
-            assert_eq!(
-                file_node.entry.node.get_size(locked, current_task).expect("get_size failed"),
-                13
-            );
+            assert_eq!(file_node.entry.node.get_size(current_task).expect("get_size failed"), 13);
             assert_eq!(*state.write_offsets.lock(), vec![0, 0, 10]);
         })
         .await;
@@ -4447,9 +4269,8 @@ mod test {
 
         let server_task = fasync::Task::spawn(Arc::clone(&state).run(stream));
 
-        spawn_kernel_and_run(async move |locked, current_task| {
+        spawn_kernel_and_run(async move |current_task| {
             let fs = RemoteFs::new_fs(
-                locked,
                 &current_task.kernel(),
                 client.into_channel(),
                 FileSystemOptions { source: FlyByteStr::new(b"."), ..Default::default() },
@@ -4462,20 +4283,17 @@ mod test {
 
             let mut context = LookupContext::default();
             let file_node = root
-                .lookup_child(locked, current_task, &mut context, "file".into())
+                .lookup_child(current_task, &mut context, "file".into())
                 .expect("lookup failed");
 
             // Fill cache.
-            assert_eq!(
-                file_node.entry.node.get_size(locked, current_task).expect("get_size failed"),
-                0
-            );
+            assert_eq!(file_node.entry.node.get_size(current_task).expect("get_size failed"), 0);
 
             // Truncate to 10.
             file_node
                 .entry
                 .node
-                .truncate(locked, current_task, &file_node.mount, 10)
+                .truncate(current_task, &file_node.mount, 10)
                 .expect("truncate failed");
 
             // Set barrier to pause GetAttributes.
@@ -4491,12 +4309,9 @@ mod test {
             // Spawn thread to call get_size. It will pause when it hits the first barrier.
             let file_node_clone = file_node.clone();
             let (result1, request) = SpawnRequestBuilder::new()
-                .with_sync_closure(move |locked, current_task| {
-                    let size = file_node_clone
-                        .entry
-                        .node
-                        .get_size(locked, current_task)
-                        .expect("get_size failed");
+                .with_sync_closure(move |current_task| {
+                    let size =
+                        file_node_clone.entry.node.get_size(current_task).expect("get_size failed");
                     assert_eq!(size, 10);
                 })
                 .build_with_async_result();
@@ -4511,12 +4326,9 @@ mod test {
 
             // Another get_size call should not use cached size (0) while refresh is in progress.
             let (result2, request) = SpawnRequestBuilder::new()
-                .with_sync_closure(move |locked, current_task| {
-                    let size = file_node
-                        .entry
-                        .node
-                        .get_size(locked, current_task)
-                        .expect("get_size failed");
+                .with_sync_closure(move |current_task| {
+                    let size =
+                        file_node.entry.node.get_size(current_task).expect("get_size failed");
                     assert_eq!(size, 10);
                 })
                 .build_with_async_result();
@@ -4537,9 +4349,8 @@ mod test {
 
         let server_task = fasync::Task::spawn(Arc::clone(&state).run(stream));
 
-        spawn_kernel_and_run(async move |locked, current_task| {
+        spawn_kernel_and_run(async move |current_task| {
             let fs = RemoteFs::new_fs(
-                locked,
                 &current_task.kernel(),
                 client.into_channel(),
                 FileSystemOptions { source: FlyByteStr::new(b"."), ..Default::default() },
@@ -4552,12 +4363,12 @@ mod test {
 
             let mut context = LookupContext::default();
             let file_node = root
-                .lookup_child(locked, current_task, &mut context, "file".into())
+                .lookup_child(current_task, &mut context, "file".into())
                 .expect("lookup failed");
 
             // Open the file.
             let file_handle = file_node
-                .open(locked, current_task, OpenFlags::RDWR, AccessCheck::default())
+                .open(current_task, OpenFlags::RDWR, AccessCheck::default())
                 .expect("open failed");
 
             // Set hook to stall the write response.
@@ -4574,11 +4385,9 @@ mod test {
             let file_handle_clone = file_handle.clone();
             current_task.kernel().kthreads.spawner().spawn_from_request(
                 SpawnRequestBuilder::new()
-                    .with_sync_closure(move |locked, current_task| {
+                    .with_sync_closure(move |current_task| {
                         let mut data = VecInputBuffer::new(b"hello");
-                        file_handle_clone
-                            .write(locked, current_task, &mut data)
-                            .expect("write failed");
+                        file_handle_clone.write(current_task, &mut data).expect("write failed");
                     })
                     .build(),
             );
@@ -4589,15 +4398,13 @@ mod test {
             // On this thread, verify that a read sees the new data.
             {
                 let mut data = VecOutputBuffer::new(5);
-                let read =
-                    file_handle.read_at(locked, current_task, 0, &mut data).expect("read failed");
+                let read = file_handle.read_at(current_task, 0, &mut data).expect("read failed");
                 assert_eq!(read, 5);
                 assert_eq!(data.data(), b"hello");
             }
 
             // Now call get_size and it should see the correct size.
-            let size =
-                file_node.entry.node.get_size(locked, current_task).expect("get_size failed");
+            let size = file_node.entry.node.get_size(current_task).expect("get_size failed");
             assert_eq!(
                 size, 5,
                 "get_size should return the updated size even if a write is outstanding"
@@ -4658,8 +4465,7 @@ mod test {
         }
         assert_eq!(state.0.load(Ordering::Relaxed), InfoState::TRUNCATED);
 
-        let info =
-            DynamicLockDepRwLock::new::<starnix_sync::FsNodeInfoLevel>(FsNodeInfo::default());
+        let info = DynamicLockDepRwLock::new::<FsNodeInfoLevel>(FsNodeInfo::default());
         state.maybe_refresh(&info, |_| Ok(()), |_| unreachable!()).unwrap();
 
         assert_eq!(state.0.load(Ordering::Relaxed), InfoState::IN_SYNC);
@@ -4669,8 +4475,7 @@ mod test {
     #[test]
     fn test_info_state_maybe_refresh_success() {
         let state = InfoState::new(true);
-        let info =
-            DynamicLockDepRwLock::new::<starnix_sync::FsNodeInfoLevel>(FsNodeInfo::default());
+        let info = DynamicLockDepRwLock::new::<FsNodeInfoLevel>(FsNodeInfo::default());
 
         let res = state.maybe_refresh(&info, |_| Ok(42), |_| unreachable!());
         assert_eq!(res.unwrap(), 42);
@@ -4680,8 +4485,7 @@ mod test {
     #[test]
     fn test_info_state_maybe_refresh_error() {
         let state = InfoState::new(true);
-        let info =
-            DynamicLockDepRwLock::new::<starnix_sync::FsNodeInfoLevel>(FsNodeInfo::default());
+        let info = DynamicLockDepRwLock::new::<FsNodeInfoLevel>(FsNodeInfo::default());
 
         let res: Result<u32, Errno> =
             state.maybe_refresh(&info, |_| error!(EIO), |_| unreachable!());
@@ -4692,8 +4496,7 @@ mod test {
     #[test]
     fn test_info_state_maybe_refresh_not_needed() {
         let state = InfoState::new(false); // in sync
-        let info =
-            DynamicLockDepRwLock::new::<starnix_sync::FsNodeInfoLevel>(FsNodeInfo::default());
+        let info = DynamicLockDepRwLock::new::<FsNodeInfoLevel>(FsNodeInfo::default());
         let res = state.maybe_refresh(&info, |_| unreachable!(), |_| Ok(123));
         assert_eq!(res.unwrap(), 123);
     }
@@ -4701,8 +4504,7 @@ mod test {
     #[test]
     fn test_info_state_concurrent_dirty_op_during_refresh() {
         let state = InfoState::new(true);
-        let info =
-            DynamicLockDepRwLock::new::<starnix_sync::FsNodeInfoLevel>(FsNodeInfo::default());
+        let info = DynamicLockDepRwLock::new::<FsNodeInfoLevel>(FsNodeInfo::default());
 
         state
             .maybe_refresh(
@@ -4726,11 +4528,10 @@ mod test {
         let (server, client) = zx::Channel::create();
         fixture.root().clone(server.into()).expect("clone failed");
 
-        spawn_kernel_and_run(async move |locked, current_task| {
+        spawn_kernel_and_run(async move |current_task| {
             let kernel = current_task.kernel();
             let rights = fio::PERM_READABLE | fio::PERM_WRITABLE;
             let fs = RemoteFs::new_fs(
-                locked,
                 &kernel,
                 client,
                 FileSystemOptions { source: FlyByteStr::new(b"/"), ..Default::default() },
@@ -4742,11 +4543,11 @@ mod test {
             let root = ns.root();
 
             const REG_MODE: FileMode = FileMode::from_bits(FileMode::IFREG.bits());
-            root.create_node(locked, &current_task, "file".into(), REG_MODE, DeviceId::NONE)
+            root.create_node(&current_task, "file".into(), REG_MODE, DeviceId::NONE)
                 .expect("create_node failed");
             let mut context = LookupContext::new(SymlinkMode::NoFollow);
             let reg_node = root
-                .lookup_child(locked, &current_task, &mut context, "file".into())
+                .lookup_child(&current_task, &mut context, "file".into())
                 .expect("lookup_child failed");
 
             // sync should delegate to zxio and succeed
@@ -4792,11 +4593,10 @@ mod test {
         let (server, client) = zx::Channel::create();
         fixture.root().clone(server.into()).expect("clone channel");
 
-        spawn_kernel_and_run(async move |locked, current_task| {
+        spawn_kernel_and_run(async move |current_task| {
             // Setup RemoteFs
             let rights = fio::PERM_READABLE | fio::PERM_WRITABLE;
             let fs = RemoteFs::new_fs(
-                locked,
                 current_task.kernel(),
                 client,
                 FileSystemOptions { source: FlyByteStr::new(b"/test"), ..Default::default() },
@@ -4808,24 +4608,15 @@ mod test {
 
             // Create and Open a file
             let node = root
-                .create_node(
-                    locked,
-                    &current_task,
-                    "test_file".into(),
-                    mode!(IFREG, 0o666),
-                    DeviceId::NONE,
-                )
+                .create_node(&current_task, "test_file".into(), mode!(IFREG, 0o666), DeviceId::NONE)
                 .expect("create_node");
-            let file_handle = node
-                .open(locked, &current_task, OpenFlags::RDWR, AccessCheck::default())
-                .expect("open");
-            let fd =
-                current_task.add_file(locked, file_handle, FdFlags::empty()).expect("add file");
+            let file_handle =
+                node.open(&current_task, OpenFlags::RDWR, AccessCheck::default()).expect("open");
+            let fd = current_task.add_file(file_handle, FdFlags::empty()).expect("add file");
 
             // Do mmap
             let len = *PAGE_SIZE as usize * 4;
             let mmap_addr = sys_mmap(
-                locked,
                 current_task,
                 UserAddress::default(),
                 len,
@@ -4848,7 +4639,7 @@ mod test {
             let commits_before_msync = commit_count.load(Ordering::SeqCst);
 
             // invoke msync()
-            sys_msync(locked, current_task, mmap_addr, len, MS_SYNC).expect("msync");
+            sys_msync(current_task, mmap_addr, len, MS_SYNC).expect("msync");
 
             // Verify msync results
             let final_commits = commit_count.load(Ordering::SeqCst);
@@ -4870,11 +4661,10 @@ mod test {
         let (server, client) = zx::Channel::create();
         fixture.root().clone(server.into()).expect("clone failed");
 
-        spawn_kernel_and_run(async move |locked, current_task| {
+        spawn_kernel_and_run(async move |current_task| {
             let kernel = current_task.kernel();
             let rights = fio::PERM_READABLE | fio::PERM_WRITABLE;
             let fs = RemoteFs::new_fs(
-                locked,
                 &kernel,
                 client,
                 FileSystemOptions { source: FlyByteStr::new(b"/"), ..Default::default() },
@@ -4886,45 +4676,33 @@ mod test {
 
             const REG_MODE: FileMode = FileMode::from_bits(FileMode::IFREG.bits() | 0o666);
             let node = root
-                .create_node(locked, &current_task, "file".into(), REG_MODE, DeviceId::NONE)
+                .create_node(&current_task, "file".into(), REG_MODE, DeviceId::NONE)
                 .expect("create_node failed");
             let file = node
-                .open(locked, &current_task, OpenFlags::RDWR, AccessCheck::default())
+                .open(&current_task, OpenFlags::RDWR, AccessCheck::default())
                 .expect("open failed");
 
             // Initial size should be 0.
-            assert_eq!(
-                node.entry.node.get_size(locked, &current_task).expect("get_size failed"),
-                0
-            );
+            assert_eq!(node.entry.node.get_size(&current_task).expect("get_size failed"), 0);
 
             // Write some data.
             let mut data = VecInputBuffer::new(b"hello");
-            file.write(locked, &current_task, &mut data).expect("write failed");
+            file.write(&current_task, &mut data).expect("write failed");
 
             // Size should be 5.
-            assert_eq!(
-                node.entry.node.get_size(locked, &current_task).expect("get_size failed"),
-                5
-            );
+            assert_eq!(node.entry.node.get_size(&current_task).expect("get_size failed"), 5);
 
             // Truncate to 10.
-            node.truncate(locked, &current_task, 10).expect("truncate failed");
+            node.truncate(&current_task, 10).expect("truncate failed");
 
             // Size should be 10.
-            assert_eq!(
-                node.entry.node.get_size(locked, &current_task).expect("get_size failed"),
-                10
-            );
+            assert_eq!(node.entry.node.get_size(&current_task).expect("get_size failed"), 10);
 
             // Truncate to 3.
-            node.truncate(locked, &current_task, 3).expect("truncate failed");
+            node.truncate(&current_task, 3).expect("truncate failed");
 
             // Size should be 3.
-            assert_eq!(
-                node.entry.node.get_size(locked, &current_task).expect("get_size failed"),
-                3
-            );
+            assert_eq!(node.entry.node.get_size(&current_task).expect("get_size failed"), 3);
         })
         .await;
         fixture.close().await;

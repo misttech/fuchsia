@@ -872,10 +872,9 @@ mod tests {
     fn test_data_input_buffer() {
         let mut executor = fuchsia_async::TestExecutor::new();
         executor.run_singlethreaded(async {
-            spawn_kernel_and_run(async |locked, current_task| {
+            spawn_kernel_and_run(async |current_task| {
                 let page_size = *PAGE_SIZE;
-                let addr =
-                    map_memory(locked, &current_task, UserAddress::default(), 64 * page_size);
+                let addr = map_memory(&current_task, UserAddress::default(), 64 * page_size);
 
                 let data: Vec<u8> = (0..1024).map(|i| (i % 256) as u8).collect();
                 let mm = current_task.deref();
@@ -892,7 +891,7 @@ mod tests {
                 // Test incorrect callback.
                 {
                     let mut input_buffer =
-                        UserBuffersInputBuffer::unified_new(mm, input_iovec.clone())
+                        UserBuffersInputBuffer::unified_new(&current_task, input_iovec.clone())
                             .expect("UserBuffersInputBuffer");
                     assert!(input_buffer.peek_each(&mut |data| Ok(data.len() + 1)).is_err());
                 }
@@ -900,7 +899,7 @@ mod tests {
                 // Test drain
                 {
                     let mut input_buffer =
-                        UserBuffersInputBuffer::unified_new(mm, input_iovec.clone())
+                        UserBuffersInputBuffer::unified_new(&current_task, input_iovec.clone())
                             .expect("UserBuffersInputBuffer");
                     assert_eq!(input_buffer.available(), 37);
                     assert_eq!(input_buffer.bytes_read(), 0);
@@ -912,7 +911,7 @@ mod tests {
                 // Test read_all
                 {
                     let mut input_buffer =
-                        UserBuffersInputBuffer::unified_new(mm, input_iovec.clone())
+                        UserBuffersInputBuffer::unified_new(&current_task, input_iovec.clone())
                             .expect("UserBuffersInputBuffer");
                     assert_eq!(input_buffer.available(), 37);
                     assert_eq!(input_buffer.bytes_read(), 0);
@@ -926,8 +925,9 @@ mod tests {
 
                 // Test read
                 {
-                    let mut input_buffer = UserBuffersInputBuffer::unified_new(mm, input_iovec)
-                        .expect("UserBuffersInputBuffer");
+                    let mut input_buffer =
+                        UserBuffersInputBuffer::unified_new(&current_task, input_iovec)
+                            .expect("UserBuffersInputBuffer");
                     let mut buffer = [0; 50];
                     assert_eq!(input_buffer.available(), 37);
                     assert_eq!(input_buffer.bytes_read(), 0);
@@ -964,10 +964,9 @@ mod tests {
     fn test_data_output_buffer() {
         let mut executor = fuchsia_async::TestExecutor::new();
         executor.run_singlethreaded(async {
-            spawn_kernel_and_run(async |locked, current_task| {
+            spawn_kernel_and_run(async |current_task| {
                 let page_size = *PAGE_SIZE;
-                let addr =
-                    map_memory(locked, &current_task, UserAddress::default(), 64 * page_size);
+                let addr = map_memory(&current_task, UserAddress::default(), 64 * page_size);
 
                 let output_iovec = smallvec![
                     UserBuffer { address: addr, length: 25 },
@@ -977,21 +976,22 @@ mod tests {
                     },
                 ];
 
-                let mm = current_task.deref();
+                let _mm = current_task.deref();
                 let data: Vec<u8> = (0..1024).map(|i| (i % 256) as u8).collect();
 
                 // Test incorrect callback.
                 {
                     let mut output_buffer =
-                        UserBuffersOutputBuffer::unified_new(mm, output_iovec.clone())
+                        UserBuffersOutputBuffer::unified_new(&current_task, output_iovec.clone())
                             .expect("UserBuffersOutputBuffer");
                     assert!(output_buffer.write_each(&mut |data| Ok(data.len() + 1)).is_err());
                 }
 
                 // Test write
                 {
-                    let mut output_buffer = UserBuffersOutputBuffer::unified_new(mm, output_iovec)
-                        .expect("UserBuffersOutputBuffer");
+                    let mut output_buffer =
+                        UserBuffersOutputBuffer::unified_new(&current_task, output_iovec)
+                            .expect("UserBuffersOutputBuffer");
                     assert_eq!(output_buffer.available(), 37);
                     assert_eq!(output_buffer.bytes_written(), 0);
                     assert_eq!(output_buffer.write_all(&data[0..20]).expect("write"), 20);

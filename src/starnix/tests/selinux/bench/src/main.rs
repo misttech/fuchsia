@@ -15,7 +15,6 @@ use starnix_core::task::container_namespace::ContainerNamespace;
 use starnix_core::task::{CurrentTask, Kernel, KernelFeatures, SchedulerManager, SystemLimits};
 use starnix_core::testing::{AutoReleasableTask, PanickingFile};
 use starnix_core::vfs::FsContext;
-use starnix_sync::{Locked, Unlocked};
 use std::num::NonZeroU32;
 use std::sync::Arc;
 use std::time::Duration;
@@ -23,10 +22,7 @@ use std::time::Duration;
 const POLICY_BYTES: &[u8] =
     include_bytes!("../../../../lib/selinux/testdata/policies/aosp_sepolicy");
 
-fn create_test_kernel(
-    _locked: &mut Locked<Unlocked>,
-    security_server: Option<Arc<selinux::SecurityServer>>,
-) -> Arc<Kernel> {
+fn create_test_kernel(security_server: Option<Arc<selinux::SecurityServer>>) -> Arc<Kernel> {
     Kernel::new(
         b"".into(),
         KernelFeatures::default(),
@@ -42,20 +38,17 @@ fn create_test_kernel(
     .expect("failed to create kernel")
 }
 
-fn create_kernel_task_and_unlocked_with_selinux()
--> (Arc<Kernel>, AutoReleasableTask, &'static mut Locked<Unlocked>, Arc<selinux::SecurityServer>) {
+fn create_kernel_and_task_with_selinux()
+-> (Arc<Kernel>, AutoReleasableTask, Arc<selinux::SecurityServer>) {
     let security_server = selinux::SecurityServer::new_default();
     security_server.load_policy(POLICY_BYTES.to_vec()).unwrap();
 
-    // SAFETY: We need Unlocked for test setup.
-    let locked = unsafe { starnix_sync::Unlocked::new() };
+    let kernel = create_test_kernel(Some(security_server.clone()));
 
-    let kernel = create_test_kernel(locked, Some(security_server.clone()));
-
-    let file_system = TmpFs::new_fs(locked, &kernel);
+    let file_system = TmpFs::new_fs(&kernel);
     let fs = FsContext::new(starnix_core::vfs::Namespace::new(file_system));
 
-    let task = starnix_core::execution::create_system_task(locked, &kernel, fs)
+    let task = starnix_core::execution::create_system_task(&kernel, fs)
         .expect("failed to create system task");
 
     // Set the system task for testing so that release()'s time_stats() assertion succeeds!
@@ -70,7 +63,7 @@ fn create_kernel_task_and_unlocked_with_selinux()
         starnix_core::security::task_for_context(&task, b"u:r:kernel:s0".into()).unwrap();
     task.set_creds(creds);
 
-    (kernel, task.into(), locked, security_server)
+    (kernel, task.into(), security_server)
 }
 
 fn create_file_bench(
@@ -78,9 +71,9 @@ fn create_file_bench(
     hook_closure: impl Fn(&CurrentTask, &starnix_core::vfs::FileObject) + Send + Sync + 'static,
 ) -> Benchmark {
     let executor = fuchsia_async::LocalExecutor::default();
-    let (kernel, task, locked, _security_server) = create_kernel_task_and_unlocked_with_selinux();
+    let (kernel, task, _security_server) = create_kernel_and_task_with_selinux();
     let task = Box::leak(Box::new(task));
-    let file = Box::leak(Box::new(PanickingFile::new_file(locked, task)));
+    let file = Box::leak(Box::new(PanickingFile::new_file(task)));
 
     Benchmark::new(name, move |bench| {
         let _kernel = &kernel;
@@ -213,7 +206,7 @@ fn check_file_ioctl_access_bench() -> Benchmark {
 
 fn binder_transaction_bench() -> Benchmark {
     let executor = fuchsia_async::LocalExecutor::default();
-    let (kernel, task, _locked, _security_server) = create_kernel_task_and_unlocked_with_selinux();
+    let (kernel, task, _security_server) = create_kernel_and_task_with_selinux();
     let task = Box::leak(Box::new(task));
     let connection_state = Box::leak(Box::new(security::binder_connection_alloc(task)));
 

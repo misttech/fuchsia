@@ -14,9 +14,7 @@ use anyhow::Context;
 use fidl::endpoints::{SynchronousProxy, create_sync_proxy};
 use fidl_fuchsia_hardware_qualcomm_router as fqrtr;
 use starnix_logging::{log_warn, track_stub};
-use starnix_sync::{
-    FileOpsCore, LockDepGuard, LockDepMutex, Locked, MappedLockDepGuard, QipcrtrSocketInnerLock,
-};
+use starnix_sync::{LockDepGuard, LockDepMutex, MappedLockDepGuard, QipcrtrSocketInnerLock};
 use starnix_uapi::errors::{Errno, from_status_like_fdio};
 use starnix_uapi::vfs::FdEvents;
 use starnix_uapi::{
@@ -160,7 +158,6 @@ impl Drop for QipcrtrSocketInner {
 impl SocketOps for QipcrtrSocket {
     fn connect(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _socket: &SocketHandle,
         _current_task: &CurrentTask,
         peer: SocketPeer,
@@ -189,28 +186,16 @@ impl SocketOps for QipcrtrSocket {
         Ok(())
     }
 
-    fn listen(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        _socket: &Socket,
-        _backlog: i32,
-        _credentials: ucred,
-    ) -> Result<(), Errno> {
+    fn listen(&self, _socket: &Socket, _backlog: i32, _credentials: ucred) -> Result<(), Errno> {
         error!(ENOTSUP)
     }
 
-    fn accept(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        _socket: &Socket,
-        _current_task: &CurrentTask,
-    ) -> Result<SocketHandle, Errno> {
+    fn accept(&self, _socket: &Socket, _current_task: &CurrentTask) -> Result<SocketHandle, Errno> {
         error!(ENOTSUP)
     }
 
     fn bind(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _socket: &Socket,
         _current_task: &CurrentTask,
         socket_address: SocketAddress,
@@ -234,7 +219,6 @@ impl SocketOps for QipcrtrSocket {
 
     fn read(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _socket: &Socket,
         _current_task: &CurrentTask,
         data: &mut dyn OutputBuffer,
@@ -279,7 +263,6 @@ impl SocketOps for QipcrtrSocket {
 
     fn write(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _socket: &Socket,
         _current_task: &CurrentTask,
         data: &mut dyn InputBuffer,
@@ -321,7 +304,6 @@ impl SocketOps for QipcrtrSocket {
 
     fn wait_async(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _socket: &Socket,
         _current_task: &CurrentTask,
         waiter: &Waiter,
@@ -348,7 +330,6 @@ impl SocketOps for QipcrtrSocket {
 
     fn query_events(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _socket: &Socket,
         _current_task: &CurrentTask,
     ) -> Result<FdEvents, Errno> {
@@ -361,46 +342,27 @@ impl SocketOps for QipcrtrSocket {
         Ok(qrtr_signals_to_fd_events(signals))
     }
 
-    fn shutdown(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        _socket: &Socket,
-        _how: SocketShutdownFlags,
-    ) -> Result<(), Errno> {
+    fn shutdown(&self, _socket: &Socket, _how: SocketShutdownFlags) -> Result<(), Errno> {
         self.close();
         Ok(())
     }
 
-    fn close(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        _current_task: &CurrentTask,
-        _socket: &Socket,
-    ) {
+    fn close(&self, _current_task: &CurrentTask, _socket: &Socket) {
         self.close();
     }
 
-    fn getsockname(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        _socket: &Socket,
-    ) -> Result<SocketAddress, Errno> {
+    fn getsockname(&self, _socket: &Socket) -> Result<SocketAddress, Errno> {
         let name = self.connecting_lock()?.bound_addr()?;
         Ok(SocketAddress::Qipcrtr(name.as_bytes().to_vec()))
     }
 
-    fn getpeername(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        _socket: &Socket,
-    ) -> Result<SocketAddress, Errno> {
+    fn getpeername(&self, _socket: &Socket) -> Result<SocketAddress, Errno> {
         let peer = self.connecting_lock()?.peer.ok_or_else(|| errno!(ENOTCONN))?;
         Ok(SocketAddress::Qipcrtr(peer.as_bytes().to_vec()))
     }
 
     fn setsockopt(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _socket: &Socket,
         current_task: &CurrentTask,
         level: u32,
@@ -438,7 +400,6 @@ impl SocketOps for QipcrtrSocket {
 
     fn getsockopt(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _socket: &Socket,
         _current_task: &CurrentTask,
         level: u32,
@@ -553,7 +514,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_qipcrtr_socket_new() {
-        spawn_kernel_and_run(async |locked, current_task| {
+        spawn_kernel_and_run(async |current_task| {
             let _kernel = current_task.kernel();
             // This test just checks basic creation without panic, but for QIPCRTR it tries
             // to connect to the global service, which might fail in test env if not mocked
@@ -562,7 +523,6 @@ mod tests {
             // `QipcrtrSocket::new` creates a None inner, so it doesn't connect yet.
             // Connection happens on first use or explicit connect.
             let _socket = Socket::new(
-                locked,
                 &current_task,
                 SocketDomain::Qipcrtr,
                 SocketType::Datagram,
@@ -576,7 +536,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_qipcrtr_sockopt() {
-        spawn_kernel_and_run(async |locked, current_task| {
+        spawn_kernel_and_run(async |current_task| {
             let socket = mock_qipcrtr_socket();
             let socket_obj = Socket::new_with_ops_and_info(
                 Box::new(socket.0),
@@ -587,15 +547,13 @@ mod tests {
             let _server_end = socket.1;
 
             // Test SO_SNDBUF
-            let sndbuf =
-                socket_obj.getsockopt(locked, &current_task, SOL_SOCKET, SO_SNDBUF, 4).unwrap();
+            let sndbuf = socket_obj.getsockopt(&current_task, SOL_SOCKET, SO_SNDBUF, 4).unwrap();
             let sndbuf_val = u32::from_ne_bytes(sndbuf.as_slice().try_into().unwrap());
             assert_eq!(sndbuf_val, SEND_BUF_DEFAULT_SIZE as u32);
 
             let new_sndbuf: u32 = 4096;
             socket_obj
                 .setsockopt(
-                    locked,
                     &current_task,
                     SOL_SOCKET,
                     SO_SNDBUF,
@@ -603,22 +561,19 @@ mod tests {
                 )
                 .unwrap();
 
-            let sndbuf =
-                socket_obj.getsockopt(locked, &current_task, SOL_SOCKET, SO_SNDBUF, 4).unwrap();
+            let sndbuf = socket_obj.getsockopt(&current_task, SOL_SOCKET, SO_SNDBUF, 4).unwrap();
             let sndbuf_val = u32::from_ne_bytes(sndbuf.as_slice().try_into().unwrap());
             // Setsockopt doubles the value.
             assert_eq!(sndbuf_val, new_sndbuf * 2);
 
             // Test SO_RCVBUF
-            let rcvbuf =
-                socket_obj.getsockopt(locked, &current_task, SOL_SOCKET, SO_RCVBUF, 4).unwrap();
+            let rcvbuf = socket_obj.getsockopt(&current_task, SOL_SOCKET, SO_RCVBUF, 4).unwrap();
             let rcvbuf_val = u32::from_ne_bytes(rcvbuf.as_slice().try_into().unwrap());
             assert_eq!(rcvbuf_val, RECV_BUF_DEFAULT_SIZE as u32);
 
             let new_rcvbuf: u32 = 1024;
             socket_obj
                 .setsockopt(
-                    locked,
                     &current_task,
                     SOL_SOCKET,
                     SO_RCVBUF,
@@ -626,8 +581,7 @@ mod tests {
                 )
                 .unwrap();
 
-            let rcvbuf =
-                socket_obj.getsockopt(locked, &current_task, SOL_SOCKET, SO_RCVBUF, 4).unwrap();
+            let rcvbuf = socket_obj.getsockopt(&current_task, SOL_SOCKET, SO_RCVBUF, 4).unwrap();
             let rcvbuf_val = u32::from_ne_bytes(rcvbuf.as_slice().try_into().unwrap());
             // Setsockopt doubles the value.
             assert_eq!(rcvbuf_val, new_rcvbuf * 2);
@@ -662,7 +616,7 @@ mod tests {
             });
         });
 
-        spawn_kernel_and_run(async |locked, _current_task| {
+        spawn_kernel_and_run(async |_current_task| {
             let socket_obj = Socket::new_with_ops_and_info(
                 Box::new(socket_inner),
                 SocketDomain::Qipcrtr,
@@ -670,7 +624,7 @@ mod tests {
                 SocketProtocol::default(),
             );
 
-            let addr = socket_obj.getsockname(locked).unwrap();
+            let addr = socket_obj.getsockname().unwrap();
             let qrtr_addr = extract_qrtr_sockaddr(&addr).unwrap();
             assert_eq!(qrtr_addr.sq_node, 123);
             assert_eq!(qrtr_addr.sq_port, 456);
@@ -691,7 +645,7 @@ mod tests {
                 .unwrap()
                 .peer = Some(peer_addr);
 
-            let peer = socket_obj.getpeername(locked).unwrap();
+            let peer = socket_obj.getpeername().unwrap();
             let peer_qrtr = extract_qrtr_sockaddr(&peer).unwrap();
             assert_eq!(peer_qrtr.sq_node, 10);
             assert_eq!(peer_qrtr.sq_port, 20);
@@ -734,7 +688,7 @@ mod tests {
             });
         });
 
-        spawn_kernel_and_run(async |locked, current_task| {
+        spawn_kernel_and_run(async |current_task| {
             let socket_obj = Socket::new_with_ops_and_info(
                 Box::new(socket_inner),
                 SocketDomain::Qipcrtr,
@@ -759,16 +713,14 @@ mod tests {
 
             // Test Write
             let mut input = VecInputBuffer::new(b"hello");
-            let written = socket_obj
-                .write(locked, &current_task, &mut input, &mut None, &mut vec![])
-                .unwrap();
+            let written =
+                socket_obj.write(&current_task, &mut input, &mut None, &mut vec![]).unwrap();
             assert_eq!(written, 5);
 
             // Test Read
             let mut output = VecOutputBuffer::new(100);
-            let info = socket_obj
-                .read(locked, &current_task, &mut output, SocketMessageFlags::empty())
-                .unwrap();
+            let info =
+                socket_obj.read(&current_task, &mut output, SocketMessageFlags::empty()).unwrap();
             assert_eq!(info.bytes_read, 5);
             assert_eq!(output.data(), b"world");
 

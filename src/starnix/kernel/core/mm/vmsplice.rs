@@ -364,7 +364,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn lifecycle() {
-        spawn_kernel_and_run(async |_, current_task| {
+        spawn_kernel_and_run(async |current_task| {
             const NUM_PAGES: u64 = 3;
             let page_size = *PAGE_SIZE;
 

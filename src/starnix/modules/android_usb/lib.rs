@@ -8,7 +8,7 @@ use fidl_fuchsia_hardware_usb_policy::DeviceState;
 use starnix_core::task::dynamic_thread_spawner::SpawnRequestBuilder;
 use starnix_core::task::{CurrentTask, Kernel};
 use starnix_logging::log_error;
-use starnix_sync::{Locked, Unlocked};
+
 use starnix_uapi::errors::Errno;
 
 use fidl_fuchsia_usb_policy::PolicyProviderMarker;
@@ -88,10 +88,7 @@ impl BytesFileOps for UsbStateSysfsFile {
     }
 }
 
-pub fn usb_device_init(
-    locked: &mut Locked<Unlocked>,
-    kernel: &Arc<Kernel>,
-) -> Result<Device, Errno> {
+pub fn usb_device_init(kernel: &Arc<Kernel>) -> Result<Device, Errno> {
     let registry = &kernel.device_registry;
 
     let android_usb_class =
@@ -101,7 +98,6 @@ pub fn usb_device_init(
     let state_clone = shared_state.clone();
 
     let device = registry.register_dyn_device_with_dir(
-        locked,
         kernel,
         "android0".into(),
         android_usb_class,
@@ -136,16 +132,12 @@ fn dispatch_usb_state_change(
 ) -> impl Future<Output = Result<(), Errno>> {
     let spawner = kernel.kthreads.spawner();
     let device_clone = device.clone();
-    let closure = move |locked: &mut Locked<Unlocked>, current_task: &CurrentTask| {
+    let closure = move |current_task: &CurrentTask| {
         if let Some(metadata) = &device_clone.metadata {
             metadata.properties.insert("USB_STATE".into(), usb_state);
         }
 
-        current_task.kernel.device_registry.dispatch_uevent(
-            locked,
-            UEventAction::Change,
-            device_clone,
-        );
+        current_task.kernel.device_registry.dispatch_uevent(UEventAction::Change, device_clone);
     };
     let (result, request) =
         SpawnRequestBuilder::new().with_sync_closure(closure).build_with_async_result();
@@ -248,7 +240,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_usb_sysfs_state_reads() {
-        spawn_kernel_and_run(async |_locked, current_task| {
+        spawn_kernel_and_run(async |current_task| {
             let shared_state = Arc::new(AtomicU8::new(UsbGadgetState::Disconnected as u8));
 
             shared_state.store(UsbGadgetState::Configured as u8, Ordering::Relaxed);
@@ -278,9 +270,8 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_usb_device_init_sysfs() {
-        spawn_kernel_and_run(async |locked, current_task| {
-            let device =
-                usb_device_init(locked, current_task.kernel()).expect("usb_device_init failed");
+        spawn_kernel_and_run(async |current_task| {
+            let device = usb_device_init(current_task.kernel()).expect("usb_device_init failed");
 
             assert_eq!(device.name.as_slice(), b"android0");
             let metadata = device.metadata.as_ref().expect("metadata not found");
@@ -291,9 +282,8 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_usb_device_metadata_property_injection() {
-        spawn_kernel_and_run(async |locked, current_task| {
-            let device =
-                usb_device_init(locked, current_task.kernel()).expect("usb_device_init failed");
+        spawn_kernel_and_run(async |current_task| {
+            let device = usb_device_init(current_task.kernel()).expect("usb_device_init failed");
 
             let kernel = current_task.kernel();
 

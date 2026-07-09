@@ -6,36 +6,28 @@ use crate::inotify::InotifyFileObject;
 use starnix_core::task::CurrentTask;
 use starnix_core::vfs::syscalls::{LookupFlags, lookup_at};
 use starnix_core::vfs::{FdFlags, FdNumber, WdNumber};
-use starnix_sync::{Locked, Unlocked};
+
 use starnix_uapi::errors::Errno;
 use starnix_uapi::inotify_mask::InotifyMask;
 use starnix_uapi::user_address::UserCString;
 use starnix_uapi::{IN_CLOEXEC, IN_NONBLOCK, errno, error};
 
-pub fn sys_inotify_init1(
-    locked: &mut Locked<Unlocked>,
-    current_task: &CurrentTask,
-    flags: u32,
-) -> Result<FdNumber, Errno> {
+pub fn sys_inotify_init1(current_task: &CurrentTask, flags: u32) -> Result<FdNumber, Errno> {
     if flags & !(IN_NONBLOCK | IN_CLOEXEC) != 0 {
         return error!(EINVAL);
     }
     let non_blocking = flags & IN_NONBLOCK != 0;
     let close_on_exec = flags & IN_CLOEXEC != 0;
-    let inotify_file = InotifyFileObject::new_file(locked, current_task, non_blocking);
+    let inotify_file = InotifyFileObject::new_file(current_task, non_blocking);
     let fd_flags = if close_on_exec { FdFlags::CLOEXEC } else { FdFlags::empty() };
-    current_task.add_file(locked, inotify_file, fd_flags)
+    current_task.add_file(inotify_file, fd_flags)
 }
 
-pub fn sys_inotify_init(
-    locked: &mut Locked<Unlocked>,
-    current_task: &CurrentTask,
-) -> Result<FdNumber, Errno> {
-    sys_inotify_init1(locked, current_task, 0)
+pub fn sys_inotify_init(current_task: &CurrentTask) -> Result<FdNumber, Errno> {
+    sys_inotify_init1(current_task, 0)
 }
 
 pub fn sys_inotify_add_watch(
-    locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
     fd: FdNumber,
     user_path: UserCString,
@@ -53,7 +45,7 @@ pub fn sys_inotify_add_watch(
     } else {
         LookupFlags::default()
     };
-    let watched_node = lookup_at(locked, current_task, FdNumber::AT_FDCWD, user_path, options)?;
+    let watched_node = lookup_at(current_task, FdNumber::AT_FDCWD, user_path, options)?;
     if mask.contains(InotifyMask::ONLYDIR) && !watched_node.entry.node.is_dir() {
         return error!(ENOTDIR);
     }
@@ -61,7 +53,6 @@ pub fn sys_inotify_add_watch(
 }
 
 pub fn sys_inotify_rm_watch(
-    _locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
     fd: FdNumber,
     watch_id: WdNumber,
@@ -71,36 +62,27 @@ pub fn sys_inotify_rm_watch(
     inotify_file.remove_watch(watch_id, &file)
 }
 
-pub fn sys_arch32_inotify_init1(
-    locked: &mut Locked<Unlocked>,
-    current_task: &CurrentTask,
-    flags: u32,
-) -> Result<FdNumber, Errno> {
-    sys_inotify_init1(locked, current_task, flags)
+pub fn sys_arch32_inotify_init1(current_task: &CurrentTask, flags: u32) -> Result<FdNumber, Errno> {
+    sys_inotify_init1(current_task, flags)
 }
 
-pub fn sys_arch32_inotify_init(
-    locked: &mut Locked<Unlocked>,
-    current_task: &CurrentTask,
-) -> Result<FdNumber, Errno> {
-    sys_inotify_init1(locked, current_task, 0)
+pub fn sys_arch32_inotify_init(current_task: &CurrentTask) -> Result<FdNumber, Errno> {
+    sys_inotify_init1(current_task, 0)
 }
 
 pub fn sys_arch32_inotify_add_watch(
-    locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
     fd: FdNumber,
     user_path: UserCString,
     mask: u32,
 ) -> Result<WdNumber, Errno> {
-    sys_inotify_add_watch(locked, current_task, fd, user_path, mask)
+    sys_inotify_add_watch(current_task, fd, user_path, mask)
 }
 
 pub fn sys_arch32_inotify_rm_watch(
-    locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
     fd: FdNumber,
     watch_id: WdNumber,
 ) -> Result<(), Errno> {
-    sys_inotify_rm_watch(locked, current_task, fd, watch_id)
+    sys_inotify_rm_watch(current_task, fd, watch_id)
 }

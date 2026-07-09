@@ -146,8 +146,7 @@ use starnix_core::vfs::{
 use starnix_lifecycle::AtomicCounter;
 use starnix_logging::{impossible_error, log_error, log_warn, track_stub};
 use starnix_sync::{
-    FileOpsCore, LockDepMutex, LockEqualOrBefore, Locked, MagmaBuffersLock, MagmaConnectionsLock,
-    MagmaDevicesLock, MagmaSemaphoresLock, Unlocked,
+    LockDepMutex, MagmaBuffersLock, MagmaConnectionsLock, MagmaDevicesLock, MagmaSemaphoresLock,
 };
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_types::user_buffer::UserBuffer;
@@ -307,14 +306,10 @@ impl MagmaFile {
     /// of the correct type for that file.
     ///
     /// Returns an error if the file does not contain a buffer.
-    fn get_memory_and_magma_buffer<L>(
-        locked: &mut Locked<L>,
+    fn get_memory_and_magma_buffer(
         current_task: &CurrentTask,
         fd: FdNumber,
-    ) -> Result<(MemoryObject, BufferInfo), Errno>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
+    ) -> Result<(MemoryObject, BufferInfo), Errno> {
         let file = current_task.files().get(fd)?;
         if let Some(file) = file.downcast_file::<ImageFile>() {
             let buffer = BufferInfo::Image(file.info.clone());
@@ -345,12 +340,7 @@ impl MagmaFile {
             // Map any failure to EINVAL; any failure here is most likely to be an FD that isn't
             // a gralloc buffer.
             let memory = file
-                .get_memory(
-                    locked,
-                    current_task,
-                    None,
-                    ProtectionFlags::READ | ProtectionFlags::WRITE,
-                )
+                .get_memory(current_task, None, ProtectionFlags::READ | ProtectionFlags::WRITE)
                 .map_err(|_| errno!(EINVAL))?;
             Ok((
                 memory.duplicate_handle(zx::Rights::SAME_RIGHTS).map_err(impossible_error)?,
@@ -478,7 +468,6 @@ impl FileOps for MagmaFile {
 
     fn ioctl(
         &self,
-        locked: &mut Locked<Unlocked>,
         _file: &FileObject,
         current_task: &CurrentTask,
         _request: u32,
@@ -607,13 +596,7 @@ impl FileOps for MagmaFile {
                 ) = read_control_and_response(current_task, &command)?;
                 let buffer = self.get_buffer(control.buffer)?;
 
-                get_buffer_handle(
-                    locked.cast_locked(),
-                    current_task,
-                    control,
-                    &mut response,
-                    &buffer,
-                )?;
+                get_buffer_handle(current_task, control, &mut response, &buffer)?;
 
                 current_task.write_object(UserRef::new(response_address), &response)
             }
@@ -646,7 +629,6 @@ impl FileOps for MagmaFile {
                 let buffer = self.get_buffer(control.buffer)?;
 
                 export_buffer(
-                    locked,
                     current_task,
                     control,
                     &mut response,
@@ -666,7 +648,7 @@ impl FileOps for MagmaFile {
 
                 let buffer_fd = FdNumber::from_raw(control.buffer_handle as i32);
                 let (memory, buffer) =
-                    MagmaFile::get_memory_and_magma_buffer(locked, current_task, buffer_fd)?;
+                    MagmaFile::get_memory_and_magma_buffer(current_task, buffer_fd)?;
                 let vmo = memory.into_vmo().ok_or_else(|| errno!(EINVAL))?;
 
                 let mut buffer_out = magma_buffer_t::default();
@@ -936,13 +918,12 @@ impl FileOps for MagmaFile {
                     let sync_file_name: &[u8; 32] =
                         b"magma semaphore\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0";
                     let file = SyncFile::new_file(
-                        locked,
                         current_task,
                         *sync_file_name,
                         SyncFence { sync_points },
                     )?;
 
-                    let fd = current_task.add_file(locked, file, FdFlags::empty())?;
+                    let fd = current_task.add_file(file, FdFlags::empty())?;
                     sync_file_fd = fd.raw();
                 }
 
@@ -1204,7 +1185,7 @@ impl FileOps for MagmaFile {
 
                 let device = self.get_device(control.device)?;
 
-                query(locked, current_task, device.handle, control.id, &mut response)?;
+                query(current_task, device.handle, control.id, &mut response)?;
 
                 response.hdr.type_ = virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_DEVICE_QUERY as u32;
                 current_task.write_object(UserRef::new(response_address), &response)
@@ -1393,7 +1374,6 @@ impl FileOps for MagmaFile {
 
     fn read(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         offset: usize,
@@ -1405,7 +1385,6 @@ impl FileOps for MagmaFile {
 
     fn write(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         offset: usize,

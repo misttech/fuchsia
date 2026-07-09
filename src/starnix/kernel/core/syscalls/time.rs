@@ -10,7 +10,6 @@ use crate::time::utc::utc_now;
 use crate::time::{ClockId, GenericDuration, Timeline, TimerId, TimerWakeup};
 use fuchsia_runtime::UtcInstant;
 use starnix_logging::{log_debug, log_error, log_trace, track_stub};
-use starnix_sync::{Locked, Unlocked};
 use starnix_types::time::{
     NANOS_PER_SECOND, duration_from_timespec, duration_to_scheduler_clock, time_from_timespec,
     timespec_from_duration, timespec_is_zero, timeval_from_time,
@@ -55,7 +54,6 @@ fn get_clock_res(current_task: &CurrentTask, which_clock: i32) -> Result<timespe
 }
 
 pub fn sys_clock_getres(
-    _locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
     which_clock: i32,
     tp_addr: TimeSpecPtr,
@@ -90,7 +88,6 @@ fn get_clock_gettime(current_task: &CurrentTask, which_clock: i32) -> Result<tim
 }
 
 pub fn sys_clock_gettime(
-    _locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
     which_clock: i32,
     tp_addr: TimeSpecPtr,
@@ -101,7 +98,6 @@ pub fn sys_clock_gettime(
 }
 
 pub fn sys_gettimeofday(
-    _locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
     user_tv: TimeValPtr,
     user_tz: TimeZonePtr,
@@ -119,7 +115,6 @@ pub fn sys_gettimeofday(
 }
 
 pub fn sys_settimeofday(
-    _locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
     tv: TimeValPtr,
     _tz: TimeZonePtr,
@@ -172,7 +167,6 @@ pub fn sys_settimeofday(
 }
 
 pub fn sys_clock_nanosleep(
-    locked: &mut Locked<Unlocked>,
     current_task: &mut CurrentTask,
     which_clock: ClockId,
     flags: u32,
@@ -215,13 +209,7 @@ pub fn sys_clock_nanosleep(
     }
 
     if which_clock == CLOCK_REALTIME {
-        return clock_nanosleep_relative_to_utc(
-            locked,
-            current_task,
-            request,
-            is_absolute,
-            user_remaining,
-        );
+        return clock_nanosleep_relative_to_utc(current_task, request, is_absolute, user_remaining);
     }
 
     // TODO(https://fxbug.dev/361583830): Support futex wait on different timeline deadlines.
@@ -232,7 +220,6 @@ pub fn sys_clock_nanosleep(
     };
 
     clock_nanosleep_boot_with_deadline(
-        locked,
         current_task,
         is_absolute,
         boot_deadline,
@@ -244,7 +231,6 @@ pub fn sys_clock_nanosleep(
 /// Sleep until we've satisfied |request| relative to the UTC clock which may advance at
 /// a different rate from the boot clock by repeatdly computing a boot target and sleeping.
 fn clock_nanosleep_relative_to_utc(
-    locked: &mut Locked<Unlocked>,
     current_task: &mut CurrentTask,
     request: timespec,
     is_absolute: bool,
@@ -262,7 +248,6 @@ fn clock_nanosleep_relative_to_utc(
         let (boot_deadline, _) =
             crate::time::utc::estimate_boot_deadline_from_utc(clock_deadline_absolute);
         clock_nanosleep_boot_with_deadline(
-            locked,
             current_task,
             is_absolute,
             boot_deadline,
@@ -282,7 +267,6 @@ fn clock_nanosleep_relative_to_utc(
 }
 
 fn clock_nanosleep_boot_with_deadline(
-    locked: &mut Locked<Unlocked>,
     current_task: &mut CurrentTask,
     is_absolute: bool,
     deadline: zx::BootInstant,
@@ -301,7 +285,7 @@ fn clock_nanosleep_boot_with_deadline(
         .expect("wait can only fail in OOM conditions");
     let timer_slack = current_task.read().get_timerslack();
     timer.set(deadline, timer_slack).expect("timer set cannot fail with valid handles and slack");
-    match waiter.wait(locked, current_task) {
+    match waiter.wait(current_task) {
         Err(err) if err == EINTR && is_absolute => error!(ERESTARTNOHAND),
         Err(err) if err == EINTR => {
             if !user_remaining.is_null() {
@@ -317,9 +301,8 @@ fn clock_nanosleep_boot_with_deadline(
                 ));
                 current_task.write_multi_arch_object(user_remaining, remaining)?;
             }
-            current_task.set_syscall_restart_func(move |locked, current_task| {
+            current_task.set_syscall_restart_func(move |current_task| {
                 clock_nanosleep_boot_with_deadline(
-                    locked,
                     current_task,
                     is_absolute,
                     deadline,
@@ -334,19 +317,11 @@ fn clock_nanosleep_boot_with_deadline(
 }
 
 pub fn sys_nanosleep(
-    locked: &mut Locked<Unlocked>,
     current_task: &mut CurrentTask,
     user_request: TimeSpecPtr,
     user_remaining: TimeSpecPtr,
 ) -> Result<(), Errno> {
-    sys_clock_nanosleep(
-        locked,
-        current_task,
-        CLOCK_REALTIME as ClockId,
-        0,
-        user_request,
-        user_remaining,
-    )
+    sys_clock_nanosleep(current_task, CLOCK_REALTIME as ClockId, 0, user_request, user_remaining)
 }
 
 /// Returns the cpu time for the task with the given `pid`.
@@ -423,7 +398,6 @@ fn get_dynamic_clock(current_task: &CurrentTask, which_clock: i32) -> Result<i64
 }
 
 pub fn sys_timer_create(
-    _locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
     clock_id: ClockId,
     event: MultiArchUserRef<uapi::sigevent, uapi::arch32::sigevent>,
@@ -483,16 +457,11 @@ pub fn sys_timer_create(
     Ok(())
 }
 
-pub fn sys_timer_delete(
-    _locked: &mut Locked<Unlocked>,
-    current_task: &CurrentTask,
-    id: TimerId,
-) -> Result<(), Errno> {
+pub fn sys_timer_delete(current_task: &CurrentTask, id: TimerId) -> Result<(), Errno> {
     current_task.thread_group().timers.delete(current_task, id)
 }
 
 pub fn sys_timer_gettime(
-    _locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
     id: TimerId,
     curr_value: ITimerSpecPtr,
@@ -502,16 +471,11 @@ pub fn sys_timer_gettime(
     Ok(())
 }
 
-pub fn sys_timer_getoverrun(
-    _locked: &mut Locked<Unlocked>,
-    current_task: &CurrentTask,
-    id: TimerId,
-) -> Result<i32, Errno> {
+pub fn sys_timer_getoverrun(current_task: &CurrentTask, id: TimerId) -> Result<i32, Errno> {
     current_task.thread_group().timers.get_overrun(id)
 }
 
 pub fn sys_timer_settime(
-    _locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
     id: TimerId,
     flags: i32,
@@ -539,7 +503,6 @@ pub fn sys_timer_settime(
 }
 
 pub fn sys_getitimer(
-    _locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
     which: u32,
     user_curr_value: ITimerValPtr,
@@ -550,7 +513,6 @@ pub fn sys_getitimer(
 }
 
 pub fn sys_setitimer(
-    _locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
     which: u32,
     user_new_value: ITimerValPtr,
@@ -567,11 +529,7 @@ pub fn sys_setitimer(
     Ok(())
 }
 
-pub fn sys_times(
-    _locked: &mut Locked<Unlocked>,
-    current_task: &CurrentTask,
-    buf: UserRef<tms>,
-) -> Result<i64, Errno> {
+pub fn sys_times(current_task: &CurrentTask, buf: UserRef<tms>) -> Result<i64, Errno> {
     if !buf.is_null() {
         let thread_group = current_task.thread_group();
         let process_time_stats = thread_group.time_stats();
@@ -593,14 +551,12 @@ pub fn sys_times(
 mod arch32 {
     use crate::task::CurrentTask;
     use crate::time::TimerId;
-    use starnix_sync::{Locked, Unlocked};
     use starnix_uapi::errors::Errno;
     use starnix_uapi::uapi;
     use starnix_uapi::user_address::UserRef;
     use static_assertions::const_assert;
 
     pub fn sys_arch32_clock_gettime64(
-        locked: &mut Locked<Unlocked>,
         current_task: &CurrentTask,
         which_clock: i32,
         tp_addr: UserRef<uapi::timespec>,
@@ -609,11 +565,10 @@ mod arch32 {
             std::mem::size_of::<uapi::timespec>()
                 == std::mem::size_of::<uapi::arch32::__kernel_timespec>()
         );
-        super::sys_clock_gettime(locked, current_task, which_clock, tp_addr.into())
+        super::sys_clock_gettime(current_task, which_clock, tp_addr.into())
     }
 
     pub fn sys_arch32_timer_gettime64(
-        locked: &mut Locked<Unlocked>,
         current_task: &CurrentTask,
         id: TimerId,
         curr_value: UserRef<uapi::itimerspec>,
@@ -622,7 +577,7 @@ mod arch32 {
             std::mem::size_of::<uapi::itimerspec>()
                 == std::mem::size_of::<uapi::arch32::__kernel_itimerspec>()
         );
-        super::sys_timer_gettime(locked, current_task, id, curr_value.into())
+        super::sys_timer_gettime(current_task, id, curr_value.into())
     }
 
     pub use super::{
@@ -658,7 +613,7 @@ mod test {
 
     #[::fuchsia::test]
     async fn test_nanosleep_without_remainder() {
-        spawn_kernel_and_run(async |locked, current_task| {
+        spawn_kernel_and_run(async |current_task| {
             let thread = std::thread::spawn({
                 let task = current_task.weak_task();
                 move || {
@@ -673,7 +628,6 @@ mod test {
 
             let duration = timespec_from_duration(zx::MonotonicDuration::from_seconds(60));
             let address = map_memory(
-                locked,
                 &current_task,
                 UserAddress::default(),
                 std::mem::size_of::<timespec>() as u64,
@@ -684,7 +638,7 @@ mod test {
             // nanosleep will be interrupted by the current thread and should not fail with EFAULT
             // because the remainder pointer is null.
             assert_eq!(
-                sys_nanosleep(locked, current_task, address_ptr.into(), UserRef::default().into()),
+                sys_nanosleep(current_task, address_ptr.into(), UserRef::default().into()),
                 error!(ERESTART_RESTARTBLOCK)
             );
 
@@ -695,7 +649,7 @@ mod test {
 
     #[::fuchsia::test]
     async fn test_clock_nanosleep_relative_to_slow_clock() {
-        spawn_kernel_and_run(async |locked, current_task| {
+        spawn_kernel_and_run(async |current_task| {
             let test_clock = UtcClock::create(zx::ClockOpts::AUTO_START, None).unwrap();
             let _test_clock_guard = UtcClockOverrideGuard::new(
                 test_clock.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
@@ -711,14 +665,8 @@ mod test {
 
             let remaining = UserRef::new(UserAddress::default());
 
-            super::clock_nanosleep_relative_to_utc(
-                locked,
-                current_task,
-                tv,
-                false,
-                remaining.into(),
-            )
-            .unwrap();
+            super::clock_nanosleep_relative_to_utc(current_task, tv, false, remaining.into())
+                .unwrap();
             let elapsed = test_clock.read().unwrap() - before;
             assert!(elapsed >= UtcDuration::from_seconds(1));
         })
@@ -727,7 +675,7 @@ mod test {
 
     #[::fuchsia::test]
     async fn test_clock_nanosleep_interrupted_relative_to_fast_utc_clock() {
-        spawn_kernel_and_run(async |locked, current_task| {
+        spawn_kernel_and_run(async |current_task| {
             let test_clock = UtcClock::create(zx::ClockOpts::AUTO_START, None).unwrap();
             let _test_clock_guard = UtcClockOverrideGuard::new(
                 test_clock.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
@@ -742,7 +690,7 @@ mod test {
             let tv = timespec { tv_sec: 2, tv_nsec: 0 };
 
             let remaining = {
-                let addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
+                let addr = map_memory(&current_task, UserAddress::default(), *PAGE_SIZE);
                 UserRef::new(addr)
             };
 
@@ -767,13 +715,8 @@ mod test {
                 })
                 .unwrap();
 
-            let result = super::clock_nanosleep_relative_to_utc(
-                locked,
-                current_task,
-                tv,
-                false,
-                remaining.into(),
-            );
+            let result =
+                super::clock_nanosleep_relative_to_utc(current_task, tv, false, remaining.into());
 
             // We can't know deterministically if our interrupter thread will be able to interrupt our sleep.
             // If it did, result should be ERESTART_RESTARTBLOCK and |remaining| will be populated.

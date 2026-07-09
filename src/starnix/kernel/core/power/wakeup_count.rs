@@ -9,7 +9,6 @@ use crate::task::{
 use crate::vfs::buffers::{InputBuffer, OutputBuffer};
 use crate::vfs::pseudo::simple_file::{SimpleFileNode, parse_unsigned_file, serialize_for_file};
 use crate::vfs::{FileObject, FileOps, FsNodeOps, fileops_impl_noop_sync, fileops_impl_seekless};
-use starnix_sync::{FileOpsCore, Locked};
 use starnix_uapi::error;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::vfs::FdEvents;
@@ -29,7 +28,7 @@ pub struct PowerWakeupCountFile {
 
 impl PowerWakeupCountFile {
     pub fn new_node(suspend_resume_manager: Arc<SuspendResumeManager>) -> impl FsNodeOps {
-        SimpleFileNode::new(move |_, _| {
+        SimpleFileNode::new(move |_| {
             Ok(Self {
                 suspend_resume_manager: suspend_resume_manager.clone(),
                 blocking_event: suspend_resume_manager.duplicate_lock_event(),
@@ -44,7 +43,6 @@ impl FileOps for PowerWakeupCountFile {
 
     fn write(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         _offset: usize,
@@ -61,13 +59,12 @@ impl FileOps for PowerWakeupCountFile {
 
     fn read(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         file: &FileObject,
         current_task: &CurrentTask,
         offset: usize,
         data: &mut dyn OutputBuffer,
     ) -> Result<usize, Errno> {
-        file.blocking_op(locked, current_task, FdEvents::POLLIN | FdEvents::POLLHUP, None, |_| {
+        file.blocking_op(current_task, FdEvents::POLLIN | FdEvents::POLLHUP, None, || {
             if !self.suspend_resume_manager.lock().can_suspend() {
                 return error!(EAGAIN);
             }
@@ -82,7 +79,6 @@ impl FileOps for PowerWakeupCountFile {
 
     fn wait_async(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         waiter: &Waiter,
@@ -110,7 +106,6 @@ impl FileOps for PowerWakeupCountFile {
 
     fn query_events(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
     ) -> Result<FdEvents, Errno> {

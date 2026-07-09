@@ -8,7 +8,6 @@ use crate::fs::sysfs::get_sysfs;
 use crate::task::Kernel;
 use crate::vfs::pseudo::simple_directory::{SimpleDirectory, SimpleDirectoryMutator};
 use crate::vfs::{FileSystemHandle, FsStr, FsString};
-use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked};
 use std::sync::{Arc, OnceLock};
 
 /// The owner of all the KObjects in sysfs.
@@ -24,11 +23,8 @@ pub struct KObjectStore {
 }
 
 impl KObjectStore {
-    pub fn init<L>(&self, locked: &mut Locked<L>, kernel: &Kernel)
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
-        self.fs.set(get_sysfs(locked, kernel)).unwrap();
+    pub fn init(&self, kernel: &Kernel) {
+        self.fs.set(get_sysfs(kernel)).unwrap();
     }
 
     fn fs(&self) -> &FileSystemHandle {

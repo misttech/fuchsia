@@ -24,7 +24,6 @@ rustc_library("gralloc") {
     "//sdk/rust/zx",
     "//src/starnix/kernel/core",
     "//src/starnix/lib/starnix_logging",
-    "//src/starnix/lib/starnix_sync",
     "//src/starnix/lib/starnix_syscalls",
     "//src/starnix/lib/starnix_uapi",
     "//src/starnix/lib/virtgralloc",

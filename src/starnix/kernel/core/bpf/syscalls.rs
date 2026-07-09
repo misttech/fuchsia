@@ -18,7 +18,6 @@ use ebpf::{EbpfInstruction, MapFlags, MapSchema};
 use ebpf_api::{MapKey, ProgramType};
 use smallvec::smallvec;
 use starnix_logging::{log_error, log_trace, log_warn, track_stub};
-use starnix_sync::{Locked, Unlocked};
 use starnix_syscalls::{SUCCESS, SyscallResult};
 use starnix_types::user_buffer::UserBuffer;
 use starnix_uapi::auth::CAP_SYS_ADMIN;
@@ -76,7 +75,6 @@ fn read_attr<Attr: FromBytes>(
 }
 
 fn reopen_bpf_fd(
-    locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
     handle: BpfHandle,
     open_flags: OpenFlags,
@@ -85,17 +83,15 @@ fn reopen_bpf_fd(
     // so that `FsNode` access checks will not be performed.
     let name = handle.type_name();
     let file = Anon::new_private_file(
-        locked,
         current_task,
         Box::new(handle),
         open_flags | OpenFlags::CLOEXEC,
         name,
     );
-    Ok(current_task.add_file(locked, file, FdFlags::CLOEXEC)?.into())
+    Ok(current_task.add_file(file, FdFlags::CLOEXEC)?.into())
 }
 
 fn install_bpf_fd(
-    locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
     obj: impl Into<BpfHandle>,
 ) -> Result<SyscallResult, Errno> {
@@ -105,13 +101,12 @@ fn install_bpf_fd(
 
     // All BPF FDs have the CLOEXEC flag turned on by default.
     let file = Anon::new_private_file(
-        locked,
         current_task,
         Box::new(handle),
         OpenFlags::RDWR | OpenFlags::CLOEXEC,
         name,
     );
-    Ok(current_task.add_file(locked, file, FdFlags::CLOEXEC)?.into())
+    Ok(current_task.add_file(file, FdFlags::CLOEXEC)?.into())
 }
 
 #[derive(Debug, Clone)]
@@ -157,7 +152,6 @@ fn validate_bpf_name(name: &[u8]) -> Result<&str, Errno> {
 }
 
 pub fn sys_bpf(
-    locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
     cmd: bpf_cmd,
     attr_addr: UserAddress,
@@ -199,14 +193,9 @@ pub fn sys_bpf(
             };
 
             let name = validate_bpf_name(map_attr.map_name.as_bytes())?;
-            let map = BpfMap::new(
-                locked,
-                current_task,
-                schema,
-                name,
-                security::bpf_map_alloc(current_task),
-            )?;
-            install_bpf_fd(locked, current_task, map)
+            let map =
+                BpfMap::new(current_task, schema, name, security::bpf_map_alloc(current_task))?;
+            install_bpf_fd(current_task, map)
         }
 
         bpf_cmd_BPF_MAP_LOOKUP_ELEM => {
@@ -228,7 +217,7 @@ pub fn sys_bpf(
             let user_value = UserAddress::from(unsafe { elem_attr.__bindgen_anon_1.value });
 
             let _suspend_lock =
-                current_task.kernel().suspend_resume_manager.acquire_ebpf_suspend_lock(locked);
+                current_task.kernel().suspend_resume_manager.acquire_ebpf_suspend_lock();
 
             let value = map.load(&key).ok_or_else(|| errno!(ENOENT))?;
             current_task.write_memory(user_value, &value)?;
@@ -246,7 +235,7 @@ pub fn sys_bpf(
             let map = map.as_map()?;
 
             // Get the frozen state and keep the lock to prevent a race.
-            let (frozen, locked) = map.frozen(locked);
+            let frozen = map.frozen();
 
             if *frozen || map.schema.flags.contains(MapFlags::SyscallReadOnly) {
                 return error!(EPERM);
@@ -262,7 +251,7 @@ pub fn sys_bpf(
                 current_task.read_memory_to_vec(user_value, map.schema.value_size as usize)?;
 
             let _suspend_lock =
-                current_task.kernel().suspend_resume_manager.acquire_ebpf_suspend_lock(locked);
+                current_task.kernel().suspend_resume_manager.acquire_ebpf_suspend_lock();
 
             map.update(&key[..], value.as_mut_bytes().into(), flags)
                 .map_err(map::map_error_to_errno)?;
@@ -278,7 +267,7 @@ pub fn sys_bpf(
             let map = map.as_map()?;
 
             // Get the frozen state and keep the lock to prevent a race.
-            let (frozen, locked) = map.frozen(locked);
+            let frozen = map.frozen();
 
             if *frozen || map.schema.flags.contains(MapFlags::SyscallReadOnly) {
                 return error!(EPERM);
@@ -287,7 +276,7 @@ pub fn sys_bpf(
             let key = read_map_key(current_task, UserAddress::from(elem_attr.key), map)?;
 
             let _suspend_lock =
-                current_task.kernel().suspend_resume_manager.acquire_ebpf_suspend_lock(locked);
+                current_task.kernel().suspend_resume_manager.acquire_ebpf_suspend_lock();
 
             map.delete(&key).map_err(map::map_error_to_errno)?;
             Ok(SUCCESS)
@@ -348,7 +337,7 @@ pub fn sys_bpf(
             let name = validate_bpf_name(prog_attr.prog_name.as_bytes())?;
             let info = ProgramInfo::try_from(&prog_attr)?;
             let program_type = info.program_type;
-            let program = Program::new(locked, current_task, info, &mut log_buffer, code);
+            let program = Program::new(current_task, info, &mut log_buffer, code);
             let program_or_stub = match (program, program_type) {
                 (Ok(program), _) => BpfHandle::Program(program),
 
@@ -370,14 +359,14 @@ pub fn sys_bpf(
             };
             // Ensures the log buffer ends with a 0.
             log_buffer.write(b"\0")?;
-            install_bpf_fd(locked, current_task, program_or_stub)
+            install_bpf_fd(current_task, program_or_stub)
         }
 
         // Attach an eBPF program to a target_fd at the specified attach_type hook.
         bpf_cmd_BPF_PROG_ATTACH => {
             let attach_attr: BpfAttachAttr = read_attr(current_task, attr_addr, attr_size)?;
             security::check_bpf_access(current_task, cmd, &attach_attr, attr_size)?;
-            bpf_prog_attach(locked, current_task, attach_attr)
+            bpf_prog_attach(current_task, attach_attr)
         }
 
         // Obtain information about eBPF programs associated with the specified attach_type hook.
@@ -404,14 +393,13 @@ pub fn sys_bpf(
             let path_addr = UserCString::new(current_task, UserAddress::from(pin_attr.pathname));
             let pathname = current_task.read_path(path_addr)?;
             let (parent, basename) = current_task.lookup_parent_at(
-                locked,
                 &mut LookupContext::default(),
                 FdNumber::AT_FDCWD,
                 pathname.as_ref(),
             )?;
             let bpf_dir =
                 parent.entry.node.downcast_ops::<BpfFsDir>().ok_or_else(|| errno!(EINVAL))?;
-            bpf_dir.register_pin(locked, current_task, &parent, basename, object)?;
+            bpf_dir.register_pin(current_task, &parent, basename, object)?;
             Ok(SUCCESS)
         }
 
@@ -428,9 +416,8 @@ pub fn sys_bpf(
                 _ => return error!(EINVAL),
             };
             let pathname = current_task.read_path(path_addr)?;
-            let handle =
-                resolve_pinned_bpf_object(locked, current_task, pathname.as_ref(), open_flags)?;
-            reopen_bpf_fd(locked, current_task, handle, open_flags)
+            let handle = resolve_pinned_bpf_object(current_task, pathname.as_ref(), open_flags)?;
+            reopen_bpf_fd(current_task, handle, open_flags)
         }
 
         // Obtain information about the eBPF object corresponding to bpf_fd.
@@ -502,12 +489,12 @@ pub fn sys_bpf(
             security::check_bpf_access(current_task, cmd, &btf_attr, attr_size)?;
             let data = current_task
                 .read_memory_to_vec(UserAddress::from(btf_attr.btf), btf_attr.btf_size as usize)?;
-            install_bpf_fd(locked, current_task, BpfTypeFormat { data })
+            install_bpf_fd(current_task, BpfTypeFormat { data })
         }
         bpf_cmd_BPF_PROG_DETACH => {
             let attach_attr: BpfAttachAttr = read_attr(current_task, attr_addr, attr_size)?;
             security::check_bpf_access(current_task, cmd, &attach_attr, attr_size)?;
-            bpf_prog_detach(locked, current_task, attach_attr)
+            bpf_prog_detach(current_task, attach_attr)
         }
         bpf_cmd_BPF_PROG_RUN => {
             track_stub!(TODO("https://fxbug.dev/322874055"), "BPF_PROG_RUN");
@@ -522,7 +509,7 @@ pub fn sys_bpf(
             get_next_attr.next_id = current_task
                 .kernel()
                 .ebpf_state
-                .get_next_program_id(locked, start_id)
+                .get_next_program_id(start_id)
                 .ok_or_else(|| errno!(ENOENT))?;
             current_task.write_object(UserRef::new(attr_addr), &get_next_attr)?;
             Ok(SUCCESS)
@@ -536,7 +523,7 @@ pub fn sys_bpf(
             get_next_attr.next_id = current_task
                 .kernel()
                 .ebpf_state
-                .get_next_map_id(locked, start_id)
+                .get_next_map_id(start_id)
                 .ok_or_else(|| errno!(ENOENT))?;
             current_task.write_object(UserRef::new(attr_addr), &get_next_attr)?;
             Ok(SUCCESS)
@@ -550,9 +537,9 @@ pub fn sys_bpf(
             let prog = current_task
                 .kernel()
                 .ebpf_state
-                .get_program_by_id(locked, prog_id)
+                .get_program_by_id(prog_id)
                 .ok_or_else(|| errno!(ENOENT))?;
-            install_bpf_fd(locked, current_task, prog)
+            install_bpf_fd(current_task, prog)
         }
         bpf_cmd_BPF_MAP_GET_FD_BY_ID => {
             security::check_task_capable(current_task, CAP_SYS_ADMIN)?;
@@ -563,9 +550,9 @@ pub fn sys_bpf(
             let map = current_task
                 .kernel()
                 .ebpf_state
-                .get_map_by_id(locked, map_id)
+                .get_map_by_id(map_id)
                 .ok_or_else(|| errno!(ENOENT))?;
-            install_bpf_fd(locked, current_task, map)
+            install_bpf_fd(current_task, map)
         }
         bpf_cmd_BPF_RAW_TRACEPOINT_OPEN => {
             track_stub!(TODO("https://fxbug.dev/322874055"), "BPF_RAW_TRACEPOINT_OPEN");
@@ -589,7 +576,7 @@ pub fn sys_bpf(
             let map_fd = FdNumber::from_raw(elem_attr.map_fd as i32);
             let map = get_bpf_object(current_task, map_fd)?;
             let map = map.as_map()?;
-            map.freeze(locked)?;
+            map.freeze()?;
             Ok(SUCCESS)
         }
         bpf_cmd_BPF_BTF_GET_NEXT_ID => {

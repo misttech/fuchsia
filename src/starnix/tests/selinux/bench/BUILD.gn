@@ -41,7 +41,6 @@ rustc_binary("bin") {
     "//src/starnix/kernel/core",
     "//src/starnix/lib/selinux",
     "//src/starnix/lib/starnix_registers",
-    "//src/starnix/lib/starnix_sync",
     "//src/starnix/lib/starnix_uapi",
     "//third_party/rust_crates:criterion",
   ]

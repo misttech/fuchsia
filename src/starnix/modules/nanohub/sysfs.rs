@@ -14,7 +14,7 @@ use starnix_core::vfs::{
 };
 use starnix_core::{fileops_impl_seekable, fs_node_impl_not_dir};
 use starnix_logging::log_error;
-use starnix_sync::{FileOpsCore, LockDepMutex, Locked, NanohubContentsLock, NanohubServiceLock};
+use starnix_sync::{LockDepMutex, NanohubContentsLock, NanohubServiceLock};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::{errno, error};
@@ -149,7 +149,6 @@ impl<P: DiscoverableProtocolMarker, O: SysfsOps<P::SynchronousProxy>> FileOps fo
 
     fn read(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         offset: usize,
@@ -184,7 +183,6 @@ impl<P: DiscoverableProtocolMarker, O: SysfsOps<P::SynchronousProxy>> FileOps fo
 
     fn write(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         _offset: usize,
@@ -229,7 +227,6 @@ impl<P: DiscoverableProtocolMarker, O: SysfsOps<P::SynchronousProxy>> FsNodeOps
 
     fn create_file_ops(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _node: &FsNode,
         _current_task: &CurrentTask,
         _flags: OpenFlags,
@@ -242,7 +239,6 @@ impl<P: DiscoverableProtocolMarker, O: SysfsOps<P::SynchronousProxy>> FsNodeOps
     /// and only support show/store operations which are mapped to read/write FileOps.
     fn truncate(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _guard: &AppendLockWriteGuard<'_>,
         _node: &FsNode,
         _current_task: &CurrentTask,

@@ -9,7 +9,7 @@ use starnix_core::vfs::{
     FsNodeHandle, FsNodeInfo, FsNodeOps, InputBuffer, OutputBuffer, fileops_impl_noop_sync,
     fileops_impl_seekless, fs_node_impl_not_dir,
 };
-use starnix_sync::{DynamicLockDepRwLock, FileOpsCore, Locked};
+use starnix_sync::DynamicLockDepRwLock;
 use starnix_uapi::auth::FsCred;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
@@ -31,7 +31,6 @@ impl FsNodeOps for KmsgNode {
 
     fn check_access(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         node: &FsNode,
         current_task: &CurrentTask,
         permission_flags: security::PermissionFlags,
@@ -51,7 +50,6 @@ impl FsNodeOps for KmsgNode {
 
     fn create_file_ops(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _node: &FsNode,
         _current_task: &CurrentTask,
         _flags: OpenFlags,
@@ -61,7 +59,6 @@ impl FsNodeOps for KmsgNode {
 
     fn truncate(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _guard: &AppendLockWriteGuard<'_>,
         _node: &FsNode,
         _current_task: &CurrentTask,
@@ -80,7 +77,6 @@ impl FileOps for KmsgFile {
 
     fn wait_async(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         current_task: &CurrentTask,
         waiter: &Waiter,
@@ -97,7 +93,6 @@ impl FileOps for KmsgFile {
 
     fn query_events(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         current_task: &CurrentTask,
     ) -> Result<FdEvents, Errno> {
@@ -114,7 +109,6 @@ impl FileOps for KmsgFile {
 
     fn read(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         file: &FileObject,
         current_task: &CurrentTask,
         _offset: usize,
@@ -124,7 +118,7 @@ impl FileOps for KmsgFile {
             .kernel()
             .syslog
             .access(current_task, SyslogAccess::ProcKmsg(SyslogAction::Read))?;
-        file.blocking_op(locked, current_task, FdEvents::POLLIN | FdEvents::POLLHUP, None, |_| {
+        file.blocking_op(current_task, FdEvents::POLLIN | FdEvents::POLLHUP, None, || {
             let bytes_written = syslog.read(data)?;
             Ok(bytes_written as usize)
         })
@@ -132,7 +126,6 @@ impl FileOps for KmsgFile {
 
     fn write(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         _offset: usize,

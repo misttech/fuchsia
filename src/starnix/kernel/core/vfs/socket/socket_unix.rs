@@ -27,10 +27,7 @@ use ebpf_api::{
     SOCKET_FILTER_SK_BUF_TYPE, SocketFilterProgramContext, SocketRef,
 };
 use starnix_logging::track_stub;
-use starnix_sync::{
-    FileOpsCore, LockDepGuard, LockDepMutex, LockEqualOrBefore, Locked, UnixSocketInnerLock,
-    Unlocked, allow_subclass,
-};
+use starnix_sync::{LockDepGuard, LockDepMutex, UnixSocketInnerLock, allow_subclass};
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_uapi::errors::{EACCES, EINTR, EPERM, Errno};
 use starnix_uapi::file_mode::Access;
@@ -174,19 +171,14 @@ impl UnixSocket {
     /// # Parameters
     /// - `domain`: The domain of the socket (e.g., `AF_UNIX`).
     /// - `socket_type`: The type of the socket (e.g., `SOCK_STREAM`).
-    pub fn new_pair<L>(
-        locked: &mut Locked<L>,
+    pub fn new_pair(
         current_task: &CurrentTask,
         domain: SocketDomain,
         socket_type: SocketType,
         open_flags: OpenFlags,
-    ) -> Result<(FileHandle, FileHandle), Errno>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
+    ) -> Result<(FileHandle, FileHandle), Errno> {
         let credentials = current_task.current_ucred();
         let left = Socket::new(
-            locked,
             current_task,
             domain,
             socket_type,
@@ -194,7 +186,6 @@ impl UnixSocket {
             /* kernel_private = */ false,
         )?;
         let right = Socket::new(
-            locked,
             current_task,
             domain,
             socket_type,
@@ -206,14 +197,12 @@ impl UnixSocket {
         downcast_socket_to_unix(&right).lock().state = UnixSocketState::Connected(left.clone());
         downcast_socket_to_unix(&right).lock().credentials = Some(credentials);
         let left = SocketFile::from_socket(
-            locked,
             current_task,
             left,
             open_flags,
             /* kernel_private= */ false,
         )?;
         let right = SocketFile::from_socket(
-            locked,
             current_task,
             right,
             open_flags,
@@ -228,7 +217,6 @@ impl UnixSocket {
 
     fn connect_stream(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         socket: &SocketHandle,
         current_task: &CurrentTask,
         peer: &SocketHandle,
@@ -266,7 +254,6 @@ impl UnixSocket {
             }
 
             let server = Socket::new(
-                locked,
                 current_task,
                 peer.domain,
                 peer.socket_type,
@@ -494,7 +481,6 @@ impl UnixSocket {
 impl SocketOps for UnixSocket {
     fn connect(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         socket: &SocketHandle,
         current_task: &CurrentTask,
         peer: SocketPeer,
@@ -505,20 +491,14 @@ impl SocketOps for UnixSocket {
         };
         match socket.socket_type {
             SocketType::Stream | SocketType::SeqPacket => {
-                self.connect_stream(locked, socket, current_task, &peer)
+                self.connect_stream(socket, current_task, &peer)
             }
             SocketType::Datagram | SocketType::Raw => self.connect_datagram(socket, &peer),
             _ => error!(EINVAL),
         }
     }
 
-    fn listen(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        socket: &Socket,
-        backlog: i32,
-        credentials: ucred,
-    ) -> Result<(), Errno> {
+    fn listen(&self, socket: &Socket, backlog: i32, credentials: ucred) -> Result<(), Errno> {
         match socket.socket_type {
             SocketType::Stream | SocketType::SeqPacket => {}
             _ => return error!(EOPNOTSUPP),
@@ -540,12 +520,7 @@ impl SocketOps for UnixSocket {
         }
     }
 
-    fn accept(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        socket: &Socket,
-        _current_task: &CurrentTask,
-    ) -> Result<SocketHandle, Errno> {
+    fn accept(&self, socket: &Socket, _current_task: &CurrentTask) -> Result<SocketHandle, Errno> {
         match socket.socket_type {
             SocketType::Stream | SocketType::SeqPacket => {}
             _ => return error!(EOPNOTSUPP),
@@ -560,7 +535,6 @@ impl SocketOps for UnixSocket {
 
     fn bind(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _socket: &Socket,
         _current_task: &CurrentTask,
         socket_address: SocketAddress,
@@ -574,7 +548,6 @@ impl SocketOps for UnixSocket {
 
     fn read(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         socket: &Socket,
         _current_task: &CurrentTask,
         data: &mut dyn OutputBuffer,
@@ -598,7 +571,6 @@ impl SocketOps for UnixSocket {
 
     fn write(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         socket: &Socket,
         current_task: &CurrentTask,
         data: &mut dyn InputBuffer,
@@ -616,7 +588,7 @@ impl SocketOps for UnixSocket {
             (None, Some(_), SocketType::SeqPacket) => return error!(ENOTCONN),
             (Some(_), Some(_), _) => return error!(EISCONN),
             (_, Some(SocketAddress::Unix(name)), _) => {
-                resolve_unix_socket_address(locked, current_task, name.as_ref())?
+                resolve_unix_socket_address(current_task, name.as_ref())?
             }
             (_, Some(_), _) => return error!(EINVAL),
             (None, None, _) => return error!(ENOTCONN),
@@ -639,14 +611,7 @@ impl SocketOps for UnixSocket {
                 let context = security::socket_getpeersec_dgram(current_task, socket);
                 ancillary_data.push(AncillaryData::Unix(UnixControlData::Security(context.into())));
             }
-            peer.write(
-                locked,
-                current_task,
-                data,
-                local_address,
-                ancillary_data,
-                socket.socket_type,
-            )?
+            peer.write(current_task, data, local_address, ancillary_data, socket.socket_type)?
         };
         if bytes_written > 0 {
             unix_socket.waiters.notify_fd_events(FdEvents::POLLIN);
@@ -656,7 +621,6 @@ impl SocketOps for UnixSocket {
 
     fn wait_async(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _socket: &Socket,
         _current_task: &CurrentTask,
         waiter: &Waiter,
@@ -668,7 +632,6 @@ impl SocketOps for UnixSocket {
 
     fn query_events(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _socket: &Socket,
         _current_task: &CurrentTask,
     ) -> Result<FdEvents, Errno> {
@@ -720,12 +683,7 @@ impl SocketOps for UnixSocket {
     /// Shuts down this socket according to how, preventing any future reads and/or writes.
     ///
     /// Used by the shutdown syscalls.
-    fn shutdown(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        _socket: &Socket,
-        how: SocketShutdownFlags,
-    ) -> Result<(), Errno> {
+    fn shutdown(&self, _socket: &Socket, how: SocketShutdownFlags) -> Result<(), Errno> {
         let mut should_notify_self = false;
         let mut should_notify_peer = false;
         let peer = {
@@ -764,12 +722,7 @@ impl SocketOps for UnixSocket {
     /// which changes how read() behaves on that socket. Second, close
     /// transitions the internal state of this socket to Closed, which breaks
     /// the reference cycle that exists in the connected state.
-    fn close(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        _current_task: &CurrentTask,
-        socket: &Socket,
-    ) {
+    fn close(&self, _current_task: &CurrentTask, socket: &Socket) {
         let (maybe_peer, has_unread) = {
             let mut inner = self.lock();
             let maybe_peer = inner.peer().map(Arc::clone);
@@ -799,11 +752,7 @@ impl SocketOps for UnixSocket {
     ///
     /// The name is derived from the address and domain. A socket
     /// will always have a name, even if it is not bound to an address.
-    fn getsockname(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        socket: &Socket,
-    ) -> Result<SocketAddress, Errno> {
+    fn getsockname(&self, socket: &Socket) -> Result<SocketAddress, Errno> {
         let inner = self.lock();
         if let Some(address) = &inner.address {
             Ok(address.clone())
@@ -815,18 +764,13 @@ impl SocketOps for UnixSocket {
     /// Returns the name of the peer of this socket, if such a peer exists.
     ///
     /// Returns an error if the socket is not connected.
-    fn getpeername(
-        &self,
-        locked: &mut Locked<FileOpsCore>,
-        _socket: &Socket,
-    ) -> Result<SocketAddress, Errno> {
+    fn getpeername(&self, _socket: &Socket) -> Result<SocketAddress, Errno> {
         let peer = self.lock().peer().ok_or_else(|| errno!(ENOTCONN))?.clone();
-        peer.getsockname(locked)
+        peer.getsockname()
     }
 
     fn setsockopt(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _socket: &Socket,
         current_task: &CurrentTask,
         level: u32,
@@ -897,7 +841,6 @@ impl SocketOps for UnixSocket {
 
     fn getsockopt(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         socket: &Socket,
         current_task: &CurrentTask,
         level: u32,
@@ -939,7 +882,6 @@ impl SocketOps for UnixSocket {
 
     fn ioctl(
         &self,
-        _locked: &mut Locked<Unlocked>,
         socket: &Socket,
         _file: &FileObject,
         current_task: &CurrentTask,
@@ -1057,7 +999,6 @@ impl UnixSocketInner {
     /// Returns the number of bytes that were written to the socket.
     fn write(
         &mut self,
-        locked: &mut Locked<FileOpsCore>,
         current_task: &CurrentTask,
         data: &mut dyn InputBuffer,
         address: Option<SocketAddress>,
@@ -1075,7 +1016,7 @@ impl UnixSocketInner {
             // TODO(https://fxbug.dev/385015056): Fill in SkBuf.
             let mut sk_buf = SkBuf::default();
 
-            let mut context = EbpfRunContextImpl::<'_>::new(locked.cast_locked(), current_task);
+            let mut context = EbpfRunContextImpl::<'_>::new(current_task);
             let s = bpf_program.run(&mut context, &mut sk_buf);
             if s == 0 {
                 None
@@ -1093,30 +1034,20 @@ impl UnixSocketInner {
     }
 }
 
-pub fn resolve_unix_socket_address<L>(
-    locked: &mut Locked<L>,
+pub fn resolve_unix_socket_address(
     current_task: &CurrentTask,
     name: &FsStr,
-) -> Result<SocketHandle, Errno>
-where
-    L: LockEqualOrBefore<FileOpsCore>,
-{
+) -> Result<SocketHandle, Errno> {
     if name[0] == b'\0' {
         current_task.running_state().abstract_socket_namespace.lookup(name)
     } else {
         let mut context = LookupContext::default();
         let (parent, basename) =
-            current_task.lookup_parent_at(locked, &mut context, FdNumber::AT_FDCWD, name)?;
-        let name =
-            parent.lookup_child(locked, current_task, &mut context, basename).map_err(|errno| {
-                if matches!(errno.code, EACCES | EPERM | EINTR) {
-                    errno
-                } else {
-                    errno!(ECONNREFUSED)
-                }
-            })?;
+            current_task.lookup_parent_at(&mut context, FdNumber::AT_FDCWD, name)?;
+        let name = parent.lookup_child(current_task, &mut context, basename).map_err(|errno| {
+            if matches!(errno.code, EACCES | EPERM | EINTR) { errno } else { errno!(ECONNREFUSED) }
+        })?;
         name.check_access(
-            locked,
             current_task,
             Access::WRITE,
             CheckAccessReason::InternalPermissionChecks,
@@ -1190,10 +1121,9 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_socket_send_capacity() {
-        spawn_kernel_and_run(async |locked, current_task| {
+        spawn_kernel_and_run(async |current_task| {
             let _kernel = current_task.kernel();
             let socket = Socket::new(
-                locked,
                 &current_task,
                 SocketDomain::Unix,
                 SocketType::Stream,
@@ -1202,11 +1132,10 @@ mod tests {
             )
             .expect("Failed to create socket.");
             socket
-                .bind(locked, &current_task, SocketAddress::Unix(b"\0".into()))
+                .bind(&current_task, SocketAddress::Unix(b"\0".into()))
                 .expect("Failed to bind socket.");
-            socket.listen(locked, &current_task, 10).expect("Failed to listen.");
+            socket.listen(&current_task, 10).expect("Failed to listen.");
             let connecting_socket = Socket::new(
-                locked,
                 &current_task,
                 SocketDomain::Unix,
                 SocketType::Stream,
@@ -1216,28 +1145,22 @@ mod tests {
             .expect("Failed to connect socket.");
             connecting_socket
                 .ops
-                .connect(
-                    locked.cast_locked(),
-                    &connecting_socket,
-                    &current_task,
-                    SocketPeer::Handle(socket.clone()),
-                )
+                .connect(&connecting_socket, &current_task, SocketPeer::Handle(socket.clone()))
                 .expect("Failed to connect socket.");
-            assert_eq!(Ok(FdEvents::POLLIN), socket.query_events(locked, &current_task));
-            let server_socket = socket.accept(locked, &current_task).unwrap();
+            assert_eq!(Ok(FdEvents::POLLIN), socket.query_events(&current_task));
+            let server_socket = socket.accept(&current_task).unwrap();
 
             let opt_size = std::mem::size_of::<socklen_t>();
-            let user_address =
-                map_memory(locked, &current_task, UserAddress::default(), opt_size as u64);
+            let user_address = map_memory(&current_task, UserAddress::default(), opt_size as u64);
             let send_capacity: socklen_t = 4 * 4096;
             current_task.write_memory(user_address, &send_capacity.to_ne_bytes()).unwrap();
             let user_buffer = UserBuffer { address: user_address, length: opt_size };
             server_socket
-                .setsockopt(locked, &current_task, SOL_SOCKET, SO_SNDBUF, user_buffer.into())
+                .setsockopt(&current_task, SOL_SOCKET, SO_SNDBUF, user_buffer.into())
                 .unwrap();
 
             let opt_bytes =
-                server_socket.getsockopt(locked, &current_task, SOL_SOCKET, SO_SNDBUF, 0).unwrap();
+                server_socket.getsockopt(&current_task, SOL_SOCKET, SO_SNDBUF, 0).unwrap();
             let retrieved_capacity = socklen_t::from_ne_bytes(opt_bytes.try_into().unwrap());
             // Setting SO_SNDBUF actually sets it to double the size
             assert_eq!(2 * send_capacity, retrieved_capacity);

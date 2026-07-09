@@ -845,7 +845,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn role_overrides_non_realtime() {
-        crate::testing::spawn_kernel_and_run_sync(|_locked, current_task| {
+        crate::testing::spawn_kernel_and_run_sync(|current_task| {
             let mut builder = RoleOverrides::new();
             builder.add("my_task", "my_task", "overridden_role");
             let overrides = builder.build().unwrap();

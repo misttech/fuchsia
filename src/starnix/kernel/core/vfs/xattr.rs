@@ -5,7 +5,6 @@
 use crate::vfs::{FsStr, FsString, XattrOp, XattrStorage};
 use starnix_rcu::rcu_hash_map::Entry;
 use starnix_rcu::{RcuHashMap, RcuReadScope};
-use starnix_sync::{FileOpsCore, Locked};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::{errno, error};
 
@@ -21,21 +20,11 @@ impl Default for MemoryXattrStorage {
 }
 
 impl XattrStorage for MemoryXattrStorage {
-    fn get_xattr(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        name: &FsStr,
-    ) -> Result<FsString, Errno> {
+    fn get_xattr(&self, name: &FsStr) -> Result<FsString, Errno> {
         self.xattrs.get(&RcuReadScope::new(), name).cloned().ok_or_else(|| errno!(ENODATA))
     }
 
-    fn set_xattr(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        name: &FsStr,
-        value: &FsStr,
-        op: XattrOp,
-    ) -> Result<(), Errno> {
+    fn set_xattr(&self, name: &FsStr, value: &FsStr, op: XattrOp) -> Result<(), Errno> {
         let mut xattrs = self.xattrs.lock();
         match xattrs.entry(name.to_owned()) {
             Entry::Vacant(_) if op == XattrOp::Replace => return error!(ENODATA),
@@ -50,7 +39,7 @@ impl XattrStorage for MemoryXattrStorage {
         Ok(())
     }
 
-    fn remove_xattr(&self, _locked: &mut Locked<FileOpsCore>, name: &FsStr) -> Result<(), Errno> {
+    fn remove_xattr(&self, name: &FsStr) -> Result<(), Errno> {
         let mut xattrs = self.xattrs.lock();
         if xattrs.remove(name).is_none() {
             return error!(ENODATA);
@@ -58,7 +47,7 @@ impl XattrStorage for MemoryXattrStorage {
         Ok(())
     }
 
-    fn list_xattrs(&self, _locked: &mut Locked<FileOpsCore>) -> Result<Vec<FsString>, Errno> {
+    fn list_xattrs(&self) -> Result<Vec<FsString>, Errno> {
         Ok(self.xattrs.keys(&RcuReadScope::new()).cloned().collect())
     }
 }

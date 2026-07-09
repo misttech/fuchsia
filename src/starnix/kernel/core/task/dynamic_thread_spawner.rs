@@ -9,13 +9,12 @@
 
 use crate::execution::create_kernel_thread;
 use crate::task::{
-    CurrentTask, DelayedReleaser, LockedAndTask, Task, ThreadLockupDetector, WrappedFuture,
-    with_new_current_task,
+    CurrentTask, DelayedReleaser, Task, ThreadLockupDetector, WrappedFuture, with_new_current_task,
 };
 use futures::TryFutureExt;
 use futures::channel::oneshot;
 use starnix_logging::{CATEGORY_STARNIX, log_debug, log_error};
-use starnix_sync::{DynamicThreadSpawnerLock, LockDepMutex, Locked, Unlocked};
+use starnix_sync::{DynamicThreadSpawnerLock, LockDepMutex};
 use starnix_task_command::TaskCommand;
 use starnix_types::ownership::release_after;
 use starnix_uapi::errno;
@@ -25,7 +24,7 @@ use std::sync::mpsc::{SendError, SyncSender, TrySendError, sync_channel};
 use std::sync::{Arc, Weak};
 use std::thread::JoinHandle;
 
-type BoxedClosure = Box<dyn FnOnce(&mut Locked<Unlocked>, &CurrentTask) -> () + Send + 'static>;
+type BoxedClosure = Box<dyn FnOnce(&CurrentTask) -> () + Send + 'static>;
 
 const DEFAULT_THREAD_ROLE: &str = "fuchsia.starnix.fair.16";
 
@@ -89,10 +88,10 @@ impl SpawnRequestBuilder<ClosureNone> {
     pub fn with_sync_closure<F, T>(
         self,
         f: F,
-    ) -> SpawnRequestBuilder<impl FnOnce(&mut Locked<Unlocked>, &CurrentTask) -> T + Send + 'static>
+    ) -> SpawnRequestBuilder<impl FnOnce(&CurrentTask) -> T + Send + 'static>
     where
         T: Send + 'static,
-        F: FnOnce(&mut Locked<Unlocked>, &CurrentTask) -> T + Send + 'static,
+        F: FnOnce(&CurrentTask) -> T + Send + 'static,
     {
         let SpawnRequestBuilder { role, closure_kind: _, debug_name } = self;
         SpawnRequestBuilder { role, closure_kind: f, debug_name }
@@ -102,10 +101,10 @@ impl SpawnRequestBuilder<ClosureNone> {
     pub fn with_async_closure<F, T>(
         self,
         f: F,
-    ) -> SpawnRequestBuilder<impl FnOnce(&mut Locked<Unlocked>, &CurrentTask) -> T + Send + 'static>
+    ) -> SpawnRequestBuilder<impl FnOnce(&CurrentTask) -> T + Send + 'static>
     where
         T: Send + 'static,
-        F: AsyncFnOnce(LockedAndTask<'_>) -> T + Send + 'static,
+        F: AsyncFnOnce(&CurrentTask) -> T + Send + 'static,
     {
         let sync_fn = async_to_sync(f, self.debug_name);
         self.with_sync_closure(sync_fn)
@@ -123,16 +122,16 @@ pub struct SpawnRequest {
 impl<T, F> SpawnRequestBuilder<F>
 where
     T: Send + 'static,
-    F: FnOnce(&mut Locked<Unlocked>, &CurrentTask) -> T + Send + 'static,
+    F: FnOnce(&CurrentTask) -> T + Send + 'static,
 {
     /// Build a spawn request.
     pub fn build(self) -> SpawnRequest {
         let Self { role, closure_kind, debug_name } = self;
         let closure = closure_kind;
         let closure = maybe_apply_role(role, closure);
-        let closure = Box::new(move |locked: &mut Locked<Unlocked>, current_task: &CurrentTask| {
+        let closure = Box::new(move |current_task: &CurrentTask| {
             fuchsia_trace::duration!(CATEGORY_STARNIX, debug_name);
-            let _ = closure(locked, current_task);
+            let _ = closure(current_task);
         });
         SpawnRequest { closure, debug_name }
     }
@@ -155,9 +154,9 @@ where
             receiver.recv().map_err(|err| errno!(EINTR, format!("while receiving: {err:?}")))
         };
         let closure = maybe_apply_role(role, closure);
-        let closure = Box::new(move |locked: &mut Locked<Unlocked>, current_task: &CurrentTask| {
+        let closure = Box::new(move |current_task: &CurrentTask| {
             fuchsia_trace::duration!(CATEGORY_STARNIX, debug_name);
-            let _ = sender.send(closure(locked, current_task));
+            let _ = sender.send(closure(current_task));
         });
         (result_fn, SpawnRequest { closure, debug_name })
     }
@@ -177,12 +176,11 @@ where
         let closure = closure_kind;
         let (sender_async, result_fut) = oneshot::channel::<T>();
         let maybe_with_role = maybe_apply_role(role, closure);
-        let repackaged =
-            Box::new(move |locked: &mut Locked<Unlocked>, current_task: &CurrentTask| {
-                fuchsia_trace::duration!(CATEGORY_STARNIX, debug_name);
-                let result = maybe_with_role(locked, current_task);
-                let _ = sender_async.send(result);
-            });
+        let repackaged = Box::new(move |current_task: &CurrentTask| {
+            fuchsia_trace::duration!(CATEGORY_STARNIX, debug_name);
+            let result = maybe_with_role(current_task);
+            let _ = sender_async.send(result);
+        });
         let result_fut =
             result_fut.map_err(|err| errno!(EINTR, format!("while receiving async: {err:?}")));
         (result_fut, SpawnRequest { closure: repackaged, debug_name })
@@ -205,43 +203,38 @@ pub struct DynamicThreadSpawner {
 fn maybe_apply_role<R, F>(
     role: Option<&'static str>,
     f: F,
-) -> impl FnOnce(&mut Locked<Unlocked>, &CurrentTask) -> R + Send + 'static
+) -> impl FnOnce(&CurrentTask) -> R + Send + 'static
 where
-    F: FnOnce(&mut Locked<Unlocked>, &CurrentTask) -> R + Send + 'static,
+    F: FnOnce(&CurrentTask) -> R + Send + 'static,
 {
-    move |locked, current_task| {
+    move |current_task| {
         if let Some(role) = role {
             if let Err(e) = fuchsia_scheduler::set_role_for_this_thread(role) {
                 log_debug!(e:%; "failed to set kthread role");
             }
-            let result = f(locked, current_task);
+            let result = f(current_task);
             if let Err(e) = fuchsia_scheduler::set_role_for_this_thread(DEFAULT_THREAD_ROLE) {
                 log_debug!(e:%; "failed to reset kthread role to default priority");
             }
             result
         } else {
-            f(locked, current_task)
+            f(current_task)
         }
     }
 }
 
 /// Convert async closure to sync closure that can be submitted to the spawner.
-fn async_to_sync<T, F>(
-    f: F,
-    name: &'static str,
-) -> impl FnOnce(&mut Locked<Unlocked>, &CurrentTask) -> T + Send + 'static
+fn async_to_sync<T, F>(f: F, name: &'static str) -> impl FnOnce(&CurrentTask) -> T + Send + 'static
 where
     T: Send + 'static,
-    F: AsyncFnOnce(LockedAndTask<'_>) -> T + Send + 'static,
+    F: AsyncFnOnce(&CurrentTask) -> T + Send + 'static,
 {
-    move |locked, current_task| {
+    move |current_task| {
         let mut exec = fuchsia_async::LocalExecutor::default();
-        let locked_and_task = LockedAndTask::new(locked, current_task);
 
-        let locked_and_task_clone = locked_and_task.clone();
         let wrapped_future = WrappedSpawnedFuture::new(
-            locked_and_task,
-            ThreadLockupDetector::track_future(f(locked_and_task_clone)),
+            current_task,
+            ThreadLockupDetector::track_future(f(current_task)),
             name,
         );
         let _waiting_guard = ThreadLockupDetector::pause_tracking();
@@ -263,10 +256,7 @@ impl ClosureKind for ClosureNone {}
 
 /// A builder type state where a closure has been provided.
 /// See [SpawnRequestBuilder] for usage details.
-impl<T: Send + 'static, FN: FnOnce(&mut Locked<Unlocked>, &CurrentTask) -> T + Send + 'static>
-    ClosureKind for FN
-{
-}
+impl<T: Send + 'static, FN: FnOnce(&CurrentTask) -> T + Send + 'static> ClosureKind for FN {}
 
 #[derive(Debug)]
 struct DynamicThreadSpawnerState {
@@ -337,7 +327,7 @@ impl DynamicThreadSpawner {
         let dispatch_function: BoxedClosure = Box::new({
             let state = self.state.clone();
             let system_task = self.system_task.clone();
-            move |_, _| {
+            move |_| {
                 sender
                     .send(RunningThread::new(
                         state,
@@ -355,16 +345,16 @@ impl DynamicThreadSpawner {
     }
 }
 
-type WrappedSpawnedFuture<'a, F> = WrappedFuture<F, LockedAndTask<'a>>;
+type WrappedSpawnedFuture<'a, F> = WrappedFuture<F, &'a CurrentTask>;
 
 impl<'a, F: 'a> WrappedSpawnedFuture<'a, F> {
-    fn new(locked_and_task: LockedAndTask<'a>, fut: F, name: &'static str) -> Self {
-        Self::new_with_cleaner(locked_and_task, trigger_delayed_releaser, fut, name)
+    fn new(current_task: &'a CurrentTask, fut: F, name: &'static str) -> Self {
+        Self::new_with_cleaner(current_task, trigger_delayed_releaser, fut, name)
     }
 }
 
-fn trigger_delayed_releaser(locked_and_task: LockedAndTask<'_>) {
-    locked_and_task.current_task().trigger_delayed_releaser(&mut locked_and_task.unlocked());
+fn trigger_delayed_releaser(current_task: &CurrentTask) {
+    current_task.trigger_delayed_releaser();
 }
 
 #[derive(Debug)]
@@ -385,22 +375,13 @@ impl RunningThread {
             std::thread::Builder::new()
                 .name("kthread-dynamic-worker".to_string())
                 .spawn(move || {
-                    // It's ok to create a new lock context here, since we are on a new thread.
-                    #[allow(
-                        clippy::undocumented_unsafe_blocks,
-                        reason = "Force documented unsafe blocks in Starnix"
-                    )]
-                    let locked = unsafe { Unlocked::new() };
-                    let result = with_new_current_task(
-                        locked,
-                        &system_task,
-                        debug_task_name,
-                        |locked, current_task| {
+                    let result =
+                        with_new_current_task(&system_task, debug_task_name, |current_task| {
                             while let Ok(f) = receiver.recv() {
                                 let _guard = ThreadLockupDetector::track();
-                                f(locked, &current_task);
+                                f(&current_task);
                                 // Apply any delayed releasers.
-                                current_task.trigger_delayed_releaser(locked);
+                                current_task.trigger_delayed_releaser();
                                 let mut state = state.lock();
                                 state.idle_threads += 1;
                                 if state.idle_threads > state.max_idle_threads {
@@ -411,8 +392,7 @@ impl RunningThread {
                                     return;
                                 }
                             }
-                        },
-                    );
+                        });
                     if let Err(e) = result {
                         log_error!("Unable to create a kernel thread: {e:?}");
                     }
@@ -438,18 +418,11 @@ impl RunningThread {
             std::thread::Builder::new()
                 .name("kthread-persistent-worker".to_string())
                 .spawn(move || {
-                    // It's ok to create a new lock context here, since we are on a new thread.
-                    #[allow(
-                        clippy::undocumented_unsafe_blocks,
-                        reason = "Force documented unsafe blocks in Starnix"
-                    )]
-                    let locked = unsafe { Unlocked::new() };
                     let current_task = {
                         let Some(system_task) = system_task.upgrade() else {
                             return;
                         };
                         match create_kernel_thread(
-                            locked,
                             &system_task,
                             TaskCommand::new(task_name.as_bytes()),
                         ) {
@@ -460,13 +433,13 @@ impl RunningThread {
                             }
                         }
                     };
-                    release_after!(current_task, locked, {
+                    release_after!(current_task, {
                         while let Ok(f) = receiver.recv() {
                             let _guard = ThreadLockupDetector::track();
-                            f(locked, &current_task);
+                            f(&current_task);
 
                             // Apply any delayed releasers.
-                            current_task.trigger_delayed_releaser(locked);
+                            current_task.trigger_delayed_releaser();
                         }
                     });
 
@@ -504,11 +477,11 @@ mod tests {
 
     #[fuchsia::test]
     async fn run_simple_task() {
-        spawn_kernel_and_run(async |_, current_task| {
+        spawn_kernel_and_run(async |current_task| {
             let spawner = DynamicThreadSpawner::new(2, current_task.weak_task(), "kthreadd");
             // Type decorations are needed sometimes to avoid "closure type is
             // not general enough" error.
-            let closure = move |_: &mut Locked<Unlocked>, _: &CurrentTask| {};
+            let closure = move |_: &CurrentTask| {};
             let req = SpawnRequestBuilder::new().with_sync_closure(closure).build();
             spawner.spawn_from_request(req);
         })
@@ -517,10 +490,10 @@ mod tests {
 
     #[fuchsia::test]
     async fn run_10_tasks() {
-        spawn_kernel_and_run(async |_, current_task| {
+        spawn_kernel_and_run(async |current_task| {
             let spawner = DynamicThreadSpawner::new(2, current_task.weak_task(), "kthreadd");
             for _ in 0..10 {
-                let closure = move |_: &mut Locked<Unlocked>, _: &CurrentTask| {};
+                let closure = move |_: &CurrentTask| {};
                 let opts = SpawnRequestBuilder::new().with_sync_closure(closure).build();
                 spawner.spawn_from_request(opts);
             }
@@ -530,13 +503,13 @@ mod tests {
 
     #[fuchsia::test]
     async fn blocking_task_do_not_prevent_further_processing() {
-        spawn_kernel_and_run(async |_, current_task| {
+        spawn_kernel_and_run(async |current_task| {
             let spawner = DynamicThreadSpawner::new(1, current_task.weak_task(), "kthreadd");
 
             let pair = Arc::new((fuchsia_sync::Mutex::new(false), fuchsia_sync::Condvar::new()));
             for _ in 0..10 {
                 let pair2 = Arc::clone(&pair);
-                let closure = move |_: &mut Locked<Unlocked>, _: &CurrentTask| {
+                let closure = move |_: &CurrentTask| {
                     let (lock, cvar) = &*pair2;
                     let mut cont = lock.lock();
                     while !*cont {
@@ -547,7 +520,7 @@ mod tests {
                 spawner.spawn_from_request(req);
             }
 
-            let closure = move |_: &mut Locked<Unlocked>, _: &CurrentTask| {
+            let closure = move |_: &CurrentTask| {
                 let (lock, cvar) = &*pair;
                 let mut cont = lock.lock();
                 *cont = true;
@@ -565,11 +538,11 @@ mod tests {
 
     #[fuchsia::test]
     async fn run_spawn_and_get_result() {
-        spawn_kernel_and_run(async |_, current_task| {
+        spawn_kernel_and_run(async |current_task| {
             let spawner = DynamicThreadSpawner::new(2, current_task.weak_task(), "kthreadd");
 
             let (result, req) =
-                SpawnRequestBuilder::new().with_sync_closure(|_, _| 3).build_with_sync_result();
+                SpawnRequestBuilder::new().with_sync_closure(|_| 3).build_with_sync_result();
             spawner.spawn_from_request(req);
             assert_eq!(result(), Ok(3));
         })
@@ -578,17 +551,16 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_spawn_async() {
-        spawn_kernel_and_run(async |_, current_task| {
+        spawn_kernel_and_run(async |current_task| {
             let spawner = DynamicThreadSpawner::new(2, current_task.weak_task(), "kthreadd");
 
             // The closure free variables must be decorated with their respective types,
             // the rust compiler gets confused otherwise and is unable to infer the correct
             // lifetimes. Interestingly, adding your own lifetimes here does *not* help.
-            let closure = move |locked: &mut Locked<Unlocked>, current_task: &CurrentTask| {
+            let closure = move |current_task: &CurrentTask| {
                 let mut exec = fuchsia_async::LocalExecutor::default();
-                let locked_and_task = LockedAndTask::new(locked, current_task);
                 let fut = async {};
-                let wrapped_future = WrappedSpawnedFuture::new(locked_and_task, fut, "test-async");
+                let wrapped_future = WrappedSpawnedFuture::new(current_task, fut, "test-async");
                 exec.run_singlethreaded(wrapped_future);
             };
             let req = SpawnRequestBuilder::new().with_sync_closure(closure).build();
@@ -599,9 +571,9 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_spawn_async_closure() {
-        spawn_kernel_and_run(async |_, current_task| {
+        spawn_kernel_and_run(async |current_task| {
             let spawner = DynamicThreadSpawner::new(2, current_task.weak_task(), "kthreadd");
-            let fut = async |_: LockedAndTask<'_>| 42;
+            let fut = async |_: &CurrentTask| 42;
             let (result, req) =
                 SpawnRequestBuilder::new().with_async_closure(fut).build_with_sync_result();
             spawner.spawn_from_request(req);
@@ -612,13 +584,13 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_spawn_sync_to_async_result() {
-        spawn_kernel_and_run(async |_, current_task| {
+        spawn_kernel_and_run(async |current_task| {
             let spawner = DynamicThreadSpawner::new(2, current_task.weak_task(), "kthreadd");
-            let fut = async |_: LockedAndTask<'_>| 42;
+            let fut = async |_: &CurrentTask| 42;
             let (result, req) =
                 SpawnRequestBuilder::new().with_async_closure(fut).build_with_sync_result();
 
-            let fut2 = async move |_: LockedAndTask<'_>| result().unwrap();
+            let fut2 = async move |_: &CurrentTask| result().unwrap();
             let (result2, req2) =
                 SpawnRequestBuilder::new().with_async_closure(fut2).build_with_sync_result();
             spawner.spawn_from_request(req2);
@@ -630,13 +602,13 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_spawn_async_to_async_result() {
-        spawn_kernel_and_run(async |_, current_task| {
+        spawn_kernel_and_run(async |current_task| {
             let spawner = DynamicThreadSpawner::new(2, current_task.weak_task(), "kthreadd");
-            let fut = async |_: LockedAndTask<'_>| 42;
+            let fut = async |_: &CurrentTask| 42;
             let (result_fut, req) =
                 SpawnRequestBuilder::new().with_async_closure(fut).build_with_async_result();
 
-            let fut2 = async move |_: LockedAndTask<'_>| result_fut.await.unwrap();
+            let fut2 = async move |_: &CurrentTask| result_fut.await.unwrap();
             let (result2, req2) =
                 SpawnRequestBuilder::new().with_async_closure(fut2).build_with_sync_result();
             spawner.spawn_from_request(req2);

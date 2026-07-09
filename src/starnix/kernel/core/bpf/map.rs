@@ -7,13 +7,11 @@
 
 use crate::mm::memory::MemoryObject;
 use crate::security;
-use crate::task::{CurrentTask, CurrentTaskAndLocked, Kernel, register_delayed_release};
+use crate::task::{CurrentTask, Kernel, register_delayed_release};
 use ebpf::MapSchema;
 use ebpf_api::{Map, MapError, PinnedMap};
 use starnix_lifecycle::{ObjectReleaser, ReleaserAction};
-use starnix_sync::{
-    EbpfMapStateLevel, EbpfStateLock, LockBefore, LockDepGuard, Locked, OrderedMutex,
-};
+use starnix_sync::{EbpfMapStateLevel, LockDepGuard, LockDepMutex};
 use starnix_types::ownership::{Releasable, ReleaseGuard};
 use starnix_uapi::auth::{CAP_BPF, CAP_NET_ADMIN, CAP_PERFMON, CAP_SYS_ADMIN};
 use starnix_uapi::errors::Errno;
@@ -113,7 +111,7 @@ pub struct BpfMap {
     map: PinnedMap,
 
     /// The internal state of the map object.
-    state: OrderedMutex<BpfMapState, EbpfMapStateLevel>,
+    state: LockDepMutex<BpfMapState, EbpfMapStateLevel>,
 
     /// The security state associated with this bpf Map.
     pub security_state: security::BpfMapState,
@@ -130,16 +128,12 @@ impl Deref for BpfMap {
 }
 
 impl BpfMap {
-    pub fn new<L>(
-        locked: &mut Locked<L>,
+    pub fn new(
         current_task: &CurrentTask,
         schema: MapSchema,
         name: &str,
         security_state: security::BpfMapState,
-    ) -> Result<BpfMapHandle, Errno>
-    where
-        L: LockBefore<EbpfStateLock>,
-    {
+    ) -> Result<BpfMapHandle, Errno> {
         check_map_create_access(current_task, &schema)?;
 
         let map = Map::new(schema, name).map_err(map_error_to_errno)?;
@@ -153,7 +147,7 @@ impl BpfMap {
             }
             .into(),
         );
-        current_task.kernel().ebpf_state.register_map(locked, &map);
+        current_task.kernel().ebpf_state.register_map(&map);
         Ok(map)
     }
 
@@ -161,22 +155,13 @@ impl BpfMap {
         self.id
     }
 
-    pub(crate) fn frozen<'a, L>(
-        &'a self,
-        locked: &'a mut Locked<L>,
-    ) -> (impl Deref<Target = bool> + 'a, &'a mut Locked<EbpfMapStateLevel>)
-    where
-        L: LockBefore<EbpfMapStateLevel>,
-    {
-        let (guard, locked) = self.state.lock_and(locked);
-        (LockDepGuard::map(guard, |s| &mut s.is_frozen), locked)
+    pub(crate) fn frozen<'a>(&'a self) -> impl Deref<Target = bool> + 'a {
+        let guard = self.state.lock();
+        LockDepGuard::map(guard, |s| &mut s.is_frozen)
     }
 
-    pub(crate) fn freeze<L>(&self, locked: &mut Locked<L>) -> Result<(), Errno>
-    where
-        L: LockBefore<EbpfMapStateLevel>,
-    {
-        let mut state = self.state.lock(locked);
+    pub(crate) fn freeze(&self) -> Result<(), Errno> {
+        let mut state = self.state.lock();
         if state.is_frozen {
             return Ok(());
         }
@@ -196,16 +181,11 @@ impl BpfMap {
         self.map.clone()
     }
 
-    pub(crate) fn get_memory<L, F>(
-        &self,
-        locked: &mut Locked<L>,
-        factory: F,
-    ) -> Result<Arc<MemoryObject>, Errno>
+    pub(crate) fn get_memory<F>(&self, factory: F) -> Result<Arc<MemoryObject>, Errno>
     where
-        L: LockBefore<EbpfMapStateLevel>,
         F: FnOnce() -> Result<Arc<MemoryObject>, Errno>,
     {
-        let mut state = self.state.lock(locked);
+        let mut state = self.state.lock();
         if state.is_frozen {
             return error!(EPERM);
         }
@@ -219,11 +199,11 @@ impl BpfMap {
 }
 
 impl Releasable for BpfMap {
-    type Context<'a> = CurrentTaskAndLocked<'a>;
+    type Context<'a> = &'a CurrentTask;
 
-    fn release<'a>(self, (locked, _current_task): CurrentTaskAndLocked<'a>) {
+    fn release<'a>(self, _current_task: &'a CurrentTask) {
         if let Some(kernel) = self.kernel.upgrade() {
-            kernel.ebpf_state.unregister_map(locked, self.id);
+            kernel.ebpf_state.unregister_map(self.id);
         }
     }
 }

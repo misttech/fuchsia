@@ -11,6 +11,8 @@ mod thermal_zone;
 use crate::thermal_zone::{SensorProps, ThermalZone};
 use anyhow::{Error, anyhow};
 use family::ThermalFamily;
+use fidl_fuchsia_hardware_temperature as ftemperature;
+use fidl_fuchsia_thermal as fthermal;
 use starnix_core::device::kobject::Device;
 use starnix_core::fs::sysfs::build_device_directory;
 use starnix_core::task::{CurrentTask, Kernel};
@@ -18,7 +20,7 @@ use starnix_core::vfs::FsNodeOps;
 use starnix_core::vfs::pseudo::simple_directory::SimpleDirectoryMutator;
 use starnix_core::vfs::pseudo::simple_file::{BytesFile, BytesFileOps};
 use starnix_logging::{log_error, log_warn};
-use starnix_sync::{Locked, Unlocked};
+
 use starnix_uapi::errors::{Errno, errno, error};
 use starnix_uapi::file_mode::mode;
 use std::borrow::Cow;
@@ -26,7 +28,6 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use thermal_netlink::{celsius_to_millicelsius, millicelsius_to_celsius};
 use zx::MonotonicInstant;
-use {fidl_fuchsia_hardware_temperature as ftemperature, fidl_fuchsia_thermal as fthermal};
 
 pub use cooling::cooling_device_init;
 
@@ -161,7 +162,7 @@ impl BytesFileOps for EmulTempFile {
     }
 }
 
-pub fn thermal_device_init(locked: &mut Locked<Unlocked>, kernel: &Kernel) -> Result<(), Error> {
+pub fn thermal_device_init(kernel: &Kernel) -> Result<(), Error> {
     let sensor_manager =
         fuchsia_component::client::connect_to_protocol_sync::<fthermal::SensorManagerMarker>()
             .map_err(|error| anyhow!("Failed to connect to SensorManager: {:?}", error))?;
@@ -198,9 +199,7 @@ pub fn thermal_device_init(locked: &mut Locked<Unlocked>, kernel: &Kernel) -> Re
             continue;
         }
 
-        registry.add_numberless_device(
-            locked,
-            thermal_zone.clone().as_str().into(),
+        registry.add_numberless_device(thermal_zone.clone().as_str().into(),
             virtual_thermal_class.clone(),
             move |device, dir|{
                 match fuchsia_component::client::connect_to_protocol_sync::<fthermal::SensorManagerMarker>() {

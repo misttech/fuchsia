@@ -16,17 +16,15 @@ use starnix_core::device::serial::SerialDevice;
 use starnix_core::fs::sysfs::build_device_directory;
 use starnix_core::task::Kernel;
 use starnix_logging::{log_error, log_info, log_warn};
-use starnix_sync::{Locked, Unlocked};
-use std::ops::DerefMut;
+
 use std::sync::Arc;
 
 const SERIAL_DIRECTORY: &str = "/dev/class/serial";
 
-pub fn nanohub_device_init(locked: &mut Locked<Unlocked>, kernel: &Arc<Kernel>) {
-    register_gpio_chip_device(locked, kernel, "gpiochipwake0");
+pub fn nanohub_device_init(kernel: &Arc<Kernel>) {
+    register_gpio_chip_device(kernel, "gpiochipwake0");
 
     register_socket_tunnel_device(
-        locked,
         kernel,
         "/dev/display_comms".into(),
         "display_comms".into(),
@@ -37,7 +35,6 @@ pub fn nanohub_device_init(locked: &mut Locked<Unlocked>, kernel: &Arc<Kernel>) 
     // /dev/nanohub_comms requires a set of additional sysfs nodes, so create this route
     // with a specialized directory.
     register_socket_tunnel_device(
-        locked,
         kernel,
         "/dev/nanohub_comms".into(),
         "nanohub_comms".into(),
@@ -103,7 +100,6 @@ async fn register_datachannel_devices(kernel: Arc<Kernel>) {
             registry.objects.get_or_create_class("nanohub".into(), registry.objects.virtual_bus());
 
         if let Err(e) = registry.register_dyn_device_with_dir(
-            current_task.kernel().kthreads.unlocked_for_async().deref_mut(),
             current_task.kernel(),
             name.as_bytes().into(),
             device_class,
@@ -142,8 +138,6 @@ async fn register_serial_device(kernel: Arc<Kernel>) {
         match watcher.try_next().await {
             Ok(Some(watch_msg)) => {
                 let current_task = kernel.kthreads.system_task();
-                let mut locked = kernel.kthreads.unlocked_for_async();
-                let locked = &mut locked;
                 let filename = watch_msg
                     .filename
                     .as_path()
@@ -181,12 +175,9 @@ async fn register_serial_device(kernel: Arc<Kernel>) {
                     };
 
                     if device_class == fserial::Class::Mcu {
-                        let serial_device = SerialDevice::new(
-                            locked,
-                            current_task,
-                            serial_proxy.into_channel().into(),
-                        )
-                        .expect("Can create SerialDevice wrapper");
+                        let serial_device =
+                            SerialDevice::new(current_task, serial_proxy.into_channel().into())
+                                .expect("Can create SerialDevice wrapper");
 
                         // TODO This will register with an incorrect device number. We should be
                         // dynamically registering a major device and this should be minor device 1
@@ -194,7 +185,6 @@ async fn register_serial_device(kernel: Arc<Kernel>) {
                         let registry = &current_task.kernel().device_registry;
                         registry
                             .register_dyn_device(
-                                locked,
                                 current_task.kernel(),
                                 "ttyHS1".into(),
                                 registry.objects.tty_class(),

@@ -4,7 +4,7 @@
 
 use crate::task::{CurrentTask, WaitQueue, Waiter};
 use crate::vfs::{FdTableId, FileObject, FileObjectId};
-use starnix_sync::{LockDepMutex, Locked, RecordLocksStateLock, Unlocked};
+use starnix_sync::{LockDepMutex, RecordLocksStateLock};
 use starnix_uapi::errors::{EAGAIN, Errno};
 use starnix_uapi::{
     __kernel_off_t, F_GETLK, F_GETLK64, F_OFD_GETLK, F_OFD_SETLK, F_OFD_SETLKW, F_RDLCK, F_SETLK,
@@ -421,7 +421,6 @@ impl RecordLocks {
     /// overwrite the content of the flock struct passed by the user.
     pub fn lock(
         &self,
-        locked: &mut Locked<Unlocked>,
         current_task: &CurrentTask,
         file: &FileObject,
         cmd: RecordLockCommand,
@@ -460,7 +459,7 @@ impl RecordLocks {
                                 // TODO(qsr): Check deadlocks.
                                 if let Some(waiter) = waiter {
                                     std::mem::drop(state);
-                                    waiter.wait(locked, current_task)?;
+                                    waiter.wait(current_task)?;
                                 }
                             }
                             result => return result.map(|_| None),

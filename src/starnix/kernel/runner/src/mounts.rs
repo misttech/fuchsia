@@ -9,7 +9,7 @@ use starnix_core::fs::tmpfs::TmpFs;
 use starnix_core::task::{CurrentTask, Kernel};
 use starnix_core::vfs::fs_args::MountParams;
 use starnix_core::vfs::{FileSystemHandle, FileSystemOptions, FsString};
-use starnix_sync::{Locked, Unlocked};
+
 use starnix_uapi::mount_flags::{MountFlags, MountpointFlags};
 
 pub struct MountAction {
@@ -20,7 +20,6 @@ pub struct MountAction {
 
 impl MountAction {
     pub fn new_for_root(
-        locked: &mut Locked<Unlocked>,
         kernel: &Kernel,
         pkg: &fio::DirectorySynchronousProxy,
         spec: &str,
@@ -33,9 +32,9 @@ impl MountAction {
         // The root file system needs to be creatable without a task because we mount the root
         // file system before creating the initial task.
         let fs = match spec.fs_type.as_slice() {
-            b"remote_bundle" => RemoteBundle::new_fs_in_base(locked, kernel, pkg, options, rights)?,
-            b"remote_pkg_subdir" => new_remotefs_in_root(locked, kernel, pkg, options, rights)?,
-            b"tmpfs" => TmpFs::new_fs_with_options(locked, kernel, options)?,
+            b"remote_bundle" => RemoteBundle::new_fs_in_base(kernel, pkg, options, rights)?,
+            b"remote_pkg_subdir" => new_remotefs_in_root(kernel, pkg, options, rights)?,
+            b"tmpfs" => TmpFs::new_fs_with_options(kernel, options)?,
             _ => bail!("unsupported root file system: {}", spec.fs_type),
         };
 
@@ -43,7 +42,6 @@ impl MountAction {
     }
 
     pub fn from_spec(
-        locked: &mut Locked<Unlocked>,
         current_task: &CurrentTask,
         pkg: &fio::DirectorySynchronousProxy,
         spec: &str,
@@ -54,15 +52,15 @@ impl MountAction {
         let fs = match spec.fs_type.as_slice() {
             // The remote_bundle file system is available only via the mounts declaration in CML.
             b"remote_bundle" => {
-                RemoteBundle::new_fs_in_base(locked, current_task.kernel(), pkg, options, rights)?
+                RemoteBundle::new_fs_in_base(current_task.kernel(), pkg, options, rights)?
             }
 
             // Mounts a subdirectory of the container's `/pkg`.
             b"remote_pkg_subdir" => {
-                new_remotefs_in_root(locked, current_task.kernel(), pkg, options, rights)?
+                new_remotefs_in_root(current_task.kernel(), pkg, options, rights)?
             }
 
-            _ => current_task.create_filesystem(locked, spec.fs_type.as_ref(), options)?,
+            _ => current_task.create_filesystem(spec.fs_type.as_ref(), options)?,
         };
 
         Ok(spec.into_action(fs))

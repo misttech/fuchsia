@@ -20,7 +20,7 @@ use starnix_core::vfs::{
     fs_node_impl_xattr_delegate,
 };
 use starnix_logging::{impossible_error, track_stub};
-use starnix_sync::{FileOpsCore, Locked, Unlocked};
+
 use starnix_types::vfs::default_statfs;
 use starnix_uapi::auth::FsCred;
 use starnix_uapi::errors::Errno;
@@ -45,12 +45,7 @@ impl FileSystemOps for ExtFilesystem {
         "ext4".into()
     }
 
-    fn statfs(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        _fs: &FileSystem,
-        _current_task: &CurrentTask,
-    ) -> Result<statfs, Errno> {
+    fn statfs(&self, _fs: &FileSystem, _current_task: &CurrentTask) -> Result<statfs, Errno> {
         Ok(default_statfs(EXT4_SUPER_MAGIC))
     }
 }
@@ -63,7 +58,6 @@ struct ExtNode {
 
 impl ExtFilesystem {
     pub fn new_fs(
-        locked: &mut Locked<Unlocked>,
         current_task: &CurrentTask,
         options: FileSystemOptions,
     ) -> Result<FileSystemHandle, Errno> {
@@ -74,11 +68,11 @@ impl ExtFilesystem {
             prot_flags ^= ProtectionFlags::WRITE;
         }
 
-        let source_device = current_task.open_file(locked, options.source.as_ref(), open_flags)?;
+        let source_device = current_task.open_file(options.source.as_ref(), open_flags)?;
 
         // Note that we *require* get_memory to work here for performance reasons.  Fallback to
         // FIDL-based read/write API is not an option.
-        let memory = source_device.get_memory(locked, current_task, None, prot_flags)?;
+        let memory = source_device.get_memory(current_task, None, prot_flags)?;
         let pager_vmo = memory
             .as_vmo()
             .ok_or_else(|| errno!(EINVAL))?
@@ -97,7 +91,6 @@ impl ExtFilesystem {
         let fs = Self { parser, pager };
         let ops = ExtDirectory { inner: Arc::new(ExtNode::new(&fs, ROOT_INODE_NUM)?) };
         let fs = FileSystem::new(
-            locked,
             current_task.kernel(),
             CacheMode::Cached(current_task.kernel().fs_cache_config()),
             fs,
@@ -117,28 +110,18 @@ impl ExtNode {
 }
 
 impl XattrStorage for ExtNode {
-    fn list_xattrs(&self, _locked: &mut Locked<FileOpsCore>) -> Result<Vec<FsString>, Errno> {
+    fn list_xattrs(&self) -> Result<Vec<FsString>, Errno> {
         Ok(self.xattrs.keys().map(|k| k.clone().into()).collect())
     }
 
-    fn get_xattr(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        name: &FsStr,
-    ) -> Result<FsString, Errno> {
+    fn get_xattr(&self, name: &FsStr) -> Result<FsString, Errno> {
         self.xattrs.get(&**name).map(|a| a.clone().into()).ok_or_else(|| errno!(ENODATA))
     }
 
-    fn set_xattr(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        _name: &FsStr,
-        _value: &FsStr,
-        _op: XattrOp,
-    ) -> Result<(), Errno> {
+    fn set_xattr(&self, _name: &FsStr, _value: &FsStr, _op: XattrOp) -> Result<(), Errno> {
         error!(ENOSYS)
     }
-    fn remove_xattr(&self, _locked: &mut Locked<FileOpsCore>, _name: &FsStr) -> Result<(), Errno> {
+    fn remove_xattr(&self, _name: &FsStr) -> Result<(), Errno> {
         error!(ENOSYS)
     }
 }
@@ -153,7 +136,6 @@ impl FsNodeOps for ExtDirectory {
 
     fn create_file_ops(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _node: &FsNode,
         _current_task: &CurrentTask,
         _flags: OpenFlags,
@@ -163,7 +145,6 @@ impl FsNodeOps for ExtDirectory {
 
     fn lookup(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         node: &FsNode,
         _current_task: &CurrentTask,
         name: &FsStr,
@@ -292,7 +273,6 @@ impl FsNodeOps for ExtFile {
 
     fn create_file_ops(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         node: &FsNode,
         _current_task: &CurrentTask,
         _flags: OpenFlags,
@@ -345,12 +325,7 @@ impl FsNodeOps for ExtSymlink {
     fs_node_impl_symlink!();
     fs_node_impl_xattr_delegate!(self, self.inner);
 
-    fn readlink(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        node: &FsNode,
-        _current_task: &CurrentTask,
-    ) -> Result<SymlinkTarget, Errno> {
+    fn readlink(&self, node: &FsNode, _current_task: &CurrentTask) -> Result<SymlinkTarget, Errno> {
         let fs = node.fs();
         let fs_ops = fs.downcast_ops::<ExtFilesystem>().unwrap();
         let data = fs_ops.parser.read_data(self.inner.inode_num).map_err(|e| errno!(EIO, e))?;
@@ -368,7 +343,6 @@ impl FileOps for ExtDirFileObject {
 
     fn seek(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         current_offset: off_t,
@@ -379,7 +353,6 @@ impl FileOps for ExtDirFileObject {
 
     fn readdir(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         file: &FileObject,
         _current_task: &CurrentTask,
         sink: &mut dyn DirentSink,

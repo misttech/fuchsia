@@ -18,7 +18,7 @@ use crate::vfs::{
     FileSystemOps, FileSystemOptions, FsNodeInfo, FsStr, SpecialNode, default_fcntl,
     fileops_impl_nonseekable, fileops_impl_noop_sync,
 };
-use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex, MutexGuard, Unlocked};
+use starnix_sync::{Mutex, MutexGuard};
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_types::user_buffer::{UserBuffer, UserBuffers};
 use starnix_types::vfs::default_statfs;
@@ -81,7 +81,6 @@ impl Pipe {
     }
 
     pub fn open(
-        locked: &mut Locked<Unlocked>,
         current_task: &CurrentTask,
         pipe: &PipeHandle,
         flags: OpenFlags,
@@ -138,7 +137,7 @@ impl Pipe {
                 WaitCallback::none(),
             );
             std::mem::drop(pipe_locked);
-            match waiter.wait(locked, current_task) {
+            match waiter.wait(current_task) {
                 Err(e) => {
                     return Err(e);
                 }
@@ -239,7 +238,6 @@ impl Pipe {
 
     pub fn write(
         &mut self,
-        locked: &mut Locked<FileOpsCore>,
         current_task: &CurrentTask,
         data: &mut dyn InputBuffer,
     ) -> Result<usize, Errno> {
@@ -248,7 +246,7 @@ impl Pipe {
         }
 
         if self.reader_count == 0 {
-            send_standard_signal(locked, current_task, SignalInfo::kernel(SIGPIPE));
+            send_standard_signal(current_task, SignalInfo::kernel(SIGPIPE));
             return error!(EPIPE);
         }
 
@@ -304,7 +302,6 @@ impl Pipe {
     fn ioctl(
         &self,
         _file: &FileObject,
-        _locked: &mut Locked<Unlocked>,
         current_task: &CurrentTask,
         request: u32,
         arg: SyscallArg,
@@ -389,15 +386,12 @@ impl Pipe {
 /// The first FileObject is the read endpoint of the pipe. The second is the
 /// write endpoint of the pipe. This order matches the order expected by
 /// sys_pipe2().
-pub fn new_pipe(
-    locked: &mut Locked<Unlocked>,
-    current_task: &CurrentTask,
-) -> Result<(FileHandle, FileHandle), Errno> {
+pub fn new_pipe(current_task: &CurrentTask) -> Result<(FileHandle, FileHandle), Errno> {
     let fs = current_task
         .kernel()
         .expando
         .get::<FsRegistry>()
-        .create(locked, current_task, "pipefs".into(), FileSystemOptions::default())
+        .create(current_task, "pipefs".into(), FileSystemOptions::default())
         .ok_or_else(|| errno!(EINVAL))??;
     let mut info = FsNodeInfo::new(mode!(IFIFO, 0o600), current_task.current_fscred());
     info.blksize = ATOMIC_IO_BYTES.into();
@@ -412,7 +406,6 @@ pub fn new_pipe(
     // Creating the readable `FileObject` takes care of initializing the `node` security label.
     let read_ops = PipeFileObject { pipe: Arc::clone(pipe) };
     let read_file = FileObject::new_anonymous(
-        locked,
         current_task,
         Box::new(read_ops),
         Arc::clone(&node),
@@ -422,7 +415,6 @@ pub fn new_pipe(
     // Create the writable `FileObject` using the readable object's `name` to reduce overhead.
     let write_ops = PipeFileObject { pipe: Arc::clone(pipe) };
     let write_file = FileObject::new(
-        locked,
         current_task,
         Box::new(write_ops),
         read_file.name.to_passive(),
@@ -434,12 +426,7 @@ pub fn new_pipe(
 
 struct PipeFs;
 impl FileSystemOps for PipeFs {
-    fn statfs(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        _fs: &FileSystem,
-        _current_task: &CurrentTask,
-    ) -> Result<statfs, Errno> {
+    fn statfs(&self, _fs: &FileSystem, _current_task: &CurrentTask) -> Result<statfs, Errno> {
         Ok(default_statfs(PIPEFS_MAGIC))
     }
     fn name(&self) -> &'static FsStr {
@@ -448,7 +435,6 @@ impl FileSystemOps for PipeFs {
 }
 
 fn pipe_fs(
-    locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
     _options: FileSystemOptions,
 ) -> Result<FileSystemHandle, Errno> {
@@ -459,14 +445,8 @@ fn pipe_fs(
         .expando
         .get_or_init(|| {
             PipeFsHandle(
-                FileSystem::new(
-                    locked,
-                    kernel,
-                    CacheMode::Uncached,
-                    PipeFs,
-                    FileSystemOptions::default(),
-                )
-                .expect("pipefs constructed with valid options"),
+                FileSystem::new(kernel, CacheMode::Uncached, PipeFs, FileSystemOptions::default())
+                    .expect("pipefs constructed with valid options"),
             )
         })
         .0
@@ -485,25 +465,19 @@ impl FileOps for PipeFileObject {
     fileops_impl_nonseekable!();
     fileops_impl_noop_sync!();
 
-    fn close(
-        self: Box<Self>,
-        _locked: &mut Locked<FileOpsCore>,
-        file: &FileObjectState,
-        _current_task: &CurrentTask,
-    ) {
+    fn close(self: Box<Self>, file: &FileObjectState, _current_task: &CurrentTask) {
         self.on_close(file.flags());
     }
 
     fn read(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         file: &FileObject,
         current_task: &CurrentTask,
         offset: usize,
         data: &mut dyn OutputBuffer,
     ) -> Result<usize, Errno> {
         debug_assert!(offset == 0);
-        file.blocking_op(locked, current_task, FdEvents::POLLIN | FdEvents::POLLHUP, None, |_| {
+        file.blocking_op(current_task, FdEvents::POLLIN | FdEvents::POLLHUP, None, || {
             let mut pipe = self.pipe.lock();
             let actual = pipe.read(data)?;
             if actual > 0 && pipe.is_empty() {
@@ -515,7 +489,6 @@ impl FileOps for PipeFileObject {
 
     fn write(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         file: &FileObject,
         current_task: &CurrentTask,
         offset: usize,
@@ -524,11 +497,11 @@ impl FileOps for PipeFileObject {
         debug_assert!(offset == 0);
         debug_assert!(data.bytes_read() == 0);
 
-        let result = file.blocking_op(locked, current_task, FdEvents::POLLOUT, None, |locked| {
+        let result = file.blocking_op(current_task, FdEvents::POLLOUT, None, || {
             let mut pipe = self.pipe.lock();
             let was_empty = pipe.is_empty();
             let offset_before = data.bytes_read();
-            let bytes_written = pipe.write(locked, current_task, data)?;
+            let bytes_written = pipe.write(current_task, data)?;
             debug_assert!(data.bytes_read() - offset_before == bytes_written);
             if bytes_written > 0 && was_empty {
                 pipe.notify_fd_events(FdEvents::POLLIN);
@@ -550,7 +523,6 @@ impl FileOps for PipeFileObject {
 
     fn wait_async(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         file: &FileObject,
         _current_task: &CurrentTask,
         waiter: &Waiter,
@@ -569,7 +541,6 @@ impl FileOps for PipeFileObject {
 
     fn query_events(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         file: &FileObject,
         _current_task: &CurrentTask,
     ) -> Result<FdEvents, Errno> {
@@ -588,13 +559,12 @@ impl FileOps for PipeFileObject {
 
     fn ioctl(
         &self,
-        locked: &mut Locked<Unlocked>,
         file: &FileObject,
         current_task: &CurrentTask,
         request: u32,
         arg: SyscallArg,
     ) -> Result<SyscallResult, Errno> {
-        self.pipe.lock().ioctl(file, locked, current_task, request, arg)
+        self.pipe.lock().ioctl(file, current_task, request, arg)
     }
 }
 
@@ -787,9 +757,8 @@ impl PipeFileObject {
     ///
     /// This will wait on `events` if the file is opened in blocking mode. If the file is opened in
     /// not blocking mode and `condition` is not realized, this will return EAGAIN.
-    fn wait_for_condition<'a, L, F, G, V>(
+    fn wait_for_condition<'a, F, G, V>(
         &'a self,
-        locked: &mut Locked<L>,
         current_task: &CurrentTask,
         file: &FileHandle,
         condition: F,
@@ -797,32 +766,29 @@ impl PipeFileObject {
         events: FdEvents,
     ) -> Result<(V, MutexGuard<'a, Pipe>), Errno>
     where
-        L: LockEqualOrBefore<FileOpsCore>,
         F: Fn(&Pipe) -> bool,
-        G: Fn(&mut Locked<L>) -> Result<V, Errno>,
+        G: Fn() -> Result<V, Errno>,
     {
-        file.blocking_op(locked, current_task, events, None, |locked| {
-            let other = pregen(locked)?;
+        file.blocking_op(current_task, events, None, || {
+            let other = pregen()?;
             let pipe = self.pipe.lock();
             if condition(&pipe) { Ok((other, pipe)) } else { error!(EAGAIN) }
         })
     }
 
     /// Lock the pipe for reading, after having run `pregen`.
-    fn lock_pipe_for_reading_with<'a, L, G, V>(
+    fn lock_pipe_for_reading_with<'a, G, V>(
         &'a self,
-        locked: &mut Locked<L>,
         current_task: &CurrentTask,
         file: &FileHandle,
         pregen: G,
         non_blocking: bool,
     ) -> Result<(V, MutexGuard<'a, Pipe>), Errno>
     where
-        L: LockEqualOrBefore<FileOpsCore>,
-        G: Fn(&mut Locked<L>) -> Result<V, Errno>,
+        G: Fn() -> Result<V, Errno>,
     {
         if non_blocking {
-            let other = pregen(locked)?;
+            let other = pregen()?;
             let pipe = self.pipe.lock();
             if !pipe.is_readable() {
                 return error!(EAGAIN);
@@ -830,7 +796,6 @@ impl PipeFileObject {
             Ok((other, pipe))
         } else {
             self.wait_for_condition(
-                locked,
                 current_task,
                 file,
                 |pipe| pipe.is_readable(),
@@ -840,24 +805,18 @@ impl PipeFileObject {
         }
     }
 
-    fn lock_pipe_for_reading<'a, L>(
+    fn lock_pipe_for_reading<'a>(
         &'a self,
-        locked: &mut Locked<L>,
         current_task: &CurrentTask,
         file: &FileHandle,
         non_blocking: bool,
-    ) -> Result<MutexGuard<'a, Pipe>, Errno>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
-        self.lock_pipe_for_reading_with(locked, current_task, file, |_| Ok(()), non_blocking)
-            .map(|(_, l)| l)
+    ) -> Result<MutexGuard<'a, Pipe>, Errno> {
+        self.lock_pipe_for_reading_with(current_task, file, || Ok(()), non_blocking).map(|(_, l)| l)
     }
 
     /// Lock the pipe for writing, after having run `pregen`.
-    fn lock_pipe_for_writing_with<'a, L, G, V>(
+    fn lock_pipe_for_writing_with<'a, G, V>(
         &'a self,
-        locked: &mut Locked<L>,
         current_task: &CurrentTask,
         file: &FileHandle,
         pregen: G,
@@ -865,11 +824,10 @@ impl PipeFileObject {
         len: usize,
     ) -> Result<(V, MutexGuard<'a, Pipe>), Errno>
     where
-        L: LockEqualOrBefore<FileOpsCore>,
-        G: Fn(&mut Locked<L>) -> Result<V, Errno>,
+        G: Fn() -> Result<V, Errno>,
     {
         if non_blocking {
-            let other = pregen(locked)?;
+            let other = pregen()?;
             let pipe = self.pipe.lock();
             if !pipe.is_writable(len) {
                 return error!(EAGAIN);
@@ -877,7 +835,6 @@ impl PipeFileObject {
             Ok((other, pipe))
         } else {
             self.wait_for_condition(
-                locked,
                 current_task,
                 file,
                 |pipe| pipe.is_writable(len),
@@ -887,18 +844,14 @@ impl PipeFileObject {
         }
     }
 
-    fn lock_pipe_for_writing<'a, L>(
+    fn lock_pipe_for_writing<'a>(
         &'a self,
-        locked: &mut Locked<L>,
         current_task: &CurrentTask,
         file: &FileHandle,
         non_blocking: bool,
         len: usize,
-    ) -> Result<MutexGuard<'a, Pipe>, Errno>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
-        self.lock_pipe_for_writing_with(locked, current_task, file, |_| Ok(()), non_blocking, len)
+    ) -> Result<MutexGuard<'a, Pipe>, Errno> {
+        self.lock_pipe_for_writing_with(current_task, file, || Ok(()), non_blocking, len)
             .map(|(_, l)| l)
     }
 
@@ -906,30 +859,25 @@ impl PipeFileObject {
     ///
     /// The given file handle must not be a pipe. If you wish to splice between two pipes, use
     /// `lock_pipes` and `Pipe::splice`.
-    pub fn splice_from<L>(
+    pub fn splice_from(
         &self,
-        locked: &mut Locked<L>,
         current_task: &CurrentTask,
         self_file: &FileHandle,
         from: &FileHandle,
         maybe_offset: Option<usize>,
         len: usize,
         non_blocking: bool,
-    ) -> Result<usize, Errno>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
+    ) -> Result<usize, Errno> {
         // If both ends are pipes, use `lock_pipes` and `Pipe::splice`.
         assert!(from.downcast_file::<PipeFileObject>().is_none());
 
-        let mut pipe =
-            self.lock_pipe_for_writing(locked, current_task, self_file, non_blocking, len)?;
+        let mut pipe = self.lock_pipe_for_writing(current_task, self_file, non_blocking, len)?;
         let len = std::cmp::min(len, pipe.messages.available_capacity());
         let mut buffer = SpliceOutputBuffer { pipe: &mut pipe, len, available: len };
         if let Some(offset) = maybe_offset {
-            from.read_at(locked, current_task, offset, &mut buffer)
+            from.read_at(current_task, offset, &mut buffer)
         } else {
-            from.read(locked, current_task, &mut buffer)
+            from.read(current_task, &mut buffer)
         }
     }
 
@@ -937,48 +885,38 @@ impl PipeFileObject {
     ///
     /// The given file handle must not be a pipe. If you wish to splice between two pipes, use
     /// `lock_pipes` and `Pipe::splice`.
-    pub fn splice_to<L>(
+    pub fn splice_to(
         &self,
-        locked: &mut Locked<L>,
         current_task: &CurrentTask,
         self_file: &FileHandle,
         to: &FileHandle,
         maybe_offset: Option<usize>,
         len: usize,
         non_blocking: bool,
-    ) -> Result<usize, Errno>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
+    ) -> Result<usize, Errno> {
         // If both ends are pipes, use `lock_pipes` and `Pipe::splice`.
         assert!(to.downcast_file::<PipeFileObject>().is_none());
 
-        let mut pipe = self.lock_pipe_for_reading(locked, current_task, self_file, non_blocking)?;
+        let mut pipe = self.lock_pipe_for_reading(current_task, self_file, non_blocking)?;
         let len = std::cmp::min(len, pipe.messages.len());
         let mut buffer = SpliceInputBuffer { pipe: &mut pipe, len, available: len };
         if let Some(offset) = maybe_offset {
-            to.write_at(locked, current_task, offset, &mut buffer)
+            to.write_at(current_task, offset, &mut buffer)
         } else {
-            to.write(locked, current_task, &mut buffer)
+            to.write(current_task, &mut buffer)
         }
     }
 
     /// Share the mappings backing the given input buffer into the pipe.
     ///
     /// Returns the number of bytes enqueued.
-    pub fn vmsplice_from<L>(
+    pub fn vmsplice_from(
         &self,
-        locked: &mut Locked<L>,
         current_task: &CurrentTask,
         self_file: &FileHandle,
         mut iovec: UserBuffers,
         non_blocking: bool,
-    ) -> Result<usize, Errno>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
-        let locked = locked.cast_locked::<FileOpsCore>();
-        let locked = locked;
+    ) -> Result<usize, Errno> {
         let available = UserBuffer::cap_buffers_to_max_rw_count(
             current_task.maximum_valid_address().ok_or_else(|| errno!(EINVAL))?,
             &mut iovec,
@@ -986,10 +924,10 @@ impl PipeFileObject {
         let mappings = current_task.mm()?.get_mappings_for_vmsplice(&iovec)?;
 
         let mut pipe =
-            self.lock_pipe_for_writing(locked, current_task, self_file, non_blocking, available)?;
+            self.lock_pipe_for_writing(current_task, self_file, non_blocking, available)?;
 
         if pipe.reader_count == 0 {
-            send_standard_signal(locked, current_task, SignalInfo::kernel(SIGPIPE));
+            send_standard_signal(current_task, SignalInfo::kernel(SIGPIPE));
             return error!(EPIPE);
         }
 
@@ -1018,18 +956,14 @@ impl PipeFileObject {
     /// Copy data from the pipe to the given output buffer.
     ///
     /// Returns the number of bytes transferred.
-    pub fn vmsplice_to<L>(
+    pub fn vmsplice_to(
         &self,
-        locked: &mut Locked<L>,
         current_task: &CurrentTask,
         self_file: &FileHandle,
         iovec: UserBuffers,
         non_blocking: bool,
-    ) -> Result<usize, Errno>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
-        let mut pipe = self.lock_pipe_for_reading(locked, current_task, self_file, non_blocking)?;
+    ) -> Result<usize, Errno> {
+        let mut pipe = self.lock_pipe_for_reading(current_task, self_file, non_blocking)?;
 
         let mut data = UserBuffersOutputBuffer::unified_new(current_task, iovec)?;
         let len = std::cmp::min(data.available(), pipe.messages.len());
@@ -1042,17 +976,13 @@ impl PipeFileObject {
     /// Returns EINVAL if one (or both) of the given file handles is not a pipe.
     ///
     /// Obtains the locks on the pipes in the correct order to avoid deadlocks.
-    pub fn lock_pipes<'a, 'b, L>(
-        locked: &mut Locked<L>,
+    pub fn lock_pipes<'a, 'b>(
         current_task: &CurrentTask,
         file_in: &'a FileHandle,
         file_out: &'b FileHandle,
         len: usize,
         non_blocking: bool,
-    ) -> Result<PipeOperands<'a, 'b>, Errno>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
+    ) -> Result<PipeOperands<'a, 'b>, Errno> {
         let pipe_in = file_in.downcast_file::<PipeFileObject>().ok_or_else(|| errno!(EINVAL))?;
         let pipe_out = file_out.downcast_file::<PipeFileObject>().ok_or_else(|| errno!(EINVAL))?;
 
@@ -1063,30 +993,18 @@ impl PipeFileObject {
             Ordering::Equal => error!(EINVAL),
             Ordering::Less => {
                 let (write, read) = pipe_in.lock_pipe_for_reading_with(
-                    locked,
                     current_task,
                     file_in,
-                    |locked| {
-                        pipe_out.lock_pipe_for_writing(
-                            locked,
-                            current_task,
-                            file_out,
-                            non_blocking,
-                            len,
-                        )
-                    },
+                    || pipe_out.lock_pipe_for_writing(current_task, file_out, non_blocking, len),
                     non_blocking,
                 )?;
                 Ok(PipeOperands { read, write })
             }
             Ordering::Greater => {
                 let (read, write) = pipe_out.lock_pipe_for_writing_with(
-                    locked,
                     current_task,
                     file_out,
-                    |locked| {
-                        pipe_in.lock_pipe_for_reading(locked, current_task, file_in, non_blocking)
-                    },
+                    || pipe_in.lock_pipe_for_reading(current_task, file_in, non_blocking),
                     non_blocking,
                     len,
                 )?;

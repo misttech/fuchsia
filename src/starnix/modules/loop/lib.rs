@@ -22,10 +22,7 @@ use starnix_core::vfs::{
 };
 use starnix_ext::map_ext::EntryExt;
 use starnix_logging::track_stub;
-use starnix_sync::{
-    FileOpsCore, LockDepMutex, LockEqualOrBefore, Locked, LoopDeviceStateLock, LoopDevicesLock,
-    Unlocked,
-};
+use starnix_sync::{LockDepMutex, LoopDeviceStateLock, LoopDevicesLock};
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_types::user_buffer::UserBuffer;
 use starnix_uapi::device_id::{DeviceId, LOOP_MAJOR};
@@ -97,7 +94,6 @@ impl LoopDeviceState {
 
     fn set_backing_file(
         &mut self,
-        locked: &mut Locked<Unlocked>,
         current_task: &CurrentTask,
         backing_file: FileHandle,
     ) -> Result<(), Errno> {
@@ -105,7 +101,7 @@ impl LoopDeviceState {
             return error!(EBUSY);
         }
         self.backing_file = Some(backing_file);
-        self.update_size_limit(locked, current_task)?;
+        self.update_size_limit(current_task)?;
         Ok(())
     }
 
@@ -119,13 +115,9 @@ impl LoopDeviceState {
         self.init = info.lo_init;
     }
 
-    fn update_size_limit(
-        &mut self,
-        locked: &mut Locked<Unlocked>,
-        current_task: &CurrentTask,
-    ) -> Result<(), Errno> {
+    fn update_size_limit(&mut self, current_task: &CurrentTask) -> Result<(), Errno> {
         if let Some(backing_file) = &self.backing_file {
-            let backing_stat = backing_file.node().stat(locked, current_task)?;
+            let backing_stat = backing_file.node().stat(current_task)?;
             self.size_limit = backing_stat.st_size as u64;
         }
         Ok(())
@@ -168,17 +160,13 @@ impl BytesFileOps for LoopDeviceBackingFile {
 }
 
 impl LoopDevice {
-    fn new<'a, L>(locked: &mut Locked<L>, kernel: &Kernel, minor: u32) -> Result<Arc<Self>, Errno>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
+    fn new<'a>(kernel: &Kernel, minor: u32) -> Result<Arc<Self>, Errno> {
         let registry = &kernel.device_registry;
         let loop_device_name = FsString::from(format!("loop{minor}"));
         let virtual_block_class = registry.objects.virtual_block_class();
         let device = Arc::new(Self { number: minor, state: Default::default() });
         let device_weak = Arc::<LoopDevice>::downgrade(&device);
         let k_device = registry.add_device(
-            locked,
             kernel,
             loop_device_name.as_ref(),
             DeviceMetadata::new(
@@ -327,19 +315,13 @@ impl FileOps for LoopDeviceFile {
 
     fn read(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         current_task: &CurrentTask,
         offset: usize,
         data: &mut dyn OutputBuffer,
     ) -> Result<usize, Errno> {
         if let Some(backing_file) = self.device.backing_file() {
-            backing_file.read_at(
-                locked,
-                current_task,
-                self.device.offset_for_backing_file(offset),
-                data,
-            )
+            backing_file.read_at(current_task, self.device.offset_for_backing_file(offset), data)
         } else {
             Ok(0)
         }
@@ -347,7 +329,6 @@ impl FileOps for LoopDeviceFile {
 
     fn write(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         current_task: &CurrentTask,
         offset: usize,
@@ -371,7 +352,6 @@ impl FileOps for LoopDeviceFile {
                 data
             };
             let r = backing_file.write_at(
-                locked,
                 current_task,
                 self.device.offset_for_backing_file(offset),
                 data,
@@ -384,7 +364,6 @@ impl FileOps for LoopDeviceFile {
 
     fn get_memory(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         current_task: &CurrentTask,
         requested_length: Option<usize>,
@@ -401,7 +380,6 @@ impl FileOps for LoopDeviceFile {
         };
 
         let backing_memory = backing_file.get_memory(
-            locked,
             current_task,
             requested_length.map(|l| l + configured_offset as usize),
             prot,
@@ -449,7 +427,6 @@ impl FileOps for LoopDeviceFile {
 
     fn ioctl(
         &self,
-        locked: &mut Locked<Unlocked>,
         file: &FileObject,
         current_task: &CurrentTask,
         request: u32,
@@ -486,7 +463,7 @@ impl FileOps for LoopDeviceFile {
                 let fd = arg.into();
                 let backing_file = current_task.files().get(fd)?;
                 let mut state = self.device.state.lock();
-                state.set_backing_file(locked, current_task, backing_file)?;
+                state.set_backing_file(current_task, backing_file)?;
                 Ok(SUCCESS)
             }
             LOOP_CLR_FD => {
@@ -558,7 +535,7 @@ impl FileOps for LoopDeviceFile {
             LOOP_SET_CAPACITY => {
                 let mut state = self.device.state.lock();
                 state.check_bound()?;
-                state.update_size_limit(locked, current_task)?;
+                state.update_size_limit(current_task)?;
                 Ok(SUCCESS)
             }
             LOOP_SET_DIRECT_IO => {
@@ -580,7 +557,7 @@ impl FileOps for LoopDeviceFile {
                 check_block_size(config.block_size)?;
                 let mut state = self.device.state.lock();
                 if let Ok(backing_file) = current_task.files().get(fd) {
-                    state.set_backing_file(locked, current_task, backing_file)?;
+                    state.set_backing_file(current_task, backing_file)?;
                 }
                 state.block_size = config.block_size;
                 state.set_info(&config.info);
@@ -623,21 +600,15 @@ impl FileOps for LoopDeviceFile {
     }
 }
 
-pub fn loop_device_init(locked: &mut Locked<Unlocked>, kernel: &Kernel) -> Result<(), Errno> {
+pub fn loop_device_init(kernel: &Kernel) -> Result<(), Errno> {
     // Device registry.
     kernel
         .device_registry
-        .register_major(
-            locked,
-            "loop".into(),
-            DeviceMode::Block,
-            LOOP_MAJOR,
-            get_or_create_loop_device,
-        )
+        .register_major("loop".into(), DeviceMode::Block, LOOP_MAJOR, get_or_create_loop_device)
         .expect("loop device register failed.");
 
     // Ensure initial loop devices.
-    kernel.expando.get::<LoopDeviceRegistry>().ensure_initial_devices(locked, kernel)
+    kernel.expando.get::<LoopDeviceRegistry>().ensure_initial_devices(kernel)
 }
 
 #[derive(Debug, Default)]
@@ -647,16 +618,9 @@ pub struct LoopDeviceRegistry {
 
 impl LoopDeviceRegistry {
     /// Ensure initial loop devices.
-    fn ensure_initial_devices<L>(
-        &self,
-        locked: &mut Locked<L>,
-        kernel: &Kernel,
-    ) -> Result<(), Errno>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
+    fn ensure_initial_devices(&self, kernel: &Kernel) -> Result<(), Errno> {
         for minor in 0..8 {
-            self.get_or_create(locked, kernel, minor)?;
+            self.get_or_create(kernel, minor)?;
         }
         Ok(())
     }
@@ -665,31 +629,20 @@ impl LoopDeviceRegistry {
         self.devices.lock().get(&minor).ok_or_else(|| errno!(ENODEV)).cloned()
     }
 
-    fn get_or_create<'a, L>(
-        &self,
-        locked: &mut Locked<L>,
-        kernel: &Kernel,
-        minor: u32,
-    ) -> Result<Arc<LoopDevice>, Errno>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
+    fn get_or_create<'a>(&self, kernel: &Kernel, minor: u32) -> Result<Arc<LoopDevice>, Errno> {
         self.devices
             .lock()
             .entry(minor)
-            .or_insert_with_fallible(|| LoopDevice::new(locked, kernel, minor))
+            .or_insert_with_fallible(|| LoopDevice::new(kernel, minor))
             .cloned()
     }
 
-    fn find<L>(&self, locked: &mut Locked<L>, current_task: &CurrentTask) -> Result<u32, Errno>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
+    fn find(&self, current_task: &CurrentTask) -> Result<u32, Errno> {
         let mut devices = self.devices.lock();
         for minor in 0..u32::MAX {
             match devices.entry(minor) {
                 Entry::Vacant(e) => {
-                    e.insert(LoopDevice::new(locked, current_task.kernel(), minor)?);
+                    e.insert(LoopDevice::new(current_task.kernel(), minor)?);
                     return Ok(minor);
                 }
                 Entry::Occupied(e) => {
@@ -702,18 +655,10 @@ impl LoopDeviceRegistry {
         error!(ENODEV)
     }
 
-    fn add<L>(
-        &self,
-        locked: &mut Locked<L>,
-        current_task: &CurrentTask,
-        minor: u32,
-    ) -> Result<(), Errno>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
+    fn add(&self, current_task: &CurrentTask, minor: u32) -> Result<(), Errno> {
         match self.devices.lock().entry(minor) {
             Entry::Vacant(e) => {
-                e.insert(LoopDevice::new(locked, current_task.kernel(), minor)?);
+                e.insert(LoopDevice::new(current_task.kernel(), minor)?);
                 Ok(())
             }
             Entry::Occupied(_) => {
@@ -722,16 +667,12 @@ impl LoopDeviceRegistry {
         }
     }
 
-    fn remove<L>(
+    fn remove(
         &self,
-        locked: &mut Locked<L>,
         current_task: &CurrentTask,
         k_device: Option<Device>,
         minor: u32,
-    ) -> Result<(), Errno>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
+    ) -> Result<(), Errno> {
         match self.devices.lock().entry(minor) {
             Entry::Vacant(_) => Ok(()),
             Entry::Occupied(e) => {
@@ -742,7 +683,7 @@ impl LoopDeviceRegistry {
                 let kernel = current_task.kernel();
                 let registry = &kernel.device_registry;
                 if let Some(dev) = &k_device {
-                    registry.remove_device(locked, current_task, dev.clone());
+                    registry.remove_device(current_task, dev.clone());
                 } else {
                     return error!(EINVAL);
                 }
@@ -753,7 +694,6 @@ impl LoopDeviceRegistry {
 }
 
 pub fn create_loop_control_device(
-    _locked: &mut Locked<FileOpsCore>,
     current_task: &CurrentTask,
     _id: DeviceId,
     _node: &NamespaceNode,
@@ -779,21 +719,18 @@ impl FileOps for LoopControlDevice {
 
     fn ioctl(
         &self,
-        locked: &mut Locked<Unlocked>,
         _file: &FileObject,
         current_task: &CurrentTask,
         request: u32,
         arg: SyscallArg,
     ) -> Result<SyscallResult, Errno> {
         match request {
-            LOOP_CTL_GET_FREE => Ok(self.registry.find(locked, current_task)?.into()),
+            LOOP_CTL_GET_FREE => Ok(self.registry.find(current_task)?.into()),
             LOOP_CTL_ADD => {
                 let minor = arg.into();
                 let registry = Arc::clone(&self.registry);
                 // Delegate to the system task to have the permission to create the loop device.
-                let closure = move |locked: &mut Locked<Unlocked>, task: &CurrentTask| {
-                    registry.add(locked, task, minor)
-                };
+                let closure = move |task: &CurrentTask| registry.add(task, minor);
                 let (result, req) = SpawnRequestBuilder::new()
                     .with_debug_name("loop-control-add")
                     .with_sync_closure(closure)
@@ -811,7 +748,7 @@ impl FileOps for LoopControlDevice {
                     let state = device.state.lock();
                     state.k_device.clone()
                 };
-                self.registry.remove(locked, current_task, k_device, minor)?;
+                self.registry.remove(current_task, k_device, minor)?;
                 Ok(minor.into())
             }
             _ => error!(ENOTTY),
@@ -820,7 +757,6 @@ impl FileOps for LoopControlDevice {
 }
 
 fn get_or_create_loop_device(
-    locked: &mut Locked<FileOpsCore>,
     current_task: &CurrentTask,
     id: DeviceId,
     _node: &NamespaceNode,
@@ -830,7 +766,7 @@ fn get_or_create_loop_device(
         .kernel()
         .expando
         .get::<LoopDeviceRegistry>()
-        .get_or_create(locked, current_task.kernel(), id.minor())?
+        .get_or_create(current_task.kernel(), id.minor())?
         .create_file_ops())
 }
 
@@ -866,22 +802,19 @@ mod tests {
     }
 
     fn bind_simple_loop_device(
-        locked: &mut Locked<Unlocked>,
         current_task: &CurrentTask,
         backing_file: FileHandle,
         open_flags: OpenFlags,
     ) -> FileHandle {
-        let backing_fd = current_task.add_file(locked, backing_file, FdFlags::empty()).unwrap();
+        let backing_fd = current_task.add_file(backing_file, FdFlags::empty()).unwrap();
 
         let loop_file = anon_test_file(
-            locked,
             &current_task,
             Box::new(LoopDeviceFile { device: Arc::new(LoopDevice::default()) }),
             open_flags,
         );
 
         let config_addr = map_object_anywhere(
-            locked,
             &current_task,
             &uapi::loop_config {
                 block_size: MIN_BLOCK_SIZE,
@@ -889,27 +822,25 @@ mod tests {
                 ..Default::default()
             },
         );
-        loop_file.ioctl(locked, &current_task, LOOP_CONFIGURE, config_addr.into()).unwrap();
+        loop_file.ioctl(&current_task, LOOP_CONFIGURE, config_addr.into()).unwrap();
 
         loop_file
     }
 
     #[::fuchsia::test]
     async fn basic_read() {
-        spawn_kernel_and_run(async |locked, current_task| {
-            let fs = create_testfs(locked, &current_task.kernel());
+        spawn_kernel_and_run(async |current_task| {
+            let fs = create_testfs(&current_task.kernel());
             let expected_contents = b"hello, world!";
 
             let ops = PassthroughTestFile::new_node(expected_contents);
             let backing_node = create_fs_node_for_testing(&fs, ops);
-            let file_ops =
-                backing_node.create_file_ops(locked, current_task, OpenFlags::RDONLY).unwrap();
-            let backing_file = anon_test_file(locked, current_task, file_ops, OpenFlags::RDONLY);
-            let loop_file =
-                bind_simple_loop_device(locked, current_task, backing_file, OpenFlags::RDONLY);
+            let file_ops = backing_node.create_file_ops(current_task, OpenFlags::RDONLY).unwrap();
+            let backing_file = anon_test_file(current_task, file_ops, OpenFlags::RDONLY);
+            let loop_file = bind_simple_loop_device(current_task, backing_file, OpenFlags::RDONLY);
 
             let mut buf = VecOutputBuffer::new(expected_contents.len());
-            loop_file.read(locked, current_task, &mut buf).unwrap();
+            loop_file.read(current_task, &mut buf).unwrap();
 
             assert_eq!(buf.data(), expected_contents);
         })
@@ -918,25 +849,22 @@ mod tests {
 
     #[::fuchsia::test]
     async fn offset_works() {
-        spawn_kernel_and_run(async |locked, current_task| {
-            let fs = create_testfs(locked, &current_task.kernel());
+        spawn_kernel_and_run(async |current_task| {
+            let fs = create_testfs(&current_task.kernel());
             let ops = PassthroughTestFile::new_node(b"hello, world!");
             let backing_node = create_fs_node_for_testing(&fs, ops);
-            let file_ops =
-                backing_node.create_file_ops(locked, current_task, OpenFlags::RDONLY).unwrap();
-            let backing_file = anon_test_file(locked, current_task, file_ops, OpenFlags::RDONLY);
-            let loop_file =
-                bind_simple_loop_device(locked, current_task, backing_file, OpenFlags::RDONLY);
+            let file_ops = backing_node.create_file_ops(current_task, OpenFlags::RDONLY).unwrap();
+            let backing_file = anon_test_file(current_task, file_ops, OpenFlags::RDONLY);
+            let loop_file = bind_simple_loop_device(current_task, backing_file, OpenFlags::RDONLY);
 
             let info_addr = map_object_anywhere(
-                locked,
                 current_task,
                 &uapi::loop_info64 { lo_offset: 3, ..Default::default() },
             );
-            loop_file.ioctl(locked, current_task, LOOP_SET_STATUS64, info_addr.into()).unwrap();
+            loop_file.ioctl(current_task, LOOP_SET_STATUS64, info_addr.into()).unwrap();
 
             let mut buf = VecOutputBuffer::new(25);
-            loop_file.read(locked, current_task, &mut buf).unwrap();
+            loop_file.read(current_task, &mut buf).unwrap();
 
             assert_eq!(buf.data(), b"lo, world!");
         })
@@ -955,15 +883,12 @@ mod tests {
                 .unwrap()
                 .into();
 
-        spawn_kernel_and_run(async move |locked, current_task| {
+        spawn_kernel_and_run(async move |current_task| {
             let backing_file =
-                new_remote_file(locked, current_task, txt_channel.into(), OpenFlags::RDONLY)
-                    .unwrap();
-            let loop_file =
-                bind_simple_loop_device(locked, current_task, backing_file, OpenFlags::RDONLY);
+                new_remote_file(current_task, txt_channel.into(), OpenFlags::RDONLY).unwrap();
+            let loop_file = bind_simple_loop_device(current_task, backing_file, OpenFlags::RDONLY);
 
-            let memory =
-                loop_file.get_memory(locked, current_task, None, ProtectionFlags::READ).unwrap();
+            let memory = loop_file.get_memory(current_task, None, ProtectionFlags::READ).unwrap();
             let size = memory.get_content_size();
             let memory_contents = memory.read_to_vec(0, size).unwrap();
             assert_eq!(memory_contents, expected_contents);
@@ -991,15 +916,12 @@ mod tests {
                 .unwrap()
                 .into();
 
-        spawn_kernel_and_run(async move |locked, current_task| {
+        spawn_kernel_and_run(async move |current_task| {
             let backing_file =
-                new_remote_file(locked, current_task, txt_channel.into(), OpenFlags::RDONLY)
-                    .unwrap();
-            let loop_file =
-                bind_simple_loop_device(locked, current_task, backing_file, OpenFlags::RDONLY);
+                new_remote_file(current_task, txt_channel.into(), OpenFlags::RDONLY).unwrap();
+            let loop_file = bind_simple_loop_device(current_task, backing_file, OpenFlags::RDONLY);
 
             let info_addr = map_object_anywhere(
-                locked,
                 current_task,
                 &uapi::loop_info64 {
                     lo_offset: expected_offset,
@@ -1007,10 +929,9 @@ mod tests {
                     ..Default::default()
                 },
             );
-            loop_file.ioctl(locked, current_task, LOOP_SET_STATUS64, info_addr.into()).unwrap();
+            loop_file.ioctl(current_task, LOOP_SET_STATUS64, info_addr.into()).unwrap();
 
-            let memory =
-                loop_file.get_memory(locked, current_task, None, ProtectionFlags::READ).unwrap();
+            let memory = loop_file.get_memory(current_task, None, ProtectionFlags::READ).unwrap();
             let size = memory.get_content_size();
             let memory_contents = memory.read_to_vec(0, size).unwrap();
             assert_eq!(memory_contents, expected_contents);

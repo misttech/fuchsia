@@ -9,7 +9,7 @@ use starnix_core::vfs::{
     FileObject, FileOps, InputBuffer, OutputBuffer, SeekTarget, fileops_impl_noop_sync,
 };
 use starnix_logging::{log_error, log_info, track_stub};
-use starnix_sync::{FileOpsCore, Locked, Unlocked};
+
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::user_address::{UserAddress, UserRef};
@@ -81,7 +81,6 @@ impl FileOps for GrallocFile {
 
     fn seek(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         _current_offset: starnix_uapi::off_t,
@@ -92,7 +91,6 @@ impl FileOps for GrallocFile {
 
     fn ioctl(
         &self,
-        _locked: &mut Locked<Unlocked>,
         _file: &FileObject,
         current_task: &CurrentTask,
         request: u32,
@@ -124,7 +122,6 @@ impl FileOps for GrallocFile {
 
     fn read(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         offset: usize,
@@ -137,7 +134,6 @@ impl FileOps for GrallocFile {
 
     fn write(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         offset: usize,

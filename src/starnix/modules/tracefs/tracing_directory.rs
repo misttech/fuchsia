@@ -9,7 +9,7 @@ use starnix_core::vfs::buffers::InputBuffer;
 use starnix_core::vfs::pseudo::simple_file::SimpleFileNode;
 use starnix_core::vfs::{FileObject, FileOps, FsNodeOps, OutputBuffer, fileops_impl_noop_sync};
 use starnix_logging::CATEGORY_TRACE_META;
-use starnix_sync::{FileOpsCore, Locked};
+
 use starnix_uapi::errors::Errno;
 use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;
@@ -22,7 +22,7 @@ pub struct TraceMarkerFile {
 impl TraceMarkerFile {
     pub fn new_node(event_queue_collection: Arc<TraceEventQueueList>) -> impl FsNodeOps {
         let num_cpus = event_queue_collection.queues.len();
-        SimpleFileNode::new(move |_, _| {
+        SimpleFileNode::new(move |_| {
             Ok(Self {
                 event_queue_collection: event_queue_collection.clone(),
                 num_cpus,
@@ -38,7 +38,6 @@ impl FileOps for TraceMarkerFile {
 
     fn read(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         _offset: usize,
@@ -49,7 +48,6 @@ impl FileOps for TraceMarkerFile {
 
     fn write(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         current_task: &CurrentTask,
         _offset: usize,

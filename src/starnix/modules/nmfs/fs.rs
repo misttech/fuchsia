@@ -17,7 +17,7 @@ use starnix_core::vfs::{
     FsNodeHandle, FsNodeInfo, FsNodeOps, FsStr, MemoryDirectoryFile,
 };
 use starnix_logging::{log_error, log_warn};
-use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Unlocked};
+
 use starnix_types::vfs::default_statfs;
 use starnix_uapi::auth::FsCred;
 use starnix_uapi::device_id::DeviceId;
@@ -127,21 +127,8 @@ pub(crate) enum VersionedProperties {
 
 pub struct FuchsiaNetworkMonitorFs;
 impl FuchsiaNetworkMonitorFs {
-    pub fn new_fs<L>(
-        locked: &mut Locked<L>,
-        kernel: &Kernel,
-        options: FileSystemOptions,
-    ) -> Result<FileSystemHandle, Errno>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
-        let fs = FileSystem::new(
-            locked,
-            kernel,
-            CacheMode::Permanent,
-            FuchsiaNetworkMonitorFs,
-            options,
-        )?;
+    pub fn new_fs(kernel: &Kernel, options: FileSystemOptions) -> Result<FileSystemHandle, Errno> {
+        let fs = FileSystem::new(kernel, CacheMode::Permanent, FuchsiaNetworkMonitorFs, options)?;
         let root_ino = fs.allocate_ino();
         fs.create_root(root_ino, NetworkDirectoryNode::new());
         Ok(fs)
@@ -152,12 +139,7 @@ const FUCHSIA_NETWORK_MONITOR_FS_NAME: &[u8; 26] = b"fuchsia_network_monitor_fs"
 const FUCHSIA_NETWORK_MONITOR_FS_MAGIC: u32 = u32::from_be_bytes(*b"nmfs");
 
 impl FileSystemOps for FuchsiaNetworkMonitorFs {
-    fn statfs(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        _fs: &FileSystem,
-        _current_task: &CurrentTask,
-    ) -> Result<statfs, Errno> {
+    fn statfs(&self, _fs: &FileSystem, _current_task: &CurrentTask) -> Result<statfs, Errno> {
         Ok(default_statfs(FUCHSIA_NETWORK_MONITOR_FS_MAGIC))
     }
 
@@ -167,7 +149,6 @@ impl FileSystemOps for FuchsiaNetworkMonitorFs {
 }
 
 pub fn fuchsia_network_monitor_fs(
-    locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
     options: FileSystemOptions,
 ) -> Result<FileSystemHandle, Errno> {
@@ -177,7 +158,7 @@ pub fn fuchsia_network_monitor_fs(
     Ok(kernel
         .expando
         .get_or_try_init(|| {
-            FuchsiaNetworkMonitorFs::new_fs(locked, kernel, options)
+            FuchsiaNetworkMonitorFs::new_fs(kernel, options)
                 .map(|fs| FuchsiaNetworkMonitorFsHandle(fs))
         })?
         .0
@@ -204,7 +185,6 @@ impl NetworkDirectoryNode {
 impl FsNodeOps for NetworkDirectoryNode {
     fn create_file_ops(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _node: &FsNode,
         _current_task: &CurrentTask,
         _flags: OpenFlags,
@@ -214,7 +194,6 @@ impl FsNodeOps for NetworkDirectoryNode {
 
     fn mkdir(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _node: &FsNode,
         _current_task: &CurrentTask,
         _name: &FsStr,
@@ -226,7 +205,6 @@ impl FsNodeOps for NetworkDirectoryNode {
 
     fn mknod(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         node: &FsNode,
         current_task: &CurrentTask,
         name: &FsStr,
@@ -262,7 +240,6 @@ impl FsNodeOps for NetworkDirectoryNode {
 
     fn unlink(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _node: &FsNode,
         current_task: &CurrentTask,
         name: &FsStr,
@@ -285,7 +262,6 @@ impl FsNodeOps for NetworkDirectoryNode {
 
     fn create_symlink(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _node: &FsNode,
         _current_task: &CurrentTask,
         _name: &FsStr,

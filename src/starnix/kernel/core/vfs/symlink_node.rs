@@ -7,7 +7,6 @@ use crate::vfs::{
     FsNode, FsNodeInfo, FsNodeOps, FsStr, FsString, MemoryXattrStorage, SymlinkTarget,
     XattrStorage as _, fs_node_impl_symlink, fs_node_impl_xattr_delegate,
 };
-use starnix_sync::{FileOpsCore, Locked};
 use starnix_uapi::auth::FsCred;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::mode;
@@ -34,7 +33,6 @@ impl FsNodeOps for SymlinkNode {
 
     fn readlink(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _node: &FsNode,
         _current_task: &CurrentTask,
     ) -> Result<SymlinkTarget, Errno> {
@@ -69,7 +67,6 @@ where
 
     fn readlink(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _node: &FsNode,
         _current_task: &CurrentTask,
     ) -> Result<SymlinkTarget, Errno> {

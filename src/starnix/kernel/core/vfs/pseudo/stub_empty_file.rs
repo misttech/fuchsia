@@ -8,7 +8,6 @@ use crate::vfs::{
 };
 use bstr::ByteSlice;
 use starnix_logging::BugRef;
-use starnix_sync::{FileOpsCore, Locked};
 use std::panic::Location;
 
 #[derive(Clone, Debug)]
@@ -20,7 +19,7 @@ pub struct StubEmptyFile {
 impl StubEmptyFile {
     #[track_caller]
     pub fn new_node(bug: BugRef) -> impl FsNodeOps {
-        SimpleFileNode::new(move |_, _| Ok(StubEmptyFile::new(bug)))
+        SimpleFileNode::new(move |_| Ok(StubEmptyFile::new(bug)))
     }
 
     #[track_caller]
@@ -38,7 +37,6 @@ impl FileOps for StubEmptyFile {
 
     fn open(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         file: &crate::vfs::FileObject,
         current_task: &crate::task::CurrentTask,
     ) -> Result<(), starnix_uapi::errors::Errno> {

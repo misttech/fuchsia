@@ -9,9 +9,7 @@ use starnix_core::vfs::{
     FsNodeInfo, FsStr,
 };
 use starnix_logging::log_warn;
-use starnix_sync::{
-    CgroupDirectoryNodesLock, FileOpsCore, LockDepMutex, LockEqualOrBefore, Locked, Unlocked,
-};
+use starnix_sync::{CgroupDirectoryNodesLock, LockDepMutex};
 use starnix_types::vfs::default_statfs;
 use starnix_uapi::auth::FsCred;
 use starnix_uapi::errors::Errno;
@@ -38,23 +36,20 @@ pub struct CgroupV1Fs {
 
 impl CgroupV1Fs {
     pub fn new_fs(
-        locked: &mut Locked<Unlocked>,
         current_task: &CurrentTask,
         options: FileSystemOptions,
     ) -> Result<FileSystemHandle, Errno> {
-        Self::new_fs_inner(locked, current_task, options, b"cgroup".into())
+        Self::new_fs_inner(current_task, options, b"cgroup".into())
     }
 
     pub fn new_fs_cpuset(
-        locked: &mut Locked<Unlocked>,
         current_task: &CurrentTask,
         options: FileSystemOptions,
     ) -> Result<FileSystemHandle, Errno> {
-        Self::new_fs_inner(locked, current_task, options, b"cpuset".into())
+        Self::new_fs_inner(current_task, options, b"cpuset".into())
     }
 
     fn new_fs_inner(
-        locked: &mut Locked<Unlocked>,
         current_task: &CurrentTask,
         options: FileSystemOptions,
         fs_name: &'static FsStr,
@@ -117,7 +112,6 @@ impl CgroupV1Fs {
             DirectoryNodes::new(Arc::downgrade(&root), CgroupVersion::V1(hierarchy_key.clone()));
         let root_dir = dir_nodes.root.clone();
         let fs = FileSystem::new(
-            locked,
             kernel,
             CacheMode::Uncached,
             CgroupV1Fs {
@@ -142,12 +136,7 @@ impl FileSystemOps for CgroupV1Fs {
     fn name(&self) -> &'static FsStr {
         self.name
     }
-    fn statfs(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        _fs: &FileSystem,
-        _current_task: &CurrentTask,
-    ) -> Result<statfs, Errno> {
+    fn statfs(&self, _fs: &FileSystem, _current_task: &CurrentTask) -> Result<statfs, Errno> {
         Ok(default_statfs(CGROUP_SUPER_MAGIC))
     }
 }
@@ -159,40 +148,27 @@ pub struct CgroupV2Fs {
 
 struct CgroupV2FsHandle(FileSystemHandle);
 pub fn cgroup2_fs(
-    locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
     options: FileSystemOptions,
 ) -> Result<FileSystemHandle, Errno> {
     Ok(current_task
         .kernel()
         .expando
-        .get_or_try_init(|| {
-            Ok(CgroupV2FsHandle(CgroupV2Fs::new_fs(locked, current_task, options)?))
-        })?
+        .get_or_try_init(|| Ok(CgroupV2FsHandle(CgroupV2Fs::new_fs(current_task, options)?)))?
         .0
         .clone())
 }
 
 impl CgroupV2Fs {
-    fn new_fs<L>(
-        locked: &mut Locked<L>,
+    fn new_fs(
         current_task: &CurrentTask,
         options: FileSystemOptions,
-    ) -> Result<FileSystemHandle, Errno>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
+    ) -> Result<FileSystemHandle, Errno> {
         let kernel = current_task.kernel();
         let dir_nodes =
             DirectoryNodes::new(Arc::downgrade(&kernel.cgroups.cgroup2), CgroupVersion::V2);
         let root = dir_nodes.root.clone();
-        let fs = FileSystem::new(
-            locked,
-            kernel,
-            CacheMode::Uncached,
-            CgroupV2Fs { dir_nodes },
-            options,
-        )?;
+        let fs = FileSystem::new(kernel, CacheMode::Uncached, CgroupV2Fs { dir_nodes }, options)?;
         root.create_root_interface_files(&fs);
         let root_ino = fs.allocate_ino();
         fs.create_root(root_ino, root);
@@ -204,12 +180,7 @@ impl FileSystemOps for CgroupV2Fs {
     fn name(&self) -> &'static FsStr {
         b"cgroup2".into()
     }
-    fn statfs(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        _fs: &FileSystem,
-        _current_task: &CurrentTask,
-    ) -> Result<statfs, Errno> {
+    fn statfs(&self, _fs: &FileSystem, _current_task: &CurrentTask) -> Result<statfs, Errno> {
         Ok(default_statfs(CGROUP2_SUPER_MAGIC))
     }
 }
@@ -320,7 +291,7 @@ mod test {
     use super::*;
 
     #[allow(deprecated, reason = "pre-existing usage")]
-    use starnix_core::testing::create_kernel_task_and_unlocked;
+    use starnix_core::testing::create_kernel_and_task;
     use starnix_core::vfs::FsNodeOps;
     use starnix_core::vfs::fs_args::MountParams;
     use starnix_core::vfs::fs_registry::FsRegistry;
@@ -329,12 +300,12 @@ mod test {
     #[::fuchsia::test]
     async fn test_filesystem_creates_nodes() {
         #[allow(deprecated, reason = "pre-existing usage")]
-        let (kernel, current_task, locked) = create_kernel_task_and_unlocked();
+        let (kernel, current_task) = create_kernel_and_task();
         let registry = kernel.expando.get::<FsRegistry>();
         registry.register(b"cgroup2".into(), cgroup2_fs);
 
         let fs = current_task
-            .create_filesystem(locked, b"cgroup2".into(), Default::default())
+            .create_filesystem(b"cgroup2".into(), Default::default())
             .expect("create_filesystem");
 
         let cgroupfs = fs.downcast_ops::<CgroupV2Fs>().expect("downcast_ops");
@@ -348,7 +319,7 @@ mod test {
     #[::fuchsia::test]
     async fn test_cgroup_v1_remount_preserves_tree() {
         #[allow(deprecated, reason = "pre-existing usage")]
-        let (kernel, current_task, locked) = create_kernel_task_and_unlocked();
+        let (kernel, current_task) = create_kernel_and_task();
         let registry = kernel.expando.get::<FsRegistry>();
         registry.register(b"cgroup".into(), CgroupV1Fs::new_fs);
 
@@ -359,17 +330,15 @@ mod test {
 
         {
             let fs1 = current_task
-                .create_filesystem(&mut *locked, b"cgroup".into(), options.clone())
+                .create_filesystem(b"cgroup".into(), options.clone())
                 .expect("create_filesystem");
             let cgroupfs1 = fs1.downcast_ops::<CgroupV1Fs>().expect("downcast_ops");
             let dir_nodes1 = cgroupfs1.dir_nodes.clone();
             let root_dir1 = dir_nodes1.root.clone();
             let root_node1 = fs1.root();
 
-            let locked_file_ops = locked.cast_locked::<FileOpsCore>();
             root_dir1
                 .mkdir(
-                    locked_file_ops,
                     &root_node1.node,
                     &current_task,
                     "test_child".into(),
@@ -378,30 +347,19 @@ mod test {
                 )
                 .expect("mkdir");
 
-            let lookup_result1 = root_dir1.lookup(
-                locked_file_ops,
-                &root_node1.node,
-                &current_task,
-                "test_child".into(),
-            );
+            let lookup_result1 =
+                root_dir1.lookup(&root_node1.node, &current_task, "test_child".into());
             assert!(lookup_result1.is_ok());
         }
 
-        let fs2 = current_task
-            .create_filesystem(&mut *locked, b"cgroup".into(), options)
-            .expect("create_filesystem");
+        let fs2 =
+            current_task.create_filesystem(b"cgroup".into(), options).expect("create_filesystem");
         let cgroupfs2 = fs2.downcast_ops::<CgroupV1Fs>().expect("downcast_ops");
         let dir_nodes2 = cgroupfs2.dir_nodes.clone();
         let root_dir2 = dir_nodes2.root.clone();
         let root_node2 = fs2.root();
 
-        let locked_file_ops2 = locked.cast_locked::<FileOpsCore>();
-        let lookup_result2 = root_dir2.lookup(
-            locked_file_ops2,
-            &root_node2.node,
-            &current_task,
-            "test_child".into(),
-        );
+        let lookup_result2 = root_dir2.lookup(&root_node2.node, &current_task, "test_child".into());
         assert!(lookup_result2.is_ok(), "child cgroup should be preserved on remount");
     }
 }

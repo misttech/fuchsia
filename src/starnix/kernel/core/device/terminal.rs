@@ -11,10 +11,7 @@ use derivative::Derivative;
 use macro_rules_attribute::apply;
 
 use line_discipline::{LineDiscipline, PendingSignals};
-use starnix_sync::{
-    DeviceTerminalsLock, LockBefore, LockDepMutex, LockDepRwLock, Locked, ProcessGroupState,
-    PtsIdsSetLock,
-};
+use starnix_sync::{DeviceTerminalsLock, LockDepMutex, LockDepRwLock, PtsIdsSetLock};
 use starnix_uapi::auth::FsCred;
 use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::Errno;
@@ -125,12 +122,9 @@ impl Terminal {
     }
 
     /// Sets the terminal configuration.
-    pub fn set_termios<L>(&self, locked: &mut Locked<L>, termios: uapi::termios2)
-    where
-        L: LockBefore<ProcessGroupState>,
-    {
+    pub fn set_termios(&self, termios: uapi::termios2) {
         let signals = self.write().set_termios(termios);
-        self.send_signals(locked, signals);
+        self.send_signals(signals);
     }
 
     pub fn flush(&self, is_main: bool, arg: u32) -> Result<(), Errno> {
@@ -167,28 +161,14 @@ impl Terminal {
     }
 
     /// `read` implementation of the main side of the terminal.
-    pub fn main_read<L>(
-        &self,
-        _locked: &mut Locked<L>,
-        data: &mut dyn OutputBuffer,
-    ) -> Result<usize, Errno>
-    where
-        L: LockBefore<ProcessGroupState>,
-    {
+    pub fn main_read(&self, data: &mut dyn OutputBuffer) -> Result<usize, Errno> {
         self.write().main_read(data)
     }
 
     /// `write` implementation of the main side of the terminal.
-    pub fn main_write<L>(
-        &self,
-        locked: &mut Locked<L>,
-        data: &mut dyn InputBuffer,
-    ) -> Result<usize, Errno>
-    where
-        L: LockBefore<ProcessGroupState>,
-    {
+    pub fn main_write(&self, data: &mut dyn InputBuffer) -> Result<usize, Errno> {
         let (bytes, signals) = self.write().main_write(data)?;
-        self.send_signals(locked, signals);
+        self.send_signals(signals);
         Ok(bytes)
     }
 
@@ -218,34 +198,17 @@ impl Terminal {
     }
 
     /// `read` implementation of the replica side of the terminal.
-    pub fn replica_read<L>(
-        &self,
-        _locked: &mut Locked<L>,
-        data: &mut dyn OutputBuffer,
-    ) -> Result<usize, Errno>
-    where
-        L: LockBefore<ProcessGroupState>,
-    {
+    pub fn replica_read(&self, data: &mut dyn OutputBuffer) -> Result<usize, Errno> {
         self.write().replica_read(data)
     }
 
     /// `write` implementation of the replica side of the terminal.
-    pub fn replica_write<L>(
-        &self,
-        _locked: &mut Locked<L>,
-        data: &mut dyn InputBuffer,
-    ) -> Result<usize, Errno>
-    where
-        L: LockBefore<ProcessGroupState>,
-    {
+    pub fn replica_write(&self, data: &mut dyn InputBuffer) -> Result<usize, Errno> {
         self.write().replica_write(data)
     }
 
     /// Send the pending signals to the associated foreground process groups if they exist.
-    fn send_signals<L>(&self, locked: &mut Locked<L>, signals: PendingSignals)
-    where
-        L: LockBefore<ProcessGroupState>,
-    {
+    fn send_signals(&self, signals: PendingSignals) {
         let signals = signals.signals();
         if !signals.is_empty() {
             let process_group = {
@@ -261,7 +224,7 @@ impl Terminal {
                 };
                 process_group
             };
-            process_group.send_signals(locked, signals);
+            process_group.send_signals(signals);
         }
     }
 

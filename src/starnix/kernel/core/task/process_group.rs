@@ -6,7 +6,7 @@ use crate::mutable_state::{ordered_state_accessor, state_implementation};
 use crate::signals::SignalInfo;
 use crate::task::{PidTable, Session, SessionDisassociation, ThreadGroup};
 use macro_rules_attribute::apply;
-use starnix_sync::{LockBefore, Locked, OrderedRwLock, ProcessGroupState};
+use starnix_sync::{LockDepRwLock, ProcessGroupState};
 use starnix_uapi::pid_t;
 use starnix_uapi::signals::{SIGCONT, SIGHUP, Signal};
 use std::collections::BTreeMap;
@@ -34,7 +34,7 @@ pub struct ProcessGroup {
     pub leader: pid_t,
 
     /// The mutable state of the ProcessGroup.
-    mutable_state: OrderedRwLock<ProcessGroupMutableState, ProcessGroupState>,
+    mutable_state: LockDepRwLock<ProcessGroupMutableState, ProcessGroupState>,
 }
 
 impl PartialEq for ProcessGroup {
@@ -74,7 +74,7 @@ impl ProcessGroup {
         let process_group = Arc::new(ProcessGroup {
             session: session.clone(),
             leader,
-            mutable_state: OrderedRwLock::new(ProcessGroupMutableState {
+            mutable_state: LockDepRwLock::new(ProcessGroupMutableState {
                 thread_groups: BTreeMap::new(),
                 orphaned: false,
             }),
@@ -85,29 +85,17 @@ impl ProcessGroup {
 
     ordered_state_accessor!(ProcessGroup, mutable_state, ProcessGroupState);
 
-    pub fn insert<L>(&self, locked: &mut Locked<L>, thread_group: &ThreadGroup)
-    where
-        L: LockBefore<ProcessGroupState>,
-    {
-        self.write(locked)
-            .thread_groups
-            .insert(thread_group.leader, thread_group.weak_self.clone());
+    pub fn insert(&self, thread_group: &ThreadGroup) {
+        self.write().thread_groups.insert(thread_group.leader, thread_group.weak_self.clone());
     }
 
     /// Removes the thread group from the process group.
     /// Returns whether the process group is empty and a `SessionDisassociation`, which
     /// the caller must use to explicitly disassociate the controlling terminal if the
     /// exiting thread group was the session leader.
-    pub fn remove<L>(
-        &self,
-        locked: &mut Locked<L>,
-        thread_group: &ThreadGroup,
-    ) -> (bool, SessionDisassociation)
-    where
-        L: LockBefore<ProcessGroupState>,
-    {
+    pub fn remove(&self, thread_group: &ThreadGroup) -> (bool, SessionDisassociation) {
         let is_session_leader = self.session.leader == thread_group.leader;
-        let is_empty = self.write(locked).remove(thread_group);
+        let is_empty = self.write().remove(thread_group);
         let disassociation = if is_session_leader {
             SessionDisassociation::new(Some(self.session.clone()))
         } else {
@@ -116,11 +104,8 @@ impl ProcessGroup {
         (is_empty, disassociation)
     }
 
-    pub fn send_signals<L>(&self, locked: &mut Locked<L>, signals: &[Signal])
-    where
-        L: LockBefore<ProcessGroupState>,
-    {
-        let thread_groups = self.read(locked).thread_groups().collect::<Vec<_>>();
+    pub fn send_signals(&self, signals: &[Signal]) {
+        let thread_groups = self.read().thread_groups().collect::<Vec<_>>();
         Self::send_signals_to_thread_groups(signals, thread_groups);
     }
 
@@ -129,12 +114,9 @@ impl ProcessGroup {
     ///
     /// Takes a read lock on the PidTable to ensure the object cannot be removed while this method
     /// is running.
-    pub fn check_orphaned<L>(&self, locked: &mut Locked<L>, _pids: &PidTable)
-    where
-        L: LockBefore<ProcessGroupState>,
-    {
+    pub fn check_orphaned(&self, _pids: &PidTable) {
         let thread_groups = {
-            let state = self.read(locked);
+            let state = self.read();
             if state.orphaned {
                 return;
             }
@@ -153,7 +135,7 @@ impl ProcessGroup {
             }
         }
         let thread_groups = {
-            let mut state = self.write(locked);
+            let mut state = self.write();
             if state.orphaned {
                 return;
             }

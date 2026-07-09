@@ -9,7 +9,6 @@ use crate::vfs::pipe::{Pipe, PipeFileObject, PipeOperands};
 use crate::vfs::syscalls::OffsetPtr;
 use crate::vfs::{FdNumber, FileHandle};
 use starnix_logging::track_stub;
-use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Unlocked};
 use starnix_types::user_buffer::MAX_RW_COUNT;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
@@ -67,7 +66,6 @@ impl CopyOperand {
 }
 
 fn copy_data(
-    locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
     operand_in: CopyOperand,
     operand_out: CopyOperand,
@@ -76,19 +74,19 @@ fn copy_data(
     let mut remaining = length;
     let mut transferred = 0;
 
-    let read = |locked: &mut Locked<Unlocked>, progress: usize, data: &mut VecOutputBuffer| {
+    let read = |progress: usize, data: &mut VecOutputBuffer| {
         if let Some(offset) = operand_in.maybe_offset {
-            operand_in.file.read_at(locked, current_task, offset + progress, data)
+            operand_in.file.read_at(current_task, offset + progress, data)
         } else {
-            operand_in.file.read(locked, current_task, data)
+            operand_in.file.read(current_task, data)
         }
     };
 
-    let write = |locked: &mut Locked<Unlocked>, progress: usize, data: &mut VecInputBuffer| {
+    let write = |progress: usize, data: &mut VecInputBuffer| {
         if let Some(offset) = operand_out.maybe_offset {
-            operand_out.file.write_at(locked, current_task, offset + progress, data)
+            operand_out.file.write_at(current_task, offset + progress, data)
         } else {
-            operand_out.file.write(locked, current_task, data)
+            operand_out.file.write(current_task, data)
         }
     };
 
@@ -98,14 +96,14 @@ fn copy_data(
             // perhaps using asynchronous IO for better performance.
             let chunk_length = std::cmp::min(*PAGE_SIZE as usize, remaining);
             let mut buffer = VecOutputBuffer::new(chunk_length);
-            let bytes_read = read(locked, transferred, &mut buffer)?;
+            let bytes_read = read(transferred, &mut buffer)?;
             operand_in.maybe_write_result_offset(current_task, transferred + bytes_read)?;
             if bytes_read == 0 {
                 break;
             }
             let mut buffer = Vec::from(buffer);
             buffer.truncate(bytes_read);
-            let bytes_written = write(locked, transferred, &mut VecInputBuffer::from(buffer))?;
+            let bytes_written = write(transferred, &mut VecInputBuffer::from(buffer))?;
             operand_out.maybe_write_result_offset(current_task, transferred + bytes_written)?;
             if bytes_written == 0 {
                 break;
@@ -129,7 +127,6 @@ fn copy_data(
 }
 
 pub fn sendfile(
-    locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
     fd_out: FdNumber,
     fd_in: FdNumber,
@@ -164,11 +161,10 @@ pub fn sendfile(
     }
 
     let length = std::cmp::min(count as usize, *MAX_RW_COUNT);
-    copy_data(locked, current_task, operand_in, operand_out, length)
+    copy_data(current_task, operand_in, operand_out, length)
 }
 
 pub fn splice(
-    locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
     fd_in: FdNumber,
     off_in: OffsetPtr,
@@ -208,7 +204,6 @@ pub fn splice(
         // If both ends are pipes, use the symmetric `Pipe::splice` function.
         (Some(_), Some(_)) => {
             let PipeOperands { mut read, mut write } = PipeFileObject::lock_pipes(
-                locked,
                 current_task,
                 &operand_in.file,
                 &operand_out.file,
@@ -219,7 +214,6 @@ pub fn splice(
         }
         (None, Some(pipe_out)) => {
             let spliced = pipe_out.splice_from(
-                locked,
                 current_task,
                 &operand_out.file,
                 &operand_in.file,
@@ -232,7 +226,6 @@ pub fn splice(
         }
         (Some(pipe_in), None) => {
             let spliced = pipe_in.splice_to(
-                locked,
                 current_task,
                 &operand_in.file,
                 &operand_out.file,
@@ -249,7 +242,6 @@ pub fn splice(
 }
 
 pub fn vmsplice(
-    locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
     fd: FdNumber,
     iovec_addr: IOVecPtr,
@@ -275,18 +267,17 @@ pub fn vmsplice(
 
     if should_write {
         bytes_transferred +=
-            pipe.vmsplice_from(locked, current_task, &file, iovec.clone(), non_blocking)?;
+            pipe.vmsplice_from(current_task, &file, iovec.clone(), non_blocking)?;
     }
 
     if should_read {
-        bytes_transferred += pipe.vmsplice_to(locked, current_task, &file, iovec, non_blocking)?;
+        bytes_transferred += pipe.vmsplice_to(current_task, &file, iovec, non_blocking)?;
     }
 
     Ok(bytes_transferred)
 }
 
 pub fn copy_file_range(
-    locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
     fd_in: FdNumber,
     user_offset_in: OffsetPtr,
@@ -337,20 +328,16 @@ pub fn copy_file_range(
         }
     }
 
-    copy_data(locked, current_task, operand_in, operand_out, length)
+    copy_data(current_task, operand_in, operand_out, length)
 }
 
-pub fn tee<L>(
-    locked: &mut Locked<L>,
+pub fn tee(
     current_task: &CurrentTask,
     fd_in: FdNumber,
     fd_out: FdNumber,
     len: usize,
     flags: u32,
-) -> Result<usize, Errno>
-where
-    L: LockEqualOrBefore<FileOpsCore>,
-{
+) -> Result<usize, Errno> {
     const KNOWN_FLAGS: u32 =
         uapi::SPLICE_F_MOVE | uapi::SPLICE_F_NONBLOCK | uapi::SPLICE_F_MORE | uapi::SPLICE_F_GIFT;
     if flags & !KNOWN_FLAGS != 0 {
@@ -365,6 +352,6 @@ where
 
     // tee requires that both files are pipes.
     let PipeOperands { mut read, mut write } =
-        PipeFileObject::lock_pipes(locked, current_task, &file_in, &file_out, len, non_blocking)?;
+        PipeFileObject::lock_pipes(current_task, &file_in, &file_out, len, non_blocking)?;
     Pipe::tee(&mut read, &mut write, len)
 }

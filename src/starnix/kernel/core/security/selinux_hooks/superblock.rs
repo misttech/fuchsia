@@ -18,7 +18,6 @@ use selinux::{
     SecurityId, SecurityServer,
 };
 use starnix_logging::{log_debug, track_stub};
-use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked};
 use starnix_uapi::error;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::mount_flags::MountFlags;
@@ -43,15 +42,11 @@ pub(in crate::security) fn file_system_init_security(
 }
 
 /// Resolves the labeling scheme and arguments for the `file_system`, based on the loaded policy.
-pub(in crate::security) fn file_system_resolve_security<L>(
-    locked: &mut Locked<L>,
+pub(in crate::security) fn file_system_resolve_security(
     security_server: &SecurityServer,
     current_task: &CurrentTask,
     file_system: &FileSystemHandle,
-) -> Result<(), Errno>
-where
-    L: LockEqualOrBefore<FileOpsCore>,
-{
+) -> Result<(), Errno> {
     // TODO: https://fxbug.dev/334094811 - Determine how failures, e.g. mount options containing
     // Security Context values that are not valid in the loaded policy.
     let fs_state = &file_system.security_state.state;
@@ -112,10 +107,11 @@ where
     // This step will be performed only when the file system label is first resolved.
     if let Some(root_dir_entry) = root_node_to_init {
         fs_node_init_with_dentry(
-            Some(locked.cast_locked()),
             security_server,
             current_task,
             root_dir_entry,
+            /* read_xaddr = */
+            true,
         )?;
     }
 
@@ -124,10 +120,11 @@ where
     for dir_entry in pending_entries {
         if let Some(dir_entry) = dir_entry.0.upgrade() {
             fs_node_init_with_dentry(
-                Some(locked.cast_locked()),
                 security_server,
                 current_task,
                 &dir_entry,
+                /* read_xaddr = */
+                true,
             )
             .unwrap_or_else(|_| panic!("Failed to resolve FsNode label"));
         }

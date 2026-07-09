@@ -4,7 +4,6 @@
 
 use starnix_core::task::CurrentTask;
 use starnix_core::vfs::FsNodeOps;
-use starnix_sync::{FileOpsCore, Locked};
 use starnix_uapi::errors::Errno;
 use std::sync::atomic::Ordering;
 
@@ -44,7 +43,6 @@ const TX_STAT_NAMES: [&str; 8] = [
 impl starnix_core::vfs::pseudo::dynamic_file::DynamicFileSource for ProcNetDev {
     fn generate_locked(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         current_task: &CurrentTask,
         sink: &mut starnix_core::vfs::pseudo::dynamic_file::DynamicFileBuf,
     ) -> Result<(), Errno> {
@@ -55,7 +53,7 @@ impl starnix_core::vfs::pseudo::dynamic_file::DynamicFileSource for ProcNetDev {
             let waiter = starnix_core::task::Waiter::new();
             let _ = wq.wait_async(&waiter);
             while !initialized.load(Ordering::SeqCst) {
-                waiter.wait(locked, current_task)?;
+                waiter.wait(current_task)?;
             }
         }
 

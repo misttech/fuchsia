@@ -59,14 +59,14 @@ use starnix_modules_layeredfs::{LayeredFsBuilder, LayeredFsMounts};
 use starnix_modules_magma::get_magma_params;
 use starnix_modules_overlayfs::OverlayStack;
 use starnix_modules_rtc::rtc_device_init;
-use starnix_sync::{Locked, Unlocked};
+
 use starnix_task_command::TaskCommand;
 use starnix_uapi::errors::{ENOENT, SourceContext};
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::resource_limits::Resource;
 use starnix_uapi::{errno, tid_t};
 use std::ffi::CString;
-use std::ops::DerefMut;
+
 use std::sync::Arc;
 use zx::Task as _;
 
@@ -369,11 +369,7 @@ impl Container {
             // Expose the root of the container's filesystem.
             let (fs_root, fs_root_server_end) = fidl::endpoints::create_proxy();
             fs.add_remote("fs_root", fs_root);
-            expose_root(
-                self.kernel.kthreads.unlocked_for_async().deref_mut(),
-                self.system_task(),
-                fs_root_server_end,
-            )?;
+            expose_root(self.system_task(), fs_root_server_end)?;
 
             fs.serve_connection(outgoing_dir.into()).map_err(|_| errno!(EINVAL))?;
 
@@ -734,30 +730,20 @@ async fn create_container(
         device_tree,
     )
     .with_source_context(|| format!("creating Kernel: {}", start_info.program.name))?;
-    let (fs_context, feature_mounts) = create_fs_context(
-        kernel.kthreads.unlocked_for_async().deref_mut(),
-        &kernel,
-        &features,
-        start_info,
-        &pkg_dir_proxy,
-    )
-    .source_context("creating FsContext")?;
+    let (fs_context, feature_mounts) =
+        create_fs_context(&kernel, &features, start_info, &pkg_dir_proxy)
+            .source_context("creating FsContext")?;
     let init_pid = kernel.pids.write().allocate_pid();
     // Lots of software assumes that the pid for the init process is 1.
     debug_assert_eq!(init_pid, 1);
 
-    let system_task = create_system_task(
-        kernel.kthreads.unlocked_for_async().deref_mut(),
-        &kernel,
-        Arc::clone(&fs_context),
-    )
-    .source_context("create system task")?;
+    let system_task = create_system_task(&kernel, Arc::clone(&fs_context))
+        .source_context("create system task")?;
     // The system task gives pid 2. This value is less critical than giving
     // pid 1 to init, but this value matches what is supposed to happen.
     debug_assert_eq!(system_task.tid, 2);
 
-    feature_mounts(kernel.kthreads.unlocked_for_async().deref_mut(), &system_task)
-        .source_context("mounting feature filesystems")?;
+    feature_mounts(&system_task).source_context("mounting feature filesystems")?;
 
     kernel.kthreads.init(system_task).source_context("initializing kthreads")?;
     let system_task = kernel.kthreads.system_task();
@@ -773,38 +759,27 @@ async fn create_container(
 
     // Real Time clock is present in all configuration.
     log_info!("Initializing RTC device.");
-    rtc_device_init(kernel.kthreads.unlocked_for_async().deref_mut(), &system_task)
-        .context("in starnix_kernel_runner, while initializing RTC")?;
+    rtc_device_init(&system_task).context("in starnix_kernel_runner, while initializing RTC")?;
 
     // Register common devices and add them in sysfs and devtmpfs.
     log_info!("Registering devices and filesystems.");
-    init_common_devices(kernel.kthreads.unlocked_for_async().deref_mut(), &kernel)?;
-    register_common_file_systems(kernel.kthreads.unlocked_for_async().deref_mut(), &kernel);
+    init_common_devices(&kernel)?;
+    register_common_file_systems(&kernel);
 
     register_common_syscalls(&kernel);
 
     log_info!("Mounting filesystems.");
-    mount_filesystems(
-        kernel.kthreads.unlocked_for_async().deref_mut(),
-        &system_task,
-        start_info,
-        &pkg_dir_proxy,
-    )
-    .source_context("mounting filesystems")?;
+    mount_filesystems(&system_task, start_info, &pkg_dir_proxy)
+        .source_context("mounting filesystems")?;
 
     // Run all common features that were specified in the .cml.
     {
         log_info!("Running container features.");
-        run_container_features(
-            kernel.kthreads.unlocked_for_async().deref_mut(),
-            &system_task,
-            &features,
-        )?;
+        run_container_features(&system_task, &features)?;
     }
 
     log_info!("Initializing remote block devices.");
-    init_remote_block_devices(kernel.kthreads.unlocked_for_async().deref_mut(), &system_task)
-        .source_context("initalizing remote block devices")?;
+    init_remote_block_devices(&system_task).source_context("initalizing remote block devices")?;
 
     // If there is an init binary path, run it, optionally waiting for the
     // startup_file_path to be created. The task struct is still used
@@ -821,11 +796,7 @@ async fn create_container(
 
     log_info!("Opening start_info file.");
     let executable = system_task
-        .open_file(
-            kernel.kthreads.unlocked_for_async().deref_mut(),
-            argv[0].as_bytes().into(),
-            OpenFlags::RDONLY,
-        )
+        .open_file(argv[0].as_bytes().into(), OpenFlags::RDONLY)
         .with_source_context(|| format!("opening init: {:?}", argv[0]))?;
 
     let initial_name = if start_info.program.init.is_empty() {
@@ -857,22 +828,15 @@ async fn create_container(
     }
 
     log_info!("Creating init process.");
-    let init_task = create_init_process(
-        kernel.kthreads.unlocked_for_async().deref_mut(),
-        &kernel,
-        init_pid,
-        initial_name,
-        Arc::clone(&fs_context),
-        &rlimits,
-    )
-    .with_source_context(|| format!("creating init task: {:?}", start_info.program.init))?;
+    let init_task =
+        create_init_process(&kernel, init_pid, initial_name, Arc::clone(&fs_context), &rlimits)
+            .with_source_context(|| format!("creating init task: {:?}", start_info.program.init))?;
 
     execute_task_with_prerun_result(
-        kernel.kthreads.unlocked_for_async().deref_mut(),
         init_task,
-        move |locked, init_task| {
-            parse_numbered_handles(locked, init_task, None, &init_task.files()).expect("");
-            init_task.exec(locked, executable, argv[0].clone(), argv.clone(), vec![])
+        move |init_task| {
+            parse_numbered_handles(init_task, None, &init_task.files()).expect("");
+            init_task.exec(executable, argv[0].clone(), argv.clone(), vec![])
         },
         move |result| {
             log_info!("Finished running init process: {:?}", result);
@@ -899,7 +863,6 @@ async fn create_container(
 }
 
 fn create_fs_context(
-    locked: &mut Locked<Unlocked>,
     kernel: &Kernel,
     features: &Features,
     start_info: &ContainerStartInfo,
@@ -911,7 +874,6 @@ fn create_fs_context(
     let mut mounts_iter =
         start_info.program.mounts.iter().chain(start_info.config.additional_mounts.iter());
     let root = MountAction::new_for_root(
-        locked,
         kernel,
         pkg_dir_proxy,
         mounts_iter.next().ok_or_else(|| anyhow!("Mounts list is empty"))?,
@@ -931,7 +893,7 @@ fn create_fs_context(
                 .context("#component_tmpfs options")?,
             ..Default::default()
         };
-        let component_tmpfs = TmpFs::new_fs_with_options(locked, kernel, component_tmpfs_options)?;
+        let component_tmpfs = TmpFs::new_fs_with_options(kernel, component_tmpfs_options)?;
 
         // /container will mount the container pkg
         let container_remotefs_options = FileSystemOptions {
@@ -940,7 +902,6 @@ fn create_fs_context(
             ..Default::default()
         };
         let container_remotefs = new_remotefs_in_root(
-            locked,
             kernel,
             pkg_dir_proxy,
             container_remotefs_options,
@@ -958,7 +919,7 @@ fn create_fs_context(
                 .context("#custom_artifacts options")?,
             ..Default::default()
         };
-        let fs = TmpFs::new_fs_with_options(locked, kernel, mount_options)?;
+        let fs = TmpFs::new_fs_with_options(kernel, mount_options)?;
         builder.add("/custom_artifacts", fs);
     }
     if features.test_data {
@@ -966,13 +927,13 @@ fn create_fs_context(
             params: kernel.features.ns_mount_options("#test_data").context("#test_data options")?,
             ..Default::default()
         };
-        let fs = TmpFs::new_fs_with_options(locked, kernel, mount_options)?;
+        let fs = TmpFs::new_fs_with_options(kernel, mount_options)?;
         builder.add("/test_data", fs);
     }
 
-    let (mut root_fs, feature_mounts) = builder.build(locked, kernel);
+    let (mut root_fs, feature_mounts) = builder.build(kernel);
     if features.rootfs_rw {
-        root_fs = OverlayStack::wrap_fs_in_writable_layer(locked, kernel, root_fs)?;
+        root_fs = OverlayStack::wrap_fs_in_writable_layer(kernel, root_fs)?;
     }
 
     Ok((FsContext::new(Namespace::new_with_flags(root_fs, root.flags)), feature_mounts))
@@ -997,7 +958,6 @@ fn parse_rlimits(rlimits: &[String]) -> Result<Vec<(Resource, u64)>, Error> {
 }
 
 fn mount_filesystems(
-    locked: &mut Locked<Unlocked>,
     system_task: &CurrentTask,
     start_info: &ContainerStartInfo,
     pkg_dir_proxy: &fio::DirectorySynchronousProxy,
@@ -1007,21 +967,18 @@ fn mount_filesystems(
         start_info.program.mounts.iter().chain(start_info.config.additional_mounts.iter());
     let _ = mounts_iter.next();
     for mount_spec in mounts_iter {
-        let action = MountAction::from_spec(locked, system_task, pkg_dir_proxy, mount_spec)
+        let action = MountAction::from_spec(system_task, pkg_dir_proxy, mount_spec)
             .with_source_context(|| format!("creating filesystem from spec: {}", mount_spec))?;
         let mount_point = system_task
-            .lookup_path_from_root(locked, action.path.as_ref())
+            .lookup_path_from_root(action.path.as_ref())
             .with_source_context(|| format!("lookup path from root: {}", action.path))?;
         mount_point.mount(WhatToMount::Fs(action.fs), action.flags)?;
     }
     Ok(())
 }
 
-fn init_remote_block_devices(
-    locked: &mut Locked<Unlocked>,
-    system_task: &CurrentTask,
-) -> Result<(), Error> {
-    remote_block_device_init(locked, system_task);
+fn init_remote_block_devices(system_task: &CurrentTask) -> Result<(), Error> {
+    remote_block_device_init(system_task);
     let entries = match std::fs::read_dir("/block") {
         Ok(entries) => entries,
         Err(e) => {
@@ -1049,7 +1006,7 @@ fn init_remote_block_devices(
         system_task
             .kernel()
             .remote_block_device_registry
-            .create_remote_block_device(locked, system_task.kernel(), &name_str, client_end)
+            .create_remote_block_device(system_task.kernel(), &name_str, client_end)
             .with_source_context(|| format!("creating remote block device: {name_str}"))?;
     }
     Ok(())
@@ -1069,12 +1026,7 @@ async fn wait_for_init_file(
             let root = current_task.fs().root();
             let mut context = LookupContext::default();
 
-            match current_task.lookup_path(
-                current_task.kernel().kthreads.unlocked_for_async().deref_mut(),
-                &mut context,
-                root,
-                startup_file_path.into(),
-            ) {
+            match current_task.lookup_path(&mut context, root, startup_file_path.into()) {
                 Ok(_) => return Some(Ok(())),
                 Err(error) if error == ENOENT => {}
                 Err(error) => return Some(Err(anyhow::Error::from(error))),
@@ -1149,7 +1101,7 @@ mod test {
     use fuchsia_async as fasync;
     use futures::{SinkExt, StreamExt};
     #[allow(deprecated, reason = "pre-existing usage")]
-    use starnix_core::testing::create_kernel_task_and_unlocked;
+    use starnix_core::testing::create_kernel_and_task;
     use starnix_core::vfs::FdNumber;
     use starnix_uapi::CLONE_FS;
     use starnix_uapi::file_mode::{AccessCheck, FileMode};
@@ -1160,13 +1112,12 @@ mod test {
     #[fuchsia::test]
     async fn test_init_file_already_exists() {
         #[allow(deprecated, reason = "pre-existing usage")]
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
+        let (_kernel, current_task) = create_kernel_and_task();
         let (mut sender, mut receiver) = futures::channel::mpsc::unbounded();
 
         let path = "/path";
         current_task
             .open_file_at(
-                locked,
                 FdNumber::AT_FDCWD,
                 path.into(),
                 OpenFlags::CREAT,
@@ -1191,10 +1142,10 @@ mod test {
     #[fuchsia::test]
     async fn test_init_file_wait_required() {
         #[allow(deprecated, reason = "pre-existing usage")]
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
+        let (_kernel, current_task) = create_kernel_and_task();
         let (mut sender, mut receiver) = futures::channel::mpsc::unbounded();
 
-        let init_task = current_task.clone_task_for_test(locked, CLONE_FS as u64, Some(SIGCHLD));
+        let init_task = current_task.clone_task_for_test(CLONE_FS as u64, Some(SIGCHLD));
         let path = "/path";
 
         let test_init_tid = current_task.get_tid();
@@ -1213,7 +1164,6 @@ mod test {
         // Create the file that is being waited on.
         current_task
             .open_file_at(
-                locked,
                 FdNumber::AT_FDCWD,
                 path.into(),
                 OpenFlags::CREAT,
@@ -1230,10 +1180,10 @@ mod test {
     #[fuchsia::test]
     async fn test_init_exits_before_file_exists() {
         #[allow(deprecated, reason = "pre-existing usage")]
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
+        let (_kernel, current_task) = create_kernel_and_task();
         let (mut sender, mut receiver) = futures::channel::mpsc::unbounded();
 
-        let init_task = current_task.clone_task_for_test(locked, CLONE_FS as u64, Some(SIGCHLD));
+        let init_task = current_task.clone_task_for_test(CLONE_FS as u64, Some(SIGCHLD));
         const STARTUP_FILE_PATH: &str = "/path";
 
         let test_init_tid = init_task.get_tid();

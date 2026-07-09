@@ -21,7 +21,7 @@ use ebpf_api::SECCOMP_CBPF_CONFIG;
 use linux_uapi::AUDIT_SECCOMP;
 use starnix_lifecycle::AtomicCounter;
 use starnix_logging::{log_warn, track_stub};
-use starnix_sync::{FileOpsCore, LockDepMutex, Locked, SeccompNotifierLock, Unlocked};
+use starnix_sync::{LockDepMutex, SeccompNotifierLock};
 use starnix_syscalls::decls::Syscall;
 use starnix_syscalls::{SyscallArg, SyscallResult};
 use starnix_uapi::errors::Errno;
@@ -306,15 +306,11 @@ impl SeccompFilterContainer {
     }
 
     /// Creates a new listener for use by SECCOMP_RET_USER_NOTIF.  Returns its fd.
-    pub fn create_listener(
-        locked: &mut Locked<Unlocked>,
-        current_task: &CurrentTask,
-    ) -> Result<FdNumber, Errno> {
+    pub fn create_listener(current_task: &CurrentTask) -> Result<FdNumber, Errno> {
         // Create the `Anon` handle file before taking the write lock on the task, because
         // `Anon::new_file()` needs to read the `current_task` SID to label the file object.
         let the_notifier = SeccompNotifier::new();
         let handle = Anon::new_file(
-            locked,
             current_task,
             Box::new(SeccompNotifierFileObject { notifier: the_notifier.clone() }),
             OpenFlags::RDWR,
@@ -327,7 +323,7 @@ impl SeccompFilterContainer {
         if filters.notifier.is_some() {
             return error!(EBUSY);
         }
-        let fd = current_task.add_file(locked, handle, FdFlags::CLOEXEC)?;
+        let fd = current_task.add_file(handle, FdFlags::CLOEXEC)?;
         {
             let mut state = the_notifier.lock();
             state.add_thread();
@@ -399,16 +395,12 @@ impl SeccompState {
 
     /// Check to see if this syscall is allowed in STRICT mode, and, if not,
     /// send the current task a SIGKILL.
-    pub fn do_strict(
-        locked: &mut Locked<Unlocked>,
-        task: &Task,
-        syscall: &Syscall,
-    ) -> Option<Result<SyscallResult, Errno>> {
+    pub fn do_strict(task: &Task, syscall: &Syscall) -> Option<Result<SyscallResult, Errno>> {
         if syscall.decl.number as u32 != __NR_exit
             && syscall.decl.number as u32 != __NR_read
             && syscall.decl.number as u32 != __NR_write
         {
-            send_standard_signal(locked, task, SignalInfo::kernel(SIGKILL));
+            send_standard_signal(task, SignalInfo::kernel(SIGKILL));
             return Some(Err(errno_from_code!(0)));
         }
         None
@@ -450,7 +442,6 @@ impl SeccompState {
     // NB: Allow warning below so that it is clear what we are doing on KILL_PROCESS
     #[allow(clippy::wildcard_in_or_patterns)]
     pub fn do_user_defined(
-        locked: &mut Locked<Unlocked>,
         result: SeccompFilterResult,
         current_task: &mut CurrentTask,
         syscall: &Syscall,
@@ -479,8 +470,7 @@ impl SeccompState {
                 Some(Err(errno_from_code!(0)))
             }
             SeccompAction::KillProcess => {
-                current_task
-                    .kill_thread_group(locked, ExitStatus::CoreDump(SignalInfo::kernel(SIGSYS)));
+                current_task.kill_thread_group(ExitStatus::CoreDump(SignalInfo::kernel(SIGSYS)));
                 Some(Err(errno_from_code!(0)))
             }
             SeccompAction::Log => {
@@ -517,7 +507,7 @@ impl SeccompState {
                     None,
                 );
 
-                send_standard_signal(locked, current_task, siginfo);
+                send_standard_signal(current_task, siginfo);
                 Some(Err(errno_from_code!(-(syscall.decl.number as i16))))
             }
             SeccompAction::UserNotif => {
@@ -549,7 +539,7 @@ impl SeccompState {
                     }
 
                     // Next, wait for a response from the supervisor
-                    if let Err(e) = waiter.wait(locked, current_task) {
+                    if let Err(e) = waiter.wait(current_task) {
                         return Some(Err(e));
                     }
 
@@ -928,12 +918,7 @@ impl FileOps for SeccompNotifierFileObject {
     fileops_impl_nonseekable!();
     fileops_impl_noop_sync!();
 
-    fn close(
-        self: Box<Self>,
-        _locked: &mut Locked<FileOpsCore>,
-        _file: &FileObjectState,
-        _current_task: &CurrentTask,
-    ) {
+    fn close(self: Box<Self>, _file: &FileObjectState, _current_task: &CurrentTask) {
         let mut state = self.notifier.lock();
 
         for (cookie, notification) in state.pending_notifications.iter() {
@@ -953,7 +938,6 @@ impl FileOps for SeccompNotifierFileObject {
 
     fn read(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         _offset: usize,
@@ -964,7 +948,6 @@ impl FileOps for SeccompNotifierFileObject {
 
     fn write(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         _offset: usize,
@@ -975,7 +958,6 @@ impl FileOps for SeccompNotifierFileObject {
 
     fn ioctl(
         &self,
-        locked: &mut Locked<Unlocked>,
         _file: &FileObject,
         current_task: &CurrentTask,
         request: u32,
@@ -1010,7 +992,7 @@ impl FileOps for SeccompNotifierFileObject {
                             EventHandler::None,
                         );
                     }
-                    waiter.wait(locked, current_task)?;
+                    waiter.wait(current_task)?;
                 }
                 if let Some(notif) = notif {
                     if let Err(e) =
@@ -1061,7 +1043,6 @@ impl FileOps for SeccompNotifierFileObject {
 
     fn wait_async(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         waiter: &Waiter,
@@ -1074,7 +1055,6 @@ impl FileOps for SeccompNotifierFileObject {
 
     fn query_events(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
     ) -> Result<FdEvents, Errno> {
@@ -1089,7 +1069,7 @@ mod test {
 
     #[::fuchsia::test]
     async fn test_actions_logged_accepts_legal_string() {
-        spawn_kernel_and_run(async |_, current_task| {
+        spawn_kernel_and_run(async |current_task| {
             let kernel = current_task.kernel();
             let mut actions = SeccompAction::get_actions_avail_file();
             // This is a test in Rust instead of a syscall test because we don't want to change the

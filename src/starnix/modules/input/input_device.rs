@@ -9,11 +9,7 @@ use starnix_core::device::kobject::DeviceMetadata;
 use starnix_core::device::{DeviceMode, DeviceOps};
 use starnix_core::task::CurrentTask;
 use starnix_core::vfs::{FileOps, FsString, NamespaceNode};
-#[cfg(test)]
-use starnix_sync::Unlocked;
-use starnix_sync::{
-    FileOpsCore, InputDeviceFileNodesLock, LockDepMutex, LockEqualOrBefore, Locked,
-};
+use starnix_sync::{InputDeviceFileNodesLock, LockDepMutex};
 use starnix_uapi::device_id::{DeviceId as StarnixDeviceId, INPUT_MAJOR};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
@@ -282,21 +278,12 @@ impl InputDevice {
         }
     }
 
-    pub fn register<L>(
-        self,
-        locked: &mut Locked<L>,
-        system_task: &CurrentTask,
-        device_id: u32,
-    ) -> Result<(), Errno>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
+    pub fn register(self, system_task: &CurrentTask, device_id: u32) -> Result<(), Errno> {
         let kernel = system_task.kernel();
         let registry = &kernel.device_registry;
 
         let input_class = registry.objects.input_class();
         registry.register_device(
-            locked,
             system_task.kernel(),
             FsString::from(format!("event{}", device_id)).as_ref(),
             DeviceMetadata::new(
@@ -356,16 +343,14 @@ impl InputDevice {
     #[cfg(test)]
     pub fn open_test(
         &self,
-        locked: &mut Locked<Unlocked>,
         current_task: &CurrentTask,
     ) -> Result<starnix_core::vfs::FileHandle, Errno> {
         let input_file = self.open_internal();
         let root_namespace_node = current_task
-            .lookup_path_from_root(locked, ".".into())
+            .lookup_path_from_root(".".into())
             .expect("failed to get namespace node for root");
 
         let file_object = starnix_core::vfs::FileObject::new(
-            locked,
             current_task,
             input_file,
             root_namespace_node,
@@ -379,7 +364,6 @@ impl InputDevice {
 impl DeviceOps for InputDevice {
     fn open(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _current_task: &CurrentTask,
         _id: StarnixDeviceId,
         _node: &NamespaceNode,
@@ -412,7 +396,7 @@ mod test {
     use starnix_core::task::dynamic_thread_spawner::SpawnRequestBuilder;
     use starnix_core::task::{EventHandler, Waiter};
     #[allow(deprecated, reason = "pre-existing usage")]
-    use starnix_core::testing::create_kernel_task_and_unlocked;
+    use starnix_core::testing::create_kernel_and_task;
     use starnix_core::vfs::FileHandle;
     use starnix_core::vfs::buffers::VecOutputBuffer;
     use starnix_types::time::timeval_from_time;
@@ -426,19 +410,17 @@ mod test {
     const INPUT_EVENT_SIZE: usize = std::mem::size_of::<uapi::input_event>();
 
     async fn start_touch_input(
-        locked: &mut Locked<Unlocked>,
         current_task: &CurrentTask,
     ) -> (InputDevice, FileHandle, fuipointer::TouchSourceRequestStream) {
         let inspector = fuchsia_inspect::Inspector::default();
-        start_touch_input_inspect_and_dimensions(locked, current_task, 700, 1200, &inspector).await
+        start_touch_input_inspect_and_dimensions(current_task, 700, 1200, &inspector).await
     }
 
     async fn start_touch_input_inspect(
-        locked: &mut Locked<Unlocked>,
         current_task: &CurrentTask,
         inspector: &fuchsia_inspect::Inspector,
     ) -> (InputDevice, FileHandle, fuipointer::TouchSourceRequestStream) {
-        start_touch_input_inspect_and_dimensions(locked, current_task, 700, 1200, &inspector).await
+        start_touch_input_inspect_and_dimensions(current_task, 700, 1200, &inspector).await
     }
 
     async fn init_keyboard_listener(
@@ -494,15 +476,13 @@ mod test {
     }
 
     async fn start_touch_input_inspect_and_dimensions(
-        locked: &mut Locked<Unlocked>,
         current_task: &CurrentTask,
         x_max: i32,
         y_max: i32,
         inspector: &fuchsia_inspect::Inspector,
     ) -> (InputDevice, FileHandle, fuipointer::TouchSourceRequestStream) {
         let input_device = InputDevice::new_touch(x_max, y_max, inspector.root());
-        let input_file =
-            input_device.open_test(locked, current_task).expect("Failed to create input file");
+        let input_file = input_device.open_test(current_task).expect("Failed to create input file");
 
         let (touch_source_client_end, touch_source_stream) =
             fidl::endpoints::create_request_stream::<TouchSourceMarker>();
@@ -543,13 +523,11 @@ mod test {
     }
 
     async fn start_keyboard_input(
-        locked: &mut Locked<Unlocked>,
         current_task: &CurrentTask,
     ) -> (InputDevice, FileHandle, fuiinput::KeyboardListenerProxy) {
         let inspector = fuchsia_inspect::Inspector::default();
         let input_device = InputDevice::new_keyboard(inspector.root());
-        let input_file =
-            input_device.open_test(locked, current_task).expect("Failed to create input file");
+        let input_file = input_device.open_test(current_task).expect("Failed to create input file");
         let (keyboard_proxy, mut keyboard_stream) =
             fidl::endpoints::create_sync_proxy_and_stream::<fuiinput::KeyboardMarker>();
         let view_ref_pair =
@@ -589,21 +567,18 @@ mod test {
     }
 
     async fn start_button_input(
-        locked: &mut Locked<Unlocked>,
         current_task: &CurrentTask,
     ) -> (InputDevice, FileHandle, fuipolicy::MediaButtonsListenerProxy) {
         let inspector = fuchsia_inspect::Inspector::default();
-        start_button_input_inspect(locked, current_task, &inspector).await
+        start_button_input_inspect(current_task, &inspector).await
     }
 
     async fn start_button_input_inspect(
-        locked: &mut Locked<Unlocked>,
         current_task: &CurrentTask,
         inspector: &fuchsia_inspect::Inspector,
     ) -> (InputDevice, FileHandle, fuipolicy::MediaButtonsListenerProxy) {
         let input_device = InputDevice::new_keyboard(inspector.root());
-        let input_file =
-            input_device.open_test(locked, current_task).expect("Failed to create input file");
+        let input_file = input_device.open_test(current_task).expect("Failed to create input file");
         let (device_registry_proxy, mut device_listener_stream) =
             fidl::endpoints::create_sync_proxy_and_stream::<fuipolicy::DeviceListenerRegistryMarker>(
             );
@@ -641,21 +616,18 @@ mod test {
     }
 
     async fn start_mouse_input(
-        locked: &mut Locked<Unlocked>,
         current_task: &CurrentTask,
     ) -> (InputDevice, FileHandle, fuipointer::MouseSourceRequestStream) {
         let inspector = fuchsia_inspect::Inspector::default();
-        start_mouse_input_inspect(locked, current_task, &inspector).await
+        start_mouse_input_inspect(current_task, &inspector).await
     }
 
     async fn start_mouse_input_inspect(
-        locked: &mut Locked<Unlocked>,
         current_task: &CurrentTask,
         inspector: &fuchsia_inspect::Inspector,
     ) -> (InputDevice, FileHandle, fuipointer::MouseSourceRequestStream) {
         let input_device = InputDevice::new_mouse(inspector.root());
-        let input_file =
-            input_device.open_test(locked, current_task).expect("Failed to create input file");
+        let input_file = input_device.open_test(current_task).expect("Failed to create input file");
 
         let (touch_source_client_end, _touch_source_stream) =
             fidl::endpoints::create_request_stream::<TouchSourceMarker>();
@@ -780,18 +752,10 @@ mod test {
         }
     }
 
-    fn read_uapi_events<L>(
-        locked: &mut Locked<L>,
-        file: &FileHandle,
-        current_task: &CurrentTask,
-    ) -> Vec<uapi::input_event>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
+    fn read_uapi_events(file: &FileHandle, current_task: &CurrentTask) -> Vec<uapi::input_event> {
         std::iter::from_fn(|| {
-            let locked = locked.cast_locked::<FileOpsCore>();
             let mut event_bytes = VecOutputBuffer::new(INPUT_EVENT_SIZE);
-            match file.read(locked, current_task, &mut event_bytes) {
+            match file.read(current_task, &mut event_bytes) {
                 Ok(INPUT_EVENT_SIZE) => Some(
                     uapi::input_event::read_from_bytes(Vec::from(event_bytes).as_slice())
                         .map_err(|_| anyhow!("failed to read input_event from buffer")),
@@ -843,10 +807,10 @@ mod test {
     #[::fuchsia::test()]
     async fn initial_watch_request_has_empty_responses_arg() {
         #[allow(deprecated, reason = "pre-existing usage")]
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
+        let (_kernel, current_task) = create_kernel_and_task();
         // Set up resources.
         let (_input_device, _input_file, mut touch_source_stream) =
-            start_touch_input(locked, &current_task).await;
+            start_touch_input(&current_task).await;
 
         // Verify that the watch request has empty `responses`.
         assert_matches!(
@@ -860,9 +824,9 @@ mod test {
     async fn later_watch_requests_have_responses_arg_matching_earlier_watch_replies() {
         // Set up resources.
         #[allow(deprecated, reason = "pre-existing usage")]
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
+        let (_kernel, current_task) = create_kernel_and_task();
         let (_input_device, _input_file, mut touch_source_stream) =
-            start_touch_input(locked, &current_task).await;
+            start_touch_input(&current_task).await;
 
         // Reply to first `Watch` with two `TouchEvent`s.
         match touch_source_stream.next().await {
@@ -903,30 +867,18 @@ mod test {
     async fn notifies_polling_waiters_of_new_data() {
         // Set up resources.
         #[allow(deprecated, reason = "pre-existing usage")]
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
+        let (_kernel, current_task) = create_kernel_and_task();
         let (_input_device, input_file, mut touch_source_stream) =
-            start_touch_input(locked, &current_task).await;
+            start_touch_input(&current_task).await;
         let waiter1 = Waiter::new();
         let waiter2 = Waiter::new();
 
         // Ask `input_file` to notify waiters when data is available to read.
         [&waiter1, &waiter2].iter().for_each(|waiter| {
-            input_file.wait_async(
-                locked,
-                &current_task,
-                waiter,
-                FdEvents::POLLIN,
-                EventHandler::None,
-            );
+            input_file.wait_async(&current_task, waiter, FdEvents::POLLIN, EventHandler::None);
         });
-        assert_matches!(
-            waiter1.wait_until(locked, &current_task, zx::MonotonicInstant::ZERO),
-            Err(_)
-        );
-        assert_matches!(
-            waiter2.wait_until(locked, &current_task, zx::MonotonicInstant::ZERO),
-            Err(_)
-        );
+        assert_matches!(waiter1.wait_until(&current_task, zx::MonotonicInstant::ZERO), Err(_));
+        assert_matches!(waiter2.wait_until(&current_task, zx::MonotonicInstant::ZERO), Err(_));
 
         // Reply to first `Watch` request.
         answer_next_touch_watch_request(
@@ -939,24 +891,23 @@ mod test {
         // `InputFile` should be done processing the first reply, since it has sent its second
         // request. And, as part of processing the first reply, `InputFile` should have notified
         // the interested waiters.
-        assert_eq!(waiter1.wait_until(locked, &current_task, zx::MonotonicInstant::ZERO), Ok(()));
-        assert_eq!(waiter2.wait_until(locked, &current_task, zx::MonotonicInstant::ZERO), Ok(()));
+        assert_eq!(waiter1.wait_until(&current_task, zx::MonotonicInstant::ZERO), Ok(()));
+        assert_eq!(waiter2.wait_until(&current_task, zx::MonotonicInstant::ZERO), Ok(()));
     }
 
     #[::fuchsia::test]
     async fn notifies_blocked_waiter_of_new_data() {
         // Set up resources.
         #[allow(deprecated, reason = "pre-existing usage")]
-        let (kernel, current_task, locked) = create_kernel_task_and_unlocked();
+        let (kernel, current_task) = create_kernel_and_task();
         let (_input_device, input_file, mut touch_source_stream) =
-            start_touch_input(locked, &current_task).await;
+            start_touch_input(&current_task).await;
         let waiter = Waiter::new();
 
         // Ask `input_file` to notify `waiter` when data is available to read.
-        input_file.wait_async(locked, &current_task, &waiter, FdEvents::POLLIN, EventHandler::None);
+        input_file.wait_async(&current_task, &waiter, FdEvents::POLLIN, EventHandler::None);
 
-        let closure =
-            move |locked: &mut Locked<Unlocked>, task: &CurrentTask| waiter.wait(locked, &task);
+        let closure = move |task: &CurrentTask| waiter.wait(&task);
 
         let (waiter_thread, req) = SpawnRequestBuilder::new()
             .with_debug_name("input-device-waiter")
@@ -986,30 +937,18 @@ mod test {
     async fn does_not_notify_polling_waiters_without_new_data() {
         // Set up resources.
         #[allow(deprecated, reason = "pre-existing usage")]
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
+        let (_kernel, current_task) = create_kernel_and_task();
         let (_input_device, input_file, mut touch_source_stream) =
-            start_touch_input(locked, &current_task).await;
+            start_touch_input(&current_task).await;
         let waiter1 = Waiter::new();
         let waiter2 = Waiter::new();
 
         // Ask `input_file` to notify waiters when data is available to read.
         [&waiter1, &waiter2].iter().for_each(|waiter| {
-            input_file.wait_async(
-                locked,
-                &current_task,
-                waiter,
-                FdEvents::POLLIN,
-                EventHandler::None,
-            );
+            input_file.wait_async(&current_task, waiter, FdEvents::POLLIN, EventHandler::None);
         });
-        assert_matches!(
-            waiter1.wait_until(locked, &current_task, zx::MonotonicInstant::ZERO),
-            Err(_)
-        );
-        assert_matches!(
-            waiter2.wait_until(locked, &current_task, zx::MonotonicInstant::ZERO),
-            Err(_)
-        );
+        assert_matches!(waiter1.wait_until(&current_task, zx::MonotonicInstant::ZERO), Err(_));
+        assert_matches!(waiter2.wait_until(&current_task, zx::MonotonicInstant::ZERO), Err(_));
 
         // Reply to first `Watch` request with an empty set of events.
         answer_next_touch_watch_request(&mut touch_source_stream, vec![]).await;
@@ -1017,14 +956,8 @@ mod test {
         // `InputFile` should be done processing the first reply. Since there
         // were no touch_events given, `InputFile` should not have notified the
         // interested waiters.
-        assert_matches!(
-            waiter1.wait_until(locked, &current_task, zx::MonotonicInstant::ZERO),
-            Err(_)
-        );
-        assert_matches!(
-            waiter2.wait_until(locked, &current_task, zx::MonotonicInstant::ZERO),
-            Err(_)
-        );
+        assert_matches!(waiter1.wait_until(&current_task, zx::MonotonicInstant::ZERO), Err(_));
+        assert_matches!(waiter2.wait_until(&current_task, zx::MonotonicInstant::ZERO), Err(_));
     }
 
     // Note: a user program may also want to be woken if events were already ready at the
@@ -1043,9 +976,9 @@ mod test {
     async fn honors_wait_cancellation() {
         // Set up input resources.
         #[allow(deprecated, reason = "pre-existing usage")]
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
+        let (_kernel, current_task) = create_kernel_and_task();
         let (_input_device, input_file, mut touch_source_stream) =
-            start_touch_input(locked, &current_task).await;
+            start_touch_input(&current_task).await;
         let waiter1 = Waiter::new();
         let waiter2 = Waiter::new();
 
@@ -1054,7 +987,7 @@ mod test {
             .iter()
             .map(|waiter| {
                 input_file
-                    .wait_async(locked, &current_task, waiter, FdEvents::POLLIN, EventHandler::None)
+                    .wait_async(&current_task, waiter, FdEvents::POLLIN, EventHandler::None)
                     .expect("wait_async")
             })
             .collect::<Vec<_>>();
@@ -1074,24 +1007,21 @@ mod test {
         // `InputFile` should be done processing the first reply, since it has sent its second
         // request. And, as part of processing the first reply, `InputFile` should have notified
         // the interested waiters.
-        assert_matches!(
-            waiter1.wait_until(locked, &current_task, zx::MonotonicInstant::ZERO),
-            Err(_)
-        );
-        assert_eq!(waiter2.wait_until(locked, &current_task, zx::MonotonicInstant::ZERO), Ok(()));
+        assert_matches!(waiter1.wait_until(&current_task, zx::MonotonicInstant::ZERO), Err(_));
+        assert_eq!(waiter2.wait_until(&current_task, zx::MonotonicInstant::ZERO), Ok(()));
     }
 
     #[::fuchsia::test]
     async fn query_events() {
         // Set up resources.
         #[allow(deprecated, reason = "pre-existing usage")]
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
+        let (_kernel, current_task) = create_kernel_and_task();
         let (_input_device, input_file, mut touch_source_stream) =
-            start_touch_input(locked, &current_task).await;
+            start_touch_input(&current_task).await;
 
         // Check initial expectation.
         assert_eq!(
-            input_file.query_events(locked, &current_task).expect("query_events"),
+            input_file.query_events(&current_task).expect("query_events"),
             FdEvents::empty(),
             "events should be empty before data arrives"
         );
@@ -1108,7 +1038,7 @@ mod test {
 
         // Check post-watch expectation.
         assert_eq!(
-            input_file.query_events(locked, &current_task).expect("query_events"),
+            input_file.query_events(&current_task).expect("query_events"),
             FdEvents::POLLIN | FdEvents::POLLRDNORM,
             "events should be POLLIN after data arrives"
         );
@@ -1137,9 +1067,9 @@ mod test {
         // Set up resources.
         let inspector = fuchsia_inspect::Inspector::default();
         #[allow(deprecated, reason = "pre-existing usage")]
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
+        let (_kernel, current_task) = create_kernel_and_task();
         let (_input_device, input_file, mut touch_source_stream) =
-            start_touch_input_inspect(locked, &current_task, &inspector).await;
+            start_touch_input_inspect(&current_task, &inspector).await;
 
         // Touch add for pointer 1. This should be counted as a received event and a converted
         // event. It should also yield 6 generated events.
@@ -1156,7 +1086,7 @@ mod test {
             .await;
 
         // Consume all of the `uapi::input_event`s that are available.
-        let events = read_uapi_events(locked, &input_file, &current_task);
+        let events = read_uapi_events(&input_file, &current_task);
 
         assert_eq!(events.len(), 6);
 
@@ -1173,7 +1103,7 @@ mod test {
             unexpected_request => panic!("unexpected request {:?}", unexpected_request),
         }
 
-        let events = read_uapi_events(locked, &input_file, &current_task);
+        let events = read_uapi_events(&input_file, &current_task);
         assert_eq!(events, vec![]);
         assert_data_tree!(inspector, root: {
             touch_device: {
@@ -1214,9 +1144,9 @@ mod test {
         // Set up resources.
         let inspector = fuchsia_inspect::Inspector::default();
         #[allow(deprecated, reason = "pre-existing usage")]
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
+        let (_kernel, current_task) = create_kernel_and_task();
         let (_input_device, input_file, mut touch_source_stream) =
-            start_touch_input_inspect(locked, &current_task, &inspector).await;
+            start_touch_input_inspect(&current_task, &inspector).await;
 
         // Touch add for pointer 1. This should be counted as a received event and a converted
         // event. It should also yield 6 generated events.
@@ -1233,7 +1163,7 @@ mod test {
             .await;
 
         // Consume all of the `uapi::input_event`s that are available.
-        let events = read_uapi_events(locked, &input_file, &current_task);
+        let events = read_uapi_events(&input_file, &current_task);
 
         assert_eq!(events.len(), 6);
 
@@ -1249,7 +1179,7 @@ mod test {
             unexpected_request => panic!("unexpected request {:?}", unexpected_request),
         }
 
-        let events = read_uapi_events(locked, &input_file, &current_task);
+        let events = read_uapi_events(&input_file, &current_task);
         assert_eq!(events, vec![]);
         assert_data_tree!(inspector, root: {
             touch_device: {
@@ -1285,9 +1215,9 @@ mod test {
     async fn translates_touch_add() {
         // Set up resources.
         #[allow(deprecated, reason = "pre-existing usage")]
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
+        let (_kernel, current_task) = create_kernel_and_task();
         let (_input_device, input_file, mut touch_source_stream) =
-            start_touch_input(locked, &current_task).await;
+            start_touch_input(&current_task).await;
 
         // Touch add for pointer 1.
         answer_next_touch_watch_request(
@@ -1303,7 +1233,7 @@ mod test {
             .await;
 
         // Consume all of the `uapi::input_event`s that are available.
-        let events = read_uapi_events(locked, &input_file, &current_task);
+        let events = read_uapi_events(&input_file, &current_task);
 
         assert_eq!(
             events,
@@ -1322,9 +1252,9 @@ mod test {
     async fn translates_touch_change() {
         // Set up resources.
         #[allow(deprecated, reason = "pre-existing usage")]
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
+        let (_kernel, current_task) = create_kernel_and_task();
         let (_input_device, input_file, mut touch_source_stream) =
-            start_touch_input(locked, &current_task).await;
+            start_touch_input(&current_task).await;
 
         // Touch add for pointer 1.
         answer_next_touch_watch_request(
@@ -1340,7 +1270,7 @@ mod test {
             .await;
 
         // Consume all of the `uapi::input_event`s that are available.
-        let events = read_uapi_events(locked, &input_file, &current_task);
+        let events = read_uapi_events(&input_file, &current_task);
 
         assert_eq!(events.len(), 6);
 
@@ -1355,7 +1285,7 @@ mod test {
         answer_next_touch_watch_request(&mut touch_source_stream, vec![TouchEvent::default()])
             .await;
 
-        let events = read_uapi_events(locked, &input_file, &current_task);
+        let events = read_uapi_events(&input_file, &current_task);
         assert_eq!(
             events,
             vec![
@@ -1371,9 +1301,9 @@ mod test {
     async fn translates_touch_remove() {
         // Set up resources.
         #[allow(deprecated, reason = "pre-existing usage")]
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
+        let (_kernel, current_task) = create_kernel_and_task();
         let (_input_device, input_file, mut touch_source_stream) =
-            start_touch_input(locked, &current_task).await;
+            start_touch_input(&current_task).await;
 
         // Touch add for pointer 1.
         answer_next_touch_watch_request(
@@ -1389,7 +1319,7 @@ mod test {
             .await;
 
         // Consume all of the `uapi::input_event`s that are available.
-        let events = read_uapi_events(locked, &input_file, &current_task);
+        let events = read_uapi_events(&input_file, &current_task);
 
         assert_eq!(events.len(), 6);
 
@@ -1404,7 +1334,7 @@ mod test {
         answer_next_touch_watch_request(&mut touch_source_stream, vec![TouchEvent::default()])
             .await;
 
-        let events = read_uapi_events(locked, &input_file, &current_task);
+        let events = read_uapi_events(&input_file, &current_task);
         assert_eq!(
             events,
             vec![
@@ -1420,9 +1350,9 @@ mod test {
     async fn multi_touch_event_sequence() {
         // Set up resources.
         #[allow(deprecated, reason = "pre-existing usage")]
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
+        let (_kernel, current_task) = create_kernel_and_task();
         let (_input_device, input_file, mut touch_source_stream) =
-            start_touch_input(locked, &current_task).await;
+            start_touch_input(&current_task).await;
 
         // Touch add for pointer 1.
         answer_next_touch_watch_request(
@@ -1434,7 +1364,7 @@ mod test {
         // Wait for another `Watch`.
         answer_next_touch_watch_request(&mut touch_source_stream, vec![TouchEvent::default()])
             .await;
-        let events = read_uapi_events(locked, &input_file, &current_task);
+        let events = read_uapi_events(&input_file, &current_task);
 
         assert_eq!(events.len(), 6);
 
@@ -1451,7 +1381,7 @@ mod test {
         // Wait for another `Watch`.
         answer_next_touch_watch_request(&mut touch_source_stream, vec![TouchEvent::default()])
             .await;
-        let events = read_uapi_events(locked, &input_file, &current_task);
+        let events = read_uapi_events(&input_file, &current_task);
 
         assert_eq!(
             events,
@@ -1480,7 +1410,7 @@ mod test {
         // Wait for another `Watch`.
         answer_next_touch_watch_request(&mut touch_source_stream, vec![TouchEvent::default()])
             .await;
-        let events = read_uapi_events(locked, &input_file, &current_task);
+        let events = read_uapi_events(&input_file, &current_task);
 
         assert_eq!(
             events,
@@ -1508,7 +1438,7 @@ mod test {
         // Wait for another `Watch`.
         answer_next_touch_watch_request(&mut touch_source_stream, vec![TouchEvent::default()])
             .await;
-        let events = read_uapi_events(locked, &input_file, &current_task);
+        let events = read_uapi_events(&input_file, &current_task);
 
         assert_eq!(
             events,
@@ -1532,7 +1462,7 @@ mod test {
         // Wait for another `Watch`.
         answer_next_touch_watch_request(&mut touch_source_stream, vec![TouchEvent::default()])
             .await;
-        let events = read_uapi_events(locked, &input_file, &current_task);
+        let events = read_uapi_events(&input_file, &current_task);
 
         assert_eq!(
             events,
@@ -1549,9 +1479,9 @@ mod test {
     async fn multi_event_sequence_unsorted_in_one_watch() {
         // Set up resources.
         #[allow(deprecated, reason = "pre-existing usage")]
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
+        let (_kernel, current_task) = create_kernel_and_task();
         let (_input_device, input_file, mut touch_source_stream) =
-            start_touch_input(locked, &current_task).await;
+            start_touch_input(&current_task).await;
 
         // Touch add for pointer 1.
         answer_next_touch_watch_request(
@@ -1572,7 +1502,7 @@ mod test {
         // Wait for another `Watch`.
         answer_next_touch_watch_request(&mut touch_source_stream, vec![TouchEvent::default()])
             .await;
-        let events = read_uapi_events(locked, &input_file, &current_task);
+        let events = read_uapi_events(&input_file, &current_task);
 
         assert_eq!(
             events,
@@ -1609,9 +1539,9 @@ mod test {
     async fn sends_acceptable_coordinates((x, y): (f32, f32)) {
         // Set up resources.
         #[allow(deprecated, reason = "pre-existing usage")]
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
+        let (_kernel, current_task) = create_kernel_and_task();
         let (_input_device, input_file, mut touch_source_stream) =
-            start_touch_input(locked, &current_task).await;
+            start_touch_input(&current_task).await;
 
         // Touch add.
         answer_next_touch_watch_request(
@@ -1623,7 +1553,7 @@ mod test {
         // Wait for another `Watch`.
         answer_next_touch_watch_request(&mut touch_source_stream, vec![TouchEvent::default()])
             .await;
-        let events = read_uapi_events(locked, &input_file, &current_task);
+        let events = read_uapi_events(&input_file, &current_task);
 
         // Check that the reported positions are within the acceptable error. The acceptable
         // error is chosen to allow either rounding or truncation.
@@ -1663,9 +1593,9 @@ mod test {
     ) -> Option<TouchResponse> {
         // Set up resources.
         #[allow(deprecated, reason = "pre-existing usage")]
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
+        let (_kernel, current_task) = create_kernel_and_task();
         let (_input_device, _input_file, mut touch_source_stream) =
-            start_touch_input(locked, &current_task).await;
+            start_touch_input(&current_task).await;
 
         // Reply to first `Watch` request.
         answer_next_touch_watch_request(&mut touch_source_stream, vec![event]).await;
@@ -1684,9 +1614,9 @@ mod test {
     #[::fuchsia::test]
     async fn sends_keyboard_events(fkey: fidl_fuchsia_input::Key, lkey: u32) {
         #[allow(deprecated, reason = "pre-existing usage")]
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
+        let (_kernel, current_task) = create_kernel_and_task();
         let (_keyboard_device, keyboard_file, keyboard_listener) =
-            start_keyboard_input(locked, &current_task).await;
+            start_keyboard_input(&current_task).await;
 
         let key_event = fuiinput::KeyEvent {
             timestamp: Some(0),
@@ -1697,7 +1627,7 @@ mod test {
 
         let _ = keyboard_listener.on_key_event(&key_event).await;
         std::mem::drop(keyboard_listener); // Close Zircon channel.
-        let events = read_uapi_events(locked, &keyboard_file, &current_task);
+        let events = read_uapi_events(&keyboard_file, &current_task);
         assert_eq!(events.len(), 2);
         assert_eq!(events[0].code, lkey as u16);
     }
@@ -1705,9 +1635,9 @@ mod test {
     #[::fuchsia::test]
     async fn skips_unknown_keyboard_events() {
         #[allow(deprecated, reason = "pre-existing usage")]
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
+        let (_kernel, current_task) = create_kernel_and_task();
         let (_keyboard_device, keyboard_file, keyboard_listener) =
-            start_keyboard_input(locked, &current_task).await;
+            start_keyboard_input(&current_task).await;
 
         let key_event = fuiinput::KeyEvent {
             timestamp: Some(0),
@@ -1718,16 +1648,15 @@ mod test {
 
         let _ = keyboard_listener.on_key_event(&key_event).await;
         std::mem::drop(keyboard_listener); // Close Zircon channel.
-        let events = read_uapi_events(locked, &keyboard_file, &current_task);
+        let events = read_uapi_events(&keyboard_file, &current_task);
         assert_eq!(events.len(), 0);
     }
 
     #[::fuchsia::test]
     async fn sends_power_button_events() {
         #[allow(deprecated, reason = "pre-existing usage")]
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        let (_input_device, input_file, buttons_listener) =
-            start_button_input(locked, &current_task).await;
+        let (_kernel, current_task) = create_kernel_and_task();
+        let (_input_device, input_file, buttons_listener) = start_button_input(&current_task).await;
 
         let power_event = MediaButtonsEvent {
             volume: Some(0),
@@ -1742,7 +1671,7 @@ mod test {
         let _ = buttons_listener.on_event(power_event).await;
         std::mem::drop(buttons_listener); // Close Zircon channel.
 
-        let events = read_uapi_events(locked, &input_file, &current_task);
+        let events = read_uapi_events(&input_file, &current_task);
         assert_eq!(events.len(), 2);
         assert_eq!(events[0].code, uapi::KEY_POWER as u16);
         assert_eq!(events[0].value, 1);
@@ -1751,9 +1680,8 @@ mod test {
     #[::fuchsia::test]
     async fn sends_function_button_events() {
         #[allow(deprecated, reason = "pre-existing usage")]
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        let (_input_device, input_file, buttons_listener) =
-            start_button_input(locked, &current_task).await;
+        let (_kernel, current_task) = create_kernel_and_task();
+        let (_input_device, input_file, buttons_listener) = start_button_input(&current_task).await;
 
         let function_event = MediaButtonsEvent {
             volume: Some(0),
@@ -1768,7 +1696,7 @@ mod test {
         let _ = buttons_listener.on_event(function_event).await;
         std::mem::drop(buttons_listener); // Close Zircon channel.
 
-        let events = read_uapi_events(locked, &input_file, &current_task);
+        let events = read_uapi_events(&input_file, &current_task);
         assert_eq!(events.len(), 2);
         assert_eq!(events[0].code, uapi::KEY_VOLUMEDOWN as u16);
         assert_eq!(events[0].value, 1);
@@ -1777,9 +1705,8 @@ mod test {
     #[::fuchsia::test]
     async fn sends_overlapping_button_events() {
         #[allow(deprecated, reason = "pre-existing usage")]
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        let (_input_device, input_file, buttons_listener) =
-            start_button_input(locked, &current_task).await;
+        let (_kernel, current_task) = create_kernel_and_task();
+        let (_input_device, input_file, buttons_listener) = start_button_input(&current_task).await;
 
         let power_event = MediaButtonsEvent {
             volume: Some(0),
@@ -1827,7 +1754,7 @@ mod test {
         let _ = buttons_listener.on_event(power_release_event).await;
         std::mem::drop(buttons_listener); // Close Zircon channel.
 
-        let events = read_uapi_events(locked, &input_file, &current_task);
+        let events = read_uapi_events(&input_file, &current_task);
         assert_eq!(events.len(), 8);
         assert_eq!(events[0].code, uapi::KEY_POWER as u16);
         assert_eq!(events[0].value, 1);
@@ -1842,9 +1769,8 @@ mod test {
     #[::fuchsia::test]
     async fn sends_simultaneous_button_events() {
         #[allow(deprecated, reason = "pre-existing usage")]
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        let (_input_device, input_file, buttons_listener) =
-            start_button_input(locked, &current_task).await;
+        let (_kernel, current_task) = create_kernel_and_task();
+        let (_input_device, input_file, buttons_listener) = start_button_input(&current_task).await;
 
         let power_and_function_event = MediaButtonsEvent {
             volume: Some(0),
@@ -1859,7 +1785,7 @@ mod test {
         let _ = buttons_listener.on_event(power_and_function_event).await;
         std::mem::drop(buttons_listener); // Close Zircon channel.
 
-        let events = read_uapi_events(locked, &input_file, &current_task);
+        let events = read_uapi_events(&input_file, &current_task);
         assert_eq!(events.len(), 4);
         assert_eq!(events[0].code, uapi::KEY_POWER as u16);
         assert_eq!(events[0].value, 1);
@@ -1879,9 +1805,8 @@ mod test {
             value: ticks as i32,
         };
         #[allow(deprecated, reason = "pre-existing usage")]
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        let (_mouse_device, mouse_file, mut mouse_stream) =
-            start_mouse_input(locked, &current_task).await;
+        let (_kernel, current_task) = create_kernel_and_task();
+        let (_mouse_device, mouse_file, mut mouse_stream) = start_mouse_input(&current_task).await;
 
         answer_next_mouse_watch_request(
             &mut mouse_stream,
@@ -1893,7 +1818,7 @@ mod test {
         // Use an empty vec, to ensure no unexpected `uapi::input_event`s are created.
         answer_next_mouse_watch_request(&mut mouse_stream, vec![]).await;
 
-        let events = read_uapi_events(locked, &mouse_file, &current_task);
+        let events = read_uapi_events(&mouse_file, &current_task);
         assert_eq!(events.len(), 2);
         assert_eq!(events[0], uapi_event);
     }
@@ -1919,9 +1844,8 @@ mod test {
             ..Default::default()
         };
         #[allow(deprecated, reason = "pre-existing usage")]
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        let (_mouse_device, mouse_file, mut mouse_stream) =
-            start_mouse_input(locked, &current_task).await;
+        let (_kernel, current_task) = create_kernel_and_task();
+        let (_mouse_device, mouse_file, mut mouse_stream) = start_mouse_input(&current_task).await;
 
         // Expect mouse relay to discard MouseEvents without vertical scroll.
         answer_next_mouse_watch_request(&mut mouse_stream, vec![mouse_move_event]).await;
@@ -1931,21 +1855,21 @@ mod test {
         // Use an empty vec, to ensure no unexpected `uapi::input_event`s are created.
         answer_next_mouse_watch_request(&mut mouse_stream, vec![]).await;
 
-        let events = read_uapi_events(locked, &mouse_file, &current_task);
+        let events = read_uapi_events(&mouse_file, &current_task);
         assert_eq!(events.len(), 0);
     }
 
     #[::fuchsia::test]
     async fn touch_input_initialized_with_inspect_node() {
         #[allow(deprecated, reason = "pre-existing usage")]
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
+        let (_kernel, current_task) = create_kernel_and_task();
         let inspector = fuchsia_inspect::Inspector::default();
         let touch_device = InputDevice::new_touch(
             1200, /* screen width */
             720,  /* screen height */
             &inspector.root(),
         );
-        let _file_obj = touch_device.open_test(locked, &current_task);
+        let _file_obj = touch_device.open_test(&current_task);
 
         assert_data_tree!(inspector, root: {
             touch_device: {
@@ -1981,9 +1905,9 @@ mod test {
     async fn touch_relay_updates_touch_inspect_status() {
         let inspector = fuchsia_inspect::Inspector::default();
         #[allow(deprecated, reason = "pre-existing usage")]
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
+        let (_kernel, current_task) = create_kernel_and_task();
         let (_input_device, input_file, mut touch_source_stream) =
-            start_touch_input_inspect(locked, &current_task, &inspector).await;
+            start_touch_input_inspect(&current_task, &inspector).await;
 
         // Send 2 TouchEvents to proxy that should be counted as `received` by InputFile
         // A TouchEvent::default() has no pointer sample so these events should be discarded.
@@ -2050,7 +1974,7 @@ mod test {
             unexpected_request => panic!("unexpected request {:?}", unexpected_request),
         }
 
-        let _events = read_uapi_events(locked, &input_file, &current_task);
+        let _events = read_uapi_events(&input_file, &current_task);
         assert_data_tree!(inspector, root: {
             touch_device: {
                 active_wake_leases_count: 0u64,
@@ -2085,11 +2009,11 @@ mod test {
     async fn new_file_updates_inspect_status() {
         let inspector = fuchsia_inspect::Inspector::default();
         #[allow(deprecated, reason = "pre-existing usage")]
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
+        let (_kernel, current_task) = create_kernel_and_task();
 
         let input_device = InputDevice::new_touch(700, 700, inspector.root());
         let input_file_0 =
-            input_device.open_test(locked, &current_task).expect("Failed to create input file");
+            input_device.open_test(&current_task).expect("Failed to create input file");
 
         let (touch_source_client_end, mut touch_source_stream) =
             fidl::endpoints::create_request_stream::<TouchSourceMarker>();
@@ -2153,7 +2077,7 @@ mod test {
 
         // Open new file which should receive input_device's subsequent events
         let input_file_1 =
-            input_device.open_test(locked, &current_task).expect("Failed to create input file");
+            input_device.open_test(&current_task).expect("Failed to create input file");
 
         // Send 5 TouchEvents with pointer sample to proxy, these should be received and converted
         // Add/Remove events generate 5 uapi events each. Change events generate 3 uapi events each.
@@ -2210,7 +2134,7 @@ mod test {
             unexpected_request => panic!("unexpected request {:?}", unexpected_request),
         }
 
-        let _events = read_uapi_events(locked, &input_file_1, &current_task);
+        let _events = read_uapi_events(&input_file_1, &current_task);
 
         // Verify file node & properties remain in inspect tree when file is closed
         input_device.open_files.lock().clear();
@@ -2266,11 +2190,11 @@ mod test {
     async fn file_status_inspect_not_empty_after_close() {
         let inspector = fuchsia_inspect::Inspector::default();
         #[allow(deprecated, reason = "pre-existing usage")]
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
+        let (_kernel, current_task) = create_kernel_and_task();
 
         let input_device = InputDevice::new_touch(700, 700, inspector.root());
         let file_handle =
-            input_device.open_test(locked, &current_task).expect("Failed to create input file");
+            input_device.open_test(&current_task).expect("Failed to create input file");
 
         let status = file_handle
             .downcast_file::<crate::input_file::ArcInputFile>()
@@ -2347,10 +2271,10 @@ mod test {
     #[::fuchsia::test]
     async fn keyboard_input_initialized_with_inspect_node() {
         #[allow(deprecated, reason = "pre-existing usage")]
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
+        let (_kernel, current_task) = create_kernel_and_task();
         let inspector = fuchsia_inspect::Inspector::default();
         let keyboard_device = InputDevice::new_keyboard(&inspector.root());
-        let _file_obj = keyboard_device.open_test(locked, &current_task);
+        let _file_obj = keyboard_device.open_test(&current_task);
 
         assert_data_tree!(inspector, root: {
             keyboard_device: {
@@ -2386,9 +2310,9 @@ mod test {
     async fn button_relay_updates_keyboard_inspect_status() {
         let inspector = fuchsia_inspect::Inspector::default();
         #[allow(deprecated, reason = "pre-existing usage")]
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
+        let (_kernel, current_task) = create_kernel_and_task();
         let (_input_device, input_file, buttons_listener) =
-            start_button_input_inspect(locked, &current_task, &inspector).await;
+            start_button_input_inspect(&current_task, &inspector).await;
 
         // Each of these events should count toward received and converted.
         // They also generate 2 uapi events each.
@@ -2415,14 +2339,14 @@ mod test {
         let _ = buttons_listener.on_event(power_event).await;
         let _ = buttons_listener.on_event(power_release_event).await;
 
-        let events = read_uapi_events(locked, &input_file, &current_task);
+        let events = read_uapi_events(&input_file, &current_task);
         assert_eq!(events.len(), 4);
         assert_eq!(events[0].code, uapi::KEY_POWER as u16);
         assert_eq!(events[0].value, 1);
         assert_eq!(events[2].code, uapi::KEY_POWER as u16);
         assert_eq!(events[2].value, 0);
 
-        let _events = read_uapi_events(locked, &input_file, &current_task);
+        let _events = read_uapi_events(&input_file, &current_task);
 
         assert_data_tree!(inspector, root: {
             keyboard_device: {
@@ -2459,10 +2383,10 @@ mod test {
     #[::fuchsia::test]
     async fn mouse_input_initialized_with_inspect_node() {
         #[allow(deprecated, reason = "pre-existing usage")]
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
+        let (_kernel, current_task) = create_kernel_and_task();
         let inspector = fuchsia_inspect::Inspector::default();
         let mouse_device = InputDevice::new_mouse(&inspector.root());
-        let _file_obj = mouse_device.open_test(locked, &current_task);
+        let _file_obj = mouse_device.open_test(&current_task);
 
         assert_data_tree!(inspector, root: {
             mouse_device: {
@@ -2498,9 +2422,9 @@ mod test {
     async fn mouse_relay_updates_mouse_inspect_status() {
         let inspector = fuchsia_inspect::Inspector::default();
         #[allow(deprecated, reason = "pre-existing usage")]
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
+        let (_kernel, current_task) = create_kernel_and_task();
         let (_input_device, input_file, mut mouse_source_stream) =
-            start_mouse_input_inspect(locked, &current_task, &inspector).await;
+            start_mouse_input_inspect(&current_task, &inspector).await;
 
         let mouse_move_event = fuipointer::MouseEvent {
             timestamp: Some(0),
@@ -2551,7 +2475,7 @@ mod test {
         // Use an empty vec, to ensure no unexpected `uapi::input_event`s are created.
         answer_next_mouse_watch_request(&mut mouse_source_stream, vec![]).await;
 
-        let _events = read_uapi_events(locked, &input_file, &current_task);
+        let _events = read_uapi_events(&input_file, &current_task);
         assert_data_tree!(inspector, root: {
             mouse_device: {
                 active_wake_leases_count: 0u64,

@@ -18,10 +18,7 @@ use starnix_core::vfs::{
     fs_node_impl_dir_readonly, fs_node_impl_not_dir,
 };
 use starnix_logging::{log_warn, track_stub};
-use starnix_sync::{
-    FileOpsCore, FunctionFsResultLock, FunctionFsStateLock, InterruptibleEvent, LockDepMutex,
-    Locked, Unlocked,
-};
+use starnix_sync::{FunctionFsResultLock, FunctionFsStateLock, InterruptibleEvent, LockDepMutex};
 use starnix_types::vfs::default_statfs;
 use starnix_uapi::auth::FsCred;
 use starnix_uapi::errors::Errno;
@@ -264,7 +261,6 @@ async fn handle_adb(
 pub struct FunctionFs;
 impl FunctionFs {
     pub fn new_fs(
-        locked: &mut Locked<Unlocked>,
         current_task: &CurrentTask,
         options: FileSystemOptions,
     ) -> Result<FileSystemHandle, Errno> {
@@ -294,13 +290,7 @@ impl FunctionFs {
             0
         };
 
-        let fs = FileSystem::new(
-            locked,
-            current_task.kernel(),
-            CacheMode::Uncached,
-            FunctionFs,
-            options,
-        )?;
+        let fs = FileSystem::new(current_task.kernel(), CacheMode::Uncached, FunctionFs, options)?;
 
         let creds = FsCred { uid, gid };
         let info = FsNodeInfo::new(mode!(IFDIR, 0o777), creds);
@@ -310,12 +300,7 @@ impl FunctionFs {
 }
 
 impl FileSystemOps for FunctionFs {
-    fn statfs(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        _fs: &FileSystem,
-        _current_task: &CurrentTask,
-    ) -> Result<statfs, Errno> {
+    fn statfs(&self, _fs: &FileSystem, _current_task: &CurrentTask) -> Result<statfs, Errno> {
         Ok(default_statfs(FUNCTIONFS_MAGIC))
     }
 
@@ -485,7 +470,6 @@ impl FunctionFsRootDir {
 
     fn wait_until_online(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         current_task: &CurrentTask,
         file: &FileObject,
     ) -> Result<(), Errno> {
@@ -502,7 +486,7 @@ impl FunctionFsRootDir {
                 state.waiters.wait_async(&waiter);
                 waiter
             };
-            waiter.wait(locked, current_task)?;
+            waiter.wait(current_task)?;
         }
     }
 
@@ -513,12 +497,11 @@ impl FunctionFsRootDir {
 
     fn write(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         current_task: &CurrentTask,
         file: &FileObject,
         bytes: &[u8],
     ) -> Result<usize, Errno> {
-        self.wait_until_online(locked, current_task, file)?;
+        self.wait_until_online(current_task, file)?;
 
         let data = Vec::from(bytes);
         let pending = Arc::<PendingResult<usize>>::default();
@@ -538,13 +521,8 @@ impl FunctionFsRootDir {
         result.take().ok_or_else(|| errno!(EINTR))?
     }
 
-    fn read(
-        &self,
-        locked: &mut Locked<FileOpsCore>,
-        current_task: &CurrentTask,
-        file: &FileObject,
-    ) -> Result<Vec<u8>, Errno> {
-        self.wait_until_online(locked, current_task, file)?;
+    fn read(&self, current_task: &CurrentTask, file: &FileObject) -> Result<Vec<u8>, Errno> {
+        self.wait_until_online(current_task, file)?;
 
         let pending = Arc::<PendingResult<Vec<u8>>>::default();
         let guard = pending.event.begin_wait();
@@ -568,7 +546,6 @@ impl FsNodeOps for FunctionFsRootDir {
 
     fn create_file_ops(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _node: &FsNode,
         _current_task: &CurrentTask,
         _flags: OpenFlags,
@@ -599,7 +576,6 @@ impl FsNodeOps for FunctionFsRootDir {
 
     fn lookup(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         node: &FsNode,
         _current_task: &CurrentTask,
         name: &FsStr,
@@ -636,7 +612,6 @@ impl FsNodeOps for FunctionFsControlEndpoint {
 
     fn create_file_ops(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         node: &FsNode,
         _current_task: &CurrentTask,
         _flags: OpenFlags,
@@ -656,19 +631,13 @@ impl FileOps for FunctionFsControlEndpoint {
     fileops_impl_seekless!();
     fileops_impl_noop_sync!();
 
-    fn close(
-        self: Box<Self>,
-        _locked: &mut Locked<FileOpsCore>,
-        file: &FileObjectState,
-        _current_task: &CurrentTask,
-    ) {
+    fn close(self: Box<Self>, file: &FileObjectState, _current_task: &CurrentTask) {
         let rootdir = FunctionFsRootDir::from_fs(&file.fs);
         rootdir.on_control_closed();
     }
 
     fn read(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         file: &FileObject,
         _current_task: &CurrentTask,
         _offset: usize,
@@ -697,7 +666,6 @@ impl FileOps for FunctionFsControlEndpoint {
 
     fn write(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         file: &FileObject,
         current_task: &CurrentTask,
         _offset: usize,
@@ -716,7 +684,6 @@ impl FileOps for FunctionFsControlEndpoint {
 
     fn wait_async(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         file: &FileObject,
         _current_task: &CurrentTask,
         waiter: &Waiter,
@@ -730,7 +697,6 @@ impl FileOps for FunctionFsControlEndpoint {
 
     fn query_events(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         file: &FileObject,
         _current_task: &CurrentTask,
     ) -> Result<FdEvents, Errno> {
@@ -747,7 +713,6 @@ impl FsNodeOps for FunctionFsInputEndpoint {
 
     fn create_file_ops(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _node: &FsNode,
         _current_task: &CurrentTask,
         _flags: OpenFlags,
@@ -762,7 +727,6 @@ impl FileOps for FunctionFsInputEndpoint {
 
     fn read(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         _offset: usize,
@@ -773,7 +737,6 @@ impl FileOps for FunctionFsInputEndpoint {
 
     fn write(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         file: &FileObject,
         current_task: &CurrentTask,
         _offset: usize,
@@ -781,7 +744,7 @@ impl FileOps for FunctionFsInputEndpoint {
     ) -> Result<usize, Errno> {
         let bytes = data.read_all()?;
         let rootdir = FunctionFsRootDir::from_file(file);
-        rootdir.write(locked, current_task, file, &bytes)
+        rootdir.write(current_task, file, &bytes)
     }
 }
 
@@ -793,7 +756,6 @@ impl FsNodeOps for FunctionFsOutputEndpoint {
 
     fn create_file_ops(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _node: &FsNode,
         _current_task: &CurrentTask,
         _flags: OpenFlags,
@@ -810,14 +772,13 @@ impl FileOps for FunctionFsOutputFileObject {
 
     fn read(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         file: &FileObject,
         current_task: &CurrentTask,
         _offset: usize,
         data: &mut dyn OutputBuffer,
     ) -> Result<usize, Errno> {
         let rootdir = FunctionFsRootDir::from_file(file);
-        let payload = rootdir.read(locked, current_task, file)?;
+        let payload = rootdir.read(current_task, file)?;
         if payload.len() > data.available() {
             // This means the data will only be partially written, with the rest discarded.
             // Instead of attempting this, we'll instead return error to the client.
@@ -829,7 +790,6 @@ impl FileOps for FunctionFsOutputFileObject {
 
     fn write(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         _offset: usize,

@@ -6,14 +6,13 @@ use rutabaga_gfx::{RutabagaBuilder, RutabagaComponentType, RutabagaFenceHandler}
 use starnix_core::task::{CurrentTask, Kernel};
 use starnix_core::vfs::{FileOps, NamespaceNode};
 use starnix_logging::log_error;
-use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked};
+
 use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::error;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
 
 fn create_gpu_device(
-    _locked: &mut Locked<FileOpsCore>,
     _current_task: &CurrentTask,
     _id: DeviceId,
     _node: &NamespaceNode,
@@ -23,10 +22,7 @@ fn create_gpu_device(
     error!(ENOTSUP)
 }
 
-pub fn gpu_device_init<L>(locked: &mut Locked<L>, kernel: &Kernel)
-where
-    L: LockEqualOrBefore<FileOpsCore>,
-{
+pub fn gpu_device_init(kernel: &Kernel) {
     let registry = &kernel.device_registry;
 
     let _ = RutabagaBuilder::new(0, RutabagaFenceHandler::new(move |_| {}))
@@ -35,7 +31,6 @@ where
 
     registry
         .register_dyn_device(
-            locked,
             kernel,
             "virtio-gpu".into(),
             registry.objects.starnix_class(),

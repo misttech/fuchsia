@@ -7,7 +7,7 @@ use crate::vfs::pseudo::simple_file::{BytesFile, BytesFileOps, SimpleFileNode};
 use crate::vfs::{FileObject, FsNodeOps};
 use bstr::ByteSlice;
 use starnix_logging::BugRef;
-use starnix_sync::{FileOpsCore, LockDepMutex, Locked, StubBytesFileStateLock};
+use starnix_sync::{LockDepMutex, StubBytesFileStateLock};
 use starnix_uapi::errors::Errno;
 use std::borrow::Cow;
 use std::panic::Location;
@@ -34,7 +34,7 @@ impl StubBytesFile {
             bug,
             location,
         });
-        SimpleFileNode::new(move |_, _| Ok(file.clone()))
+        SimpleFileNode::new(move |_| Ok(file.clone()))
     }
 }
 
@@ -47,12 +47,7 @@ impl BytesFileOps for StubBytesFile {
         Ok(self.data.lock().clone().into())
     }
 
-    fn open(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        file: &FileObject,
-        current_task: &CurrentTask,
-    ) -> Result<(), Errno> {
+    fn open(&self, file: &FileObject, current_task: &CurrentTask) -> Result<(), Errno> {
         let path = file.name.path(&current_task.fs());
         starnix_logging::__track_stub_inner(
             self.bug,

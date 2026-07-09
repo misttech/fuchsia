@@ -9,16 +9,13 @@ use fragile::Fragile;
 use fuchsia_async as fasync;
 use pin_project::pin_project;
 use scopeguard::ScopeGuard;
-use starnix_sync::{Locked, Unlocked};
+
 use starnix_task_command::TaskCommand;
 
 use starnix_uapi::errors::Errno;
 use starnix_uapi::{errno, error};
-use std::cell::{RefCell, RefMut};
 use std::future::Future;
-use std::ops::DerefMut;
 use std::pin::Pin;
-use std::rc::Rc;
 use std::sync::{Arc, OnceLock, Weak};
 use std::task::{Context, Poll};
 
@@ -42,9 +39,6 @@ pub struct KernelThreads {
     /// Information about the main system task that is bound to the kernel main thread.
     system_task: OnceLock<SystemTask>,
 
-    /// A `RefCell` containing an `Unlocked` state for the lock ordering purposes.
-    unlocked_for_async: UnlockedForAsync,
-
     /// A weak reference to the kernel owning this struct.
     kernel: Weak<Kernel>,
 }
@@ -64,7 +58,6 @@ impl KernelThreads {
             ehandle: fasync::EHandle::local(),
             spawner: Default::default(),
             system_task: Default::default(),
-            unlocked_for_async: UnlockedForAsync::new(),
             kernel,
         }
     }
@@ -112,14 +105,6 @@ impl KernelThreads {
         self.system_task.get().expect("KernelThreads::init must be called").system_task.get()
     }
 
-    /// Access the `Unlocked` state.
-    ///
-    /// This function is intended for limited use in async contexts and can only be called from the
-    /// kernel main thread.
-    pub fn unlocked_for_async(&self) -> RefMut<'_, Locked<Unlocked>> {
-        self.unlocked_for_async.unlocked.get().borrow_mut()
-    }
-
     /// Access the `ThreadGroup` for the system tasks.
     ///
     /// This function can be safely called from anywhere as soon as `KernelThreads::init` has been
@@ -135,16 +120,11 @@ impl KernelThreads {
 }
 
 impl Drop for KernelThreads {
+    // TODO: Replace with .release. This is not actually safe, since locks
+    // may be held elsewhere on this thread.
     fn drop(&mut self) {
-        // TODO: Replace with .release. Creating a new lock context here is not
-        // actually safe, since locks may be held elsewhere on this thread.
-        #[allow(
-            clippy::undocumented_unsafe_blocks,
-            reason = "Force documented unsafe blocks in Starnix"
-        )]
-        let locked = unsafe { Unlocked::new() };
         if let Some(system_task) = self.system_task.take() {
-            system_task.system_task.into_inner().release(locked);
+            system_task.system_task.into_inner().release(());
         }
     }
 }
@@ -152,46 +132,26 @@ impl Drop for KernelThreads {
 /// Create a new system task, register it on the thread and run the given closure with it.
 
 pub fn with_new_current_task<F, R>(
-    locked: &mut Locked<Unlocked>,
     system_task: &Weak<Task>,
     task_name: String,
     f: F,
 ) -> Result<R, Errno>
 where
-    F: FnOnce(&mut Locked<Unlocked>, &CurrentTask) -> R,
+    F: FnOnce(&CurrentTask) -> R,
 {
     let current_task = {
         let Some(system_task) = system_task.upgrade() else {
             return error!(ESRCH);
         };
-        create_kernel_thread(locked, &system_task, TaskCommand::new(task_name.as_bytes())).unwrap()
+        create_kernel_thread(&system_task, TaskCommand::new(task_name.as_bytes())).unwrap()
     };
-    let result = f(locked, &current_task);
-    current_task.release(locked);
+    let result = f(&current_task);
+    current_task.release(());
 
     // Ensure that no releasables are registered after this point as we unwind the stack.
     DelayedReleaser::finalize();
 
     Ok(result)
-}
-
-#[derive(Clone, Debug)]
-pub struct LockedAndTask<'a>(
-    Rc<Fragile<(RefCell<&'a mut Locked<Unlocked>>, RefCell<&'a CurrentTask>)>>,
-);
-
-impl<'a> LockedAndTask<'a> {
-    pub(crate) fn new(locked: &'a mut Locked<Unlocked>, current_task: &'a CurrentTask) -> Self {
-        Self(Rc::new(Fragile::new((RefCell::new(locked), RefCell::new(current_task)))))
-    }
-
-    pub fn unlocked(&self) -> impl DerefMut<Target = &'a mut Locked<Unlocked>> + '_ {
-        self.0.get().0.borrow_mut()
-    }
-
-    pub fn current_task(&self) -> &'a CurrentTask {
-        *self.0.get().1.borrow()
-    }
 }
 
 struct SystemTask {
@@ -201,20 +161,6 @@ struct SystemTask {
 
     /// The system `ThreadGroup` is accessible from everywhere.
     system_thread_group: Weak<ThreadGroup>,
-}
-
-struct UnlockedForAsync {
-    unlocked: Fragile<RefCell<Locked<Unlocked>>>,
-}
-
-impl UnlockedForAsync {
-    fn new() -> Self {
-        #[allow(
-            clippy::undocumented_unsafe_blocks,
-            reason = "Force documented unsafe blocks in Starnix"
-        )]
-        Self { unlocked: Fragile::new(RefCell::new(unsafe { Unlocked::new_instance() })) }
-    }
 }
 
 impl SystemTask {
@@ -266,10 +212,7 @@ impl<F> WrappedMainFuture<F> {
 fn trigger_delayed_releaser(kernel: Weak<Kernel>) {
     if let Some(kernel) = kernel.upgrade() {
         if let Some(system_task) = kernel.kthreads.system_task.get() {
-            system_task
-                .system_task
-                .get()
-                .trigger_delayed_releaser(kernel.kthreads.unlocked_for_async().deref_mut());
+            system_task.system_task.get().trigger_delayed_releaser();
         }
     }
 }

@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use starnix_core::task::{CurrentTask, EventHandler, WaitCanceler, Waiter};
 use starnix_core::vfs::buffers::{InputBuffer, OutputBuffer};
 use starnix_core::vfs::{FileObject, FileOps, fileops_impl_nonseekable, fileops_impl_noop_sync};
-use starnix_sync::{FileOpsCore, Locked, Unlocked};
+
 use starnix_syscalls::{SyscallArg, SyscallResult};
 
 use starnix_uapi::errors::Errno;
@@ -26,7 +26,6 @@ impl FileOps for NanohubSocketFile {
 
     fn read(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         file: &FileObject,
         current_task: &CurrentTask,
         offset: usize,
@@ -39,13 +38,12 @@ impl FileOps for NanohubSocketFile {
             Ok(0)
         } else {
             self.read_complete.store(true, Ordering::Relaxed);
-            self.socket_file.read(locked, file, current_task, offset, data)
+            self.socket_file.read(file, current_task, offset, data)
         }
     }
 
     fn write(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         file: &FileObject,
         current_task: &CurrentTask,
         offset: usize,
@@ -56,48 +54,40 @@ impl FileOps for NanohubSocketFile {
         // Sysfs routes expect to re-arm for reading after a write operation.
         self.read_complete.store(false, Ordering::Relaxed);
 
-        self.socket_file.write(locked, file, current_task, offset, data)
+        self.socket_file.write(file, current_task, offset, data)
     }
 
     fn wait_async(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         file: &FileObject,
         current_task: &CurrentTask,
         waiter: &Waiter,
         events: FdEvents,
         handler: EventHandler,
     ) -> Option<WaitCanceler> {
-        self.socket_file.wait_async(locked, file, current_task, waiter, events, handler)
+        self.socket_file.wait_async(file, current_task, waiter, events, handler)
     }
 
     fn query_events(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         file: &FileObject,
         current_task: &CurrentTask,
     ) -> Result<FdEvents, Errno> {
-        self.socket_file.query_events(locked, file, current_task)
+        self.socket_file.query_events(file, current_task)
     }
 
     fn ioctl(
         &self,
-        locked: &mut Locked<Unlocked>,
         file: &FileObject,
         current_task: &CurrentTask,
         request: u32,
         arg: SyscallArg,
     ) -> Result<SyscallResult, Errno> {
-        self.socket_file.ioctl(locked, file, current_task, request, arg)
+        self.socket_file.ioctl(file, current_task, request, arg)
     }
 
-    fn close(
-        self: Box<Self>,
-        locked: &mut Locked<FileOpsCore>,
-        file: &FileObjectState,
-        current_task: &CurrentTask,
-    ) {
-        self.socket_file.close(locked, file, current_task);
+    fn close(self: Box<Self>, file: &FileObjectState, current_task: &CurrentTask) {
+        self.socket_file.close(file, current_task);
     }
 }
 

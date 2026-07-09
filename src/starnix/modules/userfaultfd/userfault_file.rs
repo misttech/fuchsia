@@ -16,7 +16,7 @@ use starnix_core::vfs::{
     fileops_impl_nonseekable, fileops_impl_noop_sync,
 };
 use starnix_logging::track_stub;
-use starnix_sync::{FileOpsCore, LockBefore, LockEqualOrBefore, Locked, Unlocked, UserFaultInner};
+
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::user_address::UserRef;
@@ -95,31 +95,23 @@ pub struct UserFaultFile {
 const_assert_eq!(UFFDIO, 0xAA);
 
 impl UserFaultFile {
-    pub fn new<L>(
-        locked: &mut Locked<L>,
+    pub fn new(
         current_task: &CurrentTask,
         open_flags: OpenFlags,
         _user_mode_only: bool,
-    ) -> Result<FileHandle, Errno>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
+    ) -> Result<FileHandle, Errno> {
         let mm = current_task.mm()?;
         let inner = Arc::new(UserFault::new(Arc::downgrade(&mm)));
         mm.register_uffd(&inner);
-        Anon::new_file(locked, current_task, Box::new(Self { inner }), open_flags, "[userfaultfd]")
+        Anon::new_file(current_task, Box::new(Self { inner }), open_flags, "[userfaultfd]")
     }
 
-    fn api_handshake<L>(
+    fn api_handshake(
         &self,
-        locked: &mut Locked<L>,
         _current_task: &CurrentTask,
         request: uffdio_api,
-    ) -> Result<uffdio_api, Errno>
-    where
-        L: LockBefore<UserFaultInner>,
-    {
-        if self.inner.is_initialized(locked) {
+    ) -> Result<uffdio_api, Errno> {
+        if self.inner.is_initialized() {
             return error!(EPERM, "userfault object already initialized");
         }
 
@@ -136,7 +128,7 @@ impl UserFaultFile {
         }
 
         // We can support the client, initialize the object.
-        self.inner.initialize(locked, requested_features);
+        self.inner.initialize(requested_features);
 
         Ok(uffdio_api {
             api: request.api,
@@ -151,7 +143,6 @@ impl FileOps for UserFaultFile {
     fileops_impl_noop_sync!();
     fn read(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         _offset: usize,
@@ -163,7 +154,6 @@ impl FileOps for UserFaultFile {
 
     fn write(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         _offset: usize,
@@ -174,7 +164,6 @@ impl FileOps for UserFaultFile {
 
     fn query_events(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
     ) -> Result<FdEvents, Errno> {
@@ -184,7 +173,6 @@ impl FileOps for UserFaultFile {
 
     fn wait_async(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         _waiter: &Waiter,
@@ -197,7 +185,6 @@ impl FileOps for UserFaultFile {
 
     fn ioctl(
         &self,
-        locked: &mut Locked<Unlocked>,
         _file: &FileObject,
         current_task: &CurrentTask,
         request: u32,
@@ -207,7 +194,7 @@ impl FileOps for UserFaultFile {
             UFFDIO_API => {
                 let arg: UserRef<uffdio_api> = arg.into();
                 let request = current_task.read_object(arg)?;
-                match self.api_handshake(locked, current_task, request) {
+                match self.api_handshake(current_task, request) {
                     Ok(reply) => {
                         current_task.write_object(arg, &reply)?;
                         Ok(0.into())
@@ -226,7 +213,6 @@ impl FileOps for UserFaultFile {
                 request.ioctls = self
                     .inner
                     .op_register(
-                        locked,
                         request.range.start.into(),
                         request.range.len,
                         FaultRegisterMode::from_bits_truncate(
@@ -241,7 +227,7 @@ impl FileOps for UserFaultFile {
             UFFDIO_UNREGISTER => {
                 let arg: UserRef<uffdio_range> = arg.into();
                 let request = current_task.read_object(arg)?;
-                self.inner.op_unregister(locked, request.start.into(), request.len)?;
+                self.inner.op_unregister(request.start.into(), request.len)?;
                 Ok(0.into())
             }
 
@@ -249,7 +235,6 @@ impl FileOps for UserFaultFile {
                 let arg: UserRef<uffdio_zeropage> = arg.into();
                 let mut request = current_task.read_object(arg)?;
                 let ioctl_res = self.inner.op_zero(
-                    locked,
                     request.range.start.into(),
                     request.range.len,
                     FaultZeroMode::from_bits_truncate(
@@ -275,7 +260,6 @@ impl FileOps for UserFaultFile {
                 let mut request = current_task.read_object(arg)?;
                 let mm = current_task.mm()?;
                 let ioctl_res = self.inner.op_copy(
-                    locked,
                     &mm,
                     request.src.into(),
                     request.dst.into(),
@@ -317,12 +301,7 @@ impl FileOps for UserFaultFile {
     }
 
     // On closing, clear all the registrations pointing to this userfault object.
-    fn close(
-        self: Box<Self>,
-        locked: &mut Locked<FileOpsCore>,
-        _file: &FileObjectState,
-        _current_task: &CurrentTask,
-    ) {
-        self.inner.cleanup(locked);
+    fn close(self: Box<Self>, _file: &FileObjectState, _current_task: &CurrentTask) {
+        self.inner.cleanup();
     }
 }

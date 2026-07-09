@@ -197,7 +197,7 @@ impl BinderThread {
         BinderThreadGuard { guard: self.state.lock(), thread: self }
     }
 
-    pub fn lock_both<'a>(
+    pub fn ordered_lock<'a>(
         t1: &'a Self,
         t2: &'a Self,
     ) -> (BinderThreadGuard<'a>, BinderThreadGuard<'a>) {

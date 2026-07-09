@@ -28,7 +28,6 @@ rustc_library("android_usb") {
     "//src/lib/fuchsia-component",
     "//src/starnix/kernel/core",
     "//src/starnix/lib/starnix_logging",
-    "//src/starnix/lib/starnix_sync",
     "//src/starnix/lib/starnix_uapi",
   ]
 

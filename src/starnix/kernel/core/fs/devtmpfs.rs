@@ -12,7 +12,6 @@ use crate::vfs::{
     DirEntryHandle, FileSystemHandle, FileSystemOptions, FsStr, LookupContext, MountInfo,
     NamespaceNode, path,
 };
-use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Unlocked};
 use starnix_uapi::auth::FsCred;
 use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::Errno;
@@ -20,30 +19,23 @@ use starnix_uapi::file_mode::mode;
 use std::collections::BTreeMap;
 
 pub fn dev_tmp_fs(
-    locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
     _options: FileSystemOptions,
 ) -> Result<FileSystemHandle, Errno> {
-    Ok(DevTmpFs::from_kernel(locked, current_task.kernel()))
+    Ok(DevTmpFs::from_kernel(current_task.kernel()))
 }
 
 pub struct DevTmpFs(());
 
 impl DevTmpFs {
-    pub fn from_kernel<L>(locked: &mut Locked<L>, kernel: &Kernel) -> FileSystemHandle
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
+    pub fn from_kernel(kernel: &Kernel) -> FileSystemHandle {
         struct DevTmpFsHandle(FileSystemHandle);
 
-        kernel.expando.get_or_init(|| DevTmpFsHandle(Self::init(locked, kernel))).0.clone()
+        kernel.expando.get_or_init(|| DevTmpFsHandle(Self::init(kernel))).0.clone()
     }
 
-    fn init<L>(locked: &mut Locked<L>, kernel: &Kernel) -> FileSystemHandle
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
-        let fs = TmpFs::new_fs_with_name(locked, kernel, "devtmpfs".into());
+    fn init(kernel: &Kernel) -> FileSystemHandle {
+        let fs = TmpFs::new_fs_with_name(kernel, "devtmpfs".into());
 
         let initial_content = TmpFsData {
             owner: FsCred::root(),
@@ -90,9 +82,9 @@ pub fn devtmpfs_create_device(
     kernel: &Kernel,
     device_metadata: DeviceMetadata,
 ) -> Result<(), Errno> {
-    let closure = move |locked: &mut Locked<Unlocked>, current_task: &CurrentTask| {
+    let closure = move |current_task: &CurrentTask| {
         current_task.override_creds(security::creds_start_internal_operation(current_task), || {
-            devtmpfs_create_device_internal(locked, current_task, &device_metadata)
+            devtmpfs_create_device_internal(current_task, &device_metadata)
         })
     };
     let (result_fn, req) = SpawnRequestBuilder::new()
@@ -104,7 +96,6 @@ pub fn devtmpfs_create_device(
 }
 
 fn devtmpfs_create_device_internal(
-    locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
     device_metadata: &DeviceMetadata,
 ) -> Result<(), Errno> {
@@ -118,18 +109,12 @@ fn devtmpfs_create_device_internal(
         // Avoid EEXIST for 'foo//bar' and the last directory name.
         .filter(|dir_name| dir_name.len() > 0)
         .try_fold(
-            DevTmpFs::from_kernel(locked, current_task.kernel()).root().clone(),
+            DevTmpFs::from_kernel(current_task.kernel()).root().clone(),
             |parent_dir, dir_name| {
-                devtmpfs_get_or_create_directory_at(
-                    locked,
-                    current_task,
-                    parent_dir,
-                    dir_name.into(),
-                )
+                devtmpfs_get_or_create_directory_at(current_task, parent_dir, dir_name.into())
             },
         )?;
     devtmpfs_create_device_node(
-        locked,
         current_task,
         parent_dir,
         device_name.into(),
@@ -138,23 +123,17 @@ fn devtmpfs_create_device_internal(
     )
 }
 
-pub fn devtmpfs_get_or_create_directory_at<L>(
-    locked: &mut Locked<L>,
+pub fn devtmpfs_get_or_create_directory_at(
     current_task: &CurrentTask,
     parent_dir: DirEntryHandle,
     dir_name: &FsStr,
-) -> Result<DirEntryHandle, Errno>
-where
-    L: LockEqualOrBefore<FileOpsCore>,
-{
+) -> Result<DirEntryHandle, Errno> {
     parent_dir.get_or_create_entry(
-        locked,
         current_task,
         &MountInfo::detached(),
         dir_name,
-        |locked, dir, mount, name| {
+        |dir, mount, name| {
             dir.create_node(
-                locked,
                 current_task,
                 mount,
                 name,
@@ -167,7 +146,6 @@ where
 }
 
 fn devtmpfs_create_device_node(
-    locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
     parent_dir: DirEntryHandle,
     device_name: &FsStr,
@@ -181,31 +159,19 @@ fn devtmpfs_create_device_node(
     // This creates content inside the temporary FS. This doesn't depend on the mount
     // information.
     parent_dir.create_entry(
-        locked,
         current_task,
         &MountInfo::detached(),
         device_name,
-        |locked, dir, mount, name| {
-            dir.create_node(locked, current_task, mount, name, mode, devt, FsCred::root())
-        },
+        |dir, mount, name| dir.create_node(current_task, mount, name, mode, devt, FsCred::root()),
     )?;
     Ok(())
 }
 
-pub fn devtmpfs_remove_path<L>(
-    locked: &mut Locked<L>,
-    current_task: &CurrentTask,
-    path: &FsStr,
-) -> Result<(), Errno>
-where
-    L: LockEqualOrBefore<FileOpsCore>,
-{
-    let root_node = NamespaceNode::new_anonymous(
-        DevTmpFs::from_kernel(locked, current_task.kernel()).root().clone(),
-    );
+pub fn devtmpfs_remove_path(current_task: &CurrentTask, path: &FsStr) -> Result<(), Errno> {
+    let root_node =
+        NamespaceNode::new_anonymous(DevTmpFs::from_kernel(current_task.kernel()).root().clone());
     let mut context = LookupContext::default();
-    let (parent_node, device_name) =
-        current_task.lookup_parent(locked, &mut context, &root_node, path)?;
+    let (parent_node, device_name) = current_task.lookup_parent(&mut context, &root_node, path)?;
     parent_node.entry.remove_child(device_name.into(), &current_task.kernel().mounts);
     Ok(())
 }

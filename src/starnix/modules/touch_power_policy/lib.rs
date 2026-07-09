@@ -11,9 +11,7 @@ use starnix_core::vfs::{
     fileops_impl_noop_sync,
 };
 use starnix_logging::{log_error, log_info};
-use starnix_sync::{
-    FileOpsCore, LockDepMutex, LockEqualOrBefore, Locked, TouchPowerPolicyEnabledLock, Unlocked,
-};
+use starnix_sync::{LockDepMutex, TouchPowerPolicyEnabledLock};
 use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::error;
 use starnix_uapi::errors::Errno;
@@ -32,14 +30,10 @@ impl TouchPowerPolicyDevice {
         TouchPowerPolicyDevice { touch_power_file: TouchPowerPolicyFile::new(touch_standby_sender) }
     }
 
-    pub fn register<L>(self, locked: &mut Locked<L>, kernel: &Kernel)
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
+    pub fn register(self, kernel: &Kernel) {
         let registry = &kernel.device_registry;
         registry
             .register_dyn_device(
-                locked,
                 kernel,
                 "touch_standby".into(),
                 registry.objects.starnix_class(),
@@ -54,7 +48,7 @@ impl TouchPowerPolicyDevice {
         touch_standby_receiver: LockupDetectorReceiver<bool>,
     ) {
         let slf = self.clone();
-        let closure = move |_lock_context: &mut Locked<Unlocked>, _current_task: &CurrentTask| {
+        let closure = move |_current_task: &CurrentTask| {
             let mut prev_enabled = true;
             while let Ok(touch_enabled) = touch_standby_receiver.recv() {
                 if touch_enabled != prev_enabled {
@@ -80,7 +74,6 @@ impl TouchPowerPolicyDevice {
 impl DeviceOps for TouchPowerPolicyDevice {
     fn open(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _current_task: &CurrentTask,
         _devt: DeviceId,
         _node: &NamespaceNode,
@@ -112,7 +105,6 @@ impl FileOps for TouchPowerPolicyFile {
 
     fn read(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         offset: usize,
@@ -125,7 +117,6 @@ impl FileOps for TouchPowerPolicyFile {
 
     fn write(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         _offset: usize,

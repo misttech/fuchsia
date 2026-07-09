@@ -38,7 +38,7 @@ use starnix_core::vfs::{
     fileops_impl_noop_sync, fileops_impl_unbounded_seek, fs_node_impl_dir_readonly,
 };
 use starnix_logging::{BugRef, bug_ref, track_stub};
-use starnix_sync::{FileOpsCore, Locked};
+
 use starnix_uapi::auth::FsCred;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::mode;
@@ -89,7 +89,7 @@ impl ProcDirectory {
             "device-tree".into() => symlink_file(fs, DeviceTreeSymlink::new_node()),
             "diskstats".into() => stub_file(fs, bug_ref!("https://fxbug.dev/322893370")),
             "filesystems".into() => read_only_file(fs, FilesystemsFile::new_node(&kernel.expando.get::<FsRegistry>())),
-            "kallsyms".into() => read_only_file(fs, SimpleFileNode::new(|_,_| {
+            "kallsyms".into() => read_only_file(fs, SimpleFileNode::new(|_| {
                 track_stub!(TODO("https://fxbug.dev/369067922"), "Provide a real /proc/kallsyms");
                 Ok(BytesFile::new(b"0000000000000000 T security_inode_copy_up".to_vec()))
             })),
@@ -170,7 +170,6 @@ impl FsNodeOps for ProcDirectoryNode {
 
     fn create_file_ops(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _node: &FsNode,
         _current_task: &CurrentTask,
         _flags: OpenFlags,
@@ -180,7 +179,6 @@ impl FsNodeOps for ProcDirectoryNode {
 
     fn lookup(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         node: &FsNode,
         current_task: &CurrentTask,
         name: &FsStr,
@@ -218,7 +216,6 @@ impl FileOps for ProcDirectory {
 
     fn readdir(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         file: &FileObject,
         current_task: &CurrentTask,
         sink: &mut dyn DirentSink,

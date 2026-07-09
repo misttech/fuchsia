@@ -12,7 +12,6 @@ use crate::vfs::{FileOps, FsString, NamespaceNode, VecInputBuffer, VecOutputBuff
 use anyhow::Error;
 use fidl::endpoints::ClientEnd;
 use fidl_fuchsia_hardware_serial as fserial;
-use starnix_sync::{FileOpsCore, Locked, Unlocked};
 use starnix_uapi::device_id::{DeviceId, TTY_MAJOR};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::from_status_like_fdio;
@@ -34,7 +33,7 @@ impl ForwardTask {
     fn spawn_reader(&self, kernel: &Kernel) {
         let terminal = self.terminal.clone();
         let serial_proxy = self.serial_proxy.clone();
-        let closure = move |locked: &mut Locked<Unlocked>, current_task: &CurrentTask| {
+        let closure = move |current_task: &CurrentTask| {
             let _result = move || -> Result<(), Error> {
                 let waiter = Waiter::new();
                 loop {
@@ -44,7 +43,7 @@ impl ForwardTask {
 
                     // Only await the event if it is not already asserted
                     if !terminal.main_query_events().contains(FdEvents::POLLOUT) {
-                        waiter.wait(locked, current_task)?;
+                        waiter.wait(current_task)?;
                     }
 
                     let data = {
@@ -53,7 +52,7 @@ impl ForwardTask {
                             .read(zx::MonotonicInstant::INFINITE)?
                             .map_err(|e: i32| from_status_like_fdio!(zx::Status::from_raw(e)))?
                     };
-                    terminal.main_write(locked, &mut VecInputBuffer::from(data))?;
+                    terminal.main_write(&mut VecInputBuffer::from(data))?;
                 }
             }();
         };
@@ -67,7 +66,7 @@ impl ForwardTask {
     fn spawn_writer(&self, kernel: &Kernel) {
         let terminal = self.terminal.clone();
         let serial_proxy = self.serial_proxy.clone();
-        let closure = move |locked: &mut Locked<Unlocked>, current_task: &CurrentTask| {
+        let closure = move |current_task: &CurrentTask| {
             let _result = move || -> Result<(), Error> {
                 let waiter = Waiter::new();
                 loop {
@@ -77,12 +76,12 @@ impl ForwardTask {
 
                     // Only await the event if it is not already asserted
                     if !terminal.main_query_events().contains(FdEvents::POLLIN) {
-                        waiter.wait(locked, current_task)?;
+                        waiter.wait(current_task)?;
                     }
 
                     let size = terminal.read().get_available_read_size(true);
                     let mut buffer = VecOutputBuffer::new(size);
-                    terminal.main_read(locked, &mut buffer)?;
+                    terminal.main_read(&mut buffer)?;
                     serial_proxy
                         .write(buffer.data(), zx::MonotonicInstant::INFINITE)?
                         .map_err(|e: i32| from_status_like_fdio!(zx::Status::from_raw(e)))?;
@@ -114,14 +113,13 @@ impl SerialDevice {
     ///
     /// To register the device, call `register_serial_device`.
     pub fn new(
-        locked: &mut Locked<Unlocked>,
         current_task: &CurrentTask,
         serial_device: ClientEnd<fserial::DeviceMarker>,
     ) -> Result<Arc<Self>, Errno> {
         let kernel = current_task.kernel();
 
         let state = Arc::new(TtyState::default());
-        let fs = new_pts_fs_with_state(locked, kernel, Default::default(), state.clone())?;
+        let fs = new_pts_fs_with_state(kernel, Default::default(), state.clone())?;
         let creds = current_task.current_fscred();
         let terminal = state.get_next_terminal(fs.root().clone(), creds)?;
 
@@ -137,7 +135,6 @@ impl SerialDevice {
 impl DeviceOps for Arc<SerialDevice> {
     fn open(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _current_task: &CurrentTask,
         _id: DeviceId,
         _node: &NamespaceNode,
@@ -152,7 +149,6 @@ impl DeviceOps for Arc<SerialDevice> {
 /// The `index` should be the numerical value associated with the device. For example, if you want
 /// to register /dev/ttyS<n>, then `index` should be `n`.
 pub fn register_serial_device(
-    locked: &mut Locked<Unlocked>,
     kernel: &Kernel,
     index: u32,
     serial_device: Arc<SerialDevice>,
@@ -165,7 +161,6 @@ pub fn register_serial_device(
 
     let registry = &kernel.device_registry;
     registry.register_device(
-        locked,
         kernel,
         name.as_ref(),
         DeviceMetadata::new(

@@ -7,9 +7,7 @@ use crate::ptrace::{PtraceCoreState, ptrace_attach_from_state};
 use crate::task::{CurrentTask, DelayedReleaser, ExitStatus, TaskBuilder, ZirconThread};
 use anyhow::Error;
 use starnix_logging::{log_error, log_warn};
-use starnix_sync::{
-    ExecutorVmarManagerLock, LockBefore, LockDepMutex, Locked, TaskRelease, Unlocked,
-};
+use starnix_sync::{ExecutorVmarManagerLock, LockDepMutex};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::{errno, error};
 use std::os::unix::thread::JoinHandleExt;
@@ -22,24 +20,21 @@ use thread_create_vmars::ThreadCreateVmars;
 /// This is a module-private singleton used to manage VMARs for thread creation.
 struct ExecutorVmarManager(LockDepMutex<ThreadCreateVmars, ExecutorVmarManagerLock>);
 
-pub fn execute_task_with_prerun_result<L, F, R, G>(
-    locked: &mut Locked<L>,
+pub fn execute_task_with_prerun_result<F, R, G>(
     task_builder: TaskBuilder,
     pre_run: F,
     task_complete: G,
     ptrace_state: Option<PtraceCoreState>,
 ) -> Result<R, Errno>
 where
-    L: LockBefore<TaskRelease>,
-    F: FnOnce(&mut Locked<Unlocked>, &mut CurrentTask) -> Result<R, Errno> + Send + Sync + 'static,
+    F: FnOnce(&mut CurrentTask) -> Result<R, Errno> + Send + Sync + 'static,
     R: Send + Sync + 'static,
     G: FnOnce(Result<ExitStatus, Error>) + Send + Sync + 'static,
 {
     let (sender, receiver) = sync_channel::<Result<R, Errno>>(1);
     execute_task(
-        locked,
         task_builder,
-        move |current_task, locked| match pre_run(current_task, locked) {
+        move |current_task| match pre_run(current_task) {
             Err(errno) => {
                 let _ = sender.send(Err(errno.clone()));
                 Err(errno)
@@ -58,16 +53,14 @@ where
     })?
 }
 
-pub fn execute_task<L, F, G>(
-    locked: &mut Locked<L>,
+pub fn execute_task<F, G>(
     task_builder: TaskBuilder,
     pre_run: F,
     task_complete: G,
     ptrace_state: Option<PtraceCoreState>,
 ) -> Result<(), Errno>
 where
-    L: LockBefore<TaskRelease>,
-    F: FnOnce(&mut Locked<Unlocked>, &mut CurrentTask) -> Result<(), Errno> + Send + Sync + 'static,
+    F: FnOnce(&mut CurrentTask) -> Result<(), Errno> + Send + Sync + 'static,
     G: FnOnce(Result<ExitStatus, Error>) + Send + Sync + 'static,
 {
     // Set the process handle to the new task's process, so the new thread is spawned in that
@@ -104,11 +97,7 @@ where
     };
 
     if let Some(ptrace_state) = ptrace_state {
-        let _ = ptrace_attach_from_state(
-            locked.cast_locked::<TaskRelease>(),
-            &task_builder.task,
-            ptrace_state,
-        );
+        let _ = ptrace_attach_from_state(&task_builder.task, ptrace_state);
     }
 
     let ref_task = Arc::clone(&task_builder.task);
@@ -118,13 +107,6 @@ where
     // `process_handle`.
     let (sender, receiver) = sync_channel::<TaskBuilder>(1);
     let result = std::thread::Builder::new().name("user-thread".to_string()).spawn(move || {
-        // It's safe to create a new lock context since we are on a new thread.
-        #[allow(
-            clippy::undocumented_unsafe_blocks,
-            reason = "Force documented unsafe blocks in Starnix"
-        )]
-        let locked = unsafe { Unlocked::new() };
-
         // Note, cross-process shared resources allocated in this function that aren't freed by the
         // Zircon kernel upon thread and/or process termination (like mappings in the shared region)
         // should be freed using the delayed finalizer mechanism and Task drop.
@@ -137,7 +119,7 @@ where
         // allocated for the lifetime of the thread.
         std::mem::drop(receiver);
 
-        let pre_run_result = { pre_run(locked, &mut current_task) };
+        let pre_run_result = { pre_run(&mut current_task) };
         if pre_run_result.is_err() {
             // Only log if the pre run didn't exit the task. Otherwise, consider this is expected
             // by the caller.
@@ -149,14 +131,14 @@ where
             // releasables.
             std::mem::drop(task_complete);
         } else {
-            let exit_status = enter_syscall_loop(locked, &mut current_task);
+            let exit_status = enter_syscall_loop(&mut current_task);
             current_task.write().set_exit_status(exit_status.clone());
             task_complete(Ok(exit_status));
         }
 
         // `release` must be called as the absolute last action on this thread to ensure that
         // any deferred release are done before it.
-        current_task.release(locked);
+        current_task.release(());
 
         // Ensure that no releasables are registered after this point as we unwind the stack.
         DelayedReleaser::finalize();
@@ -164,7 +146,7 @@ where
     let join_handle = match result {
         Ok(handle) => handle,
         Err(e) => {
-            task_builder.release(locked);
+            task_builder.release(());
             match e.kind() {
                 std::io::ErrorKind::WouldBlock => return error!(EAGAIN),
                 other => panic!("unexpected error on thread spawn: {other}"),
@@ -237,9 +219,9 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_block_if_stopped_stop_and_continue() {
-        spawn_kernel_and_run(async |locked, task| {
+        spawn_kernel_and_run(async |task| {
             // The task is not stopped.
-            assert!(!task.block_if_stopped(locked));
+            assert!(!task.block_if_stopped());
 
             // Stop the task.
             task.thread_group().set_stopped(
@@ -267,22 +249,22 @@ mod tests {
             });
 
             // Block until continued.
-            assert!(task.block_if_stopped(locked));
+            assert!(task.block_if_stopped());
 
             // Join the thread, which will ensure set_stopped terminated.
             thread.join().expect("joined");
 
             // The task should not be blocked anymore.
-            assert!(!task.block_if_stopped(locked));
+            assert!(!task.block_if_stopped());
         })
         .await;
     }
 
     #[::fuchsia::test]
     async fn test_block_if_stopped_stop_and_exit() {
-        spawn_kernel_and_run(async |locked, task| {
+        spawn_kernel_and_run(async |task| {
             // The task is neither stopped nor exited.
-            assert!(!task.block_if_stopped(locked));
+            assert!(!task.block_if_stopped());
 
             // Stop the task.
             task.thread_group().set_stopped(
@@ -294,11 +276,6 @@ mod tests {
             let thread = std::thread::spawn({
                 let task = task.weak_task();
                 move || {
-                    #[allow(
-                        clippy::undocumented_unsafe_blocks,
-                        reason = "Force documented unsafe blocks in Starnix"
-                    )]
-                    let locked = unsafe { Unlocked::new() };
                     let task = task.upgrade().expect("task must be alive");
                     // Wait for the task to have a waiter.
                     while !task.read().is_blocked() {
@@ -306,18 +283,18 @@ mod tests {
                     }
 
                     // exit the task.
-                    task.thread_group().kill(locked, ExitStatus::Exit(1), None);
+                    task.thread_group().kill(ExitStatus::Exit(1), None);
                 }
             });
 
             // Block until continued.
-            assert!(task.block_if_stopped(locked));
+            assert!(task.block_if_stopped());
 
             // Join the task, which will ensure thread_group.exit terminated.
             thread.join().expect("joined");
 
             // The task should not be blocked because it is stopped.
-            assert!(!task.block_if_stopped(locked));
+            assert!(!task.block_if_stopped());
         })
         .await;
     }

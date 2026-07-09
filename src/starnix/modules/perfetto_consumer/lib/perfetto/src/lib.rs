@@ -17,7 +17,7 @@ use starnix_core::vfs::socket::{
     SocketDomain, SocketFile, SocketPeer, SocketProtocol, SocketType, resolve_unix_socket_address,
 };
 use starnix_core::vfs::{FileHandle, FsStr};
-use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Unlocked};
+
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::vfs::FdEvents;
@@ -86,15 +86,11 @@ impl IpcConnection {
         Self { file, request_id: 0 }
     }
 
-    pub fn bind_service<L>(
+    pub fn bind_service(
         &mut self,
         service_name: &str,
-        locked: &mut Locked<L>,
         current_task: &CurrentTask,
-    ) -> Result<(), IpcWriteError>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
+    ) -> Result<(), IpcWriteError> {
         // The first thing we need to send over our newly connected socket is send a request to
         // bind to the service.
         let bind_service_message = IpcFrame {
@@ -104,20 +100,16 @@ impl IpcConnection {
             })),
             ..Default::default()
         };
-        self.write_frame(bind_service_message, locked, current_task)
+        self.write_frame(bind_service_message, current_task)
     }
 
-    pub fn invoke_method<L>(
+    pub fn invoke_method(
         &mut self,
         service_id: u32,
         method_id: u32,
         arguments: Option<Vec<u8>>,
-        locked: &mut Locked<L>,
         current_task: &CurrentTask,
-    ) -> Result<(), IpcWriteError>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
+    ) -> Result<(), IpcWriteError> {
         let msg = IpcFrame {
             request_id: Some(self.allocate_request_id()),
             msg: Some(ipc_frame::Msg::MsgInvokeMethod(ipc_frame::InvokeMethod {
@@ -128,18 +120,14 @@ impl IpcConnection {
             })),
             ..Default::default()
         };
-        self.write_frame(msg, locked, current_task)
+        self.write_frame(msg, current_task)
     }
 
-    fn write_frame<L>(
+    fn write_frame(
         &mut self,
         frame: IpcFrame,
-        locked: &mut Locked<L>,
         current_task: &CurrentTask,
-    ) -> Result<(), IpcWriteError>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
+    ) -> Result<(), IpcWriteError> {
         // We need to length prefix our proto before encoding and sending it down the wire.
         let frame_len = u32::try_from(frame.encoded_len())
             .map_err(|_| IpcWriteError::TooLong(frame.encoded_len()))?;
@@ -148,7 +136,7 @@ impl IpcConnection {
         bind_service_bytes.extend_from_slice(&frame_len.to_le_bytes());
         frame.encode(&mut bind_service_bytes)?;
         let mut bind_service_buffer: VecInputBuffer = bind_service_bytes.into();
-        self.file.write(locked, current_task, &mut bind_service_buffer)?;
+        self.file.write(current_task, &mut bind_service_buffer)?;
         Ok(())
     }
 
@@ -191,14 +179,10 @@ impl FrameReader {
     }
 
     /// Repeatedly reads from the specified file until a full message is available.
-    pub fn next_frame_blocking<L>(
+    pub fn next_frame_blocking(
         &mut self,
-        locked: &mut Locked<L>,
         current_task: &CurrentTask,
-    ) -> Result<IpcFrame, IpcReadError>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
+    ) -> Result<IpcFrame, IpcReadError> {
         loop {
             if self.next_message_size.is_none() && self.data.len() >= 4 {
                 let len_bytes: [u8; 4] = self
@@ -218,19 +202,11 @@ impl FrameReader {
             }
 
             let waiter = Waiter::new();
-            self.file.wait_async(
-                locked,
-                current_task,
-                &waiter,
-                FdEvents::POLLIN,
-                EventHandler::None,
-            );
-            while self.file.query_events(locked, current_task)? & FdEvents::POLLIN
-                != FdEvents::POLLIN
-            {
-                waiter.wait(locked, current_task)?;
+            self.file.wait_async(current_task, &waiter, FdEvents::POLLIN, EventHandler::None);
+            while self.file.query_events(current_task)? & FdEvents::POLLIN != FdEvents::POLLIN {
+                waiter.wait(current_task)?;
             }
-            self.file.read(locked, current_task, &mut self.read_buffer)?;
+            self.file.read(current_task, &mut self.read_buffer)?;
             self.data.extend(self.read_buffer.data());
             self.read_buffer.reset();
         }
@@ -254,13 +230,8 @@ pub struct Consumer {
 impl Consumer {
     /// Opens a socket connection to the specified socket path and initializes the requisite
     /// bookkeeping information.
-    pub fn new(
-        locked: &mut Locked<Unlocked>,
-        current_task: &CurrentTask,
-        socket_path: &FsStr,
-    ) -> Result<Self, anyhow::Error> {
+    pub fn new(current_task: &CurrentTask, socket_path: &FsStr) -> Result<Self, anyhow::Error> {
         let conn_file = SocketFile::new_socket(
-            locked,
             current_task,
             SocketDomain::Unix,
             SocketType::Stream,
@@ -269,9 +240,8 @@ impl Consumer {
             /* kernel_private=*/ false,
         )?;
         let conn = SocketFile::get_from_file(&conn_file)?;
-        let peer =
-            SocketPeer::Handle(resolve_unix_socket_address(locked, current_task, socket_path)?);
-        conn.connect(locked, current_task, peer)?;
+        let peer = SocketPeer::Handle(resolve_unix_socket_address(current_task, socket_path)?);
+        conn.connect(current_task, peer)?;
         let mut frame_reader = FrameReader::new(conn_file.clone());
         let mut request_id = 1;
 
@@ -290,9 +260,9 @@ impl Consumer {
         );
         bind_service_message.encode(&mut bind_service_bytes)?;
         let mut bind_service_buffer: VecInputBuffer = bind_service_bytes.into();
-        conn.file().write(locked, current_task, &mut bind_service_buffer)?;
+        conn.file().write(current_task, &mut bind_service_buffer)?;
 
-        let reply_frame = frame_reader.next_frame_blocking(locked, current_task)?;
+        let reply_frame = frame_reader.next_frame_blocking(current_task)?;
 
         let bind_service_reply = match reply_frame.msg {
             Some(ipc_frame::Msg::MsgBindServiceReply(reply)) => reply,
@@ -302,15 +272,11 @@ impl Consumer {
         Ok(Self { conn_file, frame_reader, bind_service_reply, request_id })
     }
 
-    fn send_message<L>(
+    fn send_message(
         &mut self,
-        locked: &mut Locked<L>,
         current_task: &CurrentTask,
         msg: ipc_frame::Msg,
-    ) -> Result<u64, anyhow::Error>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
+    ) -> Result<u64, anyhow::Error> {
         let request_id = self.request_id;
         let frame =
             IpcFrame { request_id: Some(request_id), data_for_testing: Vec::new(), msg: Some(msg) };
@@ -321,7 +287,7 @@ impl Consumer {
         frame_bytes.extend_from_slice(&u32::try_from(frame.encoded_len())?.to_le_bytes());
         frame.encode(&mut frame_bytes)?;
         let mut buffer: VecInputBuffer = frame_bytes.into();
-        self.conn_file.write(locked, current_task, &mut buffer)?;
+        self.conn_file.write(current_task, &mut buffer)?;
 
         Ok(request_id)
     }
@@ -344,21 +310,16 @@ impl Consumer {
         Err(anyhow::anyhow!("Did not find method {}", name))
     }
 
-    pub fn enable_tracing<L>(
+    pub fn enable_tracing(
         &mut self,
-        locked: &mut Locked<L>,
         current_task: &CurrentTask,
         req: EnableTracingRequest,
-    ) -> Result<u64, anyhow::Error>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
+    ) -> Result<u64, anyhow::Error> {
         let method_id = self.method_id("EnableTracing")?;
         let mut encoded_args: Vec<u8> = Vec::with_capacity(req.encoded_len());
         req.encode(&mut encoded_args)?;
 
         self.send_message(
-            locked,
             current_task,
             ipc_frame::Msg::MsgInvokeMethod(ipc_frame::InvokeMethod {
                 service_id: self.bind_service_reply.service_id,
@@ -369,21 +330,16 @@ impl Consumer {
         )
     }
 
-    pub fn disable_tracing<L>(
+    pub fn disable_tracing(
         &mut self,
-        locked: &mut Locked<L>,
         current_task: &CurrentTask,
         req: DisableTracingRequest,
-    ) -> Result<u64, anyhow::Error>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
+    ) -> Result<u64, anyhow::Error> {
         let method_id = self.method_id("DisableTracing")?;
         let mut encoded_args: Vec<u8> = Vec::with_capacity(req.encoded_len());
         req.encode(&mut encoded_args)?;
 
         self.send_message(
-            locked,
             current_task,
             ipc_frame::Msg::MsgInvokeMethod(ipc_frame::InvokeMethod {
                 service_id: self.bind_service_reply.service_id,
@@ -394,21 +350,16 @@ impl Consumer {
         )
     }
 
-    pub fn read_buffers<L>(
+    pub fn read_buffers(
         &mut self,
-        locked: &mut Locked<L>,
         current_task: &CurrentTask,
         req: ReadBuffersRequest,
-    ) -> Result<u64, anyhow::Error>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
+    ) -> Result<u64, anyhow::Error> {
         let method_id = self.method_id("ReadBuffers")?;
         let mut encoded_args: Vec<u8> = Vec::with_capacity(req.encoded_len());
         req.encode(&mut encoded_args)?;
 
         self.send_message(
-            locked,
             current_task,
             ipc_frame::Msg::MsgInvokeMethod(ipc_frame::InvokeMethod {
                 service_id: self.bind_service_reply.service_id,
@@ -419,21 +370,16 @@ impl Consumer {
         )
     }
 
-    pub fn free_buffers<L>(
+    pub fn free_buffers(
         &mut self,
-        locked: &mut Locked<L>,
         current_task: &CurrentTask,
         req: FreeBuffersRequest,
-    ) -> Result<u64, anyhow::Error>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
+    ) -> Result<u64, anyhow::Error> {
         let method_id = self.method_id("FreeBuffers")?;
         let mut encoded_args: Vec<u8> = Vec::with_capacity(req.encoded_len());
         req.encode(&mut encoded_args)?;
 
         self.send_message(
-            locked,
             current_task,
             ipc_frame::Msg::MsgInvokeMethod(ipc_frame::InvokeMethod {
                 service_id: self.bind_service_reply.service_id,
@@ -444,15 +390,11 @@ impl Consumer {
         )
     }
 
-    pub fn next_frame_blocking<L>(
+    pub fn next_frame_blocking(
         &mut self,
-        locked: &mut Locked<L>,
         current_task: &CurrentTask,
-    ) -> Result<IpcFrame, IpcReadError>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
-        self.frame_reader.next_frame_blocking(locked, current_task)
+    ) -> Result<IpcFrame, IpcReadError> {
+        self.frame_reader.next_frame_blocking(current_task)
     }
 }
 
@@ -481,14 +423,7 @@ pub struct Producer {
 impl Producer {
     /// Opens a socket connection to the specified socket path and initializes the requisite
     /// bookkeeping information.
-    pub fn new<L>(
-        locked: &mut Locked<L>,
-        current_task: &CurrentTask,
-        socket: FileHandle,
-    ) -> Result<Self, ProducerError>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
+    pub fn new(current_task: &CurrentTask, socket: FileHandle) -> Result<Self, ProducerError> {
         let mut producer = Self {
             frame_reader: FrameReader::new(socket.clone()),
             ipc_connection: IpcConnection::new(socket),
@@ -498,12 +433,12 @@ impl Producer {
 
         // The first thing we need to send over our newly connected socket is send a request to
         // bind to the service.
-        producer.ipc_connection.bind_service("ProducerPort", locked, current_task)?;
+        producer.ipc_connection.bind_service("ProducerPort", current_task)?;
 
         // Perfetto will then respond and tell us:
         // 1) Our service_id, which we'll need to include in future messages to identify ourself
         // 2) The list of methods that we can call using the "InvokeMethod" ipc
-        let reply_frame = producer.frame_reader.next_frame_blocking(locked, current_task)?;
+        let reply_frame = producer.frame_reader.next_frame_blocking(current_task)?;
 
         let ipc_frame::BindServiceReply { success, service_id, methods } = match reply_frame.msg {
             Some(ipc_frame::Msg::MsgBindServiceReply(reply)) => reply,
@@ -540,19 +475,14 @@ impl Producer {
 
     /// Called once only after establishing the connection with the Service.
     /// The service replies sending the shared memory file descriptor in reply.
-    pub fn initialize_connection<L>(
+    pub fn initialize_connection(
         &mut self,
         request: InitializeConnectionRequest,
-        locked: &mut Locked<L>,
         current_task: &CurrentTask,
-    ) -> Result<InitializeConnectionResponse, ProducerError>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
+    ) -> Result<InitializeConnectionResponse, ProducerError> {
         let (Some(reply), has_more) = self.invoke_method(
             "InitializeConnection",
             Some(request.encode_to_vec()),
-            locked,
             current_task,
         )?
         else {
@@ -567,21 +497,13 @@ impl Producer {
     }
 
     /// Advertises a new data source.
-    pub fn register_data_source<L>(
+    pub fn register_data_source(
         &mut self,
         request: RegisterDataSourceRequest,
-        locked: &mut Locked<L>,
         current_task: &CurrentTask,
-    ) -> Result<RegisterDataSourceResponse, ProducerError>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
-        let (Some(reply), has_more) = self.invoke_method(
-            "RegisterDataSource",
-            Some(request.encode_to_vec()),
-            locked,
-            current_task,
-        )?
+    ) -> Result<RegisterDataSourceResponse, ProducerError> {
+        let (Some(reply), has_more) =
+            self.invoke_method("RegisterDataSource", Some(request.encode_to_vec()), current_task)?
         else {
             return Err(ProducerError::InvalidResponse(
                 "RegisterDataSource expected a response but got none".into(),
@@ -596,19 +518,15 @@ impl Producer {
     }
 
     /// Invoke a named method and block until the service replies.
-    fn invoke_method<L>(
+    fn invoke_method(
         &mut self,
         method_name: &str,
         arguments: Option<Vec<u8>>,
-        locked: &mut Locked<L>,
         current_task: &CurrentTask,
-    ) -> Result<(Option<Vec<u8>>, bool), InvokeMethodError>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
-        self.invoke_method_inner(method_name, arguments, locked, current_task)?;
+    ) -> Result<(Option<Vec<u8>>, bool), InvokeMethodError> {
+        self.invoke_method_inner(method_name, arguments, current_task)?;
 
-        let reply_frame = self.frame_reader.next_frame_blocking(locked, current_task)?;
+        let reply_frame = self.frame_reader.next_frame_blocking(current_task)?;
 
         let ipc_frame::InvokeMethodReply { success, has_more, reply_proto } = match reply_frame.msg
         {
@@ -632,57 +550,35 @@ impl Producer {
     }
 
     /// Invoke a named method without blocking for a response.
-    fn invoke_method_inner<L>(
+    fn invoke_method_inner(
         &mut self,
         method_name: &str,
         arguments: Option<Vec<u8>>,
-        locked: &mut Locked<L>,
         current_task: &CurrentTask,
-    ) -> Result<(), InvokeMethodError>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
+    ) -> Result<(), InvokeMethodError> {
         let Some(method_id) = self.method_map.get(method_name).copied() else {
             return Err(InvokeMethodError::InvalidMethod(method_name.into()));
         };
-        self.ipc_connection.invoke_method(
-            self.service_id,
-            method_id,
-            arguments,
-            locked,
-            current_task,
-        )?;
+        self.ipc_connection.invoke_method(self.service_id, method_id, arguments, current_task)?;
         Ok(())
     }
 
     /// This is a backchannel to get asynchronous commands / notifications back
     /// from the Service.
-    pub fn get_command_request<L>(
-        &mut self,
-        locked: &mut Locked<L>,
-        current_task: &CurrentTask,
-    ) -> Result<(), ProducerError>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
+    pub fn get_command_request(&mut self, current_task: &CurrentTask) -> Result<(), ProducerError> {
         Ok(self.invoke_method_inner(
             "GetAsyncCommand",
             Some(GetAsyncCommandRequest {}.encode_to_vec()),
-            locked,
             current_task,
         )?)
     }
 
     /// After calling get_command_request, block until a response can be read.
-    pub fn get_command_response<L>(
+    pub fn get_command_response(
         &mut self,
-        locked: &mut Locked<L>,
         current_task: &CurrentTask,
-    ) -> Result<(Option<GetAsyncCommandResponse>, bool), ProducerError>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
-        let reply_frame = self.frame_reader.next_frame_blocking(locked, current_task)?;
+    ) -> Result<(Option<GetAsyncCommandResponse>, bool), ProducerError> {
+        let reply_frame = self.frame_reader.next_frame_blocking(current_task)?;
 
         let ipc_frame::InvokeMethodReply { success, has_more, reply_proto } = match reply_frame.msg
         {

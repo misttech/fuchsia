@@ -22,7 +22,7 @@ use starnix_core::vfs::{
     FsStr, FsString,
 };
 use starnix_logging::bug_ref;
-use starnix_sync::{CgroupDirectoryInterfaceFilesLock, FileOpsCore, LockDepMutex, Locked};
+use starnix_sync::{CgroupDirectoryInterfaceFilesLock, LockDepMutex};
 use starnix_uapi::auth::FsCred;
 use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::Errno;
@@ -256,7 +256,6 @@ impl Deref for CgroupDirectoryHandle {
 impl FsNodeOps for CgroupDirectoryHandle {
     fn create_file_ops(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _node: &FsNode,
         _current_task: &CurrentTask,
         _flags: OpenFlags,
@@ -290,7 +289,6 @@ impl FsNodeOps for CgroupDirectoryHandle {
 
     fn mkdir(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         node: &FsNode,
         _current_task: &CurrentTask,
         name: &FsStr,
@@ -316,7 +314,6 @@ impl FsNodeOps for CgroupDirectoryHandle {
 
     fn mknod(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _node: &FsNode,
         _current_task: &CurrentTask,
         _name: &FsStr,
@@ -329,7 +326,6 @@ impl FsNodeOps for CgroupDirectoryHandle {
 
     fn unlink(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         node: &FsNode,
         _current_task: &CurrentTask,
         name: &FsStr,
@@ -356,7 +352,6 @@ impl FsNodeOps for CgroupDirectoryHandle {
 
     fn create_symlink(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _node: &FsNode,
         _current_task: &CurrentTask,
         _name: &FsStr,
@@ -368,7 +363,6 @@ impl FsNodeOps for CgroupDirectoryHandle {
 
     fn lookup(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _node: &FsNode,
         _current_task: &CurrentTask,
         name: &FsStr,

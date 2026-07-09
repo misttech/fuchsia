@@ -11,7 +11,6 @@ use crate::vfs::{
     Anon, FileHandle, FileObject, FileOps, fileops_impl_dataless, fileops_impl_nonseekable,
     fileops_impl_noop_sync,
 };
-use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked};
 use starnix_uapi::error;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
@@ -45,16 +44,12 @@ impl PidFdFileObject {
     }
 }
 
-pub fn new_pidfd<L>(
-    locked: &mut Locked<L>,
+pub fn new_pidfd(
     current_task: &CurrentTask,
     proc: &ThreadGroup,
     mm: &MemoryManager,
     flags: OpenFlags,
-) -> FileHandle
-where
-    L: LockEqualOrBefore<FileOpsCore>,
-{
+) -> FileHandle {
     // We should really be monitoring the ThreadGroup's drop_notifier instead, but we also need to
     // ensure that we're not signalling the pidfd until after all memory resources associated with
     // the process are released. In the current Starnix codebase, there is a 1:1 correspondence
@@ -66,7 +61,6 @@ where
     let terminated_event = mm.drop_notifier.event();
 
     Anon::new_private_file(
-        locked,
         current_task,
         Box::new(PidFdFileObject { tg: proc.into(), terminated_event }),
         flags,
@@ -85,7 +79,6 @@ impl FileOps for PidFdFileObject {
 
     fn wait_async(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         waiter: &Waiter,
@@ -109,7 +102,6 @@ impl FileOps for PidFdFileObject {
 
     fn query_events(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
     ) -> Result<FdEvents, Errno> {
@@ -125,21 +117,8 @@ impl FileOps for PidFdFileObject {
     }
 }
 
-pub fn new_zombie_pidfd<L>(
-    locked: &mut Locked<L>,
-    current_task: &CurrentTask,
-    flags: OpenFlags,
-) -> FileHandle
-where
-    L: LockEqualOrBefore<FileOpsCore>,
-{
-    Anon::new_private_file(
-        locked,
-        current_task,
-        Box::new(ZombiePidFdFileObject {}),
-        flags,
-        "[pidfd]",
-    )
+pub fn new_zombie_pidfd(current_task: &CurrentTask, flags: OpenFlags) -> FileHandle {
+    Anon::new_private_file(current_task, Box::new(ZombiePidFdFileObject {}), flags, "[pidfd]")
 }
 
 struct ZombiePidFdFileObject {}
@@ -156,7 +135,6 @@ impl FileOps for ZombiePidFdFileObject {
 
     fn wait_async(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         _waiter: &Waiter,
@@ -169,7 +147,6 @@ impl FileOps for ZombiePidFdFileObject {
 
     fn query_events(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
     ) -> Result<FdEvents, Errno> {

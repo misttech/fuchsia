@@ -79,11 +79,11 @@ async fn test_fidl_read_fault() {
     let (client, server) = zx::Channel::create();
     fasync::Task::spawn(mock_remote_file_server(server, None)).detach();
 
-    spawn_kernel_and_run(async move |locked, current_task| {
-        let file = new_remote_file(locked, &current_task, client.into(), OpenFlags::RDWR)
+    spawn_kernel_and_run(async move |current_task| {
+        let file = new_remote_file(&current_task, client.into(), OpenFlags::RDWR)
             .expect("new_remote_file");
 
-        let addr = map_memory(locked, &current_task, UserAddress::default(), 100);
+        let addr = map_memory(&current_task, UserAddress::default(), 100);
 
         let mut buffer = UserBuffersOutputBuffer::unified_new(
             &current_task,
@@ -92,7 +92,7 @@ async fn test_fidl_read_fault() {
         .unwrap();
 
         // Check a successful read.
-        assert_eq!(file.read(locked, &current_task, &mut buffer), Ok(100));
+        assert_eq!(file.read(&current_task, &mut buffer), Ok(100));
 
         // Unmap so the address becomes bad.
         current_task.mm().unwrap().unmap(addr, 100).unwrap();
@@ -104,7 +104,7 @@ async fn test_fidl_read_fault() {
         .unwrap();
 
         // The address is bad now, so this should result in EFAULT.
-        assert_eq!(file.read(locked, &current_task, &mut buffer), error!(EFAULT));
+        assert_eq!(file.read(&current_task, &mut buffer), error!(EFAULT));
 
         // Test with NULL address
         let mut buffer = UserBuffersOutputBuffer::unified_new(
@@ -112,7 +112,7 @@ async fn test_fidl_read_fault() {
             smallvec![UserBuffer { address: UserAddress::default(), length: 100 }],
         )
         .unwrap();
-        assert_eq!(file.read(locked, &current_task, &mut buffer), error!(EFAULT));
+        assert_eq!(file.read(&current_task, &mut buffer), error!(EFAULT));
     })
     .await;
 }
@@ -122,11 +122,11 @@ async fn test_fidl_write_fault() {
     let (client, server) = zx::Channel::create();
     fasync::Task::spawn(mock_remote_file_server(server, None)).detach();
 
-    spawn_kernel_and_run(async move |locked, current_task| {
-        let file = new_remote_file(locked, &current_task, client.into(), OpenFlags::RDWR)
+    spawn_kernel_and_run(async move |current_task| {
+        let file = new_remote_file(&current_task, client.into(), OpenFlags::RDWR)
             .expect("new_remote_file");
 
-        let addr = map_memory(locked, &current_task, UserAddress::default(), 100);
+        let addr = map_memory(&current_task, UserAddress::default(), 100);
 
         let mut buffer = UserBuffersInputBuffer::unified_new(
             &current_task,
@@ -135,7 +135,7 @@ async fn test_fidl_write_fault() {
         .unwrap();
 
         // Check a successful write.
-        assert_eq!(file.write(locked, &current_task, &mut buffer), Ok(100));
+        assert_eq!(file.write(&current_task, &mut buffer), Ok(100));
 
         // Unmap so the address becomes bad.
         current_task.mm().unwrap().unmap(addr, 100).unwrap();
@@ -147,7 +147,7 @@ async fn test_fidl_write_fault() {
         .unwrap();
 
         // The address is bad now, so this should result in EFAULT.
-        assert_eq!(file.write(locked, &current_task, &mut buffer), error!(EFAULT));
+        assert_eq!(file.write(&current_task, &mut buffer), error!(EFAULT));
 
         // Test with NULL address
         let mut buffer = UserBuffersInputBuffer::unified_new(
@@ -155,7 +155,7 @@ async fn test_fidl_write_fault() {
             smallvec![UserBuffer { address: UserAddress::default(), length: 100 }],
         )
         .unwrap();
-        assert_eq!(file.write(locked, &current_task, &mut buffer), error!(EFAULT));
+        assert_eq!(file.write(&current_task, &mut buffer), error!(EFAULT));
     })
     .await;
 }
@@ -260,12 +260,12 @@ async fn test_vectored_stream_io() {
     let (client, server) = zx::Channel::create();
     fasync::Task::spawn(mock_remote_file_server(server, Some(stream))).detach();
 
-    spawn_kernel_and_run(async move |locked, current_task| {
-        let file = new_remote_file(locked, &current_task, client.into(), OpenFlags::RDWR)
+    spawn_kernel_and_run(async move |current_task| {
+        let file = new_remote_file(&current_task, client.into(), OpenFlags::RDWR)
             .expect("new_remote_file");
 
-        let addr1 = map_memory(locked, &current_task, UserAddress::default(), 100);
-        let addr2 = map_memory(locked, &current_task, UserAddress::default(), 100);
+        let addr1 = map_memory(&current_task, UserAddress::default(), 100);
+        let addr2 = map_memory(&current_task, UserAddress::default(), 100);
 
         // Verify that they are non-adjacent.
         assert!(
@@ -286,7 +286,7 @@ async fn test_vectored_stream_io() {
             )
             .unwrap(),
         };
-        assert_eq!(file.write(locked, &current_task, &mut buffer), Ok(200));
+        assert_eq!(file.write(&current_task, &mut buffer), Ok(200));
         assert_eq!(buffer.bytes_read(), 200);
 
         let mut vmo_data = vec![0u8; 200];
@@ -295,7 +295,7 @@ async fn test_vectored_stream_io() {
         assert_eq!(&vmo_data[100..200], &[2u8; 100]);
 
         // Reset the file offset to 0.
-        file.seek(locked, &current_task, SeekTarget::Set(0)).unwrap();
+        file.seek(&current_task, SeekTarget::Set(0)).unwrap();
 
         // Test vectored read.
         let pattern = (0..200).map(|i| i as u8).collect::<Vec<_>>();
@@ -311,7 +311,7 @@ async fn test_vectored_stream_io() {
             )
             .unwrap(),
         };
-        assert_eq!(file.read(locked, &current_task, &mut buffer), Ok(200));
+        assert_eq!(file.read(&current_task, &mut buffer), Ok(200));
         assert_eq!(buffer.bytes_written(), 200);
 
         let mut mem1 = vec![0u8; 100];

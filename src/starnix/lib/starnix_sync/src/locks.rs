@@ -6,13 +6,7 @@
 use fuchsia_sync as _;
 use lock_api as _;
 
-use crate::{
-    LockAfter, LockBefore, LockDepMutex, LockDepRwLock, LockFor, Locked, RwLockFor,
-    UninterruptibleLock,
-};
-
 use lock_api::RawMutex;
-use std::{any, fmt};
 
 pub use fuchsia_sync::{
     MappedMutexGuard, Mutex, MutexGuard, RwLock, RwLockReadGuard, RwLockWriteGuard,
@@ -210,163 +204,6 @@ pub fn ordered_write_lock_vec<'a, R: RwLockLike>(rwlocks: &[&'a R]) -> Vec<R::Wr
     ordered_lock_vec(&wrapper_refs)
 }
 
-/// A wrapper for mutex that requires a `Locked` context to acquire.
-/// This context must be of a level that precedes `L` in the lock ordering graph
-/// where `L` is a level associated with this mutex.
-pub struct OrderedMutex<T, L: LockAfter<UninterruptibleLock> + crate::LockLevel> {
-    mutex: LockDepMutex<T, L>,
-}
-
-impl<T: Default, L: LockAfter<UninterruptibleLock> + crate::LockLevel> Default
-    for OrderedMutex<T, L>
-{
-    fn default() -> Self {
-        Self { mutex: T::default().into() }
-    }
-}
-
-impl<T: fmt::Debug, L: LockAfter<UninterruptibleLock> + crate::LockLevel> fmt::Debug
-    for OrderedMutex<T, L>
-{
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "OrderedMutex({:?}, {})", self.mutex, any::type_name::<L>())
-    }
-}
-
-impl<T, L: LockAfter<UninterruptibleLock> + crate::LockLevel> LockFor<L> for OrderedMutex<T, L> {
-    type Data = T;
-    type Guard<'a>
-        = crate::LockDepGuard<'a, T>
-    where
-        T: 'a,
-        L: 'a;
-    fn lock(&self) -> Self::Guard<'_> {
-        self.mutex.lock()
-    }
-}
-
-impl<T, L: LockAfter<UninterruptibleLock> + crate::LockLevel> OrderedMutex<T, L> {
-    pub const fn new(t: T) -> Self {
-        Self { mutex: LockDepMutex::new(t) }
-    }
-
-    pub fn lock<'a, P>(&'a self, locked: &'a mut Locked<P>) -> <Self as LockFor<L>>::Guard<'a>
-    where
-        P: LockBefore<L>,
-    {
-        locked.lock(self)
-    }
-
-    pub fn lock_and<'a, P>(
-        &'a self,
-        locked: &'a mut Locked<P>,
-    ) -> (<Self as LockFor<L>>::Guard<'a>, &'a mut Locked<L>)
-    where
-        P: LockBefore<L>,
-    {
-        locked.lock_and(self)
-    }
-}
-
-/// Lock two OrderedMutex of the same level in the consistent order. Returns both
-/// guards and a new locked context.
-pub fn lock_both<'a, T, L: LockAfter<UninterruptibleLock> + crate::LockLevel, P>(
-    locked: &'a mut Locked<P>,
-    m1: &'a OrderedMutex<T, L>,
-    m2: &'a OrderedMutex<T, L>,
-) -> (crate::LockDepGuard<'a, T>, crate::LockDepGuard<'a, T>, &'a mut Locked<L>)
-where
-    P: LockBefore<L>,
-{
-    locked.lock_both_and(m1, m2)
-}
-
-/// A wrapper for an RwLock that requires a `Locked` context to acquire.
-/// This context must be of a level that precedes `L` in the lock ordering graph
-/// where `L` is a level associated with this RwLock.
-pub struct OrderedRwLock<T, L: LockAfter<UninterruptibleLock> + crate::LockLevel> {
-    rwlock: LockDepRwLock<T, L>,
-}
-
-impl<T: Default, L: LockAfter<UninterruptibleLock> + crate::LockLevel> Default
-    for OrderedRwLock<T, L>
-{
-    fn default() -> Self {
-        Self { rwlock: T::default().into() }
-    }
-}
-
-impl<T: fmt::Debug, L: LockAfter<UninterruptibleLock> + crate::LockLevel> fmt::Debug
-    for OrderedRwLock<T, L>
-{
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "OrderedRwLock({:?}, {})", self.rwlock, any::type_name::<L>())
-    }
-}
-
-impl<T, L: LockAfter<UninterruptibleLock> + crate::LockLevel> RwLockFor<L> for OrderedRwLock<T, L> {
-    type Data = T;
-    type ReadGuard<'a>
-        = crate::LockDepReadGuard<'a, T>
-    where
-        T: 'a,
-        L: 'a;
-    type WriteGuard<'a>
-        = crate::LockDepWriteGuard<'a, T>
-    where
-        T: 'a,
-        L: 'a;
-    fn read_lock(&self) -> Self::ReadGuard<'_> {
-        self.rwlock.read()
-    }
-    fn write_lock(&self) -> Self::WriteGuard<'_> {
-        self.rwlock.write()
-    }
-}
-
-impl<T, L: LockAfter<UninterruptibleLock> + crate::LockLevel> OrderedRwLock<T, L> {
-    pub const fn new(t: T) -> Self {
-        Self { rwlock: LockDepRwLock::new(t) }
-    }
-
-    pub fn read<'a, P>(&'a self, locked: &'a mut Locked<P>) -> <Self as RwLockFor<L>>::ReadGuard<'a>
-    where
-        P: LockBefore<L>,
-    {
-        locked.read_lock(self)
-    }
-
-    pub fn write<'a, P>(
-        &'a self,
-        locked: &'a mut Locked<P>,
-    ) -> <Self as RwLockFor<L>>::WriteGuard<'a>
-    where
-        P: LockBefore<L>,
-    {
-        locked.write_lock(self)
-    }
-
-    pub fn read_and<'a, P>(
-        &'a self,
-        locked: &'a mut Locked<P>,
-    ) -> (<Self as RwLockFor<L>>::ReadGuard<'a>, &'a mut Locked<L>)
-    where
-        P: LockBefore<L>,
-    {
-        locked.read_lock_and(self)
-    }
-
-    pub fn write_and<'a, P>(
-        &'a self,
-        locked: &'a mut Locked<P>,
-    ) -> (<Self as RwLockFor<L>>::WriteGuard<'a>, &'a mut Locked<L>)
-    where
-        P: LockBefore<L>,
-    {
-        locked.write_lock_and(self)
-    }
-}
-
 struct RwLockReadWrapper<'a, R>(&'a R);
 struct RwLockWriteWrapper<'a, R>(&'a R);
 
@@ -418,7 +255,6 @@ impl<'a, R: RwLockLike> MutexLike for RwLockWriteWrapper<'a, R> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::Unlocked;
 
     #[::fuchsia::test]
     fn test_lock_ordering() {
@@ -457,113 +293,10 @@ mod test {
         }
     }
 
-    mod lock_levels {
-        //! Lock ordering tree:
-        //! Unlocked -> A -> B -> C
-        //!          -> D -> E -> F
-        use crate::{LockAfter, UninterruptibleLock, Unlocked};
-        use lock_ordering_macro::lock_ordering;
-        lock_ordering! {
-            Unlocked => A,
-            A => B,
-            B => C,
-            Unlocked => D,
-            D => E,
-            E => F,
-        }
-
-        impl LockAfter<UninterruptibleLock> for A {}
-        impl LockAfter<UninterruptibleLock> for B {}
-        impl LockAfter<UninterruptibleLock> for C {}
-        impl LockAfter<UninterruptibleLock> for D {}
-        impl LockAfter<UninterruptibleLock> for E {}
-        impl LockAfter<UninterruptibleLock> for F {}
-    }
-
-    use lock_levels::{A, B, C, D, E, F};
-
-    #[test]
-    fn test_ordered_mutex() {
-        let a: OrderedMutex<u8, A> = OrderedMutex::new(15);
-        let _b: OrderedMutex<u16, B> = OrderedMutex::new(30);
-        let c: OrderedMutex<u32, C> = OrderedMutex::new(45);
-
-        #[allow(
-            clippy::undocumented_unsafe_blocks,
-            reason = "Force documented unsafe blocks in Starnix"
-        )]
-        let locked = unsafe { Unlocked::new() };
-
-        let (a_data, mut next_locked) = a.lock_and(locked);
-        let c_data = c.lock(&mut next_locked);
-
-        // This won't compile
-        //let _b_data = _b.lock(locked);
-        //let _b_data = _b.lock(&mut next_locked);
-
-        assert_eq!(&*a_data, &15);
-        assert_eq!(&*c_data, &45);
-    }
-    #[test]
-    fn test_ordered_rwlock() {
-        let d: OrderedRwLock<u8, D> = OrderedRwLock::new(15);
-        let _e: OrderedRwLock<u16, E> = OrderedRwLock::new(30);
-        let f: OrderedRwLock<u32, F> = OrderedRwLock::new(45);
-
-        #[allow(
-            clippy::undocumented_unsafe_blocks,
-            reason = "Force documented unsafe blocks in Starnix"
-        )]
-        let locked = unsafe { Unlocked::new() };
-        {
-            let (d_data, mut next_locked) = d.write_and(locked);
-            let f_data = f.read(&mut next_locked);
-
-            // This won't compile
-            //let _e_data = _e.read(locked);
-            //let _e_data = _e.read(&mut next_locked);
-
-            assert_eq!(&*d_data, &15);
-            assert_eq!(&*f_data, &45);
-        }
-        {
-            let (d_data, mut next_locked) = d.read_and(locked);
-            let f_data = f.write(&mut next_locked);
-
-            // This won't compile
-            //let _e_data = _e.write(locked);
-            //let _e_data = _e.write(&mut next_locked);
-
-            assert_eq!(&*d_data, &15);
-            assert_eq!(&*f_data, &45);
-        }
-    }
-
-    #[test]
-    fn test_lock_both() {
-        let a1: OrderedMutex<u8, A> = OrderedMutex::new(15);
-        let a2: OrderedMutex<u8, A> = OrderedMutex::new(30);
-        #[allow(
-            clippy::undocumented_unsafe_blocks,
-            reason = "Force documented unsafe blocks in Starnix"
-        )]
-        let locked = unsafe { Unlocked::new() };
-        {
-            let (a1_data, a2_data, _) = lock_both(locked, &a1, &a2);
-            assert_eq!(&*a1_data, &15);
-            assert_eq!(&*a2_data, &30);
-        }
-        {
-            let (a2_data, a1_data, _) = lock_both(locked, &a2, &a1);
-            assert_eq!(&*a1_data, &15);
-            assert_eq!(&*a2_data, &30);
-        }
-    }
-
     #[::fuchsia::test]
     fn test_ordered_rwlock_wrappers() {
-        let l1: LockDepRwLock<u8, A> = 1.into();
-        let l2: LockDepRwLock<u8, A> = 2.into();
+        let l1: RwLock<u8> = RwLock::new(1);
+        let l2: RwLock<u8> = RwLock::new(2);
 
         {
             let (g1, g2) = ordered_read_lock(&l1, &l2);
@@ -589,9 +322,9 @@ mod test {
 
     #[::fuchsia::test]
     fn test_ordered_rwlock_vec() {
-        let l1: LockDepRwLock<u8, A> = 1.into();
-        let l0: LockDepRwLock<u8, A> = 0.into();
-        let l2: LockDepRwLock<u8, A> = 2.into();
+        let l1: RwLock<u8> = RwLock::new(1);
+        let l0: RwLock<u8> = RwLock::new(0);
+        let l2: RwLock<u8> = RwLock::new(2);
 
         {
             let guards = ordered_read_lock_vec(&[&l0, &l1, &l2]);

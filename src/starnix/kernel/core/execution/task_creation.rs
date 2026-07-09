@@ -10,9 +10,7 @@ use crate::task::{
     SeccompState, Task, TaskBuilder, ThreadGroup, ThreadGroupParent, ThreadGroupWriteGuard,
 };
 use crate::vfs::{FdTable, FsContext};
-use starnix_sync::{
-    LockBefore, Locked, ProcessGroupState, RwLockWriteGuard, TaskRelease, Unlocked, allow_subclass,
-};
+use starnix_sync::{RwLockWriteGuard, allow_subclass};
 use starnix_task_command::TaskCommand;
 use starnix_types::arch::ArchWidth;
 use starnix_types::release_on_error;
@@ -36,8 +34,7 @@ pub struct TaskInfo {
     pub memory_manager: Option<Arc<MemoryManager>>,
 }
 
-pub fn create_zircon_process<L>(
-    locked: &mut Locked<L>,
+pub fn create_zircon_process(
     kernel: &Arc<Kernel>,
     parent: Option<ThreadGroupWriteGuard<'_>>,
     pid: pid_t,
@@ -45,10 +42,7 @@ pub fn create_zircon_process<L>(
     process_group: Arc<ProcessGroup>,
     signal_actions: Arc<SignalActions>,
     name: TaskCommand,
-) -> Result<TaskInfo, Errno>
-where
-    L: LockBefore<ProcessGroupState>,
-{
+) -> Result<TaskInfo, Errno> {
     // Don't allow new processes to be created once the kernel has started shutting down.
     if kernel.is_shutting_down() {
         return error!(EBUSY);
@@ -63,7 +57,6 @@ where
         .map_err(|status| from_status_like_fdio!(status))?;
 
     let thread_group = ThreadGroup::new(
-        locked,
         kernel.clone(),
         process,
         root_vmar,
@@ -140,16 +133,12 @@ fn create_shared(
 /// Otherwise the task will inherit its LSM state from the "init" task.
 ///
 /// This function creates an underlying Zircon process to host the new task.
-pub fn create_init_child_process<L>(
-    locked: &mut Locked<L>,
+pub fn create_init_child_process(
     kernel: &Arc<Kernel>,
     initial_name: TaskCommand,
     mut creds: Credentials,
     seclabel: Option<&CString>,
-) -> Result<TaskBuilder, Errno>
-where
-    L: LockBefore<TaskRelease>,
-{
+) -> Result<TaskBuilder, Errno> {
     let init_task = kernel.get_init_task()?;
 
     let fs = init_task.running_state()?.fs().fork();
@@ -167,13 +156,11 @@ where
     creds.security_state = security_state;
 
     let task = create_task(
-        locked,
         kernel,
         initial_name.clone(),
         fs,
-        |locked, pid, process_group| {
+        |pid, process_group| {
             create_zircon_process(
-                locked.cast_locked::<TaskRelease>(),
                 kernel,
                 None,
                 pid,
@@ -197,8 +184,8 @@ where
     }
     // A child process created via fork(2) inherits its parent's
     // resource limits.  Resource limits are preserved across execve(2).
-    let limits = init_task.thread_group().limits.lock(locked.cast_locked::<TaskRelease>()).clone();
-    *task.thread_group().limits.lock(locked.cast_locked::<TaskRelease>()) = limits;
+    let limits = init_task.thread_group().limits.lock().clone();
+    *task.thread_group().limits.lock() = limits;
     Ok(task)
 }
 
@@ -221,7 +208,6 @@ where
 /// pass the `pid` as an argument to clarify that it's the callers responsibility to determine
 /// the pid for the process.
 pub fn create_init_process(
-    locked: &mut Locked<Unlocked>,
     kernel: &Arc<Kernel>,
     pid: pid_t,
     initial_name: TaskCommand,
@@ -231,15 +217,13 @@ pub fn create_init_process(
     assert_eq!(pid, 1);
     let pids = kernel.pids.write();
     let builder = create_task_with_pid(
-        locked,
         kernel,
         pids,
         pid,
         initial_name.clone(),
         fs,
-        |locked, pid, process_group| {
+        |pid, process_group| {
             create_zircon_process(
-                locked,
                 kernel,
                 None,
                 pid,
@@ -267,26 +251,13 @@ pub fn create_init_process(
 ///
 /// Rather than calling this function directly, consider using `kthreads`, which provides both
 /// a system task and a threadpool on which the task can do work.
-pub fn create_system_task<L>(
-    locked: &mut Locked<L>,
-    kernel: &Arc<Kernel>,
-    fs: Arc<FsContext>,
-) -> Result<CurrentTask, Errno>
-where
-    L: LockBefore<TaskRelease>,
-{
+pub fn create_system_task(kernel: &Arc<Kernel>, fs: Arc<FsContext>) -> Result<CurrentTask, Errno> {
     let builder = create_task(
-        locked,
         kernel,
         TaskCommand::new(b"kthreadd"),
         fs,
-        |locked, pid, process_group| {
-            let thread_group = ThreadGroup::for_system(
-                locked.cast_locked::<TaskRelease>(),
-                kernel.clone(),
-                pid,
-                process_group,
-            );
+        |pid, process_group| {
+            let thread_group = ThreadGroup::for_system(kernel.clone(), pid, process_group);
             Ok(TaskInfo { thread_group, memory_manager: None }.into())
         },
         Credentials::root(),
@@ -294,8 +265,7 @@ where
     Ok(builder.into())
 }
 
-pub fn create_task<F, L>(
-    locked: &mut Locked<L>,
+pub fn create_task<F>(
     kernel: &Kernel,
     initial_name: TaskCommand,
     root_fs: Arc<FsContext>,
@@ -303,26 +273,14 @@ pub fn create_task<F, L>(
     creds: Arc<Credentials>,
 ) -> Result<TaskBuilder, Errno>
 where
-    F: FnOnce(&mut Locked<L>, i32, Arc<ProcessGroup>) -> Result<TaskInfo, Errno>,
-    L: LockBefore<TaskRelease>,
+    F: FnOnce(i32, Arc<ProcessGroup>) -> Result<TaskInfo, Errno>,
 {
     let mut pids = kernel.pids.write();
     let pid = pids.allocate_pid();
-    create_task_with_pid(
-        locked,
-        kernel,
-        pids,
-        pid,
-        initial_name,
-        root_fs,
-        task_info_factory,
-        creds,
-        &[],
-    )
+    create_task_with_pid(kernel, pids, pid, initial_name, root_fs, task_info_factory, creds, &[])
 }
 
-fn create_task_with_pid<F, L>(
-    locked: &mut Locked<L>,
+fn create_task_with_pid<F>(
     kernel: &Kernel,
     mut pids: RwLockWriteGuard<'_, PidTable>,
     pid: pid_t,
@@ -333,18 +291,16 @@ fn create_task_with_pid<F, L>(
     rlimits: &[(Resource, u64)],
 ) -> Result<TaskBuilder, Errno>
 where
-    F: FnOnce(&mut Locked<L>, i32, Arc<ProcessGroup>) -> Result<TaskInfo, Errno>,
-    L: LockBefore<TaskRelease>,
+    F: FnOnce(i32, Arc<ProcessGroup>) -> Result<TaskInfo, Errno>,
 {
     debug_assert!(pids.get_task(pid).is_err());
 
     let process_group = ProcessGroup::new(pid, None);
     pids.add_process_group(process_group.clone());
 
-    let TaskInfo { thread_group, memory_manager } =
-        task_info_factory(locked, pid, process_group.clone())?;
+    let TaskInfo { thread_group, memory_manager } = task_info_factory(pid, process_group.clone())?;
 
-    process_group.insert(locked.cast_locked::<TaskRelease>(), &thread_group);
+    process_group.insert(&thread_group);
 
     // > The timer slack values of init (PID 1), the ancestor of all processes, are 50,000
     // > nanoseconds (50 microseconds).  The timer slack value is inherited by a child created
@@ -375,13 +331,13 @@ where
         ),
         thread_state: Default::default(),
     };
-    release_on_error!(builder, locked, {
+    release_on_error!(builder, {
         builder.thread_group().add(Arc::clone(&builder.task))?;
         for (resource, limit) in rlimits {
             builder
                 .thread_group()
                 .limits
-                .lock(locked.cast_locked::<TaskRelease>())
+                .lock()
                 .set(*resource, rlimit { rlim_cur: *limit, rlim_max: *limit });
         }
 
@@ -394,14 +350,10 @@ where
 /// Create a kernel task in the same ThreadGroup as the given `system_task`.
 ///
 /// There is no underlying Zircon thread to host the task.
-pub fn create_kernel_thread<L>(
-    locked: &mut Locked<L>,
+pub fn create_kernel_thread(
     system_task: &Task,
     initial_name: TaskCommand,
-) -> Result<CurrentTask, Errno>
-where
-    L: LockBefore<TaskRelease>,
-{
+) -> Result<CurrentTask, Errno> {
     let mut pids = system_task.kernel().pids.write();
     let pid = pids.allocate_pid();
 
@@ -449,7 +401,7 @@ where
         default_timerslack_ns,
     ))
     .into();
-    release_on_error!(current_task, locked, {
+    release_on_error!(current_task, {
         current_task.thread_group().add(Arc::clone(&current_task.task))?;
         pids.add_task(Arc::clone(&current_task.task));
         Ok(())

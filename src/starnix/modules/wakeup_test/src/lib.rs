@@ -23,7 +23,7 @@
 use starnix_core::device::DeviceMode;
 use starnix_core::device::kobject::DeviceMetadata;
 use starnix_core::task::CurrentTask;
-use starnix_sync::{Locked, Unlocked};
+
 use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::Errno;
 
@@ -34,16 +34,12 @@ mod tracing;
 
 pub use device::WakeupTestDevice;
 
-pub fn register_wakeup_test_device(
-    locked: &mut Locked<Unlocked>,
-    system_task: &CurrentTask,
-) -> Result<(), Errno> {
+pub fn register_wakeup_test_device(system_task: &CurrentTask) -> Result<(), Errno> {
     let kernel = system_task.kernel();
     let registry = &kernel.device_registry;
     let misc_class = registry.objects.misc_class();
     let device = WakeupTestDevice::new(system_task);
     registry.register_device(
-        locked,
         system_task.kernel(),
         "wakeup_test0".into(),
         DeviceMetadata::new("wakeup_test0".into(), DeviceId::new(0, 0), DeviceMode::Char),

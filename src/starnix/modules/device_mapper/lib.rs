@@ -25,10 +25,7 @@ use starnix_core::vfs::{
 };
 use starnix_ext::map_ext::EntryExt;
 use starnix_logging::{log_trace, track_stub};
-use starnix_sync::{
-    DeviceMapperRegistryDevicesLock, DmDeviceStateLock, FileOpsCore, LockDepMutex,
-    LockEqualOrBefore, Locked, Unlocked,
-};
+use starnix_sync::{DeviceMapperRegistryDevicesLock, DmDeviceStateLock, LockDepMutex};
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_uapi::auth::CAP_SYS_ADMIN;
 use starnix_uapi::device_id::{DEVICE_MAPPER_MAJOR, DeviceId, LOOP_MAJOR};
@@ -74,9 +71,8 @@ bitflags! {
     }
 }
 
-pub fn device_mapper_init(locked: &mut Locked<Unlocked>, kernel: &Kernel) -> Result<(), Errno> {
+pub fn device_mapper_init(kernel: &Kernel) -> Result<(), Errno> {
     kernel.device_registry.register_major(
-        locked,
         "device-mapper".into(),
         DeviceMode::Block,
         DEVICE_MAPPER_MAJOR,
@@ -135,37 +131,26 @@ impl DeviceMapperRegistry {
         if let Some((_, device)) = entry { Ok(device.clone()) } else { error!(ENODEV) }
     }
 
-    fn get_or_create_by_minor<L>(
+    fn get_or_create_by_minor(
         &self,
-        locked: &mut Locked<L>,
         current_task: &CurrentTask,
         minor: u32,
-    ) -> Result<Arc<DmDevice>, Errno>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
+    ) -> Result<Arc<DmDevice>, Errno> {
         self.devices
             .lock()
             .entry(minor)
-            .or_insert_with_fallible(|| DmDevice::new(locked, current_task, minor))
+            .or_insert_with_fallible(|| DmDevice::new(current_task, minor))
             .cloned()
     }
 
     /// Finds a free minor number in the DeviceMapperRegistry. Returns that minor number along with
     /// a new DmDevice associated with that minor number.
-    fn find<L>(
-        &self,
-        locked: &mut Locked<L>,
-        current_task: &CurrentTask,
-    ) -> Result<Arc<DmDevice>, Errno>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
+    fn find(&self, current_task: &CurrentTask) -> Result<Arc<DmDevice>, Errno> {
         let mut devices = self.devices.lock();
         for minor in 0..u32::MAX {
             match devices.entry(minor) {
                 Entry::Vacant(e) => {
-                    let device = DmDevice::new(locked, current_task, minor)?;
+                    let device = DmDevice::new(current_task, minor)?;
                     e.insert(device.clone());
                     return Ok(device);
                 }
@@ -176,22 +161,18 @@ impl DeviceMapperRegistry {
     }
 
     /// Removes `device` from both the Device and DeviceMapper registries.
-    fn remove<L>(
+    fn remove(
         &self,
-        locked: &mut Locked<L>,
         current_task: &CurrentTask,
         devices: &mut BTreeMap<u32, Arc<DmDevice>>,
         minor: u32,
         k_device: &Option<Device>,
-    ) -> Result<(), Errno>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
+    ) -> Result<(), Errno> {
         devices.remove(&minor).ok_or_else(|| errno!(ENODEV))?;
         let kernel = current_task.kernel();
         let registry = &kernel.device_registry;
         if let Some(dev) = &k_device {
-            registry.remove_device(locked, current_task, dev.clone());
+            registry.remove_device(current_task, dev.clone());
         } else {
             return error!(EINVAL);
         }
@@ -205,14 +186,7 @@ pub struct DmDevice {
 }
 
 impl DmDevice {
-    fn new<L>(
-        locked: &mut Locked<L>,
-        current_task: &CurrentTask,
-        minor: u32,
-    ) -> Result<Arc<Self>, Errno>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
+    fn new(current_task: &CurrentTask, minor: u32) -> Result<Arc<Self>, Errno> {
         let kernel = current_task.kernel();
         let registry = &kernel.device_registry;
         let dm_device_name = FsString::from(format!("dm-{minor}"));
@@ -223,7 +197,6 @@ impl DmDevice {
         });
         let device_weak = Arc::<DmDevice>::downgrade(&device);
         let k_device = registry.add_device(
-            locked,
             current_task.kernel(),
             dm_device_name.as_ref(),
             DeviceMetadata::new(
@@ -274,7 +247,6 @@ impl FileOps for DmDeviceFile {
 
     fn write(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         _offset: usize,
@@ -285,7 +257,6 @@ impl FileOps for DmDeviceFile {
 
     fn read(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         current_task: &CurrentTask,
         offset: usize,
@@ -322,7 +293,6 @@ impl FileOps for DmDeviceFile {
                             return error!(EINVAL);
                         }
                         let read = verity_target.block_device.ops().read(
-                            locked,
                             &verity_target.block_device,
                             current_task,
                             offset - start,
@@ -350,7 +320,6 @@ impl FileOps for DmDeviceFile {
 
     fn get_memory(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         current_task: &CurrentTask,
         length: Option<usize>,
@@ -372,7 +341,6 @@ impl FileOps for DmDeviceFile {
             }
             match &active_table.targets[0].target_type {
                 TargetType::Verity(verity_target) => verity_target.block_device.ops().get_memory(
-                    locked,
                     &verity_target.block_device,
                     current_task,
                     length,
@@ -389,7 +357,6 @@ impl FileOps for DmDeviceFile {
 
     fn ioctl(
         &self,
-        locked: &mut Locked<Unlocked>,
         _file: &FileObject,
         current_task: &CurrentTask,
         request: u32,
@@ -403,7 +370,6 @@ impl FileOps for DmDeviceFile {
                     let target = &mut active_table.targets[0];
                     if let TargetType::Verity(args) = &mut target.target_type {
                         return args.block_device.ops().ioctl(
-                            locked,
                             &*args.block_device,
                             current_task,
                             request,
@@ -417,12 +383,7 @@ impl FileOps for DmDeviceFile {
         error!(ENOTTY)
     }
 
-    fn close(
-        self: Box<Self>,
-        _locked: &mut Locked<FileOpsCore>,
-        _file: &FileObjectState,
-        _current_task: &CurrentTask,
-    ) {
+    fn close(self: Box<Self>, _file: &FileObjectState, _current_task: &CurrentTask) {
         let mut state = self.device.state.lock();
         state.open_count -= 1;
     }
@@ -639,23 +600,19 @@ impl VerityTarget {
 // either /dev/loop# of MAJOR:MINOR
 
 fn open_device(
-    locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
     device_path: String,
 ) -> Result<(u64, FileHandle), Errno> {
     let device_path_vec: Vec<&str> = device_path.split(":").collect();
     if device_path_vec.len() == 1 {
-        let dev = current_task.open_file(locked, device_path.as_str().into(), OpenFlags::RDONLY)?;
+        let dev = current_task.open_file(device_path.as_str().into(), OpenFlags::RDONLY)?;
         let loop_device_vec: Vec<&str> = device_path.split("loop").collect();
         let minor = loop_device_vec[1].parse::<u64>().unwrap();
         Ok((minor, dev))
     } else {
         let minor = device_path_vec[1].parse::<u64>().unwrap();
-        let dev = current_task.open_file(
-            locked,
-            format!("/dev/loop{minor}").as_str().into(),
-            OpenFlags::RDONLY,
-        )?;
+        let dev = current_task
+            .open_file(format!("/dev/loop{minor}").as_str().into(), OpenFlags::RDONLY)?;
         Ok((minor, dev))
     }
 }
@@ -680,7 +637,6 @@ fn size_of_merkle_tree_preceding_leaf_nodes(
 // Parse the parameter string into a TargetType.
 
 fn parse_parameter_string(
-    locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
     target_type: &str,
     parameter_str: String,
@@ -723,14 +679,13 @@ fn parse_parameter_string(
                 }
             }
 
-            let (minor, block_device) =
-                open_device(locked, current_task, params.block_device_path)?;
+            let (minor, block_device) = open_device(current_task, params.block_device_path)?;
             params.block_device_path = format!("{LOOP_MAJOR}:{minor}");
 
             let (minor, hash_device) = if params.hash_device_path == params.block_device_path {
                 (minor, block_device.clone())
             } else {
-                open_device(locked, current_task, params.hash_device_path)?
+                open_device(current_task, params.hash_device_path)?
             };
             params.hash_device_path = format!("{LOOP_MAJOR}:{minor}");
 
@@ -752,14 +707,8 @@ fn parse_parameter_string(
                     hash_size,
                     params.hash_block_size,
                 );
-            let locked = locked.cast_locked::<FileOpsCore>();
-            let bytes_read = hash_device.ops().read(
-                locked,
-                &hash_device,
-                current_task,
-                offset as usize,
-                &mut buffer,
-            )?;
+            let bytes_read =
+                hash_device.ops().read(&hash_device, current_task, offset as usize, &mut buffer)?;
             debug_assert!(bytes_read == leaf_nodes_size as usize);
 
             let leaf_hashes: Vec<u8> = buffer.into();
@@ -792,7 +741,6 @@ impl FileOps for DeviceMapper {
 
     fn ioctl(
         &self,
-        locked: &mut Locked<Unlocked>,
         _file: &FileObject,
         current_task: &CurrentTask,
         request: u32,
@@ -809,7 +757,7 @@ impl FileOps for DeviceMapper {
                 if info.name == [0; DM_NAME_LEN as usize] || info.version == [0; 3] {
                     return error!(EINVAL);
                 }
-                let dm_device = self.registry.find(locked, current_task)?;
+                let dm_device = self.registry.find(current_task)?;
                 let mut state = dm_device.state.lock();
                 check_version_compatibility(info.version[0], info.version[1])?;
                 state.set_version();
@@ -872,7 +820,6 @@ impl FileOps for DeviceMapper {
                         status: target.status,
                         name: target.target_type,
                         target_type: parse_parameter_string(
-                            locked,
                             current_task,
                             &target_type.to_string(),
                             parameters.to_string(),
@@ -957,7 +904,6 @@ impl FileOps for DeviceMapper {
                     return error!(ENOTSUP);
                 }
                 self.registry.remove(
-                    locked,
                     current_task,
                     &mut devices,
                     dm_device.number.minor(),
@@ -1221,7 +1167,6 @@ impl FileOps for DeviceMapper {
 }
 
 pub fn create_device_mapper(
-    _locked: &mut Locked<FileOpsCore>,
     current_task: &CurrentTask,
     _id: DeviceId,
     _node: &NamespaceNode,
@@ -1231,7 +1176,6 @@ pub fn create_device_mapper(
 }
 
 fn get_or_create_dm_device(
-    locked: &mut Locked<FileOpsCore>,
     current_task: &CurrentTask,
     id: DeviceId,
     _node: &NamespaceNode,
@@ -1241,6 +1185,6 @@ fn get_or_create_dm_device(
         .kernel()
         .expando
         .get::<DeviceMapperRegistry>()
-        .get_or_create_by_minor(locked, current_task, id.minor())?
+        .get_or_create_by_minor(current_task, id.minor())?
         .create_file_ops())
 }

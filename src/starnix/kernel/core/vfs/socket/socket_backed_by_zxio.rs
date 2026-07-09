@@ -23,7 +23,6 @@ use fidl_fuchsia_posix_socket_packet as fposix_socket_packet;
 use fidl_fuchsia_posix_socket_raw as fposix_socket_raw;
 use linux_uapi::{IP_MULTICAST_ALL, IP_PASSSEC};
 use starnix_logging::{log_warn, track_stub};
-use starnix_sync::{FileOpsCore, Locked, Unlocked};
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_uapi::auth::{CAP_NET_ADMIN, CAP_NET_RAW};
 use starnix_uapi::errors::{ENOTSUP, Errno, ErrnoCode};
@@ -127,7 +126,6 @@ pub struct ZxioBackedSocket {
 
 impl ZxioBackedSocket {
     pub fn new(
-        locked: &mut Locked<FileOpsCore>,
         current_task: &CurrentTask,
         domain: SocketDomain,
         socket_type: SocketType,
@@ -167,7 +165,6 @@ impl ZxioBackedSocket {
 
         if matches!(domain, SocketDomain::Inet | SocketDomain::Inet6) {
             match current_task.kernel().ebpf_state.attachments.root_cgroup().run_sock_prog(
-                locked,
                 current_task,
                 SockOp::Create,
                 domain,
@@ -194,7 +191,6 @@ impl ZxioBackedSocket {
 
     fn sendmsg(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         socket: &Socket,
         current_task: &CurrentTask,
         addr: &Option<SocketAddress>,
@@ -220,7 +216,7 @@ impl ZxioBackedSocket {
             (SocketDomain::Inet | SocketDomain::Inet6, SocketType::Datagram)
         ) && addr.len() > 0
         {
-            self.run_sockaddr_ebpf(locked, socket, current_task, SockAddrOp::UdpSendMsg, &addr)?;
+            self.run_sockaddr_ebpf(socket, current_task, SockAddrOp::UdpSendMsg, &addr)?;
         }
 
         let map_errors = |res: Result<Result<usize, ZxioErrorCode>, zx::Status>| {
@@ -278,7 +274,6 @@ impl ZxioBackedSocket {
 
     fn recvmsg(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         socket: &Socket,
         current_task: &CurrentTask,
         data: &mut dyn OutputBuffer,
@@ -342,13 +337,7 @@ impl ZxioBackedSocket {
             (socket.domain, socket.socket_type),
             (SocketDomain::Inet | SocketDomain::Inet6, SocketType::Datagram)
         ) {
-            self.run_sockaddr_ebpf(
-                locked,
-                socket,
-                current_task,
-                SockAddrOp::UdpRecvMsg,
-                &info.address,
-            )?;
+            self.run_sockaddr_ebpf(socket, current_task, SockAddrOp::UdpRecvMsg, &info.address)?;
         }
 
         Ok(info)
@@ -391,7 +380,6 @@ impl ZxioBackedSocket {
 
     fn run_sockaddr_ebpf(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         socket: &Socket,
         current_task: &CurrentTask,
         op: SockAddrOp,
@@ -404,7 +392,6 @@ impl ZxioBackedSocket {
 
         let ebpf_result =
             current_task.kernel().ebpf_state.attachments.root_cgroup().run_sock_addr_prog(
-                locked,
                 current_task,
                 op,
                 socket.domain,
@@ -470,7 +457,6 @@ impl SocketOps for ZxioBackedSocket {
 
     fn connect(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         socket: &SocketHandle,
         current_task: &CurrentTask,
         peer: SocketPeer,
@@ -478,9 +464,7 @@ impl SocketOps for ZxioBackedSocket {
         match peer {
             SocketPeer::Address(
                 ref address @ (SocketAddress::Inet(_) | SocketAddress::Inet6(_)),
-            ) => {
-                self.run_sockaddr_ebpf(locked, socket, current_task, SockAddrOp::Connect, address)?
-            }
+            ) => self.run_sockaddr_ebpf(socket, current_task, SockAddrOp::Connect, address)?,
             _ => (),
         };
 
@@ -498,25 +482,14 @@ impl SocketOps for ZxioBackedSocket {
         }
     }
 
-    fn listen(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        _socket: &Socket,
-        backlog: i32,
-        _credentials: ucred,
-    ) -> Result<(), Errno> {
+    fn listen(&self, _socket: &Socket, backlog: i32, _credentials: ucred) -> Result<(), Errno> {
         self.zxio
             .listen(backlog)
             .map_err(|status| from_status_like_fdio!(status))?
             .map_err(|out_code| errno_from_zxio_code!(out_code))
     }
 
-    fn accept(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        socket: &Socket,
-        current_task: &CurrentTask,
-    ) -> Result<SocketHandle, Errno> {
+    fn accept(&self, socket: &Socket, current_task: &CurrentTask) -> Result<SocketHandle, Errno> {
         let zxio = self
             .zxio
             .accept()
@@ -533,12 +506,11 @@ impl SocketOps for ZxioBackedSocket {
 
     fn bind(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         socket: &Socket,
         current_task: &CurrentTask,
         socket_address: SocketAddress,
     ) -> Result<(), Errno> {
-        self.run_sockaddr_ebpf(locked, socket, current_task, SockAddrOp::Bind, &socket_address)?;
+        self.run_sockaddr_ebpf(socket, current_task, SockAddrOp::Bind, &socket_address)?;
 
         match socket_address {
             SocketAddress::Inet(addr)
@@ -554,7 +526,6 @@ impl SocketOps for ZxioBackedSocket {
 
     fn read(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         socket: &Socket,
         current_task: &CurrentTask,
         data: &mut dyn OutputBuffer,
@@ -566,7 +537,7 @@ impl SocketOps for ZxioBackedSocket {
             return error!(EAGAIN);
         }
 
-        let mut info = self.recvmsg(locked, socket, current_task, data, flags)?;
+        let mut info = self.recvmsg(socket, current_task, data, flags)?;
 
         let bytes_read = info.bytes_read;
 
@@ -586,7 +557,6 @@ impl SocketOps for ZxioBackedSocket {
 
     fn write(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         socket: &Socket,
         current_task: &CurrentTask,
         data: &mut dyn InputBuffer,
@@ -604,20 +574,11 @@ impl SocketOps for ZxioBackedSocket {
         // Ignore destination address if this is a stream socket.
         let dest_address =
             if socket.socket_type == SocketType::Stream { &None } else { dest_address };
-        self.sendmsg(
-            locked,
-            socket,
-            current_task,
-            dest_address,
-            data,
-            cmsgs,
-            SocketMessageFlags::empty(),
-        )
+        self.sendmsg(socket, current_task, dest_address, data, cmsgs, SocketMessageFlags::empty())
     }
 
     fn wait_async(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _socket: &Socket,
         _current_task: &CurrentTask,
         waiter: &Waiter,
@@ -629,32 +590,25 @@ impl SocketOps for ZxioBackedSocket {
 
     fn query_events(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _socket: &Socket,
         _current_task: &CurrentTask,
     ) -> Result<FdEvents, Errno> {
         zxio_query_events(&self.zxio)
     }
 
-    fn shutdown(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        _socket: &Socket,
-        how: SocketShutdownFlags,
-    ) -> Result<(), Errno> {
+    fn shutdown(&self, _socket: &Socket, how: SocketShutdownFlags) -> Result<(), Errno> {
         self.zxio
             .shutdown(how)
             .map_err(|status| from_status_like_fdio!(status))?
             .map_err(|out_code| errno_from_zxio_code!(out_code))
     }
 
-    fn close(&self, locked: &mut Locked<FileOpsCore>, current_task: &CurrentTask, socket: &Socket) {
+    fn close(&self, current_task: &CurrentTask, socket: &Socket) {
         if matches!(socket.domain, SocketDomain::Inet | SocketDomain::Inet6) {
             // Invoke eBPF release program (if any). Result is ignored since we cannot block
             // socket release.
             let _: SockProgramResult =
                 current_task.kernel().ebpf_state.attachments.root_cgroup().run_sock_prog(
-                    locked,
                     current_task,
                     SockOp::Release,
                     socket.domain,
@@ -670,26 +624,18 @@ impl SocketOps for ZxioBackedSocket {
 
         // TODO(https://fxbug.dev/496639039): Move sk_storage cleanup to Netstack.
         if let Ok(cookie) = cookie {
-            current_task.kernel().ebpf_state.remove_sk_storage_entries(locked, cookie);
+            current_task.kernel().ebpf_state.remove_sk_storage_entries(cookie);
         }
     }
 
-    fn getsockname(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        socket: &Socket,
-    ) -> Result<SocketAddress, Errno> {
+    fn getsockname(&self, socket: &Socket) -> Result<SocketAddress, Errno> {
         match self.zxio.getsockname() {
             Err(_) | Ok(Err(_)) => Ok(SocketAddress::default_for_domain(socket.domain)),
             Ok(Ok(addr)) => SocketAddress::from_bytes(addr),
         }
     }
 
-    fn getpeername(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        _socket: &Socket,
-    ) -> Result<SocketAddress, Errno> {
+    fn getpeername(&self, _socket: &Socket) -> Result<SocketAddress, Errno> {
         self.zxio
             .getpeername()
             .map_err(|status| from_status_like_fdio!(status))?
@@ -699,7 +645,6 @@ impl SocketOps for ZxioBackedSocket {
 
     fn setsockopt(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _socket: &Socket,
         current_task: &CurrentTask,
         level: u32,
@@ -787,7 +732,6 @@ impl SocketOps for ZxioBackedSocket {
 
     fn getsockopt(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _socket: &Socket,
         _current_task: &CurrentTask,
         level: u32,
@@ -849,7 +793,6 @@ impl SocketOps for ZxioBackedSocket {
 
     fn ioctl(
         &self,
-        _locked: &mut Locked<Unlocked>,
         socket: &Socket,
         _file: &FileObject,
         current_task: &CurrentTask,

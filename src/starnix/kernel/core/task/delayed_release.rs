@@ -5,15 +5,12 @@
 use crate::task::CurrentTask;
 use fuchsia_rcu::rcu_run_callbacks;
 use starnix_logging::log_warn;
-use starnix_sync::{FileOpsCore, Locked};
 use starnix_types::ownership::Releasable;
 use std::cell::RefCell;
 use std::ops::DerefMut;
 
 /// Register the container to be deferred released.
-pub fn register_delayed_release<
-    T: for<'a> Releasable<Context<'a> = CurrentTaskAndLocked<'a>> + 'static,
->(
+pub fn register_delayed_release<T: for<'a> Releasable<Context<'a> = &'a CurrentTask> + 'static>(
     to_release: T,
 ) {
     RELEASERS.with(|cell| {
@@ -23,22 +20,20 @@ pub fn register_delayed_release<
     });
 }
 
-impl<T> CurrentTaskAndLockedReleasable for Option<T>
+impl<T> CurrentTaskReleasable for Option<T>
 where
-    for<'a> T: Releasable<Context<'a> = CurrentTaskAndLocked<'a>>,
+    for<'a> T: Releasable<Context<'a> = &'a CurrentTask>,
 {
-    fn release_with_context(&mut self, context: CurrentTaskAndLocked<'_>) {
+    fn release_with_context(&mut self, context: &CurrentTask) {
         if let Some(this) = self.take() {
             <T as Releasable>::release(this, context);
         }
     }
 }
 
-pub type CurrentTaskAndLocked<'a> = (&'a mut Locked<FileOpsCore>, &'a CurrentTask);
-
 /// An object-safe/dyn-compatible trait to wrap `Releasable` types.
-pub trait CurrentTaskAndLockedReleasable {
-    fn release_with_context(&mut self, context: CurrentTaskAndLocked<'_>);
+pub trait CurrentTaskReleasable {
+    fn release_with_context(&mut self, context: &CurrentTask);
 }
 
 thread_local! {
@@ -50,7 +45,7 @@ thread_local! {
 #[derive(Default)]
 struct LocalReleasers {
     /// The list of entities to be deferred released.
-    releasables: Vec<Box<dyn CurrentTaskAndLockedReleasable>>,
+    releasables: Vec<Box<dyn CurrentTaskReleasable>>,
 }
 
 impl LocalReleasers {
@@ -60,12 +55,12 @@ impl LocalReleasers {
 }
 
 impl Releasable for LocalReleasers {
-    type Context<'a> = CurrentTaskAndLocked<'a>;
+    type Context<'a> = &'a CurrentTask;
 
-    fn release<'a>(self, context: CurrentTaskAndLocked<'a>) {
-        let (locked, current_task) = context;
+    fn release<'a>(self, context: &'a CurrentTask) {
+        let current_task = context;
         for mut releasable in self.releasables {
-            releasable.release_with_context((locked, current_task));
+            releasable.release_with_context(current_task);
         }
     }
 }
@@ -79,7 +74,7 @@ pub struct DelayedReleaser {}
 
 impl DelayedReleaser {
     /// Run all current delayed releases for the current thread.
-    pub fn apply<'a>(&self, locked: &'a mut Locked<FileOpsCore>, current_task: &'a CurrentTask) {
+    pub fn apply(&self, current_task: &CurrentTask) {
         let mut counter = 0u32;
         loop {
             rcu_run_callbacks();
@@ -94,7 +89,7 @@ impl DelayedReleaser {
             if releasers.is_empty() {
                 return;
             }
-            releasers.release((locked, current_task));
+            releasers.release(current_task);
             counter += 1;
             if counter == 100 {
                 log_warn!("DelayedReleaser: applied >=100 delayed releases");

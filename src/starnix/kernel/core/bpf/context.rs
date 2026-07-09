@@ -6,11 +6,11 @@ use crate::bpf::attachments::BpfSock;
 use crate::power::EbpfSuspendGuard;
 use crate::task::CurrentTask;
 use ebpf_api::{BpfSockContext, CurrentTaskContext, Map, MapValueRef, MapsContext};
-use starnix_sync::{EbpfStateLock, Locked};
+
 use starnix_uapi::{gid_t, pid_t, uid_t};
 
 enum SuspendLockState<'a> {
-    NotLocked(&'a mut Locked<EbpfStateLock>),
+    NotLocked(),
 
     #[allow(dead_code)]
     Locked(EbpfSuspendGuard<'a>),
@@ -26,25 +26,18 @@ pub struct EbpfRunContextImpl<'a> {
 }
 
 impl<'a> EbpfRunContextImpl<'a> {
-    pub fn new(locked: &'a mut Locked<EbpfStateLock>, current_task: &'a CurrentTask) -> Self {
-        Self {
-            current_task,
-            suspend_lock_state: SuspendLockState::NotLocked(locked),
-            map_refs: vec![],
-        }
+    pub fn new(current_task: &'a CurrentTask) -> Self {
+        Self { current_task, suspend_lock_state: SuspendLockState::NotLocked(), map_refs: vec![] }
     }
 }
 
 impl<'a> MapsContext<'a> for EbpfRunContextImpl<'a> {
     fn on_map_access(&mut self, map: &Map) {
-        if map.uses_locks() && matches!(self.suspend_lock_state, SuspendLockState::NotLocked(_)) {
+        if map.uses_locks() && matches!(self.suspend_lock_state, SuspendLockState::NotLocked()) {
             replace_with::replace_with(&mut self.suspend_lock_state, |state| {
-                let SuspendLockState::NotLocked(locked) = state else { unreachable!() };
+                let SuspendLockState::NotLocked() = state else { unreachable!() };
                 SuspendLockState::Locked(
-                    self.current_task
-                        .kernel()
-                        .suspend_resume_manager
-                        .acquire_ebpf_suspend_lock(locked),
+                    self.current_task.kernel().suspend_resume_manager.acquire_ebpf_suspend_lock(),
                 )
             });
         }

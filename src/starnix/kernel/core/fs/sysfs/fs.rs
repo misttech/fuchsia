@@ -12,7 +12,6 @@ use crate::vfs::{
 };
 use ebpf_api::BPF_PROG_TYPE_FUSE;
 use starnix_logging::bug_ref;
-use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Unlocked};
 use starnix_types::vfs::default_statfs;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::mode;
@@ -20,12 +19,7 @@ use starnix_uapi::{SYSFS_MAGIC, statfs};
 
 struct SysFs;
 impl FileSystemOps for SysFs {
-    fn statfs(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        _fs: &FileSystem,
-        _current_task: &CurrentTask,
-    ) -> Result<statfs, Errno> {
+    fn statfs(&self, _fs: &FileSystem, _current_task: &CurrentTask) -> Result<statfs, Errno> {
         Ok(default_statfs(SYSFS_MAGIC))
     }
     fn name(&self) -> &'static FsStr {
@@ -34,22 +28,10 @@ impl FileSystemOps for SysFs {
 }
 
 impl SysFs {
-    fn new_fs<L>(
-        locked: &mut Locked<L>,
-        kernel: &Kernel,
-        options: FileSystemOptions,
-    ) -> FileSystemHandle
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
-        let fs = FileSystem::new(
-            locked,
-            kernel,
-            CacheMode::Cached(kernel.fs_cache_config()),
-            SysFs,
-            options,
-        )
-        .expect("sysfs constructed with valid options");
+    fn new_fs(kernel: &Kernel, options: FileSystemOptions) -> FileSystemHandle {
+        let fs =
+            FileSystem::new(kernel, CacheMode::Cached(kernel.fs_cache_config()), SysFs, options)
+                .expect("sysfs constructed with valid options");
 
         fn empty_dir(_: &SimpleDirectoryMutator) {}
 
@@ -417,20 +399,16 @@ impl SysFs {
 struct SysFsHandle(FileSystemHandle);
 
 pub fn sys_fs(
-    locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
     _options: FileSystemOptions,
 ) -> Result<FileSystemHandle, Errno> {
-    Ok(get_sysfs(locked, current_task.kernel()))
+    Ok(get_sysfs(current_task.kernel()))
 }
 
-pub fn get_sysfs<L>(locked: &mut Locked<L>, kernel: &Kernel) -> FileSystemHandle
-where
-    L: LockEqualOrBefore<FileOpsCore>,
-{
+pub fn get_sysfs(kernel: &Kernel) -> FileSystemHandle {
     kernel
         .expando
-        .get_or_init(|| SysFsHandle(SysFs::new_fs(locked, kernel, FileSystemOptions::default())))
+        .get_or_init(|| SysFsHandle(SysFs::new_fs(kernel, FileSystemOptions::default())))
         .0
         .clone()
 }

@@ -9,9 +9,7 @@ use starnix_core::vfs::{
     Anon, DirEntryHandle, FileHandle, FileObject, FileObjectState, FileOps, FsStr, FsString,
     WdNumber, fileops_impl_nonseekable, fileops_impl_noop_sync,
 };
-use starnix_sync::{
-    FileOpsCore, InotifyStateLock, LockDepMutex, LockEqualOrBefore, Locked, Unlocked,
-};
+use starnix_sync::{InotifyStateLock, LockDepMutex};
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_uapi::arc_key::WeakKey;
 use starnix_uapi::errors::Errno;
@@ -82,21 +80,13 @@ impl InotifyState {
 
 impl InotifyFileObject {
     /// Allocate a new, empty inotify instance.
-    pub fn new_file<L>(
-        locked: &mut Locked<L>,
-        current_task: &CurrentTask,
-        non_blocking: bool,
-    ) -> FileHandle
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
+    pub fn new_file(current_task: &CurrentTask, non_blocking: bool) -> FileHandle {
         let flags =
             OpenFlags::RDONLY | if non_blocking { OpenFlags::NONBLOCK } else { OpenFlags::empty() };
         let max_queued_events =
             current_task.kernel().system_limits.inotify.max_queued_events.load(Ordering::Relaxed);
         assert!(max_queued_events >= 0);
         Anon::new_private_file(
-            locked,
             current_task,
             Box::new(InotifyFileObject {
                 state: InotifyState {
@@ -193,7 +183,6 @@ impl FileOps for InotifyFileObject {
 
     fn write(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         offset: usize,
@@ -205,14 +194,13 @@ impl FileOps for InotifyFileObject {
 
     fn read(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         file: &FileObject,
         current_task: &CurrentTask,
         offset: usize,
         data: &mut dyn OutputBuffer,
     ) -> Result<usize, Errno> {
         debug_assert!(offset == 0);
-        file.blocking_op(locked, current_task, FdEvents::POLLIN | FdEvents::POLLHUP, None, |_| {
+        file.blocking_op(current_task, FdEvents::POLLIN | FdEvents::POLLHUP, None, || {
             let mut state = self.state.lock();
             if let Some(front) = state.events.front() {
                 if data.available() < front.size() {
@@ -237,7 +225,6 @@ impl FileOps for InotifyFileObject {
 
     fn ioctl(
         &self,
-        _locked: &mut Locked<Unlocked>,
         _file: &FileObject,
         current_task: &CurrentTask,
         request: u32,
@@ -256,7 +243,6 @@ impl FileOps for InotifyFileObject {
 
     fn wait_async(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         waiter: &Waiter,
@@ -268,19 +254,13 @@ impl FileOps for InotifyFileObject {
 
     fn query_events(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
     ) -> Result<FdEvents, Errno> {
         if self.available() > 0 { Ok(FdEvents::POLLIN) } else { Ok(FdEvents::empty()) }
     }
 
-    fn close(
-        self: Box<Self>,
-        _locked: &mut Locked<FileOpsCore>,
-        file: &FileObjectState,
-        _current_task: &CurrentTask,
-    ) {
+    fn close(self: Box<Self>, file: &FileObjectState, _current_task: &CurrentTask) {
         let dir_entries = {
             let mut state = self.state.lock();
             state.watches.drain().map(|(_key, value)| value).collect::<Vec<_>>()
@@ -291,12 +271,7 @@ impl FileOps for InotifyFileObject {
         }
     }
 
-    fn extra_fdinfo(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        file: &FileHandle,
-        _current_task: &CurrentTask,
-    ) -> Option<FsString> {
+    fn extra_fdinfo(&self, file: &FileHandle, _current_task: &CurrentTask) -> Option<FsString> {
         let state = self.state.lock();
         let mut info = String::new();
         for dir_entry in state.watches.values() {
@@ -610,9 +585,9 @@ mod tests {
 
     #[::fuchsia::test]
     async fn notify_from_watchers() {
-        spawn_kernel_and_run_with_pkgfs(async |locked, current_task| {
+        spawn_kernel_and_run_with_pkgfs(async |current_task| {
             inotify_init(current_task.kernel());
-            let file = InotifyFileObject::new_file(locked, &current_task, true);
+            let file = InotifyFileObject::new_file(&current_task, true);
             let inotify =
                 file.downcast_file::<InotifyFileObject>().expect("failed to downcast to inotify");
 
@@ -646,8 +621,7 @@ mod tests {
 
             // Read 1 event.
             let mut buffer = VecOutputBuffer::new(DATA_SIZE);
-            let bytes_read =
-                file.read(locked, &current_task, &mut buffer).expect("read into buffer");
+            let bytes_read = file.read(&current_task, &mut buffer).expect("read into buffer");
 
             assert_eq!(bytes_read, DATA_SIZE);
             assert_eq!(inotify.available(), DATA_SIZE);
@@ -658,8 +632,7 @@ mod tests {
 
             // Read other event.
             buffer.reset();
-            let bytes_read =
-                file.read(locked, &current_task, &mut buffer).expect("read into buffer");
+            let bytes_read = file.read(&current_task, &mut buffer).expect("read into buffer");
 
             assert_eq!(bytes_read, DATA_SIZE);
             assert_eq!(inotify.available(), 0);
@@ -673,9 +646,9 @@ mod tests {
 
     #[::fuchsia::test]
     async fn notify_deletion_from_watchers() {
-        spawn_kernel_and_run_with_pkgfs(async |locked, current_task| {
+        spawn_kernel_and_run_with_pkgfs(async |current_task| {
             inotify_init(current_task.kernel());
-            let file = InotifyFileObject::new_file(locked, &current_task, true);
+            let file = InotifyFileObject::new_file(&current_task, true);
             let inotify =
                 file.downcast_file::<InotifyFileObject>().expect("failed to downcast to inotify");
 
@@ -715,9 +688,9 @@ mod tests {
 
     #[::fuchsia::test]
     async fn inotify_on_same_file() {
-        spawn_kernel_and_run_with_pkgfs(async |locked, current_task| {
+        spawn_kernel_and_run_with_pkgfs(async |current_task| {
             inotify_init(current_task.kernel());
-            let file = InotifyFileObject::new_file(locked, &current_task, true);
+            let file = InotifyFileObject::new_file(&current_task, true);
             let file_key = WeakKey::from(&file);
             let inotify =
                 file.downcast_file::<InotifyFileObject>().expect("failed to downcast to inotify");
@@ -777,9 +750,9 @@ mod tests {
 
     #[::fuchsia::test]
     async fn coalesce_events() {
-        spawn_kernel_and_run_with_pkgfs(async |locked, current_task| {
+        spawn_kernel_and_run_with_pkgfs(async |current_task| {
             inotify_init(current_task.kernel());
-            let file = InotifyFileObject::new_file(locked, &current_task, true);
+            let file = InotifyFileObject::new_file(&current_task, true);
             let inotify =
                 file.downcast_file::<InotifyFileObject>().expect("failed to downcast to inotify");
 

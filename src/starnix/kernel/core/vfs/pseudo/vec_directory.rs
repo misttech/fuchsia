@@ -7,7 +7,6 @@ use crate::vfs::{
     DirectoryEntryType, DirentSink, FileObject, FileOps, FsString, emit_dotdot,
     fileops_impl_directory, fileops_impl_noop_sync, fileops_impl_unbounded_seek,
 };
-use starnix_sync::{FileOpsCore, Locked};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::ino_t;
 
@@ -40,7 +39,6 @@ impl FileOps for VecDirectory {
 
     fn readdir(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         file: &FileObject,
         _current_task: &CurrentTask,
         sink: &mut dyn DirentSink,

@@ -266,7 +266,6 @@ mod tests {
     use crate::signals::{SignalDetail, dequeue_signal, restore_from_signal_handler};
     use crate::task::CurrentTask;
     use crate::testing::spawn_kernel_and_run;
-    use starnix_sync::{Locked, Unlocked};
     use starnix_uapi::errors::{EINTR, ERESTARTSYS};
     use starnix_uapi::file_mode::Access;
     use starnix_uapi::signals::{SIGUSR1, SIGUSR2};
@@ -286,7 +285,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn syscall_restart_adjusts_instruction_pointer_and_rax() {
-        spawn_kernel_and_run_with_stack(|locked, current_task| {
+        spawn_kernel_and_run_with_stack(|current_task| {
             // Register the signal action.
             current_task.thread_group().signal_actions.set(
                 SIGUSR1,
@@ -323,7 +322,7 @@ mod tests {
             ));
 
             // Process the signal.
-            dequeue_signal(locked, current_task);
+            dequeue_signal(current_task);
 
             // The instruction pointer should have changed to the signal handling address.
             assert_eq!(current_task.thread_state.registers.ip, SA_HANDLER_ADDRESS.ptr() as u64);
@@ -360,7 +359,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn syscall_nested_restart() {
-        spawn_kernel_and_run_with_stack(|locked, current_task| {
+        spawn_kernel_and_run_with_stack(|current_task| {
             // Register the signal actions.
             current_task.thread_group().signal_actions.set(
                 SIGUSR1,
@@ -406,7 +405,7 @@ mod tests {
             ));
 
             // Process the signal.
-            dequeue_signal(locked, current_task);
+            dequeue_signal(current_task);
 
             // The instruction pointer should have changed to the signal handling address.
             assert_eq!(current_task.thread_state.registers.ip, SA_HANDLER_ADDRESS.ptr() as u64);
@@ -437,7 +436,7 @@ mod tests {
             ));
 
             // Process the signal.
-            dequeue_signal(locked, current_task);
+            dequeue_signal(current_task);
 
             // The instruction pointer should have changed to the signal handling address.
             assert_eq!(current_task.thread_state.registers.ip, SA_HANDLER2_ADDRESS.ptr() as u64);
@@ -496,7 +495,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn syscall_does_not_restart_if_signal_action_has_no_sa_restart_flag() {
-        spawn_kernel_and_run_with_stack(|locked, current_task| {
+        spawn_kernel_and_run_with_stack(|current_task| {
             // Register the signal action.
             current_task.thread_group().signal_actions.set(
                 SIGUSR1,
@@ -533,7 +532,7 @@ mod tests {
             ));
 
             // Process the signal.
-            dequeue_signal(locked, current_task);
+            dequeue_signal(current_task);
 
             // The instruction pointer should have changed to the signal handling address.
             assert_eq!(current_task.thread_state.registers.ip, SA_HANDLER_ADDRESS.ptr() as u64);
@@ -565,9 +564,9 @@ mod tests {
     /// Creates a kernel and initial task, giving the task a stack.
     fn spawn_kernel_and_run_with_stack<F>(callback: F) -> impl Future<Output = ()>
     where
-        F: FnOnce(&mut Locked<Unlocked>, &mut CurrentTask) + Send + Sync + 'static,
+        F: FnOnce(&mut CurrentTask) + Send + Sync + 'static,
     {
-        spawn_kernel_and_run(async |locked, current_task| {
+        spawn_kernel_and_run(async |current_task| {
             const STACK_SIZE: usize = 0x1000;
 
             // Give the task a stack.
@@ -592,7 +591,7 @@ mod tests {
             let stack_address = (stack_base + (STACK_SIZE - 8)).expect("OOB memory access.");
             current_task.thread_state.registers.rsp = stack_address.ptr() as u64;
 
-            callback(locked, current_task);
+            callback(current_task);
         })
     }
 }

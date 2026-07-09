@@ -6,9 +6,7 @@ use crate::mm::memory::MemoryObject;
 use crate::mm::{CompareExchangeResult, ProtectionFlags};
 use crate::task::{CurrentTask, EventHandler, SignalHandler, SignalHandlerInner, Task, Waiter};
 use futures::channel::oneshot;
-use starnix_sync::{
-    FutexTableStateLock, InterruptibleEvent, LockBefore, Locked, OrderedMutex, Unlocked,
-};
+use starnix_sync::{FutexTableStateLock, InterruptibleEvent, LockDepMutex};
 use starnix_types::futex_address::FutexAddress;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::user_address::UserAddress;
@@ -27,12 +25,12 @@ pub struct FutexTable<Key: FutexKey> {
     /// The futexes associated with each address in each VMO.
     ///
     /// This HashMap is populated on-demand when futexes are used.
-    state: OrderedMutex<FutexTableState<Key>, FutexTableStateLock>,
+    state: LockDepMutex<FutexTableState<Key>, FutexTableStateLock>,
 }
 
 impl<Key: FutexKey> Default for FutexTable<Key> {
     fn default() -> Self {
-        Self { state: OrderedMutex::new(FutexTableState::default()) }
+        Self { state: LockDepMutex::new(FutexTableState::default()) }
     }
 }
 
@@ -42,7 +40,6 @@ impl<Key: FutexKey> FutexTable<Key> {
     /// See FUTEX_WAIT when passed a deadline in CLOCK_REALTIME.
     pub fn wait_boot(
         &self,
-        locked: &mut Locked<Unlocked>,
         current_task: &CurrentTask,
         addr: UserAddress,
         value: u32,
@@ -51,7 +48,7 @@ impl<Key: FutexKey> FutexTable<Key> {
         timer_slack: zx::BootDuration,
     ) -> Result<(), Errno> {
         let addr = FutexAddress::try_from(addr)?;
-        let mut state = self.state.lock(locked);
+        let mut state = self.state.lock();
         // As the state is locked, no wake can happen before the waiter is registered.
         // If the addr is remapped, we will read stale data, but we will not miss a futex wake.
         // Acquire ordering to synchronize with userspace modifications to the value on other
@@ -80,31 +77,27 @@ impl<Key: FutexKey> FutexTable<Key> {
             notifiable: FutexNotifiable::new_internal_boot(Arc::downgrade(&waiter)),
         });
         std::mem::drop(state);
-        waiter.wait(locked, current_task).inspect_err(|_| {
+        waiter.wait(current_task).inspect_err(|_| {
             // If wait returned an error (e.g., ETIMEDOUT, EINTR), we must explicitly
             // remove our waiter from the queue to prevent a memory leak.
             // If it succeeded, the waker has already removed us from the queue.
-            self.state.lock(locked).remove_boot_waiter_from_queue(key, &waiter);
+            self.state.lock().remove_boot_waiter_from_queue(key, &waiter);
         })
     }
 
     /// Wait on the futex at the given address.
     ///
     /// See FUTEX_WAIT.
-    pub fn wait<L>(
+    pub fn wait(
         &self,
-        locked: &mut Locked<L>,
         current_task: &CurrentTask,
         addr: UserAddress,
         value: u32,
         mask: u32,
         deadline: zx::MonotonicInstant,
-    ) -> Result<(), Errno>
-    where
-        L: LockBefore<FutexTableStateLock>,
-    {
+    ) -> Result<(), Errno> {
         let addr = FutexAddress::try_from(addr)?;
-        let mut state = self.state.lock(locked);
+        let mut state = self.state.lock();
         // As the state is locked, no wake can happen before the waiter is registered.
         // If the addr is remapped, we will read stale data, but we will not miss a futex wake.
         // Acquire ordering to synchronize with userspace modifications to the value on other
@@ -127,7 +120,7 @@ impl<Key: FutexKey> FutexTable<Key> {
             // If block_until returned an error (e.g., ETIMEDOUT, EINTR), we must explicitly
             // remove our waiter from the queue to prevent a memory leak.
             // If it succeeded, the waker has already removed us from the queue.
-            self.state.lock(locked).remove_waiter_from_queue(key, &event);
+            self.state.lock().remove_waiter_from_queue(key, &event);
         })
     }
 
@@ -135,43 +128,35 @@ impl<Key: FutexKey> FutexTable<Key> {
     /// waiters actually woken.
     ///
     /// See FUTEX_WAKE.
-    pub fn wake<L>(
+    pub fn wake(
         &self,
-        locked: &mut Locked<L>,
         task: &Task,
         addr: UserAddress,
         count: usize,
         mask: u32,
-    ) -> Result<usize, Errno>
-    where
-        L: LockBefore<FutexTableStateLock>,
-    {
+    ) -> Result<usize, Errno> {
         let addr = FutexAddress::try_from(addr)?;
         let key = Key::get(task, addr)?;
-        Ok(self.state.lock(locked).wake(key, count, mask))
+        Ok(self.state.lock().wake(key, count, mask))
     }
 
     /// Requeue the waiters to another address.
     ///
     /// See FUTEX_CMP_REQUEUE
-    pub fn requeue<L>(
+    pub fn requeue(
         &self,
-        locked: &mut Locked<L>,
         current_task: &CurrentTask,
         addr: UserAddress,
         wake_count: usize,
         requeue_count: usize,
         new_addr: UserAddress,
         expected_value: Option<u32>,
-    ) -> Result<usize, Errno>
-    where
-        L: LockBefore<FutexTableStateLock>,
-    {
+    ) -> Result<usize, Errno> {
         let addr = FutexAddress::try_from(addr)?;
         let new_addr = FutexAddress::try_from(new_addr)?;
         let key = Key::get(current_task, addr)?;
         let new_key = Key::get(current_task, new_addr)?;
-        let mut state = self.state.lock(locked);
+        let mut state = self.state.lock();
         if let Some(expected) = expected_value {
             // Use acquire ordering here to synchronize with mutex impls that store w/ release
             // ordering.
@@ -187,18 +172,14 @@ impl<Key: FutexKey> FutexTable<Key> {
     /// Lock the futex at the given address.
     ///
     /// See FUTEX_LOCK_PI.
-    pub fn lock_pi<L>(
+    pub fn lock_pi(
         &self,
-        locked: &mut Locked<L>,
         current_task: &CurrentTask,
         addr: UserAddress,
         deadline: zx::MonotonicInstant,
-    ) -> Result<(), Errno>
-    where
-        L: LockBefore<FutexTableStateLock>,
-    {
+    ) -> Result<(), Errno> {
         let addr = FutexAddress::try_from(addr)?;
-        let mut state = self.state.lock(locked);
+        let mut state = self.state.lock();
         // As the state is locked, no unlock can happen before the waiter is registered.
         // If the addr is remapped, we will read stale data, but we will not miss a futex unlock.
         let key = Key::get(current_task, addr)?;
@@ -272,24 +253,16 @@ impl<Key: FutexKey> FutexTable<Key> {
                 // If block_with_owner_until returned an error (e.g., ETIMEDOUT), or if we
                 // failed to find the new owner (ESRCH), we must explicitly remove our waiter
                 // from the PI-mutex queue to prevent a memory leak.
-                self.state.lock(locked).remove_rt_mutex_waiter_from_queue(key, &event);
+                self.state.lock().remove_rt_mutex_waiter_from_queue(key, &event);
             })
     }
 
     /// Unlock the futex at the given address.
     ///
     /// See FUTEX_UNLOCK_PI.
-    pub fn unlock_pi<L>(
-        &self,
-        locked: &mut Locked<L>,
-        current_task: &CurrentTask,
-        addr: UserAddress,
-    ) -> Result<(), Errno>
-    where
-        L: LockBefore<FutexTableStateLock>,
-    {
+    pub fn unlock_pi(&self, current_task: &CurrentTask, addr: UserAddress) -> Result<(), Errno> {
         let addr = FutexAddress::try_from(addr)?;
-        let mut state = self.state.lock(locked);
+        let mut state = self.state.lock();
         let tid = current_task.get_tid() as u32;
         let mm = current_task.mm()?;
 
@@ -357,19 +330,15 @@ impl FutexTable<SharedFutexKey> {
     /// next futex operation on this table.
     ///
     /// See FUTEX_WAIT.
-    pub fn external_wait<L>(
+    pub fn external_wait(
         &self,
-        locked: &mut Locked<L>,
         memory: MemoryObject,
         offset: u64,
         value: u32,
         mask: u32,
-    ) -> Result<(Arc<()>, oneshot::Receiver<()>), Errno>
-    where
-        L: LockBefore<FutexTableStateLock>,
-    {
+    ) -> Result<(Arc<()>, oneshot::Receiver<()>), Errno> {
         let key = SharedFutexKey::new(&memory, offset);
-        let mut state = self.state.lock(locked);
+        let mut state = self.state.lock();
         // As the state is locked, no wake can happen before the waiter is registered.
         Self::external_check_futex_value(&memory, offset, value)?;
 
@@ -386,23 +355,18 @@ impl FutexTable<SharedFutexKey> {
     /// number of waiters actually woken.
     ///
     /// See FUTEX_WAKE.
-    pub fn external_wake<L>(
+    pub fn external_wake(
         &self,
-        locked: &mut Locked<L>,
         memory: MemoryObject,
         offset: u64,
         count: usize,
         mask: u32,
-    ) -> Result<usize, Errno>
-    where
-        L: LockBefore<FutexTableStateLock>,
-    {
-        Ok(self.state.lock(locked).wake(SharedFutexKey::new(&memory, offset), count, mask))
+    ) -> Result<usize, Errno> {
+        Ok(self.state.lock().wake(SharedFutexKey::new(&memory, offset), count, mask))
     }
 
-    pub fn external_requeue<L>(
+    pub fn external_requeue(
         &self,
-        locked: &mut Locked<L>,
         first_memory: MemoryObject,
         first_offset: u64,
         second_memory: Option<MemoryObject>,
@@ -410,10 +374,7 @@ impl FutexTable<SharedFutexKey> {
         wake_count: usize,
         requeue_count: usize,
         expected_value: Option<u32>,
-    ) -> Result<usize, Errno>
-    where
-        L: LockBefore<FutexTableStateLock>,
-    {
+    ) -> Result<usize, Errno> {
         let first_key = SharedFutexKey::new(&first_memory, first_offset);
         let second_key = match second_memory.as_ref() {
             Some(second_memory) => SharedFutexKey::new(second_memory, second_offset),
@@ -425,7 +386,7 @@ impl FutexTable<SharedFutexKey> {
         // each of the two futexes per that sort order. This way, we can be holding both mutexes to
         // make the requeue atomic despite each futex having its own mutex, while avoiding
         // deadlocks. But for now we lock the whole FutexTable.
-        let mut state = self.state.lock(locked);
+        let mut state = self.state.lock();
         if let Some(expected) = expected_value {
             // The state being locked is how this is included in the set of atomic changes.
             Self::external_check_futex_value(&first_memory, first_offset, expected)?;

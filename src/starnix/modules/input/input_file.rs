@@ -11,7 +11,7 @@ use starnix_core::task::{CurrentTask, EventHandler, WaitCanceler, WaitQueue, Wai
 use starnix_core::vfs::buffers::{InputBuffer, OutputBuffer};
 use starnix_core::vfs::{FileObject, FileOps, fileops_impl_noop_sync};
 use starnix_logging::{log_info, track_stub};
-use starnix_sync::{FileOpsCore, InputFileInputFileLock, LockDepMutex, Locked, Unlocked};
+use starnix_sync::{InputFileInputFileLock, LockDepMutex};
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_types::time::duration_from_timeval;
 use starnix_uapi::errors::Errno;
@@ -528,12 +528,7 @@ impl FileOps for InputFile {
     fileops_impl_nonseekable!();
     fileops_impl_noop_sync!();
 
-    fn open(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        file: &FileObject,
-        _current_task: &CurrentTask,
-    ) -> Result<(), Errno> {
+    fn open(&self, file: &FileObject, _current_task: &CurrentTask) -> Result<(), Errno> {
         if let Some(inspect) = &self.inspect_status {
             inspect.set_open_timestamp(zx::MonotonicInstant::get().into_nanos());
             if (file.flags() & OpenFlags::NONBLOCK) != OpenFlags::NONBLOCK {
@@ -545,7 +540,6 @@ impl FileOps for InputFile {
 
     fn close(
         self: Box<Self>,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &starnix_core::vfs::FileObjectState,
         _current_task: &CurrentTask,
     ) {
@@ -557,7 +551,6 @@ impl FileOps for InputFile {
 
     fn ioctl(
         &self,
-        _locked: &mut Locked<Unlocked>,
         _file: &FileObject,
         current_task: &CurrentTask,
         request: u32,
@@ -695,7 +688,6 @@ impl FileOps for InputFile {
 
     fn read(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         current_task: &CurrentTask,
         offset: usize,
@@ -743,7 +735,6 @@ impl FileOps for InputFile {
 
     fn write(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         offset: usize,
@@ -756,7 +747,6 @@ impl FileOps for InputFile {
 
     fn wait_async(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         waiter: &Waiter,
@@ -768,7 +758,6 @@ impl FileOps for InputFile {
 
     fn query_events(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
     ) -> Result<FdEvents, Errno> {
@@ -782,18 +771,12 @@ impl FileOps for ArcInputFile {
     fileops_impl_nonseekable!();
     fileops_impl_noop_sync!();
 
-    fn open(
-        &self,
-        locked: &mut Locked<FileOpsCore>,
-        file: &FileObject,
-        current_task: &CurrentTask,
-    ) -> Result<(), Errno> {
-        self.0.as_ref().open(locked, file, current_task)
+    fn open(&self, file: &FileObject, current_task: &CurrentTask) -> Result<(), Errno> {
+        self.0.as_ref().open(file, current_task)
     }
 
     fn close(
         self: Box<Self>,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &starnix_core::vfs::FileObjectState,
         _current_task: &CurrentTask,
     ) {
@@ -806,56 +789,51 @@ impl FileOps for ArcInputFile {
 
     fn ioctl(
         &self,
-        locked: &mut Locked<Unlocked>,
         file: &FileObject,
         current_task: &CurrentTask,
         request: u32,
         arg: SyscallArg,
     ) -> Result<SyscallResult, Errno> {
-        self.0.as_ref().ioctl(locked, file, current_task, request, arg)
+        self.0.as_ref().ioctl(file, current_task, request, arg)
     }
 
     fn read(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         file: &FileObject,
         current_task: &CurrentTask,
         offset: usize,
         data: &mut dyn OutputBuffer,
     ) -> Result<usize, Errno> {
-        self.0.as_ref().read(locked, file, current_task, offset, data)
+        self.0.as_ref().read(file, current_task, offset, data)
     }
 
     fn write(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         file: &FileObject,
         current_task: &CurrentTask,
         offset: usize,
         data: &mut dyn InputBuffer,
     ) -> Result<usize, Errno> {
-        self.0.as_ref().write(locked, file, current_task, offset, data)
+        self.0.as_ref().write(file, current_task, offset, data)
     }
 
     fn wait_async(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         file: &FileObject,
         current_task: &CurrentTask,
         waiter: &Waiter,
         events: FdEvents,
         handler: EventHandler,
     ) -> Option<WaitCanceler> {
-        self.0.as_ref().wait_async(locked, file, current_task, waiter, events, handler)
+        self.0.as_ref().wait_async(file, current_task, waiter, events, handler)
     }
 
     fn query_events(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         file: &FileObject,
         current_task: &CurrentTask,
     ) -> Result<FdEvents, Errno> {
-        self.0.as_ref().query_events(locked, file, current_task)
+        self.0.as_ref().query_events(file, current_task)
     }
 }
 

@@ -6,14 +6,12 @@ use crate::task::CurrentTask;
 use crate::task::syscalls::do_clone;
 use crate::vfs::FdNumber;
 use crate::vfs::syscalls::sys_renameat2;
-use starnix_sync::{Locked, Unlocked};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::user_address::{UserAddress, UserCString, UserRef};
 use starnix_uapi::{CSIGNAL, clone_args, tid_t};
 
 /// The parameter order for `clone` varies by architecture.
 pub fn sys_clone(
-    locked: &mut Locked<Unlocked>,
     current_task: &mut CurrentTask,
     flags: u64,
     user_stack: UserAddress,
@@ -24,7 +22,6 @@ pub fn sys_clone(
     // Our flags parameter uses the low 8 bits (CSIGNAL mask) of flags to indicate the exit
     // signal. The CloneArgs struct separates these as `flags` and `exit_signal`.
     do_clone(
-        locked,
         current_task,
         &clone_args {
             flags: flags & !(CSIGNAL as u64),
@@ -40,14 +37,13 @@ pub fn sys_clone(
 }
 
 pub fn sys_renameat(
-    locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
     old_dir_fd: FdNumber,
     old_user_path: UserCString,
     new_dir_fd: FdNumber,
     new_user_path: UserCString,
 ) -> Result<(), Errno> {
-    sys_renameat2(locked, current_task, old_dir_fd, old_user_path, new_dir_fd, new_user_path, 0)
+    sys_renameat2(current_task, old_dir_fd, old_user_path, new_dir_fd, new_user_path, 0)
 }
 
 // Syscalls for arch32 usage
@@ -56,7 +52,6 @@ mod arch32 {
     use crate::task::CurrentTask;
     use crate::task::syscalls::do_clone;
     use linux_uapi::clone_args;
-    use starnix_sync::{Locked, Unlocked};
     use starnix_uapi::errors::Errno;
     use starnix_uapi::signals::SIGCHLD;
     use starnix_uapi::user_address::UserAddress;
@@ -64,7 +59,6 @@ mod arch32 {
 
     #[allow(non_snake_case)]
     pub fn sys_arch32_ARM_set_tls(
-        _locked: &mut Locked<Unlocked>,
         current_task: &mut CurrentTask,
         addr: UserAddress,
     ) -> Result<(), Errno> {
@@ -74,7 +68,6 @@ mod arch32 {
 
     #[allow(non_snake_case)]
     pub fn sys_arch32_ARM_cacheflush(
-        _locked: &mut Locked<Unlocked>,
         current_task: &mut CurrentTask,
         start_addr: UserAddress,
         end_addr: UserAddress,
@@ -88,12 +81,8 @@ mod arch32 {
         current_task.mm()?.cache_flush(start_addr..end_addr)
     }
 
-    pub fn sys_arch32_vfork(
-        locked: &mut Locked<Unlocked>,
-        current_task: &mut CurrentTask,
-    ) -> Result<tid_t, Errno> {
+    pub fn sys_arch32_vfork(current_task: &mut CurrentTask) -> Result<tid_t, Errno> {
         do_clone(
-            locked,
             current_task,
             &clone_args {
                 flags: (CLONE_VFORK | CLONE_VM) as u64,

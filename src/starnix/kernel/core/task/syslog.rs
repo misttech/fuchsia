@@ -15,7 +15,7 @@ use fuchsia_component::client::connect_to_protocol_sync;
 use fuchsia_inspect::Inspector;
 use futures::FutureExt;
 use serde::Deserialize;
-use starnix_sync::{LockDepMutex, Locked, SyslogStateLock, SyslogSubscriptionLock, Unlocked};
+use starnix_sync::{LockDepMutex, SyslogStateLock, SyslogSubscriptionLock};
 use starnix_uapi::auth::CAP_SYSLOG;
 use starnix_uapi::errors::{EAGAIN, Errno, errno, error};
 use starnix_uapi::syslog::SyslogAction;
@@ -140,7 +140,6 @@ impl GrantedSyslog<'_> {
 
     pub fn blocking_read(
         &self,
-        locked: &mut Locked<Unlocked>,
         current_task: &CurrentTask,
         out: &mut dyn OutputBuffer,
     ) -> Result<i32, Errno> {
@@ -167,7 +166,7 @@ impl GrantedSyslog<'_> {
             }
             // Drop the subscription lock to avoid holding a lock while waiting.
             std::mem::drop(subscription);
-            waiter.wait(locked, current_task)?;
+            waiter.wait(current_task)?;
         }
     }
 
@@ -252,7 +251,7 @@ impl LogSubscription {
         let (snd, receiver) = mpsc::sync_channel(1);
         let waiters = Arc::new(WaitQueue::default());
         let waiters_clone = waiters.clone();
-        let closure = move |_: &mut Locked<Unlocked>, _: &CurrentTask| {
+        let closure = move |_: &CurrentTask| {
             scopeguard::defer! {
                 waiters_clone.notify_fd_events(FdEvents::POLLHUP);
             };

@@ -11,7 +11,7 @@ use linux_uapi::{
     LINUX_REBOOT_CMD_RESTART2, LINUX_REBOOT_CMD_SW_SUSPEND,
 };
 use starnix_logging::{log_debug, log_info, log_warn, track_stub};
-use starnix_sync::{InterruptibleEvent, Locked, Unlocked};
+use starnix_sync::InterruptibleEvent;
 use starnix_uapi::auth::CAP_SYS_BOOT;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::user_address::{UserAddress, UserCString};
@@ -34,7 +34,6 @@ fn panic_or_error(kernel: &Kernel, errno: Errno) -> Result<(), Errno> {
 }
 
 pub fn sys_reboot(
-    _locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
     magic: u32,
     magic2: u32,

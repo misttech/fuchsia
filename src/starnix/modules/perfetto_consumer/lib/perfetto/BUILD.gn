@@ -13,7 +13,6 @@ rustc_library("perfetto") {
   deps = [
     ":perfetto_protos",
     "//src/starnix/kernel/core",
-    "//src/starnix/lib/starnix_sync",
     "//src/starnix/lib/starnix_uapi",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:prost",

@@ -17,9 +17,7 @@ use crate::vfs::{
 };
 use smallvec::smallvec;
 use starnix_logging::track_stub;
-use starnix_sync::{
-    AioEventsLock, AioPendingOperationsLock, InterruptibleEvent, LockDepMutex, Locked, Unlocked,
-};
+use starnix_sync::{AioEventsLock, AioPendingOperationsLock, InterruptibleEvent, LockDepMutex};
 use starnix_syscalls::SyscallResult;
 use starnix_types::user_buffer::{UserBuffer, UserBuffers};
 use starnix_uapi::errors::{EINTR, ETIMEDOUT, Errno};
@@ -177,10 +175,9 @@ impl AioContextInner {
     fn spawn_worker_for(self: &Arc<Self>, current_task: &CurrentTask, worker_type: WorkerType) {
         let creds = current_task.current_creds().clone();
         let inner = self.clone();
-        let closure = move |locked: &mut Locked<Unlocked>, current_task: &CurrentTask| {
-            current_task.override_creds(creds, || {
-                inner.perform_next_action(locked, current_task, worker_type)
-            })
+        let closure = move |current_task: &CurrentTask| {
+            current_task
+                .override_creds(creds, || inner.perform_next_action(current_task, worker_type))
         };
         let req = SpawnRequestBuilder::new()
             .with_debug_name("aio-worker")
@@ -189,16 +186,11 @@ impl AioContextInner {
         current_task.kernel().kthreads.spawner().spawn_from_request(req);
     }
 
-    fn perform_next_action(
-        &self,
-        locked: &mut Locked<Unlocked>,
-        current_task: &CurrentTask,
-        worker_type: WorkerType,
-    ) {
+    fn perform_next_action(&self, current_task: &CurrentTask, worker_type: WorkerType) {
         while let Ok(IoAction::Op(op)) =
             self.operations.block_until_dequeue(current_task, worker_type)
         {
-            let Some(result) = op.execute(locked, current_task) else {
+            let Some(result) = op.execute(current_task) else {
                 return;
             };
             self.results.enqueue(op.complete(result));
@@ -206,7 +198,7 @@ impl AioContextInner {
             if let Some(eventfd) = op.eventfd {
                 if let Some(eventfd) = eventfd.upgrade() {
                     let mut input_buffer = VecInputBuffer::new(1u64.as_bytes());
-                    let _ = eventfd.write(locked, current_task, &mut input_buffer);
+                    let _ = eventfd.write(current_task, &mut input_buffer);
                 }
             }
         }
@@ -335,11 +327,7 @@ impl IoOperation {
         })
     }
 
-    fn execute(
-        &self,
-        locked: &mut Locked<Unlocked>,
-        current_task: &CurrentTask,
-    ) -> Option<Result<SyscallResult, Errno>> {
+    fn execute(&self, current_task: &CurrentTask) -> Option<Result<SyscallResult, Errno>> {
         let Some(file) = self.file.upgrade() else {
             // The FileHandle can close while async IO operations are ongoing.
             // Ignore this operation when this happens.
@@ -347,12 +335,8 @@ impl IoOperation {
         };
 
         let result = match self.op_type {
-            OpType::PRead | OpType::PReadV => {
-                self.do_read(locked, current_task, file).map(Into::into)
-            }
-            OpType::PWrite | OpType::PWriteV => {
-                self.do_write(locked, current_task, file).map(Into::into)
-            }
+            OpType::PRead | OpType::PReadV => self.do_read(current_task, file).map(Into::into),
+            OpType::PWrite | OpType::PWriteV => self.do_write(current_task, file).map(Into::into),
         };
         Some(result)
     }
@@ -366,38 +350,28 @@ impl IoOperation {
         io_event { data: self.id, obj: self.iocb_addr.addr().into(), res, ..Default::default() }
     }
 
-    fn do_read(
-        &self,
-        locked: &mut Locked<Unlocked>,
-        current_task: &CurrentTask,
-        file: FileHandle,
-    ) -> Result<usize, Errno> {
+    fn do_read(&self, current_task: &CurrentTask, file: FileHandle) -> Result<usize, Errno> {
         let mut output_buffer = {
             let task = self.task.upgrade().ok_or_else(|| errno!(EFAULT))?;
             let sink = UserBuffersOutputBuffer::syscall_new(&task, self.buffers.clone())?;
             VecOutputBuffer::new(sink.available())
         };
 
-        file.read_at(locked, current_task, self.offset, &mut output_buffer)?;
+        file.read_at(current_task, self.offset, &mut output_buffer)?;
 
         let task = self.task.upgrade().ok_or_else(|| errno!(EFAULT))?;
         let mut sink = UserBuffersOutputBuffer::syscall_new(&task, self.buffers.clone())?;
         sink.write(&output_buffer.data())
     }
 
-    fn do_write(
-        &self,
-        locked: &mut Locked<Unlocked>,
-        current_task: &CurrentTask,
-        file: FileHandle,
-    ) -> Result<usize, Errno> {
+    fn do_write(&self, current_task: &CurrentTask, file: FileHandle) -> Result<usize, Errno> {
         let mut input_buffer = {
             let task = self.task.upgrade().ok_or_else(|| errno!(EFAULT))?;
             let mut source = UserBuffersInputBuffer::syscall_new(&task, self.buffers.clone())?;
             VecInputBuffer::new(&source.read_all()?)
         };
 
-        file.write_at(locked, current_task, self.offset, &mut input_buffer)
+        file.write_at(current_task, self.offset, &mut input_buffer)
     }
 }
 

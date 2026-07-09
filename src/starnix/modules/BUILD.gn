@@ -39,7 +39,6 @@ rustc_library("modules") {
 
   deps = [
     "//src/starnix/kernel/core",
-    "//src/starnix/lib/starnix_sync",
     "//src/starnix/lib/starnix_uapi",
     "//src/starnix/modules/binderfs",
     "//src/starnix/modules/cgroupfs",

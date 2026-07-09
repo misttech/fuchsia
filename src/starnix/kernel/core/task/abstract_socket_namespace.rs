@@ -9,7 +9,6 @@ use std::sync::{Arc, Weak};
 use crate::task::CurrentTask;
 use crate::vfs::FsString;
 use crate::vfs::socket::{Socket, SocketAddress, SocketHandle};
-use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::{errno, error};
 
@@ -41,21 +40,16 @@ where
         Arc::new(AbstractSocketNamespace::<K> { table: RcuHashMap::default(), address_maker })
     }
 
-    pub fn bind<L>(
+    pub fn bind(
         &self,
-        locked: &mut Locked<L>,
         current_task: &CurrentTask,
         address: K,
         socket: &SocketHandle,
-    ) -> Result<(), Errno>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
-        let locked = locked.cast_locked::<FileOpsCore>();
+    ) -> Result<(), Errno> {
         let mut table = self.table.lock();
         match table.entry(address.clone()) {
             Entry::Vacant(entry) => {
-                socket.bind(locked, current_task, (self.address_maker)(address))?;
+                socket.bind(current_task, (self.address_maker)(address))?;
                 entry.insert(Arc::downgrade(socket));
             }
             Entry::Occupied(mut entry) => {
@@ -63,7 +57,7 @@ where
                 if occupant.is_some() {
                     return error!(EADDRINUSE);
                 }
-                socket.bind(locked, current_task, (self.address_maker)(address))?;
+                socket.bind(current_task, (self.address_maker)(address))?;
                 entry.insert(Arc::downgrade(socket));
             }
         }

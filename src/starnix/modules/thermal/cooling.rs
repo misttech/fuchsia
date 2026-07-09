@@ -13,7 +13,7 @@ use starnix_core::vfs::FsNodeOps;
 use starnix_core::vfs::pseudo::simple_directory::SimpleDirectoryMutator;
 use starnix_core::vfs::pseudo::simple_file::{BytesFile, BytesFileOps};
 use starnix_logging::{log_error, log_warn};
-use starnix_sync::{LockDepMutex, Locked, ThermalChargeLevelLock, Unlocked};
+use starnix_sync::{LockDepMutex, ThermalChargeLevelLock};
 use starnix_uapi::errors::{Errno, errno};
 use starnix_uapi::file_mode::mode;
 use std::borrow::Cow;
@@ -110,13 +110,7 @@ impl CoolingDeviceRegistrar {
     }
 
     /// Register a device in the virtual thermal class.
-    fn register<T: CoolingOps>(
-        &mut self,
-        locked: &mut Locked<Unlocked>,
-        kernel: &Kernel,
-        device_type: String,
-        ops: T,
-    ) -> Device {
+    fn register<T: CoolingOps>(&mut self, kernel: &Kernel, device_type: String, ops: T) -> Device {
         let device_registry = &kernel.device_registry;
         let device_class = device_registry.objects.virtual_thermal_class();
 
@@ -124,7 +118,6 @@ impl CoolingDeviceRegistrar {
             Arc::new(CoolingDevice::<T> { device_id: self.get_next_id(), device_type, ops });
 
         device_registry.add_numberless_device(
-            locked,
             cooling_device.get_device_name().as_str().into(),
             device_class,
             |device, dir| cooling_device.build_device_dir(device, dir),
@@ -174,7 +167,6 @@ impl CoolingOps for CpuCoolingOps {
 }
 
 fn register_cpu_domains(
-    locked: &mut Locked<Unlocked>,
     kernel: &Kernel,
     registrar: &mut CoolingDeviceRegistrar,
 ) -> Result<(), Error> {
@@ -196,7 +188,7 @@ fn register_cpu_domains(
                 .available_frequencies_hz
                 .expect("available_frequencies_hz not provided"),
         };
-        registrar.register(locked, kernel, device_type, ops);
+        registrar.register(kernel, device_type, ops);
     }
     Ok(())
 }
@@ -207,11 +199,7 @@ fn register_cpu_domains(
 ///
 /// Supported devices:
 /// * `fcc=N`: Fast charge current, where N is the maximum charge level.
-pub fn cooling_device_init(
-    locked: &mut Locked<Unlocked>,
-    kernel: &Kernel,
-    devices: Vec<String>,
-) -> Result<(), Error> {
+pub fn cooling_device_init(kernel: &Kernel, devices: Vec<String>) -> Result<(), Error> {
     let mut registrar = CoolingDeviceRegistrar::new();
     for device_spec in devices.into_iter() {
         let (device_type, device_param) = device_spec
@@ -221,7 +209,6 @@ pub fn cooling_device_init(
             "fcc" => {
                 // TODO(b/460321934): Return errors rather than logging them.
                 if let Err(e) = register_fcc_device(
-                    locked,
                     kernel,
                     &mut registrar,
                     device_param
@@ -230,7 +217,7 @@ pub fn cooling_device_init(
                     log_error!("Failed to register 'fcc' cooling device: {e:?}");
                 }
             }
-            "cpu" => register_cpu_domains(locked, kernel, &mut registrar)?,
+            "cpu" => register_cpu_domains(kernel, &mut registrar)?,
             t => {
                 return Err(format_err!("Unknown cooling device: {t:?}"));
             }
@@ -303,7 +290,6 @@ impl CoolingOps for FccCoolingOps {
 }
 
 fn register_fcc_device(
-    locked: &mut Locked<Unlocked>,
     kernel: &Kernel,
     registrar: &mut CoolingDeviceRegistrar,
     param: &str,
@@ -312,7 +298,7 @@ fn register_fcc_device(
     let max_charge_level: u32 = param.parse().context("Invalid max_charge_level")?;
     let ops = FccCoolingOps::new(proxy, max_charge_level, 0);
 
-    registrar.register(locked, kernel, "fcc".to_string(), ops);
+    registrar.register(kernel, "fcc".to_string(), ops);
     Ok(())
 }
 

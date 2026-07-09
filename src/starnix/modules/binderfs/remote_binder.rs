@@ -19,7 +19,7 @@ use starnix_core::mm::memory::MemoryObject;
 use starnix_core::mm::{DesiredAddress, MappingOptions, MemoryAccessorExt, ProtectionFlags};
 use starnix_core::power::{ContainerWakingStream, OwnedMessageCounterHandle, WakeupSourceOrigin};
 use starnix_core::task::dynamic_thread_spawner::SpawnRequestBuilder;
-use starnix_core::task::{CurrentTask, Kernel, LockedAndTask, ThreadGroup, WaitQueue, Waiter};
+use starnix_core::task::{CurrentTask, Kernel, ThreadGroup, WaitQueue, Waiter};
 use starnix_core::vfs::buffers::{InputBuffer, OutputBuffer};
 use starnix_core::vfs::{
     FileObject, FileObjectState, FileOps, FsString, NamespaceNode, fileops_impl_nonseekable,
@@ -28,8 +28,7 @@ use starnix_core::vfs::{
 use starnix_lifecycle::DropWaiter;
 use starnix_logging::{CATEGORY_STARNIX, log_error, log_warn};
 use starnix_sync::{
-    FileOpsCore, LockDepGuard, LockDepMutex, Locked, RemoteBinderHandleLevel,
-    RemoteBinderResponderLock, Unlocked,
+    LockDepGuard, LockDepMutex, RemoteBinderHandleLevel, RemoteBinderResponderLock,
 };
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_uapi::device_id::DeviceId;
@@ -83,7 +82,6 @@ pub struct RemoteBinderDevice {}
 impl DeviceOps for RemoteBinderDevice {
     fn open(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         current_task: &CurrentTask,
         _id: DeviceId,
         _node: &NamespaceNode,
@@ -107,36 +105,28 @@ impl FileOps for RemoteBinderFileOps {
 
     fn query_events(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
     ) -> Result<FdEvents, Errno> {
         Ok(FdEvents::empty())
     }
 
-    fn close(
-        self: Box<Self>,
-        _locked: &mut Locked<FileOpsCore>,
-        _file: &FileObjectState,
-        _current_task: &CurrentTask,
-    ) {
+    fn close(self: Box<Self>, _file: &FileObjectState, _current_task: &CurrentTask) {
         self.0.close();
     }
 
     fn ioctl(
         &self,
-        locked: &mut Locked<Unlocked>,
         _file: &FileObject,
         current_task: &CurrentTask,
         request: u32,
         arg: SyscallArg,
     ) -> Result<SyscallResult, Errno> {
-        self.0.ioctl(locked, current_task, request, arg)
+        self.0.ioctl(current_task, request, arg)
     }
 
     fn get_memory(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         _length: Option<usize>,
@@ -147,7 +137,6 @@ impl FileOps for RemoteBinderFileOps {
 
     fn mmap(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         _addr: DesiredAddress,
@@ -162,7 +151,6 @@ impl FileOps for RemoteBinderFileOps {
 
     fn read(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         offset: usize,
@@ -174,7 +162,6 @@ impl FileOps for RemoteBinderFileOps {
 
     fn write(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         offset: usize,
@@ -501,7 +488,6 @@ impl<F: RemoteControllerConnector> RemoteBinderHandle<F> {
 
     fn ioctl(
         self: &Arc<Self>,
-        locked: &mut Locked<Unlocked>,
         current_task: &CurrentTask,
         request: u32,
         arg: SyscallArg,
@@ -512,7 +498,7 @@ impl<F: RemoteControllerConnector> RemoteBinderHandle<F> {
             uapi::REMOTE_BINDER_START | uapi::arch32::REMOTE_BINDER_START => {
                 self.start(current_task, UserCStringPtr::new(current_task, user_addr))?
             }
-            uapi::REMOTE_BINDER_WAIT => self.wait(locked, current_task, user_addr.into())?,
+            uapi::REMOTE_BINDER_WAIT => self.wait(current_task, user_addr.into())?,
             _ => return error!(ENOTSUP),
         }
         Ok(SUCCESS)
@@ -890,11 +876,7 @@ impl<F: RemoteControllerConnector> RemoteBinderHandle<F> {
     }
 
     /// Returns the next TaskRequest that `current_task` must handle, waiting if none is available.
-    fn get_next_task(
-        &self,
-        locked: &mut Locked<Unlocked>,
-        current_task: &CurrentTask,
-    ) -> Result<TaskRequest, Errno> {
+    fn get_next_task(&self, current_task: &CurrentTask) -> Result<TaskRequest, Errno> {
         loop {
             let waiter = {
                 let mut state = self.lock();
@@ -929,25 +911,24 @@ impl<F: RemoteControllerConnector> RemoteBinderHandle<F> {
                 self.waiters.wait_async_value(&waiter, tid as u64);
                 waiter
             };
-            waiter.wait(locked, current_task)?;
+            waiter.wait(current_task)?;
         }
     }
 
     /// Open a remote connection with the binder device at `path`.
     fn open(
         &self,
-        locked: &mut Locked<Unlocked>,
         current_task: &CurrentTask,
         path: FsString,
         process_accessor: ClientEnd<fbinder::ProcessAccessorMarker>,
         process: zx::Process,
     ) -> Result<Arc<RemoteBinderConnection>, Errno> {
-        let node = current_task.lookup_path_from_root(locked, path.as_ref())?;
+        let node = current_task.lookup_path_from_root(path.as_ref())?;
         let device_type = node.entry.node.info().rdev;
         let device = current_task
             .kernel()
             .device_registry
-            .get_device(locked, device_type, DeviceMode::Char)
+            .get_device(device_type, DeviceMode::Char)
             .or_else(|_| error!(ENOTSUP))?;
         let device_ref: &BinderDevice = device
             .as_ref()
@@ -991,7 +972,7 @@ impl<F: RemoteControllerConnector> RemoteBinderHandle<F> {
             })
             .map_err(|_| errno!(EINVAL))?;
         let handle = self.clone();
-        let closure = async move |_locked_and_task: LockedAndTask<'_>| {
+        let closure = async move |_current_task: &CurrentTask| {
             // Retrieve the Kernel and a `DropWaiter` for the thread_group, taking care not
             // to keep a strong reference to the thread_group itself.
             let kernel_and_drop_waiter = handle
@@ -1040,15 +1021,14 @@ impl<F: RemoteControllerConnector> RemoteBinderHandle<F> {
     /// Implementation of the REMOTE_BINDER_WAIT ioctl.
     fn wait(
         &self,
-        locked: &mut Locked<Unlocked>,
         current_task: &CurrentTask,
         wait_command_ref: UserRef<uapi::remote_binder_wait_command>,
     ) -> Result<(), Errno> {
         self.lock().register_waiting_task(current_task.get_tid());
         loop {
-            let interruption = match self.get_next_task(locked, current_task)? {
+            let interruption = match self.get_next_task(current_task)? {
                 TaskRequest::Open { path, process_accessor, process, responder } => {
-                    let result = self.open(locked, current_task, path, process_accessor, process);
+                    let result = self.open(current_task, path, process_accessor, process);
                     let interruption = must_interrupt(&result);
                     responder.send(result).map_err(|_| errno!(EINVAL))?;
                     interruption
@@ -1088,7 +1068,6 @@ impl<F: RemoteControllerConnector> RemoteBinderHandle<F> {
                         koid.into()
                     );
                     let result = remote_binder_connection.ioctl(
-                        locked,
                         current_task,
                         request,
                         arg.into(),
@@ -1186,7 +1165,7 @@ mod tests {
         Fut: Future<Output = fbinder::BinderProxy>,
         F: FnOnce(fbinder::BinderProxy) -> Fut + Sync + Send + 'static,
     {
-        spawn_kernel_and_run(async |_, init_task| {
+        spawn_kernel_and_run(async |init_task| {
             let service_name = Alphanumeric.sample_string(&mut rand::rng(), 16);
             let (remote_controller_client, remote_controller_server) =
                 create_endpoints::<fbinder::RemoteControllerMarker>();
@@ -1200,22 +1179,15 @@ mod tests {
             let starnix_thread = std::thread::Builder::new()
                 .name("user-thread".to_string())
                 .spawn(move || {
-                    #[allow(
-                        clippy::undocumented_unsafe_blocks,
-                        reason = "Force documented unsafe blocks in Starnix"
-                    )]
-                    let locked = unsafe { Unlocked::new() };
                     let builder = create_task(
-                        locked,
                         &kernel,
                         TaskCommand::new(b"kthreadd"),
                         fs,
-                        |locked, pid, process_group| {
+                        |pid, process_group| {
                             let process = fuchsia_runtime::process_self()
                                 .duplicate_handle(zx::Rights::SAME_RIGHTS)
                                 .expect("process");
                             let thread_group = ThreadGroup::for_test(
-                                locked,
                                 kernel.clone(),
                                 process,
                                 init_thread_group.write(),
@@ -1233,7 +1205,6 @@ mod tests {
                         .fs()
                         .root()
                         .create_node(
-                            locked,
                             &current_task,
                             "dev".into(),
                             mode!(IFDIR, 0o755),
@@ -1241,11 +1212,11 @@ mod tests {
                         )
                         .expect("mkdir dev");
                     let dev = current_task
-                        .lookup_path_from_root(locked, "/dev".into())
+                        .lookup_path_from_root("/dev".into())
                         .expect("lookup_path_from_root");
                     dev.mount(
                         WhatToMount::Fs(
-                            BinderFs::new_fs(locked, &current_task, FileSystemOptions::default())
+                            BinderFs::new_fs(&current_task, FileSystemOptions::default())
                                 .expect("new_fs"),
                         ),
                         MountpointFlags::empty(),
@@ -1260,7 +1231,6 @@ mod tests {
                     let service_name_bytes = service_name_string.as_bytes_with_nul();
                     let base_address = UserAddress::from(RESTRICTED_ASPACE_RANGE.start as u64);
                     let service_name_address = map_memory(
-                        locked,
                         &current_task,
                         (base_address + *PAGE_SIZE).expect("failed to compute address"),
                         service_name_bytes.len() as u64,
@@ -1270,7 +1240,6 @@ mod tests {
                         .expect("write_memory");
 
                     let start_command_address = map_memory(
-                        locked,
                         &current_task,
                         (base_address + (*PAGE_SIZE * 2)).expect("failed to compute address"),
                         std::mem::size_of::<u64>() as u64,
@@ -1280,14 +1249,12 @@ mod tests {
                         .expect("write_object");
 
                     let wait_command_address = map_memory(
-                        locked,
                         &current_task,
                         UserAddress::default(),
                         std::mem::size_of::<uapi::remote_binder_wait_command>() as u64,
                     );
 
                     let start_result = remote_binder_handle.ioctl(
-                        locked,
                         &current_task,
                         uapi::REMOTE_BINDER_START,
                         start_command_address.into(),
@@ -1297,13 +1264,12 @@ mod tests {
                     }
                     loop {
                         let result = remote_binder_handle.ioctl(
-                            locked,
                             &current_task,
                             uapi::REMOTE_BINDER_WAIT,
                             wait_command_address.into(),
                         );
                         if must_interrupt(&result).is_none() {
-                            current_task.release(locked);
+                            current_task.release(());
                             break result;
                         }
                     }
@@ -1412,7 +1378,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn container_power_controller() {
-        spawn_kernel_and_run(async move |_locked, current_task| {
+        spawn_kernel_and_run(async move |current_task| {
             let kernel = current_task.kernel().clone();
             let (power_controller, power_controller_server_end) = fidl::endpoints::create_proxy();
             let counter = zx::Counter::create();
@@ -1444,8 +1410,7 @@ mod tests {
     fn container_power_controller_drop_wake_lock() {
         let mut exec = fasync::TestExecutor::new();
         #[allow(deprecated, reason = "pre-existing usage")]
-        let (kernel, _init_task, _locked) =
-            starnix_core::testing::create_kernel_task_and_unlocked();
+        let (kernel, _init_task) = starnix_core::testing::create_kernel_and_task();
 
         let (power_controller, power_controller_server_end) = fidl::endpoints::create_proxy();
         let counter = zx::Counter::create();

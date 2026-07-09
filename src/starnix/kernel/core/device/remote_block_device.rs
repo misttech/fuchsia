@@ -8,7 +8,7 @@ use crate::device::kobject::DeviceMetadata;
 use crate::fs::sysfs::{BlockDeviceInfo, build_block_device_directory};
 use crate::mm::MemoryAccessorExt;
 use crate::task::dynamic_thread_spawner::SpawnRequestBuilder;
-use crate::task::{CurrentTask, Kernel, KernelThreads, LockedAndTask};
+use crate::task::{CurrentTask, Kernel, KernelThreads};
 use crate::vfs::buffers::{InputBuffer, OutputBuffer};
 use crate::vfs::{FileObject, FileOps, FsString, NamespaceNode, SeekTarget, default_seek};
 use anyhow::{Context as _, Error};
@@ -17,10 +17,7 @@ use fidl::endpoints::ClientEnd;
 use fidl_fuchsia_storage_block::BlockMarker;
 use futures::channel::oneshot;
 use futures::executor::block_on;
-use starnix_sync::{
-    FileOpsCore, LockDepMutex, LockEqualOrBefore, Locked, RemoteBlockDeviceRegistryDevicesLock,
-    Unlocked,
-};
+use starnix_sync::{LockDepMutex, RemoteBlockDeviceRegistryDevicesLock};
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_uapi::device_id::{BLOCK_EXTENDED_MAJOR, DeviceId};
 use starnix_uapi::errors::Errno;
@@ -43,16 +40,12 @@ impl RemoteBlockDevice {
             .context("read_at failed")
     }
 
-    fn new<L>(
-        locked: &mut Locked<L>,
+    fn new(
         kernel: &Kernel,
         minor: u32,
         name: &str,
         block: ClientEnd<BlockMarker>,
-    ) -> Result<Arc<Self>, Errno>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
+    ) -> Result<Arc<Self>, Errno> {
         let registry = &kernel.device_registry;
         let device_name = FsString::from(name);
         let virtual_block_class = registry.objects.virtual_block_class();
@@ -60,7 +53,6 @@ impl RemoteBlockDevice {
         let device = Arc::new(Self { block_client });
         let device_weak = Arc::<RemoteBlockDevice>::downgrade(&device);
         registry.add_device(
-            locked,
             kernel,
             device_name.as_ref(),
             DeviceMetadata::new(
@@ -98,7 +90,7 @@ impl SyncBlockClient {
         let (terminate_tx, terminate_rx) = oneshot::channel();
 
         // Spawn a thread to run the executor.
-        let closure = move |_: LockedAndTask<'_>| async move {
+        let closure = move |_: &CurrentTask| async move {
             let proxy = block.into_proxy();
             match RemoteBlockClient::new(proxy).await {
                 Ok(client) => {
@@ -202,7 +194,6 @@ impl FileOps for RemoteBlockDeviceFile {
     // devices).
     fn seek(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         current_offset: off_t,
@@ -213,7 +204,6 @@ impl FileOps for RemoteBlockDeviceFile {
 
     fn read(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         mut offset: usize,
@@ -260,7 +250,6 @@ impl FileOps for RemoteBlockDeviceFile {
 
     fn write(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         mut offset: usize,
@@ -348,7 +337,6 @@ impl FileOps for RemoteBlockDeviceFile {
 
     fn ioctl(
         &self,
-        _locked: &mut Locked<Unlocked>,
         _file: &FileObject,
         current_task: &CurrentTask,
         request: u32,
@@ -373,7 +361,6 @@ impl FileOps for RemoteBlockDeviceFile {
 }
 
 fn open_remote_block_device(
-    _locked: &mut Locked<FileOpsCore>,
     current_task: &CurrentTask,
     id: DeviceId,
     _node: &NamespaceNode,
@@ -382,12 +369,11 @@ fn open_remote_block_device(
     Ok(current_task.kernel().remote_block_device_registry.open(id.minor())?.create_file_ops())
 }
 
-pub fn remote_block_device_init(locked: &mut Locked<Unlocked>, current_task: &CurrentTask) {
+pub fn remote_block_device_init(current_task: &CurrentTask) {
     current_task
         .kernel()
         .device_registry
         .register_major(
-            locked,
             "remote-block".into(),
             DeviceMode::Block,
             BLOCK_EXTENDED_MAJOR,
@@ -404,19 +390,15 @@ pub struct RemoteBlockDeviceRegistry {
 }
 
 impl RemoteBlockDeviceRegistry {
-    pub fn create_remote_block_device<L>(
+    pub fn create_remote_block_device(
         &self,
-        locked: &mut Locked<L>,
         kernel: &Kernel,
         name: &str,
         block: ClientEnd<BlockMarker>,
-    ) -> Result<(), Error>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
+    ) -> Result<(), Error> {
         let mut devices = self.devices.lock();
         let minor = self.next_minor.fetch_add(1, Ordering::Relaxed);
-        let device = RemoteBlockDevice::new(locked, kernel, minor, name, block)?;
+        let device = RemoteBlockDevice::new(kernel, minor, name, block)?;
         devices.insert(minor, device);
         Ok(())
     }
@@ -438,9 +420,9 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_remote_block_device_registry() {
-        spawn_kernel_and_run(async |locked, current_task| {
+        spawn_kernel_and_run(async |current_task| {
             let kernel = current_task.kernel();
-            remote_block_device_init(locked, &current_task);
+            remote_block_device_init(&current_task);
             let registry = kernel.remote_block_device_registry.clone();
             let server =
                 VmoBackedServer::new(2, 512, &[]).expect("Failed to create VmoBackedServer");
@@ -454,37 +436,36 @@ mod tests {
             });
 
             registry
-                .create_remote_block_device(locked, kernel, "test", client)
+                .create_remote_block_device(kernel, "test", client)
                 .expect("create_remote_block_device failed.");
 
             let device = registry.open(0).expect("open failed.");
-            let file =
-                anon_test_file(locked, &current_task, device.create_file_ops(), OpenFlags::RDWR);
+            let file = anon_test_file(&current_task, device.create_file_ops(), OpenFlags::RDWR);
 
-            let arg_addr = map_object_anywhere(locked, &current_task, &0u64);
+            let arg_addr = map_object_anywhere(&current_task, &0u64);
             let mut arg = [0u8; 8];
 
-            file.ioctl(locked, &current_task, BLKGETSIZE64, arg_addr.into()).expect("ioctl failed");
+            file.ioctl(&current_task, BLKGETSIZE64, arg_addr.into()).expect("ioctl failed");
             current_task.read_memory_to_slice(arg_addr, &mut arg).unwrap();
             assert_eq!(u64::read_from_bytes(&arg).unwrap(), 1024);
 
-            file.ioctl(locked, &current_task, BLKGETSIZE, arg_addr.into()).expect("ioctl failed");
+            file.ioctl(&current_task, BLKGETSIZE, arg_addr.into()).expect("ioctl failed");
             current_task.read_memory_to_slice(arg_addr, &mut arg).unwrap();
             assert_eq!(u64::read_from_bytes(&arg).unwrap(), 2);
 
             // Deliberately read with a non-block-aligned buffer size. These reads come from
             // uncontrolled sources so we need to be able to handle the alignment ourselves.
             let mut buf = VecOutputBuffer::new(256);
-            file.read(locked, &current_task, &mut buf).expect("read failed.");
+            file.read(&current_task, &mut buf).expect("read failed.");
             assert_eq!(buf.data(), &[0u8; 256]);
 
             let mut buf = VecInputBuffer::from(vec![1u8; 256]);
-            file.seek(locked, &current_task, SeekTarget::Set(0)).expect("seek failed");
-            file.write(locked, &current_task, &mut buf).expect("write failed.");
+            file.seek(&current_task, SeekTarget::Set(0)).expect("seek failed");
+            file.write(&current_task, &mut buf).expect("write failed.");
 
             let mut buf = VecOutputBuffer::new(256);
-            file.seek(locked, &current_task, SeekTarget::Set(0)).expect("seek failed");
-            file.read(locked, &current_task, &mut buf).expect("read failed.");
+            file.seek(&current_task, SeekTarget::Set(0)).expect("seek failed");
+            file.read(&current_task, &mut buf).expect("read failed.");
             assert_eq!(buf.data(), &[1u8; 256]);
         })
         .await;
@@ -492,9 +473,9 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_read_write_past_eof() {
-        spawn_kernel_and_run(async |locked, current_task| {
+        spawn_kernel_and_run(async |current_task| {
             let kernel = current_task.kernel();
-            remote_block_device_init(locked, &current_task);
+            remote_block_device_init(&current_task);
             let registry = kernel.remote_block_device_registry.clone();
             let server =
                 VmoBackedServer::new(2, 512, &[]).expect("Failed to create VmoBackedServer");
@@ -508,28 +489,27 @@ mod tests {
             });
 
             registry
-                .create_remote_block_device(locked, kernel, "test", client)
+                .create_remote_block_device(kernel, "test", client)
                 .expect("create_remote_block_device failed.");
 
             let device = registry.open(0).expect("open failed.");
-            let file =
-                anon_test_file(locked, &current_task, device.create_file_ops(), OpenFlags::RDWR);
+            let file = anon_test_file(&current_task, device.create_file_ops(), OpenFlags::RDWR);
 
-            file.seek(locked, &current_task, SeekTarget::End(0)).expect("seek failed");
+            file.seek(&current_task, SeekTarget::End(0)).expect("seek failed");
             let mut buf = VecOutputBuffer::new(512);
-            assert_eq!(file.read(locked, &current_task, &mut buf).expect("read failed."), 0);
+            assert_eq!(file.read(&current_task, &mut buf).expect("read failed."), 0);
 
             let mut buf = VecInputBuffer::from(vec![1u8; 512]);
-            assert_eq!(file.write(locked, &current_task, &mut buf).expect("write failed."), 0);
+            assert_eq!(file.write(&current_task, &mut buf).expect("write failed."), 0);
         })
         .await;
     }
 
     #[::fuchsia::test]
     async fn test_unaligned_read_write_spanning_blocks() {
-        spawn_kernel_and_run(async |locked, current_task| {
+        spawn_kernel_and_run(async |current_task| {
             let kernel = current_task.kernel();
-            remote_block_device_init(locked, &current_task);
+            remote_block_device_init(&current_task);
             let registry = kernel.remote_block_device_registry.clone();
             // 3 blocks of 512 bytes = 1536 bytes
             let server =
@@ -544,35 +524,34 @@ mod tests {
             });
 
             registry
-                .create_remote_block_device(locked, kernel, "test", client)
+                .create_remote_block_device(kernel, "test", client)
                 .expect("create_remote_block_device failed.");
 
             let device = registry.open(0).expect("open failed.");
-            let file =
-                anon_test_file(locked, &current_task, device.create_file_ops(), OpenFlags::RDWR);
+            let file = anon_test_file(&current_task, device.create_file_ops(), OpenFlags::RDWR);
 
             // Write spanning across block boundaries (e.g., from 510 to 1026)
             // Start at 510 (2 bytes before end of 1st block)
             // Write 516 bytes (2 bytes in 1st block, 512 bytes in 2nd block, 2 bytes in 3rd block)
             let mut buf = VecInputBuffer::from(vec![0xAAu8; 516]);
-            file.seek(locked, &current_task, SeekTarget::Set(510)).expect("seek failed");
-            assert_eq!(file.write(locked, &current_task, &mut buf).expect("write failed."), 516);
+            file.seek(&current_task, SeekTarget::Set(510)).expect("seek failed");
+            assert_eq!(file.write(&current_task, &mut buf).expect("write failed."), 516);
 
             // Read back the data
             let mut buf = VecOutputBuffer::new(516);
-            file.seek(locked, &current_task, SeekTarget::Set(510)).expect("seek failed");
-            assert_eq!(file.read(locked, &current_task, &mut buf).expect("read failed."), 516);
+            file.seek(&current_task, SeekTarget::Set(510)).expect("seek failed");
+            assert_eq!(file.read(&current_task, &mut buf).expect("read failed."), 516);
             assert_eq!(buf.data(), &[0xAAu8; 516]);
 
             // Verify surrounding data is still 0
             let mut buf = VecOutputBuffer::new(1);
-            file.seek(locked, &current_task, SeekTarget::Set(509)).expect("seek failed");
-            assert_eq!(file.read(locked, &current_task, &mut buf).expect("read failed."), 1);
+            file.seek(&current_task, SeekTarget::Set(509)).expect("seek failed");
+            assert_eq!(file.read(&current_task, &mut buf).expect("read failed."), 1);
             assert_eq!(buf.data(), &[0u8]);
 
             let mut buf = VecOutputBuffer::new(1);
-            file.seek(locked, &current_task, SeekTarget::Set(1026)).expect("seek failed");
-            assert_eq!(file.read(locked, &current_task, &mut buf).expect("read failed."), 1);
+            file.seek(&current_task, SeekTarget::Set(1026)).expect("seek failed");
+            assert_eq!(file.read(&current_task, &mut buf).expect("read failed."), 1);
             assert_eq!(buf.data(), &[0u8]);
         })
         .await;
@@ -580,9 +559,9 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_exact_eof_boundary() {
-        spawn_kernel_and_run(async |locked, current_task| {
+        spawn_kernel_and_run(async |current_task| {
             let kernel = current_task.kernel();
-            remote_block_device_init(locked, &current_task);
+            remote_block_device_init(&current_task);
             let registry = kernel.remote_block_device_registry.clone();
             // 2 blocks of 512 bytes = 1024 bytes
             let server =
@@ -597,29 +576,28 @@ mod tests {
             });
 
             registry
-                .create_remote_block_device(locked, kernel, "test", client)
+                .create_remote_block_device(kernel, "test", client)
                 .expect("create_remote_block_device failed.");
 
             let device = registry.open(0).expect("open failed.");
-            let file =
-                anon_test_file(locked, &current_task, device.create_file_ops(), OpenFlags::RDWR);
+            let file = anon_test_file(&current_task, device.create_file_ops(), OpenFlags::RDWR);
 
             // Write ending exactly at EOF (1024)
             // Start at 1020, write 4 bytes
             let mut buf = VecInputBuffer::from(vec![0xBBu8; 4]);
-            file.seek(locked, &current_task, SeekTarget::Set(1020)).expect("seek failed");
-            assert_eq!(file.write(locked, &current_task, &mut buf).expect("write failed."), 4);
+            file.seek(&current_task, SeekTarget::Set(1020)).expect("seek failed");
+            assert_eq!(file.write(&current_task, &mut buf).expect("write failed."), 4);
 
             // Read back
             let mut buf = VecOutputBuffer::new(4);
-            file.seek(locked, &current_task, SeekTarget::Set(1020)).expect("seek failed");
-            assert_eq!(file.read(locked, &current_task, &mut buf).expect("read failed."), 4);
+            file.seek(&current_task, SeekTarget::Set(1020)).expect("seek failed");
+            assert_eq!(file.read(&current_task, &mut buf).expect("read failed."), 4);
             assert_eq!(buf.data(), &[0xBBu8; 4]);
 
             // Try to read past EOF from 1020 (request 5 bytes)
             let mut buf = VecOutputBuffer::new(5);
-            file.seek(locked, &current_task, SeekTarget::Set(1020)).expect("seek failed");
-            assert_eq!(file.read(locked, &current_task, &mut buf).expect("read failed."), 4);
+            file.seek(&current_task, SeekTarget::Set(1020)).expect("seek failed");
+            assert_eq!(file.read(&current_task, &mut buf).expect("read failed."), 4);
             assert_eq!(buf.data()[..4], [0xBBu8; 4]);
         })
         .await;
@@ -627,9 +605,9 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_rmw_preserves_data() {
-        spawn_kernel_and_run(async |locked, current_task| {
+        spawn_kernel_and_run(async |current_task| {
             let kernel = current_task.kernel();
-            remote_block_device_init(locked, &current_task);
+            remote_block_device_init(&current_task);
             let registry = kernel.remote_block_device_registry.clone();
             // 3 blocks of 512 bytes = 1536 bytes
             // Initialize with a known pattern (0xFF)
@@ -645,24 +623,23 @@ mod tests {
             });
 
             registry
-                .create_remote_block_device(locked, kernel, "test", client)
+                .create_remote_block_device(kernel, "test", client)
                 .expect("create_remote_block_device failed.");
 
             let device = registry.open(0).expect("open failed.");
-            let file =
-                anon_test_file(locked, &current_task, device.create_file_ops(), OpenFlags::RDWR);
+            let file = anon_test_file(&current_task, device.create_file_ops(), OpenFlags::RDWR);
 
             // Write a small chunk in the middle of the second block (offset 600, length 100)
             // Block 1 is 512-1024. 600 is inside.
             // This should trigger RMW for the second block.
             let mut buf = VecInputBuffer::from(vec![0xAAu8; 100]);
-            file.seek(locked, &current_task, SeekTarget::Set(600)).expect("seek failed");
-            assert_eq!(file.write(locked, &current_task, &mut buf).expect("write failed."), 100);
+            file.seek(&current_task, SeekTarget::Set(600)).expect("seek failed");
+            assert_eq!(file.write(&current_task, &mut buf).expect("write failed."), 100);
 
             // Read back the entire second block to verify
             let mut buf = VecOutputBuffer::new(512);
-            file.seek(locked, &current_task, SeekTarget::Set(512)).expect("seek failed");
-            assert_eq!(file.read(locked, &current_task, &mut buf).expect("read failed."), 512);
+            file.seek(&current_task, SeekTarget::Set(512)).expect("seek failed");
+            assert_eq!(file.read(&current_task, &mut buf).expect("read failed."), 512);
             let data = buf.data();
 
             // 512 to 600 (88 bytes) should be 0xFF

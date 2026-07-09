@@ -135,14 +135,11 @@ mod tests {
     use starnix_uapi::device_id::DeviceId;
     use starnix_uapi::file_mode::FileMode;
 
-    fn create_fs_node(
-        locked: &mut starnix_sync::Locked<starnix_sync::Unlocked>,
-        current_task: &crate::task::CurrentTask,
-    ) -> FsNodeHandle {
+    fn create_fs_node(current_task: &crate::task::CurrentTask) -> FsNodeHandle {
         current_task
             .fs()
             .root()
-            .create_node(locked, current_task, "foo".into(), FileMode::IFREG, DeviceId::NONE)
+            .create_node(current_task, "foo".into(), FileMode::IFREG, DeviceId::NONE)
             .expect("create_node")
             .entry
             .node
@@ -172,8 +169,8 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_write_exec_locking() {
-        spawn_kernel_and_run(async |locked, current_task| {
-            let fs_node = create_fs_node(locked, current_task);
+        spawn_kernel_and_run(async |current_task| {
+            let fs_node = create_fs_node(current_task);
 
             let write_guard = FileWriteGuard::new(&fs_node, FileWriteGuardMode::WriteFile)
                 .expect("FsNode::lock failed unexpectedly");
@@ -229,8 +226,8 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_seals() {
-        spawn_kernel_and_run(async |locked, current_task| {
-            let fs_node = create_fs_node(locked, current_task);
+        spawn_kernel_and_run(async |current_task| {
+            let fs_node = create_fs_node(current_task);
 
             {
                 let mut state = fs_node.write_guard_state.lock();
@@ -263,8 +260,8 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_seals_block_when_mapped() {
-        spawn_kernel_and_run(async |locked, current_task| {
-            let fs_node = create_fs_node(locked, current_task);
+        spawn_kernel_and_run(async |current_task| {
+            let fs_node = create_fs_node(current_task);
             fs_node.write_guard_state.lock().enable_sealing(SealFlags::empty());
 
             let _write_guard = FileWriteGuard::new(&fs_node, FileWriteGuardMode::WriteFile)
@@ -294,8 +291,8 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_seals_sealed() {
-        spawn_kernel_and_run(async |locked, current_task| {
-            let fs_node = create_fs_node(locked, current_task);
+        spawn_kernel_and_run(async |current_task| {
+            let fs_node = create_fs_node(current_task);
             let mut state = fs_node.write_guard_state.lock();
 
             state.enable_sealing(SealFlags::SEAL);

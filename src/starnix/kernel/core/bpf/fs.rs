@@ -25,7 +25,6 @@ use bstr::BStr;
 use ebpf::{MapFlags, MapSchema};
 use ebpf_api::{RINGBUF_SIGNAL, compute_map_storage_size};
 use starnix_logging::track_stub;
-use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Unlocked};
 use starnix_types::vfs::default_statfs;
 use starnix_uapi::auth::FsCred;
 use starnix_uapi::device_id::DeviceId;
@@ -136,7 +135,6 @@ impl FileOps for BpfHandle {
     fileops_impl_noop_sync!();
     fn read(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &crate::task::CurrentTask,
         _offset: usize,
@@ -147,7 +145,6 @@ impl FileOps for BpfHandle {
     }
     fn write(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &crate::task::CurrentTask,
         _offset: usize,
@@ -159,7 +156,6 @@ impl FileOps for BpfHandle {
 
     fn get_memory(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         length: Option<usize>,
@@ -189,7 +185,7 @@ impl FileOps for BpfHandle {
                     }
                 }
 
-                self.as_map()?.get_memory(locked, || {
+                self.as_map()?.get_memory(|| {
                     // The first page of the ring buffer VMO is not visible to
                     // user-space processes. Return a VMO slice that doesn't
                     // include the first page.
@@ -219,7 +215,7 @@ impl FileOps for BpfHandle {
                     return error!(EINVAL);
                 }
 
-                self.as_map()?.get_memory(locked, || {
+                self.as_map()?.get_memory(|| {
                     let vmo_dup: zx::Vmo = vmo
                         .as_handle_ref()
                         .duplicate_handle(zx::Rights::SAME_RIGHTS)
@@ -236,7 +232,6 @@ impl FileOps for BpfHandle {
 
     fn mmap(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         file: &FileObject,
         current_task: &CurrentTask,
         addr: DesiredAddress,
@@ -254,22 +249,11 @@ impl FileOps for BpfHandle {
             &bpf_map.security_state,
             PermissionFlags::READ | PermissionFlags::WRITE,
         )?;
-        default_mmap(
-            locked,
-            file,
-            current_task,
-            addr,
-            memory_offset,
-            length,
-            prot_flags,
-            options,
-            filename,
-        )
+        default_mmap(file, current_task, addr, memory_offset, length, prot_flags, options, filename)
     }
 
     fn wait_async(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         waiter: &Waiter,
@@ -307,7 +291,6 @@ impl FileOps for BpfHandle {
 
     fn query_events(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
     ) -> Result<FdEvents, Errno> {
@@ -331,12 +314,11 @@ pub fn get_bpf_object(task: &Task, fd: FdNumber) -> Result<BpfHandle, Errno> {
 pub struct BpfFs;
 impl BpfFs {
     pub fn new_fs(
-        locked: &mut Locked<Unlocked>,
         current_task: &CurrentTask,
         options: FileSystemOptions,
     ) -> Result<FileSystemHandle, Errno> {
         let kernel = current_task.kernel();
-        let fs = FileSystem::new(locked, kernel, CacheMode::Permanent, BpfFs, options)?;
+        let fs = FileSystem::new(kernel, CacheMode::Permanent, BpfFs, options)?;
         let root_ino = fs.allocate_ino();
         fs.create_root_with_info(
             root_ino,
@@ -348,12 +330,7 @@ impl BpfFs {
 }
 
 impl FileSystemOps for BpfFs {
-    fn statfs(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        _fs: &FileSystem,
-        _current_task: &CurrentTask,
-    ) -> Result<statfs, Errno> {
+    fn statfs(&self, _fs: &FileSystem, _current_task: &CurrentTask) -> Result<statfs, Errno> {
         Ok(default_statfs(BPF_FS_MAGIC))
     }
     fn name(&self) -> &'static FsStr {
@@ -362,7 +339,6 @@ impl FileSystemOps for BpfFs {
 
     fn rename(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _fs: &FileSystem,
         _current_task: &CurrentTask,
         _context: &mut RenameContext<'_>,
@@ -382,29 +358,19 @@ impl BpfFsDir {
         Self { xattrs: MemoryXattrStorage::default() }
     }
 
-    pub fn register_pin<L>(
+    pub fn register_pin(
         &self,
-        locked: &mut Locked<L>,
         current_task: &CurrentTask,
         node: &NamespaceNode,
         name: &FsStr,
         object: BpfHandle,
-    ) -> Result<(), Errno>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
-        node.entry.create_entry(
-            locked,
-            current_task,
-            &node.mount,
-            name,
-            |_locked, dir, _mount, _name| {
-                Ok(dir.fs().create_node_and_allocate_node_id(
-                    BpfFsObject::new(object),
-                    FsNodeInfo::new(mode!(IFREG, 0o600), current_task.current_fscred()),
-                ))
-            },
-        )?;
+    ) -> Result<(), Errno> {
+        node.entry.create_entry(current_task, &node.mount, name, |dir, _mount, _name| {
+            Ok(dir.fs().create_node_and_allocate_node_id(
+                BpfFsObject::new(object),
+                FsNodeInfo::new(mode!(IFREG, 0o600), current_task.current_fscred()),
+            ))
+        })?;
         Ok(())
     }
 }
@@ -414,7 +380,6 @@ impl FsNodeOps for BpfFsDir {
 
     fn create_file_ops(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _node: &FsNode,
         _current_task: &CurrentTask,
         _flags: OpenFlags,
@@ -424,7 +389,6 @@ impl FsNodeOps for BpfFsDir {
 
     fn mkdir(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         node: &FsNode,
         _current_task: &CurrentTask,
         _name: &FsStr,
@@ -439,7 +403,6 @@ impl FsNodeOps for BpfFsDir {
 
     fn mknod(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _node: &FsNode,
         _current_task: &CurrentTask,
         _name: &FsStr,
@@ -452,7 +415,6 @@ impl FsNodeOps for BpfFsDir {
 
     fn create_symlink(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _node: &FsNode,
         _current_task: &CurrentTask,
         _name: &FsStr,
@@ -464,7 +426,6 @@ impl FsNodeOps for BpfFsDir {
 
     fn link(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _node: &FsNode,
         _current_task: &CurrentTask,
         _name: &FsStr,
@@ -475,7 +436,6 @@ impl FsNodeOps for BpfFsDir {
 
     fn unlink(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _node: &FsNode,
         _current_task: &CurrentTask,
         _name: &FsStr,
@@ -502,7 +462,6 @@ impl FsNodeOps for BpfFsObject {
 
     fn create_file_ops(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _node: &FsNode,
         _current_task: &CurrentTask,
         _flags: OpenFlags,
@@ -515,15 +474,14 @@ impl FsNodeOps for BpfFsObject {
 /// Performs DAC and MAC checks using the specified `open_flags `. Also updates
 /// atime unless `NOATIME` flag is set.
 pub fn resolve_pinned_bpf_object(
-    locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
     path: &BStr,
     open_flags: OpenFlags,
 ) -> Result<BpfHandle, Errno> {
-    let node = current_task.lookup_path_from_root(locked, path.as_ref())?;
+    let node = current_task.lookup_path_from_root(path.as_ref())?;
 
     let permission_flags = PermissionFlags::from(open_flags);
-    node.check_access(locked, current_task, permission_flags, CheckAccessReason::Access)?;
+    node.check_access(current_task, permission_flags, CheckAccessReason::Access)?;
 
     let object = node.entry.node.downcast_ops::<BpfFsObject>().ok_or_else(|| errno!(EPERM))?;
     object.handle.security_check_open_fd(current_task, Some(permission_flags))?;

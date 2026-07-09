@@ -33,7 +33,7 @@ use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender, unbounded};
 use futures::{FutureExt, StreamExt};
 use starnix_core::mm::memory::MemoryObject;
 use starnix_core::task::dynamic_thread_spawner::SpawnRequestBuilder;
-use starnix_core::task::{Kernel, LockedAndTask};
+use starnix_core::task::{CurrentTask, Kernel};
 use starnix_lifecycle::AtomicCounter;
 use starnix_logging::log_error;
 use starnix_sync::{FramebufferPresentationReceiverLock, FramebufferSceneStateLock, LockDepMutex};
@@ -268,8 +268,8 @@ pub fn start_presentation_loop(
     let flatland = server.flatland.clone();
     let mut flatland_event_stream = flatland.take_event_stream();
     let mut presentation_receiver = server.presentation_receiver.lock().deref_mut().take().unwrap();
-    let closure = async move |locked_and_task: LockedAndTask<'_>| {
-        let kernel = locked_and_task.current_task().kernel();
+    let closure = async move |current_task: &CurrentTask| {
+        let kernel = current_task.kernel();
         let scheduler = ThroughputScheduler::new();
         let mut view_bound_protocols = Some(view_bound_protocols);
         let mut view_identity = Some(view_identity);

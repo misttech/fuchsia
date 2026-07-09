@@ -25,8 +25,8 @@ use macro_rules_attribute::apply;
 use starnix_logging::{log_warn, set_zx_name};
 use starnix_registers::HeapRegs;
 use starnix_sync::{
-    FutexTableStateLock, LockBefore, LockDepGuard, LockDepMutex, LockDepReadGuard, LockDepRwLock,
-    LockDepWriteGuard, Locked, TaskCommandLevel, TaskCredsLock,
+    LockDepGuard, LockDepMutex, LockDepReadGuard, LockDepRwLock, LockDepWriteGuard,
+    TaskCommandLevel, TaskCredsLock,
 };
 use starnix_task_command::TaskCommand;
 use starnix_types::arch::ArchWidth;
@@ -1323,17 +1323,13 @@ impl Task {
     /// uses this mechanism to implement pthread_join. The thread that calls
     /// pthread_join sleeps using FUTEX_WAIT on the child tid address. We wake
     /// them up here to let them know the thread is done.
-    pub fn clear_child_tid_if_needed<L>(&self, locked: &mut Locked<L>) -> Result<(), Errno>
-    where
-        L: LockBefore<TaskCommandLevel> + LockBefore<FutexTableStateLock>,
-    {
+    pub fn clear_child_tid_if_needed(&self) -> Result<(), Errno> {
         let mut state = self.write();
         let user_tid = state.clear_child_tid;
         if !user_tid.is_null() {
             let zero: tid_t = 0;
             self.write_object(user_tid, &zero)?;
             self.kernel().shared_futexes.wake(
-                locked,
                 self,
                 user_tid.addr(),
                 usize::MAX,
@@ -1668,10 +1664,10 @@ mod test {
 
     #[::fuchsia::test]
     async fn test_tid_allocation() {
-        spawn_kernel_and_run(async |locked, current_task| {
+        spawn_kernel_and_run(async |current_task| {
             let kernel = current_task.kernel();
             assert_eq!(current_task.get_tid(), 1);
-            let another_current = create_task(locked, &kernel, "another-task");
+            let another_current = create_task(&kernel, "another-task");
             let another_tid = another_current.get_tid();
             assert!(another_tid >= 2);
 
@@ -1684,9 +1680,8 @@ mod test {
 
     #[::fuchsia::test]
     async fn test_clone_pid_and_parent_pid() {
-        spawn_kernel_and_run(async |locked, current_task| {
+        spawn_kernel_and_run(async |current_task| {
             let thread = current_task.clone_task_for_test(
-                locked,
                 (CLONE_THREAD | CLONE_VM | CLONE_SIGHAND) as u64,
                 Some(SIGCHLD),
             );
@@ -1694,7 +1689,7 @@ mod test {
             assert_ne!(current_task.get_tid(), thread.get_tid());
             assert_eq!(current_task.thread_group().leader, thread.thread_group().leader);
 
-            let child_task = current_task.clone_task_for_test(locked, 0, Some(SIGCHLD));
+            let child_task = current_task.clone_task_for_test(0, Some(SIGCHLD));
             assert_ne!(current_task.get_pid(), child_task.get_pid());
             assert_ne!(current_task.get_tid(), child_task.get_tid());
             assert_eq!(current_task.get_pid(), child_task.thread_group().read().get_ppid());
@@ -1704,7 +1699,7 @@ mod test {
 
     #[::fuchsia::test]
     async fn test_root_capabilities() {
-        spawn_kernel_and_run(async |_, current_task| {
+        spawn_kernel_and_run(async |current_task| {
             assert!(security::is_task_capable_noaudit(current_task, CAP_SYS_ADMIN));
             assert_eq!(current_task.real_creds().cap_inheritable, Capabilities::empty());
 
@@ -1716,14 +1711,13 @@ mod test {
 
     #[::fuchsia::test]
     async fn test_is_spawned() {
-        spawn_kernel_and_run(async |locked, current_task| {
+        spawn_kernel_and_run(async |current_task| {
             // The init task should be marked as spawned, because it is executing.
             assert!(current_task.is_spawned());
 
             // A cloned task should not be marked as spawned, because it has not yet been executed.
             let child = current_task
                 .clone_task(
-                    locked,
                     0,
                     Some(SIGCHLD),
                     UserRef::default(),
@@ -1732,11 +1726,11 @@ mod test {
                 )
                 .expect("failed to create task in test");
             assert!(!child.is_spawned());
-            child.release(locked);
+            child.release(());
 
             // A cloned task for a test should be marked as spawned, because we intentionally avoid
             // spawning threads for test tasks but want them to behave as normal tasks.
-            let test_child = current_task.clone_task_for_test(locked, 0, Some(SIGCHLD));
+            let test_child = current_task.clone_task_for_test(0, Some(SIGCHLD));
             assert!(test_child.is_spawned());
         })
         .await;
@@ -1744,19 +1738,19 @@ mod test {
 
     #[::fuchsia::test]
     async fn test_clone_rlimit() {
-        spawn_kernel_and_run(async |locked, current_task| {
-            let prev_fsize = current_task.thread_group().get_rlimit(locked, Resource::FSIZE);
+        spawn_kernel_and_run(async |current_task| {
+            let prev_fsize = current_task.thread_group().get_rlimit(Resource::FSIZE);
             assert_ne!(prev_fsize, 10);
             current_task
                 .thread_group()
                 .limits
-                .lock(locked)
+                .lock()
                 .set(Resource::FSIZE, rlimit { rlim_cur: 10, rlim_max: 100 });
-            let current_fsize = current_task.thread_group().get_rlimit(locked, Resource::FSIZE);
+            let current_fsize = current_task.thread_group().get_rlimit(Resource::FSIZE);
             assert_eq!(current_fsize, 10);
 
-            let child_task = current_task.clone_task_for_test(locked, 0, Some(SIGCHLD));
-            let child_fsize = child_task.thread_group().get_rlimit(locked, Resource::FSIZE);
+            let child_task = current_task.clone_task_for_test(0, Some(SIGCHLD));
+            let child_fsize = child_task.thread_group().get_rlimit(Resource::FSIZE);
             assert_eq!(child_fsize, 10)
         })
         .await;
@@ -1772,7 +1766,7 @@ mod test {
 
         let scheduler_manager = SchedulerManager::new_for_tests(None, overrides);
 
-        spawn_kernel_with_scheduler_and_run_sync(scheduler_manager, |_locked, current_task| {
+        spawn_kernel_with_scheduler_and_run_sync(scheduler_manager, |current_task| {
             // Set did_exec = true so custom role overrides are applied.
             current_task.thread_group().write().did_exec = true;
 
@@ -1802,9 +1796,9 @@ mod test {
 
         let scheduler_manager = SchedulerManager::new_for_tests(None, overrides);
 
-        spawn_kernel_with_scheduler_and_run_sync(scheduler_manager, |locked, current_task| {
+        spawn_kernel_with_scheduler_and_run_sync(scheduler_manager, |current_task| {
             // Fork a child process (which sets did_exec = false on the child's thread group)
-            let child = current_task.clone_task_for_test(locked, 0, None);
+            let child = current_task.clone_task_for_test(0, None);
 
             let scheduler = &current_task.thread_group().kernel.scheduler;
 

@@ -30,8 +30,8 @@ use netlink_packet_sock_diag::SockDiagRequest;
 use netlink_packet_sock_diag::message::EmptyDeserializeOptions as EmptyDeserializeSockDiagOptions;
 use netlink_packet_utils::{DecodeError, Emitable as _};
 use starnix_sync::{
-    AuditNetlinkClientAuditResponseLock, FileOpsCore, LockDepGuard, LockDepMutex,
-    LockEqualOrBefore, Locked, NetlinkSocketInnerLock, UEventNetlinkSocketDeviceListenerKeyLock,
+    AuditNetlinkClientAuditResponseLock, LockDepGuard, LockDepMutex, NetlinkSocketInnerLock,
+    UEventNetlinkSocketDeviceListenerKeyLock,
 };
 use std::io::Write;
 use std::marker::PhantomData;
@@ -465,7 +465,6 @@ impl StubbedNetlinkSocket {
 impl SocketOps for StubbedNetlinkSocket {
     fn connect(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _socket: &SocketHandle,
         current_task: &CurrentTask,
         peer: SocketPeer,
@@ -473,28 +472,16 @@ impl SocketOps for StubbedNetlinkSocket {
         self.lock().connect(current_task, peer)
     }
 
-    fn listen(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        _socket: &Socket,
-        _backlog: i32,
-        _credentials: ucred,
-    ) -> Result<(), Errno> {
+    fn listen(&self, _socket: &Socket, _backlog: i32, _credentials: ucred) -> Result<(), Errno> {
         error!(EOPNOTSUPP)
     }
 
-    fn accept(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        _socket: &Socket,
-        _current_task: &CurrentTask,
-    ) -> Result<SocketHandle, Errno> {
+    fn accept(&self, _socket: &Socket, _current_task: &CurrentTask) -> Result<SocketHandle, Errno> {
         error!(EOPNOTSUPP)
     }
 
     fn bind(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _socket: &Socket,
         current_task: &CurrentTask,
         socket_address: SocketAddress,
@@ -504,7 +491,6 @@ impl SocketOps for StubbedNetlinkSocket {
 
     fn read(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _socket: &Socket,
         _current_task: &CurrentTask,
         data: &mut dyn OutputBuffer,
@@ -535,7 +521,6 @@ impl SocketOps for StubbedNetlinkSocket {
 
     fn write(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _socket: &Socket,
         _current_task: &CurrentTask,
         data: &mut dyn InputBuffer,
@@ -562,7 +547,6 @@ impl SocketOps for StubbedNetlinkSocket {
 
     fn wait_async(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _socket: &Socket,
         _current_task: &CurrentTask,
         waiter: &Waiter,
@@ -574,50 +558,29 @@ impl SocketOps for StubbedNetlinkSocket {
 
     fn query_events(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _socket: &Socket,
         _current_task: &CurrentTask,
     ) -> Result<FdEvents, Errno> {
         Ok(self.lock().query_events() & FdEvents::POLLIN)
     }
 
-    fn shutdown(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        _socket: &Socket,
-        _how: SocketShutdownFlags,
-    ) -> Result<(), Errno> {
+    fn shutdown(&self, _socket: &Socket, _how: SocketShutdownFlags) -> Result<(), Errno> {
         track_stub!(TODO("https://fxbug.dev/322875507"), "StubbedNetlinkSocket::shutdown");
         Ok(())
     }
 
-    fn close(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        _current_task: &CurrentTask,
-        _socket: &Socket,
-    ) {
-    }
+    fn close(&self, _current_task: &CurrentTask, _socket: &Socket) {}
 
-    fn getsockname(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        _socket: &Socket,
-    ) -> Result<SocketAddress, Errno> {
+    fn getsockname(&self, _socket: &Socket) -> Result<SocketAddress, Errno> {
         self.lock().getsockname()
     }
 
-    fn getpeername(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        _socket: &Socket,
-    ) -> Result<SocketAddress, Errno> {
+    fn getpeername(&self, _socket: &Socket) -> Result<SocketAddress, Errno> {
         self.lock().getpeername()
     }
 
     fn getsockopt(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _socket: &Socket,
         _current_task: &CurrentTask,
         level: u32,
@@ -629,7 +592,6 @@ impl SocketOps for StubbedNetlinkSocket {
 
     fn setsockopt(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _socket: &Socket,
         current_task: &CurrentTask,
         level: u32,
@@ -669,23 +631,19 @@ impl UEventNetlinkSocket {
         self.inner.lock()
     }
 
-    fn register_listener<L>(
+    fn register_listener(
         &self,
-        locked: &mut Locked<L>,
         current_task: &CurrentTask,
         state: LockDepGuard<'_, NetlinkSocketInner>,
-    ) where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
+    ) {
         if state.address.is_none() {
             return;
         }
         std::mem::drop(state);
         let mut key_state = self.device_listener_key.lock();
         if key_state.is_none() {
-            *key_state = Some(
-                current_task.kernel().device_registry.register_listener(locked, self.inner.clone()),
-            );
+            *key_state =
+                Some(current_task.kernel().device_registry.register_listener(self.inner.clone()));
         }
     }
 }
@@ -693,52 +651,38 @@ impl UEventNetlinkSocket {
 impl SocketOps for UEventNetlinkSocket {
     fn connect(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         _socket: &SocketHandle,
         current_task: &CurrentTask,
         peer: SocketPeer,
     ) -> Result<(), Errno> {
         let mut state = self.lock();
         state.connect(current_task, peer)?;
-        self.register_listener(locked, current_task, state);
+        self.register_listener(current_task, state);
         Ok(())
     }
 
-    fn listen(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        _socket: &Socket,
-        _backlog: i32,
-        _credentials: ucred,
-    ) -> Result<(), Errno> {
+    fn listen(&self, _socket: &Socket, _backlog: i32, _credentials: ucred) -> Result<(), Errno> {
         error!(EOPNOTSUPP)
     }
 
-    fn accept(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        _socket: &Socket,
-        _current_task: &CurrentTask,
-    ) -> Result<SocketHandle, Errno> {
+    fn accept(&self, _socket: &Socket, _current_task: &CurrentTask) -> Result<SocketHandle, Errno> {
         error!(EOPNOTSUPP)
     }
 
     fn bind(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         _socket: &Socket,
         current_task: &CurrentTask,
         socket_address: SocketAddress,
     ) -> Result<(), Errno> {
         let mut state = self.lock();
         state.bind(current_task, socket_address)?;
-        self.register_listener(locked, current_task, state);
+        self.register_listener(current_task, state);
         Ok(())
     }
 
     fn read(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _socket: &Socket,
         _current_task: &CurrentTask,
         data: &mut dyn OutputBuffer,
@@ -749,7 +693,6 @@ impl SocketOps for UEventNetlinkSocket {
 
     fn write(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _socket: &Socket,
         _current_task: &CurrentTask,
         _data: &mut dyn InputBuffer,
@@ -761,7 +704,6 @@ impl SocketOps for UEventNetlinkSocket {
 
     fn wait_async(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _socket: &Socket,
         _current_task: &CurrentTask,
         waiter: &Waiter,
@@ -773,54 +715,34 @@ impl SocketOps for UEventNetlinkSocket {
 
     fn query_events(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _socket: &Socket,
         _current_task: &CurrentTask,
     ) -> Result<FdEvents, Errno> {
         Ok(self.lock().query_events() & FdEvents::POLLIN)
     }
 
-    fn shutdown(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        _socket: &Socket,
-        _how: SocketShutdownFlags,
-    ) -> Result<(), Errno> {
+    fn shutdown(&self, _socket: &Socket, _how: SocketShutdownFlags) -> Result<(), Errno> {
         track_stub!(TODO("https://fxbug.dev/322875507"), "UEventNetlinkSocket::shutdown");
         Ok(())
     }
 
-    fn close(
-        &self,
-        locked: &mut Locked<FileOpsCore>,
-        current_task: &CurrentTask,
-        _socket: &Socket,
-    ) {
+    fn close(&self, current_task: &CurrentTask, _socket: &Socket) {
         let id = self.device_listener_key.lock().take();
         if let Some(id) = id {
-            current_task.kernel().device_registry.unregister_listener(locked, &id);
+            current_task.kernel().device_registry.unregister_listener(&id);
         }
     }
 
-    fn getsockname(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        _socket: &Socket,
-    ) -> Result<SocketAddress, Errno> {
+    fn getsockname(&self, _socket: &Socket) -> Result<SocketAddress, Errno> {
         self.lock().getsockname()
     }
 
-    fn getpeername(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        _socket: &Socket,
-    ) -> Result<SocketAddress, Errno> {
+    fn getpeername(&self, _socket: &Socket) -> Result<SocketAddress, Errno> {
         self.lock().getpeername()
     }
 
     fn getsockopt(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _socket: &Socket,
         _current_task: &CurrentTask,
         level: u32,
@@ -832,7 +754,6 @@ impl SocketOps for UEventNetlinkSocket {
 
     fn setsockopt(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _socket: &Socket,
         current_task: &CurrentTask,
         level: u32,
@@ -1086,7 +1007,6 @@ where
 {
     fn connect(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _socket: &SocketHandle,
         current_task: &CurrentTask,
         peer: SocketPeer,
@@ -1095,28 +1015,16 @@ where
         inner.lock().connect(current_task, peer)
     }
 
-    fn listen(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        _socket: &Socket,
-        _backlog: i32,
-        _credentials: ucred,
-    ) -> Result<(), Errno> {
+    fn listen(&self, _socket: &Socket, _backlog: i32, _credentials: ucred) -> Result<(), Errno> {
         error!(EOPNOTSUPP)
     }
 
-    fn accept(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        _socket: &Socket,
-        _current_task: &CurrentTask,
-    ) -> Result<SocketHandle, Errno> {
+    fn accept(&self, _socket: &Socket, _current_task: &CurrentTask) -> Result<SocketHandle, Errno> {
         error!(EOPNOTSUPP)
     }
 
     fn bind(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _socket: &Socket,
         current_task: &CurrentTask,
         socket_address: SocketAddress,
@@ -1151,7 +1059,6 @@ where
 
     fn read(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _socket: &Socket,
         _current_task: &CurrentTask,
         data: &mut dyn OutputBuffer,
@@ -1163,7 +1070,6 @@ where
 
     fn write(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         socket: &Socket,
         current_task: &CurrentTask,
         data: &mut dyn InputBuffer,
@@ -1212,7 +1118,6 @@ where
 
     fn wait_async(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _socket: &Socket,
         _current_task: &CurrentTask,
         waiter: &Waiter,
@@ -1225,7 +1130,6 @@ where
 
     fn query_events(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _socket: &Socket,
         _current_task: &CurrentTask,
     ) -> Result<FdEvents, Errno> {
@@ -1233,45 +1137,26 @@ where
         Ok(inner.lock().query_events() & FdEvents::POLLIN)
     }
 
-    fn shutdown(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        _socket: &Socket,
-        _how: SocketShutdownFlags,
-    ) -> Result<(), Errno> {
+    fn shutdown(&self, _socket: &Socket, _how: SocketShutdownFlags) -> Result<(), Errno> {
         error!(EOPNOTSUPP)
     }
 
-    fn close(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        _current_task: &CurrentTask,
-        _socket: &Socket,
-    ) {
+    fn close(&self, _current_task: &CurrentTask, _socket: &Socket) {
         // Close the underlying channel to the Netlink worker.
         self.message_sender.close_channel();
     }
 
-    fn getsockname(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        _socket: &Socket,
-    ) -> Result<SocketAddress, Errno> {
+    fn getsockname(&self, _socket: &Socket) -> Result<SocketAddress, Errno> {
         let NetlinkSocket { inner, client: _, message_sender: _ } = self;
         inner.lock().getsockname()
     }
 
-    fn getpeername(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        _socket: &Socket,
-    ) -> Result<SocketAddress, Errno> {
+    fn getpeername(&self, _socket: &Socket) -> Result<SocketAddress, Errno> {
         self.inner.lock().getpeername()
     }
 
     fn getsockopt(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _socket: &Socket,
         _current_task: &CurrentTask,
         level: u32,
@@ -1283,7 +1168,6 @@ where
 
     fn setsockopt(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _socket: &Socket,
         current_task: &CurrentTask,
         level: u32,
@@ -1353,7 +1237,6 @@ impl GenericNetlinkSocket {
 impl SocketOps for GenericNetlinkSocket {
     fn connect(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _socket: &SocketHandle,
         current_task: &CurrentTask,
         peer: SocketPeer,
@@ -1362,28 +1245,16 @@ impl SocketOps for GenericNetlinkSocket {
         state.connect(current_task, peer)
     }
 
-    fn listen(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        _socket: &Socket,
-        _backlog: i32,
-        _credentials: ucred,
-    ) -> Result<(), Errno> {
+    fn listen(&self, _socket: &Socket, _backlog: i32, _credentials: ucred) -> Result<(), Errno> {
         error!(EOPNOTSUPP)
     }
 
-    fn accept(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        _socket: &Socket,
-        _current_task: &CurrentTask,
-    ) -> Result<SocketHandle, Errno> {
+    fn accept(&self, _socket: &Socket, _current_task: &CurrentTask) -> Result<SocketHandle, Errno> {
         error!(EOPNOTSUPP)
     }
 
     fn bind(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _socket: &Socket,
         current_task: &CurrentTask,
         socket_address: SocketAddress,
@@ -1394,7 +1265,6 @@ impl SocketOps for GenericNetlinkSocket {
 
     fn read(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _socket: &Socket,
         _current_task: &CurrentTask,
         data: &mut dyn OutputBuffer,
@@ -1405,7 +1275,6 @@ impl SocketOps for GenericNetlinkSocket {
 
     fn write(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _socket: &Socket,
         _current_task: &CurrentTask,
         data: &mut dyn InputBuffer,
@@ -1430,7 +1299,6 @@ impl SocketOps for GenericNetlinkSocket {
 
     fn wait_async(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _socket: &Socket,
         _current_task: &CurrentTask,
         waiter: &Waiter,
@@ -1442,50 +1310,29 @@ impl SocketOps for GenericNetlinkSocket {
 
     fn query_events(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _socket: &Socket,
         _current_task: &CurrentTask,
     ) -> Result<FdEvents, Errno> {
         Ok(self.lock().query_events() & FdEvents::POLLIN)
     }
 
-    fn shutdown(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        _socket: &Socket,
-        _how: SocketShutdownFlags,
-    ) -> Result<(), Errno> {
+    fn shutdown(&self, _socket: &Socket, _how: SocketShutdownFlags) -> Result<(), Errno> {
         track_stub!(TODO("https://fxbug.dev/322875507"), "GenericNetlinkSocket::shutdown");
         Ok(())
     }
 
-    fn close(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        _current_task: &CurrentTask,
-        _socket: &Socket,
-    ) {
-    }
+    fn close(&self, _current_task: &CurrentTask, _socket: &Socket) {}
 
-    fn getsockname(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        _socket: &Socket,
-    ) -> Result<SocketAddress, Errno> {
+    fn getsockname(&self, _socket: &Socket) -> Result<SocketAddress, Errno> {
         self.lock().getsockname()
     }
 
-    fn getpeername(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        _socket: &Socket,
-    ) -> Result<SocketAddress, Errno> {
+    fn getpeername(&self, _socket: &Socket) -> Result<SocketAddress, Errno> {
         self.lock().getpeername()
     }
 
     fn getsockopt(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _socket: &Socket,
         _current_task: &CurrentTask,
         level: u32,
@@ -1497,7 +1344,6 @@ impl SocketOps for GenericNetlinkSocket {
 
     fn setsockopt(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _socket: &Socket,
         current_task: &CurrentTask,
         level: u32,
@@ -1716,7 +1562,6 @@ impl AuditNetlinkSocket {
 impl SocketOps for AuditNetlinkSocket {
     fn read(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _socket: &Socket,
         _current_task: &CurrentTask,
         data: &mut dyn OutputBuffer,
@@ -1735,7 +1580,6 @@ impl SocketOps for AuditNetlinkSocket {
 
     fn write(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         socket: &Socket,
         current_task: &CurrentTask,
         data: &mut dyn InputBuffer,
@@ -1769,7 +1613,6 @@ impl SocketOps for AuditNetlinkSocket {
 
     fn wait_async(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _socket: &Socket,
         _current_task: &CurrentTask,
         waiter: &Waiter,
@@ -1781,35 +1624,23 @@ impl SocketOps for AuditNetlinkSocket {
 
     fn query_events(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _socket: &Socket,
         _current_task: &CurrentTask,
     ) -> Result<FdEvents, Errno> {
         Ok(self.audit_client.query_events() & FdEvents::POLLIN)
     }
 
-    fn close(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        _current_task: &CurrentTask,
-        _socket: &Socket,
-    ) {
+    fn close(&self, _current_task: &CurrentTask, _socket: &Socket) {
         // If the `AuditNetlinkClient` disconnects, detach it.
         self.audit_client.detach();
     }
 
-    fn shutdown(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        _socket: &Socket,
-        _how: SocketShutdownFlags,
-    ) -> Result<(), Errno> {
+    fn shutdown(&self, _socket: &Socket, _how: SocketShutdownFlags) -> Result<(), Errno> {
         error!(EOPNOTSUPP)
     }
 
     fn connect(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _socket: &SocketHandle,
         _current_task: &CurrentTask,
         _peer: SocketPeer,
@@ -1817,28 +1648,16 @@ impl SocketOps for AuditNetlinkSocket {
         error!(EOPNOTSUPP)
     }
 
-    fn listen(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        _socket: &Socket,
-        _backlog: i32,
-        _credentials: ucred,
-    ) -> Result<(), Errno> {
+    fn listen(&self, _socket: &Socket, _backlog: i32, _credentials: ucred) -> Result<(), Errno> {
         error!(EOPNOTSUPP)
     }
 
-    fn accept(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        _socket: &Socket,
-        _current_task: &CurrentTask,
-    ) -> Result<SocketHandle, Errno> {
+    fn accept(&self, _socket: &Socket, _current_task: &CurrentTask) -> Result<SocketHandle, Errno> {
         error!(EOPNOTSUPP)
     }
 
     fn bind(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _socket: &Socket,
         _current_task: &CurrentTask,
         _socket_address: SocketAddress,
@@ -1846,25 +1665,16 @@ impl SocketOps for AuditNetlinkSocket {
         error!(EOPNOTSUPP)
     }
 
-    fn getsockname(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        _socket: &Socket,
-    ) -> Result<SocketAddress, Errno> {
+    fn getsockname(&self, _socket: &Socket) -> Result<SocketAddress, Errno> {
         error!(EOPNOTSUPP)
     }
 
-    fn getpeername(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        _socket: &Socket,
-    ) -> Result<SocketAddress, Errno> {
+    fn getpeername(&self, _socket: &Socket) -> Result<SocketAddress, Errno> {
         error!(EOPNOTSUPP)
     }
 
     fn getsockopt(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _socket: &Socket,
         _current_task: &CurrentTask,
         _level: u32,
@@ -1876,7 +1686,6 @@ impl SocketOps for AuditNetlinkSocket {
 
     fn setsockopt(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _socket: &Socket,
         _current_task: &CurrentTask,
         _level: u32,
@@ -1948,7 +1757,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_set_get_snd_rcv_buf() {
-        crate::testing::spawn_kernel_and_run_sync(|_locked, current_task| {
+        crate::testing::spawn_kernel_and_run_sync(|current_task| {
             let mut socket = NetlinkSocketInner::new(NetlinkFamily::Route);
 
             // Verify initialization uses the default value.
@@ -1974,7 +1783,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_snd_rcv_buf_limits() {
-        crate::testing::spawn_kernel_and_run_sync(|_locked, current_task| {
+        crate::testing::spawn_kernel_and_run_sync(|current_task| {
             let mut socket = NetlinkSocketInner::new(NetlinkFamily::Route);
             let too_big = u32::try_from(SOCKET_MAX_SIZE).unwrap() + 1;
 

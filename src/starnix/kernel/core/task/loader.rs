@@ -12,7 +12,6 @@ use crate::vdso::vdso_loader::ZX_TIME_VALUES_MEMORY;
 use crate::vfs::{FdNumber, FileHandle, FileMapping, FileWriteGuardMode};
 use process_builder::elf_load;
 use starnix_logging::{log_error, log_warn};
-use starnix_sync::{Locked, Unlocked};
 use starnix_types::arch::ArchWidth;
 use starnix_types::math::round_up_to_system_page_size;
 use starnix_types::thread_start_info::ThreadStartInfo;
@@ -349,20 +348,18 @@ const MAX_RECURSION_DEPTH: usize = 5;
 /// Resolves a file into a validated executable ELF, following script interpreters to a fixed
 /// recursion depth. `argv` may change due to script interpreter logic.
 pub fn resolve_executable(
-    locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
     file: FileHandle,
     path: CString,
     argv: Vec<CString>,
     environ: Vec<CString>,
 ) -> Result<ResolvedElf, Errno> {
-    resolve_executable_impl(locked, current_task, file, path, argv, environ, 0)
+    resolve_executable_impl(current_task, file, path, argv, environ, 0)
 }
 
 /// Resolves a file into a validated executable ELF, following script interpreters to a fixed
 /// recursion depth.
 fn resolve_executable_impl(
-    locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
     file: FileHandle,
     path: CString,
@@ -374,7 +371,7 @@ fn resolve_executable_impl(
         return error!(ELOOP);
     }
     let memory = file
-        .get_memory(locked, current_task, None, ProtectionFlags::READ | ProtectionFlags::EXEC)
+        .get_memory(current_task, None, ProtectionFlags::READ | ProtectionFlags::EXEC)
         .map_err(|e| if e.code.error_code() == ENODEV { errno!(ENOEXEC) } else { e })?;
     let header = match memory.read_to_array::<u8, HASH_BANG_SIZE>(0) {
         Ok(header) => Ok(header),
@@ -385,15 +382,14 @@ fn resolve_executable_impl(
         Err(_) => return error!(EINVAL),
     }?;
     if &header == HASH_BANG {
-        resolve_script(locked, current_task, memory, path, argv, environ, recursion_depth)
+        resolve_script(current_task, memory, path, argv, environ, recursion_depth)
     } else {
-        resolve_elf(locked, current_task, file, memory, argv, environ)
+        resolve_elf(current_task, file, memory, argv, environ)
     }
 }
 
 /// Resolves a #! script file into a validated executable ELF.
 fn resolve_script(
-    locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
     memory: Arc<MemoryObject>,
     path: CString,
@@ -412,7 +408,6 @@ fn resolve_script(
 
     let mut args = parse_interpreter_line(&buffer)?;
     let interpreter = current_task.open_file_at(
-        locked,
         FdNumber::AT_FDCWD,
         args[0].as_bytes().into(),
         OpenFlags::RDONLY,
@@ -429,7 +424,6 @@ fn resolve_script(
 
     // Recurse and resolve the interpreter executable
     resolve_executable_impl(
-        locked,
         current_task,
         interpreter,
         args[0].clone(),
@@ -480,7 +474,6 @@ fn parse_interpreter_line(line: &[u8]) -> Result<Vec<CString>, Errno> {
 
 /// Resolves a file handle into a validated executable ELF.
 fn resolve_elf(
-    locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
     file: FileHandle,
     memory: Arc<MemoryObject>,
@@ -503,10 +496,9 @@ fn resolve_elf(
             .read_to_vec(interp_hdr.offset as u64, interp_hdr.filesz)
             .map_err(|status| from_status_like_fdio!(status))?;
         let interp = CStr::from_bytes_until_nul(&interp).map_err(|_| errno!(EINVAL))?;
-        let interp_file =
-            current_task.open_file(locked, interp.to_bytes().into(), OpenFlags::RDONLY)?;
+        let interp_file = current_task.open_file(interp.to_bytes().into(), OpenFlags::RDONLY)?;
         let interp_memory = interp_file
-            .get_memory(locked, current_task, None, ProtectionFlags::READ | ProtectionFlags::EXEC)
+            .get_memory(current_task, None, ProtectionFlags::READ | ProtectionFlags::EXEC)
             .map_err(|e| if e.code.error_code() == ENODEV { errno!(ENOEXEC) } else { e })?;
         let interp_file =
             interp_file.name.clone().into_mapping(Some(FileWriteGuardMode::ExecMapping))?;
@@ -825,21 +817,17 @@ mod tests {
         );
     }
 
-    fn exec_hello_starnix(
-        locked: &mut Locked<Unlocked>,
-        current_task: &mut CurrentTask,
-    ) -> Result<(), Errno> {
+    fn exec_hello_starnix(current_task: &mut CurrentTask) -> Result<(), Errno> {
         let argv = vec![CString::new("data/tests/hello_starnix").unwrap()];
-        let executable =
-            current_task.open_file(locked, argv[0].as_bytes().into(), OpenFlags::RDONLY)?;
-        current_task.exec(locked, executable, argv[0].clone(), argv, vec![])?;
+        let executable = current_task.open_file(argv[0].as_bytes().into(), OpenFlags::RDONLY)?;
+        current_task.exec(executable, argv[0].clone(), argv, vec![])?;
         Ok(())
     }
 
     #[fuchsia::test]
     async fn test_load_hello_starnix() {
-        spawn_kernel_and_run_with_pkgfs(async |locked, current_task| {
-            exec_hello_starnix(locked, current_task).expect("failed to load executable");
+        spawn_kernel_and_run_with_pkgfs(async |current_task| {
+            exec_hello_starnix(current_task).expect("failed to load executable");
             assert!(current_task.mm().unwrap().get_mapping_count() > 0);
         })
         .await;
@@ -848,10 +836,10 @@ mod tests {
     // TODO(https://fxbug.dev/42072654): Figure out why this snapshot fails.
     #[fuchsia::test]
     async fn test_snapshot_hello_starnix() {
-        spawn_kernel_and_run_with_pkgfs(async |locked, current_task| {
-            exec_hello_starnix(locked, current_task).expect("failed to load executable");
+        spawn_kernel_and_run_with_pkgfs(async |current_task| {
+            exec_hello_starnix(current_task).expect("failed to load executable");
 
-            let current2 = current_task.clone_task_for_test(locked, 0, None);
+            let current2 = current_task.clone_task_for_test(0, None);
 
             assert_eq!(
                 current_task.mm().unwrap().get_mapping_count(),

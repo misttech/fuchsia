@@ -138,7 +138,7 @@ pub mod ioctl {
     };
     use crate::vfs::{FileObject, FileWriteGuardMode};
     use num_traits::FromPrimitive;
-    use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked};
+
     use starnix_syscalls::{SUCCESS, SyscallResult};
     use starnix_uapi::errors::Errno;
     use starnix_uapi::user_address::{UserAddress, UserRef};
@@ -146,23 +146,19 @@ pub mod ioctl {
     use zerocopy::IntoBytes;
 
     /// ioctl handler for FS_IOC_ENABLE_VERITY.
-    pub fn enable<L>(
-        locked: &mut Locked<L>,
+    pub fn enable(
         task: &CurrentTask,
         arg: UserAddress,
         file: &FileObject,
-    ) -> Result<SyscallResult, Errno>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
+    ) -> Result<SyscallResult, Errno> {
         if file.can_write() {
             return error!(ETXTBSY);
         }
-        let block_size = file.name.entry.node.fs().statfs(locked, task)?.f_bsize as u32;
+        let block_size = file.name.entry.node.fs().statfs(task)?.f_bsize as u32;
         // Nb: Lock order is important here.
         let args: fsverity_enable_arg = task.read_object(arg.into())?;
         let mut descriptor = fsverity_descriptor_from_enable_arg(task, block_size, &args)?;
-        descriptor.data_size = file.node().fetch_and_refresh_info(locked, task)?.size as u64;
+        descriptor.data_size = file.node().fetch_and_refresh_info(task)?.size as u64;
         // The "Exec" writeguard mode means 'no writers'.
         let _mapping = file.name.clone().into_mapping(Some(FileWriteGuardMode::ExecMapping))?;
         {
@@ -173,28 +169,24 @@ pub mod ioctl {
                 FsVerityState::None => *fsverity = FsVerityState::Building,
             }
         }
-        let result = file.node().enable_fsverity(locked, task, &descriptor);
+        let result = file.node().enable_fsverity(task, &descriptor);
         *file.node().fsverity.lock() =
             if result.is_ok() { FsVerityState::FsVerity } else { FsVerityState::None };
         result.map(|()| SUCCESS)
     }
 
     /// ioctl handler for FS_IOC_MEASURE_VERITY.
-    pub fn measure<L>(
-        locked: &mut Locked<L>,
+    pub fn measure(
         task: &CurrentTask,
         arg: UserAddress,
         file: &FileObject,
-    ) -> Result<SyscallResult, Errno>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
+    ) -> Result<SyscallResult, Errno> {
         let header_ref = UserRef::<uapi::fsverity_digest>::new(arg);
         let digest_addr = header_ref.next()?.addr();
         let header = task.read_object(header_ref.clone())?;
         match &*file.node().fsverity.lock() {
             FsVerityState::FsVerity => {
-                let block_size = file.name.entry.node.fs().statfs(locked, task)?.f_bsize as u32;
+                let block_size = file.name.entry.node.fs().statfs(task)?.f_bsize as u32;
                 if !block_size.is_power_of_two() {
                     return error!(EINVAL);
                 }

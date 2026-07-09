@@ -10,7 +10,6 @@ use crate::vfs::socket::syscalls::CMsgHdrPtr;
 use crate::vfs::socket::{SocketAddress, SocketMessageFlags};
 use crate::vfs::{FdFlags, FdNumber, FileHandle, FsString};
 use byteorder::{ByteOrder, NativeEndian};
-use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked};
 use starnix_uapi::auth::{CAP_SETGID, CAP_SETUID, CAP_SYS_ADMIN};
 use starnix_uapi::errors::Errno;
 
@@ -188,17 +187,13 @@ impl AncillaryData {
         }
     }
 
-    pub fn into_controlmsg<L>(
+    pub fn into_controlmsg(
         self,
-        locked: &mut Locked<L>,
         current_task: &CurrentTask,
         flags: SocketMessageFlags,
-    ) -> Result<Option<ControlMsg>, Errno>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
+    ) -> Result<Option<ControlMsg>, Errno> {
         match self {
-            AncillaryData::Unix(control) => control.into_controlmsg(locked, current_task, flags),
+            AncillaryData::Unix(control) => control.into_controlmsg(current_task, flags),
             AncillaryData::Ip(syncio::ControlMessage::IpTos(value)) => {
                 Ok(Some(ControlMsg::new(SOL_IP, IP_TOS, value.as_bytes().to_vec())))
             }
@@ -251,16 +246,12 @@ impl AncillaryData {
     }
 
     /// Convert the message into bytes, truncating it if it exceeds the available space.
-    pub fn into_bytes<L>(
+    pub fn into_bytes(
         self,
-        locked: &mut Locked<L>,
         current_task: &CurrentTask,
         flags: SocketMessageFlags,
         space_available: usize,
-    ) -> Result<Vec<u8>, Errno>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
+    ) -> Result<Vec<u8>, Errno> {
         let header_size = CMsgHdrPtr::size_of_object_for(current_task);
         let minimum_data_size = self.minimum_size();
 
@@ -270,7 +261,7 @@ impl AncillaryData {
             return Ok(vec![]);
         }
 
-        let cmsg = self.into_controlmsg(locked, current_task, flags)?;
+        let cmsg = self.into_controlmsg(current_task, flags)?;
         if let Some(mut cmsg) = cmsg {
             cmsg.truncate(space_available - header_size);
             cmsg.into_bytes(current_task).map_err(|_| errno!(EINVAL))
@@ -411,15 +402,11 @@ impl UnixControlData {
     /// Constructs a ControlMsg for this control data, with a destination of `task`.
     ///
     /// The provided `task` is used to create any required file descriptors, etc.
-    pub fn into_controlmsg<L>(
+    pub fn into_controlmsg(
         self,
-        locked: &mut Locked<L>,
         current_task: &CurrentTask,
         flags: SocketMessageFlags,
-    ) -> Result<Option<ControlMsg>, Errno>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
+    ) -> Result<Option<ControlMsg>, Errno> {
         let (msg_type, data) = match self {
             UnixControlData::Rights(files) => {
                 let flags = if flags.contains(SocketMessageFlags::CMSG_CLOEXEC) {
@@ -434,7 +421,7 @@ impl UnixControlData {
                     if security::file_receive(current_task, &file).is_err() {
                         break;
                     }
-                    let fd = current_task.add_file(locked, file, flags)?;
+                    let fd = current_task.add_file(file, flags)?;
                     fds.push(fd);
                 }
                 // If no file descriptors are left, the entirety of the control message should be

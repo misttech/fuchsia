@@ -25,10 +25,8 @@ use macro_rules_attribute::apply;
 use starnix_lifecycle::{AtomicCounter, DropNotifier};
 use starnix_logging::{log_debug, log_error, log_info, log_warn, track_stub};
 use starnix_sync::{
-    LockBefore, LockDepMutex, LockDepRwLock, Locked, OrderedMutex, ProcessGroupState,
-    RwLockWriteGuard, ThreadGroupLimits, ThreadGroupMutableStateLock,
-    ThreadGroupPendingSignalsLock, ThreadGroupPtraceesLock, Unlocked, allow_subclass,
-    ordered_write_lock,
+    LockDepMutex, LockDepRwLock, RwLockWriteGuard, ThreadGroupLimits, ThreadGroupMutableStateLock,
+    ThreadGroupPendingSignalsLock, ThreadGroupPtraceesLock, allow_subclass, ordered_write_lock,
 };
 use starnix_task_command::TaskCommand;
 use starnix_types::ownership::{OwnedRef, Releasable};
@@ -305,7 +303,7 @@ pub struct ThreadGroup {
     /// The resource limits for this thread group.  This is outside mutable_state
     /// to avoid deadlocks where the thread_group lock is held when acquiring
     /// the task lock, and vice versa.
-    pub limits: OrderedMutex<ResourceLimits, ThreadGroupLimits>,
+    pub limits: LockDepMutex<ResourceLimits, ThreadGroupLimits>,
 
     /// The next unique identifier for a seccomp filter.  These are required to be
     /// able to distinguish identical seccomp filters, which are treated differently
@@ -673,8 +671,7 @@ impl ZombieNotification {
 
 impl ThreadGroup {
     /// Creates a ThreadGroup for a regular userspace process.
-    pub fn new<L>(
-        locked: &mut Locked<L>,
+    pub fn new(
         kernel: Arc<Kernel>,
         process: zx::Process,
         root_vmar: zx::Vmar,
@@ -683,14 +680,10 @@ impl ThreadGroup {
         exit_signal: Option<Signal>,
         process_group: Arc<ProcessGroup>,
         signal_actions: Arc<SignalActions>,
-    ) -> Arc<ThreadGroup>
-    where
-        L: LockBefore<ProcessGroupState>,
-    {
+    ) -> Arc<ThreadGroup> {
         debug_assert!(!process.is_invalid());
         debug_assert!(!root_vmar.is_invalid());
         Self::new_internal(
-            locked,
             kernel,
             process,
             root_vmar,
@@ -703,17 +696,12 @@ impl ThreadGroup {
     }
 
     /// Creates a ThreadGroup for a kernel system task (e.g., kthreadd).
-    pub fn for_system<L>(
-        locked: &mut Locked<L>,
+    pub fn for_system(
         kernel: Arc<Kernel>,
         leader: pid_t,
         process_group: Arc<ProcessGroup>,
-    ) -> Arc<ThreadGroup>
-    where
-        L: LockBefore<ProcessGroupState>,
-    {
+    ) -> Arc<ThreadGroup> {
         Self::new_internal(
-            locked,
             kernel,
             zx::Process::invalid(),
             zx::Vmar::invalid(),
@@ -732,19 +720,14 @@ impl ThreadGroup {
     /// default signal actions with `SIGCHLD` as the exit signal.
     ///
     /// This should only be used in tests where a full process environment is not required.
-    pub fn for_test<L>(
-        locked: &mut Locked<L>,
+    pub fn for_test(
         kernel: Arc<Kernel>,
         process: zx::Process,
         parent: ThreadGroupWriteGuard<'_>,
         leader: pid_t,
         process_group: Arc<ProcessGroup>,
-    ) -> Arc<ThreadGroup>
-    where
-        L: LockBefore<ProcessGroupState>,
-    {
+    ) -> Arc<ThreadGroup> {
         Self::new_internal(
-            locked,
             kernel,
             process,
             zx::Vmar::invalid(),
@@ -756,8 +739,7 @@ impl ThreadGroup {
         )
     }
 
-    fn new_internal<L>(
-        locked: &mut Locked<L>,
+    fn new_internal(
         kernel: Arc<Kernel>,
         process: zx::Process,
         root_vmar: zx::Vmar,
@@ -766,10 +748,7 @@ impl ThreadGroup {
         exit_signal: Option<Signal>,
         process_group: Arc<ProcessGroup>,
         signal_actions: Arc<SignalActions>,
-    ) -> Arc<ThreadGroup>
-    where
-        L: LockBefore<ProcessGroupState>,
-    {
+    ) -> Arc<ThreadGroup> {
         Arc::new_cyclic(|weak_self| {
             let process = ZirconProcess::new(process);
             let mut thread_group = ThreadGroup {
@@ -784,10 +763,10 @@ impl ThreadGroup {
                 drop_notifier: Default::default(),
                 // A child process created via fork(2) inherits its parent's
                 // resource limits.  Resource limits are preserved across execve(2).
-                limits: OrderedMutex::new(
+                limits: LockDepMutex::new(
                     parent
                         .as_ref()
-                        .map(|p| p.base.limits.lock(locked.cast_locked()).clone())
+                        .map(|p| p.base.limits.lock().clone())
                         .unwrap_or(Default::default()),
                 ),
                 next_seccomp_filter_id: Default::default(),
@@ -828,7 +807,7 @@ impl ThreadGroup {
             if let Some(mut parent) = parent {
                 thread_group.next_seccomp_filter_id.reset(parent.base.next_seccomp_filter_id.get());
                 parent.children.insert(leader, weak_self.clone());
-                process_group.insert(locked, &thread_group);
+                process_group.insert(&thread_group);
             };
             thread_group
         })
@@ -848,18 +827,10 @@ impl ThreadGroup {
     /// If this is being called from a task that is part of the current thread group, the caller
     /// should pass `current_task`. If ownership issues prevent passing `current_task`, then callers
     /// should use [`CurrentTask::kill_thread_group()`] instead.
-    pub fn kill(
-        &self,
-        locked: &mut Locked<Unlocked>,
-        exit_status: ExitStatus,
-        mut current_task: Option<&mut CurrentTask>,
-    ) {
+    pub fn kill(&self, exit_status: ExitStatus, mut current_task: Option<&mut CurrentTask>) {
         if let Some(ref mut current_task) = current_task {
-            current_task.ptrace_event(
-                locked,
-                PtraceOptions::TRACEEXIT,
-                exit_status.signal_info_status() as u64,
-            );
+            current_task
+                .ptrace_event(PtraceOptions::TRACEEXIT, exit_status.signal_info_status() as u64);
         }
         let mut pids = self.kernel.pids.write();
         let mut state = self.write();
@@ -880,11 +851,11 @@ impl ThreadGroup {
         for notification in zombie_notifications {
             notification.deliver(&mut pids);
         }
-        self.detach_ptracees(locked, &mut pids);
+        self.detach_ptracees(&mut pids);
 
         for task in tasks {
             task.write().set_exit_status(exit_status.clone());
-            send_standard_signal(locked, &task, SignalInfo::kernel(SIGKILL));
+            send_standard_signal(&task, SignalInfo::kernel(SIGKILL));
         }
     }
 
@@ -913,14 +884,7 @@ impl ThreadGroup {
     ///
     /// It is important that the task is taken as an `Arc`. It ensures the tasks of the
     /// ThreadGroup are always valid as they are still valid when removed.
-    pub fn remove<L>(
-        &self,
-        locked: &mut Locked<L>,
-        mut pids: RwLockWriteGuard<'_, PidTable>,
-        task: &Arc<Task>,
-    ) where
-        L: LockBefore<ProcessGroupState> + LockBefore<ThreadGroupLimits>,
-    {
+    pub fn remove(&self, mut pids: RwLockWriteGuard<'_, PidTable>, task: &Arc<Task>) {
         task.set_ptrace_zombie(&mut pids);
         pids.remove_task(task.tid);
 
@@ -958,7 +922,7 @@ impl ThreadGroup {
                 ZombieProcess::new(state.as_ref(), &persistent_info.real_creds(), exit_info);
             pids.kill_process(self.leader, OwnedRef::downgrade(&zombie));
 
-            let session = state.leave_process_group(locked, &pids);
+            let session = state.leave_process_group(&pids);
 
             // I have no idea if dropping the lock here is correct, and I don't want to think about
             // it. If problems do turn up with another thread observing an intermediate state of
@@ -973,7 +937,7 @@ impl ThreadGroup {
 
             // `disassociate_controlling_terminal` can not be called while holding the
             // ThreadGroup state lock.
-            session.disassociate_controlling_terminal(locked);
+            session.disassociate_controlling_terminal();
 
             for notification in zombie_notifications {
                 notification.deliver(&mut pids);
@@ -984,7 +948,7 @@ impl ThreadGroup {
             // more in lock_cgroup2_pid_table comments.
             self.kernel.cgroups.lock_cgroup2_pid_table().remove_process(self.into());
 
-            self.detach_ptracees(locked, &mut pids);
+            self.detach_ptracees(&mut pids);
 
             // We will need the immediate parent and the reaper. Once we have them, we can make
             // sure to take the locks in the right order: parent before child.
@@ -1069,7 +1033,7 @@ impl ThreadGroup {
 
             if let Some(parent) = parent {
                 let parent = parent.upgrade();
-                parent.check_orphans(locked, &pids);
+                parent.check_orphans(&pids);
             }
 
             self.write().set_exited();
@@ -1077,10 +1041,7 @@ impl ThreadGroup {
     }
 
     /// Detach from any ptraced tasks, killing the ones that set `PTRACE_O_EXITKILL`.
-    fn detach_ptracees<L>(&self, locked: &mut Locked<L>, pids: &mut PidTable)
-    where
-        L: LockBefore<ThreadGroupLimits>,
-    {
+    fn detach_ptracees(&self, pids: &mut PidTable) {
         let tracee_tids = self.ptracees.lock().keys().cloned().collect_vec();
         for tracee_tid in tracee_tids {
             let Ok(tracee) = pids.get_task(tracee_tid) else {
@@ -1092,11 +1053,10 @@ impl ThreadGroup {
                 should_send_sigkill = ptrace.has_option(PtraceOptions::EXITKILL);
             }
             if should_send_sigkill {
-                send_standard_signal(locked, tracee.as_ref(), SignalInfo::kernel(SIGKILL));
+                send_standard_signal(tracee.as_ref(), SignalInfo::kernel(SIGKILL));
             }
 
             let _ = ptrace_detach(
-                locked,
                 pids,
                 PtraceTracer::Exiting(self),
                 tracee.as_ref(),
@@ -1212,33 +1172,26 @@ impl ThreadGroup {
         Some(weak_parent)
     }
 
-    pub fn setsid<L>(&self, locked: &mut Locked<L>) -> Result<(), Errno>
-    where
-        L: LockBefore<ProcessGroupState>,
-    {
+    pub fn setsid(&self) -> Result<(), Errno> {
         let pids = self.kernel.pids.read();
         if pids.get_process_group(self.leader).is_some() {
             return error!(EPERM);
         }
         let process_group = ProcessGroup::new(self.leader, None);
         pids.add_process_group(process_group.clone());
-        let session = self.write().set_process_group(locked, process_group, &pids);
-        session.disassociate_controlling_terminal(locked);
-        self.check_orphans(locked, &pids);
+        let session = self.write().set_process_group(process_group, &pids);
+        session.disassociate_controlling_terminal();
+        self.check_orphans(&pids);
 
         Ok(())
     }
 
-    pub fn setpgid<L>(
+    pub fn setpgid(
         &self,
-        locked: &mut Locked<L>,
         current_task: &CurrentTask,
         target: &Task,
         pgid: pid_t,
-    ) -> Result<(), Errno>
-    where
-        L: LockBefore<ProcessGroupState>,
-    {
+    ) -> Result<(), Errno> {
         let pids = self.kernel.pids.read();
 
         {
@@ -1297,14 +1250,14 @@ impl ThreadGroup {
                 }
             }
 
-            let session = target_thread_group.set_process_group(locked, new_process_group, &pids);
+            let session = target_thread_group.set_process_group(new_process_group, &pids);
             std::mem::drop(target_thread_group);
             // `disassociate_controlling_terminal` can not be called while holding the
             // ThreadGroup state lock.
-            session.disassociate_controlling_terminal(locked);
+            session.disassociate_controlling_terminal();
         }
 
-        target.thread_group().check_orphans(locked, &pids);
+        target.thread_group().check_orphans(&pids);
 
         Ok(())
     }
@@ -1428,16 +1381,12 @@ impl ThreadGroup {
         Ok(pid)
     }
 
-    pub fn set_foreground_process_group<L>(
+    pub fn set_foreground_process_group(
         &self,
-        locked: &mut Locked<L>,
         current_task: &CurrentTask,
         terminal: &Terminal,
         pgid: pid_t,
-    ) -> Result<(), Errno>
-    where
-        L: LockBefore<ProcessGroupState>,
-    {
+    ) -> Result<(), Errno> {
         let process_group;
         let send_ttou;
         {
@@ -1472,7 +1421,7 @@ impl ThreadGroup {
 
         // Locks must not be held when sending signals.
         if send_ttou {
-            process_group.send_signals(locked, &[SIGTTOU]);
+            process_group.send_signals(&[SIGTTOU]);
             return error!(EINTR);
         }
 
@@ -1546,16 +1495,12 @@ impl ThreadGroup {
         Ok(())
     }
 
-    pub fn release_controlling_terminal<L>(
+    pub fn release_controlling_terminal(
         &self,
-        locked: &mut Locked<L>,
         _current_task: &CurrentTask,
         terminal: &Terminal,
         is_main: bool,
-    ) -> Result<(), Errno>
-    where
-        L: LockBefore<ProcessGroupState>,
-    {
+    ) -> Result<(), Errno> {
         let process_group;
         {
             // Keep locks to ensure atomicity.
@@ -1586,47 +1531,37 @@ impl ThreadGroup {
         }
 
         if process_group.session.leader == self.leader {
-            process_group.send_signals(locked, &[SIGHUP, SIGCONT]);
+            process_group.send_signals(&[SIGHUP, SIGCONT]);
         }
 
         Ok(())
     }
 
-    fn check_orphans<L>(&self, locked: &mut Locked<L>, pids: &PidTable)
-    where
-        L: LockBefore<ProcessGroupState>,
-    {
+    fn check_orphans(&self, pids: &PidTable) {
         let mut thread_groups = self.read().children().collect::<Vec<_>>();
         let this = self.weak_self.upgrade().unwrap();
         thread_groups.push(this);
         let process_groups =
             thread_groups.iter().map(|tg| Arc::clone(&tg.read().process_group)).unique();
         for pg in process_groups {
-            pg.check_orphaned(locked, pids);
+            pg.check_orphaned(pids);
         }
     }
 
-    pub fn get_rlimit<L>(&self, locked: &mut Locked<L>, resource: Resource) -> u64
-    where
-        L: LockBefore<ThreadGroupLimits>,
-    {
-        self.limits.lock(locked).get(resource).rlim_cur
+    pub fn get_rlimit(&self, resource: Resource) -> u64 {
+        self.limits.lock().get(resource).rlim_cur
     }
 
     /// Adjusts the rlimits of the ThreadGroup to which `target_task` belongs to.
-    pub fn adjust_rlimits<L>(
-        locked: &mut Locked<L>,
+    pub fn adjust_rlimits(
         current_task: &CurrentTask,
         target_task: &Task,
         resource: Resource,
         maybe_new_limit: Option<rlimit>,
-    ) -> Result<rlimit, Errno>
-    where
-        L: LockBefore<ThreadGroupLimits>,
-    {
+    ) -> Result<rlimit, Errno> {
         let thread_group = target_task.thread_group();
         let can_increase_rlimit = security::is_task_capable_noaudit(current_task, CAP_SYS_RESOURCE);
-        let mut limit_state = thread_group.limits.lock(locked);
+        let mut limit_state = thread_group.limits.lock();
         let old_limit = limit_state.get(resource);
         if let Some(new_limit) = maybe_new_limit {
             if new_limit.rlim_max > old_limit.rlim_max && !can_increase_rlimit {
@@ -2147,21 +2082,17 @@ impl ThreadGroupMutableState<Base = ThreadGroup> {
     /// leader.
     /// This must be done after the ThreadGroup state lock is released to avoid lock order
     /// violations.
-    fn set_process_group<L>(
+    fn set_process_group(
         &mut self,
-        locked: &mut Locked<L>,
         process_group: Arc<ProcessGroup>,
         pids: &PidTable,
-    ) -> SessionDisassociation
-    where
-        L: LockBefore<ProcessGroupState>,
-    {
+    ) -> SessionDisassociation {
         if self.process_group == process_group {
             return SessionDisassociation::new(None);
         }
-        let session = self.leave_process_group(locked, pids);
+        let session = self.leave_process_group(pids);
         self.process_group = process_group;
-        self.process_group.insert(locked, self.base);
+        self.process_group.insert(self.base);
         session
     }
 
@@ -2172,15 +2103,8 @@ impl ThreadGroupMutableState<Base = ThreadGroup> {
     /// leader.
     /// This must be done after the ThreadGroup state lock is released to avoid lock order
     /// violations.
-    fn leave_process_group<L>(
-        &mut self,
-        locked: &mut Locked<L>,
-        pids: &PidTable,
-    ) -> SessionDisassociation
-    where
-        L: LockBefore<ProcessGroupState>,
-    {
-        let (is_empty, disassociation) = self.process_group.remove(locked, self.base);
+    fn leave_process_group(&mut self, pids: &PidTable) -> SessionDisassociation {
+        let (is_empty, disassociation) = self.process_group.remove(self.base);
         if is_empty {
             self.process_group.session.write().remove(self.process_group.leader);
             pids.remove_process_group(self.process_group.leader);
@@ -2535,33 +2459,31 @@ mod test {
 
     #[::fuchsia::test]
     async fn test_setsid() {
-        spawn_kernel_and_run(async |locked, current_task| {
+        spawn_kernel_and_run(async |current_task| {
             fn get_process_group(task: &Task) -> Arc<ProcessGroup> {
                 Arc::clone(&task.thread_group().read().process_group)
             }
-            assert_eq!(current_task.thread_group().setsid(locked), error!(EPERM));
+            assert_eq!(current_task.thread_group().setsid(), error!(EPERM));
 
-            let child_task = current_task.clone_task_for_test(locked, 0, Some(SIGCHLD));
+            let child_task = current_task.clone_task_for_test(0, Some(SIGCHLD));
             assert_eq!(get_process_group(&current_task), get_process_group(&child_task));
 
             let old_process_group = child_task.thread_group().read().process_group.clone();
-            assert_eq!(child_task.thread_group().setsid(locked), Ok(()));
+            assert_eq!(child_task.thread_group().setsid(), Ok(()));
             assert_eq!(
                 child_task.thread_group().read().process_group.session.leader,
                 child_task.get_pid()
             );
-            assert!(
-                !old_process_group.read(locked).thread_groups().contains(child_task.thread_group())
-            );
+            assert!(!old_process_group.read().thread_groups().contains(child_task.thread_group()));
         })
         .await;
     }
 
     #[::fuchsia::test]
     async fn test_exit_status() {
-        spawn_kernel_and_run(async |locked, current_task| {
-            let child = current_task.clone_task_for_test(locked, 0, Some(SIGCHLD));
-            child.thread_group().kill(locked, ExitStatus::Exit(42), None);
+        spawn_kernel_and_run(async |current_task| {
+            let child = current_task.clone_task_for_test(0, Some(SIGCHLD));
+            child.thread_group().kill(ExitStatus::Exit(42), None);
             std::mem::drop(child);
             assert_eq!(
                 current_task.thread_group().read().zombie_children[0].exit_info.status,
@@ -2573,49 +2495,42 @@ mod test {
 
     #[::fuchsia::test]
     async fn test_setgpid() {
-        spawn_kernel_and_run(async |locked, current_task| {
-            assert_eq!(current_task.thread_group().setsid(locked), error!(EPERM));
+        spawn_kernel_and_run(async |current_task| {
+            assert_eq!(current_task.thread_group().setsid(), error!(EPERM));
 
-            let child_task1 = current_task.clone_task_for_test(locked, 0, Some(SIGCHLD));
-            let child_task2 = current_task.clone_task_for_test(locked, 0, Some(SIGCHLD));
-            let execd_child_task = current_task.clone_task_for_test(locked, 0, Some(SIGCHLD));
+            let child_task1 = current_task.clone_task_for_test(0, Some(SIGCHLD));
+            let child_task2 = current_task.clone_task_for_test(0, Some(SIGCHLD));
+            let execd_child_task = current_task.clone_task_for_test(0, Some(SIGCHLD));
             execd_child_task.thread_group().write().did_exec = true;
-            let other_session_child_task =
-                current_task.clone_task_for_test(locked, 0, Some(SIGCHLD));
-            assert_eq!(other_session_child_task.thread_group().setsid(locked), Ok(()));
+            let other_session_child_task = current_task.clone_task_for_test(0, Some(SIGCHLD));
+            assert_eq!(other_session_child_task.thread_group().setsid(), Ok(()));
 
             assert_eq!(
-                child_task1.thread_group().setpgid(locked, &current_task, &current_task, 0),
+                child_task1.thread_group().setpgid(&current_task, &current_task, 0),
                 error!(ESRCH)
             );
             assert_eq!(
-                current_task.thread_group().setpgid(locked, &current_task, &execd_child_task, 0),
+                current_task.thread_group().setpgid(&current_task, &execd_child_task, 0),
                 error!(EACCES)
             );
             assert_eq!(
-                current_task.thread_group().setpgid(locked, &current_task, &current_task, 0),
+                current_task.thread_group().setpgid(&current_task, &current_task, 0),
                 error!(EPERM)
             );
             assert_eq!(
-                current_task.thread_group().setpgid(
-                    locked,
-                    &current_task,
-                    &other_session_child_task,
-                    0
-                ),
+                current_task.thread_group().setpgid(&current_task, &other_session_child_task, 0),
                 error!(EPERM)
             );
             assert_eq!(
-                current_task.thread_group().setpgid(locked, &current_task, &child_task1, -1),
+                current_task.thread_group().setpgid(&current_task, &child_task1, -1),
                 error!(EINVAL)
             );
             assert_eq!(
-                current_task.thread_group().setpgid(locked, &current_task, &child_task1, 255),
+                current_task.thread_group().setpgid(&current_task, &child_task1, 255),
                 error!(EPERM)
             );
             assert_eq!(
                 current_task.thread_group().setpgid(
-                    locked,
                     &current_task,
                     &child_task1,
                     other_session_child_task.tid
@@ -2623,10 +2538,7 @@ mod test {
                 error!(EPERM)
             );
 
-            assert_eq!(
-                child_task1.thread_group().setpgid(locked, &current_task, &child_task1, 0),
-                Ok(())
-            );
+            assert_eq!(child_task1.thread_group().setpgid(&current_task, &child_task1, 0), Ok(()));
             assert_eq!(
                 child_task1.thread_group().read().process_group.session.leader,
                 current_task.tid
@@ -2635,35 +2547,25 @@ mod test {
 
             let old_process_group = child_task2.thread_group().read().process_group.clone();
             assert_eq!(
-                current_task.thread_group().setpgid(
-                    locked,
-                    &current_task,
-                    &child_task2,
-                    child_task1.tid
-                ),
+                current_task.thread_group().setpgid(&current_task, &child_task2, child_task1.tid),
                 Ok(())
             );
             assert_eq!(child_task2.thread_group().read().process_group.leader, child_task1.tid);
-            assert!(
-                !old_process_group
-                    .read(locked)
-                    .thread_groups()
-                    .contains(child_task2.thread_group())
-            );
+            assert!(!old_process_group.read().thread_groups().contains(child_task2.thread_group()));
         })
         .await;
     }
 
     #[::fuchsia::test]
     async fn test_adopt_children() {
-        spawn_kernel_and_run(async |locked, current_task| {
-            let task1 = current_task.clone_task_for_test(locked, 0, None);
-            let task2 = task1.clone_task_for_test(locked, 0, None);
-            let task3 = task2.clone_task_for_test(locked, 0, None);
+        spawn_kernel_and_run(async |current_task| {
+            let task1 = current_task.clone_task_for_test(0, None);
+            let task2 = task1.clone_task_for_test(0, None);
+            let task3 = task2.clone_task_for_test(0, None);
 
             assert_eq!(task3.thread_group().read().get_ppid(), task2.tid);
 
-            task2.thread_group().kill(locked, ExitStatus::Exit(0), None);
+            task2.thread_group().kill(ExitStatus::Exit(0), None);
             std::mem::drop(task2);
 
             // Task3 parent should be current_task.
@@ -2674,9 +2576,9 @@ mod test {
 
     #[::fuchsia::test]
     async fn test_getppid_after_self_and_parent_exit() {
-        spawn_kernel_and_run(async |locked, current_task| {
-            let task1 = current_task.clone_task_for_test(locked, 0, None);
-            let task2 = task1.clone_task_for_test(locked, 0, None);
+        spawn_kernel_and_run(async |current_task| {
+            let task1 = current_task.clone_task_for_test(0, None);
+            let task2 = task1.clone_task_for_test(0, None);
 
             // Take strong references to the ThreadGroups.
             let tg1 = task1.thread_group().clone();
@@ -2686,11 +2588,11 @@ mod test {
             assert_eq!(tg2.read().get_ppid(), task1.tid);
 
             // Exit `task2` first, so that when `task1` exits, it will not be reparented to init.
-            tg2.kill(locked, ExitStatus::Exit(0), None);
+            tg2.kill(ExitStatus::Exit(0), None);
             std::mem::drop(task2);
 
             // Exit `task1`, and drop the task and ThreadGroup.
-            tg1.kill(locked, ExitStatus::Exit(0), None);
+            tg1.kill(ExitStatus::Exit(0), None);
             std::mem::drop(task1);
             std::mem::drop(tg1);
 

@@ -10,7 +10,7 @@ use crate::vfs::{
 };
 
 use crate::vfs::fileops_impl_noop_sync;
-use starnix_sync::{FileOpsCore, Locked};
+
 use starnix_uapi::as_any::AsAny;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
@@ -21,7 +21,7 @@ use std::sync::{Arc, Weak};
 
 pub struct SimpleFileNode<F, O>
 where
-    F: Fn(&mut Locked<FileOpsCore>, &CurrentTask) -> Result<O, Errno>,
+    F: Fn(&CurrentTask) -> Result<O, Errno>,
     O: FileOps,
 {
     create_file_ops: F,
@@ -29,7 +29,7 @@ where
 
 impl<F, O> SimpleFileNode<F, O>
 where
-    F: Fn(&mut Locked<FileOpsCore>, &CurrentTask) -> Result<O, Errno> + Send + Sync + 'static,
+    F: Fn(&CurrentTask) -> Result<O, Errno> + Send + Sync + 'static,
     O: FileOps,
 {
     pub fn new(create_file_ops: F) -> Self {
@@ -39,24 +39,22 @@ where
 
 impl<F, O> FsNodeOps for SimpleFileNode<F, O>
 where
-    F: Fn(&mut Locked<FileOpsCore>, &CurrentTask) -> Result<O, Errno> + Send + Sync + 'static,
+    F: Fn(&CurrentTask) -> Result<O, Errno> + Send + Sync + 'static,
     O: FileOps,
 {
     fs_node_impl_not_dir!();
 
     fn create_file_ops(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         _node: &FsNode,
         current_task: &CurrentTask,
         _flags: OpenFlags,
     ) -> Result<Box<dyn FileOps>, Errno> {
-        Ok(Box::new((self.create_file_ops)(locked, current_task)?))
+        Ok(Box::new((self.create_file_ops)(current_task)?))
     }
 
     fn truncate(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _guard: &AppendLockWriteGuard<'_>,
         _node: &FsNode,
         _current_task: &CurrentTask,
@@ -97,7 +95,7 @@ impl<Ops: BytesFileOps> BytesFile<Ops> {
 
     pub fn new_node(data: Ops) -> impl FsNodeOps {
         let data = Arc::new(data);
-        SimpleFileNode::new(move |_, _| Ok(BytesFile(Arc::clone(&data))))
+        SimpleFileNode::new(move |_| Ok(BytesFile(Arc::clone(&data))))
     }
 }
 
@@ -112,24 +110,18 @@ impl<Ops: BytesFileOps> FileOps for BytesFile<Ops> {
     fileops_impl_seekable!();
     fileops_impl_noop_sync!();
 
-    fn open(
-        &self,
-        locked: &mut Locked<FileOpsCore>,
-        file: &FileObject,
-        current_task: &CurrentTask,
-    ) -> Result<(), Errno> {
-        self.0.open(locked, file, current_task)
+    fn open(&self, file: &FileObject, current_task: &CurrentTask) -> Result<(), Errno> {
+        self.0.open(file, current_task)
     }
 
     fn read(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         current_task: &CurrentTask,
         offset: usize,
         data: &mut dyn OutputBuffer,
     ) -> Result<usize, Errno> {
-        let content = self.0.read_locked(locked, current_task)?;
+        let content = self.0.read(current_task)?;
         if offset >= content.len() {
             return Ok(0);
         }
@@ -138,7 +130,6 @@ impl<Ops: BytesFileOps> FileOps for BytesFile<Ops> {
 
     fn write(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         current_task: &CurrentTask,
         _offset: usize,
@@ -146,7 +137,7 @@ impl<Ops: BytesFileOps> FileOps for BytesFile<Ops> {
     ) -> Result<usize, Errno> {
         let data = data.read_all()?;
         let len = data.len();
-        self.0.write_locked(locked, current_task, data)?;
+        self.0.write(current_task, data)?;
         Ok(len)
     }
 }
@@ -155,30 +146,10 @@ pub trait BytesFileOps: Send + Sync + AsAny + 'static {
     fn write(&self, _current_task: &CurrentTask, _data: Vec<u8>) -> Result<(), Errno> {
         error!(ENOSYS)
     }
-    fn write_locked(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        current_task: &CurrentTask,
-        data: Vec<u8>,
-    ) -> Result<(), Errno> {
-        self.write(current_task, data)
-    }
     fn read(&self, _current_task: &CurrentTask) -> Result<Cow<'_, [u8]>, Errno> {
         error!(ENOSYS)
     }
-    fn read_locked(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        current_task: &CurrentTask,
-    ) -> Result<Cow<'_, [u8]>, Errno> {
-        self.read(current_task)
-    }
-    fn open(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        _file: &FileObject,
-        _current_task: &CurrentTask,
-    ) -> Result<(), Errno> {
+    fn open(&self, _file: &FileObject, _current_task: &CurrentTask) -> Result<(), Errno> {
         Ok(())
     }
 }

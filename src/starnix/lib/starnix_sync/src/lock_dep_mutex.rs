@@ -9,6 +9,8 @@ use fuchsia_sync::{
 };
 use std::marker::PhantomData;
 
+pub use tracking::LockLevelToken;
+
 #[cfg(feature = "detect_lock_dep_cycles")]
 mod tracking {
     use std::cell::RefCell;

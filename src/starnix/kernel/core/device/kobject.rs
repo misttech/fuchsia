@@ -12,7 +12,6 @@ use crate::vfs::{
 };
 use starnix_logging::track_stub;
 use starnix_rcu::{RcuHashMap, RcuReadScope};
-use starnix_sync::{FileOpsCore, Locked};
 use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
@@ -181,7 +180,6 @@ impl FsNodeOps for UEventFsNode {
 
     fn create_file_ops(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _node: &FsNode,
         _current_task: &CurrentTask,
         _flags: OpenFlags,
@@ -210,7 +208,6 @@ impl FileOps for UEventFile {
 
     fn read(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         offset: usize,
@@ -223,7 +220,6 @@ impl FileOps for UEventFile {
 
     fn write(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         current_task: &CurrentTask,
         offset: usize,
@@ -240,11 +236,9 @@ impl FileOps for UEventFile {
             }
 
             match UEventAction::try_from(command) {
-                Ok(c) => current_task.kernel().device_registry.dispatch_uevent(
-                    locked,
-                    c,
-                    self.device.clone(),
-                ),
+                Ok(c) => {
+                    current_task.kernel().device_registry.dispatch_uevent(c, self.device.clone())
+                }
                 Err(e) => {
                     track_stub!(TODO("https://fxbug.dev/297435061"), "synthetic uevent variables");
                     return Err(e);

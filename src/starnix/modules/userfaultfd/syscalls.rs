@@ -6,7 +6,7 @@ use starnix_core::security;
 use starnix_core::task::CurrentTask;
 use starnix_core::vfs::{FdFlags, FdNumber};
 use starnix_logging::track_stub;
-use starnix_sync::{Locked, Unlocked};
+
 use starnix_uapi::auth::CAP_SYS_PTRACE;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
@@ -14,11 +14,7 @@ use starnix_uapi::{O_CLOEXEC, O_NONBLOCK, UFFD_USER_MODE_ONLY, error};
 
 use crate::userfault_file::UserFaultFile;
 
-pub fn sys_userfaultfd(
-    locked: &mut Locked<Unlocked>,
-    current_task: &CurrentTask,
-    raw_flags: u32,
-) -> Result<FdNumber, Errno> {
+pub fn sys_userfaultfd(current_task: &CurrentTask, raw_flags: u32) -> Result<FdNumber, Errno> {
     let unknown_flags = raw_flags & !(O_CLOEXEC | O_NONBLOCK | UFFD_USER_MODE_ONLY);
     if unknown_flags != 0 {
         return error!(EINVAL, format!("unknown flags provided: {unknown_flags:x?}"));
@@ -42,8 +38,8 @@ pub fn sys_userfaultfd(
     if !user_mode_only {
         security::check_task_capable(current_task, CAP_SYS_PTRACE)?;
     }
-    let uff_handle = UserFaultFile::new(locked, current_task, open_flags, user_mode_only)?;
-    current_task.add_file(locked, uff_handle, fd_flags)
+    let uff_handle = UserFaultFile::new(current_task, open_flags, user_mode_only)?;
+    current_task.add_file(uff_handle, fd_flags)
 }
 
 pub use sys_userfaultfd as sys_arch32_userfaultfd;

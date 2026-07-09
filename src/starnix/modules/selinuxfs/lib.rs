@@ -4,8 +4,6 @@
 
 #![recursion_limit = "512"]
 
-use starnix_sync::LockEqualOrBefore;
-
 use seq_lock::{SeqLock, SeqLockable, WriteSize};
 
 use selinux::policy::parser::PolicyData;
@@ -34,7 +32,7 @@ use starnix_core::vfs::{
 use starnix_logging::{
     __track_stub_inner, BugRef, impossible_error, log_error, log_info, track_stub,
 };
-use starnix_sync::{FileOpsCore, LockDepMutex, Locked, SeLinuxFsContextSidLock, Unlocked};
+use starnix_sync::{LockDepMutex, SeLinuxFsContextSidLock};
 use starnix_types::vfs::default_statfs;
 use starnix_uapi::auth::FsCred;
 use starnix_uapi::device_id::DeviceId;
@@ -114,12 +112,7 @@ impl SeLinuxStatusPublisher for StatusPublisher {
 
 struct SeLinuxFs;
 impl FileSystemOps for SeLinuxFs {
-    fn statfs(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        _fs: &FileSystem,
-        _current_task: &CurrentTask,
-    ) -> Result<statfs, Errno> {
+    fn statfs(&self, _fs: &FileSystem, _current_task: &CurrentTask) -> Result<statfs, Errno> {
         Ok(default_statfs(SELINUX_MAGIC))
     }
     fn name(&self) -> &'static FsStr {
@@ -131,20 +124,16 @@ impl FileSystemOps for SeLinuxFs {
 /// Notebook at
 /// https://github.com/SELinuxProject/selinux-notebook/blob/main/src/lsm_selinux.md#selinux-filesystem
 impl SeLinuxFs {
-    fn new_fs<L>(
-        locked: &mut Locked<L>,
+    fn new_fs(
         current_task: &CurrentTask,
         options: FileSystemOptions,
-    ) -> Result<FileSystemHandle, Errno>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
+    ) -> Result<FileSystemHandle, Errno> {
         // If SELinux is not enabled then the "selinuxfs" file system does not exist.
         let security_server = security::selinuxfs_get_admin_api(current_task)
             .ok_or_else(|| errno!(ENODEV, "selinuxfs"))?;
 
         let kernel = current_task.kernel();
-        let fs = FileSystem::new(locked, kernel, CacheMode::Permanent, SeLinuxFs, options)?;
+        let fs = FileSystem::new(kernel, CacheMode::Permanent, SeLinuxFs, options)?;
         let root = SimpleDirectory::new();
         fs.create_root(fs.allocate_ino(), root.clone());
         let dir = SimpleDirectoryMutator::new(fs.clone(), root);
@@ -248,9 +237,8 @@ impl SeLinuxFs {
         let null_flags = OpenFlags::empty();
         let null_name =
             NamespaceNode::new_anonymous(DirEntry::new(null_fs_node, None, "null".into()));
-        let null_file_object =
-            FileObject::new(locked, current_task, null_ops, null_name, null_flags)
-                .expect("create file object for just-created selinuxfs/null");
+        let null_file_object = FileObject::new(current_task, null_ops, null_name, null_flags)
+            .expect("create file object for just-created selinuxfs/null");
         security::selinuxfs_init_null(current_task, &null_file_object);
 
         Ok(fs)
@@ -273,12 +261,7 @@ impl SeLinuxApiOps for LoadApi {
     fn api_write_permission() -> SecurityPermission {
         SecurityPermission::LoadPolicy
     }
-    fn api_write_with_task(
-        &self,
-        locked: &mut Locked<FileOpsCore>,
-        current_task: &CurrentTask,
-        data: Vec<u8>,
-    ) -> Result<(), Errno> {
+    fn api_write_with_task(&self, current_task: &CurrentTask, data: Vec<u8>) -> Result<(), Errno> {
         log_info!("Loading {} byte policy", data.len());
         self.security_server.load_policy(data).map_err(|error| {
             log_error!("Policy load error: {}", error);
@@ -286,7 +269,7 @@ impl SeLinuxApiOps for LoadApi {
         })?;
 
         // Allow one-time initialization of state that requires a loaded policy.
-        security::selinuxfs_policy_loaded(locked, current_task);
+        security::selinuxfs_policy_loaded(current_task);
 
         Ok(())
     }
@@ -300,7 +283,7 @@ struct PolicyFile {
 
 impl PolicyFile {
     fn new_node(security_server: Arc<SecurityServer>) -> impl FsNodeOps {
-        SimpleFileNode::new(move |_, _| {
+        SimpleFileNode::new(move |_| {
             Ok(Self { binary_policy: security_server.get_binary_policy() })
         })
     }
@@ -310,19 +293,13 @@ impl FileOps for PolicyFile {
     fileops_impl_seekable!();
     fileops_impl_noop_sync!();
 
-    fn open(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        _file: &FileObject,
-        current_task: &CurrentTask,
-    ) -> Result<(), Errno> {
+    fn open(&self, _file: &FileObject, current_task: &CurrentTask) -> Result<(), Errno> {
         security::selinuxfs_check_access(current_task, SecurityPermission::ReadPolicy)?;
         Ok(())
     }
 
     fn read(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         offset: usize,
@@ -340,7 +317,6 @@ impl FileOps for PolicyFile {
 
     fn write(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         _offset: usize,
@@ -851,7 +827,6 @@ impl FsNodeOps for NullFileNode {
 
     fn create_file_ops(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _node: &FsNode,
         _current_task: &CurrentTask,
         _flags: OpenFlags,
@@ -876,7 +851,6 @@ impl FsNodeOps for BooleansDirectory {
 
     fn create_file_ops(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _node: &FsNode,
         _current_task: &CurrentTask,
         _flags: OpenFlags,
@@ -886,7 +860,6 @@ impl FsNodeOps for BooleansDirectory {
 
     fn lookup(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         node: &FsNode,
         current_task: &CurrentTask,
         name: &FsStr,
@@ -910,7 +883,6 @@ impl FileOps for BooleansDirectory {
 
     fn readdir(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         file: &FileObject,
         _current_task: &CurrentTask,
         sink: &mut dyn DirentSink,
@@ -1006,7 +978,6 @@ impl FsNodeOps for ClassDirectory {
     /// Returns the set of classes under the "class" directory.
     fn create_file_ops(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _node: &FsNode,
         _current_task: &CurrentTask,
         _flags: OpenFlags,
@@ -1027,7 +998,6 @@ impl FsNodeOps for ClassDirectory {
 
     fn lookup(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         node: &FsNode,
         _current_task: &CurrentTask,
         name: &FsStr,
@@ -1071,7 +1041,6 @@ impl FsNodeOps for PermsDirectory {
     /// Lists all available permissions for the corresponding class.
     fn create_file_ops(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _node: &FsNode,
         _current_task: &CurrentTask,
         _flags: OpenFlags,
@@ -1092,7 +1061,6 @@ impl FsNodeOps for PermsDirectory {
 
     fn lookup(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         node: &FsNode,
         current_task: &CurrentTask,
         name: &FsStr,
@@ -1173,7 +1141,7 @@ impl<T: SeLinuxApiOps + Sync + Send + 'static> SeLinuxApi<T> {
     where
         F: Fn() -> Result<T, Errno> + Send + Sync + 'static,
     {
-        SimpleFileNode::new(move |_, _| create_ops().map(|ops| SeLinuxApi { ops }))
+        SimpleFileNode::new(move |_| create_ops().map(|ops| SeLinuxApi { ops }))
     }
 }
 
@@ -1198,12 +1166,7 @@ trait SeLinuxApiOps {
     }
 
     /// Variant of `api_write()` that additionally receives the `current_task`.
-    fn api_write_with_task(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        _current_task: &CurrentTask,
-        data: Vec<u8>,
-    ) -> Result<(), Errno> {
+    fn api_write_with_task(&self, _current_task: &CurrentTask, data: Vec<u8>) -> Result<(), Errno> {
         self.api_write(data)
     }
 }
@@ -1218,7 +1181,6 @@ impl<T: SeLinuxApiOps + Sync + Send + 'static> FileOps for SeLinuxApi<T> {
 
     fn read(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         offset: usize,
@@ -1230,7 +1192,6 @@ impl<T: SeLinuxApiOps + Sync + Send + 'static> FileOps for SeLinuxApi<T> {
 
     fn write(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         current_task: &CurrentTask,
         offset: usize,
@@ -1242,14 +1203,13 @@ impl<T: SeLinuxApiOps + Sync + Send + 'static> FileOps for SeLinuxApi<T> {
         security::selinuxfs_check_access(current_task, T::api_write_permission())?;
         let data = data.read_all()?;
         let data_len = data.len();
-        self.ops.api_write_with_task(locked, current_task, data)?;
+        self.ops.api_write_with_task(current_task, data)?;
         Ok(data_len)
     }
 }
 
 /// Returns the "selinuxfs" file system, used by the system userspace to administer SELinux.
 pub fn selinux_fs(
-    locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
     options: FileSystemOptions,
 ) -> Result<FileSystemHandle, Errno> {
@@ -1258,7 +1218,7 @@ pub fn selinux_fs(
     Ok(current_task
         .kernel()
         .expando
-        .get_or_try_init(|| Ok(SeLinuxFsHandle(SeLinuxFs::new_fs(locked, current_task, options)?)))?
+        .get_or_try_init(|| Ok(SeLinuxFsHandle(SeLinuxFs::new_fs(current_task, options)?)))?
         .0
         .clone())
 }

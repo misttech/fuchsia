@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 use crate::fs::fuchsia::RemoteFs;
+use crate::task::CurrentTask;
 use crate::task::dynamic_thread_spawner::SpawnRequestBuilder;
-use crate::task::{CurrentTask, LockedAndTask};
 use crate::vfs::{
     CacheMode, FileSystem, FileSystemHandle, FileSystemOps, FileSystemOptions, FsStr, RenameContext,
 };
@@ -15,7 +15,6 @@ use fidl_fuchsia_hardware_inlineencryption::DeviceMarker as InlineEncryptionDevi
 use fidl_fuchsia_io as fio;
 use starnix_crypt::CryptService;
 use starnix_logging::{Level, log, log_error};
-use starnix_sync::{FileOpsCore, Locked, Unlocked};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::{errno, from_status_like_fdio, statfs};
 use std::sync::Arc;
@@ -39,13 +38,8 @@ impl RemoteVolume {
 }
 
 impl FileSystemOps for RemoteVolume {
-    fn statfs(
-        &self,
-        locked: &mut Locked<FileOpsCore>,
-        fs: &FileSystem,
-        current_task: &CurrentTask,
-    ) -> Result<statfs, Errno> {
-        self.remotefs.statfs(locked, fs, current_task)
+    fn statfs(&self, fs: &FileSystem, current_task: &CurrentTask) -> Result<statfs, Errno> {
+        self.remotefs.statfs(fs, current_task)
     }
 
     fn name(&self) -> &'static FsStr {
@@ -58,14 +52,13 @@ impl FileSystemOps for RemoteVolume {
 
     fn rename(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         fs: &FileSystem,
         current_task: &CurrentTask,
         context: &mut RenameContext<'_>,
         old_name: &FsStr,
         new_name: &FsStr,
     ) -> Result<(), Errno> {
-        self.remotefs.rename(locked, fs, current_task, context, old_name, new_name)
+        self.remotefs.rename(fs, current_task, context, old_name, new_name)
     }
 
     fn unmount(&self) {
@@ -252,7 +245,6 @@ impl VolumeKeys {
 }
 
 pub fn new_remote_vol(
-    locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
     options: FileSystemOptions,
 ) -> Result<FileSystemHandle, Errno> {
@@ -313,7 +305,7 @@ pub fn new_remote_vol(
         fidl::endpoints::create_endpoints::<fio::DirectoryMarker>();
 
     let crypt_service_clone = Arc::clone(&crypt_service);
-    let closure = async move |_: LockedAndTask<'_>| {
+    let closure = async move |_: &CurrentTask| {
         let (r1, r2) = futures::join!(
             crypt_service_clone.handle_connection(crypt_proxy.into_stream()),
             crypt_service_clone.handle_connection(crypt2_proxy.into_stream())
@@ -383,13 +375,8 @@ pub fn new_remote_vol(
 
     let use_remote_ids = remotefs.use_remote_ids();
     let remotevol = RemoteVolume { remotefs, exposed_dir_proxy, crypt_service };
-    let fs = FileSystem::new(
-        locked,
-        kernel,
-        CacheMode::Cached(kernel.fs_cache_config()),
-        remotevol,
-        options,
-    )?;
+    let fs =
+        FileSystem::new(kernel, CacheMode::Cached(kernel.fs_cache_config()), remotevol, options)?;
 
     if use_remote_ids {
         fs.create_root_with_info(node_id, root_node, info);

@@ -6,7 +6,7 @@ use super::file::GrallocFile;
 use starnix_core::device::DeviceOps;
 use starnix_core::task::{CurrentTask, Kernel};
 use starnix_core::vfs::{FileOps, NamespaceNode};
-use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked};
+
 use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
@@ -17,7 +17,6 @@ struct GrallocDevice;
 impl DeviceOps for GrallocDevice {
     fn open(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         current_task: &CurrentTask,
         _id: DeviceId,
         _node: &NamespaceNode,
@@ -27,14 +26,10 @@ impl DeviceOps for GrallocDevice {
     }
 }
 
-pub fn gralloc_device_init<L>(locked: &mut Locked<L>, kernel: &Kernel)
-where
-    L: LockEqualOrBefore<FileOpsCore>,
-{
+pub fn gralloc_device_init(kernel: &Kernel) {
     let registry = &kernel.device_registry;
     registry
         .register_dyn_device(
-            locked,
             kernel,
             "virtgralloc0".into(),
             registry.objects.starnix_class(),

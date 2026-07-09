@@ -30,9 +30,8 @@ use starnix_core::vfs::{
 use starnix_lifecycle::AtomicCounter;
 use starnix_logging::{log_error, log_trace, log_warn, track_stub};
 use starnix_sync::{
-    AtomicMonotonicInstant, DynamicLockDepRwLock, FileOpsCore, FuseConnectionStateLock,
-    FuseConnectionsLock, FuseNodeStateLock, LockDepGuard, LockDepMutex, LockDepReadGuard,
-    LockDepWriteGuard, LockEqualOrBefore, Locked, Unlocked,
+    AtomicMonotonicInstant, DynamicLockDepRwLock, FuseConnectionStateLock, FuseConnectionsLock,
+    FuseNodeStateLock, LockDepGuard, LockDepMutex, LockDepReadGuard, LockDepWriteGuard,
 };
 use starnix_syscalls::{SyscallArg, SyscallResult};
 use starnix_types::time::{NANOS_PER_SECOND, duration_from_timespec, time_from_timespec};
@@ -101,7 +100,6 @@ struct DevFuse {
 }
 
 pub fn open_fuse_device(
-    _locked: &mut Locked<FileOpsCore>,
     current_task: &CurrentTask,
     _id: DeviceId,
     _node: &NamespaceNode,
@@ -125,32 +123,23 @@ impl FileOps for DevFuse {
     fileops_impl_nonseekable!();
     fileops_impl_noop_sync!();
 
-    fn close(
-        self: Box<Self>,
-        _locked: &mut Locked<FileOpsCore>,
-        _file: &FileObjectState,
-        _current_task: &CurrentTask,
-    ) {
+    fn close(self: Box<Self>, _file: &FileObjectState, _current_task: &CurrentTask) {
         self.connection.lock().disconnect();
     }
 
     fn read(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         file: &FileObject,
         current_task: &CurrentTask,
         offset: usize,
         data: &mut dyn OutputBuffer,
     ) -> Result<usize, Errno> {
         debug_assert!(offset == 0);
-        file.blocking_op(locked, current_task, FdEvents::POLLIN, None, |_| {
-            self.connection.lock().read(data)
-        })
+        file.blocking_op(current_task, FdEvents::POLLIN, None, || self.connection.lock().read(data))
     }
 
     fn write(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         offset: usize,
@@ -162,7 +151,6 @@ impl FileOps for DevFuse {
 
     fn wait_async(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         waiter: &Waiter,
@@ -174,7 +162,6 @@ impl FileOps for DevFuse {
 
     fn query_events(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
     ) -> Result<FdEvents, Errno> {
@@ -183,7 +170,6 @@ impl FileOps for DevFuse {
 
     fn ioctl(
         &self,
-        _locked: &mut Locked<Unlocked>,
         _file: &FileObject,
         current_task: &CurrentTask,
         request: u32,
@@ -214,7 +200,6 @@ impl FileOps for DevFuse {
 }
 
 pub fn new_fuse_fs(
-    locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
     options: FileSystemOptions,
 ) -> Result<FileSystemHandle, Errno> {
@@ -231,7 +216,6 @@ pub fn new_fuse_fs(
         .clone();
 
     let fs = FileSystem::new(
-        locked,
         current_task.kernel(),
         CacheMode::Cached(current_task.kernel().fs_cache_config()),
         FuseFs { connection: connection.clone(), default_permissions },
@@ -246,7 +230,6 @@ pub fn new_fuse_fs(
         let mut state = connection.lock();
         state.connect();
         state.execute_operation(
-            locked,
             current_task,
             FuseNode::from_node(&fs.root().node),
             FuseOperation::Init { fs: Arc::downgrade(&fs) },
@@ -260,12 +243,10 @@ fn fuse_connections(kernel: &Kernel) -> Arc<FuseConnections> {
 }
 
 pub fn new_fusectl_fs(
-    locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
     options: FileSystemOptions,
 ) -> Result<FileSystemHandle, Errno> {
-    let fs =
-        FileSystem::new(locked, current_task.kernel(), CacheMode::Uncached, FuseCtlFs, options)?;
+    let fs = FileSystem::new(current_task.kernel(), CacheMode::Uncached, FuseCtlFs, options)?;
 
     let root_ino = fs.allocate_ino();
     fs.create_root_with_info(
@@ -301,7 +282,6 @@ impl FileSystemOps for FuseFs {
 
     fn rename(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         _fs: &FileSystem,
         current_task: &CurrentTask,
         context: &mut RenameContext<'_>,
@@ -311,7 +291,6 @@ impl FileSystemOps for FuseFs {
         let old_parent = &context.old_parent().node;
         let new_parent = &context.new_parent().node;
         self.connection.lock().execute_operation(
-            locked,
             current_task,
             FuseNode::from_node(&old_parent),
             FuseOperation::Rename {
@@ -327,19 +306,10 @@ impl FileSystemOps for FuseFs {
         true
     }
 
-    fn statfs(
-        &self,
-        locked: &mut Locked<FileOpsCore>,
-        fs: &FileSystem,
-        current_task: &CurrentTask,
-    ) -> Result<statfs, Errno> {
+    fn statfs(&self, fs: &FileSystem, current_task: &CurrentTask) -> Result<statfs, Errno> {
         let node = FuseNode::from_node(&fs.root().node);
-        let response = self.connection.lock().execute_operation(
-            locked,
-            current_task,
-            &node,
-            FuseOperation::Statfs,
-        )?;
+        let response =
+            self.connection.lock().execute_operation(current_task, &node, FuseOperation::Statfs)?;
         let FuseResponse::Statfs(statfs_out) = response else {
             return error!(EINVAL);
         };
@@ -401,7 +371,6 @@ struct FuseCtlFs;
 impl FileSystemOps for FuseCtlFs {
     fn rename(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _fs: &FileSystem,
         _current_task: &CurrentTask,
         _context: &mut RenameContext<'_>,
@@ -411,12 +380,7 @@ impl FileSystemOps for FuseCtlFs {
         error!(ENOTSUP)
     }
 
-    fn statfs(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        _fs: &FileSystem,
-        _current_task: &CurrentTask,
-    ) -> Result<statfs, Errno> {
+    fn statfs(&self, _fs: &FileSystem, _current_task: &CurrentTask) -> Result<statfs, Errno> {
         // Magic number has been extracted from the stat utility.
         const FUSE_CTL_MAGIC: u32 = 0x65735543;
         Ok(default_statfs(FUSE_CTL_MAGIC))
@@ -435,7 +399,6 @@ impl FsNodeOps for FuseCtlConnectionsDirectory {
 
     fn create_file_ops(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _node: &FsNode,
         current_task: &CurrentTask,
         _flags: OpenFlags,
@@ -454,7 +417,6 @@ impl FsNodeOps for FuseCtlConnectionsDirectory {
 
     fn lookup(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         node: &FsNode,
         current_task: &CurrentTask,
         name: &FsStr,
@@ -502,7 +464,7 @@ struct AbortFile {
 
 impl AbortFile {
     fn new_node(connection: Arc<FuseConnection>) -> impl FsNodeOps {
-        SimpleFileNode::new(move |_, _| Ok(Self { connection: connection.clone() }))
+        SimpleFileNode::new(move |_| Ok(Self { connection: connection.clone() }))
     }
 }
 
@@ -512,7 +474,6 @@ impl FileOps for AbortFile {
 
     fn read(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         _offset: usize,
@@ -523,7 +484,6 @@ impl FileOps for AbortFile {
 
     fn write(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         _offset: usize,
@@ -608,7 +568,6 @@ impl FuseNode {
 
     fn default_check_access_with_valid_node_attributes(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         node: &FsNode,
         current_task: &CurrentTask,
         permission_flags: security::PermissionFlags,
@@ -616,13 +575,12 @@ impl FuseNode {
         info: &DynamicLockDepRwLock<FsNodeInfo>,
         audit_context: security::Auditable<'_>,
     ) -> Result<(), Errno> {
-        let info = self.refresh_expired_node_attributes(locked, current_task, info)?;
+        let info = self.refresh_expired_node_attributes(current_task, info)?;
         node.default_check_access_impl(current_task, permission_flags, reason, info, audit_context)
     }
 
     fn refresh_expired_node_attributes<'a>(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         current_task: &CurrentTask,
         info: &'a DynamicLockDepRwLock<FsNodeInfo>,
     ) -> Result<LockDepReadGuard<'a, FsNodeInfo>, Errno> {
@@ -651,21 +609,16 @@ impl FuseNode {
         }
 
         // Force a refresh of our cached attributes.
-        self.fetch_and_refresh_info_impl(locked, current_task, info)
+        self.fetch_and_refresh_info_impl(current_task, info)
     }
 
     fn fetch_and_refresh_info_impl<'a>(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         current_task: &CurrentTask,
         info: &'a DynamicLockDepRwLock<FsNodeInfo>,
     ) -> Result<LockDepReadGuard<'a, FsNodeInfo>, Errno> {
-        let response = self.connection.lock().execute_operation(
-            locked,
-            current_task,
-            self,
-            FuseOperation::GetAttr,
-        )?;
+        let response =
+            self.connection.lock().execute_operation(current_task, self, FuseOperation::GetAttr)?;
         let uapi::fuse_attr_out { attr_valid, attr_valid_nsec, attr, .. } =
             if let FuseResponse::Attr(attr) = response {
                 attr
@@ -778,18 +731,12 @@ impl FuseFileObject {
 }
 
 impl FileOps for FuseFileObject {
-    fn close(
-        self: Box<Self>,
-        locked: &mut Locked<FileOpsCore>,
-        file: &FileObjectState,
-        current_task: &CurrentTask,
-    ) {
+    fn close(self: Box<Self>, file: &FileObjectState, current_task: &CurrentTask) {
         let node = FuseNode::from_node(file.node());
         let is_dir = file.node().is_dir();
         {
             let mut connection = self.connection.lock();
             if let Err(e) = connection.execute_operation(
-                locked,
                 current_task,
                 node,
                 if is_dir {
@@ -806,15 +753,9 @@ impl FileOps for FuseFileObject {
         }
     }
 
-    fn flush(
-        &self,
-        locked: &mut Locked<FileOpsCore>,
-        file: &FileObject,
-        current_task: &CurrentTask,
-    ) {
+    fn flush(&self, file: &FileObject, current_task: &CurrentTask) {
         let node = Self::get_fuse_node(file);
         if let Err(e) = self.connection.lock().execute_operation(
-            locked,
             current_task,
             node,
             FuseOperation::Flush(self.open_out),
@@ -829,7 +770,6 @@ impl FileOps for FuseFileObject {
 
     fn read(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         file: &FileObject,
         current_task: &CurrentTask,
         offset: usize,
@@ -839,7 +779,7 @@ impl FileOps for FuseFileObject {
             return error!(EISDIR);
         }
         if let Some(file_object) = self.passthrough_file.upgrade() {
-            return file_object.ops().read(locked, &file_object, current_task, offset, data);
+            return file_object.ops().read(&file_object, current_task, offset, data);
         }
 
         // EOF bounds capping to prevent reading past file limits.
@@ -854,7 +794,6 @@ impl FileOps for FuseFileObject {
 
         let node = Self::get_fuse_node(file);
         let response = self.connection.lock().execute_operation(
-            locked,
             current_task,
             node,
             FuseOperation::Read(uapi::fuse_read_in {
@@ -875,7 +814,6 @@ impl FileOps for FuseFileObject {
 
     fn write(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         file: &FileObject,
         current_task: &CurrentTask,
         offset: usize,
@@ -885,12 +823,11 @@ impl FileOps for FuseFileObject {
             return error!(EISDIR);
         }
         if let Some(file_object) = self.passthrough_file.upgrade() {
-            return file_object.ops().write(locked, &file_object, current_task, offset, data);
+            return file_object.ops().write(&file_object, current_task, offset, data);
         }
         let node = Self::get_fuse_node(file);
         let content = data.peek_all()?;
         let response = self.connection.lock().execute_operation(
-            locked,
             current_task,
             node,
             FuseOperation::Write {
@@ -919,7 +856,6 @@ impl FileOps for FuseFileObject {
 
     fn seek(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         file: &FileObject,
         current_task: &CurrentTask,
         current_offset: off_t,
@@ -929,7 +865,6 @@ impl FileOps for FuseFileObject {
         if matches!(target, SeekTarget::Data(_) | SeekTarget::Hole(_)) {
             let node = Self::get_fuse_node(file);
             let response = self.connection.lock().execute_operation(
-                locked,
                 current_task,
                 node,
                 FuseOperation::Seek(uapi::fuse_lseek_in {
@@ -953,7 +888,7 @@ impl FileOps for FuseFileObject {
             };
         }
 
-        default_seek(current_offset, target, || default_eof_offset(locked, file, current_task))
+        default_seek(current_offset, target, || default_eof_offset(file, current_task))
     }
 
     fn sync(&self, _file: &FileObject, _current_task: &CurrentTask) -> Result<(), Errno> {
@@ -963,7 +898,6 @@ impl FileOps for FuseFileObject {
 
     fn wait_async(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         _waiter: &Waiter,
@@ -975,13 +909,11 @@ impl FileOps for FuseFileObject {
 
     fn query_events(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         file: &FileObject,
         current_task: &CurrentTask,
     ) -> Result<FdEvents, Errno> {
         let node = Self::get_fuse_node(file);
         let response = self.connection.lock().execute_operation(
-            locked,
             current_task,
             node,
             FuseOperation::Poll(uapi::fuse_poll_in {
@@ -999,13 +931,12 @@ impl FileOps for FuseFileObject {
 
     fn readdir(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         file: &FileObject,
         current_task: &CurrentTask,
         sink: &mut dyn DirentSink,
     ) -> Result<(), Errno> {
         let mut state = self.connection.lock();
-        let configuration = state.get_configuration(locked, current_task)?;
+        let configuration = state.get_configuration(current_task)?;
         let use_readdirplus = {
             if configuration.flags.contains(FuseInitFlags::DO_READDIRPLUS) {
                 if configuration.flags.contains(FuseInitFlags::READDIRPLUS_AUTO) {
@@ -1031,7 +962,6 @@ impl FileOps for FuseFileObject {
         };
         let node = Self::get_fuse_node(file);
         let response = state.execute_operation(
-            locked,
             current_task,
             node,
             FuseOperation::Readdir {
@@ -1077,7 +1007,6 @@ impl FileOps for FuseFileObject {
 
     fn ioctl(
         &self,
-        _locked: &mut Locked<Unlocked>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         _request: u32,
@@ -1110,12 +1039,7 @@ impl Default for FuseDirEntry {
 }
 
 impl DirEntryOps for FuseDirEntry {
-    fn revalidate(
-        &self,
-        locked: &mut Locked<FileOpsCore>,
-        current_task: &CurrentTask,
-        dir_entry: &DirEntry,
-    ) -> Result<bool, Errno> {
+    fn revalidate(&self, current_task: &CurrentTask, dir_entry: &DirEntry) -> Result<bool, Errno> {
         // Relaxed because the attributes valid until atomic is not used to synchronize
         // anything.
         const VALID_UNTIL_ORDERING: Ordering = Ordering::Relaxed;
@@ -1153,7 +1077,6 @@ impl DirEntryOps for FuseDirEntry {
                 },
             ..
         } = match parent.connection.lock().execute_operation(
-            locked,
             current_task,
             parent,
             FuseOperation::Lookup { name },
@@ -1201,7 +1124,6 @@ const DEFAULT_PERMISSIONS_ATOMIC_ORDERING: Ordering = Ordering::Relaxed;
 impl FsNodeOps for FuseNode {
     fn check_access(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         node: &FsNode,
         current_task: &CurrentTask,
         permission_flags: security::PermissionFlags,
@@ -1214,7 +1136,6 @@ impl FsNodeOps for FuseNode {
         if FuseFs::from_fs(&node.fs()).default_permissions.load(DEFAULT_PERMISSIONS_ATOMIC_ORDERING)
         {
             return self.default_check_access_with_valid_node_attributes(
-                locked,
                 node,
                 current_task,
                 permission_flags,
@@ -1231,7 +1152,6 @@ impl FsNodeOps for FuseNode {
                 // family of syscalls when the `default_permissions` flag isn't set on the FUSE
                 // fs. Seems like `chroot` also triggers a `FUSE_ACCESS` request on Linux.
                 let response = self.connection.lock().execute_operation(
-                    locked,
                     current_task,
                     self,
                     FuseOperation::Access {
@@ -1242,7 +1162,6 @@ impl FsNodeOps for FuseNode {
                 if let FuseResponse::Access(result) = response { result } else { error!(EINVAL) }
             }
             CheckAccessReason::Exec => self.default_check_access_with_valid_node_attributes(
-                locked,
                 node,
                 current_task,
                 permission_flags,
@@ -1267,7 +1186,6 @@ impl FsNodeOps for FuseNode {
 
     fn create_file_ops(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         node: &FsNode,
         current_task: &CurrentTask,
         flags: OpenFlags,
@@ -1276,7 +1194,6 @@ impl FsNodeOps for FuseNode {
         let flags = flags & !(OpenFlags::CREAT | OpenFlags::EXCL);
         let mode = node.info().mode;
         let response = self.connection.lock().execute_operation(
-            locked,
             current_task,
             self,
             FuseOperation::Open { flags, mode },
@@ -1302,13 +1219,11 @@ impl FsNodeOps for FuseNode {
 
     fn lookup(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         node: &FsNode,
         current_task: &CurrentTask,
         name: &FsStr,
     ) -> Result<FsNodeHandle, Errno> {
         let response = self.connection.lock().execute_operation(
-            locked,
             current_task,
             self,
             FuseOperation::Lookup { name: name.to_owned() },
@@ -1318,7 +1233,6 @@ impl FsNodeOps for FuseNode {
 
     fn mknod(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         node: &FsNode,
         current_task: &CurrentTask,
         name: &FsStr,
@@ -1326,13 +1240,12 @@ impl FsNodeOps for FuseNode {
         dev: DeviceId,
         _owner: FsCred,
     ) -> Result<FsNodeHandle, Errno> {
-        let get_entry = |locked: &mut Locked<FileOpsCore>| {
+        let get_entry = || {
             let umask = current_task.fs().umask().bits();
             let mut connection = self.connection.lock();
 
             if dev == DeviceId::NONE && !connection.no_create {
                 match connection.execute_operation(
-                    locked,
                     current_task,
                     self,
                     FuseOperation::Create(
@@ -1362,7 +1275,6 @@ impl FsNodeOps for FuseNode {
                         // on us using create rather than mknod to create regular files.  We will
                         // have to tackle this if it shows up as a performance issue.
                         if let Err(e) = connection.execute_operation(
-                            locked,
                             current_task,
                             &fuse_node,
                             FuseOperation::Release(response.open),
@@ -1382,7 +1294,6 @@ impl FsNodeOps for FuseNode {
 
             connection
                 .execute_operation(
-                    locked,
                     current_task,
                     self,
                     FuseOperation::Mknod {
@@ -1400,13 +1311,12 @@ impl FsNodeOps for FuseNode {
                 .ok_or_else(|| errno!(EINVAL))
         };
 
-        let entry = get_entry(locked)?;
+        let entry = get_entry()?;
         self.fs_node_from_entry(node, name, &entry)
     }
 
     fn mkdir(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         node: &FsNode,
         current_task: &CurrentTask,
         name: &FsStr,
@@ -1414,7 +1324,6 @@ impl FsNodeOps for FuseNode {
         _owner: FsCred,
     ) -> Result<FsNodeHandle, Errno> {
         let response = self.connection.lock().execute_operation(
-            locked,
             current_task,
             self,
             FuseOperation::Mkdir {
@@ -1430,7 +1339,6 @@ impl FsNodeOps for FuseNode {
 
     fn create_symlink(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         node: &FsNode,
         current_task: &CurrentTask,
         name: &FsStr,
@@ -1438,7 +1346,6 @@ impl FsNodeOps for FuseNode {
         _owner: FsCred,
     ) -> Result<FsNodeHandle, Errno> {
         let response = self.connection.lock().execute_operation(
-            locked,
             current_task,
             self,
             FuseOperation::Symlink { target: target.to_owned(), name: name.to_owned() },
@@ -1446,14 +1353,8 @@ impl FsNodeOps for FuseNode {
         self.fs_node_from_entry(node, name, response.entry().ok_or_else(|| errno!(EINVAL))?)
     }
 
-    fn readlink(
-        &self,
-        locked: &mut Locked<FileOpsCore>,
-        _node: &FsNode,
-        current_task: &CurrentTask,
-    ) -> Result<SymlinkTarget, Errno> {
+    fn readlink(&self, _node: &FsNode, current_task: &CurrentTask) -> Result<SymlinkTarget, Errno> {
         let response = self.connection.lock().execute_operation(
-            locked,
             current_task,
             self,
             FuseOperation::Readlink,
@@ -1466,7 +1367,6 @@ impl FsNodeOps for FuseNode {
 
     fn link(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         _node: &FsNode,
         current_task: &CurrentTask,
         name: &FsStr,
@@ -1476,7 +1376,6 @@ impl FsNodeOps for FuseNode {
         self.connection
             .lock()
             .execute_operation(
-                locked,
                 current_task,
                 self,
                 FuseOperation::Link {
@@ -1489,7 +1388,6 @@ impl FsNodeOps for FuseNode {
 
     fn unlink(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         _node: &FsNode,
         current_task: &CurrentTask,
         name: &FsStr,
@@ -1499,7 +1397,6 @@ impl FsNodeOps for FuseNode {
         self.connection
             .lock()
             .execute_operation(
-                locked,
                 current_task,
                 self,
                 if is_dir {
@@ -1513,7 +1410,6 @@ impl FsNodeOps for FuseNode {
 
     fn truncate(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         _guard: &AppendLockWriteGuard<'_>,
         node: &FsNode,
         current_task: &CurrentTask,
@@ -1528,7 +1424,6 @@ impl FsNodeOps for FuseNode {
             };
 
             let response = self.connection.lock().execute_operation(
-                locked,
                 current_task,
                 self,
                 FuseOperation::SetAttr(attributes),
@@ -1551,7 +1446,6 @@ impl FsNodeOps for FuseNode {
 
     fn allocate(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _guard: &AppendLockWriteGuard<'_>,
         _node: &FsNode,
         _current_task: &CurrentTask,
@@ -1565,7 +1459,6 @@ impl FsNodeOps for FuseNode {
 
     fn fetch_and_refresh_info<'a>(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         _node: &FsNode,
         current_task: &CurrentTask,
         info: &'a DynamicLockDepRwLock<FsNodeInfo>,
@@ -1573,12 +1466,11 @@ impl FsNodeOps for FuseNode {
         // NOTE: Do not be tempted to always refresh information here; sadly, there are CTS tests
         // that rely on this only updating attributes if they have expired, and this matches what
         // Linux appears to do.
-        self.refresh_expired_node_attributes(locked, current_task, info)
+        self.refresh_expired_node_attributes(current_task, info)
     }
 
     fn update_attributes(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         _node: &FsNode,
         current_task: &CurrentTask,
         info: &FsNodeInfo,
@@ -1617,7 +1509,6 @@ impl FsNodeOps for FuseNode {
         };
 
         let response = self.connection.lock().execute_operation(
-            locked,
             current_task,
             self,
             FuseOperation::SetAttr(attributes),
@@ -1627,14 +1518,12 @@ impl FsNodeOps for FuseNode {
 
     fn get_xattr(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         _node: &FsNode,
         current_task: &CurrentTask,
         name: &FsStr,
         max_size: usize,
     ) -> Result<ValueOrSize<FsString>, Errno> {
         let response = self.connection.lock().execute_operation(
-            locked,
             current_task,
             self,
             FuseOperation::GetXAttr {
@@ -1650,7 +1539,6 @@ impl FsNodeOps for FuseNode {
 
     fn set_xattr(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         _node: &FsNode,
         current_task: &CurrentTask,
         name: &FsStr,
@@ -1658,9 +1546,8 @@ impl FsNodeOps for FuseNode {
         op: XattrOp,
     ) -> Result<(), Errno> {
         let mut state = self.connection.lock();
-        let configuration = state.get_configuration(locked, current_task)?;
+        let configuration = state.get_configuration(current_task)?;
         state.execute_operation(
-            locked,
             current_task,
             self,
             FuseOperation::SetXAttr {
@@ -1680,13 +1567,11 @@ impl FsNodeOps for FuseNode {
 
     fn remove_xattr(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         _node: &FsNode,
         current_task: &CurrentTask,
         name: &FsStr,
     ) -> Result<(), Errno> {
         self.connection.lock().execute_operation(
-            locked,
             current_task,
             self,
             FuseOperation::RemoveXAttr { name: name.to_owned() },
@@ -1696,13 +1581,11 @@ impl FsNodeOps for FuseNode {
 
     fn list_xattrs(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         _node: &FsNode,
         current_task: &CurrentTask,
         max_size: usize,
     ) -> Result<ValueOrSize<Vec<FsString>>, Errno> {
         let response = self.connection.lock().execute_operation(
-            locked,
             current_task,
             self,
             FuseOperation::ListXAttr(uapi::fuse_getxattr_in {
@@ -1723,12 +1606,7 @@ impl FsNodeOps for FuseNode {
         }
     }
 
-    fn forget(
-        self: Box<Self>,
-        locked: &mut Locked<FileOpsCore>,
-        current_task: &CurrentTask,
-        _info: FsNodeInfo,
-    ) -> Result<(), Errno> {
+    fn forget(self: Box<Self>, current_task: &CurrentTask, _info: FsNodeInfo) -> Result<(), Errno> {
         let nlookup = self.state.lock().nlookup;
         let mut state = self.connection.lock();
         if !state.is_connected() {
@@ -1736,7 +1614,6 @@ impl FsNodeOps for FuseNode {
         }
         if nlookup > 0 {
             state.execute_operation(
-                locked,
                 current_task,
                 self.as_ref(),
                 FuseOperation::Forget(uapi::fuse_forget_in { nlookup }),
@@ -1857,15 +1734,11 @@ struct FuseMutableState {
 }
 
 impl<'a> FuseMutableStateGuard<'a> {
-    fn wait_for_configuration<L, T>(
+    fn wait_for_configuration<T>(
         &mut self,
-        locked: &mut Locked<L>,
         current_task: &CurrentTask,
         f: impl Fn(&FuseConfiguration) -> T,
-    ) -> Result<T, Errno>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
+    ) -> Result<T, Errno> {
         if let Some(configuration) = self.configuration.as_ref() {
             return Ok(f(configuration));
         }
@@ -1880,31 +1753,20 @@ impl<'a> FuseMutableStateGuard<'a> {
             }
             Guard::<'a, FuseConnection, LockDepGuard<'a, FuseMutableState>>::unlocked(
                 self,
-                || waiter.wait(locked, current_task),
+                || waiter.wait(current_task),
             )?;
         }
     }
 
-    fn get_configuration<L>(
+    fn get_configuration(
         &mut self,
-        locked: &mut Locked<L>,
         current_task: &CurrentTask,
-    ) -> Result<FuseConfiguration, Errno>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
-        self.wait_for_configuration(locked, current_task, Clone::clone)
+    ) -> Result<FuseConfiguration, Errno> {
+        self.wait_for_configuration(current_task, Clone::clone)
     }
 
-    fn wait_for_configuration_ready<L>(
-        &mut self,
-        locked: &mut Locked<L>,
-        current_task: &CurrentTask,
-    ) -> Result<(), Errno>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
-        self.wait_for_configuration(locked, current_task, |_| ())
+    fn wait_for_configuration_ready(&mut self, current_task: &CurrentTask) -> Result<(), Errno> {
+        self.wait_for_configuration(current_task, |_| ())
     }
 
     /// Execute the given operation on the `node`. If the operation is not asynchronous, this
@@ -1912,22 +1774,18 @@ impl<'a> FuseMutableStateGuard<'a> {
     /// an interrupt will be sent to the userspace process and the operation will then block until
     /// the initial operation has a response. This block can only be interrupted by the filesystem
     /// being unmounted.
-    fn execute_operation<L>(
+    fn execute_operation(
         &mut self,
-        locked: &mut Locked<L>,
         current_task: &CurrentTask,
         node: &FuseNode,
         operation: FuseOperation,
-    ) -> Result<FuseResponse, Errno>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
+    ) -> Result<FuseResponse, Errno> {
         // Block until we have a valid configuration to make sure that the FUSE
         // implementation has initialized, indicated by its response to the
         // `FUSE_INIT` request. Obviously, we skip this check for the `FUSE_INIT`
         // request itself.
         if !matches!(operation, FuseOperation::Init { .. }) {
-            self.wait_for_configuration_ready(locked, current_task)?;
+            self.wait_for_configuration_ready(current_task)?;
         }
 
         if let Some(result) = self.operations_state.get(&operation.opcode()) {
@@ -1954,7 +1812,7 @@ impl<'a> FuseMutableStateGuard<'a> {
             }
             match Guard::<'a, FuseConnection, LockDepGuard<'a, FuseMutableState>>::unlocked(
                 self,
-                || waiter.wait(locked, current_task),
+                || waiter.wait(current_task),
             ) {
                 Ok(()) => {}
                 Err(e) if e == EINTR => {

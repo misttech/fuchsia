@@ -23,7 +23,6 @@ rustc_library("starnix_syscall_loop") {
     "//src/starnix/lib/extended_pstate:lib",
     "//src/starnix/lib/starnix_logging",
     "//src/starnix/lib/starnix_registers",
-    "//src/starnix/lib/starnix_sync",
     "//src/starnix/lib/starnix_syscalls",
     "//src/starnix/lib/starnix_uapi",
     "//src/starnix/modules/inotify",

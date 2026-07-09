@@ -7,7 +7,6 @@ use crate::vfs::FsNodeOps;
 use crate::vfs::pseudo::simple_file::{BytesFile, BytesFileOps};
 use fidl_fuchsia_power_broker::PowerLevel;
 use starnix_logging::{log_info, log_warn};
-use starnix_sync::{FileOpsCore, Locked};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::{errno, error};
 use std::borrow::Cow;
@@ -66,12 +65,7 @@ impl PowerStateFile {
 }
 
 impl BytesFileOps for PowerStateFile {
-    fn write_locked(
-        &self,
-        locked: &mut Locked<FileOpsCore>,
-        current_task: &CurrentTask,
-        data: Vec<u8>,
-    ) -> Result<(), Errno> {
+    fn write(&self, current_task: &CurrentTask, data: Vec<u8>) -> Result<(), Errno> {
         let state_str = std::str::from_utf8(&data).map_err(|_| errno!(EINVAL))?;
         let clean_state_str = state_str.split('\n').next().unwrap_or("");
         let state = match clean_state_str {
@@ -91,7 +85,7 @@ impl BytesFileOps for PowerStateFile {
         // LINT.IfChange
         fuchsia_trace::duration!("power", "starnix-sysfs:suspend");
         // LINT.ThenChange(//src/performance/lib/trace_processing/metrics/suspend.py)
-        power_manager.suspend(locked, state).inspect_err(|e| log_warn!("Suspend failed: {e}"))?;
+        power_manager.suspend(state).inspect_err(|e| log_warn!("Suspend failed: {e}"))?;
 
         Ok(())
     }

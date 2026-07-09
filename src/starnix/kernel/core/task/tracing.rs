@@ -167,13 +167,13 @@ mod tests {
     #[fuchsia::test]
     async fn test_initialize_pid_map() {
         let (sender, receiver) = oneshot::channel();
-        spawn_kernel_and_run(async move |locked, current_task| {
+        spawn_kernel_and_run(async move |current_task| {
             let kernel = current_task.kernel();
             let pid = current_task.task.tid;
             let tkoid = current_task.running_state().thread.get().map(|t| t.koid);
             let pkoid = current_task.thread_group().get_process_koid().ok();
 
-            let _another_current = create_task(locked, &kernel, "another-task");
+            let _another_current = create_task(&kernel, "another-task");
 
             let pid_map = TracePerformanceEventManager::read_existing_pid_map(&*kernel.pids.read());
 
@@ -217,7 +217,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_lifecycle() {
         let (sender, receiver) = oneshot::channel();
-        spawn_kernel_and_run(async move |locked, current_task| {
+        spawn_kernel_and_run(async move |current_task| {
             let kernel = current_task.kernel();
             let mut manager = TracePerformanceEventManager::new();
 
@@ -227,7 +227,7 @@ mod tests {
             assert_eq!(pid_map.len(), 1, "Expected 1 entry in pid_map got {pid_map:?}");
 
             // Associate a thread with a new task.
-            let another_current = create_task(locked, &kernel, "another-task");
+            let another_current = create_task(&kernel, "another-task");
             let test_thread = another_current
                 .thread_group()
                 .process

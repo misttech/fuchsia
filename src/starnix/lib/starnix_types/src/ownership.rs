@@ -832,6 +832,7 @@ macro_rules! release_on_error {
             Ok(x) => x,
         }
     }};
+    ($releasable_name:ident, $body:block ) => {{ release_on_error!($releasable_name, (), $body) }};
 }
 
 /// Macro that ensure the releasable is released with the given context after the body returns.
@@ -848,6 +849,12 @@ macro_rules! release_after {
         let result = { (|| $(-> $output_type)? { $body })() };
         $releasable_name.release($context);
         result
+    }};
+    ($releasable_name:ident, async || $($output_type:ty)? $body:block ) => {{
+        release_after!($releasable_name, (), async || $($output_type)? $body)
+    }};
+    ($releasable_name:ident, $(|| -> $output_type:ty)? $body:block ) => {{
+        release_after!($releasable_name, (), $(|| -> $output_type)? $body)
     }};
 }
 
@@ -873,7 +880,9 @@ macro_rules! release_iter_after {
     }};
 }
 
-pub use {release_after, release_iter_after, release_on_error};
+pub use release_after;
+pub use release_iter_after;
+pub use release_on_error;
 
 #[cfg(test)]
 mod test {

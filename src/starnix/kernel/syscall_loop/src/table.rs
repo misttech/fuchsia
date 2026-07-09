@@ -5,7 +5,7 @@
 use paste::paste;
 use starnix_core::arch::syscalls::sys_clone;
 use starnix_core::task::CurrentTask;
-use starnix_sync::{Locked, Unlocked};
+
 use starnix_syscalls::SyscallResult;
 use starnix_syscalls::decls::Syscall;
 use starnix_uapi::errors::Errno;
@@ -16,7 +16,7 @@ use starnix_uapi::user_address::{Into32, Into64};
 
 macro_rules! syscall_match_generic {
     {
-        $path:path; $fn_prefix:ident; $into_fn:ident; $locked:ident; $current_task:ident; $syscall_number:expr; $args:ident;
+        $path:path; $fn_prefix:ident; $into_fn:ident; $current_task:ident; $syscall_number:expr; $args:ident;
         $($(#[$match:meta])? $call:ident [$num_args:tt],)*
     } => {
         paste! {
@@ -24,24 +24,24 @@ macro_rules! syscall_match_generic {
                 $(
                     $(#[$match])?
                     $path :: [<__NR_ $call>] => {
-                        match syscall_match_generic!(@call $into_fn; $locked; $current_task; $args; [<$fn_prefix $call>][$num_args]) {
+                        match syscall_match_generic!(@call $into_fn; $current_task; $args; [<$fn_prefix $call>][$num_args]) {
                             Ok(x) => Ok(SyscallResult::from(x)),
                             Err(err) => Err(err),
                         }
                     },
                 )*
-                _ => sys_unknown($locked, $current_task, $syscall_number),
+                _ => sys_unknown($current_task, $syscall_number),
             }
         }
     };
 
-    (@call $into_fn:ident; $locked:ident; $current_task:ident; $args:ident; $func:ident [0]) => ($func($locked, $current_task));
-    (@call $into_fn:ident; $locked:ident; $current_task:ident; $args:ident; $func:ident [1]) => ($func($locked, $current_task, $args.0.$into_fn()));
-    (@call $into_fn:ident; $locked:ident; $current_task:ident; $args:ident; $func:ident [2]) => ($func($locked, $current_task, $args.0.$into_fn(), $args.1.$into_fn()));
-    (@call $into_fn:ident; $locked:ident; $current_task:ident; $args:ident; $func:ident [3]) => ($func($locked, $current_task, $args.0.$into_fn(), $args.1.$into_fn(), $args.2.$into_fn()));
-    (@call $into_fn:ident; $locked:ident; $current_task:ident; $args:ident; $func:ident [4]) => ($func($locked, $current_task, $args.0.$into_fn(), $args.1.$into_fn(), $args.2.$into_fn(), $args.3.$into_fn()));
-    (@call $into_fn:ident; $locked:ident; $current_task:ident; $args:ident; $func:ident [5]) => ($func($locked, $current_task, $args.0.$into_fn(), $args.1.$into_fn(), $args.2.$into_fn(), $args.3.$into_fn(), $args.4.$into_fn()));
-    (@call $into_fn:ident; $locked:ident; $current_task:ident; $args:ident; $func:ident [6]) => ($func($locked, $current_task, $args.0.$into_fn(), $args.1.$into_fn(), $args.2.$into_fn(), $args.3.$into_fn(), $args.4.$into_fn(), $args.5.$into_fn()));
+    (@call $into_fn:ident; $current_task:ident; $args:ident; $func:ident [0]) => ($func($current_task));
+    (@call $into_fn:ident; $current_task:ident; $args:ident; $func:ident [1]) => ($func($current_task, $args.0.$into_fn()));
+    (@call $into_fn:ident; $current_task:ident; $args:ident; $func:ident [2]) => ($func($current_task, $args.0.$into_fn(), $args.1.$into_fn()));
+    (@call $into_fn:ident; $current_task:ident; $args:ident; $func:ident [3]) => ($func($current_task, $args.0.$into_fn(), $args.1.$into_fn(), $args.2.$into_fn()));
+    (@call $into_fn:ident; $current_task:ident; $args:ident; $func:ident [4]) => ($func($current_task, $args.0.$into_fn(), $args.1.$into_fn(), $args.2.$into_fn(), $args.3.$into_fn()));
+    (@call $into_fn:ident; $current_task:ident; $args:ident; $func:ident [5]) => ($func($current_task, $args.0.$into_fn(), $args.1.$into_fn(), $args.2.$into_fn(), $args.3.$into_fn(), $args.4.$into_fn()));
+    (@call $into_fn:ident; $current_task:ident; $args:ident; $func:ident [6]) => ($func($current_task, $args.0.$into_fn(), $args.1.$into_fn(), $args.2.$into_fn(), $args.3.$into_fn(), $args.4.$into_fn(), $args.5.$into_fn()));
 }
 
 macro_rules! syscall_match {
@@ -66,7 +66,6 @@ macro_rules! arch32_syscall_match {
 }
 
 pub fn dispatch_syscall(
-    locked: &mut Locked<Unlocked>,
     current_task: &mut CurrentTask,
     syscall: &Syscall,
 ) -> Result<SyscallResult, Errno> {
@@ -282,7 +281,7 @@ pub fn dispatch_syscall(
     #[cfg(all(target_arch = "aarch64"))]
     if current_task.is_arch32() {
         return arch32_syscall_match! {
-            locked; current_task; syscall.decl.number; args;
+            current_task; syscall.decl.number; args;
 
             // go/keep-sorted start
 
@@ -548,7 +547,7 @@ pub fn dispatch_syscall(
     // An if-else isn't used to allow the above code to be removed and for
     // constant optimization to occur below.
     syscall_match! {
-        locked; current_task; syscall.decl.number; args;
+        current_task; syscall.decl.number; args;
 
         // go/keep-sorted start
 

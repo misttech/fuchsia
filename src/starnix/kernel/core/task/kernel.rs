@@ -48,9 +48,8 @@ use once_cell::sync::OnceCell;
 use starnix_lifecycle::AtomicCounter;
 use starnix_logging::{SyscallLogFilter, log_debug, log_error, log_info, log_warn};
 use starnix_sync::{
-    ComponentControllerLock, FileOpsCore, KernelSwapFiles, LockDepMutex, LockDepRwLock,
-    LockEqualOrBefore, Locked, MountsLevel, OrderedMutex, PidToKoidMapLock, RwLock, RwSeqLock,
-    SyscallLogFiltersLock,
+    ComponentControllerLock, KernelSwapFiles, LockDepMutex, LockDepRwLock, MountsLevel,
+    PidToKoidMapLock, RwLock, RwSeqLock, SyscallLogFiltersLock,
 };
 use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::{Errno, errno};
@@ -264,7 +263,7 @@ pub struct Kernel {
     /// Files that are currently available for swapping.
     /// Note: Starnix never actually swaps memory to these files. We just need to track them
     /// to pass conformance tests.
-    pub swap_files: OrderedMutex<Vec<FsNodeHandle>, KernelSwapFiles>,
+    pub swap_files: LockDepMutex<Vec<FsNodeHandle>, KernelSwapFiles>,
 
     /// The implementation of generic Netlink protocol families.
     generic_netlink: OnceLock<GenericNetlink<NetlinkToClientSender<GenericMessage>>>,
@@ -521,7 +520,7 @@ impl Kernel {
         // Initialize the device registry before registering any devices.
         //
         // We will create sysfs recursively within this function.
-        this.device_registry.objects.init(&mut this.kthreads.unlocked_for_async(), &this);
+        this.device_registry.objects.init(&this);
 
         // Make a copy of this Arc for the inspect lazy node to use but don't create an Arc cycle
         // because the inspect node that owns this reference is owned by the kernel.
@@ -733,19 +732,15 @@ impl Kernel {
     }
 
     /// Opens a device file (driver) identified by `dev`.
-    pub fn open_device<L>(
+    pub fn open_device(
         &self,
-        locked: &mut Locked<L>,
         current_task: &CurrentTask,
         node: &NamespaceNode,
         flags: OpenFlags,
         dev: DeviceId,
         mode: DeviceMode,
-    ) -> Result<Box<dyn FileOps>, Errno>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
-        self.device_registry.open_device(locked, current_task, node, flags, dev, mode)
+    ) -> Result<Box<dyn FileOps>, Errno> {
+        self.device_registry.open_device(current_task, node, flags, dev, mode)
     }
 
     /// Return a reference to the Audit Framework

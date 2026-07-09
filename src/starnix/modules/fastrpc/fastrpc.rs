@@ -19,7 +19,7 @@ use starnix_core::{
     fileops_impl_dataless, fileops_impl_memory, fileops_impl_noop_sync, fileops_impl_seekless,
 };
 use starnix_logging::{log_debug, log_error, log_warn};
-use starnix_sync::{FastrpcInnerState, FileOpsCore, Locked, OrderedMutex, Unlocked};
+use starnix_sync::{FastrpcInnerState, LockDepMutex};
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_types::user_buffer::UserBuffer;
 use starnix_uapi::device_id::DeviceId;
@@ -171,7 +171,6 @@ impl FileOps for DmaBufFile {
 
     fn ioctl(
         &self,
-        _locked: &mut Locked<Unlocked>,
         _file: &FileObject,
         current_task: &CurrentTask,
         request: u32,
@@ -203,7 +202,6 @@ struct SystemHeap {
 impl Alloc for SystemHeap {
     fn alloc(
         &self,
-        locked: &mut Locked<Unlocked>,
         current_task: &CurrentTask,
         size: u64,
         fd_flags: FdFlags,
@@ -219,14 +217,13 @@ impl Alloc for SystemHeap {
         let memory = Arc::new(MemoryObject::from(vmo));
 
         let file = Anon::new_private_file(
-            locked,
             current_task,
             DmaBufFile::new(memory),
             OpenFlags::RDWR,
             "[fastrpc:buffer]",
         );
 
-        current_task.add_file(locked, file, fd_flags)
+        current_task.add_file(file, fd_flags)
     }
 }
 
@@ -282,7 +279,7 @@ struct FastRPCFile {
     pid_open: ThreadGroupKey,
     device: Arc<frpc::SecureFastRpcSynchronousProxy>,
     cached_capabilities: Arc<OnceLock<[u32; FASTRPC_MAX_DSP_ATTRIBUTES]>>,
-    inner_state: OrderedMutex<FastRPCFileState, FastrpcInnerState>,
+    inner_state: LockDepMutex<FastRPCFileState, FastrpcInnerState>,
 }
 
 impl FastRPCFile {
@@ -295,14 +292,13 @@ impl FastRPCFile {
             pid_open,
             device,
             cached_capabilities,
-            inner_state: OrderedMutex::new(FastRPCFileState::default()),
+            inner_state: LockDepMutex::new(FastRPCFileState::default()),
         }
     }
 
     fn invoke(
         &self,
         current_task: &CurrentTask,
-        locked: &mut Locked<Unlocked>,
         request: u32,
         arg: SyscallArg,
     ) -> Result<SyscallResult, Errno> {
@@ -333,7 +329,6 @@ impl FastRPCFile {
         let merged_buffers = Self::merge_buffers(&fd_vmos, &remote_bufs)?;
         let payload = Self::get_payload_info(
             current_task,
-            locked,
             &self.inner_state,
             &merged_buffers,
             &remote_bufs,
@@ -346,7 +341,7 @@ impl FastRPCFile {
             None => 0,
         };
 
-        let session = self.get_session(locked)?;
+        let session = self.get_session()?;
         let invoke_res = {
             let _waiting_guard = ThreadLockupDetector::pause_tracking();
             session.invoke(
@@ -375,7 +370,7 @@ impl FastRPCFile {
 
             if let Some(buffer) = payload.payload_buffer {
                 log_debug!("returning payload buffer {}", buffer.id);
-                self.inner_state.lock(locked).payload_vmos.push_back(buffer);
+                self.inner_state.lock().payload_vmos.push_back(buffer);
             };
 
             Ok(())
@@ -397,11 +392,8 @@ impl FastRPCFile {
         }
     }
 
-    fn get_session(
-        &self,
-        locked: &mut Locked<Unlocked>,
-    ) -> Result<Arc<frpc::RemoteDomainSynchronousProxy>, Errno> {
-        let inner = self.inner_state.lock(locked);
+    fn get_session(&self) -> Result<Arc<frpc::RemoteDomainSynchronousProxy>, Errno> {
+        let inner = self.inner_state.lock();
         Ok(inner.session.as_ref().ok_or_else(|| errno!(ENOENT))?.clone())
     }
 
@@ -644,8 +636,7 @@ impl FastRPCFile {
 
     fn get_payload_info(
         current_task: &CurrentTask,
-        locked: &mut Locked<Unlocked>,
-        inner_state: &OrderedMutex<FastRPCFileState, FastrpcInnerState>,
+        inner_state: &LockDepMutex<FastRPCFileState, FastrpcInnerState>,
         merged_buffers: &Vec<BufferWithMergeInfo>,
         remote_bufs: &Vec<linux_uapi::remote_buf>,
         fd_vmos: &mut Option<Vec<Option<zx::Vmo>>>,
@@ -656,7 +647,7 @@ impl FastRPCFile {
             None
         } else {
             let payload_buffer =
-                inner_state.lock(locked).payload_vmos.pop_front().ok_or_else(|| errno!(ENOBUFS))?;
+                inner_state.lock().payload_vmos.pop_front().ok_or_else(|| errno!(ENOBUFS))?;
             log_debug!("selected payload buffer {}", payload_buffer.id);
             Some(payload_buffer)
         };
@@ -780,13 +771,8 @@ impl FileOps for FastRPCFile {
     fileops_impl_seekless!();
     fileops_impl_dataless!();
 
-    fn close(
-        self: Box<Self>,
-        locked: &mut Locked<FileOpsCore>,
-        _file: &FileObjectState,
-        _current_task: &CurrentTask,
-    ) {
-        let inner = self.inner_state.lock(locked);
+    fn close(self: Box<Self>, _file: &FileObjectState, _current_task: &CurrentTask) {
+        let inner = self.inner_state.lock();
         if let Some(ref session) = inner.session {
             call_fidl_and_await_close(frpc::RemoteDomainSynchronousProxy::close, session.as_ref());
         }
@@ -794,7 +780,6 @@ impl FileOps for FastRPCFile {
 
     fn ioctl(
         &self,
-        locked: &mut Locked<Unlocked>,
         _file: &FileObject,
         current_task: &CurrentTask,
         request: u32,
@@ -807,7 +792,7 @@ impl FileOps for FastRPCFile {
 
         match canonicalize_ioctl_request(current_task, request) {
             linux_uapi::FASTRPC_IOCTL_INVOKE | linux_uapi::FASTRPC_IOCTL_INVOKE_FD => {
-                self.invoke(current_task, locked, request, arg)
+                self.invoke(current_task, request, arg)
             }
             linux_uapi::FASTRPC_IOCTL_GETINFO => {
                 let user_info = UserRef::<u32>::from(arg);
@@ -822,7 +807,7 @@ impl FileOps for FastRPCFile {
                     return error!(EPERM);
                 }
 
-                let mut inner = self.inner_state.lock(locked);
+                let mut inner = self.inner_state.lock();
                 if inner.session.is_some() {
                     return error!(EEXIST);
                 }
@@ -873,7 +858,7 @@ impl FileOps for FastRPCFile {
                     return error!(EFBIG);
                 }
 
-                let mut inner = self.inner_state.lock(locked);
+                let mut inner = self.inner_state.lock();
                 if inner.session.is_some() {
                     return error!(EEXIST);
                 }
@@ -954,7 +939,6 @@ impl FastRPCDevice {
 impl DeviceOps for FastRPCDevice {
     fn open(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         current_task: &CurrentTask,
         _id: DeviceId,
         _node: &NamespaceNode,
@@ -968,7 +952,7 @@ impl DeviceOps for FastRPCDevice {
     }
 }
 
-pub fn fastrpc_device_init(locked: &mut Locked<Unlocked>, kernel: &Kernel) {
+pub fn fastrpc_device_init(kernel: &Kernel) {
     let device = fuchsia_component::client::connect_to_protocol_sync::<frpc::SecureFastRpcMarker>()
         .expect("Failed to connect to fuchsia.hardware.qualcomm.fastrpc.SecureFastRpc");
 
@@ -977,13 +961,12 @@ pub fn fastrpc_device_init(locked: &mut Locked<Unlocked>, kernel: &Kernel) {
     // This is called the "system" dma heap, but as of now the fastrpc client is its only client.
     // Because fastrpc needs to be aware of the fds from this, we are putting the implementation
     // in this module.
-    dma_heap_device_register(locked, kernel, "system", SystemHeap { device: device.clone() });
+    dma_heap_device_register(kernel, "system", SystemHeap { device: device.clone() });
 
     let device = FastRPCDevice::new(device);
     let registry = &kernel.device_registry;
     registry
         .register_dyn_device(
-            locked,
             kernel,
             "adsprpc-smd-secure".into(),
             registry.objects.get_or_create_class("fastrpc".into(), registry.objects.virtual_bus()),
@@ -1001,7 +984,7 @@ pub mod tests {
     use linux_uapi::{remote_buf, uaddr};
     use starnix_core::mm::ProtectionFlags;
     use starnix_core::testing::{UserMemoryWriter, map_memory, spawn_kernel_and_run};
-    use starnix_sync::OrderedMutex;
+    use starnix_sync::LockDepMutex;
     use starnix_types::PAGE_SIZE;
     use starnix_uapi::user_address::UserAddress;
 
@@ -1327,8 +1310,8 @@ pub mod tests {
 
     #[fuchsia::test]
     async fn get_payload_info_test_complex_range_values() {
-        spawn_kernel_and_run(async |locked, current_task| {
-            let addr = map_memory(locked, &current_task, UserAddress::from_ptr(100 as usize), 500);
+        spawn_kernel_and_run(async |current_task| {
+            let addr = map_memory(&current_task, UserAddress::from_ptr(100 as usize), 500);
 
             // Use the same buffers as merge_buffers_test_complex but just offset them in the
             // memory we got mapped above.
@@ -1364,7 +1347,7 @@ pub mod tests {
             let vmo = zx::Vmo::create(*PAGE_SIZE).expect("vmo create");
             let vmo_dup = vmo.duplicate_handle(fidl::Rights::SAME_RIGHTS).expect("dup");
 
-            let state = OrderedMutex::new(FastRPCFileState {
+            let state = LockDepMutex::new(FastRPCFileState {
                 session: None,
                 payload_vmos: vec![SharedPayloadBuffer { id: 1, vmo: vmo }].into(),
                 cid: None,
@@ -1376,7 +1359,6 @@ pub mod tests {
                 FastRPCFile::merge_buffers(&fd_vmos, &remote_bufs).expect("merge to succeed");
             let payload_info = FastRPCFile::get_payload_info(
                 &current_task,
-                locked,
                 &state,
                 &merged_buffers,
                 &remote_bufs,
@@ -1438,8 +1420,8 @@ pub mod tests {
 
     #[fuchsia::test]
     async fn get_payload_info_test_complex_single_values() {
-        spawn_kernel_and_run(async |locked, current_task| {
-            let addr = map_memory(locked, &current_task, UserAddress::from_ptr(100 as usize), 500);
+        spawn_kernel_and_run(async |current_task| {
+            let addr = map_memory(&current_task, UserAddress::from_ptr(100 as usize), 500);
 
             // Use the same buffers as merge_buffers_test_complex but just offset them in the
             // memory we got mapped above.
@@ -1476,7 +1458,7 @@ pub mod tests {
             let vmo = zx::Vmo::create(*PAGE_SIZE).expect("vmo create");
             let vmo_dup = vmo.duplicate_handle(fidl::Rights::SAME_RIGHTS).expect("dup");
 
-            let state = OrderedMutex::new(FastRPCFileState {
+            let state = LockDepMutex::new(FastRPCFileState {
                 session: None,
                 payload_vmos: vec![SharedPayloadBuffer { id: 1, vmo: vmo }].into(),
                 cid: None,
@@ -1488,7 +1470,6 @@ pub mod tests {
                 FastRPCFile::merge_buffers(&fd_vmos, &remote_bufs).expect("merge to succeed");
             let payload_info = FastRPCFile::get_payload_info(
                 &current_task,
-                locked,
                 &state,
                 &merged_buffers,
                 &remote_bufs,
@@ -1551,10 +1532,10 @@ pub mod tests {
 
     #[fuchsia::test]
     async fn get_payload_info_test_complex_single_values_with_one_mapped() {
-        spawn_kernel_and_run(async |locked, current_task| {
-            let addr = map_memory(locked, &current_task, UserAddress::from_ptr(100 as usize), 400);
+        spawn_kernel_and_run(async |current_task| {
+            let addr = map_memory(&current_task, UserAddress::from_ptr(100 as usize), 400);
 
-            let mapped_addr = starnix_core::testing::map_memory_anywhere(locked, current_task, 100);
+            let mapped_addr = starnix_core::testing::map_memory_anywhere(current_task, 100);
             let (mm_vmo, _mm_offset) = current_task
                 .mm()
                 .unwrap()
@@ -1596,7 +1577,7 @@ pub mod tests {
             let vmo = zx::Vmo::create(*PAGE_SIZE).expect("vmo create");
             let vmo_dup = vmo.duplicate_handle(fidl::Rights::SAME_RIGHTS).expect("dup");
 
-            let state = OrderedMutex::new(FastRPCFileState {
+            let state = LockDepMutex::new(FastRPCFileState {
                 session: None,
                 payload_vmos: vec![SharedPayloadBuffer { id: 1, vmo: vmo }].into(),
                 cid: None,
@@ -1620,7 +1601,6 @@ pub mod tests {
                 FastRPCFile::merge_buffers(&fd_vmos, &remote_bufs).expect("merge to succeed");
             let payload_info = FastRPCFile::get_payload_info(
                 &current_task,
-                locked,
                 &state,
                 &merged_buffers,
                 &remote_bufs,

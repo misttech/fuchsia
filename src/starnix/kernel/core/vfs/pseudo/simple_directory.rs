@@ -9,7 +9,7 @@ use crate::vfs::{
     fileops_impl_directory, fileops_impl_noop_sync, fileops_impl_unbounded_seek,
     fs_node_impl_dir_readonly,
 };
-use starnix_sync::{FileOpsCore, LockDepMutex, Locked, SimpleDirectoryEntriesLock};
+use starnix_sync::{LockDepMutex, SimpleDirectoryEntriesLock};
 use starnix_uapi::auth::FsCred;
 use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errno;
@@ -204,7 +204,6 @@ impl FsNodeOps for Arc<SimpleDirectory> {
 
     fn create_file_ops(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _node: &FsNode,
         _current_task: &CurrentTask,
         _flags: OpenFlags,
@@ -214,7 +213,6 @@ impl FsNodeOps for Arc<SimpleDirectory> {
 
     fn lookup(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _node: &FsNode,
         _current_task: &CurrentTask,
         name: &FsStr,
@@ -233,7 +231,6 @@ impl FileOps for SimpleDirectory {
 
     fn readdir(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         file: &FileObject,
         _current_task: &CurrentTask,
         sink: &mut dyn DirentSink,
@@ -264,12 +261,10 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_default_not_found_handler() {
-        spawn_kernel_and_run(async |locked, current_task| {
+        spawn_kernel_and_run(async |current_task| {
             let dir = SimpleDirectory::new();
             let node = dir.clone().into_node(&current_task.fs().root().entry.node.fs(), 0o777);
-            let mut locked = locked.cast_locked();
-            let result =
-                FsNodeOps::lookup(&dir, &mut locked, &node, &current_task, "nonexistent".into());
+            let result = FsNodeOps::lookup(&dir, &node, &current_task, "nonexistent".into());
             assert_eq!(result.unwrap_err(), errno!(ENOENT));
         })
         .await;
@@ -277,19 +272,16 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_custom_not_found_handler() {
-        spawn_kernel_and_run(async |locked, current_task| {
+        spawn_kernel_and_run(async |current_task| {
             let dir = SimpleDirectory::new_with_handler(|name, _entries| {
                 if name == "special" { errno!(EACCES) } else { errno!(ENOENT) }
             });
             let node = dir.clone().into_node(&current_task.fs().root().entry.node.fs(), 0o777);
 
-            let mut locked = locked.cast_locked::<FileOpsCore>();
-            let result_special =
-                FsNodeOps::lookup(&dir, &mut locked, &node, &current_task, "special".into());
+            let result_special = FsNodeOps::lookup(&dir, &node, &current_task, "special".into());
             assert_eq!(result_special.unwrap_err(), errno!(EACCES));
 
-            let result_other =
-                FsNodeOps::lookup(&dir, &mut locked, &node, &current_task, "other".into());
+            let result_other = FsNodeOps::lookup(&dir, &node, &current_task, "other".into());
             assert_eq!(result_other.unwrap_err(), errno!(ENOENT));
         })
         .await;
@@ -297,7 +289,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_simple_directory_lookups() {
-        spawn_kernel_and_run(async |locked, current_task| {
+        spawn_kernel_and_run(async |current_task| {
             let fs = current_task.fs().root().entry.node.fs();
             let dir = SimpleDirectory::new();
             let mutator = SimpleDirectoryMutator::new(fs.clone(), dir.clone());
@@ -311,24 +303,21 @@ mod tests {
             });
 
             let node = dir.clone().into_node(&fs, 0o777);
-            let mut locked = locked.cast_locked::<FileOpsCore>();
 
             // Verify that lookup returns the same FsNodeHandle for multiple calls.
-            let node1 = FsNodeOps::lookup(&dir, &mut locked, &node, &current_task, "link".into())
-                .expect("lookup link");
-            let node2 = FsNodeOps::lookup(&dir, &mut locked, &node, &current_task, "link".into())
+            let node1 =
+                FsNodeOps::lookup(&dir, &node, &current_task, "link".into()).expect("lookup link");
+            let node2 = FsNodeOps::lookup(&dir, &node, &current_task, "link".into())
                 .expect("lookup link again");
 
             assert!(Arc::ptr_eq(&node1, &node2));
             assert!(node1.info().mode.is_lnk());
 
             // Verify that lookup returns the same FsNodeHandle for subdirectories.
-            let subdir1 =
-                FsNodeOps::lookup(&dir, &mut locked, &node, &current_task, "subdir".into())
-                    .expect("lookup subdir");
-            let subdir2 =
-                FsNodeOps::lookup(&dir, &mut locked, &node, &current_task, "subdir".into())
-                    .expect("lookup subdir again");
+            let subdir1 = FsNodeOps::lookup(&dir, &node, &current_task, "subdir".into())
+                .expect("lookup subdir");
+            let subdir2 = FsNodeOps::lookup(&dir, &node, &current_task, "subdir".into())
+                .expect("lookup subdir again");
 
             assert!(Arc::ptr_eq(&subdir1, &subdir2));
             assert!(subdir1.info().mode.is_dir());
@@ -339,7 +328,7 @@ mod tests {
 
             // Verify that removing an entry works.
             mutator.remove("link".into());
-            let result = FsNodeOps::lookup(&dir, &mut locked, &node, &current_task, "link".into());
+            let result = FsNodeOps::lookup(&dir, &node, &current_task, "link".into());
             assert_eq!(result.unwrap_err(), errno!(ENOENT));
         })
         .await;

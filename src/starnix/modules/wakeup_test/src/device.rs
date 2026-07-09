@@ -13,7 +13,7 @@ use starnix_core::task::{CurrentTask, Kernel};
 use starnix_core::vfs::{CloseFreeSafe, FileObject, FileOps, NamespaceNode};
 use starnix_core::{fileops_impl_dataless, fileops_impl_noop_sync, fileops_impl_seekless};
 use starnix_logging::{log_error, log_info};
-use starnix_sync::{FileOpsCore, Locked, Unlocked};
+
 use starnix_syscalls::{SUCCESS, SyscallResult};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
@@ -43,7 +43,6 @@ impl WakeupTestDevice {
 impl DeviceOps for WakeupTestDevice {
     fn open(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         current_task: &CurrentTask,
         _id: device_id::DeviceId,
         _node: &NamespaceNode,
@@ -149,7 +148,6 @@ impl FileOps for WakeupTestDevice {
 
     fn ioctl(
         &self,
-        _locked: &mut Locked<Unlocked>,
         _file: &FileObject,
         current_task: &CurrentTask,
         request: u32,

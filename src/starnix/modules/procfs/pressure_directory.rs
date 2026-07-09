@@ -21,16 +21,14 @@ use starnix_core::vfs::{
     fileops_impl_delegate_read_write_and_seek, fileops_impl_noop_sync,
 };
 use starnix_logging::{log_error, track_stub};
-use starnix_sync::{
-    FileOpsCore, Locked, MemoryPressureMonitor, MemoryPressureMonitorClientState, OrderedMutex,
-};
+use starnix_sync::{LockDepMutex, MemoryPressureMonitor, MemoryPressureMonitorClientState};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::mode;
 use starnix_uapi::vfs::FdEvents;
 use starnix_uapi::{errno, error};
-use std::ops::DerefMut;
+
 use std::pin::pin;
-use std::sync::{Arc, Weak};
+use std::sync::Arc;
 
 /// Creates the /proc/pressure directory. https://docs.kernel.org/accounting/psi.html
 pub fn pressure_directory(kernel: &Kernel, fs: &FileSystemHandle) -> Option<FsNodeHandle> {
@@ -73,7 +71,7 @@ impl Default for PsiProvider {
 
 struct MemoryPressureFileSource {
     psi_provider: Arc<PsiProvider>,
-    monitor: Arc<OrderedMutex<Option<Arc<PressureMonitorThread>>, MemoryPressureMonitor>>,
+    monitor: Arc<LockDepMutex<Option<Arc<PressureMonitorThread>>, MemoryPressureMonitor>>,
 }
 
 impl DynamicFileSource for MemoryPressureFileSource {
@@ -120,7 +118,6 @@ impl DynamicFileSource for MemoryPressureFileSource {
     /// Pressure notifications are configured by writing to the file.
     fn write(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         current_task: &CurrentTask,
         _offset: usize,
         data: &mut dyn InputBuffer,
@@ -157,7 +154,7 @@ impl DynamicFileSource for MemoryPressureFileSource {
             }
         };
 
-        let mut monitor = self.monitor.lock(locked);
+        let mut monitor = self.monitor.lock();
         if monitor.is_some() {
             return error!(EBUSY);
         }
@@ -186,13 +183,13 @@ impl DynamicFileSource for MemoryPressureFileSource {
 
 struct MemoryPressureFile {
     source: DynamicFile<MemoryPressureFileSource>,
-    monitor: Arc<OrderedMutex<Option<Arc<PressureMonitorThread>>, MemoryPressureMonitor>>,
+    monitor: Arc<LockDepMutex<Option<Arc<PressureMonitorThread>>, MemoryPressureMonitor>>,
 }
 
 impl MemoryPressureFile {
     pub fn new_node(psi_provider: Arc<PsiProvider>) -> impl FsNodeOps {
-        SimpleFileNode::new(move |_, _| {
-            let monitor = Arc::new(OrderedMutex::new(None));
+        SimpleFileNode::new(move |_| {
+            let monitor = Arc::new(LockDepMutex::new(None));
             Ok(Self {
                 source: DynamicFile::new(MemoryPressureFileSource {
                     psi_provider: psi_provider.clone(),
@@ -208,27 +205,21 @@ impl FileOps for MemoryPressureFile {
     fileops_impl_delegate_read_write_and_seek!(self, self.source);
     fileops_impl_noop_sync!();
 
-    fn close(
-        self: Box<Self>,
-        locked: &mut Locked<FileOpsCore>,
-        _file: &FileObjectState,
-        _current_task: &CurrentTask,
-    ) {
-        if let Some(monitor) = self.monitor.lock(locked).take() {
+    fn close(self: Box<Self>, _file: &FileObjectState, _current_task: &CurrentTask) {
+        if let Some(monitor) = self.monitor.lock().take() {
             monitor.stop();
         }
     }
 
     fn wait_async(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         waiter: &Waiter,
         _events: FdEvents,
         handler: EventHandler,
     ) -> Option<WaitCanceler> {
-        let (monitor, locked) = self.monitor.lock_and(locked);
+        let monitor = self.monitor.lock();
         let Some(ref monitor) = *monitor else {
             return None;
         };
@@ -246,7 +237,7 @@ impl FileOps for MemoryPressureFile {
         let result = WaitCanceler::new_port(canceler);
 
         // Update the notification state.
-        monitor.client_state.lock(locked).mutate_in_place(|old_value| match old_value {
+        monitor.client_state.lock().mutate_in_place(|old_value| match old_value {
             // If a signal has already been latched, deliver it immediately and start a new cycle.
             PressureMonitorClientState::PressureLatched => {
                 event.signal(zx::Signals::empty(), zx::Signals::EVENT_SIGNALED).unwrap();
@@ -266,16 +257,15 @@ impl FileOps for MemoryPressureFile {
 
     fn query_events(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
     ) -> Result<FdEvents, Errno> {
         let mut events = FdEvents::POLLIN | FdEvents::POLLOUT;
-        let (monitor, locked) = self.monitor.lock_and(locked);
+        let monitor = self.monitor.lock();
         if let Some(ref monitor) = *monitor {
             // Note: the following logic assumes that userspace will never poll from more than one
             // thread at the same time. We'll need to revisit it if it stops being the case.
-            match &*monitor.client_state.lock(locked) {
+            match &*monitor.client_state.lock() {
                 // The previous cycle has ended and userspace has not yet started a new wait.
                 // Therefore, from the userspace point of view, we're still in the previous cycle.
                 // Let's act accordingly and report POLLPRI.
@@ -295,7 +285,7 @@ impl FileOps for MemoryPressureFile {
 /// This struct contains data that is shared by the monitor thread and its clients.
 struct PressureMonitorThread {
     /// The state of the notification state machine.
-    client_state: OrderedMutex<PressureMonitorClientState, MemoryPressureMonitorClientState>,
+    client_state: LockDepMutex<PressureMonitorClientState, MemoryPressureMonitorClientState>,
 
     /// Signaled when the PSI file descriptor is closed to ask the kthread to quit.
     should_stop: zx::Event,
@@ -336,7 +326,7 @@ impl PressureMonitorThread {
         rate_limiting_window: zx::MonotonicDuration,
     ) -> Arc<PressureMonitorThread> {
         let result = Arc::new(PressureMonitorThread {
-            client_state: OrderedMutex::new(PressureMonitorClientState::Idle),
+            client_state: LockDepMutex::new(PressureMonitorClientState::Idle),
             should_stop: zx::Event::create(),
         });
 
@@ -344,10 +334,7 @@ impl PressureMonitorThread {
         kernel.kthreads.spawn_future(
             {
                 let result = Arc::clone(&result);
-                let kernel = kernel.weak_self.clone();
-                move || async move {
-                    result.worker(kernel, zircon_stall_event, rate_limiting_window).await
-                }
+                move || async move { result.worker(zircon_stall_event, rate_limiting_window).await }
             },
             "pressure_monitor",
         );
@@ -361,7 +348,6 @@ impl PressureMonitorThread {
 
     async fn worker(
         self: Arc<Self>,
-        kernel: Weak<Kernel>,
         zircon_stall_event: zx::Event,
         rate_limiting_window: zx::MonotonicDuration,
     ) {
@@ -391,27 +377,19 @@ impl PressureMonitorThread {
             let mut rate_limiting_timer = pin!(rate_limiting_window.into_timer());
 
             // Notify.
-            let Some(kernel) = kernel.upgrade() else {
-                return;
-            };
-            self.client_state
-                .lock(kernel.kthreads.unlocked_for_async().deref_mut())
-                .mutate_in_place(|old_value| match old_value {
-                    // If a client is currently waiting, notify it and start a new cycle.
-                    PressureMonitorClientState::WaitingForPressure { target_event } => {
-                        target_event
-                            .signal(zx::Signals::empty(), zx::Signals::EVENT_SIGNALED)
-                            .unwrap();
-                        PressureMonitorClientState::Idle
-                    }
-                    // Otherwise, just remember that the pressure event has already happened.
-                    // If a pressure event was already latched, it will be folded into the new one
-                    // and a single notification will be delivered to userspace.
+            self.client_state.lock().mutate_in_place(|old_value| match old_value {
+                // If a client is currently waiting, notify it and start a new cycle.
+                PressureMonitorClientState::WaitingForPressure { target_event } => {
+                    target_event.signal(zx::Signals::empty(), zx::Signals::EVENT_SIGNALED).unwrap();
                     PressureMonitorClientState::Idle
-                    | PressureMonitorClientState::PressureLatched => {
-                        PressureMonitorClientState::PressureLatched
-                    }
-                });
+                }
+                // Otherwise, just remember that the pressure event has already happened.
+                // If a pressure event was already latched, it will be folded into the new one
+                // and a single notification will be delivered to userspace.
+                PressureMonitorClientState::Idle | PressureMonitorClientState::PressureLatched => {
+                    PressureMonitorClientState::PressureLatched
+                }
+            });
 
             // Wait for the next rate-limiting window.
             select! {
@@ -463,7 +441,6 @@ impl DynamicFileSource for StubPressureFileSource {
     /// Pressure notifications are configured by writing to the file.
     fn write(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _current_task: &CurrentTask,
         _offset: usize,
         data: &mut dyn InputBuffer,
@@ -491,7 +468,7 @@ struct StubPressureFile(DynamicFile<StubPressureFileSource>);
 
 impl StubPressureFile {
     pub fn new_node(kind: StubPressureFileKind) -> impl FsNodeOps {
-        SimpleFileNode::new(move |_, _| Ok(Self(DynamicFile::new(StubPressureFileSource { kind }))))
+        SimpleFileNode::new(move |_| Ok(Self(DynamicFile::new(StubPressureFileSource { kind }))))
     }
 }
 
@@ -501,14 +478,13 @@ impl FileOps for StubPressureFile {
 
     fn wait_async(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         file: &FileObject,
         current_task: &CurrentTask,
         waiter: &Waiter,
         events: FdEvents,
         handler: EventHandler,
     ) -> Option<WaitCanceler> {
-        if let Ok(current_events) = self.query_events(locked, file, current_task) {
+        if let Ok(current_events) = self.query_events(file, current_task) {
             let events = events.intersection(current_events);
             if !events.is_empty() {
                 handler.handle(events);

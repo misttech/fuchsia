@@ -15,7 +15,7 @@ use starnix_core::vfs::{
     NamespaceNode, SpecialNode, fileops_impl_dataless, fileops_impl_nonseekable,
     fileops_impl_noop_sync, fs_node_impl_dir_readonly,
 };
-use starnix_sync::{BinderFsDevicesLevel, FileOpsCore, LockDepMutex, Locked, Unlocked};
+use starnix_sync::{BinderFsDevicesLevel, LockDepMutex};
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_types::vfs::default_statfs;
 use starnix_uapi::auth::FsCred;
@@ -31,12 +31,7 @@ use std::sync::Arc;
 
 pub struct BinderFs;
 impl FileSystemOps for BinderFs {
-    fn statfs(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        _fs: &FileSystem,
-        _current_task: &CurrentTask,
-    ) -> Result<statfs, Errno> {
+    fn statfs(&self, _fs: &FileSystem, _current_task: &CurrentTask) -> Result<statfs, Errno> {
         Ok(default_statfs(BINDERFS_SUPER_MAGIC))
     }
     fn name(&self) -> &'static FsStr {
@@ -62,29 +57,22 @@ pub struct BinderFsState {
 }
 
 impl BinderFsDir {
-    pub fn new(locked: &mut Locked<Unlocked>, kernel: &Kernel) -> Result<Self, Errno> {
+    pub fn new(kernel: &Kernel) -> Result<Self, Errno> {
         let registry = &kernel.device_registry;
         let mut devices = BTreeMap::<FsString, DeviceId>::default();
-        let remote_device = registry.register_silent_dyn_device(
-            locked,
-            "remote-binder".into(),
-            RemoteBinderDevice {},
-        )?;
+        let remote_device =
+            registry.register_silent_dyn_device("remote-binder".into(), RemoteBinderDevice {})?;
         devices.insert("remote".into(), remote_device.devt);
 
         for name in DEFAULT_BINDERS {
-            let device_metadata = registry.register_silent_dyn_device(
-                locked,
-                name.into(),
-                BinderDevice::default(),
-            )?;
+            let device_metadata =
+                registry.register_silent_dyn_device(name.into(), BinderDevice::default())?;
             devices.insert(name.into(), device_metadata.devt);
         }
         let state = Arc::new(BinderFsState { devices: devices.into() });
 
         let control_device = registry
             .register_silent_dyn_device(
-                locked,
                 BINDER_CONTROL_DEVICE.into(),
                 BinderControlDevice { state: state.clone() },
             )?
@@ -99,7 +87,6 @@ impl FsNodeOps for BinderFsDir {
 
     fn create_file_ops(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _node: &FsNode,
         _current_task: &CurrentTask,
         _flags: OpenFlags,
@@ -130,7 +117,6 @@ impl FsNodeOps for BinderFsDir {
 
     fn lookup(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         node: &FsNode,
         _current_task: &CurrentTask,
         name: &FsStr,
@@ -157,13 +143,12 @@ impl FsNodeOps for BinderFsDir {
 
 impl BinderFs {
     pub fn new_fs(
-        locked: &mut Locked<Unlocked>,
         current_task: &CurrentTask,
         options: FileSystemOptions,
     ) -> Result<FileSystemHandle, Errno> {
         let kernel = current_task.kernel();
-        let fs = FileSystem::new(locked, kernel, CacheMode::Permanent, BinderFs, options)?;
-        let ops = BinderFsDir::new(locked, kernel)?;
+        let fs = FileSystem::new(kernel, CacheMode::Permanent, BinderFs, options)?;
+        let ops = BinderFsDir::new(kernel)?;
         let root_ino = fs.allocate_ino();
         fs.create_root(root_ino, ops);
         Ok(fs)
@@ -178,7 +163,6 @@ struct BinderControlDevice {
 impl DeviceOps for BinderControlDevice {
     fn open(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _current_task: &CurrentTask,
         _devt: DeviceId,
         _node: &NamespaceNode,
@@ -195,7 +179,6 @@ impl FileOps for BinderControlDevice {
 
     fn ioctl(
         &self,
-        locked: &mut Locked<Unlocked>,
         _file: &FileObject,
         current_task: &CurrentTask,
         request: u32,
@@ -228,11 +211,9 @@ impl FileOps for BinderControlDevice {
                 Entry::Occupied(_) => error!(EEXIST),
                 Entry::Vacant(entry) => {
                     let kernel = current_task.kernel();
-                    let device_metadata = kernel.device_registry.register_silent_dyn_device(
-                        locked,
-                        (*name).into(),
-                        BinderDevice::default(),
-                    )?;
+                    let device_metadata = kernel
+                        .device_registry
+                        .register_silent_dyn_device((*name).into(), BinderDevice::default())?;
                     entry.insert(device_metadata.devt);
                     request.major = device_metadata.devt.major();
                     request.minor = device_metadata.devt.minor();
@@ -261,7 +242,6 @@ impl FsNodeOps for BinderFeaturesDir {
 
     fn create_file_ops(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _node: &FsNode,
         _current_task: &CurrentTask,
         _flags: OpenFlags,
@@ -280,7 +260,6 @@ impl FsNodeOps for BinderFeaturesDir {
 
     fn lookup(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         node: &FsNode,
         _current_task: &CurrentTask,
         name: &FsStr,

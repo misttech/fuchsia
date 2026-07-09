@@ -15,7 +15,7 @@ use starnix_logging::{
     log_syscall, log_trace, log_warn, set_current_task_info,
 };
 use starnix_registers::RestrictedState;
-use starnix_sync::{Locked, Unlocked};
+
 use starnix_syscalls::SyscallResult;
 use starnix_syscalls::decls::{Syscall, SyscallDecl};
 use starnix_uapi::errno;
@@ -25,7 +25,7 @@ use zerocopy::FromZeros;
 
 mod table;
 
-pub fn enter(locked: &mut Locked<Unlocked>, current_task: &mut CurrentTask) -> ExitStatus {
+pub fn enter(current_task: &mut CurrentTask) -> ExitStatus {
     // Zircon will populate this report on restricted exception exits. Initialize it to all zero
     // since we're just reserving storage.
     let mut exception_report = zx::sys::zx_exception_report_t::new_zeroed();
@@ -34,12 +34,7 @@ pub fn enter(locked: &mut Locked<Unlocked>, current_task: &mut CurrentTask) -> E
         &mut exception_report,
     ) {
         Ok(restricted_state) => {
-            match run_task(
-                locked,
-                current_task,
-                restricted_state.bound_state.as_ptr(),
-                &exception_report,
-            ) {
+            match run_task(current_task, restricted_state.bound_state.as_ptr(), &exception_report) {
                 Ok(ok) => ok,
                 Err(error) => {
                     log_warn!("Died unexpectedly from {error:?}! treating as SIGKILL");
@@ -96,7 +91,6 @@ struct RestrictedEnterContext<'a> {
 ///   5. Handle pending signals.
 ///   6. Goto 1.
 fn run_task(
-    locked: &mut Locked<Unlocked>,
     current_task: &mut CurrentTask,
     restricted_state_ptr: *mut zx::sys::zx_restricted_state_t,
     exception_report_raw: *const zx::sys::zx_exception_report_t,
@@ -115,9 +109,7 @@ fn run_task(
 
     // We need to check for exit once, before the task starts executing, in case
     // the task has already been sent a signal that will cause it to exit.
-    if let Some(exit_status) =
-        process_completed_restricted_exit(locked, current_task, &error_context)?
-    {
+    if let Some(exit_status) = process_completed_restricted_exit(current_task, &error_context)? {
         return Ok(exit_status);
     }
 
@@ -231,13 +223,6 @@ fn process_restricted_exit(
     error_context: &mut Option<ErrorContext>,
     exception_report_raw: *const zx::sys::zx_exception_report_t,
 ) -> Result<Option<ExitStatus>, Error> {
-    // We can't hold any locks entering restricted mode so we can't be holding any locks on exit.
-    #[allow(
-        clippy::undocumented_unsafe_blocks,
-        reason = "Force documented unsafe blocks in Starnix"
-    )]
-    let locked = unsafe { Unlocked::new() };
-
     current_task.thread_state.registers.sync_stack_ptr();
 
     match reason_code {
@@ -247,7 +232,7 @@ fn process_restricted_exit(
                 current_task.thread_state.arch_width(),
             );
 
-            if let Some(new_error_context) = execute_syscall(locked, current_task, syscall_decl) {
+            if let Some(new_error_context) = execute_syscall(current_task, syscall_decl) {
                 *error_context = Some(new_error_context);
             }
         }
@@ -255,8 +240,8 @@ fn process_restricted_exit(
             fuchsia_trace::duration!(CATEGORY_STARNIX, NAME_HANDLE_EXCEPTION);
             // SAFETY: `exception_report_raw` was written by Zircon during this restricted exit.
             let exception_report = unsafe { zx::ExceptionReport::from_raw(*exception_report_raw) };
-            let exception_result = current_task.process_exception(locked, &exception_report);
-            process_completed_exception(locked, current_task, exception_result, exception_report);
+            let exception_result = current_task.process_exception(&exception_report);
+            process_completed_exception(current_task, exception_result, exception_report);
         }
         zx::sys::ZX_RESTRICTED_REASON_KICK => {
             fuchsia_trace::instant!(
@@ -273,9 +258,7 @@ fn process_restricted_exit(
         }
     }
 
-    if let Some(exit_status) =
-        process_completed_restricted_exit(locked, current_task, &error_context)?
-    {
+    if let Some(exit_status) = process_completed_restricted_exit(current_task, &error_context)? {
         return Ok(Some(exit_status));
     }
 
@@ -283,7 +266,6 @@ fn process_restricted_exit(
 }
 
 fn process_completed_exception(
-    locked: &mut Locked<Unlocked>,
     current_task: &mut CurrentTask,
     exception_result: ExceptionResult,
     restricted_exception: zx::ExceptionReport,
@@ -311,7 +293,7 @@ fn process_completed_exception(
                 &current_task.thread_state.extended_pstate,
                 Some(restricted_exception),
             ) {
-                current_task.kill_thread_group(locked, status);
+                current_task.kill_thread_group(status);
             }
         }
     }
@@ -335,7 +317,6 @@ pub struct ErrorContext {
 /// Returns an `ErrorContext` if the system call returned an error.
 #[inline(never)] // Inlining this function breaks the CFI directives used to unwind into user code.
 pub fn execute_syscall(
-    locked: &mut Locked<Unlocked>,
     current_task: &mut CurrentTask,
     syscall_decl: SyscallDecl,
 ) -> Option<ErrorContext> {
@@ -345,7 +326,7 @@ pub fn execute_syscall(
     current_task.thread_state.registers.save_registers_for_restart(syscall.decl.number);
 
     if current_task.trace_syscalls.load(std::sync::atomic::Ordering::Relaxed) {
-        ptrace_syscall_enter(locked, current_task);
+        ptrace_syscall_enter(current_task);
     }
 
     log_syscall!(current_task, "{syscall:?}");
@@ -355,16 +336,16 @@ pub fn execute_syscall(
         if current_task.seccomp_filter_state.get() != SeccompStateValue::None {
             // Inlined fast path for seccomp, so that we don't incur the cost
             // of a method call when running the filters.
-            if let Some(res) = current_task.run_seccomp_filters(locked, &syscall) {
+            if let Some(res) = current_task.run_seccomp_filters(&syscall) {
                 res
             } else {
-                table::dispatch_syscall(locked, current_task, &syscall)
+                table::dispatch_syscall(current_task, &syscall)
             }
         } else {
-            table::dispatch_syscall(locked, current_task, &syscall)
+            table::dispatch_syscall(current_task, &syscall)
         };
 
-    current_task.trigger_delayed_releaser(locked);
+    current_task.trigger_delayed_releaser();
 
     let return_value = match result {
         Ok(return_value) => {
@@ -383,7 +364,7 @@ pub fn execute_syscall(
     };
 
     if current_task.trace_syscalls.load(std::sync::atomic::Ordering::Relaxed) {
-        ptrace_syscall_exit(locked, current_task, return_value.is_some());
+        ptrace_syscall_exit(current_task, return_value.is_some());
     }
 
     return_value
@@ -393,7 +374,6 @@ pub fn execute_syscall(
 ///
 /// Returns an `ExitStatus` if the task is meant to exit.
 pub fn process_completed_restricted_exit(
-    locked: &mut Locked<Unlocked>,
     current_task: &mut CurrentTask,
     error_context: &Option<ErrorContext>,
 ) -> Result<Option<ExitStatus>, Errno> {
@@ -403,7 +383,7 @@ pub fn process_completed_restricted_exit(
         {
             {
                 if !current_task.is_exitted() {
-                    dequeue_signal(locked, current_task);
+                    dequeue_signal(current_task);
                 }
                 // The syscall may need to restart for a non-signal-related
                 // reason. This call does nothing if we aren't restarting.
@@ -432,7 +412,7 @@ pub fn process_completed_restricted_exit(
         } else {
             // Block a stopped process after it's had a chance to handle signals, since a signal might
             // cause it to stop.
-            if current_task.block_if_stopped(locked) {
+            if current_task.block_if_stopped() {
                 // If the task was stopped and has now woken up (e.g., via SIGCONT or PTRACE_CONT),
                 // loop back to process any pending signals before returning to userspace.
                 continue;

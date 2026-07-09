@@ -15,7 +15,7 @@ use crate::vfs::{
 };
 use futures::channel::mpsc;
 use starnix_logging::{log_debug, log_warn};
-use starnix_sync::{FileOpsCore, LockDepMutex, LockEqualOrBefore, Locked, TimerFileInfoLock};
+use starnix_sync::{LockDepMutex, TimerFileInfoLock};
 use starnix_types::time::{duration_from_timespec, timespec_from_duration, timespec_is_zero};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
@@ -215,16 +215,12 @@ impl TimerFile {
     /// Creates a new anonymous `TimerFile` in `kernel`.
     ///
     /// Returns an error if the `zx::Timer` could not be created.
-    pub fn new_file<L>(
-        locked: &mut Locked<L>,
+    pub fn new_file(
         current_task: &CurrentTask,
         wakeup_type: TimerWakeup,
         timeline: Timeline,
         flags: OpenFlags,
-    ) -> Result<FileHandle, Errno>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
+    ) -> Result<FileHandle, Errno> {
         let timer: Arc<dyn TimerOps> = match (wakeup_type, timeline) {
             (TimerWakeup::Regular, Timeline::Monotonic) => Arc::new(MonotonicZxTimer::new()),
             (TimerWakeup::Regular, Timeline::BootInstant) => Arc::new(BootZxTimer::new()),
@@ -251,7 +247,6 @@ impl TimerFile {
         }
 
         Ok(Anon::new_private_file(
-            locked,
             current_task,
             Box::new(TimerFile {
                 timer,
@@ -390,12 +385,7 @@ impl FileOps for TimerFile {
     fileops_impl_nonseekable!();
     fileops_impl_noop_sync!();
 
-    fn close(
-        self: Box<Self>,
-        _locked: &mut Locked<FileOpsCore>,
-        _file: &FileObjectState,
-        current_task: &CurrentTask,
-    ) {
+    fn close(self: Box<Self>, _file: &FileObjectState, current_task: &CurrentTask) {
         if let Err(e) = self.timer.stop(current_task.kernel()) {
             log_warn!("Failed to stop the timer when closing the timerfd: {e:?}");
         }
@@ -403,7 +393,6 @@ impl FileOps for TimerFile {
 
     fn write(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         file: &FileObject,
         _current_task: &CurrentTask,
         offset: usize,
@@ -416,14 +405,13 @@ impl FileOps for TimerFile {
 
     fn read(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         file: &FileObject,
         current_task: &CurrentTask,
         offset: usize,
         data: &mut dyn OutputBuffer,
     ) -> Result<usize, Errno> {
         debug_assert!(offset == 0);
-        file.blocking_op(locked, current_task, FdEvents::POLLIN | FdEvents::POLLHUP, None, |_| {
+        file.blocking_op(current_task, FdEvents::POLLIN | FdEvents::POLLHUP, None, || {
             let mut tfi = self.timer_file_info.lock();
             let is_cancel_on_set = tfi.cancel_on_set;
             // A "cancel-on-set" timer, this was prepared in `set_timer_spec`. It is handled
@@ -486,7 +474,6 @@ impl FileOps for TimerFile {
 
     fn wait_async(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         waiter: &Waiter,
@@ -545,7 +532,6 @@ impl FileOps for TimerFile {
 
     fn query_events(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
     ) -> Result<FdEvents, Errno> {

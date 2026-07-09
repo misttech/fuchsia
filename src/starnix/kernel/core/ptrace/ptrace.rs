@@ -17,7 +17,6 @@ use crate::task::{
 use bitflags::bitflags;
 use starnix_logging::track_stub;
 use starnix_registers::HeapRegs;
-use starnix_sync::{LockBefore, Locked, MmDumpable, ThreadGroupLimits, Unlocked};
 use starnix_syscalls::SyscallResult;
 use starnix_syscalls::decls::SyscallDecl;
 use starnix_types::ownership::{OwnedRef, Releasable};
@@ -688,16 +687,12 @@ impl<'a> PtraceTracer<'a> {
 /// * `tracee` - The target thread to continue.
 /// * `data` - Is treated as it is in PTRACE_CONT.
 /// * `detach` - If true, the tracer will detach from the tracee.
-fn ptrace_cont<L>(
-    locked: &mut Locked<L>,
+fn ptrace_cont(
     tracer: PtraceTracer<'_>,
     tracee: &Task,
     data: &UserAddress,
     detach: bool,
-) -> Result<(), Errno>
-where
-    L: LockBefore<ThreadGroupLimits>,
-{
+) -> Result<(), Errno> {
     let data = data.ptr() as u64;
     let new_state;
     let mut siginfo = if data != 0 {
@@ -765,7 +760,7 @@ where
 
     if let Some(siginfo) = siginfo {
         // This will wake up the task for us, and also release state
-        send_signal_first(locked, &tracee, state, siginfo);
+        send_signal_first(&tracee, state, siginfo);
     } else {
         state.set_stopped(StopState::Waking, None, None, None);
         drop(state);
@@ -823,21 +818,17 @@ fn ptrace_listen(tracee: &Task) -> Result<(), Errno> {
     Ok(())
 }
 
-pub fn ptrace_detach<L>(
-    locked: &mut Locked<L>,
+pub fn ptrace_detach(
     pids: &mut PidTable,
     tracer: PtraceTracer<'_>,
     tracee: &Task,
     data: &UserAddress,
-) -> Result<(), Errno>
-where
-    L: LockBefore<ThreadGroupLimits>,
-{
+) -> Result<(), Errno> {
     let tid = tracee.get_tid();
     let thread_group = tracer.thread_group();
     {
         let mut ptracees = thread_group.ptracees.lock();
-        ptrace_cont(locked, tracer, tracee, &data, true)?;
+        ptrace_cont(tracer, tracee, &data, true)?;
         ptracees.remove(&tid);
     }
     let zombie_notification = thread_group.write().zombie_ptracees.detach(pids, tid);
@@ -848,17 +839,13 @@ where
 }
 
 /// For all ptrace requests that require an attached tracee
-pub fn ptrace_dispatch<L>(
-    locked: &mut Locked<L>,
+pub fn ptrace_dispatch(
     current_task: &mut CurrentTask,
     request: u32,
     pid: pid_t,
     addr: UserAddress,
     data: UserAddress,
-) -> Result<SyscallResult, Errno>
-where
-    L: LockBefore<ThreadGroupLimits>,
-{
+) -> Result<SyscallResult, Errno> {
     let mut pids = current_task.kernel().pids.write();
     let tracee = pids.get_task(pid)?;
 
@@ -882,7 +869,7 @@ where
                 (SIGTRAP.number() | PTRACE_KILL << 8) as i32,
                 SignalDetail::None,
             );
-            send_standard_signal(locked, &tracee, siginfo);
+            send_standard_signal(&tracee, siginfo);
             return Ok(starnix_syscalls::SUCCESS);
         }
         PTRACE_INTERRUPT => {
@@ -894,29 +881,16 @@ where
             return Ok(starnix_syscalls::SUCCESS);
         }
         PTRACE_CONT => {
-            ptrace_cont(
-                locked,
-                PtraceTracer::Syscall(&current_task.task),
-                tracee.as_ref(),
-                &data,
-                false,
-            )?;
+            ptrace_cont(PtraceTracer::Syscall(&current_task.task), tracee.as_ref(), &data, false)?;
             return Ok(starnix_syscalls::SUCCESS);
         }
         PTRACE_SYSCALL => {
             tracee.trace_syscalls.store(true, std::sync::atomic::Ordering::Relaxed);
-            ptrace_cont(
-                locked,
-                PtraceTracer::Syscall(&current_task.task),
-                tracee.as_ref(),
-                &data,
-                false,
-            )?;
+            ptrace_cont(PtraceTracer::Syscall(&current_task.task), tracee.as_ref(), &data, false)?;
             return Ok(starnix_syscalls::SUCCESS);
         }
         PTRACE_DETACH => {
             ptrace_detach(
-                locked,
                 &mut pids,
                 PtraceTracer::Syscall(&current_task.task),
                 tracee.as_ref(),
@@ -1176,14 +1150,10 @@ fn do_attach(
 /// Uses the given core ptrace state (including tracer, attach type, etc) to
 /// attach to another task, given by `tracee_task`.  Also sends a signal to stop
 /// tracee_task.  Typical for when inheriting ptrace state from another task.
-pub fn ptrace_attach_from_state<L>(
-    locked: &mut Locked<L>,
+pub fn ptrace_attach_from_state(
     tracee_task: &Arc<Task>,
     ptrace_state: PtraceCoreState,
-) -> Result<(), Errno>
-where
-    L: LockBefore<ThreadGroupLimits>,
-{
+) -> Result<(), Errno> {
     {
         let tracer_tg = ptrace_state.thread_group.upgrade().ok_or_else(|| errno!(ESRCH))?;
         do_attach(
@@ -1210,7 +1180,7 @@ where
         // Note, SIGSTOP can never be blocked, but we use `forced` anyway to be consistent.
         SignalInfo::forced(SIGSTOP)
     };
-    send_signal_first(locked, tracee_task, state, signal);
+    send_signal_first(tracee_task, state, signal);
 
     // If the tracer is already sleeping in waitpid, it is waiting on the shared `tracer_waiters`
     // queue. We must wake it up here so it can register on the new tracee's queue (and update its
@@ -1245,23 +1215,19 @@ pub fn ptrace_traceme(current_task: &mut CurrentTask) -> Result<SyscallResult, E
     }
 }
 
-pub fn ptrace_attach<L>(
-    locked: &mut Locked<L>,
+pub fn ptrace_attach(
     current_task: &mut CurrentTask,
     pid: pid_t,
     attach_type: PtraceAttachType,
     data: UserAddress,
-) -> Result<SyscallResult, Errno>
-where
-    L: LockBefore<MmDumpable>,
-{
+) -> Result<SyscallResult, Errno> {
     let tracee = current_task.kernel().pids.read().get_task(pid)?;
 
     if tracee.thread_group == current_task.thread_group {
         return error!(EPERM);
     }
 
-    current_task.check_ptrace_access_mode(locked, PTRACE_MODE_ATTACH_REALCREDS, &tracee)?;
+    current_task.check_ptrace_access_mode(PTRACE_MODE_ATTACH_REALCREDS, &tracee)?;
     let tracer_task = Arc::downgrade(&current_task.task);
     do_attach(
         current_task.thread_group(),
@@ -1271,11 +1237,7 @@ where
         PtraceOptions::empty(),
     )?;
     if attach_type == PtraceAttachType::Attach {
-        send_standard_signal(
-            locked.cast_locked::<MmDumpable>(),
-            &tracee,
-            SignalInfo::kernel(SIGSTOP),
-        );
+        send_standard_signal(&tracee, SignalInfo::kernel(SIGSTOP));
     } else if attach_type == PtraceAttachType::Seize {
         // When seizing, |data| should be used as the options bitmask.
         let mut state = tracee.write();
@@ -1380,7 +1342,7 @@ pub fn ptrace_setregset(
 }
 
 #[inline(never)]
-pub fn ptrace_syscall_enter(locked: &mut Locked<Unlocked>, current_task: &mut CurrentTask) {
+pub fn ptrace_syscall_enter(current_task: &mut CurrentTask) {
     let block = {
         let mut state = current_task.write();
         if state.ptrace.is_some() {
@@ -1404,16 +1366,12 @@ pub fn ptrace_syscall_enter(locked: &mut Locked<Unlocked>, current_task: &mut Cu
         }
     };
     if block {
-        current_task.block_if_stopped(locked);
+        current_task.block_if_stopped();
     }
 }
 
 #[inline(never)]
-pub fn ptrace_syscall_exit(
-    locked: &mut Locked<Unlocked>,
-    current_task: &mut CurrentTask,
-    is_error: bool,
-) {
+pub fn ptrace_syscall_exit(current_task: &mut CurrentTask, is_error: bool) {
     let block = {
         let mut state = current_task.write();
         current_task.trace_syscalls.store(false, Ordering::Relaxed);
@@ -1441,7 +1399,7 @@ pub fn ptrace_syscall_exit(
         }
     };
     if block {
-        current_task.block_if_stopped(locked);
+        current_task.block_if_stopped();
     }
 }
 
@@ -1455,24 +1413,20 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_set_ptracer() {
-        spawn_kernel_and_run(async |locked, current_task| {
+        spawn_kernel_and_run(async |current_task| {
             let kernel = current_task.kernel().clone();
-            let mut tracee = create_task(locked, &kernel, "tracee");
-            let mut tracer = create_task(locked, &kernel, "tracer");
+            let mut tracee = create_task(&kernel, "tracee");
+            let mut tracer = create_task(&kernel, "tracer");
 
             let mut creds = tracer.real_creds().clone();
             creds.cap_effective &= !CAP_SYS_PTRACE;
             tracer.set_creds(creds);
 
             kernel.ptrace_scope.store(security::yama::SCOPE_RESTRICTED, Ordering::Relaxed);
-            assert_eq!(
-                sys_prctl(locked, &mut tracee, PR_SET_PTRACER, 0xFFF, 0, 0, 0),
-                error!(EINVAL)
-            );
+            assert_eq!(sys_prctl(&mut tracee, PR_SET_PTRACER, 0xFFF, 0, 0, 0), error!(EINVAL));
 
             assert_eq!(
                 ptrace_attach(
-                    locked,
                     &mut tracer,
                     tracee.as_ref().task.tid,
                     PtraceAttachType::Attach,
@@ -1483,7 +1437,6 @@ mod tests {
 
             assert!(
                 sys_prctl(
-                    locked,
                     &mut tracee,
                     PR_SET_PTRACER,
                     tracer.thread_group().leader as u64,
@@ -1494,11 +1447,10 @@ mod tests {
                 .is_ok()
             );
 
-            let mut not_tracer = create_task(locked, &kernel, "not-tracer");
+            let mut not_tracer = create_task(&kernel, "not-tracer");
             not_tracer.set_creds(tracer.real_creds().clone());
             assert_eq!(
                 ptrace_attach(
-                    locked,
                     &mut not_tracer,
                     tracee.as_ref().task.tid,
                     PtraceAttachType::Attach,
@@ -1509,7 +1461,6 @@ mod tests {
 
             assert!(
                 ptrace_attach(
-                    locked,
                     &mut tracer,
                     tracee.as_ref().task.tid,
                     PtraceAttachType::Attach,
@@ -1523,24 +1474,20 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_set_ptracer_any() {
-        spawn_kernel_and_run(async |locked, current_task| {
+        spawn_kernel_and_run(async |current_task| {
             let kernel = current_task.kernel().clone();
-            let mut tracee = create_task(locked, &kernel, "tracee");
-            let mut tracer = create_task(locked, &kernel, "tracer");
+            let mut tracee = create_task(&kernel, "tracee");
+            let mut tracer = create_task(&kernel, "tracer");
 
             let mut creds = tracer.real_creds().clone();
             creds.cap_effective &= !CAP_SYS_PTRACE;
             tracer.set_creds(creds);
 
             kernel.ptrace_scope.store(security::yama::SCOPE_RESTRICTED, Ordering::Relaxed);
-            assert_eq!(
-                sys_prctl(locked, &mut tracee, PR_SET_PTRACER, 0xFFF, 0, 0, 0),
-                error!(EINVAL)
-            );
+            assert_eq!(sys_prctl(&mut tracee, PR_SET_PTRACER, 0xFFF, 0, 0, 0), error!(EINVAL));
 
             assert_eq!(
                 ptrace_attach(
-                    locked,
                     &mut tracer,
                     tracee.as_ref().task.tid,
                     PtraceAttachType::Attach,
@@ -1550,13 +1497,11 @@ mod tests {
             );
 
             assert!(
-                sys_prctl(locked, &mut tracee, PR_SET_PTRACER, PR_SET_PTRACER_ANY as u64, 0, 0, 0)
-                    .is_ok()
+                sys_prctl(&mut tracee, PR_SET_PTRACER, PR_SET_PTRACER_ANY as u64, 0, 0, 0).is_ok()
             );
 
             assert!(
                 ptrace_attach(
-                    locked,
                     &mut tracer,
                     tracee.as_ref().task.tid,
                     PtraceAttachType::Attach,

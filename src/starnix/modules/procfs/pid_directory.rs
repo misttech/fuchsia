@@ -30,7 +30,7 @@ use starnix_core::vfs::{
     fileops_impl_unbounded_seek, fs_node_impl_dir_readonly,
 };
 use starnix_logging::{bug_ref, track_stub};
-use starnix_sync::{FileOpsCore, Locked};
+
 use starnix_task_command::TaskCommand;
 use starnix_types::time::duration_to_scheduler_clock;
 use starnix_uapi::auth::{
@@ -145,7 +145,6 @@ impl FsNodeOps for TaskDirectoryNode {
 
     fn create_file_ops(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _node: &FsNode,
         _current_task: &CurrentTask,
         _flags: OpenFlags,
@@ -155,7 +154,6 @@ impl FsNodeOps for TaskDirectoryNode {
 
     fn lookup(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         node: &FsNode,
         _current_task: &CurrentTask,
         name: &FsStr,
@@ -202,7 +200,7 @@ impl FsNodeOps for TaskDirectoryNode {
             b"maps" => Box::new(PtraceCheckedNode::new_node(
                 task_weak,
                 PTRACE_MODE_READ_FSCREDS,
-                |_, _, task| Ok(ProcMapsFile::new(task)),
+                |_, task| Ok(ProcMapsFile::new(task)),
             )),
             b"mem" => Box::new(MemFile::new_node(task_weak)),
             b"root" => Box::new(CallbackSymlinkNode::new({
@@ -219,7 +217,7 @@ impl FsNodeOps for TaskDirectoryNode {
             b"smaps" => Box::new(PtraceCheckedNode::new_node(
                 task_weak,
                 PTRACE_MODE_READ_FSCREDS,
-                |_, _, task| Ok(ProcSmapsFile::new(task)),
+                |_, task| Ok(ProcSmapsFile::new(task)),
             )),
             b"stat" => Box::new(StatFile::new_node(task_weak, self.scope)),
             b"statm" => Box::new(StatmFile::new_node(task_weak)),
@@ -271,7 +269,7 @@ impl FsNodeOps for TaskDirectoryNode {
             b"pagemap" => Box::new(PtraceCheckedNode::new_node(
                 task_weak,
                 PTRACE_MODE_READ_FSCREDS,
-                |_, _, _| Ok(StubEmptyFile::new(bug_ref!("https://fxbug.dev/452096300"))),
+                |_, _| Ok(StubEmptyFile::new(bug_ref!("https://fxbug.dev/452096300"))),
             )),
             b"task" => {
                 let task = self.task_weak.upgrade().ok_or_else(|| errno!(ESRCH))?;
@@ -296,7 +294,6 @@ impl FileOps for TaskDirectory {
 
     fn readdir(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         file: &FileObject,
         _current_task: &CurrentTask,
         sink: &mut dyn DirentSink,
@@ -362,7 +359,6 @@ impl FsNodeOps for FdDirectory {
 
     fn create_file_ops(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _node: &FsNode,
         _current_task: &CurrentTask,
         _flags: OpenFlags,
@@ -374,7 +370,6 @@ impl FsNodeOps for FdDirectory {
 
     fn lookup(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         node: &FsNode,
         _current_task: &CurrentTask,
         name: &FsStr,
@@ -418,7 +413,7 @@ struct AttrNode {
 
 impl AttrNode {
     fn new(task: Weak<Task>, attr: security::ProcAttr) -> impl FsNodeOps {
-        SimpleFileNode::new(move |_, _| Ok(AttrNode { attr, task: task.clone() }))
+        SimpleFileNode::new(move |_| Ok(AttrNode { attr, task: task.clone() }))
     }
 }
 
@@ -432,7 +427,6 @@ impl FileOps for AttrNode {
 
     fn read(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         current_task: &CurrentTask,
         offset: usize,
@@ -445,7 +439,6 @@ impl FileOps for AttrNode {
 
     fn write(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         current_task: &CurrentTask,
         offset: usize,
@@ -478,7 +471,6 @@ impl FsNodeOps for NsDirectory {
 
     fn create_file_ops(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _node: &FsNode,
         _current_task: &CurrentTask,
         _flags: OpenFlags,
@@ -499,7 +491,6 @@ impl FsNodeOps for NsDirectory {
 
     fn lookup(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         node: &FsNode,
         current_task: &CurrentTask,
         name: &FsStr,
@@ -606,14 +597,13 @@ impl FsNodeOps for FdInfoDirectory {
 
     fn create_file_ops(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         _node: &FsNode,
         current_task: &CurrentTask,
         _flags: OpenFlags,
     ) -> Result<Box<dyn FileOps>, Errno> {
         let task = Task::from_weak(&self.task)?;
         current_task
-            .check_ptrace_access_mode(locked, PTRACE_MODE_READ_FSCREDS, &task)
+            .check_ptrace_access_mode(PTRACE_MODE_READ_FSCREDS, &task)
             .map_err(|_| errno!(EACCES))?;
 
         Ok(VecDirectory::new_file(fds_to_directory_entries(task.files()?.get_all_fds())))
@@ -621,7 +611,6 @@ impl FsNodeOps for FdInfoDirectory {
 
     fn lookup(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         node: &FsNode,
         current_task: &CurrentTask,
         name: &FsStr,
@@ -632,7 +621,7 @@ impl FsNodeOps for FdInfoDirectory {
         let pos = file.offset.read();
         let flags = file.flags();
         let mut data = format!("pos:\t{}\nflags:\t0{:o}\n", pos, flags.bits()).into_bytes();
-        if let Some(extra_fdinfo) = file.extra_fdinfo(locked, current_task) {
+        if let Some(extra_fdinfo) = file.extra_fdinfo(current_task) {
             data.extend_from_slice(extra_fdinfo.as_slice());
         }
         Ok(node.fs().create_node_and_allocate_node_id(
@@ -668,7 +657,6 @@ impl FsNodeOps for TaskListDirectory {
 
     fn create_file_ops(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _node: &FsNode,
         _current_task: &CurrentTask,
         _flags: OpenFlags,
@@ -688,7 +676,6 @@ impl FsNodeOps for TaskListDirectory {
 
     fn lookup(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         node: &FsNode,
         _current_task: &CurrentTask,
         name: &FsStr,
@@ -798,21 +785,16 @@ struct PtraceCheckedNode {}
 impl PtraceCheckedNode {
     pub fn new_node<F, O>(task: Weak<Task>, mode: PtraceAccessMode, create_ops: F) -> impl FsNodeOps
     where
-        F: Fn(&mut Locked<FileOpsCore>, &CurrentTask, Arc<Task>) -> Result<O, Errno>
-            + Send
-            + Sync
-            + 'static,
+        F: Fn(&CurrentTask, Arc<Task>) -> Result<O, Errno> + Send + Sync + 'static,
         O: FileOps,
     {
-        SimpleFileNode::new(move |locked, current_task: &CurrentTask| {
+        SimpleFileNode::new(move |current_task: &CurrentTask| {
             let task = Task::from_weak(&task)?;
             // proc-pid nodes for kthreads do not require ptrace access checks.
             if task.mm().is_ok() {
-                current_task
-                    .check_ptrace_access_mode(locked, mode, &task)
-                    .map_err(|_| errno!(EACCES))?;
+                current_task.check_ptrace_access_mode(mode, &task).map_err(|_| errno!(EACCES))?;
             }
-            create_ops(locked, current_task, task)
+            create_ops(current_task, task)
         })
     }
 }
@@ -824,7 +806,7 @@ pub struct EnvironFile {
 }
 impl EnvironFile {
     pub fn new_node(task: Weak<Task>) -> impl FsNodeOps {
-        PtraceCheckedNode::new_node(task, PTRACE_MODE_READ_FSCREDS, |_, _, task| {
+        PtraceCheckedNode::new_node(task, PTRACE_MODE_READ_FSCREDS, |_, task| {
             Ok(DynamicFile::new(Self { task: Arc::downgrade(&task) }))
         })
     }
@@ -855,7 +837,7 @@ pub struct AuxvFile {
 }
 impl AuxvFile {
     pub fn new_node(task: Weak<Task>) -> impl FsNodeOps {
-        PtraceCheckedNode::new_node(task, PTRACE_MODE_READ_FSCREDS, |_, _, task| {
+        PtraceCheckedNode::new_node(task, PTRACE_MODE_READ_FSCREDS, |_, task| {
             Ok(DynamicFile::new(Self { task: Arc::downgrade(&task) }))
         })
     }
@@ -886,7 +868,7 @@ pub struct CommFile {
 }
 impl CommFile {
     pub fn new_node(task: Weak<Task>, info: TaskPersistentInfo) -> impl FsNodeOps {
-        SimpleFileNode::new(move |_, _| {
+        SimpleFileNode::new(move |_| {
             Ok(DynamicFile::new(CommFile { task: task.clone(), info: info.clone() }))
         })
     }
@@ -905,7 +887,6 @@ impl DynamicFileSource for CommFile {
 
     fn write(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         current_task: &CurrentTask,
         _offset: usize,
         data: &mut dyn InputBuffer,
@@ -959,12 +940,11 @@ impl LimitsFile {
 impl DynamicFileSource for LimitsFile {
     fn generate_locked(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         _current_task: &CurrentTask,
         sink: &mut DynamicFileBuf,
     ) -> Result<(), Errno> {
         let task = Task::from_weak(&self.0)?;
-        let limits = task.thread_group().limits.lock(locked);
+        let limits = task.thread_group().limits.lock();
 
         let write_limit = |sink: &mut DynamicFileBuf, value| {
             if value == RLIM_INFINITY as u64 {
@@ -1004,7 +984,7 @@ pub struct MemFile {
 
 impl MemFile {
     pub fn new_node(task: Weak<Task>) -> impl FsNodeOps {
-        PtraceCheckedNode::new_node(task, PTRACE_MODE_ATTACH_FSCREDS, |_, _, task| {
+        PtraceCheckedNode::new_node(task, PTRACE_MODE_ATTACH_FSCREDS, |_, task| {
             let mm = task.mm().ok().as_ref().map(Arc::downgrade).unwrap_or_default();
             Ok(Self { mm, task: Arc::downgrade(&task) })
         })
@@ -1020,7 +1000,6 @@ impl FileOps for MemFile {
 
     fn seek(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         current_offset: off_t,
@@ -1031,7 +1010,6 @@ impl FileOps for MemFile {
 
     fn read(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         current_task: &CurrentTask,
         offset: usize,
@@ -1059,7 +1037,6 @@ impl FileOps for MemFile {
 
     fn write(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         current_task: &CurrentTask,
         offset: usize,
@@ -1126,7 +1103,6 @@ impl StatFile {
 impl DynamicFileSource for StatFile {
     fn generate_locked(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         current_task: &CurrentTask,
         sink: &mut DynamicFileBuf,
     ) -> Result<(), Errno> {
@@ -1236,7 +1212,7 @@ impl DynamicFileSource for StatFile {
             let page_size = *PAGE_SIZE as usize;
             vsize = mem_stats.vm_size;
             rss = mem_stats.vm_rss / page_size;
-            rsslim = task.thread_group().limits.lock(locked).get(Resource::RSS).rlim_max;
+            rsslim = task.thread_group().limits.lock().get(Resource::RSS).rlim_max;
 
             {
                 let mm_state = mm.state.read();
@@ -1252,7 +1228,7 @@ impl DynamicFileSource for StatFile {
         // caller does not have ptrace read access to the target.
         // In practice the `startcode` and `endcode` fields appear to be displayed as 1.
         if !current_task
-            .check_ptrace_access_mode(locked, PTRACE_MODE_READ_FSCREDS | PTRACE_MODE_NOAUDIT, &task)
+            .check_ptrace_access_mode(PTRACE_MODE_READ_FSCREDS | PTRACE_MODE_NOAUDIT, &task)
             .is_ok()
         {
             startcode = 1;

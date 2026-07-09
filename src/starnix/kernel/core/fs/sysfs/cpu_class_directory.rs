@@ -8,6 +8,8 @@ use crate::vfs::pseudo::simple_directory::SimpleDirectoryMutator;
 use crate::vfs::pseudo::simple_file::{BytesFile, BytesFileOps, SimpleFileNode};
 use crate::vfs::pseudo::stub_empty_file::StubEmptyFile;
 use anyhow::Error;
+use fidl_fuchsia_hardware_cpu_ctrl as fcpuctrl;
+use fidl_fuchsia_power_cpu as fcpu;
 use fuchsia_component::client::connect_to_protocol_sync;
 use itertools::Itertools;
 use starnix_logging::{bug_ref, log_warn};
@@ -15,7 +17,7 @@ use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::mode;
 use starnix_uapi::{errno, error, from_status_like_fdio};
 use std::collections::HashMap;
-use {fidl_fuchsia_hardware_cpu_ctrl as fcpuctrl, fidl_fuchsia_power_cpu as fcpu, zx};
+use zx;
 
 pub fn build_cpu_class_directory(dir: &SimpleDirectoryMutator) {
     let cpu_domains = get_cpu_domains();
@@ -230,7 +232,7 @@ fn connect_to_device() -> Result<fcpuctrl::DeviceSynchronousProxy, Errno> {
 }
 
 fn create_scaling_cur_freq_file() -> impl FsNodeOps {
-    SimpleFileNode::new(|_, _| {
+    SimpleFileNode::new(|_| {
         let proxy = connect_to_device()?;
         let opp =
             proxy.get_current_operating_point(zx::Instant::INFINITE).map_err(|_| errno!(EINVAL))?;

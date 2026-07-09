@@ -9,10 +9,7 @@ use crate::vfs::socket::{
     AcceptQueue, DEFAULT_LISTEN_BACKLOG, Socket, SocketAddress, SocketDomain, SocketHandle,
     SocketMessageFlags, SocketOps, SocketPeer, SocketProtocol, SocketShutdownFlags, SocketType,
 };
-use starnix_sync::{
-    FileOpsCore, LockDepGuard, LockDepMutex, LockEqualOrBefore, Locked, VsockSocketInnerLock,
-    allow_subclass,
-};
+use starnix_sync::{LockDepGuard, LockDepMutex, VsockSocketInnerLock, allow_subclass};
 use starnix_uapi::auth::Credentials;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
@@ -82,7 +79,6 @@ impl SocketOps for VsockSocket {
     // we only connect from the enclosing OK.
     fn connect(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _socket: &SocketHandle,
         _current_task: &CurrentTask,
         _peer: SocketPeer,
@@ -90,13 +86,7 @@ impl SocketOps for VsockSocket {
         error!(EPROTOTYPE)
     }
 
-    fn listen(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        _socket: &Socket,
-        backlog: i32,
-        _credentials: ucred,
-    ) -> Result<(), Errno> {
+    fn listen(&self, _socket: &Socket, backlog: i32, _credentials: ucred) -> Result<(), Errno> {
         let mut inner = self.lock();
         let is_bound = inner.address.is_some();
         let backlog = if backlog < 0 { DEFAULT_LISTEN_BACKLOG } else { backlog as usize };
@@ -113,12 +103,7 @@ impl SocketOps for VsockSocket {
         }
     }
 
-    fn accept(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        socket: &Socket,
-        _current_task: &CurrentTask,
-    ) -> Result<SocketHandle, Errno> {
+    fn accept(&self, socket: &Socket, _current_task: &CurrentTask) -> Result<SocketHandle, Errno> {
         match socket.socket_type {
             SocketType::Stream | SocketType::SeqPacket => {}
             _ => return error!(EOPNOTSUPP),
@@ -134,7 +119,6 @@ impl SocketOps for VsockSocket {
 
     fn bind(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _socket: &Socket,
         _current_task: &CurrentTask,
         socket_address: SocketAddress,
@@ -153,7 +137,6 @@ impl SocketOps for VsockSocket {
 
     fn read(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         _socket: &Socket,
         current_task: &CurrentTask,
         data: &mut dyn OutputBuffer,
@@ -168,8 +151,8 @@ impl SocketOps for VsockSocket {
                 _ => return error!(EBADF),
             }
         };
-        let bytes_read = current_task
-            .override_creds(Credentials::root(), || file.read(locked, current_task, data))?;
+        let bytes_read =
+            current_task.override_creds(Credentials::root(), || file.read(current_task, data))?;
         Ok(MessageReadInfo {
             bytes_read,
             message_length: bytes_read,
@@ -180,7 +163,6 @@ impl SocketOps for VsockSocket {
 
     fn write(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         _socket: &Socket,
         current_task: &CurrentTask,
         data: &mut dyn InputBuffer,
@@ -194,12 +176,11 @@ impl SocketOps for VsockSocket {
                 _ => return error!(EBADF),
             }
         };
-        current_task.override_creds(Credentials::root(), || file.write(locked, current_task, data))
+        current_task.override_creds(Credentials::root(), || file.write(current_task, data))
     }
 
     fn wait_async(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         _socket: &Socket,
         current_task: &CurrentTask,
         waiter: &Waiter,
@@ -209,7 +190,7 @@ impl SocketOps for VsockSocket {
         let inner = self.lock();
         match &inner.state {
             VsockSocketState::Connected { file, .. } => file
-                .wait_async(locked, current_task, waiter, events, handler)
+                .wait_async(current_task, waiter, events, handler)
                 .expect("vsock socket should be connected to a file that can be waited on"),
             _ => inner.waiters.wait_async_fd_events(waiter, events, handler),
         }
@@ -217,39 +198,23 @@ impl SocketOps for VsockSocket {
 
     fn query_events(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         _socket: &Socket,
         current_task: &CurrentTask,
     ) -> Result<FdEvents, Errno> {
-        self.lock().query_events(locked, current_task)
+        self.lock().query_events(current_task)
     }
 
-    fn shutdown(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        _socket: &Socket,
-        _how: SocketShutdownFlags,
-    ) -> Result<(), Errno> {
+    fn shutdown(&self, _socket: &Socket, _how: SocketShutdownFlags) -> Result<(), Errno> {
         self.lock().state = VsockSocketState::Closed;
         Ok(())
     }
 
-    fn close(
-        &self,
-        locked: &mut Locked<FileOpsCore>,
-        _current_task: &CurrentTask,
-        socket: &Socket,
-    ) {
+    fn close(&self, _current_task: &CurrentTask, socket: &Socket) {
         // Call to shutdown should never fail, so unwrap is OK
-        self.shutdown(locked, socket, SocketShutdownFlags::READ | SocketShutdownFlags::WRITE)
-            .unwrap();
+        self.shutdown(socket, SocketShutdownFlags::READ | SocketShutdownFlags::WRITE).unwrap();
     }
 
-    fn getsockname(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        socket: &Socket,
-    ) -> Result<SocketAddress, Errno> {
+    fn getsockname(&self, socket: &Socket) -> Result<SocketAddress, Errno> {
         let inner = self.lock();
         if let Some(address) = &inner.address {
             Ok(address.clone())
@@ -258,11 +223,7 @@ impl SocketOps for VsockSocket {
         }
     }
 
-    fn getpeername(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        _socket: &Socket,
-    ) -> Result<SocketAddress, Errno> {
+    fn getpeername(&self, _socket: &Socket) -> Result<SocketAddress, Errno> {
         let inner = self.lock();
         match &inner.state {
             VsockSocketState::Connected { peer_addr, .. } => Ok(peer_addr.clone()),
@@ -274,16 +235,12 @@ impl SocketOps for VsockSocket {
 }
 
 impl VsockSocket {
-    pub fn remote_connection<L>(
+    pub fn remote_connection(
         &self,
-        locked: &mut Locked<L>,
         socket: &Socket,
         current_task: &CurrentTask,
         file: FileHandle,
-    ) -> Result<(), Errno>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
+    ) -> Result<(), Errno> {
         // we only allow non-blocking files here, so that
         // read and write on file can return EAGAIN.
         assert!(file.flags().contains(OpenFlags::NONBLOCK));
@@ -301,7 +258,6 @@ impl VsockSocket {
                     return error!(EAGAIN);
                 }
                 let remote_socket = Socket::new(
-                    locked,
                     current_task,
                     SocketDomain::Vsock,
                     SocketType::Stream,
@@ -329,18 +285,11 @@ impl VsockSocket {
 }
 
 impl VsockSocketInner {
-    fn query_events<L>(
-        &self,
-        locked: &mut Locked<L>,
-        current_task: &CurrentTask,
-    ) -> Result<FdEvents, Errno>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
+    fn query_events(&self, current_task: &CurrentTask) -> Result<FdEvents, Errno> {
         Ok(match &self.state {
             VsockSocketState::Disconnected => FdEvents::empty(),
             VsockSocketState::Connected { file, .. } => current_task
-                .override_creds(Credentials::root(), || file.query_events(locked, current_task))?,
+                .override_creds(Credentials::root(), || file.query_events(current_task))?,
             VsockSocketState::Listening(queue) => {
                 if !queue.sockets.is_empty() {
                     FdEvents::POLLIN
@@ -364,18 +313,16 @@ mod tests {
     use crate::vfs::buffers::{VecInputBuffer, VecOutputBuffer};
     use crate::vfs::socket::SocketFile;
     use futures::executor::block_on;
-    use starnix_sync::Unlocked;
     use starnix_uapi::vfs::EpollEvent;
     use syncio::Zxio;
 
     #[::fuchsia::test]
     async fn test_vsock_socket() {
-        spawn_kernel_and_run(async |locked, current_task| {
+        spawn_kernel_and_run(async |current_task| {
             let (fs1, fs2) = fidl::Socket::create_stream();
             const VSOCK_PORT: u32 = 5555;
 
             let listen_socket = Socket::new(
-                locked,
                 &current_task,
                 SocketDomain::Vsock,
                 SocketType::Stream,
@@ -385,32 +332,28 @@ mod tests {
             .expect("Failed to create socket.");
             let vsock_ns = current_task.running_state().abstract_vsock_namespace.clone();
             vsock_ns
-                .bind(locked, &current_task, VSOCK_PORT, &listen_socket)
+                .bind(&current_task, VSOCK_PORT, &listen_socket)
                 .expect("Failed to bind socket.");
-            listen_socket.listen(locked, &current_task, 10).expect("Failed to listen.");
+            listen_socket.listen(&current_task, 10).expect("Failed to listen.");
 
             let listen_socket =
                 vsock_ns.lookup(&VSOCK_PORT).expect("Failed to look up listening socket.");
-            let remote = create_fuchsia_pipe(
-                locked,
-                &current_task,
-                fs2,
-                OpenFlags::RDWR | OpenFlags::NONBLOCK,
-            )
-            .unwrap();
+            let remote =
+                create_fuchsia_pipe(&current_task, fs2, OpenFlags::RDWR | OpenFlags::NONBLOCK)
+                    .unwrap();
             listen_socket
                 .downcast_socket::<VsockSocket>()
                 .unwrap()
-                .remote_connection(locked, &listen_socket, &current_task, remote)
+                .remote_connection(&listen_socket, &current_task, remote)
                 .unwrap();
 
-            let server_socket = listen_socket.accept(locked, &current_task).unwrap();
+            let server_socket = listen_socket.accept(&current_task).unwrap();
 
             let test_bytes_in: [u8; 5] = [0, 1, 2, 3, 4];
             assert_eq!(fs1.write(&test_bytes_in[..]).unwrap(), test_bytes_in.len());
             let mut buffer_iterator = VecOutputBuffer::new(*PAGE_SIZE as usize);
             let read_message_info = server_socket
-                .read(locked, &current_task, &mut buffer_iterator, SocketMessageFlags::empty())
+                .read(&current_task, &mut buffer_iterator, SocketMessageFlags::empty())
                 .unwrap();
             assert_eq!(read_message_info.bytes_read, test_bytes_in.len());
             assert_eq!(buffer_iterator.data(), test_bytes_in);
@@ -418,7 +361,7 @@ mod tests {
             let test_bytes_out: [u8; 10] = [9, 8, 7, 6, 5, 4, 3, 2, 1, 0];
             let mut buffer_iterator = VecInputBuffer::new(&test_bytes_out);
             server_socket
-                .write(locked, &current_task, &mut buffer_iterator, &mut None, &mut vec![])
+                .write(&current_task, &mut buffer_iterator, &mut None, &mut vec![])
                 .unwrap();
             assert_eq!(buffer_iterator.bytes_read(), test_bytes_out.len());
 
@@ -426,19 +369,18 @@ mod tests {
             assert_eq!(test_bytes_out.len(), fs1.read(&mut read_back_buf).unwrap());
             assert_eq!(&read_back_buf[..test_bytes_out.len()], &test_bytes_out);
 
-            server_socket.close(locked, &current_task);
-            listen_socket.close(locked, &current_task);
+            server_socket.close(&current_task);
+            listen_socket.close(&current_task);
         })
         .await;
     }
 
     #[::fuchsia::test]
     async fn test_vsock_write_while_read() {
-        spawn_kernel_and_run(async |locked, current_task| {
+        spawn_kernel_and_run(async |current_task| {
             let kernel = current_task.kernel();
             let (fs1, fs2) = fidl::Socket::create_stream();
             let socket = Socket::new(
-                locked,
                 &current_task,
                 SocketDomain::Vsock,
                 SocketType::Stream,
@@ -446,13 +388,9 @@ mod tests {
                 /* kernel_private = */ false,
             )
             .expect("Failed to create socket.");
-            let remote = create_fuchsia_pipe(
-                locked,
-                &current_task,
-                fs2,
-                OpenFlags::RDWR | OpenFlags::NONBLOCK,
-            )
-            .unwrap();
+            let remote =
+                create_fuchsia_pipe(&current_task, fs2, OpenFlags::RDWR | OpenFlags::NONBLOCK)
+                    .unwrap();
             downcast_socket_to_vsock(&socket).lock().state = VsockSocketState::Connected {
                 file: remote,
                 peer_addr: SocketAddress::Vsock {
@@ -461,16 +399,15 @@ mod tests {
                 },
             };
             let socket_file =
-                SocketFile::from_socket(locked, &current_task, socket, OpenFlags::RDWR, false)
+                SocketFile::from_socket(&current_task, socket, OpenFlags::RDWR, false)
                     .expect("Failed to create socket file.");
 
             const XFER_SIZE: usize = 42;
 
             let socket_clone = socket_file.clone();
-            let closure = move |locked: &mut Locked<Unlocked>, current_task: &CurrentTask| {
-                let bytes_read = socket_clone
-                    .read(locked, current_task, &mut VecOutputBuffer::new(XFER_SIZE))
-                    .unwrap();
+            let closure = move |current_task: &CurrentTask| {
+                let bytes_read =
+                    socket_clone.read(current_task, &mut VecOutputBuffer::new(XFER_SIZE)).unwrap();
                 assert_eq!(XFER_SIZE, bytes_read);
             };
             let (result, req) =
@@ -480,9 +417,7 @@ mod tests {
             // Wait for the thread to become blocked on the read.
             std::thread::sleep(std::time::Duration::from_secs(2));
 
-            socket_file
-                .write(locked, &current_task, &mut VecInputBuffer::new(&[0; XFER_SIZE]))
-                .unwrap();
+            socket_file.write(&current_task, &mut VecInputBuffer::new(&[0; XFER_SIZE])).unwrap();
 
             let mut buffer = [0u8; 1024];
             assert_eq!(XFER_SIZE, fs1.read(&mut buffer).unwrap());
@@ -494,13 +429,12 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_vsock_poll() {
-        spawn_kernel_and_run(async |locked, current_task| {
+        spawn_kernel_and_run(async |current_task| {
             let (client, server) = zx::Socket::create_stream();
-            let pipe = create_fuchsia_pipe(locked, &current_task, client, OpenFlags::RDWR)
+            let pipe = create_fuchsia_pipe(&current_task, client, OpenFlags::RDWR)
                 .expect("create_fuchsia_pipe");
             let server_zxio = Zxio::create(server.into_handle()).expect("Zxio::create");
             let socket_object = Socket::new(
-                locked,
                 &current_task,
                 SocketDomain::Vsock,
                 SocketType::Stream,
@@ -516,7 +450,6 @@ mod tests {
                 },
             };
             let socket = SocketFile::from_socket(
-                locked,
                 &current_task,
                 socket_object.clone(),
                 OpenFlags::RDWR,
@@ -525,48 +458,37 @@ mod tests {
             .expect("Failed to create socket file.");
 
             assert_eq!(
-                socket.query_events(locked, &current_task),
+                socket.query_events(&current_task),
                 Ok(FdEvents::POLLOUT | FdEvents::POLLWRNORM)
             );
 
-            let epoll_object = EpollFileObject::new_file(locked, &current_task);
+            let epoll_object = EpollFileObject::new_file(&current_task);
             let epoll_file = epoll_object.downcast_file::<EpollFileObject>().unwrap();
             let event = EpollEvent::new(FdEvents::POLLIN, 0);
-            epoll_file
-                .add(locked, &current_task, &socket, &epoll_object, event)
-                .expect("poll_file.add");
+            epoll_file.add(&current_task, &socket, &epoll_object, event).expect("poll_file.add");
 
-            let fds = epoll_file
-                .wait(locked, &current_task, 1, zx::MonotonicInstant::ZERO)
-                .expect("wait");
+            let fds = epoll_file.wait(&current_task, 1, zx::MonotonicInstant::ZERO).expect("wait");
             assert!(fds.is_empty());
 
             assert_eq!(server_zxio.write(&[0]).expect("write"), 1);
 
             assert_eq!(
-                socket.query_events(locked, &current_task),
+                socket.query_events(&current_task),
                 Ok(FdEvents::POLLOUT
                     | FdEvents::POLLWRNORM
                     | FdEvents::POLLIN
                     | FdEvents::POLLRDNORM)
             );
-            let fds = epoll_file
-                .wait(locked, &current_task, 1, zx::MonotonicInstant::ZERO)
-                .expect("wait");
+            let fds = epoll_file.wait(&current_task, 1, zx::MonotonicInstant::ZERO).expect("wait");
             assert_eq!(fds.len(), 1);
 
-            assert_eq!(
-                socket.read(locked, &current_task, &mut VecOutputBuffer::new(64)).expect("read"),
-                1
-            );
+            assert_eq!(socket.read(&current_task, &mut VecOutputBuffer::new(64)).expect("read"), 1);
 
             assert_eq!(
-                socket.query_events(locked, &current_task),
+                socket.query_events(&current_task),
                 Ok(FdEvents::POLLOUT | FdEvents::POLLWRNORM)
             );
-            let fds = epoll_file
-                .wait(locked, &current_task, 1, zx::MonotonicInstant::ZERO)
-                .expect("wait");
+            let fds = epoll_file.wait(&current_task, 1, zx::MonotonicInstant::ZERO).expect("wait");
             assert!(fds.is_empty());
         })
         .await;

@@ -10,9 +10,9 @@ use slab::Slab;
 use smallvec::SmallVec;
 use starnix_lifecycle::AtomicCounter;
 use starnix_sync::{
-    EventHandlerReadyQueueLock, EventWaitGuard, FileOpsCore, InterruptibleEvent, LockDepMutex,
-    LockEqualOrBefore, Locked, NotifyKind, PortEvent, PortWaitResult, PortWaiterCallbacksLock,
-    PortWaiterWaitQueuesLock, WaitQueueImplLock, WaiterEventHandlerLock,
+    EventHandlerReadyQueueLock, EventWaitGuard, InterruptibleEvent, LockDepMutex, NotifyKind,
+    PortEvent, PortWaitResult, PortWaiterCallbacksLock, PortWaiterWaitQueuesLock,
+    WaitQueueImplLock, WaiterEventHandlerLock,
 };
 use starnix_types::ownership::debug_assert_no_local_temp_ref;
 use starnix_uapi::error;
@@ -426,16 +426,12 @@ impl PortWaiter {
         }
     }
 
-    fn wait_until<L>(
+    fn wait_until(
         self: &Arc<Self>,
-        locked: &mut Locked<L>,
         current_task: &CurrentTask,
         run_state: RunState,
         deadline: zx::MonotonicInstant,
-    ) -> Result<(), Errno>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
+    ) -> Result<(), Errno> {
         let is_waiting = deadline.into_nanos() > 0;
 
         let callback = || {
@@ -464,7 +460,7 @@ impl PortWaiter {
         //
         // For example, we cannot trigger delayed releaser if we are holding any locks.
         if !self.options.contains(WaiterOptions::UNSAFE_CALLSTACK) {
-            current_task.trigger_delayed_releaser(locked);
+            current_task.trigger_delayed_releaser();
         }
 
         if is_waiting { current_task.run_in_state(run_state, callback) } else { callback() }
@@ -601,14 +597,10 @@ impl Waiter {
     /// Freeze the task until the waiter is woken up.
     ///
     /// No signal, e.g. EINTR (interrupt), should be received.
-    pub fn freeze<L>(&self, locked: &mut Locked<L>, current_task: &CurrentTask)
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
+    pub fn freeze(&self, current_task: &CurrentTask) {
         while self
             .inner
             .wait_until(
-                locked,
                 current_task,
                 RunState::Frozen(self.clone()),
                 zx::MonotonicInstant::INFINITE,
@@ -626,12 +618,8 @@ impl Waiter {
     /// Wait until the waiter is woken up.
     ///
     /// If the wait is interrupted (see [`Waiter::interrupt`]), this function returns EINTR.
-    pub fn wait<L>(&self, locked: &mut Locked<L>, current_task: &CurrentTask) -> Result<(), Errno>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
+    pub fn wait(&self, current_task: &CurrentTask) -> Result<(), Errno> {
         self.inner.wait_until(
-            locked,
             current_task,
             RunState::Waiter(WaiterRef::from_port(&self.inner)),
             zx::MonotonicInstant::INFINITE,
@@ -660,17 +648,12 @@ impl Waiter {
     /// the [`EventHandler`] used to handle an event iff the waiter observes the side-effects of
     /// the handler (e.g. reading the ready list modified by [`EventHandler::Enqueue`] or
     /// [`EventHandler::EnqueueOnce`]).
-    pub fn wait_until<L>(
+    pub fn wait_until(
         &self,
-        locked: &mut Locked<L>,
         current_task: &CurrentTask,
         deadline: zx::MonotonicInstant,
-    ) -> Result<(), Errno>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
+    ) -> Result<(), Errno> {
         self.inner.wait_until(
-            locked,
             current_task,
             RunState::Waiter(WaiterRef::from_port(&self.inner)),
             deadline,
@@ -1206,7 +1189,6 @@ mod tests {
     use crate::vfs::buffers::{VecInputBuffer, VecOutputBuffer};
     use crate::vfs::eventfd::{EventFdType, new_eventfd};
     use assert_matches::assert_matches;
-    use starnix_sync::Unlocked;
     use starnix_uapi::open_flags::OpenFlags;
     use starnix_uapi::signals::SIGUSR1;
 
@@ -1214,10 +1196,9 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_async_wait_exec() {
-        spawn_kernel_and_run(async |locked, current_task| {
+        spawn_kernel_and_run(async |current_task| {
             let (local_socket, remote_socket) = zx::Socket::create_stream();
-            let pipe =
-                create_fuchsia_pipe(locked, &current_task, remote_socket, OpenFlags::RDWR).unwrap();
+            let pipe = create_fuchsia_pipe(&current_task, remote_socket, OpenFlags::RDWR).unwrap();
 
             const MEM_SIZE: usize = 1024;
             let mut output_buffer = VecOutputBuffer::new(MEM_SIZE);
@@ -1231,8 +1212,7 @@ mod tests {
                 sought_events: FdEvents::all(),
             };
             let waiter = Waiter::new();
-            pipe.wait_async(locked, &current_task, &waiter, FdEvents::POLLIN, handler)
-                .expect("wait_async");
+            pipe.wait_async(&current_task, &waiter, FdEvents::POLLIN, handler).expect("wait_async");
             let test_string_clone = test_string.clone();
 
             let write_count = AtomicCounter::<usize>::default();
@@ -1247,12 +1227,12 @@ mod tests {
                 // this code would block on failure
 
                 assert!(queue.lock().is_empty());
-                waiter.wait(locked, &current_task).unwrap();
+                waiter.wait(&current_task).unwrap();
                 thread.join().expect("join thread")
             });
             queue.lock().iter().for_each(|item| assert!(item.events.contains(FdEvents::POLLIN)));
 
-            let read_size = pipe.read(locked, &current_task, &mut output_buffer).unwrap();
+            let read_size = pipe.read(&current_task, &mut output_buffer).unwrap();
 
             let no_written = write_count.get();
             assert_eq!(no_written, read_size);
@@ -1265,8 +1245,8 @@ mod tests {
     #[::fuchsia::test]
     async fn test_async_wait_cancel() {
         for do_cancel in [true, false] {
-            spawn_kernel_and_run(async move |locked, current_task| {
-                let event = new_eventfd(locked, &current_task, 0, EventFdType::Counter, true);
+            spawn_kernel_and_run(async move |current_task| {
+                let event = new_eventfd(&current_task, 0, EventFdType::Counter, true);
                 let waiter = Waiter::new();
                 let queue: Arc<LockDepMutex<VecDeque<ReadyItem>, EventHandlerReadyQueueLock>> =
                     Default::default();
@@ -1276,7 +1256,7 @@ mod tests {
                     sought_events: FdEvents::all(),
                 };
                 let wait_canceler = event
-                    .wait_async(locked, &current_task, &waiter, FdEvents::POLLIN, handler)
+                    .wait_async(&current_task, &waiter, FdEvents::POLLIN, handler)
                     .expect("wait_async");
                 if do_cancel {
                     wait_canceler.cancel();
@@ -1284,17 +1264,12 @@ mod tests {
                 let add_val = 1u64;
                 assert_eq!(
                     event
-                        .write(
-                            locked,
-                            &current_task,
-                            &mut VecInputBuffer::new(&add_val.to_ne_bytes())
-                        )
+                        .write(&current_task, &mut VecInputBuffer::new(&add_val.to_ne_bytes()))
                         .unwrap(),
                     std::mem::size_of::<u64>()
                 );
 
-                let wait_result =
-                    waiter.wait_until(locked, &current_task, zx::MonotonicInstant::ZERO);
+                let wait_result = waiter.wait_until(&current_task, zx::MonotonicInstant::ZERO);
                 let final_count = queue.lock().len();
                 if do_cancel {
                     assert_eq!(wait_result, error!(ETIMEDOUT));
@@ -1310,21 +1285,21 @@ mod tests {
 
     #[::fuchsia::test]
     async fn single_waiter_multiple_waits_cancel_one_waiter_still_notified() {
-        spawn_kernel_and_run(async |locked, current_task| {
+        spawn_kernel_and_run(async |current_task| {
             let wait_queue = WaitQueue::default();
             let waiter = Waiter::new();
             let wk1 = wait_queue.wait_async(&waiter);
             let _wk2 = wait_queue.wait_async(&waiter);
             wk1.cancel();
             wait_queue.notify_all();
-            assert!(waiter.wait_until(locked, &current_task, zx::MonotonicInstant::ZERO).is_ok());
+            assert!(waiter.wait_until(&current_task, zx::MonotonicInstant::ZERO).is_ok());
         })
         .await;
     }
 
     #[::fuchsia::test]
     async fn multiple_waiters_cancel_one_other_still_notified() {
-        spawn_kernel_and_run(async |locked, current_task| {
+        spawn_kernel_and_run(async |current_task| {
             let wait_queue = WaitQueue::default();
             let waiter1 = Waiter::new();
             let waiter2 = Waiter::new();
@@ -1332,15 +1307,15 @@ mod tests {
             let _wk2 = wait_queue.wait_async(&waiter2);
             wk1.cancel();
             wait_queue.notify_all();
-            assert!(waiter1.wait_until(locked, &current_task, zx::MonotonicInstant::ZERO).is_err());
-            assert!(waiter2.wait_until(locked, &current_task, zx::MonotonicInstant::ZERO).is_ok());
+            assert!(waiter1.wait_until(&current_task, zx::MonotonicInstant::ZERO).is_err());
+            assert!(waiter2.wait_until(&current_task, zx::MonotonicInstant::ZERO).is_ok());
         })
         .await;
     }
 
     #[::fuchsia::test]
     async fn test_wait_queue() {
-        spawn_kernel_and_run(async |locked, current_task| {
+        spawn_kernel_and_run(async |current_task| {
             let queue = WaitQueue::default();
 
             let waiters = <[Waiter; 3]>::default();
@@ -1348,30 +1323,28 @@ mod tests {
                 queue.wait_async(w);
             });
 
-            let woken = |locked: &mut Locked<Unlocked>| {
+            let woken = || {
                 waiters
                     .iter()
-                    .filter(|w| {
-                        w.wait_until(locked, &current_task, zx::MonotonicInstant::ZERO).is_ok()
-                    })
+                    .filter(|w| w.wait_until(&current_task, zx::MonotonicInstant::ZERO).is_ok())
                     .count()
             };
 
             const INITIAL_NOTIFY_COUNT: usize = 2;
             let total_waiters = waiters.len();
             queue.notify_unordered_count(INITIAL_NOTIFY_COUNT);
-            assert_eq!(INITIAL_NOTIFY_COUNT, woken(locked));
+            assert_eq!(INITIAL_NOTIFY_COUNT, woken());
 
             // Only the remaining (unnotified) waiters should be notified.
             queue.notify_all();
-            assert_eq!(total_waiters - INITIAL_NOTIFY_COUNT, woken(locked));
+            assert_eq!(total_waiters - INITIAL_NOTIFY_COUNT, woken());
         })
         .await;
     }
 
     #[::fuchsia::test]
     async fn waiter_kind_abort_handle() {
-        spawn_kernel_and_run_sync(|_locked, current_task| {
+        spawn_kernel_and_run_sync(|current_task| {
             let mut executor = fuchsia_async::TestExecutor::new();
             let (abort_handle, abort_registration) = futures::stream::AbortHandle::new_pair();
             let abort_handle = Arc::new(abort_handle);
@@ -1399,7 +1372,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn freeze_with_pending_sigusr1() {
-        spawn_kernel_and_run(async |_locked, current_task| {
+        spawn_kernel_and_run(async |current_task| {
             {
                 let mut task_state = current_task.task.write();
                 let siginfo = SignalInfo::kernel(SIGUSR1);
@@ -1421,7 +1394,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn freeze_with_pending_sigkill() {
-        spawn_kernel_and_run(async |_locked, current_task| {
+        spawn_kernel_and_run(async |current_task| {
             {
                 let mut task_state = current_task.task.write();
                 let siginfo = SignalInfo::kernel(SIGKILL);
@@ -1440,7 +1413,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_async_typed_wait_value_with_handler() {
-        spawn_kernel_and_run(async |locked, current_task| {
+        spawn_kernel_and_run(async |current_task| {
             let queue: Arc<LockDepMutex<VecDeque<ReadyItem>, EventHandlerReadyQueueLock>> =
                 Default::default();
             let handler = EventHandler::Enqueue {
@@ -1464,7 +1437,7 @@ mod tests {
             // Notify right value
             wait_queue.notify_value(test_value);
 
-            waiter.wait(locked, &current_task).expect("wait failed");
+            waiter.wait(&current_task).expect("wait failed");
 
             // Result delivered via POLLIN logic in central dispatcher
             let ready_items = queue.lock();

@@ -15,16 +15,13 @@ use starnix_core::device::kobject::DeviceMetadata;
 use starnix_core::fs::sysfs::build_device_directory;
 use starnix_core::task::Kernel;
 use starnix_logging::log_warn;
-use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked};
+
 use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::mode;
 use std::sync::Arc;
 
-pub fn hvdcp_opti_init<L>(locked: &mut Locked<L>, kernel: &Kernel) -> Result<(), Errno>
-where
-    L: LockEqualOrBefore<FileOpsCore>,
-{
+pub fn hvdcp_opti_init(kernel: &Kernel) -> Result<(), Errno> {
     let proxy = match connect_to_device_channel("iio") {
         Ok(chan) => Arc::new(fhvdcpopti::IioSynchronousProxy::new(chan)),
         Err(e) => {
@@ -46,7 +43,6 @@ where
 
     // /dev/qbg
     registry.register_device(
-        locked,
         kernel,
         "qbg".into(),
         DeviceMetadata::new("qbg".into(), DeviceId::new(484, 0), DeviceMode::Char),
@@ -56,7 +52,6 @@ where
 
     // /dev/qbg_battery
     registry.register_device(
-        locked,
         kernel,
         "qbg_battery".into(),
         DeviceMetadata::new("qbg_battery".into(), DeviceId::new(485, 0), DeviceMode::Char),
@@ -70,11 +65,11 @@ where
     let iio = registry
         .objects
         .get_or_create_class("iio".into(), registry.objects.get_or_create_bus("iio".into()));
-    registry.add_numberless_device(locked, "iio:device0".into(), iio.clone(), |device, dir| {
+    registry.add_numberless_device("iio:device0".into(), iio.clone(), |device, dir| {
         build_iio0_directory(device, &proxy, dir)
     });
 
-    registry.add_numberless_device(locked, "iio:device1".into(), iio, |device, dir| {
+    registry.add_numberless_device("iio:device1".into(), iio, |device, dir| {
         build_iio1_directory(device, &proxy, dir)
     });
 
@@ -83,19 +78,16 @@ where
     let power_supply =
         registry.objects.get_or_create_class("power_supply".into(), registry.objects.virtual_bus());
     // /sys/class/power_supply/usb
-    registry.add_numberless_device(locked, "usb".into(), power_supply.clone(), |device, dir| {
+    registry.add_numberless_device("usb".into(), power_supply.clone(), |device, dir| {
         build_usb_power_supply_directory(device, &proxy, dir)
     });
 
     // /sys/class/power_supply/battery
-    registry.add_numberless_device(
-        locked,
-        "battery".into(),
-        power_supply.clone(),
-        |device, dir| build_battery_power_supply_directory(device, &proxy, dir),
-    );
+    registry.add_numberless_device("battery".into(), power_supply.clone(), |device, dir| {
+        build_battery_power_supply_directory(device, &proxy, dir)
+    });
 
     // /sys/class/power_supply/bms
-    registry.add_numberless_device(locked, "bms".into(), power_supply, build_device_directory);
+    registry.add_numberless_device("bms".into(), power_supply, build_device_directory);
     Ok(())
 }

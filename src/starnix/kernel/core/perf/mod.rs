@@ -22,10 +22,7 @@ use fxt::profiler::ProfilerRecord;
 use fxt::session::SessionParser;
 use seq_lock::{SeqLock, SeqLockable, WriteSize};
 use starnix_logging::{log_info, log_warn, track_stub};
-use starnix_sync::{
-    FileOpsCore, LockDepMutex, LockDepRwLock, Locked, PerfEventLevel, PerfFormatIdLookupTableLock,
-    Unlocked,
-};
+use starnix_sync::{LockDepMutex, LockDepRwLock, PerfEventLevel, PerfFormatIdLookupTableLock};
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_uapi::arch32::{
     PERF_EVENT_IOC_DISABLE, PERF_EVENT_IOC_ENABLE, PERF_EVENT_IOC_ID,
@@ -49,7 +46,7 @@ use starnix_uapi::{
 };
 
 use crate::security::{self, TargetTaskType};
-use crate::task::{Kernel, LockedAndTask};
+use crate::task::Kernel;
 
 static READ_FORMAT_ID_GENERATOR: AtomicU64 = AtomicU64::new(0);
 // Default buffer size to read from socket (for sampling data).
@@ -231,12 +228,7 @@ impl FileOps for PerfEventFile {
     fileops_impl_nonseekable!();
     fileops_impl_noop_sync!();
 
-    fn close(
-        self: Box<Self>,
-        _locked: &mut Locked<FileOpsCore>,
-        file: &FileObjectState,
-        current_task: &CurrentTask,
-    ) {
+    fn close(self: Box<Self>, file: &FileObjectState, current_task: &CurrentTask) {
         let perf_state = get_perf_state(&current_task.kernel);
         let mut events = perf_state.format_id_lookup_table.lock();
         events.remove(&file.id);
@@ -245,7 +237,6 @@ impl FileOps for PerfEventFile {
     // See "Reading results" section of https://man7.org/linux/man-pages/man2/perf_event_open.2.html.
     fn read(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         current_task: &CurrentTask,
         _offset: usize,
@@ -318,7 +309,6 @@ impl FileOps for PerfEventFile {
 
     fn ioctl(
         &self,
-        _locked: &mut Locked<Unlocked>,
         _file: &FileObject,
         current_task: &CurrentTask,
         op: u32,
@@ -400,7 +390,6 @@ impl FileOps for PerfEventFile {
     // or Perfetto). We will then write the metadata to the VMO and return the pointer to it.
     fn get_memory(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         current_task: &CurrentTask,
         length: Option<usize>,
@@ -450,7 +439,6 @@ impl FileOps for PerfEventFile {
 
     fn write(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         _offset: usize,
@@ -933,7 +921,6 @@ unsafe fn create_seq_lock(
 }
 
 pub fn sys_perf_event_open(
-    locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
     attr: UserRef<perf_event_attr>,
     // Note that this is pid in Linux docs.
@@ -1043,7 +1030,7 @@ pub fn sys_perf_event_open(
     let cloned_seq_lock = Arc::clone(&seq_lock);
     let mut vmo_write_offset = 0;
 
-    let closure = async move |_: LockedAndTask<'_>| {
+    let closure = async move |_: &CurrentTask| {
         let mut profiler_state: Option<(profiler::SessionProxy, fidl::AsyncSocket)> = None;
 
         // This loop will wait for messages from the sender.
@@ -1115,11 +1102,10 @@ pub fn sys_perf_event_open(
         seq_lock: seq_lock,
     });
     // TODO: https://fxbug.dev/404739824 - Confirm whether to handle this as a "private" node.
-    let file_handle =
-        Anon::new_private_file(locked, current_task, file, OpenFlags::RDWR, "[perf_event]");
+    let file_handle = Anon::new_private_file(current_task, file, OpenFlags::RDWR, "[perf_event]");
     let file_object_id = file_handle.id;
     let file_descriptor: Result<FdNumber, Errno> =
-        current_task.add_file(locked, file_handle, FdFlags::empty());
+        current_task.add_file(file_handle, FdFlags::empty());
 
     match file_descriptor {
         Ok(fd) => {

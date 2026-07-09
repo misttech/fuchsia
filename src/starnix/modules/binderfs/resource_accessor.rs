@@ -12,7 +12,6 @@ use starnix_core::mm::MemoryAccessor;
 use starnix_core::task::{CurrentTask, Task};
 use starnix_core::vfs::{FdFlags, FdNumber, FileHandle};
 use starnix_logging::{log_trace, log_warn, with_zx_name};
-use starnix_sync::{Locked, ResourceAccessorLevel};
 use starnix_types::convert::IntoFidl;
 use starnix_uapi::auth::Credentials;
 use starnix_uapi::errors::{Errno, errno, errno_from_code, error};
@@ -35,13 +34,11 @@ pub trait ResourceAccessor: std::fmt::Debug {
     fn close_files(&self, fds: Vec<FdNumber>) -> Result<(), Errno>;
     fn get_files_with_flags(
         &self,
-        locked: &mut Locked<ResourceAccessorLevel>,
         current_task: &CurrentTask,
         fds: Vec<FdNumber>,
     ) -> Result<Vec<(FileHandle, FdFlags)>, Errno>;
     fn add_files_with_flags(
         &self,
-        locked: &mut Locked<ResourceAccessorLevel>,
         current_task: &CurrentTask,
         files: Vec<(FileHandle, FdFlags)>,
         add_action: &mut dyn FnMut(FdNumber),
@@ -278,7 +275,6 @@ impl ResourceAccessor for RemoteResourceAccessor {
 
     fn get_files_with_flags(
         &self,
-        locked: &mut Locked<ResourceAccessorLevel>,
         current_task: &CurrentTask,
         fds: Vec<FdNumber>,
     ) -> Result<Vec<(FileHandle, FdFlags)>, Errno> {
@@ -299,13 +295,13 @@ impl ResourceAccessor for RemoteResourceAccessor {
                         return error!(ENOENT);
                     };
                     let file = if let Some(handle) = handle {
-                        new_remote_file(locked, current_task, handle, flags.into_fidl())?
+                        new_remote_file(current_task, handle, flags.into_fidl())?
                     } else if let Some(_bag) = bag {
                         // TODO(https://fxbug.dev/481167098): Support composite file descriptors.
                         log_warn!("FileHandle::bag is not supported");
                         return error!(EBADFD);
                     } else {
-                        new_null_file(locked, current_task, flags.into_fidl())
+                        new_null_file(current_task, flags.into_fidl())
                     };
                     files.push((file, FdFlags::empty()));
                 }
@@ -317,7 +313,6 @@ impl ResourceAccessor for RemoteResourceAccessor {
 
     fn add_files_with_flags(
         &self,
-        _locked: &mut Locked<ResourceAccessorLevel>,
         current_task: &CurrentTask,
         files: Vec<(FileHandle, FdFlags)>,
         add_action: &mut dyn FnMut(FdNumber),
@@ -374,7 +369,6 @@ impl ResourceAccessor for CurrentTask {
 
     fn get_files_with_flags(
         &self,
-        _locked: &mut Locked<ResourceAccessorLevel>,
         _current_task: &CurrentTask,
         fds: Vec<FdNumber>,
     ) -> Result<Vec<(FileHandle, FdFlags)>, Errno> {
@@ -389,7 +383,6 @@ impl ResourceAccessor for CurrentTask {
 
     fn add_files_with_flags(
         &self,
-        locked: &mut Locked<ResourceAccessorLevel>,
         current_task: &CurrentTask,
         files: Vec<(FileHandle, FdFlags)>,
         add_action: &mut dyn FnMut(FdNumber),
@@ -397,7 +390,7 @@ impl ResourceAccessor for CurrentTask {
         let mut fds = Vec::with_capacity(files.len());
         for (file, flags) in files {
             log_trace!("Adding file {:?} with flags {:?}", file, flags);
-            let fd = self.files().add(locked, current_task, file, flags)?;
+            let fd = self.files().add(current_task, file, flags)?;
             add_action(fd);
             fds.push(fd);
         }
@@ -421,7 +414,6 @@ impl ResourceAccessor for Task {
 
     fn get_files_with_flags(
         &self,
-        _locked: &mut Locked<ResourceAccessorLevel>,
         _current_task: &CurrentTask,
         fds: Vec<FdNumber>,
     ) -> Result<Vec<(FileHandle, FdFlags)>, Errno> {
@@ -436,7 +428,6 @@ impl ResourceAccessor for Task {
 
     fn add_files_with_flags(
         &self,
-        locked: &mut Locked<ResourceAccessorLevel>,
         current_task: &CurrentTask,
         files: Vec<(FileHandle, FdFlags)>,
         add_action: &mut dyn FnMut(FdNumber),
@@ -444,7 +435,7 @@ impl ResourceAccessor for Task {
         let mut fds = Vec::with_capacity(files.len());
         for (file, flags) in files {
             log_trace!("Adding file {:?} with flags {:?}", file, flags);
-            let fd = self.files()?.add(locked, current_task, file, flags)?;
+            let fd = self.files()?.add(current_task, file, flags)?;
             add_action(fd);
             fds.push(fd);
         }

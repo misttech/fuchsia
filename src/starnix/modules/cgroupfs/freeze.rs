@@ -14,7 +14,7 @@
 use starnix_core::task::{CgroupOps, CurrentTask};
 use starnix_core::vfs::FsNodeOps;
 use starnix_core::vfs::pseudo::simple_file::{BytesFile, BytesFileOps};
-use starnix_sync::{FileOpsCore, Locked};
+
 use starnix_uapi::errors::Errno;
 use starnix_uapi::{errno, error};
 use std::borrow::Cow;
@@ -35,16 +35,11 @@ impl FreezeFile {
 }
 
 impl BytesFileOps for FreezeFile {
-    fn write_locked(
-        &self,
-        locked: &mut Locked<FileOpsCore>,
-        _current_task: &CurrentTask,
-        data: Vec<u8>,
-    ) -> Result<(), Errno> {
+    fn write(&self, _current_task: &CurrentTask, data: Vec<u8>) -> Result<(), Errno> {
         let state_str = std::str::from_utf8(&data).map_err(|_| errno!(EINVAL))?;
         let cgroup = self.cgroup()?;
         match state_str.trim() {
-            "1" => Ok(cgroup.freeze(locked)),
+            "1" => Ok(cgroup.freeze()),
             "0" => Ok(cgroup.thaw()),
             _ => error!(EINVAL),
         }

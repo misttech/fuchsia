@@ -23,8 +23,8 @@ use starnix_core::vfs::{
 };
 use starnix_logging::{log_info, log_warn, track_stub};
 use starnix_sync::{
-    FileOpsCore, FramebufferInfoLock, FramebufferMemoryLock, FramebufferViewBoundProtocolsLock,
-    FramebufferViewIdentityLock, LockDepMutex, LockDepRwLock, LockEqualOrBefore, Locked, Unlocked,
+    FramebufferInfoLock, FramebufferMemoryLock, FramebufferViewBoundProtocolsLock,
+    FramebufferViewIdentityLock, LockDepMutex, LockDepRwLock,
 };
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_uapi::device_id::DeviceId;
@@ -74,16 +74,12 @@ impl Framebuffer {
     }
 
     /// Initialize the framebuffer device. Should only be called once per kernel.
-    pub fn device_init<L>(
-        locked: &mut Locked<L>,
+    pub fn device_init(
         system_task: &CurrentTask,
         aspect_ratio: Option<AspectRatio>,
         enable_visual_debugging: bool,
         initial_view_id_annotation: String,
-    ) -> Result<Arc<Framebuffer>, Errno>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
+    ) -> Result<Arc<Framebuffer>, Errno> {
         let kernel = system_task.kernel();
         let registry = &kernel.device_registry;
 
@@ -93,7 +89,6 @@ impl Framebuffer {
 
         let graphics_class = registry.objects.graphics_class();
         registry.register_device(
-            locked,
             system_task.kernel(),
             "fb0".into(),
             DeviceMetadata::new("fb0".into(), DeviceId::FB0, DeviceMode::Char),
@@ -255,7 +250,6 @@ fn set_display_power(mode: fuidisplay::PowerMode) -> Result<(), Errno> {
 impl DeviceOps for FramebufferDevice {
     fn open(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _current_task: &CurrentTask,
         dev: DeviceId,
         node: &NamespaceNode,
@@ -280,7 +274,6 @@ impl FileOps for Framebuffer {
 
     fn ioctl(
         &self,
-        _locked: &mut Locked<Unlocked>,
         _file: &FileObject,
         current_task: &CurrentTask,
         request: u32,

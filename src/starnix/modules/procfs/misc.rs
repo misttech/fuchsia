@@ -6,7 +6,7 @@ use starnix_core::device::DeviceMode;
 use starnix_core::task::CurrentTask;
 use starnix_core::vfs::FsNodeOps;
 use starnix_core::vfs::pseudo::simple_file::{BytesFile, BytesFileOps};
-use starnix_sync::{FileOpsCore, Locked};
+
 use starnix_uapi::device_id::{DeviceId, MISC_MAJOR};
 use starnix_uapi::errors::Errno;
 use std::borrow::Cow;
@@ -20,14 +20,9 @@ impl MiscFile {
 }
 
 impl BytesFileOps for MiscFile {
-    fn read_locked(
-        &self,
-        locked: &mut Locked<FileOpsCore>,
-        current_task: &CurrentTask,
-    ) -> Result<Cow<'_, [u8]>, Errno> {
+    fn read(&self, current_task: &CurrentTask) -> Result<Cow<'_, [u8]>, Errno> {
         let registery = &current_task.kernel().device_registry;
         let devices = registery.list_minor_devices(
-            locked,
             DeviceMode::Char,
             DeviceId::new_range(MISC_MAJOR, DeviceMode::Char.minor_range()),
         );

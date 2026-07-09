@@ -6,7 +6,7 @@ use starnix_core::device::DeviceMode;
 use starnix_core::task::CurrentTask;
 use starnix_core::vfs::FsNodeOps;
 use starnix_core::vfs::pseudo::simple_file::{BytesFile, BytesFileOps};
-use starnix_sync::{FileOpsCore, Locked};
+
 use starnix_uapi::errors::Errno;
 use std::borrow::Cow;
 
@@ -18,14 +18,10 @@ impl DevicesFile {
 }
 
 impl BytesFileOps for DevicesFile {
-    fn read_locked(
-        &self,
-        locked: &mut Locked<FileOpsCore>,
-        current_task: &CurrentTask,
-    ) -> Result<Cow<'_, [u8]>, Errno> {
+    fn read(&self, current_task: &CurrentTask) -> Result<Cow<'_, [u8]>, Errno> {
         let registery = &current_task.kernel().device_registry;
-        let char_devices = registery.list_major_devices(locked, DeviceMode::Char);
-        let block_devices = registery.list_major_devices(locked, DeviceMode::Block);
+        let char_devices = registery.list_major_devices(DeviceMode::Char);
+        let block_devices = registery.list_major_devices(DeviceMode::Block);
         let mut contents = String::new();
         contents.push_str("Character devices:\n");
         for (major, name) in char_devices {

@@ -6,20 +6,18 @@ use crate::device::kobject::{Class, Device, DeviceMetadata, UEventAction, UEvent
 use crate::device::kobject_store::KObjectStore;
 use crate::fs::devtmpfs::{devtmpfs_create_device, devtmpfs_remove_path};
 use crate::fs::sysfs::build_device_directory;
-use crate::task::{CurrentTask, CurrentTaskAndLocked, Kernel, register_delayed_release};
+use crate::task::{CurrentTask, Kernel, register_delayed_release};
 use crate::vfs::pseudo::simple_directory::SimpleDirectoryMutator;
 use crate::vfs::{FileOps, FsStr, FsString, NamespaceNode};
 use starnix_lifecycle::{ObjectReleaser, ReleaserAction};
 use starnix_logging::log_error;
-use starnix_sync::{LockBefore, LockDepGuard, LockEqualOrBefore, OrderedMutex};
+use starnix_sync::{DeviceRegistryStateLevel, LockDepGuard, LockDepMutex, MappedLockDepGuard};
 use starnix_types::ownership::{Releasable, ReleaseGuard};
 use starnix_uapi::as_any::AsAny;
 use starnix_uapi::device_id::{DYN_MAJOR_RANGE, DeviceId, MISC_DYNANIC_MINOR_RANGE, MISC_MAJOR};
 use starnix_uapi::error;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
-
-use starnix_sync::{FileOpsCore, Locked, MappedLockDepGuard};
 use std::collections::btree_map::{BTreeMap, Entry};
 use std::ops::{Deref, Range};
 use std::sync::Arc;
@@ -61,7 +59,6 @@ pub trait DeviceOps: DynClone + Send + Sync + AsAny + 'static {
     /// assigned to this device.
     fn open(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         current_task: &CurrentTask,
         devt: DeviceId,
         node: &NamespaceNode,
@@ -79,30 +76,22 @@ where
         + Send
         + Sync
         + Clone
-        + Fn(
-            &mut Locked<FileOpsCore>,
-            &CurrentTask,
-            DeviceId,
-            &NamespaceNode,
-            OpenFlags,
-        ) -> Result<Box<dyn FileOps>, Errno>
+        + Fn(&CurrentTask, DeviceId, &NamespaceNode, OpenFlags) -> Result<Box<dyn FileOps>, Errno>
         + 'static,
 {
     fn open(
         &self,
-        locked: &mut Locked<FileOpsCore>,
         current_task: &CurrentTask,
         id: DeviceId,
         node: &NamespaceNode,
         flags: OpenFlags,
     ) -> Result<Box<dyn FileOps>, Errno> {
-        self(locked, current_task, id, node, flags)
+        self(current_task, id, node, flags)
     }
 }
 
 /// A simple `DeviceOps` function for any device that implements `FileOps + Default`.
 pub fn simple_device_ops<T: Default + FileOps + 'static>(
-    _locked: &mut Locked<FileOpsCore>,
     _current_task: &CurrentTask,
     _id: DeviceId,
     _node: &NamespaceNode,
@@ -135,9 +124,9 @@ impl Deref for DeviceOpsWrapper {
 pub type DeviceReleaser = ObjectReleaser<DeviceOpsWrapper, DeviceOpsWrapper>;
 pub type DeviceHandle = Arc<DeviceReleaser>;
 impl Releasable for DeviceOpsWrapper {
-    type Context<'a> = CurrentTaskAndLocked<'a>;
+    type Context<'a> = &'a CurrentTask;
 
-    fn release<'a>(self, _context: CurrentTaskAndLocked<'a>) {}
+    fn release<'a>(self, _context: &'a CurrentTask) {}
 }
 
 /// An entry in the `DeviceRegistry`.
@@ -238,7 +227,7 @@ pub struct DeviceRegistry {
     pub objects: KObjectStore,
 
     /// Mutable state for the device registry.
-    state: OrderedMutex<DeviceRegistryState, starnix_sync::DeviceRegistryState>,
+    state: LockDepMutex<DeviceRegistryState, DeviceRegistryStateLevel>,
 }
 struct DeviceRegistryState {
     /// The registered character devices.
@@ -275,18 +264,10 @@ struct DeviceRegistryState {
 
 impl DeviceRegistry {
     /// Notify devfs and listeners that a device has been added to the registry.
-    fn notify_device<L>(
-        &self,
-        locked: &mut Locked<L>,
-        kernel: &Kernel,
-        device: Device,
-    ) -> Result<(), Errno>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
+    fn notify_device(&self, kernel: &Kernel, device: Device) -> Result<(), Errno> {
         if let Some(metadata) = &device.metadata {
             devtmpfs_create_device(kernel, metadata.clone())?;
-            self.dispatch_uevent(locked, UEventAction::Add, device);
+            self.dispatch_uevent(UEventAction::Add, device);
         }
         Ok(())
     }
@@ -337,20 +318,15 @@ impl DeviceRegistry {
     ///
     /// Finally, the `dev_ops` parameter is where you provide the callback for instantiating
     /// your device.
-    pub fn register_device<'a, L>(
+    pub fn register_device<'a>(
         &self,
-        locked: &mut Locked<L>,
         kernel: &Kernel,
         name: &FsStr,
         metadata: DeviceMetadata,
         class: Class,
         dev_ops: impl DeviceOps,
-    ) -> Result<Device, Errno>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
+    ) -> Result<Device, Errno> {
         self.register_device_with_dir(
-            locked,
             kernel,
             name,
             metadata,
@@ -363,23 +339,18 @@ impl DeviceRegistry {
     /// Register a device with a custom directory.
     ///
     /// See `register_device` for an explanation of the parameters.
-    pub fn register_device_with_dir<'a, L>(
+    pub fn register_device_with_dir<'a>(
         &self,
-        locked: &mut Locked<L>,
         kernel: &Kernel,
         name: &FsStr,
         metadata: DeviceMetadata,
         class: Class,
         build_directory: impl FnOnce(&Device, &SimpleDirectoryMutator),
         dev_ops: impl DeviceOps,
-    ) -> Result<Device, Errno>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
-        let locked = locked.cast_locked::<FileOpsCore>();
+    ) -> Result<Device, Errno> {
         let entry = DeviceEntry::new(name.into(), dev_ops);
-        self.devices(locked, metadata.mode).register_minor(metadata.devt, entry);
-        self.add_device(locked, kernel, name, metadata, class, build_directory)
+        self.devices(metadata.mode).register_minor(metadata.devt, entry);
+        self.add_device(kernel, name, metadata, class, build_directory)
     }
 
     /// Register a dynamic device in the `MISC_MAJOR` major device number.
@@ -389,26 +360,15 @@ impl DeviceRegistry {
     /// function instead to register the device.
     ///
     /// See `register_device` for an explanation of the parameters.
-    pub fn register_misc_device<'a, L>(
+    pub fn register_misc_device<'a>(
         &self,
-        locked: &mut Locked<L>,
         kernel: &Kernel,
         name: &FsStr,
         dev_ops: impl DeviceOps,
-    ) -> Result<Device, Errno>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
-        let devt = self.state.lock(locked.cast_locked()).misc_chardev_allocator.allocate()?;
+    ) -> Result<Device, Errno> {
+        let devt = self.state.lock().misc_chardev_allocator.allocate()?;
         let metadata = DeviceMetadata::new(name.into(), devt, DeviceMode::Char);
-        Ok(self.register_device(
-            locked,
-            kernel,
-            name,
-            metadata,
-            self.objects.misc_class(),
-            dev_ops,
-        )?)
+        Ok(self.register_device(kernel, name, metadata, self.objects.misc_class(), dev_ops)?)
     }
 
     /// Register a dynamic device with major numbers 234..255.
@@ -421,51 +381,28 @@ impl DeviceRegistry {
     /// to be dynamic, we should expand to using the full dynamic range.
     ///
     /// See `register_device` for an explanation of the parameters.
-    pub fn register_dyn_device<'a, L>(
+    pub fn register_dyn_device<'a>(
         &self,
-        locked: &mut Locked<L>,
         kernel: &Kernel,
         name: &FsStr,
         class: Class,
         dev_ops: impl DeviceOps,
-    ) -> Result<Device, Errno>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
-        self.register_dyn_device_with_dir(
-            locked,
-            kernel,
-            name,
-            class,
-            build_device_directory,
-            dev_ops,
-        )
+    ) -> Result<Device, Errno> {
+        self.register_dyn_device_with_dir(kernel, name, class, build_device_directory, dev_ops)
     }
 
     /// Register a dynamic device with a custom directory.
     ///
     /// See `register_device` for an explanation of the parameters.
-    pub fn register_dyn_device_with_dir<'a, L>(
+    pub fn register_dyn_device_with_dir<'a>(
         &self,
-        locked: &mut Locked<L>,
         kernel: &Kernel,
         name: &FsStr,
         class: Class,
         build_directory: impl FnOnce(&Device, &SimpleDirectoryMutator),
         dev_ops: impl DeviceOps,
-    ) -> Result<Device, Errno>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
-        self.register_dyn_device_with_devname(
-            locked,
-            kernel,
-            name,
-            name,
-            class,
-            build_directory,
-            dev_ops,
-        )
+    ) -> Result<Device, Errno> {
+        self.register_dyn_device_with_devname(kernel, name, name, class, build_directory, dev_ops)
     }
 
     /// Register a dynamic device with major numbers 234..255.
@@ -478,23 +415,18 @@ impl DeviceRegistry {
     /// to be dynamic, we should expand to using the full dynamic range.
     ///
     /// See `register_device` for an explanation of the parameters.
-    pub fn register_dyn_device_with_devname<'a, L>(
+    pub fn register_dyn_device_with_devname<'a>(
         &self,
-        locked: &mut Locked<L>,
         kernel: &Kernel,
         name: &FsStr,
         devname: &FsStr,
         class: Class,
         build_directory: impl FnOnce(&Device, &SimpleDirectoryMutator),
         dev_ops: impl DeviceOps,
-    ) -> Result<Device, Errno>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
-        let devt = self.state.lock(locked.cast_locked()).dyn_chardev_allocator.allocate()?;
+    ) -> Result<Device, Errno> {
+        let devt = self.state.lock().dyn_chardev_allocator.allocate()?;
         let metadata = DeviceMetadata::new(devname.into(), devt, DeviceMode::Char);
         Ok(self.register_device_with_dir(
-            locked,
             kernel,
             name,
             metadata,
@@ -510,20 +442,15 @@ impl DeviceRegistry {
     /// This is a rare occurrence.
     ///
     /// See `register_dyn_device` for an explanation of dyn devices and of the parameters.
-    pub fn register_silent_dyn_device<'a, L>(
+    pub fn register_silent_dyn_device<'a>(
         &self,
-        locked: &mut Locked<L>,
         name: &FsStr,
         dev_ops: impl DeviceOps,
-    ) -> Result<DeviceMetadata, Errno>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
-        let locked = locked.cast_locked::<FileOpsCore>();
-        let devt = self.state.lock(locked).dyn_chardev_allocator.allocate()?;
+    ) -> Result<DeviceMetadata, Errno> {
+        let devt = self.state.lock().dyn_chardev_allocator.allocate()?;
         let metadata = DeviceMetadata::new(name.into(), devt, DeviceMode::Char);
         let entry = DeviceEntry::new(name.into(), dev_ops);
-        self.devices(locked, metadata.mode).register_minor(metadata.devt, entry);
+        self.devices(metadata.mode).register_minor(metadata.devt, entry);
         Ok(metadata)
     }
 
@@ -534,24 +461,18 @@ impl DeviceRegistry {
     /// instead.
     ///
     /// See `register_device` for an explanation of the parameters.
-    pub fn add_device<'a, L>(
+    pub fn add_device<'a>(
         &self,
-        locked: &mut Locked<L>,
         kernel: &Kernel,
         name: &FsStr,
         metadata: DeviceMetadata,
         class: Class,
         build_directory: impl FnOnce(&Device, &SimpleDirectoryMutator),
-    ) -> Result<Device, Errno>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
-        self.devices(locked.cast_locked(), metadata.mode)
-            .get(metadata.devt)
-            .expect("device is registered");
+    ) -> Result<Device, Errno> {
+        self.devices(metadata.mode).get(metadata.devt).expect("device is registered");
         let device = self.objects.create_device(name, Some(metadata), class, build_directory);
 
-        self.notify_device(locked, kernel, device.clone())?;
+        self.notify_device(kernel, device.clone())?;
         Ok(device)
     }
 
@@ -584,16 +505,12 @@ impl DeviceRegistry {
     /// identify these devices because they appear in sysfs and have an empty `uevent` file.
     ///
     /// See `register_device` for an explanation of the parameters.
-    pub fn add_numberless_device<L>(
+    pub fn add_numberless_device(
         &self,
-        _locked: &mut Locked<L>,
         name: &FsStr,
         class: Class,
         build_directory: impl FnOnce(&Device, &SimpleDirectoryMutator),
-    ) -> Device
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
+    ) -> Device {
         self.objects.create_device(name, None, class, build_directory)
     }
 
@@ -601,19 +518,11 @@ impl DeviceRegistry {
     ///
     /// This function should be used only by device that have registered an entire major device
     /// number. Individually registered minor device cannot be removed at this time.
-    pub fn remove_device<L>(
-        &self,
-        locked: &mut Locked<L>,
-        current_task: &CurrentTask,
-        device: Device,
-    ) where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
+    pub fn remove_device(&self, current_task: &CurrentTask, device: Device) {
         if let Some(metadata) = &device.metadata {
-            self.dispatch_uevent(locked, UEventAction::Remove, device.clone());
+            self.dispatch_uevent(UEventAction::Remove, device.clone());
 
-            if let Err(err) = devtmpfs_remove_path(locked, current_task, metadata.devname.as_ref())
-            {
+            if let Err(err) = devtmpfs_remove_path(current_task, metadata.devname.as_ref()) {
                 log_error!("Cannot remove device {:?} ({:?})", device, err);
             }
         }
@@ -623,40 +532,22 @@ impl DeviceRegistry {
 
     /// Returns a list of the registered major device numbers for the given `DeviceMode` and their
     /// names.
-    pub fn list_major_devices<L>(
-        &self,
-        locked: &mut Locked<L>,
-        mode: DeviceMode,
-    ) -> Vec<(u32, FsString)>
-    where
-        L: LockBefore<starnix_sync::DeviceRegistryState>,
-    {
-        self.devices(locked, mode).list_major_devices()
+    pub fn list_major_devices(&self, mode: DeviceMode) -> Vec<(u32, FsString)> {
+        self.devices(mode).list_major_devices()
     }
 
     /// Returns a list of the registered minor devices for the given `DeviceMode` and their names.
-    pub fn list_minor_devices<L>(
+    pub fn list_minor_devices(
         &self,
-        locked: &mut Locked<L>,
         mode: DeviceMode,
         range: Range<DeviceId>,
-    ) -> Vec<(DeviceId, FsString)>
-    where
-        L: LockBefore<starnix_sync::DeviceRegistryState>,
-    {
-        self.devices(locked, mode).list_minor_devices(range)
+    ) -> Vec<(DeviceId, FsString)> {
+        self.devices(mode).list_minor_devices(range)
     }
 
     /// The `RegisteredDevice` object for the given `DeviceMode`.
-    fn devices<'a, L>(
-        &'a self,
-        locked: &'a mut Locked<L>,
-        mode: DeviceMode,
-    ) -> MappedLockDepGuard<'a, RegisteredDevices>
-    where
-        L: LockBefore<starnix_sync::DeviceRegistryState>,
-    {
-        LockDepGuard::map(self.state.lock(locked), |state| match mode {
+    fn devices<'a>(&'a self, mode: DeviceMode) -> MappedLockDepGuard<'a, RegisteredDevices> {
+        LockDepGuard::map(self.state.lock(), |state| match mode {
             DeviceMode::Char => &mut state.char_devices,
             DeviceMode::Block => &mut state.block_devices,
         })
@@ -667,29 +558,20 @@ impl DeviceRegistry {
     /// If you register an entire major device, use `add_device` and `remove_device` to manage the
     /// sysfs entiries for your device rather than trying to register and unregister individual
     /// minor devices.
-    pub fn register_major<'a, L>(
+    pub fn register_major<'a>(
         &self,
-        locked: &mut Locked<L>,
         name: FsString,
         mode: DeviceMode,
         major: u32,
         dev_ops: impl DeviceOps,
-    ) -> Result<(), Errno>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
-        let locked = locked.cast_locked::<FileOpsCore>();
+    ) -> Result<(), Errno> {
         let entry = DeviceEntry::new(name, dev_ops);
-        self.devices(locked, mode).register_major(major, entry)
+        self.devices(mode).register_major(major, entry)
     }
 
     /// Allocate an anonymous device identifier.
-    pub fn next_anonymous_dev_id<'a, L>(&self, locked: &mut Locked<L>) -> DeviceId
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
-        let locked = locked.cast_locked::<FileOpsCore>();
-        let mut state = self.state.lock(locked);
+    pub fn next_anonymous_dev_id<'a>(&self) -> DeviceId {
+        let mut state = self.state.lock();
         let id = DeviceId::new(0, state.next_anon_minor);
         state.next_anon_minor += 1;
         id
@@ -698,15 +580,11 @@ impl DeviceRegistry {
     /// Register a new listener for uevents on devices.
     ///
     /// Returns a key used to unregister the listener.
-    pub fn register_listener<'a, L>(
+    pub fn register_listener<'a>(
         &self,
-        locked: &mut Locked<L>,
         listener: impl DeviceListener + 'static,
-    ) -> DeviceListenerKey
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
-        let mut state = self.state.lock(locked.cast_locked());
+    ) -> DeviceListenerKey {
+        let mut state = self.state.lock();
         let key = state.next_listener_id;
         state.next_listener_id += 1;
         state.listeners.insert(key, Box::new(listener));
@@ -714,23 +592,13 @@ impl DeviceRegistry {
     }
 
     /// Unregister a listener previously registered through `register_listener`.
-    pub fn unregister_listener<'a, L>(&self, locked: &mut Locked<L>, key: &DeviceListenerKey)
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
-        self.state.lock(locked.cast_locked()).listeners.remove(key);
+    pub fn unregister_listener<'a>(&self, key: &DeviceListenerKey) {
+        self.state.lock().listeners.remove(key);
     }
 
     /// Dispatch an uevent for the given `device`.
-    pub fn dispatch_uevent<'a, L>(
-        &self,
-        locked: &mut Locked<L>,
-        action: UEventAction,
-        device: Device,
-    ) where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
-        let mut state = self.state.lock(locked.cast_locked());
+    pub fn dispatch_uevent<'a>(&self, action: UEventAction, device: Device) {
+        let mut state = self.state.lock();
         let event_id = state.next_event_id;
         state.next_event_id += 1;
         let context = UEventContext { seqnum: event_id };
@@ -742,33 +610,20 @@ impl DeviceRegistry {
     /// Instantiate a file for the specified device.
     ///
     /// The device will be looked up in the device registry by `DeviceMode` and `DeviceId`.
-    pub fn open_device<L>(
+    pub fn open_device(
         &self,
-        locked: &mut Locked<L>,
         current_task: &CurrentTask,
         node: &NamespaceNode,
         flags: OpenFlags,
         devt: DeviceId,
         mode: DeviceMode,
-    ) -> Result<Box<dyn FileOps>, Errno>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
-        let locked = locked.cast_locked::<FileOpsCore>();
-        let dev_ops = self.devices(locked, mode).get(devt)?;
-        dev_ops.open(locked, current_task, devt, node, flags)
+    ) -> Result<Box<dyn FileOps>, Errno> {
+        let dev_ops = self.devices(mode).get(devt)?;
+        dev_ops.open(current_task, devt, node, flags)
     }
 
-    pub fn get_device<L>(
-        &self,
-        locked: &mut Locked<L>,
-        devt: DeviceId,
-        mode: DeviceMode,
-    ) -> Result<DeviceHandle, Errno>
-    where
-        L: LockBefore<starnix_sync::DeviceRegistryState>,
-    {
-        self.devices(locked, mode).get(devt)
+    pub fn get_device(&self, devt: DeviceId, mode: DeviceMode) -> Result<DeviceHandle, Errno> {
+        self.devices(mode).get(devt)
     }
 }
 
@@ -789,7 +644,7 @@ impl Default for DeviceRegistry {
             next_listener_id: 0,
             next_event_id: 0,
         };
-        Self { objects: Default::default(), state: OrderedMutex::new(state) }
+        Self { objects: Default::default(), state: state.into() }
     }
 }
 
@@ -837,11 +692,10 @@ mod tests {
 
     #[::fuchsia::test]
     async fn registry_fails_to_add_duplicate_device() {
-        spawn_kernel_and_run(async |locked, _current_task| {
+        spawn_kernel_and_run(async |_current_task| {
             let registry = DeviceRegistry::default();
             registry
                 .register_major(
-                    locked,
                     "mem".into(),
                     DeviceMode::Char,
                     MEM_MAJOR,
@@ -850,7 +704,6 @@ mod tests {
                 .expect("registers once");
             registry
                 .register_major(
-                    locked,
                     "random".into(),
                     DeviceMode::Char,
                     123,
@@ -859,7 +712,6 @@ mod tests {
                 .expect("registers unique");
             registry
                 .register_major(
-                    locked,
                     "mem".into(),
                     DeviceMode::Char,
                     MEM_MAJOR,
@@ -872,12 +724,11 @@ mod tests {
 
     #[::fuchsia::test]
     async fn registry_opens_device() {
-        spawn_kernel_and_run(async |locked, current_task| {
+        spawn_kernel_and_run(async |current_task| {
             let kernel = current_task.kernel();
             let registry = DeviceRegistry::default();
             registry
                 .register_major(
-                    locked,
                     "mem".into(),
                     DeviceMode::Char,
                     MEM_MAJOR,
@@ -885,14 +736,13 @@ mod tests {
                 )
                 .expect("registers unique");
 
-            let fs = create_testfs(locked, &kernel);
+            let fs = create_testfs(&kernel);
             let node = create_namespace_node_for_testing(&fs, PanickingFsNode);
 
             // Fail to open non-existent device.
             assert!(
                 registry
                     .open_device(
-                        locked,
                         &current_task,
                         &node,
                         OpenFlags::RDONLY,
@@ -906,7 +756,6 @@ mod tests {
             assert!(
                 registry
                     .open_device(
-                        locked,
                         &current_task,
                         &node,
                         OpenFlags::RDONLY,
@@ -919,7 +768,6 @@ mod tests {
             // Open in correct mode.
             let _ = registry
                 .open_device(
-                    locked,
                     &current_task,
                     &node,
                     OpenFlags::RDONLY,
@@ -933,10 +781,9 @@ mod tests {
 
     #[::fuchsia::test]
     async fn registry_dynamic_misc() {
-        spawn_kernel_and_run(async |locked, current_task| {
+        spawn_kernel_and_run(async |current_task| {
             let kernel = current_task.kernel();
             fn create_test_device(
-                _locked: &mut Locked<FileOpsCore>,
                 _current_task: &CurrentTask,
                 _id: DeviceId,
                 _node: &NamespaceNode,
@@ -948,7 +795,6 @@ mod tests {
             let registry = &kernel.device_registry;
             let device = registry
                 .register_dyn_device(
-                    locked,
                     kernel,
                     "test-device".into(),
                     registry.objects.virtual_block_class(),
@@ -958,17 +804,10 @@ mod tests {
             let devt = device.metadata.expect("has metadata").devt;
             assert!(DYN_MAJOR_RANGE.contains(&devt.major()));
 
-            let fs = create_testfs(locked, &kernel);
+            let fs = create_testfs(&kernel);
             let node = create_namespace_node_for_testing(&fs, PanickingFsNode);
             let _ = registry
-                .open_device(
-                    locked,
-                    &current_task,
-                    &node,
-                    OpenFlags::RDONLY,
-                    devt,
-                    DeviceMode::Char,
-                )
+                .open_device(&current_task, &node, OpenFlags::RDONLY, devt, DeviceMode::Char)
                 .expect("opens device");
         })
         .await;
@@ -976,12 +815,11 @@ mod tests {
 
     #[::fuchsia::test]
     async fn registery_add_class() {
-        spawn_kernel_and_run(async |locked, current_task| {
+        spawn_kernel_and_run(async |current_task| {
             let kernel = current_task.kernel();
             let registry = &kernel.device_registry;
             registry
                 .register_major(
-                    locked,
                     "input".into(),
                     DeviceMode::Char,
                     INPUT_MAJOR,
@@ -994,7 +832,6 @@ mod tests {
                 .get_or_create_class("input".into(), registry.objects.virtual_bus());
             registry
                 .add_device(
-                    locked,
                     kernel,
                     "mouse".into(),
                     DeviceMetadata::new(
@@ -1014,12 +851,11 @@ mod tests {
 
     #[::fuchsia::test]
     async fn registry_add_bus() {
-        spawn_kernel_and_run(async |locked, current_task| {
+        spawn_kernel_and_run(async |current_task| {
             let kernel = current_task.kernel();
             let registry = &kernel.device_registry;
             registry
                 .register_major(
-                    locked,
                     "input".into(),
                     DeviceMode::Char,
                     INPUT_MAJOR,
@@ -1031,7 +867,6 @@ mod tests {
             let class = registry.objects.get_or_create_class("my-class".into(), bus);
             registry
                 .add_device(
-                    locked,
                     kernel,
                     "my-device".into(),
                     DeviceMetadata::new(
@@ -1054,12 +889,11 @@ mod tests {
 
     #[::fuchsia::test]
     async fn registry_remove_device() {
-        spawn_kernel_and_run(async |locked, current_task| {
+        spawn_kernel_and_run(async |current_task| {
             let kernel = current_task.kernel();
             let registry = &kernel.device_registry;
             registry
                 .register_major(
-                    locked,
                     "input".into(),
                     DeviceMode::Char,
                     INPUT_MAJOR,
@@ -1071,7 +905,6 @@ mod tests {
             let input_class = registry.objects.get_or_create_class("input".into(), pci_bus);
             let mouse_dev = registry
                 .add_device(
-                    locked,
                     kernel,
                     "mouse".into(),
                     DeviceMetadata::new(
@@ -1088,7 +921,7 @@ mod tests {
             assert!(registry.objects.root.lookup("devices/pci/input/mouse".into()).is_some());
             assert!(registry.objects.root.lookup("class/input/mouse".into()).is_some());
 
-            registry.remove_device(locked, &current_task, mouse_dev);
+            registry.remove_device(&current_task, mouse_dev);
 
             assert!(registry.objects.root.lookup("bus/pci/devices/mouse".into()).is_none());
             assert!(registry.objects.root.lookup("devices/pci/input/mouse".into()).is_none());
@@ -1099,12 +932,11 @@ mod tests {
 
     #[::fuchsia::test]
     async fn registry_add_and_remove_numberless_device() {
-        spawn_kernel_and_run(async |locked, current_task| {
+        spawn_kernel_and_run(async |current_task| {
             let kernel = current_task.kernel();
             let registry = &kernel.device_registry;
 
             let cooling_device = registry.add_numberless_device(
-                locked,
                 "cooling_device0".into(),
                 registry.objects.virtual_thermal_class(),
                 build_device_directory,
@@ -1119,7 +951,7 @@ mod tests {
                     .is_some()
             );
 
-            registry.remove_device(locked, &current_task, cooling_device);
+            registry.remove_device(&current_task, cooling_device);
 
             assert!(registry.objects.root.lookup("class/thermal/cooling_device0".into()).is_none());
             assert!(

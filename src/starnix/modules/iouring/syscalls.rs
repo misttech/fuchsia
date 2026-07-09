@@ -8,7 +8,7 @@ use starnix_core::security;
 use starnix_core::task::CurrentTask;
 use starnix_core::vfs::{FdFlags, FdNumber};
 use starnix_logging::track_stub;
-use starnix_sync::{Locked, Unlocked};
+
 use starnix_syscalls::{SUCCESS, SyscallResult};
 use starnix_uapi::auth::CAP_SYS_ADMIN;
 use starnix_uapi::errors::Errno;
@@ -30,7 +30,6 @@ use starnix_uapi::{
 use std::sync::atomic;
 
 pub fn sys_io_uring_setup(
-    locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
     user_entries: UserValue<u32>,
     user_params: UserRef<io_uring_params>,
@@ -70,16 +69,15 @@ pub fn sys_io_uring_setup(
         }
     }
 
-    let file = IoUringFileObject::new_file(locked, current_task, entries, &mut params)?;
+    let file = IoUringFileObject::new_file(current_task, entries, &mut params)?;
 
     // io_uring file descriptors are always created with CLOEXEC.
-    let fd = current_task.add_file(locked, file, FdFlags::CLOEXEC)?;
+    let fd = current_task.add_file(file, FdFlags::CLOEXEC)?;
     current_task.write_object(user_params, &params)?;
     Ok(fd)
 }
 
 pub fn sys_io_uring_enter(
-    locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
     fd: FdNumber,
     to_submit: u32,
@@ -99,11 +97,10 @@ pub fn sys_io_uring_enter(
     let file = current_task.files().get(fd)?;
     let io_uring = file.downcast_file::<IoUringFileObject>().ok_or_else(|| errno!(EOPNOTSUPP))?;
     // TODO(https://fxbug.dev/297431387): Use `_sig` to change the signal mask for `current_task`.
-    io_uring.enter(locked, current_task, to_submit, min_complete, flags)
+    io_uring.enter(current_task, to_submit, min_complete, flags)
 }
 
 pub fn sys_io_uring_register(
-    locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
     fd: FdNumber,
     opcode: u32,
@@ -120,14 +117,14 @@ pub fn sys_io_uring_register(
             // TODO(https://fxbug.dev/297431387): Check nr_args for zero and return EINVAL here.
             let iovec = IOVecPtr::new(current_task, arg);
             let buffers = current_task.read_iovec(iovec, nr_args)?;
-            io_uring.register_buffers(locked, buffers);
+            io_uring.register_buffers(buffers);
             return Ok(SUCCESS);
         }
         IORING_UNREGISTER_BUFFERS => {
             if !arg.is_null() {
                 return error!(EINVAL);
             }
-            io_uring.unregister_buffers(locked);
+            io_uring.unregister_buffers();
             return Ok(SUCCESS);
         }
         IORING_REGISTER_IOWQ_MAX_WORKERS => {
@@ -180,7 +177,7 @@ pub fn sys_io_uring_register(
                 return error!(EINVAL);
             }
             let buffer_definition: uapi::io_uring_buf_reg = current_task.read_object(arg.into())?;
-            io_uring.register_ring_buffers(locked, buffer_definition)?;
+            io_uring.register_ring_buffers(buffer_definition)?;
             return Ok(SUCCESS);
         }
 
@@ -190,7 +187,7 @@ pub fn sys_io_uring_register(
                 return error!(EINVAL);
             }
             let buffer_definition: uapi::io_uring_buf_reg = current_task.read_object(arg.into())?;
-            io_uring.unregister_ring_buffers(locked, buffer_definition)?;
+            io_uring.unregister_ring_buffers(buffer_definition)?;
             return Ok(SUCCESS);
         }
 
@@ -202,7 +199,7 @@ pub fn sys_io_uring_register(
             let buffer_status_addr = UserRef::<uapi::io_uring_buf_status>::from(arg);
             let mut buffer_status: uapi::io_uring_buf_status =
                 current_task.read_object(buffer_status_addr)?;
-            io_uring.ring_buffer_status(locked, &mut buffer_status)?;
+            io_uring.ring_buffer_status(&mut buffer_status)?;
             current_task.write_object(buffer_status_addr, &buffer_status)?;
             return Ok(SUCCESS);
         }

@@ -6,7 +6,7 @@ use crate::security;
 use crate::task::{CurrentTask, MountsWriteToken};
 use crate::vfs::{ActiveNamespaceNode, CheckAccessReason, Namespace, NamespaceNode};
 use starnix_logging::log_trace;
-use starnix_sync::{FileOpsCore, LockDepRwLock, LockEqualOrBefore, Locked};
+use starnix_sync::LockDepRwLock;
 use starnix_uapi::auth::CAP_SYS_CHROOT;
 use starnix_uapi::errno;
 use starnix_uapi::errors::Errno;
@@ -106,32 +106,16 @@ impl FsContext {
     }
 
     /// Change the current working directory.
-    pub fn chdir<L>(
-        &self,
-        locked: &mut Locked<L>,
-        current_task: &CurrentTask,
-        name: NamespaceNode,
-    ) -> Result<(), Errno>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
-        name.check_access(locked, current_task, Access::EXEC, CheckAccessReason::Chdir)?;
+    pub fn chdir(&self, current_task: &CurrentTask, name: NamespaceNode) -> Result<(), Errno> {
+        name.check_access(current_task, Access::EXEC, CheckAccessReason::Chdir)?;
         let mut state = self.state.write();
         state.cwd = name.into_active();
         Ok(())
     }
 
     /// Change the root.
-    pub fn chroot<L>(
-        &self,
-        locked: &mut Locked<L>,
-        current_task: &CurrentTask,
-        name: NamespaceNode,
-    ) -> Result<(), Errno>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
-        name.check_access(locked, current_task, Access::EXEC, CheckAccessReason::Chroot)
+    pub fn chroot(&self, current_task: &CurrentTask, name: NamespaceNode) -> Result<(), Errno> {
+        name.check_access(current_task, Access::EXEC, CheckAccessReason::Chroot)
             .map_err(|_| errno!(EACCES))?;
         security::check_task_capable(current_task, CAP_SYS_CHROOT)?;
 
@@ -197,9 +181,9 @@ mod test {
 
     #[::fuchsia::test]
     async fn test_umask() {
-        spawn_kernel_and_run(async |locked, current_task| {
+        spawn_kernel_and_run(async |current_task| {
             let kernel = current_task.kernel();
-            let fs = FsContext::new(Namespace::new(TmpFs::new_fs(locked, &kernel)));
+            let fs = FsContext::new(Namespace::new(TmpFs::new_fs(&kernel)));
 
             assert_eq!(FileMode::from_bits(0o22), fs.set_umask(FileMode::from_bits(0o3020)));
             assert_eq!(FileMode::from_bits(0o646), fs.apply_umask(FileMode::from_bits(0o666)));
@@ -211,51 +195,42 @@ mod test {
 
     #[::fuchsia::test]
     async fn test_chdir() {
-        spawn_kernel_and_run_with_pkgfs(async |locked, current_task| {
+        spawn_kernel_and_run_with_pkgfs(async |current_task| {
             assert_eq!("/", current_task.fs().cwd().path_escaping_chroot());
 
             let bin = current_task
-                .open_file(locked, "bin".into(), OpenFlags::RDONLY)
+                .open_file("bin".into(), OpenFlags::RDONLY)
                 .expect("missing bin directory");
-            current_task
-                .fs()
-                .chdir(locked, &current_task, bin.name.to_passive())
-                .expect("Failed to chdir");
+            current_task.fs().chdir(&current_task, bin.name.to_passive()).expect("Failed to chdir");
             assert_eq!("/bin", current_task.fs().cwd().path_escaping_chroot());
 
             // Now that we have changed directories to bin, we're opening a file
             // relative to that directory, which doesn't exist.
-            assert!(current_task.open_file(locked, "bin".into(), OpenFlags::RDONLY).is_err());
+            assert!(current_task.open_file("bin".into(), OpenFlags::RDONLY).is_err());
 
             // However, bin still exists in the root directory.
-            assert!(current_task.open_file(locked, "/bin".into(), OpenFlags::RDONLY).is_ok());
+            assert!(current_task.open_file("/bin".into(), OpenFlags::RDONLY).is_ok());
 
             let previous_directory = current_task
-                .open_file(locked, "..".into(), OpenFlags::RDONLY)
+                .open_file("..".into(), OpenFlags::RDONLY)
                 .expect("failed to open ..")
                 .name
                 .to_passive();
-            current_task
-                .fs()
-                .chdir(locked, &current_task, previous_directory)
-                .expect("Failed to chdir");
+            current_task.fs().chdir(&current_task, previous_directory).expect("Failed to chdir");
             assert_eq!("/", current_task.fs().cwd().path_escaping_chroot());
 
             // Now bin exists again because we've gone back to the root.
-            assert!(current_task.open_file(locked, "bin".into(), OpenFlags::RDONLY).is_ok());
+            assert!(current_task.open_file("bin".into(), OpenFlags::RDONLY).is_ok());
 
             // Repeating the .. doesn't do anything because we're already at the root.
             let previous_directory = current_task
-                .open_file(locked, "..".into(), OpenFlags::RDONLY)
+                .open_file("..".into(), OpenFlags::RDONLY)
                 .expect("failed to open ..")
                 .name
                 .to_passive();
-            current_task
-                .fs()
-                .chdir(locked, &current_task, previous_directory)
-                .expect("Failed to chdir");
+            current_task.fs().chdir(&current_task, previous_directory).expect("Failed to chdir");
             assert_eq!("/", current_task.fs().cwd().path_escaping_chroot());
-            assert!(current_task.open_file(locked, "bin".into(), OpenFlags::RDONLY).is_ok());
+            assert!(current_task.open_file("bin".into(), OpenFlags::RDONLY).is_ok());
         })
         .await;
     }

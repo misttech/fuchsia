@@ -31,8 +31,8 @@ use starnix_core::mm::{
 
 use starnix_core::security;
 use starnix_core::task::{
-    CurrentTask, CurrentTaskAndLocked, EventHandler, Kernel, SchedulerState, SimpleWaiter, Task,
-    ThreadGroupKey, WaitCanceler, Waiter,
+    CurrentTask, EventHandler, Kernel, SchedulerState, SimpleWaiter, Task, ThreadGroupKey,
+    WaitCanceler, Waiter,
 };
 use starnix_core::vfs::buffers::{InputBuffer, OutputBuffer};
 use starnix_core::vfs::{
@@ -42,8 +42,8 @@ use starnix_core::vfs::{
 use starnix_lifecycle::AtomicCounter;
 use starnix_logging::{CATEGORY_STARNIX, log_error, log_trace, log_warn, track_stub, with_zx_name};
 use starnix_sync::{
-    BinderContextManagerLevel, BinderProcsLevel, FileOpsCore, InterruptibleEvent, LockDepMutex,
-    LockDepRwLock, LockEqualOrBefore, Locked, ResourceAccessorLevel, Unlocked, ordered_lock_vec,
+    BinderContextManagerLevel, BinderProcsLevel, InterruptibleEvent, LockDepMutex, LockDepRwLock,
+    ordered_lock_vec,
 };
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_types::convert::IntoFidl as _;
@@ -106,7 +106,6 @@ impl Deref for BinderDevice {
 impl DeviceOps for BinderDevice {
     fn open(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         current_task: &CurrentTask,
         _id: DeviceId,
         _node: &NamespaceNode,
@@ -164,18 +163,12 @@ impl FileOps for BinderConnection {
     fileops_impl_nonseekable!();
     fileops_impl_noop_sync!();
 
-    fn close(
-        self: Box<Self>,
-        _locked: &mut Locked<FileOpsCore>,
-        _file: &FileObjectState,
-        current_task: &CurrentTask,
-    ) {
+    fn close(self: Box<Self>, _file: &FileObjectState, current_task: &CurrentTask) {
         (*self).close(current_task.kernel());
     }
 
     fn query_events(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         current_task: &CurrentTask,
     ) -> Result<FdEvents, Errno> {
@@ -209,7 +202,6 @@ impl FileOps for BinderConnection {
 
     fn wait_async(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         current_task: &CurrentTask,
         waiter: &Waiter,
@@ -241,7 +233,6 @@ impl FileOps for BinderConnection {
 
     fn ioctl(
         &self,
-        locked: &mut Locked<Unlocked>,
         _file: &FileObject,
         current_task: &CurrentTask,
         request: u32,
@@ -250,7 +241,6 @@ impl FileOps for BinderConnection {
         let binder_process = self.proc(current_task)?;
         release_after!(binder_process, current_task.kernel(), {
             self.device.ioctl(
-                locked,
                 current_task,
                 &self.security_state,
                 &binder_process,
@@ -264,7 +254,6 @@ impl FileOps for BinderConnection {
 
     fn get_memory(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         _length: Option<usize>,
@@ -275,7 +264,6 @@ impl FileOps for BinderConnection {
 
     fn mmap(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         current_task: &CurrentTask,
         addr: DesiredAddress,
@@ -301,7 +289,6 @@ impl FileOps for BinderConnection {
 
     fn read(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         offset: usize,
@@ -313,7 +300,6 @@ impl FileOps for BinderConnection {
 
     fn write(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
         _current_task: &CurrentTask,
         offset: usize,
@@ -323,12 +309,7 @@ impl FileOps for BinderConnection {
         error!(EOPNOTSUPP)
     }
 
-    fn flush(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        _file: &FileObject,
-        current_task: &CurrentTask,
-    ) {
+    fn flush(&self, _file: &FileObject, current_task: &CurrentTask) {
         // Errors are not meaningful on flush.
         let Ok(binder_process) = self.proc(current_task) else { return };
         release_after!(binder_process, current_task.kernel(), {
@@ -358,7 +339,6 @@ impl RemoteBinderConnection {
 
     pub fn ioctl(
         &self,
-        locked: &mut Locked<Unlocked>,
         current_task: &CurrentTask,
         request: u32,
         arg: SyscallArg,
@@ -371,7 +351,6 @@ impl RemoteBinderConnection {
             let remote_ioctl =
                 RemoteIoctl { ioctl_reads, ioctl_writes: Cell::new(Vec::new()), vmo };
             self.binder_connection.device.ioctl(
-                locked,
                 current_task,
                 &self.binder_connection.security_state,
                 &binder_process,
@@ -435,10 +414,10 @@ pub struct BinderDriver {
 }
 
 impl Releasable for BinderDriver {
-    type Context<'a> = CurrentTaskAndLocked<'a>;
+    type Context<'a> = &'a CurrentTask;
 
-    fn release<'a>(mut self, context: CurrentTaskAndLocked<'a>) {
-        let (_locked, current_task) = context;
+    fn release<'a>(mut self, context: &'a CurrentTask) {
+        let current_task = context;
         for binder_process in std::mem::take(self.procs.get_mut()).into_values() {
             binder_process.release(current_task.kernel());
         }
@@ -572,7 +551,6 @@ impl BinderDriver {
 
     pub fn ioctl(
         &self,
-        locked: &mut Locked<Unlocked>,
         current_task: &CurrentTask,
         connection_security_state: &security::BinderConnectionState,
         binder_proc: &BinderProcess,
@@ -794,12 +772,7 @@ impl BinderDriver {
                             // Handle all the data the calling thread sent, which may include
                             // multiple commands.
                             while cursor.bytes_read() < input.write_size as usize {
-                                self.handle_thread_write(
-                                    locked,
-                                    &context,
-                                    &mut files,
-                                    &mut cursor,
-                                )?;
+                                self.handle_thread_write(&context, &mut files, &mut cursor)?;
                                 has_consumed_write = true;
                                 input.write_consumed = cursor.bytes_read() as u64;
                             }
@@ -884,16 +857,12 @@ impl BinderDriver {
 
     /// Consumes one command from the userspace binder_write_read buffer and handles it.
     /// This method will never block.
-    fn handle_thread_write<L>(
+    fn handle_thread_write(
         &self,
-        locked: &mut Locked<L>,
         context: &OperationContext<'_>,
         files: &mut Vec<fbinder::FileHandle>,
         cursor: &mut UserMemoryCursor,
-    ) -> Result<(), Errno>
-    where
-        L: LockEqualOrBefore<ResourceAccessorLevel>,
-    {
+    ) -> Result<(), Errno> {
         let command = cursor.read_object::<binder_driver_command_protocol>()?;
         fuchsia_trace::duration!(CATEGORY_STARNIX, "handle_thread_write", "command" => command);
         let result = match command {
@@ -942,7 +911,6 @@ impl BinderDriver {
             binder_driver_command_protocol_BC_TRANSACTION => {
                 let data = cursor.read_object::<binder_transaction_data>()?;
                 self.handle_transaction(
-                    locked,
                     context,
                     files,
                     binder_transaction_data_sg { transaction_data: data, buffers_size: 0 },
@@ -952,7 +920,6 @@ impl BinderDriver {
             binder_driver_command_protocol_BC_REPLY => {
                 let data = cursor.read_object::<binder_transaction_data>()?;
                 self.handle_reply(
-                    locked,
                     context,
                     files,
                     binder_transaction_data_sg { transaction_data: data, buffers_size: 0 },
@@ -961,12 +928,12 @@ impl BinderDriver {
             }
             binder_driver_command_protocol_BC_TRANSACTION_SG => {
                 let data = cursor.read_object::<binder_transaction_data_sg>()?;
-                self.handle_transaction(locked, context, files, data)
+                self.handle_transaction(context, files, data)
                     .or_else(|err| err.dispatch(context.binder_thread))
             }
             binder_driver_command_protocol_BC_REPLY_SG => {
                 let data = cursor.read_object::<binder_transaction_data_sg>()?;
-                self.handle_reply(locked, context, files, data)
+                self.handle_reply(context, files, data)
                     .or_else(|err| err.dispatch(context.binder_thread))
             }
             binder_driver_command_protocol_BC_REQUEST_FREEZE_NOTIFICATION => {
@@ -999,16 +966,12 @@ impl BinderDriver {
     }
 
     /// A binder thread is starting a transaction on a remote binder object.
-    pub fn handle_transaction<L>(
+    pub fn handle_transaction(
         &self,
-        locked: &mut Locked<L>,
         context: &OperationContext<'_>,
         files: &mut Vec<fbinder::FileHandle>,
         data: binder_transaction_data_sg,
-    ) -> Result<(), TransactionError>
-    where
-        L: LockEqualOrBefore<ResourceAccessorLevel>,
-    {
+    ) -> Result<(), TransactionError> {
         // SAFETY: Transactions can only refer to handles.
         let handle = unsafe { data.transaction_data.target.handle }.into();
 
@@ -1069,7 +1032,6 @@ impl BinderDriver {
 
                 // Copy the transaction data to the target process.
                 let (buffers, mut transaction_state) = self.copy_transaction_buffers(
-                    locked,
                     context,
                     files,
                     &target_task,
@@ -1235,16 +1197,12 @@ impl BinderDriver {
     }
 
     /// A binder thread is sending a reply to a transaction.
-    pub fn handle_reply<L>(
+    pub fn handle_reply(
         &self,
-        locked: &mut Locked<L>,
         context: &OperationContext<'_>,
         files: &mut Vec<fbinder::FileHandle>,
         data: binder_transaction_data_sg,
-    ) -> Result<(), TransactionError>
-    where
-        L: LockEqualOrBefore<ResourceAccessorLevel>,
-    {
+    ) -> Result<(), TransactionError> {
         // Find the process and thread that initiated the transaction. This reply is for them.
         let (target_proc, target_thread, scheduler_state) =
             context.binder_thread.lock().pop_transaction_caller(context.current_task)?;
@@ -1256,7 +1214,6 @@ impl BinderDriver {
 
                 // Copy the transaction data to the target process.
                 let (buffers, transaction_state) = self.copy_transaction_buffers(
-                    locked,
                     context,
                     files,
                     &target_task,
@@ -1280,7 +1237,7 @@ impl BinderDriver {
                 // transaction complete command on the local thread.
                 {
                     let (mut target_thread, mut binder_thread) =
-                        BinderThread::lock_both(&target_thread, context.binder_thread);
+                        BinderThread::ordered_lock(&target_thread, context.binder_thread);
                     target_thread.enqueue_command(Command::Reply(TransactionData {
                         peer_pid: context.binder_proc.key.pid(),
                         peer_tid: context.binder_thread.tid,
@@ -1494,9 +1451,8 @@ impl BinderDriver {
     /// Returns the transaction buffers in the target process, as well as the transaction state.
     ///
     /// If `security_context` is present, it must be null terminated.
-    pub fn copy_transaction_buffers<'a, L>(
+    pub fn copy_transaction_buffers<'a>(
         &self,
-        locked: &mut Locked<L>,
         source: &OperationContext<'_>,
         source_files: &mut Vec<fbinder::FileHandle>,
         target_task: &Task,
@@ -1504,10 +1460,7 @@ impl BinderDriver {
         target_proc: &BinderProcess,
         data: &binder_transaction_data_sg,
         security_context: Option<&FsStr>,
-    ) -> Result<(TransactionBuffers, TransientTransactionState<'a>), TransactionError>
-    where
-        L: LockEqualOrBefore<ResourceAccessorLevel>,
-    {
+    ) -> Result<(TransactionBuffers, TransientTransactionState<'a>), TransactionError> {
         // Get the shared memory of the target process.
         let mut shared_memory_lock = target_proc.shared_memory.lock();
         let shared_memory = shared_memory_lock.as_mut().ok_or_else(|| errno!(ENOMEM))?;
@@ -1546,7 +1499,6 @@ impl BinderDriver {
         // Translate any handles/fds from the source process' handle table to the target process'
         // handle table.
         let transient_transaction_state = self.translate_objects(
-            locked,
             source,
             source_files,
             target_task,
@@ -1561,18 +1513,14 @@ impl BinderDriver {
     }
 
     /// Translates file descriptors from the sending process to the receiving process.
-    fn translate_files<'a, L>(
-        locked: &mut Locked<L>,
+    fn translate_files<'a>(
         source: &OperationContext<'_>,
         source_files: &mut Vec<fbinder::FileHandle>,
         target_task: &Task,
         target_resource_accessor: &'a dyn ResourceAccessor,
         fds: Vec<FdNumber>,
         add_action: &mut dyn FnMut(FdNumber),
-    ) -> Result<Vec<FdNumber>, Errno>
-    where
-        L: LockEqualOrBefore<ResourceAccessorLevel>,
-    {
+    ) -> Result<Vec<FdNumber>, Errno> {
         // Create a map of FD to index into `source_files`. This is used to check if the already
         // file exists in `source_files`, allowing us to avoid fetching it via the
         // `source_resource_accessor`.
@@ -1587,15 +1535,10 @@ impl BinderDriver {
             .filter(|fd| !source_map.contains_key(&fd.raw()))
             .copied()
             .collect::<Vec<_>>();
-        let locked = locked.cast_locked::<ResourceAccessorLevel>();
         let mut get_files = if fds_to_get.is_empty() {
             Vec::new()
         } else {
-            source.resource_accessor().get_files_with_flags(
-                locked,
-                source.current_task,
-                fds_to_get,
-            )?
+            source.resource_accessor().get_files_with_flags(source.current_task, fds_to_get)?
         };
         let mut drain = get_files.drain(0..);
         // Merge `source_files` and `get_files` together.
@@ -1605,13 +1548,13 @@ impl BinderDriver {
                 let source_file = std::mem::replace(&mut source_files[*pos], Default::default());
                 let flags = source_file.flags.ok_or_else(|| errno!(ENOENT))?.into_fidl();
                 let new_file = if let Some(handle) = source_file.handle {
-                    new_remote_file(locked, source.current_task, handle, flags)?
+                    new_remote_file(source.current_task, handle, flags)?
                 } else if let Some(_bag) = source_file.bag {
                     // TODO(https://fxbug.dev/481167098): Support composite file descriptors.
                     log_warn!("FileHandle::bag is not supported");
                     return error!(EBADFD);
                 } else {
-                    new_null_file(locked, source.current_task, flags)
+                    new_null_file(source.current_task, flags)
                 };
                 (new_file, FdFlags::empty())
             } else if let Some(file) = drain.next() {
@@ -1625,12 +1568,7 @@ impl BinderDriver {
             target_files.push(file);
         }
         // Finally add the files to the `target_resource_accessor`.
-        target_resource_accessor.add_files_with_flags(
-            locked,
-            source.current_task,
-            target_files,
-            add_action,
-        )
+        target_resource_accessor.add_files_with_flags(source.current_task, target_files, add_action)
     }
 
     /// Translates binder object handles/FDs from the sending process to the receiver process,
@@ -1650,9 +1588,8 @@ impl BinderDriver {
     /// handle table for which temporary strong references were acquired, along with duped FDs. This
     /// object takes care of releasing these resources when dropped, due to an error or a
     /// `BC_FREE_BUFFER` command.
-    pub fn translate_objects<'a, L>(
+    pub fn translate_objects<'a>(
         &self,
-        locked: &mut Locked<L>,
         source: &OperationContext<'_>,
         source_files: &mut Vec<fbinder::FileHandle>,
         target_task: &Task,
@@ -1661,10 +1598,7 @@ impl BinderDriver {
         offsets: &[binder_uintptr_t],
         transaction_data: &mut [u8],
         sg_buffer: &mut SharedBuffer<'_, u8>,
-    ) -> Result<TransientTransactionState<'a>, TransactionError>
-    where
-        L: LockEqualOrBefore<ResourceAccessorLevel>,
-    {
+    ) -> Result<TransientTransactionState<'a>, TransactionError> {
         let mut transaction_state =
             TransientTransactionState::new(target_resource_accessor, target_proc);
         release_on_error!(transaction_state, (), {
@@ -1859,7 +1793,6 @@ impl BinderDriver {
 
                         // Dup each file descriptor and re-write the value of the new FD.
                         let new_fds = Self::translate_files(
-                            locked,
                             source,
                             source_files,
                             target_task,
@@ -1880,7 +1813,6 @@ impl BinderDriver {
             }
 
             let new_fds = Self::translate_files(
-                locked,
                 source,
                 source_files,
                 target_task,

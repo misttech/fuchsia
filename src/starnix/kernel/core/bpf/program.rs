@@ -5,7 +5,7 @@
 use crate::bpf::BpfMapHandle;
 use crate::bpf::fs::get_bpf_object;
 use crate::security;
-use crate::task::{CurrentTask, CurrentTaskAndLocked, Kernel, register_delayed_release};
+use crate::task::{CurrentTask, Kernel, register_delayed_release};
 use crate::vfs::{FdNumber, OutputBuffer};
 use ebpf::{
     BPF_LDDW, BPF_PSEUDO_BTF_ID, BPF_PSEUDO_FUNC, BPF_PSEUDO_MAP_FD, BPF_PSEUDO_MAP_IDX,
@@ -17,7 +17,6 @@ use ebpf_api::{AttachType, EbpfApiError, MapsContext, PinnedMap, ProgramType, St
 use fidl_fuchsia_ebpf as febpf;
 use starnix_lifecycle::{AtomicCounter, ObjectReleaser, ReleaserAction};
 use starnix_logging::{log_warn, track_stub};
-use starnix_sync::{EbpfStateLock, LockBefore, Locked};
 use starnix_types::ownership::{Releasable, ReleaseGuard};
 use starnix_uapi::auth::{CAP_BPF, CAP_NET_ADMIN, CAP_PERFMON, CAP_SYS_ADMIN};
 use starnix_uapi::errors::Errno;
@@ -91,16 +90,12 @@ fn map_ebpf_api_error(e: EbpfApiError) -> Errno {
 }
 
 impl Program {
-    pub fn new<L>(
-        locked: &mut Locked<L>,
+    pub fn new(
         current_task: &CurrentTask,
         info: ProgramInfo,
         logger: &mut dyn OutputBuffer,
         mut code: Vec<EbpfInstruction>,
-    ) -> Result<ProgramHandle, Errno>
-    where
-        L: LockBefore<EbpfStateLock>,
-    {
+    ) -> Result<ProgramHandle, Errno> {
         Self::check_load_access(current_task, &info)?;
         let maps = link_maps_fds(current_task, &mut code)?;
         let maps_schema = maps.iter().map(|m| m.schema).collect();
@@ -131,7 +126,7 @@ impl Program {
             }
             .into(),
         );
-        current_task.kernel().ebpf_state.register_program(locked, &program);
+        current_task.kernel().ebpf_state.register_program(&program);
 
         Ok(program)
     }
@@ -225,11 +220,11 @@ impl Program {
 }
 
 impl Releasable for Program {
-    type Context<'a> = CurrentTaskAndLocked<'a>;
+    type Context<'a> = &'a CurrentTask;
 
-    fn release<'a>(self, (locked, _current_task): CurrentTaskAndLocked<'a>) {
+    fn release<'a>(self, _current_task: &'a CurrentTask) {
         if let Some(kernel) = self.kernel.upgrade() {
-            kernel.ebpf_state.unregister_program(locked, self.id);
+            kernel.ebpf_state.unregister_program(self.id);
         }
 
         // Signal the FIDL handle to indicate that the program handle is defunct
