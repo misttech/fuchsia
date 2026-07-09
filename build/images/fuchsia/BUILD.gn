@@ -13,6 +13,7 @@ if (is_host) {
     # tests.
     visibility = [
       "//src/devices/block/drivers/ufs/test/e2e:*",
+      "//src/recovery/simulator:*",
       "//src/tests/disable_shell:*",
       "//src/tests/disable_syscalls:*",
       "//src/tests/dlog:*",

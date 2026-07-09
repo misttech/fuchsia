@@ -48,7 +48,10 @@ if (is_linux) {
         "-zbi-path",
         rebase_path(_outputs[0], root_build_dir),
       ]
-      non_go_deps = [ ":recovery_test_data" ]
+      non_go_deps = [
+        ":recovery_test_data",
+        "//build/images/fuchsia:default_product_bundle_for_emulator.go",
+      ]
     }
   }
 
