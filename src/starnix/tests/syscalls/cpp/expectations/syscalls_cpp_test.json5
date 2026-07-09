@@ -176,6 +176,10 @@
                 "MountTest.RemountBindReadWriteToReadOnlyWithOpenWriterToBindFails",
                 "MountTest.RemountFilesystemReadWriteToReadOnlyWithOpenWriterToBindFails",
                 "MountTest.RemountReadWriteToReadOnlyWithOpenWriterFails",
+
+                // Starnix does not currently support this feature (see https://fxbug.dev/322874526)
+                // If it ever does, implementing `security::mmap_addr` will be necessary.
+                "MmapTest.MmapMinAddr",
             ],
         },
     ],

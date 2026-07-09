@@ -30,6 +30,7 @@
 #include "src/lib/fxl/strings/split_string.h"
 #include "src/lib/fxl/strings/string_number_conversions.h"
 #include "src/lib/fxl/strings/string_printf.h"
+#include "src/starnix/tests/syscalls/cpp/capabilities_helper.h"
 #include "src/starnix/tests/syscalls/cpp/proc_test_base.h"
 #include "src/starnix/tests/syscalls/cpp/test_helper.h"
 
@@ -1813,6 +1814,58 @@ TEST(MMapTest, MsyncFlags) {
 
   SAFE_SYSCALL(munmap(addr, page_size));
   close(fd);
+}
+
+// Tests that mmap_min_addr specifies the minimum address that unprivileged processes can mmap.
+TEST(MmapTest, MmapMinAddr) {
+  if (!test_helper::HasSysAdmin()) {
+    GTEST_SKIP() << "Need CAP_SYS_ADMIN to run MmapTest.MmapMinAddr";
+  }
+
+  const char kMmapMinAddr[] = "/proc/sys/vm/mmap_min_addr";
+  std::string original_value;
+  EXPECT_TRUE(files::ReadFileToString(kMmapMinAddr, &original_value));
+
+  // Restore the original value after the test.
+  auto cleanup = fit::defer(
+      [original_value, kMmapMinAddr]() { files::WriteFile(kMmapMinAddr, original_value); });
+
+  // Tries to mmap at `target_addr` as an unprivileged process.
+  // Returns 0 on success, and the error number on failure.
+  auto try_mmap_unprivileged = [](size_t target_addr) -> int {
+    test_helper::ForkHelper helper;
+    helper.OnlyWaitForForkedChildren();
+    pid_t pid = helper.RunInForkedProcess([target_addr] {
+      // Drop all capabilities to become unprivileged.
+      test_helper::DropAllCapabilities();
+      fit::result<int, test_helper::ScopedMMap> mmap_result = test_helper::ScopedMMap::MMap(
+          reinterpret_cast<void*>(target_addr), 4096, PROT_READ | PROT_WRITE,
+          MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0);
+      if (mmap_result.is_error()) {
+        _exit(mmap_result.error_value());
+      }
+      _exit(0);
+    });
+    test_helper::ForkResult result = helper.WaitForChild(pid);
+    if (result.determined_result == testing::AssertionSuccess()) {
+      return 0;
+    }
+    return result.subprocess_exit_status;
+  };
+
+  constexpr size_t k5Mb = 5242880;
+
+  // Write 10MB to mmap_min_addr.
+  EXPECT_TRUE(files::WriteFile(kMmapMinAddr, "10485760\n"));
+
+  // mmap at 5MB should fail because 5MB < 10MB.
+  EXPECT_EQ(try_mmap_unprivileged(k5Mb), EPERM);
+
+  // Write 0MB to mmap_min_addr.
+  EXPECT_TRUE(files::WriteFile(kMmapMinAddr, "0\n"));
+
+  // mmap at 5MB should succeed now.
+  EXPECT_EQ(try_mmap_unprivileged(k5Mb), 0);
 }
 
 }  // namespace
