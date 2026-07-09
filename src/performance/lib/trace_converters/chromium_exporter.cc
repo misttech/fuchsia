@@ -7,6 +7,7 @@
 #include <inttypes.h>
 #include <lib/syslog/cpp/macros.h>
 #include <lib/trace-engine/types.h>
+#include <simdutf.h>
 
 #include <filesystem>
 #include <memory>
@@ -14,7 +15,6 @@
 #include <utility>
 #include <variant>
 
-#include <third_party/modp_b64/modp_b64.h>
 #include <trace-reader/reader.h>
 
 #include "rapidjson/writer.h"
@@ -82,6 +82,13 @@ std::string CleanString(std::string_view str) {
     char_index++;
   }
 
+  return result;
+}
+
+inline std::string Base64Encode(std::string_view bytes) {
+  std::string result(simdutf::base64_length_from_binary(bytes.size()), '\0');
+  size_t written = simdutf::binary_to_base64(bytes.data(), bytes.size(), result.data());
+  result.resize(written);
   return result;
 }
 
@@ -721,8 +728,8 @@ void ChromiumExporter::ExportFidlBlob(const trace::LargeRecordData::BlobEvent& b
   writer_.Key("tid");
   writer_.Uint64(blob.process_thread.thread_koid());
   writer_.Key("blob");
-  auto blob_str = std::string(static_cast<const char*>(blob.blob), blob.blob_size);
-  auto blob_str_base64 = modp_b64_encode(blob_str);
+  auto blob_str_base64 =
+      Base64Encode(std::string_view(static_cast<const char*>(blob.blob), blob.blob_size));
   writer_.String(blob_str_base64);
   writer_.EndObject();
 }
@@ -769,9 +776,9 @@ void ChromiumExporter::WriteArgs(const std::vector<trace::Argument>& arguments) 
       case trace::ArgumentType::kBlob:
         writer_.Key(CleanString(arg.name()));
         {
-          std::string blob_str(reinterpret_cast<const char*>(arg.value().GetBlob().data()),
-                               arg.value().GetBlob().size());
-          writer_.String(modp_b64_encode(blob_str));
+          const auto& blob = arg.value().GetBlob();
+          writer_.String(Base64Encode(
+              std::string_view(reinterpret_cast<const char*>(blob.data()), blob.size())));
         }
         break;
       default:

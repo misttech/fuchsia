@@ -20,11 +20,13 @@ source_set("chromium") {
     "chromium_exporter.h",
   ]
 
-  deps = [ "//src/lib/fxl" ]
+  deps = [
+    "//src/lib/fxl",
+    "//third_party/github.com/simdutf/simdutf",
+  ]
 
   public_deps = [
     "//sdk/lib/syslog/cpp",
-    "//third_party/modp_b64",
     "//third_party/rapidjson",
     "//zircon/system/ulib/trace-reader",
   ]
