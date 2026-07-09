@@ -220,11 +220,6 @@ where
     })
 }
 
-#[deprecated = "Do not add new callers, use spawn_kernel_and_run() instead."]
-pub fn create_kernel_and_task() -> (Arc<Kernel>, AutoReleasableTask) {
-    create_kernel_and_task_with_fs(TmpFs::new_fs)
-}
-
 fn create_test_kernel(
     security_server: Option<Arc<SecurityServer>>,
     features: KernelFeatures,
@@ -290,17 +285,6 @@ fn create_test_init_task(kernel: &Kernel, fs: Arc<FsContext>) -> TaskBuilder {
         let _l2 = init_task.read();
     }
     init_task
-}
-
-fn create_kernel_and_task_with_fs(
-    create_fs: impl FnOnce(&Kernel) -> FileSystemHandle,
-) -> (Arc<Kernel>, AutoReleasableTask) {
-    let kernel =
-        create_test_kernel(None, KernelFeatures::default(), SchedulerManager::empty_for_tests());
-    let fs = create_fs(&kernel);
-    let fs_context = create_test_fs_context(&kernel, |_| fs.clone());
-    let init_task = create_test_init_task(&kernel, fs_context);
-    (kernel, init_task.into())
 }
 
 /// An old way of creating a task for testing
