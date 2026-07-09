@@ -197,18 +197,28 @@ compiler_config("static-pic-link") {
         action = "set"
         value = "hidden"
       },
+      {
+        key = "relocation-model"
+        action = "set"
+        value = "pie"
+      },
     ]
   } else {
     rustflags += [
+      # TODO(https://fxbug.dev/532132064): Set the relocation-model=pie for
+      # Rust, as without this setting the Rust core library will not build
+      # correctly w/ direct-access-external-data, whenever ThinLTO is used,
+      # thus resulting in unnecessary GOT slots. Note that due to
+      # `codegen-units > 1`, crates may be split and ThinLTO'd together back
+      # together, even in non-LTO enabled builds. Note that this option is also
+      # in the rust_target_edits above, and these should be added or removed
+      # together.
+      "-Crelocation-model=pie",
       "-Cdefault-linker-libraries=no",
       "-Zdefault-visibility=hidden",
       "-Zdirect-access-external-data=yes",
     ]
   }
-
-  # TODO(https://fxbug.dev/511265181): The Rust compiler has longstanding
-  # bugs wherein it breaks these invariants unless given this switch.
-  rustflags += [ "-Ccodegen-units=1" ]
 }
 
 # These flags say that we want complete DWARF CFI at every instruction in
@@ -365,8 +375,6 @@ variant("kernel_config") {
   if (kernel_no_userabi) {
     defines += [ "KERNEL_NO_USERABI" ]
   }
-
-  cflags = [ "-fpie" ]
 }
 
 # Each switchset is expected to include one of these.
@@ -519,14 +527,6 @@ if (current_cpu == "arm64" && is_gcc) {
   got_tolerance = 32
 } else {
   got_tolerance = 0
-
-  # TODO(https://fxbug.dev/511265181): This should be 0 and none should be
-  # tolerated in production builds.  Currently Rust code produces GOT
-  # indirections it should not when thinlto is enabled.  So far, there is very
-  # little Rust code that might run into this compiler issue.  Until the
-  # compiler bug is fixed (ASAP), allow the few slots empirically seen to be
-  # produced in the build.
-  got_tolerance = 128
 }
 
 # This is implicitly added last to configs in kernel_executable().
