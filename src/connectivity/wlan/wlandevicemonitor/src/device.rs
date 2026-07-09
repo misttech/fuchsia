@@ -38,7 +38,6 @@ pub struct NewIface {
 
 pub struct PhyDevice {
     pub proxy: fidl_wlan_dev::PhyProxy,
-    pub device_path: String,
 }
 
 pub struct IfaceDevice {
@@ -52,7 +51,7 @@ pub type IfaceMap = WatchableMap<u16, IfaceDevice>;
 /// Handles newly-discovered PHYs.
 ///
 /// When new PHYs are discovered, the `device_watch` module produces a `NewPhyDevice`.  This struct
-/// contains a PHY id, proxy, and path.
+/// contains a PHY id and proxy.
 pub async fn serve_phys(
     phys: Arc<PhyMap>,
     inspect_tree: Arc<inspect::WlanMonitorTree>,
@@ -93,7 +92,7 @@ async fn serve_phy(
     inspect_tree: Arc<inspect::WlanMonitorTree>,
     mut phy_event_sink: mpsc::Sender<(u16, fidl_wlan_dev::PhyEvent)>,
 ) {
-    let msg = format!("new phy #{}: {}", new_phy.id, new_phy.device_path);
+    let msg = format!("new phy #{}", new_phy.id);
     info!("{}", msg);
     inspect_log!(inspect_tree.device_events.lock(), msg: msg);
     let id = new_phy.id;
@@ -105,7 +104,7 @@ async fn serve_phy(
     // Insert the newly discovered device into the `WatchableMap`.  This will trigger the watchable
     // map to produce an event so that the `DeviceWatcher` service can produce an update for API
     // consumers.
-    phys.insert(id, PhyDevice { proxy: new_phy.proxy, device_path: new_phy.device_path });
+    phys.insert(id, PhyDevice { proxy: new_phy.proxy });
 
     let mut phy_stream_result = Ok(());
     while let Some(event) = event_stream.next().await {
@@ -198,11 +197,7 @@ mod tests {
         let inspect_tree = Arc::new(inspect::WlanMonitorTree::new(inspector));
 
         let (phy_proxy, phy_server) = create_proxy::<fidl_wlan_dev::PhyMarker>();
-        let new_phy = device_watch::NewPhyDevice {
-            id: 0,
-            proxy: phy_proxy,
-            device_path: String::from("/test/path"),
-        };
+        let new_phy = device_watch::NewPhyDevice { id: 0, proxy: phy_proxy };
 
         let fut = serve_phy(&phys, new_phy, inspect_tree, sender);
         let mut fut = pin!(fut);

@@ -201,10 +201,7 @@ async fn do_phy(cmd: opts::PhyCmd, monitor_proxy: DeviceMonitor) -> Result<(), E
                 .get_supported_mac_roles(phy_id)
                 .await
                 .context("error querying MAC roles")?;
-            let device_path =
-                monitor_proxy.get_dev_path(phy_id).await.context("error querying device path")?;
             println!("PHY ID: {}", phy_id);
-            println!("Device Path: {:?}", device_path);
             println!("Supported MAC roles: {:?}", mac_roles);
         }
         opts::PhyCmd::GetCountry { phy_id } => {

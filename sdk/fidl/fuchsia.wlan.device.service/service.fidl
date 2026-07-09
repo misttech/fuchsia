@@ -100,11 +100,7 @@ closed protocol DeviceMonitor {
     strict ListIfaces() -> (struct {
         iface_list vector<uint16>:MAX;
     });
-    strict GetDevPath(struct {
-        phy_id uint16;
-    }) -> (struct {
-        dev_path string:optional;
-    });
+
     strict GetSupportedMacRoles(struct {
         phy_id uint16;
     }) -> (struct {

@@ -11,10 +11,10 @@ use futures::stream::{Stream, TryStreamExt as _};
 use log::error;
 use std::hash::{Hash as _, Hasher as _};
 
+#[derive(Debug)]
 pub struct NewPhyDevice {
     pub id: u16,
     pub proxy: fidl_wlan_dev::PhyProxy,
-    pub device_path: String,
 }
 
 pub fn watch_phy_devices(
@@ -63,11 +63,7 @@ pub fn watch_phy_devices(
                     id |= s as u16;
                     s >>= 16;
                 }
-                Ok(Some(NewPhyDevice {
-                    id,
-                    proxy,
-                    device_path: format!("{device_directory}/{filename}"),
-                }))
+                Ok(Some(NewPhyDevice { id, proxy }))
             })())
         }))
     }
@@ -77,6 +73,7 @@ pub fn watch_phy_devices(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use assert_matches::assert_matches;
     use fidl::endpoints::Proxy as _;
     use fidl_fuchsia_wlan_device::{ConnectorRequest, ConnectorRequestStream};
     use fuchsia_async as fasync;
@@ -108,13 +105,7 @@ mod tests {
             .expect("phy_watcher ended without yielding a phy")
             .expect("phy_watcher returned an error");
 
-        #[allow(
-            clippy::redundant_pattern_matching,
-            reason = "mass allow for https://fxbug.dev/381896734"
-        )]
-        if let Poll::Ready(..) = poll!(phy_watcher.next()) {
-            panic!("phy_watcher found more than one phy");
-        }
+        assert_matches!(poll!(phy_watcher.next()), Poll::Pending);
     }
 
     #[fasync::run_singlethreaded(test)]
@@ -141,13 +132,7 @@ mod tests {
                 .expect("phy_watcher returned an error");
         }
 
-        #[allow(
-            clippy::redundant_pattern_matching,
-            reason = "mass allow for https://fxbug.dev/381896734"
-        )]
-        if let Poll::Ready(..) = poll!(phy_watcher.next()) {
-            panic!("phy_watcher found more than one phy");
-        }
+        assert_matches!(poll!(phy_watcher.next()), Poll::Pending);
     }
 
     fn serve_and_bind_vfs(vfs_dir: Arc<dyn Directory>, path: &'static str) {

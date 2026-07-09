@@ -53,9 +53,6 @@ pub(crate) async fn handle_monitor_request(
         DeviceMonitorRequest::ListIfaces { responder } => {
             responder.send(&list_ifaces(iface_wrapper.ifaces))?
         }
-        DeviceMonitorRequest::GetDevPath { phy_id, responder } => {
-            responder.send(get_dev_path(phys, phy_id).as_deref())?
-        }
         DeviceMonitorRequest::GetSupportedMacRoles { phy_id, responder } => responder
             .send(get_supported_mac_roles(phys, phy_id).await.as_deref().map_err(|e| *e))?,
         DeviceMonitorRequest::WatchDevices { watcher, control_handle: _ } => {
@@ -277,11 +274,6 @@ fn list_phys(phys: &PhyMap) -> Vec<u16> {
 
 fn list_ifaces(ifaces: &IfaceMap) -> Vec<u16> {
     ifaces.get_snapshot().keys().copied().collect()
-}
-
-fn get_dev_path(phys: &PhyMap, phy_id: u16) -> Option<String> {
-    let phy = phys.get(&phy_id)?;
-    Some(phy.device_path.clone())
 }
 
 async fn get_country(
@@ -835,7 +827,7 @@ mod tests {
     fn fake_phy() -> (PhyDevice, fidl_dev::PhyRequestStream) {
         let (proxy, server) = create_proxy::<fidl_dev::PhyMarker>();
         let stream = server.into_stream();
-        (PhyDevice { proxy, device_path: String::from("/test/path") }, stream)
+        (PhyDevice { proxy }, stream)
     }
 
     fn fake_alpha2() -> [u8; 2] {
@@ -997,78 +989,6 @@ mod tests {
         assert_matches!(exec.run_until_stalled(&mut list_fut), Poll::Ready(Ok(ifaces)) => {
             assert_eq!(vec![0u16], ifaces);
         });
-    }
-
-    #[fuchsia::test]
-    fn test_get_dev_path_success() {
-        let mut exec = fasync::TestExecutor::new();
-        let test_values = test_setup();
-        let (phy, _) = fake_phy();
-
-        let expected_path = phy.device_path.clone();
-        test_values.phys.insert(10u16, phy);
-
-        let cfg = fake_wlandevicemonitor_config();
-        let service_fut = serve_monitor_requests(
-            test_values.monitor_stream,
-            &test_values.phys,
-            &test_values.ifaces,
-            &test_values.watcher_service,
-            &test_values.phy_event_service,
-            &test_values.new_iface_sink,
-            &test_values.iface_counter,
-            &test_values.ifaces_tree,
-            &cfg,
-        );
-        let mut service_fut = pin!(service_fut);
-        assert_matches!(exec.run_until_stalled(&mut service_fut), Poll::Pending);
-
-        // Initiate a GetDevPath request. The returned future should not be able
-        // to produce a result immediately
-        let query_fut = test_values.monitor_proxy.get_dev_path(10u16);
-        let mut query_fut = pin!(query_fut);
-        assert_matches!(exec.run_until_stalled(&mut query_fut), Poll::Pending);
-        assert_matches!(exec.run_until_stalled(&mut service_fut), Poll::Pending);
-
-        // Our original future should complete, and return the dev path.
-        assert_matches!(
-            exec.run_until_stalled(&mut query_fut),
-            Poll::Ready(Ok(Some(path))) => {
-                assert_eq!(path, expected_path);
-            }
-        );
-    }
-
-    #[fuchsia::test]
-    fn test_get_dev_path_phy_not_found() {
-        let mut exec = fasync::TestExecutor::new();
-        let test_values = test_setup();
-        let cfg = fake_wlandevicemonitor_config();
-        let service_fut = serve_monitor_requests(
-            test_values.monitor_stream,
-            &test_values.phys,
-            &test_values.ifaces,
-            &test_values.watcher_service,
-            &test_values.phy_event_service,
-            &test_values.new_iface_sink,
-            &test_values.iface_counter,
-            &test_values.ifaces_tree,
-            &cfg,
-        );
-        let mut service_fut = pin!(service_fut);
-
-        assert_matches!(exec.run_until_stalled(&mut service_fut), Poll::Pending);
-
-        // Query a PHY's dev path.
-        let query_fut = test_values.monitor_proxy.get_dev_path(0);
-        let mut query_fut = pin!(query_fut);
-        assert_matches!(exec.run_until_stalled(&mut query_fut), Poll::Pending);
-
-        // Progress the service loop.
-        assert_matches!(exec.run_until_stalled(&mut service_fut), Poll::Pending);
-
-        // The attempt to query the PHY's information should fail.
-        assert_matches!(exec.run_until_stalled(&mut query_fut), Poll::Ready(Ok(None)));
     }
 
     #[fuchsia::test]

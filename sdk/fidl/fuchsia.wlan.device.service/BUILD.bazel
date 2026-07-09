@@ -12,7 +12,6 @@ fidl_library(
     # TODO(https://fxbug.dev/42111344): Remove lint exclusions by fixing known FIDL lint violations in this target
     excluded_checks = [
         "disallowed-library-name-component",
-        "string-bounds-not-specified",
     ],
     visibility = ["//visibility:public"],
     deps = [
