@@ -789,7 +789,7 @@ zx_status_t UsbPeripheral::GetDescriptor(uint8_t request_type, uint16_t value, u
     memcpy(buffer, &device_desc_, length);
     *out_actual = length;
     return ZX_OK;
-  } else if (desc_type == USB_DT_CONFIG && index == 0) {
+  } else if ((desc_type == USB_DT_CONFIG || desc_type == USB_DT_OTHER_SPEED_CONFIG) && index == 0) {
     index = value & 0xff;
     if (index >= configurations_.size()) {
       fdf::error("Invalid configuration index: {}", index);
@@ -803,6 +803,9 @@ zx_status_t UsbPeripheral::GetDescriptor(uint8_t request_type, uint16_t value, u
     auto desc_length = config_desc.size();
     length = std::min(length, desc_length);
     memcpy(buffer, config_desc.data(), length);
+    if (desc_type == USB_DT_OTHER_SPEED_CONFIG && length >= 2) {
+      static_cast<uint8_t*>(buffer)[1] = USB_DT_OTHER_SPEED_CONFIG;
+    }
     *out_actual = length;
     return ZX_OK;
   } else if (desc_type == USB_DT_STRING) {
