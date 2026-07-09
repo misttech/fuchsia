@@ -36,11 +36,9 @@ rustc_binary("bin") {
 
   deps = [
     "//src/developer/fuchsia-criterion",
-    "//src/lib/diagnostics/inspect/rust",
     "//src/lib/fuchsia-async",
     "//src/starnix/kernel/core",
     "//src/starnix/lib/selinux",
-    "//src/starnix/lib/starnix_registers",
     "//src/starnix/lib/starnix_uapi",
     "//third_party/rust_crates:criterion",
   ]
