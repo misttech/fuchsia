@@ -2,11 +2,11 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-_default_cxx_version = 20
+_default_cxx_version = 23
 
 _available_cxx_versions = [
-  20,
   23,
+  26,
 ]
 
 # The C++ standard version with which the Fuchsia build compiles C++ code.
