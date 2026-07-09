@@ -212,9 +212,12 @@ void CrashServer::MakeRequest(const Report& report, const Snapshot& snapshot,
       PrepareAnnotations(report, snapshot, annotation_manager_, clock_->BootNow());
   FX_CHECK(annotations.contains("product"));
   FX_CHECK(annotations.contains("version"));
-  const std::string url = fxl::Substitute("$0?product=$1&version=$2", url_,
-                                          crashpad::URLEncode(annotations.at("product")),
-                                          crashpad::URLEncode(annotations.at("version")));
+  std::string url = fxl::Substitute("$0?product=$1&version=$2", url_,
+                                    crashpad::URLEncode(annotations.at("product")),
+                                    crashpad::URLEncode(annotations.at("version")));
+  if (annotations.contains("guid")) {
+    url += fxl::Substitute("&guid=$0", crashpad::URLEncode(annotations.at("guid")));
+  }
 
   // We have to build the MIME multipart message ourselves as all the public Crashpad helpers are
   // asynchronous and we won't be able to know the upload status nor the server report ID.

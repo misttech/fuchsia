@@ -39,6 +39,7 @@ const Report kReport{/*report_id=*/0,
                      {
                          {"product", "some-product"},
                          {"version", "some-version"},
+                         {"guid", "some-guid"},
                      },
                      /*attachments=*/{},
                      /*snapshot_uuid=*/kSnapshotUuid,
@@ -109,7 +110,8 @@ TEST_F(CrashServerTest, UrlWithEncodedParameter) {
 
   ASSERT_TRUE(upload_status.has_value());
   EXPECT_EQ(upload_status.value(), CrashServer::UploadStatus::kSuccess);
-  EXPECT_EQ(LoaderLastRequestUrl(), kUrl + "?product=some-product&version=some-version");
+  EXPECT_EQ(LoaderLastRequestUrl(),
+            kUrl + "?product=some-product&version=some-version&guid=some-guid");
 
   upload_status = std::nullopt;
   const Report another_report{/*report_id=*/0,
@@ -118,6 +120,7 @@ TEST_F(CrashServerTest, UrlWithEncodedParameter) {
                               {
                                   {"product", "!product"},
                                   {"version", "#version"},
+                                  {"guid", "$guid"},
                               },
                               /*attachments=*/{},
                               /*snapshot_uuid=*/kSnapshotUuid,
@@ -130,7 +133,7 @@ TEST_F(CrashServerTest, UrlWithEncodedParameter) {
 
   ASSERT_TRUE(upload_status.has_value());
   EXPECT_EQ(upload_status.value(), CrashServer::UploadStatus::kSuccess);
-  EXPECT_EQ(LoaderLastRequestUrl(), kUrl + "?product=%21product&version=%23version");
+  EXPECT_EQ(LoaderLastRequestUrl(), kUrl + "?product=%21product&version=%23version&guid=%24guid");
 }
 
 TEST_F(CrashServerTest, Fails_OnError) {
