@@ -103,7 +103,11 @@ zx::result<> SpiDriver::AddChildren(const fuchsia_hardware_spi_businfo::SpiBusMe
     char name[20];
     snprintf(name, sizeof(name), "spi-%u-%u", bus_id_, cs);
 
-    fidl::Arena arena;
+    fdf::Arena arena('SPI_');
+    // Release any leftover registered VMOs in case we're rebinding.
+    if (auto result = client.buffer(arena)->ReleaseRegisteredVmos(cs); !result.ok()) {
+      fdf::error("Failed to release registered VMOs: {}", result.error().FormatDescription());
+    }
 
     auto offers = std::vector{
         fdf::MakeOffer2<fuchsia_hardware_spi::Service>(arena, name),

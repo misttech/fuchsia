@@ -760,6 +760,16 @@ TEST_F(SpiDeviceTest, OneClient) {
   }
 
   {
+    // Synchronize with the driver and environment by making a FIDL call that hits the fake spiimpl
+    // device. After this we can verify that the one-way call to release VMOs has been made.
+    auto result = cs0_client->AssertCs();
+    ASSERT_OK(result.status());
+  }
+
+  // VMOs should have been released in the driver's Start hook.
+  EXPECT_TRUE(vmos_released_since_last_call());
+
+  {
     auto result = cs0_client->CanAssertCs();
     ASSERT_OK(result.status());
     ASSERT_TRUE(result.value().can);
