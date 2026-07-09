@@ -612,19 +612,14 @@ impl DeviceOps for VirtualDevice {
 mod test {
     use super::*;
     use crate::{EventProxyMode, start_input_relays_for_test};
-    use starnix_core::task::Kernel;
-    #[allow(deprecated, reason = "pre-existing usage")]
-    use starnix_core::testing::{AutoReleasableTask, create_kernel_and_task};
+    use starnix_core::testing::spawn_kernel_and_run;
     use starnix_core::vfs::FileHandle;
     use std::sync::Arc;
     use test_case::test_case;
 
-    async fn new_kernel_objects()
-    -> (Arc<UinputDeviceFile>, Arc<Kernel>, AutoReleasableTask, FileHandle) {
-        #[allow(deprecated, reason = "pre-existing usage")]
-        let (kernel, current_task) = create_kernel_and_task();
+    async fn new_kernel_objects(current_task: &CurrentTask) -> (Arc<UinputDeviceFile>, FileHandle) {
         let (input_relay_handle, _, _, _, _, _, _, _, _, _, _, _) =
-            start_input_relays_for_test(&current_task, EventProxyMode::None).await;
+            start_input_relays_for_test(current_task, EventProxyMode::None).await;
         let inspector = fuchsia_inspect::Inspector::default();
         let dev = Arc::new(UinputDeviceFile::new(
             input_relay_handle,
@@ -636,7 +631,7 @@ mod test {
             .expect("failed to get namespace node for root");
 
         let file_object = FileObject::new(
-            &current_task,
+            current_task,
             Box::new(dev.clone()),
             // The input node doesn't really live at the root of the filesystem.
             // But the test doesn't need to be 100% representative of production.
@@ -644,7 +639,7 @@ mod test {
             OpenFlags::empty(),
         )
         .expect("FileObject::new failed");
-        (dev, kernel, current_task, file_object)
+        (dev, file_object)
     }
 
     #[test_case(uapi::EV_KEY, vec![uapi::EV_KEY as usize] => Ok(SUCCESS))]
@@ -652,100 +647,115 @@ mod test {
     #[test_case(uapi::EV_REL, vec![] => error!(EPERM))]
     #[::fuchsia::test]
     async fn ui_set_evbit(bit: u32, expected_evbits: Vec<usize>) -> Result<SyscallResult, Errno> {
-        let (dev, _kernel, current_task, file_object) = new_kernel_objects().await;
-        let r = dev.ioctl(
-            &file_object,
-            &current_task,
-            uapi::UI_SET_EVBIT,
-            SyscallArg::from(bit as u64),
-        );
-        for expected_evbit in expected_evbits {
-            assert!(dev.inner.lock().enabled_evbits.get(expected_evbit).unwrap());
-        }
-        r
+        spawn_kernel_and_run(async move |current_task| {
+            let (dev, file_object) = new_kernel_objects(current_task).await;
+            let r = dev.ioctl(
+                &file_object,
+                current_task,
+                uapi::UI_SET_EVBIT,
+                SyscallArg::from(bit as u64),
+            );
+            for expected_evbit in expected_evbits {
+                assert!(dev.inner.lock().enabled_evbits.get(expected_evbit).unwrap());
+            }
+            r
+        })
+        .await
     }
 
     #[::fuchsia::test]
     async fn ui_set_evbit_call_multi() {
-        let (dev, _kernel, current_task, file_object) = new_kernel_objects().await;
-        let r = dev.ioctl(
-            &file_object,
-            &current_task,
-            uapi::UI_SET_EVBIT,
-            SyscallArg::from(uapi::EV_KEY as u64),
-        );
-        assert_eq!(r, Ok(SUCCESS));
-        let r = dev.ioctl(
-            &file_object,
-            &current_task,
-            uapi::UI_SET_EVBIT,
-            SyscallArg::from(uapi::EV_ABS as u64),
-        );
-        assert_eq!(r, Ok(SUCCESS));
-        assert!(dev.inner.lock().enabled_evbits.get(uapi::EV_KEY as usize).unwrap());
-        assert!(dev.inner.lock().enabled_evbits.get(uapi::EV_ABS as usize).unwrap());
+        spawn_kernel_and_run(async move |current_task| {
+            let (dev, file_object) = new_kernel_objects(current_task).await;
+            let r = dev.ioctl(
+                &file_object,
+                current_task,
+                uapi::UI_SET_EVBIT,
+                SyscallArg::from(uapi::EV_KEY as u64),
+            );
+            assert_eq!(r, Ok(SUCCESS));
+            let r = dev.ioctl(
+                &file_object,
+                current_task,
+                uapi::UI_SET_EVBIT,
+                SyscallArg::from(uapi::EV_ABS as u64),
+            );
+            assert_eq!(r, Ok(SUCCESS));
+            assert!(dev.inner.lock().enabled_evbits.get(uapi::EV_KEY as usize).unwrap());
+            assert!(dev.inner.lock().enabled_evbits.get(uapi::EV_ABS as usize).unwrap());
+        })
+        .await;
     }
 
     #[::fuchsia::test]
     async fn ui_set_keybit() {
-        let (dev, _kernel, current_task, file_object) = new_kernel_objects().await;
-        let r = dev.ioctl(
-            &file_object,
-            &current_task,
-            uapi::UI_SET_KEYBIT,
-            SyscallArg::from(uapi::BTN_TOUCH as u64),
-        );
-        assert_eq!(r, Ok(SUCCESS));
+        spawn_kernel_and_run(async move |current_task| {
+            let (dev, file_object) = new_kernel_objects(current_task).await;
+            let r = dev.ioctl(
+                &file_object,
+                current_task,
+                uapi::UI_SET_KEYBIT,
+                SyscallArg::from(uapi::BTN_TOUCH as u64),
+            );
+            assert_eq!(r, Ok(SUCCESS));
 
-        // also test call multi times.
-        let r = dev.ioctl(
-            &file_object,
-            &current_task,
-            uapi::UI_SET_KEYBIT,
-            SyscallArg::from(uapi::KEY_SPACE as u64),
-        );
-        assert_eq!(r, Ok(SUCCESS));
+            // also test call multi times.
+            let r = dev.ioctl(
+                &file_object,
+                current_task,
+                uapi::UI_SET_KEYBIT,
+                SyscallArg::from(uapi::KEY_SPACE as u64),
+            );
+            assert_eq!(r, Ok(SUCCESS));
+        })
+        .await;
     }
 
     #[::fuchsia::test]
     async fn ui_set_absbit() {
-        let (dev, _kernel, current_task, file_object) = new_kernel_objects().await;
-        let r = dev.ioctl(
-            &file_object,
-            &current_task,
-            uapi::UI_SET_ABSBIT,
-            SyscallArg::from(uapi::ABS_MT_SLOT as u64),
-        );
-        assert_eq!(r, Ok(SUCCESS));
+        spawn_kernel_and_run(async move |current_task| {
+            let (dev, file_object) = new_kernel_objects(current_task).await;
+            let r = dev.ioctl(
+                &file_object,
+                current_task,
+                uapi::UI_SET_ABSBIT,
+                SyscallArg::from(uapi::ABS_MT_SLOT as u64),
+            );
+            assert_eq!(r, Ok(SUCCESS));
 
-        // also test call multi times.
-        let r = dev.ioctl(
-            &file_object,
-            &current_task,
-            uapi::UI_SET_ABSBIT,
-            SyscallArg::from(uapi::ABS_MT_TOUCH_MAJOR as u64),
-        );
-        assert_eq!(r, Ok(SUCCESS));
+            // also test call multi times.
+            let r = dev.ioctl(
+                &file_object,
+                current_task,
+                uapi::UI_SET_ABSBIT,
+                SyscallArg::from(uapi::ABS_MT_TOUCH_MAJOR as u64),
+            );
+            assert_eq!(r, Ok(SUCCESS));
+        })
+        .await;
     }
 
     #[::fuchsia::test]
     async fn ui_set_propbit() {
-        let (dev, _kernel, current_task, file_object) = new_kernel_objects().await;
-        let r = dev.ioctl(
-            &file_object,
-            &current_task,
-            uapi::UI_SET_PROPBIT,
-            SyscallArg::from(uapi::INPUT_PROP_DIRECT as u64),
-        );
-        assert_eq!(r, Ok(SUCCESS));
+        spawn_kernel_and_run(async move |current_task| {
+            let (dev, file_object) = new_kernel_objects(current_task).await;
+            let r = dev.ioctl(
+                &file_object,
+                current_task,
+                uapi::UI_SET_PROPBIT,
+                SyscallArg::from(uapi::INPUT_PROP_DIRECT as u64),
+            );
+            assert_eq!(r, Ok(SUCCESS));
 
-        // also test call multi times.
-        let r = dev.ioctl(
-            &file_object,
-            &current_task,
-            uapi::UI_SET_PROPBIT,
-            SyscallArg::from(uapi::INPUT_PROP_DIRECT as u64),
-        );
-        assert_eq!(r, Ok(SUCCESS));
+            // also test call multi times.
+            let r = dev.ioctl(
+                &file_object,
+                current_task,
+                uapi::UI_SET_PROPBIT,
+                SyscallArg::from(uapi::INPUT_PROP_DIRECT as u64),
+            );
+            assert_eq!(r, Ok(SUCCESS));
+        })
+        .await;
     }
 }
