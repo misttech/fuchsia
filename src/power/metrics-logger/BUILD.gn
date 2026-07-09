@@ -17,6 +17,7 @@ rustc_binary("bin") {
     "//sdk/fidl/fuchsia.hardware.network:fuchsia.hardware.network_rust",
     "//sdk/fidl/fuchsia.hardware.power.sensor:fuchsia.hardware.power.sensor_rust",
     "//sdk/fidl/fuchsia.hardware.temperature:fuchsia.hardware.temperature_rust",
+    "//sdk/fidl/fuchsia.hardware.thermal:fuchsia.hardware.thermal_rust",
     "//sdk/fidl/fuchsia.kernel:fuchsia.kernel_rust",
     "//sdk/fidl/fuchsia.power.metrics:fuchsia.power.metrics_rust",
     "//sdk/fidl/fuchsia.ui.activity:fuchsia.ui.activity_rust",

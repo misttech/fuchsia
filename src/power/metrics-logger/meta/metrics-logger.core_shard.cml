@@ -13,67 +13,22 @@
     ],
     offer: [
         {
-            // TODO(https://fxbug.dev/324273348): Remove this capability once the clients have
-            // been migrated to services. The service capability has been added below.
-            directory: "dev-class",
-            from: "parent",
-            as: "dev-class-network",
-            to: [ "#metrics-logger" ],
-            subdir: "network",
-        },
-        {
-            // This service replaces the directory capability above.
-            service: "fuchsia.hardware.network.Service",
-            from: "parent",
-            to: [ "#metrics-logger" ],
-        },
-        {
-            // TODO(https://fxbug.dev/324273348): Remove this capability once the clients have
-            // been migrated to services. The service capability has been added below.
-            directory: "dev-class",
-            from: "parent",
-            as: "dev-temperature",
-            to: "#metrics-logger",
-            subdir: "temperature",
-        },
-        {
-            // This service replaces the directory capability above.
             service: "fuchsia.hardware.temperature.Service",
             from: "parent",
             to: "#metrics-logger",
         },
         {
-            // TODO(https://fxbug.dev/324273348): Remove this capability once the clients have
-            // been migrated to services. The service capability has been added below.
-            directory: "dev-class",
-            from: "parent",
-            as: "dev-thermal",
-            to: "#metrics-logger",
-            subdir: "thermal",
-        },
-        {
-            // This service replaces the directory capability above.
             service: "fuchsia.hardware.thermal.Service",
             from: "parent",
             to: "#metrics-logger",
         },
         {
-            service: "fuchsia.hardware.trippoint.Service",
-            from: "parent",
-            to: "#metrics-logger",
-        },
-        {
-            // TODO(https://fxbug.dev/324273348): Remove this capability once the clients have
-            // been migrated to services. The service capability has been added below.
-            directory: "dev-class",
-            from: "parent",
-            as: "dev-power-sensor",
-            to: "#metrics-logger",
-            subdir: "power-sensor",
-        },
-        {
-            // This service replaces the directory capability above.
             service: "fuchsia.hardware.power.sensor.Service",
+            from: "parent",
+            to: "#metrics-logger",
+        },
+        {
+            service: "fuchsia.hardware.trippoint.Service",
             from: "parent",
             to: "#metrics-logger",
         },
@@ -89,6 +44,21 @@
         {
             // This service replaces the directory capability above.
             service: "fuchsia.gpu.magma.Service",
+            from: "parent",
+            to: [ "#metrics-logger" ],
+        },
+        {
+            // TODO(https://fxbug.dev/324273348): Remove this capability once the clients have
+            // been migrated to services. The service capability has been added below.
+            directory: "dev-class",
+            from: "parent",
+            as: "dev-class-network",
+            to: [ "#metrics-logger" ],
+            subdir: "network",
+        },
+        {
+            // This service replaces the directory capability above.
+            service: "fuchsia.hardware.network.Service",
             from: "parent",
             to: [ "#metrics-logger" ],
         },

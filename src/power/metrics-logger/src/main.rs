@@ -1725,8 +1725,9 @@ mod tests {
     #[fuchsia::test]
     fn test_logging_power_request_errors() {
         let runner_builder = RunnerBuilder::new();
+        let (_power_driver_tasks, power_drivers, _, _) = create_power_drivers();
 
-        let mut runner = runner_builder.build();
+        let mut runner = runner_builder.with_power_drivers(power_drivers).build();
 
         let mut query = runner.proxy.start_logging(
             "test",
@@ -1822,6 +1823,8 @@ mod tests {
             runner.executor.run_until_stalled(&mut query),
             Poll::Ready(Ok(Err(fmetrics::RecorderError::InvalidSamplingInterval)))
         );
+
+        runner.server.power_drivers.replace(Some(Rc::new(vec![])));
 
         let mut query = runner.proxy.start_logging(
             "test",

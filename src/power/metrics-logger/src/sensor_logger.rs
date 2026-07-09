@@ -3,12 +3,14 @@
 // found in the LICENSE file.
 
 use crate::MIN_INTERVAL_FOR_SYSLOG_MS;
-use crate::driver_utils::{Driver, connect_proxy, list_directory_entries};
+use crate::driver_utils::Driver;
 use anyhow::{Error, Result, format_err};
 use async_trait::async_trait;
 use diagnostics_hierarchy::LinearHistogramParams;
+use fidl::endpoints::Proxy;
 use fidl_fuchsia_hardware_power_sensor as fpower;
 use fidl_fuchsia_hardware_temperature as ftemperature;
+use fidl_fuchsia_hardware_thermal as fthermal;
 use fidl_fuchsia_power_metrics as fmetrics;
 use fidl_fuchsia_ui_activity as factivity;
 use fuchsia_async as fasync;
@@ -23,12 +25,6 @@ use std::cell::Cell;
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
-
-// The fuchsia.hardware.temperature.Device is composed into fuchsia.hardware.thermal.Device, and
-// fuchsia.hardware.trippoint also provides temperature sensors so this driver is found in
-// three directories.
-const TEMPERATURE_SERVICE_DIRS: [&str; 2] = ["/dev/class/temperature", "/dev/class/thermal"];
-const POWER_SERVICE_DIRS: [&str; 1] = ["/dev/class/power-sensor"];
 
 // Type aliases for convenience.
 pub type TemperatureDriver = Driver<ftemperature::DeviceProxy>;
@@ -46,24 +42,26 @@ pub async fn generate_temperature_drivers(
 ) -> Result<Vec<Driver<ftemperature::DeviceProxy>>> {
     let mut drivers = Vec::new();
     let mut sensor_names: HashSet<String> = HashSet::new();
-    // For each driver path, create a proxy for the service.
-    for dir_path in TEMPERATURE_SERVICE_DIRS {
-        let listed_drivers = list_directory_entries(dir_path).await;
-        for driver in listed_drivers.iter() {
-            let class_path = format!("{}/{}", dir_path, driver);
-            let proxy = connect_proxy::<ftemperature::DeviceMarker>(&class_path)?;
-            let sensor_name = proxy.get_sensor_name().await?;
-            let alias = driver_aliases.get(&sensor_name);
-            drivers.push(Driver { sensor_name: sensor_name.clone(), proxy, alias: alias.cloned() });
-
-            sensor_names.insert(sensor_name);
-        }
-    }
 
     for instance in fclient::Service::open(ftemperature::ServiceMarker)?.enumerate().await? {
         let temperature_proxy = instance.connect_to_device()?;
         let sensor_name = temperature_proxy.get_sensor_name().await?;
-        if !sensor_names.contains(&sensor_name) {
+        if sensor_names.insert(sensor_name.clone()) {
+            let alias = driver_aliases.get(&sensor_name);
+            drivers.push(Driver { sensor_name, proxy: temperature_proxy, alias: alias.cloned() });
+        }
+    }
+
+    for instance in fclient::Service::open(fthermal::ServiceMarker)?.enumerate().await? {
+        let thermal_proxy = instance.connect_to_device()?;
+        // fuchsia.hardware.temperature.Device is composed into fuchsia.hardware.thermal.Device,
+        // so we can safely convert the channel and use it as a temperature sensor.
+        let channel = thermal_proxy
+            .into_channel()
+            .map_err(|_| format_err!("Failed to convert thermal proxy to channel"))?;
+        let temperature_proxy = ftemperature::DeviceProxy::from_channel(channel);
+        let sensor_name = temperature_proxy.get_sensor_name().await?;
+        if sensor_names.insert(sensor_name.clone()) {
             let alias = driver_aliases.get(&sensor_name);
             drivers.push(Driver { sensor_name, proxy: temperature_proxy, alias: alias.cloned() });
         }
@@ -75,16 +73,11 @@ pub async fn generate_power_drivers(
     driver_aliases: HashMap<String, String>,
 ) -> Result<Vec<Driver<fpower::DeviceProxy>>> {
     let mut drivers = Vec::new();
-    // For each driver path, create a proxy for the service.
-    for dir_path in POWER_SERVICE_DIRS {
-        let listed_drivers = list_directory_entries(dir_path).await;
-        for driver in listed_drivers.iter() {
-            let class_path = format!("{}/{}", dir_path, driver);
-            let proxy = connect_proxy::<fpower::DeviceMarker>(&class_path)?;
-            let sensor_name = proxy.get_sensor_name().await?;
-            let alias = driver_aliases.get(&sensor_name);
-            drivers.push(Driver { sensor_name, proxy, alias: alias.cloned() });
-        }
+    for instance in fclient::Service::open(fpower::ServiceMarker)?.enumerate().await? {
+        let power_proxy = instance.connect_to_device()?;
+        let sensor_name = power_proxy.get_sensor_name().await?;
+        let alias = driver_aliases.get(&sensor_name);
+        drivers.push(Driver { sensor_name, proxy: power_proxy, alias: alias.cloned() });
     }
     Ok(drivers)
 }
@@ -780,12 +773,12 @@ pub mod tests {
         let (proxy, mut stream) =
             fidl::endpoints::create_proxy_and_stream::<ftemperature::DeviceMarker>();
         let task = fasync::Task::local(async move {
-            while let Ok(req) = stream.try_next().await {
+            while let Ok(Some(req)) = stream.try_next().await {
                 match req {
-                    Some(ftemperature::DeviceRequest::GetTemperatureCelsius { responder }) => {
+                    ftemperature::DeviceRequest::GetTemperatureCelsius { responder } => {
                         let _ = responder.send(zx::Status::OK.into_raw(), get_temperature());
                     }
-                    _ => assert!(false),
+                    _ => panic!("Unexpected request"),
                 }
             }
         });
@@ -799,12 +792,12 @@ pub mod tests {
         let (proxy, mut stream) =
             fidl::endpoints::create_proxy_and_stream::<fpower::DeviceMarker>();
         let task = fasync::Task::local(async move {
-            while let Ok(req) = stream.try_next().await {
+            while let Ok(Some(req)) = stream.try_next().await {
                 match req {
-                    Some(fpower::DeviceRequest::GetPowerWatts { responder }) => {
+                    fpower::DeviceRequest::GetPowerWatts { responder } => {
                         let _ = responder.send(Ok(get_power()));
                     }
-                    _ => assert!(false),
+                    _ => panic!("Unexpected request"),
                 }
             }
         });
