@@ -31,6 +31,7 @@ from mobly import asserts, signals, test_runner
 from mobly.config_parser import TestRunConfig
 from openwrt_access_point import OpenWrtAP
 from openwrt_access_point.lib.access_point_config import (
+    DFS_BYPASS_COUNTRY_CODE,
     AccessPointConfig,
     Band,
     BssChannel,
@@ -331,6 +332,7 @@ class ChannelSweepTest(base_test.WifiBaseTest):
                                     password=password,
                                 )
                             ],
+                            country=DFS_BYPASS_COUNTRY_CODE,
                         )
                     ]
                 )
@@ -688,30 +690,6 @@ class ChannelSweepTest(base_test.WifiBaseTest):
         ssid = self.setup_ap(
             test.channel, test.channel_bandwidth, test.security_mode, password
         )
-
-        # DFS channels require a 60 second wait for CAC (Channel Availability Check)
-        if test.channel in [
-            52,
-            56,
-            60,
-            64,
-            100,
-            104,
-            108,
-            112,
-            116,
-            120,
-            124,
-            128,
-            132,
-            136,
-            140,
-            144,
-        ]:
-            self.log.info(
-                "Waiting 65 seconds for DFS Channel Availability Check (CAC)..."
-            )
-            time.sleep(65)
 
         if self.openwrt_ap is not None:
             interface = (

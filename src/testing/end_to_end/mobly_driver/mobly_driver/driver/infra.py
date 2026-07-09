@@ -86,6 +86,12 @@ class InfraDriver(base.BaseDriver):
         """
         try:
             tb_config = common.read_json_from_file(self._tb_json_path)
+            for controller in tb_config:
+                if controller.get("type") in (
+                    api_infra.ACCESS_POINT,
+                    api_infra.OPENWRT_AP,
+                ):
+                    controller[api_mobly.ALLOW_REGDB_BYPASS] = True
 
             test_params = {}
             if self._params_path:

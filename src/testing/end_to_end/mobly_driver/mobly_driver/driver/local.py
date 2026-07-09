@@ -225,6 +225,7 @@ class LocalDriver(base.BaseDriver):
                 "port": self._ap_ssh_port or 22,
                 "user": "root",
                 "wan_interface": "eth0",
+                "allow_regdb_bypass": False,
             }
 
             if self._ap_ssh_key:

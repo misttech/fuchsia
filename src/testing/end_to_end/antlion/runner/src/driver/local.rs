@@ -128,6 +128,7 @@ impl Driver for LocalDriver {
                 },
                 pdu_device: None,
                 attenuators: None,
+                allow_regdb_bypass: Some(false),
             });
         }
 
@@ -557,6 +558,7 @@ mod test {
                 port: {ap_ssh_port}
                 user: root
                 identity_file: {ap_ssh_key_path}
+              allow_regdb_bypass: false
         MoblyParams:
           LogPath: {out_path}
         "#};

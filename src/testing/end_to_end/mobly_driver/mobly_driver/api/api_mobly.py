@@ -22,6 +22,7 @@ SSH_HOST_KEY: str = "host"
 SSH_USER_KEY: str = "user"
 SSH_IDENTITY_FILE_KEY: str = "identity_file"
 HONEYDEW_CONFIG_KEY: str = "honeydew_config"
+ALLOW_REGDB_BYPASS: str = "allow_regdb_bypass"
 
 
 MoblyConfigComponent = dict[str, Any]
@@ -233,7 +234,12 @@ def new_testbed_config(
         elif api_infra.ACCESS_POINT == controller_type:
             model = controller.pop("model", None)
             if model == "OpenWrtOne":
-                controller_type = "OpenWrtAP"
+                controller_type = api_infra.OPENWRT_AP
+
+            controller.setdefault(
+                ALLOW_REGDB_BYPASS,
+                test_params_dict.get(ALLOW_REGDB_BYPASS, False),
+            )
 
             controller[SSH_CONFIG_KEY] = {
                 SSH_HOST_KEY: controller.pop("ip"),

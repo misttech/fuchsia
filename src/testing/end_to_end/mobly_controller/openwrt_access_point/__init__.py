@@ -132,6 +132,7 @@ class OpenWrtAP:
         """
         logging.info("Connecting to OpenWRT AP with config: %s", config)
         c = MapValidator(config)
+        self.allow_regdb_bypass = c.get(bool, "allow_regdb_bypass", False)
         self.ssh_settings = settings.from_config(c.get(dict, "ssh_config"))
         self.ssh = connection.SshConnection(self.ssh_settings)
         self.dhcp = DhcpController(self.ssh)
@@ -312,6 +313,11 @@ class OpenWrtAP:
             country = radio_config.country
             if str(radio_config.channel.number) in ["12", "13", "14"]:
                 country = "AU"
+            if country == "XF" and not self.allow_regdb_bypass:
+                _LOGGER.error(
+                    "country=XF requested without allow_regdb_bypass. Falling back to US."
+                )
+                country = "US"
             self.ssh.run(f"uci set wireless.{radio}.country='{country}'")
 
             for option, value in radio_config.custom_uci_options.items():
@@ -585,7 +591,7 @@ class OpenWrtAP:
     def _verify_wifi_status(
         self,
         band: Band,
-        timeout_sec: int = 70,  # TODO(b/504795188): Bypass DFS wait times (60s) via custom regdb
+        timeout_sec: int = 70,  # On DFS channels, there may be up to a 60s wait for the CAC.
     ) -> None:
         """Polls the AP until the hostapd BSS is actively transmitting beacons.
 

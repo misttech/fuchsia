@@ -256,6 +256,7 @@ impl InfraDriver {
                                 ports_5g: vec![1, 2, 3],
                             }]
                         }),
+                        allow_regdb_bypass: Some(true),
                     };
 
                     if let Some(m) = model.as_deref() {
@@ -822,6 +823,7 @@ mod test {
                 - 1
                 - 2
                 - 3
+              allow_regdb_bypass: true
             Attenuator:
             - Model: minicircuits
               InstrumentCount: 4
@@ -924,6 +926,7 @@ mod test {
                 host: 192.168.42.11
                 user: root
                 identity_file: {ssh_key_path}
+              allow_regdb_bypass: true
         MoblyParams:
           LogPath: {out_path}
         "#};

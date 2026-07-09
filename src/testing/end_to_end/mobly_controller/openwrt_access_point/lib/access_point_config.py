@@ -313,6 +313,28 @@ class BssChannel:
 DEFAULT_2G_CHANNEL = BssChannel(Band.BAND_2G, 1, HtMode(bw=40, extension="+"))
 DEFAULT_5G_CHANNEL = BssChannel(Band.BAND_5G, 36, VhtMode(bw=80))
 
+# see http://go/openwrt-one-dfs-bypass
+DFS_BYPASS_COUNTRY_CODE = "XF"
+
+US_DFS_CHANNELS = [
+    52,
+    56,
+    60,
+    64,
+    100,
+    104,
+    108,
+    112,
+    116,
+    120,
+    124,
+    128,
+    132,
+    136,
+    140,
+    144,
+]
+
 
 @dataclasses.dataclass
 class BssSettings:

@@ -153,6 +153,7 @@ class ApiMoblyTest(unittest.TestCase):
                             "Controllers": {
                                 "AccessPoint": [
                                     {
+                                        "allow_regdb_bypass": False,
                                         "ssh_config": {
                                             "ssh_binary_path": "some/ssh_binary/path",
                                             "host": "192.168.42.11",
@@ -225,6 +226,7 @@ class ApiMoblyTest(unittest.TestCase):
                             "Controllers": {
                                 "AccessPoint": [
                                     {
+                                        "allow_regdb_bypass": False,
                                         "ssh_config": {
                                             "ssh_binary_path": "some/ssh_binary/path",
                                             "host": "192.168.42.11",
@@ -260,6 +262,7 @@ class ApiMoblyTest(unittest.TestCase):
                             "Controllers": {
                                 "OpenWrtAP": [
                                     {
+                                        "allow_regdb_bypass": False,
                                         "ssh_config": {
                                             "host": "192.168.42.11",
                                             "user": "root",
@@ -294,6 +297,7 @@ class ApiMoblyTest(unittest.TestCase):
                             "Controllers": {
                                 "AccessPoint": [
                                     {
+                                        "allow_regdb_bypass": False,
                                         "ssh_config": {
                                             "host": "192.168.42.11",
                                             "user": "root",

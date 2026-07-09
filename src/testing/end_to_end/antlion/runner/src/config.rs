@@ -150,6 +150,8 @@ pub(crate) struct AccessPoint {
     pub pdu_device: Option<PduRef>,
     #[serde(rename = "Attenuator", skip_serializing_if = "Option::is_none")]
     pub attenuators: Option<Vec<AttenuatorRef>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub allow_regdb_bypass: Option<bool>,
 }
 
 #[derive(Clone, Debug, Serialize)]

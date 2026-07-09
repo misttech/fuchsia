@@ -28,6 +28,8 @@ from honeydew.affordances.connectivity.wlan.utils.types import (
 )
 from mobly import asserts, signals, test_runner
 from openwrt_access_point.lib.access_point_config import (
+    DFS_BYPASS_COUNTRY_CODE,
+    US_DFS_CHANNELS,
     AccessPointConfig,
     Band,
     BssChannel,
@@ -48,25 +50,6 @@ BEACON_INTERVAL_KUS = 100
 
 # 1 kus = 1.024ms.
 SEC_PER_KUS = 0.001024
-
-US_DFS_CHANNELS = [
-    52,
-    56,
-    60,
-    64,
-    100,
-    104,
-    108,
-    112,
-    116,
-    120,
-    124,
-    128,
-    132,
-    136,
-    140,
-    144,
-]
 
 
 class ChannelSwitchTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
@@ -182,6 +165,7 @@ class ChannelSwitchTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                                 security=SecurityOpen(),
                             )
                         ],
+                        country=DFS_BYPASS_COUNTRY_CODE,
                     )
                 ]
             )
@@ -217,12 +201,16 @@ class ChannelSwitchTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         for channel_num in channel_switches:
             if channel_num == current_channel:
                 continue
-            # TODO(b/504795188): Support switching to DFS channels.
-            if channel_num in US_DFS_CHANNELS:
-                self.log.info(f"Skipping DFS channel {channel_num}")
-                continue
+
             self.log.info(f"channel switch: {current_channel} -> {channel_num}")
             if self.openwrt_ap:
+                if (
+                    not self.openwrt_ap.allow_regdb_bypass
+                    and channel_num in US_DFS_CHANNELS
+                ):
+                    self.log.info(f"Skipping DFS channel {channel_num}")
+                    continue
+
                 self.openwrt_ap.channel_switch(
                     ap_iface, channel_num, CSA_BEACON_COUNT
                 )
