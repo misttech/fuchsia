@@ -38,6 +38,7 @@ if (is_host) {
     inputs = [
       "build_command_query_utils.py",
       "//build/api/ninja_artifacts.py",
+      "//build/bazel/scripts/bazel_build_args.py",
       "//build/bazel/scripts/build_utils.py",
     ]
   }
@@ -47,6 +48,7 @@ if (is_host) {
     main_source = "compare_rustc_commands.py"
     sources = [
       "//build/api/ninja_artifacts.py",
+      "//build/bazel/scripts/bazel_build_args.py",
       "//build/bazel/scripts/build_utils.py",
       "build_command_query_utils.py",
       "gn_runner.py",

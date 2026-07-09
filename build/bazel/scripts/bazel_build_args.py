@@ -662,7 +662,7 @@ def expand_args_from_disk(
             # If this is the final --env-file, just append it as-is to the output.
             # The command-line is likely broken, but should be reported.
             if not work_queue:
-                append(item)
+                expanded.append(item)
                 continue
 
             env_path = work_queue.popleft()
@@ -672,7 +672,7 @@ def expand_args_from_disk(
             if not isinstance(env_path, str):
                 # --env-file POP_MARKER ... => POP_MARKER --env-file ...
                 work_queue.appendleft(item)
-                work_queue, appendleft(env_path)
+                work_queue.appendleft(env_path)
                 continue
 
             assert isinstance(env_path, str)  # for mypy

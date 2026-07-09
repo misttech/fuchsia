@@ -11,6 +11,7 @@ if (is_host) {
     main_source = "verify_build_commands.py"
     sources = [
       "//build/api/ninja_artifacts.py",
+      "//build/bazel/scripts/bazel_build_args.py",
       "//build/bazel/scripts/build_utils.py",
       "//build/beads/scripts/build_command_query_utils.py",
       "//build/beads/scripts/gn_runner.py",

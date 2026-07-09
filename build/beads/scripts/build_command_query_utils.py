@@ -4,6 +4,7 @@
 
 import json
 import pathlib
+import shlex
 import sys
 import typing as T
 from itertools import zip_longest
@@ -15,6 +16,7 @@ sys.path.insert(0, str(_FUCHSIA_DIR / "build/api"))
 import ninja_artifacts
 
 sys.path.insert(0, str(_FUCHSIA_DIR / "build/bazel/scripts"))
+import bazel_build_args
 import build_utils
 
 _DEBUG = False
@@ -123,14 +125,19 @@ def query_ninja_command(
 
 
 def query_bazel_commands(
-    bazel_launcher: build_utils.BazelLauncher, bazel_labels: list[str]
+    bazel_launcher: build_utils.BazelLauncher,
+    bazel_execroot: str | pathlib.Path,
+    bazel_labels: list[str],
+    read_response_files: bool = False,
 ) -> dict[str, str]:
     """
     Query Bazel for the command lines of the rustc commands for the given Bazel labels.
 
     Args:
         bazel_launcher: The BazelLauncher instance to use.
+        bazel_execroot: Path to the Bazel execroot directory.
         bazel_labels: The Bazel labels to fetch the command lines for.
+        read_response_files: Whether to read response files directly from disk instead of using queries.
 
     Returns:
         A dictionary mapping Bazel labels to their corresponding rustc command lines.
@@ -138,60 +145,71 @@ def query_bazel_commands(
     if not bazel_labels:
         return {}
 
-    query_targets = " + ".join(bazel_labels)
-    query_args = [
+    def normalize_label(label: str) -> str:
+        """Remove optional @@ and @ prefix for root workspace labels."""
+        if label.startswith("@@//"):
+            return label[2:]
+        if label.startswith("@//"):
+            return label[1:]
+        return label
+
+    bazel_target = 'mnemonic("Rustc", {})'.format(
+        " + ".join(normalize_label(l) for l in bazel_labels)
+    )
+    config_args = [
         "--config=host",
         "--config=quiet",
-        "--output=jsonproto",
-        f'mnemonic("Rustc", {query_targets})',
+        # Ensure that the labels returned by get_bazel_expanded_actions()
+        # have a canonical label, which means a @@// prefix for root workspace files.
+        "--consistent_labels",
     ]
     debug(
-        f"Fetching Bazel commands for {bazel_labels} using aquery with args: {query_args}"
+        f"Fetching expanded Bazel commands for {bazel_labels} using get_bazel_expanded_actions with target: {bazel_target}"
     )
-    res = bazel_launcher.run_query(
-        "aquery",
-        query_args,
-        ignore_errors=False,
-    )
-    if res.returncode != 0:
-        debug(f"Bazel aquery stdout:\n{res.stdout}")
-        debug(f"Bazel aquery stderr:\n{res.stderr}")
-        raise ValueError(
-            f"Failed to run bazel aquery for labels, return code: {res.returncode}"
+    try:
+        expanded_actions = bazel_build_args.get_bazel_expanded_actions(
+            bazel_launcher=bazel_launcher,
+            bazel_execroot=str(bazel_execroot),
+            bazel_target=bazel_target,
+            config_args=config_args,
+            filter_mnemonics=["Rustc"],
+            read_response_files=read_response_files,
         )
+    except Exception as e:
+        raise ValueError(
+            f"Failed to run bazel action expansion for labels: {e}"
+        ) from e
 
-    aquery_json = json.loads(res.stdout)
-    targets = aquery_json.get("targets", [])
-    target_id_to_label = {
-        target.get("id"): target.get("label") for target in targets
-    }
+    # Maps { normalized_label -> command-line string }
+    commands_map: dict[str, str] = {}
 
-    results: dict[str, str] = {}
-    actions = aquery_json.get("actions", [])
-    for action in actions:
-        target_id = action.get("targetId")
-        if not target_id:
+    for action in expanded_actions:
+        full_args = list(action.env_vars) + action.args
+        if not full_args:
             continue
+        cmd_str = shlex.join(full_args)
+        commands_map.setdefault(normalize_label(action.target), cmd_str)
 
-        label = target_id_to_label.get(target_id)
-        if not label:
-            # Not a label we know about, skip.
-            continue
-        arguments = " ".join(action.get("arguments", []))
-        if not arguments:
-            # Skip actions that don't have any arguments.
-            continue
-        results.setdefault(label, arguments)
+    result: dict[str, str] = {}
+    missing_labels = []
+    for label in bazel_labels:
+        command = commands_map.get(normalize_label(label), "")
+        if command:
+            result[label] = command
+        else:
+            missing_labels.append(label)
 
-    missing_labels = [label for label in bazel_labels if label not in results]
     if missing_labels:
         raise ValueError(f"Could not find command for labels: {missing_labels}")
 
-    return results
+    return result
 
 
 def query_bazel_command(
-    bazel_launcher: build_utils.BazelLauncher, bazel_label: str
+    bazel_launcher: build_utils.BazelLauncher,
+    bazel_execroot: str | pathlib.Path,
+    bazel_label: str,
+    read_response_files: bool = False,
 ) -> str:
     """
     Query Bazel for the command line of the rustc command for the given Bazel
@@ -199,10 +217,17 @@ def query_bazel_command(
 
     Args:
         bazel_launcher: The BazelLauncher instance to use.
+        bazel_execroot: Path to the Bazel execroot directory.
         bazel_label: The Bazel label to fetch the command line for.
+        read_response_files: Whether to read response files directly from disk instead of using queries.
 
     Returns:
         A string representing the command line of the rustc command.
     """
     debug(f"Fetching Bazel command for Bazel label {bazel_label}...")
-    return query_bazel_commands(bazel_launcher, [bazel_label])[bazel_label]
+    return query_bazel_commands(
+        bazel_launcher,
+        bazel_execroot,
+        [bazel_label],
+        read_response_files=read_response_files,
+    )[bazel_label]

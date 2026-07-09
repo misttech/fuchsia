@@ -157,10 +157,12 @@ class TestBuildCommandQueryUtils(unittest.TestCase):
                             {
                                 "targetId": "1",
                                 "arguments": ["rustc", "--crate-name", "bar"],
+                                "mnemonic": "Rustc",
                             },
                             {
                                 "targetId": "2",
                                 "arguments": ["rustc", "--crate-name", "baz"],
+                                "mnemonic": "Rustc",
                             },
                         ],
                     }
@@ -170,7 +172,7 @@ class TestBuildCommandQueryUtils(unittest.TestCase):
 
         self.assertDictEqual(
             build_command_query_utils.query_bazel_commands(
-                mock_bazel_launcher, ["//foo:bar", "//foo:baz"]
+                mock_bazel_launcher, "execroot", ["//foo:bar", "//foo:baz"]
             ),
             {
                 "//foo:bar": "rustc --crate-name bar",
@@ -186,24 +188,92 @@ class TestBuildCommandQueryUtils(unittest.TestCase):
                 "aquery",
                 "--config=host",
                 "--config=quiet",
+                "--consistent_labels",
                 "--output=jsonproto",
                 'mnemonic("Rustc", //foo:bar + //foo:baz)',
             ],
+        )
+
+    def test_query_bazel_commands_with_env_vars(self) -> None:
+        mock_bazel_launcher = build_utils.MockBazelLauncher()
+        mock_bazel_launcher.push_expected_outputs(
+            [
+                json.dumps(
+                    {
+                        "targets": [
+                            {"id": "1", "label": "//foo:bar"},
+                        ],
+                        "actions": [
+                            {
+                                "targetId": "1",
+                                "arguments": ["rustc", "--crate-name", "bar"],
+                                "environmentVariables": [
+                                    {"key": "CARGO_PKG_NAME", "value": "bar"}
+                                ],
+                                "mnemonic": "Rustc",
+                            },
+                        ],
+                    }
+                )
+            ]
+        )
+
+        self.assertDictEqual(
+            build_command_query_utils.query_bazel_commands(
+                mock_bazel_launcher, "execroot", ["//foo:bar"]
+            ),
+            {
+                "//foo:bar": "CARGO_PKG_NAME=bar rustc --crate-name bar",
+            },
+        )
+
+    def test_query_bazel_commands_normalized_label(self) -> None:
+        mock_bazel_launcher = build_utils.MockBazelLauncher()
+        mock_bazel_launcher.push_expected_outputs(
+            [
+                json.dumps(
+                    {
+                        "targets": [
+                            {"id": "1", "label": "@@//foo:bar"},
+                        ],
+                        "actions": [
+                            {
+                                "targetId": "1",
+                                "arguments": ["rustc", "--crate-name", "bar"],
+                                "mnemonic": "Rustc",
+                            },
+                        ],
+                    }
+                )
+            ]
+        )
+
+        self.assertDictEqual(
+            build_command_query_utils.query_bazel_commands(
+                mock_bazel_launcher, "execroot", ["//foo:bar"]
+            ),
+            {
+                "//foo:bar": "rustc --crate-name bar",
+            },
         )
 
     def test_query_bazel_commands_error(self) -> None:
         mock_bazel_launcher = build_utils.MockBazelLauncher()
         mock_bazel_launcher.command_runner.push_result(returncode=1)
 
-        with self.assertRaisesRegex(ValueError, "Failed to run bazel aquery"):
+        with self.assertRaisesRegex(
+            ValueError, "Failed to run bazel action expansion"
+        ):
             build_command_query_utils.query_bazel_commands(
-                mock_bazel_launcher, ["//foo:bar"]
+                mock_bazel_launcher, "execroot", ["//foo:bar"]
             )
 
     def test_query_bazel_commands_empty_labels(self) -> None:
         mock_launcher = build_utils.MockBazelLauncher()
         self.assertDictEqual(
-            build_command_query_utils.query_bazel_commands(mock_launcher, []),
+            build_command_query_utils.query_bazel_commands(
+                mock_launcher, "execroot", []
+            ),
             {},
         )
         self.assertEqual(len(mock_launcher.command_runner.results), 0)
@@ -211,9 +281,9 @@ class TestBuildCommandQueryUtils(unittest.TestCase):
     def test_query_bazel_commands_invalid_json(self) -> None:
         mock_launcher = build_utils.MockBazelLauncher()
         mock_launcher.push_expected_outputs(["invalid json"])
-        with self.assertRaises(json.decoder.JSONDecodeError):
+        with self.assertRaisesRegex(ValueError, "Could not find command"):
             build_command_query_utils.query_bazel_commands(
-                mock_launcher, ["//foo:bar"]
+                mock_launcher, "execroot", ["//foo:bar"]
             )
 
     def test_query_bazel_commands_missing_actions(self) -> None:
@@ -229,7 +299,7 @@ class TestBuildCommandQueryUtils(unittest.TestCase):
         )
         with self.assertRaisesRegex(ValueError, "Could not find command"):
             build_command_query_utils.query_bazel_commands(
-                mock_launcher, ["//foo:bar"]
+                mock_launcher, "execroot", ["//foo:bar"]
             )
 
     def test_query_bazel_commands_target_not_in_results(self) -> None:
@@ -240,7 +310,11 @@ class TestBuildCommandQueryUtils(unittest.TestCase):
                     {
                         "targets": [{"id": "1", "label": "//foo:baz"}],
                         "actions": [
-                            {"targetId": "1", "arguments": ["rustc", "baz"]}
+                            {
+                                "targetId": "1",
+                                "arguments": ["rustc", "baz"],
+                                "mnemonic": "Rustc",
+                            }
                         ],
                     }
                 )
@@ -248,7 +322,7 @@ class TestBuildCommandQueryUtils(unittest.TestCase):
         )
         with self.assertRaisesRegex(ValueError, "Could not find command"):
             build_command_query_utils.query_bazel_commands(
-                mock_launcher, ["//foo:bar"]
+                mock_launcher, "execroot", ["//foo:bar"]
             )
 
     def test_query_bazel_commands_empty_arguments(self) -> None:
@@ -258,14 +332,20 @@ class TestBuildCommandQueryUtils(unittest.TestCase):
                 json.dumps(
                     {
                         "targets": [{"id": "1", "label": "//foo:bar"}],
-                        "actions": [{"targetId": "1", "arguments": []}],
+                        "actions": [
+                            {
+                                "targetId": "1",
+                                "arguments": [],
+                                "mnemonic": "Rustc",
+                            }
+                        ],
                     }
                 )
             ]
         )
         with self.assertRaisesRegex(ValueError, "Could not find command"):
             build_command_query_utils.query_bazel_commands(
-                mock_launcher, ["//foo:bar"]
+                mock_launcher, "execroot", ["//foo:bar"]
             )
 
 

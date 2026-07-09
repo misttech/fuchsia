@@ -87,6 +87,12 @@ def main() -> int:
         "--bazel_label", required=True, help="Bazel Rust target label"
     )
     parser.add_argument(
+        "--read_response_files",
+        action="store_true",
+        default=False,
+        help="Read response files directly from the Bazel execroot instead of querying Starlark providers.",
+    )
+    parser.add_argument(
         "--verbose",
         "-v",
         action="store_true",
@@ -129,7 +135,10 @@ def main() -> int:
     bazel_paths = build_utils.BazelPaths(args.fuchsia_dir, build_dir)
     bazel_launcher = build_utils.BazelLauncher(bazel_paths.launcher)
     bazel_cmd_raw = build_command_query_utils.query_bazel_command(
-        bazel_launcher, args.bazel_label
+        bazel_launcher,
+        bazel_paths.execroot,
+        args.bazel_label,
+        read_response_files=args.read_response_files,
     )
     bazel_cmd = shell_utils.ShellCommand(bazel_cmd_raw)
 

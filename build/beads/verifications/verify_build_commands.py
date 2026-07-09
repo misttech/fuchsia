@@ -81,6 +81,12 @@ def main() -> int:
         help="Path to the manifest file (JSON)",
     )
     parser.add_argument(
+        "--read_response_files",
+        action="store_true",
+        default=False,
+        help="Read response files directly from the Bazel execroot instead of querying Starlark providers.",
+    )
+    parser.add_argument(
         "--verbose",
         "-v",
         action="store_true",
@@ -126,7 +132,10 @@ def main() -> int:
     bazel_launcher = build_utils.BazelLauncher(bazel_paths.launcher)
 
     bazel_cmds_raw = build_command_query_utils.query_bazel_commands(
-        bazel_launcher, bazel_labels
+        bazel_launcher,
+        bazel_paths.execroot,
+        bazel_labels,
+        read_response_files=args.read_response_files,
     )
 
     temp_dir = tempfile.mkdtemp(
@@ -167,12 +176,20 @@ def main() -> int:
             all_success = False
             continue
 
+        if _DEBUG:
+            debug(f"GN raw rustc command:\n{gn_rustc_cmd}\n")
+            debug(f"Bazel raw rustc command:\n{bazel_rustc_cmd}\n")
+
         normalized_gn_args = normalize_rustc_args.normalize_rustc_cmd(
             str(gn_rustc_cmd)
         )
         normalized_bazel_args = normalize_rustc_args.normalize_rustc_cmd(
             str(bazel_rustc_cmd)
         )
+
+        if _DEBUG:
+            debug(f"GN normalized rustc command:\n{normalized_gn_args}\n")
+            debug(f"Bazel normalized rustc command:\n{normalized_bazel_args}\n")
 
         if normalized_gn_args != normalized_bazel_args:
             debug(f"Mismatch for {gn_label} vs {bazel_label}!")
