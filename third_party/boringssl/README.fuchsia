@@ -1,7 +1,7 @@
 Name: boringssl
 URL: https://boringssl.googlesource.com/boringssl
 Revision: e056f59c7dfdcf891af03bc7900c946ac485c78f
-Upstream Revision: https://fuchsia.googlesource.com/third_party/boringssl/+/e056f59c7dfdcf891af03bc7900c946ac485c78f/
+Upstream Revision: https://boringssl.googlesource.com/boringssl/+/e056f59c7dfdcf891af03bc7900c946ac485c78f/
 Security Critical: yes
 
 License File: src/LICENSE
@@ -11,24 +11,14 @@ Description:
   A fork of OpenSSL, as described at https://www.imperialviolet.org/2014/06/20/boringssl.html
   Revision is from `git merge-base JIRI_HEAD origin/main`.
   Prerequisites: * apt install curl git golang perl python
-  To update: 1. Locate bindgen and rustfmt:
-  ```
-  PATH=$PATH:$(find $FUCHSIA_DIR/prebuilt -name bindgen | xargs dirname)
-  PATH=$PATH:$(find $FUCHSIA_DIR/prebuilt -name rustfmt | xargs dirname)
-  ```
-  1. Update `BINDGEN_EXPECTED_VERSION`:
-  ```
-  sed -E -i \
-  "s/BINDGEN_EXPECTED_VERSION='bindgen [0-9\.]*'/BINDGEN_EXPECTED_VERSION='$(bindgen --version)'/" \
-  $FUCHSIA_DIR/third_party/boringssl/rust/boringssl-sys/bindgen.sh
+  To update:
   1. Roll BoringSSL:
   ```
   go run $FUCHSIA_DIR/third_party/boringssl/roll_boringssl.go
   ```
   1. Test according to instructions given by the previous step.
-  1. Commit, review, and submit the changes to this repository. If CQ fails, this
-  is likely a breaking change and need to be submitted together with the
-  integration pin (see below), per process at go/tq-breaking-change.
-  1. Update the BoringSSL manifest in the internal integration repository with
-  this repository's revision and the upstream revision. The manifest you're
-  looking for is at //integration/fuchsia/third_party/flower.
+  1. Commit, review, and submit the changes to this repository. Remind the reviewer in the commit message to independently verify the upstream URL, execute the roll and compare the roll outputs.
+     A reviewer can sync to the same revision using
+     ```
+     go run $FUCHSIA_DIR/third_party/boringssl/roll_boringssl.go --commit <commit-ish>
+     ```

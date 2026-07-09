@@ -34,6 +34,7 @@ BORINGSSL_MIRROR_DIR = BORINGSSL_PLATFORM_DIR / "src"
 
 BSSL_SYS_INPUT_FILE = BORINGSSL_MIRROR_DIR / "rust" / "bssl-sys" / "wrapper.h"
 BSSL_SYS_OUTPUT_FILE = BORINGSSL_PLATFORM_DIR / "rust" / "bssl-sys" / "bindgen.rs"
+BSSL_SYS_C_OUTPUT_FILE = BORINGSSL_PLATFORM_DIR / "rust" / "bssl-sys" / "wrapper.c"
 BORINGSSL_INCLUDE_DIR = BORINGSSL_MIRROR_DIR / "include"
 
 OPENSSLCONF_INPUT_FILE = BORINGSSL_INCLUDE_DIR / "openssl" / "opensslconf.h"
@@ -68,16 +69,20 @@ def generate_rust_bindings() -> None:
 
     # The remaining options mirror what's specified in
     # //third_party/boringssl/src/rust/bssl-sys/CMakeLists.txt
-    bindgen.include_dirs = [ BORINGSSL_INCLUDE_DIR ]
+    bindgen.include_dirs = [ str(BORINGSSL_INCLUDE_DIR.relative_to(FUCHSIA_DIR)) ]
     bindgen.use_core = True
     bindgen.additional_bindgen_flags = [
         "--no-derive-default",
         "--enable-function-attribute-detection",
         "--default-macro-constant-type=signed",
         "--rustified-enum=point_conversion_form_t",
+        "--allowlist-file=.*[[:punct:]]include[[:punct:]]openssl[[:punct:]].*\\.h",
+        "--experimental",
+        "--wrap-static-fns",
+        f"--wrap-static-fns-path={str(BSSL_SYS_C_OUTPUT_FILE.relative_to(FUCHSIA_DIR))}",
     ]
 
-    bindgen.run(str(BSSL_SYS_INPUT_FILE), str(BSSL_SYS_OUTPUT_FILE))
+    bindgen.run(str(BSSL_SYS_INPUT_FILE.relative_to(FUCHSIA_DIR)), str(BSSL_SYS_OUTPUT_FILE))
 
 def generate_opensslconf_gni_bindings() -> None:
     defines = subprocess.run(

@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 //
 // This script updates //third_party/boringssl/src to point to the current revision at:
-//   https://boringssl.googlesource.com/boringssl/+/master
+//   https://boringssl.googlesource.com/boringssl/+/main
 //
 // It also updates the generated build files, Rust bindings, and subset of code used in Zircon.
 
@@ -16,6 +16,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 )
 
@@ -75,28 +76,46 @@ func generateRustBindings(dir string) {
 	}
 }
 
-// Updates the README file that ends with the current upstream git revision.
+// Updates the Revision and Upstream Revision fields in README.fuchsia.
 func updateReadMe(dir string, sha1 []byte) {
 	const readmeName = "README.fuchsia"
 	log.Printf("Updating %s...", readmeName)
-	readme, err := os.OpenFile(filepath.Join(dir, readmeName), os.O_RDWR, 0644)
+	readmePath := filepath.Join(dir, readmeName)
+	content, err := os.ReadFile(readmePath)
 	if err != nil {
-		log.Fatalf("failed to open %s: %s", readmeName, err)
+		log.Fatalf("failed to read %s: %s", readmeName, err)
 	}
-	defer func() {
-		if err := readme.Close(); err != nil {
-			log.Fatalf("failed to close %s: %s", readmeName, err)
-		}
-	}()
+	reRev := regexp.MustCompile(`(?m)^(Revision:\s*)[0-9a-fA-F]+`)
+	if !reRev.Match(content) {
+		log.Fatalf("failed to find Revision field in %s", readmeName)
+	}
+	content = reRev.ReplaceAll(content, []byte("${1}"+string(sha1)))
+	reUpstream := regexp.MustCompile(`(?m)^(Upstream Revision:\s*https://\S+?/\+/)[0-9a-fA-F]+`)
+	if !reUpstream.Match(content) {
+		log.Fatalf("failed to find Upstream Revision field in %s", readmeName)
+	}
+	content = reUpstream.ReplaceAll(content, []byte("${1}"+string(sha1)))
+	if err := os.WriteFile(readmePath, content, 0644); err != nil {
+		log.Fatalf("failed to write %s: %s", readmeName, err)
+	}
+}
 
-	// Assume that the file ends with a git URL.
-	info, err := readme.Stat()
+// Updates the BoringSSL revision in //manifests/third_party/all.
+func updateManifest(dir string, sha1 []byte) {
+	const manifestName = "//manifests/third_party/all"
+	log.Printf("Updating %s...", manifestName)
+	manifestPath := filepath.Join(dir, "..", "..", "manifests", "third_party", "all")
+	content, err := os.ReadFile(manifestPath)
 	if err != nil {
-		log.Fatalf("failed to stat %s: %s", readmeName, err)
+		log.Fatalf("failed to read %s: %s", manifestName, err)
 	}
-	offset := info.Size() - int64(len(sha1)+2 /* trailing newlines */)
-	if _, err = readme.WriteAt(sha1, offset); err != nil {
-		log.Fatalf("failed to write to %s: %s", readmeName, err)
+	re := regexp.MustCompile(`(<project\s+name="boringssl"[\s\S]*?revision=")[0-9a-fA-F]+(")`)
+	if !re.Match(content) {
+		log.Fatalf("failed to find boringssl project tag in %s", manifestName)
+	}
+	newContent := re.ReplaceAll(content, []byte("${1}"+string(sha1)+"${2}"))
+	if err := os.WriteFile(manifestPath, newContent, 0644); err != nil {
+		log.Fatalf("failed to write %s: %s", manifestName, err)
 	}
 }
 
@@ -115,6 +134,7 @@ func main() {
 	generateBuildFiles(dir)
 	generateRustBindings(dir)
 	updateReadMe(dir, sha1)
+	updateManifest(dir, sha1)
 
 	log.Println()
 	log.Println("To test, run:")
