@@ -457,14 +457,6 @@ group("crossbeam-0.8.4") {
   public_deps = [ ":crossbeam-v0_8_4" ]
 }
 
-group("crossbeam-channel") {
-  public_deps = [ ":crossbeam-channel-v0_5_15" ]
-}
-
-group("crossbeam-channel-0.5.15") {
-  public_deps = [ ":crossbeam-channel-v0_5_15" ]
-}
-
 group("crossbeam-utils") {
   public_deps = [ ":crossbeam-utils-v0_8_21" ]
 }
@@ -569,28 +561,12 @@ group("ecb-0.2.0") {
   public_deps = [ ":ecb-v0_2_0" ]
 }
 
-group("ecdsa") {
-  public_deps = [ ":ecdsa-v0_16_9" ]
-}
-
-group("ecdsa-0.16.9") {
-  public_deps = [ ":ecdsa-v0_16_9" ]
-}
-
 group("either") {
   public_deps = [ ":either-v1_15_0" ]
 }
 
 group("either-1.15.0") {
   public_deps = [ ":either-v1_15_0" ]
-}
-
-group("elliptic-curve") {
-  public_deps = [ ":elliptic-curve-v0_13_8" ]
-}
-
-group("elliptic-curve-0.13.8") {
-  public_deps = [ ":elliptic-curve-v0_13_8" ]
 }
 
 group("enumn") {
@@ -751,14 +727,6 @@ if (current_os == "fuchsia") {
   group("getopts-0.2.24") {
     public_deps = [ ":getopts-v0_2_24" ]
   }
-}
-
-group("getrandom") {
-  public_deps = [ ":getrandom-v0_4_3" ]
-}
-
-group("getrandom-0.4.3") {
-  public_deps = [ ":getrandom-v0_4_3" ]
 }
 
 group("glob") {
@@ -1493,14 +1461,6 @@ group("prost-build-0.14.4") {
   public_deps = [ ":prost-build-v0_14_4" ]
 }
 
-group("prost-types") {
-  public_deps = [ ":prost-types-v0_14_4" ]
-}
-
-group("prost-types-0.14.4") {
-  public_deps = [ ":prost-types-v0_14_4" ]
-}
-
 if (!(current_os == "fuchsia")) {
   group("pulldown-cmark") {
     public_deps = [ ":pulldown-cmark-v0_13_4" ]
@@ -1696,18 +1656,6 @@ if (current_os == "fuchsia") {
 if (current_os == "fuchsia") {
   group("rust_icu_uloc-5.6.0") {
     public_deps = [ ":rust_icu_uloc-v5_6_0" ]
-  }
-}
-
-if (current_os == "fuchsia") {
-  group("rust_icu_unorm2") {
-    public_deps = [ ":rust_icu_unorm2-v5_6_0" ]
-  }
-}
-
-if (current_os == "fuchsia") {
-  group("rust_icu_unorm2-5.6.0") {
-    public_deps = [ ":rust_icu_unorm2-v5_6_0" ]
   }
 }
 
@@ -6371,7 +6319,6 @@ rustc_library("crossbeam-channel-v0_5_15") {
     "--cap-lints=allow",
     "-Cmetadata=b8677b88ac423bff",
     "-Cextra-filename=-b8677b88ac423bff",
-    "--cfg=feature=\"default\"",
     "--cfg=feature=\"std\"",
   ]
 
@@ -7939,7 +7886,6 @@ rustc_library("ecdsa-v0_16_9") {
     "-Cextra-filename=-d6567e2e26f842ac",
     "--cfg=feature=\"alloc\"",
     "--cfg=feature=\"arithmetic\"",
-    "--cfg=feature=\"default\"",
     "--cfg=feature=\"der\"",
     "--cfg=feature=\"digest\"",
     "--cfg=feature=\"hazmat\"",
@@ -8100,7 +8046,6 @@ rustc_library("elliptic-curve-v0_13_8") {
     "-Cextra-filename=-d729f255f442efc8",
     "--cfg=feature=\"alloc\"",
     "--cfg=feature=\"arithmetic\"",
-    "--cfg=feature=\"default\"",
     "--cfg=feature=\"digest\"",
     "--cfg=feature=\"ecdh\"",
     "--cfg=feature=\"ff\"",
@@ -9948,7 +9893,6 @@ rustc_library("getrandom-v0_4_3") {
     "--cap-lints=allow",
     "-Cmetadata=ff0545eacb93ce03",
     "-Cextra-filename=-ff0545eacb93ce03",
-    "--cfg=feature=\"std\"",
   ]
 
   visibility = [ ":*" ]
@@ -16166,8 +16110,6 @@ rustc_library("prost-types-v0_14_4") {
     "--cap-lints=allow",
     "-Cmetadata=d675b741ffc334d1",
     "-Cextra-filename=-d675b741ffc334d1",
-    "--cfg=feature=\"default\"",
-    "--cfg=feature=\"std\"",
   ]
 
   visibility = [ ":*" ]
@@ -17972,7 +17914,6 @@ icu_rustc_library("rust_icu_ucal-v5_6_0") {
     "--cap-lints=allow",
     "-Cmetadata=9f3a7fd6816f33b3",
     "-Cextra-filename=-9f3a7fd6816f33b3",
-    "--cfg=feature=\"icu_version_67_plus\"",
     "--cfg=feature=\"icu_version_in_env\"",
     "--cfg=feature=\"renaming\"",
   ]
@@ -18155,52 +18096,6 @@ icu_rustc_library("rust_icu_uloc-v5_6_0") {
   visibility += [ "//src/settings/intl:*" ]
 
   applicable_licenses = [ ":rust_icu_uloc-v5_6_0.license" ]
-}
-
-license("rust_icu_unorm2-v5_6_0.license") {
-  public_package_name = "rust_icu_unorm2"
-  license_files =
-      [ "//third_party/rust_crates/vendor/rust_icu_unorm2-5.6.0/LICENSE" ]
-}
-
-icu_rustc_library("rust_icu_unorm2-v5_6_0") {
-  crate_name = "rust_icu_unorm2"
-  source_root =
-      "//third_party/rust_crates/vendor/rust_icu_unorm2-5.6.0/src/lib.rs"
-  output_name = "rust_icu_unorm2-722ef8129fee58ba"
-  edition = "2018"
-  disable_clippy = true
-  enforce_source_listing = false
-  configs += [ "//src/lib/icu:version" ]
-  configs -= [ "//build/config/rust:2018_idioms" ]
-
-  deps = []
-  deps += [ ":log-v0_4_29" ]
-  deps += [ ":paste-v1_0_15($host_toolchain)" ]
-  deps += [ ":rust_icu_common-v5_6_0" ]
-  deps += [ ":rust_icu_sys-v5_6_0" ]
-  deps += [ ":rust_icu_ucal-v5_6_0" ]
-  deps += [ ":rust_icu_uenum-v5_6_0" ]
-  deps += [ ":rust_icu_uloc-v5_6_0" ]
-  deps += [ ":rust_icu_ustring-v5_6_0" ]
-
-  rustenv = []
-
-  rustflags = [
-    "--cap-lints=allow",
-    "-Cmetadata=722ef8129fee58ba",
-    "-Cextra-filename=-722ef8129fee58ba",
-    "--cfg=feature=\"icu_version_67_plus\"",
-    "--cfg=feature=\"icu_version_in_env\"",
-    "--cfg=feature=\"renaming\"",
-  ]
-
-  visibility = []
-  visibility += [ "//third_party/rust_crates/compat/icu:*" ]
-  visibility += [ ":*" ]
-  visibility += [ "//src/ui/lib/input_pipeline:*" ]
-
-  applicable_licenses = [ ":rust_icu_unorm2-v5_6_0.license" ]
 }
 
 license("rust_icu_ustring-v5_6_0.license") {
@@ -24612,7 +24507,7 @@ rustc_library("zeroize-v1_8_1") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":zeroize_derive-v1_4_2($host_toolchain)" ]
+  deps += [ ":zeroize_derive-v1_5_0($host_toolchain)" ]
 
   rustenv = []
 
@@ -24630,20 +24525,20 @@ rustc_library("zeroize-v1_8_1") {
   applicable_licenses = [ ":zeroize-v1_8_1.license" ]
 }
 
-license("zeroize_derive-v1_4_2.license") {
+license("zeroize_derive-v1_5_0.license") {
   public_package_name = "zeroize_derive"
   license_files = [
-    "//third_party/rust_crates/vendor/zeroize_derive-1.4.2/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/zeroize_derive-1.4.2/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/zeroize_derive-1.5.0/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/zeroize_derive-1.5.0/LICENSE-MIT",
   ]
 }
 
-rustc_macro("zeroize_derive-v1_4_2") {
+rustc_macro("zeroize_derive-v1_5_0") {
   crate_name = "zeroize_derive"
   source_root =
-      "//third_party/rust_crates/vendor/zeroize_derive-1.4.2/src/lib.rs"
-  output_name = "zeroize_derive-32e544c8de3d36f9"
-  edition = "2021"
+      "//third_party/rust_crates/vendor/zeroize_derive-1.5.0/src/lib.rs"
+  output_name = "zeroize_derive-2fd1695b1d152d5c"
+  edition = "2024"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
@@ -24657,13 +24552,13 @@ rustc_macro("zeroize_derive-v1_4_2") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=32e544c8de3d36f9",
-    "-Cextra-filename=-32e544c8de3d36f9",
+    "-Cmetadata=2fd1695b1d152d5c",
+    "-Cextra-filename=-2fd1695b1d152d5c",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":zeroize_derive-v1_4_2.license" ]
+  applicable_licenses = [ ":zeroize_derive-v1_5_0.license" ]
 }
 
 license("zip-v8_6_0.license") {

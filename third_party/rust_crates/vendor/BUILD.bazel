@@ -667,18 +667,6 @@ alias(
 )
 
 alias(
-    name = "crossbeam-channel-0.5.15",
-    actual = "//third_party/rust_crates/vendor/crossbeam-channel-0.5.15:crossbeam_channel",
-    tags = ["manual"],
-)
-
-alias(
-    name = "crossbeam-channel",
-    actual = "//third_party/rust_crates/vendor/crossbeam-channel-0.5.15:crossbeam_channel",
-    tags = ["manual"],
-)
-
-alias(
     name = "crossbeam-utils-0.8.21",
     actual = "//third_party/rust_crates/vendor/crossbeam-utils-0.8.21:crossbeam_utils",
     tags = ["manual"],
@@ -823,18 +811,6 @@ alias(
 )
 
 alias(
-    name = "ecdsa-0.16.9",
-    actual = "//third_party/rust_crates/vendor/ecdsa-0.16.9:ecdsa",
-    tags = ["manual"],
-)
-
-alias(
-    name = "ecdsa",
-    actual = "//third_party/rust_crates/vendor/ecdsa-0.16.9:ecdsa",
-    tags = ["manual"],
-)
-
-alias(
     name = "either-1.15.0",
     actual = "//third_party/rust_crates/vendor/either-1.15.0:either",
     tags = ["manual"],
@@ -843,18 +819,6 @@ alias(
 alias(
     name = "either",
     actual = "//third_party/rust_crates/vendor/either-1.15.0:either",
-    tags = ["manual"],
-)
-
-alias(
-    name = "elliptic-curve-0.13.8",
-    actual = "//third_party/rust_crates/vendor/elliptic-curve-0.13.8:elliptic_curve",
-    tags = ["manual"],
-)
-
-alias(
-    name = "elliptic-curve",
-    actual = "//third_party/rust_crates/vendor/elliptic-curve-0.13.8:elliptic_curve",
     tags = ["manual"],
 )
 
@@ -1071,18 +1035,6 @@ alias(
 alias(
     name = "getopts",
     actual = "//third_party/rust_crates/vendor/getopts-0.2.24:getopts",
-    tags = ["manual"],
-)
-
-alias(
-    name = "getrandom-0.4.3",
-    actual = "//third_party/rust_crates/vendor/getrandom-0.4.3:getrandom",
-    tags = ["manual"],
-)
-
-alias(
-    name = "getrandom",
-    actual = "//third_party/rust_crates/vendor/getrandom-0.4.3:getrandom",
     tags = ["manual"],
 )
 
@@ -2035,18 +1987,6 @@ alias(
 )
 
 alias(
-    name = "prost-types-0.14.4",
-    actual = "//third_party/rust_crates/vendor/prost-types-0.14.4:prost_types",
-    tags = ["manual"],
-)
-
-alias(
-    name = "prost-types",
-    actual = "//third_party/rust_crates/vendor/prost-types-0.14.4:prost_types",
-    tags = ["manual"],
-)
-
-alias(
     name = "pulldown-cmark-0.13.4",
     actual = "//third_party/rust_crates/vendor/pulldown-cmark-0.13.4:pulldown_cmark",
     tags = ["manual"],
@@ -2283,18 +2223,6 @@ alias(
 alias(
     name = "rust_icu_uloc",
     actual = "//third_party/rust_crates/vendor/rust_icu_uloc-5.6.0:rust_icu_uloc",
-    tags = ["manual"],
-)
-
-alias(
-    name = "rust_icu_unorm2-5.6.0",
-    actual = "//third_party/rust_crates/vendor/rust_icu_unorm2-5.6.0:rust_icu_unorm2",
-    tags = ["manual"],
-)
-
-alias(
-    name = "rust_icu_unorm2",
-    actual = "//third_party/rust_crates/vendor/rust_icu_unorm2-5.6.0:rust_icu_unorm2",
     tags = ["manual"],
 )
 

@@ -92,7 +92,6 @@ cpio = "0.4.1"
 crc = "3.4.0"
 criterion = { version = "0.2", default-features = false }
 crossbeam = "0.8.4"
-crossbeam-channel = "0.5.15"
 crossbeam-utils = "0.8.21"
 csv = "1.4.0"
 darling = "0.23.0"
@@ -103,9 +102,7 @@ difference = "2.0.0"
 downcast-rs = "2.0.2"
 dyn-clone = "1.0.20"
 ecb = "0.2"
-ecdsa = { version = "0.16.9", features = ["pkcs8"] }
 either = "1.15.0"
-elliptic-curve = { version = "0.13.8", features = [ "ecdh" ] }
 enumn = "0.1.14"
 eui48 = { version = "1.1.0", default-features = false, features = ["serde", "disp_hexstring"] }
 event-listener = "5.4.1"
@@ -120,7 +117,6 @@ futures-io = "=0.3.31"
 futures-lite = "2.6.1"
 futures-test = "=0.3.31"
 futures-util = "=0.3.31"
-getrandom = { version = "0.4.3", default-features = false, features = ["std"] }
 glob = "0.3.3"
 googletest = "0.14.2"
 gpt = "3.1.0"
@@ -189,7 +185,6 @@ proptest = "1.11.0"
 proptest-derive = "0.8.0"
 prost = "0.14.4"
 prost-build = "0.14.4"
-prost-types = "0.14.4"
 rand = { version = "0.9.4", features = ["small_rng"] }
 rand_core = "0.9.5"
 rand_xorshift = "0.4"
@@ -290,7 +285,6 @@ rust_icu_ucal = { version = "5.6.0", default-features = false, features = ["rena
 rust_icu_udat = { version = "5.6.0", default-features = false, features = ["renaming", "icu_version_in_env"] }
 rust_icu_udata = { version = "5.6.0", default-features = false, features = ["renaming", "icu_version_in_env"] }
 rust_icu_uloc = { version = "5.6.0", default-features = false, features = ["renaming", "icu_version_in_env", "icu_version_67_plus"] }
-rust_icu_unorm2 = { version = "5.6.0", default-features = false, features = ["renaming", "icu_version_in_env", "icu_version_67_plus"] }
 rust_icu_ustring = { version = "5.6.0", default-features = false, features = ["renaming", "icu_version_in_env"] }
 sec1 = { version = "0.7.3", features = ["alloc", "der", "pkcs8", "zeroize"] }
 spki = { version = "0.7.3", features = ["alloc"] }
@@ -1014,14 +1008,6 @@ visibility = [
   ":*",
   "//src/lib/intl/lookup/rust:*",
   "//src/settings/intl:*",
-]
-[gn.package.rust_icu_unorm2."5.6.0"]
-configs = [ "//src/lib/icu:version" ]
-target_renaming = { import = "//build/icu/icu_rustc_library.gni", rule_name = "icu_rustc_library" }
-visibility = [
-  "//third_party/rust_crates/compat/icu:*",
-  ":*",
-  "//src/ui/lib/input_pipeline:*",
 ]
 [gn.package.rust_icu_ustring."5.6.0"]
 configs = [ "//src/lib/icu:version" ]

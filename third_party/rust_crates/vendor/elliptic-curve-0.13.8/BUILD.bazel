@@ -55,7 +55,6 @@ rust_library(
     crate_features = [
         "alloc",
         "arithmetic",
-        "default",
         "digest",
         "ecdh",
         "ff",

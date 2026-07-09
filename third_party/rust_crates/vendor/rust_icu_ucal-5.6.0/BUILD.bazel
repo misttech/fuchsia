@@ -50,7 +50,6 @@ rust_library(
         ],
     ),
     crate_features = [
-        "icu_version_67_plus",
         "icu_version_in_env",
         "renaming",
     ],

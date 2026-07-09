@@ -21,8 +21,8 @@ package(
 package_info(
     name = "package_info",
     package_name = "zeroize_derive",
-    package_url = "https://github.com/RustCrypto/utils/tree/master/zeroize/derive",
-    package_version = "1.4.2",
+    package_url = "https://github.com/RustCrypto/utils",
+    package_version = "1.5.0",
 )
 
 license(
@@ -53,7 +53,7 @@ rust_proc_macro(
         ],
     ),
     crate_root = "src/lib.rs",
-    edition = "2021",
+    edition = "2024",
     rustc_flags = [
         "--cap-lints=allow",
     ],
@@ -71,7 +71,7 @@ rust_proc_macro(
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    version = "1.4.2",
+    version = "1.5.0",
     deps = [
         "//third_party/rust_crates/vendor/proc-macro2-1.0.106:proc_macro2",
         "//third_party/rust_crates/vendor/quote-1.0.45:quote",
