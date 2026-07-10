@@ -1,32 +1,47 @@
 ---
 name: split-fuchsia-rust-dep-updates
 description: >-
-  Splits a Fuchsia Rust dependency update commit into two commits: one with pure
-  copies/moves of vendored crates, and one with actual changes and migrations.
-  Similar to Gerrit review splitting. Use when preparing a Rust dependency
-  upgrade CL in Fuchsia where vendored crates are added, deleted, or updated,
-  to make the diff reviewable.
+  Splits a Fuchsia Rust dependency update commit into two or more commits: one or
+  more commits with pure copies/moves of vendored crates, and one final commit with
+  actual changes and migrations. Similar to Gerrit review splitting. Use when
+  preparing a Rust dependency upgrade CL in Fuchsia where vendored crates are
+  added, deleted, or updated, to make the diff reviewable.
 ---
 
 # Splitting Fuchsia Rust Dependency Updates
 
-Splits a dependency update commit into two parts:
+Splits a dependency update commit into two parts (or multiple grouped commits):
 1.  **Pure copies/moves**: Git sees them as 100% similar, making the diff clean.
 1.  **Actual changes**: Contains content updates, Cargo.toml/Cargo.lock updates, and code migrations.
 
 This structure makes it much easier for reviewers in Gerrit to see what actually changed in the dependency upgrade, rather than being overwhelmed by a huge diff of new vendored code.
 
+> **Note**: For the end-to-end workflow on planning dependency updates, verifying compilation/lints (`fx clippy --all`), and managing multi-repository graceful migrations (`//vendor/...`), see the top-level **[`update-fuchsia-rust-deps`](third_party/rust_crates/skills/update_fuchsia_rust_deps/SKILL.md)** skill. This skill (`split-fuchsia-rust-dep-updates`) focuses specifically on structuring your commits for clean Gerrit code reviews.
+
 ## Workflow Overview
 
 1.  Identify which crates are completely upgraded (moves) and which have multiple versions kept (copies).
-1.  Run the helper script to automate the split.
+1.  Run either `split_updates.py` (for a single copy/move commit) or `split_updates_grouped.py` (for sequential grouped copy/move commits) to automate the split.
 1.  Verify the split was successful.
 
 ---
 
 ## 1. Automated Splitting
 
-Use the bundled Python script to automate the entire split process. The script will handle the checkout of the base commit, perform the copies and moves, commit them, revert them, cherry-pick the target commit, and squash them into the correct structure.
+### Script Architecture
+
+The splitting scripts share a common helper module (`split_utils.py`):
+*   **`split_utils.py`**: Shared utility library providing repository validation, revision resolution, vendored crate discovery (`git ls-tree`), copy/move classification (`discover_copies_and_moves`), filesystem/git operations (`apply_copies`, `apply_moves`), and flexible grouping strategies (`group_operations`).
+*   **`split_updates.py`**: CLI script for splitting an upgrade into a single copy/move commit followed by the actual updates commit.
+*   **`split_updates_grouped.py`**: General-purpose CLI script for partitioning copies and moves across multiple sequential commit groups before the actual updates commit.
+
+---
+
+### Single Copy/Move Commit (`split_updates.py`)
+
+Use `split_updates.py` to automate splitting a dependency upgrade into exactly two commits:
+1. One commit with all pure copies and moves under `third_party/rust_crates/vendor/`.
+1. One commit with the actual updates and migrations.
 
 Run the script from the root of your Fuchsia repository:
 
@@ -37,7 +52,7 @@ python3 third_party/rust_crates/skills/split_fuchsia_rust_dep_updates/scripts/sp
   --base-commit={base_commit_usually_origin_main}
 ```
 
-### Options
+#### Options
 
 Flag | Default | Description
 --- | --- | ---
@@ -45,7 +60,7 @@ Flag | Default | Description
 `--target-commit` | `HEAD` | The commit (or branch) containing the combined updates and migrations that you want to split.
 `--base-commit` | `origin/main` | The base commit before the updates were applied.
 
-### Success Criteria
+#### Success Criteria
 
 Upon success, the script will output two commit hashes:
 *   **Commit 1 (copies/moves)**: Contains only directory moves and copies under `third_party/rust_crates/vendor/`.
@@ -59,16 +74,84 @@ git checkout -B {your_branch_name}
 
 ---
 
+### Grouped Copy/Move Commits (`split_updates_grouped.py`)
+
+For large dependency updates involving many crates, a single copy/move commit can still be difficult to navigate in Gerrit. `split_updates_grouped.py` dynamically discovers all crate copy/move operations and chunks them into multiple smaller sequential commits before the final actual update commit.
+
+```bash
+python3 third_party/rust_crates/skills/split_fuchsia_rust_dep_updates/scripts/split_updates_grouped.py \
+  --repo-path=$(git rev-parse --show-toplevel) \
+  --target-commit={commit_or_branch_to_split} \
+  --base-commit={base_commit_usually_origin_main} \
+  --crates-per-group=10
+```
+
+#### Options
+
+Flag | Default | Description
+--- | --- | ---
+`--repo-path` | (Required) | Absolute path to the local Fuchsia repository.
+`--target-commit` | `HEAD` | The commit (or branch) containing the combined updates to split.
+`--base-commit` | `origin/main` | The base commit before the updates were applied.
+`--crates-per-group` / `--batch-size` | `10` | Automatically chunks crate copy/move operations into sequential commits of at most N crates per commit (used if `--groups-file` and `--num-groups` are not specified).
+`--num-groups` | `None` | Divides discovered crate copy/move operations evenly across K sequential commit groups.
+`--groups-file` | `None` | Path to a JSON file specifying explicit custom crate groupings.
+
+*Note on Option Precedence*: If multiple grouping options are supplied, `--groups-file` takes highest precedence, followed by `--num-groups`, and finally `--crates-per-group` / `--batch-size`.
+
+#### Grouping Examples
+
+1.  **Chunk by batch size (e.g., 15 crates per commit)**:
+    ```bash
+    python3 third_party/rust_crates/skills/split_fuchsia_rust_dep_updates/scripts/split_updates_grouped.py \
+      --repo-path=$(git rev-parse --show-toplevel) \
+      --crates-per-group=15
+    ```
+
+1.  **Divide evenly into K commit groups**:
+    ```bash
+    python3 third_party/rust_crates/skills/split_fuchsia_rust_dep_updates/scripts/split_updates_grouped.py \
+      --repo-path=$(git rev-parse --show-toplevel) \
+      --num-groups=4
+    ```
+
+1.  **Custom JSON grouping file**:
+    Create a JSON file (e.g., `groups.json`) defining lists of crate names, either as a list of lists:
+    ```json
+    [
+      ["aes", "block-buffer", "cbc"],
+      ["digest", "sha2", "hmac"]
+    ]
+    ```
+    or as a dictionary mapping group names to crate arrays:
+    ```json
+    {
+      "ciphers": ["aes", "block-buffer", "cbc"],
+      "hashes": ["digest", "sha2", "hmac"]
+    }
+    ```
+    Then pass it to the script:
+    ```bash
+    python3 third_party/rust_crates/skills/split_fuchsia_rust_dep_updates/scripts/split_updates_grouped.py \
+      --repo-path=$(git rev-parse --show-toplevel) \
+      --groups-file=groups.json
+    ```
+
+---
+
 ## 2. Verification
 
-Verify that the split did not introduce any changes compared to the original target state. The diff between your new HEAD (Commit 2) and the original target commit must be empty:
+### Tree Identity Check
+
+Verify that the split did not introduce any changes compared to the original target state. The diff between your new HEAD (the final actual updates commit) and the original target commit must be empty:
 
 ```bash
 git diff {original_target_commit} HEAD
 ```
 
-If the diff is empty, the split was successful and the code is identical to your original working state.
+If the diff is empty, the split was successful and the tree state is identical to your original target commit.
 
+> **Note**: For building, running `fx clippy --all`, and verifying host-only targets, follow the verification steps in the **`third_party/rust_crates/skills/update_fuchsia_rust_deps`** skill.
 ---
 
 ## 3. Manual Steps (Fallback)
@@ -89,7 +172,7 @@ If the script fails (e.g., due to cherry-pick conflicts), you can perform the st
     For each copy `old` -> `new`:
     ```bash
     rm -rf third_party/rust_crates/vendor/{new}
-    cp -pr third_party/rust_crates/vendor/{old} third_party/rust_crates/vendor/{new}
+    cp -r third_party/rust_crates/vendor/{old} third_party/rust_crates/vendor/{new}
     git add third_party/rust_crates/vendor/{new}
     ```
 
@@ -107,18 +190,20 @@ If the script fails (e.g., due to cherry-pick conflicts), you can perform the st
     git commit -m "[rust-3p] Copy and move vendored crates"
     ```
 
-1.  **Revert copies/moves**:
+1.  **Restore base tree temporarily**:
+    Create a temporary commit restoring the base commit's exact tree so that cherry-picking applies cleanly without tree conflicts:
     ```bash
-    git revert HEAD --no-edit
+    git reset --hard $(git commit-tree $(git rev-parse origin/main^{tree}) -p HEAD -m "[rust-3p] Temporary restore base tree")
     ```
 
 1.  **Cherry-pick target**:
     ```bash
     git cherry-pick {target_commit}
     ```
-    Resolve any conflicts.
+    Resolve any conflicts if they occur.
 
-1.  **Squash the revert and cherry-pick from before into one commit**:
+1.  **Finalize actual updates commit**:
+    Reset softly back to your copy/move commit and commit with the target commit's message and authorship:
     ```bash
     git reset --soft HEAD~2
     git commit -C {target_commit}
