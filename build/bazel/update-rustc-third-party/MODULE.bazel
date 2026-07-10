@@ -7,7 +7,17 @@ module(
     version = "1",
 )
 
-bazel_dep(name = "platforms", version = "1.0.0")
+bazel_dep(name = "platforms", version = "1.1.0")
+single_version_override(
+    module_name = "platforms",
+    version = "1.1.0",
+)
+
+bazel_dep(name = "rules_python", version = "2.0.3")
+single_version_override(
+    module_name = "rules_python",
+    version = "2.0.3",
+)
 
 # Use local override instead of specifying a version to avoid this from
 # falling out of sync with the version used in fuchsia.git.
