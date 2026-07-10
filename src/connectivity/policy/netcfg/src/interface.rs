@@ -358,6 +358,10 @@ impl DynamicNameCompositionRule {
             DynamicNameCompositionRule::DeviceClass => match info.device_class.into() {
                 crate::InterfaceType::WlanClient => INTERFACE_PREFIX_WLAN,
                 crate::InterfaceType::Ethernet => INTERFACE_PREFIX_ETHERNET,
+                // Lowpan interfaces are not managed or installed by Netcfg.
+                crate::InterfaceType::Lowpan => {
+                    unreachable!("unexpected to install lowpan interface")
+                }
                 crate::InterfaceType::WlanAp => INTERFACE_PREFIX_AP,
                 crate::InterfaceType::Blackhole => INTERFACE_PREFIX_BLACKHOLE,
             }
@@ -654,6 +658,7 @@ mod tests {
     fn device_class_from_interface_type(ty: crate::InterfaceType) -> DeviceClass {
         match ty {
             crate::InterfaceType::Ethernet => DeviceClass::Ethernet,
+            crate::InterfaceType::Lowpan => DeviceClass::Lowpan,
             crate::InterfaceType::WlanClient => DeviceClass::WlanClient,
             crate::InterfaceType::WlanAp => DeviceClass::WlanAp,
             crate::InterfaceType::Blackhole => DeviceClass::Blackhole,

@@ -259,6 +259,7 @@ pub enum InterfaceType {
     // NB: Serde alias provides backwards compatibility.
     #[serde(alias = "ap")]
     WlanAp,
+    Lowpan,
     Blackhole,
 }
 
@@ -280,9 +281,7 @@ impl From<DeviceClass> for InterfaceType {
             | DeviceClass::Virtual
             | DeviceClass::Ppp
             | DeviceClass::Bridge => InterfaceType::Ethernet,
-            // TODO(https://fxbug.dev/349810498): Add a first party
-            // `InterfaceType` variant for lowpan interfaces.
-            DeviceClass::Lowpan => InterfaceType::Ethernet,
+            DeviceClass::Lowpan => InterfaceType::Lowpan,
         }
     }
 }
@@ -2787,6 +2786,13 @@ impl<'a> NetCfg<'a> {
             DeviceClass::try_from(*port_class).map_err(|e: UnknownPortClassError| {
                 devices::AddDeviceError::Other(errors::Error::NonFatal(anyhow::Error::new(e)))
             })?;
+        if device_class == DeviceClass::Lowpan {
+            info!(
+                "lowpan interface addition detected: netcfg does not manage lowpan \
+                 interfaces; filtering out"
+            );
+            return Ok(());
+        }
         let device_info =
             DeviceInfoRef { device_class, mac: &mac, topological_path: &topological_path };
 
@@ -2794,6 +2800,8 @@ impl<'a> NetCfg<'a> {
         let metric = match interface_type {
             InterfaceType::WlanClient | InterfaceType::WlanAp => self.interface_metrics.wlan_metric,
             InterfaceType::Ethernet => self.interface_metrics.eth_metric,
+            // Lowpan interfaces are not managed or assigned metrics by Netcfg.
+            InterfaceType::Lowpan => unreachable!("unexpected lowpan interface type"),
             InterfaceType::Blackhole => self.interface_metrics.blackhole_metric,
         }
         .into();
@@ -3842,7 +3850,7 @@ pub async fn run<M: Mode>() -> Result<(), anyhow::Error> {
     // setting filters when interfaces are in Delegated provisioning mode.
     netcfg
         .filter_control
-        .update_filters(filter_config)
+        .update_filters(filter_config, &netcfg.filter_enabled_state)
         .await
         .context("update filters based on config")?;
 

@@ -13,6 +13,7 @@ use fidl_fuchsia_net_filter_ext::{
     InstalledNatRoutine, IpHook, Matchers, Namespace, NamespaceId, NatHook, PushChangesError,
     Resource, ResourceId, Routine, RoutineId, RoutineType, Rule, RuleId,
 };
+use fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext;
 use fidl_fuchsia_net_masquerade as fnet_masquerade;
 use fidl_fuchsia_net_matchers_ext as fnet_matchers_ext;
 use fuchsia_async::DurationExt as _;
@@ -75,10 +76,13 @@ impl FilterControl {
     pub(super) async fn update_filters(
         &mut self,
         config: FilterConfig,
+        filter_enabled_state: &FilterEnabledState,
     ) -> Result<(), anyhow::Error> {
         match self {
             FilterControl::Deprecated(proxy) => update_filters_deprecated(proxy, config).await,
-            FilterControl::Current(state) => state.update_filters_current(config).await,
+            FilterControl::Current(state) => {
+                state.update_filters_current(config, filter_enabled_state).await
+            }
         }
     }
 }
@@ -112,19 +116,25 @@ pub(super) struct FilterState {
 
 impl FilterState {
     // Commit the initial filter state using fuchsia.net.filter.
-    async fn update_filters_current(&mut self, config: FilterConfig) -> Result<(), anyhow::Error> {
+    async fn update_filters_current(
+        &mut self,
+        config: FilterConfig,
+        filter_enabled_state: &FilterEnabledState,
+    ) -> Result<(), anyhow::Error> {
         let FilterState {
             controller,
             uninstalled_ip_routines,
             installed_ip_routines,
-            current_installed_rule_index: _,
+            current_installed_rule_index,
             masquerade,
         } = self;
-        let changes = generate_initial_filter_changes(
+        let (changes, num_installed_rules) = generate_initial_filter_changes(
             uninstalled_ip_routines,
             installed_ip_routines,
             &masquerade.routine_id,
             config,
+            &filter_enabled_state.interface_types,
+            *current_installed_rule_index,
         )?;
 
         for batch in changes.chunks(usize::from(fnet_filter::MAX_BATCH_SIZE)) {
@@ -136,6 +146,8 @@ impl FilterState {
 
         controller.commit().await.context("failed to commit changes to filter controller")?;
         info!("initial filter configuration has been committed successfully");
+        *current_installed_rule_index =
+            current_installed_rule_index.wrapping_add(num_installed_rules);
         Ok(())
     }
 }
@@ -184,7 +196,9 @@ fn generate_initial_filter_changes(
     installed_ip_routines: &netfilter::parser::FilterRoutines,
     masquerade_routine: &RoutineId,
     config: FilterConfig,
-) -> Result<Vec<Change>, anyhow::Error> {
+    filter_enabled_interface_types: &HashSet<InterfaceType>,
+    current_installed_rule_index: u32,
+) -> Result<(Vec<Change>, u32), anyhow::Error> {
     let namespace = Change::Create(Resource::Namespace(Namespace {
         id: NamespaceId(String::from("netcfg")),
         domain: Domain::AllIp,
@@ -252,7 +266,21 @@ fn generate_initial_filter_changes(
         changes.extend(rule_changes);
     }
 
-    Ok(changes)
+    // TODO(https://fxbug.dev/530218539): Add PortClass filtering for
+    // interfaces other than LoWPAN once NS2/filter.deprecated is removed.
+    let mut num_installed_rules = 0;
+    if filter_enabled_interface_types.contains(&InterfaceType::Lowpan) {
+        let lowpan_rules = generate_static_port_class_filter_rules(
+            uninstalled_ip_routines,
+            installed_ip_routines,
+            fnet_interfaces_ext::PortClass::Lowpan,
+            current_installed_rule_index.wrapping_add(num_installed_rules),
+        );
+        changes.extend(lowpan_rules.into_iter().map(|rule| Change::Create(Resource::Rule(rule))));
+        num_installed_rules += 1;
+    }
+
+    Ok((changes, num_installed_rules))
 }
 
 // Create a list of `fnet_filter_ext::Rule`s that, when used with
@@ -299,10 +327,27 @@ fn generate_updated_filter_rules(
         )
     });
 
-    let rules: Vec<_> =
-        vec![local_ingress_rule, local_egress_rule].into_iter().filter_map(|rule| rule).collect();
+    [local_ingress_rule, local_egress_rule].into_iter().flatten().collect()
+}
 
-    rules
+fn create_jump_rule(
+    routine_id: RoutineId,
+    index: u32,
+    interface: fnet_matchers_ext::Interface,
+    hook: IpHook,
+    target_routine_name: &str,
+) -> Rule {
+    let (in_interface, out_interface) = match hook {
+        IpHook::LocalIngress | IpHook::Ingress => (Some(interface), None),
+        IpHook::LocalEgress | IpHook::Egress => (None, Some(interface)),
+        IpHook::Forwarding => (Some(interface.clone()), Some(interface)),
+    };
+
+    Rule {
+        id: RuleId { routine: routine_id, index },
+        matchers: Matchers { in_interface, out_interface, ..Default::default() },
+        action: Action::Jump(target_routine_name.to_string()),
+    }
 }
 
 fn create_interface_matching_jump_rule(
@@ -312,27 +357,73 @@ fn create_interface_matching_jump_rule(
     hook: IpHook,
     target_routine_name: &str,
 ) -> Rule {
-    // Some matchers cannot be used on all `IpHook`s.
-    let (in_interface, out_interface) = match hook {
-        IpHook::LocalIngress | IpHook::Ingress => {
-            (Some(fnet_matchers_ext::Interface::Id(interface_id.into())), None)
-        }
-        IpHook::LocalEgress | IpHook::Egress => {
-            (None, Some(fnet_matchers_ext::Interface::Id(interface_id.into())))
-        }
-        IpHook::Forwarding => (
-            Some(fnet_matchers_ext::Interface::Id(interface_id.into())),
-            Some(fnet_matchers_ext::Interface::Id(interface_id.into())),
-        ),
-    };
+    create_jump_rule(
+        routine_id,
+        index,
+        fnet_matchers_ext::Interface::Id(interface_id.into()),
+        hook,
+        target_routine_name,
+    )
+}
 
-    // Full path qualification is preferred where types can get mistaken
-    // between filtering libraries.
-    Rule {
-        id: RuleId { routine: routine_id, index },
-        matchers: Matchers { in_interface, out_interface, ..Default::default() },
-        action: Action::Jump(target_routine_name.to_string()),
-    }
+/// Generates static filter rules (jump rules) for a given `PortClass` (specifically Lowpan) to
+/// redirect traffic to uninstalled routines.
+fn generate_static_port_class_filter_rules(
+    uninstalled_ip_routines: &netfilter::parser::FilterRoutines,
+    installed_ip_routines: &netfilter::parser::FilterRoutines,
+    port_class: fnet_interfaces_ext::PortClass,
+    current_installed_rule_index: u32,
+) -> Vec<Rule> {
+    let netfilter::parser::FilterRoutines {
+        local_ingress: uninstalled_local_ingress,
+        local_egress: uninstalled_local_egress,
+    } = uninstalled_ip_routines;
+    let netfilter::parser::FilterRoutines { local_ingress, local_egress } = installed_ip_routines;
+
+    let local_ingress_rule = local_ingress.clone().map(|routine_id| {
+        create_port_class_matching_jump_rule(
+            routine_id,
+            current_installed_rule_index,
+            port_class,
+            IpHook::LocalIngress,
+            &uninstalled_local_ingress
+                .as_ref()
+                .expect("there should be a corresponding uninstalled routine for local ingress")
+                .name,
+        )
+    });
+    let local_egress_rule = local_egress.clone().map(|routine_id| {
+        create_port_class_matching_jump_rule(
+            routine_id,
+            current_installed_rule_index,
+            port_class,
+            IpHook::LocalEgress,
+            &uninstalled_local_egress
+                .as_ref()
+                .expect("there should be a corresponding uninstalled routine for local egress")
+                .name,
+        )
+    });
+
+    [local_ingress_rule, local_egress_rule].into_iter().flatten().collect()
+}
+
+/// Helper to create a single rule matching a `PortClass` on input/output interfaces depending on
+/// the hook.
+fn create_port_class_matching_jump_rule(
+    routine_id: RoutineId,
+    index: u32,
+    port_class: fnet_interfaces_ext::PortClass,
+    hook: IpHook,
+    target_routine_name: &str,
+) -> Rule {
+    create_jump_rule(
+        routine_id,
+        index,
+        fnet_matchers_ext::Interface::PortClass(port_class),
+        hook,
+        target_routine_name,
+    )
 }
 
 // We use Compare-And-Swap (CAS) protocol to update filter rules. $get_rules returns the current
@@ -505,6 +596,7 @@ impl FilterEnabledState {
         let _removed_count: Option<MasqueradeCounter> =
             self.masquerade_enabled_interface_ids.remove(&interface_id);
     }
+
     pub(super) async fn maybe_update_deprecated<
         Filter: fnet_filter_deprecated::FilterProxyInterface,
     >(
@@ -634,9 +726,10 @@ impl FilterEnabledState {
         interface_type
             .as_ref()
             .map(|ty| match ty {
-                InterfaceType::WlanClient | InterfaceType::Ethernet | InterfaceType::Blackhole => {
-                    self.interface_types.contains(ty)
-                }
+                InterfaceType::WlanClient
+                | InterfaceType::Ethernet
+                | InterfaceType::Blackhole
+                | InterfaceType::Lowpan => self.interface_types.contains(ty),
                 // An AP device can be filtered by specifying AP or WLAN.
                 InterfaceType::WlanAp => {
                     self.interface_types.contains(ty)
@@ -895,7 +988,7 @@ mod tests {
         let uninstalled_filter_routines =
             create_filter_routines(namespace, UNINSTALLED_LOCAL_INGRESS, UNINSTALLED_LOCAL_EGRESS);
 
-        let changes = generate_initial_filter_changes(
+        let (changes, _num_installed_rules) = generate_initial_filter_changes(
             &uninstalled_filter_routines,
             &installed_filter_routines,
             &masquerade_routine(),
@@ -904,6 +997,8 @@ mod tests {
                 nat_rules: vec![],
                 rdr_rules: vec![],
             },
+            &HashSet::new(),
+            0,
         )
         .expect("rules should be formatted correctly");
 
@@ -954,6 +1049,80 @@ mod tests {
             .collect();
 
         assert_eq!(rules, expected_rules);
+    }
+
+    #[test]
+    fn test_generate_static_port_class_filter_rules() {
+        let namespace = namespace_id();
+        let installed_filter_routines =
+            create_filter_routines(namespace.clone(), LOCAL_INGRESS, LOCAL_EGRESS);
+        let uninstalled_filter_routines =
+            create_filter_routines(namespace, UNINSTALLED_LOCAL_INGRESS, UNINSTALLED_LOCAL_EGRESS);
+
+        let rules = generate_static_port_class_filter_rules(
+            &uninstalled_filter_routines,
+            &installed_filter_routines,
+            fnet_interfaces_ext::PortClass::Lowpan,
+            0,
+        );
+
+        let local_ingress = (
+            installed_filter_routines.local_ingress.unwrap(),
+            uninstalled_filter_routines.local_ingress.unwrap().name,
+            IpHook::LocalIngress,
+        );
+        let local_egress = (
+            installed_filter_routines.local_egress.unwrap(),
+            uninstalled_filter_routines.local_egress.unwrap().name,
+            IpHook::LocalEgress,
+        );
+        let expected_rules: Vec<_> = vec![local_ingress, local_egress]
+            .into_iter()
+            .map(|(installed_routine, uninstalled_routine_name, hook)| {
+                create_port_class_matching_jump_rule(
+                    installed_routine,
+                    0,
+                    fnet_interfaces_ext::PortClass::Lowpan,
+                    hook,
+                    &uninstalled_routine_name,
+                )
+            })
+            .collect();
+
+        assert_eq!(rules, expected_rules);
+    }
+
+    #[test]
+    fn test_initial_filter_changes_with_lowpan() {
+        let namespace = namespace_id();
+        let installed_filter_routines =
+            create_filter_routines(namespace.clone(), LOCAL_INGRESS, LOCAL_EGRESS);
+        let uninstalled_filter_routines =
+            create_filter_routines(namespace, UNINSTALLED_LOCAL_INGRESS, UNINSTALLED_LOCAL_EGRESS);
+
+        let (changes, num_installed_rules) = generate_initial_filter_changes(
+            &uninstalled_filter_routines,
+            &installed_filter_routines,
+            &masquerade_routine(),
+            FilterConfig { rules: vec![], nat_rules: vec![], rdr_rules: vec![] },
+            &[InterfaceType::Lowpan].into_iter().collect(),
+            0,
+        )
+        .expect("rules should be formatted correctly");
+
+        let mut expected_changes = get_foundational_changes();
+
+        let lowpan_rules = generate_static_port_class_filter_rules(
+            &uninstalled_filter_routines,
+            &installed_filter_routines,
+            fnet_interfaces_ext::PortClass::Lowpan,
+            0,
+        );
+        expected_changes
+            .extend(lowpan_rules.into_iter().map(|rule| Change::Create(Resource::Rule(rule))));
+
+        assert_eq!(changes, expected_changes);
+        assert_eq!(num_installed_rules, 1);
     }
 
     #[test]
@@ -1083,8 +1252,11 @@ mod tests {
             push_changes_count
         };
 
-        let (client_res, push_changes_count) =
-            futures::join!(filter_control.update_filters(config), server_fut);
+        let filter_enabled_state = FilterEnabledState::default();
+        let (client_res, push_changes_count) = futures::join!(
+            filter_control.update_filters(config, &filter_enabled_state),
+            server_fut
+        );
 
         client_res.expect("update_filters should succeed");
         assert_eq!(push_changes_count, 2);
