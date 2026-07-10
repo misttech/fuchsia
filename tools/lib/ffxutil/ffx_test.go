@@ -47,7 +47,7 @@ func TestFFXInstance(t *testing.T) {
 
 	assertRunsExpectedCmd(ffx.TargetWait(ctx), stdout, "--target target --config log.level=debug target wait")
 
-	assertRunsExpectedCmd(ffx.TargetWait(ctx, "-t", "30"), stdout, "--target target --config log.level=debug target wait -t 30")
+	assertRunsExpectedCmd(ffx.TargetWait(ctx, "-t", "90"), stdout, "--target target --config log.level=debug target wait -t 90")
 
 	// Create a new instance that uses the same ffx config but runs against a different target.
 	ffx2 := FFXWithTarget(ffx, "target2")

@@ -689,7 +689,7 @@ type FFXTesterOptions struct {
 
 // NewFFXTester returns an FFXTester.
 func NewFFXTester(ctx context.Context, opts FFXTesterOptions) (*FFXTester, error) {
-	err := opts.Ffx.TargetWait(ctx, "-t", "30")
+	err := opts.Ffx.TargetWait(ctx, "-t", "90")
 	if err != nil {
 		return nil, err
 	}
@@ -753,7 +753,7 @@ func (t *FFXTester) Test(ctx context.Context, test testsharder.Test, stdout, std
 var ffxTesterReconnect = reconnect
 
 func reconnect(t *FFXTester, ctx context.Context) error {
-	return t.ffx.TargetWait(ctx, "-t", "30")
+	return t.ffx.TargetWait(ctx, "-t", "90")
 }
 
 func (t *FFXTester) Reconnect(ctx context.Context) error {

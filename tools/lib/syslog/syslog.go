@@ -137,7 +137,7 @@ func (s *Syslogger) Stream(ctx, loggerCtx context.Context, output io.Writer) <-c
 			logger.Errorf(loggerCtx, "syslog: SSH client unresponsive; will attempt to reconnect and continue streaming: %s", err)
 			var reconnectErr error
 			if s.ffx != nil {
-				reconnectErr = s.ffx.TargetWait(ctx, "-t", "30")
+				reconnectErr = s.ffx.TargetWait(ctx, "-t", "90")
 			} else {
 				reconnectErr = s.client.ReconnectWithBackoff(ctx, retry.NewConstantBackoff(defaultReconnectInterval))
 			}
