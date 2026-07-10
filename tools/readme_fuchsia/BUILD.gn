@@ -36,7 +36,13 @@ if (is_host) {
       "fields_test.go",
       "formatter_test.go",
       "parser_test.go",
+      "validate_test.go",
     ]
+  }
+
+  go_test("main_test") {
+    embed = [ ":main" ]
+    sources = [ "cmd/main_test.go" ]
   }
 }
 
@@ -44,7 +50,10 @@ if (is_host) {
   group("tests") {
     testonly = true
     visibility = [ "*" ]
-    deps = [ ":readme_fuchsia_test" ]
+    deps = [
+      ":main_test",
+      ":readme_fuchsia_test",
+    ]
   }
 
   install_host_tools("host") {

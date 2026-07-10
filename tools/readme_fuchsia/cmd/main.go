@@ -5,6 +5,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -32,7 +33,9 @@ func main() {
 		os.Exit(0)
 	case "validate":
 		if err := runValidate(os.Args[2:]); err != nil {
-			fmt.Fprintln(os.Stderr, err)
+			if err.Error() != "" {
+				fmt.Fprintln(os.Stderr, err)
+			}
 			os.Exit(1)
 		}
 	case "format":
@@ -93,10 +96,11 @@ func runValidate(args []string) error {
 		errs = filteredErrs
 	}
 	if len(errs) > 0 {
+		fmt.Fprintf(os.Stderr, "validation failed for %s\n", readmePath)
 		for _, err := range errs {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		}
-		return fmt.Errorf("validation failed for %s", readmePath)
+		return errors.New("")
 	}
 
 	fmt.Printf("Validation passed for %s\n", readmePath)

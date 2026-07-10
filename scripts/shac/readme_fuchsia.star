@@ -34,10 +34,10 @@ def _readme_fuchsia_required_fields(ctx):
     for f, proc in procs:
         res = proc.wait()
         if res.retcode != 0:
-            for line in res.stderr.strip().split("\n"):
-                line = line.strip()
-                if not line:
-                    continue
+            lines = [line.strip() for line in res.stderr.strip().split("\n") if line.strip()]
+            if len(lines) > 1:
+                lines = lines[1:]
+            for line in lines:
                 ctx.emit.finding(
                     level = "error",
                     message = line,

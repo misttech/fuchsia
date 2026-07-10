@@ -9,6 +9,7 @@ load("//build/bazel/rules:stamp_group.bzl", "stamp_group")
 go_library(
     name = "readme_fuchsia_lib",
     srcs = [
+        "fields.go",
         "formatter.go",
         "parser.go",
         "types.go",
@@ -36,10 +37,19 @@ go_binary(
 go_test(
     name = "readme_fuchsia_test",
     srcs = [
+        "fields_test.go",
         "formatter_test.go",
         "parser_test.go",
+        "validate_test.go",
     ],
     embed = [":readme_fuchsia_lib"],
+    visibility = ["//visibility:public"],
+)
+
+go_test(
+    name = "main_test",
+    srcs = ["cmd/main_test.go"],
+    embed = [":main"],
     visibility = ["//visibility:public"],
 )
 
@@ -50,6 +60,7 @@ stamp_group(
     target_compatible_with = HOST_CONSTRAINTS,
     visibility = ["//visibility:public"],
     deps = [
+        ":main_test",
         ":readme_fuchsia_test",
     ],
 )
