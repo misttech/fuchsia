@@ -30,13 +30,8 @@ pub struct WakeupTestDevice {
 impl CloseFreeSafe for WakeupTestDevice {}
 
 impl WakeupTestDevice {
-    pub fn new(current_task: &CurrentTask) -> Self {
-        Self {
-            commands: Commands {
-                tid: current_task.get_tid(),
-                kernel: Arc::downgrade(current_task.kernel()),
-            },
-        }
+    pub fn new(kernel: &Arc<Kernel>) -> Self {
+        Self { commands: Commands { kernel: Arc::downgrade(kernel) } }
     }
 }
 
@@ -48,14 +43,13 @@ impl DeviceOps for WakeupTestDevice {
         _node: &NamespaceNode,
         _flags: OpenFlags,
     ) -> Result<Box<dyn FileOps>, Errno> {
-        Ok(Box::new(WakeupTestDevice::new(current_task)))
+        Ok(Box::new(WakeupTestDevice::new(current_task.kernel())))
     }
 }
 
 #[derive(Clone)]
 struct Commands {
     kernel: Weak<Kernel>,
-    tid: i32,
 }
 
 impl Commands {
@@ -95,7 +89,11 @@ impl Commands {
         Ok(())
     }
 
-    fn run_wakeup_set_timers(&self, timer_info: WakeupTimerInfo) -> Result<()> {
+    fn run_wakeup_set_timers(
+        &self,
+        current_task: &CurrentTask,
+        timer_info: WakeupTimerInfo,
+    ) -> Result<()> {
         let method = WakeupMethod::from(timer_info.method);
 
         // TODO(https://fxbug.dev/458389823): Use other input events to wakeup the system.
@@ -116,7 +114,11 @@ impl Commands {
             timer_info.interval,
             timer_info.offset
         );
-        tracing::trace_wakeup_test_type(self.get_trace_event_queues(), self.tid, test_type);
+        tracing::trace_wakeup_test_type(
+            self.get_trace_event_queues(),
+            current_task.get_tid(),
+            test_type,
+        );
         for index in 0..timer_info.num_events {
             let time = (timer_info.interval * (index as i64)) + timer_info.offset;
             log_info!("WakeupTestDevice::set_timer i: {index} for {time}");
@@ -163,7 +165,7 @@ impl FileOps for WakeupTestDevice {
                 log_info!("WakeupTestDevice::WakeupSetTimers {timer_info:?}");
                 log_info!("WakeupTestDevice::WakeupSetTimers version 0x{:x}", timer_info.version);
 
-                match self.commands.run_wakeup_set_timers(timer_info) {
+                match self.commands.run_wakeup_set_timers(current_task, timer_info) {
                     Ok(_) => Ok(SUCCESS),
                     Err(e) => {
                         log_error!("WakeupTestDevice::WakeupSetTimers failed: {:?}", e);

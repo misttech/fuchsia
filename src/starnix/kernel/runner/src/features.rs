@@ -647,7 +647,7 @@ pub fn run_container_features(system_task: &CurrentTask, features: &Features) ->
         fastrpc_device_init(kernel);
     }
     if features.wakeup_test {
-        register_wakeup_test_device(system_task)?;
+        register_wakeup_test_device(kernel)?;
     }
     if features.mmcblk_stub {
         let _device = add_mmc_block_device(kernel).context("Failed to add stub mmcblk0 device")?;
