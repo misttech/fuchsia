@@ -35,6 +35,10 @@
                 "IoUringTest/IoUringOverrideCredsTest.OverrideCreds/Allowed",
                 "IoUringTest/IoUringOverrideCredsTest.OverrideCreds/Denied",
 
+                // TODO(https://fxbug.dev/532921178): io_uring memory accounting is not implemented in Starnix.
+                "IoUringTest.IoUringSetupMemlockLimitCumulative",
+                "IoUringTest.IoUringSetupMemlockLimit",
+
                 // TODO: https://fxbug.dev/334094811 - Reject SELinux mount options before a
                 // policy is loaded.
                 "MountTests/MountOptionValidationTest.RejectedBeforePolicyLoad/*",
