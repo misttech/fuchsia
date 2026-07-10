@@ -933,8 +933,8 @@ void Flatland::SetScale(TransformId transform_id, fuchsia_math::VecF scale) {
     return;
   }
 
-  if (scale_x == 0.f || scale_y == 0.f) {
-    error_reporter_->ERROR() << "SetScale failed, zero values not allowed (" << scale_x << ", "
+  if (scale_x <= 0.f || scale_y <= 0.f) {
+    error_reporter_->ERROR() << "SetScale failed, values must be positive (" << scale_x << ", "
                              << scale_y << " ).";
     CloseConnection(FlatlandError::kBadOperation);
     return;

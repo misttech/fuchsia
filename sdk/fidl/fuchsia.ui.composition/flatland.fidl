@@ -641,7 +641,7 @@ closed protocol Flatland {
 
     /// Sets the scale on a transform. The order of geometric attribute application is
     /// addressed above. The (x,y) values in the VecF |scale| refer to the scale factor in the
-    /// x-axis (width) and y-axis (height) respectively. Scale values must be normal 32-bit
+    /// x-axis (width) and y-axis (height) respectively. Scale values must be positive 32-bit
     /// floating point values: https://en.wikipedia.org/wiki/Normal_number_%28computing%29
     strict SetScale(struct {
         transform_id TransformId;
