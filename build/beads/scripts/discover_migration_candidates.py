@@ -5,6 +5,7 @@
 # found in the LICENSE file.
 
 import argparse
+import dataclasses
 import pathlib
 import re
 import sys
@@ -64,7 +65,7 @@ _TOOLCHAIN_SHORTHANDS = {
 }
 
 
-def debug(msg: str):
+def debug(msg: str) -> None:
     if _DEBUG:
         print(msg, file=sys.stderr)
 
@@ -83,7 +84,7 @@ def find_gn_files(
                    toolchain.
 
     Returns:
-        A list of BUILD.gn files.
+        A list of BUILD.gn file paths.
     """
     gn = gn_runner.GnRunner()
 
@@ -236,9 +237,32 @@ def list_assignments_from(
     return assignments
 
 
+@dataclasses.dataclass
+class GnTargetInfo:
+    """Information about a target definition found in a BUILD.gn file."""
+
+    name: str
+    type: str
+    path: pathlib.Path
+    deps: list[str] = dataclasses.field(default_factory=list)
+    fields: list[str] = dataclasses.field(default_factory=list)
+    complexity: int = 0
+    non_standard_fields: list[str] = dataclasses.field(default_factory=list)
+
+
+@dataclasses.dataclass
+class GnFileInfo:
+    """Information about a single BUILD.gn fle."""
+
+    path: pathlib.Path
+    targets: list[GnTargetInfo] = dataclasses.field(default_factory=list)
+    total_complexity: int = 0
+    total_targets: int = 0
+
+
 def targets_from_gn_file(
     filepath: pathlib.Path, target_types: list[str] | None
-) -> list[dict]:
+) -> list[GnTargetInfo]:
     """Parse a BUILD.gn file and extract information about targets in input target_types.
 
     This function implements a simple regex-based parser for BUILD.gn files.
@@ -254,7 +278,7 @@ def targets_from_gn_file(
         target_types: List of target types to look for. None means all target types.
 
     Returns:
-        List of targets found in the file.
+        List of dictionaries, each one describing a target found in the file.
     """
     content = filepath.read_text()
 
@@ -293,15 +317,15 @@ def targets_from_gn_file(
 
         target_body = content[start_pos : end_pos - 1]
         targets.append(
-            {
-                "type": target_type,
-                "name": target_name,
-                "path": filepath,
-                "deps": deps_from_target_body(
+            GnTargetInfo(
+                type=target_type,
+                name=target_name,
+                path=filepath,
+                deps=deps_from_target_body(
                     target_body, shared_variables_from(context)
                 ),
-                "fields": fields_from_target_body(target_body),
-            }
+                fields=fields_from_target_body(target_body),
+            )
         )
 
     return targets
@@ -325,7 +349,7 @@ class ComplexityCalculator:
         # Cache for computed complexities keyed on fully-qualified labels.
         self._complexity_cache: dict[str, int] = {}
         # Cache for target details keyed on fully-qualified labels.
-        self._target_cache: dict[str, dict] = {}
+        self._target_cache: dict[str, GnTargetInfo] = {}
         # Populate the target cache with all targets eagerly in the specified GN files for easier
         # dependency label resolution during complexity calculation, which traverses the dependency
         # graph recursively.
@@ -333,7 +357,7 @@ class ComplexityCalculator:
 
     def _populate_target_cache(
         self, gn_files: list[pathlib.Path], target_types: list[str]
-    ):
+    ) -> None:
         """Populate the target cache with all targets in the specified GN files.
 
         Args:
@@ -348,7 +372,7 @@ class ComplexityCalculator:
             targets = targets_from_gn_file(gn_file, None)
             label_to_target = {
                 self._to_fully_qualified_label(
-                    gn_file.parent, target["name"]
+                    gn_file.parent, target.name
                 ): target
                 for target in targets
             }
@@ -447,8 +471,7 @@ class ComplexityCalculator:
         target = self._target_cache[label]
         dir_path, _ = self._parts_from_fully_qualified_label(label)
         fully_qualified_deps = [
-            self._to_fully_qualified_label(dir_path, dep)
-            for dep in target["deps"]
+            self._to_fully_qualified_label(dir_path, dep) for dep in target.deps
         ]
         complex_deps = [
             dep
@@ -465,7 +488,7 @@ class ComplexityCalculator:
 
         field_complexity = sum(
             _COMPLEX_FIELDS.get(f, _DEFAULT_FIELD_COMPLEXITY)
-            for f in target["fields"]
+            for f in target.fields
             if f not in _STANDARD_FIELDS
         )
 
@@ -477,54 +500,46 @@ class ComplexityCalculator:
 
     def complexity_for_file(
         self, gn_file: pathlib.Path, target_types: list[str]
-    ) -> dict:
+    ) -> GnFileInfo:
         targets = targets_from_gn_file(gn_file, target_types)
 
-        file_result = {
-            "path": gn_file,
-            "targets": [],
-            "total_complexity": 0,
-            "total_targets": 0,
-        }
+        file_result = GnFileInfo(path=gn_file)
 
         for target in targets:
             complexity = self.complexity_for_label(
-                self._to_fully_qualified_label(gn_file.parent, target["name"])
+                self._to_fully_qualified_label(gn_file.parent, target.name)
             )
 
-            target_info = {
-                "name": target["name"],
-                "type": target["type"],
-                "complexity": complexity,
-                "deps": target["deps"],
-                "fields": target["fields"],
+            target_info = dataclasses.replace(
+                target,
+                complexity=complexity,
                 # Add extra info for display if needed.
-                "non_standard_fields": [
-                    f for f in target["fields"] if f not in _STANDARD_FIELDS
+                non_standard_fields=[
+                    f for f in target.fields if f not in _STANDARD_FIELDS
                 ],
-            }
+            )
 
-            file_result["targets"].append(target_info)
-            file_result["total_complexity"] += complexity
-            file_result["total_targets"] += 1
+            file_result.targets.append(target_info)
+            file_result.total_complexity += complexity
+            file_result.total_targets += 1
 
         return file_result
 
 
-def print_results(file_results: list[dict], top: int):
+def print_results(file_results: list[GnFileInfo], top: int) -> None:
     """Print the results of the analysis in a tabular format."""
     print("\nTop Candidates for Migration (Grouped by File):")
     print("=" * 80)
     for i, file_res in enumerate(file_results[:top]):
-        print(f"{i+1}. {file_res['path']}")
-        print(f"   Total Complexity: {file_res['total_complexity']}")
-        print(f"   Targets ({file_res['total_targets']}):")
-        for target in file_res["targets"]:
-            print(f"     - {target['name']} ({target['type']})")
-            print(f"       Complexity: {target['complexity']}")
-            if target["non_standard_fields"]:
+        print(f"{i+1}. {file_res.path}")
+        print(f"   Total Complexity: {file_res.total_complexity}")
+        print(f"   Targets ({file_res.total_targets}):")
+        for target in file_res.targets:
+            print(f"     - {target.name} ({target.type})")
+            print(f"       Complexity: {target.complexity}")
+            if target.non_standard_fields:
                 print(
-                    f"       Non-standard fields: {target['non_standard_fields']}"
+                    f"       Non-standard fields: {target.non_standard_fields}"
                 )
         print("-" * 80)
 
@@ -612,12 +627,10 @@ def main() -> int:
         calculator.complexity_for_file(gn_file, args.target_types)
         for gn_file in gn_files
     ]
-    actionable_files = [f for f in file_results if f["total_complexity"] > 0]
+    actionable_files = [f for f in file_results if f.total_complexity > 0]
 
     # Sort by total complexity and then by number of targets.
-    actionable_files.sort(
-        key=lambda x: (x["total_complexity"], x["total_targets"])
-    )
+    actionable_files.sort(key=lambda x: (x.total_complexity, x.total_targets))
     print_results(actionable_files, args.top)
 
     return 0

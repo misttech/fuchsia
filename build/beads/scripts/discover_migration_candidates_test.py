@@ -7,6 +7,7 @@ import unittest
 from unittest import mock
 
 import discover_migration_candidates
+from discover_migration_candidates import GnTargetInfo
 
 
 class TestDiscoverMigrationCandidates(unittest.TestCase):
@@ -68,16 +69,21 @@ class TestDiscoverMigrationCandidates(unittest.TestCase):
         root = pathlib.Path("/root")
         calc = discover_migration_candidates.ComplexityCalculator(root, [], [])
 
-        target = {
-            "path": root / "BUILD.gn",
-            "name": "t1",
-            "deps": ["//a:a", "//b:b"],
-            "fields": ["sources", "configs"],  # configs is complex (2)
-        }
+        target = GnTargetInfo(
+            path=root / "BUILD.gn",
+            name="t1",
+            type="action",
+            deps=["//a:a", "//b:b"],
+            fields=["sources", "configs"],  # configs is complex (2)
+        )
         # Populate cache manually to avoid mocking filesystem access.
         calc._target_cache["//root:t1"] = target
-        calc._target_cache["//a:a"] = {"name": "a", "deps": [], "fields": []}
-        calc._target_cache["//b:b"] = {"name": "b", "deps": [], "fields": []}
+        calc._target_cache["//a:a"] = GnTargetInfo(
+            name="a", type="action", path=root / "a/BUILD.gn"
+        )
+        calc._target_cache["//b:b"] = GnTargetInfo(
+            name="b", type="action", path=root / "b/BUILD.gn"
+        )
 
         # 1 + (2 deps * (1 + 1)) + 2 fields (configs=2) -> 1 + 4 + 2 = 7
         with mock.patch.object(
@@ -121,30 +127,30 @@ class TestDiscoverMigrationCandidates(unittest.TestCase):
             mock_complexity_for_label.return_value = 1
 
             result1 = calc.complexity_for_file(path, ["rustc_binary"])
-            self.assertEqual(result1["total_complexity"], 2)
-            self.assertEqual(len(result1["targets"]), 2)
-            self.assertEqual(result1["targets"][0]["name"], "t1")
-            self.assertEqual(result1["targets"][0]["complexity"], 1)
-            self.assertEqual(result1["targets"][1]["name"], "t2")
-            self.assertEqual(result1["targets"][1]["complexity"], 1)
+            self.assertEqual(result1.total_complexity, 2)
+            self.assertEqual(len(result1.targets), 2)
+            self.assertEqual(result1.targets[0].name, "t1")
+            self.assertEqual(result1.targets[0].complexity, 1)
+            self.assertEqual(result1.targets[1].name, "t2")
+            self.assertEqual(result1.targets[1].complexity, 1)
 
             result2 = calc.complexity_for_file(path, ["cc_binary"])
-            self.assertEqual(result2["total_complexity"], 1)
-            self.assertEqual(len(result2["targets"]), 1)
-            self.assertEqual(result2["targets"][0]["name"], "t3")
-            self.assertEqual(result2["targets"][0]["complexity"], 1)
+            self.assertEqual(result2.total_complexity, 1)
+            self.assertEqual(len(result2.targets), 1)
+            self.assertEqual(result2.targets[0].name, "t3")
+            self.assertEqual(result2.targets[0].complexity, 1)
 
             result3 = calc.complexity_for_file(
                 path, ["rustc_binary", "cc_binary"]
             )
-            self.assertEqual(result3["total_complexity"], 3)
-            self.assertEqual(len(result3["targets"]), 3)
-            self.assertEqual(result3["targets"][0]["name"], "t1")
-            self.assertEqual(result3["targets"][0]["complexity"], 1)
-            self.assertEqual(result3["targets"][1]["name"], "t2")
-            self.assertEqual(result3["targets"][1]["complexity"], 1)
-            self.assertEqual(result3["targets"][2]["name"], "t3")
-            self.assertEqual(result3["targets"][2]["complexity"], 1)
+            self.assertEqual(result3.total_complexity, 3)
+            self.assertEqual(len(result3.targets), 3)
+            self.assertEqual(result3.targets[0].name, "t1")
+            self.assertEqual(result3.targets[0].complexity, 1)
+            self.assertEqual(result3.targets[1].name, "t2")
+            self.assertEqual(result3.targets[1].complexity, 1)
+            self.assertEqual(result3.targets[2].name, "t3")
+            self.assertEqual(result3.targets[2].complexity, 1)
 
     def test_end_pos_for_single_target(self) -> None:
         content = 'target("name") { deps = [] }'
@@ -310,23 +316,23 @@ class TestDiscoverMigrationCandidates(unittest.TestCase):
             targets = discover_migration_candidates.targets_from_gn_file(
                 path, ["source_set", "executable"]
             )
-            self.assertEqual(
+            self.assertListEqual(
                 targets,
                 [
-                    {
-                        "path": path,
-                        "name": "lib",
-                        "type": "source_set",
-                        "deps": [],
-                        "fields": ["sources"],
-                    },
-                    {
-                        "path": path,
-                        "name": "bin",
-                        "type": "executable",
-                        "deps": [":lib"],
-                        "fields": ["deps"],
-                    },
+                    GnTargetInfo(
+                        name="lib",
+                        type="source_set",
+                        path=path,
+                        deps=[],
+                        fields=["sources"],
+                    ),
+                    GnTargetInfo(
+                        name="bin",
+                        type="executable",
+                        path=path,
+                        deps=[":lib"],
+                        fields=["deps"],
+                    ),
                 ],
             )
 
@@ -341,9 +347,9 @@ class TestDiscoverMigrationCandidates(unittest.TestCase):
             )
             expected_label = "//src:foo"
             self.assertIn(expected_label, calc._target_cache)
-            self.assertEqual(calc._target_cache[expected_label]["name"], "foo")
+            self.assertEqual(calc._target_cache[expected_label].name, "foo")
             self.assertEqual(
-                calc._target_cache[expected_label]["type"], "executable"
+                calc._target_cache[expected_label].type, "executable"
             )
 
     def test_to_fully_qualified_label(self) -> None:
