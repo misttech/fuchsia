@@ -876,6 +876,12 @@ license_files = ["LICENSE-APACHE", "LICENSE-MIT"]
 [gn.package.pin-init-internal."0.3.0"]
 license_files = ["LICENSE-APACHE", "LICENSE-MIT"]
 
+[gn.package.pkcs8."0.10.2"]
+groups = [
+  { name = "pkcs8" },
+  { name = "pkcs8-0.10" },
+]
+
 [gn.package.prettyplease."0.2.37"]
 rustflags = []
 

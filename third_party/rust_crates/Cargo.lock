@@ -6132,3 +6132,4 @@ dependencies = [
 [[patch.unused]]
 name = "sapphire-gatt"
 version = "0.1.0"
+
