@@ -6,12 +6,13 @@ use crate::cfg::{cfg_to_gn_conditional, target_to_gn_conditional};
 use crate::target::GnTarget;
 use crate::types::*;
 use crate::{
-    BinaryRenderOptions, CombinedTargetCfg, GlobalTargetCfgs, GroupVisibility, RuleRenaming,
+    BinaryRenderOptions, CombinedTargetCfg, GlobalTargetCfgs, GroupCfg, GroupVisibility,
+    RuleRenaming,
 };
 use anyhow::{Context, Result};
 use cargo_metadata::Package;
 use std::borrow::Cow;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Display;
 use std::io;
 use std::path::Path;
@@ -59,6 +60,7 @@ pub fn write_top_level_rule<W: io::Write>(
     pkg: &Package,
     group_name: Option<&str>,
     group_visibility: Option<&GroupVisibility>,
+    groups: Option<&[GroupCfg]>,
     rule_renaming: Option<&RuleRenaming>,
     testonly: bool,
     has_tests: bool,
@@ -76,31 +78,68 @@ pub fn write_top_level_rule<W: io::Write>(
         )?;
     }
 
-    let group_name = group_name.unwrap_or_else(|| pkg.name.as_ref());
     let group_rule = rule_renaming.and_then(|t| t.group_name.as_deref()).unwrap_or("group");
-    let optional_visibility =
-        group_visibility.map(|v| format!("visibility = {}", v.variable)).unwrap_or_default();
-    writeln!(
-        output,
-        include_str!("../templates/top_level_gn_rule.template"),
-        group_name = group_name,
-        dep_name = target_name,
-        group_rule_name = group_rule,
-        optional_visibility = optional_visibility,
-        optional_testonly = if testonly { "testonly = true" } else { "" },
-    )?;
 
-    if has_tests {
-        let test_group_name = format!("{}-test", group_name);
+    if let Some(groups) = groups {
+        for group_cfg in groups {
+            let optional_visibility = match &group_cfg.visibility {
+                Some(vis) if vis.is_empty() => "visibility = []".to_string(),
+                Some(vis) => format!(
+                    "visibility = [ {} ]",
+                    vis.iter().map(|v| format!("\"{}\"", v)).collect::<Vec<_>>().join(", ")
+                ),
+                None => String::new(),
+            };
+
+            writeln!(
+                output,
+                include_str!("../templates/top_level_gn_rule.template"),
+                group_name = &group_cfg.name,
+                dep_name = target_name,
+                group_rule_name = group_rule,
+                optional_visibility = optional_visibility,
+                optional_testonly = if testonly { "testonly = true" } else { "" },
+            )?;
+
+            if has_tests {
+                let test_group_name = format!("{}-test", group_cfg.name);
+                writeln!(
+                    output,
+                    include_str!("../templates/top_level_gn_rule.template"),
+                    group_name = test_group_name,
+                    group_rule_name = group_rule,
+                    dep_name = target_name.clone() + "-test",
+                    optional_visibility = optional_visibility,
+                    optional_testonly = "testonly = true",
+                )?;
+            }
+        }
+    } else {
+        let group_name = group_name.unwrap_or_else(|| pkg.name.as_ref());
+        let optional_visibility =
+            group_visibility.map(|v| format!("visibility = {}", v.variable)).unwrap_or_default();
         writeln!(
             output,
             include_str!("../templates/top_level_gn_rule.template"),
-            group_name = test_group_name,
+            group_name = group_name,
+            dep_name = target_name,
             group_rule_name = group_rule,
-            dep_name = target_name + "-test",
             optional_visibility = optional_visibility,
-            optional_testonly = "testonly = true",
+            optional_testonly = if testonly { "testonly = true" } else { "" },
         )?;
+
+        if has_tests {
+            let test_group_name = format!("{}-test", group_name);
+            writeln!(
+                output,
+                include_str!("../templates/top_level_gn_rule.template"),
+                group_name = test_group_name,
+                group_rule_name = group_rule,
+                dep_name = target_name + "-test",
+                optional_visibility = optional_visibility,
+                optional_testonly = "testonly = true",
+            )?;
+        }
     }
 
     if platform.is_some() {
@@ -116,6 +155,7 @@ pub fn write_alias_rule<W: io::Write>(
     platform: Option<&str>,
     pkg: &Package,
     group_visibility: Option<&GroupVisibility>,
+    groups: Option<&[GroupCfg]>,
     testonly: bool,
 ) -> Result<()> {
     if let Some(ref platform) = platform {
@@ -127,8 +167,28 @@ pub fn write_alias_rule<W: io::Write>(
     }
 
     let group_name = format!("{}-{}", pkg.name, pkg.version);
-    let optional_visibility =
-        group_visibility.map(|v| format!("visibility = {}", v.variable)).unwrap_or_default();
+    let optional_visibility = if let Some(gv) = group_visibility {
+        format!("visibility = {}", gv.variable)
+    } else if let Some(groups) = groups {
+        if !groups.is_empty()
+            && groups.iter().all(|g| g.visibility.as_ref().map_or(false, |v| !v.is_empty()))
+        {
+            let mut vis_set = BTreeSet::new();
+            for g in groups {
+                if let Some(vis) = &g.visibility {
+                    for v in vis {
+                        vis_set.insert(v.as_str());
+                    }
+                }
+            }
+            let vis_strs: Vec<_> = vis_set.iter().map(|v| format!("\"{}\"", v)).collect();
+            format!("visibility = [ {} ]", vis_strs.join(", "))
+        } else {
+            String::new()
+        }
+    } else {
+        String::new()
+    };
 
     writeln!(
         output,
@@ -988,6 +1048,417 @@ mod tests {
   applicable_licenses = []
 
   
+}
+
+"#
+        );
+    }
+
+    #[test]
+    fn top_level_rule_structured_groups() {
+        let pkg: cargo_metadata::Package = serde_json::from_str(
+            r#"{
+                "name": "foo",
+                "version": "1.2.3",
+                "id": "foo 1.2.3 (path+file:///foo)",
+                "license": null,
+                "license_file": null,
+                "description": null,
+                "source": null,
+                "dependencies": [],
+                "targets": [],
+                "features": {},
+                "manifest_path": "/foo/Cargo.toml"
+            }"#,
+        )
+        .unwrap();
+
+        let groups = vec![
+            GroupCfg {
+                name: "foo-v1_2".to_string(),
+                visibility: Some(vec!["//vendor/google/*".to_string()]),
+            },
+            GroupCfg { name: "foo-legacy".to_string(), visibility: None },
+        ];
+
+        let mut output = vec![];
+        write_top_level_rule(
+            &mut output,
+            None,
+            &pkg,
+            None,
+            None,
+            Some(&groups),
+            None,
+            false,
+            false,
+        )
+        .unwrap();
+
+        let output_str = String::from_utf8(output).unwrap();
+        assert_eq!(
+            output_str,
+            r#"group("foo-v1_2") {
+  public_deps = [":foo-v1_2_3"]
+  
+  visibility = [ "//vendor/google/*" ]
+}
+
+group("foo-legacy") {
+  public_deps = [":foo-v1_2_3"]
+  
+  
+}
+
+"#
+        );
+    }
+
+    #[test]
+    fn top_level_rule_structured_groups_with_tests() {
+        let pkg: cargo_metadata::Package = serde_json::from_str(
+            r#"{
+                "name": "foo",
+                "version": "1.2.3",
+                "id": "foo 1.2.3 (path+file:///foo)",
+                "license": null,
+                "license_file": null,
+                "description": null,
+                "source": null,
+                "dependencies": [],
+                "targets": [],
+                "features": {},
+                "manifest_path": "/foo/Cargo.toml"
+            }"#,
+        )
+        .unwrap();
+
+        let groups = vec![GroupCfg {
+            name: "foo-v1_2".to_string(),
+            visibility: Some(vec!["//vendor/google/*".to_string()]),
+        }];
+
+        let mut output = vec![];
+        write_top_level_rule(&mut output, None, &pkg, None, None, Some(&groups), None, false, true)
+            .unwrap();
+
+        let output_str = String::from_utf8(output).unwrap();
+        assert_eq!(
+            output_str,
+            r#"group("foo-v1_2") {
+  public_deps = [":foo-v1_2_3"]
+  
+  visibility = [ "//vendor/google/*" ]
+}
+
+group("foo-v1_2-test") {
+  public_deps = [":foo-v1_2_3-test"]
+  testonly = true
+  visibility = [ "//vendor/google/*" ]
+}
+
+"#
+        );
+    }
+
+    #[test]
+    fn top_level_rule_structured_groups_testonly() {
+        let pkg: cargo_metadata::Package = serde_json::from_str(
+            r#"{
+                "name": "foo",
+                "version": "1.2.3",
+                "id": "foo 1.2.3 (path+file:///foo)",
+                "license": null,
+                "license_file": null,
+                "description": null,
+                "source": null,
+                "dependencies": [],
+                "targets": [],
+                "features": {},
+                "manifest_path": "/foo/Cargo.toml"
+            }"#,
+        )
+        .unwrap();
+
+        let groups = vec![GroupCfg {
+            name: "foo-v1_2".to_string(),
+            visibility: Some(vec!["//vendor/google/*".to_string()]),
+        }];
+
+        let mut output = vec![];
+        write_top_level_rule(&mut output, None, &pkg, None, None, Some(&groups), None, true, false)
+            .unwrap();
+
+        let output_str = String::from_utf8(output).unwrap();
+        assert_eq!(
+            output_str,
+            r#"group("foo-v1_2") {
+  public_deps = [":foo-v1_2_3"]
+  testonly = true
+  visibility = [ "//vendor/google/*" ]
+}
+
+"#
+        );
+    }
+
+    #[test]
+    fn top_level_rule_legacy_group() {
+        let pkg: cargo_metadata::Package = serde_json::from_str(
+            r#"{
+                "name": "foo",
+                "version": "1.2.3",
+                "id": "foo 1.2.3 (path+file:///foo)",
+                "license": null,
+                "license_file": null,
+                "description": null,
+                "source": null,
+                "dependencies": [],
+                "targets": [],
+                "features": {},
+                "manifest_path": "/foo/Cargo.toml"
+            }"#,
+        )
+        .unwrap();
+
+        let mut output = vec![];
+        write_top_level_rule(
+            &mut output,
+            None,
+            &pkg,
+            Some("foo-legacy"),
+            None,
+            None,
+            None,
+            false,
+            false,
+        )
+        .unwrap();
+
+        let output_str = String::from_utf8(output).unwrap();
+        assert_eq!(
+            output_str,
+            r#"group("foo-legacy") {
+  public_deps = [":foo-v1_2_3"]
+  
+  
+}
+
+"#
+        );
+    }
+
+    #[test]
+    fn alias_rule_structured_groups_union_visibility() {
+        let pkg: cargo_metadata::Package = serde_json::from_str(
+            r#"{
+                "name": "foo",
+                "version": "1.2.3",
+                "id": "foo 1.2.3 (path+file:///foo)",
+                "license": null,
+                "license_file": null,
+                "description": null,
+                "source": null,
+                "dependencies": [],
+                "targets": [],
+                "features": {},
+                "manifest_path": "/foo/Cargo.toml"
+            }"#,
+        )
+        .unwrap();
+
+        let groups = vec![
+            GroupCfg {
+                name: "foo-v1_2".to_string(),
+                visibility: Some(vec!["//vendor/google/*".to_string(), "//src/a/*".to_string()]),
+            },
+            GroupCfg {
+                name: "foo-v1".to_string(),
+                visibility: Some(vec!["//src/a/*".to_string(), "//src/b/*".to_string()]),
+            },
+        ];
+
+        let mut output = vec![];
+        write_alias_rule(&mut output, None, &pkg, None, Some(&groups), false).unwrap();
+
+        let output_str = String::from_utf8(output).unwrap();
+        assert_eq!(
+            output_str,
+            r#"group("foo-1.2.3") {
+  public_deps = [":foo-v1_2_3"]
+  
+  visibility = [ "//src/a/*", "//src/b/*", "//vendor/google/*" ]
+}
+
+"#
+        );
+    }
+
+    #[test]
+    fn alias_rule_structured_groups_unrestricted_if_any_unrestricted() {
+        let pkg: cargo_metadata::Package = serde_json::from_str(
+            r#"{
+                "name": "foo",
+                "version": "1.2.3",
+                "id": "foo 1.2.3 (path+file:///foo)",
+                "license": null,
+                "license_file": null,
+                "description": null,
+                "source": null,
+                "dependencies": [],
+                "targets": [],
+                "features": {},
+                "manifest_path": "/foo/Cargo.toml"
+            }"#,
+        )
+        .unwrap();
+
+        let groups = vec![
+            GroupCfg {
+                name: "foo-v1_2".to_string(),
+                visibility: Some(vec!["//vendor/google/*".to_string()]),
+            },
+            GroupCfg { name: "foo-legacy".to_string(), visibility: None },
+        ];
+
+        let mut output = vec![];
+        write_alias_rule(&mut output, None, &pkg, None, Some(&groups), false).unwrap();
+
+        let output_str = String::from_utf8(output).unwrap();
+        assert_eq!(
+            output_str,
+            r#"group("foo-1.2.3") {
+  public_deps = [":foo-v1_2_3"]
+  
+  
+}
+
+"#
+        );
+    }
+
+    #[test]
+    fn alias_rule_structured_groups_unrestricted_if_any_empty() {
+        let pkg: cargo_metadata::Package = serde_json::from_str(
+            r#"{
+                "name": "foo",
+                "version": "1.2.3",
+                "id": "foo 1.2.3 (path+file:///foo)",
+                "license": null,
+                "license_file": null,
+                "description": null,
+                "source": null,
+                "dependencies": [],
+                "targets": [],
+                "features": {},
+                "manifest_path": "/foo/Cargo.toml"
+            }"#,
+        )
+        .unwrap();
+
+        let groups = vec![
+            GroupCfg {
+                name: "foo-v1_2".to_string(),
+                visibility: Some(vec!["//vendor/google/*".to_string()]),
+            },
+            GroupCfg { name: "foo-legacy".to_string(), visibility: Some(vec![]) },
+        ];
+
+        let mut output = vec![];
+        write_alias_rule(&mut output, None, &pkg, None, Some(&groups), false).unwrap();
+
+        let output_str = String::from_utf8(output).unwrap();
+        assert_eq!(
+            output_str,
+            r#"group("foo-1.2.3") {
+  public_deps = [":foo-v1_2_3"]
+  
+  
+}
+
+"#
+        );
+    }
+
+    #[test]
+    fn alias_rule_legacy_group_visibility() {
+        let pkg: cargo_metadata::Package = serde_json::from_str(
+            r#"{
+                "name": "foo",
+                "version": "1.2.3",
+                "id": "foo 1.2.3 (path+file:///foo)",
+                "license": null,
+                "license_file": null,
+                "description": null,
+                "source": null,
+                "dependencies": [],
+                "targets": [],
+                "features": {},
+                "manifest_path": "/foo/Cargo.toml"
+            }"#,
+        )
+        .unwrap();
+
+        let group_vis = GroupVisibility {
+            import: "//build/foo.gni".to_string(),
+            variable: "foo_visibility".to_string(),
+        };
+
+        let mut output = vec![];
+        write_alias_rule(&mut output, None, &pkg, Some(&group_vis), None, false).unwrap();
+
+        let output_str = String::from_utf8(output).unwrap();
+        assert_eq!(
+            output_str,
+            r#"group("foo-1.2.3") {
+  public_deps = [":foo-v1_2_3"]
+  
+  visibility = foo_visibility
+}
+
+"#
+        );
+    }
+
+    #[test]
+    fn alias_rule_legacy_group_visibility_overrides_groups() {
+        let pkg: cargo_metadata::Package = serde_json::from_str(
+            r#"{
+                "name": "foo",
+                "version": "1.2.3",
+                "id": "foo 1.2.3 (path+file:///foo)",
+                "license": null,
+                "license_file": null,
+                "description": null,
+                "source": null,
+                "dependencies": [],
+                "targets": [],
+                "features": {},
+                "manifest_path": "/foo/Cargo.toml"
+            }"#,
+        )
+        .unwrap();
+
+        let group_vis = GroupVisibility {
+            import: "//build/foo.gni".to_string(),
+            variable: "foo_visibility".to_string(),
+        };
+
+        let groups = vec![GroupCfg {
+            name: "foo-v1_2".to_string(),
+            visibility: Some(vec!["//vendor/google/*".to_string()]),
+        }];
+
+        let mut output = vec![];
+        write_alias_rule(&mut output, None, &pkg, Some(&group_vis), Some(&groups), false).unwrap();
+
+        let output_str = String::from_utf8(output).unwrap();
+        assert_eq!(
+            output_str,
+            r#"group("foo-1.2.3") {
+  public_deps = [":foo-v1_2_3"]
+  
+  visibility = foo_visibility
 }
 
 "#

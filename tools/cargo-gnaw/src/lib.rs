@@ -142,6 +142,17 @@ pub struct GroupVisibility {
     variable: String,
 }
 
+/// Configuration for a structured forwarding group target.
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct GroupCfg {
+    /// The name of the GN group target to generate.
+    pub name: String,
+    /// Optional visibility configuration for that specific group target.
+    #[serde(default)]
+    pub visibility: Option<Vec<String>>,
+}
+
 /// Defines a per-target rule for rule renaming.
 ///
 /// Some external crates require additional post-processing. For those we define custom rules,
@@ -187,6 +198,8 @@ pub struct PackageCfg {
     /// Visibility list to use for the forwarding group, for use with fixits which seek to remove
     /// the use of a specific crate from the tree.
     group_visibility: Option<GroupVisibility>,
+    /// Structured list of forwarding group targets to generate for this package version.
+    groups: Option<Vec<GroupCfg>>,
     /// Whether or not this target my only be used in tests.
     testonly: Option<bool>,
     /// Build tests for this target.
@@ -197,6 +210,17 @@ pub struct PackageCfg {
     /// feature is deliberately limited to just a single definition and a limited number
     /// of renames, as it should be used in very special cases only.
     target_renaming: Option<RuleRenaming>,
+}
+
+impl PackageCfg {
+    pub fn validate(&self) -> Result<()> {
+        if self.groups.is_some() && (self.group_name.is_some() || self.group_visibility.is_some()) {
+            anyhow::bail!(
+                "Cannot specify both `groups` and legacy `group_name` or `group_visibility`"
+            );
+        }
+        Ok(())
+    }
 }
 
 /// Configs added to all GN targets in the BUILD.gn
@@ -353,6 +377,16 @@ pub fn generate_from_manifest<W: io::Write>(mut output: &mut W, opt: &Opt) -> Re
     let metadata_configs: BuildMetadata =
         toml::from_str(&contents).context("parsing manifest toml")?;
 
+    if let Some(gn) = &metadata_configs.gn {
+        for (pkg_name, versions) in &gn.package {
+            for (pkg_version, pkg_cfg) in versions {
+                pkg_cfg.validate().with_context(|| {
+                    format!("validating package config for {} version {}", pkg_name, pkg_version)
+                })?;
+            }
+        }
+    }
+
     gn::write_header(&mut output, manifest_path).context("writing header")?;
 
     if opt.output_fuchsia_sdk_metadata {
@@ -388,6 +422,7 @@ pub fn generate_from_manifest<W: io::Write>(mut output: &mut W, opt: &Opt) -> Re
 
                             let group_name = cfg.and_then(|cfg| cfg.group_name.as_deref());
                             let visibility = cfg.and_then(|cfg| cfg.group_visibility.as_ref());
+                            let groups = cfg.and_then(|cfg| cfg.groups.as_deref());
                             if let Some(visibility) = visibility {
                                 write_import_once(
                                     &mut output,
@@ -411,6 +446,7 @@ pub fn generate_from_manifest<W: io::Write>(mut output: &mut W, opt: &Opt) -> Re
                                 package,
                                 group_name,
                                 visibility,
+                                groups,
                                 target_renaming,
                                 cfg.and_then(|cfg| cfg.testonly).unwrap_or(false),
                                 cfg.map(|c| c.tests).unwrap_or(false),
@@ -426,6 +462,7 @@ pub fn generate_from_manifest<W: io::Write>(mut output: &mut W, opt: &Opt) -> Re
                                 platform.as_deref(),
                                 package,
                                 visibility,
+                                groups,
                                 cfg.and_then(|cfg| cfg.testonly).unwrap_or(false),
                             )
                             .with_context(|| {
@@ -457,6 +494,7 @@ pub fn generate_from_manifest<W: io::Write>(mut output: &mut W, opt: &Opt) -> Re
 
                 let group_name = cfg.and_then(|cfg| cfg.group_name.as_deref());
                 let visibility = cfg.and_then(|cfg| cfg.group_visibility.as_ref());
+                let groups = cfg.and_then(|cfg| cfg.groups.as_deref());
                 if let Some(visibility) = visibility {
                     write_import_once(&mut output, &mut imported_files, &visibility.import)?;
                 }
@@ -472,6 +510,7 @@ pub fn generate_from_manifest<W: io::Write>(mut output: &mut W, opt: &Opt) -> Re
                     package,
                     group_name,
                     visibility,
+                    groups,
                     target_renaming,
                     cfg.and_then(|cfg| cfg.testonly).unwrap_or(false),
                     cfg.map(|c| c.tests).unwrap_or(false),
@@ -566,6 +605,7 @@ pub fn generate_from_manifest<W: io::Write>(mut output: &mut W, opt: &Opt) -> Re
                                 && pkg_cfg.binary.is_empty()
                                 && pkg_cfg.reviewed_features.is_none()
                                 && pkg_cfg.group_visibility.is_none()
+                                && pkg_cfg.groups.is_none()
                                 && pkg_cfg.testonly.is_none()
                                 && pkg_cfg.target_renaming.is_none(),
                             "No other field can be set, including platform sub-configs, if an existing GN target is specified"
@@ -891,4 +931,92 @@ pub fn run(args: &[impl AsRef<str>]) -> Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn deserialize_package_cfg_with_groups() {
+        let toml_str = r#"
+            groups = [
+                { name = "foo-v1_2", visibility = [ "//vendor/google/*" ] },
+                { name = "foo-legacy" }
+            ]
+        "#;
+
+        let cfg: PackageCfg = toml::from_str(toml_str).expect("deserialize PackageCfg");
+        let groups = cfg.groups.expect("groups should be Some");
+        assert_eq!(groups.len(), 2);
+        assert_eq!(groups[0].name, "foo-v1_2");
+        assert_eq!(groups[0].visibility, Some(vec!["//vendor/google/*".to_string()]));
+        assert_eq!(groups[1].name, "foo-legacy");
+        assert_eq!(groups[1].visibility, None);
+    }
+
+    #[test]
+    fn deserialize_package_cfg_without_groups() {
+        let toml_str = r#"
+            group_name = "foo-legacy"
+        "#;
+
+        let cfg: PackageCfg = toml::from_str(toml_str).expect("deserialize PackageCfg");
+        assert_eq!(cfg.group_name.as_deref(), Some("foo-legacy"));
+        assert!(cfg.groups.is_none());
+    }
+
+    #[test]
+    fn package_cfg_with_group_name_and_groups_errors() {
+        let toml_str = r#"
+            group_name = "foo-legacy"
+            groups = [
+                { name = "foo-v1_2" }
+            ]
+        "#;
+
+        let cfg: PackageCfg = toml::from_str(toml_str).expect("deserialize PackageCfg");
+        let err = cfg.validate().expect_err("expected validation error");
+        assert!(err.to_string().contains(
+            "Cannot specify both `groups` and legacy `group_name` or `group_visibility`"
+        ));
+    }
+
+    #[test]
+    fn package_cfg_with_group_visibility_and_groups_errors() {
+        let toml_str = r#"
+            groups = [
+                { name = "foo-v1_2" }
+            ]
+            [group_visibility]
+            import = "//build/foo.gni"
+            variable = "foo_visibility"
+        "#;
+
+        let cfg: PackageCfg = toml::from_str(toml_str).expect("deserialize PackageCfg");
+        let err = cfg.validate().expect_err("expected validation error");
+        assert!(err.to_string().contains(
+            "Cannot specify both `groups` and legacy `group_name` or `group_visibility`"
+        ));
+    }
+
+    #[test]
+    fn package_cfg_validate_ok() {
+        let toml_groups = r#"
+            groups = [
+                { name = "foo-v1_2" }
+            ]
+        "#;
+        let cfg: PackageCfg = toml::from_str(toml_groups).expect("deserialize PackageCfg");
+        assert!(cfg.validate().is_ok());
+
+        let toml_legacy = r#"
+            group_name = "foo-legacy"
+            [group_visibility]
+            import = "//build/foo.gni"
+            variable = "foo_visibility"
+        "#;
+        let cfg_legacy: PackageCfg = toml::from_str(toml_legacy).expect("deserialize PackageCfg");
+        assert!(cfg_legacy.validate().is_ok());
+    }
 }
