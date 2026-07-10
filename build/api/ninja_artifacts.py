@@ -8,7 +8,6 @@ import collections
 import os
 import sys
 import typing as T
-from collections.abc import Sequence
 from pathlib import Path
 
 _SCRIPT_DIR = Path(__file__).parent
@@ -58,9 +57,7 @@ class NinjaRunner(object):
         """
         self._ninja = ninja
         self._build_dir = build_dir
-        self._cmd_runner = (
-            command_runner if command_runner else build_utils.CommandRunner()
-        )
+        self._cmd_runner = command_runner or build_utils.CommandRunner()
 
     @property
     def ninja(self) -> Path:
@@ -101,7 +98,7 @@ class MockNinjaRunner(NinjaRunner):
         super().__init__(Path("ninja"), build_dir, self._mock_runner)
         self._mock_runner.push_result(0, mock_output, "")
 
-    def last_ninja_args(self) -> Sequence[str | Path]:
+    def last_ninja_args(self) -> T.Sequence[str | Path]:
         last_args = self._mock_runner.results[-1].args
         assert last_args[0:3] == ["ninja", "-C", str(self.build_dir)]
         return last_args[3:]

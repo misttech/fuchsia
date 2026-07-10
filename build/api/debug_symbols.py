@@ -207,7 +207,9 @@ class DebugSymbolsManifestParser(object):
         # value, for example Go host binaries. So this could be an empty string.
         return build_id
 
-    def _parse_entry(self, entry: T.Any, manifest_path: Path | None) -> None:
+    def _parse_entry(
+        self, entry: T.Any, manifest_path: Path | str | None
+    ) -> None:
         """Parse a given debug manifest entry, and update state accordingly.
 
         Args:
@@ -262,7 +264,7 @@ class DebugSymbolsManifestParser(object):
         self._visited_stack = self._visited_stack[:-1]
 
     def parse_manifest_json(
-        self, manifest_json: T.Any, manifest_path: Path | None
+        self, manifest_json: T.Any, manifest_path: Path | str | None
     ) -> None:
         """Parse a given debug_symbols manifest JSON value.
 

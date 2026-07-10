@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.join(_SCRIPT_DIR, "../bazel/scripts"))
 import build_utils
 
 if T.TYPE_CHECKING:
-    from gn_ninja_outputs import OutputsDatabase
+    from gn_ninja_outputs import NinjaOutputsBase
 
 
 class FileToTestPackageFinder:
@@ -27,7 +27,7 @@ class FileToTestPackageFinder:
     Args:
         build_dir: The root of the build directory.
         fuchsia_dir: The root of the Fuchsia source tree.
-        outputs_database: An instance of OutputsDatabase for querying build outputs.
+        outputs_database: An instance of NinjaOutputsBase for querying build outputs.
         log_func: A callable for logging messages.
         command_runner: An instance of build_utils.CommandRunner.
         host_tag: The host platform tag (e.g. "linux-x64").
@@ -37,7 +37,7 @@ class FileToTestPackageFinder:
         self,
         build_dir: Path,
         fuchsia_dir: Path,
-        outputs_database: "OutputsDatabase",
+        outputs_database: "NinjaOutputsBase",
         log_func: T.Callable[[str], None],
         host_tag: str = "linux-x64",
         command_runner: build_utils.CommandRunner | None = None,
@@ -51,7 +51,7 @@ class FileToTestPackageFinder:
             self.log_func
         )
 
-    def find_test_packages_fast(self, source_path: str) -> set[str]:
+    def find_test_packages_fast(self, source_path: Path | str) -> set[str]:
         """Finds test packages using fast-lookup heuristics.
 
         Args:
@@ -61,7 +61,7 @@ class FileToTestPackageFinder:
             A set of GN labels for test packages that likely cover this source file.
         """
         # Helper to get GN labels for the source file
-        gn_labels = set()
+        gn_labels: set[str] = set()
 
         str_abs_source = os.path.realpath(self.fuchsia_dir / source_path)
 
@@ -209,7 +209,8 @@ class FileToTestPackageFinder:
             return gn_labels
 
         # Load caching infrastructure
-        cache = self._load_cache()
+        # This stores a { target_label -> [ test_label ] } map.
+        cache: dict[str, list[str]] = self._load_cache()
 
         final_tests = set()
 
@@ -228,13 +229,13 @@ class FileToTestPackageFinder:
             # Heuristic: Prefer tests defined in the same directory as the source target
             # If we find any such tests, return ONLY them.
             if matched_tests:
-                target_dirs = set()
+                target_dirs: set[str] = set()
                 for t in gn_labels:
                     # //foo/bar:baz -> //foo/bar
                     # //foo/bar -> //foo/bar
                     target_dirs.add(t.split(":")[0])
 
-                same_dir_tests = set()
+                same_dir_tests: set[str] = set()
                 for test in matched_tests:
                     for d in target_dirs:
                         # Match //foo/bar:test or //foo/bar/sub:test
@@ -275,7 +276,9 @@ class FileToTestPackageFinder:
         self.log_func(f"WARNING: gn refs failed for {target}")
         return set()
 
-    def _filter_tests_json(self, refs: set[str], tests_data: list) -> set[str]:
+    def _filter_tests_json(
+        self, refs: set[str], tests_data: list[dict[str, T.Any]]
+    ) -> set[str]:
         """Returns test labels from tests.json that are in `refs`."""
         matched = set()
         for test_entry in tests_data:
@@ -304,7 +307,7 @@ class FileToTestPackageFinder:
     def _get_cache_path(self) -> Path:
         return self.build_dir / "file_to_test_package_cache.json"
 
-    def _load_cache(self) -> dict:
+    def _load_cache(self) -> dict[str, list[str]]:
         """Loads cache if valid, else returns empty dict."""
         cache_path = self._get_cache_path()
         if not cache_path.exists():
@@ -341,7 +344,7 @@ class FileToTestPackageFinder:
 
         return data.get("mapping", {})
 
-    def _save_cache(self, mapping: dict) -> None:
+    def _save_cache(self, mapping: dict[str, list[str]]) -> None:
         """Saves the mapping to cache with current timestamp."""
         cache_path = self._get_cache_path()
         data = {"mapping": mapping}

@@ -166,75 +166,15 @@ class BuildApiModuleList(object):
         return [m.name for m in self._modules]
 
 
-class OutputsDatabase(object):
-    """Manage a lazily-created / updated NinjaOutputsTabular database.
+def load_ninja_outputs_database(build_dir: Path) -> None | T.Any:
+    """Load the Ninja outputs database, return None on error."""
+    try:
+        import gn_ninja_outputs
 
-    Usage is:
-        1) Create instance.
-        2) Call load() to load the database from the Ninja build directory.
-        3) Call gn_label_to_paths() or path_to_gn_label() as many times
-           as needed.
-    """
-
-    def __init__(self) -> None:
-        self._database: None | OutputsDatabase = None
-
-    def load(self, build_dir: Path) -> bool:
-        """Load the database from the given build directory.
-
-        This takes care of converting the ninja_outputs.json file generated
-        by GN into the more efficient tabular format, whenever this is needed.
-
-        Args:
-          build_dir: Ninja build directory.
-
-        Returns:
-          On success return True, on failure, print an error message to stderr
-          then return False.
-        """
-        json_file = build_dir / "ninja_outputs.json"
-        tab_file = build_dir / "ninja_outputs.tabular"
-        if not json_file.exists():
-            if tab_file.exists():
-                tab_file.unlink()
-            print(
-                f"ERROR: Missing Ninja outputs file: {json_file}",
-                file=sys.stderr,
-            )
-            return False
-
-        from gn_ninja_outputs import NinjaOutputsTabular as OutputsDatabase
-
-        database = OutputsDatabase()
-        self._database = database
-
-        if (
-            not tab_file.exists()
-            or tab_file.stat().st_mtime < json_file.stat().st_mtime
-        ):
-            # Re-generate database file when needed
-            database.load_from_json(json_file)
-            database.save_to_file(tab_file)
-        else:
-            # Load previously generated database.
-            database.load_from_file(tab_file)
-        return True
-
-    def gn_label_to_paths(self, label: str) -> T.List[str]:
-        assert self._database
-        return self._database.gn_label_to_paths(label)
-
-    def path_to_gn_label(self, path: str) -> str:
-        assert self._database
-        return self._database.path_to_gn_label(path)
-
-    def target_name_to_gn_labels(self, target: str) -> T.List[str]:
-        assert self._database
-        return self._database.target_name_to_gn_labels(target)
-
-    def is_valid_target_name(self, target: str) -> bool:
-        assert self._database
-        return self._database.is_valid_target_name(target)
+        return gn_ninja_outputs.load_from_build_dir(build_dir)
+    except RuntimeError as e:
+        print(f"ERROR: Could not load outputs database: {e}", file=sys.stderr)
+        return None
 
 
 class LastBuildApiFilter(object):
@@ -450,8 +390,8 @@ class DebugSymbolCommandState(object):
             # --test-mode is used during regression testing to avoid
             # using a fake ELF input file. Simply return the file name
             # as the build-id value for now.
-            def get_build_id(path: Path) -> str:
-                return path.name
+            def get_build_id(path: Path | str) -> str:
+                return Path(path).name
 
             self._debug_parser.set_build_id_callback_for_test(get_build_id)
 
@@ -726,9 +666,13 @@ class NinjaPathToGnLabelCommand(ScriptCommandBase):
 
     @staticmethod
     def run(args: argparse.Namespace) -> int:
-        outputs = OutputsDatabase()
-        if not outputs.load(args.build_dir):
+        outputs = load_ninja_outputs_database(args.build_dir)
+        if not outputs:
             return 1
+
+        import gn_ninja_outputs
+
+        assert isinstance(outputs, gn_ninja_outputs.NinjaOutputsBase)
 
         failure = False
         labels = set()
@@ -783,9 +727,13 @@ def resolve_gn_labels_to_ninja_paths(
         On failure, return (error_message, []) where error_message indicates
         and error.
     """
-    outputs = OutputsDatabase()
-    if not outputs.load(build_dir):
-        return "Could not load GN outputs database", []
+    outputs = load_ninja_outputs_database(build_dir)
+    if not outputs:
+        return ("Could not load Ninja outputs", [])
+
+    import gn_ninja_outputs
+
+    assert isinstance(outputs, gn_ninja_outputs.NinjaOutputsBase)
 
     from gn_labels import GnLabelQualifier
 
@@ -868,9 +816,13 @@ class FxBuildArgsToLabelsCommand(ScriptCommandBase):
 
     @staticmethod
     def run(args: argparse.Namespace) -> int:
-        outputs = OutputsDatabase()
-        if not outputs.load(args.build_dir):
+        outputs = load_ninja_outputs_database(args.build_dir)
+        if not outputs:
             return 1
+
+        import gn_ninja_outputs
+
+        assert isinstance(outputs, gn_ninja_outputs.NinjaOutputsBase)
 
         from gn_labels import GnLabelQualifier
 
@@ -1177,10 +1129,13 @@ class FileToTestPackageCommand(ScriptCommandBase):
 
         test_packages = set()
 
-        outputs = OutputsDatabase()
-        if not outputs.load(args.build_dir):
-            _log("Failed to load OutputsDatabase.")
+        outputs = load_ninja_outputs_database(args.build_dir)
+        if not outputs:
             return 1
+
+        import gn_ninja_outputs
+
+        assert isinstance(outputs, gn_ninja_outputs.NinjaOutputsBase)
 
         from file_to_test_package import FileToTestPackageFinder
 

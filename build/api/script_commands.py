@@ -43,8 +43,7 @@ class ScriptCommandBase(object):
     class ListCommand(ScriptCommandBase):
         "List all available build API module names."
 
-        @staticmethod
-        def run(args: argparse.Namespace) -> int:
+        def run(self, args: argparse.Namespace) -> int:
             ... implement the command here.
             return 0
 
@@ -87,8 +86,7 @@ class ScriptCommandBase(object):
         needs.
         """
 
-    @staticmethod
-    def run(args: argparse.Namespace) -> int:
+    def run(self, args: argparse.Namespace) -> int:
         """Run the command. Derived classes *must* override this method."""
         raise NotImplementedError
         return 0
