@@ -17,10 +17,7 @@ from antlion.utils import rand_ascii_str, rand_hex_str
 from honeydew.affordances.connectivity.wlan.utils.errors import (
     HoneydewWlanError,
 )
-from honeydew.affordances.connectivity.wlan.utils.types import (
-    NetworkConfig,
-    SecurityType,
-)
+from honeydew.affordances.connectivity.wlan.utils.types import NetworkConfig
 from mobly import asserts, signals, test_runner
 from openwrt_access_point.lib.access_point_config import (
     DEFAULT_2G_CHANNEL,
@@ -144,7 +141,7 @@ class SavedNetworksTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         """Save an open network with a password and verify that it fails to save."""
         test_network = NetworkConfig(
             rand_ascii_str(10),
-            SecurityType.NONE,
+            f_wlan_policy.SecurityType.NONE,
             CREDENTIAL_TYPE_NONE,
             rand_ascii_str(8),
         )
@@ -169,7 +166,7 @@ class SavedNetworksTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         """Save an open network and verify presence."""
         test_network = NetworkConfig(
             rand_ascii_str(10),
-            SecurityType.NONE,
+            f_wlan_policy.SecurityType.NONE,
             CREDENTIAL_TYPE_NONE,
             CREDENTIAL_VALUE_NONE,
         )
@@ -190,7 +187,7 @@ class SavedNetworksTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         """
         test_network = NetworkConfig(
             rand_ascii_str(11),
-            SecurityType.WPA2,
+            f_wlan_policy.SecurityType.WPA2,
             CREDENTIAL_TYPE_PSK,
             rand_hex_str(PSK_LEN).lower(),
         )
@@ -207,7 +204,7 @@ class SavedNetworksTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         """Save a wep network and verify presence."""
         test_network = NetworkConfig(
             rand_ascii_str(12),
-            SecurityType.WEP,
+            f_wlan_policy.SecurityType.WEP,
             CREDENTIAL_TYPE_PASSWORD,
             rand_ascii_str(13),
         )
@@ -224,7 +221,7 @@ class SavedNetworksTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         """Save a wpa2 network and verify presence."""
         test_network = NetworkConfig(
             rand_ascii_str(9),
-            SecurityType.WPA2,
+            f_wlan_policy.SecurityType.WPA2,
             CREDENTIAL_TYPE_PASSWORD,
             rand_ascii_str(15),
         )
@@ -241,7 +238,7 @@ class SavedNetworksTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         """Save a wpa network and verify presence."""
         test_network = NetworkConfig(
             rand_ascii_str(16),
-            SecurityType.WPA,
+            f_wlan_policy.SecurityType.WPA,
             CREDENTIAL_TYPE_PASSWORD,
             rand_ascii_str(9),
         )
@@ -258,7 +255,7 @@ class SavedNetworksTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         """Save a wpa3 network and verify presence."""
         test_network = NetworkConfig(
             rand_ascii_str(9),
-            SecurityType.WPA3,
+            f_wlan_policy.SecurityType.WPA3,
             CREDENTIAL_TYPE_PASSWORD,
             rand_ascii_str(15),
         )
@@ -275,7 +272,7 @@ class SavedNetworksTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         """Save a network and verify after reboot network is present."""
         test_network = NetworkConfig(
             rand_ascii_str(10),
-            SecurityType.WPA2,
+            f_wlan_policy.SecurityType.WPA2,
             CREDENTIAL_TYPE_PASSWORD,
             rand_ascii_str(10),
         )
@@ -303,13 +300,13 @@ class SavedNetworksTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         ssid = rand_ascii_str(19)
         test_network_wpa2 = NetworkConfig(
             ssid,
-            SecurityType.WPA2,
+            f_wlan_policy.SecurityType.WPA2,
             CREDENTIAL_TYPE_PASSWORD,
             rand_ascii_str(12),
         )
         test_network_open = NetworkConfig(
             ssid,
-            SecurityType.NONE,
+            f_wlan_policy.SecurityType.NONE,
             CREDENTIAL_TYPE_NONE,
             CREDENTIAL_VALUE_NONE,
         )
@@ -340,7 +337,7 @@ class SavedNetworksTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         """
         test_network = NetworkConfig(
             rand_ascii_str(10),
-            SecurityType.WPA2,
+            f_wlan_policy.SecurityType.WPA2,
             CREDENTIAL_TYPE_PASSWORD,
             rand_ascii_str(10),
         )
@@ -384,7 +381,7 @@ class SavedNetworksTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         """
         test_network = NetworkConfig(
             rand_ascii_str(10),
-            SecurityType.NONE,
+            f_wlan_policy.SecurityType.NONE,
             CREDENTIAL_TYPE_NONE,
             CREDENTIAL_VALUE_NONE,
         )
@@ -421,7 +418,7 @@ class SavedNetworksTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         """
         test_network = NetworkConfig(
             rand_ascii_str(10),
-            SecurityType.WPA3,
+            f_wlan_policy.SecurityType.WPA3,
             CREDENTIAL_TYPE_PASSWORD,
             rand_ascii_str(10),
         )
@@ -439,7 +436,7 @@ class SavedNetworksTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         # Save the network and make sure that we see the device auto connect to it.
         await self.dut.wlan_policy.save_network(
             test_network.ssid,
-            SecurityType.WPA3,
+            f_wlan_policy.SecurityType.WPA3,
             test_network.credential_value,
         )
         try:

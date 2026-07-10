@@ -14,6 +14,7 @@ import time
 from typing import Sequence
 
 import fidl_fuchsia_wlan_common as f_wlan_common
+import fidl_fuchsia_wlan_policy as f_wlan_policy
 import fuchsia_wlan_base_test
 from antlion.controllers.access_point import setup_ap
 from antlion.controllers.ap_lib import hostapd_constants
@@ -24,7 +25,6 @@ from honeydew.affordances.connectivity.wlan.utils.types import (
     ClientStatusConnected,
     ConnectivityMode,
     OperatingBand,
-    SecurityType,
 )
 from mobly import asserts, signals, test_runner
 from openwrt_access_point.lib.access_point_config import (
@@ -184,8 +184,12 @@ class ChannelSwitchTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         if test_with_soft_ap:
             await self._start_soft_ap()
         self.log.info("connecting to network with ssid %s", self.ssid)
-        await self.dut.wlan_policy.save_network(self.ssid, SecurityType.NONE)
-        await self.dut.wlan_policy.connect(self.ssid, SecurityType.NONE)
+        await self.dut.wlan_policy.save_network(
+            self.ssid, f_wlan_policy.SecurityType.NONE
+        )
+        await self.dut.wlan_policy.connect(
+            self.ssid, f_wlan_policy.SecurityType.NONE
+        )
 
         asserts.assert_true(
             channel_switches, "Cannot run test, no channels to switch to"
@@ -435,7 +439,7 @@ class ChannelSwitchTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
 
         await self.dut.wlan_policy_ap.start(
             ssid,
-            SecurityType.NONE,
+            f_wlan_policy.SecurityType.NONE,
             None,
             ConnectivityMode.LOCAL_ONLY,
             OperatingBand.ANY,

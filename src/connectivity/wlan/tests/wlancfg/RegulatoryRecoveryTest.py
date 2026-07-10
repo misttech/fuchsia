@@ -14,7 +14,6 @@ from honeydew.affordances.connectivity.wlan.utils.types import (
     ConnectivityMode,
     CountryCode,
     OperatingBand,
-    SecurityType,
 )
 from honeydew.typing.custom_types import FidlEndpoint
 from mobly import asserts, signals, test_runner
@@ -56,7 +55,7 @@ class RegulatoryRecoveryTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         try:
             await self.dut.wlan_policy_ap.start(
                 "test_ssid",
-                SecurityType.NONE,
+                f_wlan_policy.SecurityType.NONE,
                 None,
                 ConnectivityMode.LOCAL_ONLY,
                 OperatingBand.ANY,
@@ -123,7 +122,7 @@ class RegulatoryRecoveryTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         if self.device_supports_ap:
             await self.dut.wlan_policy_ap.start(
                 "test_ssid",
-                SecurityType.NONE,
+                f_wlan_policy.SecurityType.NONE,
                 None,
                 ConnectivityMode.LOCAL_ONLY,
                 OperatingBand.ANY,
@@ -149,7 +148,7 @@ class RegulatoryRecoveryTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             )
             asserts.assert_equal(
                 ap_updates[0].id_.security_type,
-                SecurityType.NONE,
+                f_wlan_policy.SecurityType.NONE,
                 "Wrong security type",
                 ap_updates,
             )

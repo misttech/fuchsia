@@ -4,14 +4,12 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import fidl_fuchsia_wlan_policy as f_wlan_policy
 import fuchsia_wlan_base_test
 from antlion.controllers.access_point import AccessPoint, setup_ap
 from antlion.controllers.ap_lib import hostapd_constants
 from antlion.controllers.ap_lib.hostapd_security import Security, SecurityMode
-from honeydew.affordances.connectivity.wlan.utils.types import (
-    CountryCode,
-    SecurityType,
-)
+from honeydew.affordances.connectivity.wlan.utils.types import CountryCode
 from mobly import signals, test_runner
 from openwrt_access_point.lib.access_point_config import (
     AccessPointConfig,
@@ -100,8 +98,12 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                 ssid=self.ssid,
             )
 
-        await self.dut.wlan_policy.save_network(self.ssid, SecurityType.NONE)
-        await self.dut.wlan_policy.connect(self.ssid, SecurityType.NONE)
+        await self.dut.wlan_policy.save_network(
+            self.ssid, f_wlan_policy.SecurityType.NONE
+        )
+        await self.dut.wlan_policy.connect(
+            self.ssid, f_wlan_policy.SecurityType.NONE
+        )
 
     async def test_associate_actiontec_pk5000_24ghz_wpa2(self) -> None:
         if self.openwrt_ap:
@@ -127,12 +129,12 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
 
         await self.dut.wlan_policy.save_network(
             self.ssid,
-            SecurityType.WPA2,
+            f_wlan_policy.SecurityType.WPA2,
             target_pwd=self.password,
         )
         await self.dut.wlan_policy.connect(
             self.ssid,
-            SecurityType.WPA2,
+            f_wlan_policy.SecurityType.WPA2,
         )
 
     async def test_associate_actiontec_mi424wr_24ghz_open(self) -> None:
@@ -155,8 +157,12 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                 ssid=self.ssid,
             )
 
-        await self.dut.wlan_policy.save_network(self.ssid, SecurityType.NONE)
-        await self.dut.wlan_policy.connect(self.ssid, SecurityType.NONE)
+        await self.dut.wlan_policy.save_network(
+            self.ssid, f_wlan_policy.SecurityType.NONE
+        )
+        await self.dut.wlan_policy.connect(
+            self.ssid, f_wlan_policy.SecurityType.NONE
+        )
 
     async def test_associate_actiontec_mi424wr_24ghz_wpa2(self) -> None:
         if self.openwrt_ap:
@@ -181,12 +187,12 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             )
         await self.dut.wlan_policy.save_network(
             self.ssid,
-            SecurityType.WPA2,
+            f_wlan_policy.SecurityType.WPA2,
             target_pwd=self.password,
         )
         await self.dut.wlan_policy.connect(
             self.ssid,
-            SecurityType.WPA2,
+            f_wlan_policy.SecurityType.WPA2,
         )
 
     async def test_associate_asus_rtac66u_24ghz_open(self) -> None:
@@ -205,8 +211,12 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                 ssid=self.ssid,
             )
 
-        await self.dut.wlan_policy.save_network(self.ssid, SecurityType.NONE)
-        await self.dut.wlan_policy.connect(self.ssid, SecurityType.NONE)
+        await self.dut.wlan_policy.save_network(
+            self.ssid, f_wlan_policy.SecurityType.NONE
+        )
+        await self.dut.wlan_policy.connect(
+            self.ssid, f_wlan_policy.SecurityType.NONE
+        )
 
     async def test_associate_asus_rtac66u_24ghz_wpa2(self) -> None:
         if self.openwrt_ap:
@@ -228,12 +238,12 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
 
         await self.dut.wlan_policy.save_network(
             self.ssid,
-            SecurityType.WPA2,
+            f_wlan_policy.SecurityType.WPA2,
             target_pwd=self.password,
         )
         await self.dut.wlan_policy.connect(
             self.ssid,
-            SecurityType.WPA2,
+            f_wlan_policy.SecurityType.WPA2,
         )
 
     async def test_associate_asus_rtac66u_5ghz_open(self) -> None:
@@ -252,8 +262,12 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                 ssid=self.ssid,
             )
 
-        await self.dut.wlan_policy.save_network(self.ssid, SecurityType.NONE)
-        await self.dut.wlan_policy.connect(self.ssid, SecurityType.NONE)
+        await self.dut.wlan_policy.save_network(
+            self.ssid, f_wlan_policy.SecurityType.NONE
+        )
+        await self.dut.wlan_policy.connect(
+            self.ssid, f_wlan_policy.SecurityType.NONE
+        )
 
     async def test_associate_asus_rtac66u_5ghz_wpa2(self) -> None:
         if self.openwrt_ap:
@@ -275,12 +289,12 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
 
         await self.dut.wlan_policy.save_network(
             self.ssid,
-            SecurityType.WPA2,
+            f_wlan_policy.SecurityType.WPA2,
             target_pwd=self.password,
         )
         await self.dut.wlan_policy.connect(
             self.ssid,
-            SecurityType.WPA2,
+            f_wlan_policy.SecurityType.WPA2,
         )
 
     async def test_associate_asus_rtac86u_24ghz_open(self) -> None:
@@ -299,8 +313,12 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                 ssid=self.ssid,
             )
 
-        await self.dut.wlan_policy.save_network(self.ssid, SecurityType.NONE)
-        await self.dut.wlan_policy.connect(self.ssid, SecurityType.NONE)
+        await self.dut.wlan_policy.save_network(
+            self.ssid, f_wlan_policy.SecurityType.NONE
+        )
+        await self.dut.wlan_policy.connect(
+            self.ssid, f_wlan_policy.SecurityType.NONE
+        )
 
     async def test_associate_asus_rtac86u_24ghz_wpa2(self) -> None:
         if self.openwrt_ap:
@@ -321,12 +339,12 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             )
         await self.dut.wlan_policy.save_network(
             self.ssid,
-            SecurityType.WPA2,
+            f_wlan_policy.SecurityType.WPA2,
             target_pwd=self.password,
         )
         await self.dut.wlan_policy.connect(
             self.ssid,
-            SecurityType.WPA2,
+            f_wlan_policy.SecurityType.WPA2,
         )
 
     async def test_associate_asus_rtac86u_5ghz_open(self) -> None:
@@ -344,8 +362,12 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                 channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
                 ssid=self.ssid,
             )
-        await self.dut.wlan_policy.save_network(self.ssid, SecurityType.NONE)
-        await self.dut.wlan_policy.connect(self.ssid, SecurityType.NONE)
+        await self.dut.wlan_policy.save_network(
+            self.ssid, f_wlan_policy.SecurityType.NONE
+        )
+        await self.dut.wlan_policy.connect(
+            self.ssid, f_wlan_policy.SecurityType.NONE
+        )
 
     async def test_associate_asus_rtac86u_5ghz_wpa2(self) -> None:
         if self.openwrt_ap:
@@ -366,12 +388,12 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             )
         await self.dut.wlan_policy.save_network(
             self.ssid,
-            SecurityType.WPA2,
+            f_wlan_policy.SecurityType.WPA2,
             target_pwd=self.password,
         )
         await self.dut.wlan_policy.connect(
             self.ssid,
-            SecurityType.WPA2,
+            f_wlan_policy.SecurityType.WPA2,
         )
 
     async def test_associate_asus_rtac5300_24ghz_open(self) -> None:
@@ -389,8 +411,12 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                 channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
                 ssid=self.ssid,
             )
-        await self.dut.wlan_policy.save_network(self.ssid, SecurityType.NONE)
-        await self.dut.wlan_policy.connect(self.ssid, SecurityType.NONE)
+        await self.dut.wlan_policy.save_network(
+            self.ssid, f_wlan_policy.SecurityType.NONE
+        )
+        await self.dut.wlan_policy.connect(
+            self.ssid, f_wlan_policy.SecurityType.NONE
+        )
 
     async def test_associate_asus_rtac5300_24ghz_wpa2(self) -> None:
         if self.openwrt_ap:
@@ -411,12 +437,12 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             )
         await self.dut.wlan_policy.save_network(
             self.ssid,
-            SecurityType.WPA2,
+            f_wlan_policy.SecurityType.WPA2,
             target_pwd=self.password,
         )
         await self.dut.wlan_policy.connect(
             self.ssid,
-            SecurityType.WPA2,
+            f_wlan_policy.SecurityType.WPA2,
         )
 
     async def test_associate_asus_rtac5300_5ghz_open(self) -> None:
@@ -434,8 +460,12 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                 channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
                 ssid=self.ssid,
             )
-        await self.dut.wlan_policy.save_network(self.ssid, SecurityType.NONE)
-        await self.dut.wlan_policy.connect(self.ssid, SecurityType.NONE)
+        await self.dut.wlan_policy.save_network(
+            self.ssid, f_wlan_policy.SecurityType.NONE
+        )
+        await self.dut.wlan_policy.connect(
+            self.ssid, f_wlan_policy.SecurityType.NONE
+        )
 
     async def test_associate_asus_rtac5300_5ghz_wpa2(self) -> None:
         if self.openwrt_ap:
@@ -456,12 +486,12 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             )
         await self.dut.wlan_policy.save_network(
             self.ssid,
-            SecurityType.WPA2,
+            f_wlan_policy.SecurityType.WPA2,
             target_pwd=self.password,
         )
         await self.dut.wlan_policy.connect(
             self.ssid,
-            SecurityType.WPA2,
+            f_wlan_policy.SecurityType.WPA2,
         )
 
     async def test_associate_asus_rtn56u_24ghz_open(self) -> None:
@@ -479,8 +509,12 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                 channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
                 ssid=self.ssid,
             )
-        await self.dut.wlan_policy.save_network(self.ssid, SecurityType.NONE)
-        await self.dut.wlan_policy.connect(self.ssid, SecurityType.NONE)
+        await self.dut.wlan_policy.save_network(
+            self.ssid, f_wlan_policy.SecurityType.NONE
+        )
+        await self.dut.wlan_policy.connect(
+            self.ssid, f_wlan_policy.SecurityType.NONE
+        )
 
     async def test_associate_asus_rtn56u_24ghz_wpa2(self) -> None:
         if self.openwrt_ap:
@@ -502,12 +536,12 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
 
         await self.dut.wlan_policy.save_network(
             self.ssid,
-            SecurityType.WPA2,
+            f_wlan_policy.SecurityType.WPA2,
             target_pwd=self.password,
         )
         await self.dut.wlan_policy.connect(
             self.ssid,
-            SecurityType.WPA2,
+            f_wlan_policy.SecurityType.WPA2,
         )
 
     async def test_associate_asus_rtn56u_5ghz_open(self) -> None:
@@ -526,8 +560,12 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                 ssid=self.ssid,
             )
 
-        await self.dut.wlan_policy.save_network(self.ssid, SecurityType.NONE)
-        await self.dut.wlan_policy.connect(self.ssid, SecurityType.NONE)
+        await self.dut.wlan_policy.save_network(
+            self.ssid, f_wlan_policy.SecurityType.NONE
+        )
+        await self.dut.wlan_policy.connect(
+            self.ssid, f_wlan_policy.SecurityType.NONE
+        )
 
     async def test_associate_asus_rtn56u_5ghz_wpa2(self) -> None:
         if self.openwrt_ap:
@@ -549,12 +587,12 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
 
         await self.dut.wlan_policy.save_network(
             self.ssid,
-            SecurityType.WPA2,
+            f_wlan_policy.SecurityType.WPA2,
             target_pwd=self.password,
         )
         await self.dut.wlan_policy.connect(
             self.ssid,
-            SecurityType.WPA2,
+            f_wlan_policy.SecurityType.WPA2,
         )
 
     async def test_associate_asus_rtn66u_24ghz_open(self) -> None:
@@ -572,8 +610,12 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                 channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
                 ssid=self.ssid,
             )
-        await self.dut.wlan_policy.save_network(self.ssid, SecurityType.NONE)
-        await self.dut.wlan_policy.connect(self.ssid, SecurityType.NONE)
+        await self.dut.wlan_policy.save_network(
+            self.ssid, f_wlan_policy.SecurityType.NONE
+        )
+        await self.dut.wlan_policy.connect(
+            self.ssid, f_wlan_policy.SecurityType.NONE
+        )
 
     async def test_associate_asus_rtn66u_24ghz_wpa2(self) -> None:
         if self.openwrt_ap:
@@ -595,12 +637,12 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
 
         await self.dut.wlan_policy.save_network(
             self.ssid,
-            SecurityType.WPA2,
+            f_wlan_policy.SecurityType.WPA2,
             target_pwd=self.password,
         )
         await self.dut.wlan_policy.connect(
             self.ssid,
-            SecurityType.WPA2,
+            f_wlan_policy.SecurityType.WPA2,
         )
 
     async def test_associate_asus_rtn66u_5ghz_open(self) -> None:
@@ -619,8 +661,12 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                 ssid=self.ssid,
             )
 
-        await self.dut.wlan_policy.save_network(self.ssid, SecurityType.NONE)
-        await self.dut.wlan_policy.connect(self.ssid, SecurityType.NONE)
+        await self.dut.wlan_policy.save_network(
+            self.ssid, f_wlan_policy.SecurityType.NONE
+        )
+        await self.dut.wlan_policy.connect(
+            self.ssid, f_wlan_policy.SecurityType.NONE
+        )
 
     async def test_associate_asus_rtn66u_5ghz_wpa2(self) -> None:
         if self.openwrt_ap:
@@ -642,12 +688,12 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
 
         await self.dut.wlan_policy.save_network(
             self.ssid,
-            SecurityType.WPA2,
+            f_wlan_policy.SecurityType.WPA2,
             target_pwd=self.password,
         )
         await self.dut.wlan_policy.connect(
             self.ssid,
-            SecurityType.WPA2,
+            f_wlan_policy.SecurityType.WPA2,
         )
 
     async def test_associate_belkin_f9k1001v5_24ghz_open(self) -> None:
@@ -670,8 +716,12 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                 ssid=self.ssid,
             )
 
-        await self.dut.wlan_policy.save_network(self.ssid, SecurityType.NONE)
-        await self.dut.wlan_policy.connect(self.ssid, SecurityType.NONE)
+        await self.dut.wlan_policy.save_network(
+            self.ssid, f_wlan_policy.SecurityType.NONE
+        )
+        await self.dut.wlan_policy.connect(
+            self.ssid, f_wlan_policy.SecurityType.NONE
+        )
 
     async def test_associate_belkin_f9k1001v5_24ghz_wpa2(self) -> None:
         if self.openwrt_ap:
@@ -696,12 +746,12 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
 
         await self.dut.wlan_policy.save_network(
             self.ssid,
-            SecurityType.WPA2,
+            f_wlan_policy.SecurityType.WPA2,
             target_pwd=self.password,
         )
         await self.dut.wlan_policy.connect(
             self.ssid,
-            SecurityType.WPA2,
+            f_wlan_policy.SecurityType.WPA2,
         )
 
     async def test_associate_linksys_ea4500_24ghz_open(self) -> None:
@@ -723,8 +773,12 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                 channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
                 ssid=self.ssid,
             )
-        await self.dut.wlan_policy.save_network(self.ssid, SecurityType.NONE)
-        await self.dut.wlan_policy.connect(self.ssid, SecurityType.NONE)
+        await self.dut.wlan_policy.save_network(
+            self.ssid, f_wlan_policy.SecurityType.NONE
+        )
+        await self.dut.wlan_policy.connect(
+            self.ssid, f_wlan_policy.SecurityType.NONE
+        )
 
     async def test_associate_linksys_ea4500_24ghz_wpa2(self) -> None:
         if self.openwrt_ap:
@@ -749,12 +803,12 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             )
         await self.dut.wlan_policy.save_network(
             self.ssid,
-            SecurityType.WPA2,
+            f_wlan_policy.SecurityType.WPA2,
             target_pwd=self.password,
         )
         await self.dut.wlan_policy.connect(
             self.ssid,
-            SecurityType.WPA2,
+            f_wlan_policy.SecurityType.WPA2,
         )
 
     async def test_associate_linksys_ea4500_5ghz_open(self) -> None:
@@ -776,8 +830,12 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                 channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
                 ssid=self.ssid,
             )
-        await self.dut.wlan_policy.save_network(self.ssid, SecurityType.NONE)
-        await self.dut.wlan_policy.connect(self.ssid, SecurityType.NONE)
+        await self.dut.wlan_policy.save_network(
+            self.ssid, f_wlan_policy.SecurityType.NONE
+        )
+        await self.dut.wlan_policy.connect(
+            self.ssid, f_wlan_policy.SecurityType.NONE
+        )
 
     async def test_associate_linksys_ea4500_5ghz_wpa2(self) -> None:
         if self.openwrt_ap:
@@ -802,12 +860,12 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             )
         await self.dut.wlan_policy.save_network(
             self.ssid,
-            SecurityType.WPA2,
+            f_wlan_policy.SecurityType.WPA2,
             target_pwd=self.password,
         )
         await self.dut.wlan_policy.connect(
             self.ssid,
-            SecurityType.WPA2,
+            f_wlan_policy.SecurityType.WPA2,
         )
 
     async def test_associate_linksys_ea9500_24ghz_open(self) -> None:
@@ -829,8 +887,12 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                 channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
                 ssid=self.ssid,
             )
-        await self.dut.wlan_policy.save_network(self.ssid, SecurityType.NONE)
-        await self.dut.wlan_policy.connect(self.ssid, SecurityType.NONE)
+        await self.dut.wlan_policy.save_network(
+            self.ssid, f_wlan_policy.SecurityType.NONE
+        )
+        await self.dut.wlan_policy.connect(
+            self.ssid, f_wlan_policy.SecurityType.NONE
+        )
 
     async def test_associate_linksys_ea9500_24ghz_wpa2(self) -> None:
         if self.openwrt_ap:
@@ -855,12 +917,12 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             )
         await self.dut.wlan_policy.save_network(
             self.ssid,
-            SecurityType.WPA2,
+            f_wlan_policy.SecurityType.WPA2,
             target_pwd=self.password,
         )
         await self.dut.wlan_policy.connect(
             self.ssid,
-            SecurityType.WPA2,
+            f_wlan_policy.SecurityType.WPA2,
         )
 
     async def test_associate_linksys_ea9500_5ghz_open(self) -> None:
@@ -882,8 +944,12 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                 channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
                 ssid=self.ssid,
             )
-        await self.dut.wlan_policy.save_network(self.ssid, SecurityType.NONE)
-        await self.dut.wlan_policy.connect(self.ssid, SecurityType.NONE)
+        await self.dut.wlan_policy.save_network(
+            self.ssid, f_wlan_policy.SecurityType.NONE
+        )
+        await self.dut.wlan_policy.connect(
+            self.ssid, f_wlan_policy.SecurityType.NONE
+        )
 
     async def test_associate_linksys_ea9500_5ghz_wpa2(self) -> None:
         if self.openwrt_ap:
@@ -908,12 +974,12 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             )
         await self.dut.wlan_policy.save_network(
             self.ssid,
-            SecurityType.WPA2,
+            f_wlan_policy.SecurityType.WPA2,
             target_pwd=self.password,
         )
         await self.dut.wlan_policy.connect(
             self.ssid,
-            SecurityType.WPA2,
+            f_wlan_policy.SecurityType.WPA2,
         )
 
     async def test_associate_linksys_wrt1900acv2_24ghz_open(self) -> None:
@@ -935,8 +1001,12 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                 channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
                 ssid=self.ssid,
             )
-        await self.dut.wlan_policy.save_network(self.ssid, SecurityType.NONE)
-        await self.dut.wlan_policy.connect(self.ssid, SecurityType.NONE)
+        await self.dut.wlan_policy.save_network(
+            self.ssid, f_wlan_policy.SecurityType.NONE
+        )
+        await self.dut.wlan_policy.connect(
+            self.ssid, f_wlan_policy.SecurityType.NONE
+        )
 
     async def test_associate_linksys_wrt1900acv2_24ghz_wpa2(self) -> None:
         if self.openwrt_ap:
@@ -961,12 +1031,12 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             )
         await self.dut.wlan_policy.save_network(
             self.ssid,
-            SecurityType.WPA2,
+            f_wlan_policy.SecurityType.WPA2,
             target_pwd=self.password,
         )
         await self.dut.wlan_policy.connect(
             self.ssid,
-            SecurityType.WPA2,
+            f_wlan_policy.SecurityType.WPA2,
         )
 
     async def test_associate_linksys_wrt1900acv2_5ghz_open(self) -> None:
@@ -988,8 +1058,12 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                 channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
                 ssid=self.ssid,
             )
-        await self.dut.wlan_policy.save_network(self.ssid, SecurityType.NONE)
-        await self.dut.wlan_policy.connect(self.ssid, SecurityType.NONE)
+        await self.dut.wlan_policy.save_network(
+            self.ssid, f_wlan_policy.SecurityType.NONE
+        )
+        await self.dut.wlan_policy.connect(
+            self.ssid, f_wlan_policy.SecurityType.NONE
+        )
 
     async def test_associate_linksys_wrt1900acv2_5ghz_wpa2(self) -> None:
         if self.openwrt_ap:
@@ -1014,12 +1088,12 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             )
         await self.dut.wlan_policy.save_network(
             self.ssid,
-            SecurityType.WPA2,
+            f_wlan_policy.SecurityType.WPA2,
             target_pwd=self.password,
         )
         await self.dut.wlan_policy.connect(
             self.ssid,
-            SecurityType.WPA2,
+            f_wlan_policy.SecurityType.WPA2,
         )
 
     async def test_associate_netgear_r7000_24ghz_open(self) -> None:
@@ -1041,8 +1115,12 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                 channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
                 ssid=self.ssid,
             )
-        await self.dut.wlan_policy.save_network(self.ssid, SecurityType.NONE)
-        await self.dut.wlan_policy.connect(self.ssid, SecurityType.NONE)
+        await self.dut.wlan_policy.save_network(
+            self.ssid, f_wlan_policy.SecurityType.NONE
+        )
+        await self.dut.wlan_policy.connect(
+            self.ssid, f_wlan_policy.SecurityType.NONE
+        )
 
     async def test_associate_netgear_r7000_24ghz_wpa2(self) -> None:
         if self.openwrt_ap:
@@ -1067,12 +1145,12 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             )
         await self.dut.wlan_policy.save_network(
             self.ssid,
-            SecurityType.WPA2,
+            f_wlan_policy.SecurityType.WPA2,
             target_pwd=self.password,
         )
         await self.dut.wlan_policy.connect(
             self.ssid,
-            SecurityType.WPA2,
+            f_wlan_policy.SecurityType.WPA2,
         )
 
     async def test_associate_netgear_r7000_5ghz_open(self) -> None:
@@ -1094,8 +1172,12 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                 channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
                 ssid=self.ssid,
             )
-        await self.dut.wlan_policy.save_network(self.ssid, SecurityType.NONE)
-        await self.dut.wlan_policy.connect(self.ssid, SecurityType.NONE)
+        await self.dut.wlan_policy.save_network(
+            self.ssid, f_wlan_policy.SecurityType.NONE
+        )
+        await self.dut.wlan_policy.connect(
+            self.ssid, f_wlan_policy.SecurityType.NONE
+        )
 
     async def test_associate_netgear_r7000_5ghz_wpa2(self) -> None:
         if self.openwrt_ap:
@@ -1120,12 +1202,12 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             )
         await self.dut.wlan_policy.save_network(
             self.ssid,
-            SecurityType.WPA2,
+            f_wlan_policy.SecurityType.WPA2,
             target_pwd=self.password,
         )
         await self.dut.wlan_policy.connect(
             self.ssid,
-            SecurityType.WPA2,
+            f_wlan_policy.SecurityType.WPA2,
         )
 
     async def test_associate_netgear_wndr3400_24ghz_open(self) -> None:
@@ -1147,8 +1229,12 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                 channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
                 ssid=self.ssid,
             )
-        await self.dut.wlan_policy.save_network(self.ssid, SecurityType.NONE)
-        await self.dut.wlan_policy.connect(self.ssid, SecurityType.NONE)
+        await self.dut.wlan_policy.save_network(
+            self.ssid, f_wlan_policy.SecurityType.NONE
+        )
+        await self.dut.wlan_policy.connect(
+            self.ssid, f_wlan_policy.SecurityType.NONE
+        )
 
     async def test_associate_netgear_wndr3400_24ghz_wpa2(self) -> None:
         if self.openwrt_ap:
@@ -1173,12 +1259,12 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             )
         await self.dut.wlan_policy.save_network(
             self.ssid,
-            SecurityType.WPA2,
+            f_wlan_policy.SecurityType.WPA2,
             target_pwd=self.password,
         )
         await self.dut.wlan_policy.connect(
             self.ssid,
-            SecurityType.WPA2,
+            f_wlan_policy.SecurityType.WPA2,
         )
 
     async def test_associate_netgear_wndr3400_5ghz_open(self) -> None:
@@ -1200,8 +1286,12 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                 channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
                 ssid=self.ssid,
             )
-        await self.dut.wlan_policy.save_network(self.ssid, SecurityType.NONE)
-        await self.dut.wlan_policy.connect(self.ssid, SecurityType.NONE)
+        await self.dut.wlan_policy.save_network(
+            self.ssid, f_wlan_policy.SecurityType.NONE
+        )
+        await self.dut.wlan_policy.connect(
+            self.ssid, f_wlan_policy.SecurityType.NONE
+        )
 
     async def test_associate_netgear_wndr3400_5ghz_wpa2(self) -> None:
         if self.openwrt_ap:
@@ -1226,12 +1316,12 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             )
         await self.dut.wlan_policy.save_network(
             self.ssid,
-            SecurityType.WPA2,
+            f_wlan_policy.SecurityType.WPA2,
             target_pwd=self.password,
         )
         await self.dut.wlan_policy.connect(
             self.ssid,
-            SecurityType.WPA2,
+            f_wlan_policy.SecurityType.WPA2,
         )
 
     async def test_associate_securifi_almond_24ghz_open(self) -> None:
@@ -1255,8 +1345,12 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                 ssid=self.ssid,
             )
 
-        await self.dut.wlan_policy.save_network(self.ssid, SecurityType.NONE)
-        await self.dut.wlan_policy.connect(self.ssid, SecurityType.NONE)
+        await self.dut.wlan_policy.save_network(
+            self.ssid, f_wlan_policy.SecurityType.NONE
+        )
+        await self.dut.wlan_policy.connect(
+            self.ssid, f_wlan_policy.SecurityType.NONE
+        )
 
     async def test_associate_securifi_almond_24ghz_wpa2(self) -> None:
         if self.openwrt_ap:
@@ -1283,12 +1377,12 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
 
         await self.dut.wlan_policy.save_network(
             self.ssid,
-            SecurityType.WPA2,
+            f_wlan_policy.SecurityType.WPA2,
             target_pwd=self.password,
         )
         await self.dut.wlan_policy.connect(
             self.ssid,
-            SecurityType.WPA2,
+            f_wlan_policy.SecurityType.WPA2,
         )
 
     async def test_associate_tplink_archerc5_24ghz_open(self) -> None:
@@ -1312,8 +1406,12 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                 ssid=self.ssid,
             )
 
-        await self.dut.wlan_policy.save_network(self.ssid, SecurityType.NONE)
-        await self.dut.wlan_policy.connect(self.ssid, SecurityType.NONE)
+        await self.dut.wlan_policy.save_network(
+            self.ssid, f_wlan_policy.SecurityType.NONE
+        )
+        await self.dut.wlan_policy.connect(
+            self.ssid, f_wlan_policy.SecurityType.NONE
+        )
 
     async def test_associate_tplink_archerc5_24ghz_wpa2(self) -> None:
         if self.openwrt_ap:
@@ -1340,12 +1438,12 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
 
         await self.dut.wlan_policy.save_network(
             self.ssid,
-            SecurityType.WPA2,
+            f_wlan_policy.SecurityType.WPA2,
             target_pwd=self.password,
         )
         await self.dut.wlan_policy.connect(
             self.ssid,
-            SecurityType.WPA2,
+            f_wlan_policy.SecurityType.WPA2,
         )
 
     async def test_associate_tplink_archerc5_5ghz_open(self) -> None:
@@ -1369,8 +1467,12 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                 ssid=self.ssid,
             )
 
-        await self.dut.wlan_policy.save_network(self.ssid, SecurityType.NONE)
-        await self.dut.wlan_policy.connect(self.ssid, SecurityType.NONE)
+        await self.dut.wlan_policy.save_network(
+            self.ssid, f_wlan_policy.SecurityType.NONE
+        )
+        await self.dut.wlan_policy.connect(
+            self.ssid, f_wlan_policy.SecurityType.NONE
+        )
 
     async def test_associate_tplink_archerc5_5ghz_wpa2(self) -> None:
         if self.openwrt_ap:
@@ -1397,12 +1499,12 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
 
         await self.dut.wlan_policy.save_network(
             self.ssid,
-            SecurityType.WPA2,
+            f_wlan_policy.SecurityType.WPA2,
             target_pwd=self.password,
         )
         await self.dut.wlan_policy.connect(
             self.ssid,
-            SecurityType.WPA2,
+            f_wlan_policy.SecurityType.WPA2,
         )
 
     async def test_associate_tplink_archerc7_24ghz_open(self) -> None:
@@ -1426,8 +1528,12 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                 ssid=self.ssid,
             )
 
-        await self.dut.wlan_policy.save_network(self.ssid, SecurityType.NONE)
-        await self.dut.wlan_policy.connect(self.ssid, SecurityType.NONE)
+        await self.dut.wlan_policy.save_network(
+            self.ssid, f_wlan_policy.SecurityType.NONE
+        )
+        await self.dut.wlan_policy.connect(
+            self.ssid, f_wlan_policy.SecurityType.NONE
+        )
 
     async def test_associate_tplink_archerc7_24ghz_wpa2(self) -> None:
         if self.openwrt_ap:
@@ -1454,12 +1560,12 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
 
         await self.dut.wlan_policy.save_network(
             self.ssid,
-            SecurityType.WPA2,
+            f_wlan_policy.SecurityType.WPA2,
             target_pwd=self.password,
         )
         await self.dut.wlan_policy.connect(
             self.ssid,
-            SecurityType.WPA2,
+            f_wlan_policy.SecurityType.WPA2,
         )
 
     async def test_associate_tplink_archerc7_5ghz_open(self) -> None:
@@ -1483,8 +1589,12 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                 ssid=self.ssid,
             )
 
-        await self.dut.wlan_policy.save_network(self.ssid, SecurityType.NONE)
-        await self.dut.wlan_policy.connect(self.ssid, SecurityType.NONE)
+        await self.dut.wlan_policy.save_network(
+            self.ssid, f_wlan_policy.SecurityType.NONE
+        )
+        await self.dut.wlan_policy.connect(
+            self.ssid, f_wlan_policy.SecurityType.NONE
+        )
 
     async def test_associate_tplink_archerc7_5ghz_wpa2(self) -> None:
         if self.openwrt_ap:
@@ -1511,12 +1621,12 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
 
         await self.dut.wlan_policy.save_network(
             self.ssid,
-            SecurityType.WPA2,
+            f_wlan_policy.SecurityType.WPA2,
             target_pwd=self.password,
         )
         await self.dut.wlan_policy.connect(
             self.ssid,
-            SecurityType.WPA2,
+            f_wlan_policy.SecurityType.WPA2,
         )
 
     async def test_associate_tplink_c1200_24ghz_open(self) -> None:
@@ -1539,8 +1649,12 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                 channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
                 ssid=self.ssid,
             )
-        await self.dut.wlan_policy.save_network(self.ssid, SecurityType.NONE)
-        await self.dut.wlan_policy.connect(self.ssid, SecurityType.NONE)
+        await self.dut.wlan_policy.save_network(
+            self.ssid, f_wlan_policy.SecurityType.NONE
+        )
+        await self.dut.wlan_policy.connect(
+            self.ssid, f_wlan_policy.SecurityType.NONE
+        )
 
     async def test_associate_tplink_c1200_24ghz_wpa2(self) -> None:
         if self.openwrt_ap:
@@ -1566,12 +1680,12 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             )
         await self.dut.wlan_policy.save_network(
             self.ssid,
-            SecurityType.WPA2,
+            f_wlan_policy.SecurityType.WPA2,
             target_pwd=self.password,
         )
         await self.dut.wlan_policy.connect(
             self.ssid,
-            SecurityType.WPA2,
+            f_wlan_policy.SecurityType.WPA2,
         )
 
     async def test_associate_tplink_c1200_5ghz_open(self) -> None:
@@ -1594,8 +1708,12 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                 channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
                 ssid=self.ssid,
             )
-        await self.dut.wlan_policy.save_network(self.ssid, SecurityType.NONE)
-        await self.dut.wlan_policy.connect(self.ssid, SecurityType.NONE)
+        await self.dut.wlan_policy.save_network(
+            self.ssid, f_wlan_policy.SecurityType.NONE
+        )
+        await self.dut.wlan_policy.connect(
+            self.ssid, f_wlan_policy.SecurityType.NONE
+        )
 
     async def test_associate_tplink_c1200_5ghz_wpa2(self) -> None:
         if self.openwrt_ap:
@@ -1621,12 +1739,12 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             )
         await self.dut.wlan_policy.save_network(
             self.ssid,
-            SecurityType.WPA2,
+            f_wlan_policy.SecurityType.WPA2,
             target_pwd=self.password,
         )
         await self.dut.wlan_policy.connect(
             self.ssid,
-            SecurityType.WPA2,
+            f_wlan_policy.SecurityType.WPA2,
         )
 
     async def test_associate_tplink_tlwr940n_24ghz_open(self) -> None:
@@ -1649,8 +1767,12 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                 channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
                 ssid=self.ssid,
             )
-        await self.dut.wlan_policy.save_network(self.ssid, SecurityType.NONE)
-        await self.dut.wlan_policy.connect(self.ssid, SecurityType.NONE)
+        await self.dut.wlan_policy.save_network(
+            self.ssid, f_wlan_policy.SecurityType.NONE
+        )
+        await self.dut.wlan_policy.connect(
+            self.ssid, f_wlan_policy.SecurityType.NONE
+        )
 
     async def test_associate_tplink_tlwr940n_24ghz_wpa2(self) -> None:
         if self.openwrt_ap:
@@ -1676,12 +1798,12 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             )
         await self.dut.wlan_policy.save_network(
             self.ssid,
-            SecurityType.WPA2,
+            f_wlan_policy.SecurityType.WPA2,
             target_pwd=self.password,
         )
         await self.dut.wlan_policy.connect(
             self.ssid,
-            SecurityType.WPA2,
+            f_wlan_policy.SecurityType.WPA2,
         )
 
 

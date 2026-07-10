@@ -27,7 +27,6 @@ from honeydew.affordances.connectivity.wlan.utils.types import (
     Credential,
     NetworkConfig,
     NetworkIdentifier,
-    SecurityType,
 )
 from honeydew.affordances.connectivity.wlan.wlan_policy import wlan_policy
 from honeydew.affordances.location.location import AsyncLocation, Location
@@ -382,7 +381,7 @@ class AsyncWlanPolicyUsingFc(wlan_policy.AsyncWlanPolicy, AsyncLazyReady):
     async def connect(
         self,
         target_ssid: str,
-        security_type: SecurityType,
+        security_type: f_wlan_policy.SecurityType,
         *,
         timeout: float
         | None = wlan_policy.WlanPolicy.DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
@@ -700,7 +699,7 @@ class AsyncWlanPolicyUsingFc(wlan_policy.AsyncWlanPolicy, AsyncLazyReady):
     async def remove_network(
         self,
         target_ssid: str,
-        security_type: SecurityType,
+        security_type: f_wlan_policy.SecurityType,
         target_pwd: str | None = None,
         *,
         timeout: float
@@ -734,10 +733,9 @@ class AsyncWlanPolicyUsingFc(wlan_policy.AsyncWlanPolicy, AsyncLazyReady):
             res = await asyncio.wait_for(
                 self._client_controller.proxy.remove_network(
                     config=f_wlan_policy.NetworkConfig(
-                        id_=f_wlan_policy.NetworkIdentifier(
-                            ssid=list(target_ssid.encode("utf-8")),
-                            type_=security_type.to_fidl(),
-                        ),
+                        id_=NetworkIdentifier(
+                            target_ssid, security_type
+                        ).to_fidl(),
                         credential=Credential.from_password(
                             target_pwd
                         ).to_fidl(),
@@ -758,7 +756,7 @@ class AsyncWlanPolicyUsingFc(wlan_policy.AsyncWlanPolicy, AsyncLazyReady):
     async def save_network(
         self,
         target_ssid: str,
-        security_type: SecurityType,
+        security_type: f_wlan_policy.SecurityType,
         target_pwd: str | None = None,
         *,
         timeout: float
@@ -791,10 +789,9 @@ class AsyncWlanPolicyUsingFc(wlan_policy.AsyncWlanPolicy, AsyncLazyReady):
             res = await asyncio.wait_for(
                 self._client_controller.proxy.save_network(
                     config=f_wlan_policy.NetworkConfig(
-                        id_=f_wlan_policy.NetworkIdentifier(
-                            ssid=list(target_ssid.encode("utf-8")),
-                            type_=security_type.to_fidl(),
-                        ),
+                        id_=NetworkIdentifier(
+                            target_ssid, security_type
+                        ).to_fidl(),
                         credential=Credential.from_password(
                             target_pwd
                         ).to_fidl(),
@@ -1139,7 +1136,7 @@ class WlanPolicy(wlan_policy.WlanPolicy):
     def connect(
         self,
         target_ssid: str,
-        security_type: SecurityType,
+        security_type: f_wlan_policy.SecurityType,
         *,
         timeout: float
         | None = wlan_policy.WlanPolicy.DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
@@ -1286,7 +1283,7 @@ class WlanPolicy(wlan_policy.WlanPolicy):
     def remove_network(
         self,
         target_ssid: str,
-        security_type: SecurityType,
+        security_type: f_wlan_policy.SecurityType,
         target_pwd: str | None = None,
         *,
         timeout: float
@@ -1314,7 +1311,7 @@ class WlanPolicy(wlan_policy.WlanPolicy):
     def save_network(
         self,
         target_ssid: str,
-        security_type: SecurityType,
+        security_type: f_wlan_policy.SecurityType,
         target_pwd: str | None = None,
         *,
         timeout: float

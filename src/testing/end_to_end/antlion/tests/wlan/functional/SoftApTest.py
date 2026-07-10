@@ -31,7 +31,6 @@ from fuchsia_wlan_base_test.deprecated.wifi import base_test
 from honeydew.affordances.connectivity.wlan.utils.types import (
     ConnectivityMode,
     OperatingBand,
-    SecurityType,
 )
 from libs.ssh import settings
 from libs.ssh.connection import SshConnection
@@ -466,7 +465,7 @@ class SoftApTest(base_test.WifiBaseTest):
         self.log.info(f"Starting SoftAP on DUT with settings: {params}")
         self.fuchsia_device.honeydew_fd.wlan_policy_ap_deprecated_sync.start(
             params.ssid,
-            SecurityType(params.security_type.fuchsia_security_type()),
+            params.security_type.fuchsia_security_type(),
             params.password,
             params.connectivity_mode,
             params.operating_band,
@@ -921,7 +920,7 @@ class SoftApTest(base_test.WifiBaseTest):
         self.log.info("Stopping SoftAP on DUT.")
         self.fuchsia_device.honeydew_fd.wlan_policy_ap_deprecated_sync.stop(
             soft_ap_params.ssid,
-            SecurityType(soft_ap_params.security_type.fuchsia_security_type()),
+            soft_ap_params.security_type.fuchsia_security_type(),
             soft_ap_params.password,
         )
         self.assert_disconnected_to_ap(client, self.dut)

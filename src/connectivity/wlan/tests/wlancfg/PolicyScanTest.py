@@ -8,6 +8,7 @@
 import dataclasses
 import logging
 
+import fidl_fuchsia_wlan_policy as f_wlan_policy
 import fuchsia_wlan_base_test
 from antlion.controllers.ap_lib import (
     hostapd_ap_preset,
@@ -16,10 +17,7 @@ from antlion.controllers.ap_lib import (
     hostapd_security,
 )
 from antlion.controllers.ap_lib.hostapd_security import SecurityMode
-from honeydew.affordances.connectivity.wlan.utils.types import (
-    CountryCode,
-    SecurityType,
-)
+from honeydew.affordances.connectivity.wlan.utils.types import CountryCode
 from mobly import asserts, signals, test_runner
 from openwrt_access_point.lib.access_point_config import (
     DEFAULT_2G_CHANNEL,
@@ -35,7 +33,7 @@ from openwrt_access_point.lib.access_point_config import (
 @dataclasses.dataclass(frozen=True)
 class NetworkInfo:
     ssid: str
-    security: SecurityType
+    security: f_wlan_policy.SecurityType
     password: str | None = None
 
 
@@ -71,20 +69,20 @@ class PolicyScanTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         # Generate network params.
         self.open_network_2g = NetworkInfo(
             ssid=AccessPointConfig.random_string(AP_SSID_LENGTH),
-            security=SecurityType.NONE,
+            security=f_wlan_policy.SecurityType.NONE,
         )
         self.wpa2_network_2g = NetworkInfo(
             ssid=AccessPointConfig.random_string(AP_SSID_LENGTH),
-            security=SecurityType.WPA2,
+            security=f_wlan_policy.SecurityType.WPA2,
             password=AccessPointConfig.random_string(AP_PASSPHRASE_LENGTH),
         )
         self.open_network_5g = NetworkInfo(
             ssid=AccessPointConfig.random_string(AP_SSID_LENGTH),
-            security=SecurityType.NONE,
+            security=f_wlan_policy.SecurityType.NONE,
         )
         self.wpa2_network_5g = NetworkInfo(
             ssid=AccessPointConfig.random_string(AP_SSID_LENGTH),
-            security=SecurityType.WPA2,
+            security=f_wlan_policy.SecurityType.WPA2,
             password=AccessPointConfig.random_string(AP_PASSPHRASE_LENGTH),
         )
 

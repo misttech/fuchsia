@@ -28,7 +28,6 @@ from honeydew.affordances.connectivity.wlan.utils.types import (
     NetworkConfig,
     NetworkIdentifier,
     NetworkState,
-    SecurityType,
 )
 
 # Time to wait for a WLAN interface to become available.
@@ -141,10 +140,16 @@ class WlanPolicyTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         )
 
         # Saving the network should initiate an auto-connection.
-        await self.dut.wlan_policy.save_network(test_ssid, SecurityType.NONE)
+        await self.dut.wlan_policy.save_network(
+            test_ssid, f_wlan_policy.SecurityType.NONE
+        )
         asserts.assert_equal(
             await self.dut.wlan_policy.get_saved_networks(),
-            [NetworkConfig(test_ssid, SecurityType.NONE, "None", "")],
+            [
+                NetworkConfig(
+                    test_ssid, f_wlan_policy.SecurityType.NONE, "None", ""
+                )
+            ],
         )
         await self.wait_for_network(
             test_ssid, f_wlan_policy.ConnectionState.CONNECTING
@@ -154,7 +159,9 @@ class WlanPolicyTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         )
 
         # Connecting explicitly again shouldn't do anything.
-        await self.dut.wlan_policy.connect(test_ssid, SecurityType.NONE)
+        await self.dut.wlan_policy.connect(
+            test_ssid, f_wlan_policy.SecurityType.NONE
+        )
         async for update in self.get_updates_until(timeout_sec=3):
             asserts.fail(f"Expected no updates, got {update}")
 
@@ -168,7 +175,9 @@ class WlanPolicyTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                 state=f_wlan_policy.WlanClientState.CONNECTIONS_ENABLED,
                 networks=[
                     NetworkState(
-                        NetworkIdentifier(test_ssid, SecurityType.NONE),
+                        NetworkIdentifier(
+                            test_ssid, f_wlan_policy.SecurityType.NONE
+                        ),
                         f_wlan_policy.ConnectionState.DISCONNECTED,
                         f_wlan_policy.DisconnectStatus.CONNECTION_STOPPED,
                     )
@@ -210,10 +219,16 @@ class WlanPolicyTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         )
 
         test_ssid = AccessPointConfig.random_string()
-        await self.dut.wlan_policy.save_network(test_ssid, SecurityType.NONE)
+        await self.dut.wlan_policy.save_network(
+            test_ssid, f_wlan_policy.SecurityType.NONE
+        )
         asserts.assert_equal(
             await self.dut.wlan_policy.get_saved_networks(),
-            [NetworkConfig(test_ssid, SecurityType.NONE, "None", "")],
+            [
+                NetworkConfig(
+                    test_ssid, f_wlan_policy.SecurityType.NONE, "None", ""
+                )
+            ],
         )
 
         # Verify saving a network does not initiate an auto-connect.
@@ -228,7 +243,9 @@ class WlanPolicyTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
 
         test_ssid = AccessPointConfig.random_string()
         with asserts.assert_raises(HoneydewWlanError):
-            await self.dut.wlan_policy.connect(test_ssid, SecurityType.NONE)
+            await self.dut.wlan_policy.connect(
+                test_ssid, f_wlan_policy.SecurityType.NONE
+            )
 
         # Verify connect doesn't change client state.
         async for update in self.get_updates_until(timeout_sec=3):
@@ -250,10 +267,16 @@ class WlanPolicyTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         )
 
         test_ssid = AccessPointConfig.random_string()
-        await self.dut.wlan_policy.save_network(test_ssid, SecurityType.NONE)
+        await self.dut.wlan_policy.save_network(
+            test_ssid, f_wlan_policy.SecurityType.NONE
+        )
         asserts.assert_equal(
             await self.dut.wlan_policy.get_saved_networks(),
-            [NetworkConfig(test_ssid, SecurityType.NONE, "None", "")],
+            [
+                NetworkConfig(
+                    test_ssid, f_wlan_policy.SecurityType.NONE, "None", ""
+                )
+            ],
         )
 
         await self.dut.wlan_policy.remove_all_networks()
@@ -269,19 +292,29 @@ class WlanPolicyTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         test_ssid = AccessPointConfig.random_string()
 
         # Removing a network that doesn't exist shouldn't error.
-        await self.dut.wlan_policy.remove_network(test_ssid, SecurityType.NONE)
+        await self.dut.wlan_policy.remove_network(
+            test_ssid, f_wlan_policy.SecurityType.NONE
+        )
         asserts.assert_equal(
             await self.dut.wlan_policy.get_saved_networks(),
             [],
         )
 
-        await self.dut.wlan_policy.save_network(test_ssid, SecurityType.NONE)
+        await self.dut.wlan_policy.save_network(
+            test_ssid, f_wlan_policy.SecurityType.NONE
+        )
         asserts.assert_equal(
             await self.dut.wlan_policy.get_saved_networks(),
-            [NetworkConfig(test_ssid, SecurityType.NONE, "None", "")],
+            [
+                NetworkConfig(
+                    test_ssid, f_wlan_policy.SecurityType.NONE, "None", ""
+                )
+            ],
         )
 
-        await self.dut.wlan_policy.remove_network(test_ssid, SecurityType.NONE)
+        await self.dut.wlan_policy.remove_network(
+            test_ssid, f_wlan_policy.SecurityType.NONE
+        )
         asserts.assert_equal(
             await self.dut.wlan_policy.get_saved_networks(),
             [],
@@ -330,7 +363,9 @@ class WlanPolicyTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                 state=expected_client_state,
                 networks=[
                     NetworkState(
-                        NetworkIdentifier(ssid, SecurityType.NONE),
+                        NetworkIdentifier(
+                            ssid, f_wlan_policy.SecurityType.NONE
+                        ),
                         expected_state,
                         expected_status,
                     )

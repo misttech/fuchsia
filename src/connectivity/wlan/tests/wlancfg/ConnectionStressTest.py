@@ -11,15 +11,13 @@ import logging
 import time
 from dataclasses import dataclass
 
+import fidl_fuchsia_wlan_policy as f_wlan_policy
 import fuchsia_wlan_base_test
 from antlion.controllers.access_point import setup_ap
 from antlion.controllers.ap_lib.hostapd_security import (
     Security as DeprecatedSecurity,
 )
-from honeydew.affordances.connectivity.wlan.utils.types import (
-    CountryCode,
-    SecurityType,
-)
+from honeydew.affordances.connectivity.wlan.utils.types import CountryCode
 from mobly import asserts, signals, test_runner
 from openwrt_access_point.lib.access_point_config import (
     DEFAULT_2G_CHANNEL,
@@ -206,9 +204,9 @@ class ConnectionStressTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             )
 
         if isinstance(test.security, SecurityOpen):
-            security_type = SecurityType.NONE
+            security_type = f_wlan_policy.SecurityType.NONE
         elif isinstance(test.security, SecurityWpa2):
-            security_type = SecurityType.WPA2
+            security_type = f_wlan_policy.SecurityType.WPA2
         else:
             raise TypeError(f"Unsupported security type: {test.security}")
 

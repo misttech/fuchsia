@@ -24,7 +24,6 @@ from honeydew.affordances.connectivity.wlan.utils.types import (
     NetworkConfig,
     NetworkIdentifier,
     NetworkState,
-    SecurityType,
 )
 from honeydew.affordances.connectivity.wlan.wlan_policy import (
     wlan_policy_using_fc,
@@ -55,7 +54,7 @@ _TEST_CREDENTIAL_PSK = f_wlan_policy.Credential(
 
 _TEST_NETWORK_CONFIG_NONE = NetworkConfig(
     ssid=_TEST_SSID,
-    security_type=SecurityType.NONE,
+    security_type=f_wlan_policy.SecurityType.NONE,
     credential_type="None",
     credential_value="",
 )
@@ -69,7 +68,7 @@ _TEST_NETWORK_CONFIG_NONE_FIDL = f_wlan_policy.NetworkConfig(
 
 _TEST_NETWORK_CONFIG_PASSWORD = NetworkConfig(
     ssid=_TEST_SSID,
-    security_type=SecurityType.WPA2,
+    security_type=f_wlan_policy.SecurityType.WPA2,
     credential_type="Password",
     credential_value=_TEST_PASSWORD,
 )
@@ -83,7 +82,7 @@ _TEST_NETWORK_CONFIG_PASSWORD_FIDL = f_wlan_policy.NetworkConfig(
 
 _TEST_NETWORK_CONFIG_PSK = NetworkConfig(
     ssid=_TEST_SSID,
-    security_type=SecurityType.WPA2,
+    security_type=f_wlan_policy.SecurityType.WPA2,
     credential_type="Psk",
     credential_value=_TEST_PSK,
 )
@@ -356,12 +355,12 @@ class WlanPolicyFCTests(unittest.IsolatedAsyncioTestCase):
                     if should_raise:
                         with self.assertRaises(HoneydewWlanError):
                             await self.wlan_policy_obj.connect(
-                                _TEST_SSID, SecurityType.NONE
+                                _TEST_SSID, f_wlan_policy.SecurityType.NONE
                             )
                         mock_wait_for_network_state.assert_not_called()
                     else:
                         await self.wlan_policy_obj.connect(
-                            _TEST_SSID, SecurityType.NONE
+                            _TEST_SSID, f_wlan_policy.SecurityType.NONE
                         )
                         mock_wait_for_network_state.assert_called_once_with(
                             _TEST_SSID,
@@ -440,7 +439,7 @@ class WlanPolicyFCTests(unittest.IsolatedAsyncioTestCase):
                         NetworkState(
                             network_identifier=NetworkIdentifier(
                                 ssid="Google Guest",
-                                security_type=SecurityType.WPA2,
+                                security_type=f_wlan_policy.SecurityType.WPA2,
                             ),
                             connection_state=f_wlan_policy.ConnectionState.CONNECTING,
                             disconnect_status=None,
@@ -606,7 +605,7 @@ class WlanPolicyFCTests(unittest.IsolatedAsyncioTestCase):
         client_controller.remove_network.return_value = _async_response(res)
 
         await self.wlan_policy_obj.remove_network(
-            _TEST_SSID, SecurityType.NONE, None
+            _TEST_SSID, f_wlan_policy.SecurityType.NONE, None
         )
         client_controller.remove_network.assert_called_with(
             config=_TEST_NETWORK_CONFIG_NONE_FIDL
@@ -625,7 +624,7 @@ class WlanPolicyFCTests(unittest.IsolatedAsyncioTestCase):
 
             with self.assertRaises(HoneydewWlanError):
                 await self.wlan_policy_obj.remove_network(
-                    _TEST_SSID, SecurityType.NONE, None
+                    _TEST_SSID, f_wlan_policy.SecurityType.NONE, None
                 )
             client_controller.remove_network.assert_called_once()
 
@@ -642,7 +641,7 @@ class WlanPolicyFCTests(unittest.IsolatedAsyncioTestCase):
 
             with self.assertRaises(HoneydewWlanError):
                 await self.wlan_policy_obj.remove_network(
-                    _TEST_SSID, SecurityType.NONE, None
+                    _TEST_SSID, f_wlan_policy.SecurityType.NONE, None
                 )
             client_controller.remove_network.assert_called_once()
 
@@ -653,7 +652,7 @@ class WlanPolicyFCTests(unittest.IsolatedAsyncioTestCase):
         client_controller.save_network.return_value = _async_response(res)
 
         await self.wlan_policy_obj.save_network(
-            _TEST_SSID, SecurityType.NONE, None
+            _TEST_SSID, f_wlan_policy.SecurityType.NONE, None
         )
         client_controller.save_network.assert_called_once()
 
@@ -670,7 +669,7 @@ class WlanPolicyFCTests(unittest.IsolatedAsyncioTestCase):
 
             with self.assertRaises(HoneydewWlanError):
                 await self.wlan_policy_obj.save_network(
-                    _TEST_SSID, SecurityType.NONE, None
+                    _TEST_SSID, f_wlan_policy.SecurityType.NONE, None
                 )
             client_controller.save_network.assert_called_once()
 
@@ -687,7 +686,7 @@ class WlanPolicyFCTests(unittest.IsolatedAsyncioTestCase):
 
             with self.assertRaises(HoneydewWlanError):
                 await self.wlan_policy_obj.save_network(
-                    _TEST_SSID, SecurityType.NONE, None
+                    _TEST_SSID, f_wlan_policy.SecurityType.NONE, None
                 )
             client_controller.save_network.assert_called_once()
 

@@ -24,53 +24,6 @@ MacAddress = _MacAddress
 _PSK_LENGTH = 64
 
 
-# pylint: disable=line-too-long
-# TODO(http://b/299995309): Add lint if change presubmit checks to keep enums and fidl
-# definitions consistent.
-class SecurityType(enum.StrEnum):
-    """Fuchsia supported security types.
-
-    Defined by https://cs.opensource.google/fuchsia/fuchsia/+/main:sdk/fidl/fuchsia.wlan.policy/types.fidl
-    """
-
-    NONE = "none"
-    WEP = "wep"
-    WPA = "wpa"
-    WPA2 = "wpa2"
-    WPA3 = "wpa3"
-
-    @staticmethod
-    def from_fidl(fidl: f_wlan_policy.SecurityType) -> "SecurityType":
-        """Parse from a fuchsia.wlan.policy/SecurityType."""
-        match fidl:
-            case f_wlan_policy.SecurityType.NONE:
-                return SecurityType.NONE
-            case f_wlan_policy.SecurityType.WEP:
-                return SecurityType.WEP
-            case f_wlan_policy.SecurityType.WPA:
-                return SecurityType.WPA
-            case f_wlan_policy.SecurityType.WPA2:
-                return SecurityType.WPA2
-            case f_wlan_policy.SecurityType.WPA3:
-                return SecurityType.WPA3
-            case _:
-                raise TypeError(f"Unknown SecurityType: {fidl}")
-
-    def to_fidl(self) -> f_wlan_policy.SecurityType:
-        """Convert to a fuchsia.wlan.policy/SecurityType."""
-        match self:
-            case SecurityType.NONE:
-                return f_wlan_policy.SecurityType.NONE
-            case SecurityType.WEP:
-                return f_wlan_policy.SecurityType.WEP
-            case SecurityType.WPA:
-                return f_wlan_policy.SecurityType.WPA
-            case SecurityType.WPA2:
-                return f_wlan_policy.SecurityType.WPA2
-            case SecurityType.WPA3:
-                return f_wlan_policy.SecurityType.WPA3
-
-
 # TODO(http://b/346424966): Only necessary because Python does not have static
 # typing for FIDL. Once these static types are available and the SL4F affordance
 # is removed, replace with the statically generated FIDL equivalent.
@@ -107,7 +60,7 @@ class NetworkConfig:
     """
 
     ssid: str
-    security_type: SecurityType
+    security_type: f_wlan_policy.SecurityType
     credential_type: str
     credential_value: str
 
@@ -147,7 +100,7 @@ class NetworkIdentifier:
     """
 
     ssid: str
-    security_type: SecurityType
+    security_type: f_wlan_policy.SecurityType
 
     @staticmethod
     def from_fidl(fidl: f_wlan_policy.NetworkIdentifier) -> "NetworkIdentifier":
@@ -155,16 +108,14 @@ class NetworkIdentifier:
 
         return NetworkIdentifier(
             ssid=bytes(fidl.ssid).decode("utf-8"),
-            security_type=SecurityType.from_fidl(
-                f_wlan_policy.SecurityType(fidl.type_)
-            ),
+            security_type=f_wlan_policy.SecurityType(fidl.type_),
         )
 
     def to_fidl(self) -> f_wlan_policy.NetworkIdentifier:
         """Convert to a fuchsia.wlan.policy/NetworkIdentifier."""
         return f_wlan_policy.NetworkIdentifier(
             ssid=list(self.ssid.encode("utf-8")),
-            type_=self.security_type.to_fidl(),
+            type_=self.security_type,
         )
 
     def __lt__(self, other: NetworkIdentifier) -> bool:

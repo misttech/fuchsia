@@ -7,13 +7,13 @@ import logging
 import fidl_fuchsia_net as fidl_net
 import fidl_fuchsia_wlan_common as fidl_common
 import fidl_fuchsia_wlan_device_service as fidl_service
+import fidl_fuchsia_wlan_policy as f_wlan_policy
 import fidl_fuchsia_wlan_product_deprecatedconfiguration as fidl_deprecatedconfiguration
 import fuchsia_wlan_base_test
 from honeydew.affordances.connectivity.wlan.utils.types import (
     ConnectivityMode,
     MacAddress,
     OperatingBand,
-    SecurityType,
 )
 from honeydew.typing.custom_types import FidlEndpoint
 from mobly import signals, test_runner
@@ -66,7 +66,7 @@ class SuggestApMacAddressTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         logger.info("Creating SoftAP and retrieving its AP MAC address...")
         await self.dut.wlan_policy_ap.start(
             TEST_SSID,
-            SecurityType.NONE,
+            f_wlan_policy.SecurityType.NONE,
             None,
             ConnectivityMode.LOCAL_ONLY,
             OperatingBand.ANY,
@@ -93,7 +93,7 @@ class SuggestApMacAddressTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         )
         await self.dut.wlan_policy_ap.start(
             TEST_SSID,
-            SecurityType.NONE,
+            f_wlan_policy.SecurityType.NONE,
             None,
             ConnectivityMode.LOCAL_ONLY,
             OperatingBand.ANY,
@@ -117,7 +117,7 @@ class SuggestApMacAddressTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         )
         await self.dut.wlan_policy_ap.start(
             TEST_SSID,
-            SecurityType.NONE,
+            f_wlan_policy.SecurityType.NONE,
             None,
             ConnectivityMode.LOCAL_ONLY,
             OperatingBand.ANY,

@@ -16,7 +16,6 @@ from honeydew.affordances.connectivity.wlan.utils.types import (
     ClientStateSummary,
     NetworkIdentifier,
     NetworkState,
-    SecurityType,
 )
 from mobly import asserts, signals, test_runner
 from openwrt_access_point.lib.access_point_config import (
@@ -51,7 +50,7 @@ class StartStopClientConnectionsTest(
         self.password = rand_ascii_str(
             hostapd_constants.AP_PASSPHRASE_LENGTH_2G
         )
-        self.security_type = SecurityType.WPA2
+        self.security_type = f_wlan_policy.SecurityType.WPA2
 
         if self.openwrt_ap:
             config = AccessPointConfig(

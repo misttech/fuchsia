@@ -21,7 +21,6 @@ from antlion.utils import rand_ascii_str
 from honeydew.affordances.connectivity.wlan.utils.errors import (
     HoneydewWlanError,
 )
-from honeydew.affordances.connectivity.wlan.utils.types import SecurityType
 from mobly import signals, test_runner
 from openwrt_access_point.lib.access_point_config import (
     DEFAULT_2G_CHANNEL,
@@ -132,7 +131,9 @@ class HiddenNetworksTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             wait_for_confirmation=True
         )
         await self.dut.wlan_policy.save_network(
-            self.hidden_ssid, SecurityType.WPA2, self.hidden_password
+            self.hidden_ssid,
+            f_wlan_policy.SecurityType.WPA2,
+            self.hidden_password,
         )
         await self.dut.wlan_policy.start_client_connections()
         start_time = time.time()
@@ -167,7 +168,9 @@ class HiddenNetworksTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             wait_for_confirmation=True
         )
         await self.dut.wlan_policy.save_network(
-            self.hidden_ssid, SecurityType.WPA2, self.hidden_password
+            self.hidden_ssid,
+            f_wlan_policy.SecurityType.WPA2,
+            self.hidden_password,
         )
 
         # Reboot the device and check that it auto connects.
@@ -196,7 +199,9 @@ class HiddenNetworksTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         """
         await self.dut.wlan_policy.wait_for_no_connections()
         await self.dut.wlan_policy.save_network(
-            self.hidden_ssid, SecurityType.WPA2, self.hidden_password
+            self.hidden_ssid,
+            f_wlan_policy.SecurityType.WPA2,
+            self.hidden_password,
         )
         try:
             await self.dut.wlan_policy.wait_for_network_state(

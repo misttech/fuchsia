@@ -23,7 +23,6 @@ from honeydew.affordances.connectivity.wlan.utils.types import (
     Credential,
     NetworkConfig,
     OperatingBand,
-    SecurityType,
 )
 from honeydew.affordances.connectivity.wlan.wlan_policy_ap import wlan_policy_ap
 from honeydew.transports.ffx import ffx as ffx_transport
@@ -217,7 +216,7 @@ class AsyncWlanPolicyApUsingFc(
     async def start(
         self,
         ssid: str,
-        security: SecurityType,
+        security: f_wlan_policy.SecurityType,
         password: str | None,
         mode: ConnectivityMode,
         band: OperatingBand,
@@ -263,7 +262,7 @@ class AsyncWlanPolicyApUsingFc(
     async def stop(
         self,
         ssid: str,
-        security: SecurityType,
+        security: f_wlan_policy.SecurityType,
         password: str | None,
     ) -> None:
         """Stop an active access point.
@@ -433,7 +432,7 @@ class WlanPolicyAp(wlan_policy_ap.WlanPolicyAp):
     def start(
         self,
         ssid: str,
-        security: SecurityType,
+        security: f_wlan_policy.SecurityType,
         password: str | None,
         mode: ConnectivityMode,
         band: OperatingBand,
@@ -459,7 +458,7 @@ class WlanPolicyAp(wlan_policy_ap.WlanPolicyAp):
     def stop(
         self,
         ssid: str,
-        security: SecurityType,
+        security: f_wlan_policy.SecurityType,
         password: str | None,
     ) -> None:
         """Stop an active access point.

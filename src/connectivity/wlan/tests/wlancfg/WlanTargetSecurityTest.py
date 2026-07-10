@@ -4,6 +4,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import fidl_fuchsia_wlan_policy as f_wlan_policy
 import fuchsia_wlan_base_test
 from antlion.controllers.access_point import setup_ap
 from antlion.controllers.ap_lib.hostapd_constants import (
@@ -16,10 +17,7 @@ from antlion.controllers.ap_lib.hostapd_security import (
 from honeydew.affordances.connectivity.wlan.utils.errors import (
     HoneydewWlanError,
 )
-from honeydew.affordances.connectivity.wlan.utils.types import (
-    CountryCode,
-    SecurityType,
-)
+from honeydew.affordances.connectivity.wlan.utils.types import CountryCode
 from mobly import asserts, signals, test_runner
 from openwrt_access_point.lib.access_point_config import (
     DEFAULT_5G_CHANNEL,
@@ -128,56 +126,72 @@ class WlanTargetSecurityTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
     # Open Security on AP
     async def test_associate_open_ap_with_open_target_security(self) -> None:
         ssid, _ = self.setup_ap()
-        await self.dut.wlan_policy.save_network(ssid, SecurityType.NONE)
-        await self.dut.wlan_policy.connect(ssid, SecurityType.NONE)
+        await self.dut.wlan_policy.save_network(
+            ssid, f_wlan_policy.SecurityType.NONE
+        )
+        await self.dut.wlan_policy.connect(
+            ssid, f_wlan_policy.SecurityType.NONE
+        )
 
     async def test_reject_open_ap_with_wep_target_security(self) -> None:
         ssid, password = self.setup_ap()
         await self.dut.wlan_policy.save_network(
-            ssid, SecurityType.WEP, password
+            ssid, f_wlan_policy.SecurityType.WEP, password
         )
         with asserts.assert_raises(HoneydewWlanError):
-            await self.dut.wlan_policy.connect(ssid, SecurityType.WEP)
+            await self.dut.wlan_policy.connect(
+                ssid, f_wlan_policy.SecurityType.WEP
+            )
 
     async def test_reject_open_ap_with_wpa_target_security(self) -> None:
         ssid, password = self.setup_ap()
         await self.dut.wlan_policy.save_network(
-            ssid, SecurityType.WPA, password
+            ssid, f_wlan_policy.SecurityType.WPA, password
         )
         with asserts.assert_raises(HoneydewWlanError):
-            await self.dut.wlan_policy.connect(ssid, SecurityType.WPA)
+            await self.dut.wlan_policy.connect(
+                ssid, f_wlan_policy.SecurityType.WPA
+            )
 
     async def test_reject_open_ap_with_wpa2_target_security(self) -> None:
         ssid, password = self.setup_ap()
         await self.dut.wlan_policy.save_network(
-            ssid, SecurityType.WPA2, password
+            ssid, f_wlan_policy.SecurityType.WPA2, password
         )
         with asserts.assert_raises(HoneydewWlanError):
-            await self.dut.wlan_policy.connect(ssid, SecurityType.WPA2)
+            await self.dut.wlan_policy.connect(
+                ssid, f_wlan_policy.SecurityType.WPA2
+            )
 
     async def test_reject_open_ap_with_wpa3_target_security(self) -> None:
         ssid, password = self.setup_ap()
         await self.dut.wlan_policy.save_network(
-            ssid, SecurityType.WPA3, password
+            ssid, f_wlan_policy.SecurityType.WPA3, password
         )
         with asserts.assert_raises(HoneydewWlanError):
-            await self.dut.wlan_policy.connect(ssid, SecurityType.WPA3)
+            await self.dut.wlan_policy.connect(
+                ssid, f_wlan_policy.SecurityType.WPA3
+            )
 
     # WEP Security on AP
     async def test_reject_wep_ap_with_open_target_security(self) -> None:
         ssid, _ = self.setup_ap(SecurityWep())
-        await self.dut.wlan_policy.save_network(ssid, SecurityType.NONE)
+        await self.dut.wlan_policy.save_network(
+            ssid, f_wlan_policy.SecurityType.NONE
+        )
         with asserts.assert_raises(HoneydewWlanError):
-            await self.dut.wlan_policy.connect(ssid, SecurityType.NONE)
+            await self.dut.wlan_policy.connect(
+                ssid, f_wlan_policy.SecurityType.NONE
+            )
 
     async def test_associate_wep_ap_with_wep_target_security(self) -> None:
         # TODO(b/490162087): Remove this skip once OpenWrt supports WEP security
         self.skip_if_wep_not_supported()
         ssid, password = self.setup_ap(SecurityWep())
         await self.dut.wlan_policy.save_network(
-            ssid, SecurityType.WEP, password
+            ssid, f_wlan_policy.SecurityType.WEP, password
         )
-        await self.dut.wlan_policy.connect(ssid, SecurityType.WEP)
+        await self.dut.wlan_policy.connect(ssid, f_wlan_policy.SecurityType.WEP)
 
     def skip_if_wep_not_supported(self) -> None:
         if self.openwrt_ap:
@@ -186,155 +200,197 @@ class WlanTargetSecurityTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
     async def test_reject_wep_ap_with_wpa_target_security(self) -> None:
         ssid, password = self.setup_ap(SecurityWep())
         await self.dut.wlan_policy.save_network(
-            ssid, SecurityType.WPA, password
+            ssid, f_wlan_policy.SecurityType.WPA, password
         )
         with asserts.assert_raises(HoneydewWlanError):
-            await self.dut.wlan_policy.connect(ssid, SecurityType.WPA)
+            await self.dut.wlan_policy.connect(
+                ssid, f_wlan_policy.SecurityType.WPA
+            )
 
     async def test_reject_wep_ap_with_wpa2_target_security(self) -> None:
         ssid, password = self.setup_ap(SecurityWep())
         await self.dut.wlan_policy.save_network(
-            ssid, SecurityType.WPA2, password
+            ssid, f_wlan_policy.SecurityType.WPA2, password
         )
         with asserts.assert_raises(HoneydewWlanError):
-            await self.dut.wlan_policy.connect(ssid, SecurityType.WPA2)
+            await self.dut.wlan_policy.connect(
+                ssid, f_wlan_policy.SecurityType.WPA2
+            )
 
     async def test_reject_wep_ap_with_wpa3_target_security(self) -> None:
         ssid, password = self.setup_ap(SecurityWep())
         await self.dut.wlan_policy.save_network(
-            ssid, SecurityType.WPA3, password
+            ssid, f_wlan_policy.SecurityType.WPA3, password
         )
         with asserts.assert_raises(HoneydewWlanError):
-            await self.dut.wlan_policy.connect(ssid, SecurityType.WPA3)
+            await self.dut.wlan_policy.connect(
+                ssid, f_wlan_policy.SecurityType.WPA3
+            )
 
     # WPA Security on AP
     async def test_reject_wpa_ap_with_open_target_security(self) -> None:
         ssid, _ = self.setup_ap(SecurityWpa())
-        await self.dut.wlan_policy.save_network(ssid, SecurityType.NONE)
+        await self.dut.wlan_policy.save_network(
+            ssid, f_wlan_policy.SecurityType.NONE
+        )
         with asserts.assert_raises(HoneydewWlanError):
-            await self.dut.wlan_policy.connect(ssid, SecurityType.NONE)
+            await self.dut.wlan_policy.connect(
+                ssid, f_wlan_policy.SecurityType.NONE
+            )
 
     async def test_reject_wpa_ap_with_wep_target_security(self) -> None:
         ssid, password = self.setup_ap(SecurityWpa())
         await self.dut.wlan_policy.save_network(
-            ssid, SecurityType.WEP, password
+            ssid, f_wlan_policy.SecurityType.WEP, password
         )
         with asserts.assert_raises(HoneydewWlanError):
-            await self.dut.wlan_policy.connect(ssid, SecurityType.WEP)
+            await self.dut.wlan_policy.connect(
+                ssid, f_wlan_policy.SecurityType.WEP
+            )
 
     async def test_associate_wpa_ap_with_wpa_target_security(self) -> None:
         ssid, password = self.setup_ap(SecurityWpa())
         await self.dut.wlan_policy.save_network(
-            ssid, SecurityType.WPA, password
+            ssid, f_wlan_policy.SecurityType.WPA, password
         )
-        await self.dut.wlan_policy.connect(ssid, SecurityType.WPA)
+        await self.dut.wlan_policy.connect(ssid, f_wlan_policy.SecurityType.WPA)
 
     async def test_reject_wpa_ap_with_wpa2_target_security(self) -> None:
         ssid, password = self.setup_ap(SecurityWpa())
         await self.dut.wlan_policy.save_network(
-            ssid, SecurityType.WPA2, password
+            ssid, f_wlan_policy.SecurityType.WPA2, password
         )
         with asserts.assert_raises(HoneydewWlanError):
-            await self.dut.wlan_policy.connect(ssid, SecurityType.WPA2)
+            await self.dut.wlan_policy.connect(
+                ssid, f_wlan_policy.SecurityType.WPA2
+            )
 
     async def test_reject_wpa_ap_with_wpa3_target_security(self) -> None:
         ssid, password = self.setup_ap(SecurityWpa())
         await self.dut.wlan_policy.save_network(
-            ssid, SecurityType.WPA3, password
+            ssid, f_wlan_policy.SecurityType.WPA3, password
         )
         with asserts.assert_raises(HoneydewWlanError):
-            await self.dut.wlan_policy.connect(ssid, SecurityType.WPA3)
+            await self.dut.wlan_policy.connect(
+                ssid, f_wlan_policy.SecurityType.WPA3
+            )
 
     # WPA2 Security on AP
     async def test_reject_wpa2_ap_with_open_target_security(self) -> None:
         ssid, _ = self.setup_ap(SecurityWpa2())
-        await self.dut.wlan_policy.save_network(ssid, SecurityType.NONE)
+        await self.dut.wlan_policy.save_network(
+            ssid, f_wlan_policy.SecurityType.NONE
+        )
         with asserts.assert_raises(HoneydewWlanError):
-            await self.dut.wlan_policy.connect(ssid, SecurityType.NONE)
+            await self.dut.wlan_policy.connect(
+                ssid, f_wlan_policy.SecurityType.NONE
+            )
 
     async def test_reject_wpa2_ap_with_wep_target_security(self) -> None:
         ssid, password = self.setup_ap(SecurityWpa2())
         await self.dut.wlan_policy.save_network(
-            ssid, SecurityType.WEP, password
+            ssid, f_wlan_policy.SecurityType.WEP, password
         )
         with asserts.assert_raises(HoneydewWlanError):
-            await self.dut.wlan_policy.connect(ssid, SecurityType.WEP)
+            await self.dut.wlan_policy.connect(
+                ssid, f_wlan_policy.SecurityType.WEP
+            )
 
     async def test_associate_wpa2_ap_with_wpa_target_security(self) -> None:
         ssid, password = self.setup_ap(SecurityWpa2())
         await self.dut.wlan_policy.save_network(
-            ssid, SecurityType.WPA, password
+            ssid, f_wlan_policy.SecurityType.WPA, password
         )
-        await self.dut.wlan_policy.connect(ssid, SecurityType.WPA)
+        await self.dut.wlan_policy.connect(ssid, f_wlan_policy.SecurityType.WPA)
 
     async def test_associate_wpa2_ap_with_wpa2_target_security(self) -> None:
         ssid, password = self.setup_ap(SecurityWpa2())
         await self.dut.wlan_policy.save_network(
-            ssid, SecurityType.WPA2, password
+            ssid, f_wlan_policy.SecurityType.WPA2, password
         )
-        await self.dut.wlan_policy.connect(ssid, SecurityType.WPA2)
+        await self.dut.wlan_policy.connect(
+            ssid, f_wlan_policy.SecurityType.WPA2
+        )
 
     async def test_reject_wpa2_ap_with_wpa3_target_security(self) -> None:
         ssid, password = self.setup_ap(SecurityWpa2())
         await self.dut.wlan_policy.save_network(
-            ssid, SecurityType.WPA3, password
+            ssid, f_wlan_policy.SecurityType.WPA3, password
         )
         with asserts.assert_raises(HoneydewWlanError):
-            await self.dut.wlan_policy.connect(ssid, SecurityType.WPA3)
+            await self.dut.wlan_policy.connect(
+                ssid, f_wlan_policy.SecurityType.WPA3
+            )
 
     # WPA/WPA2 Security on AP
     async def test_reject_wpa_wpa2_ap_with_open_target_security(self) -> None:
         ssid, _ = self.setup_ap(SecurityWpaWpa2Mixed())
-        await self.dut.wlan_policy.save_network(ssid, SecurityType.NONE)
+        await self.dut.wlan_policy.save_network(
+            ssid, f_wlan_policy.SecurityType.NONE
+        )
         with asserts.assert_raises(HoneydewWlanError):
-            await self.dut.wlan_policy.connect(ssid, SecurityType.NONE)
+            await self.dut.wlan_policy.connect(
+                ssid, f_wlan_policy.SecurityType.NONE
+            )
 
     async def test_reject_wpa_wpa2_ap_with_wep_target_security(self) -> None:
         ssid, password = self.setup_ap(SecurityWpaWpa2Mixed())
         await self.dut.wlan_policy.save_network(
-            ssid, SecurityType.WEP, password
+            ssid, f_wlan_policy.SecurityType.WEP, password
         )
         with asserts.assert_raises(HoneydewWlanError):
-            await self.dut.wlan_policy.connect(ssid, SecurityType.WEP)
+            await self.dut.wlan_policy.connect(
+                ssid, f_wlan_policy.SecurityType.WEP
+            )
 
     async def test_associate_wpa_wpa2_ap_with_wpa_target_security(self) -> None:
         ssid, password = self.setup_ap(SecurityWpaWpa2Mixed())
         await self.dut.wlan_policy.save_network(
-            ssid, SecurityType.WPA, password
+            ssid, f_wlan_policy.SecurityType.WPA, password
         )
-        await self.dut.wlan_policy.connect(ssid, SecurityType.WPA)
+        await self.dut.wlan_policy.connect(ssid, f_wlan_policy.SecurityType.WPA)
 
     async def test_associate_wpa_wpa2_ap_with_wpa2_target_security(
         self,
     ) -> None:
         ssid, password = self.setup_ap(SecurityWpaWpa2Mixed())
         await self.dut.wlan_policy.save_network(
-            ssid, SecurityType.WPA2, password
+            ssid, f_wlan_policy.SecurityType.WPA2, password
         )
-        await self.dut.wlan_policy.connect(ssid, SecurityType.WPA2)
+        await self.dut.wlan_policy.connect(
+            ssid, f_wlan_policy.SecurityType.WPA2
+        )
 
     async def test_reject_wpa_wpa2_ap_with_wpa3_target_security(self) -> None:
         ssid, password = self.setup_ap(SecurityWpaWpa2Mixed())
         await self.dut.wlan_policy.save_network(
-            ssid, SecurityType.WPA3, password
+            ssid, f_wlan_policy.SecurityType.WPA3, password
         )
         with asserts.assert_raises(HoneydewWlanError):
-            await self.dut.wlan_policy.connect(ssid, SecurityType.WPA3)
+            await self.dut.wlan_policy.connect(
+                ssid, f_wlan_policy.SecurityType.WPA3
+            )
 
     # WPA3 Security on AP
     async def test_reject_wpa3_ap_with_open_target_security(self) -> None:
         ssid, _ = self.setup_ap(SecurityWpa3())
-        await self.dut.wlan_policy.save_network(ssid, SecurityType.NONE)
+        await self.dut.wlan_policy.save_network(
+            ssid, f_wlan_policy.SecurityType.NONE
+        )
         with asserts.assert_raises(HoneydewWlanError):
-            await self.dut.wlan_policy.connect(ssid, SecurityType.NONE)
+            await self.dut.wlan_policy.connect(
+                ssid, f_wlan_policy.SecurityType.NONE
+            )
 
     async def test_reject_wpa3_ap_with_wep_target_security(self) -> None:
         ssid, password = self.setup_ap(SecurityWpa3())
         await self.dut.wlan_policy.save_network(
-            ssid, SecurityType.WEP, password
+            ssid, f_wlan_policy.SecurityType.WEP, password
         )
         with asserts.assert_raises(HoneydewWlanError):
-            await self.dut.wlan_policy.connect(ssid, SecurityType.WEP)
+            await self.dut.wlan_policy.connect(
+                ssid, f_wlan_policy.SecurityType.WEP
+            )
 
     async def test_associate_wpa3_ap_with_wpa_target_security(self) -> None:
         ssid, password = self.setup_ap(SecurityWpa3())
@@ -343,39 +399,51 @@ class WlanTargetSecurityTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         # If this feature was re-enabled, please update this test's
         # expectation.
         await self.dut.wlan_policy.save_network(
-            ssid, SecurityType.WPA, password
+            ssid, f_wlan_policy.SecurityType.WPA, password
         )
         with asserts.assert_raises(HoneydewWlanError):
-            await self.dut.wlan_policy.connect(ssid, SecurityType.WPA)
+            await self.dut.wlan_policy.connect(
+                ssid, f_wlan_policy.SecurityType.WPA
+            )
 
     async def test_associate_wpa3_ap_with_wpa2_target_security(self) -> None:
         ssid, password = self.setup_ap(SecurityWpa3())
         await self.dut.wlan_policy.save_network(
-            ssid, SecurityType.WPA2, password
+            ssid, f_wlan_policy.SecurityType.WPA2, password
         )
-        await self.dut.wlan_policy.connect(ssid, SecurityType.WPA2)
+        await self.dut.wlan_policy.connect(
+            ssid, f_wlan_policy.SecurityType.WPA2
+        )
 
     async def test_associate_wpa3_ap_with_wpa3_target_security(self) -> None:
         ssid, password = self.setup_ap(SecurityWpa3())
         await self.dut.wlan_policy.save_network(
-            ssid, SecurityType.WPA3, password
+            ssid, f_wlan_policy.SecurityType.WPA3, password
         )
-        await self.dut.wlan_policy.connect(ssid, SecurityType.WPA3)
+        await self.dut.wlan_policy.connect(
+            ssid, f_wlan_policy.SecurityType.WPA3
+        )
 
     # WPA2/WPA3 Security on AP
     async def test_reject_wpa2_wpa3_ap_with_open_target_security(self) -> None:
         ssid, _ = self.setup_ap(SecurityWpa2Wpa3Mixed())
-        await self.dut.wlan_policy.save_network(ssid, SecurityType.NONE)
+        await self.dut.wlan_policy.save_network(
+            ssid, f_wlan_policy.SecurityType.NONE
+        )
         with asserts.assert_raises(HoneydewWlanError):
-            await self.dut.wlan_policy.connect(ssid, SecurityType.NONE)
+            await self.dut.wlan_policy.connect(
+                ssid, f_wlan_policy.SecurityType.NONE
+            )
 
     async def test_reject_wpa2_wpa3_ap_with_wep_target_security(self) -> None:
         ssid, password = self.setup_ap(SecurityWpa2Wpa3Mixed())
         await self.dut.wlan_policy.save_network(
-            ssid, SecurityType.WEP, password
+            ssid, f_wlan_policy.SecurityType.WEP, password
         )
         with asserts.assert_raises(HoneydewWlanError):
-            await self.dut.wlan_policy.connect(ssid, SecurityType.WEP)
+            await self.dut.wlan_policy.connect(
+                ssid, f_wlan_policy.SecurityType.WEP
+            )
 
     async def test_associate_wpa2_wpa3_ap_with_wpa_target_security(
         self,
@@ -386,28 +454,34 @@ class WlanTargetSecurityTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         # If this feature was re-enabled, please update this test's
         # expectation.
         await self.dut.wlan_policy.save_network(
-            ssid, SecurityType.WPA, password
+            ssid, f_wlan_policy.SecurityType.WPA, password
         )
         with asserts.assert_raises(HoneydewWlanError):
-            await self.dut.wlan_policy.connect(ssid, SecurityType.WPA)
+            await self.dut.wlan_policy.connect(
+                ssid, f_wlan_policy.SecurityType.WPA
+            )
 
     async def test_associate_wpa2_wpa3_ap_with_wpa2_target_security(
         self,
     ) -> None:
         ssid, password = self.setup_ap(SecurityWpa2Wpa3Mixed())
         await self.dut.wlan_policy.save_network(
-            ssid, SecurityType.WPA2, password
+            ssid, f_wlan_policy.SecurityType.WPA2, password
         )
-        await self.dut.wlan_policy.connect(ssid, SecurityType.WPA2)
+        await self.dut.wlan_policy.connect(
+            ssid, f_wlan_policy.SecurityType.WPA2
+        )
 
     async def test_associate_wpa2_wpa3_ap_with_wpa3_target_security(
         self,
     ) -> None:
         ssid, password = self.setup_ap(SecurityWpa2Wpa3Mixed())
         await self.dut.wlan_policy.save_network(
-            ssid, SecurityType.WPA3, password
+            ssid, f_wlan_policy.SecurityType.WPA3, password
         )
-        await self.dut.wlan_policy.connect(ssid, SecurityType.WPA3)
+        await self.dut.wlan_policy.connect(
+            ssid, f_wlan_policy.SecurityType.WPA3
+        )
 
 
 if __name__ == "__main__":

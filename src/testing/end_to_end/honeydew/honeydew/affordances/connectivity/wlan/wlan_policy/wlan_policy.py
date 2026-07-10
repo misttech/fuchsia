@@ -13,7 +13,6 @@ from honeydew.affordances.connectivity.wlan.utils.types import (
     ClientStateSummary,
     CountryCode,
     NetworkConfig,
-    SecurityType,
 )
 
 
@@ -30,7 +29,7 @@ class AsyncWlanPolicy(abc.ABC):
     async def connect(
         self,
         target_ssid: str,
-        security_type: SecurityType,
+        security_type: f_wlan_policy.SecurityType,
         *,
         timeout: float | None = DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
     ) -> None:
@@ -149,7 +148,7 @@ class AsyncWlanPolicy(abc.ABC):
     async def remove_network(
         self,
         target_ssid: str,
-        security_type: SecurityType,
+        security_type: f_wlan_policy.SecurityType,
         target_pwd: str | None = None,
         *,
         timeout: float | None = DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
@@ -171,7 +170,7 @@ class AsyncWlanPolicy(abc.ABC):
     async def save_network(
         self,
         target_ssid: str,
-        security_type: SecurityType,
+        security_type: f_wlan_policy.SecurityType,
         target_pwd: str | None = None,
         *,
         timeout: float | None = DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
@@ -298,7 +297,7 @@ class WlanPolicy(affordance.Affordance):
     def connect(
         self,
         target_ssid: str,
-        security_type: SecurityType,
+        security_type: f_wlan_policy.SecurityType,
         *,
         timeout: float | None = DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
     ) -> None:
@@ -417,7 +416,7 @@ class WlanPolicy(affordance.Affordance):
     def remove_network(
         self,
         target_ssid: str,
-        security_type: SecurityType,
+        security_type: f_wlan_policy.SecurityType,
         target_pwd: str | None = None,
         *,
         timeout: float | None = DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
@@ -439,7 +438,7 @@ class WlanPolicy(affordance.Affordance):
     def save_network(
         self,
         target_ssid: str,
-        security_type: SecurityType,
+        security_type: f_wlan_policy.SecurityType,
         target_pwd: str | None = None,
         *,
         timeout: float | None = DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,

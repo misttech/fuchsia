@@ -7,6 +7,7 @@
 import logging
 from typing import Literal, NamedTuple, cast
 
+import fidl_fuchsia_wlan_policy as f_wlan_policy
 import fuchsia_wlan_base_test
 from antlion import utils
 from antlion.controllers.access_point import setup_ap
@@ -15,10 +16,7 @@ from antlion.controllers.ap_lib.regulatory_channels import (
     COUNTRY_CHANNELS,
     TEST_CHANNELS,
 )
-from honeydew.affordances.connectivity.wlan.utils.types import (
-    CountryCode,
-    SecurityType,
-)
+from honeydew.affordances.connectivity.wlan.utils.types import CountryCode
 from mobly import asserts, signals, test_runner
 from mobly.config_parser import TestRunConfig
 from openwrt_access_point.lib.access_point_config import (
@@ -215,10 +213,12 @@ class RegulatoryComplianceTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         )
 
         try:
-            await self.dut.wlan_policy.save_network(ssid, SecurityType.NONE)
+            await self.dut.wlan_policy.save_network(
+                ssid, f_wlan_policy.SecurityType.NONE
+            )
             await self.dut.wlan_policy.connect(
                 ssid,
-                SecurityType.NONE,
+                f_wlan_policy.SecurityType.NONE,
                 timeout=30,
             )
             associated = True

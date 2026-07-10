@@ -6,6 +6,7 @@ import collections
 import string
 from enum import Enum, StrEnum, auto, unique
 
+import fidl_fuchsia_wlan_policy as f_wlan_policy
 from antlion.controllers.ap_lib import hostapd_constants
 
 
@@ -147,22 +148,6 @@ class OpenWRTEncryptionMode(StrEnum):
 
 
 @unique
-class FuchsiaSecurityType(StrEnum):
-    """Fuchsia supported security types.
-
-    Defined by the fuchsia.wlan.policy.SecurityType FIDL.
-
-    https://cs.opensource.google/fuchsia/fuchsia/+/main:sdk/fidl/fuchsia.wlan.policy/types.fidl
-    """
-
-    NONE = "none"
-    WEP = "wep"
-    WPA = "wpa"
-    WPA2 = "wpa2"
-    WPA3 = "wpa3"
-
-
-@unique
 class SecurityMode(StrEnum):
     OPEN = auto()
     WEP = auto()
@@ -216,24 +201,22 @@ class SecurityMode(StrEnum):
             case SecurityMode.ENT:
                 return KeyManagement.ENT
 
-    def fuchsia_security_type(self) -> FuchsiaSecurityType:
+    def fuchsia_security_type(self) -> f_wlan_policy.SecurityType:
         match self:
             case SecurityMode.OPEN:
-                return FuchsiaSecurityType.NONE
+                return f_wlan_policy.SecurityType.NONE
             case SecurityMode.WEP:
-                return FuchsiaSecurityType.WEP
+                return f_wlan_policy.SecurityType.WEP
             case SecurityMode.WPA:
-                return FuchsiaSecurityType.WPA
-            case SecurityMode.WPA2:
-                return FuchsiaSecurityType.WPA2
-            case SecurityMode.WPA_WPA2:
-                return FuchsiaSecurityType.WPA2
-            case SecurityMode.WPA3:
-                return FuchsiaSecurityType.WPA3
-            case SecurityMode.WPA2_WPA3:
-                return FuchsiaSecurityType.WPA3
-            case SecurityMode.WPA_WPA2_WPA3:
-                return FuchsiaSecurityType.WPA3
+                return f_wlan_policy.SecurityType.WPA
+            case SecurityMode.WPA2 | SecurityMode.WPA_WPA2:
+                return f_wlan_policy.SecurityType.WPA2
+            case (
+                SecurityMode.WPA3
+                | SecurityMode.WPA2_WPA3
+                | SecurityMode.WPA_WPA2_WPA3
+            ):
+                return f_wlan_policy.SecurityType.WPA3
             case SecurityMode.ENT:
                 raise NotImplementedError(
                     f'Fuchsia has not implemented support for security mode "{self}"'

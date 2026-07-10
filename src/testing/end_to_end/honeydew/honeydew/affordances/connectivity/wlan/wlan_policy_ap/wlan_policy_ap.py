@@ -5,12 +5,13 @@
 
 import abc
 
+import fidl_fuchsia_wlan_policy as f_wlan_policy
+
 from honeydew.affordances import affordance
 from honeydew.affordances.connectivity.wlan.utils.types import (
     AccessPointState,
     ConnectivityMode,
     OperatingBand,
-    SecurityType,
 )
 
 
@@ -21,7 +22,7 @@ class AsyncWlanPolicyAp(abc.ABC):
     async def start(
         self,
         ssid: str,
-        security: SecurityType,
+        security: f_wlan_policy.SecurityType,
         password: str | None,
         mode: ConnectivityMode,
         band: OperatingBand,
@@ -45,7 +46,7 @@ class AsyncWlanPolicyAp(abc.ABC):
     async def stop(
         self,
         ssid: str,
-        security: SecurityType,
+        security: f_wlan_policy.SecurityType,
         password: str | None,
     ) -> None:
         """Stop an active access point.
@@ -116,7 +117,7 @@ class WlanPolicyAp(affordance.Affordance):
     def start(
         self,
         ssid: str,
-        security: SecurityType,
+        security: f_wlan_policy.SecurityType,
         password: str | None,
         mode: ConnectivityMode,
         band: OperatingBand,
@@ -140,7 +141,7 @@ class WlanPolicyAp(affordance.Affordance):
     def stop(
         self,
         ssid: str,
-        security: SecurityType,
+        security: f_wlan_policy.SecurityType,
         password: str | None,
     ) -> None:
         """Stop an active access point.

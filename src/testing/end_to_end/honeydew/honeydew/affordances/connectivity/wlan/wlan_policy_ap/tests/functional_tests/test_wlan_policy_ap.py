@@ -7,6 +7,7 @@ import random
 import string
 import time
 
+import fidl_fuchsia_wlan_policy as f_wlan_policy
 import fuchsia_wlan_base_test
 from mobly import asserts, test_runner
 
@@ -21,7 +22,6 @@ from honeydew.affordances.connectivity.wlan.utils.types import (
     NetworkIdentifier,
     OperatingBand,
     OperatingState,
-    SecurityType,
 )
 
 # Time to wait for a WLAN interface to become available.
@@ -80,7 +80,7 @@ class WlanPolicyApTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         test_ssid = random_str()
         await self.dut.wlan_policy_ap.start(
             test_ssid,
-            SecurityType.NONE,
+            f_wlan_policy.SecurityType.NONE,
             None,
             ConnectivityMode.LOCAL_ONLY,
             OperatingBand.ONLY_2_4GHZ,
@@ -95,7 +95,8 @@ class WlanPolicyApTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                     frequency=None,
                     clients=None,
                     id_=NetworkIdentifier(
-                        ssid=test_ssid, security_type=SecurityType.NONE
+                        ssid=test_ssid,
+                        security_type=f_wlan_policy.SecurityType.NONE,
                     ),
                 )
             ],
@@ -110,7 +111,8 @@ class WlanPolicyApTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                     frequency=None,
                     clients=None,
                     id_=NetworkIdentifier(
-                        ssid=test_ssid, security_type=SecurityType.NONE
+                        ssid=test_ssid,
+                        security_type=f_wlan_policy.SecurityType.NONE,
                     ),
                 )
             ],
@@ -128,7 +130,8 @@ class WlanPolicyApTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                     frequency=got_states[0].frequency,
                     clients=ConnectedClientInformation(count=0),
                     id_=NetworkIdentifier(
-                        ssid=test_ssid, security_type=SecurityType.NONE
+                        ssid=test_ssid,
+                        security_type=f_wlan_policy.SecurityType.NONE,
                     ),
                 )
             ],
@@ -147,13 +150,16 @@ class WlanPolicyApTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                     frequency=got_states[0].frequency,
                     clients=ConnectedClientInformation(count=0),
                     id_=NetworkIdentifier(
-                        ssid=test_ssid, security_type=SecurityType.NONE
+                        ssid=test_ssid,
+                        security_type=f_wlan_policy.SecurityType.NONE,
                     ),
                 )
             ],
         )
 
-        await self.dut.wlan_policy_ap.stop(test_ssid, SecurityType.NONE, None)
+        await self.dut.wlan_policy_ap.stop(
+            test_ssid, f_wlan_policy.SecurityType.NONE, None
+        )
         asserts.assert_equal(
             await self.dut.wlan_policy_ap.get_update(),
             [],

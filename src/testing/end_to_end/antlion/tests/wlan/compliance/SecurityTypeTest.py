@@ -10,6 +10,7 @@ import time
 from dataclasses import dataclass
 from typing import Literal
 
+import fidl_fuchsia_wlan_policy as f_wlan_policy
 import fuchsia_wlan_base_test
 from antlion.controllers.access_point import AccessPoint, setup_ap
 from antlion.controllers.ap_lib import hostapd_constants
@@ -17,10 +18,7 @@ from antlion.controllers.ap_lib.hostapd_security import (
     Security as DeprecatedSecurity,
 )
 from antlion.controllers.ap_lib.hostapd_security import SecurityMode
-from honeydew.affordances.connectivity.wlan.utils.types import (
-    CountryCode,
-    SecurityType,
-)
+from honeydew.affordances.connectivity.wlan.utils.types import CountryCode
 from mobly import signals, test_runner
 from mobly.records import TestResultRecord
 from openwrt_access_point import OpenWrtAP
@@ -547,12 +545,12 @@ class SecurityTypeTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
 
         await self.dut.wlan_policy.save_network(
             ssid,
-            SecurityType.WEP,
+            f_wlan_policy.SecurityType.WEP,
             target_pwd=password,
         )
         await self.dut.wlan_policy.connect(
             ssid,
-            SecurityType.WEP,
+            f_wlan_policy.SecurityType.WEP,
         )
 
     async def _run_wpa_test(self, params: WpaTestParams) -> None:
@@ -605,12 +603,12 @@ class SecurityTypeTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
 
         await self.dut.wlan_policy.save_network(
             ssid,
-            SecurityType.from_fidl(params.security.to_fidl_wlan_policy()),
+            params.security.to_fidl_wlan_policy(),
             target_pwd=password,
         )
         await self.dut.wlan_policy.connect(
             ssid,
-            SecurityType.from_fidl(params.security.to_fidl_wlan_policy()),
+            params.security.to_fidl_wlan_policy(),
         )
 
     async def _run_wpa3_test(self, params: Wpa3TestParams) -> None:
@@ -666,12 +664,12 @@ class SecurityTypeTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
 
         await self.dut.wlan_policy.save_network(
             ssid,
-            SecurityType.from_fidl(security.to_fidl_wlan_policy()),
+            security.to_fidl_wlan_policy(),
             target_pwd=password,
         )
         await self.dut.wlan_policy.connect(
             ssid,
-            SecurityType.from_fidl(security.to_fidl_wlan_policy()),
+            security.to_fidl_wlan_policy(),
         )
 
     async def _run_boundary_test(self, params: BoundaryTestParams) -> None:
@@ -735,12 +733,12 @@ class SecurityTypeTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
 
         await self.dut.wlan_policy.save_network(
             ssid,
-            SecurityType.from_fidl(security.to_fidl_wlan_policy()),
+            security.to_fidl_wlan_policy(),
             target_pwd=password,
         )
         await self.dut.wlan_policy.connect(
             ssid,
-            SecurityType.from_fidl(security.to_fidl_wlan_policy()),
+            security.to_fidl_wlan_policy(),
         )
 
     async def _run_utf8_test(self, params: Utf8TestParams) -> None:
@@ -796,12 +794,12 @@ class SecurityTypeTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
 
         await self.dut.wlan_policy.save_network(
             ssid,
-            SecurityType.from_fidl(security.to_fidl_wlan_policy()),
+            security.to_fidl_wlan_policy(),
             target_pwd=password,
         )
         await self.dut.wlan_policy.connect(
             ssid,
-            SecurityType.from_fidl(security.to_fidl_wlan_policy()),
+            security.to_fidl_wlan_policy(),
         )
 
     async def _run_mac_phy_test(self, params: MacPhyTestParams) -> None:
@@ -894,12 +892,12 @@ class SecurityTypeTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
 
         await self.dut.wlan_policy.save_network(
             ssid,
-            SecurityType.from_fidl(security.to_fidl_wlan_policy()),
+            security.to_fidl_wlan_policy(),
             target_pwd=password,
         )
         await self.dut.wlan_policy.connect(
             ssid,
-            SecurityType.from_fidl(security.to_fidl_wlan_policy()),
+            security.to_fidl_wlan_policy(),
         )
 
     async def _run_pmf_test(self, params: PmfTestParams) -> None:
@@ -955,12 +953,12 @@ class SecurityTypeTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
 
         await self.dut.wlan_policy.save_network(
             ssid,
-            SecurityType.from_fidl(security.to_fidl_wlan_policy()),
+            security.to_fidl_wlan_policy(),
             target_pwd=password,
         )
         await self.dut.wlan_policy.connect(
             ssid,
-            SecurityType.from_fidl(security.to_fidl_wlan_policy()),
+            security.to_fidl_wlan_policy(),
         )
 
     async def _run_vendor_ie_test(self, params: VendorIeTestParams) -> None:
@@ -1041,12 +1039,12 @@ class SecurityTypeTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
 
         await self.dut.wlan_policy.save_network(
             ssid,
-            SecurityType.from_fidl(security.to_fidl_wlan_policy()),
+            security.to_fidl_wlan_policy(),
             target_pwd=password,
         )
         await self.dut.wlan_policy.connect(
             ssid,
-            SecurityType.from_fidl(security.to_fidl_wlan_policy()),
+            security.to_fidl_wlan_policy(),
         )
 
 

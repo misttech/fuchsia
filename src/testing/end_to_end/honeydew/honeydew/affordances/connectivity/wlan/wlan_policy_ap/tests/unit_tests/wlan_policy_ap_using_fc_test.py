@@ -25,7 +25,6 @@ from honeydew.affordances.connectivity.wlan.utils.types import (
     NetworkIdentifier,
     OperatingBand,
     OperatingState,
-    SecurityType,
 )
 from honeydew.affordances.connectivity.wlan.wlan_policy_ap import (
     wlan_policy_ap_using_fc,
@@ -45,7 +44,9 @@ _ACCESS_POINT_STATE = AccessPointState(
     band=OperatingBand.ONLY_2_4GHZ,
     frequency=None,
     clients=None,
-    id_=NetworkIdentifier(ssid=_TEST_SSID, security_type=SecurityType.WPA2),
+    id_=NetworkIdentifier(
+        ssid=_TEST_SSID, security_type=f_wlan_policy.SecurityType.WPA2
+    ),
 )
 _ACCESS_POINT_STATE_FIDL = f_wlan_policy.AccessPointState(
     state=f_wlan_policy.OperatingState.STARTING,
@@ -234,7 +235,7 @@ class WlanPolicyApFCTests(unittest.IsolatedAsyncioTestCase):
 
         await self.wlan_policy_ap_obj.start(
             _TEST_SSID,
-            SecurityType.NONE,
+            f_wlan_policy.SecurityType.NONE,
             None,
             ConnectivityMode.LOCAL_ONLY,
             OperatingBand.ANY,
@@ -249,7 +250,7 @@ class WlanPolicyApFCTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(HoneydewWlanError):
             await self.wlan_policy_ap_obj.start(
                 _TEST_SSID,
-                SecurityType.NONE,
+                f_wlan_policy.SecurityType.NONE,
                 None,
                 ConnectivityMode.LOCAL_ONLY,
                 OperatingBand.ANY,
@@ -267,7 +268,7 @@ class WlanPolicyApFCTests(unittest.IsolatedAsyncioTestCase):
 
         await self.wlan_policy_ap_obj.stop(
             _TEST_SSID,
-            SecurityType.NONE,
+            f_wlan_policy.SecurityType.NONE,
             None,
         )
 
@@ -280,7 +281,7 @@ class WlanPolicyApFCTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(HoneydewWlanError):
             await self.wlan_policy_ap_obj.stop(
                 _TEST_SSID,
-                SecurityType.NONE,
+                f_wlan_policy.SecurityType.NONE,
                 None,
             )
 

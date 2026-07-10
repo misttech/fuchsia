@@ -6,6 +6,7 @@
 
 import logging
 
+import fidl_fuchsia_wlan_policy as f_wlan_policy
 import fuchsia_wlan_base_test
 from antlion.controllers.access_point import setup_ap
 from antlion.controllers.ap_lib.hostapd_security import (
@@ -14,10 +15,7 @@ from antlion.controllers.ap_lib.hostapd_security import (
 from honeydew.affordances.connectivity.wlan.utils.errors import (
     HoneydewWlanError,
 )
-from honeydew.affordances.connectivity.wlan.utils.types import (
-    CountryCode,
-    SecurityType,
-)
+from honeydew.affordances.connectivity.wlan.utils.types import CountryCode
 from mobly import asserts, signals, test_runner
 from openwrt_access_point.lib.access_point_config import (
     DEFAULT_5G_CHANNEL,
@@ -120,13 +118,13 @@ class WlanMiscScenarioTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         self.log.info("Attempting to associate WPA3 with wrong password.")
         await self.dut.wlan_policy.save_network(
             wpa3_ssid,
-            SecurityType.WPA3,
+            f_wlan_policy.SecurityType.WPA3,
             target_pwd="wrongpass",
         )
         with asserts.assert_raises(HoneydewWlanError):
             await self.dut.wlan_policy.connect(
                 wpa3_ssid,
-                SecurityType.WPA3,
+                f_wlan_policy.SecurityType.WPA3,
             )
 
         if self.access_point:
@@ -146,12 +144,12 @@ class WlanMiscScenarioTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         self.log.info("Attempting to associate with WPA2 network.")
         await self.dut.wlan_policy.save_network(
             wpa2_ssid,
-            SecurityType.WPA2,
+            f_wlan_policy.SecurityType.WPA2,
             target_pwd=wpa2_password,
         )
         await self.dut.wlan_policy.connect(
             wpa2_ssid,
-            SecurityType.WPA2,
+            f_wlan_policy.SecurityType.WPA2,
         )
 
 

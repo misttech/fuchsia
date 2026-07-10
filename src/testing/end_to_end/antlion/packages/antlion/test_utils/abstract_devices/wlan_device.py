@@ -29,9 +29,6 @@ from honeydew.affordances.connectivity.wlan.utils.types import (
     ClientStatusConnecting,
     ClientStatusIdle,
 )
-from honeydew.affordances.connectivity.wlan.utils.types import (
-    SecurityType as HdSecurityType,
-)
 from mobly.records import TestResultRecord
 
 DEFAULT_ASSOCIATE_TIMEOUT_SEC = 30
@@ -443,12 +440,12 @@ class FuchsiaWlanDevice(SupportsWLAN):
                 try:
                     self.device.honeydew_fd.wlan_policy_deprecated_sync.save_network(
                         target_ssid,
-                        HdSecurityType(target_security.fuchsia_security_type()),
+                        target_security.fuchsia_security_type(),
                         target_pwd=target_pwd,
                     )
                     self.device.honeydew_fd.wlan_policy_deprecated_sync.connect(
                         target_ssid,
-                        HdSecurityType(target_security.fuchsia_security_type()),
+                        target_security.fuchsia_security_type(),
                         timeout=timeout_sec,
                     )
                     return True
