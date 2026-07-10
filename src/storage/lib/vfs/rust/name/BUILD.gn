@@ -22,7 +22,10 @@ rustc_library("name") {
     "//third_party/rust_crates:thiserror",
   ]
 
-  sources = [ "src/lib.rs" ]
+  sources = [
+    "src/lib.rs",
+    "src/repr.rs",
+  ]
 
   test_deps = [ "//third_party/rust_crates:assert_matches" ]
 }
