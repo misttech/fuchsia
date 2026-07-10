@@ -105,6 +105,8 @@ impl ObjectStore {
             callback(self);
         }
 
+        // NOTE: `num_flushes` must only be incremented while the flush lock is held, as
+        // `ObjectStore::unlock` relies on this to detect concurrent flushes.
         let mut counters = self.counters.lock();
         counters.num_flushes += 1;
         counters.last_flush_time = Some(std::time::SystemTime::now());
