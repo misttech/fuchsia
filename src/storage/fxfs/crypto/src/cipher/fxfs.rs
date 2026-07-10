@@ -11,16 +11,22 @@ use zerocopy::IntoBytes;
 #[derive(Debug)]
 pub struct FxfsCipher {
     key: Aes256,
+    legacy: bool,
 }
 impl FxfsCipher {
     pub fn new(key: &UnwrappedKey) -> Self {
-        Self { key: Aes256::new(key.as_slice().try_into().unwrap()) }
+        Self { key: Aes256::new(key.as_slice().try_into().unwrap()), legacy: false }
+    }
+
+    pub fn new_legacy(key: &UnwrappedKey) -> Self {
+        Self { key: Aes256::new(key.as_slice().try_into().unwrap()), legacy: true }
     }
 }
 impl Cipher for FxfsCipher {
     fn encrypt(
         &self,
         _ino: u64,
+        attribute_id: u64,
         _device_offset: u64,
         file_offset: u64,
         buffer: &mut [u8],
@@ -29,8 +35,9 @@ impl Cipher for FxfsCipher {
         assert_eq!(file_offset % SECTOR_SIZE, 0);
         let mut sector_offset = file_offset / SECTOR_SIZE;
         assert_eq!(buffer.len() % (SECTOR_SIZE as usize), 0);
+        let upper_tweak = if self.legacy { 0 } else { (attribute_id as u128) << 64 };
         for sector in buffer.chunks_exact_mut(SECTOR_SIZE as usize) {
-            let mut tweak = Tweak(sector_offset as u128);
+            let mut tweak = Tweak(upper_tweak | (sector_offset as u128));
             // The same key is used for encrypting the data and computing the tweak.
             self.key.encrypt_block(tweak.as_mut_bytes().try_into().unwrap());
             self.key.encrypt_with_backend(XtsProcessor::new(tweak, sector));
@@ -42,6 +49,7 @@ impl Cipher for FxfsCipher {
     fn decrypt(
         &self,
         _ino: u64,
+        attribute_id: u64,
         _device_offset: u64,
         file_offset: u64,
         buffer: &mut [u8],
@@ -50,8 +58,9 @@ impl Cipher for FxfsCipher {
         assert_eq!(file_offset % SECTOR_SIZE, 0);
         let mut sector_offset = file_offset / SECTOR_SIZE;
         assert_eq!(buffer.len() % (SECTOR_SIZE as usize), 0);
+        let upper_tweak = if self.legacy { 0 } else { (attribute_id as u128) << 64 };
         for sector in buffer.chunks_exact_mut(SECTOR_SIZE as usize) {
-            let mut tweak = Tweak(sector_offset as u128);
+            let mut tweak = Tweak(upper_tweak | (sector_offset as u128));
             // The same key is used for encrypting the data and computing the tweak.
             self.key.encrypt_block(tweak.as_mut_bytes().try_into().unwrap());
             self.key.decrypt_with_backend(XtsProcessor::new(tweak, sector));
@@ -85,7 +94,47 @@ impl Cipher for FxfsCipher {
         false
     }
 
-    fn crypt_ctx(&self, _ino: u64, _file_offset: u64) -> Option<(u32, u8)> {
+    fn crypt_ctx(&self, _ino: u64, _attribute_id: u64, _file_offset: u64) -> Option<(u32, u8)> {
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Cipher, FxfsCipher, SECTOR_SIZE};
+    use crate::UnwrappedKey;
+
+    #[test]
+    fn test_legacy_fxfs_cipher_ignores_attribute_id() {
+        let key = UnwrappedKey::new(vec![0x42; 32]);
+        let cipher = FxfsCipher::new_legacy(&key);
+        let mut buf0 = vec![0x12; SECTOR_SIZE as usize];
+        let mut buf1 = vec![0x12; SECTOR_SIZE as usize];
+
+        cipher.encrypt(1, 0, 0, 0, &mut buf0).expect("encrypt attr 0");
+        cipher.encrypt(1, 4, 0, 0, &mut buf1).expect("encrypt attr 4");
+        assert_eq!(
+            buf0, buf1,
+            "LegacyFxfsCipher should produce identical ciphertext for same file_offset regardless of attribute_id"
+        );
+    }
+
+    #[test]
+    fn test_fxfs_cipher_domain_separates_attribute_id() {
+        let key = UnwrappedKey::new(vec![0x42; 32]);
+        let cipher = FxfsCipher::new(&key);
+        let mut buf0 = vec![0x12; SECTOR_SIZE as usize];
+        let mut buf1 = vec![0x12; SECTOR_SIZE as usize];
+
+        cipher.encrypt(1, 0, 0, 0, &mut buf0).expect("encrypt attr 0");
+        cipher.encrypt(1, 4, 0, 0, &mut buf1).expect("encrypt attr 4");
+        assert_ne!(buf0, buf1, "FxfsCipher should domain-separate tweaks across attribute_id");
+
+        // Verify decryption works correctly for each attribute_id
+        cipher.decrypt(1, 0, 0, 0, &mut buf0).expect("decrypt attr 0");
+        assert_eq!(buf0, vec![0x12; SECTOR_SIZE as usize]);
+
+        cipher.decrypt(1, 4, 0, 0, &mut buf1).expect("decrypt attr 4");
+        assert_eq!(buf1, vec![0x12; SECTOR_SIZE as usize]);
     }
 }

@@ -11,8 +11,8 @@ use crate::object_store::allocator::{AllocatorItem, Reservation};
 use crate::object_store::object_manager::{ObjectManager, reserved_space_from_journal_usage};
 use crate::object_store::object_record::{
     FxfsKey, FxfsKeyV40, FxfsKeyV49, ObjectItem, ObjectItemV40, ObjectItemV41, ObjectItemV43,
-    ObjectItemV46, ObjectItemV47, ObjectItemV49, ObjectItemV50, ObjectItemV55, ObjectKey,
-    ObjectKeyData, ObjectValue, ProjectProperty,
+    ObjectItemV46, ObjectItemV47, ObjectItemV49, ObjectItemV50, ObjectItemV55, ObjectItemV56,
+    ObjectKey, ObjectKeyData, ObjectValue, ProjectProperty,
 };
 use crate::object_store::{AttributeId, AttributeKey, ProjectId};
 use crate::serialized_types::{Migrate, Versioned, migrate_nodefault, migrate_to_version};
@@ -77,22 +77,36 @@ pub struct TransactionLocks<'a>(pub WriteGuard<'a>);
 /// transaction, these are stored as a set which allows some mutations to be deduplicated and found
 /// (and we require custom comparison functions below).  For example, we need to be able to find
 /// object size changes.
-pub type Mutation = MutationV55;
+pub type Mutation = MutationV56;
 
 #[derive(
     Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize, TypeFingerprint, Versioned,
 )]
 #[cfg_attr(fuzz, derive(arbitrary::Arbitrary))]
+pub enum MutationV56 {
+    ObjectStore(ObjectStoreMutationV56),
+    EncryptedObjectStore(#[serde(with = "crate::zerocopy_serialization")] Box<[u8]>),
+    Allocator(AllocatorMutationV32),
+    /// Indicates the beginning of a flush. This would typically involve sealing a tree.
+    BeginFlush,
+    /// Indicates the end of a flush. This would typically involve replacing the immutable layers
+    /// with compacted ones.
+    EndFlush,
+    /// Volume has been deleted. Requires we remove it from the set of managed ObjectStore.
+    DeleteVolume,
+    UpdateBorrowed(u64),
+    UpdateMutationsKey(UpdateMutationsKey),
+    CreateInternalDir(u64),
+}
+
+#[derive(Migrate, Clone, Debug, PartialEq, Serialize, Deserialize, TypeFingerprint, Versioned)]
+#[migrate_to_version(MutationV56)]
 pub enum MutationV55 {
     ObjectStore(ObjectStoreMutationV55),
     EncryptedObjectStore(#[serde(with = "crate::zerocopy_serialization")] Box<[u8]>),
     Allocator(AllocatorMutationV32),
-    // Indicates the beginning of a flush.  This would typically involve sealing a tree.
     BeginFlush,
-    // Indicates the end of a flush.  This would typically involve replacing the immutable layers
-    // with compacted ones.
     EndFlush,
-    // Volume has been deleted.  Requires we remove it from the set of managed ObjectStore.
     DeleteVolume,
     UpdateBorrowed(u64),
     UpdateMutationsKey(UpdateMutationsKey),
@@ -241,10 +255,18 @@ impl Mutation {
 // We have custom comparison functions for mutations that just use the key, rather than the key and
 // value that would be used by default so that we can deduplicate and find mutations (see
 // get_object_mutation below).
-pub type ObjectStoreMutation = ObjectStoreMutationV55;
+pub type ObjectStoreMutation = ObjectStoreMutationV56;
 
 #[derive(Clone, Debug, Serialize, Deserialize, TypeFingerprint)]
 #[cfg_attr(fuzz, derive(arbitrary::Arbitrary))]
+pub struct ObjectStoreMutationV56 {
+    pub item: ObjectItemV56,
+    pub op: Operation,
+}
+
+#[derive(Migrate, Clone, Debug, PartialEq, Serialize, Deserialize, TypeFingerprint, Versioned)]
+#[migrate_to_version(ObjectStoreMutationV56)]
+#[migrate_nodefault]
 pub struct ObjectStoreMutationV55 {
     pub item: ObjectItemV55,
     pub op: Operation,
@@ -317,7 +339,7 @@ pub struct ObjectStoreMutationV40 {
 /// The different LSM tree operations that can be performed as part of a mutation.
 pub type Operation = OperationV32;
 
-#[derive(Clone, Debug, Serialize, Deserialize, TypeFingerprint)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TypeFingerprint)]
 #[cfg_attr(fuzz, derive(arbitrary::Arbitrary))]
 pub enum OperationV32 {
     Insert,

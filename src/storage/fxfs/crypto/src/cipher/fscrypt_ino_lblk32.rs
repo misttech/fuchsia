@@ -37,6 +37,7 @@ impl Cipher for FscryptInoLblk32DirCipher {
     fn encrypt(
         &self,
         _ino: u64,
+        _attribute_id: u64,
         _device_offset: u64,
         _file_offset: u64,
         _buffer: &mut [u8],
@@ -47,6 +48,7 @@ impl Cipher for FscryptInoLblk32DirCipher {
     fn decrypt(
         &self,
         _ino: u64,
+        _attribute_id: u64,
         _device_offset: u64,
         _file_offset: u64,
         _buffer: &mut [u8],
@@ -82,7 +84,7 @@ impl Cipher for FscryptInoLblk32DirCipher {
         false
     }
 
-    fn crypt_ctx(&self, _ino: u64, _file_offset: u64) -> Option<(u32, u8)> {
+    fn crypt_ctx(&self, _ino: u64, _attribute_id: u64, _file_offset: u64) -> Option<(u32, u8)> {
         None
     }
 }
@@ -193,6 +195,7 @@ impl Cipher for FscryptInoLblk32FileCipher {
     fn encrypt(
         &self,
         _ino: u64,
+        _attribute_id: u64,
         _device_offset: u64,
         _file_offset: u64,
         _buffer: &mut [u8],
@@ -204,6 +207,7 @@ impl Cipher for FscryptInoLblk32FileCipher {
     fn decrypt(
         &self,
         _ino: u64,
+        _attribute_id: u64,
         _device_offset: u64,
         _file_offset: u64,
         _buffer: &mut [u8],
@@ -246,7 +250,7 @@ impl Cipher for FscryptInoLblk32FileCipher {
         true
     }
 
-    fn crypt_ctx(&self, ino: u64, file_offset: u64) -> Option<(u32, u8)> {
+    fn crypt_ctx(&self, ino: u64, _attribute_id: u64, file_offset: u64) -> Option<(u32, u8)> {
         assert_eq!(file_offset % BLOCK_SIZE as u64, 0);
         let block_num = file_offset / BLOCK_SIZE as u64;
         let tweak = self.tweak(ino, block_num);

@@ -44,8 +44,9 @@ use crate::object_store::object_manager::ObjectManager;
 use crate::object_store::object_record::{AttributeKey, ObjectKey, ObjectKeyData, ObjectValue};
 use crate::object_store::transaction::{
     AllocatorMutation, LockKey, Mutation, MutationV40, MutationV41, MutationV43, MutationV46,
-    MutationV47, MutationV49, MutationV50, MutationV54, MutationV55, ObjectStoreMutation, Options,
-    TRANSACTION_MAX_JOURNAL_USAGE, Transaction, TxnMutation, lock_keys,
+    MutationV47, MutationV49, MutationV50, MutationV54, MutationV55, MutationV56,
+    ObjectStoreMutation, Options, TRANSACTION_MAX_JOURNAL_USAGE, Transaction, TxnMutation,
+    lock_keys,
 };
 use crate::object_store::{
     AssocObj, AttributeId, DataObjectHandle, Extent, HandleOptions, HandleOwner, INVALID_OBJECT_ID,
@@ -114,16 +115,16 @@ pub struct JournalCheckpointV32 {
     pub version: Version,
 }
 
-pub type JournalRecord = JournalRecordV55;
+pub type JournalRecord = JournalRecordV56;
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, Serialize, Deserialize, TypeFingerprint, Versioned)]
 #[cfg_attr(fuzz, derive(arbitrary::Arbitrary))]
-pub enum JournalRecordV55 {
+pub enum JournalRecordV56 {
     EndBlock,
     Mutation {
         object_id: u64,
-        mutation: MutationV55,
+        mutation: MutationV56,
     },
     /// Commits records in the transaction.
     Commit,
@@ -146,6 +147,18 @@ pub enum JournalRecordV55 {
     /// extents, we only check the checksums for a block if it has been written to for the first
     /// time since the last flush, because otherwise we can't roll it back anyway so it doesn't
     /// matter. For copy-on-write extents, the bool is always true.
+    DataChecksums(Range<u64>, crate::checksum::ChecksumsV38, bool),
+}
+
+#[allow(clippy::large_enum_variant)]
+#[derive(Migrate, Clone, Debug, Serialize, Deserialize, TypeFingerprint, Versioned)]
+#[migrate_to_version(JournalRecordV56)]
+pub enum JournalRecordV55 {
+    EndBlock,
+    Mutation { object_id: u64, mutation: MutationV55 },
+    Commit,
+    Discard(u64),
+    DidFlushDevice(u64),
     DataChecksums(Range<u64>, crate::checksum::ChecksumsV38, bool),
 }
 

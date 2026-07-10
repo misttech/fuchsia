@@ -133,25 +133,34 @@ impl<'de> Deserialize<'de> for WrappedKeyBytes {
 /// This specifies a single key to be used to encrypt/decrypt.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TypeFingerprint)]
 pub enum EncryptionKey {
-    Fxfs(FxfsKey),
+    /// Legacy Fxfs key that derives XTS tweaks using only the sector offset.
+    LegacyFxfs(FxfsKey),
     // NOTE: `key_identifier` can be thought of as the "name" of the key to use; it is not a
     // per-file or per-directory key. It is similar to Fxfs's wrapping key ID, although it
     // doesn't wrap anything. Files using the same `key_identifier` are encrypted using the
     // same underlying key, with just differences in the tweak used. Directories also use the
     // same underlying key, but some structures are further salted using the provided nonce.
-    FscryptInoLblk32File { key_identifier: [u8; 16] },
-    FscryptInoLblk32Dir { key_identifier: [u8; 16], nonce: [u8; 16] },
+    FscryptInoLblk32File {
+        key_identifier: [u8; 16],
+    },
+    FscryptInoLblk32Dir {
+        key_identifier: [u8; 16],
+        nonce: [u8; 16],
+    },
+    /// Fxfs key that domain-separates XTS tweaks using `(attribute_id << 64) | sector_offset`.
+    Fxfs(FxfsKey),
 }
 
 impl<'a> arbitrary::Arbitrary<'a> for EncryptionKey {
     fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
-        Ok(match u.int_in_range(0..=2)? {
-            0 => EncryptionKey::Fxfs(u.arbitrary()?),
+        Ok(match u.int_in_range(0..=3)? {
+            0 => EncryptionKey::LegacyFxfs(u.arbitrary()?),
             1 => EncryptionKey::FscryptInoLblk32File { key_identifier: u.arbitrary()? },
             2 => EncryptionKey::FscryptInoLblk32Dir {
                 key_identifier: u.arbitrary()?,
                 nonce: u.arbitrary()?,
             },
+            3 => EncryptionKey::Fxfs(u.arbitrary()?),
             _ => unreachable!(),
         })
     }
@@ -160,7 +169,9 @@ impl<'a> arbitrary::Arbitrary<'a> for EncryptionKey {
 impl From<EncryptionKey> for WrappedKey {
     fn from(value: EncryptionKey) -> Self {
         match value {
-            EncryptionKey::Fxfs(key) => WrappedKey::Fxfs(key.into()),
+            EncryptionKey::LegacyFxfs(key) | EncryptionKey::Fxfs(key) => {
+                WrappedKey::Fxfs(key.into())
+            }
             EncryptionKey::FscryptInoLblk32File { key_identifier } => {
                 WrappedKey::FscryptInoLblk32File(FscryptKeyIdentifier { key_identifier })
             }
@@ -170,6 +181,17 @@ impl From<EncryptionKey> for WrappedKey {
                     nonce,
                 })
             }
+        }
+    }
+}
+
+impl From<&EncryptionKey> for KeyType {
+    fn from(value: &EncryptionKey) -> Self {
+        match value {
+            EncryptionKey::LegacyFxfs(_) => KeyType::LegacyFxfs,
+            EncryptionKey::Fxfs(_) => KeyType::Fxfs,
+            EncryptionKey::FscryptInoLblk32File { .. } => KeyType::FscryptInoLblk32File,
+            EncryptionKey::FscryptInoLblk32Dir { .. } => KeyType::FscryptInoLblk32Dir,
         }
     }
 }
@@ -344,16 +366,17 @@ pub trait Crypt: Send + Sync {
     /// The cipher can be used directly to encrypt/decrypt data.
     async fn unwrap_keys(
         &self,
-        keys: &BTreeMap<u64, WrappedKey>,
+        keys: &[(u64, EncryptionKey)],
         owner: u64,
     ) -> Result<CipherSet, zx::Status> {
         let futures: FuturesUnordered<_> = keys
             .iter()
             .map(|(key_id, key)| {
                 let key_id = *key_id;
+                let wrapped_key = WrappedKey::from(key.clone());
                 let owner = owner;
                 async move {
-                    match self.unwrap_key(&key, owner).await {
+                    match self.unwrap_key(&wrapped_key, owner).await {
                         Ok(unwrapped_key) => cipher::key_to_cipher(key, &unwrapped_key)
                             .map(|c| (key_id, cipher::CipherHolder::Cipher(c))),
                         Err(zx::Status::UNAVAILABLE) => {

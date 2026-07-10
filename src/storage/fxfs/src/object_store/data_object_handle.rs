@@ -1607,7 +1607,9 @@ impl<S: HandleOwner> DataObjectHandle<S> {
         buffer: MutableBufferRef<'_>,
         key_id: u64,
     ) -> Result<(), Error> {
-        self.handle.read_and_decrypt(device_offset, file_offset, buffer, key_id).await
+        self.handle
+            .read_and_decrypt(self.attribute_id, device_offset, file_offset, buffer, key_id)
+            .await
     }
 
     /// Truncates a file to a given size (growing/shrinking as required).

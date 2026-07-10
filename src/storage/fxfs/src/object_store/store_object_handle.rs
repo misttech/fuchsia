@@ -740,6 +740,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
     /// Reads and decrypts a singular logical range.
     pub async fn read_and_decrypt(
         &self,
+        attribute_id: AttributeId,
         device_offset: u64,
         file_offset: u64,
         mut buffer: MutableBufferRef<'_>,
@@ -754,7 +755,9 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
 
         let (_key_id, key) = self.get_key(Some(key_id)).await?;
         if let Some(key) = key {
-            if let Some((dun, slot)) = key.crypt_ctx(self.object_id, file_offset) {
+            if let Some((dun, slot)) =
+                key.crypt_ctx(self.object_id, attribute_id.raw(), file_offset)
+            {
                 store
                     .device
                     .read_with_opts(
@@ -765,7 +768,13 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
                     .await?;
             } else {
                 store.device.read(device_offset, buffer.reborrow()).await?;
-                key.decrypt(self.object_id, device_offset, file_offset, buffer.as_mut_slice())?;
+                key.decrypt(
+                    self.object_id,
+                    attribute_id.raw(),
+                    device_offset,
+                    file_offset,
+                    buffer.as_mut_slice(),
+                )?;
             }
         } else {
             store.device.read(device_offset, buffer.reborrow()).await?;
@@ -820,7 +829,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
 
         // Ensure that if the key we receive uses inline encryption, barriers should be enabled.
         if let Some(ref key) = result.1 {
-            if key.crypt_ctx(self.object_id, 0).is_some() {
+            if key.crypt_ctx(self.object_id, 0, 0).is_some() {
                 if !store.filesystem().options().barriers_enabled {
                     return Err(anyhow!(FxfsError::InvalidArgs)
                         .context("Barriers must be enabled for inline encrypted writes."));
@@ -1056,8 +1065,14 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
                         _ => None,
                     };
                     reads.push(async move {
-                        self.read_and_decrypt(device_offset, offset, head.reborrow(), key_id)
-                            .await?;
+                        self.read_and_decrypt(
+                            attribute_id,
+                            device_offset,
+                            offset,
+                            head.reborrow(),
+                            key_id,
+                        )
+                        .await?;
                         if let Some(bitmap) = maybe_bitmap {
                             apply_bitmap_zeroing(self.block_size() as usize, &bitmap, head);
                         }
@@ -1091,8 +1106,14 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
                             "RT",
                         );
                     }
-                    self.read_and_decrypt(device_offset, offset, align_buf.as_mut(), key_id)
-                        .await?;
+                    self.read_and_decrypt(
+                        attribute_id,
+                        device_offset,
+                        offset,
+                        align_buf.as_mut(),
+                        key_id,
+                    )
+                    .await?;
                     buf.as_mut_slice().copy_from_slice(&align_buf.as_slice()[..end_align]);
                     buf = buf.subslice_mut(0..0);
                     break;
@@ -1189,6 +1210,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
                             _ => None,
                         };
                         self.read_and_decrypt(
+                            attribute_id,
                             *device_offset,
                             extent_key.start,
                             buffer.subslice_mut(offset..end as usize),
@@ -1244,11 +1266,12 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
 
         let mut crypt_ctx = None;
         if let (_, Some(key)) = self.get_key(key_id).await? {
-            if let Some(ctx) = key.crypt_ctx(self.object_id, range.start) {
+            if let Some(ctx) = key.crypt_ctx(self.object_id, attribute_id.raw(), range.start) {
                 crypt_ctx = Some(ctx);
             } else {
                 key.encrypt(
                     self.object_id,
+                    attribute_id.raw(),
                     device_offset,
                     range.start,
                     transfer_buf_ref.as_mut_slice(),
@@ -1319,6 +1342,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
                     let (head, tail) = slice.split_at_mut(l as usize);
                     key.encrypt(
                         self.object_id,
+                        attribute_id.raw(),
                         0, /* TODO(https://fxbug.dev/421269588): plumb through device_offset. */
                         r.start,
                         head,
@@ -1363,7 +1387,8 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
                             current_range.end - current_range.start,
                             device_range_len,
                         );
-                        let crypt_ctx = key.crypt_ctx(self.object_id, current_range.start);
+                        let crypt_ctx =
+                            key.crypt_ctx(self.object_id, attribute_id.raw(), current_range.start);
                         current_range.start += split;
                         (crypt_ctx, split)
                     } else {
@@ -1503,6 +1528,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
                     let (head, tail) = slice.split_at_mut(l as usize);
                     key.encrypt(
                         self.object_id,
+                        attr_id.raw(),
                         0, /* TODO(https://fxbug.dev/421269588): plumb through device_offset. */
                         r.start,
                         head,
@@ -1604,7 +1630,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
                         );
 
                         let crypt_ctx = if let Some(key) = &key {
-                            key.crypt_ctx(self.object_id, target_range.start)
+                            key.crypt_ctx(self.object_id, attr_id.raw(), target_range.start)
                         } else {
                             None
                         };

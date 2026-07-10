@@ -19,10 +19,10 @@ use crate::object_store::directory::{
 use crate::object_store::transaction::{self, LockKey, ObjectStoreMutation, Options, lock_keys};
 use crate::object_store::volume::root_volume;
 use crate::object_store::{
-    AttributeId, AttributeKey, ChildValue, DirType, EncryptionKeys, ExtentValue, FsverityMetadata,
-    HandleOptions, Mutation, NewChildStoreOptions, ObjectAttributes, ObjectDescriptor, ObjectKey,
-    ObjectKeyData, ObjectKind, ObjectStore, ObjectValue, ProjectId, RootDigest, StoreInfo,
-    StoreOptions, Timestamp, VOLUME_DATA_KEY_ID,
+    AttributeId, AttributeKey, ChildValue, DirType, EncryptionKeys, ExtentMode, ExtentValue,
+    FsverityMetadata, HandleOptions, Mutation, NewChildStoreOptions, ObjectAttributes,
+    ObjectDescriptor, ObjectKey, ObjectKeyData, ObjectKind, ObjectStore, ObjectValue, ProjectId,
+    RootDigest, StoreInfo, StoreOptions, Timestamp, VOLUME_DATA_KEY_ID,
 };
 use crate::round::round_down;
 use crate::serialized_types::VersionedLatest;
@@ -4649,5 +4649,215 @@ async fn test_bad_last_object_id() {
             FsckIssue::Error(FsckError::NextObjectIdInUse(_, _)),
             FsckIssue::Error(FsckError::BadLastObjectId(_, _)),
         ]
+    );
+}
+
+#[fuchsia::test]
+async fn test_ino_lblk32_key_used_for_non_data_attribute() {
+    let mut test = FsckTest::new().await;
+
+    let (store_id, object_id) = {
+        let fs = test.filesystem();
+        let root_store = fs.root_store();
+        let store_id = root_store.store_object_id();
+
+        let handle;
+        let mut transaction = fs
+            .root_store()
+            .new_transaction(
+                lock_keys![LockKey::object(store_id, root_store.root_directory_object_id())],
+                Options::default(),
+            )
+            .await
+            .expect("new_transaction failed");
+        let root_directory = Directory::open(&root_store, root_store.root_directory_object_id())
+            .await
+            .expect("open failed");
+        handle = root_directory
+            .create_child_file(&mut transaction, "foo")
+            .await
+            .expect("create_child_file failed");
+        transaction.commit().await.expect("commit failed");
+
+        let mut keys = EncryptionKeys::default();
+        keys.insert(2, EncryptionKey::FscryptInoLblk32File { key_identifier: [0u8; 16] });
+
+        let mut transaction = fs
+            .root_store()
+            .new_transaction(
+                lock_keys![LockKey::object(store_id, handle.object_id())],
+                Options::default(),
+            )
+            .await
+            .expect("new_transaction failed");
+        transaction.add(
+            store_id,
+            Mutation::replace_or_insert_object(
+                ObjectKey::keys(handle.object_id()),
+                ObjectValue::Keys(keys),
+            ),
+        );
+        transaction.add(
+            store_id,
+            Mutation::replace_or_insert_object(
+                ObjectKey::extent(handle.object_id(), AttributeId::XATTR_RANGE_START, 0..4096),
+                ObjectValue::Extent(ExtentValue::Some {
+                    device_offset: 0,
+                    mode: ExtentMode::Raw,
+                    key_id: 2,
+                }),
+            ),
+        );
+        transaction.commit().await.expect("commit failed");
+
+        (store_id, handle.object_id())
+    };
+
+    test.remount().await.expect("Remount failed");
+    test.run(TestOptions { volume_store_id: Some(store_id), ..Default::default() })
+        .await
+        .expect_err("Fsck should fail");
+
+    assert!(
+        test.errors().iter().any(|e| matches!(
+            e,
+            FsckIssue::Error(FsckError::InvalidInoLblk32KeyUsage(sid, oid))
+                if *sid == store_id && *oid == object_id
+        )),
+        "errors: {:?}",
+        test.errors()
+    );
+}
+
+#[fuchsia::test]
+async fn test_ino_lblk32_dir_key_used_for_file() {
+    let mut test = FsckTest::new().await;
+
+    let (store_id, object_id) = {
+        let fs = test.filesystem();
+        let root_store = fs.root_store();
+        let store_id = root_store.store_object_id();
+
+        let root_directory = Directory::open(&root_store, root_store.root_directory_object_id())
+            .await
+            .expect("open failed");
+        let mut transaction = fs
+            .root_store()
+            .new_transaction(
+                lock_keys![LockKey::object(store_id, root_store.root_directory_object_id())],
+                Options::default(),
+            )
+            .await
+            .expect("new_transaction failed");
+        let handle = root_directory
+            .create_child_file(&mut transaction, "foo")
+            .await
+            .expect("create_child_file failed");
+        transaction.commit().await.expect("commit failed");
+
+        let mut keys = EncryptionKeys::default();
+        keys.insert(
+            0,
+            EncryptionKey::FscryptInoLblk32Dir { key_identifier: [0u8; 16], nonce: [0u8; 16] },
+        );
+
+        let mut transaction = fs
+            .root_store()
+            .new_transaction(
+                lock_keys![LockKey::object(store_id, handle.object_id())],
+                Options::default(),
+            )
+            .await
+            .expect("new_transaction failed");
+        transaction.add(
+            store_id,
+            Mutation::replace_or_insert_object(
+                ObjectKey::keys(handle.object_id()),
+                ObjectValue::Keys(keys),
+            ),
+        );
+        transaction.commit().await.expect("commit failed");
+
+        (store_id, handle.object_id())
+    };
+
+    test.remount().await.expect("Remount failed");
+    test.run(TestOptions { volume_store_id: Some(store_id), ..Default::default() })
+        .await
+        .expect_err("Fsck should fail");
+
+    assert!(
+        test.errors().iter().any(|e| matches!(
+            e,
+            FsckIssue::Error(FsckError::InvalidInoLblk32KeyUsage(sid, oid))
+                if *sid == store_id && *oid == object_id
+        )),
+        "errors: {:?}",
+        test.errors()
+    );
+}
+
+#[fuchsia::test]
+async fn test_ino_lblk32_file_key_used_for_directory() {
+    let mut test = FsckTest::new().await;
+
+    let (store_id, object_id) = {
+        let fs = test.filesystem();
+        let root_store = fs.root_store();
+        let store_id = root_store.store_object_id();
+
+        let root_directory = Directory::open(&root_store, root_store.root_directory_object_id())
+            .await
+            .expect("open failed");
+        let mut transaction = fs
+            .root_store()
+            .new_transaction(
+                lock_keys![LockKey::object(store_id, root_store.root_directory_object_id())],
+                Options::default(),
+            )
+            .await
+            .expect("new_transaction failed");
+        let handle = root_directory
+            .create_child_dir(&mut transaction, "bardir")
+            .await
+            .expect("create_child_dir failed");
+        transaction.commit().await.expect("commit failed");
+
+        let mut keys = EncryptionKeys::default();
+        keys.insert(0, EncryptionKey::FscryptInoLblk32File { key_identifier: [0u8; 16] });
+
+        let mut transaction = fs
+            .root_store()
+            .new_transaction(
+                lock_keys![LockKey::object(store_id, handle.object_id())],
+                Options::default(),
+            )
+            .await
+            .expect("new_transaction failed");
+        transaction.add(
+            store_id,
+            Mutation::replace_or_insert_object(
+                ObjectKey::keys(handle.object_id()),
+                ObjectValue::Keys(keys),
+            ),
+        );
+        transaction.commit().await.expect("commit failed");
+
+        (store_id, handle.object_id())
+    };
+
+    test.remount().await.expect("Remount failed");
+    test.run(TestOptions { volume_store_id: Some(store_id), ..Default::default() })
+        .await
+        .expect_err("Fsck should fail");
+
+    assert!(
+        test.errors().iter().any(|e| matches!(
+            e,
+            FsckIssue::Error(FsckError::InvalidInoLblk32KeyUsage(sid, oid))
+                if *sid == store_id && *oid == object_id
+        )),
+        "errors: {:?}",
+        test.errors()
     );
 }

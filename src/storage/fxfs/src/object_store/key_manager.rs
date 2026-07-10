@@ -8,6 +8,7 @@ use crate::object_store::object_record::EncryptionKeys;
 use crate::object_store::{FSCRYPT_KEY_ID, VOLUME_DATA_KEY_ID};
 use anyhow::Error;
 use event_listener::Event;
+use fuchsia_async as fasync;
 use fuchsia_sync::Mutex;
 use fxfs_crypto::{Cipher, CipherHolder, CipherSet, Crypt, FindKeyResult};
 use fxfs_trace::{TraceFutureExt, trace_future_args};
@@ -18,7 +19,7 @@ use std::collections::btree_map::Entry;
 use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
-use {fuchsia_async as fasync, zx_status as zx};
+use zx_status as zx;
 
 /// This timeout controls when entries are moved from `hash` to `pending_purge` and then dumped.
 /// Entries will remain in the cache until they remain inactive from between PURGE_TIMEOUT and 2 *
@@ -297,10 +298,7 @@ impl KeyManager {
             }
         };
 
-        // TODO(b/418125391): Extend crypt protocol and interfaces in fxfs-crypto to support
-        // additional key types.
-        let wrapped_keys = encryption_keys.into();
-        match crypt.unwrap_keys(&wrapped_keys, object_id).await {
+        match crypt.unwrap_keys(&encryption_keys, object_id).await {
             Ok(cipher_set) => {
                 let keys = Arc::new(cipher_set);
                 let _ = ScopeGuard::into_inner(result);
@@ -527,7 +525,7 @@ mod tests {
 
     fn cipher_text(counter: u8) -> Vec<u8> {
         let mut text = padded_plain_text();
-        cipher(counter).encrypt(0, 0, 0, &mut text).expect("encrypt failed");
+        cipher(counter).encrypt(0, 0, 0, 0, &mut text).expect("encrypt failed");
         // Ensure that encrypt changed the text.
         assert_ne!(&text, &padded_plain_text());
         text
@@ -626,7 +624,7 @@ mod tests {
                     .find_key(0),
             )
             .unwrap()
-            .decrypt(0, 0, 0, &mut buf)
+            .decrypt(0, 0, 0, 0, &mut buf)
             .expect("decrypt failed");
             assert_eq!(&buf, &padded_plain_text());
         });
@@ -646,7 +644,7 @@ mod tests {
                     .find_key(0),
             )
             .unwrap()
-            .decrypt(0, 0, 0, &mut buf)
+            .decrypt(0, 0, 0, 0, &mut buf)
             .expect("decrypt failed");
             assert_eq!(&buf, &padded_plain_text());
         });
@@ -659,7 +657,7 @@ mod tests {
                 .await
                 .expect("get failed")
                 .expect("missing key")
-                .decrypt(0, 0, 0, &mut buf)
+                .decrypt(0, 0, 0, 0, &mut buf)
                 .expect("decrypt failed");
             assert_eq!(&buf, &padded_plain_text());
         });
@@ -683,7 +681,7 @@ mod tests {
             .await
             .expect("get failed")
             .expect("missing key")
-            .decrypt(0, 0, 0, &mut buf)
+            .decrypt(0, 0, 0, 0, &mut buf)
             .expect("decrypt failed");
         assert_eq!(&buf, &padded_plain_text());
         let _ = manager.remove(1);

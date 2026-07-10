@@ -249,6 +249,55 @@ impl From<EncryptionKeysV40> for EncryptionKeysV47 {
 #[derive(Serialize, Deserialize, TypeFingerprint)]
 pub struct WrappedKeysV40(pub Vec<(u64, FxfsKeyV40)>);
 
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TypeFingerprint)]
+#[cfg_attr(fuzz, derive(arbitrary::Arbitrary))]
+pub enum EncryptionKeyV49 {
+    Fxfs(fxfs_crypto::FxfsKey),
+    FscryptInoLblk32File { key_identifier: [u8; 16] },
+    FscryptInoLblk32Dir { key_identifier: [u8; 16], nonce: [u8; 16] },
+}
+
+impl From<EncryptionKeyV49> for EncryptionKeyV56 {
+    fn from(old: EncryptionKeyV49) -> Self {
+        match old {
+            EncryptionKeyV49::Fxfs(key) => EncryptionKeyV56::LegacyFxfs(key),
+            EncryptionKeyV49::FscryptInoLblk32File { key_identifier } => {
+                EncryptionKeyV56::FscryptInoLblk32File { key_identifier }
+            }
+            EncryptionKeyV49::FscryptInoLblk32Dir { key_identifier, nonce } => {
+                EncryptionKeyV56::FscryptInoLblk32Dir { key_identifier, nonce }
+            }
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TypeFingerprint)]
+#[cfg_attr(fuzz, derive(arbitrary::Arbitrary))]
+pub struct EncryptionKeysV49(Vec<(u64, EncryptionKeyV49)>);
+
+impl From<EncryptionKeysV49> for EncryptionKeysV56 {
+    fn from(old: EncryptionKeysV49) -> Self {
+        Self(old.0.into_iter().map(|(id, key)| (id, key.into())).collect())
+    }
+}
+
+#[derive(Migrate, Clone, Debug, PartialEq, Serialize, Deserialize, TypeFingerprint, Versioned)]
+#[migrate_to_version(ObjectValueV56)]
+#[cfg_attr(fuzz, derive(arbitrary::Arbitrary))]
+pub enum ObjectValueV54 {
+    None,
+    Some,
+    Object { kind: ObjectKindV54, attributes: ObjectAttributesV49 },
+    Keys(EncryptionKeysV49),
+    Attribute { size: u64, has_overwrite_extents: bool },
+    Extent(ExtentValueV38),
+    Child(ChildValue),
+    Trim,
+    BytesAndNodes { bytes: i64, nodes: i64 },
+    ExtendedAttribute(ExtendedAttributeValueV32),
+    VerifiedAttribute { size: u64, fsverity_metadata: FsverityMetadataV50 },
+}
+
 #[derive(Migrate, Serialize, Deserialize, TypeFingerprint, Versioned)]
 #[migrate_to_version(ObjectValueV50)]
 pub enum ObjectValueV49 {
@@ -377,6 +426,21 @@ impl From<TimestampV32> for TimestampV49 {
 pub struct TimestampV32 {
     pub secs: u64,
     pub nanos: u32,
+}
+
+pub type ObjectItemV54 = LegacyItem<ObjectKeyV54, ObjectValueV54>;
+pub type ObjectItemV55 = Item<ObjectKeyV54, ObjectValueV54>;
+
+impl From<ObjectItemV54> for ObjectItemV55 {
+    fn from(item: ObjectItemV54) -> Self {
+        Self { key: item.key, value: item.value }
+    }
+}
+
+impl From<ObjectItemV55> for ObjectItemV56 {
+    fn from(item: ObjectItemV55) -> Self {
+        Self { key: item.key, value: item.value.into() }
+    }
 }
 
 pub type ObjectItemV49 = LegacyItem<ObjectKeyV43, ObjectValueV49>;

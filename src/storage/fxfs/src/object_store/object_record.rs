@@ -779,14 +779,14 @@ pub enum FsverityMetadataV50 {
     F2fs(std::ops::Range<u64>),
 }
 
-pub type EncryptionKey = EncryptionKeyV49;
-pub type EncryptionKeyV49 = fxfs_crypto::EncryptionKey;
+pub type EncryptionKey = EncryptionKeyV56;
+pub type EncryptionKeyV56 = fxfs_crypto::EncryptionKey;
 
-pub type EncryptionKeys = EncryptionKeysV49;
+pub type EncryptionKeys = EncryptionKeysV56;
 
 #[derive(Clone, Default, Debug, PartialEq, Serialize, Deserialize, TypeFingerprint)]
 #[cfg_attr(fuzz, derive(arbitrary::Arbitrary))]
-pub struct EncryptionKeysV49(Vec<(u64, EncryptionKeyV49)>);
+pub struct EncryptionKeysV56(Vec<(u64, EncryptionKeyV56)>);
 
 impl EncryptionKeys {
     pub fn get(&self, id: u64) -> Option<&EncryptionKey> {
@@ -828,14 +828,14 @@ impl std::ops::Deref for EncryptionKeys {
 /// ObjectValue is the value of an item in the object store.
 /// Note that the tree stores deltas on objects, so these values describe deltas. Unless specified
 /// otherwise, a value indicates an insert/replace mutation.
-pub type ObjectValue = ObjectValueV54;
+pub type ObjectValue = ObjectValueV56;
 impl Value for ObjectValue {
     const DELETED_MARKER: Self = Self::None;
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, TypeFingerprint, Versioned)]
 #[cfg_attr(fuzz, derive(arbitrary::Arbitrary))]
-pub enum ObjectValueV54 {
+pub enum ObjectValueV56 {
     /// Some keys have no value (this often indicates a tombstone of some sort).  Records with this
     /// value are always filtered when a major compaction is performed, so the meaning must be the
     /// same as if the item was not present.
@@ -846,7 +846,7 @@ pub enum ObjectValueV54 {
     /// The value for an ObjectKey::Object record.
     Object { kind: ObjectKindV54, attributes: ObjectAttributesV49 },
     /// Specifies encryption keys to use for an object.
-    Keys(EncryptionKeysV49),
+    Keys(EncryptionKeysV56),
     /// An attribute associated with a file object. |size| is the size of the attribute in bytes.
     Attribute { size: u64, has_overwrite_extents: bool },
     /// An extent associated with an object.
@@ -1000,16 +1000,9 @@ impl ObjectValue {
     }
 }
 
-pub type ObjectItem = ObjectItemV55;
+pub type ObjectItem = ObjectItemV56;
 
-pub type ObjectItemV54 = LegacyItem<ObjectKeyV54, ObjectValueV54>;
-pub type ObjectItemV55 = Item<ObjectKeyV54, ObjectValueV54>;
-
-impl From<ObjectItemV54> for ObjectItemV55 {
-    fn from(item: ObjectItemV54) -> Self {
-        Self { key: item.key, value: item.value }
-    }
-}
+pub type ObjectItemV56 = Item<ObjectKeyV54, ObjectValueV56>;
 
 pub type ObjectItemV50 = LegacyItem<ObjectKeyV43, ObjectValueV50>;
 

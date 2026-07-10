@@ -20,8 +20,8 @@ use crate::object_store::{
 use crate::range::RangeExt;
 use crate::round::round_up;
 use anyhow::{Error, bail};
-use fxfs_crypto::{Crypt, WrappedKey, key_to_cipher};
-use rustc_hash::FxHashSet as HashSet;
+use fxfs_crypto::{Crypt, KeyType, WrappedKey, key_to_cipher};
+use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
 use std::cell::UnsafeCell;
 use std::collections::BTreeMap;
 use std::ops::Range;
@@ -143,7 +143,7 @@ struct ScannedStore<'a> {
 
 struct CurrentObject {
     object_id: u64,
-    key_ids: HashSet<u64>,
+    key_ids: HashMap<u64, KeyType>,
     lazy_keys: bool,
 }
 
@@ -205,7 +205,7 @@ impl<'a> ScannedStore<'a> {
                         }
                         self.current_object = Some(CurrentObject {
                             object_id: key.object_id,
-                            key_ids: HashSet::default(),
+                            key_ids: HashMap::default(),
                             lazy_keys: false,
                         });
                         let parents = if self.root_objects.contains(&key.object_id) {
@@ -248,7 +248,7 @@ impl<'a> ScannedStore<'a> {
                         };
                         self.current_object = Some(CurrentObject {
                             object_id: key.object_id,
-                            key_ids: HashSet::default(),
+                            key_ids: HashMap::default(),
                             lazy_keys: true,
                         });
                         // We've verified no duplicate keys, and Object records come first,
@@ -295,7 +295,7 @@ impl<'a> ScannedStore<'a> {
                         }
                         self.current_object = Some(CurrentObject {
                             object_id: key.object_id,
-                            key_ids: HashSet::default(),
+                            key_ids: HashMap::default(),
                             lazy_keys: true,
                         });
                         self.objects.insert(
@@ -327,7 +327,7 @@ impl<'a> ScannedStore<'a> {
                         }
                         self.current_object = Some(CurrentObject {
                             object_id: key.object_id,
-                            key_ids: HashSet::default(),
+                            key_ids: HashMap::default(),
                             lazy_keys: true,
                         });
                         self.objects.insert(
@@ -363,12 +363,42 @@ impl<'a> ScannedStore<'a> {
                         // duplicate key IDs.
                         assert!(current_file.key_ids.is_empty());
                         for (key_id, encryption_key) in keys.iter() {
-                            if !current_file.key_ids.insert(*key_id) {
+                            let key_type = KeyType::from(encryption_key);
+                            if current_file.key_ids.insert(*key_id, key_type).is_some() {
                                 self.fsck.error(FsckError::DuplicateKey(
                                     self.store_id,
                                     key.object_id,
                                     *key_id,
                                 ))?;
+                            }
+                            match key_type {
+                                KeyType::FscryptInoLblk32File => {
+                                    if matches!(
+                                        self.objects.get(&current_file.object_id),
+                                        Some(
+                                            ScannedObject::Directory(_) | ScannedObject::Symlink(_)
+                                        )
+                                    ) {
+                                        self.fsck.error(FsckError::InvalidInoLblk32KeyUsage(
+                                            self.store_id,
+                                            key.object_id,
+                                        ))?;
+                                    }
+                                }
+                                KeyType::FscryptInoLblk32Dir => {
+                                    if !matches!(
+                                        self.objects.get(&current_file.object_id),
+                                        Some(
+                                            ScannedObject::Directory(_) | ScannedObject::Symlink(_)
+                                        )
+                                    ) {
+                                        self.fsck.error(FsckError::InvalidInoLblk32KeyUsage(
+                                            self.store_id,
+                                            key.object_id,
+                                        ))?;
+                                    }
+                                }
+                                KeyType::Fxfs | KeyType::LegacyFxfs => {}
                             }
                             if *key_id == FSCRYPT_KEY_ID {
                                 if let Some(ScannedObject::Directory(dir)) =
@@ -485,7 +515,7 @@ impl<'a> ScannedStore<'a> {
                 }
             }
             // Mostly ignore extents on this pass. We'll process them later.
-            ObjectKeyData::Attribute(_, AttributeKey::Extent(_)) => {
+            ObjectKeyData::Attribute(attribute_id, AttributeKey::Extent(_)) => {
                 match value {
                     // Regular extent record.
                     ObjectValue::Extent(ExtentValue::Some { key_id, .. }) => {
@@ -493,12 +523,26 @@ impl<'a> ScannedStore<'a> {
                             if !self.is_encrypted && *key_id == 0 && current_file.key_ids.is_empty()
                             {
                                 // Unencrypted files in unencrypted stores should use key ID 0.
-                            } else if !current_file.key_ids.contains(key_id) {
-                                self.fsck.error(FsckError::MissingKey(
-                                    self.store_id,
-                                    key.object_id,
-                                    *key_id,
-                                ))?;
+                            } else {
+                                match current_file.key_ids.get(key_id) {
+                                    None => {
+                                        self.fsck.error(FsckError::MissingKey(
+                                            self.store_id,
+                                            key.object_id,
+                                            *key_id,
+                                        ))?;
+                                    }
+                                    Some(KeyType::FscryptInoLblk32File)
+                                        if attribute_id != AttributeId::DATA
+                                            && attribute_id != AttributeId::FSVERITY_MERKLE =>
+                                    {
+                                        self.fsck.error(FsckError::InvalidInoLblk32KeyUsage(
+                                            self.store_id,
+                                            key.object_id,
+                                        ))?;
+                                    }
+                                    _ => {}
+                                }
                             }
                         } else {
                             // This must be an orphaned extent, which should get picked up later.
@@ -1021,10 +1065,7 @@ impl<'a> ScannedStore<'a> {
     fn finish_file(&mut self) -> Result<(), Error> {
         if let Some(current_file) = self.current_object.take() {
             if self.is_encrypted {
-                let mut key_ids = vec![];
-                for id in current_file.key_ids.iter() {
-                    key_ids.push(*id);
-                }
+                let key_ids: HashSet<u64> = current_file.key_ids.keys().copied().collect();
 
                 // If the store is unencrypted, then the file might or might not have encryption
                 // keys (e.g. the root store has encrypted layer files). Also, if the object has

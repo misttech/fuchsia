@@ -272,6 +272,7 @@ pub enum FsckError {
     ZombieDir(u64, u64, u64),
     ZombieFile(u64, u64, Vec<u64>),
     ZombieSymlink(u64, u64, Vec<u64>),
+    InvalidInoLblk32KeyUsage(u64, u64),
 }
 
 impl FsckError {
@@ -508,6 +509,9 @@ impl FsckError {
                     store_id, object_id
                 )
             }
+            FsckError::InvalidInoLblk32KeyUsage(store_id, object_id) => {
+                format!("Object {object_id} in store {store_id} uses an InoLblk32 key invalidly")
+            }
             FsckError::IncorrectMerkleTreeSize(store_id, object_id, expected_size, actual_size) => {
                 format!(
                     "Object {} in store {} has merkle tree of size {} expected {}",
@@ -715,6 +719,9 @@ impl FsckError {
             }
             FsckError::NonFileMarkedAsVerified(store_id, oid) => {
                 error!(store_id, oid; "Non-file marked as verified")
+            }
+            FsckError::InvalidInoLblk32KeyUsage(store_id, oid) => {
+                error!(store_id, oid; "Invalid InoLblk32 key usage")
             }
             FsckError::IncorrectMerkleTreeSize(store_id, oid, expected_size, actual_size) => {
                 error!(
