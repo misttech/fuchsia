@@ -2475,6 +2475,90 @@ TEST_F(UnmanagedUsbPeripheralTest, UnconfiguredRequestTests) {
     EXPECT_EQ(res->error_value(), ZX_ERR_BAD_STATE);
   }
 
+  // 1b. Test GET_STATUS for USB_RECIP_DEVICE before configuration.
+  {
+    fdescriptor::wire::UsbSetup setup = {
+        .bm_request_type = USB_DIR_IN | USB_TYPE_STANDARD | USB_RECIP_DEVICE,
+        .b_request = USB_REQ_GET_STATUS,
+        .w_value = 0,
+        .w_index = 0,
+        .w_length = 2,
+    };
+
+    auto res = dci()->Control(setup, fidl::VectorView<uint8_t>());
+    ASSERT_TRUE(res.ok()) << res.FormatDescription();
+    ASSERT_TRUE(res->is_ok());
+    ASSERT_EQ(res->value()->read.size(), 2u);
+    EXPECT_EQ(res->value()->read[0] & (1 << USB_DEVICE_SELF_POWERED), 1 << USB_DEVICE_SELF_POWERED);
+    EXPECT_EQ(res->value()->read[1], 0);
+  }
+
+  // 1c. Test GET_STATUS for USB_RECIP_ENDPOINT (EP0 w_index=0) before configuration.
+  {
+    fdescriptor::wire::UsbSetup setup = {
+        .bm_request_type = USB_DIR_IN | USB_TYPE_STANDARD | USB_RECIP_ENDPOINT,
+        .b_request = USB_REQ_GET_STATUS,
+        .w_value = 0,
+        .w_index = 0,
+        .w_length = 2,
+    };
+
+    auto res = dci()->Control(setup, fidl::VectorView<uint8_t>());
+    ASSERT_TRUE(res.ok()) << res.FormatDescription();
+    ASSERT_TRUE(res->is_ok());
+    ASSERT_EQ(res->value()->read.size(), 2u);
+    EXPECT_EQ(res->value()->read[0], 0);
+    EXPECT_EQ(res->value()->read[1], 0);
+  }
+
+  // 1d. Test GET_STATUS for USB_RECIP_ENDPOINT (non-zero w_index=1) before configuration.
+  {
+    fdescriptor::wire::UsbSetup setup = {
+        .bm_request_type = USB_DIR_IN | USB_TYPE_STANDARD | USB_RECIP_ENDPOINT,
+        .b_request = USB_REQ_GET_STATUS,
+        .w_value = 0,
+        .w_index = 1,
+        .w_length = 2,
+    };
+
+    auto res = dci()->Control(setup, fidl::VectorView<uint8_t>());
+    ASSERT_TRUE(res.ok()) << res.FormatDescription();
+    ASSERT_TRUE(res->is_error());
+    EXPECT_EQ(res->error_value(), ZX_ERR_BAD_STATE);
+  }
+
+  // 1e. Test SET_FEATURE(USB_ENDPOINT_HALT) on non-zero w_index=1 before configuration.
+  {
+    fdescriptor::wire::UsbSetup setup = {
+        .bm_request_type = USB_DIR_OUT | USB_TYPE_STANDARD | USB_RECIP_ENDPOINT,
+        .b_request = USB_REQ_SET_FEATURE,
+        .w_value = USB_ENDPOINT_HALT,
+        .w_index = 1,
+        .w_length = 0,
+    };
+
+    auto res = dci()->Control(setup, fidl::VectorView<uint8_t>());
+    ASSERT_TRUE(res.ok()) << res.FormatDescription();
+    ASSERT_TRUE(res->is_error());
+    EXPECT_EQ(res->error_value(), ZX_ERR_BAD_STATE);
+  }
+
+  // 1f. Test CLEAR_FEATURE(USB_ENDPOINT_HALT) on non-zero w_index=1 before configuration.
+  {
+    fdescriptor::wire::UsbSetup setup = {
+        .bm_request_type = USB_DIR_OUT | USB_TYPE_STANDARD | USB_RECIP_ENDPOINT,
+        .b_request = USB_REQ_CLEAR_FEATURE,
+        .w_value = USB_ENDPOINT_HALT,
+        .w_index = 1,
+        .w_length = 0,
+    };
+
+    auto res = dci()->Control(setup, fidl::VectorView<uint8_t>());
+    ASSERT_TRUE(res.ok()) << res.FormatDescription();
+    ASSERT_TRUE(res->is_error());
+    EXPECT_EQ(res->error_value(), ZX_ERR_BAD_STATE);
+  }
+
   // 2. Test SetInterface (via CommonControl) before configuration.
   {
     fdescriptor::wire::UsbSetup setup = {
@@ -2545,6 +2629,159 @@ TEST_F(UnmanagedUsbPeripheralReadyTest, InvalidConfigurationTest) {
     ASSERT_TRUE(res.ok()) << res.FormatDescription();
     ASSERT_TRUE(res->is_error());
     EXPECT_EQ(res->error_value(), ZX_ERR_INVALID_ARGS);
+  }
+}
+
+TEST_F(UnmanagedUsbPeripheralReadyTest, ConfiguredGetStatusTests) {
+  usb_peripheral_config::Config config;
+  config.functions() = {"test"};
+  StartDriverWithConfig(config);
+
+  auto function_clients = TransitionToPeripheralReady();
+  ASSERT_OK(function_clients);
+
+  // Transition to configured state (configuration 1).
+  {
+    fdescriptor::wire::UsbSetup setup = {
+        .bm_request_type = USB_DIR_OUT | USB_TYPE_STANDARD | USB_RECIP_DEVICE,
+        .b_request = USB_REQ_SET_CONFIGURATION,
+        .w_value = 1,
+        .w_index = 0,
+        .w_length = 0,
+    };
+    auto res = dci()->Control(setup, fidl::VectorView<uint8_t>());
+    ASSERT_TRUE(res.ok()) << res.FormatDescription();
+    ASSERT_TRUE(res->is_ok());
+  }
+
+  // 1. Test GET_STATUS for USB_RECIP_DEVICE in configured state.
+  {
+    fdescriptor::wire::UsbSetup setup = {
+        .bm_request_type = USB_DIR_IN | USB_TYPE_STANDARD | USB_RECIP_DEVICE,
+        .b_request = USB_REQ_GET_STATUS,
+        .w_value = 0,
+        .w_index = 0,
+        .w_length = 2,
+    };
+    auto res = dci()->Control(setup, fidl::VectorView<uint8_t>());
+    ASSERT_TRUE(res.ok()) << res.FormatDescription();
+    ASSERT_TRUE(res->is_ok());
+    ASSERT_EQ(res->value()->read.size(), 2u);
+    EXPECT_EQ(res->value()->read[0] & (1 << USB_DEVICE_SELF_POWERED), 1 << USB_DEVICE_SELF_POWERED);
+    EXPECT_EQ(res->value()->read[1], 0);
+  }
+
+  // 2. Test GET_STATUS for USB_RECIP_INTERFACE (valid interface 0) in configured state.
+  {
+    fdescriptor::wire::UsbSetup setup = {
+        .bm_request_type = USB_DIR_IN | USB_TYPE_STANDARD | USB_RECIP_INTERFACE,
+        .b_request = USB_REQ_GET_STATUS,
+        .w_value = 0,
+        .w_index = 0,  // interface 0
+        .w_length = 2,
+    };
+    auto res = dci()->Control(setup, fidl::VectorView<uint8_t>());
+    ASSERT_TRUE(res.ok()) << res.FormatDescription();
+    ASSERT_TRUE(res->is_ok());
+    ASSERT_EQ(res->value()->read.size(), 2u);
+    EXPECT_EQ(res->value()->read[0], 0);
+    EXPECT_EQ(res->value()->read[1], 0);
+  }
+
+  // 3. Test GET_STATUS for USB_RECIP_INTERFACE (invalid interface 5) in configured state.
+  {
+    fdescriptor::wire::UsbSetup setup = {
+        .bm_request_type = USB_DIR_IN | USB_TYPE_STANDARD | USB_RECIP_INTERFACE,
+        .b_request = USB_REQ_GET_STATUS,
+        .w_value = 0,
+        .w_index = 5,  // out of range
+        .w_length = 2,
+    };
+    auto res = dci()->Control(setup, fidl::VectorView<uint8_t>());
+    ASSERT_TRUE(res.ok()) << res.FormatDescription();
+    ASSERT_TRUE(res->is_error());
+    EXPECT_EQ(res->error_value(), ZX_ERR_OUT_OF_RANGE);
+  }
+
+  // 4. Test GET_STATUS for USB_RECIP_ENDPOINT (EP0 control endpoint) in configured state.
+  {
+    fdescriptor::wire::UsbSetup setup = {
+        .bm_request_type = USB_DIR_IN | USB_TYPE_STANDARD | USB_RECIP_ENDPOINT,
+        .b_request = USB_REQ_GET_STATUS,
+        .w_value = 0,
+        .w_index = 0,  // EP0
+        .w_length = 2,
+    };
+    auto res = dci()->Control(setup, fidl::VectorView<uint8_t>());
+    ASSERT_TRUE(res.ok()) << res.FormatDescription();
+    ASSERT_TRUE(res->is_ok());
+    ASSERT_EQ(res->value()->read.size(), 2u);
+    EXPECT_EQ(res->value()->read[0], 0);
+    EXPECT_EQ(res->value()->read[1], 0);
+  }
+
+  // 5. Test GET_STATUS for USB_RECIP_ENDPOINT (valid EP 0x81) initially not halted.
+  {
+    fdescriptor::wire::UsbSetup setup = {
+        .bm_request_type = USB_DIR_IN | USB_TYPE_STANDARD | USB_RECIP_ENDPOINT,
+        .b_request = USB_REQ_GET_STATUS,
+        .w_value = 0,
+        .w_index = 0x81,
+        .w_length = 2,
+    };
+    auto res = dci()->Control(setup, fidl::VectorView<uint8_t>());
+    ASSERT_TRUE(res.ok()) << res.FormatDescription();
+    ASSERT_TRUE(res->is_ok());
+    ASSERT_EQ(res->value()->read.size(), 2u);
+    EXPECT_EQ(res->value()->read[0], 0);
+    EXPECT_EQ(res->value()->read[1], 0);
+  }
+
+  // 6. Test SET_FEATURE(USB_ENDPOINT_HALT) on EP 0x81 and verify GET_STATUS reflects stall.
+  {
+    fdescriptor::wire::UsbSetup set_halt = {
+        .bm_request_type = USB_DIR_OUT | USB_TYPE_STANDARD | USB_RECIP_ENDPOINT,
+        .b_request = USB_REQ_SET_FEATURE,
+        .w_value = USB_ENDPOINT_HALT,
+        .w_index = 0x81,
+        .w_length = 0,
+    };
+    auto res_set = dci()->Control(set_halt, fidl::VectorView<uint8_t>());
+    ASSERT_TRUE(res_set.ok()) << res_set.FormatDescription();
+    ASSERT_TRUE(res_set->is_ok());
+
+    fdescriptor::wire::UsbSetup get_status = {
+        .bm_request_type = USB_DIR_IN | USB_TYPE_STANDARD | USB_RECIP_ENDPOINT,
+        .b_request = USB_REQ_GET_STATUS,
+        .w_value = 0,
+        .w_index = 0x81,
+        .w_length = 2,
+    };
+    auto res_get = dci()->Control(get_status, fidl::VectorView<uint8_t>());
+    ASSERT_TRUE(res_get.ok()) << res_get.FormatDescription();
+    ASSERT_TRUE(res_get->is_ok());
+    ASSERT_EQ(res_get->value()->read.size(), 2u);
+    EXPECT_EQ(res_get->value()->read[0], 1);  // halted
+    EXPECT_EQ(res_get->value()->read[1], 0);
+
+    // Clear feature back to not halted.
+    fdescriptor::wire::UsbSetup clear_halt = {
+        .bm_request_type = USB_DIR_OUT | USB_TYPE_STANDARD | USB_RECIP_ENDPOINT,
+        .b_request = USB_REQ_CLEAR_FEATURE,
+        .w_value = USB_ENDPOINT_HALT,
+        .w_index = 0x81,
+        .w_length = 0,
+    };
+    auto res_clear = dci()->Control(clear_halt, fidl::VectorView<uint8_t>());
+    ASSERT_TRUE(res_clear.ok()) << res_clear.FormatDescription();
+    ASSERT_TRUE(res_clear->is_ok());
+
+    auto res_get2 = dci()->Control(get_status, fidl::VectorView<uint8_t>());
+    ASSERT_TRUE(res_get2.ok()) << res_get2.FormatDescription();
+    ASSERT_TRUE(res_get2->is_ok());
+    ASSERT_EQ(res_get2->value()->read.size(), 2u);
+    EXPECT_EQ(res_get2->value()->read[0], 0);  // cleared
+    EXPECT_EQ(res_get2->value()->read[1], 0);
   }
 }
 

@@ -1242,6 +1242,14 @@ void UsbPeripheral::CommonControl(const fdescriptor::wire::UsbSetup& setup,
         completer(zx::ok(std::vector<uint8_t>{configuration_}));
         return;
       }
+      // Per USB 2.0 Spec Section 9.4.5 / USB 3.0 Spec Section 9.4.5, GET_STATUS to USB_RECIP_DEVICE
+      // returns a 16-bit status word containing two feature flags:
+      //   Bit 0: Self Powered (1 = self-powered, 0 = bus-powered)
+      //   Bit 1: Remote Wakeup (1 = remote wakeup enabled, 0 = disabled)
+      // All other bits are reserved and must be zero.
+      // TODO(https://fxbug.dev/533013195): Add an API to get the current config (power and remote
+      // wakeup) from the system or active peripheral configuration, and update these status flags
+      // dynamically rather than returning static feature bits.
       if (request_type == (USB_DIR_IN | USB_TYPE_STANDARD | USB_RECIP_DEVICE) &&
           request == USB_REQ_GET_STATUS && length == 2) {
         std::vector<uint8_t> read_data_vec(length, 0);
@@ -1290,6 +1298,16 @@ void UsbPeripheral::CommonControl(const fdescriptor::wire::UsbSetup& setup,
       return;
     }
     case USB_RECIP_INTERFACE: {
+      if (configuration_ == 0) {
+        fdf::error("Control request received for interface before configuration");
+        completer(zx::error(ZX_ERR_BAD_STATE));
+        return;
+      }
+      if (configuration_ > configurations_.size()) {
+        fdf::error("CommonControl: invalid configuration_ {}", configuration_);
+        completer(zx::error(ZX_ERR_BAD_STATE));
+        return;
+      }
       if (request_type == (USB_DIR_OUT | USB_TYPE_STANDARD | USB_RECIP_INTERFACE) &&
           request == USB_REQ_SET_INTERFACE && length == 0) {
         SetInterface(static_cast<uint8_t>(index), static_cast<uint8_t>(value),
@@ -1304,22 +1322,18 @@ void UsbPeripheral::CommonControl(const fdescriptor::wire::UsbSetup& setup,
       }
 
       std::shared_ptr<UsbFunction> function;
-      if (configuration_ == 0) {
-        fdf::error("Control request received for interface before configuration");
-        completer(zx::error(ZX_ERR_BAD_STATE));
-        return;
-      }
-      if (configuration_ > configurations_.size()) {
-        fdf::error("CommonControl: invalid configuration_ {}", configuration_);
-        completer(zx::error(ZX_ERR_BAD_STATE));
-        return;
-      }
       const auto& configuration = configurations_[configuration_ - 1];
       const auto& interface_map = configuration.interface_map;
-      if (index >= std::size(interface_map)) {
-        fdf::warn("CommonControl: USB_RECIP_INTERFACE index {} out of range (max {})", index,
-                  std::size(interface_map));
+      if (index >= std::size(interface_map) || !interface_map[index].has_value()) {
+        fdf::warn("CommonControl: USB_RECIP_INTERFACE index {} out of range or unassigned (max {})",
+                  index, std::size(interface_map));
         completer(zx::error(ZX_ERR_OUT_OF_RANGE));
+        return;
+      }
+      if (request_type == (USB_DIR_IN | USB_TYPE_STANDARD | USB_RECIP_INTERFACE) &&
+          request == USB_REQ_GET_STATUS && length == 2) {
+        std::vector<uint8_t> read_data_vec(length, 0);
+        completer(zx::ok(std::move(read_data_vec)));
         return;
       }
       // delegate to the function driver for the interface
@@ -1337,9 +1351,13 @@ void UsbPeripheral::CommonControl(const fdescriptor::wire::UsbSetup& setup,
       break;
     }
     case USB_RECIP_ENDPOINT: {
+      uint8_t ep_addr = static_cast<uint8_t>(index);
+      if (ep_addr != 0 && configuration_ == 0) {
+        completer(zx::error(ZX_ERR_BAD_STATE));
+        return;
+      }
       if (request_type == (USB_DIR_IN | USB_TYPE_STANDARD | USB_RECIP_ENDPOINT) &&
           request == USB_REQ_GET_STATUS && length == 2) {
-        uint8_t ep_addr = static_cast<uint8_t>(index);
         uint16_t status = 0;
         if (ep_addr != 0) {
           fbl::AutoLock _(&lock_);
@@ -1354,7 +1372,6 @@ void UsbPeripheral::CommonControl(const fdescriptor::wire::UsbSetup& setup,
       }
       if (request_type == (USB_DIR_OUT | USB_TYPE_STANDARD | USB_RECIP_ENDPOINT) &&
           request == USB_REQ_SET_FEATURE && value == USB_ENDPOINT_HALT && length == 0) {
-        uint8_t ep_addr = static_cast<uint8_t>(index);
         if (ep_addr != 0) {
           UsbDciCancelAll(ep_addr);
           UsbDciEndpointSetStall(ep_addr);
@@ -1364,7 +1381,6 @@ void UsbPeripheral::CommonControl(const fdescriptor::wire::UsbSetup& setup,
       }
       if (request_type == (USB_DIR_OUT | USB_TYPE_STANDARD | USB_RECIP_ENDPOINT) &&
           request == USB_REQ_CLEAR_FEATURE && value == USB_ENDPOINT_HALT && length == 0) {
-        uint8_t ep_addr = static_cast<uint8_t>(index);
         if (ep_addr != 0) {
           UsbDciEndpointClearStall(ep_addr);
         }
@@ -1372,7 +1388,7 @@ void UsbPeripheral::CommonControl(const fdescriptor::wire::UsbSetup& setup,
         return;
       }
       // delegate to the function driver for the endpoint
-      uint8_t ep_index = EpAddressToIndex(static_cast<uint8_t>(index));
+      uint8_t ep_index = EpAddressToIndex(ep_addr);
       if (ep_index == 0 || ep_index >= USB_MAX_EPS) {
         fdf::warn("CommonControl: USB_RECIP_ENDPOINT invalid ep index {} (raw index: {})", ep_index,
                   index);
