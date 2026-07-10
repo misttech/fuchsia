@@ -544,15 +544,17 @@ template("bazel_action") {
       ]
     }
 
-    # Write the log of build events to a target-specific file.
-    # See https://bazel.build/remote/bep for details.
-    # For now, produce in JSON output since we lack a tool to convert from
-    # binary to other formats in the tree.
-    _bazel_build_events_log_json =
-        "$target_out_dir/$target_name.bazel_events.log.json"
+    if (invoker.command == "build") {
+      # Write the log of build events to a target-specific file.
+      # See https://bazel.build/remote/bep for details.
+      # For now, produce in JSON output since we lack a tool to convert from
+      # binary to other formats in the tree.
+      _bazel_build_events_log_json =
+          "$target_out_dir/$target_name.bazel_events.log.json"
 
-    _rebased_bazel_build_events_log_json =
-        rebase_path(_bazel_build_events_log_json, root_build_dir)
+      _rebased_bazel_build_events_log_json =
+          rebase_path(_bazel_build_events_log_json, root_build_dir)
+    }
 
     _bazel_build_files = []
     _bazel_targets = []
