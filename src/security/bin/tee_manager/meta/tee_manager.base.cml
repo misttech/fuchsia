@@ -15,8 +15,9 @@
     ],
     use: [
         {
-            // This service replaces the directory capability.
-            service: "fuchsia.hardware.tee.Service",
+            directory: "dev-tee",
+            rights: [ "r*" ],
+            path: "/dev/class/tee",
         },
         {
             directory: "config-data",

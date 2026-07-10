@@ -10,16 +10,19 @@ mod provider_server;
 
 use crate::config::Config;
 use crate::device_server::{serve_application_passthrough, serve_device_info_passthrough};
-use anyhow::{Context as _, Error, Result, format_err};
-use fidl::endpoints::{DiscoverableProtocolMarker, ServerEnd};
-use fidl_fuchsia_hardware_tee::DeviceConnectorProxy;
+use anyhow::{Context as _, Error, format_err};
+use fidl::endpoints::{DiscoverableProtocolMarker as _, ServerEnd};
+use fidl_fuchsia_hardware_tee::{DeviceConnectorMarker, DeviceConnectorProxy};
 use fidl_fuchsia_tee::{self as fuchsia_tee, DeviceInfoMarker};
-use fuchsia_component::client::Service;
 use fuchsia_component::server::ServiceFs;
+use fuchsia_fs::directory as vfs;
 use futures::prelude::*;
 use futures::select;
 use futures::stream::FusedStream;
+use std::path::{Path, PathBuf};
 use uuid::Uuid;
+
+const DEV_TEE_PATH: &str = "/dev/class/tee";
 
 enum IncomingRequest {
     Application(ServerEnd<fuchsia_tee::ApplicationMarker>, fuchsia_tee::Uuid),
@@ -28,33 +31,24 @@ enum IncomingRequest {
 
 #[fuchsia::main(logging_tags = ["tee_manager"])]
 async fn main() -> Result<(), Error> {
-    let service = Service::open(fidl_fuchsia_hardware_tee::ServiceMarker)
-        .context("Failed to open TEE service")?;
+    let device_list = enumerate_tee_devices().await?;
 
-    let current_instances =
-        service.clone().enumerate().await.context("Failed to enumerate TEE service")?;
-    match current_instances.len() {
-        0 => return Err(format_err!("No TEE devices found")),
-        1 => {} // OK
-        _ => {
-            // Cannot handle more than one TEE device.
+    let path = match device_list.as_slice() {
+        [] => return Err(format_err!("No TEE devices found")),
+        [path] => path.to_str().unwrap(),
+        _device_list => {
+            // Cannot handle more than one TEE device
             // If this becomes supported, Manager will need to provide a method for clients to
             // enumerate and select a device to connect to.
             return Err(format_err!(
                 "Found more than 1 TEE device - this is currently not supported"
             ));
         }
-    }
-
-    let mut instances = service.watch().await.context("Failed to watch TEE service")?;
-
-    let dev_connector_proxy = match instances.next().await {
-        Some(Ok(instance)) => instance
-            .connect_to_device_connector()
-            .context("Failed to connect to TEE DeviceConnector")?,
-        Some(Err(e)) => return Err(e),
-        None => return Err(format_err!("TEE service watcher closed unexpectedly")),
     };
+
+    let dev_connector_proxy =
+        fuchsia_component::client::connect_to_protocol_at_path::<DeviceConnectorMarker>(path)
+            .context("Failed to connect to TEE DeviceConnectorProxy")?;
 
     let mut fs = ServiceFs::new_local();
     fs.dir("svc").add_service_at(DeviceInfoMarker::PROTOCOL_NAME, |channel| {
@@ -72,61 +66,67 @@ async fn main() -> Result<(), Error> {
                 });
             }
         }
-        Err(e) => {
-            log::error!("Failed to load config: {:?}", e);
-        }
+        Err(error) => log::warn!("Unable to serve applications: {:?}", error),
     }
 
     fs.take_and_serve_directory_handle()?;
 
-    serve(dev_connector_proxy, fs.fuse(), instances).await
+    serve(dev_connector_proxy, fs.fuse()).await
 }
 
-async fn serve<I, P>(
+async fn serve(
     dev_connector_proxy: DeviceConnectorProxy,
     service_stream: impl Stream<Item = IncomingRequest> + FusedStream + Unpin,
-    instances: I,
-) -> Result<(), Error>
-where
-    I: Stream<Item = Result<P, Error>> + Unpin,
-{
+) -> Result<(), Error> {
     let mut device_fut = dev_connector_proxy.take_event_stream().into_future();
-    let mut service_fut = service_stream.for_each_concurrent(None, |request| async {
-        match request {
-            IncomingRequest::Application(channel, uuid) => {
-                log::trace!("Connecting application: {:?}", uuid);
-                let result =
-                    serve_application_passthrough(uuid, dev_connector_proxy.clone(), channel).await;
-                if let Err(e) = result {
-                    log::error!("Error serving application: {:?}", e);
+    let mut service_fut =
+        service_stream.for_each_concurrent(None, |request: IncomingRequest| async {
+            match request {
+                IncomingRequest::Application(channel, uuid) => {
+                    log::trace!("Connecting application: {:?}", uuid);
+                    serve_application_passthrough(uuid, dev_connector_proxy.clone(), channel).await
+                }
+                IncomingRequest::DeviceInfo(channel) => {
+                    serve_device_info_passthrough(dev_connector_proxy.clone(), channel).await
                 }
             }
-            IncomingRequest::DeviceInfo(channel) => {
-                let result =
-                    serve_device_info_passthrough(dev_connector_proxy.clone(), channel).await;
-                if let Err(e) = result {
-                    log::error!("Error serving device info: {:?}", e);
-                }
-            }
-        }
-    });
-
-    let mut instances = instances.fuse();
-    let mut instances_fut = instances.next();
+            .unwrap_or_else(|e| log::error!("{:?}", e));
+        });
 
     select! {
-        _ = service_fut => Ok(()),
+        service_result = service_fut => Ok(service_result),
         _ = device_fut => Err(format_err!("TEE DeviceConnector closed unexpectedly")),
-        maybe_instance = instances_fut => {
-            match maybe_instance {
-                Some(Ok(_instance)) => Err(format_err!("Found more than 1 TEE device")),
-                Some(Err(e)) => Err(e),
-                None => {
-                    Err(format_err!("TEE service watcher closed unexpectedly"))
+    }
+}
+
+async fn enumerate_tee_devices() -> Result<Vec<PathBuf>, Error> {
+    let mut device_list = Vec::new();
+
+    let mut watcher = create_watcher(&DEV_TEE_PATH).await?;
+
+    while let Some(msg) = watcher.try_next().await? {
+        match msg.event {
+            vfs::WatchEvent::EXISTING => {
+                if msg.filename == Path::new(".") {
+                    continue;
                 }
+                device_list.push(PathBuf::new().join(DEV_TEE_PATH).join(msg.filename));
+            }
+            vfs::WatchEvent::IDLE => {
+                break;
+            }
+            _ => {
+                unreachable!("Non-fio::WatchEvent::EXISTING found before fio::WatchEvent::IDLE");
             }
         }
     }
+    Ok(device_list)
+}
+
+async fn create_watcher(path: &str) -> Result<vfs::Watcher, Error> {
+    let dir = fuchsia_fs::directory::open_in_namespace(path, fuchsia_fs::PERM_READABLE)?;
+    let watcher = vfs::Watcher::new(&dir).await?;
+    Ok(watcher)
 }
 
 /// Converts a `uuid::Uuid` to a `fidl_fuchsia_tee::Uuid`.
@@ -144,27 +144,24 @@ fn uuid_to_fuchsia_tee_uuid(uuid: &Uuid) -> fuchsia_tee::Uuid {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fidl::endpoints;
-    use fidl_fuchsia_hardware_tee::{
-        DeviceConnectorMarker, DeviceConnectorProxy, DeviceConnectorRequest,
-    };
-    use fidl_fuchsia_io as fio;
+    use fidl::{Error, endpoints};
+    use fidl_fuchsia_hardware_tee::DeviceConnectorRequest;
     use fidl_fuchsia_tee::ApplicationMarker;
     use fidl_fuchsia_tee_manager::ProviderProxy;
-    use fuchsia_async as fasync;
     use futures::channel::mpsc;
     use zx_status::Status;
+    use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
     fn spawn_device_connector<F>(
         request_handler: impl Fn(DeviceConnectorRequest) -> F + 'static,
     ) -> DeviceConnectorProxy
     where
-        F: Future<Output = ()> + 'static,
+        F: Future,
     {
         let (proxy, mut stream) = endpoints::create_proxy_and_stream::<DeviceConnectorMarker>();
 
         fasync::Task::local(async move {
-            while let Some(Ok(request)) = stream.next().await {
+            while let Some(request) = stream.try_next().await.unwrap() {
                 request_handler(request).await;
             }
         })
@@ -174,14 +171,14 @@ mod tests {
     }
 
     fn get_storage(provider_proxy: &ProviderProxy) -> fio::DirectoryProxy {
-        let (proxy, server_end) = endpoints::create_proxy::<fio::DirectoryMarker>();
+        let (client_end, server_end) = endpoints::create_endpoints::<fio::DirectoryMarker>();
         assert!(provider_proxy.request_persistent_storage(server_end).is_ok());
-        proxy
+        client_end.into_proxy()
     }
 
-    fn is_closed_with_status(error: fidl::Error, status: Status) -> bool {
+    fn is_closed_with_status(error: Error, status: Status) -> bool {
         match error {
-            fidl::Error::ClientChannelClosed { status: s, .. } => s == status,
+            Error::ClientChannelClosed { status: s, .. } => s == status,
             _ => false,
         }
     }
@@ -194,48 +191,7 @@ mod tests {
     }
 
     #[fasync::run_singlethreaded(test)]
-    async fn test_serve_device_info() {
-        let dev_connector = spawn_device_connector(|request| async move {
-            match request {
-                DeviceConnectorRequest::ConnectToDeviceInfo {
-                    device_info_request,
-                    control_handle: _,
-                } => {
-                    assert!(!device_info_request.channel().is_invalid());
-                    device_info_request
-                        .close_with_epitaph(Status::OK)
-                        .expect("Unable to close device_info_request");
-                }
-                _ => unreachable!("Unexpected request"),
-            }
-        });
-
-        let (mut sender, receiver) = mpsc::channel::<IncomingRequest>(1);
-
-        fasync::Task::local(async move {
-            let result = serve(
-                dev_connector,
-                receiver.fuse(),
-                futures::stream::pending::<Result<(), anyhow::Error>>(),
-            )
-            .await;
-            assert!(result.is_ok(), "{}", result.unwrap_err());
-        })
-        .detach();
-
-        let (device_info_proxy, device_info_server) = endpoints::create_proxy::<DeviceInfoMarker>();
-
-        sender
-            .send(IncomingRequest::DeviceInfo(device_info_server))
-            .await
-            .expect("Unable to send DeviceInfo Request");
-
-        let (result, _) = device_info_proxy.take_event_stream().into_future().await;
-        assert!(is_closed_with_status(result.unwrap().unwrap_err(), Status::OK));
-    }
-
-    #[fasync::run_singlethreaded(test)]
-    async fn test_serve_application() {
+    async fn connect_to_application() {
         let app_uuid = uuid_to_fuchsia_tee_uuid(
             &Uuid::parse_str("8aaaf200-2450-11e4-abe2-0002a5d5c51b").unwrap(),
         );
@@ -260,28 +216,25 @@ mod tests {
                         .close_with_epitaph(Status::OK)
                         .expect("Unable to close tee_request");
                 }
-                _ => unreachable!("Unexpected request"),
+                _ => {
+                    assert!(false);
+                }
             }
         });
 
         let (mut sender, receiver) = mpsc::channel::<IncomingRequest>(1);
 
         fasync::Task::local(async move {
-            let result = serve(
-                dev_connector,
-                receiver.fuse(),
-                futures::stream::pending::<Result<(), anyhow::Error>>(),
-            )
-            .await;
+            let result = serve(dev_connector, receiver.fuse()).await;
             assert!(result.is_ok(), "{}", result.unwrap_err());
         })
         .detach();
 
-        let (app_proxy, app_server) = endpoints::create_proxy::<ApplicationMarker>();
+        let (app_client, app_server) = endpoints::create_endpoints::<ApplicationMarker>();
 
+        let app_proxy = app_client.into_proxy();
         sender
-            .send(IncomingRequest::Application(app_server, app_uuid))
-            .await
+            .try_send(IncomingRequest::Application(app_server, app_uuid))
             .expect("Unable to send Application Request");
 
         let (result, _) = app_proxy.take_event_stream().into_future().await;
@@ -289,35 +242,47 @@ mod tests {
     }
 
     #[fasync::run_singlethreaded(test)]
-    async fn test_serve_error() {
-        let (dev_connector_proxy, server_end) = endpoints::create_proxy::<DeviceConnectorMarker>();
-
-        server_end
-            .close_with_epitaph(Status::PEER_CLOSED)
-            .expect("Could not close DeviceConnector ServerEnd");
+    async fn connect_to_device_info() {
+        let dev_connector = spawn_device_connector(|request| async move {
+            match request {
+                DeviceConnectorRequest::ConnectToDeviceInfo {
+                    device_info_request,
+                    control_handle: _,
+                } => {
+                    assert!(!device_info_request.channel().is_invalid());
+                    device_info_request
+                        .close_with_epitaph(Status::OK)
+                        .expect("Unable to close device_info_request");
+                }
+                _ => {
+                    assert!(false);
+                }
+            }
+        });
 
         let (mut sender, receiver) = mpsc::channel::<IncomingRequest>(1);
-        let (client_proxy, client_server_end) = endpoints::create_proxy::<DeviceInfoMarker>();
-
-        sender.send(IncomingRequest::DeviceInfo(client_server_end)).await.unwrap();
 
         fasync::Task::local(async move {
-            let result = serve(
-                dev_connector_proxy,
-                receiver.fuse(),
-                futures::stream::pending::<Result<(), anyhow::Error>>(),
-            )
-            .await;
-            assert!(result.is_err());
+            let result = serve(dev_connector, receiver.fuse()).await;
+            assert!(result.is_ok(), "{}", result.unwrap_err());
         })
         .detach();
 
-        let result = client_proxy.get_os_info().await;
-        assert!(result.is_err());
+        let (device_info_client, device_info_server) =
+            endpoints::create_endpoints::<DeviceInfoMarker>();
+
+        let device_info_proxy = device_info_client.into_proxy();
+
+        sender
+            .try_send(IncomingRequest::DeviceInfo(device_info_server))
+            .expect("Unable to send DeviceInfo Request");
+
+        let (result, _) = device_info_proxy.take_event_stream().into_future().await;
+        assert!(is_closed_with_status(result.unwrap().unwrap_err(), Status::OK));
     }
 
     #[fasync::run_singlethreaded(test)]
-    async fn test_tee_device_closed() {
+    async fn tee_device_closed() {
         let (dev_connector_proxy, dev_connector_server) =
             fidl::endpoints::create_proxy::<DeviceConnectorMarker>();
         let (_sender, receiver) = mpsc::channel::<IncomingRequest>(1);
@@ -325,25 +290,7 @@ mod tests {
         dev_connector_server
             .close_with_epitaph(Status::PEER_CLOSED)
             .expect("Could not close DeviceConnector ServerEnd");
-        let result = serve(
-            dev_connector_proxy,
-            receiver.fuse(),
-            futures::stream::pending::<Result<(), anyhow::Error>>(),
-        )
-        .await;
+        let result = serve(dev_connector_proxy, receiver.fuse()).await;
         assert!(result.is_err());
-    }
-
-    #[fasync::run_singlethreaded(test)]
-    async fn test_multiple_tee_devices() {
-        let (dev_connector_proxy, _dev_connector_server) =
-            fidl::endpoints::create_proxy::<DeviceConnectorMarker>();
-        let (_sender, receiver) = mpsc::channel::<IncomingRequest>(1);
-
-        let instances_stream = futures::stream::iter(vec![Ok::<(), anyhow::Error>(())]);
-
-        let result = serve(dev_connector_proxy, receiver.fuse(), instances_stream).await;
-        assert!(result.is_err());
-        assert_eq!(result.unwrap_err().to_string(), "Found more than 1 TEE device");
     }
 }
