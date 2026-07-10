@@ -64,7 +64,8 @@ void SuperblockManager::Write(PendingWork* transaction, UpdateBackupSuperblock w
       superblock_dev_offset = kFvmSuperblockBackup;
     }
 
-    operation.dev_offset = superblock_dev_offset, transaction->EnqueueMetadata(operation, &buffer);
+    operation.dev_offset = superblock_dev_offset;
+    transaction->EnqueueMetadata(operation, &buffer);
   }
 
   dirty_ = false;
