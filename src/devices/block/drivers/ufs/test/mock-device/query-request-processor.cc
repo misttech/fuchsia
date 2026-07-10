@@ -60,8 +60,14 @@ zx_status_t QueryRequestProcessor::DefaultWriteDescriptorHandler(UfsMockDevice &
     return ZX_ERR_INVALID_ARGS;
   }
 
-  mock_device.GetDeviceDesc().bHighPriorityLUN =
-      reinterpret_cast<ConfigurationDescriptor *>(req_upiu.command_data.data())->bHighPriorityLUN;
+  auto *config_desc = reinterpret_cast<ConfigurationDescriptor *>(req_upiu.command_data.data());
+  // 0xE6 is a legacy descriptor length value from earlier UFS spec revisions.
+  if ((config_desc->bLength != 0xE6 && config_desc->bLength != sizeof(ConfigurationDescriptor)) ||
+      config_desc->bDescriptorIDN != static_cast<uint8_t>(DescriptorType::kConfiguration)) {
+    return ZX_ERR_INVALID_ARGS;
+  }
+
+  mock_device.GetDeviceDesc().bHighPriorityLUN = config_desc->bHighPriorityLUN;
 
   return ZX_OK;
 }

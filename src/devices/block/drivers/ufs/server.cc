@@ -106,7 +106,14 @@ void UfsServer::WriteDescriptor(WriteDescriptorRequestView request,
   }
 
   auto [type, index] = result.value();
-  WriteDescriptorUpiu write_desc_upiu(type, &request->data, index);
+  if (request->data.size() < GetDescriptorSize(type)) {
+    fdf::error(
+        "Invalid FIDL request: descriptor data length (%zu) is smaller than descriptor size (%zu)",
+        request->data.size(), GetDescriptorSize(type));
+    completer.Reply(fit::error(QueryErrorCode::kGeneralFailure));
+    return;
+  }
+  WriteDescriptorUpiu write_desc_upiu(type, request->data.data(), index);
   auto response = HandleQueryRequestUpiu<DescriptorResponseUpiu>(write_desc_upiu);
   if (response.is_error()) {
     completer.Reply(response.take_error());

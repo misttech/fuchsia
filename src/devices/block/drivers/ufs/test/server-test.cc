@@ -105,6 +105,26 @@ TEST_F(ServerTest, WriteDescriptor) {
   ASSERT_OK(result.status_value());
 }
 
+TEST_F(ServerTest, WriteDescriptorBufferTooShort) {
+  zx::result result = driver_test().RunOnBackgroundDispatcherSync([client_end = GetClient()]() {
+    fidl::Arena arena;
+    auto desc = fuchsia_hardware_ufs::wire::Descriptor::Builder(arena)
+                    .type(fuchsia_hardware_ufs::DescriptorType::kConfiguration)
+                    .Build();
+    // Create a buffer significantly smaller than ConfigurationDescriptor.
+    std::vector<uint8_t> short_data_segment(10, 0);
+
+    const fidl::WireResult result =
+        fidl::WireCall(client_end)
+            ->WriteDescriptor(desc, fidl::VectorView<uint8_t>(arena, short_data_segment));
+    ASSERT_TRUE(result.ok());
+    const fit::result response = result.value();
+    ASSERT_TRUE(response.is_error());
+    ASSERT_EQ(response.error_value(), fuchsia_hardware_ufs::QueryErrorCode::kGeneralFailure);
+  });
+  ASSERT_OK(result.status_value());
+}
+
 TEST_F(ServerTest, ReadFlag) {
   bool device_init = false;
   mock_device_.SetFlag(Flags::fDeviceInit, device_init);
