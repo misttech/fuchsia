@@ -123,7 +123,6 @@ type buildModules interface {
 	BuildDir() string
 	ClippyTargets() []build.ClippyTarget
 	GeneratedSources() []string
-	Images() []build.Image
 	PrebuiltBinarySets() []build.PrebuiltBinarySet
 	TestSpecs() []build.TestSpec
 	Tools() build.Tools
@@ -796,27 +795,6 @@ func constructNinjaTargets(
 				if testSpec.OS != "fuchsia" {
 					targets = append(targets, testSpec.Path)
 				}
-			}
-		}
-	}
-
-	if staticSpec.IncludeImages {
-
-		for _, image := range modules.Images() {
-			if isTestingImage(image, staticSpec.Pave) {
-
-				// All deps of "//:images" are deps of "//:default", so the
-				// targets don't need to be specified
-				if !staticSpec.IncludeDefaultNinjaTarget {
-					targets = append(targets, image.Path)
-				}
-
-				// However, the artifacts need to be added.
-				imageStruct, err := toStructPB(image)
-				if err != nil {
-					return nil, nil, err
-				}
-				artifacts.BuiltImages = append(artifacts.BuiltImages, imageStruct)
 			}
 		}
 	}

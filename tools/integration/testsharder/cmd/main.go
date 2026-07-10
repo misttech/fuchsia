@@ -135,7 +135,6 @@ func mainImpl(ctx context.Context) error {
 
 type buildModules interface {
 	Args() build.Args
-	Images() []build.Image
 	ModulePaths() ([]string, error)
 	Platforms() []build.DimensionSet
 	TefmocheckRulesManifest() []string

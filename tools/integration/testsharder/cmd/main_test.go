@@ -690,7 +690,6 @@ func TestExecute(t *testing.T) {
 }
 
 type fakeModules struct {
-	images              []build.Image
 	testSpecs           []build.TestSpec
 	testList            string
 	testDurations       []build.TestDuration
@@ -722,16 +721,6 @@ func (m *fakeModules) Platforms() []build.DimensionSet {
 			"cpu":             "x64",
 			"os":              "Linux",
 			"other_dimension": "bar",
-		},
-	}
-}
-
-func (m *fakeModules) Images() []build.Image {
-	return []build.Image{
-		{
-			Name: "qemu-kernel",
-			Path: "multiboot.bin",
-			Type: "kernel",
 		},
 	}
 }

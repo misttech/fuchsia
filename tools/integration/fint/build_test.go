@@ -37,7 +37,6 @@ type fakeBuildModules struct {
 	buildDir         string
 	clippyTargets    []build.ClippyTarget
 	generatedSources []string
-	images           []build.Image
 	pbinSets         []build.PrebuiltBinarySet
 	testSpecs        []build.TestSpec
 	tools            build.Tools
@@ -47,7 +46,6 @@ func (m fakeBuildModules) Args() build.Args                              { retur
 func (m fakeBuildModules) BuildDir() string                              { return m.buildDir }
 func (m fakeBuildModules) ClippyTargets() []build.ClippyTarget           { return m.clippyTargets }
 func (m fakeBuildModules) GeneratedSources() []string                    { return m.generatedSources }
-func (m fakeBuildModules) Images() []build.Image                         { return m.images }
 func (m fakeBuildModules) PrebuiltBinarySets() []build.PrebuiltBinarySet { return m.pbinSets }
 func (m fakeBuildModules) TestSpecs() []build.TestSpec                   { return m.testSpecs }
 func (m fakeBuildModules) Tools() build.Tools                            { return m.tools }
@@ -475,64 +473,6 @@ func TestBuild(t *testing.T) {
 				NinjaTargets: []string{"foo", "foo"},
 			},
 			expectedTargets: []string{"foo"},
-		},
-		{
-			name: "images for testing included without default",
-			staticSpec: &fintpb.Static{
-				IncludeDefaultNinjaTarget: false,
-				IncludeImages:             true,
-			},
-			modules: fakeBuildModules{
-				images: []build.Image{
-					{Name: qemuImageNames[0], Path: "qemu_image_path"},
-					{Name: "should-be-ignored", Path: "different_path"},
-				},
-			},
-			expectedTargets: []string{"qemu_image_path"},
-			expectedArtifacts: &fintpb.BuildArtifacts{
-				BuiltImages: []*structpb.Struct{
-					mustStructPB(t, build.Image{Name: qemuImageNames[0], Path: "qemu_image_path"}),
-				},
-			},
-		},
-		{
-			name: "images for testing not included in targets with default",
-			staticSpec: &fintpb.Static{
-				IncludeDefaultNinjaTarget: true,
-				IncludeImages:             true,
-			},
-			modules: fakeBuildModules{
-				images: []build.Image{
-					{Name: qemuImageNames[0], Path: "qemu_image_path"},
-					{Name: "should-be-ignored", Path: "different_path"},
-				},
-			},
-			expectedTargets: []string{":default"},
-			expectedArtifacts: &fintpb.BuildArtifacts{
-				BuiltImages: []*structpb.Struct{
-					mustStructPB(t, build.Image{Name: qemuImageNames[0], Path: "qemu_image_path"}),
-				},
-			},
-		},
-		{
-			name: "netboot images and scripts excluded when paving",
-			staticSpec: &fintpb.Static{
-				Pave:          true,
-				IncludeImages: true,
-			},
-			modules: fakeBuildModules{
-				images: []build.Image{
-					{Name: "netboot", Path: "netboot.zbi", Type: "zbi"},
-					{Name: "netboot-script", Path: "netboot.sh", Type: "script"},
-					{Name: "foo", Path: "foo.sh", Type: "script"},
-				},
-			},
-			expectedTargets: []string{"foo.sh"},
-			expectedArtifacts: &fintpb.BuildArtifacts{
-				BuiltImages: []*structpb.Struct{
-					mustStructPB(t, build.Image{Name: "foo", Path: "foo.sh", Type: "script"}),
-				},
-			},
 		},
 		{
 			name: "default ninja target included",
