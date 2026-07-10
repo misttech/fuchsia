@@ -1461,10 +1461,15 @@ impl ThreadGroup {
 
         // "The calling process must be a session leader and not have a
         // controlling terminal already." - tty_ioctl(4)
-        if process_group.session.leader != self.leader
-            || session_writer.controlling_terminal.is_some()
-        {
+        if process_group.session.leader != self.leader {
             return error!(EINVAL);
+        }
+        if let Some(ref current_ct) = session_writer.controlling_terminal {
+            if current_ct.matches(terminal, is_main) {
+                return Ok(());
+            } else {
+                return error!(EINVAL);
+            }
         }
 
         let mut has_admin_capability_determined = false;

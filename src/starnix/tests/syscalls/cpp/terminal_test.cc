@@ -213,6 +213,102 @@ TEST_F(Pty, OpenDevTTY) {
   });
 }
 
+TEST_F(Pty, RedundantTIOCSCTTY) {
+  test_helper::ForkHelper helper;
+
+  helper.RunInForkedProcess([&] {
+    // Create a new session here, and associate it with the new terminal.
+    SAFE_SYSCALL(setsid());
+    int main_terminal = OpenMainTerminal();
+
+    // First call to TIOCSCTTY should succeed.
+    SAFE_SYSCALL(ioctl(main_terminal, TIOCSCTTY, 0));
+
+    // Second call to TIOCSCTTY on the same terminal should also succeed (noop).
+    SAFE_SYSCALL(ioctl(main_terminal, TIOCSCTTY, 0));
+  });
+}
+
+TEST_F(Pty, StealTIOCSCTTY) {
+  test_helper::ForkHelper helper;
+  test_helper::Rendezvous acquired = test_helper::MakeRendezvous();
+  test_helper::Rendezvous stolen = test_helper::MakeRendezvous();
+
+  int main_terminal = OpenMainTerminal();
+  std::string replica_path = ptsname(main_terminal);
+
+  // Session 1 (The victim)
+  helper.RunInForkedProcess([&] {
+    // Close unused rendezvous sides.
+    acquired.holder = {};
+    stolen.poker = {};
+
+    SAFE_SYSCALL(setsid());
+    int replica_fd = SAFE_SYSCALL(open(replica_path.c_str(), O_RDWR));
+    SAFE_SYSCALL(ioctl(replica_fd, TIOCSCTTY, 0));
+
+    // Verify we have it.
+    int tty_fd = SAFE_SYSCALL(open("/dev/tty", O_RDWR));
+    close(tty_fd);
+
+    // Notify Session 2 that we have acquired it.
+    acquired.poker.poke();
+
+    // Wait until Session 2 has stolen it (or tried to).
+    stolen.holder.hold();
+
+    if (test_helper::HasSysAdmin()) {
+      // Verify we NO LONGER have it.
+      // Opening /dev/tty should now fail with ENXIO.
+      int ret = open("/dev/tty", O_RDWR);
+      EXPECT_EQ(ret, -1);
+      EXPECT_EQ(errno, ENXIO);
+    } else {
+      // Verify we STILL have it.
+      int tty_fd = SAFE_SYSCALL(open("/dev/tty", O_RDWR));
+      close(tty_fd);
+    }
+  });
+
+  // Session 2 (The thief)
+  helper.RunInForkedProcess([&] {
+    // Close unused rendezvous sides.
+    acquired.poker = {};
+    stolen.holder = {};
+
+    // Wait until Session 1 has acquired it.
+    acquired.holder.hold();
+
+    SAFE_SYSCALL(setsid());
+    int replica_fd = SAFE_SYSCALL(open(replica_path.c_str(), O_RDWR));
+
+    // Attempt to acquire without steal flag. Should fail with EPERM.
+    int ret = ioctl(replica_fd, TIOCSCTTY, 0);
+    EXPECT_EQ(ret, -1);
+    EXPECT_EQ(errno, EPERM);
+
+    if (test_helper::HasSysAdmin()) {
+      // Attempt to steal with steal flag = 1. Should succeed.
+      SAFE_SYSCALL(ioctl(replica_fd, TIOCSCTTY, 1));
+
+      // Verify we now have it.
+      int tty_fd = SAFE_SYSCALL(open("/dev/tty", O_RDWR));
+      close(tty_fd);
+    } else {
+      // Attempt to steal without CAP_SYS_ADMIN. Should fail with EPERM.
+      ret = ioctl(replica_fd, TIOCSCTTY, 1);
+      EXPECT_EQ(ret, -1);
+      EXPECT_EQ(errno, EPERM);
+    }
+
+    // Notify Session 1 that we are done.
+    stolen.poker.poke();
+  });
+
+  ASSERT_TRUE(helper.WaitForChildren());
+  close(main_terminal);
+}
+
 TEST_F(Pty, ioctl_TCSETSF) {
   test_helper::ForkHelper helper;
 

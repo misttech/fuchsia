@@ -1304,8 +1304,9 @@ mod tests {
             set_controlling_terminal(task1, &opened_replica, false)
                 .expect("Associate terminal to task1");
 
-            // One cannot associate a terminal to a process that has already one
-            assert_eq!(set_controlling_terminal(task1, &opened_replica, false), error!(EINVAL));
+            // Redundant association of the same terminal should succeed (no-op)
+            set_controlling_terminal(task1, &opened_replica, false)
+                .expect("Redundant association should succeed");
 
             task2.thread_group().setsid().expect("setsid");
 

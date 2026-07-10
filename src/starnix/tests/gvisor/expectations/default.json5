@@ -689,10 +689,6 @@
                 "PtraceTest.ChangeRegSetInOptSyscall",
                 "PtraceTest.Sysemu_PokeUser",
 
-                // pty_test
-                // TODO(https://fxbug.dev/530576584): Fix and re-enable.
-                "JobControlTest.SetTTY",
-
                 // rlimits_test
                 "RlimitTest.RlimitNProc",
 
