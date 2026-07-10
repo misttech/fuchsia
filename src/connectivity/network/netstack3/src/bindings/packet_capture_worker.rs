@@ -60,6 +60,13 @@ struct CaptureData {
     pcap_headers: Arc<[u8]>,
 }
 
+#[derive(Debug)]
+struct DetachedState {
+    name: String,
+    cancel: oneshot::Sender<()>,
+    connected: bool,
+}
+
 /// The state of the single allowed rolling packet capture.
 ///
 /// Netstack3 restricts packet captures to at most one active capture at a time
@@ -73,18 +80,8 @@ enum RollingCaptureState {
     /// This state blocks other clients from starting a new packet capture
     /// until all associated resources are freed.
     Closing,
-    /// A packet capture is active and the client is currently connected.
-    ///
-    /// The lifetime of the packet capture is tied to the client's connection.
-    Attached { task: fasync::Task<Option<CaptureData>> },
-    /// A packet capture is detached, and may or may not have a client connected
-    /// based on `connected`.
-    Detached {
-        name: String,
-        task: fasync::Task<Option<CaptureData>>,
-        cancel: oneshot::Sender<()>,
-        connected: bool,
-    },
+    /// A packet capture is active (either attached or detached).
+    Running { task: fasync::Task<Option<CaptureData>>, detached: Option<DetachedState> },
 }
 
 impl RollingCaptureState {
@@ -98,8 +95,7 @@ impl RollingCaptureState {
     #[track_caller]
     fn transition_to_closing(&mut self) {
         self.replace_with(|old| match old {
-            RollingCaptureState::Attached { task }
-            | RollingCaptureState::Detached { task, name: _, cancel: _, connected: _ } => {
+            RollingCaptureState::Running { task, detached: _ } => {
                 let _ = task.detach_on_drop();
                 (RollingCaptureState::Closing, ())
             }
@@ -135,26 +131,30 @@ fn handle_detach(
     name: String,
 ) -> Result<oneshot::Receiver<()>, fnet_debug::RollingPacketCaptureDetachError> {
     ctx.bindings_ctx().packet_captures.state.lock().replace_with(|old_state| match old_state {
-        RollingCaptureState::Attached { task } => {
+        RollingCaptureState::Running { task, detached: None } => {
             let (cancel_tx, cancel_rx) = oneshot::channel();
             (
-                RollingCaptureState::Detached {
-                    name: name.clone(),
+                RollingCaptureState::Running {
                     task,
-                    cancel: cancel_tx,
-                    connected: true,
+                    detached: Some(DetachedState {
+                        name: name.clone(),
+                        cancel: cancel_tx,
+                        connected: true,
+                    }),
                 },
                 Ok(cancel_rx),
             )
         }
-        s @ RollingCaptureState::Detached { name: _, task: _, cancel: _, connected }
-            if connected =>
-        {
-            (s, Err(fnet_debug::RollingPacketCaptureDetachError::AlreadyDetached))
-        }
+        s @ RollingCaptureState::Running {
+            detached: Some(DetachedState { connected: true, .. }),
+            ..
+        } => (s, Err(fnet_debug::RollingPacketCaptureDetachError::AlreadyDetached)),
         RollingCaptureState::Empty
         | RollingCaptureState::Closing
-        | RollingCaptureState::Detached { .. } => {
+        | RollingCaptureState::Running {
+            detached: Some(DetachedState { connected: false, .. }),
+            ..
+        } => {
             unreachable!("Detach called in unexpected state {old_state:?}");
         }
     })
@@ -332,15 +332,24 @@ where
         }
 
         state_lock.replace_with(|old| match old {
-            RollingCaptureState::Detached { name, task, cancel, connected } if connected => (
-                RollingCaptureState::Detached { name, task, cancel, connected: false },
+            RollingCaptureState::Running {
+                task,
+                detached: Some(DetachedState { name, cancel, connected: true }),
+            } => (
+                RollingCaptureState::Running {
+                    task,
+                    detached: Some(DetachedState { name, cancel, connected: false }),
+                },
                 NewState::Disconnected,
             ),
-            RollingCaptureState::Attached { task } => {
+            RollingCaptureState::Running { task, detached: None } => {
                 let _ = task.detach_on_drop();
                 (RollingCaptureState::Closing, NewState::Closing)
             }
-            RollingCaptureState::Detached { .. }
+            RollingCaptureState::Running {
+                detached: Some(DetachedState { connected: false, .. }),
+                ..
+            }
             | RollingCaptureState::Closing
             | RollingCaptureState::Empty => {
                 unreachable!("unexpected state at closure: {old:?}");
@@ -408,9 +417,7 @@ fn handle_start_rolling(
     // Attached state is written into the protected state at the end.
     let mut state_lock = ctx_clone.bindings_ctx().packet_captures.state.lock();
     match *state_lock {
-        RollingCaptureState::Attached { .. }
-        | RollingCaptureState::Detached { .. }
-        | RollingCaptureState::Closing => {
+        RollingCaptureState::Running { .. } | RollingCaptureState::Closing => {
             return Err(fnet_debug::PacketCaptureStartError::QuotaExceeded);
         }
         RollingCaptureState::Empty => {}
@@ -543,7 +550,7 @@ fn handle_start_rolling(
         serve_rolling_packet_capture(ctx_clone, request_stream, data, scope_cancel, None).await
     });
 
-    *state_lock = RollingCaptureState::Attached { task: new_task };
+    *state_lock = RollingCaptureState::Running { task: new_task, detached: None };
 
     Ok(rolling_client)
 }
@@ -565,39 +572,35 @@ fn handle_reconnect_rolling(
 
     let mut state_lock = ctx.bindings_ctx().packet_captures.state.lock();
 
-    state_lock.replace_with(|old_state| {
-        let old_task = match old_state {
-            RollingCaptureState::Detached { name: n, task, cancel, connected: _ } if n == name => {
-                cancel.send(()).expect("cancel recevier should not have been dropped");
-                task
-            }
-            old_state => {
-                return (old_state, Err(fnet_debug::PacketCaptureReconnectError::NotFound));
-            }
-        };
+    state_lock.replace_with(|old_state| match old_state {
+        RollingCaptureState::Running {
+            task,
+            detached: Some(DetachedState { name: n, cancel, connected: _ }),
+        } if n == name => {
+            cancel.send(()).expect("cancel recevier should not have been dropped");
 
-        let new_task = scope.compute(async move {
-            let scope_cancel = guard.on_cancel();
-            let data = old_task.await?;
-            serve_rolling_packet_capture(
-                ctx_clone,
-                request_stream,
-                data,
-                scope_cancel,
-                Some(cancel_receiver),
+            let new_task = scope.compute(async move {
+                let scope_cancel = guard.on_cancel();
+                let data = task.await?;
+                serve_rolling_packet_capture(
+                    ctx_clone,
+                    request_stream,
+                    data,
+                    scope_cancel,
+                    Some(cancel_receiver),
+                )
+                .await
+            });
+
+            (
+                RollingCaptureState::Running {
+                    task: new_task,
+                    detached: Some(DetachedState { name, cancel: cancel_sender, connected: true }),
+                },
+                Ok(rolling_client),
             )
-            .await
-        });
-
-        (
-            RollingCaptureState::Detached {
-                name: name.clone(),
-                task: new_task,
-                cancel: cancel_sender,
-                connected: true,
-            },
-            Ok(rolling_client),
-        )
+        }
+        old_state => (old_state, Err(fnet_debug::PacketCaptureReconnectError::NotFound)),
     })
 }
 
@@ -873,7 +876,10 @@ mod tests {
             let state_lock = ns.ctx.bindings_ctx().packet_captures.state.lock();
             let (name, connected) = assert_matches::assert_matches!(
                 &*state_lock,
-                RollingCaptureState::Detached { name, connected, .. } => (name, connected)
+                RollingCaptureState::Running {
+                    detached: Some(DetachedState { name, connected, .. }),
+                    ..
+                } => (name, connected)
             );
             assert_eq!(name, capture_name);
             assert!(!connected);
