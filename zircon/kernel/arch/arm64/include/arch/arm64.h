@@ -85,7 +85,7 @@ arm64_context_switch_frame* arm64_get_context_switch_frame(Thread* thread);
 void arm64_fpu_exception(iframe_t* iframe, uint exception_flags);
 void arm64_fpu_context_switch(Thread* oldthread, Thread* newthread);
 void arm64_fpu_save_state(Thread* t);
-void arm64_fpu_restore_state(Thread* t);
+void arm64_fpu_restore_state(const Thread* t);
 
 // TODO(https://fxbug.dev/393619961): Identically 1 today, but should one day
 // be dynamic.
