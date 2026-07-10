@@ -984,4 +984,46 @@ TEST_F(Pty, FlushOutputPollEvents) {
   });
 }
 
+TEST_F(Pty, CloseMainTerminalSendsSighup) {
+  test_helper::ForkHelper helper;
+  helper.ExpectExitValue(42);
+  helper.RunInForkedProcess([&] {
+    // Become session leader.
+    SAFE_SYSCALL(setsid());
+
+    // Open master PTY.
+    int main_terminal = OpenMainTerminal(O_NOCTTY);
+
+    // Open replica PTY and acquire as controlling terminal.
+    int replica_terminal = SAFE_SYSCALL(open(ptsname(main_terminal), O_RDWR));
+
+    // Verify it is indeed the controlling terminal.
+    int tty_fd = open("/dev/tty", O_RDWR);
+    if (tty_fd < 0) {
+      _exit(99);  // Failed to acquire controlling terminal.
+    }
+    close(tty_fd);
+
+    // Set up signal handler for SIGHUP.
+    struct sigaction sa = {};
+    sa.sa_handler = [](int sig) {
+      _exit(42);  // Exit with 42 when SIGHUP is received.
+    };
+    if (sigaction(SIGHUP, &sa, nullptr) < 0) {
+      _exit(98);  // Failed to set signal handler.
+    }
+
+    // Close the master PTY. This should trigger SIGHUP.
+    close(main_terminal);
+
+    // Wait for signal.
+    sleep(2);
+
+    close(replica_terminal);
+    // If we reach here, we didn't get SIGHUP.
+    _exit(1);
+  });
+  ASSERT_TRUE(helper.WaitForChildren());
+}
+
 }  // namespace

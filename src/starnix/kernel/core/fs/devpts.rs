@@ -368,6 +368,13 @@ impl FileOps for DevPtmxFile {
     fileops_impl_noop_sync!();
 
     fn close(self: Box<Self>, _file: &FileObjectState, _current_task: &CurrentTask) {
+        let session = {
+            let terminal = self.terminal.read();
+            terminal.controller.as_ref().and_then(|c| c.session.upgrade())
+        };
+        if let Some(session) = session {
+            session.disassociate_controlling_terminal();
+        }
         self.terminal.main_close();
     }
 

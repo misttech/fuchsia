@@ -1123,10 +1123,6 @@
                 // Requires alarms. Hangs without.
                 "SpliceTest.ToPipeWithSmallCapacityDoesNotSpin",
 
-                // TODO(https://fxbug.dev/503441321): Implement SIGHUP on main
-                // PTY closure.
-                "JobControlTest.SIGHUPOnMasterClose",
-
                 // sigstop_test
 
                 // TODO(https://fxbug.dev/495996345): Implement SIGCONT that aborts an ongoing stop.
