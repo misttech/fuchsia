@@ -165,12 +165,12 @@ impl<D: Driver> TestHarness<D> {
         let driver_outgoing = Incoming::from(driver_outgoing_dir_client);
 
         let driver_incoming_svc =
-            open_directory_async(&self.driver_incoming_dir, "svc", fio::R_STAR_DIR).unwrap();
+            open_directory_async(&self.driver_incoming_dir, ".", fio::R_STAR_DIR).unwrap();
 
         let start_args = DriverStartArgs {
             node: Some(NextClientEnd::from_untyped(node_client)),
             incoming: Some(vec![ComponentNamespaceEntry {
-                path: Some("/svc".to_string()),
+                path: Some("/".to_string()),
                 directory: Some(NextClientEnd::from_untyped(
                     driver_incoming_svc.into_channel().unwrap().into(),
                 )),
