@@ -1571,9 +1571,13 @@ impl<'a> NetCfg<'a> {
                     .expect("watcher stream never returns None");
                 trace!("got interfaces watcher event = {:?}", event);
 
-                self.handle_interface_watcher_event(event, dns_watchers, virtualization_handler)
+                if let Some(removed_id) = self
+                    .handle_interface_watcher_event(event, dns_watchers, virtualization_handler)
                     .await
-                    .context("handle interface watcher event")?;
+                    .context("handle interface watcher event")?
+                {
+                    masquerade_handler.handle_interface_removed(removed_id);
+                }
             }
             ProvisioningEvent::DnsWatcherResult(dns_watchers_res) => {
                 let (source, res) = dns_watchers_res.ok_or_else(|| {
@@ -1969,13 +1973,13 @@ impl<'a> NetCfg<'a> {
         .await
     }
 
-    /// Handles an interface watcher event (existing, added, changed, or removed).
+    /// Handles an interface watcher event. Returns the ID if the interface was removed.
     async fn handle_interface_watcher_event(
         &mut self,
         event: fnet_interfaces_ext::EventWithInterest<fnet_interfaces_ext::DefaultInterest>,
         watchers: &mut DnsServerWatchers<'_>,
         virtualization_handler: &mut impl virtualization::Handler,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<Option<InterfaceId>, anyhow::Error> {
         let Self {
             interface_properties,
             dns_servers,
@@ -1992,6 +1996,7 @@ impl<'a> NetCfg<'a> {
             dhcpv6_prefixes_streams,
             allowed_upstream_device_classes,
             dhcpv6_prefix_provider_handler,
+            filter_enabled_state,
             ..
         } = self;
         let update_result = interface_properties
@@ -2025,12 +2030,12 @@ impl<'a> NetCfg<'a> {
                     is delegated for this interface: {:?}",
                         update_result
                     );
-                    return Ok(());
+                    return Ok(None);
                 }
             }
         }
 
-        Self::handle_interface_update_result(
+        let removed_id = Self::handle_interface_update_result(
             &update_result,
             watchers,
             dns_servers,
@@ -2045,10 +2050,18 @@ impl<'a> NetCfg<'a> {
             dhcpv6_client_provider,
             route_set_v4_provider,
             socket_proxy_state,
+            filter_enabled_state,
         )
         .await
-        .context("handle interface update")
-        .or_else(errors::Error::accept_non_fatal)?;
+        .context("handle interface update");
+
+        let removed_id = match removed_id {
+            Ok(id) => id,
+            Err(e) => {
+                e.accept_non_fatal()?;
+                None
+            }
+        };
 
         // The interface watcher event may have disabled DHCPv6 on the interface
         // so respond accordingly.
@@ -2063,9 +2076,13 @@ impl<'a> NetCfg<'a> {
             .handle_interface_update_result(&update_result)
             .await
             .context("handle interface update for virtualization")
-            .or_else(errors::Error::accept_non_fatal)
+            .or_else(errors::Error::accept_non_fatal)?;
+
+        Ok(removed_id)
     }
 
+    /// Processes the update result from the interface watcher, returning the
+    /// ID if the interface was removed.
     // This method takes mutable references to several fields of `NetCfg` separately as parameters,
     // rather than `&mut self` directly, because `update_result` already holds a reference into
     // `self.interface_properties`.
@@ -2088,11 +2105,12 @@ impl<'a> NetCfg<'a> {
         dhcpv6_client_provider: &Option<fnet_dhcpv6::ClientProviderProxy>,
         route_set_v4_provider: &fnet_routes_admin::RouteTableV4Proxy,
         socket_proxy_state: &mut Option<SocketProxyState>,
-    ) -> Result<(), errors::Error> {
+        filter_enabled_state: &mut FilterEnabledState,
+    ) -> Result<Option<InterfaceId>, errors::Error> {
         match update_result {
             fnet_interfaces_ext::UpdateResult::Added { properties, state: _ } => {
-                match interface_states.get_mut(&properties.id.into()) {
-                    Some(state) => state
+                if let Some(state) = interface_states.get_mut(&properties.id.into()) {
+                    return state
                         .on_discovery(
                             properties,
                             dhcpv4_client_provider.as_ref(),
@@ -2106,14 +2124,15 @@ impl<'a> NetCfg<'a> {
                             dhcpv6_prefixes_streams,
                         )
                         .await
-                        .context("failed to handle interface added event"),
-                    // An interface netcfg won't be configuring was added, do nothing.
-                    None => Ok(()),
+                        .context("failed to handle interface added event")
+                        .map(|()| None);
                 }
+                // An interface netcfg won't be configuring was added, do nothing.
+                return Ok(None);
             }
             fnet_interfaces_ext::UpdateResult::Existing { properties, state: _ } => {
-                match interface_states.get_mut(&properties.id.into()) {
-                    Some(state) => state
+                if let Some(state) = interface_states.get_mut(&properties.id.into()) {
+                    return state
                         .on_discovery(
                             properties,
                             dhcpv4_client_provider.as_ref(),
@@ -2127,10 +2146,11 @@ impl<'a> NetCfg<'a> {
                             dhcpv6_prefixes_streams,
                         )
                         .await
-                        .context("failed to handle existing interface event"),
-                    // An interface netcfg won't be configuring was discovered, do nothing.
-                    None => Ok(()),
+                        .context("failed to handle existing interface event")
+                        .map(|()| None);
                 }
+                // An interface netcfg won't be configuring was discovered, do nothing.
+                return Ok(None);
             }
             fnet_interfaces_ext::UpdateResult::Changed {
                 previous: previous_properties,
@@ -2143,7 +2163,7 @@ impl<'a> NetCfg<'a> {
                     current_properties;
                 match interface_states.get_mut(&(*id).into()) {
                     // An interface netcfg is not configuring was changed, do nothing.
-                    None => return Ok(()),
+                    None => return Ok(None),
                     Some(InterfaceState {
                         config:
                             InterfaceConfigState::Host(HostInterfaceState {
@@ -2261,7 +2281,7 @@ impl<'a> NetCfg<'a> {
                             if let Some(dhcpv6_client_provider) = dhcpv6_client_provider {
                                 dhcpv6_client_provider
                             } else {
-                                return Ok(());
+                                return Ok(None);
                             };
 
                         if !online {
@@ -2269,7 +2289,7 @@ impl<'a> NetCfg<'a> {
                             let dhcpv6::ClientState { sockaddr, prefixes: _ } =
                                 match dhcpv6_client_state.take() {
                                     Some(s) => s,
-                                    None => return Ok(()),
+                                    None => return Ok(None),
                                 };
 
                             info!(
@@ -2280,7 +2300,7 @@ impl<'a> NetCfg<'a> {
                                 sockaddr.display_ext(),
                             );
 
-                            return Ok(dhcpv6::stop_client(
+                            dhcpv6::stop_client(
                                 &lookup_admin,
                                 dns_servers,
                                 dns_server_watch_responders,
@@ -2289,7 +2309,8 @@ impl<'a> NetCfg<'a> {
                                 watchers,
                                 dhcpv6_prefixes_streams,
                             )
-                            .await);
+                            .await;
+                            return Ok(None);
                         }
 
                         // Stop the DHCPv6 client if its address can no longer be found on the
@@ -2350,7 +2371,7 @@ impl<'a> NetCfg<'a> {
                             *dhcpv6_client_state = sockaddr.map(dhcpv6::ClientState::new);
                         }
 
-                        Ok(())
+                        return Ok(None);
                     }
                     Some(InterfaceState {
                         config:
@@ -2364,13 +2385,13 @@ impl<'a> NetCfg<'a> {
                         let dhcp_server = if let Some(dhcp_server) = dhcp_server {
                             dhcp_server
                         } else {
-                            return Ok(());
+                            return Ok(None);
                         };
 
                         if previous_online
                             .map_or(true, |previous_online| previous_online == *online)
                         {
-                            return Ok(());
+                            return Ok(None);
                         }
 
                         if *online {
@@ -2380,7 +2401,8 @@ impl<'a> NetCfg<'a> {
                             );
                             dhcpv4::start_server(&dhcp_server)
                                 .await
-                                .context("error starting DHCP server")
+                                .context("error starting DHCP server")?;
+                            return Ok(None);
                         } else {
                             info!(
                                 "WLAN AP interface {} (id={}) went down so stopping DHCP server",
@@ -2388,13 +2410,14 @@ impl<'a> NetCfg<'a> {
                             );
                             dhcpv4::stop_server(&dhcp_server)
                                 .await
-                                .context("error stopping DHCP server")
+                                .context("error stopping DHCP server")?;
+                            return Ok(None);
                         }
                     }
                     Some(InterfaceState {
                         config: InterfaceConfigState::Blackhole(BlackholeInterfaceState),
                         ..
-                    }) => return Ok(()),
+                    }) => return Ok(None),
                 }
             }
             fnet_interfaces_ext::UpdateResult::Removed(
@@ -2403,11 +2426,13 @@ impl<'a> NetCfg<'a> {
                     state: (),
                 },
             ) => {
-                match interface_states.remove(&(*id).into()) {
+                let interface_id: InterfaceId = (*id).into();
+                match interface_states.remove(&interface_id) {
                     // An interface netcfg was not responsible for configuring was removed, do
                     // nothing.
-                    None => Ok(()),
+                    None => return Ok(None),
                     Some(InterfaceState { config, control, provisioning, .. }) => {
+                        filter_enabled_state.remove_interface(interface_id);
                         // TODO(https://fxbug.dev/498654191): Add Locally provisioned networks to
                         // the networks service even when socket-proxy is absent.
                         if let Some(state) = socket_proxy_state {
@@ -2425,9 +2450,9 @@ impl<'a> NetCfg<'a> {
                             // TODO(https://fxbug.dev/475916525): Stop sharing Fuchsia networks
                             // state with socket-proxy once the source-of-truth registry exists
                             // solely within netcfg.
-                            state.handle_interface_no_longer_candidate(InterfaceId(*id)).await;
+                            state.handle_interface_no_longer_candidate(interface_id).await;
                         }
-                        match config {
+                        let res = match config {
                             InterfaceConfigState::Host(HostInterfaceState {
                                 mut dhcpv4_client,
                                 mut dhcpv6_client_state,
@@ -2435,7 +2460,6 @@ impl<'a> NetCfg<'a> {
                                 interface_admin_auth: _,
                                 interface_naming_id: _,
                             }) => {
-                                let interface_id: InterfaceId = (*id).into();
                                 Self::handle_dhcpv4_client_stop(
                                     interface_id,
                                     name,
@@ -2448,7 +2472,7 @@ impl<'a> NetCfg<'a> {
                                     lookup_admin,
                                     dhcpv4::AlreadyObservedClientExit::No,
                                 )
-                                    .await;
+                                .await;
 
                                 // The NDP RDNSS watcher is registered
                                 // unconditionally when the interface is
@@ -2456,37 +2480,37 @@ impl<'a> NetCfg<'a> {
                                 // to removing the DHCPv6 client state
                                 // to avoid leaking the watcher.
                                 dns::remove_rdnss_watcher(
-                                    &lookup_admin, dns_servers,
-                                    dns_server_watch_responders,
-                                    netpol_networks_service, interface_id, watchers,
-                                ).await;
-
-                                let dhcpv6::ClientState {
-                                    sockaddr,
-                                    prefixes: _,
-                                } = match dhcpv6_client_state.take() {
-                                    Some(s) => s,
-                                    None => return Ok(()),
-                                };
-
-                                info!(
-                                    "host interface {} (id={}) removed \
-                                    so stopping DHCPv6 client w/ sockaddr = {}",
-                                    name,
-                                    id,
-                                    sockaddr.display_ext()
-                                );
-
-                                dhcpv6::stop_client(
                                     &lookup_admin,
                                     dns_servers,
                                     dns_server_watch_responders,
                                     netpol_networks_service,
                                     interface_id,
                                     watchers,
-                                    dhcpv6_prefixes_streams,
                                 )
                                 .await;
+
+                                if let Some(dhcpv6::ClientState { sockaddr, prefixes: _ }) =
+                                    dhcpv6_client_state.take()
+                                {
+                                    info!(
+                                        "host interface {} (id={}) removed \
+                                        so stopping DHCPv6 client w/ sockaddr = {}",
+                                        name,
+                                        id,
+                                        sockaddr.display_ext()
+                                    );
+
+                                    dhcpv6::stop_client(
+                                        &lookup_admin,
+                                        dns_servers,
+                                        dns_server_watch_responders,
+                                        netpol_networks_service,
+                                        interface_id,
+                                        watchers,
+                                        dhcpv6_prefixes_streams,
+                                    )
+                                    .await;
+                                }
 
                                 Ok(())
                             }
@@ -2507,16 +2531,16 @@ impl<'a> NetCfg<'a> {
                                     Ok(())
                                 }
                             }
-                            InterfaceConfigState::Blackhole(BlackholeInterfaceState) => {
-                                Ok(())
-                            }
-                        }
-                        .context("failed to handle interface removed event")
+                            InterfaceConfigState::Blackhole(BlackholeInterfaceState) => Ok(()),
+                        };
+                        return res
+                            .context("failed to handle interface removed event")
+                            .map(|()| Some(interface_id));
                     }
                 }
             }
-            fnet_interfaces_ext::UpdateResult::NoChange => Ok(()),
-        }
+            fnet_interfaces_ext::UpdateResult::NoChange => return Ok(None),
+        };
     }
 
     /// Handle an event from `D`'s device directory.
@@ -4213,6 +4237,7 @@ mod tests {
         netcfg
             .handle_interface_watcher_event(event.into(), dns_watchers, &mut virtualization::Stub)
             .await
+            .map(|_| ())
     }
 
     /// Make sure that a new DHCPv6 client was requested, and verify its parameters.
@@ -4348,7 +4373,7 @@ mod tests {
 
         // Should start the DHCPv6 client when we get an interface changed event that shows the
         // interface as up with an link-local address.
-        netcfg
+        let _removed_interface_id: Option<InterfaceId> = netcfg
             .handle_interface_watcher_event(
                 fnet_interfaces::Event::Added(fnet_interfaces::Properties {
                     id: Some(INTERFACE_ID.get()),
@@ -4436,7 +4461,7 @@ mod tests {
         addresses: Option<Vec<fnet_interfaces::Address>>,
         dns_watchers: &mut DnsServerWatchers<'_>,
     ) {
-        netcfg
+        let _removed_interface_id: Option<InterfaceId> = netcfg
             .handle_interface_watcher_event(
                 fnet_interfaces::Event::Changed(fnet_interfaces::Properties {
                     id: Some(INTERFACE_ID.get()),
@@ -4449,7 +4474,7 @@ mod tests {
                 &mut virtualization::Stub,
             )
             .await
-            .expect("error handling interface change event with interface online")
+            .expect("error handling interface change event with interface online");
     }
     const DHCP_ADDRESS: fnet::Ipv4AddressWithPrefix = fidl_ip_v4_with_prefix!("192.0.2.254/24");
 
@@ -4528,7 +4553,10 @@ mod tests {
                     &mut dns_watchers,
                     &mut virt_stub,
                 )
-                .map(|result| result.expect("handling interfaces watcher event"))
+                .map(|result| {
+                    let _removed_interface_id: Option<InterfaceId> =
+                        result.expect("handling interfaces watcher event");
+                })
                 .fuse();
             let netcfg_fut = pin!(netcfg_fut);
             if added_online {
@@ -4624,7 +4652,7 @@ mod tests {
         };
 
         let handle_interface_watcher_event_fut = async {
-            netcfg
+            let _removed_interface_id: Option<InterfaceId> = netcfg
                 .handle_interface_watcher_event(
                     fnet_interfaces::Event::Added(fnet_interfaces::Properties {
                         id: Some(INTERFACE_ID.get()),
@@ -4820,14 +4848,14 @@ mod tests {
         let ((), (), (), (deleted_routers, mut route_set_request_stream)) = future::join4(
             async {
                 if remove_interface {
-                    netcfg
+                    let _removed_interface_id: Option<InterfaceId> = netcfg
                         .handle_interface_watcher_event(
                             fnet_interfaces::Event::Removed(INTERFACE_ID.get()).into(),
                             &mut dns_watchers,
                             &mut virtualization::Stub,
                         )
                         .await
-                        .expect("error handling interface removed event")
+                        .expect("error handling interface removed event");
                 } else {
                     handle_update(
                         &mut netcfg,
@@ -5016,7 +5044,7 @@ mod tests {
         );
 
         // Make sure the DHCPv4 client is created on interface up.
-        netcfg
+        let _removed_interface_id: Option<InterfaceId> = netcfg
             .handle_interface_watcher_event(
                 fnet_interfaces::Event::Added(fnet_interfaces::Properties {
                     id: Some(INTERFACE_ID.get()),
@@ -5170,7 +5198,7 @@ mod tests {
 
         // Make sure the DHCPv4 client is created on interface up.
         let (client_stream, control_handle, responder) = {
-            netcfg
+            let _removed_interface_id: Option<InterfaceId> = netcfg
                 .handle_interface_watcher_event(
                     fnet_interfaces::Event::Added(fnet_interfaces::Properties {
                         id: Some(INTERFACE_ID.get()),
@@ -5314,7 +5342,7 @@ mod tests {
 
         // Should start the DHCPv6 client when we get an interface changed event that shows the
         // interface as up with an link-local address.
-        netcfg
+        let _removed_interface_id: Option<InterfaceId> = netcfg
             .handle_interface_watcher_event(
                 fnet_interfaces::Event::Added(fnet_interfaces::Properties {
                     id: Some(INTERFACE_ID.get()),
@@ -5478,7 +5506,10 @@ mod tests {
                     &mut dns_watchers,
                     &mut virtualization::Stub,
                 )
-                .map(|r| r.expect("error handling interface removed event")),
+                .map(|r| {
+                    let _removed_interface_id: Option<InterfaceId> =
+                        r.expect("error handling interface removed event");
+                }),
             run_lookup_admin_once(&mut servers.lookup_admin, &netstack_servers),
         )
         .await;
@@ -5649,7 +5680,7 @@ mod tests {
             let sockaddr = dhcpv6_sockaddr(id);
 
             // Fake an interface added event.
-            netcfg
+            let _removed_interface_id: Option<InterfaceId> = netcfg
                 .handle_interface_watcher_event(
                     fnet_interfaces::Event::Added(fnet_interfaces::Properties {
                         id: Some(id.get()),
@@ -6055,7 +6086,7 @@ mod tests {
             let sockaddr = dhcpv6_sockaddr(id);
 
             // Fake an interface added event.
-            netcfg
+            let _removed_interface_id: Option<InterfaceId> = netcfg
                 .handle_interface_watcher_event(
                     fnet_interfaces::Event::Added(fnet_interfaces::Properties {
                         id: Some(id.get()),
@@ -6218,7 +6249,7 @@ mod tests {
                 },
             )
             .await;
-            assert_matches::assert_matches!(watcher_result, Ok(()));
+            assert_matches::assert_matches!(watcher_result, Ok(None));
         }
 
         // Verify the default network through the socketproxy state.
@@ -6259,7 +6290,7 @@ mod tests {
                     &mut virtualization::Stub,
                 )
                 .await,
-            Ok(())
+            Ok(None)
         );
 
         // Send an interface changed event with an address update
@@ -6286,11 +6317,15 @@ mod tests {
                     &mut virtualization::Stub,
                 )
                 .await,
-            Ok(())
+            Ok(None)
         );
 
         // Send an interface changed event that should cause the network
         // to be removed from the socketproxy.
+        let expected_result = match &final_event {
+            fnet_interfaces::Event::Removed(id) => Some(InterfaceId::new(*id).unwrap()),
+            _ => None,
+        };
         let (watcher_result, ()) = futures::future::join(
             netcfg.handle_interface_watcher_event(
                 final_event.into(),
@@ -6306,7 +6341,8 @@ mod tests {
             },
         )
         .await;
-        assert_matches::assert_matches!(watcher_result, Ok(()));
+        let watcher_result = watcher_result.expect("watcher_result error");
+        assert_eq!(watcher_result, expected_result);
 
         // The fallback default interface is the second one that is locally
         // provisioned (or None if one does not exist).

@@ -6,16 +6,15 @@ use std::collections::HashMap;
 
 use derivative::Derivative;
 use fidl::endpoints::ControlHandle;
+use fidl_fuchsia_net as fnet;
+use fidl_fuchsia_net_filter_deprecated as fnet_filter_deprecated;
 use fidl_fuchsia_net_filter_ext::{CommitError, Matchers, PushChangesError, RuleId};
+use fidl_fuchsia_net_masquerade as fnet_masquerade;
+use fidl_fuchsia_net_matchers_ext as fnet_matchers_ext;
 use fnet_masquerade::Error;
 use futures::stream::LocalBoxStream;
 use futures::{StreamExt as _, TryStreamExt as _, future};
-use log::{error, warn};
-
-use fidl_fuchsia_net as fnet;
-use fidl_fuchsia_net_filter_deprecated as fnet_filter_deprecated;
-use fidl_fuchsia_net_masquerade as fnet_masquerade;
-use fidl_fuchsia_net_matchers_ext as fnet_matchers_ext;
+use log::{debug, error, warn};
 
 use crate::filter::{FilterControl, FilterEnabledState, FilterError};
 use crate::{InterfaceId, InterfaceState};
@@ -316,6 +315,23 @@ impl MasqueradeHandler {
         }
     }
 
+    /// Locally cleans up masquerade controllers and shuts down client channels
+    /// for a removed interface.
+    ///
+    /// Netstack automatically removes the associated rules, so no Netstack calls
+    /// are needed. Concurrent client disconnects will safely no-op when their
+    /// queued `Disconnect` events find the controller already removed.
+    pub(super) fn handle_interface_removed(&mut self, interface_id: InterfaceId) {
+        self.active_controllers.retain(|config, state| {
+            if config.output_interface == interface_id {
+                state.control.shutdown_with_epitaph(fidl::Status::NOT_FOUND);
+                false
+            } else {
+                true
+            }
+        });
+    }
+
     pub(super) async fn handle_event(
         &mut self,
         event: Event,
@@ -375,39 +391,56 @@ impl MasqueradeHandler {
                 fnet_masquerade::ControlRequest::SetEnabled { enabled, responder },
             ) => {
                 let response = self
-                    .set_enabled(filter, config, enabled, filter_enabled_state, interface_states)
+                    .set_enabled(
+                        filter,
+                        config.clone(),
+                        enabled,
+                        filter_enabled_state,
+                        interface_states,
+                    )
                     .await;
-                let state = self
-                    .active_controllers
-                    .get_mut(&config)
-                    .expect("no active_controller for the given interface");
-                state.respond_and_maybe_shutdown(response, |r| responder.send(r));
+                if let Some(state) = self.active_controllers.get_mut(&config) {
+                    state.respond_and_maybe_shutdown(response, |r| responder.send(r));
+                } else {
+                    // Controller removed by interface teardown while request was in-flight.
+                    debug!(
+                        "masquerade controller for {config:?} was removed while processing \
+                         SetEnabled"
+                    );
+                }
             }
             Event::Disconnect(config) => {
                 match self
                     .set_enabled(filter, config, false, filter_enabled_state, interface_states)
                     .await
                 {
-                    Ok(_prev_enabled) => {}
-                    // Note: `NotFound` errors here aren't problematic. They may
-                    // happen when interface removal races with masquerade
-                    // controller disconnect.
-                    Err(Error::NotFound) => {}
+                    Ok(_prev_enabled) => {
+                        // Disable succeeded; remove controller from tracking.
+                        if self.active_controllers.remove(&config).is_none() {
+                            error!(
+                                "masquerade controller for {config:?} was unexpectedly \
+                                 missing on disconnect"
+                            );
+                        }
+                    }
+                    // The controller was already cleaned up by
+                    // `handle_interface_removed` due to a race between the
+                    // interface removal and the client disconnect.
+                    Err(Error::InvalidArguments) => {}
+                    // Interface is gone (Netstack failed to disable), but
+                    // controller is still tracked. Clean it up.
+                    Err(Error::NotFound) | Err(Error::BadRule) => {
+                        let _removed_controller: Option<MasqueradeState> =
+                            self.active_controllers.remove(&config);
+                    }
                     Err(Error::RetryExceeded) => error!(
                         "Failed to removed masquerade configuration for disconnected client \
                             (RetryExceeded): {config:?}"
                     ),
-                    Err(Error::AlreadyExists)
-                    | Err(Error::BadRule)
-                    | Err(Error::InvalidArguments)
-                    | Err(Error::Unsupported) => {
+                    Err(Error::AlreadyExists) | Err(Error::Unsupported) => {
                         panic!("removing existing configuration cannot fail")
                     }
                     Err(Error::__SourceBreaking { unknown_ordinal: _ }) => {}
-                }
-                match self.active_controllers.remove(&config) {
-                    None => panic!("controller was unexpectedly missing on disconnect"),
-                    Some(_masquerade_state) => {}
                 }
             }
         }
@@ -817,10 +850,65 @@ pub mod test {
                 r = set_enabled_fut => r,
                 () = server_fut => panic!("mock filter server should never exit"),
             );
-            pretty_assertions::assert_eq!(response, Ok(!enable));
+            assert_eq!(response, Ok(!enable));
             assert_eq!(mock.list_configurations(), expected_configs);
             assert_eq!(mock.is_interface_active(DEFAULT_CONFIG.output_interface), enable);
         }
+    }
+
+    #[test_case(FilterBackend::Deprecated)]
+    #[test_case(FilterBackend::Current)]
+    #[fuchsia::test]
+    async fn interface_removed(filter_backend: FilterBackend) {
+        let config = ValidatedConfig::try_from(DEFAULT_CONFIG).unwrap();
+
+        let mock = filter_backend.into_mock();
+        let (mut filter_control, mut server_fut) = mock.clone().into_client_and_server().await;
+
+        let mut filter_enabled_state = FilterEnabledState::default();
+        let interface_states = HashMap::new();
+
+        let mut masq = MasqueradeHandler::default();
+        let (client, server) =
+            fidl::endpoints::create_endpoints::<fidl_fuchsia_net_masquerade::ControlMarker>();
+        let (_request_stream, control) = server.into_stream_and_control_handle();
+
+        assert_matches!(masq.create_control(config, control), Ok(()));
+
+        // Enable masquerading for this config first.
+        {
+            let set_enabled_fut = masq
+                .set_enabled(
+                    &mut filter_control,
+                    config,
+                    true,
+                    &mut filter_enabled_state,
+                    &interface_states,
+                )
+                .fuse();
+            futures::pin_mut!(set_enabled_fut);
+            let response = futures::select!(
+                r = set_enabled_fut => r,
+                () = server_fut => panic!("mock filter server should never exit"),
+            );
+            assert_eq!(response, Ok(false));
+        }
+        assert_eq!(mock.list_configurations(), vec![DEFAULT_CONFIG]);
+        assert_eq!(mock.is_interface_active(DEFAULT_CONFIG.output_interface), true);
+
+        // Now trigger interface removal.
+        masq.handle_interface_removed(InterfaceId::new(DEFAULT_CONFIG.output_interface).unwrap());
+
+        // Verify the controller was removed.
+        assert!(masq.active_controllers.is_empty());
+
+        // Verify the FIDL control handle channel was closed with NOT_FOUND.
+        let client_proxy = client.into_proxy();
+        let event = client_proxy.take_event_stream().next().await;
+        assert_matches!(
+            event,
+            Some(Err(fidl::Error::ClientChannelClosed { status: fidl::Status::NOT_FOUND, .. }))
+        );
     }
 
     // Verifies errors that can only occur on the `fuchsia.net.filter.deprecated`
@@ -869,7 +957,7 @@ pub mod test {
             fidl::endpoints::create_endpoints::<fidl_fuchsia_net_masquerade::ControlMarker>();
         let (_request_stream, control) = server.into_stream_and_control_handle();
         let mut masq = MasqueradeHandler::default();
-        pretty_assertions::assert_eq!(
+        assert_eq!(
             masq.create_control(config.clone(), control).map_err(|(e, _control)| e),
             create_control_response
         );
@@ -889,7 +977,7 @@ pub mod test {
                 r = set_enabled_fut => r,
                 () = server_fut => panic!("mock filter server should never exit"),
             );
-            pretty_assertions::assert_eq!(response, expected_response);
+            assert_eq!(response, expected_response);
         }
     }
 

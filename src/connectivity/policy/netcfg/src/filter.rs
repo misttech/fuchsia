@@ -497,6 +497,14 @@ impl FilterEnabledState {
         }
     }
 
+    /// Clears tracking and masquerade counts for a removed interface.
+    /// Netstack automatically destroys the rules on interface removal.
+    pub(super) fn remove_interface(&mut self, interface_id: InterfaceId) {
+        let _removed_rules: Option<Vec<RuleId>> =
+            self.currently_enabled_interfaces.remove(&interface_id);
+        let _removed_count: Option<MasqueradeCounter> =
+            self.masquerade_enabled_interface_ids.remove(&interface_id);
+    }
     pub(super) async fn maybe_update_deprecated<
         Filter: fnet_filter_deprecated::FilterProxyInterface,
     >(
