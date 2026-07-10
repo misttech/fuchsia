@@ -5,6 +5,7 @@
 import("//build/bazel/bazel_inputs.gni")
 import("//build/bazel/config/logging.gni")
 import("//build/bazel/remote_services.gni")
+import("//build/config/enable_delayed_bazel_actions.gni")
 import("//build/licenses/generated_licenses_spdx.gni")
 import("//build/rust/config.gni")
 
@@ -1013,7 +1014,11 @@ template("bazel_action") {
       # resulting in erroneous outputs or errors), as well as allow Bazel to
       # print its progress on smart terminals when `fx build` is invoked
       # from one, which is handy to follow long-lasting commands.
-      pool = "//:console($default_toolchain)"
+      if (enable_delayed_bazel_actions) {
+        pool = "//build/config:local($default_toolchain)"
+      } else {
+        pool = "//:console($default_toolchain)"
+      }
 
       # This action definitely cannot be hermetic. Callers should add
       # themselves to the //build:non_hermetic_deps visibility list.
