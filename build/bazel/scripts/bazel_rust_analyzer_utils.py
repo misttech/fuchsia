@@ -22,8 +22,6 @@ _DEBUG = False
 # @rules_rust//tools/rust_analyzer and thus must be updated in lockstep with any
 # new rolls of @rules_rust releases into the Fuchsia source checkout.
 
-# LINT.IfChange(rules_rust_version)
-
 # Arguments to pass to Bazel to suppress CLI outputs.
 _SILENT_BAZEL_ARGS = [
     "--ui_event_filters=-info,-warning",
@@ -54,6 +52,8 @@ FUCHSIA_RUST_ANALYZER_MANIFEST_PATH_PREFIX = (
     b"FUCHSIA_RUST_ANALYZER_MANIFEST_PATH="
 )
 # LINT.ThenChange(//build/bazel/aspects/rust_analyzer.bzl:rust_analyzer_manifest_path_prefix)
+
+# LINT.IfChange(rules_rust_version)
 
 
 class CrateSpecSource(T.TypedDict, total=False):
@@ -90,7 +90,9 @@ class CrateSpec(T.TypedDict, total=False):
     build: T.Optional[CrateSpecBuild]
 
 
-def consolidate_crate_specs(crate_specs: list[CrateSpec]) -> list[CrateSpec]:
+def consolidate_crate_specs(
+    crate_specs: T.Iterable[CrateSpec],
+) -> list[CrateSpec]:
     """Consolidate a CrateSpec list.
 
     This de-duplicates items with the same crate_id, which happens
@@ -203,7 +205,7 @@ class Crate(T.TypedDict, total=False):
 
 
 def convert_crate_specs_to_rust_project_crates(
-    crate_specs: list[CrateSpec],
+    crate_specs: T.Iterable[CrateSpec],
 ) -> list[Crate]:
     """
     Converts a list of CrateSpec dictionaries to a list of Crate dictionaries.
@@ -230,7 +232,7 @@ def convert_crate_specs_to_rust_project_crates(
         crate_specs,
         key=lambda c: (
             c["display_name"],
-            c["build"]["label"] if c.get("build") else "",
+            c["build"]["label"] if c.get("build") else "",  # type: ignore
         ),
     )
 
@@ -357,7 +359,7 @@ def load_crate_spec_from_json(
 
 
 def load_crate_specs_from_json_files(
-    crate_spec_files: list[Path], bazel_paths: build_utils.BazelPaths
+    crate_spec_files: T.Iterable[Path], bazel_paths: build_utils.BazelPaths
 ) -> list[CrateSpec]:
     """Load crate specs from JSON files.
 
@@ -471,7 +473,9 @@ def merge_rust_project_jsons(
     return merged_json
 
 
-def find_crates_for_file(file_path: Path, crates: list[Crate]) -> list[Crate]:
+def find_crates_for_file(
+    file_path: Path, crates: T.Iterable[Crate]
+) -> list[Crate]:
     """
     Finds the crates that contains the given Rust file.
 

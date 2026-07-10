@@ -14,7 +14,12 @@ _SCRIPT_DIR = os.path.dirname(__file__)
 sys.path.insert(0, _SCRIPT_DIR)
 
 import bazel_rust_analyzer_utils
-from bazel_rust_analyzer_utils import CrateSpec, CrateSpecBuild, CrateSpecSource
+from bazel_rust_analyzer_utils import (
+    Crate,
+    CrateSpec,
+    CrateSpecBuild,
+    CrateSpecSource,
+)
 
 
 class TestBazelRustAnalyzerUtils(unittest.TestCase):
@@ -425,7 +430,7 @@ class TestBazelRustAnalyzerUtils(unittest.TestCase):
             ),
         ]
 
-        expected_crate_specs = [
+        expected_crate_specs: list[CrateSpec] = [
             CrateSpec(
                 aliases={},
                 crate_id="ID-mylib.rs",
@@ -752,46 +757,52 @@ class TestBazelRustAnalyzerUtils(unittest.TestCase):
             )
 
     def test_convert_crate_specs_to_rust_project_crates(self) -> None:
-        crate_specs = [
-            {
-                "crate_id": "lib_a",
-                "display_name": "lib_a",
-                "edition": "2021",
-                "root_module": "a/src/lib.rs",
-                "is_workspace_member": True,
-                "deps": ["lib_b"],
-                "cfg": ["test"],
-                "env": {},
-                "target": "x86_64-unknown-linux-gnu",
-                "crate_type": "rlib",
-            },
-            {
-                "crate_id": "lib_b",
-                "display_name": "lib_b",
-                "edition": "2021",
-                "root_module": "b/src/lib.rs",
-                "is_workspace_member": True,
-                "deps": [],
-                "cfg": [],
-                "env": {},
-                "target": "x86_64-unknown-linux-gnu",
-                "crate_type": "rlib",
-                "source": {"include_dirs": ["b/src"], "exclude_dirs": []},
-                "build": {"label": "//b:b", "build_file": "b/BUILD.bazel"},
-            },
-            {
-                "crate_id": "bin_c",
-                "display_name": "bin_c",
-                "edition": "2021",
-                "root_module": "c/src/main.rs",
-                "is_workspace_member": True,
-                "deps": ["lib_a"],
-                "cfg": [],
-                "env": {},
-                "target": "x86_64-unknown-linux-gnu",
-                "crate_type": "bin",
-                "is_test": False,
-            },
+        crate_specs: list[CrateSpec] = [
+            CrateSpec(
+                crate_id="lib_a",
+                display_name="lib_a",
+                edition="2021",
+                root_module="a/src/lib.rs",
+                is_workspace_member=True,
+                deps=["lib_b"],
+                cfg=["test"],
+                env={},
+                target="x86_64-unknown-linux-gnu",
+                crate_type="rlib",
+            ),
+            CrateSpec(
+                crate_id="lib_b",
+                display_name="lib_b",
+                edition="2021",
+                root_module="b/src/lib.rs",
+                is_workspace_member=True,
+                deps=[],
+                cfg=[],
+                env={},
+                target="x86_64-unknown-linux-gnu",
+                crate_type="rlib",
+                source=CrateSpecSource(
+                    include_dirs=["b/src"],
+                    exclude_dirs=[],
+                ),
+                build=CrateSpecBuild(
+                    label="//b:b",
+                    build_file="b/BUILD.bazel",
+                ),
+            ),
+            CrateSpec(
+                crate_id="bin_c",
+                display_name="bin_c",
+                edition="2021",
+                root_module="c/src/main.rs",
+                is_workspace_member=True,
+                deps=["lib_a"],
+                cfg=[],
+                env={},
+                target="x86_64-unknown-linux-gnu",
+                crate_type="bin",
+                is_test=False,
+            ),
         ]
 
         expected_crates = [
@@ -972,7 +983,7 @@ class TestBazelRustAnalyzerUtils(unittest.TestCase):
         self.assertEqual(result, expected_json)
 
     def test_find_crate_for_file(self) -> None:
-        crates = [
+        crates: list[Crate] = [
             {
                 "crate_id": 0,
                 "root_module": "/abs/crate_a/src/lib.rs",
@@ -1019,14 +1030,14 @@ class TestBazelRustAnalyzerUtils(unittest.TestCase):
 
         for file_path, expected_crate_ids in test_cases:
             with self.subTest(file_path=file_path):
-                result = bazel_rust_analyzer_utils.find_crates_for_file(
+                crate_result = bazel_rust_analyzer_utils.find_crates_for_file(
                     Path(file_path), crates
                 )
-                result = {crate["crate_id"] for crate in result}
+                result = {crate["crate_id"] for crate in crate_result}
                 self.assertEqual(result, expected_crate_ids)
 
     def test_get_crates_and_dependencies(self) -> None:
-        crates = [
+        crates: list[Crate] = [
             {"crate_id": 0, "root_module": "crate0", "deps": []},
             {
                 "crate_id": 1,
@@ -1145,7 +1156,7 @@ class TestBazelRustAnalyzerUtils(unittest.TestCase):
         )
 
     def test_get_crates_and_dependencies_value_error(self) -> None:
-        crates = [
+        crates: list[Crate] = [
             {"crate_id": 0, "root_module": "crate0", "deps": []},
             {
                 "crate_id": 1,
@@ -1162,7 +1173,7 @@ class TestBazelRustAnalyzerUtils(unittest.TestCase):
             )
 
     def test_get_crates_and_dependencies_missing_dependency_error(self) -> None:
-        crates = [
+        crates: list[Crate] = [
             {
                 "crate_id": 1,
                 "root_module": "crate1",

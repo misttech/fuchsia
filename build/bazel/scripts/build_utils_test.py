@@ -544,6 +544,7 @@ class BazelBuildInvocationTest(unittest.TestCase):
         self.assertEqual(
             i.gn_targets_dir, "obj/some/bazel_action/gn_targets_dir"
         )
+        assert i.bazel_action_timings  # make mypy happy
         self.assertDictEqual(i.bazel_action_timings, {"foo": 1})
 
     def test_to_json(self) -> None:
@@ -579,7 +580,7 @@ class BazelBuildInvocationTest(unittest.TestCase):
 
     def test_from_json(self) -> None:
         with self.assertRaises(ValueError) as cm:
-            i = build_utils.BazelBuildInvocation.from_json([])
+            i = build_utils.BazelBuildInvocation.from_json([])  # type: ignore
         self.assertEqual(str(cm.exception), "Input JSON is not an object: []")
 
         with self.assertRaises(ValueError) as cm:
@@ -634,7 +635,7 @@ class BazelBuildInvocationTest(unittest.TestCase):
 class LastBazelBuildInvocationsTest(unittest.TestCase):
     def test_from_json(self) -> None:
         with self.assertRaises(ValueError) as cm:
-            last = build_utils.LastBazelBuildInvocations.new_from_json({})
+            last = build_utils.LastBazelBuildInvocations.new_from_json({})  # type: ignore
         self.assertEqual(
             str(cm.exception),
             "Input is not a JSON array, got <class 'dict'> instead!",
@@ -779,6 +780,7 @@ class BazelQueryCacheTest(unittest.TestCase):
         mock_runner.push_result(stdout="some\nresult\nlines")
         result = cache.get_query_output("query", ["deps(//src:foo)"], launcher)
 
+        assert result  # make mypy happy, self.assertIsNotNone() doesn't work
         self.assertListEqual(result, ["some", "result", "lines"])
         self.assertTrue(cache_dir.is_dir())
         key, args = cache.compute_cache_key_and_args(
@@ -802,6 +804,8 @@ class BazelQueryCacheTest(unittest.TestCase):
         # command will be run by the cache.
         mock_runner.push_result(stdout="some\nother\nresult\nlines")
         result2 = cache.get_query_output("query", ["deps(//src:foo)"], launcher)
+        assert result2
+        self.assertIsNotNone(result2)
         self.assertListEqual(result2, result)
 
         # By changing the query type, this will pop the last pushed
@@ -809,6 +813,7 @@ class BazelQueryCacheTest(unittest.TestCase):
         result3 = cache.get_query_output(
             "cquery", ["deps(//src:foo)"], launcher
         )
+        assert result3
         self.assertListEqual(result3, ["some", "other", "result", "lines"])
 
         key3, args3 = cache.compute_cache_key_and_args(
@@ -849,6 +854,7 @@ class BazelQueryCacheTest(unittest.TestCase):
         # First invocation creates cache entry.
         mock_runner.push_result(stdout="some\nresult\nlines")
         result = cache.get_query_output(query_cmd, query_args, launcher)
+        assert result
         self.assertListEqual(result, ["some", "result", "lines"])
         self.assertTrue(cache_dir.is_dir())
 

@@ -108,7 +108,7 @@ class BazelSourcePathMapper:
             if path.startswith("external/"):
                 # This file path belongs to an external repository, but could link to something
                 # else, hence will have to be resolved with realpath() below.
-                path = self._external_dir / path.removeprefix("external/")
+                path = str(self._external_dir / path.removeprefix("external/"))
 
             else:
                 # Assume regular source file path, relative to the workspace, ergo relative

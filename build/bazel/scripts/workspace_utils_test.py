@@ -7,6 +7,7 @@ import json
 import os
 import sys
 import tempfile
+import typing as T
 import unittest
 from pathlib import Path
 from textwrap import dedent
@@ -276,7 +277,7 @@ class GnBuildArgsTest(unittest.TestCase):
         )
 
     def test_generate_args_bzl(self) -> None:
-        gn_args_to_export = [
+        gn_args_to_export: list[dict[str, T.Any]] = [
             {
                 "location": "//bob.gni",
                 "name": "foo",

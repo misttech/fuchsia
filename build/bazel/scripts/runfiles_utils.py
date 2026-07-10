@@ -4,6 +4,7 @@
 
 """Utilities related to managing Bazel runfiles manifests and directories."""
 
+import os
 import typing as T
 from pathlib import Path
 
@@ -153,7 +154,7 @@ class RunfilesManifest(object):
                 source_path = os.path.relpath(path, runfiles_dir)
                 if path.is_symlink():
                     target = path.readlink()
-                    file_map[source_path] = target
+                    file_map[source_path] = str(target)
                 else:
                     # Empty files do not need a target path after the space separator.
                     # For non-empty files though, convert the source path to an
@@ -161,7 +162,7 @@ class RunfilesManifest(object):
                     if path.stat().st_size == 0:
                         file_map[source_path] = ""
                     else:
-                        file_map[source_path] = path.resolve()
+                        file_map[source_path] = str(path.resolve())
 
         return RunfilesManifest(file_map)
 

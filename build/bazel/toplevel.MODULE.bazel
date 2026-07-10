@@ -72,7 +72,7 @@ single_version_override(
 #
 # LINT.IfChange(rules_rust_version)
 #
-# @rules_rust needs to be patched to work-around bazelbuild/issues/28286
+# @rules_rust needs to be patched to work-around https://github.com/bazelbuild/bazel/issues/28286
 bazel_dep(name = "rules_rust", version = "0.69.0")
 single_version_override(
     module_name = "rules_rust",

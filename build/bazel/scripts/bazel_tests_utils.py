@@ -110,6 +110,7 @@ def generate_tests_json(
             },
         }
         if cquery_test["list_cases_argument"]:
+            assert isinstance(test_spec["test"], dict)  # make mypy happy
             test_spec["test"]["list_cases_argument"] = cquery_test[
                 "list_cases_argument"
             ]

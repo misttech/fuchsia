@@ -34,7 +34,7 @@ class OutputSink(object):
     def close(self) -> None:
         """Called when closing the sink after writing has completed."""
 
-    def __enter__(self) -> "OutputSink":
+    def __enter__(self) -> T.Self:
         self.open()
         return self
 

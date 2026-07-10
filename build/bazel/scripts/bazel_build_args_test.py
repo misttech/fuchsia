@@ -19,6 +19,7 @@ from bazel_build_args import (
     ParsedAction,
     ResolvedBuildArgsFlags,
     ResolvedBuildArgsMap,
+    ResponseFileMap,
     ResponseFileTarget,
 )
 
@@ -347,18 +348,20 @@ class ExpandArgsStaticTest(unittest.TestCase):
             "bazel-out/k8-fastbuild/bin/env.rustc_env_file.build_flags",
         ]
 
-        response_files_map = {
-            "bazel-out/k8-fastbuild/bin/src/main.cpp_compile.build_flags": (
-                ResponseFileTarget(
-                    "@@//src:main.final_build_flags", "cpp_compile"
-                )
-            ),
-            "bazel-out/k8-fastbuild/bin/env.rustc_env_file.build_flags": (
-                ResponseFileTarget(
-                    "@@//src:main.final_build_flags", "rust_compile"
-                )
-            ),
-        }
+        response_files_map = ResponseFileMap(
+            {
+                "bazel-out/k8-fastbuild/bin/src/main.cpp_compile.build_flags": (
+                    ResponseFileTarget(
+                        "@@//src:main.final_build_flags", "cpp_compile"
+                    )
+                ),
+                "bazel-out/k8-fastbuild/bin/env.rustc_env_file.build_flags": (
+                    ResponseFileTarget(
+                        "@@//src:main.final_build_flags", "rust_compile"
+                    )
+                ),
+            }
+        )
 
         build_args_map = ResolvedBuildArgsMap(
             {
@@ -419,11 +422,13 @@ class GetBazelExpandedActionsTest(unittest.TestCase):
                 env_vars={"FOO": "foo"},
             )
         ]
-        response_files_map = {
-            "bazel-out/bin/main.cpp_compile.build_flags": ResponseFileTarget(
-                "@@//src:main.final_build_flags", "cpp_compile"
-            )
-        }
+        response_files_map = ResponseFileMap(
+            {
+                "bazel-out/bin/main.cpp_compile.build_flags": ResponseFileTarget(
+                    "@@//src:main.final_build_flags", "cpp_compile"
+                )
+            }
+        )
 
         # Monkeypatch
         orig_parse_aquery = bazel_build_args.parse_aquery_output
@@ -438,7 +443,7 @@ class GetBazelExpandedActionsTest(unittest.TestCase):
                 )
             )
         )
-        bazel_build_args.query_build_flags_from_bazel = lambda labels, launcher, config_args: (
+        bazel_build_args.query_build_flags_from_bazel = lambda final_build_flags_labels, bazel_launcher, config_args: (
             ResolvedBuildArgsMap(
                 {
                     "@@//src:main.final_build_flags": ResolvedBuildArgsFlags(
@@ -510,7 +515,7 @@ class GetBazelExpandedActionsTest(unittest.TestCase):
                 lambda aquery_output, filter_mnemonics=None: (
                     bazel_build_args.ParsedAqueryResult(
                         actions=actions,
-                        response_files_map={},
+                        response_files_map=ResponseFileMap({}),
                         uses_bazel_params_file=False,
                     )
                 )
