@@ -376,10 +376,9 @@ __NO_INLINE bool Mutex::AcquireContendedMutex(
       // Set the queued flag to indicate that we're blocking.
       //
       // We may find the old state was |STATE_FREE| if we raced with the
-      // holder as they dropped the mutex. We use the |acquire| memory ordering
-      // in the |fetch_or| just in case this happens, to ensure we see the memory
-      // released by the previous lock holder.
-      old_mutex_state = val_.fetch_or(STATE_FLAG_CONTESTED, ktl::memory_order_acquire);
+      // holder as they dropped the mutex. We use acquire+release semantics
+      // here to make sure we do not reorder before the acquisition of the OWQ.
+      old_mutex_state = val_.fetch_or(STATE_FLAG_CONTESTED, ktl::memory_order_acq_rel);
 
       if (unlikely(old_mutex_state == STATE_FREE)) {
         // Since we set the contested flag we know that there are no waiters and
@@ -484,9 +483,13 @@ __NO_INLINE bool Mutex::AcquireContendedMutex(
 
 inline uintptr_t Mutex::TryRelease(Thread* current_thread) {
   // Try the fast path.  Assume that we are locked, but uncontested.
+  // Success memory order is release: makes sure the lock state is ordered so
+  // the next thread sees the content. Failure memory order is acquire: makes
+  // sure we re-observe the state of the mutex before we try to wake up threads
+  // and unwind the state.
   uintptr_t old_mutex_state = reinterpret_cast<uintptr_t>(current_thread);
   if (likely(val_.compare_exchange_strong(old_mutex_state, STATE_FREE, ktl::memory_order_release,
-                                          ktl::memory_order_relaxed))) {
+                                          ktl::memory_order_acquire))) {
     // We're done.  Since this mutex was uncontested, we know that we were
     // not receiving any priority pressure from the wait queue, and there is
     // nothing further to do.
