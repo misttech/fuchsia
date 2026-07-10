@@ -100,7 +100,11 @@ template("ffx_e2e_test") {
                              "deps",
                              "args",
                              "data_deps",
+                             "configs",
                            ])
+    if (defined(invoker.configs)) {
+      configs += invoker.configs
+    }
   }
   host_test_data(_host_test_data_label) {
     sources = [

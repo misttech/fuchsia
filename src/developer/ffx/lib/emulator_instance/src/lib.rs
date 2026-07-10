@@ -439,8 +439,24 @@ pub struct RuntimeConfig {
     pub upscript: Option<PathBuf>,
 
     /// Serial number of the emulator.
+    ///
+    /// - `SerialMode::Uninitialized` represents a legacy or uninitialized instance.
+    /// - `SerialMode::Disabled` represents that serial number generation is explicitly disabled.
+    /// - `SerialMode::Enabled(serial)` contains the generated or custom stable serial number.
     #[serde(default)]
-    pub serial_number: Option<String>,
+    pub serial_number: SerialMode,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "status", content = "serial", rename_all = "snake_case")]
+pub enum SerialMode {
+    /// Legacy or uninitialized instance.
+    #[default]
+    Uninitialized,
+    /// Serial number generation is explicitly disabled.
+    Disabled,
+    /// Enabled with a specific serial number (generated or custom).
+    Enabled(String),
 }
 
 fn default_avx2_enabled() -> bool {

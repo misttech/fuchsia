@@ -13,7 +13,7 @@ use async_trait::async_trait;
 use camino::Utf8Path;
 use emulator_instance::{
     AccelerationMode, ConsoleType, DiskImage, EmulatorConfiguration, EngineState, GuestConfig,
-    NetworkingMode, Ramdisk, RamdiskKind,
+    NetworkingMode, Ramdisk, RamdiskKind, SerialMode,
 };
 use errors::ffx_bail;
 use ffx_config::EnvironmentContext;
@@ -453,7 +453,7 @@ pub(crate) trait QemuBasedEngine: EmulatorEngine {
         src: &PathBuf,
         dest: &PathBuf,
         cmdline: Option<String>,
-        serial_number: Option<String>,
+        serial_number: SerialMode,
     ) -> Result<()> {
         let zbi_tool = get_host_tool(ctx, config::ZBI_HOST_TOOL)
             .map_err(|e| bug!("ZBI tool is missing: {e}"))?;
@@ -502,9 +502,8 @@ pub(crate) trait QemuBasedEngine: EmulatorEngine {
         };
 
         // Note: For ZBI boots, the emulator injects the serial number here as a ZBI boot item.
-        // For UEFI/EFI boots (where ZBI staging is skipped), the guest relies on the kernel command line
-        // fallback (bootloader.zbi.serial-number=...) defined in the flags templates.
-        let _serial_file = if let Some(serial) = serial_number.as_ref().filter(|&s| s != "none") {
+        // If the serial number is explicitly disabled or legacy, we do not inject it.
+        let _serial_file = if let SerialMode::Enabled(serial) = &serial_number {
             let file = NamedTempFile::new().map_err(|e| bug!("{e}"))?;
             fs::write(&file, serial).map_err(|e| bug!("{e}"))?;
             zbi_command.arg("--type=SERIAL_NUMBER").arg(file.path());
@@ -1833,8 +1832,14 @@ pub(crate) mod tests {
         };
         let dest = root_dir.join("dest.zbi");
 
-        <TestEngine as QemuBasedEngine>::embed_boot_data(&env.context, &src, &dest, None, None)
-            .await?;
+        <TestEngine as QemuBasedEngine>::embed_boot_data(
+            &env.context,
+            &src,
+            &dest,
+            None,
+            SerialMode::Uninitialized,
+        )
+        .await?;
 
         Ok(())
     }
@@ -1864,7 +1869,7 @@ pub(crate) mod tests {
             &src,
             &dest,
             Some("kernel.boot=yes".into()),
-            None,
+            SerialMode::Uninitialized,
         )
         .await?;
 
@@ -1896,7 +1901,7 @@ pub(crate) mod tests {
             &src,
             &dest,
             None,
-            Some("TESTSERIAL".into()),
+            SerialMode::Enabled("TESTSERIAL".into()),
         )
         .await?;
 

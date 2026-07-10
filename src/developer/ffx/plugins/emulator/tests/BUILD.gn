@@ -5,6 +5,7 @@
 import("//build/board.gni")
 import("//build/rust/rustc_test.gni")
 import("//src/developer/ffx/config.gni")
+import("//src/developer/ffx/lib/e2e_emu/ffx_e2e_test.gni")
 
 group("host_tests") {
   testonly = true
@@ -20,17 +21,19 @@ group("host_tests") {
 # Also check for has_board, since this test cannot run on a configuration
 # without a board.
 if (is_host && is_linux && has_board) {
-  rustc_test("emu_e2e_host_test") {
+  ffx_e2e_test("emu_e2e_host_test") {
     edition = "2024"
     sources = [ "src/lib.rs" ]
 
-    configs += [ ":test_config" ]
+    configs = [ ":test_config" ]
 
     deps = [
+      "//src/developer/ffx/lib/e2e_emu",
       "//src/developer/ffx/lib/executor:lib",
       "//src/developer/ffx/plugins/emulator/commands/stop/command_output",
       "//src/lib/fuchsia",
       "//third_party/rust_crates:anyhow",
+      "//third_party/rust_crates:serde_json",
       "//third_party/rust_crates:tempfile",
     ]
     data_deps = [

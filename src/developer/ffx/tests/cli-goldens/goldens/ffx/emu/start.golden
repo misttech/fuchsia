@@ -194,6 +194,14 @@
       "hidden": false
     },
     {
+      "kind": "Switch",
+      "optionality": "optional",
+      "long": "--no-serial-number",
+      "short": null,
+      "description": "disable serial number generation. Overrides the \"emu.serial_number.enabled\" config.",
+      "hidden": false
+    },
+    {
       "kind": {
         "Option": {
           "arg_name": "net"

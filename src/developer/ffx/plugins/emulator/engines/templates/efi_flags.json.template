@@ -283,14 +283,7 @@
     {{/if}}
     "kernel.entropy-mixin=de330defe83c3d93556612a133f893892b6b49f96944c3c363197a679a6339b0",
     "kernel.halt-on-panic=true"
-    {{#if runtime.serial_number}}
-        {{! For UEFI/EFI boots (where ZBI staging is bypassed), the guest is intended to
-            rely on this kernel command line argument to synthesize the ZBI_TYPE_SERIAL_NUMBER item.
-            Note: Due to a bug in the UEFI boot-shim (b/530298931), this command-line fallback is currently
-            not initialized in production. For standard ZBI boots, the emulator embeds the ZBI item
-            directly, and the boot-shim ignores this parameter. }}
-        ,"bootloader.zbi.serial-number={{runtime.serial_number}}"
-    {{/if}}
+
     {{#each runtime.addl_kernel_args}}
         ,"{{this}}"
     {{/each}}

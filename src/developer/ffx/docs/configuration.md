@@ -108,7 +108,7 @@ ffx config env get
     |                                         | writable by the running process to |
     |                                         | utilize KVM for acceleration.      |
     |                                         | Defaults to `/dev/kvm`             |
-    | `emu.serial.enabled`                    | Whether to support automatic       |
+    | `emu.serial_number.enabled`             | Whether to support automatic       |
     |                                         | generation of stable, unique       |
     |                                         | serial numbers for emulators.      |
     |                                         | Defaults to `true`                 |

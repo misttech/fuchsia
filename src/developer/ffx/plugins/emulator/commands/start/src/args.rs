@@ -153,6 +153,10 @@ pub struct StartCommand {
     #[ffx_config_default(key = "emu.name", default = "fuchsia-emulator")]
     pub name: Option<String>,
 
+    /// disable serial number generation. Overrides the "emu.serial_number.enabled" config.
+    #[argh(switch)]
+    pub no_serial_number: bool,
+
     /// specify the networking mode for the emulator. Allowed values are "none" which disables
     /// networking, "tap" which attaches to a Tun/Tap interface, "user" which sets up mapped ports
     /// via SLiRP, and "auto" which will check the host system's capabilities and select "tap" if

@@ -82,4 +82,56 @@ mod tests {
             .await
             .expect("run commands");
     }
+
+    #[fuchsia::test]
+    async fn test_target_list_and_show_with_serial_numbers() {
+        use ffx_e2e_emu::IsolatedEmulator;
+        use serde_json::Value;
+
+        // 1. Start emulator with serial numbers enabled (default).
+        let emu_with_serial =
+            IsolatedEmulator::start("emu-with-serial").await.expect("start emu-with-serial");
+        let name_with_serial = emu_with_serial.emu_name();
+
+        // Verify serial number is listed in target list.
+        let list_with_serial: Value =
+            emu_with_serial.ffx_json(&["target", "list", name_with_serial]).await.unwrap();
+        let targets_with_serial = list_with_serial.as_array().expect("target list is array");
+        assert_eq!(targets_with_serial.len(), 1);
+        let target_with_serial = &targets_with_serial[0];
+        let serial = target_with_serial["serial"].as_str().expect("serial is string");
+        assert_eq!(serial.len(), 12);
+        assert!(serial.starts_with("EM-"));
+        assert!(
+            serial[3..]
+                .chars()
+                .all(|c| c.is_ascii_hexdigit() && (c.is_numeric() || c.is_uppercase()))
+        );
+
+        // Verify serial number is shown in target show.
+        let show_with_serial: Value = emu_with_serial.ffx_json(&["target", "show"]).await.unwrap();
+        let show_serial =
+            show_with_serial["device"]["serial_number"].as_str().expect("serial_number is string");
+        assert_eq!(show_serial, serial);
+
+        // 2. Start emulator with serial numbers disabled.
+        let emu_no_serial = IsolatedEmulator::start_with_serial_enabled("emu-no-serial", false)
+            .await
+            .expect("start emu-no-serial");
+        let name_no_serial = emu_no_serial.emu_name();
+
+        // Verify target list shows `<unknown>` or no serial.
+        let list_no_serial: Value =
+            emu_no_serial.ffx_json(&["target", "list", name_no_serial]).await.unwrap();
+        let targets_no_serial = list_no_serial.as_array().expect("target list is array");
+        assert_eq!(targets_no_serial.len(), 1);
+        let target_no_serial = &targets_no_serial[0];
+        let serial_no_serial = target_no_serial["serial"].as_str();
+        assert!(serial_no_serial.is_none() || serial_no_serial == Some("<unknown>"));
+
+        // Verify target show has null or empty/missing serial_number.
+        let show_no_serial: Value = emu_no_serial.ffx_json(&["target", "show"]).await.unwrap();
+        let show_serial_no_serial = show_no_serial["device"]["serial_number"].as_str();
+        assert!(show_serial_no_serial.is_none());
+    }
 }

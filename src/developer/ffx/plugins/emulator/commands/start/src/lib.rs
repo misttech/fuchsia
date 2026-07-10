@@ -116,6 +116,7 @@ pub trait EngineOperations: TryFromEnv + 'static {
         &self,
         emulator_configuration: &EmulatorConfiguration,
         engine_type: EngineType,
+        serial_enabled: bool,
     ) -> Result<Box<dyn EmulatorEngine>>;
 
     async fn load_product_bundle(
@@ -163,10 +164,12 @@ impl EngineOperations for EngineOperationsData {
         &self,
         emulator_configuration: &EmulatorConfiguration,
         engine_type: EngineType,
+        serial_enabled: bool,
     ) -> Result<Box<dyn EmulatorEngine>> {
         EngineBuilder::new(&self.context, self.emu_instances.clone())
             .config(emulator_configuration.clone())
             .engine_type(engine_type)
+            .serial_enabled(serial_enabled)
             .build()
             .await
     }
@@ -254,6 +257,10 @@ impl<T: EngineOperations> FfxMain for EmuStartTool<T> {
 }
 
 impl<T: EngineOperations> EmuStartTool<T> {
+    fn serial_enabled(&self) -> bool {
+        !self.cmd.no_serial_number && self.context.get(EMU_SERIAL_ENABLED).unwrap_or(true)
+    }
+
     async fn do_start(
         mut self,
         writer: &mut <EmuStartTool<T> as fho::FfxMain>::Writer,
@@ -403,8 +410,10 @@ impl<T: EngineOperations> EmuStartTool<T> {
                 }
             } else {
                 log::debug!("No existing instance to check as reusable.");
-                engine =
-                    self.engine_operations.new_engine(&emulator_configuration, engine_type).await?;
+                engine = self
+                    .engine_operations
+                    .new_engine(&emulator_configuration, engine_type, self.serial_enabled())
+                    .await?;
                 let config = engine.emu_config_mut();
                 Self::save_disk_hashes(config)?;
             }
@@ -428,7 +437,7 @@ impl<T: EngineOperations> EmuStartTool<T> {
                     self.cmd.reuse = false;
                     engine = self
                         .engine_operations
-                        .new_engine(&emulator_configuration, engine_type)
+                        .new_engine(&emulator_configuration, engine_type, self.serial_enabled())
                         .await?
                 }
             } else {
@@ -437,7 +446,9 @@ impl<T: EngineOperations> EmuStartTool<T> {
                 {
                     existing_engine.expect("existing engine instance")
                 } else {
-                    self.engine_operations.new_engine(&emulator_configuration, engine_type).await?
+                    self.engine_operations
+                        .new_engine(&emulator_configuration, engine_type, self.serial_enabled())
+                        .await?
                 }
             }
         }
@@ -628,7 +639,10 @@ impl<T: EngineOperations> EmuStartTool<T> {
                 &self.cmd.engine(&self.context).unwrap_or_else(|_| "femu".to_string()),
             )
             .context("Reading engine type from ffx config.")?;
-            engine = self.engine_operations.new_engine(&new_config, engine_type).await?;
+            engine = self
+                .engine_operations
+                .new_engine(&new_config, engine_type, self.serial_enabled())
+                .await?;
             let config = engine.emu_config_mut();
             config.guest.zbi_hash = new_zbi.clone();
             config.guest.disk_hash = new_disk.clone();
@@ -652,7 +666,7 @@ impl<T: EngineOperations> EmuStartTool<T> {
         if engine.emu_config().host.networking == NetworkingMode::User {
             engine.emu_config_mut().host.port_map = new_config.host.port_map.clone();
         }
-        let serial_enabled: bool = self.context.get(EMU_SERIAL_ENABLED).unwrap_or(true);
+        let serial_enabled = self.serial_enabled();
         {
             let config = engine.emu_config_mut();
             config.host.log = new_config.host.log.clone();
@@ -694,7 +708,7 @@ mod tests {
     use assembled_system::Image;
     use assembly_partitions_config::PartitionsConfig;
     use camino::{Utf8Path, Utf8PathBuf};
-    use emulator_instance::{LogLevel, RuntimeConfig};
+    use emulator_instance::{LogLevel, RuntimeConfig, SerialMode};
     use ffx_config::environment::TestEnvBuilder;
     use ffx_writer::TestBuffers;
     use pbms::ProductBundle;
@@ -1000,7 +1014,7 @@ mod tests {
             })
             .times(1);
 
-        tool.engine_operations.expect_new_engine().returning(|_, _| {
+        tool.engine_operations.expect_new_engine().returning(|_, _, _| {
             Ok(Box::new(TestEngine {
                 do_stage: true,
                 do_start: true,
@@ -1043,7 +1057,7 @@ mod tests {
 
         tool.engine_operations
             .expect_new_engine()
-            .returning(|_, _| {
+            .returning(|_, _, _| {
                 Ok(Box::new(TestEngine {
                     do_stage: true,
                     do_start: true,
@@ -1091,7 +1105,7 @@ mod tests {
 
         tool.engine_operations
             .expect_new_engine()
-            .returning(|_, _| {
+            .returning(|_, _, _| {
                 Ok(Box::new(TestEngine {
                     do_stage: false,
                     do_start: true,
@@ -1192,7 +1206,7 @@ mod tests {
 
         tool.engine_operations
             .expect_new_engine()
-            .returning(|config, _| {
+            .returning(|config, _, _| {
                 Ok(Box::new(TestEngine {
                     do_stage: true,
                     do_start: true,
@@ -1295,7 +1309,7 @@ mod tests {
 
         tool.engine_operations
             .expect_new_engine()
-            .returning(|_, _| {
+            .returning(|_, _, _| {
                 Ok(Box::new(TestEngine {
                     do_stage: true,
                     do_start: false,
@@ -1339,7 +1353,7 @@ mod tests {
 
         tool.engine_operations
             .expect_new_engine()
-            .returning(|_, _| {
+            .returning(|_, _, _| {
                 Ok(Box::new(TestEngine {
                     do_stage: true,
                     do_start: false,
@@ -1381,7 +1395,7 @@ mod tests {
         let mut tool = make_test_emu_start_tool(&env.context, cmd).await;
         tool.engine_operations
             .expect_new_engine()
-            .returning(|_, _| {
+            .returning(|_, _, _| {
                 Ok(Box::new(TestEngine {
                     do_stage: true,
                     do_start: true,
@@ -1474,7 +1488,7 @@ mod tests {
 
         tool.engine_operations
             .expect_new_engine()
-            .returning(|_, _| {
+            .returning(|_, _, _| {
                 Ok(Box::new(TestEngine {
                     do_stage: false,
                     do_start: true,
@@ -1509,7 +1523,7 @@ mod tests {
 
         tool.engine_operations
             .expect_new_engine()
-            .returning(|_, _| {
+            .returning(|_, _, _| {
                 Ok(Box::new(TestEngine {
                     do_stage: true,
                     do_start: true,
@@ -1569,7 +1583,7 @@ mod tests {
         tool.engine_operations.expect_context().returning(move || env_context.clone()).times(2);
         tool.engine_operations
             .expect_new_engine()
-            .returning(|_, _| {
+            .returning(|_, _, _| {
                 Ok(Box::new(TestEngine {
                     do_stage: true,
                     do_start: true,
@@ -1649,7 +1663,7 @@ mod tests {
         // Only make the engine once.
         tool.engine_operations
             .expect_new_engine()
-            .returning(|config, _| {
+            .returning(|config, _, _| {
                 Ok(Box::new(TestEngine {
                     do_stage: true,
                     do_start: true,
@@ -1807,6 +1821,76 @@ mod tests {
         assert!(reused, "Expected engine to be reused");
         assert_eq!(engine.emu_config().host.log, env.isolate_root.path().join("emu.log"));
         assert_eq!(engine.emu_config().runtime.log_level, LogLevel::Verbose);
+    }
+
+    #[fuchsia::test]
+    async fn test_reuse_engine_serial_transitions() {
+        async fn run_reuse(
+            initial_serial: SerialMode,
+            serial_enabled: bool,
+        ) -> EmulatorConfiguration {
+            let builder = ffx_config::test_env();
+            let builder = make_fake_sdk(builder).await;
+            let env = builder
+                .user_config("emu.serial_number.enabled", serial_enabled)
+                .build()
+                .expect("test env");
+
+            let cmd =
+                StartCommand { name: Some("reuse-test".into()), reuse: true, ..Default::default() };
+
+            let mut existing_config = EmulatorConfiguration::default();
+            existing_config.runtime.serial_number = initial_serial;
+
+            let mut existing_engine: Box<dyn EmulatorEngine> = Box::new(TestEngine {
+                config: existing_config,
+                do_configure: true,
+                ..Default::default()
+            });
+
+            let tool = make_test_emu_start_tool(&env.context, cmd).await;
+            let new_config = EmulatorConfiguration::default();
+
+            tool.reuse_existing_engine(&mut existing_engine, &new_config)
+                .await
+                .expect("reuse_existing_engine");
+
+            existing_engine.emu_config().clone()
+        }
+
+        // Test Cases:
+
+        // 1. None (legacy) -> enabled=true => generates serial
+        let config = run_reuse(SerialMode::Uninitialized, true).await;
+        if let SerialMode::Enabled(serial) = &config.runtime.serial_number {
+            assert!(serial.starts_with("EM-"));
+        } else {
+            panic!("expected serial to be generated, got {:?}", config.runtime.serial_number);
+        }
+
+        // 2. None (legacy) -> enabled=false => "none" (Disabled)
+        let config = run_reuse(SerialMode::Uninitialized, false).await;
+        assert_eq!(config.runtime.serial_number, SerialMode::Disabled);
+
+        // 3. Existing serial -> enabled=true => preserved (stable!)
+        let config = run_reuse(SerialMode::Enabled("EM-CUSTOM123".to_string()), true).await;
+        assert_eq!(config.runtime.serial_number, SerialMode::Enabled("EM-CUSTOM123".to_string()));
+
+        // 4. Existing serial -> enabled=false => "none" (Disabled)
+        let config = run_reuse(SerialMode::Enabled("EM-CUSTOM123".to_string()), false).await;
+        assert_eq!(config.runtime.serial_number, SerialMode::Disabled);
+
+        // 5. "none" (Disabled) -> enabled=true => generates new serial (re-enabled!)
+        let config = run_reuse(SerialMode::Disabled, true).await;
+        if let SerialMode::Enabled(serial) = &config.runtime.serial_number {
+            assert!(serial.starts_with("EM-"));
+        } else {
+            panic!("expected serial to be generated, got {:?}", config.runtime.serial_number);
+        }
+
+        // 6. "none" (Disabled) -> enabled=false => preserved as "none" (Disabled)
+        let config = run_reuse(SerialMode::Disabled, false).await;
+        assert_eq!(config.runtime.serial_number, SerialMode::Disabled);
     }
 
     #[fuchsia::test]

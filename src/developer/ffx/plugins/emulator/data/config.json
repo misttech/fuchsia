@@ -3,7 +3,7 @@
         "console": {
             "enabled": false
         },
-        "serial": {
+        "serial_number": {
             "enabled": true
         },
         "device": "",

@@ -14,7 +14,7 @@ pub use arg_templates::process_flag_template;
 use emulator_instance::{
     DeviceConfig, EmulatorConfiguration, EmulatorInstanceData, EmulatorInstanceInfo,
     EmulatorInstances, EngineOption, EngineState, EngineType, FlagData, GuestConfig, HostConfig,
-    RuntimeConfig, read_from_disk,
+    RuntimeConfig, SerialMode, read_from_disk,
 };
 use errors::ffx_bail;
 use ffx_config::EnvironmentContext;
@@ -60,6 +60,7 @@ pub struct EngineBuilder {
     emulator_configuration: EmulatorConfiguration,
     engine_type: EngineType,
     emu_instances: EmulatorInstances,
+    serial_enabled: Option<bool>,
 }
 
 impl EngineBuilder {
@@ -70,12 +71,19 @@ impl EngineBuilder {
             emulator_configuration: EmulatorConfiguration::default(),
             engine_type: EngineType::default(),
             emu_instances,
+            serial_enabled: None,
         }
     }
 
     /// Set the configuration to use when building a new engine.
     pub fn config(mut self, config: EmulatorConfiguration) -> EngineBuilder {
         self.emulator_configuration = config;
+        self
+    }
+
+    /// Override the "emu.serial_number.enabled" config setting.
+    pub fn serial_enabled(mut self, enabled: bool) -> EngineBuilder {
+        self.serial_enabled = Some(enabled);
         self
     }
 
@@ -135,7 +143,9 @@ impl EngineBuilder {
         self.emulator_configuration.runtime.instance_directory =
             self.emu_instances.get_instance_dir(&name, true).map_err(anyhow::Error::from)?;
 
-        let serial_enabled: bool = self.context.get(EMU_SERIAL_ENABLED).unwrap_or(true);
+        let serial_enabled = self
+            .serial_enabled
+            .unwrap_or_else(|| self.context.get(EMU_SERIAL_ENABLED).unwrap_or(true));
         update_serial_number(&mut self.emulator_configuration, serial_enabled);
 
         // Make sure we don't overwrite an existing instance.
@@ -298,11 +308,34 @@ pub(crate) fn finalize_port_mapping(emu_config: &mut EmulatorConfiguration) -> R
     Ok(())
 }
 
-/// Updates the serial number configuration based on the `emu.serial.enabled` setting.
+fn generate_serial() -> String {
+    format!("EM-{:09X}", rand::random::<u64>() & 0xFFFFFFFFF)
+}
+
+/// Updates the serial number configuration based on the `emu.serial_number.enabled` setting.
+///
+/// Handles generation of new serial numbers, preservation of existing stable serials,
+/// and transition of the serial number state if the config changes.
 pub fn update_serial_number(config: &mut EmulatorConfiguration, serial_enabled: bool) {
-    if serial_enabled && config.runtime.serial_number.is_none() {
-        let serial = format!("EM-{:09X}", rand::random::<u64>() & 0xFFFFFFFFF);
-        config.runtime.serial_number = Some(serial);
+    let runtime = &mut config.runtime;
+    match &runtime.serial_number {
+        SerialMode::Uninitialized => {
+            if serial_enabled {
+                runtime.serial_number = SerialMode::Enabled(generate_serial());
+            } else {
+                runtime.serial_number = SerialMode::Disabled;
+            }
+        }
+        SerialMode::Enabled(_) => {
+            if !serial_enabled {
+                runtime.serial_number = SerialMode::Disabled;
+            }
+        }
+        SerialMode::Disabled => {
+            if serial_enabled {
+                runtime.serial_number = SerialMode::Enabled(generate_serial());
+            }
+        }
     }
 }
 
@@ -348,8 +381,13 @@ mod tests {
             .engine_type(EngineType::Qemu);
 
         let engine = builder.build().await.expect("engine built");
-        let serial =
-            engine.emu_config().runtime.serial_number.as_ref().expect("serial number generated");
+        let serial = match &engine.emu_config().runtime.serial_number {
+            SerialMode::Enabled(s) => s,
+            _ => panic!(
+                "expected serial to be generated, got {:?}",
+                engine.emu_config().runtime.serial_number
+            ),
+        };
         assert_eq!(serial.len(), 12);
         assert!(serial.starts_with("EM-"));
         assert!(
@@ -374,12 +412,12 @@ mod tests {
             .engine_type(EngineType::Qemu);
 
         let engine_disabled = builder_disabled.build().await.expect("engine built");
-        assert!(engine_disabled.emu_config().runtime.serial_number.is_none());
+        assert_eq!(engine_disabled.emu_config().runtime.serial_number, SerialMode::Disabled);
 
         // 3. Pre-existing: Some("custom-serial") is not overwritten.
         let mut cfg_custom = EmulatorConfiguration::default();
         cfg_custom.runtime.name = "test-emu-3".to_string();
-        cfg_custom.runtime.serial_number = Some("custom-serial".to_string());
+        cfg_custom.runtime.serial_number = SerialMode::Enabled("custom-serial".to_string());
         cfg_custom.runtime.config_override = true;
         let builder_custom = EngineBuilder::new(&env.context, emu_instances.clone())
             .config(cfg_custom)
@@ -387,8 +425,8 @@ mod tests {
 
         let engine_custom = builder_custom.build().await.expect("engine built");
         assert_eq!(
-            engine_custom.emu_config().runtime.serial_number.as_deref(),
-            Some("custom-serial")
+            engine_custom.emu_config().runtime.serial_number,
+            SerialMode::Enabled("custom-serial".to_string())
         );
     }
 }

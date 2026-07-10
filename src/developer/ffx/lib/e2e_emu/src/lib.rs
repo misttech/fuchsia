@@ -80,15 +80,24 @@ impl IsolatedEmulator {
     /// bundle and package repository from the Fuchsia build directory. Streams logs in the
     /// background and allows resolving packages from universe.
     pub async fn start(name: &str) -> Result<Self, IsolatedEmulatorError> {
-        let symbol_index_path = std::env::var("SYMBOL_INDEX_PATH")
-            .expect("SYMBOL_INDEX_PATH env var must be set -- run this test with 'fx test'");
-        let package_repository_path = std::env::var("PACKAGE_REPOSITORY_PATH")
-            .expect("PACKAGE_REPOSITORY_PATH env var must be set");
+        Self::start_internal(name, None, None, Self::DEFAULT_STARTUP_TIMEOUT_SECONDS, true).await
+    }
+
+    /// Create an isolated ffx environment and start an emulator in it with serial number generation
+    /// enabled or disabled.
+    ///
+    /// Note: This is a convenience helper for tests that do not need to customize the package
+    /// repository or symbol index (which are resolved from the environment).
+    pub async fn start_with_serial_enabled(
+        name: &str,
+        serial_enabled: bool,
+    ) -> Result<Self, IsolatedEmulatorError> {
         Self::start_internal(
             name,
-            &package_repository_path,
-            Some(&symbol_index_path),
+            None,
+            None,
             Self::DEFAULT_STARTUP_TIMEOUT_SECONDS,
+            serial_enabled,
         )
         .await
     }
@@ -98,11 +107,22 @@ impl IsolatedEmulator {
     // matching a developer workflow.
     async fn start_internal(
         name: &str,
-        amber_files_path: &str,
+        amber_files_path: Option<&str>,
         symbol_index_path: Option<&str>,
         startup_timeout_seconds: u32,
+        serial_enabled: bool,
     ) -> Result<Self, IsolatedEmulatorError> {
         let emu_name = format!("{name}-emu");
+
+        let package_repository_path = match amber_files_path {
+            Some(path) => path.to_string(),
+            None => std::env::var("PACKAGE_REPOSITORY_PATH")
+                .expect("PACKAGE_REPOSITORY_PATH env var must be set"),
+        };
+        let symbol_index_path = match symbol_index_path {
+            Some(path) => Some(path.to_string()),
+            None => std::env::var("SYMBOL_INDEX_PATH").ok(),
+        };
 
         info!(name:% = name; "making ffx isolate");
         let temp_dir = tempfile::TempDir::new().map_err(IsolatedEmulatorError::TempDirCreate)?;
@@ -162,13 +182,20 @@ impl IsolatedEmulator {
             }
         })?;
         if let Some(symbol_index_path) = symbol_index_path {
-            this.ffx(&["debug", "symbol-index", "add", symbol_index_path]).await.map_err(|e| {
+            this.ffx(&["debug", "symbol-index", "add", &symbol_index_path]).await.map_err(|e| {
                 IsolatedEmulatorError::SetupFailed {
                     step: "symbol-index".to_string(),
                     source: Box::new(e),
                 }
             })?;
         }
+
+        this.ffx(&["config", "set", "emu.serial_number.enabled", &serial_enabled.to_string()])
+            .await
+            .map_err(|e| IsolatedEmulatorError::SetupFailed {
+                step: "emu.serial_number.enabled".to_string(),
+                source: Box::new(e),
+            })?;
 
         this.ffx_isolate.start_daemon().await.map_err(IsolatedEmulatorError::IsolateCreate)?;
 
@@ -257,7 +284,7 @@ impl IsolatedEmulator {
             "--repository",
             &this.package_server_name,
             "--repo-path",
-            amber_files_path,
+            &package_repository_path,
         ])
         .await
         .map_err(|e| IsolatedEmulatorError::SetupFailed {
@@ -559,10 +586,15 @@ mod tests {
     async fn public_apis_succeed() {
         let amber_files_path = std::env::var("PACKAGE_REPOSITORY_PATH")
             .expect("PACKAGE_REPOSITORY_PATH env var must be set -- run this test with 'fx test'");
-        let emu =
-            IsolatedEmulator::start_internal("e2e-emu-public-apis", &amber_files_path, None, 240)
-                .await
-                .expect("Couldn't start emulator");
+        let emu = IsolatedEmulator::start_internal(
+            "e2e-emu-public-apis",
+            Some(&amber_files_path),
+            None,
+            IsolatedEmulator::DEFAULT_STARTUP_TIMEOUT_SECONDS,
+            true,
+        )
+        .await
+        .expect("Couldn't start emulator");
 
         info!("Checking target monotonic time to ensure we can connect and get stdout");
         let time = emu.ffx_output(&["target", "get-time"]).await.unwrap();
@@ -598,9 +630,10 @@ mod tests {
         let test_package_url = format!("fuchsia-pkg://fuchsia.com/{test_package_name}");
         let emu = IsolatedEmulator::start_internal(
             "pkg-resolve",
-            &amber_files_path,
+            Some(&amber_files_path),
             None,
             IsolatedEmulator::DEFAULT_STARTUP_TIMEOUT_SECONDS,
+            true,
         )
         .await
         .unwrap();
