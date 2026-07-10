@@ -10,10 +10,12 @@ import("//build/toolchain/toolchain_environment.gni")
 import("//build/toolchain/variant.gni")
 
 config("fat-lto-objects") {
-  configs = [
-    ":fat-lto-objects-compilation",
-    ":fat-lto-objects-linking",
-  ]
+  if (!is_kernel) {
+    configs = [
+      ":fat-lto-objects-compilation",
+      ":fat-lto-objects-linking",
+    ]
+  }
 }
 
 config("fat-lto-objects-compilation") {
@@ -116,7 +118,10 @@ config("lto-clang") {
     ":lto-workarounds",
   ]
 
-  if (!is_fuchsia || is_kernel) {
+  # TODO(https://fxbug.dev/533045810): WPD is temporarily disabled for the kernel because
+  # WPD depends on module summaries emitted for all participating bitcode, but
+  # rust currently doesn't emit module summaries for full/fat LTO.
+  if (!is_fuchsia) {
     configs += [ ":lto-whole-program-devirtualization" ]
   }
 
