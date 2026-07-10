@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use crate::util::{LaunchedComponentConnector, setup_and_teardown_fixture};
+use fdomain_client::fidl::Proxy;
 use fixture::fixture;
 use futures::{AsyncReadExt, StreamExt, TryFutureExt};
 
@@ -12,16 +13,16 @@ mod util;
 #[fuchsia::test]
 async fn test_stuff_socket(connector: LaunchedComponentConnector) {
     let proxy = connector.connect().await.expect("connect to stressor");
-    let (client_socket, server_socket) = fidl::Socket::create_stream();
+    let (client_socket, server_socket) = proxy.domain().create_stream_socket();
     let bytes_written_fut = proxy.stuff_socket(server_socket);
     let bytes_written = bytes_written_fut.await.expect("stuff socket");
 
     // Full socket shouldn't block other requests.
     assert_eq!(proxy.echo("john").await.unwrap(), "john");
     // All data should be available from the socket.
-    let mut async_socket = fuchsia_async::Socket::from_socket(client_socket);
+    let mut client_socket = client_socket;
     let mut socket_data = vec![];
-    async_socket.read_to_end(&mut socket_data).await.expect("read socket");
+    client_socket.read_to_end(&mut socket_data).await.expect("read socket");
     assert_eq!(socket_data, vec![0xFF; bytes_written as usize]);
 }
 
@@ -78,14 +79,14 @@ async fn test_pipelined_connections(connector: LaunchedComponentConnector) {
 #[ignore] // This test currently fails.
 #[fixture(setup_and_teardown_fixture)]
 #[fuchsia::test]
-async fn test_parallel_connections_multiple_connections_to_daemon(
+async fn test_parallel_connections_multiple_target_connections(
     connector: LaunchedComponentConnector,
 ) {
     const NUM_CONNECTIONS: usize = 100;
     const NUM_REQUESTS: usize = 100;
 
     let connections: Vec<_> = futures::stream::iter(0..NUM_CONNECTIONS)
-        .then(|_| async { connector.connect_via_new_daemon_connection().await.expect("new rcs") })
+        .then(|_| async { connector.connect_via_new_target_connection().await.expect("new rcs") })
         .collect()
         .await;
 

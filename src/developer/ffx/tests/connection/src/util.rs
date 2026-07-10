@@ -4,17 +4,12 @@
 
 use anyhow::{Result, anyhow};
 use async_lock::Mutex;
-use fidl::endpoints::{DiscoverableProtocolMarker, create_proxy};
-use fidl_fuchsia_developer_remotecontrol::RemoteControlProxy;
-use fidl_fuchsia_sys2 as fsys;
-use fidl_test_proxy_stress::{StressorMarker, StressorProxy};
+use fdomain_client::fidl::{DiscoverableProtocolMarker, Proxy};
+use fdomain_fuchsia_developer_remotecontrol::RemoteControlProxy;
+use fdomain_fuchsia_sys2 as fsys;
+use fdomain_test_proxy_stress::{StressorMarker, StressorProxy};
 use fuchsia_async as fasync;
-use std::path::{Path, PathBuf};
 use std::sync::Arc;
-
-/// Effectively arbitrarily high timeout. We don't use Duration::MAX here to avoid
-/// overflow errors in underlying libraries.
-const TARGET_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60 * 60 * 24);
 const STRESSOR_URL: &str =
     "fuchsia-pkg://fuchsia.com/ffx_connection_test_components#meta/proxy_stressor.cm";
 
@@ -22,22 +17,21 @@ const STRESSOR_URL: &str =
 /// when the test completes.
 struct LaunchedComponent {
     moniker: String,
+    target_identifier: String,
 }
 
 /// Helper for creating proxies to a launched component on the target device.
 pub struct LaunchedComponentConnector {
-    nodename: String,
+    target_addr: String,
     moniker: String,
-    node: Arc<overnet_core::Router>,
     rcs_proxy: RemoteControlProxy,
-    ascendd_path: PathBuf,
-    daemon_tasks: Mutex<Vec<fasync::Task<Result<()>>>>,
+    connections: Mutex<Vec<Arc<ffx_target::Connection>>>,
     env_context: ffx_config::EnvironmentContext,
 }
 
 impl LaunchedComponent {
     async fn destroy(self, ffx: &ffx_isolate::Isolate) -> Result<()> {
-        ffx.ffx(&["component", "destroy", &self.moniker]).await?;
+        ffx.ffx(&["-t", &self.target_identifier, "component", "destroy", &self.moniker]).await?;
         Ok(())
     }
 }
@@ -48,7 +42,8 @@ impl LaunchedComponentConnector {
         moniker: &str,
     ) -> Result<StressorProxy> {
         loop {
-            let (proxy, server) = create_proxy::<StressorMarker>();
+            let client = rcs_proxy.domain();
+            let (proxy, server) = client.create_proxy::<StressorMarker>();
             if let Ok(Ok(_)) = rcs_proxy
                 .connect_capability(
                     &moniker,
@@ -68,13 +63,11 @@ impl LaunchedComponentConnector {
         Self::connect_with_rcs_proxy(&self.rcs_proxy, &self.moniker).await
     }
 
-    /// Creates a new connection to the daemon and uses it to connect to the component
+    /// Creates a new connection to the target and uses it to connect to the component
     /// running on target.
-    pub async fn connect_via_new_daemon_connection(&self) -> Result<StressorProxy> {
-        let (rcs_proxy, daemon_task) =
-            connect_to_rcs(&self.node, &self.nodename, &self.ascendd_path, &self.env_context)
-                .await?;
-        self.daemon_tasks.lock().await.push(daemon_task);
+    pub async fn connect_via_new_target_connection(&self) -> Result<StressorProxy> {
+        let (rcs_proxy, conn) = connect_to_rcs(&self.target_addr, &self.env_context).await?;
+        self.connections.lock().await.push(conn);
         Self::connect_with_rcs_proxy(&rcs_proxy, &self.moniker).await
     }
 }
@@ -83,10 +76,17 @@ impl LaunchedComponentConnector {
 async fn launch(
     name: &str,
     target_identifier: &str,
-    node: Arc<overnet_core::Router>,
+    target_addr: &str,
     isolate: &ffx_isolate::Isolate,
 ) -> Result<(LaunchedComponent, LaunchedComponentConnector)> {
     let moniker = format!("/core/ffx-laboratory:{}", name);
+
+    // Best-effort cleanup: destroy any stale instance left over from a previous aborted run.
+    // Log errors as info for debugging purposes.
+    if let Err(e) = isolate.ffx(&["-t", target_identifier, "component", "destroy", &moniker]).await
+    {
+        log::info!("Stale component cleanup failed (this is normal if it didn't exist): {:?}", e);
+    }
 
     let env_context = isolate.env_context().clone();
     let create_output = isolate
@@ -96,7 +96,10 @@ async fn launch(
         return Err(anyhow!("Failed to create component: {:?}", create_output));
     }
 
-    let component = LaunchedComponent { moniker: moniker.clone() };
+    let component = LaunchedComponent {
+        moniker: moniker.clone(),
+        target_identifier: target_identifier.to_string(),
+    };
 
     let start_and_launch_result = async move {
         let output =
@@ -104,16 +107,12 @@ async fn launch(
         if !output.status.success() {
             Err(anyhow!("Failed to start component: {:?}", output))
         } else {
-            let ascendd_path = isolate.ascendd_path().to_owned();
-            let (rcs_proxy, daemon_task) =
-                connect_to_rcs(&node, target_identifier, &ascendd_path, &env_context).await?;
+            let (rcs_proxy, conn) = connect_to_rcs(target_addr, &env_context).await?;
             Ok(LaunchedComponentConnector {
-                nodename: target_identifier.to_string(),
+                target_addr: target_addr.to_string(),
                 moniker,
-                node,
                 rcs_proxy,
-                ascendd_path,
-                daemon_tasks: Mutex::new(vec![daemon_task]),
+                connections: Mutex::new(vec![conn]),
                 env_context,
             })
         }
@@ -130,27 +129,16 @@ async fn launch(
     }
 }
 
-/// Connects to a daemon running on |ascendd_path| and uses it to connect to RCS on the target.
+/// Connects directly to RCS on the target using target resolution.
 async fn connect_to_rcs(
-    node: &Arc<overnet_core::Router>,
-    nodename: &str,
-    ascendd_path: &Path,
+    target_addr: &str,
     context: &ffx_config::EnvironmentContext,
-) -> Result<(RemoteControlProxy, fasync::Task<Result<()>>)> {
-    let (_node, daemon_proxy, daemon_fut) =
-        ffx_daemon::get_daemon_proxy_single_link(context, &node, ascendd_path.to_owned(), None)
-            .await?;
-    use futures::FutureExt;
-    let daemon_task = fasync::Task::spawn(daemon_fut.map(|res| res.map_err(anyhow::Error::from)));
-    let rcs_proxy = ffx_target::get_remote_proxy(
-        &ffx_target::TargetInfoQuery::try_from(nodename.to_string())?,
-        daemon_proxy,
-        TARGET_TIMEOUT,
-        None,
-        context,
-    )
-    .await?;
-    Ok((rcs_proxy, daemon_task))
+) -> Result<(RemoteControlProxy, Arc<ffx_target::Connection>)> {
+    let query = ffx_target::TargetInfoQuery::try_from(target_addr.to_string())?;
+    let resolution = ffx_target::resolve_target_address(&query, false, context).await?;
+    let conn = resolution.get_connection(context).await?;
+    let rcs_proxy = conn.rcs_proxy_fdomain().await?;
+    Ok((rcs_proxy, conn))
 }
 
 /// Test fixture that handles launching and tearing down a test after execution.
@@ -159,23 +147,22 @@ where
     F: FnOnce(LaunchedComponentConnector) -> Fut + Send + 'static,
     Fut: futures::future::Future<Output = ()>,
 {
-    let node = overnet_core::Router::new(None).expect("creating Overnet node");
-
     let ssh_path = std::env::var("FUCHSIA_SSH_KEY").unwrap().into();
     let test_env = ffx_config::test_init().expect("Setting up test environment");
     let isolate = ffx_isolate::Isolate::new_in_test(case_name, ssh_path, &test_env.context)
         .await
         .expect("create isolate");
 
-    isolate.start_daemon().await.expect("failed to start daemon");
-
     // Ensure that the address is formatted properly, and include port if it is available.
     // Without this formatting, the connection does not work when using a remote workflow.
-    let addr = format!(
-        "[{}]{}",
-        std::env::var("FUCHSIA_DEVICE_ADDR").unwrap().trim_start_matches('[').trim_end_matches(']'),
-        std::env::var("FUCHSIA_SSH_PORT").map(|v| format!(":{}", v)).unwrap_or_default()
-    );
+    let raw_addr = std::env::var("FUCHSIA_DEVICE_ADDR").unwrap();
+    let base_addr = raw_addr.trim_start_matches('[').trim_end_matches(']');
+    let port = std::env::var("FUCHSIA_SSH_PORT").ok();
+    let addr = if base_addr.contains(':') {
+        format!("[{}]{}", base_addr, port.map(|v| format!(":{}", v)).unwrap_or_default())
+    } else {
+        format!("{}{}", base_addr, port.map(|v| format!(":{}", v)).unwrap_or_default())
+    };
     let nodename = std::env::var("FUCHSIA_NODENAME").unwrap();
 
     isolate.ffx(&["target", "add", &addr]).await.expect("add target");
@@ -183,7 +170,7 @@ where
     isolate.ffx(&["-t", target_identifier, "target", "wait"]).await.expect("wait for target");
 
     let (launched_component, component_connector) =
-        launch(case_name, target_identifier, node, &isolate).await.expect("launch component");
+        launch(case_name, target_identifier, &addr, &isolate).await.expect("launch component");
 
     // Spawn a new thread so that we can catch panics from the test. We check completion of
     // the thread using an mpsc channel, so that futures on the original executor continue
