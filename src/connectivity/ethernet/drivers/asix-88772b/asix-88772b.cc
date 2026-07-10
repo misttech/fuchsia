@@ -306,7 +306,7 @@ static void ax88772b_interrupt_complete(void* ctx, usb_request_t* request) {
   if (request->response.status == ZX_OK && request->response.actual == sizeof(eth->status)) {
     uint8_t status[INTR_REQ_SIZE];
     memset(status, 0, INTR_REQ_SIZE);
-    __UNUSED size_t result = usb_request_copy_from(request, status, sizeof(status), 0);
+    [[maybe_unused]] size_t result = usb_request_copy_from(request, status, sizeof(status), 0);
     if (memcmp(eth->status, status, sizeof(eth->status)) != 0) {
       const uint8_t* b = status;
       zxlogf(DEBUG, "ax88772b: status changed: %02X %02X %02X %02X %02X %02X %02X %02X", b[0], b[1],
@@ -351,7 +351,7 @@ static void ax88772b_interrupt_complete(void* ctx, usb_request_t* request) {
 
 static void ax88772b_queue_tx(void* ctx, uint32_t options, ethernet_netbuf_t* netbuf,
                               ethernet_impl_queue_tx_callback completion_cb, void* cookie) {
-  ax88772b_t* eth = ctx;
+  ax88772b_t* eth = (ax88772b_t*)ctx;
   txn_info_t* txn = containerof(netbuf, txn_info_t, netbuf);
   txn->completion_cb = completion_cb;
   txn->cookie = cookie;
@@ -381,7 +381,7 @@ static void ax88772b_queue_tx(void* ctx, uint32_t options, ethernet_netbuf_t* ne
 }
 
 static void ax88772b_unbind(void* ctx) {
-  ax88772b_t* eth = ctx;
+  ax88772b_t* eth = (ax88772b_t*)ctx;
 
   mtx_lock(&eth->mutex);
   eth->dead = true;
@@ -406,7 +406,7 @@ static void ax88772b_free(ax88772b_t* eth) {
 }
 
 static void ax88772b_release(void* ctx) {
-  ax88772b_t* eth = ctx;
+  ax88772b_t* eth = (ax88772b_t*)ctx;
   ax88772b_free(eth);
 }
 
@@ -417,7 +417,7 @@ static zx_protocol_device_t ax88772b_device_proto = {
 };
 
 static zx_status_t ax88772b_query(void* ctx, uint32_t options, ethernet_info_t* info) {
-  ax88772b_t* eth = ctx;
+  ax88772b_t* eth = (ax88772b_t*)ctx;
 
   if (options) {
     return ZX_ERR_INVALID_ARGS;
@@ -433,14 +433,14 @@ static zx_status_t ax88772b_query(void* ctx, uint32_t options, ethernet_info_t* 
 }
 
 static void ax88772b_stop(void* ctx) {
-  ax88772b_t* eth = ctx;
+  ax88772b_t* eth = (ax88772b_t*)ctx;
   mtx_lock(&eth->mutex);
   eth->ifc.ops = NULL;
   mtx_unlock(&eth->mutex);
 }
 
 static zx_status_t ax88772b_start(void* ctx, const ethernet_ifc_protocol_t* ifc) {
-  ax88772b_t* eth = ctx;
+  ax88772b_t* eth = (ax88772b_t*)ctx;
   zx_status_t status = ZX_OK;
 
   mtx_lock(&eth->mutex);
@@ -477,7 +477,7 @@ static zx_status_t ax88772b_set_promisc(ax88772b_t* eth, bool on) {
 
 static zx_status_t ax88772b_set_param(void* ctx, uint32_t param, int32_t value, const uint8_t* data,
                                       size_t data_size) {
-  ax88772b_t* eth = ctx;
+  ax88772b_t* eth = (ax88772b_t*)ctx;
   zx_status_t status = ZX_OK;
 
   mtx_lock(&eth->mutex);
@@ -504,6 +504,9 @@ static ethernet_impl_protocol_ops_t ethernet_impl_ops = {
 
 static int ax88772b_start_thread(void* arg) {
   ax88772b_t* eth = (ax88772b_t*)arg;
+  uint16_t embed_phy = 0;
+  uint16_t medium = 0;
+  device_add_args_t args = {};
 
   // set some GPIOs
   zx_status_t status =
@@ -523,7 +526,7 @@ static int ax88772b_start_thread(void* arg) {
     goto fail;
   }
   eth->phy_id = phy_addr[1];
-  uint16_t embed_phy = (eth->phy_id & 0x1F) == 0x10 ? 1 : 0;
+  embed_phy = (eth->phy_id & 0x1F) == 0x10 ? 1 : 0;
   status = ax88772b_set_value(eth, ASIX_REQ_SW_PHY_SELECT, embed_phy);
   if (status < 0) {
     zxlogf(ERROR, "ax88772b: ASIX_REQ_SW_PHY_SELECT failed: %d", status);
@@ -558,9 +561,8 @@ static int ax88772b_start_thread(void* arg) {
     goto fail;
   }
 
-  uint16_t medium = ASIX_MEDIUM_MODE_FD | ASIX_MEDIUM_MODE_AC | ASIX_MEDIUM_MODE_RFC |
-                    ASIX_MEDIUM_MODE_TFC | ASIX_MEDIUM_MODE_JFE | ASIX_MEDIUM_MODE_RE |
-                    ASIX_MEDIUM_MODE_PS;
+  medium = ASIX_MEDIUM_MODE_FD | ASIX_MEDIUM_MODE_AC | ASIX_MEDIUM_MODE_RFC | ASIX_MEDIUM_MODE_TFC |
+           ASIX_MEDIUM_MODE_JFE | ASIX_MEDIUM_MODE_RE | ASIX_MEDIUM_MODE_PS;
   status = ax88772b_set_value(eth, ASIX_REQ_MEDIUM_MODE, medium);
   if (status < 0) {
     zxlogf(ERROR, "ax88772b: ASIX_REQ_MEDIUM_MODE failed: %d", status);
@@ -592,7 +594,7 @@ static int ax88772b_start_thread(void* arg) {
   zxlogf(INFO, "ax88772b: MAC address: %02x:%02x:%02x:%02x:%02x:%02x", eth->mac_addr[0],
          eth->mac_addr[1], eth->mac_addr[2], eth->mac_addr[3], eth->mac_addr[4], eth->mac_addr[5]);
 
-  device_add_args_t args = {
+  args = {
       .version = DEVICE_ADD_ARGS_VERSION,
       .name = "ax88772b",
       .ctx = eth,
@@ -662,7 +664,7 @@ static zx_status_t ax88772b_bind(void* ctx, zx_device_t* device) {
     return ZX_ERR_NOT_SUPPORTED;
   }
 
-  ax88772b_t* eth = calloc(1, sizeof(ax88772b_t));
+  ax88772b_t* eth = static_cast<ax88772b_t*>(calloc(1, sizeof(ax88772b_t)));
   if (!eth) {
     zxlogf(ERROR, "ax88772b: Not enough memory for ax88772b_t");
     return ZX_ERR_NO_MEMORY;

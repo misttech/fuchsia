@@ -19,7 +19,7 @@ fuchsia_cc_driver("asix-88772b-driver") {
     "//build/config:all_source",
     "//build/config/fuchsia:enable_zircon_asserts",
   ]
-  sources = [ "asix-88772b.c" ]
+  sources = [ "asix-88772b.cc" ]
   deps = [
     ":ethernet_ax88772b_bind",
     "//sdk/banjo/fuchsia.hardware.ethernet:fuchsia.hardware.ethernet_banjo_cpp",
