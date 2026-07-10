@@ -73,7 +73,7 @@ EOF
 setup_ffx() {
   local ffx="$(btf::make_installed_hosttools_mock ffx)"
   cat > "${ffx}.mock_side_effects" <<EOF
-   if [[ "\$@" == "target update check-now --monitor" ]]; then
+   if [[ "\$@" == "target update force-install" ]]; then
      $trigger_update "\$@"
      return
    else
@@ -154,16 +154,39 @@ TEST_ota_nobuild() {
   BT_ASSERT_FILE_EXISTS "${commit_update}.mock_state"
 }
 
+TEST_ota_packageless() {
+  echo "0" > "${check_package_server}.mock_status" # package server is running
+  setup_versions_after_update "1" "1"
+
+  local ffx="$(btf::make_installed_hosttools_mock ffx)"
+  cat > "${ffx}.mock_side_effects" <<EOF
+   if [[ "\$@" == "target update force-install --packageless" ]]; then
+     $trigger_update "\$@"
+     return
+   else
+     echo "unknown command \$@" 1>&2
+     exit 1
+  fi
+EOF
+
+  local out="${BT_TEMP_DIR}/_fx_ota_output"
+  BT_EXPECT ${fx} ota --no-build --packageless > "$out" 2>&1
+  # update was triggered
+  BT_ASSERT_FILE_EXISTS "${trigger_update}.mock_state"
+  # update was committed
+  BT_ASSERT_FILE_EXISTS "${commit_update}.mock_state"
+  # check that ffx was called with --packageless
+  btf::expect-mock-args "${trigger_update}" "target" "update" "force-install" "--packageless"
+}
+
 TEST_ota_update_failed() {
   echo "0" > "${check_package_server}.mock_status" # package server is running
   setup_versions_after_update "1" "2"
 
   local ffx="$(btf::make_installed_hosttools_mock ffx)"
   cat > "${ffx}.mock_side_effects" << EOF
-if [[ "\$@" == "target update check-now --monitor" ]]; then
+if [[ "\$@" == "target update force-install" ]]; then
  $trigger_update "\$@"
-elif [[ "\$@" == "ffx component select capability fuchsia.update.Manager" ]]; then
-  echo "/core/system-update/omaha-client-service"
 else
   echo "unknown command \$@" 1>&2
   exit 1
@@ -199,7 +222,7 @@ TEST_ota_serve() {
   btf::make_mock "$stop_called"
 
   cat > "${ffx}.mock_side_effects" <<EOF
-   if [[ "\$@" == "target update check-now --monitor" ]]; then
+   if [[ "\$@" == "target update force-install" ]]; then
      $trigger_update "\$@"
      return
    elif [[ "\$@" == "repository server stop fx-ota-serve-"* ]]; then

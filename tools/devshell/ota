@@ -6,10 +6,11 @@
 #### CATEGORY=Software delivery
 ### perform a system OTA on a connected device
 
-## usage: fx ota [--help] [--build|--no-build] [--serve]
+## usage: fx ota [--help] [--build|--no-build] [--serve] [--packageless]
 ##
 ##   --build | --no-build   Build (or not) the 'updates' target before initiating OTA.
 ##   --serve                Spawn 'fx serve' for the duration of the OTA if not already running.
+##   --packageless          Use a packageless update (direct blob fetching).
 ##   --help                 Print out this message.
 ##
 ## Ask the connected Fuchsia device to do an OTA.
@@ -56,13 +57,10 @@ function needs-update {
   [[ $(fx-command-run shell 'read ver < /system/meta;echo $ver') != "${base_package_merkle}" ]]
 }
 
-function target-using-omaha-client {
-  [[ "$(ffx component capability fuchsia.update.Manager)" == *"core/system-update/omaha-client-service"* ]]
-}
-
 function main {
   local build=false
   local serve=false
+  local packageless=false
   local build_targets=("//build/images/updates")
   if is_feature_enabled "incremental"; then
     # In incremental workflows, these defaults have changed.
@@ -83,6 +81,9 @@ function main {
         ;;
       --serve)
         serve=true
+        ;;
+      --packageless)
+        packageless=true
         ;;
       *)
        fx-error 'Invalid syntax'
@@ -116,11 +117,6 @@ function main {
     check-for-package-server || return 1
   fi
 
-  if target-using-omaha-client; then
-    fx-warn "The target device is using omaha-client for update management, which will not"
-    fx-warn "OTA from this host. Consider 'fx force-ota-from-devhost' to bypass omaha-client."
-  fi
-
   if $build; then
     fx-info "Building/refreshing ${build_targets[@]}"
     fx-command-run build "${build_targets[@]}" || return 1
@@ -129,7 +125,11 @@ function main {
   # Note: the following command continues to run as the system goes into
   # reboot, so we lose SSH connection before it "completes". As such the
   # following command completes with error, but that is not actually an error.
-  fx-command-run ffx target update check-now --monitor || true
+  local ota_args=()
+  if $packageless; then
+    ota_args+=("--packageless")
+  fi
+  fx-command-run ffx target update force-install "${ota_args[@]}" || true
 
   fx-command-run wait
 
