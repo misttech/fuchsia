@@ -29,7 +29,6 @@ from honeydew.affordances.connectivity.wlan.utils.types import (
     ClientStatusIdle,
     CountryCode,
     InformationElementType,
-    Protection,
     WlanChannel,
 )
 from honeydew.affordances.connectivity.wlan.wlan_core import wlan_core_using_fc
@@ -124,7 +123,7 @@ _TEST_CLIENT_STATUS_CONNECTED = ClientStatusConnected(
         cbw=f_wlan_ieee80211.ChannelBandwidth.CBW20,
         secondary80=3,
     ),
-    protection=Protection.WPA2_PERSONAL,
+    protection=f_wlan_sme.Protection.WPA2_PERSONAL,
 )
 
 _T = TypeVar("_T")

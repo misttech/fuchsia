@@ -24,34 +24,6 @@ MacAddress = _MacAddress
 _PSK_LENGTH = 64
 
 
-# TODO(http://b/346424966): Only necessary because Python does not have static
-# typing for FIDL. Once these static types are available and the SL4F affordance
-# is removed, replace with the statically generated FIDL equivalent.
-class Protection(enum.IntEnum):
-    """Protection
-
-    Defined by https://cs.opensource.google/fuchsia/fuchsia/+/main:src/testing/sl4f/src/wlan/types.rs
-    """
-
-    UNKNOWN = 0
-    OPEN = 1
-    WEP = 2
-    WPA1 = 3
-    WPA1_WPA2_PERSONAL_TKIP_ONLY = 4
-    WPA2_PERSONAL_TKIP_ONLY = 5
-    WPA1_WPA2_PERSONAL = 6
-    WPA2_PERSONAL = 7
-    WPA2_WPA3_PERSONAL = 8
-    WPA3_PERSONAL = 9
-    WPA2_ENTERPRISE = 10
-    WPA3_ENTERPRISE = 11
-
-    @staticmethod
-    def from_fidl(fidl: f_wlan_sme.Protection) -> "Protection":
-        """Parse from a fuchsia.wlan.sme/Protection."""
-        return Protection(fidl)
-
-
 @dataclass(frozen=True)
 class NetworkConfig:
     """Network information used to establish a connection.
@@ -397,9 +369,7 @@ class ClientStatusResponse(Protocol):
                 rssi_dbm=ap.rssi_dbm,
                 snr_db=ap.snr_db,
                 channel=WlanChannel.from_fidl(ap.channel),
-                protection=Protection.from_fidl(
-                    f_wlan_sme.Protection(ap.protection)
-                ),
+                protection=f_wlan_sme.Protection(ap.protection),
             )
 
         if fidl.connecting:
@@ -423,7 +393,7 @@ class ClientStatusConnected(ClientStatusResponse):
     rssi_dbm: int
     snr_db: int
     channel: WlanChannel
-    protection: Protection
+    protection: f_wlan_sme.Protection
 
     def status(self) -> str:
         return "Connected"
