@@ -12,7 +12,7 @@ use fuchsia_async as fasync;
 use futures::{AsyncReadExt, AsyncWriteExt, FutureExt, TryStreamExt, select, try_join};
 use guest_cli_args as arguments;
 use prettytable::format::consts::FORMAT_CLEAN;
-use prettytable::{Table, cell, row};
+use prettytable::{Table, row};
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::io::Write;

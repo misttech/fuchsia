@@ -13,7 +13,7 @@ use cm_rust::ExposeDeclCommon;
 use flex_fuchsia_sys2 as fsys;
 use moniker::Moniker;
 use prettytable::format::FormatBuilder;
-use prettytable::{Table, cell, row};
+use prettytable::{Table, row};
 
 #[cfg(feature = "serde")]
 use {schemars::JsonSchema, serde::Serialize};

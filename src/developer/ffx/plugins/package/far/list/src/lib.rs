@@ -10,7 +10,7 @@ use fho::{FfxMain, FfxTool};
 use fuchsia_archive as far;
 use humansize::{WINDOWS, format_size};
 use prettytable::format::FormatBuilder;
-use prettytable::{Table, cell, row};
+use prettytable::{Table, row};
 use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::Write;

@@ -98,7 +98,7 @@ impl BenchmarkResults {
     }
 
     fn pretty_row_header() -> prettytable::Row {
-        use prettytable::{cell, row};
+        use prettytable::row;
         row![
             l->"FS",
             l->"Benchmark",
@@ -114,7 +114,7 @@ impl BenchmarkResults {
 
     fn pretty_row(&self) -> prettytable::Row {
         let stats = self.statistics();
-        use prettytable::{cell, row};
+        use prettytable::row;
         row![
             l->self.filesystem_name,
             l->self.benchmark_name,

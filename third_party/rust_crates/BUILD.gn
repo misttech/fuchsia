@@ -1410,11 +1410,11 @@ group("pretty_assertions-1.2.1") {
 }
 
 group("prettytable-rs") {
-  public_deps = [ ":prettytable-rs-v0_8_0" ]
+  public_deps = [ ":prettytable-rs-v0_10_0" ]
 }
 
-group("prettytable-rs-0.8.0") {
-  public_deps = [ ":prettytable-rs-v0_8_0" ]
+group("prettytable-rs-0.10.0") {
+  public_deps = [ ":prettytable-rs-v0_10_0" ]
 }
 
 if (!(current_os == "fuchsia")) {
@@ -7660,6 +7660,30 @@ rustc_library("digest-v0_11_3") {
   applicable_licenses = [ ":digest-v0_11_3.license" ]
 }
 
+rustc_library("dirs-next-v2_0_0") {
+  crate_name = "dirs_next"
+  source_root = "//third_party/rust_crates/empty/dirs-next-2.0.0/src/lib.rs"
+  output_name = "dirs_next-ccbbecfd0234cf73"
+  edition = "2015"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=ccbbecfd0234cf73",
+    "-Cextra-filename=-ccbbecfd0234cf73",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ "//build/licenses:fuchsia_license" ]
+}
+
 license("downcast-v0_11_0.license") {
   public_package_name = "downcast"
   license_files =
@@ -8087,20 +8111,20 @@ rustc_library("elliptic-curve-v0_13_8") {
   applicable_licenses = [ ":elliptic-curve-v0_13_8.license" ]
 }
 
-license("encode_unicode-v0_3_6.license") {
+license("encode_unicode-v1_0_0.license") {
   public_package_name = "encode_unicode"
   license_files = [
-    "//third_party/rust_crates/vendor/encode_unicode-0.3.6/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/encode_unicode-0.3.6/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/encode_unicode-1.0.0/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/encode_unicode-1.0.0/LICENSE-MIT",
   ]
 }
 
-rustc_library("encode_unicode-v0_3_6") {
+rustc_library("encode_unicode-v1_0_0") {
   crate_name = "encode_unicode"
   source_root =
-      "//third_party/rust_crates/vendor/encode_unicode-0.3.6/src/lib.rs"
-  output_name = "encode_unicode-57fb3c2141f4c504"
-  edition = "2015"
+      "//third_party/rust_crates/vendor/encode_unicode-1.0.0/src/lib.rs"
+  output_name = "encode_unicode-32b3e45a9c514f72"
+  edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
@@ -8111,15 +8135,15 @@ rustc_library("encode_unicode-v0_3_6") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=57fb3c2141f4c504",
-    "-Cextra-filename=-57fb3c2141f4c504",
+    "-Cmetadata=32b3e45a9c514f72",
+    "-Cextra-filename=-32b3e45a9c514f72",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"std\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":encode_unicode-v0_3_6.license" ]
+  applicable_licenses = [ ":encode_unicode-v1_0_0.license" ]
 }
 
 license("endian-type-v0_2_0.license") {
@@ -15733,35 +15757,34 @@ rustc_library("prettyplease-v0_2_37") {
   applicable_licenses = [ ":prettyplease-v0_2_37.license" ]
 }
 
-license("prettytable-rs-v0_8_0.license") {
+license("prettytable-rs-v0_10_0.license") {
   public_package_name = "prettytable"
   license_files =
       [ "//third_party/rust_crates/forks/prettytable-rs/LICENSE.txt" ]
 }
 
-rustc_library("prettytable-rs-v0_8_0") {
+rustc_library("prettytable-rs-v0_10_0") {
   crate_name = "prettytable"
   source_root = "//third_party/rust_crates/forks/prettytable-rs/src/lib.rs"
-  output_name = "prettytable-1855933ce08984ad"
-  edition = "2015"
+  output_name = "prettytable-54559b91cefe7818"
+  edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
   deps += [ ":csv-v1_4_0" ]
-  deps += [ ":atty-v0_2_14" ]
-  deps += [ ":encode_unicode-v0_3_6" ]
+  deps += [ ":encode_unicode-v1_0_0" ]
   deps += [ ":lazy_static-v1_5_0" ]
-  deps += [ ":term-v0_5_1" ]
+  deps += [ ":term-v0_7_0" ]
   deps += [ ":unicode-width-v0_1_14" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=1855933ce08984ad",
-    "-Cextra-filename=-1855933ce08984ad",
+    "-Cmetadata=54559b91cefe7818",
+    "-Cextra-filename=-54559b91cefe7818",
     "--cfg=feature=\"csv\"",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"win_crlf\"",
@@ -15769,7 +15792,7 @@ rustc_library("prettytable-rs-v0_8_0") {
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":prettytable-rs-v0_8_0.license" ]
+  applicable_licenses = [ ":prettytable-rs-v0_10_0.license" ]
 }
 
 license("primeorder-v0_13_6.license") {
@@ -21103,26 +21126,27 @@ rustc_library("tempfile-v3_27_0") {
   applicable_licenses = [ ":tempfile-v3_27_0.license" ]
 }
 
-license("term-v0_5_1.license") {
+license("term-v0_7_0.license") {
   public_package_name = "term"
   license_files = [
-    "//third_party/rust_crates/vendor/term-0.5.1/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/term-0.5.1/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/term-0.7.0/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/term-0.7.0/LICENSE-MIT",
   ]
 }
 
-rustc_library("term-v0_5_1") {
+rustc_library("term-v0_7_0") {
   crate_name = "term"
-  source_root = "//third_party/rust_crates/vendor/term-0.5.1/src/lib.rs"
-  output_name = "term-2cb16ccbdf283d91"
-  edition = "2015"
+  source_root = "//third_party/rust_crates/vendor/term-0.7.0/src/lib.rs"
+  output_name = "term-7609218970e74e32"
+  edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":byteorder-v1_5_0" ]
+  deps += [ ":dirs-next-v2_0_0" ]
   if (false) {
+    deps += [ ":rustversion-v1_0_22($host_toolchain)" ]
     deps += [ ":winapi-v0_3_9" ]
   }
 
@@ -21130,14 +21154,14 @@ rustc_library("term-v0_5_1") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=2cb16ccbdf283d91",
-    "-Cextra-filename=-2cb16ccbdf283d91",
+    "-Cmetadata=7609218970e74e32",
+    "-Cextra-filename=-7609218970e74e32",
     "--cfg=feature=\"default\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":term-v0_5_1.license" ]
+  applicable_licenses = [ ":term-v0_7_0.license" ]
 }
 
 license("term_grid-v0_2_0.license") {

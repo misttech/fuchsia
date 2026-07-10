@@ -180,7 +180,7 @@ pin-weak = "1.1.0"
 png = "0.18" # saved for future use
 pretty = "0.12.5"
 pretty_assertions = "1.2.1"
-prettytable-rs = "0.8.0"
+prettytable-rs = "0.10.0"
 proptest = "1.11.0"
 proptest-derive = "0.8.0"
 prost = "0.14.4"
@@ -382,6 +382,7 @@ cloudabi = { path = "empty/cloudabi"}
 core-foundation-sys = { path = "empty/core-foundation-sys" }
 crossterm_winapi = { path = "empty/crossterm_winapi" }
 ctor = { path = "empty/ctor" }
+dirs-next = { path = "empty/dirs-next-2.0.0" }
 hermit-abi = { path = "empty/hermit-abi" }
 hermit-abi-0_1_19 = { package = "hermit-abi", path = "empty/hermit-abi-0.1.19" }
 iana-time-zone-haiku = { path = "empty/iana-time-zone-haiku" }
@@ -437,7 +438,6 @@ num-bigint-dig = { path = "forks/num-bigint-dig" }
 openssl = { path = "forks/openssl-0.10.81" }
 petgraph = { path = "forks/petgraph-0.8.3" }
 pin-init = { path = "forks/pin-init" }
-# FIXME(118248): We can unfork once undefined behavior is resolved.
 prettytable-rs = { path = "forks/prettytable-rs" }
 #pulldown-cmark = { path = "forks/pulldown-cmark" }
 # Fork of `rapidhash` has quality benchmarks removed; see forks/rapidhash-1.4.0/README.fuchsia.

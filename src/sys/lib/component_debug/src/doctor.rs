@@ -7,7 +7,7 @@ use anyhow::{Result, format_err};
 use flex_fuchsia_sys2 as fsys;
 use moniker::Moniker;
 use prettytable::format::consts::FORMAT_CLEAN;
-use prettytable::{Row, Table, cell, row};
+use prettytable::{Row, Table, row};
 
 const USE_TITLE: &'static str = "Used Capability";
 const EXPOSE_TITLE: &'static str = "Exposed Capability";

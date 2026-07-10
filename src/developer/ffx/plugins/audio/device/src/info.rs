@@ -27,7 +27,7 @@ use fuchsia_audio_fdomain::sigproc::{
     TypeSpecificElementState, VendorSpecific, VendorSpecificElementState,
 };
 use itertools::Itertools;
-use prettytable::{Table, cell, format, row};
+use prettytable::{Table, format, row};
 use serde::ser::SerializeSeq;
 use serde::{Serialize, Serializer};
 use std::collections::BTreeMap;

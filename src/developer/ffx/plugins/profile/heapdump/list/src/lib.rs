@@ -13,7 +13,7 @@ use ffx_profile_heapdump_list_args::ListCommand;
 use ffx_writer::{MachineWriter, ToolIO as _};
 use fho::{AvailabilityFlag, FfxMain, FfxTool};
 use prettytable::format::FormatBuilder;
-use prettytable::{Table, cell, row};
+use prettytable::{Table, row};
 use serde::Serialize;
 use target_holders::fdomain::RemoteControlProxyHolder;
 

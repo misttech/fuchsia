@@ -8,8 +8,6 @@ mod output;
 mod resource_annotator;
 mod statistics;
 
-#[macro_use]
-extern crate prettytable;
 use crate::resource_annotator::ResourceAnnotator;
 use anyhow::{Result, anyhow};
 use assembly_container::AssemblyContainer;

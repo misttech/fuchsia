@@ -6,7 +6,7 @@ use anyhow::{Result, format_err};
 use flex_fuchsia_sys2 as fsys;
 use moniker::{ExtendedMoniker, Moniker};
 use prettytable::format::consts::FORMAT_CLEAN;
-use prettytable::{Table, cell, row};
+use prettytable::{Table, row};
 use std::fmt;
 
 const SUCCESS_SUMMARY: &'static str = "Success";

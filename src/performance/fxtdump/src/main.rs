@@ -5,7 +5,7 @@
 use anyhow::Result;
 use argh::{ArgsInfo, FromArgs};
 use fxt::session::SessionParser;
-use prettytable::{Table, cell, row};
+use prettytable::{Table, row};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufReader;

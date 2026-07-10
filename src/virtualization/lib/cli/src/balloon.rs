@@ -8,7 +8,7 @@ use fidl_fuchsia_virtualization::{
 };
 use guest_cli_args as arguments;
 use prettytable::format::consts::FORMAT_CLEAN;
-use prettytable::{Table, cell, row};
+use prettytable::{Table, row};
 use std::fmt;
 
 #[derive(Default, serde::Serialize, serde::Deserialize)]

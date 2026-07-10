@@ -8,7 +8,7 @@ use ffx_package_ota_manifest_show_args::ShowCommand;
 use ffx_writer::{MachineWriter, ToolIO as _};
 use fho::{Error, FfxMain, FfxTool, Result};
 use prettytable::format::FormatBuilder;
-use prettytable::{Table, cell, row};
+use prettytable::{Table, row};
 use ring::signature::UnparsedPublicKey;
 use serde::Serialize;
 use update_package::UpdateMode;

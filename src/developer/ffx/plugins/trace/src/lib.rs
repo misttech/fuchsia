@@ -17,7 +17,7 @@ use ffx_writer::{MachineWriter, ToolIO as _};
 use fho::{Deferred, FfxMain, FfxTool, bug, deferred};
 use futures::future::{BoxFuture, Future, FutureExt as _};
 use prettytable::format::FormatBuilder;
-use prettytable::{Table, cell, row};
+use prettytable::{Table, row};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::{Stdin, stdin};

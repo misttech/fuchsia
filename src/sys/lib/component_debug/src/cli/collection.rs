@@ -8,7 +8,7 @@ use cm_rust::offer::{OfferDeclCommon, OfferTarget};
 use flex_fuchsia_sys2 as fsys;
 use moniker::Moniker;
 use prettytable::format::consts::FORMAT_CLEAN;
-use prettytable::{Table, cell, row};
+use prettytable::{Table, row};
 
 struct Collection {
     name: String,

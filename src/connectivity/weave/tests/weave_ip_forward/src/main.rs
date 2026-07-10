@@ -3,22 +3,24 @@
 // found in the LICENSE file.
 use anyhow::{Context as _, Error, format_err};
 use clap::Parser;
+use fidl_fuchsia_net as fnet;
+use fidl_fuchsia_net_interfaces as fnet_interfaces;
+use fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext;
+use fidl_fuchsia_net_resources as fnet_resources;
+use fidl_fuchsia_net_root as fnet_root;
+use fidl_fuchsia_net_routes as fnet_routes;
+use fidl_fuchsia_net_routes_admin as fnet_routes_admin;
+use fidl_fuchsia_net_routes_ext as fnet_routes_ext;
+use fuchsia_async as fasync;
 use fuchsia_component::client;
 use log::info;
 use net_declare::fidl_ip_v6_with_prefix;
 use net_types::ip::Ipv6;
-use prettytable::{Table, cell, format, row};
+use prettytable::{Table, format, row};
 use std::collections::HashMap;
 use std::io::{Read as _, Write as _};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::pin::pin;
-use {
-    fidl_fuchsia_net as fnet, fidl_fuchsia_net_interfaces as fnet_interfaces,
-    fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext,
-    fidl_fuchsia_net_resources as fnet_resources, fidl_fuchsia_net_root as fnet_root,
-    fidl_fuchsia_net_routes as fnet_routes, fidl_fuchsia_net_routes_admin as fnet_routes_admin,
-    fidl_fuchsia_net_routes_ext as fnet_routes_ext, fuchsia_async as fasync,
-};
 
 const BUS_NAME: &str = "test-bus";
 const WEAVE_NODE_NAME: &str = "weave-node";
@@ -210,7 +212,7 @@ async fn run_fuchsia_node() -> Result<(), Error> {
         t.add_row(row![destination, next_hop, outbound_interface, metric]);
     }
 
-    info!("{}", t.printstd());
+    info!("{}", t);
 
     let bus = netemul_sync::Bus::subscribe(BUS_NAME, FUCHSIA_NODE_NAME)?;
     info!("waiting for server to finish...");

@@ -15,7 +15,7 @@ use fdomain_fuchsia_bluetooth_sys::{
 use ffx_bluetooth_common::{PeerIdOrAddr, handle_pairing_delegate_requests};
 use ffx_writer::{SimpleWriter, ToolIO as _};
 use fuchsia_bluetooth::types::{Address, Peer, PeerId};
-use prettytable::{Row, Table, cell, format, row};
+use prettytable::{Row, Table, format, row};
 use std::cmp::Ordering;
 use target_holders::fdomain::toolbox;
 
@@ -262,6 +262,9 @@ fn get_peer_list(peers: &Vec<Peer>, filter: &String, full_details: bool) -> Stri
     let mut matched_peers: Vec<&Peer> = peers.iter().filter(|p| match_peer(filter, p)).collect();
     matched_peers.sort_by(|a, b| cmp_peers(&*a, &*b));
     let match_msg = format!("Showing {}/{} peers\n", matched_peers.len(), peers.len());
+    if matched_peers.is_empty() {
+        return match_msg;
+    }
 
     if full_details {
         return String::from_iter(

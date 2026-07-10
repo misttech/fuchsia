@@ -14,7 +14,7 @@ use flex_fuchsia_driver_framework as fdf;
 use fuchsia_driver_dev_fdomain as fuchsia_driver_dev;
 use itertools::Itertools;
 use prettytable::format::FormatBuilder;
-use prettytable::{Table, cell, row};
+use prettytable::{Table, row};
 use serde::Serialize;
 use std::io::Write;
 

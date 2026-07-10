@@ -2,11 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::realm::{get_all_instances, Instance};
+use crate::realm::{Instance, get_all_instances};
 use ansi_term::Colour;
 use anyhow::Result;
 use prettytable::format::consts::FORMAT_CLEAN;
-use prettytable::{cell, row, Table};
+use prettytable::{Table, row};
 use std::collections::HashSet;
 use std::str::FromStr;
 
@@ -42,7 +42,9 @@ impl FromStr for ListFilter {
                     "relative" | "relatives" => Ok(ListFilter::Relative(arg.to_string())),
                     _ => Err("unknown function for list filter."),
                 },
-                None => Err("list filter should be 'running', 'stopped', 'ancestors:<component_name>', 'descendants:<component_name>', or 'relatives:<component_name>'."),
+                None => Err(
+                    "list filter should be 'running', 'stopped', 'ancestors:<component_name>', 'descendants:<component_name>', or 'relatives:<component_name>'.",
+                ),
             },
         }
     }

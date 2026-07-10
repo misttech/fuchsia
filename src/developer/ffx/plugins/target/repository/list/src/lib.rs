@@ -13,7 +13,7 @@ use fho::{Error, FfxMain, FfxTool, Result, bug};
 use fidl_fuchsia_pkg_ext::RepositoryStorageType;
 use fidl_fuchsia_pkg_rewrite_ext::Rule;
 use prettytable::format::FormatBuilder;
-use prettytable::{Table, cell, row};
+use prettytable::{Table, row};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use target_holders::fdomain::toolbox;

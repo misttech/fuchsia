@@ -16,7 +16,7 @@ use fuchsia_component::client::connect_to_protocol;
 use fuchsia_sync::Mutex;
 use futures::channel::mpsc;
 use futures::{FutureExt, Sink, SinkExt, Stream, StreamExt, TryFutureExt, select};
-use prettytable::{Row, Table, cell, format, row};
+use prettytable::{Row, Table, format, row};
 use regex::Regex;
 use rustyline::error::ReadlineError;
 use rustyline::history::DefaultHistory;
@@ -164,6 +164,9 @@ fn get_peers<'a>(args: &'a [&'a str], state: &Mutex<State>, full_details: bool) 
     let mut peers: Vec<&Peer> = state.peers.values().filter(|p| match_peer(&find, p)).collect();
     peers.sort_by(|a, b| cmp_peers(&*a, &*b));
     let matched = format!("Showing {}/{} peers\n", peers.len(), state.peers.len());
+    if peers.is_empty() {
+        return matched;
+    }
 
     if full_details {
         return String::from_iter(

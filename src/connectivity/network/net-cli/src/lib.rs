@@ -46,7 +46,7 @@ use log::{info, warn};
 use net_types::SpecifiedAddr;
 use net_types::ip::{Ip, IpAddress as _, Ipv4, Ipv4Addr, Ipv6, Ipv6Addr, Subnet};
 use netfilter::FidlReturn as _;
-use prettytable::{Row, Table, cell, format, row};
+use prettytable::{Row, Table, format, row};
 use ser::AddressAssignmentState;
 use serde_json::json;
 use serde_json::value::Value;

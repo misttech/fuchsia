@@ -7,7 +7,7 @@ use anyhow::{Error, anyhow};
 use fidl_fuchsia_virtualization::{GuestManagerProxy, GuestStatus};
 use guest_cli_args as arguments;
 use prettytable::format::consts::FORMAT_CLEAN;
-use prettytable::{Table, cell, row};
+use prettytable::{Table, row};
 use std::fmt;
 
 fn guest_status_to_string(status: GuestStatus) -> &'static str {

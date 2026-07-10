@@ -11,7 +11,7 @@ use ffx_bluetooth_controller_args::{ControllerCommand, ControllerSubCommand};
 use ffx_writer::{SimpleWriter, ToolIO as _};
 use fuchsia_bluetooth::types::{HostId, HostInfo, addresses_to_custom_string};
 use prettytable::format::FormatBuilder;
-use prettytable::{Table, cell, row};
+use prettytable::{Table, row};
 use target_holders::fdomain::toolbox;
 
 pub mod device_class;
