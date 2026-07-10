@@ -4,6 +4,8 @@
 
 #![cfg(test)]
 
+use std::assert_matches;
+
 use fidl::endpoints::Proxy as _;
 use fidl_fuchsia_io as _;
 use fidl_fuchsia_net as _;
@@ -11,6 +13,7 @@ use fidl_fuchsia_net_debug as fnet_debug;
 use fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin;
 use fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext;
 use fuchsia_async as fasync;
+use futures::StreamExt as _;
 
 use net_declare::{fidl_subnet, net_ip_v4, std_ip_v4};
 use netemul::RealmUdpSocket as _;
@@ -552,6 +555,15 @@ async fn rolling_packet_capture_detach_reconnect_test(name: &str) {
         .expect("sync FIDL error")
         .map_err(zx::Status::from_raw)
         .expect("sync error");
+    // Assert that the OnEnded event was sent.
+    let mut event_stream = rolling_proxy.take_event_stream();
+    let event = event_stream.next().await.expect("event stream ended").expect("FIDL error");
+    assert_matches!(
+        event,
+        fnet_debug::RollingPacketCaptureEvent::OnEnded {
+            reason: fnet_debug::PacketCaptureEndReason::UserRequest
+        }
+    );
 
     let channel = provider
         .reconnect_rolling(capture_name)
@@ -560,6 +572,12 @@ async fn rolling_packet_capture_detach_reconnect_test(name: &str) {
         .expect("reconnect_rolling error");
     assert_eq!(rolling_proxy.on_closed().await, Ok(zx::Signals::CHANNEL_PEER_CLOSED));
     let rolling_proxy = channel.into_proxy();
+
+    // Since the capture has ended, the reconnect should immediately yield OnEnded.
+    let mut event_stream = rolling_proxy.take_event_stream();
+    let event = event_stream.next().await.expect("event stream ended").expect("FIDL error");
+    let fnet_debug::RollingPacketCaptureEvent::OnEnded { reason } = event;
+    assert_eq!(reason, fnet_debug::PacketCaptureEndReason::UserRequest);
 
     let (file_client2, file_server) = fidl::endpoints::create_endpoints();
     rolling_proxy.stop_and_download(file_server).expect("stop_and_download failed");

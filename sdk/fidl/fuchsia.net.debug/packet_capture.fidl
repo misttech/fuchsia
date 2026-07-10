@@ -149,6 +149,8 @@ type PacketCaptureEndReason = flexible enum {
     /// with [`InterfaceSpecifier.any`]. When capturing on multiple interfaces,
     /// the packet capture ends when any interface has been removed.
     INTERFACE_REMOVED = 1;
+    /// The packet capture was stopped due to user request.
+    USER_REQUEST = 2;
 };
 
 /// Rolling packet capture.
@@ -185,6 +187,10 @@ closed protocol RollingPacketCapture {
     };
 
     /// Event emitted by the server when the packet capture ends.
+    ///
+    /// Once emitted, any future connections that are established via
+    /// [`PacketCaptureProvider.ReconnectRolling`] will immediately see the
+    /// `OnEnded` event.
     strict -> OnEnded(struct {
         /// The reason this packet capture ended.
         reason PacketCaptureEndReason;
@@ -192,9 +198,9 @@ closed protocol RollingPacketCapture {
 
     /// Stop and make this rolling packet capture downloadable.
     ///
-    /// It is implicit by calling this method that the packet capture is stopped
-    /// due to user request, so the [`RollingPacketCapture.OnEnded`] event is
-    /// not emitted.
+    /// Calling this method stops the packet capture due to user request, and
+    /// emits the [`RollingPacketCapture.OnEnded`] event with reason
+    /// [`PacketCaptureEndReason.USER_REQUEST`].
     ///
     /// This method can be called multiple times, including across disconnects:
     /// a client can call this method, disconnect, reconnect, and call this

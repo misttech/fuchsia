@@ -8,6 +8,7 @@
 use std::pin::pin;
 use std::sync::Arc;
 
+use fidl::endpoints::RequestStream as _;
 use fidl_fuchsia_io as fio;
 use fidl_fuchsia_net_debug as fnet_debug;
 use fidl_fuchsia_posix_socket_packet as fppacket;
@@ -175,6 +176,18 @@ where
     Fut: futures::Future<Output = ()>,
 {
     let CaptureData { source, pcap_headers } = data;
+
+    // If the packet capture has already ended (e.g. we are reconnecting after
+    // StopAndDownload was called), immediately yield the OnEnded event.
+    match &source {
+        Source::RingBuffer { .. } => {
+            rs.control_handle()
+                .send_on_ended(fnet_debug::PacketCaptureEndReason::UserRequest)
+                .unwrap_or_log("failed to send OnEnded event on reconnect");
+        }
+        Source::Socket(_) => {}
+    }
+
     let mut source = Some(source);
 
     let mut takeover_cancel = match takeover_cancel_rx {
@@ -220,6 +233,9 @@ where
             fnet_debug::RollingPacketCaptureRequest::StopAndDownload { channel, .. } => {
                 let (ring_buffer, download_scope) = match source.take().expect("source missing") {
                     Source::Socket(id) => {
+                        rs.control_handle()
+                            .send_on_ended(fnet_debug::PacketCaptureEndReason::UserRequest)
+                            .unwrap_or_log("failed to send OnEnded event on StopAndDownload");
                         let socket_state = remove_socket(&mut ctx, id).await;
                         let buf = Arc::new(socket_state.into_rolling_pcap_buffer());
                         let download_scope = vfs::execution_scope::ExecutionScope::new();
