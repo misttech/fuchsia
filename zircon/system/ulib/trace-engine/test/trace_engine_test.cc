@@ -11,6 +11,8 @@
 
 #include <gtest/gtest.h>
 
+#include "../context_impl.h"
+
 namespace {
 const unsigned char bytes_disabled[5] = {'b', 'y', 't', 'e', 's'};
 const unsigned char bytes_enabled[11] = {'e', 'n', 'a', 'b', 'l', 'e', 'd', '_', 'c', 'a', 't'};
@@ -391,6 +393,51 @@ TEST(TraceEngineTest, FlushBuffer) {
   trace_engine_flush_buffer();
   loop.RunUntilIdle();
   ASSERT_TRUE(handler.flushed);
+
+  trace_engine_stop(ZX_OK);
+  trace_engine_terminate();
+  loop.RunUntilIdle();
+}
+
+TEST(TraceEngineTest, OversizedEventDropped) {
+  async::Loop loop(&kAsyncLoopConfigAttachToCurrentThread);
+  char buffer[65536];
+  trace_handler_t handler{&ops};
+  zx_status_t init = trace_engine_initialize(loop.dispatcher(), &handler,
+                                             TRACE_BUFFERING_MODE_ONESHOT, buffer, sizeof(buffer));
+  ASSERT_EQ(init, ZX_OK);
+  loop.RunUntilIdle();
+
+  zx_status_t start = trace_engine_start(TRACE_START_CLEAR_ENTIRE_BUFFER);
+  ASSERT_EQ(start, ZX_OK);
+  loop.RunUntilIdle();
+
+  trace_context_t* context = trace_acquire_context();
+  ASSERT_TRUE(context);
+
+  trace_context* raw_context = reinterpret_cast<trace_context*>(context);
+  uint64_t initial_dropped = raw_context->num_records_dropped();
+
+  std::vector<char> large_str(20000, 'A');
+  large_str.push_back('\0');
+
+  trace_string_ref_t category_ref = trace_make_inline_c_string_ref("enabled_cat");
+  trace_string_ref_t name_ref = trace_make_inline_c_string_ref("name");
+  trace_string_ref_t arg_name = trace_make_inline_c_string_ref("arg");
+  trace_string_ref_t arg_val_ref = trace_make_inline_c_string_ref(large_str.data());
+  trace_arg_t args[2] = {
+      trace_make_arg(arg_name, trace_make_string_arg_value(arg_val_ref)),
+      trace_make_arg(arg_name, trace_make_string_arg_value(arg_val_ref)),
+  };
+
+  trace_thread_ref_t thread_ref = trace_make_unknown_thread_ref();
+
+  trace_context_write_instant_event_record(context, 12345, &thread_ref, &category_ref, &name_ref,
+                                           TRACE_SCOPE_PROCESS, args, 2);
+
+  ASSERT_EQ(raw_context->num_records_dropped(), initial_dropped + 1);
+
+  trace_release_context(context);
 
   trace_engine_stop(ZX_OK);
   trace_engine_terminate();

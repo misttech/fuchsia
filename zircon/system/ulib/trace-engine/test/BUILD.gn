@@ -49,6 +49,9 @@ test("buffer_test") {
 test("trace_engine_test") {
   visibility = [ ":*" ]
   sources = [
+    "../buffer.h",
+    "../context_impl.h",
+    "../rolling_buffer.h",
     "trace_engine_test.cc",
     "trace_engine_writing_test.cc",
   ]

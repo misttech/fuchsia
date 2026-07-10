@@ -80,6 +80,8 @@ struct trace_context {
   // Return true if at least one record was dropped.
   bool WasRecordDropped() const { return num_records_dropped() != 0u; }
 
+  void MarkRecordDropped() { num_records_dropped_.fetch_add(1, std::memory_order_relaxed); }
+
   void ResetRollingBufferPointers();
   void ResetBufferPointers();
   void InitBufferHeader();
@@ -140,8 +142,6 @@ struct trace_context {
   void SetPendingBufferService(RollingBufferState prev_state);
 
   void MarkTracingArtificiallyStopped();
-
-  void MarkRecordDropped() { num_records_dropped_.fetch_add(1, std::memory_order_relaxed); }
 
   // The generation counter associated with this context to distinguish
   // it from previously created contexts.

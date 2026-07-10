@@ -287,12 +287,39 @@ size_t SizeOfEncodedArgs(const trace_arg_t* args, size_t num_args) {
 // Provides support for writing sequences of 64-bit words into a trace buffer.
 class Payload {
  public:
-  explicit Payload(trace_context_t* context, size_t num_bytes)
-      : ptr_(context->AllocRecord(num_bytes)) {}
+  enum class SizeCheck : uint8_t {
+    kStandard,
+    kLarge,
+  };
 
-  explicit Payload(trace_context_t* context, bool rqst_durable, size_t num_bytes)
-      : ptr_(rqst_durable && context->UsingDurableBuffer() ? context->AllocDurableRecord(num_bytes)
-                                                           : context->AllocRecord(num_bytes)) {}
+  explicit Payload(trace_context_t* context, size_t num_bytes,
+                   SizeCheck check = SizeCheck::kStandard) {
+    if (check == SizeCheck::kStandard && unlikely(num_bytes > RecordFields::kMaxRecordSizeBytes)) {
+      context->MarkRecordDropped();
+      ptr_ = nullptr;
+    } else if (check == SizeCheck::kLarge &&
+               unlikely(num_bytes > LargeRecordFields::kMaxRecordSizeBytes)) {
+      context->MarkRecordDropped();
+      ptr_ = nullptr;
+    } else {
+      ptr_ = context->AllocRecord(num_bytes);
+    }
+  }
+
+  explicit Payload(trace_context_t* context, bool rqst_durable, size_t num_bytes,
+                   SizeCheck check = SizeCheck::kStandard) {
+    if (check == SizeCheck::kStandard && unlikely(num_bytes > RecordFields::kMaxRecordSizeBytes)) {
+      context->MarkRecordDropped();
+      ptr_ = nullptr;
+    } else if (check == SizeCheck::kLarge &&
+               unlikely(num_bytes > LargeRecordFields::kMaxRecordSizeBytes)) {
+      context->MarkRecordDropped();
+      ptr_ = nullptr;
+    } else {
+      ptr_ = rqst_durable && context->UsingDurableBuffer() ? context->AllocDurableRecord(num_bytes)
+                                                           : context->AllocRecord(num_bytes);
+    }
+  }
 
   explicit operator bool() const { return ptr_ != nullptr; }
 
@@ -1161,7 +1188,7 @@ trace::Payload trace_context_begin_write_large_blob_record(trace_context_t* cont
                                                            size_t content_size) {
   const size_t record_size = sizeof(trace::RecordHeader) + content_size;
 
-  trace::Payload payload(context, record_size);
+  trace::Payload payload(context, record_size, trace::Payload::SizeCheck::kLarge);
   if (payload) {
     payload.WriteUint64(
         trace::LargeBlobFields::Type::Make(ToUnderlyingType(trace::RecordType::kLargeRecord)) |
