@@ -98,7 +98,7 @@ closed protocol Msi {
     /// *[`zx_vmo_create_contiguous()`] vmo can be used.
     ///
     /// *msi_id* corresponds to the vector in a given MSI allocation to create an Interrupt
-    /// object for. *msi_id* must be be between 0 and the allocation size minus 1, inclusive.
+    /// object for. *msi_id* must be between 0 and the allocation size minus 1, inclusive.
     ///
     /// *vmo_offset* corresponds to the offset within *vmo* where the MSI capability
     /// structure begins. Details of this structure can be found in the PCI Local Bus

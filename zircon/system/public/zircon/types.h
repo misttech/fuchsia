@@ -428,7 +428,7 @@ typedef uint32_t zx_stream_seek_origin_t;
 #define ZX_STREAM_SEEK_ORIGIN_CURRENT    ((zx_stream_seek_origin_t)1u)
 #define ZX_STREAM_SEEK_ORIGIN_END        ((zx_stream_seek_origin_t)2u)
 
-// Flags which can be used to to control cache policy for APIs which map memory.
+// Flags which can be used to control cache policy for APIs which map memory.
 #define ZX_CACHE_POLICY_CACHED              ((uint32_t)0u)
 #define ZX_CACHE_POLICY_UNCACHED            ((uint32_t)1u)
 #define ZX_CACHE_POLICY_UNCACHED_DEVICE     ((uint32_t)2u)

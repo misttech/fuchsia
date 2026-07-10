@@ -196,7 +196,7 @@ class WakeEvent : public fbl::ContainableBaseClasses<
   // Strobe is an operation used only in a very specific situation; when a suspend operation times
   // out and the ResumeTimerWakeVector becomes signaled as a result.  This object is (currently) the
   // only non-interrupt wake source/vector defined in the system, and it is not directly exposed to
-  // user-mode as a object which becomes acknowledged by user-mode actions.  Instead, it is the
+  // user-mode as an object which becomes acknowledged by user-mode actions.  Instead, it is the
   // synthetic wake source used to report suspend-operation timeouts, and is (logically speaking)
   // _always_ immediately acked after being signaled.
   //

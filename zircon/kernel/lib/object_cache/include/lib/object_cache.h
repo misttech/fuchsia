@@ -392,7 +392,7 @@ class ObjectCache<T, Option::Single, Allocator> : private Allocator {
   using SlabPtr = fbl::RefPtr<Slab>;
   using SlabList = fbl::DoublyLinkedListCustomTraits<SlabPtr, Slab>;
 
-  // Slab control block. Separate from the defintion of Slab to simplify
+  // Slab control block. Separate from the definition of Slab to simplify
   // computing the size of the Entry array.
   struct SlabControl {
     explicit SlabControl(ObjectCache* object_cache) : object_cache{object_cache} {}
@@ -574,7 +574,7 @@ class ObjectCache<T, Option::Single, Allocator> : private Allocator {
       } else {
         // Our Object Cache instance was alive while we held our lock, and our
         // slab must be a member of either the full or partial lists (meaning
-        // that a Object Cache in the process of destructing will need to bounce
+        // that an Object Cache in the process of destructing will need to bounce
         // through our lock on its way out).
         //
         // Increment the free operation in-flight count in our OC.  This

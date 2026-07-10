@@ -120,7 +120,7 @@ bool mutex_inherit_test() {
           args->test_mutex[j].Acquire();
         }
 
-        // wait on a event for a period of time, to try to have other grabber threads
+        // wait on an event for a period of time, to try to have other grabber threads
         // need to tweak our priority in either one of the mutexes we hold or the
         // blocking event
         args->test_blocker.WaitDeadline(current_mono_time() + ZX_USEC(rand() % 10u),

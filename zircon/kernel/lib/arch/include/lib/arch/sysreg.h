@@ -14,7 +14,7 @@
 
 namespace arch {
 
-// Each system register is identified by an unique "register tag" type.  This
+// Each system register is identified by a unique "register tag" type.  This
 // serves as a template argument for specializations for the hardware access.
 // It also defines a static method Get() that returns an hwreg::RegisterAddr
 // derived object representing the register.  The register tag type can be the
@@ -131,7 +131,7 @@ class SysReg {
 };
 
 // <lib/arch/arm64/*.h> headers use this to declare AArch64 system registers.
-// RegisterTag is an unique C++ type that has a static Get() method.
+// RegisterTag is a unique C++ type that has a static Get() method.
 // RegisterName is a string literal of the assembly name for the register.
 //
 // When compiling for Aarch64, this makes arch::SysReg()::Io<RegisterTag>()
@@ -168,7 +168,7 @@ class SysReg {
 #endif
 
 // <lib/arch/x86/*.h> headers use this to declare x86 system registers.
-// RegisterTag is an unique C++ type that has a static Get() method.
+// RegisterTag is a unique C++ type that has a static Get() method.
 // RegisterName is a string literal of the assembly name for the register
 // without the leading '%'.
 //
@@ -199,7 +199,7 @@ class SysReg {
 #endif
 
 // <lib/arch/riscv64/*.h> headers use this to declare RISC-V CSRs.
-// RegisterTag is an unique C++ type that has a static Get() method.
+// RegisterTag is a unique C++ type that has a static Get() method.
 // RegisterName is a string literal of the assembly name for the CSR.
 //
 // When compiling for RISC-V, this makes arch::SysReg()::Io<RegisterTag>()

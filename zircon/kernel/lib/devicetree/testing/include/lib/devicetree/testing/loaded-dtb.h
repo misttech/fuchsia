@@ -20,7 +20,7 @@ namespace devicetree::testing {
 
 // Represents a 'dtb' file in memory.
 struct LoadedDtb {
-  // Returns a instance of a devictree::Devicetree based on the loaded data.
+  // Returns an instance of a devicetree::Devicetree based on the loaded data.
   devicetree::Devicetree fdt() const {
     return devicetree::Devicetree(ByteView(dtb.data(), dtb.size()));
   }

@@ -139,7 +139,7 @@
 // Static slab allocators require that the storage required for the allocator to
 // function be declared instantiated in a translation unit somewhere in the
 // program.  In addition, if the allocator is going to be used outside of just
-// this one translation unit, the existance of the storage must be forward
+// this one translation unit, the existence of the storage must be forward
 // declared to all of the users of the allocator.
 //
 // Given the precondition...
@@ -147,7 +147,7 @@
 //   class MyObject;
 //   using SATraits = fbl::StaticAllocatorTraits<std::unique_ptr<MyObject>>;
 //
-// The formal syntax for forward declaring the existance of the allocator
+// The formal syntax for forward declaring the existence of the allocator
 // storage would be...
 //
 //   template<>
@@ -683,11 +683,11 @@ class SlabAllocator : public SlabAllocatorBase {
 //  The fbl::AutoLock compatible class which will handle synchronization.
 //
 // ++ AllocatorType
-//  Selects between a the three flavors of allocator.
+//  Selects between the three flavors of allocator.
 //  ++ INSTANCED - Allocations come from an instance of an allocator.
 //     Allocation objects carry the overhead of an "origin pointer" which will
 //     be used to find their way home when the delete operator is applied to the
-//     object.  Each instance of an allocator has it's own slab quota.
+//     object.  Each instance of an allocator has its own slab quota.
 //  ++ STATIC - Allocations come from a static instance of an allocator.  There
 //     is only one allocation pool for the entire process.  All allocator
 //     methods are static members of the allocator's type and use the
@@ -936,7 +936,7 @@ using UnlockedStaticSlabAllocatorTraits =
   ::fbl::SlabAllocator<ALLOC_TRAITS>::InternalAllocatorType      \
       fbl::SlabAllocator<ALLOC_TRAITS>::allocator_(__VA_ARGS__)
 
-// Shorthand for forward declaring the existance of the storage required to use
+// Shorthand for forward declaring the existence of the storage required to use
 // a static slab allocator.  Use this macro in your header file if your static
 // slab allocator is to be used outside of a single translational unit.
 #define FWD_DECL_STATIC_SLAB_ALLOCATOR(ALLOC_TRAITS)        \

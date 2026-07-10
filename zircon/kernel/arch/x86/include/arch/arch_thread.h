@@ -61,7 +61,7 @@ struct arch_thread {
   uint64_t page_fault_resume;
 
   /* |track_debug_state| tells whether the kernel should keep track of the whole debug state for
-   * this thread. Normally this is set explicitly by an user that wants to make use of HW
+   * this thread. Normally this is set explicitly by a user that wants to make use of HW
    * breakpoints or watchpoints.
    * |debug_state| will still keep track of the status of the exceptions (DR6), as there are HW
    * exceptions that are triggered without explicit debug state setting (eg. single step).

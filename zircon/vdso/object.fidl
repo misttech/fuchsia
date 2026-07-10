@@ -155,7 +155,7 @@ closed protocol Object {
     /// ```
     ///
     /// The caller must provide *count* `zx_wait_item_t`s in the *items* array,
-    /// containing the handle and signals bitmask to wait for for each item.
+    /// containing the handle and signals bitmask to wait for each item.
     /// Each item should contain a valid *handle* referring to an object to
     /// wait for, and a bitmask *waitfor* indicating which signals should wake
     /// the calling thread.
@@ -2435,7 +2435,7 @@ closed protocol Object {
     ///
     /// *options* is currently ignored, and should be set to `0` by callers.
     ///
-    /// Currently, the the only two supported *target* object types are [thread] and [vmar]. Other
+    /// Currently, the only two supported *target* object types are [thread] and [vmar]. Other
     /// object types may be supported in the future.
     ///
     /// [profile]: /docs/reference/kernel_objects/profile.md

@@ -527,7 +527,7 @@ closed protocol Thread {
     /// In the future, *options* may be expanded to enable targeting other types of
     /// exception channels.
     ///
-    /// The the *type* argument must be be `ZX_EXCP_USER`. In the future, *type* may be
+    /// The *type* argument must be `ZX_EXCP_USER`. In the future, *type* may be
     /// expanded to enable raising other types of exceptions.
     ///
     /// The `arch` field in `zx_exception_context_t` is ignored. Instead, use the

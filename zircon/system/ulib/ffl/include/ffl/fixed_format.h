@@ -48,7 +48,7 @@ struct FixedFormat {
   static_assert(FormatIsValid<Integer_, FractionalBits_>,
                 "The number of fractional bits must fit within the positive bits!");
   static_assert(sizeof(Integer_) * 8 <= 64,
-                "The Integer template paramter must have at most 64 bits!");
+                "The Integer template parameter must have at most 64 bits!");
 
   // The underlying integral type of the fixed-point values in this format.
   using Integer = Integer_;

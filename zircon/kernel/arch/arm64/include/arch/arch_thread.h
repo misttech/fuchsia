@@ -113,7 +113,7 @@ struct arch_thread {
   struct fpstate fpstate;
 
   // |track_debug_state| tells whether the kernel should keep track of the whole debug state for
-  // this thread. Normally this is set explicitly by an user that wants to make use of HW
+  // this thread. Normally this is set explicitly by a user that wants to make use of HW
   // breakpoints or watchpoints.
   // Userspace can still read the complete |debug_state| even if |track_debug_state| is false.
   bool track_debug_state;
