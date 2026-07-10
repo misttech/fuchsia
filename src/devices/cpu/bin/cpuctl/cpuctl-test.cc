@@ -23,6 +23,7 @@ constexpr uint32_t kInitialOperatingPoint = 0;
 constexpr uint32_t kNumLogicalCores = 4;
 
 constexpr uint8_t kDefaultRelativePerformance = 255;
+constexpr uint64_t kDefaultRelativePerformance2 = 500;
 
 constexpr uint32_t kDefaultDomainId = 1;
 
@@ -49,6 +50,7 @@ class FakeCpuDevice : public fidl::testing::WireTestBase<cpuctrl::Device> {
                         GetLogicalCoreIdCompleter::Sync& completer) override;
   void GetDomainId(GetDomainIdCompleter::Sync& completer) override;
   void GetRelativePerformance(GetRelativePerformanceCompleter::Sync& completer) override;
+  void GetRelativePerformance2(GetRelativePerformance2Completer::Sync& completer) override;
 
   uint32_t current_opp_ = kInitialOperatingPoint;
   unsigned int opp_set_count_ = 0;
@@ -101,6 +103,10 @@ void FakeCpuDevice::GetDomainId(GetDomainIdCompleter::Sync& completer) {
 
 void FakeCpuDevice::GetRelativePerformance(GetRelativePerformanceCompleter::Sync& completer) {
   completer.ReplySuccess(kDefaultRelativePerformance);
+}
+
+void FakeCpuDevice::GetRelativePerformance2(GetRelativePerformance2Completer::Sync& completer) {
+  completer.ReplySuccess(kDefaultRelativePerformance2);
 }
 
 class TestCpuPerformanceDomain : public CpuPerformanceDomain {
@@ -194,6 +200,13 @@ TEST_F(PerformanceDomainTest, TestGetRelativePerformance) {
 
   EXPECT_OK(relative_perf_status);
   EXPECT_EQ(relative_perf, kDefaultRelativePerformance);
+}
+
+TEST_F(PerformanceDomainTest, TestGetRelativePerformance2) {
+  const auto [relative_perf_status, relative_perf] = pd().GetRelativePerformance2();
+
+  EXPECT_OK(relative_perf_status);
+  EXPECT_EQ(relative_perf, kDefaultRelativePerformance2);
 }
 
 TEST_F(PerformanceDomainTest, TestGetDomainId) {

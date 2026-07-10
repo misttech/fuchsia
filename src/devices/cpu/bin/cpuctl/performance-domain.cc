@@ -40,6 +40,17 @@ std::pair<zx_status_t, uint64_t> CpuPerformanceDomain::GetRelativePerformance() 
                         resp.status() == ZX_OK ? resp.value()->relative_performance : 0);
 }
 
+std::pair<zx_status_t, uint64_t> CpuPerformanceDomain::GetRelativePerformance2() {
+  auto resp = cpu_client_->GetRelativePerformance2();
+  if (resp.status() != ZX_OK) {
+    return std::make_pair(resp.status(), 0);
+  }
+  if (resp->is_error()) {
+    return std::make_pair(resp->error_value(), 0);
+  }
+  return std::make_pair(ZX_OK, resp.value()->relative_performance);
+}
+
 std::pair<zx_status_t, uint64_t> CpuPerformanceDomain::GetDomainId() {
   auto resp = cpu_client_->GetDomainId();
   return std::make_pair(resp.status(), resp.status() == ZX_OK ? resp.value().domain_id : 0);

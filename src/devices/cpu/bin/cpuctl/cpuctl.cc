@@ -307,9 +307,14 @@ void describe(const char* domain_name) {
     std::cout << "logical core count: " << core_count << std::endl;
   }
 
-  const auto [relative_perf_status, relative_perf] = client.GetRelativePerformance();
-  if (relative_perf_status == ZX_OK) {
-    std::cout << "relative performance: " << relative_perf << std::endl;
+  const auto [relative_perf2_status, relative_perf2] = client.GetRelativePerformance2();
+  if (relative_perf2_status == ZX_OK) {
+    std::cout << "relative performance: " << relative_perf2 << std::endl;
+  } else {
+    const auto [relative_perf_status, relative_perf] = client.GetRelativePerformance();
+    if (relative_perf_status == ZX_OK) {
+      std::cout << "relative performance (deprecated): " << relative_perf << std::endl;
+    }
   }
 
   const auto [domain_id_status, domain_id] = client.GetDomainId();

@@ -20,6 +20,7 @@ class CpuPerformanceDomain {
   std::pair<zx_status_t, uint64_t> GetNumLogicalCores();
   std::pair<zx_status_t, uint64_t> GetDomainId();
   std::pair<zx_status_t, uint64_t> GetRelativePerformance();
+  std::pair<zx_status_t, uint64_t> GetRelativePerformance2();
   std::tuple<zx_status_t, uint64_t, cpuctrl::wire::CpuOperatingPointInfo>
   GetCurrentOperatingPoint();
   std::tuple<zx_status_t, const std::vector<cpuctrl::wire::CpuOperatingPointInfo>&>
