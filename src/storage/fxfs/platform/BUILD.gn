@@ -138,6 +138,7 @@ fxfs_platform_library("platform") {
     "//third_party/rust_crates:assert_matches",
     "//third_party/rust_crates:libc",
     "//third_party/rust_crates:rand",
+    "//third_party/rust_crates:test-case",
   ]
 
   # The test requires more than typical memory,

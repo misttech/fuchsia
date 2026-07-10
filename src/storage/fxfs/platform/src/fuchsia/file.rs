@@ -293,12 +293,14 @@ impl FxFile {
                 .get(FSCRYPT_KEY_ID)
             {
                 match key {
-                    EncryptionKey::Fxfs(fxfs_key) => return Ok(Some(fxfs_key.wrapping_key_id)),
+                    EncryptionKey::LegacyFxfs(fxfs_key) | EncryptionKey::Fxfs(fxfs_key) => {
+                        return Ok(Some(fxfs_key.wrapping_key_id));
+                    }
                     EncryptionKey::FscryptInoLblk32File { key_identifier } => {
                         return Ok(Some(*key_identifier));
                     }
-                    _ => {
-                        error!("Unexpected key type: {:?}", key);
+                    EncryptionKey::FscryptInoLblk32Dir { .. } => {
+                        error!("Unexpected key type for file: {:?}", key);
                         return Ok(None);
                     }
                 }
@@ -3206,6 +3208,85 @@ mod tests {
                 .expect_err("Write on stream 2 should fail after final close");
         })
         .await;
+
+        fixture.close().await;
+    }
+
+    use test_case::test_case;
+
+    #[test_case(
+        fxfs_crypto::EncryptionKey::LegacyFxfs(fxfs_crypto::FxfsKey {
+            wrapping_key_id: WRAPPING_KEY_ID,
+            key: fxfs_crypto::WrappedKeyBytes::from([0xff; fxfs_crypto::FXFS_WRAPPED_KEY_SIZE]),
+        });
+        "legacy_fxfs"
+    )]
+    #[test_case(
+        fxfs_crypto::EncryptionKey::Fxfs(fxfs_crypto::FxfsKey {
+            wrapping_key_id: WRAPPING_KEY_ID,
+            key: fxfs_crypto::WrappedKeyBytes::from([0xff; fxfs_crypto::FXFS_WRAPPED_KEY_SIZE]),
+        });
+        "fxfs"
+    )]
+    #[test_case(
+        fxfs_crypto::EncryptionKey::FscryptInoLblk32File {
+            key_identifier: WRAPPING_KEY_ID,
+        };
+        "fscrypt_file"
+    )]
+    #[fuchsia::test]
+    async fn test_supported_wrapping_key_ids(key: fxfs_crypto::EncryptionKey) {
+        use fxfs::object_store::transaction::{LockKey, Mutation, Options, lock_keys};
+        use fxfs::object_store::{FSCRYPT_KEY_ID, ObjectKey, ObjectValue};
+
+        let fixture = TestFixture::new().await;
+        let root = fixture.root();
+
+        let file = open_file_checked(
+            &root,
+            "key_test_file",
+            fio::Flags::FLAG_MAYBE_CREATE
+                | fio::Flags::PROTOCOL_FILE
+                | fio::PERM_READABLE
+                | fio::PERM_WRITABLE,
+            &fio::Options::default(),
+        )
+        .await;
+
+        let (_, immutable_attributes) = file
+            .get_attributes(fio::NodeAttributesQuery::ID)
+            .await
+            .expect("get_attributes wire call failed")
+            .map_err(zx::Status::from_raw)
+            .expect("get_attributes failed");
+        let file_id = immutable_attributes.id.unwrap();
+
+        let store = fixture.volume().volume().store();
+        let mut transaction = store
+            .new_transaction(
+                lock_keys![LockKey::object(store.store_object_id(), file_id)],
+                Options::default(),
+            )
+            .await
+            .expect("new_transaction failed");
+
+        transaction.add(
+            store.store_object_id(),
+            Mutation::replace_or_insert_object(
+                ObjectKey::keys(file_id),
+                ObjectValue::Keys(vec![(FSCRYPT_KEY_ID, key)].into()),
+            ),
+        );
+        transaction.commit().await.expect("commit failed");
+
+        let (mutable_attributes, _) = file
+            .get_attributes(fio::NodeAttributesQuery::WRAPPING_KEY_ID)
+            .await
+            .expect("get_attributes wire call failed")
+            .map_err(zx::Status::from_raw)
+            .expect("get_attributes failed");
+
+        assert_eq!(mutable_attributes.wrapping_key_id, Some(WRAPPING_KEY_ID));
 
         fixture.close().await;
     }
