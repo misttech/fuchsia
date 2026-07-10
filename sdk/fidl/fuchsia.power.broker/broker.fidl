@@ -298,13 +298,22 @@ type LeaseError = flexible enum {
 
 type LeaseStatus = flexible enum {
     UNKNOWN = 0;
-    /// The dependencies of the leased `PowerLevel` are not at their required
+    /// The lease has been received by Power Broker, and the upward power
+    /// transition has begun, but has not yet completed. That is, one or more
+    /// dependencies of the leased `PowerLevel` are not yet at their required
     /// levels.
     PENDING = 1;
-    /// The dependencies required by the leased `PowerLevel` are at their
+    /// All dependencies required by the leased `PowerLevel` are at their
     /// required `PowerLevel`s, and the leased `PowerElement` has transitioned
     /// to the requested level.
     SATISFIED = 2;
+    /// The lease has been dropped by the client and acknowledged by Power
+    /// Broker, and the downward power transition has begun, but has not yet
+    /// completed.
+    POWERING_DOWN = 3;
+    /// The lease has been removed, and all resulting power transitions have
+    /// been completed.
+    VACATED = 4;
 };
 
 /// Provides lease-scoped access to actions that can be taken on a lease

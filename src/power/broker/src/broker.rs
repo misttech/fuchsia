@@ -573,12 +573,11 @@ impl Broker {
         Ok(lease)
     }
 
-    /// Drops the provided lease, which deactivates the claims associated with it and
-    /// begins the orderly drop of the dependency chain.
     pub fn drop_lease(&mut self, lease_id: LeaseID) -> Result<(), Error> {
         fuchsia_trace::duration!("power-broker", "Broker::drop_lease");
-        // Drop the lease to mark all the relevant claims as deactivated.
-        let (lease, claims) = self.catalog.drop(lease_id)?;
+        // Drop the lease to mark all the relevant claims as dropped and
+        // transition to PoweringDown.
+        let (lease, claims) = self.catalog.drop_and_mark_powering_down(lease_id)?;
         let counter = self.adjust_lease_counter(
             lease.underlying_element_id,
             lease.underlying_element_level.level,
@@ -589,13 +588,51 @@ impl Broker {
             &self.lookup_name(lease.underlying_element_id).into_owned() => counter
         );
 
-        // Find the set of claims that can be dropped immediately.
+        // Find the set of claims that can be safely dropped immediately.
         let claims_dropped = self.find_claims_to_drop_or_deactivate(&claims);
-        // Drop the discovered set of claims and forcefully update leases,
-        // which don't have direct dependencies on this lease and thus won't be found via
-        // the claim search through this lease.
+        // Drop the discovered set of claims and update required levels.
         self.drop_or_deactivate_claims(&claims_dropped);
-        // Remove the lease information and then remove the underlying element.
+
+        // Transition the synthetic element's current level to minimum level (OFF/0) to initiate the
+        // power down.
+        let minimum_level = self.catalog.minimum_level(lease.synthetic_element_id);
+        self.update_current_level(lease.synthetic_element_id, minimum_level);
+
+        // Check if the lease has no remaining claims and can be vacated immediately.
+        self.vacate_lease_if_all_claims_dropped(lease_id);
+        Ok(())
+    }
+
+    fn vacate_lease_if_all_claims_dropped(&mut self, lease_id: LeaseID) {
+        if self.catalog.is_lease_powering_down(lease_id)
+            && self.catalog.has_no_remaining_claims(lease_id)
+        {
+            if let Err(err) = self.vacate_lease(lease_id) {
+                log::error!("Failed to vacate lease {lease_id}: {:?}", err);
+            }
+        }
+    }
+
+    fn vacate_lease(&mut self, lease_id: LeaseID) -> Result<(), Error> {
+        log::debug!("vacate_lease({lease_id})");
+        let lease = self
+            .catalog
+            .leases
+            .get(&lease_id)
+            .cloned()
+            .ok_or_else(|| anyhow!("{lease_id} not found"))?;
+
+        self.catalog.lease_status.update(&lease_id, LeaseStatus::Vacated);
+        if let Some(element) = self.catalog.topology.get_element(&lease.underlying_element_id) {
+            self.catalog.topology.inspect().on_update_lease_status(
+                &element,
+                &lease,
+                &LeaseStatus::Vacated,
+            );
+            self.catalog.topology.inspect().on_drop_lease(&element, &lease);
+        }
+
+        self.catalog.leases.remove(&lease_id);
         self.catalog.lease_status.remove(&lease_id);
         self.remove_element(&lease.synthetic_element_id);
         Ok(())
@@ -798,10 +835,12 @@ impl Broker {
     /// or drops them if their lease has been dropped. Then updates lease
     /// status of leases affected and required levels of elements affected.
     fn drop_or_deactivate_claims(&mut self, claims: &[Claim]) {
+        let mut leases_to_check = HashSet::new();
         for claim in claims {
             log::debug!("deactivate claim: {claim}");
             if self.catalog.is_lease_dropped(claim.lease_id) {
                 self.catalog.claims.drop_claim(claim.id);
+                leases_to_check.insert(claim.lease_id);
             } else {
                 self.catalog.claims.deactivate_claim(claim.id);
             }
@@ -810,6 +849,9 @@ impl Broker {
             element_ids_required_by_claims(claims.iter()),
             &mut EagerInspectWriter,
         );
+        for lease_id in leases_to_check {
+            self.vacate_lease_if_all_claims_dropped(lease_id);
+        }
     }
 
     pub fn add_element(
@@ -1230,7 +1272,22 @@ impl Catalog {
 
     /// Returns true if the lease was dropped (or never existed).
     fn is_lease_dropped(&self, lease_id: LeaseID) -> bool {
-        !self.leases.contains_key(&lease_id)
+        if !self.leases.contains_key(&lease_id) {
+            return true;
+        }
+        match self.lease_status.get(&lease_id) {
+            Some(LeaseStatus::PoweringDown) | Some(LeaseStatus::Vacated) => true,
+            _ => false,
+        }
+    }
+
+    fn is_lease_powering_down(&self, lease_id: LeaseID) -> bool {
+        self.lease_status.get(&lease_id) == Some(LeaseStatus::PoweringDown)
+    }
+
+    fn has_no_remaining_claims(&self, lease_id: LeaseID) -> bool {
+        self.claims.pending.for_lease(lease_id).next().is_none()
+            && self.claims.activated.for_lease(lease_id).next().is_none()
     }
 
     /// Calculates the required level for each element, according to the
@@ -1382,16 +1439,23 @@ impl Catalog {
     }
 
     /// Drops an existing lease, and initiates process of releasing all
-    /// associated claims.
-    /// Returns the dropped lease and a Vec of claims marked to deactivate.
-    fn drop(&mut self, lease_id: LeaseID) -> Result<(Lease, Vec<Claim>), Error> {
-        log::debug!("drop(lease:{lease_id})");
-        let lease = self.leases.remove(&lease_id).ok_or_else(|| anyhow!("{lease_id} not found"))?;
-        self.lease_status.remove(&lease_id);
+    /// associated claims, and transitions status to PoweringDown.
+    /// Returns the lease and a Vec of claims marked to deactivate.
+    fn drop_and_mark_powering_down(
+        &mut self,
+        lease_id: LeaseID,
+    ) -> Result<(Lease, Vec<Claim>), Error> {
+        log::debug!("drop_and_mark_powering_down(lease:{lease_id})");
+        let lease =
+            self.leases.get(&lease_id).cloned().ok_or_else(|| anyhow!("{lease_id} not found"))?;
+        self.lease_status.update(&lease_id, LeaseStatus::PoweringDown);
         if let Some(element) = self.topology.get_element(&lease.underlying_element_id) {
-            self.topology.inspect().on_drop_lease(&element, &lease);
+            self.topology.inspect().on_update_lease_status(
+                &element,
+                &lease,
+                &LeaseStatus::PoweringDown,
+            );
         }
-        log::debug!("dropping lease({:?})", lease);
         // Pending claims should be dropped immediately.
         let pending_claims: Vec<ClaimID> =
             self.claims.pending.for_lease(lease.id).map(|c| c.id).collect::<Vec<_>>();
@@ -2817,10 +2881,13 @@ mod tests {
         broker_status.assert_matches(&broker);
 
         // We expect one synthetic element.
-        let mut synthetic_elements =
-            broker.catalog.topology.elements.iter().filter(|(_, e)| e.synthetic);
-        let (_, synthetic) = synthetic_elements.next().unwrap();
-        assert!(synthetic_elements.next().is_none());
+        let (synthetic_id, synthetic_name) = {
+            let mut synthetic_elements =
+                broker.catalog.topology.elements.iter().filter(|(_, e)| e.synthetic);
+            let (_, synthetic) = synthetic_elements.next().unwrap();
+            assert!(synthetic_elements.next().is_none());
+            (synthetic.id, synthetic.name.clone())
+        };
 
         assert_data_tree!(inspect, root: {
             test: {
@@ -2842,9 +2909,9 @@ mod tests {
                                 },
                                 relationships: {}
                             },
-                            synthetic.id.to_string() => {
+                            synthetic_id.to_string() => {
                                 meta: {
-                                    name: synthetic.name.clone(),
+                                    name: synthetic_name,
                                     synthetic: true,
                                     leases: {},
                                     valid_levels: vec![0u64, 255],
@@ -2922,7 +2989,7 @@ mod tests {
             [
                 {
                     add_element: {
-                        element_id: *synthetic.id,
+                        element_id: *synthetic_id,
                     },
                 },
                 {
@@ -2933,7 +3000,7 @@ mod tests {
                 },
                 {
                     update_level: {
-                        element_id: *synthetic.id,
+                        element_id: *synthetic_id,
                         required_level: 0u64,
                     },
                 },
@@ -2946,7 +3013,7 @@ mod tests {
                 },
                 {
                     update_level: {
-                        element_id: *synthetic.id,
+                        element_id: *synthetic_id,
                         required_level: 255u64,
                     },
                 },
@@ -2983,6 +3050,100 @@ mod tests {
         assert!(extra_drop.is_err());
 
         assert_lease_cleaned_up(&broker.catalog, lease.id);
+
+        let hierarchy = fuchsia_inspect::reader::read(&inspect).await.unwrap();
+        assert_events_recorded_in_order!(
+            &hierarchy,
+            [
+                {
+                    add_element: {
+                        element_id: *synthetic_id,
+                    },
+                },
+                {
+                    create_lease: {
+                        element_id: *child,
+                        lease_id: *lease.id,
+                    },
+                },
+                {
+                    update_level: {
+                        element_id: *synthetic_id,
+                        required_level: 0u64,
+                    },
+                },
+                {
+                    update_lease: {
+                        element_id: *child,
+                        lease_id: *lease.id,
+                        status: 1u64,
+                    },
+                },
+                {
+                    update_level: {
+                        element_id: *synthetic_id,
+                        required_level: 255u64,
+                    },
+                },
+                {
+                    update_lease: {
+                        element_id: *child,
+                        lease_id: *lease.id,
+                        status: 2u64,
+                    },
+                },
+                {
+                    update_lease: {
+                        element_id: *child,
+                        lease_id: *lease.id,
+                        status: 3u64,
+                    },
+                },
+                {
+                    update_level: {
+                        element_id: *child,
+                        required_level: 0u64,
+                    },
+                },
+                {
+                    update_level: {
+                        element_id: *synthetic_id,
+                        current_level: 0u64,
+                    },
+                },
+                {
+                    update_level: {
+                        element_id: *child,
+                        current_level: 0u64,
+                    },
+                },
+                {
+                    update_level: {
+                        element_id: *parent1,
+                        required_level: 0u64,
+                    },
+                },
+                {
+                    update_level: {
+                        element_id: *parent2,
+                        required_level: 0u64,
+                    },
+                },
+                {
+                    update_lease: {
+                        element_id: *child,
+                        lease_id: *lease.id,
+                        status: 4u64,
+                    },
+                },
+                {
+                    rm_lease: {
+                        element_id: *child,
+                        lease_id: *lease.id,
+                    },
+                },
+            ]
+        );
 
         broker.remove_element(&child);
         assert_element_cleaned_up(&broker, child);
@@ -4933,5 +5094,69 @@ mod tests {
         assert_eq!(broker.get_required_level(&element_b).unwrap().level, 1);
         // The lease should still be satisfied.
         assert_eq!(broker.get_lease_status(lease.id), Some(LeaseStatus::Satisfied));
+    }
+
+    #[fuchsia::test]
+    fn test_lease_powering_down_and_vacated_states() {
+        let inspect = fuchsia_inspect::Inspector::default();
+        let mut broker = Broker::new(inspect.root().create_child("test"));
+
+        let element_a = broker
+            .add_element("A", OFF.level, BINARY_POWER_LEVELS.to_vec(), vec![])
+            .expect("add_element failed");
+        let element_b = broker
+            .add_element("B", OFF.level, BINARY_POWER_LEVELS.to_vec(), vec![])
+            .expect("add_element failed");
+
+        let token_b = DependencyToken::create();
+        broker
+            .register_dependency_token(
+                element_b,
+                token_b.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed").into(),
+            )
+            .expect("register_dependency_token failed");
+
+        // A at ON requires B at ON.
+        broker
+            .add_dependency(
+                element_a,
+                fpb::LevelDependency {
+                    dependent_level: Some(ON.level),
+                    requires_token: Some(token_b),
+                    requires_level_by_preference: Some(vec![ON.level]),
+                    ..Default::default()
+                },
+                &mut EagerInspectWriter,
+            )
+            .expect("add_dependency failed");
+
+        // Acquire lease on A at ON.
+        let lease =
+            broker.acquire_lease(element_a, ON, zx::Koid::from_raw(1)).expect("acquire failed");
+
+        // Satisfy dependencies.
+        broker.update_current_level(element_b, ON);
+        broker.update_current_level(element_a, ON);
+
+        // Verify lease is Satisfied.
+        assert_eq!(broker.get_lease_status(lease.id), Some(LeaseStatus::Satisfied));
+        assert!(broker.catalog.leases.contains_key(&lease.id));
+
+        // Drop the lease.
+        broker.drop_lease(lease.id).expect("drop failed");
+
+        // Verify it enters POWERING_DOWN state and is not yet deleted.
+        assert_eq!(broker.get_lease_status(lease.id), Some(LeaseStatus::PoweringDown));
+        assert!(broker.catalog.leases.contains_key(&lease.id));
+        assert!(broker.catalog.topology.elements.contains_key(&lease.synthetic_element_id));
+
+        // Let's power down element A to OFF. This should cascade and drop claims.
+        broker.update_current_level(element_a, OFF);
+
+        // The lease should be VACATED now, but we can't observe that as it has
+        // been cleaned up.
+        assert_eq!(broker.get_lease_status(lease.id), None);
+        assert!(!broker.catalog.leases.contains_key(&lease.id));
+        assert!(!broker.catalog.topology.elements.contains_key(&lease.synthetic_element_id));
     }
 }
