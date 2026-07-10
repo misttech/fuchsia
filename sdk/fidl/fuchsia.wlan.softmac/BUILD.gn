@@ -44,7 +44,7 @@ fidl("fuchsia.wlan.softmac") {
   sdk_category = "partner"
   contains_drivers = true
   enable_rust_next = true
-  stable = true
+  stable = false
   visibility = [ "*" ]
   public_deps = [
     "//sdk/fidl/fuchsia.wlan.common",

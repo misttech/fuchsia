@@ -401,7 +401,7 @@ fidl_library://fidl/fuchsia.wlan.phyimpl
 fidl_library://fidl/fuchsia.wlan.policy
 fidl_library://fidl/fuchsia.wlan.product.deprecatedclient
 fidl_library://fidl/fuchsia.wlan.product.deprecatedconfiguration
-fidl_library://fidl/fuchsia.wlan.softmac
+fidl_library://fidl/fuchsia.wlan.softmac (unstable)
 fidl_library://fidl/fuchsia.wlan.stats (unstable)
 fidl_library://fidl/zx
 loadable_module://pkg/vulkan_layers

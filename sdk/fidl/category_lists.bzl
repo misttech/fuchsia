@@ -194,7 +194,6 @@ PARTNER_IDK_STABLE_FIDL_LIBRARY_ATOMS_LIST = [
     "//sdk/fidl/fuchsia.wlan.policy:fuchsia.wlan.policy_idk",
     "//sdk/fidl/fuchsia.wlan.product.deprecatedclient:fuchsia.wlan.product.deprecatedclient_idk",
     "//sdk/fidl/fuchsia.wlan.product.deprecatedconfiguration:fuchsia.wlan.product.deprecatedconfiguration_idk",
-    "//sdk/fidl/fuchsia.wlan.softmac:fuchsia.wlan.softmac_idk",
     "//zircon/vdso/zx:zx_idk",
 ]
 
@@ -262,6 +261,7 @@ PARTNER_IDK_UNSTABLE_FIDL_LIBRARY_ATOMS_LIST = [
     "//sdk/fidl/fuchsia.system.state:fuchsia.system.state_idk",
     "//sdk/fidl/fuchsia.usb.policy:fuchsia.usb.policy_idk",
     "//sdk/fidl/fuchsia.wlan.fullmac:fuchsia.wlan.fullmac_idk",
+    "//sdk/fidl/fuchsia.wlan.softmac:fuchsia.wlan.softmac_idk",
     "//sdk/fidl/fuchsia.wlan.stats:fuchsia.wlan.stats_idk",
 ]
 # LINT.ThenChange(BUILD.gn:partner_libraries)

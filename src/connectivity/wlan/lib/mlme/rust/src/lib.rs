@@ -34,58 +34,13 @@ use futures::channel::mpsc::{self, TrySendError};
 use futures::channel::oneshot;
 use futures::{Future, StreamExt, select};
 use log::info;
+use std::fmt;
 use std::sync::Arc;
 use std::time::Duration;
-use std::{cmp, fmt};
 pub use wlan_common as common;
 use wlan_ffi_transport::{EthernetTxEvent, EthernetTxEventSender, WlanRxEvent, WlanRxEventSender};
 use wlan_fidl_ext::{ResponderExt, SendResultExt};
 use wlan_trace as wtrace;
-
-// TODO(https://fxbug.dev/42084990): This trait is migratory and reads both newer and deprecated fields that
-//                         encode the same information (and prioritizes the newer fields). Remove
-//                         this trait and directly access fields once the deprecated fields for
-//                         basic rates and operating channels are removed from the SoftMAC FIDL
-//                         APIs and the platform version for WLAN is bumped to or beyond the
-//                         removal.
-// These extension methods cannot enforce that client code reads fields in a manner that is
-// backwards-compatible, but in exchange churn is greatly reduced (compared to the introduction of
-// additional types, for example).
-/// SDK backwards-compatiblity extensions for band capabilitites.
-trait WlanSoftmacBandCapabilityExt {
-    /// Gets supported basic rates with SDK backwards-compatibility.
-    fn basic_rates(&self) -> Option<&[u8]>;
-
-    /// Gets supported operating channels with SDK backwards-compatibility.
-    fn operating_channels(&self) -> Option<&[u8]>;
-}
-
-impl WlanSoftmacBandCapabilityExt for fidl_softmac::WlanSoftmacBandCapability {
-    fn basic_rates(&self) -> Option<&[u8]> {
-        match (&self.basic_rates, (&self.basic_rate_count, &self.basic_rate_list)) {
-            // Prefer the newer `basic_rates` field in the SoftMAC FIDL API.
-            (Some(basic_rates), _) => Some(basic_rates),
-            (None, (Some(n), Some(basic_rates))) => {
-                Some(&basic_rates[..cmp::min(usize::from(*n), basic_rates.len())])
-            }
-            _ => None,
-        }
-    }
-
-    fn operating_channels(&self) -> Option<&[u8]> {
-        match (
-            &self.operating_channels,
-            (&self.operating_channel_count, &self.operating_channel_list),
-        ) {
-            // Prefer the newer `operating_channels` field in the SoftMAC FIDL API.
-            (Some(operating_channels), _) => Some(operating_channels),
-            (None, (Some(n), Some(operating_channels))) => {
-                Some(&operating_channels[..cmp::min(usize::from(*n), operating_channels.len())])
-            }
-            _ => None,
-        }
-    }
-}
 
 trait WlanTxPacketExt {
     fn template(mac_frame: Vec<u8>) -> Self;

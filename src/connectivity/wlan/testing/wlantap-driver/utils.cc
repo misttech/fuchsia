@@ -42,12 +42,10 @@ void ConvertTapPhyConfig(wlan_softmac::WlanSoftmacQueryResponse* resp,
     softmac_band_caps_builder.band(tap_band_caps.band);
 
     if (tap_band_caps.ht_caps != nullptr) {
-      softmac_band_caps_builder.ht_supported(true);
       softmac_band_caps_builder.ht_caps(tap_band_caps.ht_caps);
     }
 
     if (tap_band_caps.vht_caps != nullptr) {
-      softmac_band_caps_builder.vht_supported(true);
       softmac_band_caps_builder.vht_caps(tap_band_caps.vht_caps);
     }
 

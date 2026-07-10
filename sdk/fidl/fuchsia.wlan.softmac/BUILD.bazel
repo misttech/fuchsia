@@ -16,7 +16,7 @@ fidl_library(
     category = "partner",
     contains_drivers = True,
     enable_rust_next = True,
-    stable = True,
+    stable = False,
     visibility = ["//visibility:public"],
     deps = [
         "//sdk/fidl/fuchsia.wlan.common",

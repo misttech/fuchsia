@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::WlanSoftmacBandCapabilityExt as _;
 use crate::client::Context;
 use crate::client::convert_beacon::construct_bss_description;
 use crate::ddk_converter::cssid_from_ssid_unchecked;
@@ -443,7 +442,8 @@ fn supported_rates_for_band(
 ) -> Result<Vec<u8>, Error> {
     let rates = band_cap_for_band(&query_response, band)
         .ok_or_else(|| format_err!("no capabilities found for band {:?}", band))?
-        .basic_rates()
+        .basic_rates
+        .as_deref()
         .map(From::from)
         .ok_or_else(|| format_err!("no basic rates found for band capabilities"))?;
     Ok(rates)

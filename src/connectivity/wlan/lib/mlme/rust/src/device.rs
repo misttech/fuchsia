@@ -1259,7 +1259,6 @@ pub mod test_utils {
                     0x02, 0x04, 0x0b, 0x16, 0x0c, 0x12, 0x18, 0x24, 0x30, 0x48, 0x60, 0x6c,
                 ]),
                 operating_channels: Some(vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]),
-                ht_supported: Some(true),
                 ht_caps: Some(fidl_ieee80211::HtCapabilities {
                     bytes: [
                         0x63, 0x00, // HT capability info
@@ -1272,15 +1271,13 @@ pub mod test_utils {
                         0x00, // ASEL capabilities
                     ],
                 }),
-                vht_supported: Some(false),
-                vht_caps: Some(fidl_ieee80211::VhtCapabilities { bytes: Default::default() }),
+                vht_caps: None,
                 ..Default::default()
             },
             fidl_softmac::WlanSoftmacBandCapability {
                 band: Some(fidl_ieee80211::WlanBand::FiveGhz),
                 basic_rates: Some(vec![0x02, 0x04, 0x0b, 0x16, 0x30, 0x60, 0x7e, 0x7f]),
                 operating_channels: Some(vec![36, 40, 44, 48, 149, 153, 157, 161]),
-                ht_supported: Some(true),
                 ht_caps: Some(fidl_ieee80211::HtCapabilities {
                     bytes: [
                         0x63, 0x00, // HT capability info
@@ -1293,7 +1290,6 @@ pub mod test_utils {
                         0x00, // ASEL capabilities
                     ],
                 }),
-                vht_supported: Some(true),
                 vht_caps: Some(fidl_ieee80211::VhtCapabilities {
                     bytes: [0x32, 0x50, 0x80, 0x0f, 0xfe, 0xff, 0x00, 0x00, 0xfe, 0xff, 0x00, 0x00],
                 }),
@@ -1359,7 +1355,6 @@ mod tests {
                     0x02, 0x04, 0x0b, 0x16, 0x0c, 0x12, 0x18, 0x24, 0x30, 0x48, 0x60, 0x6c,
                 ]),
                 operating_channels: Some(vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]),
-                ht_supported: Some(true),
                 ht_caps: Some(fidl_ieee80211::HtCapabilities {
                     bytes: [
                         0x63, 0x00, // HT capability info
@@ -1372,15 +1367,13 @@ mod tests {
                         0x00, // ASEL capabilities
                     ],
                 }),
-                vht_supported: Some(false),
-                vht_caps: Some(fidl_ieee80211::VhtCapabilities { bytes: Default::default() }),
+                vht_caps: None,
                 ..Default::default()
             },
             fidl_softmac::WlanSoftmacBandCapability {
                 band: Some(fidl_ieee80211::WlanBand::FiveGhz),
                 basic_rates: Some(vec![0x02, 0x04, 0x0b, 0x16, 0x30, 0x60, 0x7e, 0x7f]),
                 operating_channels: Some(vec![36, 40, 44, 48, 149, 153, 157, 161]),
-                ht_supported: Some(true),
                 ht_caps: Some(fidl_ieee80211::HtCapabilities {
                     bytes: [
                         0x63, 0x00, // HT capability info
@@ -1393,7 +1386,6 @@ mod tests {
                         0x00, // ASEL capabilities
                     ],
                 }),
-                vht_supported: Some(true),
                 vht_caps: Some(fidl_ieee80211::VhtCapabilities {
                     bytes: [0x32, 0x50, 0x80, 0x0f, 0xfe, 0xff, 0x00, 0x00, 0xfe, 0xff, 0x00, 0x00],
                 }),

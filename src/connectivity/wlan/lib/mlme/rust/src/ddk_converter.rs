@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::WlanSoftmacBandCapabilityExt as _;
 use anyhow::format_err;
 use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
 use fidl_fuchsia_wlan_mlme as fidl_mlme;
@@ -51,23 +50,12 @@ pub fn mlme_band_cap_from_softmac(
         })
     }
 
-    // TODO(https://fxbug.dev/42084991): The predicate fields in `WlanSoftmacBandCapability` have been
-    //                         deprecated. As such, this function raises no errors when the
-    //                         predicate is set `true` but the predicated field is unset, because
-    //                         servers working against the deprecated fields are expected to always
-    //                         set them to `true`. Once the predicate fields have been removed,
-    //                         remove this function and map the fields directly below.
-    fn predicated<T>(predicate: Option<bool>, field: Option<T>) -> Option<T> {
-        // Do not read the predicated fields if the predicate is unset or set `false`.
-        predicate.unwrap_or(false).then_some(field).flatten()
-    }
-
     Ok(fidl_mlme::BandCapability {
         band: required(band_cap.band, "band")?,
-        basic_rates: required(band_cap.basic_rates(), "basic_rates")?.into(),
-        operating_channels: required(band_cap.operating_channels(), "operating_channels")?.into(),
-        ht_cap: predicated(band_cap.ht_supported, band_cap.ht_caps).map(Box::new),
-        vht_cap: predicated(band_cap.vht_supported, band_cap.vht_caps).map(Box::new),
+        basic_rates: required(band_cap.basic_rates, "basic_rates")?,
+        operating_channels: required(band_cap.operating_channels, "operating_channels")?,
+        ht_cap: band_cap.ht_caps.map(Box::new),
+        vht_cap: band_cap.vht_caps.map(Box::new),
     })
 }
 
@@ -181,7 +169,6 @@ mod tests {
                 0x02, 0x04, 0x0b, 0x16, 0x0c, 0x12, 0x18, 0x24, 0x30, 0x48, 0x60, 0x6c,
             ]),
             operating_channels: Some(vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]),
-            ht_supported: Some(true),
             ht_caps: Some(fidl_ieee80211::HtCapabilities {
                 bytes: [
                     0x63, 0x00, // HT capability info
@@ -194,8 +181,12 @@ mod tests {
                     0x00, // ASEL capabilities
                 ],
             }),
-            vht_supported: Some(false),
-            vht_caps: Some(fidl_ieee80211::VhtCapabilities { bytes: Default::default() }),
+            vht_caps: Some(fidl_ieee80211::VhtCapabilities {
+                bytes: [
+                    0xfe, 0xff, 0xff, 0xff, // VhtCapabilitiesInfo(u32)
+                    0xff, 0xaa, 0x00, 0x00, 0x55, 0xff, 0x00, 0x00, // VhtMcsNssSet(u64)
+                ],
+            }),
             ..Default::default()
         };
         let mlme_band_cap = mlme_band_cap_from_softmac(softmac_band_cap)
@@ -210,6 +201,6 @@ mod tests {
             vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
         );
         assert!(mlme_band_cap.ht_cap.is_some());
-        assert!(mlme_band_cap.vht_cap.is_none());
+        assert!(mlme_band_cap.vht_cap.is_some());
     }
 }
