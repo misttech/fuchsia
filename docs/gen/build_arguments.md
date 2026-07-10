@@ -224,7 +224,7 @@ NOTE: Enabling will add a several seconds of overhead to the build.
 
 **Current value (from the default):** `false`
 
-From //build/bazel/bazel_action.gni:15
+From //build/bazel/bazel_action.gni:16
 
 ### bazel_execution_logs
 
@@ -974,7 +974,7 @@ This should never be set as a build argument.
 }
   tsan = {
   shared = {
-  clang_rt = ""
+  clang_rt = "../../../../out/not-default/libclang_rt.tsan.so"
 }
   static = {
   clang_rt = "../../../../out/not-default/libclang_rt.tsan.a"
