@@ -286,16 +286,6 @@ zx::result<std::unique_ptr<Blobfs>> Blobfs::Create(async_dispatcher_t* dispatche
     FX_PLOGS(ERROR, status) << "Failed to load bitmaps";
     return zx::error(status);
   }
-  if (zx_status_t status = fs->info_mapping_.CreateAndMap(kBlobfsBlockSize, "blobfs-superblock");
-      status != ZX_OK) {
-    FX_PLOGS(ERROR, status) << "Failed to create info vmo";
-    return zx::error(status);
-  }
-  if (zx_status_t status = fs->BlockAttachVmo(fs->info_mapping_.vmo(), &fs->info_vmoid_);
-      status != ZX_OK) {
-    FX_PLOGS(ERROR, status) << "Failed to attach info vmo";
-    return zx::error(status);
-  }
   if (zx_status_t status = fs->InitializeVnodes(); status != ZX_OK) {
     FX_PLOGS(ERROR, status) << "Failed to initialize Vnodes";
     return zx::error(status);
@@ -560,9 +550,8 @@ void Blobfs::WriteNode(uint32_t map_index, BlobTransaction& transaction) {
 }
 
 void Blobfs::WriteInfo(BlobTransaction& transaction, bool write_backup) {
-  memcpy(info_mapping_.start(), &info_, sizeof(info_));
   storage::UnbufferedOperation operation = {
-      .vmo = zx::unowned_vmo(info_mapping_.vmo().get()),
+      .data = &info_,
       .op =
           {
               .type = storage::OperationType::kWrite,
@@ -872,18 +861,10 @@ std::unique_ptr<BlockDevice> Blobfs::Reset() {
 
   // Write the clean bit.
   if (writability_ == Writability::Writable) {
-    // NB: If blobfs initialization failed, it is possible that the info_mapping_ vmo that we use to
-    // send writes to the underlying block device has not been initialized yet.
-    // To fix this, we could change Blobfs::Create ordering to try and get the object into a valid
-    // state as soon as possible and reassess what is needed in the destructor.
-    if (info_mapping_.start() == nullptr) {
-      FX_LOGS(ERROR) << "Cannot write journal clean bit";
-    } else {
-      BlobTransaction transaction;
-      info_.flags |= kBlobFlagClean;
-      WriteInfo(transaction);
-      transaction.Commit(*journal_);
-    }
+    BlobTransaction transaction;
+    info_.flags |= kBlobFlagClean;
+    WriteInfo(transaction);
+    transaction.Commit(*journal_);
   }
   // Waits for all pending writeback operations to complete or fail.
   journal_.reset();
@@ -896,8 +877,6 @@ std::unique_ptr<BlockDevice> Blobfs::Reset() {
 
   // Flushes the underlying block device.
   this->Flush();
-
-  BlockDetachVmo(std::move(info_vmoid_));
 
   return std::move(block_device_);
 }

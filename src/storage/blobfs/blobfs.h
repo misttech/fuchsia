@@ -14,7 +14,6 @@
 
 #include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <lib/async/dispatcher.h>
-#include <lib/fzl/resizeable-vmo-mapper.h>
 #include <lib/zx/event.h>
 #include <lib/zx/result.h>
 #include <lib/zx/vmo.h>
@@ -299,9 +298,6 @@ class Blobfs : public TransactionManager, public BlockIteratorProvider {
   Writability writability_;
 
   std::unique_ptr<Allocator> allocator_;
-
-  fzl::ResizeableVmoMapper info_mapping_;
-  storage::Vmoid info_vmoid_;
 
   // This event's koid is used as a unique identifier for this filesystem instance.
   zx::event fs_id_;
