@@ -40,17 +40,9 @@ LogSource::LogSource(async_dispatcher_t* dispatcher,
 
     // The batch iterator and archive accessor connections are not expected to close. Ensure both
     // are unbound at the same time to simplify reconnections.
-    batch_iterator_.Unbind();
-
-    OnDisconnect();
-  });
-
-  batch_iterator_.set_error_handler([this](const zx_status_t status) {
-    FX_LOGS(WARNING) << "Lost connection to fuchsia.diagnostics.BatchIterator";
-
-    // The batch iterator and archive accessor connections are not expected to close. Ensure both
-    // are unbound at the same time to simplify reconnections.
-    archive_accessor_.Unbind();
+    if (batch_iterator_) {
+      batch_iterator_->Unbind();
+    }
 
     OnDisconnect();
   });
@@ -64,14 +56,27 @@ void LogSource::Start() {
   is_stopped_ = false;
   services_->Connect(archive_accessor_.NewRequest(dispatcher_), kArchiveAccessorName);
 
+  auto format = fuchsia::diagnostics::Format::LEGACY_FXT;
   fuchsia::diagnostics::StreamParameters params;
   params.set_data_type(fuchsia::diagnostics::DataType::LOGS)
-      .set_format(fuchsia::diagnostics::Format::LEGACY_FXT)
+      .set_format(format)
       .set_stream_mode(fuchsia::diagnostics::StreamMode::SNAPSHOT_THEN_SUBSCRIBE)
       .set_client_selector_configuration(
           fuchsia::diagnostics::ClientSelectorConfiguration::WithSelectAll(true));
 
-  archive_accessor_->StreamDiagnostics(std::move(params), batch_iterator_.NewRequest(dispatcher_));
+  fuchsia::diagnostics::BatchIteratorPtr batch_iterator;
+  archive_accessor_->StreamDiagnostics(std::move(params), batch_iterator.NewRequest(dispatcher_));
+  batch_iterator_ = std::make_unique<diagnostics::accessor2logger::LogBatchIterator>(
+      std::move(batch_iterator), format);
+  batch_iterator_->set_error_handler([this](const zx_status_t status) {
+    FX_LOGS(WARNING) << "Lost connection to fuchsia.diagnostics.BatchIterator";
+
+    // The batch iterator and archive accessor connections are not expected to close. Ensure both
+    // are unbound at the same time to simplify reconnections.
+    archive_accessor_.Unbind();
+
+    OnDisconnect();
+  });
   GetNext();
 }
 
@@ -95,34 +100,31 @@ void LogSource::OnDisconnect() {
 }
 
 void LogSource::GetNext() {
-  using diagnostics::accessor2logger::ConvertFormattedContentToLogMessages;
-
   batch_iterator_->GetNext([this](auto result) {
     auto get_next = ::fit::defer([this] { GetNext(); });
-    if (result.is_err()) {
+    if (result.is_error()) {
       return;
     }
 
-    for (::fuchsia::diagnostics::FormattedContent& content : result.response().batch) {
-      auto formatted = ConvertFormattedContentToLogMessages(std::move(content));
+    for (fpromise::result<fuchsia::logger::LogMessage, std::string>& formatted : result.value()) {
       if (formatted.is_error()) {
         sink_->Add(::fpromise::error(std::move(formatted.error())));
         continue;
       }
 
-      for (::fpromise::result<fuchsia::logger::LogMessage, std::string>& message :
-           formatted.value()) {
-        sink_->Add(std::move(message));
-      }
+      sink_->Add(std::move(formatted));
     }
   });
 }
 
 void LogSource::Stop() {
-  batch_iterator_.Unbind();
+  is_stopped_ = true;
+
+  if (batch_iterator_) {
+    batch_iterator_->Unbind();
+  }
   archive_accessor_.Unbind();
 
-  is_stopped_ = true;
   sink_->NotifyInterruption();
 }
 

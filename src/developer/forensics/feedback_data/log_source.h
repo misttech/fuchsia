@@ -15,6 +15,7 @@
 #include <string>
 
 #include "src/lib/backoff/backoff.h"
+#include "src/lib/diagnostics/accessor2logger/log_message.h"
 #include "src/lib/fxl/memory/weak_ptr.h"
 
 namespace forensics::feedback_data {
@@ -62,7 +63,7 @@ class LogSource {
 
   LogSink* sink_;
   fuchsia::diagnostics::ArchiveAccessorPtr archive_accessor_;
-  fuchsia::diagnostics::BatchIteratorPtr batch_iterator_;
+  std::unique_ptr<diagnostics::accessor2logger::LogBatchIterator> batch_iterator_;
 
   bool is_stopped_{false};
   std::unique_ptr<backoff::Backoff> backoff_;

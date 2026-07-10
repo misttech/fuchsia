@@ -337,10 +337,23 @@ fpromise::result<void, std::string> ConvertFormattedContentToLogMessagesInternal
     return fpromise::error("Expected json or FXT content");
   }
 }
+
+MessageParser* CreateMessageParserForFormat(fuchsia::diagnostics::Format format) {
+  switch (format) {
+    case fuchsia::diagnostics::Format::JSON:
+    case fuchsia::diagnostics::Format::TEXT:
+    case fuchsia::diagnostics::Format::CBOR:
+    case fuchsia::diagnostics::Format::LEGACY_FXT:
+      return nullptr;
+    case fuchsia::diagnostics::Format::FXT:
+      return fuchsia_new_message_parser();
+  }
+}
 }  // namespace
 
-LogBatchIterator::LogBatchIterator(fuchsia::diagnostics::BatchIteratorPtr iterator)
-    : iterator_(std::move(iterator)), parser_(fuchsia_new_message_parser()) {}
+LogBatchIterator::LogBatchIterator(fuchsia::diagnostics::BatchIteratorPtr iterator,
+                                   fuchsia::diagnostics::Format format)
+    : iterator_(std::move(iterator)), parser_(CreateMessageParserForFormat(format)) {}
 
 LogBatchIterator::~LogBatchIterator() {
   if (parser_) {

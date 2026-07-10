@@ -77,7 +77,8 @@ class LogBatchIteratorTestHelper {
     fuchsia::diagnostics::BatchIteratorPtr ptr;
     auto request = ptr.NewRequest(loop_.dispatcher());
     binding_.Bind(std::move(request), loop_.dispatcher());
-    iterator_ = std::make_unique<diagnostics::accessor2logger::LogBatchIterator>(std::move(ptr));
+    iterator_ = std::make_unique<diagnostics::accessor2logger::LogBatchIterator>(
+        std::move(ptr), fuchsia::diagnostics::Format::FXT);
   }
 
   void SetBatch(std::vector<fuchsia::diagnostics::FormattedContent> batch) {

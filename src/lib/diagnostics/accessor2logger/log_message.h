@@ -25,7 +25,8 @@ namespace diagnostics::accessor2logger {
 // be made from the thread to which the interface was bound.
 class LogBatchIterator {
  public:
-  explicit LogBatchIterator(fuchsia::diagnostics::BatchIteratorPtr iterator);
+  explicit LogBatchIterator(fuchsia::diagnostics::BatchIteratorPtr iterator,
+                            fuchsia::diagnostics::Format format);
   ~LogBatchIterator();
 
   // Non-copyable, but movable.
