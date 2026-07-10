@@ -450,9 +450,11 @@ impl From<&Error> for SerializableError {
             err @ Error::IoError(e) => {
                 Self::IoError { code: err.exit_code(), message: format!("{}", e) }
             }
-            err @ Error::User(e) => Self::User { code: err.exit_code(), message: format!("{}", e) },
-            err @ Error::Config(e) => {
-                Self::Config { code: err.exit_code(), message: format!("{}", e) }
+            err @ Error::User(_) => {
+                Self::User { code: err.exit_code(), message: format!("{}", err) }
+            }
+            err @ Error::Config(_) => {
+                Self::Config { code: err.exit_code(), message: format!("{}", err) }
             }
             Error::ExitWithCode(code) => Self::ExitWithCode { code: *code },
             Error::Help { command, output, code } => {
@@ -512,6 +514,15 @@ mod test {
         assert_eq!(
             SerializableError::from(Error::User(anyhow::Error::msg("Cytherea".to_string()))),
             SerializableError::User { code: 1, message: "Cytherea".to_string() }
+        );
+        assert_eq!(
+            SerializableError::from(Error::User(anyhow::anyhow!(NonFatalError(anyhow::anyhow!(
+                "inner error"
+            ))))),
+            SerializableError::User {
+                code: 1,
+                message: "non-fatal error encountered: inner error".to_string()
+            }
         );
         assert_eq!(
             SerializableError::from(Error::Config(anyhow::Error::msg("Cytherea".to_string()))),

@@ -7,7 +7,7 @@ use traceable_error_derive::TraceableError;
 
 /// Represents a recoverable error. Intended to be embedded in `Error`.
 #[derive(thiserror::Error, Debug)]
-#[error("non-fatal error encountered: {}", .0)]
+#[error("non-fatal error encountered")]
 pub struct NonFatalError(#[source] pub anyhow::Error);
 
 /// A top level error type for ffx tool results
@@ -381,5 +381,13 @@ mod tests {
             expected.to_owned(),
             "There should be no duplication from re-wrapping errors"
         );
+    }
+
+    #[test]
+    fn test_non_fatal_error_formatting() {
+        let inner = anyhow!("inner error");
+        let non_fatal = NonFatalError(inner);
+        let err = Error::User(anyhow!(non_fatal));
+        assert_eq!(format!("{}", err), "non-fatal error encountered: inner error");
     }
 }
