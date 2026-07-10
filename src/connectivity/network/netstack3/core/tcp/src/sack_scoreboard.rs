@@ -34,6 +34,13 @@ pub(crate) struct SackScoreboard {
 }
 
 impl SackScoreboard {
+    /// The max number of ACKed ranges we'll track as part of the scoreboard.
+    ///
+    /// In order to preserve this limit, the scoreboard will evict the rightmost
+    /// ACKed range. Preserving the leftmost ranges is important to avoid
+    /// spurious retransmissions.
+    pub(crate) const MAX_NUM_ACKED_RANGES: usize = 128;
+
     /// Processes an incoming ACK and updates the scoreboard.
     ///
     /// - `ack` is the cumulative acknowledgement in the received segment.
@@ -112,6 +119,13 @@ impl SackScoreboard {
 
             new || changed
         });
+
+        // NB: Enforce the limit on MAX_NUM_ACKED_RANGES after processing the
+        // new blocks. That way we prioritize new blocks that either 1) are
+        // further left than existing blocks, or 2) merge with existing blocks.
+        while acked_ranges.len() > Self::MAX_NUM_ACKED_RANGES {
+            let _evicted = acked_ranges.pop_back();
+        }
 
         let sacked_byte_threshold = sacked_bytes_threshold(smss);
         let high_rxt = high_rxt.unwrap_or(ack);
@@ -365,6 +379,12 @@ mod test {
         fn sacked_bytes(&self) -> u32 {
             self.acked_ranges.iter().map(|seq_range| seq_range.len()).sum()
         }
+    }
+
+    fn contains_range(sb: &SackScoreboard, range: Range<u32>) -> bool {
+        sb.acked_ranges
+            .iter()
+            .any(|r| u32::from(r.start()) == range.start && u32::from(r.end()) == range.end)
     }
 
     #[test]
@@ -749,5 +769,83 @@ mod test {
 
         let blocks = sb.acked_ranges.iter().collect::<Vec<_>>();
         assert_matches!(&blocks[..], &[], "expected SACK blocks to be empty");
+    }
+
+    // Verify that the SACK Scoreboard correctly limits the ACKed ranges.
+    #[test]
+    fn max_acked_ranges() {
+        const MAX: usize = SackScoreboard::MAX_NUM_ACKED_RANGES;
+
+        // Set up a 10 byte gap between every ACKed range.
+        const PERIOD: u32 = 20;
+        const LEN: u32 = 10;
+        const OFFSET: u32 = 10;
+        let nth_block = |n| (PERIOD * (n as u32) + OFFSET)..(PERIOD * (n as u32) + OFFSET + LEN);
+
+        // Insert the maximum number of disjoint blocks into the scoreboard.
+        let mut sb = SackScoreboard::default();
+        let ack = SeqNum::new(0);
+        let mut blocks = Vec::new();
+        for n in 0..MAX {
+            blocks.push(nth_block(n));
+        }
+        let snd_nxt = SeqNum::new(nth_block(MAX).end);
+        for block in &blocks {
+            assert!(sb.process_ack(
+                ack,
+                snd_nxt,
+                None,
+                &testutil::sack_blocks([block.clone()]),
+                TEST_MSS
+            ));
+        }
+        assert_eq!(sb.acked_ranges.len(), MAX);
+        assert_eq!(sb.acked_ranges.last().unwrap().start(), SeqNum::new(nth_block(MAX - 1).start));
+
+        // If the new block is rightmost, it should be dropped.
+        let _ =
+            sb.process_ack(ack, snd_nxt, None, &testutil::sack_blocks([nth_block(MAX)]), TEST_MSS);
+        assert_eq!(sb.acked_ranges.len(), MAX);
+        assert_eq!(sb.acked_ranges.last().unwrap().start(), SeqNum::new(nth_block(MAX - 1).start));
+
+        // If the new block is in the middle & disjoint from all existing blocks
+        // it should be inserted and the rightmost block should be evicted.
+        let middle_disjoint = PERIOD + 2..PERIOD + OFFSET - 2;
+        let _ = sb.process_ack(
+            ack,
+            snd_nxt,
+            None,
+            &testutil::sack_blocks([middle_disjoint.clone()]),
+            TEST_MSS,
+        );
+        assert_eq!(sb.acked_ranges.len(), MAX);
+        assert_eq!(sb.acked_ranges.last().unwrap().start(), SeqNum::new(nth_block(MAX - 2).start));
+        assert!(contains_range(&sb, middle_disjoint));
+
+        // If the new block extends an existing block, it should do so without
+        // eviction.
+        let extending_block1 = nth_block(10).end..nth_block(10).end + 1;
+        let _ = sb.process_ack(
+            ack,
+            snd_nxt,
+            None,
+            &testutil::sack_blocks([extending_block1.clone()]),
+            TEST_MSS,
+        );
+        assert_eq!(sb.acked_ranges.len(), MAX);
+        assert!(contains_range(&sb, nth_block(10).start..extending_block1.end));
+
+        // If the new block merges two existing blocks, it should do so without
+        // eviction.
+        let extending_block2 = extending_block1.start..nth_block(11).start;
+        let _ = sb.process_ack(
+            ack,
+            snd_nxt,
+            None,
+            &testutil::sack_blocks([extending_block2]),
+            TEST_MSS,
+        );
+        assert_eq!(sb.acked_ranges.len(), MAX - 1);
+        assert!(contains_range(&sb, nth_block(10).start..nth_block(11).end));
     }
 }

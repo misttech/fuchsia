@@ -23,6 +23,14 @@ impl<M> SeqRanges<M> {
         self.blocks.is_empty()
     }
 
+    pub(crate) fn len(&self) -> usize {
+        self.blocks.len()
+    }
+
+    pub(crate) fn pop_back(&mut self) -> Option<SeqRange<M>> {
+        self.blocks.pop_back()
+    }
+
     pub(crate) fn pop_front_if<F: FnOnce(&SeqRange<M>) -> bool>(
         &mut self,
         f: F,
