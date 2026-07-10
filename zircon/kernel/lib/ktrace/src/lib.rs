@@ -773,23 +773,10 @@ pub unsafe extern "C" fn rust_ktrace_init_cpu_buffer(
     Status::OK.into_raw()
 }
 
-// test_suite macro doesn't support the definitions that declared_intened_category generates so
-// wrap them manually in ktest cfg here instead.
-#[cfg(all(not(gcc), ktest))]
-declare_interned_category!(MEMORY_CAT, "kernel:memory", extern);
-#[cfg(all(not(gcc), ktest))]
-declare_interned_category!(SCHED_CAT, "kernel:sched", extern);
-#[cfg(all(not(gcc), ktest))]
-declare_interned_category!(CONTENTION_CAT, "kernel:contention", extern);
-#[cfg(all(not(gcc), ktest))]
-declare_interned_category!(IPC_CAT, "kernel:ipc", extern);
-#[cfg(all(not(gcc), ktest))]
-declare_interned_category!(IRQ_CAT, "kernel:irq", extern);
-
-#[cfg(all(not(gcc), ktest))]
-#[unittest::test_suite]
 /// KTrace tests
-mod ktrace_tests {
+#[cfg(all(not(gcc), ktest))]
+#[unittest::test_suite(name = "ktrace_rust")]
+mod tests {
     use arch_rs::{InterruptDisableGuard, curr_cpu_num, max_num_cpus};
     use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
     use core::{ffi, ptr};
@@ -798,6 +785,12 @@ mod ktrace_tests {
     use unittest::{
         assert_eq, assert_ok, expect_eq, expect_false, expect_ne, expect_true, unwrap_ok,
     };
+
+    declare_interned_category!(MEMORY_CAT, "kernel:memory", extern);
+    declare_interned_category!(SCHED_CAT, "kernel:sched", extern);
+    declare_interned_category!(CONTENTION_CAT, "kernel:contention", extern);
+    declare_interned_category!(IPC_CAT, "kernel:ipc", extern);
+    declare_interned_category!(IRQ_CAT, "kernel:irq", extern);
 
     /// Initialization and size/metadata attributes.
     #[test]
