@@ -135,6 +135,7 @@ source_set("log_message") {
     ":log_sink_set",
     ":nullguard",
     ":proto",
+    ":structured_proto",
     "//third_party/abseil-cpp/absl/base",
     "//third_party/abseil-cpp/absl/base:config",
     "//third_party/abseil-cpp/absl/base:core_headers",
@@ -293,5 +294,21 @@ source_set("vlog_config") {
     "//third_party/abseil-cpp/absl/strings",
     "//third_party/abseil-cpp/absl/synchronization",
     "//third_party/abseil-cpp/absl/types:optional",
+  ]
+}
+
+source_set("structured_proto") {
+  public_configs = [ "//third_party/abseil-cpp:abseil_config" ]
+
+  sources =
+      [ "//third_party/abseil-cpp/src/absl/log/internal/structured_proto.cc" ]
+  public =
+      [ "//third_party/abseil-cpp/src/absl/log/internal/structured_proto.h" ]
+
+  deps = [
+    "//third_party/abseil-cpp/absl/base:config",
+    "//third_party/abseil-cpp/absl/base:core_headers",
+    "//third_party/abseil-cpp/absl/strings",
+    "//third_party/abseil-cpp/absl/types:span",
   ]
 }

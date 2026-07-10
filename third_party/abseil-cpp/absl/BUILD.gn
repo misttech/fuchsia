@@ -20,6 +20,7 @@ group("absl") {
     "base:endian",
     "base:log_severity",
     "base:throw_delegate",
+    "base:tracing_internal",
     "cleanup",
     "container:compressed_tuple",
     "container:container_memory",

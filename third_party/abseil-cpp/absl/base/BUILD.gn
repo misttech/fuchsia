@@ -301,3 +301,15 @@ source_set("prefetch") {
     ":core_headers",
   ]
 }
+
+source_set("tracing_internal") {
+  public_configs = [ "//third_party/abseil-cpp:abseil_config" ]
+
+  sources = [ "//third_party/abseil-cpp/src/absl/base/internal/tracing.cc" ]
+  public = [ "//third_party/abseil-cpp/src/absl/base/internal/tracing.h" ]
+
+  deps = [
+    ":config",
+    ":core_headers",
+  ]
+}
