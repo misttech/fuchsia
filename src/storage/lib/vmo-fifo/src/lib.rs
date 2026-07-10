@@ -262,10 +262,12 @@ where
         // the validated memory bounds of `self.slots`.
         unsafe { self.slots.offset(slot_idx) }
     }
+}
 
+impl<T> SharedQueue<T> {
     // Trigger shutdown, waking up all waiters.
     fn shutdown(&self) -> Result<(), zx::Status> {
-        self.vmo().signal(zx::Signals::empty(), SIG_SHUTDOWN)?;
+        self.mapping.vmo().signal(zx::Signals::empty(), SIG_SHUTDOWN)?;
         Ok(())
     }
 }
@@ -370,9 +372,17 @@ impl<T: FromBytes + IntoBytes + KnownLayout + Copy> Sender<T> {
             }
         }
     }
+}
 
+impl<T> Sender<T> {
     pub fn shutdown(&self) -> Result<(), zx::Status> {
         self.inner.shutdown()
+    }
+}
+
+impl<T> Drop for Sender<T> {
+    fn drop(&mut self) {
+        let _ = self.shutdown();
     }
 }
 
@@ -494,9 +504,17 @@ impl<T: FromBytes + IntoBytes + KnownLayout + Copy> Receiver<T> {
             }
         }
     }
+}
 
+impl<T> Receiver<T> {
     pub fn shutdown(&self) -> Result<(), zx::Status> {
         self.inner.shutdown()
+    }
+}
+
+impl<T> Drop for Receiver<T> {
+    fn drop(&mut self) {
+        let _ = self.shutdown();
     }
 }
 
@@ -638,5 +656,56 @@ mod tests {
         assert_eq!(receiver.index(), 1);
 
         assert!(receiver.is_empty());
+    }
+
+    #[fuchsia::test]
+    fn test_receiver_wakes_on_sender_drop() {
+        let vmo = zx::Vmo::create(4096).expect("VMO creation failed");
+        let vmo_dup = vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("Duplicate failed");
+
+        let sender = Sender::<TestMessage>::new(vmo, 2).expect("Sender creation failed");
+        let mut receiver =
+            Receiver::<TestMessage>::new(vmo_dup, 2).expect("Receiver creation failed");
+
+        let handle = std::thread::spawn(move || {
+            // Receiver blocks because the queue is empty
+            receiver.pop_reserve()
+        });
+
+        // Give the receiver thread a moment to block on wait()
+        std::thread::sleep(std::time::Duration::from_millis(100));
+
+        // Dropping sender should trigger shutdown
+        drop(sender);
+
+        let result = handle.join().expect("thread panicked");
+        assert_eq!(result, Err(zx::Status::CANCELED));
+    }
+
+    #[fuchsia::test]
+    fn test_sender_wakes_on_receiver_drop() {
+        let vmo = zx::Vmo::create(4096).expect("VMO creation failed");
+        let vmo_dup = vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("Duplicate failed");
+
+        let mut sender = Sender::<TestMessage>::new(vmo, 2).expect("Sender creation failed");
+        let receiver = Receiver::<TestMessage>::new(vmo_dup, 2).expect("Receiver creation failed");
+
+        // Fill up the queue so the next push blocks
+        sender.push(TestMessage { val: 1 }).expect("push failed");
+        sender.push(TestMessage { val: 2 }).expect("push failed");
+
+        let handle = std::thread::spawn(move || {
+            // Sender blocks because the queue is full
+            sender.push(TestMessage { val: 3 })
+        });
+
+        // Give the sender thread a moment to block on wait()
+        std::thread::sleep(std::time::Duration::from_millis(100));
+
+        // Dropping receiver should trigger shutdown
+        drop(receiver);
+
+        let result = handle.join().expect("thread panicked");
+        assert_eq!(result, Err(zx::Status::CANCELED));
     }
 }
