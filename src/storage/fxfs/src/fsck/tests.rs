@@ -30,6 +30,7 @@ use crate::testing::writer::Writer;
 use anyhow::{Context, Error};
 use assert_matches::assert_matches;
 use fidl_fuchsia_io as fio;
+use fuchsia_async as fasync;
 use fuchsia_sync::Mutex;
 use futures::join;
 use fxfs_crypt_common::CryptBase;
@@ -4860,4 +4861,66 @@ async fn test_ino_lblk32_file_key_used_for_directory() {
         "errors: {:?}",
         test.errors()
     );
+}
+
+#[fuchsia::test]
+async fn test_concurrent_fsck_volume_and_flush() {
+    let mut test = FsckTest::new().await;
+
+    let store_id = {
+        let fs = test.filesystem();
+        let root_volume = root_volume(fs.clone()).await.unwrap();
+        let store = root_volume
+            .new_volume(
+                "vol",
+                NewChildStoreOptions {
+                    options: StoreOptions {
+                        crypt: Some(test.get_crypt()),
+                        ..StoreOptions::default()
+                    },
+                    ..NewChildStoreOptions::default()
+                },
+            )
+            .await
+            .unwrap();
+        store.store_object_id()
+    };
+
+    test.remount_rw().await.expect("Remount failed");
+
+    let fs = test.filesystem();
+    let crypt = test.get_crypt();
+
+    // Acquire a write lock on `LockKey::flush(store_id)` to simulate an ongoing flush / journal
+    // compaction on the store.
+    let flush_lock_keys = lock_keys![LockKey::flush(store_id)];
+    let flush_guard = fs.lock_manager().write_lock(flush_lock_keys).await;
+
+    // Spawn `fsck_volume_with_options` in a concurrent task.
+    // `fsck_volume_with_options` will block waiting for `LockKey::flush(store_id)` BEFORE
+    // acquiring the commit_mutex.
+    let fs_clone = fs.clone();
+    let crypt_clone = crypt.clone();
+    let fsck_task = fasync::Task::spawn(async move {
+        let options = FsckOptions::default();
+        fsck_volume_with_options(
+            fs_clone.as_ref(),
+            &options,
+            store_id,
+            Some(crypt_clone as Arc<dyn Crypt>),
+        )
+        .await
+    });
+
+    // Give fsck_task a short interval to run until it blocks on LockKey::flush(store_id).
+    fasync::Timer::new(std::time::Duration::from_millis(50)).await;
+
+    // Now simulate the flush / journal compaction acquiring commit_mutex (`lock_commits()`).
+    // Since `fsck_task` does not hold the commit_mutex whilst waiting for `LockKey::flush`, this
+    // acquisition should succeed immediately.
+    let commit_guard = fs.lock_commits().await;
+    drop(commit_guard);
+    drop(flush_guard);
+
+    fsck_task.await.expect("fsck_volume_with_options failed");
 }

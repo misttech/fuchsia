@@ -13,9 +13,8 @@ use crate::lsm_tree::types::{
 use crate::object_handle::INVALID_OBJECT_ID;
 use crate::object_store::allocator::{AllocatorKey, AllocatorValue, CoalescingIterator};
 use crate::object_store::journal::super_block::SuperBlockInstance;
-use crate::object_store::load_store_info;
-
 use crate::object_store::volume::root_volume;
+use crate::object_store::{ObjectStore, load_store_info};
 use anyhow::{Context, Error, anyhow};
 use futures::try_join;
 use fxfs_crypto::Crypt;
@@ -99,8 +98,8 @@ impl Default for FsckOptions<'_> {
 //  + The root parent object store ID and root object store ID must not conflict with any other
 //    stores or the allocator.
 //
-// TODO(https://fxbug.dev/42178152): This currently takes a write lock on the filesystem.  It would be nice if
-// we could take a snapshot.
+// TODO(https://fxbug.dev/42178152): This currently takes a write lock on the filesystem.  It would
+// be nice if we could take a snapshot.
 pub async fn fsck(filesystem: Arc<FxFilesystem>) -> Result<FsckResult, Error> {
     fsck_with_options(filesystem, &FsckOptions::default()).await
 }
@@ -254,8 +253,8 @@ pub async fn fsck_with_options(
 }
 
 /// Verifies the integrity of a volume within Fxfs.  See errors.rs for a list of checks performed.
-// TODO(https://fxbug.dev/42178152): This currently takes a write lock on the filesystem.  It would be nice if
-// we could take a snapshot.
+// TODO(https://fxbug.dev/42178152): This currently takes a write lock on the filesystem.  It would
+// be nice if we could take a snapshot.
 pub async fn fsck_volume(
     filesystem: &FxFilesystem,
     store_id: u64,
@@ -275,10 +274,21 @@ pub async fn fsck_volume_with_options(
         info!(store_id:?; "Starting volume fsck");
     }
 
+    let store = filesystem.object_manager().store(store_id).context("open_store failed").unwrap();
+
+    let _relock_guard;
+    if store.is_locked() {
+        let crypt = crypt.ok_or_else(|| anyhow!("Invalid key"))?;
+        store.unlock_read_only(crypt).await?;
+        _relock_guard = scopeguard::guard(store.clone(), |store| {
+            store.lock_read_only();
+        });
+    }
+
     let _guard = if options.no_lock { None } else { Some(filesystem.lock_commits().await) };
 
     let mut fsck = Fsck::new(options);
-    fsck.check_child_store(filesystem, store_id, crypt, &mut result).await?;
+    fsck.check_child_store(store.as_ref(), &mut result).await?;
     let mut store_ids = HashSet::default();
     store_ids.insert(store_id);
     fsck.verify_allocations(filesystem, &store_ids, &mut result).await?;
@@ -378,26 +388,10 @@ impl<'a> Fsck<'a> {
 
     async fn check_child_store(
         &mut self,
-        filesystem: &FxFilesystem,
-        store_id: u64,
-        crypt: Option<Arc<dyn Crypt>>,
+        store: &ObjectStore,
         result: &mut FsckResult,
     ) -> Result<(), Error> {
-        let store =
-            filesystem.object_manager().store(store_id).context("open_store failed").unwrap();
-
-        let _relock_guard;
-        if store.is_locked() {
-            if let Some(crypt) = &crypt {
-                store.unlock_read_only(crypt.clone()).await?;
-                _relock_guard = scopeguard::guard(store.clone(), |store| {
-                    store.lock_read_only();
-                });
-            } else {
-                return Err(anyhow!("Invalid key"));
-            }
-        }
-
+        let store_id = store.store_object_id();
         if self.options.do_slow_passes {
             let layer_set = store.tree().immutable_layer_set();
             for layer in layer_set.layers {
@@ -414,7 +408,7 @@ impl<'a> Fsck<'a> {
             }
         }
 
-        store_scanner::scan_store(self, store.as_ref(), &store.root_objects(), result)
+        store_scanner::scan_store(self, store, &store.root_objects(), result)
             .await
             .context("scan_store failed")
     }
