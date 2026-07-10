@@ -1565,11 +1565,12 @@ impl ThreadGroup {
         maybe_new_limit: Option<rlimit>,
     ) -> Result<rlimit, Errno> {
         let thread_group = target_task.thread_group();
-        let can_increase_rlimit = security::is_task_capable_noaudit(current_task, CAP_SYS_RESOURCE);
         let mut limit_state = thread_group.limits.lock();
         let old_limit = limit_state.get(resource);
         if let Some(new_limit) = maybe_new_limit {
-            if new_limit.rlim_max > old_limit.rlim_max && !can_increase_rlimit {
+            if new_limit.rlim_max > old_limit.rlim_max
+                && !security::is_task_capable_noaudit(current_task, CAP_SYS_RESOURCE)
+            {
                 return error!(EPERM);
             }
             security::task_setrlimit(current_task, &target_task, old_limit, new_limit)?;
