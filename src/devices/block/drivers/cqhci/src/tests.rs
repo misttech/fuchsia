@@ -1015,6 +1015,43 @@ async fn test_suspend_resume() {
 }
 
 #[fuchsia::test]
+async fn test_suspend_wrong_state() {
+    let (_fixture, mut harness) = FakeCqhci::new(None);
+    let started_driver = harness.start_driver().await.expect("failed to start driver");
+    let driver = started_driver.get_driver().expect("failed to get driver");
+    {
+        let command_queue = driver.command_queue.lock().as_ref().cloned().unwrap();
+
+        // Shut down the command queue so its state becomes State::Disabled.
+        command_queue.shutdown().await;
+
+        // Suspending while in State::Disabled should return BAD_STATE instead of panicking.
+        assert_eq!(command_queue.suspend().await.err(), Some(zx::Status::BAD_STATE));
+    }
+
+    started_driver.stop_driver().await;
+}
+
+#[fuchsia::test]
+async fn test_immediate_suspend_after_resume() {
+    let (_fixture, mut harness) = FakeCqhci::new(None);
+    let started_driver = harness.start_driver().await.expect("failed to start driver");
+    let driver = started_driver.get_driver().expect("failed to get driver");
+
+    // Suspend.
+    driver.suspend().await;
+
+    // Resume (which now awaits completion of the resume hook).
+    driver.resume().await;
+
+    // Immediately suspending again should succeed without race or panic.
+    driver.suspend().await;
+
+    driver.resume().await;
+    started_driver.stop_driver().await;
+}
+
+#[fuchsia::test]
 async fn test_suspend_with_active_io() {
     let mut blocker = Blocker::default();
     let (fixture, mut harness) = FakeCqhci::new(Some(blocker.hook()));

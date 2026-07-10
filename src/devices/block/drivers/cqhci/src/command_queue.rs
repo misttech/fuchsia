@@ -1210,6 +1210,23 @@ pub struct CommandQueue {
     transfer_manager: Arc<TransferManager>,
 }
 
+/// A handle returned by [`CommandQueue::suspend`] which can be used to resume CQE later.
+pub struct ResumeHandle {
+    tx: oneshot::Sender<oneshot::Sender<Result<(), zx::Status>>>,
+}
+
+impl ResumeHandle {
+    /// Resumes the CQE.
+    pub async fn resume(self) -> Result<(), zx::Status> {
+        let (tx, rx) = oneshot::channel();
+        if let Ok(()) = self.tx.send(tx) {
+            rx.await.unwrap_or(Err(zx::Status::CANCELED))
+        } else {
+            Err(zx::Status::CANCELED)
+        }
+    }
+}
+
 impl CommandQueue {
     fn supports_barriers(&self) -> bool {
         self.ext_csd[EXT_CSD_BARRIER_SUPPORT] & EXT_CSD_BARRIER_SUPPORT_MASK > 0
@@ -1702,28 +1719,42 @@ impl CommandQueue {
         );
     }
 
-    /// Suspends the CQ engine.  The caller should use the returned sender to resume.
-    pub async fn suspend(&self) -> Result<oneshot::Sender<()>, zx::Status> {
+    /// Suspends the CQ engine.  The caller should use the returned handle to resume.
+    pub async fn suspend(&self) -> Result<ResumeHandle, zx::Status> {
         let (tx, rx) = oneshot::channel();
         {
             let mut inner = self.inner.lock();
-            assert!(inner.state == State::Enabled);
+            match inner.state {
+                State::Enabled => {}
+                State::Suspended => {
+                    panic!("Cannot suspend CQE while already in Suspended state");
+                }
+                _ => {
+                    warn!(state:? = inner.state; "Cannot suspend CQE in current state");
+                    return Err(zx::Status::BAD_STATE);
+                }
+            }
             Inner::submit_async_task(
                 &mut inner,
                 into_async_task(
                     async |mut cq| {
                         cq.disable().await;
-                        assert_eq!(
-                            std::mem::replace(&mut cq.inner.lock().state, State::Suspended),
-                            State::Enabled
-                        );
+                        {
+                            let mut inner = cq.inner.lock();
+                            if inner.state != State::Enabled {
+                                error!(state:? = inner.state; "Unexpected state when suspending");
+                                let _ = tx.send(Err(zx::Status::BAD_STATE));
+                                return Ok(());
+                            }
+                            inner.state = State::Suspended;
+                        }
                         let (resume_tx, resume_rx) = oneshot::channel();
-                        let _ = tx.send(resume_tx);
+                        let _ = tx.send(Ok(ResumeHandle { tx: resume_tx }));
 
                         info!("Suspended");
 
                         // Wait till resumed.
-                        let _ = resume_rx.await;
+                        let complete_tx = resume_rx.await.ok();
                         let result = cq.enable().await;
                         cq.inner.lock().state = match result {
                             Ok(()) => {
@@ -1735,13 +1766,16 @@ impl CommandQueue {
                                 State::Disabled
                             }
                         };
+                        if let Some(complete_tx) = complete_tx {
+                            let _ = complete_tx.send(result);
+                        }
                         result
                     },
                     |_| {},
                 ),
             );
         }
-        rx.await.map_err(|_| zx::Status::CANCELED)
+        rx.await.map_err(|_| zx::Status::CANCELED)?
     }
 
     /// Pops the next task, returning it and an [`CommandQueueExcl`] representing unique access to

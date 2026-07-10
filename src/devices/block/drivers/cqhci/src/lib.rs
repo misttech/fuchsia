@@ -5,7 +5,7 @@
 use std::collections::BTreeMap;
 use std::sync::{Arc, Weak};
 
-use crate::command_queue::{CommandQueue, CommandQueueHost, TaskStatusReceiver};
+use crate::command_queue::{CommandQueue, CommandQueueHost, ResumeHandle, TaskStatusReceiver};
 use crate::partition::EmmcPartition;
 use block_server::callback_interface::SessionManager;
 use block_server::{BlockServer, RequestId};
@@ -26,7 +26,6 @@ use fuchsia_async::Scope;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_sync::Mutex;
 use futures::StreamExt as _;
-use futures::channel::oneshot;
 use log::{debug, error, info, warn};
 
 mod command_queue;
@@ -126,7 +125,7 @@ struct CqhciDriver {
     scope: Mutex<Option<Scope>>,
     partitions: Arc<Mutex<BTreeMap<String, Arc<PartitionServer>>>>,
     command_queue: Mutex<Option<Arc<CommandQueue>>>,
-    resume_tx: Mutex<Option<oneshot::Sender<()>>>,
+    resume_handle: Mutex<Option<ResumeHandle>>,
     suspend_enabled: bool,
 }
 
@@ -313,7 +312,7 @@ impl Driver for CqhciDriver {
             scope: Mutex::new(Some(scope)),
             partitions,
             command_queue: Mutex::new(Some(command_queue)),
-            resume_tx: Mutex::default(),
+            resume_handle: Mutex::default(),
             suspend_enabled,
         };
         if let Some(scope) = driver.scope.lock().as_ref() {
@@ -388,7 +387,10 @@ impl Driver for CqhciDriver {
 
         let Some(command_queue) = self.command_queue.lock().take() else { unreachable!() };
         // This will resume if currently suspended.
-        *self.resume_tx.lock() = None;
+        let resume_handle = self.resume_handle.lock().take();
+        if let Some(resume_handle) = resume_handle {
+            let _ = resume_handle.resume().await;
+        }
         command_queue.shutdown().await;
         debug!("cqhci shut down");
 
@@ -413,14 +415,22 @@ impl Driver for CqhciDriver {
 impl SuspendableDriver for CqhciDriver {
     async fn suspend(&self) {
         let Some(cq) = self.command_queue.lock().as_ref().cloned() else { return };
-        if let Ok(resume_tx) = cq.suspend().await {
-            assert!(self.resume_tx.lock().replace(resume_tx).is_none());
+        match cq.suspend().await {
+            Ok(resume_handle) => {
+                let _ = self.resume_handle.lock().replace(resume_handle);
+            }
+            Err(error) => {
+                error!(error:?; "Failed to suspend CQHCI");
+            }
         }
     }
 
     async fn resume(&self) {
-        if let Some(resume_tx) = self.resume_tx.lock().take() {
-            let _ = resume_tx.send(());
+        let resume_handle = self.resume_handle.lock().take();
+        if let Some(resume_handle) = resume_handle {
+            if let Err(error) = resume_handle.resume().await {
+                error!(error:?; "Failed to resume CQHCI");
+            }
         } else {
             warn!("Nothing to resume because not suspended");
         }
