@@ -36,17 +36,17 @@ const TIMEOUT: std::time::Duration = std::time::Duration::from_mins(30);
 
 #[derive(Debug)]
 enum Source {
-    Socket(SocketId<BindingsCtx>),
-    RingBuffer { buffer: Arc<RingBuffer>, download_scope: vfs::execution_scope::ExecutionScope },
+    Ongoing { socket_id: SocketId<BindingsCtx> },
+    Stopped { buffer: Arc<RingBuffer>, download_scope: vfs::execution_scope::ExecutionScope },
 }
 
 impl Source {
     async fn shutdown(self, ctx: &mut Ctx) {
         match self {
-            Self::Socket(id) => {
-                let _: SocketState = remove_socket(ctx, id).await;
+            Self::Ongoing { socket_id } => {
+                let _: SocketState = remove_socket(ctx, socket_id).await;
             }
-            Self::RingBuffer { buffer: _, download_scope } => {
+            Self::Stopped { buffer: _, download_scope } => {
                 download_scope.shutdown();
                 download_scope.wait().await;
             }
@@ -180,12 +180,12 @@ where
     // If the packet capture has already ended (e.g. we are reconnecting after
     // StopAndDownload was called), immediately yield the OnEnded event.
     match &source {
-        Source::RingBuffer { .. } => {
+        Source::Stopped { .. } => {
             rs.control_handle()
                 .send_on_ended(fnet_debug::PacketCaptureEndReason::UserRequest)
                 .unwrap_or_log("failed to send OnEnded event on reconnect");
         }
-        Source::Socket(_) => {}
+        Source::Ongoing { .. } => {}
     }
 
     let mut source = Some(source);
@@ -232,23 +232,23 @@ where
             }
             fnet_debug::RollingPacketCaptureRequest::StopAndDownload { channel, .. } => {
                 let (ring_buffer, download_scope) = match source.take().expect("source missing") {
-                    Source::Socket(id) => {
+                    Source::Ongoing { socket_id } => {
                         rs.control_handle()
                             .send_on_ended(fnet_debug::PacketCaptureEndReason::UserRequest)
                             .unwrap_or_log("failed to send OnEnded event on StopAndDownload");
-                        let socket_state = remove_socket(&mut ctx, id).await;
+                        let socket_state = remove_socket(&mut ctx, socket_id).await;
                         let buf = Arc::new(socket_state.into_rolling_pcap_buffer());
                         let download_scope = vfs::execution_scope::ExecutionScope::new();
-                        source = Some(Source::RingBuffer {
+                        source = Some(Source::Stopped {
                             buffer: buf.clone(),
                             download_scope: download_scope.clone(),
                         });
                         (buf, download_scope)
                     }
-                    Source::RingBuffer { buffer, download_scope } => {
+                    Source::Stopped { buffer, download_scope } => {
                         let b = buffer.clone();
                         let s = download_scope.clone();
-                        source = Some(Source::RingBuffer { buffer, download_scope });
+                        source = Some(Source::Stopped { buffer, download_scope });
                         (b, s)
                     }
                 };
@@ -359,8 +359,8 @@ where
         NewState::Disconnected => {
             let ongoing_downloads_fut = OptionFuture::from(
                 match source {
-                    Source::Socket(_) => None,
-                    Source::RingBuffer { buffer: _, ref download_scope } => {
+                    Source::Ongoing { .. } => None,
+                    Source::Stopped { buffer: _, ref download_scope } => {
                         Some(download_scope.clone())
                     }
                 }
@@ -536,7 +536,7 @@ fn handle_start_rolling(
 
     let scope = fasync::Scope::current();
 
-    let data = CaptureData { source: Source::Socket(id), pcap_headers };
+    let data = CaptureData { source: Source::Ongoing { socket_id: id }, pcap_headers };
 
     let new_task = scope.compute(async move {
         let scope_cancel = guard.on_cancel();
