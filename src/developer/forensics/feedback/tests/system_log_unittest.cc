@@ -803,14 +803,14 @@ TEST(LogBufferTest, RedactsLogs) {
 
   EXPECT_TRUE(buffer.Add(ToMessage("log 4")));
 
-  EXPECT_EQ(buffer.ToString(), R"([00001.010][00100][00101][tag1, tag2] INFO: REDACTED
+  EXPECT_EQ(buffer.ToString(), R"([00001.010][00100][00101][REDACTED, REDACTED] INFO: REDACTED
 !!! MESSAGE REPEATED 5 MORE TIMES !!!
 !!! Failed to format chunk: ERRORS ERR 1 !!!
 !!! Failed to format chunk: ERRORS ERR 2 !!!
 !!! MESSAGE REPEATED 1 MORE TIME !!!
-[00001.010][00100][00101][tag1, tag2] INFO: REDACTED
+[00001.010][00100][00101][REDACTED, REDACTED] INFO: REDACTED
 !!! Failed to format chunk: ERRORS ERR 3 !!!
-[00001.010][00100][00101][tag1, tag2] INFO: REDACTED
+[00001.010][00100][00101][REDACTED, REDACTED] INFO: REDACTED
 )");
 }
 

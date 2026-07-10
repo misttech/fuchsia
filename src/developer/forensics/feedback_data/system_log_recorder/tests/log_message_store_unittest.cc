@@ -137,6 +137,18 @@ TEST(LogMessageStoreTest, AppliesRedaction) {
   EXPECT_FALSE(end_of_block);
 }
 
+TEST(LogMessageStoreTest, AppliesRedactionToTags) {
+  LogMessageStore store(kMaxLogLineSize * 10, kMaxLogLineSize,
+                        MakeSimpleRedactor(/*count_calls=*/false), MakeIdentityEncoder());
+
+  EXPECT_TRUE(
+      store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 0", zx::duration(0), {"tag1", "tag2"})));
+
+  bool end_of_block;
+  EXPECT_EQ(store.Consume(&end_of_block), R"([15604.000][07559][07687][R, R] INFO: R
+)");
+}
+
 TEST(LogMessageStoreTest, RedactionCompressed) {
   // Set the block to hold 10 log messages while the buffer holds 1 log message (but the buffer
   // limits should be ignored because the component has just started up).

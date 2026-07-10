@@ -61,6 +61,9 @@ std::optional<zx::time_boot> LogBuffer::LastTimestamp() const {
 bool LogBuffer::Add(LogSink::MessageOr message) {
   if (message.is_ok()) {
     redactor_->Redact(message.value().msg);
+    for (std::string& tag : message.value().tags) {
+      redactor_->Redact(tag);
+    }
   } else {
     redactor_->Redact(message.error());
   }

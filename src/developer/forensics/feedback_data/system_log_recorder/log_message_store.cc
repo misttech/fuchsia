@@ -64,8 +64,14 @@ bool LogMessageStore::Add(LogSink::MessageOr message) {
 
   std::lock_guard<std::mutex> lk(mtx_);
 
-  const std::string& log_msg =
-      (message.is_ok()) ? redactor_->Redact(message.value().msg) : message.error();
+  if (message.is_ok()) {
+    redactor_->Redact(message.value().msg);
+    for (std::string& tag : message.value().tags) {
+      redactor_->Redact(tag);
+    }
+  }
+
+  const std::string& log_msg = message.is_ok() ? message.value().msg : message.error();
   const int32_t& log_severity = (message.is_ok()) ? message.value().severity : kDefaultLogSeverity;
   const std::vector<std::string>& log_tags =
       (message.is_ok()) ? message.value().tags : kDefaultTags;
