@@ -240,6 +240,7 @@ function diff_file_relpath() {
     *.vbmeta) expect="skip" ;; # Always timestamped in the digital signature
     product_bundle.json) expect="diff"; diff_json "$left" "$right" ;;  # update package hash, due to vbmeta
     update_packages.manifest.json) expect="diff"; diff_json "$left" "$right" ;;  # hashes
+    ota_manifest) expect="diff"; diff_binary "$left" "$right" ;;  # vbmeta hash
     root.json)
       case "$common_path" in
         */repository/root.json) expect=skip ;; # diffs: sig, expires
@@ -427,6 +428,9 @@ function diff_file_relpath() {
     # rustix build script compilation tests are attributed to absolute paths
     # in metadata, which causes false positives in bazel consistency checks
     rustix_test_can_compile) expect="ignore" ;;
+
+    # python compiled files (nondeterministic)
+    *.pyc) expect="ignore" ;;
 
     *.pyz | *.zip) expect="match"; diff_zip "$left" "$right" ;;
     # Most archives carry timestamp information of their contents.
