@@ -287,10 +287,7 @@ impl TerminalMutableState<Base = Terminal> {
 
     pub fn flush(&mut self, is_main: bool, arg: u32) -> Result<(), Errno> {
         self.line_discipline.flush(is_main, arg)?;
-        self.main_wait_queue
-            .notify_fd_events(FdEvents::POLLIN | FdEvents::POLLOUT | FdEvents::POLLHUP);
-        self.replica_wait_queue
-            .notify_fd_events(FdEvents::POLLIN | FdEvents::POLLOUT | FdEvents::POLLHUP);
+        self.notify_waiters();
         Ok(())
     }
 

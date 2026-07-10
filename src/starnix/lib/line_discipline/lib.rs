@@ -207,20 +207,45 @@ impl LineDiscipline {
         }
     }
 
-    /// Flushes input queues according to `arg` (TCIFLUSH, TCIOFLUSH).
-    /// Since we're a PTY, transmission is instant and there is never buffered output,
-    /// making TCOFLUSH a no-op.
+    /// Flushes queues according to `queue_selector` (TCIFLUSH, TCOFLUSH, TCIOFLUSH).
     pub fn flush(&mut self, is_main: bool, queue_selector: u32) -> Result<(), Errno> {
-        match (is_main, queue_selector) {
-            (_, uapi::TCOFLUSH) => {}
-            (true, uapi::TCIFLUSH) | (true, uapi::TCIOFLUSH) => {
-                self.output_queue.as_mut().unwrap().flush();
+        // We can receive a flush request from either the main or the replica which switch what the
+        // input and output queues are referring to.
+        let (input_queue, output_queue) = if is_main {
+            (self.output_queue.as_mut().unwrap(), self.input_queue.as_mut().unwrap())
+        } else {
+            (self.input_queue.as_mut().unwrap(), self.output_queue.as_mut().unwrap())
+        };
+
+        let event;
+        // For input flushes, we discard all data in the pipeline. Data that's already been
+        // delivered to us, and data that's waiting to be delivered.
+        //
+        // For output flushes, we want to only discard data that has been sent, but not yet
+        // delivered to the other side's read_queue. Since this we're a pty and sending is just a
+        // memcpy rather than actually going across a wire, the only time this will happen when the
+        // read_queue fills up and there is backpressure due to full buffers.
+        match queue_selector {
+            uapi::TCIFLUSH => {
+                input_queue.flush();
+                event = uapi::TIOCPKT_FLUSHREAD;
             }
-            (false, uapi::TCIFLUSH) | (false, uapi::TCIOFLUSH) => {
-                self.input_queue.as_mut().unwrap().flush();
+            uapi::TCOFLUSH => {
+                output_queue.flush_unprocessed();
+                event = uapi::TIOCPKT_FLUSHWRITE;
+            }
+            uapi::TCIOFLUSH => {
+                input_queue.flush();
+                output_queue.flush_unprocessed();
+                event = uapi::TIOCPKT_FLUSHREAD | uapi::TIOCPKT_FLUSHWRITE;
             }
             _ => return error!(EINVAL),
+        };
+
+        if !is_main && self.packet_mode_enabled {
+            self.packet_mode_pending_events |= event as u8;
         }
+
         Ok(())
     }
 
@@ -379,12 +404,19 @@ impl LineDiscipline {
         // main termios never has ICANON set.
 
         if !self.termios.has_output_flags(OPOST) {
-            queue.read_queue.push_back(buffer.to_vec());
-            return buffer.len();
+            let limit = CANON_MAX_BYTES.saturating_sub(queue.readable_size());
+            if limit == 0 {
+                return 0;
+            }
+            let to_write = std::cmp::min(limit, buffer.len());
+            queue.read_queue.push_back(buffer[..to_write].to_vec());
+            return to_write;
         }
 
         let mut return_value = 0;
-        while !buffer.is_empty() {
+        while !buffer.is_empty()
+            && queue.readable_size() + queue.line_buffer.len() < CANON_MAX_BYTES
+        {
             let size = compute_next_character_size(buffer, &self.termios);
             let mut character_bytes = buffer[..size].to_vec();
             return_value += size;
@@ -457,7 +489,9 @@ impl LineDiscipline {
 
         let mut return_value = 0;
         let mut signals = PendingSignals::new();
-        while !buffer.is_empty() && queue.line_buffer.len() < CANON_MAX_BYTES {
+        while !buffer.is_empty()
+            && queue.readable_size() + queue.line_buffer.len() < CANON_MAX_BYTES
+        {
             let size = compute_next_character_size(buffer, &self.termios);
             let mut character_bytes = buffer[..size].to_vec();
             // It is guaranteed that character_bytes has at least one element.
@@ -892,6 +926,12 @@ impl Queue {
     fn flush(&mut self) {
         self.read_queue.clear();
         self.line_buffer.clear();
+        self.wait_buffers.clear();
+        self.total_wait_buffer_length = 0;
+    }
+
+    /// Flush only the part of the queue which has not yet been processed.
+    fn flush_unprocessed(&mut self) {
         self.wait_buffers.clear();
         self.total_wait_buffer_length = 0;
     }

@@ -1155,13 +1155,6 @@
                 // TODO(https://fxbug.dev/328690720) Re-enable once flake is resolved.
                 "PtraceTest.Seize_Interrupt_Listen",
 
-                // TODO(https://fxbug.dev/322893703): Enable once TIOCPKT packet mode and write
-                // backpressure wakeups are implemented.
-                "PtyTest.TCFLSHReplicaReportsPacketModeStatus",
-                "PtyTest.TCFLSHMasterDoesNotReportPacketModeStatus",
-                "PtyTest.TCFLSHWakesReplicaPolloutAfterMasterInputFlush",
-                "PtyTest.TCFLSHWakesMasterWriteAfterReplicaInputFlush",
-
                 // TODO(https://fxbug.dev/297434895): This test hangs if
                 // multithreaded exec doesn't work.
                 "TraceExec/PtraceExecveTest.Execve_GetRegs_PeekUser_SIGKILL_TraceClone_TraceExit/0",

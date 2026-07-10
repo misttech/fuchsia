@@ -801,4 +801,187 @@ TEST_F(Pty, IoctlTIOCGPTPEER) {
   close(main_terminal);
 }
 
+// Check that if we flush, we don't drop data that has already been delivered.
+TEST_F(Pty, TcoFlushPreservesProcessedInput) {
+  test_helper::ForkHelper helper;
+  helper.RunInForkedProcess([&] {
+    SAFE_SYSCALL(setsid());
+    int main_terminal = OpenMainTerminal(O_NONBLOCK);
+    int replica_terminal =
+        SAFE_SYSCALL(open(ptsname(main_terminal), O_RDWR | O_NONBLOCK | O_NOCTTY));
+
+    // Disable canonical mode and echo
+    struct termios t = {};
+    ASSERT_EQ(0, SAFE_SYSCALL(tcgetattr(replica_terminal, &t)));
+    t.c_lflag &= ~(ICANON | ECHO);
+    t.c_cc[VMIN] = 1;
+    t.c_cc[VTIME] = 0;
+    ASSERT_EQ(0, SAFE_SYSCALL(tcsetattr(replica_terminal, TCSANOW, &t)));
+
+    // Write data to replica
+    const char* data = "world";
+    ASSERT_EQ(5, SAFE_SYSCALL(write(replica_terminal, data, 5)));
+
+    // Wait for the data to be processed and put into the main terminal's read queue.
+    int bytes_avail = 0;
+    while (bytes_avail < 5) {
+      SleepNs(10e6);  // 10 ms
+      ASSERT_EQ(0, SAFE_SYSCALL(ioctl(main_terminal, FIONREAD, &bytes_avail)));
+    }
+
+    // Call TCOFLUSH on replica
+    ASSERT_EQ(0, SAFE_SYSCALL(ioctl(replica_terminal, TCFLSH, TCOFLUSH)));
+
+    // Verify FIONREAD still shows 5 bytes
+    ASSERT_EQ(0, SAFE_SYSCALL(ioctl(main_terminal, FIONREAD, &bytes_avail)));
+    ASSERT_EQ(5, bytes_avail);
+
+    // Verify reading 5 bytes from main_terminal succeeds and returns the data
+    char buf[10] = {};
+    ASSERT_EQ(5, SAFE_SYSCALL(read(main_terminal, buf, 5)));
+    ASSERT_STREQ("world", buf);
+
+    close(replica_terminal);
+    close(main_terminal);
+  });
+}
+
+TEST_F(Pty, FlushPollEvents) {
+  test_helper::ForkHelper helper;
+  helper.RunInForkedProcess([&] {
+    SAFE_SYSCALL(setsid());
+    int main_terminal = OpenMainTerminal(O_NONBLOCK);
+    int replica_terminal =
+        SAFE_SYSCALL(open(ptsname(main_terminal), O_RDWR | O_NONBLOCK | O_NOCTTY));
+
+    // Disable canonical mode and echo
+    struct termios t = {};
+    ASSERT_EQ(0, SAFE_SYSCALL(tcgetattr(replica_terminal, &t)));
+    t.c_lflag &= ~(ICANON | ECHO);
+    t.c_cc[VMIN] = 1;
+    t.c_cc[VTIME] = 0;
+    ASSERT_EQ(0, SAFE_SYSCALL(tcsetattr(replica_terminal, TCSANOW, &t)));
+
+    // Verify initial poll events: both terminals should be writable (POLLOUT)
+    // and neither should have POLLIN or POLLHUP.
+    struct pollfd pfd_main = {main_terminal, POLLIN | POLLOUT | POLLHUP | POLLERR, 0};
+    struct pollfd pfd_replica = {replica_terminal, POLLIN | POLLOUT | POLLHUP | POLLERR, 0};
+
+    ASSERT_EQ(1, SAFE_SYSCALL(poll(&pfd_main, 1, 0)));
+    EXPECT_TRUE(pfd_main.revents & POLLOUT);
+    EXPECT_FALSE(pfd_main.revents & POLLIN);
+    EXPECT_FALSE(pfd_main.revents & POLLHUP);
+    EXPECT_FALSE(pfd_main.revents & POLLERR);
+
+    ASSERT_EQ(1, SAFE_SYSCALL(poll(&pfd_replica, 1, 0)));
+    EXPECT_TRUE(pfd_replica.revents & POLLOUT);
+    EXPECT_FALSE(pfd_replica.revents & POLLIN);
+    EXPECT_FALSE(pfd_replica.revents & POLLHUP);
+    EXPECT_FALSE(pfd_replica.revents & POLLERR);
+
+    // Replica writes data to main
+    const char* data = "hello";
+    ASSERT_EQ(5, SAFE_SYSCALL(write(replica_terminal, data, 5)));
+
+    // Wait for the data to be processed and put into main's read queue
+    int bytes_avail = 0;
+    while (bytes_avail < 5) {
+      SleepNs(10e6);  // 10 ms
+      ASSERT_EQ(0, SAFE_SYSCALL(ioctl(main_terminal, FIONREAD, &bytes_avail)));
+    }
+
+    // Check poll on main: should now be POLLIN | POLLOUT
+    ASSERT_EQ(1, SAFE_SYSCALL(poll(&pfd_main, 1, 0)));
+    EXPECT_TRUE(pfd_main.revents & POLLIN);
+    EXPECT_TRUE(pfd_main.revents & POLLOUT);
+    EXPECT_FALSE(pfd_main.revents & POLLHUP);
+    EXPECT_FALSE(pfd_main.revents & POLLERR);
+
+    // Now call TCIFLUSH on main to discard the unread bytes
+    ASSERT_EQ(0, SAFE_SYSCALL(ioctl(main_terminal, TCFLSH, TCIFLUSH)));
+
+    // Check FIONREAD on main: should be 0
+    bytes_avail = 0;
+    ASSERT_EQ(0, SAFE_SYSCALL(ioctl(main_terminal, FIONREAD, &bytes_avail)));
+    EXPECT_EQ(0, bytes_avail);
+
+    // Check poll on main after TCIFLUSH. We should no longer see POLLIN.
+    ASSERT_EQ(1, SAFE_SYSCALL(poll(&pfd_main, 1, 0)));
+    EXPECT_FALSE(pfd_main.revents & POLLIN);
+    EXPECT_TRUE(pfd_main.revents & POLLOUT);
+    EXPECT_FALSE(pfd_main.revents & POLLHUP);
+    EXPECT_FALSE(pfd_main.revents & POLLERR);
+
+    // Verify replica poll after TCOFLUSH: still writable (POLLOUT) and no POLLHUP/POLLIN
+    ASSERT_EQ(0, SAFE_SYSCALL(ioctl(replica_terminal, TCFLSH, TCOFLUSH)));
+    ASSERT_EQ(1, SAFE_SYSCALL(poll(&pfd_replica, 1, 0)));
+    EXPECT_TRUE(pfd_replica.revents & POLLOUT);
+    EXPECT_FALSE(pfd_replica.revents & POLLIN);
+    EXPECT_FALSE(pfd_replica.revents & POLLHUP);
+    EXPECT_FALSE(pfd_replica.revents & POLLERR);
+
+    close(replica_terminal);
+    close(main_terminal);
+  });
+}
+
+TEST_F(Pty, FlushOutputPollEvents) {
+  test_helper::ForkHelper helper;
+  helper.RunInForkedProcess([&] {
+    SAFE_SYSCALL(setsid());
+    int main_terminal = OpenMainTerminal(O_NONBLOCK);
+    int replica_terminal =
+        SAFE_SYSCALL(open(ptsname(main_terminal), O_RDWR | O_NONBLOCK | O_NOCTTY));
+
+    // Disable canonical mode and echo
+    struct termios t = {};
+    ASSERT_EQ(0, SAFE_SYSCALL(tcgetattr(replica_terminal, &t)));
+    t.c_lflag &= ~(ICANON | ECHO);
+    t.c_cc[VMIN] = 1;
+    t.c_cc[VTIME] = 0;
+    ASSERT_EQ(0, SAFE_SYSCALL(tcsetattr(replica_terminal, TCSANOW, &t)));
+
+    struct pollfd pfd_replica = {replica_terminal, POLLIN | POLLOUT | POLLHUP | POLLERR, 0};
+
+    // Fill up the replica's output queue by writing in a loop until write returns EAGAIN
+    // or poll indicates the terminal is no longer writable (not POLLOUT).
+    char buf[1024];
+    memset(buf, 'x', sizeof(buf));
+    while (true) {
+      ssize_t written = write(replica_terminal, buf, sizeof(buf));
+      if (written < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+        break;
+      }
+      if (written < 0) {
+        FAIL() << "Unexpected error during write: " << strerror(errno);
+      }
+      poll(&pfd_replica, 1, 0);
+      if (!(pfd_replica.revents & POLLOUT)) {
+        break;
+      }
+    }
+
+    // Verify that replica is no longer writable (!POLLOUT)
+    ASSERT_EQ(0, SAFE_SYSCALL(poll(&pfd_replica, 1, 0)));
+    EXPECT_FALSE(pfd_replica.revents & POLLOUT);
+    EXPECT_FALSE(pfd_replica.revents & POLLIN);
+    EXPECT_FALSE(pfd_replica.revents & POLLHUP);
+    EXPECT_FALSE(pfd_replica.revents & POLLERR);
+
+    // Call TCOFLUSH on replica to discard unprocessed write buffers
+    ASSERT_EQ(0, SAFE_SYSCALL(ioctl(replica_terminal, TCFLSH, TCOFLUSH)));
+
+    // Verify that replica is writable again (POLLOUT) after TCOFLUSH and has no
+    // POLLIN/POLLHUP/POLLERR!
+    ASSERT_EQ(1, SAFE_SYSCALL(poll(&pfd_replica, 1, 0)));
+    EXPECT_TRUE(pfd_replica.revents & POLLOUT);
+    EXPECT_FALSE(pfd_replica.revents & POLLIN);
+    EXPECT_FALSE(pfd_replica.revents & POLLHUP);
+    EXPECT_FALSE(pfd_replica.revents & POLLERR);
+
+    close(replica_terminal);
+    close(main_terminal);
+  });
+}
+
 }  // namespace

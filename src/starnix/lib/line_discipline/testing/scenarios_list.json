@@ -62,5 +62,7 @@
     "veol_basic",
     "veol2_basic",
     "veol2_no_iexten",
-    "packet_mode_basic"
+    "packet_mode_basic",
+    "tcflush_packet_mode",
+    "tciflush_buffer_full"
 ]
