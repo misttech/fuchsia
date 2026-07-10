@@ -31,6 +31,7 @@ class QemuRiscv64Pciroot : public QemuRiscv64PcirootType,
   using PcirootBase::PcirootAllocateMsi;
   using PcirootBase::PcirootDriverShouldProxyConfig;
   using PcirootBase::PcirootGetAddressSpace;
+  using PcirootBase::PcirootGetMsiHandle;
   using PcirootBase::PcirootReadConfig16;
   using PcirootBase::PcirootReadConfig32;
   using PcirootBase::PcirootReadConfig8;

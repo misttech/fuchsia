@@ -4,6 +4,7 @@
 // found in the LICENSE file.
 #ifndef SRC_DEVICES_BUS_DRIVERS_PCI_BUS_DEVICE_INTERFACE_H_
 #define SRC_DEVICES_BUS_DRIVERS_PCI_BUS_DEVICE_INTERFACE_H_
+#include <fuchsia/hardware/pciroot/c/banjo.h>
 #include <lib/zx/bti.h>
 #include <lib/zx/msi.h>
 #include <stdint.h>
@@ -26,7 +27,11 @@ class BusDeviceInterface {
   // Get the BTI at |index| for a device.
   virtual zx_status_t GetBti(const pci::Device* device, uint32_t index, zx::bti* bti) = 0;
   // Allocate |count| messagge signaled interrupts for a device.
-  virtual zx_status_t AllocateMsi(uint32_t count, zx::msi* msi) = 0;
+  virtual zx_status_t AllocateMsi(uint32_t count, zx::msi* msi,
+                                  msi_allocation_info_t* out_info) = 0;
+  virtual zx_status_t GetMsiHandle(const zx::msi& allocation, uint32_t options, uint16_t msi_id,
+                                   const zx::vmo& cfg_vmo, uint64_t cfg_offset,
+                                   zx::interrupt* out_interrupt) = 0;
   // Add device to the Bus device tree.
   virtual zx_status_t LinkDevice(fbl::RefPtr<pci::Device> device) = 0;
   // Remove a device from the Bus device tree.

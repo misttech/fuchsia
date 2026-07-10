@@ -96,13 +96,48 @@ TEST_F(FakePcirootTests, DriverShouldProxyConfig) {
 TEST_F(FakePcirootTests, AllocateMsi) {
   zx::msi msi;
   uint32_t msi_count = 2;
-  ASSERT_OK(pciroot()->PcirootAllocateMsi(msi_count, false, &msi));
-  zx_info_msi_t info{};
-  ASSERT_OK(msi.get_info(ZX_INFO_MSI, &info, sizeof(info), nullptr, nullptr));
-  ASSERT_EQ(info.num_irq, msi_count);
-  ASSERT_EQ(info.interrupt_count, 0u);
+  msi_allocation_info_t info{};
+  ASSERT_OK(pciroot()->PcirootAllocateMsi(msi_count, false, &msi, &info));
+  ASSERT_EQ(info.irq_count, msi_count);
+  ASSERT_EQ(info.target_addr, 0xCAFEu);
+  ASSERT_EQ(info.target_data, 0xC0FEu);
   pciroot()->enable_allocate_msi(false);
-  ASSERT_STATUS(ZX_ERR_NOT_SUPPORTED, pciroot()->PcirootAllocateMsi(msi_count, false, &msi));
+  ASSERT_STATUS(ZX_ERR_NOT_SUPPORTED, pciroot()->PcirootAllocateMsi(msi_count, false, &msi, &info));
+}
+
+TEST_F(FakePcirootTests, GetMsiHandle) {
+  zx::msi msi;
+  uint32_t msi_count = 2;
+  msi_allocation_info_t info{};
+  ASSERT_OK(pciroot()->PcirootAllocateMsi(msi_count, false, &msi, &info));
+
+  zx::msi msi_dup;
+  ASSERT_OK(msi.duplicate(ZX_RIGHT_SAME_RIGHTS, &msi_dup));
+
+  zx::vmo cfg_vmo;
+  ASSERT_OK(zx::vmo::create(4096, 0, &cfg_vmo));
+  ASSERT_OK(cfg_vmo.set_cache_policy(ZX_CACHE_POLICY_UNCACHED_DEVICE));
+
+  zx::interrupt interrupt;
+  ASSERT_OK(pciroot()->PcirootGetMsiHandle(std::move(msi_dup), /*options=*/0, 0, std::move(cfg_vmo),
+                                           0, &interrupt));
+  ASSERT_TRUE(interrupt.is_valid());
+  interrupt.reset();
+
+  // Test error injection
+  pciroot()->enable_get_msi_handle(false);
+  zx::msi msi2;
+  ASSERT_OK(pciroot()->PcirootAllocateMsi(msi_count, false, &msi2, &info));
+  zx::msi msi2_dup;
+  ASSERT_OK(msi2.duplicate(ZX_RIGHT_SAME_RIGHTS, &msi2_dup));
+
+  zx::vmo cfg_vmo2;
+  ASSERT_OK(zx::vmo::create(4096, 0, &cfg_vmo2));
+  ASSERT_OK(cfg_vmo2.set_cache_policy(ZX_CACHE_POLICY_UNCACHED_DEVICE));
+  ASSERT_STATUS(ZX_ERR_NOT_SUPPORTED,
+                pciroot()->PcirootGetMsiHandle(std::move(msi2_dup), /*options=*/0, 0,
+                                               std::move(cfg_vmo2), 0, &interrupt));
+  interrupt.reset();
 }
 
 TEST_F(FakePcirootTests, GetAddressSpace) {

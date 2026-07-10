@@ -73,7 +73,7 @@ class FakeMmioConfig final : public MmioConfig {
     }
   }
 
-  const char* type(void) const final { return "fake_mmio"; }
+  const char* type(void) const final { return "mmio"; }
 };
 
 }  // namespace pci

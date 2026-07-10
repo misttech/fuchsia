@@ -11,6 +11,7 @@
 #include <lib/zx/bti.h>
 #include <lib/zx/channel.h>
 #include <lib/zx/interrupt.h>
+#include <lib/zx/msi.h>
 #include <zircon/errors.h>
 #include <zircon/syscalls/resource.h>
 
@@ -173,13 +174,29 @@ class FakePciroot : public ddk::PcirootProtocol<FakePciroot> {
   }
 
   zx_status_t PcirootAllocateMsi(uint32_t requested_irqs, bool can_target_64bit,
-                                 zx::msi* out_allocation) {
+                                 zx::msi* out_allocation, msi_allocation_info_t* out_info) {
     if (!enable_allocate_msi_) {
       return ZX_ERR_NOT_SUPPORTED;
     }
 
-    return zx_msi_allocate(ZX_HANDLE_INVALID, requested_irqs,
-                           out_allocation->reset_and_get_address());
+    zx_status_t status =
+        zx_msi_allocate(ZX_HANDLE_INVALID, requested_irqs, out_allocation->reset_and_get_address());
+    if (status != ZX_OK) {
+      return status;
+    }
+    out_info->target_addr = 0xCAFE;
+    out_info->target_data = 0xC0FE;
+    out_info->irq_count = requested_irqs;
+    return ZX_OK;
+  }
+
+  zx_status_t PcirootGetMsiHandle(zx::msi allocation, uint32_t options, uint16_t msi_id,
+                                  zx::vmo cfg_vmo, uint64_t cfg_offset,
+                                  zx::interrupt* out_interrupt) {
+    if (!enable_get_msi_handle_) {
+      return ZX_ERR_NOT_SUPPORTED;
+    }
+    return zx::msi::create(allocation, options, msi_id, cfg_vmo, cfg_offset, out_interrupt);
   }
 
   zx_status_t PcirootGetAddressSpace(zx_paddr_t in_base, size_t size, pci_address_space_t type,
@@ -224,6 +241,7 @@ class FakePciroot : public ddk::PcirootProtocol<FakePciroot> {
   void enable_config_write(bool enable) { enable_config_write_ = enable; }
   void enable_allocate_msi(bool enable) { enable_allocate_msi_ = enable; }
   void enable_get_address_space(bool enable) { enable_get_address_space_ = enable; }
+  void enable_get_msi_handle(bool enable) { enable_get_msi_handle_ = enable; }
 
  private:
   pciroot_protocol_t proto_;
@@ -246,6 +264,7 @@ class FakePciroot : public ddk::PcirootProtocol<FakePciroot> {
   bool enable_config_write_ = true;
   bool enable_allocate_msi_ = true;
   bool enable_get_address_space_ = true;
+  bool enable_get_msi_handle_ = true;
 };
 
 #endif  // SRC_DEVICES_BUS_DRIVERS_PCI_TEST_FAKES_FAKE_PCIROOT_H_

@@ -85,13 +85,26 @@ zx_status_t zx_msi_create(zx_handle_t msi_handle, uint32_t options, uint32_t msi
     return ZX_ERR_INVALID_ARGS;
   }
 
-  zx_info_vmo_t vmo_info;
-  zx::unowned_vmo vmo(vmo_hnd);
-  ZX_ASSERT(vmo->get_info(ZX_INFO_VMO, &vmo_info, sizeof(vmo_info), nullptr, nullptr) == ZX_OK);
-
-  if (cap_offset > vmo_info.size_bytes - MsiCapabilitySize ||
-      vmo_info.cache_policy != ZX_CACHE_POLICY_UNCACHED_DEVICE || options & ~ZX_MSI_MODE_MSI_X) {
+  if (options & ~ZX_MSI_MODE_MSI_X) {
+    printf("fake-msi: invalid options: %x\n", options);
     return ZX_ERR_INVALID_ARGS;
+  }
+
+  if (vmo_hnd != ZX_HANDLE_INVALID) {
+    zx_info_vmo_t vmo_info;
+    zx::unowned_vmo vmo(vmo_hnd);
+    zx_status_t status = vmo->get_info(ZX_INFO_VMO, &vmo_info, sizeof(vmo_info), nullptr, nullptr);
+    if (status != ZX_OK) {
+      printf("fake-msi: vmo->get_info failed with %d for handle %#x\n", status, vmo_hnd);
+      return status;
+    }
+
+    if (cap_offset > vmo_info.size_bytes - MsiCapabilitySize ||
+        vmo_info.cache_policy != ZX_CACHE_POLICY_UNCACHED_DEVICE) {
+      printf("fake-msi: invalid args: size=%zu cap_offset=%zu cache_policy=%u\n",
+             vmo_info.size_bytes, cap_offset, vmo_info.cache_policy);
+      return ZX_ERR_INVALID_ARGS;
+    }
   }
 
   // After creation here, this handle is only used by the caller. We want no ownership of it,

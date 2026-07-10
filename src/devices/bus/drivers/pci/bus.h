@@ -105,7 +105,11 @@ class Bus : public PciBusType,
   // Bus Device Interface implementation
   zx_status_t LinkDevice(fbl::RefPtr<pci::Device> device) __TA_EXCLUDES(devices_lock_) final;
   zx_status_t UnlinkDevice(pci::Device* device) __TA_EXCLUDES(devices_lock_) final;
-  zx_status_t AllocateMsi(uint32_t count, zx::msi* msi) __TA_EXCLUDES(devices_lock_) final;
+  zx_status_t AllocateMsi(uint32_t count, zx::msi* msi, msi_allocation_info_t* out_info)
+      __TA_EXCLUDES(devices_lock_) final;
+  zx_status_t GetMsiHandle(const zx::msi& allocation, uint32_t options, uint16_t msi_id,
+                           const zx::vmo& cfg_vmo, uint64_t cfg_offset,
+                           zx::interrupt* out_interrupt) __TA_EXCLUDES(devices_lock_) final;
   zx_status_t GetBti(const pci::Device* device, uint32_t index, zx::bti* bti)
       __TA_EXCLUDES(devices_lock_) final;
   zx_status_t AddToSharedIrqList(pci::Device* device, uint32_t vector)

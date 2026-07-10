@@ -10,6 +10,7 @@
 #include <lib/ddk/driver.h>
 #include <lib/pci/pciroot.h>
 #include <lib/zx/resource.h>
+#include <stdint.h>
 #include <zircon/compiler.h>
 #include <zircon/errors.h>
 #include <zircon/syscalls/pci.h>
@@ -69,6 +70,7 @@ class AcpiPciroot : ddk::PcirootProtocol<AcpiPciroot>, public AcpiPcirootType, p
   using PcirootBase::PcirootAllocateMsi;
   using PcirootBase::PcirootDriverShouldProxyConfig;
   using PcirootBase::PcirootGetAddressSpace;
+  using PcirootBase::PcirootGetMsiHandle;
   zx_status_t PcirootGetBti(uint32_t bdf, uint32_t index, zx::bti* bti);
   zx_status_t PcirootGetPciPlatformInfo(pci_platform_info_t* info);
   zx_status_t PcirootReadConfig8(const pci_bdf_t* address, uint16_t offset, uint8_t* value) final;

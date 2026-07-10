@@ -63,8 +63,26 @@ class PciRootHost {
     ZX_ASSERT(zx::port::create(0, &eventpair_port_) == ZX_OK);
   }
 
-  zx_status_t AllocateMsi(uint32_t count, zx::msi* msi) {
-    return zx::msi::allocate(*msi_resource_, count, msi);
+  zx_status_t AllocateMsi(uint32_t count, zx::msi* msi, msi_allocation_info_t* out_info) {
+    zx_status_t status = zx::msi::allocate(*msi_resource_, count, msi);
+    if (status != ZX_OK) {
+      return status;
+    }
+    zx_info_msi_t msi_info;
+    status = msi->get_info(ZX_INFO_MSI, &msi_info, sizeof(msi_info), nullptr, nullptr);
+    if (status != ZX_OK) {
+      return status;
+    }
+    out_info->target_addr = msi_info.target_addr;
+    out_info->target_data = msi_info.target_data;
+    out_info->irq_count = msi_info.num_irq;
+    return ZX_OK;
+  }
+
+  static zx_status_t GetMsiHandle(const zx::msi& allocation, uint32_t options, uint16_t msi_id,
+                                  const zx::vmo& cfg_vmo, uint64_t cfg_offset,
+                                  zx::interrupt* out_interrupt) {
+    return zx::msi::create(allocation, options, msi_id, cfg_vmo, cfg_offset, out_interrupt);
   }
 
   zx::result<zx_paddr_t> AllocateMmio32Window(zx_paddr_t base, size_t size,

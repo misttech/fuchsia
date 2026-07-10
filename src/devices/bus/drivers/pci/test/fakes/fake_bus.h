@@ -33,10 +33,28 @@ class FakeBus : public BusDeviceInterface {
     return ZX_OK;
   }
 
-  zx_status_t AllocateMsi(uint32_t count, zx::msi* msi) final {
+  zx_status_t AllocateMsi(uint32_t count, zx::msi* msi, msi_allocation_info_t* out_info) final {
     fbl::AutoLock devices_lock(&devices_lock_);
     // Using fake MSIs supplied by lib/fake-msi
-    return zx::msi::allocate(*zx::unowned_resource(ZX_HANDLE_INVALID), count, msi);
+    zx_status_t status = zx::msi::allocate(*zx::unowned_resource(ZX_HANDLE_INVALID), count, msi);
+    if (status != ZX_OK) {
+      return status;
+    }
+    zx_info_msi_t msi_info;
+    status = msi->get_info(ZX_INFO_MSI, &msi_info, sizeof(msi_info), nullptr, nullptr);
+    if (status != ZX_OK) {
+      return status;
+    }
+    out_info->target_addr = msi_info.target_addr;
+    out_info->target_data = msi_info.target_data;
+    out_info->irq_count = msi_info.num_irq;
+    return ZX_OK;
+  }
+
+  zx_status_t GetMsiHandle(const zx::msi& allocation, uint32_t options, uint16_t msi_id,
+                           const zx::vmo& cfg_vmo, uint64_t cfg_offset,
+                           zx::interrupt* out_interrupt) final {
+    return zx::msi::create(allocation, options, msi_id, cfg_vmo, cfg_offset, out_interrupt);
   }
 
   zx_status_t GetBti(const pci::Device* /*device*/, uint32_t /*index*/, zx::bti* /*bti*/) final {

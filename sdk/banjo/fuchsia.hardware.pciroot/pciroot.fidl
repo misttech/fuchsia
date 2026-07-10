@@ -74,6 +74,12 @@ type PciPlatformInfo = resource struct {
     devicetree_bdfs vector<PciBdf>:MAX;
 };
 
+type MsiAllocationInfo = struct {
+    target_addr uint64;
+    target_data uint32;
+    irq_count uint32;
+};
+
 type PciAddressSpace = strict enum : uint8 {
     NONE = 0;
     MEMORY = 1;
@@ -172,12 +178,29 @@ closed protocol Pciroot {
         resource zx.Handle:RESOURCE;
         token zx.Handle:EVENTPAIR;
     });
-    /// Allocate |msi_count| MSIs and return a handle to the backing MsiAllocation.
     strict AllocateMsi(struct {
         msi_count uint32;
         can_target_64bit bool;
     }) -> (resource struct {
         s zx.Status;
         allocation zx.Handle:MSI;
+        info MsiAllocationInfo;
+    });
+
+    /// Get a handle corresponding to an InterruptDispatcher for the provided |msi_id| in |allocation|.
+    strict GetMsiHandle(resource struct {
+        /// Handle to the MsiAllocation from |AllocateMsi|
+        allocation zx.Handle:MSI;
+        /// Options for the MSI creation.
+        options uint32;
+        /// The id of the MSI vector in the block to retrieve.
+        msi_id uint16;
+        /// A VMO containing the device's configuration space.
+        cfg_vmo zx.Handle:<VMO, optional>;
+        /// The offset into |cfg_vmo| for the MSI capability.
+        cfg_offset uint64;
+    }) -> (resource struct {
+        s zx.Status;
+        interrupt zx.Handle:INTERRUPT;
     });
 };

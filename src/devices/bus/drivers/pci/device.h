@@ -346,7 +346,7 @@ class Device : public fbl::WAVLTreeContainable<fbl::RefPtr<pci::Device>>,
   // configuring downstream BARs..
   virtual zx::result<> AllocateBars() __TA_EXCLUDES(dev_lock_);
   zx::result<> ConfigureCapabilities() __TA_EXCLUDES(dev_lock_);
-  zx::result<std::pair<zx::msi, zx_info_msi_t>> AllocateMsi(uint32_t irq_cnt)
+  zx::result<std::pair<zx::msi, msi_allocation_info_t>> AllocateMsi(uint32_t irq_cnt)
       __TA_REQUIRES(dev_lock_);
   zx_status_t VerifyAllMsisFreed() __TA_REQUIRES(dev_lock_);
 

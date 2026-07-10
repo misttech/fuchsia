@@ -246,12 +246,32 @@ TEST_F(PciBusTests, BdiAllocateMsi) {
 
   for (uint32_t cnt = 1; cnt <= 32; cnt *= 2) {
     zx::msi msi = {};
-    bus->AllocateMsi(cnt, &msi);
-
-    zx_info_msi_t info = {};
-    ASSERT_OK(msi.get_info(ZX_INFO_MSI, &info, sizeof(info), nullptr, nullptr));
-    EXPECT_EQ(info.num_irq, cnt);
+    msi_allocation_info_t info = {};
+    bus->AllocateMsi(cnt, &msi, &info);
+    EXPECT_EQ(info.irq_count, cnt);
+    EXPECT_EQ(info.target_addr, 0xCAFEu);
+    EXPECT_EQ(info.target_data, 0xC0FEu);
   }
+}
+
+TEST_F(PciBusTests, BdiGetMsiHandle) {
+  auto owned_bus = std::make_unique<TestBus>(parent(), pciroot().proto(), pciroot().info(),
+                                             pciroot().ecam().mmio());
+  ASSERT_OK(owned_bus->Initialize());
+  auto* bus = owned_bus.release();
+
+  zx::msi msi = {};
+  msi_allocation_info_t info = {};
+  ASSERT_OK(bus->AllocateMsi(2, &msi, &info));
+
+  zx::vmo cfg_vmo;
+  ASSERT_OK(zx::vmo::create(4096, 0, &cfg_vmo));
+  ASSERT_OK(cfg_vmo.set_cache_policy(ZX_CACHE_POLICY_UNCACHED_DEVICE));
+
+  zx::interrupt interrupt;
+  ASSERT_OK(bus->GetMsiHandle(msi, /*options=*/0, 0, cfg_vmo, 0, &interrupt));
+  EXPECT_TRUE(interrupt.is_valid());
+  interrupt.reset();
 }
 
 TEST_F(PciBusTests, BdiLinkUnlinkDevice) {

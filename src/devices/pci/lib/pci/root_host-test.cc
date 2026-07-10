@@ -85,11 +85,9 @@ TEST_F(PciRootHostTests, Mcfg) {
 TEST_F(PciRootHostTests, MsiAllocationTest) {
   const uint32_t irq_cnt = 8;
   zx::msi msi = {};
-  ASSERT_OK(root_host().AllocateMsi(irq_cnt, &msi));
-  zx_info_msi_t info;
-  ASSERT_OK(msi.get_info(ZX_INFO_MSI, &info, sizeof(info), nullptr, nullptr));
-  ASSERT_EQ(info.num_irq, irq_cnt);
-  ASSERT_EQ(info.interrupt_count, 0u);
+  msi_allocation_info_t info = {};
+  ASSERT_OK(root_host().AllocateMsi(irq_cnt, &msi, &info));
+  ASSERT_EQ(info.irq_count, irq_cnt);
 }
 
 constexpr size_t kU32Max = std::numeric_limits<uint32_t>::max();

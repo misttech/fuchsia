@@ -539,6 +539,33 @@ TEST_F(PciDeviceTestsExtendedCam, InspectMsi) {
                                         inspect::UintPropertyValue(irq_cnt)));
 }
 
+TEST_F(PciDeviceTestsExtendedCam, MapInterruptMsi) {
+  pci::Device& dev =
+      CreateTestDevice(MockDevice::FakeRootParent().get(), kFakeQuadroDeviceConfig.data(),
+                       kFakeQuadroDeviceConfig.max_size());
+  const auto mode = fuchsia_hardware_pci::InterruptMode::kMsi;
+  ASSERT_OK(dev.SetIrqMode(mode, 1));
+
+  auto result = dev.MapInterrupt(0);
+  ASSERT_TRUE(result.is_ok());
+  EXPECT_TRUE(result.value().is_valid());
+  result.value().reset();
+}
+
+TEST_F(PciDeviceTestsExtendedCam, MapInterruptMsiX) {
+  pci::Device& dev =
+      CreateTestDevice(MockDevice::FakeRootParent().get(), kFakeQuadroDeviceConfig.data(),
+                       kFakeQuadroDeviceConfig.max_size());
+  ConfigureDownstreamDevices();
+  const auto mode = fuchsia_hardware_pci::InterruptMode::kMsiX;
+  ASSERT_OK(dev.SetIrqMode(mode, 1));
+
+  auto result = dev.MapInterrupt(0);
+  ASSERT_TRUE(result.is_ok());
+  EXPECT_TRUE(result.value().is_valid());
+  result.value().reset();
+}
+
 // Verify that power state transitions wait the necessary amount of time, and that they end up in
 // the correct state.
 TEST_F(PciDeviceTestsExtendedCam, PowerStateTransitions) {

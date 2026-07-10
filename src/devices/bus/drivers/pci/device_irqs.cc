@@ -156,19 +156,26 @@ zx::result<zx::interrupt> Device::MapInterrupt(uint32_t which_irq) {
       break;
     }
     case fpci::InterruptMode::kMsi: {
-      zx::result<fdf::MmioView> view_res = cfg_->get_view();
-      if (!view_res.is_ok()) {
-        return view_res.take_error();
+      zx::unowned_vmo cfg_vmo;
+      uint64_t cfg_offset = 0;
+
+      if (strcmp(cfg_->type(), "mmio") == 0) {
+        zx::result<fdf::MmioView> view_res = cfg_->get_view();
+        if (!view_res.is_ok()) {
+          return view_res.take_error();
+        }
+        cfg_vmo = view_res->get_vmo();
+        cfg_offset = view_res->get_offset() + caps_.msi->base();
       }
 
-      status = zx::msi::create(irqs_.msi_allocation, /*options=*/0, which_irq, *view_res->get_vmo(),
-                               view_res->get_offset() + caps_.msi->base(), &interrupt);
+      status = bdi_->GetMsiHandle(irqs_.msi_allocation, /*options=*/0, which_irq, *cfg_vmo,
+                                  cfg_offset, &interrupt);
       break;
     }
     case fpci::InterruptMode::kMsiX: {
       auto& msix = caps_.msix;
-      status = zx::msi::create(irqs_.msi_allocation, ZX_MSI_MODE_MSI_X, which_irq,
-                               *msix->table_vmo(), msix->table_offset(), &interrupt);
+      status = bdi_->GetMsiHandle(irqs_.msi_allocation, ZX_MSI_MODE_MSI_X, which_irq,
+                                  *msix->table_vmo(), msix->table_offset(), &interrupt);
       // Disable the function level masking now that at least one interrupt exists for the device.
       if (status == ZX_OK) {
         MsixControlReg ctrl = {.value = cfg_->Read(caps_.msix->ctrl())};
@@ -213,24 +220,18 @@ void Device::DisableLegacyIrq() {
   irqs_.legacy_disabled = true;
 }
 
-zx::result<std::pair<zx::msi, zx_info_msi_t>> Device::AllocateMsi(uint32_t irq_cnt) {
+zx::result<std::pair<zx::msi, msi_allocation_info_t>> Device::AllocateMsi(uint32_t irq_cnt) {
   zx::msi msi;
-  zx_status_t st = bdi_->AllocateMsi(irq_cnt, &msi);
+  msi_allocation_info_t info{};
+  zx_status_t st = bdi_->AllocateMsi(irq_cnt, &msi, &info);
   if (st != ZX_OK) {
     return zx::error(st);
   }
+  ZX_DEBUG_ASSERT(info.irq_count == irq_cnt);
+  zxlogf(DEBUG, "[%s] allocated MSI range [%#x, %#x)", cfg_->addr(), info.target_data,
+         info.target_data + info.irq_count);
 
-  zx_info_msi_t msi_info;
-  st = msi.get_info(ZX_INFO_MSI, &msi_info, sizeof(msi_info), nullptr, nullptr);
-  if (st != ZX_OK) {
-    return zx::error(st);
-  }
-  ZX_DEBUG_ASSERT(msi_info.num_irq == irq_cnt);
-  ZX_DEBUG_ASSERT(msi_info.interrupt_count == 0);
-  zxlogf(DEBUG, "[%s] allocated MSI range [%#x, %#x)", cfg_->addr(), msi_info.base_irq_id,
-         msi_info.base_irq_id + msi_info.num_irq);
-
-  return zx::ok(std::make_pair(std::move(msi), msi_info));
+  return zx::ok(std::make_pair(std::move(msi), info));
 }
 
 zx_status_t Device::EnableLegacy(bool needs_ack) {

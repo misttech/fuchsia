@@ -158,10 +158,18 @@ class PcirootBase : public PcirootInspect {
     return ZX_ERR_NOT_SUPPORTED;
   }
 
-  zx_status_t PcirootAllocateMsi(uint32_t msi_cnt, bool can_target_64bit, zx::msi* allocation) {
+  zx_status_t PcirootAllocateMsi(uint32_t msi_cnt, bool can_target_64bit, zx::msi* allocation,
+                                 msi_allocation_info_t* out_info) {
     // AllocateMsi already uses platform specific MSI impleemnation methods and
     // syscalls, so this likely suits most platforms.
-    return root_host_->AllocateMsi(msi_cnt, allocation);
+    return root_host_->AllocateMsi(msi_cnt, allocation, out_info);
+  }
+
+  zx_status_t PcirootGetMsiHandle(zx::msi allocation, uint32_t options, uint16_t msi_id,
+                                  zx::vmo cfg_vmo, uint64_t cfg_offset,
+                                  zx::interrupt* out_interrupt) {
+    return PciRootHost::GetMsiHandle(allocation, options, msi_id, cfg_vmo, cfg_offset,
+                                     out_interrupt);
   }
 
   // Allocate out of the IO / MMIO32 allocators if required, otherwise try to use whichever

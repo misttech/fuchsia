@@ -4,6 +4,8 @@
 #include <zircon/errors.h>
 #include <zircon/status.h>
 
+#include "fbl/auto_lock.h"
+#include "lib/zx/vmo.h"
 #include "src/devices/bus/drivers/pci/bus.h"
 
 namespace pci {
@@ -27,9 +29,32 @@ zx_status_t Bus::UnlinkDevice(pci::Device* device) {
   return ZX_ERR_NOT_FOUND;
 }
 
-zx_status_t Bus::AllocateMsi(uint32_t count, zx::msi* msi) {
+zx_status_t Bus::AllocateMsi(uint32_t count, zx::msi* msi, msi_allocation_info_t* out_info) {
   fbl::AutoLock _(&devices_lock_);
-  return pciroot().AllocateMsi(count, false, msi);
+  return pciroot().AllocateMsi(count, false, msi, out_info);
+}
+
+zx_status_t Bus::GetMsiHandle(const zx::msi& allocation, uint32_t options, uint16_t msi_id,
+                              const zx::vmo& cfg_vmo, uint64_t cfg_offset,
+                              zx::interrupt* out_interrupt) {
+  fbl::AutoLock devices_lock(&devices_lock_);
+
+  zx::msi dup_allocation;
+  zx_status_t status = allocation.duplicate(ZX_RIGHT_SAME_RIGHTS, &dup_allocation);
+  if (status != ZX_OK) {
+    return status;
+  }
+
+  zx::vmo dup_cfg_vmo;
+  if (cfg_vmo.is_valid()) {
+    status = cfg_vmo.duplicate(ZX_RIGHT_SAME_RIGHTS, &dup_cfg_vmo);
+    if (status != ZX_OK) {
+      return status;
+    }
+  }
+
+  return pciroot().GetMsiHandle(std::move(dup_allocation), options, msi_id, std::move(dup_cfg_vmo),
+                                cfg_offset, out_interrupt);
 }
 
 zx_status_t Bus::GetBti(const pci::Device* device, uint32_t index, zx::bti* bti) {
