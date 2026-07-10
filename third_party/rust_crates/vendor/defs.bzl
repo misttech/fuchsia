@@ -540,7 +540,8 @@ _NORMAL_DEPENDENCIES = {
             "openat": Label("//third_party/rust_crates/vendor/openat-0.1.21:openat"),
             "openssl": Label("//third_party/rust_crates/vendor/openssl-0.10.81:openssl"),
             "pkcs1": Label("//third_party/rust_crates/vendor/pkcs1-0.7.5:pkcs1"),
-            "pkcs8": Label("//third_party/rust_crates/vendor/pkcs8-0.10.2:pkcs8"),
+            "pkcs8": Label("//third_party/rust_crates/vendor/pkcs8-0.11.0:pkcs8"),
+            "pkcs8_0_10_2": Label("//third_party/rust_crates/vendor/pkcs8-0.10.2:pkcs8"),
             "rust_icu_common": Label("//third_party/rust_crates/vendor/rust_icu_common-5.6.0:rust_icu_common"),
             "rust_icu_sys": Label("//third_party/rust_crates/vendor/rust_icu_sys-5.6.0:rust_icu_sys"),
             "rust_icu_ucal": Label("//third_party/rust_crates/vendor/rust_icu_ucal-5.6.0:rust_icu_ucal"),
@@ -571,6 +572,7 @@ _NORMAL_ALIASES = {
         "cfg(not(target_os = \"fuchsia\"))": {
         },
         "cfg(target_os = \"fuchsia\")": {
+            Label("//third_party/rust_crates/vendor/pkcs8-0.10.2:pkcs8"): "pkcs8_0_10_2",
         },
     },
 }

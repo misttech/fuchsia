@@ -1374,10 +1374,6 @@ if (current_os == "fuchsia") {
 }
 
 if (current_os == "fuchsia") {
-  group("pkcs8") {
-    public_deps = [ ":pkcs8-v0_10_2" ]
-  }
-
   group("pkcs8-0.10") {
     public_deps = [ ":pkcs8-v0_10_2" ]
   }
@@ -1386,6 +1382,18 @@ if (current_os == "fuchsia") {
 if (current_os == "fuchsia") {
   group("pkcs8-0.10.2") {
     public_deps = [ ":pkcs8-v0_10_2" ]
+  }
+}
+
+if (current_os == "fuchsia") {
+  group("pkcs8") {
+    public_deps = [ ":pkcs8-v0_11_0" ]
+  }
+}
+
+if (current_os == "fuchsia") {
+  group("pkcs8-0.11.0") {
+    public_deps = [ ":pkcs8-v0_11_0" ]
   }
 }
 
@@ -5888,6 +5896,38 @@ rustc_library("concurrent-queue-v2_5_0") {
   applicable_licenses = [ ":concurrent-queue-v2_5_0.license" ]
 }
 
+license("const-oid-v0_10_2.license") {
+  public_package_name = "const_oid"
+  license_files = [
+    "//third_party/rust_crates/vendor/const-oid-0.10.2/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/const-oid-0.10.2/LICENSE-MIT",
+  ]
+}
+
+rustc_library("const-oid-v0_10_2") {
+  crate_name = "const_oid"
+  source_root = "//third_party/rust_crates/vendor/const-oid-0.10.2/src/lib.rs"
+  output_name = "const_oid-c30a96ec7c78b05d"
+  edition = "2024"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=c30a96ec7c78b05d",
+    "-Cextra-filename=-c30a96ec7c78b05d",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":const-oid-v0_10_2.license" ]
+}
+
 license("const-oid-v0_9_6.license") {
   public_package_name = "const_oid"
   license_files = [
@@ -7296,6 +7336,40 @@ rustc_library("der-v0_7_10") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":der-v0_7_10.license" ]
+}
+
+license("der-v0_8_1.license") {
+  public_package_name = "der"
+  license_files = [
+    "//third_party/rust_crates/vendor/der-0.8.1/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/der-0.8.1/LICENSE-MIT",
+  ]
+}
+
+rustc_library("der-v0_8_1") {
+  crate_name = "der"
+  source_root = "//third_party/rust_crates/vendor/der-0.8.1/src/lib.rs"
+  output_name = "der-ec6d6b4ff9ef0da6"
+  edition = "2024"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+  deps += [ ":const-oid-v0_10_2" ]
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=ec6d6b4ff9ef0da6",
+    "-Cextra-filename=-ec6d6b4ff9ef0da6",
+    "--cfg=feature=\"oid\"",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":der-v0_8_1.license" ]
 }
 
 license("der_derive-v0_7_3.license") {
@@ -15353,6 +15427,40 @@ rustc_library("pkcs8-v0_10_2") {
   applicable_licenses = [ ":pkcs8-v0_10_2.license" ]
 }
 
+license("pkcs8-v0_11_0.license") {
+  public_package_name = "pkcs8"
+  license_files = [
+    "//third_party/rust_crates/vendor/pkcs8-0.11.0/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/pkcs8-0.11.0/LICENSE-MIT",
+  ]
+}
+
+rustc_library("pkcs8-v0_11_0") {
+  crate_name = "pkcs8"
+  source_root = "//third_party/rust_crates/vendor/pkcs8-0.11.0/src/lib.rs"
+  output_name = "pkcs8-a32f0fa44c6c5edc"
+  edition = "2024"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+  deps += [ ":der-v0_8_1" ]
+  deps += [ ":spki-v0_8_0" ]
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=a32f0fa44c6c5edc",
+    "-Cextra-filename=-a32f0fa44c6c5edc",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":pkcs8-v0_11_0.license" ]
+}
+
 license("pkcs8-v0_9_0.license") {
   public_package_name = "pkcs8"
   license_files = [
@@ -20622,6 +20730,39 @@ rustc_library("spki-v0_7_3") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":spki-v0_7_3.license" ]
+}
+
+license("spki-v0_8_0.license") {
+  public_package_name = "spki"
+  license_files = [
+    "//third_party/rust_crates/vendor/spki-0.8.0/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/spki-0.8.0/LICENSE-MIT",
+  ]
+}
+
+rustc_library("spki-v0_8_0") {
+  crate_name = "spki"
+  source_root = "//third_party/rust_crates/vendor/spki-0.8.0/src/lib.rs"
+  output_name = "spki-9655269515f77e62"
+  edition = "2024"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+  deps += [ ":der-v0_8_1" ]
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=9655269515f77e62",
+    "-Cextra-filename=-9655269515f77e62",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":spki-v0_8_0.license" ]
 }
 
 license("splines-v5_0_0.license") {

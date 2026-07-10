@@ -1885,8 +1885,26 @@ alias(
 )
 
 alias(
-    name = "pkcs8",
+    name = "pkcs8_0_10_2-0.10.2",
     actual = "//third_party/rust_crates/vendor/pkcs8-0.10.2:pkcs8",
+    tags = ["manual"],
+)
+
+alias(
+    name = "pkcs8_0_10_2",
+    actual = "//third_party/rust_crates/vendor/pkcs8-0.10.2:pkcs8",
+    tags = ["manual"],
+)
+
+alias(
+    name = "pkcs8-0.11.0",
+    actual = "//third_party/rust_crates/vendor/pkcs8-0.11.0:pkcs8",
+    tags = ["manual"],
+)
+
+alias(
+    name = "pkcs8",
+    actual = "//third_party/rust_crates/vendor/pkcs8-0.11.0:pkcs8",
     tags = ["manual"],
 )
 
