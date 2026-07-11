@@ -6,6 +6,12 @@ use crate::host_identifier::{DefaultIdentifier, HostIdentifier, Identifier};
 use anyhow::{Context as _, Result};
 use component_debug::dirs::*;
 use component_debug::lifecycle::*;
+use fidl_fuchsia_developer_remotecontrol as rcs;
+use fidl_fuchsia_developer_remotecontrol_connector as connector;
+use fidl_fuchsia_diagnostics_types as diagnostics;
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_io as io;
+use fidl_fuchsia_sys2 as fsys;
 use fuchsia_component::client::connect_to_protocol_at_path;
 use futures::channel::oneshot;
 use futures::prelude::*;
@@ -14,12 +20,6 @@ use moniker::Moniker;
 use std::borrow::Borrow;
 use std::cell::RefCell;
 use std::rc::{Rc, Weak};
-use {
-    fidl_fuchsia_developer_remotecontrol as rcs,
-    fidl_fuchsia_developer_remotecontrol_connector as connector,
-    fidl_fuchsia_diagnostics_types as diagnostics, fidl_fuchsia_io as fio, fidl_fuchsia_io as io,
-    fidl_fuchsia_sys2 as fsys,
-};
 
 mod host_identifier;
 pub mod http;
@@ -49,7 +49,15 @@ pub enum ConnectionRequest {
 
 impl RemoteControlService {
     pub async fn new(connector: impl Fn(ConnectionRequest, Weak<Self>) + 'static) -> Self {
-        let boot_id = zx::MonotonicInstant::get().into_nanos() as u64;
+        // Generate a random 64-bit boot ID using Zircon's CPRNG.
+        // This replaces the previous monotonic timestamp to ensure uniqueness and prevent
+        // collisions, as clients of RCS were using this as a unique identifier.
+        //
+        // With a FIDL API change, this should probably be increased to a true 128-bit UUID
+        // to further improve entropy and prevent any chance of collision.
+        let mut bytes = [0u8; 8];
+        zx::cprng_draw(&mut bytes);
+        let boot_id = u64::from_ne_bytes(bytes);
         Self::new_with_allocator(connector, move || Ok(Box::new(HostIdentifier::new(boot_id)?)))
     }
 
@@ -427,13 +435,16 @@ async fn check_entry_exists(
 mod tests {
     use super::*;
     use fidl::endpoints::ServerEnd;
+    use fidl_fuchsia_buildinfo as buildinfo;
+    use fidl_fuchsia_developer_remotecontrol as rcs;
+    use fidl_fuchsia_device as fdevice;
+    use fidl_fuchsia_hwinfo as hwinfo;
+    use fidl_fuchsia_io as fio;
+    use fidl_fuchsia_net as fnet;
+    use fidl_fuchsia_net_interfaces as fnet_interfaces;
+    use fidl_fuchsia_sysinfo as sysinfo;
+    use fuchsia_async as fasync;
     use fuchsia_component::server::ServiceFs;
-    use {
-        fidl_fuchsia_buildinfo as buildinfo, fidl_fuchsia_developer_remotecontrol as rcs,
-        fidl_fuchsia_device as fdevice, fidl_fuchsia_hwinfo as hwinfo, fidl_fuchsia_io as fio,
-        fidl_fuchsia_net as fnet, fidl_fuchsia_net_interfaces as fnet_interfaces,
-        fidl_fuchsia_sysinfo as sysinfo, fuchsia_async as fasync,
-    };
 
     const NODENAME: &'static str = "thumb-set-human-shred";
     const BOOT_TIME: u64 = 123456789000000000;
