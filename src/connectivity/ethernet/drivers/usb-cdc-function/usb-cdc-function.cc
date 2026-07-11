@@ -205,12 +205,18 @@ void UsbCdcFunction::cdc_send_notifications() {
 
   req2->CacheFlush(intr_ep_.GetMapped());
 
-  std::vector<frequest::Request> requests;
-  requests.emplace_back(req->take_request());
-  requests.emplace_back(req2->take_request());
-  auto result = intr_ep_->QueueRequests({std::move(requests)});
-  if (result.is_error()) {
-    fdf::error("[bug] intr_ep_->QueueRequests(): {}", result.error_value().FormatDescription());
+  fdf::Arena arena(kArenaTag);
+  std::array<frequest::wire::Request, 2> reqs = {
+      fidl::ToWire(arena, req->take_request()),
+      fidl::ToWire(arena, req2->take_request()),
+  };
+  fidl::OneWayStatus queue_status = intr_ep_.client().wire()->QueueRequests(
+      fidl::VectorView<frequest::wire::Request>::FromExternal(reqs.data(), reqs.size()));
+  if (!queue_status.ok()) {
+    fdf::error("[bug] intr_ep_->QueueRequests(): {}", queue_status.FormatDescription());
+    for (auto &r : reqs) {
+      intr_ep_.PutRequest(usb::FidlRequest(fidl::ToNatural(r)));
+    }
   }
 }
 
@@ -502,17 +508,26 @@ void UsbCdcFunction::SetInterface(SetInterfaceRequest &request,
   fdf::info("online = {}", online);
 
   if (alt_setting) {
-    std::vector<fuchsia_hardware_usb_request::Request> reqs;
-    // queue our OUT reqs
-    while (!bulk_out_ep_.RequestsEmpty()) {
+    fdf::Arena arena(kArenaTag);
+    std::array<frequest::wire::Request, kRxDepth> reqs;
+
+    auto reqs_iter = reqs.begin();
+    for (; !bulk_out_ep_.RequestsEmpty(); reqs_iter++) {
       std::optional<usb::FidlRequest> req = bulk_out_ep_.GetRequest();
       req->reset_buffers(bulk_out_ep_.GetMapped());
-      ZX_ASSERT(req.has_value());  // A given from the loop.
-      reqs.emplace_back(req->take_request());
+      *reqs_iter = fidl::ToWire(arena, req->take_request());
     }
-    fit::result<fidl::OneWayError> queue_status = bulk_out_ep_->QueueRequests({std::move(reqs)});
-    if (queue_status.is_error()) {
-      fdf::error("Failed to queue rx requests: {}", queue_status.error_value().FormatDescription());
+
+    if (reqs_iter != reqs.begin()) {
+      fidl::OneWayStatus queue_status = bulk_out_ep_.client().wire()->QueueRequests(
+          fidl::VectorView<frequest::wire::Request>::FromExternal(
+              reqs.data(), std::distance(reqs.begin(), reqs_iter)));
+      if (!queue_status.ok()) {
+        fdf::error("Failed to queue rx requests: {}", queue_status.FormatDescription());
+        for (auto it = reqs.begin(); it != reqs_iter; it++) {
+          bulk_out_ep_.PutRequest(usb::FidlRequest(fidl::ToNatural(*it)));
+        }
+      }
     }
   }
 
