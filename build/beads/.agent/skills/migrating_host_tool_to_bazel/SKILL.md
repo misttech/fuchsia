@@ -8,33 +8,22 @@ description: >-
   verify_bazel2gn targets.
 ---
 
-# Host Tool Bazel Migration
+## Checks Before Migration
 
-This skill guides you through migrating host tools from GN to Bazel.
-
-## Quick Checklist
-
-Copy this checklist and track progress:
-
-- [ ] Step 1: Confirm provided host targets build via GN
-- [ ] Step 2: Validate dependencies are buildable with Bazel or migrate them first
-- [ ] Step 3: Create BUILD.bazel with identical Bazel targets
-- [ ] Step 4: Verify new Bazel target correctness natively
-- [ ] Step 5: Update GN root tooling references
-- [ ] Step 6: Sync to GN via `bazel2gn`, gracefully skipping binaries
-- [ ] Step 7: Resolve any `bazel2gn` verification errors or broken `go_test`s
-- [ ] Step 8: Format code
-- [ ] Step 9: Execute full build validation
-
-## Prerequisites
-
-- Confirm the provided GN target is a host tool target with:
+1. Confirm the provided GN target is a host tool target with:
 
   ```bash
   fx build --host //{directory_path}:{target_name}
   ```
 
-- Ensure that all dependencies of the host tool target are buildable from
+2. Get the dependency tree of the host tool targets with following command line.
+
+  ```bash
+  # <target_label> e.g. "//path/to/directory:target_name"
+  fx gn desc $(fx get-build-dir) "<target_label>(//build/toolchain:host_x64)" deps --tree
+  ```
+
+  Ensure that all dependencies of the host tool target are buildable from
   Bazel with the following command. If not, recursively migrate missing
   dependencies using this skill (migrating-host-tool-to-bazel):
 
@@ -43,24 +32,33 @@ Copy this checklist and track progress:
   fx build --host @//{dependency_path}:{dependency_name}
   ```
 
-## Procedure
+3. If the BUILD.bazel file already exists, check if the actual binary targets
+   have been migrated. If so, warn user and stop the migration process.
 
-Follow these steps to migrate the targets from GN to Bazel:
 
-### 1. Create Bazel targets
+## Migration Steps
 
-Create `BUILD.bazel` in the same directory as `BUILD.gn` if missing.
-**NOTE:** Add the standard Fuchsia copyright header (`#`) to new `BUILD.bazel` files.
+### Step 1: Create Bazel targets
+1. Create a `BUILD.bazel` file in the same directory as the `BUILD.gn` of the
+   migrated target.
 
-Refer to language-specific guides and examples:
+2. Refer to the template in `assets/copyright_header_template.md` to add the
+   copyright header to the top of the `BUILD.bazel` file.
 
-- [Go Migration Guide](references/go_migration.md) (See **Common Pitfalls** for `importpath` and dependency gotchas).
+3. Refer to language-specific guides and examples to create bazel targets in
+   the BUILD.bazel file.
+
+- [Go Migration Guide](references/go_migration.md)
+  (See **Common Pitfalls** for `importpath` and dependency gotchas).
 - [Go Examples](examples/go)
-- [Rust](references/rust_migration.md) (See **Common Pitfalls and Best Practices** section).
+- [Rust](references/rust_migration.md)
+  (See **Common Pitfalls and Best Practices** section).
 
-**NOTE:** Set `target_compatible_with = HOST_CONSTRAINTS` (or `HOST_OS_CONSTRAINTS` for tools in the IDK) on your Bazel targets. See [target_compatible_with.md](references/target_compatible_with.md).
+**NOTE:** Set `target_compatible_with = HOST_CONSTRAINTS` (or `HOST_OS_CONSTRAINTS`
+for tools in the IDK) on your Bazel targets.
+See [target_compatible_with.md](references/target_compatible_with.md).
 
-### 2. Verify Bazel Target Correctness
+### Step 2: Verify Bazel Target Correctness
 
 Verify the new Bazel target builds correctly:
 
@@ -69,22 +67,29 @@ Verify the new Bazel target builds correctly:
 fx build --host @//{directory_path}:{target_name}
 ```
 
-### 3. Update GN References
+### Step 3: Update GN References
+Find external targets which references or depend on the original GN host tool
+target with following command line.
 
-Update GN references to use the new Bazel host tool target following
-instructions from
+```bash
+# <target_label> e.g. "//path/to/directory:target_name"
+fx gn refs $(fx get-build-dir) "<target_label>"
+```
+
+Update the references in the external targets to use the new Bazel host tool
+targets following instructions from
 [bazel_root_targets_list.md](references/bazel_root_targets_list.md).
 
-### 4. Sync to GN for Library and Test Targets
+### Step 4: Sync to GN for Library and Test Targets
 
-Follow the following steps for migrated library and test targets (e.g. `go_library`,
-`rustc_library`, `rustc_test`, `source_set`, `static_library`):
+Follow the following steps for migrated library and test targets
+(e.g. `go_library`, `rustc_library`, `rustc_test`, `source_set`, `static_library`):
 
 **CRITICAL `bazel2gn` GOTCHAS:**
 
 - **Prevent Redundant Binary Syncs:** Add `# @bazel2gn:skip` on the line
-  immediately preceding `go_binary_host_tool` or `rustc_binary` in `BUILD.bazel` so it isn't
-  output into GN as a binary.
+  immediately preceding `go_binary_host_tool` or `rustc_binary` in `BUILD.bazel`
+  so it isn't output into GN as a binary.
 - **Missing `verify` Targets:** Every synchronized directory outputs a
   `verify_bazel2gn` target. You MUST manually add
   `"//{directory_path}:verify_bazel2gn"` to the `bazel2gn_verification_targets`
@@ -100,16 +105,30 @@ Follow the following steps for migrated library and test targets (e.g. `go_libra
 
 1. Remove the targets you've migrated from `{directory_path}/BUILD.gn`.
 
-2. Run `fx gen` to validate the GN build graph.
+2. Sync the target back from Bazel to GN using the `syncing-bazel-to-gn` skill
+   (see `../syncing_bazel_to_gn/SKILL.md`).
+
+3. Run `fx gen` to validate the GN build graph.
    - **NOTE:** If `fx gen` fails with missing GN targets, sync them back using
      [`syncing-bazel-to-gn`](../syncing_bazel_to_gn/SKILL.md).
-   - Only if you suspect the tests are completely missing from the active build configuration, reconfigure the build using:
+   - Only if you suspect the tests are completely missing from the active build
+     configuration, reconfigure the build using:
      ```bash
      fx set core.x64 --with '//bundles/buildbot/core' --with '//bundles/tests'
      ```
-     _(Avoid running `fx set` if possible, as it is slow and overwrites the active board/product configuration)._
+     (Avoid running `fx set` if possible, as it is slow and overwrites the active board/product configuration).
 
-### 5. Format Code
+### Step 5: Remove Redundant GN Targets
+1. In the synced BUILD.gn file:
+- if the `go_library` targets is not referenced by other targets, remove it.
+- if there is no targets in the synced BUILD.gn, remove the BUILD.gn file.
+2. In the BUILD.bazel file, if the BUILD.gn is removed:
+  - Remove the `# @bazel2gn:skip` added on the line immediately preceding
+    `go_binary_host_tool` or `rustc_binary`.
+  - Remove the entry `"//{directory_path}:verify_bazel2gn"` added to the
+    `bazel2gn_verification_targets` list.
+
+### Step 6: Format Code
 
 Format all changed files with:
 
@@ -117,7 +136,7 @@ Format all changed files with:
 fx format-code --parallel
 ```
 
-### 6. Final Verification
+### Step 7: Final Verification
 
 Ensure everything builds correctly using the new Bazel targets:
 

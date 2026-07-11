@@ -4,9 +4,11 @@ After creating your Bazel host tool target, expose it to the GN build graph so
 it can be used by other GN targets.
 
 ## 1. Register the Target
-
-Add your migrated Bazel host tool to the `default_bazel_root_host_targets` list
-in `//build/bazel/bazel_root_targets_list.gni`:
+Refer to the example below to add migrated Bazel tool to the `default_bazel_root_host_targets`.
+- For host tools under `//tools` directory, add the migrated Bazel host tool
+  to the `tools_bazel_root_targets` list in `//tools/bazel_root_targets_list.gni`.
+- For other host tools, add the migrated Bazel host tool to the `default_bazel_root_host_targets`
+  list in `//build/bazel/bazel_root_targets_list.gni`
 
 ```gn
 default_bazel_root_host_targets = sdk_host_tool_bazel_targets + [
