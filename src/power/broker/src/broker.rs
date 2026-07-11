@@ -3051,6 +3051,12 @@ mod tests {
 
         assert_lease_cleaned_up(&broker.catalog, lease.id);
 
+        // Because ElementIDs are randomly generated, these will be processed in order of ID hash
+        // value. We don't actually care about the order for correctness outside of
+        // assert_events_recordered_in_order.
+        let (first_parent, second_parent) =
+            if parent1 < parent2 { (parent1, parent2) } else { (parent2, parent1) };
+
         let hierarchy = fuchsia_inspect::reader::read(&inspect).await.unwrap();
         assert_events_recorded_in_order!(
             &hierarchy,
@@ -3119,13 +3125,13 @@ mod tests {
                 },
                 {
                     update_level: {
-                        element_id: *parent1,
+                        element_id: *first_parent,
                         required_level: 0u64,
                     },
                 },
                 {
                     update_level: {
-                        element_id: *parent2,
+                        element_id: *second_parent,
                         required_level: 0u64,
                     },
                 },
