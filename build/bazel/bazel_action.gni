@@ -730,14 +730,20 @@ template("bazel_action") {
 
       depfile = "${target_gen_dir}/${target_name}.d"
 
-      outputs = [
-        _bazel_command_file,
-        _bazel_explain_file,
-        _debug_symbols_manifest,
-        _timings_file,
-      ]
-      if (_update_rust_project) {
-        outputs += [ _rust_project_json ]
+      outputs = []
+      if (!enable_delayed_bazel_actions) {
+        # None of these can be individually created when delayed actions are in
+        # use.
+        outputs += [
+          _bazel_command_file,
+          _bazel_explain_file,
+          _debug_symbols_manifest,
+          _timings_file,
+        ]
+
+        if (_update_rust_project) {
+          outputs += [ _rust_project_json ]
+        }
       }
 
       # bazel_gn_target_action.py always checks the rbe_settings.json file to
@@ -815,7 +821,7 @@ template("bazel_action") {
         ]
       }
 
-      if (bazel_auto_refresh_compdb) {
+      if (bazel_auto_refresh_compdb && !enable_delayed_bazel_actions) {
         _compdb_file =
             "${target_out_dir}/${target_name}.bazel_compile_commands.json"
         _rebased_compdb_file = rebase_path(_compdb_file, root_build_dir)
@@ -847,7 +853,7 @@ template("bazel_action") {
         inputs += [ "//build/bazel/starlark/FuchsiaPackageInfo_archive.cquery" ]
       }
 
-      if (invoker.command == "build") {
+      if (invoker.command == "build" && !enable_delayed_bazel_actions) {
         outputs += [ _bazel_build_events_log_json ]
 
         args += [
@@ -878,37 +884,40 @@ template("bazel_action") {
             },
           ]
 
-          # Used by //:bazel_build_actions target.
-          bazel_build_actions_barrier = []
-          bazel_build_actions = [
-            # LINT.IfChange(bazel_build_actions)
-            {
-              gn_target = get_label_info(":$target_name", "label_no_toolchain")
-              bazel_targets = _bazel_targets
-              no_sdk = _no_sdk
-              is_host = _build_for_host
-              gn_targets_dir =
-                  rebase_path(_gn_targets_repository_path, root_build_dir)
-              gn_targets_manifest =
-                  rebase_path(_gn_targets_repository_manifest, root_build_dir)
-              gn_targets_licenses_spdx =
-                  rebase_path(_all_licenses_spdx_file, root_build_dir)
-              debug_symbols_manifest = _rebased_debug_symbols_manifest
-              bazel_command_file = _rebased_bazel_command_file
-              bazel_explain_file = _rebased_bazel_explain_file
-              timings_file = _rebased_timings_file
-              build_events_log_json = _rebased_bazel_build_events_log_json
+          if (!enable_delayed_bazel_actions) {
+            # Used by //:bazel_build_actions target.
+            bazel_build_actions_barrier = []
+            bazel_build_actions = [
+              # LINT.IfChange(bazel_build_actions)
+              {
+                gn_target =
+                    get_label_info(":$target_name", "label_no_toolchain")
+                bazel_targets = _bazel_targets
+                no_sdk = _no_sdk
+                is_host = _build_for_host
+                gn_targets_dir =
+                    rebase_path(_gn_targets_repository_path, root_build_dir)
+                gn_targets_manifest =
+                    rebase_path(_gn_targets_repository_manifest, root_build_dir)
+                gn_targets_licenses_spdx =
+                    rebase_path(_all_licenses_spdx_file, root_build_dir)
+                debug_symbols_manifest = _rebased_debug_symbols_manifest
+                bazel_command_file = _rebased_bazel_command_file
+                bazel_explain_file = _rebased_bazel_explain_file
+                timings_file = _rebased_timings_file
+                build_events_log_json = _rebased_bazel_build_events_log_json
 
-              if (_update_rust_project) {
-                bazel_rust_project_json = _rebased_rust_project_json
-              }
+                if (_update_rust_project) {
+                  bazel_rust_project_json = _rebased_rust_project_json
+                }
 
-              if (bazel_auto_refresh_compdb) {
-                bazel_compdb_file = _rebased_compdb_file
-              }
-            },
-            # LINT.ThenChange(//BUILD.gn:bazel_build_actions)
-          ]
+                if (bazel_auto_refresh_compdb) {
+                  bazel_compdb_file = _rebased_compdb_file
+                }
+              },
+              # LINT.ThenChange(//BUILD.gn:bazel_build_actions)
+            ]
+          }
 
           # Used by //:debug_symbols
           debug_symbol_manifests = [

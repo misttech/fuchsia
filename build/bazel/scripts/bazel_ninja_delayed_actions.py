@@ -7,6 +7,7 @@
 
 import argparse
 import dataclasses
+import datetime
 import json
 import os
 import sys
@@ -43,6 +44,12 @@ _DEBUG = False
 
 # Set this to True to enable debug printing of the action's timing profiles
 _DEBUG_TIME_PROFILE = _DEBUG
+
+
+@dataclasses.dataclass(frozen=True)
+class TargetWithPlatform:
+    target: str
+    platform: str
 
 
 def main() -> int:
@@ -112,21 +119,37 @@ def main() -> int:
         args.delayed_actions_request.read_text()
     )
 
+    # This is a nested map, first by platform, then by bazel target label, to the BazelTargetInfo
+    # struct used to define the outputs for the Bazel targets that we need to build.
     targets_by_platform: dict[str, dict[str, BazelTargetInfo]] = {}
-    target_request_map: dict[str, DelayedAction] = {}
+
+    # This is a map from a bazel target (with platform label) to the DelayedAction from ninja that's
+    # requesting its outputs to be built, along with the stamp file that needs to be created so that
+    # ninja can tell that the action was performed.
+    target_request_map: dict[
+        TargetWithPlatform, tuple[DelayedAction, Path]
+    ] = {}
+
     for action in ninja_request.actions:
         for output in action.ninja_outputs:
             target = bazel_target_infos.get_target(output)
 
             if target:
-                if target.bazel_target not in target_request_map:
-                    target_request_map[target.bazel_target] = action
-                else:
-                    if action != target_request_map[target.bazel_target]:
-                        parser.error(
-                            f"Bazel target {target.bazel_target} is requested by multiple actions: "
-                            + f"{action} and {target_request_map[target.bazel_target]}"
-                        )
+                # In order to line up the results with the action IDs (and to setup the depfile
+                # infos) we need to know which action is responsible for which target, which
+                # means that we can't have multiple actions creating the same output file.
+                target_with_platform = TargetWithPlatform(
+                    target.bazel_target,
+                    target.bazel_platform_label,
+                )
+                existing_action, _ = target_request_map.setdefault(
+                    target_with_platform, (action, Path(target.stamp_path))
+                )
+                if existing_action is not action:
+                    parser.error(
+                        f"Bazel target {target.bazel_target} is requested by multiple actions: "
+                        + f"{action.action_id} and {existing_action.action_id}"
+                    )
 
                 platform_targets = targets_by_platform.setdefault(
                     target.bazel_platform_label, {}
@@ -142,7 +165,8 @@ def main() -> int:
     print()
     print("Bazel targets to build:")
     for platform, targets in sorted(targets_by_platform.items()):
-        print(f"  {platform}")
+        print()
+        print(f"Using platform: {platform}")
         for target in sorted(targets):
             print(f"    {target}")
     print()
@@ -210,10 +234,13 @@ def main() -> int:
                 time_profile=time_profile,
             )
 
-            # Update the depfiles data
+            # Update the depfiles data and the stamp file
             for target, sources in action_result.source_files.items():
-                # Locate the action request for this target.
-                action = target_request_map[target]
+                # Locate the action request and stamp path for this target.
+                target_with_platform = TargetWithPlatform(
+                    target, platform_label
+                )
+                action, stamp_path = target_request_map[target_with_platform]
 
                 # Construct a depfile for it.
                 depfile = DepFile(action.ninja_outputs[0])
@@ -223,11 +250,28 @@ def main() -> int:
                     depfile.add_output(output)
 
                 # And all the sources for the target.
-                depfile.update(sources)
+                for source in sources:
+                    # Don't include our @gn_targets generated BUILD.bazel files as
+                    # inputs for the depfile, because they're created on the fly.
+                    if not (
+                        source.startswith(
+                            "build/bazel/ninja_delayed_action.gn_targets"
+                        )
+                        and source.endswith("BUILD.bazel")
+                    ):
+                        depfile.add_input(source)
 
                 # And then write out the depfile
                 with open(action.ninja_depfile, "w") as f:
                     depfile.write_to(f)
+
+                # Update the stamp file.
+                timestamp = datetime.datetime.now().timestamp()
+                stamp_path.parent.mkdir(parents=True, exist_ok=True)
+                if stamp_path.exists():
+                    stamp_path.unlink()
+                with open(stamp_path, "w") as f:
+                    f.write(f"{timestamp}\n")
 
         rc = 0
 
