@@ -956,7 +956,7 @@ This should never be set as a build argument.
 }
   hwasan = {
   shared = {
-  clang_rt = "../../../../out/not-default/libclang_rt.hwasan.so"
+  clang_rt = ""
 }
   static = {
   clang_rt = "../../../../out/not-default/libclang_rt.hwasan.a"
