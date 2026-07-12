@@ -6,6 +6,7 @@
 """Run a series of Python tests from a given directory or explicit list. A.k.a a basic pytest."""
 
 import argparse
+import json
 import os
 import subprocess
 import sys
@@ -34,8 +35,41 @@ def main():
     parser.add_argument(
         "--stamp", type=Path, help="Stamp file to write on success."
     )
+    parser.add_argument(
+        "--library-infos",
+        type=Path,
+        help="Path to the library infos JSON file. Requires --depfile.",
+    )
+    parser.add_argument(
+        "--depfile",
+        type=Path,
+        help="Path to the depfile to generate. Requires --stamp.",
+    )
 
     args = parser.parse_args()
+
+    if args.library_infos:
+        if not args.depfile:
+            parser.error("--depfile is required if --library-infos is provided")
+        if not args.stamp:
+            parser.error(
+                "--stamp is required if --library-infos is provided to use as depfile target"
+            )
+
+        with open(args.library_infos, "r") as f:
+            lib_infos = json.load(f)
+
+        dep_files = []
+        for lib_info in lib_infos:
+            source_root = lib_info["source_root"]
+            for source in lib_info["sources"]:
+                dep_files.append(os.path.join(source_root, source))
+
+        dep_files.append(str(args.library_infos))
+
+        args.depfile.write_text(
+            "{}: {}\n".format(args.stamp, " ".join(dep_files))
+        )
 
     test_files = args.test_files
     if args.source_dir:

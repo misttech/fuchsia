@@ -98,10 +98,10 @@ class MockNinjaRunner(NinjaRunner):
         super().__init__(Path("ninja"), build_dir, self._mock_runner)
         self._mock_runner.push_result(0, mock_output, "")
 
-    def last_ninja_args(self) -> T.Sequence[str | Path]:
+    def last_ninja_args(self) -> list[str]:
         last_args = self._mock_runner.results[-1].args
         assert last_args[0:3] == ["ninja", "-C", str(self.build_dir)]
-        return last_args[3:]
+        return [str(c) for c in last_args[3:]]
 
 
 def get_last_build_targets_path(build_dir: Path) -> Path:
