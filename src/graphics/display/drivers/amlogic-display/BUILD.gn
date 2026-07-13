@@ -208,6 +208,7 @@ test("amlogic-display-test") {
     "//sdk/lib/async_patterns/testing/cpp",
     "//sdk/lib/driver/compat/cpp",
     "//sdk/lib/driver/component/cpp",
+    "//sdk/lib/driver/fake-platform-device/cpp",
     "//sdk/lib/driver/incoming/cpp",
     "//sdk/lib/driver/logging/cpp",
     "//sdk/lib/driver/mock-mmio/cpp",

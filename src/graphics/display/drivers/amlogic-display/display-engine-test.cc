@@ -11,13 +11,14 @@
 #include <lib/async-loop/default.h>
 #include <lib/async/default.h>
 #include <lib/async_patterns/testing/cpp/dispatcher_bound.h>
+#include <lib/driver/fake-platform-device/cpp/fake-pdev.h>
 #include <lib/driver/incoming/cpp/namespace.h>
-#include <lib/driver/testing/cpp/driver_runtime.h>
-#include <lib/driver/testing/cpp/internal/test_environment.h>
+#include <lib/driver/testing/cpp/driver_test.h>
 #include <lib/driver/testing/cpp/scoped_global_logger.h>
 #include <lib/fdf/cpp/dispatcher.h>
 #include <lib/inspect/cpp/inspect.h>
 
+#include <atomic>
 #include <memory>
 #include <utility>
 
@@ -226,12 +227,13 @@ class FakeAllocator : public fidl::testing::WireTestBase<fuchsia_sysmem2::Alloca
   using FakeBufferCollectionBuilder =
       fit::function<std::unique_ptr<FakeBufferCollectionBase>(void)>;
 
-  explicit FakeAllocator(async_dispatcher_t* dispatcher) : dispatcher_(dispatcher) {
-    ZX_ASSERT(dispatcher_ != nullptr);
-  }
+  FakeAllocator() = default;
 
-  void Bind(fidl::ServerEnd<fuchsia_sysmem2::Allocator> server) {
-    fidl::BindServer(dispatcher_, std::move(server), this);
+  void Bind(async_dispatcher_t* dispatcher,
+            fidl::ServerEnd<fuchsia_sysmem2::Allocator> server_end) {
+    ZX_ASSERT(dispatcher != nullptr);
+    dispatcher_ = dispatcher;
+    binding_.emplace(dispatcher_, std::move(server_end), this, fidl::kIgnoreBindingClosure);
   }
 
   void set_fake_buffer_collection_builder(FakeBufferCollectionBuilder builder) {
@@ -242,20 +244,21 @@ class FakeAllocator : public fidl::testing::WireTestBase<fuchsia_sysmem2::Alloca
                             BindSharedCollectionCompleter::Sync& completer) override {
     ZX_ASSERT(fake_buffer_collection_builder_ != nullptr);
     auto buffer_collection_id = next_buffer_collection_id_++;
-    active_buffer_collections_[buffer_collection_id] = {
-        .token_client = std::move(request->token()),
-        .fake_buffer_collection = fake_buffer_collection_builder_(),
-    };
 
-    fidl::BindServer(
-        dispatcher_, std::move(request->buffer_collection_request()),
-        active_buffer_collections_[buffer_collection_id].fake_buffer_collection.get(),
-        [this, buffer_collection_id](FakeBufferCollectionBase*, fidl::UnbindInfo,
-                                     fidl::ServerEnd<fuchsia_sysmem2::BufferCollection>) {
+    auto fake_buffer_collection = fake_buffer_collection_builder_();
+    auto binding = std::make_unique<fidl::ServerBinding<fuchsia_sysmem2::BufferCollection>>(
+        dispatcher_, std::move(request->buffer_collection_request()), fake_buffer_collection.get(),
+        [this, buffer_collection_id](FakeBufferCollectionBase*, fidl::UnbindInfo) {
           inactive_buffer_collection_tokens_.push_back(
               std::move(active_buffer_collections_[buffer_collection_id].token_client));
           active_buffer_collections_.erase(buffer_collection_id);
         });
+
+    active_buffer_collections_[buffer_collection_id] = {
+        .token_client = std::move(request->token()),
+        .fake_buffer_collection = std::move(fake_buffer_collection),
+        .binding = std::move(binding),
+    };
   }
 
   FakeBufferCollectionBase* GetMostRecentBufferCollection() {
@@ -300,6 +303,7 @@ class FakeAllocator : public fidl::testing::WireTestBase<fuchsia_sysmem2::Alloca
   struct BufferCollection {
     fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> token_client;
     std::unique_ptr<FakeBufferCollectionBase> fake_buffer_collection;
+    std::unique_ptr<fidl::ServerBinding<fuchsia_sysmem2::BufferCollection>> binding;
   };
 
   std::unordered_map<display::DriverBufferCollectionId, BufferCollection>
@@ -312,18 +316,18 @@ class FakeAllocator : public fidl::testing::WireTestBase<fuchsia_sysmem2::Alloca
   FakeBufferCollectionBuilder fake_buffer_collection_builder_ = nullptr;
 
   async_dispatcher_t* dispatcher_ = nullptr;
+  std::optional<fidl::ServerBinding<fuchsia_sysmem2::Allocator>> binding_;
 };
 
 // This class is thread-unsafe. It must be created, used and destroyed in the
 // `dispatcher` passed in the constructor.
 class FakeCanvas : public fidl::WireServer<fuchsia_hardware_amlogiccanvas::Device> {
  public:
-  explicit FakeCanvas(async_dispatcher_t* dispatcher) : dispatcher_(dispatcher) {
-    ZX_ASSERT(dispatcher_ != nullptr);
-  }
+  FakeCanvas() = default;
 
-  void Bind(fidl::ServerEnd<fuchsia_hardware_amlogiccanvas::Device> server_end) {
-    fidl::BindServer(dispatcher_, std::move(server_end), this);
+  void Bind(async_dispatcher_t* dispatcher,
+            fidl::ServerEnd<fuchsia_hardware_amlogiccanvas::Device> server_end) {
+    binding_.emplace(dispatcher, std::move(server_end), this, fidl::kIgnoreBindingClosure);
   }
 
   void Config(ConfigRequestView request, ConfigCompleter::Sync& completer) override {
@@ -352,44 +356,101 @@ class FakeCanvas : public fidl::WireServer<fuchsia_hardware_amlogiccanvas::Devic
   }
 
  private:
-  async_dispatcher_t* dispatcher_;
   static constexpr uint32_t kCanvasEntries = 256;
   bool in_use_[kCanvasEntries] = {};
   std::optional<fidl::ServerBinding<fuchsia_hardware_amlogiccanvas::Device>> binding_;
 };
 
-// WARNING: Don't use this test as a template for new tests as it uses the old driver testing
-// library.
+class TestDriver : public fdf::DriverBase2 {
+ public:
+  TestDriver() : fdf::DriverBase2("test-driver") {}
+
+  zx::result<> Start(fdf::DriverContext context) override {
+    incoming_namespace_ = std::shared_ptr<fdf::Namespace>(context.take_incoming());
+    return zx::ok();
+  }
+
+  const std::shared_ptr<fdf::Namespace>& incoming_namespace() const { return incoming_namespace_; }
+
+  static DriverRegistration GetDriverRegistration() {
+    return FUCHSIA_DRIVER_REGISTRATION_V1(fdf_internal::DriverServer2<TestDriver>::initialize,
+                                          fdf_internal::DriverServer2<TestDriver>::destroy);
+  }
+
+ private:
+  std::shared_ptr<fdf::Namespace> incoming_namespace_;
+};
+
+class AmlogicDisplayTestEnvironment : public fdf_testing::Environment {
+ public:
+  zx::result<> Serve(fdf::OutgoingDirectory& to_driver_vfs) override {
+    async_dispatcher_t* dispatcher = fdf::Dispatcher::GetCurrent()->async_dispatcher();
+
+    // 1. Configure and serve FakePDev
+    fdf_fake::FakePDev::Config config;
+    config.use_fake_bti = true;
+    fake_pdev_.SetConfig(std::move(config));
+
+    auto pdev_handler = fake_pdev_.GetInstanceHandler(dispatcher);
+    zx::result<> status = to_driver_vfs.AddService<fuchsia_hardware_platform_device::Service>(
+        std::move(pdev_handler), "pdev");
+    if (status.is_error()) {
+      return status;
+    }
+
+    // 2. Serve FakeCanvas under service name "canvas" using Bind()
+    fuchsia_hardware_amlogiccanvas::Service::InstanceHandler canvas_handler({
+        .device =
+            [this, dispatcher](fidl::ServerEnd<fuchsia_hardware_amlogiccanvas::Device> server_end) {
+              canvas_.Bind(dispatcher, std::move(server_end));
+            },
+    });
+    status = to_driver_vfs.AddService<fuchsia_hardware_amlogiccanvas::Service>(
+        std::move(canvas_handler), "canvas");
+    if (status.is_error()) {
+      return status;
+    }
+
+    // 3. Serve FakeAllocator using Bind()
+    status = to_driver_vfs.component().AddUnmanagedProtocol<fuchsia_sysmem2::Allocator>(
+        [this, dispatcher](fidl::ServerEnd<fuchsia_sysmem2::Allocator> server_end) {
+          allocator_.Bind(dispatcher, std::move(server_end));
+        });
+    if (status.is_error()) {
+      return status;
+    }
+
+    return zx::ok();
+  }
+
+  FakeAllocator& allocator() { return allocator_; }
+  FakeCanvas& canvas() { return canvas_; }
+
+ private:
+  fdf_fake::FakePDev fake_pdev_;
+  FakeAllocator allocator_;
+  FakeCanvas canvas_;
+};
+
+struct TestConfig {
+  using DriverType = TestDriver;
+  using EnvironmentType = AmlogicDisplayTestEnvironment;
+};
+
 class FakeSysmemTest : public testing::Test {
  public:
   static constexpr int kWidth = 1024;
   static constexpr int kHeight = 600;
 
-  void InitializeTestEnvironment() {
-    auto [directory_client, directory_server] = fidl::Endpoints<fuchsia_io::Directory>::Create();
-    std::vector<fuchsia_component_runner::ComponentNamespaceEntry> entries;
-    entries.push_back({{.path = "/", .directory = std::move(directory_client)}});
-    zx::result<fdf::Namespace> namespace_result = fdf::Namespace::Create(entries);
-    ASSERT_OK(namespace_result);
-
-    incoming_ = std::make_shared<fdf::Namespace>(std::move(namespace_result).value());
-
-    zx::result<> test_environment_init_result = test_environment_.SyncCall(
-        &fdf_testing::internal::TestEnvironment::Initialize, std::move(directory_server));
-    ASSERT_OK(test_environment_init_result);
-  }
-
   void SetUp() override {
-    auto [canvas_client, canvas_server] =
-        fidl::Endpoints<fuchsia_hardware_amlogiccanvas::Device>::Create();
-    canvas_.SyncCall(&FakeCanvas::Bind, std::move(canvas_server));
+    zx::result<> start_result = driver_test_.StartDriver();
+    ASSERT_OK(start_result);
 
-    InitializeTestEnvironment();
+    display_engine_ = std::make_unique<DisplayEngine>(driver_test_.driver()->incoming_namespace(),
+                                                      &engine_events_, structured_config::Config());
+    ASSERT_EQ(display_engine_->GetCommonProtocolsAndResources(), ZX_OK);
 
-    display_engine_ =
-        std::make_unique<DisplayEngine>(incoming_, &engine_events_, structured_config::Config());
     display_engine_->SetFormatSupportCheck([](auto) { return true; });
-    display_engine_->SetCanvasForTesting(std::move(canvas_client));
 
     zx::result<std::unique_ptr<VoutDsi>> create_dsi_vout_result =
         VoutDsi::CreateForTesting(display::PanelType::kBoeTv070wsmFitipowerJd9364Astro);
@@ -410,40 +471,94 @@ class FakeSysmemTest : public testing::Test {
     ASSERT_OK(video_input_unit_result);
     display_engine_->SetVideoInputUnitForTesting(std::move(video_input_unit_result).value());
 
-    allocator_.SyncCall(&FakeAllocator::set_fake_buffer_collection_builder, [] {
+    SetBufferCollectionBuilder([] {
       // Allocate importable primary Image by default.
       const std::vector<fuchsia_images2::wire::PixelFormat> kPixelFormats = {
           fuchsia_images2::wire::PixelFormat::kB8G8R8A8,
           fuchsia_images2::wire::PixelFormat::kR8G8B8A8};
       return std::make_unique<FakeBufferCollection>(kPixelFormats);
     });
-
-    auto [sysmem_client, sysmem_server] = fidl::Endpoints<fuchsia_sysmem2::Allocator>::Create();
-    allocator_.SyncCall(&FakeAllocator::Bind, std::move(sysmem_server));
-    display_engine_->SetSysmemAllocatorForTesting(fidl::WireSyncClient(std::move(sysmem_client)));
   }
 
   void TearDown() override {
     display_engine_.reset();
-    test_environment_.reset();
-    runtime_.ShutdownAllDispatchers(nullptr);
+    zx::result<> stop_result = driver_test_.StopDriver();
+    ASSERT_OK(stop_result);
+  }
+
+  fidl::ServerEnd<fuchsia_sysmem2::BufferCollectionToken> ImportBufferCollection(
+      display::DriverBufferCollectionId id) {
+    auto [token_client, token_server] =
+        fidl::Endpoints<fuchsia_sysmem2::BufferCollectionToken>::Create();
+    EXPECT_OK(display_engine_->ImportBufferCollection(id, std::move(token_client)));
+    return std::move(token_server);
+  }
+
+  void SetBufferCollectionBuilder(FakeAllocator::FakeBufferCollectionBuilder builder) {
+    driver_test_.RunInEnvironmentTypeContext(
+        [builder = std::move(builder)](AmlogicDisplayTestEnvironment& env) mutable {
+          env.allocator().set_fake_buffer_collection_builder(std::move(builder));
+        });
+  }
+
+  void SetBufferCollectionBuilderForCapture() {
+    SetBufferCollectionBuilder([] { return std::make_unique<FakeBufferCollectionForCapture>(); });
+  }
+
+  void PollUntilActiveTokensCount(size_t expected_count) {
+    EXPECT_TRUE(display::PollUntil(
+        [&]() {
+          return driver_test_.RunInEnvironmentTypeContext<bool>(
+              [expected_count](AmlogicDisplayTestEnvironment& env) {
+                return env.allocator().GetActiveBufferCollectionTokenClients().size() ==
+                       expected_count;
+              });
+        },
+        zx::msec(5), 1000));
+  }
+
+  void VerifyTokenIsActive(const zx::channel& token_server_channel) {
+    auto [server_koid, server_related_koid] = fsl::GetKoids(token_server_channel.get());
+    driver_test_.RunInEnvironmentTypeContext([&](AmlogicDisplayTestEnvironment& env) {
+      auto active_buffer_token_clients = env.allocator().GetActiveBufferCollectionTokenClients();
+      ASSERT_EQ(active_buffer_token_clients.size(), 1u);
+
+      auto [client_koid, client_related_koid] =
+          fsl::GetKoids(active_buffer_token_clients[0].channel()->get());
+      EXPECT_NE(client_koid, ZX_KOID_INVALID);
+      EXPECT_NE(client_related_koid, ZX_KOID_INVALID);
+      EXPECT_EQ(client_koid, server_related_koid);
+      EXPECT_EQ(server_koid, client_related_koid);
+
+      auto inactive_buffer_token_clients =
+          env.allocator().GetInactiveBufferCollectionTokenClients();
+      EXPECT_EQ(inactive_buffer_token_clients.size(), 0u);
+    });
+  }
+
+  void VerifyTokenIsInactive(const zx::channel& token_server_channel) {
+    auto [server_koid, server_related_koid] = fsl::GetKoids(token_server_channel.get());
+    driver_test_.RunInEnvironmentTypeContext([&](AmlogicDisplayTestEnvironment& env) {
+      auto active_buffer_token_clients = env.allocator().GetActiveBufferCollectionTokenClients();
+      EXPECT_EQ(active_buffer_token_clients.size(), 0u);
+
+      auto inactive_buffer_token_clients =
+          env.allocator().GetInactiveBufferCollectionTokenClients();
+      ASSERT_EQ(inactive_buffer_token_clients.size(), 1u);
+
+      auto [client_koid, client_related_koid] =
+          fsl::GetKoids(inactive_buffer_token_clients[0].channel()->get());
+      EXPECT_NE(client_koid, ZX_KOID_INVALID);
+      EXPECT_NE(client_related_koid, ZX_KOID_INVALID);
+      EXPECT_EQ(client_koid, server_related_koid);
+      EXPECT_EQ(server_koid, client_related_koid);
+    });
   }
 
  protected:
   fdf_testing::ScopedGlobalLogger logger_;
 
-  fdf_testing::DriverRuntime runtime_;
-  fdf::UnownedSynchronizedDispatcher sysmem_dispatcher_ = runtime_.StartBackgroundDispatcher();
-  fdf::UnownedSynchronizedDispatcher env_dispatcher_ = runtime_.StartBackgroundDispatcher();
-  async_patterns::TestDispatcherBound<fdf_testing::internal::TestEnvironment> test_environment_{
-      env_dispatcher_->async_dispatcher(), std::in_place};
-
-  async_patterns::TestDispatcherBound<FakeAllocator> allocator_{
-      sysmem_dispatcher_->async_dispatcher(), std::in_place, async_patterns::PassDispatcher};
-  async_patterns::TestDispatcherBound<FakeCanvas> canvas_{
-      env_dispatcher_->async_dispatcher(), std::in_place, async_patterns::PassDispatcher};
-
-  std::shared_ptr<fdf::Namespace> incoming_;
+  fdf_testing::ForegroundDriverTest<TestConfig> driver_test_;
 
   display::DisplayEngineEventsFidl engine_events_;
 
@@ -454,57 +569,21 @@ class FakeSysmemTest : public testing::Test {
 };
 
 TEST_F(FakeSysmemTest, ImportBufferCollection) {
-  zx::result<fidl::Endpoints<fuchsia_sysmem2::BufferCollectionToken>> token1_endpoints =
-      fidl::CreateEndpoints<fuchsia_sysmem2::BufferCollectionToken>();
-  ASSERT_OK(token1_endpoints);
-  zx::result<fidl::Endpoints<fuchsia_sysmem2::BufferCollectionToken>> token2_endpoints =
-      fidl::CreateEndpoints<fuchsia_sysmem2::BufferCollectionToken>();
-  ASSERT_OK(token2_endpoints);
-
-  // Test ImportBufferCollection().
   constexpr display::DriverBufferCollectionId kValidBufferCollectionId(1);
-  EXPECT_OK(display_engine_->ImportBufferCollection(kValidBufferCollectionId,
-                                                    std::move(token1_endpoints->client)));
+  fidl::ServerEnd<fuchsia_sysmem2::BufferCollectionToken> token1_server =
+      ImportBufferCollection(kValidBufferCollectionId);
 
   // `driver_buffer_collection_id` must be unused.
-  EXPECT_STATUS(display_engine_->ImportBufferCollection(kValidBufferCollectionId,
-                                                        std::move(token2_endpoints->client)),
-                zx::error(ZX_ERR_ALREADY_EXISTS));
+  auto [token2_client, token2_server] =
+      fidl::Endpoints<fuchsia_sysmem2::BufferCollectionToken>::Create();
+  EXPECT_STATUS(
+      display_engine_->ImportBufferCollection(kValidBufferCollectionId, std::move(token2_client)),
+      zx::error(ZX_ERR_ALREADY_EXISTS));
 
-  bool poll_success = display::PollUntil(
-      [&]() {
-        std::vector<fidl::UnownedClientEnd<fuchsia_sysmem2::BufferCollectionToken>> clients =
-            allocator_.SyncCall(&FakeAllocator::GetActiveBufferCollectionTokenClients);
-        return !clients.empty();
-      },
-      zx::msec(5), 1000);
-  EXPECT_TRUE(poll_success);
+  PollUntilActiveTokensCount(1);
 
   // Verify that the current buffer collection token is used (active).
-  {
-    std::vector<fidl::UnownedClientEnd<fuchsia_sysmem2::BufferCollectionToken>>
-        active_buffer_token_clients =
-            allocator_.SyncCall(&FakeAllocator::GetActiveBufferCollectionTokenClients);
-    EXPECT_EQ(active_buffer_token_clients.size(), 1u);
-
-    std::vector<fidl::UnownedClientEnd<fuchsia_sysmem2::BufferCollectionToken>>
-        inactive_buffer_token_clients =
-            allocator_.SyncCall(&FakeAllocator::GetInactiveBufferCollectionTokenClients);
-    EXPECT_EQ(inactive_buffer_token_clients.size(), 0u);
-
-    auto [client_koid, client_related_koid] =
-        fsl::GetKoids(active_buffer_token_clients[0].channel()->get());
-    auto [server_koid, server_related_koid] =
-        fsl::GetKoids(token1_endpoints->server.channel().get());
-
-    EXPECT_NE(client_koid, ZX_KOID_INVALID);
-    EXPECT_NE(client_related_koid, ZX_KOID_INVALID);
-    EXPECT_NE(server_koid, ZX_KOID_INVALID);
-    EXPECT_NE(server_related_koid, ZX_KOID_INVALID);
-
-    EXPECT_EQ(client_koid, server_related_koid);
-    EXPECT_EQ(server_koid, client_related_koid);
-  }
+  VerifyTokenIsActive(token1_server.channel());
 
   // Test ReleaseBufferCollection().
   constexpr display::DriverBufferCollectionId kInvalidBufferCollectionId(2);
@@ -512,47 +591,16 @@ TEST_F(FakeSysmemTest, ImportBufferCollection) {
                 zx::error(ZX_ERR_NOT_FOUND));
   EXPECT_OK(display_engine_->ReleaseBufferCollection(kValidBufferCollectionId));
 
-  EXPECT_TRUE(display::PollUntil(
-      [&]() {
-        std::vector<fidl::UnownedClientEnd<fuchsia_sysmem2::BufferCollectionToken>> clients =
-            allocator_.SyncCall(&FakeAllocator::GetActiveBufferCollectionTokenClients);
-        return clients.empty();
-      },
-      zx::msec(5), 1000));
+  PollUntilActiveTokensCount(0);
 
   // Verify that the current buffer collection token is released (inactive).
-  {
-    std::vector<fidl::UnownedClientEnd<fuchsia_sysmem2::BufferCollectionToken>>
-        active_buffer_token_clients =
-            allocator_.SyncCall(&FakeAllocator::GetActiveBufferCollectionTokenClients);
-    EXPECT_EQ(active_buffer_token_clients.size(), 0u);
-
-    std::vector<fidl::UnownedClientEnd<fuchsia_sysmem2::BufferCollectionToken>>
-        inactive_buffer_token_clients =
-            allocator_.SyncCall(&FakeAllocator::GetInactiveBufferCollectionTokenClients);
-    EXPECT_EQ(inactive_buffer_token_clients.size(), 1u);
-
-    auto [client_koid, client_related_koid] =
-        fsl::GetKoids(inactive_buffer_token_clients[0].channel()->get());
-    auto [server_koid, server_related_koid] =
-        fsl::GetKoids(token1_endpoints->server.channel().get());
-
-    EXPECT_NE(client_koid, ZX_KOID_INVALID);
-    EXPECT_NE(client_related_koid, ZX_KOID_INVALID);
-    EXPECT_NE(server_koid, ZX_KOID_INVALID);
-    EXPECT_NE(server_related_koid, ZX_KOID_INVALID);
-
-    EXPECT_EQ(client_koid, server_related_koid);
-    EXPECT_EQ(server_koid, client_related_koid);
-  }
+  VerifyTokenIsInactive(token1_server.channel());
 }
 
 TEST_F(FakeSysmemTest, ImportImage) {
-  auto [token_client, token_server] =
-      fidl::Endpoints<fuchsia_sysmem2::BufferCollectionToken>::Create();
-
   constexpr display::DriverBufferCollectionId kBufferCollectionId(1);
-  EXPECT_OK(display_engine_->ImportBufferCollection(kBufferCollectionId, std::move(token_client)));
+  fidl::ServerEnd<fuchsia_sysmem2::BufferCollectionToken> token_server =
+      ImportBufferCollection(kBufferCollectionId);
 
   static constexpr display::ImageBufferUsage kDisplayUsage({
       .tiling_type = display::ImageTilingType::kLinear,
@@ -605,14 +653,11 @@ TEST_F(FakeSysmemTest, ImportImage) {
 }
 
 TEST_F(FakeSysmemTest, ImportImageForCapture) {
-  allocator_.SyncCall(&FakeAllocator::set_fake_buffer_collection_builder,
-                      [] { return std::make_unique<FakeBufferCollectionForCapture>(); });
-
-  auto [token_client, token_server] =
-      fidl::Endpoints<fuchsia_sysmem2::BufferCollectionToken>::Create();
+  SetBufferCollectionBuilderForCapture();
 
   constexpr display::DriverBufferCollectionId kBufferCollectionId(1);
-  EXPECT_OK(display_engine_->ImportBufferCollection(kBufferCollectionId, std::move(token_client)));
+  fidl::ServerEnd<fuchsia_sysmem2::BufferCollectionToken> token_server =
+      ImportBufferCollection(kBufferCollectionId);
 
   // Driver sets BufferCollection buffer memory constraints.
   static constexpr display::ImageBufferUsage kCaptureUsage({
@@ -646,67 +691,86 @@ TEST_F(FakeSysmemTest, ImportImageForCapture) {
 }
 
 TEST_F(FakeSysmemTest, SysmemRequirements) {
-  FakeBufferCollectionBase* collection = nullptr;
-  allocator_.SyncCall(&FakeAllocator::set_fake_buffer_collection_builder, [&collection] {
+  std::atomic<FakeBufferCollectionBase*> collection = nullptr;
+  SetBufferCollectionBuilder([&collection] {
     const std::vector<fuchsia_images2::wire::PixelFormat> kPixelFormats = {
         fuchsia_images2::wire::PixelFormat::kB8G8R8A8,
         fuchsia_images2::wire::PixelFormat::kR8G8B8A8};
     auto new_buffer_collection = std::make_unique<FakeBufferCollection>(kPixelFormats);
-    collection = new_buffer_collection.get();
+    collection.store(new_buffer_collection.get());
     return new_buffer_collection;
   });
 
-  auto [token_client, token_server] =
-      fidl::Endpoints<fuchsia_sysmem2::BufferCollectionToken>::Create();
-
   constexpr display::DriverBufferCollectionId kBufferCollectionId(1);
-  EXPECT_OK(display_engine_->ImportBufferCollection(kBufferCollectionId, std::move(token_client)));
+  fidl::ServerEnd<fuchsia_sysmem2::BufferCollectionToken> token_server =
+      ImportBufferCollection(kBufferCollectionId);
 
-  EXPECT_TRUE(display::PollUntil([&] { return collection != nullptr; }, zx::msec(5), 1000));
+  EXPECT_TRUE(display::PollUntil([&] { return collection.load() != nullptr; }, zx::msec(5), 1000));
 
   static constexpr display::ImageBufferUsage kDisplayUsage({
       .tiling_type = display::ImageTilingType::kLinear,
   });
   EXPECT_OK(display_engine_->SetBufferCollectionConstraints(kDisplayUsage, kBufferCollectionId));
 
+  EXPECT_TRUE(display::PollUntil(
+      [&] {
+        return driver_test_.RunInEnvironmentTypeContext<bool>(
+            [&](AmlogicDisplayTestEnvironment& env) {
+              FakeBufferCollectionBase* col = collection.load();
+              return col != nullptr && col->set_constraints_called();
+            });
+      },
+      zx::msec(5), 1000));
+
   EXPECT_TRUE(
-      display::PollUntil([&] { return collection->set_constraints_called(); }, zx::msec(5), 1000));
-  EXPECT_TRUE(collection->set_name_called());
+      driver_test_.RunInEnvironmentTypeContext<bool>([&](AmlogicDisplayTestEnvironment& env) {
+        FakeBufferCollectionBase* col = collection.load();
+        return col != nullptr && col->set_name_called();
+      }));
 }
 
 TEST_F(FakeSysmemTest, SysmemRequirements_BgraOnly) {
-  FakeBufferCollectionBase* collection = nullptr;
-  allocator_.SyncCall(&FakeAllocator::set_fake_buffer_collection_builder, [&collection] {
+  std::atomic<FakeBufferCollectionBase*> collection = nullptr;
+  SetBufferCollectionBuilder([&collection] {
     const std::vector<fuchsia_images2::wire::PixelFormat> kPixelFormats = {
         fuchsia_images2::wire::PixelFormat::kB8G8R8A8,
     };
     auto new_buffer_collection = std::make_unique<FakeBufferCollection>(kPixelFormats);
-    collection = new_buffer_collection.get();
+    collection.store(new_buffer_collection.get());
     return new_buffer_collection;
   });
   display_engine_->SetFormatSupportCheck(
       [](display::PixelFormat format) { return format == display::PixelFormat::kB8G8R8A8; });
 
-  auto [token_client, token_server] =
-      fidl::Endpoints<fuchsia_sysmem2::BufferCollectionToken>::Create();
-
   constexpr display::DriverBufferCollectionId kBufferCollectionId(1);
-  EXPECT_OK(display_engine_->ImportBufferCollection(kBufferCollectionId, std::move(token_client)));
+  fidl::ServerEnd<fuchsia_sysmem2::BufferCollectionToken> token_server =
+      ImportBufferCollection(kBufferCollectionId);
 
-  EXPECT_TRUE(display::PollUntil([&] { return collection != nullptr; }, zx::msec(5), 1000));
+  EXPECT_TRUE(display::PollUntil([&] { return collection.load() != nullptr; }, zx::msec(5), 1000));
 
   static constexpr display::ImageBufferUsage kDisplayUsage({
       .tiling_type = display::ImageTilingType::kLinear,
   });
   EXPECT_OK(display_engine_->SetBufferCollectionConstraints(kDisplayUsage, kBufferCollectionId));
 
+  EXPECT_TRUE(display::PollUntil(
+      [&] {
+        return driver_test_.RunInEnvironmentTypeContext<bool>(
+            [&](AmlogicDisplayTestEnvironment& env) {
+              FakeBufferCollectionBase* col = collection.load();
+              return col != nullptr && col->set_constraints_called();
+            });
+      },
+      zx::msec(5), 1000));
+
   EXPECT_TRUE(
-      display::PollUntil([&] { return collection->set_constraints_called(); }, zx::msec(5), 1000));
-  EXPECT_TRUE(collection->set_name_called());
+      driver_test_.RunInEnvironmentTypeContext<bool>([&](AmlogicDisplayTestEnvironment& env) {
+        FakeBufferCollectionBase* col = collection.load();
+        return col != nullptr && col->set_name_called();
+      }));
 }
 
 TEST(AmlogicDisplay, FloatToFix3_10) {
-  inspect::Inspector inspector;
   EXPECT_EQ(0x0000u, VideoInputUnit::FloatToFixed3_10(0.0f));
   EXPECT_EQ(0x0066u, VideoInputUnit::FloatToFixed3_10(0.1f));
   EXPECT_EQ(0x1f9au, VideoInputUnit::FloatToFixed3_10(-0.1f));
@@ -720,7 +784,6 @@ TEST(AmlogicDisplay, FloatToFix3_10) {
 }
 
 TEST(AmlogicDisplay, FloatToFixed2_10) {
-  inspect::Inspector inspector;
   EXPECT_EQ(0x0000u, VideoInputUnit::FloatToFixed2_10(0.0f));
   EXPECT_EQ(0x0066u, VideoInputUnit::FloatToFixed2_10(0.1f));
   EXPECT_EQ(0x0f9au, VideoInputUnit::FloatToFixed2_10(-0.1f));
@@ -734,14 +797,11 @@ TEST(AmlogicDisplay, FloatToFixed2_10) {
 }
 
 TEST_F(FakeSysmemTest, NoLeakCaptureCanvas) {
-  allocator_.SyncCall(&FakeAllocator::set_fake_buffer_collection_builder,
-                      [] { return std::make_unique<FakeBufferCollectionForCapture>(); });
-
-  auto [token_client, token_server] =
-      fidl::Endpoints<fuchsia_sysmem2::BufferCollectionToken>::Create();
+  SetBufferCollectionBuilderForCapture();
 
   constexpr display::DriverBufferCollectionId kBufferCollectionId(1);
-  EXPECT_OK(display_engine_->ImportBufferCollection(kBufferCollectionId, std::move(token_client)));
+  fidl::ServerEnd<fuchsia_sysmem2::BufferCollectionToken> token_server =
+      ImportBufferCollection(kBufferCollectionId);
 
   zx::result<display::DriverCaptureImageId> successful_import_result =
       display_engine_->ImportImageForCapture(kBufferCollectionId,
@@ -750,7 +810,8 @@ TEST_F(FakeSysmemTest, NoLeakCaptureCanvas) {
   display::DriverCaptureImageId capture_image_id = std::move(successful_import_result).value();
   EXPECT_OK(display_engine_->ReleaseCapture(capture_image_id));
 
-  canvas_.SyncCall(&FakeCanvas::CheckThatNoEntriesInUse);
+  driver_test_.RunInEnvironmentTypeContext(
+      [](AmlogicDisplayTestEnvironment& env) { env.canvas().CheckThatNoEntriesInUse(); });
 }
 
 }  // namespace

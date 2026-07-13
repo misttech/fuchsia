@@ -134,19 +134,21 @@ class DisplayEngine final : public display::DisplayEngineInterface {
     format_support_check_ = std::move(fn);
   }
 
-  void SetCanvasForTesting(fidl::ClientEnd<fuchsia_hardware_amlogiccanvas::Device> canvas) {
-    canvas_.Bind(std::move(canvas));
-  }
+  // Acquires the common protocols (pdev, sysmem and amlogic-canvas) and
+  // resources (Vsync interrupts, capture interrupts and BTIs) from the parent
+  // nodes.
+  //
+  // Must be called once and only once per driver binding procedure, before
+  // the protocols / resources mentioned above being used.
+  //
+  // This is meant for private use, but is marked public because the unit test
+  // needs to be able to call it as well to bypass the full `Initialize()` flow.
+  zx_status_t GetCommonProtocolsAndResources();
 
   void SetVoutForTesting(std::unique_ptr<Vout> vout) { vout_ = std::move(vout); }
 
   void SetVideoInputUnitForTesting(std::unique_ptr<VideoInputUnit> video_input_unit) {
     video_input_unit_ = std::move(video_input_unit);
-  }
-
-  void SetSysmemAllocatorForTesting(
-      fidl::WireSyncClient<fuchsia_sysmem2::Allocator> sysmem_allocator_client) {
-    sysmem_ = std::move(sysmem_allocator_client);
   }
 
  private:
@@ -163,14 +165,6 @@ class DisplayEngine final : public display::DisplayEngineInterface {
   // preferred to turn the initialization procedure into a builder pattern,
   // where resources are acquired before the device is created, and the device
   // is guaranteed to be ready at creation time.
-
-  // Acquires the common protocols (pdev, sysmem and amlogic-canvas) and
-  // resources (Vsync interrupts, capture interrupts and BTIs) from the parent
-  // nodes.
-  //
-  // Must be called once and only once per driver binding procedure, before
-  // the protocols / resources mentioned above being used.
-  zx_status_t GetCommonProtocolsAndResources();
 
   // Must be called once and only once per driver binding procedure.
   //
