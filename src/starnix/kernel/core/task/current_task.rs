@@ -20,7 +20,6 @@ use crate::vfs::{
     LookupVec, MAX_SYMLINK_FOLLOWS, NamespaceNode, ResolveBase, SymlinkMode, SymlinkTarget,
     new_pidfd,
 };
-use fuchsia_rcu::RcuReadGuard;
 use futures::FutureExt;
 use linux_uapi::CLONE_PIDFD;
 use starnix_logging::{CATEGORY_STARNIX, log_error, log_warn, track_file_not_found, track_stub};
@@ -225,7 +224,7 @@ impl CurrentTask {
     /// Calling `running_state()` on a [`CurrentTask`] for which the [`Task`] has no running state
     /// (i.e. exited tasks) panics. However, such tasks should not have a `CurrentTask`.
     #[track_caller]
-    pub fn running_state(&self) -> RcuReadGuard<TaskRunningState> {
+    pub fn running_state(&self) -> Arc<TaskRunningState> {
         self.task.running_state().expect("CurrentTask must have TaskRunningState")
     }
 

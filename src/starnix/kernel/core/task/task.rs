@@ -20,7 +20,7 @@ use crate::task::{
 };
 use crate::vfs::{FdTable, FsContext, FsString};
 use atomic_bitflags::atomic_bitflags;
-use fuchsia_rcu::{RcuArc, RcuOptionArc, RcuOptionBox, RcuReadGuard};
+use fuchsia_rcu::{RcuArc, RcuOptionArc, RcuReadGuard};
 use macro_rules_attribute::apply;
 use starnix_logging::{log_warn, set_zx_name};
 use starnix_registers::HeapRegs;
@@ -925,7 +925,7 @@ pub struct Task {
     /// The running state of the task.
     ///
     /// This is `None` for exited tasks.
-    pub running_state: RcuOptionBox<TaskRunningState>,
+    pub running_state: RcuOptionArc<TaskRunningState>,
 
     /// The stop state of the task, distinct from the stop state of the thread group.
     ///
@@ -1109,7 +1109,7 @@ impl Task {
                 thread_group_key: thread_group_key.clone(),
                 kernel: Arc::clone(&thread_group.kernel),
                 thread_group,
-                running_state: RcuOptionBox::new(Some(TaskRunningState {
+                running_state: RcuOptionArc::new(Some(Arc::new(TaskRunningState {
                     thread: Default::default(),
                     files,
                     mm: RcuOptionArc::new(mm),
@@ -1117,7 +1117,7 @@ impl Task {
                     abstract_socket_namespace,
                     abstract_vsock_namespace,
                     proc_pid_directory_cache: Default::default(),
-                })),
+                }))),
                 vfork_event,
                 stop_state: AtomicStopState::new(StopState::Awake),
                 flags: AtomicTaskFlags::new(TaskFlags::empty()),
@@ -1200,8 +1200,8 @@ impl Task {
     /// Returns [`Err(ESRCH)`] if the task has already transitioned to a zombie state and its running
     /// resources have been dropped.
     #[track_caller]
-    pub fn running_state(&self) -> Result<RcuReadGuard<TaskRunningState>, Errno> {
-        self.running_state.read().ok_or_else(|| errno!(ESRCH))
+    pub fn running_state(&self) -> Result<Arc<TaskRunningState>, Errno> {
+        self.running_state.to_option_arc().ok_or_else(|| errno!(ESRCH))
     }
 
     /// Returns the file descriptor table of the task, if it exists.
