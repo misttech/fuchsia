@@ -477,22 +477,32 @@ impl CallbackState {
         if pid == 0 {
             return 0;
         }
-        // Truncate the koid down to 32 bits in order to match the perfetto data schema. This is
-        // usually not an issue except for artificial koids which have the 2^63 bit set, such as
-        // virtual threads. This is consistent with the perfetto data importer code:
-        // https://github.com/google/perfetto/blob/c343c8a77c6e665c679e5c1ec845ac6dde0fc685/src/trace_processor/importers/fuchsia/fuchsia_trace_tokenizer.cc#L490
-        self.event_manager.map_tid_to_koid(pid).raw_koid() as i32
+        self.event_manager
+            .map_tid_to_koid(pid)
+            .map(|k| {
+                // Truncate the koid down to 32 bits in order to match the perfetto data schema. This is
+                // usually not an issue except for artificial koids which have the 2^63 bit set, such as
+                // virtual threads. This is consistent with the perfetto data importer code:
+                // https://github.com/google/perfetto/blob/c343c8a77c6e665c679e5c1ec845ac6dde0fc685/src/trace_processor/importers/fuchsia/fuchsia_trace_tokenizer.cc#L490
+                k.raw_koid() as i32
+            })
+            .unwrap_or(pid)
     }
 
     fn map_to_koid_val(&mut self, pid: i32) -> i32 {
-        // Truncate the koid down to 32 bits in order to match the perfetto data schema. This is
-        // usually not an issue except for artificial koids which have the 2^63 bit set, such as
-        // virtual threads. This is consistent with the perfetto data importer code:
-        // https://github.com/google/perfetto/blob/c343c8a77c6e665c679e5c1ec845ac6dde0fc685/src/trace_processor/importers/fuchsia/fuchsia_trace_tokenizer.cc#L490
         if pid == 0 {
             return 0;
         }
-        self.event_manager.map_pid_to_koid(pid).raw_koid() as i32
+        self.event_manager
+            .map_pid_to_koid(pid)
+            .map(|k| {
+                // Truncate the koid down to 32 bits in order to match the perfetto data schema. This is
+                // usually not an issue except for artificial koids which have the 2^63 bit set, such as
+                // virtual threads. This is consistent with the perfetto data importer code:
+                // https://github.com/google/perfetto/blob/c343c8a77c6e665c679e5c1ec845ac6dde0fc685/src/trace_processor/importers/fuchsia/fuchsia_trace_tokenizer.cc#L490
+                k.raw_koid() as i32
+            })
+            .unwrap_or(pid)
     }
 }
 

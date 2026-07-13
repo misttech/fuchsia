@@ -30,7 +30,7 @@ pub struct TracePerformanceEventManager {
     // In order to reduce overhead when processing the trace events, make a local copy of the mappings
     // that is not thread safe and use that as the first level cache. Since this makes copies of
     // copies of mappings, |clear| should be called when the mappings are no longer needed.
-    local_map: HashMap<tid_t, KoidPair>,
+    local_map: HashMap<tid_t, Option<KoidPair>>,
 
     // Hold a weak reference to the Kernel so we can make sure the pid to koid map is removed from
     // the kernel when this object is dropped.
@@ -99,33 +99,54 @@ impl TracePerformanceEventManager {
     // Look up the pid/tid from a local copy of the pid-koid mapping table, and only
     // take a lock on the mapping table if there is a missing key from the local map.
     // Any new keys are added to the local map.
-    fn get_mapping(&mut self, pid: pid_t) -> &KoidPair {
+    fn get_mapping(&mut self, pid: pid_t) -> Option<&KoidPair> {
         if self.local_map.is_empty() {
             let shared_map = self.map.read().clone();
-            self.local_map.extend(shared_map);
+            self.local_map.extend(shared_map.into_iter().map(|(k, v)| (k, Some(v))));
         }
-
         match self.local_map.entry(pid) {
-            Entry::Occupied(o) => o.into_mut(),
+            Entry::Occupied(o) => {
+                // If the entry was initialized while the starnix task was being started,
+                // it is possible to have a None thread koid. Check the shared map and update
+                // the local map in that case. Also check if we cached a miss (None) and see
+                // if it has been added to the shared map since.
+                let entry_val = o.into_mut();
+                let needs_update = match entry_val {
+                    Some(koid_pair) => koid_pair.process.is_none() || koid_pair.thread.is_none(),
+                    None => true,
+                };
+                if needs_update {
+                    let shared_map = self.map.read();
+                    if let Some(updated_koid_pair) = shared_map.get(&pid) {
+                        *entry_val = Some(updated_koid_pair.clone());
+                    }
+                }
+                entry_val.as_ref()
+            }
             Entry::Vacant(v) => {
                 // If there is a miss, check the shared mapping table. This would only happen in
                 // extreme cases where the tracing events are being mapped while new events are
                 // being created by new threads.
                 let shared_map = self.map.read();
-                let koid_pair = shared_map.get(&pid).expect("all pids should have mappings");
-                v.insert(koid_pair.clone())
+                if let Some(koid_pair) = shared_map.get(&pid) {
+                    v.insert(Some(koid_pair.clone())).as_ref()
+                } else {
+                    log_error!("shared map does not include an entry for pid/tid {pid}");
+                    v.insert(None);
+                    None
+                }
             }
         }
     }
 
     /// Maps a "pid" to the koid. This is also referred to as the "Process Id" in Perfetto terms.
-    pub fn map_pid_to_koid(&mut self, pid: pid_t) -> Koid {
-        self.get_mapping(pid).process.expect("all pids should have a process koid.")
+    pub fn map_pid_to_koid(&mut self, pid: pid_t) -> Option<Koid> {
+        self.get_mapping(pid).and_then(|pair| pair.process)
     }
 
     /// Maps a "tid" to the koid. This is also referred to as the "Thread Id" in Perfetto terms.
-    pub fn map_tid_to_koid(&mut self, tid: tid_t) -> Koid {
-        self.get_mapping(tid).thread.expect("all tids should have a thread koid.")
+    pub fn map_tid_to_koid(&mut self, tid: tid_t) -> Option<Koid> {
+        self.get_mapping(tid).and_then(|pair| pair.thread)
     }
 
     /// Use the kernel pid table to make a mapping from linux pid to koid for existing entries.
@@ -201,17 +222,29 @@ mod tests {
         map.insert(2, KoidPair { process: Some(Koid::from_raw(102)), thread: None });
         manager.map.write().extend(map);
 
-        assert_eq!(manager.map_pid_to_koid(1), Koid::from_raw(101));
-        assert_eq!(manager.map_tid_to_koid(1), Koid::from_raw(201));
-        assert_eq!(manager.map_pid_to_koid(2), Koid::from_raw(102));
+        assert_eq!(manager.map_tid_to_koid(0), None);
+
+        assert_eq!(manager.map_pid_to_koid(1), Some(Koid::from_raw(101)));
+        assert_eq!(manager.map_tid_to_koid(1), Some(Koid::from_raw(201)));
+        assert_eq!(manager.map_pid_to_koid(2), Some(Koid::from_raw(102)));
+
+        // The mapping added did not have a thread value, so it should map 2 -> None.
+        assert_eq!(manager.map_tid_to_koid(2), None);
+
+        // Update the thread mapping in the shared map, so now there is a thread id.
+        manager.map.write().insert(
+            2,
+            KoidPair { process: Some(Koid::from_raw(102)), thread: Some(Koid::from_raw(202)) },
+        );
+        // The tid_to_koid lookup now succeeds since the mapping has been populated.
+        assert_eq!(manager.map_tid_to_koid(2), Some(Koid::from_raw(202)));
     }
 
     #[fuchsia::test]
-    #[should_panic]
     fn test_unmapped_tid() {
         let mut manager = TracePerformanceEventManager::new();
 
-        manager.map_tid_to_koid(2);
+        assert_eq!(manager.map_tid_to_koid(2), None);
     }
 
     #[fuchsia::test]
