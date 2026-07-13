@@ -1889,14 +1889,14 @@ if (!(current_os == "fuchsia")) {
 
 if (!(current_os == "fuchsia")) {
   group("serial_test") {
-    public_deps = [ ":serial_test-v0_8_0" ]
+    public_deps = [ ":serial_test-v3_5_0" ]
     testonly = true
   }
 }
 
 if (!(current_os == "fuchsia")) {
-  group("serial_test-0.8.0") {
-    public_deps = [ ":serial_test-v0_8_0" ]
+  group("serial_test-3.5.0") {
+    public_deps = [ ":serial_test-v3_5_0" ]
     testonly = true
   }
 }
@@ -15982,83 +15982,6 @@ rustc_library("proc-macro2-v1_0_106") {
   applicable_licenses = [ ":proc-macro2-v1_0_106.license" ]
 }
 
-license("proc-macro-error-v1_0_4.license") {
-  public_package_name = "proc_macro_error"
-  license_files = [
-    "//third_party/rust_crates/vendor/proc-macro-error-1.0.4/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/proc-macro-error-1.0.4/LICENSE-MIT",
-  ]
-}
-
-rustc_library("proc-macro-error-v1_0_4") {
-  crate_name = "proc_macro_error"
-  source_root =
-      "//third_party/rust_crates/vendor/proc-macro-error-1.0.4/src/lib.rs"
-  output_name = "proc_macro_error-7fe39f1884bfdcff"
-  edition = "2018"
-  disable_clippy = true
-  enforce_source_listing = false
-  configs -= [ "//build/config/rust:2018_idioms" ]
-
-  deps = []
-  deps += [ ":proc-macro-error-attr-v1_0_4($host_toolchain)" ]
-  deps += [ ":proc-macro2-v1_0_106" ]
-  deps += [ ":quote-v1_0_45" ]
-  deps += [ ":syn-v1_0_109" ]
-
-  rustenv = []
-
-  rustflags = [
-    "--cap-lints=allow",
-    "-Cmetadata=7fe39f1884bfdcff",
-    "-Cextra-filename=-7fe39f1884bfdcff",
-    "--cfg=feature=\"default\"",
-    "--cfg=feature=\"syn\"",
-    "--cfg=feature=\"syn-error\"",
-    "--cfg=use_fallback",
-  ]
-
-  visibility = [ ":*" ]
-
-  applicable_licenses = [ ":proc-macro-error-v1_0_4.license" ]
-}
-
-license("proc-macro-error-attr-v1_0_4.license") {
-  public_package_name = "proc_macro_error_attr"
-  license_files = [
-    "//third_party/rust_crates/vendor/proc-macro-error-attr-1.0.4/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/proc-macro-error-attr-1.0.4/LICENSE-MIT",
-  ]
-}
-
-rustc_macro("proc-macro-error-attr-v1_0_4") {
-  crate_name = "proc_macro_error_attr"
-  source_root =
-      "//third_party/rust_crates/vendor/proc-macro-error-attr-1.0.4/src/lib.rs"
-  output_name = "proc_macro_error_attr-f458d86aacd315ad"
-  edition = "2018"
-  disable_clippy = true
-  enforce_source_listing = false
-  configs -= [ "//build/config/rust:2018_idioms" ]
-
-  deps = []
-  deps += [ ":proc-macro2-v1_0_106" ]
-  deps += [ ":quote-v1_0_45" ]
-
-  rustenv = []
-
-  rustflags = [
-    "--cap-lints=allow",
-    "-Cmetadata=f458d86aacd315ad",
-    "-Cextra-filename=-f458d86aacd315ad",
-    "--cfg=use_fallback",
-  ]
-
-  visibility = [ ":*" ]
-
-  applicable_licenses = [ ":proc-macro-error-attr-v1_0_4.license" ]
-}
-
 license("proptest-v1_11_0.license") {
   public_package_name = "proptest"
   license_files = [
@@ -19979,79 +19902,80 @@ rustc_library("serdect-v0_2_0") {
   applicable_licenses = [ ":serdect-v0_2_0.license" ]
 }
 
-license("serial_test-v0_8_0.license") {
+license("serial_test-v3_5_0.license") {
   public_package_name = "serial_test"
   license_files =
-      [ "//third_party/rust_crates/vendor/serial_test-0.8.0/LICENSE" ]
+      [ "//third_party/rust_crates/vendor/serial_test-3.5.0/LICENSE" ]
 }
 
-rustc_library("serial_test-v0_8_0") {
+rustc_library("serial_test-v3_5_0") {
   crate_name = "serial_test"
-  source_root = "//third_party/rust_crates/vendor/serial_test-0.8.0/src/lib.rs"
-  output_name = "serial_test-16e38e1d5b83f3ed"
+  source_root = "//third_party/rust_crates/vendor/serial_test-3.5.0/src/lib.rs"
+  output_name = "serial_test-3ba3101796dab669"
   edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":futures-v0_3_31" ]
-  deps += [ ":lazy_static-v1_5_0" ]
+  deps += [ ":futures-executor-v0_3_31" ]
+  deps += [ ":futures-util-v0_3_31" ]
   deps += [ ":log-v0_4_29" ]
+  deps += [ ":once_cell-v1_21_3" ]
   deps += [ ":parking_lot-v0_12_5" ]
-  deps += [ ":serial_test_derive-v0_8_0($host_toolchain)" ]
+  deps += [ ":serial_test_derive-v3_5_0($host_toolchain)" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=16e38e1d5b83f3ed",
-    "-Cextra-filename=-16e38e1d5b83f3ed",
+    "-Cmetadata=3ba3101796dab669",
+    "-Cextra-filename=-3ba3101796dab669",
+    "--cfg=feature=\"async\"",
     "--cfg=feature=\"default\"",
-    "--cfg=feature=\"log\"",
     "--cfg=feature=\"logging\"",
   ]
 
   visibility = [ ":*" ]
 
   testonly = true
-  applicable_licenses = [ ":serial_test-v0_8_0.license" ]
+  applicable_licenses = [ ":serial_test-v3_5_0.license" ]
 }
 
-license("serial_test_derive-v0_8_0.license") {
+license("serial_test_derive-v3_5_0.license") {
   public_package_name = "serial_test_derive"
   license_files =
-      [ "//third_party/rust_crates/vendor/serial_test_derive-0.8.0/LICENSE" ]
+      [ "//third_party/rust_crates/vendor/serial_test_derive-3.5.0/LICENSE" ]
 }
 
-rustc_macro("serial_test_derive-v0_8_0") {
+rustc_macro("serial_test_derive-v3_5_0") {
   crate_name = "serial_test_derive"
   source_root =
-      "//third_party/rust_crates/vendor/serial_test_derive-0.8.0/src/lib.rs"
-  output_name = "serial_test_derive-e562c3734da85242"
+      "//third_party/rust_crates/vendor/serial_test_derive-3.5.0/src/lib.rs"
+  output_name = "serial_test_derive-cbc4894d1f591d27"
   edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":rustversion-v1_0_22($host_toolchain)" ]
-  deps += [ ":proc-macro-error-v1_0_4" ]
   deps += [ ":proc-macro2-v1_0_106" ]
   deps += [ ":quote-v1_0_45" ]
-  deps += [ ":syn-v1_0_109" ]
+  deps += [ ":syn-v2_0_118" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=e562c3734da85242",
-    "-Cextra-filename=-e562c3734da85242",
+    "-Cmetadata=cbc4894d1f591d27",
+    "-Cextra-filename=-cbc4894d1f591d27",
+    "--cfg=feature=\"async\"",
+    "--cfg=feature=\"default\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":serial_test_derive-v0_8_0.license" ]
+  applicable_licenses = [ ":serial_test_derive-v3_5_0.license" ]
 }
 
 license("sha1-v0_10_6.license") {
@@ -20986,7 +20910,6 @@ rustc_library("syn-v1_0_109") {
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"derive\"",
     "--cfg=feature=\"extra-traits\"",
-    "--cfg=feature=\"full\"",
     "--cfg=feature=\"parsing\"",
     "--cfg=feature=\"printing\"",
     "--cfg=feature=\"proc-macro\"",

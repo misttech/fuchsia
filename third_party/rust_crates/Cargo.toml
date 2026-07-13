@@ -329,7 +329,7 @@ rustfix = "0.9.5"
 rustls-native-certs = "0.8.4"
 semver = "1.0.28"
 serde_yaml = "0.9.34+deprecated" # To use on Fuchsia, serde_yaml and unsafe-libyaml will need to be re-audited.
-serial_test = "0.8.0" # Not for use on Fuchsia, only for a single process.
+serial_test = "3.5.0" # Not for use on Fuchsia, only for a single process.
 shared_child = { version = "1.1.1", default-features = false }
 signal-hook = "0.4.4"
 syn = { version = "2.0.118", features = ["full", "visit", "visit-mut", "extra-traits"] }
@@ -885,16 +885,6 @@ groups = [
 [gn.package.prettyplease."0.2.37"]
 rustflags = []
 
-# "--cfg=use_fallback" is required in order to avoid using the unstable
-# proc_macro_diagnostic feature.
-[gn.package.proc-macro-error."1.0.4"]
-rustflags = ["--cfg=use_fallback"]
-
-# "--cfg=use_fallback" is required in order to avoid using the unstable
-# proc_macro_diagnostic feature.
-[gn.package.proc-macro-error-attr."1.0.4"]
-rustflags = ["--cfg=use_fallback"]
-
 # cargo-gnaw suggested "--cfg=proc_macro_span" as well but proc_macro_span is still an unstable feature.
 [gn.package.proc-macro2."1.0.106"]
 rustflags = ["--cfg=span_locations", "--cfg=wrap_proc_macro"]
@@ -1120,7 +1110,7 @@ env_vars = [
 [gn.package.serde_json."1.0.149"]
 rustflags = ["--cfg=fast_arithmetic=\\\"64\\\""]
 
-[gn.package.serial_test."0.8.0"]
+[gn.package.serial_test."3.5.0"]
 testonly = true
 
 [gn.package.sha1."0.10.6"]
