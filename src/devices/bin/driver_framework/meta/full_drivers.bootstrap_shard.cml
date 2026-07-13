@@ -27,7 +27,10 @@
     ],
     offer: [
         {
-            config: [ "fuchsia.power.SuspendEnabled" ],
+            config: [
+                "fuchsia.driver.ExposeDebugCapabilities",
+                "fuchsia.power.SuspendEnabled",
+            ],
             from: "parent",
             to: "#full-drivers",
         },
