@@ -134,9 +134,10 @@ library_headers("headers") {
 rustc_library("vm-rs") {
   edition = "2024"
   name = "vm"
-  source_root = "vm.rs"
+  source_root = "lib.rs"
   sources = [
     "arch_vm_aspace.rs",
+    "lib.rs",
     "page.rs",
     "page_state.rs",
     "vm.rs",

@@ -311,3 +311,8 @@ static int cmd_vm(int argc, const cmd_args* argv, uint32_t) {
 STATIC_COMMAND_START
 STATIC_COMMAND("vm", "vm commands", &cmd_vm)
 STATIC_COMMAND_END(vm)
+
+extern "C" {
+paddr_t cpp_vaddr_to_paddr(const void* va);
+paddr_t cpp_vaddr_to_paddr(const void* va) { return vaddr_to_paddr(va); }
+}

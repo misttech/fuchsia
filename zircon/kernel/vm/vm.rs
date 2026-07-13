@@ -2,13 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#![no_std]
+use kernel::types::PAddr;
 
-pub mod arch_vm_aspace;
-pub mod page;
-pub mod page_state;
-pub mod vm_address_region;
-pub mod vm_aspace;
-pub mod vm_mapping;
-pub mod vm_object;
-pub mod vm_object_physical;
+unsafe extern "C" {
+    fn cpp_vaddr_to_paddr(va: *const core::ffi::c_void) -> PAddr;
+}
+
+// While this method is implemented using FFI clippy cannot observer that the pointer is not
+// de-referenced and so for now squash this lint.
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+/// Converts a kernel virtual address to a physical address.
+pub fn vaddr_to_paddr(va: *const core::ffi::c_void) -> PAddr {
+    unsafe { cpp_vaddr_to_paddr(va) }
+}
