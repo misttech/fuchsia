@@ -31,7 +31,7 @@ cc_test_executable("snapshotter_unittest_exe") {
   sources = [ "snapshotter_unittest.cc" ]
 
   deps = [
-    "//sdk/fidl/fuchsia.feedback:fuchsia.feedback_hlcpp",
+    "//sdk/fidl/fuchsia.feedback:fuchsia.feedback_cpp",
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/async-loop:async-loop-default",
     "//sdk/lib/sys/cpp/testing:unit",

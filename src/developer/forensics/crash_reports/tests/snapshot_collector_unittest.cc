@@ -161,7 +161,7 @@ class SnapshotCollectorTest : public UnitTestFixture {
                                 .or_else([]() { FX_CHECK(false); }));
   }
 
-  void CloseConnection() { data_provider_server_->CloseConnection(); }
+  void CloseConnection() { data_provider_server_->CloseConnection(ZX_ERR_PEER_CLOSED); }
 
   bool is_server_bound() { return data_provider_server_->IsBound(); }
 

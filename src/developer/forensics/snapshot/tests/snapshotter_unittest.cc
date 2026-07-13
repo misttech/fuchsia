@@ -4,6 +4,7 @@
 
 #include "src/developer/forensics/snapshot/snapshotter.h"
 
+#include <fidl/fuchsia.feedback/cpp/fidl.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
 #include <lib/sys/cpp/testing/service_directory_provider.h>
@@ -47,9 +48,11 @@ class SnapshotterTest : public gtest::TestLoopFixture {
   }
 
  protected:
-  void SetUpDataProviderServer(fuchsia::feedback::Attachment snapshot) {
+  void SetUpDataProviderServer(fuchsia_feedback::Attachment snapshot) {
     data_provider_server_ = std::make_unique<stubs::DataProviderSnapshotOnly>(std::move(snapshot));
-    FX_CHECK(service_directory_provider_.AddService(data_provider_server_->GetHandler()) == ZX_OK);
+    FX_CHECK(service_directory_provider_.AddService(
+                 data_provider_server_->GetService(service_directory_provider_loop_.dispatcher()),
+                 fidl::DiscoverableProtocolName<fuchsia_feedback::DataProvider>) == ZX_OK);
   }
 
  private:
@@ -67,9 +70,16 @@ class SnapshotterTest : public gtest::TestLoopFixture {
 TEST_F(SnapshotterTest, Basic) {
   const std::string payload = "technically a ZIP archive, but it doesn't matter for the unit test";
 
-  fuchsia::feedback::Attachment snapshot;
-  snapshot.key = "unused";
-  ASSERT_TRUE(fsl::VmoFromString(payload, &snapshot.value));
+  fuchsia_feedback::Attachment snapshot;
+  snapshot.key("unused");
+
+  fsl::SizedVmo sized_vmo;
+  ASSERT_TRUE(fsl::VmoFromString(payload, &sized_vmo));
+  snapshot.value(fuchsia_mem::Buffer{{
+      .vmo = std::move(sized_vmo.vmo()),
+      .size = sized_vmo.size(),
+  }});
+
   SetUpDataProviderServer(std::move(snapshot));
 
   ASSERT_TRUE(MakeSnapshot(service_directory_provider_.service_directory(), snapshot_path_.data()));
