@@ -19,7 +19,7 @@ if [[ -n "${FUCHSIA_DIR}" ]]; then
     unset FUCHSIA_DIR
   else
     PWD="$(pwd)"
-    if [[ "${PWD#${FUCHSIA_DIR}}" = "${PWD}" ]]; then
+    if [[ "${PWD#"${FUCHSIA_DIR}"}" = "${PWD}" ]]; then
       # FUCHSIA_DIR does not contain the current directory
       unset FUCHSIA_DIR
     fi
@@ -93,11 +93,12 @@ fi
 
 export FUCHSIA_DIR="${fuchsia_dir}"
 declare -r platform_sh="${fuchsia_dir}/tools/devshell/lib/platform.sh"
+# shellcheck source=/dev/null
 source "${platform_sh}" || exit $?
 
-if [[ "${PATH#${PREBUILT_ALL_PATHS}}" == "${PATH}" ]]; then
+if [[ "${PATH#"${PREBUILT_ALL_PATHS}"}" == "${PATH}" ]]; then
   # Prebuilts have not been added to the path
-  if [[ x"${FUCHSIA_HERMETIC_TOOLS}" == xy ]]; then
+  if [[ "${FUCHSIA_HERMETIC_TOOLS}" == "y" ]]; then
     readonly newpath="${PREBUILT_ALL_PATHS}:${FUCHSIA_DIR}/tools/system"
   else
     readonly newpath="${PREBUILT_ALL_PATHS}:${PATH}"
@@ -106,11 +107,38 @@ else
   readonly newpath="${PATH}"
 fi
 
-export PATH="${newpath}"
+# Remove problematic PATH entries to avoid hermeticity errors, such
+# as the one from https://fxbug.dev/530479291. The following removes
+# empty path components (interpreted as the current directory), the
+# current directory (.), and any relative path from PATH.
+sanitized_path=""
+for path in $(printf "%s" "${newpath}" | awk -v RS=: '{print}'); do
+  case "${path}" in
+    /*)
+       # Keep this absolute path, append it to current list.
+       if [[ -n "${sanitized_path}" ]]; then
+         sanitized_path+=":"
+       fi
+       sanitized_path+="${path}"
+       ;;
+   "")
+       echo >&2 "WARNING: Empty path component removed from PATH!"
+       ;;
+   .)
+       echo >&2 "WARNING: Current directory removed from PATH!"
+       ;;
+   *)
+       echo >&2 "WARNING: Relative path removed from PATH: $path"
+       ;;
+  esac
+done
+
+export PATH="${sanitized_path}"
 
 # Always populate FUCHSIA_BUILD_DIR_FROM_FX.
 if [[ -z "${FUCHSIA_BUILD_DIR_FROM_FX}" && -f "${FUCHSIA_DIR}/.fx-build-dir" ]]; then
-  export FUCHSIA_BUILD_DIR_FROM_FX=$(cd ${FUCHSIA_DIR} && realpath $(cat .fx-build-dir))
+  FUCHSIA_BUILD_DIR_FROM_FX=$(cd "${FUCHSIA_DIR}" && realpath "$(cat .fx-build-dir)")
+  export FUCHSIA_BUILD_DIR_FROM_FX
 fi
 
 # Forward agent environment variables defined in agents.txt.
