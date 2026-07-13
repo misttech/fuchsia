@@ -248,16 +248,16 @@ class DisplayEngine final : public display::DisplayEngineInterface {
   fbl::DoublyLinkedList<std::unique_ptr<ImageInfo>> imported_images_ __TA_GUARDED(image_mutex_);
   fbl::DoublyLinkedList<std::unique_ptr<ImageInfo>> imported_captures_ __TA_GUARDED(capture_mutex_);
 
-  // Objects: only valid if fully_initialized()
-  std::unique_ptr<Vpu> vpu_;
-  std::unique_ptr<VideoInputUnit> video_input_unit_;
-  std::unique_ptr<Vout> vout_;
-
   // Monitoring. We create a named "amlogic-display" node to allow for easier filtering
   // of inspect tree when defining selectors and metrics.
   inspect::Inspector inspector_;
   inspect::Node root_node_;
   inspect::Node video_input_unit_node_;
+
+  // Objects: only valid if fully_initialized()
+  std::unique_ptr<Vpu> vpu_;
+  std::unique_ptr<VideoInputUnit> video_input_unit_;
+  std::unique_ptr<Vout> vout_;
 
   display::DisplayId display_id_ __TA_GUARDED(display_mutex_) = kPanelDisplayId;
   bool display_attached_ __TA_GUARDED(display_mutex_) = false;
