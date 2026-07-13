@@ -258,8 +258,8 @@ async fn list_targets(
 
 fn query_type(query: &str) -> &str {
     match TargetInfoQuery::try_from(query) {
-        Ok(TargetInfoQuery::NodenameOrSerial(_)) => "nodename_or_serial",
-        Ok(TargetInfoQuery::Serial(_)) => "serial",
+        Ok(TargetInfoQuery::NodenameOrId(_)) => "nodename_or_id",
+        Ok(TargetInfoQuery::Id(_)) => "id",
         Ok(TargetInfoQuery::Addr(_)) => "addr",
         Ok(TargetInfoQuery::VSock(_)) => "vsock",
         Ok(TargetInfoQuery::Usb(_)) => "usb",

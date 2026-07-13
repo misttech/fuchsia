@@ -77,7 +77,7 @@ mod test {
             .check_with_notifier((), &mut notifier)
             .await
             .expect("running checks");
-        if let TargetInfoQuery::NodenameOrSerial(n) = target {
+        if let TargetInfoQuery::NodenameOrId(n) = target {
             assert_eq!(n, "foobar");
         } else {
             panic!("Unexpected target: {target:?}")

@@ -9,9 +9,9 @@ use std::net::SocketAddr;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum TargetInfoQuery {
-    /// Attempts to match the nodename, falling back to serial (in that order).
-    NodenameOrSerial(String),
-    Serial(String),
+    /// Attempts to match the nodename, falling back to ID (in that order).
+    NodenameOrId(String),
+    Id(String),
     Addr(SocketAddr),
     /// Match a target which has a VSock address with the given CID.
     VSock(u32),
@@ -43,7 +43,7 @@ fn address_matcher(ours: &SocketAddr, theirs: &mut SocketAddr, ssh_port: u16) ->
 
 impl TargetInfoQuery {
     pub fn is_query_on_identity(&self) -> bool {
-        matches!(self, TargetInfoQuery::NodenameOrSerial(..) | TargetInfoQuery::First)
+        matches!(self, TargetInfoQuery::NodenameOrId(..) | TargetInfoQuery::First)
     }
 
     pub fn is_query_on_address(&self) -> bool {
@@ -53,7 +53,7 @@ impl TargetInfoQuery {
     /// If the query already resolves to an address, return that TargetAddr
     pub fn get_target_addr(&self) -> Option<TargetAddr> {
         match self {
-            Self::NodenameOrSerial(_) | Self::Serial(_) | Self::First => None,
+            Self::NodenameOrId(_) | Self::Id(_) | Self::First => None,
             Self::Addr(socket_addr) => Some(TargetAddr::Net(*socket_addr)),
             Self::VSock(id) => Some(TargetAddr::VSockCtx(*id)),
             Self::Usb(id) => Some(TargetAddr::UsbCtx(*id)),
@@ -63,7 +63,7 @@ impl TargetInfoQuery {
     pub fn match_description(&self, t: &Description) -> bool {
         log::debug!("Matching description {t:?} against query {self:?}");
         match self {
-            Self::NodenameOrSerial(arg) => {
+            Self::NodenameOrId(arg) => {
                 if let Some(ref nodename) = t.nodename {
                     if nodename == arg {
                         return true;
@@ -76,7 +76,7 @@ impl TargetInfoQuery {
                 }
                 false
             }
-            Self::Serial(arg) => {
+            Self::Id(arg) => {
                 if let Some(ref serial) = t.serial {
                     if serial == arg {
                         return true;
@@ -106,7 +106,7 @@ impl TargetInfoQuery {
             TargetInfoQuery::Addr(_) => {
                 DiscoverySources::MDNS | DiscoverySources::MANUAL | DiscoverySources::EMULATOR
             }
-            TargetInfoQuery::Serial(_) => DiscoverySources::USB_FASTBOOT,
+            TargetInfoQuery::Id(_) => DiscoverySources::USB_FASTBOOT,
             TargetInfoQuery::VSock(_) => DiscoverySources::EMULATOR,
             TargetInfoQuery::Usb(_) => DiscoverySources::USB_VSOCK,
             _ => {
@@ -150,15 +150,15 @@ impl TryFrom<String> for TargetInfoQuery {
     type Error = crate::error::Error;
 
     /// If the string can be parsed as some kind of IP address, will attempt to
-    /// match based on that, else fall back to the nodename or serial matches.
+    /// match based on that, else fall back to the nodename or ID matches.
     fn try_from(s: String) -> Result<Self, Self::Error> {
         if s == "" {
             return Ok(Self::First);
         }
-        if s.starts_with("serial:") {
-            // "serial:" is used when we _know_ something is a serial number,
-            // and want to to preserve that across the client/daemon boundary
-            return Ok(Self::Serial(String::from(&s[7..])));
+        if s.starts_with("id:") {
+            // "id:" is used when we _know_ something is an ID,
+            // and want to preserve that across the client/daemon boundary
+            return Ok(Self::Id(String::from(&s[3..])));
         }
         if s.starts_with("usb:cid:") {
             let cid = s["usb:cid:".len()..]
@@ -180,7 +180,7 @@ impl TryFrom<String> for TargetInfoQuery {
                     "Failed to parse address from '{s}'. Interpreting as nodename: {:?}",
                     e
                 );
-                return Ok(Self::NodenameOrSerial(s));
+                return Ok(Self::NodenameOrId(s));
             }
         };
 
@@ -213,8 +213,8 @@ impl From<&TargetInfoQuery> for String {
             TargetInfoQuery::First => {
                 format!("")
             }
-            TargetInfoQuery::Serial(s) => {
-                format!("serial:{}", s)
+            TargetInfoQuery::Id(s) => {
+                format!("id:{}", s)
             }
             TargetInfoQuery::Usb(cid) => {
                 format!("usb:cid:{}", cid)
@@ -222,7 +222,7 @@ impl From<&TargetInfoQuery> for String {
             TargetInfoQuery::VSock(cid) => {
                 format!("vsock:cid:{}", cid)
             }
-            TargetInfoQuery::NodenameOrSerial(nnos) => {
+            TargetInfoQuery::NodenameOrId(nnos) => {
                 format!("{}", nnos)
             }
             TargetInfoQuery::Addr(addr) => {
@@ -288,19 +288,19 @@ mod test {
             DiscoverySources::MDNS | DiscoverySources::MANUAL | DiscoverySources::EMULATOR
         );
 
-        // Serial # should only use USB source
-        let query = TargetInfoQuery::try_from("serial:abcdef").unwrap();
+        // ID should only use USB source
+        let query = TargetInfoQuery::try_from("id:abcdef").unwrap();
         let sources = query.discovery_sources();
         assert_eq!(sources, DiscoverySources::USB_FASTBOOT);
     }
 
     #[test]
-    fn test_serial_query() {
+    fn test_id_query() {
         let serial = "abcdef";
-        let q = TargetInfoQuery::try_from(format!("serial:{serial}")).unwrap();
+        let q = TargetInfoQuery::try_from(format!("id:{serial}")).unwrap();
         match q {
-            TargetInfoQuery::Serial(s) if s == serial => {}
-            _ => panic!("parsing of serial query failed"),
+            TargetInfoQuery::Id(s) if s == serial => {}
+            _ => panic!("parsing of ID query failed"),
         }
     }
 
@@ -397,7 +397,7 @@ mod test {
         "Test First"
     )]
     #[test_case(
-        TargetInfoQuery::NodenameOrSerial("foo".to_string()),
+        TargetInfoQuery::NodenameOrId("foo".to_string()),
         None;
         "Test Nodename"
     )]
@@ -406,8 +406,8 @@ mod test {
     }
 
     #[test_case(
-        "serial:123456";
-        "Test Serial Number"
+        "id:123456";
+        "Test ID"
     )]
     #[test_case(
         "";
@@ -441,9 +441,9 @@ mod test {
         "Test First"
     )]
     #[test_case(
-        TargetInfoQuery::NodenameOrSerial("tressoftheemeraldsea".to_string()),
+        TargetInfoQuery::NodenameOrId("tressoftheemeraldsea".to_string()),
         Some("tressoftheemeraldsea".to_string());
-        "Test Nodename or serial"
+        "Test Nodename or ID"
     )]
     #[test_case(
         TargetInfoQuery::VSock(16),
@@ -456,9 +456,9 @@ mod test {
         "Test Usb Cid"
     )]
     #[test_case(
-        TargetInfoQuery::Serial("totallynothoid".to_string()),
-        Some("serial:totallynothoid".to_string());
-        "Test Serial"
+        TargetInfoQuery::Id("totallynothoid".to_string()),
+        Some("id:totallynothoid".to_string());
+        "Test ID"
     )]
     #[test_case(
         TargetInfoQuery::Addr(std_socket_addr!("192.168.1.1:8082")),
@@ -473,7 +473,7 @@ mod test {
     #[test]
     fn test_try_from_option() {
         let q = TargetInfoQuery::try_from(Some("name".to_string())).unwrap();
-        assert_eq!(q, TargetInfoQuery::NodenameOrSerial("name".to_string()));
+        assert_eq!(q, TargetInfoQuery::NodenameOrId("name".to_string()));
 
         let q = TargetInfoQuery::try_from(None as Option<String>).unwrap();
         assert_eq!(q, TargetInfoQuery::First);

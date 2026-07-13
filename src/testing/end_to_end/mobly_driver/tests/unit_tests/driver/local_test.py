@@ -222,6 +222,12 @@ class LocalDriverTest(unittest.TestCase):
                     "target_address_type": "name",
                 },
             ),
+            (
+                {
+                    "label": "valid_value_as_id",
+                    "target_address_type": "id",
+                },
+            ),
         ],
         name_func=_custom_test_name_func,
     )
@@ -241,11 +247,17 @@ class LocalDriverTest(unittest.TestCase):
             all_nodes=["dut_1"], default_nodes=[]
         ),
     )
+    @patch(
+        "mobly_driver.api.api_ffx.FfxClient.get_target_serial",
+        autospec=True,
+        return_value="1234",
+    )
     @patch("mobly_driver.api.api_mobly.new_testbed_config", autospec=True)
     def test_target_address_type_arg_success(
         self,
         parameterized_dict: dict[str, Any],
         mock_new_tb_config: Any,
+        mock_get_target_serial: Any,
         mock_ffx_target_list: Any,
         mock_ffx_target_ssh_address: Any,
         *unused_args: Any,
@@ -265,6 +277,11 @@ class LocalDriverTest(unittest.TestCase):
         self.assertEqual(ret, "yaml_str")
 
         mock_ffx_target_list.assert_called()
+        if parameterized_dict["target_address_type"] in [None, "id"]:
+            mock_get_target_serial.assert_called_once()
+        else:
+            mock_get_target_serial.assert_not_called()
+
         if parameterized_dict["target_address_type"] in [None, "ip"]:
             mock_ffx_target_ssh_address.assert_called_once()
         else:

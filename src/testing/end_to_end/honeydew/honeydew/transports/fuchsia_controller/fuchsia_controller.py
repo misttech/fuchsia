@@ -60,7 +60,8 @@ class FuchsiaController:
         if self._target_ip_port:
             self._target = str(self._target_ip_port)
         elif self._target_serial:
-            self._target = f"serial:{self._target_serial}"
+            # FFX/Fuchsia-Controller uses "id:<serial-number>" addressing scheme.
+            self._target = f"id:{self._target_serial}"
         else:
             self._target = self._target_name
 

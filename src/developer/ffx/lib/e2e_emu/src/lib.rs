@@ -330,7 +330,7 @@ impl IsolatedEmulator {
         &self,
         fho_env: &fho::FhoEnvironment,
     ) -> Result<(), IsolatedEmulatorError> {
-        let query = TargetInfoQuery::NodenameOrSerial(self.emu_name().to_string());
+        let query = TargetInfoQuery::NodenameOrId(self.emu_name().to_string());
         let targets =
             ffx_target::list_targets(fho_env.environment_context(), query, false, false, false)
                 .await?;

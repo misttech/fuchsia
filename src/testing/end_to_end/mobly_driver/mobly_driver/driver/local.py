@@ -15,7 +15,7 @@ from mobly_driver.driver import base, common
 
 _VALID_TARGET_TYPES: list[str] = [
     "ip",
-    "serial",
+    "id",
     "name",
 ]
 
@@ -176,7 +176,7 @@ class LocalDriver(base.BaseDriver):
             if self._ssh_key:
                 fx_device["ssh_key"] = self._ssh_key
             if (
-                self._target_address_type == "serial"
+                self._target_address_type == "id"
                 or not self._target_address_type
             ):
                 failure = None
@@ -189,10 +189,10 @@ class LocalDriver(base.BaseDriver):
                     failure = e
                 if target_serial is not None:
                     fx_device["device_serial"] = target_serial
-                elif self._target_address_type == "serial":
+                elif self._target_address_type == "id":
                     if failure is None:
                         raise common.DriverException(
-                            "Device had no serial number"
+                            "Device had no serial number (which is required when target_address_type is 'id')"
                         )
                     else:
                         raise failure

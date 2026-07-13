@@ -609,7 +609,7 @@ pub mod test {
         let env = ffx_config::test_env().build().expect("Test Env Init");
         let (discovery, handle1, _) = setup_test(&env.context);
         let mut stream = discovery
-            .discovery_stream(TargetInfoQuery::NodenameOrSerial("test-target-1".to_string()))
+            .discovery_stream(TargetInfoQuery::NodenameOrId("test-target-1".to_string()))
             .unwrap();
 
         // We should get the first handle, and then the stream should be closed.

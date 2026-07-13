@@ -76,7 +76,7 @@ parser.add_argument(
 parser.add_argument(
     "--target-address-type",
     default=None,
-    help="Whether to use the fuchsia device's name or ip for host-target interactions when using FFX and Fuchsia-Controller transports.",
+    help="Whether to use the fuchsia device's name, ip, or id (serial number) for host-target interactions when using FFX and Fuchsia-Controller transports.",
 )
 parser.add_argument(
     "--ssh-key",

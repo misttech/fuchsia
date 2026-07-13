@@ -139,7 +139,7 @@ func (f *ffxStrict) resolveTargetIfNeeded(ctx context.Context, target string) (s
 	}
 
 	// Check if target is a valid IP address, or a valid prefix.
-	if net.ParseIP(ipStr) != nil || strings.HasPrefix(target, "usb:") || strings.HasPrefix(target, "vsock:") || strings.HasPrefix(target, "serial:") {
+	if net.ParseIP(ipStr) != nil || strings.HasPrefix(target, "usb:") || strings.HasPrefix(target, "vsock:") || strings.HasPrefix(target, "id:") {
 		return target, nil
 	}
 

@@ -83,7 +83,7 @@ async fn locally_resolve_target_spec<T: TargetResolver>(
         // If an address is passed in, make sure that the default port is filled in if it hadn't
         // been explicit, then just pass it on to the daemon as is
         TargetInfoQuery::Addr(addr) => format!("{}", replace_default_port(addr)),
-        TargetInfoQuery::Serial(sn) => format!("serial:{sn}"),
+        TargetInfoQuery::Id(sn) => format!("id:{sn}"),
         _ => {
             let resolution =
                 resolver.resolve_single_target(&target_spec, true, env_context).await?;
@@ -235,7 +235,7 @@ pub trait TargetResolver {
             let mut discovered: Option<Vec<TargetHandle>> = None;
 
             // If the query is not specified, we won't even bother with trying to resolve a manual target.
-            if let TargetInfoQuery::NodenameOrSerial(s) = &target_spec {
+            if let TargetInfoQuery::NodenameOrId(s) = &target_spec {
                 // We want to query both the manual targets and the discoverable handles concurrently.
                 let manual_target_fut = self.try_resolve_manual_target(s, env_context).fuse();
                 pin_mut!(manual_target_fut);
@@ -263,7 +263,7 @@ pub trait TargetResolver {
             }
 
             // If we haven't gotten a result yet (because the query wasn't
-            // NodenameOrSerial, or because the manual-target query completed
+            // NodenameOrId, or because the manual-target query completed
             // without finding a target), get it now.
             let discovered = match discovered {
                 Some(targets) => targets,
@@ -1153,20 +1153,20 @@ mod test {
     }
 
     #[fuchsia::test]
-    async fn test_can_resolve_target_locally_serial() {
+    async fn test_can_resolve_target_locally_id() {
         let test_env = ffx_config::test_init().unwrap();
         let resolver = MockTargetResolver::new();
-        // A serial spec will resolve to itself
-        let sn = "abcdef".to_string();
-        let sn_spec = TargetInfoQuery::Serial(sn.clone());
+        // An ID spec will resolve to itself
+        let id = "abcdef".to_string();
+        let id_spec = TargetInfoQuery::Id(id.clone());
         // Note that this will fail if we try to call resolve_target_spec()
         // since we still haven't mocked a return value. So it's also checking that no
         // resolution is done.
         let target_spec =
-            locally_resolve_target_spec(&sn_spec.clone(), &resolver, &test_env.context)
+            locally_resolve_target_spec(&id_spec.clone(), &resolver, &test_env.context)
                 .await
                 .unwrap();
-        assert_eq!(target_spec, sn_spec.clone());
+        assert_eq!(target_spec, id_spec.clone());
     }
 
     fn make_target_handle_for_product(name: &str, sa: SocketAddr) -> TargetHandle {
@@ -1181,7 +1181,7 @@ mod test {
         let mut resolver = MockTargetResolver::new();
         // A DNS name will satisfy the resolution request
         let name = "foobar".to_string();
-        let name_spec = TargetInfoQuery::NodenameOrSerial(name.clone());
+        let name_spec = TargetInfoQuery::NodenameOrId(name.clone());
         let (sa, addr_spec) = get_addr_and_spec();
         let th = make_target_handle_for_product(&name, sa);
         resolver.expect_try_resolve_manual_target().return_once(move |_, _| Ok(None));
@@ -1194,15 +1194,15 @@ mod test {
     }
 
     #[fuchsia::test]
-    async fn test_cannot_resolve_target_locally_serial_name() {
+    async fn test_cannot_resolve_target_locally_id_name() {
         let test_env = ffx_config::test_init().unwrap();
         let mut resolver = MockTargetResolver::new();
-        // Test with "<serial>", _not_ "serial:<serial>"
-        let sn = "abcdef".to_string();
+        // Test with "<id>", _not_ "id:<id>"
+        let id = "abcdef".to_string();
         let th = TargetHandle {
             node_name: None,
             state: discovery::TargetState::Fastboot(discovery::FastbootTargetState {
-                serial_number: sn.clone(),
+                serial_number: id.clone(),
                 connection_state: discovery::FastbootConnectionState::Usb,
             }),
             manual: false,
@@ -1210,7 +1210,7 @@ mod test {
         resolver.expect_try_resolve_manual_target().return_once(move |_, _| Ok(None));
         resolver.expect_discovered_targets().return_once(move |_| Ok(vec![th]));
         let target_spec = locally_resolve_target_spec(
-            &(TargetInfoQuery::try_from(sn.clone()).unwrap()),
+            &(TargetInfoQuery::try_from(id.clone()).unwrap()),
             &resolver,
             &test_env.context,
         )
@@ -1274,7 +1274,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_expect_single_target_empty() {
-        let query = TargetInfoQuery::NodenameOrSerial("foo".to_string());
+        let query = TargetInfoQuery::NodenameOrId("foo".to_string());
         let handles: Vec<TargetHandle> = vec![];
         let res = expect_single_target(&query, handles);
         assert!(res.is_err());
@@ -1287,7 +1287,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_expect_single_target_single() {
-        let query = TargetInfoQuery::NodenameOrSerial("foo".to_string());
+        let query = TargetInfoQuery::NodenameOrId("foo".to_string());
         let handle = make_target_handle_for_product("foo", "127.0.0.1:8080".parse().unwrap());
         let handles = vec![handle.clone()];
         let res = expect_single_target(&query, handles);
@@ -1297,7 +1297,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_expect_single_target_multiple() {
-        let query = TargetInfoQuery::NodenameOrSerial("foo".to_string());
+        let query = TargetInfoQuery::NodenameOrId("foo".to_string());
         let handle1 = make_target_handle_for_product("foo", "127.0.0.1:8080".parse().unwrap());
         let handle2 = make_target_handle_for_product("bar", "127.0.0.1:8081".parse().unwrap());
         let handles = vec![handle1, handle2];
@@ -1366,7 +1366,7 @@ mod test {
 
         let mut resolver = MockTargetResolver::new();
         let name = "foobar".to_string();
-        let name_spec = TargetInfoQuery::NodenameOrSerial(name.clone());
+        let name_spec = TargetInfoQuery::NodenameOrId(name.clone());
         let (sa, addr_spec) = get_addr_and_spec();
         let th = make_target_handle_for_product(&name, sa);
 
@@ -1408,7 +1408,7 @@ mod test {
         cache.save(&cache_file).unwrap();
 
         let resolver = MockTargetResolver::new();
-        let name_spec = TargetInfoQuery::NodenameOrSerial("foobar".to_string());
+        let name_spec = TargetInfoQuery::NodenameOrId("foobar".to_string());
 
         // Note: we do NOT mock expect_try_resolve_manual_target or expect_discovered_targets.
         // If the resolver attempts to call them, MockTargetResolver will panic,

@@ -945,7 +945,7 @@ mod test {
         let env = test_init().unwrap();
         assert!(
             knock_target_daemonless(
-                &TargetInfoQuery::NodenameOrSerial("foo".to_string()),
+                &TargetInfoQuery::NodenameOrId("foo".to_string()),
                 &env.context,
                 Some(rcs::RCS_KNOCK_TIMEOUT)
             )
@@ -1353,7 +1353,7 @@ mod test {
         })
         .detach();
 
-        let target_spec = TargetInfoQuery::NodenameOrSerial("fake-device".to_string());
+        let target_spec = TargetInfoQuery::NodenameOrId("fake-device".to_string());
 
         let proxy_timeout = Duration::from_millis(50);
         let start = std::time::Instant::now();

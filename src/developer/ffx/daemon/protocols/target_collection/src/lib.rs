@@ -251,7 +251,7 @@ impl TargetCollectionProtocol {
                 let filter = [TargetUpdateFilter::NetAddrs(&addrs)];
                 (update, filter)
             }
-            TargetInfoQuery::Serial(ref sn) => {
+            TargetInfoQuery::Id(ref sn) => {
                 // We're not going to discover anything.  But since
                 // the query provided us with a serial number, we can try
                 // to connect to it.
@@ -391,7 +391,7 @@ impl FidlProtocol for TargetCollectionProtocol {
                             // If we have enough information in the request to
                             // try to connect to the target, just add the target
                             // automatically.
-                            TargetInfoQuery::Addr(_) | TargetInfoQuery::Serial(_) => {
+                            TargetInfoQuery::Addr(_) | TargetInfoQuery::Id(_) => {
                                 self.add_and_use_target(&target_collection, &node, query)
                             }
                             _ => {

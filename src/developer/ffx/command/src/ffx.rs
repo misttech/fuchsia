@@ -355,7 +355,7 @@ enum StrictCheckErrorEnum {
         "ffx strict requires that the target be explicitly specified. Specify `--target <target>`."
     )]
     MustHaveTarget,
-    #[error("ffx strict requires that the Target be specified by address or have the prefix \"serial:\", \"usb:cid:\" or \"vsock:cid\". Actually passed: \"{}\"", .0)]
+    #[error("ffx strict requires that the Target be specified by address or have the prefix \"id:<serial-number>\", \"usb:cid:\" or \"vsock:cid\". Actually passed: \"{}\"", .0)]
     TargetSpecificationInvalid(String),
     #[error("ffx strict requires that the Target be a valid IP address. Invalid scope ID: \"{}\"", .0)]
     TargetAddressMustHaveValidScopeId(String),
@@ -410,7 +410,7 @@ pub fn check_strict_constraints(ffx: &Ffx, requires_target: bool) -> Result<()> 
             None => errors.push(StrictCheckErrorEnum::MustHaveTarget),
             Some(t) => match netext::parse_address_parts(t.as_str()) {
                 Err(_) => {
-                    let valid_prefix = t.starts_with("serial:")
+                    let valid_prefix = t.starts_with("id:")
                         || t.starts_with("usb:cid:")
                         || t.starts_with("vsock:cid:");
                     if !valid_prefix {
@@ -819,13 +819,13 @@ mod test {
                     "--log-output",
                     "/tmp/out.log",
                     "--target",
-                    "serial:1234567890AB",
+                    "id:1234567890AB",
                     "--machine",
                     "json",
                     "target",
                     "echo",
                 ],
-                name: "serial prefix is okay".into(),
+                name: "id prefix is okay".into(),
                 expected_errors: vec![],
             },
         ];

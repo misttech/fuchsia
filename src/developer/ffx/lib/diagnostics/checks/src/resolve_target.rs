@@ -31,9 +31,9 @@ where
 // This may need some tweaking if looking at too many/too few sources for each query type.
 fn sources_from_query(query: &TargetInfoQuery) -> DiscoverySources {
     match query {
-        TargetInfoQuery::NodenameOrSerial(_)
-        | TargetInfoQuery::First
-        | TargetInfoQuery::Serial(_) => DiscoverySources::all(),
+        TargetInfoQuery::NodenameOrId(_) | TargetInfoQuery::First | TargetInfoQuery::Id(_) => {
+            DiscoverySources::all()
+        }
         TargetInfoQuery::VSock(_) => DiscoverySources::USB_FASTBOOT | DiscoverySources::EMULATOR,
         TargetInfoQuery::Usb(_) => DiscoverySources::USB_FASTBOOT,
         TargetInfoQuery::Addr(_) => {
@@ -93,7 +93,7 @@ where
         let sources_string =
             sources.iter_names().map(|(n, _)| n.to_owned()).collect::<Vec<_>>().join(", ");
         let nodename = match input {
-            TargetInfoQuery::NodenameOrSerial(v) => Some(v),
+            TargetInfoQuery::NodenameOrId(v) => Some(v),
             _ => None,
         };
         if let Some(nodename) = nodename {

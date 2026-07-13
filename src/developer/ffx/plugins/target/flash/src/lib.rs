@@ -506,8 +506,8 @@ async fn reboot_target_to_bootloader_and_rediscover(
     };
 
     let query = match (info.serial_number, node_name) {
-        (Some(sn), _) => TargetInfoQuery::Serial(sn),
-        (None, Some(nn)) => TargetInfoQuery::NodenameOrSerial(nn.clone()),
+        (Some(sn), _) => TargetInfoQuery::Id(sn),
+        (None, Some(nn)) => TargetInfoQuery::NodenameOrId(nn.clone()),
         (None, None) => TargetInfoQuery::First,
     };
     ffx_target::discover_fastboot_target(&ctx, query, Some(100000)).await.map_err(|e| e.into())

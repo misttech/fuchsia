@@ -141,9 +141,8 @@ Reboot the Target to the bootloader and re-run this command."
                     Err(e) => handle_fidl_connection_err(e)?,
                 };
 
-                let query = info
-                    .serial_number
-                    .map_or(TargetInfoQuery::First, |sn| TargetInfoQuery::Serial(sn));
+                let query =
+                    info.serial_number.map_or(TargetInfoQuery::First, |sn| TargetInfoQuery::Id(sn));
                 ffx_target::discover_fastboot_target(&self.ctx, query, Some(100000)).await?
             }
             TargetState::Unknown => {

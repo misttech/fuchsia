@@ -269,11 +269,11 @@ func (c *Client) getTargetSpecifier(ctx context.Context, ffxTool *ffx.FFXTool) (
 		}
 
 		if net.ParseIP(ipStr) == nil &&
-			!strings.HasPrefix(target, "usb:") && !strings.HasPrefix(target, "vsock:") && !strings.HasPrefix(target, "serial:") {
-			return "", fmt.Errorf("cannot resolve a valid target specifier for strict mode (got node name %q). Ffx strict mode requires an address or valid prefix.", target)
+			!strings.HasPrefix(target, "usb:") && !strings.HasPrefix(target, "vsock:") && !strings.HasPrefix(target, "id:") {
+			return "", fmt.Errorf("cannot resolve a valid target specifier for strict mode (got node name %q). Ffx strict mode requires an IP address or a valid prefix (\"id:<serial-number>\", \"usb:cid\", \"vsock:cid\").", target)
 		}
 	} else {
-		return "", fmt.Errorf("cannot resolve a target specifier. Ffx strict mode requires an address or valid prefix.")
+		return "", fmt.Errorf("cannot resolve a target specifier. Ffx strict mode requires an IP address or a valid prefix (\"id:<serial-number>\", \"usb:cid\", \"vsock:cid\").")
 	}
 
 	return target, nil

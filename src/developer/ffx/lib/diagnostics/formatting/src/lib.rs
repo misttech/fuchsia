@@ -157,12 +157,12 @@ pub fn format_target_state(state: &TargetState) -> String {
 /// Formats the query into a human-readable struct.
 pub fn format_query(query: &TargetInfoQuery) -> ReadableQuery {
     let (kind, value) = match query {
-        TargetInfoQuery::NodenameOrSerial(v) => ("nodename or serial", v.to_string()),
+        TargetInfoQuery::NodenameOrId(v) => ("nodename or id (serial number)", v.to_string()),
         TargetInfoQuery::First => {
             ("not set. We will search for any device on the network", "".to_string())
         }
         TargetInfoQuery::Addr(a) => ("address", a.to_string()),
-        TargetInfoQuery::Serial(s) => ("serial", s.to_string()),
+        TargetInfoQuery::Id(s) => ("id (serial number)", s.to_string()),
         TargetInfoQuery::Usb(u) => ("usb", u.to_string()),
         TargetInfoQuery::VSock(v) => ("vsock", v.to_string()),
     };
@@ -213,9 +213,9 @@ mod tests {
 
     #[test]
     fn test_format_query() {
-        let query = TargetInfoQuery::NodenameOrSerial("test".to_string());
+        let query = TargetInfoQuery::NodenameOrId("test".to_string());
         let f = format_query(&query);
-        assert_eq!(f.kind, "nodename or serial");
+        assert_eq!(f.kind, "nodename or id (serial number)");
         assert_eq!(f.value, "test");
 
         let query = TargetInfoQuery::First;
@@ -229,9 +229,9 @@ mod tests {
         assert_eq!(f.kind, "address");
         assert_eq!(f.value, "192.168.1.1:8080");
 
-        let query = TargetInfoQuery::Serial("1234".to_string());
+        let query = TargetInfoQuery::Id("1234".to_string());
         let f = format_query(&query);
-        assert_eq!(f.kind, "serial");
+        assert_eq!(f.kind, "id (serial number)");
         assert_eq!(f.value, "1234");
 
         let query = TargetInfoQuery::Usb(1);

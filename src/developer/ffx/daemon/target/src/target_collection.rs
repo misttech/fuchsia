@@ -1416,12 +1416,12 @@ mod tests {
         );
 
         // The most recent matching target should be returned for both queries.
-        let query_name = expect_target(&tc, &TargetInfoQuery::NodenameOrSerial(NODENAME.into()));
-        let query_serial = expect_target(&tc, &TargetInfoQuery::NodenameOrSerial(SERIAL.into()));
+        let query_name = expect_target(&tc, &TargetInfoQuery::NodenameOrId(NODENAME.into()));
+        let query_id = expect_target(&tc, &TargetInfoQuery::NodenameOrId(SERIAL.into()));
         // Both targets have updated
         assert!(Rc::ptr_eq(&query_name, &t1) || Rc::ptr_eq(&query_name, &t2));
         // Target returned from queries should be consistent.
-        assert!(Rc::ptr_eq(&query_name, &query_serial));
+        assert!(Rc::ptr_eq(&query_name, &query_id));
 
         // The state of both targets are merged together when requesting Description:
         let targets = tc.targets(None);
@@ -2250,14 +2250,13 @@ mod tests {
     }
 
     #[fuchsia::test]
-    async fn test_target_match_serial() {
+    async fn test_target_match_id() {
         let env = ffx_config::test_init().unwrap();
         let string = "turritopsis-dohrnii-is-an-immortal-jellyfish";
         let t = Target::new_for_usb(&env.context, string);
         let tc = TargetCollection::new_with_queue(&env.context);
         tc.merge_insert(t.clone());
-        let found_target =
-            expect_target(&tc, &TargetInfoQuery::NodenameOrSerial(string.to_owned()));
+        let found_target = expect_target(&tc, &TargetInfoQuery::NodenameOrId(string.to_owned()));
         assert_eq!(string, found_target.serial().expect("target should have serial number"));
         assert!(found_target.nodename().is_none());
     }

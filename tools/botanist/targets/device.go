@@ -293,7 +293,7 @@ func (t *Device) Start(ctx context.Context, args []string, pbPath string, isBoot
 			target = ipv6.String()
 			tcpFlash = true
 		} else {
-			target = "serial:" + target
+			target = "id:" + target
 		}
 		t.ffx.SetTarget(target)
 		for attempt := 1; attempt <= maxAllowedAttempts; attempt++ {
