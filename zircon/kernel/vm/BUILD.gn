@@ -145,6 +145,7 @@ rustc_library("vm-rs") {
     "vm_aspace.rs",
     "vm_mapping.rs",
     "vm_object.rs",
+    "vm_object_paged.rs",
     "vm_object_physical.rs",
   ]
 

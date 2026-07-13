@@ -31,6 +31,9 @@
 #include <vm/vm_cow_pages.h>
 #include <vm/vm_object.h>
 
+class VmObjectPaged;
+extern "C" void cpp_vm_object_paged_free(VmObjectPaged* vmo);
+
 // the main VM object type, based on a copy-on-write set of pages.
 class VmObjectPaged final : public VmObject, public VmDeferredDeleter<VmObjectPaged> {
  public:
@@ -427,6 +430,7 @@ class VmObjectPaged final : public VmObject, public VmDeferredDeleter<VmObjectPa
   // private destructor, only called from refptr
   ~VmObjectPaged() override;
   friend fbl::RefPtr<VmObjectPaged>;
+  friend void ::cpp_vm_object_paged_free(VmObjectPaged* vmo);
 
   DISALLOW_COPY_ASSIGN_AND_MOVE(VmObjectPaged);
 
