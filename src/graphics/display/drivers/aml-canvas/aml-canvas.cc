@@ -9,6 +9,7 @@
 #include <lib/driver/outgoing/cpp/outgoing_directory.h>
 #include <lib/inspect/cpp/inspector.h>
 #include <lib/zx/bti.h>
+#include <safemath/checked_math.h>
 #include <zircon/assert.h>
 #include <zircon/status.h>
 #include <zircon/syscalls.h>
@@ -56,8 +57,32 @@ void AmlCanvas::Config(ConfigRequestView request, ConfigCompleter::Sync& complet
   uint64_t offset = request->offset;
 
   uint32_t page_size = zx_system_get_page_size();
-  uint32_t size = fbl::round_up<uint32_t, uint32_t>(
-      (info->stride_bytes * info->height) + static_cast<uint32_t>(offset % page_size), page_size);
+
+  // Use checked arithmetic to detect overflow in the canvas size computation.
+  // stride_bytes and height are uint32_t values from untrusted FIDL input;
+  // their product can wrap in uint32_t (e.g., 0x80000000 * 8 = 0x400000000,
+  // which wraps to 0). The wrapped value would pin a tiny DMA region while
+  // the hardware is programmed with the original dimensions, allowing the DMA
+  // engine to read or write physical memory beyond the pinned region.
+  uint32_t image_size_bytes;
+  if (!safemath::CheckMul(info->stride_bytes, info->height)
+           .AssignIfValid(&image_size_bytes)) {
+    zxlogf(ERROR, "Canvas size overflow: %u * %u bytes",
+           info->stride_bytes, info->height);
+    completer.ReplyError(ZX_ERR_OUT_OF_RANGE);
+    return;
+  }
+
+  uint32_t buffer_size_bytes;
+  if (!safemath::CheckAdd(image_size_bytes,
+                static_cast<uint32_t>(offset % page_size))
+           .AssignIfValid(&buffer_size_bytes)) {
+    zxlogf(ERROR, "Canvas size overflow adding offset: %u + %lu",
+           image_size_bytes, offset % page_size);
+    completer.ReplyError(ZX_ERR_OUT_OF_RANGE);
+    return;
+  }
+  uint32_t size = fbl::round_up<uint32_t, uint32_t>(buffer_size_bytes, page_size);
   uint32_t index;
 
   uint32_t height = info->height;
