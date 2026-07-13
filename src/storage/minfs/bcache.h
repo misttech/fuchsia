@@ -55,11 +55,15 @@ class Bcache : public fs::DeviceTransactionHandler, public storage::VmoidRegistr
 
   // Set whether to die on mutation failures in transactions.
   void DieOnMutationFailure(bool setting);
+  bool die_on_mutation_failure() const {
+    return die_on_mutation_failure_.load(std::memory_order_relaxed);
+  }
 
   ////////////////
   // fs::TransactionHandler interface.
 
   zx_status_t RunRequests(const std::vector<storage::BufferedOperation>& operations) override;
+  zx_status_t Flush() override;
 
   uint64_t BlockNumberToDevice(uint64_t block_num) const final {
     return block_num * kMinfsBlockSize / info_.block_size;

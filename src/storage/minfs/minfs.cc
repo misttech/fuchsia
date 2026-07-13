@@ -677,8 +677,8 @@ void Minfs::CommitTransaction(std::unique_ptr<Transaction> transaction) {
        // data until the transaction is complete (and we could end up doing that if the vnode
        // gets destroyed and then quickly recreated).
        .complete_callback = [pinned_vnodes = transaction->RemovePinnedVnodes()] {}});
-  if (status != ZX_OK) {
-    FX_LOGS(ERROR) << "CommitTransaction failed: " << zx_status_get_string(status);
+  if (status != ZX_OK && GetMutableBcache()->die_on_mutation_failure()) {
+    ZX_PANIC("Minfs synchronous commit failed: %s", zx_status_get_string(status));
   }
 
   // Update filesystem usage information now that the transaction has been committed.
@@ -695,6 +695,7 @@ void Minfs::CommitTransaction(std::unique_ptr<Transaction> transaction) {
 #else
   bc_->RunRequests(transaction->TakeOperations());
 #endif
+  transaction->Disarm();
 }
 
 void Minfs::FsckAtEndOfTransaction() {

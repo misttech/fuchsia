@@ -111,6 +111,7 @@ class Transaction final : public PendingWork {
     // When consuming transaction, we ignore any pending data and matadata operations
     // as they will be enqueued again.
     ZX_ASSERT(transaction->inode_reservation_.GetReserved() == 0);
+    transaction->Disarm();
     return (std::move(transaction->block_reservation_));
   }
 
@@ -118,16 +119,26 @@ class Transaction final : public PendingWork {
   std::vector<storage::BufferedOperation> TakeOperations() { return builder_.TakeOperations(); }
 #endif
 
+  // Disarms the transaction, indicating that it has been safely committed or consumed.
+  // This prevents the destructor from panicking if die_on_mutation_failure is true.
+  void Disarm() { armed_ = false; }
+
+  // Arms the transaction, indicating that it has pending mutations.
+  // Must be called whenever the transaction's in-memory state is modified.
+  void Arm();
+
  private:
 #ifdef __Fuchsia__
   fbl::AutoLock<fbl::Mutex> lock_;
   storage::UnbufferedOperationsBuilder metadata_operations_;
   storage::UnbufferedOperationsBuilder data_operations_;
   std::vector<fbl::RefPtr<VnodeMinfs>> pinned_vnodes_;
+  TransactionalFs* minfs_ = nullptr;
 #else
   fs::BufferedOperationsBuilder builder_;
 #endif
 
+  bool armed_ = false;
   AllocatorReservation inode_reservation_;
   std::unique_ptr<AllocatorReservation> block_reservation_;
 };

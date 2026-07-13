@@ -72,6 +72,7 @@ Transaction::Transaction(TransactionalFs* minfs,
     :
 #ifdef __Fuchsia__
       lock_(minfs->GetLock()),
+      minfs_(minfs),
 #endif
       inode_reservation_(&minfs->GetInodeAllocator()),
       block_reservation_(cached_transaction == nullptr
@@ -85,22 +86,33 @@ Transaction::~Transaction() {
   if (block_reservation_ != nullptr) {
     block_reservation_->Cancel();
   }
+#ifdef __Fuchsia__
+  if (armed_ && minfs_ != nullptr && minfs_->GetMutableBcache() != nullptr &&
+      minfs_->GetMutableBcache()->die_on_mutation_failure()) {
+    ZX_PANIC("Transaction destroyed while armed with pending mutations!");
+  }
+#endif
 }
+
+void Transaction::Arm() { armed_ = true; }
 
 #ifdef __Fuchsia__
 void Transaction::EnqueueMetadata(storage::Operation operation, storage::BlockBuffer* buffer) {
+  Arm();
   storage::UnbufferedOperation unbuffered_operation = {.vmo = zx::unowned_vmo(buffer->Vmo()),
                                                        .op = operation};
   metadata_operations_.Add(std::move(unbuffered_operation));
 }
 
 void Transaction::EnqueueData(storage::Operation operation, storage::BlockBuffer* buffer) {
+  Arm();
   storage::UnbufferedOperation unbuffered_operation = {.vmo = zx::unowned_vmo(buffer->Vmo()),
                                                        .op = operation};
   data_operations_.Add(std::move(unbuffered_operation));
 }
 
 void Transaction::PinVnode(fbl::RefPtr<VnodeMinfs> vnode) {
+  Arm();
   if (auto it = std::find_if(pinned_vnodes_.begin(), pinned_vnodes_.end(),
                              [&](const auto& pinned) { return pinned.get() == vnode.get(); });
       it != pinned_vnodes_.end()) {

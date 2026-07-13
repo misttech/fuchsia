@@ -12,6 +12,7 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include "src/storage/minfs/bcache.h"
 #include "src/storage/minfs/format.h"
 #include "src/storage/minfs/minfs_private.h"
 #include "src/storage/minfs/unowned_vmo_buffer.h"
@@ -79,9 +80,14 @@ class FakeBlockDevice : public block_client::BlockDevice {
     return zx::error(ZX_ERR_NOT_SUPPORTED);
   }
   zx_status_t BlockGetInfo(fuchsia_storage_block::wire::BlockInfo* out_info) const final {
+    out_info->block_size = kMinfsBlockSize;
+    out_info->block_count = kTotalElements;
     return ZX_OK;
   }
-  zx_status_t BlockAttachVmo(const zx::vmo& vmo, storage::Vmoid* out_vmoid) final { return ZX_OK; }
+  zx_status_t BlockAttachVmo(const zx::vmo& vmo, storage::Vmoid* out_vmoid) final {
+    *out_vmoid = storage::Vmoid(1);
+    return ZX_OK;
+  }
   zx_status_t VolumeGetInfo(fuchsia_storage_block::wire::VolumeManagerInfo* out_manager,
                             fuchsia_storage_block::wire::VolumeInfo* out_volume) const final {
     return ZX_OK;
@@ -101,6 +107,11 @@ class FakeMinfs : public TransactionalFs {
   FakeMinfs() {
     info_.inode_count = kTotalElements;
     info_.block_size = kMinfsBlockSize;
+
+    auto bcache_or = Bcache::Create(&block_device_, kTotalElements);
+    ZX_ASSERT(bcache_or.is_ok());
+    bcache_ = std::move(bcache_or.value());
+    bcache_->DieOnMutationFailure(true);
   }
 
   fbl::Mutex* GetLock() const override { return &txn_lock_; }
@@ -112,9 +123,11 @@ class FakeMinfs : public TransactionalFs {
 
   void EnqueueCallback(SyncCallback callback) override {}
 
-  void CommitTransaction(std::unique_ptr<Transaction> transaction) override {}
+  void CommitTransaction(std::unique_ptr<Transaction> transaction) override {
+    transaction->Disarm();
+  }
 
-  Bcache* GetMutableBcache() override { return nullptr; }
+  Bcache* GetMutableBcache() override { return bcache_.get(); }
 
   Allocator& GetBlockAllocator() override {
     if (!block_allocator_) {
@@ -169,6 +182,7 @@ class FakeMinfs : public TransactionalFs {
  private:
   mutable fbl::Mutex txn_lock_;
   FakeBlockDevice block_device_;
+  std::unique_ptr<Bcache> bcache_;
   fs::BufferedOperationsBuilder builder_;
   Superblock info_ = {};
   std::unique_ptr<SuperblockManager> superblock_manager_;
@@ -349,6 +363,8 @@ TEST(TransactionTest, VerifyNoWorkExistsBeforeEnqueue) {
 // Checks that the Transaction's metadata work is populated after enqueueing metadata writes.
 TEST(TransactionTest, EnqueueAndVerifyMetadataWork) {
   FakeMinfs minfs;
+  ASSERT_NE(minfs.GetMutableBcache(), nullptr);
+  minfs.GetMutableBcache()->DieOnMutationFailure(false);
   Transaction transaction(&minfs);
 
   storage::Operation op = {
@@ -373,6 +389,8 @@ TEST(TransactionTest, EnqueueAndVerifyMetadataWork) {
 // Checks that the Transaction's data work is populated after enqueueing data writes.
 TEST(TransactionTest, EnqueueAndVerifyDataWork) {
   FakeMinfs minfs;
+  ASSERT_NE(minfs.GetMutableBcache(), nullptr);
+  minfs.GetMutableBcache()->DieOnMutationFailure(false);
   Transaction transaction(&minfs);
 
   storage::Operation op = {
@@ -441,6 +459,8 @@ class MockVnodeMinfs : public VnodeMinfs, public fbl::Recyclable<MockVnodeMinfs>
 // Checks that a pinned vnode is not attached to the transaction's data work.
 TEST(TransactionTest, RemovePinnedVnodeContainsVnode) {
   FakeMinfs minfs;
+  ASSERT_NE(minfs.GetMutableBcache(), nullptr);
+  minfs.GetMutableBcache()->DieOnMutationFailure(false);
   bool vnode_alive = false;
 
   fbl::RefPtr<MockVnodeMinfs> vnode(fbl::AdoptRef(new MockVnodeMinfs(&vnode_alive)));
@@ -459,6 +479,8 @@ TEST(TransactionTest, RemovePinnedVnodeContainsVnode) {
 
 TEST(TransactionTest, RemovePinnedVnodeContainsManyVnodes) {
   FakeMinfs minfs;
+  ASSERT_NE(minfs.GetMutableBcache(), nullptr);
+  minfs.GetMutableBcache()->DieOnMutationFailure(false);
   size_t vnode_count = 4;
   auto vnode_alive = std::make_unique<bool[]>(vnode_count);
   auto vnodes = std::make_unique<fbl::RefPtr<MockVnodeMinfs>[]>(vnode_count);
@@ -498,6 +520,115 @@ TEST(CachedBlockTransactionTest, FewBlocksReserved) {
   CachedBlockTransaction cached_transaction(
       Transaction::TakeBlockReservations(std::move(transaction_or.value())));
   ASSERT_EQ(cached_transaction.TakeBlockReservations()->GetReserved(), kDefaultElements);
+}
+
+TEST(TransactionDeathTest, DestroyArmedMetadataTransactionDies) {
+  FakeMinfs minfs;
+  ASSERT_NE(minfs.GetMutableBcache(), nullptr);
+
+  storage::Operation op = {
+      .type = storage::OperationType::kWrite,
+      .vmo_offset = 2,
+      .dev_offset = 3,
+      .length = 4,
+  };
+  UnownedVmoBuffer buffer(zx::unowned_vmo(1));
+
+  ASSERT_DEATH(
+      {
+        Transaction transaction(&minfs);
+        transaction.EnqueueMetadata(op, &buffer);
+      },
+      "Transaction destroyed while armed with pending mutations!");
+}
+
+TEST(TransactionDeathTest, DestroyArmedDataTransactionDies) {
+  FakeMinfs minfs;
+  ASSERT_NE(minfs.GetMutableBcache(), nullptr);
+
+  storage::Operation op = {
+      .type = storage::OperationType::kWrite,
+      .vmo_offset = 2,
+      .dev_offset = 3,
+      .length = 4,
+  };
+  UnownedVmoBuffer buffer(zx::unowned_vmo(1));
+
+  ASSERT_DEATH(
+      {
+        Transaction transaction(&minfs);
+        transaction.EnqueueData(op, &buffer);
+      },
+      "Transaction destroyed while armed with pending mutations!");
+}
+
+TEST(TransactionDeathTest, DestroyArmedVnodeTransactionDies) {
+  FakeMinfs minfs;
+  ASSERT_NE(minfs.GetMutableBcache(), nullptr);
+  bool vnode_alive = false;
+
+  ASSERT_DEATH(
+      {
+        fbl::RefPtr<MockVnodeMinfs> vnode(fbl::AdoptRef(new MockVnodeMinfs(&vnode_alive)));
+        Transaction transaction(&minfs);
+        transaction.PinVnode(std::move(vnode));
+      },
+      "Transaction destroyed while armed with pending mutations!");
+}
+
+TEST(TransactionTest, DestroyDisarmedTransactionSucceeds) {
+  FakeMinfs minfs;
+  ASSERT_NE(minfs.GetMutableBcache(), nullptr);
+
+  storage::Operation op = {
+      .type = storage::OperationType::kWrite,
+      .vmo_offset = 2,
+      .dev_offset = 3,
+      .length = 4,
+  };
+  UnownedVmoBuffer buffer(zx::unowned_vmo(1));
+
+  Transaction transaction(&minfs);
+  transaction.EnqueueMetadata(op, &buffer);
+
+  transaction.Disarm();
+}
+
+TEST(TransactionTest, DestroyDisarmedByTakeBlockReservationsSucceeds) {
+  FakeMinfs minfs;
+  ASSERT_NE(minfs.GetMutableBcache(), nullptr);
+
+  auto transaction_or = minfs.CreateTransaction(0, kDefaultElements);
+  ASSERT_TRUE(transaction_or.is_ok());
+
+  storage::Operation op = {
+      .type = storage::OperationType::kWrite,
+      .vmo_offset = 2,
+      .dev_offset = 3,
+      .length = 4,
+  };
+  UnownedVmoBuffer buffer(zx::unowned_vmo(1));
+  transaction_or.value()->EnqueueMetadata(op, &buffer);
+
+  CachedBlockTransaction cached_transaction(
+      Transaction::TakeBlockReservations(std::move(transaction_or.value())));
+}
+
+TEST(TransactionTest, DestroyArmedTransactionWithNoPanicSettingSucceeds) {
+  FakeMinfs minfs;
+  ASSERT_NE(minfs.GetMutableBcache(), nullptr);
+  minfs.GetMutableBcache()->DieOnMutationFailure(false);
+
+  storage::Operation op = {
+      .type = storage::OperationType::kWrite,
+      .vmo_offset = 2,
+      .dev_offset = 3,
+      .length = 4,
+  };
+  UnownedVmoBuffer buffer(zx::unowned_vmo(1));
+
+  Transaction transaction(&minfs);
+  transaction.EnqueueMetadata(op, &buffer);
 }
 
 }  // namespace

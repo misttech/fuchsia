@@ -84,6 +84,20 @@ zx_status_t Bcache::RunRequests(const std::vector<storage::BufferedOperation>& o
   return status;
 }
 
+zx_status_t Bcache::Flush() {
+  zx_status_t status;
+  {
+    std::shared_lock lock(mutex_);
+    status = DeviceTransactionHandler::Flush();
+  }
+#ifdef __Fuchsia__
+  if (status != ZX_OK && die_on_mutation_failure_.load(std::memory_order_relaxed)) {
+    ZX_PANIC("Flush failure. Disk no longer consistent: %s", zx_status_get_string(status));
+  }
+#endif
+  return status;
+}
+
 zx::result<> Bcache::Writeblk(blk_t bno, const void* data) {
   TRACE_DURATION("minfs", "Bcache::Writeblk", "blk", bno);
   storage::Operation operation = {};
