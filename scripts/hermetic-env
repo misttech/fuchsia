@@ -113,6 +113,18 @@ if [[ -z "${FUCHSIA_BUILD_DIR_FROM_FX}" && -f "${FUCHSIA_DIR}/.fx-build-dir" ]];
   export FUCHSIA_BUILD_DIR_FROM_FX=$(cd ${FUCHSIA_DIR} && realpath $(cat .fx-build-dir))
 fi
 
+# Forward agent environment variables defined in agents.txt.
+agent_env_args=()
+readonly agents_file="${fuchsia_dir}/tools/devshell/lib/agents.txt"
+if [[ -f "${agents_file}" ]]; then
+  while IFS= read -r agent_var || [[ -n "${agent_var}" ]]; do
+    [[ -z "${agent_var}" || "${agent_var}" =~ ^# ]] && continue
+    if [[ -n "${!agent_var+x}" ]]; then
+      agent_env_args+=("${agent_var}=${!agent_var}")
+    fi
+  done < "${agents_file}"
+fi
+
 # Forward the args to the system `env`.
 exec /usr/bin/env -i \
   "FUCHSIA_DIR=${fuchsia_dir}" \
@@ -147,4 +159,5 @@ exec /usr/bin/env -i \
   ${GEMINI_API_KEY+"GEMINI_API_KEY=${GEMINI_API_KEY}"} \
   ${XDG_RUNTIME_DIR+"FUCHSIA_XDG_RUNTIME_DIR_FROM_FX=${XDG_RUNTIME_DIR}"} \
   ${FUCHSIA_METRICS_CALL_STACK+"FUCHSIA_METRICS_CALL_STACK=${FUCHSIA_METRICS_CALL_STACK}"} \
+  ${agent_env_args[@]+"${agent_env_args[@]}"} \
   "$@"
