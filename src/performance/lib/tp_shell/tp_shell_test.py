@@ -5,6 +5,7 @@
 import importlib.resources
 import time
 import unittest
+import unittest.mock
 
 from tp_shell import PerfettoTraceProcessor
 
@@ -71,6 +72,54 @@ class TpShellTest(unittest.TestCase):
                 event_names = [r["name"] for r in results]
                 expected_names = ["example_duration"] * 20
                 self.assertEqual(event_names, expected_names)
+
+    @unittest.mock.patch("urllib.request.urlopen")
+    def test_http_uri_resolver_timeout(
+        self, mock_urlopen: unittest.mock.MagicMock
+    ) -> None:
+        """Tests that HttpUriResolver.resolve() calls urlopen with a timeout."""
+        from tp_shell.tp_utils import HttpUriResolver
+
+        mock_response = unittest.mock.MagicMock()
+        mock_response.read.side_effect = [b"data", b""]
+        mock_urlopen.return_value = mock_response
+
+        resolver = HttpUriResolver("http://example.com/trace.fxt")
+        resolver.resolve()
+
+        mock_urlopen.assert_called_once()
+        _, kwargs = mock_urlopen.call_args
+        self.assertEqual(kwargs.get("timeout"), 120)
+
+    @unittest.mock.patch("urllib.request.urlopen")
+    @unittest.mock.patch("tp_shell.tp_utils.resolve_trace_url")
+    def test_http_uri_resolver_permalink(
+        self,
+        mock_resolve_trace_url: unittest.mock.MagicMock,
+        mock_urlopen: unittest.mock.MagicMock,
+    ) -> None:
+        """Tests that HttpUriResolver resolves perfetto.dev permalinks."""
+        from tp_shell.tp_utils import HttpUriResolver
+
+        mock_resolve_trace_url.return_value = (
+            "http://example.com/resolved_trace.fxt"
+        )
+
+        mock_response = unittest.mock.MagicMock()
+        mock_response.read.side_effect = [b"data", b""]
+        mock_urlopen.return_value = mock_response
+
+        resolver = HttpUriResolver("https://ui.perfetto.dev/#!/?s=123456789")
+        resolver.resolve()
+
+        mock_resolve_trace_url.assert_called_once_with(
+            "https://ui.perfetto.dev/#!/?s=123456789"
+        )
+        mock_urlopen.assert_called_once_with(
+            "http://example.com/resolved_trace.fxt",
+            context=unittest.mock.ANY,
+            timeout=120,
+        )
 
 
 if __name__ == "__main__":

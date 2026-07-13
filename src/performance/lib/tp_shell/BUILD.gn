@@ -199,6 +199,7 @@ python_library("perfetto_py") {
     "prebuilts/manifests/tracebox.py",
     "prebuilts/manifests/traceconv.py",
     "prebuilts/perfetto_prebuilts.py",
+    "tools/download_trace.py",
     "trace_processor/__init__.py",
     "trace_processor/api.py",
     "trace_processor/http.py",

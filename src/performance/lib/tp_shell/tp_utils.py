@@ -7,16 +7,56 @@
 import importlib.resources
 import logging
 import os
+import ssl
+import urllib.request
 import weakref
 from types import TracebackType
 from typing import Any
 
 import perfetto.trace_processor.api
+from perfetto.tools.download_trace import resolve_trace_url
 from perfetto.trace_processor.api import TraceProcessor as PerfettoTP
 from perfetto.trace_processor.api import TraceProcessorConfig
 from perfetto.trace_processor.platform import PlatformDelegate
+from perfetto.trace_uri_resolver import util as resolver_util
+from perfetto.trace_uri_resolver.path import PathUriResolver
+from perfetto.trace_uri_resolver.registry import ResolverRegistry
+from perfetto.trace_uri_resolver.resolver import TraceUriResolver
 
 _LOGGER = logging.getLogger(__name__)
+
+
+class HttpUriResolver(TraceUriResolver):
+    """URI Resolver that streams trace data from HTTP/HTTPS endpoints and permalinks."""
+
+    PREFIX = "http"
+
+    def __init__(self, uri: str) -> None:
+        self.uri = uri
+
+    @classmethod
+    def from_trace_uri(cls, uri: str) -> "HttpUriResolver":
+        return cls(uri)
+
+    def resolve(self) -> list[TraceUriResolver.Result]:
+        if "perfetto.dev" in self.uri:
+            url = resolve_trace_url(self.uri)
+        else:
+            url = self.uri
+        context = ssl._create_unverified_context()
+        # Add a default timeout of 2 minutes (120 seconds) as a backstop to
+        # avoid permanently blocking when loading the trace file.
+        response = urllib.request.urlopen(url, context=context, timeout=120)
+        return [
+            TraceUriResolver.Result(
+                trace=resolver_util.read_generator(response),
+                metadata={"_url": url},
+            )
+        ]
+
+
+class HttpsUriResolver(HttpUriResolver):
+    PREFIX = "https"
 
 
 class FuchsiaPlatformDelegate(PlatformDelegate):
@@ -44,6 +84,11 @@ class FuchsiaPlatformDelegate(PlatformDelegate):
             importlib.resources.files("perfetto.trace_processor")
             .joinpath(file)
             .read_bytes()
+        )
+
+    def default_resolver_registry(self) -> ResolverRegistry:
+        return ResolverRegistry(
+            resolvers=[PathUriResolver, HttpUriResolver, HttpsUriResolver]
         )
 
 
@@ -81,7 +126,12 @@ class PerfettoTraceProcessor:
             tp_shell_path: Optional path to the trace_processor_shell binary.
             debug: If True, prints SQL queries.
         """
-        self.trace_path = os.path.abspath(trace_path)
+        if trace_path.startswith("http://") or trace_path.startswith(
+            "https://"
+        ):
+            self.trace_path = trace_path
+        else:
+            self.trace_path = os.path.abspath(trace_path)
         self._tp_shell_context = None
 
         if tp_shell_path is None:
@@ -115,7 +165,10 @@ class PerfettoTraceProcessor:
         self.tp_shell_path = os.path.abspath(tp_shell_path)
         self.debug = debug
 
-        if not os.path.exists(self.trace_path):
+        if not (
+            self.trace_path.startswith("http://")
+            or self.trace_path.startswith("https://")
+        ) and not os.path.exists(self.trace_path):
             raise FileNotFoundError(f"Trace file not found: {self.trace_path}")
         if not os.path.exists(self.tp_shell_path):
             raise FileNotFoundError(

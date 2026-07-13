@@ -25,6 +25,11 @@ download it from the cloud and cache it.
 the RPC calls to `trace_processor_shell`. These are internal to the library and
 users of the library do not need to interact with protobufs directly.
 
+* The library includes custom `HttpUriResolver` and `HttpsUriResolver` implementations
+registered with `FuchsiaPlatformDelegate`. This allows `PerfettoTraceProcessor` to directly
+accept `ui.perfetto.dev` permalinks and direct HTTP/HTTPS URLs as input, resolving metadata
+and streaming traces over the network without requiring local download steps.
+
 * The library includes a copy of the `trace_processor_shell` so if the path to a
 local copy is not specified, the library will use the bundled copy. This is
 useful for agent skills and use outside the Fuchsia build directory.
@@ -107,6 +112,19 @@ try:
 finally:
     # Always close to prevent zombie background daemons
     tp.close()
+```
+
+### Remote Permalinks and URLs
+`PerfettoTraceProcessor` natively accepts `ui.perfetto.dev` permalinks and direct HTTP/HTTPS URLs as input. The trace metadata is resolved and streamed directly over the network without requiring a local `.fxt` download step or disk storage:
+
+```python
+from tp_shell import PerfettoTraceProcessor
+
+# Pass a ui.perfetto.dev permalink or HTTP/HTTPS trace URL directly
+permalink = "https://ui.perfetto.dev/#!/?s=0fdf12cb1d57131188fd93b6cd857865156e8f5b"
+with PerfettoTraceProcessor(permalink) as tp:
+    results = tp.run_query("SELECT count(1) as slice_count FROM slice")
+    print(f"Total slices in permalink: {results[0]['slice_count']}")
 ```
 
 ---
