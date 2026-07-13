@@ -636,15 +636,6 @@
             },
             {
                 "paths": [
-                    "third_party/chre/src/apps/nearby/third_party/contexthub/chre/util",
-                    "third_party/chre/src/apps/nearby/third_party/nanopb"
-                ],
-                "notes": [
-                    "Skip third party chre directories that do not contain a license file."
-                ]
-            },
-            {
-                "paths": [
                     "src/lib/android/aidl/generated-files"
                 ],
                 "notes": [

@@ -321,7 +321,6 @@
       "third_party/bazel_vendor/**": true,
       "third_party/bcmdhd/**": true,
       "third_party/boringssl/**": true,
-      "third_party/chre/**": true,
       "third_party/chromiumos-xorg-conf/**": true,
       "third_party/cobalt_config/**": true,
       "third_party/colorama/**": true,

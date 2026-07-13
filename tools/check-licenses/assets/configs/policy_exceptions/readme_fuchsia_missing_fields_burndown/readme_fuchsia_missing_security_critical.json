@@ -7,7 +7,6 @@
                 "paths": [
                     "third_party/Vulkan-Loader",
                     "third_party/Vulkan-Tools",
-                    "third_party/chre",
                     "third_party/colorama",
                     "third_party/flatbuffers",
                     "third_party/gfxstream",

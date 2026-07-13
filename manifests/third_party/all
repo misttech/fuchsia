@@ -601,11 +601,6 @@
              remote="https://fuchsia.googlesource.com/third_party/github.com/dpranke/pyjson5"
              gerrithost="https://fuchsia-review.googlesource.com"
              revision="2154e31bbae71b6a8ae69e5e5a3350528825f0fc"/>
-    <project name="third_party/chre"
-             path="third_party/chre/src"
-             remote="https://fuchsia.googlesource.com/third_party/android.googlesource.com/platform/system/chre"
-             gerrithost="https://fuchsia-review.googlesource.com"
-             revision="8845bc1271be36fc5e5ebb7d48b88441bbf96dcc"/>
     <project name="third_party/pypng"
              path="third_party/pypng/src"
              remote="https://fuchsia.googlesource.com/third_party/gitlab.com/drj11/pypng"

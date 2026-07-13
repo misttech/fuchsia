@@ -320,13 +320,6 @@
         },
         {
             "paths": [
-                "third_party/chre/src/apps/nearby/third_party/contexthub/chre/util",
-                "third_party/chre/src/apps/nearby/third_party/nanopb"
-            ],
-            "description": "Skip third party chre directories that do not contain a license file."
-        },
-        {
-            "paths": [
                 "build/bazel/fuchsia_idk/validation_data"
             ],
             "description": "Validation test files for //build/bazel/fuchsia_idk/generate_repository.py"
