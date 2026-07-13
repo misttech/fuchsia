@@ -438,6 +438,23 @@ TEST(State, CreateAndFreeFromSameReference) {
   state->ReleaseStringReference(idx2);
 }
 
+TEST(State, StringReferenceAllocationFailureNoCache) {
+  auto state = InitState(4096);
+  ASSERT_TRUE(state != nullptr);
+
+  // A string large enough that extents will fail to allocate in a 4096-byte VMO.
+  std::string data(6000, '.');
+  BlockIndex idx;
+  ASSERT_EQ(ZX_ERR_NO_MEMORY, state->CreateAndIncrementStringReference(data, &idx));
+
+  // If caching happened before extent allocation failed, calling CreateAndIncrementStringReference
+  // again with the same string would find the stale freed index in string_reference_ids_ and
+  // return ZX_OK with a dangling index. With caching after success, it should fail again with
+  // ZX_ERR_NO_MEMORY.
+  BlockIndex idx2;
+  ASSERT_EQ(ZX_ERR_NO_MEMORY, state->CreateAndIncrementStringReference(data, &idx2));
+}
+
 TEST(State, StringReferenceCountSaturation) {
   auto state = InitState(4096);
   ASSERT_TRUE(state != NULL);

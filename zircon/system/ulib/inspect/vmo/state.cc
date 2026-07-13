@@ -1275,10 +1275,6 @@ zx_status_t State::InnerDoStringReferenceAllocations(std::string_view data, Bloc
     return status;
   }
 
-  if (should_cache) {
-    string_reference_ids_[std::string(data.data(), data.size())] = *out;
-  }
-
   auto* block = heap_->GetBlock(*out);
   block->header = StringReferenceBlockFields::Order::Make(GetOrder(block)) |
                   StringReferenceBlockFields::Type::Make(BlockType::kStringReference) |
@@ -1290,6 +1286,10 @@ zx_status_t State::InnerDoStringReferenceAllocations(std::string_view data, Bloc
   if (status != ZX_OK) {
     heap_->Free(*out);
     return status;
+  }
+
+  if (should_cache) {
+    string_reference_ids_[std::string(data.data(), data.size())] = *out;
   }
 
   return ZX_OK;
