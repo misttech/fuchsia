@@ -8,6 +8,7 @@
 #include <lib/ddk/metadata.h>
 #include <lib/driver/testing/cpp/driver_test.h>
 
+#include <algorithm>
 #include <cmath>
 
 #include <gtest/gtest.h>
@@ -64,10 +65,12 @@ class AdcTestEnvironment : fdf_testing::Environment {
       return result.take_error();
     }
 
-    if (zx::result result = metadata_server_.Serve(
-            to_driver_vfs, fdf::Dispatcher::GetCurrent()->async_dispatcher());
-        result.is_error()) {
-      return result.take_error();
+    if (metadata_.has_value()) {
+      if (zx::result result = metadata_server_.Serve(
+              to_driver_vfs, fdf::Dispatcher::GetCurrent()->async_dispatcher(), metadata_.value());
+          result.is_error()) {
+        return result.take_error();
+      }
     }
 
     return zx::ok();
@@ -75,14 +78,10 @@ class AdcTestEnvironment : fdf_testing::Environment {
 
   void Init(std::vector<fidl_metadata::adc::Channel> kAdcChannels) {
     std::vector<fuchsia_hardware_adcimpl::AdcChannel> channels;
-    std::transform(
-        kAdcChannels.begin(), kAdcChannels.end(), std::back_inserter(channels),
-        [](const auto& channel) {
-          return fuchsia_hardware_adcimpl::AdcChannel{{.idx = channel.idx, .name = channel.name}};
-        });
-    fuchsia_hardware_adcimpl::Metadata metadata{{.channels = std::move(channels)}};
-
-    ASSERT_EQ(ZX_OK, metadata_server_.SetMetadata(metadata).status_value());
+    std::ranges::transform(kAdcChannels, std::back_inserter(channels), [](const auto& channel) {
+      return fuchsia_hardware_adcimpl::AdcChannel{{.idx = channel.idx, .name = channel.name}};
+    });
+    metadata_ = fuchsia_hardware_adcimpl::Metadata({.channels = std::move(channels)});
   }
 
   FakeAdcImplServer& fake_adc_impl_server() { return fake_adc_impl_server_; }
@@ -90,6 +89,7 @@ class AdcTestEnvironment : fdf_testing::Environment {
  private:
   FakeAdcImplServer fake_adc_impl_server_;
   fdf_metadata::MetadataServer<fuchsia_hardware_adcimpl::Metadata> metadata_server_;
+  std::optional<fuchsia_hardware_adcimpl::Metadata> metadata_;
 };
 
 class AdcTestConfig final {

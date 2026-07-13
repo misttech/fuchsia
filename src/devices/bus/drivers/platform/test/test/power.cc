@@ -72,18 +72,17 @@ zx::result<> TestPowerDriver::Start(fdf::DriverContext context) {
     fdf::error("Failed to connect to platform device: {}", pdev);
     return pdev.take_error();
   }
-  if (zx::result result = metadata_server_.SetMetadataFromPDevIfExists(pdev.value());
+  if (zx::result result = metadata_server_.ForwardAndServe(*outgoing(), dispatcher(), pdev.value());
       result.is_error()) {
-    fdf::error("Failed to set metadata: {}", result);
-    return result.take_error();
-  }
-  if (zx::result result = metadata_server_.Serve(*outgoing(), dispatcher()); result.is_error()) {
-    fdf::error("Failed to serve metadata: {}", result);
+    fdf::error("Failed to forward metadata: {}", result);
     return result.take_error();
   }
 
   std::vector offers = compat_server_.CreateOffers2();
-  offers.push_back(metadata_server_.MakeOffer());
+  std::optional metadata_offer = metadata_server_.CreateOffer();
+  if (metadata_offer.has_value()) {
+    offers.push_back(std::move(metadata_offer.value()));
+  }
   zx::result child =
       AddChild(kChildNodeName, std::vector<fuchsia_driver_framework::NodeProperty2>{}, offers);
   if (child.is_error()) {

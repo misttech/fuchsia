@@ -43,26 +43,18 @@ zx::result<> UsbFunction::AddChild(fidl::UnownedClientEnd<fuchsia_driver_framewo
   }
 
   auto& mac_address_metadata_server = mac_address_metadata_server_.emplace(name_);
-  if (zx::result result = mac_address_metadata_server.ForwardMetadataIfExists(incoming);
+  if (zx::result result =
+          mac_address_metadata_server.ForwardAndServe(*outgoing, dispatcher_, incoming);
       result.is_error()) {
     fdf::error("Failed to forward mac address metadata: {}", result);
     return result.take_error();
   }
-  if (zx::result result = mac_address_metadata_server.Serve(*outgoing, dispatcher_);
-      result.is_error()) {
-    fdf::error("Failed to serve mac address metadata: {}", result);
-    return result.take_error();
-  }
 
   auto& serial_number_metadata_server = serial_number_metadata_server_.emplace(name_);
-  if (zx::result result = serial_number_metadata_server.ForwardMetadataIfExists(incoming);
+  if (zx::result result =
+          serial_number_metadata_server.ForwardAndServe(*outgoing, dispatcher_, incoming);
       result.is_error()) {
     fdf::error("Failed to forward serial number metadata: {}", result);
-    return result.take_error();
-  }
-  if (zx::result result = serial_number_metadata_server.Serve(*outgoing, dispatcher_);
-      result.is_error()) {
-    fdf::error("Failed to serve serial number metadata: {}", result);
     return result.take_error();
   }
 
@@ -110,8 +102,12 @@ zx::result<> UsbFunction::AddChild(fidl::UnownedClientEnd<fuchsia_driver_framewo
 
   std::vector offers = compat_server_.CreateOffers2();
   offers.push_back(fdf::MakeOffer2<ffunction::UsbFunctionService>(name_));
-  offers.push_back(mac_address_metadata_server.MakeOffer());
-  offers.push_back(serial_number_metadata_server.MakeOffer());
+  if (std::optional offer = mac_address_metadata_server.CreateOffer(); offer.has_value()) {
+    offers.push_back(std::move(offer.value()));
+  }
+  if (std::optional offer = serial_number_metadata_server.CreateOffer(); offer.has_value()) {
+    offers.push_back(std::move(offer.value()));
+  }
 
   auto bus_info = fuchsia_driver_framework::BusInfo{{
       .bus = fuchsia_driver_framework::BusType::kUsbPeripheral,

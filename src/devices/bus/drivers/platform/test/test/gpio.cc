@@ -67,14 +67,10 @@ zx::result<> TestGpioDriver::Start(fdf::DriverContext context) {
   }
 
   zx::result pdev = incoming->Connect<fuchsia_hardware_platform_device::Service::Device>();
-  if (zx::result result = pin_metadata_server_.SetMetadataFromPDevIfExists(pdev.value());
+  if (zx::result result =
+          pin_metadata_server_.ForwardAndServe(*outgoing(), dispatcher(), pdev.value());
       result.is_error()) {
-    fdf::error("Failed to set SPI metadata from platform device: {}", result);
-    return result.take_error();
-  }
-  if (zx::result result = pin_metadata_server_.Serve(*outgoing(), dispatcher());
-      result.is_error()) {
-    fdf::error("Failed to serve SPI metadata: {}", result);
+    fdf::error("Failed to forward pin metadata: {}", result);
     return result.take_error();
   }
 
@@ -92,7 +88,10 @@ zx::result<> TestGpioDriver::Start(fdf::DriverContext context) {
 
   std::vector offers = compat_server_.CreateOffers2();
   offers.push_back(fdf::MakeOffer2<fuchsia_hardware_pinimpl::Service>());
-  offers.push_back(pin_metadata_server_.MakeOffer());
+  std::optional metadata_offer = pin_metadata_server_.CreateOffer();
+  if (metadata_offer.has_value()) {
+    offers.push_back(std::move(metadata_offer.value()));
+  }
   zx::result child =
       AddChild(kChildNodeName, std::vector<fuchsia_driver_framework::NodeProperty2>{}, offers);
   if (child.is_error()) {

@@ -20,10 +20,13 @@ class TestEnvironment : public fdf_testing::Environment {
   TestEnvironment() : i2c_impl_(1024) {}
 
   zx::result<> Serve(fdf::OutgoingDirectory& to_driver_vfs) override {
-    if (zx::result result = metadata_server_.Serve(
-            to_driver_vfs, fdf::Dispatcher::GetCurrent()->async_dispatcher());
-        result.is_error()) {
-      return result.take_error();
+    if (i2c_metadata_.has_value()) {
+      if (zx::result result = metadata_server_.Serve(
+              to_driver_vfs, fdf::Dispatcher::GetCurrent()->async_dispatcher(),
+              i2c_metadata_.value());
+          result.is_error()) {
+        return result.take_error();
+      }
     }
 
     // Add the i2c service.
@@ -35,8 +38,8 @@ class TestEnvironment : public fdf_testing::Environment {
     return zx::ok();
   }
 
-  void AddMetadata(const fuchsia_hardware_i2c_businfo::I2CBusMetadata& metadata) {
-    ZX_ASSERT(metadata_server_.SetMetadata(metadata).is_ok());
+  void AddMetadata(fuchsia_hardware_i2c_businfo::I2CBusMetadata metadata) {
+    i2c_metadata_.emplace(std::move(metadata));
   }
 
   FakeI2cImpl& i2c_impl() { return i2c_impl_; }
@@ -44,6 +47,7 @@ class TestEnvironment : public fdf_testing::Environment {
  private:
   fdf_metadata::MetadataServer<fuchsia_hardware_i2c_businfo::I2CBusMetadata> metadata_server_;
   FakeI2cImpl i2c_impl_;
+  std::optional<fuchsia_hardware_i2c_businfo::I2CBusMetadata> i2c_metadata_;
 };
 
 class TestConfig final {

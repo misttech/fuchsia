@@ -115,11 +115,8 @@ zx::result<> Crosvm::CreateRoothost(const pci_dt::PciVisitor& pci_visitor,
 zx::result<> Crosvm::CreateMetadata() {
   fuchsia_hardware_pci::BoardConfiguration board_config{
       {fuchsia_hardware_pci::UseIntxWorkaroundType()}};
-  if (zx::result result = metadata_server_.SetMetadata(board_config); result.is_error()) {
-    return result.take_error();
-  }
-
-  if (zx::result result = metadata_server_.Serve(*outgoing(), dispatcher()); result.is_error()) {
+  if (zx::result result = metadata_server_.Serve(*outgoing(), dispatcher(), board_config);
+      result.is_error()) {
     return result.take_error();
   }
 
@@ -184,8 +181,11 @@ zx::result<> Crosvm::StartBanjoServer(const std::shared_ptr<fdf::Namespace>& inc
     return result.take_error();
   }
 
-  std::vector offers{compat_server_.CreateOffers2()};
-  offers.push_back(metadata_server_.MakeOffer());
+  std::vector offers = compat_server_.CreateOffers2();
+  std::optional metadata_offer = metadata_server_.CreateOffer();
+  if (metadata_offer.has_value()) {
+    offers.push_back(std::move(metadata_offer.value()));
+  }
 
   zx::result child = AddChild(kPcirootNodeName, {{banjo_server_->property()}}, offers);
   if (child.is_error()) {

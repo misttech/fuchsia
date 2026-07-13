@@ -139,7 +139,10 @@ zx::result<> AmlSdmmc::Start(fdf::DriverContext context) {
   std::vector<fuchsia_driver_framework::wire::Offer> offers = compat_server_.CreateOffers2(arena);
   offers.push_back(fdf::MakeOffer2<fuchsia_hardware_sdmmc::SdmmcService>(arena));
   offers.push_back(fdf::MakeOffer2<fuchsia_hardware_power::PowerTokenService>(arena));
-  offers.push_back(metadata_server_.MakeOffer(arena));
+  std::optional metadata_offer = metadata_server_.CreateOffer(arena);
+  if (metadata_offer.has_value()) {
+    offers.push_back(std::move(metadata_offer.value()));
+  }
 
   const auto args = fuchsia_driver_framework::wire::NodeAddArgs::Builder(arena)
                         .name(arena, name())
@@ -163,12 +166,9 @@ zx::result<> AmlSdmmc::InitResources(
     fdf::Namespace& incoming) {
   fdf::PDev pdev{std::move(pdev_client_end)};
 
-  if (zx::result result = metadata_server_.SetMetadataFromPDevIfExists(pdev); result.is_error()) {
-    fdf::error("Failed to set metadata: {}", result);
-    return result.take_error();
-  }
-  if (zx::result result = metadata_server_.Serve(*outgoing(), dispatcher()); result.is_error()) {
-    fdf::error("Failed to serve metadata: {}", result);
+  if (zx::result result = metadata_server_.ForwardAndServe(*outgoing(), dispatcher(), pdev);
+      result.is_error()) {
+    fdf::error("Failed to forward and serve metadata: {}", result);
     return result.take_error();
   }
 

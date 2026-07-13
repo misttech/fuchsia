@@ -592,12 +592,9 @@ zx::result<> DwI2c::Start(fdf::DriverContext context) {
     }
   }
 
-  if (zx::result result = metadata_server_.SetMetadataFromPDevIfExists(pdev); result.is_error()) {
-    fdf::error("Failed to set metadata for metadata server: {}", result);
-    return result.take_error();
-  }
-  if (zx::result result = metadata_server_.Serve(*outgoing(), dispatcher()); result.is_error()) {
-    fdf::error("Failed to serve metadata: {}", result);
+  if (zx::result result = metadata_server_.ForwardAndServe(*outgoing(), dispatcher(), pdev);
+      result.is_error()) {
+    fdf::error("Failed to forward and serve metadata: {}", result);
     return result.take_error();
   }
 
@@ -663,10 +660,12 @@ zx::result<> DwI2c::CreateChildNode() {
     return controller_endpoints.take_error();
   }
 
-  auto offers = std::to_array({
+  std::vector<fuchsia_driver_framework::Offer> offers = {
       fdf::MakeOffer2<fuchsia_hardware_i2cimpl::Service>(component::kDefaultInstance),
-      metadata_server_.MakeOffer(),
-  });
+  };
+  if (std::optional offer = metadata_server_.CreateOffer(); offer.has_value()) {
+    offers.push_back(std::move(offer.value()));
+  }
 
   zx::result child =
       AddChild(kChildNodeName, std::vector<fuchsia_driver_framework::NodeProperty2>{}, offers);

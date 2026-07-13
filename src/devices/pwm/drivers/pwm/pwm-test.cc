@@ -92,10 +92,9 @@ class FakePwmImpl : public ddk::PwmImplProtocol<FakePwmImpl> {
 
 class PwmTestEnvironment : public fdf_testing::Environment {
  public:
-  void Init(const fuchsia_hardware_pwm::PwmChannelsMetadata& metadata) {
+  void Init(fuchsia_hardware_pwm::PwmChannelsMetadata metadata) {
     device_server_.Initialize("default", std::nullopt, pwm_impl_.GetBanjoConfig());
-
-    ASSERT_OK(metadata_server_.SetMetadata(metadata));
+    metadata_ = std::move(metadata);
   }
 
   zx::result<> Serve(fdf::OutgoingDirectory& to_driver_vfs) override {
@@ -105,8 +104,11 @@ class PwmTestEnvironment : public fdf_testing::Environment {
       return zx::error(status);
     }
 
-    if (zx::result result = metadata_server_.Serve(to_driver_vfs, dispatcher); result.is_error()) {
-      return result.take_error();
+    if (metadata_.has_value()) {
+      if (zx::result result = metadata_server_.Serve(to_driver_vfs, dispatcher, metadata_.value());
+          result.is_error()) {
+        return result.take_error();
+      }
     }
 
     return zx::ok();
@@ -118,6 +120,7 @@ class PwmTestEnvironment : public fdf_testing::Environment {
   FakePwmImpl pwm_impl_;
   compat::DeviceServer device_server_;
   fdf_metadata::MetadataServer<fuchsia_hardware_pwm::PwmChannelsMetadata> metadata_server_;
+  std::optional<fuchsia_hardware_pwm::PwmChannelsMetadata> metadata_;
 };
 
 class FixtureConfig final {

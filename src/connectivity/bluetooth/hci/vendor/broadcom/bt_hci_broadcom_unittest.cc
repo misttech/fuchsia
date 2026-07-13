@@ -445,10 +445,11 @@ class TestEnvironment : fdf_testing::Environment {
       return result.take_error();
     }
 
+    async_dispatcher_t* dispatcher = fdf::Dispatcher::GetCurrent()->async_dispatcher();
+
     // Serve our firmware directory locally
     auto dir_endpoints = fidl::Endpoints<fuchsia_io::Directory>::Create();
-    firmware_server_.SetDispatcher(fdf::Dispatcher::GetCurrent()->async_dispatcher());
-
+    firmware_server_.SetDispatcher(dispatcher);
     ZX_ASSERT(firmware_server_.ServeDirectory(firmware_dir_, std::move(dir_endpoints.server)) ==
               ZX_OK);
     // Attach the firmware directory endpoint to "pkg/lib"
@@ -472,12 +473,15 @@ class TestEnvironment : fdf_testing::Environment {
     }
 
     result = to_driver_vfs.AddService<fhbt::HciService>(transport_device_.GetHciInstanceHandler());
-    ZX_ASSERT(mac_address_metadata_server_
-                  .Serve(to_driver_vfs, fdf::Dispatcher::GetCurrent()->async_dispatcher())
-                  .is_ok());
-
     EXPECT_TRUE(result.is_ok());
 
+    if (mac_address_.has_value()) {
+      zx::result result =
+          mac_address_metadata_server_.Serve(to_driver_vfs, dispatcher, mac_address_.value());
+      if (result.is_error()) {
+        return result.take_error();
+      }
+    }
     return zx::ok();
   }
 
@@ -497,12 +501,8 @@ class TestEnvironment : fdf_testing::Environment {
   }
 
   zx_status_t SetMacAddressMetadata(std::array<uint8_t, 6> mac_address_octets) {
-    fuchsia_boot_metadata::MacAddressMetadata metadata{{.mac_address{mac_address_octets}}};
-    zx::result result = mac_address_metadata_server_.SetMetadata(metadata);
-    if (result.is_error()) {
-      return result.status_value();
-    }
-
+    mac_address_.emplace(
+        fuchsia_boot_metadata::MacAddressMetadata({.mac_address{mac_address_octets}}));
     return ZX_OK;
   }
 
@@ -515,9 +515,9 @@ class TestEnvironment : fdf_testing::Environment {
   fs::SynchronousVfs firmware_server_;
   fdf_metadata::MetadataServer<fuchsia_boot_metadata::MacAddressMetadata>
       mac_address_metadata_server_;
-
   FakePowerBroker fake_power_broker_;
   FakePowerTokenProvider fake_power_token_provider_;
+  std::optional<fuchsia_boot_metadata::MacAddressMetadata> mac_address_;
 };
 
 class FixtureConfig final {

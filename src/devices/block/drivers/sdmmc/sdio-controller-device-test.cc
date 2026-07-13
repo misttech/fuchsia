@@ -321,11 +321,8 @@ class Environment : public fdf_testing::Environment {
     fuchsia_hardware_sdmmc::SdmmcMetadata metadata{{
         .vccq_off_with_controller_off = true,
     }};
-    if (zx::result result = metadata_server_.SetMetadata(metadata); result.is_error()) {
-      return result.take_error();
-    }
     if (zx::result result = metadata_server_.Serve(
-            to_driver_vfs, fdf::Dispatcher::GetCurrent()->async_dispatcher());
+            to_driver_vfs, fdf::Dispatcher::GetCurrent()->async_dispatcher(), metadata);
         result.is_error()) {
       return result.take_error();
     }

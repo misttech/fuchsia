@@ -58,7 +58,8 @@ void ScoConnectionServer::handle_unknown_method(
 }
 
 BtTransportUart::BtTransportUart()
-    : DriverBase2("bt-transport-uart"), sco_connection_server_(fit::bind_member(this, &BtTransportUart::OnScoData),
+    : DriverBase2("bt-transport-uart"),
+      sco_connection_server_(fit::bind_member(this, &BtTransportUart::OnScoData),
                              fit::bind_member(this, &BtTransportUart::OnScoStop),
                              fit::bind_member(this, &BtTransportUart::OnAckReceive)) {
   // Pre-allocate the vector size to avoid resizing. Reserve the space for packet indicator by +1 on
@@ -137,22 +138,23 @@ zx::result<> BtTransportUart::Start(fdf::DriverContext context) {
     return zx::error(status);
   }
 
-  if (zx::result result = mac_address_metadata_server_.ForwardMetadataIfExists(incoming_);
+  if (zx::result result =
+          mac_address_metadata_server_.ForwardAndServe(*outgoing(), dispatcher(), incoming_);
       result.is_error()) {
     fdf::error("Failed to forward mac address metadata: {}", result);
     return result.take_error();
   }
-  if (zx::result result = mac_address_metadata_server_.Serve(*outgoing(), dispatcher());
-      result.is_error()) {
-    fdf::error("Failed to server mac address metadata: {}", result);
-    return result.take_error();
-  }
 
+  // Add child node for the vendor driver to bind.
+  // Build offers
   std::vector<fuchsia_driver_framework::Offer> offers = {
       fdf::MakeOffer2<fhbt::HciService>(),
       fdf::MakeOffer2<fuchsia_hardware_serialimpl::Service>(),
-      mac_address_metadata_server_.MakeOffer(),
   };
+  std::optional mac_address_offer = mac_address_metadata_server_.CreateOffer();
+  if (mac_address_offer.has_value()) {
+    offers.push_back(std::move(mac_address_offer.value()));
+  }
 
   if (config.enable_suspend()) {
     // Forward PowerTokenService to our parent if suspend is enabled.

@@ -49,14 +49,6 @@ fpromise::promise<void, zx_status_t> InitMetadataServer(
   pdev->GetMetadata(FidlType::kSerializableName)
       .Then([&metadata_server, &outgoing,
              completer = std::move(bridge.completer)](auto& persisted_metadata) mutable {
-        if (zx::result result =
-                metadata_server.Serve(outgoing, fdf::Dispatcher::GetCurrent()->async_dispatcher());
-            result.is_error()) {
-          fdf::error("Failed to serve metadata server: {}", result);
-          return completer.complete_error(result.status_value());
-          return;
-        }
-
         if (!persisted_metadata.ok()) {
           fdf::error("Failed to send GetMetadata request: {}", persisted_metadata.status_string());
           return completer.complete_error(persisted_metadata.status());
@@ -79,8 +71,10 @@ fpromise::promise<void, zx_status_t> InitMetadataServer(
           return completer.complete_error(metadata.error_value().status());
         }
 
-        if (zx::result result = metadata_server.SetMetadata(metadata.value()); result.is_error()) {
-          fdf::error("Failed to set metadata for metadata server: {}", result);
+        if (zx::result result = metadata_server.Serve(
+                outgoing, fdf::Dispatcher::GetCurrent()->async_dispatcher(), metadata.value());
+            result.is_error()) {
+          fdf::error("Failed to serve metadata: {}", result);
           return completer.complete_error(result.status_value());
         }
 

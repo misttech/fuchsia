@@ -153,7 +153,6 @@ class UsbFunction : public fidl::Server<fuchsia_hardware_usb_function::UsbFuncti
   fidl::ServerBindingGroup<fuchsia_hardware_usb_function::UsbFunction> bindings_;
   fidl::WireSharedClient<fuchsia_driver_framework::NodeController> child_;
   compat::SyncInitializedDeviceServer compat_server_;
-
   std::optional<fdf_metadata::MetadataServer<fuchsia_boot_metadata::MacAddressMetadata>>
       mac_address_metadata_server_;
   std::optional<fdf_metadata::MetadataServer<fuchsia_boot_metadata::SerialNumberMetadata>>

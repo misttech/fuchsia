@@ -129,23 +129,29 @@ class Environment : public fdf_testing::Environment {
       }
     }
 
-    if (zx::result result = clock_init_metadata_server_.Serve(to_driver_vfs, dispatcher);
-        result.is_error()) {
-      return result.take_error();
+    if (clock_init_metadata_.has_value()) {
+      if (zx::result result = clock_init_metadata_server_.Serve(to_driver_vfs, dispatcher,
+                                                                clock_init_metadata_.value());
+          result.is_error()) {
+        return result.take_error();
+      }
     }
 
-    if (zx::result result = clock_ids_metadata_server_.Serve(to_driver_vfs, dispatcher);
-        result.is_error()) {
-      return result.take_error();
+    if (clock_ids_metadata_.has_value()) {
+      if (zx::result result = clock_ids_metadata_server_.Serve(to_driver_vfs, dispatcher,
+                                                               clock_ids_metadata_.value());
+          result.is_error()) {
+        return result.take_error();
+      }
     }
 
     return zx::ok();
   }
 
-  void Init(const fuchsia_hardware_clockimpl::InitMetadata& clock_init_metadata,
-            const fuchsia_hardware_clockimpl::ClockIdsMetadata& clock_ids_metadata) {
-    ASSERT_OK(clock_init_metadata_server_.SetMetadata(clock_init_metadata));
-    ASSERT_OK(clock_ids_metadata_server_.SetMetadata(clock_ids_metadata));
+  void Init(fuchsia_hardware_clockimpl::InitMetadata clock_init_metadata,
+            fuchsia_hardware_clockimpl::ClockIdsMetadata clock_ids_metadata) {
+    clock_init_metadata_ = std::move(clock_init_metadata);
+    clock_ids_metadata_ = std::move(clock_ids_metadata);
   }
 
   FakeClockImpl& clock_impl() { return clock_impl_; }
@@ -156,6 +162,8 @@ class Environment : public fdf_testing::Environment {
       clock_init_metadata_server_;
   fdf_metadata::MetadataServer<fuchsia_hardware_clockimpl::ClockIdsMetadata>
       clock_ids_metadata_server_;
+  std::optional<fuchsia_hardware_clockimpl::InitMetadata> clock_init_metadata_;
+  std::optional<fuchsia_hardware_clockimpl::ClockIdsMetadata> clock_ids_metadata_;
 };
 
 class ClockTestConfig {

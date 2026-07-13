@@ -216,14 +216,16 @@ class FakePowerBroker {
 class TestEnvironment : public fdf_testing::Environment {
  public:
   zx::result<> Serve(fdf::OutgoingDirectory& to_driver_vfs) override {
-    zx::result result =
-        metadata_server.Serve(to_driver_vfs, fdf::Dispatcher::GetCurrent()->async_dispatcher());
-    if (result.is_error()) {
-      return result.take_error();
+    if (metadata_.has_value()) {
+      zx::result result = metadata_server.Serve(
+          to_driver_vfs, fdf::Dispatcher::GetCurrent()->async_dispatcher(), metadata_.value());
+      if (result.is_error()) {
+        return result.take_error();
+      }
     }
 
     // Serve (fake) cpu_element_manager.
-    result =
+    zx::result result =
         to_driver_vfs.component().AddUnmanagedProtocol<fuchsia_power_system::CpuElementManager>(
             cpu_element_manager.CreateHandler());
     if (result.is_error()) {
@@ -247,18 +249,21 @@ class TestEnvironment : public fdf_testing::Environment {
 
   void SetMetadata(bool removable, fuchsia_hardware_sdmmc::SdmmcHostPrefs speed_capabilities,
                    bool use_fidl) {
-    std::ignore = metadata_server.SetMetadata(fuchsia_hardware_sdmmc::SdmmcMetadata{{
+    metadata_ = fuchsia_hardware_sdmmc::SdmmcMetadata{{
         .speed_capabilities = speed_capabilities,
         .enable_cache = true,
         .removable = removable,
         .max_command_packing = 16,
         .use_fidl = use_fidl,
-    }});
+    }};
   }
 
   fdf_metadata::MetadataServer<fuchsia_hardware_sdmmc::SdmmcMetadata> metadata_server;
   FakePowerBroker power_broker;
   FakeCpuElementManager cpu_element_manager;
+
+ private:
+  std::optional<fuchsia_hardware_sdmmc::SdmmcMetadata> metadata_;
 };
 
 class TestConfig final {

@@ -480,7 +480,7 @@ zx::result<> AmlPower::Start(fdf::DriverContext context) {
   }
 
   std::vector offers = compat_server_.CreateOffers2();
-  std::optional metadata_offer = metadata_server_.MakeOffer();
+  std::optional metadata_offer = metadata_server_.CreateOffer();
   if (metadata_offer.has_value()) {
     offers.push_back(std::move(metadata_offer.value()));
   }

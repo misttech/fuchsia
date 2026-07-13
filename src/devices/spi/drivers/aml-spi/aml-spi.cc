@@ -954,16 +954,12 @@ void AmlSpiDriver::AddNode(
   // Setup SPI bus metadata server.
   {
     if (spi_bus_metadata.has_value()) {
-      if (zx::result result = spi_metadata_server_.SetMetadata(spi_bus_metadata.value());
+      if (zx::result result =
+              spi_metadata_server_.Serve(*outgoing(), dispatcher(), spi_bus_metadata.value());
           result.is_error()) {
-        fdf::error("Failed to set metadata for metadata server: {}", result);
+        fdf::error("Failed to serve metadata server: {}", result);
         return completer(result.take_error());
       }
-    }
-    if (zx::result result = spi_metadata_server_.Serve(*outgoing(), dispatcher());
-        result.is_error()) {
-      fdf::error("Failed to serve metadata server: {}", result);
-      return completer(result.take_error());
     }
   }
 
@@ -1055,9 +1051,15 @@ void AmlSpiDriver::AddNode(
 
   std::vector<fuchsia_driver_framework::wire::Offer> offers = {
       fdf::MakeOffer2<fuchsia_hardware_spiimpl::Service>(arena, component::kDefaultInstance),
-      spi_metadata_server_.MakeOffer(arena),
-      scheduler_role_name_metadata_server_.MakeOffer(arena),
   };
+  std::optional scheduler_role_name_offer = scheduler_role_name_metadata_server_.CreateOffer(arena);
+  if (scheduler_role_name_offer.has_value()) {
+    offers.push_back(std::move(scheduler_role_name_offer.value()));
+  }
+  std::optional spi_metadata_offer = spi_metadata_server_.CreateOffer(arena);
+  if (spi_metadata_offer.has_value()) {
+    offers.push_back(std::move(spi_metadata_offer.value()));
+  }
   const auto args = fuchsia_driver_framework::wire::NodeAddArgs::Builder(arena)
                         .name(arena, devname)
                         .offers2(arena, std::move(offers))

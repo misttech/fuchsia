@@ -42,14 +42,10 @@ class TestSpiDriver : public fdf::DriverBase2,
     }
 
     zx::result pdev = incoming_ptr->Connect<fuchsia_hardware_platform_device::Service::Device>();
-    if (zx::result result = spi_metadata_server_.SetMetadataFromPDevIfExists(pdev.value());
+    if (zx::result result =
+            spi_metadata_server_.ForwardAndServe(*outgoing(), dispatcher(), pdev.value());
         result.is_error()) {
-      fdf::error("Failed to set SPI metadata from platform device: {}", result);
-      return result.take_error();
-    }
-    if (zx::result result = spi_metadata_server_.Serve(*outgoing(), dispatcher());
-        result.is_error()) {
-      fdf::error("Failed to serve SPI metadata: {}", result);
+      fdf::error("Failed to forward SPI metadata: {}", result);
       return result.take_error();
     }
 
@@ -67,7 +63,10 @@ class TestSpiDriver : public fdf::DriverBase2,
 
     std::vector offers = compat_server_.CreateOffers2();
     offers.push_back(fdf::MakeOffer2<fuchsia_hardware_spiimpl::Service>());
-    offers.push_back(spi_metadata_server_.MakeOffer());
+    std::optional metadata_offer = spi_metadata_server_.CreateOffer();
+    if (metadata_offer.has_value()) {
+      offers.push_back(std::move(metadata_offer.value()));
+    }
     zx::result child =
         AddChild(kChildNodeName, std::vector<fuchsia_driver_framework::NodeProperty>{}, offers);
     if (child.is_error()) {

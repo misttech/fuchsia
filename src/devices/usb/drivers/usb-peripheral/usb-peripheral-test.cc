@@ -341,15 +341,17 @@ class FakeEvents : public fidl::WireServer<fperipheral::Events> {
 class UsbPeripheralTestEnvironment : public fdf_testing::Environment {
  public:
   void Init(std::string_view serial_number) {
-    fuchsia_boot_metadata::SerialNumberMetadata metadata{{.serial_number{serial_number}}};
-    ASSERT_OK(serial_number_metadata_server_.SetMetadata(metadata));
+    serial_number_ = fuchsia_boot_metadata::SerialNumberMetadata{{.serial_number{serial_number}}};
   }
 
   zx::result<> Serve(fdf::OutgoingDirectory& to_driver_vfs) override {
-    if (zx::result result = serial_number_metadata_server_.Serve(
-            to_driver_vfs, fdf::Dispatcher::GetCurrent()->async_dispatcher());
-        result.is_error()) {
-      return result.take_error();
+    if (serial_number_.has_value()) {
+      if (zx::result result = serial_number_metadata_server_.Serve(
+              to_driver_vfs, fdf::Dispatcher::GetCurrent()->async_dispatcher(),
+              serial_number_.value());
+          result.is_error()) {
+        return result.take_error();
+      }
     }
 
     if (zx::result result = to_driver_vfs.AddService<fdci::UsbDciService>(dci_.GetHandler());
@@ -368,6 +370,7 @@ class UsbPeripheralTestEnvironment : public fdf_testing::Environment {
   FakeDevice dci_;
   fdf_metadata::MetadataServer<fuchsia_boot_metadata::SerialNumberMetadata>
       serial_number_metadata_server_;
+  std::optional<fuchsia_boot_metadata::SerialNumberMetadata> serial_number_;
 };
 
 class UsbPeripheralTestConfig {

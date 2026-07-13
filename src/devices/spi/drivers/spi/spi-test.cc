@@ -303,16 +303,21 @@ class FakeSpiImplServer : public fdf::WireServer<fuchsia_hardware_spiimpl::SpiIm
 class TestEnvironment : public fdf_testing::Environment {
  public:
   zx::result<> Serve(fdf::OutgoingDirectory& to_driver_vfs) override {
-    if (zx::result result = spi_metadata_server_.Serve(
-            to_driver_vfs, fdf::Dispatcher::GetCurrent()->async_dispatcher());
-        result.is_error()) {
-      return result.take_error();
+    if (spi_metadata_.has_value()) {
+      if (zx::result result = spi_metadata_server_.Serve(
+              to_driver_vfs, fdf::Dispatcher::GetCurrent()->async_dispatcher(),
+              spi_metadata_.value());
+          result.is_error()) {
+        return result.take_error();
+      }
     }
 
-    if (zx::result result = scheduler_role_name_metadata_server_.Serve(
-            to_driver_vfs, fdf::Dispatcher::GetCurrent()->async_dispatcher());
-        result.is_error()) {
-      return result.take_error();
+    if (role_name_.has_value()) {
+      if (zx::result result = scheduler_role_name_metadata_server_.Serve(
+              to_driver_vfs, fdf::Dispatcher::GetCurrent()->async_dispatcher(), role_name_.value());
+          result.is_error()) {
+        return result.take_error();
+      }
     }
 
     return to_driver_vfs.AddService<fuchsia_hardware_spiimpl::Service>(
@@ -322,23 +327,19 @@ class TestEnvironment : public fdf_testing::Environment {
   }
 
   void SetSchedulerRoleName(std::string role_name) {
-    fuchsia_scheduler::RoleName scheduler_role_name(std::move(role_name));
-    EXPECT_OK(scheduler_role_name_metadata_server_.SetMetadata(scheduler_role_name));
+    role_name_ = fuchsia_scheduler::RoleName(std::move(role_name));
   }
 
   zx::result<> SetSpiChannelCount(uint32_t count) {
     std::vector<fuchsia_hardware_spi_businfo::SpiChannel> channels;
+    channels.reserve(count);
     for (uint32_t i = 0; i < count; i++) {
       channels.emplace_back(
           fuchsia_hardware_spi_businfo::SpiChannel{{.cs = i, .vid = 0, .pid = 0, .did = 0}});
     }
 
-    fuchsia_hardware_spi_businfo::SpiBusMetadata metadata{
-        {.channels = std::move(channels), .bus_id = 0}};
-
-    if (zx::result result = spi_metadata_server_.SetMetadata(metadata); result.is_error()) {
-      return result.take_error();
-    }
+    spi_metadata_ = fuchsia_hardware_spi_businfo::SpiBusMetadata(
+        {.channels = std::move(channels), .bus_id = 0});
 
     return zx::ok();
   }
@@ -349,6 +350,8 @@ class TestEnvironment : public fdf_testing::Environment {
   FakeSpiImplServer fake_spi_impl_;
   fdf_metadata::MetadataServer<fuchsia_hardware_spi_businfo::SpiBusMetadata> spi_metadata_server_;
   fdf_metadata::MetadataServer<fuchsia_scheduler::RoleName> scheduler_role_name_metadata_server_;
+  std::optional<fuchsia_hardware_spi_businfo::SpiBusMetadata> spi_metadata_;
+  std::optional<fuchsia_scheduler::RoleName> role_name_;
 };
 
 struct FixtureConfig {

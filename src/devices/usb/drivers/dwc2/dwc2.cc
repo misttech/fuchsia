@@ -1172,27 +1172,19 @@ zx_status_t Dwc2::Init(fdf::DriverContext& context, const dwc2_config::Config& c
   }
 
   // Initialize mac address metadata server.
-  if (zx::result result = mac_address_metadata_server_.ForwardMetadataIfExists(incoming, "pdev");
+  if (zx::result result =
+          mac_address_metadata_server_.ForwardAndServe(*outgoing(), dispatcher(), incoming, "pdev");
       result.is_error()) {
     fdf::error("Failed to forward mac address metadata: {}", result);
     return result.status_value();
   }
-  if (zx::result serve = mac_address_metadata_server_.Serve(*outgoing(), dispatcher());
-      serve.is_error()) {
-    fdf::error("Failed to serve mac address metadata: {}", serve);
-    return serve.status_value();
-  }
 
   // Initialize serial number metadata server.
-  if (zx::result result = serial_number_metadata_server_.ForwardMetadataIfExists(incoming, "pdev");
+  if (zx::result result = serial_number_metadata_server_.ForwardAndServe(*outgoing(), dispatcher(),
+                                                                         incoming, "pdev");
       result.is_error()) {
     fdf::error("Failed to forward serial number metadata: {}", result);
     return result.status_value();
-  }
-  if (zx::result serve = serial_number_metadata_server_.Serve(*outgoing(), dispatcher());
-      serve.is_error()) {
-    fdf::error("Failed to serve serial number metadata: {}", serve);
-    return serve.status_value();
   }
 
   // USB PHY protocol is optional.
@@ -1243,11 +1235,15 @@ zx_status_t Dwc2::Init(fdf::DriverContext& context, const dwc2_config::Config& c
                          bind_fuchsia_designware_platform::BIND_PLATFORM_DEV_DID_DWC2),
   };
 
-  std::vector offers{
-      fdf::MakeOffer2<fdci::UsbDciService>(),
-      mac_address_metadata_server_.MakeOffer(),
-      serial_number_metadata_server_.MakeOffer(),
-  };
+  std::vector offers = {fdf::MakeOffer2<fdci::UsbDciService>()};
+  std::optional mac_address_offer = mac_address_metadata_server_.CreateOffer();
+  if (mac_address_offer.has_value()) {
+    offers.push_back(std::move(mac_address_offer.value()));
+  }
+  std::optional serial_number_offer = serial_number_metadata_server_.CreateOffer();
+  if (serial_number_offer.has_value()) {
+    offers.push_back(std::move(serial_number_offer.value()));
+  }
 
   zx::result child = AddChild(name(), props, offers);
   if (child.is_error()) {

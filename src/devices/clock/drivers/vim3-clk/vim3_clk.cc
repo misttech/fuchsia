@@ -38,28 +38,18 @@ zx::result<> Vim3Clock::Start(fdf::DriverContext context) {
   fdf::PDev pdev{std::move(pdev_client_end.value())};
 
 #if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
-  // Serve clock IDs metadata.
-  if (zx::result result = clock_ids_metadata_server_.SetMetadataFromPDevIfExists(pdev);
+  if (zx::result result =
+          clock_ids_metadata_server_.ForwardAndServe(*outgoing(), dispatcher(), pdev);
       result.is_error()) {
-    fdf::error("Failed to set metadata for clock ID's metadata server: {}", result);
-    return result.take_error();
-  }
-  if (zx::result result = clock_ids_metadata_server_.Serve(*outgoing(), dispatcher());
-      result.is_error()) {
-    fdf::error("Failed to serve clock ID's: {}", result);
+    fdf::error("Failed to forward clock IDs: {}", result);
     return result.take_error();
   }
 #endif
 
-  // Serve clock init metadata.
-  if (zx::result result = clock_init_metadata_server_.SetMetadataFromPDevIfExists(pdev);
+  if (zx::result result =
+          clock_init_metadata_server_.ForwardAndServe(*outgoing(), dispatcher(), pdev);
       result.is_error()) {
-    fdf::error("Failed to set metadata for clock init metadata server: {}", result);
-    return result.take_error();
-  }
-  if (zx::result result = clock_init_metadata_server_.Serve(*outgoing(), dispatcher());
-      result.is_error()) {
-    fdf::error("Failed to serve clock init metadata: {}", result);
+    fdf::error("Failed to forward clock init metadata: {}", result);
     return result.take_error();
   }
 
@@ -92,13 +82,20 @@ zx::result<> Vim3Clock::Start(fdf::DriverContext context) {
   // Add a child node.
   std::vector<fuchsia_driver_framework::Offer> offers = {
       fdf::MakeOffer2<fuchsia_hardware_clockimpl::Service>(),
-      clock_ids_metadata_server_.MakeOffer(),
-      clock_init_metadata_server_.MakeOffer(),
   };
+  std::optional clock_ids_offer = clock_ids_metadata_server_.CreateOffer();
+  if (clock_ids_offer.has_value()) {
+    offers.push_back(std::move(clock_ids_offer.value()));
+  }
+  std::optional clock_init_offer = clock_init_metadata_server_.CreateOffer();
+  if (clock_init_offer.has_value()) {
+    offers.push_back(std::move(clock_init_offer.value()));
+  }
 
   std::vector<fuchsia_driver_framework::NodeProperty2> properties = {};
   auto add_child_result = AddChild(child_name, properties, offers);
-  if (add_service_result.is_error()) {
+  if (add_child_result.is_error()) {
+    fdf::error("Failed to add child: {}", add_child_result);
     return add_child_result.take_error();
   }
 

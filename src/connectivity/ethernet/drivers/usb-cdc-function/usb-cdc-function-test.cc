@@ -177,10 +177,12 @@ class Environment : public fdf_testing::Environment {
                                                        fidl::kIgnoreBindingClosure),
     });
 
-    if (zx::result result = metadata_server_.Serve(
-            to_driver_vfs, fdf::Dispatcher::GetCurrent()->async_dispatcher());
-        result.is_error()) {
-      return result.take_error();
+    if (mac_address_.has_value()) {
+      if (zx::result result =
+              metadata_server_.Serve(to_driver_vfs, dispatcher, mac_address_.value());
+          result.is_error()) {
+        return result.take_error();
+      }
     }
 
     if (zx::result result =
@@ -200,6 +202,7 @@ class Environment : public fdf_testing::Environment {
   fidl::ServerBindingGroup<fuchsia_hardware_usb_function::UsbFunction> usb_function_bindings_;
   fdf_metadata::MetadataServer<fuchsia_boot_metadata::MacAddressMetadata> metadata_server_;
   FakeNetworkDeviceIfc fake_ifc_;
+  std::optional<fuchsia_boot_metadata::MacAddressMetadata> mac_address_;
 };
 
 class UsbCdcTestConfig final {
@@ -219,8 +222,8 @@ class UsbCdcTest : public ::testing::Test {
     libsync::Completion function_configured;
     driver_test_.RunInEnvironmentTypeContext([server = std::move(endpoints->server), &port_ready,
                                               &function_configured](Environment& env) mutable {
-      EXPECT_TRUE(
-          env.metadata_server_.SetMetadata({{.mac_address = {{{.octets = kTestMac}}}}}).is_ok());
+      env.mac_address_ =
+          fuchsia_boot_metadata::MacAddressMetadata{{.mac_address = {{{.octets = kTestMac}}}}};
       fdf::BindServer(fdf::Dispatcher::GetCurrent()->get(), std::move(server), &env.fake_ifc_);
       env.fake_ifc_.set_on_add_port([&port_ready]() { port_ready.Signal(); });
       env.fake_usb_fidl_.set_on_configure(

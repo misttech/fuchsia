@@ -329,12 +329,9 @@ zx::result<> AmlI2c::Start(fdf::DriverContext context) {
 
   fdf::PDev pdev{std::move(pdev_client_end.value())};
 
-  if (zx::result result = metadata_server_.SetMetadataFromPDevIfExists(pdev); result.is_error()) {
-    fdf::error("Failed to set metadata for metadata server: {}", result);
-    return result.take_error();
-  }
-  if (zx::result result = metadata_server_.Serve(*outgoing(), dispatcher()); result.is_error()) {
-    fdf::error("Failed to serve metadata: {}", result);
+  if (zx::result result = metadata_server_.ForwardAndServe(*outgoing(), dispatcher(), pdev);
+      result.is_error()) {
+    fdf::error("Failed to forward and serve metadata: {}", result);
     return result.take_error();
   }
 
@@ -425,10 +422,12 @@ zx_status_t AmlI2c::CreateChildNode() {
     return controller_endpoints.status_value();
   }
 
-  fuchsia_driver_framework::Offer offers[]{
-      fdf::MakeOffer2<fuchsia_hardware_i2cimpl::Service>(component::kDefaultInstance),
-      metadata_server_.MakeOffer(),
-  };
+  std::vector<fuchsia_driver_framework::Offer> offers = {
+      fdf::MakeOffer2<fuchsia_hardware_i2cimpl::Service>(component::kDefaultInstance)};
+  std::optional metadata_offer = metadata_server_.CreateOffer();
+  if (metadata_offer.has_value()) {
+    offers.push_back(std::move(metadata_offer.value()));
+  }
 
   zx::result child =
       AddChild(kChildNodeName, std::vector<fuchsia_driver_framework::NodeProperty2>{}, offers);

@@ -1608,11 +1608,8 @@ zx_status_t Sdhci::Init() {
         .WriteTo(&*regs_cqhci_mmio_buffer_);
   }
 
-  if (zx::result result = metadata_server_.SetMetadata(metadata); result.is_error()) {
-    fdf::error("Failed to set metadata for metadata server: {}", result.status_string());
-    return result.status_value();
-  }
-  if (zx::result result = metadata_server_.Serve(*outgoing(), dispatcher()); result.is_error()) {
+  if (zx::result result = metadata_server_.Serve(*outgoing(), dispatcher(), metadata);
+      result.is_error()) {
     fdf::error("Failed to serve metadata server: {}", result.status_string());
     return result.status_value();
   }
@@ -1796,10 +1793,12 @@ zx::result<> Sdhci::Start(fdf::DriverContext context) {
     return result;
   }
 
-  std::vector<fuchsia_driver_framework::Offer> offers{
-      metadata_server_.MakeOffer(),
-      fdf::MakeOffer2<fuchsia_hardware_sdmmc::SdmmcService>(),
-  };
+  std::vector<fuchsia_driver_framework::Offer> offers;
+  std::optional metadata_offer = metadata_server_.CreateOffer();
+  if (metadata_offer.has_value()) {
+    offers.push_back(std::move(metadata_offer.value()));
+  }
+  offers.push_back(fdf::MakeOffer2<fuchsia_hardware_sdmmc::SdmmcService>());
 
   // The SDHCI core driver does not have to take any action when the SDMMC device or controller
   // power elements change state. Therefore we can simply forward PowerTokenService from our parent

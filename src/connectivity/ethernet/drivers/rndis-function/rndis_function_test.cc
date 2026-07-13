@@ -228,9 +228,12 @@ class RndisFunctionTestEnvironment : public fdf_testing::Environment {
       return zx::error(status);
     }
 
-    if (zx::result result = mac_address_metadata_server_.Serve(to_driver_vfs, dispatcher);
-        result.is_error()) {
-      return result.take_error();
+    if (mac_address_.has_value()) {
+      if (zx::result result =
+              mac_address_metadata_server_.Serve(to_driver_vfs, dispatcher, mac_address_.value());
+          result.is_error()) {
+        return result.take_error();
+      }
     }
 
     ffunction::UsbFunctionService::InstanceHandler handler({
@@ -254,6 +257,7 @@ class RndisFunctionTestEnvironment : public fdf_testing::Environment {
   fdf_metadata::MetadataServer<fuchsia_boot_metadata::MacAddressMetadata>
       mac_address_metadata_server_;
   FakeNetworkDeviceIfc fake_ifc_;
+  std::optional<fuchsia_boot_metadata::MacAddressMetadata> mac_address_;
 };
 
 class FixtureConfig final {
@@ -275,8 +279,8 @@ class RndisFunctionTest : public ::testing::Test {
     driver_test_.RunInEnvironmentTypeContext(
         [server = std::move(endpoints->server), &port_ready,
          &configure_done](RndisFunctionTestEnvironment& env) mutable {
-          EXPECT_OK(env.mac_address_metadata_server_.SetMetadata(
-              {{.mac_address = {{{.octets = kMacAddr}}}}}));
+          env.mac_address_ =
+              fuchsia_boot_metadata::MacAddressMetadata{{.mac_address = {{{.octets = kMacAddr}}}}};
           fdf::BindServer(fdf::Dispatcher::GetCurrent()->get(), std::move(server), &env.fake_ifc_);
           env.fake_ifc_.set_on_add_port([&port_ready]() { port_ready.Signal(); });
           env.fake_function_.set_on_configure([&configure_done]() { configure_done.Signal(); });

@@ -553,12 +553,8 @@ zx::result<> AmlPwmDriver::Start(fdf::DriverContext context) {
   }
   const auto& metadata = metadata_result.value();
 
-  if (zx::result result = metadata_server_.SetMetadata(metadata); result.is_error()) {
-    fdf::error("Failed to set metadata: {}", result);
-    return result.take_error();
-  }
-
-  if (zx::result result = metadata_server_.Serve(*outgoing(), dispatcher()); result.is_error()) {
+  if (zx::result result = metadata_server_.Serve(*outgoing(), dispatcher(), metadata);
+      result.is_error()) {
     fdf::error("Failed to serve metadata: {}", result);
     return result.take_error();
   }
@@ -600,7 +596,10 @@ zx::result<> AmlPwmDriver::Start(fdf::DriverContext context) {
   }
 
   std::vector offers = compat_server_.CreateOffers2();
-  offers.push_back(metadata_server_.MakeOffer());
+  std::optional metadata_offer = metadata_server_.CreateOffer();
+  if (metadata_offer.has_value()) {
+    offers.push_back(std::move(metadata_offer.value()));
+  }
 
   std::vector<fuchsia_driver_framework::NodeProperty2> properties = {
       fdf::MakeProperty2(bind_fuchsia::PROTOCOL, static_cast<uint32_t>(ZX_PROTOCOL_PWM_IMPL))};

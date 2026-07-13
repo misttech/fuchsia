@@ -604,14 +604,21 @@ zx::result<> Dwc3::Start(fdf::DriverContext context) {
   };
 
   std::vector offers = {
-      // clang-format off
-        fdf::MakeOffer2<fdci::UsbDciService>(),
-        fdf::MakeOffer2<fpolicy::Service>(),
-        mac_address_metadata_server_.MakeOffer(),
-        serial_number_metadata_server_.MakeOffer(),
-        usb_phy_metadata_server_.MakeOffer(),
-      // clang-format on
+      fdf::MakeOffer2<fdci::UsbDciService>(),
+      fdf::MakeOffer2<fpolicy::Service>(),
   };
+  std::optional mac_address_offer = mac_address_metadata_server_.CreateOffer();
+  if (mac_address_offer.has_value()) {
+    offers.push_back(std::move(mac_address_offer.value()));
+  }
+  std::optional serial_number_offer = serial_number_metadata_server_.CreateOffer();
+  if (serial_number_offer.has_value()) {
+    offers.push_back(std::move(serial_number_offer.value()));
+  }
+  std::optional usb_phy_offer = usb_phy_metadata_server_.CreateOffer();
+  if (usb_phy_offer.has_value()) {
+    offers.push_back(std::move(usb_phy_offer.value()));
+  }
 
   auto child = AddChild("dwc3", properties, offers);
   if (child.is_error()) {
@@ -637,40 +644,24 @@ zx_status_t Dwc3::AcquirePDevResources() {
   }
   pdev_ = fdf::PDev{std::move(pdev_client_end.value())};
 
-  // Initialize usb-phy metadata server.
-  if (zx::result result = usb_phy_metadata_server_.SetMetadataFromPDevIfExists(pdev_);
+  if (zx::result result =
+          usb_phy_metadata_server_.ForwardAndServe(*outgoing(), dispatcher(), pdev_);
       result.is_error()) {
     fdf::error("Failed to forward usb-phy metadata: {}", result);
     return result.status_value();
   }
-  if (zx::result result = usb_phy_metadata_server_.Serve(*outgoing(), dispatcher());
-      result.is_error()) {
-    fdf::error("Failed to serve usb-phy address metadata: {}", result);
-    return result.status_value();
-  }
 
-  // Initialize mac address metadata server.
-  if (zx::result result = mac_address_metadata_server_.ForwardMetadataIfExists(incoming(), "pdev");
+  if (zx::result result = mac_address_metadata_server_.ForwardAndServe(*outgoing(), dispatcher(),
+                                                                       incoming(), "pdev");
       result.is_error()) {
     fdf::error("Failed to forward mac address metadata: {}", result);
     return result.status_value();
   }
-  if (zx::result result = mac_address_metadata_server_.Serve(*outgoing(), dispatcher());
-      result.is_error()) {
-    fdf::error("Failed to serve mac address metadata: {}", result);
-    return result.status_value();
-  }
 
-  // Initialize serial number metadata server.
-  if (zx::result result =
-          serial_number_metadata_server_.ForwardMetadataIfExists(incoming(), "pdev");
+  if (zx::result result = serial_number_metadata_server_.ForwardAndServe(*outgoing(), dispatcher(),
+                                                                         incoming(), "pdev");
       result.is_error()) {
     fdf::error("Failed to forward serial number metadata: {}", result);
-    return result.status_value();
-  }
-  if (zx::result result = serial_number_metadata_server_.Serve(*outgoing(), dispatcher());
-      result.is_error()) {
-    fdf::error("Failed to serve serial number metadata: {}", result);
     return result.status_value();
   }
 

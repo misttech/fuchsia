@@ -36,14 +36,10 @@ zx::result<> AmlUartV2::Start(fdf::DriverContext context) {
   }
   fdf::PDev pdev{std::move(pdev_client_end.value())};
 
-  if (zx::result result = mac_address_metadata_server_.ForwardMetadataIfExists(incoming);
+  if (zx::result result =
+          mac_address_metadata_server_.ForwardAndServe(*outgoing(), dispatcher(), incoming);
       result.is_error()) {
     fdf::error("Failed to forward mac address metadata: {}", result);
-    return result.take_error();
-  }
-  if (zx::result result = mac_address_metadata_server_.Serve(*outgoing(), dispatcher());
-      result.is_error()) {
-    fdf::error("Failed to serve mac address metadata: {}", result);
     return result.take_error();
   }
 
@@ -105,8 +101,11 @@ zx::result<> AmlUartV2::Start(fdf::DriverContext context) {
 
   std::vector<fuchsia_driver_framework::Offer> offers = {
       fdf::MakeOffer2<fuchsia_hardware_serialimpl::Service>(kChildName),
-      mac_address_metadata_server_.MakeOffer(),
   };
+  std::optional mac_address_offer = mac_address_metadata_server_.CreateOffer();
+  if (mac_address_offer.has_value()) {
+    offers.push_back(std::move(mac_address_offer.value()));
+  }
 
   std::vector<fuchsia_driver_framework::NodeProperty2> properties = {{
       fdf::MakeProperty2(bind_fuchsia::SERIAL_CLASS,

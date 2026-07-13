@@ -177,19 +177,23 @@ class GpioTestEnvironment : public fdf_testing::Environment {
  public:
   zx::result<> Serve(fdf::OutgoingDirectory& to_driver_vfs) override {
     EXPECT_OK(pinimpl_.Serve(to_driver_vfs));
-    EXPECT_OK(pin_metadata_server_.Serve(to_driver_vfs,
-                                         fdf::Dispatcher::GetCurrent()->async_dispatcher()));
-    EXPECT_OK(scheduler_role_name_metadata_server_.Serve(
-        to_driver_vfs, fdf::Dispatcher::GetCurrent()->async_dispatcher()));
+    if (pin_metadata_.has_value()) {
+      EXPECT_OK(pin_metadata_server_.Serve(
+          to_driver_vfs, fdf::Dispatcher::GetCurrent()->async_dispatcher(), pin_metadata_.value()));
+    }
+    if (role_name_.has_value()) {
+      EXPECT_OK(scheduler_role_name_metadata_server_.Serve(
+          to_driver_vfs, fdf::Dispatcher::GetCurrent()->async_dispatcher(), role_name_.value()));
+    }
     return zx::ok();
   }
 
-  zx::result<> SetPinMetadata(const fuchsia_hardware_pinimpl::Metadata& metadata) {
-    return pin_metadata_server_.SetMetadata(metadata);
+  void SetPinMetadata(fuchsia_hardware_pinimpl::Metadata metadata) {
+    pin_metadata_ = std::move(metadata);
   }
 
-  zx::result<> SetSchedulerRoleName(const fuchsia_scheduler::RoleName& role_name) {
-    return scheduler_role_name_metadata_server_.SetMetadata(role_name);
+  void SetSchedulerRoleName(fuchsia_scheduler::RoleName role_name) {
+    role_name_ = std::move(role_name);
   }
 
   MockPinImpl& pinimpl() { return pinimpl_; }
@@ -198,6 +202,8 @@ class GpioTestEnvironment : public fdf_testing::Environment {
   MockPinImpl pinimpl_;
   fdf_metadata::MetadataServer<fuchsia_hardware_pinimpl::Metadata> pin_metadata_server_;
   fdf_metadata::MetadataServer<fuchsia_scheduler::RoleName> scheduler_role_name_metadata_server_;
+  std::optional<fuchsia_hardware_pinimpl::Metadata> pin_metadata_;
+  std::optional<fuchsia_scheduler::RoleName> role_name_;
 };
 
 class FixtureConfig final {
@@ -223,7 +229,7 @@ class GpioTest : public ::testing::Test {
  protected:
   void SetPinMetadata(const fuchsia_hardware_pinimpl::Metadata& metadata) {
     driver_test().RunInEnvironmentTypeContext(
-        [&](GpioTestEnvironment& env) { EXPECT_OK(env.SetPinMetadata(metadata)); });
+        [&](GpioTestEnvironment& env) { env.SetPinMetadata(metadata); });
   }
 
  private:
@@ -762,7 +768,7 @@ TEST_F(GpioTest, SchedulerRole) {
     // dispatcher. Verify that FIDL calls can still be made, and that dispatcher shutdown using the
     // unbind hook works.
     fuchsia_scheduler::RoleName kRoleName("no.such.scheduler.role");
-    EXPECT_OK(env.SetSchedulerRoleName(kRoleName));
+    env.SetSchedulerRoleName(kRoleName);
   });
 
   EXPECT_TRUE(driver_test()

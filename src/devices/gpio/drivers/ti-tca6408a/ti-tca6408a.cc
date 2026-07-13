@@ -55,26 +55,17 @@ zx::result<> TiTca6408aDevice::Start(fdf::DriverContext context) {
     return pdev.take_error();
   }
 
-  if (zx::result result = pin_metadata_server_.SetMetadataFromPDevIfExists(pdev.value());
+  if (zx::result result =
+          pin_metadata_server_.ForwardAndServe(*outgoing(), dispatcher(), pdev.value());
       result.is_error()) {
     fdf::error("Failed to set pin metadata from platform device: {}", result);
     return result.take_error();
   }
-  if (zx::result result = pin_metadata_server_.Serve(*outgoing(), dispatcher());
-      result.is_error()) {
-    fdf::error("Failed to serve pin metadata: {}", result);
-    return result.take_error();
-  }
 
-  if (zx::result result =
-          scheduler_role_name_metadata_server_.SetMetadataFromPDevIfExists(pdev.value());
+  if (zx::result result = scheduler_role_name_metadata_server_.ForwardAndServe(
+          *outgoing(), dispatcher(), pdev.value());
       result.is_error()) {
     fdf::error("Failed to set scheduler role name metadata from platform device: {}", result);
-    return result.take_error();
-  }
-  if (zx::result result = scheduler_role_name_metadata_server_.Serve(*outgoing(), dispatcher());
-      result.is_error()) {
-    fdf::error("Failed to serve scheduler role name metadata: {}", result);
     return result.take_error();
   }
 
@@ -89,9 +80,16 @@ TiTca6408aDevice::~TiTca6408aDevice() {
 }
 
 zx::result<> TiTca6408aDevice::CreateNode() {
-  fuchsia_driver_framework::Offer offers[]{fdf::MakeOffer2<fuchsia_hardware_pinimpl::Service>(),
-                                           pin_metadata_server_.MakeOffer(),
-                                           scheduler_role_name_metadata_server_.MakeOffer()};
+  std::vector<fuchsia_driver_framework::Offer> offers = {
+      fdf::MakeOffer2<fuchsia_hardware_pinimpl::Service>()};
+  std::optional pin_metadata_offer = pin_metadata_server_.CreateOffer();
+  if (pin_metadata_offer.has_value()) {
+    offers.push_back(std::move(pin_metadata_offer.value()));
+  }
+  std::optional scheduler_role_name_offer = scheduler_role_name_metadata_server_.CreateOffer();
+  if (scheduler_role_name_offer.has_value()) {
+    offers.push_back(std::move(scheduler_role_name_offer.value()));
+  }
 
   zx::result child =
       AddChild(kDeviceName, std::vector<fuchsia_driver_framework::NodeProperty>{}, offers);
