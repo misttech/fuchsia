@@ -5,6 +5,7 @@
 #include "src/virtualization/bin/vmm/device/virtio_net/src/cpp/guest_ethernet.h"
 
 #include <lib/async/cpp/task.h>
+#include <lib/sync/cpp/completion.h>
 #include <lib/syslog/cpp/macros.h>
 
 #include "src/virtualization/bin/vmm/device/virtio_net/src/cpp/guest_ethernet_interface.h"
@@ -81,7 +82,13 @@ void GuestEthernet::Teardown() {
   network_.Unbind();
   interface_registration_.Unbind();
 
-  device_interface_->Teardown([] {});
+  // Tear down the device interface and wait for completion before
+  // destroying the completion queues. This drains pending callbacks
+  // that capture raw |this| pointers through the completion queues.
+  libsync::Completion teardown_complete;
+  device_interface_->Teardown(
+      [&teardown_complete]() { teardown_complete.Signal(); });
+  teardown_complete.Wait();
 }
 
 zx_status_t GuestEthernet::Initialize(const void* rust_guest_ethernet, const uint8_t* mac,
