@@ -150,14 +150,14 @@ void cpp_spinlock_destroy(SpinLock* lock) { lock->~SpinLock(); }
 
 interrupt_saved_state_t cpp_spinlock_acquire_irqsave(
     SpinLock* lock, lockdep::LockClassId lcid, void* entry_storage) TA_NO_THREAD_SAFETY_ANALYSIS {
+  interrupt_saved_state_t state = arch_interrupt_save();
 #if WITH_LOCK_DEP
   if (lcid != nullptr && entry_storage != nullptr) {
     auto* entry = new (entry_storage) lockdep::AcquiredLockEntry(lock, lcid, 0);
     lockdep::ThreadLockState::Get(lockdep::LockFlagsIrqSafe)->Acquire(entry);
   }
 #endif
-  interrupt_saved_state_t state;
-  lock->AcquireIrqSave(state);
+  lock->Acquire();
   return state;
 }
 
