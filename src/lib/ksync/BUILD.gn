@@ -21,14 +21,17 @@ rustc_macro("ksync-macro") {
 rustc_library("ksync") {
   edition = "2024"
   sources = [
+    "src/brwlock.rs",
     "src/kcell.rs",
     "src/kmutex.rs",
     "src/lib.rs",
     "src/lock_token.rs",
+    "src/raw_kernel_brwlock.rs",
     "src/raw_kernel_event.rs",
     "src/raw_kernel_mutex.rs",
     "src/raw_lock.rs",
     "src/raw_spin_lock.rs",
+    "src/raw_userspace_brwlock.rs",
     "src/raw_userspace_mutex.rs",
   ]
   with_unit_tests = !is_kernel

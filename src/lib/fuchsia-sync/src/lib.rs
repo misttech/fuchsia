@@ -18,9 +18,9 @@ pub use mutex::RawSyncMutex as RawMutex;
 pub use parking_lot::RawMutex;
 
 #[cfg(not(target_os = "fuchsia"))]
-use parking_lot::RawRwLock;
+pub use parking_lot::RawRwLock;
 #[cfg(target_os = "fuchsia")]
-use rwlock::RawSyncRwLock as RawRwLock;
+pub use rwlock::RawSyncRwLock as RawRwLock;
 
 #[cfg(not(detect_lock_cycles))]
 type RawMutexImpl = RawMutex;

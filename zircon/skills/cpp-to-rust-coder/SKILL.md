@@ -158,9 +158,9 @@ let pinned_init = zr::pin_init_ffi!(extern_cpp_constructor_fn);
 
 ### 4. Token-Based "Ghost Token" Synchronization (`ksync`)
 
-Instead of encapsulating data inside a Mutex (like `std::sync::Mutex<T>`),
-Zircon's concurrency control separates the lock state (`KMutex`) from data
-storage (`KCell<T, Class>`).
+Instead of encapsulating data inside a lock structure (like
+`std::sync::Mutex<T>`), Zircon's concurrency control separates the lock state
+(`KMutex`, `BrwLockPi`) from data storage (`KCell<T, Class>`).
 
 ```mermaid
 sequenceDiagram
@@ -169,38 +169,44 @@ sequenceDiagram
     participant KMutex as KMutex<Class>
     participant KCell as KCell<T, Class>
 
-    Thread->>KMutex: lock()
+    Thread->>KMutex: lock_mu() / read_lock() / write_lock()
     activate KMutex
-    KMutex-->>Thread: KMutexGuard (holds LockToken)
+    KMutex-->>Thread: Lock Guard (holds LockToken)
     deactivate KMutex
     Note over Thread: Safe Mutability proof established
-    Thread->>KCell: get_mut(token)
-    KCell-->>Thread: &mut T
+    Thread->>KCell: get(token) / get_mut(token_mut)
+    KCell-->>Thread: &T / &mut T
 ```
 
-- **`LockToken<'a, Class>`**: A zero-sized compile-time proof that the exclusive
-  lock is held.
-- **`KMutex<Class>`**: The lock state. Pinned in memory to support safe FFI
-  active-list registration for loop-detector validation.
+- **`LockToken<'a, Class>`**: A zero-sized compile-time proof that a lock of
+  type `Class` is held.
+- **`KMutex<Class>` / `BrwLockPi<Class>`**: The lock state, pinned in memory to
+  support safe FFI active-list registration for loop-detector validation.
 - **`KCell<T, Class>`**: A wrapper around `UnsafeCell<T>` accessible only by
-  proving ownership of a matching `LockToken`.
+  proving ownership of a matching `LockToken` (via `.token()` for shared access,
+  or `.token_mut()` for exclusive access).
 
 #### The `#[guarded]` Procedural Macro:
-Annotate structures to automatically rewrite fields into `KMutex` and `KCell`
-wrappers, generating safe Guard and Split Accessor structures.
+Annotate structures to automatically rewrite fields into `KMutex`/`BrwLockPi`
+and `KCell` wrappers, and generate helper lock methods on the parent struct
+returning PinInit blocks for custom projection guards (which expose safe,
+compiler-checked field accessors without `unsafe` blocks).
 
 ```rust
-use ksync::{guarded, KMutex};
+use ksync::{guarded, KMutex, BrwLockPi};
 
 #[guarded]
 pub struct NetworkDevice {
     #[mutex]
     mu: KMutex,
 
+    #[brwlock]
+    lock: BrwLockPi,
+
     #[guarded_by(mu)]
     pub tx_packets: u64,
 
-    #[guarded_by(mu)]
+    #[guarded_by(lock)]
     pub rx_packets: u64,
 }
 ```
@@ -223,20 +229,33 @@ use pin_init::pin_init;
 
 pin_init::stack_pin_init!(let dev = pin_init!(NetworkDevice {
     mu <- KMutex::init(),
+    lock <- BrwLockPi::init(),
     tx_packets: 0.into(),
     rx_packets: 0.into(),
 }));
 
-// Pin-initialize the mutex guard
-lock!(let mut guard = dev.lock_mu());
+// Mutex Exclusive Write Access
+{
+    lock!(let mut guard = dev.lock_mu());
+    *guard.as_mut().tx_packets_mut() += 1;
 
-// Access individual fields mutably
-*guard.as_mut().tx_packets_mut() += 1;
+    // Disjoint mutable borrows of multiple fields simultaneously
+    let fields = guard.as_mut().fields_mut();
+    *fields.tx_packets += 1;
+    *fields.rx_packets += 1;
+}
 
-// Access disjoint borrows simultaneously
-let fields = guard.as_mut().fields_mut();
-*fields.tx_packets += 1;
-*fields.rx_packets += 1;
+// Reader-Writer Lock Shared Read Access
+{
+    lock!(let guard = dev.read_lock());
+    let rx = *guard.rx_packets();
+}
+
+// Reader-Writer Lock Exclusive Write Access
+{
+    lock!(let mut guard = dev.write_lock());
+    *guard.as_mut().rx_packets_mut() = 0;
+}
 ```
 
 #### Custom Raw Locking & RAII Guards:

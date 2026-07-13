@@ -5,11 +5,11 @@ low-level, `no_std` environments like the Zircon kernel.
 
 ## Purpose
 
-`KMutex` separates lock states from data. Instead of encapsulating protected
-data inside the mutex struct itself (like `std::sync::Mutex<T>`), the data
+`ksync` separates lock states from data. Instead of encapsulating protected
+data inside the lock struct itself (like `std::sync::Mutex<T>`), the data
 resides in separate fields of the same struct, wrapped in `KCell`. Access to
-these cells is granted only by presenting a zero-sized `LockToken` (held by the
-Guard returned when locking the mutex).
+these cells is granted only by presenting a `LockToken` (held by the
+guards returned when locking).
 
 This design is particularly useful when:
 
@@ -18,8 +18,8 @@ This design is particularly useful when:
     control.
 
 2.  **We need to support disjoint mutable borrows** of different guarded fields
-    simultaneously, which is normally difficult with a single standard Mutex
-    Guard.
+    simultaneously, which is normally difficult with a single standard lock
+    guard.
 
 ## Ergonomic Attribute Macro: `#[guarded]`
 
@@ -27,16 +27,19 @@ The primary way to use this crate is via the `#[guarded]` attribute macro.
 
 Apply `#[guarded]` to your struct and use the helper attributes:
 
-*   `#[mutex]` to mark the `KMutex` field.
-*   `#[guarded_by(mutex_field_name)]` to mark fields protected by that mutex.
+*   `#[mutex]` to mark a `KMutex` field.
+*   `#[brwlock]` to mark a `BrwLockPi` (Reader-Writer) field.
+*   `#[guarded_by(lock_field_name)]` to mark fields protected by that lock.
 
-### Single Mutex
+Under the hood, the macro:
+1. Rewrites guarded fields to `KCell<T, LockClass>`.
+2. Generates unique lock class markers automatically.
+3. Implements lock helper methods on the parent struct returning PinInit
+   blocks for custom projection guards (e.g., `MyStructMuGuard` or
+   `MyStructLockReadGuard`). These guards expose safe projection accessors
+   directly.
 
-When you mark a single field with `#[mutex]`, you can declare it simply as
-`KMutex` (without explicit generic parameters). The macro will automatically
-generate a marker lock class behind the scenes, named
-`{StructName}{MutexNameCamel}Class` (e.g., `ImageCacheMuClass` for a field
-named `mu` in `ImageCache`).
+### Mutex Example
 
 ```rust
 use ksync::{guarded, KMutex, lock};
@@ -60,14 +63,15 @@ fn update_cache(cache: &ImageCache, is_hit: bool) {
     // Acquire lock.
     lock!(let mut guard = cache.lock_mu());
 
-    // Use individual accessors:
+    // Access fields safely on the guard:
     if is_hit {
         *guard.as_mut().hits_mut() += 1;
     } else {
         *guard.as_mut().misses_mut() += 1;
     }
 
-    // Or use split accessors for simultaneous disjoint mutable borrows:
+    // Or obtain disjoint mutable borrows of multiple fields simultaneously
+    // using split accessors:
     let fields = guard.as_mut().fields_mut();
     if is_hit {
         *fields.hits += 1;
@@ -78,7 +82,7 @@ fn update_cache(cache: &ImageCache, is_hit: bool) {
 
 fn main() {
     let cache = ImageCache {
-        hits: 42.into(),
+        hits: 42.into(), // Under the hood, hits is a KCell, initialized via Into
         path: "/path/to/cache".to_string(),
         ..Default::default()
     };
@@ -87,12 +91,54 @@ fn main() {
 }
 ```
 
+### Reader-Writer Lock Example
+
+```rust
+use ksync::{guarded, BrwLockPi, lock};
+
+#[derive(Default)]
+#[guarded]
+struct Database {
+    #[brwlock]
+    lock: BrwLockPi,
+
+    #[guarded_by(lock)]
+    data: Vec<String>,
+
+    #[guarded_by(lock)]
+    query_count: u64,
+}
+
+fn read_data(db: &Database) -> usize {
+    // Shared read access
+    lock!(let guard = db.read_lock());
+    let len = guard.data().len();
+
+    // Access multiple fields via shared projection (disjoint read borrows):
+    let fields = guard.fields();
+    let _ = fields.data.len();
+    let _ = *fields.query_count;
+
+    len
+}
+
+fn append_data(db: &Database, value: String) {
+    // Exclusive write access
+    lock!(let mut guard = db.write_lock());
+
+    // Obtain disjoint mutable borrows of multiple fields simultaneously
+    // using split/projection accessors:
+    let fields = guard.as_mut().fields_mut();
+    fields.data.push(value);
+    *fields.query_count += 1;
+}
+```
+
 ### Multiple Mutexes
 
-If your struct has multiple mutexes, the macro will automatically generate a
-distinct, unique lock class for each mutex field by default (utilizing the
-`{StructName}{MutexNameCamel}Class` naming convention). You don't need any
-special syntax:
+If your struct has multiple locks, the macro will automatically generate a
+distinct, unique lock class for each lock field. You can lock them independently
+and access their respective fields:
 
 ```rust
 use ksync::{guarded, KMutex, lock};
@@ -113,11 +159,11 @@ struct DualCache {
 }
 
 fn process_dual_cache(cache: &DualCache) {
-    // Lock both mutexes.
+    // Lock both mutexes independently.
     lock!(let mut guard1 = cache.lock_mu1());
     lock!(let mut guard2 = cache.lock_mu2());
 
-    // Use individual accessors for each lock independently:
+    // Access individual fields safely via guards:
     *guard1.as_mut().data1_mut() = 100;
     *guard2.as_mut().data2_mut() = -50;
 

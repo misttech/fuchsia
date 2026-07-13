@@ -54,6 +54,15 @@ mod raw_kernel_mutex;
 mod raw_spin_lock;
 
 pub use kcell::{KCell, KCellInit, kcell_init};
+#[cfg(any(feature = "kernel", test))]
+mod brwlock;
+
+#[cfg(feature = "kernel")]
+mod raw_kernel_brwlock;
+
+#[cfg(all(not(feature = "kernel"), test))]
+mod raw_userspace_brwlock;
+
 pub use kmutex::{KMutex, KMutexGuard};
 pub use lock_token::LockToken;
 pub use lockdep::{LockClass, LockClassRegistration};
@@ -62,12 +71,20 @@ pub use raw_lock::RawLock;
 #[cfg(not(feature = "kernel"))]
 pub use raw_userspace_mutex::RawMutex;
 
+#[cfg(not(feature = "kernel"))]
+pub type LockEntryStorage = ();
+
 #[cfg(feature = "kernel")]
 pub use raw_kernel_event::{KEvent, RawEvent};
 #[cfg(feature = "kernel")]
-pub use raw_kernel_mutex::{RawCriticalMutex, RawMutex};
-#[cfg(feature = "kernel")]
 pub use raw_spin_lock::{InterruptSavedState, RawSpinlock};
-
 #[cfg(feature = "kernel")]
 pub type KSpinlock<Class> = KMutex<Class, RawSpinlock>;
+#[cfg(any(feature = "kernel", test))]
+pub use brwlock::{BrwLockPi, BrwLockPiReadGuard, BrwLockPiWriteGuard};
+#[cfg(feature = "kernel")]
+pub use raw_kernel_brwlock::RawBrwLockPi;
+#[cfg(feature = "kernel")]
+pub use raw_kernel_mutex::{LockEntryStorage, RawCriticalMutex, RawMutex};
+#[cfg(all(not(feature = "kernel"), test))]
+pub use raw_userspace_brwlock::RawBrwLockPi;

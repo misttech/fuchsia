@@ -1,4 +1,4 @@
-# KMutex: Technical Design Document
+# KSync: Technical Design Document
 
 This document covers the technical architecture, safety invariants, and macro
 code generation details of the `ksync` crate.
@@ -7,37 +7,40 @@ code generation details of the `ksync` crate.
 
 `ksync` implements a **token-based synchronization pattern** (also known as
 the "Ghost Token" pattern). Instead of encapsulating the protected data inside
-the mutex struct itself (like `std::sync::Mutex<T>`), it separates the lock
-state (`KMutex`) from the actual data storage (`KCell`).
+the mutex or reader-writer lock struct itself (like `std::sync::Mutex<T>`), it
+separates the lock state (`KMutex`, `BrwLockPi`) from the actual data storage
+(`KCell`).
 
 ```
 +-------------------------------------------------------------+
 |                        Parent Struct                        |
 |                                                             |
-|   +----------------+           +------------------------+   |
-|   |  KMutex<Class> |           |  KCell<T, Class>       |   |
-|   |  (Raw Lock)    |           |  (UnsafeCell wrapper)  |   |
-|   +--------+-------+           +-----------+------------+   |
+|   +-------------------+        +------------------------+   |
+|   | KMutex/BrwLockPi  |        |  KCell<T, Class>       |   |
+|   |  (Raw Lock State) |        |  (UnsafeCell wrapper)  |   |
+|   +--------+----------+        +-----------+------------+   |
 +------------|-------------------------------|----------------+
-             | lock()                        | get(token)
+             | lock() / read_lock()          | get(token)
              v                               v
     +--------+------------+         +--------+-------+
-    |  KMutexGuard        |         |  &T / &mut T   |
+    |  Lock Guard         |         |  &T / &mut T   |
     |                     |-------->|  (Safe Access) |
     |  - LockToken        |         +----------------+
     +---------------------+
 ```
 
-### The Three Core Types
+### The Core Types
 
 1.  **`LockToken<'a, Class>`**: A zero-sized type (ZST) that serves as
-    compile-time proof that the exclusive lock for `Class` is currently held by
-    the current thread. It has a lifetime `'a` bound to the active
-    `KMutexGuard`.
-2.  **`KMutex<Class>`**: The lock state representation. It wraps a raw mutex
-    (e.g., `fuchsia_sync::RawMutex`). Locking it acquires the raw lock and
-    returns a `KMutexGuard` holding the ZST `LockToken`.
-3.  **`KCell<T, Class>`**: A wrapper around `core::cell::UnsafeCell<T>`.  It
+    compile-time proof that the lock for `Class` is currently held by the
+    current thread. It has a lifetime `'a` bound to the active lock guard.
+2.  **`KMutex<Class>`**: The mutual exclusion lock state representation. Locking
+    it acquires the raw lock and returns a `KMutexGuard` holding the
+    `LockToken`.
+3.  **`BrwLockPi<Class>`**: The priority-inheriting reader-writer lock state
+    representation. Locking it returns a `BrwLockPiReadGuard` or
+    `BrwLockPiWriteGuard` holding the `LockToken`.
+4.  **`KCell<T, Class>`**: A wrapper around `core::cell::UnsafeCell<T>`. It
     provides token-gated accessors (`get(&self, token)` and `get_mut(&self,
     token)`).
 
@@ -47,12 +50,13 @@ While the `LockToken` and `KCell` share a compile-time `Class` type parameter
 to prevent mixing locks of different types, this type-level association is
 insufficient to guarantee memory safety.
 
-To provide safety, the macro generates Guard structures (`MyStructMuGuard`)
-that provide a safe wrapper that provides the instance-level association. The
-Guard holds a reference to the specific parent struct instance (`parent: &'a
-MyStruct`) and the active lock state (`inner: KMutexGuard<'a,
-MyStructMuClass>`), providing the link needed to make accessing each `KCell`
-safe.
+To provide safety, the macro generates custom guard structures (e.g.
+`MyStructMuGuard`, `MyStructLockReadGuard`, `MyStructLockWriteGuard`) that wrap
+standard lock guards and hold a reference to the parent structure instance.
+These custom guards expose safe, compiler-checked projection accessors (such as
+`.field()` or `.fields_mut()`). This guarantees safe access to guarded
+fields without requiring any `unsafe` block or risking cross-instance token
+mixing.
 
 ## 2. Safe Exclusive Access
 
@@ -70,8 +74,7 @@ checker already guarantees compile-time thread exclusivity:
 ## 3. Macro Code Generation
 
 The `#[guarded]` attribute proc-macro parses a struct definition, rewrites its
-fields, and generates the accompanying safe Guard and Split Accessor
-structures.
+fields, and generates the lock acquisition methods.
 
 ### 3.1 Input Struct
 
@@ -81,117 +84,91 @@ pub struct MyStruct {
     #[mutex]
     pub mu: KMutex,
 
+    #[brwlock]
+    pub lock: BrwLockPi,
+
     #[guarded_by(mu)]
     pub data1: u32,
 
-    #[guarded_by(mu)]
-    data2: i32,
+    #[guarded_by(lock)]
+    pub data2: i32,
 }
 ```
 
 ### 3.2 Expanded Code Output (Simplified)
 
 ```rust
-// 1. Unique Lock Class marker struct generated automatically
+// 1. Unique Lock Class marker structs generated automatically
 pub struct MyStructMuClass;
+pub struct MyStructLockClass;
 
-// 2. Struct fields rewritten to KMutex<Class> and KCell<T, Class>
+// 2. Struct fields rewritten to KMutex/BrwLockPi and KCell
 pub struct MyStruct {
     pub mu: ::ksync::KMutex<MyStructMuClass>,
+    pub lock: ::ksync::BrwLockPi<MyStructLockClass>,
     pub data1: ::ksync::KCell<u32, MyStructMuClass>,
-    data2: ::ksync::KCell<i32, MyStructMuClass>,
+    pub data2: ::ksync::KCell<i32, MyStructLockClass>,
 }
 
-// 3. Custom Guard generated with safe target accessors and lifetime bindings
-#[pin_init::pin_data(PinnedDrop)]
+// 3. Custom projection guard structures (stack-pinned)
+#[pin_data(PinnedDrop)]
 pub struct MyStructMuGuard<'a> {
     parent: &'a MyStruct,
     #[pin]
     inner: ::ksync::KMutexGuard<'a, MyStructMuClass>,
 }
 
-#[pin_init::pinned_drop]
-impl<'a> pin_init::PinnedDrop for MyStructMuGuard<'a> {
-    fn drop(self: ::core::pin::Pin<&mut Self>) {
-        // Releases the raw lock automatically when dropped
-    }
+#[pin_data(PinnedDrop)]
+pub struct MyStructLockReadGuard<'a> {
+    parent: &'a MyStruct,
+    #[pin]
+    inner: ::ksync::BrwLockPiReadGuard<'a, MyStructLockClass>,
+}
+
+#[pin_data(PinnedDrop)]
+pub struct MyStructLockWriteGuard<'a> {
+    parent: &'a MyStruct,
+    #[pin]
+    inner: ::ksync::BrwLockPiWriteGuard<'a, MyStructLockClass>,
+}
+
+// 4. Safe projection accessors and field projection structs
+pub struct MyStructLockReadFields<'b> {
+    pub data2: &'b i32,
+    _marker: ::core::marker::PhantomData<&'b ()>,
+}
+
+pub struct MyStructLockWriteFields<'b> {
+    pub data2: &'b mut i32,
+    _marker: ::core::marker::PhantomData<&'b ()>,
 }
 
 impl<'a> MyStructMuGuard<'a> {
-    // Individual Accessors (matching original field visibilities)
-    #[inline]
     pub fn data1(&self) -> &u32 {
-        // SAFETY: The token is obtained from the same parent instance (self.parent)
-        // that contains the cell, satisfying the KCell safety invariant.
         unsafe { self.parent.data1.get(self.inner.token()) }
     }
+    pub fn data1_mut(self: Pin<&mut Self>) -> &mut u32 { ... }
+    pub fn fields<'b>(&'b self) -> MyStructMuFields<'b> { ... }
+    pub fn fields_mut<'b>(self: Pin<&'b mut Self>) -> MyStructMuFieldsMut<'b> { ... }
+}
 
-    #[inline]
-    pub fn data1_mut(self: ::core::pin::Pin<&mut Self>) -> &mut u32 {
-        // SAFETY: Safe projection to pinned inner guard to get mutable token.
-        let me = unsafe { self.get_unchecked_mut() };
-        let inner_pin = unsafe { ::core::pin::Pin::new_unchecked(&mut me.inner) };
-        unsafe { me.parent.data1.get_mut(inner_pin.token_mut()) }
-    }
-
-    #[inline]
-    fn data2(&self) -> &i32 {
-        // SAFETY: The token is obtained from the same parent instance (self.parent)
-        // that contains the cell, satisfying the KCell safety invariant.
+impl<'a> MyStructLockReadGuard<'a> {
+    pub fn data2(&self) -> &i32 {
         unsafe { self.parent.data2.get(self.inner.token()) }
     }
-
-    #[inline]
-    fn data2_mut(self: ::core::pin::Pin<&mut Self>) -> &mut i32 {
-        // SAFETY: Safe projection to pinned inner guard to get mutable token.
-        let me = unsafe { self.get_unchecked_mut() };
-        let inner_pin = unsafe { ::core::pin::Pin::new_unchecked(&mut me.inner) };
-        unsafe { me.parent.data2.get_mut(inner_pin.token_mut()) }
-    }
-
-    #[inline]
-    pub fn fields<'b>(&'b self) -> MyStructMuFields<'b> {
-        MyStructMuFields {
-            // SAFETY: The token is from the same parent instance as the cell.
-            data1: unsafe { self.parent.data1.get(self.inner.token()) },
-            data2: unsafe { self.parent.data2.get(self.inner.token()) },
-            _marker: ::core::marker::PhantomData,
-        }
-    }
-
-    #[inline]
-    pub fn fields_mut<'b>(self: ::core::pin::Pin<&'b mut Self>) -> MyStructMuFieldsMut<'b> {
-        let me = unsafe { self.get_unchecked_mut() };
-        let inner_pin = unsafe { ::core::pin::Pin::new_unchecked(&mut me.inner) };
-        let token = inner_pin.token_mut();
-        // SAFETY:
-        // 1. We have exclusive access to the Guard.
-        // 2. The fields in the struct are disjoint.
-        // 3. The returned references are bound to the lifetime 'b of the guard borrow.
-        unsafe {
-            MyStructMuFieldsMut {
-                data1: &mut *me.parent.data1.as_mut_ptr(token),
-                data2: &mut *me.parent.data2.as_mut_ptr(token),
-                _marker: ::core::marker::PhantomData,
-            }
-        }
-    }
+    pub fn fields<'b>(&'b self) -> MyStructLockReadFields<'b> { ... }
 }
 
-// 4. Helper split structs generated to hold the disjoint borrows
-pub struct MyStructMuFields<'b> {
-    pub data1: &'b u32,
-    data2: &'b i32,
-    _marker: ::core::marker::PhantomData<(&'b (), )>,
+impl<'a> MyStructLockWriteGuard<'a> {
+    pub fn data2(&self) -> &i32 {
+        unsafe { self.parent.data2.get(self.inner.token()) }
+    }
+    pub fn data2_mut(self: Pin<&mut Self>) -> &mut i32 { ... }
+    pub fn fields<'b>(&'b self) -> MyStructLockReadFields<'b> { ... }
+    pub fn fields_mut<'b>(self: Pin<&'b mut Self>) -> MyStructLockWriteFields<'b> { ... }
 }
 
-pub struct MyStructMuFieldsMut<'b> {
-    pub data1: &'b mut u32,
-    data2: &'b mut i32,
-    _marker: ::core::marker::PhantomData<(&'b (), )>,
-}
-
-// 5. Lock method impl on the parent struct returning a PinInit
+// 5. Lock methods implemented on the parent struct returning PinInit blocks
 impl MyStruct {
     #[inline]
     pub fn lock_mu(&self) -> impl pin_init::PinInit<MyStructMuGuard<'_>, ::core::convert::Infallible> {
@@ -200,5 +177,23 @@ impl MyStruct {
             inner <- ::ksync::KMutexGuard::new(&self.mu),
         })
     }
+
+    #[inline]
+    pub fn read_lock(&self) -> impl pin_init::PinInit<MyStructLockReadGuard<'_>, ::core::convert::Infallible> {
+        pin_init::pin_init!(MyStructLockReadGuard {
+            parent: self,
+            inner <- ::ksync::BrwLockPiReadGuard::new(&self.lock),
+        })
+    }
+
+    #[inline]
+    pub fn write_lock(&self) -> impl pin_init::PinInit<MyStructLockWriteGuard<'_>, ::core::convert::Infallible> {
+        pin_init::pin_init!(MyStructLockWriteGuard {
+            parent: self,
+            inner <- ::ksync::BrwLockPiWriteGuard::new(&self.lock),
+        })
+    }
 }
 ```
+
+

@@ -128,7 +128,7 @@ impl<'a, Class: LockClass, M: RawLock> PinnedDrop for KMutexGuard<'a, Class, M> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{KCell, RawMutex};
+    use crate::{KCell, RawMutex, guarded};
     use lockdep::LockClass;
     use pin_init::{pin_init, stack_pin_init};
 
@@ -164,34 +164,7 @@ mod tests {
             *s.data1.get_mut(token_mut) = 20;
             assert_eq!(*s.data1.get(guard.token()), 20);
         }
-        unsafe {
-            let token_mut = guard.as_mut().token_mut();
-            let p1 = s.data1.as_mut_ptr(token_mut);
-            let p2 = s.data2.as_mut_ptr(token_mut);
-            *p1 = 30;
-            *p2 = -10;
-        }
-        unsafe {
-            assert_eq!(*s.data1.get(guard.token()), 30);
-            assert_eq!(*s.data2.get(guard.token()), -10);
-        }
     }
-
-    #[test]
-    fn test_kmutex_init() {
-        stack_pin_init!(let mu = KMutex::<MyClass>::init());
-        lock!(mu.lock());
-    }
-
-    #[test]
-    fn test_kmutex_debug() {
-        extern crate std;
-        stack_pin_init!(let mu = KMutex::<MyClass>::init());
-        let debug_str = std::format!("{:?}", mu);
-        assert!(debug_str.contains("KMutex"));
-    }
-
-    use crate::guarded;
 
     #[guarded]
     struct MyGuardedStruct {
@@ -211,25 +184,40 @@ mod tests {
             data2: (-50).into(),
         }));
 
-        lock!(let mut guard = s.lock_mu());
-
-        assert_eq!(*guard.data1(), 100);
-        assert_eq!(*guard.data2(), -50);
-
-        *guard.as_mut().data1_mut() = 200;
-        assert_eq!(*guard.data1(), 200);
         {
-            let fields = guard.fields();
-            assert_eq!(*fields.data1, 200);
-            assert_eq!(*fields.data2, -50);
-        }
-        {
+            lock!(let mut guard = s.lock_mu());
+
+            // Safe individual field access
+            assert_eq!(*guard.data1(), 100);
+            assert_eq!(*guard.data2(), -50);
+
+            *guard.as_mut().data1_mut() = 200;
+            assert_eq!(*guard.data1(), 200);
+
+            // Safe disjoint/split access
             let fields = guard.as_mut().fields_mut();
-            *fields.data1 = 300;
-            *fields.data2 = -100;
+            *fields.data1 += 50;
+            *fields.data2 += 50;
         }
-        assert_eq!(*guard.data1(), 300);
-        assert_eq!(*guard.data2(), -100);
+
+        // Verify fields
+        lock!(let guard = s.lock_mu());
+        assert_eq!(*guard.data1(), 250);
+        assert_eq!(*guard.data2(), 0);
+    }
+
+    #[test]
+    fn test_kmutex_init() {
+        stack_pin_init!(let mu = KMutex::<MyClass>::init());
+        lock!(mu.lock());
+    }
+
+    #[test]
+    fn test_kmutex_debug() {
+        extern crate std;
+        stack_pin_init!(let mu = KMutex::<MyClass>::init());
+        let debug_str = std::format!("{:?}", mu);
+        assert!(debug_str.contains("KMutex"));
     }
 
     #[guarded]

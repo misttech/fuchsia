@@ -6,6 +6,7 @@
 
 #include <new>
 
+#include <kernel/brwlock.h>
 #include <kernel/event.h>
 #include <kernel/mutex.h>
 #include <kernel/spinlock.h>
@@ -66,6 +67,23 @@ static_assert(sizeof(interrupt_saved_state_t) == kExpectedInterruptSavedStateSiz
               "Rust InterruptSavedState size mismatch with C++");
 static_assert(alignof(interrupt_saved_state_t) == kExpectedInterruptSavedStateAlign,
               "Rust InterruptSavedState alignment mismatch with C++");
+#if WITH_LOCK_DEP
+using SystemBrwLockType = lockdep::LockDep<void, BrwLockPi, lockdep::LockFlagsMultiAcquire>;
+#else
+using SystemBrwLockType = BrwLockPi;
+#endif
+
+#if defined(__riscv)
+constexpr size_t kExpectedBrwLockSize = kWithLockDep ? 80 : 72;
+constexpr size_t kExpectedBrwLockAlign = 8;
+#else
+constexpr size_t kExpectedBrwLockSize = kWithLockDep ? 144 : 128;
+constexpr size_t kExpectedBrwLockAlign = 16;
+#endif
+
+static_assert(sizeof(SystemBrwLockType) == kExpectedBrwLockSize, "SystemBrwLockType size mismatch");
+static_assert(alignof(SystemBrwLockType) == kExpectedBrwLockAlign,
+              "SystemBrwLockType alignment mismatch");
 
 extern "C" {
 
@@ -89,6 +107,14 @@ void cpp_event_destroy(Event* event);
 void cpp_event_signal(Event* event, zx_status_t wait_result);
 void cpp_event_unsignal(Event* event);
 zx_status_t cpp_event_wait(Event* event, zx_instant_mono_t deadline);
+void cpp_brwlock_pi_init(SystemBrwLockType* lock);
+void cpp_brwlock_pi_destroy(SystemBrwLockType* lock);
+void cpp_brwlock_pi_acquire_read(SystemBrwLockType* lock, lockdep::LockClassId lcid,
+                                 void* entry_storage);
+void cpp_brwlock_pi_release_read(SystemBrwLockType* lock, void* entry_storage);
+void cpp_brwlock_pi_acquire_write(SystemBrwLockType* lock, lockdep::LockClassId lcid,
+                                  void* entry_storage);
+void cpp_brwlock_pi_release_write(SystemBrwLockType* lock, void* entry_storage);
 
 void cpp_mutex_init(Mutex* mutex) { new (mutex) Mutex(); }
 
@@ -183,6 +209,64 @@ void cpp_event_unsignal(Event* event) { event->Unsignal(); }
 
 zx_status_t cpp_event_wait(Event* event, zx_instant_mono_t deadline) {
   return event->Wait(Deadline::no_slack(deadline));
+}
+
+void cpp_brwlock_pi_init(SystemBrwLockType* lock) { new (lock) SystemBrwLockType(); }
+
+void cpp_brwlock_pi_destroy(SystemBrwLockType* lock) { lock->~SystemBrwLockType(); }
+
+void cpp_brwlock_pi_acquire_read(SystemBrwLockType* lock, lockdep::LockClassId lcid,
+                                 void* entry_storage) TA_NO_THREAD_SAFETY_ANALYSIS {
+#if WITH_LOCK_DEP
+  if (lcid != nullptr && entry_storage != nullptr) {
+    auto* entry = new (entry_storage) lockdep::AcquiredLockEntry(lock, lcid, 0);
+    lockdep::ThreadLockState::Get(lockdep::LockFlagsMultiAcquire)->Acquire(entry);
+  }
+  lock->lock().ReadAcquire();
+#else
+  lock->ReadAcquire();
+#endif
+}
+
+void cpp_brwlock_pi_release_read(SystemBrwLockType* lock,
+                                 void* entry_storage) TA_NO_THREAD_SAFETY_ANALYSIS {
+#if WITH_LOCK_DEP
+  if (entry_storage != nullptr) {
+    auto* entry = static_cast<lockdep::AcquiredLockEntry*>(entry_storage);
+    lockdep::ThreadLockState::Get(lockdep::LockFlagsMultiAcquire)->Release(entry);
+    entry->~AcquiredLockEntry();
+  }
+  lock->lock().ReadRelease();
+#else
+  lock->ReadRelease();
+#endif
+}
+
+void cpp_brwlock_pi_acquire_write(SystemBrwLockType* lock, lockdep::LockClassId lcid,
+                                  void* entry_storage) TA_NO_THREAD_SAFETY_ANALYSIS {
+#if WITH_LOCK_DEP
+  if (lcid != nullptr && entry_storage != nullptr) {
+    auto* entry = new (entry_storage) lockdep::AcquiredLockEntry(lock, lcid, 0);
+    lockdep::ThreadLockState::Get(lockdep::LockFlagsMultiAcquire)->Acquire(entry);
+  }
+  lock->lock().WriteAcquire();
+#else
+  lock->WriteAcquire();
+#endif
+}
+
+void cpp_brwlock_pi_release_write(SystemBrwLockType* lock,
+                                  void* entry_storage) TA_NO_THREAD_SAFETY_ANALYSIS {
+#if WITH_LOCK_DEP
+  if (entry_storage != nullptr) {
+    auto* entry = static_cast<lockdep::AcquiredLockEntry*>(entry_storage);
+    lockdep::ThreadLockState::Get(lockdep::LockFlagsMultiAcquire)->Release(entry);
+    entry->~AcquiredLockEntry();
+  }
+  lock->lock().WriteRelease();
+#else
+  lock->WriteRelease();
+#endif
 }
 
 }  // extern "C"
