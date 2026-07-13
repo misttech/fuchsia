@@ -9,10 +9,10 @@ use anyhow::{Context, Error};
 use fidl_fuchsia_hardware_light::{Info, LightMarker, LightProxy};
 use fidl_fuchsia_settings_storage::LightGroups;
 use fuchsia_async as fasync;
+use futures::StreamExt;
 use futures::channel::mpsc::UnboundedReceiver;
 use futures::channel::oneshot::Sender;
 use futures::lock::Mutex;
-use futures::StreamExt;
 use settings_common::call_async;
 use settings_common::config::default_settings::DefaultSetting;
 use settings_common::inspect::event::{
@@ -20,20 +20,20 @@ use settings_common::inspect::event::{
 };
 use settings_common::service_context::{ExternalServiceProxy, ServiceContext};
 use settings_media_buttons::{Event, MediaButtons};
+use settings_storage::UpdateState;
 use settings_storage::fidl_storage::{FidlStorage, FidlStorageConvertible};
 use settings_storage::storage_factory::{NoneT, StorageAccess, StorageFactory};
-use settings_storage::UpdateState;
 use std::borrow::Cow;
-use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 use std::rc::Rc;
 
 /// Used as the argument field in a LightError::InvalidArgument to signal the FIDL handler to
 /// signal that a fidl LightError::INVALID_NAME should be returned to the client.
 pub(crate) const ARG_NAME: &str = "name";
 
-/// Hardware path used to connect to light devices.
-pub(crate) const DEVICE_PATH: &str = "/dev/class/light/*";
+/// Service path used to connect to light devices.
+pub(crate) const SERVICE_PATH: &str = "/svc/fuchsia.hardware.light.LightService/*/light";
 
 impl FidlStorageConvertible for LightInfo {
     type Storable = LightGroups;
@@ -162,9 +162,9 @@ impl LightController {
         F: StorageFactory<Storage = FidlStorage>,
     {
         let light_proxy = service_context
-            .connect_device_path::<LightMarker, _>(DEVICE_PATH, external_publisher)
+            .connect_device_path::<LightMarker, _>(SERVICE_PATH, external_publisher)
             .await
-            .context("connecting to fuchsia.hardware.light")?;
+            .context("connecting to fuchsia.hardware.light service")?;
 
         Ok(LightController {
             light_proxy,

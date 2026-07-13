@@ -47,6 +47,18 @@ class FakeLightServer : public fuchsia::hardware::light::testing::Light_TestBase
     callback(fuchsia::hardware::light::Light_SetBrightnessValue_Result::WithResponse(
         fuchsia::hardware::light::Light_SetBrightnessValue_Response()));
   }
+  void SetSimpleValue(uint32_t index, bool value, SetSimpleValueCallback callback) override {
+    lights_.at(index).brightness = value ? 1.0 : 0.0;
+    callback(fuchsia::hardware::light::Light_SetSimpleValue_Result::WithResponse(
+        fuchsia::hardware::light::Light_SetSimpleValue_Response()));
+  }
+  void SetRgbValue(uint32_t index, fuchsia::hardware::light::Rgb value,
+                   SetRgbValueCallback callback) override {
+    lights_.at(index).brightness =
+        (value.red > 0.0 || value.green > 0.0 || value.blue > 0.0) ? 1.0 : 0.0;
+    callback(fuchsia::hardware::light::Light_SetRgbValue_Result::WithResponse(
+        fuchsia::hardware::light::Light_SetRgbValue_Response()));
+  }
 
   // Callback when a unimplemented FIDL method is called.
   void NotImplemented_(const std::string& name) override {
@@ -65,12 +77,12 @@ TEST(LightStress, GetLights) {
           .capability = fuchsia::hardware::light::Capability::BRIGHTNESS,
       },
       FakeLightServer::Light{
-          .name = "unsupported",
+          .name = "B",
           .capability = fuchsia::hardware::light::Capability::SIMPLE,
       },
       FakeLightServer::Light{
-          .name = "B",
-          .capability = fuchsia::hardware::light::Capability::BRIGHTNESS,
+          .name = "C",
+          .capability = fuchsia::hardware::light::Capability::RGB,
       },
   }};
 
@@ -81,16 +93,27 @@ TEST(LightStress, GetLights) {
   // Query light server information.
   std::vector<LightInfo> lights = GetLights(client).value();
 
-  // Ensure we detected the two supported lights, and the index of each is correct.
-  EXPECT_THAT(lights, ElementsAre(LightInfo{"A", 0}, LightInfo{"B", 2}));
+  // Ensure we detected the supported lights, and the index of each is correct.
+  EXPECT_THAT(lights,
+              ElementsAre(LightInfo{"A", 0, fuchsia::hardware::light::Capability::BRIGHTNESS},
+                          LightInfo{"B", 1, fuchsia::hardware::light::Capability::SIMPLE},
+                          LightInfo{"C", 2, fuchsia::hardware::light::Capability::RGB}));
 }
 
 TEST(LightStress, TurnLightOnOff) {
-  // Create a light server exposing a single light.
+  // Create a light server exposing three lights of different capabilities.
   FakeLightServer server{{
       FakeLightServer::Light{
           .name = "A",
           .capability = fuchsia::hardware::light::Capability::BRIGHTNESS,
+      },
+      FakeLightServer::Light{
+          .name = "B",
+          .capability = fuchsia::hardware::light::Capability::SIMPLE,
+      },
+      FakeLightServer::Light{
+          .name = "C",
+          .capability = fuchsia::hardware::light::Capability::RGB,
       },
   }};
 
@@ -98,13 +121,35 @@ TEST(LightStress, TurnLightOnOff) {
   auto factory = std::make_unique<testing::LoopbackConnectionFactory>();
   auto client = factory->CreateSyncPtrTo<fuchsia::hardware::light::Light>(&server);
 
-  // Turn the light on.
-  ASSERT_TRUE(TurnOnLight(client, 0).is_ok());
-  EXPECT_EQ(server.lights().at(0).brightness, 1.0);
+  // Test BRIGHTNESS light.
+  {
+    LightInfo info{
+        .name = "A", .index = 0, .capability = fuchsia::hardware::light::Capability::BRIGHTNESS};
+    ASSERT_TRUE(TurnOnLight(client, info).is_ok());
+    EXPECT_EQ(server.lights().at(0).brightness, 1.0);
+    ASSERT_TRUE(TurnOffLight(client, info).is_ok());
+    EXPECT_EQ(server.lights().at(0).brightness, 0.0);
+  }
 
-  // Turn the light off.
-  ASSERT_TRUE(TurnOffLight(client, 0).is_ok());
-  EXPECT_EQ(server.lights().at(0).brightness, 0.0);
+  // Test SIMPLE light.
+  {
+    LightInfo info{
+        .name = "B", .index = 1, .capability = fuchsia::hardware::light::Capability::SIMPLE};
+    ASSERT_TRUE(TurnOnLight(client, info).is_ok());
+    EXPECT_EQ(server.lights().at(1).brightness, 1.0);
+    ASSERT_TRUE(TurnOffLight(client, info).is_ok());
+    EXPECT_EQ(server.lights().at(1).brightness, 0.0);
+  }
+
+  // Test RGB light.
+  {
+    LightInfo info{
+        .name = "C", .index = 2, .capability = fuchsia::hardware::light::Capability::RGB};
+    ASSERT_TRUE(TurnOnLight(client, info).is_ok());
+    EXPECT_EQ(server.lights().at(2).brightness, 1.0);
+    ASSERT_TRUE(TurnOffLight(client, info).is_ok());
+    EXPECT_EQ(server.lights().at(2).brightness, 0.0);
+  }
 }
 
 }  // namespace

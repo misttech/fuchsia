@@ -5,7 +5,8 @@
 use anyhow::Error;
 use fidl::endpoints::DiscoverableProtocolMarker;
 use fidl_fuchsia_hardware_light::{
-    Capability, Info as HardwareInfo, LightError, LightRequest, LightRequestStream, Rgb,
+    Capability, Info as HardwareInfo, LightError, LightRequest, LightRequestStream,
+    LightServiceMarker, Rgb,
 };
 use fidl_fuchsia_io as fio;
 use fidl_fuchsia_settings::{LightGroup, LightMarker, LightProxy, LightValue};
@@ -33,7 +34,6 @@ pub struct HardwareLight {
 }
 
 const COMPONENT_URL: &str = "#meta/setui_service.cm";
-const DEVICE_PATH: &str = "/dev/class/light";
 
 pub struct LightRealm;
 
@@ -53,22 +53,20 @@ impl LightRealm {
         // Add setui_service as child of the realm builder.
         let setui_service =
             builder.add_child("setui_service", COMPONENT_URL, ChildOptions::new()).await?;
-        let hardware_light = builder
+        let light_service = builder
             .add_local_child(
-                "dev-light",
-                move |handles| Box::pin(Self::serve_dev(handles, hardware_lights.clone())),
+                "light-service",
+                move |handles| {
+                    Box::pin(Self::serve_light_service(handles, hardware_lights.clone()))
+                },
                 ChildOptions::new().eager(),
             )
             .await?;
         builder
             .add_route(
                 Route::new()
-                    .capability(
-                        ComponentCapability::directory("dev-light")
-                            .rights(fio::RW_STAR_DIR)
-                            .path(DEVICE_PATH),
-                    )
-                    .from(&hardware_light)
+                    .capability(ComponentCapability::service::<LightServiceMarker>())
+                    .from(&light_service)
                     .to(&setui_service),
             )
             .await?;
@@ -267,14 +265,14 @@ impl LightRealm {
         .detach();
     }
 
-    async fn serve_dev(
+    async fn serve_light_service(
         handles: LocalComponentHandles,
         hardware_lights: Vec<HardwareLight>,
     ) -> Result<(), Error> {
         let dir = pseudo_directory! {
-            "class" => pseudo_directory! {
-                "light" => pseudo_directory! {
-                    "000" => service::host(
+            "fuchsia.hardware.light.LightService" => pseudo_directory! {
+                "default" => pseudo_directory! {
+                    "light" => service::host(
                         move |stream: LightRequestStream| {
                             Self::hardware_light_service(stream, hardware_lights.clone())
                         }
@@ -284,14 +282,14 @@ impl LightRealm {
         };
         let mut fs = ServiceFs::new();
         let _ = fs.add_remote(
-            "dev",
+            "svc",
             vfs::directory::serve(
                 dir,
                 vfs::execution_scope::ExecutionScope::new(),
                 fio::PERM_READABLE | fio::PERM_WRITABLE,
             ),
         );
-        let _ = fs.serve_connection(handles.outgoing_dir).expect("failed to serve dev");
+        let _ = fs.serve_connection(handles.outgoing_dir).expect("failed to serve outgoing");
         fs.collect::<()>().await;
         Ok(())
     }
