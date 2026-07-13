@@ -120,6 +120,13 @@ pub(super) struct Assembler {
 }
 
 impl Assembler {
+    /// The max number of outstanding ranges we'll track for the assembler.
+    ///
+    /// In order to preserve this limit, the assembler will evict the rightmost
+    /// range. Preserving the leftmost ranges is important because they will be
+    /// made available to the application first.
+    pub(crate) const MAX_NUM_OUTSTANDING_RANGES: usize = 64;
+
     /// Creates a new assembler.
     pub(super) fn new(nxt: SeqNum) -> Self {
         Self { outstanding: SeqRanges::default(), generation: 0, nxt }
@@ -162,6 +169,11 @@ impl Assembler {
             *nxt = advanced.end();
             usize::try_from(advanced.len()).unwrap()
         } else {
+            // Since we're not popping the front of `outstanding`, ensure the
+            // range we inserted above didn't extend beyond the limit.
+            if outstanding.len() > Self::MAX_NUM_OUTSTANDING_RANGES {
+                let _evicted: Option<SeqRange<usize>> = outstanding.pop_back();
+            }
             0
         }
     }
@@ -816,6 +828,11 @@ mod test {
     use testutil::RingBuffer;
 
     use super::*;
+
+    fn contains_range(assembler: &Assembler, range: Range<SeqNum>) -> bool {
+        assembler.outstanding.iter().any(|r| r.start() == range.start && r.end() == range.end)
+    }
+
     proptest! {
         #![proptest_config(Config {
             // Add all failed seeds here.
@@ -991,6 +1008,62 @@ mod test {
             .try_iter()
             .map(|r| r.expect("invalid_block").into_range_u32())
             .collect()
+    }
+
+    // Verify that the Assembler correctly limits the outstanding ranges.
+    #[test]
+    fn assembler_max_outstanding_ranges() {
+        const MAX: usize = Assembler::MAX_NUM_OUTSTANDING_RANGES;
+
+        // Set up a 10 byte gap between every outstanding range.
+        const PERIOD: u32 = 20;
+        const LEN: u32 = 10;
+        const OFFSET: u32 = 10;
+        let nth_range = |n| {
+            SeqNum::new(PERIOD * (n as u32) + OFFSET)
+                ..SeqNum::new(PERIOD * (n as u32) + OFFSET + LEN)
+        };
+
+        // Insert the maximum number of disjoint ranges into the assembler.
+        let mut assembler = Assembler::new(SeqNum::new(0));
+        for n in 0..MAX {
+            assert_eq!(assembler.insert(nth_range(n)), 0);
+        }
+        assert_eq!(assembler.outstanding.len(), MAX);
+        assert_eq!(assembler.outstanding.last().unwrap().start(), nth_range(MAX - 1).start);
+
+        // If the new range is rightmost, it should be dropped.
+        assert_eq!(assembler.insert(nth_range(MAX)), 0);
+        assert_eq!(assembler.outstanding.len(), MAX);
+        assert_eq!(assembler.outstanding.last().unwrap().start(), nth_range(MAX - 1).start);
+
+        // If the new range makes data available, it should do so without
+        // eviction.
+        assert_eq!(assembler.insert(SeqNum::new(0)..SeqNum::new(1)), 1);
+        assert_eq!(assembler.outstanding.len(), MAX);
+        assert_eq!(assembler.outstanding.last().unwrap().start(), nth_range(MAX - 1).start);
+
+        // If the new range is in the middle & disjoint from all existing ranges
+        // it should be inserted and the rightmost range should be evicted.
+        let middle_disjoint = SeqNum::new(PERIOD + 2)..SeqNum::new(PERIOD + OFFSET - 2);
+        assert_eq!(assembler.insert(middle_disjoint.clone()), 0);
+        assert_eq!(assembler.outstanding.len(), MAX);
+        assert_eq!(assembler.outstanding.last().unwrap().start(), nth_range(MAX - 2).start);
+        assert!(contains_range(&assembler, middle_disjoint));
+
+        // If the new range extends an existing range, it should do so without
+        // eviction.
+        let extending_range1 = nth_range(10).end..nth_range(10).end + 1;
+        assert_eq!(assembler.insert(extending_range1.clone()), 0);
+        assert_eq!(assembler.outstanding.len(), MAX);
+        assert!(contains_range(&assembler, nth_range(10).start..extending_range1.end));
+
+        // If the new range merges two existing ranges, it should do so without
+        // eviction.
+        let extending_range2 = extending_range1.start..nth_range(11).start;
+        assert_eq!(assembler.insert(extending_range2), 0);
+        assert_eq!(assembler.outstanding.len(), MAX - 1);
+        assert!(contains_range(&assembler, nth_range(10).start..nth_range(11).end));
     }
 
     #[test]
