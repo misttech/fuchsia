@@ -1,5 +1,0 @@
-{
-    "sdk": {
-        "root": "$BUILD_DIR/external/fuchsia_sdk"
-    }
-}

@@ -86,14 +86,7 @@ updated:
        instantiation.
      * Remove the corresponding `sdk_host_tool(name = "<tool_name>")` target.
 
-5. **Update SDK Test Workspace Generator**:
-
-   * In
-     `//build/bazel_sdk/e2e/utils/generate_test_workspace/generate.gni`:
-     * Remove references to the tool from the outputs or symlink list in
-       `generate_private_test_workspace`.
-
-6. **Update CLI Documentation Tooling**:
+5. **Update CLI Documentation Tooling**:
 
    * In `//tools/clidoc/src/main.rs`:
      * Remove the tool's name from the `ALLOW_LIST`.

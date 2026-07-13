@@ -8,7 +8,6 @@
                     "third_party/bazel_vendor/apple_support+",
                     "third_party/bazel_vendor/rules_kotlin+",
                     "third_party/crashpad",
-                    "third_party/fuchsia-infra-bazel-rules",
                     "third_party/mesa-migrating",
                     "tools/bazel-docgen/third_party/stardoc",
                     "zircon/third_party/dev/ethernet/e1000",

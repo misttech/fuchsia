@@ -25,7 +25,6 @@
         "third_party/colorama/README.fuchsia",
         "third_party/crashpad/README.fuchsia",
         "third_party/curl/README.fuchsia",
-        "third_party/fuchsia-infra-bazel-rules/README.fuchsia",
         "third_party/gfxstream/README.fuchsia",
         "third_party/gfxstream/aemu/README.fuchsia",
         "third_party/github.com/jd/tenacity/README.fuchsia",

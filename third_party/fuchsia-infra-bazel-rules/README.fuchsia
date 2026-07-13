@@ -1,7 +1,0 @@
-Name: Fuchsia Infra Bazel Rules
-URL: https://fuchsia.googlesource.com/fuchsia-infra-bazel-rules
-Revision: 7a6aaba051decf8ccfbc0b811d19f2f5b8dd6e3b
-License File: src/LICENSE
-Description: This repository provides tools and Bazel rules for helping projects
-integrate with Fuchsia's CI infrastructure.
-Revision is from `git merge-base JIRI_HEAD origin/main`.

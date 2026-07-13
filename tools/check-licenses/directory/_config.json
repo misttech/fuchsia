@@ -169,14 +169,6 @@
             },
             {
                 "notes": [
-                    "Exempt the SDK workflow validation test workspace directory"
-                ],
-                "paths": [
-                    "build/bazel_sdk/e2e/utils/generate_test_workspace/workspace/third_party"
-                ]
-            },
-            {
-                "notes": [
                     "Exempt the IDK validation test source directory structure."
                 ],
                 "paths": [

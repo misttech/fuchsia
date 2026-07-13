@@ -85,12 +85,6 @@
         },
         {
             "paths": [
-                "build/bazel_sdk/e2e/utils/generate_test_workspace/workspace/third_party"
-            ],
-            "description": "Exempt the SDK workflow validation test workspace directory"
-        },
-        {
-            "paths": [
                 "build/sdk/generate_prebuild_idk/validation_data/input_fuchsia_dir"
             ],
             "description": "Exempt the IDK validation test source directory structure."
