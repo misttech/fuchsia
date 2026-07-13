@@ -5,12 +5,14 @@
 import("//build/bind/bind.gni")
 import("//build/components.gni")
 import("//build/drivers.gni")
+import("//build/testing/cc_test_executable.gni")
 import("//src/camera/debug.gni")
 
 group("tests") {
   testonly = true
   deps = [
     ":usb_video_bind_test",
+    ":usb_video_test",
     "uvc-tester",
   ]
 }
@@ -74,4 +76,24 @@ fuchsia_driver_component("driver") {
 
 fuchsia_driver_package("usb_video") {
   driver_components = [ ":driver" ]
+}
+
+cc_test_executable("usb_video_test_bin") {
+  testonly = true
+  sources = [ "usb_video_test.cc" ]
+  deps = [
+    ":lib",
+    "//sdk/banjo/fuchsia.hardware.usb:fuchsia.hardware.usb_banjo_cpp_mock",
+    "//src/devices/testing/mock-ddk",
+    "//zircon/system/ulib/zxtest",
+  ]
+}
+
+fuchsia_unittest_package("usb_video_test") {
+  deps = [ ":usb_video_test_bin" ]
+  test_specs = {
+    log_settings = {
+      max_severity = "ERROR"
+    }
+  }
 }

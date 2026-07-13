@@ -5,6 +5,7 @@
 #include "src/camera/drivers/usb_video/usb_video_stream.h"
 
 #include <fidl/fuchsia.sysmem2/cpp/hlcpp_conversion.h>
+#include <inttypes.h>
 #include <lib/async/cpp/task.h>
 #include <lib/ddk/binding_driver.h>
 #include <lib/ddk/debug.h>
@@ -196,8 +197,8 @@ zx_status_t UsbVideoStream::CreateStream(fuchsia::sysmem::BufferCollectionInfo b
   }
 
   if (usb_state_.MaxFrameSize() > buffer_collection.vmo_size) {
-    zxlogf(ERROR, "buffer provided %lu is less than max size %u.", buffer_collection.vmo_size,
-           usb_state_.MaxFrameSize());
+    zxlogf(ERROR, "buffer provided %" PRIu64 " is less than max size %" PRIu32 ".",
+           buffer_collection.vmo_size, usb_state_.MaxFrameSize());
     return ZX_ERR_INVALID_ARGS;
   }
 
@@ -214,6 +215,13 @@ zx_status_t UsbVideoStream::CreateStream(fuchsia::sysmem::BufferCollectionInfo b
         status != ZX_OK) {
       zxlogf(ERROR, "Failed to initialize VmoPool, err: %d", status);
       return status;
+    }
+    for (uint32_t i = 0; i < buffers_.total_buffers(); ++i) {
+      if (buffers_.buffer_size(i) < usb_state_.MaxFrameSize()) {
+        zxlogf(ERROR, "VMO %" PRIu32 " physical size %zu is less than max frame size %" PRIu32, i,
+               buffers_.buffer_size(i), usb_state_.MaxFrameSize());
+        return ZX_ERR_INVALID_ARGS;
+      }
     }
   }
   if (zx_status_t status = buffers_.MapVmos(); status != ZX_OK) {

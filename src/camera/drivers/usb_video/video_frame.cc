@@ -4,6 +4,7 @@
 
 #include "src/camera/drivers/usb_video/video_frame.h"
 
+#include <inttypes.h>
 #include <lib/ddk/debug.h>
 #include <lib/fit/function.h>
 #include <lib/fzl/vmo-pool.h>
@@ -48,7 +49,7 @@ zx::result<VideoFrame::PayloadHeader> VideoFrame::PayloadHeader::ParseHeader(usb
   if (req->response.status != ZX_OK) {
     failure_count_++;
     if (failure_count_ == 1 || (failure_count_) % 10 == 0) {
-      zxlogf(ERROR, "usb request failed %lu times: %d", failure_count_.load(),
+      zxlogf(ERROR, "usb request failed %" PRIu64 " times: %d", failure_count_.load(),
              req->response.status);
     }
     return zx::error(req->response.status);
@@ -56,7 +57,7 @@ zx::result<VideoFrame::PayloadHeader> VideoFrame::PayloadHeader::ParseHeader(usb
   usb_video_vs_payload_header pheader;
   size_t len = usb_request_copy_from(req, &pheader, sizeof(pheader), 0);
   if (len != sizeof(usb_video_vs_payload_header) || pheader.bHeaderLength > req->response.actual) {
-    zxlogf(ERROR, "got invalid header bHeaderLength %u data length %lu", pheader.bHeaderLength,
+    zxlogf(ERROR, "got invalid header bHeaderLength %u data length %" PRIu64, pheader.bHeaderLength,
            req->response.actual);
     return zx::error(ZX_ERR_INTERNAL);
   }
@@ -137,15 +138,22 @@ zx_status_t VideoFrame::CopyData(usb_request_t* req, uint32_t data_offset) {
   // Copy the data into the video buffer.
   uint32_t data_size = static_cast<uint32_t>(req->response.actual) - data_offset;
   if (bytes_ + data_size > usb_state_.MaxFrameSize()) {
-    zxlogf(ERROR, "invalid data size %u, cur frame bytes %u, frame size %u", data_size, bytes_,
-           usb_state_.MaxFrameSize());
+    zxlogf(ERROR, "invalid data size %" PRIu32 ", cur frame bytes %" PRIu32 ", frame size %" PRIu32,
+           data_size, bytes_, usb_state_.MaxFrameSize());
     error_ = true;
     return ZX_ERR_IO_INVALID;
   }
 
   // Append the data to the end of the current frame.
   uint64_t avail = buffer_.size() - bytes_;
-  ZX_DEBUG_ASSERT(avail >= data_size);
+  if (avail < data_size) {
+    zxlogf(ERROR,
+           "VMO size (%zu) is too small to contain frame data (offset %" PRIu32
+           ", data size %" PRIu32 ")",
+           buffer_.size(), bytes_, data_size);
+    error_ = true;
+    return ZX_ERR_BUFFER_TOO_SMALL;
+  }
 
   uint8_t* dst = reinterpret_cast<uint8_t*>(buffer_.virtual_address()) + bytes_;
   // TODO(https://fxbug.dev/42142159): Decide what to do here
