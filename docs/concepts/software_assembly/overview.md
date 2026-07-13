@@ -83,7 +83,7 @@ or GN build rules to construct and use these inputs.
 ## How Software Assembly is invoked {:#how-software-assembly-is-invoked}
 
 At its core, Fuchsia's software assembly is a rust library used by several
-different CLI tools to produce a Product Bundle. The following depics the
+different CLI tools to produce a Product Bundle. The following depicts the
 most common ways to invoke assembly:
 
 *   **Build system integration (Bazel and GN)**: Build systems like Bazel and GN
