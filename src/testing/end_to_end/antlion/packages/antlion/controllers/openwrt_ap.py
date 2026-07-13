@@ -21,11 +21,15 @@ from antlion.controllers.openwrt_lib import (
     wireless_config,
     wireless_settings_applier,
 )
-from antlion.controllers.openwrt_lib.openwrt_constants import SYSTEM_INFO_CMD
+from antlion.controllers.openwrt_lib.openwrt_constants import (
+    SYSTEM_INFO_CMD,
+)
 from antlion.controllers.openwrt_lib.openwrt_constants import (
     OpenWrtModelMap as modelmap,
 )
-from antlion.controllers.openwrt_lib.openwrt_constants import OpenWrtWifiSetting
+from antlion.controllers.openwrt_lib.openwrt_constants import (
+    OpenWrtWifiSetting,
+)
 from antlion.types import ControllerConfig, Json
 from libs.ssh import connection, settings
 from mobly import logger, signals

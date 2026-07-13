@@ -40,11 +40,15 @@ from honeydew.affordances.connectivity.bluetooth.utils import (
 from honeydew.affordances.connectivity.netstack import (
     netstack as netstack_module,
 )
-from honeydew.affordances.connectivity.netstack import netstack_using_fc
+from honeydew.affordances.connectivity.netstack import (
+    netstack_using_fc,
+)
 from honeydew.affordances.connectivity.wlan.wlan_core import (
     wlan_core as wlan_core_module,
 )
-from honeydew.affordances.connectivity.wlan.wlan_core import wlan_core_using_fc
+from honeydew.affordances.connectivity.wlan.wlan_core import (
+    wlan_core_using_fc,
+)
 from honeydew.affordances.connectivity.wlan.wlan_policy import (
     wlan_policy as wlan_policy_module,
 )
@@ -409,13 +413,13 @@ class FuchsiaDevice(
         Raises:
             FuchsiaControllerError: Failed to instantiate.
         """
-        fuchsia_controller_obj: (
-            fc_transport.FuchsiaController
-        ) = fc_transport.FuchsiaController(
-            target_name=self.device_name,
-            ffx_config_data=self._ffx_config_data,
-            target_ip_port=self._device_info.ip_port,
-            device_ip_change=self,
+        fuchsia_controller_obj: fc_transport.FuchsiaController = (
+            fc_transport.FuchsiaController(
+                target_name=self.device_name,
+                ffx_config_data=self._ffx_config_data,
+                target_ip_port=self._device_info.ip_port,
+                device_ip_change=self,
+            )
         )
         return fuchsia_controller_obj
 
@@ -1261,8 +1265,10 @@ class FuchsiaDevice(
 
     def register_for_on_device_ip_change(
         self,
-        fn: Callable[[custom_types.IpPort], None]
-        | Callable[[custom_types.IpPort], Awaitable[None]],
+        fn: (
+            Callable[[custom_types.IpPort], None]
+            | Callable[[custom_types.IpPort], Awaitable[None]]
+        ),
     ) -> None:
         """Register a function that will be called when an IP address is changed.
 

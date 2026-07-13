@@ -1,10 +1,11 @@
 Name: isort
 URL: https://github.com/PyCQA/isort
-Revision: c655831799765e9593989ee12faba13b6ca391a5
-Version: 5.13.2
+Security Critical: no
+Revision: a333737ed43df02b18e6c95477ea1b285b3de15a
+Version: 8.0.1
 License: MIT License
 License File: src/LICENSE
 Description: Python library to sort imports.
-Revision is from `git merge-base 5.13.2 JIRI_HEAD`.
+Revision is from `git merge-base 8.0.1 JIRI_HEAD`.
 Local Modifications: Created a wrapper script (isort_wrapper.py) to dynamically add missing version
 metadata when running isort from a local source checkout.

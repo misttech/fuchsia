@@ -17,8 +17,12 @@ from antlion.controllers.ap_lib import hostapd_constants
 from antlion.controllers.ap_lib.hostapd_security import (
     Security as DeprecatedSecurity,
 )
-from antlion.controllers.ap_lib.hostapd_security import SecurityMode
-from honeydew.affordances.connectivity.wlan.utils.types import CountryCode
+from antlion.controllers.ap_lib.hostapd_security import (
+    SecurityMode,
+)
+from honeydew.affordances.connectivity.wlan.utils.types import (
+    CountryCode,
+)
 from mobly import signals, test_runner
 from mobly.records import TestResultRecord
 from openwrt_access_point import OpenWrtAP
@@ -93,9 +97,13 @@ class Utf8TestParams:
 @dataclass
 class MacPhyTestParams:
     band: Band
-    security: SecurityWpa | SecurityWpa2 | SecurityWpa3 | SecurityWpaWpa2Mixed | SecurityWpa2Wpa3Mixed = SecurityWpa2(
-        cipher="ccmp"
-    )
+    security: (
+        SecurityWpa
+        | SecurityWpa2
+        | SecurityWpa3
+        | SecurityWpaWpa2Mixed
+        | SecurityWpa2Wpa3Mixed
+    ) = SecurityWpa2(cipher="ccmp")
     frag: int | None = None
     rts: int | None = None
     dtim_period: int | None = None

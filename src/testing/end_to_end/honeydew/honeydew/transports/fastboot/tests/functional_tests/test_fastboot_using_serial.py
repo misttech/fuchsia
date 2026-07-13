@@ -12,7 +12,9 @@ from honeydew import errors
 from honeydew.auxiliary_devices.power_switch import (
     power_switch as power_switch_interface,
 )
-from honeydew.auxiliary_devices.power_switch import power_switch_using_dmc
+from honeydew.auxiliary_devices.power_switch import (
+    power_switch_using_dmc,
+)
 from honeydew.transports.serial import serial as serial_transport
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)

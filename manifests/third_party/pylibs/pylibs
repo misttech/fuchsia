@@ -15,11 +15,11 @@
         remote="https://fuchsia.googlesource.com/third_party/github.com/annotated-types/annotated-types"
         revision="0735cd3d4c272b88405b6b04009716b691115210"
         gerrithost="https://fuchsia-review.googlesource.com"/>
-    <!-- astroid-3.0.3 -->
+    <!-- astroid-4.0.4 -->
     <project name="third_party/pylibs/astroid"
         path="third_party/pylibs/astroid/src"
         remote="https://fuchsia.googlesource.com/third_party/github.com/pylint-dev/astroid"
-        revision="0375d1a22262b4d7a4327aad5d770b2cd262c4ef"
+        revision="019feb6018eef32a0e3a25d8153427a537961882"
         gerrithost="https://fuchsia-review.googlesource.com"/>
     <!-- autoflake-2.3.3 -->
     <project name="third_party/pylibs/autoflake"
@@ -39,11 +39,11 @@
         remote="https://fuchsia.googlesource.com/third_party/github.com/uqfoundation/dill"
         revision="a9d4d39c411296fb3608c4ffd142134559942d21"
         gerrithost="https://fuchsia-review.googlesource.com"/>
-    <!-- isort-5.13.2 -->
+    <!-- isort-8.0.1 -->
     <project name="third_party/pylibs/isort"
         path="third_party/pylibs/isort/src"
         remote="https://fuchsia.googlesource.com/third_party/github.com/PyCQA/isort"
-        revision="c235f5e450b4b84e58d114ed4c589cbf454175a3"
+        revision="a333737ed43df02b18e6c95477ea1b285b3de15a"
         gerrithost="https://fuchsia-review.googlesource.com"/>
     <!-- mccabe-0.7.0 -->
     <project name="third_party/pylibs/mccabe"
@@ -81,11 +81,11 @@
         remote="https://fuchsia.googlesource.com/third_party/github.com/PyCQA/pyflakes"
         revision="b66726b3e6f1787fa4221d760b355c615b6f7a92"
         gerrithost="https://fuchsia-review.googlesource.com"/>
-    <!-- pylint-3.0.2 -->
+    <!-- pylint-4.0.6 -->
     <project name="third_party/pylibs/pylint"
         path="third_party/pylibs/pylint/src"
         remote="https://fuchsia.googlesource.com/third_party/github.com/pylint-dev/pylint"
-        revision="efee9618894795cc8847727108522aa79431ee25"
+        revision="8a396357098337ba8be714fffdf2d00947a9778c"
         gerrithost="https://fuchsia-review.googlesource.com"/>
     <!-- pyserial-3.5 -->
     <project name="third_party/pylibs/pyserial"
@@ -99,17 +99,17 @@
         remote="https://fuchsia.googlesource.com/third_party/github.com/pyusb/pyusb"
         revision="b9b8a2b1ecb822af0c0f1d2cf0c0ec69f19765e3"
         gerrithost="https://fuchsia-review.googlesource.com"/>
-    <!-- tomlkit-0.14.0 -->
+    <!-- tomlkit-0.15.0 -->
     <project name="third_party/pylibs/tomlkit"
         path="third_party/pylibs/tomlkit/src"
         remote="https://fuchsia.googlesource.com/third_party/github.com/sdispater/tomlkit"
-        revision="090a28e46b58473210a74ec68a3c08b1535ff233"
+        revision="8694e4d3323df68eb325bf3d5ab7caa66f8c206a"
         gerrithost="https://fuchsia-review.googlesource.com"/>
-    <!-- typing_extensions-4.15.0 -->
+    <!-- typing_extensions-4.16.0 -->
     <project name="third_party/pylibs/typing_extensions"
         path="third_party/pylibs/typing_extensions/src"
         remote="https://fuchsia.googlesource.com/third_party/github.com/python/typing_extensions"
-        revision="9d1637e264b5c1a6b7acee3e907015f89b20c2c9"
+        revision="f29cd28d8ed7642cafb1d18daf5aa41be6a5c0aa"
         gerrithost="https://fuchsia-review.googlesource.com"/>
     <!-- typing_inspection-0.4.2 -->
     <project name="third_party/pylibs/typing_inspection"

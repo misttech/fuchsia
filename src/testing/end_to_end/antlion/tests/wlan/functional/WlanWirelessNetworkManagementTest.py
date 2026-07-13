@@ -16,7 +16,9 @@ from antlion.controllers.ap_lib import hostapd_constants
 from antlion.controllers.ap_lib.hostapd_security import (
     Security as DeprecatedSecurity,
 )
-from antlion.controllers.ap_lib.hostapd_security import SecurityMode
+from antlion.controllers.ap_lib.hostapd_security import (
+    SecurityMode,
+)
 from antlion.controllers.ap_lib.radio_measurement import (
     BssidInformation,
     BssidInformationCapabilities,

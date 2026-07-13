@@ -1,6 +1,8 @@
 Name: typing_extensions
 URL: https://github.com/python/typing_extensions
-Revision: 9d1637e264b5c1a6b7acee3e907015f89b20c2c9
+Security Critical: no
+Revision: f29cd28d8ed7642cafb1d18daf5aa41be6a5c0aa
+Version: 4.16.0
 License: PSF License Version 2 and the Zero-Clause BSD license
 License File: src/LICENSE
 Description: typing_extensions is backported and experimental type hints for Python

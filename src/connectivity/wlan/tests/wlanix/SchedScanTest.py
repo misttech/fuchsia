@@ -23,7 +23,9 @@ from antlion.controllers.ap_lib.hostapd_constants import (
 from antlion.controllers.ap_lib.hostapd_security import (
     Security as DeprecatedSecurity,
 )
-from antlion.controllers.ap_lib.hostapd_security import SecurityMode
+from antlion.controllers.ap_lib.hostapd_security import (
+    SecurityMode,
+)
 from common.utils.ies import read_ssid
 from fuchsia_controller_py import Channel
 from honeydew.utils.deadline import Deadline
