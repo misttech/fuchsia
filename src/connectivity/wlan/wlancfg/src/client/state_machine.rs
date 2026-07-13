@@ -18,6 +18,10 @@ use crate::util::listener::Message::NotifyListeners;
 use crate::util::listener::{ClientListenerMessageSender, ClientNetworkState, ClientStateUpdate};
 use crate::util::state_machine::{self, ExitReason, IntoStateExt, StateMachineStatusPublisher};
 use anyhow::format_err;
+use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
+use fidl_fuchsia_wlan_internal as fidl_internal;
+use fidl_fuchsia_wlan_policy as fidl_policy;
+use fidl_fuchsia_wlan_sme as fidl_sme;
 use fuchsia_async::{self as fasync, DurationExt};
 use fuchsia_inspect::Node as InspectNode;
 use fuchsia_inspect_contrib::inspect_insert;
@@ -32,10 +36,6 @@ use std::pin::Pin;
 use std::sync::Arc;
 use wlan_common::bss::BssDescription;
 use wlan_common::sequestered::Sequestered;
-use {
-    fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211, fidl_fuchsia_wlan_internal as fidl_internal,
-    fidl_fuchsia_wlan_policy as fidl_policy, fidl_fuchsia_wlan_sme as fidl_sme,
-};
 
 const MAX_CONNECTION_ATTEMPTS: u8 = 4; // arbitrarily chosen until we have some data
 const NUM_PAST_SCORES: usize = 91; // number of past periodic connection scores to store for metrics
@@ -1497,6 +1497,7 @@ mod tests {
             connect_selection.target.network.clone(),
             connect_selection.target.credential.clone(),
             connect_selection.target.saved_network_info.has_ever_connected,
+            None,
         )
         .expect("failed to create network config");
         test_values.saved_networks_manager.set_lookup_compatible_response(vec![expected_config]);
@@ -2459,6 +2460,7 @@ mod tests {
             connect_selection.target.network.clone(),
             connect_selection.target.credential.clone(),
             false,
+            None,
         )
         .expect("failed to create network config");
         test_values.saved_networks_manager.set_lookup_compatible_response(vec![expected_config]);

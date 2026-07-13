@@ -174,7 +174,7 @@ mod tests {
         let stash_security = storage::SecurityType::Wpa3;
         let id = NetworkIdentifier::try_from(ssid, security_type).unwrap();
         let credential = Credential::Password(b"foo_pass".to_vec());
-        let network_config = NetworkConfig::new(id, credential, has_ever_connected)
+        let network_config = NetworkConfig::new(id, credential, has_ever_connected, None)
             .expect("failed to create network config");
         assert_eq!(
             storage::PersistentStorageData::from(network_config),
@@ -211,7 +211,7 @@ mod tests {
             ),
         };
 
-        let network_config = NetworkConfig::new(id, credential, has_ever_connected)
+        let network_config = NetworkConfig::new(id, credential, has_ever_connected, None)
             .expect("failed to create network config");
         assert_eq!(
             storage::PersistentStorageData::from(network_config),

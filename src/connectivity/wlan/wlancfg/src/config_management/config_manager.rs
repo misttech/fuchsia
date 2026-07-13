@@ -12,15 +12,14 @@ use crate::client::types::{self, ScanObservation};
 use crate::telemetry::{TelemetryEvent, TelemetrySender};
 use anyhow::format_err;
 use async_trait::async_trait;
+use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
+use fidl_fuchsia_wlan_sme as fidl_sme;
+use fuchsia_async as fasync;
 use futures::lock::Mutex;
 use log::{error, info};
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 use wlan_storage::policy::{POLICY_STORAGE_ID, PolicyStorage};
-use {
-    fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211, fidl_fuchsia_wlan_sme as fidl_sme,
-    fuchsia_async as fasync,
-};
 
 const MAX_CONFIGS_PER_SSID: usize = 1;
 
@@ -162,6 +161,7 @@ impl SavedNetworksManager {
                 id.clone(),
                 persisted_data.credential.clone().into(),
                 persisted_data.has_ever_connected,
+                None,
             );
             match config {
                 Ok(config) => saved_networks.entry(id).or_default().push(config),
@@ -326,7 +326,8 @@ impl SavedNetworksManagerApi for SavedNetworksManager {
             info!("Saving a previously saved network with same password.");
             return Ok(None);
         }
-        let network_config = NetworkConfig::new(network_id.clone(), credential.clone(), false)?;
+        let network_config =
+            NetworkConfig::new(network_id.clone(), credential.clone(), false, None)?;
         let network_configs = network_entry.or_default();
         let evicted_config = evict_if_needed(network_configs);
         network_configs.push(network_config);
@@ -483,7 +484,7 @@ impl SavedNetworksManagerApi for SavedNetworksManager {
                     });
                     for config in compatible_configs {
                         config.update_hidden_prob(HiddenProbEvent::SeenPassive);
-                        config.update_seen_multiple_bss(has_multiple_bss)
+                        config.update_seen_multiple_bss(has_multiple_bss);
                     }
                 }
             }
@@ -712,7 +713,7 @@ mod tests {
         // Store another network and verify.
         let network_id_baz = NetworkIdentifier::try_from("baz", SecurityType::Wpa2).unwrap();
         let psk = Credential::Psk(vec![1; 32]);
-        let config_baz = NetworkConfig::new(network_id_baz.clone(), psk.clone(), false)
+        let config_baz = NetworkConfig::new(network_id_baz.clone(), psk.clone(), false, None)
             .expect("failed to create network config");
         assert!(
             saved_networks
@@ -917,10 +918,12 @@ mod tests {
         let results = saved_networks
             .lookup_compatible(&ssid, types::SecurityTypeDetailed::Wpa2Wpa3Personal)
             .await;
-        let expected_config_wpa2 = NetworkConfig::new(network_id_wpa2, credential_wpa2, false)
-            .expect("Failed to create config");
-        let expected_config_wpa3 = NetworkConfig::new(network_id_wpa3, credential_wpa3, false)
-            .expect("Failed to create config");
+        let expected_config_wpa2 =
+            NetworkConfig::new(network_id_wpa2, credential_wpa2, false, None)
+                .expect("Failed to create config");
+        let expected_config_wpa3 =
+            NetworkConfig::new(network_id_wpa3, credential_wpa3, false, None)
+                .expect("Failed to create config");
         assert_eq!(results.len(), 2);
         assert!(results.contains(&expected_config_wpa2));
         assert!(results.contains(&expected_config_wpa3));
@@ -959,7 +962,7 @@ mod tests {
 
         // Only the WPA3 config with a credential should be returned.
         let expected_config_wpa3 =
-            NetworkConfig::new(network_id_password, credential_password, false)
+            NetworkConfig::new(network_id_password, credential_password, false, None)
                 .expect("Failed to create configc");
         let results = exec
             .run_singlethreaded(saved_networks.lookup_compatible(&ssid, wpa3_detailed_security));
@@ -1778,7 +1781,7 @@ mod tests {
         let credential = Credential::from_bytes(password.into());
         let id = NetworkIdentifier::try_from(ssid, credential.derived_security_type()).unwrap();
         let has_ever_connected = false;
-        NetworkConfig::new(id, credential, has_ever_connected).unwrap()
+        NetworkConfig::new(id, credential, has_ever_connected, None).unwrap()
     }
 
     #[fuchsia::test]
@@ -1833,37 +1836,37 @@ mod tests {
             ssid: types::Ssid::try_from("hidden").unwrap(),
             security_type: types::SecurityType::Wpa2,
         };
-        let mut net_config_hidden = NetworkConfig::new(
+        let net_config_hidden = NetworkConfig::new(
             id_hidden.clone(),
             Credential::Password(b"password".to_vec()),
             false,
+            Some(1.0),
         )
         .expect("failed to create network config");
-        net_config_hidden.hidden_probability = 1.0;
 
         let id_not_hidden = types::NetworkIdentifier {
             ssid: types::Ssid::try_from("not_hidden").unwrap(),
             security_type: types::SecurityType::Wpa2,
         };
-        let mut net_config_not_hidden = NetworkConfig::new(
+        let net_config_not_hidden = NetworkConfig::new(
             id_not_hidden.clone(),
             Credential::Password(b"password".to_vec()),
             false,
+            Some(0.0),
         )
         .expect("failed to create network config");
-        net_config_not_hidden.hidden_probability = 0.0;
 
         let id_maybe_hidden = types::NetworkIdentifier {
             ssid: types::Ssid::try_from("maybe_hidden").unwrap(),
             security_type: types::SecurityType::Wpa2,
         };
-        let mut net_config_maybe_hidden = NetworkConfig::new(
+        let net_config_maybe_hidden = NetworkConfig::new(
             id_maybe_hidden.clone(),
             Credential::Password(b"password".to_vec()),
             false,
+            Some(0.5),
         )
         .expect("failed to create network config");
-        net_config_maybe_hidden.hidden_probability = 0.5;
 
         let mut maybe_hidden_selection_count = 0;
         let mut hidden_selection_count = 0;
@@ -1904,49 +1907,49 @@ mod tests {
             ssid: types::Ssid::try_from("hidden").unwrap(),
             security_type: types::SecurityType::Wpa2,
         };
-        let mut net_config_hidden = NetworkConfig::new(
+        let net_config_hidden = NetworkConfig::new(
             id_hidden.clone(),
             Credential::Password(b"password".to_vec()),
             false,
+            Some(1.0),
         )
         .expect("failed to create network config");
-        net_config_hidden.hidden_probability = 1.0;
 
         let id_maybe_hidden_high = types::NetworkIdentifier {
             ssid: types::Ssid::try_from("maybe_hidden_high").unwrap(),
             security_type: types::SecurityType::Wpa2,
         };
-        let mut net_config_maybe_hidden_high = NetworkConfig::new(
+        let net_config_maybe_hidden_high = NetworkConfig::new(
             id_maybe_hidden_high.clone(),
             Credential::Password(b"password".to_vec()),
             false,
+            Some(0.8),
         )
         .expect("failed to create network config");
-        net_config_maybe_hidden_high.hidden_probability = 0.8;
 
         let id_maybe_hidden_low = types::NetworkIdentifier {
             ssid: types::Ssid::try_from("maybe_hidden_low").unwrap(),
             security_type: types::SecurityType::Wpa2,
         };
-        let mut net_config_maybe_hidden_low = NetworkConfig::new(
+        let net_config_maybe_hidden_low = NetworkConfig::new(
             id_maybe_hidden_low.clone(),
             Credential::Password(b"password".to_vec()),
             false,
+            Some(0.7),
         )
         .expect("failed to create network config");
-        net_config_maybe_hidden_low.hidden_probability = 0.7;
 
         let id_not_hidden = types::NetworkIdentifier {
             ssid: types::Ssid::try_from("not_hidden").unwrap(),
             security_type: types::SecurityType::Wpa2,
         };
-        let mut net_config_not_hidden = NetworkConfig::new(
+        let net_config_not_hidden = NetworkConfig::new(
             id_not_hidden.clone(),
             Credential::Password(b"password".to_vec()),
             false,
+            Some(0.0),
         )
         .expect("failed to create network config");
-        net_config_not_hidden.hidden_probability = 0.0;
 
         let selected_networks = select_high_probability_hidden_networks(vec![
             net_config_hidden.clone(),
@@ -2159,7 +2162,7 @@ mod tests {
 
         let id = NetworkIdentifier::try_from("foo", SecurityType::Wpa).unwrap();
         let credential = Credential::Password(b"some_password".to_vec());
-        let mut config = NetworkConfig::new(id.clone(), credential.clone(), true)
+        let mut config = NetworkConfig::new(id.clone(), credential.clone(), true, None)
             .expect("failed to create config");
         let mut past_connections = HistoricalListsByBssid::new();
 

@@ -271,6 +271,7 @@ impl NetworkConfig {
         id: NetworkIdentifier,
         credential: Credential,
         has_ever_connected: bool,
+        hidden_probability: Option<f32>,
     ) -> Result<Self, NetworkConfigError> {
         check_config_errors(&id.ssid, &id.security_type, &credential)?;
 
@@ -279,7 +280,7 @@ impl NetworkConfig {
             security_type: id.security_type,
             credential,
             has_ever_connected,
-            hidden_probability: PROB_HIDDEN_DEFAULT,
+            hidden_probability: hidden_probability.unwrap_or(PROB_HIDDEN_DEFAULT).clamp(0.0, 1.0),
             hidden_probability_stats: HiddenProbabilityStats::new(),
             perf_stats: PerformanceStats::new(),
             scan_stats: ScanStats::new(),
@@ -872,6 +873,7 @@ mod tests {
             NetworkIdentifier::try_from("foo", SecurityType::None).unwrap(),
             credential.clone(),
             false,
+            None,
         )
         .expect("Error creating network config for foo");
 
@@ -891,6 +893,20 @@ mod tests {
     }
 
     #[fuchsia::test]
+    fn new_network_config_with_hidden_prob_some() {
+        let credential = Credential::None;
+        let network_config = NetworkConfig::new(
+            NetworkIdentifier::try_from("foo", SecurityType::None).unwrap(),
+            credential.clone(),
+            false,
+            Some(0.05),
+        )
+        .expect("Error creating network config for foo");
+
+        assert_eq!(network_config.hidden_probability, 0.05);
+    }
+
+    #[fuchsia::test]
     fn new_network_config_password_credential() {
         let credential = Credential::Password(b"foo-password".to_vec());
 
@@ -898,6 +914,7 @@ mod tests {
             NetworkIdentifier::try_from("foo", SecurityType::Wpa2).unwrap(),
             credential.clone(),
             false,
+            None,
         )
         .expect("Error creating network config for foo");
 
@@ -925,6 +942,7 @@ mod tests {
             NetworkIdentifier::try_from("foo", SecurityType::Wpa2).unwrap(),
             credential.clone(),
             false,
+            None,
         )
         .expect("Error creating network config for foo");
 
@@ -951,6 +969,7 @@ mod tests {
             NetworkIdentifier::try_from("foo", SecurityType::Wpa).unwrap(),
             credential,
             false,
+            None,
         );
 
         assert_matches!(config_result, Err(NetworkConfigError::PasswordLen));
@@ -964,6 +983,7 @@ mod tests {
             NetworkIdentifier::try_from("foo", SecurityType::Wpa2).unwrap(),
             credential,
             false,
+            None,
         );
 
         assert_matches!(config_result, Err(NetworkConfigError::PskLen));
@@ -1363,6 +1383,7 @@ mod tests {
             NetworkIdentifier::try_from("some_ssid", SecurityType::None).unwrap(),
             Credential::None,
             false,
+            None,
         )
         .expect("Failed to create network config");
         assert_eq!(network_config.hidden_probability, PROB_HIDDEN_DEFAULT);
@@ -1385,6 +1406,7 @@ mod tests {
             NetworkIdentifier::try_from("some_ssid", SecurityType::None).unwrap(),
             Credential::None,
             false,
+            None,
         )
         .expect("Failed to create network config");
 
@@ -1410,6 +1432,7 @@ mod tests {
             NetworkIdentifier::try_from("some_ssid", SecurityType::None).unwrap(),
             Credential::None,
             false,
+            None,
         )
         .expect("Failed to create network config");
 
@@ -1429,6 +1452,7 @@ mod tests {
             NetworkIdentifier::try_from("some_ssid", SecurityType::None).unwrap(),
             Credential::None,
             false,
+            None,
         )
         .expect("Failed to create network config");
 
@@ -1449,6 +1473,7 @@ mod tests {
             NetworkIdentifier::try_from("some_ssid", SecurityType::None).unwrap(),
             Credential::None,
             false,
+            None,
         )
         .expect("Failed to create network config");
 
@@ -1469,6 +1494,7 @@ mod tests {
             NetworkIdentifier::try_from("some_ssid", SecurityType::None).unwrap(),
             Credential::None,
             false,
+            None,
         )
         .expect("Failed to create network config");
 
@@ -1487,6 +1513,7 @@ mod tests {
             NetworkIdentifier::try_from("foo", SecurityType::Wpa2).unwrap(),
             policy_wpa_password(),
             false,
+            None,
         )
         .expect("Error creating network config for foo");
         config.update_hidden_prob(HiddenProbEvent::ConnectActive);
@@ -1647,6 +1674,7 @@ mod tests {
             NetworkIdentifier::try_from(&ssid, SecurityType::None).unwrap(),
             Credential::None,
             false,
+            None,
         )
         .expect("Failed to create network config");
 
@@ -1666,6 +1694,7 @@ mod tests {
             NetworkIdentifier::try_from(&ssid, SecurityType::None).unwrap(),
             Credential::None,
             false,
+            None,
         )
         .expect("Failed to create network config");
 
@@ -1686,6 +1715,7 @@ mod tests {
             NetworkIdentifier::try_from(&ssid, SecurityType::None).unwrap(),
             Credential::None,
             false,
+            None,
         )
         .expect("Failed to create network config");
 

@@ -12,15 +12,14 @@ use crate::config_management::{
 };
 use anyhow::format_err;
 use async_trait::async_trait;
+use fidl_fuchsia_wlan_policy as fidl_policy;
+use fidl_fuchsia_wlan_sme as fidl_sme;
+use fuchsia_async as fasync;
 use futures::lock::Mutex;
 use log::{info, warn};
 use rand::Rng;
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
-use {
-    fidl_fuchsia_wlan_policy as fidl_policy, fidl_fuchsia_wlan_sme as fidl_sme,
-    fuchsia_async as fasync,
-};
 
 pub struct FakeSavedNetworksManager {
     saved_networks: Mutex<HashMap<NetworkIdentifier, Vec<NetworkConfig>>>,
@@ -104,7 +103,7 @@ impl FakeSavedNetworksManager {
                 .expect("test config is missing credential")
                 .try_into()
                 .expect("test credential is not valid");
-            let config = NetworkConfig::new(id.clone(), credential, false)
+            let config = NetworkConfig::new(id.clone(), credential, false, None)
                 .expect("provided config is not valid");
 
             saved_networks.entry(id).or_default().push(config);
@@ -228,7 +227,7 @@ impl SavedNetworksManagerApi for FakeSavedNetworksManager {
         if self.fail_all_stores {
             return Err(NetworkConfigError::FileWriteError);
         }
-        let config = NetworkConfig::new(network_id.clone(), credential, false)?;
+        let config = NetworkConfig::new(network_id.clone(), credential, false, None)?;
         return Ok(self
             .saved_networks
             .lock()
