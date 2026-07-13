@@ -32,14 +32,13 @@ class BrwLockTest {
   BrwLockTest() : state_(0), kill_(false) {}
   ~BrwLockTest() {}
 
-  template <unsigned int readers, unsigned int writers, unsigned int upgraders>
+  template <unsigned int readers, unsigned int writers>
   static bool RunTest() {
     BEGIN_TEST;
 
     BrwLockTest<LockType> test;
     Thread* reader_threads[readers];
     Thread* writer_threads[writers];
-    Thread* upgrader_threads[upgraders];
 
     const SchedulerState::BaseProfile old_bp = Thread::Current::Get()->SnapshotBaseProfile();
 
@@ -82,17 +81,6 @@ class BrwLockTest {
       t->SetCpuAffinity(worker_mask);
       t->Resume();
     }
-    for (auto& t : upgrader_threads) {
-      t = Thread::Create(
-          "upgrader worker",
-          [](void* arg) -> int {
-            static_cast<BrwLockTest*>(arg)->UpgraderWorker();
-            return 0;
-          },
-          &test, DEFAULT_PRIORITY);
-      t->SetCpuAffinity(worker_mask);
-      t->Resume();
-    }
 
     zx_instant_mono_t start = current_mono_time();
     zx_duration_mono_t duration = ZX_MSEC(300);
@@ -100,7 +88,7 @@ class BrwLockTest {
       uint32_t local_state = test.state_.load(ktl::memory_order_relaxed);
       uint32_t num_readers = local_state & 0xffff;
       uint32_t num_writers = local_state >> 16;
-      EXPECT_LE(num_readers, readers + upgraders, "Too many readers");
+      EXPECT_LE(num_readers, readers, "Too many readers");
       EXPECT_TRUE(num_writers == 0 || num_writers == 1, "Too many writers");
       EXPECT_TRUE((num_readers == 0 && num_writers == 0) || num_writers > 0 || num_readers > 0,
                   "Readers and writers");
@@ -136,10 +124,7 @@ class BrwLockTest {
       zx_status_t status = join(t, "Writer");
       EXPECT_EQ(status, ZX_OK, "Writer failed to join");
     }
-    for (auto& t : upgrader_threads) {
-      zx_status_t status = join(t, "Upgrader");
-      EXPECT_EQ(status, ZX_OK, "Upgrader failed to join");
-    }
+
     EXPECT_EQ(test.state_.load(ktl::memory_order_seq_cst), 0u, "Threads still holding lock");
 
     // Restore original base profile.
@@ -171,21 +156,6 @@ class BrwLockTest {
     }
   }
 
-  void UpgraderWorker() {
-    while (!kill_.load(ktl::memory_order_relaxed)) {
-      lock_.ReadAcquire();
-      state_.fetch_add(1, ktl::memory_order_relaxed);
-      Thread::Current::Yield();
-      state_.fetch_sub(1, ktl::memory_order_relaxed);
-      lock_.ReadUpgrade();
-      state_.fetch_add(0x10000, ktl::memory_order_relaxed);
-      Thread::Current::Yield();
-      state_.fetch_sub(0x10000, ktl::memory_order_relaxed);
-      lock_.WriteRelease();
-      rand_delay();
-    }
-  }
-
   LockType lock_;
   ktl::atomic<uint32_t> state_;
   ktl::atomic<bool> kill_;
@@ -194,12 +164,10 @@ class BrwLockTest {
 UNITTEST_START_TESTCASE(brwlock_tests)
 // The number of threads to use for readers, writers and upgraders was chosen by manual
 // instrumentation of the brwlock to see if all the different code paths were being hit.
-UNITTEST("parallel readers(PI)", (BrwLockTest<BrwLockPi>::RunTest<8, 0, 0>))
-UNITTEST("single writer(PI)", (BrwLockTest<BrwLockPi>::RunTest<0, 4, 0>))
-UNITTEST("readers and writer(PI)", (BrwLockTest<BrwLockPi>::RunTest<4, 2, 0>))
-UNITTEST("upgraders(PI)", (BrwLockTest<BrwLockPi>::RunTest<2, 0, 3>))
-UNITTEST("parallel readers(No PI)", (BrwLockTest<BrwLockNoPi>::RunTest<8, 0, 0>))
-UNITTEST("single writer(No PI)", (BrwLockTest<BrwLockNoPi>::RunTest<0, 4, 0>))
-UNITTEST("readers and writer(No PI)", (BrwLockTest<BrwLockNoPi>::RunTest<4, 2, 0>))
-UNITTEST("upgraders(No PI)", (BrwLockTest<BrwLockNoPi>::RunTest<2, 0, 3>))
+UNITTEST("parallel readers(PI)", (BrwLockTest<BrwLockPi>::RunTest<8, 0>))
+UNITTEST("single writer(PI)", (BrwLockTest<BrwLockPi>::RunTest<0, 4>))
+UNITTEST("readers and writer(PI)", (BrwLockTest<BrwLockPi>::RunTest<4, 2>))
+UNITTEST("parallel readers(No PI)", (BrwLockTest<BrwLockNoPi>::RunTest<8, 0>))
+UNITTEST("single writer(No PI)", (BrwLockTest<BrwLockNoPi>::RunTest<0, 4>))
+UNITTEST("readers and writer(No PI)", (BrwLockTest<BrwLockNoPi>::RunTest<4, 2>))
 UNITTEST_END_TESTCASE(brwlock_tests, "brwlock", "brwlock tests")

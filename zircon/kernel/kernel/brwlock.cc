@@ -616,67 +616,6 @@ void BrwLock<PI>::ReleaseWakeup() {
                                   CLT_TAG("BrwLock<PI>::ContendedReadAcquire"), do_transaction);
 }
 
-template <BrwLockEnablePi PI>
-void BrwLock<PI>::ContendedReadUpgrade() {
-  LOCK_TRACE_DURATION("ContendedReadUpgrade", ("name", class_name_ref()));
-  Thread* const current_thread = Thread::Current::Get();
-  ContentionTimer timer(current_thread, current_mono_ticks());
-
-  auto TryBlock = [&]() TA_REQ(chainlock_transaction_token) TA_REL(wait_.get_lock()) -> bool {
-    ktl::optional<BlockOpLockDetails<PI>> maybe_lock_details = LockForBlock();
-
-    if (maybe_lock_details.has_value()) {
-      ChainLockTransaction::Finalize();
-      current_thread->get_lock().AssertAcquired();
-      Block(current_thread, ktl::move(maybe_lock_details).value(), true);
-      return true;
-    } else {
-      // We failed to obtain the locks we needed.  Convert our waiter status
-      // back into a reader status, then drop the locks in order to try again.
-      ktl::atomic_ref(state_.state_)
-          .fetch_add(-kBrwLockWaiter + kBrwLockReader, ktl::memory_order_acquire);
-      wait_.get_lock().Release();
-      return false;
-    }
-  };
-
-  const auto do_transaction = [&]()
-                                  TA_REQ(chainlock_transaction_token,
-                                         preempt_disabled_token) -> ChainLockTransaction::Result<> {
-    wait_.get_lock().AcquireFirstInChain();
-
-    // Convert reading state into waiting.  This way, if anyone else attempts to
-    // claim the BRW lock, they will encounter contention and need to obtain our
-    // OWQ's ChainLock lock in order to deal with it.
-    const uint64_t prev =
-        ktl::atomic_ref(state_.state_)
-            .fetch_add(-kBrwLockReader + kBrwLockWaiter, ktl::memory_order_relaxed);
-
-    if (StateHasExclusiveReader(prev)) {
-      if constexpr (PI == BrwLockEnablePi::Yes) {
-        ktl::atomic_ref(state_.writer_).store(Thread::Current::Get(), ktl::memory_order_relaxed);
-      }
-      // There are no writers or readers. There might be waiters, but as we
-      // already have some form of lock we still have fairness even if we
-      // bypass the queue, so we convert our waiting into writing
-      ktl::atomic_ref(state_.state_)
-          .fetch_add(-kBrwLockWaiter + kBrwLockWriter, ktl::memory_order_acquire);
-
-      wait_.get_lock().Release();
-      return ChainLockTransaction::Done;
-    }
-
-    // Looks like we were not the only reader, so we need to try to block instead.
-    if (TryBlock()) {
-      return ChainLockTransaction::Done;
-    }
-
-    return ChainLockTransaction::Action::Backoff;
-  };
-  ChainLockTransaction::UntilDone(PreemptDisableAndIrqSaveOption,
-                                  CLT_TAG("BrwLock<PI>::ContendedReadUpgrade"), do_transaction);
-}
-
 template class BrwLock<BrwLockEnablePi::Yes>;
 template class BrwLock<BrwLockEnablePi::No>;
 

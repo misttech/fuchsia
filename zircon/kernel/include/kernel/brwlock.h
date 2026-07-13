@@ -146,14 +146,8 @@ class TA_CAP("mutex") BrwLock
       Thread::Current::preemption_state().PreemptReenable();
     }
   }
-
-  void ReadUpgrade() TA_REL_SHARED() TA_ACQ() {
-    canary_.Assert();
-    DEBUG_ASSERT(!arch_blocking_disallowed());
-    // To upgrade we require that we as a current reader be the only current
-    // user of the lock.
-    CommonWriteAcquire(kBrwLockReader, [this] { ContendedReadUpgrade(); });
-  }
+  // Note: ReadUpgrade() is intentionally omitted because it is unused across the codebase
+  // outside of tests and may be reconsidered when a concrete use case arises.
 
   // suppress default constructors
   DISALLOW_COPY_ASSIGN_AND_MOVE(BrwLock);
@@ -218,7 +212,6 @@ class TA_CAP("mutex") BrwLock
 
   void ContendedReadAcquire() TA_EXCL(chainlock_transaction_token);
   void ContendedWriteAcquire() TA_EXCL(chainlock_transaction_token);
-  void ContendedReadUpgrade() TA_EXCL(chainlock_transaction_token);
   void ReleaseWakeup() TA_EXCL(chainlock_transaction_token);
 
   ktl::optional<BlockOpLockDetails<PI>> LockForBlock()
