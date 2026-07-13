@@ -6,6 +6,7 @@ import("//build/bind/bind.gni")
 import("//build/components.gni")
 import("//build/drivers.gni")
 import("//build/test.gni")
+import("//build/testing/environments.gni")
 
 assert(target_cpu == "x64")
 
@@ -79,5 +80,31 @@ group("tests") {
   deps = [
     ":intel-rtc-test",
     ":intel_rtc_bind_test",
+    ":rtc-periodic-interrupt-test",
   ]
+}
+
+test("rtc-periodic-interrupt-test-bin") {
+  output_name = "rtc-periodic-interrupt-test"
+  sources = [ "rtc-periodic-interrupt-test.cc" ]
+  deps = [
+    "//sdk/fidl/fuchsia.kernel:fuchsia.kernel_cpp",
+    "//sdk/lib/component/incoming/cpp",
+    "//src/lib/ddk",
+    "//zircon/system/ulib/hwreg",
+    "//zircon/system/ulib/zx",
+    "//zircon/system/ulib/zxtest",
+  ]
+}
+
+fuchsia_unittest_package("rtc-periodic-interrupt-test") {
+  manifest = "meta/rtc-periodic-interrupt-test.cml"
+  deps = [ ":rtc-periodic-interrupt-test-bin" ]
+  test_type = "system"
+  test_specs = {
+    environments = [
+      nuc7_env,
+      nuc11_env,
+    ]
+  }
 }

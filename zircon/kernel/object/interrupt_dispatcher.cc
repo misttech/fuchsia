@@ -208,6 +208,10 @@ void InterruptDispatcher::InterruptHandler() {
   AutoPreemptDisabler preempt_disable;
   Guard<SpinLock, IrqSave> guard{&spinlock_};
 
+  if (state_ == InterruptState::DESTROYED) {
+    return;
+  }
+
   const CurrentTicksObservation trigger_time = timer_current_mono_and_boot_ticks();
   ktl::optional<zx_instant_boot_t> boot_trigger_time;
 
@@ -253,11 +257,21 @@ void InterruptDispatcher::InterruptHandler() {
 }
 
 zx_status_t InterruptDispatcher::Destroy() {
+  const InterruptState old_state = [&]() {
+    Guard<SpinLock, IrqSave> guard{&spinlock_};
+    return ktl::exchange(state_, InterruptState::DESTROYED);
+  }();
+
+  if (old_state == InterruptState::DESTROYED) {
+    return ZX_OK;
+  }
+
   // The interrupt may presently have been fired and we could already be about to acquire the
   // spinlock_ in InterruptHandler. If we were to call UnregisterInterruptHandler whilst holding
   // the spinlock_ then we risk a deadlock scenario where the platform interrupt code may have
   // taken a lock to call InterruptHandler, and it might take the same lock when we call
   // UnregisterInterruptHandler.
+
   MaskInterrupt();
   DeactivateInterrupt();
   UnregisterInterruptHandler();
@@ -269,17 +283,14 @@ zx_status_t InterruptDispatcher::Destroy() {
 
   if (port_dispatcher_) {
     bool packet_was_in_queue = port_dispatcher_->RemoveInterruptPacket(&port_packet_);
-    if ((state_ == InterruptState::NEEDACK) && !packet_was_in_queue) {
-      state_ = InterruptState::DESTROYED;
+    if ((old_state == InterruptState::NEEDACK) && !packet_was_in_queue) {
       return ZX_ERR_NOT_FOUND;
     }
-    if ((state_ == InterruptState::IDLE) ||
-        ((state_ == InterruptState::NEEDACK) && packet_was_in_queue)) {
-      state_ = InterruptState::DESTROYED;
+    if ((old_state == InterruptState::IDLE) ||
+        ((old_state == InterruptState::NEEDACK) && packet_was_in_queue)) {
       return ZX_OK;
     }
   } else {
-    state_ = InterruptState::DESTROYED;
     Signal();
   }
   return ZX_OK;
