@@ -112,6 +112,47 @@ def generate_bazel_content_hash_files(
     return result
 
 
+def bazel_warm_up(fuchsia_dir: Path, build_dir: Path) -> int:
+    """Launch the Bazel daemon to verify workspace configuration.
+
+    This performs a minimal query to verify that the top-level MODULE.bazel file
+    and the generated .bazelrc files can be parsed properly. An error here means
+    a severe bug in the Fuchsia build system.
+
+    Args:
+        fuchsia_dir: Path to Fuchsia source directory.
+        build_dir: Path to Ninja build directory.
+
+    Returns:
+        0 on success, or process status code in case of failure.
+    """
+    bazel_paths = build_utils.BazelPaths(fuchsia_dir, build_dir)
+    bazel_launcher = build_utils.BazelLauncher(bazel_paths.launcher)
+    ret = bazel_launcher.run_bazel_command(
+        ["query", "//build/bazel/warm_up:BUILD.bazel"]
+    )
+    if ret.returncode != 0:
+        print(
+            f"""ERROR: Something is wrong with the Bazel workspace!!
+
+Trying to start the Bazel daemon and perform a minimal query failed. There is something
+wrong with the workspace's configuration. This could be an error in toplevel.MODULE.bazel,
+the generated .bazelrc file or anything else. If this happens during a regular build
+please file a bug with repro steps and contact the Fuchsia Build Team.
+
+FAILED COMMAND STDERR
+{ret.stderr}
+
+FAILED COMMAND STDOUT
+{ret.stdout}
+
+""",
+            file=sys.stderr,
+        )
+
+    return ret.returncode
+
+
 def update_prebuilt_build_ids_list(fuchsia_dir: Path, list_file: Path) -> None:
     """Update the file containing the list of files under //prebuilt/.build-id
 
@@ -592,6 +633,16 @@ def main() -> int:
             bazel_build_action_targets, build_dir
         )
 
+        # Bazel warm-up: perform a minimalistic query that ensures that the Bazel
+        # daemon is started for the current build directory and that
+        # toplevel.MODULE.bazel is processed
+        time_profile.start(
+            "bazel_warm_up", "Launching Bazel daemon with minimal query"
+        )
+        returncode = bazel_warm_up(fuchsia_dir, build_dir)
+        if returncode != 0:
+            return returncode
+
         time_profile.start("tests.json", "Generating tests.json.")
         args_json = json.loads((build_dir / "args.json").read_text())
         extra_ninja_build_inputs |= build_tests_json.build_tests_json(
@@ -612,6 +663,11 @@ def main() -> int:
         # Find all imported Python modules and set them as extra inputs
         # for safety. This avoids the need to manually track them, which
         # is error-prone.
+        time_profile.start(
+            "imported_python_modules",
+            "Find Python modules imported from this script",
+        )
+
         extra_ninja_build_inputs |= {
             Path(m.__file__)  # type: ignore
             for m in sys.modules.values()
@@ -694,7 +750,7 @@ def main() -> int:
         return 0
 
     def ensure_regenerator_will_run_again() -> None:
-        """Ensures this script run again the next time a build is attempted.
+        """Ensures this script runs again the next time a build is attempted.
 
         Deletes files used by Ninja and `fx bazel` to determine whether the
         workspace needs to be regenerated. Call to ensure regeneration is run
