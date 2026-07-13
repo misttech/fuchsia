@@ -3026,23 +3026,28 @@ mod tests {
         {
             let mut name_block = state.get_block_mut::<StringRef>(name_index);
             HeaderFields::set_string_reference_count(&mut name_block, MAX_REFERENCE_COUNT);
+            assert_eq!(MAX_REFERENCE_COUNT, HeaderFields::string_reference_count(&name_block));
         }
 
         // Record stats before the failing allocation
         let stats_before = state.stats();
 
-        // 3. Try to create another node with the same name "foo".
-        // This will try to reuse the string reference "foo" and increment its ref count.
-        // It should fail due to overflow.
+        // 3. Try to create another node with the same name "foo". The ref is saturated,
+        // so this should succeed.
         let result = state.create_node("foo", parent_index);
-        assert!(result.is_err());
+        assert!(result.is_ok());
+        {
+            let name_block = state.get_block_mut::<StringRef>(name_index);
+            assert_eq!(MAX_REFERENCE_COUNT, HeaderFields::string_reference_count(&name_block));
+        }
 
         // 4. Verify that no block was leaked.
         let stats_after = state.stats();
 
         let active_before = stats_before.allocated_blocks - stats_before.deallocated_blocks;
         let active_after = stats_after.allocated_blocks - stats_after.deallocated_blocks;
-        assert_eq!(active_after, active_before);
+        // Add 1 because the new node block
+        assert_eq!(active_after, active_before + 1);
     }
 
     #[fuchsia::test]

@@ -980,19 +980,19 @@ impl<T: Deref<Target = Q> + DerefMut<Target = Q>, Q: WriteBytes + ReadBytes> Blo
     /// Increment the reference count by 1.
     pub fn increment_ref_count(&mut self) -> Result<(), Error> {
         let cur = HeaderFields::string_reference_count(self);
-        if cur >= constants::MAX_REFERENCE_COUNT {
-            return Err(Error::InvalidReferenceCount);
+        if cur < constants::MAX_REFERENCE_COUNT {
+            HeaderFields::set_string_reference_count(self, cur + 1);
         }
-        let new_count = cur + 1;
-        HeaderFields::set_string_reference_count(self, new_count);
         Ok(())
     }
 
     /// Decrement the reference count by 1.
     pub fn decrement_ref_count(&mut self) -> Result<(), Error> {
         let cur = HeaderFields::string_reference_count(self);
-        let new_count = cur.checked_sub(1).ok_or(Error::InvalidReferenceCount)?;
-        HeaderFields::set_string_reference_count(self, new_count);
+        if cur < constants::MAX_REFERENCE_COUNT {
+            let new_count = cur.checked_sub(1).ok_or(Error::InvalidReferenceCount)?;
+            HeaderFields::set_string_reference_count(self, new_count);
+        }
         Ok(())
     }
 
@@ -1223,6 +1223,15 @@ mod tests {
 
         assert!(block.decrement_ref_count().is_err());
         assert_eq!(block.reference_count(), 0);
+
+        HeaderFields::set_string_reference_count(&mut block, constants::MAX_REFERENCE_COUNT);
+        assert_eq!(block.reference_count(), constants::MAX_REFERENCE_COUNT);
+
+        assert!(block.increment_ref_count().is_ok());
+        assert_eq!(block.reference_count(), constants::MAX_REFERENCE_COUNT);
+
+        assert!(block.decrement_ref_count().is_ok());
+        assert_eq!(block.reference_count(), constants::MAX_REFERENCE_COUNT);
     }
 
     #[fuchsia::test]

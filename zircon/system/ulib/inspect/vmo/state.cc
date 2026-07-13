@@ -1034,8 +1034,10 @@ void State::InnerReleaseStringReference(const BlockIndex index) {
 
   const auto reference_count =
       StringReferenceBlockFields::ReferenceCount::Get<uint64_t>(block->header);
-  StringReferenceBlockFields::ReferenceCount::Set(&block->header,
-                                                  reference_count > 0 ? reference_count - 1 : 0);
+  if (reference_count < StringReferenceBlockFields::ReferenceCount::kMask) {
+    StringReferenceBlockFields::ReferenceCount::Set(&block->header,
+                                                    reference_count > 0 ? reference_count - 1 : 0);
+  }
   InnerMaybeFreeStringReference(index, block);
 }
 
@@ -1332,7 +1334,9 @@ zx_status_t State::InnerCreateAndIncrementStringReference(std::string_view name,
   // you must look up the reference count, because if the block already exists,
   // InnerCreateStringReference does not notify you in any way
   const auto count = StringReferenceBlockFields::ReferenceCount::Get<uint64_t>(block->header);
-  StringReferenceBlockFields::ReferenceCount::Set(&block->header, count + 1);
+  if (count < StringReferenceBlockFields::ReferenceCount::kMask) {
+    StringReferenceBlockFields::ReferenceCount::Set(&block->header, count + 1);
+  }
 
   return status;
 }
@@ -1391,6 +1395,25 @@ std::optional<std::string> TesterLoadStringReference(const State& state, const B
       total_length - max_inlinable_length, &buffer);
 
   return std::string{buffer.cbegin(), buffer.cend()};
+}
+
+uint64_t TesterGetStringReferenceCount(const State& state, const BlockIndex index) {
+  std::lock_guard<std::mutex> lock(state.mutex_);
+  const auto* const block = state.heap_->GetBlock(index);
+  if (!block) {
+    return 0;
+  }
+  return StringReferenceBlockFields::ReferenceCount::Get<uint64_t>(block->header);
+}
+
+void TesterSetStringReferenceCount(const State& state, const BlockIndex index,
+                                   const uint64_t count) {
+  std::lock_guard<std::mutex> lock(state.mutex_);
+  auto* const block = state.heap_->GetBlock(index);
+  if (!block) {
+    return;
+  }
+  StringReferenceBlockFields::ReferenceCount::Set(&block->header, count);
 }
 
 }  // namespace internal

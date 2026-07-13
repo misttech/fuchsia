@@ -363,6 +363,8 @@ class State final {
       __TA_REQUIRES(mutex_);
 
   friend std::optional<std::string> TesterLoadStringReference(const State& state, BlockIndex index);
+  friend uint64_t TesterGetStringReferenceCount(const State& state, BlockIndex index);
+  friend void TesterSetStringReferenceCount(const State& state, BlockIndex index, uint64_t count);
 
   // Mutex wrapping all fields in the state.
   // The mutex is mutable to support locking when reading fields of a
@@ -406,6 +408,10 @@ class State final {
   // std::string_view as the input to std::map::find without allocating temporary std::strings
   std::map<std::string, BlockIndex, std::less<>> string_reference_ids_;
 };
+
+std::optional<std::string> TesterLoadStringReference(const State& state, BlockIndex index);
+uint64_t TesterGetStringReferenceCount(const State& state, BlockIndex index);
+void TesterSetStringReferenceCount(const State& state, BlockIndex index, uint64_t count);
 
 }  // namespace internal
 }  // namespace inspect

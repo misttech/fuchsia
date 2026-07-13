@@ -62,6 +62,9 @@ using inspect::internal::ScanBlocks;
 using inspect::internal::State;
 using inspect::internal::StringReferenceBlockFields;
 using inspect::internal::StringReferenceBlockPayload;
+using inspect::internal::TesterGetStringReferenceCount;
+using inspect::internal::TesterLoadStringReference;
+using inspect::internal::TesterSetStringReferenceCount;
 using inspect::internal::ValueBlockFields;
 
 std::shared_ptr<State> InitState(size_t size) {
@@ -433,6 +436,40 @@ TEST(State, CreateAndFreeFromSameReference) {
 
   ASSERT_EQ(allocated_blocks3, allocated_blocks4);
   state->ReleaseStringReference(idx2);
+}
+
+TEST(State, StringReferenceCountSaturation) {
+  auto state = InitState(4096);
+  ASSERT_TRUE(state != NULL);
+
+  const std::string_view data = "saturated_string";
+  BlockIndex idx;
+  ASSERT_EQ(ZX_OK, state->CreateAndIncrementStringReference(data, &idx));
+  ASSERT_EQ(1u, TesterGetStringReferenceCount(*state, idx));
+
+  // Manually set the reference count to the maximum value (kMask).
+  TesterSetStringReferenceCount(*state, idx, StringReferenceBlockFields::ReferenceCount::kMask);
+  ASSERT_EQ(StringReferenceBlockFields::ReferenceCount::kMask,
+            TesterGetStringReferenceCount(*state, idx));
+
+  // Incrementing at max count should saturate and not wrap around to 0.
+  BlockIndex idx2;
+  ASSERT_EQ(ZX_OK, state->CreateAndIncrementStringReference(data, &idx2));
+  ASSERT_EQ(idx, idx2);
+  ASSERT_EQ(StringReferenceBlockFields::ReferenceCount::kMask,
+            TesterGetStringReferenceCount(*state, idx));
+
+  // Releasing at max count should also saturate (pin) and not decrement.
+  state->ReleaseStringReference(idx);
+  ASSERT_EQ(StringReferenceBlockFields::ReferenceCount::kMask,
+            TesterGetStringReferenceCount(*state, idx));
+
+  // Verify the string reference is still valid and not freed.
+  ASSERT_EQ(data, TesterLoadStringReference(*state, idx));
+
+  // Manually reset reference count to 1 and release to clean up before Heap destruction assert.
+  TesterSetStringReferenceCount(*state, idx, 1);
+  state->ReleaseStringReference(idx);
 }
 
 TEST(State, CreateIntProperty) {
