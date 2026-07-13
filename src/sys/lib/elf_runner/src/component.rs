@@ -286,6 +286,7 @@ impl Controllable for ElfComponent {
                             outgoing_dir: payload.outgoing_dir,
                             escrowed_dictionary: payload.escrowed_dictionary,
                             escrowed_dictionary_handle: payload.escrowed_dictionary_handle,
+                            recoverable_bytes: payload.recoverable_bytes,
                             ..Default::default()
                         })
                     }

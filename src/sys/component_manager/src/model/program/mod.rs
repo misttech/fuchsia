@@ -9,15 +9,16 @@ use ::runner::component::StopInfo;
 use errors::{StartError, StopError};
 use fidl::endpoints;
 use fidl::endpoints::ServerEnd;
+use fidl_fuchsia_component_runner as fcrunner;
+use fidl_fuchsia_component_sandbox as fsandbox;
+use fidl_fuchsia_data as fdata;
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_mem as fmem;
+use fidl_fuchsia_process as fprocess;
 use futures::FutureExt;
 use futures::channel::oneshot;
 use futures::future::{BoxFuture, Either};
 use serve_processargs::NamespaceBuilder;
-use {
-    fidl_fuchsia_component_runner as fcrunner, fidl_fuchsia_component_sandbox as fsandbox,
-    fidl_fuchsia_data as fdata, fidl_fuchsia_io as fio, fidl_fuchsia_mem as fmem,
-    fidl_fuchsia_process as fprocess,
-};
 
 mod component_controller;
 use component_controller::ComponentController;
@@ -349,6 +350,10 @@ pub struct EscrowRequest {
     /// the framework will return these handles via
     /// `ComponentStartInfo.escrowed_dictionary`.
     pub escrowed_dictionary_handle: Option<zx::EventPair>,
+
+    /// The number of bytes of memory which are reclaimed when this component stops running.
+    #[allow(unused)]
+    pub recoverable_bytes: Option<u64>,
 }
 
 impl From<fcrunner::ComponentControllerOnEscrowRequest> for EscrowRequest {
@@ -357,6 +362,7 @@ impl From<fcrunner::ComponentControllerOnEscrowRequest> for EscrowRequest {
             outgoing_dir: value.outgoing_dir,
             escrowed_dictionary: value.escrowed_dictionary,
             escrowed_dictionary_handle: value.escrowed_dictionary_handle,
+            recoverable_bytes: value.recoverable_bytes,
         }
     }
 }

@@ -7,7 +7,7 @@ use crate::indexer::*;
 use crate::resolved_driver::ResolvedDriver;
 use anyhow::anyhow;
 use fidl_fuchsia_component_sandbox as fsandbox;
-use fidl_fuchsia_process_lifecycle as flifecycle;
+use fuchsia_component::escrow::EscrowOperation;
 use std::collections::HashMap;
 use std::rc::Rc;
 
@@ -62,7 +62,7 @@ pub fn apply_state(resume_state: ResumedState, index: Rc<Indexer>) -> bool {
 // we saved our state to, as well as our outgoing directory server end.
 pub async fn handle_stall(
     index: Rc<Indexer>,
-    lifecycle_control_handle: &flifecycle::LifecycleControlHandle,
+    escrow_operation: &EscrowOperation,
     outgoing_directory: zx::Channel,
     capability_store: &fsandbox::CapabilityStoreProxy,
     id_gen: &sandbox::CapabilityIdGenerator,
@@ -87,13 +87,10 @@ pub async fn handle_stall(
         panic!("capability is not Dictionary?");
     };
 
-    lifecycle_control_handle
-        .send_on_escrow(flifecycle::LifecycleOnEscrowRequest {
-            outgoing_dir: Some(outgoing_directory.into()),
-            escrowed_dictionary: Some(dictionary_ref),
-            ..Default::default()
-        })
-        .map_err(|e| anyhow!("Could not call send_on_escrow {:?}", e))
+    escrow_operation.with_fsandbox_dictionary(dictionary_ref);
+    escrow_operation
+        .run(outgoing_directory.into())
+        .map_err(|e| anyhow!("Could not perform escrow {:?}", e))
 }
 
 pub async fn resume_state(

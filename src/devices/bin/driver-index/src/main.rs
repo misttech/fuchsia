@@ -18,9 +18,9 @@ use fidl_fuchsia_driver_index::{
     DriverIndexRequestStream,
 };
 use fidl_fuchsia_driver_registrar as fdr;
-use fidl_fuchsia_process_lifecycle as flifecycle;
 use fuchsia_async as fasync;
 use fuchsia_component::client;
+use fuchsia_component::escrow::EscrowOperation;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_sync::Mutex;
 use futures::prelude::*;
@@ -371,7 +371,7 @@ async fn run_driver_index(
     index: &Rc<Indexer>,
     idle_timeout: fasync::MonotonicDuration,
     full_resolver: Option<fresolution::ResolverProxy>,
-    lifecycle_control_handle: flifecycle::LifecycleControlHandle,
+    escrow_operation: EscrowOperation,
     capability_store: fsandbox::CapabilityStoreProxy,
     id_gen: sandbox::CapabilityIdGenerator,
     dict_id: u64,
@@ -432,7 +432,7 @@ async fn run_driver_index(
                         fuchsia_component::server::Item::Stalled(outgoing_directory) => {
                             let stall_result = handle_stall(
                                 index.clone(),
-                                &lifecycle_control_handle,
+                                &escrow_operation,
                                 outgoing_directory,
                                 &capability_store,
                                 &id_gen,
@@ -451,35 +451,11 @@ async fn run_driver_index(
     Ok(())
 }
 
-// TODO(https://fxbug.dev/339457865):
-// We have to do this for now, but ideally we can stop doing this if we can use the escrow feature
-// without signing up to listen to stop requests.
-async fn run_stop_watcher(mut lifecycle_request_stream: flifecycle::LifecycleRequestStream) {
-    let Some(Ok(request)) = lifecycle_request_stream.next().await else {
-        return std::future::pending::<()>().await;
-    };
-    match request {
-        flifecycle::LifecycleRequest::Stop { .. } => {
-            // TODO(https://fxbug.dev/332341289): If the framework asks us to stop, we still
-            // end up dropping requests. If we teach the `ServiceFs` etc. libraries to skip
-            // the timeout when this happens, we can cleanly stop the component.
-            return;
-        }
-    }
-}
-
 // NOTE: This tag is load-bearing to make sure that the output
 // shows up in serial.
 #[fuchsia::main(logging_tags = ["driver"])]
 async fn main() -> Result<()> {
-    let lifecycle =
-        fuchsia_runtime::take_startup_handle(fuchsia_runtime::HandleType::Lifecycle.into())
-            .expect("Expected to have a lifecycle startup handle.");
-    let lifecycle = fidl::endpoints::ServerEnd::<flifecycle::LifecycleMarker>::new(
-        zx::Channel::from(lifecycle),
-    );
-    let (lifecycle_request_stream, lifecycle_control_handle) =
-        lifecycle.into_stream_and_control_handle();
+    let escrow_operation = EscrowOperation::new();
 
     let config = Config::take_from_startup_handle();
     let full_resolver = if config.enable_ephemeral_drivers {
@@ -618,41 +594,24 @@ async fn main() -> Result<()> {
     });
     load_base_task.detach();
 
+    // Start the task which watches for an instruction to stop from component manager, and kills
+    // this process if such an instruction is received.
+    escrow_operation.watch_for_stop().expect("failed to watch for stop on lifecycle channel");
+
     let main_task = run_driver_index(
         &index,
         idle_timeout,
         full_resolver,
-        lifecycle_control_handle,
+        escrow_operation,
         capability_store,
         id_gen,
         dict_id,
     )
     .fuse();
 
-    // This task watches for stop requests from the component framework. It does not complete
-    // unless it receives a stop request.
-    let stop_watcher = run_stop_watcher(lifecycle_request_stream).fuse();
-
-    futures::pin_mut!(main_task);
-    futures::pin_mut!(stop_watcher);
-
-    // We select between the main task and the stop watcher. Either the main task completes,
-    // which indicates the idle timeout has been reached, or the stop watcher completes which
-    // indicates a stop request came in from the Component Framework.
-    futures::select! {
-        index_result = main_task => {
-            log::info!("driver-index stopping because it is idle.");
-
-            if index_result.is_err() {
-                return index_result;
-            }
-        },
-        () = stop_watcher => {
-            log::info!("driver-index stopping because it was told to stop.");
-        }
-    }
-
-    Ok(())
+    let index_result = main_task.await;
+    log::info!("driver-index stopping because it is idle.");
+    index_result
 }
 
 #[cfg(test)]

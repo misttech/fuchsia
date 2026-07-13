@@ -10,7 +10,8 @@
 pub const DEFAULT_SERVICE_INSTANCE: &'static str = "default";
 
 pub use client::SVC_DIR;
-pub use {
-    fuchsia_component_client as client, fuchsia_component_directory as directory,
-    fuchsia_component_runtime as runtime, fuchsia_component_server as server,
-};
+pub use fuchsia_component_client as client;
+pub use fuchsia_component_directory as directory;
+pub use fuchsia_component_escrow as escrow;
+pub use fuchsia_component_runtime as runtime;
+pub use fuchsia_component_server as server;

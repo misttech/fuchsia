@@ -11,6 +11,7 @@ rustc_library("fuchsia-component") {
   deps = [
     "//src/lib/fuchsia-component/client",
     "//src/lib/fuchsia-component/directory",
+    "//src/lib/fuchsia-component/escrow",
     "//src/lib/fuchsia-component/runtime",
     "//src/lib/fuchsia-component/server",
   ]
@@ -23,6 +24,7 @@ group("tests") {
   deps = [
     "client:tests",
     "directory:tests",
+    "escrow:tests",
     "runtime:tests",
     "server:tests",
   ]

@@ -2,8 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use detect_stall;
 use fidl::endpoints;
 use fidl_fidl_test_components::{TriggerMarker, TriggerRequestStream};
+use fidl_fuchsia_component_runtime as fruntime;
+use fidl_fuchsia_process_lifecycle as flifecycle;
+use fuchsia_async as fasync;
 use fuchsia_component::runtime;
 use fuchsia_component::server::{Item, ServiceFs};
 use fuchsia_runtime::{HandleInfo, HandleType};
@@ -11,10 +15,6 @@ use futures::{FutureExt, StreamExt, TryStreamExt, future, select};
 use log::*;
 use std::future::Future;
 use std::pin::pin;
-use {
-    detect_stall, fidl_fuchsia_component_runtime as fruntime,
-    fidl_fuchsia_process_lifecycle as flifecycle, fuchsia_async as fasync,
-};
 
 /// Duration to wait for FIDL requests before stalling the component. This has to be long enough to
 /// avoid test flakes resulting from the component starting and stopping more times than expected.

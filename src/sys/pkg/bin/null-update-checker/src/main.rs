@@ -7,6 +7,7 @@ use fidl::endpoints::{ControlHandle as _, RequestStream as _};
 use fidl_fuchsia_process_lifecycle as fprocess_lifecycle;
 use fidl_fuchsia_update as fupdate;
 use fidl_fuchsia_update_channel as fupdate_channel;
+use fuchsia_component::escrow::EscrowOperation;
 use fuchsia_component::server::ServiceFs;
 use futures::future::FutureExt as _;
 use futures::stream::{StreamExt as _, TryStreamExt as _};
@@ -63,15 +64,11 @@ pub async fn main() -> Result<(), anyhow::Error> {
     let lifecycle: fidl::endpoints::ServerEnd<fprocess_lifecycle::LifecycleMarker> =
         lifecycle.into();
     let (mut lifecycle_stream, lifecycle_controller) = lifecycle.into_stream_and_control_handle();
+    let escrow_operation = EscrowOperation::new_with_control_handle(lifecycle_controller);
 
     futures::select! {
         out_dir = service_fut => {
-            let () = lifecycle_controller
-                .send_on_escrow(fprocess_lifecycle::LifecycleOnEscrowRequest {
-                    outgoing_dir: Some(out_dir.into()),
-                    ..Default::default()
-                })
-                .context("escrowing component")?;
+            escrow_operation.run(out_dir.into()).context("failed to run escrow operation")?;
             Ok(())
         },
         req = lifecycle_stream.next() => {
@@ -87,12 +84,13 @@ pub async fn main() -> Result<(), anyhow::Error> {
                     );
                     // The shutdown request is acknowledged by closing the lifecycle channel which
                     // causes the ELF runner to kill the process. [0]
-                    // Leak the channel so that it will be closed by the kernel after the process
-                    // exits normally, allowing the rest of the process's own cleanup to occur.
+                    // Leak the channel (which is held by `escrow_operation`) so that it will be
+                    // closed by the kernel after the process exits normally, allowing the rest of
+                    // the process's own cleanup to occur.
                     // [0] https://cs.opensource.google/fuchsia/fuchsia/+/main:src/sys/lib/elf_runner/src/component.rs;l=245;drc=82b695bd9ac772d898ef8f9525cba51c31040050
 
                     // Drop these so the Arc<Channel> in the request stream can be unwrapped.
-                    drop((control_handle, lifecycle_controller));
+                    drop((control_handle, escrow_operation));
                     // Leak the wrapped channel instead of the RequestStream because the Fuchsia
                     // executor will panic if it is dropped before all registered receivers.
                     let (inner, _terminated): (_, bool) = lifecycle_stream.into_inner();

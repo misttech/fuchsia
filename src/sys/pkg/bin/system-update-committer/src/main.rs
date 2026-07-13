@@ -14,6 +14,7 @@ use fidl_fuchsia_update as fupdate;
 use fidl_fuchsia_update_verify::HealthVerificationMarker;
 use fuchsia_async as fasync;
 use fuchsia_component::client::connect_to_protocol;
+use fuchsia_component::escrow::EscrowOperation;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_inspect::health::Reporter as _;
 use fuchsia_inspect::{self as finspect};
@@ -335,17 +336,14 @@ async fn run_until_idle_or_component_stopped(
     let lifecycle: ::fidl::endpoints::ServerEnd<flifecycle::LifecycleMarker> = lifecycle.into();
     let (mut lifecycle_request_stream, lifecycle_controller) =
         lifecycle.into_stream_and_control_handle();
+    let escrow_operation = EscrowOperation::new_with_control_handle(lifecycle_controller);
 
     futures::select! {
         res = service_fut => {
             let (state, out_dir) = res?;
-            let () = lifecycle_controller
-                .send_on_escrow(flifecycle::LifecycleOnEscrowRequest {
-                    outgoing_dir: Some(out_dir),
-                    escrowed_dictionary: Some(state.store().await.context("escrowing state")?),
-                    ..Default::default()
-                })
-                .context("escrowing component")?;
+            let escrowed_dictionary = state.store().await.context("escrowing state")?;
+            escrow_operation.with_fsandbox_dictionary(escrowed_dictionary);
+            escrow_operation.run(out_dir).context("failed to run escrow operation")?;
             Ok(())
         },
         req = lifecycle_request_stream.next() => {
@@ -361,11 +359,12 @@ async fn run_until_idle_or_component_stopped(
                     );
                     // The shutdown request is acknowledged by closing the lifecycle channel which
                     // causes CM to kill the component.
-                    // Intentionally leak the channel so that it will be closed when the OS cleans
-                    // up the process, allowing the rest of the component's own cleanup to occur.
+                    // Intentionally leak the channel (which is held by `escrow_operation`) so that
+                    // it will be closed when the OS cleans up the process, allowing the rest of
+                    // the component's own cleanup to occur.
 
                     // Drop these so the Arc<Channel> in the request stream can be unwrapped.
-                    drop((control_handle, lifecycle_controller));
+                    drop((control_handle, escrow_operation));
                     // Leak the internal channel instead of the RequestStream because the Fuchsia
                     // executor will panic if it is dropped while registered receivers are still
                     // alive.

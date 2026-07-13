@@ -3,19 +3,15 @@
 // found in the LICENSE file.
 
 use anyhow::Context as _;
-use fidl::endpoints::ServerEnd;
 use fidl::prelude::*;
-use fidl_fuchsia_io as fio;
 use fidl_fuchsia_net_http as net_http;
 use fidl_fuchsia_pkg_http as fpkg_http;
-use fidl_fuchsia_process_lifecycle as flifecycle;
 use fuchsia_async::{self as fasync, TimeoutExt as _};
+use fuchsia_component::escrow::EscrowOperation;
 use fuchsia_component::server::{Item, ServiceFs, ServiceFsDir};
 use fuchsia_hyper as fhyper;
 use fuchsia_inspect as finspect;
-use fuchsia_runtime::{HandleInfo, HandleType};
 use futures::StreamExt;
-use futures::future::Either;
 use futures::prelude::*;
 use http_client_config::Config;
 use hyper::header::{AUTHORIZATION, COOKIE, HeaderName, PROXY_AUTHORIZATION, WWW_AUTHENTICATE};
@@ -507,14 +503,8 @@ pub async fn main() -> Result<(), anyhow::Error> {
     let _inspect_server_task =
         inspect_runtime::publish(&inspector, inspect_runtime::PublishOptions::default());
 
-    // TODO(https://fxbug.dev/333080598): This is quite some boilerplate to escrow the outgoing dir.
-    // Design some library function to handle the lifecycle requests.
-    let lifecycle =
-        fuchsia_runtime::take_startup_handle(HandleInfo::new(HandleType::Lifecycle, 0)).unwrap();
-    let lifecycle: zx::Channel = lifecycle.into();
-    let lifecycle: ServerEnd<flifecycle::LifecycleMarker> = lifecycle.into();
-    let (mut lifecycle_request_stream, lifecycle_control_handle) =
-        lifecycle.into_stream_and_control_handle();
+    let escrow_operation = EscrowOperation::new();
+    escrow_operation.watch_for_stop().expect("Failed to prep escrow operation");
 
     let config = Config::take_from_startup_handle();
     let idle_timeout = if config.stop_on_idle_timeout_millis >= 0 {
@@ -529,20 +519,6 @@ pub async fn main() -> Result<(), anyhow::Error> {
         .dir("svc")
         .add_fidl_service(HttpServices::Loader)
         .add_fidl_service(HttpServices::PkgClient);
-
-    let lifecycle_task = async move {
-        let Some(Ok(request)) = lifecycle_request_stream.next().await else {
-            return std::future::pending::<()>().await;
-        };
-        match request {
-            flifecycle::LifecycleRequest::Stop { .. } => {
-                // TODO(https://fxbug.dev/332341289): If the framework asks us to stop, we still
-                // end up dropping requests. If we teach the `ServiceFs` etc. libraries to skip
-                // the timeout when this happens, we can cleanly stop the component.
-                return;
-            }
-        }
-    };
 
     let outgoing_dir_task = async move {
         fs.until_stalled(idle_timeout)
@@ -565,33 +541,17 @@ pub async fn main() -> Result<(), anyhow::Error> {
                         .unwrap_or_else(|e: anyhow::Error| error!("{e:#}")),
                     },
                     Item::Stalled(outgoing_directory) => {
-                        escrow_outgoing(lifecycle_control_handle.clone(), outgoing_directory.into())
+                        escrow_operation
+                            .run(outgoing_directory.into())
+                            .expect("failed to run escrow operation");
                     }
                 }
             })
             .await;
     };
-
-    match futures::future::select(lifecycle_task.boxed_local(), outgoing_dir_task.boxed_local())
-        .await
-    {
-        Either::Left(_) => log::info!("http-client stopping because we are told to stop"),
-        Either::Right(_) => log::info!("http-client stopping because it is idle"),
-    }
+    outgoing_dir_task.await;
 
     Ok(())
-}
-
-/// Escrow the outgoing directory server endpoint to component manager, such that we will receive
-/// the same server endpoint on the next execution.
-fn escrow_outgoing(
-    lifecycle_control_handle: flifecycle::LifecycleControlHandle,
-    outgoing_dir: ServerEnd<fio::DirectoryMarker>,
-) {
-    let outgoing_dir = Some(outgoing_dir);
-    lifecycle_control_handle
-        .send_on_escrow(flifecycle::LifecycleOnEscrowRequest { outgoing_dir, ..Default::default() })
-        .unwrap();
 }
 
 #[cfg(test)]

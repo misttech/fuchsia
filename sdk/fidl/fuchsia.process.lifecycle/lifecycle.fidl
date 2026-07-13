@@ -71,5 +71,10 @@ closed protocol Lifecycle {
         /// dictionary, put the event pair inside with an appropriate key
         /// (e.g. `"my_event_pair"`), then check for that entry on startup.
         3: escrowed_dictionary_handle zx.Handle:EVENTPAIR;
+
+        /// Recoverable bytes when this component stops running. Used to track
+        /// how much memory is saved when a component is escrowed, which is only
+        /// used for development purposes.
+        4: recoverable_bytes uint64;
     });
 };

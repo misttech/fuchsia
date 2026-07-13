@@ -309,6 +309,11 @@ closed(removed=24) open(added=24) protocol ComponentController {
         /// dictionary, put the event pair inside with an appropriate key
         /// (e.g. `"my_event_pair"`), then check for that entry on startup.
         3: escrowed_dictionary_handle zx.Handle:EVENTPAIR;
+
+        /// Recoverable bytes when this component stops running. Used to track
+        /// how much memory is saved when a component is escrowed, which is only
+        /// used for development purposes.
+        4: recoverable_bytes uint64;
     });
 
     /// Report that the component has stopped, with data about its termination. This will

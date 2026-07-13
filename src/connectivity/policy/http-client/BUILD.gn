@@ -21,10 +21,8 @@ network_unified_binary("http_client") {
 
   deps = [
     ":http_client_config",
-    "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
     "//sdk/fidl/fuchsia.net.http:fuchsia.net.http_rust",
     "//sdk/fidl/fuchsia.pkg.http:fuchsia.pkg.http_rust",
-    "//sdk/fidl/fuchsia.process.lifecycle:fuchsia.process.lifecycle_rust",
     "//sdk/rust/zx",
     "//src/lib/detect-stall",
     "//src/lib/diagnostics/inspect/runtime/rust",
@@ -34,7 +32,6 @@ network_unified_binary("http_client") {
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
     "//src/lib/fuchsia-hyper",
-    "//src/lib/fuchsia-runtime",
     "//src/lib/trace/rust:trace",
     "//src/lib/trace/rust:trace-provider",
     "//src/storage/fxfs/fidl/fuchsia.fxfs:fuchsia.fxfs_rust",

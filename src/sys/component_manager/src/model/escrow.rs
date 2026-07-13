@@ -539,6 +539,7 @@ mod tests {
             outgoing_dir: Some(escrow.unwrap().outgoing_dir),
             escrowed_dictionary: None,
             escrowed_dictionary_handle: None,
+            recoverable_bytes: None,
         }));
         assert_matches!(TestExecutor::poll_until_stalled(start_rx.next()).await, Poll::Ready(_));
 
@@ -561,6 +562,7 @@ mod tests {
             outgoing_dir: Some(escrow.unwrap().outgoing_dir),
             escrowed_dictionary: None,
             escrowed_dictionary_handle: None,
+            recoverable_bytes: None,
         }));
         let (_, server_end) = zx::Channel::create();
         let execution_scope = ExecutionScope::new();

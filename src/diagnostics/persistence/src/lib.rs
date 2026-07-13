@@ -11,20 +11,19 @@ mod scheduler;
 
 use anyhow::{Context, Error, anyhow};
 use argh::FromArgs;
-use fidl::endpoints;
 use fidl::endpoints::ControlHandle;
 use fidl_fuchsia_component_sandbox as fsandbox;
 use fidl_fuchsia_diagnostics as fdiagnostics;
 use fidl_fuchsia_inspect as finspect;
-use fidl_fuchsia_process_lifecycle as flifecycle;
 use fidl_fuchsia_update as fupdate;
 use fuchsia_async as fasync;
+use fuchsia_component::escrow::EscrowOperation;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_inspect::component;
 use fuchsia_inspect::health::Reporter;
 use fuchsia_runtime::{HandleInfo, HandleType};
 use fuchsia_sync::Mutex;
-use futures::{FutureExt, StreamExt, TryStreamExt, select};
+use futures::{StreamExt, TryStreamExt};
 use log::*;
 use persistence_build_config::Config;
 use sandbox::CapabilityRef;
@@ -418,37 +417,12 @@ pub async fn main(_args: CommandLine) -> Result<(), Error> {
     fs.dir("svc").add_fidl_service(IncomingRequest::SampleSink);
     fs.take_and_serve_directory_handle().expect("Failed to take service directory handle");
 
-    let lifecycle =
-        fuchsia_runtime::take_startup_handle(HandleInfo::new(HandleType::Lifecycle, 0)).unwrap();
-    let lifecycle: zx::Channel = lifecycle.into();
-    let lifecycle: endpoints::ServerEnd<flifecycle::LifecycleMarker> = lifecycle.into();
-    let (mut lifecycle_request_stream, lifecycle_control_handle) =
-        lifecycle.into_stream_and_control_handle();
-    let mut lifecycle_task = pin!(
-        async move {
-            match lifecycle_request_stream.next().await {
-                Some(Ok(flifecycle::LifecycleRequest::Stop { .. })) => {
-                    debug!("Received stop request");
-                    // TODO(https://fxbug.dev/444529707): Teach `ServiceFs` and
-                    // others to skip the `until_stalled` timeout when this happens
-                    // so we can cleanly stop the component.
-                }
-                Some(Err(e)) => {
-                    error!("Received FIDL error from Lifecycle: {e:?}");
-                    std::future::pending::<()>().await
-                }
-                None => {
-                    debug!("Lifecycle request stream closed");
-                    std::future::pending::<()>().await
-                }
-            }
-        }
-        .fuse()
-    );
+    let escrow_operation = EscrowOperation::new();
+    escrow_operation.watch_for_stop().context("Failed to watch for stop on lifecycle handle")?;
 
-    let mut outgoing_dir_task =
+    let outgoing_dir_task =
         pin!(fs.until_stalled(BUILD_CONFIG.stall_interval).for_each_concurrent(None, move |item| {
-            let lifecycle_control_handle = lifecycle_control_handle.clone();
+            let escrow_operation = escrow_operation.clone();
             let state = state.clone();
             let store = store.clone();
             async move {
@@ -466,41 +440,27 @@ pub async fn main(_args: CommandLine) -> Result<(), Error> {
                         },
                     },
                     fuchsia_component::server::Item::Stalled(outgoing_directory) => {
-                        let escrowed_dictionary = match ComponentState::as_escrowed_dict(
+                        match ComponentState::as_escrowed_dict(
                             &store,
                             state.persisted,
                             state.inspect,
                         ).await {
-                            Ok(dict) => Some(dict),
+                            Ok(dict) => escrow_operation.with_fsandbox_dictionary(dict),
                             Err(e) => {
                                 error!(
                                     "Failed to serialize PersistedState into component dictionary: {e}"
                                 );
-                                None
                             }
                         };
-                        lifecycle_control_handle
-                            .send_on_escrow(flifecycle::LifecycleOnEscrowRequest {
-                                outgoing_dir: Some(outgoing_directory.into()),
-                                escrowed_dictionary,
-                                ..Default::default()
-                            })
-                            .unwrap();
+                        escrow_operation.run(outgoing_directory.into()).expect("failed to escrow handles");
                     }
                 }
             }
         }));
 
-    select! {
-        _ = lifecycle_task => {
-            info!("Stopping due to lifecycle request");
-            scope.cancel().await;
-        },
-        _ = outgoing_dir_task => {
-            info!("Stopping due to idle activity");
-            scope.join().await;
-        },
-    }
+    outgoing_dir_task.await;
+    info!("Stopping due to idle activity");
+    scope.join().await;
 
     Ok(())
 }
