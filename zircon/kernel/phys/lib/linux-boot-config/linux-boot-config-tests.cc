@@ -26,6 +26,7 @@ using linux_boot_config::LinuxBootConfig;
 using linux_boot_config::Trailer;
 using linux_boot_config::Value;
 using CompareResult = linux_boot_config::Key::CompareResult;
+using namespace std::string_view_literals;
 
 struct KeyHolder {
   explicit KeyHolder(std::span<std::string_view> args) {
@@ -506,6 +507,52 @@ TEST(LinuxBootConfigTest, ParseEmpty) {
     ASSERT_TRUE(parse_result.is_ok());
     ASSERT_EQ(visit_count, 0u);
   }
+}
+
+TEST(LinuxBootConfigTest, ParseWithTrailingNullPadding) {
+  constexpr std::string_view kContents = "foo=bar\n\0\0\0"sv;
+  std::vector initrd = MakeRamdisk(0, kContents);
+  auto linux_boot_config = LinuxBootConfig::Create(initrd);
+  ASSERT_TRUE(linux_boot_config.is_ok());
+
+  // contents() and size_bytes() docs explicitly include padding so they should include both our
+  // padding here as well as any implicit 4-alignment padding added by `MakeRamdisk()`.
+  std::string_view expected = "foo=bar\n\0\0\0\0"sv;  // 11 bytes kContents + 1 to 4-align.
+  EXPECT_EQ(linux_boot_config->size_bytes(), expected.size());
+  EXPECT_EQ(linux_boot_config->contents(), expected);
+
+  // `Parse()` should omit the trailing data.
+  size_t visit_count = 0;
+  auto parse_result = linux_boot_config->Parse([&](const Key& key, const Value& value) {
+    visit_count++;
+    EXPECT_EQ(key, "foo");
+    EXPECT_EQ(value.value, "bar");
+  });
+  EXPECT_TRUE(parse_result.is_ok());
+  EXPECT_EQ(visit_count, 1u);
+}
+
+// Accommodate non-compliant bootloaders that may not fully zero out the padding.
+TEST(LinuxBootConfigTest, ParseWithTrailingNullPaddingAndGarbage) {
+  constexpr std::string_view kContents = "foo=bar\n\0abc\n"sv;
+  std::vector initrd = MakeRamdisk(0, kContents);
+  auto linux_boot_config = LinuxBootConfig::Create(initrd);
+  ASSERT_TRUE(linux_boot_config.is_ok());
+
+  // contents() and size_bytes() docs explicitly include padding so they should include both our
+  // padding here as well as any implicit 4-alignment padding added by `MakeRamdisk()`.
+  std::string_view expected = "foo=bar\n\0abc\n\0\0\0"sv;  // 13 bytes kContents + 3 to 4-align.
+  EXPECT_EQ(linux_boot_config->size_bytes(), expected.size());
+  EXPECT_EQ(linux_boot_config->contents(), expected);
+
+  size_t visit_count = 0;
+  auto parse_result = linux_boot_config->Parse([&](const Key& key, const Value& value) {
+    visit_count++;
+    EXPECT_EQ(key, "foo");
+    EXPECT_EQ(value.value, "bar");
+  });
+  EXPECT_TRUE(parse_result.is_ok());
+  EXPECT_EQ(visit_count, 1u);
 }
 
 }  // namespace

@@ -405,7 +405,7 @@ fit::result<ParseError, LinuxBootConfig> LinuxBootConfig::Create(std::span<const
   // require this and we have encountered production violations of this
   // alignment, so we pragmatically swallow any deviations.
   if (trailer.size % 4 != 0) {
-    fprintf(f, "Warning: `bootconfig` file size is not properly aligned.");
+    fprintf(f, "Warning: `bootconfig` file size is not properly aligned.\n");
   }
 
   if (trailer.size + sizeof(Trailer) > initrd.size_bytes()) {
@@ -433,6 +433,17 @@ fit::result<ParseError> LinuxBootConfig::VisitInternal(LinuxBootConfig::NodeVisi
   }
 
   Chunk boot_config{.data = contents_, .chunk_offset = 0};
+
+  // Trim off any padding ahead of time to avoid more complex checking in the parsing logic.
+  //
+  // We intentionally look for the first `\0` rather than e.g. right-trimming because some
+  // bootloaders leave nonzero data later on in the padding. This technically violates the spec
+  // which says padding should all be `\0`, but standard parsing behavior is to just stop at the
+  // first terminator without checking the remaining bytes so we do the same.
+  if (size_t first_null = boot_config.data.find('\0'); first_null != std::string_view::npos) {
+    boot_config.data = boot_config.data.substr(0, first_null);
+  }
+
   boot_config.remove_prefix_matching(" \n");
   // Empty boot config.
   if (boot_config->empty()) {
