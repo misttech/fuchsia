@@ -272,10 +272,16 @@ void brcmf_sdiod_intr_unregister(struct brcmf_sdio_dev* sdiodev) {
                 zx_status_get_string(result->error_value()));
     }
 
-    zx_handle_close(sdiodev->irq_handle);
+    if (sdiodev->irq_handle != ZX_HANDLE_INVALID) {
+      zx_interrupt_destroy(sdiodev->irq_handle);
+    }
     if (sdiodev->isr_dispatcher.get()) {
       sdiodev->isr_dispatcher.ShutdownAsync();
       sdiodev->isr_dispatcher_shutdown.Wait();
+    }
+    if (sdiodev->irq_handle != ZX_HANDLE_INVALID) {
+      zx_handle_close(sdiodev->irq_handle);
+      sdiodev->irq_handle = ZX_HANDLE_INVALID;
     }
     sdiodev->oob_irq_requested = false;
   }
