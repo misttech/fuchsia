@@ -490,34 +490,6 @@ class CountryCode(enum.StrEnum):
         return cls(code_str)
 
 
-class ConnectivityMode(enum.IntEnum):
-    """Connectivity operating mode for the access point."""
-
-    LOCAL_ONLY = 1
-    """Allows for connectivity between co-located devices.
-
-    Local only access points do not forward traffic to other network connections.
-    """
-
-    UNRESTRICTED = 2
-    """Allows for full connectivity.
-
-    Traffic can potentially being forwarded to other network connections (e.g.
-    tethering mode).
-    """
-
-    @staticmethod
-    def from_fidl(
-        fidl: f_wlan_policy.ConnectivityMode,
-    ) -> "ConnectivityMode":
-        """Parse from a fuchsia.wlan.policy/ConnectivityMode."""
-        return ConnectivityMode(fidl)
-
-    def to_fidl(self) -> f_wlan_policy.ConnectivityMode:
-        """Convert to equivalent FIDL."""
-        return f_wlan_policy.ConnectivityMode(self.value)
-
-
 class OperatingBand(enum.IntEnum):
     """Operating band for wlan control request and status updates."""
 
@@ -578,7 +550,7 @@ class AccessPointState:
     state: OperatingState
     """Current access point operating state."""
 
-    mode: ConnectivityMode
+    mode: f_wlan_policy.ConnectivityMode
     """Requested operating connectivity mode."""
 
     band: OperatingBand
@@ -607,9 +579,7 @@ class AccessPointState:
             state=OperatingState.from_fidl(
                 f_wlan_policy.OperatingState(fidl.state)
             ),
-            mode=ConnectivityMode.from_fidl(
-                f_wlan_policy.ConnectivityMode(fidl.mode)
-            ),
+            mode=f_wlan_policy.ConnectivityMode(fidl.mode),
             band=OperatingBand.from_fidl(
                 f_wlan_policy.OperatingBand(fidl.band)
             ),

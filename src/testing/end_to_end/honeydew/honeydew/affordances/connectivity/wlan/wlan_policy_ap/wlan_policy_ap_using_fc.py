@@ -19,7 +19,6 @@ from honeydew.affordances.affordance import AsyncLazyReady, ensure_ready
 from honeydew.affordances.connectivity.wlan.utils import errors as wlan_errors
 from honeydew.affordances.connectivity.wlan.utils.types import (
     AccessPointState,
-    ConnectivityMode,
     Credential,
     NetworkConfig,
     OperatingBand,
@@ -218,7 +217,7 @@ class AsyncWlanPolicyApUsingFc(
         ssid: str,
         security: f_wlan_policy.SecurityType,
         password: str | None,
-        mode: ConnectivityMode,
+        mode: f_wlan_policy.ConnectivityMode,
         band: OperatingBand,
     ) -> None:
         """Start an access point.
@@ -243,7 +242,7 @@ class AsyncWlanPolicyApUsingFc(
                 config=NetworkConfig(
                     ssid, security, cred.type(), cred.value()
                 ).to_fidl(),
-                mode=mode.to_fidl(),
+                mode=mode,
                 band=band.to_fidl(),
             )
         except FcTransportStatus as status:
@@ -434,7 +433,7 @@ class WlanPolicyAp(wlan_policy_ap.WlanPolicyAp):
         ssid: str,
         security: f_wlan_policy.SecurityType,
         password: str | None,
-        mode: ConnectivityMode,
+        mode: f_wlan_policy.ConnectivityMode,
         band: OperatingBand,
     ) -> None:
         """Start an access point.

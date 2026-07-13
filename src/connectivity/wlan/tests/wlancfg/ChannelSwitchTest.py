@@ -23,7 +23,6 @@ from honeydew.affordances.connectivity.wlan.utils.errors import (
 )
 from honeydew.affordances.connectivity.wlan.utils.types import (
     ClientStatusConnected,
-    ConnectivityMode,
     OperatingBand,
 )
 from mobly import asserts, signals, test_runner
@@ -441,7 +440,7 @@ class ChannelSwitchTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             ssid,
             f_wlan_policy.SecurityType.NONE,
             None,
-            ConnectivityMode.LOCAL_ONLY,
+            f_wlan_policy.ConnectivityMode.LOCAL_ONLY,
             OperatingBand.ANY,
         )
         self.log.info(f"SoftAp network ({ssid}) is up.")

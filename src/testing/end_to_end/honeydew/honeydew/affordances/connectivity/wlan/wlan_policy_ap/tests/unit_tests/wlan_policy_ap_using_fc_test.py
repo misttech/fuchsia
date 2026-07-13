@@ -21,7 +21,6 @@ from honeydew.affordances.connectivity.wlan.utils.errors import (
 )
 from honeydew.affordances.connectivity.wlan.utils.types import (
     AccessPointState,
-    ConnectivityMode,
     NetworkIdentifier,
     OperatingBand,
     OperatingState,
@@ -40,7 +39,7 @@ _TEST_SSID_BYTES = list(str.encode(_TEST_SSID))
 
 _ACCESS_POINT_STATE = AccessPointState(
     state=OperatingState.STARTING,
-    mode=ConnectivityMode.LOCAL_ONLY,
+    mode=f_wlan_policy.ConnectivityMode.LOCAL_ONLY,
     band=OperatingBand.ONLY_2_4GHZ,
     frequency=None,
     clients=None,
@@ -237,7 +236,7 @@ class WlanPolicyApFCTests(unittest.IsolatedAsyncioTestCase):
             _TEST_SSID,
             f_wlan_policy.SecurityType.NONE,
             None,
-            ConnectivityMode.LOCAL_ONLY,
+            f_wlan_policy.ConnectivityMode.LOCAL_ONLY,
             OperatingBand.ANY,
         )
 
@@ -252,7 +251,7 @@ class WlanPolicyApFCTests(unittest.IsolatedAsyncioTestCase):
                 _TEST_SSID,
                 f_wlan_policy.SecurityType.NONE,
                 None,
-                ConnectivityMode.LOCAL_ONLY,
+                f_wlan_policy.ConnectivityMode.LOCAL_ONLY,
                 OperatingBand.ANY,
             )
 

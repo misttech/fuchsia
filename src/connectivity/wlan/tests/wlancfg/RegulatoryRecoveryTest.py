@@ -11,7 +11,6 @@ import fidl_fuchsia_wlan_policy as f_wlan_policy
 import fuchsia_wlan_base_test
 from honeydew.affordances.connectivity.wlan.utils import errors as wlan_errors
 from honeydew.affordances.connectivity.wlan.utils.types import (
-    ConnectivityMode,
     CountryCode,
     OperatingBand,
 )
@@ -57,7 +56,7 @@ class RegulatoryRecoveryTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                 "test_ssid",
                 f_wlan_policy.SecurityType.NONE,
                 None,
-                ConnectivityMode.LOCAL_ONLY,
+                f_wlan_policy.ConnectivityMode.LOCAL_ONLY,
                 OperatingBand.ANY,
             )
             await self.dut.wlan_policy_ap.stop_all()
@@ -124,7 +123,7 @@ class RegulatoryRecoveryTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                 "test_ssid",
                 f_wlan_policy.SecurityType.NONE,
                 None,
-                ConnectivityMode.LOCAL_ONLY,
+                f_wlan_policy.ConnectivityMode.LOCAL_ONLY,
                 OperatingBand.ANY,
             )
 

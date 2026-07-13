@@ -11,7 +11,6 @@ import fidl_fuchsia_wlan_policy as f_wlan_policy
 import fidl_fuchsia_wlan_product_deprecatedconfiguration as fidl_deprecatedconfiguration
 import fuchsia_wlan_base_test
 from honeydew.affordances.connectivity.wlan.utils.types import (
-    ConnectivityMode,
     MacAddress,
     OperatingBand,
 )
@@ -68,7 +67,7 @@ class SuggestApMacAddressTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             TEST_SSID,
             f_wlan_policy.SecurityType.NONE,
             None,
-            ConnectivityMode.LOCAL_ONLY,
+            f_wlan_policy.ConnectivityMode.LOCAL_ONLY,
             OperatingBand.ANY,
         )
         initial_mac_addr = await self._get_ap_mac_address()
@@ -95,7 +94,7 @@ class SuggestApMacAddressTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             TEST_SSID,
             f_wlan_policy.SecurityType.NONE,
             None,
-            ConnectivityMode.LOCAL_ONLY,
+            f_wlan_policy.ConnectivityMode.LOCAL_ONLY,
             OperatingBand.ANY,
         )
 
@@ -119,7 +118,7 @@ class SuggestApMacAddressTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             TEST_SSID,
             f_wlan_policy.SecurityType.NONE,
             None,
-            ConnectivityMode.LOCAL_ONLY,
+            f_wlan_policy.ConnectivityMode.LOCAL_ONLY,
             OperatingBand.ANY,
         )
 

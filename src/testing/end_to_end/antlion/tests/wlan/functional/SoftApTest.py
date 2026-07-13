@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from enum import Enum, StrEnum, auto, unique
 from typing import Any, Mapping, Type, TypeAlias, TypeVar
 
+import fidl_fuchsia_wlan_policy as f_wlan_policy
 from antlion import utils
 from antlion.controllers import iperf_client, iperf_server
 from antlion.controllers.access_point import AccessPoint, setup_ap
@@ -28,10 +29,7 @@ from antlion.test_utils.abstract_devices.wlan_device import (
     create_wlan_device,
 )
 from fuchsia_wlan_base_test.deprecated.wifi import base_test
-from honeydew.affordances.connectivity.wlan.utils.types import (
-    ConnectivityMode,
-    OperatingBand,
-)
+from honeydew.affordances.connectivity.wlan.utils.types import OperatingBand
 from libs.ssh import settings
 from libs.ssh.connection import SshConnection
 from mobly import asserts, signals, test_runner
@@ -79,7 +77,7 @@ class TestType(StrEnum):
 class TestParams:
     test_type: TestType
     security_type: SecurityMode
-    connectivity_mode: ConnectivityMode
+    connectivity_mode: f_wlan_policy.ConnectivityMode
     operating_band: OperatingBand
     ssid: str
     password: str
@@ -155,7 +153,7 @@ class SoftAPParams:
     ssid: str
     security_type: SecurityMode
     password: str | None
-    connectivity_mode: ConnectivityMode
+    connectivity_mode: f_wlan_policy.ConnectivityMode
     operating_band: OperatingBand
 
     def __str__(self) -> str:
@@ -189,7 +187,10 @@ class SoftAPParams:
             )
 
         connectivity_mode = get_typed(
-            d, "connectivity_mode", str, str(ConnectivityMode.LOCAL_ONLY)
+            d,
+            "connectivity_mode",
+            str,
+            f_wlan_policy.ConnectivityMode.LOCAL_ONLY.name,
         )
         operating_band = get_typed(
             d, "operating_band", str, str(OperatingBand.ONLY_2_4GHZ)
@@ -204,7 +205,7 @@ class SoftAPParams:
             ),
             security_type=security_mode,
             password=password,
-            connectivity_mode=ConnectivityMode[connectivity_mode],
+            connectivity_mode=f_wlan_policy.ConnectivityMode[connectivity_mode],
             operating_band=OperatingBand[operating_band],
         )
 
@@ -330,7 +331,12 @@ class SoftApTest(base_test.WifiBaseTest):
                 SecurityMode.WPA2,
                 SecurityMode.WPA3,
             ]:
-                for connectivity_mode in ConnectivityMode:
+                for connectivity_mode in f_wlan_policy.ConnectivityMode:
+                    if (
+                        connectivity_mode
+                        == f_wlan_policy.ConnectivityMode.EMPTY__
+                    ):
+                        continue
                     if security_mode == SecurityMode.OPEN:
                         ssid_length = hostapd_constants.AP_SSID_LENGTH_2G
                         password = None
@@ -493,7 +499,7 @@ class SoftApTest(base_test.WifiBaseTest):
             target_pwd=params.password,
             target_security=params.security_type,
             check_connectivity=params.connectivity_mode
-            == ConnectivityMode.UNRESTRICTED,
+            == f_wlan_policy.ConnectivityMode.UNRESTRICTED,
         )
 
         asserts.assert_true(
