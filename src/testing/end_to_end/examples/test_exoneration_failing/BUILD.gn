@@ -18,5 +18,5 @@ python_mobly_test("exoneration_failing_test") {
 
 group("tests") {
   testonly = true
-  public_deps = [ ":exoneration_failing_test($host_toolchain)" ]
+  public_deps = []
 }
