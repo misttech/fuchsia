@@ -493,11 +493,6 @@
 	url = https://fuchsia.googlesource.com/third_party/gitlab.com/drj11/pypng
 	name = third_party/pypng
 	ignore = all
-[submodule "third_party/fuchsia-infra-bazel-rules/src"]
-	path = third_party/fuchsia-infra-bazel-rules/src
-	url = https://fuchsia.googlesource.com/fuchsia-infra-bazel-rules
-	name = third_party/fuchsia-infra-bazel-rules
-	ignore = all
 [submodule "third_party/shac-project/checks-cpp/src"]
 	path = third_party/shac-project/checks-cpp/src
 	url = https://fuchsia.googlesource.com/shac-project/checks-cpp
