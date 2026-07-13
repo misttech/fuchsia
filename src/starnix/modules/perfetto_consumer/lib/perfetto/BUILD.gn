@@ -50,6 +50,7 @@ protobuf_info = {
   field_name = "frame_timeline_event"
 }
 
+# TODO(b/533158938): Investigate other ways to handle extension fields in Rust.
 action("merge_perfetto_trace_extensions") {
   script = "merge_extension.py"
   sources = [
