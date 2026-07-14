@@ -47,7 +47,7 @@ def generate_tests_json(
             "--config=host",
             "--output=starlark",
             f"--starlark:file={starlark_input}",
-            "deps(//build/bazel/host_tests)",
+            "tests(//build/bazel/host_tests)",
         ],
         False,
     )
@@ -61,6 +61,7 @@ def generate_tests_json(
         )
 
     tests_json: list[dict[str, T.Any]] = []
+    targets_missing_test_info: list[str] = []
 
     for line in ret.stdout.splitlines():
         line = line.strip()
@@ -73,6 +74,12 @@ def generate_tests_json(
         #    are present instead of 'path' and 'runtime_deps_path', and they contain
         #    paths relative to the Bazel execroot instead of the Ninja build directory.
         cquery_test = json.loads(line)
+
+        if cquery_test.get("error") == "missing_fuchsia_host_test_info":
+            label = _normalize_label(cquery_test.get("label", "unknown"))
+            if label not in targets_missing_test_info:
+                targets_missing_test_info.append(label)
+            continue
 
         # LINT.IfChange(cquery_output_schema)
         label = cquery_test["label"]
@@ -117,6 +124,23 @@ def generate_tests_json(
 
         tests_json.append(test_spec)
         # LINT.ThenChange(//build/bazel/starlark/FuchsiaHostTestInfo.cquery:cquery_output_schema)
+
+    if targets_missing_test_info:
+        if len(targets_missing_test_info) == 1:
+            raise RuntimeError(
+                f"Target '{targets_missing_test_info[0]}' in //build/bazel/host_tests is a test target "
+                f"but does not provide FuchsiaHostTestInfo. "
+                f"Wrap it with host_go_test(), host_rustc_test(), host_py_test(), or host_test()."
+            )
+        else:
+            targets_list = "\n".join(
+                f"  - {t}" for t in targets_missing_test_info
+            )
+            raise RuntimeError(
+                f"The following targets in //build/bazel/host_tests are test targets "
+                f"but do not provide FuchsiaHostTestInfo:\n{targets_list}\n"
+                f"Wrap them with host_go_test(), host_rustc_test(), host_py_test(), or host_test()."
+            )
 
     return tests_json, {starlark_input}
 

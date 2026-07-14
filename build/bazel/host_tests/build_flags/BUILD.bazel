@@ -3,13 +3,13 @@
 # found in the LICENSE file.
 
 load("@fuchsia_rules_common//build_flags:build_flags.bzl", "build_flags")
+load("//build/bazel/host_tests:host_rustc_test.bzl", "host_rustc_test")
 load("//build/bazel/host_tests:host_test.bzl", "host_test")
 load("//build/bazel/rules/cc:fx_cc_binary.bzl", "fx_cc_binary")
 load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
 load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
 load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
 load("//build/bazel/rules/rust:rustc_proc_macro.bzl", "rustc_proc_macro")
-load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
 load(
     ":cc_defs.bzl",
     "build_flags_cc_binary_host_test",
@@ -236,7 +236,7 @@ host_test(
     binary = ":check_rust_rules_test_bin",
 )
 
-rustc_test(
+host_rustc_test(
     name = "check_rustc_test_with_rustflags_and_rustenv",
     srcs = ["check_rustc_test.rs"],
     build_flags = [":flags_rust"],

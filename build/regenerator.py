@@ -357,7 +357,7 @@ def main() -> int:
             # Print something if GN was stopped by a signal,
             # otherwise assume it already wrote something to the user.
             if ret.returncode == 245:
-                print("ERROR: GN crahsed!!", file=sys.stderr)
+                print("ERROR: GN crashed!!", file=sys.stderr)
             elif ret.returncode > 127:
                 print(
                     f"ERROR: GN stopped unexpected with exit_code={ret.returncode}",
@@ -645,12 +645,16 @@ def main() -> int:
 
         time_profile.start("tests.json", "Generating tests.json.")
         args_json = json.loads((build_dir / "args.json").read_text())
-        extra_ninja_build_inputs |= build_tests_json.build_tests_json(
-            build_dir,
-            with_bazel_host_tests=args_json.get(
-                "export_bazel_host_tests", False
-            ),
-        )
+        try:
+            extra_ninja_build_inputs |= build_tests_json.build_tests_json(
+                build_dir,
+                with_bazel_host_tests=args_json.get(
+                    "export_bazel_host_tests", False
+                ),
+            )
+        except RuntimeError as e:
+            print(f"ERROR: failed to generate tests.json: {e}", file=sys.stderr)
+            return 1
 
         time_profile.start(
             "pyrightconfig.base.json", "Generating pyrightconfig.base.json."

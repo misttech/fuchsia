@@ -15,10 +15,16 @@
 def format(target):
     p = providers(target)
     if not p:
-        return ""
+        return json.encode({
+            "error": "missing_fuchsia_host_test_info",
+            "label": str(target.label),
+        })
     host_test_info = p.get("//build/bazel/host_tests:host_test.bzl%FuchsiaHostTestInfo")
     if not host_test_info:
-        return ""
+        return json.encode({
+            "error": "missing_fuchsia_host_test_info",
+            "label": str(target.label),
+        })
     result = {
         # LINT.IfChange(cquery_output_schema)
         "label": str(host_test_info.test_label),

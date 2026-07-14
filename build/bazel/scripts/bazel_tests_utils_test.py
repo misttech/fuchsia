@@ -175,6 +175,46 @@ class BazelTestsUtilsTest(unittest.TestCase):
                 self.bazel_paths, command_runner=mock_runner
             )
 
+    def test_generate_tests_json_missing_fuchsia_host_test_info(self) -> None:
+        mock_runner = MockCommandRunner()
+        missing_info = {
+            "error": "missing_fuchsia_host_test_info",
+            "label": "//tools/check-licenses:v2_config_test",
+        }
+        mock_runner.push_result(stdout=json.dumps(missing_info))
+
+        with self.assertRaisesRegex(
+            RuntimeError,
+            r"Target '//tools/check-licenses:v2_config_test' in //build/bazel/host_tests is a test target but does not provide FuchsiaHostTestInfo",
+        ):
+            bazel_tests_utils.generate_tests_json(
+                self.bazel_paths, command_runner=mock_runner
+            )
+
+    def test_generate_tests_json_multiple_missing_fuchsia_host_test_info(
+        self,
+    ) -> None:
+        mock_runner = MockCommandRunner()
+        missing_info1 = {
+            "error": "missing_fuchsia_host_test_info",
+            "label": "//tools/check-licenses:v2_config_test",
+        }
+        missing_info2 = {
+            "error": "missing_fuchsia_host_test_info",
+            "label": "//tools/whereiscl:whereiscl_test",
+        }
+        mock_runner.push_result(
+            stdout=json.dumps(missing_info1) + "\n" + json.dumps(missing_info2)
+        )
+
+        with self.assertRaisesRegex(
+            RuntimeError,
+            r"The following targets in //build/bazel/host_tests are test targets but do not provide FuchsiaHostTestInfo:\n  - //tools/check-licenses:v2_config_test\n  - //tools/whereiscl:whereiscl_test",
+        ):
+            bazel_tests_utils.generate_tests_json(
+                self.bazel_paths, command_runner=mock_runner
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
