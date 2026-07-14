@@ -1027,7 +1027,9 @@
                 "NetlinkRouteTest.RemoveLoopbackByName",
                 "NetlinkRouteTest.RemoveLoopbackByIndex",
 
-                // Breaks tests that run after it.
+                // TODO(https://fxbug.dev/534455279): The MaxMounts test succeeds, but something in
+                // the unmounting process doesn't clean up properly. This causes most subsequent
+                // mount tests to fail with ENOSPC or PosixError(errno=28 No space left on device).
                 "MountTest.MaxMounts",
                 "MountTest.MountFailsOnPseudoFilesystemMountpoint",
 
