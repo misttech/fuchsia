@@ -75,7 +75,17 @@ rust_library(
         "unicode-script",
         "unicode-segment",
         "unicode-word-boundary",
-    ],
+    ] + select({
+        "@rules_rust//rust/platform:aarch64-unknown-linux-gnu": [
+            "dfa-build",  # aarch64-unknown-linux-gnu
+            "dfa-search",  # aarch64-unknown-linux-gnu
+        ],
+        "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [
+            "dfa-build",  # x86_64-unknown-linux-gnu
+            "dfa-search",  # x86_64-unknown-linux-gnu
+        ],
+        "//conditions:default": [],
+    }),
     crate_root = "src/lib.rs",
     edition = "2021",
     rustc_flags = [

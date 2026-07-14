@@ -12193,7 +12193,7 @@ rustc_library("loom-v0_7_2") {
   deps += [ ":scoped-tls-v1_0_1" ]
   deps += [ ":serde-v1_0_228" ]
   deps += [ ":serde_json-v1_0_149" ]
-  deps += [ ":tracing-subscriber-v0_3_18" ]
+  deps += [ ":tracing-subscriber-v0_3_23" ]
   deps += [ ":tracing-v0_1_44" ]
   deps += [ "//build/validate:non_production_tag" ]
   rustenv = []
@@ -12351,34 +12351,34 @@ rustc_library("maplit-v1_0_2") {
   applicable_licenses = [ ":maplit-v1_0_2.license" ]
 }
 
-license("matchers-v0_1_0.license") {
+license("matchers-v0_2_0.license") {
   public_package_name = "matchers"
-  license_files = [ "//third_party/rust_crates/vendor/matchers-0.1.0/LICENSE" ]
+  license_files = [ "//third_party/rust_crates/vendor/matchers-0.2.0/LICENSE" ]
 }
 
-rustc_library("matchers-v0_1_0") {
+rustc_library("matchers-v0_2_0") {
   crate_name = "matchers"
-  source_root = "//third_party/rust_crates/vendor/matchers-0.1.0/src/lib.rs"
-  output_name = "matchers-d20ec4d350970f68"
+  source_root = "//third_party/rust_crates/vendor/matchers-0.2.0/src/lib.rs"
+  output_name = "matchers-3974fbe3174873bb"
   edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":regex-automata-v0_1_10" ]
+  deps += [ ":regex-automata-v0_4_14" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=d20ec4d350970f68",
-    "-Cextra-filename=-d20ec4d350970f68",
+    "-Cmetadata=3974fbe3174873bb",
+    "-Cextra-filename=-3974fbe3174873bb",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":matchers-v0_1_0.license" ]
+  applicable_licenses = [ ":matchers-v0_2_0.license" ]
 }
 
 license("matches-v0_1_10.license") {
@@ -13350,39 +13350,43 @@ rustc_library("ntapi-v0_3_4") {
   applicable_licenses = [ ":ntapi-v0_3_4.license" ]
 }
 
-license("nu-ansi-term-v0_46_0.license") {
+license("nu-ansi-term-v0_50_3.license") {
   public_package_name = "nu_ansi_term"
   license_files =
-      [ "//third_party/rust_crates/vendor/nu-ansi-term-0.46.0/LICENCE" ]
+      [ "//third_party/rust_crates/vendor/nu-ansi-term-0.50.3/LICENSE" ]
 }
 
-rustc_library("nu-ansi-term-v0_46_0") {
+rustc_library("nu-ansi-term-v0_50_3") {
   crate_name = "nu_ansi_term"
   source_root =
-      "//third_party/rust_crates/vendor/nu-ansi-term-0.46.0/src/lib.rs"
-  output_name = "nu_ansi_term-8ffdebcdd74cbc77"
-  edition = "2018"
+      "//third_party/rust_crates/vendor/nu-ansi-term-0.50.3/src/lib.rs"
+  output_name = "nu_ansi_term-79f1e9a294376d22"
+  edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":overload-v0_1_1" ]
   if (false) {
-    deps += [ ":winapi-v0_3_9" ]
+    deps += [ ":windows-sys-v0_61_2" ]
   }
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=8ffdebcdd74cbc77",
-    "-Cextra-filename=-8ffdebcdd74cbc77",
+    "-Cmetadata=79f1e9a294376d22",
+    "-Cextra-filename=-79f1e9a294376d22",
+    "--cfg=feature=\"default\"",
+    "--cfg=feature=\"std\"",
   ]
 
+  aliased_deps = {
+    windows = ":windows-sys-v0_61_2.actual"
+  }
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":nu-ansi-term-v0_46_0.license" ]
+  applicable_licenses = [ ":nu-ansi-term-v0_50_3.license" ]
 }
 
 license("num-v0_4_3.license") {
@@ -14180,35 +14184,6 @@ rustc_library("output_vt100-v0_1_3") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ "//build/licenses:fuchsia_license" ]
-}
-
-license("overload-v0_1_1.license") {
-  public_package_name = "overload"
-  license_files = [ "//third_party/rust_crates/vendor/overload-0.1.1/LICENSE" ]
-}
-
-rustc_library("overload-v0_1_1") {
-  crate_name = "overload"
-  source_root = "//third_party/rust_crates/vendor/overload-0.1.1/src/lib.rs"
-  output_name = "overload-eb3d37d1929098ee"
-  edition = "2018"
-  disable_clippy = true
-  enforce_source_listing = false
-  configs -= [ "//build/config/rust:2018_idioms" ]
-
-  deps = []
-
-  rustenv = []
-
-  rustflags = [
-    "--cap-lints=allow",
-    "-Cmetadata=eb3d37d1929098ee",
-    "-Cextra-filename=-eb3d37d1929098ee",
-  ]
-
-  visibility = [ ":*" ]
-
-  applicable_licenses = [ ":overload-v0_1_1.license" ]
 }
 
 license("p256-v0_11_1.license") {
@@ -17330,43 +17305,6 @@ rustc_library("regex-v1_12_3") {
   applicable_licenses = [ ":regex-v1_12_3.license" ]
 }
 
-license("regex-automata-v0_1_10.license") {
-  public_package_name = "regex_automata"
-  license_files = [
-    "//third_party/rust_crates/ask2patch/regex-automata/LICENSE-MIT",
-    "//third_party/rust_crates/ask2patch/regex-automata/data/fowler-tests/LICENSE",
-    "//third_party/rust_crates/ask2patch/regex-automata/data/tests/fowler/LICENSE",
-  ]
-}
-
-rustc_library("regex-automata-v0_1_10") {
-  crate_name = "regex_automata"
-  source_root = "//third_party/rust_crates/ask2patch/regex-automata/src/lib.rs"
-  output_name = "regex_automata-9a13f2d2e3083385"
-  edition = "2015"
-  disable_clippy = true
-  enforce_source_listing = false
-  configs -= [ "//build/config/rust:2018_idioms" ]
-
-  deps = []
-  deps += [ ":regex-syntax-v0_6_29" ]
-
-  rustenv = []
-
-  rustflags = [
-    "--cap-lints=allow",
-    "-Cmetadata=9a13f2d2e3083385",
-    "-Cextra-filename=-9a13f2d2e3083385",
-    "--cfg=feature=\"default\"",
-    "--cfg=feature=\"regex-syntax\"",
-    "--cfg=feature=\"std\"",
-  ]
-
-  visibility = [ ":*" ]
-
-  applicable_licenses = [ ":regex-automata-v0_1_10.license" ]
-}
-
 license("regex-automata-v0_4_14.license") {
   public_package_name = "regex_automata"
   license_files = [
@@ -17397,7 +17335,9 @@ rustc_library("regex-automata-v0_4_14") {
     "-Cmetadata=26877e8e28d0140a",
     "-Cextra-filename=-26877e8e28d0140a",
     "--cfg=feature=\"alloc\"",
+    "--cfg=feature=\"dfa-build\"",
     "--cfg=feature=\"dfa-onepass\"",
+    "--cfg=feature=\"dfa-search\"",
     "--cfg=feature=\"hybrid\"",
     "--cfg=feature=\"meta\"",
     "--cfg=feature=\"nfa-backtrack\"",
@@ -17458,49 +17398,6 @@ rustc_library("regex-lite-v0_1_9") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":regex-lite-v0_1_9.license" ]
-}
-
-license("regex-syntax-v0_6_29.license") {
-  public_package_name = "regex_syntax"
-  license_files = [
-    "//third_party/rust_crates/vendor/regex-syntax-0.6.29/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/regex-syntax-0.6.29/LICENSE-MIT",
-    "//third_party/rust_crates/vendor/regex-syntax-0.6.29/src/unicode_tables/LICENSE-UNICODE",
-  ]
-}
-
-rustc_library("regex-syntax-v0_6_29") {
-  crate_name = "regex_syntax"
-  source_root =
-      "//third_party/rust_crates/vendor/regex-syntax-0.6.29/src/lib.rs"
-  output_name = "regex_syntax-d26dc0d7d6398dea"
-  edition = "2018"
-  disable_clippy = true
-  enforce_source_listing = false
-  configs -= [ "//build/config/rust:2018_idioms" ]
-
-  deps = []
-
-  rustenv = []
-
-  rustflags = [
-    "--cap-lints=allow",
-    "-Cmetadata=d26dc0d7d6398dea",
-    "-Cextra-filename=-d26dc0d7d6398dea",
-    "--cfg=feature=\"default\"",
-    "--cfg=feature=\"unicode\"",
-    "--cfg=feature=\"unicode-age\"",
-    "--cfg=feature=\"unicode-bool\"",
-    "--cfg=feature=\"unicode-case\"",
-    "--cfg=feature=\"unicode-gencat\"",
-    "--cfg=feature=\"unicode-perl\"",
-    "--cfg=feature=\"unicode-script\"",
-    "--cfg=feature=\"unicode-segment\"",
-  ]
-
-  visibility = [ ":*" ]
-
-  applicable_licenses = [ ":regex-syntax-v0_6_29.license" ]
 }
 
 license("regex-syntax-v0_8_10.license") {
@@ -22425,17 +22322,17 @@ rustc_library("tracing-mutex-v0_3_2") {
   applicable_licenses = [ ":tracing-mutex-v0_3_2.license" ]
 }
 
-license("tracing-subscriber-v0_3_18.license") {
+license("tracing-subscriber-v0_3_23.license") {
   public_package_name = "tracing_subscriber"
   license_files =
-      [ "//third_party/rust_crates/vendor/tracing-subscriber-0.3.18/LICENSE" ]
+      [ "//third_party/rust_crates/vendor/tracing-subscriber-0.3.23/LICENSE" ]
 }
 
-rustc_library("tracing-subscriber-v0_3_18") {
+rustc_library("tracing-subscriber-v0_3_23") {
   crate_name = "tracing_subscriber"
   source_root =
-      "//third_party/rust_crates/vendor/tracing-subscriber-0.3.18/src/lib.rs"
-  output_name = "tracing_subscriber-e05c1c596b7237cd"
+      "//third_party/rust_crates/vendor/tracing-subscriber-0.3.23/src/lib.rs"
+  output_name = "tracing_subscriber-9986d8e9f66dbde1"
   edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
@@ -22443,10 +22340,10 @@ rustc_library("tracing-subscriber-v0_3_18") {
 
   deps = []
   deps += [ ":tracing-core-v0_1_36" ]
-  deps += [ ":matchers-v0_1_0" ]
-  deps += [ ":nu-ansi-term-v0_46_0" ]
+  deps += [ ":matchers-v0_2_0" ]
+  deps += [ ":nu-ansi-term-v0_50_3" ]
   deps += [ ":once_cell-v1_21_3" ]
-  deps += [ ":regex-v1_12_3" ]
+  deps += [ ":regex-automata-v0_4_14" ]
   deps += [ ":sharded-slab-v0_1_7" ]
   deps += [ ":smallvec-v1_15_1" ]
   deps += [ ":thread_local-v1_1_9" ]
@@ -22457,8 +22354,8 @@ rustc_library("tracing-subscriber-v0_3_18") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=e05c1c596b7237cd",
-    "-Cextra-filename=-e05c1c596b7237cd",
+    "-Cmetadata=9986d8e9f66dbde1",
+    "-Cextra-filename=-9986d8e9f66dbde1",
     "--cfg=feature=\"alloc\"",
     "--cfg=feature=\"ansi\"",
     "--cfg=feature=\"default\"",
@@ -22467,7 +22364,6 @@ rustc_library("tracing-subscriber-v0_3_18") {
     "--cfg=feature=\"matchers\"",
     "--cfg=feature=\"nu-ansi-term\"",
     "--cfg=feature=\"once_cell\"",
-    "--cfg=feature=\"regex\"",
     "--cfg=feature=\"registry\"",
     "--cfg=feature=\"sharded-slab\"",
     "--cfg=feature=\"smallvec\"",
@@ -22479,7 +22375,7 @@ rustc_library("tracing-subscriber-v0_3_18") {
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":tracing-subscriber-v0_3_18.license" ]
+  applicable_licenses = [ ":tracing-subscriber-v0_3_23.license" ]
 }
 
 license("trust-dns-proto-v0_22_0.license") {
