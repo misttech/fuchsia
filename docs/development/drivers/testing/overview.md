@@ -5,6 +5,12 @@
 Driver authors should use the [driver_test_realm](/docs/development/drivers/testing/driver_test_realm.md)
 for integration tests.
 
+## Device enumeration tests
+
+Driver authors should use
+[device enumeration tests](/docs/development/drivers/testing/device_enumeration.md)
+to verify system-level topology integration across the full board tree during driver development.
+
 ## Unit tests
 Drivers authors should use the [driver testing library](/docs/development/sdk/driver-testing/driver-unit-testing-quick-start.md)
 library for unit tests.

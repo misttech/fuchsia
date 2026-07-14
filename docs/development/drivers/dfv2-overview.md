@@ -34,6 +34,8 @@ new drivers using Fuchsia's [driver framework version 2][dfv2] (DFv2).
 
 - [**DriverTestRealm**][driver-test-realm]: Learn how to use the
   `DriverTestRealm` framework for running driver integration tests.
+- [**Device enumeration tests**][device-enumeration]: Learn how to run device
+  enumeration tests across boards to verify full driver topology integration.
 - [**Threading tips in tests**][treading-tips]: Understand best practices for
   handling threading in driver tests to avoid crashes.
 
@@ -86,6 +88,7 @@ See the following tutorials under the **SDK** section:
 [troubleshoot]: /docs/development/drivers/developer_guide/troubleshoot-common-issues.md
 [driver-utils]: /docs/development/drivers/diagnostics/driver-utils.md
 [driver-test-realm]: /docs/development/drivers/testing/driver_test_realm.md
+[device-enumeration]: /docs/development/drivers/testing/device_enumeration.md
 [treading-tips]: /docs/development/drivers/testing/threading-tips-in-tests.md
 [vmo-pattern]: /docs/development/drivers/best_practices/vmo-registration-pattern.md
 [driver-stack-performance]: /docs/development/drivers/best_practices/driver_stack_performance.md

@@ -64,6 +64,7 @@ section.
 - Testing
 
   - [DriverTestRealm][driver-test-realm]
+  - [Device enumeration tests][device-enumeration]
   - [Threading tips in tests][threading-tips-in-tests]
 
 - Best practices
@@ -169,6 +170,7 @@ section.
 [usb-mass-storage-driver]: driver_guides/usb/concepts/usb-mass-storage.md
 [driver-testing-overview]: testing/overview.md
 [driver-test-realm]: testing/driver_test_realm.md
+[device-enumeration]: testing/device_enumeration.md
 [threading-tips-in-tests]: testing/threading-tips-in-tests.md
 [using-inspect]: diagnostics/inspect.md
 [driver-logging]: diagnostics/logging.md

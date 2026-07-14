@@ -10,5 +10,7 @@ toc:
   path: /docs/development/drivers/testing/overview.md
 - title: "Driver test realm"
   path: /docs/development/drivers/testing/driver_test_realm.md
+- title: "Device enumeration tests"
+  path: /docs/development/drivers/testing/device_enumeration.md
 - title: "Threading Tips"
   path: /docs/development/drivers/testing/threading-tips-in-tests.md
