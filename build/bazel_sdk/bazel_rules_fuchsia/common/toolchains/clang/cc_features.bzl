@@ -243,6 +243,12 @@ _flag_configs = struct(
             # TODO(https://fxbug.dev/500111548): Disable "-Wunused-but-set-global" until
             # all instances are fixed.
             "-Wno-unused-but-set-global",
+
+            # TODO(https://fxbug.dev/534361287): Clean up unused templates in first-party code.
+            # This is currently applied globally to unblock the toolchain update.
+            # Eventually, this should be removed from default_warnings and only applied
+            # to third_party targets.
+            "-Wno-unused-template",
         ],
     ),
     # LINT.ThenChange(//build/config/BUILD.gn:default_warnings)
