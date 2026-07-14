@@ -19,6 +19,8 @@
 #include <zircon/compiler.h>
 #include <zircon/types.h>
 
+#include <array>
+#include <bitset>
 #include <memory>
 #include <mutex>
 
