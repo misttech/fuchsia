@@ -4,6 +4,8 @@
 
 load("//build/bazel/rules:stamp_group.bzl", "stamp_group")
 
+package(default_applicable_licenses = ["//:license"])
+
 stamp_group(
     name = "target_examples",
     testonly = True,

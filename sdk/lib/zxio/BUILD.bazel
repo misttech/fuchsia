@@ -5,6 +5,8 @@
 load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
 load("//build/bazel/rules/cc:fx_cc_library_headers.bzl", "fx_cc_library_headers")
 
+package(default_applicable_licenses = ["//:license"])
+
 fx_cc_library_headers(
     name = "headers",
     hdrs = [

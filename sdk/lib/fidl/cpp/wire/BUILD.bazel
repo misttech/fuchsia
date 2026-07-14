@@ -152,3 +152,5 @@ idk_cc_source_library(
     visibility = ["//visibility:public"],
     public_configs = [":include"],  # For bazel2gn.
 )
+
+package(default_applicable_licenses = ["//:license"])

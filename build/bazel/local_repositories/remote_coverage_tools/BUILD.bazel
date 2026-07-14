@@ -1,5 +1,7 @@
 """Fake dependency for @bazel_tools."""
 
+package(default_applicable_licenses = ["//:license"])
+
 filegroup(
     name = "coverage_report_generator",
     srcs = [],

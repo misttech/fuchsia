@@ -4,7 +4,12 @@
 
 # amlogic library that can be shared across amlogic based drivers
 
-package(default_visibility = ["//visibility:public"])
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+
+package(
+    default_applicable_licenses = ["//:license"],
+    default_visibility = ["//visibility:public"],
+)
 
 cc_library(
     name = "amlogic",

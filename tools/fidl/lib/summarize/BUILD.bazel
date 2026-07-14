@@ -6,7 +6,10 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
 load("//tools/fidl/lib/fidlgentest:fidlgentest_go_test.bzl", "fidlgentest_go_test")
 
-package(default_visibility = ["//tools/fidl:__subpackages__"])
+package(
+    default_applicable_licenses = ["//:license"],
+    default_visibility = ["//tools/fidl:__subpackages__"],
+)
 
 go_library(
     name = "gopkg",

@@ -8,7 +8,10 @@ load(
     "sbase_binaries",
 )
 
-package(default_visibility = ["//bundles/assembly:__subpackages__"])
+package(
+    default_applicable_licenses = ["//:license"],
+    default_visibility = ["//bundles/assembly:__subpackages__"],
+)
 
 [
     prebuilt_package(

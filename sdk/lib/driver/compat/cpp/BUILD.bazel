@@ -5,7 +5,12 @@
 # driver_compat library used by drivers to communicate with DFv1 drivers.
 # This library will be removed when DF team can move off this library.
 
-package(default_visibility = ["//visibility:public"])
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+
+package(
+    default_applicable_licenses = ["//:license"],
+    default_visibility = ["//visibility:public"],
+)
 
 cc_library(
     name = "cpp",

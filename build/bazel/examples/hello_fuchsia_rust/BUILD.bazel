@@ -12,6 +12,8 @@ load(
 )
 load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_test")
 
+package(default_applicable_licenses = ["//:license"])
+
 rust_binary(
     name = "hello_fuchsia_rust_native",
     srcs = ["src/main.rs"],

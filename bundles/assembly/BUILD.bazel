@@ -50,7 +50,10 @@ load(
 # later the assembled image.  This makes it harder to reason about how and when
 # the artifacts are included within the assembled product.
 
-package(default_visibility = ["//visibility:public"])
+package(
+    default_applicable_licenses = ["//:license"],
+    default_visibility = ["//visibility:public"],
+)
 
 platform_artifacts(
     name = "bringup",

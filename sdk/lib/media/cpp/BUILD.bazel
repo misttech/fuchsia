@@ -4,6 +4,8 @@
 
 load("//build/bazel/rules/idk:idk_cc_source_library.bzl", "idk_cc_source_library")
 
+package(default_applicable_licenses = ["//:license"])
+
 idk_cc_source_library(
     name = "no_converters",
     srcs = [

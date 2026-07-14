@@ -4,7 +4,10 @@
 
 load("@rules_fuchsia//fuchsia:assembly.bzl", "fuchsia_prebuilt_package")
 
-package(default_visibility = ["//visibility:public"])
+package(
+    default_applicable_licenses = ["//:license"],
+    default_visibility = ["//visibility:public"],
+)
 
 fuchsia_prebuilt_package(
     name = "aml-light",

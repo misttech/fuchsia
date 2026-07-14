@@ -222,3 +222,5 @@ idk_cc_source_library(
         "//zircon/system/ulib/zx",
     ],
 )
+
+package(default_applicable_licenses = ["//:license"])

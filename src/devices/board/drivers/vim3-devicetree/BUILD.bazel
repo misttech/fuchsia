@@ -16,6 +16,8 @@ load(
     "fuchsia_test_package",
 )
 
+package(default_applicable_licenses = ["//:license"])
+
 fuchsia_driver_bind_bytecode(
     name = "vim3-devicetree-bind",
     output = "vim3-devicetree-bind.bindbc",

@@ -6,6 +6,8 @@ load("@fuchsia_build_info//:args.bzl", "idk_buildable_api_levels", "idk_buildabl
 load("@rules_python//python:py_binary.bzl", "py_binary")
 load(":rules.bzl", "compare_bazel_sdk_contents", "generate_bazel_sdk", "generate_merged_idk", "validate_idk")
 
+package(default_applicable_licenses = ["//:license"])
+
 # A script used to convert an IDK export directory into a Fuchsia Bazel SDK directory.
 #
 # Example usage with `bazel run`:

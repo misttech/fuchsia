@@ -4,6 +4,8 @@
 
 load("@rules_python//python:py_binary.bzl", "py_binary")
 
+package(default_applicable_licenses = ["//:license"])
+
 py_binary(
     name = "generate_idk_bazel",
     srcs = [

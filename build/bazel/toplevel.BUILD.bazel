@@ -12,6 +12,7 @@ load(
     "@rules_fuchsia//fuchsia:defs.bzl",
     "fuchsia_devicetree_toolchain_info",
 )
+load("@rules_license//rules:license.bzl", "license")
 load(
     "//build/bazel/toolchains:linux_sysroot.bzl",
     "linux_sysroot_headers",
@@ -153,4 +154,11 @@ toolchain(
     name = "fuchsia_sdk_devicetree_toolchain",
     toolchain = ":fuchsia_devicetree_toolchain_info",
     toolchain_type = "@rules_fuchsia//fuchsia:devicetree_toolchain_type",
+)
+
+license(
+    name = "license",
+    license_kinds = ["@rules_license//licenses/spdx:BSD-2-Clause"],
+    license_text = "LICENSE",
+    visibility = ["//visibility:public"],
 )

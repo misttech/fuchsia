@@ -4,7 +4,10 @@
 
 load("//build/bazel/rules/packages:prebuilt_package.bzl", "prebuilt_package")
 
-package(default_visibility = ["//bundles/assembly:__subpackages__"])
+package(
+    default_applicable_licenses = ["//:license"],
+    default_visibility = ["//bundles/assembly:__subpackages__"],
+)
 
 prebuilt_package(
     name = "disable-executability-restrictions",

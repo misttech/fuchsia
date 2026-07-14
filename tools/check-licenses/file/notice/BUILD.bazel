@@ -3,3 +3,5 @@
 # found in the LICENSE file.
 
 # Empty file for now to keep the directory around for a subsequent cleanup CL.
+
+package(default_applicable_licenses = ["//:license"])

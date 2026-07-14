@@ -7,6 +7,8 @@
 load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 
+package(default_applicable_licenses = ["//:license"])
+
 py_library(
     name = "lib",
     srcs = ["lib.py"],

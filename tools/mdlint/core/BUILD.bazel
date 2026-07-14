@@ -4,7 +4,10 @@
 
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
-package(default_visibility = ["//tools/mdlint:__subpackages__"])
+package(
+    default_applicable_licenses = ["//:license"],
+    default_visibility = ["//tools/mdlint:__subpackages__"],
+)
 
 go_library(
     name = "core",

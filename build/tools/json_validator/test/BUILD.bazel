@@ -3,6 +3,8 @@
 # found in the LICENSE file.
 load(":defs.bzl", "json_validator_valico_test")
 
+package(default_applicable_licenses = ["//:license"])
+
 # NOTE: The GN json_validator_valico_test target runs a single shell script
 # that receives the path to the tool and to an input data directory, then
 # invokes the tool three times with different inputs.

@@ -43,6 +43,8 @@ load(
     "verify_atom_info",
 )
 
+package(default_applicable_licenses = ["//:license"])
+
 idk_data(
     name = "test_data_atom",
     testonly = True,

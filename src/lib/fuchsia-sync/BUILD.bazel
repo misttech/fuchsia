@@ -5,7 +5,10 @@
 load("@fuchsia_build_info//:args.bzl", "fuchsia_sync_detect_lock_cycles")
 load("//build/bazel/rules/rust:defs.bzl", "rustc_library", "rustc_test")
 
-package(default_visibility = ["//visibility:public"])
+package(
+    default_applicable_licenses = ["//:license"],
+    default_visibility = ["//visibility:public"],
+)
 
 FUCHSIA_SYNC_SRCS = [
     "src/condvar.rs",

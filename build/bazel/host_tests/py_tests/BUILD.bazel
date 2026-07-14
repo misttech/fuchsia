@@ -5,6 +5,8 @@
 load("@rules_python//python:py_library.bzl", "py_library")
 load("//build/bazel/host_tests:host_py_test.bzl", "host_py_test")
 
+package(default_applicable_licenses = ["//:license"])
+
 test_suite(
     name = "py_tests",
     visibility = ["//visibility:public"],

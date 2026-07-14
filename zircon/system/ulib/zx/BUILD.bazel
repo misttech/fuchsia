@@ -4,8 +4,9 @@
 
 load("//build/bazel/rules/idk:idk_cc_source_library.bzl", "idk_cc_source_library_zx")
 
-# LINT.IfChange
+package(default_applicable_licenses = ["//:license"])
 
+# LINT.IfChange
 idk_cc_source_library_zx(
     name = "zx",
     srcs = [

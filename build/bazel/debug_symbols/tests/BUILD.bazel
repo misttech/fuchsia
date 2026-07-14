@@ -37,11 +37,14 @@ TODO(digit): Find a way to generate a single manifest and generate debug binarie
 TODO(digit): Make this a proper build-time test instead.
 """
 
+load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library", "cc_shared_library")
 load("@rules_fuchsia//fuchsia:defs.bzl", "fuchsia_cc_binary", "fuchsia_cc_test", "fuchsia_wrap_rust_binary")
 load("@rules_python//python:defs.bzl", "py_binary")
 load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_test")
 load(":defs.bzl", "debug_symbols_manifest", "multi_compilation_mode_filegroup")
+
+package(default_applicable_licenses = ["//:license"])
 
 debug_symbols_manifest(
     name = "debug_symbols",

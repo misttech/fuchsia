@@ -3,6 +3,7 @@
 # TODO: You only need one BUILD file. Chose between this one or the gn one and then
 # delete the other one. Use bazel for vendor repo drivers. Use gn for in-tree drivers.
 
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load(
     "@rules_fuchsia//fuchsia:defs.bzl",
     "fuchsia_cc_driver",
@@ -13,6 +14,8 @@ load(
     "fuchsia_package",
     "fuchsia_unittest_package",
 )
+
+package(default_applicable_licenses = ["//:license"])
 
 fuchsia_driver_bind_bytecode(
     name = "bind_bytecode",

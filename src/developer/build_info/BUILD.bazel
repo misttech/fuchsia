@@ -8,6 +8,8 @@ load(
     "fx_component_manifest",
 )
 
+package(default_applicable_licenses = ["//:license"])
+
 exports_files(
     ["meta/build_info.core_shard.cml"],
     visibility = ["//bundles/assembly:__subpackages__"],

@@ -5,7 +5,12 @@
 # Library that exports the metadata.h file  to support the transition
 # to DFv2.
 
-package(default_visibility = ["//visibility:public"])
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+
+package(
+    default_applicable_licenses = ["//:license"],
+    default_visibility = ["//visibility:public"],
+)
 
 cc_library(
     name = "ddk_metadata",

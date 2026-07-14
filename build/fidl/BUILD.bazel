@@ -5,6 +5,8 @@
 load("@rules_python//python:defs.bzl", "py_binary")
 load("//build/bazel/rules/fidl:collect_fidl_library_data.bzl", "collect_fidl_ir_json_files", "collect_fidl_metadata")
 
+package(default_applicable_licenses = ["//:license"])
+
 py_binary(
     name = "gen_response_file",
     srcs = ["gen_response_file.py"],

@@ -5,6 +5,8 @@
 load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
 load("//build/bazel/rules/rust:defs.bzl", "rustc_library")
 
+package(default_applicable_licenses = ["//:license"])
+
 rustc_library(
     name = "notify-batch-watcher",
     srcs = ["src/lib.rs"],

@@ -4,7 +4,10 @@
 
 load(":assert_no_deps_test.bzl", "assert_no_deps_test_suite")
 
-package(default_visibility = ["//visibility:public"])
+package(
+    default_applicable_licenses = ["//:license"],
+    default_visibility = ["//visibility:public"],
+)
 
 assert_no_deps_test_suite(
     name = "assert_no_deps_test",

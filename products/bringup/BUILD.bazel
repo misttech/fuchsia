@@ -23,7 +23,10 @@ load(
     "PLATFORM_CONFIG_WITH_TEST_JSON",
 )
 
-package(default_visibility = ["//visibility:public"])
+package(
+    default_applicable_licenses = ["//:license"],
+    default_visibility = ["//visibility:public"],
+)
 
 fuchsia_product_configuration(
     name = "product_config",

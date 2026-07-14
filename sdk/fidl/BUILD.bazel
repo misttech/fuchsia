@@ -21,6 +21,8 @@ load(
     "PREBUILT_FIDL_LIBRARY_ATOMS_LIST",
 )
 
+package(default_applicable_licenses = ["//:license"])
+
 # GN note: Unlike the GN target, this does not depend on libraries in the
 # "prebuilt" or "host_tool" categories.
 idk_molecule(

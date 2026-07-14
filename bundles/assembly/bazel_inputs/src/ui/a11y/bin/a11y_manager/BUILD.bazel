@@ -4,7 +4,10 @@
 
 load("//build/bazel/rules/icu:icu_prebuilt_package.bzl", "icu_prebuilt_package")
 
-package(default_visibility = ["//bundles/assembly:__subpackages__"])
+package(
+    default_applicable_licenses = ["//:license"],
+    default_visibility = ["//bundles/assembly:__subpackages__"],
+)
 
 icu_prebuilt_package(
     name = "a11y-manager",

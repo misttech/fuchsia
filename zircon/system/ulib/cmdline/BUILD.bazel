@@ -4,6 +4,8 @@
 
 load("//build/bazel/rules:zx_library.bzl", "cc_source_library_zx")
 
+package(default_applicable_licenses = ["//:license"])
+
 cc_source_library_zx(
     name = "cmdline",
     srcs = ["args_parser.cc"],

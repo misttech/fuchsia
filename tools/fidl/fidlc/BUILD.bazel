@@ -7,6 +7,8 @@ load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
 load("//build/bazel/rules/host:defs.bzl", "cc_binary_host_tool")
 load("//build/bazel/rules/idk:idk_host_tool.bzl", "idk_cc_binary_host_tool")
 
+package(default_applicable_licenses = ["//:license"])
+
 cc_library(
     name = "lib",
     srcs = [

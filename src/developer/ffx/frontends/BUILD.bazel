@@ -3,3 +3,5 @@
 # found in the LICENSE file.
 
 # Empty to satisfy visibility from another target.
+
+package(default_applicable_licenses = ["//:license"])

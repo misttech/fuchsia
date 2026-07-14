@@ -87,3 +87,5 @@ rustc_library(
         "//third_party/rust_crates/vendor:valico",
     ],
 )
+
+package(default_applicable_licenses = ["//:license"])

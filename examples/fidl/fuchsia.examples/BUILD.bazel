@@ -5,6 +5,8 @@
 # Import the fidl GN template. (Mapped to Bazel load)
 load("//build/bazel/rules/fidl:fidl_library.bzl", "fidl_library")
 
+package(default_applicable_licenses = ["//:license"])
+
 # Define a target for our FIDL library by passing it the FIDL source files
 # that make up the library.
 fidl_library(

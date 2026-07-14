@@ -6,6 +6,8 @@ load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
 load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
 load("//build/bazel/rules:stamp_group.bzl", "stamp_group")
 
+package(default_applicable_licenses = ["//:license"])
+
 go_library(
     name = "readme_fuchsia_lib",
     srcs = [

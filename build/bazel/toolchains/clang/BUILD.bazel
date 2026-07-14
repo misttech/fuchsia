@@ -4,4 +4,6 @@
 
 load(":toolchains.bzl", "define_fuchsia_api_level_info")
 
+package(default_applicable_licenses = ["//:license"])
+
 define_fuchsia_api_level_info(name = "_fuchsia_api_level_info")

@@ -4,6 +4,8 @@
 
 load("//build/bazel/rules/rust:defs.bzl", "rustc_library")
 
+package(default_applicable_licenses = ["//:license"])
+
 rustc_library(
     name = "fidl_next_codec",
     srcs = [

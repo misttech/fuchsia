@@ -4,6 +4,8 @@
 
 load("//build/bazel/host_tests:host_test_data.bzl", "host_test_data_files")
 
+package(default_applicable_licenses = ["//:license"])
+
 host_test_data_files(
     name = "python_interpreter_as_test_data",
     testonly = True,

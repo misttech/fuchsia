@@ -4,7 +4,10 @@
 
 load("@rules_python//python:defs.bzl", "py_library")
 
-package(default_visibility = ["//build/assembly/scripts:__pkg__"])
+package(
+    default_applicable_licenses = ["//:license"],
+    default_visibility = ["//build/assembly/scripts:__pkg__"],
+)
 
 py_library(
     name = "serialization",

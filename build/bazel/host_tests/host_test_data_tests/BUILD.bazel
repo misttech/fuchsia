@@ -8,6 +8,8 @@ load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("//build/bazel/host_tests:host_test.bzl", "host_test")
 load("//build/bazel/host_tests:host_test_data.bzl", "host_test_data_files", "host_test_data_map")
 
+package(default_applicable_licenses = ["//:license"])
+
 test_suite(
     name = "host_test_data_tests",
     visibility = ["//visibility:public"],

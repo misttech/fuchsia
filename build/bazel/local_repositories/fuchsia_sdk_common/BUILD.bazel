@@ -11,3 +11,5 @@ package.
 I simply contains a `common` symlink pointing to the right location, so one can
 use @fuchsia_sdk_common//common:<subpath> to access files there.
 """
+
+package(default_applicable_licenses = ["//:license"])

@@ -4,7 +4,10 @@
 
 load("//build/bazel/rules/rust:defs.bzl", "rustc_embed_files", "rustc_proc_macro")
 
-package(default_visibility = ["//visibility:public"])
+package(
+    default_applicable_licenses = ["//:license"],
+    default_visibility = ["//visibility:public"],
+)
 
 # The `files` attribute of `rustc_embed_files` in Bazel uses
 # `label_keyed_string_dict` for extra safety, while the GN implementation uses a GN scope.

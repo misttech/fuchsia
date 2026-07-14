@@ -14,6 +14,8 @@ load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
 load("//build/bazel/rules:stamp_group.bzl", "stamp_group")
 load(":rules.bzl", "build_for_host")
 
+package(default_applicable_licenses = ["//:license"])
+
 # Runs all tests and writes a stamp file.
 stamp_group(
     name = "tests",

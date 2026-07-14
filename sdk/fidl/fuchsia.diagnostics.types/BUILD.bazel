@@ -4,7 +4,10 @@
 
 load("//build/bazel/rules/fidl:fidl_library.bzl", "fidl_library")
 
-package(default_visibility = ["//visibility:public"])
+package(
+    default_applicable_licenses = ["//:license"],
+    default_visibility = ["//visibility:public"],
+)
 
 fidl_library(
     name = "fuchsia.diagnostics.types",

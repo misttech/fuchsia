@@ -29,6 +29,8 @@ load(
     "NOOP_ATOMS_LIST",
 )
 
+package(default_applicable_licenses = ["//:license"])
+
 sdk_version_history(
     name = "version_history",
     category = "partner",

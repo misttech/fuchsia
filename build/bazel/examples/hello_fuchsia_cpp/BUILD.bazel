@@ -11,6 +11,8 @@ load(
     "fuchsia_unittest_package",
 )
 
+package(default_applicable_licenses = ["//:license"])
+
 fuchsia_cc_binary(
     name = "hello_world",
     srcs = [

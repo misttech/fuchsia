@@ -5,6 +5,8 @@
 load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
 load("//build/bazel/rules/idk:idk_host_tool.bzl", "idk_rustc_binary_host_tool")
 
+package(default_applicable_licenses = ["//:license"])
+
 idk_rustc_binary_host_tool(
     name = "fake-omaha-client",
     srcs = [

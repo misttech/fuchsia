@@ -4,6 +4,8 @@
 
 load("//build/bazel/rules/idk:idk_cc_source_library.bzl", "idk_cc_source_library")
 
+package(default_applicable_licenses = ["//:license"])
+
 # "fidl" is used in low-level contexts such as early system
 # boot, hence cannot depend on the C++ standard library, and must only introduce
 # minimal symbols into dependent targets. As such, these libraries need to be

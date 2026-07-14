@@ -13,6 +13,8 @@ load(
     "fuchsia_product_configuration",
 )
 
+package(default_applicable_licenses = ["//:license"])
+
 fuchsia_board_configuration(
     name = "board_config",
     board_name = "fake_board",

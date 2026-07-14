@@ -7,6 +7,8 @@ load(
     "fuchsia_test_product_bundle",
 )
 
+package(default_applicable_licenses = ["//:license"])
+
 fuchsia_test_product_bundle(
     name = "test_product.arm64",
     board_config = "//boards:arm64",

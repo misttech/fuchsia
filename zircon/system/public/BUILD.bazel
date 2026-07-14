@@ -4,9 +4,11 @@
 
 # The logic in BUILD.gn is too complex for bazel2gn, manually keep these
 # files synchronized.
-# LINT.IfChange
 load("@rules_cc//cc:defs.bzl", "cc_library")
 
+package(default_applicable_licenses = ["//:license"])
+
+# LINT.IfChange
 cc_library(
     name = "public",
     hdrs = [

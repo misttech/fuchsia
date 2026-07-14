@@ -68,3 +68,5 @@ rustc_test(
         "//conditions:default": [],
     }),
 )
+
+package(default_applicable_licenses = ["//:license"])

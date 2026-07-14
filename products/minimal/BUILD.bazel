@@ -12,7 +12,10 @@ load(
 )
 load("//products/minimal:minimal.bzl", "MINIMAL_PLATFORM_BASE", "MINIMAL_PRODUCT_BASE")
 
-package(default_visibility = ["//visibility:public"])
+package(
+    default_applicable_licenses = ["//:license"],
+    default_visibility = ["//visibility:public"],
+)
 
 _PRODUCT_CONFIG_BASE_JSON = {
     "platform": MINIMAL_PLATFORM_BASE,

@@ -4,7 +4,10 @@
 
 load("//build/bazel/rules/rust:defs.bzl", "rustc_proc_macro")
 
-package(default_visibility = ["//visibility:public"])
+package(
+    default_applicable_licenses = ["//:license"],
+    default_visibility = ["//visibility:public"],
+)
 
 rustc_proc_macro(
     name = "include_str_from_working_dir",

@@ -4,7 +4,10 @@
 
 load("//build/bazel/rules/rust:defs.bzl", "rustc_library")
 
-package(default_visibility = ["//visibility:public"])
+package(
+    default_applicable_licenses = ["//:license"],
+    default_visibility = ["//visibility:public"],
+)
 
 rustc_library(
     name = "fuchsia-async",

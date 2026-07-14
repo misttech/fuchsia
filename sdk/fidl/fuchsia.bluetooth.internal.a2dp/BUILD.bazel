@@ -4,6 +4,8 @@
 
 load("//build/bazel/rules/fidl:fidl_library.bzl", "fidl_library")
 
+package(default_applicable_licenses = ["//:license"])
+
 fidl_library(
     name = "fuchsia.bluetooth.internal.a2dp",
     srcs = [

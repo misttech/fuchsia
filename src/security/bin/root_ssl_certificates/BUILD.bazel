@@ -12,6 +12,8 @@ load(
     "fx_package",
 )
 
+package(default_applicable_licenses = ["//:license"])
+
 fx_package(
     name = "root_ssl_certificates",
     package_name = "root_ssl_certificates",

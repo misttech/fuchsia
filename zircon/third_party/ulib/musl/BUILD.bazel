@@ -4,6 +4,8 @@
 
 load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
 
+package(default_applicable_licenses = ["//:license"])
+
 # We share just this internal header with fdio so it can implement
 # getifaddrs re-using this address manipulation code.
 fx_cc_library(

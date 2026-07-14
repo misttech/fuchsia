@@ -7,6 +7,8 @@ load("//build/bazel/host_tests:host_rustc_test.bzl", "host_rustc_test")
 load("//build/bazel/host_tests:host_test_data.bzl", "host_test_data_files")
 load("//build/bazel/rules/rust:defs.bzl", "rustc_binary", "rustc_library")
 
+package(default_applicable_licenses = ["//:license"])
+
 # A regular library target. This does not compile any tests.
 rustc_library(
     name = "lib",

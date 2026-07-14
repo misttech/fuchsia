@@ -16,10 +16,13 @@ load(
 load("//build/info:info.bzl", "DEFAULT_PRODUCT_BUILD_INFO")
 load("//products/workbench:platform_config.bzl", "workbench_platform_config")
 
-package(default_visibility = [
-    "//build/bazel/assembly:__pkg__",
-    "//vendor/google:__subpackages__",
-])
+package(
+    default_applicable_licenses = ["//:license"],
+    default_visibility = [
+        "//build/bazel/assembly:__pkg__",
+        "//vendor/google:__subpackages__",
+    ],
+)
 
 fuchsia_product_bundle(
     name = "product_bundle_eng.x64",

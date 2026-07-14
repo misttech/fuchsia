@@ -4,6 +4,8 @@
 
 load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
 
+package(default_applicable_licenses = ["//:license"])
+
 fx_cc_library(
     name = "cpp",
     srcs = ["file-lock.cc"],

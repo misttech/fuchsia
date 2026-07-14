@@ -10,11 +10,14 @@ load(
 )
 load("//build/bazel/assembly:zedboot_image_args.bzl", "ZEDBOOT_IMAGE_ARGS", "ZEDBOOT_PLATFORM_BASE")
 
-package(default_visibility = [
-    "//build/bazel/assembly:__subpackages__",
-    "//products:__subpackages__",
-    "//vendor/google:__subpackages__",
-])
+package(
+    default_applicable_licenses = ["//:license"],
+    default_visibility = [
+        "//build/bazel/assembly:__subpackages__",
+        "//products:__subpackages__",
+        "//vendor/google:__subpackages__",
+    ],
+)
 
 fuchsia_product_configuration(
     name = "zedboot",

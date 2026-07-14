@@ -11,7 +11,10 @@ load(
     "fuchsia_prebuilt_board_input_bundle_set",
 )
 
-package(default_visibility = ["//visibility:public"])
+package(
+    default_applicable_licenses = ["//:license"],
+    default_visibility = ["//visibility:public"],
+)
 
 _COMMON_FILESYSTEMS = {
     "vbmeta": {

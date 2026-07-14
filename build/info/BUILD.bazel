@@ -4,7 +4,10 @@
 
 load(":info.bzl", "gen_latest_date_and_timestamp", "get_build_info_version", "get_latest_commit_date", "get_latest_commit_hash", "get_timestamp_file")
 
-package(default_visibility = ["//visibility:public"])
+package(
+    default_applicable_licenses = ["//:license"],
+    default_visibility = ["//visibility:public"],
+)
 
 exports_files([
     "jiri_generated/integration_daily_commit_hash.txt",

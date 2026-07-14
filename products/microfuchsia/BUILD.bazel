@@ -13,9 +13,12 @@ load(
     "fuchsia_virtual_device",
 )
 
-package(default_visibility = [
-    "//build/bazel/assembly:__pkg__",
-])
+package(
+    default_applicable_licenses = ["//:license"],
+    default_visibility = [
+        "//build/bazel/assembly:__pkg__",
+    ],
+)
 
 fuchsia_virtual_device(
     name = "microfuchsia_emu_x64",

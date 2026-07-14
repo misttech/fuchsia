@@ -9,6 +9,8 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
 load("//build/bazel/rules/host:defs.bzl", "go_binary_host_tool")
 
+package(default_applicable_licenses = ["//:license"])
+
 # Creates the matching go_library target.
 #
 # You can verify this target builds correctly with:

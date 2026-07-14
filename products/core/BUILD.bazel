@@ -16,7 +16,10 @@ load(
 )
 load("//build/info:info.bzl", "DEFAULT_PRODUCT_BUILD_INFO")
 
-package(default_visibility = ["//visibility:public"])
+package(
+    default_applicable_licenses = ["//:license"],
+    default_visibility = ["//visibility:public"],
+)
 
 PLATFORM_BASE = {
     "build_type": BUILD_TYPES.ENG,

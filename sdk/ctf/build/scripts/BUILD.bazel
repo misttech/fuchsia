@@ -4,6 +4,8 @@
 
 load("@rules_python//python:defs.bzl", "py_binary")
 
+package(default_applicable_licenses = ["//:license"])
+
 py_binary(
     name = "fidl_api_compatibility_test",
     srcs = [
