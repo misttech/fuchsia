@@ -10,6 +10,20 @@
 
 namespace vm_unittest {
 
+static void InitializeTestPage(vm_page_t* page) {
+  DEBUG_ASSERT(page);
+  DEBUG_ASSERT(!list_in_list(&page->queue_node));
+  // Pages are constructed in the FREE state
+  DEBUG_ASSERT(page->state() == vm_page_state::FREE);
+  page->set_state(vm_page_state::OBJECT);
+  page->object.share_count = 0;
+  page->object.pin_count = 0;
+  page->object.always_need = 0;
+  page->object.dirty_state = uint8_t(VmCowPages::DirtyState::Untracked);
+  page->object.set_object(nullptr);
+  page->object.set_page_offset(0);
+}
+
 static bool pq_add_remove() {
   BEGIN_TEST;
 
@@ -17,7 +31,7 @@ static bool pq_add_remove() {
 
   // Pretend we have an allocated page
   vm_page_t test_page = {};
-  test_page.set_state(vm_page_state::OBJECT);
+  InitializeTestPage(&test_page);
 
   // Need a VMO to claim our pages are in
   fbl::RefPtr<VmObjectPaged> vmo;
@@ -76,7 +90,7 @@ static bool pq_move_queues() {
 
   // Pretend we have an allocated page
   vm_page_t test_page = {};
-  test_page.set_state(vm_page_state::OBJECT);
+  InitializeTestPage(&test_page);
 
   // Need a VMO to claim our pages are in
   fbl::RefPtr<VmObjectPaged> vmo;
@@ -142,7 +156,7 @@ static bool pq_move_self_queue() {
 
   // Pretend we have an allocated page
   vm_page_t test_page = {};
-  test_page.set_state(vm_page_state::OBJECT);
+  InitializeTestPage(&test_page);
 
   // Need a VMO to claim our pages are in
   fbl::RefPtr<VmObjectPaged> vmo;
@@ -221,9 +235,9 @@ static bool pq_rotate_queue() {
   vm_page_t wired_page = {};
   vm_page_t clean_pager_page = {};
   vm_page_t dirty_pager_page = {};
-  wired_page.set_state(vm_page_state::OBJECT);
-  clean_pager_page.set_state(vm_page_state::OBJECT);
-  dirty_pager_page.set_state(vm_page_state::OBJECT);
+  InitializeTestPage(&wired_page);
+  InitializeTestPage(&clean_pager_page);
+  InitializeTestPage(&dirty_pager_page);
 
   // Need a VMO to claim our pages are in.
   fbl::RefPtr<VmObjectPaged> vmo;
@@ -339,8 +353,8 @@ static bool pq_toggle_dont_need_queue() {
   // Pretend we have a couple of allocated pager-backed pages.
   vm_page_t page1 = {};
   vm_page_t page2 = {};
-  page1.set_state(vm_page_state::OBJECT);
-  page2.set_state(vm_page_state::OBJECT);
+  InitializeTestPage(&page1);
+  InitializeTestPage(&page2);
 
   // Need a VMO to claim our pager backed pages are in.
   fbl::RefPtr<VmObjectPaged> vmo;
@@ -415,8 +429,8 @@ static bool pq_multiple_queues_fifo_order() {
 
   vm_page_t old_page = {};
   vm_page_t new_page = {};
-  old_page.set_state(vm_page_state::OBJECT);
-  new_page.set_state(vm_page_state::OBJECT);
+  InitializeTestPage(&old_page);
+  InitializeTestPage(&new_page);
 
   fbl::RefPtr<VmObjectPaged> vmo;
   zx_status_t status = make_uncommitted_pager_vmo(2, false, false, &vmo);
@@ -465,8 +479,8 @@ static bool pq_single_queue_fifo_order() {
 
   vm_page_t old_page = {};
   vm_page_t new_page = {};
-  old_page.set_state(vm_page_state::OBJECT);
-  new_page.set_state(vm_page_state::OBJECT);
+  InitializeTestPage(&old_page);
+  InitializeTestPage(&new_page);
 
   fbl::RefPtr<VmObjectPaged> vmo;
   zx_status_t status = make_uncommitted_pager_vmo(2, false, false, &vmo);
@@ -510,8 +524,8 @@ static bool pq_isolate_dont_need_fifo_order() {
 
   vm_page_t old_page = {};
   vm_page_t new_page = {};
-  old_page.set_state(vm_page_state::OBJECT);
-  new_page.set_state(vm_page_state::OBJECT);
+  InitializeTestPage(&old_page);
+  InitializeTestPage(&new_page);
 
   fbl::RefPtr<VmObjectPaged> vmo;
   zx_status_t status = make_uncommitted_pager_vmo(2, false, false, &vmo);
@@ -553,8 +567,8 @@ static bool pq_isolate_queues_priority() {
 
   vm_page_t aged_page = {};
   vm_page_t dont_need_page = {};
-  aged_page.set_state(vm_page_state::OBJECT);
-  dont_need_page.set_state(vm_page_state::OBJECT);
+  InitializeTestPage(&aged_page);
+  InitializeTestPage(&dont_need_page);
 
   fbl::RefPtr<VmObjectPaged> vmo;
   zx_status_t status = make_uncommitted_pager_vmo(2, false, false, &vmo);
@@ -603,7 +617,7 @@ static bool pq_is_page_reclaimable() {
   PageQueues pq;
 
   vm_page_t test_page = {};
-  test_page.set_state(vm_page_state::OBJECT);
+  InitializeTestPage(&test_page);
 
   fbl::RefPtr<VmObjectPaged> vmo;
   zx_status_t status = make_uncommitted_pager_vmo(1, false, false, &vmo);
