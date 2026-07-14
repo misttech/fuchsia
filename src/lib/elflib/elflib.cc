@@ -55,9 +55,9 @@ inline Dest bit_cast(const Source& source) {
 // undefined in C++.  This happens frequently with the deserialized ELF libs.
 template <typename T>
 inline T safe_copy(const T* source) {
-  const char* raw_ptr = reinterpret_cast<const char*>(source);
-  T copy = bit_cast<T, const char>(*raw_ptr);
-  return copy;
+  T dest;
+  memcpy(std::addressof(dest), static_cast<const void*>(source), sizeof(T));
+  return dest;
 }
 
 Elf64_Sym UpcastSym(const Elf32_Sym& sym) {
@@ -587,7 +587,7 @@ std::optional<std::vector<uint8_t>> ElfLib::GetNote(const std::string& name, uin
 
     for (const uint8_t* pos = data.ptr; (pos + sizeof(Elf64_Nhdr)) < data.ptr + data.size;
          pos += sizeof(Elf64_Nhdr) + namesz_padded + descsz_padded) {
-      header = bit_cast<Elf64_Nhdr, const uint8_t>(*pos);
+      header = safe_copy(reinterpret_cast<const Elf64_Nhdr*>(pos));
 
       // Don't overflow the padded lengths.
       if (header.n_namesz > (std::numeric_limits<Elf64_Word>::max() - 3)) {
