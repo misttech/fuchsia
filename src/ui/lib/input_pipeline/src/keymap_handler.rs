@@ -243,8 +243,11 @@ mod tests {
                     zx::MonotonicInstant::ZERO,
                     &input_device::InputDeviceDescriptor::ConsumerControls(
                         consumer_controls_binding::ConsumerControlsDeviceDescriptor {
-                            buttons: vec![],
-                            device_id: 0,
+                            buttons: vec![
+                                fidl_fuchsia_input_report::ConsumerControlButton::VolumeUp,
+                            ],
+                            device_id: 1,
+                            is_injected: false,
                         },
                     ),
                 )],

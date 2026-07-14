@@ -21,6 +21,7 @@ rustc_test("factory_reset_handler_test") {
   deps = [
     "//sdk/fidl/fuchsia.accessibility.scene:fuchsia.accessibility.scene_rust",
     "//sdk/fidl/fuchsia.input.injection:fuchsia.input.injection_rust",
+    "//sdk/fidl/fuchsia.input.report:fuchsia.input.report_rust",
     "//sdk/fidl/fuchsia.logger:fuchsia.logger_rust",
     "//sdk/fidl/fuchsia.media.sounds:fuchsia.media.sounds_rust",
     "//sdk/fidl/fuchsia.recovery:fuchsia.recovery_rust",
@@ -31,6 +32,7 @@ rustc_test("factory_reset_handler_test") {
     "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_rust",
     "//sdk/fidl/fuchsia.ui.composition.internal:fuchsia.ui.composition.internal_rust",
     "//sdk/fidl/fuchsia.ui.display.singleton:fuchsia.ui.display.singleton_rust",
+    "//sdk/fidl/fuchsia.ui.focus:fuchsia.ui.focus_rust",
     "//sdk/fidl/fuchsia.ui.observation.scope:fuchsia.ui.observation.scope_rust",
     "//sdk/fidl/fuchsia.ui.pointerinjector:fuchsia.ui.pointerinjector_rust",
     "//sdk/fidl/fuchsia.ui.pointerinjector.configuration:fuchsia.ui.pointerinjector.configuration_rust",
@@ -38,6 +40,7 @@ rustc_test("factory_reset_handler_test") {
     "//sdk/rust/zx",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia",
+    "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
     "//src/lib/fuchsia-component-test",
     "//src/lib/ui/fuchsia-scenic",
@@ -50,6 +53,7 @@ rustc_test("factory_reset_handler_test") {
   sources = [
     "src/lib.rs",
     "src/mocks/factory_reset_mock.rs",
+    "src/mocks/input_report_mock.rs",
     "src/mocks/mod.rs",
     "src/mocks/pointer_injector_mock.rs",
     "src/mocks/sound_player_mock.rs",

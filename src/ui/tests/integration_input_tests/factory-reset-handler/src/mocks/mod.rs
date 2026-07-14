@@ -82,5 +82,6 @@ macro_rules! impl_test_realm_component {
 }
 
 pub(crate) mod factory_reset_mock;
+pub(crate) mod input_report_mock;
 pub(crate) mod pointer_injector_mock;
 pub(crate) mod sound_player_mock;

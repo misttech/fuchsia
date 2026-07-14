@@ -107,6 +107,8 @@ pub struct ConsumerControlsDeviceDescriptor {
     pub buttons: Vec<ConsumerControlButton>,
     /// Identifies the device originating this event.
     pub device_id: u32,
+    /// True if the device was injected (e.g. by input_device_registry).
+    pub is_injected: bool,
 }
 
 #[async_trait]
@@ -142,9 +144,16 @@ impl ConsumerControlsBinding {
         device_node: fuchsia_inspect::Node,
         feature_flags: input_device::InputPipelineFeatureFlags,
         metrics_logger: metrics::MetricsLogger,
+        is_injected: bool,
     ) -> Result<Self, Error> {
-        let (device_binding, mut inspect_status) =
-            Self::bind_device(&device_proxy, device_id, input_event_sender, device_node).await?;
+        let (device_binding, mut inspect_status) = Self::bind_device(
+            &device_proxy,
+            device_id,
+            input_event_sender,
+            device_node,
+            is_injected,
+        )
+        .await?;
         inspect_status.health_node.set_ok();
         input_device::initialize_report_stream(
             device_proxy,
@@ -175,6 +184,7 @@ impl ConsumerControlsBinding {
         device_id: u32,
         input_event_sender: UnboundedSender<Vec<InputEvent>>,
         device_node: fuchsia_inspect::Node,
+        is_injected: bool,
     ) -> Result<(Self, InputDeviceStatus), Error> {
         let mut input_device_status = InputDeviceStatus::new(device_node);
         let device_descriptor: fidl_next_fuchsia_input_report::DeviceDescriptor = match device
@@ -214,6 +224,7 @@ impl ConsumerControlsBinding {
                     .map(|b| utils::consumer_control_button_to_old(&b))
                     .collect(),
                 device_id,
+                is_injected,
             };
 
         Ok((

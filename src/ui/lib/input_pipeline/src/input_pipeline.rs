@@ -289,13 +289,19 @@ impl InputPipeline {
             // The displayer ownership handler, like all input handlers, runs on [`crate::Dispatcher`]
             // which is driver dispatcher in dso mode. The display ownership future must run on
             // the same dispatcher because the types do not support multithreaded access.
-            tasks.push(Dispatcher::spawn_local(fut));
+            tasks.push(Dispatcher::spawn_local(async move {
+                fut.await;
+                panic!("display_ownership_fut exited unexpectedly, which compromises device state tracking. Terminating to avoid inconsistent state.");
+            }));
             handlers_count += 1;
         }
 
         // TODO: b/469745447 - should use futures::select! instead of spawning tasks.
         if let Some(fut) = focus_listener_fut {
-            fasync_tasks.push(fasync::Task::local(fut));
+            fasync_tasks.push(fasync::Task::local(async move {
+                fut.await;
+                panic!("focus_listener_fut exited unexpectedly, which breaks input routing. Terminating to avoid inconsistent state.");
+            }));
             handlers_count += 1;
         }
 
@@ -519,6 +525,7 @@ impl InputPipeline {
                             Some(&devices_connected),
                             feature_flags.clone(),
                             metrics_logger.clone(),
+                            false,
                         )
                         .await;
                     }
@@ -590,6 +597,7 @@ impl InputPipeline {
                         None,
                         feature_flags.clone(),
                         metrics_logger.clone(),
+                        true,
                     )
                     .await;
                 }
@@ -617,6 +625,7 @@ impl InputPipeline {
                         None,
                         feature_flags.clone(),
                         metrics_logger.clone(),
+                        true,
                     )
                     .await;
 
@@ -744,6 +753,7 @@ async fn add_device_bindings(
     devices_connected: Option<&fuchsia_inspect::UintProperty>,
     feature_flags: InputPipelineFeatureFlags,
     metrics_logger: metrics::MetricsLogger,
+    is_injected: bool,
 ) {
     let mut matched_device_types = vec![];
     if let Ok(res) = device_proxy.get_descriptor().await {
@@ -822,6 +832,7 @@ async fn add_device_bindings(
             device_node,
             feature_flags.clone(),
             metrics_logger.clone(),
+            is_injected,
         )
         .await
         {

@@ -4,8 +4,8 @@
 
 use fidl_fuchsia_media_sounds::{PlaySoundError, PlayerRequest, PlayerRequestStream};
 use fuchsia_component_test::{ChildOptions, RealmBuilder};
-use futures::channel::mpsc::UnboundedSender;
 use futures::TryStreamExt;
+use futures::channel::mpsc::UnboundedSender;
 
 #[derive(Clone, Copy, PartialEq)]
 pub(crate) enum SoundPlayerBehavior {
@@ -51,8 +51,8 @@ impl SoundPlayerMock {
             relay.unbounded_send(SoundPlayerRequestName::AddSoundFromFile).unwrap();
         }
         match self.behavior {
-            SoundPlayerBehavior::Succeed | SoundPlayerBehavior::FailPlaySound => Ok(DURATION),
-            SoundPlayerBehavior::FailAddSound => Err(0_i32),
+            SoundPlayerBehavior::FailAddSound => Err(-1),
+            _ => Ok(DURATION),
         }
     }
 
@@ -61,10 +61,8 @@ impl SoundPlayerMock {
             relay.unbounded_send(SoundPlayerRequestName::PlaySound2).unwrap();
         }
         match self.behavior {
-            SoundPlayerBehavior::Succeed => Ok(()),
-            SoundPlayerBehavior::FailAddSound | SoundPlayerBehavior::FailPlaySound => {
-                Err(PlaySoundError::NoSuchSound)
-            }
+            SoundPlayerBehavior::FailPlaySound => Err(PlaySoundError::NoSuchSound),
+            _ => Ok(()),
         }
     }
 

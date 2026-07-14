@@ -444,12 +444,16 @@ impl UnhandledInputHandler for FactoryResetHandler {
         match unhandled_input_event {
             input_device::UnhandledInputEvent {
                 device_event: input_device::InputDeviceEvent::ConsumerControls(ref event),
-                device_descriptor: input_device::InputDeviceDescriptor::ConsumerControls(_),
+                device_descriptor:
+                    input_device::InputDeviceDescriptor::ConsumerControls(ref descriptor),
                 event_time,
                 trace_id: _,
             } => {
                 fuchsia_trace::duration!("input", "factory_reset_handler[processing]");
                 self.inspect_status.count_received_event(&event_time);
+                if descriptor.is_injected {
+                    return vec![unhandled_input_event.into()];
+                }
                 match self.factory_reset_state() {
                     FactoryResetState::Idle => {
                         let event_clone = event.clone();
@@ -562,6 +566,7 @@ mod tests {
                 fidl_input_report::ConsumerControlButton::VolumeUp,
             ],
             device_id: 0,
+            is_injected: false,
         })
     }
 
@@ -609,6 +614,45 @@ mod tests {
             event_time: zx::MonotonicInstant::get(),
             trace_id: None,
         }
+    }
+
+    fn create_injected_reset_input_event() -> input_device::UnhandledInputEvent {
+        let device_event = input_device::InputDeviceEvent::ConsumerControls(
+            create_reset_consumer_controls_event(),
+        );
+
+        let mut descriptor = match create_input_device_descriptor() {
+            input_device::InputDeviceDescriptor::ConsumerControls(desc) => desc,
+            _ => panic!("Expected ConsumerControls"),
+        };
+        descriptor.is_injected = true;
+
+        input_device::UnhandledInputEvent {
+            device_event,
+            device_descriptor: input_device::InputDeviceDescriptor::ConsumerControls(descriptor),
+            event_time: zx::MonotonicInstant::get(),
+            trace_id: None,
+        }
+    }
+
+    #[fuchsia::test]
+    async fn injected_reset_event_is_ignored() {
+        let inspector = fuchsia_inspect::Inspector::default();
+        let test_node = inspector.root().create_child("test_node");
+        let reset_handler = FactoryResetHandler::new(
+            Incoming::new(),
+            &test_node,
+            metrics::MetricsLogger::default(),
+        );
+
+        // Send an injected reset event
+        let reset_event = create_injected_reset_input_event();
+        let events = reset_handler.clone().handle_unhandled_input_event(reset_event).await;
+
+        // The handler doesn't consume events, but explicitly check that it remained in Idle state,
+        // proving that the injected event was ignored and the countdown was not started!
+        assert_eq!(events.len(), 1);
+        assert_eq!(reset_handler.factory_reset_state(), FactoryResetState::Idle);
     }
 
     #[fuchsia::test]

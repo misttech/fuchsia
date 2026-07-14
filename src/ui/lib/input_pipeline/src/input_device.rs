@@ -488,6 +488,7 @@ pub async fn get_device_binding(
     device_node: fuchsia_inspect::Node,
     feature_flags: InputPipelineFeatureFlags,
     metrics_logger: metrics::MetricsLogger,
+    is_injected: bool,
 ) -> Result<Box<dyn InputDeviceBinding>, Error> {
     match device_type {
         InputDeviceType::ConsumerControls => {
@@ -498,6 +499,7 @@ pub async fn get_device_binding(
                 device_node,
                 feature_flags.clone(),
                 metrics_logger,
+                is_injected,
             )
             .await?;
             Ok(Box::new(binding))

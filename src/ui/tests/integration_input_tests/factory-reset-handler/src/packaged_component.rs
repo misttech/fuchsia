@@ -13,6 +13,7 @@ enum LegacyOrModernUrl {
 pub(crate) struct PackagedComponent {
     name: String,
     source: LegacyOrModernUrl,
+    eager: bool,
 }
 
 impl PackagedComponent {
@@ -20,7 +21,22 @@ impl PackagedComponent {
         name: impl Into<String>,
         modern_url: impl Into<String>,
     ) -> Self {
-        Self { name: name.into(), source: LegacyOrModernUrl::ModernUrl(modern_url.into()) }
+        Self {
+            name: name.into(),
+            source: LegacyOrModernUrl::ModernUrl(modern_url.into()),
+            eager: false,
+        }
+    }
+
+    pub(crate) fn new_eager_from_modern_url(
+        name: impl Into<String>,
+        modern_url: impl Into<String>,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            source: LegacyOrModernUrl::ModernUrl(modern_url.into()),
+            eager: true,
+        }
     }
 }
 
@@ -33,7 +49,11 @@ impl TestRealmComponent for PackagedComponent {
     async fn add_to_builder(&self, builder: &RealmBuilder) {
         match &self.source {
             LegacyOrModernUrl::ModernUrl(url) => {
-                builder.add_child(&self.name, url, ChildOptions::new()).await.unwrap();
+                let mut options = ChildOptions::new();
+                if self.eager {
+                    options = options.eager();
+                }
+                builder.add_child(&self.name, url, options).await.unwrap();
             }
         }
     }

@@ -7,6 +7,7 @@ mod packaged_component;
 mod traits;
 
 use crate::mocks::factory_reset_mock::FactoryResetMock;
+use crate::mocks::input_report_mock::InputReportMock;
 use crate::mocks::pointer_injector_mock::PointerInjectorMock;
 use crate::mocks::sound_player_mock::{
     SoundPlayerBehavior, SoundPlayerMock, SoundPlayerRequestName,
@@ -15,6 +16,7 @@ use crate::packaged_component::PackagedComponent;
 use crate::traits::realm_builder_ext::RealmBuilderExt as _;
 use crate::traits::test_realm_component::TestRealmComponent;
 use fidl_fuchsia_ui_pointerinjector as pointerinjector;
+use fuchsia_async::{self as fasync, TimeoutExt};
 use fuchsia_component_test::{
     Capability, DirectoryContents, RealmBuilder, RealmBuilderParams, RealmInstance,
 };
@@ -29,6 +31,7 @@ async fn assemble_realm(
     sound_player_mock: SoundPlayerMock,
     pointer_injector_mock: PointerInjectorMock,
     factory_reset_mock: FactoryResetMock,
+    input_report_mock: Option<InputReportMock>,
     test_name: &str,
 ) -> RealmInstance {
     let b = RealmBuilder::with_params(RealmBuilderParams::new().realm_name(test_name))
@@ -40,7 +43,12 @@ async fn assemble_realm(
         PackagedComponent::new_from_modern_url("scenic-test-realm", "#meta/scenic_with_config.cm");
     let a11y_test_realm =
         PackagedComponent::new_from_modern_url("a11y-test-realm", "#meta/fake-a11y-manager.cm");
-    let scene_manager = PackagedComponent::new_from_modern_url("input-owner", SCENE_MANAGER_URL);
+    // We launch scene_manager eagerly because the tests for physical factory reset
+    // spoof a real device via directory watching. Since we no longer connect to
+    // scene_manager's InputDeviceRegistry to inject events (which are now ignored
+    // by FactoryResetHandler), scene_manager would remain dormant unless run eagerly.
+    let scene_manager =
+        PackagedComponent::new_eager_from_modern_url("input-owner", SCENE_MANAGER_URL);
     let scene_manager_config =
         PackagedComponent::new_from_modern_url("scene-manager-config", SCENE_MANAGER_CONFIG_URL);
 
@@ -52,6 +60,9 @@ async fn assemble_realm(
     b.add(&sound_player_mock).await;
     b.add(&pointer_injector_mock).await;
     b.add(&factory_reset_mock).await;
+    if let Some(mock) = &input_report_mock {
+        b.add(mock).await;
+    }
 
     // Allow Scenic to access the capabilities it needs. Capabilities that can't
     // be run hermetically are routed from the parent realm. The remainder are
@@ -102,6 +113,11 @@ async fn assemble_realm(
         &scene_manager,
     )
     .await;
+    b.route_to_peer::<fidl_fuchsia_ui_focus::FocusChainListenerRegistryMarker>(
+        &scenic_test_realm,
+        &scene_manager,
+    )
+    .await;
     b.route_to_peer::<fidl_fuchsia_accessibility_scene::ProviderMarker>(
         &a11y_test_realm,
         &scene_manager,
@@ -139,9 +155,39 @@ async fn assemble_realm(
     .await
     .unwrap();
 
-    // Allow tests to inject input reports into the input pipeline.
+    // Route injection to input pipeline out to the test.
     b.route_to_parent::<fidl_fuchsia_input_injection::InputDeviceRegistryMarker>(&scene_manager)
         .await;
+
+    if let Some(mock) = &input_report_mock {
+        b.add_route(
+            fuchsia_component_test::Route::new()
+                .capability(fuchsia_component_test::Capability::service_by_name(
+                    "fuchsia.input.report.Service",
+                ))
+                .from(mock.ref_())
+                .to(scene_manager.ref_()),
+        )
+        .await
+        .unwrap();
+    } else {
+        // scene_manager requires a route for fuchsia.input.report.Service to compile and
+        // validate. If we aren't testing physical reset (no mock device), we route from void()
+        // so that the service directory is empty.
+        b.add_route(
+            fuchsia_component_test::Route::new()
+                .capability(
+                    fuchsia_component_test::Capability::service_by_name(
+                        "fuchsia.input.report.Service",
+                    )
+                    .optional(),
+                )
+                .from(fuchsia_component_test::Ref::void())
+                .to(scene_manager.ref_()),
+        )
+        .await
+        .unwrap();
+    }
 
     // Route required config files to input pipeline.
     b.route_read_only_directory(
@@ -162,17 +208,6 @@ async fn assemble_realm(
     b.build().await.expect("Failed to create realm")
 }
 
-async fn perform_factory_reset(realm: &RealmInstance) {
-    let injection_registry = realm
-        .root
-        .connect_to_protocol_at_exposed_dir()
-        .expect("Failed to connect to InputDeviceRegistry");
-    let mut device_registry = modern_backend::InputDeviceRegistry::new(injection_registry);
-    synthesizer::media_button_event([synthesizer::MediaButton::FactoryReset], &mut device_registry)
-        .await
-        .expect("Failed to inject reset event");
-}
-
 fn default_viewport() -> pointerinjector::Viewport {
     pointerinjector::Viewport {
         extents: Some([[0.0, 0.0], [100.0, 100.0]]),
@@ -184,15 +219,59 @@ fn default_viewport() -> pointerinjector::Viewport {
 const SOUND_PLAYER_NAME: &'static str = "mock_sound_player";
 const POINTER_INJECTOR_NAME: &'static str = "mock_pointer_injector";
 const FACTORY_RESET_NAME: &'static str = "mock_factory_reset";
+const INPUT_REPORT_NAME: &'static str = "mock_input_report";
 const SCENE_MANAGER_URL: &'static str = "#meta/scene_manager.cm";
 const SCENE_MANAGER_CONFIG_URL: &'static str = "#meta/scene_manager_config.cm";
 
 #[fuchsia::test]
-async fn sound_is_played_during_factory_reset() {
-    let (sound_request_relay_write_end, mut sound_request_relay_read_end) =
-        futures::channel::mpsc::unbounded();
+async fn injected_factory_reset_is_ignored() {
     let (reset_request_relay_write_end, mut reset_request_relay_read_end) =
         futures::channel::mpsc::unbounded();
+    let sound_player_mock =
+        SoundPlayerMock::new(SOUND_PLAYER_NAME, SoundPlayerBehavior::Succeed, None);
+    let pointer_injector_mock = PointerInjectorMock::new(POINTER_INJECTOR_NAME, default_viewport());
+    let factory_reset_mock =
+        FactoryResetMock::new(FACTORY_RESET_NAME, reset_request_relay_write_end);
+    let realm = assemble_realm(
+        sound_player_mock.clone(),
+        pointer_injector_mock.clone(),
+        factory_reset_mock.clone(),
+        None,
+        "factory_reset_is_ignored",
+    )
+    .await;
+
+    // Press buttons for factory reset.
+    let injection_registry = realm
+        .root
+        .connect_to_protocol_at_exposed_dir()
+        .expect("Failed to connect to InputDeviceRegistry");
+    let mut device_registry = modern_backend::InputDeviceRegistry::new(injection_registry);
+    synthesizer::media_button_event([synthesizer::MediaButton::FactoryReset], &mut device_registry)
+        .await
+        .expect("Failed to inject reset event");
+
+    // Wait and verify that `factory_reset_mock` DOES NOT receive the reset request.
+    let result = reset_request_relay_read_end
+        .next()
+        .on_timeout(
+            fasync::MonotonicInstant::after(fasync::MonotonicDuration::from_millis(3000)),
+            || None,
+        )
+        .await;
+
+    assert!(result.is_none(), "Injected factory reset should explicitly be ignored");
+
+    realm.destroy().await.unwrap();
+}
+
+#[fuchsia::test]
+async fn real_factory_reset_is_handled() {
+    let (reset_request_relay_write_end, mut reset_request_relay_read_end) =
+        futures::channel::mpsc::unbounded();
+    let (sound_request_relay_write_end, mut sound_request_relay_read_end) =
+        futures::channel::mpsc::unbounded();
+
     let sound_player_mock = SoundPlayerMock::new(
         SOUND_PLAYER_NAME,
         SoundPlayerBehavior::Succeed,
@@ -201,31 +280,26 @@ async fn sound_is_played_during_factory_reset() {
     let pointer_injector_mock = PointerInjectorMock::new(POINTER_INJECTOR_NAME, default_viewport());
     let factory_reset_mock =
         FactoryResetMock::new(FACTORY_RESET_NAME, reset_request_relay_write_end);
+    let input_report_mock = InputReportMock::new(INPUT_REPORT_NAME);
+
     let realm = assemble_realm(
-        sound_player_mock,
-        pointer_injector_mock,
-        factory_reset_mock,
-        "sound_is_played_during_factory_reset",
+        sound_player_mock.clone(),
+        pointer_injector_mock.clone(),
+        factory_reset_mock.clone(),
+        Some(input_report_mock.clone()),
+        "real_factory_reset_is_handled",
     )
     .await;
 
-    // Press buttons for factory reset, and verify that `factory_reset_mock`
-    // received the reset request.
-    perform_factory_reset(&realm).await;
-    reset_request_relay_read_end.next().await;
-
-    // Verify that sound was played.
     assert_eq!(
-        sound_request_relay_read_end.next().await.unwrap(),
-        SoundPlayerRequestName::AddSoundFromFile
+        sound_request_relay_read_end.next().await,
+        Some(SoundPlayerRequestName::AddSoundFromFile)
     );
-    assert_eq!(
-        sound_request_relay_read_end.next().await.unwrap(),
-        SoundPlayerRequestName::PlaySound2
-    );
+    assert_eq!(sound_request_relay_read_end.next().await, Some(SoundPlayerRequestName::PlaySound2));
 
-    // Shut down input pipeline before dropping mocks, so that input pipeline doesn't
-    // log errors about channels being closed.
+    let result = reset_request_relay_read_end.next().await;
+    assert!(result.is_some(), "Hardware factory reset should be explicitly handled");
+
     realm.destroy().await.unwrap();
 }
 
@@ -233,26 +307,26 @@ async fn sound_is_played_during_factory_reset() {
 async fn failure_to_load_sound_doesnt_block_factory_reset() {
     let (reset_request_relay_write_end, mut reset_request_relay_read_end) =
         futures::channel::mpsc::unbounded();
+
     let sound_player_mock =
         SoundPlayerMock::new(SOUND_PLAYER_NAME, SoundPlayerBehavior::FailAddSound, None);
     let pointer_injector_mock = PointerInjectorMock::new(POINTER_INJECTOR_NAME, default_viewport());
     let factory_reset_mock =
         FactoryResetMock::new(FACTORY_RESET_NAME, reset_request_relay_write_end);
+    let input_report_mock = InputReportMock::new(INPUT_REPORT_NAME);
+
     let realm = assemble_realm(
-        sound_player_mock,
-        pointer_injector_mock,
-        factory_reset_mock,
+        sound_player_mock.clone(),
+        pointer_injector_mock.clone(),
+        factory_reset_mock.clone(),
+        Some(input_report_mock.clone()),
         "failure_to_load_sound_doesnt_block_factory_reset",
     )
     .await;
 
-    // Press buttons for factory reset, and verify that `factory_reset_mock`
-    // received the reset request.
-    perform_factory_reset(&realm).await;
-    reset_request_relay_read_end.next().await;
+    let result = reset_request_relay_read_end.next().await;
+    assert!(result.is_some(), "Hardware factory reset should be explicitly handled");
 
-    // Shut down input pipeline before dropping mocks, so that input pipeline doesn't
-    // log errors about channels being closed.
     realm.destroy().await.unwrap();
 }
 
@@ -260,25 +334,25 @@ async fn failure_to_load_sound_doesnt_block_factory_reset() {
 async fn failure_to_play_sound_doesnt_block_factory_reset() {
     let (reset_request_relay_write_end, mut reset_request_relay_read_end) =
         futures::channel::mpsc::unbounded();
+
     let sound_player_mock =
         SoundPlayerMock::new(SOUND_PLAYER_NAME, SoundPlayerBehavior::FailPlaySound, None);
     let pointer_injector_mock = PointerInjectorMock::new(POINTER_INJECTOR_NAME, default_viewport());
     let factory_reset_mock =
         FactoryResetMock::new(FACTORY_RESET_NAME, reset_request_relay_write_end);
+    let input_report_mock = InputReportMock::new(INPUT_REPORT_NAME);
+
     let realm = assemble_realm(
-        sound_player_mock,
-        pointer_injector_mock,
-        factory_reset_mock,
+        sound_player_mock.clone(),
+        pointer_injector_mock.clone(),
+        factory_reset_mock.clone(),
+        Some(input_report_mock.clone()),
         "failure_to_play_sound_doesnt_block_factory_reset",
     )
     .await;
 
-    // Press buttons for factory reset, and verify that `factory_reset_mock`
-    // received the reset request.
-    perform_factory_reset(&realm).await;
-    reset_request_relay_read_end.next().await;
+    let result = reset_request_relay_read_end.next().await;
+    assert!(result.is_some(), "Hardware factory reset should be explicitly handled");
 
-    // Shut down input pipeline before dropping mocks, so that input pipeline doesn't
-    // log errors about channels being closed.
     realm.destroy().await.unwrap();
 }
