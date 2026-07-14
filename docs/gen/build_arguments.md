@@ -974,7 +974,7 @@ This should never be set as a build argument.
 }
   tsan = {
   shared = {
-  clang_rt = "../../../../out/not-default/libclang_rt.tsan.so"
+  clang_rt = ""
 }
   static = {
   clang_rt = "../../../../out/not-default/libclang_rt.tsan.a"
@@ -2196,6 +2196,12 @@ From //build/config/compiler.gni:82
   ninja = "measure-tape"
 }]
   install_host_tool = true
+}, {
+  bazel_label = "//tools/build/gndoc:gndoc"
+  copy_outputs = [{
+  bazel = "{{BAZEL_TARGET_OUT_DIR}}/gndoc_/gndoc"
+  ninja = "gndoc"
+}]
 }, {
   bazel_label = "//tools/check-licenses:tests"
   bazel_name = "build.stamp"
