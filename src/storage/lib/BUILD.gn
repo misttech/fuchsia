@@ -4,6 +4,7 @@
 
 group("lib") {
   deps = [
+    "mapping",
     "ramdevice_client",
     "storage_device",
     "vfs/cpp",
@@ -24,6 +25,7 @@ group("tests") {
     "fsverity-merkle:tests",
     "ftl:tests",
     "key-bag:tests",
+    "mapping:tests",
     "pseudo_fs:tests",
     "ptr_slice:tests",
     "ramdevice_client:tests",
