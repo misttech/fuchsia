@@ -45,6 +45,7 @@ class Environment : public fdf_testing::Environment {
     // 4) and the global reset register (GRSTCTL).
     mmio_[GSNPSID::Get().addr()].SetReadCallback([]() -> uint64_t { return 0x4f54330a; });
     mmio_[GHWCFG2::Get().addr()].SetReadCallback([]() -> uint64_t { return 0x2288d854; });
+    mmio_[GHWCFG3::Get().addr()].SetReadCallback([]() -> uint64_t { return 0x40000000; });
     mmio_[GHWCFG4::Get().addr()].SetReadCallback([]() -> uint64_t { return 0xd6028030; });
     mmio_[GRSTCTL::Get().addr()].SetReadCallback([this]() { return fake_grstctl_.Read(); });
     mmio_[GRSTCTL::Get().addr()].SetWriteCallback([this](uint64_t v) { fake_grstctl_.Write(v); });
@@ -58,8 +59,8 @@ class Environment : public fdf_testing::Environment {
          .usb_turnaround_time = 10,
          .rx_fifo_size = 1024,
          .nptx_fifo_size = 1024,
-         .tx_fifo_sizes = std::array<uint32_t, 15>{1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024,
-                                                   1024, 1024, 1024, 1024, 1024, 1024, 1024}});
+         .tx_fifo_sizes =
+             std::array<uint32_t, 15>{1024, 1024, 1024, 1024, 1024, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}});
 
     async_dispatcher_t* dispatcher = fdf::Dispatcher::GetCurrent()->async_dispatcher();
 
@@ -158,10 +159,52 @@ class Dwc2Test : public testing::Test {
 
   void TearDown() override { EXPECT_TRUE(dut_.StopDriver().is_ok()); }
 
- private:
-  fdf_testing::ForegroundDriverTest<Config> dut_;
+ protected:
+  fdf_testing::BackgroundDriverTest<Config> dut_;
 };
 
 TEST_F(Dwc2Test, DriverLifetimeTest) {}
+
+TEST_F(Dwc2Test, GetHardwareInfo) {
+  zx::result client_end = dut_.Connect<fuchsia_hardware_usb_dci::UsbDciService::Device>();
+  ASSERT_TRUE(client_end.is_ok());
+  fidl::SyncClient client(std::move(*client_end));
+
+  auto result = client->GetHardwareInfo();
+  ASSERT_TRUE(result.is_ok()) << result.error_value().FormatDescription();
+
+  auto& info = result->info();
+  // The number of endpoints (5 IN + 5 OUT) is derived from the fake GHWCFG2
+  // and GHWCFG4 values set in the Environment.
+  // 5 IN endpoints (capped by num_dev_ep = 6) + 5 OUT endpoints (num_dev_ep = 6, minus EP0)
+  EXPECT_EQ(info.endpoints()->size(), 10u);
+
+  // EP1 IN:
+  EXPECT_EQ(info.endpoints()->at(0).ep_address(), 0x81);
+  // The max_packet_size_limit for IN endpoints is 4096 because the emulated
+  // GHWCFG4 (0xd6028030) indicates support for dedicated IN FIFOs, and the
+  // driver combines 4x 1024-byte TX FIFOs (from metadata) for IN endpoints.
+  ASSERT_TRUE(info.endpoints()->at(0).supported_types().has_value());
+  EXPECT_EQ(info.endpoints()->at(0).supported_types()->size(), 2u);
+  EXPECT_EQ(info.endpoints()->at(0).supported_types()->at(0).max_packet_size_limit(), 4096u);
+  EXPECT_EQ(info.endpoints()->at(0).supported_types()->at(0).endpoint_type(),
+            fuchsia_hardware_usb_descriptor::EndpointType::kBulk);
+  EXPECT_EQ(info.endpoints()->at(0).supported_types()->at(1).max_packet_size_limit(), 4096u);
+  EXPECT_EQ(info.endpoints()->at(0).supported_types()->at(1).endpoint_type(),
+            fuchsia_hardware_usb_descriptor::EndpointType::kInterrupt);
+
+  // EP1 OUT (after 5 IN endpoints):
+  EXPECT_EQ(info.endpoints()->at(5).ep_address(), 0x01);
+  // The max_packet_size_limit for OUT endpoints is 1024, matching the
+  // rx_fifo_size provided in the metadata.
+  ASSERT_TRUE(info.endpoints()->at(5).supported_types().has_value());
+  EXPECT_EQ(info.endpoints()->at(5).supported_types()->size(), 2u);
+  EXPECT_EQ(info.endpoints()->at(5).supported_types()->at(0).max_packet_size_limit(), 1024u);
+  EXPECT_EQ(info.endpoints()->at(5).supported_types()->at(0).endpoint_type(),
+            fuchsia_hardware_usb_descriptor::EndpointType::kBulk);
+  EXPECT_EQ(info.endpoints()->at(5).supported_types()->at(1).max_packet_size_limit(), 1024u);
+  EXPECT_EQ(info.endpoints()->at(5).supported_types()->at(1).endpoint_type(),
+            fuchsia_hardware_usb_descriptor::EndpointType::kInterrupt);
+}
 
 }  // namespace dwc2

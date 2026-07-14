@@ -33,6 +33,13 @@
 
 namespace dwc2 {
 
+// DWC2 FIFO sizes are specified in 32-bit words (4 bytes per word).
+constexpr uint16_t kWordSizeBytes = 4;
+// OUT endpoints share the Rx FIFO. A default FIFO depth of 256 words at 4 bytes per word
+// yields a 1024-byte limit.
+constexpr uint16_t kDefaultRxFifoDepthWords = 256;
+constexpr uint16_t kMaxOutPacketSizeLimit = kDefaultRxFifoDepthWords * kWordSizeBytes;
+
 class Dwc2 : public fdf::DriverBase2, public fidl::Server<fuchsia_hardware_usb_dci::UsbDci> {
  public:
   Dwc2() : fdf::DriverBase2("dwc2") {}

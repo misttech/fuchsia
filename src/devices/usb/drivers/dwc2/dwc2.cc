@@ -1204,6 +1204,29 @@ zx_status_t Dwc2::Init(fdf::DriverContext& context, const dwc2_config::Config& c
   }
   metadata_ = std::move(metadata.value());
 
+  // Validate FIFO configuration against hardware limits.
+  uint32_t num_dev_ep = cached_ghwcfg2_.num_dev_ep();
+  uint32_t total_tx_fifo_size = 0;
+  for (size_t i = 0; i < metadata_.tx_fifo_sizes().size(); i++) {
+    if (metadata_.tx_fifo_sizes()[i] > 0) {
+      if (i >= num_dev_ep - 1) {
+        fdf::error("Tx FIFO {} configured with size {} but hardware only supports {} Tx FIFOs", i,
+                   metadata_.tx_fifo_sizes()[i], num_dev_ep - 1);
+        return ZX_ERR_INVALID_ARGS;
+      }
+      total_tx_fifo_size += metadata_.tx_fifo_sizes()[i];
+    }
+  }
+
+  auto dfifo_depth = GHWCFG3::Get().ReadFrom(get_mmio()).dfifo_depth();
+  uint32_t required_ram =
+      metadata_.rx_fifo_size() + metadata_.nptx_fifo_size() + total_tx_fifo_size;
+  if (required_ram > dfifo_depth) {
+    fdf::error("Insufficient RAM for FIFO configuration: required {}, available {}", required_ram,
+               dfifo_depth);
+    return ZX_ERR_NO_MEMORY;
+  }
+
   zx::result interrupt = pdev_->GetInterrupt(0, 0);
   if (interrupt.is_error()) {
     fdf::error("Failed to get interrupt: {}", interrupt);
@@ -1571,7 +1594,51 @@ void Dwc2::Endpoint::OnUnbound(
 }
 
 void Dwc2::GetHardwareInfo(GetHardwareInfoCompleter::Sync& completer) {
-  completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
+  std::vector<fuchsia_hardware_usb_dci::EndpointInfo> endpoints;
+
+  // IN endpoints.
+  // Limited by the number of Tx FIFOs configured in metadata and the hardware endpoint limit.
+  uint32_t num_dev_ep = cached_ghwcfg2_.num_dev_ep();
+  size_t num_in_eps =
+      std::min(metadata_.tx_fifo_sizes().size(), static_cast<size_t>(num_dev_ep - 1));
+  std::vector<fuchsia_hardware_usb_dci::SupportedEndpointInfo> in_supported_types(2);
+  in_supported_types[0].endpoint_type(fuchsia_hardware_usb_descriptor::EndpointType::kBulk);
+  in_supported_types[1].endpoint_type(fuchsia_hardware_usb_descriptor::EndpointType::kInterrupt);
+
+  for (size_t i = 0; i < num_in_eps; i++) {
+    uint16_t max_packet = static_cast<uint16_t>(metadata_.tx_fifo_sizes()[i] * kWordSizeBytes);
+    in_supported_types[0].max_packet_size_limit(max_packet);
+    in_supported_types[1].max_packet_size_limit(max_packet);
+
+    fuchsia_hardware_usb_dci::EndpointInfo ep_info;
+    ep_info.ep_address(static_cast<uint8_t>(0x80 | (i + 1)));
+    ep_info.supported_types(in_supported_types);
+    endpoints.push_back(std::move(ep_info));
+  }
+
+  // OUT endpoints share the Rx FIFO.
+  // Limited by the number of device endpoints supported by the hardware.
+  std::vector<fuchsia_hardware_usb_dci::SupportedEndpointInfo> out_supported_types(2);
+  out_supported_types[0].endpoint_type(fuchsia_hardware_usb_descriptor::EndpointType::kBulk);
+  out_supported_types[0].max_packet_size_limit(kMaxOutPacketSizeLimit);
+  out_supported_types[1].endpoint_type(fuchsia_hardware_usb_descriptor::EndpointType::kInterrupt);
+  out_supported_types[1].max_packet_size_limit(kMaxOutPacketSizeLimit);
+
+  for (uint32_t i = 1; i < num_dev_ep; i++) {
+    fuchsia_hardware_usb_dci::EndpointInfo ep_info;
+    ep_info.ep_address(static_cast<uint8_t>(i));
+    ep_info.supported_types(out_supported_types);
+    endpoints.push_back(std::move(ep_info));
+  }
+
+  fuchsia_hardware_usb_dci::DciHardwareInfo info;
+  info.endpoints(std::move(endpoints));
+  info.supports_dynamic_ep_sizing(false);
+
+  fuchsia_hardware_usb_dci::UsbDciGetHardwareInfoResponse response;
+  response.info(std::move(info));
+
+  completer.Reply(zx::ok(std::move(response)));
 }
 
 void Dwc2::AllocEndpoint(AllocEndpointRequest& request, AllocEndpointCompleter::Sync& completer) {
