@@ -3278,31 +3278,7 @@ mod test {
         fs::create_dir(&instance_dir)?;
         let mut instance_data =
             EmulatorInstanceData::new_with_state("fuchsia-emulator", EngineState::Running);
-
-        #[cfg(target_os = "linux")]
-        let (_child_guard, running_pid) = {
-            struct KillOnDrop {
-                _child: std::process::Child,
-                _dir: tempfile::TempDir,
-            }
-            impl Drop for KillOnDrop {
-                fn drop(&mut self) {
-                    let _ = self._child.kill();
-                }
-            }
-            let dir = tempfile::tempdir()?;
-            let dummy_path = dir.path().join("emulator_dummy");
-            if fs::copy("/bin/sleep", &dummy_path).is_err() {
-                fs::copy("/usr/bin/sleep", &dummy_path).expect("failed to copy sleep binary");
-            }
-            let child = std::process::Command::new(&dummy_path).arg("10").spawn()?;
-            let pid = child.id();
-            (KillOnDrop { _child: child, _dir: dir }, pid)
-        };
-        #[cfg(not(target_os = "linux"))]
-        let running_pid = std::process::id();
-
-        instance_data.set_pid(running_pid);
+        instance_data.set_pid(std::process::id());
         let engine_json_path = instance_dir.join("engine.json");
         fs::write(&engine_json_path, serde_json::to_string(&instance_data)?)?;
 

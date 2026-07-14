@@ -576,7 +576,7 @@ impl EmulatorInstanceInfo for EmulatorInstanceData {
     }
 
     fn is_running(&self) -> bool {
-        is_proc_running(self.pid)
+        is_pid_running(self.pid)
     }
     fn get_engine_state(&self) -> EngineState {
         // If the static state is running, compare it with the process state
@@ -613,93 +613,18 @@ impl EmulatorInstanceInfo for EmulatorInstanceData {
     }
 }
 
-/// Returns true if the process identified by the pid is running and is an emulator process.
-fn is_proc_running(pid: u32) -> bool {
-    if pid == 0 {
-        return false;
+/// Returns true if the process identified by the pid is running.
+fn is_pid_running(pid: u32) -> bool {
+    if pid != 0 {
+        // First do a no-hang wait to collect the process if it's defunct.
+        let _ = nix::sys::wait::waitpid(
+            nix::unistd::Pid::from_raw(pid.try_into().unwrap()),
+            Some(nix::sys::wait::WaitPidFlag::WNOHANG),
+        );
+        // Check to see if it is running by sending signal 0. If there is no error,
+        // the process is running.
+        return nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid.try_into().unwrap()), None)
+            .is_ok();
     }
-    // First do a no-hang wait to collect the process if it's defunct.
-    let _ = nix::sys::wait::waitpid(
-        nix::unistd::Pid::from_raw(pid.try_into().unwrap()),
-        Some(nix::sys::wait::WaitPidFlag::WNOHANG),
-    );
-    // Check to see if it is running by sending signal 0. If there is no error,
-    // the process is running.
-    if nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid.try_into().unwrap()), None).is_err() {
-        return false;
-    }
-    #[cfg(target_os = "linux")]
-    {
-        let proc_exe = PathBuf::from(format!("/proc/{}/exe", pid));
-        match std::fs::read_link(&proc_exe) {
-            Ok(actual_exe) => {
-                let exe_str = actual_exe.to_string_lossy();
-                if !exe_str.contains("qemu-system-")
-                    && !exe_str.contains("emulator")
-                    && !exe_str.contains("crosvm")
-                {
-                    log::debug!(
-                        "PID {} is running but executable mismatch. Expected emulator (qemu-system-, emulator, crosvm), Actual: {:?}",
-                        pid,
-                        actual_exe
-                    );
-                    return false;
-                }
-            }
-            Err(e) => {
-                log::warn!(
-                    "Failed to read link for {:?}: {}. Falling back to PID check.",
-                    proc_exe,
-                    e
-                );
-            }
-        }
-    }
-    true
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_is_proc_running_matching() {
-        #[cfg(target_os = "linux")]
-        {
-            use std::fs;
-            use std::process::Command;
-            use tempfile::tempdir;
-
-            let dir = tempdir().unwrap();
-            let dummy_path = dir.path().join("emulator_dummy");
-            fs::copy("/bin/sleep", &dummy_path).unwrap();
-
-            let mut child = Command::new(&dummy_path).arg("10").spawn().unwrap();
-
-            let pid = child.id();
-            assert!(is_proc_running(pid));
-
-            child.kill().unwrap();
-        }
-    }
-
-    #[test]
-    fn test_is_proc_running_mismatch() {
-        #[cfg(target_os = "linux")]
-        {
-            use std::process::Command;
-
-            let mut child = Command::new("/bin/sleep").arg("10").spawn().unwrap();
-
-            let pid = child.id();
-            assert!(!is_proc_running(pid));
-
-            child.kill().unwrap();
-        }
-    }
-
-    #[test]
-    fn test_is_proc_running_invalid_pid() {
-        assert!(!is_proc_running(0));
-    }
+    return false;
 }

@@ -197,8 +197,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_stop_prefer_running() {
-        let temp_dir = tempdir().unwrap();
-        let temp_path = temp_dir.path().to_path_buf();
+        let temp_path = PathBuf::from(tempdir().unwrap().path());
         let env = ffx_config::test_env()
             .user_config(EMU_INSTANCE_ROOT_DIR, temp_path.to_str().unwrap())
             .build()
@@ -207,28 +206,11 @@ mod tests {
         let cmd = StopCommand::default();
 
         // Spawn a test process to get a valid running PID
-        #[cfg(target_os = "linux")]
-        let (mut test_child, test_pid) = {
-            let dummy_path = temp_path.join("emulator_dummy");
-            if std::fs::copy("/bin/sleep", &dummy_path).is_err() {
-                std::fs::copy("/usr/bin/sleep", &dummy_path).expect("failed to copy sleep binary");
-            }
-            let child = std::process::Command::new(&dummy_path)
-                .arg("60")
-                .spawn()
-                .expect("failed to spawn test process");
-            let pid = child.id();
-            (child, pid)
-        };
-        #[cfg(not(target_os = "linux"))]
-        let (mut test_child, test_pid) = {
-            let child = std::process::Command::new("sleep")
-                .arg("60")
-                .spawn()
-                .expect("failed to spawn test process");
-            let pid = child.id();
-            (child, pid)
-        };
+        let mut test_child = std::process::Command::new("sleep")
+            .arg("60")
+            .spawn()
+            .expect("failed to spawn test process");
+        let test_pid = test_child.id();
 
         // Instance 1 is running
         let mut data = EmulatorInstanceData::new_with_state("one_instance", EngineState::Running);
@@ -254,8 +236,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_stop_multiple_running_auto_fail() {
-        let temp_dir = tempdir().unwrap();
-        let temp_path = temp_dir.path().to_path_buf();
+        let temp_path = PathBuf::from(tempdir().unwrap().path());
         let env = ffx_config::test_env()
             .user_config(EMU_INSTANCE_ROOT_DIR, temp_path.to_str().unwrap())
             .build()
@@ -264,28 +245,11 @@ mod tests {
         let cmd = StopCommand::default();
 
         // Spawn a test process to get a valid running PID
-        #[cfg(target_os = "linux")]
-        let (mut test_child, test_pid) = {
-            let dummy_path = temp_path.join("emulator_dummy");
-            if std::fs::copy("/bin/sleep", &dummy_path).is_err() {
-                std::fs::copy("/usr/bin/sleep", &dummy_path).expect("failed to copy sleep binary");
-            }
-            let child = std::process::Command::new(&dummy_path)
-                .arg("60")
-                .spawn()
-                .expect("failed to spawn test process");
-            let pid = child.id();
-            (child, pid)
-        };
-        #[cfg(not(target_os = "linux"))]
-        let (mut test_child, test_pid) = {
-            let child = std::process::Command::new("sleep")
-                .arg("60")
-                .spawn()
-                .expect("failed to spawn test process");
-            let pid = child.id();
-            (child, pid)
-        };
+        let mut test_child = std::process::Command::new("sleep")
+            .arg("60")
+            .spawn()
+            .expect("failed to spawn test process");
+        let test_pid = test_child.id();
 
         // Instance 1 is running
         let mut data = EmulatorInstanceData::new_with_state("one_instance", EngineState::Running);
