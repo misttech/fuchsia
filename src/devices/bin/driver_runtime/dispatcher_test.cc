@@ -15,6 +15,7 @@
 #include <lib/fdf/cpp/channel_read.h>
 #include <lib/fdf/cpp/dispatcher.h>
 #include <lib/fdf/cpp/env.h>
+#include <lib/fdf/cpp/wake_vector.h>
 #include <lib/fdf/internal.h>
 #include <lib/fdf/testing.h>
 #include <lib/fit/defer.h>
@@ -4125,4 +4126,37 @@ TEST_F(DispatcherTest, WakeVectorTriggeredBeforeSuspend) {
 
   g_suspend_completion = nullptr;
   g_resume_requested = nullptr;
+}
+
+TEST_F(DispatcherTest, WakeVectorAndAlwaysOnCppApi) {
+  auto fake_driver = CreateFakeDriver();
+  libsync::Completion shutdown_completion;
+  auto shutdown_handler = [&](fdf_dispatcher_t* dispatcher) { shutdown_completion.Signal(); };
+
+  auto dispatcher = fdf_env::DispatcherBuilder::CreateSynchronizedWithOwner(
+      fake_driver, {}, "test-dispatcher", shutdown_handler);
+  ASSERT_FALSE(dispatcher.is_error());
+
+  // Test always on dispatcher API
+  fdf::UnownedDispatcher always_on = dispatcher->GetAlwaysOnDispatcher();
+  ASSERT_NOT_NULL(always_on->get());
+
+  // Test wake vector registration API
+  zx::event event;
+  ASSERT_OK(zx::event::create(0, &event));
+
+  {
+    auto reg = fdf::WakeVectorRegistration::Create(*dispatcher, zx::unowned_handle(event.get()),
+                                                   ZX_USER_SIGNAL_0);
+    ASSERT_TRUE(reg.is_ok());
+    ASSERT_TRUE(*reg);  // operator bool
+  }  // reg goes out of scope and unregisters
+
+  // Trying to unregister it again should fail with ZX_ERR_NOT_FOUND if it was successfully
+  // unregistered by RAII
+  ASSERT_EQ(ZX_ERR_NOT_FOUND, fdf_dispatcher_unregister_wake_vector(dispatcher->get(), event.get(),
+                                                                    ZX_USER_SIGNAL_0));
+
+  dispatcher->ShutdownAsync();
+  shutdown_completion.Wait();
 }

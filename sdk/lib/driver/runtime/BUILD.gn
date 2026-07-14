@@ -46,6 +46,7 @@ sdk_source_set("driver_runtime_cpp") {
     "include/lib/fdf/cpp/dispatcher.h",
     "include/lib/fdf/cpp/protocol.h",
     "include/lib/fdf/cpp/unowned.h",
+    "include/lib/fdf/cpp/wake_vector.h",
   ]
   public_configs = [ ":include" ]
   public_deps = [

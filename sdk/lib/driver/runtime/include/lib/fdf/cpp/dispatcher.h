@@ -10,6 +10,7 @@
 #include <lib/fdf/dispatcher.h>
 #include <lib/fit/function.h>
 #include <lib/stdcompat/string_view.h>
+#include <lib/zx/handle.h>
 #include <lib/zx/result.h>
 #include <zircon/assert.h>
 
@@ -169,6 +170,14 @@ class Dispatcher {
     return zx::make_result(
         fdf_dispatcher_seal(dispatcher_, FDF_DISPATCHER_OPTION_ALLOW_SYNC_CALLS));
   }
+
+#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+  // Returns the always-on dispatcher interface for this dispatcher.
+  // The returned dispatcher is unowned and shares the lifetime of this dispatcher.
+  Unowned<Dispatcher> GetAlwaysOnDispatcher() const {
+    return Unowned<Dispatcher>(fdf_dispatcher_get_always_on_dispatcher(dispatcher_));
+  }
+#endif
 
  protected:
   // Friend declaration is needed because the |DispatcherShutdownContext| is private.
