@@ -65,6 +65,8 @@ pub struct PersistentStorageData {
     pub credential: Credential,
     #[serde(default = "has_ever_connected_default")]
     pub has_ever_connected: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hidden_probability: Option<f32>,
 }
 
 /// Defines the default value of has_ever_connected in persisted data. This is used so that the
@@ -84,6 +86,59 @@ impl PersistentStorageData {
             security_type: id.security_type,
             credential: data.credential,
             has_ever_connected: data.has_ever_connected,
+            hidden_probability: None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json;
+
+    #[test]
+    fn test_persistent_storage_data_deserialize_missing_hidden_probability() {
+        let json_str = r#"{
+            "ssid": [102, 111, 111],
+            "security_type": "Wpa2",
+            "credential": { "Password": [112, 97, 115, 115] },
+            "has_ever_connected": true
+        }"#;
+        let data: PersistentStorageData =
+            serde_json::from_str(json_str).expect("deserialize failed");
+        assert_eq!(data.hidden_probability, None);
+    }
+
+    #[test]
+    fn test_persistent_storage_data_serialize_skip_none() {
+        // Check that if the hidden probability is None, it is not included in the serialized data.
+        let data = PersistentStorageData {
+            ssid: b"foo".to_vec(),
+            security_type: SecurityType::Wpa2,
+            credential: Credential::Password(b"pass".to_vec()),
+            has_ever_connected: true,
+            hidden_probability: None,
+        };
+        let json_str = serde_json::to_string(&data).expect("serialize failed");
+        assert!(!json_str.contains("hidden_probability"));
+    }
+
+    #[test]
+    fn test_persistent_storage_data_serialize_and_deserialize() {
+        // Check that serializing and deserializing results in the original data.
+        let data = PersistentStorageData {
+            ssid: b"foo".to_vec(),
+            security_type: SecurityType::Wpa2,
+            credential: Credential::Password(b"pass".to_vec()),
+            has_ever_connected: true,
+            hidden_probability: Some(0.05),
+        };
+        let json_str = serde_json::to_string(&data).expect("serialize failed");
+        assert!(json_str.contains("\"hidden_probability\":0.05"));
+
+        let loaded_data: PersistentStorageData =
+            serde_json::from_str(&json_str).expect("deserialize failed");
+        assert_eq!(loaded_data.hidden_probability, Some(0.05));
+        assert_eq!(loaded_data, data);
     }
 }

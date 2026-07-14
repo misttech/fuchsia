@@ -73,6 +73,13 @@ impl From<NetworkConfig> for storage::PersistentStorageData {
             security_type: item.security_type.into(),
             credential: item.credential.into(),
             has_ever_connected: item.has_ever_connected,
+            hidden_probability: if item.hidden_probability
+                == super::network_config::PROB_HIDDEN_DEFAULT
+            {
+                None
+            } else {
+                Some(item.hidden_probability)
+            },
         }
     }
 }
@@ -182,7 +189,8 @@ mod tests {
                 ssid: ssid.as_bytes().to_vec(),
                 security_type: stash_security,
                 credential: storage::Credential::Password(b"foo_pass".to_vec()),
-                has_ever_connected
+                has_ever_connected,
+                hidden_probability: None,
             }
         );
     }
@@ -219,7 +227,27 @@ mod tests {
                 ssid: ssid.as_bytes().to_vec(),
                 security_type: storage_security,
                 credential: storage_credential,
-                has_ever_connected
+                has_ever_connected,
+                hidden_probability: None,
+            }
+        );
+    }
+
+    #[fuchsia::test]
+    fn test_persistent_data_from_network_config_non_default_hidden_probability() {
+        let id = NetworkIdentifier::try_from("ssid", SecurityType::Wpa3).unwrap();
+        let mut network_config =
+            NetworkConfig::new(id, Credential::Password(b"foo_pass".to_vec()), true, None)
+                .expect("failed to create network config");
+        network_config.hidden_probability = 0.05;
+        assert_eq!(
+            storage::PersistentStorageData::from(network_config),
+            storage::PersistentStorageData {
+                ssid: b"ssid".to_vec(),
+                security_type: storage::SecurityType::Wpa3,
+                credential: storage::Credential::Password(b"foo_pass".to_vec()),
+                has_ever_connected: true,
+                hidden_probability: Some(0.05),
             }
         );
     }

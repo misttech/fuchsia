@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 use log::{error, info, warn};
 use std::collections::HashMap;
 use std::io::Write;
@@ -77,7 +77,9 @@ impl StorageStore {
                 }
             }
             Some(FileContent::Networks(_)) => {
-                error!("The recorded version was interpreted as saved networks data. The newest version will be used to interpret data.");
+                error!(
+                    "The recorded version was interpreted as saved networks data. The newest version will be used to interpret data."
+                );
             }
             None => {
                 warn!(
@@ -117,6 +119,7 @@ mod tests {
             security_type: SecurityType::Wpa2,
             credential: Credential::Password(b"password".to_vec()),
             has_ever_connected: false,
+            hidden_probability: None,
         }];
         store.write(network_configs.clone()).expect("write failed");
         let store = StorageStore::new(&path);
@@ -148,6 +151,7 @@ mod tests {
             security_type: SecurityType::Wpa2,
             credential: Credential::Password(vec![100, 100, 100, 100, 100, 100]),
             has_ever_connected: false,
+            hidden_probability: None,
         }];
 
         // Write the data with a missing field to the file.
@@ -190,6 +194,7 @@ mod tests {
             security_type: SecurityType::Wpa2,
             credential: Credential::Password(vec![100, 100, 100, 100, 100, 100]),
             has_ever_connected: false,
+            hidden_probability: None,
         }];
 
         // Write the data that has an extra field to the StorageStore's backing file.
@@ -215,6 +220,7 @@ mod tests {
             security_type: SecurityType::Wpa2,
             credential: Credential::Password(b"password".to_vec()),
             has_ever_connected: false,
+            hidden_probability: None,
         }];
         store.write(network_config.clone()).expect("write failed");
         assert_eq!(store.load().expect("load failed"), network_config);

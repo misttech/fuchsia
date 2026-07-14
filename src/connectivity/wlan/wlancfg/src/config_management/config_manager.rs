@@ -161,7 +161,7 @@ impl SavedNetworksManager {
                 id.clone(),
                 persisted_data.credential.clone().into(),
                 persisted_data.has_ever_connected,
-                None,
+                persisted_data.hidden_probability,
             );
             match config {
                 Ok(config) => saved_networks.entry(id).or_default().push(config),
@@ -363,6 +363,7 @@ impl SavedNetworksManagerApi for SavedNetworksManager {
                 match (connect_result.code, connect_result.is_credential_rejected) {
                     (fidl_ieee80211::StatusCode::Success, _) => {
                         let mut has_change = false;
+                        let old_hidden_prob = network.hidden_probability;
                         if !network.has_ever_connected {
                             network.has_ever_connected = true;
                             has_change = true;
@@ -377,6 +378,10 @@ impl SavedNetworksManagerApi for SavedNetworksManager {
                             }
                             types::ScanObservation::Unknown => {}
                         };
+
+                        if network.hidden_probability != old_hidden_prob {
+                            has_change = true;
+                        }
 
                         if has_change {
                             // Update persistent storage since a config has changed.
@@ -460,6 +465,7 @@ impl SavedNetworksManagerApi for SavedNetworksManager {
         results: &HashMap<types::NetworkIdentifierDetailed, Vec<types::Bss>>,
     ) {
         let mut saved_networks = self.saved_networks.lock().await;
+        let mut has_change = false;
 
         for (network, bss_list) in results {
             // If there are BSSs seen with the same SSID but different security, it will be
@@ -483,8 +489,12 @@ impl SavedNetworksManagerApi for SavedNetworksManager {
                         security_is_compatible(&network.security_type, &config.credential)
                     });
                     for config in compatible_configs {
+                        let old_hidden_prob = config.hidden_probability;
                         config.update_hidden_prob(HiddenProbEvent::SeenPassive);
                         config.update_seen_multiple_bss(has_multiple_bss);
+                        if config.hidden_probability != old_hidden_prob {
+                            has_change = true;
+                        }
                     }
                 }
             }
@@ -505,11 +515,20 @@ impl SavedNetworksManagerApi for SavedNetworksManager {
                         .contains(&config.security_type)
                         && security_is_compatible(&scan_id.security_type, &config.credential)
                 }) {
+                    let old_hidden_prob = config.hidden_probability;
                     config.update_hidden_prob(HiddenProbEvent::NotSeenActive);
+                    if config.hidden_probability != old_hidden_prob {
+                        has_change = true;
+                    }
                 }
             }
         }
-        // TODO(60619): Update persistent storage with new probability if it has changed
+        if has_change {
+            let data = persistent_data_from_config_map(&saved_networks);
+            if let Err(e) = self.store.lock().await.write(data) {
+                info!("Failed to record scan result updates in store: {}", e);
+            }
+        }
     }
 
     /// Returns whether or not the network likely has only one BSS based on previous scans. This
@@ -1052,14 +1071,17 @@ mod tests {
             assert_eq!(config.hidden_probability, PROB_HIDDEN_IF_CONNECT_PASSIVE);
         });
 
-        // Success connects should be saved as persistent data.
-        let (telemetry_sender, _telemetry_receiver) = mpsc::channel::<TelemetryEvent>(100);
-        let store = PolicyStorage::new_with_id(&store_id).await;
-        let saved_networks =
-            SavedNetworksManager::new_with_storage(store, TelemetrySender::new(telemetry_sender))
-                .await;
-        assert_matches!(saved_networks.lookup(&network_id).await.as_slice(), [config] => {
+        // Check that recording the connect event updates the persisted data by loading the data.
+        let store_reloaded = PolicyStorage::new_with_id(&store_id).await;
+        let (telemetry_sender_reloaded, _) = mpsc::channel::<TelemetryEvent>(100);
+        let saved_networks_reloaded = SavedNetworksManager::new_with_storage(
+            store_reloaded,
+            TelemetrySender::new(telemetry_sender_reloaded),
+        )
+        .await;
+        assert_matches!(saved_networks_reloaded.lookup(&network_id).await.as_slice(), [config] => {
             assert!(config.has_ever_connected);
+            assert_eq!(config.hidden_probability, PROB_HIDDEN_IF_CONNECT_PASSIVE);
         });
     }
 
@@ -1283,7 +1305,8 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_record_undirected_scan() {
-        let saved_networks = SavedNetworksManager::new_for_test().await;
+        let store_id = generate_string();
+        let saved_networks = create_saved_networks(&store_id).await;
         let saved_seen_id = NetworkIdentifier::try_from("foo", SecurityType::None).unwrap();
         let saved_seen_network = types::NetworkIdentifierDetailed {
             ssid: saved_seen_id.ssid.clone(),
@@ -1331,6 +1354,21 @@ mod tests {
             assert_eq!(config.hidden_probability, PROB_HIDDEN_IF_SEEN_PASSIVE);
         });
         assert_matches!(saved_networks.lookup(&saved_unseen_id).await.as_slice(), [config] => {
+            assert_eq!(config.hidden_probability, PROB_HIDDEN_DEFAULT);
+        });
+
+        // Re-open storage from store_id to verify the new hidden_probability persisted across reload.
+        let store_reloaded = PolicyStorage::new_with_id(&store_id).await;
+        let (telemetry_sender_reloaded, _) = mpsc::channel::<TelemetryEvent>(100);
+        let saved_networks_reloaded = SavedNetworksManager::new_with_storage(
+            store_reloaded,
+            TelemetrySender::new(telemetry_sender_reloaded),
+        )
+        .await;
+        assert_matches!(saved_networks_reloaded.lookup(&saved_seen_id).await.as_slice(), [config] => {
+            assert_eq!(config.hidden_probability, PROB_HIDDEN_IF_SEEN_PASSIVE);
+        });
+        assert_matches!(saved_networks_reloaded.lookup(&saved_unseen_id).await.as_slice(), [config] => {
             assert_eq!(config.hidden_probability, PROB_HIDDEN_DEFAULT);
         });
     }

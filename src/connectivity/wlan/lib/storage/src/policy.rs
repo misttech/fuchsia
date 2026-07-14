@@ -4,14 +4,14 @@
 
 use crate::stash_store::StashStore;
 use crate::storage_store::StorageStore;
-use anyhow::{format_err, Context, Error};
+use anyhow::{Context, Error, format_err};
 use fidl_fuchsia_stash as fidl_stash;
 use fuchsia_component::client::connect_to_protocol;
 use wlan_metrics_registry::StashMigrationResultsMetricDimensionMigrationResult as MigrationResult;
 
 pub use wlan_storage_constants::{
-    self, Credential, NetworkIdentifier, PersistentData, PersistentStorageData, SecurityType,
-    POLICY_STORAGE_ID,
+    self, Credential, NetworkIdentifier, POLICY_STORAGE_ID, PersistentData, PersistentStorageData,
+    SecurityType,
 };
 
 /// If the store ID is saved_networks, the file will be saved at /data/network-data.saved_networks
@@ -213,8 +213,8 @@ mod tests {
     use ieee80211::Ssid;
     use std::convert::TryFrom;
     use std::io::Write;
-    use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
     use wlan_storage_constants::PersistentData;
 
     /// The PSK provided must be the bytes form of the 64 hexadecimal character hash. This is a
@@ -230,6 +230,7 @@ mod tests {
             security_type: SecurityType::Wpa2,
             credential: Credential::Password(b"password".to_vec()),
             has_ever_connected: true,
+            hidden_probability: None,
         };
 
         // Save a network config to storage
@@ -246,6 +247,7 @@ mod tests {
             security_type: SecurityType::Wpa2,
             credential: Credential::Password(b"other-password".to_vec()),
             has_ever_connected: false,
+            hidden_probability: None,
         };
         store.write(vec![cfg.clone(), cfg_2.clone()]).expect("Failed writing to storage");
 
@@ -267,30 +269,35 @@ mod tests {
             security_type: SecurityType::None,
             credential: Credential::None,
             has_ever_connected: false,
+            hidden_probability: None,
         };
         let cfg_wep = PersistentStorageData {
             ssid: Ssid::try_from("foo").unwrap().to_vec(),
             security_type: SecurityType::Wep,
             credential: password.clone(),
             has_ever_connected: false,
+            hidden_probability: None,
         };
         let cfg_wpa = PersistentStorageData {
             ssid: Ssid::try_from("foo").unwrap().to_vec(),
             security_type: SecurityType::Wpa,
             credential: password.clone(),
             has_ever_connected: false,
+            hidden_probability: None,
         };
         let cfg_wpa2 = PersistentStorageData {
             ssid: Ssid::try_from("foo").unwrap().to_vec(),
             security_type: SecurityType::Wpa2,
             credential: password.clone(),
             has_ever_connected: false,
+            hidden_probability: None,
         };
         let cfg_wpa3 = PersistentStorageData {
             ssid: Ssid::try_from("foo").unwrap().to_vec(),
             security_type: SecurityType::Wpa3,
             credential: password.clone(),
             has_ever_connected: false,
+            hidden_probability: None,
         };
 
         // Write the saved network list as it would be each time a new network was added.
@@ -328,18 +335,21 @@ mod tests {
             security_type: SecurityType::None,
             credential: Credential::None,
             has_ever_connected: false,
+            hidden_probability: None,
         };
         let cfg_password = PersistentStorageData {
             ssid: b"bar-password".to_vec(),
             security_type: SecurityType::Wpa2,
             credential: password,
             has_ever_connected: false,
+            hidden_probability: None,
         };
         let cfg_psk = PersistentStorageData {
             ssid: b"bar-psk".to_vec(),
             security_type: SecurityType::Wpa2,
             credential: psk,
             has_ever_connected: false,
+            hidden_probability: None,
         };
 
         // Write configs to storage as they would be when saved.
@@ -359,6 +369,49 @@ mod tests {
     }
 
     #[fuchsia::test]
+    async fn write_read_hidden_probability() {
+        let mut store = new_storage(&rand_string()).await;
+
+        // create and write configs with each hidden probability
+        let cfg_zero = PersistentStorageData {
+            ssid: Ssid::try_from("foo").unwrap().to_vec(),
+            security_type: SecurityType::None,
+            credential: Credential::None,
+            has_ever_connected: false,
+            hidden_probability: Some(0.0),
+        };
+        let cfg_low = PersistentStorageData {
+            ssid: Ssid::try_from("foo").unwrap().to_vec(),
+            security_type: SecurityType::None,
+            credential: Credential::None,
+            has_ever_connected: false,
+            hidden_probability: Some(0.05),
+        };
+        let cfg_high = PersistentStorageData {
+            ssid: Ssid::try_from("foo").unwrap().to_vec(),
+            security_type: SecurityType::None,
+            credential: Credential::None,
+            has_ever_connected: false,
+            hidden_probability: Some(0.9),
+        };
+
+        // Write the saved network list as it would be each time a new network was added.
+        let mut saved_networks = vec![cfg_zero.clone()];
+        store.write(saved_networks.clone()).expect("failed to write config");
+        saved_networks.push(cfg_low.clone());
+        store.write(saved_networks.clone()).expect("failed to write config");
+        saved_networks.push(cfg_high.clone());
+        store.write(saved_networks.clone()).expect("failed to write config");
+
+        // Load storage and expect each config that we wrote.
+        let configs = store.load().await.expect("failed loading from storage");
+        assert_eq!(configs.len(), 3);
+        assert!(configs.contains(&cfg_zero));
+        assert!(configs.contains(&cfg_low));
+        assert!(configs.contains(&cfg_high));
+    }
+
+    #[fuchsia::test]
     async fn write_persists() {
         let path = rand_string();
         let store = new_storage(&path).await;
@@ -367,6 +420,7 @@ mod tests {
             security_type: SecurityType::Wpa2,
             credential: Credential::Password(b"password".to_vec()),
             has_ever_connected: true,
+            hidden_probability: None,
         };
 
         // Save a network config to the stash
@@ -389,12 +443,14 @@ mod tests {
             security_type: SecurityType::Wpa2,
             credential: Credential::Password(b"12345678".to_vec()),
             has_ever_connected: true,
+            hidden_probability: None,
         };
         let cfg_bar = PersistentStorageData {
             ssid: Ssid::try_from("bar").unwrap().to_vec(),
             security_type: SecurityType::Wpa2,
             credential: Credential::Password(b"qwertyuiop".to_vec()),
             has_ever_connected: true,
+            hidden_probability: None,
         };
 
         // Store two networks in our stash.
@@ -483,12 +539,14 @@ mod tests {
             security_type: SecurityType::Wpa2,
             credential: Credential::Password(b"qwertyuio".to_vec()),
             has_ever_connected: true,
+            hidden_probability: None,
         };
         let cfg_bar = PersistentStorageData {
             ssid: Ssid::try_from("bar").unwrap().to_vec(),
             security_type: SecurityType::Wpa2,
             credential: Credential::Password(b"12345678".to_vec()),
             has_ever_connected: false,
+            hidden_probability: None,
         };
         storage.write(vec![cfg_foo.clone(), cfg_bar.clone()]).expect("Failed to write to storage");
 
@@ -529,6 +587,7 @@ mod tests {
             security_type: security_type,
             credential: credential.clone(),
             has_ever_connected,
+            hidden_probability: None,
         }];
 
         // Write the config to stash that storage will migrate from.
@@ -936,12 +995,14 @@ mod tests {
                 security_type: SecurityType::Wpa2,
                 credential: Credential::Password(vec![100, 100, 100, 100, 100, 100]),
                 has_ever_connected: false,
+                hidden_probability: None,
             },
             PersistentStorageData {
                 ssid: vec![111, 112, 101, 110, 45, 110, 101, 116, 119, 111, 114, 107],
                 security_type: SecurityType::None,
                 credential: Credential::None,
                 has_ever_connected: true,
+                hidden_probability: None,
             },
         ];
 
