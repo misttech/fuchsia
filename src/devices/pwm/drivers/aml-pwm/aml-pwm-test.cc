@@ -466,7 +466,9 @@ TEST_F(AmlPwmDriverTest, TwoTimerModeClockDividerChange) {
     (*mmios[0])[2 * 4].ExpectRead(0x00000000).ExpectWrite(0x01000002);  // SetMode
     (*mmios[0])[2 * 4].ExpectRead(0xFFFFFFFF).ExpectWrite(0xFF80FFFF);  // SetClockDivider
     (*mmios[0])[6 * 4].ExpectRead(0xA39D9259).ExpectWrite(0x00130003);  // SetDutyCycle2
-    (*mmios[0])[4 * 4].ExpectRead(0xFFFFFFFF).ExpectWrite(0xFFFF0302);  // SetTimers
+    (*mmios[0])[4 * 4]
+        .ExpectRead(0xFFFFFFFF)
+        .ExpectWrite(0xFFFF0302);  // SetTimers sets b1=3, b2=2 at [15:0]
     (*mmios[0])[2 * 4].ExpectRead(0xFFFFFFFF).ExpectWrite(0xF7FFFFFF);  // Invert
     (*mmios[0])[2 * 4].ExpectRead(0xFFFFFFFF).ExpectWrite(0xDFFFFFFF);  // EnableConst
     (*mmios[0])[1 * 4].ExpectRead(0xA39D9259).ExpectWrite(0x00060010);  // SetDutyCycle
@@ -594,6 +596,41 @@ TEST_F(AmlPwmDriverTest, SetConfigPeriodNotDivisibleBy100Test) {
       .mode_config_size = sizeof(on),
   };
   EXPECT_OK(driver().PwmImplSetConfig(0, &on_cfg));  // Success
+}
+
+TEST_F(AmlPwmDriverTest, TwoTimerChannelSeparationTest) {
+  mode_config timer2{
+      .mode = Mode::kTwoTimer,
+      .two_timer =
+          {
+              .period_ns2 = 1000,
+              .duty_cycle2 = 80.0,
+              .timer1 = 3,
+              .timer2 = 2,
+          },
+  };
+  pwm_config timer2_cfg{
+      .polarity = false,
+      .period_ns = 1000,
+      .duty_cycle = 30.0,
+      .mode_config_buffer = reinterpret_cast<uint8_t*>(&timer2),
+      .mode_config_size = sizeof(timer2),
+  };
+
+  WithMmios([](auto mmios) {
+    (*mmios[0])[2 * 4]
+        .ExpectRead(0x00000000)
+        .ExpectWrite(0x02000001);  // SetMode sets en_a and en_a2 (bit 25)
+    (*mmios[0])[2 * 4].ExpectRead(0xFFFFFFFF).ExpectWrite(0xFFFF80FF);  // SetClockDivider
+    (*mmios[0])[5 * 4].ExpectRead(0xA39D9259).ExpectWrite(0x00130003);  // SetDutyCycle2
+    (*mmios[0])[4 * 4]
+        .ExpectRead(0xFFFFFFFF)
+        .ExpectWrite(0x0302FFFF);  // SetTimers sets a1=3, a2=2 at [31:16]
+    (*mmios[0])[2 * 4].ExpectRead(0xFFFFFFFF).ExpectWrite(0xFBFFFFFF);  // Invert
+    (*mmios[0])[2 * 4].ExpectRead(0xFFFFFFFF).ExpectWrite(0xEFFFFFFF);  // EnableConst
+    (*mmios[0])[0 * 4].ExpectRead(0xA39D9259).ExpectWrite(0x00060010);  // SetDutyCycle
+  });
+  EXPECT_OK(driver().PwmImplSetConfig(0, &timer2_cfg));
 }
 
 }  // namespace pwm

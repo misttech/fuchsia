@@ -33,6 +33,10 @@ class MiscReg : public hwreg::RegisterBase<MiscReg, uint32_t> {
   DEF_BIT(28, constant_en_a);
   DEF_BIT(27, inv_en_b);
   DEF_BIT(26, inv_en_a);
+  // NOTE: Two-timer enable bits (en_a2 / en_b2) are asymmetrical in Amlogic
+  // hardware specifications (#define MISC_A2_EN BIT(25), #define MISC_B2_EN BIT(24)).
+  // Unlike en_a (bit 0) and en_b (bit 1) where A is even and B is odd, en_a2 occupies
+  // bit 25 (odd) and en_b2 occupies bit 24 (even). Do NOT swap them.
   DEF_BIT(25, en_a2);
   DEF_BIT(24, en_b2);
   DEF_BIT(23, clk_en_b);
@@ -59,6 +63,11 @@ class DeltaSigmaReg : public hwreg::RegisterBase<DeltaSigmaReg, uint32_t> {
 
 class TimeReg : public hwreg::RegisterBase<TimeReg, uint32_t> {
  public:
+  // NOTE: TimeReg channel bit allocations are asymmetrical in Amlogic
+  // hardware compared to DeltaSigmaReg.
+  // Channel A timers (a1 / a2) occupy the upper 16 bits [31:16] ([31:24] and [23:16]).
+  // Channel B timers (b1 / b2) occupy the lower 16 bits [15:0] ([15:8] and [7:0]).
+  // Do NOT swap them to match DeltaSigmaReg (where a is [15:0] and b is [31:16]).
   DEF_FIELD(31, 24, a1);
   DEF_FIELD(23, 16, a2);
   DEF_FIELD(15, 8, b1);
