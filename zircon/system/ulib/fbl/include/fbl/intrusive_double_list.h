@@ -66,7 +66,7 @@ struct DoublyLinkedListNodeState
   using PtrTraits = internal::ContainerPtrTraits<PtrType>;
   static constexpr NodeOptions kNodeOptions = Options;
 
-  constexpr DoublyLinkedListNodeState() {}
+  constexpr DoublyLinkedListNodeState() = default;
   ~DoublyLinkedListNodeState() {
     ZX_DEBUG_ASSERT(IsValid());
     if constexpr (!(kNodeOptions & fbl::NodeOptions::AllowClearUnsafe)) {
