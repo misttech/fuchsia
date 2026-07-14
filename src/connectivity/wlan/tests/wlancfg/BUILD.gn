@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 import("//build/python/python_mobly_test.gni")
+import("//build/testing/environments.gni")
 import("//build/testing/host_test_data.gni")
 
 import("//src/connectivity/wlan/tests/wlancfg/test_lists.gni")

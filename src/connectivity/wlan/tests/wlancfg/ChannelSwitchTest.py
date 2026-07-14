@@ -23,6 +23,7 @@ from honeydew.affordances.connectivity.wlan.utils.errors import (
 )
 from honeydew.affordances.connectivity.wlan.utils.types import (
     ClientStatusConnected,
+    CountryCode,
     OperatingBand,
 )
 from mobly import asserts, signals, test_runner
@@ -69,6 +70,11 @@ class ChannelSwitchTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         await super().setup_class()
         self.log = logging.getLogger()
         self.ssid = AccessPointConfig.random_string(10)
+
+        # Set country code US for 5G DFS channels
+        await self.dut.wlan_policy.set_country_code(
+            CountryCode.UNITED_STATES_OF_AMERICA
+        )
 
         if not self.openwrt_ap and not self.access_point:
             raise signals.TestAbortClass("Requires at least one access point")
