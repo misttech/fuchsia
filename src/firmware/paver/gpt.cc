@@ -272,14 +272,15 @@ zx::result<> GptDevicePartitioner::ResetPartitionTables(
                             });
   }
 
-  std::vector<fuchsia_storage_partitions::wire::PartitionInfo> infos{
-      partitions.size(), fuchsia_storage_partitions::wire::PartitionInfo{}};
+  fidl::Arena arena;
+  fidl::VectorView<fuchsia_storage_partitions::wire::PartitionEntry> infos(arena,
+                                                                           partitions.size());
   for (size_t i = 0; i < partitions.size(); ++i) {
     const auto& partition = partitions[i];
     if (partition.size_bytes == 0) {
       continue;
     }
-    fuchsia_storage_partitions::wire::PartitionInfo info{
+    fuchsia_storage_partitions::wire::PartitionEntry info{
         .name = fidl::StringView::FromExternal(partition.name),
         .start_block = partition.start_block,
         .num_blocks = partition.size_bytes / block_size_,
@@ -295,8 +296,7 @@ zx::result<> GptDevicePartitioner::ResetPartitionTables(
   if (recovery.is_error()) {
     return recovery.take_error();
   }
-  fidl::WireResult result = fidl::WireCall(*recovery)->InitSystemPartitionTable(
-      fidl::VectorView<fuchsia_storage_partitions::wire::PartitionInfo>::FromExternal(infos));
+  fidl::WireResult result = fidl::WireCall(*recovery)->InitSystemPartitionTable(infos);
   if (result.status() != ZX_OK) {
     ERROR("Failed to reset partitions table: %s\n", result.FormatDescription().c_str());
     return zx::error(result.status());

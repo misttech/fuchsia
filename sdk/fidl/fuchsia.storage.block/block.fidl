@@ -223,6 +223,21 @@ type Guid = struct {
     value array<uint8, GUID_LENGTH>;
 };
 
+/// Metadata describing a partition.
+type PartitionInfo = table {
+    1: name string:<NAME_LENGTH>;
+    2: type_guid Guid;
+    3: instance_guid Guid;
+    4: start_block_offset uint64;
+    /// num_blocks will be absent if the partition is a volume, which is dynamically sized and can
+    /// grow via fuchsia.storage.block.Block/Extend.  To get the current size, use
+    /// fuchsia.storage.block.Block/GetVolumeInfo.
+    5: num_blocks uint64;
+    /// The partition table entry flags (for example, in a GPT partition, the GPT partition table
+    /// entry flags).  Note that this is distinct from the device flags returned in BlockInfo.
+    6: flags uint64;
+};
+
 /// VolumeManagerInfo describes the properties of the volume manager and not each individual volume.
 type VolumeManagerInfo = struct {
     /// Size of a single slice, in bytes.
@@ -435,17 +450,7 @@ closed protocol Block {
     /// Gets the metadata for the partition.
     ///
     /// Fields may be absent if the partition doesn't have the given metadata.
-    strict GetMetadata() -> (table {
-        1: name string:<NAME_LENGTH>;
-        2: type_guid Guid;
-        3: instance_guid Guid;
-        /// start_block_offset will be absent if the partition is non-contiguous.
-        4: start_block_offset uint64;
-        /// num_blocks will be absent if the partition is a dynamic volume, in which case
-        /// fuchsia.storage.block.Block/GetVolumeInfo should be called instead.
-        5: num_blocks uint64;
-        6: flags uint64;
-    }) error zx.Status;
+    strict GetMetadata() -> (PartitionInfo) error zx.Status;
 
     // volume-specific methods
 

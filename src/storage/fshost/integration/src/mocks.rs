@@ -207,8 +207,10 @@ async fn run_fxfs_provisioner(
                     .expect("get_partitions FIDL call failed")
                     .expect("get_partitions failed");
                 assert_eq!(partitions_info.len(), 2);
-                assert!(partitions_info.iter().any(|info| info.name == "super"));
-                assert!(partitions_info.iter().any(|info| info.name == "userdata"));
+                assert!(partitions_info.iter().any(|info| info.name.as_deref() == Some("super")));
+                assert!(
+                    partitions_info.iter().any(|info| info.name.as_deref() == Some("userdata"))
+                );
 
                 let connector =
                     Box::new(DirBasedBlockConnector::new(partition_service, "/volume".to_string()));

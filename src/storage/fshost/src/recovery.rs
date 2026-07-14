@@ -229,7 +229,7 @@ impl RecoveryOps {
 
     pub async fn init_system_partition_table(
         &self,
-        partitions: Vec<fpartitions::PartitionInfo>,
+        partitions: Vec<fpartitions::PartitionEntry>,
     ) -> Result<(), zx::Status> {
         if !self.config.ramdisk_image {
             log::error!("init_system_partition_table only supported in ramdisk-image mode.");

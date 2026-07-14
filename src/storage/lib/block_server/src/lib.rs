@@ -527,7 +527,7 @@ impl<SM: SessionManager> BlockServer<SM> {
                     let mut instance_guid =
                         fblock::Guid { value: [0u8; fblock::GUID_LENGTH as usize] };
                     instance_guid.value.copy_from_slice(&info.instance_guid);
-                    responder.send(Ok(&fblock::BlockGetMetadataResponse {
+                    responder.send(Ok(&fblock::PartitionInfo {
                         name: Some(info.name.clone()),
                         type_guid: Some(type_guid),
                         instance_guid: Some(instance_guid),

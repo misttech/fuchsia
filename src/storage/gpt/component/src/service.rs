@@ -333,19 +333,19 @@ impl GptService {
 
     async fn reset_partition_table(
         &self,
-        partitions: Vec<fpartitions::PartitionInfo>,
+        partitions: Vec<fpartitions::PartitionEntry>,
     ) -> Result<(), zx::Status> {
-        fn convert_partition_info(info: fpartitions::PartitionInfo) -> gpt::PartitionInfo {
+        fn convert_partition_entry(entry: fpartitions::PartitionEntry) -> gpt::PartitionInfo {
             gpt::PartitionInfo {
-                label: info.name,
-                type_guid: gpt::Guid::from_bytes(info.type_guid.value),
-                instance_guid: gpt::Guid::from_bytes(info.instance_guid.value),
-                start_block: info.start_block,
-                num_blocks: info.num_blocks,
-                flags: info.flags,
+                label: entry.name,
+                type_guid: gpt::Guid::from_bytes(entry.type_guid.value),
+                instance_guid: gpt::Guid::from_bytes(entry.instance_guid.value),
+                start_block: entry.start_block,
+                num_blocks: entry.num_blocks,
+                flags: entry.flags,
             }
         }
-        let partitions = partitions.into_iter().map(convert_partition_info).collect::<Vec<_>>();
+        let partitions = partitions.into_iter().map(convert_partition_entry).collect::<Vec<_>>();
 
         let mut state = self.state.lock().await;
         match &mut *state {

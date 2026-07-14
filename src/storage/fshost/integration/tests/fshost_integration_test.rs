@@ -23,6 +23,45 @@ use fshost_test_fixture::{
     round_down,
 };
 use fuchsia_async as fasync;
+
+fn make_partition_entry(
+    name: &str,
+    type_guid: fpartition::Guid,
+    instance_guid: fpartition::Guid,
+    start_block: u64,
+    num_blocks: u64,
+    flags: u64,
+) -> fpartitions::PartitionEntry {
+    fpartitions::PartitionEntry {
+        name: name.to_string(),
+        type_guid,
+        instance_guid,
+        start_block,
+        num_blocks,
+        flags,
+    }
+}
+
+#[allow(unused)]
+fn make_partition_info(
+    name: &str,
+    type_guid: fpartition::Guid,
+    instance_guid: fpartition::Guid,
+    start_block_offset: u64,
+    num_blocks: u64,
+    flags: u64,
+) -> fpartitions::PartitionInfo {
+    fpartitions::PartitionInfo {
+        name: Some(name.to_string()),
+        type_guid: Some(type_guid),
+        instance_guid: Some(instance_guid),
+        start_block_offset: Some(start_block_offset),
+        num_blocks: Some(num_blocks),
+        flags: Some(flags),
+        ..Default::default()
+    }
+}
+
 use fuchsia_component::client::connect_to_named_protocol_at_dir_root;
 use futures::FutureExt as _;
 use regex::Regex;
@@ -709,14 +748,14 @@ async fn reset_uninitialized_gpt() {
 
     let recovery: RecoveryProxy = fixture.realm.root.connect_to_protocol_at_exposed_dir().unwrap();
     recovery
-        .init_system_partition_table(&[fpartitions::PartitionInfo {
-            name: "part".to_string(),
-            type_guid: fpartition::Guid { value: [0xabu8; 16] },
-            instance_guid: fpartition::Guid { value: [0xcdu8; 16] },
-            start_block: 4,
-            num_blocks: 1,
-            flags: 0,
-        }])
+        .init_system_partition_table(&[make_partition_entry(
+            "part",
+            fpartition::Guid { value: [0xabu8; 16] },
+            fpartition::Guid { value: [0xcdu8; 16] },
+            4,
+            1,
+            0,
+        )])
         .await
         .expect("FIDL error")
         .expect("init_system_partition_table failed");
@@ -740,22 +779,22 @@ async fn reset_initialized_gpt() {
     let recovery: RecoveryProxy = fixture.realm.root.connect_to_protocol_at_exposed_dir().unwrap();
     recovery
         .init_system_partition_table(&[
-            fpartitions::PartitionInfo {
-                name: "part".to_string(),
-                type_guid: fpartition::Guid { value: [0xabu8; 16] },
-                instance_guid: fpartition::Guid { value: [0xcdu8; 16] },
-                start_block: 4,
-                num_blocks: 1,
-                flags: 0,
-            },
-            fpartitions::PartitionInfo {
-                name: "part2".to_string(),
-                type_guid: fpartition::Guid { value: [0x11u8; 16] },
-                instance_guid: fpartition::Guid { value: [0x22u8; 16] },
-                start_block: 5,
-                num_blocks: 1,
-                flags: 0,
-            },
+            make_partition_entry(
+                "part",
+                fpartition::Guid { value: [0xabu8; 16] },
+                fpartition::Guid { value: [0xcdu8; 16] },
+                4,
+                1,
+                0,
+            ),
+            make_partition_entry(
+                "part2",
+                fpartition::Guid { value: [0x11u8; 16] },
+                fpartition::Guid { value: [0x22u8; 16] },
+                5,
+                1,
+                0,
+            ),
         ])
         .await
         .expect("FIDL error")
@@ -1594,7 +1633,7 @@ mod fxblob {
     // because fxfs supports mounting on a larger partition than it was formatted with.
     #[fuchsia::test]
     async fn merge_super_and_userdata() {
-        use fidl_fuchsia_storage_partitions::{OverlayPartitionMarker, PartitionInfo};
+        use fidl_fuchsia_storage_partitions::OverlayPartitionMarker;
         use fs_management::FVM_TYPE_GUID;
         use fshost_test_fixture::disk_builder::{DEFAULT_TEST_TYPE_GUID, FVM_PART_INSTANCE_GUID};
 
@@ -1664,22 +1703,22 @@ mod fxblob {
                 assert_eq!(
                     infos,
                     vec![
-                        PartitionInfo {
-                            name: "super".to_string(),
-                            type_guid: fpartition::Guid { value: FVM_TYPE_GUID },
-                            instance_guid: fpartition::Guid { value: FVM_PART_INSTANCE_GUID },
-                            start_block: 64,
-                            num_blocks: 221781,
-                            flags: 0,
-                        },
-                        PartitionInfo {
-                            name: "userdata".to_string(),
-                            type_guid: fpartition::Guid { value: DEFAULT_TEST_TYPE_GUID },
-                            instance_guid: fpartition::Guid { value: FVM_PART_INSTANCE_GUID },
-                            start_block: 221845,
-                            num_blocks: USERDATA_NUM_BLOCKS,
-                            flags: 0,
-                        },
+                        make_partition_info(
+                            "super",
+                            fpartition::Guid { value: FVM_TYPE_GUID },
+                            fpartition::Guid { value: FVM_PART_INSTANCE_GUID },
+                            64,
+                            221781,
+                            0,
+                        ),
+                        make_partition_info(
+                            "userdata",
+                            fpartition::Guid { value: DEFAULT_TEST_TYPE_GUID },
+                            fpartition::Guid { value: FVM_PART_INSTANCE_GUID },
+                            221845,
+                            USERDATA_NUM_BLOCKS,
+                            0,
+                        ),
                     ]
                 )
             }

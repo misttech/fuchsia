@@ -41,7 +41,7 @@ closed protocol Recovery {
     /// Wipes and re-initializes the system partition table.  This is a destructive operation!
     strict InitSystemPartitionTable(struct {
         partitions
-                vector<fuchsia.storage.partitions.PartitionInfo>:fuchsia.storage.partitions.MAX_PARTITIONS;
+                vector<fuchsia.storage.partitions.PartitionEntry>:fuchsia.storage.partitions.MAX_PARTITIONS;
     }) -> () error zx.Status;
 
     /// Writes `filename` into the data partition with contents from `payload`, formatting the data

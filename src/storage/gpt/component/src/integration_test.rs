@@ -13,6 +13,55 @@ use fuchsia_component::client::connect::connect_to_protocol_at_dir_root;
 use test_case::test_case;
 use vmo_backed_block_server::{VmoBackedServer, VmoBackedServerConnector};
 
+fn make_partition_entry(
+    name: &str,
+    type_guid: fblock::Guid,
+    instance_guid: fblock::Guid,
+    start_block: u64,
+    num_blocks: u64,
+    flags: u64,
+) -> fpartitions::PartitionEntry {
+    fpartitions::PartitionEntry {
+        name: name.to_string(),
+        type_guid,
+        instance_guid,
+        start_block,
+        num_blocks,
+        flags,
+    }
+}
+
+fn entry_to_info(entry: &fpartitions::PartitionEntry) -> fpartitions::PartitionInfo {
+    fpartitions::PartitionInfo {
+        name: Some(entry.name.clone()),
+        type_guid: Some(entry.type_guid),
+        instance_guid: Some(entry.instance_guid),
+        start_block_offset: Some(entry.start_block),
+        num_blocks: Some(entry.num_blocks),
+        flags: Some(entry.flags),
+        ..Default::default()
+    }
+}
+
+fn make_partition_info(
+    name: &str,
+    type_guid: fblock::Guid,
+    instance_guid: fblock::Guid,
+    start_block_offset: u64,
+    num_blocks: u64,
+    flags: u64,
+) -> fpartitions::PartitionInfo {
+    fpartitions::PartitionInfo {
+        name: Some(name.to_string()),
+        type_guid: Some(type_guid),
+        instance_guid: Some(instance_guid),
+        start_block_offset: Some(start_block_offset),
+        num_blocks: Some(num_blocks),
+        flags: Some(flags),
+        ..Default::default()
+    }
+}
+
 #[test_case(true; "overlay_enabled")]
 #[test_case(false; "overlay_disabled")]
 #[fuchsia::test]
@@ -40,65 +89,62 @@ async fn test_overlay(overlay_enabled: bool) {
     };
 
     let initial_partitions = vec![
-        fpartitions::PartitionInfo {
-            name: "other1".to_string(),
-            type_guid: fblock::Guid { value: [1u8; 16] },
-            instance_guid: fblock::Guid { value: [1u8; 16] },
-            start_block: 40,
-            num_blocks: 10,
-            flags: 0,
-        },
-        fpartitions::PartitionInfo {
-            name: "super".to_string(),
-            type_guid: fblock::Guid { value: [2u8; 16] },
-            instance_guid: fblock::Guid { value: [2u8; 16] },
-            start_block: 50,
-            num_blocks: 100,
-            flags: 0,
-        },
-        fpartitions::PartitionInfo {
-            name: "userdata".to_string(),
-            type_guid: fblock::Guid { value: [3u8; 16] },
-            instance_guid: fblock::Guid { value: [3u8; 16] },
-            start_block: 150,
-            num_blocks: 50,
-            flags: 0,
-        },
-        fpartitions::PartitionInfo {
-            name: "other2".to_string(),
-            type_guid: fblock::Guid { value: [4u8; 16] },
-            instance_guid: fblock::Guid { value: [4u8; 16] },
-            start_block: 200,
-            num_blocks: 25,
-            flags: 0,
-        },
-        fpartitions::PartitionInfo {
-            name: "other3".to_string(),
-            type_guid: fblock::Guid { value: [5u8; 16] },
-            instance_guid: fblock::Guid { value: [5u8; 16] },
-            start_block: 400,
-            num_blocks: 100,
-            flags: 0,
-        },
-        // Make sure we can handle multiple super/userdata partitions (the later ones will just be
-        // treated as normal partitions).  Not a likely scenario, but it's worth being explicit
-        // about the behaviour.
-        fpartitions::PartitionInfo {
-            name: "super".to_string(),
-            type_guid: fblock::Guid { value: [6u8; 16] },
-            instance_guid: fblock::Guid { value: [6u8; 16] },
-            start_block: 500,
-            num_blocks: 1,
-            flags: 0,
-        },
-        fpartitions::PartitionInfo {
-            name: "userdata".to_string(),
-            type_guid: fblock::Guid { value: [7u8; 16] },
-            instance_guid: fblock::Guid { value: [7u8; 16] },
-            start_block: 501,
-            num_blocks: 1,
-            flags: 0,
-        },
+        make_partition_entry(
+            "other1",
+            fblock::Guid { value: [1u8; 16] },
+            fblock::Guid { value: [1u8; 16] },
+            40,
+            10,
+            0,
+        ),
+        make_partition_entry(
+            "super",
+            fblock::Guid { value: [2u8; 16] },
+            fblock::Guid { value: [2u8; 16] },
+            50,
+            100,
+            0,
+        ),
+        make_partition_entry(
+            "userdata",
+            fblock::Guid { value: [3u8; 16] },
+            fblock::Guid { value: [3u8; 16] },
+            150,
+            50,
+            0,
+        ),
+        make_partition_entry(
+            "other2",
+            fblock::Guid { value: [4u8; 16] },
+            fblock::Guid { value: [4u8; 16] },
+            200,
+            25,
+            0,
+        ),
+        make_partition_entry(
+            "other3",
+            fblock::Guid { value: [5u8; 16] },
+            fblock::Guid { value: [5u8; 16] },
+            400,
+            100,
+            0,
+        ),
+        make_partition_entry(
+            "super",
+            fblock::Guid { value: [6u8; 16] },
+            fblock::Guid { value: [6u8; 16] },
+            500,
+            1,
+            0,
+        ),
+        make_partition_entry(
+            "userdata",
+            fblock::Guid { value: [7u8; 16] },
+            fblock::Guid { value: [7u8; 16] },
+            501,
+            1,
+            0,
+        ),
     ];
 
     let partitions_admin =
@@ -132,16 +178,8 @@ async fn test_overlay(overlay_enabled: bool) {
         >(&partition_service_dir, &format!("{}/volume", partition))
         .unwrap();
 
-        let metadata =
+        let partition_info =
             volume.get_metadata().await.expect("FIDL error").expect("Failed to GetMetadata");
-        let partition_info = fpartitions::PartitionInfo {
-            name: metadata.name.unwrap(),
-            type_guid: metadata.type_guid.unwrap(),
-            instance_guid: metadata.instance_guid.unwrap(),
-            start_block: metadata.start_block_offset.unwrap(),
-            num_blocks: metadata.num_blocks.unwrap(),
-            flags: metadata.flags.unwrap(),
-        };
 
         let dir = fuchsia_fs::directory::open_directory(
             &partition_service_dir,
@@ -157,7 +195,7 @@ async fn test_overlay(overlay_enabled: bool) {
             .map(|entry| entry.name)
             .collect::<Vec<_>>();
         entries.sort();
-        if overlay_enabled && partition_info.name == "super_and_userdata" {
+        if overlay_enabled && partition_info.name.as_deref() == Some("super_and_userdata") {
             // Ensure that the original partition information can be queried
             assert_eq!(entries, vec!["overlay", "volume"]);
             let overlay = fuchsia_component::client::connect_to_named_protocol_at_dir_root::<
@@ -169,22 +207,22 @@ async fn test_overlay(overlay_enabled: bool) {
             assert_eq!(
                 overlay_partitions,
                 vec![
-                    fpartitions::PartitionInfo {
-                        name: "super".to_string(),
-                        type_guid: fblock::Guid { value: [2u8; 16] },
-                        instance_guid: fblock::Guid { value: [2u8; 16] },
-                        start_block: 50,
-                        num_blocks: 100,
-                        flags: 0,
-                    },
-                    fpartitions::PartitionInfo {
-                        name: "userdata".to_string(),
-                        type_guid: fblock::Guid { value: [3u8; 16] },
-                        instance_guid: fblock::Guid { value: [3u8; 16] },
-                        start_block: 150,
-                        num_blocks: 50,
-                        flags: 0,
-                    },
+                    make_partition_info(
+                        "super",
+                        fblock::Guid { value: [2u8; 16] },
+                        fblock::Guid { value: [2u8; 16] },
+                        50,
+                        100,
+                        0
+                    ),
+                    make_partition_info(
+                        "userdata",
+                        fblock::Guid { value: [3u8; 16] },
+                        fblock::Guid { value: [3u8; 16] },
+                        150,
+                        50,
+                        0
+                    ),
                 ]
             );
 
@@ -208,61 +246,61 @@ async fn test_overlay(overlay_enabled: bool) {
         }
         found_partitions.push(partition_info);
     }
-    found_partitions.sort_by_key(|a| a.start_block);
+    found_partitions.sort_by_key(|a| a.start_block_offset);
 
     let expected_partitions = if overlay_enabled {
         vec![
-            fpartitions::PartitionInfo {
-                name: "other1".to_string(),
-                type_guid: fblock::Guid { value: [1u8; 16] },
-                instance_guid: fblock::Guid { value: [1u8; 16] },
-                start_block: 40,
-                num_blocks: 10,
-                flags: 0,
-            },
-            fpartitions::PartitionInfo {
-                name: "super_and_userdata".to_string(),
-                type_guid: fblock::Guid { value: [2u8; 16] },
-                instance_guid: fblock::Guid { value: [2u8; 16] },
-                start_block: 50,
-                num_blocks: 150,
-                flags: 0,
-            },
-            fpartitions::PartitionInfo {
-                name: "other2".to_string(),
-                type_guid: fblock::Guid { value: [4u8; 16] },
-                instance_guid: fblock::Guid { value: [4u8; 16] },
-                start_block: 200,
-                num_blocks: 25,
-                flags: 0,
-            },
-            fpartitions::PartitionInfo {
-                name: "other3".to_string(),
-                type_guid: fblock::Guid { value: [5u8; 16] },
-                instance_guid: fblock::Guid { value: [5u8; 16] },
-                start_block: 400,
-                num_blocks: 100,
-                flags: 0,
-            },
-            fpartitions::PartitionInfo {
-                name: "super".to_string(),
-                type_guid: fblock::Guid { value: [6u8; 16] },
-                instance_guid: fblock::Guid { value: [6u8; 16] },
-                start_block: 500,
-                num_blocks: 1,
-                flags: 0,
-            },
-            fpartitions::PartitionInfo {
-                name: "userdata".to_string(),
-                type_guid: fblock::Guid { value: [7u8; 16] },
-                instance_guid: fblock::Guid { value: [7u8; 16] },
-                start_block: 501,
-                num_blocks: 1,
-                flags: 0,
-            },
+            make_partition_info(
+                "other1",
+                fblock::Guid { value: [1u8; 16] },
+                fblock::Guid { value: [1u8; 16] },
+                40,
+                10,
+                0,
+            ),
+            make_partition_info(
+                "super_and_userdata",
+                fblock::Guid { value: [2u8; 16] },
+                fblock::Guid { value: [2u8; 16] },
+                50,
+                150,
+                0,
+            ),
+            make_partition_info(
+                "other2",
+                fblock::Guid { value: [4u8; 16] },
+                fblock::Guid { value: [4u8; 16] },
+                200,
+                25,
+                0,
+            ),
+            make_partition_info(
+                "other3",
+                fblock::Guid { value: [5u8; 16] },
+                fblock::Guid { value: [5u8; 16] },
+                400,
+                100,
+                0,
+            ),
+            make_partition_info(
+                "super",
+                fblock::Guid { value: [6u8; 16] },
+                fblock::Guid { value: [6u8; 16] },
+                500,
+                1,
+                0,
+            ),
+            make_partition_info(
+                "userdata",
+                fblock::Guid { value: [7u8; 16] },
+                fblock::Guid { value: [7u8; 16] },
+                501,
+                1,
+                0,
+            ),
         ]
     } else {
-        initial_partitions.clone()
+        initial_partitions.iter().map(entry_to_info).collect()
     };
     assert_eq!(found_partitions, expected_partitions);
 }
@@ -292,30 +330,30 @@ async fn test_commit_transaction_with_overlay(overlay_enabled: bool) {
     };
 
     let initial_partitions = vec![
-        fpartitions::PartitionInfo {
-            name: "other1".to_string(),
-            type_guid: fblock::Guid { value: [1u8; 16] },
-            instance_guid: fblock::Guid { value: [1u8; 16] },
-            start_block: 40,
-            num_blocks: 10,
-            flags: 0,
-        },
-        fpartitions::PartitionInfo {
-            name: "super".to_string(),
-            type_guid: fblock::Guid { value: [2u8; 16] },
-            instance_guid: fblock::Guid { value: [2u8; 16] },
-            start_block: 50,
-            num_blocks: 100,
-            flags: 0,
-        },
-        fpartitions::PartitionInfo {
-            name: "userdata".to_string(),
-            type_guid: fblock::Guid { value: [3u8; 16] },
-            instance_guid: fblock::Guid { value: [3u8; 16] },
-            start_block: 150,
-            num_blocks: 50,
-            flags: 0,
-        },
+        make_partition_entry(
+            "other1",
+            fblock::Guid { value: [1u8; 16] },
+            fblock::Guid { value: [1u8; 16] },
+            40,
+            10,
+            0,
+        ),
+        make_partition_entry(
+            "super",
+            fblock::Guid { value: [2u8; 16] },
+            fblock::Guid { value: [2u8; 16] },
+            50,
+            100,
+            0,
+        ),
+        make_partition_entry(
+            "userdata",
+            fblock::Guid { value: [3u8; 16] },
+            fblock::Guid { value: [3u8; 16] },
+            150,
+            50,
+            0,
+        ),
     ];
 
     let partitions_admin =
@@ -350,19 +388,11 @@ async fn test_commit_transaction_with_overlay(overlay_enabled: bool) {
         >(&partition_service_dir, &format!("{}/volume", partition))
         .unwrap();
 
-        let metadata =
+        let mut partition_info =
             volume.get_metadata().await.expect("FIDL error").expect("Failed to GetMetadata");
-        let mut partition_info = fpartitions::PartitionInfo {
-            name: metadata.name.unwrap(),
-            type_guid: metadata.type_guid.unwrap(),
-            instance_guid: metadata.instance_guid.unwrap(),
-            start_block: metadata.start_block_offset.unwrap(),
-            num_blocks: metadata.num_blocks.unwrap(),
-            flags: metadata.flags.unwrap(),
-        };
         eprintln!("{partition}: {partition_info:?}");
 
-        if partition_info.name == "other1" {
+        if partition_info.name.as_deref() == Some("other1") {
             let partitions_manager = connect_to_protocol_at_dir_root::<
                 fpartitions::PartitionsManagerProxy,
             >(gpt.exposed_dir())
@@ -372,7 +402,6 @@ async fn test_commit_transaction_with_overlay(overlay_enabled: bool) {
                 .await
                 .expect("FIDL error")
                 .expect("Failed to create transaction");
-
             let part = fuchsia_component::client::connect_to_named_protocol_at_dir_root::<
                 fpartitions::PartitionMarker,
             >(&partition_service_dir, &format!("{}/partition", partition))
@@ -391,67 +420,59 @@ async fn test_commit_transaction_with_overlay(overlay_enabled: bool) {
                 .await
                 .expect("FIDL error")
                 .expect("Failed to commit");
-            let metadata =
+            partition_info =
                 volume.get_metadata().await.expect("FIDL error").expect("Failed to GetMetadata");
-            partition_info = fpartitions::PartitionInfo {
-                name: metadata.name.unwrap(),
-                type_guid: metadata.type_guid.unwrap(),
-                instance_guid: metadata.instance_guid.unwrap(),
-                start_block: metadata.start_block_offset.unwrap(),
-                num_blocks: metadata.num_blocks.unwrap(),
-                flags: metadata.flags.unwrap(),
-            };
         }
 
         found_partitions.push(partition_info);
     }
-    found_partitions.sort_by_key(|a| a.start_block);
+    found_partitions.sort_by_key(|a| a.start_block_offset);
 
     let expected_partitions = if overlay_enabled {
         vec![
-            fpartitions::PartitionInfo {
-                name: "other1".to_string(),
-                type_guid: fblock::Guid { value: [1u8; 16] },
-                instance_guid: fblock::Guid { value: [1u8; 16] },
-                start_block: 40,
-                num_blocks: 10,
-                flags: 1234,
-            },
-            fpartitions::PartitionInfo {
-                name: "super_and_userdata".to_string(),
-                type_guid: fblock::Guid { value: [2u8; 16] },
-                instance_guid: fblock::Guid { value: [2u8; 16] },
-                start_block: 50,
-                num_blocks: 150,
-                flags: 0,
-            },
+            make_partition_info(
+                "other1",
+                fblock::Guid { value: [1u8; 16] },
+                fblock::Guid { value: [1u8; 16] },
+                40,
+                10,
+                1234,
+            ),
+            make_partition_info(
+                "super_and_userdata",
+                fblock::Guid { value: [2u8; 16] },
+                fblock::Guid { value: [2u8; 16] },
+                50,
+                150,
+                0,
+            ),
         ]
     } else {
         vec![
-            fpartitions::PartitionInfo {
-                name: "other1".to_string(),
-                type_guid: fblock::Guid { value: [1u8; 16] },
-                instance_guid: fblock::Guid { value: [1u8; 16] },
-                start_block: 40,
-                num_blocks: 10,
-                flags: 1234,
-            },
-            fpartitions::PartitionInfo {
-                name: "super".to_string(),
-                type_guid: fblock::Guid { value: [2u8; 16] },
-                instance_guid: fblock::Guid { value: [2u8; 16] },
-                start_block: 50,
-                num_blocks: 100,
-                flags: 0,
-            },
-            fpartitions::PartitionInfo {
-                name: "userdata".to_string(),
-                type_guid: fblock::Guid { value: [3u8; 16] },
-                instance_guid: fblock::Guid { value: [3u8; 16] },
-                start_block: 150,
-                num_blocks: 50,
-                flags: 0,
-            },
+            make_partition_info(
+                "other1",
+                fblock::Guid { value: [1u8; 16] },
+                fblock::Guid { value: [1u8; 16] },
+                40,
+                10,
+                1234,
+            ),
+            make_partition_info(
+                "super",
+                fblock::Guid { value: [2u8; 16] },
+                fblock::Guid { value: [2u8; 16] },
+                50,
+                100,
+                0,
+            ),
+            make_partition_info(
+                "userdata",
+                fblock::Guid { value: [3u8; 16] },
+                fblock::Guid { value: [3u8; 16] },
+                150,
+                50,
+                0,
+            ),
         ]
     };
     assert_eq!(found_partitions, expected_partitions);

@@ -244,7 +244,7 @@ void BlockDevice::GetMetadata(GetMetadataCompleter::Sync& completer) {
   };
 
   fidl::Arena arena;
-  auto response = fuchsia_storage_block::wire::BlockGetMetadataResponse::Builder(arena);
+  auto response = fuchsia_storage_block::wire::PartitionInfo::Builder(arena);
   response.name(
       fidl::StringView::FromExternal(metadata.name, strnlen(metadata.name, sizeof(metadata.name))));
   if (type_guid.value != kNilGuid.value) {

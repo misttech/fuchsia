@@ -623,12 +623,13 @@ impl GptManager {
     ) -> Result<Vec<fpartitions::PartitionInfo>, zx::Status> {
         fn convert_partition_info(info: &gpt::PartitionInfo) -> fpartitions::PartitionInfo {
             fpartitions::PartitionInfo {
-                name: info.label.to_string(),
-                type_guid: fblock::Guid { value: info.type_guid.to_bytes() },
-                instance_guid: fblock::Guid { value: info.instance_guid.to_bytes() },
-                start_block: info.start_block,
-                num_blocks: info.num_blocks,
-                flags: info.flags,
+                name: Some(info.label.to_string()),
+                type_guid: Some(fblock::Guid { value: info.type_guid.to_bytes() }),
+                instance_guid: Some(fblock::Guid { value: info.instance_guid.to_bytes() }),
+                start_block_offset: Some(info.start_block),
+                num_blocks: Some(info.num_blocks),
+                flags: Some(info.flags),
+                ..Default::default()
             }
         }
 
@@ -1639,7 +1640,7 @@ mod tests {
         );
         assert_eq!(info.max_transfer_size, 1024);
 
-        let metadata: fblock::BlockGetMetadataResponse =
+        let metadata: fblock::PartitionInfo =
             part_block.get_metadata().await.expect("FIDL error").expect("get_metadata failed");
         assert_eq!(metadata.name, Some(PART_NAME.to_string()));
         assert_eq!(metadata.type_guid.unwrap().value, PART_TYPE_GUID);
