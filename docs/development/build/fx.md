@@ -149,12 +149,14 @@ graph.
 
 ### What just happened?
 
-* You selected the product `workbench_eng` (run `fx list-products` for a list of
-  other product configurations).
+* You selected the product `workbench_eng` (run `fx list-products` for a list
+  of other product configurations).
 * You selected the board `x64`, which supports many typical boards based on the
-  `x64` architecture. (Note that `arm64` boards are less interchangeable, and you
-  will most likely need to give `fx set` the specific board, when building to an
-  `arm64` architecture. Run `fx list-boards` for a list of known board
+  `x64` architecture. (Note that `arm64` boards are less interchangeable, and
+  you will most likely need to give `fx set` the specific board when building
+  for an `arm64` target hardware. Note also that the generic `arm64` board
+  configuration does not support running in the emulator; you must use
+  `qemu-arm64` instead. Run `fx list-boards` for a list of known board
   configurations.)
 * You are ephemerally building `tests` as part of the `universe` package set.
 
@@ -597,7 +599,7 @@ $ fx --dir out/workbench set workbench_eng.x64
 $ fx build
 $ fx set-device <workbench-node-name>
 
-$ fx --dir out/core set core.arm64
+$ fx --dir out/core set core.qemu-arm64
 $ fx build
 $ fx set-device <core-node-name>
 

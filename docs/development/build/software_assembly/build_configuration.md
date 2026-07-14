@@ -21,6 +21,10 @@ included, and may also influence device-specific kernel parameters.
 
 The available boards can be listed using `fx list-boards`.
 
+Note: The generic `arm64` board configuration is intended for physical target
+hardware and does not support running in the emulator. To run Fuchsia in the
+emulator for ARM64, you must use the `qemu-arm64` board configuration instead.
+
 ## Products
 
 A product defines the software configuration that a build will produce. Most

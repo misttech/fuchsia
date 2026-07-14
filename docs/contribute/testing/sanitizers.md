@@ -64,9 +64,9 @@ Sanitizers are currently supported in local builds and in CI/CQ under the
 following configurations:
 
 *   `bringup.x64`
-*   `bringup.arm64`
+*   `bringup.arm64` (Note: Use `bringup.qemu-arm64` for local emulation)
 *   `core.x64`
-*   `core.arm64`
+*   `core.arm64` (Note: Use `core.qemu-arm64` for local emulation)
 *   `zbi_tests.x64`
 *   `zbi_tests.arm64`
 

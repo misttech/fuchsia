@@ -12,11 +12,11 @@ and `fx` has been configured.
 
 The `fx` command wraps the various tools used to configure, build and interact
 with Fuchsia. The `fx set` command is used to specify the product and the board
-architecture. For example, to set your build target to be Zircon for `arm64`,
-run the following command:
+architecture. For example, to set your build target to be Zircon for emulating
+`arm64`, run the following command:
 
 ```sh
-fx set bringup.arm64
+fx set bringup.qemu-arm64
 ```
 
 Fuchsia uses the concept of

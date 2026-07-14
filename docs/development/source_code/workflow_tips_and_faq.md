@@ -305,10 +305,10 @@ Now you have Zircon built, you can start building several other builds concurren
 $ fx --dir out/minimal.x64 set minimal.x64
 $ fx --dir out/minimal.x64 build > minimal.x64.build.log &
 
-$ fx --dir out/core.vim3 set core.arm64
+$ fx --dir out/core.vim3 set core.vim3
 $ fx --dir out/core.vim3 build > core.vim3.build.log &
 
-$ fx --dir out/minimal.vim3 set minimal.arm64
+$ fx --dir out/minimal.vim3 set minimal.vim3
 $ fx --dir out/minimal.vim3 build > minimal.vim3.build.log &
 ```
 

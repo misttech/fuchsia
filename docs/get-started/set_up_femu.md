@@ -26,6 +26,11 @@ the emulator environment. This guide uses `x64` for the board and
 supported boards and products, see the [Fuchsia emulator][femu-overview]
 page.)
 
+Important: The generic `arm64` board configuration is intended for physical
+target hardware and does not support running in the emulator. If you are
+building for an ARM64 emulator, you must use the `qemu-arm64` board
+configuration (for example, `terminal.qemu-arm64`).
+
 To build a FEMU Fuchsia image, do the following:
 
 1. Set the Fuchsia build configuration:

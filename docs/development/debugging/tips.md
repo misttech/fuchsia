@@ -60,7 +60,7 @@ To automatically symbolize the backtraces when running zircon, pass the logs
 through the symbolizer as follows:
 
 ```
-fx set bringup.x64 --variant asan  # or bringup.arm64
+fx set bringup.x64 --variant asan  # or bringup.qemu-arm64
 fx build
 fx ffx emu start --console | ffx debug symbolize
 ...

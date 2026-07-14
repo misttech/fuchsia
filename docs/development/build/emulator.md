@@ -58,6 +58,11 @@ When setting up FEMU using `fx set`, FEMU supports the following boards:
 *   `x64`
 *   `qemu-arm64`
 
+Important: The generic `arm64` board configuration does not support running
+in the emulator because it is configured for physical target hardware. To run
+Fuchsia in the emulator for ARM64, you must use the `qemu-arm64` board
+configuration (for example, `terminal.qemu-arm64`).
+
 With the Fuchsia SDK, FEMU supports pre-built images, including:
 
 *   `core.x64`

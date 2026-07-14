@@ -34,7 +34,7 @@ when invoking run-zircon-{arch}.
 
 ```
 # for aarch64
-fx set bringup.arm64
+fx set bringup.qemu-arm64
 fx build
 fx qemu
 

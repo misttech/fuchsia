@@ -46,7 +46,13 @@ Replace the following:
 
 * `PRODUCT`: The Fuchsia product that you want to build; for example, `core` and
   `workbench_eng`.
-* `BOARD`: The architecture of the product; for example, `x64`.
+* `BOARD`: The board configuration; for example, `x64` or `qemu-arm64`.
+
+Important: The generic `arm64` board configuration does not support running
+in the emulator because it is configured for physical target hardware. To build
+a Fuchsia image for the emulator on an ARM64 host, or to emulate an ARM64
+target, you must use the `qemu-arm64` board configuration (for example,
+`terminal.qemu-arm64`).
 
 The example command below sets the build configuration to `core.x64`:
 

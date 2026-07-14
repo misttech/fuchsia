@@ -47,6 +47,11 @@ Workbench is designed to be used with an Intel NUC or the Fuchsia emulator
         fx set workbench_eng.x64 --release
         ```
 
+        Note: Workbench does not support emulation on ARM64. To run Workbench
+        on ARM64, you must use a physical hardware device like VIM3. If you
+        must use the emulator on ARM64, you can run the `terminal` product
+        with the `qemu-arm64` board (for example, `terminal.qemu-arm64`).
+
     3.  Complete the [Start the Fuchsia emulator][start-femu] guide.
 
 <!-- Reference links -->
