@@ -116,7 +116,42 @@ void UsbVirtualDevice::CancelAll(CancelAllRequest& request, CancelAllCompleter::
 }
 
 void UsbVirtualDevice::GetHardwareInfo(GetHardwareInfoCompleter::Sync& completer) {
-  completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
+  constexpr uint16_t kMaxPacketSizeLimit = 65535;
+  std::vector<fuchsia_hardware_usb_dci::SupportedEndpointInfo> supported_types(3);
+  supported_types[0].endpoint_type(fuchsia_hardware_usb_descriptor::EndpointType::kBulk);
+  supported_types[0].max_packet_size_limit(kMaxPacketSizeLimit);
+  supported_types[1].endpoint_type(fuchsia_hardware_usb_descriptor::EndpointType::kInterrupt);
+  supported_types[1].max_packet_size_limit(kMaxPacketSizeLimit);
+  supported_types[2].endpoint_type(fuchsia_hardware_usb_descriptor::EndpointType::kIsochronous);
+  supported_types[2].max_packet_size_limit(kMaxPacketSizeLimit);
+
+  std::vector<fuchsia_hardware_usb_dci::EndpointInfo> endpoints;
+  endpoints.reserve(30);
+
+  // OUT endpoints 1 to 15.
+  for (uint8_t i = 1; i <= 15; i++) {
+    fuchsia_hardware_usb_dci::EndpointInfo ep_info;
+    ep_info.ep_address(i);
+    ep_info.supported_types(supported_types);
+    endpoints.push_back(std::move(ep_info));
+  }
+
+  // IN endpoints 0x81 to 0x8F.
+  for (uint8_t i = 1; i <= 15; i++) {
+    fuchsia_hardware_usb_dci::EndpointInfo ep_info;
+    ep_info.ep_address(static_cast<uint8_t>(0x80 | i));
+    ep_info.supported_types(supported_types);
+    endpoints.push_back(std::move(ep_info));
+  }
+
+  fuchsia_hardware_usb_dci::DciHardwareInfo info;
+  info.endpoints(std::move(endpoints));
+  info.supports_dynamic_ep_sizing(false);
+
+  fuchsia_hardware_usb_dci::UsbDciGetHardwareInfoResponse response;
+  response.info(std::move(info));
+
+  completer.Reply(zx::ok(std::move(response)));
 }
 
 void UsbVirtualDevice::AllocEndpoint(AllocEndpointRequest& request,

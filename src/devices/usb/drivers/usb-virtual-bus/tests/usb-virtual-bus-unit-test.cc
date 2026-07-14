@@ -1257,5 +1257,37 @@ TEST_F(UsbVirtualBusTest, UnexpectedDisconnectDuringDeviceNormalTest) {
   ASSERT_TRUE(ep_client.HandleOneEvent(event_handler).ok());
 }
 
+TEST_F(UsbVirtualBusTest, GetHardwareInfo) {
+  Enable();
+  auto dci_client = driver_test().Connect<fdci::UsbDciService::Device>();
+  ASSERT_TRUE(dci_client.is_ok());
+  fidl::SyncClient dci(std::move(*dci_client));
+
+  auto result = dci->GetHardwareInfo();
+  ASSERT_TRUE(result.is_ok()) << result.error_value().FormatDescription();
+
+  auto& info = result->info();
+  ASSERT_TRUE(info.endpoints().has_value());
+  // 15 OUT + 15 IN = 30 endpoints
+  ASSERT_EQ(info.endpoints()->size(), 30u);
+  EXPECT_FALSE(info.supports_dynamic_ep_sizing().value_or(true));
+
+  // Verify first OUT endpoint (0x01)
+  EXPECT_EQ(info.endpoints()->at(0).ep_address(), 0x01);
+  ASSERT_TRUE(info.endpoints()->at(0).supported_types().has_value());
+  EXPECT_EQ(info.endpoints()->at(0).supported_types()->size(), 3u);
+  EXPECT_EQ(info.endpoints()->at(0).supported_types()->at(0).endpoint_type(),
+            fuchsia_hardware_usb_descriptor::EndpointType::kBulk);
+  EXPECT_EQ(info.endpoints()->at(0).supported_types()->at(0).max_packet_size_limit(), 65535u);
+
+  // Verify first IN endpoint (0x81) at index 15
+  EXPECT_EQ(info.endpoints()->at(15).ep_address(), 0x81);
+  ASSERT_TRUE(info.endpoints()->at(15).supported_types().has_value());
+  EXPECT_EQ(info.endpoints()->at(15).supported_types()->size(), 3u);
+  EXPECT_EQ(info.endpoints()->at(15).supported_types()->at(0).endpoint_type(),
+            fuchsia_hardware_usb_descriptor::EndpointType::kBulk);
+  EXPECT_EQ(info.endpoints()->at(15).supported_types()->at(0).max_packet_size_limit(), 65535u);
+}
+
 }  // namespace
 }  // namespace usb_virtual_bus
