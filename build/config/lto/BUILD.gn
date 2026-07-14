@@ -143,13 +143,16 @@ config("lto-clang") {
 # compiler that other subclasses may exist outside this LTO unit. See
 # https://clang.llvm.org/docs/LTOVisibility.html for more information on the
 # annotation.
-config("lto-whole-program-devirtualization") {
-  cflags = [
+compiler_config("lto-whole-program-devirtualization") {
+  c_family_flags = [
     # Opt-in for whole-program devirtualization and virtual constant
     # propagation.
     "-fwhole-program-vtables",
   ]
-  ldflags = cflags
+}
+
+compiler_config("no-lto-whole-program-devirtualization") {
+  c_family_flags = [ "-fno-whole-program-vtables" ]
 }
 
 # Enables linker plugin LTO.
@@ -201,15 +204,9 @@ config("lto-rust") {
 #   configs += [ "//build/config/lto:no-lto" ]
 # ```
 # in any particular target to disable LTO.
-config("no-lto") {
-  cflags = [ "-fno-lto" ]
-
-  if (!is_fuchsia) {
-    cflags += [ "-fno-whole-program-vtables" ]
-  }
-
-  ldflags = cflags
-
+compiler_config("no-lto") {
+  c_family_flags = [ "-fno-lto" ]
+  configs = [ ":no-lto-whole-program-devirtualization" ]
   rustflags = [ "-Clto=off" ]
 }
 
