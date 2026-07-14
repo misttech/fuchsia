@@ -11,76 +11,64 @@
 
 #include "fidl/fuchsia.wlan.common/cpp/common_types.h"
 #include "fidl/fuchsia.wlan.ieee80211/cpp/natural_types.h"
-#include "fidl/fuchsia.wlan.softmac/cpp/wire_types.h"
-#include "lib/fidl/cpp/wire/array.h"
+#include "fidl/fuchsia.wlan.softmac/cpp/natural_types.h"
 
 namespace wlan {
 
-namespace wlan_common = fuchsia_wlan_common::wire;
-namespace wlan_tap = fuchsia_wlan_tap::wire;
-
-void ConvertTapPhyConfig(wlan_softmac::WlanSoftmacQueryResponse* resp,
-                         const wlan_tap::WlantapPhyConfig& tap_phy_config, fidl::AnyArena& arena) {
-  auto builder = wlan_softmac::WlanSoftmacQueryResponse::Builder(arena);
-
-  builder.sta_addr(tap_phy_config.sta_addr);
-  builder.mac_role(tap_phy_config.mac_role);
-  builder.supported_phys(tap_phy_config.supported_phys);
-  builder.hardware_capability(tap_phy_config.hardware_capability);
+void ConvertTapPhyConfig(fuchsia_wlan_softmac::WlanSoftmacQueryResponse* resp,
+                         const fuchsia_wlan_tap::WlantapPhyConfig& tap_phy_config) {
+  resp->sta_addr(tap_phy_config.sta_addr());
+  resp->mac_role(tap_phy_config.mac_role());
+  resp->supported_phys(tap_phy_config.supported_phys());
+  resp->hardware_capability(tap_phy_config.hardware_capability());
 
   size_t const band_cap_count =
-      std::min(tap_phy_config.bands.size(), static_cast<size_t>(wlan_common::kMaxBands));
+      std::min(tap_phy_config.bands().size(), static_cast<size_t>(fuchsia_wlan_common::kMaxBands));
 
-  std::vector<fuchsia_wlan_softmac::wire::WlanSoftmacBandCapability> softmac_band_caps;
+  std::vector<fuchsia_wlan_softmac::WlanSoftmacBandCapability> softmac_band_caps;
 
-  // FIDL type conversion from WlantapPhyConfig to WlanSoftmacBandCapability.
   for (size_t i = 0; i < band_cap_count; i++) {
-    auto tap_band_caps = tap_phy_config.bands[i];
-    auto softmac_band_caps_builder =
-        fuchsia_wlan_softmac::wire::WlanSoftmacBandCapability::Builder(arena);
+    auto tap_band_caps = tap_phy_config.bands()[i];
+    fuchsia_wlan_softmac::WlanSoftmacBandCapability softmac_band_cap;
+    softmac_band_cap.band(tap_band_caps.band());
 
-    softmac_band_caps_builder.band(tap_band_caps.band);
-
-    if (tap_band_caps.ht_caps != nullptr) {
-      softmac_band_caps_builder.ht_caps(tap_band_caps.ht_caps);
+    if (tap_band_caps.ht_caps().has_value()) {
+      softmac_band_cap.ht_caps(tap_band_caps.ht_caps().value());
     }
 
-    if (tap_band_caps.vht_caps != nullptr) {
-      softmac_band_caps_builder.vht_caps(tap_band_caps.vht_caps);
+    if (tap_band_caps.vht_caps().has_value()) {
+      softmac_band_cap.vht_caps(tap_band_caps.vht_caps().value());
     }
 
-    auto basic_rate_count = std::min<size_t>(tap_band_caps.rates.size(),
-                                             fuchsia_wlan_ieee80211::wire::kMaxSupportedBasicRates);
+    auto basic_rate_count = std::min<size_t>(tap_band_caps.rates().size(),
+                                             fuchsia_wlan_ieee80211::kMaxSupportedBasicRates);
     std::vector<uint8_t> basic_rates(basic_rate_count);
-    std::copy(tap_band_caps.rates.begin(), tap_band_caps.rates.begin() + basic_rate_count,
+    std::copy(tap_band_caps.rates().begin(), tap_band_caps.rates().begin() + basic_rate_count,
               basic_rates.begin());
-    softmac_band_caps_builder.basic_rates(fidl::VectorView(arena, basic_rates));
+    softmac_band_cap.basic_rates(std::move(basic_rates));
 
     auto operating_channel_count =
-        std::min<size_t>(tap_band_caps.operating_channels.size(),
+        std::min<size_t>(tap_band_caps.operating_channels().size(),
                          fuchsia::wlan::ieee80211::MAX_UNIQUE_CHANNEL_NUMBERS);
     std::vector<uint8_t> operating_channels(operating_channel_count);
-    std::copy(tap_band_caps.operating_channels.begin(),
-              tap_band_caps.operating_channels.begin() + operating_channel_count,
+    std::copy(tap_band_caps.operating_channels().begin(),
+              tap_band_caps.operating_channels().begin() + operating_channel_count,
               operating_channels.begin());
-    softmac_band_caps_builder.operating_channels(fidl::VectorView(arena, operating_channels));
+    softmac_band_cap.operating_channels(std::move(operating_channels));
 
-    softmac_band_caps.push_back(softmac_band_caps_builder.Build());
+    softmac_band_caps.push_back(std::move(softmac_band_cap));
   }
 
-  builder.band_caps(fidl::VectorView<fuchsia_wlan_softmac::wire::WlanSoftmacBandCapability>(
-      arena, softmac_band_caps));
-
-  *resp = builder.Build();
+  resp->band_caps(std::move(softmac_band_caps));
 }
 
-std::string RoleToString(wlan_common::WlanMacRole role) {
+std::string RoleToString(fuchsia_wlan_common::WlanMacRole role) {
   switch (role) {
-    case wlan_common::WlanMacRole::kClient:
+    case fuchsia_wlan_common::WlanMacRole::kClient:
       return "client";
-    case wlan_common::WlanMacRole::kAp:
+    case fuchsia_wlan_common::WlanMacRole::kAp:
       return "ap";
-    case wlan_common::WlanMacRole::kMesh:
+    case fuchsia_wlan_common::WlanMacRole::kMesh:
       return "mesh";
     default:
       return "invalid";

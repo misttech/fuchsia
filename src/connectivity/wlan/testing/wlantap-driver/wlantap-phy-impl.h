@@ -5,7 +5,7 @@
 #ifndef SRC_CONNECTIVITY_WLAN_TESTING_WLANTAP_DRIVER_WLANTAP_PHY_IMPL_H_
 #define SRC_CONNECTIVITY_WLAN_TESTING_WLANTAP_DRIVER_WLANTAP_PHY_IMPL_H_
 
-#include <fidl/fuchsia.wlan.phyimpl/cpp/driver/wire.h>
+#include <fidl/fuchsia.wlan.phyimpl/cpp/driver/fidl.h>
 #include <lib/zx/channel.h>
 #include <lib/zx/result.h>
 
@@ -19,7 +19,7 @@ namespace wlan {
 
 // Serves the WlanPhyImpl protocol. This also creates an instance of WlantapPhy, which lets the test
 // suite control the state of the mock driver.
-class WlanPhyImplDevice : public fdf::WireServer<fuchsia_wlan_phyimpl::WlanPhyImpl>,
+class WlanPhyImplDevice : public fdf::Server<fuchsia_wlan_phyimpl::WlanPhyImpl>,
                           public std::enable_shared_from_this<WlanPhyImplDevice> {
   using NodeControllerClient = fidl::ClientEnd<fuchsia_driver_framework::NodeController>;
 
@@ -30,54 +30,47 @@ class WlanPhyImplDevice : public fdf::WireServer<fuchsia_wlan_phyimpl::WlanPhyIm
   // in its implementation can create additional references to the std::shared_ptr
   // for use by WlantapPhy and shutdown callbacks.
   static std::shared_ptr<WlanPhyImplDevice> New(
-      const std::shared_ptr<const WlantapDriverContext>& context, zx::channel user_channel,
-      const std::shared_ptr<const wlan_tap::WlantapPhyConfig>& phy_config,
-      NodeControllerClient phy_controller);
+      WlantapDriverContext context, zx::channel user_channel,
+      const fuchsia_wlan_tap::WlantapPhyConfig& phy_config, NodeControllerClient phy_controller);
 
   // WlanPhyImpl protocol implementation
-  void Init(InitRequestView request, fdf::Arena& arena, InitCompleter::Sync& completer) override;
-  void GetSupportedMacRoles(fdf::Arena& arena,
-                            GetSupportedMacRolesCompleter::Sync& completer) override;
-  void CreateIface(CreateIfaceRequestView request, fdf::Arena& arena,
-                   CreateIfaceCompleter::Sync& completer) override;
-  void DestroyIface(DestroyIfaceRequestView request, fdf::Arena& arena,
-                    DestroyIfaceCompleter::Sync& completer) override;
-  void SetCountry(SetCountryRequestView request, fdf::Arena& arena,
-                  SetCountryCompleter::Sync& completer) override;
-  void ClearCountry(fdf::Arena& arena, ClearCountryCompleter::Sync& completer) override;
-  void GetCountry(fdf::Arena& arena, GetCountryCompleter::Sync& completer) override;
-  void SetPowerSaveMode(SetPowerSaveModeRequestView request, fdf::Arena& arena,
+  void Init(InitRequest& request, InitCompleter::Sync& completer) override;
+  void GetSupportedMacRoles(GetSupportedMacRolesCompleter::Sync& completer) override;
+  void CreateIface(CreateIfaceRequest& request, CreateIfaceCompleter::Sync& completer) override;
+  void DestroyIface(DestroyIfaceRequest& request, DestroyIfaceCompleter::Sync& completer) override;
+  void SetCountry(SetCountryRequest& request, SetCountryCompleter::Sync& completer) override;
+  void ClearCountry(ClearCountryCompleter::Sync& completer) override;
+  void GetCountry(GetCountryCompleter::Sync& completer) override;
+  void SetPowerSaveMode(SetPowerSaveModeRequest& request,
                         SetPowerSaveModeCompleter::Sync& completer) override;
-  void GetPowerSaveMode(fdf::Arena& arena, GetPowerSaveModeCompleter::Sync& completer) override;
-  void PowerDown(fdf::Arena& arena, PowerDownCompleter::Sync& completer) override;
-  void PowerUp(fdf::Arena& arena, PowerUpCompleter::Sync& completer) override;
-  void Reset(fdf::Arena& arena, ResetCompleter::Sync& completer) override;
-  void GetPowerState(fdf::Arena& arena, GetPowerStateCompleter::Sync& completer) override;
-  void SetBtCoexistenceMode(SetBtCoexistenceModeRequestView request, fdf::Arena& arena,
+  void GetPowerSaveMode(GetPowerSaveModeCompleter::Sync& completer) override;
+  void PowerDown(PowerDownCompleter::Sync& completer) override;
+  void PowerUp(PowerUpCompleter::Sync& completer) override;
+  void Reset(ResetCompleter::Sync& completer) override;
+  void GetPowerState(GetPowerStateCompleter::Sync& completer) override;
+  void SetBtCoexistenceMode(SetBtCoexistenceModeRequest& request,
                             SetBtCoexistenceModeCompleter::Sync& completer) override;
-  void SetTxPowerScenario(SetTxPowerScenarioRequestView request, fdf::Arena& arena,
+  void SetTxPowerScenario(SetTxPowerScenarioRequest& request,
                           SetTxPowerScenarioCompleter::Sync& completer) override;
-  void ResetTxPowerScenario(fdf::Arena& arena,
-                            ResetTxPowerScenarioCompleter::Sync& completer) override;
-  void GetTxPowerScenario(fdf::Arena& arena, GetTxPowerScenarioCompleter::Sync& completer) override;
+  void ResetTxPowerScenario(ResetTxPowerScenarioCompleter::Sync& completer) override;
+  void GetTxPowerScenario(GetTxPowerScenarioCompleter::Sync& completer) override;
   void handle_unknown_method(
       fidl::UnknownMethodMetadata<fuchsia_wlan_phyimpl::WlanPhyImpl> metadata,
       fidl::UnknownMethodCompleter::Sync& completer) override {}
 
  private:
-  WlanPhyImplDevice(const std::shared_ptr<const WlantapDriverContext>& context,
-                    const std::shared_ptr<const wlan_tap::WlantapPhyConfig>& phy_config);
+  WlanPhyImplDevice(WlantapDriverContext context,
+                    const fuchsia_wlan_tap::WlantapPhyConfig& phy_config);
   void Init(zx::channel user_channel, NodeControllerClient phy_controller);
 
-  zx_status_t CreateWlanSoftmac(wlan_common::WlanMacRole role,
+  zx_status_t CreateWlanSoftmac(fuchsia_wlan_common::WlanMacRole role,
                                 zx::channel mlme_channel) __TA_NO_THREAD_SAFETY_ANALYSIS;
   zx_status_t AddWlanSoftmacChild(std::string_view name,
                                   fidl::ServerEnd<fuchsia_driver_framework::NodeController> server);
   zx::result<std::unique_ptr<WlantapMac>> ServeWlanSoftmac(std::string_view name,
-                                                           wlan_common::WlanMacRole role,
+                                                           fuchsia_wlan_common::WlanMacRole role,
                                                            zx::channel mlme_channel);
 
-  fit::result<zx_status_t> DestroyIface();
   void ShutdownComplete();
 
   struct SlotEmpty {};
@@ -92,9 +85,9 @@ class WlanPhyImplDevice : public fdf::WireServer<fuchsia_wlan_phyimpl::WlanPhyIm
   };
   using IfaceSlot = std::variant<SlotEmpty, SlotCreating, SlotActive, SlotDestroying>;
 
-  const std::shared_ptr<const WlantapDriverContext> driver_context_;
+  WlantapDriverContext driver_context_;
 
-  const std::shared_ptr<const wlan_tap::WlantapPhyConfig> phy_config_{};
+  const fuchsia_wlan_tap::WlantapPhyConfig phy_config_{};
 
   std::string name_{"wlanphyimpl"};
 

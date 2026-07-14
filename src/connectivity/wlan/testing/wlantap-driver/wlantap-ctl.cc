@@ -5,7 +5,6 @@
 #include "wlantap-ctl.h"
 
 #include <fidl/fuchsia.wlan.tap/cpp/fidl.h>
-#include <fidl/fuchsia.wlan.tap/cpp/wire.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 #include <lib/driver/logging/cpp/logger.h>
 
@@ -15,24 +14,19 @@
 
 namespace wlan {
 
-void WlantapCtlServer::CreatePhy(CreatePhyRequestView request,
-                                 CreatePhyCompleter::Sync& completer) {
+void WlantapCtlServer::CreatePhy(CreatePhyRequest& request, CreatePhyCompleter::Sync& completer) {
   WLAN_TRACE_DURATION();
-  phy_config_arena_.Reset();
 
-  auto natural_config = fidl::ToNatural(request->config);
-  auto wire_config = fidl::ToWire(phy_config_arena_, std::move(natural_config));
-  const auto phy_config = std::make_shared<const wlan_tap::WlantapPhyConfig>(wire_config);
-
-  auto instance_name = phy_config->name.get();
+  const auto phy_config = request.config();
+  auto instance_name = phy_config.name();
 
   auto endpoints = fidl::CreateEndpoints<fuchsia_driver_framework::NodeController>();
   if (endpoints.is_error()) {
-    fdf::error("Failed to create endpoints: {}", endpoints);
+    fdf::error("Failed to create endpoints: {}", endpoints.status_string());
     completer.Reply(endpoints.error_value());
   }
 
-  auto impl = WlanPhyImplDevice::New(driver_context_, request->proxy.TakeChannel(), phy_config,
+  auto impl = WlanPhyImplDevice::New(driver_context_, request.proxy().TakeChannel(), phy_config,
                                      std::move(endpoints->client));
 
   zx_status_t status = ServeWlanPhyImplProtocol(instance_name, std::move(impl));
@@ -57,16 +51,15 @@ zx_status_t WlantapCtlServer::AddWlanPhyImplChild(
   WLAN_TRACE_DURATION();
   fidl::Arena arena;
 
-  auto offers = std::vector{fdf::MakeOffer2<fuchsia_wlan_phyimpl::Service>(arena, name)};
-  auto args = fuchsia_driver_framework::wire::NodeAddArgs::Builder(arena)
-                  .name(name)
-                  .offers2(offers)
-                  .Build();
+  auto offers = std::vector{fdf::MakeOffer2<fuchsia_wlan_phyimpl::Service>(std::string(name))};
+  fuchsia_driver_framework::NodeAddArgs args;
+  args.name(std::string(name)).offers2(std::move(offers));
 
-  auto res = driver_context_->node_client()->AddChild(args, std::move(server), {});
-  if (!res.ok()) {
-    fdf::error("Failed to add WlanPhyImpl child: {}", res.status_string());
-    return res.status();
+  auto res = driver_context_.node_client()->AddChild(
+      {{.args = std::move(args), .controller = std::move(server)}});
+  if (res.is_error()) {
+    fdf::error("Failed to add WlanPhyImpl child: {}", res.error_value().FormatDescription());
+    return ZX_ERR_INTERNAL;
   }
   return ZX_OK;
 }
@@ -82,7 +75,7 @@ zx_status_t WlantapCtlServer::ServeWlanPhyImplProtocol(std::string_view name,
   fuchsia_wlan_phyimpl::Service::InstanceHandler handler(
       {.wlan_phy_impl = std::move(protocol_handler)});
 
-  zx::result result = driver_context_->outgoing()->AddService<fuchsia_wlan_phyimpl::Service>(
+  zx::result result = driver_context_.outgoing()->AddService<fuchsia_wlan_phyimpl::Service>(
       std::move(handler), name);
 
   if (result.is_error()) {

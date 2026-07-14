@@ -5,21 +5,17 @@
 #ifndef SRC_CONNECTIVITY_WLAN_TESTING_WLANTAP_DRIVER_UTILS_H_
 #define SRC_CONNECTIVITY_WLAN_TESTING_WLANTAP_DRIVER_UTILS_H_
 
-#include <fidl/fuchsia.wlan.softmac/cpp/driver/wire.h>
-#include <fidl/fuchsia.wlan.tap/cpp/wire.h>
+#include <fidl/fuchsia.wlan.softmac/cpp/driver/fidl.h>
+#include <fidl/fuchsia.wlan.tap/cpp/fidl.h>
 #include <fuchsia/wlan/common/cpp/fidl.h>
 
 #include <string>
 
-namespace wlan_tap = fuchsia_wlan_tap::wire;
-namespace wlan_softmac = fuchsia_wlan_softmac::wire;
-namespace wlan_common = fuchsia_wlan_common::wire;
-
 namespace wlan {
 
-std::string RoleToString(wlan_common::WlanMacRole role);
-void ConvertTapPhyConfig(wlan_softmac::WlanSoftmacQueryResponse* resp,
-                         const wlan_tap::WlantapPhyConfig& tap_phy_config, fidl::AnyArena& arena);
+std::string RoleToString(fuchsia_wlan_common::WlanMacRole role);
+void ConvertTapPhyConfig(fuchsia_wlan_softmac::WlanSoftmacQueryResponse* resp,
+                         const fuchsia_wlan_tap::WlantapPhyConfig& tap_phy_config);
 }  // namespace wlan
 
 #endif  // SRC_CONNECTIVITY_WLAN_TESTING_WLANTAP_DRIVER_UTILS_H_

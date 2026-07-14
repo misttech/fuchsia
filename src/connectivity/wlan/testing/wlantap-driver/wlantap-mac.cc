@@ -20,18 +20,17 @@ constexpr size_t kWlanSoftmacQueryResponseBufferSize = 5120;
 
 namespace wlan {
 
-WlantapMac::WlantapMac(Listener* listener, wlan_common::WlanMacRole role,
-                       const std::shared_ptr<const wlan_tap::WlantapPhyConfig>& config,
-                       zx::channel sme_channel)
+WlantapMac::WlantapMac(Listener* listener, fuchsia_wlan_common::WlanMacRole role,
+                       const fuchsia_wlan_tap::WlantapPhyConfig& config, zx::channel sme_channel)
     : listener_(listener), role_(role), phy_config_(config), sme_channel_(std::move(sme_channel)) {}
 
-void WlantapMac::Query(fdf::Arena& arena, QueryCompleter::Sync& completer) {
+void WlantapMac::Query(QueryCompleter::Sync& completer) {
   WLAN_TRACE_DURATION();
-  fdf::info("Query(): {}", phy_config_->hardware_capability);
+  fdf::info("Query(): {}", phy_config_.hardware_capability());
   fidl::Arena<kWlanSoftmacQueryResponseBufferSize> table_arena;
-  wlan_softmac::WlanSoftmacQueryResponse resp;
-  ConvertTapPhyConfig(&resp, *phy_config_, table_arena);
-  completer.buffer(arena).ReplySuccess(resp);
+  fuchsia_wlan_softmac::WlanSoftmacQueryResponse resp;
+  ConvertTapPhyConfig(&resp, phy_config_);
+  completer.Reply(fit::ok(resp));
 }
 
 fidl::ProtocolHandler<fuchsia_wlan_softmac::WlanSoftmac> WlantapMac::ProtocolHandler() {
@@ -40,152 +39,140 @@ fidl::ProtocolHandler<fuchsia_wlan_softmac::WlanSoftmac> WlantapMac::ProtocolHan
                                  fidl::kIgnoreBindingClosure);
 }
 
-void WlantapMac::QueryDiscoverySupport(fdf::Arena& arena,
-                                       QueryDiscoverySupportCompleter::Sync& completer) {
+void WlantapMac::QueryDiscoverySupport(QueryDiscoverySupportCompleter::Sync& completer) {
   WLAN_TRACE_DURATION();
-  completer.buffer(arena).ReplySuccess(phy_config_->discovery_support);
+  completer.Reply(fit::ok(phy_config_.discovery_support()));
 }
 
-void WlantapMac::QueryMacSublayerSupport(fdf::Arena& arena,
-                                         QueryMacSublayerSupportCompleter::Sync& completer) {
+void WlantapMac::QueryMacSublayerSupport(QueryMacSublayerSupportCompleter::Sync& completer) {
   WLAN_TRACE_DURATION();
-  completer.buffer(arena).ReplySuccess(phy_config_->mac_sublayer_support);
+  completer.Reply(fit::ok(phy_config_.mac_sublayer_support()));
 }
 
-void WlantapMac::QuerySecuritySupport(fdf::Arena& arena,
-                                      QuerySecuritySupportCompleter::Sync& completer) {
+void WlantapMac::QuerySecuritySupport(QuerySecuritySupportCompleter::Sync& completer) {
   WLAN_TRACE_DURATION();
-  completer.buffer(arena).ReplySuccess(phy_config_->security_support);
+  completer.Reply(fit::ok(phy_config_.security_support()));
 }
 
 void WlantapMac::QuerySpectrumManagementSupport(
-    fdf::Arena& arena, QuerySpectrumManagementSupportCompleter::Sync& completer) {
+    QuerySpectrumManagementSupportCompleter::Sync& completer) {
   WLAN_TRACE_DURATION();
-  completer.buffer(arena).ReplySuccess(phy_config_->spectrum_management_support);
+  completer.Reply(fit::ok(phy_config_.spectrum_management_support()));
 }
 
-void WlantapMac::Start(StartRequestView request, fdf::Arena& arena,
-                       StartCompleter::Sync& completer) {
+void WlantapMac::Start(StartRequest& request, StartCompleter::Sync& completer) {
   WLAN_TRACE_DURATION();
   fdf::info("Calling Start()");
   if (!sme_channel_.is_valid()) {
-    completer.buffer(arena).ReplyError(ZX_ERR_ALREADY_BOUND);
+    completer.Reply(fit::error(ZX_ERR_ALREADY_BOUND));
     return;
   }
 
-  listener_->WlantapMacStart(std::move(request->ifc));
-  completer.buffer(arena).ReplySuccess(std::move(sme_channel_));
+  listener_->WlantapMacStart(std::move(request.ifc()));
+  completer.Reply(fit::ok(std::move(sme_channel_)));
 }
 
-void WlantapMac::Stop(fdf::Arena& arena, StopCompleter::Sync& completer) {
+void WlantapMac::Stop(StopCompleter::Sync& completer) {
   WLAN_TRACE_DURATION();
   listener_->WlantapMacStop();
-  completer.buffer(arena).Reply();
+  completer.Reply();
 }
 
-void WlantapMac::QueueTx(QueueTxRequestView request, fdf::Arena& arena,
-                         QueueTxCompleter::Sync& completer) {
+void WlantapMac::QueueTx(QueueTxRequest& request, QueueTxCompleter::Sync& completer) {
   WLAN_TRACE_DURATION();
-  listener_->WlantapMacQueueTx(request->packet);
-  completer.buffer(arena).ReplySuccess();
+  listener_->WlantapMacQueueTx(request.packet());
+  completer.Reply(fit::ok());
 }
 
-void WlantapMac::SetChannel(SetChannelRequestView request, fdf::Arena& arena,
-                            SetChannelCompleter::Sync& completer) {
+void WlantapMac::SetChannel(SetChannelRequest& request, SetChannelCompleter::Sync& completer) {
   WLAN_TRACE_DURATION();
-  if (!wlan::common::IsValidChan(request->channel())) {
-    completer.buffer(arena).ReplyError(ZX_ERR_INVALID_ARGS);
+  fuchsia_wlan_ieee80211::wire::WlanChannel wire_chan{
+      .primary = request.channel().value().primary(),
+      .cbw = request.channel().value().cbw(),
+      .secondary80 = request.channel().value().secondary80()};
+  if (!wlan::common::IsValidChan(wire_chan)) {
+    completer.Reply(fit::error(ZX_ERR_INVALID_ARGS));
     return;
   }
-  listener_->WlantapMacSetChannel(request->channel());
-  completer.buffer(arena).ReplySuccess();
+  listener_->WlantapMacSetChannel(request.channel().value());
+  completer.Reply(fit::ok());
 }
 
-void WlantapMac::JoinBss(JoinBssRequestView request, fdf::Arena& arena,
-                         JoinBssCompleter::Sync& completer) {
+void WlantapMac::JoinBss(JoinBssRequest& request, JoinBssCompleter::Sync& completer) {
   WLAN_TRACE_DURATION();
-  bool expected_remote = role_ == wlan_common::WlanMacRole::kClient;
-  if (request->join_request.remote() != expected_remote) {
-    completer.buffer(arena).ReplyError(ZX_ERR_INVALID_ARGS);
+  bool expected_remote = role_ == fuchsia_wlan_common::WlanMacRole::kClient;
+  if (request.join_request().remote() != expected_remote) {
+    completer.Reply(fit::error(ZX_ERR_INVALID_ARGS));
     return;
   }
-  listener_->WlantapMacJoinBss(request->join_request);
-  completer.buffer(arena).ReplySuccess();
+  listener_->WlantapMacJoinBss(request.join_request());
+  completer.Reply(fit::ok());
 }
 
-void WlantapMac::EnableBeaconing(EnableBeaconingRequestView request, fdf::Arena& arena,
+void WlantapMac::EnableBeaconing(EnableBeaconingRequest& request,
                                  EnableBeaconingCompleter::Sync& completer) {
   WLAN_TRACE_DURATION();
 
   // This is the test driver, so we can just pretend beaconing was enabled.
-  completer.buffer(arena).ReplySuccess();
+  completer.Reply(fit::ok());
 }
 
-void WlantapMac::DisableBeaconing(fdf::Arena& arena, DisableBeaconingCompleter::Sync& completer) {
+void WlantapMac::DisableBeaconing(DisableBeaconingCompleter::Sync& completer) {
   WLAN_TRACE_DURATION();
 
   // This is the test driver, so we can just pretend the beacon was configured.
-  completer.buffer(arena).ReplySuccess();
+  completer.Reply(fit::ok());
 }
 
-void WlantapMac::StartPassiveScan(StartPassiveScanRequestView request, fdf::Arena& arena,
+void WlantapMac::StartPassiveScan(StartPassiveScanRequest& request,
                                   StartPassiveScanCompleter::Sync& completer) {
   WLAN_TRACE_DURATION();
   uint64_t scan_id = 111;
   listener_->WlantapMacStartScan(scan_id);
-  fidl::Arena fidl_arena;
-  auto builder =
-      fuchsia_wlan_softmac::wire::WlanSoftmacBaseStartPassiveScanResponse::Builder(fidl_arena);
-  builder.scan_id(scan_id);
-  completer.buffer(arena).ReplySuccess(builder.Build());
+  fuchsia_wlan_softmac::WlanSoftmacBaseStartPassiveScanResponse response{{.scan_id = scan_id}};
+  completer.Reply(fit::ok(response));
 }
 
-void WlantapMac::StartActiveScan(StartActiveScanRequestView request, fdf::Arena& arena,
+void WlantapMac::StartActiveScan(StartActiveScanRequest& request,
                                  StartActiveScanCompleter::Sync& completer) {
   WLAN_TRACE_DURATION();
   uint64_t scan_id = 222;
   listener_->WlantapMacStartScan(scan_id);
 
-  fidl::Arena fidl_arena;
-  auto builder =
-      fuchsia_wlan_softmac::wire::WlanSoftmacBaseStartActiveScanResponse::Builder(fidl_arena);
-  builder.scan_id(scan_id);
-  completer.buffer(arena).ReplySuccess(builder.Build());
+  fuchsia_wlan_softmac::WlanSoftmacBaseStartActiveScanResponse response{{.scan_id = scan_id}};
+  completer.Reply(fit::ok(response));
 }
 
-void WlantapMac::InstallKey(InstallKeyRequestView request, fdf::Arena& arena,
-                            InstallKeyCompleter::Sync& completer) {
+void WlantapMac::InstallKey(InstallKeyRequest& request, InstallKeyCompleter::Sync& completer) {
   WLAN_TRACE_DURATION();
-  listener_->WlantapMacSetKey(*request);
-  completer.buffer(arena).ReplySuccess();
+  listener_->WlantapMacSetKey(request);
+  completer.Reply(fit::ok());
 }
 
-void WlantapMac::NotifyAssociationComplete(NotifyAssociationCompleteRequestView request,
-                                           fdf::Arena& arena,
+void WlantapMac::NotifyAssociationComplete(NotifyAssociationCompleteRequest& request,
                                            NotifyAssociationCompleteCompleter::Sync& completer) {
   WLAN_TRACE_DURATION();
 
   // This is the test driver, so we can just pretend the association was configured.
   // TODO(https://fxbug.dev/42103599): Evaluate the use and implement
-  completer.buffer(arena).ReplySuccess();
+  completer.Reply(fit::ok());
 }
 
-void WlantapMac::ClearAssociation(ClearAssociationRequestView request, fdf::Arena& arena,
+void WlantapMac::ClearAssociation(ClearAssociationRequest& request,
                                   ClearAssociationCompleter::Sync& completer) {
   WLAN_TRACE_DURATION();
 
   // TODO(https://fxbug.dev/42103599): Evaluate the use and implement.
   // Association is never configured, so there is nothing to clear.
-  completer.buffer(arena).ReplySuccess();
+  completer.Reply(fit::ok());
 }
 
-void WlantapMac::CancelScan(CancelScanRequestView request, fdf::Arena& arena,
-                            CancelScanCompleter::Sync& completer) {
+void WlantapMac::CancelScan(CancelScanRequest& request, CancelScanCompleter::Sync& completer) {
   WLAN_TRACE_DURATION();
   ZX_PANIC("CancelScan is not supported.");
 }
 
-void WlantapMac::UpdateWmmParameters(UpdateWmmParametersRequestView request, fdf::Arena& arena,
+void WlantapMac::UpdateWmmParameters(UpdateWmmParametersRequest& request,
                                      UpdateWmmParametersCompleter::Sync& completer) {
   WLAN_TRACE_DURATION();
   ZX_PANIC("UpdateWmmParameters is not supported.");

@@ -11,13 +11,13 @@
 
 namespace wlan {
 
-class WlantapCtlServer : public fidl::WireServer<fuchsia_wlan_tap::WlantapCtl> {
+class WlantapCtlServer : public fidl::Server<fuchsia_wlan_tap::WlantapCtl> {
  public:
-  explicit WlantapCtlServer(const std::shared_ptr<const WlantapDriverContext>& context)
-      : driver_context_(context), logger_(driver_context_->logger()) {}
+  explicit WlantapCtlServer(WlantapDriverContext context)
+      : driver_context_(context), logger_(driver_context_.logger()) {}
 
   // WlantapCtl protocol implementation
-  void CreatePhy(CreatePhyRequestView request, CreatePhyCompleter::Sync& completer) override;
+  void CreatePhy(CreatePhyRequest& request, CreatePhyCompleter::Sync& completer) override;
 
  private:
   zx_status_t AddWlanPhyImplChild(std::string_view name,
@@ -25,13 +25,8 @@ class WlantapCtlServer : public fidl::WireServer<fuchsia_wlan_tap::WlantapCtl> {
   zx_status_t ServeWlanPhyImplProtocol(std::string_view name,
                                        std::shared_ptr<WlanPhyImplDevice> impl);
 
-  static constexpr size_t kWlantapPhyConfigBufferSize =
-      fidl::MaxSizeInChannel<fuchsia_wlan_tap::wire::WlantapPhyConfig,
-                             fidl::MessageDirection::kSending>();
-
-  const std::shared_ptr<const WlantapDriverContext> driver_context_;
+  WlantapDriverContext driver_context_;
   const fdf::Logger* logger_;
-  fidl::Arena<kWlantapPhyConfigBufferSize> phy_config_arena_;
 };
 
 }  // namespace wlan
