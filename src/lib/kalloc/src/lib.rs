@@ -80,8 +80,13 @@ pub unsafe fn alloc(layout: Layout) -> Option<NonNull<u8>> {
     debug_assert!(layout.size() > 0);
     unsafe extern "C" {
         fn malloc(size: usize) -> *mut core::ffi::c_void;
+        fn memalign(alignment: usize, size: usize) -> *mut core::ffi::c_void;
     }
-    let ptr = unsafe { malloc(layout.size()) as *mut u8 };
+    let ptr = if layout.align() <= 8 {
+        unsafe { malloc(layout.size()) as *mut u8 }
+    } else {
+        unsafe { memalign(layout.align(), layout.size()) as *mut u8 }
+    };
     NonNull::new(ptr)
 }
 
@@ -112,11 +117,20 @@ pub unsafe fn dealloc(ptr: *mut u8, layout: Layout) {
 pub unsafe fn realloc(ptr: *mut u8, layout: Layout, new_size: usize) -> Option<NonNull<u8>> {
     debug_assert!(layout.size() > 0);
     debug_assert!(new_size > 0);
-    unsafe extern "C" {
-        fn realloc(ptr: *mut core::ffi::c_void, size: usize) -> *mut core::ffi::c_void;
+
+    // Zircon kernel's cmpctmalloc doesn't implement a C-linkage `realloc`, so we
+    // emulate it using alloc, copy, and dealloc.
+    let new_layout = Layout::from_size_align(new_size, layout.align()).ok()?;
+    let new_ptr = unsafe { crate::alloc(new_layout) };
+
+    if let Some(new_p) = new_ptr {
+        let copy_size = core::cmp::min(layout.size(), new_size);
+        unsafe {
+            core::ptr::copy_nonoverlapping(ptr, new_p.as_ptr(), copy_size);
+            crate::dealloc(ptr, layout);
+        }
     }
-    let ptr = unsafe { realloc(ptr as *mut core::ffi::c_void, new_size) as *mut u8 };
-    NonNull::new(ptr)
+    new_ptr
 }
 
 /// Fallible zeroed allocation using kernel calloc.
@@ -127,11 +141,21 @@ pub unsafe fn realloc(ptr: *mut u8, layout: Layout, new_size: usize) -> Option<N
 #[cfg(is_kernel)]
 pub unsafe fn alloc_zeroed(layout: Layout) -> Option<NonNull<u8>> {
     debug_assert!(layout.size() > 0);
-    unsafe extern "C" {
-        fn calloc(nmemb: usize, size: usize) -> *mut core::ffi::c_void;
+    if layout.align() <= 8 {
+        unsafe extern "C" {
+            fn calloc(nmemb: usize, size: usize) -> *mut core::ffi::c_void;
+        }
+        let ptr = unsafe { calloc(1, layout.size()) as *mut u8 };
+        NonNull::new(ptr)
+    } else {
+        let ptr = unsafe { crate::alloc(layout) };
+        if let Some(p) = ptr {
+            unsafe {
+                core::ptr::write_bytes(p.as_ptr(), 0, layout.size());
+            }
+        }
+        ptr
     }
-    let ptr = unsafe { calloc(1, layout.size()) as *mut u8 };
-    NonNull::new(ptr)
 }
 
 #[cfg(test)]
