@@ -665,7 +665,8 @@ boilerplate.
 When there is C++ code that is not to be ported, but needs to be called from
 Rust, code FFI shims should be used. These shims should not contain logic beyond
 complex type serialization and deserialization and should use `lower_snake_case`
-names of the form `cpp_$namespace_$classname_$functionname`.
+names of the form `cpp_$namespace_$classname_$functionname`. Write declarations
+for these functions before their definitions as this is required by GCC.
 
 If ported Rust code needs to be called from unconverted C++ code FFI shims
 should also be used, in this case the names should also be `lower_snake_case`
