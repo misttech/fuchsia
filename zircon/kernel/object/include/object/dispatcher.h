@@ -31,6 +31,17 @@
 #include <object/handle.h>
 #include <object/signal_observer.h>
 
+class Dispatcher;
+
+extern "C" {
+void cpp_dispatcher_on_zero_handles(Dispatcher* disp);
+void cpp_dispatcher_update_state(Dispatcher* disp, zx_signals_t clear_mask, zx_signals_t set_mask);
+void cpp_dispatcher_update_state_locked(Dispatcher* disp, zx_signals_t clear_mask,
+                                        zx_signals_t set_mask);
+void* cpp_dispatcher_get_ref_counted(const Dispatcher* disp);
+void cpp_dispatcher_recycle(Dispatcher* disp);
+}
+
 template <typename T>
 struct DispatchTag;
 template <typename T>
@@ -95,6 +106,12 @@ DECLARE_DISPTAG(SamplerDispatcher, ZX_OBJ_TYPE_SAMPLER, "SMPL")
 //
 // You don't derive directly from this class; instead derive
 // from SoloDispatcher or PeeredDispatcher.
+extern "C" {
+void cpp_dispatcher_update_state(Dispatcher* disp, zx_signals_t clear_mask, zx_signals_t set_mask);
+void cpp_dispatcher_update_state_locked(Dispatcher* disp, zx_signals_t clear_mask,
+                                        zx_signals_t set_mask);
+}
+
 class Dispatcher : private fbl::RefCountedUpgradeable<Dispatcher>,
                    private fbl::Recyclable<Dispatcher> {
  public:
@@ -299,6 +316,10 @@ class Dispatcher : private fbl::RefCountedUpgradeable<Dispatcher>,
 
  private:
   friend class fbl::Recyclable<Dispatcher>;
+  friend void cpp_dispatcher_update_state(Dispatcher* disp, zx_signals_t clear_mask,
+                                          zx_signals_t set_mask);
+  friend void cpp_dispatcher_update_state_locked(Dispatcher* disp, zx_signals_t clear_mask,
+                                                 zx_signals_t set_mask);
   void fbl_recycle();
 
   fbl::Canary<fbl::magic("DISP")> canary_;

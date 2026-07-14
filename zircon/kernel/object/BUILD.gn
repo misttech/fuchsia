@@ -18,6 +18,7 @@ source_set("object") {
     "counter_dispatcher.cc",
     "diagnostics.cc",
     "dispatcher.cc",
+    "dispatcher_ffi.cc",
     "event_dispatcher.cc",
     "event_pair_dispatcher.cc",
     "exception.cc",
@@ -49,6 +50,7 @@ source_set("object") {
     "pinned_memory_token_dispatcher.cc",
     "port_dispatcher.cc",
     "process_dispatcher.cc",
+    "process_dispatcher_ffi.cc",
     "profile_dispatcher.cc",
     "resource.cc",
     "resource_dispatcher.cc",
@@ -86,6 +88,7 @@ source_set("object") {
     "//zircon/kernel/lib/kconcurrent",
     "//zircon/kernel/lib/ktl",
     "//zircon/kernel/lib/ktrace",
+    "//zircon/kernel/lib/object-constants",
     "//zircon/kernel/lib/object_cache",
     "//zircon/kernel/lib/page",
     "//zircon/kernel/lib/page_cache",
@@ -175,8 +178,19 @@ kernel_rust_crate("object-rs") {
   edition = "2024"
   source_root = "object.rs"
   sources = [
+    "dispatcher.rs",
+    "dispatcher_ffi.rs",
     "handle.rs",
     "object.rs",
+    "process_dispatcher.rs",
+    "process_dispatcher_ffi.rs",
   ]
-  deps = [ "//sdk/rust/zx-types" ]
+  deps = [
+    "//sdk/rust/zx-status",
+    "//sdk/rust/zx-types",
+    "//src/lib/kalloc",
+    "//src/lib/ksync",
+    "//src/lib/zr",
+    "//zircon/system/ulib/fbl/rust:fbl",
+  ]
 }

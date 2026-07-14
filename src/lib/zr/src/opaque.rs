@@ -35,3 +35,15 @@ impl<T> Default for Opaque<T> {
         Self::uninit()
     }
 }
+
+/// A zero-sized type representing an opaque C++ object facade.
+///
+/// This is used as a field in Rust facade structs that represent C++ objects
+/// of unknown size. It keeps the facade struct `Sized` (size 0) so it can be
+/// used in FFI (thin pointers) and with generic containers like `RefPtr`,
+/// while ensuring LLVM knows the object has interior mutability.
+#[repr(C)]
+#[derive(Default)]
+pub struct OpaqueFacade {
+    _unused: UnsafeCell<()>,
+}

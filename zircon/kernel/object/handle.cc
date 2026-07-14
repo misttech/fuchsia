@@ -11,6 +11,7 @@
 
 #include <fbl/conditional_select_nospec.h>
 #include <object/dispatcher.h>
+#include <object/process_dispatcher.h>
 
 namespace {
 

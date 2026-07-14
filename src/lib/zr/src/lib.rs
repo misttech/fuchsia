@@ -10,6 +10,6 @@ mod pin_init;
 mod static_assert;
 mod string;
 
-pub use opaque::Opaque;
+pub use opaque::{Opaque, OpaqueFacade};
 pub use opaque_bytes::OpaqueBytes;
 pub use string::{parse_usize, to_array};

@@ -439,6 +439,11 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
                 #guard_accessors
 
                 #[inline]
+                #struct_vis fn token(&self) -> &::ksync::LockToken<'a, #class_ident> {
+                    self.inner.token()
+                }
+
+                #[inline]
                 #struct_vis fn fields<'b>(&'b self) -> #fields_ident #fields_ty_generics {
                     let me = self;
                     let token = me.inner.token();

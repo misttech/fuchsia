@@ -437,4 +437,11 @@ class ProcessDispatcher final
 
 const char* StateToString(ProcessDispatcher::State state);
 
+extern "C" {
+ProcessDispatcher* cpp_process_dispatcher_current();
+zx_status_t cpp_process_dispatcher_make_and_add_handle(ProcessDispatcher* process,
+                                                       KernelHandle<Dispatcher>* handle,
+                                                       zx_rights_t rights, zx_handle_t* out_handle);
+}
+
 #endif  // ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_PROCESS_DISPATCHER_H_
