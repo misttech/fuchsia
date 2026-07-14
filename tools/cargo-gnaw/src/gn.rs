@@ -94,7 +94,7 @@ pub fn write_top_level_rule<W: io::Write>(
             writeln!(
                 output,
                 include_str!("../templates/top_level_gn_rule.template"),
-                group_name = &group_cfg.name,
+                group_name = group_cfg.name,
                 dep_name = target_name,
                 group_rule_name = group_rule,
                 optional_visibility = optional_visibility,
