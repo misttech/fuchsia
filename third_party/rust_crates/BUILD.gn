@@ -2227,13 +2227,13 @@ if (current_os == "fuchsia") {
 
 if (current_os == "fuchsia") {
   group("ttf-parser") {
-    public_deps = [ ":ttf-parser-v0_10_1" ]
+    public_deps = [ ":ttf-parser-v0_25_1" ]
   }
 }
 
 if (current_os == "fuchsia") {
-  group("ttf-parser-0.10.1") {
-    public_deps = [ ":ttf-parser-v0_10_1" ]
+  group("ttf-parser-0.25.1") {
+    public_deps = [ ":ttf-parser-v0_25_1" ]
   }
 }
 
@@ -22604,18 +22604,18 @@ rustc_library("try-lock-v0_2_5") {
   applicable_licenses = [ ":try-lock-v0_2_5.license" ]
 }
 
-license("ttf-parser-v0_10_1.license") {
+license("ttf-parser-v0_25_1.license") {
   public_package_name = "ttf_parser"
   license_files = [
-    "//third_party/rust_crates/vendor/ttf-parser-0.10.1/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/ttf-parser-0.10.1/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/ttf-parser-0.25.1/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/ttf-parser-0.25.1/LICENSE-MIT",
   ]
 }
 
-rustc_library("ttf-parser-v0_10_1") {
+rustc_library("ttf-parser-v0_25_1") {
   crate_name = "ttf_parser"
-  source_root = "//third_party/rust_crates/vendor/ttf-parser-0.10.1/src/lib.rs"
-  output_name = "ttf_parser-17d6faa32a9b2844"
+  source_root = "//third_party/rust_crates/vendor/ttf-parser-0.25.1/src/lib.rs"
+  output_name = "ttf_parser-4b8e90763a253ad1"
   edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
@@ -22627,16 +22627,19 @@ rustc_library("ttf-parser-v0_10_1") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=17d6faa32a9b2844",
-    "-Cextra-filename=-17d6faa32a9b2844",
+    "-Cmetadata=4b8e90763a253ad1",
+    "-Cextra-filename=-4b8e90763a253ad1",
+    "--cfg=feature=\"apple-layout\"",
     "--cfg=feature=\"default\"",
+    "--cfg=feature=\"glyph-names\"",
+    "--cfg=feature=\"opentype-layout\"",
     "--cfg=feature=\"std\"",
     "--cfg=feature=\"variable-fonts\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":ttf-parser-v0_10_1.license" ]
+  applicable_licenses = [ ":ttf-parser-v0_25_1.license" ]
 }
 
 license("tuf-v0_3_0-beta14.license") {

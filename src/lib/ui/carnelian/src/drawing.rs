@@ -356,35 +356,27 @@ pub struct FontFace {
 impl FontFace {
     /// Create a new FontFace.
     pub fn new(data: &'static [u8]) -> Result<FontFace, Error> {
-        let face = Face::from_slice(data, 0)?;
+        let face = Face::parse(data, 0)?;
         Ok(FontFace { face })
     }
 
     /// Get the ascent, in pixels, for this font at the specified size.
     pub fn ascent(&self, size: f32) -> f32 {
         let ascent = self.face.ascender();
-        self.face
-            .units_per_em()
-            .and_then(|units_per_em| Some((ascent as f32 / units_per_em as f32) * size))
-            .expect("units_per_em")
+        (ascent as f32 / self.face.units_per_em() as f32) * size
     }
 
     /// Get the descent, in pixels, for this font at the specified size.
     pub fn descent(&self, size: f32) -> f32 {
         let descender = self.face.descender();
-        self.face
-            .units_per_em()
-            .and_then(|units_per_em| Some((descender as f32 / units_per_em as f32) * size))
-            .expect("units_per_em")
+        (descender as f32 / self.face.units_per_em() as f32) * size
     }
 
     /// Get the capital height, in pixels, for this font at the specified size.
     pub fn capital_height(&self, size: f32) -> Option<f32> {
-        self.face.capital_height().and_then(|capital_height| {
-            self.face
-                .units_per_em()
-                .and_then(|units_per_em| Some((capital_height as f32 / units_per_em as f32) * size))
-        })
+        self.face
+            .capital_height()
+            .map(|capital_height| (capital_height as f32 / self.face.units_per_em() as f32) * size)
     }
 }
 
@@ -397,7 +389,7 @@ pub fn measure_text_width(face: &FontFace, font_size: f32, text: &str) -> f32 {
 pub fn measure_text_size(face: &FontFace, size: f32, text: &str, visual: bool) -> Size {
     let mut bounding_box = Rect::zero();
     let ascent = face.ascent(size);
-    let units_per_em = face.face.units_per_em().expect("units_per_em");
+    let units_per_em = face.face.units_per_em();
     let scale = size / units_per_em as f32;
     let y_offset = vec2(0.0, ascent).to_i32();
     let chars = text.chars();
@@ -467,7 +459,7 @@ pub fn linebreak_text(face: &FontFace, font_size: f32, text: &str, max_width: f3
 }
 
 fn pixel_size_rect(face: &FontFace, font_size: f32, value: ttf_parser::Rect) -> Rect {
-    let units_per_em = face.face.units_per_em().expect("units_per_em");
+    let units_per_em = face.face.units_per_em();
     let scale = font_size / units_per_em as f32;
     let min_x = value.x_min as f32 * scale;
     let max_y = -value.y_min as f32 * scale;
@@ -554,7 +546,7 @@ impl Glyph {
         size: f32,
         id: Option<ttf_parser::GlyphId>,
     ) -> Self {
-        let units_per_em = face.face.units_per_em().expect("units_per_em");
+        let units_per_em = face.face.units_per_em();
         let xy_scale = size / units_per_em as f32;
         let scale = vec2(xy_scale, xy_scale);
         let offset = Vector2D::zero();
@@ -627,7 +619,7 @@ impl Text {
         };
         let ascent = face.ascent(size);
         let descent = face.descent(size);
-        let units_per_em = face.face.units_per_em().expect("units_per_em");
+        let units_per_em = face.face.units_per_em();
         let scale = size / units_per_em as f32;
         let mut y_offset = vec2(0.0, ascent).to_i32();
         for line in lines.iter() {
@@ -696,7 +688,7 @@ impl TextGrid {
     /// This determines the appropriate scale and offset for outlines
     /// to provide optimal glyph layout in cells.
     pub fn new(face: &FontFace, cell_size: &Size) -> Self {
-        let units_per_em = face.face.units_per_em().expect("units_per_em") as f32;
+        let units_per_em = face.face.units_per_em() as f32;
         let ascent = face.face.ascender() as f32 / units_per_em;
         let descent = face.face.descender() as f32 / units_per_em;
 
