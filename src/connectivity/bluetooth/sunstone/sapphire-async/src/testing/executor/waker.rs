@@ -3,35 +3,54 @@
 // found in the LICENSE file.
 
 use core::task::{RawWaker, RawWakerVTable, Waker};
+use std::rc::Weak;
 
 use crate::testing::executor::TaskHeader;
 
 // The raw waker vtable managing task wakeups.
-const VTABLE: RawWakerVTable = RawWakerVTable::new(clone_waker, wake_task, wake_task, drop_waker);
+const VTABLE: RawWakerVTable =
+    RawWakerVTable::new(clone_waker, wake_task, wake_by_ref_task, drop_waker);
 
 unsafe fn clone_waker(ptr: *const ()) -> RawWaker {
-    RawWaker::new(ptr, &VTABLE)
+    let weak = unsafe { Weak::from_raw(ptr as *const TaskHeader) };
+    let cloned = weak.clone();
+    let _ = weak.into_raw(); // Put back the original to avoid dropping it
+    RawWaker::new(cloned.into_raw() as *const (), &VTABLE)
 }
 
 // SAFETY: Wakes the task by pushing its index back into the scope's run queue.
+// This consumes the waker.
 unsafe fn wake_task(ptr: *const ()) {
-    // SAFETY: ptr is a valid pointer to a TaskHeader kept alive by the Scope's heap allocations.
-    let header = ptr as *const TaskHeader;
-    let id = unsafe { (*header).id };
-    let queue = unsafe { (*header).ready_queue.as_ref() };
-
-    let mut queue = queue.lock();
-    // Prevent duplicate enqueuing if it's already in the queue
-    if !queue.contains(&id) {
-        queue.push_back(id);
+    let weak = unsafe { Weak::from_raw(ptr as *const TaskHeader) };
+    if let Some(header) = weak.upgrade() {
+        let id = header.id;
+        let mut queue = header.ready_queue.lock();
+        if !queue.contains(&id) {
+            queue.push_back(id);
+        }
     }
+    // `weak` is dropped here, consuming the ref count.
 }
 
-unsafe fn drop_waker(_ptr: *const ()) {
-    // No-op because task deallocation is managed statically by the Scope's Drop implementation.
+// SAFETY: Wakes the task by pushing its index back into the scope's run queue.
+// This does not consume the waker.
+unsafe fn wake_by_ref_task(ptr: *const ()) {
+    let weak = unsafe { Weak::from_raw(ptr as *const TaskHeader) };
+    if let Some(header) = weak.upgrade() {
+        let id = header.id;
+        let mut queue = header.ready_queue.lock();
+        if !queue.contains(&id) {
+            queue.push_back(id);
+        }
+    }
+    let _ = weak.into_raw(); // Put back the original to avoid dropping it
 }
 
-pub fn make_waker(task: &TaskHeader) -> Waker {
-    let raw_waker = RawWaker::new(task as *const _ as *const (), &VTABLE);
+unsafe fn drop_waker(ptr: *const ()) {
+    unsafe { Weak::from_raw(ptr as *const TaskHeader) };
+}
+
+pub fn make_waker(task: Weak<TaskHeader>) -> Waker {
+    let raw_waker = RawWaker::new(task.into_raw() as *const _ as *const (), &VTABLE);
     unsafe { Waker::from_raw(raw_waker) }
 }

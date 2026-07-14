@@ -52,31 +52,32 @@ use crate::testing::executor::waker::make_waker;
 /// });
 /// ```
 pub struct TestExecutor {
-    // Store raw pointers to heap-allocated Tasks using NonNull to prevent Box moves and unique retags.
-    tasks: RefCell<Vec<NonNull<Task<dyn Future<Output = ()> + 'static>>>>,
+    // Store raw pointers to heap-allocated Tasks using NonNull to prevent Rc moves and unique retags.
+    tasks: TaskList,
     // Queue of runnable tasks (stored as indices into the vec)
     run_queue: Rc<Mutex<StdMutex, VecDeque<usize>>>,
     _pinned: PhantomPinned,
 }
 
+type TaskList = Rc<RefCell<Vec<Option<NonNull<Task<dyn Future<Output = ()> + 'static>>>>>>;
+
 /// The sized header prefix of a task containing scheduling metadata.
-#[derive(Copy, Clone)]
 struct TaskHeader {
     id: usize,
-    ready_queue: NonNull<Mutex<StdMutex, VecDeque<usize>>>,
+    ready_queue: Rc<Mutex<StdMutex, VecDeque<usize>>>,
 }
 
 /// A manual heap-allocated wrapper representing a pinned concurrent future and its run queue reference.
 #[repr(C)]
 struct Task<F: ?Sized> {
-    header: TaskHeader,
+    header: Rc<TaskHeader>,
     future: F,
 }
 
 impl TestExecutor {
     pub fn new() -> Self {
         Self {
-            tasks: RefCell::new(Vec::new()),
+            tasks: Rc::new(RefCell::new(Vec::new())),
             run_queue: Rc::new(Mutex::new(VecDeque::new())),
             _pinned: PhantomPinned,
         }
@@ -85,10 +86,13 @@ impl TestExecutor {
     pub fn run_until_stalled(&self) {
         // SAFETY: We won't move self
         while let Some(task_id) = { self.run_queue.lock().pop_front() } {
-            let mut task_nonnull = self.tasks.borrow()[task_id];
+            let Some(mut task_nonnull) = self.tasks.borrow()[task_id] else {
+                continue;
+            };
             // SAFETY: Obtain header raw pointer to avoid triggering a SharedReadOnly retag invalidation.
             let waker = unsafe {
-                let header_ptr = &(*task_nonnull.as_ptr()).header;
+                let task = task_nonnull.as_ref();
+                let header_ptr = Rc::downgrade(&task.header);
                 make_waker(header_ptr)
             };
             let mut cx = Context::from_waker(&waker);
@@ -145,6 +149,8 @@ struct JoinState<T> {
 
 pub struct JoinHandle<T> {
     state: Rc<Condition<SingleThreadMutex, JoinState<T>>>,
+    tasks: TaskList,
+    id: usize,
 }
 
 impl<T> JoinHandle<T> {
@@ -163,6 +169,36 @@ impl<T> JoinHandle<T> {
                 None => Poll::Pending,
             })
             .await
+    }
+    /// Polls the task once, returning its Poll status.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the task was already cancelled or completed.
+    pub fn poll_once(&self) -> Poll<()> {
+        let tasks = self.tasks.borrow();
+        let Some(&Some(mut task_nonnull)) = tasks.get(self.id) else {
+            panic!("Task already cancelled or completed");
+        };
+        // SAFETY: Same as run_until_stalled.
+        // No other task can mutably borrow it concurrently because we are single-threaded.
+        unsafe {
+            let task = task_nonnull.as_ref();
+            let header_ptr = Rc::downgrade(&task.header);
+            let waker = make_waker(header_ptr);
+            let mut cx = Context::from_waker(&waker);
+            let task = task_nonnull.as_mut();
+            let pinned = Pin::new_unchecked(&mut task.future);
+            pinned.poll(&mut cx)
+        }
+    }
+
+    /// Cancels the task by taking and dropping its heap allocation.
+    pub fn cancel(self) {
+        if let Some(nonnull) = self.tasks.borrow_mut()[self.id].take() {
+            // SAFETY: Reclaim heap memory manually allocated via Box::into_raw inside spawn()
+            let _task = unsafe { Box::from_raw(nonnull.as_ptr()) };
+        }
     }
 }
 
@@ -187,14 +223,8 @@ impl Executor for TestExecutor {
 
         // SAFETY: We won't move self
         let id = self.tasks.borrow().len();
-        let task = Box::new(Task {
-            header: TaskHeader {
-                ready_queue: NonNull::new(Rc::into_raw(self.run_queue.clone()) as *mut _)
-                    .expect("Rc must be non-null"),
-                id,
-            },
-            future: join_wrapper,
-        });
+        let header = Rc::new(TaskHeader { ready_queue: self.run_queue.clone(), id });
+        let task = Box::new(Task { header, future: join_wrapper });
 
         let task = Box::into_raw(task);
         // SAFETY: Box::into_raw returns a non-null pointer.
@@ -202,15 +232,15 @@ impl Executor for TestExecutor {
         let task = task as NonNull<Task<dyn Future<Output = ()> + 'a>>;
         // SAFETY: Extend the lifetime to 'static. The caller guarantees this is valid.
         let task = unsafe { core::mem::transmute(task) };
-        self.tasks.borrow_mut().push(task);
+        self.tasks.borrow_mut().push(Some(task));
         self.run_queue.lock().push_back(id);
 
-        JoinHandle { state }
+        JoinHandle { state, tasks: self.tasks.clone(), id }
     }
 }
 
-impl<F: Future<Output = ()> + ?Sized> Future for Task<F> {
-    type Output = ();
+impl<T, F: Future<Output = T> + ?Sized> Future for Task<F> {
+    type Output = T;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         // SAFETY: Performing a direct pin projection
@@ -222,12 +252,10 @@ impl<F: Future<Output = ()> + ?Sized> Future for Task<F> {
 impl Drop for TestExecutor {
     fn drop(&mut self) {
         let mut tasks = self.tasks.borrow_mut();
-        for &nonnull in tasks.iter() {
+        for nonnull in tasks.iter_mut().filter_map(|t| t.take()) {
             // SAFETY: Reclaim heap memory manually allocated via Box::into_raw inside spawn()
             // to prevent memory leaks on executor completion.
-            let task = unsafe { Box::from_raw(nonnull.as_ptr()) };
-            // SAFETY: Allocated in spawn and called `into_raw`
-            unsafe { Rc::from_raw(task.header.ready_queue.as_ptr()) };
+            let _task = unsafe { Box::from_raw(nonnull.as_ptr()) };
         }
         tasks.clear();
     }
