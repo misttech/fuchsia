@@ -10,6 +10,8 @@
 #include <lib/driver/logging/cpp/logger.h>
 #include <unistd.h>
 
+#include <cstring>
+
 #include <bind/fuchsia/cpp/bind.h>
 #include <bind/fuchsia/pwm/cpp/bind.h>
 #include <fbl/alloc_checker.h>
@@ -103,16 +105,13 @@ zx_status_t PwmInitDevice::Init() {
     fdf::error("Could not enable PWM: {}", zx_status_get_string(result->error_value()));
     return result->error_value();
   }
-  aml_pwm::mode_config two_timer = {
-      .mode = aml_pwm::Mode::kTwoTimer,
-      .two_timer =
-          {
-              .period_ns2 = 30052,
-              .duty_cycle2 = 50.0,
-              .timer1 = 0x0a,
-              .timer2 = 0x0a,
-          },
-  };
+  aml_pwm::mode_config two_timer;
+  memset(&two_timer, 0, sizeof(two_timer));
+  two_timer.mode = aml_pwm::Mode::kTwoTimer;
+  two_timer.two_timer.period_ns2 = 30052;
+  two_timer.two_timer.duty_cycle2 = 50.0;
+  two_timer.two_timer.timer1 = 0x0a;
+  two_timer.two_timer.timer2 = 0x0a;
   fuchsia_hardware_pwm::wire::PwmConfig init_cfg = {
       .polarity = false,
       .period_ns = 30053,

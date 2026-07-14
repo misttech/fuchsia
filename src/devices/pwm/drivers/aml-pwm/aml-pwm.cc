@@ -11,6 +11,7 @@
 #include <zircon/errors.h>
 
 #include <cstdint>
+#include <cstring>
 #include <limits>
 #include <vector>
 
@@ -185,6 +186,7 @@ void CopyConfig(pwm_config_t* dest, const pwm_config_t* src) {
   dest->polarity = src->polarity;
   dest->period_ns = src->period_ns;
   dest->duty_cycle = src->duty_cycle;
+  memset(dest->mode_config_buffer, 0, dest->mode_config_size);
   memcpy(dest->mode_config_buffer, src->mode_config_buffer, src->mode_config_size);
   dest->mode_config_size = src->mode_config_size;
 }
@@ -217,7 +219,9 @@ zx_status_t AmlPwm::PwmImplSetConfig(uint32_t idx, const pwm_config_t* config) {
   }
 
   // Save old config
-  mode_config tmp_cfg = {Mode::kOff, {}};
+  mode_config tmp_cfg;
+  memset(&tmp_cfg, 0, sizeof(tmp_cfg));
+  tmp_cfg.mode = Mode::kOff;
   pwm_config_t old_config = {false, 0, 0.0, reinterpret_cast<uint8_t*>(&tmp_cfg),
                              sizeof(mode_config)};
   CopyConfig(&old_config, &configs_[idx]);

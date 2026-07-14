@@ -16,6 +16,7 @@
 
 #include <array>
 #include <cstdint>
+#include <cstring>
 #include <vector>
 
 #include <ddktl/device.h>
@@ -37,6 +38,7 @@ class AmlPwm {
 
   void Init() {
     for (uint32_t i = 0; i < kPwmPairCount; i++) {
+      memset(&mode_configs_[i], 0, sizeof(mode_configs_[i]));
       mode_configs_[i].mode = Mode::kOff;
       mode_configs_[i].regular = {};
       configs_[i] = {.polarity = channels_[i].polarity().value_or(false),

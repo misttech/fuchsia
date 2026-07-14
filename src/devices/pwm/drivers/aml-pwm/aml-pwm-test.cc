@@ -7,6 +7,7 @@
 #include <lib/driver/fake-platform-device/cpp/fake-pdev.h>
 #include <lib/driver/testing/cpp/driver_test.h>
 
+#include <cstring>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -150,6 +151,25 @@ TEST_F(AmlPwmDriverTest, GetConfigTest) {
 
   cfg.mode_config_buffer = nullptr;
   EXPECT_NE(driver().PwmImplGetConfig(0, &cfg), ZX_OK);
+}
+
+TEST_F(AmlPwmDriverTest, GetConfigZeroInitializedTest) {
+  mode_config mode_cfg;
+  memset(&mode_cfg, 0xAA, sizeof(mode_cfg));
+  pwm_config cfg{
+      .polarity = false,
+      .period_ns = 1250,
+      .duty_cycle = 100.0,
+      .mode_config_buffer = reinterpret_cast<uint8_t*>(&mode_cfg),
+      .mode_config_size = sizeof(mode_cfg),
+  };
+  EXPECT_OK(driver().PwmImplGetConfig(0, &cfg));
+
+  // Verify all bytes after the mode field (the union bytes) are zero-initialized.
+  const auto* bytes = reinterpret_cast<const uint8_t*>(&mode_cfg);
+  for (size_t i = sizeof(Mode); i < sizeof(mode_config); ++i) {
+    EXPECT_EQ(bytes[i], 0u) << "Byte at offset " << i << " was not zero-initialized.";
+  }
 }
 
 TEST_F(AmlPwmDriverTest, SetConfigInvalidNullConfig) {

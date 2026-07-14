@@ -11,6 +11,7 @@
 #include <lib/async/default.h>
 #include <lib/async_patterns/testing/cpp/dispatcher_bound.h>
 
+#include <cstring>
 #include <list>
 
 #include <fbl/alloc_checker.h>
@@ -20,10 +21,11 @@
 
 bool operator==(const fuchsia_hardware_pwm::wire::PwmConfig& lhs,
                 const fuchsia_hardware_pwm::wire::PwmConfig& rhs) {
-  return (lhs.polarity == rhs.polarity) && (lhs.period_ns == rhs.period_ns) &&
-         (lhs.duty_cycle == rhs.duty_cycle) && (lhs.mode_config.size() == rhs.mode_config.size()) &&
-         (reinterpret_cast<aml_pwm::mode_config*>(lhs.mode_config.data())->mode ==
-          reinterpret_cast<aml_pwm::mode_config*>(rhs.mode_config.data())->mode);
+  if (lhs.polarity != rhs.polarity || lhs.period_ns != rhs.period_ns ||
+      lhs.duty_cycle != rhs.duty_cycle || lhs.mode_config.size() != rhs.mode_config.size()) {
+    return false;
+  }
+  return memcmp(lhs.mode_config.data(), rhs.mode_config.data(), lhs.mode_config.size()) == 0;
 }
 
 namespace pwm_init {
@@ -35,6 +37,11 @@ class MockPwmServer final : public fidl::testing::WireTestBase<fuchsia_hardware_
     auto expect_config = expect_configs_.front();
 
     ASSERT_EQ(request->config, expect_config);
+    if (request->config.mode_config.size() == sizeof(aml_pwm::mode_config)) {
+      const auto* bytes = request->config.mode_config.data();
+      EXPECT_EQ(bytes[14], 0u);
+      EXPECT_EQ(bytes[15], 0u);
+    }
 
     expect_configs_.pop_front();
     mode_config_buffers_.pop_front();
@@ -99,16 +106,13 @@ TEST(PwmInitDeviceTest, InitTest) {
   clock_endpoints.server.Close(ZX_OK);
 
   pwm.SyncCall(&MockPwmServer::ExpectEnable);
-  aml_pwm::mode_config two_timer = {
-      .mode = aml_pwm::Mode::kTwoTimer,
-      .two_timer =
-          {
-              .period_ns2 = 30052,
-              .duty_cycle2 = 50.0,
-              .timer1 = 0x0a,
-              .timer2 = 0x0a,
-          },
-  };
+  aml_pwm::mode_config two_timer;
+  memset(&two_timer, 0, sizeof(two_timer));
+  two_timer.mode = aml_pwm::Mode::kTwoTimer;
+  two_timer.two_timer.period_ns2 = 30052;
+  two_timer.two_timer.duty_cycle2 = 50.0;
+  two_timer.two_timer.timer1 = 0x0a;
+  two_timer.two_timer.timer2 = 0x0a;
   fuchsia_hardware_pwm::wire::PwmConfig init_cfg = {
       .polarity = false,
       .period_ns = 30053,
