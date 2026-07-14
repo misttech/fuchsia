@@ -22,7 +22,6 @@
 #include <perfetto/ext/tracing/core/trace_packet.h>
 #include <perfetto/ext/tracing/core/tracing_service.h>
 #include <perfetto/tracing/platform.h>
-#include <rapidjson/document.h>
 
 #include "src/lib/testing/loop_fixture/test_loop_fixture.h"
 #include "src/performance/perfetto-bridge/consumer_adapter.h"
@@ -269,13 +268,6 @@ TEST_F(ConsumerAdapterTest, TraceConfig) {
       {.name = "track_event",
        .provider_filter = "provider1",
        .enabled_categories = {"category1", "category2"}},
-      {.name = "org.chromium.trace_event", .enabled_categories = {"foo*", "bar"}},
-      {.name = "org.chromium.trace_event",
-       .provider_filter = "provider2",
-       .enabled_categories = {"categoryX"}},
-      {.name = "org.chromium.trace_event",
-       .provider_filter = "provider1",
-       .enabled_categories = {"category1", "category2"}},
   };
 
   const auto& actual_data_sources = mock_endpoint_->config().data_sources();
@@ -291,34 +283,12 @@ TEST_F(ConsumerAdapterTest, TraceConfig) {
                 actual_data_source.producer_name_filter());
     }
 
-    if (expected_data_source.name == "track_event") {
-      perfetto::protos::gen::TrackEventConfig track_event_config;
-      ASSERT_TRUE(
-          track_event_config.ParseFromString(actual_data_source.config().track_event_config_raw()));
-      EXPECT_EQ(expected_data_source.enabled_categories, track_event_config.enabled_categories());
-      EXPECT_THAT(track_event_config.disabled_categories(), ElementsAre("*"));
-    } else if (expected_data_source.name == "org.chromium.trace_event") {
-      const auto& chrome_config = actual_data_source.config().chrome_config();
-      rapidjson::Document chrome_config_parsed;
-      FX_LOGS(INFO) << chrome_config.trace_config().data();
-      chrome_config_parsed.Parse(chrome_config.trace_config().data(),
-                                 chrome_config.trace_config().size());
-      ASSERT_FALSE(chrome_config_parsed.HasParseError());
-      ASSERT_TRUE(chrome_config_parsed["included_categories"].IsArray());
-      auto included_categories = chrome_config_parsed["included_categories"].GetArray();
-      std::vector<std::string> included_categories_vector;
-      for (const auto& included_category : included_categories) {
-        included_categories_vector.emplace_back(included_category.GetString());
-      }
-      EXPECT_EQ(expected_data_source.enabled_categories, included_categories_vector);
-
-      ASSERT_TRUE(chrome_config_parsed["excluded_categories"].IsArray());
-      const auto excluded_categories = chrome_config_parsed["excluded_categories"].GetArray();
-      EXPECT_EQ(excluded_categories.Size(), 1u);
-      EXPECT_EQ(std::string(excluded_categories[0].GetString()), "*");
-    } else {
-      ASSERT_TRUE(false) << "got an unexpected data source name";
-    }
+    ASSERT_EQ(expected_data_source.name, "track_event");
+    perfetto::protos::gen::TrackEventConfig track_event_config;
+    ASSERT_TRUE(
+        track_event_config.ParseFromString(actual_data_source.config().track_event_config_raw()));
+    EXPECT_EQ(expected_data_source.enabled_categories, track_event_config.enabled_categories());
+    EXPECT_THAT(track_event_config.disabled_categories(), ElementsAre("*"));
   }
 }
 

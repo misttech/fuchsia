@@ -22,16 +22,12 @@
 
 #include <perfetto/ext/tracing/core/trace_packet.h>
 #include <perfetto/ext/tracing/core/tracing_service.h>
-#include <rapidjson/document.h>
-#include <rapidjson/stringbuffer.h>
-#include <rapidjson/writer.h>
 
 #include <protos/perfetto/common/track_event_descriptor.gen.h>
 #include <protos/perfetto/config/track_event/track_event_config.gen.h>
 #include <third_party/perfetto/protos/perfetto/common/data_source_descriptor.gen.h>
 #include <third_party/perfetto/protos/perfetto/common/trace_stats.gen.h>
 #include <third_party/perfetto/protos/perfetto/common/tracing_service_state.gen.h>
-#include <third_party/perfetto/protos/perfetto/config/chrome/chrome_config.gen.h>
 #include <third_party/perfetto/protos/perfetto/config/data_source_config.gen.h>
 #include <third_party/perfetto/protos/perfetto/config/trace_config.gen.h>
 #include <third_party/perfetto/protos/perfetto/config/track_event/track_event_config.gen.h>
@@ -49,7 +45,6 @@ constexpr int kConsumerStatsPollIntervalMs = 500;
 constexpr uint32_t kIncrementalStateClearMs = 4000;
 
 constexpr char kBlobName[] = "perfetto-bridge";
-constexpr char kChromiumTraceEvent[] = "org.chromium.trace_event";
 constexpr char kTrackEvent[] = "track_event";
 
 class EmptyConsumer : public perfetto::Consumer {
@@ -91,31 +86,6 @@ void LogTraceStats(const perfetto::TraceStats& stats) {
   }
 }
 
-// TODO(https://fxbug.dev/42066806): Remove this once the migration to track_event_config is
-// complete.
-std::string GetChromeTraceConfigString(
-    const perfetto::protos::gen::TrackEventConfig& track_event_config) {
-  rapidjson::Document chrome_trace_config(rapidjson::kObjectType);
-  auto& allocator = chrome_trace_config.GetAllocator();
-
-  rapidjson::Value included_categories(rapidjson::kArrayType);
-  for (const auto& enabled_category : track_event_config.enabled_categories()) {
-    included_categories.PushBack(rapidjson::StringRef(enabled_category), allocator);
-  }
-  chrome_trace_config.AddMember("included_categories", included_categories, allocator);
-
-  rapidjson::Value excluded_categories(rapidjson::kArrayType);
-  for (const auto& disabled_category : track_event_config.disabled_categories()) {
-    excluded_categories.PushBack(rapidjson::StringRef(disabled_category), allocator);
-  }
-  chrome_trace_config.AddMember("excluded_categories", excluded_categories, allocator);
-
-  rapidjson::StringBuffer buffer;
-  rapidjson::Writer writer(buffer);
-  chrome_trace_config.Accept(writer);
-  return std::string(buffer.GetString(), buffer.GetSize());
-}
-
 perfetto::protos::gen::TrackEventConfig GetTrackEventConfig(
     const std::vector<std::string>& enabled_categories) {
   perfetto::protos::gen::TrackEventConfig track_event_config;
@@ -139,12 +109,6 @@ perfetto::protos::gen::TraceConfig_DataSource* AddDataSource(
   const auto track_event_config = GetTrackEventConfig(enabled_categories);
   data_source_config->set_track_event_config_raw(track_event_config.SerializeAsString());
 
-  // TODO(https://fxbug.dev/42066806): Remove this once the migration to track_event_config is
-  // complete.
-  if (data_source_name == kChromiumTraceEvent) {
-    data_source_config->mutable_chrome_config()->set_trace_config(
-        GetChromeTraceConfigString(track_event_config));
-  }
   return data_source;
 }
 
@@ -171,11 +135,9 @@ void AddDataSources(perfetto::TraceConfig& trace_config,
     }
   }
 
-  for (const auto data_source_name : std::vector{kTrackEvent, kChromiumTraceEvent}) {
-    AddDataSource(trace_config, data_source_name, umbrella_categories);
-    for (const auto& [producer_name, enabled_categories] : producer_specific_categories) {
-      AddTargetedDataSource(trace_config, data_source_name, producer_name, enabled_categories);
-    }
+  AddDataSource(trace_config, kTrackEvent, umbrella_categories);
+  for (const auto& [producer_name, enabled_categories] : producer_specific_categories) {
+    AddTargetedDataSource(trace_config, kTrackEvent, producer_name, enabled_categories);
   }
 }
 
@@ -483,7 +445,7 @@ std::vector<trace::KnownCategory> ConsumerAdapter::GetKnownCategories() {
     }
     std::unordered_set<trace::KnownCategory, trace::KnownCategoryHash> categories;
     for (const auto& data_source : service_state.data_sources()) {
-      if (data_source.ds_descriptor().name() != kChromiumTraceEvent) {
+      if (data_source.ds_descriptor().name() != kTrackEvent) {
         continue;
       }
       auto raw_descriptor = data_source.ds_descriptor().track_event_descriptor_raw();
