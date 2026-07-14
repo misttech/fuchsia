@@ -4,49 +4,45 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-#include <lib/unittest/unittest.h>
 #include <stdint.h>
+
+#include <kernel/brwlock.h>
+#include <kernel/mutex.h>
+#include <kernel/spinlock.h>
+#include <lockdep/lockdep.h>
 
 extern "C" {
 
-bool test_ksync_spinlock();
-bool test_ksync_mutex();
-bool test_ksync_event();
-bool test_ksync_brwlock();
+#if UNITTESTS_ENABLED
+void ksync_tests_link_helper();
+#endif
+
+bool cpp_verify_mutex_id(const void* lock_ptr, const void* expected_id);
+bool cpp_verify_critical_mutex_id(const void* lock_ptr, const void* expected_id);
+bool cpp_verify_spinlock_id(const void* lock_ptr, const void* expected_id);
+bool cpp_verify_brwlock_id(const void* lock_ptr, const void* expected_id);
+
+bool cpp_verify_mutex_id(const void* lock_ptr, const void* expected_id) {
+#if UNITTESTS_ENABLED
+  ksync_tests_link_helper();
+#endif
+  const auto* lock = static_cast<const lockdep::Lock<Mutex>*>(lock_ptr);
+  return lock->id() == reinterpret_cast<lockdep::LockClassId>(expected_id);
+}
+
+bool cpp_verify_critical_mutex_id(const void* lock_ptr, const void* expected_id) {
+  const auto* lock = static_cast<const lockdep::Lock<CriticalMutex>*>(lock_ptr);
+  return lock->id() == reinterpret_cast<lockdep::LockClassId>(expected_id);
+}
+
+bool cpp_verify_spinlock_id(const void* lock_ptr, const void* expected_id) {
+  const auto* lock = static_cast<const lockdep::Lock<SpinLock>*>(lock_ptr);
+  return lock->id() == reinterpret_cast<lockdep::LockClassId>(expected_id);
+}
+
+bool cpp_verify_brwlock_id(const void* lock_ptr, const void* expected_id) {
+  const auto* lock = static_cast<const lockdep::Lock<BrwLockPi>*>(lock_ptr);
+  return lock->id() == reinterpret_cast<lockdep::LockClassId>(expected_id);
+}
 
 }  // extern "C"
-
-namespace {
-
-bool rust_spinlock_test() {
-  BEGIN_TEST;
-  EXPECT_TRUE(test_ksync_spinlock());
-  END_TEST;
-}
-
-bool rust_mutex_test() {
-  BEGIN_TEST;
-  EXPECT_TRUE(test_ksync_mutex());
-  END_TEST;
-}
-
-bool rust_event_test() {
-  BEGIN_TEST;
-  EXPECT_TRUE(test_ksync_event());
-  END_TEST;
-}
-
-bool rust_brwlock_test() {
-  BEGIN_TEST;
-  EXPECT_TRUE(test_ksync_brwlock());
-  END_TEST;
-}
-
-UNITTEST_START_TESTCASE(rust_ksync_tests)
-UNITTEST("test Rust KSpinlock", rust_spinlock_test)
-UNITTEST("test Rust KMutex", rust_mutex_test)
-UNITTEST("test Rust KEvent", rust_event_test)
-UNITTEST("test Rust BrwLockPi", rust_brwlock_test)
-UNITTEST_END_TESTCASE(rust_ksync_tests, "rust_ksync", "Tests for Rust ksync bindings")
-
-}  // namespace

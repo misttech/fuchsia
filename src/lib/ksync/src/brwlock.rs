@@ -26,7 +26,8 @@ impl<Class: LockClass> BrwLockPi<Class> {
     /// Safe dynamic initialization inside pin context.
     pub fn init() -> impl PinInit<Self, core::convert::Infallible> {
         pin_init!(Self {
-            lock <- RawBrwLockPi::init(),
+            // SAFETY: `Class::ID` is either null or a valid, static `LockClassId`.
+            lock <- unsafe { RawBrwLockPi::init(Class::ID) },
             _marker: PhantomData,
         })
     }
@@ -72,7 +73,7 @@ impl<'a, Class: LockClass> BrwLockPiReadGuard<'a, Class> {
                     let entry_addr = core::ptr::addr_of_mut!((*this).lock_entry);
                     core::ptr::write(entry_addr, LockEntryStorage::default());
 
-                    lock.lock.acquire_read(Class::ID, entry_addr as *mut core::ffi::c_void);
+                    lock.lock.acquire_read(entry_addr as *mut core::ffi::c_void);
 
                     let token_addr = core::ptr::addr_of_mut!((*this).token);
                     core::ptr::write(token_addr, crate::LockToken::new());
@@ -137,7 +138,7 @@ impl<'a, Class: LockClass> BrwLockPiWriteGuard<'a, Class> {
                     let entry_addr = core::ptr::addr_of_mut!((*this).lock_entry);
                     core::ptr::write(entry_addr, LockEntryStorage::default());
 
-                    lock.lock.acquire_write(Class::ID, entry_addr as *mut core::ffi::c_void);
+                    lock.lock.acquire_write(entry_addr as *mut core::ffi::c_void);
 
                     let token_addr = core::ptr::addr_of_mut!((*this).token);
                     core::ptr::write(token_addr, crate::LockToken::new());
@@ -246,7 +247,7 @@ mod tests {
         use std::sync::atomic::Ordering;
 
         stack_pin_init!(let test = pin_init!(BrwLockTest {
-            lock <- RawBrwLockPi::init(),
+            lock <- unsafe { RawBrwLockPi::init(core::ptr::null()) },
             state: std::sync::atomic::AtomicU32::new(0).into(),
             kill: std::sync::atomic::AtomicBool::new(false).into(),
         }));
@@ -259,7 +260,7 @@ mod tests {
                     while !test.kill.load(Ordering::Relaxed) {
                         // SAFETY: lock is initialized and pinned.
                         unsafe {
-                            test.lock.acquire_read(core::ptr::null_mut(), core::ptr::null_mut());
+                            test.lock.acquire_read(core::ptr::null_mut());
                         }
                         test.state.fetch_add(1, Ordering::Relaxed);
                         std::thread::yield_now();
@@ -278,7 +279,7 @@ mod tests {
                     while !test.kill.load(Ordering::Relaxed) {
                         // SAFETY: lock is initialized and pinned.
                         unsafe {
-                            test.lock.acquire_write(core::ptr::null_mut(), core::ptr::null_mut());
+                            test.lock.acquire_write(core::ptr::null_mut());
                         }
                         test.state.fetch_add(0x10000, Ordering::Relaxed);
                         std::thread::yield_now();

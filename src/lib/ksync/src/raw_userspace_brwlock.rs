@@ -18,8 +18,15 @@ unsafe impl Send for RawBrwLockPi {}
 
 impl RawBrwLockPi {
     /// Initializes a new `RawBrwLockPi` in-place.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that `class_id` is either null or points to a valid,
+    /// static `LockClassId` that remains valid for the lifetime of the lock.
     #[inline]
-    pub fn init() -> impl PinInit<Self, core::convert::Infallible> {
+    pub unsafe fn init(
+        _class_id: *const core::ffi::c_void,
+    ) -> impl PinInit<Self, core::convert::Infallible> {
         // SAFETY: The closure correctly initializes the raw userspace lock state in-place
         // and satisfies all safety requirements of `pin_init_from_closure`.
         unsafe {
@@ -36,11 +43,7 @@ impl RawBrwLockPi {
     ///
     /// The caller must ensure that the lock is pinned and initialized.
     #[inline]
-    pub unsafe fn acquire_read(
-        &self,
-        _lcid: *mut core::ffi::c_void,
-        _entry: *mut core::ffi::c_void,
-    ) {
+    pub unsafe fn acquire_read(&self, _entry: *mut core::ffi::c_void) {
         self.inner.lock_shared();
     }
 
@@ -61,11 +64,7 @@ impl RawBrwLockPi {
     ///
     /// The caller must ensure that the lock is pinned and initialized.
     #[inline]
-    pub unsafe fn acquire_write(
-        &self,
-        _lcid: *mut core::ffi::c_void,
-        _entry: *mut core::ffi::c_void,
-    ) {
+    pub unsafe fn acquire_write(&self, _entry: *mut core::ffi::c_void) {
         self.inner.lock_exclusive();
     }
 

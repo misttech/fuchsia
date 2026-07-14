@@ -85,80 +85,121 @@ static_assert(sizeof(SystemBrwLockType) == kExpectedBrwLockSize, "SystemBrwLockT
 static_assert(alignof(SystemBrwLockType) == kExpectedBrwLockAlign,
               "SystemBrwLockType alignment mismatch");
 
+#if WITH_LOCK_DEP
+template <typename T>
+using LockPtr = lockdep::Lock<T>*;
+
+template <typename T>
+struct LockInitHelper : public lockdep::Lock<T> {
+  LockInitHelper(lockdep::LockClassId id) : lockdep::Lock<T>(id) {}
+};
+#else
+template <typename T>
+using LockPtr = T*;
+#endif
+
 extern "C" {
 
-void cpp_mutex_init(Mutex* mutex);
-void cpp_mutex_destroy(Mutex* mutex);
-void cpp_mutex_acquire(Mutex* mutex, lockdep::LockClassId lcid, void* entry_storage);
-void cpp_mutex_release(Mutex* mutex, void* entry_storage);
-void cpp_critical_mutex_init(CriticalMutex* mutex);
-void cpp_critical_mutex_destroy(CriticalMutex* mutex);
-bool cpp_critical_mutex_acquire(CriticalMutex* mutex, lockdep::LockClassId lcid,
-                                void* entry_storage);
-void cpp_critical_mutex_release(CriticalMutex* mutex, void* entry_storage, bool should_clear);
-void cpp_spinlock_init(SpinLock* lock);
-void cpp_spinlock_destroy(SpinLock* lock);
-interrupt_saved_state_t cpp_spinlock_acquire_irqsave(SpinLock* lock, lockdep::LockClassId lcid,
-                                                     void* entry_storage);
-void cpp_spinlock_release_irqrestore(SpinLock* lock, void* entry_storage,
+void cpp_mutex_init(LockPtr<Mutex> mutex, const void* class_id);
+void cpp_mutex_destroy(LockPtr<Mutex> mutex);
+void cpp_mutex_acquire(LockPtr<Mutex> lock, void* entry_storage);
+void cpp_mutex_release(LockPtr<Mutex> lock, void* entry_storage);
+void cpp_critical_mutex_init(LockPtr<CriticalMutex> mutex, const void* class_id);
+void cpp_critical_mutex_destroy(LockPtr<CriticalMutex> mutex);
+bool cpp_critical_mutex_acquire(LockPtr<CriticalMutex> lock, void* entry_storage);
+void cpp_critical_mutex_release(LockPtr<CriticalMutex> lock, void* entry_storage,
+                                bool should_clear);
+void cpp_spinlock_init(LockPtr<SpinLock> lock, const void* class_id);
+void cpp_spinlock_destroy(LockPtr<SpinLock> lock);
+interrupt_saved_state_t cpp_spinlock_acquire_irqsave(LockPtr<SpinLock> lock, void* entry_storage);
+void cpp_spinlock_release_irqrestore(LockPtr<SpinLock> lock, void* entry_storage,
                                      interrupt_saved_state_t state);
 void cpp_event_init(Event* event, bool initial);
 void cpp_event_destroy(Event* event);
 void cpp_event_signal(Event* event, zx_status_t wait_result);
 void cpp_event_unsignal(Event* event);
 zx_status_t cpp_event_wait(Event* event, zx_instant_mono_t deadline);
-void cpp_brwlock_pi_init(SystemBrwLockType* lock);
-void cpp_brwlock_pi_destroy(SystemBrwLockType* lock);
-void cpp_brwlock_pi_acquire_read(SystemBrwLockType* lock, lockdep::LockClassId lcid,
-                                 void* entry_storage);
-void cpp_brwlock_pi_release_read(SystemBrwLockType* lock, void* entry_storage);
-void cpp_brwlock_pi_acquire_write(SystemBrwLockType* lock, lockdep::LockClassId lcid,
-                                  void* entry_storage);
-void cpp_brwlock_pi_release_write(SystemBrwLockType* lock, void* entry_storage);
+void cpp_brwlock_pi_init(LockPtr<BrwLockPi> lock, const void* class_id);
+void cpp_brwlock_pi_destroy(LockPtr<BrwLockPi> lock);
+void cpp_brwlock_pi_acquire_read(LockPtr<BrwLockPi> lock, void* entry_storage);
+void cpp_brwlock_pi_release_read(LockPtr<BrwLockPi> lock, void* entry_storage);
+void cpp_brwlock_pi_acquire_write(LockPtr<BrwLockPi> lock, void* entry_storage);
+void cpp_brwlock_pi_release_write(LockPtr<BrwLockPi> lock, void* entry_storage);
 
-void cpp_mutex_init(Mutex* mutex) { new (mutex) Mutex(); }
-
-void cpp_mutex_destroy(Mutex* mutex) { mutex->~Mutex(); }
-
-void cpp_mutex_acquire(Mutex* mutex, lockdep::LockClassId lcid,
-                       void* entry_storage) TA_NO_THREAD_SAFETY_ANALYSIS {
+void cpp_mutex_init(LockPtr<Mutex> lock, const void* class_id) {
 #if WITH_LOCK_DEP
-  if (lcid != nullptr && entry_storage != nullptr) {
-    auto* entry = new (entry_storage) lockdep::AcquiredLockEntry(mutex, lcid, 0);
-    lockdep::ThreadLockState::Get(lockdep::LockFlagsNone)->Acquire(entry);
-  }
+  new (lock) LockInitHelper<Mutex>(reinterpret_cast<lockdep::LockClassId>(class_id));
+#else
+  new (lock) Mutex();
 #endif
-  mutex->Acquire();
 }
 
-void cpp_mutex_release(Mutex* mutex, void* entry_storage) TA_NO_THREAD_SAFETY_ANALYSIS {
+void cpp_mutex_destroy(LockPtr<Mutex> lock) {
+#if WITH_LOCK_DEP
+  using LockType = lockdep::Lock<Mutex>;
+  lock->~LockType();
+#else
+  lock->~Mutex();
+#endif
+}
+
+void cpp_mutex_acquire(LockPtr<Mutex> lock, void* entry_storage) TA_NO_THREAD_SAFETY_ANALYSIS {
+#if WITH_LOCK_DEP
+  if (entry_storage != nullptr) {
+    auto* entry = new (entry_storage) lockdep::AcquiredLockEntry(&lock->lock(), lock->id(), 0);
+    lockdep::ThreadLockState::Get(lockdep::LockFlagsNone)->Acquire(entry);
+  }
+  lock->lock().Acquire();
+#else
+  lock->Acquire();
+#endif
+}
+
+void cpp_mutex_release(LockPtr<Mutex> lock, void* entry_storage) TA_NO_THREAD_SAFETY_ANALYSIS {
 #if WITH_LOCK_DEP
   if (entry_storage != nullptr) {
     auto* entry = static_cast<lockdep::AcquiredLockEntry*>(entry_storage);
     lockdep::ThreadLockState::Get(lockdep::LockFlagsNone)->Release(entry);
     entry->~AcquiredLockEntry();
   }
+  lock->lock().Release();
+#else
+  lock->Release();
 #endif
-  mutex->Release();
 }
 
-void cpp_critical_mutex_init(CriticalMutex* mutex) { new (mutex) CriticalMutex(); }
+void cpp_critical_mutex_init(LockPtr<CriticalMutex> lock, const void* class_id) {
+#if WITH_LOCK_DEP
+  new (lock) LockInitHelper<CriticalMutex>(reinterpret_cast<lockdep::LockClassId>(class_id));
+#else
+  new (lock) CriticalMutex();
+#endif
+}
 
-void cpp_critical_mutex_destroy(CriticalMutex* mutex) { mutex->~CriticalMutex(); }
+void cpp_critical_mutex_destroy(LockPtr<CriticalMutex> lock) {
+#if WITH_LOCK_DEP
+  using LockType = lockdep::Lock<CriticalMutex>;
+  lock->~LockType();
+#else
+  lock->~CriticalMutex();
+#endif
+}
 
-bool cpp_critical_mutex_acquire(CriticalMutex* mutex, lockdep::LockClassId lcid,
+bool cpp_critical_mutex_acquire(LockPtr<CriticalMutex> lock,
                                 void* entry_storage) TA_NO_THREAD_SAFETY_ANALYSIS {
 #if WITH_LOCK_DEP
-  if (lcid != nullptr && entry_storage != nullptr) {
-    auto* entry = new (entry_storage) lockdep::AcquiredLockEntry(mutex, lcid, 0);
+  if (entry_storage != nullptr) {
+    auto* entry = new (entry_storage) lockdep::AcquiredLockEntry(&lock->lock(), lock->id(), 0);
     lockdep::ThreadLockState::Get(lockdep::LockFlagsNone)->Acquire(entry);
   }
+  auto should_clear = lock->lock().Acquire();
+#else
+  auto should_clear = lock->Acquire();
 #endif
-  auto should_clear = mutex->Acquire();
   return should_clear == CriticalMutex::ShouldClear::Yes;
 }
 
-void cpp_critical_mutex_release(CriticalMutex* mutex, void* entry_storage,
+void cpp_critical_mutex_release(LockPtr<CriticalMutex> lock, void* entry_storage,
                                 bool should_clear) TA_NO_THREAD_SAFETY_ANALYSIS {
 #if WITH_LOCK_DEP
   if (entry_storage != nullptr) {
@@ -166,28 +207,46 @@ void cpp_critical_mutex_release(CriticalMutex* mutex, void* entry_storage,
     lockdep::ThreadLockState::Get(lockdep::LockFlagsNone)->Release(entry);
     entry->~AcquiredLockEntry();
   }
+  lock->lock().Release(should_clear ? CriticalMutex::ShouldClear::Yes
+                                    : CriticalMutex::ShouldClear::No);
+#else
+  lock->Release(should_clear ? CriticalMutex::ShouldClear::Yes : CriticalMutex::ShouldClear::No);
 #endif
-  mutex->Release(should_clear ? CriticalMutex::ShouldClear::Yes : CriticalMutex::ShouldClear::No);
 }
 
-void cpp_spinlock_init(SpinLock* lock) { new (lock) SpinLock(); }
+void cpp_spinlock_init(LockPtr<SpinLock> lock, const void* class_id) {
+#if WITH_LOCK_DEP
+  new (lock) LockInitHelper<SpinLock>(reinterpret_cast<lockdep::LockClassId>(class_id));
+#else
+  new (lock) SpinLock();
+#endif
+}
 
-void cpp_spinlock_destroy(SpinLock* lock) { lock->~SpinLock(); }
+void cpp_spinlock_destroy(LockPtr<SpinLock> lock) {
+#if WITH_LOCK_DEP
+  using LockType = lockdep::Lock<SpinLock>;
+  lock->~LockType();
+#else
+  lock->~SpinLock();
+#endif
+}
 
-interrupt_saved_state_t cpp_spinlock_acquire_irqsave(
-    SpinLock* lock, lockdep::LockClassId lcid, void* entry_storage) TA_NO_THREAD_SAFETY_ANALYSIS {
+interrupt_saved_state_t cpp_spinlock_acquire_irqsave(LockPtr<SpinLock> lock, void* entry_storage)
+    TA_NO_THREAD_SAFETY_ANALYSIS {
   interrupt_saved_state_t state = arch_interrupt_save();
 #if WITH_LOCK_DEP
-  if (lcid != nullptr && entry_storage != nullptr) {
-    auto* entry = new (entry_storage) lockdep::AcquiredLockEntry(lock, lcid, 0);
+  if (entry_storage != nullptr) {
+    auto* entry = new (entry_storage) lockdep::AcquiredLockEntry(&lock->lock(), lock->id(), 0);
     lockdep::ThreadLockState::Get(lockdep::LockFlagsIrqSafe)->Acquire(entry);
   }
-#endif
+  lock->lock().Acquire();
+#else
   lock->Acquire();
+#endif
   return state;
 }
 
-void cpp_spinlock_release_irqrestore(SpinLock* lock, void* entry_storage,
+void cpp_spinlock_release_irqrestore(LockPtr<SpinLock> lock, void* entry_storage,
                                      interrupt_saved_state_t state) TA_NO_THREAD_SAFETY_ANALYSIS {
 #if WITH_LOCK_DEP
   if (entry_storage != nullptr) {
@@ -195,8 +254,10 @@ void cpp_spinlock_release_irqrestore(SpinLock* lock, void* entry_storage,
     lockdep::ThreadLockState::Get(lockdep::LockFlagsIrqSafe)->Release(entry);
     entry->~AcquiredLockEntry();
   }
-#endif
+  lock->lock().ReleaseIrqRestore(state);
+#else
   lock->ReleaseIrqRestore(state);
+#endif
 }
 
 void cpp_event_init(Event* event, bool initial) { new (event) Event(initial); }
@@ -211,15 +272,28 @@ zx_status_t cpp_event_wait(Event* event, zx_instant_mono_t deadline) {
   return event->Wait(Deadline::no_slack(deadline));
 }
 
-void cpp_brwlock_pi_init(SystemBrwLockType* lock) { new (lock) SystemBrwLockType(); }
+void cpp_brwlock_pi_init(LockPtr<BrwLockPi> lock, const void* class_id) {
+#if WITH_LOCK_DEP
+  new (lock) LockInitHelper<BrwLockPi>(reinterpret_cast<lockdep::LockClassId>(class_id));
+#else
+  new (lock) BrwLockPi();
+#endif
+}
 
-void cpp_brwlock_pi_destroy(SystemBrwLockType* lock) { lock->~SystemBrwLockType(); }
+void cpp_brwlock_pi_destroy(LockPtr<BrwLockPi> lock) {
+#if WITH_LOCK_DEP
+  using LockType = lockdep::Lock<BrwLockPi>;
+  lock->~LockType();
+#else
+  lock->~BrwLockPi();
+#endif
+}
 
-void cpp_brwlock_pi_acquire_read(SystemBrwLockType* lock, lockdep::LockClassId lcid,
+void cpp_brwlock_pi_acquire_read(LockPtr<BrwLockPi> lock,
                                  void* entry_storage) TA_NO_THREAD_SAFETY_ANALYSIS {
 #if WITH_LOCK_DEP
-  if (lcid != nullptr && entry_storage != nullptr) {
-    auto* entry = new (entry_storage) lockdep::AcquiredLockEntry(lock, lcid, 0);
+  if (entry_storage != nullptr) {
+    auto* entry = new (entry_storage) lockdep::AcquiredLockEntry(&lock->lock(), lock->id(), 0);
     lockdep::ThreadLockState::Get(lockdep::LockFlagsMultiAcquire)->Acquire(entry);
   }
   lock->lock().ReadAcquire();
@@ -228,7 +302,7 @@ void cpp_brwlock_pi_acquire_read(SystemBrwLockType* lock, lockdep::LockClassId l
 #endif
 }
 
-void cpp_brwlock_pi_release_read(SystemBrwLockType* lock,
+void cpp_brwlock_pi_release_read(LockPtr<BrwLockPi> lock,
                                  void* entry_storage) TA_NO_THREAD_SAFETY_ANALYSIS {
 #if WITH_LOCK_DEP
   if (entry_storage != nullptr) {
@@ -242,11 +316,11 @@ void cpp_brwlock_pi_release_read(SystemBrwLockType* lock,
 #endif
 }
 
-void cpp_brwlock_pi_acquire_write(SystemBrwLockType* lock, lockdep::LockClassId lcid,
+void cpp_brwlock_pi_acquire_write(LockPtr<BrwLockPi> lock,
                                   void* entry_storage) TA_NO_THREAD_SAFETY_ANALYSIS {
 #if WITH_LOCK_DEP
-  if (lcid != nullptr && entry_storage != nullptr) {
-    auto* entry = new (entry_storage) lockdep::AcquiredLockEntry(lock, lcid, 0);
+  if (entry_storage != nullptr) {
+    auto* entry = new (entry_storage) lockdep::AcquiredLockEntry(&lock->lock(), lock->id(), 0);
     lockdep::ThreadLockState::Get(lockdep::LockFlagsMultiAcquire)->Acquire(entry);
   }
   lock->lock().WriteAcquire();
@@ -255,7 +329,7 @@ void cpp_brwlock_pi_acquire_write(SystemBrwLockType* lock, lockdep::LockClassId 
 #endif
 }
 
-void cpp_brwlock_pi_release_write(SystemBrwLockType* lock,
+void cpp_brwlock_pi_release_write(LockPtr<BrwLockPi> lock,
                                   void* entry_storage) TA_NO_THREAD_SAFETY_ANALYSIS {
 #if WITH_LOCK_DEP
   if (entry_storage != nullptr) {

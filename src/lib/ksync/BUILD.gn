@@ -89,6 +89,7 @@ if (is_kernel) {
     deps = [
       ":ksync",
       "//third_party/rust_crates:pin-init",
+      "//zircon/kernel/lib/unittest/rust:unittest",
     ]
   }
 }

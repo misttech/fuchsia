@@ -12,20 +12,16 @@ const RAW_MUTEX_SIZE: usize = 32;
 const RAW_MUTEX_SIZE: usize = 24;
 
 unsafe extern "C" {
-    fn cpp_mutex_init(mutex: *mut c_void);
+    fn cpp_mutex_init(mutex: *mut c_void, class_id: *const c_void);
     fn cpp_mutex_destroy(mutex: *mut c_void);
-    fn cpp_mutex_acquire(mutex: *mut c_void, lcid: *mut c_void, entry_storage: *mut c_void);
-    fn cpp_mutex_release(mutex: *mut c_void, entry_storage: *mut c_void);
+    fn cpp_mutex_acquire(lock: *mut c_void, entry_storage: *mut c_void);
+    fn cpp_mutex_release(lock: *mut c_void, entry_storage: *mut c_void);
 
-    fn cpp_critical_mutex_init(mutex: *mut c_void);
+    fn cpp_critical_mutex_init(mutex: *mut c_void, class_id: *const c_void);
     fn cpp_critical_mutex_destroy(mutex: *mut c_void);
-    fn cpp_critical_mutex_acquire(
-        mutex: *mut c_void,
-        lcid: *mut c_void,
-        entry_storage: *mut c_void,
-    ) -> bool;
+    fn cpp_critical_mutex_acquire(lock: *mut c_void, entry_storage: *mut c_void) -> bool;
     fn cpp_critical_mutex_release(
-        mutex: *mut c_void,
+        lock: *mut c_void,
         entry_storage: *mut c_void,
         should_clear: bool,
     );
@@ -58,8 +54,8 @@ impl crate::RawLock for RawMutex {
     type GuardState = ();
 
     #[inline]
-    fn init() -> impl PinInit<Self, core::convert::Infallible> {
-        zr::pin_init_ffi!(cpp_mutex_init)
+    unsafe fn init(class_id: *const c_void) -> impl PinInit<Self, core::convert::Infallible> {
+        zr::pin_init_ffi!(cpp_mutex_init, class_id)
     }
 
     #[inline]
@@ -68,14 +64,18 @@ impl crate::RawLock for RawMutex {
     }
 
     #[inline]
-    unsafe fn acquire(&self, lcid: *mut c_void, entry: *mut Self::LockEntry) -> Self::GuardState {
+    unsafe fn acquire(&self, entry: *mut Self::LockEntry) -> Self::GuardState {
+        // SAFETY: The FFI call is safe because the lock is initialized, and the caller guarantees
+        // that `entry` points to valid storage for a lockdep entry.
         unsafe {
-            cpp_mutex_acquire(self.as_mut_ptr(), lcid, entry as *mut c_void);
+            cpp_mutex_acquire(self.as_mut_ptr(), entry as *mut c_void);
         }
     }
 
     #[inline]
     unsafe fn release(&self, entry: *mut Self::LockEntry, _state: Self::GuardState) {
+        // SAFETY: The FFI call is safe because the lock is initialized, and the caller guarantees
+        // that `entry` points to valid storage for a lockdep entry.
         unsafe {
             cpp_mutex_release(self.as_mut_ptr(), entry as *mut c_void);
         }
@@ -102,8 +102,8 @@ impl crate::RawLock for RawCriticalMutex {
     type GuardState = bool;
 
     #[inline]
-    fn init() -> impl PinInit<Self, core::convert::Infallible> {
-        zr::pin_init_ffi!(cpp_critical_mutex_init)
+    unsafe fn init(class_id: *const c_void) -> impl PinInit<Self, core::convert::Infallible> {
+        zr::pin_init_ffi!(cpp_critical_mutex_init, class_id)
     }
 
     #[inline]
@@ -112,12 +112,16 @@ impl crate::RawLock for RawCriticalMutex {
     }
 
     #[inline]
-    unsafe fn acquire(&self, lcid: *mut c_void, entry: *mut Self::LockEntry) -> Self::GuardState {
-        unsafe { cpp_critical_mutex_acquire(self.as_mut_ptr(), lcid, entry as *mut c_void) }
+    unsafe fn acquire(&self, entry: *mut Self::LockEntry) -> Self::GuardState {
+        // SAFETY: The FFI call is safe because the lock is initialized, and the caller guarantees
+        // that `entry` points to valid storage for a lockdep entry.
+        unsafe { cpp_critical_mutex_acquire(self.as_mut_ptr(), entry as *mut c_void) }
     }
 
     #[inline]
     unsafe fn release(&self, entry: *mut Self::LockEntry, should_clear: Self::GuardState) {
+        // SAFETY: The FFI call is safe because the lock is initialized, and the caller guarantees
+        // that `entry` points to valid storage for a lockdep entry.
         unsafe {
             cpp_critical_mutex_release(self.as_mut_ptr(), entry as *mut c_void, should_clear);
         }

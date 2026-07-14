@@ -7,19 +7,11 @@ use core::pin::Pin;
 use pin_init::{PinInit, pin_data, pinned_drop};
 
 unsafe extern "C" {
-    fn cpp_brwlock_pi_init(lock: *mut c_void);
+    fn cpp_brwlock_pi_init(lock: *mut c_void, class_id: *const c_void);
     fn cpp_brwlock_pi_destroy(lock: *mut c_void);
-    fn cpp_brwlock_pi_acquire_read(
-        lock: *mut c_void,
-        lcid: *mut c_void,
-        entry_storage: *mut c_void,
-    );
+    fn cpp_brwlock_pi_acquire_read(lock: *mut c_void, entry_storage: *mut c_void);
     fn cpp_brwlock_pi_release_read(lock: *mut c_void, entry_storage: *mut c_void);
-    fn cpp_brwlock_pi_acquire_write(
-        lock: *mut c_void,
-        lcid: *mut c_void,
-        entry_storage: *mut c_void,
-    );
+    fn cpp_brwlock_pi_acquire_write(lock: *mut c_void, entry_storage: *mut c_void);
     fn cpp_brwlock_pi_release_write(lock: *mut c_void, entry_storage: *mut c_void);
 }
 
@@ -70,9 +62,14 @@ impl PinnedDrop for RawBrwLockPi {
 
 impl RawBrwLockPi {
     /// Initializes a new `RawBrwLockPi` in-place.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that `class_id` is either null or points to a valid,
+    /// static `LockClassId` that remains valid for the lifetime of the lock.
     #[inline]
-    pub fn init() -> impl PinInit<Self, core::convert::Infallible> {
-        zr::pin_init_ffi!(cpp_brwlock_pi_init)
+    pub unsafe fn init(class_id: *const c_void) -> impl PinInit<Self, core::convert::Infallible> {
+        zr::pin_init_ffi!(cpp_brwlock_pi_init, class_id)
     }
 
     /// Returns a raw pointer to the underlying storage.
@@ -86,14 +83,13 @@ impl RawBrwLockPi {
     /// # Safety
     ///
     /// The caller must ensure that the lock is pinned and initialized. If `lock_dep` is enabled,
-    /// `lcid` must be a valid pointer to a lock class, and `entry` must point to valid storage
-    /// for a lockdep entry.
+    /// `entry` must point to valid storage for a lockdep entry.
     #[inline]
-    pub unsafe fn acquire_read(&self, lcid: *mut c_void, entry: *mut c_void) {
+    pub unsafe fn acquire_read(&self, entry: *mut c_void) {
         // SAFETY: The FFI call is safe because the lock is initialized, and the caller guarantees
-        // that `lcid` and `entry` (if applicable) are valid.
+        // that `entry` (if applicable) are valid.
         unsafe {
-            cpp_brwlock_pi_acquire_read(self.as_mut_ptr(), lcid, entry);
+            cpp_brwlock_pi_acquire_read(self.as_mut_ptr(), entry);
         }
     }
 
@@ -117,14 +113,13 @@ impl RawBrwLockPi {
     /// # Safety
     ///
     /// The caller must ensure that the lock is pinned and initialized. If `lock_dep` is enabled,
-    /// `lcid` must be a valid pointer to a lock class, and `entry` must point to valid storage
-    /// for a lockdep entry.
+    /// `entry` must point to valid storage for a lockdep entry.
     #[inline]
-    pub unsafe fn acquire_write(&self, lcid: *mut c_void, entry: *mut c_void) {
+    pub unsafe fn acquire_write(&self, entry: *mut c_void) {
         // SAFETY: The FFI call is safe because the lock is initialized, and the caller guarantees
-        // that `lcid` and `entry` (if applicable) are valid.
+        // that `entry` (if applicable) are valid.
         unsafe {
-            cpp_brwlock_pi_acquire_write(self.as_mut_ptr(), lcid, entry);
+            cpp_brwlock_pi_acquire_write(self.as_mut_ptr(), entry);
         }
     }
 

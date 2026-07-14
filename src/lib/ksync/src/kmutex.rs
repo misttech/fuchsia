@@ -30,7 +30,7 @@ impl<Class: LockClass, M: RawLock> KMutex<Class, M> {
     /// Safe dynamic initialization of the validation lock inside pin context.
     pub fn init() -> impl PinInit<Self, core::convert::Infallible> {
         pin_init!(Self {
-            mutex <- M::init(),
+            mutex <- unsafe { M::init(Self::class_id()) },
             _marker: PhantomData,
         })
     }
@@ -39,6 +39,10 @@ impl<Class: LockClass, M: RawLock> KMutex<Class, M> {
     #[inline]
     pub fn lock(&self) -> impl PinInit<KMutexGuard<'_, Class, M>, core::convert::Infallible> {
         KMutexGuard::new(self)
+    }
+
+    const fn class_id() -> *const core::ffi::c_void {
+        if cfg!(feature = "lock_dep") { Class::ID } else { core::ptr::null() }
     }
 }
 
@@ -81,7 +85,7 @@ impl<'a, Class: LockClass, M: RawLock> KMutexGuard<'a, Class, M> {
                 let entry_addr = core::ptr::addr_of_mut!((*this).lock_entry);
                 core::ptr::write(entry_addr, M::LockEntry::default());
 
-                let state = mutex.mutex.acquire(Class::ID, entry_addr);
+                let state = mutex.mutex.acquire(entry_addr);
 
                 let state_addr = core::ptr::addr_of_mut!((*this).state);
                 core::ptr::write(state_addr, state);

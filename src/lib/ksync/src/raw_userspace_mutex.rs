@@ -13,7 +13,9 @@ impl RawLock for fuchsia_sync::RawMutex {
     type GuardState = ();
 
     #[inline]
-    fn init() -> impl PinInit<Self, core::convert::Infallible> {
+    unsafe fn init(
+        _class_id: *const core::ffi::c_void,
+    ) -> impl PinInit<Self, core::convert::Infallible> {
         unsafe {
             pin_init_from_closure(|slot| {
                 core::ptr::write(slot, fuchsia_sync::RawMutex::INIT);
@@ -28,11 +30,7 @@ impl RawLock for fuchsia_sync::RawMutex {
     }
 
     #[inline]
-    unsafe fn acquire(
-        &self,
-        _lcid: *mut core::ffi::c_void,
-        _entry: *mut Self::LockEntry,
-    ) -> Self::GuardState {
+    unsafe fn acquire(&self, _entry: *mut Self::LockEntry) -> Self::GuardState {
         self.lock();
     }
 

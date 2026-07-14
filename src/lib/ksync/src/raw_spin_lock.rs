@@ -18,11 +18,10 @@ type InnerSavedState = bool;
 pub struct InterruptSavedState(InnerSavedState);
 
 unsafe extern "C" {
-    fn cpp_spinlock_init(lock: *mut c_void);
+    fn cpp_spinlock_init(lock: *mut c_void, class_id: *const c_void);
     fn cpp_spinlock_destroy(lock: *mut c_void);
     fn cpp_spinlock_acquire_irqsave(
         lock: *mut c_void,
-        lcid: *mut c_void,
         entry_storage: *mut c_void,
     ) -> InterruptSavedState;
     fn cpp_spinlock_release_irqrestore(
@@ -60,8 +59,8 @@ impl crate::RawLock for RawSpinlock {
     type GuardState = InterruptSavedState;
 
     #[inline]
-    fn init() -> impl PinInit<Self, core::convert::Infallible> {
-        zr::pin_init_ffi!(cpp_spinlock_init)
+    unsafe fn init(class_id: *const c_void) -> impl PinInit<Self, core::convert::Infallible> {
+        zr::pin_init_ffi!(cpp_spinlock_init, class_id)
     }
 
     #[inline]
@@ -70,12 +69,16 @@ impl crate::RawLock for RawSpinlock {
     }
 
     #[inline]
-    unsafe fn acquire(&self, lcid: *mut c_void, entry: *mut Self::LockEntry) -> Self::GuardState {
-        unsafe { cpp_spinlock_acquire_irqsave(self.as_mut_ptr(), lcid, entry as *mut c_void) }
+    unsafe fn acquire(&self, entry: *mut Self::LockEntry) -> Self::GuardState {
+        // SAFETY: The FFI call is safe because the lock is initialized, and the caller guarantees
+        // that `entry` points to valid storage for a lockdep entry.
+        unsafe { cpp_spinlock_acquire_irqsave(self.as_mut_ptr(), entry as *mut c_void) }
     }
 
     #[inline]
     unsafe fn release(&self, entry: *mut Self::LockEntry, state: Self::GuardState) {
+        // SAFETY: The FFI call is safe because the lock is initialized, and the caller guarantees
+        // that `entry` points to valid storage for a lockdep entry.
         unsafe {
             cpp_spinlock_release_irqrestore(self.as_mut_ptr(), entry as *mut c_void, state);
         }

@@ -16,7 +16,14 @@ pub trait RawLock {
     type GuardState: Default + Copy;
 
     /// Returns a PinInit block to initialize the raw mutex in-place.
-    fn init() -> impl PinInit<Self, core::convert::Infallible>
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that `class_id` is either null or points to a valid,
+    /// static `LockClassId` that remains valid for the lifetime of the lock.
+    unsafe fn init(
+        class_id: *const core::ffi::c_void,
+    ) -> impl PinInit<Self, core::convert::Infallible>
     where
         Self: Sized;
 
@@ -27,17 +34,11 @@ pub trait RawLock {
     ///
     /// # Safety
     ///
-    /// 1. The `lcid` pointer must point to a valid dynamic `LockClassId` if not null (used for
-    ///    LockDep).
-    /// 2. The `entry` pointer must point to a valid, exclusive, stack-allocated `LockEntry` slot
+    /// 1. The `entry` pointer must point to a valid, exclusive, stack-allocated `LockEntry` slot
     ///    which will be registered in the thread's active list.
-    /// 3. The caller must ensure that the `entry` memory remains pinned on the stack and is not
+    /// 2. The caller must ensure that the `entry` memory remains pinned on the stack and is not
     ///    dropped or moved until the matching `release` call completes.
-    unsafe fn acquire(
-        &self,
-        lcid: *mut core::ffi::c_void,
-        entry: *mut Self::LockEntry,
-    ) -> Self::GuardState;
+    unsafe fn acquire(&self, entry: *mut Self::LockEntry) -> Self::GuardState;
 
     /// Releases the raw synchronization lock, restoring the state.
     ///
