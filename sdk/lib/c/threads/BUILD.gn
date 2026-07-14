@@ -273,8 +273,10 @@ libc_source_set("thread-create") {
     "thread-start.cc",
   ]
   deps = [
+    ":stack-abi",
     ":thread-list",
     "..:weak",
+    "//src/lib/elfldltl:headers",
   ]
   libc_deps = [
     ":thread-exit",

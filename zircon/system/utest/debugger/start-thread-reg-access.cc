@@ -133,16 +133,21 @@ void test_thread_start_register_access(reg_access_test_state_t* test_state, zx_h
   expected_regs.rsp = regs.rsp;
   expected_regs.rdi = regs.rdi;
   expected_regs.rsi = regs.rsi;
+  expected_regs.fs_base = regs.fs_base;
 #elif defined(__aarch64__)
   expected_regs.pc = regs.pc;
   expected_regs.sp = regs.sp;
   expected_regs.r[0] = regs.r[0];
   expected_regs.r[1] = regs.r[1];
+  expected_regs.r[18] = regs.r[18];
+  expected_regs.tpidr = regs.tpidr;
 #elif defined(__riscv)
   expected_regs.pc = regs.pc;
   expected_regs.sp = regs.sp;
   expected_regs.a0 = regs.a0;
   expected_regs.a1 = regs.a1;
+  expected_regs.gp = regs.gp;
+  expected_regs.tp = regs.tp;
 #else
 #error "what machine?"
 #endif

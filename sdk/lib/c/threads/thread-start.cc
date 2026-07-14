@@ -2,12 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <lib/elfldltl/machine.h>
 #include <lib/zx/thread.h>
 #include <zircon/sanitizer.h>
 
+#include <concepts>
 #include <cstdint>
 
 #include "../weak.h"
+#include "stack-abi.h"
 #include "thread-list.h"
 #include "thread-storage.h"
 #include "thread.h"
@@ -21,6 +24,40 @@ namespace {
 
 using SanitizerCreateHook = Weak<__sanitizer_thread_create_hook>;
 using SanitizerStartHook = Weak<__sanitizer_thread_start_hook>;
+
+[[noreturn]] void StartThread(ThreadFunction* func, void* arg) {
+  Thread& self = *__pthread_self();
+
+  // Note that the sanitizer_hook value is not stored anywhere else and is
+  // never made visible to __sanitizer_memory_snapshot.
+  SanitizerStartHook::Call(self.sanitizer_hook, ToC11Thread(self));
+
+  // The function and arg pointers are never live anywhere but in temporary
+  // registers; __sanitizer_memory_snapshot() will find them in the registers
+  // if this thread is suspended before now (including before it ever runs its
+  // first instruction).  But once the call to func begins, it won't find a way
+  // to reach them unless the user code makes them reachable.
+  ThreadExit(func(arg));
+}
+
+uint64_t ThreadAbiReg(std::same_as<Thread> auto& thread) {
+  if constexpr (kShadowCallStackAbi) {
+    uintptr_t shadow_call_stack_sp = thread.storage_shadow_call_stack_address;
+    // The first shadow call stack slot is left as zero so that a backtrace
+    // can simply read downwards from the current shadow-call-stack pointer
+    // and stop at the zero slot, without needing to know the base address to
+    // avoid reading off the bottom.
+    return shadow_call_stack_sp + sizeof(uintptr_t);
+  }
+  return 0;
+}
+
+// TODO(https://fxbug.dev/478347581): The support for the old way can be
+// removed entirely when API levels <= 30 are no longer supported at all.  Once
+// this happens, __sanitizer_memory_snapshot and maybe some other places can
+// simplify some code that works around races where a thread doesn't have its
+// $tp set up yet.
+#if FUCHSIA_API_LEVEL_AT_MOST(30)
 
 // TODO(https://fxbug.dev/478347581): Ideally &StartThread itself would be the
 // entry PC value given to zx::thread::start.  It gets two arguments in
@@ -67,21 +104,6 @@ using SanitizerStartHook = Weak<__sanitizer_thread_start_hook>;
 [[noreturn, clang::cfi_unchecked_callee]]
 void AsmTrampoline(uintptr_t arg1, uintptr_t arg2);
 
-[[noreturn]] void StartThread(ThreadFunction* func, void* arg) {
-  Thread& self = *__pthread_self();
-
-  // Note that the sanitizer_hook value is not stored anywhere else and is
-  // never made visible to __sanitizer_memory_snapshot
-  SanitizerStartHook::Call(self.sanitizer_hook, ToC11Thread(self));
-
-  // The function and arg pointers are never live anywhere but in temporary
-  // registers; __sanitizer_memory_snapshot() will find them in the registers
-  // if this thread is suspended before now (including before it ever runs the
-  // first instruction of AsmTrampoline).  But once the call to func begins, it
-  // won't find a way to reach them unless the user code makes them reachable.
-  ThreadExit(func(arg));
-}
-
 uint64_t* ThreadStackLimit(Thread& thread) {
   const std::span stack = ThreadStorage::ThreadMachineStack(thread);
   return stack.data() + stack.size();
@@ -119,13 +141,7 @@ class StartTrampoline {
     return thread_handle()->get();
 #else
     // On other machines, the initial shadow call stack pointer goes there.
-
-    uintptr_t shadow_call_stack_sp = thread_.storage_shadow_call_stack_address;
-    // The first shadow call stack slot is left as zero so that a backtrace
-    // can simply read downwards from the current shadow-call-stack pointer
-    // and stop at the zero slot, without needing to know the base address to
-    // avoid reading off the bottom.
-    return shadow_call_stack_sp + sizeof(uintptr_t);
+    return ThreadAbiReg(thread_);
 #endif
   }
 
@@ -263,6 +279,26 @@ zx::result<> StartKernelThread(Thread& thread, ThreadFunction* func, void* arg) 
   trampoline.Prepare(func, arg);
   return trampoline.Start();
 }
+
+#else
+
+// The modern zx::thread::start makes it easy.  By setting the thread pointer
+// and shadow-call-stack pointer (abi_reg) from the outset, StartThread can be
+// called directly with the full Fuchsia Compiler ABI already in place.
+zx::result<> StartKernelThread(Thread& thread, ThreadFunction* func, void* arg) {
+  zx::unowned_thread handle{thread.handle_};
+  const std::span stack = ThreadStorage::ThreadMachineStack(thread);
+  const uintptr_t pc = reinterpret_cast<uintptr_t>(&StartThread);
+  const uintptr_t sp = elfldltl::AbiTraits<>::InitialStackPointer(
+      reinterpret_cast<uintptr_t>(stack.data()), stack.size_bytes());
+  const uintptr_t arg1 = reinterpret_cast<uintptr_t>(func);
+  const uintptr_t arg2 = reinterpret_cast<uintptr_t>(arg);
+  const uintptr_t tp = reinterpret_cast<uintptr_t>(pthread_to_tp(&thread));
+  const uintptr_t abi_reg = ThreadAbiReg(thread);
+  return zx::make_result(handle->start(pc, sp, arg1, arg2, tp, abi_reg));
+}
+
+#endif  // FUCHSIA_API_LEVEL_AT_MOST(30)
 
 }  // namespace
 
