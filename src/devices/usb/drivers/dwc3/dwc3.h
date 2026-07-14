@@ -565,9 +565,7 @@ class Dwc3 : public fdf::DriverBase2,
   bool has_new_device_state_ = true;
 
   // Knobs for testing
-
-  // TODO(https://fxbug.dev/527134440): Enable by default.
-  bool enable_enqueue_many_trbs_ = false;
+  bool enable_enqueue_many_trbs_ = true;
 
   void SetDeviceState(fuchsia_hardware_usb_policy::DeviceState state);
   void SetDeviceState(fuchsia_hardware_usb_policy::DeviceState state, uint8_t address);
