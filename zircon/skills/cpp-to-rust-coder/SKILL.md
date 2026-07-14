@@ -670,3 +670,56 @@ names of the form `cpp_$namespace_$classname_$functionname`.
 If ported Rust code needs to be called from unconverted C++ code FFI shims
 should also be used, in this case the names should also be `lower_snake_case`
 but take the form `rust_$modpath_$struct_$functionname`.
+
+### 18. Local Trace Logging (`LOCAL_TRACE` & `ltrace`)
+
+When porting C++ kernel code that uses `zircon/kernel/include/trace.h` (`#define
+LOCAL_TRACE 0`, `LTRACE_ENTRY`, `LTRACEF`, `LTRACEF_LEVEL`, etc.), you must
+preserve all debug trace logging statements using the `ltrace` crate
+(`//zircon/kernel/lib/ltrace`).
+
+#### 18.1. Build Dependency
+Add `"//zircon/kernel/lib/ltrace:ltrace"` to your `deps` in `BUILD.gn`.
+
+#### 18.2. Defining the Local Trace Level (`LOCAL_TRACE`)
+In each `.rs` module or file where local tracing is used, define a module-scoped
+`const LOCAL_TRACE` at the top of the file:
+
+```rust
+// Set to 0 by default (disabled, equivalent to C++ `#define LOCAL_TRACE 0`):
+const LOCAL_TRACE: u32 = 0;
+```
+
+#### 18.3. Mechanism for Developers to Locally Update Trace Verbosity
+To locally enable higher verbosity logging in specific files during development
+or debugging:
+- Edit the module's `const LOCAL_TRACE` definition from `0` to `1` (or a higher
+  numeric verbosity level like `2`).
+- Because Rust's lexical scoping rules prefer definitions within the current
+  module over imported/outer definitions, any `ltrace!` or `ltracef!` macro
+  called within that module checks its locally defined `LOCAL_TRACE` constant.
+- When `LOCAL_TRACE` is `0` at compile time, the conditional branch (`if false {
+  ... }`) is completely eliminated by dead-branch elimination in `rustc`/LLVM.
+  This guarantees zero runtime CPU overhead and zero `.rodata` string footprint
+  in production/default builds while maintaining full compile-time format and
+  argument type checking.
+
+#### 18.4. Macro Equivalents Table
+
+| C++ (`trace.h`) | Rust (`ltrace` crate) | Notes |
+| :--- | :--- | :--- |
+| `TRACE_ENTRY` | `trace_entry!()` or `trace_entry!("Foo::bar")` | Unconditional entry log (`<module>:<line>: entry`) |
+| `TRACE_EXIT` | `trace_exit!()` or `trace_exit!("Foo::bar")` | Unconditional exit log (`<module>:<line>: exit`) |
+| `TRACE_ENTRY_OBJ` | `trace_entry_obj!(self)` | Unconditional entry log with object pointer |
+| `TRACE_EXIT_OBJ` | `trace_exit_obj!(self)` | Unconditional exit log with object pointer |
+| `TRACE` | `trace!()` | Unconditional file/line location trace |
+| `TRACEF(str, x...)` | `tracef!("fmt", x...)` | Unconditional formatted log |
+| `LTRACE_ENTRY` | `ltrace_entry!()` or `ltrace_entry!("Foo::bar")` | Guarded by `LOCAL_TRACE >= 1` |
+| `LTRACE_EXIT` | `ltrace_exit!()` or `ltrace_exit!("Foo::bar")` | Guarded by `LOCAL_TRACE >= 1` |
+| `LTRACE_ENTRY_OBJ` | `ltrace_entry_obj!(self)` | Guarded by `LOCAL_TRACE >= 1` |
+| `LTRACE_EXIT_OBJ` | `ltrace_exit_obj!(self)` | Guarded by `LOCAL_TRACE >= 1` |
+| `LTRACE` | `ltrace!()` | Guarded by `LOCAL_TRACE >= 1` |
+| `LTRACEF(x...)` | `ltracef!("fmt", x...)` | Guarded by `LOCAL_TRACE >= 1` |
+| `LTRACEF_LEVEL(lvl, x...)` | `ltracef_level!(lvl, "fmt", x...)` | Guarded by `LOCAL_TRACE >= lvl` |
+| `if constexpr (LOCAL_TRACE) { expr; }` | `ltrace!(expr;)` | Execute expression/statement guarded by `LOCAL_TRACE >= 1` |
+

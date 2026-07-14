@@ -39,6 +39,7 @@ source_set("top") {
     "//zircon/kernel/lib/jtrace:headers",
     "//zircon/kernel/lib/ktrace:ktrace-rs",
     "//zircon/kernel/lib/lockup_detector",
+    "//zircon/kernel/lib/ltrace",
     "//zircon/kernel/lib/page",
     "//zircon/kernel/lib/thread-stack",
     "//zircon/kernel/lib/userabi",

@@ -225,6 +225,12 @@ When reviewing ports, pay special attention to these common issues:
      (e.g., `slice::from_raw_parts`) or using `mem::transmute` to convert
      structs to/from byte slices. Instruct the coder to use safe abstractions
      from the `zerocopy` crate (e.g., deriving `FromBytes`, `IntoBytes`).
+18.  **Unported Trace Statements (`LOCAL_TRACE` / `LTRACE`)**: Omitting or
+     silently dropping `LTRACEF`, `LTRACE_ENTRY`, or other local trace macros
+     during porting. Ensure the ported Rust code preserves trace statements
+     using the `ltrace` crate (`//zircon/kernel/lib/ltrace`), defines `const
+     LOCAL_TRACE: u32 = 0;` at the top of the module, and maintains trace
+     verbosity parity.
 
 ---
 
