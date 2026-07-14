@@ -167,6 +167,15 @@ tools_bazel_root_targets = [
     ]
     install_host_tool = true
   },
+  {
+    bazel_label = "//tools/build/gndoc:gndoc"
+    copy_outputs = [
+      {
+        bazel = "{{BAZEL_TARGET_OUT_DIR}}/gndoc_/gndoc"
+        ninja = "gndoc"
+      },
+    ]
+  },
 
   # Various tests that we want to ensure can
   # build correctly.
