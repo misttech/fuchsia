@@ -14,6 +14,7 @@
 #include <zircon/status.h>
 
 #include <filesystem>
+#include <sstream>
 
 namespace {
 
