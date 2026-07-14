@@ -9,6 +9,7 @@
 use crate::NetworkManager;
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
+use starnix_core::security::check_task_capable;
 use starnix_core::task::{CurrentTask, Kernel};
 use starnix_core::vfs::fs_args::parse;
 use starnix_core::vfs::pseudo::simple_file::{BytesFile, BytesFileOps};
@@ -19,12 +20,12 @@ use starnix_core::vfs::{
 use starnix_logging::{log_error, log_warn};
 
 use starnix_types::vfs::default_statfs;
-use starnix_uapi::auth::FsCred;
+use starnix_uapi::auth::{CAP_NET_ADMIN, FsCred};
 use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::Errno;
-use starnix_uapi::file_mode::FileMode;
+use starnix_uapi::file_mode::{FileMode, mode};
 use starnix_uapi::open_flags::OpenFlags;
-use starnix_uapi::{errno, error, statfs};
+use starnix_uapi::{errno, error, gid_t, statfs, uid_t};
 use std::borrow::Cow;
 use std::net::{Ipv4Addr, Ipv6Addr};
 use std::sync::Arc;
@@ -128,9 +129,18 @@ pub(crate) enum VersionedProperties {
 pub struct FuchsiaNetworkMonitorFs;
 impl FuchsiaNetworkMonitorFs {
     pub fn new_fs(kernel: &Kernel, options: FileSystemOptions) -> Result<FileSystemHandle, Errno> {
+        let mode = if let Some(mode) = options.params.get(b"mode") {
+            FileMode::from_string(mode.as_ref())?.with_type(FileMode::IFDIR)
+        } else {
+            mode!(IFDIR, 0o600)
+        };
+        let uid = options.params.get_as::<uid_t>(b"uid")?.unwrap_or(0);
+        let gid = options.params.get_as::<gid_t>(b"gid")?.unwrap_or(0);
+
         let fs = FileSystem::new(kernel, CacheMode::Permanent, FuchsiaNetworkMonitorFs, options)?;
         let root_ino = fs.allocate_ino();
-        fs.create_root(root_ino, NetworkDirectoryNode::new());
+        let info = FsNodeInfo::new(mode, FsCred { uid, gid });
+        fs.create_root_with_info(root_ino, NetworkDirectoryNode::new(), info);
         Ok(fs)
     }
 }
@@ -212,6 +222,7 @@ impl FsNodeOps for NetworkDirectoryNode {
         _dev: DeviceId,
         _owner: FsCred,
     ) -> Result<FsNodeHandle, Errno> {
+        check_task_capable(current_task, CAP_NET_ADMIN)?;
         if !mode.is_reg() {
             return error!(EACCES);
         }
@@ -245,6 +256,7 @@ impl FsNodeOps for NetworkDirectoryNode {
         name: &FsStr,
         _child: &FsNodeHandle,
     ) -> Result<(), Errno> {
+        check_task_capable(current_task, CAP_NET_ADMIN)?;
         let network_manager = try_acquire_network_manager(current_task)?;
         // Note: direct equality comparisons are easier using FsStr
         // than using a match block.
@@ -284,6 +296,7 @@ impl NetworkFile {
 
 impl BytesFileOps for NetworkFile {
     fn write(&self, current_task: &CurrentTask, data: Vec<u8>) -> Result<(), Errno> {
+        check_task_capable(current_task, CAP_NET_ADMIN)?;
         let network: NetworkMessage = serde_json::from_slice(&data).map_err(|e| {
             log_error!("failed to deserialize network message: {}", e);
             errno!(EINVAL)
@@ -330,6 +343,7 @@ impl DefaultNetworkIdFile {
 
 impl BytesFileOps for DefaultNetworkIdFile {
     fn write(&self, current_task: &CurrentTask, data: Vec<u8>) -> Result<(), Errno> {
+        check_task_capable(current_task, CAP_NET_ADMIN)?;
         let id_string = std::str::from_utf8(&data).map_err(|_| errno!(EINVAL))?;
         let id: u32 = id_string.parse().map_err(|_| errno!(EINVAL))?;
 
@@ -572,6 +586,8 @@ tolerant_repr_serde_impl!(capability_list, crate::NetworkCapability);
 mod tests {
     use super::*;
     use net_declare::{std_ip_v4, std_ip_v6};
+    use starnix_core::testing::spawn_kernel_and_run;
+    use starnix_core::vfs::fs_args::MountParams;
     use test_case::test_case;
 
     #[::fuchsia::test]
@@ -783,5 +799,38 @@ mod tests {
         expected: fnp_socketproxy::ConnectivityState,
     ) {
         assert_eq!(convert_connectivity_state(&capabilities), expected);
+    }
+
+    #[::fuchsia::test]
+    async fn test_mode_option() {
+        spawn_kernel_and_run(async |current_task| {
+            let kernel = current_task.kernel();
+            let fs = FuchsiaNetworkMonitorFs::new_fs(
+                &kernel,
+                FileSystemOptions {
+                    params: MountParams::parse(b"mode=0123,uid=1000,gid=2000".into())
+                        .expect("parsed correctly"),
+                    ..Default::default()
+                },
+            )
+            .expect("new_fs");
+            {
+                let info = fs.root().node.info();
+                assert_eq!(info.mode, mode!(IFDIR, 0o123));
+                assert_eq!(info.uid, 1000);
+                assert_eq!(info.gid, 2000);
+            }
+
+            // Test defaults.
+            let fs = FuchsiaNetworkMonitorFs::new_fs(&kernel, FileSystemOptions::default())
+                .expect("new_fs");
+            {
+                let info = fs.root().node.info();
+                assert_eq!(info.mode, mode!(IFDIR, 0o600));
+                assert_eq!(info.uid, 0);
+                assert_eq!(info.gid, 0);
+            }
+        })
+        .await;
     }
 }

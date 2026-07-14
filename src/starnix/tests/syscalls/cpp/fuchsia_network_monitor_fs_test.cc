@@ -8,11 +8,14 @@
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include <linux/capability.h>
 #include <rapidjson/document.h>
 
 #include "src/lib/files/directory.h"
 #include "src/lib/files/file.h"
 #include "src/lib/files/path.h"
+#include "src/starnix/tests/syscalls/cpp/capabilities_helper.h"
+#include "src/starnix/tests/syscalls/cpp/test_helper.h"
 
 class NmfsTest : public ::testing::Test {
  public:
@@ -594,4 +597,69 @@ TEST_F(NmfsTest, NmfsV2NetworkFileWriteSuccessCapabilityList) {
       << "Network file should be readable";
   EXPECT_TRUE(files::WriteFile("/tmp/fuchsia_network_monitor/8", network_info))
       << "Contents from read should be writeable to the same file";
+}
+
+TEST_F(NmfsTest, NmfsPermissionsAndCapabilities) {
+  ASSERT_TRUE(test_helper::HasCapability(CAP_NET_ADMIN)) << "Test requires CAP_NET_ADMIN initially";
+
+  test_helper::ForkHelper fork_helper;
+
+  // Try to create a node as unprivileged (without CAP_NET_ADMIN).
+  fork_helper.RunInForkedProcess([&]() {
+    test_helper::UnsetCapabilityEffective(CAP_NET_ADMIN);
+    // File creation should fail with EPERM because we lack CAP_NET_ADMIN capability.
+    EXPECT_FALSE(files::WriteFile("/tmp/fuchsia_network_monitor/9", R"({
+      "version": "V1",
+      "netid": 9,
+      "mark": 56,
+      "handle": 78,
+      "dnsv4": [],
+      "dnsv6": []
+    })"));
+    EXPECT_EQ(errno, EPERM);
+  });
+  ASSERT_TRUE(fork_helper.WaitForChildren());
+
+  // Creation should succeed with CAP_NET_ADMIN.
+  ExpectFileWriteSuccess("/tmp/fuchsia_network_monitor/9", R"({
+    "version": "V1",
+    "netid": 9,
+    "mark": 56,
+    "handle": 78,
+    "dnsv4": [],
+    "dnsv6": []
+  })",
+                         "Creation should succeed with CAP_NET_ADMIN");
+
+  // Try to unlink or write to the existing file as unprivileged (without CAP_NET_ADMIN).
+  fork_helper.RunInForkedProcess([&]() {
+    test_helper::UnsetCapabilityEffective(CAP_NET_ADMIN);
+    // Try to unlink the file (should fail with EPERM).
+    EXPECT_EQ(unlink("/tmp/fuchsia_network_monitor/9"), -1);
+    EXPECT_EQ(errno, EPERM);
+
+    // Try to write to the existing file (should fail with EPERM).
+    EXPECT_FALSE(files::WriteFile("/tmp/fuchsia_network_monitor/9", "{}"));
+    EXPECT_EQ(errno, EPERM);
+  });
+  ASSERT_TRUE(fork_helper.WaitForChildren());
+
+  // Test default file unlink and write with/without CAP_NET_ADMIN.
+  EXPECT_TRUE(files::WriteFile("/tmp/fuchsia_network_monitor/default", "9"));
+
+  fork_helper.RunInForkedProcess([&]() {
+    test_helper::UnsetCapabilityEffective(CAP_NET_ADMIN);
+    // Try to set default (should fail with EPERM).
+    EXPECT_FALSE(files::WriteFile("/tmp/fuchsia_network_monitor/default", "9"));
+    EXPECT_EQ(errno, EPERM);
+
+    // Try to unlink default (should fail with EPERM).
+    EXPECT_EQ(unlink("/tmp/fuchsia_network_monitor/default"), -1);
+    EXPECT_EQ(errno, EPERM);
+  });
+  ASSERT_TRUE(fork_helper.WaitForChildren());
+
+  // Clean up.
+  EXPECT_EQ(unlink("/tmp/fuchsia_network_monitor/default"), 0) << strerror(errno);
+  EXPECT_EQ(unlink("/tmp/fuchsia_network_monitor/9"), 0) << strerror(errno);
 }
