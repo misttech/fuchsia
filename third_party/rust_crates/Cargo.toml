@@ -1078,6 +1078,12 @@ visibility = [
 ]
 testonly = true
 
+[gn.package.sec1."0.7.3"]
+groups = [
+  { name = "sec1" },
+  { name = "sec1-0.7" },
+]
+
 [gn.package.semver."1.0.28"]
 rustflags = []
 

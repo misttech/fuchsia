@@ -1815,6 +1815,10 @@ if (current_os == "fuchsia") {
   group("sec1") {
     public_deps = [ ":sec1-v0_7_3" ]
   }
+
+  group("sec1-0.7") {
+    public_deps = [ ":sec1-v0_7_3" ]
+  }
 }
 
 if (current_os == "fuchsia") {
