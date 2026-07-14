@@ -14,6 +14,7 @@
 #include <zircon/status.h>
 
 #include <filesystem>
+#include <sstream>
 #include <system_error>
 
 constexpr char kHrtimerClassDir[] = "/dev/class/hrtimer";
