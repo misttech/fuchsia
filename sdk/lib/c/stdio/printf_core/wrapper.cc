@@ -30,10 +30,11 @@ int PrintfImpl(int (*write)(std::string_view str, void* hook), void* hook, std::
   Writer writer{write_buffer};
 
   internal::ArgList arg_list{args};
-  int result = printf_main(&writer, format, arg_list);
+  auto wrote = printf_main(&writer, format, arg_list);
   write_buffer.flush_to_stream(newline == PrintfNewline::kYes ? kNewline : kEmpty);
 
-  return result;
+  // Any error code is lost, but it ultimately came from the callback anyway.
+  return wrote ? static_cast<int>(*wrote) : -1;
 }
 
 }  // namespace LIBC_NAMESPACE::printf_core
