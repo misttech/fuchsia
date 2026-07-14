@@ -226,6 +226,10 @@ pub const MAX_RFCOMM_HEADER_SIZE: usize = 6;
 /// The maximum length that can be represented in a single E/A padded octet.
 const MAX_SINGLE_OCTET_LENGTH: usize = 127;
 
+/// Maximum length (in bytes) for an RFCOMM frame payload.
+/// GSM 07.10 Section 5.2.1.4 limits length indicators to 15 bits.
+pub const MAX_INFORMATION_LENGTH: usize = 32767;
+
 /// Returns true if the provided `length` needs to be represented as 2 octets.
 fn is_two_octet_length(length: usize) -> bool {
     length > MAX_SINGLE_OCTET_LENGTH
@@ -467,6 +471,9 @@ impl Encodable for Frame {
 
         // Information Field.
         let data_length = self.data.encoded_len();
+        if data_length > MAX_INFORMATION_LENGTH {
+            return Err(FrameParseError::FrameTooLarge(data_length));
+        }
         let is_two_octet_length = is_two_octet_length(data_length);
         let mut first_octet_length = InformationField(0);
         first_octet_length.set_length(data_length as u8);
@@ -1082,5 +1089,21 @@ mod tests {
         buf.push(invalid_fcs);
 
         assert_matches!(Frame::parse(role, false, &buf[..]), Err(FrameParseError::FCSCheckFailed));
+    }
+
+    #[test]
+    fn encode_oversized_user_data_fails() {
+        let length = 32_768;
+        let information = vec![0; length];
+        let frame = Frame {
+            role: Role::Initiator,
+            dlci: DLCI::try_from(5).unwrap(),
+            data: FrameData::UnnumberedInfoHeaderCheck(UIHData::User(UserData { information })),
+            poll_final: true,
+            command_response: CommandResponse::Command,
+            credits: None,
+        };
+        let mut buf = vec![0; frame.encoded_len()];
+        assert_matches!(frame.encode(&mut buf[..]), Err(FrameParseError::FrameTooLarge(32768)));
     }
 }

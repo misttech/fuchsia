@@ -4,7 +4,7 @@
 
 /// The direct link connection identifier (DLCI) definitions.
 mod dlci;
-pub use dlci::{ServerChannel, DLCI};
+pub use dlci::{DLCI, ServerChannel};
 
 /// The error type used throughout this library.
 mod error;
@@ -49,7 +49,8 @@ impl Role {
 /// Returns the maximum RFCOMM packet size that can be used for the provided L2CAP `mtu`.
 /// It is assumed that `mtu` is a valid L2CAP MTU.
 pub fn max_packet_size_from_l2cap_mtu(mtu: u16) -> u16 {
-    mtu - crate::frame::MAX_RFCOMM_HEADER_SIZE as u16
+    let max_from_mtu = mtu.saturating_sub(crate::frame::MAX_RFCOMM_HEADER_SIZE as u16);
+    std::cmp::min(max_from_mtu, crate::frame::MAX_INFORMATION_LENGTH as u16)
 }
 
 #[cfg(test)]
@@ -69,5 +70,11 @@ mod tests {
 
         let role = Role::Negotiating;
         assert_eq!(role.opposite_role(), Role::Negotiating);
+    }
+
+    #[test]
+    fn max_packet_size_capped_for_large_l2cap_mtu() {
+        let l2cap_mtu = 65535;
+        assert_eq!(max_packet_size_from_l2cap_mtu(l2cap_mtu), 32767);
     }
 }

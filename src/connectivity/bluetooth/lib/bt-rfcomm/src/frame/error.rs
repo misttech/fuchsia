@@ -4,8 +4,8 @@
 
 use thiserror::Error;
 
-use crate::frame::FrameTypeMarker;
 use crate::Role;
+use crate::frame::FrameTypeMarker;
 
 /// Errors associated with parsing an RFCOMM Frame.
 #[derive(Error, Debug)]
@@ -14,6 +14,8 @@ pub enum FrameParseError {
     BufferTooSmall,
     #[error("Invalid buffer size provided. Expected: {}, Actual: {}", .0, .1)]
     InvalidBufferLength(usize, usize),
+    #[error("Frame length {0} exceeds maximum allowed size (32767)")]
+    FrameTooLarge(usize),
     #[error("FCS check for the Frame failed")]
     FCSCheckFailed,
     #[error("Invalid Role when parsing frame: {:?}", .0)]

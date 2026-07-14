@@ -512,6 +512,21 @@ mod tests {
     }
 
     #[fuchsia::test]
+    fn negotiate_channel_parameters_caps_large_peer_mtu() {
+        let mut multiplexer = SessionMultiplexer::create(32767);
+        let dlci = DLCI::try_from(8).unwrap();
+
+        // Peer attempts to negotiate a super large max frame size.
+        let negotiated_parameters = multiplexer.negotiate_channel_parameters(
+            dlci,
+            DlcNegotiationParameters { max_frame_size: 65535, initial_credits: 10 },
+        );
+        assert_eq!(negotiated_parameters.max_frame_size, 32767);
+        let channel = multiplexer.get_session_channel(dlci).expect("channel should exist");
+        assert_eq!(channel.max_packet_size(), Some(32767));
+    }
+
+    #[fuchsia::test]
     fn start_multiplexer_multiple_times_is_error() {
         const DEFAULT_MAX_TX: u16 = 900;
         let mut multiplexer = SessionMultiplexer::create(DEFAULT_MAX_TX);
