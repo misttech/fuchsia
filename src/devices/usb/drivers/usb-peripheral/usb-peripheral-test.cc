@@ -1061,7 +1061,12 @@ TEST_F(UsbPeripheralFunctionTest, ConfigureAndRouteFidlCalls) {
   EXPECT_EQ(1, fake_function->alt_setting());
 }
 
-TEST_F(UsbPeripheralFunctionTest, RepeatedSetConfigurationFlaps) {
+// Test that a repeated SetConfiguration request for the same configuration ID
+// forces the function driver to transition through an unconfigured (false)
+// state. In compliance with the USB 2.0 specification (section 9.1.1.5), this
+// unconfigured transition ensures that all endpoints and interface state are
+// reset to default values.
+TEST_F(UsbPeripheralFunctionTest, RepeatedSetConfigurationResetsFunction) {
   zx::result function_client_result = ConnectFunction();
   ASSERT_OK(function_client_result);
   fidl::WireSyncClient<ffunction::UsbFunction> function_client =
@@ -1129,7 +1134,7 @@ TEST_F(UsbPeripheralFunctionTest, RepeatedSetConfigurationFlaps) {
   ASSERT_EQ(fake_function->configured_history().size(), 1u);
   EXPECT_TRUE(fake_function->configured_history()[0]);
 
-  // Test repeated SetConfiguration request causes configuration flap
+  // Test repeated SetConfiguration request causes unconfigure/reconfigure transition.
   fake_function->clear_set_configured_called();
   fidl::WireUnownedResult config_res2 =
       dci().buffer(arena)->Control(setup, fidl::VectorView<uint8_t>::FromExternal(unused));
