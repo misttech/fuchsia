@@ -1027,7 +1027,7 @@ This should never be set as a build argument.
 }
   static = {
   clang_rt = "lib/clang/23/lib/riscv64-unknown-fuchsia/libclang_rt.lsan.a"
-  clang_rt_cxx = ""
+  clang_rt_cxx = "../../../../out/not-default/libclang_rt.lsan_cxx.a"
 }
 }
   tsan = {
@@ -3845,7 +3845,7 @@ From //third_party/perfetto/gn/perfetto.gni:230
 
 **Current value (from the default):** `false`
 
-From //third_party/perfetto/gn/perfetto.gni:419
+From //third_party/perfetto/gn/perfetto.gni:432
 
 ### enable_perfetto_fuzzers
 
@@ -3862,7 +3862,7 @@ enable this by default.
 
 **Current value (from the default):** `false`
 
-From //third_party/perfetto/gn/perfetto.gni:413
+From //third_party/perfetto/gn/perfetto.gni:426
 
 ### enable_perfetto_heapprofd
 
@@ -3886,7 +3886,7 @@ From //third_party/perfetto/gn/perfetto.gni:174
 
 **Current value (from the default):** `false`
 
-From //third_party/perfetto/gn/perfetto.gni:407
+From //third_party/perfetto/gn/perfetto.gni:420
 
 ### enable_perfetto_llvm_symbolizer
 
@@ -3894,7 +3894,7 @@ Enables the use of the LLVM symbolizer in trace_processor.
 
 **Current value (from the default):** `false`
 
-From //third_party/perfetto/gn/perfetto.gni:423
+From //third_party/perfetto/gn/perfetto.gni:436
 
 ### enable_perfetto_lockfree_taskrunner
 
@@ -3920,7 +3920,7 @@ can take a couple of minutes).
 
 **Current value (from the default):** `false`
 
-From //third_party/perfetto/gn/perfetto.gni:454
+From //third_party/perfetto/gn/perfetto.gni:467
 
 ### enable_perfetto_pcre2
 
@@ -3931,7 +3931,7 @@ fall back to the std::regex backend.
 
 **Current value (from the default):** `false`
 
-From //third_party/perfetto/gn/perfetto.gni:396
+From //third_party/perfetto/gn/perfetto.gni:409
 
 ### enable_perfetto_platform_services
 
@@ -3945,7 +3945,7 @@ Enables the protovm_compiler tool.
 
 **Current value (from the default):** `false`
 
-From //third_party/perfetto/gn/perfetto.gni:434
+From //third_party/perfetto/gn/perfetto.gni:447
 
 ### enable_perfetto_re2
 
@@ -3953,7 +3953,7 @@ Enables RE2 support.
 
 **Current value (from the default):** `false`
 
-From //third_party/perfetto/gn/perfetto.gni:399
+From //third_party/perfetto/gn/perfetto.gni:412
 
 ### enable_perfetto_rt_mutex
 
@@ -3970,7 +3970,7 @@ rerunning gn.
 
 **Current value (from the default):** `false`
 
-From //third_party/perfetto/gn/perfetto.gni:449
+From //third_party/perfetto/gn/perfetto.gni:462
 
 ### enable_perfetto_sock_inotify
 
@@ -4042,7 +4042,7 @@ From //third_party/perfetto/gn/perfetto.gni:351
 
 **Current value (from the default):** `false`
 
-From //third_party/perfetto/gn/perfetto.gni:438
+From //third_party/perfetto/gn/perfetto.gni:451
 
 ### enable_perfetto_traced_perf
 
@@ -4069,7 +4069,7 @@ From //third_party/perfetto/gn/perfetto.gni:343
 
 **Current value (from the default):** `false`
 
-From //third_party/perfetto/gn/perfetto.gni:442
+From //third_party/perfetto/gn/perfetto.gni:455
 
 ### enable_perfetto_unittests
 
@@ -4093,7 +4093,7 @@ From //third_party/perfetto/gn/perfetto.gni:206
 
 **Current value (from the default):** `false`
 
-From //third_party/perfetto/gn/perfetto.gni:428
+From //third_party/perfetto/gn/perfetto.gni:441
 
 ### enable_perfetto_x64_cpu_opt
 
@@ -4106,6 +4106,12 @@ From //third_party/perfetto/gn/perfetto.gni:279
 **Current value (from the default):** `false`
 
 From //third_party/perfetto/gn/perfetto.gni:390
+
+### enable_perfetto_zstd
+
+**Current value (from the default):** `false`
+
+From //third_party/perfetto/gn/perfetto.gni:402
 
 ### enable_power_manager_debug
 
@@ -6389,7 +6395,7 @@ to off; the consumer opts in via perfetto_sdk_config.h (see build_config.h).
 
 **Current value (from the default):** `false`
 
-From //third_party/perfetto/gn/perfetto.gni:478
+From //third_party/perfetto/gn/perfetto.gni:491
 
 ### perfetto_build_with_android
 
@@ -6458,7 +6464,7 @@ Note: that if this is enabled `perfetto_use_system_protobuf` should be also.
 
 **Current value (from the default):** `false`
 
-From //third_party/perfetto/gn/perfetto.gni:464
+From //third_party/perfetto/gn/perfetto.gni:477
 
 ### perfetto_use_system_protobuf
 
@@ -6467,7 +6473,7 @@ from /usr/include instead of the hermetic one.
 
 **Current value (from the default):** `false`
 
-From //third_party/perfetto/gn/perfetto.gni:468
+From //third_party/perfetto/gn/perfetto.gni:481
 
 ### perfetto_use_system_sqlite
 
@@ -6476,13 +6482,13 @@ from /usr/include instead of the hermetic one.
 
 **Current value (from the default):** `false`
 
-From //third_party/perfetto/gn/perfetto.gni:472
+From //third_party/perfetto/gn/perfetto.gni:485
 
 ### perfetto_use_system_zlib
 
 **Current value (from the default):** `false`
 
-From //third_party/perfetto/gn/perfetto.gni:474
+From //third_party/perfetto/gn/perfetto.gni:487
 
 ### perfetto_verbose_logs_enabled
 
@@ -9209,7 +9215,7 @@ Skip buildtools dependency checks (needed for ChromeOS).
 
 **Current value (from the default):** `false`
 
-From //third_party/perfetto/gn/perfetto.gni:457
+From //third_party/perfetto/gn/perfetto.gni:470
 
 ### smp_max_cpus
 
