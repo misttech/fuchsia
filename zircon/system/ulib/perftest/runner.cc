@@ -21,6 +21,7 @@
 #include <memory>
 #include <optional>
 #include <random>
+#include <string_view>
 
 #include <fbl/string.h>
 #include <fbl/string_printf.h>
@@ -152,6 +153,10 @@ class RepeatStateImpl : public RepeatState {
     } else {
       // Report times for individual steps.
       for (uint32_t step = 0; step < step_count_; ++step) {
+        if (std::string_view(step_names_[step].data(), step_names_[step].length())
+                .ends_with("_ignore")) {
+          continue;
+        }
         fbl::String name = fbl::StringPrintf("%s.%s", test_name, step_names_[step].c_str());
         TestCaseResults* results = dest->AddTestCase(test_suite, name, "nanoseconds");
         CopyStepTimes(step, step + 1, results);

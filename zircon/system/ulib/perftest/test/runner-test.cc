@@ -162,6 +162,40 @@ TEST(PerfTestRunner, TestMultistepTest) {
   }
 }
 
+static bool MultistepTestWithIgnore(perftest::RepeatState* state) {
+  state->DeclareStep("step1");
+  state->DeclareStep("step2_ignore");
+  state->DeclareStep("step3");
+  while (state->KeepRunning()) {
+    // Step 1 would go here.
+    state->NextStep();
+    // Step 2 would go here.
+    state->NextStep();
+    // Step 3 would go here.
+  }
+  return true;
+}
+
+// Test the results for a multi-step test where some steps are ignored via the _ignore suffix.
+TEST(PerfTestRunner, TestMultistepTestWithIgnore) {
+  perftest::internal::TestList test_list;
+  perftest::internal::NamedTest test{"example_test", MultistepTestWithIgnore};
+  test_list.push_back(std::move(test));
+
+  const uint32_t kRunCount = 7;
+  perftest::ResultsSet results;
+  DummyOutputStream out;
+  EXPECT_TRUE(
+      perftest::internal::RunTests("test-suite", &test_list, kRunCount, "", out.fp(), &results));
+  ASSERT_EQ(results.results()->size(), 2);
+  EXPECT_STREQ((*results.results())[0].label.c_str(), "example_test.step1");
+  EXPECT_STREQ((*results.results())[1].label.c_str(), "example_test.step3");
+  for (auto& test_case : *results.results()) {
+    EXPECT_EQ(test_case.values.size(), kRunCount);
+    EXPECT_TRUE(check_times(&test_case));
+  }
+}
+
 static bool MultistepTestWithDuplicateNames(perftest::RepeatState* state) {
   // These duplicate names should be caught as an error.
   state->DeclareStep("step1");
@@ -320,18 +354,17 @@ TEST(PerfTestRunner, TestRunningInRandomOrder) {
 }
 
 TEST(PerfTestRunner, TestParsingCommandArgs) {
-  const char* argv[] = {
-    "unused_argv0",
-    "--runs",
-    "123",
-    "--out",
-    "dest_file",
-    "--filter",
-    "some_regex",
-    "--quiet",
+  const char* argv[] = {"unused_argv0",
+                        "--runs",
+                        "123",
+                        "--out",
+                        "dest_file",
+                        "--filter",
+                        "some_regex",
+                        "--quiet",
 #if defined(__Fuchsia__)
-    "--enable-tracing",
-    "--startup-delay=456"
+                        "--enable-tracing",
+                        "--startup-delay=456"
 #endif
   };
   perftest::internal::CommandArgs args;

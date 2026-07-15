@@ -90,6 +90,12 @@
 // before its first call to KeepRunning().  Then it should call
 // state->NextStep() between each step.
 //
+// If a step's name ends in "_ignore" (e.g., "setup_ignore" or
+// "teardown_ignore"), the perftest runner will measure and execute the step
+// sequentially, but will skip exporting its timing results to the final output.
+// This is useful to prevent setup or teardown steps that must occur inside the
+// benchmark loop from cluttering performance dashboards.
+//
 //
 // ## Test coding style
 //
