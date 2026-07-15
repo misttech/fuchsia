@@ -35,7 +35,6 @@ from honeydew.typing.custom_types import FidlEndpoint
 _REQUIRED_CAPABILITIES = [
     "fuchsia.wlan.policy.AccessPointListener",
     "fuchsia.wlan.policy.AccessPointProvider",
-    "fuchsia.wlan.phyimpl",
 ]
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
