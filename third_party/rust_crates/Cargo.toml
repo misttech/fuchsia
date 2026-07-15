@@ -602,6 +602,12 @@ rustflags = []
 [gn.package.crunchy."0.2.3"]
 # Has build script but no config needed.
 
+[gn.package.der."0.7.10"]
+groups = [
+  { name = "der" },
+  { name = "der-0.7" }
+]
+
 [gn.package.euclid."0.22.14"]
 license_files = ["LICENSE-APACHE"]
 
@@ -1133,6 +1139,12 @@ rustflags = []
 [gn.package.slab."0.4.11"]
 rustflags = []
 
+[gn.package.spki."0.7.3"]
+groups = [
+  { name = "spki" },
+  { name = "spki-0.7" }
+]
+
 [gn.package.syn."1.0.109"]
 # Has build script but no config needed.
 # FIXME(https://fxbug.dev/332277415): temporarily allow legacy targets to
@@ -1293,6 +1305,12 @@ env_vars = ["OUT_DIR=../../../../compat/valico"]
 
 [gn.package.valuable."0.1.1"]
 rustflags = []
+
+[gn.package.x509-cert."0.2.5"]
+groups = [
+  { name = "x509-cert" },
+  { name = "x509-cert-0.2" }
+]
 
 [gn.package.zerocopy."0.8.48"]
 rustflags = [ "--cfg=zerocopy_inline_always" ]

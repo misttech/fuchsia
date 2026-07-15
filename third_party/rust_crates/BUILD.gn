@@ -505,6 +505,10 @@ if (current_os == "fuchsia") {
   group("der") {
     public_deps = [ ":der-v0_7_10" ]
   }
+
+  group("der-0.7") {
+    public_deps = [ ":der-v0_7_10" ]
+  }
 }
 
 if (current_os == "fuchsia") {
@@ -2001,6 +2005,10 @@ if (current_os == "fuchsia") {
   group("spki") {
     public_deps = [ ":spki-v0_7_3" ]
   }
+
+  group("spki-0.7") {
+    public_deps = [ ":spki-v0_7_3" ]
+  }
 }
 
 if (current_os == "fuchsia") {
@@ -2419,6 +2427,10 @@ group("winnow-0.7.13") {
 
 if (current_os == "fuchsia") {
   group("x509-cert") {
+    public_deps = [ ":x509-cert-v0_2_5" ]
+  }
+
+  group("x509-cert-0.2") {
     public_deps = [ ":x509-cert-v0_2_5" ]
   }
 }
