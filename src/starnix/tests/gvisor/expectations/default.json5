@@ -1062,8 +1062,6 @@
                 "TimerTest.ProcessKilledOnCPUHardLimit",
                 "TimerTest.ProcessKilledOnCPUSoftLimit",
                 "TimerTest.ProcessPingedRepeatedlyAfterCPUSoftLimit",
-                "FlockTest.TestSharedLockFailExclusiveHolderBlocking",
-                "FlockTest.TestExclusiveLockFailExclusiveHolderBlocking",
 
                 // These tests are flaky.
                 "ExceptionTest.IOAccessFault",
