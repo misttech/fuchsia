@@ -148,12 +148,6 @@
                 "pthread.pthread_sigmask64_SIGTRMIN",
                 "signal.pthread_sigqueue_other",
 
-                // These tests only work when the test suite is dynamically linked so they can find icu.
-                "wctype.towlower",
-                "wctype.towlower_l",
-                "wctype.towupper",
-                "wctype.towupper_l",
-
                 // This is effectively a benchmark that sometimes takes too long on our bots.
                 // See https://fxbug.dev/42080036#c15
                 "stdio*.fread_unbuffered_pathological_performance",
