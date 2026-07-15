@@ -23,7 +23,6 @@
     "fuchsia.devices.spi.drivers.aml-spi.transaction": { "priority": 16 },
     "fuchsia.devices.usb.drivers.xhci.interrupter": { "capacity": "100us", "period": "125us" },
     "fuchsia.devices.usb.drivers.dwc2.interrupt": { "capacity": "125us", "period": "1ms" },
-    "fuchsia.devices.usb.drivers.dwc3.interrupt": { "capacity": "125us", "period": "1ms" },
     "fuchsia.devices.usb.drivers.crg-udc.interrupt": { "capacity": "125us", "period": "1ms" },
     "fuchsia.devices.usb.audio": { "capacity": "250us", "period": "1ms" },
     "fuchsia.graphics.display.drivers.display.coordinator": { "capacity": "800us", "period": "8ms" },
