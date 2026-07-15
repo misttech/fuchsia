@@ -5,6 +5,7 @@
 # https://opensource.org/licenses/MIT
 
 import("//build/cpp/library_headers.gni")
+import("//build/rust/rustc_library.gni")
 
 # Conventional names for paging configurations, as codified in
 # <lib/arch/$zircon_cpu/paging-traits.h>.
@@ -66,4 +67,10 @@ library_headers("headers") {
 source_set("page") {
   visibility = [ "//zircon/kernel/*" ]
   public_deps = [ ":headers" ]
+}
+
+rustc_library("page-rs") {
+  edition = "2024"
+  name = "page"
+  sources = [ "src/lib.rs" ]
 }
