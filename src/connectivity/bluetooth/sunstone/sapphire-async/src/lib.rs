@@ -10,6 +10,7 @@ pub mod condition;
 pub mod executor;
 pub mod mpsc;
 pub mod notification;
+pub mod rpc;
 pub mod semaphore;
 
 pub(crate) mod global_index;

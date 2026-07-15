@@ -101,6 +101,7 @@ if (is_host) {
       "sapphire-async/src/mpsc.rs",
       "sapphire-async/src/notification.rs",
       "sapphire-async/src/notification/intrusive_list.rs",
+      "sapphire-async/src/rpc.rs",
       "sapphire-async/src/semaphore.rs",
       "sapphire-async/src/testing.rs",
       "sapphire-async/src/testing/executor.rs",
