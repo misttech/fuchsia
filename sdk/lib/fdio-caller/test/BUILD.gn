@@ -22,10 +22,10 @@ test("fdio-caller") {
   deps = [
     "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
     "//sdk/lib/fdio",
+    "//sdk/lib/fdio-caller",
     "//src/lib/files",
     "//src/sys/test_runners:tmp_storage",
     "//zircon/system/ulib/fbl",
-    "//zircon/system/ulib/fdio-caller",
     "//zircon/system/ulib/zxtest",
   ]
 }

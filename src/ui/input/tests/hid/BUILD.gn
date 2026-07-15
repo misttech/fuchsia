@@ -18,12 +18,12 @@ test("hid-driver-test") {
     "//sdk/lib/device-watcher/cpp",
     "//sdk/lib/driver_test_realm/realm_builder/cpp",
     "//sdk/lib/fdio",
+    "//sdk/lib/fdio-caller",
     "//sdk/lib/syslog/cpp",
     "//src/lib/ddk",
     "//src/ui/input/lib/hid",
     "//src/ui/testing/util:fidl_cpp_helpers",
     "//zircon/system/ulib/fbl",
-    "//zircon/system/ulib/fdio-caller",
     "//zircon/system/ulib/zx",
     "//zircon/system/ulib/zxtest",
   ]

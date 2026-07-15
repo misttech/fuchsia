@@ -173,9 +173,9 @@ test("sdmmc-block-test-bin") {
     "//sdk/lib/driver/metadata/cpp",
     "//sdk/lib/driver/power/cpp/testing",
     "//sdk/lib/driver/testing/cpp",
+    "//sdk/lib/fdio-caller",
     "//sdk/lib/inspect/testing/cpp:zxtest",
     "//src/storage/lib/block_client/cpp",
-    "//zircon/system/ulib/fdio-caller",
     "//zircon/system/ulib/zxtest",
   ]
 }

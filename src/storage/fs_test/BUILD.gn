@@ -35,6 +35,7 @@ static_library("fs_test") {
     "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/device-watcher/cpp",
     "//sdk/lib/fdio",
+    "//sdk/lib/fdio-caller",
     "//sdk/lib/sys/cpp",
     "//src/lib/json_parser",
     "//src/storage/fvm",
@@ -43,7 +44,6 @@ static_library("fs_test") {
     "//src/storage/lib/fs_management/cpp:mkfs_with_default",
     "//src/storage/testing:storage_driver_test_support",
     "//third_party/rapidjson",
-    "//zircon/system/ulib/fdio-caller",
   ]
   public_deps = [
     # fs_test.h:
@@ -69,8 +69,8 @@ test("access_tests") {
   deps = [
     ":fs_test",
     "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
+    "//sdk/lib/fdio-caller",
     "//src/lib/fxl/test:gtest_main",
-    "//zircon/system/ulib/fdio-caller",
   ]
 }
 
@@ -145,8 +145,8 @@ test("dot_dot_tests") {
   deps = [
     ":fs_test",
     "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
+    "//sdk/lib/fdio-caller",
     "//src/lib/fxl/test:gtest_main",
-    "//zircon/system/ulib/fdio-caller",
     "//zircon/system/ulib/zx",
   ]
 }
@@ -182,11 +182,11 @@ test("inspect_tests") {
   deps = [
     ":fs_test",
     "//sdk/lib/fdio",
+    "//sdk/lib/fdio-caller",
     "//sdk/lib/inspect/testing/cpp",
     "//src/lib/fxl/test:gtest_main",
     "//src/storage/lib/vfs/cpp/inspect",
     "//third_party/googletest:gmock",
-    "//zircon/system/ulib/fdio-caller",
   ]
 }
 
@@ -247,8 +247,8 @@ test("query_filesystem_tests") {
   deps = [
     ":fs_test",
     "//sdk/lib/component/incoming/cpp",
+    "//sdk/lib/fdio-caller",
     "//src/lib/fxl/test:gtest_main",
-    "//zircon/system/ulib/fdio-caller",
   ]
 }
 
@@ -275,9 +275,9 @@ test("rename_tests") {
   deps = [
     ":fs_test",
     "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
+    "//sdk/lib/fdio-caller",
     "//src/lib/fxl/test:gtest_main",
     "//zircon/system/ulib/fbl",
-    "//zircon/system/ulib/fdio-caller",
   ]
 }
 
@@ -286,11 +286,11 @@ test("resize_tests") {
   deps = [
     ":fs_test",
     "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
+    "//sdk/lib/fdio-caller",
     "//src/lib/fxl/test:gtest_main",
     "//src/storage/fvm",
     "//src/storage/minfs",
     "//zircon/system/ulib/fbl",
-    "//zircon/system/ulib/fdio-caller",
   ]
 }
 
@@ -374,9 +374,9 @@ test("watcher_tests") {
   deps = [
     ":fs_test",
     "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
+    "//sdk/lib/fdio-caller",
     "//src/lib/fxl/test:gtest_main",
     "//zircon/system/ulib/fbl",
-    "//zircon/system/ulib/fdio-caller",
   ]
 }
 
@@ -430,8 +430,8 @@ test("symlink_tests") {
   deps = [
     ":fs_test",
     "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
+    "//sdk/lib/fdio-caller",
     "//src/lib/fxl/test:gtest_main",
-    "//zircon/system/ulib/fdio-caller",
   ]
 }
 

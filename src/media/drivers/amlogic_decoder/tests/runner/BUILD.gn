@@ -29,8 +29,8 @@ cc_test_executable("amlogic_decoder_integration_tests_bin") {
     "//sdk/fidl/fuchsia.driver.development:fuchsia.driver.development_cpp",
     "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/fdio",
+    "//sdk/lib/fdio-caller",
     "//zircon/system/ulib/fbl",
-    "//zircon/system/ulib/fdio-caller",
     "//zircon/system/ulib/zx",
     "//zircon/system/ulib/zxtest",
   ]

@@ -55,11 +55,11 @@ test("pci-driver") {
   sources = [ "driver/driver_tests.cc" ]
   deps = [
     "//sdk/fidl/fuchsia.device.test:fuchsia.device.test_cpp",
+    "//sdk/lib/fdio-caller",
     "//src/devices/testing/driver-integration-test-shim",
     "//src/lib/ddk",
     "//src/lib/ddktl",
     "//zircon/system/ulib/fbl",
-    "//zircon/system/ulib/fdio-caller",
     "//zircon/system/ulib/zxtest",
   ]
 }

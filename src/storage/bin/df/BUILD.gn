@@ -11,8 +11,8 @@ executable("df") {
   deps = [
     "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
     "//sdk/lib/component/incoming/cpp",
+    "//sdk/lib/fdio-caller",
     "//zircon/system/ulib/fbl",
-    "//zircon/system/ulib/fdio-caller",
   ]
 }
 

@@ -11,9 +11,9 @@ executable("waitfor") {
     "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_cpp",
     "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/fdio",
+    "//sdk/lib/fdio-caller",
     "//src/lib/uuid",
     "//zircon/system/ulib/fbl",
-    "//zircon/system/ulib/fdio-caller",
   ]
 }
 

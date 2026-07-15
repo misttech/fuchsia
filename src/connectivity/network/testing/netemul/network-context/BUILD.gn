@@ -14,9 +14,9 @@ executable("bin") {
     "//sdk/lib/async-loop:async-loop-default",
     "//sdk/lib/component/outgoing/cpp",
     "//sdk/lib/device-watcher/cpp",
+    "//sdk/lib/fdio-caller",
     "//sdk/lib/sys/cpp",
     "//sdk/lib/syslog/cpp",
-    "//zircon/system/ulib/fdio-caller",
   ]
 }
 

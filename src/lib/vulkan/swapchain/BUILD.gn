@@ -113,9 +113,9 @@ source_set("display") {
     "//sdk/lib/async:async-cpp",
     "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/fdio",
+    "//sdk/lib/fdio-caller",
     "//src/lib/fsl",
     "//zircon/system/ulib/fbl",
-    "//zircon/system/ulib/fdio-caller",
     "//zircon/system/ulib/fzl",
   ]
   public_deps = [

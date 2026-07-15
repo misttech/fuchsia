@@ -117,6 +117,7 @@ static_library("fvm_test_instance") {
     "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/device-watcher/cpp",
     "//sdk/lib/fdio",
+    "//sdk/lib/fdio-caller",
     "//sdk/lib/fidl",
     "//src/devices/bind/fuchsia.platform:fuchsia.platform_cpp",
     "//src/storage/fvm",
@@ -125,7 +126,6 @@ static_library("fvm_test_instance") {
     "//src/storage/lib/fs_management",
     "//src/storage/lib/ramdevice_client/cpp",
     "//zircon/system/ulib/fbl",
-    "//zircon/system/ulib/fdio-caller",
     "//zircon/system/ulib/fzl",
     "//zircon/system/ulib/zx",
     "//zircon/system/ulib/zxtest",
@@ -153,8 +153,8 @@ test("fvm_unit") {
     deps += [
       ":client",
       "//sdk/lib/fdio",
+      "//sdk/lib/fdio-caller",
       "//src/storage/lib/block_client/cpp",
-      "//zircon/system/ulib/fdio-caller",
       "//zircon/system/ulib/zx",
     ]
   }
@@ -182,6 +182,7 @@ test("fvm-integration") {
     "//sdk/lib/device-watcher/cpp",
     "//sdk/lib/driver_test_realm/realm_builder/cpp",
     "//sdk/lib/fdio",
+    "//sdk/lib/fdio-caller",
     "//src/devices/bind/fuchsia.platform:fuchsia.platform_cpp",
     "//src/storage/blobfs",
     "//src/storage/fvm",
@@ -190,7 +191,6 @@ test("fvm-integration") {
     "//src/storage/lib/ramdevice_client/cpp",
     "//src/storage/minfs",
     "//zircon/system/ulib/fbl",
-    "//zircon/system/ulib/fdio-caller",
     "//zircon/system/ulib/zircon-internal",
     "//zircon/system/ulib/zx",
     "//zircon/system/ulib/zxtest",

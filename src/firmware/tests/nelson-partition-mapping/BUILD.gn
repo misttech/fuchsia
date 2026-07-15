@@ -13,10 +13,10 @@ test("partition-mapping") {
     "//sdk/lib/async-loop:async-loop-default",
     "//sdk/lib/device-watcher/cpp",
     "//sdk/lib/fdio",
+    "//sdk/lib/fdio-caller",
     "//src/lib/fsl",
     "//src/storage/gpt",
     "//zircon/system/ulib/fbl",
-    "//zircon/system/ulib/fdio-caller",
     "//zircon/system/ulib/zx",
     "//zircon/system/ulib/zxtest",
   ]

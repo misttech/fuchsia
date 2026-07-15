@@ -65,13 +65,13 @@ cc_test_executable("network_test_bin") {
   deps = [
     ":network_service",
     "//sdk/fidl/fuchsia.hardware.network:fuchsia.hardware.network_cpp_hlcpp_conversion",
+    "//sdk/lib/fdio-caller",
     "//sdk/lib/sys/cpp",
     "//src/connectivity/lib/network-device/cpp",
     "//src/lib/fxl",
     "//src/lib/fxl/test:gtest_main",
     "//src/lib/testing/loop_fixture",
     "//src/lib/testing/predicates",
-    "//zircon/system/ulib/fdio-caller",
     "//zircon/system/ulib/fzl",
   ]
 }

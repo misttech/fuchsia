@@ -39,12 +39,12 @@ test("ftdi-integration") {
     "//sdk/fidl/fuchsia.hardware.usb.virtual.bus:fuchsia.hardware.usb.virtual.bus_cpp",
     "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/fdio",
+    "//sdk/lib/fdio-caller",
     "//src/devices/usb/lib/usb",
     "//src/devices/usb/testing/usb-virtual-bus-launcher",
     "//src/lib/ddk",
     "//src/ui/input/lib/hid",
     "//zircon/system/ulib/fbl",
-    "//zircon/system/ulib/fdio-caller",
     "//zircon/system/ulib/zx",
     "//zircon/system/ulib/zxtest",
   ]

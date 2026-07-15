@@ -110,12 +110,12 @@ test("factory_reset_unittests") {
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/async-loop:async-loop-default",
     "//sdk/lib/component/incoming/cpp",
+    "//sdk/lib/fdio-caller",
     "//src/lib/fxl/test:gtest_main",
     "//src/lib/testing/loop_fixture",
     "//src/storage/lib/block_client/cpp",
     "//third_party/googletest:gmock",
     "//zircon/system/ulib/fbl",
-    "//zircon/system/ulib/fdio-caller",
   ]
 }
 

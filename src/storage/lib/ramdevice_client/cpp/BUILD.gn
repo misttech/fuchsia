@@ -42,10 +42,10 @@ source_set("ramdevice-client") {
     "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/device-watcher/cpp",
     "//sdk/lib/fdio",
+    "//sdk/lib/fdio-caller",
     "//sdk/lib/syslog/cpp",
     "//src/lib/ddk",
     "//zircon/system/ulib/fbl",
-    "//zircon/system/ulib/fdio-caller",
     "//zircon/system/ulib/fzl",
     "//zircon/system/ulib/zx",
   ]
@@ -78,9 +78,9 @@ source_set("ramdevice-client-test") {
     "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_cpp",
     "//sdk/lib/device-watcher/cpp",
     "//sdk/lib/fdio",
+    "//sdk/lib/fdio-caller",
     "//src/lib/ddk",
     "//zircon/system/ulib/fbl",
-    "//zircon/system/ulib/fdio-caller",
     "//zircon/system/ulib/fzl",
     "//zircon/system/ulib/zx",
   ]

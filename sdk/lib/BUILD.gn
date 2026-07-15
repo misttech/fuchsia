@@ -19,6 +19,7 @@ group("tests") {
     "driver:tests",
     "driver_test_realm:tests",
     "fdio:tests",
+    "fdio-caller:tests",
     "fidl/cpp/tests",
     "file-lock:tests",
     "fit:tests",

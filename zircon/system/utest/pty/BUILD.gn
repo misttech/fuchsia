@@ -12,7 +12,7 @@ test("pty") {
     "//sdk/fidl/fuchsia.hardware.pty:fuchsia.hardware.pty_cpp",
     "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/fdio",
-    "//zircon/system/ulib/fdio-caller",
+    "//sdk/lib/fdio-caller",
     "//zircon/system/ulib/zx",
     "//zircon/system/ulib/zxtest",
   ]

@@ -48,6 +48,7 @@ if (is_fuchsia) {
       "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_cpp",
       "//sdk/lib/component/incoming/cpp",
       "//sdk/lib/device-watcher/cpp",
+      "//sdk/lib/fdio-caller",
       "//sdk/lib/stdcompat",
       "//src/lib/digest",
       "//src/lib/fxl",
@@ -56,7 +57,6 @@ if (is_fuchsia) {
       "//src/storage/lib/block_client/cpp",
       "//src/storage/lib/vfs/cpp",
       "//zircon/system/ulib/fbl",
-      "//zircon/system/ulib/fdio-caller",
       "//zircon/system/ulib/fzl",
       "//zircon/system/ulib/pretty",
       "//zircon/system/ulib/zx",
@@ -81,6 +81,7 @@ test("fs-management-unittest") {
     "//sdk/fidl/fuchsia.device:fuchsia.device_cpp_testing",
     "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_cpp_testing",
     "//sdk/lib/async-loop:async-loop-cpp",
+    "//sdk/lib/fdio-caller",
     "//sdk/lib/syslog/cpp",
     "//src/lib/fxl/test:gtest_main",
     "//src/lib/fxl/test:test_settings",
@@ -88,7 +89,6 @@ test("fs-management-unittest") {
     "//src/storage/fvm",
     "//src/storage/lib/block_client/cpp",
     "//third_party/googletest:gtest",
-    "//zircon/system/ulib/fdio-caller",
   ]
 }
 
@@ -114,6 +114,7 @@ test("fs-management-test") {
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/fdio",
+    "//sdk/lib/fdio-caller",
     "//sdk/lib/syslog/cpp",
     "//src/lib/fxl/test:gtest_main",
     "//src/lib/fxl/test:test_settings",
@@ -127,7 +128,6 @@ test("fs-management-test") {
     "//src/storage/testing:storage_driver_test_support",
     "//third_party/googletest:gtest",
     "//zircon/system/ulib/fbl",
-    "//zircon/system/ulib/fdio-caller",
     "//zircon/system/ulib/zx",
   ]
   data_deps = [ "//src/storage/fuchsia-fatfs:tools" ]

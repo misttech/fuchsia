@@ -23,9 +23,9 @@ test("device_controller_fidl") {
     "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/device-watcher/cpp",
     "//sdk/lib/driver_test_realm/realm_builder/cpp",
+    "//sdk/lib/fdio-caller",
     "//src/lib/fxl/test:gtest_main",
     "//src/lib/testing/loop_fixture",
-    "//zircon/system/ulib/fdio-caller",
   ]
 }
 

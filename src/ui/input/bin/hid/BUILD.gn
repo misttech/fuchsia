@@ -19,10 +19,10 @@ executable("hid") {
     "//sdk/fidl/fuchsia.hardware.input:fuchsia.hardware.input_cpp",
     "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/fdio",
+    "//sdk/lib/fdio-caller",
     "//src/lib/listnode",
     "//src/ui/input/lib/hid-parser",
     "//zircon/system/ulib/fbl",
-    "//zircon/system/ulib/fdio-caller",
     "//zircon/system/ulib/fzl",
     "//zircon/system/ulib/zx",
   ]

@@ -326,6 +326,7 @@ test("adapter-integration-test") {
     ":empty-partition",
     ":minfs-partition",
     "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_cpp",
+    "//sdk/lib/fdio-caller",
     "//src/lib/fxl/test:gtest_main",
     "//src/storage/blobfs",
     "//src/storage/fvm",
@@ -338,7 +339,6 @@ test("adapter-integration-test") {
     "//src/storage/volume_image/utils:fd-io",
     "//third_party/googletest:gmock",
     "//third_party/googletest:gtest",
-    "//zircon/system/ulib/fdio-caller",
   ]
 }
 

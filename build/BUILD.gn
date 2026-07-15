@@ -500,7 +500,6 @@ group("deprecated_zx_wrapper_allowlist") {
     "//zircon/system/ulib/elf-search:*",
     "//zircon/system/ulib/explicit-memory:*",
     "//zircon/system/ulib/fbl:*",
-    "//zircon/system/ulib/fdio-caller:*",
     "//zircon/system/ulib/ffl:*",
     "//zircon/system/ulib/fs-host:*",
     "//zircon/system/ulib/fzl:*",

@@ -31,10 +31,10 @@ static_library("blobfs_integration_fixtures") {
     "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/diagnostics/reader/cpp:archive_reader",
     "//sdk/lib/fdio",
+    "//sdk/lib/fdio-caller",
     "//sdk/lib/sys/cpp",
     "//src/lib/testing/predicates",
     "//src/storage/lib/fs_management",
-    "//zircon/system/ulib/fdio-caller",
   ]
   public_deps = [
     "//sdk/lib/async-loop",
@@ -88,6 +88,7 @@ test("blobfs_integration") {
     "//sdk/lib/async-loop:async-loop-default",
     "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/fdio",
+    "//sdk/lib/fdio-caller",
     "//sdk/lib/inspect/testing/cpp",
     "//src/lib/fxl/test:gtest_main",
     "//src/lib/testing/predicates",
@@ -98,7 +99,6 @@ test("blobfs_integration") {
     "//src/storage/lib/block_client/cpp:fake_device",
     "//src/storage/lib/fs_management",
     "//src/storage/lib/utils:topological_path",
-    "//zircon/system/ulib/fdio-caller",
     "//zircon/system/ulib/zx",
     "//zircon/third_party/ulib/safemath",
   ]
@@ -255,6 +255,7 @@ template("blobfs_large_integration_test") {
       "//sdk/lib/async-loop:async-loop-cpp",
       "//sdk/lib/async-loop:async-loop-default",
       "//sdk/lib/fdio",
+      "//sdk/lib/fdio-caller",
       "//src/lib/fxl/test:gtest_main",
       "//src/lib/testing/predicates",
       "//src/storage/blobfs",
@@ -262,7 +263,6 @@ template("blobfs_large_integration_test") {
       "//src/storage/fs_test",
       "//src/storage/fvm",
       "//third_party/googletest:gtest",
-      "//zircon/system/ulib/fdio-caller",
     ]
     if (defined(invoker.deps)) {
       deps += invoker.deps

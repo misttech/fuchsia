@@ -34,12 +34,12 @@ executable("critical-services") {
     "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/component/outgoing/cpp",
     "//sdk/lib/fdio",
+    "//sdk/lib/fdio-caller",
     "//sdk/lib/sys/cpp",
     "//src/bringup/bin/critical-services/crashsvc",
     "//src/sys/lib/stdout-to-debuglog/cpp",
     "//src/ui/input/lib/hid-parser",
     "//zircon/system/ulib/fbl",
-    "//zircon/system/ulib/fdio-caller",
     "//zircon/system/ulib/fzl",
     "//zircon/system/ulib/svc",
   ]

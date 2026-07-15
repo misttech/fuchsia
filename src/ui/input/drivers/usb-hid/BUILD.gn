@@ -166,6 +166,7 @@ test("usb-hid-test") {
     "//sdk/fidl/fuchsia.hardware.usb.virtual.bus:fuchsia.hardware.usb.virtual.bus_cpp",
     "//sdk/lib/device-watcher/cpp",
     "//sdk/lib/fdio",
+    "//sdk/lib/fdio-caller",
     "//src/devices/usb/lib/usb",
     "//src/devices/usb/testing/usb-virtual-bus-launcher",
     "//src/lib/fxl/test:gtest_main",
@@ -173,7 +174,6 @@ test("usb-hid-test") {
     "//src/ui/input/lib/hid",
     "//zircon/system/ulib/ddk-platform-defs",
     "//zircon/system/ulib/fbl",
-    "//zircon/system/ulib/fdio-caller",
     "//zircon/system/ulib/zx",
   ]
 }

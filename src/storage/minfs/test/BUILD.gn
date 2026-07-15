@@ -68,6 +68,7 @@ test("minfs-integration") {
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/async-loop:async-loop-default",
     "//sdk/lib/component/incoming/cpp",
+    "//sdk/lib/fdio-caller",
     "//src/lib/fxl/test:gtest_main",
     "//src/storage/fs_test",
     "//src/storage/fvm",
@@ -76,7 +77,6 @@ test("minfs-integration") {
     "//third_party/googletest:gmock",
     "//third_party/googletest:gtest",
     "//zircon/system/ulib/fbl",
-    "//zircon/system/ulib/fdio-caller",
     "//zircon/system/ulib/zx",
   ]
 }
@@ -86,13 +86,13 @@ test("minfs_dirty_cache_integration") {
   deps = [
     "//sdk/fidl/fuchsia.fs:fuchsia.fs_cpp",
     "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
+    "//sdk/lib/fdio-caller",
     "//src/lib/fxl/test:gtest_main",
     "//src/storage/fs_test",
     "//src/storage/minfs",
     "//src/storage/testing:storage_driver_test_support",
     "//third_party/googletest:gtest",
     "//zircon/system/ulib/fbl",
-    "//zircon/system/ulib/fdio-caller",
     "//zircon/system/ulib/zircon-internal",
     "//zircon/system/ulib/zx",
   ]
@@ -123,12 +123,12 @@ test("fs_tests") {
     "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
     "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_cpp",
     "//sdk/lib/fdio",
+    "//sdk/lib/fdio-caller",
     "//src/lib/fxl/test:gtest_main",
     "//src/storage/fs_test",
     "//src/storage/fvm",
     "//src/storage/minfs",
     "//third_party/googletest:gmock",
-    "//zircon/system/ulib/fdio-caller",
   ]
 }
 

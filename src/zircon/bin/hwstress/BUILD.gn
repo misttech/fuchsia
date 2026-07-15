@@ -36,12 +36,12 @@ source_set("lib") {
     "//sdk/lib/async-loop:async-loop-default",
     "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/fdio",
+    "//sdk/lib/fdio-caller",
     "//sdk/lib/sys/cpp",
     "//src/lib/cmdline",
     "//src/lib/fxl",
     "//src/lib/uuid",
     "//src/storage/lib/fs_management",
-    "//zircon/system/ulib/fdio-caller",
     "//zircon/system/ulib/zx",
   ]
 

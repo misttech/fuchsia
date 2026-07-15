@@ -186,6 +186,7 @@ _test_deps = [
   "//sdk/lib/driver/logging/cpp",
   "//sdk/lib/driver/power/cpp/testing",
   "//sdk/lib/driver/testing/cpp",
+  "//sdk/lib/fdio-caller",
   "//sdk/lib/inspect/testing/cpp",
   "//src/devices/pci/testing:pci-protocol-fake",
   "//src/devices/testing/fake-mmio-reg",
@@ -193,7 +194,6 @@ _test_deps = [
   "//src/lib/json_parser",
   "//src/lib/testing/predicates",
   "//src/storage/lib/block_client/cpp",
-  "//zircon/system/ulib/fdio-caller",
   "//zircon/third_party/ulib/safemath",
 ]
 
