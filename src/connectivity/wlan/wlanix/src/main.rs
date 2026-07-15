@@ -439,7 +439,7 @@ async fn handle_wifi_chip_request<I: IfaceManager, P: PowerManager>(
             let result = iface_manager.reset_phy(chip_id).await;
 
             // Notify telemetry that the reset has been triggered.
-            telemetry_sender.send(TelemetryEvent::RecoveryEvent {
+            telemetry_sender.send(TelemetryEvent::RecoveryResult {
                 result: if result.is_ok() { Ok(()) } else { Err(()) },
             });
 
@@ -3868,7 +3868,7 @@ mod tests {
         // Verify that the telemetry event was sent.
         assert_matches!(
             test_helper.telemetry_receiver.try_next(),
-            Ok(Some(TelemetryEvent::RecoveryEvent { result: Ok(()) }))
+            Ok(Some(TelemetryEvent::RecoveryResult { result: Ok(()) }))
         );
 
         // Verify that the PHY reset was called.
@@ -3923,7 +3923,7 @@ mod tests {
         // Verify that the telemetry event was sent.
         assert_matches!(
             test_helper.telemetry_receiver.try_next(),
-            Ok(Some(TelemetryEvent::RecoveryEvent { result: Err(()) }))
+            Ok(Some(TelemetryEvent::RecoveryResult { result: Err(()) }))
         );
 
         // Verify that OnSubsystemRestart callback was not called.
