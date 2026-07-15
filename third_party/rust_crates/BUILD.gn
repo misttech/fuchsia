@@ -1933,6 +1933,10 @@ group("sha2") {
   public_deps = [ ":sha2-v0_10_9" ]
 }
 
+group("sha2-0.10") {
+  public_deps = [ ":sha2-v0_10_9" ]
+}
+
 group("sha2-0.10.9") {
   public_deps = [ ":sha2-v0_10_9" ]
 }

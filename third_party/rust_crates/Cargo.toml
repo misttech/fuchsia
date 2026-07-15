@@ -1133,6 +1133,12 @@ testonly = true
 [gn.package.sha1."0.10.6"]
 group_visibility = { import = "//third_party/rust_crates/visibility.gni", variable = "sha1_visibility" }
 
+[gn.package.sha2."0.10.9"]
+groups = [
+  { name = "sha2" },
+  { name = "sha2-0.10" }
+]
+
 [gn.package.signal-hook."0.4.4"]
 rustflags = []
 
