@@ -61,49 +61,72 @@ zx_status_t Allocator::ResetFromStorage(fs::DeviceTransactionHandler& transactio
 
   // Ensure the block and node maps are up-to-date with changes in size that
   // might have happened.
-  zx_status_t status;
-  if ((status = ResetBlockMapSize()) != ZX_OK) {
+  if (zx_status_t status = ResetBlockMapSize(); status != ZX_OK) {
     return status;
   }
-
-  if ((status = ResetNodeMapSize()) != ZX_OK) {
-    return status;
-  }
-
-  storage::OwnedVmoid block_map_vmoid;
-  storage::OwnedVmoid node_map_vmoid;
-
-  // TODO(https://fxbug.dev/42126023): Change to use fpromise::result<OwnedVmo, zx_status_t>.
-  status = space_manager_->BlockAttachVmo(GetBlockMapVmo(),
-                                          &block_map_vmoid.GetReference(space_manager_));
-  if (status != ZX_OK) {
-    return status;
-  }
-
-  status =
-      space_manager_->BlockAttachVmo(GetNodeMapVmo(), &node_map_vmoid.GetReference(space_manager_));
-  if (status != ZX_OK) {
+  if (zx_status_t status = ResetNodeMapSize(); status != ZX_OK) {
     return status;
   }
 
   const auto info = space_manager_->Info();
-  std::vector<storage::BufferedOperation> operations;
-  operations.push_back({.vmoid = block_map_vmoid.get(),
-                        .op = {
-                            .type = storage::OperationType::kRead,
-                            .vmo_offset = 0,
-                            .dev_offset = BlockMapStartBlock(info),
-                            .length = BlockMapBlocks(info),
-                        }});
-  operations.push_back({.vmoid = node_map_vmoid.get(),
-                        .op = {
-                            .type = storage::OperationType::kRead,
-                            .vmo_offset = 0,
-                            .dev_offset = NodeMapStartBlock(info),
-                            .length = NodeMapBlocks(info),
-                        }});
+  uint64_t block_map_blocks = BlockMapBlocks(info);
+  uint64_t node_map_blocks = NodeMapBlocks(info);
+  uint64_t block_map_size = block_map_blocks * kBlobfsBlockSize;
+  uint64_t node_map_size = node_map_blocks * kBlobfsBlockSize;
 
-  return transaction_handler.RunRequests(operations);
+  // The block map VMO and node map VMO are both resizable VMOs which can't be registered with the
+  // block device. A new VMO is created and registered to read in the block map and node map blocks.
+  // The pages are then transferred from the transfer VMO to the block map and node map VMOs.
+  zx::vmo transfer_vmo;
+  if (zx_status_t status = zx::vmo::create(block_map_size + node_map_size, 0, &transfer_vmo);
+      status != ZX_OK) {
+    return status;
+  }
+
+  storage::OwnedVmoid transfer_vmo_vmoid;
+  if (zx_status_t status = space_manager_->BlockAttachVmo(
+          transfer_vmo, &transfer_vmo_vmoid.GetReference(space_manager_));
+      status != ZX_OK) {
+    return status;
+  }
+
+  std::vector<storage::BufferedOperation> operations;
+  operations.push_back({
+      .vmoid = transfer_vmo_vmoid.get(),
+      .op =
+          {
+              .type = storage::OperationType::kRead,
+              .vmo_offset = 0,
+              .dev_offset = BlockMapStartBlock(info),
+              .length = block_map_blocks,
+          },
+  });
+  operations.push_back({
+      .vmoid = transfer_vmo_vmoid.get(),
+      .op =
+          {
+              .type = storage::OperationType::kRead,
+              .vmo_offset = block_map_blocks,
+              .dev_offset = NodeMapStartBlock(info),
+              .length = node_map_blocks,
+          },
+  });
+
+  if (zx_status_t status = transaction_handler.RunRequests(operations); status != ZX_OK) {
+    return status;
+  }
+
+  if (zx_status_t status = GetBlockMapVmo().transfer_data(0, 0, block_map_size, &transfer_vmo, 0);
+      status != ZX_OK) {
+    return status;
+  }
+  if (zx_status_t status =
+          GetNodeMapVmo().transfer_data(0, 0, node_map_size, &transfer_vmo, block_map_size);
+      status != ZX_OK) {
+    return status;
+  }
+
+  return ZX_OK;
 }
 
 const zx::vmo& Allocator::GetBlockMapVmo() const {

@@ -403,7 +403,10 @@ void ResetSizeHelper(uint64_t before_blocks, uint64_t before_nodes, uint64_t aft
   // Initialize the allocator with a given size.
   MockTransactionManager transaction_manager;
   RawBitmap block_map;
-  ASSERT_EQ(block_map.Reset(before_blocks), ZX_OK);
+  // The VMO backing the bitmap needs to be a multiple of the block size. Reset it to a block
+  // multiple size and then shrink it the size that was actually requested.
+  ASSERT_EQ(block_map.Reset(fbl::round_up(before_blocks, kBlobfsBlockBits)), ZX_OK);
+  ASSERT_EQ(block_map.Shrink(before_blocks), ZX_OK);
   fzl::ResizeableVmoMapper node_map;
   size_t map_size = fbl::round_up(before_nodes * kBlobfsInodeSize, kBlobfsBlockSize);
   ASSERT_EQ(node_map.CreateAndMap(map_size, "node map"), ZX_OK);
