@@ -14,6 +14,7 @@ use crate::path_ext::DocPathExt;
 use crate::{DocCheckError, DocCheckerArgs, DocLine, DocYamlCheck};
 use anyhow::Result;
 use async_trait::async_trait;
+use pulldown_cmark::{Event, LinkType, Options, Parser, Tag, TagEnd};
 use regex::Regex;
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
@@ -136,6 +137,7 @@ struct Metadata {
 struct ProblemEntry {
     key: String,
     use_case: String,
+    tools: Vec<String>,
     description: String,
     #[serde(alias = "related-problems")]
     related_problems: Vec<String>,
@@ -208,6 +210,14 @@ pub(crate) struct IncludedYaml {
     pub(crate) included_file: PathBuf,
 }
 
+#[derive(Debug, Clone)]
+struct ProblemLink {
+    location: DocLine,
+    link_type: LinkType,
+    dest: String,
+    text: String,
+}
+
 #[derive(Debug)]
 pub(crate) struct YamlChecker {
     root_dir: PathBuf,
@@ -218,6 +228,9 @@ pub(crate) struct YamlChecker {
     reference_docs_root: Option<PathBuf>,
     reference_prefix: PathBuf,
     external_links: Vec<LinkReference>,
+    defined_tools: HashSet<String>,
+    referenced_tools: Vec<(DocLine, String)>,
+    problem_links: Vec<ProblemLink>,
 }
 
 #[async_trait]
@@ -257,7 +270,12 @@ impl DocYamlCheck for YamlChecker {
                     self.allow_fuchsia_src_links,
                     &mut self.external_links,
                 ),
-                Some("_problems.yaml") => check_problems(filename, yaml_value),
+                Some("_problems.yaml") => check_problems(
+                    filename,
+                    yaml_value,
+                    &mut self.referenced_tools,
+                    &mut self.problem_links,
+                ),
                 Some("_redirects.yaml") => check_redirects(
                     &self.root_dir,
                     &self.docs_folder,
@@ -295,9 +313,13 @@ impl DocYamlCheck for YamlChecker {
                     self.allow_fuchsia_src_links,
                     &self.reference_prefix,
                 ),
-                Some("_tools.yaml") => {
-                    check_tools(&self.root_dir, filename, yaml_value, &mut self.external_links)
-                }
+                Some("_tools.yaml") => check_tools(
+                    &self.root_dir,
+                    filename,
+                    yaml_value,
+                    &mut self.external_links,
+                    &mut self.defined_tools,
+                ),
                 Some(name) => todo!("Need to handle {} ({:?})", name, filename),
                 _ => panic!("No str avail for {:?}", filename),
             };
@@ -498,6 +520,68 @@ impl DocYamlCheck for YamlChecker {
                 "File not reachable via _toc include references.",
             ))
         });
+
+        // Check referenced tools in problems exist
+        for (loc, tool) in &self.referenced_tools {
+            if !self.defined_tools.contains(tool) {
+                errors.push(DocCheckError::new_error(
+                    loc.line_num,
+                    loc.file_name.clone(),
+                    &format!("Tool {} referenced in problems is not defined in _tools.yaml", tool),
+                ));
+            }
+        }
+
+        // Check links in problem descriptions
+        for link in &self.problem_links {
+            match link.link_type {
+                LinkType::ShortcutUnknown | LinkType::ReferenceUnknown => {
+                    // Check if it's a tool
+                    if !self.defined_tools.contains(&link.dest) {
+                        errors.push(DocCheckError::new_error_helpful(
+                            link.location.line_num,
+                            link.location.file_name.clone(),
+                            &format!("Unknown reference link to [{}][{}]", link.text, link.dest),
+                            &format!(
+                                "make sure you added a matching [{}]: YOUR_LINK_HERE below this reference.",
+                                link.dest
+                            ),
+                        ));
+                    }
+                }
+                LinkType::Inline
+                | LinkType::Reference
+                | LinkType::Collapsed
+                | LinkType::Autolink => {
+                    if is_external_path(&link.dest) {
+                        if self.check_external_links {
+                            external_links.push(LinkReference {
+                                link: normalize_external_link(&link.dest),
+                                location: link.location.clone(),
+                            });
+                        }
+                    } else if let Some(err) = check_path(
+                        &link.location,
+                        &self.root_dir,
+                        &self.docs_folder,
+                        &self.project,
+                        &link.dest,
+                        self.allow_fuchsia_src_links,
+                        &self.reference_prefix,
+                    ) {
+                        errors.push(err);
+                    }
+                }
+                LinkType::Email => {}
+                _ => {
+                    errors.push(DocCheckError::new_warning(
+                        link.location.line_num,
+                        link.location.file_name.clone(),
+                        &format!("Unhandled link type {:?} in problem description", link.link_type),
+                    ));
+                }
+            }
+        }
 
         if self.check_external_links {
             if let Some(link_errors) = check_external_links(&external_links).await {
@@ -1143,9 +1227,62 @@ fn check_metadata(
     }
 }
 
-fn check_problems(filename: &Path, yaml_value: &Value) -> Option<Vec<DocCheckError>> {
-    let (_items, errors) = parse_entries::<ProblemEntry>(filename, yaml_value);
-    //TODO(https://fxbug.dev/42064929): other checks for ProblemEntry?
+fn check_problems(
+    filename: &Path,
+    yaml_value: &Value,
+    referenced_tools: &mut Vec<(DocLine, String)>,
+    problem_links: &mut Vec<ProblemLink>,
+) -> Option<Vec<DocCheckError>> {
+    let (items, errors) = parse_entries::<ProblemEntry>(filename, yaml_value);
+    if let Some(problems) = items {
+        for problem in problems {
+            let doc_line = DocLine { line_num: 1, file_name: filename.to_path_buf() };
+            for tool in problem.tools {
+                referenced_tools.push((doc_line.clone(), tool));
+            }
+            let mut callback = |broken_link: pulldown_cmark::BrokenLink<'_>| {
+                let reference = broken_link.reference.to_string();
+                Some((pulldown_cmark::CowStr::Boxed(reference.into()), "".into()))
+            };
+            let parser = Parser::new_with_broken_link_callback(
+                &problem.description,
+                Options::empty(),
+                Some(&mut callback),
+            );
+            let mut current_link: Option<(LinkType, String, String)> = None;
+            for event in parser {
+                match event {
+                    Event::Start(Tag::Link { link_type, dest_url, .. }) => {
+                        current_link = Some((link_type, dest_url.to_string(), String::new()));
+                    }
+                    Event::Text(t)
+                    | Event::Code(t)
+                    | Event::InlineMath(t)
+                    | Event::DisplayMath(t) => {
+                        if let Some((_, _, ref mut link_text)) = current_link {
+                            link_text.push_str(&t);
+                        }
+                    }
+                    Event::SoftBreak | Event::HardBreak => {
+                        if let Some((_, _, ref mut link_text)) = current_link {
+                            link_text.push_str(" ");
+                        }
+                    }
+                    Event::End(TagEnd::Link) => {
+                        if let Some((saved_type, saved_dest, link_text)) = current_link.take() {
+                            problem_links.push(ProblemLink {
+                                location: doc_line.clone(),
+                                link_type: saved_type,
+                                dest: saved_dest,
+                                text: link_text,
+                            });
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
     errors
 }
 
@@ -1479,11 +1616,13 @@ fn check_tools(
     filename: &Path,
     yaml_value: &Value,
     external_links: &mut Vec<LinkReference>,
+    defined_tools: &mut HashSet<String>,
 ) -> Option<Vec<DocCheckError>> {
     let (items, errors) = parse_entries::<ToolsEntry>(filename, yaml_value);
     let mut errs = errors.unwrap_or_default();
     if let Some(entries) = items {
         for entry in entries {
+            defined_tools.insert(entry.name.clone());
             for (key, value) in entry.links {
                 if let (Some(key_str), Some(link_str)) = (key.as_str(), value.as_str()) {
                     if link_str.starts_with("/docs/") {
@@ -1588,6 +1727,9 @@ pub fn register_yaml_checks(opt: &DocCheckerArgs) -> Result<Vec<Box<dyn DocYamlC
         reference_docs_root: opt.reference_docs_root.clone(),
         reference_prefix,
         external_links: vec![],
+        defined_tools: HashSet::new(),
+        referenced_tools: vec![],
+        problem_links: vec![],
     };
 
     Ok(vec![Box::new(checker)])
@@ -1690,6 +1832,9 @@ mod test {
             reference_docs_root: None,
             reference_prefix: PathBuf::from("/reference"),
             external_links: vec![],
+            defined_tools: HashSet::new(),
+            referenced_tools: vec![],
+            problem_links: vec![],
         };
 
         let test_data: [(&str, Option<DocCheckError>); 7] = [
@@ -1895,6 +2040,9 @@ redirects:
             reference_docs_root: None,
             reference_prefix: PathBuf::from("/reference"),
             external_links: vec![],
+            defined_tools: HashSet::new(),
+            referenced_tools: vec![],
+            problem_links: vec![],
         };
         let filename = PathBuf::from("_deprecated-docs.yaml");
 
@@ -2132,7 +2280,8 @@ included:
         )?;
 
         let root_dir = PathBuf::from(".");
-        let result = check_tools(&root_dir, &filename, &yaml_value, &mut vec![]);
+        let result =
+            check_tools(&root_dir, &filename, &yaml_value, &mut vec![], &mut HashSet::new());
 
         assert!(result.is_some());
         let errors = result.unwrap();
@@ -2156,7 +2305,13 @@ included:
             "#,
         )?;
         let mut external_links = vec![];
-        let result = check_tools(&root_dir, &filename, &external_link_yaml, &mut external_links);
+        let result = check_tools(
+            &root_dir,
+            &filename,
+            &external_link_yaml,
+            &mut external_links,
+            &mut HashSet::new(),
+        );
         assert!(result.is_none());
         assert_eq!(external_links.len(), 1);
         assert_eq!(external_links[0].link, "https://external.com/tool");
@@ -2423,6 +2578,82 @@ guides:
         assert!(result.is_none());
         assert_eq!(external_links.len(), 1);
         assert_eq!(external_links[0].link, "https://external.com/guide");
+
+        Ok(())
+    }
+
+    #[fuchsia::test]
+    async fn test_check_problems_and_post_check() -> Result<()> {
+        let filename = PathBuf::from("docs/reference/troubleshooting/_problems.yaml");
+        let yaml_value: Value = serde_yaml::from_str(
+            r#"
+- key: Test Problem
+  use_case: 'Testing'
+  tools:
+    - Test Tool
+    - Missing Tool
+  description: |
+    This is a description with a link to [Test Tool] and [another link with `code`](https://external.com).
+    Also [broken link][Missing Tool] and [really broken link][Unknown].
+  related-problems: []
+            "#,
+        )?;
+
+        let mut referenced_tools = vec![];
+        let mut problem_links = vec![];
+        let result =
+            check_problems(&filename, &yaml_value, &mut referenced_tools, &mut problem_links);
+        assert!(result.is_none());
+
+        assert_eq!(referenced_tools.len(), 2);
+        assert_eq!(referenced_tools[0].1, "Test Tool");
+        assert_eq!(referenced_tools[1].1, "Missing Tool");
+
+        assert_eq!(problem_links.len(), 4);
+        assert_eq!(problem_links[0].dest, "Test Tool");
+        assert_eq!(problem_links[0].text, "Test Tool");
+        assert_eq!(problem_links[1].dest, "https://external.com");
+        assert_eq!(problem_links[1].text, "another link with code");
+
+        // Now run post_check
+        let mut defined_tools = HashSet::new();
+        defined_tools.insert("Test Tool".to_string());
+
+        let checker = YamlChecker {
+            root_dir: PathBuf::from("."),
+            docs_folder: PathBuf::from("docs"),
+            project: "fuchsia".to_string(),
+            check_external_links: false,
+            allow_fuchsia_src_links: false,
+            reference_docs_root: None,
+            reference_prefix: PathBuf::from("/reference"),
+            external_links: vec![],
+            defined_tools,
+            referenced_tools,
+            problem_links,
+        };
+
+        let post_result = checker.post_check(&[], &[]).await?;
+        assert!(post_result.is_some());
+        let errors = post_result.unwrap();
+
+        for e in &errors {
+            eprintln!("POST_CHECK ERROR: {}", e.message);
+        }
+        assert_eq!(errors.len(), 4);
+        assert!(
+            errors.iter().any(|e| e.message.contains(
+                "Tool Missing Tool referenced in problems is not defined in _tools.yaml"
+            ))
+        );
+        assert!(
+            errors.iter().any(|e| e
+                .message
+                .contains("Unknown reference link to [broken link][Missing Tool]"))
+        );
+        assert!(errors.iter().any(|e| {
+            e.message.contains("Unknown reference link to [really broken link][Unknown]")
+        }));
 
         Ok(())
     }
