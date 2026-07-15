@@ -56,11 +56,7 @@ impl TocEntry {
             paths.extend(path_list);
         }
 
-        if paths.is_empty() {
-            None
-        } else {
-            Some(paths)
-        }
+        if paths.is_empty() { None } else { Some(paths) }
     }
     pub(crate) fn get_paths(&self) -> Option<Vec<String>> {
         let mut paths: Vec<String> = vec![];
@@ -76,11 +72,7 @@ impl TocEntry {
             toc.iter().filter_map(|entry| entry.get_paths()).flatten().for_each(|p| paths.push(p))
         }
 
-        if paths.is_empty() {
-            None
-        } else {
-            Some(paths)
-        }
+        if paths.is_empty() { None } else { Some(paths) }
     }
 }
 
@@ -99,20 +91,12 @@ impl Toc {
     pub(crate) fn get_paths(&self) -> Option<Vec<String>> {
         let paths: Vec<String> =
             self.toc.iter().filter_map(|entry| entry.get_paths()).flatten().collect();
-        if paths.is_empty() {
-            None
-        } else {
-            Some(paths)
-        }
+        if paths.is_empty() { None } else { Some(paths) }
     }
     pub(crate) fn get_includes(&self) -> Option<Vec<String>> {
         let paths: Vec<String> =
             self.toc.iter().filter_map(|entry| entry.get_includes()).flatten().collect();
-        if paths.is_empty() {
-            None
-        } else {
-            Some(paths)
-        }
+        if paths.is_empty() { None } else { Some(paths) }
     }
 }
 
@@ -123,6 +107,7 @@ pub(crate) fn check_toc(
     filename: &Path,
     yaml_value: &Value,
     allow_fuchsia_src_links: bool,
+    reference_prefix: &Path,
 ) -> Option<Vec<DocCheckError>> {
     let doc_line = &DocLine { line_num: 1, file_name: filename.to_path_buf() };
     let result = serde_yaml::from_value::<Toc>(yaml_value.clone());
@@ -151,6 +136,7 @@ pub(crate) fn check_toc(
                         project,
                         &path_to_check,
                         allow_fuchsia_src_links,
+                        reference_prefix,
                     ) {
                         errors.push(e);
                     }
@@ -217,11 +203,7 @@ pub(crate) fn check_toc(
                     }
                 }
             }
-            if !errors.is_empty() {
-                Some(errors)
-            } else {
-                None
-            }
+            if !errors.is_empty() { Some(errors) } else { None }
         }
         Err(e) => Some(vec![DocCheckError::new_error(
             1,
@@ -252,6 +234,7 @@ mod test {
             &filename,
             &yaml_value,
             allow_fuchsia_src_links,
+            &PathBuf::from("/reference"),
         ) {
             assert_eq!(result.len(), 1);
             if let Some(err) = result.get(0) {
@@ -300,6 +283,7 @@ mod test {
             &filename,
             &yaml_value,
             allow_fuchsia_src_links,
+            &PathBuf::from("/reference"),
         ) {
             if let Some(err) = result.get(0) {
                 panic!("Unexpected error: {:?}", err)
@@ -343,12 +327,15 @@ mod test {
             &filename,
             &yaml_value,
             allow_fuchsia_src_links,
+            &PathBuf::from("/reference"),
         ) {
             assert_eq!(result.len(), 1);
             if let Some(err) = result.get(0) {
                 let expected = DocCheckError::new_error(
-                    1, PathBuf::from("_toc.yaml"),
-                "in-tree link to /docs/title1.md could not be found at \"/some/root/dir/docs/title1.md\"");
+                    1,
+                    PathBuf::from("_toc.yaml"),
+                    "in-tree link to /docs/title1.md could not be found at \"/some/root/dir/docs/title1.md\"",
+                );
                 assert_eq!(err, &expected);
             } else {
                 panic!("Expected error, but did not get one");
@@ -410,6 +397,7 @@ mod test {
             &filename,
             &yaml_value,
             allow_fuchsia_src_links,
+            &PathBuf::from("/reference"),
         ) {
             panic!("Expected no errors, but got {:?}", result);
         }
@@ -596,17 +584,24 @@ mod test {
             &filename,
             &yaml_value,
             allow_fuchsia_src_links,
+            &PathBuf::from("/reference"),
         ) {
-            let expected_result =[
-                 DocCheckError::new_error(
-                    1,PathBuf::from("_toc.yaml"),
-                     "Invalid path /src/main.cc. Path must be in /docs (checked: \"/src/main.cc\""),
+            let expected_result = [
                 DocCheckError::new_error(
-                    1, PathBuf::from("_toc.yaml"),
-                    "Error checking path /docs/../../invalid_path.md: Cannot normalize /docs/../../invalid_path.md, references parent beyond root."),
+                    1,
+                    PathBuf::from("_toc.yaml"),
+                    "in-tree link to /src/main.cc must be in '/docs' or '/reference' directory",
+                ),
                 DocCheckError::new_error(
-                    1, PathBuf::from("_toc.yaml"),
-                     "Invalid link http://{}.com/markdown : invalid uri character")
+                    1,
+                    PathBuf::from("_toc.yaml"),
+                    "Error checking path /docs/../../invalid_path.md: Cannot normalize /docs/../../invalid_path.md, references parent beyond root.",
+                ),
+                DocCheckError::new_error(
+                    1,
+                    PathBuf::from("_toc.yaml"),
+                    "Invalid link http://{}.com/markdown : invalid uri character",
+                ),
             ];
 
             let mut expected_iter = expected_result.iter();

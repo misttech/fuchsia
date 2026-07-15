@@ -216,6 +216,7 @@ pub(crate) struct YamlChecker {
     check_external_links: bool,
     allow_fuchsia_src_links: bool,
     reference_docs_root: Option<PathBuf>,
+    reference_prefix: PathBuf,
     external_links: Vec<LinkReference>,
 }
 
@@ -234,7 +235,15 @@ impl DocYamlCheck for YamlChecker {
             let result = match yaml_name.to_str() {
                 Some("_all_drivers_doc.yaml") => check_all_drivers_doc(filename, yaml_value),
                 Some("_areas.yaml") | Some("_rfc_areas.yaml") => check_areas(filename, yaml_value),
-                Some("_deprecated-docs.yaml") => check_deprecated_docs(filename, yaml_value),
+                Some("_deprecated-docs.yaml") => check_deprecated_docs(
+                    &self.root_dir,
+                    &self.docs_folder,
+                    &self.project,
+                    filename,
+                    yaml_value,
+                    self.allow_fuchsia_src_links,
+                    &self.reference_prefix,
+                ),
                 Some("_drivers_areas.yaml") => check_drivers_areas(filename, yaml_value),
                 Some("_drivers_epitaphs.yaml") => check_drivers_epitaphs(filename, yaml_value),
                 Some("_eng_council.yaml") => check_eng_council(filename, yaml_value),
@@ -256,6 +265,7 @@ impl DocYamlCheck for YamlChecker {
                     filename,
                     yaml_value,
                     self.allow_fuchsia_src_links,
+                    &self.reference_prefix,
                 ),
                 Some("_rfcs.yaml") => check_rfcs(filename, yaml_value),
                 Some("_roadmap.yaml") => check_roadmap(
@@ -283,6 +293,7 @@ impl DocYamlCheck for YamlChecker {
                     filename,
                     yaml_value,
                     self.allow_fuchsia_src_links,
+                    &self.reference_prefix,
                 ),
                 Some("_tools.yaml") => {
                     check_tools(&self.root_dir, filename, yaml_value, &mut self.external_links)
@@ -516,6 +527,7 @@ fn check_path(
     project: &str,
     path: &str,
     allow_fuchsia_src_links: bool,
+    reference_prefix: &Path,
 ) -> Option<DocCheckError> {
     let root_dir = root_path.display().to_string();
     match do_check_link(doc_line, path, project, allow_fuchsia_src_links) {
@@ -550,15 +562,17 @@ fn check_path(
             // Since this is a table of contents, all the entries need
             // to be to the docs_folder, except /reference, which is a special case.
             if !in_tree_path.starts_with(PathBuf::from("/").join(docs_folder)) {
-                if in_tree_path.starts_with("/reference") {
+                if in_tree_path.starts_with(reference_prefix) {
                     None
                 } else {
                     Some(DocCheckError::new_error(
                         doc_line.line_num,
                         doc_line.file_name.clone(),
                         &format!(
-                            "Invalid path {}. Path must be in /docs (checked: {:?}",
-                            path, in_tree_path
+                            "in-tree link to {} must be in '{}' or '{}' directory",
+                            path,
+                            PathBuf::from("/").join(docs_folder).display(),
+                            reference_prefix.display()
                         ),
                     ))
                 }
@@ -578,6 +592,185 @@ fn check_path(
             doc_line.file_name.clone(),
             &format!("Error checking path {}: {}", path, e),
         )),
+    }
+}
+
+/// Helper function to validate a single deprecation entry.
+/// Returns a list of validation errors found in the entry.
+fn validate_deprecation_entry(
+    entry: &FromTo,
+    root_dir: &Path,
+    docs_folder: &Path,
+    project: &str,
+    filename: &Path,
+    allow_fuchsia_src_links: bool,
+    docs_prefix: &Path,
+    reference_prefix: &Path,
+) -> Vec<DocCheckError> {
+    let mut errors = vec![];
+    let doc_line = DocLine { line_num: 1, file_name: filename.to_path_buf() };
+
+    // Validate that the 'from' path is not empty.
+    if entry.from.is_empty() {
+        errors.push(DocCheckError::new_error(
+            doc_line.line_num,
+            doc_line.file_name.clone(),
+            "Deprecation 'from' path cannot be empty",
+        ));
+        return errors;
+    }
+
+    // Validate that the 'from' path starts with '/' and is under allowed folders.
+    if !entry.from.starts_with('/') {
+        errors.push(DocCheckError::new_error(
+            doc_line.line_num,
+            doc_line.file_name.clone(),
+            &format!("Deprecation 'from' path must start with '/': {}", entry.from),
+        ));
+    } else {
+        let path_buf = PathBuf::from(&entry.from);
+        if !path_buf.starts_with(docs_prefix) && !path_buf.starts_with(reference_prefix) {
+            errors.push(DocCheckError::new_error(
+                doc_line.line_num,
+                doc_line.file_name.clone(),
+                &format!(
+                    "Deprecation 'from' path must start with '{}' or '{}': {}",
+                    PathBuf::from("/").join(docs_folder).display(),
+                    reference_prefix.display(),
+                    entry.from
+                ),
+            ));
+        }
+    }
+
+    // Validate that the 'from' path does not contain wildcards, as they are not supported.
+    if entry.from.contains('*') || entry.from.contains('?') {
+        errors.push(DocCheckError::new_error(
+            doc_line.line_num,
+            doc_line.file_name.clone(),
+            &format!("Wildcards are not supported in deprecation 'from' path: {}", entry.from),
+        ));
+    }
+
+    // Validate that the target 'to' document exists (using the general check_path helper).
+    if let Some(err) = check_path(
+        &doc_line,
+        root_dir,
+        docs_folder,
+        project,
+        &entry.to,
+        allow_fuchsia_src_links,
+        reference_prefix,
+    ) {
+        errors.push(err);
+    }
+
+    errors
+}
+
+/// Checks that all entries in `_deprecated-docs.yaml` have valid source path formatting
+/// and point to a destination document that exists.
+fn check_deprecated_docs(
+    root_dir: &Path,
+    docs_folder: &Path,
+    project: &str,
+    filename: &Path,
+    yaml_value: &Value,
+    allow_fuchsia_src_links: bool,
+    reference_prefix: &Path,
+) -> Option<Vec<DocCheckError>> {
+    let result = serde_yaml::from_value::<Deprecations>(yaml_value.clone());
+    match result {
+        Ok(deprecations) => {
+            // Allocate the prefix paths once outside the loop.
+            let docs_prefix = PathBuf::from("/").join(docs_folder);
+
+            let errors: Vec<DocCheckError> = deprecations
+                .included
+                .iter()
+                .flat_map(|entry| {
+                    validate_deprecation_entry(
+                        entry,
+                        root_dir,
+                        docs_folder,
+                        project,
+                        filename,
+                        allow_fuchsia_src_links,
+                        &docs_prefix,
+                        reference_prefix,
+                    )
+                })
+                .collect();
+
+            if errors.is_empty() { None } else { Some(errors) }
+        }
+        Err(e) => Some(vec![DocCheckError::new_error(
+            1,
+            filename.to_path_buf(),
+            &format!("invalid structure {}", e),
+        )]),
+    }
+}
+
+fn check_redirects(
+    root_dir: &Path,
+    docs_folder: &Path,
+    project: &str,
+    filename: &Path,
+    yaml_value: &Value,
+    allow_fuchsia_src_links: bool,
+    reference_prefix: &Path,
+) -> Option<Vec<DocCheckError>> {
+    let result = serde_yaml::from_value::<Redirects>(yaml_value.clone());
+    match result {
+        Ok(redirects) => {
+            let mut errors = vec![];
+            let doc_line = DocLine { line_num: 1, file_name: filename.to_path_buf() };
+            for r in redirects.redirects.unwrap_or_default() {
+                // Ignore wildcards ending with "..." as they are likely supported by devsite
+                // but fail file existence checks.
+                if r.to.ends_with("...") {
+                    let parts: Vec<&str> = r.to.split("...").collect();
+                    let dir_part = parts[0].trim_end_matches('/');
+                    if !dir_part.is_empty() {
+                        let root_dir_str = root_dir.display().to_string();
+                        if let Ok(Some(in_tree_path)) =
+                            is_intree_link(project, &root_dir_str, docs_folder, dir_part)
+                        {
+                            let abs_path = root_dir.join(
+                                in_tree_path.strip_prefix("/").unwrap_or_else(|_| &in_tree_path),
+                            );
+                            if !path_helper::exists(&abs_path) || !path_helper::is_dir(&abs_path) {
+                                errors.push(DocCheckError::new_error(
+                                    doc_line.line_num,
+                                    doc_line.file_name.clone(),
+                                    &format!(
+                                        "Directory: {:?} not found for wildcard redirect.",
+                                        abs_path
+                                    ),
+                                ));
+                            }
+                        }
+                    }
+                } else if let Some(e) = check_path(
+                    &doc_line,
+                    root_dir,
+                    docs_folder,
+                    project,
+                    &r.to,
+                    allow_fuchsia_src_links,
+                    reference_prefix,
+                ) {
+                    errors.push(e);
+                }
+            }
+            if errors.is_empty() { None } else { Some(errors) }
+        }
+        Err(e) => Some(vec![DocCheckError::new_error(
+            1,
+            filename.to_path_buf(),
+            &format!("invalid structure {}", e),
+        )]),
     }
 }
 
@@ -683,18 +876,6 @@ fn check_areas(filename: &Path, yaml_value: &Value) -> Option<Vec<DocCheckError>
     }
 }
 
-fn check_deprecated_docs(filename: &Path, yaml_value: &Value) -> Option<Vec<DocCheckError>> {
-    let result = serde_yaml::from_value::<Deprecations>(yaml_value.clone());
-    //TODO(https://fxbug.dev/42064923): Add a check that the to: doc exists.
-    match result {
-        Ok(_) => None,
-        Err(e) => Some(vec![DocCheckError::new_error(
-            1,
-            filename.to_path_buf(),
-            &format!("invalid structure {}", e),
-        )]),
-    }
-}
 fn check_all_drivers_doc(filename: &Path, yaml_value: &Value) -> Option<Vec<DocCheckError>> {
     let result = serde_yaml::from_value::<AllDrivers>(yaml_value.clone());
     //TODO(https://fxbug.dev/349902231): Add a check that the to: doc exists.
@@ -966,66 +1147,6 @@ fn check_problems(filename: &Path, yaml_value: &Value) -> Option<Vec<DocCheckErr
     let (_items, errors) = parse_entries::<ProblemEntry>(filename, yaml_value);
     //TODO(https://fxbug.dev/42064929): other checks for ProblemEntry?
     errors
-}
-
-fn check_redirects(
-    root_dir: &Path,
-    docs_folder: &Path,
-    project: &str,
-    filename: &Path,
-    yaml_value: &Value,
-    allow_fuchsia_src_links: bool,
-) -> Option<Vec<DocCheckError>> {
-    let result = serde_yaml::from_value::<Redirects>(yaml_value.clone());
-    match result {
-        Ok(redirects) => {
-            let mut errors = vec![];
-            let doc_line = DocLine { line_num: 1, file_name: filename.to_path_buf() };
-            for r in redirects.redirects.unwrap_or_default() {
-                // Ignore wildcards ending with "..." as they are likely supported by devsite
-                // but fail file existence checks.
-                if r.to.ends_with("...") {
-                    let parts: Vec<&str> = r.to.split("...").collect();
-                    let dir_part = parts[0].trim_end_matches('/');
-                    if !dir_part.is_empty() {
-                        let root_dir_str = root_dir.display().to_string();
-                        if let Ok(Some(in_tree_path)) =
-                            is_intree_link(project, &root_dir_str, docs_folder, dir_part)
-                        {
-                            let abs_path = root_dir.join(
-                                in_tree_path.strip_prefix("/").unwrap_or_else(|_| &in_tree_path),
-                            );
-                            if !path_helper::exists(&abs_path) || !path_helper::is_dir(&abs_path) {
-                                errors.push(DocCheckError::new_error(
-                                    doc_line.line_num,
-                                    doc_line.file_name.clone(),
-                                    &format!(
-                                        "Directory: {:?} not found for wildcard redirect.",
-                                        abs_path
-                                    ),
-                                ));
-                            }
-                        }
-                    }
-                } else if let Some(e) = check_path(
-                    &doc_line,
-                    root_dir,
-                    docs_folder,
-                    project,
-                    &r.to,
-                    allow_fuchsia_src_links,
-                ) {
-                    errors.push(e);
-                }
-            }
-            if errors.is_empty() { None } else { Some(errors) }
-        }
-        Err(e) => Some(vec![DocCheckError::new_error(
-            1,
-            filename.to_path_buf(),
-            &format!("invalid structure {}", e),
-        )]),
-    }
 }
 
 fn check_rfcs(filename: &Path, yaml_value: &Value) -> Option<Vec<DocCheckError>> {
@@ -1456,6 +1577,8 @@ fn parse_entries<T: DeserializeOwned>(
 
 /// Called from main to register all the checks to preform which are implemented in this module.
 pub fn register_yaml_checks(opt: &DocCheckerArgs) -> Result<Vec<Box<dyn DocYamlCheck>>> {
+    let reference_prefix = PathBuf::from("/reference");
+
     let checker = YamlChecker {
         root_dir: opt.root.clone(),
         docs_folder: opt.docs_folder.clone(),
@@ -1463,6 +1586,7 @@ pub fn register_yaml_checks(opt: &DocCheckerArgs) -> Result<Vec<Box<dyn DocYamlC
         check_external_links: opt.check_external_links,
         allow_fuchsia_src_links: opt.allow_fuchsia_src_links,
         reference_docs_root: opt.reference_docs_root.clone(),
+        reference_prefix,
         external_links: vec![],
     };
 
@@ -1557,10 +1681,16 @@ mod test {
     #[test]
     fn test_check_path() -> Result<()> {
         let doc_line = &DocLine { line_num: 1, file_name: PathBuf::from("test-check-path") };
-        let root_path = PathBuf::from("/some/root");
-        let docs_folder = PathBuf::from("docs");
-        let project = "fuchsia";
-        let allow_fuchsia_src_links = false;
+        let checker = YamlChecker {
+            root_dir: PathBuf::from("/some/root"),
+            docs_folder: PathBuf::from("docs"),
+            project: "fuchsia".to_string(),
+            check_external_links: false,
+            allow_fuchsia_src_links: false,
+            reference_docs_root: None,
+            reference_prefix: PathBuf::from("/reference"),
+            external_links: vec![],
+        };
 
         let test_data: [(&str, Option<DocCheckError>); 7] = [
             ("/CONTRIBUTING.md", None),
@@ -1570,7 +1700,7 @@ mod test {
                 Some(DocCheckError::new_error(
                     1,
                     PathBuf::from("test-check-path"),
-                    "Invalid path /README.md. Path must be in /docs (checked: \"/README.md\"",
+                    "in-tree link to /README.md must be in '/docs' or '/reference' directory",
                 )),
             ),
             ("https://fuchsia.dev/reference/to/something-else.md", None),
@@ -1581,7 +1711,7 @@ mod test {
                 Some(DocCheckError::new_error(
                     1,
                     PathBuf::from("test-check-path"),
-                    "Invalid path /src/main.cc. Path must be in /docs (checked: \"/src/main.cc\"",
+                    "in-tree link to /src/main.cc must be in '/docs' or '/reference' directory",
                 )),
             ),
         ];
@@ -1589,11 +1719,12 @@ mod test {
         for (test_path, expected_result) in test_data {
             let actual_result = check_path(
                 doc_line,
-                &root_path,
-                &docs_folder,
-                project,
+                &checker.root_dir,
+                &checker.docs_folder,
+                &checker.project,
                 test_path,
-                allow_fuchsia_src_links,
+                checker.allow_fuchsia_src_links,
+                &checker.reference_prefix,
             );
             assert_eq!(actual_result, expected_result);
         }
@@ -1735,6 +1866,7 @@ redirects:
             &filename,
             &yaml_value,
             allow_fuchsia_src_links,
+            &PathBuf::from("/reference"),
         );
 
         assert!(result.is_some());
@@ -1742,11 +1874,116 @@ redirects:
         assert_eq!(errors.len(), 2);
         assert_eq!(
             errors[0].message,
-            "Invalid path /src/main.cc. Path must be in /docs (checked: \"/src/main.cc\""
+            "in-tree link to /src/main.cc must be in '/docs' or '/reference' directory"
         );
         assert_eq!(
             errors[1].message,
             "Directory: \"./docs/nonexistent-no-extension\" not found for wildcard redirect."
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_check_deprecated_docs() -> Result<()> {
+        let checker = YamlChecker {
+            root_dir: PathBuf::from("."),
+            docs_folder: PathBuf::from("docs"),
+            project: "fuchsia".to_string(),
+            check_external_links: false,
+            allow_fuchsia_src_links: false,
+            reference_docs_root: None,
+            reference_prefix: PathBuf::from("/reference"),
+            external_links: vec![],
+        };
+        let filename = PathBuf::from("_deprecated-docs.yaml");
+
+        // Test valid in-tree, external, and reference paths
+        let yaml_value: Value = serde_yaml::from_str(
+            r#"
+included:
+- from: /docs/old.md
+  to: /docs/are-ok.md
+- from: /docs/old2.md
+  to: https://external.com/is-ok
+- from: /docs/old3.md
+  to: /reference/some-ref.md
+            "#,
+        )?;
+
+        let result = check_deprecated_docs(
+            &checker.root_dir,
+            &checker.docs_folder,
+            &checker.project,
+            &filename,
+            &yaml_value,
+            checker.allow_fuchsia_src_links,
+            &checker.reference_prefix,
+        );
+        assert!(result.is_none());
+
+        // Test invalid `from` path (not starting with /) and invalid `to` path
+        let invalid_yaml: Value = serde_yaml::from_str(
+            r#"
+included:
+- from: docs/no-leading-slash.md
+  to: /docs/are-ok.md
+- from: /docs/old.md
+  to: /src/main.cc
+- from: /bad/from.md
+  to: /docs/are-ok.md
+            "#,
+        )?;
+
+        let result = check_deprecated_docs(
+            &checker.root_dir,
+            &checker.docs_folder,
+            &checker.project,
+            &filename,
+            &invalid_yaml,
+            checker.allow_fuchsia_src_links,
+            &checker.reference_prefix,
+        );
+        assert!(result.is_some());
+        let errors = result.unwrap();
+        assert_eq!(errors.len(), 3);
+        assert_eq!(
+            errors[0].message,
+            "Deprecation 'from' path must start with '/': docs/no-leading-slash.md"
+        );
+        assert_eq!(
+            errors[1].message,
+            "in-tree link to /src/main.cc must be in '/docs' or '/reference' directory"
+        );
+        assert_eq!(
+            errors[2].message,
+            "Deprecation 'from' path must start with '/docs' or '/reference': /bad/from.md"
+        );
+
+        // Test wildcard check in `from` path
+        let wildcard_yaml: Value = serde_yaml::from_str(
+            r#"
+included:
+- from: /docs/old/*.md
+  to: /docs/are-ok.md
+            "#,
+        )?;
+
+        let result = check_deprecated_docs(
+            &checker.root_dir,
+            &checker.docs_folder,
+            &checker.project,
+            &filename,
+            &wildcard_yaml,
+            checker.allow_fuchsia_src_links,
+            &checker.reference_prefix,
+        );
+        assert!(result.is_some());
+        let errors = result.unwrap();
+        assert_eq!(errors.len(), 1);
+        assert_eq!(
+            errors[0].message,
+            "Wildcards are not supported in deprecation 'from' path: /docs/old/*.md"
         );
 
         Ok(())
