@@ -71,12 +71,8 @@ static const std::vector<fpbus::Mmio> display_mmios{
         .length = T931_RESET_LENGTH,
         .name = "ee-reset",
     }},
-    {{
-        // PERIPHS_REGS (GPIO Multiplexer)
-        .base = T931_GPIO_BASE,
-        .length = T931_GPIO_LENGTH,
-        .name = "gpio-mux",
-    }},
+    // gpio-mux (T931_GPIO_BASE) is omitted as it is only needed
+    // for HDMI host configuration and not required for DSI panels.
 };
 
 static const std::vector<fpbus::Irq> display_irqs{
