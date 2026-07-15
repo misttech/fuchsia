@@ -235,6 +235,51 @@ async fn check_data_volume(dir: fio::DirectoryProxy, check_fscrypt: bool) -> Res
         "Expected xattr to be removed"
     );
 
+    let some_dir_rw = fuchsia_fs::directory::open_directory(
+        &dir,
+        "some",
+        fio::PERM_READABLE | fio::PERM_WRITABLE,
+    )
+    .await?;
+    let (status, handle) = some_dir_rw.get_token().await.context("FIDL get_token for link")?;
+    Status::ok(status).context("get_token status")?;
+    let token = zx::Event::from(handle.unwrap());
+    let status = some_dir_rw
+        .link("test_file.txt", token.into(), "linked_test_file.txt")
+        .await
+        .context("FIDL link")?;
+    Status::ok(status).context("link on directory")?;
+    ensure!(
+        &read_file(&some_dir_rw, "linked_test_file.txt").await? == ADDED_FILE_CONTENT,
+        "Linked file contents"
+    );
+
+    let (status, handle) = some_dir_rw.get_token().await.context("FIDL get_token for rename")?;
+    Status::ok(status).context("get_token status")?;
+    let token = zx::Event::from(handle.unwrap());
+    let res = some_dir_rw
+        .rename("linked_test_file.txt", token.into(), "renamed_test_file.txt")
+        .await
+        .context("FIDL rename")?;
+    res.map_err(Status::from_raw).context("rename on directory")?;
+    ensure!(
+        &read_file(&some_dir_rw, "renamed_test_file.txt").await? == ADDED_FILE_CONTENT,
+        "Renamed file contents"
+    );
+    ensure!(
+        some_dir_rw
+            .unlink("linked_test_file.txt", &fio::UnlinkOptions::default())
+            .await
+            .unwrap()
+            .is_err(),
+        "Old file name after rename should not exist"
+    );
+    let res = some_dir_rw
+        .unlink("renamed_test_file.txt", &fio::UnlinkOptions::default())
+        .await
+        .context("FIDL unlink renamed file")?;
+    res.map_err(Status::from_raw).context("unlink renamed file")?;
+
     Ok(())
 }
 
