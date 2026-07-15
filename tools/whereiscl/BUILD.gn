@@ -89,7 +89,8 @@ if (is_host) {
 }
 if (is_host) {
   group("tests") {
-    testonly = true
     deps = [ ":whereiscl_test" ]
+    visibility = [ "*" ]
+    testonly = true
   }
 }

@@ -232,8 +232,6 @@ if (is_host) {
 }
 if (is_host) {
   group("tests") {
-    testonly = true
-    visibility = [ "*" ]
     deps = [
       ":v2_config_test",
       ":v2_pipeline_test",
@@ -254,5 +252,7 @@ if (is_host) {
       "//tools/check-licenses/util:util_test",
       "//tools/readme_fuchsia:readme_fuchsia_test",
     ]
+    visibility = [ "*" ]
+    testonly = true
   }
 }

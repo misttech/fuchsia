@@ -176,18 +176,4 @@ tools_bazel_root_targets = [
       },
     ]
   },
-
-  # Various tests that we want to ensure can
-  # build correctly.
-  # TODO(https://fxbug.dev/514526401): Run these Bazel tests in CQ.
-  {
-    bazel_label = "//tools/check-licenses:tests"
-    bazel_name = "build.stamp"
-    ninja_name = "tools_check-licenses_stamp_tests.stamp"
-  },
-  {
-    bazel_label = "//tools/whereiscl:tests"
-    bazel_name = "build.stamp"
-    ninja_name = "tools_whereiscl_stamp_tests.stamp"
-  },
 ]

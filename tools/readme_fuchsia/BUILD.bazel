@@ -2,8 +2,9 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
 load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
+load("//build/bazel/host_tests:host_go_test.bzl", "host_go_test")
 load("//build/bazel/rules:stamp_group.bzl", "stamp_group")
 
 package(default_applicable_licenses = ["//:license"])
@@ -36,7 +37,7 @@ go_binary(
     visibility = ["//visibility:public"],
 )
 
-go_test(
+host_go_test(
     name = "readme_fuchsia_test",
     srcs = [
         "fields_test.go",
@@ -48,7 +49,7 @@ go_test(
     visibility = ["//visibility:public"],
 )
 
-go_test(
+host_go_test(
     name = "main_test",
     srcs = ["cmd/main_test.go"],
     embed = [":main"],

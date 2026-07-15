@@ -2,9 +2,9 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
 load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
-load("//build/bazel/rules:stamp_group.bzl", "stamp_group")
+load("//build/bazel/host_tests:host_go_test.bzl", "host_go_test")
 load("//build/bazel/rules/host:defs.bzl", "go_binary_host_tool")
 load("//build/tools/bazel2gn/bazel_rules:defs.bzl", "install_host_tools")
 
@@ -164,7 +164,7 @@ go_library(
     ],
 )
 
-go_test(
+host_go_test(
     name = "v2_config_test",
     srcs = [
         "v2/config/builder_test.go",
@@ -173,7 +173,7 @@ go_test(
     target_compatible_with = HOST_CONSTRAINTS,
 )
 
-go_test(
+host_go_test(
     name = "v2_pipeline_test",
     srcs = [
         "v2/pipeline/orchestrator_test.go",
@@ -182,7 +182,7 @@ go_test(
     target_compatible_with = HOST_CONSTRAINTS,
 )
 
-go_test(
+host_go_test(
     name = "v2_stages_report_test",
     srcs = [
         "v2/stages/report/report_test.go",
@@ -194,7 +194,7 @@ go_test(
     ],
 )
 
-go_test(
+host_go_test(
     name = "v2_readme_test",
     srcs = [
         "v2/readme/dart_test.go",
@@ -207,7 +207,7 @@ go_test(
     target_compatible_with = HOST_CONSTRAINTS,
 )
 
-go_test(
+host_go_test(
     name = "v2_stages_validate_test",
     srcs = [
         "v2/stages/validate/validate_test.go",
@@ -220,7 +220,7 @@ go_test(
     ],
 )
 
-go_test(
+host_go_test(
     name = "v2_stages_prune_test",
     srcs = [
         "v2/stages/prune/prune_test.go",
@@ -233,7 +233,7 @@ go_test(
     ],
 )
 
-go_test(
+host_go_test(
     name = "v2_stages_boundary_test",
     srcs = [
         "v2/stages/boundary/boundary_test.go",
@@ -245,7 +245,7 @@ go_test(
     ],
 )
 
-go_test(
+host_go_test(
     name = "v2_stages_classify_test",
     srcs = [
         "v2/stages/classify/classify_test.go",
@@ -258,7 +258,7 @@ go_test(
     ],
 )
 
-go_test(
+host_go_test(
     name = "v2_stages_discover_test",
     srcs = [
         "v2/stages/discover/discover_test.go",
@@ -270,13 +270,10 @@ go_test(
     ],
 )
 
-stamp_group(
+test_suite(
     name = "tests",
-    testonly = True,
-    stamp = "build.stamp",
     target_compatible_with = HOST_CONSTRAINTS,
-    visibility = ["//visibility:public"],
-    deps = [
+    tests = [
         ":v2_config_test",
         ":v2_pipeline_test",
         ":v2_readme_test",
@@ -296,4 +293,5 @@ stamp_group(
         "//tools/check-licenses/util:util_test",
         "//tools/readme_fuchsia:readme_fuchsia_test",
     ],
+    visibility = ["//visibility:public"],
 )

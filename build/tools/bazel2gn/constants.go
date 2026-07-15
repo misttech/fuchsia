@@ -58,9 +58,10 @@ var transformerAnnotationNames = map[string]transformer{
 // i.e. Bazel rules not found in this map is not supported by bazel2gn yet.
 var bazelRuleToGNTemplate = map[string]string{
 	// Go
-	"go_binary":  "go_binary",
-	"go_library": "go_library",
-	"go_test":    "go_test",
+	"go_binary":    "go_binary",
+	"go_library":   "go_library",
+	"go_test":      "go_test",
+	"host_go_test": "go_test",
 
 	// Python
 	"py_library": "python_library",
