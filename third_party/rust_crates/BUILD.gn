@@ -502,10 +502,6 @@ group("data-encoding-2.11.0") {
 }
 
 if (current_os == "fuchsia") {
-  group("der") {
-    public_deps = [ ":der-v0_7_10" ]
-  }
-
   group("der-0.7") {
     public_deps = [ ":der-v0_7_10" ]
   }
@@ -514,6 +510,18 @@ if (current_os == "fuchsia") {
 if (current_os == "fuchsia") {
   group("der-0.7.10") {
     public_deps = [ ":der-v0_7_10" ]
+  }
+}
+
+if (current_os == "fuchsia") {
+  group("der") {
+    public_deps = [ ":der-v0_8_1" ]
+  }
+}
+
+if (current_os == "fuchsia") {
+  group("der-0.8.1") {
+    public_deps = [ ":der-v0_8_1" ]
   }
 }
 
@@ -7384,7 +7392,10 @@ rustc_library("der-v0_8_1") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
+  deps += [ ":zeroize-v1_8_1" ]
   deps += [ ":const-oid-v0_10_2" ]
+  deps += [ ":der_derive-v0_8_0($host_toolchain)" ]
+  deps += [ ":flagset-v0_4_7" ]
 
   rustenv = []
 
@@ -7392,7 +7403,11 @@ rustc_library("der-v0_8_1") {
     "--cap-lints=allow",
     "-Cmetadata=ec6d6b4ff9ef0da6",
     "-Cextra-filename=-ec6d6b4ff9ef0da6",
+    "--cfg=feature=\"alloc\"",
+    "--cfg=feature=\"derive\"",
+    "--cfg=feature=\"flagset\"",
     "--cfg=feature=\"oid\"",
+    "--cfg=feature=\"zeroize\"",
   ]
 
   visibility = [ ":*" ]
@@ -7433,6 +7448,41 @@ rustc_macro("der_derive-v0_7_3") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":der_derive-v0_7_3.license" ]
+}
+
+license("der_derive-v0_8_0.license") {
+  public_package_name = "der_derive"
+  license_files = [
+    "//third_party/rust_crates/vendor/der_derive-0.8.0/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/der_derive-0.8.0/LICENSE-MIT",
+  ]
+}
+
+rustc_macro("der_derive-v0_8_0") {
+  crate_name = "der_derive"
+  source_root = "//third_party/rust_crates/vendor/der_derive-0.8.0/src/lib.rs"
+  output_name = "der_derive-d79a32f022ea1e51"
+  edition = "2024"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+  deps += [ ":proc-macro2-v1_0_106" ]
+  deps += [ ":quote-v1_0_45" ]
+  deps += [ ":syn-v2_0_118" ]
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=d79a32f022ea1e51",
+    "-Cextra-filename=-d79a32f022ea1e51",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":der_derive-v0_8_0.license" ]
 }
 
 license("derivative-v2_2_0.license") {

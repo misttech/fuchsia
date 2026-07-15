@@ -532,7 +532,8 @@ _NORMAL_DEPENDENCIES = {
         },
         "cfg(target_os = \"fuchsia\")": {
             "coset": Label("//third_party/rust_crates/vendor/coset-0.4.2:coset"),
-            "der": Label("//third_party/rust_crates/vendor/der-0.7.10:der"),
+            "der": Label("//third_party/rust_crates/vendor/der-0.8.1:der"),
+            "der_0_7_10": Label("//third_party/rust_crates/vendor/der-0.7.10:der"),
             "euclid": Label("//third_party/rust_crates/vendor/euclid-0.22.14:euclid"),
             "flagset": Label("//third_party/rust_crates/vendor/flagset-0.4.7:flagset"),
             "getopts": Label("//third_party/rust_crates/vendor/getopts-0.2.24:getopts"),
@@ -572,6 +573,7 @@ _NORMAL_ALIASES = {
         "cfg(not(target_os = \"fuchsia\"))": {
         },
         "cfg(target_os = \"fuchsia\")": {
+            Label("//third_party/rust_crates/vendor/der-0.7.10:der"): "der_0_7_10",
             Label("//third_party/rust_crates/vendor/pkcs8-0.10.2:pkcs8"): "pkcs8_0_10_2",
         },
     },

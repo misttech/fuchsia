@@ -271,7 +271,8 @@ zstd = "0.13.3"
 coset = { version = "0.4.2", features = ["std"] }
 # do not add back without verifying certificate transparency is ready to use - see https://fxbug.dev/25100
 # ct-logs = "0.6"
-der = { version = "0.7.10", features = ["alloc", "derive", "flagset", "oid", "zeroize"] }
+der = { version = "0.8.1", features = ["alloc", "derive", "flagset", "oid", "zeroize"] }
+der-0_7_10 = { package = "der", version = "0.7.10", features = ["alloc", "derive", "flagset", "oid", "zeroize"] }
 euclid = { version = "0.22.14", features = [ "serde" ] }
 flagset = "0.4.7"
 getopts = "0.2"
@@ -604,7 +605,6 @@ rustflags = []
 
 [gn.package.der."0.7.10"]
 groups = [
-  { name = "der" },
   { name = "der-0.7" }
 ]
 

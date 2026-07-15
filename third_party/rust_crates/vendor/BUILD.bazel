@@ -733,8 +733,26 @@ alias(
 )
 
 alias(
-    name = "der",
+    name = "der_0_7_10-0.7.10",
     actual = "//third_party/rust_crates/vendor/der-0.7.10:der",
+    tags = ["manual"],
+)
+
+alias(
+    name = "der_0_7_10",
+    actual = "//third_party/rust_crates/vendor/der-0.7.10:der",
+    tags = ["manual"],
+)
+
+alias(
+    name = "der-0.8.1",
+    actual = "//third_party/rust_crates/vendor/der-0.8.1:der",
+    tags = ["manual"],
+)
+
+alias(
+    name = "der",
+    actual = "//third_party/rust_crates/vendor/der-0.8.1:der",
     tags = ["manual"],
 )
 
