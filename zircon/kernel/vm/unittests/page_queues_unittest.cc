@@ -22,6 +22,7 @@ static void InitializeTestPage(vm_page_t* page) {
   page->object.dirty_state = uint8_t(VmCowPages::DirtyState::Untracked);
   page->object.set_object(nullptr);
   page->object.set_page_offset(0);
+  page->object.get_page_queue_ref().store(0, ktl::memory_order_relaxed);
 }
 
 static bool pq_add_remove() {

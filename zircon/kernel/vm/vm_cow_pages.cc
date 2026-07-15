@@ -129,6 +129,7 @@ void InitializeVmPage(vm_page_t* p) {
   p->object.dirty_state = uint8_t(VmCowPages::DirtyState::Untracked);
   p->object.set_object(nullptr);
   p->object.set_page_offset(0);
+  p->object.get_page_queue_ref().store(0, ktl::memory_order_relaxed);
 }
 
 inline uint64_t CheckedAdd(uint64_t a, uint64_t b) {
