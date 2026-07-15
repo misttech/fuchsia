@@ -12,6 +12,7 @@ pub mod glob;
 pub mod state;
 
 pub use execution_context::ExecutionContext;
+pub use expand::expand_string;
 pub use state::{
     RLIM_INFINITY, RLIMIT_CORE, RLIMIT_FSIZE, RLIMIT_NOFILE, ShellEnv, ShellPath, ShellState,
 };

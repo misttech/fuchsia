@@ -38,6 +38,7 @@ rustc_binary("bin") {
     "src/tests/ast.rs",
     "src/tests/collections.rs",
     "src/tests/errors.rs",
+    "src/tests/expand.rs",
     "src/tests/format.rs",
     "src/tests/glob.rs",
     "src/tests/mod.rs",

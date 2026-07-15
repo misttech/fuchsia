@@ -44,14 +44,32 @@ impl WordChar {
             WordChar::Unquoted(c) | WordChar::Expansion(c) | WordChar::Quoted(c) => *c,
         }
     }
+
+    /// Returns `true` if this character resulted from expansion and is an IFS whitespace byte.
+    pub fn is_ifs_whitespace(&self, ifs: &BStr) -> bool {
+        match self {
+            WordChar::Expansion(c) => (*c == b' ' || *c == b'\t' || *c == b'\n') && ifs.contains(c),
+            _ => false,
+        }
+    }
+
+    /// Returns `true` if this character resulted from expansion and is an IFS non-whitespace byte.
+    pub fn is_ifs_non_whitespace(&self, ifs: &BStr) -> bool {
+        match self {
+            WordChar::Expansion(c) => {
+                !(*c == b' ' || *c == b'\t' || *c == b'\n') && ifs.contains(c)
+            }
+            _ => false,
+        }
+    }
 }
 
-pub fn word_chars_to_bytes(word: &[WordChar]) -> Vec<u8> {
+pub fn word_chars_to_bstring(word: &[WordChar]) -> BString {
     let mut bytes = Vec::with_capacity(word.len());
     for wc in word {
         bytes.push(wc.raw_byte());
     }
-    bytes
+    BString::from(bytes)
 }
 
 /// Checks whether a byte string pattern (treated as unquoted characters) matches the target text.
@@ -238,8 +256,7 @@ fn match_segment_helper(pattern: &[WordChar], target: &[u8]) -> bool {
 pub fn expand_glob(word: &[WordChar]) -> Vec<BString> {
     let has_wildcard = word.iter().any(|c| c.is_glob_wildcard());
     if !has_wildcard {
-        let s = word_chars_to_bytes(word);
-        return vec![BString::from(s)];
+        return vec![word_chars_to_bstring(word)];
     }
 
     let mut segments = Vec::new();
@@ -275,12 +292,12 @@ pub fn expand_glob(word: &[WordChar]) -> Vec<BString> {
         let has_wildcard = seg.iter().any(|c| c.is_glob_wildcard());
 
         if !has_wildcard {
-            let seg_bytes = word_chars_to_bytes(seg);
+            let seg_bytes = word_chars_to_bstring(seg);
 
             if seg_bytes.is_empty() {
                 traverse(base_dir, current_path, &segments[1..], results);
             } else {
-                let seg_bstr = BStr::new(&seg_bytes);
+                let seg_bstr = seg_bytes.as_bstr();
                 if let Ok(path_seg) = seg_bstr.to_path() {
                     let next_dir = base_dir.join(path_seg);
                     if next_dir.exists() {
@@ -297,7 +314,7 @@ pub fn expand_glob(word: &[WordChar]) -> Vec<BString> {
                                     BString::from(joined)
                                 }
                             }
-                            None => BString::from(seg_bytes),
+                            None => seg_bytes,
                         };
                         traverse(&next_dir, Some(next_path), &segments[1..], results);
                     }
@@ -354,10 +371,5 @@ pub fn expand_glob(word: &[WordChar]) -> Vec<BString> {
         traverse(std::path::Path::new("."), None, &segments, &mut results);
     }
 
-    if results.is_empty() {
-        let s = word_chars_to_bytes(word);
-        vec![BString::from(s)]
-    } else {
-        results
-    }
+    if results.is_empty() { vec![word_chars_to_bstring(word)] } else { results }
 }
