@@ -50,7 +50,7 @@
     },
     {
         name: "Archivist",
-        process: "archivist\\.cm|sampler\\.cm|diagnostics-persistence\\.cm",
+        process: "archivist\\.cm|sampler\\.cm|diagnostics-persistence\\.cm|triage-detect\\.cm",
         vmo: "",
         event_code: 22,
     },
