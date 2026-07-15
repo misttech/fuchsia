@@ -133,7 +133,7 @@ impl DataType {
         let description = metadata
             .description
             .as_ref()
-            .ok_or_else(|| anyhow!("missing description from {}", &rust_type))?
+            .ok_or_else(|| anyhow!("missing description from {}", rust_type))?
             .clone();
         Self::from_schema_object(rust_type, description, schema)
     }
@@ -145,7 +145,7 @@ impl DataType {
             metadata
                 .description
                 .as_ref()
-                .ok_or_else(|| anyhow!("missing description from {}", &rust_type))?
+                .ok_or_else(|| anyhow!("missing description from {}", rust_type))?
                 .clone()
         } else {
             "no description".to_string()
@@ -173,9 +173,9 @@ impl DataType {
         else if let Some(_) = schema.subschemas {
             let error_message = format!(
                 "Failed to generate docs for complex {} enum: b/332348955 or b/436293725",
-                &rust_type
+                rust_type
             );
-            description = format!("{}\n\n{}", &error_message, description);
+            description = format!("{}\n\n{}", error_message, description);
             // println!("{}", error_message);
             DataTypeInner::Enum(EnumDataType { variants: BTreeSet::new() })
         }
@@ -198,7 +198,7 @@ impl DataType {
                         let subschemas = object
                             .subschemas
                             .as_ref()
-                            .ok_or_else(|| anyhow!("Missing subschemas for {}", &rust_type))?;
+                            .ok_or_else(|| anyhow!("Missing subschemas for {}", rust_type))?;
                         let mut subobjects = Vec::<SchemaObject>::new();
                         if let Some(subs) = &subschemas.all_of {
                             for sub in subs {
@@ -212,10 +212,10 @@ impl DataType {
                         }
                         let subobject = subobjects
                             .first()
-                            .ok_or_else(|| anyhow!("Missing subobject for {}", &rust_type))?
+                            .ok_or_else(|| anyhow!("Missing subobject for {}", rust_type))?
                             .clone();
                         let reference = subobject.reference.ok_or_else(|| {
-                            anyhow!("Missing reference for field in {}", &rust_type)
+                            anyhow!("Missing reference for field in {}", rust_type)
                         })?;
                         StructFieldType::Custom { data_type: reference }
                     };
@@ -235,7 +235,7 @@ impl DataType {
         }
         // Unsupported.
         else {
-            anyhow::bail!("Unsupported schema type for {}", &rust_type);
+            anyhow::bail!("Unsupported schema type for {}", rust_type);
         };
 
         Ok(Self { rust_type, description, inner })

@@ -121,7 +121,7 @@ glob = "0.3.3"
 googletest = "0.14.2"
 gpt = "3.1.0"
 half = "2.7.1"
-handlebars = "4.3.5"
+handlebars = "6.4.2"
 hashbrown = { version = "0.17.1", default-features = false, features = ["inline-more", "serde", "default-hasher"] }
 heck = { package = "heck", version = "0.5" }
 heck-0_3 = { package = "heck", version = "=0.3.1" }
@@ -683,9 +683,9 @@ rustflags = []
 [gn.package.group."0.12.1"]
 license_files = ["LICENSE-APACHE"]
 
-[gn.package.handlebars."4.3.5"]
+[gn.package.handlebars."6.4.2"]
 # pest relies on this being set to find the grammar file
-env_vars = [ "CARGO_MANIFEST_DIR=${gn_source_root}/third_party/rust_crates/vendor/handlebars-4.3.5" ]
+env_vars = [ "CARGO_MANIFEST_DIR=${gn_source_root}/third_party/rust_crates/vendor/handlebars-6.4.2" ]
 
 [gn.package.heck."0.3.1"]
 group_name = "heck-0_3"

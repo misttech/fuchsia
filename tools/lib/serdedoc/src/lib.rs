@@ -8,7 +8,9 @@ mod toc;
 use anyhow::{Context, Result};
 use camino::Utf8PathBuf;
 use data::{AllData, DataType, DataTypeInner};
-use handlebars::{Handlebars, Helper, JsonRender, Output, RenderContext, RenderError};
+use handlebars::{
+    Handlebars, Helper, JsonRender, Output, RenderContext, RenderError, RenderErrorReason,
+};
 use schemars::JsonSchema;
 use schemars::r#gen::SchemaSettings;
 use std::fs::File;
@@ -31,6 +33,7 @@ impl<'a> DocWriter<'a> {
     pub fn new(url_path: String) -> Self {
         let mut s = DocWriter { url_path, handlebars: Handlebars::new() };
 
+        s.handlebars.register_template_string("header", "").expect("Registering header template");
         s.handlebars
             .register_template_string("toc", include_str!("toc.hbs"))
             .expect("Registering enum template");
@@ -54,7 +57,7 @@ impl<'a> DocWriter<'a> {
 
     pub fn write<T: JsonSchema>(&self, output_dir: Utf8PathBuf) -> Result<()> {
         std::fs::create_dir_all(&output_dir)
-            .with_context(|| format!("Creating output dir: {}", &output_dir))?;
+            .with_context(|| format!("Creating output dir: {}", output_dir))?;
 
         let settings = SchemaSettings::default().with(|s| {
             // Remove the definitions path so that we don't have to strip it out later to determine
@@ -82,12 +85,12 @@ impl<'a> DocWriter<'a> {
     fn write_table_of_contents(&self, output_dir: &Utf8PathBuf, all_data: &AllData) -> Result<()> {
         let output_path = output_dir.join("_toc.yaml");
         let mut output_file =
-            File::create(&output_path).with_context(|| format!("Creating {}", &output_path))?;
+            File::create(&output_path).with_context(|| format!("Creating {}", output_path))?;
 
         let content = self.handlebars.render("toc", &all_data).context("Rendering TOC")?;
         output_file
             .write_all(content.as_bytes())
-            .with_context(|| format!("Writing {}", &output_path))?;
+            .with_context(|| format!("Writing {}", output_path))?;
 
         let toc = TableOfContents::new(all_data);
         toc.write(&mut output_file)?;
@@ -98,10 +101,10 @@ impl<'a> DocWriter<'a> {
         let content = self.handlebars.render("main", &all_data).context("Rendering main")?;
         let output_path = output_dir.join("README.md");
         let mut output_file =
-            File::create(&output_path).with_context(|| format!("Creating {}", &output_path))?;
+            File::create(&output_path).with_context(|| format!("Creating {}", output_path))?;
         output_file
             .write_all(content.as_bytes())
-            .with_context(|| format!("Writing {}", &output_path))?;
+            .with_context(|| format!("Writing {}", output_path))?;
         Ok(())
     }
 
@@ -114,33 +117,34 @@ impl<'a> DocWriter<'a> {
         let content = self
             .handlebars
             .render(template_string, &data_type)
-            .with_context(|| format!("Rendering {}", &data_type.rust_type))?;
+            .with_context(|| format!("Rendering {}", data_type.rust_type))?;
 
         let output_dir = output_dir.join(&data_type.rust_type);
         std::fs::create_dir_all(&output_dir)
-            .with_context(|| format!("Creating output dir: {}", &output_dir))?;
+            .with_context(|| format!("Creating output dir: {}", output_dir))?;
 
         let output_path = output_dir.join("README.md");
         let mut output_file =
-            File::create(&output_path).with_context(|| format!("Creating {}", &output_path))?;
+            File::create(&output_path).with_context(|| format!("Creating {}", output_path))?;
         output_file
             .write_all(content.as_bytes())
-            .with_context(|| format!("Writing {}", &output_path))?;
+            .with_context(|| format!("Writing {}", output_path))?;
         Ok(())
     }
 }
 
 /// Escape special characters that confuse the markdown parser.
 pub fn md_escaped(
-    h: &Helper<'_, '_>,
+    h: &Helper<'_>,
     _: &Handlebars<'_>,
     _: &handlebars::Context,
     _: &mut RenderContext<'_, '_>,
     out: &mut dyn Output,
 ) -> Result<(), RenderError> {
     // get parameter from helper or throw an error
-    let param =
-        h.param(0).ok_or_else(|| RenderError::new("Param 0 is required for md_escaped helper"))?;
+    let param = h.param(0).ok_or_else(|| {
+        RenderErrorReason::Other("Param 0 is required for md_escaped helper".to_owned())
+    })?;
     let output: String = if let Some(s) = param.value().as_str() {
         md_escaped_impl(s)
     } else {

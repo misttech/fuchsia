@@ -374,8 +374,8 @@ mod test {
   "manifest": {
     "hw_revision": "board",
     "ssh_key_upload_method": {
-      "command": "test",
-      "type": "staged"
+      "type": "staged",
+      "command": "test"
     }
   },
   "version": 4

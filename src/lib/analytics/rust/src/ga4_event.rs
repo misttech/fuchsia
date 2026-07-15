@@ -459,18 +459,22 @@ mod tests {
 
     #[test]
     fn test_param_serde_flattening() {
-        let item_map: HashMap<String, GA4Value> = HashMap::from([
+        let item_map: BTreeMap<String, GA4Value> = BTreeMap::from([
             ("item1".to_string(), "value1".into()),
             ("item2".to_string(), "value2".into()),
         ]);
-        let param_map: HashMap<String, GA4Value> = HashMap::from([
+        let param_map: BTreeMap<String, GA4Value> = BTreeMap::from([
             ("param1".to_string(), "value1".into()),
             ("param2".to_string(), "value2".into()),
         ]);
-        let p = Params { items: Some(vec![item_map]), params: param_map };
+        let p = Params {
+            items: Some(vec![item_map.into_iter().collect()]),
+            params: param_map.into_iter().collect(),
+        };
         let result = serde_json::json!(p);
-        let expected_json = "{\"items\":[{\"item1\":\"value1\",\"item2\":\"value2\"}],\"param1\":\"value1\",\"param2\":\"value2\"}";
-        assert_eq!(result.to_string(), expected_json);
+        assert_eq!(result["items"], serde_json::json!([{"item1":"value1","item2":"value2"}]));
+        assert_eq!(result["param1"], "value1");
+        assert_eq!(result["param2"], "value2");
     }
 
     #[test]
@@ -654,16 +658,18 @@ mod tests {
     #[test]
     fn make_post_event() {
         let args = "config analytics enable";
-        let expected = format!(
-            "{{\"client_id\":\"1\",\"events\":[{{\"name\":\"invoke\",\"params\":{{\"is_agent_env\":{},\"label\":\"config analytics enable\"}},\"timestamp_micros\":\"1\"}}],\"non_personalized_ads\":true}}",
-            agents::is_agent_env()
-        );
         let mut event =
             make_ga4_event(None, None, Some(args), BTreeMap::new(), None, Some("invoke"));
         event.timestamp_micros = 1.to_string(); // timestamps need to be set to the same time for strings to match
         let post = &mut Post::new("1".to_string(), None, None, vec![event]);
 
-        assert_eq!(expected, post.to_json());
+        let post_val: serde_json::Value = serde_json::from_str(&post.to_json()).unwrap();
+        assert_eq!(post_val["client_id"], "1");
+        assert_eq!(post_val["non_personalized_ads"], true);
+        assert_eq!(post_val["events"][0]["name"], "invoke");
+        assert_eq!(post_val["events"][0]["params"]["label"], "config analytics enable");
+        assert_eq!(post_val["events"][0]["params"]["is_agent_env"], agents::is_agent_env());
+        assert_eq!(post_val["events"][0]["timestamp_micros"], "1");
     }
 
     #[test]

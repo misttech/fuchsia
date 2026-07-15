@@ -774,11 +774,11 @@ group("half-2.7.1") {
 }
 
 group("handlebars") {
-  public_deps = [ ":handlebars-v4_3_5" ]
+  public_deps = [ ":handlebars-v6_4_2" ]
 }
 
-group("handlebars-4.3.5") {
-  public_deps = [ ":handlebars-v4_3_5" ]
+group("handlebars-6.4.2") {
+  public_deps = [ ":handlebars-v6_4_2" ]
 }
 
 group("hashbrown") {
@@ -10412,43 +10412,45 @@ rustc_library("half-v2_7_1") {
   applicable_licenses = [ ":half-v2_7_1.license" ]
 }
 
-license("handlebars-v4_3_5.license") {
+license("handlebars-v6_4_2.license") {
   public_package_name = "handlebars"
   license_files = [
-    "//third_party/rust_crates/vendor/handlebars-4.3.5/LICENSE",
-    "//third_party/rust_crates/vendor/handlebars-4.3.5/wasm/LICENSE",
+    "//third_party/rust_crates/vendor/handlebars-6.4.2/LICENSE",
+    "//third_party/rust_crates/vendor/handlebars-6.4.2/wasm/LICENSE",
   ]
 }
 
-rustc_library("handlebars-v4_3_5") {
+rustc_library("handlebars-v6_4_2") {
   crate_name = "handlebars"
-  source_root = "//third_party/rust_crates/vendor/handlebars-4.3.5/src/lib.rs"
-  output_name = "handlebars-f0d384607bf539b0"
-  edition = "2021"
+  source_root = "//third_party/rust_crates/vendor/handlebars-6.4.2/src/lib.rs"
+  output_name = "handlebars-3547ff0d23ff8e0c"
+  edition = "2024"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
+  deps += [ ":derive_builder-v0_20_2" ]
   deps += [ ":log-v0_4_29" ]
+  deps += [ ":num-order-v1_2_0" ]
   deps += [ ":pest-v2_8_6" ]
   deps += [ ":pest_derive-v2_8_6($host_toolchain)" ]
   deps += [ ":serde-v1_0_228" ]
   deps += [ ":serde_json-v1_0_149" ]
-  deps += [ ":thiserror-v1_0_69" ]
+  deps += [ ":thiserror-v2_0_18" ]
 
-  rustenv = [ "CARGO_MANIFEST_DIR=${gn_source_root}/third_party/rust_crates/vendor/handlebars-4.3.5" ]
+  rustenv = [ "CARGO_MANIFEST_DIR=${gn_source_root}/third_party/rust_crates/vendor/handlebars-6.4.2" ]
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=f0d384607bf539b0",
-    "-Cextra-filename=-f0d384607bf539b0",
+    "-Cmetadata=3547ff0d23ff8e0c",
+    "-Cextra-filename=-3547ff0d23ff8e0c",
     "--cfg=feature=\"default\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":handlebars-v4_3_5.license" ]
+  applicable_licenses = [ ":handlebars-v6_4_2.license" ]
 }
 
 license("hashbrown-v0_12_3.license") {
@@ -13780,6 +13782,67 @@ rustc_library("num-iter-v0_1_45") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":num-iter-v0_1_45.license" ]
+}
+
+license("num-modular-v0_6_4.license") {
+  public_package_name = "num_modular"
+  license_files =
+      [ "//third_party/rust_crates/vendor/num-modular-0.6.4/LICENSE" ]
+}
+
+rustc_library("num-modular-v0_6_4") {
+  crate_name = "num_modular"
+  source_root = "//third_party/rust_crates/vendor/num-modular-0.6.4/src/lib.rs"
+  output_name = "num_modular-2b5a187a8bc39172"
+  edition = "2018"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=2b5a187a8bc39172",
+    "-Cextra-filename=-2b5a187a8bc39172",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":num-modular-v0_6_4.license" ]
+}
+
+license("num-order-v1_2_0.license") {
+  public_package_name = "num_order"
+  license_files = [ "//third_party/rust_crates/vendor/num-order-1.2.0/LICENSE" ]
+}
+
+rustc_library("num-order-v1_2_0") {
+  crate_name = "num_order"
+  source_root = "//third_party/rust_crates/vendor/num-order-1.2.0/src/lib.rs"
+  output_name = "num_order-5f8916ba7e4bbc7e"
+  edition = "2018"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+  deps += [ ":num-modular-v0_6_4" ]
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=5f8916ba7e4bbc7e",
+    "-Cextra-filename=-5f8916ba7e4bbc7e",
+    "--cfg=feature=\"default\"",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":num-order-v1_2_0.license" ]
 }
 
 license("num-rational-v0_4_2.license") {
@@ -19665,6 +19728,7 @@ rustc_library("serde_json-v1_0_149") {
 
   deps = []
   deps += [ ":memchr-v2_8_0" ]
+  deps += [ ":indexmap-v2_13_0" ]
   deps += [ ":itoa-v1_0_18" ]
   deps += [ ":serde_core-v1_0_228" ]
   deps += [ ":zmij-v1_0_21" ]
@@ -19680,6 +19744,8 @@ rustc_library("serde_json-v1_0_149") {
     "-Cextra-filename=-e00375ac4fbc2b25",
     "--cfg=feature=\"alloc\"",
     "--cfg=feature=\"default\"",
+    "--cfg=feature=\"indexmap\"",
+    "--cfg=feature=\"preserve_order\"",
     "--cfg=feature=\"std\"",
     "--cfg=feature=\"unbounded_depth\"",
     "--cfg=fast_arithmetic=\"64\"",

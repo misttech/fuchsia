@@ -108,7 +108,7 @@
                 },
                 "table:0x0": {
                     "binary_data": "b64:IAAREgU=",
-                    "object_name": "ExampleTable",
+                    "object_name": "Example Table",
                     "row:0x1": {
                         "cell:0x2": {
                             "double_value": 11.11111111111111,

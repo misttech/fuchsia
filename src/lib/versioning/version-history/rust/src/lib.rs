@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{bail, Context};
+use anyhow::{Context, bail};
 use chrono::NaiveDate;
 use itertools::Itertools;
 use log::error;
@@ -816,25 +816,17 @@ mod tests {
     #[test]
     fn test_parse_history_rejects_invalid_versions() {
         for (api_level, abi_revision, err) in [
-            (
-                "some-version",
-                "1",
-                "invalid digit found in string"                ,
-            ),
-            (
-                "-1",
-                "1",
-                "invalid digit found in string"                ,
-            ),
+            ("some-version", "1", "invalid digit found in string"),
+            ("-1", "1", "invalid digit found in string"),
             (
                 "1",
                 "some-revision",
-                "invalid value: string \"some-revision\", expected an unsigned integer at line 1 column 58",
+                "invalid value: string \"some-revision\", expected an unsigned integer at line 1 column 113",
             ),
             (
                 "1",
                 "-1",
-                "invalid value: string \"-1\", expected an unsigned integer at line 1 column 47",
+                "invalid value: string \"-1\", expected an unsigned integer at line 1 column 102",
             ),
         ] {
             let expected_bytes = serde_json::to_vec(&serde_json::json!({

@@ -7,9 +7,9 @@ use anyhow::Error;
 use diagnostics_assertions::{AnyProperty, assert_data_tree, assert_json_diff};
 use diagnostics_data::InspectError;
 use diagnostics_reader::ArchiveReader;
-use difference::assert_diff;
+use fidl_fuchsia_archivist_test as ftest;
+use fidl_fuchsia_diagnostics as fdiagnostics;
 use realm_proxy_client::RealmProxyClient;
-use {fidl_fuchsia_archivist_test as ftest, fidl_fuchsia_diagnostics as fdiagnostics};
 
 const MONIKER_KEY: &str = "moniker";
 const METADATA_KEY: &str = "metadata";
@@ -487,21 +487,10 @@ async fn retrieve_and_validate_results(
     }
     let results = reader.snapshot_raw::<serde_json::Value>().await.expect("got result");
 
-    // Convert the json struct into a "pretty" string rather than converting the
-    // golden file into a json struct because deserializing the golden file into a
-    // struct causes serde_json to convert the u64s into exponential form which
-    // causes loss of precision.
-    let mut observed_string =
-        serde_json::to_string_pretty(&process_results_for_comparison(results))
-            .expect("should be able to format the the results as valid json.");
-    let mut expected_string = golden.to_string();
-    // Remove whitespace from both strings because text editors will do things like
-    // requiring json files end in a newline, while the result string is unbounded by
-    // newlines. Also, we don't want this test to fail if the only change is to json
-    // format within the reader.
-    observed_string.retain(|c| !c.is_whitespace());
-    expected_string.retain(|c| !c.is_whitespace());
-    assert_diff!(&expected_string, &observed_string, "\n", 0);
+    let observed = process_results_for_comparison(results);
+    let expected: serde_json::Value =
+        serde_json::from_str(golden).expect("golden file contains valid json");
+    assert_eq!(observed, expected);
 }
 
 fn process_results_for_comparison(results: serde_json::Value) -> serde_json::Value {
