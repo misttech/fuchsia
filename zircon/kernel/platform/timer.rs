@@ -4,9 +4,20 @@
 
 #![no_std]
 
+pub mod power;
+
 #[repr(transparent)]
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct InstantMono(pub i64);
+
+impl core::ops::Add<i64> for InstantMono {
+    type Output = Self;
+
+    #[inline]
+    fn add(self, rhs: i64) -> Self {
+        Self(self.0 + rhs)
+    }
+}
 
 #[repr(transparent)]
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]

@@ -82,7 +82,10 @@ group("kernel-tests") {
 }
 
 source_set("ffi") {
-  sources = [ "timer_ffi.cc" ]
+  sources = [
+    "power_ffi.cc",
+    "timer_ffi.cc",
+  ]
   deps = [ "//zircon/kernel/lib/ktl" ]
 }
 
@@ -90,6 +93,9 @@ rustc_library("platform-rs") {
   edition = "2024"
   name = "platform_rs"
   source_root = "timer.rs"
-  sources = [ "timer.rs" ]
+  sources = [
+    "power.rs",
+    "timer.rs",
+  ]
   non_rust_deps = [ ":ffi" ]
 }
