@@ -51,10 +51,57 @@ fn load_device(path: &Path) -> Result<FakeDevice, Error> {
 }
 
 async fn check_data_volume(dir: fio::DirectoryProxy, check_fscrypt: bool) -> Result<(), Error> {
+    let all_attributes = fio::NodeAttributesQuery::all();
+
+    let (dir_mut_attrs, dir_imm_attrs) = dir
+        .get_attributes(all_attributes)
+        .await
+        .context("get_attributes FIDL call on volume root dir")?
+        .map_err(Status::from_raw)
+        .context("get_attributes on volume root dir")?;
+    ensure!(dir_imm_attrs.id.is_some(), "Expected ID for volume root dir");
+    ensure!(
+        dir_imm_attrs.protocols == Some(fio::NodeProtocolKinds::DIRECTORY),
+        "Expected directory protocols"
+    );
+    ensure!(dir_mut_attrs.creation_time.is_some(), "Expected creation_time for volume root dir");
+
+    let file = open_file(&dir, REGULAR_FILE_PATH, fio::PERM_READABLE).await?;
+    let (mut_attrs, imm_attrs) = file
+        .get_attributes(all_attributes)
+        .await
+        .context("get_attributes FIDL call on regular file")?
+        .map_err(Status::from_raw)
+        .context("get_attributes wrapping_key_id on regular file")?;
+    ensure!(
+        mut_attrs.wrapping_key_id == None,
+        "Expected wrapping_key_id to be None for regular non-fscrypt file."
+    );
+    ensure!(imm_attrs.id.is_some(), "Expected ID for regular file");
+    ensure!(
+        imm_attrs.content_size == Some(EXPECTED_FILE_CONTENT.len() as u64),
+        "Expected content_size for regular file"
+    );
+    ensure!(mut_attrs.creation_time.is_some(), "Expected creation_time for regular file");
+
     ensure!(
         &read_file(&dir, REGULAR_FILE_PATH).await? == EXPECTED_FILE_CONTENT,
         "Expected file content incorrect."
     );
+
+    let verity_file = open_file(&dir, VERITY_FILE_PATH, fio::PERM_READABLE).await?;
+    let (verity_mut_attrs, verity_imm_attrs) = verity_file
+        .get_attributes(all_attributes)
+        .await
+        .context("get_attributes FIDL call on verity file")?
+        .map_err(Status::from_raw)
+        .context("get_attributes on verity file")?;
+    ensure!(verity_imm_attrs.id.is_some(), "Expected ID for verity file");
+    ensure!(
+        verity_imm_attrs.content_size == Some(EXPECTED_FILE_CONTENT.len() as u64),
+        "Expected content_size for verity file"
+    );
+    ensure!(verity_mut_attrs.creation_time.is_some(), "Expected creation_time for verity file");
 
     ensure!(
         &read_file(&dir, VERITY_FILE_PATH).await? == EXPECTED_FILE_CONTENT,
@@ -67,6 +114,23 @@ async fn check_data_volume(dir: fio::DirectoryProxy, check_fscrypt: bool) -> Res
     );
 
     if check_fscrypt {
+        let file = open_file(&dir, FSCRYPT_FILE_PATH, fio::PERM_READABLE).await?;
+        let (mut_attrs, imm_attrs) = file
+            .get_attributes(all_attributes)
+            .await
+            .context("get_attributes FIDL call on fscrypt file")?
+            .map_err(Status::from_raw)
+            .context("get_attributes wrapping_key_id on fscrypt file")?;
+        ensure!(
+            mut_attrs.wrapping_key_id == Some(WRAPPING_KEY_ID),
+            "Expected wrapping_key_id for fscrypt file."
+        );
+        ensure!(imm_attrs.id.is_some(), "Expected ID for fscrypt file");
+        ensure!(
+            imm_attrs.content_size == Some(EXPECTED_FILE_CONTENT.len() as u64),
+            "Expected content_size for fscrypt file"
+        );
+
         // Check fscrypt file read with a casefolded unicode filename.
         ensure!(
             &read_file(&dir, FSCRYPT_FILE_PATH).await? == EXPECTED_FILE_CONTENT,
