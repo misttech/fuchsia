@@ -1111,29 +1111,9 @@ func infraToolLogChecks() []FailureModeCheck {
 			Type:            syslogType,
 			AttributeToTest: true,
 		},
-		// For https://fxbug.dev/433971550
-		&stringInLogCheck{
-			String:             "Restarts have not restored connectivity. Giving up.",
-			Type:               swarmingOutputType,
-			SkipAllPassedTests: true,
-		},
-		// For https://fxbug.dev/433971550
-		&stringInLogCheck{
-			String:          "ADB communication failed, attempting restart of isolated server",
-			Type:            swarmingOutputType,
-			AttributeToTest: true,
-			AddTag:          true,
-			SkipPassedTest:  true,
-		},
 		// For https://fxbug.dev/439064347
 		&stringInLogCheck{
 			String:             "timed out waiting for boot to complete",
-			Type:               swarmingOutputType,
-			SkipAllPassedTests: true,
-		},
-		// For https://fxbug.dev/433971550
-		&stringInLogCheck{
-			String:             "Failed 'adb pull' operation.",
 			Type:               swarmingOutputType,
 			SkipAllPassedTests: true,
 		},
