@@ -96,8 +96,6 @@ template("ffx_action") {
           invoker.ffx_tool_output_name,
       "This template will automatically append '_unversioned' to the 'ffx_tool_output_name' label, use the base name for the tool.")
 
-  # Only generate our own hermetic inputs file if a depfile is not specified
-  # OR hermetic_deps is not turned off.
   _use_hermetic_inputs_file =
       !defined(invoker.depfile) &&
       (!defined(invoker.hermetic_deps) || invoker.hermetic_deps)
@@ -140,18 +138,6 @@ template("ffx_action") {
     }
   }
 
-  env_target_name = target_name + ".ffx_env"
-  env_file = "$target_out_dir/ffx.env." + target_name
-
-  # TODO(https://fxbug.dev/42077443): We could avoid creating an extra file if ffx
-  # could have its env passed in on the command line.
-  generated_file(env_target_name) {
-    outputs = [ env_file ]
-    output_conversion = "json"
-    contents = {
-    }
-  }
-
   # Invoke the compiled_action template for the call to the ffx plugin.
   #
   # This uses the compiled_action() template instead of directly creating an
@@ -161,13 +147,14 @@ template("ffx_action") {
     forward_variables_from(invoker,
                            [
                              "assert_no_deps",
+                             "check_for_output_dir_leaks",
                              "data_deps",
                              "depfile",
+                             "deps",
                              "hermetic_action_ignored_prefixes",
                              "hermetic_deps",
                              "inputs",
                              "metadata",
-                             "check_for_output_dir_leaks",
                              "outputs",
                              "public_deps",
                              "repeatable",
@@ -184,23 +171,21 @@ template("ffx_action") {
       "log.enabled=false",
     ]
 
-    deps = [ ":" + env_target_name ]
-    if (defined(invoker.deps)) {
-      deps += invoker.deps
-    }
+    args = [
+      "--strict",
+      "--machine",
+      "raw",
 
-    inputs += [ env_file ]
-
-    args = [ "--no-environment" ]
+      # Logging is disabled, but strict mode requires a logging destination to
+      # be set.
+      "--log-output",
+      "/dev/null",
+    ]
 
     # Pass the ffx config at runtime. ffx checks that it has read and write
     # access to the config files which causes hermetic actions error if using a
     # global ffx config file.
     args += [
-              "--env",
-              rebase_path(env_file, root_build_dir),
-              "--isolate-dir",
-              rebase_path(target_out_dir, root_build_dir),
               "--config",
               string_join(",", _ffx_config),
             ] + invoker.args
