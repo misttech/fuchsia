@@ -571,6 +571,9 @@ reviewed_features = ["default"]
 [gn.package.bitflags."2.13.0"]
 reviewed_features = [ "serde", "serde_core", "std" ]
 
+[gn.package.bssl-macros."0.1.0"]
+existing_gn_target = "//third_party/boringssl/rust:bssl-macros"
+
 [gn.package.bssl-sys."0.1.0"]
 existing_gn_target = "//third_party/boringssl/rust:bssl-sys"
 

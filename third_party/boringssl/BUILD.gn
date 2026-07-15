@@ -290,6 +290,10 @@ if (!is_kernel) {
           ":${crypto_test}",
           ":temp_storage",
         ]
+        if (crypto_test == "bytestring_test_crypto_test" ||
+            crypto_test == "mem_test_crypto_test") {
+          deps += [ "//src/sys/test_runners/gtest:death_test" ]
+        }
       }
     }
     fuchsia_unittest_component("ssl_test_component") {
@@ -463,6 +467,7 @@ config("test_config") {
     "src/crypto/test",
     "src/ssl/test",
   ]
+  cflags = [ "-fno-strict-aliasing" ]
   configs = [
     ":internal_config",
     ":export_symbols",

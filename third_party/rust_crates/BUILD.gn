@@ -4606,6 +4606,10 @@ rustc_library("blocking-v1_6_2") {
   applicable_licenses = [ ":blocking-v1_6_2.license" ]
 }
 
+group("bssl-macros-v0_1_0") {
+  public_deps = [ "//third_party/boringssl/rust:bssl-macros" ]
+}
+
 group("bssl-sys-v0_1_0") {
   public_deps = [ "//third_party/boringssl/rust:bssl-sys" ]
 }

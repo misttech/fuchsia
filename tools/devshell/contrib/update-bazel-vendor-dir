@@ -71,4 +71,5 @@ fx-update-bazel-workspace
     --repo='@@zlib+' \
     --stub-repo='@@apple_support+' \
     --stub-repo='@@bazel_tools+remote_coverage_tools_extension+remote_coverage_tools' \
+    --stub-repo='@@google_benchmark+' \
     --stub-repo='@@rules_kotlin+'

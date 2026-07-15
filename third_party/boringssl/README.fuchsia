@@ -1,7 +1,7 @@
 Name: boringssl
 URL: https://boringssl.googlesource.com/boringssl
-Revision: e056f59c7dfdcf891af03bc7900c946ac485c78f
-Upstream Revision: https://boringssl.googlesource.com/boringssl/+/e056f59c7dfdcf891af03bc7900c946ac485c78f/
+Revision: 156c7b75ae9b8c3b3f847acf264f17594c3859fb
+Upstream Revision: https://boringssl.googlesource.com/boringssl/+/156c7b75ae9b8c3b3f847acf264f17594c3859fb/
 Security Critical: yes
 
 License File: src/LICENSE
