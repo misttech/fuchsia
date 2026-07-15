@@ -464,11 +464,26 @@ class Flatland : public fidl::Server<fuchsia_ui_composition::Flatland>,
       const std::vector<TransformHandle>& dead_handles);
   void SetLayerImageForTest(LayerHandle handle, allocation::GlobalImageId image);
   void SetLayerSolidColorForTest(LayerHandle handle);
-  const LayerObject* GetLayerObjectForTest(LayerHandle handle) const;
+  LayerObject* GetLayerObjectForTest(LayerHandle handle);
   void ReleaseTransformForTest(TransformHandle handle);
   void SetPriorityChildForTest(TransformId parent, TransformHandle child);
 
  private:
+  // TODO(https://fxbug.dev/523371761): after transition to Flatland2 UberStruct schema is complete,
+  // revisit order of public/private sections, and verify "methods-first, fields-last" declaration
+  // order (as mandated by style guide).
+
+  // Returns the LayerObject for the given stack's content handle, or nullptr if none exists.
+  LayerObject* GetFacadeLayerObject(TransformHandle content_handle);
+
+  // Helper to extract ImageContent from a layer, returning nullptr if the layer does not exist
+  // or does not contain ImageContent.
+  LayerObject::ImageContent* GetFacadeLayerImageContent(TransformHandle content_handle);
+
+  // Helper to extract SolidColorContent from a layer, returning nullptr if the layer does not exist
+  // or does not contain SolidColorContent.
+  LayerObject::SolidColorContent* GetFacadeLayerSolidColorContent(TransformHandle content_handle);
+
   // The set of link operations that are pending a call to Present(). Unlike other operations,
   // whose effects are only visible when a new UberStruct is published, Link destruction operations
   // result in immediate changes in the LinkSystem. To avoid having these changes visible before
