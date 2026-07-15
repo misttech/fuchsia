@@ -693,7 +693,7 @@ impl MemoryManagerState {
 
         if let DesiredAddress::FixedOverwrite(addr) = addr {
             assert_eq!(addr, mapped_addr);
-            self.update_after_unmap(mm, addr, end - addr, released_mappings)?;
+            self.update_after_unmap(mm, addr, end - addr, released_mappings);
         }
 
         let mapping = Mapping::with_name(
@@ -738,7 +738,7 @@ impl MemoryManagerState {
         let end = (mapped_addr + length)?.round_up(*PAGE_SIZE)?;
         if let DesiredAddress::FixedOverwrite(addr) = addr {
             assert_eq!(addr, mapped_addr);
-            self.update_after_unmap(mm, addr, end - addr, released_mappings)?;
+            self.update_after_unmap(mm, addr, end - addr, released_mappings);
         }
 
         let mapping = Mapping::new_private_anonymous(flags, name, MappingMode::Eager);
@@ -1268,7 +1268,7 @@ impl MemoryManagerState {
             }
         };
 
-        self.update_after_unmap(mm, addr, length, released_mappings)?;
+        self.update_after_unmap(mm, addr, length, released_mappings);
 
         Ok(())
     }
@@ -1290,8 +1290,8 @@ impl MemoryManagerState {
         addr: UserAddress,
         length: usize,
         released_mappings: &mut ReleasedMappings,
-    ) -> Result<(), Errno> {
-        let end_addr = addr.checked_add(length).ok_or_else(|| errno!(EINVAL))?;
+    ) {
+        let end_addr = addr.checked_add(length).expect("address overflow during unmap");
         let unmap_range = addr..end_addr;
 
         // Remove any shadow mappings for mlock()'d pages that are now unmapped.
@@ -1302,18 +1302,23 @@ impl MemoryManagerState {
             if let MappingBacking::PrivateAnonymous = self.get_mapping_backing(mapping) {
                 let unmapped_range = &unmap_range.intersect(range);
 
-                mm.inflight_vmspliced_payloads.handle_unmapping(
-                    &mm.mapping_context.private_anonymous.backing,
-                    unmapped_range,
-                )?;
+                if let Err(e) = mm
+                    .inflight_vmspliced_payloads
+                    .handle_unmapping(&mm.mapping_context.private_anonymous.backing, unmapped_range)
+                {
+                    log_error!("Failed to handle vmsplice unmapping: {:?}", e);
+                }
 
-                mm.mapping_context
+                if let Err(e) = mm
+                    .mapping_context
                     .private_anonymous
-                    .zero(unmapped_range.start, unmapped_range.end - unmapped_range.start)?;
+                    .zero(unmapped_range.start, unmapped_range.end - unmapped_range.start)
+                {
+                    log_error!("Failed to zero private anonymous memory: {:?}", e);
+                }
             }
         }
         released_mappings.extend(self.mappings.remove(unmap_range));
-        return Ok(());
     }
 
     fn protect(
