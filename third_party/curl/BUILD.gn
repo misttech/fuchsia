@@ -84,6 +84,10 @@ target(default_library_type, "libcurl") {
     "src/lib/cf-https-connect.h",
     "src/lib/cf-ip-happy.c",
     "src/lib/cf-ip-happy.h",
+    "src/lib/cf-recvbuf.c",
+    "src/lib/cf-recvbuf.h",
+    "src/lib/cf-setup.c",
+    "src/lib/cf-setup.h",
     "src/lib/cf-socket.c",
     "src/lib/cf-socket.h",
     "src/lib/cfilters.c",
@@ -100,6 +104,8 @@ target(default_library_type, "libcurl") {
     "src/lib/content_encoding.h",
     "src/lib/cookie.c",
     "src/lib/cookie.h",
+    "src/lib/creds.c",
+    "src/lib/creds.h",
     "src/lib/cshutdn.c",
     "src/lib/cshutdn.h",
     "src/lib/curl_addrinfo.c",
@@ -276,11 +282,11 @@ target(default_library_type, "libcurl") {
     "src/lib/multiif.h",
     "src/lib/netrc.c",
     "src/lib/netrc.h",
-    "src/lib/noproxy.c",
-    "src/lib/noproxy.h",
     "src/lib/openldap.c",
     "src/lib/parsedate.c",
     "src/lib/parsedate.h",
+    "src/lib/peer.c",
+    "src/lib/peer.h",
     "src/lib/pingpong.c",
     "src/lib/pingpong.h",
     "src/lib/pop3.c",
@@ -289,6 +295,8 @@ target(default_library_type, "libcurl") {
     "src/lib/progress.h",
     "src/lib/protocol.c",
     "src/lib/protocol.h",
+    "src/lib/proxy.c",
+    "src/lib/proxy.h",
     "src/lib/psl.c",
     "src/lib/psl.h",
     "src/lib/rand.c",
@@ -371,10 +379,18 @@ target(default_library_type, "libcurl") {
     "src/lib/vauth/vauth.c",
     "src/lib/vauth/vauth.h",
     "src/lib/version.c",
-    "src/lib/vquic/curl_ngtcp2.c",
-    "src/lib/vquic/curl_ngtcp2.h",
-    "src/lib/vquic/curl_quiche.c",
-    "src/lib/vquic/curl_quiche.h",
+    "src/lib/vquic/capsule.c",
+    "src/lib/vquic/capsule.h",
+    "src/lib/vquic/cf-capsule.c",
+    "src/lib/vquic/cf-capsule.h",
+    "src/lib/vquic/cf-ngtcp2-cmn.c",
+    "src/lib/vquic/cf-ngtcp2-cmn.h",
+    "src/lib/vquic/cf-ngtcp2-proxy.c",
+    "src/lib/vquic/cf-ngtcp2-proxy.h",
+    "src/lib/vquic/cf-ngtcp2.c",
+    "src/lib/vquic/cf-ngtcp2.h",
+    "src/lib/vquic/cf-quiche.c",
+    "src/lib/vquic/cf-quiche.h",
     "src/lib/vquic/vquic.c",
     "src/lib/vquic/vquic.h",
     "src/lib/vquic/vquic_int.h",
@@ -399,6 +415,8 @@ target(default_library_type, "libcurl") {
     "src/lib/vtls/schannel_verify.c",
     "src/lib/vtls/vtls.c",
     "src/lib/vtls/vtls.h",
+    "src/lib/vtls/vtls_config.c",
+    "src/lib/vtls/vtls_config.h",
     "src/lib/vtls/vtls_int.h",
     "src/lib/vtls/vtls_scache.c",
     "src/lib/vtls/vtls_scache.h",
@@ -420,10 +438,14 @@ target(default_library_type, "libcurl") {
     "BUILDING_LIBCURL",
     "CURL_HIDDEN_SYMBOLS",
     "HAVE_CONFIG_H",
+
+    # _ALL_SOURCE exposes POSIX and GNU extensions in Zircon/musl's
+    # <features.h>. _GNU_SOURCE is required alongside it for Linux host builds
+    # where glibc does not recognize _ALL_SOURCE and otherwise hides structures
+    # like struct addrinfo when compiling with -std=c11.
+    "_ALL_SOURCE",
+    "_GNU_SOURCE",
   ]
-  if (is_linux) {
-    defines += [ "_GNU_SOURCE" ]
-  }
   public_configs = [ ":curl_config" ]
   configs += [ ":suppress_warnings" ]
 }
