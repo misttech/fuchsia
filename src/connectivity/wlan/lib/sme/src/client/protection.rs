@@ -18,7 +18,7 @@ use wlan_rsn::auth::{self};
 use wlan_rsn::nonce::NonceReader;
 use wlan_rsn::{NegotiatedProtection, ProtectionInfo, PweMethod};
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum Protection {
     Open,
     Wep(WepKey),

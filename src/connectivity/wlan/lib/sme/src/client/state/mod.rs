@@ -1850,6 +1850,34 @@ fn roam_internal(
         }
     };
 
+    // Reject roams that change the negotiated protection parameters (e.g. downgrading PMF or ciphers)
+    if selected_bss_protection != orig_bss_protection {
+        error!(
+            "Rejecting roam to {:?}: target negotiated protection differs from original negotiated protection",
+            selected_bssid
+        );
+        send_deauthenticate_request(deauth_addr, &context.mlme_sink);
+        let timeout = context.timer.schedule(event::DeauthenticateTimeout);
+        let disconnect_info = make_roam_disconnect_info(mlme_event_name, None);
+        return Err(Disconnecting {
+            cfg: state.cfg,
+            action: PostDisconnectAction::ReportRoamFinished {
+                sink: state.connect_txn_sink,
+                result: RoamFailure {
+                    status_code: fidl_ieee80211::StatusCode::RefusedReasonUnspecified,
+                    failure_type: RoamFailureType::SelectNetworkFailure,
+                    selected_bssid: selected_bss.bssid,
+                    disconnect_info,
+                    auth_method: state.auth_method,
+                    selected_bss: Some(selected_bss),
+                    establish_rsna_failure_reason: None,
+                }
+                .into(),
+            },
+            _timeout: Some(timeout),
+        });
+    }
+
     // Policy-initiated roam requires that SME send a roam request to MLME.
     if matches!(roam_initiator, RoamInitiator::RoamRequest) {
         let roam_req = fidl_mlme::RoamRequest { selected_bss: selected_bss.clone().into() };
@@ -4007,6 +4035,30 @@ mod tests {
             &h.inspector,
             *selected_bss.clone(),
         ));
+    }
+
+    #[test]
+    fn fullmac_initiated_roam_rejects_cipher_downgrade() {
+        let mut h = TestHelper::new();
+        let (supplicant, _suppl_mock) = mock_psk_supplicant();
+        let (cmd, _connect_txn_stream) = connect_command_wpa2(supplicant);
+        let state = link_up_state(cmd);
+        let selected_bssid = [0, 1, 2, 3, 4, 5];
+        let target_bss = fake_bss_description!(Wpa2TkipOnly, ssid: Ssid::try_from("wpa2").unwrap());
+
+        let roam_start_ind = MlmeEvent::RoamStartInd {
+            ind: fidl_mlme::RoamStartIndication {
+                selected_bssid,
+                original_association_maintained: false,
+                selected_bss: target_bss.clone().into(),
+            },
+        };
+        let state = state.on_mlme_event(roam_start_ind, &mut h.context);
+        assert_matches!(state, ClientState::Disconnecting(_));
+
+        assert_matches!(h.mlme_stream.try_next(), Ok(Some(MlmeRequest::Deauthenticate(req))) => {
+            assert_eq!(req.peer_sta_address, selected_bssid);
+        });
     }
 
     #[test]
