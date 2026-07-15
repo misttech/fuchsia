@@ -969,7 +969,7 @@ This should never be set as a build argument.
 }
   static = {
   clang_rt = "lib/clang/23/lib/armv7-unknown-linux-gnueabihf/libclang_rt.lsan.a"
-  clang_rt_cxx = "../../../../out/not-default/libclang_rt.lsan_cxx.a"
+  clang_rt_cxx = ""
 }
 }
   tsan = {
@@ -1032,7 +1032,7 @@ This should never be set as a build argument.
 }
   tsan = {
   shared = {
-  clang_rt = ""
+  clang_rt = "../../../../out/not-default/libclang_rt.tsan.so"
 }
   static = {
   clang_rt = "../../../../out/not-default/libclang_rt.tsan.a"
@@ -2202,14 +2202,6 @@ From //build/config/compiler.gni:82
   bazel = "{{BAZEL_TARGET_OUT_DIR}}/gndoc_/gndoc"
   ninja = "gndoc"
 }]
-}, {
-  bazel_label = "//tools/check-licenses:tests"
-  bazel_name = "build.stamp"
-  ninja_name = "tools_check-licenses_stamp_tests.stamp"
-}, {
-  bazel_label = "//tools/whereiscl:tests"
-  bazel_name = "build.stamp"
-  ninja_name = "tools_whereiscl_stamp_tests.stamp"
 }, {
   bazel_label = "//src/lib/testing/expectation/tool:list_test_expectations"
   copy_outputs = [{
