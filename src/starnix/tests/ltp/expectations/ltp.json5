@@ -256,7 +256,9 @@
                 "recvmsg01",
                 "rename14",
 
-                // Causes an OOM when /dev/loop-control is available.
+                // TODO(https://fxbug.dev/534918239): This test intentionally exhausts disk space to
+                // verify fallocate behavior under that condition. Intentionally exhausting space in
+                // Starnix causes an OOM and subsequent crash of the test environment.
                 "fallocate05",
 
                 // These tests hang
