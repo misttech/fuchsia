@@ -28,36 +28,35 @@ struct overloaded : Ts... {
 template <class... Ts>
 overloaded(Ts...) -> overloaded<Ts...>;
 
-std::shared_ptr<WlanPhyImplDevice> WlanPhyImplDevice::New(
+std::shared_ptr<WlanPhyDevice> WlanPhyDevice::New(
     WlantapDriverContext context, zx::channel user_channel,
     const fuchsia_wlan_tap::WlantapPhyConfig& phy_config, NodeControllerClient phy_controller) {
   WLAN_TRACE_DURATION();
-  auto device = std::shared_ptr<WlanPhyImplDevice>(new WlanPhyImplDevice(context, phy_config));
+  auto device = std::shared_ptr<WlanPhyDevice>(new WlanPhyDevice(context, phy_config));
   device->Init(std::move(user_channel), std::move(phy_controller));
   return device;
 }
 
-WlanPhyImplDevice::WlanPhyImplDevice(WlantapDriverContext context,
-                                     const fuchsia_wlan_tap::WlantapPhyConfig& phy_config)
+WlanPhyDevice::WlanPhyDevice(WlantapDriverContext context,
+                             const fuchsia_wlan_tap::WlantapPhyConfig& phy_config)
     : driver_context_(context), phy_config_(phy_config) {
   WLAN_TRACE_DURATION();
 }
 
-void WlanPhyImplDevice::Init(
-    zx::channel user_channel,
-    fidl::ClientEnd<fuchsia_driver_framework::NodeController> phy_controller) {
+void WlanPhyDevice::Init(zx::channel user_channel,
+                         fidl::ClientEnd<fuchsia_driver_framework::NodeController> phy_controller) {
   WLAN_TRACE_DURATION();
   wlantap_phy_ = std::make_unique<WlantapPhy>(
       std::move(user_channel), phy_config_,
       [self = shared_from_this(),
        name = name_](WlantapPhy::ShutdownCompleter::Async wlantap_phy_shutdown_completer) mutable
-          -> fit::result<zx_status_t> {
+          -> zx::result<> {
         // Return an error if |self| has already been reset(). This function
         // should only be called once, and |self| is reset() upon completion
         // to drop its reference.
         if (self == nullptr) {
           fdf::error("{}: shutdown callback called more than once", name);
-          return fit::error(ZX_ERR_INTERNAL);
+          return zx::error(ZX_ERR_INTERNAL);
         }
 
         self->wlantap_phy_shutdown_completer_ = std::move(wlantap_phy_shutdown_completer);
@@ -65,13 +64,13 @@ void WlanPhyImplDevice::Init(
         // Unbind the WlanPhyImpl child node. This effectively blocks iface
         // management from the outside.
         auto phy_removal_status = self->phy_controller_->Remove();
-        fit::result<zx_status_t> result = fit::ok();
+        zx::result<> result = zx::ok();
         if (phy_removal_status.is_error()) {
           fdf::error("{}: Could not remove phy: {}", name,
                      phy_removal_status.error_value().status_string());
           self->ShutdownComplete();
 
-          result = fit::error(phy_removal_status.error_value().status());
+          result = zx::error(phy_removal_status.error_value().status());
         }
         self.reset();
         return result;
@@ -82,7 +81,7 @@ void WlanPhyImplDevice::Init(
   class PhyControllerEventHandler
       : public fidl::AsyncEventHandler<fuchsia_driver_framework::NodeController> {
    public:
-    explicit PhyControllerEventHandler(std::shared_ptr<WlanPhyImplDevice> device)
+    explicit PhyControllerEventHandler(std::shared_ptr<WlanPhyDevice> device)
         : device_(std::move(device)) {}
     void on_fidl_error(::fidl::UnbindInfo error) override {
       WLAN_TRACE_DURATION();
@@ -92,30 +91,29 @@ void WlanPhyImplDevice::Init(
       fdf::info("{}: phy node unbound: {}", device->name_, error.FormatDescription());
       device->phy_controller_ = {};
 
-      std::optional<WlanPhyImplDevice::IfaceSlot> next_slot;
+      std::optional<WlanPhyDevice::IfaceSlot> next_slot;
       std::visit(
-          overloaded{
-              [device, &next_slot](WlanPhyImplDevice::SlotActive& slot) {
-                auto controller = std::move(slot.controller);
-                auto mac = std::move(slot.mac);
-                next_slot = WlanPhyImplDevice::SlotDestroying{.mac = std::move(mac),
-                                                              .controller = std::move(controller)};
-              },
-              [device](WlanPhyImplDevice::SlotDestroying& slot) {
-                auto status = slot.controller->Remove();
-                if (status.is_error()) {
-                  fdf::error("{}: Could not remove iface: {}", device->name_,
-                             status.error_value().status_string());
-                  device->ShutdownComplete();
-                }
-              },
-              [device](WlanPhyImplDevice::SlotEmpty& slot) { device->ShutdownComplete(); },
-              [device](WlanPhyImplDevice::SlotCreating& slot) { device->ShutdownComplete(); }},
+          overloaded{[device, &next_slot](WlanPhyDevice::SlotActive& slot) {
+                       auto controller = std::move(slot.controller);
+                       auto mac = std::move(slot.mac);
+                       next_slot = WlanPhyDevice::SlotDestroying{
+                           .mac = std::move(mac), .controller = std::move(controller)};
+                     },
+                     [device](WlanPhyDevice::SlotDestroying& slot) {
+                       auto status = slot.controller->Remove();
+                       if (status.is_error()) {
+                         fdf::error("{}: Could not remove iface: {}", device->name_,
+                                    status.error_value().status_string());
+                         device->ShutdownComplete();
+                       }
+                     },
+                     [device](WlanPhyDevice::SlotEmpty& slot) { device->ShutdownComplete(); },
+                     [device](WlanPhyDevice::SlotCreating& slot) { device->ShutdownComplete(); }},
           device->iface_slot_);
 
       if (next_slot.has_value()) {
         device->iface_slot_ = std::move(*next_slot);
-        auto& destroying = std::get<WlanPhyImplDevice::SlotDestroying>(device->iface_slot_);
+        auto& destroying = std::get<WlanPhyDevice::SlotDestroying>(device->iface_slot_);
         auto status = destroying.controller->Remove();
         if (status.is_error()) {
           fdf::error("{}: Could not remove iface: {}", device->name_,
@@ -128,31 +126,34 @@ void WlanPhyImplDevice::Init(
         fidl::UnknownEventMetadata<fuchsia_driver_framework::NodeController> metadata) override {}
 
    private:
-    std::shared_ptr<WlanPhyImplDevice> device_;
+    std::shared_ptr<WlanPhyDevice> device_;
   };
   phy_controller_.Bind(std::move(phy_controller), fdf::Dispatcher::GetCurrent()->async_dispatcher(),
                        new PhyControllerEventHandler(shared_from_this()));
 }
 
-void WlanPhyImplDevice::Init(InitRequest& request, InitCompleter::Sync& completer) {
+void WlanPhyDevice::Init(InitRequest& request, InitCompleter::Sync& completer) {
   WLAN_TRACE_DURATION();
-  completer.Reply(fit::error(ZX_ERR_NOT_SUPPORTED));
+  if (request.notify_client().has_value()) {
+    notify_client_ = std::move(request.notify_client().value());
+  }
+  completer.Reply(fit::ok());
 }
 
-void WlanPhyImplDevice::GetSupportedMacRoles(GetSupportedMacRolesCompleter::Sync& completer) {
+void WlanPhyDevice::GetSupportedMacRoles(GetSupportedMacRolesCompleter::Sync& completer) {
   WLAN_TRACE_DURATION();  // wlantap-phy only supports a single mac role determined by the config
   std::vector<fuchsia_wlan_common::WlanMacRole> reply_vec = {phy_config_.mac_role()};
 
   fdf::info("{}: received a 'GetSupportedMacRoles' DDK request. Responding with roles = {{{}}}",
             name_, static_cast<uint32_t>(phy_config_.mac_role()));
 
-  auto response = fuchsia_wlan_phyimpl::WlanPhyImplGetSupportedMacRolesResponse{
-      {.supported_mac_roles = reply_vec}};
+  auto response =
+      fuchsia_wlan_phy::WlanPhyGetSupportedMacRolesResponse{{.supported_mac_roles = reply_vec}};
   completer.Reply(fit::ok(response));
 }
 
-void WlanPhyImplDevice::CreateIface(CreateIfaceRequest& request,
-                                    CreateIfaceCompleter::Sync& completer) {
+void WlanPhyDevice::CreateIface(CreateIfaceRequest& request,
+                                CreateIfaceCompleter::Sync& completer) {
   WLAN_TRACE_DURATION();
   fdf::info("{}: received a 'CreateIface' request", name_);
 
@@ -172,8 +173,9 @@ void WlanPhyImplDevice::CreateIface(CreateIfaceRequest& request,
     return;
   }
 
-  if (!request.mlme_channel().has_value() && request.mlme_channel().value().is_valid()) {
-    fdf::error("{}: CreateIface({}): MLME channel in request is invalid", name_, role_str);
+  if (!request.mlme_channel().has_value() || !request.mlme_channel().value().is_valid()) {
+    fdf::error("{}: CreateIface({}): MLME channel in request is missing or invalid", name_,
+               role_str);
     completer.Reply(fit::error(ZX_ERR_IO_INVALID));
     return;
   }
@@ -191,20 +193,20 @@ void WlanPhyImplDevice::CreateIface(CreateIfaceRequest& request,
   }
 
   fidl::Arena fidl_arena;
-  auto resp = fuchsia_wlan_phyimpl::WlanPhyImplCreateIfaceResponse{{.iface_id = 0}};
+  auto resp = fuchsia_wlan_phy::WlanPhyCreateIfaceResponse{{.iface_id = 0}};
   completer.Reply(fit::ok(resp));
 }
 
 // Calls the stored ShutdownCompleter received through WlantapPhy.Shutdown().
-void WlanPhyImplDevice::ShutdownComplete() {
+void WlanPhyDevice::ShutdownComplete() {
   WLAN_TRACE_DURATION();
   if (this->wlantap_phy_shutdown_completer_.has_value()) {
     this->wlantap_phy_shutdown_completer_->Reply();
   }
 }
 
-void WlanPhyImplDevice::DestroyIface(DestroyIfaceRequest& request,
-                                     DestroyIfaceCompleter::Sync& completer) {
+void WlanPhyDevice::DestroyIface(DestroyIfaceRequest& request,
+                                 DestroyIfaceCompleter::Sync& completer) {
   WLAN_TRACE_DURATION();
   fdf::info("{}: received a 'DestroyIface' DDK request", name_);
 
@@ -228,13 +230,12 @@ void WlanPhyImplDevice::DestroyIface(DestroyIfaceRequest& request,
   completer.Reply(fit::ok());
 }
 
-void WlanPhyImplDevice::SetCountry(SetCountryRequest& request,
-                                   SetCountryCompleter::Sync& completer) {
+void WlanPhyDevice::SetCountry(SetCountryRequest& request, SetCountryCompleter::Sync& completer) {
   WLAN_TRACE_DURATION();
   fdf::info("{}: SetCountry() to [{}] received", name_,
-            wlan::common::Alpha2ToStr(request.alpha2().value()));
+            wlan::common::Alpha2ToStr(request.country()));
 
-  fuchsia_wlan_tap::SetCountryArgs args{{.alpha2 = request.alpha2().value()}};
+  fuchsia_wlan_tap::SetCountryArgs args{{.alpha2 = request.country()}};
   zx_status_t status = wlantap_phy_->SetCountry(args);
   if (status != ZX_OK) {
     fdf::error("{}: SetCountry() failed: {}", name_, zx_status_get_string(status));
@@ -244,79 +245,79 @@ void WlanPhyImplDevice::SetCountry(SetCountryRequest& request,
   completer.Reply(fit::ok());
 }
 
-void WlanPhyImplDevice::ClearCountry(ClearCountryCompleter::Sync& completer) {
+void WlanPhyDevice::ClearCountry(ClearCountryCompleter::Sync& completer) {
   WLAN_TRACE_DURATION();
   fdf::warn("{}: ClearCountry() not supported", name_);
   completer.Reply(fit::error(ZX_ERR_NOT_SUPPORTED));
 }
 
-void WlanPhyImplDevice::GetCountry(GetCountryCompleter::Sync& completer) {
+void WlanPhyDevice::GetCountry(GetCountryCompleter::Sync& completer) {
   WLAN_TRACE_DURATION();
   fdf::warn("{}: GetCountry() not supported", name_);
   completer.Reply(fit::error(ZX_ERR_NOT_SUPPORTED));
 }
 
-void WlanPhyImplDevice::SetPowerSaveMode(SetPowerSaveModeRequest& request,
-                                         SetPowerSaveModeCompleter::Sync& completer) {
+void WlanPhyDevice::SetPowerSaveMode(SetPowerSaveModeRequest& request,
+                                     SetPowerSaveModeCompleter::Sync& completer) {
   WLAN_TRACE_DURATION();
   fdf::warn("{}: SetPowerSaveMode() not supported", name_);
   completer.Reply(fit::error(ZX_ERR_NOT_SUPPORTED));
 }
 
-void WlanPhyImplDevice::GetPowerSaveMode(GetPowerSaveModeCompleter::Sync& completer) {
+void WlanPhyDevice::GetPowerSaveMode(GetPowerSaveModeCompleter::Sync& completer) {
   WLAN_TRACE_DURATION();
   fdf::warn("{}: GetPowerSaveMode() not supported", name_);
   completer.Reply(fit::error(ZX_ERR_NOT_SUPPORTED));
 }
 
-void WlanPhyImplDevice::PowerDown(PowerDownCompleter::Sync& completer) {
+void WlanPhyDevice::PowerDown(PowerDownCompleter::Sync& completer) {
   WLAN_TRACE_DURATION();
   fdf::warn("{}: PowerDown() not supported", name_);
   completer.Reply(fit::error(ZX_ERR_NOT_SUPPORTED));
 }
-void WlanPhyImplDevice::PowerUp(PowerUpCompleter::Sync& completer) {
+void WlanPhyDevice::PowerUp(PowerUpCompleter::Sync& completer) {
   WLAN_TRACE_DURATION();
   fdf::warn("{}: PowerUp() not supported", name_);
   completer.Reply(fit::error(ZX_ERR_NOT_SUPPORTED));
 }
 
-void WlanPhyImplDevice::Reset(ResetCompleter::Sync& completer) {
+void WlanPhyDevice::Reset(ResetCompleter::Sync& completer) {
   WLAN_TRACE_DURATION();
   fdf::warn("{}: Reset() not supported", name_);
   completer.Reply(fit::error(ZX_ERR_NOT_SUPPORTED));
 }
-void WlanPhyImplDevice::GetPowerState(GetPowerStateCompleter::Sync& completer) {
+void WlanPhyDevice::GetPowerState(GetPowerStateCompleter::Sync& completer) {
   WLAN_TRACE_DURATION();
   fdf::warn("{}: GetPowerState() not supported", name_);
   completer.Reply(fit::error(ZX_ERR_NOT_SUPPORTED));
 }
 
-void WlanPhyImplDevice::SetBtCoexistenceMode(SetBtCoexistenceModeRequest& request,
-                                             SetBtCoexistenceModeCompleter::Sync& completer) {
+void WlanPhyDevice::SetBtCoexistenceMode(SetBtCoexistenceModeRequest& request,
+                                         SetBtCoexistenceModeCompleter::Sync& completer) {
   WLAN_TRACE_DURATION();
   fdf::warn("{}: SetBtCoexistenceMode() not supported", name_);
   completer.Reply(fit::error(ZX_ERR_NOT_SUPPORTED));
 }
 
-void WlanPhyImplDevice::SetTxPowerScenario(SetTxPowerScenarioRequest& request,
-                                           SetTxPowerScenarioCompleter::Sync& completer) {
+void WlanPhyDevice::SetTxPowerScenario(SetTxPowerScenarioRequest& request,
+                                       SetTxPowerScenarioCompleter::Sync& completer) {
   WLAN_TRACE_DURATION();
   fdf::warn("{}: SetTxPowerScenario() not supported", name_);
   completer.Reply(fit::error(ZX_ERR_NOT_SUPPORTED));
 }
-void WlanPhyImplDevice::ResetTxPowerScenario(ResetTxPowerScenarioCompleter::Sync& completer) {
+void WlanPhyDevice::ResetTxPowerScenario(ResetTxPowerScenarioCompleter::Sync& completer) {
   WLAN_TRACE_DURATION();
   fdf::warn("{}: ResetTxPowerScenario() not supported", name_);
   completer.Reply(fit::error(ZX_ERR_NOT_SUPPORTED));
 }
-void WlanPhyImplDevice::GetTxPowerScenario(GetTxPowerScenarioCompleter::Sync& completer) {
+void WlanPhyDevice::GetTxPowerScenario(GetTxPowerScenarioCompleter::Sync& completer) {
   WLAN_TRACE_DURATION();
   fdf::warn("{}: GetTxPowerScenario() not supported", name_);
   completer.Reply(fit::error(ZX_ERR_NOT_SUPPORTED));
 }
 
-zx_status_t WlanPhyImplDevice::CreateWlanSoftmac(fuchsia_wlan_common::WlanMacRole role,
-                                                 zx::channel mlme_channel) {
+zx_status_t WlanPhyDevice::CreateWlanSoftmac(fuchsia_wlan_common::WlanMacRole role,
+                                             zx::channel mlme_channel) {
   WLAN_TRACE_DURATION();
   static size_t n = 0;
   char name[ZX_MAX_NAME_LEN + 1];
@@ -351,32 +352,32 @@ zx_status_t WlanPhyImplDevice::CreateWlanSoftmac(fuchsia_wlan_common::WlanMacRol
   class IfaceControllerEventHandler
       : public fidl::AsyncEventHandler<fuchsia_driver_framework::NodeController> {
    public:
-    explicit IfaceControllerEventHandler(std::shared_ptr<WlanPhyImplDevice> device)
+    explicit IfaceControllerEventHandler(std::shared_ptr<WlanPhyDevice> device)
         : device_(std::move(device)) {}
     void on_fidl_error(::fidl::UnbindInfo error) override {
       auto cleanup = fit::defer([this] { delete this; });
       auto device = std::move(device_);
       fdf::info("{}: Iface node unbound: {}", device->name_, error.FormatDescription());
 
-      std::visit(overloaded{[device](WlanPhyImplDevice::SlotActive& slot) {
+      std::visit(overloaded{[device](WlanPhyDevice::SlotActive& slot) {
                               fdf::warn("{}: Iface node unexpectedly unbound!", device->name_);
                             },
-                            [device](WlanPhyImplDevice::SlotDestroying& slot) {
+                            [device](WlanPhyDevice::SlotDestroying& slot) {
                               if (device->wlantap_phy_shutdown_completer_.has_value()) {
                                 device->ShutdownComplete();
                               }
                             },
-                            [](WlanPhyImplDevice::SlotEmpty& slot) {},
-                            [](WlanPhyImplDevice::SlotCreating& slot) {}},
+                            [](WlanPhyDevice::SlotEmpty& slot) {},
+                            [](WlanPhyDevice::SlotCreating& slot) {}},
                  device->iface_slot_);
 
-      device->iface_slot_ = WlanPhyImplDevice::SlotEmpty{};
+      device->iface_slot_ = WlanPhyDevice::SlotEmpty{};
     }
     void handle_unknown_event(
         fidl::UnknownEventMetadata<fuchsia_driver_framework::NodeController> metadata) override {}
 
    private:
-    std::shared_ptr<WlanPhyImplDevice> device_;
+    std::shared_ptr<WlanPhyDevice> device_;
   };
 
   fidl::Client<fuchsia_driver_framework::NodeController> controller;
@@ -387,7 +388,7 @@ zx_status_t WlanPhyImplDevice::CreateWlanSoftmac(fuchsia_wlan_common::WlanMacRol
   return ZX_OK;
 }
 
-zx_status_t WlanPhyImplDevice::AddWlanSoftmacChild(
+zx_status_t WlanPhyDevice::AddWlanSoftmacChild(
     std::string_view name, fidl::ServerEnd<fuchsia_driver_framework::NodeController> server) {
   WLAN_TRACE_DURATION();
   auto offers = std::vector{fdf::MakeOffer2<fuchsia_wlan_softmac::Service>(std::string(name))};
@@ -405,7 +406,7 @@ zx_status_t WlanPhyImplDevice::AddWlanSoftmacChild(
   return ZX_OK;
 }
 
-zx::result<std::unique_ptr<WlantapMac>> WlanPhyImplDevice::ServeWlanSoftmac(
+zx::result<std::unique_ptr<WlantapMac>> WlanPhyDevice::ServeWlanSoftmac(
     std::string_view name, fuchsia_wlan_common::WlanMacRole role, zx::channel mlme_channel) {
   WLAN_TRACE_DURATION();
   auto out_mac =

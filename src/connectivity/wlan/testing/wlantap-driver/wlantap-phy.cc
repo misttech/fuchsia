@@ -65,10 +65,9 @@ fuchsia_wlan_tap::TxArgs ToTxArgs(const fuchsia_wlan_softmac::WlanTxPacket pkt) 
 
 }  // namespace
 
-WlantapPhy::WlantapPhy(zx::channel user_channel,
-                       const fuchsia_wlan_tap::WlantapPhyConfig& phy_config,
-                       std::function<fit::result<zx_status_t>(WlantapPhy::ShutdownCompleter::Async)>
-                           phy_impl_shutdown_callback)
+WlantapPhy::WlantapPhy(
+    zx::channel user_channel, const fuchsia_wlan_tap::WlantapPhyConfig& phy_config,
+    std::function<zx::result<>(WlantapPhy::ShutdownCompleter::Async)> phy_impl_shutdown_callback)
     : phy_config_(phy_config),
       name_("wlantap-phy:" + std::string(phy_config_.name())),
       user_binding_{fdf::Dispatcher::GetCurrent()->async_dispatcher(),

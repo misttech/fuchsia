@@ -6,6 +6,7 @@ use crate::event::{self, Handler};
 use crate::netdevice_helper;
 use crate::wlancfg_helper::{NetworkConfigBuilder, start_ap_and_wait_for_confirmation};
 use fidl::endpoints::{Proxy, create_endpoints, create_proxy};
+use fidl_fuchsia_component_test as fcomponent_test;
 use fidl_fuchsia_driver_test as fidl_driver_test;
 use fidl_fuchsia_wlan_policy as fidl_policy;
 use fidl_fuchsia_wlan_tap as wlantap;
@@ -78,21 +79,22 @@ impl TestRealmContext {
             .expect("Could not connect to realm factory protocol");
 
         let (dict_1, dict_2) = zx::EventPair::create();
-        let (devfs_proxy, devfs_server) = create_proxy();
 
         // Create the test realm for this test. This returns a
         // `fuchsia.component.sandbox/Dictionary`, which is then consumed by `extend_namespace`
         // to turn it into a directory installed in this component's namespace at
         // `test_ns.prefix()`.
         let trace_manager_hermeticity = config.trace_manager_hermeticity.clone();
-        let options = fidl_realm::RealmOptions {
-            devfs_server_end: Some(devfs_server),
-            wlan_config: Some(config),
-            ..Default::default()
-        };
+        let options = fidl_realm::RealmOptions { wlan_config: Some(config), ..Default::default() };
         let _ = realm_factory.create_realm3(options, dict_1).await.expect("Could not create realm");
         let test_ns =
             Arc::new(extend_namespace(realm_factory, dict_2).await.expect("failed to extend ns"));
+
+        let devfs = fuchsia_fs::directory::open_in_namespace(
+            &format!("{}/dev-topological", test_ns.prefix()),
+            fidl_fuchsia_io::PERM_READABLE,
+        )
+        .expect("Failed to open devfs from extended namespace");
 
         // Start the driver test realm
         let driver_test_realm_proxy =
@@ -115,9 +117,21 @@ impl TestRealmContext {
             ..Default::default()
         };
 
+        let dtr_exposes = vec![
+            fcomponent_test::Capability::Service(fcomponent_test::Service {
+                name: Some("fuchsia.wlan.phy.Service".to_string()),
+                ..Default::default()
+            }),
+            fcomponent_test::Capability::Service(fcomponent_test::Service {
+                name: Some("fuchsia.wlan.tap.Service".to_string()),
+                ..Default::default()
+            }),
+        ];
+
         driver_test_realm_proxy
             .start(fidl_driver_test::RealmArgs {
                 test_component: Some(test_component),
+                dtr_exposes: Some(dtr_exposes),
                 ..Default::default()
             })
             .await
@@ -135,7 +149,7 @@ impl TestRealmContext {
             }
         };
 
-        Arc::new(Self { test_ns, devfs: devfs_proxy, _tracing })
+        Arc::new(Self { test_ns, devfs, _tracing })
     }
 
     pub fn test_ns_prefix(&self) -> &str {
@@ -297,8 +311,9 @@ impl TestHelper {
         ctx: Arc<TestRealmContext>,
     ) -> Self {
         // Trigger creation of wlantap serviced phy and iface for testing.
-        let wlantap =
-            Wlantap::open_from_devfs(&ctx.devfs).await.expect("Failed to open wlantapctl");
+        let wlantap = Wlantap::open_from_namespace(ctx.test_ns_prefix())
+            .await
+            .expect("Failed to open wlantapctl");
         let proxy = wlantap.create_phy(config).await.expect("Failed to create wlantap PHY");
         let event_stream = Some(proxy.take_event_stream());
         TestHelper {

@@ -4,7 +4,6 @@
 #include <lib/driver/component/cpp/driver_base2.h>
 #include <lib/driver/component/cpp/driver_export.h>
 #include <lib/driver/component/cpp/driver_export2.h>
-#include <lib/driver/devfs/cpp/connector.h>
 #include <lib/driver/logging/cpp/logger.h>
 
 #include <wlan/drivers/log.h>
@@ -15,33 +14,33 @@
 namespace wlan {
 
 // The actual driver class. This main responsibility of this class is to serve the WlantapCtl
-// protocol over devfs so that it's discoverable by wlandevicemonitor. It also passes on a
+// protocol over fuchsia.wlan.tap.Service so that it's discoverable. It also passes on a
 // WlantapDriverContext to the spawned WlantapCtl instance so that WlantapCtl can add child nodes
 // and serve new protocols.
 class WlantapDriver : public fdf::DriverBase2 {
   static constexpr std::string_view kDriverName = "wlantapctl";
 
  public:
-  explicit WlantapDriver()
-      : fdf::DriverBase2(kDriverName),
-        devfs_connector_(fit::bind_member<&WlantapDriver::Serve>(this)) {}
+  explicit WlantapDriver() : fdf::DriverBase2(kDriverName) {}
 
   zx::result<> Start(fdf::DriverContext context) override {
     WLAN_TRACE_DURATION();
     node_.Bind(take_node());
     fidl::Arena arena;
 
-    zx::result connector = devfs_connector_.Bind(dispatcher());
-    if (connector.is_error()) {
-      return connector.take_error();
+    fuchsia_wlan_tap::Service::InstanceHandler handler;
+    zx::result<> add_service_result =
+        handler.add_wlantap_ctl(fit::bind_member<&WlantapDriver::Serve>(this));
+    if (add_service_result.is_error()) {
+      return add_service_result.take_error();
+    }
+    add_service_result = outgoing()->AddService<fuchsia_wlan_tap::Service>(std::move(handler));
+    if (add_service_result.is_error()) {
+      return add_service_result.take_error();
     }
 
-    // By calling AddChild with devfs_args, the child driver will be discoverable through devfs.
-    fuchsia_driver_framework::DevfsAddArgs devfs;
-    devfs.connector(std::move(connector.value()));
-
     fuchsia_driver_framework::NodeAddArgs args;
-    args.name(std::string(kDriverName)).devfs_args(std::move(devfs));
+    args.name(std::string(kDriverName));
 
     zx::result controller_endpoints =
         fidl::CreateEndpoints<fuchsia_driver_framework::NodeController>();
@@ -69,9 +68,6 @@ class WlantapDriver : public fdf::DriverBase2 {
   // The node client. This lets WlantapDriver and related classes add child nodes, which is the DFv2
   // equivalent of calling device_add().
   fidl::SyncClient<fuchsia_driver_framework::Node> node_;
-
-  // devfs_connector_ lets the class serve the WlantapCtl protocol over devfs.
-  driver_devfs::Connector<fuchsia_wlan_tap::WlantapCtl> devfs_connector_;
 };
 
 }  // namespace wlan

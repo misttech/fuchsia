@@ -5,7 +5,7 @@
 #ifndef SRC_CONNECTIVITY_WLAN_TESTING_WLANTAP_DRIVER_WLANTAP_PHY_IMPL_H_
 #define SRC_CONNECTIVITY_WLAN_TESTING_WLANTAP_DRIVER_WLANTAP_PHY_IMPL_H_
 
-#include <fidl/fuchsia.wlan.phyimpl/cpp/driver/fidl.h>
+#include <fidl/fuchsia.wlan.phy/cpp/fidl.h>
 #include <lib/zx/channel.h>
 #include <lib/zx/result.h>
 
@@ -17,23 +17,23 @@
 
 namespace wlan {
 
-// Serves the WlanPhyImpl protocol. This also creates an instance of WlantapPhy, which lets the test
+// Serves the WlanPhy protocol. This also creates an instance of WlantapPhy, which lets the test
 // suite control the state of the mock driver.
-class WlanPhyImplDevice : public fdf::Server<fuchsia_wlan_phyimpl::WlanPhyImpl>,
-                          public std::enable_shared_from_this<WlanPhyImplDevice> {
+class WlanPhyDevice : public fidl::Server<fuchsia_wlan_phy::WlanPhy>,
+                      public std::enable_shared_from_this<WlanPhyDevice> {
   using NodeControllerClient = fidl::ClientEnd<fuchsia_driver_framework::NodeController>;
 
  public:
-  WlanPhyImplDevice() = delete;
+  WlanPhyDevice() = delete;
 
-  // Allocates a WlanPhyImplDevice into a std::shared_ptr so that WlanPhyImplDevice
+  // Allocates a WlanPhyDevice into a std::shared_ptr so that WlanPhyDevice
   // in its implementation can create additional references to the std::shared_ptr
   // for use by WlantapPhy and shutdown callbacks.
-  static std::shared_ptr<WlanPhyImplDevice> New(
-      WlantapDriverContext context, zx::channel user_channel,
-      const fuchsia_wlan_tap::WlantapPhyConfig& phy_config, NodeControllerClient phy_controller);
+  static std::shared_ptr<WlanPhyDevice> New(WlantapDriverContext context, zx::channel user_channel,
+                                            const fuchsia_wlan_tap::WlantapPhyConfig& phy_config,
+                                            NodeControllerClient phy_controller);
 
-  // WlanPhyImpl protocol implementation
+  // WlanPhy protocol implementation
   void Init(InitRequest& request, InitCompleter::Sync& completer) override;
   void GetSupportedMacRoles(GetSupportedMacRolesCompleter::Sync& completer) override;
   void CreateIface(CreateIfaceRequest& request, CreateIfaceCompleter::Sync& completer) override;
@@ -54,13 +54,11 @@ class WlanPhyImplDevice : public fdf::Server<fuchsia_wlan_phyimpl::WlanPhyImpl>,
                           SetTxPowerScenarioCompleter::Sync& completer) override;
   void ResetTxPowerScenario(ResetTxPowerScenarioCompleter::Sync& completer) override;
   void GetTxPowerScenario(GetTxPowerScenarioCompleter::Sync& completer) override;
-  void handle_unknown_method(
-      fidl::UnknownMethodMetadata<fuchsia_wlan_phyimpl::WlanPhyImpl> metadata,
-      fidl::UnknownMethodCompleter::Sync& completer) override {}
+  void handle_unknown_method(fidl::UnknownMethodMetadata<fuchsia_wlan_phy::WlanPhy> metadata,
+                             fidl::UnknownMethodCompleter::Sync& completer) override {}
 
  private:
-  WlanPhyImplDevice(WlantapDriverContext context,
-                    const fuchsia_wlan_tap::WlantapPhyConfig& phy_config);
+  WlanPhyDevice(WlantapDriverContext context, const fuchsia_wlan_tap::WlantapPhyConfig& phy_config);
   void Init(zx::channel user_channel, NodeControllerClient phy_controller);
 
   zx_status_t CreateWlanSoftmac(fuchsia_wlan_common::WlanMacRole role,
@@ -99,6 +97,7 @@ class WlanPhyImplDevice : public fdf::Server<fuchsia_wlan_phyimpl::WlanPhyImpl>,
   IfaceSlot iface_slot_{SlotEmpty{}};
 
   std::optional<WlantapPhy::ShutdownCompleter::Async> wlantap_phy_shutdown_completer_;
+  std::optional<fidl::ClientEnd<fuchsia_wlan_phy::WlanPhyNotify>> notify_client_;
 };
 
 }  // namespace wlan

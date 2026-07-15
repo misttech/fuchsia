@@ -192,3 +192,7 @@ type SetKeyArgs = struct {
     wlan_softmac_id uint16;
     config WlanKeyConfig;
 };
+
+service Service {
+    wlantap_ctl client_end:WlantapCtl;
+};

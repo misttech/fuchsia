@@ -14,6 +14,7 @@ rustc_binary("bin") {
   deps = [
     "./fidl:test.wlan.realm_rust",
     "//sdk/fidl/fuchsia.component.sandbox:fuchsia.component.sandbox_rust",
+    "//sdk/fidl/fuchsia.component.test:fuchsia.component.test_rust",
     "//sdk/fidl/fuchsia.inspect:fuchsia.inspect_rust",
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
     "//sdk/fidl/fuchsia.location.namedplace:fuchsia.location.namedplace_rust",
@@ -23,7 +24,9 @@ rustc_binary("bin") {
     "//sdk/fidl/fuchsia.tracing.controller:fuchsia.tracing.controller_rust",
     "//sdk/fidl/fuchsia.tracing.provider:fuchsia.tracing.provider_rust",
     "//sdk/fidl/fuchsia.wlan.device.service:fuchsia.wlan.device.service_rust",
+    "//sdk/fidl/fuchsia.wlan.phy:fuchsia.wlan.phy_rust",
     "//sdk/fidl/fuchsia.wlan.policy:fuchsia.wlan.policy_rust",
+    "//sdk/fidl/fuchsia.wlan.tap:fuchsia.wlan.tap_rust",
     "//sdk/lib/driver_test_realm/realm_builder/rust",
     "//sdk/rust/zx-status",
     "//src/lib/fidl/rust/fidl",
@@ -71,7 +74,6 @@ fuchsia_package("realm-factory") {
     "//src/connectivity/ethernet/drivers/ethernet/netdevice-migration",
     "//src/connectivity/network/drivers/network-device",
     "//src/connectivity/wlan/drivers/wlanif:wlanif_driver",
-    "//src/connectivity/wlan/drivers/wlanphy:wlanphy_driver",
     "//src/connectivity/wlan/drivers/wlansoftmac:wlansoftmac_driver",
     "//src/devices/misc/drivers/test-parent",
   ]

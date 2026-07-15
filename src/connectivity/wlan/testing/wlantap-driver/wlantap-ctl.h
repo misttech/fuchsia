@@ -20,10 +20,9 @@ class WlantapCtlServer : public fidl::Server<fuchsia_wlan_tap::WlantapCtl> {
   void CreatePhy(CreatePhyRequest& request, CreatePhyCompleter::Sync& completer) override;
 
  private:
-  zx_status_t AddWlanPhyImplChild(std::string_view name,
-                                  fidl::ServerEnd<fuchsia_driver_framework::NodeController> server);
-  zx_status_t ServeWlanPhyImplProtocol(std::string_view name,
-                                       std::shared_ptr<WlanPhyImplDevice> impl);
+  zx_status_t AddWlanPhyChild(std::string_view name,
+                              fidl::ServerEnd<fuchsia_driver_framework::NodeController> server);
+  zx_status_t ServeWlanPhyProtocol(std::string_view name, std::shared_ptr<WlanPhyDevice> impl);
 
   WlantapDriverContext driver_context_;
   const fdf::Logger* logger_;

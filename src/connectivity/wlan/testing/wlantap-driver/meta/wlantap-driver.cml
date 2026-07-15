@@ -14,7 +14,8 @@
     },
     capabilities: [
         { service: "fuchsia.wlan.softmac.Service" },
-        { service: "fuchsia.wlan.phyimpl.Service" },
+        { service: "fuchsia.wlan.phy.Service" },
+        { service: "fuchsia.wlan.tap.Service" },
     ],
     expose: [
         {
@@ -22,7 +23,11 @@
             from: "self",
         },
         {
-            service: "fuchsia.wlan.phyimpl.Service",
+            service: "fuchsia.wlan.phy.Service",
+            from: "self",
+        },
+        {
+            service: "fuchsia.wlan.tap.Service",
             from: "self",
         },
     ],

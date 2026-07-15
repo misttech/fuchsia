@@ -11,11 +11,12 @@ rustc_library("wlantap-client") {
   deps = [
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
     "//sdk/fidl/fuchsia.wlan.tap:fuchsia.wlan.tap_rust",
-    "//sdk/lib/device-watcher/rust",
     "//sdk/rust/zx",
     "//src/lib/fidl/rust/fidl",
+    "//src/lib/fuchsia-component",
     "//src/lib/fuchsia-fs",
     "//third_party/rust_crates:anyhow",
+    "//third_party/rust_crates:futures",
   ]
 
   sources = [ "src/lib.rs" ]

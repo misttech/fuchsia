@@ -3,24 +3,35 @@
 // found in the LICENSE file.
 
 use anyhow::Error;
-use {fidl_fuchsia_io as fio, fidl_fuchsia_wlan_tap as wlantap};
+use fidl::endpoints::ServiceMarker;
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_wlan_tap as wlantap;
+use fuchsia_component::client::Service;
+use fuchsia_fs::directory::{WatchEvent, Watcher};
+use futures::StreamExt;
 
 pub struct Wlantap {
     proxy: wlantap::WlantapCtlProxy,
 }
 
 impl Wlantap {
-    pub async fn open() -> Result<Self, Error> {
-        let dir = fuchsia_fs::directory::open_in_namespace("/dev", fuchsia_fs::Flags::empty())?;
-        Self::open_from_devfs(&dir).await
-    }
+    pub async fn open_from_namespace(prefix: &str) -> Result<Self, Error> {
+        let test_ns_dir = fuchsia_fs::directory::open_in_namespace(prefix, fio::Flags::empty())?;
 
-    pub async fn open_from_devfs(devfs: &fio::DirectoryProxy) -> Result<Self, Error> {
-        let proxy = device_watcher::recursive_wait_and_open::<wlantap::WlantapCtlMarker>(
-            devfs,
-            "sys/test/wlantapctl",
-        )
-        .await?;
+        let mut watcher = Watcher::new(&test_ns_dir).await?;
+        while let Some(message) = watcher.next().await {
+            let message = message?;
+            if message.event == WatchEvent::ADD_FILE || message.event == WatchEvent::EXISTING {
+                let filename = message.filename.to_str().unwrap();
+                if filename == wlantap::ServiceMarker::SERVICE_NAME {
+                    break;
+                }
+            }
+        }
+
+        let service = Service::open_from_dir(&test_ns_dir, wlantap::ServiceMarker)?;
+        let service_proxy = service.watch_for_any().await?;
+        let proxy = service_proxy.connect_to_wlantap_ctl()?;
         Ok(Self { proxy })
     }
 

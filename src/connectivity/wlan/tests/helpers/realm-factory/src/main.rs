@@ -5,7 +5,10 @@
 use anyhow::{Error, Result, bail, format_err};
 use fidl::endpoints::ControlHandle;
 use fidl_fuchsia_component_sandbox as fsandbox;
+use fidl_fuchsia_component_test as ftest;
 use fidl_fuchsia_testing_harness::OperationError;
+use fidl_fuchsia_wlan_phy as fidl_wlan_phy;
+use fidl_fuchsia_wlan_tap as fidl_wlan_tap;
 use fidl_test_wlan_realm::*;
 use fuchsia_async as fasync;
 use fuchsia_component::client;
@@ -138,16 +141,30 @@ async fn create_realm(mut options: RealmOptions) -> Result<RealmInstance, Error>
             )
             .await?;
 
+        let dtr_exposes = vec![
+            ftest::Capability::Service(ftest::Service {
+                name: Some("fuchsia.wlan.phy.Service".to_string()),
+                ..Default::default()
+            }),
+            ftest::Capability::Service(ftest::Service {
+                name: Some("fuchsia.wlan.tap.Service".to_string()),
+                ..Default::default()
+            }),
+        ];
+        builder.driver_test_realm_add_dtr_exposes(&dtr_exposes).await?;
+
         create_wlan_components(&builder, wlan_config).await?;
         let realm = builder.build().await?;
 
-        let devfs = options.devfs_server_end.take().unwrap();
-        realm.root.get_exposed_dir().open(
-            "dev-topological",
-            fidl_fuchsia_io::PERM_READABLE | fidl_fuchsia_io::Flags::PROTOCOL_DIRECTORY,
-            &Default::default(),
-            devfs.into_channel(),
-        )?;
+        // NOTE: We only need devfs to support netdevice-migration.
+        if let Some(devfs) = options.devfs_server_end.take() {
+            realm.root.get_exposed_dir().open(
+                "dev-topological",
+                fidl_fuchsia_io::PERM_READABLE | fidl_fuchsia_io::Flags::PROTOCOL_DIRECTORY,
+                &Default::default(),
+                devfs.into_channel(),
+            )?;
+        }
 
         Ok(realm)
     } else {
@@ -314,6 +331,16 @@ async fn create_wlan_components(builder: &RealmBuilder, config: WlanConfig) -> R
     // NOTE: fuchsia.logger.LogSink and fuchsia.inspect.InspectSink will be automatically routed
     // to all components in RealmBuilder, once older CTF tests are removed,
     // at which point the explicit routes can be removed.
+
+    builder
+        .add_route(
+            Route::new()
+                .capability(Capability::service::<fidl_wlan_tap::ServiceMarker>())
+                .from(Ref::child(fuchsia_driver_test::COMPONENT_NAME))
+                .to(Ref::parent()),
+        )
+        .await?;
+
     builder
         .add_route(
             Route::new()
@@ -371,7 +398,7 @@ async fn create_wlan_components(builder: &RealmBuilder, config: WlanConfig) -> R
     builder
         .add_route(
             Route::new()
-                .capability(Capability::directory("dev-class").subdir("wlanphy").as_("dev-wlanphy"))
+                .capability(Capability::service::<fidl_wlan_phy::ServiceMarker>())
                 .from(Ref::child(fuchsia_driver_test::COMPONENT_NAME))
                 .to(&wlandevicemonitor),
         )
