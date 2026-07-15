@@ -439,7 +439,8 @@ pub fn new_memfd(
         let tmpfs = TmpFs::new_fs(current_task.kernel());
         security::file_system_resolve_security(&current_task, &tmpfs).expect("resolve fs security");
         let mounts_guard = current_task.kernel().mounts_lock.lock();
-        let mount = Mount::new(&mounts_guard, WhatToMount::Fs(tmpfs.clone()), Default::default());
+        let mount = Mount::new(&mounts_guard, WhatToMount::Fs(tmpfs.clone()), Default::default())
+            .expect("create new tempfs mount for memfd");
         MemFdTmpfs { tmpfs, mount }
     });
 

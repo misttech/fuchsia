@@ -1852,7 +1852,10 @@ fn do_mount_move(
 ) -> Result<(), Errno> {
     let source = lookup_at(current_task, FdNumber::AT_FDCWD, source_addr, LookupFlags::default())?;
     let source_mount = source.mount_if_root()?;
-    Mount::move_mount(source_mount, target.mount.as_ref().expect(""), &target.entry)
+    // A target node may not have a mount point if it's an anonymous node. Modern Linux (6.15+)
+    // returns ENOENT in this case, rather than the more intuitive EINVAL.
+    let target_mount = target.mount.as_ref().ok_or_else(|| errno!(ENOENT))?;
+    Mount::move_mount(source_mount, target_mount, &target.entry)
 }
 
 fn do_mount_create(
