@@ -7,6 +7,8 @@
 #include <lib/ddk/binding_driver.h>
 #include <lib/ddk/debug.h>
 
+#include <sstream>
+
 #include <bind/metadata_server_test_bind_library/cpp/bind.h>
 
 #include "src/lib/ddktl/tests/metadata-server-test/metadata-sender-test-driver/metadata_test_device.h"
