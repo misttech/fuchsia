@@ -870,6 +870,64 @@ TEST_F(UsbPeripheralReadyTest, HostConnectionToggle) {
   }
 }
 
+TEST_F(UsbPeripheralReadyTest, HostDisconnectResetsConfiguration) {
+  // Connect host.
+  auto connected_res = this->dci()->SetConnected(true);
+  ASSERT_TRUE(connected_res.ok());
+  ExpectState(UsbPeripheral::DeviceState::kHostConnected);
+
+  // Set configuration to 1.
+  {
+    fdescriptor::wire::UsbSetup setup = {
+        .bm_request_type = USB_DIR_OUT | USB_TYPE_STANDARD | USB_RECIP_DEVICE,
+        .b_request = USB_REQ_SET_CONFIGURATION,
+        .w_value = 1,
+        .w_index = 0,
+        .w_length = 0,
+    };
+    auto res = dci()->Control(setup, fidl::VectorView<uint8_t>());
+    ASSERT_TRUE(res.ok()) << res.FormatDescription();
+    ASSERT_TRUE(res->is_ok());
+  }
+
+  // Get configuration should be 1.
+  {
+    fdescriptor::wire::UsbSetup setup = {
+        .bm_request_type = USB_DIR_IN | USB_TYPE_STANDARD | USB_RECIP_DEVICE,
+        .b_request = USB_REQ_GET_CONFIGURATION,
+        .w_value = 0,
+        .w_index = 0,
+        .w_length = 1,
+    };
+    auto res = dci()->Control(setup, fidl::VectorView<uint8_t>());
+    ASSERT_TRUE(res.ok()) << res.FormatDescription();
+    ASSERT_TRUE(res->is_ok());
+    ASSERT_EQ(res->value()->read.size(), 1u);
+    EXPECT_EQ(res->value()->read[0], 1);
+  }
+
+  // Disconnect host.
+  auto disconnected_res = this->dci()->SetConnected(false);
+  ASSERT_TRUE(disconnected_res.ok());
+  ExpectState(UsbPeripheral::DeviceState::kPeripheralReady);
+
+  // Get configuration should be 0.
+  {
+    fdescriptor::wire::UsbSetup setup = {
+        .bm_request_type = USB_DIR_IN | USB_TYPE_STANDARD | USB_RECIP_DEVICE,
+        .b_request = USB_REQ_GET_CONFIGURATION,
+        .w_value = 0,
+        .w_index = 0,
+        .w_length = 1,
+    };
+    auto res = dci()->Control(setup, fidl::VectorView<uint8_t>());
+    ASSERT_TRUE(res.ok()) << res.FormatDescription();
+    ASSERT_TRUE(res->is_ok());
+    ASSERT_EQ(res->value()->read.size(), 1u);
+    EXPECT_EQ(res->value()->read[0], 0);
+  }
+}
+
 TEST_F(UsbPeripheralReadyTest, DisconnectHostWhenAlreadyPeripheralReady) {
   ExpectState(UsbPeripheral::DeviceState::kPeripheralReady);
   FakeUsbFunction& fake = *function_clients_.fakes[0];

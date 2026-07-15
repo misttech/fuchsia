@@ -1464,6 +1464,9 @@ void UsbPeripheral::OnHostConnectionChanged(bool connected) {
       return;
   }
 
+  // Explicitly reset the active configuration value to 0 on host disconnect/reset
+  configuration_ = 0;
+
   // When a host disconnects, it's a good practice to unconfigure the functions.
   for (auto& config : configurations_) {
     for (auto func_index : config.functions) {
