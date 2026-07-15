@@ -2026,6 +2026,7 @@ dependencies = [
  "smallvec",
  "socket2",
  "spki 0.7.3",
+ "spki 0.8.0",
  "splines",
  "static_assertions",
  "strsim",
@@ -5154,6 +5155,7 @@ version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1d9efca8738c78ee9484207732f728b1ef517bbb1833d6fc0879ca898a522f6f"
 dependencies = [
+ "base64ct",
  "der 0.8.1",
 ]
 

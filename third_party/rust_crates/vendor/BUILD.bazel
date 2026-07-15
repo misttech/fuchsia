@@ -2689,8 +2689,26 @@ alias(
 )
 
 alias(
-    name = "spki",
+    name = "spki_0_7_3-0.7.3",
     actual = "//third_party/rust_crates/vendor/spki-0.7.3:spki",
+    tags = ["manual"],
+)
+
+alias(
+    name = "spki_0_7_3",
+    actual = "//third_party/rust_crates/vendor/spki-0.7.3:spki",
+    tags = ["manual"],
+)
+
+alias(
+    name = "spki-0.8.0",
+    actual = "//third_party/rust_crates/vendor/spki-0.8.0:spki",
+    tags = ["manual"],
+)
+
+alias(
+    name = "spki",
+    actual = "//third_party/rust_crates/vendor/spki-0.8.0:spki",
     tags = ["manual"],
 )
 

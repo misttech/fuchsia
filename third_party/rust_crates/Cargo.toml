@@ -290,7 +290,8 @@ rust_icu_udata = { version = "5.6.0", default-features = false, features = ["ren
 rust_icu_uloc = { version = "5.6.0", default-features = false, features = ["renaming", "icu_version_in_env", "icu_version_67_plus"] }
 rust_icu_ustring = { version = "5.6.0", default-features = false, features = ["renaming", "icu_version_in_env"] }
 sec1 = { version = "0.7.3", features = ["alloc", "der", "pkcs8", "zeroize"] }
-spki = { version = "0.7.3", features = ["alloc"] }
+spki = { version = "0.8.0", features = ["alloc"] }
+spki-0_7_3 = { package = "spki", version = "0.7.3", features = ["alloc"] }
 tokio = { version = "=1.52.3", default-features = false }
 trust-dns-proto = { version = "0.22.0", default-features = false, features = ["testing"] }
 trust-dns-resolver = { version = "0.22.0", default-features = false, features = ["testing"] }
@@ -1147,7 +1148,6 @@ rustflags = []
 
 [gn.package.spki."0.7.3"]
 groups = [
-  { name = "spki" },
   { name = "spki-0.7" }
 ]
 

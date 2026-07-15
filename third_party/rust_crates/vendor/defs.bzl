@@ -551,7 +551,8 @@ _NORMAL_DEPENDENCIES = {
             "rust_icu_uloc": Label("//third_party/rust_crates/vendor/rust_icu_uloc-5.6.0:rust_icu_uloc"),
             "rust_icu_ustring": Label("//third_party/rust_crates/vendor/rust_icu_ustring-5.6.0:rust_icu_ustring"),
             "sec1": Label("//third_party/rust_crates/vendor/sec1-0.7.3:sec1"),
-            "spki": Label("//third_party/rust_crates/vendor/spki-0.7.3:spki"),
+            "spki": Label("//third_party/rust_crates/vendor/spki-0.8.0:spki"),
+            "spki_0_7_3": Label("//third_party/rust_crates/vendor/spki-0.7.3:spki"),
             "tokio": Label("//third_party/rust_crates/vendor/tokio-1.52.3:tokio"),
             "trust-dns-proto": Label("//third_party/rust_crates/vendor/trust-dns-proto-0.22.0:trust_dns_proto"),
             "trust-dns-resolver": Label("//third_party/rust_crates/vendor/trust-dns-resolver-0.22.0:trust_dns_resolver"),
@@ -575,6 +576,7 @@ _NORMAL_ALIASES = {
         "cfg(target_os = \"fuchsia\")": {
             Label("//third_party/rust_crates/vendor/der-0.7.10:der"): "der_0_7_10",
             Label("//third_party/rust_crates/vendor/pkcs8-0.10.2:pkcs8"): "pkcs8_0_10_2",
+            Label("//third_party/rust_crates/vendor/spki-0.7.3:spki"): "spki_0_7_3",
         },
     },
 }

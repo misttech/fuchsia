@@ -2014,10 +2014,6 @@ group("socket2-0.6.4") {
 }
 
 if (current_os == "fuchsia") {
-  group("spki") {
-    public_deps = [ ":spki-v0_7_3" ]
-  }
-
   group("spki-0.7") {
     public_deps = [ ":spki-v0_7_3" ]
   }
@@ -2026,6 +2022,18 @@ if (current_os == "fuchsia") {
 if (current_os == "fuchsia") {
   group("spki-0.7.3") {
     public_deps = [ ":spki-v0_7_3" ]
+  }
+}
+
+if (current_os == "fuchsia") {
+  group("spki") {
+    public_deps = [ ":spki-v0_8_0" ]
+  }
+}
+
+if (current_os == "fuchsia") {
+  group("spki-0.8.0") {
+    public_deps = [ ":spki-v0_8_0" ]
   }
 }
 
@@ -20743,6 +20751,7 @@ rustc_library("spki-v0_8_0") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
+  deps += [ ":base64ct-v1_8_3" ]
   deps += [ ":der-v0_8_1" ]
 
   rustenv = []
@@ -20751,6 +20760,7 @@ rustc_library("spki-v0_8_0") {
     "--cap-lints=allow",
     "-Cmetadata=9655269515f77e62",
     "-Cextra-filename=-9655269515f77e62",
+    "--cfg=feature=\"alloc\"",
   ]
 
   visibility = [ ":*" ]
