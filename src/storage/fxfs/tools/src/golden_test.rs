@@ -12,7 +12,7 @@ use crate::golden_common::{
 use anyhow::{Context, Error, ensure};
 use fidl::endpoints::create_proxy;
 use fidl_fuchsia_io as fio;
-use fuchsia_fs::directory::{open_file, read_file};
+use fuchsia_fs::directory::{DirEntry, DirentKind, open_file, read_file, readdir_inclusive};
 use fuchsia_hash::Hash;
 use fxfs::filesystem::FxFilesystem;
 use fxfs::fsck;
@@ -66,9 +66,37 @@ async fn check_data_volume(dir: fio::DirectoryProxy, check_fscrypt: bool) -> Res
     );
     ensure!(dir_mut_attrs.creation_time.is_some(), "Expected creation_time for volume root dir");
 
+    let root_dirents = readdir_inclusive(&dir).await?;
+    ensure!(
+        root_dirents.contains(&DirEntry { name: ".".to_owned(), kind: DirentKind::Directory }),
+        "Expected . in root dirents: {:?}",
+        root_dirents
+    );
+    ensure!(
+        root_dirents.contains(&DirEntry { name: "some".to_owned(), kind: DirentKind::Directory }),
+        "Expected some in root dirents: {:?}",
+        root_dirents
+    );
+
     let some_dir =
         fuchsia_fs::directory::open_directory(&dir, REGULAR_DIRECTORY_PATH, fio::PERM_READABLE)
             .await?;
+    let some_dirents = readdir_inclusive(&some_dir).await?;
+    ensure!(
+        some_dirents.contains(&DirEntry { name: "file.txt".to_owned(), kind: DirentKind::File }),
+        "Expected file.txt in some dirents: {:?}",
+        some_dirents
+    );
+    ensure!(
+        some_dirents
+            .contains(&DirEntry { name: "fsverity.txt".to_owned(), kind: DirentKind::File }),
+        "Expected fsverity.txt in some dirents: {:?}",
+        some_dirents
+    );
+    ensure!(
+        !some_dirents.iter().any(|e| e.name == "deleted_file.txt"),
+        "deleted_file.txt should not be in dirents"
+    );
     ensure!(
         some_dir
             .get_extended_attribute(b"security.selinux")
@@ -182,6 +210,29 @@ async fn check_data_volume(dir: fio::DirectoryProxy, check_fscrypt: bool) -> Res
         ensure!(
             imm_attrs.content_size == Some(EXPECTED_FILE_CONTENT.len() as u64),
             "Expected content_size for fscrypt file"
+        );
+
+        let fscrypt_dir =
+            fuchsia_fs::directory::open_directory(&dir, "fscrypt", fio::PERM_READABLE).await?;
+        let fscrypt_dirents = readdir_inclusive(&fscrypt_dir).await?;
+        ensure!(
+            fscrypt_dirents
+                .contains(&DirEntry { name: "Straße.txt".to_owned(), kind: DirentKind::File }),
+            "Expected Straße.txt in fscrypt dirents: {:?}",
+            fscrypt_dirents
+        );
+
+        ensure!(
+            &read_file(&fscrypt_dir, "Straße.txt").await? == EXPECTED_FILE_CONTENT,
+            "Expected fscrypt content via exact name."
+        );
+        ensure!(
+            &read_file(&fscrypt_dir, "Strasse.txt").await? == EXPECTED_FILE_CONTENT,
+            "Expected fscrypt content via casefolded Strasse.txt."
+        );
+        ensure!(
+            &read_file(&fscrypt_dir, "STRASSE.TXT").await? == EXPECTED_FILE_CONTENT,
+            "Expected fscrypt content via casefolded uppercase STRASSE.TXT."
         );
 
         // Check fscrypt file read with a casefolded unicode filename.
