@@ -8,6 +8,7 @@ use fho::{FfxMain, FfxTool, Result};
 use scrutiny_frontend::FvmExtractController;
 
 #[derive(FfxTool)]
+#[target(None)]
 pub struct ScrutinyFvmTool {
     #[command]
     pub cmd: ScrutinyFvmCommand,

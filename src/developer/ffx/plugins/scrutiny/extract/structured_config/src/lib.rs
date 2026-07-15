@@ -9,6 +9,7 @@ use scrutiny_frontend::Scrutiny;
 use scrutiny_utils::path::relativize_path;
 
 #[derive(FfxTool)]
+#[target(None)]
 pub struct ScrutinyStructuredConfigTool {
     #[command]
     pub cmd: ScrutinyStructuredConfigCommand,

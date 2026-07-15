@@ -8,6 +8,7 @@ use fho::{FfxMain, FfxTool, Result};
 use scrutiny_frontend::ZbiExtractController;
 
 #[derive(FfxTool)]
+#[target(None)]
 pub struct ScrutinyZbiTool {
     #[command]
     pub cmd: ScrutinyZbiCommand,

@@ -17,6 +17,7 @@ use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
 
 #[derive(FfxTool)]
+#[target(None)]
 pub struct ScrutinyShellTool {
     #[command]
     pub cmd: ScrutinyShellCommand,

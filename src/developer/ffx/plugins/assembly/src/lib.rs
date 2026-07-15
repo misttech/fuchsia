@@ -15,6 +15,7 @@ mod subpackage_blobs_package;
 use assembly_components as _;
 
 #[derive(FfxTool)]
+#[target(None)]
 pub struct AssemblyTool {
     #[command]
     cmd: AssemblyCommand,

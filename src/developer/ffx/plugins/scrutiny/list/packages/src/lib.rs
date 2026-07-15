@@ -8,6 +8,7 @@ use fho::{FfxMain, FfxTool, Result};
 use scrutiny_frontend::Scrutiny;
 
 #[derive(FfxTool)]
+#[target(None)]
 pub struct ScrutinyPackagesTool {
     #[command]
     pub cmd: ScrutinyPackagesCommand,

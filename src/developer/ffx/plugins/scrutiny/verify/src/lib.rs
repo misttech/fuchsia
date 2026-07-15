@@ -21,6 +21,7 @@ mod static_pkgs;
 mod structured_config;
 
 #[derive(FfxTool)]
+#[target(None)]
 pub struct ScrutinyVerifyTool {
     #[command]
     pub cmd: Command,

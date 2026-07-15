@@ -8,6 +8,7 @@ use fho::{FfxMain, FfxTool, Result};
 use scrutiny_frontend::BlobFsExtractController;
 
 #[derive(FfxTool)]
+#[target(None)]
 pub struct ScrutinyBlobfsTool {
     #[command]
     pub cmd: ScrutinyBlobfsCommand,

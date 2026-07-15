@@ -15,6 +15,7 @@ use std::io::prelude::*;
 use std::path::Path;
 
 #[derive(fho::FfxTool)]
+#[target(None)]
 pub struct Efi {
     #[command]
     cmd: EfiCommand,
