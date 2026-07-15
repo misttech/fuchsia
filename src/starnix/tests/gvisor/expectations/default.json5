@@ -1091,7 +1091,6 @@
                 "FaultTest.InRange",
                 "FPSigTest.Fork",
                 "FPSigTest.ForkWithZeroMxcsr",
-                "ProcPidSymlink.SubprocessExited",
                 "ProcPidCmdline.SubprocessForkSameCmdline",
                 "SigaltstackTest.SetCurrentStack",
                 "Signalfd.KillStillKills",
