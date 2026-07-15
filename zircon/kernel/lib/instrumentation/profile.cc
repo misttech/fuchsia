@@ -66,26 +66,17 @@ InstrumentationDataVmo LlvmProfdataVmo() {
 
   // Now map in just the pages holding the live data.  This mapping will be
   // kept alive permanently so the live data can be updated through it.
-  const uint64_t map_offset =
-      RoundDownPageSize(ktl::min(profdata.counters_offset(), profdata.bitmap_offset()));
-  const size_t map_size =
-      RoundUpPageSize(ktl::max(profdata.counters_offset() + profdata.counters_size_bytes(),
-                               profdata.bitmap_offset() + profdata.bitmap_size_bytes())) -
-      map_offset;
+  const LlvmProfdata::LiveDataBounds bounds = profdata.bounds();
+  const uint64_t map_offset = RoundDownPageSize(bounds.offset);
+  const size_t map_size = RoundUpPageSize(bounds.offset + bounds.size) - map_offset;
+
   status = gProfdataLiveData.Init(ktl::move(vmo), map_offset, map_size, "llvm-profdata-live-data");
   ZX_ASSERT(status == ZX_OK);
-  LlvmProfdata::LiveData live_data{
-      .counters{
-          reinterpret_cast<ktl::byte*>(profdata.counters_offset() - map_offset +
-                                       gProfdataLiveData.base_locking()),
-          profdata.counters_size_bytes(),
-      },
-      .bitmap{
-          reinterpret_cast<ktl::byte*>(profdata.bitmap_offset() - map_offset +
-                                       gProfdataLiveData.base_locking()),
-          profdata.bitmap_size_bytes(),
-      },
-  };
+
+  LlvmProfdata::LiveData live_data = profdata.LiveDataForBounds({
+      reinterpret_cast<ktl::byte*>(bounds.offset - map_offset + gProfdataLiveData.base_locking()),
+      bounds.size,
+  });
 
   // Live data up to this point have collected in global variable space.
   // Copy those data into the mapped VMO data.

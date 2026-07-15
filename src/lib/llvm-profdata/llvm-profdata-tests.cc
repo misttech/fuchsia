@@ -63,6 +63,20 @@ TEST(LlvmProfdataTests, FixedData) {
   auto matched_data = data.VerifyMatch(buffer_span);
   EXPECT_EQ(matched_data.counters.data(), live_data.counters.data());
   EXPECT_EQ(matched_data.counters.size_bytes(), live_data.counters.size_bytes());
+
+  // Also test LiveDataForBounds.
+  auto bounds = data.bounds();
+  EXPECT_GT(bounds.size, size_t{0});
+  EXPECT_LE(bounds.offset, buffer_size);
+  EXPECT_LE(bounds.size, buffer_size - bounds.offset);
+
+  auto resolved_live_data = data.LiveDataForBounds(buffer_span.subspan(bounds.offset, bounds.size));
+  EXPECT_EQ(std::vector<std::byte>(resolved_live_data.counters.begin(),
+                                   resolved_live_data.counters.end()),
+            std::vector<std::byte>(live_data.counters.begin(), live_data.counters.end()));
+  EXPECT_EQ(
+      std::vector<std::byte>(resolved_live_data.bitmap.begin(), resolved_live_data.bitmap.end()),
+      std::vector<std::byte>(live_data.bitmap.begin(), live_data.bitmap.end()));
 }
 
 TEST(LlvmProfdataTests, CopyLiveData) {

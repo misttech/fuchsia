@@ -15,6 +15,12 @@ class LlvmProfdata {
     std::span<std::byte> counters, bitmap;
   };
 
+  // Bounds within the raw profile data containing all active live data sections.
+  struct LiveDataBounds {
+    size_t offset = 0;
+    size_t size = 0;
+  };
+
   // This is the minimum alignment required for LiveData::counters::data().
   static size_t LiveDataCountersAlignment() {
     return UsingSingleByteCounters() ? 1 : sizeof(uint64_t);
@@ -70,6 +76,15 @@ class LlvmProfdata {
   // WriteFixedData would have written.  Returns the subspans covering the
   // live data, just as WriteFixedData would have done.
   LiveData VerifyMatch(std::span<std::byte> data) { return DoFixedData(data, true); }
+
+  // Return the bounds within the raw profile data that contain all active
+  // live data sections.
+  LiveDataBounds bounds() const;
+
+  // Return the LiveData containing the individual subspans (e.g. counters,
+  // bitmap) pointing into a memory region that maps the live data bounds.
+  // The size of the `bounds` span must be at least `bounds().size` bytes.
+  LiveData LiveDataForBounds(std::span<std::byte> bounds_data) const;
 
   // Copy out the current live data values from their link-time locations where
   // they have accumulated since startup.  The data.counters buffer must be at

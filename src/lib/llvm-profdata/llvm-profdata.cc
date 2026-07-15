@@ -29,6 +29,12 @@ LlvmProfdata::LiveData LlvmProfdata::DoFixedData(std::span<std::byte> data, bool
   return {};
 }
 
+LlvmProfdata::LiveDataBounds LlvmProfdata::bounds() const { return {}; }
+
+LlvmProfdata::LiveData LlvmProfdata::LiveDataForBounds(std::span<std::byte> bounds_data) const {
+  return {};
+}
+
 void LlvmProfdata::CopyLiveData(LiveData data) {}
 
 void LlvmProfdata::MergeLiveData(LiveData data) {}
@@ -37,6 +43,7 @@ void LlvmProfdata::UseLiveData(LiveData data) {}
 
 #else  // HAVE_LLVM_PROFDATA
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <cstdint>
@@ -422,6 +429,23 @@ void LlvmProfdata::Init(std::span<const std::byte> build_id) {
 #endif
 }
 
+LlvmProfdata::LiveDataBounds LlvmProfdata::bounds() const {
+  size_t start = size_bytes_;
+  size_t end = 0;
+  if (counters_size_bytes_ > 0) {
+    start = std::min(start, counters_offset_);
+    end = std::max(end, counters_offset_ + counters_size_bytes_);
+  }
+  if (bitmap_size_bytes_ > 0) {
+    start = std::min(start, bitmap_offset_);
+    end = std::max(end, bitmap_offset_ + bitmap_size_bytes_);
+  }
+  if (end > start) {
+    return {start, end - start};
+  }
+  return {};
+}
+
 bool LlvmProfdata::UsingSingleByteCounters() {
   return INSTR_PROF_RAW_VERSION_VAR & VARIANT_MASK_BYTE_COVERAGE;
 }
@@ -508,6 +532,28 @@ LlvmProfdata::LiveData LlvmProfdata::DoFixedData(std::span<std::byte> data, bool
 #endif
 
   return {counters_data, bitmap_data};
+}
+
+LlvmProfdata::LiveData LlvmProfdata::LiveDataForBounds(std::span<std::byte> bounds_data) const {
+  auto [bounds_offset, bounds_size] = bounds();
+  if (bounds_size == 0) {
+    return {};
+  }
+  ZX_ASSERT(bounds_data.size() >= bounds_size);
+
+  auto get_span = [&](size_t offset, size_t size) -> std::span<std::byte> {
+    if (size == 0) {
+      return {};
+    }
+    ZX_ASSERT(offset >= bounds_offset);
+    ZX_ASSERT(offset + size <= bounds_offset + bounds_size);
+    return bounds_data.subspan(offset - bounds_offset, size);
+  };
+
+  return {
+      .counters = get_span(counters_offset_, counters_size_bytes_),
+      .bitmap = get_span(bitmap_offset_, bitmap_size_bytes_),
+  };
 }
 
 void LlvmProfdata::CopyLiveData(LiveData data) {
