@@ -4520,7 +4520,7 @@ rustc_library("block-buffer-v0_12_1") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":hybrid-array-v0_4_12" ]
+  deps += [ ":hybrid-array-v0_4_13" ]
 
   rustenv = []
 
@@ -4554,7 +4554,7 @@ rustc_library("block-padding-v0_4_2") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":hybrid-array-v0_4_12" ]
+  deps += [ ":hybrid-array-v0_4_13" ]
 
   rustenv = []
 
@@ -6819,7 +6819,7 @@ rustc_library("crypto-common-v0_2_2") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":hybrid-array-v0_4_12" ]
+  deps += [ ":hybrid-array-v0_4_13" ]
 
   rustenv = []
 
@@ -7282,7 +7282,7 @@ rustc_library("dbl-v0_5_0") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":hybrid-array-v0_4_12" ]
+  deps += [ ":hybrid-array-v0_4_13" ]
 
   rustenv = []
 
@@ -11086,19 +11086,19 @@ rustc_library("humansize-v2_1_3") {
   applicable_licenses = [ ":humansize-v2_1_3.license" ]
 }
 
-license("hybrid-array-v0_4_12.license") {
+license("hybrid-array-v0_4_13.license") {
   public_package_name = "hybrid_array"
   license_files = [
-    "//third_party/rust_crates/vendor/hybrid-array-0.4.12/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/hybrid-array-0.4.12/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/hybrid-array-0.4.13/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/hybrid-array-0.4.13/LICENSE-MIT",
   ]
 }
 
-rustc_library("hybrid-array-v0_4_12") {
+rustc_library("hybrid-array-v0_4_13") {
   crate_name = "hybrid_array"
   source_root =
-      "//third_party/rust_crates/vendor/hybrid-array-0.4.12/src/lib.rs"
-  output_name = "hybrid_array-75a3a315d2299789"
+      "//third_party/rust_crates/vendor/hybrid-array-0.4.13/src/lib.rs"
+  output_name = "hybrid_array-371632f869a471a5"
   edition = "2024"
   disable_clippy = true
   enforce_source_listing = false
@@ -11111,13 +11111,13 @@ rustc_library("hybrid-array-v0_4_12") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=75a3a315d2299789",
-    "-Cextra-filename=-75a3a315d2299789",
+    "-Cmetadata=371632f869a471a5",
+    "-Cextra-filename=-371632f869a471a5",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":hybrid-array-v0_4_12.license" ]
+  applicable_licenses = [ ":hybrid-array-v0_4_13.license" ]
 }
 
 license("hyper-v0_14_19.license") {
@@ -11611,7 +11611,7 @@ rustc_library("inout-v0_2_2") {
 
   deps = []
   deps += [ ":block-padding-v0_4_2" ]
-  deps += [ ":hybrid-array-v0_4_12" ]
+  deps += [ ":hybrid-array-v0_4_13" ]
 
   rustenv = []
 
