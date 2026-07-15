@@ -70,7 +70,10 @@ static_library("gvisor_test_util") {
     "//third_party/googletest:gmock",
     "//third_party/googletest:gtest",
   ]
-  public_configs = [ ":gvisor_test_util_config" ]
+  public_configs = [
+    ":gvisor_test_util_config",
+    "//build/config:Wno-deprecated-declarations",
+  ]
 }
 
 generic_test_label = "generic"

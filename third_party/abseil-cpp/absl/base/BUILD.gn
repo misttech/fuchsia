@@ -236,10 +236,8 @@ source_set("base") {
 source_set("throw_delegate") {
   public_configs = [ "//third_party/abseil-cpp:abseil_config" ]
 
-  sources =
-      [ "//third_party/abseil-cpp/src/absl/base/internal/throw_delegate.cc" ]
-  public =
-      [ "//third_party/abseil-cpp/src/absl/base/internal/throw_delegate.h" ]
+  sources = [ "//third_party/abseil-cpp/src/absl/base/throw_delegate.cc" ]
+  public = [ "//third_party/abseil-cpp/src/absl/base/throw_delegate.h" ]
 
   deps = [
     ":config",

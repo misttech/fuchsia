@@ -29,25 +29,12 @@ source_set("stacktrace") {
   ]
 
   deps = [
-    ":borrowed_fixup_buffer",
     ":debugging_internal",
     "//third_party/abseil-cpp/absl/base:config",
     "//third_party/abseil-cpp/absl/base:core_headers",
     "//third_party/abseil-cpp/absl/base:dynamic_annotations",
+    "//third_party/abseil-cpp/absl/base:malloc_internal",
     "//third_party/abseil-cpp/absl/base:raw_logging_internal",
-  ]
-}
-
-source_set("borrowed_fixup_buffer") {
-  public_configs = [ "//third_party/abseil-cpp:abseil_config" ]
-
-  sources = [ "//third_party/abseil-cpp/src/absl/debugging/internal/borrowed_fixup_buffer.cc" ]
-  public = [ "//third_party/abseil-cpp/src/absl/debugging/internal/borrowed_fixup_buffer.h" ]
-
-  deps = [
-    "//third_party/abseil-cpp/absl/base",
-    "//third_party/abseil-cpp/absl/base:config",
-    "//third_party/abseil-cpp/absl/base:core_headers",
   ]
 }
 
