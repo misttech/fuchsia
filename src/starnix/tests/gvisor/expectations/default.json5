@@ -477,7 +477,6 @@
                 "MountTest.MountTmpfsMagicValIgnored",
                 "MountTest.MountWithStrictAtime",
                 "MountTest.OverlayfsDirectoryRenameInUserNamespace",
-                "MountTest.OverlayfsSgidBitIsCopiedUp",
                 "MountTest.PropagateChildUmountEvent",
                 "MountTest.ReuseGroupIDs",
                 "MountTest.SlaveMaster",
@@ -1239,7 +1238,6 @@
                 // Failing new tests from gvisor.
                 "MountTest.BindMountDirectoryOntoFileFails",
                 "MountTest.BindMountFileOntoDirectoryFails",
-                "MountTest.OverlayfsSgidBitIsCopiedUp",
                 "PrctlTest.TaggedAddrCtrl",
                 "ProcSelfSetgroupsTest.AllowAfterDenyFails",
                 "ProcSelfSetgroupsTest.BadValueReturnsEINVAL",
