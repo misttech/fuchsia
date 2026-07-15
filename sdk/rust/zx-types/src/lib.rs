@@ -2042,6 +2042,19 @@ pub struct zx_info_handle_basic_t {
     padding1: [PadByte; 4],
 }
 
+// Don't need struct_decl_macro for this, the wrapper is different.
+#[repr(C)]
+#[derive(Default, Debug, Copy, Clone, Eq, KnownLayout, FromBytes, Immutable, PartialEq)]
+pub struct zx_info_handle_extended_t {
+    pub type_: zx_obj_type_t,
+    pub handle_value: zx_handle_t,
+    pub rights: zx_rights_t,
+    pub reserved: u32,
+    pub koid: zx_koid_t,
+    pub related_koid: zx_koid_t,
+    pub peer_owner_koid: zx_koid_t,
+}
+
 struct_decl_macro! {
     #[repr(C)]
     #[derive(Default, Debug, Copy, Clone, Eq, PartialEq)]
