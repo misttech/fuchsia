@@ -6,9 +6,7 @@ pub mod markdown;
 
 use crate::fidljson::to_lower_snake_case;
 use anyhow::Error;
-use handlebars::{
-    Context, Handlebars, Helper, JsonRender, Output, RenderContext, RenderError, RenderErrorReason,
-};
+use handlebars::{Context, Handlebars, Helper, JsonRender, Output, RenderContext, RenderError};
 use log::debug;
 use pulldown_cmark::{Parser, html as pulldown_html};
 use regex::{Captures, Regex};
@@ -16,16 +14,16 @@ use serde_json::Value;
 use std::sync::LazyLock;
 
 pub fn lower_snake_case(
-    h: &Helper<'_>,
+    h: &Helper<'_, '_>,
     _: &Handlebars<'_>,
     _: &Context,
     _: &mut RenderContext<'_, '_>,
     out: &mut dyn Output,
 ) -> Result<(), RenderError> {
     // get parameter from helper or throw an error
-    let param = h.param(0).ok_or_else(|| {
-        RenderErrorReason::Other("Param 0 is required for lower_snake_case helper".to_owned())
-    })?;
+    let param = h
+        .param(0)
+        .ok_or_else(|| RenderError::new("Param 0 is required for lower_snake_case helper"))?;
     debug!("lower_snake_case called on {}", param.value().render());
     out.write(&to_lower_snake_case(&param.value().render()))?;
     Ok(())
@@ -40,7 +38,7 @@ pub trait FidldocTemplate {
 }
 
 pub type HandlebarsHelper = fn(
-    h: &Helper<'_>,
+    h: &Helper<'_, '_>,
     _: &Handlebars<'_>,
     _: &Context,
     _: &mut RenderContext<'_, '_>,
@@ -48,16 +46,15 @@ pub type HandlebarsHelper = fn(
 ) -> Result<(), RenderError>;
 
 pub fn get_link_helper(
-    h: &Helper<'_>,
+    h: &Helper<'_, '_>,
     _: &Handlebars<'_>,
     _: &Context,
     _: &mut RenderContext<'_, '_>,
     out: &mut dyn Output,
 ) -> Result<(), RenderError> {
     // get parameter from helper or throw an error
-    let param = h.param(0).ok_or_else(|| {
-        RenderErrorReason::Other("Param 0 is required for get link helper".to_owned())
-    })?;
+    let param =
+        h.param(0).ok_or_else(|| RenderError::new("Param 0 is required for get link helper"))?;
     debug!("get_link_helper called on {}", param.value().render());
     out.write(&sanitize_name(&param.value().render()))?;
     Ok(())
@@ -68,16 +65,14 @@ fn sanitize_name(name: &str) -> String {
 }
 
 pub fn remove_package_name(
-    h: &Helper<'_>,
+    h: &Helper<'_, '_>,
     _: &Handlebars<'_>,
     _: &Context,
     _: &mut RenderContext<'_, '_>,
     out: &mut dyn Output,
 ) -> Result<(), RenderError> {
     // get parameter from helper or throw an error
-    let param = h
-        .param(0)
-        .ok_or_else(|| RenderErrorReason::Other("Param 0 is required for rpn helper".to_owned()))?;
+    let param = h.param(0).ok_or_else(|| RenderError::new("Param 0 is required for rpn helper"))?;
     debug!("remove_package_name called on {}", param.value().render());
     out.write(&rpn(&param.value().render()))?;
     Ok(())
@@ -89,7 +84,7 @@ fn rpn(name: &str) -> String {
 }
 
 pub fn eq(
-    h: &Helper<'_>,
+    h: &Helper<'_, '_>,
     _: &Handlebars<'_>,
     _: &Context,
     _: &mut RenderContext<'_, '_>,
@@ -98,12 +93,12 @@ pub fn eq(
     // get parameter from helper or throw an error
     let param_a = h
         .param(0)
-        .ok_or_else(|| RenderErrorReason::Other("Param 0 is required for eq helper".to_owned()))?
+        .ok_or_else(|| RenderError::new("Param 0 is required for eq helper"))?
         .value()
         .to_string();
     let param_b = h
         .param(1)
-        .ok_or_else(|| RenderErrorReason::Other("Param 1 is required for eq helper".to_owned()))?
+        .ok_or_else(|| RenderError::new("Param 1 is required for eq helper"))?
         .value()
         .to_string();
     debug!("eq called on {} and {}", param_a, param_b);
@@ -114,19 +109,16 @@ pub fn eq(
 }
 
 fn package_link(
-    h: &Helper<'_>,
+    h: &Helper<'_, '_>,
     _: &Handlebars<'_>,
     _: &Context,
     _: &mut RenderContext<'_, '_>,
     out: &mut dyn Output,
 ) -> Result<(), RenderError> {
     // get parameter from helper or throw an error
-    let package = h
-        .param(0)
-        .ok_or_else(|| RenderErrorReason::Other("Param 0 is required for pl helper".to_owned()))?;
-    let base = h
-        .param(1)
-        .ok_or_else(|| RenderErrorReason::Other("Param 1 is required for pl helper".to_owned()))?;
+    let package =
+        h.param(0).ok_or_else(|| RenderError::new("Param 0 is required for pl helper"))?;
+    let base = h.param(1).ok_or_else(|| RenderError::new("Param 1 is required for pl helper"))?;
     debug!("package_link called on {} and {}", package.value().render(), base.value().render());
     out.write(&pl(&package.value().render(), &base.value().render()))?;
     Ok(())
@@ -161,38 +153,35 @@ fn pl(name: &str, base: &str) -> String {
 }
 
 fn len(
-    h: &Helper<'_>,
+    h: &Helper<'_, '_>,
     _: &Handlebars<'_>,
     _: &Context,
     _: &mut RenderContext<'_, '_>,
     out: &mut dyn Output,
 ) -> Result<(), RenderError> {
     // get parameter from helper or throw an error
-    let vector = h
-        .param(0)
-        .ok_or_else(|| RenderErrorReason::Other("Param 0 is required for len helper".to_owned()))?;
+    let vector =
+        h.param(0).ok_or_else(|| RenderError::new("Param 0 is required for len helper"))?;
     if let &Value::Array(ref array) = vector.value() {
         out.write(array.len().to_string().as_str())?;
         Ok(())
     } else {
-        Err(RenderErrorReason::Other("Param 0 is not an array".to_owned()).into())
+        Err(RenderError::new("Param 0 is not an array"))
     }
 }
 
 fn doc_link(
-    h: &Helper<'_>,
+    h: &Helper<'_, '_>,
     _: &Handlebars<'_>,
     _: &Context,
     _: &mut RenderContext<'_, '_>,
     out: &mut dyn Output,
 ) -> Result<(), RenderError> {
     // get parameter from helper or throw an error
-    let docs = h.param(0).ok_or_else(|| {
-        RenderErrorReason::Other("Param 0 is required for doc_link helper".to_owned())
-    })?;
-    let base = h.param(1).ok_or_else(|| {
-        RenderErrorReason::Other("Param 1 is required for doc_link helper".to_owned())
-    })?;
+    let docs =
+        h.param(0).ok_or_else(|| RenderError::new("Param 0 is required for doc_link helper"))?;
+    let base =
+        h.param(1).ok_or_else(|| RenderError::new("Param 1 is required for doc_link helper"))?;
     let docstring = docs.value().render();
     debug!("doc_link called on {} and {}", docstring, base.value().render());
     out.write(&dl(&docstring, &base.value().render()))?;
@@ -211,16 +200,14 @@ fn dl(docstring: &str, base: &str) -> String {
 }
 
 pub fn remove_parent_folders(
-    h: &Helper<'_>,
+    h: &Helper<'_, '_>,
     _: &Handlebars<'_>,
     _: &Context,
     _: &mut RenderContext<'_, '_>,
     out: &mut dyn Output,
 ) -> Result<(), RenderError> {
     // get parameter from helper or throw an error
-    let param = h
-        .param(0)
-        .ok_or_else(|| RenderErrorReason::Other("Param 0 is required for rpf helper".to_owned()))?;
+    let param = h.param(0).ok_or_else(|| RenderError::new("Param 0 is required for rpf helper"))?;
     debug!("remove_parent_folders called on {}", param.value().render());
     out.write(&rpf(&param.value().render()))?;
     Ok(())
@@ -232,21 +219,16 @@ fn rpf(path: &str) -> String {
 }
 
 fn source_link(
-    h: &Helper<'_>,
+    h: &Helper<'_, '_>,
     _: &Handlebars<'_>,
     _: &Context,
     _: &mut RenderContext<'_, '_>,
     out: &mut dyn Output,
 ) -> Result<(), RenderError> {
-    let config = h
-        .param(0)
-        .ok_or_else(|| RenderErrorReason::Other("Param 0 is required for sl helper".to_owned()))?;
-    let tag = h
-        .param(1)
-        .ok_or_else(|| RenderErrorReason::Other("Param 1 is required for sl helper".to_owned()))?;
-    let location = h
-        .param(2)
-        .ok_or_else(|| RenderErrorReason::Other("Param 2 is required for sl helper".to_owned()))?;
+    let config = h.param(0).ok_or_else(|| RenderError::new("Param 0 is required for sl helper"))?;
+    let tag = h.param(1).ok_or_else(|| RenderError::new("Param 1 is required for sl helper"))?;
+    let location =
+        h.param(2).ok_or_else(|| RenderError::new("Param 2 is required for sl helper"))?;
     debug!("source_link called on {}, {} and {}", config.value(), tag.value(), location.value());
     out.write(&sl(&config.value(), &tag.value(), &location.value()))?;
     Ok(())
@@ -277,16 +259,15 @@ fn sl(config: &Value, tag: &Value, location: &Value) -> String {
 }
 
 pub fn one_line(
-    h: &Helper<'_>,
+    h: &Helper<'_, '_>,
     _: &Handlebars<'_>,
     _: &Context,
     _: &mut RenderContext<'_, '_>,
     out: &mut dyn Output,
 ) -> Result<(), RenderError> {
     // get parameter from helper or throw an error
-    let param = h.param(0).ok_or_else(|| {
-        RenderErrorReason::Other("Param 0 is required for oneline helper".to_owned())
-    })?;
+    let param =
+        h.param(0).ok_or_else(|| RenderError::new("Param 0 is required for oneline helper"))?;
     debug!("oneline called on {}", param.value().render());
     out.write(&ol(&param.value().render()))?;
     Ok(())
@@ -305,16 +286,15 @@ fn ol(description: &str) -> String {
 }
 
 pub fn pulldown(
-    h: &Helper<'_>,
+    h: &Helper<'_, '_>,
     _: &Handlebars<'_>,
     _: &Context,
     _: &mut RenderContext<'_, '_>,
     out: &mut dyn Output,
 ) -> Result<(), RenderError> {
     // get parameter from helper or throw an error
-    let param = h.param(0).ok_or_else(|| {
-        RenderErrorReason::Other("Param 0 is required for pulldown helper".to_owned())
-    })?;
+    let param =
+        h.param(0).ok_or_else(|| RenderError::new("Param 0 is required for pulldown helper"))?;
     debug!("pulldown called on {}", param.value().render());
     out.write(&pd(&param.value().render()))?;
     Ok(())
@@ -335,18 +315,16 @@ fn pd(text: &str) -> String {
 }
 
 pub fn method_id(
-    h: &Helper<'_>,
+    h: &Helper<'_, '_>,
     _: &Handlebars<'_>,
     _: &Context,
     _: &mut RenderContext<'_, '_>,
     out: &mut dyn Output,
 ) -> Result<(), RenderError> {
-    let method_name = h.param(0).ok_or_else(|| {
-        RenderErrorReason::Other("Param 0 is required for method_id helper".to_owned())
-    })?;
-    let protocol_name = h.param(1).ok_or_else(|| {
-        RenderErrorReason::Other("Param 1 is required for method_id helper".to_owned())
-    })?;
+    let method_name =
+        h.param(0).ok_or_else(|| RenderError::new("Param 0 is required for method_id helper"))?;
+    let protocol_name =
+        h.param(1).ok_or_else(|| RenderError::new("Param 1 is required for method_id helper"))?;
     debug!("method_id called on {} and {}", method_name.value(), protocol_name.value());
     out.write(&mi(&method_name.value().render(), &protocol_name.value().render()))?;
     Ok(())
@@ -357,7 +335,7 @@ fn mi(method: &str, protocol: &str) -> String {
 }
 
 pub fn process_versions(
-    h: &Helper<'_>,
+    h: &Helper<'_, '_>,
     _: &Handlebars<'_>,
     _: &Context,
     _: &mut RenderContext<'_, '_>,
@@ -365,15 +343,10 @@ pub fn process_versions(
 ) -> Result<(), RenderError> {
     let version_list: Value = serde_json::from_str(
         &h.param(0)
-            .ok_or_else(|| {
-                RenderErrorReason::Other(
-                    "Param 0 is required for process_version helper".to_owned(),
-                )
-            })?
+            .ok_or_else(|| RenderError::new("Param 0 is required for process_version helper"))?
             .value()
             .to_string(),
-    )
-    .map_err(RenderErrorReason::from)?;
+    )?;
 
     let output = pv(&version_list);
     out.write(&output)?;

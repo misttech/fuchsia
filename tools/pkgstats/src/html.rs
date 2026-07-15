@@ -9,7 +9,7 @@ use camino::Utf8PathBuf;
 use fuchsia_sync::Mutex;
 use fuchsia_url::Hash;
 use handlebars::{
-    Handlebars, Helper, HelperResult, Output, RenderContext, RenderErrorReason, handlebars_helper,
+    Handlebars, Helper, HelperResult, Output, RenderContext, RenderError, handlebars_helper,
 };
 use rayon::prelude::*;
 use serde::Serialize;
@@ -212,18 +212,16 @@ fn simplify_name_for_linking(name: &str) -> String {
 }
 
 fn package_link_helper(
-    h: &Helper<'_>,
+    h: &Helper<'_, '_>,
     _: &Handlebars<'_>,
     _: &handlebars::Context,
     _: &mut RenderContext<'_, '_>,
     out: &mut dyn Output,
 ) -> HelperResult {
     let input_name = if let Some(name) = h.param(0) {
-        name.value()
-            .as_str()
-            .ok_or_else(|| RenderErrorReason::Other("Value is not a non-empty string".to_owned()))?
+        name.value().as_str().ok_or_else(|| RenderError::new("Value is not a non-empty string"))?
     } else {
-        return Err(RenderErrorReason::Other("Helper requires one param".to_owned()).into());
+        return Err(RenderError::new("Helper requires one param"));
     };
     out.write(&package_page_url(input_name))?;
     Ok(())
@@ -238,18 +236,16 @@ fn package_page_url(package_hash: impl AsRef<str>) -> String {
 }
 
 fn content_link_helper(
-    h: &Helper<'_>,
+    h: &Helper<'_, '_>,
     _: &Handlebars<'_>,
     _: &handlebars::Context,
     _: &mut RenderContext<'_, '_>,
     out: &mut dyn Output,
 ) -> HelperResult {
     let input_name = if let Some(name) = h.param(0) {
-        name.value()
-            .as_str()
-            .ok_or_else(|| RenderErrorReason::Other("Value is not a non-empty string".to_owned()))?
+        name.value().as_str().ok_or_else(|| RenderError::new("Value is not a non-empty string"))?
     } else {
-        return Err(RenderErrorReason::Other("Helper requires one param".to_owned()).into());
+        return Err(RenderError::new("Helper requires one param"));
     };
 
     out.write(&format!(

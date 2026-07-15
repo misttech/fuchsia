@@ -75,7 +75,7 @@ impl FfxMain for LogTool {
     type Error = ::fho::Error;
 
     async fn main(self, writer: Self::Writer) -> fho::Result<()> {
-        Box::pin(log_impl(writer, &self.context, self.cmd, self.rcs_connector, true)).await?;
+        log_impl(writer, &self.context, self.cmd, self.rcs_connector, true).await?;
         Ok(())
     }
 }
@@ -488,7 +488,7 @@ mod tests {
             self,
             writer: <LogTool as fho::FfxMain>::Writer,
         ) -> fho::Result<()> {
-            Box::pin(log_impl(writer, &self.context, self.cmd, self.rcs_connector, false)).await?;
+            log_impl(writer, &self.context, self.cmd, self.rcs_connector, false).await?;
             Ok(())
         }
     }

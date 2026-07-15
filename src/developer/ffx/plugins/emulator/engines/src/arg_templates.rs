@@ -10,7 +10,7 @@ use anyhow::{Context as anyhow_context, Result};
 use emulator_instance::{DataUnits, DiskImage, EmulatorConfiguration, FlagData};
 use handlebars::{
     Context, Handlebars, Helper, HelperDef, HelperResult, JsonRender, Output, RenderContext,
-    RenderErrorReason, no_escape,
+    RenderError, no_escape,
 };
 
 //  Actual path is //src/developer/ffx/plugins/emulator/templates/emulator_flags.json.template
@@ -45,18 +45,18 @@ pub struct EqHelper {}
 impl HelperDef for EqHelper {
     fn call<'reg: 'rc, 'rc>(
         &self,
-        h: &Helper<'rc>,
+        h: &Helper<'reg, 'rc>,
         _: &'reg Handlebars<'reg>,
         _: &'rc Context,
         _: &mut RenderContext<'reg, 'rc>,
         out: &mut dyn Output,
     ) -> HelperResult {
-        let first = h.param(0).ok_or_else(|| {
-            RenderErrorReason::Other("First param not found for helper \"eq\"".to_owned())
-        })?;
-        let second = h.param(1).ok_or_else(|| {
-            RenderErrorReason::Other("Second param not found for helper \"eq\"".to_owned())
-        })?;
+        let first = h
+            .param(0)
+            .ok_or_else(|| RenderError::new("First param not found for helper \"eq\""))?;
+        let second = h
+            .param(1)
+            .ok_or_else(|| RenderError::new("Second param not found for helper \"eq\""))?;
 
         // Compare the value of the two parameters, and writes "true" (which is truthy) to "out" if
         // they evaluate as equal. In the context of an "#if" helper, this causes the "true" branch
@@ -99,16 +99,16 @@ pub struct UnitAbbreviationHelper {}
 impl HelperDef for UnitAbbreviationHelper {
     fn call<'reg: 'rc, 'rc>(
         &self,
-        h: &Helper<'rc>,
+        h: &Helper<'reg, 'rc>,
         _: &'reg Handlebars<'reg>,
         _: &'rc Context,
         _: &mut RenderContext<'reg, 'rc>,
         out: &mut dyn Output,
     ) -> HelperResult {
         // Convert the serde_json::Value into a DataUnits.
-        let param = h.param(0).ok_or_else(|| {
-            RenderErrorReason::Other(format!("Parameter 0 is missing in {:?}", h))
-        })?;
+        let param = h
+            .param(0)
+            .ok_or_else(|| RenderError::new(format!("Parameter 0 is missing in {:?}", h)))?;
 
         match serde_json::from_value::<DataUnits>(param.value().clone()) {
             Ok(units) => out.write(units.abbreviate())?,
@@ -133,22 +133,22 @@ pub struct DiskImageHelper {}
 impl HelperDef for DiskImageHelper {
     fn call<'reg: 'rc, 'rc>(
         &self,
-        h: &Helper<'rc>,
+        h: &Helper<'reg, 'rc>,
         _: &'reg Handlebars<'reg>,
         _: &'rc Context,
         _: &mut RenderContext<'reg, 'rc>,
         out: &mut dyn Output,
     ) -> HelperResult {
         // Convert the serde_json::Value into a DiskImage.
-        let param = h.param(0).ok_or_else(|| {
-            RenderErrorReason::Other(format!("Parameter 0 is missing in {:?}", h))
-        })?;
+        let param = h
+            .param(0)
+            .ok_or_else(|| RenderError::new(format!("Parameter 0 is missing in {:?}", h)))?;
 
         match serde_json::from_value::<DiskImage>(param.value().clone()) {
-            Ok(path) => out
-                .write(path.to_str().ok_or_else(|| {
-                    RenderErrorReason::Other(format!("Invalid path {:?}", path))
-                })?)?,
+            Ok(path) => out.write(
+                path.to_str()
+                    .ok_or_else(|| RenderError::new(format!("Invalid path {:?}", path)))?,
+            )?,
             Err(_) => out.write(param.value().render().as_ref())?,
         };
         Ok(())
@@ -186,16 +186,16 @@ pub struct EnvironmentHelper {}
 impl HelperDef for EnvironmentHelper {
     fn call<'reg: 'rc, 'rc>(
         &self,
-        h: &Helper<'rc>,
+        h: &Helper<'reg, 'rc>,
         _: &'reg Handlebars<'reg>,
         _: &'rc Context,
         _: &mut RenderContext<'reg, 'rc>,
         out: &mut dyn Output,
     ) -> HelperResult {
         // Get the key specified in param(0) and retrieve the value from std::env.
-        let param = h.param(0).ok_or_else(|| {
-            RenderErrorReason::Other(format!("Parameter 0 is missing in {:?}", h))
-        })?;
+        let param = h
+            .param(0)
+            .ok_or_else(|| RenderError::new(format!("Parameter 0 is missing in {:?}", h)))?;
         if let Some(key) = param.value().as_str() {
             match std::env::var(key) {
                 Ok(val) => out.write(&val)?,

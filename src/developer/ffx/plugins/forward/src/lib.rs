@@ -915,9 +915,9 @@ mod tests {
 
     #[fuchsia::test]
     fn test_message_representation() {
-        let repr = r#"{"forwarding":[{"host":{"Tcp":"[::]:8084"},"target":{"Tcp":"127.0.0.1:1515"},"direction":"TargetToHost"}]}
-{"forwarding":[{"host":{"Tcp":"[::1]:9090"},"target":{"Tcp":"127.0.0.1:8765"},"direction":"HostToTarget"}]}
-{"forwarding":[{"host":{"Tcp":"127.0.0.1:8888"},"target":{"Tcp":"[::]:7890"},"direction":"TargetToHost"}]}"#;
+        let repr = r#"{"forwarding":[{"direction":"TargetToHost","host":{"Tcp":"[::]:8084"},"target":{"Tcp":"127.0.0.1:1515"}}]}
+{"forwarding":[{"direction":"HostToTarget","host":{"Tcp":"[::1]:9090"},"target":{"Tcp":"127.0.0.1:8765"}}]}
+{"forwarding":[{"direction":"TargetToHost","host":{"Tcp":"127.0.0.1:8888"},"target":{"Tcp":"[::]:7890"}}]}"#;
         let items = vec![
             ForwardMessage::Forwarding(vec![ForwardSpec {
                 host: ProtoSpec::Tcp(std_socket_addr!("[::]:8084")),

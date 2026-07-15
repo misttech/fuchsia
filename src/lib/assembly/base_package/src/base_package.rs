@@ -228,7 +228,7 @@ mod tests {
 
         let gen_cache_index =
             build_results.generated_files.get("data/cache_packages.json").unwrap();
-        let cache_packages_json = r#"{"version":"1","content":["fuchsia-pkg://testrepository.com/cache_package/0?hash=0000000000000000000000000000000000000000000000000000000000000000"]}"#;
+        let cache_packages_json = r#"{"content":["fuchsia-pkg://testrepository.com/cache_package/0?hash=0000000000000000000000000000000000000000000000000000000000000000"],"version":"1"}"#;
 
         assert_eq!(cache_packages_json, std::fs::read_to_string(gen_cache_index).unwrap());
 
@@ -249,7 +249,7 @@ mod tests {
         let contents = std::str::from_utf8(&contents).unwrap();
         let expected_contents = "\
             data/anchored_packages.json=2fdb5ae5a453c197b7b13c1b736116a0841486634a8beaed679809877c15e128\n\
-            data/cache_packages.json=f89b7cf2e2b97e09d407036524c62bf67833a4d573110ad39cfe2c8d523c07c0\n\
+            data/cache_packages.json=49d59d7e9567de7ce2d5fc8632ea544965402426a8fa66456fbd68dccca36b4c\n\
             data/file.txt=15ec7bf0b50732b49f8228e07d24365338f9e3ab994b00af08e5a3bffe55fd8b\n\
             data/static_packages=2d86ccb37d003499bdc7bdd933428f4b83d9ed224d1b64ad90dc257d22cff460\n\
         "

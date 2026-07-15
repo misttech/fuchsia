@@ -134,7 +134,7 @@ mod tests {
         let contents = std::str::from_utf8(&contents).unwrap();
         let expected_contents = "\
             data/anchored_packages.json=4ef63f4e7429613be1478f9457c7d0751853cffaa6d8a9fa1172a7a42acf2e62\n\
-            data/cache_packages.json=3e714707406e68e8a8b8da17d7c9960f263272053e186c6f11e7f5f0ad1acf66\n\
+            data/cache_packages.json=8a7bb95ce6dfb4f9c9b9b3c3b654923c4148351db2719ecc98d24ae328128e2b\n\
             data/static_packages=e4f7b124a8c758488b7b9f0a42c09cb0c3c3ca6e4cf2d42ba6f03158eb2ad890\n\
             extra_base_data.txt=6ef2ad21fe7a1f22e224da891fba56b8cc53f39b977867a839584d4cc3919c4c\n\
         "

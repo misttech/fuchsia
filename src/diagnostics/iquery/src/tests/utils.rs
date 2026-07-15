@@ -5,12 +5,6 @@
 #![cfg(test)]
 
 use argh::FromArgs;
-use fidl_fuchsia_diagnostics as fdiagnostics;
-use fidl_fuchsia_inspect as finspect;
-use fidl_fuchsia_logger as flogger;
-use fidl_fuchsia_sys2 as fsys2;
-use fidl_fuchsia_tracing_provider as ftracing;
-use fuchsia_async as fasync;
 use fuchsia_component_test::{
     Capability, ChildOptions, RealmBuilder, RealmInstance, Ref, Route, SubRealmBuilder,
 };
@@ -23,6 +17,11 @@ use serde::ser::Serialize;
 use serde_json::ser::{PrettyFormatter, Serializer};
 use std::path::Path;
 use std::{fmt, fs};
+use {
+    fidl_fuchsia_diagnostics as fdiagnostics, fidl_fuchsia_inspect as finspect,
+    fidl_fuchsia_logger as flogger, fidl_fuchsia_sys2 as fsys2,
+    fidl_fuchsia_tracing_provider as ftracing, fuchsia_async as fasync,
+};
 
 const BASIC_COMPONENT_URL: &str = "fuchsia-pkg://fuchsia.com/iquery-tests#meta/basic_component.cm";
 const TEST_COMPONENT_URL: &str = "fuchsia-pkg://fuchsia.com/iquery-tests#meta/test_component.cm";
@@ -216,7 +215,7 @@ pub struct AssertionParameters<'a> {
     pub opts: Vec<AssertionOption>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug)]
 pub enum Format {
     Json,
     Text,
@@ -356,28 +355,12 @@ impl<'a> CommandAssertion<'a> {
     /// Validates that a command result matches the expected json string
     fn assert_result(&self, result: &str, expected: &str) {
         let clean_result = self.cleanup_variable_strings(result);
-        if self.format == Format::Json {
-            let actual_json: serde_json::Value =
-                serde_json::from_str(&clean_result).expect("clean_result is valid json");
-            let expected_json: serde_json::Value =
-                serde_json::from_str(expected.trim()).expect("expected is valid json");
-            pretty_assertions::assert_eq!(actual_json, expected_json);
-        } else {
-            assert_eq!(&clean_result, expected.trim());
-        }
+        assert_eq!(&clean_result, expected.trim());
     }
 
     /// Checks that the result string (cleaned) and the expected string are equal
     fn result_equals_expected(&self, result: &str, expected: &str) -> bool {
         let clean_result = self.cleanup_variable_strings(result);
-        if self.format == Format::Json
-            && let (Ok(actual_json), Ok(expected_json)) = (
-                serde_json::from_str::<serde_json::Value>(&clean_result),
-                serde_json::from_str::<serde_json::Value>(expected.trim()),
-            )
-        {
-            return actual_json == expected_json;
-        }
         clean_result.trim() == expected.trim()
     }
 

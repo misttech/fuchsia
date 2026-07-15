@@ -6,12 +6,11 @@ use anyhow::Error;
 use difference::Changeset;
 use fidl::unpersist;
 use fidl_fuchsia_component_decl::*;
-use fidl_fuchsia_data as fdata;
-use fidl_fuchsia_io as fio;
 use std::fmt::Debug;
 use std::fs::File;
 use std::io::Read;
 use std::path::PathBuf;
+use {fidl_fuchsia_data as fdata, fidl_fuchsia_io as fio};
 
 #[track_caller]
 fn fancy_assert_eq<T>(actual: &T, expected: &T)
@@ -452,14 +451,14 @@ fn example_cml_integration_test() {
                 value: Some(Box::new(fdata::DictionaryValue::Str("Fuchsia".to_string()))),
             },
             fdata::DictionaryEntry {
+                key: "year".to_string(),
+                value: Some(Box::new(fdata::DictionaryValue::Str("2018".to_string()))),
+            },
+            fdata::DictionaryEntry {
                 key: "metadata.publisher".to_string(),
                 value: Some(Box::new(fdata::DictionaryValue::Str(
                     "The Books Publisher".to_string(),
                 ))),
-            },
-            fdata::DictionaryEntry {
-                key: "year".to_string(),
-                value: Some(Box::new(fdata::DictionaryValue::Str("2018".to_string()))),
             },
         ]),
         ..Default::default()

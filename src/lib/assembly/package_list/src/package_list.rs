@@ -314,7 +314,7 @@ mod tests {
             .unwrap();
         packages.write(&mut out).unwrap();
         assert_eq!(
-            br#"{"version":"1","content":["fuchsia-pkg://testrepository.com/package0/0?hash=0000000000000000000000000000000000000000000000000000000000000000","fuchsia-pkg://testrepository.com/package1/0?hash=1111111111111111111111111111111111111111111111111111111111111111","fuchsia-pkg://testrepository.com/package2/0?hash=2222222222222222222222222222222222222222222222222222222222222222"]}"#,
+            br#"{"content":["fuchsia-pkg://testrepository.com/package0/0?hash=0000000000000000000000000000000000000000000000000000000000000000","fuchsia-pkg://testrepository.com/package1/0?hash=1111111111111111111111111111111111111111111111111111111111111111","fuchsia-pkg://testrepository.com/package2/0?hash=2222222222222222222222222222222222222222222222222222222222222222"],"version":"1"}"#,
             &*out
         );
     }

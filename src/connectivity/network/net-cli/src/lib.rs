@@ -4206,22 +4206,22 @@ port_identity_koid    -
     fn wanted_neigh_list_json() -> String {
         json!({
             "interface": 1,
+            "mac": "01:02:03:04:05:06",
             "neighbor": "192.168.0.1",
             "state": "REACHABLE",
-            "mac": "01:02:03:04:05:06",
         })
         .to_string()
     }
 
     fn wanted_neigh_watch_json() -> String {
         json!({
-            "state_change_status": "EXISTING",
             "entry": {
                 "interface": 1,
+                "mac": "01:02:03:04:05:06",
                 "neighbor": "192.168.0.1",
                 "state": "REACHABLE",
-                "mac": "01:02:03:04:05:06",
             },
+            "state_change_status": "EXISTING",
         })
         .to_string()
     }

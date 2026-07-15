@@ -193,7 +193,6 @@ fn dictionary_from_map(in_obj: Map<String, Value>) -> Result<fdata::Dictionary, 
         let value = value_to_dictionary_value_without_span(v)?;
         entries.push(fdata::DictionaryEntry { key, value });
     }
-    entries.sort_by(|a, b| a.key.cmp(&b.key));
     Ok(fdata::Dictionary { entries: Some(entries), ..Default::default() })
 }
 
@@ -322,14 +321,13 @@ fn dictionary_from_nested_map(map: IndexMap<String, Value>) -> Result<fdata::Dic
         Ok(vec![fdata::DictionaryEntry { key, value: entry_value }])
     }
 
-    let mut entries: Vec<_> = map
+    let entries = map
         .into_iter()
         .map(|(k, v)| key_value_to_entries(k, v))
         .collect::<Result<Vec<_>, _>>()?
         .into_iter()
         .flatten()
         .collect();
-    entries.sort_by(|a, b| a.key.cmp(&b.key));
     Ok(fdata::Dictionary { entries: Some(entries), ..Default::default() })
 }
 
@@ -355,14 +353,13 @@ fn dictionary_from_nested_spanned_map(
         Ok(vec![fdata::DictionaryEntry { key, value: entry_value }])
     }
 
-    let mut entries: Vec<_> = map
+    let entries = map
         .into_iter()
         .map(|(k, v)| key_value_to_entries(k, v.value))
         .collect::<Result<Vec<_>, _>>()?
         .into_iter()
         .flatten()
         .collect();
-    entries.sort_by(|a, b| a.key.cmp(&b.key));
     Ok(fdata::Dictionary { entries: Some(entries), ..Default::default() })
 }
 
