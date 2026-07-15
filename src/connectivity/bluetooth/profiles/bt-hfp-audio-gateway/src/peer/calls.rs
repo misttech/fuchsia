@@ -443,27 +443,17 @@ impl Calls {
         self.request_active(idx, /* terminate others */ false)
     }
 
-    /// Terminate a call.
+    /// Terminate all calls matching any of the following states:
+    ///   * Incoming Ringing
+    ///   * Outgoing Dialing
+    ///   * Outgoing Alerting
+    ///   * Ongoing Active
+    ///   * Incoming Waiting
     ///
-    /// The AT+CHUP command does not specify a particular call to be terminated. When there are
-    /// multiple calls that could be terminated, the Audio Gateway must make a determination as to
-    /// which call to terminate. This prioritization is based on the perceived urgency of a call in
-    /// a given state.
+    /// Per the HFP specification (HFP 1.9 Sec 5.2 / HFP 1.8), Ongoing Held calls are not
+    /// affected by the AT+CHUP command.
     ///
-    /// Terminate a single call based on the following policy:
-    ///
-    ///   * The oldest Incoming Ringing call is terminated.
-    ///   * If there are no Incoming Ringing calls, the oldest Outgoing Dialing call is terminated.
-    ///   * If there are no Outgoing Dialing calls, the oldest Outgoing Alerting call is terminated.
-    ///   * If there are no Outgoing Alerting calls, the oldest Ongoing Active call is terminated.
-    ///   * If there are no Ongoing Active calls, the oldest Ongoing Held call is terminated.
-    ///   * If there are no Ongoing Held calls, the oldest Incoming Waiting call is terminated.
-    ///   * If there are no calls in any of the previously specified states, return an Error.
-    // If it becomes desirable for this policy to be configurable, it should be pulled out into the
-    // component's configuration data.
-    //
-    // Incoming Waiting is prioritized last because implementations should be using the AT+CHLD
-    // command to manage waiting calls instead of the AT+CHUP command.
+    /// Returns an error if there are no calls in any of these states.
     pub fn hang_up(&mut self) -> Result<(), CallError> {
         use CallState::*;
         let states = vec![
@@ -471,11 +461,19 @@ impl Calls {
             OutgoingDialing,
             OutgoingAlerting,
             OngoingActive,
-            OngoingHeld,
             IncomingWaiting,
         ];
-        let idx = self.first_of_oldest_by_states(&states).ok_or(CallError::None(states))?.0;
-        self.request_terminate(idx)
+        let to_terminate: Vec<CallIdx> =
+            states.iter().flat_map(|state| self.all_by_state(*state).map(|(idx, _)| idx)).collect();
+
+        if to_terminate.is_empty() {
+            return Err(CallError::None(states));
+        }
+
+        for idx in to_terminate {
+            let _ = self.request_terminate(idx);
+        }
+        Ok(())
     }
 
     /// Perform the supplementary call service related to held or waiting calls specified by
@@ -1494,5 +1492,83 @@ mod tests {
             assert!(matches!(result, Err(Error::InvalidFIDLInput(_))), "Failed to reject: {}", num);
             assert_eq!(calls.current_calls().len(), 0);
         }
+    }
+
+    #[fuchsia::test]
+    fn hang_up_terminates_all_active_and_setup_calls() {
+        let mut exec = fasync::TestExecutor::new();
+        let mut calls = Calls::new(None);
+
+        let (client1, mut call_stream1) = fidl::endpoints::create_request_stream::<CallMarker>();
+        let next_call1 = NextCall {
+            call: Some(client1),
+            remote: Some("11111".to_string()),
+            state: Some(CallState::OngoingActive),
+            direction: Some(CallDirection::MobileTerminated),
+            ..Default::default()
+        };
+        let _idx1 = calls.handle_new_call(next_call1).expect("add call 1");
+
+        let (client2, mut call_stream2) = fidl::endpoints::create_request_stream::<CallMarker>();
+        let next_call2 = NextCall {
+            call: Some(client2),
+            remote: Some("22222".to_string()),
+            state: Some(CallState::IncomingWaiting),
+            direction: Some(CallDirection::MobileTerminated),
+            ..Default::default()
+        };
+        let _idx2 = calls.handle_new_call(next_call2).expect("add call 2");
+
+        assert!(calls.hang_up().is_ok());
+
+        assert_matches!(
+            exec.run_until_stalled(&mut call_stream1.next()),
+            Poll::Ready(Some(Ok(CallRequest::RequestTerminate { .. })))
+        );
+        assert_matches!(
+            exec.run_until_stalled(&mut call_stream2.next()),
+            Poll::Ready(Some(Ok(CallRequest::RequestTerminate { .. })))
+        );
+    }
+
+    #[fuchsia::test]
+    fn hang_up_does_not_terminate_held_calls() {
+        let mut exec = fasync::TestExecutor::new();
+        let mut calls = Calls::new(None);
+
+        let (client1, mut call_stream1) = fidl::endpoints::create_request_stream::<CallMarker>();
+        let next_call1 = NextCall {
+            call: Some(client1),
+            remote: Some("11111".to_string()),
+            state: Some(CallState::OngoingActive),
+            direction: Some(CallDirection::MobileTerminated),
+            ..Default::default()
+        };
+        let _idx1 = calls.handle_new_call(next_call1).expect("add call 1");
+
+        let (client2, mut call_stream2) = fidl::endpoints::create_request_stream::<CallMarker>();
+        let next_call2 = NextCall {
+            call: Some(client2),
+            remote: Some("22222".to_string()),
+            state: Some(CallState::OngoingHeld),
+            direction: Some(CallDirection::MobileTerminated),
+            ..Default::default()
+        };
+        let _idx2 = calls.handle_new_call(next_call2).expect("add call 2");
+
+        assert!(calls.hang_up().is_ok());
+
+        assert_matches!(
+            exec.run_until_stalled(&mut call_stream1.next()),
+            Poll::Ready(Some(Ok(CallRequest::RequestTerminate { .. })))
+        );
+        assert!(exec.run_until_stalled(&mut call_stream2.next()).is_pending());
+    }
+
+    #[fuchsia::test]
+    fn hang_up_no_calls_returns_error() {
+        let _exec = fasync::TestExecutor::new();
+        let mut calls = Calls::new(None);
+        assert!(calls.hang_up().is_err());
     }
 }
