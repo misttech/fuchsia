@@ -237,7 +237,7 @@ mod tests {
 
 ## `use` paths
 
-**Guide:** Follow the official defaults for idiomatic `use` paths:
+**Guideline:** Follow the official defaults for idiomatic `use` paths:
 
 * Bring into scope: types, derive and attribute-like macros
 * Bring parent module into scope: functions, function-like macros
@@ -290,6 +290,63 @@ pub async fn use_buffer_collection(
   /* ... */
   warn!("Failed to retrieve hardware pixel formats, falling back to safe set");
   /* ... */
+}
+```
+
+## MMIO region management
+
+**Guideline:** Use the `MmioRegion<VmoMemory, Arc<VmoMemory>>` type for all MMIO
+*memory regions.
+
+**Explanation:** `std::sync::Arc` meets the `MmioSplit` trait constraints,
+allowing any module to further subdivide the MMIO region it receives. `Arc` is
+compatible with any threading model (as opposed to `Rc`). The atomic overhead is
+negligible, because the reference count is only changed during driver start and
+stop.
+
+**Guideline:** Use `split_off`. Do not use `try_split_off`.
+
+**Explanation:** Hardware presents well-known static MMIO maps. The driver code
+for building the maps should not need any conditional logic.
+
+Examples:
+
+```rust
+use fidl_next_fuchsia_hardware_platform_device as fidl_platform_device;
+use mmio::MmioSplit;
+use mmio::region::MmioRegion;
+use mmio::vmo::VmoMemory;
+use std::sync::Arc;
+
+/// Obtains an MMIO region from the Platform Device.
+///
+/// Logs on failure.
+async fn map_mmio_range(
+    platform_device: &fidl_next::Client<fidl_platform_device::Device>,
+    range_name: &str,
+) -> Result<MmioRegion<VmoMemory, Arc<VmoMemory>>, zx::Status> {
+    let region = platform_device.map_mmio_by_name(range_name).await.map_err(|err| {
+        error!("Failed to map MMIO range {range_name}: {err:?}");
+        err.log_to_status()
+    })?;
+    Ok(region.into_split_send())
+}
+
+impl FunctionalUnit {
+    pub fn new(mmio: MmioRegion<VmoMemory, Arc<VmoMemory>>) {
+        // Subunit 1 manages the MMIO range 0x0000..0x1000.
+        let subunit1_mmio = mmio.split_off(0x1000);
+        let subunit1 = SubUnit1::new(subunit1_mmio);
+
+        // Subunit 2 manages the MMIO range 0x1000..0x2000.
+        let subunit2_mmio = mmio.split_off(0x1000);
+        let subunit2 = SubUnit1::new(subunit1_mmio);
+
+        // Subunit 3 manages the MMIO range from 0x2000 onwards.
+        let subunit3 = SubUnit3::new(mmio);
+
+        Self { subunit1, subunit2, subunit3 }
+    }
 }
 ```
 
