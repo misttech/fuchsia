@@ -63,6 +63,10 @@ from typing import Any, Iterable, Self, TextIO, Union
 FilePath = Union[str, PathLike[Any]]
 
 
+def escape_path(path: FilePath) -> str:
+    return str(path).replace(" ", "\\ ")
+
+
 class DepFile:
     """A helper class for collecting implicit dependencies and writing them to
     depfiles that ninja can read.
@@ -192,9 +196,9 @@ class DepFile:
             raise ValueError("Depfile was empty")
 
     def __repr__(self) -> str:
-        formatted_outputs = " ".join([str(s) for s in self.outputs])
+        formatted_outputs = " ".join([escape_path(s) for s in self.outputs])
         if self.deps:
-            sorted_deps = sorted(str(d) for d in self.deps)
+            sorted_deps = sorted(escape_path(d) for d in self.deps)
             input_continuation = " \\\n  "
             return f"{formatted_outputs}: \\\n  {input_continuation.join(sorted_deps)}\n"
         else:

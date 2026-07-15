@@ -88,6 +88,14 @@ class DepFileTests(unittest.TestCase):
             str(depfile), "foo/bar/baz/output some/other/output:\n"
         )
 
+    def test_spaces_in_paths(self) -> None:
+        depfile = DepFile("foo/bar/output with space")
+        depfile.add_input("things/input with space")
+        self.assertEqual(
+            str(depfile),
+            "foo/bar/output\\ with\\ space: \\\n  things/input\\ with\\ space\n",
+        )
+
 
 class DepFileSingleLineReadingTests(unittest.TestCase):
     def test_single_output_and_input(self) -> None:
@@ -95,6 +103,12 @@ class DepFileSingleLineReadingTests(unittest.TestCase):
         depfile = DepFile.read_from(io.StringIO(raw))
         self.assertEqual(depfile.outputs, ["some/output"])
         self.assertEqual(depfile.deps, set(["some/input"]))
+
+    def test_spaces_in_paths(self) -> None:
+        raw = "some/output\\ with\\ space: some/input\\ with\\ space"
+        depfile = DepFile.read_from(io.StringIO(raw))
+        self.assertEqual(depfile.outputs, ["some/output with space"])
+        self.assertEqual(depfile.deps, set(["some/input with space"]))
 
     def test_single_output_and_multiple_inputs(self) -> None:
         raw = "some/output: some/input1 some/input2"

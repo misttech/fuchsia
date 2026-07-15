@@ -11,6 +11,10 @@ import sys
 from pathlib import Path
 
 
+def escape_path(path: Path | str) -> str:
+    return str(path).replace(" ", "\\ ")
+
+
 def main():
     params = argparse.ArgumentParser(
         description="Copy all files in a directory tree and touch a stamp file"
@@ -51,16 +55,15 @@ def main():
     if args.depfile:
         os.makedirs(os.path.dirname(args.depfile[0]), exist_ok=True)
         with open(args.depfile[0], "w") as f:
-            f.write(str(args.stamp) + ": ")
-            f.write(" ".join(map(str, file_list)))
+            f.write(escape_path(args.stamp) + ": ")
+            f.write(" ".join(escape_path(file) for file in file_list))
             f.write("\n")
             for file in file_list:
+                target_path = os.path.join(
+                    args.target, os.path.relpath(file, start=args.source)
+                )
                 print(
-                    os.path.join(
-                        args.target, os.path.relpath(file, start=args.source)
-                    )
-                    + ": "
-                    + str(file),
+                    escape_path(target_path) + ": " + escape_path(file),
                     file=f,
                 )
 
