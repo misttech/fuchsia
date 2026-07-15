@@ -396,7 +396,22 @@ impl ProfileRegistrar {
         let mut entry = ServiceGroup::new(receiver.clone(), parameters);
         entry.set_service_defs(services);
         let next_handle = self.registered_services.insert(entry);
-        let advertised_services = self.refresh_advertisement().await?;
+        let advertised_services = match self.refresh_advertisement().await {
+            Ok(services) => services,
+            Err(e) => {
+                warn!(
+                    next_handle:?;
+                    "Upstream advertise failed; rolling back registration: {e:?}"
+                );
+                if let Err(rollback_err) = self.unregister_service(next_handle).await {
+                    warn!(
+                        "Failed to unregister and restore existing advertisements after rollback: {rollback_err:?}"
+                    );
+                }
+                let _ = responder.send(Err(ErrorCode::Failed));
+                return Err(e);
+            }
+        };
         // The returned `advertised_services` contains entries for all FIDL clients. The diff only
         // contains the services requested by this FIDL client.
         let new_advertised_services =
@@ -1513,5 +1528,73 @@ mod tests {
         // If the bug is present, Client B's advertisement would be incorrectly revoked here.
         expect_stream_pending(&mut exec, &mut upstream_es2);
         expect_stream_pending(&mut exec, &mut connection_stream_b);
+    }
+
+    #[fuchsia::test]
+    fn add_managed_advertisement_upstream_failure_rolls_back_registration() {
+        let (mut exec, server, mut upstream_requests) = setup_server();
+
+        let (service_sender, handler_fut) = setup_handler_fut(server);
+        let mut handler_fut = pin!(handler_fut);
+        exec.run_until_stalled(&mut handler_fut).expect_pending("server active");
+
+        // Client 1 successfully registers an advertisement.
+        let client1 = new_client(&mut exec, service_sender.clone(), &mut handler_fut);
+        let psm1 = Psm::new(10);
+        let services1 = vec![
+            bredr::ServiceDefinition::try_from(&other_service_definition(psm1)).unwrap(),
+            bredr::ServiceDefinition::try_from(&rfcomm_service_definition(None)).unwrap(),
+        ];
+        let (mut connection_stream1, adv_fut1) = make_advertise_request(&client1, services1);
+        let mut adv_fut1 = pin!(adv_fut1);
+        exec.run_until_stalled(&mut adv_fut1).expect_pending("waiting for advertise response");
+        exec.run_until_stalled(&mut handler_fut).expect_pending("server active");
+
+        let receiver1 = expect_advertise_request(&mut exec, &mut upstream_requests);
+        let (_advertised_services1, mut handler_fut) =
+            run_while(&mut exec, &mut handler_fut, &mut adv_fut1);
+
+        // Client 2 attempts to register a second service.
+        let client2 = new_client(&mut exec, service_sender.clone(), &mut handler_fut);
+        let psm2 = Psm::new(20);
+        let services2 = vec![
+            bredr::ServiceDefinition::try_from(&other_service_definition(psm2)).unwrap(),
+            bredr::ServiceDefinition::try_from(&rfcomm_service_definition(None)).unwrap(),
+        ];
+        let (mut connection_stream2, adv_fut2) = make_advertise_request(&client2, services2);
+        let mut adv_fut2 = pin!(adv_fut2);
+        exec.run_until_stalled(&mut adv_fut2).expect_pending("waiting for advertise response");
+        exec.run_until_stalled(&mut handler_fut).expect_pending("server active");
+
+        // We expect the registrar to unregister the current advertisement by issuing a `Revoke`
+        // event to the upstream Profile server.
+        {
+            let mut event_stream1 = receiver1.take_event_stream();
+            let revoke1 = expect_stream_item(&mut exec, &mut event_stream1);
+            assert_matches!(revoke1, Ok(bredr::ConnectionReceiverEvent::OnRevoke {}));
+        }
+        drop(receiver1);
+        exec.run_until_stalled(&mut handler_fut).expect_pending("server active");
+
+        // Upstream receives combined request [Service 1, Service 2], but fails.
+        match expect_stream_item(&mut exec, &mut upstream_requests) {
+            Ok(bredr::ProfileRequest::Advertise { responder, .. }) => {
+                let _ = responder.send(Err(fidl_fuchsia_bluetooth::ErrorCode::Failed));
+            }
+            x => panic!("Expected advertise request, got: {x:?}"),
+        }
+
+        // Run until stalled so rollback triggers a restoration advertise request for Client 1.
+        exec.run_until_stalled(&mut handler_fut).expect_pending("server active");
+
+        // Upstream should receive a restoration request containing ONLY Client 1's service.
+        let _restored_receiver1 = expect_advertise_request(&mut exec, &mut upstream_requests);
+
+        // Verify that Client 2 received the failure response.
+        let (adv_res2, _handler_fut) = run_while(&mut exec, &mut handler_fut, &mut adv_fut2);
+        assert_matches!(adv_res2, Err(ErrorCode::Failed));
+
+        expect_stream_pending(&mut exec, &mut connection_stream1);
+        expect_stream_terminated(&mut exec, &mut connection_stream2);
     }
 }
