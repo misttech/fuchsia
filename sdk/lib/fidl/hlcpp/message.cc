@@ -93,6 +93,10 @@ HLCPPIncomingMessage& HLCPPIncomingMessage::operator=(HLCPPIncomingMessage&& oth
 }
 
 zx_status_t HLCPPIncomingMessage::Decode(const fidl_type_t* type, const char** error_msg_out) {
+  if (!has_header()) {
+    *error_msg_out = "message is missing transactional header";
+    return ZX_ERR_BUFFER_TOO_SMALL;
+  }
   zx_status_t status =
       body_view_.Decode(WireFormatMetadata::FromTransactionalHeader(header()), type, error_msg_out);
   return status;
@@ -176,6 +180,10 @@ HLCPPOutgoingMessage& HLCPPOutgoingMessage::operator=(HLCPPOutgoingMessage&& oth
 
 zx_status_t HLCPPOutgoingMessage::Validate(const fidl_type_t* type,
                                            const char** error_msg_out) const {
+  if (!has_header()) {
+    *error_msg_out = "message is missing transactional header";
+    return ZX_ERR_BUFFER_TOO_SMALL;
+  }
   WireFormatMetadata wire_format_metadata = WireFormatMetadata::FromTransactionalHeader(header());
   if (!wire_format_metadata.is_valid()) {
     *error_msg_out = "invalid wire format metadata";

@@ -14,7 +14,7 @@
   "pkg/fidl_cpp_base/include/lib/fidl/cpp/internal/natural_types_header.h": "0e1ace7a1180f00c69df5b592c99c7f2",
   "pkg/fidl_cpp_base/include/lib/fidl/cpp/internal/natural_types_implementation.h": "78b8e4dfcb074e5fcce2722506c3aaa9",
   "pkg/fidl_cpp_base/include/lib/fidl/cpp/internal/unknown_interactions_table.h": "401691a5d02680a6c4429219aa5b4fad",
-  "pkg/fidl_cpp_base/include/lib/fidl/cpp/message.h": "2c7c6e6659b61f80b0f8cb556169a01f",
+  "pkg/fidl_cpp_base/include/lib/fidl/cpp/message.h": "186745ee30d57dfa25861d0425ba40d9",
   "pkg/fidl_cpp_base/include/lib/fidl/cpp/message_buffer.h": "cb3870d95b861f5d6b5918bf10354e22",
   "pkg/fidl_cpp_base/include/lib/fidl/cpp/message_part.h": "7e16db0daeeaec2565506d21c32c855a",
   "pkg/fidl_cpp_base/include/lib/fidl/cpp/string.h": "11d9cb4f3e0fde6cf3086ba0148d9075",

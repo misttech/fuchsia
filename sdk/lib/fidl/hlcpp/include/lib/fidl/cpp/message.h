@@ -118,6 +118,7 @@ class HLCPPIncomingMessage {
   HLCPPIncomingMessage& operator=(HLCPPIncomingMessage&& other);
 
   // The header at the start of the message.
+  bool has_header() const { return bytes_.actual() >= sizeof(fidl_message_header_t); }
   const fidl_message_header_t& header() const {
     return *reinterpret_cast<fidl_message_header_t*>(bytes_.data());
   }
@@ -168,7 +169,11 @@ class HLCPPIncomingMessage {
   }
   void resize_bytes(uint32_t num_bytes) {
     bytes_.set_actual(num_bytes);
-    body_view_.resize_bytes(num_bytes - sizeof(fidl_message_header_t));
+    if (num_bytes >= sizeof(fidl_message_header_t)) {
+      body_view_.resize_bytes(num_bytes - sizeof(fidl_message_header_t));
+    } else {
+      body_view_.resize_bytes(0);
+    }
   }
 
   // The storage for the handles of the transactional message.
@@ -301,6 +306,7 @@ class HLCPPOutgoingMessage {
   HLCPPOutgoingMessage(HLCPPOutgoingMessage&& other);
   HLCPPOutgoingMessage& operator=(HLCPPOutgoingMessage&& other);
 
+  bool has_header() const { return bytes_.actual() >= sizeof(fidl_message_header_t); }
   // The header at the start of the message.
   const fidl_message_header_t& header() const {
     return *reinterpret_cast<fidl_message_header_t*>(bytes_.data());
