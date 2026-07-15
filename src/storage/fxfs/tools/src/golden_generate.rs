@@ -4,8 +4,8 @@
 
 use crate::golden_common::{
     BLOB_LIST_PATH, DEFAULT_VOLUME, DELETED_FILE_PATH, EXPECTED_FILE_CONTENT, IMAGE_BLOCK_SIZE,
-    REGULAR_FILE_PATH, UNENCRYPTED_VOLUME, VERITY_FILE_PATH, WRAPPING_KEY_ID,
-    latest_image_filename,
+    REGULAR_DIRECTORY_PATH, REGULAR_FILE_PATH, UNENCRYPTED_VOLUME, VERITY_FILE_PATH,
+    WRAPPING_KEY_ID, latest_image_filename,
 };
 use crate::ops;
 use anyhow::{Context, Error, bail};
@@ -61,12 +61,12 @@ fn drop_file_from_path(original: &str) -> PathBuf {
 }
 
 async fn activity_in_volume(fs: &OpenFxFilesystem, vol: &Arc<ObjectStore>) -> Result<(), Error> {
-    let regular_dir_path = drop_file_from_path(REGULAR_FILE_PATH);
-    ops::mkdir(fs, vol, regular_dir_path.as_path()).await?;
+    let regular_dir_path = Path::new(REGULAR_DIRECTORY_PATH);
+    ops::mkdir(fs, vol, regular_dir_path).await?;
     // Apply limit to project id and apply that both to the "some" directory to have it get applied
     // everywhere else.
     ops::set_project_limit(vol, PROJECT_ID, 102400, 1024).await?;
-    ops::set_project_for_node(vol, PROJECT_ID, regular_dir_path.as_path()).await?;
+    ops::set_project_for_node(vol, PROJECT_ID, regular_dir_path).await?;
 
     ops::put(fs, vol, &Path::new(REGULAR_FILE_PATH), EXPECTED_FILE_CONTENT.to_vec()).await?;
     ops::put(fs, vol, &Path::new(DELETED_FILE_PATH), EXPECTED_FILE_CONTENT.to_vec()).await?;
@@ -78,13 +78,8 @@ async fn activity_in_volume(fs: &OpenFxFilesystem, vol: &Arc<ObjectStore>) -> Re
 
     fs.journal().force_compact().await?;
 
-    ops::set_extended_attribute_for_node(
-        vol,
-        &Path::new(regular_dir_path.as_path()),
-        b"security.selinux",
-        b"test value",
-    )
-    .await?;
+    ops::set_extended_attribute_for_node(vol, regular_dir_path, b"security.selinux", b"test value")
+        .await?;
     ops::set_extended_attribute_for_node(
         vol,
         &Path::new(REGULAR_FILE_PATH),

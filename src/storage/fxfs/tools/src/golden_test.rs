@@ -6,8 +6,8 @@ mod golden_common;
 
 use crate::golden_common::{
     BLOB_LIST_PATH, DEFAULT_VOLUME, DELETED_FILE_PATH, EXPECTED_FILE_CONTENT, IMAGE_BLOCK_SIZE,
-    REGULAR_FILE_PATH, UNENCRYPTED_VOLUME, VERITY_FILE_PATH, WRAPPING_KEY_ID,
-    latest_image_filename,
+    REGULAR_DIRECTORY_PATH, REGULAR_FILE_PATH, UNENCRYPTED_VOLUME, VERITY_FILE_PATH,
+    WRAPPING_KEY_ID, latest_image_filename,
 };
 use anyhow::{Context, Error, ensure};
 use fidl::endpoints::create_proxy;
@@ -66,6 +66,35 @@ async fn check_data_volume(dir: fio::DirectoryProxy, check_fscrypt: bool) -> Res
     );
     ensure!(dir_mut_attrs.creation_time.is_some(), "Expected creation_time for volume root dir");
 
+    let some_dir =
+        fuchsia_fs::directory::open_directory(&dir, REGULAR_DIRECTORY_PATH, fio::PERM_READABLE)
+            .await?;
+    ensure!(
+        some_dir
+            .get_extended_attribute(b"security.selinux")
+            .await
+            .context("FIDL call get_extended_attribute on directory")?
+            .map_err(Status::from_raw)
+            .context("get_extended_attribute on directory")?
+            == fio::ExtendedAttributeValue::Bytes(b"test value".to_vec()),
+        "Expected security.selinux xattr on some directory"
+    );
+    let (iterator_client, iterator_server) =
+        fidl::endpoints::create_proxy::<fio::ExtendedAttributeIteratorMarker>();
+    some_dir
+        .list_extended_attributes(iterator_server)
+        .context("list_extended_attributes on dir")?;
+    let (entries, _) = iterator_client
+        .get_next()
+        .await
+        .context("get_next FIDL call on dir xattrs")?
+        .map_err(Status::from_raw)
+        .context("get_next on dir xattrs")?;
+    ensure!(
+        entries.contains(&b"security.selinux".to_vec()),
+        "Expected security.selinux in dir xattrs list"
+    );
+
     let file = open_file(&dir, REGULAR_FILE_PATH, fio::PERM_READABLE).await?;
     let (mut_attrs, imm_attrs) = file
         .get_attributes(all_attributes)
@@ -88,6 +117,30 @@ async fn check_data_volume(dir: fio::DirectoryProxy, check_fscrypt: bool) -> Res
         &read_file(&dir, REGULAR_FILE_PATH).await? == EXPECTED_FILE_CONTENT,
         "Expected file content incorrect."
     );
+
+    let reg_file = open_file(&dir, REGULAR_FILE_PATH, fio::PERM_READABLE).await?;
+    ensure!(
+        reg_file
+            .get_extended_attribute(b"user.hash")
+            .await
+            .context("FIDL call get_extended_attribute on file")?
+            .map_err(Status::from_raw)
+            .context("get_extended_attribute on file")?
+            == fio::ExtendedAttributeValue::Bytes(b"different value".to_vec()),
+        "Expected user.hash xattr on regular file"
+    );
+    let (iterator_client, iterator_server) =
+        fidl::endpoints::create_proxy::<fio::ExtendedAttributeIteratorMarker>();
+    reg_file
+        .list_extended_attributes(iterator_server)
+        .context("list_extended_attributes on file")?;
+    let (entries, _) = iterator_client
+        .get_next()
+        .await
+        .context("get_next FIDL call on file xattrs")?
+        .map_err(Status::from_raw)
+        .context("get_next on file xattrs")?;
+    ensure!(entries.contains(&b"user.hash".to_vec()), "Expected user.hash in file xattrs list");
 
     let verity_file = open_file(&dir, VERITY_FILE_PATH, fio::PERM_READABLE).await?;
     let (verity_mut_attrs, verity_imm_attrs) = verity_file
@@ -151,6 +204,35 @@ async fn check_data_volume(dir: fio::DirectoryProxy, check_fscrypt: bool) -> Res
         file.write(ADDED_FILE_CONTENT).await.unwrap().map_err(Status::from_raw)?
             == ADDED_FILE_CONTENT.len() as u64,
         "Writing file"
+    );
+    file.set_extended_attribute(
+        b"user.new_attr",
+        fio::ExtendedAttributeValue::Bytes(b"new value".to_vec()),
+        fio::SetExtendedAttributeMode::Set,
+    )
+    .await
+    .context("FIDL set_extended_attribute")?
+    .map_err(Status::from_raw)
+    .context("set_extended_attribute on test file")?;
+    ensure!(
+        file.get_extended_attribute(b"user.new_attr")
+            .await
+            .context("FIDL get_extended_attribute on test file")?
+            .map_err(Status::from_raw)?
+            == fio::ExtendedAttributeValue::Bytes(b"new value".to_vec()),
+        "Expected new xattr value"
+    );
+    file.remove_extended_attribute(b"user.new_attr")
+        .await
+        .context("FIDL remove_extended_attribute")?
+        .map_err(Status::from_raw)
+        .context("remove_extended_attribute on test file")?;
+    ensure!(
+        file.get_extended_attribute(b"user.new_attr")
+            .await
+            .context("FIDL get_extended_attribute after remove")?
+            .is_err(),
+        "Expected xattr to be removed"
     );
 
     Ok(())

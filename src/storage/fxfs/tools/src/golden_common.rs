@@ -12,6 +12,7 @@ pub const DEFAULT_VOLUME: &str = "default";
 pub const DELETED_FILE_PATH: &str = "some/deleted.txt";
 pub const EXPECTED_FILE_CONTENT: &[u8; 8] = b"content.";
 pub const IMAGE_BLOCK_SIZE: u32 = 1024;
+pub const REGULAR_DIRECTORY_PATH: &str = "some";
 pub const REGULAR_FILE_PATH: &str = "some/file.txt";
 pub const UNENCRYPTED_VOLUME: &str = "unencrypted";
 pub const VERITY_FILE_PATH: &str = "some/fsverity.txt";
