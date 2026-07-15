@@ -6,18 +6,13 @@ use crate::handle::{HandleValue, KernelHandle};
 use crate::process_dispatcher_ffi::{
     cpp_process_dispatcher_current, cpp_process_dispatcher_make_and_add_handle,
 };
-use core::marker::{PhantomData, PhantomPinned};
 use zx_status::Status;
 use zx_types::zx_rights_t;
 
 #[repr(C)]
 pub struct ProcessDispatcher {
-    _marker: PhantomData<PhantomPinned>,
-    _facade: zr::OpaqueFacade,
+    _facade: fbl::OpaqueRefCountedFacade<crate::dispatcher::Dispatcher>,
 }
-
-unsafe impl Send for ProcessDispatcher {}
-unsafe impl Sync for ProcessDispatcher {}
 
 impl ProcessDispatcher {
     /// Executes the given function with a reference to the current process.

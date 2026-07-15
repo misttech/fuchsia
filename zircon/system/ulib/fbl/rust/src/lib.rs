@@ -47,7 +47,7 @@ pub use fbl_macros::{
     ref_counted,
 };
 pub use inline_array::InlineArray;
-pub use opaque_ref_counted::OpaqueRefCounted;
+pub use opaque_ref_counted::{IsOpaqueRefCounted, OpaqueRefCounted, OpaqueRefCountedFacade};
 pub use packed_pointer::PackedPointer;
 pub use pin_init;
 pub use ptr_traits::{ManagedPtr, PtrTraits};

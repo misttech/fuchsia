@@ -82,6 +82,7 @@ closed protocol Counter {
     /// [`zx_counter_add()`]: counter_add.md
     /// [`zx_counter_read()`]: counter_read.md
     /// [`zx_counter_write()`]: counter_write.md
+    @rust
     strict Create(struct {
         options uint32;
     }) -> (resource struct {
@@ -148,6 +149,7 @@ closed protocol Counter {
     /// [`zx_counter_create()`]: counter_create.md
     /// [`zx_counter_read()`]: counter_read.md
     /// [`zx_counter_write()`]: counter_write.md
+    @rust
     strict Add(resource struct {
         handle Handle;
         value int64;
@@ -198,6 +200,7 @@ closed protocol Counter {
     /// [`zx_counter_create()`]: counter_create.md
     /// [`zx_counter_add()`]: counter_add.md
     /// [`zx_counter_write()`]: counter_write.md
+    @rust
     strict Read(resource struct {
         handle Handle;
     }) -> (struct {
@@ -260,6 +263,7 @@ closed protocol Counter {
     /// [`zx_counter_create()`]: counter_create.md
     /// [`zx_counter_add()`]: counter_add.md
     /// [`zx_counter_read()`]: counter_read.md
+    @rust
     strict Write(resource struct {
         handle Handle;
         value int64;

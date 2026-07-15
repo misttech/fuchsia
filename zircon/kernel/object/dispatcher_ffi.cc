@@ -21,6 +21,8 @@ void* cpp_dispatcher_get_ref_counted(const Dispatcher* disp) {
   return disp->get_ref_counted_base();
 }
 
+zx_obj_type_t cpp_dispatcher_get_type(const Dispatcher* disp) { return disp->get_type(); }
+
 void cpp_dispatcher_recycle(Dispatcher* disp) {
   fbl::internal::recycler<Dispatcher>::recycle(disp);
 }

@@ -3,16 +3,21 @@
 // found in the LICENSE file.
 
 use crate::dispatcher_ffi::{
-    cpp_dispatcher_get_ref_counted, cpp_dispatcher_on_zero_handles, cpp_dispatcher_recycle,
-    cpp_dispatcher_update_state, cpp_dispatcher_update_state_locked,
+    cpp_dispatcher_get_ref_counted, cpp_dispatcher_get_type, cpp_dispatcher_on_zero_handles,
+    cpp_dispatcher_recycle, cpp_dispatcher_update_state, cpp_dispatcher_update_state_locked,
 };
-use core::marker::{PhantomData, PhantomPinned};
+use crate::handle::HandleValue;
+use crate::process_dispatcher_ffi::cpp_handle_table_get_dispatcher;
+use core::mem::MaybeUninit;
 use core::ptr::NonNull;
 use kalloc::AllocError;
 use ksync::LockToken;
+use zx_status::Status;
+use zx_types::zx_rights_t;
 
 pub trait DispatcherOps {
     type LockClass;
+    const TYPE: zx_types::zx_obj_type_t;
 
     fn dispatcher(&self) -> *const Dispatcher;
 
@@ -42,15 +47,49 @@ pub trait DispatcherOps {
 
 #[repr(C)]
 pub struct Dispatcher {
-    _marker: PhantomData<PhantomPinned>,
-    _facade: zr::OpaqueFacade,
+    _facade: fbl::OpaqueRefCountedFacade,
 }
 
-unsafe impl Send for Dispatcher {}
-unsafe impl Sync for Dispatcher {}
+impl Dispatcher {
+    pub fn get_type(&self) -> zx_types::zx_obj_type_t {
+        unsafe { cpp_dispatcher_get_type(self) }
+    }
+
+    pub fn get_with_rights<T>(
+        handle: HandleValue,
+        rights: zx_rights_t,
+    ) -> Result<fbl::RefPtr<T>, Status>
+    where
+        T: DispatcherOps + fbl::HasRefCount + fbl::Recyclable,
+    {
+        let mut ref_ptr = MaybeUninit::<fbl::RefPtr<Dispatcher>>::zeroed();
+        let mut actual_rights = MaybeUninit::<zx_rights_t>::zeroed();
+        let (dispatcher, actual_rights) = unsafe {
+            let status = cpp_handle_table_get_dispatcher(
+                handle,
+                ref_ptr.as_mut_ptr(),
+                actual_rights.as_mut_ptr(),
+            );
+            Status::ok(status)?;
+            (ref_ptr.assume_init(), actual_rights.assume_init())
+        };
+        // TODO(https://fxbug.dev/387324141): Currently, we don't have any use cases for
+        // getting a generic Dispatcher. If we need to support this in the future, we will
+        // need to change how this works (e.g. by allowing Dispatcher to bypass the type check).
+        if dispatcher.get_type() != T::TYPE {
+            return Err(Status::WRONG_TYPE);
+        }
+        if (actual_rights & rights) != rights {
+            return Err(Status::ACCESS_DENIED);
+        }
+        // SAFETY: We verified the type of the dispatcher, so it is safe to cast.
+        unsafe { Ok(dispatcher.cast::<T>()) }
+    }
+}
 
 impl DispatcherOps for Dispatcher {
     type LockClass = ();
+    const TYPE: zx_types::zx_obj_type_t = zx_types::ZX_OBJ_TYPE_NONE;
 
     fn dispatcher(&self) -> *const Dispatcher {
         self

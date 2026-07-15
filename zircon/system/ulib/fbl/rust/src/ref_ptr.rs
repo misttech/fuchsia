@@ -91,6 +91,21 @@ impl<T: HasRefCount + Recyclable> RefPtr<T> {
         ptr.as_ptr()
     }
 
+    /// Casts this `RefPtr` to point to a different type.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the object pointed to by this `RefPtr` can be safely
+    /// treated as an instance of type `U`.
+    pub unsafe fn cast<U>(self) -> RefPtr<U>
+    where
+        U: HasRefCount + Recyclable,
+    {
+        let ptr = self.ptr.cast::<U>();
+        core::mem::forget(self);
+        RefPtr { ptr }
+    }
+
     /// Use the given pin-initializer to pin-initialize a `T` inside of a new `RefPtr`.
     pub fn try_pin_init<E>(init: impl PinInit<T, E>) -> Result<Self, E>
     where

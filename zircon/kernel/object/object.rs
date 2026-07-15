@@ -4,12 +4,15 @@
 
 #![no_std]
 
+mod counter_dispatcher;
+mod counter_dispatcher_ffi;
 mod dispatcher;
 mod dispatcher_ffi;
 mod handle;
 mod process_dispatcher;
 mod process_dispatcher_ffi;
 
+pub use counter_dispatcher::*;
 pub use dispatcher::{Dispatcher, DispatcherOps};
 pub use handle::{HandleValue, KernelHandle};
 pub use process_dispatcher::ProcessDispatcher;

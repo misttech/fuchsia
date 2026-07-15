@@ -95,16 +95,16 @@ _ZX_SYSCALL_DECL(clock_update, zx_status_t, /* no attributes */, 3, (handle, opt
                  (_ZX_SYSCALL_ANNO(use_handle("Fuchsia")) zx_handle_t handle, uint64_t options,
                   const void* args))
 
-_ZX_SYSCALL_DECL(counter_add, zx_status_t, /* no attributes */, 2, (handle, value),
+_ZX_SYSCALL_DECL(counter_add, zx_status_t, _ZX_SYSCALL_EXTERN_C, 2, (handle, value),
                  (_ZX_SYSCALL_ANNO(use_handle("Fuchsia")) zx_handle_t handle, int64_t value))
 
-_ZX_SYSCALL_DECL(counter_create, zx_status_t, /* no attributes */, 2, (options, out),
+_ZX_SYSCALL_DECL(counter_create, zx_status_t, _ZX_SYSCALL_EXTERN_C, 2, (options, out),
                  (uint32_t options, _ZX_SYSCALL_ANNO(acquire_handle("Fuchsia")) zx_handle_t* out))
 
-_ZX_SYSCALL_DECL(counter_read, zx_status_t, /* no attributes */, 2, (handle, value),
+_ZX_SYSCALL_DECL(counter_read, zx_status_t, _ZX_SYSCALL_EXTERN_C, 2, (handle, value),
                  (_ZX_SYSCALL_ANNO(use_handle("Fuchsia")) zx_handle_t handle, int64_t* value))
 
-_ZX_SYSCALL_DECL(counter_write, zx_status_t, /* no attributes */, 2, (handle, value),
+_ZX_SYSCALL_DECL(counter_write, zx_status_t, _ZX_SYSCALL_EXTERN_C, 2, (handle, value),
                  (_ZX_SYSCALL_ANNO(use_handle("Fuchsia")) zx_handle_t handle, int64_t value))
 
 _ZX_SYSCALL_DECL(cprng_add_entropy, zx_status_t, /* no attributes */, 2, (buffer, buffer_size),

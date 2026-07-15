@@ -16,6 +16,7 @@ source_set("object") {
     "channel_dispatcher.cc",
     "clock_dispatcher.cc",
     "counter_dispatcher.cc",
+    "counter_dispatcher_ffi.cc",
     "diagnostics.cc",
     "dispatcher.cc",
     "dispatcher_ffi.cc",
@@ -178,6 +179,8 @@ kernel_rust_crate("object-rs") {
   edition = "2024"
   source_root = "object.rs"
   sources = [
+    "counter_dispatcher.rs",
+    "counter_dispatcher_ffi.rs",
     "dispatcher.rs",
     "dispatcher_ffi.rs",
     "handle.rs",
@@ -185,12 +188,16 @@ kernel_rust_crate("object-rs") {
     "process_dispatcher.rs",
     "process_dispatcher_ffi.rs",
   ]
+
   deps = [
     "//sdk/rust/zx-status",
     "//sdk/rust/zx-types",
     "//src/lib/kalloc",
     "//src/lib/ksync",
     "//src/lib/zr",
+    "//third_party/rust_crates:pin-init",
+    "//zircon/kernel/lib/counters:counters-rs",
+    "//zircon/kernel/lib/object-constants:object-constants-rs",
     "//zircon/system/ulib/fbl/rust:fbl",
   ]
 }

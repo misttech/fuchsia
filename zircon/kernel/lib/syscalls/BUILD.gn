@@ -35,7 +35,6 @@ source_set("impl") {
   sources = [
     "channel.cc",
     "clock.cc",
-    "counter.cc",
     "debug.cc",
     "driver.cc",
     "driver_${zircon_cpu}.cc",
@@ -134,11 +133,16 @@ group("boot_tests") {
 }
 
 kernel_rust_crate("syscalls-rs") {
-  source_root = "test.rs"
-  sources = [ "test.rs" ]
+  source_root = "lib.rs"
+  sources = [
+    "counter.rs",
+    "lib.rs",
+    "test.rs",
+  ]
   deps = [
     "macros:syscalls-macro",
     "//sdk/rust/zx-status",
+    "//sdk/rust/zx-types",
     "//zircon/kernel/lib/user_copy:user-copy-rs",
     "//zircon/kernel/object:object-rs",
     "//zircon/vdso:private",

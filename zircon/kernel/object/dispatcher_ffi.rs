@@ -19,5 +19,7 @@ unsafe extern "C" {
     pub(crate) fn cpp_dispatcher_get_ref_counted(
         dispatcher: *const Dispatcher,
     ) -> *mut core::ffi::c_void;
+    pub(crate) fn cpp_dispatcher_get_type(dispatcher: *const Dispatcher)
+    -> zx_types::zx_obj_type_t;
     pub(crate) fn cpp_dispatcher_recycle(dispatcher: *const Dispatcher);
 }

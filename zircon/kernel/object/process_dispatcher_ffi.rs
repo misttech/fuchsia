@@ -15,4 +15,9 @@ unsafe extern "C" {
         rights: zx_rights_t,
         out_handle: *mut HandleValue,
     ) -> zx_status_t;
+    pub(crate) fn cpp_handle_table_get_dispatcher(
+        handle: HandleValue,
+        out_dispatcher: *mut fbl::RefPtr<Dispatcher>,
+        out_rights: *mut zx_rights_t,
+    ) -> zx_status_t;
 }
