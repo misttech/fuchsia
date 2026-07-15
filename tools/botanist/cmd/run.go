@@ -367,7 +367,7 @@ func (r *RunCommand) dispatchTests(ctx context.Context, cancel context.CancelFun
 					forceFFXUSB = true
 					// For devices, the ffx target has been set to the serial number
 					// already so use that.
-					cleanupUSBDriver, err := r.setupFFXUSBDriver(ctx, t.GetFFX(), strings.TrimPrefix(t.GetFFX().GetTarget(), "serial:"))
+					cleanupUSBDriver, err := r.setupFFXUSBDriver(ctx, t.GetFFX(), strings.TrimPrefix(t.GetFFX().GetTarget(), "id:"))
 					if err != nil {
 						return fmt.Errorf("failed to set up ffx usb driver: %w", err)
 					}
