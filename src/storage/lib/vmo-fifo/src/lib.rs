@@ -2,15 +2,18 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use std::sync::atomic::{AtomicU64, Ordering};
-use zerocopy::{FromBytes, IntoBytes, KnownLayout};
+mod ring_allocator;
+pub use ring_allocator::AllocationToken;
+use ring_allocator::RingAllocator;
 
 mod signal;
-use crate::signal::EventSignal;
-pub use crate::signal::{
-    SIG_DATA_AVAILABLE_0, SIG_DATA_AVAILABLE_1, SIG_SHUTDOWN, SIG_SPACE_AVAILABLE_0,
+use signal::{
+    EventSignal, SIG_DATA_AVAILABLE_0, SIG_DATA_AVAILABLE_1, SIG_SHUTDOWN, SIG_SPACE_AVAILABLE_0,
     SIG_SPACE_AVAILABLE_1,
 };
+use std::sync::atomic::{AtomicU64, Ordering};
+use storage_ptr_slice::{MutPtrByteSlice, PtrByteSlice};
+use zerocopy::{FromBytes, IntoBytes, KnownLayout};
 
 struct MappedVmo {
     vmo: zx::Vmo,
@@ -114,6 +117,10 @@ struct SharedQueue<T> {
     header: *mut QueueHeader,
     // Pointer to the start of the data region where queue items are stored.
     slots: *mut T,
+    // The maximum number of items the queue can hold.
+    // Must be a power of two: The queue index resets to zero at 2^63. The capacity must be a power
+    // of two so that the overflow reset aligns with the modulo arithmetic boundary used for slot
+    // calculation (`index % capacity`).
     capacity: u32,
 
     // Used by the consumer to wait for and by the producer to signal that the queue is non-empty.
@@ -196,18 +203,6 @@ where
         (raw_offset + page_size - 1) & !(page_size - 1)
     }
 
-    // Returns a slice to the payload region (the portion of the VMO after the slots).
-    fn payload_region(&self) -> &[u8] {
-        let offset = std::cmp::min(self.payload_region_offset(), self.vmo_size());
-        // SAFETY: The mapping is valid for `self.vmo_size()` bytes.
-        unsafe {
-            std::slice::from_raw_parts(
-                (self.addr() + offset) as *const u8,
-                self.vmo_size() - offset,
-            )
-        }
-    }
-
     fn write_head_atomic(&self) -> &AtomicU64 {
         // SAFETY: `self.header` points to a valid memory-mapped VMO region of at least HEADER_SIZE
         // bytes. We use `addr_of_mut!` and `AtomicU64::from_ptr` to avoid creating a Rust reference
@@ -275,11 +270,59 @@ impl<T> SharedQueue<T> {
 /// A sender endpoint for a VMO-backed FIFO queue.
 pub struct Sender<T> {
     inner: SharedQueue<T>,
+    allocator: RingAllocator,
+}
+
+/// An RAII buffer for committing a payload to the FIFO. Dropping this buffer automatically rolls
+/// back the payload allocation.
+pub struct PayloadBuffer<'a, T: FromBytes + IntoBytes + KnownLayout + Copy> {
+    // Holds an exclusive mutable borrow on the `Sender` to statically prevent the caller from
+    // reserving a second payload before this one is either committed or dropped.
+    sender: &'a mut Sender<T>,
+    token: Option<AllocationToken>,
+    slice: MutPtrByteSlice<'a>,
+}
+
+impl<'a, T: FromBytes + IntoBytes + KnownLayout + Copy> PayloadBuffer<'a, T> {
+    /// Returns a mutable slice to the payload data.
+    pub fn data(&mut self) -> &mut MutPtrByteSlice<'a> {
+        &mut self.slice
+    }
+
+    /// Returns the physical byte offset of the payload in the VMO.
+    pub fn offset(&self) -> u32 {
+        self.token.as_ref().unwrap().offset()
+    }
+
+    /// Pushes the given message to the FIFO and commits this payload allocation, linking the
+    /// payload to the queue slot.
+    pub fn commit(mut self, msg: T) -> Result<(), zx::Status> {
+        let token = self.token.take().unwrap();
+        self.sender.push_and_commit_payload(msg, token)
+    }
+}
+
+impl<'a, T: FromBytes + IntoBytes + KnownLayout + Copy> Drop for PayloadBuffer<'a, T> {
+    fn drop(&mut self) {
+        if let Some(token) = self.token.take() {
+            self.sender.cancel_allocation(token);
+        }
+    }
 }
 
 impl<T: FromBytes + IntoBytes + KnownLayout + Copy> Sender<T> {
-    pub fn new(vmo: zx::Vmo, capacity: u32) -> Result<Self, zx::Status> {
-        Ok(Self { inner: SharedQueue::new(vmo, capacity)? })
+    /// Creates a new `Sender` endpoint mapping the provided `vmo`.
+    ///
+    /// * `vmo` - The shared mapping destination.
+    /// * `alignment` - The byte boundaries all payload allocations must adhere to. Modulo padding
+    ///                 will be applied so that all payloads begin aligned to this size. Must be a
+    ///                 power of two.
+    /// * `capacity` - Maximum queue node capacity.
+    pub fn new(vmo: zx::Vmo, alignment: usize, capacity: u32) -> Result<Self, zx::Status> {
+        let inner = SharedQueue::new(vmo, capacity)?;
+        let payload_size = inner.vmo_size().saturating_sub(inner.payload_region_offset());
+        let allocator = RingAllocator::new(payload_size, inner.capacity() as usize, alignment);
+        Ok(Self { inner, allocator })
     }
 
     pub fn is_full(&self) -> bool {
@@ -292,10 +335,6 @@ impl<T: FromBytes + IntoBytes + KnownLayout + Copy> Sender<T> {
 
     pub fn index(&self) -> u64 {
         self.inner.write_index()
-    }
-
-    pub fn payload_region(&self) -> &[u8] {
-        self.inner.payload_region()
     }
 
     pub fn vmo(&self) -> &zx::Vmo {
@@ -372,6 +411,68 @@ impl<T: FromBytes + IntoBytes + KnownLayout + Copy> Sender<T> {
             }
         }
     }
+
+    /// Reserves capacity in the payload region for a payload of `size` bytes.
+    /// Returns a `PayloadBuffer` referencing the payload region so that data can be copied or
+    /// written directly into it. The returned `PayloadBuffer` locks the `Sender` until the buffer
+    /// is either committed or dropped, preventing multiple concurrent allocations.
+    pub fn reserve_payload(&mut self, size: usize) -> Result<PayloadBuffer<'_, T>, zx::Status> {
+        // Eagerly sync with the receiver to reclaim slots before allocating. If the queue is
+        // routinely emptied, this allows the allocator to continually reuse the same physical
+        // memory addresses, maximizing CPU cache hits.
+        let current_read_index = self.inner.read_index();
+        self.allocator.reclaim_consumed_slots(current_read_index);
+
+        let token = match self.allocator.allocate(size) {
+            Some(token) => token,
+            None => return Err(zx::Status::NO_MEMORY),
+        };
+
+        // SAFETY:
+        // 1. `self.inner.addr()` is a valid base pointer to a mapped VMO memory space active
+        //    for the entire lifetime of this instance.
+        // 2. The `RingAllocator` math strictly guarantees that `token.offset() + size` fits
+        //    within the allocated payload boundaries, preventing out-of-bounds pointer derivation.
+        // 3. Returning a `MutPtrByteSlice` wrapper instead of a native `&mut [u8]` avoids violating
+        //    Rust's strict aliasing rules for shared memory, thereby preventing Undefined Behavior.
+        unsafe {
+            let abs_offset = self.inner.payload_region_offset() + token.offset() as usize;
+            let dest_ptr = (self.inner.addr() + abs_offset) as *mut u8;
+            let slice = std::ptr::slice_from_raw_parts_mut(dest_ptr, size);
+            Ok(PayloadBuffer {
+                sender: self,
+                token: Some(token),
+                slice: MutPtrByteSlice::new(slice),
+            })
+        }
+    }
+
+    // Rolls back an uncommitted `AllocationToken`. Called automatically by `PayloadBuffer` drop.
+    fn cancel_allocation(&mut self, token: AllocationToken) {
+        self.allocator.cancel_allocation(token);
+    }
+
+    // Pushes the message and commits its payload token to the newly written queue slot. This links
+    // the memory reservation to the queue's FIFO lifecycle, ensuring that the allocator safely
+    // reclaims the bytes exactly when the receiver pops this message.
+    fn push_and_commit_payload(
+        &mut self,
+        msg: T,
+        token: AllocationToken,
+    ) -> Result<(), zx::Status> {
+        // Note: `self.push` executes an `Ordering::Release` on the atomic write head, which acts
+        // as a memory fence guaranteeing our payload bytes above are fully visible to the reader.
+        match self.push(msg) {
+            Ok(slot) => {
+                self.allocator.commit_allocation_to_slot(slot, token);
+                Ok(())
+            }
+            Err(e) => {
+                self.allocator.cancel_allocation(token);
+                Err(e)
+            }
+        }
+    }
 }
 
 impl<T> Sender<T> {
@@ -400,7 +501,7 @@ impl<T: FromBytes + IntoBytes + KnownLayout + Copy> Receiver<T> {
     // Creates a Receiver that initializes its cached index from the provided VMO. This is solely
     // used for tests. Receiver should normally not support a populated VMO.
     #[cfg(test)]
-    pub(crate) fn new_from_populated_vmo(vmo: zx::Vmo, capacity: u32) -> Result<Self, zx::Status> {
+    fn new_from_populated_vmo(vmo: zx::Vmo, capacity: u32) -> Result<Self, zx::Status> {
         let inner = SharedQueue::new(vmo, capacity)?;
         let cached_read_index = inner.read_index();
         Ok(Self { inner, cached_read_index })
@@ -416,10 +517,6 @@ impl<T: FromBytes + IntoBytes + KnownLayout + Copy> Receiver<T> {
 
     pub fn index(&self) -> u64 {
         self.inner.read_index()
-    }
-
-    pub fn payload_region(&self) -> &[u8] {
-        self.inner.payload_region()
     }
 
     pub fn vmo(&self) -> &zx::Vmo {
@@ -504,6 +601,30 @@ impl<T: FromBytes + IntoBytes + KnownLayout + Copy> Receiver<T> {
             }
         }
     }
+
+    /// Returns a raw slice pointer to the specified payload region.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the `vmo_offset + len` exceeds the bounds of the VMO.
+    // TODO(https://fxbug.dev/530494057): Refactor to encode the payload layout as part of the FIFO
+    // messaging envelope to safely resolve bounds.
+    pub fn payload_slice(&self, vmo_offset: u32, len: u32) -> PtrByteSlice<'_> {
+        // SAFETY:
+        // 1. `self.inner.addr()` is a valid base pointer to a mapped VMO memory space active
+        //    for the entire lifetime of this instance.
+        // 2. The explicit assertion guarantees that `offset + len` physically fits within
+        //    the bounded VMO boundaries, preventing out-of-bounds pointer derivation.
+        // 3. Returning a `PtrByteSlice` wrapper instead of a native `&[u8]` avoids violating
+        //    Rust's strict aliasing rules for shared memory, thereby preventing Undefined Behavior.
+        unsafe {
+            let offset = self.inner.payload_region_offset() + vmo_offset as usize;
+            assert!(offset + len as usize <= self.inner.vmo_size(), "Payload out of bounds");
+            let dest_ptr = (self.inner.addr() + offset) as *const u8;
+            let slice = std::ptr::slice_from_raw_parts(dest_ptr, len as usize);
+            PtrByteSlice::new(slice)
+        }
+    }
 }
 
 impl<T> Receiver<T> {
@@ -531,11 +652,11 @@ mod tests {
     #[fuchsia::test]
     fn test_push_pop() {
         let vmo = zx::Vmo::create(4096).expect("VMO creation failed");
-        let vmo_dup = vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("Duplicate failed");
+        let vmo_dup =
+            vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("duplicate_handle failed");
 
-        let mut sender = Sender::<TestMessage>::new(vmo, 8).expect("Sender creation failed");
-        let mut receiver =
-            Receiver::<TestMessage>::new(vmo_dup, 8).expect("Receiver creation failed");
+        let mut sender = Sender::<TestMessage>::new(vmo, 1, 4).expect("Sender new failed");
+        let mut receiver = Receiver::<TestMessage>::new(vmo_dup, 4).expect("Receiver new failed");
 
         assert!(receiver.is_empty());
         assert!(!sender.is_full());
@@ -553,32 +674,14 @@ mod tests {
     }
 
     #[fuchsia::test]
-    fn test_payload_region() {
-        let vmo = zx::Vmo::create(8192).expect("VMO creation failed");
-        let vmo_dup = vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("Duplicate failed");
-
-        let sender = Sender::<TestMessage>::new(vmo, 8).expect("Sender creation failed");
-
-        let offset = sender.inner.payload_region_offset();
-        assert!(offset < sender.inner.vmo_size(), "Payload region offset should be within VMO");
-
-        // Write some recognizable bytes to the VMO at the payload offset
-        let test_data = [0xDE, 0xAD, 0xBE, 0xEF];
-        vmo_dup.write(&test_data, offset as u64).expect("VMO write failed");
-
-        // Verify that `payload_region()` returns a slice that includes our written data
-        let region = sender.payload_region();
-        assert_eq!(&region[0..test_data.len()], &test_data);
-    }
-
-    #[fuchsia::test]
     fn test_blocking_push_pop() {
         let vmo = zx::Vmo::create(4096).expect("VMO creation failed");
         let vmo_writer =
-            vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("VMO handle duplication failed");
+            vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("VMO duplicate_handle failed");
 
         let mut receiver = Receiver::<TestMessage>::new(vmo, 2).expect("receiver creation failed");
-        let mut sender = Sender::<TestMessage>::new(vmo_writer, 2).expect("sender creation failed");
+        let mut sender =
+            Sender::<TestMessage>::new(vmo_writer, 8, 2).expect("sender creation failed");
 
         let handle = std::thread::spawn(move || {
             let msg1 = TestMessage { val: 1 };
@@ -622,11 +725,12 @@ mod tests {
         // `read_index` is at byte offset 8
         vmo.write(&start_idx.to_ne_bytes(), 8).expect("write failed");
 
-        let vmo_dup = vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("Duplicate failed");
+        let vmo_dup =
+            vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("duplicate_handle failed");
 
-        let mut sender = Sender::<TestMessage>::new(vmo, 4).expect("Sender creation failed");
+        let mut sender = Sender::<TestMessage>::new(vmo, 8, 4).expect("Sender new failed");
         let mut receiver = Receiver::<TestMessage>::new_from_populated_vmo(vmo_dup, 4)
-            .expect("Receiver creation failed");
+            .expect("Receiver new_from_populated_vmo failed");
 
         // Verify they started at the seeded value.
         assert_eq!(receiver.index(), start_idx);
@@ -661,9 +765,10 @@ mod tests {
     #[fuchsia::test]
     fn test_receiver_wakes_on_sender_drop() {
         let vmo = zx::Vmo::create(4096).expect("VMO creation failed");
-        let vmo_dup = vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("Duplicate failed");
+        let vmo_dup =
+            vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("VMO duplicate_handle failed");
 
-        let sender = Sender::<TestMessage>::new(vmo, 2).expect("Sender creation failed");
+        let sender = Sender::<TestMessage>::new(vmo, 8, 2).expect("Sender creation failed");
         let mut receiver =
             Receiver::<TestMessage>::new(vmo_dup, 2).expect("Receiver creation failed");
 
@@ -685,9 +790,10 @@ mod tests {
     #[fuchsia::test]
     fn test_sender_wakes_on_receiver_drop() {
         let vmo = zx::Vmo::create(4096).expect("VMO creation failed");
-        let vmo_dup = vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("Duplicate failed");
+        let vmo_dup =
+            vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("VMO duplicate_handle failed");
 
-        let mut sender = Sender::<TestMessage>::new(vmo, 2).expect("Sender creation failed");
+        let mut sender = Sender::<TestMessage>::new(vmo, 8, 2).expect("Sender creation failed");
         let receiver = Receiver::<TestMessage>::new(vmo_dup, 2).expect("Receiver creation failed");
 
         // Fill up the queue so the next push blocks
@@ -707,5 +813,123 @@ mod tests {
 
         let result = handle.join().expect("thread panicked");
         assert_eq!(result, Err(zx::Status::CANCELED));
+    }
+
+    // Wire Protocol Struct - this is the struct sent to queue
+    #[derive(FromBytes, IntoBytes, KnownLayout, Clone, Copy, Debug, PartialEq)]
+    #[repr(C)]
+    struct WireTestCommand {
+        opcode: u32,
+        vmo_offset: u32,
+        len: u32, // Used by WithPayload (opcode 0)
+        _pad: u32,
+        val: u64, // Used by NoPayload (opcode 1)
+    }
+
+    #[derive(Debug, PartialEq)]
+    enum TestCommand {
+        WithPayload { vmo_offset: u32, len: u32 },
+        NoPayload { val: u64 },
+    }
+
+    impl TestCommand {
+        fn to_wire(&self) -> WireTestCommand {
+            match self {
+                TestCommand::WithPayload { vmo_offset, len } => WireTestCommand {
+                    opcode: 0,
+                    vmo_offset: *vmo_offset,
+                    len: *len,
+                    _pad: 0,
+                    val: 0,
+                },
+                TestCommand::NoPayload { val } => {
+                    WireTestCommand { opcode: 1, vmo_offset: 0, len: 0, _pad: 0, val: *val }
+                }
+            }
+        }
+
+        fn from_wire(wire: WireTestCommand) -> Self {
+            match wire.opcode {
+                0 => TestCommand::WithPayload { vmo_offset: wire.vmo_offset, len: wire.len },
+                _ => TestCommand::NoPayload { val: wire.val },
+            }
+        }
+    }
+
+    #[fuchsia::test]
+    fn test_payload_drop_releases_allocation() {
+        let page_size = zx::system_get_page_size() as u64;
+        let vmo = zx::Vmo::create(page_size * 2).expect("VMO creation failed");
+
+        let mut sender = Sender::<WireTestCommand>::new(vmo, 8, 4).expect("Sender creation failed");
+
+        let buffer = sender.reserve_payload(10).expect("reserve failed");
+        assert_eq!(buffer.offset(), 0);
+
+        // Roll it back instead of committing
+        drop(buffer);
+
+        // Allocate again, ensure it gives the same offset
+        let buffer2 = sender.reserve_payload(10).expect("reserve failed");
+        assert_eq!(buffer2.offset(), 0);
+    }
+
+    #[fuchsia::test]
+    fn test_payload_buffer_drops_uncommitted_allocations() {
+        let page_size = zx::system_get_page_size() as u64;
+        let vmo = zx::Vmo::create(page_size * 2).expect("VMO creation failed");
+
+        let mut sender = Sender::<WireTestCommand>::new(vmo, 8, 4).expect("Sender creation failed");
+
+        // Simulate a function that reserves a payload but returns early (e.g., from encountering
+        // an error).
+        let _ = (|| -> Result<(), ()> {
+            let _buffer = sender.reserve_payload(10).expect("reserve failed");
+
+            // Assuming an error is encountered before `_buffer` can be committed,
+            // the early return causes the buffer to be dropped, triggering cancellation.
+            Err(())
+        })();
+
+        // Verifies that the early return successfully dropped `_buffer` and cancelled the
+        // allocation. The queue is now empty, placing this allocation at offset 0.
+        let buffer_after_bail = sender.reserve_payload(10).expect("reserve failed");
+        assert_eq!(buffer_after_bail.offset(), 0);
+    }
+
+    #[fuchsia::test]
+    fn test_with_payload_commands() {
+        let page_size = zx::system_get_page_size() as u64;
+        let vmo = zx::Vmo::create(page_size * 2).expect("VMO creation failed");
+        let vmo_dup =
+            vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("VMO duplicate_handle failed");
+
+        let mut sender = Sender::<WireTestCommand>::new(vmo, 8, 4).expect("Sender creation failed");
+        let mut receiver =
+            Receiver::<WireTestCommand>::new(vmo_dup, 4).expect("Receiver creation failed");
+
+        let mut buffer = sender.reserve_payload(10).expect("reserve failed");
+        buffer.data().fill(0xAA);
+        let wire_msg = TestCommand::WithPayload { vmo_offset: buffer.offset(), len: 10 }.to_wire();
+        buffer.commit(wire_msg).expect("commit failed");
+
+        let standalone = TestCommand::NoPayload { val: 456 };
+        sender.push(standalone.to_wire()).expect("push failed");
+
+        let msg1 = receiver.pop_reserve().expect("pop_reserve failed");
+        let app_msg1 = TestCommand::from_wire(msg1);
+        if let TestCommand::WithPayload { vmo_offset, len } = app_msg1 {
+            assert_eq!(len, 10);
+            let read_data = receiver.payload_slice(vmo_offset, len);
+            assert_eq!(read_data.to_vec(), vec![0xAA; 10]);
+        } else {
+            panic!("Expected TestCommand::WithPayload");
+        }
+        receiver.pop_commit().expect("pop_commit failed");
+
+        let msg2 = receiver.pop_reserve().expect("pop_reserve failed");
+        let app_msg2 = TestCommand::from_wire(msg2);
+        assert_eq!(app_msg2, TestCommand::NoPayload { val: 456 });
+        receiver.pop_commit().expect("pop_commit failed");
     }
 }

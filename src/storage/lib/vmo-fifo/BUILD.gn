@@ -12,6 +12,7 @@ rustc_library("vmo-fifo") {
   deps = [
     "//sdk/rust/zx",
     "//src/lib/fuchsia-runtime",
+    "//src/storage/lib/ptr_slice",
     "//third_party/rust_crates:zerocopy",
   ]
 
@@ -19,6 +20,7 @@ rustc_library("vmo-fifo") {
 
   sources = [
     "src/lib.rs",
+    "src/ring_allocator.rs",
     "src/signal.rs",
   ]
 }
