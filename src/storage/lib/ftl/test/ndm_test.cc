@@ -584,4 +584,64 @@ TEST_F(NdmReadOnlyTest, RejectsCorruptPartitionSize) {
   ASSERT_NE(nullptr, ndm_driver_->CreateVolume());
 }
 
+TEST_F(NdmReadOnlyTest, RejectsInvalidFreeVirtBlk) {
+  std::vector<uint32_t> control(
+      kControlBlockTransferV2,
+      kControlBlockTransferV2 + (sizeof(kControlBlockTransferV2) / sizeof(uint32_t)));
+  // free_virt_blk is at index 8. Set it to num_blocks (30), which is invalid (must be < 30).
+  control[8] = 30;
+
+  memcpy(buffer_.data(), control.data(), control.size() * sizeof(uint32_t));
+  fix_crc(buffer_.data(), kPageSize, true);
+  ASSERT_EQ(ftl::kNdmOk, ndm_driver_->NandWrite(kControlPage0, 1, buffer_.data(), kControlOob));
+
+  ASSERT_NE(nullptr, ndm_driver_->CreateVolume());
+  ASSERT_EQ(NDM_BAD_META_DATA, GetFsErrCode());
+}
+
+TEST_F(NdmReadOnlyTest, RejectsInvalidXfrTblk) {
+  std::vector<uint32_t> control(
+      kControlBlockTransferV2,
+      kControlBlockTransferV2 + (sizeof(kControlBlockTransferV2) / sizeof(uint32_t)));
+  // xfr_tblk is at index 10. Set it to num_blocks (30), which is invalid.
+  control[10] = 30;
+
+  memcpy(buffer_.data(), control.data(), control.size() * sizeof(uint32_t));
+  fix_crc(buffer_.data(), kPageSize, true);
+  ASSERT_EQ(ftl::kNdmOk, ndm_driver_->NandWrite(kControlPage0, 1, buffer_.data(), kControlOob));
+
+  ASSERT_NE(nullptr, ndm_driver_->CreateVolume());
+  ASSERT_EQ(NDM_BAD_META_DATA, GetFsErrCode());
+}
+
+TEST_F(NdmReadOnlyTest, RejectsInvalidXfrFblk) {
+  std::vector<uint32_t> control(
+      kControlBlockTransferV2,
+      kControlBlockTransferV2 + (sizeof(kControlBlockTransferV2) / sizeof(uint32_t)));
+  // xfr_fblk is at index 11. Set it to num_blocks (30), which is invalid.
+  control[11] = 30;
+
+  memcpy(buffer_.data(), control.data(), control.size() * sizeof(uint32_t));
+  fix_crc(buffer_.data(), kPageSize, true);
+  ASSERT_EQ(ftl::kNdmOk, ndm_driver_->NandWrite(kControlPage0, 1, buffer_.data(), kControlOob));
+
+  ASSERT_NE(nullptr, ndm_driver_->CreateVolume());
+  ASSERT_EQ(NDM_BAD_META_DATA, GetFsErrCode());
+}
+
+TEST_F(NdmReadOnlyTest, RejectsInvalidXfrBadPo) {
+  std::vector<uint32_t> control(
+      kControlBlockTransferV2,
+      kControlBlockTransferV2 + (sizeof(kControlBlockTransferV2) / sizeof(uint32_t)));
+  // xfr_bad_po is at index 12. Set it to pages_per_block (16), which is invalid (must be < 16).
+  control[12] = 16;
+
+  memcpy(buffer_.data(), control.data(), control.size() * sizeof(uint32_t));
+  fix_crc(buffer_.data(), kPageSize, true);
+  ASSERT_EQ(ftl::kNdmOk, ndm_driver_->NandWrite(kControlPage0, 1, buffer_.data(), kControlOob));
+
+  ASSERT_NE(nullptr, ndm_driver_->CreateVolume());
+  ASSERT_EQ(NDM_BAD_META_DATA, GetFsErrCode());
+}
+
 }  // namespace

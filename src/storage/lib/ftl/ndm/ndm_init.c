@@ -671,6 +671,9 @@ static int read_ctrl_info(NDM ndm) {
 
   // Retrieve free_virt_blk pointer.
   ndm->free_virt_blk = RD32_LE(&ndm->main_buf[curr_loc]);
+  if (ndm->free_virt_blk != (ui32)-1 && ndm->free_virt_blk >= ndm->num_dev_blks) {
+    return FsError2(NDM_BAD_META_DATA, EINVAL);
+  }
   curr_loc += sizeof(ui32);
 
   // Retrieve free_ctrl_blk pointer.
@@ -688,6 +691,10 @@ static int read_ctrl_info(NDM ndm) {
 
   // Retrieve the transfer to block (if any).
   ndm->xfr_tblk = RD32_LE(&ndm->main_buf[curr_loc]);
+  if (ndm->xfr_tblk != (ui32)-1 &&
+      (ndm->xfr_tblk < ndm->frst_reserved || ndm->xfr_tblk >= ndm->num_dev_blks)) {
+    return FsError2(NDM_BAD_META_DATA, EINVAL);
+  }
   curr_loc += sizeof(ui32);
 
   // Up to this point, versions 1 and 2 of the header match. Transfer info is not
@@ -699,10 +706,16 @@ static int read_ctrl_info(NDM ndm) {
   if (ndm->xfr_tblk != (ui32)-1 || major_version != 1) {
     // Retrieve the physical bad block being transferred.
     ndm->xfr_fblk = RD32_LE(&ndm->main_buf[curr_loc]);
+    if (ndm->xfr_tblk != (ui32)-1 && ndm->xfr_fblk >= ndm->num_dev_blks) {
+      return FsError2(NDM_BAD_META_DATA, EINVAL);
+    }
     curr_loc += sizeof(ui32);
 
     // Retrieve the page offset of bad page in bad block.
     ndm->xfr_bad_po = RD32_LE(&ndm->main_buf[curr_loc]);
+    if (ndm->xfr_tblk != (ui32)-1 && ndm->xfr_bad_po >= ndm->pgs_per_blk) {
+      return FsError2(NDM_BAD_META_DATA, EINVAL);
+    }
     curr_loc += sizeof(ui32);
 
     if (major_version == 1) {
@@ -908,6 +921,13 @@ static int recover_bad_blk(NDM ndm) {
   ui32 i, bpn;
   int rc;
 
+  if (ndm->free_virt_blk != (ui32)-1 && ndm->free_virt_blk >= ndm->num_dev_blks) {
+    ndm->logger.error(__FILE__, __LINE__,
+                      "Failed to recover NDM Bad Block. Invalid |free_virt_blk| %u.",
+                      ndm->free_virt_blk);
+    return FsError2(NDM_BAD_META_DATA, EINVAL);
+  }
+
   // Ensure the 'transfer from' block value is valid.
   if (ndm->xfr_fblk >= ndm->num_dev_blks) {
     ndm->logger.error(__FILE__, __LINE__,
@@ -917,10 +937,18 @@ static int recover_bad_blk(NDM ndm) {
   }
 
   // Ensure the 'transfer to' block value is valid.
-  if (ndm->xfr_tblk < ndm->frst_reserved || ndm->xfr_tblk >= ndm->free_virt_blk) {
+  if (ndm->xfr_tblk < ndm->frst_reserved || ndm->xfr_tblk >= ndm->num_dev_blks ||
+      ndm->xfr_tblk >= ndm->free_virt_blk) {
     ndm->logger.error(__FILE__, __LINE__,
                       "Failed to recover NDM Bad Block. Invalid |transfer_to| block %u.",
                       ndm->xfr_tblk);
+    return FsError2(NDM_BAD_META_DATA, EINVAL);
+  }
+
+  if (ndm->xfr_bad_po >= ndm->pgs_per_blk) {
+    ndm->logger.error(__FILE__, __LINE__,
+                      "Failed to recover NDM Bad Block. Invalid |transfer_bad_po| %u.",
+                      ndm->xfr_bad_po);
     return FsError2(NDM_BAD_META_DATA, EINVAL);
   }
 
