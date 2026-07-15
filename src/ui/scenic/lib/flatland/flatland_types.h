@@ -15,28 +15,48 @@
 #include <variant>
 
 #include "src/ui/scenic/lib/allocation/id.h"
+#include "src/ui/scenic/lib/scheduling/id.h"
 #include "src/ui/scenic/lib/types/blend_mode.h"
 #include "src/ui/scenic/lib/types/id_type.h"
 #include "src/ui/scenic/lib/types/rectangle.h"
 #include "src/ui/scenic/lib/types/rectangle_f.h"
+#include "src/ui/scenic/lib/types/rotate_flip.h"
 #include "src/ui/scenic/lib/types/view_ref.h"
 
 #include <glm/glm.hpp>
 
 namespace flatland {
 
-namespace internal {
-using ContentIdTraits =
-    types::DefaultIdTypeTraitsForNaturalFidl<uint64_t, fuchsia_ui_composition::ContentId>;
-using TransformIdTraits =
-    types::DefaultIdTypeTraitsForNaturalFidl<uint64_t, fuchsia_ui_composition::TransformId>;
-}  // namespace internal
+class LayerHandle {
+ public:
+  using InstanceId = scheduling::SessionId;
 
-using ContentId = types::IdType<::flatland::internal::ContentIdTraits>;
-using TransformId = types::IdType<::flatland::internal::TransformIdTraits>;
+  LayerHandle() = default;
+  LayerHandle(InstanceId instance_id, uint64_t layer_id)
+      : instance_id_(instance_id), layer_id_(layer_id) {}
 
-constexpr ContentId kInvalidContentId = ContentId(0);
-constexpr TransformId kInvalidTransformId = TransformId(0);
+  // Allow copy and move ctors.
+  LayerHandle(const LayerHandle& other) = default;
+  LayerHandle& operator=(const LayerHandle& other) = default;
+  LayerHandle(LayerHandle&& other) = default;
+  LayerHandle& operator=(LayerHandle&& other) = default;
+
+  // Default "Spaceship operator" generates all six comparison operators (==, !=, <, <=, >, >=)
+  // by comparing each field in the order declared.
+  auto operator<=>(const LayerHandle&) const = default;
+
+  InstanceId GetInstanceId() const { return instance_id_; }
+  uint64_t GetLayerId() const { return layer_id_; }
+
+ private:
+  friend struct std::hash<flatland::LayerHandle>;
+  friend std::ostream& operator<<(std::ostream& out, const flatland::LayerHandle& h);
+
+  InstanceId instance_id_ = 0;
+  uint64_t layer_id_ = 0;
+};
+
+std::ostream& operator<<(std::ostream& out, const LayerHandle& h);
 
 // The sample region to use for an image when texturing a rectangle.
 using ImageSampleRegion = types::RectangleF;
@@ -144,7 +164,7 @@ struct ResolvedLayer {
   };
 
   ImageRect rect;
-  std::array<float, 4> color = {1.f, 1.f, 1.f, 1.f};  // multiply color
+  std::array<float, 4> multiply_color = {1.f, 1.f, 1.f, 1.f};  // multiply color
   types::BlendMode blend_mode = types::BlendMode::kReplace();
   fuchsia_ui_composition::ImageFlip flip = fuchsia_ui_composition::ImageFlip::kNone;
   std::variant<ImageContent, SolidColorContent> content;
@@ -160,5 +180,17 @@ struct ResolvedLayer {
 };
 
 }  // namespace flatland
+
+namespace std {
+
+template <>
+struct hash<flatland::LayerHandle> {
+  size_t operator()(const flatland::LayerHandle& h) const noexcept {
+    return hash<flatland::LayerHandle::InstanceId>{}(h.instance_id_) ^
+           hash<uint64_t>{}(h.layer_id_);
+  }
+};
+
+}  // namespace std
 
 #endif  // SRC_UI_SCENIC_LIB_FLATLAND_FLATLAND_TYPES_H_

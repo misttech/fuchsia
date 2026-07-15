@@ -34,10 +34,10 @@ void ComputeGlobalResolvedLayers(std::vector<ResolvedLayer>& output,
       // meta.multiply_color.  Eventually, there will be no `ComputeGlobalImageData()` function,
       // and opacity will be handled directly in this function (the signature will change to
       // include opacity data).
-      layer.color = {1.f, 1.f, 1.f, 1.f};
+      layer.multiply_color = {1.f, 1.f, 1.f, 1.f};
       layer.content = ResolvedLayer::SolidColorContent{.color = meta.multiply_color};
     } else {
-      layer.color = meta.multiply_color;
+      layer.multiply_color = meta.multiply_color;
       layer.content = ResolvedLayer::ImageContent{
           .image_id = meta.identifier,
           .width = meta.width,

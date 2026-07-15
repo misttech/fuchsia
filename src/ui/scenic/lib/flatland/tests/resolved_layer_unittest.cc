@@ -39,7 +39,7 @@ TEST(ComputeGlobalResolvedLayersTest, SingleImage) {
 
   const auto& layer = result[0];
   EXPECT_EQ(layer.rect, rectangles[0]);
-  EXPECT_EQ(layer.color, meta.multiply_color);
+  EXPECT_EQ(layer.multiply_color, meta.multiply_color);
   EXPECT_EQ(layer.blend_mode, meta.blend_mode);
   EXPECT_EQ(layer.flip, meta.flip);
 
@@ -86,9 +86,9 @@ TEST(ComputeGlobalResolvedLayersTest, FilledRectBecomesSolidColorContent) {
   auto result = ComputeGlobalResolvedLayers(rectangles, images);
   ASSERT_EQ(result.size(), 1u);
 
-  // `layer.color` is used for global opacity, debugging tint, etc.
+  // `layer.multiply_color` is used for global opacity, debugging tint, etc.
   const auto& layer = result[0];
-  EXPECT_EQ(layer.color, (std::array<float, 4>{1.f, 1.f, 1.f, 1.f}));
+  EXPECT_EQ(layer.multiply_color, (std::array<float, 4>{1.f, 1.f, 1.f, 1.f}));
 
   ASSERT_TRUE(std::holds_alternative<SolidColorContent>(layer.content));
   const auto& content = std::get<SolidColorContent>(layer.content);
@@ -170,7 +170,7 @@ TEST(ComputeGlobalResolvedLayersTest, PopulatesTopologyIndex) {
 TEST(ResolvedLayerTest, EqualityComparesAllFields) {
   ResolvedLayer layer1;
   layer1.rect = ImageRect(glm::vec2(0, 0), glm::vec2(10, 10));
-  layer1.color = {1.f, 1.f, 1.f, 1.f};
+  layer1.multiply_color = {1.f, 1.f, 1.f, 1.f};
   layer1.blend_mode = BlendMode::kReplace();
   layer1.flip = fuchsia_ui_composition::ImageFlip::kNone;
   layer1.content = ImageContent{.image_id = display::ImageId(1)};
@@ -185,9 +185,9 @@ TEST(ResolvedLayerTest, EqualityComparesAllFields) {
   layer2.rect = ImageRect(glm::vec2(1, 0), glm::vec2(10, 10));
   EXPECT_NE(layer1, layer2);
 
-  // 2. color
+  // 2. multiply_color
   layer2 = layer1;
-  layer2.color = {0.f, 1.f, 1.f, 1.f};
+  layer2.multiply_color = {0.f, 1.f, 1.f, 1.f};
   EXPECT_NE(layer1, layer2);
 
   // 3. blend_mode

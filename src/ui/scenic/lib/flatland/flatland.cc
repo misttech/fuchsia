@@ -2375,8 +2375,7 @@ allocation::GlobalImageId Flatland::ReleaseLayerObject(LayerHandle handle) {
     return allocation::kInvalidImageId;
   }
 
-  allocation::GlobalImageId released_image =
-      std::get<LayerObject::ImageContent>(content).bound_image;
+  allocation::GlobalImageId released_image = std::get<LayerObject::ImageContent>(content).image_id;
 
   // TODO(https://fxbug.dev/523371761): this works for the Flatland1 facade, where the
   // FIDL client "image" corresponds 1-1 to:
@@ -2443,7 +2442,7 @@ void Flatland::SetLayerImageForTest(LayerHandle handle, allocation::GlobalImageI
     it->second.content = LayerObject::ImageContent();
     it->second.epoch++;
   }
-  std::get<LayerObject::ImageContent>(it->second.content).bound_image = image;
+  std::get<LayerObject::ImageContent>(it->second.content).image_id = image;
 }
 
 void Flatland::SetLayerSolidColorForTest(LayerHandle handle) {

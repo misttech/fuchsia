@@ -2691,7 +2691,7 @@ VK_TEST_F(VulkanRendererTest, ReadbackTest) {
   // Render the renderable to the render target.
   ResolvedLayer layer = {
       .rect = renderable,
-      .color = {1.f, 1.f, 1.f, 1.f},
+      .multiply_color = {1.f, 1.f, 1.f, 1.f},
       .blend_mode = renderable_image_data.blend_mode,
       .content = ResolvedLayer::SolidColorContent{.color = renderable_image_data.multiply_color},
   };

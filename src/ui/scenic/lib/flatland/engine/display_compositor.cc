@@ -576,10 +576,10 @@ bool DisplayCompositor::SetRenderDataOnDisplay(const RenderData& data) {
     } else {
       const auto& solid_color = std::get<ResolvedLayer::SolidColorContent>(layer.content);
       const std::array<float, 4> final_color = {
-          solid_color.color[0] * layer.color[0],
-          solid_color.color[1] * layer.color[1],
-          solid_color.color[2] * layer.color[2],
-          solid_color.color[3] * layer.color[3],
+          solid_color.color[0] * layer.multiply_color[0],
+          solid_color.color[1] * layer.multiply_color[1],
+          solid_color.color[2] * layer.multiply_color[2],
+          solid_color.color[3] * layer.multiply_color[3],
       };
       ApplyLayerColor(layers[i], layer.rect, final_color, layer.blend_mode);
     }
@@ -672,7 +672,7 @@ void DisplayCompositor::ApplyLayerImage(const display::LayerId& layer_id,
   display_coordinator_.SetLayerPrimaryPosition(
       layer_id, display::RotateFlip::From(orientation, layer.flip), src, dst);
 
-  display_coordinator_.SetLayerPrimaryAlpha(layer_id, layer.blend_mode, layer.color[3]);
+  display_coordinator_.SetLayerPrimaryAlpha(layer_id, layer.blend_mode, layer.multiply_color[3]);
 
   // Set the imported image on the layer.
   display_coordinator_.SetLayerImage(layer_id, display::ImageId(image.image_id), wait_id);
@@ -766,10 +766,10 @@ bool DisplayCompositor::PerformGpuComposition(
       // Unfortunately we copy the list here due to constness.
       tinted_layers.assign(render_data.layers.begin(), render_data.layers.end());
       for (auto& layer : tinted_layers) {
-        layer.color[0] *= kGpuRenderingDebugColor[0];
-        layer.color[1] *= kGpuRenderingDebugColor[1];
-        layer.color[2] *= kGpuRenderingDebugColor[2];
-        layer.color[3] *= kGpuRenderingDebugColor[3];
+        layer.multiply_color[0] *= kGpuRenderingDebugColor[0];
+        layer.multiply_color[1] *= kGpuRenderingDebugColor[1];
+        layer.multiply_color[2] *= kGpuRenderingDebugColor[2];
+        layer.multiply_color[3] *= kGpuRenderingDebugColor[3];
       }
     }
     const std::span layers = config_.tint_gpu_fallback_images ? tinted_layers : render_data.layers;
@@ -808,7 +808,7 @@ bool DisplayCompositor::PerformGpuComposition(
 
     ResolvedLayer gpu_layer = {
         .rect = {glm::vec2(0), glm::vec2(render_target.width, render_target.height)},
-        .color = render_target.multiply_color,
+        .multiply_color = render_target.multiply_color,
         .content =
             ResolvedLayer::ImageContent{
                 .image_id = render_target.identifier,

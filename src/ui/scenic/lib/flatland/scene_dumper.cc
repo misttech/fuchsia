@@ -168,8 +168,8 @@ void DumpLayers(const flatland::GlobalTopologyData& topology_data,
     } else {
       const auto& image = std::get<flatland::ResolvedLayer::ImageContent>(layer.content);
       output << "\n        image: size=" << image.width << "x" << image.height
-             << "  multiply_color=(" << layer.color[0] << "," << layer.color[1] << ","
-             << layer.color[2] << "," << layer.color[3] << ")"
+             << "  multiply_color=(" << layer.multiply_color[0] << "," << layer.multiply_color[1]
+             << "," << layer.multiply_color[2] << "," << layer.multiply_color[3] << ")"
              << "  blend_mode=" << layer.blend_mode << " flip=" << cpp23::to_underlying(layer.flip);
     }
     FX_CHECK(layer.topology_index >= 0);

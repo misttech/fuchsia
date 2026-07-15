@@ -70,4 +70,9 @@ fuchsia::ui::composition::HitTestInteraction HitRegion::interaction() const { re
 HitRegion::HitRegion(fuchsia::ui::composition::HitTestInteraction interaction)
     : interaction_(interaction) {}
 
+std::ostream& operator<<(std::ostream& out, const LayerHandle& h) {
+  out << "(L:" << h.GetInstanceId() << ":" << h.GetLayerId() << ")";
+  return out;
+}
+
 }  // namespace flatland

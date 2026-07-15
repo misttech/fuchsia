@@ -615,23 +615,24 @@ TEST(UberStructSystemTest, UberStructLayerFieldsRoundTrip) {
   const LayerHandle layer_image(kSessionId, 1);
   UberStructLayer us_layer_image{
       .epoch = 42,
-      .content = UberStructLayer::ImageContent{
-          .sample_rect = {{.x = 1.f, .y = 2.f, .width = 3.f, .height = 4.f}},
-          .transform = types::RotateFlip::kRotateCcw90(),
-          .display_rect = {{.x = 5, .y = 6, .width = 7, .height = 8}},
-          .opacity = 0.5f,
-          .blend_mode = types::BlendMode::kPremultipliedAlpha(),
-          .image_id = allocation::GlobalImageId(123),
-          .image_width = 100,
-          .image_height = 200}};
+      .content =
+          UberStructLayer::ImageContent{
+              .sample_rect = {{.x = 1.f, .y = 2.f, .width = 3.f, .height = 4.f}},
+              .transform = types::RotateFlip::kRotateCcw90(),
+              .image_id = allocation::GlobalImageId(123),
+              .image_width = 100,
+              .image_height = 200},
+      .display_rect = {{.x = 5, .y = 6, .width = 7, .height = 8}},
+      .opacity = 0.5f,
+      .blend_mode = types::BlendMode::kPremultipliedAlpha()};
 
   const LayerHandle layer_color(kSessionId, 2);
-  UberStructLayer us_layer_color{.epoch = 84,
-                                 .content = UberStructLayer::SolidColorContent{
-                                     .color = {0.1f, 0.2f, 0.3f, 0.4f},
-                                     .display_rect = {{.x = 9, .y = 10, .width = 11, .height = 12}},
-                                     .opacity = 0.75f,
-                                     .blend_mode = types::BlendMode::kPremultipliedAlpha()}};
+  UberStructLayer us_layer_color{
+      .epoch = 84,
+      .content = UberStructLayer::SolidColorContent{.color = {0.1f, 0.2f, 0.3f, 0.4f}},
+      .display_rect = {{.x = 9, .y = 10, .width = 11, .height = 12}},
+      .opacity = 0.75f,
+      .blend_mode = types::BlendMode::kPremultipliedAlpha()};
 
   uber_struct->layers.insert({layer_image, us_layer_image});
   uber_struct->layers.insert({layer_color, us_layer_color});
@@ -655,12 +656,12 @@ TEST(UberStructSystemTest, UberStructLayerFieldsRoundTrip) {
   EXPECT_EQ(snap_image.sample_rect.width(), 3.f);
   EXPECT_EQ(snap_image.sample_rect.height(), 4.f);
   EXPECT_EQ(snap_image.transform, types::RotateFlip::kRotateCcw90());
-  EXPECT_EQ(snap_image.display_rect.x(), 5);
-  EXPECT_EQ(snap_image.display_rect.y(), 6);
-  EXPECT_EQ(snap_image.display_rect.width(), 7);
-  EXPECT_EQ(snap_image.display_rect.height(), 8);
-  EXPECT_EQ(snap_image.opacity, 0.5f);
-  EXPECT_EQ(snap_image.blend_mode, types::BlendMode::kPremultipliedAlpha());
+  EXPECT_EQ(image_iter->second.display_rect.x(), 5);
+  EXPECT_EQ(image_iter->second.display_rect.y(), 6);
+  EXPECT_EQ(image_iter->second.display_rect.width(), 7);
+  EXPECT_EQ(image_iter->second.display_rect.height(), 8);
+  EXPECT_EQ(image_iter->second.opacity, 0.5f);
+  EXPECT_EQ(image_iter->second.blend_mode, types::BlendMode::kPremultipliedAlpha());
   EXPECT_EQ(snap_image.image_id, allocation::GlobalImageId(123));
   EXPECT_EQ(snap_image.image_width, 100u);
   EXPECT_EQ(snap_image.image_height, 200u);
@@ -672,12 +673,12 @@ TEST(UberStructSystemTest, UberStructLayerFieldsRoundTrip) {
       std::holds_alternative<UberStructLayer::SolidColorContent>(color_iter->second.content));
   auto snap_color = std::get<UberStructLayer::SolidColorContent>(color_iter->second.content);
   EXPECT_EQ(snap_color.color, (std::array<float, 4>{0.1f, 0.2f, 0.3f, 0.4f}));
-  EXPECT_EQ(snap_color.display_rect.x(), 9);
-  EXPECT_EQ(snap_color.display_rect.y(), 10);
-  EXPECT_EQ(snap_color.display_rect.width(), 11);
-  EXPECT_EQ(snap_color.display_rect.height(), 12);
-  EXPECT_EQ(snap_color.opacity, 0.75f);
-  EXPECT_EQ(snap_color.blend_mode, types::BlendMode::kPremultipliedAlpha());
+  EXPECT_EQ(color_iter->second.display_rect.x(), 9);
+  EXPECT_EQ(color_iter->second.display_rect.y(), 10);
+  EXPECT_EQ(color_iter->second.display_rect.width(), 11);
+  EXPECT_EQ(color_iter->second.display_rect.height(), 12);
+  EXPECT_EQ(color_iter->second.opacity, 0.75f);
+  EXPECT_EQ(color_iter->second.blend_mode, types::BlendMode::kPremultipliedAlpha());
 
   EXPECT_EQ(iter->second->flatland_version, 2u);
 }

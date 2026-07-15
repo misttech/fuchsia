@@ -11,10 +11,10 @@
 #include <unordered_map>
 
 #include "src/ui/scenic/lib/allocation/image_metadata.h"
-#include "src/ui/scenic/lib/flatland/flatland2_state.h"
 #include "src/ui/scenic/lib/flatland/flatland_types.h"
 #include "src/ui/scenic/lib/flatland/transform_graph.h"
 #include "src/ui/scenic/lib/flatland/transform_handle.h"
+#include "src/ui/scenic/lib/types/rotate_flip.h"
 
 #include <glm/glm.hpp>
 #include <glm/mat3x3.hpp>
@@ -25,21 +25,24 @@ namespace flatland {
 struct UberStructLayer {
   struct ImageContent {
     types::RectangleF sample_rect;
-    types::RotateFlip transform;
-    types::Rectangle display_rect;
-    float opacity = 1.f;
-    types::BlendMode blend_mode = types::BlendMode::kReplace();
+    types::RotateFlip transform = types::RotateFlip::kIdentity();
     allocation::GlobalImageId image_id = allocation::kInvalidImageId;
     uint32_t image_width = 0, image_height = 0;
   };
   struct SolidColorContent {
+    // Straight (non-premultiplied) alpha.
     std::array<float, 4> color = {1.f, 1.f, 1.f, 1.f};
-    types::Rectangle display_rect;
-    float opacity = 1.f;
-    types::BlendMode blend_mode = types::BlendMode::kReplace();
   };
+
+  // Incremented when the layer transitions to a different content type (e.g., from ImageContent to
+  // SolidColorContent).  It does not increment when properties of the existing content are mutated.
+  // This helps the renderer to efficiently detect structural content changes.
   uint64_t epoch = 0;
   std::variant<std::monostate, ImageContent, SolidColorContent> content;
+
+  types::Rectangle display_rect;
+  float opacity = 1.f;
+  types::BlendMode blend_mode = types::BlendMode::kReplace();
 };
 
 // TODO(https://fxbug.dev/42122511): find the appropriate name for this struct.

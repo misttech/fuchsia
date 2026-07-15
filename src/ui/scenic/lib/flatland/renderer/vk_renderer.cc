@@ -913,7 +913,8 @@ void VkRenderer::Render(const ImageMetadata& render_target, std::span<const Reso
 
     textures.push_back(texture_ptr);
 
-    glm::vec4 multiply(layer.color[0], layer.color[1], layer.color[2], layer.color[3]);
+    glm::vec4 multiply(layer.multiply_color[0], layer.multiply_color[1], layer.multiply_color[2],
+                       layer.multiply_color[3]);
     if (std::holds_alternative<ResolvedLayer::SolidColorContent>(layer.content)) {
       const auto& solid = std::get<ResolvedLayer::SolidColorContent>(layer.content);
       multiply.r *= solid.color[0];

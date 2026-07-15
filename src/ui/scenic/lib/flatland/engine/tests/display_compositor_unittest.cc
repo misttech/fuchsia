@@ -1755,7 +1755,7 @@ TEST_F(DisplayCompositorTest, SolidColorContentTakesColorLayerPath) {
 
   ResolvedLayer layer = {
       .rect = {glm::vec2(0, 0), glm::vec2(resolution.x, resolution.y)},
-      .color = {1.f, 1.f, 1.f, 1.f},
+      .multiply_color = {1.f, 1.f, 1.f, 1.f},
       .blend_mode = BlendMode::kReplace(),
       .content = ResolvedLayer::SolidColorContent{.color = {1.f, 0.f, 0.f, 1.f}},
   };
@@ -1884,7 +1884,7 @@ TEST_F(DisplayCompositorTest, ImageContentTakesImageLayerPath) {
 
   ResolvedLayer layer = {
       .rect = {glm::vec2(0, 0), glm::vec2(128, 256)},
-      .color = {1.f, 1.f, 1.f, 1.f},
+      .multiply_color = {1.f, 1.f, 1.f, 1.f},
       .blend_mode = BlendMode::kReplace(),
       .content =
           ResolvedLayer::ImageContent{
