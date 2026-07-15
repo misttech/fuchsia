@@ -11,6 +11,7 @@ use fbl::RefPtr;
 use kalloc::AllocError;
 use kernel::thread::ThreadPtr;
 use kernel::types::PAddr;
+use zr::ToMutPtr;
 use zx_status::Status;
 
 #[repr(u8)]
@@ -119,10 +120,6 @@ pub struct VmAspace {
 }
 
 impl VmAspace {
-    fn as_mut_ptr(&self) -> *mut VmAspace {
-        self as *const VmAspace as *mut VmAspace
-    }
-
     /// Creates an address space of the type specified in `type_` with name `name`.
     ///
     /// Although reference counted, the returned [`VmAspace`] must be explicitly destroyed via
@@ -200,48 +197,48 @@ impl VmAspace {
     /// `destroy` does not free this object, but rather allows it to be freed when the last
     /// retaining `RefPtr` is destroyed.
     pub fn destroy(&self) -> Result<(), Status> {
-        Status::ok(unsafe { cpp_vm_aspace_destroy(self.as_mut_ptr()) })
+        Status::ok(unsafe { cpp_vm_aspace_destroy(self.to_mut_ptr()) })
     }
 
     /// Renames this address space.
     pub fn rename(&self, name: &CStr) {
-        unsafe { cpp_vm_aspace_rename(self.as_mut_ptr(), name.as_ptr()) }
+        unsafe { cpp_vm_aspace_rename(self.to_mut_ptr(), name.as_ptr()) }
     }
 
     /// Returns the base virtual address of this address space.
     pub fn base(&self) -> usize {
-        unsafe { cpp_vm_aspace_base(self.as_mut_ptr()) }
+        unsafe { cpp_vm_aspace_base(self.to_mut_ptr()) }
     }
 
     /// Returns the size in bytes of this address space.
     pub fn size(&self) -> usize {
-        unsafe { cpp_vm_aspace_size(self.as_mut_ptr()) }
+        unsafe { cpp_vm_aspace_size(self.to_mut_ptr()) }
     }
 
     /// Returns the name of this address space.
     pub fn name(&self) -> &CStr {
-        unsafe { CStr::from_ptr(cpp_vm_aspace_name(self.as_mut_ptr())) }
+        unsafe { CStr::from_ptr(cpp_vm_aspace_name(self.to_mut_ptr())) }
     }
 
     /// Returns a reference to the architecturally specific part of the address space
     /// (`ArchVmAspace`). This is internally locked and does not need to be guarded by `lock_`.
     pub fn arch_aspace(&self) -> &ArchVmAspace {
-        unsafe { &*cpp_vm_aspace_arch_aspace(self.as_mut_ptr()) }
+        unsafe { &*cpp_vm_aspace_arch_aspace(self.to_mut_ptr()) }
     }
 
     /// Returns true if this is a user address space (`Type::User`).
     pub fn is_user(&self) -> bool {
-        unsafe { cpp_vm_aspace_is_user(self.as_mut_ptr()) }
+        unsafe { cpp_vm_aspace_is_user(self.to_mut_ptr()) }
     }
 
     /// Returns true if ASLR is enabled for this address space.
     pub fn is_aslr_enabled(&self) -> bool {
-        unsafe { cpp_vm_aspace_is_aslr_enabled(self.as_mut_ptr()) }
+        unsafe { cpp_vm_aspace_is_aslr_enabled(self.to_mut_ptr()) }
     }
 
     /// Returns true if this address space has been destroyed.
     pub fn is_destroyed(&self) -> bool {
-        unsafe { cpp_vm_aspace_is_destroyed(self.as_mut_ptr()) }
+        unsafe { cpp_vm_aspace_is_destroyed(self.to_mut_ptr()) }
     }
 
     /// Returns the singleton kernel address space.
@@ -251,17 +248,17 @@ impl VmAspace {
 
     /// Returns the root address region (`RootVmar`) for this address space.
     pub fn root_vmar(&self) -> Option<RefPtr<VmAddressRegion>> {
-        unsafe { RefPtr::try_from_raw(cpp_vm_aspace_root_vmar(self.as_mut_ptr())) }
+        unsafe { RefPtr::try_from_raw(cpp_vm_aspace_root_vmar(self.to_mut_ptr())) }
     }
 
     /// Sets the per-thread address space pointer to this address space.
     pub fn attach_to_thread(&self, thread: ThreadPtr) {
-        unsafe { cpp_vm_aspace_attach_to_thread(self.as_mut_ptr(), thread.as_raw()) }
+        unsafe { cpp_vm_aspace_attach_to_thread(self.to_mut_ptr(), thread.as_raw()) }
     }
 
     /// Dumps information about this address space to the debug log.
     pub fn dump(&self, verbose: bool) {
-        unsafe { cpp_vm_aspace_dump(self.as_mut_ptr(), verbose) }
+        unsafe { cpp_vm_aspace_dump(self.to_mut_ptr(), verbose) }
     }
 
     /// Drops all user page tables across all user address spaces.
@@ -271,7 +268,7 @@ impl VmAspace {
 
     /// Drops all user page tables for this address space.
     pub fn drop_user_page_tables(&self) {
-        unsafe { cpp_vm_aspace_drop_user_page_tables(self.as_mut_ptr()) }
+        unsafe { cpp_vm_aspace_drop_user_page_tables(self.to_mut_ptr()) }
     }
 
     /// Dumps all address spaces in the system.
@@ -305,7 +302,7 @@ impl VmAspace {
     ///
     /// May block on page requests and must be called without locks held.
     pub fn soft_fault(&self, va: usize, flags: u32) -> Result<(), Status> {
-        Status::ok(unsafe { cpp_vm_aspace_soft_fault(self.as_mut_ptr(), va, flags) })
+        Status::ok(unsafe { cpp_vm_aspace_soft_fault(self.to_mut_ptr(), va, flags) })
     }
 
     /// Similar to `soft_fault`, but additionally takes a length indicating that the range of
@@ -315,7 +312,7 @@ impl VmAspace {
     /// There are no alignment restrictions on `va` or `len`, although it is assumed that `len` is
     /// greater than zero.
     pub fn soft_fault_in_range(&self, va: usize, flags: u32, len: usize) -> Result<(), Status> {
-        Status::ok(unsafe { cpp_vm_aspace_soft_fault_in_range(self.as_mut_ptr(), va, flags, len) })
+        Status::ok(unsafe { cpp_vm_aspace_soft_fault_in_range(self.to_mut_ptr(), va, flags, len) })
     }
 
     /// Generates an accessed flag fault against this address space.
@@ -323,14 +320,14 @@ impl VmAspace {
     /// This is a specialized version of `soft_fault` that will only resolve a potential missing
     /// access flag and nothing else.
     pub fn accessed_fault(&self, va: usize) -> Result<(), Status> {
-        Status::ok(unsafe { cpp_vm_aspace_accessed_fault(self.as_mut_ptr(), va) })
+        Status::ok(unsafe { cpp_vm_aspace_accessed_fault(self.to_mut_ptr(), va) })
     }
 
     /// Page fault routine.
     ///
     /// Should only be called by the hypervisor or by `Thread::Current::Fault`.
     pub fn page_fault(&self, va: usize, flags: u32) -> Result<(), Status> {
-        Status::ok(unsafe { cpp_vm_aspace_page_fault(self.as_mut_ptr(), va, flags) })
+        Status::ok(unsafe { cpp_vm_aspace_page_fault(self.to_mut_ptr(), va, flags) })
     }
 
     /// Legacy function to assist in the transition to VMARs.
@@ -354,7 +351,7 @@ impl VmAspace {
     ) -> Result<(), Status> {
         Status::ok(unsafe {
             cpp_vm_aspace_alloc_physical(
-                self.as_mut_ptr(),
+                self.to_mut_ptr(),
                 name.as_ptr(),
                 size,
                 ptr,
@@ -386,7 +383,7 @@ impl VmAspace {
     ) -> Result<(), Status> {
         Status::ok(unsafe {
             cpp_vm_aspace_alloc_contiguous(
-                self.as_mut_ptr(),
+                self.to_mut_ptr(),
                 name.as_ptr(),
                 size,
                 ptr,
@@ -406,28 +403,28 @@ impl VmAspace {
     ///
     /// The caller must ensure that the virtual address range being freed is no longer in use.
     pub unsafe fn free_region(&self, va: usize) -> Result<(), Status> {
-        Status::ok(unsafe { cpp_vm_aspace_free_region(self.as_mut_ptr(), va) })
+        Status::ok(unsafe { cpp_vm_aspace_free_region(self.to_mut_ptr(), va) })
     }
 
     /// Returns the vDSO base address for this address space.
     pub fn vdso_base_address(&self) -> usize {
-        unsafe { cpp_vm_aspace_vdso_base_address(self.as_mut_ptr()) }
+        unsafe { cpp_vm_aspace_vdso_base_address(self.to_mut_ptr()) }
     }
 
     /// Returns the vDSO code address for this address space.
     pub fn vdso_code_address(&self) -> usize {
-        unsafe { cpp_vm_aspace_vdso_code_address(self.as_mut_ptr()) }
+        unsafe { cpp_vm_aspace_vdso_code_address(self.to_mut_ptr()) }
     }
 
     /// Returns whether this address space is currently set to be a high memory priority.
     pub fn is_high_memory_priority(&self) -> bool {
-        unsafe { cpp_vm_aspace_is_high_memory_priority(self.as_mut_ptr()) }
+        unsafe { cpp_vm_aspace_is_high_memory_priority(self.to_mut_ptr()) }
     }
 }
 
 impl fbl::HasRefCount for VmAspace {
     fn ref_count(&self) -> &fbl::RefCounted {
-        unsafe { &*cpp_vm_aspace_get_ref_counted(self.as_mut_ptr()) }
+        unsafe { &*cpp_vm_aspace_get_ref_counted(self.to_mut_ptr()) }
     }
 }
 

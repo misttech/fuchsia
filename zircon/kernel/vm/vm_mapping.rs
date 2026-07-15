@@ -8,6 +8,7 @@ use core::marker::{PhantomData, PhantomPinned};
 use core::ptr::NonNull;
 use fbl::RefPtr;
 use kalloc::AllocError;
+use zr::ToMutPtr;
 use zx_status::Status;
 
 unsafe extern "C" {
@@ -46,39 +47,35 @@ pub struct VmMapping {
 }
 
 impl VmMapping {
-    fn as_mut_ptr(&self) -> *mut VmMapping {
-        self as *const VmMapping as *mut VmMapping
-    }
-
     /// Destroys this mapping, unmapping all pages and removing dependencies on the underlying VMO.
     pub fn destroy(&self) -> Result<(), Status> {
-        Status::ok(unsafe { cpp_vm_mapping_destroy(self.as_mut_ptr()) })
+        Status::ok(unsafe { cpp_vm_mapping_destroy(self.to_mut_ptr()) })
     }
 
     /// Returns the base virtual address of this mapping.
     pub fn base(&self) -> usize {
-        unsafe { cpp_vm_mapping_base(self.as_mut_ptr()) }
+        unsafe { cpp_vm_mapping_base(self.to_mut_ptr()) }
     }
 
     /// Returns the size in bytes of this mapping.
     pub fn size(&self) -> usize {
-        unsafe { cpp_vm_mapping_size(self.as_mut_ptr()) }
+        unsafe { cpp_vm_mapping_size(self.to_mut_ptr()) }
     }
 
     /// Returns the creation flags of this mapping.
     pub fn flags(&self) -> u32 {
-        unsafe { cpp_vm_mapping_flags(self.as_mut_ptr()) }
+        unsafe { cpp_vm_mapping_flags(self.to_mut_ptr()) }
     }
 
     /// Returns the offset into the underlying VMO for this mapping.
     pub fn object_offset(&self) -> u64 {
-        unsafe { cpp_vm_mapping_object_offset(self.as_mut_ptr()) }
+        unsafe { cpp_vm_mapping_object_offset(self.to_mut_ptr()) }
     }
 
     /// Convenience wrapper for vmo()->DecommitRange() with the necessary
     /// offset modification and locking.
     pub fn decommit_range(&self, offset: usize, len: usize) -> Result<(), Status> {
-        Status::ok(unsafe { cpp_vm_mapping_decommit_range(self.as_mut_ptr(), offset, len) })
+        Status::ok(unsafe { cpp_vm_mapping_decommit_range(self.to_mut_ptr(), offset, len) })
     }
 
     /// Map in pages from the underlying vm object, optionally committing pages as it goes.
@@ -94,13 +91,13 @@ impl VmMapping {
         ignore_existing: bool,
     ) -> Result<(), Status> {
         Status::ok(unsafe {
-            cpp_vm_mapping_map_range(self.as_mut_ptr(), offset, len, commit, ignore_existing)
+            cpp_vm_mapping_map_range(self.to_mut_ptr(), offset, len, commit, ignore_existing)
         })
     }
 
     /// Unlocked convenience wrapper around unmap for testing.
     pub fn debug_unmap(&self, base: usize, size: usize) -> Result<(), Status> {
-        Status::ok(unsafe { cpp_vm_mapping_debug_unmap(self.as_mut_ptr(), base, size) })
+        Status::ok(unsafe { cpp_vm_mapping_debug_unmap(self.to_mut_ptr(), base, size) })
     }
 
     /// Unlocked convenience wrapper around protect for testing.
@@ -111,19 +108,19 @@ impl VmMapping {
         new_arch_mmu_flags: ArchMmuFlags,
     ) -> Result<(), Status> {
         Status::ok(unsafe {
-            cpp_vm_mapping_debug_protect(self.as_mut_ptr(), base, size, new_arch_mmu_flags)
+            cpp_vm_mapping_debug_protect(self.to_mut_ptr(), base, size, new_arch_mmu_flags)
         })
     }
 
     /// Returns the underlying VMO backing this mapping.
     pub fn vmo(&self) -> Option<RefPtr<VmObject>> {
-        unsafe { RefPtr::try_from_raw(cpp_vm_mapping_vmo(self.as_mut_ptr())) }
+        unsafe { RefPtr::try_from_raw(cpp_vm_mapping_vmo(self.to_mut_ptr())) }
     }
 }
 
 impl fbl::HasRefCount for VmMapping {
     fn ref_count(&self) -> &fbl::RefCounted {
-        unsafe { &*cpp_vm_mapping_get_ref_counted(self.as_mut_ptr()) }
+        unsafe { &*cpp_vm_mapping_get_ref_counted(self.to_mut_ptr()) }
     }
 }
 

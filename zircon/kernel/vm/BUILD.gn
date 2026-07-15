@@ -152,6 +152,7 @@ rustc_library("vm-rs") {
   deps = [
     "//sdk/rust/zx-status",
     "//src/lib/kalloc",
+    "//src/lib/zr",
     "//zircon/kernel/kernel:kernel-rs",
     "//zircon/system/ulib/fbl/rust:fbl",
   ]

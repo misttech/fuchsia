@@ -11,6 +11,7 @@ rustc_library("zr") {
     "src/opaque.rs",
     "src/opaque_bytes.rs",
     "src/pin_init.rs",
+    "src/ptr.rs",
     "src/static_assert.rs",
     "src/string.rs",
   ]

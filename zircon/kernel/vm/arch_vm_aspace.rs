@@ -4,6 +4,7 @@
 
 use core::marker::{PhantomData, PhantomPinned};
 use kernel::types::PAddr;
+use zr::ToMutPtr;
 use zx_status::Status;
 
 // TODO(https://fxbug.dev/529507187): Use bitflags! or equivalent once available.
@@ -156,30 +157,26 @@ pub struct ArchVmAspace {
 }
 
 impl ArchVmAspace {
-    fn as_mut_ptr(&self) -> *mut ArchVmAspace {
-        self as *const ArchVmAspace as *mut ArchVmAspace
-    }
-
     /// This is used to create a regular address space with no special features. In
     /// architectures that do not support unified address spaces, it is also used to create
     /// shared and restricted address spaces. However, when unified address spaces are
     /// supported, the shared and restricted address spaces should be created with `init_shared`
     /// and `init_restricted`.
     pub fn init(&self) -> Result<(), Status> {
-        Status::ok(unsafe { cpp_arch_vm_aspace_init(self.as_mut_ptr()) })
+        Status::ok(unsafe { cpp_arch_vm_aspace_init(self.to_mut_ptr()) })
     }
 
     /// This is used to create a shared address space, whose contents can be
     /// accessed from multiple unified address spaces. These address spaces have a statically
     /// initialized top level page.
     pub fn init_shared(&self) -> Result<(), Status> {
-        Status::ok(unsafe { cpp_arch_vm_aspace_init_shared(self.as_mut_ptr()) })
+        Status::ok(unsafe { cpp_arch_vm_aspace_init_shared(self.to_mut_ptr()) })
     }
 
     /// This is used to create a restricted address space, whose contents can be
     /// accessed from a single unified address space.
     pub fn init_restricted(&self) -> Result<(), Status> {
-        Status::ok(unsafe { cpp_arch_vm_aspace_init_restricted(self.as_mut_ptr()) })
+        Status::ok(unsafe { cpp_arch_vm_aspace_init_restricted(self.to_mut_ptr()) })
     }
 
     /// `init_unified`: This is used to create a unified address space. This type of address space
@@ -194,9 +191,9 @@ impl ArchVmAspace {
     ) -> Result<(), Status> {
         Status::ok(unsafe {
             cpp_arch_vm_aspace_init_unified(
-                self.as_mut_ptr(),
-                shared.as_mut_ptr(),
-                restricted.as_mut_ptr(),
+                self.to_mut_ptr(),
+                shared.to_mut_ptr(),
+                restricted.to_mut_ptr(),
             )
         })
     }
@@ -211,7 +208,7 @@ impl ArchVmAspace {
     /// The purpose of this method is to help enforce lifecycle and state transitions of VmAspace
     /// and ArchVmAspaceInterface.
     pub fn disable_updates(&self) {
-        unsafe { cpp_arch_vm_aspace_disable_updates(self.as_mut_ptr()) }
+        unsafe { cpp_arch_vm_aspace_disable_updates(self.to_mut_ptr()) }
     }
 
     /// Destroy expects the aspace to be fully unmapped, as any mapped regions indicate incomplete
@@ -222,7 +219,7 @@ impl ArchVmAspace {
     /// failed. Once destroy has been called it is a user error to call any of the other methods on
     /// the aspace, unless specifically stated otherwise, and doing so may cause a panic.
     pub fn destroy(&self) -> Result<(), Status> {
-        Status::ok(unsafe { cpp_arch_vm_aspace_destroy(self.as_mut_ptr()) })
+        Status::ok(unsafe { cpp_arch_vm_aspace_destroy(self.to_mut_ptr()) })
     }
 
     /// Map a physically contiguous region into the virtual address space. This is allowed to use
@@ -239,7 +236,7 @@ impl ArchVmAspace {
         mmu_flags: ArchMmuFlags,
     ) -> Result<(), Status> {
         Status::ok(unsafe {
-            cpp_arch_vm_aspace_map_contiguous(self.as_mut_ptr(), vaddr, paddr, count, mmu_flags)
+            cpp_arch_vm_aspace_map_contiguous(self.to_mut_ptr(), vaddr, paddr, count, mmu_flags)
         })
     }
 
@@ -271,7 +268,7 @@ impl ArchVmAspace {
     ) -> Result<(), Status> {
         Status::ok(unsafe {
             cpp_arch_vm_aspace_map(
-                self.as_mut_ptr(),
+                self.to_mut_ptr(),
                 vaddr,
                 phys,
                 count,
@@ -292,14 +289,14 @@ impl ArchVmAspace {
         count: usize,
         enlarge: ArchUnmapOptions,
     ) -> Result<(), Status> {
-        Status::ok(unsafe { cpp_arch_vm_aspace_unmap(self.as_mut_ptr(), vaddr, count, enlarge) })
+        Status::ok(unsafe { cpp_arch_vm_aspace_unmap(self.to_mut_ptr(), vaddr, count, enlarge) })
     }
 
     /// Returns whether or not an unmap might need to enlarge an operation for reasons other than
     /// being out of memory. If this returns true, then unmapping a partial large page will fail
     /// always require an enlarged operation.
     pub fn unmap_only_enlarge_on_oom(&self) -> bool {
-        unsafe { cpp_arch_vm_aspace_unmap_only_enlarge_on_oom(self.as_mut_ptr()) }
+        unsafe { cpp_arch_vm_aspace_unmap_only_enlarge_on_oom(self.to_mut_ptr()) }
     }
 
     /// Change the page protections on the given virtual address range
@@ -323,7 +320,7 @@ impl ArchVmAspace {
         enlarge: ArchUnmapOptions,
     ) -> Result<(), Status> {
         Status::ok(unsafe {
-            cpp_arch_vm_aspace_protect(self.as_mut_ptr(), vaddr, count, mmu_flags, enlarge)
+            cpp_arch_vm_aspace_protect(self.to_mut_ptr(), vaddr, count, mmu_flags, enlarge)
         })
     }
 
@@ -333,7 +330,7 @@ impl ArchVmAspace {
         let mut mmu_flags: ArchMmuFlags = 0;
         Status::ok(unsafe {
             cpp_arch_vm_aspace_query(
-                self.as_mut_ptr(),
+                self.to_mut_ptr(),
                 vaddr,
                 &mut paddr as *mut PAddr,
                 &mut mmu_flags as *mut ArchMmuFlags,
@@ -352,7 +349,7 @@ impl ArchVmAspace {
         mmu_flags: ArchMmuFlags,
     ) -> usize {
         unsafe {
-            cpp_arch_vm_aspace_pick_spot(self.as_mut_ptr(), base, end, align, size, mmu_flags)
+            cpp_arch_vm_aspace_pick_spot(self.to_mut_ptr(), base, end, align, size, mmu_flags)
         }
     }
 
@@ -370,7 +367,7 @@ impl ArchVmAspace {
     ) -> Result<(), Status> {
         Status::ok(unsafe {
             cpp_arch_vm_aspace_harvest_accessed(
-                self.as_mut_ptr(),
+                self.to_mut_ptr(),
                 vaddr,
                 count,
                 non_terminal_action,
@@ -381,7 +378,7 @@ impl ArchVmAspace {
 
     /// Marks any pages in the given virtual address range as being accessed.
     pub fn mark_accessed(&self, vaddr: usize, count: usize) -> Result<(), Status> {
-        Status::ok(unsafe { cpp_arch_vm_aspace_mark_accessed(self.as_mut_ptr(), vaddr, count) })
+        Status::ok(unsafe { cpp_arch_vm_aspace_mark_accessed(self.to_mut_ptr(), vaddr, count) })
     }
 
     /// Returns whether or not this aspace might have additional accessed information since the last
@@ -400,7 +397,7 @@ impl ArchVmAspace {
     /// Not clearing makes this function const and not modify any state. If `clear` is true then
     /// this method is only thread-compatible and must be externally synchronized.
     pub fn accessed_since_last_check(&self, clear: bool) -> bool {
-        unsafe { cpp_arch_vm_aspace_accessed_since_last_check(self.as_mut_ptr(), clear) }
+        unsafe { cpp_arch_vm_aspace_accessed_since_last_check(self.to_mut_ptr(), clear) }
     }
 
     /// Physical address of the backing data structure used for translation.
@@ -408,6 +405,6 @@ impl ArchVmAspace {
     /// This should be treated as an opaque value outside of
     /// architecture-specific components.
     pub fn arch_table_phys(&self) -> PAddr {
-        unsafe { cpp_arch_vm_aspace_arch_table_phys(self.as_mut_ptr()) }
+        unsafe { cpp_arch_vm_aspace_arch_table_phys(self.to_mut_ptr()) }
     }
 }

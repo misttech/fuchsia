@@ -11,6 +11,7 @@ use core::ptr::NonNull;
 use fbl::RefPtr;
 use kalloc::AllocError;
 use kernel::types::VAddr;
+use zr::ToMutPtr;
 use zx_status::Status;
 
 /// When randomly allocating subregions, reduce sprawl by placing allocations near each other.
@@ -137,10 +138,6 @@ pub struct VmAddressRegion {
 }
 
 impl VmAddressRegion {
-    fn as_mut_ptr(&self) -> *mut VmAddressRegion {
-        self as *const VmAddressRegion as *mut VmAddressRegion
-    }
-
     /// Creates a subregion of this region.
     pub fn create_sub_vmar(
         &self,
@@ -153,7 +150,7 @@ impl VmAddressRegion {
         let mut status = 0;
         let raw = unsafe {
             cpp_vm_address_region_create_sub_vmar(
-                self.as_mut_ptr(),
+                self.to_mut_ptr(),
                 offset,
                 size,
                 align_pow2,
@@ -185,7 +182,7 @@ impl VmAddressRegion {
         let mut status = 0;
         let raw = unsafe {
             cpp_vm_address_region_create_vm_mapping(
-                self.as_mut_ptr(),
+                self.to_mut_ptr(),
                 mapping_offset,
                 size,
                 align_pow2,
@@ -205,38 +202,38 @@ impl VmAddressRegion {
 
     /// Destroys this region and recursively destroys child VMARs.
     pub fn destroy(&self) -> Result<(), Status> {
-        Status::ok(unsafe { cpp_vm_address_region_destroy(self.as_mut_ptr()) })
+        Status::ok(unsafe { cpp_vm_address_region_destroy(self.to_mut_ptr()) })
     }
 
     /// Returns the base address of this region.
     pub fn base(&self) -> VAddr {
-        unsafe { cpp_vm_address_region_base(self.as_mut_ptr()) }
+        unsafe { cpp_vm_address_region_base(self.to_mut_ptr()) }
     }
 
     /// Returns the size in bytes of this region.
     pub fn size(&self) -> usize {
-        unsafe { cpp_vm_address_region_size(self.as_mut_ptr()) }
+        unsafe { cpp_vm_address_region_size(self.to_mut_ptr()) }
     }
 
     /// Returns the creation flags of this region.
     pub fn flags(&self) -> u32 {
-        unsafe { cpp_vm_address_region_flags(self.as_mut_ptr()) }
+        unsafe { cpp_vm_address_region_flags(self.to_mut_ptr()) }
     }
 
     /// Returns the name of this region.
     pub fn name(&self) -> &CStr {
-        unsafe { CStr::from_ptr(cpp_vm_address_region_name(self.as_mut_ptr())) }
+        unsafe { CStr::from_ptr(cpp_vm_address_region_name(self.to_mut_ptr())) }
     }
 
     /// Returns true if this region has a parent region.
     pub fn has_parent(&self) -> bool {
-        unsafe { cpp_vm_address_region_has_parent(self.as_mut_ptr()) }
+        unsafe { cpp_vm_address_region_has_parent(self.to_mut_ptr()) }
     }
 
     /// Applies the given memory priority to this region and all subregions.
     pub fn set_memory_priority(&self, priority: MemoryPriority) -> Result<(), Status> {
         Status::ok(unsafe {
-            cpp_vm_address_region_set_memory_priority(self.as_mut_ptr(), priority)
+            cpp_vm_address_region_set_memory_priority(self.to_mut_ptr(), priority)
         })
     }
 
@@ -252,7 +249,7 @@ impl VmAddressRegion {
         op_children: VmAddressRegionOpChildren,
     ) -> Result<(), Status> {
         Status::ok(unsafe {
-            cpp_vm_address_region_unmap(self.as_mut_ptr(), base, size, op_children)
+            cpp_vm_address_region_unmap(self.to_mut_ptr(), base, size, op_children)
         })
     }
 
@@ -266,7 +263,7 @@ impl VmAddressRegion {
     ) -> Result<(), Status> {
         Status::ok(unsafe {
             cpp_vm_address_region_protect(
-                self.as_mut_ptr(),
+                self.to_mut_ptr(),
                 base,
                 size,
                 new_arch_mmu_flags,
@@ -285,7 +282,7 @@ impl VmAddressRegion {
     ) -> Result<(), Status> {
         Status::ok(unsafe {
             cpp_vm_address_region_reserve_space(
-                self.as_mut_ptr(),
+                self.to_mut_ptr(),
                 name.as_ptr(),
                 base,
                 size,
@@ -297,7 +294,7 @@ impl VmAddressRegion {
 
 impl fbl::HasRefCount for VmAddressRegion {
     fn ref_count(&self) -> &fbl::RefCounted {
-        unsafe { &*cpp_vm_address_region_get_ref_counted(self.as_mut_ptr()) }
+        unsafe { &*cpp_vm_address_region_get_ref_counted(self.to_mut_ptr()) }
     }
 }
 
