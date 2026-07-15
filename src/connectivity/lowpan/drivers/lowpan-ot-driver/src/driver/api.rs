@@ -1937,7 +1937,12 @@ where
         // openthread config. Also the config values in openthread are defined at
         // compile time, so they never change for a given software version.
 
-        Ok(Capabilities { nat64: Some(true), dhcpv6_pd: Some(true), ..Default::default() })
+        Ok(Capabilities {
+            nat64: Some(true),
+            dhcpv6_pd: Some(true),
+            epskc: Some(true),
+            ..Default::default()
+        })
     }
 
     fn start_ephemeral_key(&self, lifetime: u32) -> ZxResult<Vec<u8>> {
