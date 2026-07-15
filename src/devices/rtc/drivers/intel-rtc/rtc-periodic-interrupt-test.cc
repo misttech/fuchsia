@@ -6,6 +6,7 @@
 #include <lib/component/incoming/cpp/protocol.h>
 #include <lib/ddk/hw/inout.h>
 #include <lib/zx/interrupt.h>
+#include <lib/zx/port.h>
 #include <lib/zx/resource.h>
 #include <lib/zx/result.h>
 #include <lib/zx/time.h>
@@ -275,6 +276,34 @@ TEST_F(RtcPeriodicInterruptTest, InterruptDispatcherWaitTeardownRace) {
   wait_t.join();
   destroy_t.join();
   DisableRtcPeriodicInterrupt(cmos_io);
+}
+
+// This is a regression test for https://fxbug.dev/525560700
+TEST_F(RtcPeriodicInterruptTest, PCHandleDestroyInterruptRace) {
+  zx::port port;
+  ASSERT_OK(zx::port::create(ZX_PORT_BIND_TO_INTERRUPT, &port));
+
+  constexpr size_t kNumIters = 5000;
+  for (size_t i = 0; i < kNumIters; i++) {
+    zx::interrupt h;
+    ASSERT_OK(zx::interrupt::create(irq_res, 8u, ZX_INTERRUPT_MODE_LEVEL_HIGH, &h));
+    EnableRtcPeriodicInterrupt(cmos_io, 0x02u);  // 16384 Hz
+
+    // Bind to port. This will immediately trigger the interrupt and queue a packet,
+    // transitioning the dispatcher to NEEDACK state.
+    ASSERT_OK(h.bind(port, 0, 0));
+
+    // Wait for the packet
+    zx_port_packet_t packet;
+    ASSERT_OK(port.wait(zx::time::infinite(), &packet));
+
+    // Now ack and destroy
+    h.ack();
+    h.destroy();
+
+    RegisterC::Get().ReadFrom(&cmos_io);
+    DisableRtcPeriodicInterrupt(cmos_io);
+  }
 }
 
 }  // namespace

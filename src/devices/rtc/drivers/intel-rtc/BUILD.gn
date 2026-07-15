@@ -7,6 +7,8 @@ import("//build/components.gni")
 import("//build/drivers.gni")
 import("//build/test.gni")
 import("//build/testing/environments.gni")
+import(
+    "//src/lib/testing/expectation/fuchsia_test_with_expectations_package.gni")
 
 assert(target_cpu == "x64")
 
@@ -97,10 +99,16 @@ test("rtc-periodic-interrupt-test-bin") {
   ]
 }
 
-fuchsia_unittest_package("rtc-periodic-interrupt-test") {
+fuchsia_test_component("rtc-periodic-interrupt-test-component") {
+  component_name = "rtc-periodic-interrupt-test"
   manifest = "meta/rtc-periodic-interrupt-test.cml"
   deps = [ ":rtc-periodic-interrupt-test-bin" ]
   test_type = "system"
+}
+
+fuchsia_test_with_expectations_package("rtc-periodic-interrupt-test") {
+  test_components = [ ":rtc-periodic-interrupt-test-component" ]
+  expectations = "expects/rtc_periodic_interrupt_test_expectations.json5"
   test_specs = {
     environments = [
       nuc7_env,
