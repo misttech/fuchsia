@@ -44,7 +44,7 @@ TEST_F(ManagedTestFixture, Dfv2Lifecycle) {
 
 TEST_F(UnmanagedTestFixture, ResourcesManagedInStart) {
   dut_.RunInEnvironmentTypeContext(
-      [](Environment& env) { env.usb_phy().set_watch_connection_status_changed_called(true); });
+      [](Environment& env) { env.usb_phy().set_connection_status_observer_called(true); });
 
   zx::result start = dut_.StartDriverWithCustomStartArgs([](fdf::DriverStartArgs& args) {
     dwc3_config::Config cfg;
@@ -57,7 +57,12 @@ TEST_F(UnmanagedTestFixture, ResourcesManagedInStart) {
   dut_.RunInEnvironmentTypeContext([](Environment& env) {
     EXPECT_TRUE(env.vreg().enabled());
     EXPECT_FALSE(env.reset().take_toggled());
-    EXPECT_TRUE(env.clock().enabled());
+    EXPECT_TRUE(env.clock_xo().enabled());
+    EXPECT_TRUE(env.clock_sleep().enabled());
+    EXPECT_TRUE(env.clock_iface().enabled());
+    EXPECT_TRUE(env.clock_core().enabled());
+    EXPECT_TRUE(env.clock_utmi().enabled());
+    EXPECT_TRUE(env.clock_bus_aggr().enabled());
   });
 
   dut_.runtime().RunUntilIdle();
@@ -70,7 +75,7 @@ TEST_F(UnmanagedTestFixture, PlatformExtensionBypass) {
   // Verify that when bypass_platform_extension is true, the platform extension is not created,
   // preventing it from making calls to external environment mocks during unit tests.
   dut_.RunInEnvironmentTypeContext(
-      [](Environment& env) { env.usb_phy().set_watch_connection_status_changed_called(true); });
+      [](Environment& env) { env.usb_phy().set_connection_status_observer_called(true); });
 
   zx::result start = dut_.StartDriverWithCustomStartArgs([](fdf::DriverStartArgs& args) {
     dwc3_config::Config cfg;

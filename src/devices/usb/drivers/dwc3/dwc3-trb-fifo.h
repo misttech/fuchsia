@@ -39,6 +39,8 @@ class TrbFifo : public Fifo<dwc3_trb_t> {
     return *read_;
   }
 
+  dwc3_trb_t* current_read() { return read_; }
+
   dwc3_trb_t* AdvanceWrite() { return Fifo::Advance(write_); }
   void AdvanceRead() {
     if (read_ == write_) {
