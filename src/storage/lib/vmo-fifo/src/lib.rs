@@ -560,8 +560,18 @@ impl<T: FromBytes + IntoBytes + KnownLayout + Copy> Receiver<T> {
                     // Successfully marked reader as asleep. Sleep until the writer signals that new
                     // items have been pushed.
                     let vmo = self.inner.mapping.vmo();
-                    self.inner.data_available.wait(vmo, SIG_SHUTDOWN)?;
-                    curr_write_head = self.inner.load_write_head(Ordering::Acquire);
+                    match self.inner.data_available.wait(vmo, SIG_SHUTDOWN) {
+                        Ok(()) => curr_write_head = self.inner.load_write_head(Ordering::Acquire),
+                        Err(zx::Status::CANCELED) => {
+                            // The Sender has shut down. Check one last time if they pushed items
+                            // just before dying. If the queue is truly empty, return CANCELED.
+                            curr_write_head = self.inner.load_write_head(Ordering::Acquire);
+                            if read_idx == curr_write_head.index() {
+                                return Err(zx::Status::CANCELED);
+                            }
+                        }
+                        Err(e) => return Err(e),
+                    }
                 }
                 Err(actual) => curr_write_head = State(actual),
             }
@@ -931,5 +941,46 @@ mod tests {
         let app_msg2 = TestCommand::from_wire(msg2);
         assert_eq!(app_msg2, TestCommand::NoPayload { val: 456 });
         receiver.pop_commit().expect("pop_commit failed");
+    }
+
+    #[fuchsia::test]
+    fn test_pop_handles_canceled_race_condition() {
+        // Run ten thousand times to force thread-scheduler starvation naturally
+        for _ in 0..10000 {
+            let vmo = zx::Vmo::create(4096).unwrap();
+            let vmo_dup = vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap();
+            let mut sender = Sender::<u32>::new(vmo, 4, 1).unwrap();
+            let mut receiver = Receiver::<u32>::new(vmo_dup, 1).unwrap();
+
+            let handle = std::thread::spawn(move || {
+                // Spin loop until the receiver sets the WAITER flag indicating it is blocked.
+                loop {
+                    let write_head = sender.inner.load_write_head(Ordering::Acquire);
+                    if write_head.has_waiter() {
+                        break;
+                    }
+                    std::thread::yield_now();
+                }
+
+                // Immediately push (which asserts SIG_DATA_AVAILABLE and wakes the receiver).
+                sender.push(42).expect("push failed");
+
+                // Drop the sender immediately (which asserts SIG_SHUTDOWN on the VMO). The receiver
+                // will occasionally observe both signals, and must not incorrectly return
+                // ZX_ERR_CANCELED since valid data is waiting in the queue.
+                drop(sender);
+            });
+
+            // This call will set the WAITER flag, go to sleep, sometimes wakes up with both data
+            // and shutdown signals, and should successfully pop the payload.
+            let val = receiver.pop_reserve().expect("pop_reserve failed on race condition");
+            assert_eq!(val, 42);
+            receiver.pop_commit().expect("pop_commit failed");
+
+            // The queue is now genuinely empty and the peer has dropped.
+            assert_eq!(receiver.pop_reserve().unwrap_err(), zx::Status::CANCELED);
+
+            handle.join().unwrap();
+        }
     }
 }
