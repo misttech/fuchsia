@@ -17,6 +17,7 @@
 
 #include <kernel/range_check.h>
 #include <ktl/limits.h>
+#include <ktl/memory.h>
 #include <pretty/cpp/sizes.h>
 #include <vm/physmap.h>
 #include <vm/pmm_node.h>
@@ -55,13 +56,12 @@ void PmmArena::Init(const PmmArenaSelection& selected, PmmNode* node) {
   };
   snprintf(info_.name, sizeof(info_.name), "%s", "ram");
 
-  // get the kernel pointer
+  // get the kernel pointer and initialize the pages.
   size_t page_array_size = selected.bookkeeping.size;
-  void* raw_page_array = paddr_to_physmap(selected.bookkeeping.base);
+  page_array_ = static_cast<vm_page_t*>(paddr_to_physmap(selected.bookkeeping.base));
   LTRACEF("arena for base 0%#" PRIxPTR " size %#zx page array at %p size %#zx\n", base(), size(),
-          raw_page_array, page_array_size);
-  memset(raw_page_array, 0, page_array_size);
-  page_array_ = (vm_page_t*)raw_page_array;
+          page_array_, page_array_size);
+  ktl::uninitialized_value_construct_n(page_array_, page_count);
 
   // we've just constructed |page_count| pages in the state vm_page_state::FREE
   vm_page::add_to_initial_count(vm_page_state::FREE, page_count);

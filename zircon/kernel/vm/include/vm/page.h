@@ -26,14 +26,18 @@ class FreeLoanedPagesHolder;
 // LINT.IfChange(vm_page)
 // core per page structure allocated at pmm arena creation time
 struct vm_page {
-  struct list_node queue_node;
+  struct list_node queue_node = LIST_INITIAL_CLEARED_VALUE;
 
   // read-only after being set up
-  paddr_t paddr_priv;  // use paddr() accessor
+  paddr_t paddr_priv = {};  // use paddr() accessor
 
   // offset 0x18
 
   union {
+    struct {
+      // Pages in the free state have no extra state right now. This branch of the union is declared
+      // in order to mark it as the default constructed one to match the default initial state.
+    } __PACKED free = {};
     struct {
       // This is a back pointer to the vm object this page is currently contained in.  It is
       // implicitly valid when the page is in a VmCowPages (which is a superset of intervals
@@ -146,7 +150,7 @@ struct vm_page {
   // offset 0x2e
 
   // logically private; use |state()| and |set_state()|
-  vm_page_state state_priv;
+  vm_page_state state_priv = vm_page_state::FREE;
 
   // offset 0x2f
 
@@ -156,7 +160,7 @@ struct vm_page {
   // The loaned state is packed into a single byte here to reduce memory usage, but due to the
   // allowable access patterns this means the getters and setters must perform atomic loads and
   // stores to prevent UB.
-  uint8_t loaned_state_priv;
+  uint8_t loaned_state_priv = {};
 
   // helper routines
 
@@ -306,8 +310,5 @@ static_assert(offsetof(vm_page_t, loaned_state_priv) % alignof(vm_page_state) ==
 // size and alignment are kept in sync with the arena selection algorithm.
 static_assert(sizeof(vm_page_t) == kArenaPageBookkeepingSize);
 static_assert(alignof(vm_page_t) == kArenaPageBookkeepingAlignment);
-
-// assert that |vm_page| is a POD
-static_assert(ktl::is_trivial_v<vm_page> && ktl::is_standard_layout_v<vm_page>);
 
 #endif  // ZIRCON_KERNEL_VM_INCLUDE_VM_PAGE_H_
