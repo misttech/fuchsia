@@ -9,6 +9,7 @@
 #include <inttypes.h>
 #include <lib/zx/thread.h>
 #include <link.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <zircon/assert.h>
