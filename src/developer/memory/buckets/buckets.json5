@@ -110,7 +110,7 @@
     },
     {
         name: "I18N",
-        process: "httpsdate_time_source\\.cm|fonts\\.cm|intl\\.cm|intl_services\\.cm|timezone\\.cm|time-zone-info-service\\.cm",
+        process: "httpsdate_time_source\\.cm|fonts\\.cm|font-server\\.cm|intl\\.cm|intl_services\\.cm|timezone\\.cm|time-zone-info-service\\.cm",
         vmo: "",
         event_code: 53,
     },
