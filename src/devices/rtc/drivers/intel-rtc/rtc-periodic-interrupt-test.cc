@@ -184,11 +184,11 @@ class RtcPeriodicInterruptTest : public zxtest::Test {
 
 // This test verifies basic functionality of the RTC hardware and how the
 // interrupt dispatcher interfaces with it
-TEST_F(RtcPeriodicInterruptTest, RtcPeriodicInterruptWait) {
-  EnableRtcPeriodicInterrupt(cmos_io, 0x06u);  // 1024 Hz
-
+TEST_F(RtcPeriodicInterruptTest, Wait) {
   zx::interrupt h;
   ASSERT_OK(zx::interrupt::create(irq_res, 8u, ZX_INTERRUPT_MODE_EDGE_HIGH, &h));
+
+  EnableRtcPeriodicInterrupt(cmos_io, 0x06u);  // 1024 Hz
 
   // Wait once for the interrupt to fire
   zx::time timestamp;
