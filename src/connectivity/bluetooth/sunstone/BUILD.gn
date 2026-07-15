@@ -119,6 +119,18 @@ if (is_host) {
       "//third_party/rust_crates:thiserror",
     ]
   }
+
+  rustc_test("sapphire_rpc_macro_test") {
+    edition = "2024"
+    source_root = "sapphire-rpc-macro/tests/test_rpc_macro.rs"
+    sources = [ "sapphire-rpc-macro/tests/test_rpc_macro.rs" ]
+    deps = [
+      "//third_party/rust_crates:sapphire-async",
+      "//third_party/rust_crates:sapphire-collections",
+      "//third_party/rust_crates:sapphire-rpc-macro",
+      "//third_party/rust_crates:sapphire-sync",
+    ]
+  }
 }
 
 group("tests") {
@@ -128,6 +140,7 @@ group("tests") {
     ":sapphire_collections_test($host_toolchain)",
     ":sapphire_gatt_test($host_toolchain)",
     ":sapphire_peer_cache_test($host_toolchain)",
+    ":sapphire_rpc_macro_test($host_toolchain)",
     ":sapphire_sync_test($host_toolchain)",
     ":sapphire_uuid_test($host_toolchain)",
   ]

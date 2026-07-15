@@ -1987,6 +1987,7 @@ dependencies = [
  "sapphire-async",
  "sapphire-collections",
  "sapphire-peer-cache",
+ "sapphire-rpc-macro",
  "sapphire-sync",
  "sapphire-uuid",
  "schemars",
@@ -4673,6 +4674,15 @@ version = "0.1.0"
 [[package]]
 name = "sapphire-peer-cache"
 version = "0.1.0"
+
+[[package]]
+name = "sapphire-rpc-macro"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.118",
+]
 
 [[package]]
 name = "sapphire-sync"

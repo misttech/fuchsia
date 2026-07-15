@@ -208,6 +208,7 @@ rutabaga_gfx = { version = "0.1.75", features = ["gfxstream"] }
 sapphire-async = { version = "0.1.0", features = ["std", "testing"] }
 sapphire-collections = { version = "0.1.0", features = ["std"] }
 sapphire-peer-cache = "0.1.0"
+sapphire-rpc-macro = "0.1.0"
 sapphire-sync = { version = "0.1.0", features = ["std"] }
 sapphire-uuid = "0.1.0"
 schemars = { version = "0.8.22", features = ["chrono", "preserve_order"] }
@@ -356,6 +357,7 @@ sapphire-async = { path = "intree/sunstone/sapphire-async" }
 sapphire-collections = { path = "intree/sunstone/sapphire-collections" }
 sapphire-gatt = { path = "intree/sunstone/sapphire-gatt" }
 sapphire-peer-cache = { path = "intree/sunstone/sapphire-peer-cache" }
+sapphire-rpc-macro = { path = "intree/sunstone/sapphire-rpc-macro" }
 sapphire-sync = { path = "intree/sunstone/sapphire-sync" }
 sapphire-uuid = { path = "intree/sunstone/sapphire-uuid" }
 # keep-sorted end
@@ -613,6 +615,9 @@ uses_fuchsia_license = true
 uses_fuchsia_license = true
 
 [gn.package.sapphire-peer-cache."0.1.0"]
+uses_fuchsia_license = true
+
+[gn.package.sapphire-rpc-macro."0.1.0"]
 uses_fuchsia_license = true
 
 [gn.package.sapphire-sync."0.1.0"]

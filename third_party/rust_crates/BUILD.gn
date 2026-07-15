@@ -1779,6 +1779,14 @@ group("sapphire-peer-cache-0.1.0") {
   public_deps = [ ":sapphire-peer-cache-v0_1_0" ]
 }
 
+group("sapphire-rpc-macro") {
+  public_deps = [ ":sapphire-rpc-macro-v0_1_0($host_toolchain)" ]
+}
+
+group("sapphire-rpc-macro-0.1.0") {
+  public_deps = [ ":sapphire-rpc-macro-v0_1_0" ]
+}
+
 group("sapphire-sync") {
   public_deps = [ ":sapphire-sync-v0_1_0" ]
 }
@@ -18885,6 +18893,34 @@ rustc_library("sapphire-peer-cache-v0_1_0") {
     "--cap-lints=allow",
     "-Cmetadata=5475bf84cb7e6377",
     "-Cextra-filename=-5475bf84cb7e6377",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ "//build/licenses:fuchsia_license" ]
+}
+
+rustc_macro("sapphire-rpc-macro-v0_1_0") {
+  crate_name = "sapphire_rpc_macro"
+  source_root =
+      "//src/connectivity/bluetooth/sunstone/sapphire-rpc-macro/src/lib.rs"
+  output_name = "sapphire_rpc_macro-97a3982b1e192982"
+  edition = "2024"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+  deps += [ ":proc-macro2-v1_0_106" ]
+  deps += [ ":quote-v1_0_45" ]
+  deps += [ ":syn-v2_0_118" ]
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=97a3982b1e192982",
+    "-Cextra-filename=-97a3982b1e192982",
   ]
 
   visibility = [ ":*" ]
