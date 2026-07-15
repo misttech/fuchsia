@@ -320,11 +320,11 @@ IpAddress::IpAddress(const sockaddr& addr) {
   switch (addr.sa_family) {
     case AF_INET:
       family_ = AF_INET;
-      std::memcpy(&v4_, addr.sa_data, sizeof(v4_));
+      std::memcpy(&v4_, reinterpret_cast<const uint8_t*>(addr.sa_data), sizeof(v4_));
       break;
     case AF_INET6:
       family_ = AF_INET6;
-      std::memcpy(&v6_, addr.sa_data, sizeof(v6_));
+      std::memcpy(&v6_, reinterpret_cast<const uint8_t*>(addr.sa_data), sizeof(v6_));
       break;
     default:
       family_ = AF_UNSPEC;
