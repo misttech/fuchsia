@@ -38,7 +38,13 @@ impl<Claim> Memory<Claim> {
         Self { base_ptr, len, _claim: claim }
     }
 
-    fn ptr<T>(&self, offset: usize) -> NonNull<T> {
+    /// Retrieves a valid pointer to `T` at `offset`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `T` is not properly aligned at `offset` or if `Memory` would
+    /// be out of range for the size of `T`.
+    pub fn ptr<T>(&self, offset: usize) -> NonNull<T> {
         // If this fails the caller has not met the safety requirements. It's safer to panic than it
         // is to continue.
         assert!((offset + size_of::<T>()) <= self.len && offset <= isize::MAX as usize);

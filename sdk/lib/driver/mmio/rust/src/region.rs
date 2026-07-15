@@ -155,6 +155,11 @@ impl<U: UnsafeMmio> MmioRegion<U> {
         // - the returned region has the same bounds as self did at the start of the call.
         unsafe { MmioRegion::<U, _>::new_unchecked(owner, bounds) }
     }
+
+    /// Maps the inner type to a new type with `f`.
+    pub fn map<O: UnsafeMmio, F: FnOnce(U) -> O>(self, f: F) -> MmioRegion<O> {
+        MmioRegion::new(f(self.owner))
+    }
 }
 
 impl<U: UnsafeMmio + Send + Sync> MmioRegion<U> {
@@ -184,9 +189,16 @@ impl<Impl: UnsafeMmio, Owner: Borrow<Impl>> MmioRegion<Impl, Owner> {
     /// Resolves the offset relative to the start of this MmioRegion's bounds, provided that offset
     /// is suitably aligned for type T and there is sufficient capacity within this MmioRegion's
     /// bounds at the given offset.
-    fn resolve_offset<T>(&self, offset: usize) -> Result<usize, MmioError> {
+    pub fn resolve_offset<T>(&self, offset: usize) -> Result<usize, MmioError> {
         self.check_suitable_for::<T>(offset)?;
         Ok(self.bounds.start + offset)
+    }
+}
+
+impl<Impl: UnsafeMmio, Owner: Borrow<Impl>> MmioRegion<Impl, Owner> {
+    /// Provides access to the wrapped [`UnsafeMmio`] instance.
+    pub fn unsafe_mmio(&self) -> &Impl {
+        self.owner.borrow()
     }
 }
 
