@@ -2,13 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::buffer::{Buffer, round_down, round_up};
-use event_listener::{Event, EventListener};
+use crate::buffer::{
+    Buffer, BufferAllocator as BufferAllocatorTrait, OwnedBuffer, round_down, round_up,
+};
+use event_listener::{Event, EventListener, Listener as _};
 use fuchsia_sync::Mutex;
 use futures::{Future, FutureExt as _};
 use std::collections::BTreeMap;
 use std::ops::Range;
 use std::pin::Pin;
+use std::sync::Arc;
 use std::task::{Context, Poll};
 
 #[cfg(target_os = "fuchsia")]
@@ -56,7 +59,6 @@ mod buffer_source {
             &self.vmo
         }
 
-        #[allow(clippy::mut_from_ref)]
         /// Returns a mutable pointer slice for the given range.
         ///
         /// # Safety
@@ -67,6 +69,28 @@ mod buffer_source {
             assert!(range.start < self.size && range.end <= self.size);
             // SAFETY: The base pointer is valid for `size` bytes, and `range` is within bounds.
             // The caller guarantees exclusivity.
+            unsafe {
+                MutPtrByteSlice::new(std::ptr::slice_from_raw_parts_mut(
+                    self.base.add(range.start),
+                    range.len(),
+                ))
+            }
+        }
+
+        /// Returns a mutable pointer slice with an arbitrary lifetime `'a` for the given range.
+        ///
+        /// # Safety
+        ///
+        /// The caller must ensure that no other active references or pointer slices overlap with
+        /// this range, and that `self` remains valid and mapped in memory for the entire lifetime
+        /// `'a`.
+        pub(super) unsafe fn subslice_ptr_unbounded<'a>(
+            &self,
+            range: &Range<usize>,
+        ) -> MutPtrByteSlice<'a> {
+            assert!(range.start < self.size && range.end <= self.size);
+            // SAFETY: The base pointer is valid for `size` bytes, and `range` is within bounds.
+            // The caller guarantees exclusivity and memory liveness for `'a`.
             unsafe {
                 MutPtrByteSlice::new(std::ptr::slice_from_raw_parts_mut(
                     self.base.add(range.start),
@@ -117,7 +141,7 @@ mod buffer_source {
         data: UnsafeCell<Pin<Vec<u8>>>,
     }
 
-    // Safe because none of the fields in BufferSource are modified, except the contents of |data|,
+    // Safe because none of the fields in BufferSource are modified, except the contents of `data`,
     // but that is managed by the BufferAllocator.
     unsafe impl Sync for BufferSource {}
 
@@ -131,7 +155,6 @@ mod buffer_source {
             unsafe { (&*self.data.get()).len() }
         }
 
-        #[allow(clippy::mut_from_ref)]
         /// Returns a mutable pointer slice for the given range.
         ///
         /// # Safety
@@ -140,8 +163,28 @@ mod buffer_source {
         /// this range.
         pub(super) unsafe fn subslice_ptr(&self, range: &Range<usize>) -> MutPtrByteSlice<'_> {
             assert!(range.start < self.size() && range.end <= self.size());
-            // SAFETY: The vector is valid, and `range` is within bounds.
+            // SAFETY: The data vector is valid for `size()` bytes, and `range` is within bounds.
             // The caller guarantees exclusivity.
+            unsafe {
+                let ptr = (&mut *self.data.get()).as_mut_ptr().add(range.start);
+                MutPtrByteSlice::new(std::ptr::slice_from_raw_parts_mut(ptr, range.len()))
+            }
+        }
+
+        /// Returns a mutable pointer slice with an arbitrary lifetime `'a` for the given range.
+        ///
+        /// # Safety
+        ///
+        /// The caller must ensure that no other active references or pointer slices overlap with
+        /// this range, and that `self` remains valid and mapped in memory for the entire lifetime
+        /// `'a`.
+        pub(super) unsafe fn subslice_ptr_unbounded<'a>(
+            &self,
+            range: &Range<usize>,
+        ) -> MutPtrByteSlice<'a> {
+            assert!(range.start < self.size() && range.end <= self.size());
+            // SAFETY: The data vector is valid for `size()` bytes, and `range` is within bounds.
+            // The caller guarantees exclusivity and memory liveness for `'a`.
             unsafe {
                 let ptr = (&mut *self.data.get()).as_mut_ptr().add(range.start);
                 MutPtrByteSlice::new(std::ptr::slice_from_raw_parts_mut(ptr, range.len()))
@@ -186,7 +229,7 @@ pub struct BufferAllocator {
     event: Event,
 }
 
-// Returns the smallest order which is at least |size| bytes.
+// Returns the smallest order which is at least `size` bytes.
 fn order(size: usize, block_size: usize) -> usize {
     if size <= block_size {
         return 0;
@@ -195,7 +238,7 @@ fn order(size: usize, block_size: usize) -> usize {
     nblocks.next_power_of_two().trailing_zeros() as usize
 }
 
-// Returns the largest order which is no more than |size| bytes.
+// Returns the largest order which is no more than `size` bytes.
 fn order_fit(size: usize, block_size: usize) -> usize {
     assert!(size >= block_size);
     let nblocks = round_up(size, block_size) / block_size;
@@ -283,19 +326,78 @@ impl BufferAllocator {
         self.source
     }
 
-    /// Allocates a Buffer with capacity for |size| bytes. Panics if the allocation exceeds the pool
-    /// size.  Blocks until there are enough bytes available to satisfy the request.
+    /// Allocates a Buffer with capacity for `size` bytes. Blocks until there are enough bytes
+    /// available to satisfy the request.
     ///
     /// The allocated buffer will be block-aligned and the padding up to block alignment can also
     /// be used by the buffer.
     ///
     /// Allocation is O(lg(N) + M), where N = size and M = number of allocations.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `size` exceeds the pool size (`self.buffer_source().size()`).
     pub fn allocate_buffer(&self, size: usize) -> BufferFuture<'_> {
         BufferFuture { allocator: self, size, listener: None }
     }
 
-    /// Like |allocate_buffer|, but returns an EventListener if the allocation cannot be satisfied.
+    /// Allocates a Buffer with capacity for `size` bytes synchronously. Blocks the current thread
+    /// until enough memory is available.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `size` exceeds the pool size (`self.buffer_source().size()`).
+    pub fn allocate_buffer_sync(&self, size: usize) -> Buffer<'_> {
+        loop {
+            match self.try_allocate_buffer(size) {
+                Ok(buffer) => return buffer,
+                Err(listener) => listener.wait(),
+            }
+        }
+    }
+
+    /// Allocates an OwnedBuffer with capacity for `size` bytes synchronously. Blocks the current
+    /// thread until enough memory is available.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `size` exceeds the pool size (`self.buffer_source().size()`).
+    pub fn allocate_buffer_sync_owned(self: &Arc<Self>, size: usize) -> OwnedBuffer {
+        loop {
+            match self.try_allocate_buffer_owned(size) {
+                Ok(buffer) => return buffer,
+                Err(listener) => listener.wait(),
+            }
+        }
+    }
+
+    /// Allocates an OwnedBuffer non-blockingly, returning an EventListener if memory is
+    /// unavailable.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `size` exceeds the pool size (`self.buffer_source().size()`).
+    pub fn try_allocate_buffer_owned(
+        self: &Arc<Self>,
+        size: usize,
+    ) -> Result<OwnedBuffer, EventListener> {
+        let buffer = self.try_allocate_buffer(size)?;
+        let range = buffer.range();
+        // SAFETY: `try_allocate_buffer` guarantees that `range` does not overlap with any other
+        // active allocations. We hold `Arc<Self>` (`self.clone()`), which guarantees that
+        // `self.source` remains valid and mapped in memory for the entire `'static` existence of
+        // `OwnedBuffer`.
+        let slice = unsafe { self.source.subslice_ptr_unbounded(&range) };
+        std::mem::forget(buffer);
+        Ok(OwnedBuffer::new(slice, range, self.clone() as Arc<dyn BufferAllocatorTrait>))
+    }
+
+    /// Like `allocate_buffer`, but returns an EventListener if the allocation cannot be satisfied.
     /// The listener will signal when the caller should try again.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `size` exceeds the pool size (`self.buffer_source().size()`).
     pub fn try_allocate_buffer(&self, size: usize) -> Result<Buffer<'_>, EventListener> {
         if size > self.source.size() {
             panic!("Allocation of {} bytes would exceed limit {}", size, self.source.size());
@@ -330,10 +432,18 @@ impl BufferAllocator {
         log::debug!(range:?, bytes_used = self.size_for_order(order); "Allocated");
 
         // SAFETY: The allocator guarantees that this range does not overlap with any other
-        // active allocations.
+        // active allocations. `self` guarantees `self.source` remains valid for `'a`.
         Ok(Buffer::new(unsafe { self.source.subslice_ptr(&range) }, range, self))
     }
+}
 
+impl BufferAllocatorTrait for BufferAllocator {
+    fn free_buffer(&self, range: Range<usize>) {
+        self.free_buffer(range);
+    }
+}
+
+impl BufferAllocator {
     /// Deallocation is O(lg(N) + M), where N = size and M = number of allocations.
     #[doc(hidden)]
     pub(super) fn free_buffer(&self, range: Range<usize>) {
@@ -558,7 +668,7 @@ mod tests {
         let source = BufferSource::new(1024 * 1024);
         let allocator = BufferAllocator::new(512, source);
 
-        // Allocate one buffer first so that |buf| is not starting at offset 0. This helps catch
+        // Allocate one buffer first so that `buf` is not starting at offset 0. This helps catch
         // bugs.
         let _buf = allocator.allocate_buffer(512).await;
         let mut buf = allocator.allocate_buffer(4096).await;
@@ -612,7 +722,7 @@ mod tests {
         let source = BufferSource::new(1024 * 1024);
         let allocator = BufferAllocator::new(512, source);
 
-        // Allocate one buffer first so that |buf| is not starting at offset 0. This helps catch
+        // Allocate one buffer first so that `buf` is not starting at offset 0. This helps catch
         // bugs.
         let _buf = allocator.allocate_buffer(512).await;
         let mut buf = allocator.allocate_buffer(4096).await;
@@ -782,5 +892,49 @@ mod tests {
             assert_eq!(left_out, vec![0x11; 2048]);
             assert_eq!(right_out, vec![0x22; 2048]);
         }
+    }
+
+    #[fuchsia::test]
+    async fn test_owned_buffer() {
+        let source = BufferSource::new(4096);
+        let allocator = Arc::new(BufferAllocator::new(512, source));
+
+        let mut owned_buf = allocator.allocate_buffer_sync_owned(2048);
+        assert_eq!(owned_buf.len(), 2048);
+        owned_buf.as_mut_slice().fill(0xcc);
+        assert_eq!(owned_buf.as_slice(), vec![0xcc; 2048]);
+
+        // Allocating remaining 2048 bytes should succeed.
+        let owned_buf2 = allocator.try_allocate_buffer_owned(2048).expect("Must succeed");
+        assert_eq!(owned_buf2.len(), 2048);
+
+        // Pool is full (4096 bytes used). Next allocation should return an EventListener.
+        assert!(allocator.try_allocate_buffer_owned(512).is_err());
+
+        // Dropping owned_buf should free its 2048 bytes back to the allocator.
+        std::mem::drop(owned_buf);
+
+        // Now allocation of 2048 bytes should succeed again.
+        let mut owned_buf3 = allocator.try_allocate_buffer_owned(2048).expect("Must succeed");
+        owned_buf3.as_mut_slice().fill(0xdd);
+        assert_eq!(owned_buf3.as_slice(), vec![0xdd; 2048]);
+    }
+
+    #[fuchsia::test]
+    async fn test_allocate_buffer_sync() {
+        let source = BufferSource::new(4096);
+        let allocator = BufferAllocator::new(512, source);
+
+        let mut buf = allocator.allocate_buffer_sync(2048);
+        assert_eq!(buf.len(), 2048);
+        buf.as_mut_slice().fill(0xee);
+        assert_eq!(buf.as_slice(), vec![0xee; 2048]);
+
+        std::mem::drop(buf);
+
+        let mut buf2 = allocator.allocate_buffer_sync(4096);
+        assert_eq!(buf2.len(), 4096);
+        buf2.as_mut_slice().fill(0xff);
+        assert_eq!(buf2.as_slice(), vec![0xff; 4096]);
     }
 }

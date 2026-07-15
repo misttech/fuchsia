@@ -2,12 +2,20 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::buffer_allocator::BufferAllocator;
+use crate::buffer_allocator::BufferAllocator as PoolBufferAllocator;
+use std::borrow::Borrow;
+use std::marker::PhantomData;
 use std::ops::{Bound, Range, RangeBounds};
 use std::slice::SliceIndex;
 use storage_ptr_slice::{MutPtrByteSlice, PtrByteSlice};
 
 pub use crate::buffer_allocator::BufferFuture;
+
+/// An entity capable of reclaiming a memory buffer range when dropped.
+pub trait BufferAllocator: Send + Sync + std::fmt::Debug + 'static {
+    /// Frees or reclaims the specified memory range.
+    fn free_buffer(&self, range: Range<usize>);
+}
 
 pub(super) fn round_down<T>(value: T, granularity: T) -> T
 where
@@ -59,22 +67,28 @@ fn split_range(range: &Range<usize>, mid: usize) -> (Range<usize>, Range<usize>)
 /// would need to be involved; the input Buffer could be used to write everything up to the last
 /// block, and a second single-block alignment Buffer would be used to read-modify-update the last
 /// block.
-#[derive(Debug)]
-pub struct Buffer<'a>(MutableBufferRef<'a>);
+use std::sync::Arc;
 
-// Alias for the traits which need to be satisfied for |subslice| and friends.
+#[derive(Debug)]
+pub struct BufferImpl<'a, H: Borrow<A>, A: ?Sized + BufferAllocator> {
+    slice: MutPtrByteSlice<'a>,
+    range: Range<usize>,
+    allocator: H,
+    _phantom: PhantomData<fn() -> &'a A>,
+}
+
+pub type Buffer<'a> = BufferImpl<'a, &'a PoolBufferAllocator, PoolBufferAllocator>;
+pub type OwnedBuffer = BufferImpl<'static, Arc<dyn BufferAllocator>, dyn BufferAllocator>;
+
+// Alias for the traits which need to be satisfied for `subslice` and friends.
 // This trait is automatically satisfied for most typical uses (a..b, a.., ..b, ..).
 pub trait SliceRange: Clone + RangeBounds<usize> + SliceIndex<[u8], Output = [u8]> {}
 impl<T> SliceRange for T where T: Clone + RangeBounds<usize> + SliceIndex<[u8], Output = [u8]> {}
 
-impl<'a> Buffer<'a> {
-    pub(super) fn new(
-        slice: MutPtrByteSlice<'a>,
-        range: Range<usize>,
-        allocator: &'a BufferAllocator,
-    ) -> Self {
+impl<'a, H: Borrow<A>, A: ?Sized + BufferAllocator> BufferImpl<'a, H, A> {
+    pub(super) fn new(slice: MutPtrByteSlice<'a>, range: Range<usize>, allocator: H) -> Self {
         assert_eq!(slice.len(), range.end - range.start);
-        Self(MutableBufferRef { slice, range, allocator })
+        Self { slice, range, allocator, _phantom: PhantomData }
     }
 
     /// Takes a read-only reference to this buffer.
@@ -82,10 +96,14 @@ impl<'a> Buffer<'a> {
         self.subslice(..)
     }
 
-    /// Takes a read-only reference to this buffer over |range| (which must be within the size of
+    /// Takes a read-only reference to this buffer over `range` (which must be within the size of
     /// the buffer).
     pub fn subslice<R: SliceRange>(&self, range: R) -> BufferRef<'_> {
-        self.0.subslice(range)
+        let new_range = subrange(&self.range, &range);
+        let relative_range =
+            (new_range.start - self.range.start)..(new_range.end - self.range.start);
+        let slice = self.slice.as_ptr_slice().subslice(relative_range);
+        BufferRef { slice, start: new_range.start, end: new_range.end }
     }
 
     /// Takes a read-write reference to this buffer.
@@ -93,25 +111,32 @@ impl<'a> Buffer<'a> {
         self.subslice_mut(..)
     }
 
-    /// Takes a read-write reference to this buffer over |range| (which must be within the size of
+    /// Takes a read-write reference to this buffer over `range` (which must be within the size of
     /// the buffer).
     pub fn subslice_mut<R: SliceRange>(&mut self, range: R) -> MutableBufferRef<'_> {
-        self.0.reborrow().subslice_mut(range)
+        let new_range = subrange(&self.range, &range);
+        let relative_range =
+            (new_range.start - self.range.start)..(new_range.end - self.range.start);
+        let slice = self.slice.reborrow().subslice_mut(relative_range);
+        MutableBufferRef { slice, range: new_range }
     }
 
     /// Returns the buffer's capacity.
     pub fn len(&self) -> usize {
-        self.0.len()
+        self.range.end - self.range.start
     }
 
     /// Returns a slice of the buffer's contents.
     pub fn as_slice(&self) -> &[u8] {
-        self.0.as_slice()
+        // SAFETY: `self.slice` points to a valid memory range of `self.len()` bytes.
+        unsafe { std::slice::from_raw_parts(self.slice.as_ptr(), self.len()) }
     }
 
     /// Returns a mutable slice of the buffer's contents.
     pub fn as_mut_slice(&mut self) -> &mut [u8] {
-        self.0.as_mut_slice()
+        // SAFETY: `&mut self` guarantees exclusive mutable access to this range of `self.len()`
+        // bytes.
+        unsafe { std::slice::from_raw_parts_mut(self.slice.as_mut_ptr(), self.len()) }
     }
 
     /// Copies the contents of this buffer into `dest`.
@@ -120,7 +145,7 @@ impl<'a> Buffer<'a> {
     ///
     /// Panics if `dest.len() != self.len()`.
     pub fn copy_to_slice(&self, dest: &mut [u8]) {
-        self.0.copy_to_slice(dest);
+        self.slice.as_ptr_slice().copy_to_slice(dest);
     }
 
     /// Copies the contents of `src` into this buffer.
@@ -129,22 +154,22 @@ impl<'a> Buffer<'a> {
     ///
     /// Panics if `src.len() != self.len()`.
     pub fn copy_from_slice(&mut self, src: &[u8]) {
-        self.0.copy_from_slice(src);
+        self.as_mut_slice().copy_from_slice(src);
     }
 
     /// Fills the buffer with `val`.
     pub fn fill(&mut self, val: u8) {
-        self.0.fill(val);
+        self.slice.fill(val);
     }
 
     /// Returns the range in the underlying BufferSource that this buffer covers.
     pub fn range(&self) -> Range<usize> {
-        self.0.range()
+        self.range.clone()
     }
 
     /// Returns a reference to the allocator.
-    pub fn allocator(&self) -> &BufferAllocator {
-        self.0.allocator
+    pub fn allocator(&self) -> &A {
+        self.allocator.borrow()
     }
 
     /// Returns the buffer's contents as a Vec.
@@ -159,28 +184,28 @@ impl<'a> Buffer<'a> {
 
     /// Returns a raw pointer to the buffer's contents.
     pub fn as_ptr(&self) -> *const u8 {
-        self.0.as_ptr()
+        self.slice.as_ptr()
     }
 
     /// Returns a mutable raw pointer to the buffer's contents.
     pub fn as_mut_ptr(&mut self) -> *mut u8 {
-        self.0.as_mut_ptr()
+        self.slice.as_mut_ptr()
     }
 
     /// Returns a read-only pointer slice over the buffer.
     pub fn as_ptr_slice(&self) -> PtrByteSlice<'_> {
-        self.0.as_ptr_slice()
+        self.slice.as_ptr_slice()
     }
 
     /// Returns a mutable pointer slice over the buffer.
     pub fn as_mut_ptr_slice(&mut self) -> MutPtrByteSlice<'_> {
-        self.0.as_mut_ptr_slice()
+        self.slice.reborrow()
     }
 }
 
-impl<'a> Drop for Buffer<'a> {
+impl<'a, H: Borrow<A>, A: ?Sized + BufferAllocator> Drop for BufferImpl<'a, H, A> {
     fn drop(&mut self) {
-        self.0.allocator.free_buffer(self.range());
+        self.allocator.borrow().free_buffer(self.range.clone());
     }
 }
 
@@ -190,7 +215,6 @@ pub struct BufferRef<'a> {
     slice: PtrByteSlice<'a>,
     start: usize, // Not range so that we get Copy.
     end: usize,
-    allocator: &'a BufferAllocator,
 }
 
 impl<'a> BufferRef<'a> {
@@ -215,26 +239,16 @@ impl<'a> BufferRef<'a> {
         let new_range = subrange(&self.range(), &range);
         let relative_range = (new_range.start - self.start)..(new_range.end - self.start);
         let slice = self.slice.subslice(relative_range);
-        BufferRef { slice, start: new_range.start, end: new_range.end, allocator: self.allocator }
+        BufferRef { slice, start: new_range.start, end: new_range.end }
     }
 
-    /// Splits at |mid| (included in the right child), yielding two BufferRefs.
+    /// Splits at `mid` (included in the right child), yielding two BufferRefs.
     pub fn split_at(&self, mid: usize) -> (BufferRef<'_>, BufferRef<'_>) {
         let ranges = split_range(&self.range(), mid);
         let (left_slice, right_slice) = self.slice.split_at(mid);
         (
-            BufferRef {
-                slice: left_slice,
-                start: ranges.0.start,
-                end: ranges.0.end,
-                allocator: self.allocator,
-            },
-            BufferRef {
-                slice: right_slice,
-                start: ranges.1.start,
-                end: ranges.1.end,
-                allocator: self.allocator,
-            },
+            BufferRef { slice: left_slice, start: ranges.0.start, end: ranges.0.end },
+            BufferRef { slice: right_slice, start: ranges.1.start, end: ranges.1.end },
         )
     }
 
@@ -278,7 +292,6 @@ impl<'a> BufferRef<'a> {
 pub struct MutableBufferRef<'a> {
     slice: MutPtrByteSlice<'a>,
     range: Range<usize>,
-    allocator: &'a BufferAllocator,
 }
 
 impl<'a> MutableBufferRef<'a> {
@@ -293,22 +306,12 @@ impl<'a> MutableBufferRef<'a> {
 
     /// Returns a read-only view of the buffer.
     pub fn as_ref(&self) -> BufferRef<'_> {
-        BufferRef {
-            slice: self.slice.as_ptr_slice(),
-            start: self.range.start,
-            end: self.range.end,
-            allocator: self.allocator,
-        }
+        BufferRef { slice: self.slice.as_ptr_slice(), start: self.range.start, end: self.range.end }
     }
 
     /// Consumes this reference and returns a read-only view.
     pub fn into_ref(self) -> BufferRef<'a> {
-        BufferRef {
-            slice: self.slice.into(),
-            start: self.range.start,
-            end: self.range.end,
-            allocator: self.allocator,
-        }
+        BufferRef { slice: self.slice.into(), start: self.range.start, end: self.range.end }
     }
 
     /// Returns a slice of the buffer's contents.
@@ -335,11 +338,7 @@ impl<'a> MutableBufferRef<'a> {
     ///        let sub = buf.reborrow().subslice_mut(a..b);
     ///    }
     pub fn reborrow(&mut self) -> MutableBufferRef<'_> {
-        MutableBufferRef {
-            slice: self.slice.reborrow(),
-            range: self.range.clone(),
-            allocator: self.allocator,
-        }
+        MutableBufferRef { slice: self.slice.reborrow(), range: self.range.clone() }
     }
 
     /// Slices this reference. See Buffer::subslice.
@@ -348,7 +347,7 @@ impl<'a> MutableBufferRef<'a> {
         let relative_range =
             (new_range.start - self.range.start)..(new_range.end - self.range.start);
         let slice = self.slice.as_ptr_slice().subslice(relative_range);
-        BufferRef { slice, start: new_range.start, end: new_range.end, allocator: self.allocator }
+        BufferRef { slice, start: new_range.start, end: new_range.end }
     }
 
     /// Slices and consumes this reference. See Buffer::subslice_mut.
@@ -361,34 +360,24 @@ impl<'a> MutableBufferRef<'a> {
         self
     }
 
-    /// Splits at |mid| (included in the right child), yielding two BufferRefs.
+    /// Splits at `mid` (included in the right child), yielding two BufferRefs.
     pub fn split_at(&self, mid: usize) -> (BufferRef<'_>, BufferRef<'_>) {
         let ranges = split_range(&self.range, mid);
         let (left_slice, right_slice) = self.slice.as_ptr_slice().split_at(mid);
         (
-            BufferRef {
-                slice: left_slice,
-                start: ranges.0.start,
-                end: ranges.0.end,
-                allocator: self.allocator,
-            },
-            BufferRef {
-                slice: right_slice,
-                start: ranges.1.start,
-                end: ranges.1.end,
-                allocator: self.allocator,
-            },
+            BufferRef { slice: left_slice, start: ranges.0.start, end: ranges.0.end },
+            BufferRef { slice: right_slice, start: ranges.1.start, end: ranges.1.end },
         )
     }
 
-    /// Consumes the reference and splits it at |mid| (included in the right child), yielding two
+    /// Consumes the reference and splits it at `mid` (included in the right child), yielding two
     /// MutableBufferRefs.
     pub fn split_at_mut(self, mid: usize) -> (MutableBufferRef<'a>, MutableBufferRef<'a>) {
         let ranges = split_range(&self.range, mid);
         let (left_slice, right_slice) = self.slice.split_at_mut(mid);
         (
-            MutableBufferRef { slice: left_slice, range: ranges.0, allocator: self.allocator },
-            MutableBufferRef { slice: right_slice, range: ranges.1, allocator: self.allocator },
+            MutableBufferRef { slice: left_slice, range: ranges.0 },
+            MutableBufferRef { slice: right_slice, range: ranges.1 },
         )
     }
 

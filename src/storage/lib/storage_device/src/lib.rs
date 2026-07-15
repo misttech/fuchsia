@@ -25,6 +25,9 @@ use std::sync::{Arc, OnceLock};
 
 pub mod buffer;
 pub mod buffer_allocator;
+pub mod splittable_buffer;
+
+pub use splittable_buffer::SplittableBuffer;
 
 #[cfg(target_os = "fuchsia")]
 pub mod block_device;
@@ -39,7 +42,7 @@ pub mod ranged_device;
 #[async_trait]
 /// Device is an abstract representation of an underlying block device.
 pub trait Device: Send + Sync {
-    /// Allocates a transfer buffer of at least |size| bytes for doing I/O with the device.
+    /// Allocates a transfer buffer of at least `size` bytes for doing I/O with the device.
     /// The actual size of the buffer will be rounded up to a block-aligned size.
     /// Blocks until enough capacity is available in the buffer.
     fn allocate_buffer(&self, size: usize) -> BufferFuture<'_>;
@@ -58,7 +61,7 @@ pub trait Device: Send + Sync {
         self.block_size() as u64 * self.block_count()
     }
 
-    /// Fills |buffer| with blocks read from |offset|.
+    /// Fills `buffer` with blocks read from `offset`.
     fn read<'a>(
         &'a self,
         offset: u64,
@@ -67,7 +70,7 @@ pub trait Device: Send + Sync {
         self.read_with_opts(offset, buffer, ReadOptions::default())
     }
 
-    /// Fills |buffer| with blocks read from |offset|.
+    /// Fills `buffer` with blocks read from `offset`.
     async fn read_with_opts(
         &self,
         offset: u64,
@@ -75,7 +78,7 @@ pub trait Device: Send + Sync {
         read_opts: ReadOptions,
     ) -> Result<(), Error>;
 
-    /// Writes the contents of |buffer| to the device at |offset|.
+    /// Writes the contents of `buffer` to the device at `offset`.
     fn write<'a>(
         &'a self,
         offset: u64,
@@ -84,7 +87,7 @@ pub trait Device: Send + Sync {
         self.write_with_opts(offset, buffer, WriteOptions::default())
     }
 
-    /// Writes the contents of |buffer| to the device at |offset|.
+    /// Writes the contents of `buffer` to the device at `offset`.
     async fn write_with_opts(
         &self,
         offset: u64,
@@ -92,7 +95,7 @@ pub trait Device: Send + Sync {
         write_opts: WriteOptions,
     ) -> Result<(), Error>;
 
-    /// Trims the given device |range|.
+    /// Trims the given device `range`.
     async fn trim(&self, range: Range<u64>) -> Result<(), Error>;
 
     /// Closes the block device. It is an error to continue using the device after this, but close

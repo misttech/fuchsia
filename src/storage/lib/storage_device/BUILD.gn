@@ -12,6 +12,7 @@ lib_srcs = [
   "src/file_backed_device.rs",
   "src/lib.rs",
   "src/ranged_device.rs",
+  "src/splittable_buffer.rs",
 ]
 
 lib_deps = [

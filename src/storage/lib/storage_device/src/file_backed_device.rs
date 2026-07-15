@@ -28,7 +28,7 @@ pub struct FileBackedDevice {
 const TRANSFER_HEAP_SIZE: usize = 32 * 1024 * 1024;
 
 impl FileBackedDevice {
-    /// Creates a new FileBackedDevice over |file|. The size of the file will be used as the size of
+    /// Creates a new FileBackedDevice over `file`. The size of the file will be used as the size of
     /// the Device.
     pub fn new(file: std::fs::File, block_size: u32) -> Self {
         let size = file.metadata().unwrap().len();
@@ -36,7 +36,7 @@ impl FileBackedDevice {
         Self::new_with_block_count(file, block_size, size / block_size as u64)
     }
 
-    /// Creates a new FileBackedDevice over |file| using an explicit size.  The underlying file is
+    /// Creates a new FileBackedDevice over `file` using an explicit size.  The underlying file is
     /// *not* truncated to the target size, so the file size will be exactly as large as the
     /// filesystem ends up using within the file.  With a sequential allocator, this makes the file
     /// as big as it needs to be and no more.

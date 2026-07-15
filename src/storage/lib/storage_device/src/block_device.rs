@@ -24,7 +24,7 @@ pub struct BlockDevice<T> {
 const TRANSFER_VMO_SIZE: usize = 128 * 1024 * 1024;
 
 impl<T: BlockClient> BlockDevice<T> {
-    /// Creates a new BlockDevice over |remote|.
+    /// Creates a new BlockDevice over `remote`.
     pub async fn new(remote: T, read_only: bool) -> Result<Self, Error> {
         let buffer_source = BufferSource::new(TRANSFER_VMO_SIZE);
         // SAFETY: We only attach this VMO once here, and we ensure no references are held
