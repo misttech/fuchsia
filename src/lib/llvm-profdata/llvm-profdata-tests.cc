@@ -14,6 +14,8 @@
 
 #include "coverage-example.h"
 
+#include <profile/InstrProfData.inc>
+
 namespace {
 
 // The compiler doesn't support relocatable mode on macOS.
@@ -77,6 +79,12 @@ TEST(LlvmProfdataTests, FixedData) {
   EXPECT_EQ(
       std::vector<std::byte>(resolved_live_data.bitmap.begin(), resolved_live_data.bitmap.end()),
       std::vector<std::byte>(live_data.bitmap.begin(), live_data.bitmap.end()));
+#if INSTR_PROF_RAW_VERSION >= 11
+  EXPECT_EQ(
+      std::vector<std::byte>(resolved_live_data.uniform_counters.begin(),
+                             resolved_live_data.uniform_counters.end()),
+      std::vector<std::byte>(live_data.uniform_counters.begin(), live_data.uniform_counters.end()));
+#endif
 }
 
 TEST(LlvmProfdataTests, CopyLiveData) {
@@ -106,6 +114,7 @@ TEST(LlvmProfdataTests, CopyLiveData) {
   data.CopyLiveData({
       .counters = std::as_writable_bytes(counters),
       .bitmap = live_data.bitmap,
+      .uniform_counters = live_data.uniform_counters,
   });
 
   // None of the real values should be the unreasonable value.
@@ -129,6 +138,7 @@ TEST(LlvmProfdataTests, CopyLiveData) {
   data.CopyLiveData({
       .counters = std::as_writable_bytes(new_counters),
       .bitmap = live_data.bitmap,
+      .uniform_counters = live_data.uniform_counters,
   });
 
   uint64_t increase = 0;
@@ -176,6 +186,7 @@ TEST(LlvmProfdataTests, CopyLiveDataSingleByteCounters) {
   data.CopyLiveData({
       .counters = std::as_writable_bytes(counters),
       .bitmap = live_data.bitmap,
+      .uniform_counters = live_data.uniform_counters,
   });
 
   // None of the real values should be the unreasonable value.
@@ -199,6 +210,7 @@ TEST(LlvmProfdataTests, CopyLiveDataSingleByteCounters) {
   data.CopyLiveData({
       .counters = std::as_writable_bytes(new_counters),
       .bitmap = live_data.bitmap,
+      .uniform_counters = live_data.uniform_counters,
   });
 
   for (size_t i = 0; i < counters.size(); ++i) {
@@ -228,6 +240,10 @@ TEST(LlvmProfdataTests, MergeLiveData) {
   static constexpr uint8_t kOldBitmap[] = {0, 0x01, 0x02, 0x03};
   uint8_t new_bitmap[] = {1, 0x11, 0x20, 0x31};
 
+  static constexpr uint64_t kOldUniformCounters[] = {10, 20};
+  uint64_t new_uniform_counters[] = {30, 40};
+  static_assert(std::size(kOldUniformCounters) == std::size(new_uniform_counters));
+
   constexpr auto as_falsely_writable = [](auto span) {
     std::span<const std::byte> bytes = std::as_bytes(span);
     return std::span<std::byte>{
@@ -240,10 +256,12 @@ TEST(LlvmProfdataTests, MergeLiveData) {
       {
           .counters = std::as_writable_bytes(std::span(new_counters)),
           .bitmap = std::as_writable_bytes(std::span(new_bitmap)),
+          .uniform_counters = std::as_writable_bytes(std::span(new_uniform_counters)),
       },
       {
           .counters = as_falsely_writable(std::span(kOldCounters)),
           .bitmap = as_falsely_writable(std::span(kOldBitmap)),
+          .uniform_counters = as_falsely_writable(std::span(kOldUniformCounters)),
       });
 
   EXPECT_EQ(new_counters[0], 6u);
@@ -255,6 +273,14 @@ TEST(LlvmProfdataTests, MergeLiveData) {
   EXPECT_EQ(new_bitmap[1], 0x11u);
   EXPECT_EQ(new_bitmap[2], 0x22u);
   EXPECT_EQ(new_bitmap[3], 0x33u);
+
+#if INSTR_PROF_RAW_VERSION >= 11
+  EXPECT_EQ(new_uniform_counters[0], 40u);
+  EXPECT_EQ(new_uniform_counters[1], 60u);
+#else
+  EXPECT_EQ(new_uniform_counters[0], 30u);
+  EXPECT_EQ(new_uniform_counters[1], 40u);
+#endif
 
   LlvmProfdata data;
   data.Init(MyBuildId());
@@ -284,7 +310,11 @@ TEST(LlvmProfdataTests, MergeLiveData) {
   }
 
   // Now merge the current data into our synthetic starting data.
-  data.MergeLiveData({.counters = std::as_writable_bytes(counters), .bitmap = live_data.bitmap});
+  data.MergeLiveData({
+      .counters = std::as_writable_bytes(counters),
+      .bitmap = live_data.bitmap,
+      .uniform_counters = live_data.uniform_counters,
+  });
 
   uint64_t increase = 0;
   for (size_t i = 0; i < counters.size(); ++i) {
@@ -366,7 +396,11 @@ TEST(LlvmProfdataTests, MergeLiveDataSingleByteCounters) {
   }
 
   // Now merge the current data into our synthetic starting data.
-  data.MergeLiveData({.counters = std::as_writable_bytes(counters), .bitmap = live_data.bitmap});
+  data.MergeLiveData({
+      .counters = std::as_writable_bytes(counters),
+      .bitmap = live_data.bitmap,
+      .uniform_counters = live_data.uniform_counters,
+  });
 
   uint8_t covered = 1;
   for (size_t i = 0; i < counters.size(); ++i) {

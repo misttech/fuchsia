@@ -12,7 +12,7 @@
 class LlvmProfdata {
  public:
   struct LiveData {
-    std::span<std::byte> counters, bitmap;
+    std::span<std::byte> counters, bitmap, uniform_counters;
   };
 
   // Bounds within the raw profile data containing all active live data sections.
@@ -53,6 +53,11 @@ class LlvmProfdata {
   // bytes array.
   size_t bitmap_offset() const { return bitmap_offset_; }
   size_t bitmap_size_bytes() const { return bitmap_size_bytes_; }
+
+  // These return the offset and size within the blob of the uint64_t[] uniform
+  // counters array.
+  size_t uniform_counters_offset() const { return uniform_counters_offset_; }
+  size_t uniform_counters_size_bytes() const { return uniform_counters_size_bytes_; }
 
   // If the data appears to be valid llvm-profdata format with a build ID, then
   // return the subspan that is just the build ID bytes themselves.  Otherwise
@@ -129,6 +134,8 @@ class LlvmProfdata {
   size_t counters_size_bytes_ = 0;
   size_t bitmap_size_bytes_ = 0;
   size_t bitmap_offset_ = 0;
+  size_t uniform_counters_offset_ = 0;
+  size_t uniform_counters_size_bytes_ = 0;
 };
 
 #endif  // SRC_LIB_LLVM_PROFDATA_INCLUDE_LIB_LLVM_PROFDATA_LLVM_PROFDATA_H_
