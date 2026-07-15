@@ -1,7 +1,7 @@
 // Copyright 2025 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-use crate::util::cobalt_logger::log_cobalt;
+use crate::util::cobalt_logger::{FilteredCobaltLogger, log_cobalt};
 use cobalt_client::traits::AsEventCode;
 use fuchsia_inspect::Node as InspectNode;
 use fuchsia_inspect_contrib::inspect_log;
@@ -28,15 +28,12 @@ pub enum UnclearPowerDemand {
 
 pub struct PowerLogger {
     power_inspect_node: Mutex<BoundedListNode>,
-    cobalt_proxy: fidl_fuchsia_metrics::MetricEventLoggerProxy,
+    cobalt_proxy: Arc<FilteredCobaltLogger>,
     iface_power_states: Arc<Mutex<HashMap<u16, IfacePowerLevel>>>,
 }
 
 impl PowerLogger {
-    pub fn new(
-        cobalt_proxy: fidl_fuchsia_metrics::MetricEventLoggerProxy,
-        inspect_node: &InspectNode,
-    ) -> Self {
+    pub fn new(cobalt_proxy: Arc<FilteredCobaltLogger>, inspect_node: &InspectNode) -> Self {
         // Initialize inspect children
         let iface_power_events = inspect_node.create_child("iface_power_events");
         let power_inspect_node: BoundedListNode =
@@ -135,7 +132,7 @@ mod tests {
     fn test_iface_power_event_in_inspect() {
         let mut test_helper = setup_test();
         let node = test_helper.create_inspect_node("wlan_mock_node");
-        let power_logger = PowerLogger::new(test_helper.cobalt_proxy.clone(), &node);
+        let power_logger = PowerLogger::new(test_helper.filtered_cobalt_logger(), &node);
 
         let test_fut = power_logger.log_iface_power_event(IfacePowerLevel::NoPowerSavings, 11);
         pin_mut!(test_fut);
@@ -195,7 +192,7 @@ mod tests {
     fn test_iface_power_event_adds_to_internal_hashmap() {
         let mut test_helper = setup_test();
         let node = test_helper.create_inspect_node("wlan_mock_node");
-        let power_logger = PowerLogger::new(test_helper.cobalt_proxy.clone(), &node);
+        let power_logger = PowerLogger::new(test_helper.filtered_cobalt_logger(), &node);
 
         let test_fut = power_logger.log_iface_power_event(IfacePowerLevel::NoPowerSavings, 11);
         pin_mut!(test_fut);
@@ -242,7 +239,7 @@ mod tests {
     fn test_disconnect_updates_internal_hashmap() {
         let mut test_helper = setup_test();
         let node = test_helper.create_inspect_node("wlan_mock_node");
-        let power_logger = PowerLogger::new(test_helper.cobalt_proxy.clone(), &node);
+        let power_logger = PowerLogger::new(test_helper.filtered_cobalt_logger(), &node);
 
         let _ =
             power_logger.iface_power_states.try_lock().unwrap().insert(33, IfacePowerLevel::Normal);
@@ -264,7 +261,7 @@ mod tests {
     fn test_destroy_removes_from_internal_hashmap() {
         let mut test_helper = setup_test();
         let node = test_helper.create_inspect_node("wlan_mock_node");
-        let power_logger = PowerLogger::new(test_helper.cobalt_proxy.clone(), &node);
+        let power_logger = PowerLogger::new(test_helper.filtered_cobalt_logger(), &node);
 
         let _ =
             power_logger.iface_power_states.try_lock().unwrap().insert(33, IfacePowerLevel::Normal);
@@ -282,7 +279,7 @@ mod tests {
     fn test_imminent_suspension_logs_to_cobalt() {
         let mut test_helper = setup_test();
         let node = test_helper.create_inspect_node("wlan_mock_node");
-        let power_logger = PowerLogger::new(test_helper.cobalt_proxy.clone(), &node);
+        let power_logger = PowerLogger::new(test_helper.filtered_cobalt_logger(), &node);
 
         let _ =
             power_logger.iface_power_states.try_lock().unwrap().insert(33, IfacePowerLevel::Normal);
@@ -309,7 +306,7 @@ mod tests {
     fn test_unclear_power_demand_logs_to_cobalt() {
         let mut test_helper = setup_test();
         let node = test_helper.create_inspect_node("wlan_mock_node");
-        let power_logger = PowerLogger::new(test_helper.cobalt_proxy.clone(), &node);
+        let power_logger = PowerLogger::new(test_helper.filtered_cobalt_logger(), &node);
 
         let mut test_fut = pin!(power_logger.handle_unclear_power_demand(
             UnclearPowerDemand::PowerSaveRequestedWhileSuspendModeEnabled
@@ -336,7 +333,7 @@ mod tests {
     fn test_chip_power_up_failure_logs_to_cobalt() {
         let mut test_helper = setup_test();
         let node = test_helper.create_inspect_node("wlan_mock_node");
-        let power_logger = PowerLogger::new(test_helper.cobalt_proxy.clone(), &node);
+        let power_logger = PowerLogger::new(test_helper.filtered_cobalt_logger(), &node);
 
         let mut test_fut = pin!(power_logger.handle_chip_power_up_failure());
         assert_eq!(
@@ -360,7 +357,7 @@ mod tests {
     fn test_failed_to_stop_logs_to_cobalt() {
         let mut test_helper = setup_test();
         let node = test_helper.create_inspect_node("wlan_mock_node");
-        let power_logger = PowerLogger::new(test_helper.cobalt_proxy.clone(), &node);
+        let power_logger = PowerLogger::new(test_helper.filtered_cobalt_logger(), &node);
 
         let mut test_fut = pin!(power_logger.chip_power_down_failure());
         assert_eq!(

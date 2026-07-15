@@ -2,9 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::util::cobalt_logger::log_cobalt_batch;
+use crate::util::cobalt_logger::{FilteredCobaltLogger, log_cobalt_batch};
 use fidl_fuchsia_metrics::{MetricEvent, MetricEventPayload};
 use fuchsia_async as fasync;
+use std::sync::Arc;
 use wlan_legacy_metrics_registry as metrics;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -15,13 +16,13 @@ pub enum PnoScanDisabledReason {
 }
 
 pub struct PnoScanLogger {
-    cobalt_proxy: fidl_fuchsia_metrics::MetricEventLoggerProxy,
+    cobalt_proxy: Arc<FilteredCobaltLogger>,
     enabled_at: Option<fasync::BootInstant>,
     has_scan_results: bool,
 }
 
 impl PnoScanLogger {
-    pub fn new(cobalt_proxy: fidl_fuchsia_metrics::MetricEventLoggerProxy) -> Self {
+    pub fn new(cobalt_proxy: Arc<FilteredCobaltLogger>) -> Self {
         Self { cobalt_proxy, enabled_at: None, has_scan_results: false }
     }
 
@@ -151,7 +152,7 @@ mod tests {
     #[fuchsia::test]
     fn test_pno_scan_collision() {
         let mut test_helper = setup_test();
-        let mut logger = PnoScanLogger::new(test_helper.cobalt_proxy.clone());
+        let mut logger = PnoScanLogger::new(test_helper.filtered_cobalt_logger());
 
         {
             let mut test_fut = pin!(logger.handle_pno_scan_enabled(false));
@@ -178,7 +179,7 @@ mod tests {
     #[fuchsia::test]
     fn test_pno_scan_enabled_while_connected() {
         let mut test_helper = setup_test();
-        let mut logger = PnoScanLogger::new(test_helper.cobalt_proxy.clone());
+        let mut logger = PnoScanLogger::new(test_helper.filtered_cobalt_logger());
 
         {
             let mut test_fut = pin!(logger.handle_pno_scan_enabled(true));
@@ -197,7 +198,7 @@ mod tests {
     #[fuchsia::test]
     fn test_pno_scan_results_received_metrics() {
         let mut test_helper = setup_test();
-        let mut logger = PnoScanLogger::new(test_helper.cobalt_proxy.clone());
+        let mut logger = PnoScanLogger::new(test_helper.filtered_cobalt_logger());
 
         test_helper.exec.set_fake_time(fasync::MonotonicInstant::from_nanos(10_000_000));
         {
@@ -226,7 +227,7 @@ mod tests {
     #[fuchsia::test]
     fn test_pno_scan_disabled_no_results() {
         let mut test_helper = setup_test();
-        let mut logger = PnoScanLogger::new(test_helper.cobalt_proxy.clone());
+        let mut logger = PnoScanLogger::new(test_helper.filtered_cobalt_logger());
 
         test_helper.exec.set_fake_time(fasync::MonotonicInstant::from_nanos(10_000_000));
         {
@@ -271,7 +272,7 @@ mod tests {
     #[fuchsia::test]
     fn test_pno_scan_disabled_with_results() {
         let mut test_helper = setup_test();
-        let mut logger = PnoScanLogger::new(test_helper.cobalt_proxy.clone());
+        let mut logger = PnoScanLogger::new(test_helper.filtered_cobalt_logger());
 
         test_helper.exec.set_fake_time(fasync::MonotonicInstant::from_nanos(10_000_000));
         {
@@ -328,7 +329,7 @@ mod tests {
     #[fuchsia::test]
     fn test_pno_scan_periodic_telemetry() {
         let mut test_helper = setup_test();
-        let mut logger = PnoScanLogger::new(test_helper.cobalt_proxy.clone());
+        let mut logger = PnoScanLogger::new(test_helper.filtered_cobalt_logger());
 
         test_helper.exec.set_fake_time(fasync::MonotonicInstant::from_nanos(10_000_000));
         {

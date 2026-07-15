@@ -3126,6 +3126,8 @@ async fn main() {
         monitor_svc.clone(),
         fuchsia_inspect::component::inspector().root().create_child(CLIENT_STATS_NODE_NAME),
         &format!("root/{CLIENT_STATS_NODE_NAME}"),
+        wlan_telemetry::TelemetryConfig::all(),
+        wlan_telemetry::CobaltAllowlist::All,
     );
     let log_throttler =
         Arc::new(Mutex::new(ThrottledErrorLogger::new(MIN_MINUTES_BETWEEN_FREQUENT_ERRORS)));

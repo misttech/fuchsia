@@ -42,6 +42,7 @@ rustc_library("wlan-telemetry") {
   ]
 
   sources = [
+    "src/config.rs",
     "src/convert.rs",
     "src/lib.rs",
     "src/processors/client_iface_counters.rs",

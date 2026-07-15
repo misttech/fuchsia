@@ -2,11 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::util::cobalt_logger::log_cobalt_batch;
+use crate::util::cobalt_logger::{FilteredCobaltLogger, log_cobalt_batch};
 use fidl_fuchsia_metrics::{MetricEvent, MetricEventPayload};
 use fidl_fuchsia_power_battery as fidl_battery;
 use fuchsia_async as fasync;
 use std::ops::BitOr;
+use std::sync::Arc;
 use windowed_stats::experimental::inspect::{InspectSender, InspectedTimeMatrix};
 use windowed_stats::experimental::series::interpolation::ConstantSample;
 use windowed_stats::experimental::series::metadata::BitsetMap;
@@ -22,7 +23,7 @@ pub enum ScanResult {
 }
 
 pub struct ScanLogger {
-    cobalt_proxy: fidl_fuchsia_metrics::MetricEventLoggerProxy,
+    cobalt_proxy: Arc<FilteredCobaltLogger>,
     time_series_stats: ScanTimeSeries,
     scan_started_at: Option<fasync::BootInstant>,
     on_battery: bool,
@@ -30,7 +31,7 @@ pub struct ScanLogger {
 
 impl ScanLogger {
     pub fn new<S: InspectSender>(
-        cobalt_proxy: fidl_fuchsia_metrics::MetricEventLoggerProxy,
+        cobalt_proxy: Arc<FilteredCobaltLogger>,
         time_matrix_client: &S,
     ) -> Self {
         Self {
@@ -205,8 +206,10 @@ mod tests {
     #[fuchsia::test]
     fn test_handle_scan_start() {
         let mut test_helper = setup_test();
-        let mut scan_logger =
-            ScanLogger::new(test_helper.cobalt_proxy.clone(), &test_helper.mock_time_matrix_client);
+        let mut scan_logger = ScanLogger::new(
+            test_helper.filtered_cobalt_logger(),
+            &test_helper.mock_time_matrix_client,
+        );
 
         run_handle_scan_start(&mut test_helper, &mut scan_logger);
 
@@ -221,8 +224,10 @@ mod tests {
     #[fuchsia::test]
     fn test_handle_scan_start_on_battery() {
         let mut test_helper = setup_test();
-        let mut scan_logger =
-            ScanLogger::new(test_helper.cobalt_proxy.clone(), &test_helper.mock_time_matrix_client);
+        let mut scan_logger = ScanLogger::new(
+            test_helper.filtered_cobalt_logger(),
+            &test_helper.mock_time_matrix_client,
+        );
 
         run_handle_battery_charge_status(
             &mut test_helper,
@@ -256,8 +261,10 @@ mod tests {
     #[fuchsia::test]
     fn test_handle_scan_result_complete() {
         let mut test_helper = setup_test();
-        let mut scan_logger =
-            ScanLogger::new(test_helper.cobalt_proxy.clone(), &test_helper.mock_time_matrix_client);
+        let mut scan_logger = ScanLogger::new(
+            test_helper.filtered_cobalt_logger(),
+            &test_helper.mock_time_matrix_client,
+        );
 
         test_helper.exec.set_fake_time(fasync::MonotonicInstant::from_nanos(20_000_000));
         run_handle_scan_start(&mut test_helper, &mut scan_logger);
@@ -276,8 +283,10 @@ mod tests {
     #[fuchsia::test]
     fn test_handle_scan_result_empty() {
         let mut test_helper = setup_test();
-        let mut scan_logger =
-            ScanLogger::new(test_helper.cobalt_proxy.clone(), &test_helper.mock_time_matrix_client);
+        let mut scan_logger = ScanLogger::new(
+            test_helper.filtered_cobalt_logger(),
+            &test_helper.mock_time_matrix_client,
+        );
 
         run_handle_scan_start(&mut test_helper, &mut scan_logger);
 
@@ -294,8 +303,10 @@ mod tests {
     #[fuchsia::test]
     fn test_handle_scan_result_cancelled() {
         let mut test_helper = setup_test();
-        let mut scan_logger =
-            ScanLogger::new(test_helper.cobalt_proxy.clone(), &test_helper.mock_time_matrix_client);
+        let mut scan_logger = ScanLogger::new(
+            test_helper.filtered_cobalt_logger(),
+            &test_helper.mock_time_matrix_client,
+        );
 
         run_handle_scan_start(&mut test_helper, &mut scan_logger);
 
@@ -310,8 +321,10 @@ mod tests {
     #[fuchsia::test]
     fn test_handle_scan_result_failure() {
         let mut test_helper = setup_test();
-        let mut scan_logger =
-            ScanLogger::new(test_helper.cobalt_proxy.clone(), &test_helper.mock_time_matrix_client);
+        let mut scan_logger = ScanLogger::new(
+            test_helper.filtered_cobalt_logger(),
+            &test_helper.mock_time_matrix_client,
+        );
 
         run_handle_scan_start(&mut test_helper, &mut scan_logger);
 
@@ -344,8 +357,10 @@ mod tests {
         metric_id: u32,
     ) {
         let mut test_helper = setup_test();
-        let mut scan_logger =
-            ScanLogger::new(test_helper.cobalt_proxy.clone(), &test_helper.mock_time_matrix_client);
+        let mut scan_logger = ScanLogger::new(
+            test_helper.filtered_cobalt_logger(),
+            &test_helper.mock_time_matrix_client,
+        );
 
         run_handle_scan_result(&mut test_helper, &mut scan_logger, scan_result);
 
@@ -357,7 +372,7 @@ mod tests {
     fn scan_logger_new_then_inspect_data_tree_contains_time_matrix_metadata() {
         let mut test_helper = setup_test();
         let client = TimeMatrixClient::new(test_helper.inspect_node.create_child("wlan_scan"));
-        let _scan_logger = ScanLogger::new(test_helper.cobalt_proxy.clone(), &client);
+        let _scan_logger = ScanLogger::new(test_helper.filtered_cobalt_logger(), &client);
 
         let tree = test_helper.get_inspect_data_tree();
         assert_data_tree!(
@@ -384,8 +399,10 @@ mod tests {
     #[fuchsia::test]
     fn log_scan_start_inspect() {
         let mut test_helper = setup_test();
-        let mut scan_logger =
-            ScanLogger::new(test_helper.cobalt_proxy.clone(), &test_helper.mock_time_matrix_client);
+        let mut scan_logger = ScanLogger::new(
+            test_helper.filtered_cobalt_logger(),
+            &test_helper.mock_time_matrix_client,
+        );
 
         run_handle_scan_start(&mut test_helper, &mut scan_logger);
 

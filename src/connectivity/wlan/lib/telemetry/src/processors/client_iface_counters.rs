@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::util::cobalt_logger::log_cobalt_batch;
+use crate::util::cobalt_logger::{FilteredCobaltLogger, log_cobalt_batch};
 use fidl_fuchsia_metrics::{MetricEvent, MetricEventPayload};
 use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
 use fidl_fuchsia_wlan_stats as fidl_stats;
@@ -47,7 +47,7 @@ type GaugesTimeSeriesMap = HashMap<u16, Vec<InspectedTimeMatrix<i64>>>;
 
 pub struct ClientIfaceCountersLogger<S> {
     iface_state: Arc<Mutex<IfaceState>>,
-    cobalt_proxy: fidl_fuchsia_metrics::MetricEventLoggerProxy,
+    cobalt_proxy: Arc<FilteredCobaltLogger>,
     monitor_svc_proxy: fidl_fuchsia_wlan_device_service::DeviceMonitorProxy,
     inspect_metadata_node: Mutex<InspectMetadataNode>,
     time_series_stats: IfaceCountersTimeSeries,
@@ -62,7 +62,7 @@ pub struct ClientIfaceCountersLogger<S> {
 
 impl<S: InspectSender> ClientIfaceCountersLogger<S> {
     pub fn new(
-        cobalt_proxy: fidl_fuchsia_metrics::MetricEventLoggerProxy,
+        cobalt_proxy: Arc<FilteredCobaltLogger>,
         monitor_svc_proxy: fidl_fuchsia_wlan_device_service::DeviceMonitorProxy,
         inspect_metadata_node: &InspectNode,
         inspect_metadata_path: &str,
@@ -451,7 +451,7 @@ async fn log_driver_specific_gauges(
 }
 
 async fn diff_and_log_connection_stats_cobalt(
-    cobalt_proxy: &fidl_fuchsia_metrics::MetricEventLoggerProxy,
+    cobalt_proxy: &FilteredCobaltLogger,
     prev: &fidl_stats::ConnectionStats,
     current: &fidl_stats::ConnectionStats,
 ) {
@@ -480,7 +480,7 @@ async fn diff_and_log_connection_stats_cobalt(
 }
 
 async fn diff_and_log_rx_cobalt(
-    cobalt_proxy: &fidl_fuchsia_metrics::MetricEventLoggerProxy,
+    cobalt_proxy: &FilteredCobaltLogger,
     prev: &fidl_stats::ConnectionStats,
     current: &fidl_stats::ConnectionStats,
 ) {
@@ -522,7 +522,7 @@ async fn diff_and_log_rx_cobalt(
 }
 
 async fn diff_and_log_tx_cobalt(
-    cobalt_proxy: &fidl_fuchsia_metrics::MetricEventLoggerProxy,
+    cobalt_proxy: &FilteredCobaltLogger,
     prev: &fidl_stats::ConnectionStats,
     current: &fidl_stats::ConnectionStats,
 ) {
@@ -728,7 +728,7 @@ mod tests {
         let driver_counters_mock_matrix_client = MockTimeMatrixClient::new();
         let driver_gauges_mock_matrix_client = MockTimeMatrixClient::new();
         let logger = ClientIfaceCountersLogger::new(
-            test_helper.cobalt_proxy.clone(),
+            test_helper.filtered_cobalt_logger(),
             test_helper.monitor_svc_proxy.clone(),
             &test_helper.inspect_metadata_node,
             &test_helper.inspect_metadata_path,
@@ -771,7 +771,7 @@ mod tests {
         let driver_counters_mock_matrix_client = MockTimeMatrixClient::new();
         let driver_gauges_mock_matrix_client = MockTimeMatrixClient::new();
         let logger = ClientIfaceCountersLogger::new(
-            test_helper.cobalt_proxy.clone(),
+            test_helper.filtered_cobalt_logger(),
             test_helper.monitor_svc_proxy.clone(),
             &test_helper.inspect_metadata_node,
             &test_helper.inspect_metadata_path,
@@ -831,7 +831,7 @@ mod tests {
         let driver_counters_mock_matrix_client = MockTimeMatrixClient::new();
         let driver_gauges_mock_matrix_client = MockTimeMatrixClient::new();
         let logger = ClientIfaceCountersLogger::new(
-            test_helper.cobalt_proxy.clone(),
+            test_helper.filtered_cobalt_logger(),
             test_helper.monitor_svc_proxy.clone(),
             &test_helper.inspect_metadata_node,
             &test_helper.inspect_metadata_path,
@@ -927,7 +927,7 @@ mod tests {
         let driver_counters_mock_matrix_client = MockTimeMatrixClient::new();
         let driver_gauges_mock_matrix_client = MockTimeMatrixClient::new();
         let logger = ClientIfaceCountersLogger::new(
-            test_helper.cobalt_proxy.clone(),
+            test_helper.filtered_cobalt_logger(),
             test_helper.monitor_svc_proxy.clone(),
             &test_helper.inspect_metadata_node,
             &test_helper.inspect_metadata_path,
@@ -1040,7 +1040,7 @@ mod tests {
         let driver_counters_mock_matrix_client = MockTimeMatrixClient::new();
         let driver_gauges_mock_matrix_client = MockTimeMatrixClient::new();
         let logger = ClientIfaceCountersLogger::new(
-            test_helper.cobalt_proxy.clone(),
+            test_helper.filtered_cobalt_logger(),
             test_helper.monitor_svc_proxy.clone(),
             &test_helper.inspect_metadata_node,
             &test_helper.inspect_metadata_path,
@@ -1132,7 +1132,7 @@ mod tests {
         let driver_counters_mock_matrix_client = MockTimeMatrixClient::new();
         let driver_gauges_mock_matrix_client = MockTimeMatrixClient::new();
         let logger = ClientIfaceCountersLogger::new(
-            test_helper.cobalt_proxy.clone(),
+            test_helper.filtered_cobalt_logger(),
             test_helper.monitor_svc_proxy.clone(),
             &test_helper.inspect_metadata_node,
             &test_helper.inspect_metadata_path,
@@ -1215,7 +1215,7 @@ mod tests {
         let driver_counters_mock_matrix_client = MockTimeMatrixClient::new();
         let driver_gauges_mock_matrix_client = MockTimeMatrixClient::new();
         let logger = ClientIfaceCountersLogger::new(
-            test_helper.cobalt_proxy.clone(),
+            test_helper.filtered_cobalt_logger(),
             test_helper.monitor_svc_proxy.clone(),
             &test_helper.inspect_metadata_node,
             &test_helper.inspect_metadata_path,
@@ -1330,7 +1330,7 @@ mod tests {
         let driver_counters_mock_matrix_client = MockTimeMatrixClient::new();
         let driver_gauges_mock_matrix_client = MockTimeMatrixClient::new();
         let logger = ClientIfaceCountersLogger::new(
-            test_helper.cobalt_proxy.clone(),
+            test_helper.filtered_cobalt_logger(),
             test_helper.monitor_svc_proxy.clone(),
             &test_helper.inspect_metadata_node,
             &test_helper.inspect_metadata_path,
@@ -1446,7 +1446,7 @@ mod tests {
         let driver_counters_mock_matrix_client = MockTimeMatrixClient::new();
         let driver_gauges_mock_matrix_client = MockTimeMatrixClient::new();
         let logger = ClientIfaceCountersLogger::new(
-            test_helper.cobalt_proxy.clone(),
+            test_helper.filtered_cobalt_logger(),
             test_helper.monitor_svc_proxy.clone(),
             &test_helper.inspect_metadata_node,
             &test_helper.inspect_metadata_path,
@@ -1488,7 +1488,7 @@ mod tests {
         let driver_counters_mock_matrix_client = MockTimeMatrixClient::new();
         let driver_gauges_mock_matrix_client = MockTimeMatrixClient::new();
         let logger = ClientIfaceCountersLogger::new(
-            test_helper.cobalt_proxy.clone(),
+            test_helper.filtered_cobalt_logger(),
             test_helper.monitor_svc_proxy.clone(),
             &test_helper.inspect_metadata_node,
             &test_helper.inspect_metadata_path,
@@ -1531,7 +1531,7 @@ mod tests {
             rx_unicast_drop: Some(7),
             ..Default::default()
         };
-        let cobalt_proxy = test_helper.cobalt_proxy.clone();
+        let cobalt_proxy = test_helper.filtered_cobalt_logger();
         let mut test_fut = pin!(diff_and_log_rx_cobalt(&cobalt_proxy, &prev_stats, &current_stats));
         assert_eq!(
             test_helper.run_until_stalled_drain_cobalt_events(&mut test_fut),
@@ -1574,7 +1574,7 @@ mod tests {
         current_stats: fidl_stats::ConnectionStats,
     ) {
         let mut test_helper = setup_test();
-        let cobalt_proxy = test_helper.cobalt_proxy.clone();
+        let cobalt_proxy = test_helper.filtered_cobalt_logger();
         let mut test_fut = pin!(diff_and_log_rx_cobalt(&cobalt_proxy, &prev_stats, &current_stats));
         assert_eq!(
             test_helper.run_until_stalled_drain_cobalt_events(&mut test_fut),
@@ -1597,7 +1597,7 @@ mod tests {
             tx_drop: Some(7),
             ..Default::default()
         };
-        let cobalt_proxy = test_helper.cobalt_proxy.clone();
+        let cobalt_proxy = test_helper.filtered_cobalt_logger();
         let mut test_fut = pin!(diff_and_log_tx_cobalt(&cobalt_proxy, &prev_stats, &current_stats));
         assert_eq!(
             test_helper.run_until_stalled_drain_cobalt_events(&mut test_fut),
@@ -1637,7 +1637,7 @@ mod tests {
         current_stats: fidl_stats::ConnectionStats,
     ) {
         let mut test_helper = setup_test();
-        let cobalt_proxy = test_helper.cobalt_proxy.clone();
+        let cobalt_proxy = test_helper.filtered_cobalt_logger();
         let mut test_fut = pin!(diff_and_log_tx_cobalt(&cobalt_proxy, &prev_stats, &current_stats));
         assert_eq!(
             test_helper.run_until_stalled_drain_cobalt_events(&mut test_fut),
@@ -1687,7 +1687,7 @@ mod tests {
         current_stats: fidl_stats::ConnectionStats,
     ) {
         let mut test_helper = setup_test();
-        let cobalt_proxy = test_helper.cobalt_proxy.clone();
+        let cobalt_proxy = test_helper.filtered_cobalt_logger();
         let mut test_fut =
             pin!(diff_and_log_connection_stats_cobalt(&cobalt_proxy, &prev_stats, &current_stats));
         // Verify no crash
@@ -1708,7 +1708,7 @@ mod tests {
         let driver_counters_mock_matrix_client = MockTimeMatrixClient::new();
         let driver_gauges_mock_matrix_client = MockTimeMatrixClient::new();
         let logger = ClientIfaceCountersLogger::new(
-            test_helper.cobalt_proxy.clone(),
+            test_helper.filtered_cobalt_logger(),
             test_helper.monitor_svc_proxy.clone(),
             &test_helper.inspect_metadata_node,
             &test_helper.inspect_metadata_path,

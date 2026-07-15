@@ -2,17 +2,18 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::util::cobalt_logger::log_cobalt_batch;
-use fidl_fuchsia_metrics::{MetricEvent, MetricEventLoggerProxy, MetricEventPayload};
+use crate::util::cobalt_logger::{FilteredCobaltLogger, log_cobalt_batch};
+use fidl_fuchsia_metrics::{MetricEvent, MetricEventPayload};
+use std::sync::Arc;
 
 use wlan_legacy_metrics_registry as metrics;
 
 pub struct IfaceLogger {
-    cobalt_proxy: MetricEventLoggerProxy,
+    cobalt_proxy: Arc<FilteredCobaltLogger>,
 }
 
 impl IfaceLogger {
-    pub fn new(cobalt_proxy: MetricEventLoggerProxy) -> Self {
+    pub fn new(cobalt_proxy: Arc<FilteredCobaltLogger>) -> Self {
         Self { cobalt_proxy }
     }
 
@@ -38,7 +39,7 @@ impl IfaceLogger {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::testing::{setup_test, TestHelper};
+    use crate::testing::{TestHelper, setup_test};
     use futures::task::Poll;
     use std::pin::pin;
 
@@ -64,7 +65,7 @@ mod tests {
     #[fuchsia::test]
     fn test_handle_iface_creation_failure() {
         let mut test_helper = setup_test();
-        let iface_logger = IfaceLogger::new(test_helper.cobalt_proxy.clone());
+        let iface_logger = IfaceLogger::new(test_helper.filtered_cobalt_logger());
 
         run_handle_iface_creation_failure(&mut test_helper, &iface_logger);
 
@@ -76,7 +77,7 @@ mod tests {
     #[fuchsia::test]
     fn test_handle_iface_event() {
         let mut test_helper = setup_test();
-        let iface_logger = IfaceLogger::new(test_helper.cobalt_proxy.clone());
+        let iface_logger = IfaceLogger::new(test_helper.filtered_cobalt_logger());
 
         run_handle_iface_destruction_failure(&mut test_helper, &iface_logger);
 

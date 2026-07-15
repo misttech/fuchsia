@@ -80,7 +80,7 @@ pub struct TestHelper {
     cobalt_stream: fidl_fuchsia_metrics::MetricEventLoggerRequestStream,
     /// As requests to Cobalt are responded to via `self.drain_cobalt_events()`,
     /// their payloads are drained to this HashMap
-    cobalt_events: Vec<MetricEvent>,
+    pub cobalt_events: Vec<MetricEvent>,
 
     pub monitor_svc_proxy: fidl_fuchsia_wlan_device_service::DeviceMonitorProxy,
     monitor_svc_stream: fidl_fuchsia_wlan_device_service::DeviceMonitorRequestStream,
@@ -260,6 +260,23 @@ impl TestHelper {
 
     pub fn create_inspect_node(&mut self, name: &str) -> InspectNode {
         self.inspector.root().create_child(name)
+    }
+
+    pub fn filtered_cobalt_logger(&self) -> Arc<crate::util::cobalt_logger::FilteredCobaltLogger> {
+        Arc::new(crate::util::cobalt_logger::FilteredCobaltLogger::new(
+            self.cobalt_proxy.clone(),
+            crate::config::CobaltAllowlist::All,
+        ))
+    }
+
+    pub fn filtered_cobalt_logger_with_allowlist(
+        &self,
+        allowlist: crate::config::CobaltAllowlist,
+    ) -> Arc<crate::util::cobalt_logger::FilteredCobaltLogger> {
+        Arc::new(crate::util::cobalt_logger::FilteredCobaltLogger::new(
+            self.cobalt_proxy.clone(),
+            allowlist,
+        ))
     }
 }
 

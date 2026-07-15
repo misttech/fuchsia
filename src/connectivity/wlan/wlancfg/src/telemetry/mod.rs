@@ -123,6 +123,7 @@ impl TelemetrySender {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct DisconnectInfo {
+    pub iface_id: u16,
     pub connected_duration: zx::MonotonicDuration,
     pub is_sme_reconnecting: bool,
     pub disconnect_source: fidl_sme::DisconnectSource,
@@ -514,6 +515,14 @@ const TELEMETRY_EVENT_BUFFER_SIZE: usize = 100;
 /// How often to request RSSI stats and dispatcher packet counts from MLME.
 const TELEMETRY_QUERY_INTERVAL: zx::MonotonicDuration = zx::MonotonicDuration::from_seconds(15);
 
+pub fn get_telemetry_config() -> wlan_telemetry::TelemetryConfig {
+    wlan_telemetry::TelemetryConfig::default()
+}
+
+pub fn get_cobalt_allowlist() -> wlan_telemetry::CobaltAllowlist {
+    wlan_telemetry::CobaltAllowlist::Only(HashSet::new())
+}
+
 /// Create a struct for sending TelemetryEvent, and a future representing the telemetry loop.
 ///
 /// Every 15 seconds, the telemetry loop will query for MLME/PHY stats and update various
@@ -538,6 +547,16 @@ pub fn serve_telemetry(
         const INTERVAL_TICKS_PER_HR: u64 = INTERVAL_TICKS_PER_MINUTE * 60;
         const INTERVAL_TICKS_PER_DAY: u64 = INTERVAL_TICKS_PER_HR * 24;
         let mut interval_tick = 0u64;
+        let lib_telemetry_node = inspect_node.create_child("lib_telemetry");
+        let (lib_telemetry_sender, lib_telemetry_fut) = wlan_telemetry::serve_telemetry(
+            cobalt_proxy.clone(),
+            monitor_svc_proxy.clone(),
+            lib_telemetry_node,
+            "root/client_stats/lib_telemetry",
+            get_telemetry_config(),
+            get_cobalt_allowlist(),
+        );
+        let mut lib_telemetry_fut = Box::pin(lib_telemetry_fut).fuse();
         let mut telemetry = Telemetry::new(
             cloned_sender,
             monitor_svc_proxy,
@@ -548,8 +567,14 @@ pub fn serve_telemetry(
         );
         loop {
             select! {
+                res = lib_telemetry_fut => {
+                    warn!("wlan_telemetry exited unexpectedly: {:?}", res);
+                }
                 event = receiver.next() => {
                     if let Some(event) = event {
+                        if let Some(wlan_event) = convert::convert_to_wlan_telemetry_event(&event) {
+                            lib_telemetry_sender.send(wlan_event);
+                        }
                         telemetry.handle_telemetry_event(event).await;
                     }
                 }
@@ -10797,6 +10822,7 @@ mod tests {
         let is_sme_reconnecting = false;
         let fidl_disconnect_info = generate_disconnect_info(is_sme_reconnecting);
         DisconnectInfo {
+            iface_id: IFACE_ID,
             connected_duration: zx::MonotonicDuration::from_hours(6),
             is_sme_reconnecting: fidl_disconnect_info.is_sme_reconnecting,
             disconnect_source: fidl_disconnect_info.disconnect_source,

@@ -2,17 +2,18 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::util::cobalt_logger::log_cobalt_batch;
-use fidl_fuchsia_metrics::{MetricEvent, MetricEventLoggerProxy, MetricEventPayload};
+use crate::util::cobalt_logger::{FilteredCobaltLogger, log_cobalt_batch};
+use fidl_fuchsia_metrics::{MetricEvent, MetricEventPayload};
+use std::sync::Arc;
 
 use wlan_legacy_metrics_registry as metrics;
 
 pub struct SmeTimeoutLogger {
-    cobalt_proxy: MetricEventLoggerProxy,
+    cobalt_proxy: Arc<FilteredCobaltLogger>,
 }
 
 impl SmeTimeoutLogger {
-    pub fn new(cobalt_proxy: MetricEventLoggerProxy) -> Self {
+    pub fn new(cobalt_proxy: Arc<FilteredCobaltLogger>) -> Self {
         Self { cobalt_proxy }
     }
 
@@ -29,7 +30,7 @@ impl SmeTimeoutLogger {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::testing::{setup_test, TestHelper};
+    use crate::testing::{TestHelper, setup_test};
     use futures::task::Poll;
     use std::pin::pin;
 
@@ -47,7 +48,7 @@ mod tests {
     #[fuchsia::test]
     fn test_handle_sme_timeout_event() {
         let mut test_helper = setup_test();
-        let sme_timeout_logger = SmeTimeoutLogger::new(test_helper.cobalt_proxy.clone());
+        let sme_timeout_logger = SmeTimeoutLogger::new(test_helper.filtered_cobalt_logger());
 
         run_handle_sme_timeout_event(&mut test_helper, &sme_timeout_logger);
 

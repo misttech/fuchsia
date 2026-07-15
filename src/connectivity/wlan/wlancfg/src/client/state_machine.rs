@@ -1118,6 +1118,7 @@ async fn log_disconnect_to_telemetry(
 ) {
     let now = fasync::MonotonicInstant::now();
     let info = DisconnectInfo {
+        iface_id: common_options.iface_id,
         connected_duration: now - options.ess_connect_start_time,
         is_sme_reconnecting: fidl_info.is_sme_reconnecting,
         disconnect_source: fidl_info.disconnect_source,

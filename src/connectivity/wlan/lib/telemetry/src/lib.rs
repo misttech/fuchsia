@@ -11,13 +11,16 @@ use futures::channel::mpsc;
 use futures::{Future, StreamExt, select};
 use log::error;
 use std::boxed::Box;
+use std::sync::Arc;
 use windowed_stats::experimental::inspect::TimeMatrixClient;
 use wlan_common::bss::BssDescription;
 use wlan_legacy_metrics_registry as metrics;
 
+mod config;
 mod convert;
 mod processors;
 pub(crate) mod util;
+pub use crate::config::{CobaltAllowlist, TelemetryConfig};
 pub use crate::processors::connect_disconnect::DisconnectInfo;
 pub use crate::processors::pno_scan::PnoScanDisabledReason;
 pub use crate::processors::power::{IfacePowerLevel, UnclearPowerDemand};
@@ -166,66 +169,92 @@ pub fn serve_telemetry(
     monitor_svc_proxy: fidl_fuchsia_wlan_device_service::DeviceMonitorProxy,
     inspect_node: InspectNode,
     inspect_path: &str,
+    config: TelemetryConfig,
+    allowlist: CobaltAllowlist,
 ) -> (TelemetrySender, impl Future<Output = Result<(), Error>> + use<>) {
     let (sender, mut receiver) =
         mpsc::channel::<TelemetryEvent>(util::sender::TELEMETRY_EVENT_BUFFER_SIZE);
     let sender = TelemetrySender::new(sender);
+
+    let cobalt_logger =
+        Arc::new(util::cobalt_logger::FilteredCobaltLogger::new(cobalt_proxy, allowlist));
 
     // Inspect nodes to hold time series and metadata for other nodes
     const METADATA_NODE_NAME: &str = "metadata";
     let inspect_metadata_node = inspect_node.create_child(METADATA_NODE_NAME);
     let inspect_metadata_path = format!("{inspect_path}/{METADATA_NODE_NAME}");
     let inspect_time_series_node = inspect_node.create_child("time_series");
-    let driver_specific_time_series_node = inspect_time_series_node.create_child("driver_specific");
-    let driver_counters_time_series_node =
-        driver_specific_time_series_node.create_child("counters");
-    let driver_gauges_time_series_node = driver_specific_time_series_node.create_child("gauges");
 
     let time_matrix_client = TimeMatrixClient::new(inspect_time_series_node.clone_weak());
-    let driver_counters_time_series_client =
-        TimeMatrixClient::new(driver_counters_time_series_node.clone_weak());
-    let driver_gauges_time_series_client =
-        TimeMatrixClient::new(driver_gauges_time_series_node.clone_weak());
 
     // Create and initialize modules
-    let connect_disconnect = processors::connect_disconnect::ConnectDisconnectLogger::new(
-        cobalt_proxy.clone(),
-        &inspect_node,
-        &inspect_metadata_node,
-        &inspect_metadata_path,
-        &time_matrix_client,
-    );
-    let iface_logger = processors::iface::IfaceLogger::new(cobalt_proxy.clone());
-    let power_logger = processors::power::PowerLogger::new(cobalt_proxy.clone(), &inspect_node);
-    let recovery_logger = processors::recovery::RecoveryLogger::new(cobalt_proxy.clone());
-    let mut scan_logger =
-        processors::scan::ScanLogger::new(cobalt_proxy.clone(), &time_matrix_client);
-    let mut pno_scan_logger = processors::pno_scan::PnoScanLogger::new(cobalt_proxy.clone());
-    let sme_timeout_logger = processors::sme_timeout::SmeTimeoutLogger::new(cobalt_proxy.clone());
-    let mut toggle_logger =
-        processors::toggle_events::ToggleLogger::new(cobalt_proxy.clone(), &inspect_node);
-    let tx_power_scenario_logger =
-        processors::tx_power_scenario::TxPowerScenarioLogger::new(cobalt_proxy.clone());
+    let connect_disconnect = config.enable_connect_disconnect.then(|| {
+        processors::connect_disconnect::ConnectDisconnectLogger::new(
+            cobalt_logger.clone(),
+            &inspect_node,
+            &inspect_metadata_node,
+            &inspect_metadata_path,
+            &time_matrix_client,
+        )
+    });
+    let iface_logger = config
+        .enable_iface_logger
+        .then(|| processors::iface::IfaceLogger::new(cobalt_logger.clone()));
+    let power_logger = config
+        .enable_power_logger
+        .then(|| processors::power::PowerLogger::new(cobalt_logger.clone(), &inspect_node));
+    let recovery_logger = config
+        .enable_recovery_logger
+        .then(|| processors::recovery::RecoveryLogger::new(cobalt_logger.clone()));
+    let mut scan_logger = config
+        .enable_scan_logger
+        .then(|| processors::scan::ScanLogger::new(cobalt_logger.clone(), &time_matrix_client));
+    let mut pno_scan_logger = config
+        .enable_pno_scan_logger
+        .then(|| processors::pno_scan::PnoScanLogger::new(cobalt_logger.clone()));
+    let sme_timeout_logger = config
+        .enable_sme_timeout_logger
+        .then(|| processors::sme_timeout::SmeTimeoutLogger::new(cobalt_logger.clone()));
+    let mut toggle_logger = config.enable_toggle_logger.then(|| {
+        processors::toggle_events::ToggleLogger::new(cobalt_logger.clone(), &inspect_node)
+    });
+    let tx_power_scenario_logger = config
+        .enable_tx_power_scenario_logger
+        .then(|| processors::tx_power_scenario::TxPowerScenarioLogger::new(cobalt_logger.clone()));
 
-    let client_iface_counters_logger =
+    let client_iface_counters_logger = config.enable_client_iface_counters_logger.then(|| {
+        let driver_specific_time_series_node =
+            inspect_time_series_node.create_child("driver_specific");
+        let driver_counters_time_series_node =
+            driver_specific_time_series_node.create_child("counters");
+        let driver_gauges_time_series_node =
+            driver_specific_time_series_node.create_child("gauges");
+
+        let driver_counters_time_series_client =
+            TimeMatrixClient::new(driver_counters_time_series_node.clone_weak());
+        let driver_gauges_time_series_client =
+            TimeMatrixClient::new(driver_gauges_time_series_node.clone_weak());
+
+        inspect_time_series_node.record(driver_specific_time_series_node);
+        inspect_time_series_node.record(driver_counters_time_series_node);
+        inspect_time_series_node.record(driver_gauges_time_series_node);
+
         processors::client_iface_counters::ClientIfaceCountersLogger::new(
-            cobalt_proxy,
+            cobalt_logger.clone(),
             monitor_svc_proxy,
             &inspect_metadata_node,
             &inspect_metadata_path,
             &time_matrix_client,
             driver_counters_time_series_client,
             driver_gauges_time_series_client,
-        );
+        )
+    });
 
     let fut = async move {
         // Prevent the inspect nodes from being dropped while the loop is running.
         let _inspect_node = inspect_node;
         let _inspect_metadata_node = inspect_metadata_node;
         let _inspect_time_series_node = inspect_time_series_node;
-        let _driver_specific_time_series_node = driver_specific_time_series_node;
-        let _driver_counters_time_series_node = driver_counters_time_series_node;
-        let _driver_gauges_time_series_node = driver_gauges_time_series_node;
 
         let mut telemetry_interval = fasync::Interval::new(TELEMETRY_QUERY_INTERVAL);
         loop {
@@ -238,91 +267,162 @@ pub fn serve_telemetry(
                     use TelemetryEvent::*;
                     match event {
                         ConnectResult { result, bss, is_credential_rejected, is_owe_transition } => {
-                            connect_disconnect.handle_connect_attempt(result, &bss, is_credential_rejected, is_owe_transition).await;
+                            if let Some(ref connect_disconnect) = connect_disconnect {
+                                connect_disconnect.handle_connect_attempt(result, &bss, is_credential_rejected, is_owe_transition).await;
+                            }
                         }
                         Disconnect { info } => {
-                            connect_disconnect.log_disconnect(&info).await;
-                            power_logger.handle_iface_disconnect(info.iface_id).await;
+                            if let Some(ref connect_disconnect) = connect_disconnect {
+                                connect_disconnect.log_disconnect(&info).await;
+                            }
+                            if let Some(ref power_logger) = power_logger {
+                                power_logger.handle_iface_disconnect(info.iface_id).await;
+                            }
                         }
                         ClientConnectionsToggle { event } => {
-                            connect_disconnect.handle_client_connections_toggle(&event).await;
-                            toggle_logger.handle_toggle_event(event).await;
+                            if let Some(ref connect_disconnect) = connect_disconnect {
+                                connect_disconnect.handle_client_connections_toggle(&event).await;
+                            }
+                            if let Some(ref mut toggle_logger) = toggle_logger {
+                                toggle_logger.handle_toggle_event(event).await;
+                            }
                         }
                         ClientIfaceCreated { iface_id } => {
-                            client_iface_counters_logger.handle_iface_created(iface_id).await;
+                            if let Some(ref client_iface_counters_logger) = client_iface_counters_logger {
+                                client_iface_counters_logger.handle_iface_created(iface_id).await;
+                            }
                         }
                         ClientIfaceDestroyed { iface_id } => {
-                            connect_disconnect.handle_iface_destroyed().await;
-                            client_iface_counters_logger.handle_iface_destroyed(iface_id).await;
-                            power_logger.handle_iface_destroyed(iface_id).await;
+                            if let Some(ref connect_disconnect) = connect_disconnect {
+                                connect_disconnect.handle_iface_destroyed().await;
+                            }
+                            if let Some(ref client_iface_counters_logger) = client_iface_counters_logger {
+                                client_iface_counters_logger.handle_iface_destroyed(iface_id).await;
+                            }
+                            if let Some(ref power_logger) = power_logger {
+                                power_logger.handle_iface_destroyed(iface_id).await;
+                            }
                         }
                         IfaceCreationFailure => {
-                            iface_logger.handle_iface_creation_failure().await;
+                            if let Some(ref iface_logger) = iface_logger {
+                                iface_logger.handle_iface_creation_failure().await;
+                            }
                         }
                         IfaceDestructionFailure => {
-                            iface_logger.handle_iface_destruction_failure().await;
+                            if let Some(ref iface_logger) = iface_logger {
+                                iface_logger.handle_iface_destruction_failure().await;
+                            }
                         }
                         ScanStart => {
-                            scan_logger.handle_scan_start().await;
+                            if let Some(ref mut scan_logger) = scan_logger {
+                                scan_logger.handle_scan_start().await;
+                            }
                         }
                         ScanResult { result } => {
-                            scan_logger.handle_scan_result(result).await;
+                            if let Some(ref mut scan_logger) = scan_logger {
+                                scan_logger.handle_scan_result(result).await;
+                            }
                         }
                         IfacePowerLevelChanged { iface_power_level, iface_id } => {
-                            power_logger.log_iface_power_event(iface_power_level, iface_id).await;
+                            if let Some(ref power_logger) = power_logger {
+                                power_logger.log_iface_power_event(iface_power_level, iface_id).await;
+                            }
                         }
                         // TODO(b/340921554): either watch for suspension directly in the library,
                         // or plumb this from callers once suspend mechanisms are integrated
                         SuspendImminent => {
-                            power_logger.handle_suspend_imminent().await;
-                            connect_disconnect.handle_suspend_imminent().await;
+                            if let Some(ref power_logger) = power_logger {
+                                power_logger.handle_suspend_imminent().await;
+                            }
+                            if let Some(ref connect_disconnect) = connect_disconnect {
+                                connect_disconnect.handle_suspend_imminent().await;
+                            }
                         }
                         UnclearPowerDemand(demand) => {
-                            power_logger.handle_unclear_power_demand(demand).await;
+                            if let Some(ref power_logger) = power_logger {
+                                power_logger.handle_unclear_power_demand(demand).await;
+                            }
                         }
                         ChipPowerUpFailure => {
-                            power_logger.handle_chip_power_up_failure().await;
-                            connect_disconnect.handle_client_connections_failed_to_start().await;
+                            if let Some(ref power_logger) = power_logger {
+                                power_logger.handle_chip_power_up_failure().await;
+                            }
+                            if let Some(ref connect_disconnect) = connect_disconnect {
+                                connect_disconnect.handle_client_connections_failed_to_start().await;
+                            }
                         }
                         ChipPowerDownFailure => {
-                            power_logger.chip_power_down_failure().await;
-                            connect_disconnect.handle_client_connections_failed_to_stop().await;
+                            if let Some(ref power_logger) = power_logger {
+                                power_logger.chip_power_down_failure().await;
+                            }
+                            if let Some(ref connect_disconnect) = connect_disconnect {
+                                connect_disconnect.handle_client_connections_failed_to_stop().await;
+                            }
                         }
                         BatteryChargeStatus(charge_status) => {
-                            scan_logger.handle_battery_charge_status(charge_status).await;
-                            toggle_logger.handle_battery_charge_status(charge_status).await;
+                            if let Some(ref mut scan_logger) = scan_logger {
+                                scan_logger.handle_battery_charge_status(charge_status).await;
+                            }
+                            if let Some(ref mut toggle_logger) = toggle_logger {
+                                toggle_logger.handle_battery_charge_status(charge_status).await;
+                            }
                         }
                         RecoveryEvent { result } => {
-                            recovery_logger.handle_recovery_event(result).await;
+                            if let Some(ref recovery_logger) = recovery_logger {
+                                recovery_logger.handle_recovery_event(result).await;
+                            }
                         }
                         SmeTimeout => {
-                            sme_timeout_logger.handle_sme_timeout_event().await;
+                            if let Some(ref sme_timeout_logger) = sme_timeout_logger {
+                                sme_timeout_logger.handle_sme_timeout_event().await;
+                            }
                         }
                         ResetTxPowerScenario => {
-                            tx_power_scenario_logger.handle_sar_reset().await;
+                            if let Some(ref tx_power_scenario_logger) = tx_power_scenario_logger {
+                                tx_power_scenario_logger.handle_sar_reset().await;
+                            }
                         }
                         SetTxPowerScenario {scenario} => {
-                            tx_power_scenario_logger.handle_set_sar(scenario).await;
+                            if let Some(ref tx_power_scenario_logger) = tx_power_scenario_logger {
+                                tx_power_scenario_logger.handle_set_sar(scenario).await;
+                            }
                         }
                         PnoScanFailure => {
-                            connect_disconnect.handle_pno_scan_failure().await;
+                            if let Some(ref connect_disconnect) = connect_disconnect {
+                                connect_disconnect.handle_pno_scan_failure().await;
+                            }
                         }
                         PnoScanEnabled => {
-                            let is_connected = connect_disconnect.is_connected();
-                            pno_scan_logger.handle_pno_scan_enabled(is_connected).await;
+                            if let Some(ref mut pno_scan_logger) = pno_scan_logger {
+                                let is_connected = connect_disconnect
+                                    .as_ref()
+                                    .map(|cd| cd.is_connected())
+                                    .unwrap_or(false);
+                                pno_scan_logger.handle_pno_scan_enabled(is_connected).await;
+                            }
                         }
                         PnoScanResultsReceived => {
-                            pno_scan_logger.handle_pno_scan_results_received().await;
+                            if let Some(ref mut pno_scan_logger) = pno_scan_logger {
+                                pno_scan_logger.handle_pno_scan_results_received().await;
+                            }
                         }
                         PnoScanDisabled { reason } => {
-                            pno_scan_logger.handle_pno_scan_disabled(reason).await;
+                            if let Some(ref mut pno_scan_logger) = pno_scan_logger {
+                                pno_scan_logger.handle_pno_scan_disabled(reason).await;
+                            }
                         }
                     }
                 }
                 _ = telemetry_interval.next() => {
-                    connect_disconnect.handle_periodic_telemetry().await;
-                    client_iface_counters_logger.handle_periodic_telemetry().await;
-                    pno_scan_logger.handle_periodic_telemetry().await;
+                    if let Some(ref connect_disconnect) = connect_disconnect {
+                        connect_disconnect.handle_periodic_telemetry().await;
+                    }
+                    if let Some(ref client_iface_counters_logger) = client_iface_counters_logger {
+                        client_iface_counters_logger.handle_periodic_telemetry().await;
+                    }
+                    if let Some(ref mut pno_scan_logger) = pno_scan_logger {
+                        pno_scan_logger.handle_periodic_telemetry().await;
+                    }
                 }
             }
         }

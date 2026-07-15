@@ -1,11 +1,12 @@
 // Copyright 2025 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-use crate::util::cobalt_logger::log_cobalt_batch;
+use crate::util::cobalt_logger::{FilteredCobaltLogger, log_cobalt_batch};
 use cobalt_client::traits::AsEventCode;
-use fidl_fuchsia_metrics::{MetricEvent, MetricEventLoggerProxy, MetricEventPayload};
+use fidl_fuchsia_metrics::{MetricEvent, MetricEventPayload};
 use fidl_fuchsia_wlan_internal::TxPowerScenario;
 use log::warn;
+use std::sync::Arc;
 
 use wlan_legacy_metrics_registry as metrics;
 
@@ -36,11 +37,11 @@ fn fidl_scenario_to_cobalt_dimension(
 }
 
 pub struct TxPowerScenarioLogger {
-    cobalt_proxy: MetricEventLoggerProxy,
+    cobalt_proxy: Arc<FilteredCobaltLogger>,
 }
 
 impl TxPowerScenarioLogger {
-    pub fn new(cobalt_proxy: MetricEventLoggerProxy) -> Self {
+    pub fn new(cobalt_proxy: Arc<FilteredCobaltLogger>) -> Self {
         Self { cobalt_proxy }
     }
 
@@ -83,7 +84,7 @@ mod tests {
     #[fuchsia::test]
     fn test_handle_reset_event() {
         let mut test_helper = setup_test();
-        let logger = TxPowerScenarioLogger::new(test_helper.cobalt_proxy.clone());
+        let logger = TxPowerScenarioLogger::new(test_helper.filtered_cobalt_logger());
 
         let mut test_fut = pin!(logger.handle_sar_reset());
         assert_eq!(
@@ -99,7 +100,7 @@ mod tests {
     #[fuchsia::test]
     fn test_handle_set_event() {
         let mut test_helper = setup_test();
-        let logger = TxPowerScenarioLogger::new(test_helper.cobalt_proxy.clone());
+        let logger = TxPowerScenarioLogger::new(test_helper.filtered_cobalt_logger());
 
         let mut test_fut = pin!(logger.handle_set_sar(TxPowerScenario::Default));
         assert_eq!(
