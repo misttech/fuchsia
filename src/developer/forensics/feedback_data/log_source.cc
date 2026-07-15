@@ -56,7 +56,7 @@ void LogSource::Start() {
   is_stopped_ = false;
   services_->Connect(archive_accessor_.NewRequest(dispatcher_), kArchiveAccessorName);
 
-  auto format = fuchsia::diagnostics::Format::LEGACY_FXT;
+  auto format = fuchsia::diagnostics::Format::FXT;
   fuchsia::diagnostics::StreamParameters params;
   params.set_data_type(fuchsia::diagnostics::DataType::LOGS)
       .set_format(format)
