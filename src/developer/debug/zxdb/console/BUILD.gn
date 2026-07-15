@@ -206,9 +206,9 @@ static_library("console") {
     "//src/developer/debug/zxdb/client",
     "//src/developer/debug/zxdb/expr",
     "//src/developer/debug/zxdb/format",
+    "//src/lib/cmdline",
     "//src/lib/fxl",
     "//src/lib/line_input",
-    "//zircon/system/ulib/cmdline",
   ]
 
   if (is_fuchsia) {

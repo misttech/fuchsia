@@ -20,7 +20,6 @@ group("tests") {
     "affine:tests",
     "bitmap:tests",
     "closure-queue:tests",
-    "cmdline:tests",
     "concurrent:tests",
     "debugdata:tests",
     "driver-unit-test:tests",

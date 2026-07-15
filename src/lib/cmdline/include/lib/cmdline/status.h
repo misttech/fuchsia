@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef CMDLINE_STATUS_H_
-#define CMDLINE_STATUS_H_
+#ifndef SRC_LIB_CMDLINE_INCLUDE_LIB_CMDLINE_STATUS_H_
+#define SRC_LIB_CMDLINE_INCLUDE_LIB_CMDLINE_STATUS_H_
 
 #include <string>
 
@@ -57,4 +57,4 @@ class Status {
 
 }  // namespace cmdline
 
-#endif  // CMDLINE_STATUS_H_
+#endif  // SRC_LIB_CMDLINE_INCLUDE_LIB_CMDLINE_STATUS_H_

@@ -15,6 +15,7 @@ group("tests") {
     "buf-read-ext:tests",
     "callback:tests",
     "chunked-compression:tests",
+    "cmdline:tests",
     "cobalt:tests",
     "collections/packed:tests",
     "collections/sorted-vec-map:tests",

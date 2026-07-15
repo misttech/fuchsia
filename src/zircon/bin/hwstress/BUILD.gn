@@ -37,10 +37,10 @@ source_set("lib") {
     "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/fdio",
     "//sdk/lib/sys/cpp",
+    "//src/lib/cmdline",
     "//src/lib/fxl",
     "//src/lib/uuid",
     "//src/storage/lib/fs_management",
-    "//zircon/system/ulib/cmdline",
     "//zircon/system/ulib/fdio-caller",
     "//zircon/system/ulib/zx",
   ]

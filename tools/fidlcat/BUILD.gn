@@ -19,12 +19,12 @@ if (is_host) {
       "//src/developer/debug/ipc",
       "//src/developer/debug/zxdb/client",
       "//src/developer/debug/zxdb/common",
+      "//src/lib/cmdline",
       "//src/lib/fidl_codec",
       "//src/lib/fxl",
       "//third_party/protobuf:protobuf_full",
       "//third_party/rapidjson",
       "//tools/fidlcat/lib:host_lib",
-      "//zircon/system/ulib/cmdline",
     ]
   }
 
@@ -41,9 +41,9 @@ if (is_host) {
 
     deps = [
       "//sdk/lib/syslog/cpp",
+      "//src/lib/cmdline",
       "//src/lib/fidl_codec",
       "//src/lib/fxl",
-      "//zircon/system/ulib/cmdline",
     ]
 
     public_deps = [
@@ -69,9 +69,9 @@ if (is_host) {
     deps = [
       ":lib",
       "//sdk/lib/syslog/cpp",
+      "//src/lib/cmdline",
       "//src/lib/fxl",
       "//third_party/googletest:gtest",
-      "//zircon/system/ulib/cmdline",
     ]
   }
 }

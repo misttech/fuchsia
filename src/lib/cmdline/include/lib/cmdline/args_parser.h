@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef LIB_CMDLINE_ARGS_PARSER_H_
-#define LIB_CMDLINE_ARGS_PARSER_H_
+#ifndef SRC_LIB_CMDLINE_INCLUDE_LIB_CMDLINE_ARGS_PARSER_H_
+#define SRC_LIB_CMDLINE_INCLUDE_LIB_CMDLINE_ARGS_PARSER_H_
 
 #include <lib/cmdline/optional.h>
 #include <lib/cmdline/status.h>
@@ -135,7 +135,7 @@ class ArgsParser : public GeneralArgsParser {
   //   ArgsParser<MyOptions> parser;
   //   parser.AddSwitch("foo", 'f', kFooHelp, &MyOptions::foo_set);
   void AddSwitch(const char* long_name, const char short_name, const char* help,
-                 bool ResultStruct::*value) {
+                 bool ResultStruct::* value) {
     AddGeneralSwitch(
         long_name, short_name, help, [this, value]() { result_.*value = true; },
         [this, value]() { result_.*value = false; });
@@ -159,7 +159,7 @@ class ArgsParser : public GeneralArgsParser {
   // For optional values of other types, use the cmdline::Optional type, in
   // "lib/cmdline/optional.h".
   void AddSwitch(const char* long_name, const char short_name, const char* help,
-                 std::optional<std::string> ResultStruct::*value,
+                 std::optional<std::string> ResultStruct::* value,
                  StringCallback validator = nullptr) {
     AddGeneralSwitch(long_name, short_name, help,
                      [this, value, validator](const std::string& v) -> Status {
@@ -192,7 +192,7 @@ class ArgsParser : public GeneralArgsParser {
   //   ArgsParser<MyOptions> parser;
   //   parser.AddSwitch("foo", 'f', kFooHelp, &MyOptions::foo);
   void AddSwitch(const char* long_name, const char short_name, const char* help,
-                 Optional<bool> ResultStruct::*value) {
+                 Optional<bool> ResultStruct::* value) {
     AddGeneralSwitch(
         long_name, short_name, help, [this, value]() { result_.*value = true; },
         [this, value]() { result_.*value = false; });
@@ -215,7 +215,7 @@ class ArgsParser : public GeneralArgsParser {
   //   parser.AddSwitch("foo", 'f', kFooHelp, &MyOptions::foo);
   template <typename T>
   void AddSwitch(const char* long_name, const char short_name, const char* help,
-                 T ResultStruct::*value, StringCallback validator = nullptr) {
+                 T ResultStruct::* value, StringCallback validator = nullptr) {
     AddGeneralSwitch(long_name, short_name, help,
                      [this, long_name, value, validator](const std::string& v) -> Status {
                        if (validator != nullptr) {
@@ -267,7 +267,7 @@ class ArgsParser : public GeneralArgsParser {
   //   parser.AddSwitch("foo", 'f', kFooHelp, &MyOptions::foo);
   template <typename T>
   void AddSwitch(const char* long_name, const char short_name, const char* help,
-                 std::vector<T> ResultStruct::*value, StringCallback validator = nullptr,
+                 std::vector<T> ResultStruct::* value, StringCallback validator = nullptr,
                  char delimiter = '\0') {
     AddGeneralSwitch(long_name, short_name, help,
                      [this, long_name, value, validator = std::move(validator),
@@ -337,4 +337,4 @@ class ArgsParser : public GeneralArgsParser {
 
 }  // namespace cmdline
 
-#endif  // LIB_CMDLINE_ARGS_PARSER_H_
+#endif  // SRC_LIB_CMDLINE_INCLUDE_LIB_CMDLINE_ARGS_PARSER_H_

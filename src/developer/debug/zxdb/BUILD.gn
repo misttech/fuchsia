@@ -98,8 +98,8 @@ if (is_host) {
     deps = [
       "//src/developer/debug/zxdb/common:perf_test",
       "//src/developer/debug/zxdb/symbols:perf_tests",
+      "//src/lib/cmdline",
       "//third_party/googletest:gtest",
-      "//zircon/system/ulib/cmdline",
     ]
   }
 }

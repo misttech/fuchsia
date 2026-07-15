@@ -57,7 +57,7 @@ static_library("core_dev_tools") {
     "//src/lib/fxl",
   ]
 
-  public_deps = [ "//zircon/system/ulib/cmdline" ]
+  public_deps = [ "//src/lib/cmdline" ]
 }
 
 test("unittests") {

@@ -16,6 +16,7 @@ visibility([
     "//build/bazel/rules/idk/private/...",  # Uses helper functions defined here.
     "//src/devices/...",
     "//src/firmware/lib/...",
+    "//src/lib/...",
     "//src/media/audio/...",
     "//zircon/...",
 ])

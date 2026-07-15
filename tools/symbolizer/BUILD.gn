@@ -25,9 +25,9 @@ if (is_host) {
       "//src/developer/debug/zxdb/console",
       "//src/developer/debug/zxdb/symbols",
       "//src/lib/analytics/cpp/core_dev_tools",
+      "//src/lib/cmdline",
       "//src/lib/fxl",
       "//third_party/rapidjson",
-      "//zircon/system/ulib/cmdline",
     ]
   }
 

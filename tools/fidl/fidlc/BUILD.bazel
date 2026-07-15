@@ -122,9 +122,9 @@ cc_library(
     ],
     deps = [
         "//sdk/lib/fit",
+        "//src/lib/cmdline",
         "//src/lib/fxl",
         "//zircon/system/public",
-        "//zircon/system/ulib/cmdline",
         "@re2",
     ],
     alwayslink = True,

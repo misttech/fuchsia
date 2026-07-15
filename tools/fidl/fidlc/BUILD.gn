@@ -187,10 +187,10 @@ source_set("lib") {
   ]
   public_deps = [
     "//sdk/lib/fit",
+    "//src/lib/cmdline",
     "//src/lib/fxl",
     "//third_party/re2",
     "//zircon/system/public",
-    "//zircon/system/ulib/cmdline",
   ]
 }
 source_set("json_schema") {

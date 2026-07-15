@@ -19,8 +19,8 @@ executable("bin") {
     "//sdk/lib/fit",
     "//sdk/lib/sys/cpp",
     "//sdk/lib/syslog/cpp",
+    "//src/lib/cmdline",
     "//src/lib/fxl:fxl_cli",
-    "//zircon/system/ulib/cmdline",
     "//zircon/system/ulib/zx",
   ]
 }
