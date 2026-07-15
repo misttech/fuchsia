@@ -6,7 +6,7 @@ Migrate GN templates to Bazel following the mapping below.
 | ------------ | --------------------- |
 | `go_binary`  | `go_binary_host_tool` |
 | `go_library` | `go_library`          |
-| `go_test`    | `go_test`             |
+| `go_test`    | `host_go_test`        |
 
 
 ## Migration Steps
@@ -44,12 +44,22 @@ Migrate GN templates to Bazel following the mapping below.
 
 
 ### Step 3: Migrate go_test target
-1. Add `load("@io_bazel_rules_go//go:def.bzl", "go_test")` to the BUILD.bazel file if it's not there.
+1. Add `load("//build/bazel/host_tests:host_go_test.bzl", "host_go_test")` to the BUILD.bazel file if it's not there.
 
 2. Migrate the `go_test` and set the sources to the test Go sources (e.g. `*_test.go`).
 
 
-### Step 4: Add `target_compatible_with` Attribute For All Bazel Targets
+### Step 4: Migrate `group("tests")` target
+1. Migrate the `group("tests")` target to `test_suite` with the same target name.
+
+2. Migrate attributes from `group("tests")` to `test_suite` following the mapping below.
+| GN field     | Bazel attribute             | Description                                                |
+| ------------ | --------------------------- | ---------------------------------------------------------- |
+| `deps`       | `tests`                     |                                                            |
+| `testonly`   | N/A                         | `test_suite` doesn't have equivalent attribute.            |
+
+
+### Step 5: Add `target_compatible_with` Attribute For All Bazel Targets
 1. Look up the `deps` list of sdk_molecules, `//sdk:build_host_tools` and `//sdk:non_build_host_tools`. If the migrated target is in the lists, then the targets are tools in the IDK.
 - Set `target_compatible_with = HOST_CONSTRAINTS` for tools not in the IDK.
 - Set `target_compatible_with = HOST_OS_CONSTRAINTS` for tools in the IDK.
@@ -58,7 +68,8 @@ Migrate GN templates to Bazel following the mapping below.
 - Add `load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")` to the BUILD.bazel file if the value of `target_compatible_with` is `HOST_CONSTRAINTS`.
 - Add `load("@platforms//host:constraints.bzl", "HOST_OS_CONSTRAINTS")` to the BUILD.bazel file if the value of `target_compatible_with` is `HOST_OS_CONSTRAINTS`.
 
-### Step 5: Separate Non-Go Sources
+
+### Step 6: Separate Non-Go Sources
 1. In Bazel, separate non-Go sources into the following attributes:
 - `srcs`: `.go`, `.s`, `.syso` (and C/C++ sources if `cgo = True`).
 - `embedsrcs`: Files used with `//go:embed` in the `.go` source files.
