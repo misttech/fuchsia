@@ -56,13 +56,13 @@ class FuchsiaBuildConfig(object):
 
     Fields:
       rbe: if True, build uses RBE
-      resultstore: if True, build uploads status and metadata to ResultStore
+      resultstore: "all", "none", "ninja", or "bazel"
       profile: if True, collect system profile during build
       tui: if True, enable terminal UI for monitoring build
     """
 
     rbe: bool | None
-    resultstore: bool
+    resultstore: str
     profile: bool
     tui: bool
     verbose: bool
@@ -71,9 +71,11 @@ class FuchsiaBuildConfig(object):
 
     @staticmethod
     def from_args(args: argparse.Namespace) -> "FuchsiaBuildConfig":
+        resultstore_val = args.resultstore or "none"
+
         return FuchsiaBuildConfig(
             rbe=args.rbe,
-            resultstore=args.resultstore,
+            resultstore=resultstore_val,
             profile=args.profile,
             tui=args.tui,
             verbose=args.verbose,
@@ -158,6 +160,19 @@ def _check_rbe_env_vars(environ: dict[str, str]) -> None:
             f"Warning: The following environment variables starting with 'RBE_' "
             f"are set and may override RBE tool configurations: {', '.join(rbe_vars)}"
         )
+
+
+def str_to_resultstore(value: str) -> str:
+    val_lower = value.lower()
+    if val_lower in ("true", "1", "yes", "all"):
+        return "all"
+    elif val_lower in ("false", "0", "no", "none"):
+        return "none"
+    elif val_lower in ("ninja", "bazel"):
+        return val_lower
+    raise argparse.ArgumentTypeError(
+        f"Invalid --resultstore value: '{value}'. Expected true/false/all/none/ninja/bazel."
+    )
 
 
 def str_to_bool(value: str) -> bool:
@@ -320,7 +335,7 @@ class FuchsiaBuildContext(object):
 
     @property
     def needs_auth(self) -> bool:
-        if self.config.resultstore:
+        if self.config.resultstore != "none":
             return True
 
         return self._rbe_settings.get("final", {}).get("needs_auth", False)
@@ -483,6 +498,30 @@ class BuildInvocation(object):
             build_env["GOOGLE_APPLICATION_CREDENTIALS"] = self.context.env.get(
                 "GOOGLE_APPLICATION_CREDENTIALS", str(default_adc)
             )
+
+        # Inject ResultStore induction signals to allow passive wrappers to dynamically
+        # configure themselves at runtime.
+        resultstore = self.context.config.resultstore
+        # LINT.IfChange(resultstore_ninja_env_vars)
+        build_env["FX_INTERNAL_RESULTSTORE_NINJA"] = (
+            "1" if resultstore in ("all", "ninja") else "0"
+        )
+        # LINT.ThenChange(//build/resultstore/fuchsia-rsproxy-wrap.sh:resultstore_ninja_env_vars)
+
+        # LINT.IfChange(resultstore_bazel_env_vars)
+        resultstore_bazel = "0"
+        if resultstore in ("all", "bazel"):
+            # Decide between "resultstore" (developer) and "resultstore_infra" (infra).
+            if (
+                self.context.loas_type == "unrestricted"
+                and "BUILDBUCKET_ID" not in self.context.env
+            ):
+                resultstore_bazel = "resultstore"
+            else:
+                resultstore_bazel = "resultstore_infra"
+        build_env["FX_INTERNAL_RESULTSTORE_BAZEL"] = resultstore_bazel
+        # LINT.ThenChange(//build/bazel/wrapper.bazel.sh:resultstore_bazel_env_vars)
+
         return build_env
 
 
@@ -583,7 +622,7 @@ def top_build_command_prefix(
     top_cmd.extend(["--build-dir", str(context.build_dir)])
     top_cmd.extend(["--log-dir", str(invocation.log_dir)])
 
-    if context.config.resultstore:
+    if context.config.resultstore in ("all", "ninja"):
         top_cmd.append("--resultstore")
         args_gn = context.args_gn
         if exists(args_gn):
@@ -842,10 +881,19 @@ def _main_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--no-rbe", action="store_false", dest="rbe")
 
     parser.add_argument(
-        "--resultstore", type=str_to_bool, nargs="?", const=True
+        "--resultstore",
+        type=str_to_resultstore,
+        nargs="?",
+        const="all",
+        default="none",
+        help="Upload build events and metadata to ResultStore (all, ninja, bazel, or none; default: none).",
     )
     parser.add_argument(
-        "--no-resultstore", action="store_false", dest="resultstore"
+        "--no-resultstore",
+        action="store_const",
+        const="none",
+        dest="resultstore",
+        help="Disable uploading build events to ResultStore.",
     )
 
     parser.add_argument("--profile", type=str_to_bool, nargs="?", const=True)

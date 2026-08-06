@@ -10,6 +10,13 @@
 # Do not use directly, the //build/regenerator script will copy this
 # file to a specific location in the build directory and generate the
 # appropriate configuration file.
+#
+# Environment variables that influence this script:
+#
+# FX_INTERNAL_RESULTSTORE_BAZEL: Set to "resultstore" or "resultstore_infra"
+#   to dynamically append the corresponding --config= flag at runtime.
+#   Set to "0" or leave unset to disable.
+
 _SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
 readonly _SCRIPT_DIR
 
@@ -161,6 +168,24 @@ readonly RESULTSTORE_SUB_BUILDS_LINK="$RESULTSTORE_URL/?q=PARENT_BUILD_ID:$RESUL
 _BAZEL_EXTRA_ARGS=(
   --invocation_id="$RESULTSTORE_invocation_id"
 )
+
+# LINT.IfChange(resultstore_bazel_env_vars)
+# Enable ResultStore reporting if requested by the orchestrator.
+# FX_INTERNAL_RESULTSTORE_BAZEL (set by build/scripts/main_build.py)
+# can be set to "resultstore" or "resultstore_infra"
+# (configs defined in build/bazel/templates/template.remote_services.gni).
+case "${FX_INTERNAL_RESULTSTORE_BAZEL:-0}" in
+  "" | "0")
+    # Disabled or empty, do nothing
+    ;;
+  resultstore | resultstore_infra)
+    _BAZEL_EXTRA_ARGS+=( --config="${FX_INTERNAL_RESULTSTORE_BAZEL}" )
+    ;;
+  *)
+    die "Invalid FX_INTERNAL_RESULTSTORE_BAZEL value: ${FX_INTERNAL_RESULTSTORE_BAZEL:-}. Expected 'resultstore' or 'resultstore_infra'."
+    ;;
+esac
+# LINT.ThenChange(//build/scripts/main_build.py:resultstore_bazel_env_vars)
 
 # The following step is sensitive to special environment variables:
 #   * per-invocation build metadata

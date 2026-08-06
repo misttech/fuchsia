@@ -55,9 +55,9 @@ class MainBuildTestBase(unittest.TestCase):
         self, **config_kwargs: Any
     ) -> main_build.FuchsiaBuildContext:
         """Helper to create a FuchsiaBuildContext with specific config."""
-        config_vals = {
+        config_vals: dict[str, Any] = {
             "rbe": False,
-            "resultstore": False,
+            "resultstore": "none",
             "profile": False,
             "tui": False,
             "verbose": False,
@@ -106,7 +106,7 @@ class FuchsiaBuildContextTest(MainBuildTestBase):
         )
 
     def test_loas_type_skip_when_no_auth(self) -> None:
-        context = self.create_context(resultstore=False)
+        context = self.create_context(resultstore="none")
         with mock.patch.object(
             main_build.FuchsiaBuildContext,
             "needs_auth",
@@ -192,6 +192,64 @@ class BuildInvocationTest(MainBuildTestBase):
             self.assertEqual(env["TERM"], "dumb")
             self.assertEqual(env["NINJA_STATUS"], "[%f/%t] ")
 
+    def test_get_build_env_resultstore(self) -> None:
+        # 1. Test resultstore="none" (default bypass)
+        context = self.create_context(resultstore="none")
+        context.env = {"USER": "fuchsia-user"}
+        with self.mock_invocation_context():
+            invocation = main_build.BuildInvocation(context)
+            env = invocation.get_build_env()
+            self.assertEqual(env["FX_INTERNAL_RESULTSTORE_NINJA"], "0")
+            self.assertEqual(env["FX_INTERNAL_RESULTSTORE_BAZEL"], "0")
+
+        # 2. Test resultstore="ninja" (only Ninja)
+        context = self.create_context(resultstore="ninja")
+        context.env = {"USER": "fuchsia-user"}
+        with self.mock_invocation_context():
+            invocation = main_build.BuildInvocation(context)
+            env = invocation.get_build_env()
+            self.assertEqual(env["FX_INTERNAL_RESULTSTORE_NINJA"], "1")
+            self.assertEqual(env["FX_INTERNAL_RESULTSTORE_BAZEL"], "0")
+
+        # 3. Test resultstore="bazel" (only Bazel, local dev with unrestricted LOAS)
+        context = self.create_context(resultstore="bazel")
+        context.env = {"USER": "fuchsia-user"}
+        with self.mock_invocation_context():
+            with mock.patch.object(
+                main_build.FuchsiaBuildContext,
+                "loas_type",
+                new_callable=mock.PropertyMock,
+                return_value="unrestricted",
+            ):
+                invocation = main_build.BuildInvocation(context)
+                env = invocation.get_build_env()
+                self.assertEqual(env["FX_INTERNAL_RESULTSTORE_NINJA"], "0")
+                self.assertEqual(
+                    env["FX_INTERNAL_RESULTSTORE_BAZEL"], "resultstore"
+                )
+
+        # 4. Test resultstore="bazel" (only Bazel, infra with BUILDBUCKET_ID)
+        context = self.create_context(resultstore="bazel")
+        context.env = {"USER": "fuchsia-user", "BUILDBUCKET_ID": "12345"}
+        with self.mock_invocation_context():
+            invocation = main_build.BuildInvocation(context)
+            env = invocation.get_build_env()
+            self.assertEqual(env["FX_INTERNAL_RESULTSTORE_NINJA"], "0")
+            self.assertEqual(
+                env["FX_INTERNAL_RESULTSTORE_BAZEL"], "resultstore_infra"
+            )
+
+        # 5. Test resultstore="all" (both tools)
+        context = self.create_context(resultstore="all")
+        context.env = {"USER": "fuchsia-user", "BUILDBUCKET_ID": "12345"}
+        with self.mock_invocation_context():
+            invocation = main_build.BuildInvocation(context)
+            env = invocation.get_build_env()
+            self.assertEqual(env["FX_INTERNAL_RESULTSTORE_NINJA"], "1")
+            self.assertEqual(
+                env["FX_INTERNAL_RESULTSTORE_BAZEL"], "resultstore_infra"
+            )
+
     def test_get_build_env_missing_user_error(self) -> None:
         context = self.create_context()
         context.env = {}  # No USER
@@ -222,7 +280,7 @@ class BuildCommandExecutionTest(unittest.TestCase):
         # Create them manually to avoid TestBase dependency
         config = main_build.FuchsiaBuildConfig(
             rbe=False,
-            resultstore=False,
+            resultstore="none",
             profile=False,
             tui=False,
             verbose=False,
@@ -280,7 +338,7 @@ class BuildCommandExecutionTest(unittest.TestCase):
     ) -> None:
         config = main_build.FuchsiaBuildConfig(
             rbe=False,
-            resultstore=False,
+            resultstore="none",
             profile=False,
             tui=False,
             verbose=False,
@@ -444,7 +502,7 @@ class ChooseConcurrencyTest(unittest.TestCase):
 
 class TopBuildCommandPrefixTest(MainBuildTestBase):
     def test_basic(self) -> None:
-        context = self.create_context(rbe=False, resultstore=False)
+        context = self.create_context(rbe=False, resultstore="none")
         with self.mock_invocation_context():
             invocation = main_build.BuildInvocation(context)
             prefix = main_build.top_build_command_prefix(invocation)
@@ -463,7 +521,7 @@ class TopBuildCommandPrefixTest(MainBuildTestBase):
             self.assertIn("--dry-run", prefix)
 
     def test_rbe_resultstore(self) -> None:
-        context = self.create_context(rbe=True, resultstore=True)
+        context = self.create_context(rbe=True, resultstore="all")
         with mock.patch.multiple(
             main_build.FuchsiaBuildContext,
             rbe_enabled=mock.PropertyMock(return_value=True),
@@ -581,7 +639,7 @@ class MainFunctionTest(MainBuildTestBase):
             ["--build-dir", "out/default", "ninja"]
         )
         self.assertIsNone(args.rbe)
-        self.assertIsNone(args.resultstore)
+        self.assertEqual(args.resultstore, "none")
         self.assertIsNone(args.tui)
         self.assertFalse(args.verbose)
         self.assertTrue(args.status)

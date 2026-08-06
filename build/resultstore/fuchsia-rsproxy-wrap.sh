@@ -63,6 +63,12 @@ options:
   -v | --verbose: print debug messages
 
   Unrecognized options before -- will be forwarded to rsproxy.
+
+environment variables:
+  FX_INTERNAL_RESULTSTORE_NINJA:
+      Set to 1 to enable ResultStore, 0 to disable.
+      This is usually set by build/scripts/main_build.py.
+      Default is disabled if unset.
 EOF
 }
 
@@ -116,6 +122,24 @@ wrapped_command=("$@")
 [[ "${#wrapped_command[@]}" -ge 1 ]] || {
   die "The wrapped command must not be empty."
 }
+
+# LINT.IfChange(resultstore_ninja_env_vars)
+# Enable ResultStore if one of the following is true:
+#   1. FX_INTERNAL_RESULTSTORE_NINJA is explicitly set to 1.
+#   2. RS_rs_service is set (legacy/transition fallback for infra/recipes).
+#
+# TODO(https://fxbug.dev/537038381): recipe should pass flag to main_build.py
+# to control ResultStore.
+enable_resultstore=0
+if [[ "${FX_INTERNAL_RESULTSTORE_NINJA:-0}" == "1" || -n "${RS_rs_service:-}" ]]; then
+  enable_resultstore=1
+fi
+
+if [[ "$enable_resultstore" == 0 ]]; then
+  debug_msg "ResultStore disabled.  Running original command without rsproxy."
+  exec "${wrapped_command[@]}"
+fi
+# LINT.ThenChange(//build/scripts/main_build.py:resultstore_ninja_env_vars)
 
 rsproxy_options=()
 
