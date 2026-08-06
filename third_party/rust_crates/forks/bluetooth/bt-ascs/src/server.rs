@@ -2,10 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use bt_common::core::ltv::LtValue;
 use bt_common::core::CodecId;
 use bt_common::generic_audio::metadata_ltv::Metadata;
-use bt_common::packet_encoding::Encodable;
 use bt_common::{PeerId, Uuid};
 use bt_gatt::server::{LocalService, Server, ServiceDefinition, ServiceId};
 use bt_gatt::server::{ReadResponder, WriteResponder};
@@ -22,6 +20,18 @@ use pin_project::pin_project;
 use std::collections::{HashMap, VecDeque};
 
 use crate::types::*;
+
+#[derive(Debug, thiserror::Error)]
+pub enum ServerError {
+    #[error("Server Only Operation")]
+    ServerOnlyOperation,
+    #[error("Service is already published")]
+    AlreadyPublished,
+    #[error("Issue publishing service: {0}")]
+    PublishError(#[from] bt_gatt::types::Error),
+    #[error("Unknown Peer: {0}")]
+    UnknownPeer(bt_common::PeerId),
+}
 
 #[pin_project(project = LocalServiceProj)]
 enum LocalServiceState<T: bt_gatt::ServerTypes> {
@@ -87,9 +97,9 @@ impl<T: bt_gatt::ServerTypes> Stream for LocalServiceState<T> {
                     let service_result = futures::ready!(fut.poll(cx));
                     let Ok(service) = service_result else {
                         self.as_mut().set(LocalServiceState::Terminated);
-                        return Poll::Ready(Some(Err(Error::PublishError(
+                        return Poll::Ready(Some(Err(Error::from(ServerError::PublishError(
                             service_result.err().unwrap(),
-                        ))));
+                        )))));
                     };
                     let events = service.publish();
                     self.as_mut().set(LocalServiceState::Published { service, events });
@@ -99,15 +109,15 @@ impl<T: bt_gatt::ServerTypes> Stream for LocalServiceState<T> {
                     let item = futures::ready!(events.poll_next(cx));
                     let Some(gatt_result) = item else {
                         self.as_mut().set(LocalServiceState::Terminated);
-                        return Poll::Ready(Some(Err(Error::PublishError(
+                        return Poll::Ready(Some(Err(Error::from(ServerError::PublishError(
                             "GATT server terminated".into(),
-                        ))));
+                        )))));
                     };
                     let Ok(event) = gatt_result else {
                         self.as_mut().set(LocalServiceState::Terminated);
-                        return Poll::Ready(Some(Err(Error::PublishError(
+                        return Poll::Ready(Some(Err(Error::from(ServerError::PublishError(
                             gatt_result.err().unwrap(),
-                        ))));
+                        )))));
                     };
                     return Poll::Ready(Some(Ok(event)));
                 }
@@ -144,24 +154,23 @@ impl AseControlOperationAction {
         if self.opcode.is_none() || self.response_codes.is_empty() {
             return None;
         }
-        let mut notification = Vec::with_capacity(2 + self.response_codes.len() * 3);
-        // Opcode
-        notification.push(self.opcode.unwrap().into());
-        if let ResponseCode::InvalidLength { .. } | ResponseCode::UnsupportedOpcode { .. } =
-            self.response_codes[0]
+        use bt_common::packet_encoding::Encodable;
+
+        let opcode = self.opcode.unwrap().into();
+        let notification = if let ResponseCode::InvalidLength { .. }
+        | ResponseCode::UnsupportedOpcode { .. } = self.response_codes[0]
         {
-            // UnsupportedOpcode or InvalidLength. Number_of_ASEs shall be set to 0xFF
-            // See ASCS v1.0.1 Table 4.7.  We only include the first response_code.
-            notification.push(0xFF);
-            notification.extend(self.response_codes[0].notify_value());
-            return Some(notification);
-        }
-        // Number_of_ASEs
-        notification.push(self.response_codes.len() as u8);
-        for response in &self.response_codes {
-            notification.extend(response.notify_value());
-        }
-        Some(notification)
+            ControlPointNotification::new_error(opcode, self.response_codes[0].to_code())
+        } else {
+            let mut cp_notification = ControlPointNotification::new(opcode);
+            for response in &self.response_codes {
+                cp_notification.add_response(response.clone());
+            }
+            cp_notification
+        };
+        let mut buf = vec![0; notification.encoded_len()];
+        notification.encode(&mut buf).unwrap();
+        Some(buf)
     }
 }
 
@@ -288,7 +297,7 @@ impl<T: bt_gatt::ServerTypes> AudioStreamControlServiceServer<T> {
 
     pub fn publish(&mut self, server: &T::Server) -> Result<(), Error> {
         if !self.local_service.is_not_published() {
-            return Err(Error::AlreadyPublished);
+            return Err(Error::from(ServerError::AlreadyPublished));
         }
         let LocalServiceState::NotPublished { waker } = std::mem::replace(
             &mut self.local_service,
@@ -306,8 +315,10 @@ impl<T: bt_gatt::ServerTypes> AudioStreamControlServiceServer<T> {
         ase_id: AseId,
         cis: (CigId, CisId),
     ) -> Result<(), Error> {
-        let endpoints =
-            self.client_endpoints.get_mut(&peer_id).ok_or(Error::UnknownPeer(peer_id))?;
+        let endpoints = self
+            .client_endpoints
+            .get_mut(&peer_id)
+            .ok_or(Error::from(ServerError::UnknownPeer(peer_id)))?;
         endpoints.established_cis(ase_id, cis);
         for operation in endpoints.autonomous_operations() {
             self.queue_operation_unpin(peer_id, operation);
@@ -321,8 +332,10 @@ impl<T: bt_gatt::ServerTypes> AudioStreamControlServiceServer<T> {
         ase_id: AseId,
         cis: (CigId, CisId),
     ) -> Result<(), Error> {
-        let endpoints =
-            self.client_endpoints.get_mut(&peer_id).ok_or(Error::UnknownPeer(peer_id))?;
+        let endpoints = self
+            .client_endpoints
+            .get_mut(&peer_id)
+            .ok_or(Error::from(ServerError::UnknownPeer(peer_id)))?;
         endpoints.released_cis(ase_id, cis);
         for operation in endpoints.autonomous_operations() {
             self.queue_operation_unpin(peer_id, operation);
@@ -379,159 +392,6 @@ impl<T: bt_gatt::ServerTypes> AudioStreamControlServiceServer<T> {
                 );
                 let _ = current_endpoints.endpoints.insert(endpoint.ase_id, endpoint);
             }
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-enum AudioDirection {
-    Sink,
-    Source,
-}
-
-impl From<&AudioDirection> for bt_common::Uuid {
-    fn from(value: &AudioDirection) -> Self {
-        match value {
-            AudioDirection::Sink => Uuid::from_u16(0x2BC4),
-            AudioDirection::Source => Uuid::from_u16(0x2BC5),
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-enum AseAdditionalParameters {
-    /// When in states with no additional parameters: Idle, Releasing
-    None,
-    CodecConfigured {
-        framing: Framing,
-        preferred_phys: Vec<Phy>,
-        preferred_retransmission_number: u8,
-        max_transport_latency: MaxTransportLatency,
-        presentation_delay_range: PresentationDelayRange,
-        codec_id: CodecId,
-        codec_config: Vec<u8>,
-    },
-    QosConfigured {
-        configuration: QosConfiguration,
-    },
-    /// When Enabling, Streaming, or Disabling
-    Streaming {
-        cig_id: CigId,
-        cis_id: CisId,
-        metadata: Vec<Metadata>,
-        qos_configured: QosConfiguration,
-    },
-}
-
-impl AseAdditionalParameters {
-    fn char_size(&self) -> usize {
-        match self {
-            AseAdditionalParameters::None => 0,
-            AseAdditionalParameters::CodecConfigured { codec_config, .. } => {
-                23 + codec_config.len()
-            }
-            AseAdditionalParameters::QosConfigured { .. } => 15,
-            AseAdditionalParameters::Streaming { metadata, .. } => {
-                metadata.iter().fold(3, |total, m| total + m.encoded_len() as usize)
-            }
-        }
-    }
-    fn into_char_value(&self) -> Vec<u8> {
-        match self {
-            AseAdditionalParameters::None => Vec::new(),
-            AseAdditionalParameters::CodecConfigured {
-                framing,
-                preferred_phys,
-                preferred_retransmission_number,
-                max_transport_latency,
-                presentation_delay_range,
-                codec_id,
-                codec_config,
-            } => {
-                let mut value = Vec::with_capacity(self.char_size());
-                value.resize(self.char_size() - codec_config.len(), 0);
-                value[0] = (*framing) as u8;
-                value[1] = Phy::to_bits(preferred_phys.iter());
-                value[2] = *preferred_retransmission_number;
-                max_transport_latency.encode(&mut value[3..]).unwrap();
-                presentation_delay_range.encode(&mut value[5..]).unwrap();
-                codec_id.encode(&mut value[17..]).unwrap();
-                value[22] = codec_config.len() as u8;
-                value.extend(codec_config.clone());
-                value
-            }
-            AseAdditionalParameters::QosConfigured {
-                configuration:
-                    QosConfiguration {
-                        cig_id,
-                        cis_id,
-                        sdu_interval,
-                        framing,
-                        phy,
-                        max_sdu,
-                        retransmission_number,
-                        max_transport_latency,
-                        presentation_delay,
-                        ..
-                    },
-            } => {
-                let mut value = Vec::with_capacity(self.char_size());
-                value.resize(self.char_size(), 0);
-                cig_id.encode(&mut value[0..]).unwrap();
-                cis_id.encode(&mut value[1..]).unwrap();
-                sdu_interval.encode(&mut value[2..]).unwrap();
-                framing.encode(&mut value[5..]).unwrap();
-                value[6] = Phy::to_bits(phy.iter());
-                max_sdu.encode(&mut value[7..]).unwrap();
-                value[9] = *retransmission_number;
-                max_transport_latency.encode(&mut value[10..]).unwrap();
-                presentation_delay.encode(&mut value[12..]).unwrap();
-                value
-            }
-            AseAdditionalParameters::Streaming { cig_id, cis_id, metadata, .. } => {
-                let mut value = Vec::with_capacity(self.char_size());
-                value.resize(self.char_size(), 0);
-                cig_id.encode(&mut value[0..]).unwrap();
-                cis_id.encode(&mut value[1..]).unwrap();
-                value[2] = metadata.iter().fold(0usize, |acc, i| acc + i.encoded_len()) as u8;
-                LtValue::encode_all(metadata.clone().into_iter(), &mut value[3..]).unwrap();
-                value
-            }
-        }
-    }
-}
-
-impl From<QosConfiguration> for AseAdditionalParameters {
-    fn from(value: QosConfiguration) -> Self {
-        Self::QosConfigured { configuration: value }
-    }
-}
-
-#[derive(Debug, Clone)]
-struct AudioStreamEndpoint {
-    handle: Handle,
-    direction: AudioDirection,
-    ase_id: AseId,
-    state: AseState,
-    additional: AseAdditionalParameters,
-}
-
-impl AudioStreamEndpoint {
-    fn into_char_value(&self) -> Vec<u8> {
-        let mut value = Vec::with_capacity(2 + self.additional.char_size());
-        value.push(self.ase_id.into());
-        value.push(self.state.into());
-        value.extend(self.additional.into_char_value());
-        value
-    }
-
-    fn get_cis(&self) -> Option<(CigId, CisId)> {
-        match &self.additional {
-            AseAdditionalParameters::QosConfigured { configuration } => {
-                Some((configuration.cig_id, configuration.cis_id))
-            }
-            AseAdditionalParameters::Streaming { cig_id, cis_id, .. } => Some((*cig_id, *cis_id)),
-            _ => None,
         }
     }
 }
@@ -712,7 +572,7 @@ impl EnableResponder {
             cig_id: configuration.cig_id,
             cis_id: configuration.cis_id,
             metadata: self.metadata,
-            qos_configured: configuration,
+            qos_configured: Some(configuration),
         };
         let _ = self.sender.send(Ok(self.endpoint));
     }
@@ -730,7 +590,8 @@ impl DisableResponder {
     }
 
     pub fn accept(mut self) {
-        let AseAdditionalParameters::Streaming { qos_configured, .. } = self.endpoint.additional
+        let AseAdditionalParameters::Streaming { qos_configured: Some(qos_configured), .. } =
+            self.endpoint.additional
         else {
             unreachable!();
         };

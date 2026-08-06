@@ -21,6 +21,7 @@ pub enum AdvertisingDatum {
     TxPowerLevel(i8),
     Uri(String),
     BroadcastName(String),
+    ResolvableSetIdentifier([u8; 6]),
 }
 
 /// Matches a single advertised attribute or condition from a Bluetooth Low

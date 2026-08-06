@@ -16,5 +16,5 @@ parking_lot = "0.12.5"
 thiserror = "2.0.18"
 
 [dev-dependencies]
-pretty_assertions = "1.2.1"
+pretty_assertions = "1.4.1"
 bt-gatt = { path = "../bt-gatt", features = ["test-utils"] }

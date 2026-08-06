@@ -151,6 +151,11 @@ fn parse_broadcast_id(input: &str) -> Result<BroadcastId, String> {
     raw_id.try_into().map_err(|e| format!("{e:?}"))
 }
 
+fn parse_advertising_sid(input: &str) -> Result<AdvertisingSetId, String> {
+    let raw_sid: u8 = parse_int(input).map_err(|_| format!("failed to parse int from {input}"))?;
+    AdvertisingSetId::try_from(raw_sid).map_err(|e| format!("{e:?}"))
+}
+
 fn parse_bis_sync(input: &str) -> HashMap<SubgroupIndex, BisSync> {
     let mut map = HashMap::new();
     for t in input.split(',') {
@@ -297,11 +302,10 @@ where
                         return Ok(());
                     };
 
-                    let Ok(sid_val) = parse_int::<u8>(&args[1]) else {
+                    let Ok(advertising_sid) = parse_advertising_sid(&args[1]) else {
                         eprintln!("invalid advertising sid: {}", args[1]);
                         return Ok(());
                     };
-                    let advertising_sid = AdvertisingSetId(sid_val);
 
                     let pa_sync: PaSync = match args[2].parse() {
                         Ok(sync) => sync,
@@ -407,11 +411,10 @@ where
                         }
                     };
 
-                    let Ok(raw_ad_sid) = parse_int::<u8>(&args[3]) else {
+                    let Ok(advertising_sid) = parse_advertising_sid(&args[3]) else {
                         eprintln!("invalid advertising sid: {}", args[3]);
                         return Ok(());
                     };
-                    let advertising_sid = AdvertisingSetId(raw_ad_sid);
 
                     match self.assistant.force_discover_broadcast_source(
                         source_peer_id,
@@ -442,11 +445,10 @@ where
                         return Ok(());
                     };
 
-                    let Ok(raw_ad_sid) = parse_int::<u8>(&args[1]) else {
+                    let Ok(advertising_sid) = parse_advertising_sid(&args[1]) else {
                         eprintln!("invalid advertising sid: {}", args[1]);
                         return Ok(());
                     };
-                    let advertising_sid = AdvertisingSetId(raw_ad_sid);
 
                     let mut all_big_metadata = Vec::new();
                     for i in 2..args.len() {
@@ -495,11 +497,10 @@ where
                         return Ok(());
                     };
 
-                    let Ok(raw_ad_sid) = parse_int::<u8>(&args[1]) else {
+                    let Ok(advertising_sid) = parse_advertising_sid(&args[1]) else {
                         eprintln!("invalid advertising sid: {}", args[1]);
                         return Ok(());
                     };
-                    let advertising_sid = AdvertisingSetId(raw_ad_sid);
 
                     let Ok(num_big) = parse_int::<usize>(&args[2]) else {
                         eprintln!("invalid # of bigs: {}", args[2]);

@@ -15,8 +15,9 @@ const NUM_SUBGROUPS_BYTE_SIZE: usize = 1;
 const PA_SYNC_BYTE_SIZE: usize = 1;
 const SOURCE_ID_BYTE_SIZE: usize = 1;
 
-/// 16-bit UUID value for the characteristics offered by the Broadcast Audio
-/// Scan Service.
+/// 16-bit UUID values for the Broadcast Audio Scan Service and its
+/// characteristics.
+pub const BROADCAST_AUDIO_SCAN_SERVICE_UUID: Uuid = Uuid::from_u16(0x184F);
 pub const BROADCAST_AUDIO_SCAN_CONTROL_POINT_UUID: Uuid = Uuid::from_u16(0x2BC7);
 pub const BROADCAST_RECEIVE_STATE_UUID: Uuid = Uuid::from_u16(0x2BC8);
 
@@ -86,7 +87,7 @@ impl Decodable for RemoteScanStoppedOperation {
     fn decode(buf: &[u8]) -> (core::result::Result<Self, Self::Error>, usize) {
         const BYTE_SIZE: usize = ControlPointOpcode::BYTE_SIZE;
         if buf.len() < BYTE_SIZE {
-            return (Err(PacketError::BufferTooSmall), buf.len());
+            return (Err(PacketError::UnexpectedDataLength), buf.len());
         }
         (Self::check_opcode(buf[0]).map(|_| RemoteScanStoppedOperation), BYTE_SIZE)
     }
@@ -209,7 +210,7 @@ impl Decodable for AddSourceOperation {
             let advertiser_address_type = AddressType::try_from(buf[1])?;
             let mut advertiser_address = [0; ADDRESS_BYTE_SIZE];
             advertiser_address.clone_from_slice(&buf[2..8]);
-            let advertising_sid = AdvertisingSetId(buf[8]);
+            let advertising_sid = AdvertisingSetId::try_from(buf[8])?;
             let broadcast_id = BroadcastId::decode(&buf[9..12]).0?;
             let pa_sync = PaSync::try_from(buf[12])?;
             let pa_interval =
@@ -258,7 +259,7 @@ impl Encodable for AddSourceOperation {
         buf[0] = Self::opcode() as u8;
         buf[1] = self.advertiser_address_type as u8;
         buf[2..8].copy_from_slice(&self.advertiser_address);
-        buf[8] = self.advertising_sid.0;
+        buf[8] = self.advertising_sid.value();
         self.broadcast_id.encode(&mut buf[9..12])?;
         buf[12] = u8::from(self.pa_sync);
         buf[13..15].copy_from_slice(&self.pa_interval.0.to_le_bytes());
@@ -550,8 +551,12 @@ impl BisSync {
         }
         let bit_mask = 0b1 << (bis_index - 1);
 
-        // Clear the bit that we're interested in setting.
-        self.0 &= !(0b1 << bis_index - 1);
+        if self.0 == Self::NO_PREFERENCE {
+            // No preference should be re-set to 0 so that all subsequent bit_mask
+            // operations correctly set the bits for the specified `bis_index`.
+            // See BASS v1.0.1 Section 3.1.1.4 Table 3.5.
+            self.0 = 0;
+        }
         self.0 |= bit_mask;
         Ok(())
     }
@@ -762,7 +767,7 @@ impl ReceiveState {
         source_id: u8,
         source_address_type: AddressType,
         source_address: [u8; ADDRESS_BYTE_SIZE],
-        source_adv_sid: u8,
+        source_adv_sid: AdvertisingSetId,
         broadcast_id: BroadcastId,
         pa_sync_state: PaSyncState,
         big_encryption: EncryptionStatus,
@@ -772,7 +777,7 @@ impl ReceiveState {
             source_id,
             source_address_type,
             source_address,
-            source_adv_sid: AdvertisingSetId(source_adv_sid),
+            source_adv_sid,
             broadcast_id,
             pa_sync_state,
             big_encryption,
@@ -810,7 +815,7 @@ impl Decodable for ReceiveState {
             let source_address_type = AddressType::try_from(buf[1])?;
             let mut source_address = [0; ADDRESS_BYTE_SIZE];
             source_address.clone_from_slice(&buf[2..8]);
-            let source_adv_sid = AdvertisingSetId(buf[8]);
+            let source_adv_sid = AdvertisingSetId::try_from(buf[8])?;
             let broadcast_id = BroadcastId::decode(&buf[9..12]).0?;
             let pa_sync_state = PaSyncState::try_from(buf[12])?;
 
@@ -871,7 +876,7 @@ impl Encodable for ReceiveState {
         buf[0] = self.source_id;
         buf[1] = self.source_address_type as u8;
         buf[2..8].copy_from_slice(&self.source_address);
-        buf[8] = self.source_adv_sid.0;
+        buf[8] = self.source_adv_sid.value();
         self.broadcast_id.encode(&mut buf[9..12])?;
         buf[12] = u8::from(self.pa_sync_state);
         let mut idx = 13 + self.big_encryption.encoded_len();
@@ -1103,6 +1108,21 @@ mod tests {
     }
 
     #[test]
+    fn synchronize_to_index_from_default() {
+        let mut bis_sync_default = BisSync::default();
+        assert_eq!(u32::from(bis_sync_default.clone()), 0xFFFFFFFF);
+
+        // An initial synchronization of no preference should correctly be set with the
+        // requested index.
+        bis_sync_default.synchronize_to_index(1).expect("should succeed");
+        assert_eq!(u32::from(bis_sync_default.clone()), 0x1);
+
+        // Additional index should be accumulated correctly.
+        bis_sync_default.synchronize_to_index(6).expect("should succeed");
+        assert_eq!(u32::from(bis_sync_default), 0x21);
+    }
+
+    #[test]
     fn pa_sync_from_str() {
         let sync = PaSync::from_str("PaSyncOff").expect("should succeed");
         assert_eq!(sync, PaSync::DoNotSync);
@@ -1128,6 +1148,10 @@ mod tests {
         let (decoded, len) = RemoteScanStoppedOperation::decode(&bytes);
         assert_eq!(decoded, Ok(stopped));
         assert_eq!(len, 1);
+        assert_eq!(
+            RemoteScanStoppedOperation::decode(&[]).0,
+            Err(PacketError::UnexpectedDataLength)
+        );
     }
 
     #[test]
@@ -1153,7 +1177,7 @@ mod tests {
         let op = AddSourceOperation::new(
             AddressType::Public,
             [0x04, 0x10, 0x00, 0x00, 0x00, 0x00],
-            AdvertisingSetId(1),
+            AdvertisingSetId::try_from(1).unwrap(),
             BroadcastId::try_from(0x11).unwrap(),
             PaSync::DoNotSync,
             PeriodicAdvertisingInterval::unknown(),
@@ -1185,7 +1209,7 @@ mod tests {
         let op = AddSourceOperation::new(
             AddressType::Random,
             [0x04, 0x10, 0x00, 0x00, 0x00, 0x00],
-            AdvertisingSetId(1),
+            AdvertisingSetId::try_from(1).unwrap(),
             BroadcastId::try_from(0x11).unwrap(),
             PaSync::SyncPastAvailable,
             PeriodicAdvertisingInterval::unknown(),
@@ -1207,6 +1231,25 @@ mod tests {
         let (decoded, len) = AddSourceOperation::decode(&bytes);
         assert_eq!(decoded, Ok(op));
         assert_eq!(len, 31);
+    }
+
+    #[test]
+    fn invalid_advertising_sid_decoding() {
+        // AddSourceOperation with invalid Advertising_SID (0x10 > 0x0F)
+        let invalid_add_source_bytes = vec![
+            0x02, 0x00, 0x04, 0x10, 0x00, 0x00, 0x00, 0x00, 0x10, 0x11, 0x00, 0x00, 0x00, 0xFF,
+            0xFF, 0x00,
+        ];
+        let (decoded, _) = AddSourceOperation::decode(&invalid_add_source_bytes);
+        assert_eq!(decoded, Err(PacketError::OutOfRange));
+
+        // ReceiveState with invalid Advertising_SID (0x10 > 0x0F)
+        let invalid_receive_state_bytes = vec![
+            0x01, 0x00, 0x0F, 0x0E, 0x0D, 0x0C, 0x0B, 0x0A, 0x10, 0x03, 0x02, 0x01, 0x02, 0x00,
+            0x00,
+        ];
+        let (decoded, _) = BroadcastReceiveState::decode(&invalid_receive_state_bytes);
+        assert_eq!(decoded, Err(PacketError::OutOfRange));
     }
 
     #[test]
@@ -1312,7 +1355,7 @@ mod tests {
             source_id: 0x01,
             source_address_type: AddressType::Public,
             source_address: [0x0F, 0x0E, 0x0D, 0x0C, 0x0B, 0x0A],
-            source_adv_sid: AdvertisingSetId(0x01),
+            source_adv_sid: AdvertisingSetId::try_from(0x01).unwrap(),
             broadcast_id: BroadcastId::try_from(0x00010203).unwrap(),
             pa_sync_state: PaSyncState::Synced,
             big_encryption: EncryptionStatus::BadCode([
@@ -1346,7 +1389,7 @@ mod tests {
             source_id: 0x01,
             source_address_type: AddressType::Random,
             source_address: [0x0F, 0x0E, 0x0D, 0x0C, 0x0B, 0x0A],
-            source_adv_sid: AdvertisingSetId(0x01),
+            source_adv_sid: AdvertisingSetId::try_from(0x01).unwrap(),
             broadcast_id: BroadcastId::try_from(0x00010203).unwrap(),
             pa_sync_state: PaSyncState::NotSynced,
             big_encryption: EncryptionStatus::NotEncrypted,

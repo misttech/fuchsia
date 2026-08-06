@@ -3,8 +3,10 @@
 // found in the LICENSE file.
 
 pub mod client;
+pub mod server;
 pub mod types;
-pub use crate::client::error::Error;
+pub use crate::client::error::Error as ClientError;
+pub use crate::server::Error as ServerError;
 
 #[cfg(any(test, feature = "test-utils"))]
 pub mod test_utils;

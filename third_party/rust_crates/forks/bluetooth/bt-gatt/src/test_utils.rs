@@ -453,6 +453,7 @@ struct FakeServerInner {
     sender: UnboundedSender<FakeServerEvent>,
     notification_peers: HashSet<PeerId>,
     indication_peers: HashSet<PeerId>,
+    next_prepare_result: Option<Result<()>>,
 }
 
 #[derive(Clone, Debug)]
@@ -465,8 +466,12 @@ impl server::Server<FakeTypes> for FakeServer {
         &self,
         service: server::ServiceDefinition,
     ) -> <FakeTypes as ServerTypes>::LocalServiceFut {
+        let mut lock = self.inner.lock();
+        if let Some(Err(e)) = lock.next_prepare_result.take() {
+            return futures::future::ready(Err(e));
+        }
         let id = service.id();
-        self.inner.lock().services.insert(id, service);
+        lock.services.insert(id, service);
         futures::future::ready(Ok(FakeLocalService::new(id, self.inner.clone())))
     }
 }
@@ -482,10 +487,15 @@ impl FakeServer {
                     sender,
                     notification_peers: HashSet::new(),
                     indication_peers: HashSet::new(),
+                    next_prepare_result: None,
                 })),
             },
             receiver,
         )
+    }
+
+    pub fn set_next_prepare_result(&self, res: Result<()>) {
+        self.inner.lock().next_prepare_result = Some(res);
     }
 
     pub fn service(&self, id: server::ServiceId) -> Option<ServiceDefinition> {

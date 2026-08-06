@@ -291,7 +291,7 @@ mod tests {
     fn merge_broadcast_source() {
         let discovered = DiscoveredBroadcastSources::new();
         let bid1 = BroadcastId::try_from(1001).unwrap();
-        let key1 = (PeerId(1001), AdvertisingSetId(1));
+        let key1 = (PeerId(1001), AdvertisingSetId::try_from(1).unwrap());
 
         // 1. Merge initial source data for SID 1.
         let (bs, changed) = discovered.merge_broadcast_source_data(
@@ -353,7 +353,7 @@ mod tests {
         // 4. Merge a new broadcast source with a different SID (SID 2) for the same
         //    peer.
         let bid2 = BroadcastId::try_from(1002).unwrap();
-        let key2 = (PeerId(1001), AdvertisingSetId(2));
+        let key2 = (PeerId(1001), AdvertisingSetId::try_from(2).unwrap());
         let (bs, changed) = discovered.merge_broadcast_source_data(
             &key2,
             &BroadcastSource::default()
@@ -381,9 +381,9 @@ mod tests {
         // Verify get_by_broadcast_id works for both and maps to correct keys
         let lock = discovered.0.lock();
         let entry1 = lock.iter().find(|(_, v)| v.broadcast_id == Some(bid1)).unwrap();
-        assert_eq!(entry1.0 .1, AdvertisingSetId(1));
+        assert_eq!(entry1.0 .1, AdvertisingSetId::try_from(1).unwrap());
         let entry2 = lock.iter().find(|(_, v)| v.broadcast_id == Some(bid2)).unwrap();
-        assert_eq!(entry2.0 .1, AdvertisingSetId(2));
+        assert_eq!(entry2.0 .1, AdvertisingSetId::try_from(2).unwrap());
     }
 
     #[test]
@@ -427,7 +427,7 @@ mod tests {
         let peer_id = PeerId(1);
         let address = [1, 2, 3, 4, 5, 6];
         let address_type = AddressType::Public;
-        let sid = AdvertisingSetId(1);
+        let sid = AdvertisingSetId::try_from(1).unwrap();
 
         let source =
             assistant.force_discover_broadcast_source(peer_id, address, address_type, sid).unwrap();
@@ -445,7 +445,7 @@ mod tests {
         let assistant = BroadcastAssistant::<FakeTypes>::new(FakeCentral::new());
         let peer_id = PeerId(1);
         let metadata = vec![vec![Metadata::BroadcastAudioImmediateRenderingFlag]];
-        let sid = AdvertisingSetId(1);
+        let sid = AdvertisingSetId::try_from(1).unwrap();
 
         let source = assistant
             .force_discover_broadcast_source_metadata(peer_id, sid, metadata.clone())

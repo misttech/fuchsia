@@ -3,31 +3,32 @@
 // found in the LICENSE file.
 
 use bt_common::packet_encoding::{Decodable, Encodable};
-use bt_common::{codable_as_bitmask, decodable_enum};
+use bt_common::{codable_as_bitmask, decodable_enum, Uuid};
+use bt_gatt::types::Handle;
 use thiserror::Error;
 
+use crate::client::ClientError;
+use crate::server::ServerError;
+use bt_common::core::ltv::LtValue;
 use bt_common::core::CodecId;
 use bt_common::generic_audio::metadata_ltv::Metadata;
+use bt_gatt::types::Error as BtGattError;
 
 /// Error type
 #[derive(Debug, Error)]
 pub enum Error {
-    #[error("Reserved for Future Use: {0}")]
-    ReservedFutureUse(String),
-    #[error("Server Only Operation")]
-    ServerOnlyOperation,
-    #[error("Service is already published")]
-    AlreadyPublished,
-    #[error("Issue publishing service: {0}")]
-    PublishError(bt_gatt::types::Error),
-    #[error("Unsupported configuration: {0}")]
-    Unsupported(String),
-    #[error("Unknown Peer: {0}")]
-    UnknownPeer(bt_common::PeerId),
+    #[error("ASCS Server error: {0}")]
+    Server(#[from] ServerError),
+    #[error("ASCS Client error: {0}")]
+    Client(#[from] ClientError),
+    #[error("GATT operation error: {0}")]
+    Gatt(#[from] BtGattError),
+    #[error("Internal error occurred: {0}")]
+    Internal(String),
 }
 
 #[non_exhaustive]
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ResponseCode {
     Success { ase_id: AseId },
     UnsupportedOpcode { opcode_byte: u8 },
@@ -43,7 +44,7 @@ pub enum ResponseCode {
 }
 
 impl ResponseCode {
-    fn to_code(&self) -> u8 {
+    pub(crate) fn to_code(&self) -> u8 {
         match self {
             ResponseCode::Success { .. } => 0x00,
             ResponseCode::UnsupportedOpcode { .. } => 0x01,
@@ -122,9 +123,89 @@ impl ResponseCode {
     pub(crate) fn notify_value(&self) -> Vec<u8> {
         [self.ase_id_value(), self.to_code(), self.reason_byte()].into()
     }
+
+    pub fn ase_id(&self) -> AseId {
+        AseId(self.ase_id_value())
+    }
+
+    pub fn is_success(&self) -> bool {
+        matches!(self, Self::Success { .. })
+    }
+
+    pub fn decode_response(
+        buf: &[u8],
+        opcode: u8,
+    ) -> Result<Self, bt_common::packet_encoding::Error> {
+        if buf.len() < 3 {
+            return Err(bt_common::packet_encoding::Error::UnexpectedDataLength);
+        }
+        let ase_id_val = buf[0];
+        let code = buf[1];
+        let reason = buf[2];
+        let ase_id = AseId(ase_id_val);
+
+        match code {
+            0x00 => Ok(Self::Success { ase_id }),
+            0x01 => {
+                if ase_id_val != 0 {
+                    return Err(bt_common::packet_encoding::Error::OutOfRange);
+                }
+                Ok(Self::UnsupportedOpcode { opcode_byte: opcode })
+            }
+            0x02 => {
+                if ase_id_val != 0 {
+                    return Err(bt_common::packet_encoding::Error::OutOfRange);
+                }
+                Ok(Self::InvalidLength { opcode_byte: opcode })
+            }
+            0x03 => Ok(Self::InvalidAseId { value: ase_id_val }),
+            0x04 => Ok(Self::InvalidAseStateMachineTransition { ase_id }),
+            0x05 => Ok(Self::InvalidAseDirection { ase_id }),
+            0x06 => Ok(Self::UnsupportedAudioCapablities { ase_id }),
+            0x07 => {
+                let reason = ResponseReason::try_from(reason)
+                    .map_err(|_| bt_common::packet_encoding::Error::OutOfRange)?;
+                Ok(Self::ConfigurationParameterValue {
+                    ase_id,
+                    issue: ResponseIssue::Unsupported,
+                    reason,
+                })
+            }
+            0x08 => {
+                let reason = ResponseReason::try_from(reason)
+                    .map_err(|_| bt_common::packet_encoding::Error::OutOfRange)?;
+                Ok(Self::ConfigurationParameterValue {
+                    ase_id,
+                    issue: ResponseIssue::Rejected,
+                    reason,
+                })
+            }
+            0x09 => {
+                let reason = ResponseReason::try_from(reason)
+                    .map_err(|_| bt_common::packet_encoding::Error::OutOfRange)?;
+                Ok(Self::ConfigurationParameterValue {
+                    ase_id,
+                    issue: ResponseIssue::Invalid,
+                    reason,
+                })
+            }
+            0x0A => {
+                Ok(Self::Metadata { ase_id, issue: ResponseIssue::Unsupported, type_value: reason })
+            }
+            0x0B => {
+                Ok(Self::Metadata { ase_id, issue: ResponseIssue::Rejected, type_value: reason })
+            }
+            0x0C => {
+                Ok(Self::Metadata { ase_id, issue: ResponseIssue::Invalid, type_value: reason })
+            }
+            0x0D => Ok(Self::InsufficientResources { ase_id }),
+            0x0E => Ok(Self::UnspecifiedError { ase_id }),
+            _ => Err(bt_common::packet_encoding::Error::OutOfRange),
+        }
+    }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ResponseIssue {
     Unsupported,
     Rejected,
@@ -199,6 +280,370 @@ impl Decodable for AseId {
     }
 }
 
+impl Encodable for AseId {
+    type Error = bt_common::packet_encoding::Error;
+    fn encoded_len(&self) -> usize {
+        1
+    }
+    fn encode(&self, buf: &mut [u8]) -> Result<(), Self::Error> {
+        if buf.is_empty() {
+            return Err(Self::Error::BufferTooSmall);
+        }
+        buf[0] = self.0;
+        Ok(())
+    }
+}
+#[derive(Debug, Clone, PartialEq)]
+pub enum AseAdditionalParameters {
+    None,
+    CodecConfigured {
+        framing: Framing,
+        preferred_phys: Vec<Phy>,
+        preferred_retransmission_number: u8,
+        max_transport_latency: MaxTransportLatency,
+        presentation_delay_range: PresentationDelayRange,
+        codec_id: CodecId,
+        codec_config: Vec<u8>,
+    },
+    QosConfigured {
+        configuration: QosConfiguration,
+    },
+    Streaming {
+        cig_id: CigId,
+        cis_id: CisId,
+        metadata: Vec<Metadata>,
+        qos_configured: Option<QosConfiguration>,
+    },
+}
+
+impl AseAdditionalParameters {
+    pub fn char_size(&self) -> usize {
+        match self {
+            AseAdditionalParameters::None => 0,
+            AseAdditionalParameters::CodecConfigured { codec_config, .. } => {
+                23 + codec_config.len()
+            }
+            AseAdditionalParameters::QosConfigured { .. } => 15,
+            AseAdditionalParameters::Streaming { metadata, .. } => {
+                metadata.iter().fold(3, |total, m| total + m.encoded_len() as usize)
+            }
+        }
+    }
+
+    pub fn into_char_value(&self) -> Vec<u8> {
+        match self {
+            AseAdditionalParameters::None => Vec::new(),
+            AseAdditionalParameters::CodecConfigured {
+                framing,
+                preferred_phys,
+                preferred_retransmission_number,
+                max_transport_latency,
+                presentation_delay_range,
+                codec_id,
+                codec_config,
+            } => {
+                let mut value = Vec::with_capacity(self.char_size());
+                value.resize(self.char_size() - codec_config.len(), 0);
+                value[0] = (*framing) as u8;
+                value[1] = Phy::to_bits(preferred_phys.iter());
+                value[2] = *preferred_retransmission_number;
+                max_transport_latency.encode(&mut value[3..]).unwrap();
+                presentation_delay_range.encode(&mut value[5..]).unwrap();
+                codec_id.encode(&mut value[17..]).unwrap();
+                value[22] = codec_config.len() as u8;
+                value.extend(codec_config.clone());
+                value
+            }
+            AseAdditionalParameters::QosConfigured {
+                configuration:
+                    QosConfiguration {
+                        cig_id,
+                        cis_id,
+                        sdu_interval,
+                        framing,
+                        phy,
+                        max_sdu,
+                        retransmission_number,
+                        max_transport_latency,
+                        presentation_delay,
+                        ..
+                    },
+            } => {
+                let mut value = Vec::with_capacity(self.char_size());
+                value.resize(self.char_size(), 0);
+                cig_id.encode(&mut value[0..]).unwrap();
+                cis_id.encode(&mut value[1..]).unwrap();
+                sdu_interval.encode(&mut value[2..]).unwrap();
+                framing.encode(&mut value[5..]).unwrap();
+                value[6] = Phy::to_bits(phy.iter());
+                max_sdu.encode(&mut value[7..]).unwrap();
+                value[9] = *retransmission_number;
+                max_transport_latency.encode(&mut value[10..]).unwrap();
+                presentation_delay.encode(&mut value[12..]).unwrap();
+                value
+            }
+            AseAdditionalParameters::Streaming { cig_id, cis_id, metadata, .. } => {
+                let mut value = Vec::with_capacity(self.char_size());
+                value.resize(self.char_size(), 0);
+                cig_id.encode(&mut value[0..]).unwrap();
+                cis_id.encode(&mut value[1..]).unwrap();
+                value[2] = metadata.iter().fold(0usize, |acc, i| acc + i.encoded_len()) as u8;
+                LtValue::encode_all(metadata.clone().into_iter(), &mut value[3..]).unwrap();
+                value
+            }
+        }
+    }
+
+    pub fn decode(
+        ase_id: AseId,
+        state: &AseState,
+        buf: &[u8],
+    ) -> (Result<Self, ResponseCode>, usize) {
+        match state {
+            AseState::Idle | AseState::Releasing => (Ok(Self::None), 0),
+            AseState::CodecConfigured => {
+                if buf.len() < 23 {
+                    return (Err(ResponseCode::invalid_length()), buf.len());
+                }
+                let Ok(framing) = Framing::try_from(buf[0]) else {
+                    return (Err(ResponseCode::invalid_length()), buf.len());
+                };
+                let preferred_phys = Phy::from_bits(buf[1]).collect();
+                let preferred_retransmission_number = buf[2];
+                let Ok(max_transport_latency) = MaxTransportLatency::decode(&buf[3..5]).0 else {
+                    return (Err(ResponseCode::invalid_length()), buf.len());
+                };
+                let Ok(presentation_delay_range) = PresentationDelayRange::decode(&buf[5..17]).0
+                else {
+                    return (Err(ResponseCode::invalid_length()), buf.len());
+                };
+                let Ok(codec_id) = CodecId::decode(&buf[17..22]).0 else {
+                    return (Err(ResponseCode::invalid_length()), buf.len());
+                };
+                let codec_specific_configuration_len = buf[22] as usize;
+                let total_len = 23 + codec_specific_configuration_len;
+                if buf.len() < total_len {
+                    return (Err(ResponseCode::invalid_length()), buf.len());
+                }
+                let codec_config = buf[23..total_len].to_vec();
+                (
+                    Ok(Self::CodecConfigured {
+                        framing,
+                        preferred_phys,
+                        preferred_retransmission_number,
+                        max_transport_latency,
+                        presentation_delay_range,
+                        codec_id,
+                        codec_config,
+                    }),
+                    total_len,
+                )
+            }
+            AseState::QosConfigured => {
+                if buf.len() < 15 {
+                    return (Err(ResponseCode::invalid_length()), buf.len());
+                }
+                let mut temp_buf = Vec::with_capacity(16);
+                temp_buf.push(ase_id.into());
+                temp_buf.extend_from_slice(&buf[0..15]);
+                let (config_res, _) = QosConfiguration::decode(&temp_buf);
+                match config_res {
+                    Ok(configuration) => (Ok(Self::QosConfigured { configuration }), 15),
+                    Err(e) => (Err(e), buf.len()),
+                }
+            }
+            AseState::Enabling | AseState::Streaming | AseState::Disabling => {
+                if buf.len() < 3 {
+                    return (Err(ResponseCode::invalid_length()), buf.len());
+                }
+                let cig_id = match CigId::try_from(buf[0]) {
+                    Ok(id) => id,
+                    Err(_) => return (Err(ResponseCode::invalid_length()), buf.len()),
+                };
+                let cis_id = match CisId::try_from(buf[1]) {
+                    Ok(id) => id,
+                    Err(_) => return (Err(ResponseCode::invalid_length()), buf.len()),
+                };
+                let metadata_length = buf[2] as usize;
+                let total_len = 3 + metadata_length;
+                if buf.len() < total_len {
+                    return (Err(ResponseCode::invalid_length()), buf.len());
+                }
+
+                use bt_common::core::ltv::Error as LtvError;
+                use bt_common::core::ltv::LtValue;
+                let (metadata_results, consumed) =
+                    Metadata::decode_all(&buf[3..3 + metadata_length]);
+                if consumed != metadata_length {
+                    return (Err(ResponseCode::invalid_length()), buf.len());
+                }
+                let metadata_result: Result<Vec<Metadata>, LtvError<<Metadata as LtValue>::Type>> =
+                    metadata_results.into_iter().collect();
+                let Ok(metadata) = metadata_result else {
+                    match metadata_result.unwrap_err() {
+                        LtvError::MissingType | LtvError::MissingData(_) => {
+                            return (Err(ResponseCode::invalid_length()), buf.len());
+                        }
+                        LtvError::UnrecognizedType(_, type_value) => {
+                            return (
+                                Err(ResponseCode::Metadata {
+                                    ase_id,
+                                    issue: ResponseIssue::Unsupported,
+                                    type_value,
+                                }),
+                                total_len,
+                            );
+                        }
+                        LtvError::LengthOutOfRange(_, t, _)
+                        | LtvError::TypeFailedToDecode(t, _) => {
+                            return (
+                                Err(ResponseCode::Metadata {
+                                    ase_id,
+                                    issue: ResponseIssue::Invalid,
+                                    type_value: t.into(),
+                                }),
+                                total_len,
+                            );
+                        }
+                    }
+                };
+                (Ok(Self::Streaming { cig_id, cis_id, metadata, qos_configured: None }), total_len)
+            }
+        }
+    }
+}
+
+impl From<QosConfiguration> for AseAdditionalParameters {
+    fn from(value: QosConfiguration) -> Self {
+        Self::QosConfigured { configuration: value }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AudioDirection {
+    Sink,
+    Source,
+}
+
+impl From<&AudioDirection> for bt_common::Uuid {
+    fn from(value: &AudioDirection) -> Self {
+        match value {
+            AudioDirection::Sink => Uuid::from_u16(0x2BC4),
+            AudioDirection::Source => Uuid::from_u16(0x2BC5),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct AudioStreamEndpoint {
+    pub handle: Handle,
+    pub direction: AudioDirection,
+    pub ase_id: AseId,
+    pub state: AseState,
+    pub additional: AseAdditionalParameters,
+}
+
+impl AudioStreamEndpoint {
+    /// Decodes an `AudioStreamEndpoint` from an ASE characteristic value.
+    ///
+    /// # Arguments
+    /// * `handle` - The GATT handle of the ASE characteristic.
+    /// * `direction` - The direction of the ASE (Sink or Source).
+    /// * `char_value_buf` - The characteristic value bytes read from the
+    ///   server.
+    ///
+    /// # Expected `char_value_buf` Layout (ASCS v1.0 Section 4.3):
+    /// * **Octet 0:** `ASE_ID` (1 octet)
+    /// * **Octet 1:** `ASE_State` (1 octet)
+    /// * **Octet 2+:** `Additional_ASE_Parameters` (variable octets, see ASCS
+    ///   v1.0 Table 4.2)
+    pub fn from_char_value(
+        handle: Handle,
+        direction: AudioDirection,
+        char_value_buf: &[u8],
+    ) -> Result<Self, ResponseCode> {
+        if char_value_buf.len() < 2 {
+            return Err(ResponseCode::invalid_length());
+        }
+        let ase_id = AseId::try_from(char_value_buf[0])?;
+        let Ok(state) = AseState::try_from(char_value_buf[1]) else {
+            return Err(ResponseCode::invalid_length());
+        };
+        let (additional_res, _) =
+            AseAdditionalParameters::decode(ase_id, &state, &char_value_buf[2..]);
+        let additional = additional_res?;
+
+        Ok(Self { handle, direction, ase_id, state, additional })
+    }
+
+    /// Encodes this endpoint's current state into a GATT characteristic value
+    /// buffer.
+    pub fn into_char_value(&self) -> Vec<u8> {
+        let mut buf = vec![0; self.encoded_len()];
+        self.encode(&mut buf).unwrap();
+        buf
+    }
+
+    pub fn get_cis(&self) -> Option<(CigId, CisId)> {
+        match &self.additional {
+            AseAdditionalParameters::QosConfigured { configuration } => {
+                Some((configuration.cig_id, configuration.cis_id))
+            }
+            AseAdditionalParameters::Streaming { cig_id, cis_id, .. } => Some((*cig_id, *cis_id)),
+            _ => None,
+        }
+    }
+
+    pub fn qos_parameters(&self) -> Option<QosParameters> {
+        let AseAdditionalParameters::CodecConfigured {
+            framing,
+            preferred_phys,
+            preferred_retransmission_number,
+            max_transport_latency,
+            presentation_delay_range,
+            ..
+        } = &self.additional
+        else {
+            return None;
+        };
+        Some(QosParameters {
+            framing: *framing,
+            preferred_phys: preferred_phys.clone(),
+            preferred_retransmission_number: *preferred_retransmission_number,
+            max_transport_latency: *max_transport_latency,
+            presentation_delay_range: presentation_delay_range.clone(),
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct QosParameters {
+    pub framing: Framing,
+    pub preferred_phys: Vec<Phy>,
+    pub preferred_retransmission_number: u8,
+    pub max_transport_latency: MaxTransportLatency,
+    pub presentation_delay_range: PresentationDelayRange,
+}
+
+impl Encodable for AudioStreamEndpoint {
+    type Error = bt_common::packet_encoding::Error;
+
+    fn encoded_len(&self) -> usize {
+        2 + self.additional.char_size()
+    }
+
+    fn encode(&self, buf: &mut [u8]) -> Result<(), Self::Error> {
+        if buf.len() < self.encoded_len() {
+            return Err(Self::Error::BufferTooSmall);
+        }
+        buf[0] = self.ase_id.into();
+        buf[1] = self.state.into();
+        let add_bytes = self.additional.into_char_value();
+        buf[2..2 + add_bytes.len()].copy_from_slice(&add_bytes);
+        Ok(())
+    }
+}
+
 decodable_enum! {
     pub enum AseControlPointOpcode<u8, bt_common::packet_encoding::Error, OutOfRange> {
         ConfigCodec = 0x01,
@@ -213,7 +658,7 @@ decodable_enum! {
 }
 
 impl AseControlPointOpcode {
-    pub(crate) fn allowed_in_state(&self, state: &AseState) -> bool {
+    pub fn allowed_in_state(&self, state: &AseState) -> bool {
         let allowed_states: &[AseState] = match self {
             Self::ConfigCodec { .. } => {
                 &[AseState::Idle, AseState::CodecConfigured, AseState::QosConfigured]
@@ -233,6 +678,37 @@ impl AseControlPointOpcode {
             ],
         };
         allowed_states.contains(state)
+    }
+
+    /// Returns the list of expected valid states that targeted ASEs should
+    /// transition into following a successful invocation of this operation,
+    /// depending on the audio stream endpoint direction.
+    pub(crate) fn operation_target_states(&self, direction: AudioDirection) -> &[AseState] {
+        match self {
+            Self::ConfigCodec { .. } => &[AseState::CodecConfigured],
+            Self::ConfigQos { .. } => &[AseState::QosConfigured],
+            Self::Enable { .. } => &[AseState::Enabling, AseState::Streaming],
+            Self::ReceiverStartReady { .. } => &[AseState::Streaming],
+            Self::Disable { .. } => match direction {
+                AudioDirection::Sink => &[AseState::QosConfigured],
+                AudioDirection::Source => &[AseState::Disabling],
+            },
+            Self::ReceiverStopReady { .. } => &[AseState::QosConfigured],
+            Self::UpdateMetadata { .. } => &[AseState::Enabling, AseState::Streaming],
+            Self::Release { .. } => {
+                &[AseState::Releasing, AseState::Idle, AseState::CodecConfigured]
+            }
+        }
+    }
+
+    /// Returns true if the given `next_state` is a valid transition state
+    /// for this operation and audio direction according to the specification.
+    pub(crate) fn allows_transition_to(
+        &self,
+        direction: AudioDirection,
+        next_state: &AseState,
+    ) -> bool {
+        self.operation_target_states(direction).contains(next_state)
     }
 }
 
@@ -289,7 +765,9 @@ impl TryFrom<&AseControlOperation> for u8 {
             AseControlOperation::ReceiverStopReady { .. } => Ok(0x06),
             AseControlOperation::UpdateMetadata { .. } => Ok(0x07),
             AseControlOperation::Release { .. } => Ok(0x08),
-            AseControlOperation::Released { .. } => Err(Error::ServerOnlyOperation),
+            AseControlOperation::Released { .. } => {
+                Err(Error::Server(ServerError::ServerOnlyOperation))
+            }
         }
     }
 }
@@ -403,6 +881,108 @@ impl TryFrom<Vec<u8>> for AseControlOperation {
     }
 }
 
+impl Encodable for AseControlOperation {
+    type Error = bt_common::packet_encoding::Error;
+
+    fn encoded_len(&self) -> usize {
+        match self {
+            AseControlOperation::ConfigCodec { codec_configurations, .. } => {
+                2 + codec_configurations.iter().map(|c| c.encoded_len()).sum::<usize>()
+            }
+            AseControlOperation::ConfigQos { qos_configurations, .. } => {
+                2 + qos_configurations.len() * QosConfiguration::BYTE_SIZE
+            }
+            AseControlOperation::Enable { ases_with_metadata, .. } => {
+                2 + ases_with_metadata.iter().map(|a| a.encoded_len()).sum::<usize>()
+            }
+            AseControlOperation::ReceiverStartReady { ases } => 2 + ases.len() * AseId::BYTE_SIZE,
+            AseControlOperation::Disable { ases } => 2 + ases.len() * AseId::BYTE_SIZE,
+            AseControlOperation::ReceiverStopReady { ases } => 2 + ases.len() * AseId::BYTE_SIZE,
+            AseControlOperation::UpdateMetadata { ases_with_metadata, .. } => {
+                2 + ases_with_metadata.iter().map(|a| a.encoded_len()).sum::<usize>()
+            }
+            AseControlOperation::Release { ases } => 2 + ases.len() * AseId::BYTE_SIZE,
+            AseControlOperation::Released { .. } => 0,
+        }
+    }
+
+    fn encode(&self, buf: &mut [u8]) -> Result<(), Self::Error> {
+        if buf.len() < self.encoded_len() {
+            return Err(Self::Error::BufferTooSmall);
+        }
+        let opcode: u8 = self.try_into().map_err(|_| Self::Error::OutOfRange)?;
+        buf[0] = opcode;
+        match self {
+            AseControlOperation::ConfigCodec { codec_configurations, .. } => {
+                buf[1] = codec_configurations.len() as u8;
+                let mut idx = 2;
+                for c in codec_configurations {
+                    c.encode(&mut buf[idx..])?;
+                    idx += c.encoded_len();
+                }
+            }
+            AseControlOperation::ConfigQos { qos_configurations, .. } => {
+                buf[1] = qos_configurations.len() as u8;
+                let mut idx = 2;
+                for q in qos_configurations {
+                    q.encode(&mut buf[idx..])?;
+                    idx += QosConfiguration::BYTE_SIZE;
+                }
+            }
+            AseControlOperation::Enable { ases_with_metadata, .. } => {
+                buf[1] = ases_with_metadata.len() as u8;
+                let mut idx = 2;
+                for a in ases_with_metadata {
+                    a.encode(&mut buf[idx..])?;
+                    idx += a.encoded_len();
+                }
+            }
+            AseControlOperation::ReceiverStartReady { ases } => {
+                buf[1] = ases.len() as u8;
+                let mut idx = 2;
+                for a in ases {
+                    a.encode(&mut buf[idx..])?;
+                    idx += AseId::BYTE_SIZE;
+                }
+            }
+            AseControlOperation::Disable { ases } => {
+                buf[1] = ases.len() as u8;
+                let mut idx = 2;
+                for a in ases {
+                    a.encode(&mut buf[idx..])?;
+                    idx += AseId::BYTE_SIZE;
+                }
+            }
+            AseControlOperation::ReceiverStopReady { ases } => {
+                buf[1] = ases.len() as u8;
+                let mut idx = 2;
+                for a in ases {
+                    a.encode(&mut buf[idx..])?;
+                    idx += AseId::BYTE_SIZE;
+                }
+            }
+            AseControlOperation::UpdateMetadata { ases_with_metadata, .. } => {
+                buf[1] = ases_with_metadata.len() as u8;
+                let mut idx = 2;
+                for a in ases_with_metadata {
+                    a.encode(&mut buf[idx..])?;
+                    idx += a.encoded_len();
+                }
+            }
+            AseControlOperation::Release { ases } => {
+                buf[1] = ases.len() as u8;
+                let mut idx = 2;
+                for a in ases {
+                    a.encode(&mut buf[idx..])?;
+                    idx += AseId::BYTE_SIZE;
+                }
+            }
+            AseControlOperation::Released { .. } => return Err(Self::Error::OutOfRange),
+        }
+        Ok(())
+    }
+}
+
 decodable_enum! {
 pub enum TargetLatency<u8, bt_common::packet_encoding::Error, OutOfRange> {
     TargetLowLatency = 0x01,
@@ -509,6 +1089,28 @@ impl Decodable for CodecConfiguration {
             Ok(Self { ase_id, target_latency, target_phy, codec_id, codec_specific_configuration })
         };
         (try_decode_fn(buf), total_len)
+    }
+}
+
+impl Encodable for CodecConfiguration {
+    type Error = bt_common::packet_encoding::Error;
+
+    fn encoded_len(&self) -> usize {
+        Self::MIN_BYTE_SIZE + self.codec_specific_configuration.len()
+    }
+
+    fn encode(&self, buf: &mut [u8]) -> Result<(), Self::Error> {
+        if buf.len() < self.encoded_len() {
+            return Err(Self::Error::BufferTooSmall);
+        }
+        buf[0] = self.ase_id.into();
+        buf[1] = self.target_latency.into();
+        buf[2] = self.target_phy.into();
+        self.codec_id.encode(&mut buf[3..8])?;
+        buf[8] = self.codec_specific_configuration.len() as u8;
+        buf[9..9 + self.codec_specific_configuration.len()]
+            .copy_from_slice(&self.codec_specific_configuration);
+        Ok(())
     }
 }
 
@@ -619,6 +1221,31 @@ impl Decodable for QosConfiguration {
     }
 }
 
+impl Encodable for QosConfiguration {
+    type Error = bt_common::packet_encoding::Error;
+
+    fn encoded_len(&self) -> usize {
+        Self::BYTE_SIZE
+    }
+
+    fn encode(&self, buf: &mut [u8]) -> Result<(), Self::Error> {
+        if buf.len() < Self::BYTE_SIZE {
+            return Err(Self::Error::BufferTooSmall);
+        }
+        buf[0] = self.ase_id.into();
+        self.cig_id.encode(&mut buf[1..2])?;
+        self.cis_id.encode(&mut buf[2..3])?;
+        self.sdu_interval.encode(&mut buf[3..6])?;
+        self.framing.encode(&mut buf[6..7])?;
+        buf[7] = Phy::to_bits(self.phy.iter());
+        self.max_sdu.encode(&mut buf[8..10])?;
+        buf[10] = self.retransmission_number;
+        self.max_transport_latency.encode(&mut buf[11..13])?;
+        self.presentation_delay.encode(&mut buf[13..16])?;
+        Ok(())
+    }
+}
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct CigId(u8);
 
@@ -706,6 +1333,29 @@ pub struct SduInterval(u32);
 
 impl SduInterval {
     const BYTE_SIZE: usize = 3;
+}
+
+impl TryFrom<std::time::Duration> for SduInterval {
+    type Error = bt_common::packet_encoding::Error;
+    fn try_from(value: std::time::Duration) -> Result<Self, Self::Error> {
+        let Ok(microseconds) = u32::try_from(value.as_micros()) else {
+            return Err(Self::Error::OutOfRange);
+        };
+        if microseconds < 0xFF || microseconds > 0x0FFFFF {
+            return Err(Self::Error::OutOfRange);
+        }
+        Ok(Self(microseconds))
+    }
+}
+
+impl TryFrom<u32> for SduInterval {
+    type Error = bt_common::packet_encoding::Error;
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        if value < 0xFF || value > 0x0FFFFF {
+            return Err(Self::Error::OutOfRange);
+        }
+        Ok(Self(value))
+    }
 }
 
 impl Decodable for SduInterval {
@@ -796,6 +1446,16 @@ impl Encodable for MaxSdu {
 
 impl MaxSdu {
     const BYTE_SIZE: usize = 2;
+}
+
+impl TryFrom<u16> for MaxSdu {
+    type Error = bt_common::packet_encoding::Error;
+    fn try_from(value: u16) -> Result<Self, Self::Error> {
+        if value > 0xFFF {
+            return Err(Self::Error::OutOfRange);
+        }
+        Ok(Self(value))
+    }
 }
 
 /// Max Transport Latency
@@ -894,7 +1554,7 @@ impl Encodable for PresentationDelay {
 /// preferred range of the Presentation Delay parameter to be requested by the
 /// ASCS Client. Prefered Minimum must be above min, and preferred_max must be
 /// below max. Either of these being None indicates no preference.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct PresentationDelayRange {
     min: PresentationDelay,
     max: PresentationDelay,
@@ -904,6 +1564,22 @@ pub struct PresentationDelayRange {
 
 impl PresentationDelayRange {
     const BYTE_SIZE: usize = PresentationDelay::BYTE_SIZE * 4;
+
+    pub fn min(&self) -> &PresentationDelay {
+        &self.min
+    }
+
+    pub fn max(&self) -> &PresentationDelay {
+        &self.max
+    }
+
+    pub fn preferred_min(&self) -> Option<&PresentationDelay> {
+        self.preferred_min.as_ref()
+    }
+
+    pub fn preferred_max(&self) -> Option<&PresentationDelay> {
+        self.preferred_max.as_ref()
+    }
     /// Make a new delay range with no preference. Returns
     /// ResponseCode::InvalidLength if min > max or the value is out of the
     /// acceptable range (PresentationDelay is 24 bits)
@@ -1035,6 +1711,188 @@ impl Decodable for AseIdWithMetadata {
     }
 }
 
+impl Encodable for AseIdWithMetadata {
+    type Error = bt_common::packet_encoding::Error;
+
+    fn encoded_len(&self) -> usize {
+        let metadata_len: usize = self.metadata.iter().map(|m| m.encoded_len()).sum();
+        2 + metadata_len
+    }
+
+    fn encode(&self, buf: &mut [u8]) -> Result<(), Self::Error> {
+        if buf.len() < self.encoded_len() {
+            return Err(Self::Error::BufferTooSmall);
+        }
+        buf[0] = self.ase_id.into();
+        let metadata_len: usize = self.metadata.iter().map(|m| m.encoded_len()).sum();
+        buf[1] = metadata_len as u8;
+
+        use bt_common::core::ltv::LtValue;
+        LtValue::encode_all(self.metadata.clone().into_iter(), &mut buf[2..])?;
+        Ok(())
+    }
+}
+
+impl Decodable for PresentationDelayRange {
+    type Error = ResponseCode;
+
+    fn decode(buf: &[u8]) -> (Result<Self, Self::Error>, usize) {
+        if buf.len() < Self::BYTE_SIZE {
+            return (Err(ResponseCode::invalid_length()), buf.len());
+        }
+        let min = match PresentationDelay::decode(&buf[0..3]).0 {
+            Ok(min) => min,
+            Err(e) => return (Err(e), buf.len()),
+        };
+        let max = match PresentationDelay::decode(&buf[3..6]).0 {
+            Ok(max) => max,
+            Err(e) => return (Err(e), buf.len()),
+        };
+        let pref_min_val = u32::from_le_bytes([buf[6], buf[7], buf[8], 0]);
+        let preferred_min = if pref_min_val == 0 {
+            None
+        } else {
+            Some(PresentationDelay { microseconds: pref_min_val })
+        };
+        let pref_max_val = u32::from_le_bytes([buf[9], buf[10], buf[11], 0]);
+        let preferred_max = if pref_max_val == 0 {
+            None
+        } else {
+            Some(PresentationDelay { microseconds: pref_max_val })
+        };
+        (Ok(Self { min, max, preferred_min, preferred_max }), Self::BYTE_SIZE)
+    }
+}
+
+/// Represents an ASE Control Point notification sent by an ASCS Server to a
+/// Client.
+///
+/// See ASCS v1.0 Section 4.2 for the frame structure and notification
+/// properties.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ControlPointNotification {
+    pub opcode: u8,
+    pub number_of_ases: u8,
+    pub responses: Vec<ResponseCode>,
+}
+
+impl ControlPointNotification {
+    /// Creates a new, empty `ControlPointNotification` for standard multi-ASE
+    /// operations.
+    ///
+    /// The notification starts with a response count of `0`.
+    ///
+    /// # Arguments
+    /// * `opcode` - The opcode of the operation being responded to.
+    pub fn new(opcode: u8) -> Self {
+        Self { opcode, number_of_ases: 0, responses: Vec::new() }
+    }
+
+    /// Creates a new global error `ControlPointNotification`.
+    ///
+    /// A response count of `0xFF` is used strictly when the entire control
+    /// point write is rejected globally before individual ASEs are
+    /// processed (e.g., unrecognized opcode or invalid packet length). The
+    /// notification contains a single error response with an
+    /// ASE ID of `0x00`. See ASCS v1.0 Table 4.7.
+    ///
+    /// # Arguments
+    /// * `opcode` - The opcode of the operation being responded to.
+    /// * `response_code` - Either `0x01` (Unsupported Opcode) or `0x02`
+    ///   (Invalid Length).
+    pub fn new_error(opcode: u8, response_code: u8) -> Self {
+        let code = match response_code {
+            0x01 => ResponseCode::UnsupportedOpcode { opcode_byte: opcode },
+            0x02 => ResponseCode::InvalidLength { opcode_byte: opcode },
+            _ => unreachable!(),
+        };
+        Self { opcode, number_of_ases: 0xFF, responses: vec![code] }
+    }
+
+    /// Adds a single ASE response code to the notification list.
+    ///
+    /// If the notification is currently in a global error state (response count
+    /// `0xFF`), calling this method clears the error and transitions it
+    /// back to a standard multi-ASE response list.
+    ///
+    /// # Arguments
+    /// * `response` - The `ResponseCode` variant to append to the notification.
+    pub fn add_response(&mut self, response: ResponseCode) {
+        if self.number_of_ases == 0xFF {
+            self.number_of_ases = 0;
+            self.responses.clear();
+        }
+        self.responses.push(response);
+        self.number_of_ases = self.responses.len() as u8;
+    }
+}
+
+impl Encodable for ControlPointNotification {
+    type Error = bt_common::packet_encoding::Error;
+
+    fn encoded_len(&self) -> usize {
+        2 + self.responses.len() * 3
+    }
+
+    fn encode(&self, buf: &mut [u8]) -> Result<(), Self::Error> {
+        if buf.len() < self.encoded_len() {
+            return Err(Self::Error::BufferTooSmall);
+        }
+        buf[0] = self.opcode;
+        buf[1] = self.number_of_ases;
+        let mut idx = 2;
+        for r in &self.responses {
+            let val = r.notify_value();
+            buf[idx..idx + 3].copy_from_slice(&val);
+            idx += 3;
+        }
+        Ok(())
+    }
+}
+
+impl Decodable for ControlPointNotification {
+    type Error = bt_common::packet_encoding::Error;
+
+    fn decode(buf: &[u8]) -> (Result<Self, Self::Error>, usize) {
+        if buf.len() < 2 {
+            return (Err(Self::Error::UnexpectedDataLength), buf.len());
+        }
+        let opcode = buf[0];
+        let number_of_ases = buf[1];
+        let responses_buf = &buf[2..];
+        let mut responses = Vec::new();
+
+        if number_of_ases == 0xFF {
+            if responses_buf.len() < 3 {
+                return (Err(Self::Error::UnexpectedDataLength), buf.len());
+            }
+            let r = match ResponseCode::decode_response(&responses_buf[0..3], opcode) {
+                Ok(r) => r,
+                Err(e) => return (Err(e), buf.len()),
+            };
+            if r.ase_id_value() != 0 || (r.to_code() != 0x01 && r.to_code() != 0x02) {
+                return (Err(Self::Error::UnexpectedDataLength), buf.len());
+            }
+            responses.push(r);
+            (Ok(Self { opcode, number_of_ases, responses }), 5)
+        } else {
+            let expected_len = number_of_ases as usize * 3;
+            if responses_buf.len() < expected_len {
+                return (Err(Self::Error::UnexpectedDataLength), buf.len());
+            }
+            for i in 0..(number_of_ases as usize) {
+                let idx = i * 3;
+                let r = match ResponseCode::decode_response(&responses_buf[idx..idx + 3], opcode) {
+                    Ok(r) => r,
+                    Err(e) => return (Err(e), buf.len()),
+                };
+                responses.push(r);
+            }
+            (Ok(Self { opcode, number_of_ases, responses }), 2 + expected_len)
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1043,6 +1901,38 @@ mod tests {
 
     use bt_common::core::ltv::LtValue;
     use bt_common::generic_audio::{codec_configuration, AudioLocation};
+
+    #[test]
+    fn opcode_state_rules() {
+        // 1. allowed_in_state tests
+        assert!(AseControlPointOpcode::ConfigCodec.allowed_in_state(&AseState::Idle));
+        assert!(AseControlPointOpcode::ConfigCodec.allowed_in_state(&AseState::CodecConfigured));
+        assert!(!AseControlPointOpcode::ConfigCodec.allowed_in_state(&AseState::Streaming));
+
+        assert!(AseControlPointOpcode::Disable.allowed_in_state(&AseState::Streaming));
+        assert!(!AseControlPointOpcode::Disable.allowed_in_state(&AseState::Idle));
+
+        // 2. operation_target_states & allows_transition_to tests
+        // Sink direction
+        assert!(AseControlPointOpcode::Disable
+            .allows_transition_to(AudioDirection::Sink, &AseState::QosConfigured));
+        assert!(!AseControlPointOpcode::Disable
+            .allows_transition_to(AudioDirection::Sink, &AseState::Disabling));
+
+        // Source direction
+        assert!(AseControlPointOpcode::Disable
+            .allows_transition_to(AudioDirection::Source, &AseState::Disabling));
+        assert!(!AseControlPointOpcode::Disable
+            .allows_transition_to(AudioDirection::Source, &AseState::QosConfigured));
+
+        // UpdateMetadata (same state allowed)
+        assert!(AseControlPointOpcode::UpdateMetadata
+            .allows_transition_to(AudioDirection::Source, &AseState::Enabling));
+        assert!(AseControlPointOpcode::UpdateMetadata
+            .allows_transition_to(AudioDirection::Source, &AseState::Streaming));
+        assert!(!AseControlPointOpcode::UpdateMetadata
+            .allows_transition_to(AudioDirection::Source, &AseState::Idle));
+    }
 
     #[test]
     fn codec_configuration_roundtrip() {
@@ -1311,5 +2201,123 @@ mod tests {
         ];
 
         assert_eq!(&encoded, expected);
+    }
+
+    #[test]
+    fn test_ase_endpoint_roundtrip() {
+        use bt_gatt::types::Handle;
+        // Test with AdditionalParameters::None
+        let endpoint_none = AudioStreamEndpoint {
+            handle: Handle(1),
+            direction: AudioDirection::Sink,
+            ase_id: AseId(1),
+            state: AseState::Idle,
+            additional: AseAdditionalParameters::None,
+        };
+        let mut buf = vec![0; endpoint_none.encoded_len()];
+        endpoint_none.encode(&mut buf).unwrap();
+        assert_eq!(buf.len(), 2);
+        assert_eq!(buf, vec![1, 0]);
+
+        let decoded_endpoint_none =
+            AudioStreamEndpoint::from_char_value(Handle(1), AudioDirection::Sink, &buf).unwrap();
+        assert_eq!(decoded_endpoint_none.ase_id, endpoint_none.ase_id);
+        assert_eq!(decoded_endpoint_none.state, endpoint_none.state);
+        assert_eq!(decoded_endpoint_none.additional, endpoint_none.additional);
+
+        // Test with AdditionalParameters::CodecConfigured
+        let delay_range = PresentationDelayRange::build(1000, 2000).unwrap();
+        let endpoint_codec = AudioStreamEndpoint {
+            handle: Handle(2),
+            direction: AudioDirection::Source,
+            ase_id: AseId(2),
+            state: AseState::CodecConfigured,
+            additional: AseAdditionalParameters::CodecConfigured {
+                framing: Framing::Unframed,
+                preferred_phys: vec![Phy::Le1MPhy].into_iter().collect(),
+                preferred_retransmission_number: 3,
+                max_transport_latency: MaxTransportLatency::try_from(
+                    std::time::Duration::from_millis(10),
+                )
+                .unwrap(),
+                presentation_delay_range: delay_range,
+                codec_id: CodecId::Assigned(bt_common::core::CodingFormat::Lc3),
+                codec_config: vec![1, 2, 3],
+            },
+        };
+        let mut buf2 = vec![0; endpoint_codec.encoded_len()];
+        endpoint_codec.encode(&mut buf2).unwrap();
+
+        let decoded_endpoint_codec =
+            AudioStreamEndpoint::from_char_value(Handle(2), AudioDirection::Source, &buf2).unwrap();
+        assert_eq!(decoded_endpoint_codec.ase_id, endpoint_codec.ase_id);
+        assert_eq!(decoded_endpoint_codec.state, endpoint_codec.state);
+        assert_eq!(decoded_endpoint_codec.additional, endpoint_codec.additional);
+    }
+
+    #[test]
+    fn control_point_notification_roundtrip() {
+        // 1. Test Standard Multi-ASE notification roundtrip
+        let mut notification = ControlPointNotification::new(0x01); // Opcode ConfigCodec
+        notification.add_response(ResponseCode::Success { ase_id: AseId(1) });
+        notification.add_response(ResponseCode::InvalidAseId { value: 2 });
+
+        let mut buf = vec![0; notification.encoded_len()];
+        assert!(notification.encode(&mut buf).is_ok());
+
+        #[rustfmt::skip]
+        let expected_bytes = &[
+            0x01, // Opcode
+            0x02, // Number of ASEs
+            0x01, 0x00, 0x00, // Response 1: ASE 1, Success, None
+            0x02, 0x03, 0x00, // Response 2: ASE 2, Invalid ASE ID, None
+        ];
+        assert_eq!(buf, expected_bytes);
+
+        let (decoded, consumed) = ControlPointNotification::decode(&buf);
+        assert_eq!(consumed, buf.len());
+        assert_eq!(decoded.expect("should succeed"), notification);
+
+        // 2. Test Global Error Notification (0xFF) roundtrip
+        let err_notification = ControlPointNotification::new_error(0x01, 0x02); // Invalid Length error
+        let mut err_buf = vec![0; err_notification.encoded_len()];
+        assert!(err_notification.encode(&mut err_buf).is_ok());
+
+        #[rustfmt::skip]
+        let expected_err_bytes = &[
+            0x01, // Opcode
+            0xFF, // Number of ASEs: Global Error
+            0x00, 0x02, 0x00, // ASE 0, Invalid Length, None
+        ];
+        assert_eq!(err_buf, expected_err_bytes);
+
+        let (decoded_err, consumed_err) = ControlPointNotification::decode(&err_buf);
+        assert_eq!(consumed_err, err_buf.len());
+        assert_eq!(decoded_err.expect("should succeed"), err_notification);
+
+        // 3. Test Validation constraint fails on malformed 0xFF notification
+        // Case A: number_of_ases = 0xFF, but ase_id is not 0x00 (e.g., AseId 1)
+        #[rustfmt::skip]
+        let malformed_bytes_ase = &[
+            0x01, // Opcode
+            0xFF, // Global Error
+            0x01, 0x02, 0x00, // ASE 1, Invalid Length, None (ase_id must be 0x00)
+        ];
+        let (res_malformed_ase, _) = ControlPointNotification::decode(malformed_bytes_ase);
+        assert_eq!(res_malformed_ase, Err(bt_common::packet_encoding::Error::OutOfRange));
+
+        // Case B: number_of_ases = 0xFF, but response_code is not 0x01 or 0x02 (e.g.
+        // Success 0x00)
+        #[rustfmt::skip]
+        let malformed_bytes_code = &[
+            0x01, // Opcode
+            0xFF, // Global Error
+            0x00, 0x00, 0x00, // ASE 0, Success, None (response code must be 0x01 or 0x02)
+        ];
+        let (res_malformed_code, _) = ControlPointNotification::decode(malformed_bytes_code);
+        assert_eq!(
+            res_malformed_code,
+            Err(bt_common::packet_encoding::Error::UnexpectedDataLength)
+        );
     }
 }

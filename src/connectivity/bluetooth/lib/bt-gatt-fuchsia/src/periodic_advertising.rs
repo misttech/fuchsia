@@ -4,7 +4,6 @@
 
 use async_utils::hanging_get::client::HangingGetStream;
 use bt_common::PeerId;
-use bt_gatt::central::AdvertisingDatum;
 use fidl_fuchsia_bluetooth_le as fidl_le;
 use futures::stream::Stream;
 use futures::{Future, StreamExt, TryStreamExt};
@@ -12,7 +11,7 @@ use std::pin::Pin;
 
 #[cfg(test)]
 use crate::to_fidl_uuid;
-use crate::{to_fidl_peer_id, to_gatt_uuid};
+use crate::{to_fidl_peer_id, to_gatt_scan_data};
 
 fn to_gatt_sync_error(err: fidl_le::PeriodicAdvertisingSyncError) -> bt_gatt::types::Error {
     let gatt_err = match err {
@@ -46,45 +45,6 @@ fn to_gatt_big_info(
         phy: info.phy.map(to_gatt_phy).unwrap_or(bt_common::core::Phy::Le1m),
         encryption: info.encryption.unwrap_or(false),
     }
-}
-
-fn to_gatt_scan_data(data: fidl_le::ScanData) -> Vec<AdvertisingDatum> {
-    use bt_gatt::central::AdvertisingDatum::*;
-    let mut ret = Vec::new();
-    if let Some(appearance) = data.appearance {
-        ret.push(Appearance(appearance.into_primitive()));
-    }
-    if let Some(level) = data.tx_power {
-        ret.push(TxPowerLevel(level));
-    }
-    if let Some(uuids) = data.service_uuids {
-        ret.push(Services(uuids.iter().map(to_gatt_uuid).collect()));
-    }
-    if let Some(datas) = data.service_data {
-        let mut datas = datas
-            .into_iter()
-            .map(|fidl_le::ServiceData { uuid, data }| ServiceData(to_gatt_uuid(&uuid), data))
-            .collect();
-        ret.append(&mut datas);
-    }
-    if let Some(manuf_data) = data.manufacturer_data {
-        let mut manufs = manuf_data
-            .into_iter()
-            .map(|fidl_le::ManufacturerData { company_id, data }| {
-                ManufacturerData(company_id, data)
-            })
-            .collect();
-        ret.append(&mut manufs);
-    }
-    if let Some(uris) = data.uris {
-        for uri in uris {
-            ret.push(Uri(uri));
-        }
-    }
-    if let Some(name) = data.broadcast_name {
-        ret.push(BroadcastName(name));
-    }
-    ret
 }
 
 fn to_gatt_periodic_advertising_report(
@@ -302,11 +262,12 @@ mod tests {
             }]),
             uris: Some(vec!["https://example.com".to_string()]),
             broadcast_name: Some("My Broadcast".to_string()),
+            resolvable_set_identifier: Some([1, 2, 3, 4, 5, 6]),
             ..Default::default()
         };
 
         let advertised = to_gatt_scan_data(scan_data);
-        assert_eq!(advertised.len(), 6);
+        assert_eq!(advertised.len(), 7);
 
         assert!(advertised.iter().any(|d| matches!(d, AdvertisingDatum::TxPowerLevel(-15))));
 
@@ -334,6 +295,11 @@ mod tests {
 
         assert!(advertised.iter().any(|d| match d {
             AdvertisingDatum::BroadcastName(name) => name == "My Broadcast",
+            _ => false,
+        }));
+
+        assert!(advertised.iter().any(|d| match d {
+            AdvertisingDatum::ResolvableSetIdentifier(rsi) => rsi == &[1, 2, 3, 4, 5, 6],
             _ => false,
         }));
     }

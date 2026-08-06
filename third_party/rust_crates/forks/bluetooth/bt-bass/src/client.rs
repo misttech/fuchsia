@@ -317,13 +317,6 @@ impl<T: bt_gatt::GattTypes> BroadcastAudioScanServiceClient<T> {
             .get_broadcast_source_state(&broadcast_id)
             .ok_or(Error::UnknownBroadcastSource(broadcast_id))?;
 
-        // Update BIS_Sync param for BIGs if applicable.
-        for (big_index, group) in state.subgroups.iter_mut().enumerate() {
-            if let Some(bis_sync) = bis_map.get(&(big_index as u8)) {
-                group.bis_sync = bis_sync.clone();
-            }
-        }
-
         // Update metadata for BIGs if applicable.
         if let Some(mut m) = metadata_map {
             for (big_index, group) in state.subgroups.iter_mut().enumerate() {
@@ -344,6 +337,13 @@ impl<T: bt_gatt::GattTypes> BroadcastAudioScanServiceClient<T> {
                 }
                 let new_subgroup = BigSubgroup::new(None).with_metadata(m[big_index].clone());
                 state.subgroups.push(new_subgroup);
+            }
+        }
+
+        // Update BIS_Sync param for BIGs if applicable.
+        for (big_index, group) in state.subgroups.iter_mut().enumerate() {
+            if let Some(bis_sync) = bis_map.get(&(big_index as u8)) {
+                group.bis_sync = bis_sync.clone();
             }
         }
 
@@ -737,7 +737,7 @@ mod tests {
             BroadcastId::try_from(0x11).unwrap(),
             AddressType::Public,
             [0x04, 0x10, 0x00, 0x00, 0x00, 0x00],
-            AdvertisingSetId(1),
+            AdvertisingSetId::try_from(1).unwrap(),
             PaSync::DoNotSync,
             PeriodicAdvertisingInterval::unknown(),
             vec![],
@@ -759,7 +759,7 @@ mod tests {
                 source_id: 0x11,
                 source_address_type: AddressType::Public,
                 source_address: [1, 2, 3, 4, 5, 6],
-                source_adv_sid: AdvertisingSetId(1),
+                source_adv_sid: AdvertisingSetId::try_from(1).unwrap(),
                 broadcast_id: BroadcastId::try_from(0x11).unwrap(),
                 pa_sync_state: PaSyncState::Synced,
                 big_encryption: EncryptionStatus::BroadcastCodeRequired,
@@ -801,7 +801,7 @@ mod tests {
                 source_id: 0x11,
                 source_address_type: AddressType::Public,
                 source_address: [1, 2, 3, 4, 5, 6],
-                source_adv_sid: AdvertisingSetId(1),
+                source_adv_sid: AdvertisingSetId::try_from(1).unwrap(),
                 broadcast_id: BroadcastId::try_from(0x11).unwrap(),
                 pa_sync_state: PaSyncState::Synced,
                 big_encryption: EncryptionStatus::BroadcastCodeRequired,
@@ -819,7 +819,7 @@ mod tests {
                 0xFF, 0xFF, 0x02,                    // pa sync, pa interval, num of subgroups
                 0x15, 0x00, 0x00, 0x00,              // bis sync (0th subgroup)
                 0x02, 0x01, 0x09,                    // metadata len, metadata
-                0xFF, 0xFF, 0xFF, 0xFF,              // bis sync (1th subgroup)
+                0xFF, 0xFF, 0xFF, 0xFF,              // bis sync (1st subgroup)
                 0x05, 0x04, 0x04, 0x65, 0x6E, 0x67,  // metadata len, metadata
             ],
         );
@@ -834,6 +834,56 @@ mod tests {
                 (0, vec![Metadata::BroadcastAudioImmediateRenderingFlag]),
                 (1, vec![Metadata::Language("eng".to_string())]),
                 (5, vec![Metadata::ProgramInfoURI("this subgroup shouldn't be added".to_string())]),
+            ])),
+        );
+        pin_mut!(op_fut);
+        let polled: Poll<Result<(), Error>> = op_fut.poll_unpin(&mut noop_cx);
+        assert_matches!(polled, Poll::Ready(Ok(_)));
+    }
+
+    #[test]
+    fn modify_broadcast_source_applies_bis_sync_to_new_subgroups() {
+        let (client, mut fake_peer_service) = setup_client();
+
+        client.broadcast_sources.lock().update_state(
+            RECEIVE_STATE_1_HANDLE,
+            BroadcastReceiveState::NonEmpty(ReceiveState {
+                source_id: 0x11,
+                source_address_type: AddressType::Public,
+                source_address: [1, 2, 3, 4, 5, 6],
+                source_adv_sid: AdvertisingSetId::try_from(1).unwrap(),
+                broadcast_id: BroadcastId::try_from(0x11).unwrap(),
+                pa_sync_state: PaSyncState::Synced,
+                big_encryption: EncryptionStatus::BroadcastCodeRequired,
+                subgroups: vec![BigSubgroup::new(None)],
+            }),
+        );
+
+        #[rustfmt::skip]
+        fake_peer_service.expect_characteristic_value(
+            &AUDIO_SCAN_CONTROL_POINT_HANDLE,
+            vec![
+                0x03, 0x11, 0x00,                    // opcode, source id, pa sync
+                0xFF, 0xFF, 0x02,                    // pa sync, pa interval, num of subgroups
+                0x15, 0x00, 0x00, 0x00,              // bis sync (0th subgroup)
+                0x02, 0x01, 0x09,                    // metadata len, metadata
+                0x0A, 0x00, 0x00, 0x00,              // bis sync for 1st subgroup (BIS index 2 and 4 = 0b00001010)
+                0x05, 0x04, 0x04, 0x65, 0x6E, 0x67,  // metadata len, metadata
+            ],
+        );
+
+        let mut noop_cx = futures::task::Context::from_waker(futures::task::noop_waker_ref());
+        let op_fut = client.modify_broadcast_source(
+            BroadcastId::try_from(0x11).unwrap(),
+            PaSync::DoNotSync,
+            None,
+            HashMap::from([
+                (0, BisSync::sync(vec![1, 3, 5]).unwrap()),
+                (1, BisSync::sync(vec![2, 4]).unwrap()),
+            ]),
+            Some(HashMap::from([
+                (0, vec![Metadata::BroadcastAudioImmediateRenderingFlag]),
+                (1, vec![Metadata::Language("eng".to_string())]),
             ])),
         );
         pin_mut!(op_fut);
@@ -872,7 +922,7 @@ mod tests {
                 source_id: 0x11,
                 source_address_type: AddressType::Public,
                 source_address: [1, 2, 3, 4, 5, 6],
-                source_adv_sid: AdvertisingSetId(1),
+                source_adv_sid: AdvertisingSetId::try_from(1).unwrap(),
                 broadcast_id: bid,
                 pa_sync_state: PaSyncState::Synced,
                 big_encryption: EncryptionStatus::BroadcastCodeRequired,
@@ -915,7 +965,7 @@ mod tests {
                 source_id: 0x01,
                 source_address_type: AddressType::Public,
                 source_address: [1, 2, 3, 4, 5, 6],
-                source_adv_sid: AdvertisingSetId(1),
+                source_adv_sid: AdvertisingSetId::try_from(1).unwrap(),
                 broadcast_id: BroadcastId::try_from(0x030201).unwrap(),
                 pa_sync_state: PaSyncState::Synced,
                 big_encryption: EncryptionStatus::BroadcastCodeRequired,

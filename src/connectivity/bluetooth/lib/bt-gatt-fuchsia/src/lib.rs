@@ -172,15 +172,15 @@ fn to_fidl_writemode(mode: &bt_gatt::types::WriteMode) -> fidl_gatt2::WriteMode 
     }
 }
 
-fn to_gatt_advertising_data(
-    data: fidl_le::AdvertisingData,
+pub(crate) fn to_gatt_scan_data(
+    data: fidl_le::ScanData,
 ) -> Vec<bt_gatt::central::AdvertisingDatum> {
     use bt_gatt::central::AdvertisingDatum::*;
     let mut ret = Vec::new();
     if let Some(appearance) = data.appearance {
         ret.push(Appearance(appearance.into_primitive()));
     }
-    if let Some(level) = data.tx_power_level {
+    if let Some(level) = data.tx_power {
         ret.push(TxPowerLevel(level));
     }
     if let Some(uuids) = data.service_uuids {
@@ -210,6 +210,9 @@ fn to_gatt_advertising_data(
     if let Some(name) = data.broadcast_name {
         ret.push(BroadcastName(name));
     }
+    if let Some(rsi) = data.resolvable_set_identifier {
+        ret.push(ResolvableSetIdentifier(rsi));
+    }
     ret
 }
 
@@ -220,10 +223,7 @@ fn to_gatt_scan_result(peer: &fidl_le::Peer) -> bt_gatt::central::ScanResult {
         name: peer.name.clone().map_or(bt_gatt::central::PeerName::Unknown, |n| {
             bt_gatt::central::PeerName::CompleteName(n)
         }),
-        advertised: peer
-            .advertising_data
-            .clone()
-            .map_or(Vec::new(), |d| to_gatt_advertising_data(d)),
+        advertised: peer.data.as_ref().cloned().map_or(Vec::new(), to_gatt_scan_data),
         advertising_sid: peer.advertising_sid,
         periodic_advertising_interval: peer.periodic_advertising_interval,
     }

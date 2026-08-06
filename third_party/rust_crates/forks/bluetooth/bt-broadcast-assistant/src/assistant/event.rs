@@ -203,18 +203,24 @@ where
             return None;
         };
 
+        let Ok(advertising_sid) = AdvertisingSetId::try_from(sid) else {
+            return None;
+        };
+
         let (broadcast_source, changed) = self.broadcast_sources.merge_broadcast_source_data(
-            &(peer_id, AdvertisingSetId(sid)),
+            &(peer_id, advertising_sid),
             &BroadcastSource::default().with_endpoint(base),
         );
 
         if broadcast_source.is_ready_to_add() && changed {
-            if let Some(Some(handle)) = self.active_syncs.remove(&(peer_id, sid)) {
+            if let Some(Some(handle)) =
+                self.active_syncs.remove(&(peer_id, advertising_sid.value()))
+            {
                 handle.abort();
             }
             return Some(Event::FoundBroadcastSource {
                 peer: peer_id,
-                advertising_sid: AdvertisingSetId(sid),
+                advertising_sid,
                 source: broadcast_source,
             });
         }
@@ -233,7 +239,9 @@ where
         let Some(raw_sid) = scanned.advertising_sid else {
             return None;
         };
-        let sid = AdvertisingSetId(raw_sid);
+        let Ok(sid) = AdvertisingSetId::try_from(raw_sid) else {
+            return None;
+        };
 
         let (broadcast_source, changed) =
             self.broadcast_sources.merge_broadcast_source_data(&(scanned.id, sid), &found_source);
@@ -261,7 +269,7 @@ where
 
         // If we are already actively syncing (or establishing a sync) for this
         // peer/SID, don't start another one.
-        let key = (scanned.id, sid.0);
+        let key = (scanned.id, sid.value());
         if self.active_syncs.contains_key(&key) {
             return None;
         }
@@ -269,10 +277,10 @@ where
         self.active_syncs.insert(key, None);
         let fut = pa.sync_to_advertising_reports(
             scanned.id,
-            sid.0,
+            sid.value(),
             SyncConfiguration { filter_duplicates: true },
         );
-        let mapped_fut = fut.map(move |res| (scanned.id, sid.0, res));
+        let mapped_fut = fut.map(move |res| (scanned.id, sid.value(), res));
         self.establishing_periodic_advertising_syncs.push(Box::pin(mapped_fut));
 
         None
@@ -431,7 +439,7 @@ mod tests {
 
         // Pretend somehow address, address type were filled out.
         let _ = stream.broadcast_sources.merge_broadcast_source_data(
-            &(broadcast_source_pid, AdvertisingSetId(1)),
+            &(broadcast_source_pid, AdvertisingSetId::try_from(1).unwrap()),
             &BroadcastSource::default()
                 .with_address([1, 2, 3, 4, 5, 6])
                 .with_address_type(AddressType::Public),
@@ -480,7 +488,7 @@ mod tests {
         };
         assert_matches!(event, Event::FoundBroadcastSource { peer, advertising_sid, source } => {
             assert_eq!(peer, broadcast_source_pid);
-            assert_eq!(advertising_sid, AdvertisingSetId(1));
+            assert_eq!(advertising_sid, AdvertisingSetId::try_from(1).unwrap());
             assert_eq!(source.periodic_advertising_interval, Some(PeriodicAdvertisingInterval(0x0100)));
             assert_eq!(source.address, Some([1, 2, 3, 4, 5, 6]));
             assert_eq!(source.broadcast_name, Some("Test Broadcast".to_string()));

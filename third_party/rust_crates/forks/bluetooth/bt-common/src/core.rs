@@ -49,13 +49,40 @@ impl FromStr for AddressType {
     }
 }
 
-/// Advertising Set ID which is 1 byte long.
+/// Advertising Set ID (SID) which is 4 bits long (range 0x00 to 0x0F).
+/// See Bluetooth Core Specification Vol 6, Part B, Section 2.3.4 and BASS
+/// v1.0.1 Section 3.1.1.4 Table 3.5.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct AdvertisingSetId(pub u8);
+pub struct AdvertisingSetId(u8);
 
 impl AdvertisingSetId {
     // Byte size if this is to be encoded.
     pub const BYTE_SIZE: usize = 1;
+
+    /// Maximum valid ID. See BASS v1.0.1 Section 3.1.1.4 Table 3.5.
+    pub const MAX_VALUE: u8 = 0x0F;
+
+    pub fn value(&self) -> u8 {
+        self.0
+    }
+}
+
+impl TryFrom<u8> for AdvertisingSetId {
+    type Error = PacketError;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        if value > Self::MAX_VALUE {
+            Err(PacketError::OutOfRange)
+        } else {
+            Ok(Self(value))
+        }
+    }
+}
+
+impl From<AdvertisingSetId> for u8 {
+    fn from(sid: AdvertisingSetId) -> u8 {
+        sid.0
+    }
 }
 
 /// SyncInfo Interval value which is 2 bytes long.
@@ -291,5 +318,17 @@ mod tests {
                 vendor_specific_codec_id: 0x2211
             })
         );
+    }
+
+    #[test]
+    fn advertising_set_id_success() {
+        assert_eq!(AdvertisingSetId::try_from(0x00).unwrap().value(), 0x00);
+        assert_eq!(AdvertisingSetId::try_from(0x0F).unwrap().value(), 0x0F);
+    }
+
+    #[test]
+    fn advertising_set_id_out_of_range() {
+        assert_eq!(AdvertisingSetId::try_from(0x10), Err(PacketError::OutOfRange));
+        assert_eq!(AdvertisingSetId::try_from(0xFF), Err(PacketError::OutOfRange));
     }
 }

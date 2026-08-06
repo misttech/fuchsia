@@ -584,6 +584,7 @@ dependencies = [
  "futures",
  "log",
  "parking_lot 0.12.5",
+ "pin-project",
  "thiserror 2.0.18",
 ]
 

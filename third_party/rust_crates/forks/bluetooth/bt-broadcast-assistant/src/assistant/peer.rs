@@ -287,7 +287,7 @@ pub(crate) mod tests {
         {
             let fut = peer.add_broadcast_source(
                 PeerId(1001),
-                AdvertisingSetId(1),
+                AdvertisingSetId::try_from(1).unwrap(),
                 &FakeGetPeerAddr,
                 PaSync::SyncPastUnavailable,
                 HashMap::new(),
@@ -298,7 +298,7 @@ pub(crate) mod tests {
         }
 
         let _ = broadcast_source.merge_broadcast_source_data(
-            &(PeerId(1001), AdvertisingSetId(1)),
+            &(PeerId(1001), AdvertisingSetId::try_from(1).unwrap()),
             &BroadcastSource::default().with_broadcast_id(BroadcastId::try_from(1001).unwrap()),
         );
 
@@ -308,7 +308,7 @@ pub(crate) mod tests {
                 StaticPeerAddr::new_for_peer(PeerId(1002), [1, 2, 3, 4, 5, 6], AddressType::Public);
             let fut = peer.add_broadcast_source(
                 PeerId(1001),
-                AdvertisingSetId(1),
+                AdvertisingSetId::try_from(1).unwrap(),
                 &address_lookup,
                 PaSync::SyncPastUnavailable,
                 HashMap::new(),
@@ -324,7 +324,7 @@ pub(crate) mod tests {
                 StaticPeerAddr::new_for_peer(PeerId(1001), [1, 2, 3, 4, 5, 6], AddressType::Public);
             let fut = peer.add_broadcast_source(
                 PeerId(1001),
-                AdvertisingSetId(1),
+                AdvertisingSetId::try_from(1).unwrap(),
                 &address_lookup,
                 PaSync::SyncPastUnavailable,
                 HashMap::new(),
