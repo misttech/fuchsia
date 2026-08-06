@@ -33,11 +33,15 @@ fuchsia_cc_driver("msd_vsi-driver") {
   ]
 }
 
+fuchsia_driver_dml("msd-vsi-vip-dml") {
+  dml = "meta/msd-vsi-vip.dml"
+  driver_name = "msd_vsi"
+}
+
 fuchsia_driver_component("msd_vsi") {
   info = "meta/msd_vsi-info.json"
-  component_name = "libmsd_vsi"
   deps = [ ":msd_vsi-driver" ]
-  manifest = "meta/msd-vsi-vip.cml"
+  dml_label = ":msd-vsi-vip-dml"
 }
 
 fuchsia_cc_driver("msd_vsi_test-driver") {
@@ -59,7 +63,8 @@ fuchsia_driver_component("msd_vsi_test") {
 }
 
 driver_bind_rules("msd_vsi_bind") {
-  rules = "meta/msd-vsi-vip.bind"
+  dml_label = ":msd-vsi-vip-dml"
+  bind_output = "msd_vsi.bindbc"
   tests = "tests/bind_tests.json"
   deps = [
     "//src/devices/bind/fuchsia.platform",

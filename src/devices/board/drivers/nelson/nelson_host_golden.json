@@ -222,7 +222,7 @@
     {
         "drivers": [
             "fuchsia-pkg://fuchsia.com/aml-nna#meta/aml-nna.cm",
-            "fuchsia-pkg://fuchsia.com/msd-vsi-vip#meta/libmsd_vsi.cm"
+            "fuchsia-pkg://fuchsia.com/msd-vsi-vip#meta/msd_vsi.cm"
         ]
     },
     {

@@ -4,7 +4,7 @@
 {
     include: [ "driver/platform-device.shard.cml" ],
     program: {
-        bind: "meta/bind/msd_vsi_bind.bindbc",
+        bind: "meta/bind/msd_vsi.bindbc",
         colocate: "true",
         default_dispatcher_opts: [ "allow_sync_calls" ],
         allowed_scheduler_roles: [

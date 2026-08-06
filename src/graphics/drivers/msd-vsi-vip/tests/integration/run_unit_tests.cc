@@ -20,7 +20,7 @@
 
 namespace {
 const std::string kProductionDriver =
-    "fuchsia-pkg://" VSI_PRODUCTION_DRIVER_PACKAGE "#meta/libmsd_vsi.cm";
+    "fuchsia-pkg://" VSI_PRODUCTION_DRIVER_PACKAGE "#meta/msd_vsi.cm";
 const std::string kTestDriver = "fuchsia-pkg://" VSI_TEST_DRIVER_PACKAGE "#meta/libmsd_vsi_test.cm";
 }  // namespace
 

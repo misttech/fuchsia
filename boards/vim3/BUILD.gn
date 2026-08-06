@@ -138,7 +138,7 @@ board_input_bundle("main_bundle") {
     {
       package_target = "//src/graphics/drivers/msd-vsi-vip"
       package_set = "base"
-      driver_components = [ "meta/libmsd_vsi.cm" ]
+      driver_components = [ "meta/msd_vsi.cm" ]
     },
     {
       package_target = "//src/graphics/display/drivers/aml-canvas:package"

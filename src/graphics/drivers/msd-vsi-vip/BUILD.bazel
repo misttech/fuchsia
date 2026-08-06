@@ -13,6 +13,6 @@ fuchsia_prebuilt_package(
     name = "msd-vsi-vip",
     archive = "@gn_targets//src/graphics/drivers/msd-vsi-vip:msd-vsi-vip",
     drivers = [
-        "meta/libmsd_vsi.cm",
+        "meta/msd_vsi.cm",
     ],
 )
