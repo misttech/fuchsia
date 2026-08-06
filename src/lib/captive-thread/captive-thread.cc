@@ -1,0 +1,367 @@
+// Copyright 2026 The Fuchsia Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+#include "lib/captive-thread/captive-thread.h"
+
+#include <lib/stdcompat/inplace_vector.h>
+#include <zircon/assert.h>
+#include <zircon/exception.h>
+#include <zircon/status.h>
+#include <zircon/threads.h>
+#include <zircon/tls.h>
+
+#include <atomic>
+
+namespace captive_thread {
+namespace {
+
+// This returns zero after filling in the current register values.  It ensures
+// the return value register saved is nonzero.  If these register values are
+// all restored, then this call will return a second time.
+uint64_t Checkpoint(zx_thread_state_general_regs_t& exit_regs);
+
+#ifdef __aarch64__
+
+static_assert(  // lr and sp are adjacent.
+    offsetof(zx_thread_state_general_regs_t, lr) + sizeof(uint64_t) ==
+    offsetof(zx_thread_state_general_regs_t, sp));
+
+static_assert(  // pc and cpsr are adjacent.
+    offsetof(zx_thread_state_general_regs_t, pc) + sizeof(uint64_t) ==
+    offsetof(zx_thread_state_general_regs_t, cpsr));
+
+#if __has_attribute(naked)
+[[gnu::naked, clang::no_sanitize("all")]]
+uint64_t Checkpoint(zx_thread_state_general_regs_t& exit_regs) {
+#endif
+  // Report the x30 value as the pc, so the checkpoint is as of our return.
+  // Use zero for CPSR.  The return value also is the argument register, so it
+  // starts as nonzero.
+  __asm__(
+#if !__has_attribute(naked)
+      R"""(
+      .pushsection .text, "axG", %cc[fn]
+      .hidden %cc[fn]
+      .globl %cc[fn]
+      .type %cc[fn], %%function
+      %cc[fn]:
+      .cfi_startproc
+      )"""
+#endif
+      R"""(
+      stp  x0,  x1, [x0, #%cc[r] + (0 * 8)]
+      stp  x2,  x3, [x0, #%cc[r] + (2 * 8)]
+      stp  x4,  x5, [x0, #%cc[r] + (4 * 8)]
+      stp  x6,  x7, [x0, #%cc[r] + (6 * 8)]
+      stp  x8,  x9, [x0, #%cc[r] + (8 * 8)]
+      stp x10, x11, [x0, #%cc[r] + (10 * 8)]
+      stp x12, x13, [x0, #%cc[r] + (12 * 8)]
+      stp x14, x15, [x0, #%cc[r] + (14 * 8)]
+      stp x16, x17, [x0, #%cc[r] + (16 * 8)]
+      stp x18, x19, [x0, #%cc[r] + (18 * 8)]
+      stp x20, x21, [x0, #%cc[r] + (20 * 8)]
+      stp x22, x23, [x0, #%cc[r] + (22 * 8)]
+      stp x24, x25, [x0, #%cc[r] + (24 * 8)]
+      stp x26, x27, [x0, #%cc[r] + (26 * 8)]
+      stp x28, x29, [x0, #%cc[r] + (28 * 8)]
+      mov x16, sp
+      mrs x17, TPIDR_EL0
+      stp x30, x16, [x0, #%cc[lr]]
+      stp x30, xzr, [x0, #%cc[pc]]
+      str x17, [x0, #%cc[tpidr]]
+      mov x0, xzr
+      ret
+      )"""
+#if !__has_attribute(naked)
+      R"""(
+      .cfi_endproc
+      .size %cc[fn], . - %cc[fn]
+      .popsection
+      )"""
+#endif
+      :
+      :
+#if !__has_attribute(naked)
+      [fn] ":"(Checkpoint),
+#endif
+      [r] "i"(offsetof(zx_thread_state_general_regs_t, r)),
+      [lr] "i"(offsetof(zx_thread_state_general_regs_t, lr)),
+      [pc] "i"(offsetof(zx_thread_state_general_regs_t, pc)),
+      [tpidr] "i"(offsetof(zx_thread_state_general_regs_t, tpidr)));
+#if __has_attribute(naked)
+}
+#endif
+
+#elifdef __riscv
+
+[[gnu::naked, clang::no_sanitize("all")]]
+uint64_t Checkpoint(zx_thread_state_general_regs_t& exit_regs) {
+  // Report the ra value as the pc, so the checkpoint is as of our return.  The
+  // a0 value stored will be the return value on restore; it's already nonzero.
+  __asm__(
+      R"""(
+      sd ra, (a0)
+      .irp n,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31
+        sd x\n, (\n * 8)(a0)
+      .endr
+      mv a0, zero
+      ret
+      )""");
+}
+
+#elifdef __x86_64__
+
+[[gnu::naked, clang::no_sanitize("all")]]
+uint64_t Checkpoint(zx_thread_state_general_regs_t& exit_regs) {
+  // Clobber %r11 with the unsafe SP so it's restored like a register.
+  __asm__("mov %%fs:%cc0, %%r11" : : "i"(ZX_TLS_UNSAFE_SP_OFFSET));
+
+  // Clobber %rax with the address of the label below, and store that as the PC
+  // to restore.
+  __asm__("lea 0f(%rip), %rax");
+  __asm__("mov %%rax, %cc0(%%rdi)" : : "i"(offsetof(zx_thread_state_general_regs_t, rip)));
+
+  // Now clobber %rax with the return address from the stack.
+  // This is the %rax value that will be restored later.
+  __asm__("mov (%rsp), %rax");
+
+#define SAVE_REG(reg) \
+  __asm__("mov %%" #reg ", %cc0(%%rdi)" : : "i"(offsetof(zx_thread_state_general_regs_t, reg)))
+
+  SAVE_REG(rax);
+  SAVE_REG(rbx);
+  SAVE_REG(rcx);
+  SAVE_REG(rdx);
+  SAVE_REG(rsi);
+  SAVE_REG(rdi);
+  SAVE_REG(rbp);
+  SAVE_REG(rsp);
+  SAVE_REG(r8);
+  SAVE_REG(r9);
+  SAVE_REG(r10);
+  SAVE_REG(r11);
+  SAVE_REG(r12);
+  SAVE_REG(r13);
+  SAVE_REG(r14);
+  SAVE_REG(r15);
+#undef SAVE_REG
+
+  // Don't bother trying to get the true %fs.base or %gs.base values.  Only
+  // %fs.base really matters and we can presume the %fs:0 protocol, but cannot
+  // presume rdfsbase and rdgsbase instructions.
+  __asm__("mov %fs:0, %rax");
+  __asm__("mov %%rax, %cc0(%%rdi)" : : "i"(offsetof(zx_thread_state_general_regs_t, fs_base)));
+  __asm__("movq $0, %cc0(%%rdi)" : : "i"(offsetof(zx_thread_state_general_regs_t, gs_base)));
+
+  // Clear the return value register and return here.  On resumption below,
+  // that register will be reloaded with the saved return address.
+  __asm__("xor %eax, %eax");
+  __asm__("ret");
+
+  // The checkpoint will be restored to running at this PC.
+  // Restore the return address onto the stack.
+  __asm__("0: mov %rax, (%rsp)");
+
+  // Restore the unsafe SP value saved / restored in %r11.
+  __asm__("mov %%r11, %%fs:%cc0" : : "i"(ZX_TLS_UNSAFE_SP_OFFSET));
+
+  __asm__("ret");
+}
+
+#endif
+
+// The atomic state starts as 0, then goes to 1 while running the routine, then
+// -1 while on the exit path.
+void RunThread(std::optional<CaptiveThread::Routine> routine, zx::thread& thread_handle,
+               zx_thread_state_general_regs_t& exit_regs, zx::channel& exception_channel,
+               std::atomic_int& state) {
+  if (Checkpoint(exit_regs) == 0) {
+    // Move out of the argument so it won't have any destructor work to do
+    // after this block.  The real destructor will only run if the function
+    // returns normally.
+    auto f = *std::exchange(routine, std::nullopt);
+
+    // Duplicate the thread handle so it can be used safely after exit.
+    zx_status_t status = zx::thread::self()->duplicate(ZX_RIGHT_SAME_RIGHTS, &thread_handle);
+    ZX_ASSERT_MSG(status == ZX_OK, "duplicate: %s", zx_status_get_string(status));
+    ZX_DEBUG_ASSERT(thread_handle.is_valid());
+
+    // Bind the thread exception channel.
+    status = thread_handle.create_exception_channel(0, &exception_channel);
+    ZX_ASSERT_MSG(status == ZX_OK, "create_exception_channel: %s", zx_status_get_string(status));
+    ZX_DEBUG_ASSERT(exception_channel.is_valid());
+
+    // Wake up the constructor that created this thread.
+    state.store(1, std::memory_order_release);
+    state.notify_one();
+
+    // Run the user function.  If an exception is caught, ForceThread() will
+    // restore the registers so Checkpoint() returns a second time, nonzero.
+    f();
+  }
+
+  // Record that we're not "running": don't get reset to the exit path twice.
+  state.store(-1, std::memory_order_release);
+}
+
+void MarkHandled(zx::unowned_exception exception) {
+  constexpr uint32_t kHandled = ZX_EXCEPTION_STATE_HANDLED;
+  zx_status_t status =
+      exception->set_property(ZX_PROP_EXCEPTION_STATE, &kHandled, sizeof(kHandled));
+  ZX_ASSERT_MSG(status == ZX_OK, "ZX_PROP_EXCEPTION_STATE: %s", zx_status_get_string(status));
+}
+
+}  // namespace
+
+// Start the thread and wait for it to get ready.  Until it's ready,
+// it has exclusive access to exit_regs_ and channel_.
+CaptiveThread::CaptiveThread(fit::callback<void()> f)
+    : thread_(RunThread, std::move(f), std::ref(thread_handle_), std::ref(exit_regs_),
+              std::ref(channel_), std::ref(state_)) {
+  // This synchronizes with the thread filling in thread_handle_, channel_, and
+  // exit_regs_; and constitutes reacquiring the lock on those.
+  state_.wait(0, std::memory_order_acquire);
+}
+
+void CaptiveThread::ForceJoin() {
+  if (Joined()) {
+    // Already called Join or BlockUntilSuccess.
+    return;
+  }
+
+  if (!InException()) {
+    // The thread might be running, so get it safely stopped.
+    if (zx::result result = Suspend(); result.is_error()) {
+      // Ignore the error if the thread has already died.  WaitForStop() will
+      // see the ZX_THREAD_TERMINATED signal immediately.
+      ZX_ASSERT_MSG(result.error_value() == ZX_ERR_BAD_STATE, "zx::task::suspend: %s",
+                    result.status_string());
+    }
+
+    // Wait for suspension, but it could still hit an exception first.
+    zx::result result = WaitForStop();
+    ZX_ASSERT_MSG(result.is_ok(), "wait: %s", result.status_string());
+  }
+
+  // If the thread was asynchronously suspended rather than hitting an
+  // exception, then don't perturb it if it's already on the exit path.
+  if (InException() || state_.load(std::memory_order_acquire) >= 0) {
+    zx_status_t status =
+        thread_handle_.write_state(ZX_THREAD_STATE_GENERAL_REGS, &exit_regs_, sizeof(exit_regs_));
+    ZX_ASSERT_MSG(status == ZX_OK, "zx::thread::write_state: %s", zx_status_get_string(status));
+  }
+
+  if (InException()) {
+    // After warping the thread to the exit path, ignore the pending exception.
+    MarkHandled(exception_.borrow());
+  }
+
+  // Unbind the exception channel.  If the thread hits another exception
+  // hereafter, that will be a normal crash.
+  channel_.reset();
+
+  // Drop the thread handle, indicating it's been joined.
+  thread_handle_.reset();
+
+  // Let the thread run its exit path.
+  ResumeInternal();
+
+  // Do the normal thread join.
+  std::exchange(thread_, {}).join();
+}
+
+zx::result<> CaptiveThread::Suspend() {
+  if (IsStopped()) {
+    return zx::ok();
+  }
+  return zx::make_result(thread_handle_.suspend(&suspend_));
+}
+
+void CaptiveThread::ResolveException() {
+  ZX_ASSERT(InException());
+  MarkHandled(exception_.borrow());
+  ResumeInternal();
+}
+
+void CaptiveThread::Resume() {
+  ZX_ASSERT(IsStopped());
+  ResumeInternal();
+}
+
+void CaptiveThread::ResumeInternal() {
+  suspend_.reset();
+  exception_.reset();
+  exception_report_.reset();
+}
+
+void CaptiveThread::BlockUntilSuccess() {
+  ZX_ASSERT(!IsStopped());
+  ZX_ASSERT(!Joined());
+  channel_.reset();
+  thread_handle_.reset();
+  std::exchange(thread_, {}).join();
+}
+
+zx::result<CaptiveThread*> CaptiveThread::Wait(zx::time deadline, bool suspend_ok) {
+  ZX_DEBUG_ASSERT(!Joined());
+  if (InException()) {
+    return zx::ok(this);
+  }
+  cpp26::inplace_vector<zx_wait_item_t, 2> items{
+      {
+          .handle = thread_handle_.get(),
+          .waitfor = ZX_THREAD_TERMINATED | (suspend_ok ? ZX_THREAD_SUSPENDED : 0),
+      },
+  };
+  const zx_signals_t& thread_pending = items.front().pending;
+  const zx_signals_t* channel_pending = nullptr;
+  if (channel_.is_valid()) {
+    items.push_back({.handle = channel_.get(), .waitfor = ZX_CHANNEL_READABLE});
+    channel_pending = &items.back().pending;
+  }
+  if (zx_status_t status =
+          zx::handle::wait_many(items.data(), static_cast<uint32_t>(items.size()), deadline);
+      status != ZX_OK) {
+    return zx::error{status};
+  }
+  if (channel_pending && (*channel_pending & ZX_CHANNEL_READABLE)) {
+    exception_report_.emplace();
+    zx_status_t status =
+        thread_handle_.get_info(ZX_INFO_THREAD_EXCEPTION_REPORT, std::addressof(*exception_report_),
+                                sizeof(*exception_report_), nullptr, nullptr);
+    if (status != ZX_OK) {
+      return zx::error{status};
+    }
+    zx_exception_info_t info;
+    uint32_t bytes, handles;
+    status = channel_.read(0, &info, exception_.reset_and_get_address(), sizeof(info), 1, &bytes,
+                           &handles);
+    if (status != ZX_OK) {
+      exception_report_.reset();
+      return zx::error{status};
+    }
+    ZX_DEBUG_ASSERT(bytes == sizeof(info));
+    ZX_DEBUG_ASSERT(handles == 1);
+    ZX_DEBUG_ASSERT(info.type == exception_report_->header.type);
+  } else if (thread_pending & ZX_THREAD_SUSPENDED) {
+    ZX_DEBUG_ASSERT(suspend_ok);
+  } else {
+    ZX_DEBUG_ASSERT(thread_pending & ZX_THREAD_TERMINATED);
+  }
+  return zx::ok(this);
+}
+
+void PrintTo(const CaptiveThread& thread, std::ostream* os) {
+  if (auto report = thread.ExceptionReport()) {
+    *os << "in exception " << zx_exception_get_string(report->header.type);
+  } else if (thread.InSuspend()) {
+    *os << "in suspension>";
+  } else if (thread.Joined()) {
+    *os << "already joined";
+  } else {
+    *os << "no exception";
+  }
+}
+
+}  // namespace captive_thread

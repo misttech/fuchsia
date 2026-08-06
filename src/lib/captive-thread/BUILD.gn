@@ -2,6 +2,39 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/components/fuchsia_unittest_package.gni")
+import("//build/cpp/library_headers.gni")
+import("//build/test.gni")
+
+library_headers("headers") {
+  headers = [ "lib/captive-thread/captive-thread.h" ]
+  public_deps = [
+    "//sdk/lib/fit",
+    "//zircon/system/ulib/zx",
+  ]
+}
+
+static_library("captive-thread") {
+  public_deps = [ ":headers" ]
+  sources = [ "captive-thread.cc" ]
+  deps = [ "//sdk/lib/stdcompat" ]
+}
+
 group("tests") {
   testonly = true
+  deps = [ ":captive-thread-tests" ]
+}
+
+test("captive-thread-unittests") {
+  sources = [ "captive-thread-tests.cc" ]
+  deps = [
+    ".",
+    "testing",
+    "//src/lib/fxl/test:gtest_main",
+    "//third_party/googletest:gmock",
+  ]
+}
+
+fuchsia_unittest_package("captive-thread-tests") {
+  deps = [ ":captive-thread-unittests" ]
 }
