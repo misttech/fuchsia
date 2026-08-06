@@ -295,6 +295,11 @@ pin_init!(Self {
   Remove the annotations once cross-language inlining works.`) to remove the
   annotations once cross-language inlining works. Recommend and apply this
   annotation only for short FFI routines.
+- Uninitialized Storage in FFI Initializers: When passing uninitialized storage
+  (e.g., from Rust `core::mem::MaybeUninit<T>`) to a C++ FFI routine to
+  construct an object, the C++ function should include `<kernel/ffi.h>` and take
+  `ffi::Uninitialized<T>*` instead of raw `T*`. Initialize the object in C++ via
+  `handle_out->Initialize(...)`.
 
 ---
 
@@ -348,6 +353,10 @@ Reviewers and Coders must audit code against this checklist:
      C++ FFI routines include `<kernel/ffi.h>`, use `FFI_ALWAYS_INLINE`, and
      include a TODO tied to `https://fxbug.dev/537458631` (only for short FFI
      routines).
+21.  [ ] **Raw Pointer to Uninitialized Storage in FFI Initializers**: C++ FFI
+     initialization routines receiving uninitialized storage from Rust do not
+     take raw `T*`; they take `ffi::Uninitialized<T>*` and initialize in-place
+     via `Initialize(...)`.
 
 ---
 

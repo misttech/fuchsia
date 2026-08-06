@@ -11,12 +11,14 @@
 #include <zircon/rights.h>
 #include <zircon/types.h>
 
+#include <kernel/ffi.h>
 #include <object/dispatcher.h>
 #include <object/handle.h>
 #include <object/opaque_storage.h>
 
 extern "C" {
-zx_status_t cpp_counter_dispatcher_create(KernelHandle<CounterDispatcher>* handle_out);
+zx_status_t cpp_counter_dispatcher_create(
+    ffi::Uninitialized<KernelHandle<CounterDispatcher>>* handle_out);
 }
 
 class CounterDispatcher final : public Dispatcher {
@@ -39,7 +41,8 @@ class CounterDispatcher final : public Dispatcher {
   Lock<CriticalMutex>* get_lock() const final;
 
  private:
-  friend zx_status_t cpp_counter_dispatcher_create(KernelHandle<CounterDispatcher>*);
+  friend zx_status_t cpp_counter_dispatcher_create(
+      ffi::Uninitialized<KernelHandle<CounterDispatcher>>*);
   CounterDispatcher();
 
   OpaqueStorage<kCounterDispatcherStateSize, kCounterDispatcherStateAlign> opaque_storage_;
