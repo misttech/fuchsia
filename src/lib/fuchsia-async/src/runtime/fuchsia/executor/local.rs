@@ -261,6 +261,11 @@ impl TestExecutor {
         self.local.ehandle.inner().set_fake_boot_to_mono_offset(d)
     }
 
+    /// Get the global executor handle.
+    pub fn global_handle(&self) -> &EHandle {
+        &self.local.ehandle
+    }
+
     /// Get the global scope of the executor.
     pub fn global_scope(&self) -> &ScopeHandle {
         self.local.root_scope()

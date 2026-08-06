@@ -48,6 +48,7 @@ group("tests") {
     ":libasync_tests",
     "dispatcher:tests",
     "fidl:tests",
+    "scope_dispatcher:tests",
     "sys:tests",
   ]
 }

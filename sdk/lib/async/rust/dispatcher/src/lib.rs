@@ -123,6 +123,14 @@ impl<'a> AsyncDispatcherRef<'a> {
     pub fn inner(&self) -> NonNull<async_dispatcher_t> {
         self.0
     }
+
+    /// Returns the current time on the dispatcher's timeline
+    pub fn now(&self) -> zx_time_t {
+        let async_dispatcher = self.inner().as_ptr();
+        // SAFETY: The dispatcher is a valid reference to a live dispatcher by construction, and
+        // this function does not touch any rust memory.
+        unsafe { async_now(async_dispatcher) }
+    }
 }
 
 /// A trait for things that can be represented as an [`AsyncDispatcherRef`].

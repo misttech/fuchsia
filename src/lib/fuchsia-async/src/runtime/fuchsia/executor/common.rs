@@ -697,6 +697,12 @@ impl EHandle {
         self.inner().set_fake_time(t)
     }
 
+    /// Gets the current time as the executor sees it. May be fake time if the executor is running
+    /// on fake time.
+    pub fn now(&self) -> MonotonicInstant {
+        self.inner().now()
+    }
+
     pub(super) fn rm_local() {
         EXECUTOR.with(|e| *e.borrow_mut() = None);
     }
