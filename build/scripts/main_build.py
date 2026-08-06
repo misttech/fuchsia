@@ -38,6 +38,9 @@ import signal_utils
 
 _SCRIPT = pathlib.Path(__file__)
 
+GLOBAL_RESULTSTORE_CONFIG = pathlib.Path(".fx/config/resultstore")
+LOCAL_RESULTSTORE_CONFIG = pathlib.Path(".resultstore")
+
 
 @dataclasses.dataclass
 class BuildResult(object):
@@ -70,8 +73,10 @@ class FuchsiaBuildConfig(object):
     status: bool = True
 
     @staticmethod
-    def from_args(args: argparse.Namespace) -> "FuchsiaBuildConfig":
-        resultstore_val = args.resultstore or "none"
+    def from_args(
+        args: argparse.Namespace, default_resultstore: str | None = None
+    ) -> "FuchsiaBuildConfig":
+        resultstore_val = args.resultstore or default_resultstore or "none"
 
         return FuchsiaBuildConfig(
             rbe=args.rbe,
@@ -175,6 +180,62 @@ def str_to_resultstore(value: str) -> str:
     )
 
 
+def normalize_resultstore_value(val: Any) -> str:
+    if val is True or val == "all":
+        return "all"
+    elif val is False or val is None or val == "none":
+        return "none"
+    elif val in ("ninja", "bazel"):
+        return val
+    return "none"
+
+
+def parse_properties(content: str) -> dict[str, str]:
+    """Parses a simple KEY=VALUE properties string, supporting export syntax."""
+    props: dict[str, str] = {}
+    for line in content.splitlines():
+        line = line.strip()
+        if not line or line.startswith("//"):
+            continue
+        k, sep, v = line.partition("=")
+        if sep:
+            key = k.strip().removeprefix("export ").strip()
+            if key:
+                try:
+                    tokens = shlex.split(v.strip(), comments=True)
+                except ValueError:
+                    continue
+                if tokens:
+                    props[key] = tokens[0]
+    return props
+
+
+def load_properties(path: pathlib.Path) -> dict[str, str]:
+    """Reads a simple KEY=VALUE properties file safely, supporting export syntax."""
+    if not exists(path):
+        return {}
+    try:
+        content = path.read_text()
+    except OSError:
+        return {}
+    return parse_properties(content)
+
+
+def load_user_preference(path: pathlib.Path) -> str | None:
+    """Loads resultstore preference, supporting both new and legacy formats."""
+    props = load_properties(path)
+    if "resultstore" in props:
+        return normalize_resultstore_value(props["resultstore"])
+    elif "RESULTSTORE_ENABLED" in props:
+        # Legacy binary representation: 1=all, 0=none
+        val = props["RESULTSTORE_ENABLED"]
+        if val == "1":
+            return "all"
+        elif val == "0":
+            return "none"
+    return None
+
+
 def str_to_bool(value: str) -> bool:
     if isinstance(value, bool):
         return value
@@ -272,12 +333,27 @@ class FuchsiaBuildContext(object):
         if not out_dir:
             out_dir = source_dir / "out"
 
+        # Resolve sticky user preferences (local overrides global)
+        resultstore_pref = None
+        global_config = source_dir / GLOBAL_RESULTSTORE_CONFIG
+        local_config = args.build_dir / LOCAL_RESULTSTORE_CONFIG
+
+        global_pref = load_user_preference(global_config)
+        if global_pref:
+            resultstore_pref = global_pref
+
+        local_pref = load_user_preference(local_config)
+        if local_pref:
+            resultstore_pref = local_pref
+
         return FuchsiaBuildContext(
             source_dir=source_dir,
             out_dir=out_dir,
             build_dir=args.build_dir,
             env=environ,
-            config=FuchsiaBuildConfig.from_args(args),
+            config=FuchsiaBuildConfig.from_args(
+                args, default_resultstore=resultstore_pref
+            ),
         )
 
     @property
@@ -885,7 +961,7 @@ def _main_arg_parser() -> argparse.ArgumentParser:
         type=str_to_resultstore,
         nargs="?",
         const="all",
-        default="none",
+        default=None,
         help="Upload build events and metadata to ResultStore (all, ninja, bazel, or none; default: none).",
     )
     parser.add_argument(

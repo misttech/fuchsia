@@ -146,6 +146,73 @@ class FuchsiaBuildContextTest(MainBuildTestBase):
             _ = context.rbe_enabled
         self.assertEqual(str(cm.exception), "missing file")
 
+    def test_parse_properties(self) -> None:
+        test_cases = [
+            ("key=value\n", {"key": "value"}),
+            ("  key  =  value  \n", {"key": "value"}),
+            ('export key="value"\n', {"key": "value"}),
+            ("export key='value'\n", {"key": "value"}),
+            ('key="value" # comments!\n', {"key": "value"}),
+            ("=empty_key\nkey=value\n", {"key": "value"}),
+            ("# comments\n// comments\n\nkey=value\n", {"key": "value"}),
+            ("empty_val=\n", {}),
+            ("invalid_value\n", {}),
+            ('key="unclosed\nkey2=value\n', {"key2": "value"}),
+        ]
+        for content, expected in test_cases:
+            self.assertEqual(
+                main_build.parse_properties(content),
+                expected,
+                f"Failed parsing: {content!r}",
+            )
+
+    def test_load_user_preference(self) -> None:
+        with mock.patch("main_build.exists", return_value=True), mock.patch(
+            "pathlib.Path.read_text", return_value="resultstore=all\n"
+        ):
+            result = main_build.load_user_preference(pathlib.Path("path"))
+            self.assertEqual(result, "all")
+
+    def test_preference_precedence_hierarchy(self) -> None:
+        # Table of precedence scenarios: (args, global_val, local_val, expected_result)
+        test_cases: list[tuple[list[str], str | None, str | None, str]] = [
+            # Case A: No config files, no flag -> defaults to "none"
+            ([], None, None, "none"),
+            # Case B: Global config file present, no flag -> defaults to global ("all")
+            ([], "all", None, "all"),
+            # Case C: Both present, no flag -> local overrides global ("ninja")
+            ([], "all", "ninja", "ninja"),
+            # Case D: Both present, but CLI flag overrides both ("bazel")
+            (["--resultstore=bazel"], "all", "ninja", "bazel"),
+            # Case E: Both present, but CLI --no-resultstore overrides both ("none")
+            (["--no-resultstore"], "all", "ninja", "none"),
+        ]
+
+        environ = {"FUCHSIA_DIR": "/tmp/fuchsia"}
+
+        for args, global_val, local_val, expected in test_cases:
+            full_args = ["--build-dir", "out/default"] + args + ["ninja"]
+            parsed_args = main_build._MAIN_ARG_PARSER.parse_args(full_args)
+
+            def mock_load(path: pathlib.Path) -> str | None:
+                if ".fx/config/resultstore" in str(path):
+                    return global_val
+                if ".resultstore" in str(path):
+                    return local_val
+                return None
+
+            with mock.patch(
+                "main_build.load_user_preference", side_effect=mock_load
+            ):
+                ctx = main_build.FuchsiaBuildContext.from_args(
+                    parsed_args, environ
+                )
+                self.assertEqual(
+                    ctx.config.resultstore,
+                    expected,
+                    f"Failed precedence: args={args}, global={global_val}, local={local_val}",
+                )
+
 
 class BuildInvocationTest(MainBuildTestBase):
     def test_init_caching(self) -> None:
@@ -639,7 +706,7 @@ class MainFunctionTest(MainBuildTestBase):
             ["--build-dir", "out/default", "ninja"]
         )
         self.assertIsNone(args.rbe)
-        self.assertEqual(args.resultstore, "none")
+        self.assertIsNone(args.resultstore)
         self.assertIsNone(args.tui)
         self.assertFalse(args.verbose)
         self.assertTrue(args.status)
