@@ -3,6 +3,7 @@
         {
             name: "tee_manager",
             url: "{{COMPONENT_URL}}",
+            startup: "eager",
         },
     ],
     expose: [
