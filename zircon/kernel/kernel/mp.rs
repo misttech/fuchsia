@@ -7,10 +7,13 @@
 //! MP (multiprocessor) subsystem interface.
 
 use super::timer::Deadline;
-#[allow(unused_imports)]
-pub use super::types::{CPU_MASK_ALL, INVALID_CPU, cpu_mask_t, cpu_num_t};
+
+pub use super::types::{cpu_mask_t, cpu_num_t};
 use zx_status::Status;
 use zx_types::zx_instant_mono_t;
+
+pub const INVALID_CPU: cpu_num_t = super::types::INVALID_CPU;
+pub const CPU_MASK_ALL: cpu_mask_t = super::types::CPU_MASK_ALL;
 
 unsafe extern "C" {
     fn cpp_mp_set_cpu_online(cpu: cpu_num_t, online: bool);

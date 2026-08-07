@@ -9,6 +9,7 @@ mod debug;
 mod debuglog;
 mod event;
 mod iommu;
+mod membarrier;
 mod msi;
 mod profile;
 mod restricted;
