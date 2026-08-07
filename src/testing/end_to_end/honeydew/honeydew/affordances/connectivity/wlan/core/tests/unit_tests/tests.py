@@ -27,7 +27,6 @@ from honeydew.affordances.connectivity.wlan.utils.types import (
     CountryCode,
     InformationElementType,
 )
-from honeydew.errors import NotSupportedError
 from honeydew.transports.ffx import ffx as ffx_transport
 from honeydew.transports.fuchsia_controller import (
     fuchsia_controller as fc_transport,
@@ -167,9 +166,6 @@ class WlanCoreFCTests(unittest.IsolatedAsyncioTestCase):
             spec=ffx_transport.FFX,
             autospec=True,
         )
-        self.ffx_transport_obj.run.return_value = "".join(
-            wlan_core._REQUIRED_CAPABILITIES
-        )
 
         self.device_monitor_proxy = mock.MagicMock(
             spec=f_wlan_device_service.DeviceMonitorClient,
@@ -196,18 +192,6 @@ class WlanCoreFCTests(unittest.IsolatedAsyncioTestCase):
 
         # Call make_ready() to ensure the affordance is initialized.
         await self.wlan_core_obj.make_ready()
-
-    async def test_verify_supported(self) -> None:
-        """Test if verify_supported() works."""
-        self.ffx_transport_obj.run.return_value = ""
-        with self.assertRaises(NotSupportedError):
-            wlan_core.WlanCore(
-                device_name="fuchsia-emulator",
-                ffx=self.ffx_transport_obj,
-                fuchsia_controller=self.fc_transport_obj,
-                reboot_affordance=self.reboot_affordance_obj,
-                fuchsia_device_close=self.fuchsia_device_close_obj,
-            )
 
     def _mock_list_ifaces(self, zx_err: int | None = None) -> None:
         """Mock fuchsia.wlan.device.service.DeviceMonitor/QueryIface."""

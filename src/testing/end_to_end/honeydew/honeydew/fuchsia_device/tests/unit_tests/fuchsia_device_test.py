@@ -725,7 +725,6 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
     @mock.patch.object(
         ffx.FFX,
         "run",
-        return_value="".join(wlan_core._REQUIRED_CAPABILITIES),
         autospec=True,
     )
     @mock.patch.object(

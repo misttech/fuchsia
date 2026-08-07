@@ -31,11 +31,6 @@ from honeydew.transports.fuchsia_controller import (
 )
 from honeydew.typing.custom_types import FidlEndpoint, MacAddress
 
-# List of required FIDLs for the WLAN Fuchsia Controller affordance.
-_REQUIRED_CAPABILITIES = [
-    "fuchsia.wlan.device.service",
-]
-
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
 _PAUSE_FOR_ADDITIONAL_PHY_DEVICES = timedelta(seconds=1)
@@ -78,41 +73,7 @@ class WlanCore(AsyncLazyReady):
         self._reboot_affordance = reboot_affordance
         self._fuchsia_device_close = fuchsia_device_close
 
-        self.verify_supported()
-
         self._reboot_affordance.register_for_on_device_boot(self.make_ready)
-
-    def verify_supported(self) -> None:
-        """Verifies that the WLAN affordance using FuchsiaController is supported by the Fuchsia
-        device.
-
-        This method should be called in `__init__()` so that if this affordance was called on a
-        Fuchsia device that does not support it, it will raise NotSupportedError.
-
-        Raises:
-            NotSupportedError: If affordance is not supported.
-        """
-        for capability in _REQUIRED_CAPABILITIES:
-            # TODO(http://b/359342196): This is a maintenance burden; find a
-            # better way to detect FIDL component capabilities.
-            if capability not in self._ffx.run(
-                ["component", "capability", capability],
-                # TODO(b/474143046) update to JSON when ffx supports it
-                machine=ffx_types.MachineFormat.RAW,
-            ):
-                _LOGGER.warning(
-                    "All available WLAN component capabilities:\n%s",
-                    self._ffx.run(
-                        ["component", "capability", "fuchsia.wlan"],
-                        # TODO(b/474143046) update to JSON when ffx supports it
-                        machine=ffx_types.MachineFormat.RAW,
-                    ),
-                )
-                raise errors.NotSupportedError(
-                    f'Component capability "{capability}" not exposed by device '
-                    f"{self._device_name}; this build of Fuchsia does not support the "
-                    "WLAN FC affordance."
-                )
 
     async def make_ready(self) -> None:
         """Re-initializes connection to the WLAN stack."""
