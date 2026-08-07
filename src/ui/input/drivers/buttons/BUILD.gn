@@ -7,13 +7,19 @@ import("//build/components.gni")
 import("//build/drivers.gni")
 import("//build/test.gni")
 
+fuchsia_driver_dml("buttons-dml") {
+  dml = "meta/buttons.dml"
+  driver_name = "buttons"
+}
+
 driver_bind_rules("buttons-bind") {
-  rules = "meta/buttons.bind"
+  dml_label = ":buttons-dml"
   bind_output = "buttons.bindbc"
   tests = "meta/bind-tests.json"
   deps = [
     "//sdk/fidl/fuchsia.hardware.gpio:fuchsia.hardware.gpio_bindlib",
     "//sdk/fidl/fuchsia.hardware.pin:fuchsia.hardware.pin_bindlib",
+    "//sdk/fidl/fuchsia.hardware.platform.device:fuchsia.hardware.platform.device_bindlib",
     "//src/devices/bind/fuchsia",
     "//src/devices/bind/fuchsia.devicetree",
     "//src/devices/bind/fuchsia.gpio",
@@ -29,13 +35,8 @@ fuchsia_cc_driver("buttons-driver") {
   ]
 }
 
-fuchsia_component_manifest("buttons-manifest") {
-  component_name = "buttons"
-  manifest = "meta/buttons.cml"
-}
-
 fuchsia_driver_component("buttons") {
-  cm_label = ":buttons-manifest"
+  dml_label = ":buttons-dml"
   visibility = [
     ":*",
     "//src/ui/input/drivers",
@@ -45,7 +46,7 @@ fuchsia_driver_component("buttons") {
 }
 
 fuchsia_structured_config_cpp_elf_lib("buttons-config") {
-  cm_label = ":buttons-manifest"
+  cm_label = ":buttons-dml_manifest"
 }
 
 fuchsia_driver_package("package") {
