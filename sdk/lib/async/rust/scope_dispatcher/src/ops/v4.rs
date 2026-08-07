@@ -37,12 +37,13 @@ mod test {
     #[fuchsia::test]
     async fn test_refcounting() {
         let scope_dispatcher = ScopeDispatcher::new();
-        assert_eq!(Arc::strong_count(&scope_dispatcher), 1);
+        assert_eq!(Arc::strong_count(&scope_dispatcher), 2);
 
         let async_dispatcher = scope_dispatcher.get_async_dispatcher();
-        assert_eq!(Arc::strong_count(&scope_dispatcher), 2);
+        assert_eq!(Arc::strong_count(&scope_dispatcher), 3);
         drop(async_dispatcher);
 
-        assert_eq!(Arc::strong_count(&scope_dispatcher), 1);
+        assert_eq!(Arc::strong_count(&scope_dispatcher), 2);
+        scope_dispatcher.shutdown().await;
     }
 }

@@ -2,12 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use libasync_sys::{
-    async_dispatcher_t, async_guest_bell_trap_t, async_receiver_t, async_task_t, async_wait_t,
-};
+use libasync_sys::{async_dispatcher_t, async_guest_bell_trap_t, async_receiver_t, async_wait_t};
 use zx::sys::{ZX_ERR_NOT_SUPPORTED, zx_status_t};
 
 use crate::ScopeDispatcher;
+
+mod tasks;
+
+pub use tasks::*;
 
 // ops_v1 dispatch functions
 pub unsafe extern "C" fn now(dispatcher_ptr: *mut async_dispatcher_t) -> i64 {
@@ -25,18 +27,6 @@ pub unsafe extern "C" fn begin_wait(
 pub unsafe extern "C" fn cancel_wait(
     _dispatcher_ptr: *mut async_dispatcher_t,
     _wait_ptr: *mut async_wait_t,
-) -> zx_status_t {
-    ZX_ERR_NOT_SUPPORTED
-}
-pub unsafe extern "C" fn post_task(
-    _dispatcher_ptr: *mut async_dispatcher_t,
-    _task_ptr: *mut async_task_t,
-) -> zx_status_t {
-    ZX_ERR_NOT_SUPPORTED
-}
-pub unsafe extern "C" fn cancel_task(
-    _dispatcher_ptr: *mut async_dispatcher_t,
-    _task_ptr: *mut async_task_t,
 ) -> zx_status_t {
     ZX_ERR_NOT_SUPPORTED
 }
@@ -66,10 +56,14 @@ mod test {
 
     #[test]
     fn test_now() {
-        let test_executor = TestExecutor::new_with_fake_time();
+        let mut test_executor = TestExecutor::new_with_fake_time();
         test_executor.set_fake_time(MonotonicInstant::from_nanos(1000));
         let scope_dispatcher =
             ScopeDispatcher::new_on_executor(test_executor.global_handle().clone());
         assert_eq!(scope_dispatcher.as_async_dispatcher_ref().now(), 1000);
+        assert_eq!(
+            test_executor.run_until_stalled(&mut scope_dispatcher.shutdown()),
+            core::task::Poll::Ready(())
+        );
     }
 }

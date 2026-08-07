@@ -19,16 +19,21 @@ rustc_library("scope_dispatcher") {
     "//sdk/lib/async/rust/sys",
     "//sdk/rust/zx",
     "//src/lib/fuchsia-async",
-
-    #"//third_party/rust_crates:futures",
+    "//src/lib/fuchsia-sync",
+    "//third_party/rust_crates:futures",
+    "//third_party/rust_crates:pin-project-lite",
   ]
 
-  test_deps = [ "//src/lib/fuchsia" ]
+  test_deps = [
+    "//sdk/lib/async/rust",
+    "//src/lib/fuchsia",
+  ]
 
   sources = [
     "src/lib.rs",
     "src/ops.rs",
     "src/ops/v1.rs",
+    "src/ops/v1/tasks.rs",
     "src/ops/v2.rs",
     "src/ops/v3.rs",
     "src/ops/v4.rs",
