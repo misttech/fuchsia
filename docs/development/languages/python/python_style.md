@@ -11,62 +11,19 @@ below for details.
 
 ## Python versions {#python-versions}
 
-### Scripts invoked by the build
+Fuchsia vendors its own Python 3 interpreter in the checkout
+(`//scripts/fuchsia-vendored-python`, currently Python 3.11 or later as of 2026-08).
 
-Scripts invoked by the build (GN or Ninja) are executed with Python 3.8.
+All executable Python scripts in the Fuchsia repository must begin with the
+following shebang line:
 
-The build system ensures that all python scripts are executed by the
-interpreter that is installed as part of a Fuchsia source checkout.
-
-### Other scripts
-
-Scripts that are invoked directly should use `python` in the shebang and be
-compatible with both 2 and 3: `#!/usr/bin/env python`.
-
-Developers working on Fuchsia modules may use various platforms. Some platforms
-include Python 2 and not Python 3 and vice versa. Until Python 3 is
-included in the prominent development environments we support, we should support
-Python 2.
-
-While Python 2 is supported, test scripts on both versions.
-
-Any policy change will be reflected in this document.
-
-## Multiple Inheritance
-
-Multiple inheritance is strongly discouraged. This is for the same reason
-listed in the
-[Google C++ style guide: risk of "diamond" inheritance](https://google.github.io/styleguide/cppguide.html#Inheritance){:.external}
-patterns, which are prone to confusion. If a case is found where avoiding
-multiple inheritance is unreasonable, all classes involved must initially
-inherit from the base class `object`, which governs which multiple inheritance
-scheme is used.
-
-## Use Unicode for Text
-
-In scripts that support Python 2.x (see [Python versions](#python-versions)),
-explicitly declare text strings as unicode and binary data as bytes, using
-`u""`, `unicode()`, `unichr()` and  `b""`, `bytes()`, `byte()` respectively.
-Python 3.x defaults to using Unicode for strings, so this guideline will be
-removed when support for Python 2 is dropped.
-
-```python {.good}
-Yes:
-
-  a = u"Hello"  # Unicode constant.
-  b = unicode(foo)  # Convert to Unicode.
-  c = unichr(c)  # Convert to Unicode.
-  d = io.open("bar.txt").read()  # Read text as Unicode.
+```shell
+#!/usr/bin/env fuchsia-vendored-python
 ```
 
-```python {.bad}
-No:
-
-  a = "Hello"  # Ambiguous (depends on Python version).
-  b = str(foo)  # Convert to ascii.
-  c = chr(c)  # Convert to ascii.
-  d = open("bar.txt").read()  # Read text as ascii.
-```
+For more information, see
+[RFC-0129](/docs/contribute/governance/rfcs/0129_python_in_fuchsia.md) and
+[Build system policies](/docs/development/build/gn_concepts/policies.md#python-scripts-as-build-actions).
 
 ## Refinements
 
@@ -106,18 +63,24 @@ in the Google Python style guide for comparison.)
 
 ### Type annotations
 
-In scripts that support Python 2 (see [Python versions](#python-versions)),
-type annotations will not be used.
+Type annotations are strongly encouraged for all new Python code in Fuchsia.
+Follow modern Python (3.11+) type annotation conventions in accordance with the
+[Google Python Style Guide](https://github.com/google/styleguide/blob/gh-pages/pyguide.md#319-type-annotations){:.external}:
 
-(See
-[Type Annotations](https://github.com/google/styleguide/blob/gh-pages/pyguide.md#319-type-annotations){:.external}
-in the Google Python style guide for comparison.)
+* **PEP 585 Standard Collections:** Use built-in collection types directly
+  for generic type hints (`list[str]`, `dict[str, int]`, `set[Path]`,
+  `tuple[int, ...]`). Do not import `List`, `Dict`, `Set`, `Tuple` from `typing`.
+* **PEP 604 Union Syntax:** Use the `|` operator for union types (`int | float`,
+  `str | None`). Do not import `Union` or `Optional` from `typing`.
 
 ### Strings
 
 Prefer double quotes for strings (`"`). Use single quotes when the declaration is
 more readable with single quotes. For example, `'The cat said "Meow"'` is more readable
 than `"The cat said \\"Meow\\""`.
+
+Prefer **f-strings** (`f"..."`) for string formatting and interpolation over
+`%` formatting or `.format()`. Maintain double quotes for f-strings.
 
 (See
 [Strings](https://github.com/google/styleguide/blob/gh-pages/pyguide.md#310-strings){:.external}

@@ -42,8 +42,8 @@ Python scripts may be used as build actions.
 
 Please follow the [Google style guide for Python][python-style].
 
-Fuchsia currently uses Python 3.8. All Python sources are to begin with the
-following:
+Fuchsia uses a vendored Python interpreter (`fuchsia-vendored-python`,
+currently Python 3.11 or later). Python source files must begin with:
 
 ```shell
 #!/usr/bin/env fuchsia-vendored-python
