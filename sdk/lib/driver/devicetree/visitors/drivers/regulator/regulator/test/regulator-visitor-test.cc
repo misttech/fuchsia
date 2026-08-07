@@ -13,7 +13,6 @@
 
 #include <bind/fuchsia/cpp/bind.h>
 #include <bind/fuchsia/hardware/vreg/cpp/bind.h>
-#include <bind/fuchsia/regulator/cpp/bind.h>
 #include <gtest/gtest.h>
 
 #include "dts/regulator-test.h"
@@ -75,14 +74,13 @@ TEST(RegulatorVisitorTest, TestMetadataAndBindProperty) {
       {
           {fdf::MakeProperty2(bind_fuchsia_hardware_vreg::SERVICE,
                               bind_fuchsia_hardware_vreg::SERVICE_ZIRCONTRANSPORT),
-           fdf::MakeProperty2(bind_fuchsia_regulator::NAME, REGULATOR_NAME),
            fdf::MakeProperty2(bind_fuchsia::NAME, REGULATOR_NAME)},
       },
       (*mgr_request.parents2())[1].properties(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
       {{fdf::MakeAcceptBindRule(bind_fuchsia_hardware_vreg::SERVICE,
                                 bind_fuchsia_hardware_vreg::SERVICE_ZIRCONTRANSPORT),
-        fdf::MakeAcceptBindRule(bind_fuchsia_regulator::NAME, REGULATOR_NAME)}},
+        fdf::MakeAcceptBindRule(bind_fuchsia::NAME, REGULATOR_NAME)}},
       (*mgr_request.parents2())[1].bind_rules(), false));
 
   ASSERT_EQ(node_tested_count, 2u);
@@ -120,14 +118,13 @@ TEST(RegulatorVisitorTest, TestSharedRegulatorInstanceIds) {
           {
               {fdf::MakeProperty2(bind_fuchsia_hardware_vreg::SERVICE,
                                   bind_fuchsia_hardware_vreg::SERVICE_ZIRCONTRANSPORT),
-               fdf::MakeProperty2(bind_fuchsia_regulator::NAME, REGULATOR_NAME),
                fdf::MakeProperty2(bind_fuchsia::NAME, REGULATOR_NAME)},
           },
           (*mgr_request.parents2())[1].properties(), false));
       EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
           {{fdf::MakeAcceptBindRule(bind_fuchsia_hardware_vreg::SERVICE,
                                     bind_fuchsia_hardware_vreg::SERVICE_ZIRCONTRANSPORT),
-            fdf::MakeAcceptBindRule(bind_fuchsia_regulator::NAME, REGULATOR_NAME)}},
+            fdf::MakeAcceptBindRule(bind_fuchsia::NAME, REGULATOR_NAME)}},
           (*mgr_request.parents2())[1].bind_rules(), false));
     }
   }

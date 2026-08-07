@@ -12,7 +12,6 @@
 #include <string>
 
 #include <bind/fuchsia/cpp/bind.h>
-#include <bind/fuchsia/regulator/cpp/bind.h>
 
 namespace aml_pwm_regulator {
 
@@ -140,7 +139,6 @@ zx::result<std::unique_ptr<AmlPwmRegulator>> AmlPwmRegulator::Create(const VregM
   std::vector offers = {fdf::MakeOffer2<fuchsia_hardware_vreg::Service>(name)};
 
   std::vector properties = {
-      fdf::MakeProperty2(bind_fuchsia_regulator::NAME, name),
       fdf::MakeProperty2(bind_fuchsia::NAME, name),
   };
 
