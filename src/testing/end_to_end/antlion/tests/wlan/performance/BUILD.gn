@@ -82,3 +82,13 @@ group("e2e_tests_quick") {
   testonly = true
   public_deps = [ ":channel_sweep_test_quick" ]
 }
+
+group("e2e_tests_manual") {
+  testonly = true
+  public_deps = [
+    # Running ChannelSweepTest is usually only necessary when verifying new WLAN
+    # firmware patches. Take it out of automation; it takes too long otherwise.
+    ":channel_sweep_test",
+    ":wlan_wmm_test",
+  ]
+}
