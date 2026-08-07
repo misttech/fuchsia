@@ -26,6 +26,8 @@
 #include <usb/usb.h>
 
 namespace usb_adb_function {
+
+class UsbAdbTestHelper;
 namespace fdescriptor = fuchsia_hardware_usb_descriptor;
 
 constexpr uint32_t kBulkTxCount = 16;
@@ -89,6 +91,7 @@ class UsbAdbDevice : public fdf::DriverBase2,
                      public fidl::WireServer<fadb::Device>,
                      public fidl::Server<fadb::UsbAdbImpl> {
  public:
+  friend class UsbAdbTestHelper;
   UsbAdbDevice() : fdf::DriverBase2("usb_adb") {}
 
   // Driver lifecycle methods.
