@@ -2,6 +2,13 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+config("wflags") {
+  cflags = [
+    "-Wno-format",
+    "-Wno-extra-semi",
+  ]
+}
+
 executable("fsck-msdosfs") {
   if (is_fuchsia) {
     fdio_config = [ "//build/config/fuchsia:fdio_config" ]
@@ -9,6 +16,7 @@ executable("fsck-msdosfs") {
       configs -= fdio_config
     }
   }
+  include_dirs = [ "." ]
   sources = [
     "boot.c",
     "check.c",
@@ -19,5 +27,8 @@ executable("fsck-msdosfs") {
   deps = [ "//sdk/lib/fdio" ]
 
   # TODO(https://fxbug.dev/42136089): delete the below and fix compiler warnings
-  configs += [ "//build/config:Wno-conversion" ]
+  configs += [
+    "//build/config:Wno-conversion",
+    ":wflags",
+  ]
 }

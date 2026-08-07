@@ -1,4 +1,6 @@
-/*
+/*-
+ * SPDX-License-Identifier: BSD-2-Clause
+ *
  * Copyright (C) 1995 Wolfgang Solfrank
  * Copyright (c) 1995 Martin Husemann
  *
@@ -24,6 +26,11 @@
  */
 
 
+#include <sys/cdefs.h>
+#ifndef lint
+__RCSID("$NetBSD: main.c,v 1.10 1997/10/01 02:18:14 enami Exp $");
+#endif /* not lint */
+
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -31,6 +38,7 @@
 #include <errno.h>
 #include <stdarg.h>
 
+#include "fsutil.h"
 #include "ext.h"
 
 int alwaysno;		/* assume "no" for all questions */
@@ -38,8 +46,12 @@ int alwaysyes;		/* assume "yes" for all questions */
 int preen;		/* set when preening */
 int rdonly;		/* device is opened read only (supersedes above) */
 int skipclean;		/* skip clean file systems if preening */
+int allow_mmap;		/* Allow the use of mmap(), if possible */
 
-static void usage(void)
+static void usage(void) __dead2;
+
+static void
+usage(void)
 {
 
 	fprintf(stderr, "%s\n%s\n",
@@ -55,9 +67,11 @@ main(int argc, char **argv)
 	int ch;
 
 	skipclean = 1;
-	while ((ch = getopt(argc, argv, "CfFnpy")) != -1) {
+	allow_mmap = 1;
+	while ((ch = getopt(argc, argv, "BCfFnpyM")) != -1) {
 		switch (ch) {
-		case 'C': /* for fsck_ffs compatibility */
+		case 'B': /* for fsck_ffs compatibility */
+		case 'C':
 			break;
 		case 'f':
 			skipclean = 0;
@@ -74,16 +88,19 @@ main(int argc, char **argv)
 			exit(5);
 		case 'n':
 			alwaysno = 1;
-			alwaysyes = preen = 0;
+			alwaysyes = 0;
 			break;
 		case 'y':
 			alwaysyes = 1;
-			alwaysno = preen = 0;
+			alwaysno = 0;
 			break;
 
 		case 'p':
 			preen = 1;
-			alwaysyes = alwaysno = 0;
+			break;
+
+		case 'M':
+			allow_mmap = 0;
 			break;
 
 		default:
@@ -98,6 +115,7 @@ main(int argc, char **argv)
 		usage();
 
 	while (--argc >= 0) {
+		setcdevname(*argv, preen);
 		erg = checkfilesys(*argv++);
 		if (erg > ret)
 			ret = erg;
@@ -116,9 +134,10 @@ ask(int def, const char *fmt, ...)
 	char prompt[256];
 	int c;
 
+	if (alwaysyes || alwaysno || rdonly)
+		def = (alwaysyes && !rdonly && !alwaysno);
+
 	if (preen) {
-		if (rdonly)
-			def = 0;
 		if (def)
 			printf("FIXED\n");
 		return def;
@@ -127,9 +146,9 @@ ask(int def, const char *fmt, ...)
 	va_start(ap, fmt);
 	vsnprintf(prompt, sizeof(prompt), fmt, ap);
 	va_end(ap);
-	if (alwaysyes || rdonly) {
-		printf("%s? %s\n", prompt, rdonly ? "no" : "yes");
-		return !rdonly;
+	if (alwaysyes || alwaysno || rdonly) {
+		printf("%s? %s\n", prompt, def ? "yes" : "no");
+		return def;
 	}
 	do {
 		printf("%s? [yn] ", prompt);
