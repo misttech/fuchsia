@@ -304,7 +304,7 @@ fn compute_new_socket_sid(
     // for compute_new_fs_node_sid to have failed?
     let permission_check = build_permission_check(current_task, security_server);
     permission_check
-        .compute_new_fs_node_sid(current_sid, current_sid, new_socket_class.into(), name.into())
+        .compute_create_sid(current_sid, current_sid, new_socket_class.into(), name.as_ref())
         .map_err(|_| errno!(EPERM))
 }
 
@@ -377,7 +377,7 @@ fn compute_new_file_sid(
     // for compute_new_fs_node_sid to have failed?
     let permission_check = build_permission_check(current_task, security_server);
     permission_check
-        .compute_new_fs_node_sid(current_sid, target_sid, new_file_class.into(), name.into())
+        .compute_create_sid(current_sid, target_sid, new_file_class.into(), name.as_ref())
         .map_err(|_| errno!(EPERM))
 }
 
@@ -513,7 +513,7 @@ pub(in crate::security) fn fs_node_init_anon(
     new_node: &FsNode,
     node_type: &str,
 ) -> Result<(), Errno> {
-    let (node_class, node_type) = if node_type == "[memfd]" {
+    let (node_class, node_type): (FsNodeClass, _) = if node_type == "[memfd]" {
         // If the "memfd_class" policy capability is enabled then mem-FD nodes use the anon_inode
         // labeling scheme, but receive their own dedicated security class.
         if !security_server.is_policycap_enabled(PolicyCap::MemfdClass) {
@@ -532,7 +532,7 @@ pub(in crate::security) fn fs_node_init_anon(
     } else if current_task.kernel().security_state.state.as_ref().unwrap().has_policy() {
         let task_sid = current_task_state(current_task).current_sid;
         let new_sid = build_permission_check(current_task, security_server)
-            .compute_new_fs_node_sid(task_sid, task_sid, node_class, node_type.into())
+            .compute_create_sid(task_sid, task_sid, node_class.into(), node_type.as_ref())
             .expect("Compute label for anon_inode");
         check_permission(
             &build_permission_check(current_task, security_server),

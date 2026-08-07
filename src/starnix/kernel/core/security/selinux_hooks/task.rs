@@ -322,7 +322,7 @@ pub(in crate::security) fn bprm_creds_for_exec(
         exec_sid
     } else {
         permission_check
-            .compute_create_sid(current_sid, executable_sid, KernelClass::Process.into())
+            .compute_create_sid(current_sid, executable_sid, KernelClass::Process, &[])
             .map_err(|_| errno!(EACCES))?
     };
 

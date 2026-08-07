@@ -165,43 +165,15 @@ impl PolicyIndex {
 
     /// Returns the security context that should be applied to a newly created SELinux
     /// object according to `source` and `target` security contexts, as well as the new object's
-    /// `class`.
-    ///
-    /// If no filename-transition rule matches the supplied arguments then `None` is returned, and
-    /// the caller should fall-back to filename-independent labeling via
-    /// [`compute_create_context()`]
-    pub fn compute_create_context_with_name(
-        &self,
-        source: &SecurityContext,
-        target: &SecurityContext,
-        class: crate::ObjectClass,
-        name: NullessByteStr<'_>,
-    ) -> Option<SecurityContext> {
-        let policy_class = self.class(class)?;
-        let type_id = self.type_transition_new_type_with_name(
-            source.type_(),
-            target.type_(),
-            &policy_class,
-            name,
-        )?;
-        Some(self.new_security_context_internal(
-            source,
-            target,
-            class,
-            // Override the "type" with the value specified by the filename-transition rules.
-            Some(type_id),
-        ))
-    }
-
-    /// Returns the security context that should be applied to a newly created SELinux
-    /// object according to `source` and `target` security contexts, as well as the new object's
-    /// `class`.
+    /// `class` and `name`.
     ///
     /// Computation follows the "create" algorithm for labeling newly created objects:
     /// - user is taken from the `source`.
     /// - role, type and range are taken from the matching transition rules, if any.
     /// - role, type and range fall-back to the `source` or `target` values according to policy.
     ///
+    /// Callers pass an empty slice (`&[]`) for `name` to express nameless transitions.
+    /// When a non-empty `name` is provided, filename transition rules are checked first.
     /// If no transitions apply, and the policy does not explicitly specify defaults then the
     /// role, type and range values have defaults chosen based on the `class`:
     /// - For "process", and socket-like classes, role, type and range are taken from the `source`.
@@ -212,15 +184,27 @@ impl PolicyIndex {
         source: &SecurityContext,
         target: &SecurityContext,
         class: crate::ObjectClass,
+        name: &[u8],
     ) -> SecurityContext {
-        self.new_security_context_internal(source, target, class, None)
+        let override_type = if !name.is_empty() {
+            self.class(class).and_then(|policy_class| {
+                self.type_transition_new_type_with_name(
+                    source.type_(),
+                    target.type_(),
+                    &policy_class,
+                    name,
+                )
+            })
+        } else {
+            None
+        };
+        self.new_security_context_internal(source, target, class, override_type)
     }
 
-    /// Internal implementation used by `compute_create_context_with_name()` and
-    /// `compute_create_context()` to implement the policy transition calculations.
+    /// Internal implementation used by [`Self::compute_create_context`] to implement the policy transition calculations.
     /// If `override_type` is specified then the supplied value will be applied rather than a value
-    /// being calculated based on the policy; this is used by `compute_create_context_with_name()`
-    /// to shortcut the default `type_transition` lookup.
+    /// being calculated based on the policy; this is used by [`Self::compute_create_context`]
+    /// when a filename transition matches to shortcut the default `type_transition` lookup.
     fn new_security_context_internal(
         &self,
         source: &SecurityContext,
@@ -527,7 +511,7 @@ impl PolicyIndex {
         source_type: TypeId,
         target_type: TypeId,
         class: &Class,
-        name: NullessByteStr<'_>,
+        name: &[u8],
     ) -> Option<TypeId> {
         self.parsed_policy.compute_filename_transition(
             source_type,

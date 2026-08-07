@@ -124,9 +124,12 @@ fn compute_create_sid_bench(
     let server_clone = server.clone();
     let _ = group.bench_function(format!("compute_create_sid_{}", name_suffix), move |b| {
         b.iter(|| {
-            let _ = std::hint::black_box(
-                server_clone.compute_create_sid_raw(source_sid, target_sid, class_id),
-            );
+            let _ = std::hint::black_box(server_clone.compute_create_sid_raw(
+                source_sid,
+                target_sid,
+                class_id,
+                &[],
+            ));
         })
     });
 }
@@ -150,12 +153,7 @@ fn cached_create_sid_filename_bench(
         b.iter(|| {
             let _ = std::hint::black_box(
                 permission_check
-                    .compute_new_fs_node_sid(
-                        source_sid,
-                        target_sid,
-                        FileClass::File.into(),
-                        filename.into(),
-                    )
+                    .compute_create_sid(source_sid, target_sid, FileClass::File.into(), filename)
                     .unwrap(),
             );
         })
@@ -173,18 +171,14 @@ fn compute_create_sid_filename_bench(
     let _ = server.load_policy(POLICY_BYTES.to_vec()).unwrap();
     let source_sid = server.security_context_to_sid(source_context.into()).unwrap();
     let target_sid = server.security_context_to_sid(target_context.into()).unwrap();
+    let class_id = server.class_id_by_name("file").unwrap();
 
     let server_clone = server.clone();
     let _ = group.bench_function(format!("compute_create_sid_filename_{}", bench_name), move |b| {
         b.iter(|| {
             let _ = std::hint::black_box(
                 server_clone
-                    .compute_new_fs_node_sid_raw(
-                        source_sid,
-                        target_sid,
-                        FileClass::File.into(),
-                        filename.into(),
-                    )
+                    .compute_create_sid_raw(source_sid, target_sid, class_id, filename)
                     .unwrap(),
             );
         })

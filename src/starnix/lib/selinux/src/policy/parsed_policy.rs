@@ -21,6 +21,7 @@ use super::{
     XpermsAccessDecision, XpermsKind,
 };
 
+use crate::PolicyCap;
 use crate::new_policy::rules::{
     ExtendedPermissions, HasRuleKey, RuleKind, XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES,
     XPERMS_TYPE_IOCTL_PREFIXES, XPERMS_TYPE_NLMSG, XpermsBitmap,
@@ -29,7 +30,6 @@ use crate::new_policy::traits::{HasPolicyId, PolicyId};
 use crate::new_policy::{Class, NewPolicy};
 use crate::policy::arrays::FsContext;
 use crate::policy::view::CustomKeyHashedView;
-use crate::{NullessByteStr, PolicyCap};
 use std::ops::Deref;
 use std::sync::Arc;
 
@@ -298,13 +298,13 @@ impl ParsedPolicy {
         source_type: TypeId,
         target_type: TypeId,
         class: ClassId,
-        name: NullessByteStr<'_>,
+        name: &[u8],
     ) -> Option<TypeId> {
         self.new_policy.filename_transitions().compute_filename_transition(
             source_type,
             target_type,
             class,
-            name.as_bytes(),
+            name,
         )
     }
 

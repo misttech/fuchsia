@@ -8,7 +8,7 @@ use crate::concurrent_access_cache::{
 use crate::kernel_permissions::KernelPermission;
 use crate::policy::{KernelAccessDecision, XpermsBitmap, XpermsKind};
 use crate::security_server::SecurityServerBackend;
-use crate::{FsNodeClass, KernelClass, NullessByteStr, SecurityId};
+use crate::{KernelClass, SecurityId};
 use std::hash::Hash;
 use std::sync::Arc;
 
@@ -43,30 +43,17 @@ pub(super) trait Query {
         target_class: KernelClass,
     ) -> KernelAccessDecision;
 
-    /// Returns the security identifier (SID) with which to label a new object of `object_class`.
+    /// Returns the security identifier (SID) with which to label a new object of `target_class`.
     /// The label is calculated based on the creating `source_sid` and the `target_sid` of the
-    /// container (e.g. file-system, parent file node, process, etc).
-    ///
-    /// This computation does not take into account filename transition rules, for which the
-    /// `compute_fs_node_sid_with_name()` lookup should be used instead.
+    /// container (e.g. file-system, parent file node, process, etc) and optional `name`.
+    /// Callers pass an empty slice (`&[]`) for `name` to express nameless transitions.
     fn compute_create_sid(
         &self,
         source_sid: SecurityId,
         target_sid: SecurityId,
         target_class: KernelClass,
+        name: &[u8],
     ) -> Result<SecurityId, anyhow::Error>;
-
-    /// Returns the security identifier (SID) with which to label a new `fs_node_class` instance of
-    /// name `fs_node_name`, created by `source_sid` in a parent directory labeled `target_sid`.
-    /// If no filename-transition rules exist for the specified `fs_node_name` then `None` is
-    /// returned.
-    fn compute_new_fs_node_sid_with_name(
-        &self,
-        source_sid: SecurityId,
-        target_sid: SecurityId,
-        fs_node_class: FsNodeClass,
-        fs_node_name: NullessByteStr<'_>,
-    ) -> Option<SecurityId>;
 
     /// Computes the [`XpermsAccessDecision`] permitted to `source_sid` for accessing `target_sid`,
     /// an object of type `target_class`, for xperms of kind `xperms_kind` with high byte
@@ -148,27 +135,16 @@ impl FifoQueryCache {
         source_sid: SecurityId,
         target_sid: SecurityId,
         target_class: KernelClass,
+        name: &[u8],
     ) -> Result<SecurityId, anyhow::Error> {
-        let query_args = AccessQueryArgs { source_sid, target_sid, target_class };
-        self.create_sid_cache.get_or_try_insert(&query_args, || {
-            delegate.compute_create_sid(source_sid, target_sid, target_class)
-        })
-    }
-
-    pub fn compute_new_fs_node_sid_with_name(
-        &self,
-        delegate: &impl Query,
-        source_sid: SecurityId,
-        target_sid: SecurityId,
-        fs_node_class: FsNodeClass,
-        fs_node_name: NullessByteStr<'_>,
-    ) -> Option<SecurityId> {
-        delegate.compute_new_fs_node_sid_with_name(
-            source_sid,
-            target_sid,
-            fs_node_class,
-            fs_node_name,
-        )
+        if !name.is_empty() {
+            delegate.compute_create_sid(source_sid, target_sid, target_class, name)
+        } else {
+            let query_args = AccessQueryArgs { source_sid, target_sid, target_class };
+            self.create_sid_cache.get_or_try_insert(&query_args, || {
+                delegate.compute_create_sid(source_sid, target_sid, target_class, name)
+            })
+        }
     }
 
     pub fn compute_kernel_xperms_access_decision(
@@ -262,23 +238,14 @@ impl Query for AccessVectorCache {
         source_sid: SecurityId,
         target_sid: SecurityId,
         target_class: KernelClass,
+        name: &[u8],
     ) -> Result<SecurityId, anyhow::Error> {
-        self.cache.compute_create_sid(self.backend.as_ref(), source_sid, target_sid, target_class)
-    }
-
-    fn compute_new_fs_node_sid_with_name(
-        &self,
-        source_sid: SecurityId,
-        target_sid: SecurityId,
-        fs_node_class: FsNodeClass,
-        fs_node_name: NullessByteStr<'_>,
-    ) -> Option<SecurityId> {
-        self.cache.compute_new_fs_node_sid_with_name(
+        self.cache.compute_create_sid(
             self.backend.as_ref(),
             source_sid,
             target_sid,
-            fs_node_class,
-            fs_node_name,
+            target_class,
+            name,
         )
     }
 
@@ -370,17 +337,8 @@ mod tests {
             _source_sid: SecurityId,
             _target_sid: SecurityId,
             _target_class: KernelClass,
+            _name: &[u8],
         ) -> Result<SecurityId, anyhow::Error> {
-            unreachable!()
-        }
-
-        fn compute_new_fs_node_sid_with_name(
-            &self,
-            _source_sid: SecurityId,
-            _target_sid: SecurityId,
-            _fs_node_class: FsNodeClass,
-            _fs_node_name: NullessByteStr<'_>,
-        ) -> Option<SecurityId> {
             unreachable!()
         }
 

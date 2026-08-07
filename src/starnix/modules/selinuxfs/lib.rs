@@ -443,11 +443,7 @@ impl SeLinuxApiOps for CreateApi {
 
         // Optional <name>: the final element of the path of the newly-created object. This allows
         // filename-dependent transition rules to be applied to the computation.
-        let tname = parts.next();
-        if tname.is_some() {
-            track_stub!(TODO("https://fxbug.dev/361552580"), "selinux create with name");
-            return error!(ENOTSUP);
-        }
+        let tname = parts.next().map(str::as_bytes).unwrap_or(&[]);
 
         // There must be no further trailing arguments.
         if parts.next().is_some() {
@@ -456,7 +452,7 @@ impl SeLinuxApiOps for CreateApi {
 
         let result = self
             .security_server
-            .compute_create_sid_raw(scontext, tcontext, tclass)
+            .compute_create_sid_raw(scontext, tcontext, tclass, tname)
             .map_err(|_| errno!(EINVAL))?;
         self.result.set(result).map_err(|_| errno!(EINVAL))?;
 
