@@ -17,3 +17,9 @@ class Command(BaseCommand):
         stack_trace_parser.add_argument(
             "thread_id", type=int, help="Thread ID to get stack trace for"
         )
+        stack_trace_parser.add_argument(
+            "-r",
+            "--raw",
+            action="store_true",
+            help="Display raw stack trace without eliding subtle frames",
+        )

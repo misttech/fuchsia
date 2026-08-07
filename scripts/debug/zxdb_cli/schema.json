@@ -2,7 +2,7 @@
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "title": "zxdb-cli Protocol Schema",
     "description": "JSON schema for requests and responses in the zxdb-cli UDS protocol",
-    "version": 9,
+    "version": 10,
     "requests": {
         "$defs": {
             "AttachRequest": {
@@ -564,6 +564,11 @@
                     "thread_id": {
                         "title": "Thread Id",
                         "type": "integer"
+                    },
+                    "raw": {
+                        "default": false,
+                        "title": "Raw",
+                        "type": "boolean"
                     }
                 },
                 "required": [

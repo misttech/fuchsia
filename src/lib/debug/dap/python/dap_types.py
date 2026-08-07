@@ -30,7 +30,6 @@ class DapBaseModel(BaseModel):
         return self.model_dump(exclude_none=True, by_alias=True)
 
 
-# TODO(https://fxbug.dev/510003272): Support presentationHint.
 class Source(DapBaseModel):
     """A Source is a descriptor for source code.
 
@@ -49,7 +48,6 @@ class Source(DapBaseModel):
     origin: str | None = None
 
 
-# TODO(https://fxbug.dev/510003272): Support presentationHint.
 class StackFrame(DapBaseModel):
     """A StackFrame.
 

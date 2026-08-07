@@ -12,3 +12,4 @@ class StackTraceRequest(BaseRequest):
 
     command: Literal["stackTrace"] = "stackTrace"
     thread_id: int
+    raw: bool = False

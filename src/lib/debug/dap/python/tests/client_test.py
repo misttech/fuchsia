@@ -232,6 +232,53 @@ class TestDapClient(unittest.IsolatedAsyncioTestCase):
         resp = await send_task
         self.assertEqual(resp.body.stack_frames, [])
 
+    async def test_stack_trace_presentation_hint(self) -> None:
+        client = DapClient()
+        reader, writer = self._start_client(client)
+
+        args = StackTraceArguments(thread_id=1)
+        send_task = asyncio.create_task(client.stack_trace(args))
+
+        await asyncio.sleep(0)
+        await client._write_queue.join()
+
+        buffer_val = writer.buffer.getvalue()
+        headers, body = buffer_val.split(b"\r\n\r\n", 1)
+        req_val = json.loads(body.decode("utf-8"))
+        seq = req_val["seq"]
+
+        response = {
+            "seq": 10,
+            "type": "response",
+            "request_seq": seq,
+            "success": True,
+            "command": "stackTrace",
+            "body": {
+                "stackFrames": [
+                    {
+                        "id": 1,
+                        "name": "frame1",
+                        "line": 10,
+                        "column": 1,
+                        "presentationHint": "subtle",
+                        "source": {
+                            "origin": "Rust panic",
+                        },
+                    }
+                ]
+            },
+        }
+
+        feed_dap_response(reader, response)
+
+        resp = await send_task
+        self.assertEqual(len(resp.body.stack_frames), 1)
+        frame = resp.body.stack_frames[0]
+        self.assertEqual(frame.presentation_hint, "subtle")
+        self.assertIsNotNone(frame.source)
+        assert frame.source is not None
+        self.assertEqual(frame.source.origin, "Rust panic")
+
     async def test_continue_thread(self) -> None:
         client = DapClient()
         reader, writer = self._start_client(client)

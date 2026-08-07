@@ -202,7 +202,18 @@ class TestCLI(unittest.IsolatedAsyncioTestCase):
             ["--json", '{"command": "stackTrace", "thread_id": 1}']
         )
         self.assertEqual(exit_code, 0)
-        mock_send.assert_called_once_with(StackTraceRequest(thread_id=1))
+        mock_send.assert_called_once_with(
+            StackTraceRequest(thread_id=1, raw=False)
+        )
+
+    @patch("cli.cli.send_command")
+    async def test_stack_trace_command_raw_flag(self, mock_send: Mock) -> None:
+        mock_send.return_value = 0
+        exit_code = await main(["stackTrace", "1", "-r"])
+        self.assertEqual(exit_code, 0)
+        mock_send.assert_called_once_with(
+            StackTraceRequest(thread_id=1, raw=True)
+        )
 
     @patch("cli.cli.send_command")
     async def test_json_option_attach(self, mock_send: Mock) -> None:
