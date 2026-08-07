@@ -566,18 +566,18 @@
     },
     {
         "package": "fuchsia/third_party/ninja/linux-amd64",
-        "version": "git_revision:23052e34c1b855e1a91600b593e315ba5d25e6d4",
-        "instance_id": "i5CKeUx9hnOY9ikWSS_nRMVWzqg3RqckzKMTSJhxZW4C"
+        "version": "git_revision:04810a5bf663489a5947329ed6c63988498a4ed2",
+        "instance_id": "SF5kN6UJnv_E5B4CHfkvBhXP5WLnNdM-z7BQDueBUToC"
     },
     {
         "package": "fuchsia/third_party/ninja/linux-arm64",
-        "version": "git_revision:23052e34c1b855e1a91600b593e315ba5d25e6d4",
-        "instance_id": "io-vXqj1Ur9yJsPj7hu06tCzqLevEAimZvO5O1u5T4EC"
+        "version": "git_revision:04810a5bf663489a5947329ed6c63988498a4ed2",
+        "instance_id": "mbZY4669zMPA7RXoSh6gRDBkSc-e7UpeiLG_oq-dYOcC"
     },
     {
         "package": "fuchsia/third_party/ninja/windows-amd64",
-        "version": "git_revision:23052e34c1b855e1a91600b593e315ba5d25e6d4",
-        "instance_id": "OF9RkqkyPfIipt21aSY7OO6GkGt81eZ-JRhnFT0E7QoC"
+        "version": "git_revision:04810a5bf663489a5947329ed6c63988498a4ed2",
+        "instance_id": "tGs6mgAtAjORUkv-9d367rIHY5kaqlfNQ8QA32s9cM8C"
     },
     {
         "package": "fuchsia/third_party/openssh-portable/linux-amd64",
