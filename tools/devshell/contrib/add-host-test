@@ -8,7 +8,7 @@
 
 ## usage: fx add-host-test //foo/bar //foo/baz
 ##
-## Adds the labels to `host_test_labels` and regen.
+## Adds the labels to `host_labels` and regen.
 ## This is useful when `fx test` tells you to add a target to the build,
 ## but you have some custom args set in `args.gn`, so do not want to run
 ## `fx set` to overwrite those args.
@@ -20,4 +20,4 @@ fx-config-read
 
 set -e
 
-fx-command-exec add-test --target-list host_test_labels $@
+fx-command-exec add-test --target-list host_labels $@

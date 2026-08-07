@@ -262,17 +262,17 @@ type setArgs struct {
 
 	includeClippy bool
 
-	compilationMode  string
-	netboot          bool
-	cargoTOMLGen     bool
-	jsonIDEScripts   []string
-	universePackages []string
-	hostLabels       []string
-	testLabels       []string
-	variants         []string
-	fuzzSanitizers   []string
-	ideFiles         []string
-	gnArgs           []string
+	compilationMode string
+	netboot         bool
+	cargoTOMLGen    bool
+	jsonIDEScripts  []string
+	targetLabels    []string
+	hostLabels      []string
+	testLabels      []string
+	variants        []string
+	fuzzSanitizers  []string
+	ideFiles        []string
+	gnArgs          []string
 
 	assemblyOverrideStrings []string
 }
@@ -333,7 +333,7 @@ func parseArgsAndEnv(args []string, env map[string]string) (*setArgs, error) {
 	flagSet.Lookup("balanced").NoOptDefVal = "balanced"
 	flagSet.BoolVar(&cmd.cargoTOMLGen, "cargo-toml-gen", false, "")
 	flagSet.StringSliceVar(&cmd.jsonIDEScripts, "json-ide-script", []string{}, "")
-	flagSet.StringSliceVar(&cmd.universePackages, "with", []string{}, "")
+	flagSet.StringSliceVar(&cmd.targetLabels, "with", []string{}, "")
 	flagSet.StringSliceVar(&cmd.hostLabels, "with-host", []string{}, "")
 	flagSet.StringSliceVar(&cmd.testLabels, "with-test", []string{}, "")
 	flagSet.StringSliceVar(&cmd.variants, "variant", []string{}, "")
@@ -539,23 +539,24 @@ func constructStaticSpec(checkoutDir string, args *setArgs, canUseRbe bool) (*fi
 		hostLabels = append(hostLabels, "//build/rust:cargo_toml_gen")
 	}
 
+	targetLabels := append(append([]string{}, args.targetLabels...), args.testLabels...)
+
 	static := &fintpb.Static{
-		Board:               boardPath,
-		Product:             productPath,
-		MainPbLabel:         args.mainPbLabel,
-		CompilationMode:     compilationMode,
-		UniversePackages:    args.universePackages,
-		HostLabels:          hostLabels,
-		DeveloperTestLabels: args.testLabels,
-		Variants:            variants,
-		GnArgs:              gnArgs,
-		RustRbeEnable:       args.enableRustRbe,
-		LinkRbeEnable:       args.enableLinkRbe,
-		BazelRbeEnable:      args.enableBazelRbe,
-		BuildEventService:   args.buildEventService,
-		IdeFiles:            args.ideFiles,
-		JsonIdeScripts:      args.jsonIDEScripts,
-		ExportRustProject:   true,
+		Board:             boardPath,
+		Product:           productPath,
+		MainPbLabel:       args.mainPbLabel,
+		CompilationMode:   compilationMode,
+		TargetLabels:      targetLabels,
+		HostLabels:        hostLabels,
+		Variants:          variants,
+		GnArgs:            gnArgs,
+		RustRbeEnable:     args.enableRustRbe,
+		LinkRbeEnable:     args.enableLinkRbe,
+		BazelRbeEnable:    args.enableBazelRbe,
+		BuildEventService: args.buildEventService,
+		IdeFiles:          args.ideFiles,
+		JsonIdeScripts:    args.jsonIDEScripts,
+		ExportRustProject: true,
 	}
 	return applyRbeSettings(static, args, canUseRbe)
 }

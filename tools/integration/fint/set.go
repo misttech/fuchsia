@@ -238,8 +238,6 @@ func genArgs(
 	targetLists := make(map[string][]string)
 	// GN targets to import.
 	var imports []string
-	// GN vars for managing tests.
-	testVars := make(map[string]any)
 
 	if staticSpec.TargetArch == fintpb.Static_ARCH_UNSPECIFIED {
 		// Board files declare `target_cpu` so it's not necessary to set
@@ -322,19 +320,22 @@ func genArgs(
 		vars["test_durations_file"] = testDurationsFile
 	}
 
+	// The following spec vars are all combined into a single set of target labels:
+	var targetLabels []string
+	targetLabels = append(targetLabels, staticSpec.TargetLabels...)
+	targetLabels = append(targetLabels, staticSpec.UniversePackages...)
+	targetLabels = append(targetLabels, staticSpec.HermeticTestPackages...)
+	targetLabels = append(targetLabels, staticSpec.TestPackages...)
+	targetLabels = append(targetLabels, staticSpec.E2ETestLabels...)
+	targetLabels = append(targetLabels, staticSpec.DeveloperTestLabels...)
+
 	for varName, values := range map[string][]string{
-		"universe_package_labels": staticSpec.UniversePackages,
+		"host_labels":       append(staticSpec.HostLabels, staticSpec.HostTestLabels...),
+		"target_labels":     targetLabels,
+		"build_only_labels": staticSpec.BuildOnlyLabels,
 	} {
 		targetLists[varName] = values
 	}
-
-	// These list variables are never initialized by a product, so they can be
-	// directly set.
-	vars["host_labels"] = staticSpec.HostLabels
-	testVars["hermetic_test_package_labels"] = staticSpec.HermeticTestPackages
-	testVars["test_package_labels"] = staticSpec.TestPackages
-	testVars["e2e_test_labels"] = staticSpec.E2ETestLabels
-	testVars["host_test_labels"] = staticSpec.HostTestLabels
 
 	if len(staticSpec.Variants) != 0 {
 		vars["select_variant"] = staticSpec.Variants
@@ -379,13 +380,12 @@ func genArgs(
 		vars["gocache_dir"] = dir
 	}
 
-	var importArgs, varArgs, targetListArgs, testArgs, localArgs, overridesArgs, compileArgs []string
+	var importArgs, varArgs, targetListArgs, localArgs, overridesArgs, compileArgs []string
 
 	// Add comments to make args.gn more readable.
 	compileArgs = append(compileArgs, "\n\n# Compilation args:")
 	varArgs = append(varArgs, "\n\n# Basic args:")
 	targetListArgs = append(targetListArgs, "\n\n# Target lists:")
-	testArgs = append(testArgs, "\n\n# Tests to add to build: (these are validated by test-type)")
 
 	// compilation args are set in a single block
 	if staticSpec.CompilationMode == fintpb.Static_COMPILATION_MODE_UNSPECIFIED {
@@ -424,26 +424,9 @@ func genArgs(
 	sort.Strings(varArgs)
 
 	for k, v := range targetLists {
-		// Products and Boards are now using their own namespace of GN args, and not
-		// using these target lists, which are used only by infra or developers.
 		targetListArgs = appendGNArg(targetListArgs, k, v)
 	}
 	sort.Strings(targetListArgs)
-
-	// Add the "build_only_labels" to the end of appendArgs so that it stays in
-	// the "#Target lists:" block, which is semantically where it belongs.
-	targetListArgs = appendGNArg(targetListArgs, "build_only_labels", staticSpec.BuildOnlyLabels)
-
-	// The test vars are kept in a particular order to match the BUILD.gn files.
-	for _, k := range []string{"hermetic_test_package_labels", "test_package_labels", "e2e_test_labels", "host_test_labels"} {
-		testArgs = appendGNArg(testArgs, k, testVars[k])
-	}
-
-	if len(staticSpec.DeveloperTestLabels) != 0 && skipLocalArgs {
-		return nil, fmt.Errorf("'developer_test_labels' cannot be provided when 'skipLocalArgs' is true")
-	}
-	testArgs = append(testArgs, "\n\n# Additional tests: (not validated by test-type)")
-	testArgs = appendGNArg(testArgs, "developer_test_labels", staticSpec.DeveloperTestLabels)
 
 	for _, p := range imports {
 		importArgs = append(importArgs, fmt.Sprintf(`import("//%s")`, p))
@@ -510,7 +493,6 @@ func genArgs(
 	finalArgs = append(finalArgs, compileArgs...)
 	finalArgs = append(finalArgs, varArgs...)
 	finalArgs = append(finalArgs, targetListArgs...)
-	finalArgs = append(finalArgs, testArgs...)
 	finalArgs = append(finalArgs, overridesArgs...)
 	finalArgs = append(finalArgs, localArgs...)
 	finalArgs = append(finalArgs, "\n")
