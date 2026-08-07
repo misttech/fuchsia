@@ -42,7 +42,9 @@ async fn main() -> Result<(), anyhow::Error> {
     );
 
     // Initialize tracing
-    fuchsia_trace_provider::trace_provider_create_with_fdio();
+    let scope_dispatcher = libasync_scope_dispatcher::ScopeDispatcher::new();
+    let trace_provider =
+        fuchsia_trace_provider::TraceProvider::new_with_fdio(&scope_dispatcher, None);
 
     service_fs.dir("svc").add_fidl_service(ExposedProtocols::DriverHost);
     service_fs.take_and_serve_directory_handle().context("failed to serve outgoing namespace")?;
@@ -68,6 +70,9 @@ async fn main() -> Result<(), anyhow::Error> {
         _ = service_fs_fut.fuse() => {},
         _ = no_more_drivers_event.fuse() => {},
     };
+
+    drop(trace_provider);
+    scope_dispatcher.shutdown().await;
 
     Ok(())
 }

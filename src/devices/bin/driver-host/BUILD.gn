@@ -33,6 +33,7 @@ _bin_common = {
     "//sdk/fidl/fuchsia.ldsvc:fuchsia.ldsvc_rust",
     "//sdk/fidl/fuchsia.power.broker:fuchsia.power.broker_rust",
     "//sdk/fidl/fuchsia.system.state:fuchsia.system.state_rust",
+    "//sdk/lib/async/rust/scope_dispatcher",
     "//sdk/lib/driver/component/rust",
     "//sdk/lib/driver/runtime/rust",
     "//sdk/lib/driver/runtime/rust/env",
