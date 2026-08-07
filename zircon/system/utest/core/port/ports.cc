@@ -470,6 +470,29 @@ TEST(PortTest, CancelKey) {
   EXPECT_EQ(port.cancel_key(0, 3), ZX_ERR_NOT_FOUND);
 }
 
+TEST(PortTest, CancelKeyQueuedUserPacket) {
+  zx::port port;
+  ASSERT_OK(zx::port::create(0, &port));
+
+  constexpr uint64_t kKey = 42u;
+  zx_port_packet_t packet = {
+      .key = kKey,
+      .type = ZX_PKT_TYPE_USER,
+      .status = ZX_OK,
+  };
+  ASSERT_OK(port.queue(&packet));
+
+  // Cancel the queued user packet by key, which removes and frees the ephemeral packet.
+  EXPECT_EQ(port.cancel_key(0u, kKey), ZX_OK);
+
+  // Subsequent cancellation of the same key should return ZX_ERR_NOT_FOUND.
+  EXPECT_EQ(port.cancel_key(0u, kKey), ZX_ERR_NOT_FOUND);
+
+  // Verify that the port queue is empty and the canceled packet cannot be dequeued.
+  zx_port_packet_t out = {};
+  EXPECT_EQ(port.wait(zx::time::infinite_past(), &out), ZX_ERR_TIMED_OUT);
+}
+
 // Set up a scenario where one thread dequeues a packet while another thread raises an observed
 // signal on an object and another thread attempts to cancel the wait via zx_port_cancel_key().
 // Verified that either zx_port_wait() returns a packet or zx_port_cancel_key() returns ZX_OK, but
