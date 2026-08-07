@@ -7,12 +7,11 @@
 mod opaque;
 mod opaque_bytes;
 mod pin_init;
+mod ptr;
 mod static_assert;
 mod string;
 
-mod ptr;
-
 pub use opaque::{Opaque, OpaqueFacade};
 pub use opaque_bytes::OpaqueBytes;
-pub use ptr::ToMutPtr;
+pub use ptr::{AtomicConstPtr, ToMutPtr};
 pub use string::{parse_usize, to_array};
