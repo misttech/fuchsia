@@ -5,38 +5,34 @@
 import logging
 
 import fidl_fuchsia_wlan_common as fw_common
-from core_testing import base_test
+import fuchsia_wlan_base_test
+import honeydew.affordances.connectivity.wlan.core as wlan_core
 from mobly import asserts, test_runner
 
 logger = logging.getLogger(__name__)
 
 
-class CreateApIfaceWithNullMacTest(base_test.CoreBaseTestClass):
-    async def test_create_ap_iface_with_null_mac(self) -> None:
-        create_iface_response = (
-            await self.test_kit.device_monitor.create_iface(
-                phy_id=self.test_kit.phy_id,
-                role=fw_common.WlanMacRole.AP,
-                sta_address=[0, 0, 0, 0, 0, 0],
-            )
-        ).unwrap()
-        assert (
-            create_iface_response.iface_id is not None
-        ), "DeviceMonitor.CreateIface() response is missing a iface_id"
-        iface_id = create_iface_response.iface_id
+class CreateApIfaceWithNullMacTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
+    phy: wlan_core.Phy
 
-        query_iface_response = (
-            (await self.test_kit.device_monitor.query_iface(iface_id=iface_id))
-            .unwrap()
-            .resp
-        )
-        asserts.assert_equal(iface_id, query_iface_response.id_)
-        asserts.assert_equal(self.test_kit.phy_id, query_iface_response.phy_id)
+    async def setup_class(self) -> None:
+        await super().setup_class()
+        self.phy = await self.dut.wlan_core.ensure_single_phy()
+
+    async def setup_test(self) -> None:
+        await super().setup_test()
+        await self.dut.wlan_core.destroy_all_ifaces()
+
+    async def test_create_ap_iface_with_null_mac(self) -> None:
+        iface = await self.phy.create_ap_iface()
+        query_iface_response = await iface.query()
+        asserts.assert_equal(iface.id, query_iface_response.id_)
+        asserts.assert_equal(self.phy.id, query_iface_response.phy_id)
         asserts.assert_equal(
             fw_common.WlanMacRole.AP, query_iface_response.role
         )
         asserts.assert_not_equal(
-            [0, 0, 0, 0, 0, 0], query_iface_response.sta_addr
+            [0, 0, 0, 0, 0, 0], list(query_iface_response.sta_addr)
         )
 
 

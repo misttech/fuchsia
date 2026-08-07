@@ -44,6 +44,7 @@ from antlion.controllers.utils_lib.commands.date import LinuxDateCommand
 from antlion.controllers.utils_lib.commands.tcpdump import LinuxTcpdumpCommand
 from antlion.types import ControllerConfig, Json
 from antlion.validation import MapValidator
+from honeydew.typing.custom_types import MacAddress
 from libs.proc.runner import CalledProcessError
 from libs.ssh import connection, settings
 from mobly import logger
@@ -823,47 +824,55 @@ class AccessPoint:
             raise ValueError(f"Invalid identifier {identifier} given")
         return instance.hostapd.get_stas()
 
-    def sta_authenticated(self, identifier: str, sta_mac: str) -> bool:
+    def sta_authenticated(
+        self, identifier: str, sta_mac: str | MacAddress
+    ) -> bool:
         """Is STA authenticated?"""
         instance = self._aps.get(identifier)
         if instance is None:
             raise ValueError(f"Invalid identifier {identifier} given")
-        return instance.hostapd.sta_authenticated(sta_mac)
+        return instance.hostapd.sta_authenticated(str(sta_mac))
 
-    def sta_associated(self, identifier: str, sta_mac: str) -> bool:
+    def sta_associated(
+        self, identifier: str, sta_mac: str | MacAddress
+    ) -> bool:
         """Is STA associated?"""
         instance = self._aps.get(identifier)
         if instance is None:
             raise ValueError(f"Invalid identifier {identifier} given")
-        return instance.hostapd.sta_associated(sta_mac)
+        return instance.hostapd.sta_associated(str(sta_mac))
 
-    def sta_authorized(self, identifier: str, sta_mac: str) -> bool:
+    def sta_authorized(
+        self, identifier: str, sta_mac: str | MacAddress
+    ) -> bool:
         """Is STA authorized (802.1X controlled port open)?"""
         instance = self._aps.get(identifier)
         if instance is None:
             raise ValueError(f"Invalid identifier {identifier} given")
-        return instance.hostapd.sta_authorized(sta_mac)
+        return instance.hostapd.sta_authorized(str(sta_mac))
 
     def get_sta_extended_capabilities(
-        self, identifier: str, sta_mac: str
+        self, identifier: str, sta_mac: str | MacAddress
     ) -> ExtendedCapabilities:
         """Get extended capabilities for the given STA, as seen by the AP."""
         instance = self._aps.get(identifier)
         if instance is None:
             raise ValueError(f"Invalid identifier {identifier} given")
-        return instance.hostapd.get_sta_extended_capabilities(sta_mac)
+        return instance.hostapd.get_sta_extended_capabilities(str(sta_mac))
 
     def send_bss_transition_management_req(
         self,
         identifier: str,
-        sta_mac: str,
+        sta_mac: str | MacAddress,
         request: BssTransitionManagementRequest,
     ) -> None:
         """Send a BSS Transition Management request to an associated STA."""
         instance = self._aps.get(identifier)
         if instance is None:
             raise ValueError(f"Invalid identifier {identifier} given")
-        instance.hostapd.send_bss_transition_management_req(sta_mac, request)
+        instance.hostapd.send_bss_transition_management_req(
+            str(sta_mac), request
+        )
 
 
 def setup_ap(

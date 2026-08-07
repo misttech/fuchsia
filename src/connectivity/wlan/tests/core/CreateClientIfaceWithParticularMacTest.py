@@ -5,47 +5,47 @@
 import logging
 
 import fidl_fuchsia_wlan_common as fw_common
-from core_testing import base_test
+import fuchsia_wlan_base_test
+import honeydew.affordances.connectivity.wlan.core as wlan_core
 from honeydew.affordances.connectivity.wlan.utils.types import MacAddress
 from mobly import asserts, test_runner
 
 logger = logging.getLogger(__name__)
 
 
-class CreateClientIfaceWithParticularMacTest(base_test.CoreBaseTestClass):
+class CreateClientIfaceWithParticularMacTest(
+    fuchsia_wlan_base_test.FuchsiaWlanBaseTest
+):
+    phy: wlan_core.Phy
+
+    async def setup_class(self) -> None:
+        await super().setup_class()
+        self.phy = await self.dut.wlan_core.ensure_single_phy()
+
+    async def setup_test(self) -> None:
+        await super().setup_test()
+        await self.dut.wlan_core.destroy_all_ifaces()
+
     async def test_create_client_iface_with_particular_mac(self) -> None:
         # Generate a valid randomized MAC to set in the driver
-        random_sta_addr = (
+        random_sta_address = (
             MacAddress.random()
             .with_unicast_bit()
             .with_locally_administered_bit()
         )
 
-        logger.info(f"Creating client iface with MAC {random_sta_addr}")
-        create_iface_response = (
-            await self.test_kit.device_monitor.create_iface(
-                phy_id=self.test_kit.phy_id,
-                role=fw_common.WlanMacRole.CLIENT,
-                sta_address=bytes(random_sta_addr),
-            )
-        ).unwrap()
-        assert (
-            create_iface_response.iface_id is not None
-        ), "DeviceMonitor.CreateIface() response is missing a iface_id"
-        iface_id = create_iface_response.iface_id
-
-        query_iface_response = (
-            (await self.test_kit.device_monitor.query_iface(iface_id=iface_id))
-            .unwrap()
-            .resp
+        logger.info(f"Creating client iface with MAC {random_sta_address}")
+        iface = await self.phy.create_client_iface(
+            sta_address=random_sta_address
         )
-        asserts.assert_equal(iface_id, query_iface_response.id_)
-        asserts.assert_equal(self.test_kit.phy_id, query_iface_response.phy_id)
+        query_iface_response = await iface.query()
+        asserts.assert_equal(iface.id, query_iface_response.id_)
+        asserts.assert_equal(self.phy.id, query_iface_response.phy_id)
         asserts.assert_equal(
             fw_common.WlanMacRole.CLIENT, query_iface_response.role
         )
         asserts.assert_equal(
-            random_sta_addr,
+            random_sta_address,
             MacAddress(bytes(query_iface_response.sta_addr)),
         )
 

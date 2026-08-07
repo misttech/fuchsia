@@ -51,21 +51,18 @@ class WlanController:
         self.log.info(
             f"Verifying DUT country code was correctly set to {country_code}."
         )
-        phy_ids_response = (
-            fuchsia_async_extension.get_loop().run_until_complete(
-                self.honeydew.wlan_core.get_phy_id_list()
-            )
-        )
+
+        async def _verify_country() -> bool:
+            phy = await self.honeydew.wlan_core.ensure_single_phy()
+            return await phy.get_country() == country_code
 
         end_time = time.time() + TIME_TO_WAIT_FOR_COUNTRY_CODE
         while time.time() < end_time:
-            for id in phy_ids_response:
-                resp = fuchsia_async_extension.get_loop().run_until_complete(
-                    self.honeydew.wlan_core.get_country(id)
-                )
-                if resp == country_code:
-                    return
-                time.sleep(TIME_TO_SLEEP_BETWEEN_RETRIES)
+            if fuchsia_async_extension.get_loop().run_until_complete(
+                _verify_country()
+            ):
+                return
+            time.sleep(TIME_TO_SLEEP_BETWEEN_RETRIES)
         else:
             raise EnvironmentError(
                 f"Failed to set DUT country code to {country_code}."

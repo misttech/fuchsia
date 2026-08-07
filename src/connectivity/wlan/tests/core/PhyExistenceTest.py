@@ -4,23 +4,27 @@
 
 import logging
 
-from core_testing import base_test
+import fuchsia_wlan_base_test
+import honeydew.affordances.connectivity.wlan.core as wlan_core
 from mobly import test_runner
 from mobly.asserts import assert_equal
 
 logger = logging.getLogger(__name__)
 
 
-class PhyExistenceTest(base_test.CoreBaseTestClass):
-    async def test_get_phy_ids(self) -> None:
-        list_phys_response = await self.test_kit.device_monitor.list_phys()
-        assert (
-            list_phys_response.phy_list is not None
-        ), "DeviceMonitor.ListPhys() response is missing a phy_list value"
+class PhyExistenceTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
+    phy: wlan_core.Phy
+
+    async def setup_class(self) -> None:
+        await super().setup_class()
+        self.phy = await self.dut.wlan_core.ensure_single_phy()
+
+    async def test_ensure_single_phy(self) -> None:
+        phy = await self.dut.wlan_core.ensure_single_phy()
         assert_equal(
-            len(list_phys_response.phy_list),
-            1,
-            "DeviceMonitor.ListPhys() should return exactly one phy_id.",
+            phy.id,
+            self.phy.id,
+            "WlanCore.ensure_single_phy() should return valid phy.",
         )
 
 

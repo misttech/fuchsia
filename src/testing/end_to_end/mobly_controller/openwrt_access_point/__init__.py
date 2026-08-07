@@ -529,9 +529,12 @@ class OpenWrtAP:
         except Exception:
             return False, status_map
 
-    def get_sta_status(self, mac: str, band: Band) -> dict[str, StationStatus]:
+    def get_sta_status(
+        self, mac: str | MacAddress, band: Band
+    ) -> dict[str, StationStatus]:
         """Get station status for a specific band on OpenWrt."""
         result: dict[str, StationStatus] = {}
+        mac_str = str(mac)
         try:
             interfaces = self._get_hostapd_interfaces(band)
             for iface in interfaces:
@@ -541,16 +544,14 @@ class OpenWrtAP:
                 clients_data = json.loads(clients_res)
                 clients = clients_data.get("clients", {})
                 for client_mac, status in clients.items():
-                    if client_mac.lower() == mac.lower():
+                    if client_mac.lower() == mac_str.lower():
                         result[iface] = StationStatus(
                             auth=status.get("auth", False),
                             assoc=status.get("assoc", False),
                             authorized=status.get("authorized", False),
                         )
         except Exception as e:
-            error_msg = (
-                f"Failed to get status for station {mac} on band {band}: {e}"
-            )
+            error_msg = f"Failed to get status for station {mac_str} on band {band}: {e}"
             raise RuntimeError(error_msg) from e
         return result
 
@@ -599,14 +600,15 @@ class OpenWrtAP:
         raise RuntimeError(f'iw dev did not contain ssid "{ssid}"')
 
     def get_sta_extended_capabilities(
-        self, mac: str, band: Band
+        self, mac: str | MacAddress, band: Band
     ) -> dict[str, ExtendedCapabilities]:
         """Gets the extended capabilities of a station for all interfaces."""
         result: dict[str, ExtendedCapabilities] = {}
+        mac_str = str(mac)
         try:
             interfaces = self._get_hostapd_interfaces(band)
             for iface in interfaces:
-                cmd = f"hostapd_cli -i {iface} sta {mac}"
+                cmd = f"hostapd_cli -i {iface} sta {mac_str}"
                 try:
                     res = self.ssh.run(cmd)
                     output = res.stdout.decode("utf-8")
@@ -626,7 +628,7 @@ class OpenWrtAP:
         return result
 
     def send_bss_transition_management_req(
-        self, mac: str, band: Band, btm_req: Any
+        self, mac: str | MacAddress, band: Band, btm_req: Any
     ) -> None:
         """Sends a BSS Transition Management request to a station.
 
@@ -644,7 +646,8 @@ class OpenWrtAP:
                 raise RuntimeError(f"No hostapd interface found for {phy}")
             iface = interfaces[0].strip().replace("hostapd.", "")
 
-            bss_tm_req_cmd = f"bss_tm_req {mac}"
+            mac_str = str(mac)
+            bss_tm_req_cmd = f"bss_tm_req {mac_str}"
             if btm_req.abridged:
                 bss_tm_req_cmd += " abridged=1"
             if (

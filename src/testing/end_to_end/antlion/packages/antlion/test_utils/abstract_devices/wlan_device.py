@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 import enum
-from typing import Protocol, Sequence, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 import fidl_fuchsia_wlan_internal as f_wlan_internal
 import fuchsia_async_extension
@@ -22,6 +22,7 @@ from antlion.utils import PingResult, adb_shell_ping
 from honeydew.affordances.connectivity.netstack.errors import (
     HoneydewNetstackError,
 )
+from honeydew.affordances.connectivity.wlan import core as wlan_core
 from honeydew.affordances.connectivity.wlan.utils.errors import (
     HoneydewWlanError,
 )
@@ -115,22 +116,6 @@ class SupportsWLAN(Protocol):
 
         Returns:
             IPerfClient object
-        """
-        ...
-
-    def get_wlan_interface_id_list(self) -> Sequence[int]:
-        """List available WLAN interfaces.
-
-        Returns:
-            A list of wlan interface IDs.
-        """
-        ...
-
-    def destroy_wlan_interface(self, iface_id: int) -> None:
-        """Destroy the specified WLAN interface.
-
-        Args:
-            iface_id: ID of the interface to destroy.
         """
         ...
 
@@ -254,16 +239,8 @@ class AndroidWlanDevice(SupportsWLAN):
     def disconnect(self) -> None:
         awutils.turn_location_off_and_scan_toggle_off(self.device)
 
-    def get_wlan_interface_id_list(self) -> Sequence[int]:
-        raise NotImplementedError(
-            "get_wlan_interface_id_list is not implemented"
-        )
-
     def get_default_wlan_test_interface(self) -> str:
         return "wlan0"
-
-    def destroy_wlan_interface(self, iface_id: int) -> None:
-        raise NotImplementedError("destroy_wlan_interface is not implemented")
 
     def is_connected(self, ssid: str | None = None) -> bool:
         wifi_info = self.device.droid.wifiGetConnectionInfo()
@@ -326,6 +303,13 @@ class FuchsiaWlanDevice(SupportsWLAN):
         self.device = fuchsia_device
         self.device.configure_wlan()
         self.association_mode = mode
+        self._client_iface: wlan_core.ClientIface | None = None
+
+    async def _get_client_iface(self) -> wlan_core.ClientIface:
+        if self._client_iface is None:
+            phy = await self.device.honeydew_fd.wlan_core.ensure_single_phy()
+            self._client_iface = await phy.create_client_iface()
+        return self._client_iface
 
     @property
     def identifier(self) -> str:
@@ -374,9 +358,14 @@ class FuchsiaWlanDevice(SupportsWLAN):
     ) -> bool:
         match self.association_mode:
             case AssociationMode.DRIVER:
+
+                async def _scan() -> Any:
+                    iface = await self._get_client_iface()
+                    return await iface.passive_scan()
+
                 ssid_bss_desc_map = (
                     fuchsia_async_extension.get_loop().run_until_complete(
-                        self.device.honeydew_fd.wlan_core.scan_for_bss_info()
+                        _scan()
                     )
                 )
 
@@ -413,12 +402,17 @@ class FuchsiaWlanDevice(SupportsWLAN):
                     protocol=protocol, credentials=credentials
                 )
 
-                return fuchsia_async_extension.get_loop().run_until_complete(
-                    self.device.honeydew_fd.wlan_core.connect(
+                async def _connect() -> bool:
+                    iface = await self._get_client_iface()
+                    await iface.connect(
                         ssid=target_ssid,
                         bss_desc=bss_descs_for_ssid[0],
                         authentication=authentication,
                     )
+                    return True
+
+                return fuchsia_async_extension.get_loop().run_until_complete(
+                    _connect()
                 )
             case AssociationMode.POLICY:
                 try:
@@ -446,8 +440,13 @@ class FuchsiaWlanDevice(SupportsWLAN):
         """
         match self.association_mode:
             case AssociationMode.DRIVER:
+
+                async def _disconnect() -> None:
+                    iface = await self._get_client_iface()
+                    await iface.disconnect()
+
                 fuchsia_async_extension.get_loop().run_until_complete(
-                    self.device.honeydew_fd.wlan_core.disconnect()
+                    _disconnect()
                 )
             case AssociationMode.POLICY:
                 self.device.honeydew_fd.wlan_policy_deprecated_sync.remove_all_networks()
@@ -497,11 +496,6 @@ class FuchsiaWlanDevice(SupportsWLAN):
                 rtt_mdev_ms=None,
             )
 
-    def get_wlan_interface_id_list(self) -> Sequence[int]:
-        return fuchsia_async_extension.get_loop().run_until_complete(
-            self.device.honeydew_fd.wlan_core.get_iface_id_list()
-        )
-
     def get_default_wlan_test_interface(self) -> str:
         if self.device.wlan_client_test_interface_name is None:
             raise TypeError(
@@ -509,14 +503,13 @@ class FuchsiaWlanDevice(SupportsWLAN):
             )
         return self.device.wlan_client_test_interface_name
 
-    def destroy_wlan_interface(self, iface_id: int) -> None:
-        fuchsia_async_extension.get_loop().run_until_complete(
-            self.device.honeydew_fd.wlan_core.destroy_iface(iface_id)
-        )
-
     def is_connected(self, ssid: str | None = None) -> bool:
+        async def _status() -> Any:
+            iface = await self._get_client_iface()
+            return await iface.status()
+
         result = fuchsia_async_extension.get_loop().run_until_complete(
-            self.device.honeydew_fd.wlan_core.status()
+            _status()
         )
         if result.idle:
             self.device.log.info("Client status idle")
