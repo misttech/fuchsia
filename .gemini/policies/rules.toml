@@ -1,5 +1,0 @@
-# This takes too long.
-[[rule]]
-toolName = "search_file_content"
-decision = "deny"
-priority = 100
