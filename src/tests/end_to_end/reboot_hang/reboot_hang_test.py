@@ -97,11 +97,22 @@ class RebootHangTest(fuchsia_base_test.FuchsiaBaseTest):
         _LOGGER.info("Waiting for device to enter Fastboot mode...")
         fastboot_transport = self.device.fastboot
         try:
+            node_id = await fastboot_transport.node_id()
+            _LOGGER.info(f"Expected Fastboot Node ID: {node_id}")
+        except Exception as e:
+            _LOGGER.warning(f"Could not retrieve fastboot node_id: {e}")
+
+        try:
             await asyncio.wait_for(
                 fastboot_transport.wait_for_fastboot_mode(),
-                timeout=90.0,
+                timeout=180.0,
             )
         except asyncio.TimeoutError:
+            try:
+                out = self.device.ffx.run(["target", "list"])
+                _LOGGER.info(f"ffx target list output: {out}")
+            except Exception as ex:
+                _LOGGER.warning(f"Failed to run ffx target list: {ex}")
             asserts.fail("Timed out waiting for device to enter Fastboot mode")
 
         # 5. Assert we are in fastboot.

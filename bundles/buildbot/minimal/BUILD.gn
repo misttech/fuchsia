@@ -78,6 +78,12 @@ group("minimal") {
     "//src/starnix:tests",
     "//src/storage:tests",
     "//src/sys:tests",
+
+    # reboot_hang is a non-hermetic e2e test. It is added to minimal because
+    # iris only has bringup and minimal builders in infra (sorrel runs this test
+    # via its own product bundle). Execution is restricted to iris_env and
+    # sorrel_env.
+    "//src/tests/end_to_end/reboot_hang:tests",
     "//src/ui:tests",
     "//src/zircon:tests",
   ]
