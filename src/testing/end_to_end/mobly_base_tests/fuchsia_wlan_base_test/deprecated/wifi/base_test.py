@@ -8,31 +8,19 @@ Base Class for Defining Common WiFi Test Functionality
 """
 
 import logging
-import os
-from typing import Any, TypedDict, TypeVar
+from typing import TypedDict, TypeVar
 
 import fuchsia_async_extension
 import openwrt_access_point
-from antlion import context, controllers, utils
+from antlion import context, controllers
 from antlion.controllers.access_point import AccessPoint
-from antlion.controllers.android_device import AndroidDevice
-from antlion.controllers.ap_lib import hostapd_constants
 from antlion.controllers.ap_lib.hostapd_security import SecurityMode
 from antlion.controllers.attenuator import Attenuator
 from antlion.controllers.fuchsia_device import FuchsiaDevice
 from antlion.controllers.iperf_client import IPerfClientBase
 from antlion.controllers.iperf_server import IPerfServer, IPerfServerOverSsh
-from antlion.controllers.packet_capture import PacketCapture
 from antlion.controllers.pdu import PduDevice
-from antlion.keys import Config
-from antlion.test_utils.abstract_devices.wlan_device import (
-    AndroidWlanDevice,
-    AssociationMode,
-    FuchsiaWlanDevice,
-    SupportsWLAN,
-)
-from antlion.test_utils.net import net_test_utils as nutils
-from antlion.test_utils.wifi import wifi_test_utils as wutils
+from antlion.test_utils.abstract_devices.wlan_device import FuchsiaWlanDevice
 from antlion.types import Controller
 from honeydew.typing import custom_types
 from mobly import signals
@@ -41,7 +29,6 @@ from mobly.config_parser import TestRunConfig
 from mobly.records import TestResultRecord
 from openwrt_access_point import OpenWrtAP
 
-WifiEnums = wutils.WifiEnums
 MAX_AP_COUNT = 2
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
@@ -75,11 +62,6 @@ class WifiBaseTest(BaseTestClass):
         super().__init__(configs)
         self.openwrt_ap: OpenWrtAP | None = None
         self.access_point: AccessPoint | None = None
-        self.enable_packet_log = False
-        self.packet_log_2g = hostapd_constants.AP_DEFAULT_CHANNEL_2G
-        self.packet_log_5g = hostapd_constants.AP_DEFAULT_CHANNEL_5G
-        self.tcpdump_proc: list[Any] = []
-        self.packet_log_pid: dict[str, Any] = {}
 
         T = TypeVar("T")
 
@@ -96,9 +78,6 @@ class WifiBaseTest(BaseTestClass):
         )
         self.openwrt_aps: list[OpenWrtAP] = register_controller(
             openwrt_access_point
-        )
-        self.android_devices: list[AndroidDevice] = register_controller(
-            controllers.android_device
         )
         self.attenuators: list[Attenuator] = register_controller(
             controllers.attenuator
@@ -118,94 +97,21 @@ class WifiBaseTest(BaseTestClass):
             if isinstance(iperf_server, IPerfServerOverSsh)
         ]
         self.pdu_devices: list[PduDevice] = register_controller(controllers.pdu)
-        self.packet_capture: list[PacketCapture] = register_controller(
-            controllers.packet_capture
-        )
 
         for attenuator in self.attenuators:
             attenuator.set_atten(0)
-
-        self.pixel_models: list[str] | None = self.user_params.get(
-            "pixel_models"
-        )
-        self.cnss_diag_file: str | list[str] | None = self.user_params.get(
-            "cnss_diag_file"
-        )
-        self.country_code_file: str | list[str] | None = self.user_params.get(
-            "country_code_file"
-        )
-
-        if self.cnss_diag_file:
-            if isinstance(self.cnss_diag_file, list):
-                self.cnss_diag_file = self.cnss_diag_file[0]
-            if not os.path.isfile(self.cnss_diag_file):
-                self.cnss_diag_file = os.path.join(
-                    self.user_params[Config.key_config_path.value],
-                    self.cnss_diag_file,
-                )
-
-        self.packet_logger: PacketCapture | None = None
-        if self.enable_packet_log and self.packet_capture:
-            self.packet_logger = self.packet_capture[0]
-            self.packet_logger.configure_monitor_mode("2G", self.packet_log_2g)
-            self.packet_logger.configure_monitor_mode("5G", self.packet_log_5g)
-
-        for ad in self.android_devices:
-            wutils.wifi_test_device_init(ad)
-            if self.country_code_file:
-                if isinstance(self.country_code_file, list):
-                    self.country_code_file = self.country_code_file[0]
-                if not os.path.isfile(self.country_code_file):
-                    self.country_code_file = os.path.join(
-                        self.user_params[Config.key_config_path.value],
-                        self.country_code_file,
-                    )
-                assert isinstance(self.country_code_file, str)
-                self.country_code = utils.load_config(self.country_code_file)[
-                    "country"
-                ]
-            else:
-                self.country_code = WifiEnums.CountryCode.US
-            wutils.set_wifi_country_code(ad, self.country_code)
 
     def setup_test(self) -> None:
         self.write_to_device_logs(
             f"Started executing '{self.current_test_info.name}'",
             custom_types.LEVEL.INFO,
         )
-        if self.android_devices and self.cnss_diag_file and self.pixel_models:
-            wutils.start_cnss_diags(
-                self.android_devices, self.cnss_diag_file, self.pixel_models
-            )
-        self.tcpdump_proc = []
-        for ad in self.android_devices:
-            proc = nutils.start_tcpdump(ad, self.current_test_info.name)
-            self.tcpdump_proc.append((ad, proc))
-        if self.packet_logger:
-            self.packet_log_pid = wutils.start_pcap(
-                self.packet_logger, "dual", self.current_test_info.name
-            )
 
     def teardown_test(self) -> None:
         self.write_to_device_logs(
             f"Finished executing '{self.current_test_info.name}'",
             custom_types.LEVEL.INFO,
         )
-        if self.android_devices and self.cnss_diag_file and self.pixel_models:
-            wutils.stop_cnss_diags(self.android_devices, self.pixel_models)
-            for proc in self.tcpdump_proc:
-                nutils.stop_tcpdump(
-                    proc[0],
-                    proc[1],
-                    self.current_test_info.name,
-                    pull_dump=False,
-                )
-            self.tcpdump_proc = []
-        if self.packet_logger and self.packet_log_pid:
-            wutils.stop_pcap(
-                self.packet_logger, self.packet_log_pid, test_status=True
-            )
-            self.packet_log_pid = {}
 
     def teardown_class(self) -> None:
         super().teardown_class()
@@ -224,24 +130,6 @@ class WifiBaseTest(BaseTestClass):
         record: A copy of the test record for this test, containing all information of
             the test execution including exception objects.
         """
-        if self.android_devices:
-            for ad in self.android_devices:
-                ad.take_bug_report(record.test_name, record.begin_time)
-                ad.cat_adb_log(record.test_name, record.begin_time)
-                wutils.get_ssrdumps(ad)
-            if self.cnss_diag_file and self.pixel_models:
-                wutils.stop_cnss_diags(self.android_devices, self.pixel_models)
-                for ad in self.android_devices:
-                    wutils.get_cnss_diag_log(ad)
-            for proc in self.tcpdump_proc:
-                nutils.stop_tcpdump(proc[0], proc[1], record.test_name)
-            self.tcpdump_proc = []
-        if self.packet_logger and self.packet_log_pid:
-            wutils.stop_pcap(
-                self.packet_logger, self.packet_log_pid, test_status=False
-            )
-            self.packet_log_pid = {}
-
         # Download support device logs
         self.download_logs()
 
@@ -274,22 +162,13 @@ class WifiBaseTest(BaseTestClass):
         ):
             device.reboot(reboot_type="hard", testbed_pdus=self.pdu_devices)
 
-    def get_dut(self, association_mode: AssociationMode) -> SupportsWLAN:
-        """Get the DUT based on user_params, default to Fuchsia."""
-        device_type = self.user_params.get("dut", "fuchsia_devices")
-        if device_type == "fuchsia_devices":
-            return self.get_dut_type(FuchsiaDevice, association_mode)[1]
-        elif device_type == "android_devices":
-            return self.get_dut_type(FuchsiaDevice, association_mode)[1]
-        else:
-            raise signals.TestAbortClass(
-                f'Invalid "dut" type specified in config: "{device_type}". '
-                'Expected "fuchsia_devices" or "android_devices".'
-            )
+    def get_dut(self) -> FuchsiaWlanDevice:
+        """Get the DUT, default to Fuchsia."""
+        return self.get_dut_type(FuchsiaDevice)[1]
 
     def get_dut_type(
-        self, device_type: type[_T], association_mode: AssociationMode
-    ) -> tuple[_T, SupportsWLAN]:
+        self, device_type: type[_T]
+    ) -> tuple[_T, FuchsiaWlanDevice]:
         if device_type is FuchsiaDevice:
             if len(self.fuchsia_devices) == 0:
                 raise signals.TestAbortClass(
@@ -297,20 +176,11 @@ class WifiBaseTest(BaseTestClass):
                 )
             fd = self.fuchsia_devices[0]
             assert isinstance(fd, device_type)
-            return fd, FuchsiaWlanDevice(fd, association_mode)
-
-        if device_type is AndroidDevice:
-            if len(self.android_devices) == 0:
-                raise signals.TestAbortClass(
-                    "Requires at least one Android device"
-                )
-            ad = self.android_devices[0]
-            assert isinstance(ad, device_type)
-            return ad, AndroidWlanDevice(ad)
+            return fd, FuchsiaWlanDevice(fd)
 
         raise signals.TestAbortClass(
             f"Invalid device_type specified: {device_type.__name__}. "
-            "Expected FuchsiaDevice or AndroidDevice."
+            "Expected FuchsiaDevice."
         )
 
     def write_to_device_logs(

@@ -12,7 +12,6 @@ from ipaddress import IPv4Address, IPv4Network
 from pathlib import Path
 
 from antlion.controllers.access_point import AccessPoint, setup_ap
-from antlion.controllers.android_device import AndroidDevice
 from antlion.controllers.ap_lib import dhcp_config, hostapd_constants
 from antlion.controllers.ap_lib.hostapd_security import (
     Security as DeprecatedSecurity,
@@ -21,7 +20,6 @@ from antlion.controllers.ap_lib.hostapd_security import (
     SecurityMode as DeprecatedSecurityMode,
 )
 from antlion.controllers.fuchsia_device import FuchsiaDevice
-from antlion.test_utils.abstract_devices.wlan_device import AssociationMode
 from fuchsia_wlan_base_test.deprecated.wifi import base_test
 from mobly import asserts, signals
 from mobly.config_parser import TestRunConfig
@@ -50,7 +48,7 @@ class Dhcpv4InteropFixture(base_test.WifiBaseTest):
     """Test helpers for validating DHCPv4 Interop
 
     Test Bed Requirement:
-    * One Android device or Fuchsia device
+    * One Fuchsia device
     * One Access Point
     """
 
@@ -65,41 +63,15 @@ class Dhcpv4InteropFixture(base_test.WifiBaseTest):
         else:
             raise signals.TestAbortClass("Requires at least one access point")
 
-        device_type = self.user_params.get("dut", "fuchsia_devices")
-        if device_type == "fuchsia_devices":
-            self.fuchsia_device, self.dut = self.get_dut_type(
-                FuchsiaDevice, AssociationMode.POLICY
-            )
-        elif device_type == "android_devices":
-            _, self.dut = self.get_dut_type(
-                AndroidDevice, AssociationMode.POLICY
-            )
-        else:
-            raise ValueError(
-                f'Invalid "dut" type specified in config: "{device_type}".'
-                'Expected "fuchsia_devices" or "android_devices".'
-            )
+        self.fuchsia_device, self.dut = self.get_dut_type(FuchsiaDevice)
 
     def setup_class(self) -> None:
         super().setup_class()
         if self.access_point:
             self.access_point.stop_all_aps()
 
-    def setup_test(self) -> None:
-        if hasattr(self, "android_devices"):
-            for ad in self.android_devices:
-                ad.droid.wakeLockAcquireBright()
-                ad.droid.wakeUpNow()
-        self.dut.wifi_toggle_state(True)
-
     def teardown_test(self) -> None:
-        if hasattr(self, "android_devices"):
-            for ad in self.android_devices:
-                ad.droid.wakeLockRelease()
-                ad.droid.goToSleepNow()
-        self.dut.turn_location_off_and_scan_toggle_off()
         self.dut.disconnect()
-        self.dut.reset_wifi()
         if self.access_point:
             self.access_point.stop_all_aps()
 

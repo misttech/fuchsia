@@ -22,7 +22,6 @@ from antlion.controllers.ap_lib.hostapd_security import (
 )
 from antlion.controllers.ap_lib.radvd_config import RadvdConfig
 from antlion.controllers.fuchsia_device import FuchsiaDevice
-from antlion.test_utils.abstract_devices.wlan_device import AssociationMode
 from fuchsia_wlan_base_test.deprecated.wifi import base_test
 from honeydew.affordances.connectivity.wlan.utils.errors import (
     HoneydewWlanError,
@@ -186,9 +185,7 @@ class WlanRebootTest(base_test.WifiBaseTest):
         else:
             raise signals.TestAbortClass("Requires at least one access point")
 
-        self.fuchsia_device, self.dut = self.get_dut_type(
-            FuchsiaDevice, AssociationMode.POLICY
-        )
+        self.fuchsia_device, self.dut = self.get_dut_type(FuchsiaDevice)
 
     def setup_test(self) -> None:
         super().setup_test()
