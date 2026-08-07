@@ -1567,7 +1567,7 @@ TEST_F(SdioControllerDeviceTest, DifferentManufacturerProductIds) {
   driver_test().RunInNodeContext([&](fdf_testing::TestNode& node) {
     fdf_testing::TestNode& sdmmc_node = node.children().at("sdmmc");
     fdf_testing::TestNode& controller_node = sdmmc_node.children().at("sdmmc-sdio");
-    EXPECT_EQ(controller_node.children().size(), std::size(kExpectedProps));
+    EXPECT_EQ(controller_node.children().size(), std::size(kExpectedProps) * 2);
 
     for (size_t i = 0; i < std::size(kExpectedProps); i++) {
       const std::string node_name = "sdmmc-sdio-" + std::to_string(i + 1);
@@ -1577,6 +1577,17 @@ TEST_F(SdioControllerDeviceTest, DifferentManufacturerProductIds) {
       ASSERT_GE(properties.size(), std::size(kExpectedProps[0]));
       for (size_t j = 0; j < std::size(kExpectedProps[0]); j++) {
         const fuchsia_driver_framework::NodeProperty2& prop = properties[j];
+        EXPECT_EQ(prop.key(), kExpectedProps[i][j].first);
+        EXPECT_EQ(prop.value().int_value().value(), kExpectedProps[i][j].second);
+      }
+
+      const std::string driver_node_name = node_name + "-driver";
+      fdf_testing::TestNode& driver_node = controller_node.children().at(driver_node_name);
+
+      std::vector driver_properties = driver_node.GetProperties();
+      ASSERT_GE(driver_properties.size(), std::size(kExpectedProps[0]));
+      for (size_t j = 0; j < std::size(kExpectedProps[0]); j++) {
+        const fuchsia_driver_framework::NodeProperty2& prop = driver_properties[j];
         EXPECT_EQ(prop.key(), kExpectedProps[i][j].first);
         EXPECT_EQ(prop.value().int_value().value(), kExpectedProps[i][j].second);
       }

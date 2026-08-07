@@ -68,6 +68,7 @@ zx::result<> Vim3WifiVisitor::DriverVisit(fdf_devicetree::Node& node,
                      bind_fuchsia::SDIO_PID,
                      bind_fuchsia_broadcom_platform_sdio::BIND_SDIO_PID_BCM4359),
                  fdf::MakeAcceptBindRule(bind_fuchsia::SDIO_FUNCTION, i),
+                 fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.sdio.Service"),
              },
          .properties = {
              fdf::MakeProperty2(bind_fuchsia_hardware_sdio::SERVICE,

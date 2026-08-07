@@ -1045,9 +1045,10 @@ void AmlSpiDriver::AddNode(
 
   fidl::Arena arena;
 
-  fidl::VectorView<fuchsia_driver_framework::wire::NodeProperty2> properties(arena, 1);
+  fidl::VectorView<fuchsia_driver_framework::wire::NodeProperty2> properties(arena, 2);
   properties[0] = fdf::MakeProperty2(arena, bind_fuchsia_hardware_spiimpl::SERVICE,
                                      bind_fuchsia_hardware_spiimpl::SERVICE_DRIVERTRANSPORT);
+  properties[1] = fdf::MakeProperty2(arena, "fuchsia.Service", "fuchsia.hardware.spiimpl.Service");
 
   std::vector<fuchsia_driver_framework::wire::Offer> offers = {
       fdf::MakeOffer2<fuchsia_hardware_spiimpl::Service>(arena, component::kDefaultInstance),

@@ -20,19 +20,11 @@ fn get_no_protocol_property_list() -> Option<[fdf::NodeProperty; 0]> {
     None
 }
 
-fn get_test_parent_property_list() -> Option<[fdf::NodeProperty; 2]> {
-    Some([
-        fdf::NodeProperty {
-            key: fdf::NodePropertyKey::StringValue("fuchsia.BIND_PROTOCOL".to_string()),
-            value: fdf::NodePropertyValue::IntValue(bind_fuchsia_test::BIND_PROTOCOL_PARENT),
-        },
-        fdf::NodeProperty {
-            key: fdf::NodePropertyKey::StringValue("fuchsia.driver.compat.Service".to_string()),
-            value: fdf::NodePropertyValue::StringValue(
-                "fuchsia.driver.compat.Service.ZirconTransport".to_string(),
-            ),
-        },
-    ])
+fn get_test_parent_property_list() -> Option<[fdf::NodeProperty; 1]> {
+    Some([fdf::NodeProperty {
+        key: fdf::NodePropertyKey::StringValue("fuchsia.BIND_PROTOCOL".to_string()),
+        value: fdf::NodePropertyValue::IntValue(bind_fuchsia_test::BIND_PROTOCOL_PARENT),
+    }])
 }
 
 fn assert_not_found_error(error: fidl::Error) {

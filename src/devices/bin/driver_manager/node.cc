@@ -158,12 +158,41 @@ fit::result<fuchsia_driver_framework::NodeError, NodeOffer> ProcessNodeOffer(
 
 namespace {
 
+// Returns true if the service should be excluded from automatic fuchsia.Service
+// property generation.
+//
+// We exclude:
+// - Services that are handled specially (e.g. power, interrupts).
+// - Services that are only for testing or compatibility.
+// - Services that contain "Metadata" in their name. Metadata services are
+//   helper services used to retrieve metadata, and generating a fuchsia.Service
+//   property for them could cause conflicts if the node also offers a regular
+//   service.
+//
+// In the future, we should migrate drivers to manually specify the
+// bind_fuchsia::SERVICE property instead of relying on this exclusion list,
+// and eventually remove this list.
+bool ShouldExcludeService(std::string_view service_name) {
+  if (service_name == "fuchsia.driver.compat.Service" ||
+      service_name == "fuchsia.hardware.power.PowerTokenService" ||
+      service_name == "fuchsia.hardware.interrupt.ControllerRegistryService" ||
+      service_name == "fidl.examples.echo.EchoService2" ||
+      service_name == "fuchsia.hardware.goldfish.ControlService") {
+    return true;
+  }
+  if (service_name.find("Metadata") != std::string_view::npos) {
+    return true;
+  }
+  return false;
+}
+
 // Processes the offer by validating it has a source_name and adding a source ref to it.
 // Returns a tuple containing the offer as well as node property that provides transport
 // information for the offer.
-fit::result<fdf::NodeError, std::tuple<NodeOffer, fdf::NodeProperty2>>
+fit::result<fdf::NodeError, std::tuple<NodeOffer, std::vector<fdf::NodeProperty2>>>
 ProcessNodeOfferWithTransportProperty(const fdf::Offer& add_offer, Collection source_collection,
-                                      std::string_view source_name) {
+                                      std::string_view source_name,
+                                      bool generate_service_property) {
   fit::result result = ProcessNodeOffer(add_offer, source_collection, source_name);
   if (result.is_error()) {
     return result.take_error();
@@ -171,11 +200,19 @@ ProcessNodeOfferWithTransportProperty(const fdf::Offer& add_offer, Collection so
 
   NodeOffer processed_offer = std::move(result.value());
 
+  std::vector<fdf::NodeProperty2> properties;
   const std::string& name = processed_offer.service_name;
-  auto node_property =
-      fdf::MakeProperty2(name, std::format("{}.{}", name, processed_offer.transport));
+  if (ShouldExcludeService(name)) {
+    return fit::ok(std::make_tuple(std::move(processed_offer), std::move(properties)));
+  }
 
-  return fit::ok(std::make_tuple(std::move(processed_offer), std::move(node_property)));
+  properties.push_back(
+      fdf::MakeProperty2(name, std::format("{}.{}", name, processed_offer.transport)));
+  if (generate_service_property) {
+    properties.push_back(fdf::MakeProperty2(bind_fuchsia::SERVICE, name));
+  }
+
+  return fit::ok(std::make_tuple(std::move(processed_offer), std::move(properties)));
 }
 
 bool IsDefaultOffer(std::string_view target_name) { return target_name == "default"; }
@@ -1278,6 +1315,18 @@ void Node::AddChildHelper(fuchsia_driver_framework::NodeAddArgs args,
     child->driver_host_name_for_colocation_ = args.driver_host().value();
   }
 
+  // If the node already has a manually specified fuchsia.Service property,
+  // we disable automatic generation of fuchsia.Service properties for all
+  // offers. This allows drivers to manually specify which service should be
+  // used for binding, avoiding conflicts when a node offers multiple services.
+  bool has_manual_service_property = false;
+  for (const auto& property : properties) {
+    if (property.key() == bind_fuchsia::SERVICE) {
+      has_manual_service_property = true;
+      break;
+    }
+  }
+
   std::vector<NodeOffer> child_offers;
   bool has_dictionary_offer = false;
   if (fdf_offers.has_value()) {
@@ -1300,17 +1349,19 @@ void Node::AddChildHelper(fuchsia_driver_framework::NodeAddArgs args,
         has_dictionary_offer = true;
       }
 
-      fit::result new_offer =
-          ProcessNodeOfferWithTransportProperty(fdf_offer, source_collection, source_name);
+      fit::result new_offer = ProcessNodeOfferWithTransportProperty(
+          fdf_offer, source_collection, source_name, !has_manual_service_property);
       if (new_offer.is_error()) {
         fdf_log::error("Failed to add Node '{}': Bad add offer: {}", child->MakeTopologicalPath(),
                        new_offer.error_value());
         callback(new_offer.take_error());
         return;
       }
-      auto [processed_offer, property] = std::move(new_offer.value());
+      auto [processed_offer, offer_properties] = std::move(new_offer.value());
       child_offers.emplace_back(processed_offer);
-      properties.emplace_back(property);
+      for (auto& property : offer_properties) {
+        properties.emplace_back(std::move(property));
+      }
     }
   }
 
@@ -1581,18 +1632,32 @@ void Node::ProvideResource(
     std::string source_name = source_node->MakeComponentMoniker();
     Collection source_collection = source_node->collection_;
 
+    // If the node already has a manually specified fuchsia.Service property,
+    // we disable automatic generation of fuchsia.Service properties for all
+    // offers. This allows drivers to manually specify which service should be
+    // used for binding, avoiding conflicts when a node offers multiple services.
+    bool has_manual_service_property = false;
+    for (const auto& property : *natural_resource.properties()) {
+      if (property.key() == bind_fuchsia::SERVICE) {
+        has_manual_service_property = true;
+        break;
+      }
+    }
+
     for (const auto& fdf_offer : *natural_resource.offers()) {
-      fit::result new_offer =
-          ProcessNodeOfferWithTransportProperty(fdf_offer, source_collection, source_name);
+      fit::result new_offer = ProcessNodeOfferWithTransportProperty(
+          fdf_offer, source_collection, source_name, !has_manual_service_property);
       if (new_offer.is_error()) {
         fdf_log::error("Failed to provide resource '{}': Bad offer: {}",
                        natural_resource.name().value(), new_offer.error_value());
         completer.ReplyError(new_offer.error_value());
         return;
       }
-      auto [processed_offer, property] = std::move(new_offer.value());
+      auto [processed_offer, offer_properties] = std::move(new_offer.value());
       node_offers.push_back(std::move(processed_offer));
-      natural_resource.properties()->push_back(std::move(property));
+      for (auto& property : offer_properties) {
+        natural_resource.properties()->push_back(std::move(property));
+      }
     }
   }
   auto resource = std::make_shared<Resource>(

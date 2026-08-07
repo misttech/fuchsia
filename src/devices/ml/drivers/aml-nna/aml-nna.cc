@@ -281,6 +281,7 @@ zx::result<> AmlNnaDriver::Start(fdf::DriverContext context) {
                          bind_fuchsia_platform::BIND_PLATFORM_DEV_PID_GENERIC),
       fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_DID,
                          bind_fuchsia_verisilicon_platform::BIND_PLATFORM_DEV_DID_MAGMA_VIP),
+      fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.platform.device.Service"),
   };
 
   zx::result child = AddChild(kChildNodeName, properties, offers);

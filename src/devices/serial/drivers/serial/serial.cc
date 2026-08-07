@@ -11,6 +11,7 @@
 #include <zircon/status.h>
 #include <zircon/threads.h>
 
+#include <format>
 #include <memory>
 
 #include <bind/fuchsia/cpp/bind.h>
@@ -288,7 +289,7 @@ zx_status_t SerialDevice::Bind(serial_config::Config config) {
     }
   }
 
-  std::vector<fuchsia_driver_framework::Offer> offers{
+  std::vector<fuchsia_driver_framework::Offer> serial_offers{
       fdf::MakeOffer2<fuchsia_hardware_serial::Service>(),
       fdf::MakeOffer2<fuchsia_hardware_serialimpl::Service>(),
   };
@@ -313,7 +314,7 @@ zx_status_t SerialDevice::Bind(serial_config::Config config) {
       return result.error_value();
     }
 
-    offers.push_back(fdf::MakeOffer2<fuchsia_hardware_power::PowerTokenService>());
+    serial_offers.push_back(fdf::MakeOffer2<fuchsia_hardware_power::PowerTokenService>());
   }
 
   // Forward MAC address metadata if it exists.
@@ -328,14 +329,16 @@ zx_status_t SerialDevice::Bind(serial_config::Config config) {
 
   const std::optional mac_address_offer = mac_address_metadata_server_.CreateOffer();
   if (mac_address_offer.has_value()) {
-    offers.push_back(mac_address_offer.value());
+    serial_offers.push_back(mac_address_offer.value());
   }
 
-  std::vector<fuchsia_driver_framework::NodeProperty2> props{
+  std::vector<fuchsia_driver_framework::NodeProperty2> legacy_props{
       fdf::MakeProperty2(bind_fuchsia::PROTOCOL, bind_fuchsia_serial::BIND_PROTOCOL_DEVICE),
       fdf::MakeProperty2(bind_fuchsia::SERIAL_CLASS, serial_class_),
+      fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.serial.Service"),
   };
 
+  // 1. Add the legacy serial node (offers serial::Service)
   zx::result<fidl::ClientEnd<fuchsia_device_fs::Connector>> connector =
       devfs_connector_.Bind(fdf::Dispatcher::GetCurrent()->async_dispatcher());
   if (connector.is_error()) {
@@ -352,15 +355,33 @@ zx_status_t SerialDevice::Bind(serial_config::Config config) {
   }};
 
   zx::result<fidl::ClientEnd<fuchsia_driver_framework::NodeController>> controller =
-      fdf::AddChild(node(), logger(), name(), devfs, props, offers);
+      fdf::AddChild(node(), logger(), name(), devfs, legacy_props, serial_offers);
   if (controller.is_error()) {
     logger().log(fdf::ERROR, "AddChild failed: {}", controller);
     return controller.error_value();
   }
 
   logger().log(fdf::TRACE, "SerialDevice registered devfs node: {}", name());
-
   controller_ = *std::move(controller);
+
+  // 2. Add the new serial-impl node (offers serialimpl::Service)
+  std::vector<fuchsia_driver_framework::Offer> impl_offers{
+      fdf::MakeOffer2<fuchsia_hardware_serialimpl::Service>(),
+  };
+
+  std::vector<fuchsia_driver_framework::NodeProperty2> impl_props{
+      fdf::MakeProperty2(bind_fuchsia::PROTOCOL, bind_fuchsia_serial::BIND_PROTOCOL_DEVICE),
+      fdf::MakeProperty2(bind_fuchsia::SERIAL_CLASS, serial_class_),
+  };
+
+  std::string impl_node_name = std::format("{}-impl", name());
+  auto impl_result = fdf::AddChild(node(), logger(), impl_node_name, impl_props, impl_offers);
+  if (impl_result.is_error()) {
+    logger().log(fdf::ERROR, "Failed to add serial-impl child node: {}", impl_result);
+    return impl_result.error_value();
+  }
+  impl_controller_ = std::move(impl_result.value());
+
   return ZX_OK;
 }
 

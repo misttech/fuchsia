@@ -5,6 +5,7 @@
 #include "gpio.h"
 
 #include <fidl/fuchsia.driver.metadata/cpp/fidl.h>
+#include <fidl/fuchsia.hardware.gpio/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.pinimpl/cpp/driver/fidl.h>
 #include <fidl/fuchsia.scheduler/cpp/fidl.h>
 #include <lib/ddk/metadata.h>
@@ -527,8 +528,11 @@ TEST_F(GpioTest, ValidateMetadataOk) {
   driver_test().RunInNodeContext([](fdf_testing::TestNode& node) {
     ASSERT_EQ(node.children().count("gpio"), 1ul);
     EXPECT_EQ(node.children().at("gpio").children().count("gpio-1"), 1ul);
+    EXPECT_EQ(node.children().at("gpio").children().count("gpio-1-pin"), 1ul);
     EXPECT_EQ(node.children().at("gpio").children().count("gpio-2"), 1ul);
+    EXPECT_EQ(node.children().at("gpio").children().count("gpio-2-pin"), 1ul);
     EXPECT_EQ(node.children().at("gpio").children().count("gpio-3"), 1ul);
+    EXPECT_EQ(node.children().at("gpio").children().count("gpio-3-pin"), 1ul);
   });
 
   EXPECT_TRUE(driver_test().StopDriver().is_ok());
@@ -788,8 +792,11 @@ TEST_F(GpioTest, ControllerId) {
   driver_test().RunInNodeContext([](fdf_testing::TestNode& node) {
     ASSERT_EQ(node.children().count("gpio"), 1ul);
     EXPECT_EQ(node.children().at("gpio").children().count("gpio-0"), 1ul);
+    EXPECT_EQ(node.children().at("gpio").children().count("gpio-0-pin"), 1ul);
     EXPECT_EQ(node.children().at("gpio").children().count("gpio-1"), 1ul);
+    EXPECT_EQ(node.children().at("gpio").children().count("gpio-1-pin"), 1ul);
     EXPECT_EQ(node.children().at("gpio").children().count("gpio-2"), 1ul);
+    EXPECT_EQ(node.children().at("gpio").children().count("gpio-2-pin"), 1ul);
   });
 
   for (const auto& pin : kPins) {
@@ -804,7 +811,7 @@ TEST_F(GpioTest, ControllerId) {
               .at(std::string{"gpio-"} + pin.name().value())
               .GetProperties();
 
-      ASSERT_EQ(properties.size(), 2ul);
+      ASSERT_EQ(properties.size(), 3ul);
 
       EXPECT_EQ(properties[0].key(), bind_fuchsia::GPIO_PIN);
 
@@ -815,6 +822,29 @@ TEST_F(GpioTest, ControllerId) {
 
       ASSERT_TRUE(properties[1].value().int_value().has_value());
       EXPECT_EQ(properties[1].value().int_value().value(), kController);
+
+      EXPECT_EQ(properties[2].key(), bind_fuchsia::SERVICE);
+      ASSERT_TRUE(properties[2].value().string_value().has_value());
+      EXPECT_EQ(properties[2].value().string_value().value(), fuchsia_hardware_gpio::Service::Name);
+
+      std::vector<fuchsia_driver_framework::NodeProperty2> pin_properties =
+          node.children()
+              .at("gpio")
+              .children()
+              .at(std::string{"gpio-"} + pin.name().value() + "-pin")
+              .GetProperties();
+
+      ASSERT_EQ(pin_properties.size(), 3ul);
+      EXPECT_EQ(pin_properties[0].key(), bind_fuchsia::GPIO_PIN);
+      ASSERT_TRUE(pin_properties[0].value().int_value().has_value());
+      EXPECT_EQ(pin_properties[0].value().int_value().value(), pin.pin().value());
+      EXPECT_EQ(pin_properties[1].key(), bind_fuchsia::GPIO_CONTROLLER);
+      ASSERT_TRUE(pin_properties[1].value().int_value().has_value());
+      EXPECT_EQ(pin_properties[1].value().int_value().value(), kController);
+      EXPECT_EQ(pin_properties[2].key(), bind_fuchsia::SERVICE);
+      ASSERT_TRUE(pin_properties[2].value().string_value().has_value());
+      EXPECT_EQ(pin_properties[2].value().string_value().value(),
+                fuchsia_hardware_pin::Service::Name);
     });
   }
 
@@ -861,8 +891,11 @@ TEST_F(GpioTest, SchedulerRole) {
   driver_test().RunInNodeContext([](fdf_testing::TestNode& node) {
     ASSERT_EQ(node.children().count("gpio"), 1ul);
     EXPECT_EQ(node.children().at("gpio").children().count("gpio-0"), 1ul);
+    EXPECT_EQ(node.children().at("gpio").children().count("gpio-0-pin"), 1ul);
     EXPECT_EQ(node.children().at("gpio").children().count("gpio-1"), 1ul);
+    EXPECT_EQ(node.children().at("gpio").children().count("gpio-1-pin"), 1ul);
     EXPECT_EQ(node.children().at("gpio").children().count("gpio-2"), 1ul);
+    EXPECT_EQ(node.children().at("gpio").children().count("gpio-2-pin"), 1ul);
   });
 
   for (const auto& pin : kPins) {

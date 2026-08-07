@@ -271,6 +271,7 @@ zx::result<> AddWifiNode(fdf::WireSyncClient<fpbus::PlatformBus>& pbus) {
   for (uint32_t i = 1; i <= kSdioFunctionCount; i++) {
     auto sdio_bind_rules = {
         fdf::MakeAcceptBindRule(bind_fuchsia::PROTOCOL, bind_fuchsia_sdio::BIND_PROTOCOL_DEVICE),
+        fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.sdio.Service"),
         fdf::MakeAcceptBindRule(bind_fuchsia::SDIO_VID,
                                 bind_fuchsia_broadcom_platform_sdio::BIND_SDIO_VID_BROADCOM),
         fdf::MakeAcceptBindRule(bind_fuchsia::SDIO_PID,

@@ -253,6 +253,7 @@ class BtTransportUart : public fdf::DriverBase2,
   async_dispatcher_t* dispatcher_ = nullptr;
 
   fidl::WireClient<fuchsia_driver_framework::NodeController> child_node_controller_;
+  fidl::ClientEnd<fuchsia_driver_framework::NodeController> impl_controller_;
 
   std::optional<fidl::ServerBinding<fuchsia_hardware_bluetooth::Snoop>> snoop_server_;
 

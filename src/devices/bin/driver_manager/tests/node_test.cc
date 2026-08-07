@@ -1294,10 +1294,13 @@ TEST_F(Dfv2NodeTest, ProvideAndRemoveResource) {
   EXPECT_FALSE(node->provided_resources()[0]->is_self_resource());
   ASSERT_EQ(node->provided_resources()[0]->offers().size(), 1u);
   EXPECT_EQ(node->provided_resources()[0]->offers()[0].service_name, "service");
-  ASSERT_EQ(node->provided_resources()[0]->properties().size(), 1u);
+  ASSERT_EQ(node->provided_resources()[0]->properties().size(), 2u);
   EXPECT_EQ(node->provided_resources()[0]->properties()[0].key(), "service");
   EXPECT_EQ(node->provided_resources()[0]->properties()[0].value().string_value().value(),
             "service.ZirconTransport");
+  EXPECT_EQ(node->provided_resources()[0]->properties()[1].key(), "fuchsia.Service");
+  EXPECT_EQ(node->provided_resources()[0]->properties()[1].value().string_value().value(),
+            "service");
 
   auto owner = node->provided_resources()[0]->owner().lock();
   ASSERT_NE(owner, nullptr);

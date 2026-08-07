@@ -236,6 +236,16 @@ class BtTransportUartTest : public ::testing::Test {
   fidl::WireSyncClient<fhbt::Hci> hci_client_;
 };
 
+TEST_F(BtTransportUartTest, Lifetime) {
+  zx::result<> result = StartDriver();
+  ASSERT_TRUE(result.is_ok());
+
+  driver_test().RunInNodeContext([](fdf_testing::TestNode& node) {
+    EXPECT_EQ(node.children().count("bt-transport-uart"), 1ul);
+    EXPECT_EQ(node.children().count("bt-transport-uart-impl"), 1ul);
+  });
+}
+
 TEST_F(BtTransportUartTest, GetInfoError) {
   driver_test().RunInEnvironmentTypeContext([](FixtureBasedTestEnvironment& env) {
     env.serial_device_.set_info_result(zx::error(ZX_ERR_INTERNAL));

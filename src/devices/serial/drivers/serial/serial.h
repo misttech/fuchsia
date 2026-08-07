@@ -60,6 +60,7 @@ class SerialDevice : public fdf::DriverBase2,
   std::shared_ptr<fdf::Namespace> incoming_;
 
   fidl::ClientEnd<fuchsia_driver_framework::NodeController> controller_;
+  fidl::ClientEnd<fuchsia_driver_framework::NodeController> impl_controller_;
 
   fidl::ServerBindingGroup<fuchsia_hardware_serial::DeviceProxy> proxy_bindings_;
   std::optional<fidl::ServerBinding<fuchsia_hardware_serial::Device>> binding_;

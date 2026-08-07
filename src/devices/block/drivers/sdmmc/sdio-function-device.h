@@ -228,6 +228,7 @@ class SdioFunctionDevice : public ddk::SdioProtocol<SdioFunctionDevice>,
 
   std::string sdio_function_name_;
   fidl::WireSyncClient<fuchsia_driver_framework::NodeController> controller_;
+  fidl::WireSyncClient<fuchsia_driver_framework::NodeController> driver_controller_;
 
   compat::BanjoServer sdio_server_{ZX_PROTOCOL_SDIO, this, &sdio_protocol_ops_};
   compat::SyncInitializedDeviceServer compat_server_;

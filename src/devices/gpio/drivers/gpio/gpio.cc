@@ -17,6 +17,7 @@
 #include <zircon/types.h>
 
 #include <algorithm>
+#include <format>
 #include <memory>
 
 #include <bind/fuchsia/cpp/bind.h>
@@ -316,18 +317,27 @@ zx::result<> GpioDevice::AddServices(const std::shared_ptr<fdf::Namespace>& inco
 
 zx::result<> GpioDevice::AddDevice(fidl::UnownedClientEnd<fuchsia_driver_framework::Node> root_node,
                                    fdf::Logger& logger, gpio_config::Config config) {
-  std::vector<fuchsia_driver_framework::Offer> offers{
+  // 1. Add the legacy GPIO node (offers gpio::Service and PowerTokenService)
+  std::vector<fuchsia_driver_framework::Offer> gpio_offers{
       fdf::MakeOffer2<fuchsia_hardware_gpio::Service>(pin_name()),
       fdf::MakeOffer2<fuchsia_hardware_pin::Service>(pin_name()),
   };
 
   if (config.enable_suspend()) {
-    offers.emplace_back(fdf::MakeOffer2<fuchsia_hardware_power::PowerTokenService>(pin_name()));
+    gpio_offers.emplace_back(
+        fdf::MakeOffer2<fuchsia_hardware_power::PowerTokenService>(pin_name()));
   }
 
-  std::vector<fuchsia_driver_framework::NodeProperty2> props{
+  std::vector<fuchsia_driver_framework::NodeProperty2> gpio_props{
       fdf::MakeProperty2(bind_fuchsia::GPIO_PIN, pin_),
       fdf::MakeProperty2(bind_fuchsia::GPIO_CONTROLLER, controller_id_),
+      fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.gpio.Service"),
+  };
+
+  std::vector<fuchsia_driver_framework::NodeProperty2> pin_props{
+      fdf::MakeProperty2(bind_fuchsia::GPIO_PIN, pin_),
+      fdf::MakeProperty2(bind_fuchsia::GPIO_CONTROLLER, controller_id_),
+      fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.pin.Service"),
   };
 
   zx::result<fidl::ClientEnd<fuchsia_driver_framework::NodeController>> result;
@@ -338,22 +348,34 @@ zx::result<> GpioDevice::AddDevice(fidl::UnownedClientEnd<fuchsia_driver_framewo
       return connector.take_error();
     }
 
-    fuchsia_driver_framework::DevfsAddArgs devfs{{
-        .connector = *std::move(connector),
+    fuchsia_driver_framework::DevfsAddArgs devfs_args{{
+        .connector = std::move(connector.value()),
         .class_name = "gpio",
-        .connector_supports = fuchsia_device_fs::ConnectionType::kDevice,
     }};
-
-    result = fdf::AddChild(root_node, logger, pin_name(), devfs, props, offers);
+    result = fdf::AddChild(root_node, logger, pin_name(), devfs_args, gpio_props, gpio_offers);
   } else {
-    result = fdf::AddChild(root_node, logger, pin_name(), props, offers);
+    result = fdf::AddChild(root_node, logger, pin_name(), gpio_props, gpio_offers);
   }
+
   if (result.is_error()) {
-    logger.log(fdf::TRACE, "AddChild failed for pin {}", pin_);
+    logger.log(fdf::ERROR, "Failed to add gpio child node: {}", result.status_string());
     return result.take_error();
   }
+  controller_ = std::move(result.value());
 
-  controller_ = *std::move(result);
+  // 2. Add the new Pin node (offers pin::Service)
+  std::vector<fuchsia_driver_framework::Offer> pin_offers{
+      fdf::MakeOffer2<fuchsia_hardware_pin::Service>(pin_name()),
+  };
+
+  std::string pin_node_name = std::format("{}-pin", pin_name());
+  auto pin_result = fdf::AddChild(root_node, logger, pin_node_name, pin_props, pin_offers);
+  if (pin_result.is_error()) {
+    logger.log(fdf::ERROR, "Failed to add pin child node: {}", pin_result.status_string());
+    return pin_result.take_error();
+  }
+  pin_controller_ = std::move(pin_result.value());
+
   return zx::ok();
 }
 

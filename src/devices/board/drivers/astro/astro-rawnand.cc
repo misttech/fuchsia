@@ -125,6 +125,10 @@ zx_status_t Astro::RawNandInit() {
       }},
   };
 
+  const std::vector<fuchsia_driver_framework::NodeProperty2> raw_nand_properties = {
+      fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.platform.device.Service"),
+  };
+
   fpbus::Node raw_nand_dev{{
       .name = "nand-ffe07800",
       .vid = bind_fuchsia_amlogic_platform::BIND_PLATFORM_DEV_VID_AMLOGIC,
@@ -135,6 +139,7 @@ zx_status_t Astro::RawNandInit() {
       .bti = raw_nand_btis,
       .metadata = std::move(metadata),
       .boot_metadata = raw_nand_boot_metadata,
+      .properties = raw_nand_properties,
   }};
 
   fidl::Arena<> fidl_arena;

@@ -105,19 +105,34 @@ zx_status_t SdioFunctionDevice::AddDevice(const sdio_func_hw_info_t& hw_info) {
                    .class_name("sdio")
                    .Build();
 
-  fidl::VectorView<fuchsia_driver_framework::wire::NodeProperty2> properties(arena, 4);
-  properties[0] =
+  fidl::VectorView<fuchsia_driver_framework::wire::NodeProperty2> legacy_properties(arena, 5);
+  legacy_properties[0] =
       fdf::MakeProperty2(arena, bind_fuchsia::PROTOCOL, bind_fuchsia_sdio::BIND_PROTOCOL_DEVICE);
-  properties[1] = fdf::MakeProperty2(arena, bind_fuchsia::SDIO_VID, hw_info.manufacturer_id);
-  properties[2] = fdf::MakeProperty2(arena, bind_fuchsia::SDIO_PID, hw_info.product_id);
-  properties[3] =
+  legacy_properties[1] = fdf::MakeProperty2(arena, bind_fuchsia::SDIO_VID, hw_info.manufacturer_id);
+  legacy_properties[2] = fdf::MakeProperty2(arena, bind_fuchsia::SDIO_PID, hw_info.product_id);
+  legacy_properties[3] =
       fdf::MakeProperty2(arena, bind_fuchsia::SDIO_FUNCTION, static_cast<uint32_t>(function_));
+  legacy_properties[4] =
+      fdf::MakeProperty2(arena, bind_fuchsia::SERVICE, "fuchsia.hardware.sdio.Service");
 
-  std::vector<fuchsia_driver_framework::wire::Offer> offers = compat_server_.CreateOffers2(arena);
-  offers.push_back(fdf::MakeOffer2<fuchsia_hardware_sdio::Service>(arena, sdio_function_name_));
-  offers.push_back(
+  fidl::VectorView<fuchsia_driver_framework::wire::NodeProperty2> driver_properties(arena, 5);
+  driver_properties[0] =
+      fdf::MakeProperty2(arena, bind_fuchsia::PROTOCOL, bind_fuchsia_sdio::BIND_PROTOCOL_DEVICE);
+  driver_properties[1] = fdf::MakeProperty2(arena, bind_fuchsia::SDIO_VID, hw_info.manufacturer_id);
+  driver_properties[2] = fdf::MakeProperty2(arena, bind_fuchsia::SDIO_PID, hw_info.product_id);
+  driver_properties[3] =
+      fdf::MakeProperty2(arena, bind_fuchsia::SDIO_FUNCTION, static_cast<uint32_t>(function_));
+  driver_properties[4] =
+      fdf::MakeProperty2(arena, bind_fuchsia::SERVICE, "fuchsia.hardware.sdio.DriverService");
+
+  std::vector<fuchsia_driver_framework::wire::Offer> legacy_offers =
+      compat_server_.CreateOffers2(arena);
+  legacy_offers.push_back(
+      fdf::MakeOffer2<fuchsia_hardware_sdio::Service>(arena, sdio_function_name_));
+  legacy_offers.push_back(
       fdf::MakeOffer2<fuchsia_hardware_sdio::DriverService>(arena, sdio_function_name_));
 
+  bool power_service_added = false;
   if (sdio_parent_->parent()->config().enable_suspend()) {
     // TODO(b/425459741) Treat errors as fatal again once all products are
     // wired proerly.
@@ -135,14 +150,16 @@ zx_status_t SdioFunctionDevice::AddDevice(const sdio_func_hw_info_t& hw_info) {
         return result.status_value();
       }
 
-      offers.push_back(
+      legacy_offers.push_back(
           fdf::MakeOffer2<fuchsia_hardware_power::PowerTokenService>(arena, sdio_function_name_));
+      power_service_added = true;
     } else {
       fdf::error("Power configuration failed, power management disabled: {}",
                  result.status_string());
     }
   }
 
+  // 1. Add the legacy SDIO node (offers fuchsia_hardware_sdio::Service)
   auto bus_info =
       fuchsia_driver_framework::wire::BusInfo::Builder(arena)
           .bus(fuchsia_driver_framework::wire::BusType::kSdio)
@@ -150,19 +167,48 @@ zx_status_t SdioFunctionDevice::AddDevice(const sdio_func_hw_info_t& hw_info) {
           .address_stability(fuchsia_driver_framework::wire::DeviceAddressStability::kStable)
           .Build();
 
-  const auto args = fuchsia_driver_framework::wire::NodeAddArgs::Builder(arena)
-                        .name(arena, sdio_function_name_)
-                        .offers2(arena, std::move(offers))
-                        .properties2(properties)
-                        .devfs_args(devfs)
-                        .bus_info(bus_info)
-                        .Build();
+  const auto legacy_args = fuchsia_driver_framework::wire::NodeAddArgs::Builder(arena)
+                               .name(arena, sdio_function_name_)
+                               .offers2(arena, std::move(legacy_offers))
+                               .properties2(legacy_properties)
+                               .devfs_args(devfs)
+                               .bus_info(bus_info)
+                               .Build();
 
-  auto result =
-      sdio_parent_->sdio_controller_node()->AddChild(args, std::move(controller_server_end), {});
+  auto result = sdio_parent_->sdio_controller_node()->AddChild(
+      legacy_args, std::move(controller_server_end), {});
   if (!result.ok()) {
     fdf::error("Failed to add child sdio function device: {}", result.status_string());
     return result.status();
+  }
+
+  // 2. Add the new SDIO driver node (offers fuchsia_hardware_sdio::DriverService)
+  std::vector<fuchsia_driver_framework::wire::Offer> driver_offers;
+  driver_offers.push_back(
+      fdf::MakeOffer2<fuchsia_hardware_sdio::DriverService>(arena, sdio_function_name_));
+  if (power_service_added) {
+    driver_offers.push_back(
+        fdf::MakeOffer2<fuchsia_hardware_power::PowerTokenService>(arena, sdio_function_name_));
+  }
+
+  auto [driver_controller_client_end, driver_controller_server_end] =
+      fidl::Endpoints<fuchsia_driver_framework::NodeController>::Create();
+  driver_controller_.Bind(std::move(driver_controller_client_end));
+
+  std::string driver_node_name = sdio_function_name_ + "-driver";
+  const auto driver_args = fuchsia_driver_framework::wire::NodeAddArgs::Builder(arena)
+                               .name(arena, driver_node_name)
+                               .offers2(arena, std::move(driver_offers))
+                               .properties2(driver_properties)
+                               .bus_info(bus_info)
+                               .Build();
+
+  auto driver_result = sdio_parent_->sdio_controller_node()->AddChild(
+      driver_args, std::move(driver_controller_server_end), {});
+  if (!driver_result.ok()) {
+    fdf::error("Failed to add child sdio function driver device: {}",
+               driver_result.status_string());
+    return driver_result.status();
   }
 
   return ZX_OK;

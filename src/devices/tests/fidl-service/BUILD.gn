@@ -82,7 +82,7 @@ fuchsia_driver_component("parent") {
 driver_bind_rules("child-driver-bind") {
   testonly = true
   rules = "meta/child-driver.bind"
-  deps = [ ":echo_bindlib" ]
+  deps = [ "//src/devices/bind/fuchsia" ]
 }
 
 fuchsia_cc_driver("child-driver") {

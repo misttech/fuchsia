@@ -130,6 +130,8 @@ static const char MAILBOX_ID[] = "fuchsia.BIND_MAILBOX_ID";
 
 static const char INTERCONNECT_PATH_ID[] = "fuchsia.BIND_INTERCONNECT_PATH_ID";
 
+static const char SERVICE[] = "fuchsia.Service";
+
 }  // namespace bind_fuchsia
 
 #endif  // BIND_FUCHSIA_BINDLIB_

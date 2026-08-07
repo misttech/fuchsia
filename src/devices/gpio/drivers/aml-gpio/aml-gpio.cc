@@ -15,6 +15,7 @@
 #include <algorithm>
 #include <cstdint>
 
+#include <bind/fuchsia/cpp/bind.h>
 #include <bind/fuchsia/hardware/pinimpl/cpp/bind.h>
 #include <fbl/alloc_checker.h>
 
@@ -291,7 +292,8 @@ void AmlGpioDriver::InitDevice(uint32_t pid, uint32_t irq_count, std::vector<fdf
 zx::result<> AmlGpioDriver::AddNode() {
   auto props =
       std::vector{fdf::MakeProperty2(bind_fuchsia_hardware_pinimpl::SERVICE,
-                                     bind_fuchsia_hardware_pinimpl::SERVICE_DRIVERTRANSPORT)};
+                                     bind_fuchsia_hardware_pinimpl::SERVICE_DRIVERTRANSPORT),
+                  fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.pinimpl.Service")};
 
   std::vector<fuchsia_driver_framework::Offer> offers;
   offers.push_back(fdf::MakeOffer2<fuchsia_hardware_pinimpl::Service>(component::kDefaultInstance));

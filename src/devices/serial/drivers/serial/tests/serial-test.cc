@@ -158,6 +158,11 @@ TEST_F(SerialTest, Lifetime) {
                   })
                   .is_ok());
 
+  driver_test().RunInNodeContext([](fdf_testing::TestNode& node) {
+    EXPECT_EQ(node.children().count("serial"), 1ul);
+    EXPECT_EQ(node.children().count("serial-impl"), 1ul);
+  });
+
   zx::result client_end = driver_test().Connect<fuchsia_hardware_serial::Service::Device>();
   EXPECT_TRUE(client_end.is_ok());
 

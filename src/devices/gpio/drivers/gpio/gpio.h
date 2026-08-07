@@ -12,6 +12,7 @@
 #include <lib/driver/devfs/cpp/connector.h>
 #include <stdio.h>
 
+#include <format>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -139,6 +140,7 @@ class GpioDevice : public fidl::WireServer<fuchsia_hardware_pin::Pin>,
   fidl::ServerBindingGroup<fuchsia_hardware_pin::Pin> pin_bindings_;
   fidl::ServerBindingGroup<fuchsia_hardware_pin::Debug> debug_bindings_;
   fidl::ClientEnd<fuchsia_driver_framework::NodeController> controller_;
+  fidl::ClientEnd<fuchsia_driver_framework::NodeController> pin_controller_;
   driver_devfs::Connector<fuchsia_hardware_pin::Debug> devfs_connector_;
   fdf::Logger& logger_;
 };
