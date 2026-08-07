@@ -321,12 +321,6 @@ macro_rules! __define_log_filter_args_helper {
             #[argh(subcommand)]
             pub sub_command: Option<LogSubCommand>,
 
-            /// dumps all logs and exits. This flag is deprecated. ffx log dump
-            /// should be used instead. This is now a subcommand.
-            /// This switch will eventually be removed.
-            #[argh(switch, hidden_help)]
-            pub dump: bool,
-
             /// configure the log settings on the target device for components matching
             /// the given selector. This modifies the minimum log severity level emitted
             /// by components during the logging session.
@@ -348,7 +342,6 @@ macro_rules! __define_log_filter_args_helper {
             pub fn into_log_command(self) -> LogCommand {
                 LogCommand {
                     sub_command: self.sub_command,
-                    dump: self.dump,
                     set_severity: self.set_severity,
                     filters: LogFilterArgs {
                         $(
@@ -625,7 +618,6 @@ define_log_filter_args! {
 /// Consolidated log command representation containing merged filter criteria and subcommands.
 pub struct LogCommand {
     pub sub_command: Option<LogSubCommand>,
-    pub dump: bool,
     pub set_severity: Vec<OneOrMany<LogInterestSelector>>,
     pub filters: LogFilterArgs,
 }
@@ -1459,7 +1451,6 @@ ffx log --force-set-severity.
                 parse_log_interest_selector("ambiguous_selector#INFO").unwrap(),
             )],
             filters: LogFilterArgs { force_set_severity: true, ..LogFilterArgs::default() },
-            ..LogCommand::default()
         };
         let getter = FakeInstanceGetter {
             expected_selector: Some("ambiguous_selector".into()),
@@ -1688,7 +1679,6 @@ ffx log --force-set-severity.
         };
         let mut cmd_none = LogCommand {
             sub_command: None,
-            dump: false,
             set_severity: vec![],
             filters: initial_filters.clone(),
         };
@@ -1700,7 +1690,6 @@ ffx log --force-set-severity.
             SetSeverityCommand { no_persist: true, force: true, interest_selector: vec![] };
         let mut cmd_set_sev = LogCommand {
             sub_command: Some(LogSubCommand::SetSeverity(set_severity_cmd.clone())),
-            dump: false,
             set_severity: vec![],
             filters: initial_filters.clone(),
         };
