@@ -14,7 +14,7 @@ rustc_library("lib") {
   with_unit_tests = true
 
   deps = [
-    "//src/developer/ffx/fidl:fuchsia.developer.ffx_rust",
+    "//src/developer/ffx/fidl:fuchsia.developer.ffx_rust_fdomain",
     "//src/developer/ffx/lib/fho:lib",
     "//src/developer/ffx/lib/target/holders:lib",
     "//src/developer/ffx/lib/writer:lib",
@@ -23,10 +23,8 @@ rustc_library("lib") {
   ]
 
   test_deps = [
-    "//src/lib/fidl/rust/fidl",
+    "//src/lib/fdomain/local",
     "//src/lib/fuchsia",
-    "//src/lib/fuchsia-async",
-    "//third_party/rust_crates:futures-lite",
   ]
 
   sources = [ "src/lib.rs" ]

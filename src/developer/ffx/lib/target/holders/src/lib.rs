@@ -8,29 +8,22 @@ use fdomain_client::fidl::Proxy;
 use ffx_command_error::Result;
 use fho::{FhoEnvironment, TryFromEnv as _};
 
-mod daemon_proxy;
-mod fake_injector;
 mod from_toolbox;
 mod host_ssh_addr;
 mod nodename;
 mod remote_control_proxy;
 mod ssh_addr;
 mod target_info_query;
-mod target_proxy;
 mod with_moniker;
-
-pub use daemon_proxy::{DaemonProxyHolder, daemon_protocol};
-pub use fake_injector::FakeInjector;
 
 pub use from_toolbox::toolbox;
 pub use host_ssh_addr::HostAddrHolder;
 pub use nodename::NodenameHolder;
 pub use remote_control_proxy::{
-    RemoteControlProxyHolder, fake_async_proxy, fake_daemon_proxy, fake_proxy, open_moniker,
+    RemoteControlProxyHolder, fake_async_proxy, fake_proxy, open_moniker,
 };
 pub use ssh_addr::SshAddrHolder;
 pub use target_info_query::TargetInfoQueryHolder;
-pub use target_proxy::TargetProxyHolder;
 pub use with_moniker::{
     ExposedDirectoryConnector, OptionalProtocolConnector, WithMoniker, exposed_dir,
     optional_moniker,

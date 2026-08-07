@@ -3,14 +3,14 @@
 // found in the LICENSE file.
 use argh::{ArgsInfo, FromArgs};
 use async_trait::async_trait;
+use fdomain_fuchsia_developer_ffx as ffx;
 use ffx_writer::{MachineWriter, ToolIO as _};
 use fho::{FfxContext, FfxMain, FfxTool, Result};
-use fidl_fuchsia_developer_ffx as ffx;
-use target_holders::daemon_protocol;
+use target_holders::moniker;
 
 // [START command_struct]
 #[derive(ArgsInfo, FromArgs, Debug, PartialEq)]
-#[argh(subcommand, name = "echo", description = "run echo test against the daemon")]
+#[argh(subcommand, name = "echo", description = "run echo test against the target")]
 pub struct EchoCommand {
     #[argh(positional)]
     /// text string to echo back and forth
@@ -23,7 +23,7 @@ pub struct EchoCommand {
 pub struct EchoTool {
     #[command]
     cmd: EchoCommand,
-    #[with(daemon_protocol())]
+    #[with(moniker("core/echo"))]
     echo_proxy: ffx::EchoProxy,
 }
 // [END tool_struct]
@@ -52,22 +52,15 @@ impl FfxMain for EchoTool {
 mod tests {
     use super::*;
     use ffx_writer::TestBuffer;
-    use futures_lite::stream::StreamExt;
 
     // [START fake_proxy]
     fn setup_fake_echo_proxy() -> ffx::EchoProxy {
-        let (proxy, mut stream) = fidl::endpoints::create_proxy_and_stream::<ffx::EchoMarker>();
-        fuchsia_async::Task::local(async move {
-            while let Ok(Some(req)) = stream.try_next().await {
-                match req {
-                    ffx::EchoRequest::EchoString { value, responder } => {
-                        responder.send(value.as_ref()).unwrap();
-                    }
-                }
+        let client = fdomain_local::local_client_empty();
+        target_holders::fake_proxy::<ffx::EchoProxy>(client, move |req| match req {
+            ffx::EchoRequest::EchoString { value, responder } => {
+                responder.send(value.as_ref()).unwrap();
             }
         })
-        .detach();
-        proxy
     }
     // [END fake_proxy]
 

@@ -41,12 +41,12 @@ if (is_host) {
 
     package_deps = [ ":ffx_connection_test_components" ]
 
-    test_environments = all_fuchsia_envs
+    test_environments = [ emu_env ]
 
     # TODO(https://fxbug.dev/42143551): The arm64 emulator is run from an arm64 host but we only
     # support running tests on x64 hosts.
     if (target_cpu == "arm64") {
-      test_environments -= [ emu_env ]
+      test_environments = []
     }
   }
 }

@@ -4,7 +4,6 @@
     },
     "ffx": {
         "subtool-search-paths": "$BUILD_DIR/host-tools",
-        "daemon_timeout": 15000,
         "ui": {
             "mode": "text",
             "overrides": {}

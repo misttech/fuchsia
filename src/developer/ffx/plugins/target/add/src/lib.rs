@@ -3,20 +3,15 @@
 // found in the LICENSE file.
 
 use async_trait::async_trait;
-use errors::ffx_error;
 use ffx_config::EnvironmentContext;
-use ffx_target::{TargetInfoQuery, add_manual_target, knock_target_daemonless};
+// TODO(b/540443331): Clean up naming (e.g., `knock_target_daemonless`) to remove "daemonless" in a follow-up CL.
+use ffx_target::{TargetInfoQuery, knock_target_daemonless};
 use ffx_target_add_args::AddCommand;
-use ffx_writer::{ToolIO as _, VerifiedMachineWriter};
-use fho::{Deferred, FfxContext, FfxMain, FfxTool, deferred};
-use fidl_fuchsia_developer_ffx::{TargetCollectionProxy, TargetConnectionError};
+use ffx_writer::VerifiedMachineWriter;
+use fho::{FfxMain, FfxTool};
 use manual_targets::{Config as ManualTargetsConfig, ManualTargets};
-use netext::parse_address_parts;
 use schemars::JsonSchema;
 use serde::Serialize;
-use std::io::Write;
-use target_errors::FfxTargetError;
-use target_holders::daemon_protocol;
 
 #[derive(Debug, Serialize, JsonSchema)]
 pub enum CommandStatus {
@@ -32,8 +27,6 @@ pub enum CommandStatus {
 pub struct AddTool {
     #[command]
     cmd: AddCommand,
-    #[with(deferred(daemon_protocol()))]
-    target_collection_proxy: Deferred<TargetCollectionProxy>,
     context: EnvironmentContext,
 }
 
@@ -46,96 +39,30 @@ impl FfxMain for AddTool {
     type Error = ::fho::Error;
 
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
-        if self.context.get_direct_connection_mode() {
-            if !self.cmd.nowait {
-                let query = TargetInfoQuery::try_from(self.cmd.addr.clone())
-                    .map_err(|e| ffx_error!("Could not parse '{}'. {}", self.cmd.addr, e))?;
-                knock_target_daemonless(&query, &self.context, None)
-                    .await
-                    .map_err(|e| ffx_error!("Could not connect to target: {e}"))?;
-            }
-            let mt = ManualTargetsConfig::new_from_context(&self.context);
-            mt.add(self.cmd.addr.clone()).await.map_err(|e| {
-                ffx_error!("Failed to add target to manual targets collection: {e}")
-            })?;
-            writer.machine(&CommandStatus::Ok { message: None })?;
-            return Ok(());
-        }
-        match add_impl(Some(&mut writer), self.target_collection_proxy.await?, self.cmd).await {
-            Ok(_) => {
-                writer.machine(&CommandStatus::Ok { message: None })?;
-                Ok(())
-            }
-            Err(fho::Error::User(e)) => {
-                writer.machine(&CommandStatus::UserError { message: e.to_string() })?;
-                Err(fho::Error::User(e))
-            }
-            Err(e) => {
-                writer.machine(&CommandStatus::UnexpectedError { message: e.to_string() })?;
-                Err(e)
-            }
-        }
-    }
-}
-
-pub async fn add_impl(
-    mut writer: Option<&mut VerifiedMachineWriter<CommandStatus>>,
-    target_collection_proxy: TargetCollectionProxy,
-    cmd: AddCommand,
-) -> fho::Result<()> {
-    let (addr, scope, port) =
-        parse_address_parts(cmd.addr.as_str()).map_err(|e| ffx_error!("{}", e))?;
-    let scope_id = if let Some(scope) = scope {
-        match netext::get_verified_scope_id(scope) {
-            Ok(res) => res,
-            Err(_e) => {
-                return Err(ffx_error!(
-                    "Cannot add target, as scope ID '{scope}' is not a valid interface name or index"
-                )
-                .into());
-            }
-        }
-    } else {
-        0
-    };
-    loop {
-        let res = add_manual_target(
-            &target_collection_proxy,
-            addr,
-            scope_id,
-            port.unwrap_or(0),
-            !cmd.nowait,
-        )
-        .await;
-        break match res {
-            Ok(()) => Ok(()),
-            Err(e) => {
-                // target_connection_err @ target_errors::FfxTargetError::TargetConnectionError { err, .. });
-                match e.downcast_ref::<FfxTargetError>() {
-                    Some(FfxTargetError::TargetConnectionError { err, .. }) => {
-                        // This is just copied from ffx/lib/target/src/ssh_connector.rs
-                        // This is, unfortunately, an artifact of having to convert rust errors into FIDL
-                        // for the error message response from the daemon.
-                        // LINT.IfChange
-                        use TargetConnectionError::*;
-                        match err {
-                            Timeout | ConnectionRefused | UnknownNameOrService | NoRouteToHost
-                            | NetworkUnreachable | UnknownError => {
-                                if let Some(ref mut writer) = writer {
-                                    if !writer.is_machine() {
-                                        writeln!(writer, "Non-fatal error encountered connecting. Will retry: {e}").bug()?;
-                                    }
-                                }
-                                continue;
-                            }
-                            _ => Err(e.into()),
-                        }
-                        // LINT.ThenChange(/src/developer/ffx/lib/target/src/ssh_connector.rs)
-                    }
-                    _ => Err(e.into()),
+        let addr = self.cmd.addr.clone();
+        if !self.cmd.nowait {
+            let query = match TargetInfoQuery::try_from(addr.clone()) {
+                Ok(q) => q,
+                Err(e) => {
+                    let msg = format!("Could not parse '{addr}'. {e}");
+                    let _ = writer.machine(&CommandStatus::UserError { message: msg.clone() });
+                    return Err(fho::user_error!("{msg}"));
                 }
+            };
+            if let Err(e) = knock_target_daemonless(&query, &self.context, None).await {
+                let msg = format!("Could not connect to target: {e}");
+                let _ = writer.machine(&CommandStatus::UserError { message: msg.clone() });
+                return Err(fho::user_error!("{msg}"));
             }
-        };
+        }
+        let mt = ManualTargetsConfig::new_from_context(&self.context);
+        if let Err(e) = mt.add(addr.clone()).await {
+            let msg = format!("Failed to add target to manual targets collection: {e}");
+            let _ = writer.machine(&CommandStatus::UserError { message: msg.clone() });
+            return Err(fho::user_error!("{msg}"));
+        }
+        writer.machine(&CommandStatus::Ok { message: None })?;
+        Ok(())
     }
 }
 
@@ -143,166 +70,12 @@ pub async fn add_impl(
 mod test {
     use super::*;
     use ffx_writer::{Format, TestBuffers};
-    use fidl_fuchsia_developer_ffx as ffx;
-    use fidl_fuchsia_net as net;
-    use target_holders::fake_daemon_proxy;
-
-    fn setup_fake_target_collection<T: 'static + Fn(ffx::TargetAddrInfo) + Send>(
-        test: T,
-    ) -> TargetCollectionProxy {
-        fake_daemon_proxy(move |req| match req {
-            ffx::TargetCollectionRequest::AddTarget {
-                ip, config: _, add_target_responder, ..
-            } => {
-                let add_target_responder = add_target_responder.into_proxy();
-                test(ip);
-                add_target_responder.success().unwrap();
-            }
-            _ => assert!(false),
-        })
-    }
-
-    #[fuchsia::test]
-    async fn test_add() {
-        let server = setup_fake_target_collection(|addr| {
-            assert_eq!(
-                addr,
-                ffx::TargetAddrInfo::Ip(ffx::TargetIp {
-                    ip: net::IpAddress::Ipv4(net::Ipv4Address {
-                        addr: "123.210.123.210"
-                            .parse::<std::net::Ipv4Addr>()
-                            .unwrap()
-                            .octets()
-                            .into()
-                    }),
-                    scope_id: 0,
-                })
-            )
-        });
-        add_impl(None, server, AddCommand { addr: "123.210.123.210".to_owned(), nowait: true })
-            .await
-            .unwrap();
-    }
-
-    #[fuchsia::test]
-    async fn test_add_port() {
-        let server = setup_fake_target_collection(|addr| {
-            assert_eq!(
-                addr,
-                ffx::TargetAddrInfo::IpPort(ffx::TargetIpPort {
-                    ip: net::IpAddress::Ipv4(net::Ipv4Address {
-                        addr: "123.210.123.210"
-                            .parse::<std::net::Ipv4Addr>()
-                            .unwrap()
-                            .octets()
-                            .into()
-                    }),
-                    scope_id: 0,
-                    port: 2310,
-                })
-            )
-        });
-        add_impl(
-            None,
-            server,
-            AddCommand { addr: "123.210.123.210:2310".to_owned(), nowait: true },
-        )
-        .await
-        .unwrap();
-    }
-
-    #[fuchsia::test]
-    async fn test_add_v6() {
-        let server = setup_fake_target_collection(|addr| {
-            assert_eq!(
-                addr,
-                ffx::TargetAddrInfo::Ip(ffx::TargetIp {
-                    ip: net::IpAddress::Ipv6(net::Ipv6Address {
-                        addr: "f000::1".parse::<std::net::Ipv6Addr>().unwrap().octets().into()
-                    }),
-                    scope_id: 0,
-                })
-            )
-        });
-        add_impl(None, server, AddCommand { addr: "f000::1".to_owned(), nowait: true })
-            .await
-            .unwrap();
-    }
-
-    #[fuchsia::test]
-    async fn test_add_v6_port() {
-        let server = setup_fake_target_collection(|addr| {
-            assert_eq!(
-                addr,
-                ffx::TargetAddrInfo::IpPort(ffx::TargetIpPort {
-                    ip: net::IpAddress::Ipv6(net::Ipv6Address {
-                        addr: "f000::1".parse::<std::net::Ipv6Addr>().unwrap().octets().into()
-                    }),
-                    scope_id: 0,
-                    port: 65,
-                })
-            )
-        });
-        add_impl(None, server, AddCommand { addr: "[f000::1]:65".to_owned(), nowait: true })
-            .await
-            .unwrap();
-    }
-
-    #[fuchsia::test]
-    async fn test_add_v6_scope_id() {
-        let server = setup_fake_target_collection(|addr| {
-            assert_eq!(
-                addr,
-                ffx::TargetAddrInfo::Ip(ffx::TargetIp {
-                    ip: net::IpAddress::Ipv6(net::Ipv6Address {
-                        addr: "f000::1".parse::<std::net::Ipv6Addr>().unwrap().octets().into()
-                    }),
-                    scope_id: 1,
-                })
-            )
-        });
-        add_impl(None, server, AddCommand { addr: "f000::1%1".to_owned(), nowait: true })
-            .await
-            .unwrap();
-    }
-
-    #[fuchsia::test]
-    async fn test_add_v6_scope_id_port() {
-        let server = setup_fake_target_collection(|addr| {
-            assert_eq!(
-                addr,
-                ffx::TargetAddrInfo::IpPort(ffx::TargetIpPort {
-                    ip: net::IpAddress::Ipv6(net::Ipv6Address {
-                        addr: "f000::1".parse::<std::net::Ipv6Addr>().unwrap().octets().into()
-                    }),
-                    scope_id: 1,
-                    port: 640,
-                })
-            )
-        });
-        add_impl(None, server, AddCommand { addr: "[f000::1%1]:640".to_owned(), nowait: true })
-            .await
-            .unwrap();
-    }
 
     #[fuchsia::test]
     async fn test_machine_output() {
         let env = ffx_config::test_init_with_daemon().expect("test_init_with_daemon");
-        let server = setup_fake_target_collection(|addr| {
-            assert_eq!(
-                addr,
-                ffx::TargetAddrInfo::IpPort(ffx::TargetIpPort {
-                    ip: net::IpAddress::Ipv6(net::Ipv6Address {
-                        addr: "f000::1".parse::<std::net::Ipv6Addr>().unwrap().octets().into()
-                    }),
-                    scope_id: 1,
-                    port: 640,
-                })
-            )
-        });
         let tool = AddTool {
             cmd: AddCommand { addr: "[f000::1%1]:640".to_owned(), nowait: true },
-            target_collection_proxy: Deferred::from_output(Ok(server)),
             context: env.context.clone(),
         };
 
@@ -318,30 +91,18 @@ mod test {
     #[fuchsia::test]
     async fn test_machine_output_err() {
         let env = ffx_config::test_init_with_daemon().expect("test_init_with_daemon");
-        let server = setup_fake_target_collection(|addr| {
-            assert_eq!(
-                addr,
-                ffx::TargetAddrInfo::IpPort(ffx::TargetIpPort {
-                    ip: net::IpAddress::Ipv6(net::Ipv6Address {
-                        addr: "f000::1".parse::<std::net::Ipv6Addr>().unwrap().octets().into()
-                    }),
-                    scope_id: 1,
-                    port: 640,
-                })
-            )
-        });
         let tool = AddTool {
-            cmd: AddCommand { addr: "invalid_address-100".into(), nowait: true },
-            target_collection_proxy: Deferred::from_output(Ok(server)),
+            cmd: AddCommand { addr: "invalid_address-100".into(), nowait: false },
             context: env.context.clone(),
         };
 
         let buffers = TestBuffers::default();
         let writer = VerifiedMachineWriter::new_test(Some(Format::Json), &buffers);
-        tool.main(writer).await.expect_err("target add");
+        let res = tool.main(writer).await;
+        assert!(res.is_err());
 
         let expected = String::from(
-            "{\"UserError\":{\"message\":\"Could not parse 'invalid_address-100'. Invalid address\"}}\n",
+            "{\"UserError\":{\"message\":\"Could not connect to target: non-critical error: Target not found: NodenameOrId(\\\"invalid_address-100\\\")\"}}\n",
         );
         let actual = buffers.into_stdout_str();
         assert_eq!(expected, actual)
@@ -353,12 +114,8 @@ mod test {
             .runtime_config(ffx_config::keys::DIRECT_CONNECTIONS, true)
             .build()
             .expect("test_env build");
-        let server = setup_fake_target_collection(|_| {
-            unreachable!("proxy should not be used in direct mode");
-        });
         let tool = AddTool {
             cmd: AddCommand { addr: "127.0.0.1:8022".into(), nowait: true },
-            target_collection_proxy: Deferred::from_output(Ok(server)),
             context: env.context.clone(),
         };
         let buffers = TestBuffers::default();

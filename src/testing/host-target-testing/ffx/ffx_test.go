@@ -141,3 +141,33 @@ func TestCloseStrict(t *testing.T) {
 		t.Fatalf("Close failed: %s", err)
 	}
 }
+
+func TestMatchTarget(t *testing.T) {
+	entry := TargetEntry{
+		NodeName: "my-node",
+		Serial:   "12345",
+		Addresses: []TargetAddress{
+			{Type: "Ip", IP: "192.168.1.5", SSHPort: 2222},
+		},
+	}
+
+	tests := []struct {
+		target string
+		want   bool
+	}{
+		{"", true},
+		{"my-node", true},
+		{"12345", true},
+		{"192.168.1.5", true},
+		{"192.168.1.5:2222", true},
+		{"other-node", false},
+		{"192.168.1.6", false},
+	}
+
+	for _, tc := range tests {
+		got := matchTarget(entry, tc.target)
+		if got != tc.want {
+			t.Errorf("matchTarget(entry, %q) = %v; want %v", tc.target, got, tc.want)
+		}
+	}
+}

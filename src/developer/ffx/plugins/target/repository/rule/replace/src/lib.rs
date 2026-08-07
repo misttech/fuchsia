@@ -141,24 +141,20 @@ async fn read_literal_rule_from_url(url: &Url) -> Result<RuleConfig> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use fdomain_fuchsia_net::{IpAddress, Ipv4Address};
+
     use fdomain_fuchsia_pkg_rewrite::{
         EditTransactionRequest, EngineRequest, Rule, RuleIteratorRequest,
     };
 
     use ffx_config::keys::TARGET_DEFAULT_KEY;
     use ffx_writer::TestBuffers;
-    use fidl_fuchsia_developer_ffx::{
-        RemoteControlState, SshHostAddrInfo, TargetAddrInfo, TargetInfo, TargetIpAddrInfo,
-        TargetIpPort, TargetProxy, TargetRequest, TargetState,
-    };
-    use fuchsia_async as fasync;
+
     use futures::TryStreamExt;
     use std::path::PathBuf;
     use std::str::FromStr;
     use std::sync::Arc;
-    use target_behavior::{ConnectionBehavior, target_interface};
-    use target_holders::{FakeInjector, fake_proxy};
+    use target_behavior::{ConnectionBehavior, setup_fake_resolution, target_interface};
+    use target_holders::fake_proxy;
 
     const TARGET_NAME: &str = "some-target";
     const VALID_TEST_RULE: &str = r#"{
@@ -252,50 +248,6 @@ mod test {
         repos
     }
 
-    fn to_target_info(nodename: String, ssh_host_address: Option<SshHostAddrInfo>) -> TargetInfo {
-        let device_addr = TargetAddrInfo::IpPort(TargetIpPort {
-            ip: IpAddress::Ipv4(Ipv4Address { addr: [127, 0, 0, 1] }),
-            scope_id: 0,
-            port: 5,
-        });
-        let device_addr_ip = TargetIpAddrInfo::IpPort(TargetIpPort {
-            ip: IpAddress::Ipv4(Ipv4Address { addr: [127, 0, 0, 1] }),
-            scope_id: 0,
-            port: 5,
-        });
-
-        TargetInfo {
-            nodename: Some(nodename),
-            addresses: Some(vec![device_addr]),
-            ssh_address: Some(device_addr_ip),
-            ssh_host_address,
-            age_ms: Some(101),
-            rcs_state: Some(RemoteControlState::Up),
-            target_state: Some(TargetState::Unknown),
-            ..Default::default()
-        }
-    }
-    struct FakeTarget;
-
-    impl FakeTarget {
-        fn new(host_address: Option<SshHostAddrInfo>) -> (Self, TargetProxy) {
-            let target_proxy: TargetProxy =
-                target_holders::fake_daemon_proxy(move |req| match req {
-                    TargetRequest::Identity { responder, .. } => {
-                        let ssh_host_address = host_address.clone();
-                        fasync::Task::local(async move {
-                            responder
-                                .send(&to_target_info("Foo".to_string(), ssh_host_address))
-                                .unwrap();
-                        })
-                        .detach();
-                    }
-                    _ => panic!("unexpected request: {:?}", req),
-                });
-            (Self, target_proxy)
-        }
-    }
-
     #[fuchsia::test]
     async fn test_empty_args() {
         let client = fdomain_local::local_client_empty();
@@ -304,20 +256,9 @@ mod test {
             .build()
             .expect("test env");
         let fho_env = FhoEnvironment::new_with_args(&env.context, &["some", "repo", "test"]);
-        let (_, fake_target_proxy) =
-            FakeTarget::new(Some(SshHostAddrInfo { address: "1.2.3.4".to_string() }));
-
-        let fake_injector = FakeInjector {
-            target_factory_closure: Box::new(move || {
-                let fake_target_proxy = fake_target_proxy.clone();
-                Box::pin(async { Ok(fake_target_proxy) })
-            }),
-            ..Default::default()
-        };
-
         let target_env = target_interface(&fho_env);
-        target_env
-            .set_behavior_for_test(ConnectionBehavior::DaemonConnector(Arc::new(fake_injector)));
+        let resolution = setup_fake_resolution(Some("1.2.3.4".to_string())).await;
+        target_env.set_behavior_for_test(ConnectionBehavior::fake_direct_connector(resolution));
 
         let engine_proxy = setup_fake_engine_proxy(Arc::clone(&client), None).await;
 
@@ -341,20 +282,9 @@ mod test {
             .build()
             .expect("test env");
         let fho_env = FhoEnvironment::new_with_args(&env.context, &["some", "repo", "test"]);
-        let (_, fake_target_proxy) =
-            FakeTarget::new(Some(SshHostAddrInfo { address: "1.2.3.4".to_string() }));
-
-        let fake_injector = FakeInjector {
-            target_factory_closure: Box::new(move || {
-                let fake_target_proxy = fake_target_proxy.clone();
-                Box::pin(async { Ok(fake_target_proxy) })
-            }),
-            ..Default::default()
-        };
-
         let target_env = target_interface(&fho_env);
-        target_env
-            .set_behavior_for_test(ConnectionBehavior::DaemonConnector(Arc::new(fake_injector)));
+        let resolution = setup_fake_resolution(Some("1.2.3.4".to_string())).await;
+        target_env.set_behavior_for_test(ConnectionBehavior::fake_direct_connector(resolution));
 
         let engine_proxy = setup_fake_engine_proxy(Arc::clone(&client), None).await;
 
@@ -383,20 +313,9 @@ mod test {
             .build()
             .expect("test env");
         let fho_env = FhoEnvironment::new_with_args(&env.context, &["some", "repo", "test"]);
-        let (_, fake_target_proxy) =
-            FakeTarget::new(Some(SshHostAddrInfo { address: "1.2.3.4".to_string() }));
-
-        let fake_injector = FakeInjector {
-            target_factory_closure: Box::new(move || {
-                let fake_target_proxy = fake_target_proxy.clone();
-                Box::pin(async { Ok(fake_target_proxy) })
-            }),
-            ..Default::default()
-        };
-
         let target_env = target_interface(&fho_env);
-        target_env
-            .set_behavior_for_test(ConnectionBehavior::DaemonConnector(Arc::new(fake_injector)));
+        let resolution = setup_fake_resolution(Some("1.2.3.4".to_string())).await;
+        target_env.set_behavior_for_test(ConnectionBehavior::fake_direct_connector(resolution));
 
         let engine_proxy = setup_fake_engine_proxy(Arc::clone(&client), None).await;
 
@@ -420,20 +339,9 @@ mod test {
             .build()
             .expect("test env");
         let fho_env = FhoEnvironment::new_with_args(&env.context, &["some", "repo", "test"]);
-        let (_, fake_target_proxy) =
-            FakeTarget::new(Some(SshHostAddrInfo { address: "1.2.3.4".to_string() }));
-
-        let fake_injector = FakeInjector {
-            target_factory_closure: Box::new(move || {
-                let fake_target_proxy = fake_target_proxy.clone();
-                Box::pin(async { Ok(fake_target_proxy) })
-            }),
-            ..Default::default()
-        };
-
         let target_env = target_interface(&fho_env);
-        target_env
-            .set_behavior_for_test(ConnectionBehavior::DaemonConnector(Arc::new(fake_injector)));
+        let resolution = setup_fake_resolution(Some("1.2.3.4".to_string())).await;
+        target_env.set_behavior_for_test(ConnectionBehavior::fake_direct_connector(resolution));
 
         let engine_proxy = setup_fake_engine_proxy(Arc::clone(&client), None).await;
 
@@ -460,20 +368,9 @@ mod test {
             .build()
             .expect("test env");
         let fho_env = FhoEnvironment::new_with_args(&env.context, &["some", "repo", "test"]);
-        let (_, fake_target_proxy) =
-            FakeTarget::new(Some(SshHostAddrInfo { address: "1.2.3.4".to_string() }));
-
-        let fake_injector = FakeInjector {
-            target_factory_closure: Box::new(move || {
-                let fake_target_proxy = fake_target_proxy.clone();
-                Box::pin(async { Ok(fake_target_proxy) })
-            }),
-            ..Default::default()
-        };
-
         let target_env = target_interface(&fho_env);
-        target_env
-            .set_behavior_for_test(ConnectionBehavior::DaemonConnector(Arc::new(fake_injector)));
+        let resolution = setup_fake_resolution(Some("1.2.3.4".to_string())).await;
+        target_env.set_behavior_for_test(ConnectionBehavior::fake_direct_connector(resolution));
 
         let engine_proxy = setup_fake_engine_proxy(Arc::clone(&client), None).await;
 

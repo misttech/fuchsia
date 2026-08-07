@@ -14,15 +14,8 @@ rustc_library("lib") {
 
   deps = [
     "//src/developer/ffx/command/error:lib",
-    "//src/developer/ffx/fidl:fuchsia.developer.ffx_rust",
-    "//src/developer/ffx/lib/errors:lib",
     "//src/developer/ffx/lib/fho:lib",
-    "//src/developer/ffx/lib/target:lib",
     "//src/developer/ffx/lib/target/behavior:lib",
-    "//src/developer/ffx/lib/target/holders:lib",
-    "//src/developer/ffx/lib/target_errors:lib",
-    "//src/lib/fidl/rust/fidl",
-    "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:async-trait",
     "//third_party/rust_crates:log",
   ]

@@ -205,24 +205,6 @@ class FfxTest(ffxtestcase.FfxTestCase):
         asserts.assert_equal(stderr, "")
         asserts.assert_equal(code, 0)
 
-    def test_daemon_start_background_works_with_autostart_false(self) -> None:
-        """Test that `ffx daemon start --background` works even if daemon.autostart=false"""
-        self.run_ffx(["--isolate-dir", self.isolate_dir, "daemon", "stop"])
-        # We're validating that this command doesn't throw an exception
-        self.run_ffx(
-            [
-                "--isolate-dir",
-                self.isolate_dir,
-                "--machine",
-                "raw",
-                "-c",
-                "daemon.autostart=false",
-                "daemon",
-                "start",
-                "--background",
-            ]
-        )
-
     def test_shared_data(self) -> None:
         """Test `ffx -c shared_dir=<dir>` will use the value passed in for $SHARED_DATA"""
         (_code, stdout, _stderr) = self.run_ffx_unchecked(
