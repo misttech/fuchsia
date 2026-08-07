@@ -22,6 +22,7 @@ core_tests_for_presubmit = []
 core_tests_for_presubmit_no_shield_box = [
   "//src/connectivity/wlan/tests/core:create_ap_iface_with_null_mac_test",
   "//src/connectivity/wlan/tests/core:create_ap_iface_with_particular_mac_test",
+  "//src/connectivity/wlan/tests/core:create_client_iface_with_invalid_mac_test",
   "//src/connectivity/wlan/tests/core:create_client_iface_with_null_mac_test",
   "//src/connectivity/wlan/tests/core:create_client_iface_with_particular_mac_test",
   "//src/connectivity/wlan/tests/core:phy_existence_test",

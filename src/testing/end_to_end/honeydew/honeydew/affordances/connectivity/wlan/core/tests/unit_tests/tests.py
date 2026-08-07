@@ -601,20 +601,6 @@ class WlanCoreFCTests(unittest.IsolatedAsyncioTestCase):
                     phy_id,
                 )
 
-    async def test_create_iface_invalid_mac(self) -> None:
-        """Test if create_iface errors on invalid MAC."""
-        for msg, phy_id, sta_addr in [
-            ("not defined", 1, ""),
-            ("too short", 2, "12:34:56:78:90"),
-            ("invalid byte", 2, "12:34:56:78:90:abcd"),
-            ("too long", 3, "12:34:56:78:90:ab:"),
-        ]:
-            with self.subTest(msg=msg, phy_id=phy_id, sta_addr=sta_addr):
-                with self.assertRaises(ValueError):
-                    await self.wlan_core_obj.create_iface(
-                        phy_id, f_wlan_common.WlanMacRole.CLIENT, sta_addr
-                    )
-
     async def test_destroy_iface(self) -> None:
         """Test if destroy_iface works."""
         for msg, iface_id, status in [
