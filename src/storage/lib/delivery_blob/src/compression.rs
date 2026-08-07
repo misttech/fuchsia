@@ -378,8 +378,7 @@ impl ChunkedArchiveHeader {
 
     /// Calculate the checksum of the header + all seek table entries.
     fn checksum(&self, entries: &[SeekTableEntry]) -> u32 {
-        let crc_algo = crc::Crc::<u32>::new(&crc::CRC_32_ISO_HDLC);
-        let mut digest = crc_algo.digest();
+        let mut digest = crate::CRC_32.digest();
         digest.update(&self.as_bytes()[..Self::CHUNKED_ARCHIVE_CHECKSUM_OFFSET]);
         digest.update(
             &self.as_bytes()

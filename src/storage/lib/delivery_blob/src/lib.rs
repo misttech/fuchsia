@@ -23,6 +23,9 @@ pub mod compression;
 pub use compression::DataBuffer;
 mod format;
 
+/// Pre-computed CRC-32 ISO HDLC lookup table.
+pub(crate) const CRC_32: crc::Crc<u32> = crc::Crc::<u32>::new(&crc::CRC_32_ISO_HDLC);
+
 // This library assumes usize is large enough to hold a u64.
 assert_eq_size!(usize, u64);
 

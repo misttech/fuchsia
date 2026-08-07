@@ -139,10 +139,7 @@ impl SerializedType1Blob {
     pub fn checksum(&self) -> u32 {
         // Create a copy of the serialized blob but with the checksum zeroed.
         let header = Self { checksum: 0.into(), ..*self };
-        let crc_algo = crc::Crc::<u32>::new(&crc::CRC_32_ISO_HDLC);
-        let mut digest = crc_algo.digest();
-        digest.update(header.as_bytes());
-        digest.finalize()
+        crate::CRC_32.checksum(header.as_bytes())
     }
 
     /// Decode and verify this serialized delivery blob.
@@ -223,10 +220,7 @@ impl SerializedType3Blob {
     pub fn checksum(&self) -> u32 {
         // Create a copy of the serialized blob but with the checksum zeroed.
         let header = Self { checksum: 0.into(), ..*self };
-        let crc_algo = crc::Crc::<u32>::new(&crc::CRC_32_ISO_HDLC);
-        let mut digest = crc_algo.digest();
-        digest.update(header.as_bytes());
-        digest.finalize()
+        crate::CRC_32.checksum(header.as_bytes())
     }
 
     /// Decode and verify this serialized Type 3 delivery blob.
