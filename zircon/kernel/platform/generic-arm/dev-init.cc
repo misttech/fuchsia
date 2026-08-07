@@ -45,7 +45,7 @@ void PlatformDriverHandoffEarly(const ArchPhysHandoff& arch_handoff) {
   ktl::visit([](const auto& config) { ArmGicInitEarly(config); }, arch_handoff.gic_driver);
 
   if (arch_handoff.generic32_watchdog_driver) {
-    Generic32BitWatchdogEarlyInit(arch_handoff.generic32_watchdog_driver.value());
+    generic_32bit_watchdog_early_init(arch_handoff.generic32_watchdog_driver.value());
   }
 
   if (arch_handoff.generic_timer_driver) {
@@ -86,7 +86,7 @@ void PlatformDriverHandoffPostVm(const ArchPhysHandoff& arch_handoff) {
   }
 
   if (arch_handoff.generic32_watchdog_driver) {
-    Generic32BitWatchdogInitPostVm(arch_handoff.generic32_watchdog_driver.value());
+    generic_32bit_watchdog_init_post_vm(arch_handoff.generic32_watchdog_driver.value());
   }
 }
 
@@ -133,7 +133,7 @@ void PlatformDriverHandoffLate(const ArchPhysHandoff& arch_handoff) {
   }
 
   if (arch_handoff.generic32_watchdog_driver) {
-    Generic32BitWatchdogLateInit();
+    generic_32bit_watchdog_late_init();
   }
 
   if (arch_handoff.moonflower_power_driver) {
