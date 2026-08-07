@@ -179,6 +179,29 @@ TEST_F(InterruptTest, BindPort) {
   ASSERT_EQ(interrupt.trigger(0, kSignaledTimeStamp1), ZX_ERR_CANCELED);
 }
 
+TEST_F(InterruptTest, PortUnbindPurgesQueuedPacket) {
+  zx::interrupt interrupt;
+  zx::port port;
+
+  ASSERT_OK(zx::interrupt::create(*irq_resource(), 0, ZX_INTERRUPT_VIRTUAL, &interrupt));
+  ASSERT_OK(zx::port::create(ZX_PORT_BIND_TO_INTERRUPT, &port));
+
+  ASSERT_OK(interrupt.bind(port, kKey, 0));
+
+  // Trigger the interrupt once to queue a packet into the port.
+  ASSERT_OK(interrupt.trigger(0, kSignaledTimeStamp1));
+
+  // Triggering a second time before reading should be suppressed since a packet is already queued.
+  ASSERT_OK(interrupt.trigger(0, kSignaledTimeStamp2));
+
+  // Destroying the interrupt while its packet is still queued in the port must purge the packet.
+  ASSERT_OK(interrupt.destroy());
+
+  // Verify that the port packet was removed and cannot be dequeued.
+  zx_port_packet_t out = {};
+  EXPECT_EQ(port.wait(zx::deadline_after(zx::msec(10)), &out), ZX_ERR_TIMED_OUT);
+}
+
 // Tests Interrupt Unbind
 TEST_F(InterruptTest, UnBindPort) {
   zx::interrupt interrupt;
