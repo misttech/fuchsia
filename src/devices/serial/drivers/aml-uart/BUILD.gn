@@ -5,7 +5,13 @@
 import("//build/bind/bind.gni")
 import("//build/components.gni")
 import("//build/drivers.gni")
+import("//build/drivers/dml.gni")
 import("//build/test.gni")
+
+fuchsia_driver_dml("aml-uart-dml") {
+  dml = "meta/aml-uart.dml"
+  driver_name = "aml-uart"
+}
 
 group("tests") {
   testonly = true
@@ -16,11 +22,12 @@ group("tests") {
 }
 
 driver_bind_rules("aml_uart_bind") {
-  rules = "meta/aml-uart.bind"
+  dml_label = ":aml-uart-dml"
   bind_output = "aml-uart.bindbc"
   tests = "meta/bind_tests.json"
   deps = [
     "//sdk/fidl/fuchsia.hardware.pin:fuchsia.hardware.pin_bindlib",
+    "//sdk/fidl/fuchsia.hardware.platform.device:fuchsia.hardware.platform.device_bindlib",
     "//src/devices/bind/fuchsia.amlogic.platform",
     "//src/devices/bind/fuchsia.devicetree",
     "//src/devices/bind/fuchsia.gpio",
@@ -64,13 +71,8 @@ fuchsia_cc_driver("aml-uart-driver") {
   deps = [ ":aml-uart-source" ]
 }
 
-fuchsia_component_manifest("aml-uart-manifest") {
-  component_name = "aml-uart"
-  manifest = "meta/aml-uart.cml"
-}
-
 fuchsia_driver_component("aml-uart") {
-  cm_label = ":aml-uart-manifest"
+  dml_label = ":aml-uart-dml"
   info = "meta/aml-uart-info.json"
   deps = [
     ":aml-uart-driver",
@@ -79,11 +81,11 @@ fuchsia_driver_component("aml-uart") {
 }
 
 fuchsia_structured_config_cpp_elf_lib("aml-uart-config") {
-  cm_label = ":aml-uart-manifest"
+  cm_label = ":aml-uart-dml_manifest"
 }
 
 fuchsia_structured_config_values("sc-values") {
-  cm_label = ":aml-uart-manifest"
+  cm_label = ":aml-uart-dml_manifest"
   values = {
     enable_suspend = true
   }
