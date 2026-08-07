@@ -37,6 +37,20 @@ test("usb-request-test-bin") {
   defines = [ "DFV1_LOGGING" ]
 }
 
+test("usb-request-memory-test-bin") {
+  output_name = "usb-request-memory-test"
+  sources = [ "request-fidl-memory-test.cc" ]
+  deps = [
+    "//sdk/fidl/fuchsia.hardware.usb.request:fuchsia.hardware.usb.request_cpp",
+    "//src/devices/usb/lib/usb:usb-fidl",
+    "//src/lib/ddk",
+    "//src/lib/fxl/test:gtest_main",
+    "//third_party/googletest:gtest",
+    "//zircon/system/ulib/zx",
+  ]
+  defines = [ "DFV1_LOGGING" ]
+}
+
 test("usb-wrapper-test-bin") {
   output_name = "usb-wrapper-test"
   sources = [ "usb-wrapper-test.cc" ]
@@ -72,6 +86,10 @@ fuchsia_unittest_component("usb-request-test") {
   deps = [ ":usb-request-test-bin" ]
 }
 
+fuchsia_unittest_component("usb-request-memory-test") {
+  deps = [ ":usb-request-memory-test-bin" ]
+}
+
 fuchsia_unittest_component("usb-wrapper-test") {
   deps = [ ":usb-wrapper-test-bin" ]
 }
@@ -83,6 +101,7 @@ fuchsia_unittest_component("usb-desc-lib-test") {
 fuchsia_test_package("usb-lib-tests") {
   test_components = [
     ":usb-desc-lib-test",
+    ":usb-request-memory-test",
     ":usb-request-test",
     ":usb-wrapper-test",
   ]
@@ -91,6 +110,7 @@ fuchsia_test_package("usb-lib-tests") {
     test_components -= [
       # TODO(https://fxbug.dev/42075218): Remove when zx_cache_flush is supported on RISC-V.
       ":usb-request-test",
+      ":usb-request-memory-test",
     ]
   }
 }

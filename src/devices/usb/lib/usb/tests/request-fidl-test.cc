@@ -7,15 +7,63 @@
 #include <lib/fake-bti/bti.h>
 #include <lib/fit/defer.h>
 
+#include <limits>
+
 #include <zxtest/zxtest.h>
 
 namespace {
 
+zx::result<std::optional<usb::internal::MappedVmo>> MakeNulloptMock(
+    const fuchsia_hardware_usb_request::Buffer&) {
+  return zx::ok(std::nullopt);
+}
+
+// Verifies default construction and destruction of empty FidlRequest objects.
 TEST(RequestFidlTest, EmptyRequestTest) {
   fuchsia_hardware_usb_request::Request request;
   usb::FidlRequest fidl_request(std::move(request));
 }
 
+// Verifies that PhysMap on an empty request succeeds without mapping VMOs.
+// Disabled in CL 1: Fails until CL 2 adds empty payload safety check in PhysMap.
+TEST(RequestFidlTest, DISABLED_PhysMapEmptyPayload) {
+  usb::FidlRequest fidl_request;
+  zx::bti bti;
+  ASSERT_OK(fake_bti_create(bti.reset_and_get_address()));
+  EXPECT_OK(fidl_request.PhysMap(bti));
+}
+
+// Verifies that while add_data pads vector capacity upon request creation, PhysMap acts as a safety
+// guard ensuring vector capacity is padded up to offset + size before BTI physical pinning.
+// Disabled in CL 1: Fails until CL 2 fixes PhysMap vector capacity allocation calculation.
+TEST(RequestFidlTest, DISABLED_PhysMapOutOfBounds) {
+  usb::FidlRequest fidl_request;
+  zx::bti bti;
+  ASSERT_OK(fake_bti_create(bti.reset_and_get_address()));
+
+  // Offset 20 is completely outside the vector length of 10.
+  fidl_request.add_data(std::vector<uint8_t>(10, 0), 5, 20);
+  EXPECT_OK(fidl_request.PhysMap(bti));
+  ASSERT_TRUE(fidl_request->data().has_value());
+  EXPECT_EQ(fidl_request->data()->at(0).buffer()->data()->size(), 25u);
+}
+
+// Verifies that PhysMap safely handles zero-capacity and zero-size kData payloads.
+// Disabled in CL 1: Fails until CL 2 adds zero-size payload bypass in PhysMap.
+TEST(RequestFidlTest, DISABLED_PhysMapZeroSizeBypassTest) {
+  usb::FidlRequest fidl_request;
+  // Explicitly allocate a kData payload with 0 capacity and 0 requested size.
+  fidl_request.add_data(std::vector<uint8_t>(), 0, 0);
+
+  zx::bti fake_bti;
+  ASSERT_OK(fake_bti_create(fake_bti.reset_and_get_address()));
+
+  EXPECT_OK(fidl_request.PhysMap(fake_bti));
+  ASSERT_TRUE(fidl_request->data().has_value());
+  EXPECT_EQ(fidl_request->data()->at(0).buffer()->data()->size(), 0u);
+}
+
+// Verifies total payload length aggregation across mixed kVmoId and kData buffer regions.
 TEST(RequestFidlTest, LengthTest) {
   usb::FidlRequest fidl_request;
   fidl_request.add_vmo_id(0, 16, 0).add_data({}, 16, 0);
@@ -23,6 +71,7 @@ TEST(RequestFidlTest, LengthTest) {
   EXPECT_EQ(fidl_request.length(), 32);
 }
 
+// Verifies BTI unpinning and unmapping during Unpin().
 TEST(RequestFidlTest, UnpinTest) {
   zx::vmo vmo;
   ASSERT_OK(zx::vmo::create(16, 0, &vmo));
@@ -66,6 +115,59 @@ TEST(RequestFidlTest, UnpinTest) {
                   sizeof(expected_vals));
 }
 
+// Verifies that Unpin() copies back IN transfer payload data starting at the region offset for
+// kData buffers. Disabled in CL 1: Fails until CL 2 adds offset-aware copy-back to Unpin.
+TEST(RequestFidlTest, DISABLED_UnpinWithRegionOffsetCopyBackTest) {
+  usb::FidlRequest fidl_request;
+  std::vector<uint8_t> initial_data(20, 0);
+  fidl_request.add_data(std::move(initial_data), 4, 10);
+
+  zx::bti fake_bti;
+  ASSERT_OK(fake_bti_create(fake_bti.reset_and_get_address()));
+  ASSERT_OK(fidl_request.PhysMap(fake_bti));
+
+  size_t actual;
+  fake_bti_pinned_vmo_info_t info[1];
+  ASSERT_OK(fake_bti_get_pinned_vmos(fake_bti.get(), info, 1, &actual));
+  ASSERT_EQ(actual, 1u);
+
+  void* mapped = nullptr;
+  ASSERT_OK(zx::vmar::root_self()->map(ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, 0, zx::vmo(info[0].vmo),
+                                       0, info[0].size, reinterpret_cast<uintptr_t*>(&mapped)));
+
+  uint8_t expected_vals[] = {0xAA, 0xBB, 0xCC, 0xDD};
+  memcpy(static_cast<char*>(mapped) + 10, expected_vals, sizeof(expected_vals));
+  ASSERT_OK(zx::vmar::root_self()->unmap(reinterpret_cast<uintptr_t>(mapped), info[0].size));
+
+  ASSERT_OK(fidl_request.Unpin());
+
+  const auto& buf = fidl_request->data()->at(0).buffer()->data().value();
+  ASSERT_EQ(buf.size(), 20u);
+  EXPECT_EQ(buf[0], 0);
+  EXPECT_EQ(buf[9], 0);
+  EXPECT_BYTES_EQ(buf.data() + 10, expected_vals, sizeof(expected_vals));
+}
+
+// Verifies that Unpin() bounds copy-back size to (mapped.size - offset) when region size >
+// (mapped.size - offset). Disabled in CL 1: Fails until CL 2 adds VMAR mapped bounds guards to
+// Unpin.
+TEST(RequestFidlTest, DISABLED_UnpinOffsetOverrunBoundsTest) {
+  usb::FidlRequest fidl_request;
+  std::vector<uint8_t> initial_data(1000, 0);
+  fidl_request.add_data(std::move(initial_data), 900, 100);
+
+  zx::bti fake_bti;
+  ASSERT_OK(fake_bti_create(fake_bti.reset_and_get_address()));
+  ASSERT_OK(fidl_request.PhysMap(fake_bti));
+
+  // Override payload region size to 5000 (exceeding mapped.size - offset = 4096 - 100 = 3996)
+  fidl_request->data()->at(0).size(5000);
+
+  // Unpin must safely limit copy-back size without reading past VMAR mapped bounds.
+  ASSERT_OK(fidl_request.Unpin());
+}
+
+// Verifies PhysMap behavior for pre-registered kVmoId buffers.
 TEST(RequestFidlTest, VmoIdTest) {
   fuchsia_hardware_usb_request::Request request;
   request.data()
@@ -96,6 +198,7 @@ TEST(RequestFidlTest, VmoIdTest) {
   EXPECT_EQ(actual, 0);
 }
 
+// Verifies BTI physical pinning, VMO creation, and page mapping for inline kData buffers.
 TEST(RequestFidlTest, DataTest) {
   fuchsia_hardware_usb_request::Request request;
   uint8_t expected1[] = {0xF, 0xE, 0xD, 0xC, 0xB, 0xA, 0x9, 0x8,
@@ -143,6 +246,112 @@ TEST(RequestFidlTest, DataTest) {
   EXPECT_OK(zx::vmar::root_self()->unmap(reinterpret_cast<uintptr_t>(mapped), info[1].size));
 }
 
+// Verifies that Unpin() safely handles teardown when clear_buffers() shrank payload vectors to size
+// 0. Disabled in CL 1: Fails until CL 3 adds unmap bounds checking for size 0 vectors in Unpin().
+TEST(RequestFidlTest, DISABLED_UnpinAfterClearBuffersTest) {
+  fuchsia_hardware_usb_request::Request request;
+  request.data()
+      .emplace()
+      .emplace_back()
+      .buffer(
+          fuchsia_hardware_usb_request::Buffer::WithData(std::vector<uint8_t>{0x1, 0x2, 0x3, 0x4}))
+      .offset(0)
+      .size(4);
+  usb::FidlRequest fidl_request(std::move(request));
+
+  zx::bti fake_bti;
+  ASSERT_OK(fake_bti_create(fake_bti.reset_and_get_address()));
+
+  EXPECT_OK(fidl_request.PhysMap(fake_bti));
+
+  // Wipe the payload vector size to 0
+  fidl_request.clear_buffers();
+
+  // fidl_request destructor is called, triggering Unpin().
+  // This verifies Unpin() gracefully handles vector capacity shrinkage.
+  EXPECT_OK(fidl_request.Unpin());
+
+  auto& restored_data = fidl_request->data()->at(0).buffer()->data().value();
+  EXPECT_EQ(restored_data.size(), 0u);
+  EXPECT_GE(restored_data.capacity(), 4u);
+}
+
+// Verifies that PhysMap gracefully returns ZX_ERR_INVALID_ARGS if a kData region omits its size
+// field.
+TEST(RequestFidlTest, PhysMapMissingRegionSizeForDataGracefulFailure) {
+  fuchsia_hardware_usb_request::Request request;
+  request.data()
+      .emplace()
+      .emplace_back()
+      .buffer(fuchsia_hardware_usb_request::Buffer::WithData(std::vector<uint8_t>(32, 0)))
+      .offset(0);
+  // Omitted size
+
+  usb::FidlRequest fidl_request(std::move(request));
+
+  zx::bti fake_bti;
+  ASSERT_OK(fake_bti_create(fake_bti.reset_and_get_address()));
+
+  EXPECT_EQ(fidl_request.PhysMap(fake_bti), ZX_ERR_INVALID_ARGS);
+}
+
+// Verifies clear_buffers() clearing for kData buffers.
+TEST(RequestFidlTest, ClearBuffersTest) {
+  fuchsia_hardware_usb_request::Request request;
+  request.data()
+      .emplace()
+      .emplace_back()
+      .buffer(fuchsia_hardware_usb_request::Buffer::WithData(std::vector<uint8_t>(32, 0)))
+      .offset(0)
+      .size(16);
+  usb::FidlRequest fidl_request(std::move(request));
+
+  fidl_request.clear_buffers();
+  fidl_request->data()->at(0).size(
+      16);  // Explicit logical size provisioning required by architecture
+
+  std::vector<uint8_t> src(16, 0xAB);
+  auto copied = fidl_request.CopyTo(0, src.data(), 16, MakeNulloptMock);
+
+  ASSERT_EQ(copied.size(), 1);
+  EXPECT_EQ(copied[0], 16);
+  for (size_t i = 0; i < 16; ++i) {
+    EXPECT_EQ(fidl_request->data()->at(0).buffer()->data()->at(i), 0xAB);
+  }
+}
+
+// Verifies that clear_buffers() resets payload size to 0 on kVmoId buffers for transfer recycling.
+// Disabled in CL 1: Fails until CL 3 updates clear_buffers() for kVmoId buffers.
+TEST(RequestFidlTest, DISABLED_ClearBuffersVmoIdTest) {
+  zx::vmo vmo;
+  ASSERT_OK(zx::vmo::create(zx_system_get_page_size(), 0, &vmo));
+  uintptr_t mapped_addr = 0;
+  ASSERT_OK(zx::vmar::root_self()->map(ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, 0, vmo, 0,
+                                       zx_system_get_page_size(), &mapped_addr));
+  auto unmap_guard = fit::defer([mapped_addr]() {
+    EXPECT_OK(zx::vmar::root_self()->unmap(mapped_addr, zx_system_get_page_size()));
+  });
+  auto get_mapped = [mapped_addr](const fuchsia_hardware_usb_request::Buffer& buffer)
+      -> zx::result<std::optional<usb::internal::MappedVmo>> {
+    return zx::ok(usb::internal::MappedVmo{mapped_addr, zx_system_get_page_size()});
+  };
+
+  usb::FidlRequest fidl_request;
+  // Transfer #1: Simulate an initial 86-byte transfer on a kVmoId buffer.
+  fidl_request.add_vmo_id(0, 86, 0);
+
+  // Transfer #2: Clear buffers and try to copy 235 bytes into the kVmoId request.
+  fidl_request.clear_buffers();
+  ASSERT_EQ(fidl_request->data()->at(0).size().value_or(999), 0u);
+
+  std::vector<uint8_t> src(235, 0xAB);
+  auto copied = fidl_request.CopyTo(0, src.data(), 235, get_mapped);
+
+  ASSERT_EQ(copied.size(), 1u);
+  EXPECT_EQ(copied[0], 235u);
+}
+
+// Verifies PhysMap behavior on requests combining both kVmoId and kData buffer regions.
 TEST(RequestFidlTest, MixedTest) {
   std::vector<uint8_t> tmp(32);
   usb::FidlRequest fidl_request;
@@ -160,6 +369,7 @@ TEST(RequestFidlTest, MixedTest) {
   EXPECT_EQ((*iter.begin()).second, 32);
 }
 
+// Verifies FidlRequestPool allocation, recycling, and lifecycle management.
 TEST(RequestFidlTest, PoolTest) {
   usb::FidlRequestPool pool;
   EXPECT_TRUE(pool.Empty());
@@ -224,6 +434,7 @@ TEST(RequestFidlTest, PoolTest) {
   EXPECT_TRUE(pool.Full());
 }
 
+// Verifies CachedCopyTo, CachedCopyFrom, zero-length copies, and mapping error propagation.
 TEST(RequestFidlTest, CopyAndCacheTest) {
   zx::vmo vmo;
   ASSERT_OK(zx::vmo::create(zx_system_get_page_size(), 0, &vmo));
@@ -325,6 +536,8 @@ TEST(RequestFidlTest, CopyAndCacheTest) {
   ASSERT_STATUS(cp_res.status_value(), ZX_ERR_BAD_HANDLE);
 }
 
+// Verifies partial slice flushing, selective get_mapped callbacks, and scatter-gather cache
+// flushes.
 TEST(RequestFidlTest, RangeCacheFlushTest) {
   zx::vmo vmo;
   ASSERT_OK(zx::vmo::create(zx_system_get_page_size(), 0, &vmo));
@@ -395,6 +608,211 @@ TEST(RequestFidlTest, RangeCacheFlushTest) {
   };
   EXPECT_OK(mixed_request.CacheFlush(get_mapped_mixed, 0, 48));
   EXPECT_OK(mixed_request.CacheFlushInvalidate(get_mapped_mixed, 0, 48));
+}
+
+// Verifies that CopyTo gracefully fails (0 bytes copied) on invalid default-constructed buffer
+// tags. Disabled in CL 1: Fails until CL 3 adds tag validation in CopyTo.
+TEST(RequestFidlTest, DISABLED_EmptyBufferCrashTest) {
+  fuchsia_hardware_usb_request::Request request;
+  request.data()
+      .emplace()
+      .emplace_back()
+      .buffer(fuchsia_hardware_usb_request::Buffer(
+          ::fidl::internal::DefaultConstructPossiblyInvalidObjectTag{}))
+      .offset(0)
+      .size(16);
+  usb::FidlRequest fidl_request(std::move(request));
+
+  std::vector<uint8_t> src(16, 0xAB);
+  // This must not crash, it should just return 0 bytes copied or gracefully fail
+  auto copied = fidl_request.CopyTo(0, src.data(), 16, MakeNulloptMock);
+
+  ASSERT_EQ(copied.size(), 1);
+  EXPECT_EQ(copied[0], 0);
+}
+
+// Verifies that PhysMap auto-allocates buffer capacity when add_data supplies an empty vector with
+// non-zero size. Disabled in CL 1: Fails until CL 2 adds auto-allocation in PhysMap.
+TEST(RequestFidlTest, DISABLED_PhysMapZeroCapacityTest) {
+  usb::FidlRequest fidl_request;
+  fidl_request.add_data(std::vector<uint8_t>(), 16, 0);
+
+  zx::bti fake_bti;
+  ASSERT_OK(fake_bti_create(fake_bti.reset_and_get_address()));
+
+  EXPECT_OK(fidl_request.PhysMap(fake_bti));
+  ASSERT_TRUE(fidl_request->data().has_value());
+  EXPECT_GE(fidl_request->data()->at(0).buffer()->data()->capacity(), 16u);
+}
+
+// Verifies that PhysMap returns ZX_ERR_INVALID_ARGS when offset + size overflows 64-bit integers.
+// Disabled in CL 1: Fails until CL 2 adds arithmetic overflow checks in PhysMap.
+TEST(RequestFidlTest, DISABLED_PhysMapOverflowTest) {
+  usb::FidlRequest fidl_request;
+  fidl_request.add_data(std::vector<uint8_t>(), 10, std::numeric_limits<uint64_t>::max() - 5);
+
+  zx::bti fake_bti;
+  ASSERT_OK(fake_bti_create(fake_bti.reset_and_get_address()));
+
+  EXPECT_EQ(ZX_ERR_INVALID_ARGS, fidl_request.PhysMap(fake_bti));
+}
+
+// Verifies that PhysMap returns ZX_ERR_INVALID_ARGS when requested buffer size exceeds
+// kMaxTransferSize. Disabled in CL 1: Fails until CL 2 adds max transfer size bounds checks in
+// PhysMap.
+TEST(RequestFidlTest, DISABLED_PhysMapCapacityExceedsMaxHalfTest) {
+  usb::FidlRequest fidl_request;
+  fidl_request.add_data(std::vector<uint8_t>(), std::numeric_limits<uint64_t>::max(), 0);
+  zx::bti fake_bti;
+  ASSERT_OK(fake_bti_create(fake_bti.reset_and_get_address()));
+  EXPECT_EQ(ZX_ERR_INVALID_ARGS, fidl_request.PhysMap(fake_bti));
+}
+
+// Verifies that CacheFlush returns ZX_ERR_INVALID_ARGS if a kVmoId region omits its size field.
+// Disabled in CL 1: Fails until CL 3 adds region size validation to CacheHelper.
+TEST(RequestFidlTest, DISABLED_MissingRegionSizeGracefulFailure) {
+  fuchsia_hardware_usb_request::Request request;
+  request.data()
+      .emplace()
+      .emplace_back()
+      .buffer(fuchsia_hardware_usb_request::Buffer::WithVmoId(0))
+      .offset(0);
+  usb::FidlRequest fidl_request(std::move(request));
+  EXPECT_EQ(ZX_ERR_INVALID_ARGS,
+            fidl_request.CacheFlush([](const fuchsia_hardware_usb_request::Buffer&)
+                                        -> zx::result<std::optional<usb::internal::MappedVmo>> {
+              return zx::ok(usb::internal::MappedVmo{0x1000, 16});
+            }));
+}
+
+// Verifies that add_data infers payload region size by subtracting offset from total vector size.
+// Disabled in CL 1: Fails until CL 2 updates add_data signature and size inference.
+TEST(RequestFidlTest, DISABLED_VectorPayloadInferredSizeSubtractsOffsetTest) {
+  usb::FidlRequest fidl_request;
+  std::vector<uint8_t> data(100);
+  fidl_request.add_data(std::move(data), 0, 20);
+  EXPECT_TRUE(fidl_request->data().has_value());
+  EXPECT_EQ(fidl_request->data()->at(0).buffer()->data()->size(), 100u);
+  EXPECT_EQ(fidl_request->data()->at(0).size().value(), 80u);
+}
+
+// Verifies that add_data infers 0 region size when vector length is smaller than offset.
+// Disabled in CL 1: Fails until CL 2 updates add_data for zero dynamic padding.
+TEST(RequestFidlTest, DISABLED_VectorPayloadInfersZeroDynamicPaddingTest) {
+  usb::FidlRequest fidl_request;
+  fidl_request.add_data(std::vector<uint8_t>(10), 0, 20);
+
+  EXPECT_TRUE(fidl_request->data().has_value());
+  EXPECT_EQ(fidl_request->data()->at(0).size().value(), 0u);
+  EXPECT_EQ(fidl_request->data()->at(0).buffer()->data()->size(), 20u);
+}
+
+// Verifies that fit::defer rollback guard unpins previously pinned VMOs if a subsequent payload
+// fails PhysMap. Disabled in CL 1: Fails until CL 2 adds fit::defer rollback guard to PhysMap.
+TEST(RequestFidlTest, DISABLED_PhysMapRollbackOnMultiPayloadFailureTest) {
+  usb::FidlRequest fidl_request;
+  fidl_request.add_data(std::vector<uint8_t>(100), 100, 0);
+  fidl_request.add_data(std::vector<uint8_t>(0), std::numeric_limits<uint64_t>::max(), 0);
+
+  zx::bti fake_bti;
+  ASSERT_OK(fake_bti_create(fake_bti.reset_and_get_address()));
+
+  EXPECT_EQ(ZX_ERR_INVALID_ARGS, fidl_request.PhysMap(fake_bti));
+}
+
+// Verifies that Unpin() safely tears down pinned VMOs even if request data vector was cleared.
+// Disabled in CL 1: Fails until CL 3 adds pointer bounds guards to Unpin().
+TEST(RequestFidlTest, DISABLED_PhysMapGhostedPayloadTeardownTest) {
+  usb::FidlRequest fidl_request;
+  fidl_request.add_data(std::vector<uint8_t>(100), 100, 0);
+
+  zx::bti fake_bti;
+  ASSERT_OK(fake_bti_create(fake_bti.reset_and_get_address()));
+  ASSERT_OK(fidl_request.PhysMap(fake_bti));
+
+  // Manually ghost the payload array by mutating it directly in the instance
+  fidl_request->data()->clear();
+
+  // Trigger Unpin() manually or via destruction to evaluate memory teardown against the ghosted
+  // payload list.
+  ASSERT_OK(fidl_request.Unpin());
+}
+
+// Verifies that CacheFlushInvalidate continues iterating scatter-gather regions after an error.
+// Disabled in CL 1: Fails until CL 3 records errors while continuing scatter-gather iteration.
+TEST(RequestFidlTest, DISABLED_CacheFlushInvalidateContinuationTest) {
+  fuchsia_hardware_usb_request::Request request;
+  request.data().emplace();
+  request.data()
+      ->emplace_back()
+      .buffer(fuchsia_hardware_usb_request::Buffer::WithVmoId(1))
+      .offset(100)
+      .size(100);
+  request.data()
+      ->emplace_back()
+      .buffer(fuchsia_hardware_usb_request::Buffer::WithVmoId(2))
+      .offset(0)
+      .size(10);
+  usb::FidlRequest fidl_request(std::move(request));
+
+  std::vector<uint8_t> valid_memory1(1000);
+  std::vector<uint8_t> valid_memory2(1000);
+  bool second_processed = false;
+  auto status =
+      fidl_request.CacheFlushInvalidate([&](const fuchsia_hardware_usb_request::Buffer& b)
+                                            -> zx::result<std::optional<usb::internal::MappedVmo>> {
+        // In FIDL C++ Natural bindings, b.vmo_id() returns a
+        // UnionMemberView<std::optional<uint64_t>>; .value() extracts the underlying scalar
+        // uint64_t for comparison.
+        if (b.vmo_id().value() == 1)
+          return zx::ok(
+              usb::internal::MappedVmo{reinterpret_cast<zx_vaddr_t>(valid_memory1.data()), 10});
+        if (b.vmo_id().value() == 2) {
+          second_processed = true;
+          return zx::ok(
+              usb::internal::MappedVmo{reinterpret_cast<zx_vaddr_t>(valid_memory2.data()), 100});
+        }
+        return zx::ok(std::nullopt);
+      });
+
+  EXPECT_STATUS(status, ZX_ERR_OUT_OF_RANGE);
+  EXPECT_TRUE(second_processed);
+}
+
+// Verifies that CopyTo returns 0 bytes copied when region offset overflows.
+// Disabled in CL 1: Fails until CL 3 adds overflow guards to CopyTo.
+TEST(RequestFidlTest, DISABLED_CopyToOverflowTest) {
+  fuchsia_hardware_usb_request::Request request;
+  request.data()
+      .emplace()
+      .emplace_back()
+      .buffer(fuchsia_hardware_usb_request::Buffer::WithData(std::vector<uint8_t>(16)))
+      .offset(std::numeric_limits<uint64_t>::max())
+      .size(16);
+  usb::FidlRequest fidl_request(std::move(request));
+
+  std::vector<uint8_t> src(16, 0xAB);
+  auto copied = fidl_request.CopyTo(0, src.data(), 16, MakeNulloptMock);
+  ASSERT_EQ(copied.size(), 1u);
+  EXPECT_EQ(copied[0], 0u);
+}
+
+// Verifies that CopyFrom returns 0 bytes copied when region offset overflows.
+// Disabled in CL 1: Fails until CL 3 adds overflow guards to CopyFrom.
+TEST(RequestFidlTest, DISABLED_CopyFromOverflowTest) {
+  fuchsia_hardware_usb_request::Request request;
+  request.data()
+      .emplace()
+      .emplace_back()
+      .buffer(fuchsia_hardware_usb_request::Buffer::WithData(std::vector<uint8_t>(16)))
+      .offset(std::numeric_limits<uint64_t>::max())
+      .size(16);
+  usb::FidlRequest fidl_request(std::move(request));
+
+  std::vector<uint8_t> dest(16, 0);
+  auto copied = fidl_request.CopyFrom(0, dest.data(), 16, MakeNulloptMock);
+  ASSERT_EQ(copied.size(), 1u);
+  EXPECT_EQ(copied[0], 0u);
 }
 
 }  // namespace
