@@ -52,4 +52,12 @@ FFI_ALWAYS_INLINE void cpp_vm_page_set_state(vm_page_t* page, vm_page_state new_
   page->set_state(new_state);
 }
 
+FFI_ALWAYS_INLINE void* cpp_vm_page_object_get_object(const vm_page_t* page) {
+  return page->object.get_object();
+}
+
+FFI_ALWAYS_INLINE uint64_t cpp_vm_page_object_get_page_offset(const vm_page_t* page) {
+  return page->object.get_page_offset();
+}
+
 }  // extern "C"

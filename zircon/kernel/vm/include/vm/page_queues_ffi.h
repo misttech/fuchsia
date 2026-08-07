@@ -16,6 +16,9 @@ __BEGIN_CDECLS
 
 bool cpp_page_queues_debug_page_is_wired(const PageQueues* queues, const vm_page_t* page);
 bool cpp_page_queues_debug_page_is_any_anonymous(const PageQueues* queues, const vm_page_t* page);
+bool cpp_page_queues_debug_page_is_reclaim(const PageQueues* queues, const vm_page_t* page,
+                                           size_t* out_queue);
+void cpp_page_queues_rotate_reclaim_queues(PageQueues* queues);
 
 __END_CDECLS
 

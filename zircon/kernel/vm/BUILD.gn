@@ -294,6 +294,8 @@ kernel_bindgen_crate("page-queues-bindings") {
   function_allowlist = [
     "cpp_page_queues_debug_page_is_wired",
     "cpp_page_queues_debug_page_is_any_anonymous",
+    "cpp_page_queues_debug_page_is_reclaim",
+    "cpp_page_queues_rotate_reclaim_queues",
   ]
   type_allowlist = [ "PageQueues" ]
   type_blocklist = [
@@ -349,6 +351,8 @@ kernel_bindgen_crate("page-bindings") {
     "cpp_vm_page_paddr",
     "cpp_vm_page_state",
     "cpp_vm_page_set_state",
+    "cpp_vm_page_object_get_object",
+    "cpp_vm_page_object_get_page_offset",
   ]
   type_allowlist = [
     "vm_page_t",
@@ -399,6 +403,7 @@ kernel_bindgen_crate("vm-object-bindings") {
   edition = "2024"
   notice_year = 2026
   function_allowlist = [
+    "cpp_vm_object_commit_range",
     "cpp_vm_object_decommit_range",
     "cpp_vm_object_commit_range_pinned",
     "cpp_vm_object_free",

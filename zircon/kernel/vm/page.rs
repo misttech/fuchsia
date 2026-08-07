@@ -160,6 +160,26 @@ impl VmPagePtr {
         unsafe { PAddr(bindings::cpp_vm_page_paddr(self.as_raw())) }
     }
 
+    /// Returns the backlink object pointer for the page.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the page is attached to a VM object.
+    pub unsafe fn get_object(self) -> *mut core::ffi::c_void {
+        // SAFETY: Safety deferred to caller per function safety preconditions.
+        unsafe { bindings::cpp_vm_page_object_get_object(self.as_raw()) }
+    }
+
+    /// Returns the page offset in the backlink object for the page.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the page is attached to a VM object.
+    pub unsafe fn get_page_offset(self) -> u64 {
+        // SAFETY: Safety deferred to caller per function safety preconditions.
+        unsafe { bindings::cpp_vm_page_object_get_page_offset(self.as_raw()) }
+    }
+
     /// Return the current VmPageState of this page.
     ///
     /// # Safety

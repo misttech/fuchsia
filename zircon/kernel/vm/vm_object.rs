@@ -112,6 +112,13 @@ impl VmObject {
         Status::ok(status)
     }
 
+    /// Commits the specified range of pages in the VMO.
+    pub fn commit_range(&self, offset: u64, len: u64) -> Result<(), Status> {
+        // SAFETY: `self.as_raw()` returns a valid `VmObject` pointer.
+        let status = unsafe { bindings::cpp_vm_object_commit_range(self.as_raw(), offset, len) };
+        Status::ok(status)
+    }
+
     /// Commits and pins the specified range of pages in the VMO.
     pub fn commit_range_pinned(&self, offset: u64, len: u64, write: bool) -> Result<(), Status> {
         // SAFETY: `self.as_raw()` returns a valid `VmObject` pointer.

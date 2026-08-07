@@ -51,6 +51,11 @@ FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_decommit_range(VmObject* vmo, uint64
   return vmo->DecommitRange(offset, len);
 }
 
+FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_commit_range(VmObject* vmo, uint64_t offset,
+                                                         uint64_t len) {
+  return vmo->CommitRange(offset, len);
+}
+
 FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_commit_range_pinned(VmObject* vmo, uint64_t offset,
                                                                 uint64_t len, bool write) {
   return vmo->CommitRangePinned(offset, len, write);

@@ -30,8 +30,11 @@ mod vmo_rs {
 
     /// Helper that tests if all pages in a VMO in the specified range pass the given predicate.
     ///
-    /// Yields only valid `VmPagePtr`s to the predicate.
-    fn all_pages_match<F>(vmo: &VmObject, offset: u64, len: u64, mut pred: F) -> bool
+    /// # Safety
+    ///
+    /// The caller must ensure that pages attached to the VM object remain attached for the duration
+    /// of the callback.
+    unsafe fn all_pages_match<F>(vmo: &VmObject, offset: u64, len: u64, mut pred: F) -> bool
     where
         F: FnMut(VmPagePtr) -> bool,
     {
@@ -53,18 +56,26 @@ mod vmo_rs {
         res.is_ok() && pred_matches
     }
 
-    fn pages_in_wired_queue(vmo: &VmObject, offset: u64, len: u64) -> bool {
-        all_pages_match(vmo, offset, len, |page| {
-            // SAFETY: `all_pages_match` guarantees `page` is a valid `VmPagePtr`.
-            unsafe { pmm::page_queues().debug_page_is_wired(page) }
-        })
+    /// # Safety
+    ///
+    /// The caller must ensure that pages attached to `vmo` remain attached during the check.
+    unsafe fn pages_in_wired_queue(vmo: &VmObject, offset: u64, len: u64) -> bool {
+        // SAFETY: Caller guarantees pages stay attached to the VMO.
+        unsafe {
+            all_pages_match(vmo, offset, len, |page| pmm::page_queues().debug_page_is_wired(page))
+        }
     }
 
-    fn pages_in_any_anonymous_queue(vmo: &VmObject, offset: u64, len: u64) -> bool {
-        all_pages_match(vmo, offset, len, |page| {
-            // SAFETY: `all_pages_match` guarantees `page` is a valid `VmPagePtr`.
-            unsafe { pmm::page_queues().debug_page_is_any_anonymous(page) }
-        })
+    /// # Safety
+    ///
+    /// The caller must ensure that pages attached to `vmo` remain attached during the check.
+    unsafe fn pages_in_any_anonymous_queue(vmo: &VmObject, offset: u64, len: u64) -> bool {
+        // SAFETY: Caller guarantees pages stay attached to the VMO.
+        unsafe {
+            all_pages_match(vmo, offset, len, |page| {
+                pmm::page_queues().debug_page_is_any_anonymous(page)
+            })
+        }
     }
 
     /// Creates a vm object.
@@ -173,7 +184,8 @@ mod vmo_rs {
 
             // pinning range
             expect_ok!(vmo.commit_range_pinned(PAGE_SIZE, 3 * PAGE_SIZE, false));
-            expect_true!(pages_in_wired_queue(&vmo, PAGE_SIZE, 3 * PAGE_SIZE));
+            // SAFETY: Test owns vmo and pages remain attached during check.
+            expect_true!(unsafe { pages_in_wired_queue(&vmo, PAGE_SIZE, 3 * PAGE_SIZE) });
 
             // decommitting pinned range
             expect_eq!(
@@ -192,14 +204,16 @@ mod vmo_rs {
             );
 
             vmo.unpin(PAGE_SIZE, 3 * PAGE_SIZE);
-            expect_true!(pages_in_any_anonymous_queue(&vmo, PAGE_SIZE, 3 * PAGE_SIZE));
+            // SAFETY: Test owns vmo and pages remain attached during check.
+            expect_true!(unsafe { pages_in_any_anonymous_queue(&vmo, PAGE_SIZE, 3 * PAGE_SIZE) });
 
             // decommitting unpinned range
             expect_ok!(vmo.decommit_range(PAGE_SIZE, 3 * PAGE_SIZE));
 
             // pinning range after decommit
             expect_ok!(vmo.commit_range_pinned(PAGE_SIZE, 3 * PAGE_SIZE, false));
-            expect_true!(pages_in_wired_queue(&vmo, PAGE_SIZE, 3 * PAGE_SIZE));
+            // SAFETY: Test owns vmo and pages remain attached during check.
+            expect_true!(unsafe { pages_in_wired_queue(&vmo, PAGE_SIZE, 3 * PAGE_SIZE) });
 
             // resizing pinned range
             expect_eq!(Status::result_into_raw(vmo.resize(0)), Status::BAD_STATE.into_raw());
@@ -236,7 +250,8 @@ mod vmo_rs {
 
             // pinning range
             expect_ok!(vmo.commit_range_pinned(PAGE_SIZE, 3 * PAGE_SIZE, false));
-            expect_true!(pages_in_wired_queue(&vmo, PAGE_SIZE, 3 * PAGE_SIZE));
+            // SAFETY: Test owns vmo and pages remain attached during check.
+            expect_true!(unsafe { pages_in_wired_queue(&vmo, PAGE_SIZE, 3 * PAGE_SIZE) });
 
             // decommitting pinned range
             let status = vmo.decommit_range(PAGE_SIZE, 3 * PAGE_SIZE);
@@ -259,7 +274,8 @@ mod vmo_rs {
             }
 
             vmo.unpin(PAGE_SIZE, 3 * PAGE_SIZE);
-            expect_true!(pages_in_wired_queue(&vmo, PAGE_SIZE, 3 * PAGE_SIZE));
+            // SAFETY: Test owns vmo and pages remain attached during check.
+            expect_true!(unsafe { pages_in_wired_queue(&vmo, PAGE_SIZE, 3 * PAGE_SIZE) });
 
             // decommitting unpinned range
             let status = vmo.decommit_range(PAGE_SIZE, 3 * PAGE_SIZE);
@@ -271,7 +287,8 @@ mod vmo_rs {
 
             // pinning range after decommit
             expect_ok!(vmo.commit_range_pinned(PAGE_SIZE, 3 * PAGE_SIZE, false));
-            expect_true!(pages_in_wired_queue(&vmo, PAGE_SIZE, 3 * PAGE_SIZE));
+            // SAFETY: Test owns vmo and pages remain attached during check.
+            expect_true!(unsafe { pages_in_wired_queue(&vmo, PAGE_SIZE, 3 * PAGE_SIZE) });
 
             vmo.unpin(PAGE_SIZE, 3 * PAGE_SIZE);
         }
@@ -292,10 +309,12 @@ mod vmo_rs {
 
             // pinning whole range
             expect_ok!(vmo.commit_range_pinned(0, alloc_size, false));
-            expect_true!(pages_in_wired_queue(&vmo, 0, alloc_size));
+            // SAFETY: Test owns vmo and pages remain attached during check.
+            expect_true!(unsafe { pages_in_wired_queue(&vmo, 0, alloc_size) });
             // pinning subrange
             expect_ok!(vmo.commit_range_pinned(PAGE_SIZE, 4 * PAGE_SIZE, false));
-            expect_true!(pages_in_wired_queue(&vmo, 0, alloc_size));
+            // SAFETY: Test owns vmo and pages remain attached during check.
+            expect_true!(unsafe { pages_in_wired_queue(&vmo, 0, alloc_size) });
 
             for _ in 1..crate::vm::page::OBJECT_MAX_PIN_COUNT {
                 // pinning first page max times
@@ -308,12 +327,12 @@ mod vmo_rs {
             );
 
             vmo.unpin(0, alloc_size);
-            expect_true!(pages_in_wired_queue(&vmo, PAGE_SIZE, 4 * PAGE_SIZE));
-            expect_true!(pages_in_any_anonymous_queue(
-                &vmo,
-                5 * PAGE_SIZE,
-                alloc_size - 5 * PAGE_SIZE
-            ));
+            // SAFETY: Test owns vmo and pages remain attached during check.
+            expect_true!(unsafe { pages_in_wired_queue(&vmo, PAGE_SIZE, 4 * PAGE_SIZE) });
+            // SAFETY: Test owns vmo and pages remain attached during check.
+            expect_true!(unsafe {
+                pages_in_any_anonymous_queue(&vmo, 5 * PAGE_SIZE, alloc_size - 5 * PAGE_SIZE)
+            });
             // decommitting pinned range
             expect_eq!(
                 Status::result_into_raw(vmo.decommit_range(PAGE_SIZE, 4 * PAGE_SIZE)),
@@ -355,10 +374,12 @@ mod vmo_rs {
 
             // pinning whole range
             expect_ok!(vmo.commit_range_pinned(0, alloc_size, false));
-            expect_true!(pages_in_wired_queue(&vmo, 0, alloc_size));
+            // SAFETY: Test owns vmo and pages remain attached during check.
+            expect_true!(unsafe { pages_in_wired_queue(&vmo, 0, alloc_size) });
             // pinning subrange
             expect_ok!(vmo.commit_range_pinned(PAGE_SIZE, 4 * PAGE_SIZE, false));
-            expect_true!(pages_in_wired_queue(&vmo, 0, alloc_size));
+            // SAFETY: Test owns vmo and pages remain attached during check.
+            expect_true!(unsafe { pages_in_wired_queue(&vmo, 0, alloc_size) });
 
             for _ in 1..crate::vm::page::OBJECT_MAX_PIN_COUNT {
                 // pinning first page max times
@@ -371,8 +392,12 @@ mod vmo_rs {
             );
 
             vmo.unpin(0, alloc_size);
-            expect_true!(pages_in_wired_queue(&vmo, PAGE_SIZE, 4 * PAGE_SIZE));
-            expect_true!(pages_in_wired_queue(&vmo, 5 * PAGE_SIZE, alloc_size - 5 * PAGE_SIZE));
+            // SAFETY: Test owns vmo and pages remain attached during check.
+            expect_true!(unsafe { pages_in_wired_queue(&vmo, PAGE_SIZE, 4 * PAGE_SIZE) });
+            // SAFETY: Test owns vmo and pages remain attached during check.
+            expect_true!(unsafe {
+                pages_in_wired_queue(&vmo, 5 * PAGE_SIZE, alloc_size - 5 * PAGE_SIZE)
+            });
 
             let status = vmo.decommit_range(PAGE_SIZE, 4 * PAGE_SIZE);
             if !is_ppb_enabled {
@@ -413,6 +438,67 @@ mod vmo_rs {
                 expect_ok!(status);
             }
         }
+    }
+
+    /// Verifies that accessing a page in a pager-backed VMO promotes its LRU position.
+    #[test]
+    fn vmo_move_pages_on_access_test() {
+        let _scanner_disable = AutoVmScannerDisable::new();
+
+        let (vmo, [page]) = unwrap_ok!(make_committed_pager_vmo(false, false));
+
+        // SAFETY: `page` is attached to `vmo`.
+        expect_true!(unsafe { pmm::page_queues().debug_page_is_reclaim(page) }.is_some());
+
+        // If we lookup the page then it should be moved to specifically the first page queue.
+        let status = vmo.get_page_blocking(0, fault::flag::SW_FAULT);
+        expect_ok!(status);
+        // SAFETY: `page` is attached to `vmo`.
+        let queue = unsafe { pmm::page_queues().debug_page_is_reclaim(page) }
+            .expect("page is in reclaim queue");
+        expect_eq!(0, queue.0);
+
+        // Rotate the queues and check the page moves.
+        pmm::page_queues().rotate_reclaim_queues();
+        // SAFETY: `page` is attached to `vmo`.
+        let queue = unsafe { pmm::page_queues().debug_page_is_reclaim(page) }
+            .expect("page is in reclaim queue");
+        expect_eq!(1, queue.0);
+
+        // Touching the page should move it back to the first queue.
+        let status = vmo.get_page_blocking(0, fault::flag::SW_FAULT);
+        expect_ok!(status);
+        // SAFETY: `page` is attached to `vmo`.
+        let queue = unsafe { pmm::page_queues().debug_page_is_reclaim(page) }
+            .expect("page is in reclaim queue");
+        expect_eq!(0, queue.0);
+
+        // Touching pages in a child should also move the page to the front of the queues.
+        let child = unwrap_ok!(vmo.create_clone(
+            Resizability::NonResizable,
+            SnapshotType::OnWrite,
+            0,
+            PAGE_SIZE,
+            true
+        ));
+
+        let status = child.get_page_blocking(0, fault::flag::SW_FAULT);
+        expect_ok!(status);
+        // SAFETY: `page` is attached to `vmo`.
+        let queue = unsafe { pmm::page_queues().debug_page_is_reclaim(page) }
+            .expect("page is in reclaim queue");
+        expect_eq!(0, queue.0);
+        pmm::page_queues().rotate_reclaim_queues();
+        // SAFETY: `page` is attached to `vmo`.
+        let queue = unsafe { pmm::page_queues().debug_page_is_reclaim(page) }
+            .expect("page is in reclaim queue");
+        expect_eq!(1, queue.0);
+        let status = child.get_page_blocking(0, fault::flag::SW_FAULT);
+        expect_ok!(status);
+        // SAFETY: `page` is attached to `vmo`.
+        let queue = unsafe { pmm::page_queues().debug_page_is_reclaim(page) }
+            .expect("page is in reclaim queue");
+        expect_eq!(0, queue.0);
     }
 
     /// Tests parent merging and user ID updates when VMO hierarchies collapse.
@@ -484,6 +570,68 @@ mod vmo_rs {
         drop(child);
         expect_eq!(child2.parent_user_id(), 42);
         expect_eq!(child3.parent_user_id(), 42);
+    }
+
+    /// Tests that pinning pager-backed pages retains backlink information.
+    #[test]
+    fn vmo_pinning_backlink_test() {
+        // Disable the page scanner as this test would be flaky if our pages get
+        // evicted by someone else.
+        let _scanner_disable = AutoVmScannerDisable::new();
+
+        // Create a pager-backed VMO with two pages, so we can verify a non-zero offset value.
+        let (vmo, [page0, page1]) = unwrap_ok!(make_committed_pager_vmo(false, false));
+
+        // SAFETY: `page0` and `page1` are attached to `vmo`.
+        expect_true!(unsafe { pmm::page_queues().debug_page_is_reclaim(page0) }.is_some());
+        expect_true!(unsafe { pmm::page_queues().debug_page_is_reclaim(page1) }.is_some());
+
+        // Verify backlink information.
+        let cow = vmo.debug_get_cow_pages().expect("cow pages must exist");
+        let cow_ptr = cow.as_raw().cast::<core::ffi::c_void>();
+        // SAFETY: `page0` and `page1` are attached to `vmo`.
+        expect_eq!(unsafe { page0.get_object() }, cow_ptr);
+        expect_eq!(unsafe { page0.get_page_offset() }, 0);
+        expect_eq!(unsafe { page1.get_object() }, cow_ptr);
+        expect_eq!(unsafe { page1.get_page_offset() }, PAGE_SIZE);
+
+        // Pin the pages.
+        let status = vmo.commit_range_pinned(0, 2 * PAGE_SIZE, false);
+        expect_ok!(status);
+
+        // Pages might get swapped out on pinning if they were loaned. Look them up again.
+        let page0 = vmo.debug_get_page(0).expect("page 0 must exist");
+        let page1 = vmo.debug_get_page(PAGE_SIZE).expect("page 1 must exist");
+
+        // SAFETY: `page0` and `page1` are attached to `vmo`.
+        expect_true!(unsafe { pmm::page_queues().debug_page_is_wired(page0) });
+        expect_true!(unsafe { pmm::page_queues().debug_page_is_wired(page1) });
+        expect_false!(unsafe { pmm::page_queues().debug_page_is_reclaim(page0) }.is_some());
+        expect_false!(unsafe { pmm::page_queues().debug_page_is_reclaim(page1) }.is_some());
+
+        // Moving to the wired queue should retain backlink information.
+        // SAFETY: `page0` and `page1` are attached to `vmo`.
+        expect_eq!(unsafe { page0.get_object() }, cow_ptr);
+        expect_eq!(unsafe { page0.get_page_offset() }, 0);
+        expect_eq!(unsafe { page1.get_object() }, cow_ptr);
+        expect_eq!(unsafe { page1.get_page_offset() }, PAGE_SIZE);
+
+        // Unpin the pages.
+        vmo.unpin(0, 2 * PAGE_SIZE);
+
+        // Pages should be back in the pager queue.
+        // SAFETY: `page0` and `page1` are attached to `vmo`.
+        expect_false!(unsafe { pmm::page_queues().debug_page_is_wired(page0) });
+        expect_false!(unsafe { pmm::page_queues().debug_page_is_wired(page1) });
+        expect_true!(unsafe { pmm::page_queues().debug_page_is_reclaim(page0) }.is_some());
+        expect_true!(unsafe { pmm::page_queues().debug_page_is_reclaim(page1) }.is_some());
+
+        // Verify backlink information again.
+        // SAFETY: `page0` and `page1` are attached to `vmo`.
+        expect_eq!(unsafe { page0.get_object() }, cow_ptr);
+        expect_eq!(unsafe { page0.get_page_offset() }, 0);
+        expect_eq!(unsafe { page1.get_object() }, cow_ptr);
+        expect_eq!(unsafe { page1.get_page_offset() }, PAGE_SIZE);
     }
 
     /// Tests that writing to a VMO does not commit pages in its clone.
