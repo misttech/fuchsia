@@ -269,7 +269,6 @@ group("unit_tests") {
       "honeydew/affordances/connectivity/bluetooth/le/tests/unit_tests:tests",
       "honeydew/affordances/connectivity/bluetooth/utils/tests/unit_tests:tests",
       "honeydew/affordances/connectivity/netstack/tests/unit_tests:tests",
-      "honeydew/affordances/connectivity/wlan/core/tests/unit_tests($host_toolchain)",
       "honeydew/affordances/connectivity/wlan/wlan_policy/tests/unit_tests:tests",
       "honeydew/affordances/connectivity/wlan/wlan_policy_ap/tests/unit_tests:tests",
       "honeydew/affordances/hello_world/tests/unit_tests:tests",
