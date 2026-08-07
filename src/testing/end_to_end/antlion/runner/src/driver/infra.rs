@@ -238,9 +238,10 @@ impl InfraDriver {
                     register_pdu(pdu)?;
                     merge_test_params(test_params);
                 }
-                InfraTarget::AccessPoint { ip, model, attenuator, pdu, ssh_key } => {
+                InfraTarget::AccessPoint { ip, nodename, model, attenuator, pdu, ssh_key } => {
                     let ap = config::AccessPoint {
                         wan_interface: "eth0".to_string(),
+                        nodename,
                         ssh_config: config::SshConfig {
                             ssh_binary_path: ssh_binary.clone(),
                             host: ip.clone(),
@@ -386,6 +387,7 @@ enum InfraTarget {
     },
     AccessPoint {
         ip: IpAddr,
+        nodename: Option<String>,
         model: Option<String>,
         ssh_key: PathBuf,
         attenuator: Option<AttenuatorRef>,
@@ -702,6 +704,7 @@ mod test {
         const FUCHSIA_PDU_IP: &'static str = "192.168.42.14";
         const FUCHSIA_PDU_PORT: u8 = 1;
         const AP_IP: &'static str = "192.168.42.11";
+        const AP_NODENAME: &'static str = "access-point-1234-5678-9abc";
         const AP_AND_IPERF_PDU_IP: &'static str = "192.168.42.13";
         const AP_PDU_PORT: u8 = 1;
         const ATTENUATOR_IP: &'static str = "192.168.42.15";
@@ -731,6 +734,7 @@ mod test {
             }, {
                 "type": "AccessPoint",
                 "ip": AP_IP,
+                "nodename": AP_NODENAME,
                 "ssh_key": ssh_key.path(),
                 "attenuator": {
                     "ip": ATTENUATOR_IP,
@@ -804,6 +808,7 @@ mod test {
                     implementation: fuchsia-controller
             AccessPoint:
             - wan_interface: eth0
+              nodename: {AP_NODENAME}
               ssh_config:
                 ssh_binary_path: {ssh_path}
                 host: {AP_IP}

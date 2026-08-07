@@ -145,6 +145,8 @@ fn default_pdu_device() -> String {
 /// [access_point.py]: https://cs.opensource.google/fuchsia/fuchsia/+/main:src/testing/end_to_end/antlion/packages/antlion/controllers/access_point.py
 pub(crate) struct AccessPoint {
     pub wan_interface: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub nodename: Option<String>,
     pub ssh_config: SshConfig,
     #[serde(rename = "PduDevice", skip_serializing_if = "Option::is_none")]
     pub pdu_device: Option<PduRef>,

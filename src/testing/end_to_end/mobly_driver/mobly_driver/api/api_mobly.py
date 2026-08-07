@@ -115,6 +115,7 @@ def new_testbed_config(
               "mac": "0c:73:eb:b0:86:fa",
               "port": 1
           },
+          "nodename": "access-point-1234-5678-9abc",
           "ssh_key": "/etc/botanist/keys/chrome_os_testing_rsa",
           "user": "root",
           "wan_interface": "eth0"
@@ -145,6 +146,7 @@ def new_testbed_config(
                 ],
                 "AccessPoint": [
                   {
+                    "nodename": "access-point-1234-5678-9abc",
                     "wan_interface": "eth0",
                     "ssh_config": {
                       "ssh_binary_path": host_x64/test_data/src/testing/end_to_end/antlion/tests/wlan_policy/hidden_networks_test/ssh

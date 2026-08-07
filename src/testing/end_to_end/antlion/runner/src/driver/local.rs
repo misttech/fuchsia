@@ -119,6 +119,7 @@ impl Driver for LocalDriver {
         if let Some(ref ap) = self.access_point {
             access_points.push(config::AccessPoint {
                 wan_interface: "eth0".to_string(),
+                nodename: None,
                 ssh_config: config::SshConfig {
                     ssh_binary_path: self.ssh_binary.clone(),
                     host: ap.ip.clone(),

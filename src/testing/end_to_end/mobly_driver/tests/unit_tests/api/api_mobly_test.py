@@ -243,6 +243,49 @@ class ApiMoblyTest(unittest.TestCase):
                 },
             ),
             param(
+                "success_access_point_optional_fields",
+                override_args={
+                    "mobly_controllers": [
+                        {
+                            "type": "AccessPoint",
+                            "ip": "192.168.42.11",
+                            "user": "root",
+                            "ssh_key": "some/key/path",
+                            "nodename": "access-point-1234-5678-9abc",
+                            "wan_interface": "eth0",
+                            "pdu": {"ip": "192.168.42.23", "port": 1},
+                        },
+                    ],
+                },
+                expected_config_obj={
+                    "MoblyParams": {"LogPath": "output_path"},
+                    "TestBeds": [
+                        {
+                            "Controllers": {
+                                "AccessPoint": [
+                                    {
+                                        "allow_regdb_bypass": False,
+                                        "nodename": "access-point-1234-5678-9abc",
+                                        "wan_interface": "eth0",
+                                        "pdu": {
+                                            "ip": "192.168.42.23",
+                                            "port": 1,
+                                        },
+                                        "ssh_config": {
+                                            "host": "192.168.42.11",
+                                            "user": "root",
+                                            "identity_file": "some/key/path",
+                                        },
+                                    },
+                                ],
+                            },
+                            "Name": "tb_name",
+                            "TestParams": {},
+                        }
+                    ],
+                },
+            ),
+            param(
                 "success_access_point_openwrt_one",
                 override_args={
                     "mobly_controllers": [
