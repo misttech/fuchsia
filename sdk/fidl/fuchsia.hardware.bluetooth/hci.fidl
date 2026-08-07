@@ -127,6 +127,7 @@ open protocol HciTransport {
     });
 };
 
+@available(removed=NEXT, note="use HciTransport instead")
 open protocol Hci {
     /// Open the two-way HCI command channel for sending HCI commands and
     /// receiving event packets.  Returns ZX_ERR_ALREADY_BOUND if the channel
@@ -192,7 +193,9 @@ open protocol Hci {
 
 /// Wrap the protocol in a service that will be exposed to the child driver.
 service HciService {
+    @available(removed=NEXT, note="use hci_transport instead")
     hci client_end:Hci;
+
     hci_transport client_end:HciTransport;
     snoop client_end:Snoop;
 };

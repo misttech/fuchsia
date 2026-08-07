@@ -259,81 +259,6 @@
         "name": "fuchsia.hardware.bluetooth/Emulator_WatchLegacyAdvertisingStates_Response"
     },
     {
-        "kind": "protocol/member",
-        "name": "fuchsia.hardware.bluetooth/Hci.ConfigureSco",
-        "strictness": "flexible",
-        "ordinal": "5304897236061518551",
-        "direction": "two_way",
-        "request": "fuchsia.hardware.bluetooth/HciConfigureScoRequest",
-        "response": "fuchsia.hardware.bluetooth/Hci_ConfigureSco_Response",
-        "error": "int32"
-    },
-    {
-        "kind": "protocol/member",
-        "name": "fuchsia.hardware.bluetooth/Hci.OpenAclDataChannel",
-        "strictness": "flexible",
-        "ordinal": "2381346294742792282",
-        "direction": "two_way",
-        "request": "fuchsia.hardware.bluetooth/HciOpenAclDataChannelRequest",
-        "response": "fuchsia.hardware.bluetooth/Hci_OpenAclDataChannel_Response",
-        "error": "int32"
-    },
-    {
-        "kind": "protocol/member",
-        "name": "fuchsia.hardware.bluetooth/Hci.OpenCommandChannel",
-        "strictness": "flexible",
-        "ordinal": "2670833790949334240",
-        "direction": "two_way",
-        "request": "fuchsia.hardware.bluetooth/HciOpenCommandChannelRequest",
-        "response": "fuchsia.hardware.bluetooth/Hci_OpenCommandChannel_Response",
-        "error": "int32"
-    },
-    {
-        "kind": "protocol/member",
-        "name": "fuchsia.hardware.bluetooth/Hci.OpenIsoDataChannel",
-        "strictness": "flexible",
-        "ordinal": "697488520954834900",
-        "direction": "two_way",
-        "request": "fuchsia.hardware.bluetooth/HciOpenIsoDataChannelRequest",
-        "response": "fuchsia.hardware.bluetooth/Hci_OpenIsoDataChannel_Response",
-        "error": "int32"
-    },
-    {
-        "kind": "protocol/member",
-        "name": "fuchsia.hardware.bluetooth/Hci.OpenScoDataChannel",
-        "strictness": "flexible",
-        "ordinal": "6614393615155420127",
-        "direction": "two_way",
-        "request": "fuchsia.hardware.bluetooth/HciOpenScoDataChannelRequest",
-        "response": "fuchsia.hardware.bluetooth/Hci_OpenScoDataChannel_Response",
-        "error": "int32"
-    },
-    {
-        "kind": "protocol/member",
-        "name": "fuchsia.hardware.bluetooth/Hci.OpenSnoopChannel",
-        "strictness": "flexible",
-        "ordinal": "950759617900896566",
-        "direction": "two_way",
-        "request": "fuchsia.hardware.bluetooth/HciOpenSnoopChannelRequest",
-        "response": "fuchsia.hardware.bluetooth/Hci_OpenSnoopChannel_Response",
-        "error": "int32"
-    },
-    {
-        "kind": "protocol/member",
-        "name": "fuchsia.hardware.bluetooth/Hci.ResetSco",
-        "strictness": "flexible",
-        "ordinal": "7990913833237626827",
-        "direction": "two_way",
-        "response": "fuchsia.hardware.bluetooth/Hci_ResetSco_Response",
-        "error": "int32"
-    },
-    {
-        "kind": "protocol",
-        "name": "fuchsia.hardware.bluetooth/Hci",
-        "openness": "open",
-        "transport": "channel"
-    },
-    {
         "kind": "enum/member",
         "name": "fuchsia.hardware.bluetooth/HciConfig.DUAL_MODE",
         "value": "1"
@@ -348,28 +273,6 @@
         "name": "fuchsia.hardware.bluetooth/HciConfig",
         "strictness": "flexible",
         "type": "uint32"
-    },
-    {
-        "kind": "struct/member",
-        "name": "fuchsia.hardware.bluetooth/HciConfigureScoRequest.coding_format",
-        "ordinal": "1",
-        "type": "fuchsia.hardware.bluetooth/ScoCodingFormat"
-    },
-    {
-        "kind": "struct/member",
-        "name": "fuchsia.hardware.bluetooth/HciConfigureScoRequest.encoding",
-        "ordinal": "2",
-        "type": "fuchsia.hardware.bluetooth/ScoEncoding"
-    },
-    {
-        "kind": "struct/member",
-        "name": "fuchsia.hardware.bluetooth/HciConfigureScoRequest.sample_rate",
-        "ordinal": "3",
-        "type": "fuchsia.hardware.bluetooth/ScoSampleRate"
-    },
-    {
-        "kind": "struct",
-        "name": "fuchsia.hardware.bluetooth/HciConfigureScoRequest"
     },
     {
         "kind": "enum/member",
@@ -736,61 +639,6 @@
         "name": "fuchsia.hardware.bluetooth/HciError",
         "strictness": "flexible",
         "type": "uint8"
-    },
-    {
-        "kind": "struct/member",
-        "name": "fuchsia.hardware.bluetooth/HciOpenAclDataChannelRequest.channel",
-        "ordinal": "1",
-        "type": "zx/Handle:CHANNEL"
-    },
-    {
-        "kind": "struct",
-        "name": "fuchsia.hardware.bluetooth/HciOpenAclDataChannelRequest",
-        "resourceness": "resource"
-    },
-    {
-        "kind": "struct/member",
-        "name": "fuchsia.hardware.bluetooth/HciOpenCommandChannelRequest.channel",
-        "ordinal": "1",
-        "type": "zx/Handle:CHANNEL"
-    },
-    {
-        "kind": "struct",
-        "name": "fuchsia.hardware.bluetooth/HciOpenCommandChannelRequest",
-        "resourceness": "resource"
-    },
-    {
-        "kind": "struct/member",
-        "name": "fuchsia.hardware.bluetooth/HciOpenIsoDataChannelRequest.channel",
-        "ordinal": "1",
-        "type": "zx/Handle:CHANNEL"
-    },
-    {
-        "kind": "struct",
-        "name": "fuchsia.hardware.bluetooth/HciOpenIsoDataChannelRequest",
-        "resourceness": "resource"
-    },
-    {
-        "kind": "struct/member",
-        "name": "fuchsia.hardware.bluetooth/HciOpenScoDataChannelRequest.channel",
-        "ordinal": "1",
-        "type": "zx/Handle:CHANNEL"
-    },
-    {
-        "kind": "struct",
-        "name": "fuchsia.hardware.bluetooth/HciOpenScoDataChannelRequest",
-        "resourceness": "resource"
-    },
-    {
-        "kind": "struct/member",
-        "name": "fuchsia.hardware.bluetooth/HciOpenSnoopChannelRequest.channel",
-        "ordinal": "1",
-        "type": "zx/Handle:CHANNEL"
-    },
-    {
-        "kind": "struct",
-        "name": "fuchsia.hardware.bluetooth/HciOpenSnoopChannelRequest",
-        "resourceness": "resource"
     },
     {
         "kind": "protocol/member",
@@ -1462,15 +1310,6 @@
     },
     {
         "kind": "protocol/member",
-        "name": "fuchsia.hardware.bluetooth/Vendor.OpenHci",
-        "strictness": "flexible",
-        "ordinal": "9152869356252245704",
-        "direction": "two_way",
-        "response": "fuchsia.hardware.bluetooth/Vendor_OpenHci_Response",
-        "error": "int32"
-    },
-    {
-        "kind": "protocol/member",
         "name": "fuchsia.hardware.bluetooth/Vendor.OpenHciTransport",
         "strictness": "flexible",
         "ordinal": "2267662903604676660",
@@ -1626,17 +1465,6 @@
     {
         "kind": "struct",
         "name": "fuchsia.hardware.bluetooth/Vendor_OpenHciTransport_Response",
-        "resourceness": "resource"
-    },
-    {
-        "kind": "struct/member",
-        "name": "fuchsia.hardware.bluetooth/Vendor_OpenHci_Response.channel",
-        "ordinal": "1",
-        "type": "client_end:fuchsia.hardware.bluetooth/Hci"
-    },
-    {
-        "kind": "struct",
-        "name": "fuchsia.hardware.bluetooth/Vendor_OpenHci_Response",
         "resourceness": "resource"
     },
     {
