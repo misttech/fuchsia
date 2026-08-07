@@ -13,9 +13,9 @@ import random
 import time
 from typing import Sequence
 
+import fidl_fuchsia_wlan_common as f_wlan_common
 import fidl_fuchsia_wlan_policy as f_wlan_policy
 import fuchsia_wlan_base_test
-import honeydew.affordances.connectivity.wlan.core as wlan_core
 from antlion.controllers.access_point import setup_ap
 from antlion.controllers.ap_lib import hostapd_constants
 from honeydew.affordances.connectivity.wlan.utils.errors import (
@@ -51,9 +51,6 @@ SEC_PER_KUS = 0.001024
 
 
 class ChannelSwitchTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
-    phy: wlan_core.Phy
-    client_iface: wlan_core.ClientIface
-
     # Time to wait between issuing channel switches
     WAIT_BETWEEN_CHANNEL_SWITCHES_S = 15
 
@@ -77,8 +74,6 @@ class ChannelSwitchTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             CountryCode.UNITED_STATES_OF_AMERICA
         )
 
-        self.phy = await self.dut.wlan_core.ensure_single_phy()
-
         if not self.openwrt_ap and not self.access_point:
             raise signals.TestAbortClass("Requires at least one access point")
 
@@ -88,13 +83,6 @@ class ChannelSwitchTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
     async def setup_test(self) -> None:
         await super().setup_test()
         await self.dut.wlan_policy.ensure_clean_state()
-        client_ifaces = await self.phy.get_client_ifaces()
-        asserts.assert_equal(
-            len(client_ifaces),
-            1,
-            f"Expected exactly 1 client interface on PHY, got {len(client_ifaces)}",
-        )
-        self.client_iface = client_ifaces[0]
 
     async def teardown_test(self) -> None:
         await self.dut.wlan_policy.ensure_clean_state()
@@ -265,7 +253,7 @@ class ChannelSwitchTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             must_change_channel_by = time.time() + must_change_channel_within
 
             while time.time() < change_channel_after:
-                status = await self.client_iface.status()
+                status = await self.dut.wlan_core.status()
                 if status.connected is None:
                     raise signals.TestFailure(
                         f"want connected status, got {status} after "
@@ -273,7 +261,7 @@ class ChannelSwitchTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                         f"channel {current_channel}"
                     )
 
-                got_channel = status.connected.primary.number
+                got_channel = status.connected.channel.number
 
                 if got_channel == previous_channel:
                     if time.time() > must_change_channel_by:
@@ -472,16 +460,21 @@ class ChannelSwitchTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             EnvironmentError: if SoftAP interface channel cannot be determined.
             signals.TestFailure: when the SoftAP interface is not connected.
         """
-        ap_ifaces = await self.phy.get_ap_ifaces()
-        asserts.assert_equal(
-            len(ap_ifaces),
-            1,
-            f"Expected exactly 1 AP interface on PHY, got {len(ap_ifaces)}",
-        )
-        status = await self.client_iface.status()
-        if status.connected is None:
-            raise signals.TestFailure(f"want connected status, got {status}")
-        return status.connected.primary.number
+        iface_ids = await self.dut.wlan_core.get_iface_id_list()
+        for iface_id in iface_ids:
+            try:
+                result = await self.dut.wlan_core.query_iface(iface_id)
+            except HoneydewWlanError as e:
+                self.log.warning(f"Query iface {iface_id} failed: {e}")
+                continue
+            if result.role == f_wlan_common.WlanMacRole.AP:
+                status = await self.dut.wlan_core.status()
+                if status.connected is None:
+                    raise signals.TestFailure(
+                        f"want connected status, got {status}"
+                    )
+                return status.connected.channel.number
+        raise EnvironmentError("Could not determine SoftAP channel")
 
 
 if __name__ == "__main__":

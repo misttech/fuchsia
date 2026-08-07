@@ -11,21 +11,18 @@ import fidl_fuchsia_wlan_common as fidl_common
 import fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211
 import fidl_fuchsia_wlan_internal as fidl_security
 import fidl_fuchsia_wlan_sme as fidl_sme
-import fuchsia_wlan_base_test
-import honeydew.affordances.connectivity.wlan.core as wlan_core
 from antlion import utils
 from antlion.controllers.access_point import AccessPoint, setup_ap
 from antlion.controllers.ap_lib import hostapd_constants
 from antlion.controllers.ap_lib.hostapd_security import (
     Security as DeprecatedSecurity,
 )
+from common.utils.ies import read_ssid
+from core_testing import base_test
 from honeydew.affordances.connectivity.wlan.core import (
     ConnectTransactionEventHandler,
 )
-from honeydew.affordances.connectivity.wlan.utils.types import (
-    CountryCode,
-    MacAddress,
-)
+from honeydew.affordances.connectivity.wlan.utils.types import MacAddress
 from mobly import signals, test_runner
 from mobly.asserts import (
     abort_class_if,
@@ -34,7 +31,7 @@ from mobly.asserts import (
     assert_true,
     fail,
 )
-from openwrt_access_point import StationStatus
+from openwrt_access_point import OpenWrtAP, StationStatus
 from openwrt_access_point.lib.access_point_config import (
     DEFAULT_2G_CHANNEL,
     DEFAULT_5G_CHANNEL,
@@ -119,7 +116,7 @@ _DUT_SECURITY_MODE_TO_COMPATIBLE_AP_MODES: dict[
 }
 
 
-class RoamRequestTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
+class RoamRequestTest(base_test.ConnectionBaseTestClass):
     """Tests fulfillment of roam requests from the SME FIDL roam API.
 
     Testbed Requirements:
@@ -130,19 +127,6 @@ class RoamRequestTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
     standardized WLAN testbeds with a single AP. Multi-AP support is needed for intra-band
     roaming tests.
     """
-
-    phy: wlan_core.Phy
-
-    async def setup_class(self) -> None:
-        await super().setup_class()
-        self.phy = await self.dut.wlan_core.ensure_single_phy()
-
-        # Set country to US so that 5 GHz channels are supported.
-        await self.phy.set_country(CountryCode.UNITED_STATES_OF_AMERICA)
-
-    async def setup_test(self) -> None:
-        await super().setup_test()
-        await self.dut.wlan_core.destroy_all_ifaces()
 
     async def pre_run(self) -> None:
         """
@@ -213,7 +197,7 @@ class RoamRequestTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
 
     def skip_if_wep_not_supported(self, test_params: TestParams) -> None:
         # TODO(b/490162087): Remove this skip once OpenWrt supports WEP security
-        if self.openwrt_ap and (
+        if isinstance(self.test_kit.access_point, OpenWrtAP) and (
             isinstance(test_params.dut_security_mode, SecurityWep)
             or isinstance(test_params.origin_security_mode, SecurityWep)
             or isinstance(test_params.target_security_mode, SecurityWep)
@@ -238,12 +222,12 @@ class RoamRequestTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         )
         return f"test_roam_request_{dut_security_mode}_dut_from_{origin_security_mode}_{test_params.origin_band.name}_to_{target_security_mode}_{test_params.target_band.name}_{expected_result}"
 
-    def get_single_sta_status(
-        self, mac: MacAddress, band: Band
-    ) -> StationStatus:
+    def get_single_sta_status(self, mac: str, band: Band) -> StationStatus:
         """Gets station status and asserts there is only one interface."""
-        assert self.openwrt_ap, "Expected OpenWrtAP"
-        sta_dict = self.openwrt_ap.get_sta_status(mac, band)
+        assert isinstance(
+            self.test_kit.access_point, OpenWrtAP
+        ), "Expected OpenWrtAP"
+        sta_dict = self.test_kit.access_point.get_sta_status(mac, band)
         assert (
             len(sta_dict) == 1
         ), f"Expected station on exactly one interface, but found: {list(sta_dict.keys())}"
@@ -273,13 +257,51 @@ class RoamRequestTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             f"Test expects one 2.4GHz AP and one 5GHz AP. Got origin: {test_params.origin_band}, target {test_params.target_band}",
         )
 
-        if not self.openwrt_ap and not self.access_point:
+        if not self.test_kit.access_point:
             raise signals.TestAbortClass(
                 "No access point configured for this test."
             )
 
         # Setup 2.4GHz AP
-        if self.openwrt_ap:
+        if isinstance(self.test_kit.access_point, AccessPoint):
+            origin_security_mode = ConfigMapper.to_hostapd_security(
+                test_params.origin_security_mode
+            )
+            target_security_mode = ConfigMapper.to_hostapd_security(
+                test_params.target_security_mode
+            )
+
+            origin_security_config = DeprecatedSecurity(
+                origin_security_mode, password=origin_password
+            )
+            target_security_config = DeprecatedSecurity(
+                target_security_mode, password=target_password
+            )
+
+            if test_params.origin_band == hostapd_constants.BandType.BAND_2G:
+                deprecated_security_2g = origin_security_config
+                deprecated_security_5g = target_security_config
+            else:
+                deprecated_security_2g = target_security_config
+                deprecated_security_5g = origin_security_config
+
+            setup_ap(
+                access_point=self.test_kit.access_point,
+                profile_name="whirlwind",
+                channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
+                ssid=ssid,
+                security=deprecated_security_2g,
+            )
+
+            # Setup 5GHz AP
+            setup_ap(
+                access_point=self.test_kit.access_point,
+                profile_name="whirlwind",
+                channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
+                ssid=ssid,
+                security=deprecated_security_5g,
+            )
+        elif isinstance(self.test_kit.access_point, OpenWrtAP):
             if test_params.origin_band == hostapd_constants.BandType.BAND_2G:
                 security_2g = test_params.origin_security_mode
                 security_5g = test_params.target_security_mode
@@ -291,7 +313,7 @@ class RoamRequestTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                 password_2g = target_password
                 password_5g = origin_password
 
-            self.openwrt_ap.configure_wifi(
+            self.test_kit.access_point.configure_wifi(
                 AccessPointConfig(
                     radios=[
                         RadioConfig(
@@ -317,58 +339,22 @@ class RoamRequestTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                     ]
                 )
             )
-        elif self.access_point:
-            origin_security_mode = ConfigMapper.to_hostapd_security(
-                test_params.origin_security_mode
-            )
-            target_security_mode = ConfigMapper.to_hostapd_security(
-                test_params.target_security_mode
-            )
-
-            origin_security_config = DeprecatedSecurity(
-                origin_security_mode, password=origin_password
-            )
-            target_security_config = DeprecatedSecurity(
-                target_security_mode, password=target_password
-            )
-
-            if test_params.origin_band == hostapd_constants.BandType.BAND_2G:
-                deprecated_security_2g = origin_security_config
-                deprecated_security_5g = target_security_config
-            else:
-                deprecated_security_2g = target_security_config
-                deprecated_security_5g = origin_security_config
-
-            setup_ap(
-                access_point=self.access_point,
-                profile_name="whirlwind",
-                channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-                ssid=ssid,
-                security=deprecated_security_2g,
-            )
-
-            # Setup 5GHz AP
-            setup_ap(
-                access_point=self.access_point,
-                profile_name="whirlwind",
-                channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
-                ssid=ssid,
-                security=deprecated_security_5g,
-            )
         return RoamTestParameters(ssid, origin_password, target_password)
 
     async def _test_logic(
         self,
         test_params: TestParams,
     ) -> None:
-        iface = await self.phy.create_client_iface()
-        if not self.openwrt_ap and not self.access_point:
+        if not self.test_kit.access_point:
             raise signals.TestAbortClass(
                 "No access point configured for this test."
             )
         self.skip_if_wep_not_supported(test_params)
         # Setup APs using test params
         roam_params = await self.setup_aps(test_params)
+        ssid = roam_params.ssid
+        origin_password = roam_params.origin_password
+        roam_params.target_password
 
         origin_band = (
             Band.BAND_2G
@@ -382,7 +368,7 @@ class RoamRequestTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         )
 
         # Passive scan on the channels used in this test, which are the default channels for 2.4GHz and 5GHz APs.
-        if self.openwrt_ap:
+        if isinstance(self.test_kit.access_point, OpenWrtAP):
             channels = [DEFAULT_2G_CHANNEL.number, DEFAULT_5G_CHANNEL.number]
         else:
             channels = [
@@ -390,22 +376,42 @@ class RoamRequestTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                 hostapd_constants.AP_DEFAULT_CHANNEL_5G,
             ]
 
-        scan_results = await iface.passive_scan(channels=channels)
+        scan_results = (
+            (
+                await self.test_kit.client_sme.scan_for_controller(
+                    req=fidl_sme.ScanRequest(
+                        passive=fidl_sme.PassiveScanRequest(channels=channels)
+                    )
+                )
+            )
+            .unwrap()
+            .scan_results
+        )
+        if scan_results is None:
+            raise signals.TestError(
+                "ClientSme.ScanForController() response is missing scan_results"
+            )
 
         # Parse out scanned BSSs from the test network
         bss_desc_2g = None
         bss_desc_5g = None
-        for ssid, bss_description_list in scan_results.items():
-            if ssid == roam_params.ssid:
-                first_bss_description = bss_description_list[0]
-                channel = first_bss_description.primary.number
+        for scan_result in scan_results:
+            assert (
+                scan_result.bss_description is not None
+            ), "ScanResult is missing bss_description"
+            assert (
+                scan_result.bss_description.ies is not None
+            ), "ScanResult.BssDescription is missing ies"
+            scanned_ssid = read_ssid(bytes(scan_result.bss_description.ies))
+            if scanned_ssid == ssid:
+                channel = scan_result.bss_description.primary.number
                 if channel in hostapd_constants.US_CHANNELS_2G:
-                    bss_desc_2g = first_bss_description
+                    bss_desc_2g = scan_result.bss_description
                 elif channel in hostapd_constants.US_CHANNELS_5G:
-                    bss_desc_5g = first_bss_description
+                    bss_desc_5g = scan_result.bss_description
                 else:
                     raise signals.TestError(
-                        f"First BSS for test network SSID '{ssid}' found on unexpected channel: {channel}:\n\n{scan_results}"
+                        f"BSS for test network SSID '{ssid}' found on unexpected channel: {channel}"
                     )
 
         # Verify there are two BSSs seen for the test network
@@ -446,39 +452,33 @@ class RoamRequestTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                     )
                 case SecurityWpa():
                     protocol = fidl_security.Protocol.WPA1
-                    if roam_params.origin_password is None:
+                    if origin_password is None:
                         raise signals.TestError("Password is required for WPA.")
                     credentials = fidl_security.Credentials(
                         wpa=fidl_security.WpaCredentials(
-                            passphrase=list(
-                                roam_params.origin_password.encode("ascii")
-                            )
+                            passphrase=list(origin_password.encode("ascii"))
                         )
                     )
                 case SecurityWpa2() | SecurityWpaWpa2Mixed():
                     protocol = fidl_security.Protocol.WPA2_PERSONAL
-                    if roam_params.origin_password is None:
+                    if origin_password is None:
                         raise signals.TestError(
                             "Password is required for WPA2/WPA_WPA2."
                         )
                     credentials = fidl_security.Credentials(
                         wpa=fidl_security.WpaCredentials(
-                            passphrase=list(
-                                roam_params.origin_password.encode("ascii")
-                            )
+                            passphrase=list(origin_password.encode("ascii"))
                         )
                     )
                 case SecurityWpa3() | SecurityWpa2Wpa3Mixed():
                     protocol = fidl_security.Protocol.WPA3_PERSONAL
-                    if roam_params.origin_password is None:
+                    if origin_password is None:
                         raise signals.TestError(
                             "Password is required for WPA3/WPA2_WPA3."
                         )
                     credentials = fidl_security.Credentials(
                         wpa=fidl_security.WpaCredentials(
-                            passphrase=list(
-                                roam_params.origin_password.encode("ascii")
-                            )
+                            passphrase=list(origin_password.encode("ascii"))
                         )
                     )
                 case _:
@@ -488,7 +488,7 @@ class RoamRequestTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
 
             # Send connect request for origin BSS
             connect_request = fidl_sme.ConnectRequest(
-                ssid=list(roam_params.ssid.encode("ascii")),
+                ssid=list(ssid.encode("ascii")),
                 bss_description=origin_bss_desc,
                 multiple_bss_candidates=True,
                 authentication=fidl_security.Authentication(
@@ -498,7 +498,9 @@ class RoamRequestTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                 deprecated_scan_type=fidl_common.ScanType.PASSIVE,
             )
             logger.info(f"ConnectRequest: {connect_request!r}")
-            iface.client_sme.connect(req=connect_request, txn=server.take())
+            self.test_kit.client_sme.connect(
+                req=connect_request, txn=server.take()
+            )
 
             # Verify a successful connect result is received
             try:
@@ -527,8 +529,41 @@ class RoamRequestTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
 
             # Verify that DUT is actually associated (as seen from AP).
             target_iface = None
-            client_mac = await iface.get_mac_address()
-            if self.openwrt_ap:
+            if isinstance(self.test_kit.access_point, AccessPoint):
+                client_mac = await self._get_client_mac()
+                if (
+                    test_params.origin_band
+                    == hostapd_constants.BandType.BAND_2G
+                ):
+                    origin_iface = self.test_kit.access_point.wlan_2g
+                    target_iface = self.test_kit.access_point.wlan_5g
+                else:
+                    origin_iface = self.test_kit.access_point.wlan_5g
+                    target_iface = self.test_kit.access_point.wlan_2g
+
+                if not self.test_kit.access_point.sta_authenticated(
+                    origin_iface, client_mac
+                ):
+                    raise signals.TestError(
+                        f"DUT is not authenticated on the {test_params.origin_band} band"
+                    )
+
+                if not self.test_kit.access_point.sta_associated(
+                    origin_iface, client_mac
+                ):
+                    raise signals.TestError(
+                        f"DUT is not associated on the {test_params.origin_band} band"
+                    )
+
+                if not self.test_kit.access_point.sta_authorized(
+                    origin_iface, client_mac
+                ):
+                    raise signals.TestError(
+                        f"DUT is not authorized on the {test_params.origin_band} band"
+                    )
+            elif isinstance(self.test_kit.access_point, OpenWrtAP):
+                client_mac = await self._get_client_mac()
+
                 sta_status = self.get_single_sta_status(
                     client_mac, band=origin_band
                 )
@@ -541,37 +576,6 @@ class RoamRequestTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                         f"DUT is not associated on the {test_params.origin_band} band"
                     )
                 if not sta_status.authorized:
-                    raise signals.TestError(
-                        f"DUT is not authorized on the {test_params.origin_band} band"
-                    )
-            elif isinstance(self.access_point, AccessPoint):
-                if (
-                    test_params.origin_band
-                    == hostapd_constants.BandType.BAND_2G
-                ):
-                    origin_iface = self.access_point.wlan_2g
-                    target_iface = self.access_point.wlan_5g
-                else:
-                    origin_iface = self.access_point.wlan_5g
-                    target_iface = self.access_point.wlan_2g
-
-                if not self.access_point.sta_authenticated(
-                    origin_iface, client_mac
-                ):
-                    raise signals.TestError(
-                        f"DUT is not authenticated on the {test_params.origin_band} band"
-                    )
-
-                if not self.access_point.sta_associated(
-                    origin_iface, client_mac
-                ):
-                    raise signals.TestError(
-                        f"DUT is not associated on the {test_params.origin_band} band"
-                    )
-
-                if not self.access_point.sta_authorized(
-                    origin_iface, client_mac
-                ):
                     raise signals.TestError(
                         f"DUT is not authorized on the {test_params.origin_band} band"
                     )
@@ -588,7 +592,7 @@ class RoamRequestTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             await asyncio.sleep(10)
             roam_request = fidl_sme.RoamRequest(bss_description=target_bss_desc)
             logger.info(f"RoamRequest: {roam_request!r}")
-            iface.client_sme.roam(req=roam_request)
+            self.test_kit.client_sme.roam(req=roam_request)
 
             # Verify a successful roam result is received. Filter out any signal reports. Waits up
             # to NEXT_TXN_WAIT_TIME_SECONDS for the next txn, and up to
@@ -633,7 +637,33 @@ class RoamRequestTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                                 "Roamed to wrong BSSID",
                             )
                             # Verify DUT is connected to the AP using the target interface
-                            if self.openwrt_ap:
+                            if (
+                                isinstance(
+                                    self.test_kit.access_point, AccessPoint
+                                )
+                                and target_iface
+                            ):
+                                assert_true(
+                                    self.test_kit.access_point.sta_authenticated(
+                                        target_iface, client_mac
+                                    ),
+                                    f"DUT is not authenticated on the {test_params.target_band} band",
+                                )
+                                assert_true(
+                                    self.test_kit.access_point.sta_associated(
+                                        target_iface, client_mac
+                                    ),
+                                    f"DUT is not associated on the {test_params.target_band} band",
+                                )
+                                assert_true(
+                                    self.test_kit.access_point.sta_authorized(
+                                        target_iface, client_mac
+                                    ),
+                                    f"DUT is not 802.1X authorized on the {test_params.target_band} band",
+                                )
+                            elif isinstance(
+                                self.test_kit.access_point, OpenWrtAP
+                            ):
                                 status = self.get_single_sta_status(
                                     client_mac, band=target_band
                                 )
@@ -648,28 +678,6 @@ class RoamRequestTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                                 assert_true(
                                     status.authorized,
                                     f"DUT is not authorized on the {test_params.target_band} band",
-                                )
-                            elif (
-                                isinstance(self.access_point, AccessPoint)
-                                and target_iface
-                            ):
-                                assert_true(
-                                    self.access_point.sta_authenticated(
-                                        target_iface, client_mac
-                                    ),
-                                    f"DUT is not authenticated on the {test_params.target_band} band",
-                                )
-                                assert_true(
-                                    self.access_point.sta_associated(
-                                        target_iface, client_mac
-                                    ),
-                                    f"DUT is not associated on the {test_params.target_band} band",
-                                )
-                                assert_true(
-                                    self.access_point.sta_authorized(
-                                        target_iface, client_mac
-                                    ),
-                                    f"DUT is not 802.1X authorized on the {test_params.target_band} band",
                                 )
                         else:
                             assert_not_equal(
@@ -690,6 +698,25 @@ class RoamRequestTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                 fail(
                     f"Never received a roam result for target BSSID {target_bss_desc.bssid} within the {ROAM_RESULT_WAIT_TIME_SECONDS} second timeout period."
                 )
+
+    async def _get_client_mac(self) -> str:
+        """Get the MAC address of the DUT client interface.
+
+        Returns:
+            str, MAC address of the DUT client interface.
+        Raises:
+            RuntimeError if there is no DUT client interface or if the DUT interface query fails.
+        """
+        try:
+            query_iface_response = (
+                await self.test_kit.device_monitor.query_iface(
+                    iface_id=self.test_kit.iface_id
+                )
+            ).unwrap()
+        except Exception as e:
+            raise RuntimeError(f"DeviceMonitor.QueryIface() error: {e}") from e
+        mac_addr = MacAddress(bytes(query_iface_response.resp.sta_addr))
+        return str(mac_addr)
 
 
 if __name__ == "__main__":

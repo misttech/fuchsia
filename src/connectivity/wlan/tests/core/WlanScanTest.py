@@ -3,20 +3,17 @@
 # found in the LICENSE file.
 
 import logging
-
-logger = logging.getLogger(__name__)
 from datetime import datetime
 
 import fidl_fuchsia_wlan_internal as f_wlan_internal
-import fuchsia_wlan_base_test
-import honeydew.affordances.connectivity.wlan.core as wlan_core
-from antlion.controllers.access_point import AccessPoint, setup_ap
+from antlion.controllers.access_point import setup_ap
 from antlion.controllers.ap_lib.hostapd_security import (
     Security as DeprecatedSecurity,
 )
 from antlion.controllers.ap_lib.hostapd_security import (
     SecurityMode as DeprecatedSecurityMode,
 )
+from core_testing import base_test
 from mobly import asserts, test_runner
 from openwrt_access_point.lib.access_point_config import (
     DEFAULT_2G_CHANNEL,
@@ -29,19 +26,8 @@ from openwrt_access_point.lib.access_point_config import (
 logger = logging.getLogger()
 
 
-class WlanScanTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
-    phy: wlan_core.Phy
-
-    async def setup_class(self) -> None:
-        await super().setup_class()
-        self.phy = await self.dut.wlan_core.ensure_single_phy()
-
-    async def setup_test(self) -> None:
-        await super().setup_test()
-        await self.dut.wlan_core.destroy_all_ifaces()
-
+class WlanScanTest(base_test.ConnectionBaseTestClass):
     async def test_scan_while_connected(self) -> None:
-        iface = await self.phy.create_client_iface()
         ssid = AccessPointConfig.random_string(20)
         if self.openwrt_ap:
             config = AccessPointConfig(
@@ -58,7 +44,7 @@ class WlanScanTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                 ]
             )
             self.openwrt_ap.configure_wifi(config)
-        elif isinstance(self.access_point, AccessPoint):
+        elif self.access_point:
             setup_ap(
                 access_point=self.access_point,
                 profile_name="whirlwind",
@@ -77,7 +63,7 @@ class WlanScanTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         name = self.dut.device_name
 
         logger.info('[%s] Scanning for ssid "%s"', name, ssid)
-        scan_results = await iface.passive_scan()
+        scan_results = await self.dut.wlan_core.scan_for_bss_info()
         asserts.assert_in(
             ssid, scan_results, f'Scan results did not include "{ssid}"'
         )
@@ -89,15 +75,18 @@ class WlanScanTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         )
 
         logger.info('[%s] Connecting to ssid "%s"', name, ssid)
-        await iface.connect(
-            ssid=ssid,
-            bss_desc=target_bss[0],
-            authentication=authentication,
+        asserts.assert_true(
+            await self.dut.wlan_core.connect(
+                ssid=ssid,
+                bss_desc=target_bss[0],
+                authentication=authentication,
+            ),
+            f"Expected connect to {ssid} to succeed",
         )
 
         logger.info('[%s] Scanning while connected to "%s"', name, ssid)
         start_time = datetime.now()
-        scan_results = await iface.passive_scan()
+        scan_results = await self.dut.wlan_core.scan_for_bss_info()
         logger.info("Scan contained %d results", len(scan_results))
         logger.debug("Scan results: %s", scan_results)
         total_time_ms = (datetime.now() - start_time).total_seconds() * 1000

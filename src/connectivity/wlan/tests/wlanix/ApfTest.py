@@ -9,6 +9,9 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+import fidl_fuchsia_wlan_device_service as fidl_device_svc
+import fidl_fuchsia_wlan_sme as fidl_sme
+from honeydew.typing.custom_types import FidlEndpoint
 from mobly import test_runner
 from mobly.asserts import (
     assert_equal,
@@ -23,14 +26,30 @@ class ApfTest(base_test.ConnectionBaseTestClass):
     async def setup_test(self) -> None:
         await super().setup_test()
 
-        phy = await self.dut.wlan_core.ensure_single_phy()
-        client_ifaces = await phy.get_client_ifaces()
-        assert_equal(
-            len(client_ifaces),
-            1,
-            f"Expected exactly 1 client interface on PHY, got {len(client_ifaces)}",
+        device_monitor_proxy = fidl_device_svc.DeviceMonitorClient(
+            self.dut.fuchsia_controller.connect_device_proxy(
+                FidlEndpoint(
+                    "core/wlandevicemonitor",
+                    "fuchsia.wlan.device.service.DeviceMonitor",
+                )
+            )
         )
-        self.client_sme = client_ifaces[0].client_sme
+        proxy, server = self.dut.fuchsia_controller.channel_create()
+
+        # Find the interface ID for the client SME
+        list_ifaces_response = await device_monitor_proxy.list_ifaces()
+        # Assuming the first interface found is the one we're interested in
+        iface_id = list_ifaces_response.iface_list[0]
+        assert_is_not_none(iface_id, "Could not find a client interface.")
+
+        # Get a reference to the client SME.
+        (
+            await device_monitor_proxy.get_client_sme(
+                iface_id=iface_id,
+                sme_server=server.take(),
+            )
+        )
+        self.client_sme = fidl_sme.ClientSmeClient(proxy)
 
     async def test_get_apf_packet_filter_support(self) -> None:
         """Tests that APF support information can be retrieved."""

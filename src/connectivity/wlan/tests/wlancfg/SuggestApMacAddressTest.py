@@ -5,13 +5,15 @@
 import logging
 
 import fidl_fuchsia_net as fidl_net
+import fidl_fuchsia_wlan_common as fidl_common
+import fidl_fuchsia_wlan_device_service as fidl_service
 import fidl_fuchsia_wlan_policy as f_wlan_policy
 import fidl_fuchsia_wlan_product_deprecatedconfiguration as fidl_deprecatedconfiguration
 import fuchsia_wlan_base_test
-import honeydew.affordances.connectivity.wlan.core as wlan_core
 from honeydew.affordances.connectivity.wlan.utils.types import MacAddress
 from honeydew.typing.custom_types import FidlEndpoint
-from mobly import asserts, test_runner
+from mobly import signals, test_runner
+from mobly.asserts import fail
 
 logger = logging.getLogger(__name__)
 
@@ -27,13 +29,17 @@ class SuggestApMacAddressTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
     * One Access Point
     """
 
-    phy: wlan_core.Phy
-
     async def setup_class(self) -> None:
         await super().setup_class()
 
-        self.phy = await self.dut.wlan_core.ensure_single_phy()
-
+        self.device_monitor_proxy = fidl_service.DeviceMonitorClient(
+            self.dut.fuchsia_controller.connect_device_proxy(
+                FidlEndpoint(
+                    "core/wlandevicemonitor",
+                    "fuchsia.wlan.device.service.DeviceMonitor",
+                )
+            )
+        )
         self.deprecated_configurator = fidl_deprecatedconfiguration.DeprecatedConfiguratorClient(
             self.dut.fuchsia_controller.connect_device_proxy(
                 FidlEndpoint(
@@ -61,13 +67,7 @@ class SuggestApMacAddressTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             f_wlan_policy.ConnectivityMode.LOCAL_ONLY,
             f_wlan_policy.OperatingBand.ANY,
         )
-        ap_ifaces = await self.phy.get_ap_ifaces()
-        asserts.assert_equal(
-            len(ap_ifaces),
-            1,
-            f"Expected exactly 1 AP interface on PHY, got {len(ap_ifaces)}",
-        )
-        initial_mac_addr = await ap_ifaces[0].get_mac_address()
+        initial_mac_addr = await self._get_ap_mac_address()
 
         logger.info(f"Created SoftAP and retrieved MAC: {initial_mac_addr}")
 
@@ -91,15 +91,9 @@ class SuggestApMacAddressTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             f_wlan_policy.OperatingBand.ANY,
         )
 
-        ap_ifaces = await self.phy.get_ap_ifaces()
-        asserts.assert_equal(
-            len(ap_ifaces),
-            1,
-            f"Expected exactly 1 AP interface on PHY, got {len(ap_ifaces)}",
-        )
-        set_mac_addr = await ap_ifaces[0].get_mac_address()
+        set_mac_addr = await self._get_ap_mac_address()
         if suggested_mac_addr != set_mac_addr:
-            asserts.fail(
+            fail(
                 f"Failed to set AP mac address via wlan_deprecated_configuration_lib. "
                 f"Expected mac addr: {suggested_mac_addr}, Actual mac addr: {set_mac_addr}"
             )
@@ -121,15 +115,9 @@ class SuggestApMacAddressTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             f_wlan_policy.OperatingBand.ANY,
         )
 
-        ap_ifaces = await self.phy.get_ap_ifaces()
-        asserts.assert_equal(
-            len(ap_ifaces),
-            1,
-            f"Expected exactly 1 AP interface on PHY, got {len(ap_ifaces)}",
-        )
-        set_mac_addr = await ap_ifaces[0].get_mac_address()
+        set_mac_addr = await self._get_ap_mac_address()
         if initial_mac_addr != set_mac_addr:
-            asserts.fail(
+            fail(
                 f"Failed to set AP mac address via wlan_deprecated_configuration_lib. "
                 f"Expected mac addr: {initial_mac_addr}, Actual mac addr: {set_mac_addr}"
             )
@@ -141,6 +129,19 @@ class SuggestApMacAddressTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
     async def teardown_test(self) -> None:
         await self.dut.wlan_policy_ap.stop_all()
         await super().teardown_test()
+
+    async def _get_ap_mac_address(self) -> MacAddress:
+        for wlan_iface in (
+            await self.device_monitor_proxy.list_ifaces()
+        ).iface_list:
+            query_iface_result = await self.dut.wlan_core.query_iface(
+                wlan_iface
+            )
+            if query_iface_result.role == fidl_common.WlanMacRole.AP:
+                return MacAddress(bytes(query_iface_result.sta_addr))
+        raise signals.TestFailure(
+            "Failed to get ap interface mac address. No AP interface found."
+        )
 
 
 if __name__ == "__main__":

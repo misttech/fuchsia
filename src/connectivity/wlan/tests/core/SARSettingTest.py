@@ -4,9 +4,9 @@
 
 import logging
 
+import fidl_fuchsia_wlan_device_service as fidl_device_svc
+import fidl_fuchsia_wlan_internal as fidl_security
 import fidl_fuchsia_wlan_internal as fidl_internal
-import fuchsia_wlan_base_test
-import honeydew.affordances.connectivity.wlan.core as wlan_core
 from antlion import utils
 from antlion.controllers.access_point import AccessPoint, setup_ap
 from antlion.controllers.ap_lib.hostapd_constants import (
@@ -19,7 +19,10 @@ from antlion.controllers.ap_lib.hostapd_security import (
 from antlion.controllers.ap_lib.hostapd_security import (
     SecurityMode as DeprecatedSecurityMode,
 )
+from core_testing import base_test
+from honeydew.typing.custom_types import FidlEndpoint
 from mobly import asserts, signals, test_runner
+from openwrt_access_point import OpenWrtAP
 from openwrt_access_point.lib.access_point_config import (
     DEFAULT_2G_CHANNEL,
     AccessPointConfig,
@@ -31,17 +34,7 @@ from openwrt_access_point.lib.access_point_config import (
 logger = logging.getLogger(__name__)
 
 
-class SARSettingTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
-    phy: wlan_core.Phy
-
-    async def setup_class(self) -> None:
-        await super().setup_class()
-        self.phy = await self.dut.wlan_core.ensure_single_phy()
-
-    async def setup_test(self) -> None:
-        await super().setup_test()
-        await self.dut.wlan_core.destroy_all_ifaces()
-
+class SARSettingTest(base_test.ConnectionBaseTestClass):
     async def pre_run(self) -> None:
         self.generate_tests(
             test_logic=self._test_logic,
@@ -60,15 +53,14 @@ class SARSettingTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
     async def _test_logic(
         self, scenario: fidl_internal.TxPowerScenario
     ) -> None:
-        iface = await self.phy.create_client_iface()
         # Setup AP
         ssid: str = utils.rand_ascii_str(AP_SSID_LENGTH_2G)
-        if not self.openwrt_ap and not self.access_point:
+        if not self.test_kit.access_point:
             raise signals.TestAbortClass(
                 "No access point configured for this test."
             )
-        if self.openwrt_ap:
-            self.openwrt_ap.configure_wifi(
+        if isinstance(self.test_kit.access_point, OpenWrtAP):
+            self.test_kit.access_point.configure_wifi(
                 AccessPointConfig(
                     radios=[
                         RadioConfig(
@@ -83,9 +75,9 @@ class SARSettingTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                     ]
                 )
             )
-        elif isinstance(self.access_point, AccessPoint):
+        elif isinstance(self.test_kit.access_point, AccessPoint):
             setup_ap(
-                access_point=self.access_point,
+                access_point=self.test_kit.access_point,
                 profile_name="whirlwind",
                 channel=AP_DEFAULT_CHANNEL_2G,
                 ssid=ssid,
@@ -94,21 +86,47 @@ class SARSettingTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                 ),
             )
 
+        device_monitor_proxy = fidl_device_svc.DeviceMonitorClient(
+            self.dut.fuchsia_controller.connect_device_proxy(
+                FidlEndpoint(
+                    "core/wlandevicemonitor",
+                    "fuchsia.wlan.device.service.DeviceMonitor",
+                )
+            )
+        )
+
         # Set the SAR scenario
         (
-            await self.phy.device_monitor.set_tx_power_scenario(
-                phy_id=self.phy.id,
+            await device_monitor_proxy.set_tx_power_scenario(
+                phy_id=self.test_kit.phy_id,
                 scenario=scenario,
             )
         ).unwrap()
 
+        # Find the matching bss_description
+        scan_results = await self.dut.wlan_core.scan_for_bss_info()
+        try:
+            bss_description = scan_results[ssid][0]
+        except KeyError:
+            logger.warning("Scanned these SSIDs: %s", scan_results.keys())
+            raise signals.TestFailure(
+                "Could not find BSS description for SSID: %s" % ssid
+            )
+
         # Connect to the AP
-        await iface.scan_and_connect(ssid=ssid)
+        await self.dut.wlan_core.connect(
+            ssid=ssid,
+            bss_desc=bss_description,
+            authentication=fidl_security.Authentication(
+                protocol=fidl_security.Protocol.OPEN,
+                credentials=None,
+            ),
+        )
 
         # confirm the SAR scenario is still set
         get_sar_resp = (
-            await self.phy.device_monitor.get_tx_power_scenario(
-                phy_id=self.phy.id,
+            await device_monitor_proxy.get_tx_power_scenario(
+                phy_id=self.test_kit.phy_id,
             )
         ).unwrap()
         asserts.assert_equal(

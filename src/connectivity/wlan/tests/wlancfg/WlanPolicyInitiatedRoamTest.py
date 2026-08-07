@@ -9,8 +9,9 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
+import fidl_fuchsia_wlan_common as f_wlan_common
 import fuchsia_wlan_base_test
-import honeydew.affordances.connectivity.wlan.core as wlan_core
+from antlion import utils
 from antlion.controllers.access_point import setup_ap
 from antlion.controllers.ap_lib import hostapd_constants
 from antlion.controllers.ap_lib.hostapd_security import (
@@ -94,9 +95,6 @@ class WlanPolicyInitiatedRoamTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
     * One Whirlwind or OpenWrt access point
     """
 
-    phy: wlan_core.Phy
-    client_iface: wlan_core.ClientIface
-
     async def pre_run(self) -> None:
         test_args: list[tuple[TestParams]] = []
 
@@ -164,8 +162,6 @@ class WlanPolicyInitiatedRoamTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
     async def setup_class(self) -> None:
         await super().setup_class()
 
-        self.phy = await self.dut.wlan_core.ensure_single_phy()
-
         if not self.openwrt_ap and not self.access_point:
             raise signals.TestAbortClass("Requires at least one access point")
 
@@ -177,19 +173,29 @@ class WlanPolicyInitiatedRoamTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
     async def setup_test(self) -> None:
         await super().setup_test()
         await self.dut.wlan_policy.ensure_clean_state()
-        client_ifaces = await self.phy.get_client_ifaces()
-        asserts.assert_equal(
-            len(client_ifaces),
-            1,
-            f"Expected exactly 1 client interface on PHY, got {len(client_ifaces)}",
-        )
-        self.client_iface = client_ifaces[0]
 
     async def teardown_test(self) -> None:
         await self.dut.wlan_policy.ensure_clean_state()
         if self.access_point:
             self.access_point.stop_all_aps()
         await super().teardown_test()
+
+    async def _get_client_mac(self) -> str:
+        """Get the MAC address of the DUT client interface.
+
+        Returns:
+            str, MAC address of the DUT client interface.
+        Raises:
+            ValueError if there is no DUT client interface.
+            WlanError if the DUT interface query fails.
+        """
+        for wlan_iface in await self.dut.wlan_core.get_iface_id_list():
+            result = await self.dut.wlan_core.query_iface(wlan_iface)
+            if result.role == f_wlan_common.WlanMacRole.CLIENT:
+                return utils.mac_address_list_to_str(bytes(result.sta_addr))
+        raise ValueError(
+            "Failed to get client interface mac address. No client interface found."
+        )
 
     async def _test_logic(self, test: TestParams) -> None:
         """Setup the APs, associate a DUT, and slowly reduce AP signal strength until roam.
@@ -276,10 +282,9 @@ class WlanPolicyInitiatedRoamTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         )
 
         # Verify that DUT is actually associated (as seen from AP).
-        client_mac = await self.client_iface.get_mac_address()
+        client_mac = await self._get_client_mac()
         iface_status = None
 
-        # Verify that DUT is actually associated (as seen from AP).
         original_identifier = ""
         target_identifier = ""
 

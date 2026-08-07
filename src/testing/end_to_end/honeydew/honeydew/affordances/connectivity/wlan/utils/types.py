@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import enum
 from dataclasses import dataclass
-from typing import Protocol, Self, Sequence
+from typing import Protocol, Self
 
 import fidl_fuchsia_wlan_device_service as f_wlan_device_service
 import fidl_fuchsia_wlan_ieee80211 as f_wlan_ieee80211
@@ -376,20 +376,19 @@ class CountryCode(enum.StrEnum):
     WORLDWIDE_ZEROES = "00"
 
     @classmethod
-    def from_bytes(cls, data: Sequence[int]) -> Self:
+    def from_bytes(cls, data: bytes) -> Self:
         """Create an instance from a 2-byte UTF-8 encoded string."""
         if len(data) != 2:
-            raise ValueError(f"Expected exactly 2 ASCII bytes, got {data!r}")
+            raise ValueError(
+                f"Expected exactly 2 bytes, got {len(data)}: {data!r}"
+            )
 
         try:
-            code_str = bytes(data).decode("ascii")
+            code_str = data.decode("utf-8")
         except UnicodeDecodeError as e:
-            raise ValueError(f"Bytes {data!r} are not valid ASCII") from e
+            raise ValueError(f"Bytes {data!r} are not valid UTF-8") from e
 
         return cls(code_str)
-
-    def to_bytes(self) -> bytes:
-        return self.encode("ascii")
 
 
 @dataclass(frozen=True)

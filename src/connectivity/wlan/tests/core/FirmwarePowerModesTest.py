@@ -7,13 +7,14 @@ import logging
 
 import fidl_fuchsia_wlan_common as fidl_common
 import fidl_fuchsia_wlan_device_service as fidl_device_svc
-import fuchsia_wlan_base_test
-import honeydew.affordances.connectivity.wlan.core as wlan_core
+import fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211
+import fidl_fuchsia_wlan_internal as fidl_security
+import fidl_fuchsia_wlan_sme as fidl_sme
 from antlion import utils
 from antlion.controllers.access_point import AccessPoint, setup_ap
 from antlion.controllers.ap_lib.hostapd_constants import (
-    AP_DEFAULT_CHANNEL_2G,
-    AP_SSID_LENGTH_2G,
+    AP_DEFAULT_CHANNEL_5G,
+    AP_SSID_LENGTH_5G,
 )
 from antlion.controllers.ap_lib.hostapd_security import (
     Security as DeprecatedSecurity,
@@ -21,10 +22,16 @@ from antlion.controllers.ap_lib.hostapd_security import (
 from antlion.controllers.ap_lib.hostapd_security import (
     SecurityMode as DeprecatedSecurityMode,
 )
+from common.utils.ies import read_ssid
+from core_testing import base_test
+from honeydew.affordances.connectivity.wlan.core import (
+    ConnectTransactionEventHandler,
+)
 from mobly import signals, test_runner
-from mobly.asserts import fail
+from mobly.asserts import assert_equal, assert_true, fail
 from openwrt_access_point import AddrType as OpenWrtAddrType
 from openwrt_access_point import InterfaceName as OpenWrtInterfaceName
+from openwrt_access_point import OpenWrtAP
 from openwrt_access_point.lib.access_point_config import (
     DEFAULT_2G_CHANNEL,
     AccessPointConfig,
@@ -36,17 +43,7 @@ from openwrt_access_point.lib.access_point_config import (
 logger = logging.getLogger(__name__)
 
 
-class FirmwarePowerModesTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
-    phy: wlan_core.Phy
-
-    async def setup_class(self) -> None:
-        await super().setup_class()
-        self.phy = await self.dut.wlan_core.ensure_single_phy()
-
-    async def setup_test(self) -> None:
-        await super().setup_test()
-        await self.dut.wlan_core.destroy_all_ifaces()
-
+class FirmwarePowerModesTest(base_test.ConnectionBaseTestClass):
     async def pre_run(self) -> None:
         self.generate_tests(
             test_logic=self._test_logic,
@@ -58,10 +55,9 @@ class FirmwarePowerModesTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         return f"test_pm_mode_{ps_mode.name.replace('PS_MODE_', '').lower()}"
 
     async def _test_logic(self, ps_mode: fidl_common.PowerSaveType) -> None:
-        iface = await self.phy.create_client_iface()
-        ssid = utils.rand_ascii_str(AP_SSID_LENGTH_2G)
-        if self.openwrt_ap:
-            self.openwrt_ap.configure_wifi(
+        ssid = utils.rand_ascii_str(AP_SSID_LENGTH_5G)
+        if isinstance(self.test_kit.access_point, OpenWrtAP):
+            self.test_kit.access_point.configure_wifi(
                 AccessPointConfig(
                     radios=[
                         RadioConfig(
@@ -76,11 +72,11 @@ class FirmwarePowerModesTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                     ]
                 )
             )
-        elif isinstance(self.access_point, AccessPoint):
+        elif isinstance(self.test_kit.access_point, AccessPoint):
             setup_ap(
-                access_point=self.access_point,
+                access_point=self.test_kit.access_point,
                 profile_name="whirlwind",
-                channel=AP_DEFAULT_CHANNEL_2G,
+                channel=AP_DEFAULT_CHANNEL_5G,
                 ssid=ssid,
                 security=DeprecatedSecurity(
                     security_mode=DeprecatedSecurityMode.OPEN
@@ -91,9 +87,9 @@ class FirmwarePowerModesTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                 "No access point configured for this test."
             )
 
-        ps_resp = await self.phy.device_monitor.set_power_save_mode(
+        ps_resp = await self.test_kit.device_monitor.set_power_save_mode(
             req=fidl_device_svc.SetPowerSaveModeRequest(
-                phy_id=self.phy.id,
+                phy_id=self.test_kit.phy_id,
                 ps_mode=ps_mode,
             )
         )
@@ -101,7 +97,79 @@ class FirmwarePowerModesTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             ps_resp.status == 0
         ), f"SetPowerSaveMode failed with status {ps_resp.status}"
 
-        await iface.scan_and_connect(ssid=ssid)
+        scan_results = (
+            (
+                await self.test_kit.client_sme.scan_for_controller(
+                    req=fidl_sme.ScanRequest(
+                        passive=fidl_sme.PassiveScanRequest(
+                            channels=[
+                                DEFAULT_2G_CHANNEL.number,
+                                AP_DEFAULT_CHANNEL_5G,
+                            ]
+                        )
+                    )
+                )
+            )
+            .unwrap()
+            .scan_results
+        )
+        assert (
+            scan_results is not None
+        ), "ClientSme.ScanForController() response is missing scan_results"
+
+        bss_description = None
+        for scan_result in scan_results:
+            assert (
+                scan_result.bss_description is not None
+            ), "ScanResult is missing bss_description"
+            assert (
+                scan_result.bss_description.ies is not None
+            ), "ScanResult.BssDescription is missing ies"
+            scanned_ssid = read_ssid(bytes(scan_result.bss_description.ies))
+            if scanned_ssid == ssid:
+                logger.info(f"Found SSID: {scanned_ssid}")
+                bss_description = scan_result.bss_description
+                break
+        assert bss_description is not None, f"Failed to find SSID: {ssid}"
+
+        (
+            proxy,
+            server,
+        ) = self.dut.fuchsia_controller.channel_create()
+        client = fidl_sme.ConnectTransactionClient(proxy.take())
+        async with ConnectTransactionEventHandler(client) as ctx:
+            txn_queue = ctx.txn_queue
+
+            connect_request = fidl_sme.ConnectRequest(
+                ssid=list(ssid.encode("ascii")),
+                bss_description=bss_description,
+                multiple_bss_candidates=False,
+                authentication=fidl_security.Authentication(
+                    protocol=fidl_security.Protocol.OPEN,
+                    credentials=None,
+                ),
+                deprecated_scan_type=fidl_common.ScanType.PASSIVE,
+            )
+            logger.info(f"ConnectRequest: {connect_request!r}")
+            self.test_kit.client_sme.connect(
+                req=connect_request, txn=server.take()
+            )
+
+            next_txn = await txn_queue.get()
+            assert_equal(
+                next_txn,
+                fidl_sme.ConnectTransactionOnConnectResultRequest(
+                    result=fidl_sme.ConnectResult(
+                        code=fidl_ieee80211.StatusCode.SUCCESS,
+                        is_credential_rejected=False,
+                        is_reconnect=False,
+                    )
+                ),
+            )
+            assert_true(
+                txn_queue.empty(),
+                "Unexpectedly received additional callback messages.",
+            )
 
         # TODO(http://b/371574733#comment6): Calling honeydew
         # methods results in a RuntimeError because an event loop already
@@ -115,15 +183,15 @@ class FirmwarePowerModesTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         # This should take no more than 5 seconds, typically.
         await asyncio.sleep(10)
 
-        if self.openwrt_ap:
-            ap_address = self.openwrt_ap.get_addr(
+        if isinstance(self.test_kit.access_point, OpenWrtAP):
+            ap_address = self.test_kit.access_point.get_addr(
                 interface=OpenWrtInterfaceName.lan,
                 addr_type=OpenWrtAddrType.ipv4_private,
             )
-        elif isinstance(self.access_point, AccessPoint):
-            ap_test_interface = self.access_point.wlan_5g
+        elif isinstance(self.test_kit.access_point, AccessPoint):
+            ap_test_interface = self.test_kit.access_point.wlan_5g
             ap_address = utils.get_addr(
-                self.access_point.ssh, ap_test_interface
+                self.test_kit.access_point.ssh, ap_test_interface
             )
         else:
             raise signals.TestAbortClass(
