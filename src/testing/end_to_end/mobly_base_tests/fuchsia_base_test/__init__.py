@@ -6,12 +6,15 @@
 from __future__ import annotations
 
 import enum
+import functools
 import importlib
+import inspect
 import logging
 import os
 import pathlib
 import typing
-from typing import Any, Dict, ParamSpec, TypeVar, Union
+from collections.abc import Awaitable
+from typing import Any, Callable, Dict, ParamSpec, TypeVar, Union
 
 import fuchsia_async_extension
 from honeydew import errors
@@ -25,8 +28,7 @@ from honeydew.auxiliary_devices.usb_power_hub import (
 )
 from honeydew.fuchsia_device import fuchsia_device
 from honeydew.typing import custom_types
-from mobly import config_parser as mobly_config_parser
-from mobly import signals
+from mobly import signals, test_runner
 from mobly.records import TestResultRecord
 from mobly_controller import fuchsia_device as fuchsia_device_mobly_controller
 
@@ -145,31 +147,18 @@ class FuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
         snapshot_on: `snapshot_on` test param value converted into SnapshotOn Enum.
         tracing_on: `tracing_on` test param value converted into TracingOn Enum.
 
-    Optional Mobly Test Params:
+    Required Mobly Test Params:
         snapshot_on (str): One of "teardown_class", "teardown_class_on_fail",
             "teardown_test", "on_fail".
             Default value is "teardown_class_on_fail".
         tracing_on (str): One of "teardown_class", "teardown_class_on_fail",
             "teardown_test", "on_fail", "never".
-            Default value is "never"
-    """
-
-    fuchsia_devices: list[fuchsia_device.FuchsiaDevice] = []
+            Default value is "    fuchsia_devices: list[fuchsia_device.FuchsiaDevice]
     dut: fuchsia_device.FuchsiaDevice
-    test_case_path: str = ""
-    snapshot_on: SnapshotOn = SnapshotOn.TEARDOWN_CLASS_ON_FAIL
-    tracing_on: TracingOn = TracingOn.NEVER
-    trace_categories: list[str] | None = None
-
-    def __init__(
-        self, mobly_configs: mobly_config_parser.TestRunConfig
-    ) -> None:
-        super().__init__(configs=mobly_configs)
-        # We define teardown_class artifacts path here so it can be used by
-        # child test classes in teardown_class before calling the super() teardown
-        self._teardown_class_artifacts: str = f"{self.log_path}/teardown_class"
-        self._any_test_failed: bool = False
-        self._devices_not_healthy: bool = False
+    test_case_path: str
+    snapshot_on: SnapshotOn
+    tracing_on: TracingOn
+    """
 
     async def setup_class(self) -> None:
         """setup_class is called once before running tests.
@@ -179,8 +168,11 @@ class FuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
             * Instantiates all fuchsia devices into self.fuchsia_devices (as async devices)
             * Instantiates and starts tracing if specified in the user params
         """
-
-        self._process_metric_user_params()  # Sets self.tracing_on and self.snapshot_on
+        self._any_test_failed: bool = False
+        self._process_metric_user_params()
+        # We define teardown_class artifacts path here so it can be used by
+        # child test classes in teardown_class before calling the super() teardown
+        self._teardown_class_artifacts: str = f"{self.log_path}/teardown_class"
 
         self.fuchsia_devices = await self.register_controller(
             fuchsia_device_mobly_controller,
@@ -203,11 +195,12 @@ class FuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
             * Logs a info message onto device that test case has started.
             * Instantiates and starts tracing if specified in the user params
         """
-        self._devices_not_healthy = False
+        self._devices_not_healthy: bool = False
 
-        self.test_case_path = f"{self.log_path}/{self.current_test_info.name}"
+        self.test_case_path: str = (
+            f"{self.log_path}/{self.current_test_info.name}"
+        )
         os.mkdir(self.test_case_path)
-
         await self._log_message_to_devices(
             message=f"Started executing '{self.current_test_info.name}' "
             f"Lacewing test case...",
@@ -295,6 +288,7 @@ class FuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
                     )
 
         if self.snapshot_on == SnapshotOn.TEARDOWN_CLASS:
+            self._teardown_class_artifacts = f"{self.log_path}/teardown_class"
             await self._collect_snapshot(
                 directory=self._teardown_class_artifacts
             )
@@ -302,6 +296,9 @@ class FuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
             self.snapshot_on == SnapshotOn.TEARDOWN_CLASS_ON_FAIL
             and self._any_test_failed
         ):
+            self._teardown_class_artifacts = (
+                f"{self.log_path}/teardown_class_on_fail"
+            )
             await self._collect_snapshot(
                 directory=self._teardown_class_artifacts
             )
@@ -577,18 +574,18 @@ class FuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
             "user_params associated with the test: %s", self.user_params
         )
 
+        snapshot_on: str = self.user_params.get(
+            "snapshot_on", SnapshotOn.TEARDOWN_CLASS_ON_FAIL.value
+        ).lower()
+        tracing_on: str = self.user_params.get(
+            "tracing_on", SnapshotOn.NEVER.value
+        ).lower()
+        self.trace_categories: list[str] = self.user_params.get(
+            "trace_categories", None
+        )
+
         try:
-            if "snapshot_on" in self.user_params:
-                self.snapshot_on = SnapshotOn(
-                    self.user_params["snapshot_on"].lower()
-                )
-            if "tracing_on" in self.user_params:
-                self.tracing_on = TracingOn(
-                    self.user_params["tracing_on"].lower()
-                )
-            if "trace_categories" in self.user_params:
-                self.trace_categories = self.user_params["trace_categories"]
-                if not isinstance(self.trace_categories, list):
-                    raise ValueError("trace_categories must be a list")
+            self.snapshot_on = SnapshotOn(snapshot_on)
+            self.tracing_on = TracingOn(tracing_on)
         except ValueError as e:
             raise signals.TestAbortClass("invalid metric user_param") from e

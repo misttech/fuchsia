@@ -286,7 +286,7 @@ class SavedNetworksTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         if not await self._has_saved_network(test_network):
             asserts.fail("Saved network not present")
 
-        await self.dut.reboot()
+        self.dut.reboot()
 
         if not await self._has_saved_network(test_network):
             asserts.fail("Saved network did not persist through reboot")

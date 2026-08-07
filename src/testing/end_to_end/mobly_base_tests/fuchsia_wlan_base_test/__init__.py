@@ -5,12 +5,14 @@
 import asyncio
 import logging
 import time
+from typing import Any
 
 import fuchsia_base_test
 import openwrt_access_point
 from antlion.controllers import access_point
 from honeydew.affordances.connectivity.netstack.netstack import (
     AsyncNetstack,
+    Netstack,
 )
 from honeydew.affordances.connectivity.netstack.types import (
     InterfaceProperties,
