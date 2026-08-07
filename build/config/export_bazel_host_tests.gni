@@ -3,8 +3,9 @@
 # found in the LICENSE file.
 
 declare_args() {
-  # Set to True to make Bazel host tests visible to Fuchsia test runners, i.e.
-  # `fx test` and `botanist`. This feature is still experimental but will become
-  # the default. See https://fxbug.dev/349341932.
-  export_bazel_host_tests = false
+  # Configures whether Bazel host tests show up in tests.json so they're visible
+  # to Fuchsia test runners, i.e. `fx test` and `botanist`.
+  # LINT.IfChange
+  export_bazel_host_tests = true
+  # LINT.ThenChange(//build/regenerator.py:export_bazel_host_tests)
 }

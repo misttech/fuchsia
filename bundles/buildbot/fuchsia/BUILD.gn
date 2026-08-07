@@ -9,14 +9,6 @@ group("fuchsia") {
     # The test targets currently build some migrated targets as well, so we do
     # not want to run them on bots that take longer than this one.
     "//build/bazel/rules/tests:all",
-
-    # The only bot that currently sets "export_bazel_host_tests = true" in its
-    # GN args uses this group, so include all tests that require it to be
-    # enabled until this GN arg is enabled by default and available on all bots.
-    # TODO(https://fxbug.dev/532431203): Remove this once the Bazel host tests
-    # are being run on other bots.
-    "//build/tools:bazel_host_tests",
-    "//tools:bazel_host_tests",
   ]
   if (current_cpu == "arm64") {
     deps += [ "//bundles/buildbot/minimal/arm64($host_toolchain)" ]

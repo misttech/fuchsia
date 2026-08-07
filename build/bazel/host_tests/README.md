@@ -94,7 +94,7 @@ When in doubt, examine the content of this file after `fx set` or `fx gen`. The
 `label` field for Bazel tests begins with `@`.
 
 NOTE: Bazel tests will only show up in `tests.json` if the
-`export_bazel_host_tests` GN argument is `true`.
+`export_bazel_host_tests` GN argument is `true` (the default).
 
 During development, it is possible to build and run test targets once they are
 defined, before they are exported as described above. See the
