@@ -24,7 +24,7 @@ enum Subcommand {
     CreateSystem(CreateSystemArgs),
 }
 
-#[fuchsia::main]
+#[fuchsia::main(logging_minimum_severity = "warn")]
 async fn main() -> Result<()> {
     let args: Args = argh::from_env();
 
