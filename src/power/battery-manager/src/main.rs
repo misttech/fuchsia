@@ -5,11 +5,14 @@
 mod battery_info_recorders;
 mod battery_manager;
 mod battery_simulator;
+mod config;
 mod polisher;
 
 use crate::battery_info_recorders::RecorderConfig;
 use crate::battery_manager::{BatteryManager, BatterySimulationStateObserver};
 use crate::battery_simulator::SimulatedBatteryInfoSource;
+pub(crate) use crate::config::BatteryManagerConfig;
+use crate::config::read_battery_manager_config;
 use anyhow::Error;
 use battery_manager_config::Config;
 use fidl_fuchsia_hardware_power_battery as fbattery;
@@ -24,16 +27,6 @@ use futures::prelude::*;
 use inspect_runtime::PublishOptions;
 use log::{error, info, warn};
 use std::sync::{Arc, Weak};
-
-fn is_default<T: Default + PartialEq>(t: &T) -> bool {
-    *t == T::default()
-}
-
-#[derive(Clone, Copy, Debug, Default, serde::Deserialize, serde::Serialize)]
-struct BatteryManagerConfig {
-    #[serde(default, skip_serializing_if = "is_default")]
-    pub shutdown_offset_percent: f32,
-}
 
 pub(crate) enum BatteryInfoSource {
     New(fbattery::BatteryProxy),
@@ -135,37 +128,7 @@ const PKG_CONFIG_PATH: &str = "/pkg/config/test_config.json";
 
 fn load_battery_manager_config_from_path(path: &str) -> Result<BatteryManagerConfig, Error> {
     info!("Loading battery manager config from {path}");
-    let contents = std::fs::read_to_string(path).map_err(|e| {
-        let err = anyhow::format_err!(
-            "Failed to read battery manager config at '{path}': {e}. \
-            Please verify the configuration file path and permissions."
-        );
-        error!("{err}");
-        err
-    })?;
-    parse_battery_manager_config(&contents, path)
-}
-
-fn parse_battery_manager_config(contents: &str, path: &str) -> Result<BatteryManagerConfig, Error> {
-    let config: BatteryManagerConfig = serde_json::from_str(contents).map_err(|e| {
-        let err = anyhow::format_err!(
-            "Failed to parse battery manager config at '{path}': {e}. \
-            Ensure the configuration file contains valid JSON matching the BatteryManagerConfig schema."
-        );
-        error!("{err}");
-        err
-    })?;
-
-    if config.shutdown_offset_percent < 0.0 || config.shutdown_offset_percent >= 100.0 {
-        let err = anyhow::format_err!(
-            "Invalid battery manager config at '{path}': shutdown_offset_percent ({}) must be in range [0.0, 100.0).",
-            config.shutdown_offset_percent
-        );
-        error!("{err}");
-        return Err(err);
-    }
-
-    Ok(config)
+    read_battery_manager_config(path)
 }
 
 fn load_battery_manager_config() -> Result<BatteryManagerConfig, Error> {
@@ -306,41 +269,4 @@ async fn main() -> Result<(), Error> {
 
     info!("stopping battery_manager");
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_parse_battery_manager_config_valid() {
-        let json = r#"{"shutdown_offset_percent": 5.0}"#;
-        let config = parse_battery_manager_config(json, "test_path").unwrap();
-        assert_eq!(config.shutdown_offset_percent, 5.0);
-    }
-
-    #[test]
-    fn test_parse_battery_manager_config_default() {
-        let json = r#"{}"#;
-        let config = parse_battery_manager_config(json, "test_path").unwrap();
-        assert_eq!(config.shutdown_offset_percent, 0.0);
-    }
-
-    #[test]
-    fn test_parse_battery_manager_config_invalid_json() {
-        let json = r#"{"shutdown_offset_percent": invalid_value}"#;
-        let err = parse_battery_manager_config(json, "test_path").unwrap_err();
-        assert!(err.to_string().contains("Failed to parse battery manager config"));
-    }
-
-    #[test]
-    fn test_parse_battery_manager_config_out_of_range() {
-        let json = r#"{"shutdown_offset_percent": -5.0}"#;
-        let err = parse_battery_manager_config(json, "test_path").unwrap_err();
-        assert!(err.to_string().contains("must be in range"));
-
-        let json = r#"{"shutdown_offset_percent": 100.0}"#;
-        let err = parse_battery_manager_config(json, "test_path").unwrap_err();
-        assert!(err.to_string().contains("must be in range"));
-    }
 }

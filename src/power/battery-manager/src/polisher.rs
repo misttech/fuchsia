@@ -33,6 +33,7 @@ pub(crate) enum TimeEstimatorError {
     InvalidRange,
     MissingCurrent,
     NonPositiveCurrent,
+    MissingConfig,
 }
 
 struct InitialScaler;
@@ -63,6 +64,7 @@ struct ChargeTimeEstimator {
     // If false, use design capacity to calculate time to full.
     use_actual_capacity: bool,
     actual_capacity_uah: Option<i32>,
+    config: crate::BatteryManagerConfig,
 
     // Average current tracking
     current_tier: Option<usize>,
@@ -72,28 +74,9 @@ struct ChargeTimeEstimator {
 }
 
 impl ChargeTimeEstimator {
-    // TODO(https://fxbug.dev/442619993): Read all tables from a device tree or a configuration.
-
     // (duration, threshold) stores number of seconds to gain 1% charge, at level <= corresponding
     // threshold. For 0-78%, the duration = 32 seconds. For 79-86, it's 56 seconds.
     const PERCENT_CHARGE_DURATION: [(i32, u32); 4] = [(32, 78), (56, 86), (84, 96), (92, 100)];
-
-    // Device tree charging current limits translate to this array with 25,000 uA resolution.
-    // Temperatures (0C, 10C, 20C, 42C, 46C) map to rows.
-    // SOC (0, 84, 90) map to columns.
-    const CHG_CC_LIMITS_UA: [[i32; 3]; 4] = [
-        [200_000, 100_000, 100_000],
-        [275_000, 100_000, 100_000],
-        [500_000, 500_000, 200_000],
-        [400_000, 400_000, 200_000],
-    ];
-
-    // Used to determine the column index for CHG_CC_LIMITS_UA.
-    const TTF_TIER_THRESHOLDS: [f32; 3] = [0.0, 84.0, 90.0];
-
-    // Used to determine the row index for CHG_CC_LIMITS_UA.
-    // Note: the array is take from an external configuration and the last element is unused.
-    const TTF_CHARGE_TEMP_LIMITS: [i32; 5] = [0, 10_000, 20_000, 42_000, 46_000];
 
     // Battery capacity: 420 mAh = 420,000 uAh
     // TODO(https://fxbug.dev/442619993): Use actual capacity instead of the design capacity.
@@ -108,30 +91,53 @@ impl ChargeTimeEstimator {
         Self::DESIGN_CAPACITY_UAH / 100
     }
 
-    fn get_reference_current_ua(level_percent: f32, temperature_mc: Option<i32>) -> i32 {
-        // Default to 25C room temp
+    fn get_reference_current_ua(
+        &self,
+        level_percent: f32,
+        temperature_mc: Option<i32>,
+    ) -> Result<i32, TimeEstimatorError> {
+        let limits =
+            self.config.ttf_charge_temp_limits.as_ref().ok_or(TimeEstimatorError::MissingConfig)?;
+        let thresholds =
+            self.config.ttf_tier_thresholds.as_ref().ok_or(TimeEstimatorError::MissingConfig)?;
+        let limits_matrix =
+            self.config.chg_cc_limits_ua.as_ref().ok_or(TimeEstimatorError::MissingConfig)?;
+
         let temp_mc = temperature_mc.unwrap_or(25_000);
 
-        // Find the appropriate temperature row index.
-        // Skip the first element containing the absolute minimum (0) when checking upper bounds.
-        let row_idx = Self::TTF_CHARGE_TEMP_LIMITS
+        let row_idx = limits
             .iter()
             .skip(1)
             .position(|&limit| temp_mc < limit)
-            .unwrap_or_else(|| Self::CHG_CC_LIMITS_UA.len() - 1);
+            .unwrap_or_else(|| limits_matrix.len().saturating_sub(1));
 
-        // Find the appropriate SOC column index.
-        // Skip the first element containing the minimum threshold (0.0) when checking bounds.
-        let col_idx = Self::TTF_TIER_THRESHOLDS
+        let col_idx = thresholds
             .iter()
             .skip(1)
             .position(|&threshold| level_percent < threshold)
-            .unwrap_or_else(|| Self::CHG_CC_LIMITS_UA[0].len() - 1);
+            .unwrap_or_else(|| thresholds.len().saturating_sub(1));
 
-        Self::CHG_CC_LIMITS_UA[row_idx][col_idx]
+        if let Some(row) = limits_matrix.get(row_idx) {
+            if let Some(&val) = row.get(col_idx) {
+                return Ok(val);
+            }
+        }
+
+        Err(TimeEstimatorError::MissingConfig)
     }
 
-    fn new(use_actual_capacity: bool) -> ChargeTimeEstimator {
+    #[cfg(test)]
+    pub fn get_static_reference_current_ua(
+        level_percent: f32,
+        temperature_mc: Option<i32>,
+    ) -> Result<i32, TimeEstimatorError> {
+        Self::new(false).get_reference_current_ua(level_percent, temperature_mc)
+    }
+
+    fn new_with_config(
+        use_actual_capacity: bool,
+        config: crate::BatteryManagerConfig,
+    ) -> ChargeTimeEstimator {
         let mut table = [0i32; LOOKUP_TABLE_SIZE];
         let mut percent_start = 0;
         for (duration, threshold) in Self::PERCENT_CHARGE_DURATION.iter() {
@@ -150,6 +156,7 @@ impl ChargeTimeEstimator {
             baseline_duration_lookup: table,
             use_actual_capacity,
             actual_capacity_uah: None,
+            config,
             current_tier: None,
             tier_accumulated_current_ua_ms: 0,
             tier_accumulated_time_ms: 0,
@@ -157,12 +164,23 @@ impl ChargeTimeEstimator {
         }
     }
 
+    #[cfg(test)]
+    fn new(use_actual_capacity: bool) -> ChargeTimeEstimator {
+        Self::new_with_config(use_actual_capacity, crate::BatteryManagerConfig::default_for_test())
+    }
+
     fn set_actual_capacity(&mut self, actual_capacity_uah: Option<i32>) {
         self.actual_capacity_uah = actual_capacity_uah;
     }
 
-    fn get_tier_index(level_percent: f32) -> usize {
-        Self::TTF_TIER_THRESHOLDS[1..].partition_point(|&threshold| threshold <= level_percent)
+    fn get_tier_index(&self, level_percent: f32) -> Result<usize, TimeEstimatorError> {
+        let thresholds =
+            self.config.ttf_tier_thresholds.as_ref().ok_or(TimeEstimatorError::MissingConfig)?;
+        if thresholds.len() > 1 {
+            Ok(thresholds[1..].partition_point(|&threshold| threshold <= level_percent))
+        } else {
+            Ok(0)
+        }
     }
 
     fn update_average_current(
@@ -173,7 +191,7 @@ impl ChargeTimeEstimator {
         charge_status: Option<fpower::ChargeStatus>,
     ) -> Option<i32> {
         let timestamp_ns = timestamp_ns?;
-        let tier_idx = Self::get_tier_index(level);
+        let tier_idx = self.get_tier_index(level).ok()?;
 
         if self.current_tier != Some(tier_idx) {
             self.current_tier = Some(tier_idx);
@@ -321,7 +339,7 @@ impl ChargeTimeEstimator {
         }
 
         // Get cc_max_ua (Maximum Allowed Current)
-        let cc_max_ua = Self::get_reference_current_ua(level_percent, temperature_mc);
+        let cc_max_ua = self.get_reference_current_ua(level_percent, temperature_mc)?;
 
         // Determine equiv_icl_ua (Effective Expected Current)
         // TODO(https://fxbug.dev/442619993): Consider fast charging which could be higher than cc_max_ua.
@@ -623,16 +641,18 @@ pub(crate) struct Polisher {
 impl Polisher {
     #[cfg(test)]
     pub fn new() -> Polisher {
-        Self::new_with_battery_manager_config(crate::BatteryManagerConfig::default())
+        Self::new_with_battery_manager_config(crate::BatteryManagerConfig::default_for_test())
     }
 
     pub fn new_with_battery_manager_config(config: crate::BatteryManagerConfig) -> Polisher {
         Polisher {
-            config,
+            config: config.clone(),
             curve_mapper: CurveMapper::new(),
             last_rate_limited_level: None,
             last_post_curve: None,
-            estimator: ChargeTimeEstimator::new(/*use_actual_capacity*/ false),
+            estimator: ChargeTimeEstimator::new_with_config(
+                /*use_actual_capacity*/ false, config,
+            ),
             rate_limiter: RateLimiter::default(),
             last_is_plugged_in: None,
             last_original_level: None,
@@ -727,7 +747,14 @@ impl Polisher {
         ) {
             Ok(duration) => duration.into_nanos(),
             Err(e) => {
-                warn!("Failed to estimate time to full: {:?}", e);
+                match e {
+                    TimeEstimatorError::MissingConfig => {
+                        debug!("Unable to estimate time to full: {:?}", e);
+                    }
+                    _ => {
+                        warn!("Failed to estimate time to full: {:?}", e);
+                    }
+                }
                 info.time_remaining = Some(fpower::TimeRemaining::Indeterminate(0));
                 return;
             }
@@ -936,6 +963,7 @@ mod tests {
     fn test_scale_battery_level() {
         let polisher = Polisher::new_with_battery_manager_config(crate::BatteryManagerConfig {
             shutdown_offset_percent: 3.0,
+            ..Default::default()
         });
 
         // Test when level_percent = shutdown offset (3.0)
@@ -1152,22 +1180,37 @@ mod tests {
     #[fuchsia::test]
     fn test_get_reference_current_ua() {
         // Temperature below 10C (row 0), SOC < 84 (col 0)
-        assert_eq!(ChargeTimeEstimator::get_reference_current_ua(50.0, Some(5_000)), 200_000);
+        assert_eq!(
+            ChargeTimeEstimator::get_static_reference_current_ua(50.0, Some(5_000)),
+            Ok(200_000)
+        );
 
         // Temperature 10-20C (row 1), SOC < 84 (col 0)
-        assert_eq!(ChargeTimeEstimator::get_reference_current_ua(50.0, Some(15_000)), 275_000);
+        assert_eq!(
+            ChargeTimeEstimator::get_static_reference_current_ua(50.0, Some(15_000)),
+            Ok(275_000)
+        );
 
         // Temperature 20-42C (row 2), SOC 84-90 (col 1)
-        assert_eq!(ChargeTimeEstimator::get_reference_current_ua(85.0, Some(25_000)), 500_000);
+        assert_eq!(
+            ChargeTimeEstimator::get_static_reference_current_ua(85.0, Some(25_000)),
+            Ok(500_000)
+        );
 
         // Temperature 42-46C (row 3, SOC 84-90 (col 1))
-        assert_eq!(ChargeTimeEstimator::get_reference_current_ua(89.0, Some(45_000)), 400_000);
+        assert_eq!(
+            ChargeTimeEstimator::get_static_reference_current_ua(89.0, Some(45_000)),
+            Ok(400_000)
+        );
 
         // Temperature > 46C (row 3, saturating fallback)
-        assert_eq!(ChargeTimeEstimator::get_reference_current_ua(95.0, Some(50_000)), 200_000);
+        assert_eq!(
+            ChargeTimeEstimator::get_static_reference_current_ua(95.0, Some(50_000)),
+            Ok(200_000)
+        );
 
         // Default temperature (25_000)
-        assert_eq!(ChargeTimeEstimator::get_reference_current_ua(50.0, None), 500_000);
+        assert_eq!(ChargeTimeEstimator::get_static_reference_current_ua(50.0, None), Ok(500_000));
     }
 
     #[fuchsia::test]
@@ -1189,8 +1232,8 @@ mod tests {
         );
 
         // Test get_reference_current_ua and get_implied_ref_current_ua
-        let reference_current = ChargeTimeEstimator::get_reference_current_ua(50.0, None);
-        assert_eq!(reference_current, 500_000);
+        let reference_current = ChargeTimeEstimator::get_static_reference_current_ua(50.0, None);
+        assert_eq!(reference_current, Ok(500_000));
 
         // At 50% SOC, implied ref is 472,500 uA.
         let implied_current = estimator.get_implied_ref_current_ua(50).unwrap();
@@ -1336,7 +1379,8 @@ mod tests {
     #[fuchsia::test]
     fn test_charge_time_estimator_ratio() {
         let estimator = ChargeTimeEstimator::new(false);
-        let ref_current = ChargeTimeEstimator::get_reference_current_ua(100.0, None);
+        let ref_current =
+            ChargeTimeEstimator::get_static_reference_current_ua(100.0, None).unwrap();
 
         // Base case with ref current: should match None
         assert_eq!(
@@ -1393,7 +1437,7 @@ mod tests {
         let expected_50_nanos = 2492 * NANOS_PER_SEC;
         info = new_info(50.0, fpower::ChargeStatus::Charging);
         info.average_charging_current_ua =
-            Some(ChargeTimeEstimator::get_reference_current_ua(50.0, None));
+            Some(ChargeTimeEstimator::get_static_reference_current_ua(50.0, None).unwrap());
         polisher.calculate_time_to_full(info.level_percent, info.level_percent, &mut info);
         assert_eq!(
             info.time_remaining,
@@ -1673,7 +1717,10 @@ mod tests {
         incoming_info.timestamp = Some(0);
 
         let info = polisher.polish_info(incoming_info);
-        let initial_scaled_level = InitialScaler::scale_level_with_offset(initial_level, 0.0);
+        let initial_scaled_level = InitialScaler::scale_level_with_offset(
+            initial_level,
+            polisher.config.shutdown_offset_percent,
+        );
         assert_matches!(info.level_percent, Some(p) if (p - initial_scaled_level).abs() < f32::EPSILON);
 
         let t0_s = 30;
@@ -1692,6 +1739,7 @@ mod tests {
     fn test_polish_info_for_full_cycle() {
         let mut polisher = Polisher::new_with_battery_manager_config(crate::BatteryManagerConfig {
             shutdown_offset_percent: 3.0,
+            ..crate::BatteryManagerConfig::default_for_test()
         });
         // Establish that we are charging.
         let info = polisher.polish_info(new_info(95.0, fpower::ChargeStatus::Charging));
@@ -1728,6 +1776,7 @@ mod tests {
     fn test_polish_info() {
         let mut polisher = Polisher::new_with_battery_manager_config(crate::BatteryManagerConfig {
             shutdown_offset_percent: 3.0,
+            ..crate::BatteryManagerConfig::default_for_test()
         });
 
         // Test when level_percent = shutdown offset (3.0)
@@ -1766,7 +1815,7 @@ mod tests {
         info.level_percent = Some(83.0);
         info.charge_status = Some(fpower::ChargeStatus::Charging);
         info.average_charging_current_ua =
-            Some(ChargeTimeEstimator::get_reference_current_ua(83.0, None));
+            Some(ChargeTimeEstimator::get_static_reference_current_ua(83.0, None).unwrap());
         info = polisher.polish_info(info);
         assert_eq!(info.level_status, Some(fpower::LevelStatus::Ok));
         // Expected nanoseconds (1432 seconds * 1,000,000,000 nanos/sec)

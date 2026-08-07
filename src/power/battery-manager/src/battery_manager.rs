@@ -574,7 +574,7 @@ mod tests {
         };
         let battery_manager = BatteryManager::new_with_battery_manager_config(
             recorder_config,
-            crate::BatteryManagerConfig { shutdown_offset_percent: 3.0 },
+            crate::BatteryManagerConfig { shutdown_offset_percent: 3.0, ..Default::default() },
         );
         (dir, battery_manager)
     }
