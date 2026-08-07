@@ -147,7 +147,7 @@ FEMU currently does not run on:
 
 FEMU currently supports Nvidia Quadro on Linux
 for hardware graphics acceleration
-([Nvidia Linux Drivers](https://www.nvidia.com/download/driverResults.aspx/160175/en-us">440.100)).
+([Nvidia Linux Drivers](https://www.nvidia.com/drivers)).
 FEMU uses a software renderer fallback for unsupported GPUs.
 
 ## Common usage {#common-usage}
