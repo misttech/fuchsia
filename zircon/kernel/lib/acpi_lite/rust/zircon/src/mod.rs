@@ -70,9 +70,9 @@ impl PhysMemReader for ZirconPhysmemReader {
 
         for mapping_node in fields.mappings.iter() {
             let mapping = &mapping_node.mapping;
-            let (map_paddr, _mmu_flags) = match arch_aspace.query(mapping.base()) {
-                Ok(res) => (res.0.0, res.1),
-                Err(status) => return Err(status),
+            let (map_paddr, _mmu_flags) = {
+                let res = arch_aspace.query(mapping.base())?;
+                (res.0.0, res.1)
             };
             if map_paddr <= paddr_base && paddr_base + size <= map_paddr + mapping.size() {
                 let offset = phys - map_paddr;

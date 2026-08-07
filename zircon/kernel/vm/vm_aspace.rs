@@ -335,6 +335,7 @@ impl VmAspace {
     ///
     /// The caller must ensure `ptr` points to a valid memory location that can hold the allocated
     /// address or specific starting address.
+    #[allow(clippy::too_many_arguments)]
     pub unsafe fn alloc_physical(
         &self,
         name: &CStr,

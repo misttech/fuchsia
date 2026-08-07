@@ -338,16 +338,14 @@ pub mod console {
         // commands alphabetically before printing.
         if (flags & CMD_FLAG_PANIC) != 0 {
             for cmd in commands {
-                if (availability_mask & cmd.availability_mask) != 0 {
-                    if !cmd.help_str.is_null() {
-                        unsafe {
-                            printf(
-                                c"\t%-16s: %s%c".as_ptr(),
-                                cmd.cmd_str,
-                                cmd.help_str,
-                                b'\n' as c_int,
-                            );
-                        }
+                if (availability_mask & cmd.availability_mask) != 0 && !cmd.help_str.is_null() {
+                    unsafe {
+                        printf(
+                            c"\t%-16s: %s%c".as_ptr(),
+                            cmd.cmd_str,
+                            cmd.help_str,
+                            b'\n' as c_int,
+                        );
                     }
                 }
             }
@@ -368,16 +366,14 @@ pub mod console {
 
             for &cmd_ptr in ptrs_slice.iter() {
                 let cmd = unsafe { &*cmd_ptr };
-                if (availability_mask & cmd.availability_mask) != 0 {
-                    if !cmd.help_str.is_null() {
-                        unsafe {
-                            printf(
-                                c"\t%-16s: %s%c".as_ptr(),
-                                cmd.cmd_str,
-                                cmd.help_str,
-                                b'\n' as c_int,
-                            );
-                        }
+                if (availability_mask & cmd.availability_mask) != 0 && !cmd.help_str.is_null() {
+                    unsafe {
+                        printf(
+                            c"\t%-16s: %s%c".as_ptr(),
+                            cmd.cmd_str,
+                            cmd.help_str,
+                            b'\n' as c_int,
+                        );
                     }
                 }
             }

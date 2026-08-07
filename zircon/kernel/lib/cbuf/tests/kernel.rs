@@ -9,7 +9,7 @@
 #[unittest::suite(name = "rust_cbuf")]
 mod tests {
     use cbuf::Cbuf;
-    use core::ffi::{c_char, c_void};
+    use core::ffi::c_void;
     use core::sync::atomic::{AtomicU32, Ordering};
     use pin_init::stack_pin_init;
     use unittest::{assert_eq, assert_ok, assert_true, unwrap_ok};
@@ -91,7 +91,7 @@ mod tests {
             unwrap_ok!(cbuf.initialize(buf.len(), buf.as_mut_ptr()));
         }
 
-        let thread_name = b"cbuf_rust_race\0".as_ptr() as *const c_char;
+        let thread_name = c"cbuf_rust_race".as_ptr();
         let cbuf_ptr = &*cbuf as *const Cbuf as *mut c_void;
 
         // SAFETY: we pass reader_thread_entry and valid pointers. The thread is joined
@@ -231,7 +231,7 @@ mod tests {
             read_char: &mut read_char,
         };
 
-        let thread_name = b"cbuf_blocking_read\0".as_ptr() as *const c_char;
+        let thread_name = c"cbuf_blocking_read".as_ptr();
         let ctx_ptr = &mut ctx as *mut BlockingReadContext as *mut c_void;
 
         unsafe {

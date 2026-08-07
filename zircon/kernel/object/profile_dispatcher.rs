@@ -43,7 +43,7 @@ fn parse_cpu_mask(set: &zx_cpu_set_t) -> cpu_mask_t {
     // The code below only supports reading up to 1 word in the mask.
     zr::static_assert!(counters_rs::SMP_MAX_CPUS <= core::mem::size_of::<u64>() * 8);
     zr::static_assert!(counters_rs::SMP_MAX_CPUS <= core::mem::size_of::<cpu_mask_t>() * 8);
-    zr::static_assert!(counters_rs::SMP_MAX_CPUS <= zx_types::ZX_CPU_SET_MAX_CPUS as usize);
+    zr::static_assert!(counters_rs::SMP_MAX_CPUS <= zx_types::ZX_CPU_SET_MAX_CPUS);
 
     // We throw away any bits beyond SMP_MAX_CPUs.
     (set.mask[0] as cpu_mask_t) & crate::kernel::bits::bit_mask_u32(counters_rs::SMP_MAX_CPUS)
@@ -143,9 +143,9 @@ impl ProfileDispatcherState {
 
         pin_init!(Self {
             canary: Canary::new(),
-            profile: profile.into(),
-            cpu_mask: cpu_mask.into(),
-            memory_priority: memory_priority.into(),
+            profile,
+            cpu_mask,
+            memory_priority,
             lock <- KMutex::init(),
         })
     }

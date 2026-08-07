@@ -110,7 +110,7 @@ pub fn sys_system_mexec_payload_get(
     debug_assert!(zbi_size <= buffer_size);
     // SAFETY: cpp_system_mexec_payload_get_helper initializes buffer[..zbi_size] on success.
     let zbi_buffer = unsafe { core::slice::from_raw_parts(buffer.as_ptr() as *const u8, zbi_size) };
-    user_buffer.copy_slice_to_user(&zbi_buffer)?;
+    user_buffer.copy_slice_to_user(zbi_buffer)?;
     Ok(())
 }
 
@@ -186,7 +186,7 @@ pub fn sys_system_watch_memory_stall(
         up.enforce_basic_policy(ZX_POL_NEW_EVENT)?;
 
         if window > MEMORY_STALL_MAX_WINDOW || window <= 0 || threshold <= 0 || threshold > window {
-            return Err(Status::INVALID_ARGS.into());
+            return Err(Status::INVALID_ARGS);
         }
         validate_system_resource(resource, ZX_RSRC_SYSTEM_STALL_BASE)?;
 
@@ -218,7 +218,7 @@ pub fn sys_system_set_performance_info(
                     .map_err(|_| Status::NO_MEMORY)?;
             let performance_info = info_void
                 .reinterpret::<zx_cpu_performance_info_t>()
-                .copy_slice_from_user(&mut *uninit_info)?;
+                .copy_slice_from_user(&mut uninit_info)?;
 
             let mut last_cpu = u32::MAX;
             for info in performance_info.iter() {
@@ -245,7 +245,7 @@ pub fn sys_system_set_performance_info(
                 .map_err(|_| Status::NO_MEMORY)?;
             let limit_info = info_void
                 .reinterpret::<zx_cpu_perf_limit_t>()
-                .copy_slice_from_user(&mut *uninit_info)?;
+                .copy_slice_from_user(&mut uninit_info)?;
 
             let mut last_cpu = u32::MAX;
             for entry in limit_info.iter() {

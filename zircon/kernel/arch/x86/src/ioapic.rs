@@ -319,8 +319,8 @@ pub fn apic_io_init_safe(io_apic_descs: &[IoApicDescriptor], overrides: &[IoApic
         box_uninit[i].write(IoApic {
             desc: desc.clone(),
             vaddr: final_vaddr,
-            version: version,
-            max_redirection_entry: max_redirection_entry,
+            version,
+            max_redirection_entry,
             saved_rtes: core::cell::UnsafeCell::new([0; IO_APIC_NUM_REDIRECTIONS]),
         });
 
@@ -440,7 +440,7 @@ pub extern "C" fn apic_io_configure_irq(
     // If we are configuring an invalid vector, for the IRQ to be masked.
     if (del_mode == ApicInterruptDeliveryMode::Fixed
         || del_mode == ApicInterruptDeliveryMode::LowestPri)
-        && (vector < X86_INT_PLATFORM_BASE.0 || vector > X86_INT_PLATFORM_MAX.0)
+        && !(X86_INT_PLATFORM_BASE.0..=X86_INT_PLATFORM_MAX.0).contains(&vector)
     {
         mask = true;
     }

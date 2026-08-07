@@ -13,13 +13,7 @@ unsafe extern "C" {
 
 #[panic_handler]
 fn rust_panic(info: &PanicInfo<'_>) -> ! {
-    let msg_str = {
-        if let Some(msg_str) = info.message().as_str() {
-            msg_str
-        } else {
-            "non-static Rust panic message"
-        }
-    };
+    let msg_str = info.message().as_str().unwrap_or("non-static Rust panic message");
 
     if let Some(location) = info.location() {
         let file = location.file_as_c_str();

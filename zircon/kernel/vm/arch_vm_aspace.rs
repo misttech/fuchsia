@@ -12,10 +12,14 @@ use zx_status::Status;
 // TODO(https://fxbug.dev/529507187): Use bitflags! or equivalent once available.
 pub type ArchMmuFlags = u8;
 
+#[allow(clippy::identity_op)]
 pub const ARCH_MMU_FLAG_CACHED: ArchMmuFlags = 0 << 0;
 pub const ARCH_MMU_FLAG_UNCACHED: ArchMmuFlags = 1 << 0;
+#[allow(clippy::identity_op)]
 pub const ARCH_MMU_FLAG_UNCACHED_DEVICE: ArchMmuFlags = 2 << 0;
+#[allow(clippy::identity_op)]
 pub const ARCH_MMU_FLAG_WRITE_COMBINING: ArchMmuFlags = 3 << 0;
+#[allow(clippy::identity_op)]
 pub const ARCH_MMU_FLAG_CACHE_MASK: ArchMmuFlags = 3 << 0;
 pub const ARCH_MMU_FLAG_PERM_USER: ArchMmuFlags = 1 << 2;
 pub const ARCH_MMU_FLAG_PERM_READ: ArchMmuFlags = 1 << 3;

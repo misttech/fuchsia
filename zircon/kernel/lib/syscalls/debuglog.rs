@@ -56,7 +56,7 @@ pub fn sys_debuglog_write(
 
     let len = core::cmp::min(len, DLOG_MAX_DATA);
 
-    if (options & !(ZX_LOG_FLAGS_MASK as u32)) != 0 {
+    if (options & !ZX_LOG_FLAGS_MASK) != 0 {
         return Err(Status::INVALID_ARGS.into());
     }
 
@@ -101,7 +101,7 @@ fn copy_out_log_record(
     }
 
     // There's enough space for the struct so copy it as is.
-    dst.copy_slice_to_user(&record_bytes)?;
+    dst.copy_slice_to_user(record_bytes)?;
 
     let mut amount_copied = record_bytes.len();
     len -= amount_copied;

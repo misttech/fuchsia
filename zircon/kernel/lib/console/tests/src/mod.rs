@@ -36,6 +36,7 @@ mod console_tests {
 
     #[repr(C)]
     #[derive(Clone, Copy)]
+    #[allow(clippy::upper_case_acronyms)]
     struct FILE {
         write: unsafe extern "C" fn(
             *mut core::ffi::c_void,

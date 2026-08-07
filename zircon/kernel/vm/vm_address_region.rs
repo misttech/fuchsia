@@ -166,6 +166,7 @@ impl VmAddressRegion {
     ///
     /// To avoid leaks, this should be paired with a call to [`VmMapping::destroy`] if desired;
     /// dropping `MapResult::mapping` will not destroy the mapping.
+    #[allow(clippy::too_many_arguments)]
     pub fn create_vm_mapping(
         &self,
         mapping_offset: usize,

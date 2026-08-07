@@ -10,6 +10,7 @@ pub const NUM_ISA_IRQS: usize = 16;
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(clippy::upper_case_acronyms)]
 pub enum ApicInterruptDeliveryMode {
     Fixed = 0,
     LowestPri = 1,

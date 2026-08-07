@@ -124,7 +124,7 @@ impl<'a> Argument<'a> {
             | ArgValue::Double(_)
             | ArgValue::Pointer(_)
             | ArgValue::Koid(_) => 2,
-            ArgValue::String(s) => 1 + (s.len() + 7) / 8,
+            ArgValue::String(s) => 1 + s.len().div_ceil(8),
         }
     }
 
@@ -166,7 +166,7 @@ impl<'a> Argument<'a> {
             ArgValue::String(s) => {
                 header |= 6u64; // ArgumentType::kString (6)
                 let string_len = s.len();
-                header |= (((string_len + 7) / 8) as u64) << 4; // ArgumentSize in words
+                header |= (string_len.div_ceil(8) as u64) << 4; // ArgumentSize in words
                 header |= (string_len as u64) << 32; // String length in bytes
                 res.write_word(header)?;
                 res.write_bytes(s.as_bytes())?;
@@ -1021,8 +1021,8 @@ mod tests {
         // 2. Verify initial states.
         expect_false!(ktrace.writes_enabled());
         expect_eq!(ktrace.categories_bitmask(), 0);
-        expect_false!(ktrace.is_category_enabled(&META_CAT));
-        expect_false!(ktrace.is_category_enabled(&IRQ_CAT));
+        expect_false!(ktrace.is_category_enabled(META_CAT));
+        expect_false!(ktrace.is_category_enabled(IRQ_CAT));
 
         // 3. Test writes_enabled.
         local_state.writes_enabled.store(true, Ordering::Release);
@@ -1034,11 +1034,11 @@ mod tests {
         let mask = (1 << MEMORY_CAT.index()) | (1 << CONTENTION_CAT.index());
         local_state.categories_bitmask.store(mask, Ordering::Release);
         expect_eq!(ktrace.categories_bitmask(), mask);
-        expect_false!(ktrace.is_category_enabled(&META_CAT));
-        expect_true!(ktrace.is_category_enabled(&MEMORY_CAT));
-        expect_false!(ktrace.is_category_enabled(&SCHED_CAT));
-        expect_true!(ktrace.is_category_enabled(&CONTENTION_CAT));
-        expect_false!(ktrace.is_category_enabled(&IPC_CAT));
+        expect_false!(ktrace.is_category_enabled(META_CAT));
+        expect_true!(ktrace.is_category_enabled(MEMORY_CAT));
+        expect_false!(ktrace.is_category_enabled(SCHED_CAT));
+        expect_true!(ktrace.is_category_enabled(CONTENTION_CAT));
+        expect_false!(ktrace.is_category_enabled(IPC_CAT));
 
         // 5. Test CPU buffer initialization and reserve.
         let mut storage = [0u8; 256];
@@ -1094,7 +1094,7 @@ mod tests {
         // 6. Test Rust macros!
         let mask = (1 << META_CAT.index()) | (1 << MEMORY_CAT.index());
         local_state.categories_bitmask.store(mask, Ordering::Release);
-        expect_true!(ktrace.is_category_enabled(&META_CAT));
+        expect_true!(ktrace.is_category_enabled(META_CAT));
 
         // Let's emit an instant event using the macro!
         instant!(META_CAT, "my_event", "arg1" => 42i32, "arg2" => "hello");
@@ -1151,7 +1151,7 @@ mod tests {
 
         let arg2_val = &read_bytes[48..56];
         expect_true!(&arg2_val[0..5] == b"hello");
-        expect_true!(&arg2_val[5..8] == &[0, 0, 0]);
+        expect_true!(arg2_val[5..8] == [0, 0, 0]);
     }
 }
 

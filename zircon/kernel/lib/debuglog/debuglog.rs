@@ -9,8 +9,8 @@ use zx_status::Status;
 
 #[allow(unused_imports)]
 pub use debuglog_types::{ZX_LOG_FLAGS_MASK, dlog_header_t, dlog_record_t};
-pub const DLOG_MAX_RECORD: usize = debuglog_types::DLOG_MAX_RECORD as usize;
-pub const DLOG_MAX_DATA: usize = debuglog_types::DLOG_MAX_DATA as usize;
+pub const DLOG_MAX_RECORD: usize = debuglog_types::DLOG_MAX_RECORD;
+pub const DLOG_MAX_DATA: usize = debuglog_types::DLOG_MAX_DATA;
 
 #[allow(improper_ctypes)]
 unsafe extern "C" {

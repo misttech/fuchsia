@@ -60,9 +60,10 @@ zr::static_assert!(core::mem::size_of::<RestrictedState>() == 72);
 #[cfg(target_arch = "riscv64")]
 zr::static_assert!(core::mem::size_of::<RestrictedState>() == 64);
 
+type VmoMapping = (RefPtr<VmObjectPaged>, RefPtr<VmMapping>, NonNull<zx_restricted_state_t>);
+
 /// Allocate a 1-page VMO, commit and pin it, map it into the kernel address space, and eagerly fault in the pages.
-fn create_vmo_mapping()
--> Result<(RefPtr<VmObjectPaged>, RefPtr<VmMapping>, NonNull<zx_restricted_state_t>), Status> {
+fn create_vmo_mapping() -> Result<VmoMapping, Status> {
     // 1. Create a 1-page paged VMO to back the thread's restricted mode state.
     let vmo =
         VmObjectPaged::create(ALLOC_FLAG_ANY | ALLOC_FLAG_CAN_WAIT, 0, STATE_VMO_SIZE as u64)?;
@@ -82,9 +83,8 @@ fn create_vmo_mapping()
 
     let map_result = kernel_vmar
         .create_vm_mapping(0, STATE_VMO_SIZE, 0, 0, base_vmo, 0, arch_mmu_flags, mapping_name)
-        .map_err(|err| {
+        .inspect_err(|_| {
             vmo.unpin(0, STATE_VMO_SIZE as u64);
-            err
         })?;
 
     // 4. Eagerly fault in all pages so kernel mode never demand-faults on access.
@@ -262,7 +262,7 @@ pub unsafe extern "C" fn rust_restricted_state_destroy(ptr: *mut RestrictedState
 /// Restricted state unit tests.
 #[unittest::suite(name = "restricted_state_tests")]
 mod tests {
-    use super::{NonNull, RestrictedState, ptr, zx_exception_report_t, zx_restricted_state_t};
+    use super::{NonNull, RestrictedState, zx_exception_report_t, zx_restricted_state_t};
 
     /// Verifies creation of RestrictedState and basic field accessors and mutators.
     #[test]
@@ -283,7 +283,7 @@ mod tests {
         unittest::expect_true!(rs.context() == 0x9abcdef0);
 
         unittest::expect_true!(rs.exception_report_ptr().is_none());
-        unittest::expect_true!(rs.exception_report_raw_ptr() == ptr::null_mut());
+        unittest::expect_true!(rs.exception_report_raw_ptr().is_null());
 
         unittest::expect_false!(rs.vmo().is_null());
         unittest::expect_false!(rs.state_ptr().is_null());

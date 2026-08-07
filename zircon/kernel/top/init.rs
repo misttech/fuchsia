@@ -78,10 +78,10 @@ pub unsafe extern "C" fn lk_init_level(
             if ptr.level < last_called_level {
                 continue;
             }
-            if let Some(found_ref) = found {
-                if found_ref.level <= ptr.level {
-                    continue;
-                }
+            if let Some(found_ref) = found
+                && found_ref.level <= ptr.level
+            {
+                continue;
             }
 
             // Keep the lowest one we haven't called yet.

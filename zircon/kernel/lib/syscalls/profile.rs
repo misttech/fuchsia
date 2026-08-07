@@ -44,7 +44,7 @@ pub fn sys_profile_create(
     match validate_resource_kind_base(
         profile_rsrc,
         ZX_RSRC_KIND_SYSTEM,
-        ZX_RSRC_SYSTEM_PROFILE_BASE as u64,
+        ZX_RSRC_SYSTEM_PROFILE_BASE,
     ) {
         Ok(()) => {}
         Err(Status::BAD_HANDLE) => return Err(Status::BAD_HANDLE.into()),

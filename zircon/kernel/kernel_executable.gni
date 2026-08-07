@@ -122,6 +122,7 @@ template("kernel_executable") {
       "-Cpanic=abort",
       "-Cmetadata=clippy",
       "-Wclippy::all",
+      "-Aclippy::duplicate_mod",  # Needed for kernel_rust_mod
       "{{rustflags}}",
     ]
   }

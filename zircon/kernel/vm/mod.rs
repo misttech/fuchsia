@@ -13,6 +13,7 @@ pub mod physical_page_borrowing_config;
 pub mod pinned_vm_object;
 pub mod pmm;
 pub mod scanner;
+#[allow(clippy::module_inception)]
 pub mod vm;
 pub mod vm_address_region;
 pub mod vm_aspace;
