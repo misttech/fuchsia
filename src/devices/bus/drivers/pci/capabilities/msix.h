@@ -59,9 +59,6 @@ class MsixCapability : public Capability {
   MsixCapability(const Config& cfg, uint8_t base);
 
   zx_status_t Init(const Bar& tbar, const Bar& pbar);
-  // Returns the size of the safe portion of the BAR a device can map without
-  // having access to the MSI-X vector table or pba.
-  zx::result<size_t> GetBarDataSize(const Bar& bar) const;
   PciReg16 ctrl() { return ctrl_; }
   PciReg32 table() { return table_reg_; }
   PciReg32 pba() { return pba_reg_; }

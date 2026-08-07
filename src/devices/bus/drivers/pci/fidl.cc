@@ -171,18 +171,6 @@ void FidlDevice::GetBar(GetBarRequestView request, GetBarCompleter::Sync& comple
   }
 
   size_t bar_size = bar->size;
-  // If this device shares BAR data with either of the MSI-X tables then we need
-  // to determine what portions of the BAR the driver can be permitted to
-  // access. If the MSI-X bar exists in the only page present in the BAR then we
-  // need to deny all access to the BAR.
-  if (device_->capabilities().msix) {
-    zx::result<size_t> result = device_->capabilities().msix->GetBarDataSize(*bar);
-    if (result.is_error()) {
-      completer.ReplyError(result.status_value());
-      RETURN_DEBUG(result.status_value(), "%u", request->bar_id);
-    }
-    bar_size = result.value();
-  }
 
   ZX_DEBUG_ASSERT(bar->allocation);
   switch (bar->allocation->type()) {

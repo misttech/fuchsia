@@ -264,16 +264,7 @@ TEST_F(PciProtocolTests, GetBar3) { ASSERT_NO_FAILURES(GetBarTestHelper(3)); }
 // TODO(https://fxbug.dev/42073399): Fix this test by sending a real resource.
 TEST_F(PciProtocolTests, DISABLED_GetBar5) { ASSERT_NO_FAILURES(GetBarTestHelper(5)); }
 
-TEST_F(PciProtocolTests, GetBar2) {
-  fidl::Arena arena;
-  fuchsia_hardware_pci::wire::Bar info = {};
-  // BAR 2 contains MSI-X registers. With relaxed mapping, it truncates down
-  // to the lowest offset >= page_size (the PBA offset at 0x2000).
-  ASSERT_OK(pci().GetBar(arena, 2, &info));
-  EXPECT_EQ(info.bar_id, 2);
-  ASSERT_EQ(info.result.Which(), fpci::wire::BarResult::Tag::kVmo);
-  EXPECT_EQ(info.size, 0x2000u);
-}
+TEST_F(PciProtocolTests, GetBar2) { ASSERT_NO_FAILURES(GetBarTestHelper(2)); }
 
 TEST_F(PciProtocolTests, GetBar4) {
   fidl::Arena arena;

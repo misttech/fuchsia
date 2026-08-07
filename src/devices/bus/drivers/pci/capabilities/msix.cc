@@ -99,35 +99,4 @@ zx_status_t MsixCapability::Init(const Bar& tbar, const Bar& pbar) {
   return ZX_OK;
 }
 
-zx::result<size_t> MsixCapability::GetBarDataSize(const Bar& bar) const {
-  size_t bar_size = bar.size;
-  uint32_t page_size = zx_system_get_page_size();
-  // In the best case, Vector and PBA tables are placed in their own BAR.
-  // However, it's possible for a function to be designed so that they share a
-  // BAR with device data and we need to limit the mappable space of the BAR
-  // provided to the userspace driver. Additionally, if the offset of either of
-  // the tables is within a page of device data we cannot allow the device to
-  // map it. This arrangement would technically be against the specification, but
-  // it is worth validating anyway.
-  // PCI Local Bus Specification rev 3.0 6.8.2
-  const std::pair<uint8_t, zx_paddr_t> sections[] = {{table_bar_, table_offset_},
-                                                     {pba_bar_, pba_offset_}};
-  for (auto& [bar_id, offset] : sections) {
-    if (bar.bar_id != bar_id) {
-      continue;
-    }
-
-    if (offset >= page_size) {
-      // Truncate the size of the bar from [0, size) to [0, offset) if size is
-      // larger, ensuring we cannot access it the table that shares this BAR.
-      // Round down to nearest page to handle situations where a table is not on a
-      // page boundary.
-      bar_size = std::min(bar_size, offset);
-      bar_size = (bar_size / page_size) * page_size;
-    }
-  }
-
-  return zx::ok(bar_size);
-}
-
 }  // namespace pci

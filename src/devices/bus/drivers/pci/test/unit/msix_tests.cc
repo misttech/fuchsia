@@ -96,53 +96,5 @@ TEST_F(PciCapabilityTests, InitTest) {
   ASSERT_STATUS(msix.Init(bar, bar), ZX_ERR_BAD_STATE);
 }
 
-TEST_F(PciCapabilityTests, MsixBarAccessTest) {
-  Bar bar1 = CreateBar(1, 0x4000);
-  Bar bar2 = CreateBar(2, 0x1000);
-
-  MmioConfig cfg = FakeMmioConfig(bdf(), view());
-  // Simple test, everything aligns well in one bar.
-  {
-    ConfigureMsixCapability(cfg, 1, 1, 0x2000, 0x3000);
-    MsixCapability msix(cfg, 0);
-    ASSERT_OK(msix.Init(bar1, bar1));
-    ASSERT_EQ(0x2000u, msix.GetBarDataSize(bar1).value());
-  }
-
-  // Swap tbar and pbar to ensure the ordering check is correct.
-  {
-    ConfigureMsixCapability(cfg, 1, 1, 0x3000, 0x2000);
-    MsixCapability msix(cfg, 0);
-    ASSERT_OK(msix.Init(bar1, bar1));
-    ASSERT_EQ(0x2000u, msix.GetBarDataSize(bar1).value());
-  }
-
-  // Different bars, Tbar will work and Pbar (offset 0) will also report its full BAR size.
-  {
-    ConfigureMsixCapability(cfg, 1, 2, 0x1000, 0x0);
-    MsixCapability msix(cfg, 0);
-    ASSERT_OK(msix.Init(bar1, bar2));
-    ASSERT_EQ(0x1000u, msix.GetBarDataSize(bar1).value());
-    ASSERT_EQ(0x1000u, msix.GetBarDataSize(bar2).value());
-  }
-
-  // Verify data sharing the same page is allowed and truncated based on the second section.
-  {
-    ConfigureMsixCapability(cfg, 1, 1, 0x800, 0x1000);
-    MsixCapability msix(cfg, 0);
-    ASSERT_OK(msix.Init(bar1, bar1));
-    ASSERT_EQ(0x1000u, msix.GetBarDataSize(bar1).value());
-  }
-
-  // Ensure a device cannot access data when a table is not aligned to a page.
-  {
-    uint32_t page_size = zx_system_get_page_size();
-    ConfigureMsixCapability(cfg, 1, 1, page_size + 0x100, page_size + 0x200);
-    MsixCapability msix(cfg, 0);
-    ASSERT_OK(msix.Init(bar1, bar1));
-    ASSERT_EQ(page_size, msix.GetBarDataSize(bar1).value());
-  }
-}
-
 }  // namespace
 }  // namespace pci
