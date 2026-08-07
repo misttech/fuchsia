@@ -443,7 +443,8 @@ cc_test_executable("product_info_provider_unittest_exe") {
   sources = [ "product_info_provider_unittest.cc" ]
 
   deps = [
-    "//sdk/fidl/fuchsia.hwinfo:fuchsia.hwinfo_hlcpp",
+    "//sdk/fidl/fuchsia.hwinfo:fuchsia.hwinfo_cpp",
+    "//sdk/fidl/fuchsia.intl:fuchsia.intl_cpp",
     "//src/developer/forensics/feedback/annotations:product_info_provider",
     "//src/developer/forensics/testing:gtest_with_syslog_main",
     "//third_party/googletest:gmock",

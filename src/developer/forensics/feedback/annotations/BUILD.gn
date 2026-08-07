@@ -186,8 +186,8 @@ source_set("product_info_provider") {
   ]
 
   public_deps = [
-    ":fidl_provider_hlcpp",
-    "//sdk/fidl/fuchsia.hwinfo:fuchsia.hwinfo_hlcpp",
+    ":fidl_provider",
+    "//sdk/fidl/fuchsia.hwinfo:fuchsia.hwinfo_cpp",
     "//src/developer/forensics/feedback/annotations",
   ]
 }

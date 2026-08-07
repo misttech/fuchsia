@@ -4,10 +4,12 @@
 
 #include "src/developer/forensics/feedback/annotations/product_info_provider.h"
 
+#include <fidl/fuchsia.hwinfo/cpp/fidl.h>
+#include <fidl/fuchsia.intl/cpp/fidl.h>
+
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
-#include "fuchsia/intl/cpp/fidl.h"
 #include "src/developer/forensics/feedback/annotations/constants.h"
 #include "src/developer/forensics/feedback/annotations/types.h"
 
@@ -17,22 +19,25 @@ namespace {
 using ::testing::Pair;
 using ::testing::UnorderedElementsAreArray;
 
-TEST(ProductInfoToAnnotationsTest, Convert) {
+TEST(ProductInfoToAnnotationsTest, ConvertSuccess) {
   ProductInfoToAnnotations convert;
 
-  fuchsia::hwinfo::ProductInfo info;
-  EXPECT_THAT(convert(info), UnorderedElementsAreArray({
-                                 Pair(kHardwareProductSKUKey, Error::kMissingValue),
-                                 Pair(kHardwareProductLanguageKey, Error::kMissingValue),
-                                 Pair(kHardwareProductRegulatoryDomainKey, Error::kMissingValue),
-                                 Pair(kHardwareProductLocaleListKey, Error::kMissingValue),
-                                 Pair(kHardwareProductNameKey, Error::kMissingValue),
-                                 Pair(kHardwareProductModelKey, Error::kMissingValue),
-                                 Pair(kHardwareProductManufacturerKey, Error::kMissingValue),
-                             }));
+  fuchsia_hwinfo::ProductInfo info;
+  fuchsia_hwinfo::ProductGetInfoResponse response{{.info = info}};
+  EXPECT_THAT(convert(response),
+              UnorderedElementsAreArray({
+                  Pair(kHardwareProductSKUKey, Error::kMissingValue),
+                  Pair(kHardwareProductLanguageKey, Error::kMissingValue),
+                  Pair(kHardwareProductRegulatoryDomainKey, Error::kMissingValue),
+                  Pair(kHardwareProductLocaleListKey, Error::kMissingValue),
+                  Pair(kHardwareProductNameKey, Error::kMissingValue),
+                  Pair(kHardwareProductModelKey, Error::kMissingValue),
+                  Pair(kHardwareProductManufacturerKey, Error::kMissingValue),
+              }));
 
-  info.set_sku("sku");
-  EXPECT_THAT(convert(info),
+  info.sku("sku");
+  response = fuchsia_hwinfo::ProductGetInfoResponse{{.info = info}};
+  EXPECT_THAT(convert(response),
               UnorderedElementsAreArray({
                   Pair(kHardwareProductSKUKey, ErrorOrString("sku")),
                   Pair(kHardwareProductLanguageKey, ErrorOrString(Error::kMissingValue)),
@@ -43,8 +48,9 @@ TEST(ProductInfoToAnnotationsTest, Convert) {
                   Pair(kHardwareProductManufacturerKey, ErrorOrString(Error::kMissingValue)),
               }));
 
-  info.set_language("language");
-  EXPECT_THAT(convert(info),
+  info.language("language");
+  response = fuchsia_hwinfo::ProductGetInfoResponse{{.info = info}};
+  EXPECT_THAT(convert(response),
               UnorderedElementsAreArray({
                   Pair(kHardwareProductSKUKey, ErrorOrString("sku")),
                   Pair(kHardwareProductLanguageKey, ErrorOrString("language")),
@@ -55,9 +61,11 @@ TEST(ProductInfoToAnnotationsTest, Convert) {
                   Pair(kHardwareProductManufacturerKey, ErrorOrString(Error::kMissingValue)),
               }));
 
-  fuchsia::intl::RegulatoryDomain regulatory_domain;
-  info.set_regulatory_domain(std::move(regulatory_domain.set_country_code("country")));
-  EXPECT_THAT(convert(info),
+  fuchsia_intl::RegulatoryDomain regulatory_domain;
+  regulatory_domain.country_code("country");
+  info.regulatory_domain(regulatory_domain);
+  response = fuchsia_hwinfo::ProductGetInfoResponse{{.info = info}};
+  EXPECT_THAT(convert(response),
               UnorderedElementsAreArray({
                   Pair(kHardwareProductSKUKey, ErrorOrString("sku")),
                   Pair(kHardwareProductLanguageKey, ErrorOrString("language")),
@@ -68,12 +76,13 @@ TEST(ProductInfoToAnnotationsTest, Convert) {
                   Pair(kHardwareProductManufacturerKey, ErrorOrString(Error::kMissingValue)),
               }));
 
-  info.set_locale_list({
-      fuchsia::intl::LocaleId{.id = "locale1"},
-      fuchsia::intl::LocaleId{.id = "locale2"},
-      fuchsia::intl::LocaleId{.id = "locale3"},
+  info.locale_list(std::vector{
+      fuchsia_intl::LocaleId{{.id = "locale1"}},
+      fuchsia_intl::LocaleId{{.id = "locale2"}},
+      fuchsia_intl::LocaleId{{.id = "locale3"}},
   });
-  EXPECT_THAT(convert(info),
+  response = fuchsia_hwinfo::ProductGetInfoResponse{{.info = info}};
+  EXPECT_THAT(convert(response),
               UnorderedElementsAreArray({
                   Pair(kHardwareProductSKUKey, ErrorOrString("sku")),
                   Pair(kHardwareProductLanguageKey, ErrorOrString("language")),
@@ -84,8 +93,9 @@ TEST(ProductInfoToAnnotationsTest, Convert) {
                   Pair(kHardwareProductManufacturerKey, ErrorOrString(Error::kMissingValue)),
               }));
 
-  info.set_name("name");
-  EXPECT_THAT(convert(info),
+  info.name("name");
+  response = fuchsia_hwinfo::ProductGetInfoResponse{{.info = info}};
+  EXPECT_THAT(convert(response),
               UnorderedElementsAreArray({
                   Pair(kHardwareProductSKUKey, ErrorOrString("sku")),
                   Pair(kHardwareProductLanguageKey, ErrorOrString("language")),
@@ -96,8 +106,9 @@ TEST(ProductInfoToAnnotationsTest, Convert) {
                   Pair(kHardwareProductManufacturerKey, ErrorOrString(Error::kMissingValue)),
               }));
 
-  info.set_model("model");
-  EXPECT_THAT(convert(info),
+  info.model("model");
+  response = fuchsia_hwinfo::ProductGetInfoResponse{{.info = info}};
+  EXPECT_THAT(convert(response),
               UnorderedElementsAreArray({
                   Pair(kHardwareProductSKUKey, ErrorOrString("sku")),
                   Pair(kHardwareProductLanguageKey, ErrorOrString("language")),
@@ -108,8 +119,9 @@ TEST(ProductInfoToAnnotationsTest, Convert) {
                   Pair(kHardwareProductManufacturerKey, ErrorOrString(Error::kMissingValue)),
               }));
 
-  info.set_manufacturer("manufacturer");
-  EXPECT_THAT(convert(info),
+  info.manufacturer("manufacturer");
+  response = fuchsia_hwinfo::ProductGetInfoResponse{{.info = info}};
+  EXPECT_THAT(convert(response),
               UnorderedElementsAreArray({
                   Pair(kHardwareProductSKUKey, ErrorOrString("sku")),
                   Pair(kHardwareProductLanguageKey, ErrorOrString("language")),
@@ -121,7 +133,21 @@ TEST(ProductInfoToAnnotationsTest, Convert) {
               }));
 }
 
-TEST(ProductInforProvider, Keys) {
+TEST(ProductInfoToAnnotationsTest, ConvertError) {
+  ProductInfoToAnnotations convert;
+  EXPECT_THAT(convert(Error::kConnectionError),
+              UnorderedElementsAreArray({
+                  Pair(kHardwareProductSKUKey, Error::kConnectionError),
+                  Pair(kHardwareProductLanguageKey, Error::kConnectionError),
+                  Pair(kHardwareProductRegulatoryDomainKey, Error::kConnectionError),
+                  Pair(kHardwareProductLocaleListKey, Error::kConnectionError),
+                  Pair(kHardwareProductNameKey, Error::kConnectionError),
+                  Pair(kHardwareProductModelKey, Error::kConnectionError),
+                  Pair(kHardwareProductManufacturerKey, Error::kConnectionError),
+              }));
+}
+
+TEST(ProductInfoProvider, Keys) {
   // Safe to pass nullptrs b/c objects are never used.
   ProductInfoProvider provider(nullptr, nullptr, nullptr);
 
