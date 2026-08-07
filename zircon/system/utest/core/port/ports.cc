@@ -2,8 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <lib/zx/channel.h>
 #include <lib/zx/clock.h>
 #include <lib/zx/event.h>
+#include <lib/zx/exception.h>
 #include <lib/zx/job.h>
 #include <lib/zx/port.h>
 #include <lib/zx/process.h>
@@ -13,6 +15,7 @@
 #include <zircon/errors.h>
 #include <zircon/process.h>
 #include <zircon/syscalls.h>
+#include <zircon/syscalls/exception.h>
 #include <zircon/syscalls/port.h>
 #include <zircon/types.h>
 
@@ -20,6 +23,7 @@
 #include <barrier>
 #include <cstdio>
 #include <iterator>
+#include <latch>
 #include <string>
 #include <thread>
 
@@ -202,6 +206,69 @@ TEST(PortStressTest, QueuePacketAfterPortClosedConcurrentRace) {
     running.store(false, std::memory_order_seq_cst);
     signaler.join();
   }
+}
+
+// Tests that exceeding the maximum allocated packet limit (kMaxAllocatedPacketCountPerPort = 4096)
+// triggers a policy exception with code ZX_EXCP_POLICY_CODE_PORT_TOO_MANY_PACKETS.
+TEST(PortTest, QueuePacketLimitExceededGeneratesPolicyException) {
+  zx::port port;
+  ASSERT_OK(zx::port::create(0u, &port));
+
+  constexpr size_t kLimit = 4096u;
+  // Pre-queue 4096 ephemeral user packets.
+  zx_port_packet_t packet = {.type = ZX_PKT_TYPE_USER};
+  for (size_t i = 0; i < kLimit; ++i) {
+    packet.key = i;
+    ASSERT_OK(port.queue(&packet));
+  }
+
+  zx::event start_event;
+  ASSERT_OK(zx::event::create(0u, &start_event));
+  std::latch should_start(1);
+
+  std::thread worker([&]() {
+    // Wait until the main thread binds the process exception channel.
+    should_start.wait();
+
+    // Queue packets until the limit (kMaxAllocatedPacketCountPerPort = 4096) is exceeded.
+    // The kernel raises ZX_EXCP_POLICY_CODE_PORT_TOO_MANY_PACKETS and returns ZX_ERR_SHOULD_WAIT.
+    while (port.queue(&packet) == ZX_OK) {
+      ++packet.key;
+    }
+  });
+
+  // Bind the process exception channel now that the worker thread has already started.
+  zx::channel exception_channel;
+  ASSERT_OK(zx_task_create_exception_channel(zx_process_self(), 0,
+                                             exception_channel.reset_and_get_address()));
+
+  // Signal the worker to attempt queueing the 4097th packet.
+  should_start.count_down();
+
+  // Wait for the policy exception on the process exception channel.
+  zx_exception_info_t info = {};
+  zx::exception exception;
+  ASSERT_OK(exception_channel.wait_one(ZX_CHANNEL_READABLE, zx::time::infinite(), nullptr));
+  ASSERT_OK(exception_channel.read(0, &info, exception.reset_and_get_address(), sizeof(info), 1,
+                                   nullptr, nullptr));
+  EXPECT_EQ(info.type, ZX_EXCP_POLICY_ERROR);
+
+  zx_exception_report_t report = {};
+  zx::thread thread;
+  ASSERT_OK(exception.get_thread(&thread));
+  ASSERT_OK(
+      thread.get_info(ZX_INFO_THREAD_EXCEPTION_REPORT, &report, sizeof(report), nullptr, nullptr));
+  EXPECT_EQ(report.header.type, ZX_EXCP_POLICY_ERROR);
+  EXPECT_EQ(report.context.synth_code, ZX_EXCP_POLICY_CODE_PORT_TOO_MANY_PACKETS);
+
+  // Resume the thread from the exception and close the exception channel so
+  // thread exit notifications do not block the worker thread from completing.
+  uint32_t state = ZX_EXCEPTION_STATE_HANDLED;
+  ASSERT_OK(exception.set_property(ZX_PROP_EXCEPTION_STATE, &state, sizeof(state)));
+  exception.reset();
+  exception_channel.reset();
+
+  worker.join();
 }
 
 // What matters here is not so much the return values, but that the system doesn't
