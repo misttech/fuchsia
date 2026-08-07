@@ -60,6 +60,13 @@ static VIM3_PARSER_CONFIG: DmlParserConfig = DmlParserConfig {
                     destination: Destination::BindRules,
                     required: true,
                 },
+                PropertyRule {
+                    bind_key: "fuchsia.NAME",
+                    sources: &[ValueSource::ResourceNode],
+                    value_type: RuleValueType::String,
+                    destination: Destination::BindRules,
+                    required: true,
+                },
             ],
             ..DEFAULT_SERVICE_BIND_CONFIG
         },
