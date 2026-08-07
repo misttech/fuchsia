@@ -66,6 +66,17 @@ gracefully, then the `BlockUntilSuccess()` method can be used.  It just does
 `std::thread::join()` on it, but after removing the exception-catching
 machinery from the thread so that a crash is a crash.
 
+### Register Access
+
+The `Registers()` and `SetRegisters()` methods can be used on a thread while
+it's stopped to fetch and/or mutate the thread's registers.  These methods take
+an optional template parameter for the type of registers; the default is
+`zx_thread_state_general_regs_t`.
+
+The [`lib/captive-thread/registers.h`](include/lib/captive-thread/registers.h)
+header provides some convenient APIs for picking apart the register data in
+terms of each machine's ABI use of its registers.
+
 ## Testing Support
 
 The additional [testing](testing) library provides gmock matchers and related

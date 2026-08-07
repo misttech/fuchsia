@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include <lib/captive-thread/captive-thread.h>
+#include <lib/captive-thread/registers.h>
 #include <lib/captive-thread/testing/matchers.h>
 
 #include <cstdint>
@@ -173,6 +174,35 @@ TEST(CaptiveThreadTests, Matchers) {
   }
 }
 
+TEST(CaptiveThreadTests, Registers) {
+  captive_thread::CaptiveThread thread{Crash};
+  EXPECT_THAT(thread.WaitForException(), captive_thread::testing::HasRegisters());
+  EXPECT_THAT(thread.WaitForException(), HasRegisters(captive_thread::testing::WithPc(Ne(0))));
+  EXPECT_THAT(thread.Registers(), HasRegisters(captive_thread::testing::WithTp(Ne(0))));
+
+  auto regs = thread.Registers();
+  EXPECT_TRUE(regs.is_ok()) << regs.status_string();
+  if (regs.is_ok()) {
+    EXPECT_THAT(*regs, captive_thread::testing::WithSp(Ne(0)));
+
+    // The names differ, but there are pairs for each special register.
+    auto special = captive_thread::SpecialRegisters(*regs);
+    std::vector matchers{
+        Pair(_, special.pc()),
+        Pair(_, special.sp()),
+        Pair(_, special.tp()),
+    };
+    if (std::optional<uint64_t> ra = special.ra()) {
+      matchers.push_back(Pair(_, *ra));
+    }
+    if (std::optional<uint64_t> scsp = special.scsp()) {
+      matchers.push_back(Pair(_, *scsp));
+    }
+    auto special_regs = captive_thread::testing::AsContainer(IsSupersetOf(matchers));
+    EXPECT_THAT(thread.Registers(), HasRegisters(special_regs));
+  }
+}
+
 TEST(CaptiveThreadTests, ResolveException) {
   bool started = true, finished = false;
   captive_thread::CaptiveThread thread{[&started, &finished] {
@@ -180,24 +210,19 @@ TEST(CaptiveThreadTests, ResolveException) {
     Crash();
     finished = true;
   }};
-  ASSERT_THAT(thread.WaitForException(), AllOf(captive_thread::testing::IsTrap()));
+  ASSERT_THAT(thread.WaitForException(),
+              AllOf(captive_thread::testing::IsTrap(),  //
+                    captive_thread::testing::HasRegisters()));
   EXPECT_TRUE(started);
   EXPECT_FALSE(finished);
-  zx_thread_state_general_regs_t regs;
-  zx::result result = zx::make_result(
-      thread.thread_handle()->read_state(ZX_THREAD_STATE_GENERAL_REGS, &regs, sizeof(regs)));
-  ASSERT_TRUE(result.is_ok()) << result.status_value();
-#ifdef __x86_64__
-  regs.rip += captive_thread::kTrapInstructionSize;
-#else
-  regs.pc += captive_thread::kTrapInstructionSize;
-#endif
-  result = zx::make_result(
-      thread.thread_handle()->write_state(ZX_THREAD_STATE_GENERAL_REGS, &regs, sizeof(regs)));
+  auto regs = *thread.Registers();
+  captive_thread::SpecialRegisters(regs).pc() += captive_thread::kTrapInstructionSize;
+  zx::result result = thread.SetRegisters(regs);
   ASSERT_TRUE(result.is_ok()) << result.status_string();
   thread.ResolveException();
   EXPECT_FALSE(thread.IsStopped());
-  ASSERT_THAT(thread.WaitForException(), Not(captive_thread::testing::GotException()));
+  ASSERT_THAT(thread.WaitForException(), Not(captive_thread::testing::GotException()))
+      << ::testing::PrintToString(captive_thread::testing::RegistersAsContainer(thread));
   ASSERT_FALSE(thread.IsStopped());
   thread.BlockUntilSuccess();
   EXPECT_TRUE(finished);

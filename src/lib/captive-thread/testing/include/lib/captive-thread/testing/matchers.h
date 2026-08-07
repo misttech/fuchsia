@@ -6,9 +6,14 @@
 #define SRC_LIB_CAPTIVE_THREAD_TESTING_INCLUDE_LIB_CAPTIVE_THREAD_TESTING_MATCHERS_H_
 
 #include <lib/captive-thread/captive-thread.h>
+#include <lib/captive-thread/registers.h>
 #include <zircon/exception.h>
 
+#include <concepts>
+#include <format>
 #include <ios>
+#include <ostream>
+#include <type_traits>
 
 #include <gmock/gmock.h>
 
@@ -113,6 +118,131 @@ MATCHER_P(IsPageFault, matcher,
   auto address_matcher = ResultOf("fault address", FaultAddress, matcher);
   return ::testing::ExplainMatchResult(  //
       AllOf(IsPageFault(), address_matcher), *report, result_listener);
+}
+
+// HasRegisters() just checks that the registers can be fetched at all, which
+// requires a stopped thread.  HasRegister<zx_thread_state_*_regs_t>() can
+// specify which registers, the default being zx_thread_state_general_regs_t.
+// With a matcher argument, that matcher is applied to the ..._regs_t type.
+
+template <RegistersType Regs, class Matcher>
+class HasRegistersMatcher {
+ public:
+  using is_gtest_matcher = void;
+
+  constexpr explicit HasRegistersMatcher(Matcher matcher) : matcher_{std::move(matcher)} {}
+
+  bool MatchAndExplain(auto&& arg, ::testing::MatchResultListener* result_listener) const {
+    CaptiveThread* thread = MatcherThread(arg, result_listener);
+    if (!thread) {
+      return false;
+    }
+    return MatchAndExplain(thread->Registers<Regs>(), result_listener);
+  }
+
+  bool MatchAndExplain(zx::result<Regs> regs,
+                       ::testing::MatchResultListener* result_listener) const {
+    if (regs.is_error()) {
+      *result_listener << "cannot get thread registers: " << regs.status_string();
+      return false;
+    }
+    return ::testing::ExplainMatchResult(matcher_, *regs, result_listener);
+  }
+
+  void DescribeTo(std::ostream* os) const {
+    *os << "has registers";
+    if (kMatcher) {
+      *os << " that " << ::testing::DescribeMatcher<Regs>(matcher_, false);
+    }
+  }
+
+  void DescribeNegationTo(std::ostream* os) const {
+    *os << "has no registers";
+    if (kMatcher) {
+      *os << " that ";
+      ::testing::DescribeMatcher<Regs>(matcher_, false);
+    }
+  }
+
+ private:
+  static constexpr bool kMatcher = !std::same_as<Matcher, std::decay_t<decltype(::testing::_)>>;
+
+  Matcher matcher_;
+};
+
+template <RegistersType Regs = zx_thread_state_general_regs_t, class Matcher>
+constexpr auto HasRegisters(Matcher matcher) {
+  return HasRegistersMatcher<Regs, Matcher>{std::move(matcher)};
+}
+
+template <RegistersType Regs = zx_thread_state_general_regs_t>
+constexpr auto HasRegisters() {
+  return HasRegisters(::testing::_);
+}
+
+// WithPc(m) matches zx_thread_state_general_regs_t with PC that m matches.
+// It's used inside HasRegisters().  WithSp() and WithTp() are similar for the
+// stack pointer and thread pointer, respectively.
+MATCHER_P(WithPc, matcher, "") {
+  return ::testing::ExplainMatchResult(matcher, SpecialRegisters(arg).pc(), result_listener);
+}
+MATCHER_P(WithSp, matcher, "") {
+  return ::testing::ExplainMatchResult(matcher, SpecialRegisters(arg).sp(), result_listener);
+}
+MATCHER_P(WithTp, matcher, "") {
+  return ::testing::ExplainMatchResult(matcher, SpecialRegisters(arg).tp(), result_listener);
+}
+MATCHER_P(WithReturnValue, matcher, "") {
+  return ::testing::ExplainMatchResult(matcher, ReturnValueRegisters(arg).front(), result_listener);
+}
+
+struct Hex {
+  constexpr explicit(false) Hex(uint64_t x) : value{x} {}
+
+  constexpr explicit(false) operator uint64_t() const { return value; }
+
+  constexpr auto operator<=>(const Hex&) const = default;
+
+  constexpr std::string AsString() const { return std::format("{:#x}", value); }
+
+  friend void PrintTo(const Hex& hex, std::ostream* os) { *os << hex.AsString(); }
+
+  uint64_t value;
+};
+
+constexpr std::ostream& operator<<(std::ostream& os, const Hex& hex) {
+  return os << hex.AsString();
+}
+
+constexpr Hex AsHex(uint64_t value) { return Hex{value}; }
+
+// HasRegisters(AsContainer(...)) can be used to apply to a container of
+// std::pair<std::string, uint64_t> with the register names and values in the
+// struct order, for more convenient matching and output.
+using RegistersContainer = std::vector<std::pair<std::string, Hex>>;
+RegistersContainer RegistersAsContainer(const zx_thread_state_general_regs_t&);
+RegistersContainer RegistersAsContainer(const zx_thread_state_fp_regs_t&);
+RegistersContainer RegistersAsContainer(const zx_thread_state_vector_regs_t&);
+RegistersContainer RegistersAsContainer(const zx_thread_state_debug_regs_t&);
+template <RegistersType Regs = zx_thread_state_general_regs_t>
+inline RegistersContainer RegistersAsContainer(CaptiveThread& thread) {
+  auto regs = thread.Registers<Regs>();
+  if (regs.is_error()) {
+    return {};
+  }
+  return RegistersAsContainer(*regs);
+}
+MATCHER_P(AsContainer, matcher,
+          (negation ? "don't "s : ""s) + "match as a container that "s +
+              ::testing::DescribeMatcher<RegistersContainer>(matcher, negation)) {
+  return ::testing::ExplainMatchResult(matcher, RegistersAsContainer(arg), result_listener);
+}
+
+void PrintTo(const RegistersContainer&, std::ostream*);
+
+constexpr std::ostream& operator<<(std::ostream& os, const RegistersContainer& regs) {
+  PrintTo(regs, &os);
+  return os;
 }
 
 }  // namespace captive_thread::testing

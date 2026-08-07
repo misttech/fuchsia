@@ -22,5 +22,5 @@ library_headers("headers") {
 static_library("captive-thread-testing") {
   testonly = true
   public_deps = [ ":headers" ]
-  sources = []
+  sources = [ "registers-as-container.cc" ]
 }

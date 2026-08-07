@@ -16,6 +16,17 @@
 namespace captive_thread {
 namespace {
 
+template <RegistersType Regs>
+constexpr uint32_t kRegisterKind = 0;
+template <>
+constexpr uint32_t kRegisterKind<zx_thread_state_general_regs_t> = ZX_THREAD_STATE_GENERAL_REGS;
+template <>
+constexpr uint32_t kRegisterKind<zx_thread_state_fp_regs_t> = ZX_THREAD_STATE_FP_REGS;
+template <>
+constexpr uint32_t kRegisterKind<zx_thread_state_vector_regs_t> = ZX_THREAD_STATE_VECTOR_REGS;
+template <>
+constexpr uint32_t kRegisterKind<zx_thread_state_debug_regs_t> = ZX_THREAD_STATE_DEBUG_REGS;
+
 // This returns zero after filling in the current register values.  It ensures
 // the return value register saved is nonzero.  If these register values are
 // all restored, then this call will return a second time.
@@ -212,6 +223,11 @@ void MarkHandled(zx::unowned_exception exception) {
   ZX_ASSERT_MSG(status == ZX_OK, "ZX_PROP_EXCEPTION_STATE: %s", zx_status_get_string(status));
 }
 
+template <RegistersType Regs>
+auto& StoppedRegs(auto& regs) {
+  return std::get<std::unique_ptr<Regs>>(regs);
+}
+
 }  // namespace
 
 // Start the thread and wait for it to get ready.  Until it's ready,
@@ -271,6 +287,51 @@ void CaptiveThread::ForceJoin() {
   std::exchange(thread_, {}).join();
 }
 
+template <RegistersType Regs>
+zx::result<Regs> CaptiveThread::Registers() {
+  if (!IsStopped()) {
+    return zx::error{ZX_ERR_BAD_STATE};
+  }
+  auto& cached_regs = StoppedRegs<Regs>(stopped_regs_);
+  if (!cached_regs) {
+    std::unique_ptr regs = std::make_unique_for_overwrite<Regs>();
+    // This can still fail if a suspension has started but not been waited for,
+    // but the caller can deal with that.
+    zx_status_t status = thread_handle_.read_state(kRegisterKind<Regs>, regs.get(), sizeof(*regs));
+    if (status != ZX_OK) {
+      return zx::error{status};
+    }
+    cached_regs = std::move(regs);
+  }
+  return zx::ok(*cached_regs);
+}
+
+template zx::result<zx_thread_state_general_regs_t>
+CaptiveThread::Registers<zx_thread_state_general_regs_t>();
+template zx::result<zx_thread_state_fp_regs_t>
+CaptiveThread::Registers<zx_thread_state_fp_regs_t>();
+template zx::result<zx_thread_state_vector_regs_t>
+CaptiveThread::Registers<zx_thread_state_vector_regs_t>();
+template zx::result<zx_thread_state_debug_regs_t>
+CaptiveThread::Registers<zx_thread_state_debug_regs_t>();
+
+template <RegistersType Regs>
+zx::result<> CaptiveThread::SetRegisters(const Regs& regs) {
+  // Clear any cached values, which are no longer likely to be correct.
+  StoppedRegs<Regs>(stopped_regs_).reset();
+
+  return zx::make_result(thread_handle_.write_state(kRegisterKind<Regs>, &regs, sizeof(regs)));
+}
+
+template zx::result<> CaptiveThread::SetRegisters<zx_thread_state_general_regs_t>(
+    const zx_thread_state_general_regs_t&);
+template zx::result<> CaptiveThread::SetRegisters<zx_thread_state_fp_regs_t>(
+    const zx_thread_state_fp_regs_t&);
+template zx::result<> CaptiveThread::SetRegisters<zx_thread_state_vector_regs_t>(
+    const zx_thread_state_vector_regs_t&);
+template zx::result<> CaptiveThread::SetRegisters<zx_thread_state_debug_regs_t>(
+    const zx_thread_state_debug_regs_t&);
+
 zx::result<> CaptiveThread::Suspend() {
   if (IsStopped()) {
     return zx::ok();
@@ -293,6 +354,9 @@ void CaptiveThread::ResumeInternal() {
   suspend_.reset();
   exception_.reset();
   exception_report_.reset();
+
+  // Discard any old cached registers.
+  stopped_regs_ = RegsTuple{};
 }
 
 void CaptiveThread::BlockUntilSuccess() {
@@ -300,6 +364,7 @@ void CaptiveThread::BlockUntilSuccess() {
   ZX_ASSERT(!Joined());
   channel_.reset();
   thread_handle_.reset();
+  stopped_regs_ = RegsTuple{};
   std::exchange(thread_, {}).join();
 }
 

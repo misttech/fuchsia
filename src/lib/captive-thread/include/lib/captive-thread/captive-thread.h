@@ -40,6 +40,21 @@ constexpr uint64_t kTrapInstructionSize =
 #endif
     ;
 
+template <template <class...> class Template>
+using OnRegisterTypes = Template<zx_thread_state_general_regs_t,  //
+                                 zx_thread_state_fp_regs_t,       //
+                                 zx_thread_state_vector_regs_t,   //
+                                 zx_thread_state_debug_regs_t>;
+
+template <class... Regs>
+struct IsRegistersType {
+  template <typename T>
+  static constexpr bool value = (std::same_as<T, Regs> || ...);
+};
+
+template <typename T>
+concept RegistersType = OnRegisterTypes<IsRegistersType>::value<T>;
+
 // CaptiveThread is a large and immovable object.  To move one around, create
 // it with std::make_unique<CaptiveThread>(...) and use it via std::unique_ptr.
 //
@@ -125,6 +140,17 @@ class CaptiveThread {
   // Return the report for the exception, or std::nullopt if !InException().
   std::optional<zx_exception_report_t> ExceptionReport() const { return exception_report_; }
 
+  // Fetch the thread registers.  This caches the value until the next
+  // resumption or SetRegisters(), so it's cheap to call repeatedly.
+  template <RegistersType Regs = zx_thread_state_general_regs_t>
+  zx::result<Regs> Registers();
+
+  // Modify the thread registers.  This clears any values previously cached and
+  // does zx::thread::write_state, so the next Registers<Regs>() call will read
+  // the normalized values back with zx::thread::read_state.
+  template <RegistersType Regs = zx_thread_state_general_regs_t>
+  zx::result<> SetRegisters(const Regs& regs);
+
   // Resume and resolve the exception so no other handler will see it.  Must be
   // called when InException() is true.
   void ResolveException();
@@ -137,6 +163,10 @@ class CaptiveThread {
   friend void PrintTo(const CaptiveThread&, std::ostream* os);
 
  private:
+  template <class... T>
+  using TupleOfPtrs = std::tuple<std::unique_ptr<T>...>;
+  using RegsTuple = OnRegisterTypes<TupleOfPtrs>;
+
   void ResumeInternal();
   zx::result<CaptiveThread*> Wait(zx::time deadline, bool suspend_ok);
 
@@ -147,6 +177,7 @@ class CaptiveThread {
   zx::suspend_token suspend_;
   zx_thread_state_general_regs_t exit_regs_;
   std::optional<zx_exception_report_t> exception_report_;
+  RegsTuple stopped_regs_;
 
   // Note this member is declared last so others are initialized first.
   std::thread thread_;
