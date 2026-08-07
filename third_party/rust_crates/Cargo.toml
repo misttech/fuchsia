@@ -309,7 +309,7 @@ sec1 = { version = "0.8.1", features = ["alloc", "der", "zeroize"] }
 sec1-0_7_3 = { package = "sec1", version = "0.7.3", features = ["alloc", "der", "pkcs8", "zeroize"] }
 spki = { version = "0.8.0", features = ["alloc"] }
 spki-0_7_3 = { package = "spki", version = "0.7.3", features = ["alloc"] }
-tokio = { version = "=1.52.3", default-features = false }
+tokio = { version = "=1.53.1", default-features = false }
 trust-dns-proto = { version = "0.22.0", default-features = false, features = ["testing"] }
 trust-dns-resolver = { version = "0.22.0", default-features = false, features = ["testing"] }
 ttf-parser = "0.25.1"
@@ -360,7 +360,7 @@ tar = "0.4.46"
 term_grid = "0.2.0"
 # TODO(https://fxbug.dev/106164) Enable the "rt" and "net" features here once gnaw
 # supports target-specific feature resolution
-tokio = { version = "=1.52.3", default-features = false }
+tokio = { version = "=1.53.1", default-features = false }
 tokio-stream = "0.1.18"
 xattr = "1.6.1"
 zip = { version = "8.6.0", default-features = false, features = ["deflate-flate2"] }
@@ -464,7 +464,7 @@ prettytable-rs = { path = "forks/prettytable-rs" }
 # Fork of `rapidhash` has quality benchmarks removed; see forks/rapidhash-1.4.0/README.fuchsia.
 rapidhash = { path = "forks/rapidhash-1.4.0" }
 semver = { path = "forks/semver-1.0.28" }
-tokio = { path = "forks/tokio-1.52.3" }
+tokio = { path = "forks/tokio-1.53.1" }
 tracing-core = { path = "forks/tracing-core" }
 tracing-mutex = { path = "forks/tracing-mutex-0.3.2" }
 trait-make = { path = "forks/trait-make" }
@@ -1274,7 +1274,7 @@ env_vars = [
 # TODO(https://fxbug.dev/106164) This manual configuration enables the "rt", "net"
 # "fs" and "sync" features on non-Fuchsia targets. It should be removed
 # once gnaw supports target-specific features.
-[gn.package.tokio."1.52.3"]
+[gn.package.tokio."1.53.1"]
 reviewed_features = [
   "bytes",
   "default",
@@ -1296,7 +1296,7 @@ reviewed_features = [
   "windows-sys",
 ]
 
-[gn.package.tokio."1.52.3".platform."cfg(not(target_os = \"fuchsia\"))"]
+[gn.package.tokio."1.53.1".platform."cfg(not(target_os = \"fuchsia\"))"]
 deps = [
   ":bytes-v1_11_1",
   ":libc-v0_2_189",

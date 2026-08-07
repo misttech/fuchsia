@@ -76,7 +76,7 @@ rust_library(
     }),
     version = "1.11.0",
     deps = [
-        "//third_party/rust_crates/forks/tokio-1.52.3:tokio",
+        "//third_party/rust_crates/forks/tokio-1.53.1:tokio",
         "//third_party/rust_crates/vendor/atomic-waker-1.1.2:atomic_waker",
         "//third_party/rust_crates/vendor/bytes-1.11.1:bytes",
         "//third_party/rust_crates/vendor/futures-channel-0.3.31:futures_channel",

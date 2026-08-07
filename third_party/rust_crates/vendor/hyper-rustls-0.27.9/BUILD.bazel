@@ -87,7 +87,7 @@ rust_library(
     }),
     version = "0.27.9",
     deps = [
-        "//third_party/rust_crates/forks/tokio-1.52.3:tokio",
+        "//third_party/rust_crates/forks/tokio-1.53.1:tokio",
         "//third_party/rust_crates/vendor/http-1.4.2:http",
         "//third_party/rust_crates/vendor/hyper-1.11.0:hyper",
         "//third_party/rust_crates/vendor/hyper-util-0.1.20:hyper_util",

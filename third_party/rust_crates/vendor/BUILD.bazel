@@ -3109,14 +3109,14 @@ alias(
 )
 
 alias(
-    name = "tokio-1.52.3",
-    actual = "//third_party/rust_crates/forks/tokio-1.52.3:tokio",
+    name = "tokio-1.53.1",
+    actual = "//third_party/rust_crates/forks/tokio-1.53.1:tokio",
     tags = ["manual"],
 )
 
 alias(
     name = "tokio",
-    actual = "//third_party/rust_crates/forks/tokio-1.52.3:tokio",
+    actual = "//third_party/rust_crates/forks/tokio-1.53.1:tokio",
     tags = ["manual"],
 )
 

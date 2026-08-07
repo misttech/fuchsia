@@ -79,7 +79,7 @@ rust_library(
     deps = [
         "//third_party/rust_crates/forks/libc-0.2.189:libc",
         "//third_party/rust_crates/forks/nix-0.29.0:nix",
-        "//third_party/rust_crates/forks/tokio-1.52.3:tokio",
+        "//third_party/rust_crates/forks/tokio-1.53.1:tokio",
         "//third_party/rust_crates/vendor/async-notify-0.3.4:async_notify",
         "//third_party/rust_crates/vendor/bytes-1.11.1:bytes",
         "//third_party/rust_crates/vendor/futures-util-0.3.31:futures_util",
