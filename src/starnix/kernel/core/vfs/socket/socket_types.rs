@@ -174,6 +174,17 @@ impl SocketType {
             SocketType::Packet => SOCK_PACKET,
         }
     }
+
+    pub fn is_connection_oriented(&self) -> bool {
+        match self {
+            SocketType::Stream | SocketType::SeqPacket => true,
+            SocketType::Datagram
+            | SocketType::Raw
+            | SocketType::Rdm
+            | SocketType::Dccp
+            | SocketType::Packet => false,
+        }
+    }
 }
 
 #[derive(Default, Debug, Copy, Clone, PartialEq, Eq)]

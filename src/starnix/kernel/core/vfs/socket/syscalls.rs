@@ -629,11 +629,14 @@ fn recvmsg_internal_with_header(
         }
     }
 
-    if info.bytes_read != info.message_length {
+    if socket_ops.socket.socket_type != SocketType::Stream && info.bytes_read != info.message_length
+    {
         message_header.flags |= MSG_TRUNC;
     }
 
-    if flags.contains(SocketMessageFlags::TRUNC) {
+    if flags.contains(SocketMessageFlags::TRUNC)
+        && socket_ops.socket.socket_type != SocketType::Stream
+    {
         Ok(info.message_length)
     } else {
         Ok(info.bytes_read)
@@ -750,7 +753,9 @@ pub fn sys_recvfrom(
         write_socket_address(current_task, user_src_address, user_src_address_length, &bytes)?;
     }
 
-    if flags.contains(SocketMessageFlags::TRUNC) {
+    if flags.contains(SocketMessageFlags::TRUNC)
+        && socket_ops.socket.socket_type != SocketType::Stream
+    {
         Ok(info.message_length)
     } else {
         Ok(info.bytes_read)

@@ -233,7 +233,7 @@ impl Pipe {
             return error!(EAGAIN);
         }
 
-        self.messages.read_stream(data).map(|info| info.bytes_read)
+        self.messages.read_stream(data).map(|(info, _)| info.bytes_read)
     }
 
     pub fn write(

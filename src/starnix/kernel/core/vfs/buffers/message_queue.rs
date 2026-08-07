@@ -104,14 +104,22 @@ impl<D: MessageData> MessageQueue<D> {
     /// # Parameters
     /// - `data`: The `OutputBuffer` to write the data to.
     ///
-    /// Returns the number of bytes that were read into the buffer, and any ancillary data that was
-    /// read.
-    pub fn read_stream(&mut self, data: &mut dyn OutputBuffer) -> Result<MessageReadInfo, Errno> {
+    /// Returns the message information containing the number of bytes read, the address, and any
+    /// ancillary data. Also returns a boolean indicating if any messages were read.
+    pub fn read_stream(
+        &mut self,
+        data: &mut dyn OutputBuffer,
+    ) -> Result<(MessageReadInfo, bool), Errno> {
         let mut total_bytes_read = 0;
         let mut address = None;
         let mut ancillary_data = vec![];
 
-        while let Some(mut message) = self.read_message() {
+        let mut messages_read = 0;
+        loop {
+            let mut message = match self.read_message() {
+                Some(m) => m,
+                None => break,
+            };
             if !Self::update_address(&message, &mut address) {
                 // We've already locked onto an address for this batch of messages, but we
                 // have found a message that doesn't match. We put it back for now and
@@ -119,33 +127,39 @@ impl<D: MessageData> MessageQueue<D> {
                 self.write_front(message);
                 break;
             }
+            messages_read += 1;
 
             let bytes_read = message.data.copy_to_user(data)?;
             total_bytes_read += bytes_read;
 
             if let Some(remaining_data) = message.data.split_off(bytes_read) {
-                // If not all the message data could fit move the ancillary data to the split off
-                // message, so that the ancillary data is returned with the "last" message.
-                self.write_front(Message::new(
-                    remaining_data,
-                    message.address.clone(),
-                    message.ancillary_data,
-                ));
+                // If not all the message data could fit, return the ancillary data now,
+                // and put the remaining data back without it.
+                ancillary_data = message.ancillary_data;
+                self.write_front(Message::new(remaining_data, message.address.clone(), vec![]));
                 break;
             }
 
+            // TODO(https://fxbug.dev/542829111): Only break on credentials if SO_PASSCRED is enabled.
             if !message.ancillary_data.is_empty() {
                 ancillary_data = message.ancillary_data;
                 break;
             }
+
+            if data.available() == 0 {
+                break;
+            }
         }
 
-        Ok(MessageReadInfo {
-            bytes_read: total_bytes_read,
-            message_length: total_bytes_read,
-            address,
-            ancillary_data,
-        })
+        Ok((
+            MessageReadInfo {
+                bytes_read: total_bytes_read,
+                message_length: total_bytes_read,
+                address,
+                ancillary_data,
+            },
+            messages_read > 0,
+        ))
     }
 
     /// Peeks messages until there are no more messages, a message with ancillary data is
@@ -158,16 +172,29 @@ impl<D: MessageData> MessageQueue<D> {
     /// # Parameters
     /// - `data`: The `OutputBuffer` to write the data to.
     ///
-    /// Returns the number of bytes that were read into the buffer, and any ancillary data that was
-    /// read.
-    pub fn peek_stream(&self, data: &mut dyn OutputBuffer) -> Result<MessageReadInfo, Errno> {
+    /// Returns the message information containing the number of bytes read, the address, and any
+    /// ancillary data. Also returns a boolean indicating if any messages were read.
+    pub fn peek_stream(
+        &self,
+        data: &mut dyn OutputBuffer,
+    ) -> Result<(MessageReadInfo, bool), Errno> {
         let mut total_bytes_read = 0;
         let mut address = None;
         let mut ancillary_data = vec![];
 
-        for message in self.messages.iter() {
+        let mut messages_peeked = 0;
+        for (index, message) in self.messages.iter().enumerate() {
+            if index > 0 && data.available() == 0 {
+                break;
+            }
+
             if !Self::update_address(message, &mut address) {
                 break;
+            }
+            messages_peeked += 1;
+
+            if !message.ancillary_data.is_empty() {
+                ancillary_data = message.ancillary_data.clone();
             }
 
             let bytes_read = message.data.copy_to_user(data)?;
@@ -177,43 +204,57 @@ impl<D: MessageData> MessageQueue<D> {
                 break;
             }
 
-            if !message.ancillary_data.is_empty() {
-                ancillary_data = message.ancillary_data.clone();
+            if !ancillary_data.is_empty() {
                 break;
             }
         }
 
-        Ok(MessageReadInfo {
-            bytes_read: total_bytes_read,
-            message_length: total_bytes_read,
-            address,
-            ancillary_data,
-        })
+        Ok((
+            MessageReadInfo {
+                bytes_read: total_bytes_read,
+                message_length: total_bytes_read,
+                address,
+                ancillary_data,
+            },
+            messages_peeked > 0,
+        ))
     }
 
-    pub fn read_datagram(&mut self, data: &mut dyn OutputBuffer) -> Result<MessageReadInfo, Errno> {
+    pub fn read_datagram(
+        &mut self,
+        data: &mut dyn OutputBuffer,
+    ) -> Result<(MessageReadInfo, bool), Errno> {
         if let Some(message) = self.read_message() {
-            Ok(MessageReadInfo {
-                bytes_read: message.data.copy_to_user(data)?,
-                message_length: message.len(),
-                address: message.address,
-                ancillary_data: message.ancillary_data,
-            })
+            Ok((
+                MessageReadInfo {
+                    bytes_read: message.data.copy_to_user(data)?,
+                    message_length: message.len(),
+                    address: message.address,
+                    ancillary_data: message.ancillary_data,
+                },
+                true,
+            ))
         } else {
-            Ok(MessageReadInfo::default())
+            Ok((MessageReadInfo::default(), false))
         }
     }
 
-    pub fn peek_datagram(&mut self, data: &mut dyn OutputBuffer) -> Result<MessageReadInfo, Errno> {
+    pub fn peek_datagram(
+        &mut self,
+        data: &mut dyn OutputBuffer,
+    ) -> Result<(MessageReadInfo, bool), Errno> {
         if let Some(message) = self.peek_message() {
-            Ok(MessageReadInfo {
-                bytes_read: message.data.copy_to_user(data)?,
-                message_length: message.len(),
-                address: message.address.clone(),
-                ancillary_data: message.ancillary_data.clone(),
-            })
+            Ok((
+                MessageReadInfo {
+                    bytes_read: message.data.copy_to_user(data)?,
+                    message_length: message.len(),
+                    address: message.address.clone(),
+                    ancillary_data: message.ancillary_data.clone(),
+                },
+                true,
+            ))
         } else {
-            Ok(MessageReadInfo::default())
+            Ok((MessageReadInfo::default(), false))
         }
     }
 

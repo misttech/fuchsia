@@ -829,7 +829,6 @@
                 "UnixSeqpacketBlockingTest.RecvfromTruncPeekNullBufferRestarted",
 
                 // socket_unix_unbound_stream_test
-                "AllUnixDomainSockets/UnixStreamSocketPairTest.FDPassPartialRead/*",
                 "AllUnixDomainSockets/UnixStreamSocketPairTest.CredPassPartialRead/*",
                 "AllUnixDomainSockets/UnixStreamSocketPairTest.SinglePeek/*",
                 "AllUnixDomainSockets/UnixStreamSocketPairTest.CredsNotCoalescedUp/*",

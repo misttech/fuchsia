@@ -70,6 +70,17 @@
 
 namespace {
 
+class ParameterizedUnixSocketTest : public testing::TestWithParam<int> {
+ protected:
+  int GetSocketType() const { return GetParam(); }
+};
+
+INSTANTIATE_TEST_SUITE_P(
+    UnixSocket, ParameterizedUnixSocketTest, testing::Values(SOCK_STREAM, SOCK_DGRAM),
+    [](const testing::TestParamInfo<ParameterizedUnixSocketTest::ParamType>& info) {
+      return info.param == SOCK_STREAM ? "SOCK_STREAM" : "SOCK_DGRAM";
+    });
+
 TEST(UnixSocket, ReadAfterClose) {
   int fds[2];
 
@@ -80,18 +91,123 @@ TEST(UnixSocket, ReadAfterClose) {
   ASSERT_EQ(1, read(fds[1], buf, 1));
   ASSERT_EQ('0', buf[0]);
   ASSERT_EQ(0, read(fds[1], buf, 1));
+  close(fds[1]);
 }
 
-TEST(UnixSocket, ReadAfterReadShutdown) {
+TEST(UnixSocket, ReadAfterCloseDgram) {
   int fds[2];
 
-  ASSERT_EQ(0, socketpair(AF_UNIX, SOCK_STREAM, 0, fds));
+  ASSERT_EQ(0, socketpair(AF_UNIX, SOCK_DGRAM, 0, fds));
+  int flags = fcntl(fds[1], F_GETFL, 0);
+  ASSERT_EQ(0, fcntl(fds[1], F_SETFL, flags | O_NONBLOCK));
+
+  ASSERT_EQ(1, write(fds[0], "0", 1));
+  ASSERT_EQ(0, close(fds[0]));
+  char buf[1];
+  ASSERT_EQ(1, read(fds[1], buf, 1));
+  ASSERT_EQ('0', buf[0]);
+  ASSERT_THAT(read(fds[1], buf, 1), SyscallFailsWithErrno(EAGAIN));
+  close(fds[1]);
+}
+
+TEST_P(ParameterizedUnixSocketTest, ReadAfterReadShutdown) {
+  int fds[2];
+
+  ASSERT_EQ(0, socketpair(AF_UNIX, GetSocketType(), 0, fds));
   ASSERT_EQ(1, write(fds[0], "0", 1));
   ASSERT_EQ(0, shutdown(fds[1], SHUT_RD));
   char buf[1];
   ASSERT_EQ(1, read(fds[1], buf, 1));
   ASSERT_EQ('0', buf[0]);
   ASSERT_EQ(0, read(fds[1], buf, 1));
+  close(fds[0]);
+  close(fds[1]);
+}
+
+TEST_P(ParameterizedUnixSocketTest, PeerWriteAfterReadShutdown) {
+  int fds[2];
+
+  ASSERT_EQ(0, socketpair(AF_UNIX, GetSocketType(), 0, fds));
+  ASSERT_EQ(0, shutdown(fds[1], SHUT_RD));
+
+  auto old_handler = signal(SIGPIPE, SIG_IGN);
+  ASSERT_THAT(write(fds[0], "0", 1), SyscallFailsWithErrno(EPIPE));
+  signal(SIGPIPE, old_handler);
+
+  close(fds[0]);
+  close(fds[1]);
+}
+
+TEST(UnixSocket, PeerWriteAfterCloseStream) {
+  int fds[2];
+
+  ASSERT_EQ(0, socketpair(AF_UNIX, SOCK_STREAM, 0, fds));
+  close(fds[1]);
+
+  auto old_handler = signal(SIGPIPE, SIG_IGN);
+  ASSERT_THAT(write(fds[0], "0", 1), SyscallFailsWithErrno(EPIPE));
+  signal(SIGPIPE, old_handler);
+
+  close(fds[0]);
+}
+
+TEST(UnixSocket, PeerWriteAfterCloseDgram) {
+  int fds[2];
+
+  ASSERT_EQ(0, socketpair(AF_UNIX, SOCK_DGRAM, 0, fds));
+  close(fds[1]);
+
+  auto old_handler = signal(SIGPIPE, SIG_IGN);
+  ASSERT_THAT(write(fds[0], "0", 1), SyscallFailsWithErrno(ECONNREFUSED));
+  signal(SIGPIPE, old_handler);
+
+  close(fds[0]);
+}
+
+TEST(UnixSocket, PeerWriteAfterCloseDgramTwice) {
+  int fds[2];
+
+  ASSERT_EQ(0, socketpair(AF_UNIX, SOCK_DGRAM, 0, fds));
+  close(fds[1]);
+
+  auto old_handler = signal(SIGPIPE, SIG_IGN);
+  ASSERT_THAT(write(fds[0], "0", 1), SyscallFailsWithErrno(ECONNREFUSED));
+
+  // Second write should return ENOTCONN because the socket was disconnected
+  // by the first failed write.
+  ASSERT_THAT(write(fds[0], "0", 1), SyscallFailsWithErrno(ENOTCONN));
+  signal(SIGPIPE, old_handler);
+
+  close(fds[0]);
+}
+
+TEST(UnixSocket, PeerWriteAfterShutdownAndCloseDgram) {
+  int fds[2];
+
+  ASSERT_EQ(0, socketpair(AF_UNIX, SOCK_DGRAM, 0, fds));
+  ASSERT_EQ(0, shutdown(fds[1], SHUT_RD));
+  close(fds[1]);
+
+  auto old_handler = signal(SIGPIPE, SIG_IGN);
+  ASSERT_THAT(write(fds[0], "0", 1), SyscallFailsWithErrno(ECONNREFUSED));
+  ASSERT_THAT(write(fds[0], "0", 1), SyscallFailsWithErrno(ENOTCONN));
+  signal(SIGPIPE, old_handler);
+
+  close(fds[0]);
+}
+
+TEST(UnixSocket, UnconnectedShutdownStream) {
+  int fd = socket(AF_UNIX, SOCK_STREAM, 0);
+  ASSERT_LT(-1, fd);
+  ASSERT_EQ(0, shutdown(fd, SHUT_RDWR));
+  close(fd);
+}
+
+TEST(UnixSocket, UnconnectedShutdownDgram) {
+  int fd = socket(AF_UNIX, SOCK_DGRAM, 0);
+  ASSERT_LT(-1, fd);
+  ASSERT_EQ(0, shutdown(fd, SHUT_RDWR));
+  close(fd);
 }
 
 TEST(UnixSocket, HupEvent) {

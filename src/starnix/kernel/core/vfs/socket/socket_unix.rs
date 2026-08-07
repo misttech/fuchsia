@@ -29,7 +29,7 @@ use ebpf_api::{
 use starnix_logging::track_stub;
 use starnix_sync::{LockDepGuard, LockDepMutex, UnixSocketInnerLock, allow_subclass};
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
-use starnix_uapi::errors::{EACCES, EINTR, EPERM, Errno};
+use starnix_uapi::errors::{EACCES, ECONNREFUSED, EINTR, EPERM, Errno};
 use starnix_uapi::file_mode::Access;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::user_address::{UserAddress, UserRef};
@@ -100,7 +100,10 @@ struct UnixSocketInner {
 
     /// Whether this end of the socket has been shut down and can no longer receive message. It is
     /// still possible to send messages to the peer, if it exists and hasn't also been shut down.
-    is_shutdown: bool,
+    is_read_shutdown: bool,
+
+    /// Whether this end of the socket has been shut down and can no longer send messages.
+    is_write_shutdown: bool,
 
     /// Whether the peer had unread data when it was closed. In this case, reads should return
     /// ECONNRESET instead of 0 (eof).
@@ -147,7 +150,8 @@ impl UnixSocket {
             inner: UnixSocketInner {
                 messages: MessageQueue::new(SOCKET_DEFAULT_SIZE),
                 address: None,
-                is_shutdown: false,
+                is_read_shutdown: false,
+                is_write_shutdown: false,
                 peer_closed_with_unread_data: false,
                 linger: uapi::linger::default(),
                 passcred: false,
@@ -577,10 +581,19 @@ impl SocketOps for UnixSocket {
         dest_address: &mut Option<SocketAddress>,
         ancillary_data: &mut Vec<AncillaryData>,
     ) -> Result<usize, Errno> {
-        let (connected_peer, local_address, creds) = {
+        let (connected_peer, local_address, creds, is_write_shutdown) = {
             let inner = self.lock();
-            (inner.peer().map(|p| p.clone()), inner.address.clone(), inner.credentials.clone())
+            (
+                inner.peer().map(|p| p.clone()),
+                inner.address.clone(),
+                inner.credentials.clone(),
+                inner.is_write_shutdown,
+            )
         };
+
+        if is_write_shutdown {
+            return error!(EPIPE);
+        }
 
         let peer = match (connected_peer, dest_address, socket.socket_type) {
             (Some(peer), None, _) => peer,
@@ -599,7 +612,7 @@ impl SocketOps for UnixSocket {
         }
 
         let unix_socket = downcast_socket_to_unix(&peer);
-        let bytes_written = {
+        let write_result = {
             let mut peer = unix_socket.lock();
             if peer.passcred {
                 let creds = creds.unwrap_or_else(|| current_task.current_ucred());
@@ -611,8 +624,22 @@ impl SocketOps for UnixSocket {
                 let context = security::socket_getpeersec_dgram(current_task, socket);
                 ancillary_data.push(AncillaryData::Unix(UnixControlData::Security(context.into())));
             }
-            peer.write(current_task, data, local_address, ancillary_data, socket.socket_type)?
+            peer.write(current_task, data, local_address, ancillary_data, socket.socket_type)
         };
+
+        if let Err(ref err) = write_result {
+            if err.code == ECONNREFUSED && socket.socket_type == SocketType::Datagram {
+                let mut inner = self.lock();
+                if let UnixSocketState::Connected(ref connected_peer) = inner.state {
+                    if Arc::ptr_eq(connected_peer, &peer) {
+                        inner.state = UnixSocketState::Disconnected;
+                        self.waiters.notify_fd_events(FdEvents::POLLOUT | FdEvents::POLLHUP);
+                    }
+                }
+            }
+        }
+
+        let bytes_written = write_result?;
         if bytes_written > 0 {
             unix_socket.waiters.notify_fd_events(FdEvents::POLLIN);
         }
@@ -632,49 +659,84 @@ impl SocketOps for UnixSocket {
 
     fn query_events(
         &self,
-        _socket: &Socket,
+        socket: &Socket,
         _current_task: &CurrentTask,
     ) -> Result<FdEvents, Errno> {
         // Note that self.lock() must be dropped before acquiring peer.inner.lock() to avoid
         // potential deadlocks.
-        let (mut events, peer) = {
+        let (
+            mut events,
+            peer,
+            local_is_read_shutdown,
+            local_is_write_shutdown,
+            is_closed,
+            is_disconnected,
+        ) = {
             let inner = self.lock();
 
             let mut events = FdEvents::empty();
             let local_events = inner.messages.query_events();
-            // From our end's message queue we only care about POLLIN (whether we have data stored
-            // that's readable). POLLOUT is based on whether the peer end has room in its buffer.
             if local_events.contains(FdEvents::POLLIN) {
-                events = FdEvents::POLLIN;
+                events |= FdEvents::POLLIN;
             }
 
-            if inner.is_shutdown {
-                events |= FdEvents::POLLIN | FdEvents::POLLOUT | FdEvents::POLLHUP;
-            }
-
-            match &inner.state {
-                UnixSocketState::Listening(queue) => {
-                    if !queue.sockets.is_empty() {
-                        events |= FdEvents::POLLIN;
-                    }
+            // Listening socket gets POLLIN when there are pending connections.
+            if let UnixSocketState::Listening(queue) = &inner.state {
+                if !queue.sockets.is_empty() {
+                    events |= FdEvents::POLLIN;
                 }
-                UnixSocketState::Closed => {
-                    events |= FdEvents::POLLHUP;
-                }
-                _ => {}
             }
 
-            (events, inner.peer().cloned())
+            (
+                events,
+                inner.peer().cloned(),
+                inner.is_read_shutdown,
+                inner.is_write_shutdown,
+                matches!(inner.state, UnixSocketState::Closed),
+                matches!(inner.state, UnixSocketState::Disconnected),
+            )
         };
 
-        // Check the peer (outside of our lock) to see if it can accept data written from our end.
+        let connection_oriented = socket.socket_type.is_connection_oriented();
+
+        let mut read_dead = local_is_read_shutdown || is_closed;
+        let mut write_dead = local_is_write_shutdown || is_closed;
+        let mut force_pollout = is_closed || is_disconnected;
+        let mut force_pollhup = false;
+
+        if connection_oriented && is_disconnected {
+            force_pollhup = true;
+            write_dead = true;
+        }
+
         if let Some(peer) = peer {
             let unix_socket = downcast_socket_to_unix(&peer);
             let peer_inner = unix_socket.lock();
+
+            if peer_inner.is_read_shutdown {
+                write_dead = true;
+            }
+            if matches!(peer_inner.state, UnixSocketState::Closed) {
+                read_dead = true;
+                write_dead = true;
+                force_pollout = true;
+            }
+
             let peer_events = peer_inner.messages.query_events();
             if peer_events.contains(FdEvents::POLLOUT) {
                 events |= FdEvents::POLLOUT;
             }
+        }
+
+        if force_pollout {
+            events |= FdEvents::POLLOUT;
+        }
+
+        if read_dead {
+            events |= FdEvents::POLLIN | FdEvents::POLLRDHUP;
+        }
+        if (read_dead && write_dead) || force_pollhup {
+            events |= FdEvents::POLLHUP;
         }
 
         Ok(events)
@@ -683,31 +745,48 @@ impl SocketOps for UnixSocket {
     /// Shuts down this socket according to how, preventing any future reads and/or writes.
     ///
     /// Used by the shutdown syscalls.
-    fn shutdown(&self, _socket: &Socket, how: SocketShutdownFlags) -> Result<(), Errno> {
-        let mut should_notify_self = false;
-        let mut should_notify_peer = false;
+    fn shutdown(&self, socket: &Socket, how: SocketShutdownFlags) -> Result<(), Errno> {
+        let mut self_notify_events = FdEvents::empty();
+        let mut peer_notify_events = FdEvents::empty();
         let peer = {
             let mut inner = self.lock();
-            let peer = inner.peer().ok_or_else(|| errno!(ENOTCONN))?.clone();
             if how.contains(SocketShutdownFlags::READ) {
-                inner.is_shutdown = true;
-                should_notify_self = true;
+                inner.is_read_shutdown = true;
+                self_notify_events |= FdEvents::POLLIN | FdEvents::POLLRDHUP;
             }
-            peer
+            if how.contains(SocketShutdownFlags::WRITE) {
+                inner.is_write_shutdown = true;
+                self_notify_events |= FdEvents::POLLOUT;
+            }
+            if inner.is_read_shutdown && inner.is_write_shutdown {
+                self_notify_events |= FdEvents::POLLHUP;
+            }
+            inner.peer().cloned()
         };
-        if how.contains(SocketShutdownFlags::WRITE) {
-            let unix_socket = downcast_socket_to_unix(&peer);
-            unix_socket.lock().is_shutdown = true;
-            should_notify_peer = true;
+        if let Some(peer) = &peer {
+            if socket.socket_type.is_connection_oriented() {
+                let unix_socket = downcast_socket_to_unix(peer);
+                let mut peer_inner = unix_socket.lock();
+                if how.contains(SocketShutdownFlags::WRITE) {
+                    peer_inner.is_read_shutdown = true;
+                    peer_notify_events |= FdEvents::POLLIN | FdEvents::POLLRDHUP;
+                }
+                if how.contains(SocketShutdownFlags::READ) {
+                    peer_notify_events |= FdEvents::POLLOUT;
+                }
+                if peer_inner.is_read_shutdown && peer_inner.is_write_shutdown {
+                    peer_notify_events |= FdEvents::POLLHUP;
+                }
+            }
         }
-        if should_notify_self {
-            self.waiters.notify_fd_events(FdEvents::POLLIN | FdEvents::POLLOUT | FdEvents::POLLHUP);
+        if !self_notify_events.is_empty() {
+            self.waiters.notify_fd_events(self_notify_events);
         }
-        if should_notify_peer {
-            let unix_socket = downcast_socket_to_unix(&peer);
-            unix_socket
-                .waiters
-                .notify_fd_events(FdEvents::POLLIN | FdEvents::POLLOUT | FdEvents::POLLHUP);
+        if !peer_notify_events.is_empty() {
+            if let Some(peer) = &peer {
+                let unix_socket = downcast_socket_to_unix(peer);
+                unix_socket.waiters.notify_fd_events(peer_notify_events);
+            }
         }
         Ok(())
     }
@@ -726,13 +805,13 @@ impl SocketOps for UnixSocket {
         let (maybe_peer, has_unread) = {
             let mut inner = self.lock();
             let maybe_peer = inner.peer().map(Arc::clone);
-            inner.is_shutdown = true;
+            inner.is_read_shutdown = true;
             inner.state = UnixSocketState::Closed;
             (maybe_peer, !inner.messages.is_empty())
         };
         self.notify_shutdown();
         // If this is a connected socket type, also shut down the connected peer.
-        if socket.socket_type == SocketType::Stream || socket.socket_type == SocketType::SeqPacket {
+        if socket.socket_type.is_connection_oriented() {
             if let Some(peer) = maybe_peer {
                 let unix_socket = downcast_socket_to_unix(&peer);
 
@@ -741,7 +820,7 @@ impl SocketOps for UnixSocket {
                     if has_unread {
                         peer_inner.peer_closed_with_unread_data = true;
                     }
-                    peer_inner.is_shutdown = true;
+                    peer_inner.is_read_shutdown = true;
                 }
                 unix_socket.notify_shutdown();
             }
@@ -942,11 +1021,7 @@ impl UnixSocketInner {
         socket_type: SocketType,
         flags: SocketMessageFlags,
     ) -> Result<MessageReadInfo, Errno> {
-        let mut info = if socket_type == SocketType::Stream {
-            if data.available() == 0 {
-                return Ok(MessageReadInfo::default());
-            }
-
+        let (mut info, has_message) = if socket_type == SocketType::Stream {
             if flags.contains(SocketMessageFlags::PEEK) {
                 self.messages.peek_stream(data)?
             } else {
@@ -957,13 +1032,13 @@ impl UnixSocketInner {
         } else {
             self.messages.read_datagram(data)?
         };
-        if info.message_length == 0 {
+        if !has_message {
             if self.peer_closed_with_unread_data {
                 // Reset the flag
                 self.peer_closed_with_unread_data = false;
                 return error!(ECONNRESET);
             }
-            if !self.is_shutdown {
+            if !self.is_read_shutdown {
                 return error!(EAGAIN);
             }
         }
@@ -1005,7 +1080,14 @@ impl UnixSocketInner {
         ancillary_data: &mut Vec<AncillaryData>,
         socket_type: SocketType,
     ) -> Result<usize, Errno> {
-        if self.is_shutdown {
+        if matches!(self.state, UnixSocketState::Closed) {
+            if !socket_type.is_connection_oriented() {
+                return error!(ECONNREFUSED);
+            } else {
+                return error!(EPIPE);
+            }
+        }
+        if self.is_read_shutdown {
             return error!(EPIPE);
         }
         let filter = |mut message: Message| {

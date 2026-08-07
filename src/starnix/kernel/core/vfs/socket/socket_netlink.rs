@@ -289,12 +289,12 @@ impl NetlinkSocketInner {
         data: &mut dyn OutputBuffer,
         flags: SocketMessageFlags,
     ) -> Result<MessageReadInfo, Errno> {
-        let mut info = if flags.contains(SocketMessageFlags::PEEK) {
+        let (mut info, has_message) = if flags.contains(SocketMessageFlags::PEEK) {
             self.receive_buffer.peek_datagram(data)
         } else {
             self.receive_buffer.read_datagram(data)
         }?;
-        if info.message_length == 0 {
+        if !has_message {
             return error!(EAGAIN);
         }
 
