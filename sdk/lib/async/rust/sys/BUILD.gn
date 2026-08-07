@@ -25,6 +25,7 @@ rustc_library("sys") {
     ":*",
     "//sdk/lib/async/rust/*",
     "//sdk/lib/driver/runtime/rust/fdf_sys/*",
+    "//src/lib/trace/rust/*",
   ]
 }
 

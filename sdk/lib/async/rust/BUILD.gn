@@ -34,6 +34,7 @@ rustc_library("rust") {
     "//sdk/lib/async/*",
     "//sdk/lib/driver/*",
     "//src/devices/bin/driver-host/*",
+    "//src/lib/trace/rust/*",
     "//src/ui/lib/input_pipeline/*",
   ]
 }
