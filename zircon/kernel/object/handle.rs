@@ -5,6 +5,8 @@
 // https://opensource.org/licenses/MIT
 
 use super::DispatcherOps;
+use super::dispatcher::Dispatcher;
+use super::process_dispatcher::ProcessDispatcher;
 use core::ptr::NonNull;
 use fbl::{HasRefCount, Recyclable, RefPtr};
 use zx_status::Status;
@@ -46,16 +48,25 @@ where
     }
 
     /// Casts this handle to a generic Dispatcher handle.
-    pub fn cast(self) -> KernelHandle<super::dispatcher::Dispatcher> {
-        let ptr = self.ptr.cast::<super::dispatcher::Dispatcher>();
-        core::mem::forget(self);
-        KernelHandle { ptr }
+    pub fn cast(mut self) -> KernelHandle<Dispatcher> {
+        let ref_ptr = self.take_ref_ptr().expect("KernelHandle was empty");
+        // SAFETY: Dispatcher upcasting is safe across all DispatcherOps types.
+        KernelHandle::new(unsafe { ref_ptr.cast() })
     }
 
     pub fn release(mut self) -> RefPtr<T> {
-        let ref_ptr = self.take_ref_ptr().expect("KernelHandle was empty");
-        core::mem::forget(self);
-        ref_ptr
+        self.take_ref_ptr().expect("KernelHandle was empty")
+    }
+
+    /// Returns a reference to the underlying `RefPtr<T>`.
+    ///
+    /// Callers can invoke methods directly on `T` (via `Deref`) without bumping the
+    /// reference count, or call `.clone()` on the returned reference to acquire a new `RefPtr<T>`.
+    pub fn dispatcher(&self) -> &RefPtr<T> {
+        assert!(!self.ptr.is_null());
+        // SAFETY: `self.ptr` is non-null and holds an acquired ref count. `RefPtr<T>` is `#[repr(C)]`
+        // containing `NonNull<T>`, which has the exact same layout and ABI as `*const T`.
+        unsafe { &*(core::ptr::from_ref(&self.ptr).cast::<RefPtr<T>>()) }
     }
 
     fn take_ref_ptr(&mut self) -> Option<RefPtr<T>> {
@@ -63,22 +74,13 @@ where
         if ptr.is_null() {
             None
         } else {
-            // SAFETY: ptr came from RefPtr::into_raw.
+            // SAFETY: `ptr` came from an active `KernelHandle` owning a reference count.
             Some(unsafe { RefPtr::from_raw(ptr) })
         }
     }
 
-    pub fn dispatcher(&self) -> &T {
-        assert!(!self.ptr.is_null());
-        // SAFETY: We are holding a reference to the object, which ensures that it lives as long as
-        // we do.
-        unsafe { &*self.ptr }
-    }
-
     pub fn make_and_add_handle(self, rights: zx_rights_t) -> Result<HandleValue, Status> {
-        super::process_dispatcher::ProcessDispatcher::with_current(|up| {
-            up.make_and_add_handle(self, rights)
-        })
+        ProcessDispatcher::with_current(|up| up.make_and_add_handle(self, rights))
     }
 }
 
