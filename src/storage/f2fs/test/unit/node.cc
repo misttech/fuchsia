@@ -1194,6 +1194,47 @@ TEST_F(NodeManagerTest, DnodeBidxConsistency) {
   vn = nullptr;
 }
 
+TEST_F(NodeManagerTest, MalformedNodeTree) TA_NO_THREAD_SAFETY_ANALYSIS {
+  fbl::RefPtr<VnodeF2fs> vnode;
+  FileTester::VnodeWithoutParent(fs_.get(), S_IFREG, vnode);
+  ASSERT_TRUE(vnode->NewInodePage().is_ok());
+
+  fbl::RefPtr<VnodeF2fs> vnode2;
+  FileTester::VnodeWithoutParent(fs_.get(), S_IFREG, vnode2);
+  ASSERT_TRUE(vnode2->NewInodePage().is_ok());
+
+  const pgoff_t direct_index = kAddrsPerInode;
+  LockedPage dnode_page;
+  ASSERT_EQ(GetLockedDnodePage(*vnode, direct_index, &dnode_page), ZX_OK);
+
+  // Corrupt the inode's first direct node pointer (kNodeDir1Block) to point to the other inode NID
+  // instead of the direct node NID.
+  {
+    LockedPage ipage;
+    ASSERT_EQ(fs_->GetNodeManager().GetNodePage(vnode->Ino(), &ipage), ZX_OK);
+    ipage.WaitOnWriteback();
+    ipage.GetPage<NodePage>().SetNid(kNodeDir1Block, vnode2->Ino());
+    ipage.SetDirty();
+  }
+
+  // Attempting to find or get the direct node page should fail with ZX_ERR_NOT_FOUND
+  // because the node at level 1 is an Inode, not a direct node.
+  auto path_or = vnode->GetNodePath(direct_index);
+  ASSERT_TRUE(path_or.is_ok());
+  ASSERT_EQ(fs_->GetNodeManager().FindLockedDnodePage(*path_or).status_value(), ZX_ERR_NOT_FOUND);
+  ASSERT_EQ(fs_->GetNodeManager().GetLockedDnodePage(*path_or, false).status_value(),
+            ZX_ERR_NOT_FOUND);
+
+  // Attempting to truncate should safely succeed by treating the invalid node as already removed,
+  // without out-of-bounds memory access.
+  ASSERT_EQ(vnode->TruncateInodeBlocks(direct_index), ZX_OK);
+
+  ASSERT_EQ(vnode->Close(), ZX_OK);
+  vnode.reset();
+  ASSERT_EQ(vnode2->Close(), ZX_OK);
+  vnode2.reset();
+}
+
 TEST_F(NodeManagerTest, IsDnodeDoubleIndirectSubtree) TA_NO_THREAD_SAFETY_ANALYSIS {
   // Test node classification in double-indirect subtrees (files > ~8MB).
   // In double-indirect subtrees, nodes appear in repeating groups of (kNidsPerBlock + 1):

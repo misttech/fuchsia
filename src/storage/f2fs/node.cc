@@ -319,11 +319,21 @@ zx::result<LockedPage> NodeManager::FindLockedDnodePage(NodePath &path) {
   if (zx_status_t err = GetNodePage(path.ino, &node_page); err != ZX_OK) {
     return zx::error(err);
   }
+  // Ensure the root of the node path is an Inode.
+  if (!node_page.GetPage<NodePage>().IsInode()) {
+    return zx::error(ZX_ERR_NOT_FOUND);
+  }
 
   for (size_t i = 0; i < level; ++i) {
     zx::result page = GetNextNodePage(node_page, offset[i]);
     if (page.is_error()) {
       return page.take_error();
+    }
+    // Ensure intermediate nodes are IndirectNodes and leaf nodes are DirectNodes.
+    if ((*page).GetPage<NodePage>().IsInode() ||
+        (i == level - 1 && !(*page).GetPage<NodePage>().IsDnode()) ||
+        (i < level - 1 && (*page).GetPage<NodePage>().IsDnode())) {
+      return zx::error(ZX_ERR_NOT_FOUND);
     }
     node_page = std::move(*page);
   }
@@ -344,6 +354,10 @@ zx::result<LockedPage> NodeManager::GetLockedDnodePage(NodePath &node_path, bool
   LockedPage node_page;
   if (zx_status_t err = GetNodePage(node_path.ino, &node_page); err != ZX_OK) {
     return zx::error(err);
+  }
+  // Ensure the root of the node path is an Inode.
+  if (!node_page.GetPage<NodePage>().IsInode()) {
+    return zx::error(ZX_ERR_NOT_FOUND);
   }
   LockedPage parent = std::move(node_page);
   for (size_t i = 0; i < level; ++i) {
@@ -370,6 +384,12 @@ zx::result<LockedPage> NodeManager::GetLockedDnodePage(NodePath &node_path, bool
       zx::result page = GetNextNodePage(parent, offset[i]);
       if (page.is_error()) {
         return page.take_error();
+      }
+      // Ensure intermediate nodes are IndirectNodes and leaf nodes are DirectNodes.
+      if ((*page).GetPage<NodePage>().IsInode() ||
+          (i == level - 1 && !(*page).GetPage<NodePage>().IsDnode()) ||
+          (i < level - 1 && (*page).GetPage<NodePage>().IsDnode())) {
+        return zx::error(ZX_ERR_NOT_FOUND);
       }
       node_page = std::move(*page);
     }
@@ -505,6 +525,7 @@ zx::result<LockedPage> NodeManager::GetNextNodePage(LockedPage &node_page, size_
       }
       continue;
     }
+
     nids.push_back(nid);
   }
   ZX_DEBUG_ASSERT(nids.size());

@@ -958,6 +958,11 @@ zx::result<size_t> VnodeF2fs::TruncateDnode(nid_t nid) {
     }
     return zx::error(err);
   }
+  // If the node type is invalid (e.g. an Inode or IndirectNode where a DirectNode is expected),
+  // treat it as already removed so the parent NID pointer is cleanly zeroed out.
+  if (page.GetPage<NodePage>().IsInode() || !page.GetPage<NodePage>().IsDnode()) {
+    return zx::ok(1);
+  }
 
   TruncateDnodeAddrs(page, 0, kAddrsPerBlock);
   TruncateNode(page);
@@ -985,6 +990,11 @@ zx::result<size_t> VnodeF2fs::TruncateNodes(nid_t start_nid, size_t nofs, size_t
       return zx::ok(kInvalidatedNids);
     }
     return zx::ok(kInvalidatedNids * kNidsPerBlock + 1);
+  }
+  // If the node type is invalid (e.g. an Inode or DirectNode where an IndirectNode is expected),
+  // treat the entire indirect subtree as already removed.
+  if (page.GetPage<NodePage>().IsInode() || page.GetPage<NodePage>().IsDnode()) {
+    return zx::ok(depth == 2 ? kInvalidatedNids : kInvalidatedNids * kNidsPerBlock + 1);
   }
 
   size_t child_nofs = 0, freed = 0;
@@ -1043,6 +1053,10 @@ zx_status_t VnodeF2fs::TruncatePartialNodes(const Inode& inode, const size_t (&o
   for (size_t i = 0; i < idx + 1; ++i) {
     if (auto ret = fs_->GetNodeManager().GetNodePage(nid[i], &pages[i]); ret != ZX_OK) {
       return ret;
+    }
+    // Verify intermediate nodes in the path are IndirectNodes.
+    if (pages[i].GetPage<NodePage>().IsInode() || pages[i].GetPage<NodePage>().IsDnode()) {
+      return ZX_ERR_NOT_FOUND;
     }
     nid[i + 1] = pages[i].GetPage<NodePage>().GetNid(offset[i + 1]);
   }
