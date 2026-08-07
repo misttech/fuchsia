@@ -10,6 +10,13 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::default::Default;
 
+#[derive(Clone, Debug, Default, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct Project {
+    /// This is the main data that we want, and is what is produced by `gn desc`
+    pub targets: AllTargets,
+}
+
 pub type AllTargets = HashMap<String, TargetDescription>;
 
 #[derive(Clone, Debug, Deserialize, PartialEq)]

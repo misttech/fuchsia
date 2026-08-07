@@ -135,7 +135,7 @@ def mangle_label(label):
 
 class Project(object):
     def __init__(self, project_json):
-        self.targets = project_json
+        self.targets = project_json["targets"]
         self.patches = None
 
     @functools.cached_property

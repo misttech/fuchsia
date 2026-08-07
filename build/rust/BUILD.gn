@@ -104,8 +104,7 @@ if (current_toolchain != default_toolchain) {
     ]
   }
 } else {
-  gn_desc_label = "//tools/gn_desc:gn_desc.json"
-  gn_desc_out = "$root_build_dir/gn_desc.json"
+  project_json = "$root_build_dir/project.json"
 
   action("cargo_toml_gen") {
     testonly = true
@@ -132,14 +131,14 @@ if (current_toolchain != default_toolchain) {
     script = "//scripts/generate_cargo.py"
     sources = []
     inputs = [
-      gn_desc_out,
+      project_json,
       "//third_party/rust_crates/Cargo.toml",
     ]
     hermetic_deps = false
 
     outputs = [ "$root_build_dir/cargo/generate_cargo.stamp" ]
     args = [
-      rebase_path(gn_desc_out, root_build_dir),
+      rebase_path(project_json, root_build_dir),
       "--root_build_dir",
       ".",
       "--fuchsia_dir",
@@ -147,7 +146,7 @@ if (current_toolchain != default_toolchain) {
     ]
     deps = [
       "//build/rust:api_level_cfg_flags",
-      gn_desc_label,
+      "//tools/gn_desc:gn_project_json",
     ]
     metadata = {
       # Hint to ninja that this action takes about 30 seconds, so that it's

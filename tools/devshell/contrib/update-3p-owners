@@ -115,7 +115,7 @@ fi
   $INTEGRATION_MANIFEST \
   --overrides "$FUCHSIA_DIR/third_party/owners.toml" \
   --fuchsia-dir "$FUCHSIA_DIR" \
-  --gn-desc "$FUCHSIA_BUILD_DIR/gn_desc.json" \
+  --project-json "$FUCHSIA_BUILD_DIR/project.json" \
   --filter <( git -C "$FUCHSIA_DIR" ls-files | grep "\/OWNERS$" ) \
   $PROJECT_PATH \
   $SKIP_EXISTING \

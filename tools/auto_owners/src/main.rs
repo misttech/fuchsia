@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, bail, Context as _, Result};
+use anyhow::{Context as _, Result, anyhow, bail};
 use argh::FromArgs;
 use camino::{Utf8Path, Utf8PathBuf};
 use gnaw_lib::CrateOutputMetadata;
@@ -41,9 +41,9 @@ struct Options {
     #[argh(option)]
     fuchsia_dir: Utf8PathBuf,
 
-    /// path to the prebuilt GN binary
+    /// path to the project.json file created by `gn gen --ide=json`
     #[argh(option)]
-    gn_desc: Utf8PathBuf,
+    project_json: Utf8PathBuf,
 
     /// generate OWNERS only for the given projects path. Can be repeated.
     #[argh(option, long = "path")]
@@ -133,7 +133,7 @@ impl OwnersDb {
             integration_manifest,
             overrides,
             fuchsia_dir,
-            gn_desc,
+            project_json,
             project_paths,
             filter,
             skip_existing,
@@ -164,7 +164,7 @@ impl OwnersDb {
             vec![]
         };
 
-        let gn_targets = gn_json::parse_file(gn_desc)?;
+        let gn_targets = gn_json::parse_file(project_json)?;
         let gn_graph = gn_graph::Graph::create_from(gn_targets)?;
 
         // OWNERS path is currently only cached for rust projects.
@@ -724,8 +724,8 @@ mod tests {
         let test_dir = setup_test_dir("owners");
         let test_dir_path = Utf8Path::from_path(test_dir.path()).unwrap();
 
-        let gn_desc = test_dir_path.join("out/gn_desc.json");
-        let gn_targets = gn_json::parse_file(gn_desc).unwrap();
+        let project_json = test_dir_path.join("out/project.json");
+        let gn_targets = gn_json::parse_file(project_json).unwrap();
         let gn_graph = gn_graph::Graph::create_from(gn_targets).unwrap();
 
         let projects =
@@ -749,8 +749,8 @@ mod tests {
         let test_dir = setup_test_dir("owners");
         let test_dir_path = Utf8Path::from_path(test_dir.path()).unwrap();
 
-        let gn_desc = test_dir_path.join("out/gn_desc.json");
-        let gn_targets = gn_json::parse_file(gn_desc).unwrap();
+        let project_json = test_dir_path.join("out/project.json");
+        let gn_targets = gn_json::parse_file(project_json).unwrap();
         let gn_graph = gn_graph::Graph::create_from(gn_targets).unwrap();
 
         assert_eq!(
@@ -772,24 +772,28 @@ mod tests {
         let mut expected_owner_files = read_owners(&test_dir_path);
         assert!(!expected_owner_files.contains_key("third_party/bar/OWNERS"));
         assert!(!expected_owner_files.contains_key("third_party/rust_crates/foo/OWNERS"));
-        assert!(!expected_owner_files
-            .contains_key("third_party/rust_crates/with-dashes-and-version-0.1.0/OWNERS"));
+        assert!(
+            !expected_owner_files
+                .contains_key("third_party/rust_crates/with-dashes-and-version-0.1.0/OWNERS")
+        );
 
-        assert!(OwnersDb::new(Options {
-            rust_metadata: Some(PATHS.test_base_dir.join("owners/rust_metadata.json")),
-            integration_manifest: None,
-            filter: Some(test_dir_path.join("filter-files")),
-            overrides: PATHS.test_base_dir.join("owners/owners.toml"),
-            gn_desc: test_dir_path.join("out/gn_desc.json"),
-            fuchsia_dir: test_dir_path.to_path_buf(),
-            skip_existing: false,
-            project_paths: vec![],
-            dry_run: false,
-            generate_owners_from_reverse_deps: true,
-        })
-        .expect("valid OwnersDb")
-        .update_all_files()
-        .is_ok());
+        assert!(
+            OwnersDb::new(Options {
+                rust_metadata: Some(PATHS.test_base_dir.join("owners/rust_metadata.json")),
+                integration_manifest: None,
+                filter: Some(test_dir_path.join("filter-files")),
+                overrides: PATHS.test_base_dir.join("owners/owners.toml"),
+                project_json: test_dir_path.join("out/project.json"),
+                fuchsia_dir: test_dir_path.to_path_buf(),
+                skip_existing: false,
+                project_paths: vec![],
+                dry_run: false,
+                generate_owners_from_reverse_deps: true,
+            })
+            .expect("valid OwnersDb")
+            .update_all_files()
+            .is_ok()
+        );
 
         // Only these paths should be created.
         expected_owner_files.insert(
@@ -823,24 +827,28 @@ mod tests {
         let mut expected_owner_files = read_owners(&test_dir_path);
         assert!(!expected_owner_files.contains_key("third_party/bar/OWNERS"));
         assert!(!expected_owner_files.contains_key("third_party/rust_crates/foo/OWNERS"));
-        assert!(!expected_owner_files
-            .contains_key("third_party/rust_crates/with-dashes-and-version-0.1.0/OWNERS"));
+        assert!(
+            !expected_owner_files
+                .contains_key("third_party/rust_crates/with-dashes-and-version-0.1.0/OWNERS")
+        );
 
-        assert!(OwnersDb::new(Options {
-            rust_metadata: Some(PATHS.test_base_dir.join("owners/rust_metadata.json")),
-            integration_manifest: None,
-            filter: Some(test_dir_path.join("filter-files")),
-            overrides: PATHS.test_base_dir.join("owners/owners.toml"),
-            gn_desc: test_dir_path.join("out/gn_desc.json"),
-            fuchsia_dir: test_dir_path.to_path_buf(),
-            skip_existing: false,
-            project_paths: vec![],
-            dry_run: false,
-            generate_owners_from_reverse_deps: true,
-        })
-        .expect("valid OwnersDb")
-        .update_all_files()
-        .is_ok());
+        assert!(
+            OwnersDb::new(Options {
+                rust_metadata: Some(PATHS.test_base_dir.join("owners/rust_metadata.json")),
+                integration_manifest: None,
+                filter: Some(test_dir_path.join("filter-files")),
+                overrides: PATHS.test_base_dir.join("owners/owners.toml"),
+                project_json: test_dir_path.join("out/project.json"),
+                fuchsia_dir: test_dir_path.to_path_buf(),
+                skip_existing: false,
+                project_paths: vec![],
+                dry_run: false,
+                generate_owners_from_reverse_deps: true,
+            })
+            .expect("valid OwnersDb")
+            .update_all_files()
+            .is_ok()
+        );
 
         // Only these paths should be created.
         expected_owner_files.insert(
@@ -874,8 +882,10 @@ mod tests {
         let mut expected_owner_files = read_owners(&test_dir_path);
         assert!(!expected_owner_files.contains_key("third_party/bar/OWNERS"));
         assert!(!expected_owner_files.contains_key("third_party/rust_crates/foo/OWNERS"));
-        assert!(!expected_owner_files
-            .contains_key("third_party/rust_crates/with-dashes-and-version-0.1.0/OWNERS"));
+        assert!(
+            !expected_owner_files
+                .contains_key("third_party/rust_crates/with-dashes-and-version-0.1.0/OWNERS")
+        );
 
         assert_matches!(
             OwnersDb::new(Options {
@@ -883,7 +893,7 @@ mod tests {
                 integration_manifest: Some(PATHS.test_base_dir.join("owners/manifest")),
                 filter: Some(test_dir_path.join("filter-files")),
                 overrides: PATHS.test_base_dir.join("owners/owners.toml"),
-                gn_desc: test_dir_path.join("out/gn_desc.json"),
+                project_json: test_dir_path.join("out/project.json"),
                 fuchsia_dir: test_dir_path.to_path_buf(),
                 skip_existing: true,
                 project_paths: vec![],
@@ -932,7 +942,7 @@ mod tests {
             integration_manifest: Some(PATHS.test_base_dir.join("owners/manifest")),
             filter: Some(test_dir_path.join("filter-files")),
             overrides: PATHS.test_base_dir.join("owners/owners.toml"),
-            gn_desc: test_dir_path.join("out/gn_desc.json"),
+            project_json: test_dir_path.join("out/project.json"),
             fuchsia_dir: test_dir_path.to_path_buf(),
             skip_existing: false,
             project_paths: vec![],
@@ -974,7 +984,7 @@ mod tests {
                 integration_manifest: None,
                 filter: Some(test_dir_path.join("filter-files")),
                 overrides: PATHS.test_base_dir.join("owners/owners.toml"),
-                gn_desc: test_dir_path.join("out/gn_desc.json"),
+                project_json: test_dir_path.join("out/project.json"),
                 fuchsia_dir: test_dir_path.to_path_buf(),
                 skip_existing: false,
                 project_paths: vec!["third_party/bar/".to_string()],
@@ -1007,21 +1017,23 @@ mod tests {
         assert!(!expected_owner_files.contains_key("third_party/bar/OWNERS"));
 
         // the 'baz' project is depended on by file, not gn target.
-        assert!(OwnersDb::new(Options {
-            rust_metadata: None,
-            integration_manifest: None,
-            filter: Some(test_dir_path.join("filter-files")),
-            overrides: PATHS.test_base_dir.join("owners/owners.toml"),
-            gn_desc: test_dir_path.join("out/gn_desc.json"),
-            fuchsia_dir: test_dir_path.to_path_buf(),
-            skip_existing: false,
-            project_paths: vec!["third_party/baz/".to_string()],
-            dry_run: false,
-            generate_owners_from_reverse_deps: true,
-        })
-        .expect("valid OwnersDb")
-        .update_all_files()
-        .is_ok());
+        assert!(
+            OwnersDb::new(Options {
+                rust_metadata: None,
+                integration_manifest: None,
+                filter: Some(test_dir_path.join("filter-files")),
+                overrides: PATHS.test_base_dir.join("owners/owners.toml"),
+                project_json: test_dir_path.join("out/project.json"),
+                fuchsia_dir: test_dir_path.to_path_buf(),
+                skip_existing: false,
+                project_paths: vec!["third_party/baz/".to_string()],
+                dry_run: false,
+                generate_owners_from_reverse_deps: true,
+            })
+            .expect("valid OwnersDb")
+            .update_all_files()
+            .is_ok()
+        );
 
         // Only these paths should be created.
         expected_owner_files.insert(
@@ -1080,30 +1092,18 @@ mod tests {
         drop(filter_file);
 
         // generate a gn out directory
-        assert!(Command::new(&PATHS.gn_binary_path)
-            .current_dir(&test_dir_path)
-            .arg("gen")
-            .arg(&out_dir)
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
-            .expect("generating out directory")
-            .success());
-
-        // generate a gn desc json file.
-        let gn_desc = out_dir.join("gn_desc.json");
-        assert!(Command::new(&PATHS.gn_binary_path)
-            .current_dir(test_dir_path)
-            .arg("desc")
-            .arg(&out_dir)
-            .arg("//*")
-            .arg("--format=json")
-            .arg("--all-toolhcains")
-            .stdout(File::create(gn_desc).unwrap())
-            .stderr(Stdio::null())
-            .status()
-            .expect("generating a gn_desc.json")
-            .success());
+        assert!(
+            Command::new(&PATHS.gn_binary_path)
+                .current_dir(&test_dir_path)
+                .arg("gen")
+                .arg(&out_dir)
+                .arg("--ide=json")
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()
+                .expect("generating out directory")
+                .success()
+        );
 
         test_dir
     }
@@ -1117,24 +1117,28 @@ mod tests {
         let mut expected_owner_files = read_owners(&test_dir_path);
         assert!(!expected_owner_files.contains_key("third_party/bar/OWNERS"));
         assert!(!expected_owner_files.contains_key("third_party/rust_crates/foo/OWNERS"));
-        assert!(!expected_owner_files
-            .contains_key("third_party/rust_crates/with-dashes-and-version-0.1.0/OWNERS"));
+        assert!(
+            !expected_owner_files
+                .contains_key("third_party/rust_crates/with-dashes-and-version-0.1.0/OWNERS")
+        );
 
-        assert!(OwnersDb::new(Options {
-            rust_metadata: Some(PATHS.test_base_dir.join("owners/rust_metadata.json")),
-            integration_manifest: None,
-            filter: Some(test_dir_path.join("filter-files")),
-            overrides: PATHS.test_base_dir.join("owners/owners.toml"),
-            gn_desc: test_dir_path.join("out/gn_desc.json"),
-            fuchsia_dir: test_dir_path.to_path_buf(),
-            skip_existing: false,
-            project_paths: vec![],
-            dry_run: false,
-            generate_owners_from_reverse_deps: false,
-        })
-        .expect("valid OwnersDb")
-        .update_all_files()
-        .is_ok());
+        assert!(
+            OwnersDb::new(Options {
+                rust_metadata: Some(PATHS.test_base_dir.join("owners/rust_metadata.json")),
+                integration_manifest: None,
+                filter: Some(test_dir_path.join("filter-files")),
+                overrides: PATHS.test_base_dir.join("owners/owners.toml"),
+                project_json: test_dir_path.join("out/project.json"),
+                fuchsia_dir: test_dir_path.to_path_buf(),
+                skip_existing: false,
+                project_paths: vec![],
+                dry_run: false,
+                generate_owners_from_reverse_deps: false,
+            })
+            .expect("valid OwnersDb")
+            .update_all_files()
+            .is_ok()
+        );
 
         // Only these paths should be created.
         expected_owner_files.insert(

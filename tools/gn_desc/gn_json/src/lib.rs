@@ -25,12 +25,19 @@ pub fn from_str(s: &str) -> serde_json::Result<crate::target::AllTargets> {
 /// This is an optimized implementation that trades memory (potentially a lot)
 /// for speed when parsing the JSON produced by GN.
 pub fn parse_file(path: impl AsRef<Path>) -> anyhow::Result<crate::target::AllTargets> {
+    let path = path.as_ref();
+    parse_file_impl(path)
+}
+
+/// Internal implementation of the above function, so that this is code is fully
+/// optimized (i.e. monomorphized) in this crate.
+fn parse_file_impl(path: &Path) -> anyhow::Result<crate::target::AllTargets> {
     // Reading to a string before parsing is considerably faster than letting
     // serde parse from a BufferedReader (saves about 30% based on testing with
-    // with large gn_desc.json files (>500MB).
-    let path = path.as_ref();
+    // with large project.json files (>500MB).
     let gn_desc_json = std::fs::read_to_string(path)
         .with_context(|| format!("Unable to open file: {}", path.display()))?;
-    serde_json::from_str(&gn_desc_json)
-        .with_context(|| format!("Unable to parse file as json: {}", path.display()))
+    let project_json: crate::target::Project = serde_json::from_str(&gn_desc_json)
+        .with_context(|| format!("Unable to parse file as json: {}", path.display()))?;
+    Ok(project_json.targets)
 }

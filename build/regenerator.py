@@ -327,6 +327,7 @@ def main() -> int:
             "--check=system",
             f"--ninja-executable={fuchsia_dir}/{prebuilt_ninja_subpath}",
             "--ninja-outputs-file=ninja_outputs.json",
+            "--ide=json",
         ]
         if not args.no_export_rust_project:
             gn_cmd_args += ["--export-rust-project"]
@@ -338,7 +339,9 @@ def main() -> int:
             gn_cmd_args += [f"--tracelog={args.gn_tracelog}"]
 
         for gn_ide in args.gn_ide:
-            gn_cmd_args += [f"--ide={gn_ide}"]
+            # json is always enabled, so don't add it twice.
+            if gn_ide != "json":
+                gn_cmd_args += [f"--ide={gn_ide}"]
 
         for gn_json_ide_script in args.gn_json_ide_script:
             gn_cmd_args += [f"--json-ide-script={gn_json_ide_script}"]

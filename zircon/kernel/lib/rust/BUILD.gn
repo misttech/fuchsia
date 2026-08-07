@@ -269,8 +269,9 @@ foreach(stage, stages) {
       visibility = [ ":*" ]
 
       # This is the default in GN's actual logic, but it only gets into the
-      # gn_desc.json file if it's explicit in the target scope, and
-      # generate_cargo.py needs to find it there (see //build/rust/BUILD.gn).
+      # GN-produced 'project.json' file if it's explicit in the target scope,
+      # and generate_cargo.py needs to find it there (see
+      # //build/rust/BUILD.gn).
       output_name = target_name
 
       rustenv = [ "RUSTC_BOOTSTRAP=$target_name" ]

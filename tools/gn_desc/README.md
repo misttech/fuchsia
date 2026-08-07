@@ -1,47 +1,26 @@
 # `gn_desc`: A tool for rapidly querying the GN build graph
 
-The `gn_desc` cli tool uses a pre-built copy of the JSON output of GN's `desc`
-command to more rapidly query GN's build graph.
-
-# Setup
-
-The `gn_desc` tool is not built by default, to add it to your configuration:
-
-`fx set ... --with-host //tools/gn_desc`
-
-or add `//tools/gn_desc` to `host_labels` via `fx args`.
-
-The tool can then be built with:
-
-`fx build host-tools/gn_desc`
-
-This also runs `gn` itself, again, to produce the `$outdir/gn_desc.json` file.
+The `gn_desc` cli tool uses the `project.json` produced by GN to more rapidly
+query GN's build graph than can be done using `fx gn desc`.
 
 ## Example Usage
 
 To list targets that match a pattern:
 
-`fx gn_desc -v --file out/default/gn_desc.json match <pattern> list`
+`fx gn_desc -v --file out/default/project.json match <pattern> list`
 
 The `<pattern>` is a regex.
 
 # Usage
 
-The cached `gn_desc.json` file can be rebuilt after changing GN files with:
-
-`fx build host-tools/gn_desc`
-
-If the GN files have been changed, a build hasn't been performed, the file is
-not updated before running the tool.
-
-Note: this can be adventageous when GN is failing and you need to determine what
-the dependency edges are that are causing issues.
+If the GN files have been changed, and a build hasn't been performed, run
+`fx gen` to update `project.json`.
 
 ## Operation
 
 The tool does the following when run:
 
-1. parses the given file
+1. parses the given `project.json` file
 1. creates a graph of all targets and their dependencies
 1. selects some subset of the targets
 1. runs a command on each selected target

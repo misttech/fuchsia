@@ -22,7 +22,6 @@ use gn_json::target::{AllTargets, ConfigValues, Public, TargetDescription};
 use pretty_assertions::assert_eq;
 use std::ffi::OsStr;
 use std::process::Command;
-use tempfile::tempdir;
 
 /// Test arguments for the integration test
 #[derive(Debug, FromArgs)]
@@ -39,6 +38,9 @@ struct TestArgs {
 fn main() -> Result<()> {
     let args: TestArgs = argh::from_env();
 
+    // The path we'll be able to read project.json from.
+    let project_json_path = args.project_dir.join("outdir/project.json");
+
     let gn = GN {
         tool_path: args.gn_tool_dir.join("gn"),
         project_path: args.project_dir,
@@ -47,19 +49,9 @@ fn main() -> Result<()> {
 
     // Run GN on the test project.
     gn.r#gen().context("Running GN 'gen' on the test project")?;
-    let raw_desc_json = gn.desc().context("Running GN 'desc' on the test project")?;
 
-    // Write the GN desc output to a temporary file.
-    let temp_out_dir = tempdir()?;
-    let temp_file_path = temp_out_dir.path().join("gn_desc.json");
-    let temp_file = temp_file_path.to_str().ok_or_else(|| {
-        anyhow::anyhow!("Is not a valid UTF-8 path: {}", temp_file_path.display())
-    })?;
-    std::fs::write(&temp_file, raw_desc_json)?;
-
-    // Now parse that file using the function provided by the library
-    let all_targets: AllTargets = gn_json::parse_file(&String::try_from(temp_file)?)
-        .context("Parsing the GN desc json output")?;
+    let all_targets: AllTargets =
+        gn_json::parse_file(project_json_path).context("Parsing the project json output")?;
 
     assert_eq!(
         vec!["//:default", "//:tests", "//foo/bar:bar", "//foo:foo_action", "//foo:foo_binary",],
@@ -160,12 +152,7 @@ struct GN {
 
 impl GN {
     fn r#gen(&self) -> Result<String> {
-        self.run_cmd("gen", vec![self.outdir.as_str()])
-    }
-
-    /// Run `gn desc`
-    fn desc(&self) -> Result<String> {
-        self.run_cmd("desc", vec![self.outdir.as_str(), "*", "--format=json"])
+        self.run_cmd("gen", vec![self.outdir.as_str(), "--ide=json"])
     }
 
     /// Run GN with the given cmd and args.
@@ -191,6 +178,7 @@ impl GN {
         let output = result?;
         let stdout = String::from_utf8(output.stdout.clone())
             .context("Converting cmd stdout to a string")?;
+        println!("{}", stdout);
         if !output.status.success() {
             if stdout.len() != 0 {
                 bail!("GN failed (stdout):\n{}", stdout);

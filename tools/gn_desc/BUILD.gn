@@ -4,41 +4,16 @@
 
 import("//build/host.gni")
 
-# The label and output file for running `gn desc` on the outdir.
-gn_desc_json = "gn_desc.json"
-
 if (current_toolchain == default_toolchain) {
-  gn_desc_json_file = "${root_build_dir}/${gn_desc_json}"
+  gn_project_json_file = "${root_build_dir}/project.json"
 
-  # This is a target that is used to also cause the gn_desc.json file to be
-  # created when the host tool is created, and can be used to regenerate the
-  # file as-needed.
-  action(gn_desc_json) {
-    script = "//scripts/generate_gn_desc.py"
-    outputs = [ gn_desc_json_file ]
-    depfile = "$target_out_dir/$gn_desc_json.d"
-    hermetic_deps = false
-    check_for_output_dir_leaks = false
-
-    args = [
-      "--fuchsia_dir",
-      rebase_path("//", root_build_dir),
-      "--gn_binary",
-      rebase_path("//prebuilt/third_party/gn/${host_platform}/gn",
-                  root_build_dir),
-      "--output",
-      rebase_path(gn_desc_json_file, root_build_dir),
-      "--depfile",
-      rebase_path(depfile, root_build_dir),
-    ]
-
-    # Hint to ninja that this action can take about a minute, so that it's
-    # appropriately weighted in the calculation of the critical path for a
-    # build.
-    metadata = {
-      ninja_edge_weights =
-          [ rebase_path(outputs[0], root_build_dir) + ",60000" ]
-    }
+  # An action that pretends to create gn_desc.json. Dependents will be
+  # re-run when this file is regenerated, which will happen when the regenerator
+  # is invoked.
+  action("gn_project_json") {
+    script = "//build/scripts/no_op.sh"
+    outputs = [ gn_project_json_file ]
+    args = rebase_path(outputs, root_build_dir)
   }
 }
 
@@ -48,7 +23,7 @@ if (is_host) {
   group("gn_desc") {
     testonly = true
     deps = [
-      ":${gn_desc_json}($default_toolchain)",
+      ":gn_project_json($default_toolchain)",
       ":install_gn_desc($host_toolchain)",
     ]
   }
@@ -59,7 +34,7 @@ if (is_host) {
   install_host_tools("install_gn_desc") {
     testonly = true
     deps = [
-      ":${gn_desc_json}($default_toolchain)",
+      ":gn_project_json($default_toolchain)",
       "bin:gn_desc",
     ]
     outputs = [ "gn_desc" ]
