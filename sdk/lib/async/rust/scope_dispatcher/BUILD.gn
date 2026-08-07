@@ -34,6 +34,7 @@ rustc_library("scope_dispatcher") {
     "src/ops.rs",
     "src/ops/v1.rs",
     "src/ops/v1/tasks.rs",
+    "src/ops/v1/waits.rs",
     "src/ops/v2.rs",
     "src/ops/v3.rs",
     "src/ops/v4.rs",

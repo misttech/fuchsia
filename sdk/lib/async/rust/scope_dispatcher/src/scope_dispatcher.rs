@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use core::ptr::NonNull;
+use core::ptr::{NonNull, null};
 use core::sync::atomic::{self, AtomicBool};
 use fuchsia_async::{EHandle, MonotonicInstant, Scope, Timer, WakeupTime};
 use fuchsia_sync::Mutex;
@@ -16,7 +16,7 @@ use std::task::{Context, Poll};
 use zx::Status;
 
 use crate::ops;
-use crate::ops::v1::{Task, TaskQueue};
+use crate::ops::v1::{PendingWaits, Task, TaskQueue};
 
 /// Implements a C++-compatible [`async_dispatcher_t`] around a [`fuchsia_async::Scope`].
 #[derive(Debug)]
@@ -25,6 +25,7 @@ pub struct ScopeDispatcher {
     // Safety Note: this must go first in this struct for the callbacks to work correctly.
     dispatcher: async_dispatcher_t,
     task_queue: Mutex<TaskQueue>,
+    pub(crate) pending_waits: Mutex<PendingWaits>,
     shutting_down: AtomicBool,
     shutdown_complete_waker: AtomicWaker,
     service_waker: AtomicWaker,
@@ -54,6 +55,7 @@ impl ScopeDispatcher {
         let scope_handle = scope.as_handle().clone();
         let dispatcher = async_dispatcher_t { ops: &ops::ASYNC_OPS };
         let task_queue = Mutex::new(TaskQueue::default());
+        let pending_waits = Mutex::new(PendingWaits::default());
         let shutting_down = AtomicBool::new(false);
         let service_waker = AtomicWaker::new();
         let shutdown_complete_waker = AtomicWaker::new();
@@ -61,6 +63,7 @@ impl ScopeDispatcher {
         let this = Arc::new(Self {
             dispatcher,
             task_queue,
+            pending_waits,
             shutting_down,
             shutdown_complete_waker,
             service_waker,
@@ -116,6 +119,22 @@ impl ScopeDispatcher {
         unsafe { this.as_ref() }.expect("null dispatcher pointer")
     }
 
+    /// Gets the Scope from a dispatcher pointer. Used in the callbacks.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the dispatcher pointer is a valid pointer originally obtained
+    /// through [`ScopeDispatcher::as_ptr`].
+    pub(crate) unsafe fn arc_from_ptr(dispatcher_ptr: *mut async_dispatcher_t) -> Arc<Self> {
+        let this = dispatcher_ptr.cast::<ScopeDispatcher>();
+        // Safety: the caller promises that this is a valid pointer to what was originally a
+        // ScopeDispatcher object.
+        unsafe {
+            Arc::increment_strong_count(this);
+            Arc::from_raw(this)
+        }
+    }
+
     /// Posts a task to the dispatcher
     pub(crate) fn post_task(&self, task: Task) -> Result<(), Status> {
         // don't queue new tasks if we're shutting down.
@@ -142,12 +161,15 @@ impl ScopeDispatcher {
         while let Some(next_task) = NextTaskFuture::new(&self).await {
             next_task.run(self.clone(), Status::OK);
         }
-        // we're shutting down, so drain the task queue of all outstanding tasks with
+        // we're shutting down, so drain the queues of all outstanding tasks with
         // a status of CANCELED. Note that we don't really care about fanning these out to all
         // threads, so we just run them directly here.
-        // Note also that we will not allow any new tasks to be added to the queue after the
+        // Note also that we will not allow any new items to be added to the queues after the
         // shutdown flag has been set, so we don't have to worry about new things being added at
         // this point.
+        for next_wait in self.pending_waits.lock().get_all_waits() {
+            next_wait.run(self.clone(), null(), Status::CANCELED);
+        }
         while let Some(next_task) = self.task_queue.lock().next_task(MonotonicInstant::INFINITE) {
             next_task.run(self.clone(), Status::CANCELED);
         }

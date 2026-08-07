@@ -2,14 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use libasync_sys::{async_dispatcher_t, async_guest_bell_trap_t, async_receiver_t, async_wait_t};
+use libasync_sys::{async_dispatcher_t, async_guest_bell_trap_t, async_receiver_t};
 use zx::sys::{ZX_ERR_NOT_SUPPORTED, zx_status_t};
 
 use crate::ScopeDispatcher;
 
 mod tasks;
+mod waits;
 
 pub use tasks::*;
+pub use waits::*;
 
 // ops_v1 dispatch functions
 pub unsafe extern "C" fn now(dispatcher_ptr: *mut async_dispatcher_t) -> i64 {
@@ -17,18 +19,6 @@ pub unsafe extern "C" fn now(dispatcher_ptr: *mut async_dispatcher_t) -> i64 {
     // object that was originally obtained from [`ScopeDispatcher::as_ptr`].
     let dispatcher = unsafe { ScopeDispatcher::from_ptr(dispatcher_ptr) };
     dispatcher.global_handle().now().into_nanos()
-}
-pub unsafe extern "C" fn begin_wait(
-    _dispatcher_ptr: *mut async_dispatcher_t,
-    _wait_ptr: *mut async_wait_t,
-) -> zx_status_t {
-    ZX_ERR_NOT_SUPPORTED
-}
-pub unsafe extern "C" fn cancel_wait(
-    _dispatcher_ptr: *mut async_dispatcher_t,
-    _wait_ptr: *mut async_wait_t,
-) -> zx_status_t {
-    ZX_ERR_NOT_SUPPORTED
 }
 pub unsafe extern "C" fn queue_packet(
     _dispatcher_ptr: *mut async_dispatcher_t,
