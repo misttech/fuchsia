@@ -16,7 +16,10 @@ from antlion.controllers.ap_lib.hostapd_security import (
     Security as DeprecatedSecurity,
 )
 from antlion.test_utils.abstract_devices import wmm_transceiver
-from antlion.test_utils.abstract_devices.wlan_device import FuchsiaWlanDevice
+from antlion.test_utils.abstract_devices.wlan_device import (
+    AssociationMode,
+    create_wlan_device,
+)
 from antlion.test_utils.fuchsia import wmm_test_cases
 from fuchsia_wlan_base_test.deprecated.wifi import base_test
 from mobly import asserts, test_runner
@@ -148,8 +151,12 @@ class WlanWmmTest(base_test.WifiBaseTest):
         if len(self._wmm_transceiver_configs) < 2:
             raise AttributeError("At least 2 WmmTransceivers must be provided.")
 
+        self.android_devices = self.android_devices
+        self.fuchsia_devices = self.fuchsia_devices
+
         self.wlan_devices = [
-            FuchsiaWlanDevice(device) for device in self.fuchsia_devices
+            create_wlan_device(device, AssociationMode.POLICY)
+            for device in self.android_devices + self.fuchsia_devices
         ]
 
         # Create STAUT transceiver
@@ -202,6 +209,7 @@ class WlanWmmTest(base_test.WifiBaseTest):
         super().setup_test()
         for tc in self.wmm_transceivers:
             if tc.wlan_device:
+                tc.wlan_device.wifi_toggle_state(True)
                 tc.wlan_device.disconnect()
             if isinstance(tc.access_point, AccessPoint):
                 tc.access_point.stop_all_aps()
@@ -211,6 +219,7 @@ class WlanWmmTest(base_test.WifiBaseTest):
             tc.cleanup_asynchronous_streams()
             if tc.wlan_device:
                 tc.wlan_device.disconnect()
+                tc.wlan_device.reset_wifi()
             self.download_logs()
             if isinstance(tc.access_point, AccessPoint):
                 tc.access_point.stop_all_aps()

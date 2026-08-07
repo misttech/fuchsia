@@ -15,6 +15,7 @@ from antlion.controllers.access_point import AccessPoint, setup_ap
 from antlion.controllers.ap_lib import hostapd_constants
 from antlion.controllers.ap_lib.hostapd_security import Security, SecurityMode
 from antlion.controllers.ap_lib.hostapd_utils import generate_random_password
+from antlion.test_utils.abstract_devices.wlan_device import AssociationMode
 from fuchsia_wlan_base_test.deprecated.wifi import base_test
 from mobly import asserts, signals, test_runner
 from mobly.records import TestResultRecord
@@ -184,7 +185,7 @@ class WlanSecurityComplianceABGTest(base_test.WifiBaseTest):
 
     def setup_class(self) -> None:
         super().setup_class()
-        self.dut = self.get_dut()
+        self.dut = self.get_dut(AssociationMode.POLICY)
 
         if len(self.access_points) == 0:
             raise signals.TestAbortClass("Requires at least one access point")
@@ -197,8 +198,22 @@ class WlanSecurityComplianceABGTest(base_test.WifiBaseTest):
 
         self.access_point.stop_all_aps()
 
+    def setup_test(self) -> None:
+        super().setup_test()
+        if hasattr(self, "android_devices"):
+            for ad in self.android_devices:
+                ad.droid.wakeLockAcquireBright()
+                ad.droid.wakeUpNow()
+        self.dut.wifi_toggle_state(True)
+
     def teardown_test(self) -> None:
+        if hasattr(self, "android_devices"):
+            for ad in self.android_devices:
+                ad.droid.wakeLockRelease()
+                ad.droid.goToSleepNow()
+        self.dut.turn_location_off_and_scan_toggle_off()
         self.dut.disconnect()
+        self.dut.reset_wifi()
         self.download_logs()
         self.access_point.stop_all_aps()
         super().teardown_test()

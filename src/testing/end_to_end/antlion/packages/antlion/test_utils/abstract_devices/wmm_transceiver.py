@@ -16,7 +16,7 @@ from uuid import UUID, uuid4
 from antlion import utils
 from antlion.controllers import iperf_client, iperf_server
 from antlion.controllers.access_point import AccessPoint
-from antlion.test_utils.abstract_devices.wlan_device import FuchsiaWlanDevice
+from antlion.test_utils.abstract_devices.wlan_device import SupportsWLAN
 from antlion.validation import MapValidator
 from mobly import logger, signals
 from openwrt_access_point import OpenWrtAP
@@ -52,7 +52,7 @@ class WmmTransceiverError(signals.ControllerError):
 def create(
     config: Mapping[str, Any],
     identifier: str | None = None,
-    wlan_devices: list[FuchsiaWlanDevice] | None = None,
+    wlan_devices: list[SupportsWLAN] | None = None,
     access_points: Sequence[AccessPoint | OpenWrtAP] | None = None,
 ):
     """Creates a WmmTransceiver from a config.
@@ -110,8 +110,8 @@ def create(
 
 
 def _find_wlan_device(
-    wlan_device_identifier: str, wlan_devices: list[FuchsiaWlanDevice]
-) -> FuchsiaWlanDevice:
+    wlan_device_identifier: str, wlan_devices: list[SupportsWLAN]
+) -> SupportsWLAN:
     """Returns WLAN device based on string identifier (e.g. ip, serial, etc.)
 
     Args:

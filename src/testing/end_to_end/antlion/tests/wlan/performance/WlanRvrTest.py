@@ -20,6 +20,7 @@ from antlion.controllers.attenuator import (
 )
 from antlion.controllers.fuchsia_device import FuchsiaDevice
 from antlion.controllers.iperf_server import IPerfResult
+from antlion.test_utils.abstract_devices.wlan_device import AssociationMode
 from antlion.utils import rand_ascii_str
 from antlion.validation import MapValidator
 from fuchsia_wlan_base_test.deprecated.wifi import base_test
@@ -117,7 +118,9 @@ class WlanRvrTest(base_test.WifiBaseTest):
         self.iperf_flags = params.get(str, "iperf_flags", "-i 1")
         self.iperf_flags += f" -t {self.dwell_time_in_secs} -J"
 
-        self.fuchsia_device, self.dut = self.get_dut_type(FuchsiaDevice)
+        self.fuchsia_device, self.dut = self.get_dut_type(
+            FuchsiaDevice, AssociationMode.POLICY
+        )
 
         if self.openwrt_aps:
             self.openwrt_ap = self.openwrt_aps[0]
@@ -199,6 +202,11 @@ class WlanRvrTest(base_test.WifiBaseTest):
     def setup_test(self) -> None:
         super().setup_test()
         self.iperf_server.start()
+        if hasattr(self, "android_devices"):
+            for ad in self.android_devices:
+                ad.droid.wakeLockAcquireBright()
+                ad.droid.wakeUpNow()
+        self.dut.wifi_toggle_state(True)
         self.dut.disconnect()
         if self.access_point:
             self.access_point.stop_all_aps()
@@ -217,8 +225,14 @@ class WlanRvrTest(base_test.WifiBaseTest):
         clients running during the tests.
         """
         self.download_logs()
+        if hasattr(self, "android_devices"):
+            for ad in self.android_devices:
+                ad.droid.wakeLockRelease()
+                ad.droid.goToSleepNow()
         self.iperf_server.stop()
+        self.dut.turn_location_off_and_scan_toggle_off()
         self.dut.disconnect()
+        self.dut.reset_wifi()
         if self.access_point:
             self.access_point.stop_all_aps()
 

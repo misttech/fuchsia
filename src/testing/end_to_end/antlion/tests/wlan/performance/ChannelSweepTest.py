@@ -21,8 +21,12 @@ from antlion.controllers.ap_lib.hostapd_security import (
 )
 from antlion.controllers.ap_lib.regulatory_channels import COUNTRY_CHANNELS
 from antlion.controllers.fuchsia_device import FuchsiaDevice
-from antlion.controllers.iperf_client import IPerfClientOverSsh
+from antlion.controllers.iperf_client import (
+    IPerfClientOverAdb,
+    IPerfClientOverSsh,
+)
 from antlion.controllers.iperf_server import IPerfResult, IPerfServerOverSsh
+from antlion.test_utils.abstract_devices.wlan_device import AssociationMode
 from fuchsia_wlan_base_test.deprecated.wifi import base_test
 from honeydew.affordances.connectivity.wlan.utils.types import CountryCode
 from mobly import asserts, signals, test_runner
@@ -200,7 +204,9 @@ class ChannelSweepTest(base_test.WifiBaseTest):
     def setup_class(self) -> None:
         super().setup_class()
 
-        self.fuchsia_device, self.dut = self.get_dut_type(FuchsiaDevice)
+        self.fuchsia_device, self.dut = self.get_dut_type(
+            FuchsiaDevice, AssociationMode.POLICY
+        )
 
         if self.openwrt_aps:
             self.openwrt_ap = self.openwrt_aps[0]
@@ -255,9 +261,17 @@ class ChannelSweepTest(base_test.WifiBaseTest):
         #                 )
         if self.access_point is not None:
             self.access_point.stop_all_aps()
+        for ad in self.android_devices:
+            ad.droid.wakeLockAcquireBright()
+            ad.droid.wakeUpNow()
+        self.dut.wifi_toggle_state(True)
         self.dut.disconnect()
 
     def teardown_test(self) -> None:
+        for ad in self.android_devices:
+            ad.droid.wakeLockRelease()
+            ad.droid.goToSleepNow()
+        self.dut.turn_location_off_and_scan_toggle_off()
         self.dut.disconnect()
         self.download_logs()
         if self.access_point is not None:
@@ -736,7 +750,9 @@ class ChannelSweepTest(base_test.WifiBaseTest):
                 self.time_to_wait_for_ip_addr,
             )
 
-            if not isinstance(self.iperf_client, IPerfClientOverSsh):
+            if not isinstance(
+                self.iperf_client, (IPerfClientOverSsh, IPerfClientOverAdb)
+            ):
                 raise TypeError(
                     f'Unknown iperf_client type "{type(self.iperf_client)}"'
                 )
