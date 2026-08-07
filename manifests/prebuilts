@@ -522,20 +522,20 @@
     <!-- Packages in /infra/tools/ -->
     <package name="infra/tools/bb/${platform}"
              path="prebuilt/tools/buildbucket"
-             version="git_revision:5530c9d95c116b94a117c70d180116a97b07a447"
+             version="git_revision:351b4ac89e70228292069dc60b9a69febdd9615a"
              platforms="linux-amd64,linux-arm64"/>
     <package name="infra/tools/luci/gsutil/${platform}"
              path="prebuilt/tools/gsutil"
              platforms="linux-amd64,linux-arm64"
-             version="git_revision:5530c9d95c116b94a117c70d180116a97b07a447"/>
+             version="git_revision:351b4ac89e70228292069dc60b9a69febdd9615a"/>
     <package name="infra/tools/luci/logdog/logdog/${platform}"
              path="prebuilt/tools/logdog"
              platforms="linux-amd64,linux-arm64"
-             version="git_revision:5530c9d95c116b94a117c70d180116a97b07a447"/>
+             version="git_revision:351b4ac89e70228292069dc60b9a69febdd9615a"/>
     <package name="infra/tools/luci/cas/${platform}"
              path="prebuilt/tools/cas"
              platforms="linux-amd64,linux-arm64"
-             version="git_revision:5530c9d95c116b94a117c70d180116a97b07a447"/>
+             version="git_revision:351b4ac89e70228292069dc60b9a69febdd9615a"/>
     <package name="infra/tools/rdb/${platform}"
              path="prebuilt/tools/resultdb"
              platforms="linux-amd64,linux-arm64"
