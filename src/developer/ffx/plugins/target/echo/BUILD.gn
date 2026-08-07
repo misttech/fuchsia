@@ -27,8 +27,7 @@ ffx_plugin("ffx_target_echo") {
   ]
   proc_macro_deps = [ "//src/developer/ffx/lib/traceable_error/derive:lib" ]
   test_deps = [
-    "//sdk/fidl/fuchsia.developer.remotecontrol:fuchsia.developer.remotecontrol_rust",
-    "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+    "//sdk/fidl/fuchsia.developer.remotecontrol:fuchsia.developer.remotecontrol_rust_fdomain",
     "//src/lib/fdomain/client",
     "//src/lib/fdomain/local",
     "//src/lib/fuchsia",

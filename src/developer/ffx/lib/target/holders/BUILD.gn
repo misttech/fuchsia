@@ -13,24 +13,33 @@ rustc_library("lib") {
   with_unit_tests = true
 
   deps = [
+    "//sdk/fidl/fuchsia.developer.remotecontrol:fuchsia.developer.remotecontrol_rust",
     "//sdk/fidl/fuchsia.developer.remotecontrol:fuchsia.developer.remotecontrol_rust_fdomain",
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust_fdomain",
     "//src/developer/ffx/command/error:lib",
+    "//src/developer/ffx/core:lib",
     "//src/developer/ffx/fidl:fuchsia.developer.ffx_rust",
+    "//src/developer/ffx/lib/addr:lib",
     "//src/developer/ffx/lib/discovery:lib",
+    "//src/developer/ffx/lib/errors:lib",
     "//src/developer/ffx/lib/fho:lib",
     "//src/developer/ffx/lib/rcs:lib_fdomain",
     "//src/developer/ffx/lib/ssh:lib",
     "//src/developer/ffx/lib/target:lib",
     "//src/developer/ffx/lib/target/behavior:lib",
+    "//src/developer/ffx/lib/target_errors:lib",
     "//src/lib/fdomain/client",
+    "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia-async",
+    "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:async-trait",
     "//third_party/rust_crates:futures",
     "//third_party/rust_crates:log",
   ]
 
   sources = [
+    "src/daemon_proxy.rs",
+    "src/fake_injector.rs",
     "src/from_toolbox.rs",
     "src/host_ssh_addr.rs",
     "src/lib.rs",
@@ -38,6 +47,7 @@ rustc_library("lib") {
     "src/remote_control_proxy.rs",
     "src/ssh_addr.rs",
     "src/target_info_query.rs",
+    "src/target_proxy.rs",
     "src/with_moniker.rs",
   ]
 }

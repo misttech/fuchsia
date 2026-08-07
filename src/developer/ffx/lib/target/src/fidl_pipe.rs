@@ -235,20 +235,13 @@ impl FidlPipe {
     }
 
     pub fn fake(device_address: Option<SocketAddr>) -> Self {
-        Self::fake_with_host_ssh_address(device_address, None)
-    }
-
-    pub fn fake_with_host_ssh_address(
-        device_address: Option<SocketAddr>,
-        host_ssh_address: Option<HostAddr>,
-    ) -> Self {
         let (_error_sender, error_queue) = async_channel::unbounded();
         Self {
             task: None,
             error_queue,
             compat: None,
             device_address,
-            host_ssh_address,
+            host_ssh_address: None,
             is_terminated: Arc::new(AtomicBool::new(false)),
         }
     }

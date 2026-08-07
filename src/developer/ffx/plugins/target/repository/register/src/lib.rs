@@ -275,11 +275,7 @@ async fn fetch_config_file_from_url(url: &Url) -> Result<RepositoryConfig> {
 mod test {
     use super::*;
     use camino::Utf8PathBuf;
-
-    use target_behavior::{ConnectionBehavior, setup_fake_resolution, target_interface};
-    use target_holders::fake_proxy;
-    use tempfile::TempDir;
-
+    use fdomain_fuchsia_net::{IpAddress, Ipv4Address};
     use fdomain_fuchsia_pkg::{MirrorConfig, RepositoryConfig, RepositoryManagerRequest};
     use fdomain_fuchsia_pkg_rewrite::{
         EditTransactionRequest, EngineRequest, LiteralRule, Rule, RuleIteratorRequest,
@@ -288,11 +284,14 @@ mod test {
     use ffx_config::keys::TARGET_DEFAULT_KEY;
     use ffx_target_repository_register_args::parse_json_uri;
     use ffx_writer::{Format, TestBuffers};
-
+    use fidl_fuchsia_developer_ffx::{
+        RemoteControlState, SshHostAddrInfo, TargetAddrInfo, TargetInfo, TargetIpAddrInfo,
+        TargetIpPort, TargetProxy, TargetRequest, TargetState,
+    };
     use fidl_fuchsia_pkg_ext::{
         RepositoryConfigBuilder, RepositoryRegistrationAliasConflictMode, RepositoryStorageType,
     };
-
+    use fuchsia_async as fasync;
     use fuchsia_repo::repository::RepositorySpec;
     use fuchsia_url::RepositoryUrl;
     use futures::TryStreamExt;
@@ -302,6 +301,9 @@ mod test {
     use std::fs;
     use std::net::{Ipv4Addr, SocketAddr};
     use std::sync::Arc;
+    use target_behavior::{ConnectionBehavior, target_interface};
+    use target_holders::{FakeInjector, fake_proxy};
+    use tempfile::TempDir;
 
     const REPO_NAME: &str = "some-name";
     const TARGET_NAME: &str = "some-target";
@@ -503,6 +505,51 @@ mod test {
         Ok(())
     }
 
+    fn to_target_info(nodename: String, ssh_host_address: Option<SshHostAddrInfo>) -> TargetInfo {
+        let device_addr = TargetAddrInfo::IpPort(TargetIpPort {
+            ip: IpAddress::Ipv4(Ipv4Address { addr: [127, 0, 0, 1] }),
+            scope_id: 0,
+            port: 5,
+        });
+        let device_addr_ip = TargetIpAddrInfo::IpPort(TargetIpPort {
+            ip: IpAddress::Ipv4(Ipv4Address { addr: [127, 0, 0, 1] }),
+            scope_id: 0,
+            port: 5,
+        });
+
+        TargetInfo {
+            nodename: Some(nodename),
+            addresses: Some(vec![device_addr]),
+            ssh_address: Some(device_addr_ip),
+            ssh_host_address,
+            age_ms: Some(101),
+            rcs_state: Some(RemoteControlState::Up),
+            target_state: Some(TargetState::Unknown),
+            ..Default::default()
+        }
+    }
+
+    struct FakeTarget;
+
+    impl FakeTarget {
+        fn new(host_address: Option<SshHostAddrInfo>) -> (Self, TargetProxy) {
+            let target_proxy: TargetProxy =
+                target_holders::fake_daemon_proxy(move |req| match req {
+                    TargetRequest::Identity { responder, .. } => {
+                        let ssh_host_address = host_address.clone();
+                        fasync::Task::local(async move {
+                            responder
+                                .send(&to_target_info("Foo".to_string(), ssh_host_address))
+                                .unwrap();
+                        })
+                        .detach();
+                    }
+                    _ => panic!("unexpected request: {:?}", req),
+                });
+            (Self, target_proxy)
+        }
+    }
+
     #[fuchsia::test]
     async fn test_register_standalone() {
         let client = fdomain_local::local_client_empty();
@@ -516,9 +563,20 @@ mod test {
             .build()
             .expect("test env");
         let fho_env = FhoEnvironment::new_with_args(&env.context, &["some", "repo", "test"]);
+        let (_, fake_target_proxy) =
+            FakeTarget::new(Some(SshHostAddrInfo { address: "1.2.3.4".to_string() }));
+
+        let fake_injector = FakeInjector {
+            target_factory_closure: Box::new(move || {
+                let fake_target_proxy = fake_target_proxy.clone();
+                Box::pin(async { Ok(fake_target_proxy) })
+            }),
+            ..Default::default()
+        };
+
         let target_env = target_interface(&fho_env);
-        let resolution = setup_fake_resolution(Some("1.2.3.4".to_string())).await;
-        target_env.set_behavior_for_test(ConnectionBehavior::fake_direct_connector(resolution));
+        target_env
+            .set_behavior_for_test(ConnectionBehavior::DaemonConnector(Arc::new(fake_injector)));
 
         let (repo_proxy, _) = setup_fake_repo_proxy(Arc::clone(&client), None, false).await;
         let (engine_proxy, _) = setup_fake_engine_proxy(Arc::clone(&client), None).await;
@@ -568,9 +626,20 @@ mod test {
             .build()
             .expect("test env");
         let fho_env = FhoEnvironment::new_with_args(&env.context, &["some", "repo", "test"]);
+        let (_, fake_target_proxy) =
+            FakeTarget::new(Some(SshHostAddrInfo { address: "127.7.7.1".to_string() }));
+
+        let fake_injector = FakeInjector {
+            target_factory_closure: Box::new(move || {
+                let fake_target_proxy = fake_target_proxy.clone();
+                Box::pin(async { Ok(fake_target_proxy) })
+            }),
+            ..Default::default()
+        };
+
         let target_env = target_interface(&fho_env);
-        let resolution = setup_fake_resolution(Some("127.7.7.1".to_string())).await;
-        target_env.set_behavior_for_test(ConnectionBehavior::fake_direct_connector(resolution));
+        target_env
+            .set_behavior_for_test(ConnectionBehavior::DaemonConnector(Arc::new(fake_injector)));
 
         let expected_config = RepositoryConfig {
             repo_url: Some("fuchsia-pkg://test-repo.fuchsia.com".into()),
@@ -649,9 +718,20 @@ mod test {
             .build()
             .expect("test env");
         let fho_env = FhoEnvironment::new_with_args(&env.context, &["some", "repo", "test"]);
+        let (_, fake_target_proxy) =
+            FakeTarget::new(Some(SshHostAddrInfo { address: "1.2.3.4".to_string() }));
+
+        let fake_injector = FakeInjector {
+            target_factory_closure: Box::new(move || {
+                let fake_target_proxy = fake_target_proxy.clone();
+                Box::pin(async { Ok(fake_target_proxy) })
+            }),
+            ..Default::default()
+        };
+
         let target_env = target_interface(&fho_env);
-        let resolution = setup_fake_resolution(Some("1.2.3.4".to_string())).await;
-        target_env.set_behavior_for_test(ConnectionBehavior::fake_direct_connector(resolution));
+        target_env
+            .set_behavior_for_test(ConnectionBehavior::DaemonConnector(Arc::new(fake_injector)));
 
         make_server_instance(
             env.isolate_root.path(),
@@ -698,9 +778,19 @@ mod test {
             .build()
             .expect("test env");
         let fho_env = FhoEnvironment::new_with_args(&env.context, &["some", "repo", "test"]);
+        let (_, fake_target_proxy) =
+            FakeTarget::new(Some(SshHostAddrInfo { address: "1.2.3.4".to_string() }));
+
+        let fake_injector = FakeInjector {
+            target_factory_closure: Box::new(move || {
+                let fake_target_proxy = fake_target_proxy.clone();
+                Box::pin(async { Ok(fake_target_proxy) })
+            }),
+            ..Default::default()
+        };
         let target_env = target_interface(&fho_env);
-        let resolution = setup_fake_resolution(Some("1.2.3.4".to_string())).await;
-        target_env.set_behavior_for_test(ConnectionBehavior::fake_direct_connector(resolution));
+        target_env
+            .set_behavior_for_test(ConnectionBehavior::DaemonConnector(Arc::new(fake_injector)));
 
         let (repo_proxy, _) = setup_fake_repo_proxy(Arc::clone(&client), None, false).await;
         let (engine_proxy, _) = setup_fake_engine_proxy(Arc::clone(&client), None).await;
@@ -749,9 +839,20 @@ mod test {
             .build()
             .expect("test env");
         let fho_env = FhoEnvironment::new_with_args(&env.context, &["some", "repo", "test"]);
+        let (_, fake_target_proxy) =
+            FakeTarget::new(Some(SshHostAddrInfo { address: "1.2.3.4".to_string() }));
+
+        let fake_injector = FakeInjector {
+            target_factory_closure: Box::new(move || {
+                let fake_target_proxy = fake_target_proxy.clone();
+                Box::pin(async { Ok(fake_target_proxy) })
+            }),
+            ..Default::default()
+        };
+
         let target_env = target_interface(&fho_env);
-        let resolution = setup_fake_resolution(Some("1.2.3.4".to_string())).await;
-        target_env.set_behavior_for_test(ConnectionBehavior::fake_direct_connector(resolution));
+        target_env
+            .set_behavior_for_test(ConnectionBehavior::DaemonConnector(Arc::new(fake_injector)));
 
         let (repo_proxy, _) = setup_fake_repo_proxy(Arc::clone(&client), None, false).await;
         let (engine_proxy, _) = setup_fake_engine_proxy(Arc::clone(&client), None).await;
@@ -798,9 +899,19 @@ mod test {
             .build()
             .expect("test env");
         let fho_env = FhoEnvironment::new_with_args(&env.context, &["some", "repo", "test"]);
+        let (_, fake_target_proxy) =
+            FakeTarget::new(Some(SshHostAddrInfo { address: "1.2.3.4".to_string() }));
+
+        let fake_injector = FakeInjector {
+            target_factory_closure: Box::new(move || {
+                let fake_target_proxy = fake_target_proxy.clone();
+                Box::pin(async { Ok(fake_target_proxy) })
+            }),
+            ..Default::default()
+        };
         let target_env = target_interface(&fho_env);
-        let resolution = setup_fake_resolution(Some("1.2.3.4".to_string())).await;
-        target_env.set_behavior_for_test(ConnectionBehavior::fake_direct_connector(resolution));
+        target_env
+            .set_behavior_for_test(ConnectionBehavior::DaemonConnector(Arc::new(fake_injector)));
 
         make_server_instance(
             env.isolate_root.path(),
@@ -849,9 +960,19 @@ mod test {
             .build()
             .expect("test env");
         let fho_env = FhoEnvironment::new_with_args(&env.context, &["some", "repo", "test"]);
+        let (_, fake_target_proxy) =
+            FakeTarget::new(Some(SshHostAddrInfo { address: "1.2.3.4".to_string() }));
+
+        let fake_injector = FakeInjector {
+            target_factory_closure: Box::new(move || {
+                let fake_target_proxy = fake_target_proxy.clone();
+                Box::pin(async { Ok(fake_target_proxy) })
+            }),
+            ..Default::default()
+        };
         let target_env = target_interface(&fho_env);
-        let resolution = setup_fake_resolution(Some("1.2.3.4".to_string())).await;
-        target_env.set_behavior_for_test(ConnectionBehavior::fake_direct_connector(resolution));
+        target_env
+            .set_behavior_for_test(ConnectionBehavior::DaemonConnector(Arc::new(fake_injector)));
 
         make_server_instance(
             env.isolate_root.path(),
@@ -908,9 +1029,20 @@ mod test {
             .build()
             .expect("test env");
         let fho_env = FhoEnvironment::new_with_args(&env.context, &["some", "repo", "test"]);
+        let (_, fake_target_proxy) =
+            FakeTarget::new(Some(SshHostAddrInfo { address: "1.2.3.4".to_string() }));
+
+        let fake_injector = FakeInjector {
+            target_factory_closure: Box::new(move || {
+                let fake_target_proxy = fake_target_proxy.clone();
+                Box::pin(async { Ok(fake_target_proxy) })
+            }),
+            ..Default::default()
+        };
+
         let target_env = target_interface(&fho_env);
-        let resolution = setup_fake_resolution(Some("1.2.3.4".to_string())).await;
-        target_env.set_behavior_for_test(ConnectionBehavior::fake_direct_connector(resolution));
+        target_env
+            .set_behavior_for_test(ConnectionBehavior::DaemonConnector(Arc::new(fake_injector)));
 
         let (repo_proxy, _) = setup_fake_repo_proxy(Arc::clone(&client), None, false).await;
         let (engine_proxy, _) = setup_fake_engine_proxy(Arc::clone(&client), None).await;
@@ -969,9 +1101,18 @@ mod test {
             .build()
             .expect("test env");
         let fho_env = FhoEnvironment::new_with_args(&env.context, &["some", "repo", "test"]);
+        let (_, fake_target_proxy) = FakeTarget::new(None);
+
+        let fake_injector = FakeInjector {
+            target_factory_closure: Box::new(move || {
+                let fake_target_proxy = fake_target_proxy.clone();
+                Box::pin(async { Ok(fake_target_proxy) })
+            }),
+            ..Default::default()
+        };
         let target_env = target_interface(&fho_env);
-        let resolution = setup_fake_resolution(None).await;
-        target_env.set_behavior_for_test(ConnectionBehavior::fake_direct_connector(resolution));
+        target_env
+            .set_behavior_for_test(ConnectionBehavior::DaemonConnector(Arc::new(fake_injector)));
 
         make_server_instance(
             env.isolate_root.path(),

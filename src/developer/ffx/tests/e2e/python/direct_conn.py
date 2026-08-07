@@ -10,6 +10,7 @@ import re
 from typing import Any, List, Optional
 
 import ffxtestcase
+from honeydew.transports.ffx.errors import FfxCommandError
 from mobly import asserts, test_runner
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
@@ -33,6 +34,21 @@ class FfxDirectTest(ffxtestcase.FfxTestCase):
         self.isolate_dir = self.dut.ffx.config.isolate_dir.directory()
         self.dut_ssh_address = self.dut.ffx.get_target_ssh_address()
         assert self.dut_ssh_address is not None
+
+    async def teardown_test(self) -> None:
+        # Verify that we did not start the daemon
+        with asserts.assert_raises(FfxCommandError):
+            self.dut.ffx.run(
+                [
+                    "--isolate-dir",
+                    self.isolate_dir,
+                    "-c",
+                    "daemon.autostart=false",
+                    "daemon",
+                    "echo",
+                ]
+            )
+        await super().teardown_test()
 
     # Run the ffx command with the --direct arg, and parse the results
     def _run_ffx_direct(

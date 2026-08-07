@@ -26,6 +26,7 @@ ffx_test_host_tools_out_dir = "${host_tools_dir}"
 # for architectural reasons.
 required_ffx_plugins = [
   "//src/developer/ffx/plugins/config:ffx_config_plugin",
+  "//src/developer/ffx/plugins/daemon:ffx_daemon_plugin",
   "//src/developer/ffx/plugins/target:ffx_target",
   "//src/developer/ffx/plugins/version:ffx_version",
   "//src/developer/ffx/plugins/platform:ffx_platform",

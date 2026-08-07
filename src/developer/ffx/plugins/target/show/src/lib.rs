@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use crate::show::TargetData;
+use addr::TargetIpAddr;
 use async_trait::async_trait;
 use fdomain_fuchsia_buildinfo::ProviderProxy;
 use fdomain_fuchsia_feedback::{DeviceIdProviderProxy, LastRebootInfoProviderProxy};
@@ -13,12 +14,16 @@ use ffx_target;
 use ffx_target_show_args as args;
 use ffx_writer::{ToolIO, VerifiedMachineWriter};
 use fho::{Deferred, FfxMain, FfxTool, FhoEnvironment, deferred};
+use fidl_fuchsia_developer_ffx::TargetIpAddrInfo;
 use netext::ScopedSocketAddr;
 use show::{
     AddressData, BoardData, BuildData, DeviceData, ProductData, TargetShowInfo, UpdateData,
 };
+use std::net::IpAddr;
+use std::time::Duration;
 use target_behavior::{ConnectionBehavior, DirectConnector};
-use target_holders::{RemoteControlProxyHolder, moniker};
+use target_holders::{RemoteControlProxyHolder, TargetProxyHolder, moniker};
+use timeout::timeout;
 
 mod show;
 
@@ -29,6 +34,7 @@ pub struct ShowTool {
     cmd: args::TargetShow,
     fho_env: FhoEnvironment,
     rcs_proxy: RemoteControlProxyHolder,
+    target_proxy: Deferred<TargetProxyHolder>,
     #[with(moniker("/core/system-update"))]
     channel_provider_proxy: fupdate_channel::ProviderProxy,
     #[with(moniker("/core/system-update"))]
@@ -107,15 +113,20 @@ impl ShowTool {
         self,
         writer: &mut VerifiedMachineWriter<TargetShowInfo>,
     ) -> Result<(), ShowError> {
+        // To add more show information, add a `gather_*_show(*) call to this
+        // list, as well as the labels in the Ok() and vec![] just below.
+        // Returns Some(dc) only if we have a direct connection
         let behavior = target_behavior::target_interface(&self.fho_env).behavior()?;
-        let ConnectionBehavior::Direct(ref connector) = *behavior;
-        // To add more show information, add a gather_*_show(*) call to this list
-        // and add the result to the TargetShowInfo struct below.
+        let connector = match *behavior {
+            ConnectionBehavior::DirectConnector(ref connector) => Some(connector.clone()),
+            _ => None,
+        };
         let (target, board, device, product, update, build) = futures::try_join!(
             gather_target_show(
                 self.rcs_proxy,
                 &self.fho_env,
-                connector.clone(),
+                connector,
+                self.target_proxy,
                 self.last_reboot_info_proxy
             ),
             gather_board_show(self.board_proxy),
@@ -155,25 +166,62 @@ async fn gather_target_info_direct(
     Ok((ad, connection.compatibility_info().map(|ci| ci.into())))
 }
 
+async fn gather_target_info_from_daemon(
+    target_proxy: TargetProxyHolder,
+) -> Result<(Option<AddressData>, Option<fidl_fuchsia_developer_ffx::CompatibilityInfo>), ShowError>
+{
+    let addr_info = timeout(Duration::from_secs(1), target_proxy.get_ssh_address())
+        .await
+        .map_err(ShowError::TargetSshAddressTimeout)?
+        .ok();
+
+    let ssh_address = if let Some(addr_info) = addr_info {
+        let addr = TargetIpAddr::from(&addr_info);
+        let port = match addr_info {
+            TargetIpAddrInfo::Ip(_info) => 22,
+            TargetIpAddrInfo::IpPort(info) => info.port,
+        };
+        Some(match addr.ip() {
+            IpAddr::V4(ip) => AddressData { host: ip.to_string(), port },
+            IpAddr::V6(ip) => AddressData {
+                host: format!(
+                    "[{ip}{}]",
+                    if addr.scope_id() != 0 { format!("%{}", addr.scope_id()) } else { "".into() }
+                ),
+                port,
+            },
+        })
+    } else {
+        None
+    };
+    let host = target_proxy.identity().await?;
+    Ok((ssh_address, host.compatibility))
+}
+
 /// Determine target information.
 async fn gather_target_show(
     rcs_proxy: RemoteControlProxyHolder,
     fho_env: &FhoEnvironment,
-    connector: DirectConnector,
+    connector: Option<DirectConnector>,
+    target_proxy: Deferred<TargetProxyHolder>,
     last_reboot_info_proxy: LastRebootInfoProviderProxy,
 ) -> Result<TargetData, ShowError> {
     let host = rcs_proxy.identify_host().await?.map_err(ShowError::RcsHostIdentification)?;
     let name = host.nodename;
-    let (ssh_address, compat) = gather_target_info_direct(
-        &*connector
-            .resolution()
-            .await
-            .map_err(ShowError::TargetResolution)?
-            .get_connection(fho_env.environment_context())
-            .await
-            .map_err(ShowError::TargetConnection)?,
-    )
-    .await?;
+    let (ssh_address, compat) = if let Some(connector) = connector {
+        gather_target_info_direct(
+            &*connector
+                .resolution()
+                .await
+                .map_err(ShowError::TargetResolution)?
+                .get_connection(fho_env.environment_context())
+                .await
+                .map_err(ShowError::TargetConnection)?,
+        )
+        .await?
+    } else {
+        gather_target_info_from_daemon(target_proxy.await?).await?
+    };
     let (compatibility_state, compatibility_message) = match compat {
         Some(compatibility) => {
             (compat_info::CompatibilityState::from(compatibility.state), compatibility.message)
@@ -311,13 +359,16 @@ mod tests {
     };
     use fdomain_fuchsia_intl::RegulatoryDomain;
     use fdomain_fuchsia_update_channelcontrol::ChannelControlRequest;
-    use ffx_target::{FidlPipe, Resolution};
+    use ffx_target::{FidlPipe, Resolution, TargetProxy};
     use ffx_writer::{Format, TestBuffers};
-    use fidl_fuchsia_developer_ffx::TargetInfo;
+    use fidl_fuchsia_developer_ffx::{TargetAddrInfo, TargetInfo, TargetIp, TargetRequest};
+    use fidl_fuchsia_net::{IpAddress, Ipv4Address};
     use net_declare::std_socket_addr;
     use serde_json::Value;
     use std::sync::Arc;
     use target_holders::fake_proxy;
+
+    const IPV4_ADDR: [u8; 4] = [127, 0, 0, 1];
 
     const TEST_OUTPUT_HUMAN: &'static str = "\
         Target: \
@@ -363,6 +414,37 @@ mod tests {
         \n    Board: \"fake_board\"\
         \n    Commit: \"fake_commit\"\
         \n";
+
+    fn setup_fake_target_server() -> Deferred<TargetProxyHolder> {
+        Deferred::from_output(Ok({
+            target_holders::fake_daemon_proxy::<TargetProxy>(move |req| match req {
+                TargetRequest::GetSshAddress { responder, .. } => {
+                    responder
+                        .send(&TargetIpAddrInfo::Ip(TargetIp {
+                            ip: IpAddress::Ipv4(Ipv4Address { addr: IPV4_ADDR }),
+                            scope_id: 1,
+                        }))
+                        .expect("fake ssh address");
+                }
+                TargetRequest::Identity { responder, .. } => {
+                    let addrs = vec![TargetAddrInfo::Ip(TargetIp {
+                        ip: IpAddress::Ipv4(Ipv4Address { addr: IPV4_ADDR }),
+                        scope_id: 1,
+                    })];
+                    let nodename = Some("fake_fuchsia_device".to_string());
+                    responder
+                        .send(&TargetInfo {
+                            nodename,
+                            addresses: Some(addrs),
+                            ..Default::default()
+                        })
+                        .unwrap();
+                }
+                _ => assert!(false),
+            })
+            .into()
+        }))
+    }
 
     fn setup_fake_device_id_server(client: Arc<fdomain_client::Client>) -> DeviceIdProviderProxy {
         fake_proxy(client, move |req| match req {
@@ -438,6 +520,7 @@ mod tests {
                 testing_lib::FakeRcsConfig::default(),
             )
             .into(),
+            target_proxy: setup_fake_target_server(),
             channel_provider_proxy: setup_fake_channel_provider_server(Arc::clone(&client)),
             channel_control_proxy: setup_fake_channel_control_server(Arc::clone(&client)),
             board_proxy: setup_fake_board_server(Arc::clone(&client)),
@@ -606,6 +689,7 @@ mod tests {
                 testing_lib::FakeRcsConfig::default(),
             )
             .into(),
+            target_proxy: setup_fake_target_server(),
             channel_provider_proxy: setup_fake_channel_provider_server(Arc::clone(&client)),
             channel_control_proxy: setup_fake_channel_control_server(Arc::clone(&client)),
             board_proxy: setup_fake_board_server(Arc::clone(&client)),
@@ -630,7 +714,6 @@ mod tests {
     }
 
     async fn setup_fake_resolution() -> Resolution {
-        use addr::TargetIpAddr;
         let device_address = std_socket_addr!("127.0.0.1:22");
         let target_addr = TargetIpAddr::from(device_address.clone());
         let target_info =
@@ -660,6 +743,7 @@ mod tests {
                 testing_lib::FakeRcsConfig::default(),
             )
             .into(),
+            target_proxy: setup_fake_target_server(),
             channel_provider_proxy: setup_fake_channel_provider_server(Arc::clone(&client)),
             channel_control_proxy: setup_fake_channel_control_server(Arc::clone(&client)),
             board_proxy: setup_fake_board_server(Arc::clone(&client)),
@@ -721,6 +805,7 @@ mod tests {
             cmd: args::TargetShow { ..Default::default() },
             fho_env,
             rcs_proxy,
+            target_proxy: setup_fake_target_server(),
             channel_provider_proxy: setup_fake_channel_provider_server(Arc::clone(&client)),
             channel_control_proxy: setup_fake_channel_control_server(Arc::clone(&client)),
             board_proxy: setup_fake_board_server(Arc::clone(&client)),

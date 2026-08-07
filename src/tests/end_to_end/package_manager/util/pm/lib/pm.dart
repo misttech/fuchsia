@@ -382,6 +382,7 @@ class PackageManagerRepo {
 
   Future<void> cleanup() async {
     await stopServer();
+    await ffx(['daemon', 'stop']);
     await Future.wait([_repoPath, _ffxIsolateDir].map((path) async {
       try {
         await Directory(path).delete(recursive: true);

@@ -10,7 +10,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net"
 	"os"
 	"os/exec"
 	"slices"
@@ -22,7 +21,6 @@ import (
 	"go.fuchsia.dev/fuchsia/tools/lib/logger"
 )
 
-// TODO(b/540443180): Clean up ffxDaemon naming and ffx_daemon.go file in a follow-up CL now that daemon is removed.
 var _ FFXToolImpl = (*ffxDaemon)(nil)
 
 type ffxDaemon struct {
@@ -95,26 +93,6 @@ func (f *ffxDaemon) GetTarget() string {
 	return f.target
 }
 
-func matchTarget(entry TargetEntry, target string) bool {
-	if target == "" {
-		return true
-	}
-	if entry.NodeName == target || entry.NodeName == "" || entry.NodeName == "<unnamed>" || entry.Serial == target {
-		return true
-	}
-	for _, addr := range entry.Addresses {
-		if addr.IP == target {
-			return true
-		}
-		if addr.SSHPort != 0 {
-			if net.JoinHostPort(addr.IP, strconv.Itoa(int(addr.SSHPort))) == target {
-				return true
-			}
-		}
-	}
-	return false
-}
-
 func (f *ffxDaemon) TargetWait(ctx context.Context, target string) error {
 	if target == "" {
 		target = f.target
@@ -126,18 +104,18 @@ func (f *ffxDaemon) TargetWait(ctx context.Context, target string) error {
 		}
 
 		if len(entries) > 0 {
-			if target == "" {
+			if f.target == "" {
 				return nil
 			}
 			for _, entry := range entries {
-				if matchTarget(entry, target) {
+				if entry.NodeName == f.target {
 					return nil
 				}
 			}
 		}
 		time.Sleep(5 * time.Second)
 	}
-	return fmt.Errorf("timed out waiting for target %q", target)
+	return fmt.Errorf("timed out waiting for target %q", f.target)
 }
 
 func (f *ffxDaemon) RebootToBootloader(ctx context.Context, target string) error {

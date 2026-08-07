@@ -299,6 +299,7 @@ group("tests") {
     "command:tests($host_toolchain)",
     "config:tests($host_toolchain)",
     "core:tests($host_toolchain)",
+    "daemon:tests($host_toolchain)",
     "lib:tests($host_toolchain)",
     "playground:tests($host_toolchain)",
     "plugins/package:tests($host_toolchain)",

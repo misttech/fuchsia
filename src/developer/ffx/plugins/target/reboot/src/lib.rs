@@ -12,16 +12,27 @@ use ffx_config::EnvironmentContext;
 use ffx_reboot_args::RebootCommand;
 use ffx_writer::MachineWriter;
 use fho::{Deferred, FfxContext, FfxMain, FfxTool};
-use fidl_fuchsia_developer_ffx::TargetRebootState;
-use target_holders::moniker;
+use fidl_fuchsia_developer_ffx::{TargetRebootError, TargetRebootState};
+use target_holders::{TargetProxyHolder, moniker};
 use tokio::sync::mpsc::channel;
+
+const NETSVC_NOT_FOUND: &str = "The Fuchsia target's netsvc address could not be determined.\n\
+                                If this problem persists, try running `ffx doctor` for diagnostics";
+const NETSVC_COMM_ERR: &str = "There was a communication error using netsvc to reboot.\n\
+                               If the problem persists, try running `ffx doctor` for further diagnostics";
+const BOOT_TO_ZED: &str = "Cannot reboot from Bootloader state to Recovery state.";
+const REBOOT_TO_PRODUCT: &str = "\nReboot to Product state with `ffx target reboot` and try again.";
+const COMM_ERR: &str = "There was a communication error with the device. Please try again. \n\
+                        If the problem persists, try running `ffx doctor` for further diagnostics";
 
 #[derive(FfxTool)]
 pub struct RebootTool {
     context: EnvironmentContext,
     #[command]
     cmd: RebootCommand,
-    // Admin proxy for shutdown shim
+    // Use target proxy when in daemon mode
+    target_proxy: Deferred<TargetProxyHolder>,
+    // Use admin proxy when in direct mode
     #[with(fho::deferred(moniker("/bootstrap/shutdown_shim")))]
     admin_proxy: Deferred<AdminProxy>,
 }
@@ -35,7 +46,14 @@ impl FfxMain for RebootTool {
     type Error = ::fho::Error;
 
     async fn main(mut self, mut writer: Self::Writer) -> fho::Result<()> {
-        let res = reboot_direct(&mut self.admin_proxy, self.cmd, &self.context).await;
+        // We have to check is_strict() explicitly because at this point
+        // the connection mode (direct vs daemon) has not yet been
+        // established, since all of our proxies are deferred.
+        let res = if self.context.is_strict() || self.context.get_direct_connection_mode() {
+            reboot_direct(&mut self.admin_proxy, self.cmd, &self.context).await
+        } else {
+            reboot_daemon(&self.target_proxy.await?, self.cmd).await
+        };
         if res.is_ok() {
             writer.machine(&())?;
         }
@@ -148,6 +166,24 @@ async fn reboot_direct_from_fastboot(
     Ok(())
 }
 
+async fn reboot_daemon(target_proxy: &TargetProxyHolder, cmd: RebootCommand) -> fho::Result<()> {
+    let state = reboot_state(&cmd)?;
+    match target_proxy.reboot(state).await.bug()? {
+        Ok(_) => Ok(()),
+        Err(TargetRebootError::NetsvcCommunication) => {
+            ffx_bail!("{}", NETSVC_COMM_ERR)
+        }
+        Err(TargetRebootError::NetsvcAddressNotFound) => {
+            ffx_bail!("{}", NETSVC_NOT_FOUND)
+        }
+        Err(TargetRebootError::FastbootToRecovery) => {
+            ffx_bail!("{}{}", BOOT_TO_ZED, REBOOT_TO_PRODUCT)
+        }
+        Err(TargetRebootError::TargetCommunication)
+        | Err(TargetRebootError::FastbootCommunication) => ffx_bail!("{}", COMM_ERR),
+    }
+}
+
 fn reboot_state(cmd: &RebootCommand) -> fho::Result<TargetRebootState> {
     match (cmd.bootloader, cmd.recovery) {
         (true, true) => {
@@ -165,6 +201,47 @@ fn reboot_state(cmd: &RebootCommand) -> fho::Result<TargetRebootState> {
 mod test {
     use super::*;
     use fdomain_fuchsia_hardware_power_statecontrol::AdminRequest;
+    use fidl_fuchsia_developer_ffx::{TargetProxy, TargetRequest};
+    use target_holders::fake_daemon_proxy;
+
+    fn setup_fake_target_server(cmd: RebootCommand) -> TargetProxyHolder {
+        TargetProxyHolder::from(fake_daemon_proxy::<TargetProxy>(move |req| match req {
+            TargetRequest::Reboot { state: _, responder } => {
+                assert!(!(cmd.bootloader && cmd.recovery));
+                responder.send(Ok(())).unwrap();
+            }
+            r => panic!("unexpected request: {:?}", r),
+        }))
+    }
+
+    async fn run_reboot_daemon_test(cmd: RebootCommand) -> fho::Result<()> {
+        let target_proxy = setup_fake_target_server(cmd);
+        reboot_daemon(&target_proxy, cmd).await
+    }
+
+    #[fuchsia::test]
+    async fn test_reboot() -> fho::Result<()> {
+        run_reboot_daemon_test(RebootCommand { bootloader: false, recovery: false }).await
+    }
+
+    #[fuchsia::test]
+    async fn test_bootloader() -> fho::Result<()> {
+        run_reboot_daemon_test(RebootCommand { bootloader: true, recovery: false }).await
+    }
+
+    #[fuchsia::test]
+    async fn test_recovery() -> fho::Result<()> {
+        run_reboot_daemon_test(RebootCommand { bootloader: false, recovery: true }).await
+    }
+
+    #[fuchsia::test]
+    async fn test_error() {
+        assert!(
+            run_reboot_daemon_test(RebootCommand { bootloader: true, recovery: true })
+                .await
+                .is_err()
+        )
+    }
 
     #[fuchsia::test]
     async fn test_reboot_direct_from_product() -> fho::Result<()> {
@@ -234,5 +311,65 @@ mod test {
                 .to_string()
                 .contains("Rebooting a target in state Zedboot is not supported")
         );
+    }
+
+    #[fuchsia::test]
+    async fn test_strict_mode_uses_direct_reboot() {
+        let context = EnvironmentContext::strict(
+            ffx_config::environment::ExecutableKind::Test,
+            ffx_config::ConfigMap::new(),
+        )
+        .expect("strict context");
+
+        let cmd = RebootCommand { bootloader: false, recovery: false };
+
+        // target_proxy should NOT be used.
+        let target_proxy = Deferred::from_output(Ok(TargetProxyHolder::from(fake_daemon_proxy::<
+            TargetProxy,
+        >(|_req| {
+            panic!("target proxy should not be used in strict mode");
+        }))));
+
+        // admin_proxy MIGHT be used if discovery succeeds, but even if it doesn't,
+        // we just want to ensure target_proxy isn't used.
+        let client = fdomain_local::local_client_empty();
+        let admin_proxy = Deferred::from_output(Ok(target_holders::fake_proxy(client, |_req| {
+            // If we get here, great! But we might fail discovery first.
+        })));
+
+        let tool = RebootTool { context, cmd, target_proxy, admin_proxy };
+
+        let test_buffers = ffx_writer::TestBuffers::default();
+        let writer = MachineWriter::new_test(None, &test_buffers);
+        let _res = tool.main(writer).await;
+
+        // If we didn't panic, the test passed.
+    }
+
+    #[fuchsia::test]
+    async fn test_machine_output_is_valid_json() {
+        let env = ffx_config::test_init_with_daemon().unwrap();
+        // Setup a tool that will succeed in daemon mode (the easiest to mock for this)
+        let cmd = RebootCommand { bootloader: false, recovery: false };
+        let target_proxy = setup_fake_target_server(cmd);
+        let tool = RebootTool {
+            context: env.context.clone(),
+            cmd,
+            target_proxy: Deferred::from_output(Ok(target_proxy)),
+            admin_proxy: Deferred::from_output(Err(fho::Error::Unexpected(anyhow::anyhow!(
+                "should not be used"
+            )))),
+        };
+
+        let test_buffers = ffx_writer::TestBuffers::default();
+        let writer = MachineWriter::new_test(Some(ffx_writer::Format::Json), &test_buffers);
+        let res = tool.main(writer).await;
+
+        assert!(res.is_ok());
+        let output = test_buffers.into_stdout_str();
+        assert_eq!(output, "null\n");
+        // Verify it's valid JSON
+        let _v: serde_json::Value =
+            serde_json::from_str(&output).expect("Output should be valid JSON");
     }
 }

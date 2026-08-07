@@ -162,61 +162,63 @@ async fn echo_impl(
 #[cfg(test)]
 mod test {
     use super::*;
-    use anyhow::Result;
+    use anyhow::{Context, Result};
+    use fdomain_fuchsia_developer_remotecontrol::{
+        RemoteControlMarker, RemoteControlProxy, RemoteControlRequest,
+    };
     use ffx_writer::{Format, TestBuffers};
     use fho::{FhoEnvironment, TryFromEnv};
-    use fidl::endpoints::DiscoverableProtocolMarker;
+    use futures::FutureExt;
     use serde_json::json;
     use std::sync::Arc;
     use target_behavior::ConnectionBehavior;
+    use target_holders::FakeInjector;
 
-    fn setup_fake_client(
-        rcs_handler: impl Fn(fidl_fuchsia_developer_remotecontrol::RemoteControlRequest)
-        + Send
-        + Sync
-        + 'static,
-    ) -> Arc<fdomain_client::Client> {
-        let rcs_handler = Arc::new(rcs_handler);
-        fdomain_local::local_client(move || {
-            let (client_end, mut stream) =
-                fidl::endpoints::create_request_stream::<fidl_fuchsia_io::DirectoryMarker>();
-            let rcs_handler = Arc::clone(&rcs_handler);
-            fuchsia_async::Task::local(async move {
-                use futures::StreamExt;
-                while let Some(Ok(req)) = stream.next().await {
-                    match req {
-                        fidl_fuchsia_io::DirectoryRequest::Open { path, object, .. } => {
-                            if path == fidl_fuchsia_developer_remotecontrol::RemoteControlMarker::PROTOCOL_NAME {
-                                let mut rcs_stream = fidl::endpoints::ServerEnd::<
-                                    fidl_fuchsia_developer_remotecontrol::RemoteControlMarker,
-                                >::new(object)
-                                .into_stream();
-                                let rcs_handler = Arc::clone(&rcs_handler);
-                                fuchsia_async::Task::local(async move {
-                                    use futures::TryStreamExt;
-                                    while let Ok(Some(req)) = rcs_stream.try_next().await {
-                                        rcs_handler(req);
-                                    }
-                                }).detach();
-                            }
-                        }
-                        _ => {}
+    async fn setup_fake_service(client: Arc<fdomain_client::Client>) -> RemoteControlProxy {
+        use futures::TryStreamExt;
+        let (proxy, mut stream) = client.create_proxy_and_stream::<RemoteControlMarker>();
+        fuchsia_async::Task::local(async move {
+            while let Ok(Some(req)) = stream.try_next().await {
+                match req {
+                    RemoteControlRequest::EchoString { value, responder } => {
+                        responder
+                            .send(value.as_ref())
+                            .context("error sending response")
+                            .expect("should send");
                     }
+                    _ => panic!("unexpected request: {:?}", req),
                 }
-            }).detach();
-            Ok(client_end)
+            }
         })
+        .detach();
+        proxy
+    }
+
+    async fn setup_failing_fake_service(client: Arc<fdomain_client::Client>) -> RemoteControlProxy {
+        use futures::TryStreamExt;
+        let (proxy, mut stream) = client.create_proxy_and_stream::<RemoteControlMarker>();
+        fuchsia_async::Task::local(async move {
+            while let Ok(Some(req)) = stream.try_next().await {
+                match req {
+                    RemoteControlRequest::EchoString { value: _, responder } => {
+                        // Intentionally drop the responder to trigger ClientChannelClosed
+                        drop(responder);
+                    }
+                    _ => panic!("unexpected request: {:?}", req),
+                }
+            }
+        })
+        .detach();
+        proxy
     }
 
     async fn run_echo_test(cmd: EchoCommand) -> Result<String> {
-        let client = setup_fake_client(|req| match req {
-            fidl_fuchsia_developer_remotecontrol::RemoteControlRequest::EchoString {
-                value,
-                responder,
-            } => {
-                responder.send(&value).unwrap();
-            }
-            _ => panic!("unexpected request: {:?}", req),
+        let client = fdomain_local::local_client_empty();
+        let fake_injector = Arc::new(FakeInjector {
+            remote_factory_closure_f: Box::new(move || {
+                Box::pin(setup_fake_service(Arc::clone(&client)).map(Ok))
+            }),
+            ..Default::default()
         });
 
         let env = FhoEnvironment::new_with_args(
@@ -229,8 +231,7 @@ mod test {
             &["some", "test"],
         );
         let target_env = target_behavior::target_interface(&env);
-        let behavior = ConnectionBehavior::fake_with_fdomain_client(client).await;
-        target_env.set_behavior_for_test(behavior);
+        target_env.set_behavior_for_test(ConnectionBehavior::DaemonConnector(fake_injector));
 
         let connector = Connector::try_from_env(&env).await.expect("Could not make test connector");
         let tool = EchoTool { cmd, rcs_proxy: connector };
@@ -260,14 +261,12 @@ mod test {
 
     #[fuchsia::test]
     async fn test_echo_with_machine() -> Result<()> {
-        let client = setup_fake_client(|req| match req {
-            fidl_fuchsia_developer_remotecontrol::RemoteControlRequest::EchoString {
-                value,
-                responder,
-            } => {
-                responder.send(&value).unwrap();
-            }
-            _ => panic!("unexpected request: {:?}", req),
+        let client = fdomain_local::local_client_empty();
+        let fake_injector = Arc::new(FakeInjector {
+            remote_factory_closure_f: Box::new(move || {
+                Box::pin(setup_fake_service(Arc::clone(&client)).map(Ok))
+            }),
+            ..Default::default()
         });
 
         let env = FhoEnvironment::new_with_args(
@@ -280,8 +279,7 @@ mod test {
             &["some", "test"],
         );
         let target_env = target_behavior::target_interface(&env);
-        let behavior = ConnectionBehavior::fake_with_fdomain_client(client).await;
-        target_env.set_behavior_for_test(behavior);
+        target_env.set_behavior_for_test(ConnectionBehavior::DaemonConnector(fake_injector));
         let connector = Connector::try_from_env(&env).await.expect("Could not make test connector");
         let cmd = EchoCommand { text: Some("test".to_string()), repeat: false };
         let tool = EchoTool { cmd, rcs_proxy: connector };
@@ -306,7 +304,12 @@ mod test {
     #[fuchsia::test]
     async fn test_echo_failure() -> Result<()> {
         let cmd = EchoCommand { text: None, repeat: false };
-        let client = fdomain_local::local_client_empty();
+        let fake_injector = Arc::new(FakeInjector {
+            remote_factory_closure_f: Box::new(move || {
+                Box::pin(async { Err(anyhow::anyhow!("Mock connection failure")) })
+            }),
+            ..Default::default()
+        });
 
         let env = FhoEnvironment::new_with_args(
             &ffx_config::EnvironmentContext::no_context(
@@ -318,8 +321,7 @@ mod test {
             &["some", "test"],
         );
         let target_env = target_behavior::target_interface(&env);
-        let behavior = ConnectionBehavior::fake_with_fdomain_client(client).await;
-        target_env.set_behavior_for_test(behavior);
+        target_env.set_behavior_for_test(ConnectionBehavior::DaemonConnector(fake_injector));
 
         let connector = Connector::try_from_env(&env).await.expect("Could not make test connector");
         let tool = EchoTool { cmd, rcs_proxy: connector };
@@ -338,15 +340,12 @@ mod test {
     #[fuchsia::test]
     async fn test_echo_capability_failure() -> Result<()> {
         let cmd = EchoCommand { text: Some("test".to_string()), repeat: false };
-        let client = setup_fake_client(|req| match req {
-            fidl_fuchsia_developer_remotecontrol::RemoteControlRequest::EchoString {
-                responder,
-                ..
-            } => {
-                // Intentionally drop the responder to trigger ClientChannelClosed
-                drop(responder);
-            }
-            _ => panic!("unexpected request: {:?}", req),
+        let client = fdomain_local::local_client_empty();
+        let fake_injector = Arc::new(FakeInjector {
+            remote_factory_closure_f: Box::new(move || {
+                Box::pin(setup_failing_fake_service(Arc::clone(&client)).map(Ok))
+            }),
+            ..Default::default()
         });
 
         let env = FhoEnvironment::new_with_args(
@@ -359,8 +358,7 @@ mod test {
             &["some", "test"],
         );
         let target_env = target_behavior::target_interface(&env);
-        let behavior = ConnectionBehavior::fake_with_fdomain_client(client).await;
-        target_env.set_behavior_for_test(behavior);
+        target_env.set_behavior_for_test(ConnectionBehavior::DaemonConnector(fake_injector));
 
         let connector = Connector::try_from_env(&env).await.expect("Could not make test connector");
         let tool = EchoTool { cmd, rcs_proxy: connector };

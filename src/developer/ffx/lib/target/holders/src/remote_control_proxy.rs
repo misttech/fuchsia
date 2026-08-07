@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use async_trait::async_trait;
+use errors::FfxError;
 use fdomain_client::fidl::{DiscoverableProtocolMarker, Proxy};
 use fdomain_fuchsia_developer_remotecontrol::RemoteControlProxy;
 use ffx_command_error::{FfxContext as _, Result};
@@ -35,15 +36,36 @@ impl TryFromEnv for RemoteControlProxyHolder {
     async fn try_from_env(env: &FhoEnvironment) -> std::result::Result<Self, Self::Error> {
         let target_env = target_interface(env);
         let behavior = target_env.init_connection_behavior(env.environment_context()).await?;
-        let ConnectionBehavior::Direct(dc) = &*behavior;
-        let conn = dc
-            .resolution()
-            .await
-            .map_err(|e| e.into_command_error())?
-            .get_connection(env.environment_context())
-            .await
-            .map_err(|e| e.into_command_error())?;
-        conn.rcs_proxy_fdomain().await.bug().map(Into::into).map_err(Into::into)
+        match *behavior {
+            ConnectionBehavior::DirectConnector(ref dc) => {
+                let conn = dc
+                    .resolution()
+                    .await
+                    .map_err(|e| e.into_command_error())?
+                    .get_connection(env.environment_context())
+                    .await
+                    .map_err(|e| e.into_command_error())?;
+                return conn.rcs_proxy_fdomain().await.bug().map(Into::into).map_err(Into::into);
+            }
+            ConnectionBehavior::DaemonConnector(ref dc) => {
+                match dc.remote_factory_fdomain().await {
+                    Ok(p) => Ok(p.into()),
+                    Err(e) => {
+                        let doctor_tip = "Please check the connection to the target; `ffx doctor -v` may help diagnose the issue.";
+                        if let Some(ffx_e) = &e.downcast_ref::<FfxError>() {
+                            let message = format!(
+                                "Failed connecting to remote control proxy: {ffx_e}. {doctor_tip}"
+                            );
+                            Err(e).user_message(message)
+                        } else {
+                            let message =
+                                format!("Failed to create remote control proxy: {e}. {doctor_tip}");
+                            Err(e).user_message(message)
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -82,6 +104,22 @@ pub fn fake_proxy<T: fdomain_client::fidl::Proxy>(
     fake_async_proxy(client, async move |req| {
         handle_request(req);
     })
+}
+
+/// Sets up a fake FIDL proxy of type `T` handing requests to the given
+/// callback and returning their responses.
+pub fn fake_daemon_proxy<T: fidl::endpoints::Proxy>(
+    mut handle_request: impl FnMut(fidl::endpoints::Request<T::Protocol>) + 'static,
+) -> T {
+    use futures::stream::TryStreamExt;
+    let (proxy, mut stream) = fidl::endpoints::create_proxy_and_stream::<T::Protocol>();
+    fuchsia_async::Task::local(async move {
+        while let Ok(Some(req)) = stream.try_next().await {
+            handle_request(req);
+        }
+    })
+    .detach();
+    proxy
 }
 
 /// Sets up a fake FDomain proxy of type `T` handing requests to the given

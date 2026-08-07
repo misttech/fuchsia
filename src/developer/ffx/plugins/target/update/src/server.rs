@@ -449,7 +449,9 @@ pub(crate) mod tests {
     use ffx_target::TargetInfoQuery;
     use fho::{FhoEnvironment, TryFromEnv as _};
     use fidl::endpoints::DiscoverableProtocolMarker;
-    use fidl_fuchsia_developer_remotecontrol::{ConnectCapabilityError, RemoteControlRequest};
+    use fidl_fuchsia_developer_remotecontrol::{
+        ConnectCapabilityError, RemoteControlProxy, RemoteControlRequest,
+    };
     use fidl_fuchsia_pkg::{
         RepositoryConfig, RepositoryIteratorRequest, RepositoryManagerMarker,
         RepositoryManagerRequest, RepositoryManagerRequestStream,
@@ -462,37 +464,7 @@ pub(crate) mod tests {
     use futures::{SinkExt as _, StreamExt as _, TryStreamExt as _};
     use std::sync::{Arc, Mutex};
     use target_behavior::ConnectionBehavior;
-    use target_holders::{HostAddrHolder, RemoteControlProxyHolder};
-
-    fn setup_fake_client() -> Arc<fdomain_client::Client> {
-        fdomain_local::local_client(move || {
-            let (client_end, mut stream) =
-                fidl::endpoints::create_request_stream::<fidl_fuchsia_io::DirectoryMarker>();
-            fuchsia_async::Task::local(async move {
-                use futures::StreamExt;
-                while let Some(Ok(req)) = stream.next().await {
-                    match req {
-                        fidl_fuchsia_io::DirectoryRequest::Open { path, object, .. } => {
-                            if path == fidl_fuchsia_developer_remotecontrol::RemoteControlMarker::PROTOCOL_NAME {
-                                let mut rcs_stream = fidl::endpoints::ServerEnd::<
-                                    fidl_fuchsia_developer_remotecontrol::RemoteControlMarker,
-                                >::new(object)
-                                .into_stream();
-                                fuchsia_async::Task::local(async move {
-                                    use futures::TryStreamExt;
-                                    while let Ok(Some(req)) = rcs_stream.try_next().await {
-                                        handle_rcs_proxy_request(req);
-                                    }
-                                }).detach();
-                            }
-                        }
-                        _ => {}
-                    }
-                }
-            }).detach();
-            Ok(client_end)
-        })
-    }
+    use target_holders::{FakeInjector, HostAddrHolder, RemoteControlProxyHolder};
 
     pub(crate) struct FakeTestEnv {
         pub context: EnvironmentContext,
@@ -504,12 +476,44 @@ pub(crate) mod tests {
 
     impl FakeTestEnv {
         pub(crate) async fn new(test_env: &TestEnv) -> Self {
-            let fdomain_client = setup_fake_client();
+            let fake_rcs_proxy: RemoteControlProxy =
+                target_holders::fake_daemon_proxy(move |req| handle_rcs_proxy_request(req));
+            let fdomain_client = fdomain_local::local_client(move || {
+                let (client_end, mut stream) = fidl::endpoints::create_request_stream::<
+                    fidl_fuchsia_developer_remotecontrol::RemoteControlMarker,
+                >();
+                fuchsia_async::Task::local(async move {
+                    while let Ok(Some(req)) = stream.try_next().await {
+                        handle_rcs_proxy_request(req);
+                    }
+                })
+                .detach();
+                Ok(client_end.into_channel().into())
+            });
+            let fcc = fdomain_client.clone();
+            let fake_injector = FakeInjector {
+                remote_factory_closure: Box::new(move || {
+                    let value = fake_rcs_proxy.clone();
+                    Box::pin(async move { Ok(value) })
+                }),
+                remote_factory_closure_f: Box::new(move || {
+                    let fdomain_client = fcc.clone();
+                    Box::pin(async move {
+                        Ok(fdomain_client::fidl::ClientEnd::<
+                            fdomain_fuchsia_developer_remotecontrol::RemoteControlMarker,
+                        >::from(
+                            fdomain_client.namespace().await.unwrap()
+                        )
+                        .into_proxy())
+                    })
+                }),
+                ..Default::default()
+            };
             let fho_env = FhoEnvironment::new_with_args(&test_env.context, &["some", "test"]);
             let target_env = target_behavior::target_interface(&fho_env);
-            let behavior =
-                ConnectionBehavior::fake_with_fdomain_client(fdomain_client.clone()).await;
-            target_env.set_behavior_for_test(behavior);
+            target_env.set_behavior_for_test(ConnectionBehavior::DaemonConnector(Arc::new(
+                fake_injector,
+            )));
 
             let rcs_proxy_connector =
                 Connector::try_from_env(&fho_env).await.expect("Could not make RCS test connector");

@@ -4,6 +4,7 @@ completion
 component
 config
 coverage
+daemon
 debug
 doctor
 driver

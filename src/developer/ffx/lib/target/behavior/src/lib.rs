@@ -2,16 +2,21 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::injection::Injection;
 use discovery::DiscoverySources;
 #[cfg(test)]
 use discovery::{DiscoveryBuilder, TargetEvent, TargetHandle, TargetState};
 use ffx_command_error::{Result, bug};
 use ffx_config::EnvironmentContext;
+use ffx_core::Injector;
 use ffx_target::{DefaultTargetResolver, Resolution, build_discovery, build_discovery_from_config};
+use fho::TryFromEnv;
 use std::fmt;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::sync::OnceCell;
+
+mod injection;
 
 struct DirectConnectorInner {
     context: EnvironmentContext,
@@ -95,65 +100,28 @@ impl DirectConnector {
 
 #[derive(Clone)]
 pub enum ConnectionBehavior {
-    Direct(DirectConnector),
+    DaemonConnector(Arc<dyn Injector>),
+    DirectConnector(DirectConnector),
 }
 
 impl ConnectionBehavior {
-    pub fn direct_connector(&self) -> Option<&DirectConnector> {
-        let ConnectionBehavior::Direct(dc) = self;
-        Some(dc)
-    }
-
     pub fn fake_direct_connector(resolution: Resolution) -> Self {
-        ConnectionBehavior::Direct(DirectConnector::from_resolution_for_test(resolution))
+        ConnectionBehavior::DirectConnector(DirectConnector::from_resolution_for_test(resolution))
     }
-
-    pub async fn fake_with_fdomain_client(client: std::sync::Arc<fdomain_client::Client>) -> Self {
-        let socket_addr = std::net::SocketAddr::new(
-            std::net::IpAddr::V4(std::net::Ipv4Addr::new(127, 0, 0, 1)),
-            22,
-        );
-        let target_handle = discovery::TargetHandle {
-            node_name: Some("test-target".to_string()),
-            state: discovery::TargetState::Product {
-                addrs: vec![addr::TargetAddr::Net(socket_addr)],
-                serial: None,
-            },
-            manual: false,
-        };
-        let resolution = ffx_target::Resolution::from_target_handle(target_handle).unwrap();
-        let conn = ffx_target::Connection::from_fdomain_client(client);
-        resolution.set_connection_for_test(Some(conn)).await;
-        Self::fake_direct_connector(resolution)
+    pub fn fake_daemon_connector<T: Injector + 'static>(injector: T) -> Self {
+        ConnectionBehavior::DaemonConnector(Arc::new(injector))
     }
-}
-
-pub async fn setup_fake_resolution(host_address: Option<String>) -> Resolution {
-    let device_address =
-        std::net::SocketAddr::new(std::net::IpAddr::V4(std::net::Ipv4Addr::new(127, 0, 0, 1)), 22);
-    let target_handle = discovery::TargetHandle {
-        node_name: Some("test-target".to_string()),
-        state: discovery::TargetState::Product {
-            addrs: vec![addr::TargetAddr::Net(device_address.clone())],
-            serial: None,
-        },
-        manual: false,
-    };
-    let ret = Resolution::from_target_handle(target_handle).unwrap();
-    let host_ssh_address = host_address.map(|a| ffx_ssh::parse::HostAddr::from(a));
-    let fidl_pipe =
-        ffx_target::FidlPipe::fake_with_host_ssh_address(Some(device_address), host_ssh_address);
-    let conn = ffx_target::Connection::fake(fidl_pipe);
-    ret.set_connection_for_test(Some(conn)).await;
-    ret
 }
 
 // Manually implement Debug here so we can skip implementing
 // Debug on the traits of the variant data.
 impl fmt::Debug for ConnectionBehavior {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let ConnectionBehavior::Direct(_) = self;
-        write!(f, "ConnectionBehavior(DirectConnector)")
+        let name = match self {
+            Self::DaemonConnector(_) => "DaemonConnector",
+            Self::DirectConnector(_) => "DirectConnector",
+        };
+        write!(f, "{name}")
     }
 }
 
@@ -192,12 +160,24 @@ impl FhoTargetEnvironmentOuter {
         self.want_direct.load(Ordering::Acquire)
     }
 
-    /// Initialize a direct connection behavior.
+    /// Initialize either a daemon connection or a direct connection,
+    /// depending on how the tool was run. If will be a direct connection
+    /// if any of:
+    ///   * we are in strict mode
+    ///   * the `connectivity.direct=true` config is set (e.g. with "ffx -d")
+    ///   * set_direct() was called
     pub async fn init_connection_behavior(
         &self,
         context: &EnvironmentContext,
     ) -> Result<Arc<ConnectionBehavior>> {
-        self.init_direct_connection_behavior(context).await
+        if self.want_direct.load(Ordering::Acquire)
+            || context.is_strict()
+            || context.get_direct_connection_mode()
+        {
+            self.init_direct_connection_behavior(context).await
+        } else {
+            self.init_daemon_connection_behavior(context).await
+        }
     }
 
     /// Explicitly create direct connection behavior.
@@ -208,12 +188,52 @@ impl FhoTargetEnvironmentOuter {
         self.inner.init_direct_connection_behavior(context).await
     }
 
+    /// Explicitly create daemon connection behavior, for subtools such as `ffx daemon echo`
+    /// which we guarantee will use the daemon, irrespective of the configured connection type.
+    /// Returns an error when in strict mode.
+    pub async fn init_daemon_connection_behavior(
+        &self,
+        context: &EnvironmentContext,
+    ) -> Result<Arc<ConnectionBehavior>> {
+        if context.is_strict() {
+            return Err(ffx_command_error::Error::User(anyhow::anyhow!(
+                "Daemon connections are not supported in strict mode"
+            )));
+        }
+        self.inner.init_daemon_connection_behavior(context).await
+    }
+
     pub fn set_behavior_for_test(&self, new_behavior: ConnectionBehavior) {
         self.inner.set_behavior_for_test(new_behavior)
     }
 
     pub fn behavior(&self) -> Result<Arc<ConnectionBehavior>> {
         self.inner.behavior()
+    }
+
+    /// While the surface of this function is a little awkward, this is necessary to provide a
+    /// readable error. Authors shouldn't use this directly, they should instead use
+    /// `TryFromEnv`.
+    pub fn injector<T: TryFromEnv>(&self, env: &fho::FhoEnvironment) -> Result<Arc<dyn Injector>> {
+        let strict = env.ffx_command().global.strict;
+        let behavior = self.behavior()?;
+        match *behavior {
+            ConnectionBehavior::DaemonConnector(ref dc) => Ok(dc.clone()),
+            _ => {
+                if strict {
+                    Err(ffx_command_error::user_error!(
+                        "ffx-strict doesn't support use of the daemon, which is used to allocate '{}'. This command must either be re-written or you should not use it.",
+                        std::any::type_name::<T>()
+                    ))
+                } else {
+                    Err(ffx_command_error::user_error!(
+                        "Attempting to use the daemon to allocate '{}', which is not yet supported with {:?}",
+                        std::any::type_name::<T>(),
+                        behavior
+                    ))
+                }
+            }
+        }
     }
 }
 
@@ -240,16 +260,17 @@ impl FhoTargetEnvironmentInner {
     /// to be used outside of the scope of an ffx subtool (outside of the `main` function).
     fn maybe_wrap_connection_errors(&self, err: fho::Error) -> fho::Error {
         if let Some(behavior) = self.behavior.get() {
-            let ConnectionBehavior::Direct(dc) = &**behavior;
-            if let Some(conn) = dc.get_connection_if_already_established() {
-                match err {
-                    fho::Error::User(e) => {
-                        return fho::Error::User(conn.wrap_connection_errors(e).into());
+            if let ConnectionBehavior::DirectConnector(ref dc) = **behavior {
+                if let Some(conn) = dc.get_connection_if_already_established() {
+                    match err {
+                        fho::Error::User(e) => {
+                            return fho::Error::User(conn.wrap_connection_errors(e).into());
+                        }
+                        fho::Error::Unexpected(e) => {
+                            return fho::Error::Unexpected(conn.wrap_connection_errors(e).into());
+                        }
+                        _ => (),
                     }
-                    fho::Error::Unexpected(e) => {
-                        return fho::Error::Unexpected(conn.wrap_connection_errors(e).into());
-                    }
-                    _ => (),
                 }
             }
         }
@@ -264,18 +285,52 @@ impl FhoTargetEnvironmentInner {
         &self,
         context: &EnvironmentContext,
     ) -> Result<Arc<ConnectionBehavior>> {
-        self.initialize_behavior_with(|| async {
-            log::info!("Initializing ConnectionBehavior::DirectConnector");
-            let discovery = build_discovery_from_config(context);
-            let resolver = DefaultTargetResolver::new(discovery);
-            let connector = DirectConnector(Arc::new(DirectConnectorInner {
-                context: context.clone(),
-                resolution: futures::lock::Mutex::new(None),
-                resolver: futures::lock::Mutex::new(resolver),
-            }));
-            Ok(ConnectionBehavior::Direct(connector))
-        })
-        .await
+        let behavior = self
+            .initialize_behavior_with(|| async {
+                log::info!("Initializing ConnectionBehavior::DirectConnector");
+                let discovery = build_discovery_from_config(context);
+                let resolver = DefaultTargetResolver::new(discovery);
+                let connector = DirectConnector(Arc::new(DirectConnectorInner {
+                    context: context.clone(),
+                    resolution: futures::lock::Mutex::new(None),
+                    resolver: futures::lock::Mutex::new(resolver),
+                }));
+                Ok(ConnectionBehavior::DirectConnector(connector))
+            })
+            .await?;
+        // If the behavior was set explicitly, e.g. with FfxTool's TargetProxy
+        // field, then we don't want to fail if something later tries to
+        // initialize direct behavior. But we do want to warn, in case it was unintended.
+        if matches!(*behavior, ConnectionBehavior::DaemonConnector(_)) {
+            log::debug!("Ignored direct behavior after daemon behavior was specified");
+        }
+        Ok(behavior)
+    }
+
+    /// Explicitly create daemon connection behavior, for subtools such as `ffx daemon echo`
+    /// which we guarantee will use the daemon, irrespective of the configured connection type.
+    /// Returns an error when in strict mode.
+    pub async fn init_daemon_connection_behavior(
+        &self,
+        context: &EnvironmentContext,
+    ) -> Result<Arc<ConnectionBehavior>> {
+        let build_info = context.build_info();
+        let context = context.clone();
+        let behavior = self
+            .initialize_behavior_with(move || async move {
+                let overnet_injector =
+                    Injection::initialize_overnet(context.clone(), None, build_info)?;
+                log::info!("Initializing ConnectionBehavior::DaemonConnector");
+                Ok(ConnectionBehavior::DaemonConnector(Arc::new(overnet_injector)))
+            })
+            .await?;
+        // If the behavior was set explicitly, e.g. with FhoTool's "#[direct]"
+        // attribute, then we don't want to fail if something later tries to
+        // initialize daemon behavior. But we do want to warn, in case it was unintended.
+        if matches!(*behavior, ConnectionBehavior::DirectConnector(_)) {
+            log::debug!("Ignored daemon behavior after direct behavior was specified");
+        }
+        Ok(behavior)
     }
 
     pub fn behavior(&self) -> Result<Arc<ConnectionBehavior>> {
@@ -297,6 +352,31 @@ impl FhoTargetEnvironmentInner {
             .await
             .map(Clone::clone)
     }
+
+    /// While the surface of this function is a little awkward, this is necessary to provide a
+    /// readable error. Authors shouldn't use this directly, they should instead use
+    /// `TryFromEnv`.
+    pub fn injector<T: TryFromEnv>(&self, env: &fho::FhoEnvironment) -> Result<Arc<dyn Injector>> {
+        let strict = env.ffx_command().global.strict;
+        let behavior = self.behavior()?;
+        match *behavior {
+            ConnectionBehavior::DaemonConnector(ref dc) => Ok(dc.clone()),
+            _ => {
+                if strict {
+                    Err(ffx_command_error::user_error!(
+                        "ffx-strict doesn't support use of the daemon, which is used to allocate '{}'. This command must either be re-written or you should not use it.",
+                        std::any::type_name::<T>()
+                    ))
+                } else {
+                    Err(ffx_command_error::user_error!(
+                        "Attempting to use the daemon to allocate '{}', which is not yet supported with {:?}",
+                        std::any::type_name::<T>(),
+                        behavior
+                    ))
+                }
+            }
+        }
+    }
 }
 
 impl fho::EnvironmentInterface for FhoTargetEnvironment {
@@ -316,7 +396,7 @@ pub fn target_interface(env: &fho::FhoEnvironment) -> FhoTargetEnvironment {
 mod tests {
     use super::*;
     use ffx_config::environment::ExecutableKind;
-    use ffx_config::test_env;
+    use ffx_config::{ConfigMap, test_env};
 
     #[fuchsia::test]
     async fn test_connection_behavior_correct_in_strict() {
@@ -325,7 +405,7 @@ mod tests {
         let ctx = EnvironmentContext::strict(ExecutableKind::Test, runtime_args).unwrap();
         let target_env = FhoTargetEnvironment::default();
         let behavior = target_env.init_connection_behavior(&ctx).await.unwrap();
-        let _ = behavior.direct_connector().unwrap().resolution();
+        assert!(matches!(*behavior, ConnectionBehavior::DirectConnector(_)));
     }
 
     #[fuchsia::test]
@@ -333,15 +413,30 @@ mod tests {
         let env = test_env().build().unwrap();
         let target_env = FhoTargetEnvironment::default();
         let behavior = target_env.init_connection_behavior(&env.context).await.unwrap();
-        let _ = behavior.direct_connector().unwrap().resolution();
+        assert!(matches!(*behavior, ConnectionBehavior::DirectConnector(_)));
     }
 
+    #[fuchsia::test]
+    async fn test_daemon_connection_behavior() {
+        let env = test_env().build().unwrap();
+        let target_env = FhoTargetEnvironment::default();
+        let behavior = target_env.init_daemon_connection_behavior(&env.context).await.unwrap();
+        assert!(matches!(*behavior, ConnectionBehavior::DaemonConnector(_)));
+    }
+
+    #[fuchsia::test]
+    async fn test_daemon_connection_behavior_fails_in_strict() {
+        let ctx =
+            EnvironmentContext::strict(ExecutableKind::Test, ConfigMap::new()).expect("strict env");
+        let target_env = FhoTargetEnvironment::default();
+        assert!(matches!(target_env.init_daemon_connection_behavior(&ctx).await, Err(_)));
+    }
     #[fuchsia::test]
     async fn test_direct_connection_behavior() {
         let env = test_env().runtime_config("target.default", "127.0.0.1").build().unwrap();
         let target_env = FhoTargetEnvironment::default();
         let behavior = target_env.init_connection_behavior(&env.context).await.unwrap();
-        let _ = behavior.direct_connector().unwrap().resolution();
+        assert!(matches!(*behavior, ConnectionBehavior::DirectConnector(_)));
     }
 
     #[fuchsia::test]
@@ -359,7 +454,27 @@ mod tests {
         let target_env = FhoTargetEnvironment::default();
         target_env.set_direct();
         let behavior = target_env.init_connection_behavior(&env.context).await.unwrap();
-        let _ = behavior.direct_connector().unwrap().resolution();
+        assert!(matches!(*behavior, ConnectionBehavior::DirectConnector(_)));
+    }
+
+    #[fuchsia::test]
+    async fn set_daemon_behavior_will_not_override_previous_direct() {
+        let env = test_env().runtime_config("target.default", "127.0.0.1").build().unwrap();
+        let target_env = FhoTargetEnvironment::default();
+        let _behavior = target_env.init_direct_connection_behavior(&env.context).await.unwrap();
+        let returned_behavior =
+            target_env.init_daemon_connection_behavior(&env.context).await.unwrap();
+        assert!(matches!(*returned_behavior, ConnectionBehavior::DirectConnector(_)));
+    }
+
+    #[fuchsia::test]
+    async fn init_direct_behavior_will_not_override_previous_daemon() {
+        let env = test_env().build().unwrap();
+        let target_env = FhoTargetEnvironment::default();
+        let _behavior = target_env.init_daemon_connection_behavior(&env.context).await.unwrap();
+        let returned_behavior =
+            target_env.init_direct_connection_behavior(&env.context).await.unwrap();
+        assert!(matches!(*returned_behavior, ConnectionBehavior::DaemonConnector(_)));
     }
 
     #[fuchsia::test]

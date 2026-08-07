@@ -2,11 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use addr::{self, TargetIpAddr};
 use async_trait::async_trait;
-use fho::{FhoEnvironment, TryFromEnv};
-use std::net::SocketAddr;
 use std::ops::Deref;
-use target_behavior::{ConnectionBehavior, target_interface};
+use target_behavior::target_interface;
+
+use fho::{FhoEnvironment, TryFromEnv, bug};
+use std::net::SocketAddr;
 
 /// Holder struct for the target's SshAddr.
 #[derive(Debug, Clone)]
@@ -18,14 +20,20 @@ impl TryFromEnv for SshAddrHolder {
     async fn try_from_env(env: &FhoEnvironment) -> std::result::Result<Self, Self::Error> {
         let target_env = target_interface(env);
         let behavior = target_env.init_connection_behavior(env.environment_context()).await?;
-        let ConnectionBehavior::Direct(ref dc) = *behavior;
-        let addr = dc
-            .resolution()
-            .await
-            .map_err(|e| e.into_command_error())?
-            .addr()
-            .map_err(|e| e.into_command_error())?;
-        Ok(SshAddrHolder(addr))
+        Ok(SshAddrHolder(match &*behavior {
+            target_behavior::ConnectionBehavior::DaemonConnector(injector) => {
+                let target = injector.target_factory().await?;
+                let tiai = target.get_ssh_address().await.map_err(|e| bug!(e))?;
+                let tia: TargetIpAddr = tiai.into();
+                tia.into()
+            }
+            target_behavior::ConnectionBehavior::DirectConnector(connector) => connector
+                .resolution()
+                .await
+                .map_err(|e| e.into_command_error())?
+                .addr()
+                .map_err(|e| e.into_command_error())?,
+        }))
     }
 }
 

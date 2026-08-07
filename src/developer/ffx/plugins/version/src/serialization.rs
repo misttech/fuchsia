@@ -5,6 +5,7 @@
 use chrono::{Offset, TimeZone};
 use ffx_build_version::VersionInfo;
 use fho::{FfxContext, Result};
+use fidl_fuchsia_developer_ffx::{self as ffx};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;
@@ -12,10 +13,54 @@ use std::io::Write;
 
 const UNKNOWN_BUILD_HASH: &str = "(unknown)";
 
+pub(crate) fn from_ffx_version_info(value: ffx::VersionInfo) -> VersionInfo {
+    let ffx::VersionInfo {
+        commit_hash,
+        commit_timestamp,
+        build_version,
+        abi_revision,
+        api_level,
+        exec_path,
+        build_id,
+        ..
+    } = value;
+    VersionInfo {
+        commit_hash,
+        commit_timestamp,
+        build_version,
+        abi_revision,
+        api_level,
+        exec_path,
+        build_id,
+    }
+}
+#[cfg(test)]
+pub(crate) fn to_ffx_version_info(value: VersionInfo) -> ffx::VersionInfo {
+    let VersionInfo {
+        commit_hash,
+        commit_timestamp,
+        build_version,
+        abi_revision,
+        api_level,
+        exec_path,
+        build_id,
+        ..
+    } = value;
+    ffx::VersionInfo {
+        commit_hash,
+        commit_timestamp,
+        build_version,
+        abi_revision,
+        api_level,
+        exec_path,
+        build_id,
+        ..Default::default()
+    }
+}
+
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, JsonSchema)]
 pub struct Versions {
     pub tool_version: VersionInfo,
-    /// Preserved for backwards compatibility with external JSON schema consumers.
     pub daemon_version: Option<VersionInfo>,
 }
 
@@ -77,24 +122,8 @@ pub fn format_versions<W: Write, O: Offset + Display>(
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::test::*;
     use chrono::Utc;
-
-    pub const FAKE_FRONTEND_HASH: &str = "fake frontend fake";
-    pub const FAKE_FRONTEND_BUILD_VERSION: &str = "fake frontend build";
-    pub const TIMESTAMP: u64 = 1604080617;
-    pub const FAKE_ABI_REVISION: u64 = 17063755220075245312;
-    pub const FAKE_API_LEVEL: u64 = 7;
-
-    pub fn frontend_info() -> VersionInfo {
-        VersionInfo {
-            commit_hash: Some(FAKE_FRONTEND_HASH.to_string()),
-            commit_timestamp: Some(TIMESTAMP),
-            build_version: Some(FAKE_FRONTEND_BUILD_VERSION.to_string()),
-            abi_revision: Some(FAKE_ABI_REVISION),
-            api_level: Some(FAKE_API_LEVEL),
-            ..Default::default()
-        }
-    }
 
     fn run_version_test(
         tool_version: VersionInfo,
@@ -108,6 +137,25 @@ mod test {
         String::from_utf8(writer).unwrap()
     }
 
+    fn assert_lines(output: String, expected_lines: Vec<String>) {
+        let output_lines: Vec<&str> = output.lines().collect();
+
+        if output_lines.len() != expected_lines.len() {
+            let mut writer = std::io::stdout();
+            writeln!(&mut writer, "FULL OUTPUT: \n{}\n", output).unwrap();
+            writer.flush().unwrap();
+            assert!(false, "{} lines =/= {} lines", output_lines.len(), expected_lines.len());
+        }
+
+        for (out_line, expected_line) in output_lines.iter().zip(expected_lines) {
+            if !expected_line.is_empty() {
+                if !out_line.contains(&expected_line) {
+                    assert!(false, "'{}' does not contain '{}'", out_line, expected_line);
+                }
+            }
+        }
+    }
+
     #[test]
     fn test_success() {
         let output = run_version_test(frontend_info(), None, false);
@@ -118,5 +166,52 @@ mod test {
     fn test_empty_version_info_not_verbose() {
         let output = run_version_test(VersionInfo::default(), None, false);
         assert_eq!(output, "(unknown build version)\n");
+    }
+
+    #[test]
+    fn test_success_verbose() {
+        let output = run_version_test(frontend_info(), Some(daemon_info()), true);
+        assert_lines(
+            output,
+            vec![
+                "ffx:".to_string(),
+                format!("  abi-revision: {}", ABI_REVISION_STR),
+                format!("  api-level: {}", FAKE_API_LEVEL),
+                format!("  build-version: {}", FAKE_FRONTEND_BUILD_VERSION),
+                format!("  integration-commit-hash: {}", FAKE_FRONTEND_HASH),
+                format!("  integration-commit-time: {}", TIMESTAMP_STR),
+                String::default(),
+                "daemon:".to_string(),
+                format!("  abi-revision: {}", ABI_REVISION_STR),
+                format!("  api-level: {}", FAKE_API_LEVEL),
+                format!("  build-version: {}", FAKE_DAEMON_BUILD_VERSION),
+                format!("  integration-commit-hash: {}", FAKE_DAEMON_HASH),
+                format!("  integration-commit-time: {}", TIMESTAMP_STR),
+            ],
+        );
+    }
+
+    #[test]
+    fn test_frontend_empty_and_daemon_returns_none() {
+        let output = run_version_test(VersionInfo::default(), Some(VersionInfo::default()), true);
+
+        assert_lines(
+            output,
+            vec![
+                "ffx:".to_string(),
+                "  abi-revision: (unknown ABI revision)".to_string(),
+                "  api-level: (unknown API level)".to_string(),
+                "  build-version: (unknown build version)".to_string(),
+                "  integration-commit-hash: (unknown)".to_string(),
+                "  integration-commit-time: (unknown commit time)".to_string(),
+                String::default(),
+                "daemon:".to_string(),
+                "  abi-revision: (unknown ABI revision)".to_string(),
+                "  api-level: (unknown API level)".to_string(),
+                "  build-version: (unknown build version)".to_string(),
+                "  integration-commit-hash: (unknown)".to_string(),
+                "  integration-commit-time: (unknown commit time)".to_string(),
+            ],
+        );
     }
 }

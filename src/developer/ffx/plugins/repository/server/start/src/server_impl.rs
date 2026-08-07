@@ -1046,7 +1046,9 @@ mod test {
         let resolution = ffx_target::Resolution::mock(move || {
             Ok(ffx_target::Connection::from_fdomain_client(client.clone()))
         });
-        ConnectionBehavior::fake_direct_connector(resolution)
+        ConnectionBehavior::DirectConnector(
+            target_behavior::DirectConnector::from_resolution_for_test(resolution),
+        )
     }
 
     async fn make_fake_rcs_proxy_connector(
@@ -1083,7 +1085,9 @@ mod test {
             targets: vec![],
         };
         let resolution = ffx_target::Resolution::mock(move || Err(anyhow::anyhow!(err.clone())));
-        let behavior = ConnectionBehavior::fake_direct_connector(resolution);
+        let behavior = ConnectionBehavior::DirectConnector(
+            target_behavior::DirectConnector::from_resolution_for_test(resolution),
+        );
 
         let env =
             FhoEnvironment::new_with_args(&test_env.context, &["some", "repo", "start", "test"]);
@@ -1100,7 +1104,9 @@ mod test {
             targets: vec!["foo".to_string(), "bar".to_string()],
         };
         let resolution = ffx_target::Resolution::mock(move || Err(anyhow::anyhow!(err.clone())));
-        let behavior = ConnectionBehavior::fake_direct_connector(resolution);
+        let behavior = ConnectionBehavior::DirectConnector(
+            target_behavior::DirectConnector::from_resolution_for_test(resolution),
+        );
 
         let env =
             FhoEnvironment::new_with_args(&test_env.context, &["some", "repo", "start", "test"]);
