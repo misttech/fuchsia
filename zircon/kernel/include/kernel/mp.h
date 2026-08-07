@@ -96,4 +96,22 @@ void mp_signal_curr_cpu_ready();
 // timeout.
 zx_status_t mp_wait_for_all_cpus_ready(Deadline deadline);
 
+extern "C" {
+void cpp_mp_set_cpu_online(cpu_num_t cpu, bool online);
+void cpp_mp_set_curr_cpu_online(bool online);
+cpu_mask_t cpp_mp_get_online_mask();
+bool cpp_mp_is_cpu_online(cpu_num_t cpu);
+void cpp_mp_signal_curr_cpu_ready();
+zx_status_t cpp_mp_wait_for_all_cpus_ready(const Deadline* deadline);
+void cpp_mp_reschedule(cpu_mask_t mask, uint32_t flags);
+void cpp_mp_reschedule_self();
+void cpp_mp_interrupt(mp_ipi_target target, cpu_mask_t mask);
+void cpp_mp_sync_exec(mp_ipi_target target, cpu_mask_t mask, mp_sync_task_t task, void* context);
+zx_status_t cpp_mp_hotplug_cpu_mask(cpu_mask_t mask);
+zx_status_t cpp_mp_hotplug_cpu(cpu_num_t cpu);
+void cpp_mp_unplug_current_cpu();
+zx_status_t cpp_mp_unplug_cpu_mask(cpu_mask_t mask, zx_instant_mono_t deadline);
+zx_status_t cpp_mp_unplug_cpu(cpu_num_t cpu);
+}  // extern "C"
+
 #endif  // ZIRCON_KERNEL_INCLUDE_KERNEL_MP_H_

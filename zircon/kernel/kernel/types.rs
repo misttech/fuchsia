@@ -42,3 +42,9 @@ impl From<u64> for VAddr {
 
 #[allow(non_camel_case_types)]
 pub type cpu_mask_t = u32;
+
+#[allow(non_camel_case_types)]
+pub type cpu_num_t = u32;
+
+pub const INVALID_CPU: cpu_num_t = u32::MAX;
+pub const CPU_MASK_ALL: cpu_mask_t = u32::MAX;

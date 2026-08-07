@@ -5,6 +5,7 @@
 // https://opensource.org/licenses/MIT
 
 pub mod bits;
+pub mod mp;
 pub mod relaxed_atomic;
 pub mod restricted_state;
 pub mod stats;

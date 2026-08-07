@@ -19,6 +19,7 @@ source_set("kernel") {
     "init.cc",
     "lazy_owned_wait_queue.cc",
     "mp.cc",
+    "mp_ffi.cc",
     "mutex.cc",
     "owned_wait_queue.cc",
     "owned_wait_queue_pool.cc",
@@ -112,6 +113,7 @@ kernel_rust_mod("kernel-rs") {
   sources = [
     "bits.rs",
     "mod.rs",
+    "mp.rs",
     "relaxed_atomic.rs",
     "restricted_state.rs",
     "stats.rs",
