@@ -211,6 +211,72 @@ mod vmo_rs {
         }
     }
 
+    /// Creates contiguous VMOs, pins them, and tries operations that should unpin.
+    #[test]
+    fn vmo_pin_contiguous_test() {
+        let _scanner_disable = AutoVmScannerDisable::new();
+
+        let alloc_size = PAGE_SIZE * 16;
+        for is_loaning_enabled in [false, true] {
+            let _loaning_guard = ScopedLoaningEnabled::new(is_loaning_enabled);
+
+            // vmobject creation
+            let vmo = unwrap_ok!(VmObjectPaged::create_contiguous(ALLOC_FLAG_ANY, alloc_size, 0));
+
+            // pinning out of range
+            expect_eq!(
+                Status::result_into_raw(vmo.commit_range_pinned(PAGE_SIZE, alloc_size, false)),
+                Status::OUT_OF_RANGE.into_raw()
+            );
+            // pinning range of len 0
+            expect_eq!(
+                Status::result_into_raw(vmo.commit_range_pinned(PAGE_SIZE, 0, false)),
+                Status::INVALID_ARGS.into_raw()
+            );
+
+            // pinning range
+            expect_ok!(vmo.commit_range_pinned(PAGE_SIZE, 3 * PAGE_SIZE, false));
+            expect_true!(pages_in_wired_queue(&vmo, PAGE_SIZE, 3 * PAGE_SIZE));
+
+            // decommitting pinned range
+            let status = vmo.decommit_range(PAGE_SIZE, 3 * PAGE_SIZE);
+            if !is_loaning_enabled {
+                expect_eq!(Status::result_into_raw(status), Status::NOT_SUPPORTED.into_raw());
+            } else {
+                expect_eq!(Status::result_into_raw(status), Status::BAD_STATE.into_raw());
+            }
+            let status = vmo.decommit_range(PAGE_SIZE, PAGE_SIZE);
+            if !is_loaning_enabled {
+                expect_eq!(Status::result_into_raw(status), Status::NOT_SUPPORTED.into_raw());
+            } else {
+                expect_eq!(Status::result_into_raw(status), Status::BAD_STATE.into_raw());
+            }
+            let status = vmo.decommit_range(3 * PAGE_SIZE, PAGE_SIZE);
+            if !is_loaning_enabled {
+                expect_eq!(Status::result_into_raw(status), Status::NOT_SUPPORTED.into_raw());
+            } else {
+                expect_eq!(Status::result_into_raw(status), Status::BAD_STATE.into_raw());
+            }
+
+            vmo.unpin(PAGE_SIZE, 3 * PAGE_SIZE);
+            expect_true!(pages_in_wired_queue(&vmo, PAGE_SIZE, 3 * PAGE_SIZE));
+
+            // decommitting unpinned range
+            let status = vmo.decommit_range(PAGE_SIZE, 3 * PAGE_SIZE);
+            if !is_loaning_enabled {
+                expect_eq!(Status::result_into_raw(status), Status::NOT_SUPPORTED.into_raw());
+            } else {
+                expect_ok!(status);
+            }
+
+            // pinning range after decommit
+            expect_ok!(vmo.commit_range_pinned(PAGE_SIZE, 3 * PAGE_SIZE, false));
+            expect_true!(pages_in_wired_queue(&vmo, PAGE_SIZE, 3 * PAGE_SIZE));
+
+            vmo.unpin(PAGE_SIZE, 3 * PAGE_SIZE);
+        }
+    }
+
     /// Tests multiple pin calls on the same pages up to the maximum pin count.
     #[test]
     fn vmo_multiple_pin_test() {
@@ -272,6 +338,80 @@ mod vmo_rs {
             vmo.unpin(0, PAGE_SIZE);
             // decommitting unpinned range
             expect_ok!(vmo.decommit_range(0, PAGE_SIZE));
+        }
+    }
+
+    /// Creates a contiguous VMO and pins the same pages multiple times.
+    #[test]
+    fn vmo_multiple_pin_contiguous_test() {
+        let _scanner_disable = AutoVmScannerDisable::new();
+
+        let alloc_size = PAGE_SIZE * 16;
+        for is_ppb_enabled in [false, true] {
+            let _loaning_guard = ScopedLoaningEnabled::new(is_ppb_enabled);
+
+            // vmobject creation
+            let vmo = unwrap_ok!(VmObjectPaged::create_contiguous(ALLOC_FLAG_ANY, alloc_size, 0));
+
+            // pinning whole range
+            expect_ok!(vmo.commit_range_pinned(0, alloc_size, false));
+            expect_true!(pages_in_wired_queue(&vmo, 0, alloc_size));
+            // pinning subrange
+            expect_ok!(vmo.commit_range_pinned(PAGE_SIZE, 4 * PAGE_SIZE, false));
+            expect_true!(pages_in_wired_queue(&vmo, 0, alloc_size));
+
+            for _ in 1..crate::vm::page::OBJECT_MAX_PIN_COUNT {
+                // pinning first page max times
+                expect_ok!(vmo.commit_range_pinned(0, PAGE_SIZE, false));
+            }
+            // page is pinned too much
+            expect_eq!(
+                Status::result_into_raw(vmo.commit_range_pinned(0, PAGE_SIZE, false)),
+                Status::UNAVAILABLE.into_raw()
+            );
+
+            vmo.unpin(0, alloc_size);
+            expect_true!(pages_in_wired_queue(&vmo, PAGE_SIZE, 4 * PAGE_SIZE));
+            expect_true!(pages_in_wired_queue(&vmo, 5 * PAGE_SIZE, alloc_size - 5 * PAGE_SIZE));
+
+            let status = vmo.decommit_range(PAGE_SIZE, 4 * PAGE_SIZE);
+            if !is_ppb_enabled {
+                expect_eq!(Status::result_into_raw(status), Status::NOT_SUPPORTED.into_raw());
+            } else {
+                expect_eq!(Status::result_into_raw(status), Status::BAD_STATE.into_raw());
+            }
+            let status = vmo.decommit_range(5 * PAGE_SIZE, alloc_size - 5 * PAGE_SIZE);
+            if !is_ppb_enabled {
+                expect_eq!(Status::result_into_raw(status), Status::NOT_SUPPORTED.into_raw());
+            } else {
+                expect_ok!(status);
+            }
+
+            vmo.unpin(PAGE_SIZE, 4 * PAGE_SIZE);
+            let status = vmo.decommit_range(PAGE_SIZE, 4 * PAGE_SIZE);
+            if !is_ppb_enabled {
+                expect_eq!(Status::result_into_raw(status), Status::NOT_SUPPORTED.into_raw());
+            } else {
+                expect_ok!(status);
+            }
+
+            for _ in 2..crate::vm::page::OBJECT_MAX_PIN_COUNT {
+                vmo.unpin(0, PAGE_SIZE);
+            }
+            let status = vmo.decommit_range(0, PAGE_SIZE);
+            if !is_ppb_enabled {
+                expect_eq!(Status::result_into_raw(status), Status::NOT_SUPPORTED.into_raw());
+            } else {
+                expect_eq!(Status::result_into_raw(status), Status::BAD_STATE.into_raw());
+            }
+
+            vmo.unpin(0, PAGE_SIZE);
+            let status = vmo.decommit_range(0, PAGE_SIZE);
+            if !is_ppb_enabled {
+                expect_eq!(Status::result_into_raw(status), Status::NOT_SUPPORTED.into_raw());
+            } else {
+                expect_ok!(status);
+            }
         }
     }
 
