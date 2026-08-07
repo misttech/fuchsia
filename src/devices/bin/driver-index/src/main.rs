@@ -1006,6 +1006,98 @@ mod tests {
     }
 
     #[fuchsia::test]
+    async fn test_match_driver_and_composite_spec_prioritization() {
+        // Make the bind instructions.
+        let always_match = bind::compiler::BindRules {
+            instructions: vec![],
+            symbol_table: HashMap::new(),
+            use_new_bytecode: true,
+            enable_debug: false,
+        };
+        let always_match = DecodedRules::new(
+            bind::bytecode_encoder::encode_v2::encode_to_bytecode_v2(always_match).unwrap(),
+        )
+        .unwrap();
+
+        // Make our driver.
+        let base_repo = BaseRepo::Resolved(std::vec![ResolvedDriver {
+            component_url: cm_types::Url::new(
+                "fuchsia-pkg://fuchsia.com/package#driver/my-driver.cm"
+            )
+            .unwrap(),
+            bind_rules: always_match.clone(),
+            bind_bytecode: vec![],
+            colocate: false,
+            device_categories: vec![],
+            fallback: false,
+            package_type: DriverPackageType::Base,
+            package_hash: None,
+            is_dfv2: None,
+            disabled: false,
+        },]);
+
+        let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<fdi::DriverIndexMarker>();
+
+        let index = Rc::new(Indexer::new(std::vec![], base_repo, false));
+
+        // Add a composite node spec that always matches.
+        let composite_spec = fdf::CompositeNodeSpec {
+            name: Some("test_spec".to_string()),
+            parents2: Some(vec![fdf::ParentSpec2 {
+                bind_rules: vec![fdf::BindRule2 {
+                    key: "my-key".to_string(),
+                    condition: fdf::Condition::Accept,
+                    values: vec![fdf::NodePropertyValue::StringValue("test-value".to_string())],
+                }],
+                properties: vec![],
+            }]),
+            ..Default::default()
+        };
+
+        index.add_composite_node_spec(composite_spec).unwrap();
+
+        let index_task = run_index_server(index.clone(), stream).fuse();
+        let test_task = async move {
+            let property = make_property(
+                "my-key",
+                fdf::NodePropertyValue::StringValue("test-value".to_string()),
+            );
+
+            let args =
+                fdi::MatchDriverArgs { properties: Some(vec![property]), ..Default::default() };
+
+            let result = proxy.match_driver(&args).await.unwrap().unwrap();
+
+            let expected_parent = fdf::CompositeParent {
+                composite: Some(fdf::CompositeInfo {
+                    spec: Some(fdf::CompositeNodeSpec {
+                        name: Some("test_spec".to_string()),
+                        parents2: Some(vec![fdf::ParentSpec2 {
+                            bind_rules: vec![],
+                            properties: vec![],
+                        }]),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                }),
+                index: Some(0),
+                ..Default::default()
+            };
+
+            assert_eq!(result, fdi::MatchDriverResult::CompositeParents(vec![expected_parent]));
+        }
+        .fuse();
+
+        futures::pin_mut!(index_task, test_task);
+        futures::select! {
+            result = index_task => {
+                panic!("Index task finished: {:?}", result);
+            },
+            () = test_task => {},
+        }
+    }
+
+    #[fuchsia::test]
     async fn test_bind_enum() {
         // Make the bind instructions.
         let always_match = bind::compiler::BindRules {
