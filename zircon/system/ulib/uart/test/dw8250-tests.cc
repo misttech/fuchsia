@@ -32,7 +32,7 @@ void AppendInitSequence(Mock& mock) {
                                              //   APB_DATA_WIDTH = 2
 
       .ExpectWrite(uint32_t{0x80}, 1)  // InterruptEnableRegister write
-      .ExpectWrite(uint32_t{0xD7}, 2)  // FifoControlRegister write
+      .ExpectWrite(uint32_t{0x17}, 2)  // FifoControlRegister write
       .ExpectWrite(uint32_t{0x03}, 4)  // ModemControlRegister write
       // End of Init()
       ;
@@ -67,6 +67,7 @@ TEST(Dw8250Tests, SetLineControl8N1) {
       .ExpectWrite(uint32_t{0b1000'0000}, 3)  // LineControl setting divisor latch access
       .ExpectWrite(uint32_t{0b0000'0001}, 0)  // Divisor to 1
       .ExpectWrite(uint32_t{0b0000'0000}, 1)
+      .ExpectRead(uint32_t{0b0000'0000}, 31)   // UserStatus
       .ExpectWrite(uint32_t{0b0000'0011}, 3);  // LineControl setting 8N1
 
   driver.Init();
@@ -84,6 +85,7 @@ TEST(Dw8250Tests, SetLineControl7E1) {
       .ExpectWrite(uint32_t{0b1000'0000}, 3)  // LineControl setting divisor latch access
       .ExpectWrite(uint32_t{0b0000'0001}, 0)  // Divisor to 1
       .ExpectWrite(uint32_t{0b0000'0000}, 1)
+      .ExpectRead(uint32_t{0b0000'0000}, 31)   // UserStatus
       .ExpectWrite(uint32_t{0b0001'1010}, 3);  // LineControl setting 7E1
 
   driver.Init();

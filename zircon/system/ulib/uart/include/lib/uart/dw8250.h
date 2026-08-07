@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef ZIRCON_SYSTEM_ULIB_UART_INCLUDE_LIB_UART_DW8250_H_
-#define ZIRCON_SYSTEM_ULIB_UART_INCLUDE_LIB_UART_DW8250_H_
+#ifndef LIB_UART_DW8250_H_
+#define LIB_UART_DW8250_H_
 
 #include <lib/acpi_lite/debug_port.h>
 #include <lib/stdcompat/array.h>
@@ -27,6 +27,11 @@ namespace uart::dw8250 {
 constexpr uint32_t kDefaultBaudRate = 115200;
 constexpr uint32_t kMaxBaudRate = 115200;
 constexpr uint8_t kFifoDepthDw8250Minimum = 16;
+// A conservative limit to prevent infinite hangs if the hardware busy bit gets stuck.
+// 1,000,000 iterations with pause/yield instructions provide a sufficient timeout
+// (e.g. at least several milliseconds), which is much longer than the time required
+// to transmit a single character at standard baud rates.
+constexpr size_t kWaitBusyLimit = 1'000'000;
 
 enum class InterruptType : uint8_t {
   kModemStatus = 0b0000,
@@ -317,7 +322,7 @@ struct Driver : public DriverBase<Driver, ZBI_KERNEL_DRIVER_DW8250_UART, zbi_dcf
     if (thre_mode_) {
       fcr.set_transmit_trigger(FifoControlRegister::kTransmitTriggerLevel2Char);
     }
-    fcr.set_receiver_trigger(FifoControlRegister::kReceiveTriggerLevel2LessThanFull);
+    fcr.set_receiver_trigger(FifoControlRegister::kReceiveTriggerLevel1Char);
     fcr.WriteTo(io.io());
 
     // Drive flow control bits high since we don't actively manage them.
@@ -331,7 +336,12 @@ struct Driver : public DriverBase<Driver, ZBI_KERNEL_DRIVER_DW8250_UART, zbi_dcf
     constexpr uint32_t kDivisor = kMaxBaudRate / kDefaultBaudRate;
 
     // Wait for the USR[0] bit to clear.
-    WaitDuringBusy(io);
+    // Note that if this times out, DLAB has not been set yet in this call.
+    // If DLAB was already set by a previous failed call, writing to LCR here
+    // to clear it would be ignored anyway since the UART is still busy.
+    if (!WaitDuringBusy(io)) {
+      return;
+    }
 
     LineControlRegister::Get().FromValue(0).set_divisor_latch_access(true).WriteTo(io.io());
 
@@ -380,6 +390,14 @@ struct Driver : public DriverBase<Driver, ZBI_KERNEL_DRIVER_DW8250_UART, zbi_dcf
       lcr.set_stop_bits(num_stop_bits);
     }
 
+    // Best-effort attempt to clear DLAB. Note that if the wait times out, the subsequent
+    // write to LCR will likely be ignored by the hardware because it remains busy. This
+    // leaves DLAB=1, which effectively breaks future RX/TX and interrupt configuration.
+    // Since we cannot easily log a warning or panic in this low-level library (which is
+    // used in early boot/kernel where standard logging is unavailable, and printing to
+    // the console would recurse on the dead UART anyway), we proceed with a best-effort
+    // write and exit.
+    (void)WaitDuringBusy(io);
     lcr.WriteTo(io.io());
   }
 
@@ -443,7 +461,7 @@ struct Driver : public DriverBase<Driver, ZBI_KERNEL_DRIVER_DW8250_UART, zbi_dcf
   template <class IoProvider>
   void EnableRxInterrupt(IoProvider& io, bool enable = true) {
     auto ier = InterruptEnableRegister::Get().ReadFrom(io.io());
-    ier.set_rx_available(enable).WriteTo(io.io());
+    ier.set_rx_available(enable).set_line_status(enable).WriteTo(io.io());
   }
 
   template <typename IoProvider, typename IrqProvider>
@@ -516,10 +534,15 @@ struct Driver : public DriverBase<Driver, ZBI_KERNEL_DRIVER_DW8250_UART, zbi_dcf
   }
 
   template <class IoProvider>
-  void WaitDuringBusy(IoProvider& io) {
-    // Wait for the busy bit in the USR register to be clear
-    while (UartStatusRegister::Get().ReadFrom(io.io()).uart_busy())
-      ;
+  bool WaitDuringBusy(IoProvider& io) {
+    // Wait for the busy bit in the USR register to be clear, up to a limit.
+    for (size_t i = 0; i < kWaitBusyLimit; ++i) {
+      if (!UartStatusRegister::Get().ReadFrom(io.io()).uart_busy()) {
+        return true;
+      }
+      arch::Yield();
+    }
+    return false;
   }
 
  protected:
@@ -530,4 +553,4 @@ struct Driver : public DriverBase<Driver, ZBI_KERNEL_DRIVER_DW8250_UART, zbi_dcf
 
 }  // namespace uart::dw8250
 
-#endif  // ZIRCON_SYSTEM_ULIB_UART_INCLUDE_LIB_UART_DW8250_H_
+#endif  // LIB_UART_DW8250_H_
