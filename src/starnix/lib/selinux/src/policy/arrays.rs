@@ -52,58 +52,6 @@ impl Counted for le::U32 {
     }
 }
 
-impl Validate for SimpleArray<InitialSid> {
-    type Error = anyhow::Error;
-
-    fn validate(&self, context: &PolicyValidationContext) -> Result<(), Self::Error> {
-        for initial_sid in crate::InitialSid::all_variants() {
-            if *initial_sid == crate::InitialSid::Init && !context.need_init_sid {
-                continue;
-            }
-            self.data
-                .iter()
-                .find(|initial| initial.id().get() == *initial_sid as u32)
-                .ok_or(ValidateError::MissingInitialSid { initial_sid: *initial_sid })?;
-        }
-        Ok(())
-    }
-}
-
-#[derive(Debug, PartialEq)]
-pub(super) struct InitialSid {
-    id: le::U32,
-    context: Context,
-}
-
-impl InitialSid {
-    pub(super) fn id(&self) -> le::U32 {
-        self.id
-    }
-
-    pub(super) fn context(&self) -> &Context {
-        &self.context
-    }
-}
-
-impl Parse for InitialSid
-where
-    Context: Parse,
-{
-    type Error = anyhow::Error;
-
-    fn parse<'a>(bytes: PolicyCursor<'a>) -> Result<(Self, PolicyCursor<'a>), Self::Error> {
-        let tail = bytes;
-
-        let (id, tail) = PolicyCursor::parse::<le::U32>(tail)?;
-
-        let (context, tail) = Context::parse(tail)
-            .map_err(Into::<anyhow::Error>::into)
-            .context("parsing context for initial sid")?;
-
-        Ok((Self { id, context }, tail))
-    }
-}
-
 #[derive(Debug, PartialEq)]
 pub(super) struct Context {
     metadata: ContextMetadata,

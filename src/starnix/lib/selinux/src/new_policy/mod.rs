@@ -13,6 +13,7 @@ pub(super) mod error;
 pub(super) mod filename_transitions;
 pub(super) mod id_type;
 pub(super) mod indexed;
+pub(super) mod initial_sids;
 pub(super) mod metadata;
 pub(super) mod mls;
 pub(super) mod parser;
@@ -40,6 +41,7 @@ use error::{ParseError, SerializeError, ValidateError};
 pub use filename_transitions::FilenameTransitions;
 pub use id_type::*;
 pub use indexed::IdAndNameIndexed;
+pub use initial_sids::InitialSids;
 use metadata::{Config, Counts, Magic, Signature};
 pub use metadata::{HandleUnknown, POLICYDB_VERSION_MAX, PolicyVersion};
 pub use mls::{Category, Sensitivity};
@@ -108,6 +110,7 @@ pub struct NewPolicy {
     role_transitions: Array<RoleTransition>,
     role_allowlist: Array<RoleAllow>,
     filename_transitions: FilenameTransitions,
+    initial_sids: InitialSids,
     rest: RemainingBytes,
 }
 
@@ -213,6 +216,11 @@ impl NewPolicy {
     /// Returns the filename transitions table.
     pub fn filename_transitions(&self) -> &FilenameTransitions {
         &self.filename_transitions
+    }
+
+    /// Returns the initial SIDs table.
+    pub fn initial_sids(&self) -> &InitialSids {
+        &self.initial_sids
     }
 
     /// Returns a shared reference to the remaining unparsed bytes.
@@ -334,6 +342,27 @@ mod tests {
                 assert_bytes_eq(&serialized, policy_bytes);
             }
         }
+    }
+
+    #[test]
+    fn test_initial_sids_policy_elements() {
+        let policy_bytes =
+            include_bytes!("../../testdata/composite_policies/compiled/minimal_policy");
+        let new_policy = NewPolicy::parse(policy_bytes).expect("parse minimal policy");
+        new_policy.validate().expect("validate minimal policy");
+
+        assert!(!new_policy.initial_sids().is_empty());
+        assert!(new_policy.initial_sids().len() >= crate::InitialSid::all_variants().len() - 1);
+
+        let kernel_context =
+            new_policy.initial_sids().get_by_id(crate::InitialSid::Kernel as u32).unwrap();
+        assert!(new_policy.users().get_by_id(kernel_context.user_id()).is_some());
+        assert!(new_policy.roles().get_by_id(kernel_context.role_id()).is_some());
+
+        let unlabeled_context =
+            new_policy.initial_sids().get_by_id(crate::InitialSid::Unlabeled as u32).unwrap();
+        assert!(new_policy.users().get_by_id(unlabeled_context.user_id()).is_some());
+        assert!(new_policy.roles().get_by_id(unlabeled_context.role_id()).is_some());
     }
 }
 

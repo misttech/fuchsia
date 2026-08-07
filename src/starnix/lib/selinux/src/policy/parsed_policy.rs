@@ -4,7 +4,7 @@
 
 use super::arrays::{
     Context, FsUse, GenericFsContext, IPv6Node, InfinitiBandEndPort, InfinitiBandPartitionKey,
-    InitialSid, MIN_POLICY_VERSION_FOR_INFINITIBAND_PARTITION_KEY, NamedContextPair, Node, Port,
+    MIN_POLICY_VERSION_FOR_INFINITIBAND_PARTITION_KEY, NamedContextPair, Node, Port,
     RangeTransition, SimpleArray,
 };
 use super::error::{ParseError, ValidateError};
@@ -38,7 +38,6 @@ use std::collections::HashSet;
 use std::fmt::Debug;
 use std::hash::Hash;
 use std::iter::Iterator;
-use zerocopy::little_endian as le;
 
 // As of 2026-01-30, more than five times larger than any policy seen in production or tests.
 const MAXIMUM_POLICY_SIZE: usize = 1 << 24;
@@ -52,7 +51,6 @@ pub struct ParsedPolicy {
     /// [`NewPolicy`] that handles the header and base tables.
     new_policy: Arc<NewPolicy>,
 
-    initial_sids: SimpleArray<InitialSid>,
     filesystems: SimpleArray<NamedContextPair>,
     ports: SimpleArray<Port>,
     network_interfaces: SimpleArray<NamedContextPair>,
@@ -267,19 +265,6 @@ impl ParsedPolicy {
         XpermsAccessDecision { allow, auditallow, auditdeny }
     }
 
-    /// Returns the policy entry for the specified initial Security Context.
-    pub(super) fn initial_context(&self, mut id: crate::InitialSid) -> &Context {
-        // If "userspace_initial_context" is not set then the "init" SID is treated as "kernel".
-        if id == crate::InitialSid::Init && !self.has_policycap(PolicyCap::UserspaceInitialContext)
-        {
-            id = crate::InitialSid::Kernel
-        }
-
-        // [`InitialSids`] validates that all `InitialSid` values are defined by the policy.
-        let id = le::U32::from(id as u32);
-        &self.initial_sids.data.iter().find(|initial| initial.id() == id).unwrap().context()
-    }
-
     pub(super) fn fs_uses(&self) -> &[FsUse] {
         &self.fs_uses.data
     }
@@ -306,6 +291,17 @@ impl ParsedPolicy {
             class,
             name,
         )
+    }
+
+    pub(super) fn initial_context(&self, mut id: crate::InitialSid) -> &crate::new_policy::Context {
+        let need_init_sid = self.has_policycap(PolicyCap::UserspaceInitialContext);
+        if id == crate::InitialSid::Init && !need_init_sid {
+            id = crate::InitialSid::Kernel;
+        }
+        self.new_policy
+            .initial_sids()
+            .get_by_id(id as u32)
+            .expect("initial SID must be present in validated policy")
     }
 
     // Validate that all sensitivity and category IDs referenced in the MLS level are
@@ -403,10 +399,6 @@ fn parse_policy_remaining(
 ) -> Result<(ParsedPolicy, usize), anyhow::Error> {
     let tail = PolicyCursor::new(&rest_data);
 
-    let (initial_sids, tail) = SimpleArray::<InitialSid>::parse(tail)
-        .map_err(Into::<anyhow::Error>::into)
-        .context("parsing initial sids")?;
-
     let (filesystems, tail) = SimpleArray::<NamedContextPair>::parse(tail)
         .map_err(Into::<anyhow::Error>::into)
         .context("parsing filesystem contexts")?;
@@ -474,7 +466,6 @@ fn parse_policy_remaining(
             data: rest_data,
             new_policy: Arc::new(new_policy),
 
-            initial_sids,
             filesystems,
             ports,
             network_interfaces,
@@ -493,17 +484,11 @@ fn parse_policy_remaining(
 
 impl ParsedPolicy {
     pub fn validate(&self) -> Result<(), anyhow::Error> {
-        let need_init_sid = self.has_policycap(PolicyCap::UserspaceInitialContext);
         let context = PolicyValidationContext {
             data: self.data.clone(),
-            need_init_sid,
             new_policy: self.new_policy.clone(),
         };
 
-        self.initial_sids
-            .validate(&context)
-            .map_err(Into::<anyhow::Error>::into)
-            .context("validating initial_sids")?;
         self.filesystems
             .validate(&context)
             .map_err(Into::<anyhow::Error>::into)
@@ -558,20 +543,6 @@ impl ParsedPolicy {
         let category_ids: HashSet<CategoryId> =
             self.new_policy.categories().iter().map(|x| x.id()).collect();
 
-        // Validate that initial contexts use only defined user, role, type, etc Ids.
-        // Check that all sensitivity and category IDs are defined and that MLS levels
-        // are internally consistent.
-        for initial_sid in &self.initial_sids.data {
-            self.validate_context(
-                initial_sid.context(),
-                &user_ids,
-                &role_ids,
-                &type_ids,
-                &sensitivity_ids,
-                &category_ids,
-            )?;
-        }
-
         // Validate that contexts specified in filesystem labeling rules only use
         // policy-defined Ids for their fields. Check that MLS levels are internally
         // consistent.
@@ -602,6 +573,18 @@ impl ParsedPolicy {
                     &category_ids,
                 )?;
             }
+        }
+
+        // Validate that all kernel-required initial SIDs are present in the policy.
+        let need_init_sid = self.has_policycap(PolicyCap::UserspaceInitialContext);
+        for initial_sid in crate::InitialSid::all_variants() {
+            if *initial_sid == crate::InitialSid::Init && !need_init_sid {
+                continue;
+            }
+            self.new_policy
+                .initial_sids()
+                .get_by_id(*initial_sid as u32)
+                .ok_or(ValidateError::MissingInitialSid { initial_sid: *initial_sid })?;
         }
 
         // To-do comments for cross-policy validations yet to be implemented go here.

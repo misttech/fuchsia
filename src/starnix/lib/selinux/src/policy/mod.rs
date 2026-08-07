@@ -401,9 +401,6 @@ pub(super) struct PolicyValidationContext {
     /// Policy data that is being validated.
     pub(super) data: PolicyData,
 
-    /// True if "userspace_initial_context" is enabled, which requires the "init" SID to be defined.
-    pub(super) need_init_sid: bool,
-
     /// New policy parser representation.
     pub(super) new_policy: Arc<new::NewPolicy>,
 }

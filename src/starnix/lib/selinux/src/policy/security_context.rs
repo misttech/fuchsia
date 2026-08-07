@@ -40,6 +40,12 @@ impl SecurityContext {
         Self { inner }
     }
 
+    pub(super) fn from_policy_context(context: &Context) -> SecurityContext {
+        SecurityContext { inner: context.clone() }
+    }
+
+    /// Constructs a [`SecurityContext`] from a legacy [`super::arrays::Context`].
+    /// TODO(b/527401888): Remove once legacy policy parser is removed.
     pub(super) fn new_from_policy_context(context: &super::arrays::Context) -> SecurityContext {
         let low = context.low_level().clone();
         let high = context.high_level().clone();
