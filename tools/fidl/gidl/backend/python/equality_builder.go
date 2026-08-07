@@ -54,6 +54,9 @@ func (b *equalityCheckBuilder) write(format string, args ...any) {
 }
 
 func (b *equalityCheckBuilder) visit(expr string, value ir.Value, decl mixer.Declaration) {
+	if decl.IsNullable() && value != nil {
+		b.write("self.assertIsNotNone(%s)", expr)
+	}
 	if canAssertEq(value) {
 		b.write("self.assertEqual(%s, %s)", expr, visit(value, decl))
 		return
@@ -81,11 +84,18 @@ func (b *equalityCheckBuilder) visit(expr string, value ir.Value, decl mixer.Dec
 		switch decl := decl.(type) {
 		case *mixer.StructDecl:
 			for _, field := range value.Fields {
-				b.visit(fmt.Sprintf("%s.%s", expr, field.Key.Name), field.Value, decl.Field(field.Key.Name))
+				fieldName := changeIfReserved(fidlgen.ToSnakeCase(field.Key.Name))
+				b.visit(fmt.Sprintf("%s.%s", expr, fieldName), field.Value, decl.Field(field.Key.Name))
 			}
 		case *mixer.TableDecl:
 			for _, field := range value.Fields {
-				b.visit(fmt.Sprintf("%s.%s", expr, field.Key.Name), field.Value, decl.Field(field.Key.Name))
+				fieldName := changeIfReserved(fidlgen.ToSnakeCase(field.Key.Name))
+				fieldExpr := fmt.Sprintf("%s.%s", expr, fieldName)
+				fieldDecl := decl.Field(field.Key.Name)
+				if field.Value != nil && !fieldDecl.IsNullable() {
+					b.write("self.assertIsNotNone(%s)", fieldExpr)
+				}
+				b.visit(fieldExpr, field.Value, fieldDecl)
 			}
 		case *mixer.UnionDecl:
 			field := value.Fields[0]
@@ -101,7 +111,8 @@ func (b *equalityCheckBuilder) visit(expr string, value ir.Value, decl mixer.Dec
 				// need to be extended to handle this area of the codebase. This will not just apply
 				// to unions but also to tables, structs, and enums.
 			} else {
-				b.write("self.assertEqual(%s.%s, %s)", expr, fidlgen.ToSnakeCase(field.Key.Name), visit(field.Value, decl.Field(field.Key.Name)))
+				fieldName := changeIfReserved(fidlgen.ToSnakeCase(field.Key.Name))
+				b.write("self.assertEqual(%s.%s, %s)", expr, fieldName, visit(field.Value, decl.Field(field.Key.Name)))
 			}
 		default:
 			panic(fmt.Sprintf("unhandled decl type: %T", decl))

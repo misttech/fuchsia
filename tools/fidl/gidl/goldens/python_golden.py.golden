@@ -629,6 +629,7 @@ ctx.event_create_pair()[0],
         type_name = "test.conformance/GoldenNullableHandleStruct"
         value = decode_standalone(type_name=type_name, bytes=encoded_bytes, handles=handles)
         value = construct_response_object(type_name, value)
+        self.assertIsNotNone(value.v)
         self.assertEqual(fuchsia_controller_py.Handle(value.v).koid(), handle_koids[0])
 
 
