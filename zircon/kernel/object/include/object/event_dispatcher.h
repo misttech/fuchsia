@@ -12,6 +12,7 @@
 #include <zircon/rights.h>
 #include <zircon/types.h>
 
+#include <kernel/ffi.h>
 #include <object/dispatcher.h>
 #include <object/handle.h>
 #include <object/opaque_storage.h>
@@ -19,8 +20,8 @@
 class EventDispatcher;
 
 extern "C" {
-zx_status_t cpp_event_dispatcher_create(uint32_t options,
-                                        KernelHandle<EventDispatcher>* handle_out);
+zx_status_t cpp_event_dispatcher_create(
+    uint32_t options, ffi::Uninitialized<KernelHandle<EventDispatcher>>* handle_out);
 zx_status_t rust_event_dispatcher_create(uint32_t options, zx_rights_t* rights_out,
                                          KernelHandle<EventDispatcher>* handle_out);
 void cpp_event_dispatcher_get_mem_pressure_event(uint32_t kind,
@@ -55,8 +56,8 @@ class EventDispatcher : public Dispatcher {
  protected:
   Lock<CriticalMutex>* get_lock() const final;
 
-  friend zx_status_t cpp_event_dispatcher_create(uint32_t options,
-                                                 KernelHandle<EventDispatcher>* handle_out);
+  friend zx_status_t cpp_event_dispatcher_create(
+      uint32_t options, ffi::Uninitialized<KernelHandle<EventDispatcher>>* handle_out);
   explicit EventDispatcher(uint32_t options);
 
  private:

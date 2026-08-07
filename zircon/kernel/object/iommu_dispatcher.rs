@@ -100,7 +100,7 @@ impl IommuDispatcher {
         // transferred to C++ (`cpp_iommu_dispatcher_create` takes ownership of `desc_ptr`), and
         // `handle_out` points to valid uninitialized memory for `KernelHandle<Self>`.
         let status = unsafe {
-            cpp_iommu_dispatcher_create(type_param, desc_ptr, desc_len, handle_out.as_mut_ptr())
+            cpp_iommu_dispatcher_create(type_param, desc_ptr, desc_len, &raw mut handle_out)
         };
         Status::ok(status)?;
         // SAFETY: cpp_iommu_dispatcher_create initialized handle_out.

@@ -14,6 +14,7 @@
 #include <zircon/syscalls/sampler.h>
 #include <zircon/types.h>
 
+#include <kernel/ffi.h>
 #include <object/dispatcher.h>
 #include <object/handle.h>
 #include <object/opaque_storage.h>
@@ -21,8 +22,9 @@
 
 class SamplerDispatcher;
 extern "C" {
-zx_status_t cpp_sampler_dispatcher_create(const zx_sampler_config_t* config,
-                                          KernelHandle<SamplerDispatcher>* handle_out);
+zx_status_t cpp_sampler_dispatcher_create(
+    const zx_sampler_config_t* config,
+    ffi::Uninitialized<KernelHandle<SamplerDispatcher>>* handle_out);
 zx_status_t cpp_sampler_dispatcher_start(const SamplerDispatcher* dispatcher);
 zx_status_t cpp_sampler_dispatcher_stop(const SamplerDispatcher* dispatcher);
 zx_status_t cpp_sampler_dispatcher_read_user(const SamplerDispatcher* dispatcher, void* ptr,
@@ -67,8 +69,8 @@ class SamplerDispatcher final : public Dispatcher {
   Lock<CriticalMutex>* get_lock() const final;
 
  private:
-  friend zx_status_t cpp_sampler_dispatcher_create(const zx_sampler_config_t*,
-                                                   KernelHandle<SamplerDispatcher>*);
+  friend zx_status_t cpp_sampler_dispatcher_create(
+      const zx_sampler_config_t*, ffi::Uninitialized<KernelHandle<SamplerDispatcher>>*);
   SamplerDispatcher();
 
   OpaqueStorage<kSamplerDispatcherStateSize, kSamplerDispatcherStateAlign> opaque_storage_;

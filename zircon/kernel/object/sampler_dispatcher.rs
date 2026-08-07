@@ -85,7 +85,7 @@ impl SamplerDispatcher {
         let mut handle_out = MaybeUninit::<KernelHandle<Self>>::uninit();
         // SAFETY: `config` is a valid reference and `handle_out` points to uninitialized handle
         // memory.
-        let status = unsafe { cpp_sampler_dispatcher_create(config, handle_out.as_mut_ptr()) };
+        let status = unsafe { cpp_sampler_dispatcher_create(config, &raw mut handle_out) };
         Status::ok(status)?;
         // SAFETY: cpp_sampler_dispatcher_create initialized handle_out.
         unsafe { Ok((handle_out.assume_init(), rights)) }

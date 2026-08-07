@@ -10,6 +10,7 @@
 
 #include <fbl/alloc_checker.h>
 #include <fbl/ref_ptr.h>
+#include <kernel/ffi.h>
 #include <ktl/utility.h>
 #include <object/handle.h>
 #include <object/sampler_dispatcher.h>
@@ -23,8 +24,9 @@ constexpr bool kSamplerEnabled = EXPERIMENTAL_THREAD_SAMPLER_ENABLED;
 
 extern "C" {
 
-zx_status_t cpp_sampler_dispatcher_create(const zx_sampler_config_t* config,
-                                          KernelHandle<SamplerDispatcher>* handle_out) {
+zx_status_t cpp_sampler_dispatcher_create(
+    const zx_sampler_config_t* config,
+    ffi::Uninitialized<KernelHandle<SamplerDispatcher>>* handle_out) {
   // Set up the global sampler if it hasn't been set up yet.
   zx::result res = sampler::gThreadSampler.SetUp(*config);
   if (res.is_error()) {
@@ -37,7 +39,7 @@ zx_status_t cpp_sampler_dispatcher_create(const zx_sampler_config_t* config,
     return ZX_ERR_NO_MEMORY;
   }
 
-  new (handle_out) KernelHandle<SamplerDispatcher>(ktl::move(disp));
+  handle_out->Initialize(ktl::move(disp));
   return ZX_OK;
 }
 

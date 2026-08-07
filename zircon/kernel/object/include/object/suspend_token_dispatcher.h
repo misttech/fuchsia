@@ -12,13 +12,15 @@
 #include <zircon/rights.h>
 #include <zircon/types.h>
 
+#include <kernel/ffi.h>
 #include <object/dispatcher.h>
 #include <object/handle.h>
 #include <object/opaque_storage.h>
 
 class SuspendTokenDispatcher;
 extern "C" {
-zx_status_t cpp_suspend_token_dispatcher_create(KernelHandle<SuspendTokenDispatcher>* handle_out);
+zx_status_t cpp_suspend_token_dispatcher_create(
+    ffi::Uninitialized<KernelHandle<SuspendTokenDispatcher>>* handle_out);
 void rust_suspend_token_dispatcher_state_init(void* state, void* disp);
 void rust_suspend_token_dispatcher_state_destroy(void* state);
 Lock<CriticalMutex>* rust_suspend_token_dispatcher_state_get_lock(const void* state);
@@ -47,7 +49,8 @@ class SuspendTokenDispatcher final : public Dispatcher {
   Lock<CriticalMutex>* get_lock() const final;
 
  private:
-  friend zx_status_t cpp_suspend_token_dispatcher_create(KernelHandle<SuspendTokenDispatcher>*);
+  friend zx_status_t cpp_suspend_token_dispatcher_create(
+      ffi::Uninitialized<KernelHandle<SuspendTokenDispatcher>>*);
   SuspendTokenDispatcher();
 
   OpaqueStorage<kSuspendTokenDispatcherStateSize, kSuspendTokenDispatcherStateAlign>

@@ -13,7 +13,7 @@ unsafe extern "C" {
     pub(crate) fn cpp_timer_dispatcher_create(
         options: u32,
         clock_id: zx_clock_t,
-        handle_out: *mut KernelHandle<TimerDispatcher>,
+        handle_out: *mut core::mem::MaybeUninit<KernelHandle<TimerDispatcher>>,
     ) -> zx_status_t;
 
     pub(crate) fn cpp_timer_dispatcher_init_dpc(

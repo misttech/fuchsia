@@ -13,6 +13,7 @@
 #include <zircon/types.h>
 
 #include <dev/iommu/iommu.h>
+#include <kernel/ffi.h>
 #include <object/dispatcher.h>
 #include <object/handle.h>
 #include <object/opaque_storage.h>
@@ -20,8 +21,9 @@
 class IommuDispatcher;
 
 extern "C" {
-zx_status_t cpp_iommu_dispatcher_create(uint32_t type, const uint8_t* desc_ptr, size_t desc_len,
-                                        KernelHandle<IommuDispatcher>* handle_out);
+zx_status_t cpp_iommu_dispatcher_create(
+    uint32_t type, const uint8_t* desc_ptr, size_t desc_len,
+    ffi::Uninitialized<KernelHandle<IommuDispatcher>>* handle_out);
 void rust_iommu_dispatcher_state_init(void* state, void* disp, iommu::Iommu* iommu);
 void rust_iommu_dispatcher_state_destroy(void* state);
 Lock<CriticalMutex>* rust_iommu_dispatcher_state_get_lock(const void* state);
@@ -56,9 +58,9 @@ class IommuDispatcher final : public Dispatcher {
   Lock<CriticalMutex>* get_lock() const final;
 
  private:
-  friend zx_status_t cpp_iommu_dispatcher_create(uint32_t type, const uint8_t* desc_ptr,
-                                                 size_t desc_len,
-                                                 KernelHandle<IommuDispatcher>* handle_out);
+  friend zx_status_t cpp_iommu_dispatcher_create(
+      uint32_t type, const uint8_t* desc_ptr, size_t desc_len,
+      ffi::Uninitialized<KernelHandle<IommuDispatcher>>* handle_out);
   explicit IommuDispatcher(fbl::RefPtr<Iommu> iommu);
 
   OpaqueStorage<kIommuDispatcherStateSize, kIommuDispatcherStateAlign> opaque_storage_;

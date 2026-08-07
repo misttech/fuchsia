@@ -12,14 +12,15 @@
 #include <zircon/syscalls/profile.h>
 #include <zircon/types.h>
 
+#include <kernel/ffi.h>
 #include <kernel/scheduler_state.h>
 #include <object/dispatcher.h>
 #include <object/handle.h>
 #include <object/opaque_storage.h>
 
 extern "C" {
-zx_status_t cpp_profile_dispatcher_create(const zx_profile_info_t* info,
-                                          KernelHandle<ProfileDispatcher>* handle_out);
+zx_status_t cpp_profile_dispatcher_create(
+    const zx_profile_info_t* info, ffi::Uninitialized<KernelHandle<ProfileDispatcher>>* handle_out);
 zx_status_t cpp_profile_dispatcher_validate_and_create_profile(
     const zx_profile_info_t* info, SchedulerState::BaseProfile* profile_out);
 }

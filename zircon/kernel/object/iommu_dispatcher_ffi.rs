@@ -16,7 +16,7 @@ unsafe extern "C" {
         type_param: u32,
         desc_ptr: *const u8,
         desc_len: usize,
-        handle_out: *mut KernelHandle<IommuDispatcher>,
+        handle_out: *mut core::mem::MaybeUninit<KernelHandle<IommuDispatcher>>,
     ) -> zx_status_t;
     pub(crate) fn cpp_iommu_recycle(iommu: *mut Iommu);
 }

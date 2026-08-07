@@ -175,7 +175,7 @@ impl ProfileDispatcher {
         let mut handle_out = core::mem::MaybeUninit::<KernelHandle<Self>>::uninit();
         // SAFETY: handle_out points to valid uninitialized memory for KernelHandle<Self>.
         let status =
-            unsafe { cpp_profile_dispatcher_create(info as *const _, handle_out.as_mut_ptr()) };
+            unsafe { cpp_profile_dispatcher_create(info as *const _, &raw mut handle_out) };
         Status::ok(status)?;
         // SAFETY: cpp_profile_dispatcher_create initialized handle_out.
         unsafe { Ok((handle_out.assume_init(), DEFAULT_RIGHTS)) }

@@ -8,6 +8,7 @@
 
 #include <fbl/alloc_checker.h>
 #include <fbl/ref_ptr.h>
+#include <kernel/ffi.h>
 #include <ktl/utility.h>
 #include <object/handle.h>
 #include <object/log_dispatcher.h>
@@ -15,14 +16,14 @@
 extern "C" {
 
 zx_status_t cpp_log_dispatcher_create(uint32_t flags, zx_rights_t rights,
-                                      KernelHandle<LogDispatcher>* handle_out) {
+                                      ffi::Uninitialized<KernelHandle<LogDispatcher>>* handle_out) {
   fbl::AllocChecker ac;
   auto disp = fbl::AdoptRef(new (&ac) LogDispatcher(flags));
   if (!ac.check()) {
     return ZX_ERR_NO_MEMORY;
   }
 
-  new (handle_out) KernelHandle<LogDispatcher>(ktl::move(disp));
+  handle_out->Initialize(ktl::move(disp));
   return ZX_OK;
 }
 

@@ -19,7 +19,7 @@ unsafe extern "C" {
     );
 
     pub(crate) fn cpp_counter_dispatcher_create(
-        handle_out: *mut KernelHandle<CounterDispatcher>,
+        handle_out: *mut core::mem::MaybeUninit<KernelHandle<CounterDispatcher>>,
     ) -> zx_status_t;
 }
 

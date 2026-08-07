@@ -92,14 +92,11 @@ impl MsiDispatcher {
     pub fn create(
         msi_alloc: RefPtr<MsiAllocation>,
     ) -> Result<(KernelHandle<Self>, zx_rights_t), Status> {
-        let mut handle_out = MaybeUninit::<KernelHandle<Self>>::zeroed();
+        let mut handle_out = MaybeUninit::<KernelHandle<Self>>::uninit();
         // SAFETY: `msi_alloc` is transferred to C++ (`cpp_msi_dispatcher_create` takes ownership
-        // of the raw pointer), and `handle_out` points to valid zeroed memory.
+        // of the raw pointer), and `handle_out` points to valid uninitialized memory for KernelHandle<Self>.
         let status = unsafe {
-            cpp_msi_dispatcher_create(
-                RefPtr::into_raw(msi_alloc).cast_mut(),
-                handle_out.as_mut_ptr(),
-            )
+            cpp_msi_dispatcher_create(RefPtr::into_raw(msi_alloc).cast_mut(), &raw mut handle_out)
         };
         Status::ok(status)?;
         // SAFETY: cpp_msi_dispatcher_create initialized handle_out.

@@ -127,9 +127,10 @@ impl CounterDispatcher {
     /// Creates a new CounterDispatcher via C++ and returns its kernel handle and rights.
     pub fn create() -> Result<(KernelHandle<Self>, zx_rights_t), Status> {
         let mut handle_out = MaybeUninit::<KernelHandle<Self>>::uninit();
-        let status = unsafe { cpp_counter_dispatcher_create(handle_out.as_mut_ptr()) };
+        // SAFETY: `handle_out` points to valid uninitialized memory for a KernelHandle.
+        let status = unsafe { cpp_counter_dispatcher_create(&raw mut handle_out) };
         Status::ok(status)?;
-        // SAFETY: cpp_counter_dispatcher_create initialized the handle.
+        // SAFETY: `cpp_counter_dispatcher_create` initialized the handle on success.
         unsafe { Ok((handle_out.assume_init(), DEFAULT_RIGHTS)) }
     }
 }

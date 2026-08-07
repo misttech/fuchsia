@@ -12,6 +12,7 @@
 #include <zircon/syscalls/log.h>
 #include <zircon/types.h>
 
+#include <kernel/ffi.h>
 #include <object/dispatcher.h>
 #include <object/handle.h>
 #include <object/opaque_storage.h>
@@ -21,7 +22,7 @@ extern "C" {
 // Allocates the C++ LogDispatcher instance. Implemented in C++ (log_dispatcher_ffi.cc)
 // and called by Rust during LogDispatcher::create.
 zx_status_t cpp_log_dispatcher_create(uint32_t flags, zx_rights_t rights,
-                                      KernelHandle<LogDispatcher>* handle_out);
+                                      ffi::Uninitialized<KernelHandle<LogDispatcher>>* handle_out);
 
 // Entry point for C++ code to create a LogDispatcher. Implemented in Rust
 // (log_dispatcher_ffi.rs) and called by LogDispatcher::Create. It orchestrates
@@ -57,7 +58,8 @@ class LogDispatcher final : public Dispatcher {
   Lock<CriticalMutex>* get_lock() const final;
 
  private:
-  friend zx_status_t cpp_log_dispatcher_create(uint32_t, zx_rights_t, KernelHandle<LogDispatcher>*);
+  friend zx_status_t cpp_log_dispatcher_create(uint32_t, zx_rights_t,
+                                               ffi::Uninitialized<KernelHandle<LogDispatcher>>*);
   explicit LogDispatcher(uint32_t flags);
 
   OpaqueStorage<kLogDispatcherStateSize, kLogDispatcherStateAlign> opaque_storage_;

@@ -16,6 +16,7 @@
 #endif
 #include <fbl/alloc_checker.h>
 #include <fbl/ref_ptr.h>
+#include <kernel/ffi.h>
 #include <ktl/unique_ptr.h>
 #include <ktl/utility.h>
 #include <object/handle.h>
@@ -23,8 +24,9 @@
 
 extern "C" {
 
-zx_status_t cpp_iommu_dispatcher_create(uint32_t type, const uint8_t* desc_ptr, size_t desc_len,
-                                        KernelHandle<IommuDispatcher>* handle_out) {
+zx_status_t cpp_iommu_dispatcher_create(
+    uint32_t type, const uint8_t* desc_ptr, size_t desc_len,
+    ffi::Uninitialized<KernelHandle<IommuDispatcher>>* handle_out) {
   ktl::unique_ptr<const uint8_t[]> desc(desc_ptr);
   zx::result<fbl::RefPtr<iommu::Iommu>> result;
   switch (type) {
@@ -57,7 +59,7 @@ zx_status_t cpp_iommu_dispatcher_create(uint32_t type, const uint8_t* desc_ptr, 
     return ZX_ERR_NO_MEMORY;
   }
 
-  new (handle_out) KernelHandle<IommuDispatcher>(ktl::move(new_handle));
+  handle_out->Initialize(ktl::move(new_handle));
   return ZX_OK;
 }
 

@@ -15,7 +15,7 @@ unsafe extern "C" {
     pub(crate) fn cpp_log_dispatcher_create(
         flags: u32,
         rights: zx_rights_t,
-        handle_out: *mut KernelHandle<LogDispatcher>,
+        handle_out: *mut core::mem::MaybeUninit<KernelHandle<LogDispatcher>>,
     ) -> zx_status_t;
 }
 

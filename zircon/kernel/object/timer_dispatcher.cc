@@ -41,15 +41,16 @@ FFI_ALWAYS_INLINE void cpp_timer_dispatcher_init_dpc(void* dpc_storage,
   new (dpc_storage) Dpc(&dpc_callback, const_cast<TimerDispatcher*>(disp));
 }
 
-zx_status_t cpp_timer_dispatcher_create(uint32_t options, zx_clock_t clock_id,
-                                        KernelHandle<TimerDispatcher>* handle_out) {
+zx_status_t cpp_timer_dispatcher_create(
+    uint32_t options, zx_clock_t clock_id,
+    ffi::Uninitialized<KernelHandle<TimerDispatcher>>* handle_out) {
   fbl::AllocChecker ac;
   auto disp = fbl::AdoptRef(new (&ac) TimerDispatcher(options, clock_id));
   if (!ac.check()) {
     return ZX_ERR_NO_MEMORY;
   }
 
-  new (handle_out) KernelHandle<TimerDispatcher>(ktl::move(disp));
+  handle_out->Initialize(ktl::move(disp));
   return ZX_OK;
 }
 

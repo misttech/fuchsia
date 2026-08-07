@@ -17,7 +17,7 @@
 extern "C" {
 
 zx_status_t cpp_msi_dispatcher_create(MsiAllocation* msi_alloc_raw,
-                                      KernelHandle<MsiDispatcher>* handle_out) {
+                                      ffi::Uninitialized<KernelHandle<MsiDispatcher>>* handle_out) {
   if (!msi_alloc_raw) {
     return ZX_ERR_INVALID_ARGS;
   }
@@ -29,7 +29,7 @@ zx_status_t cpp_msi_dispatcher_create(MsiAllocation* msi_alloc_raw,
     return ZX_ERR_NO_MEMORY;
   }
 
-  new (handle_out) KernelHandle<MsiDispatcher>(ktl::move(new_handle));
+  handle_out->Initialize(ktl::move(new_handle));
   return ZX_OK;
 }
 

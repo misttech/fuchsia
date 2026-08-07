@@ -14,7 +14,7 @@ use zx_types::{zx_info_msi_t, zx_status_t};
 unsafe extern "C" {
     pub(crate) fn cpp_msi_dispatcher_create(
         msi_alloc: *mut MsiAllocation,
-        handle_out: *mut KernelHandle<MsiDispatcher>,
+        handle_out: *mut core::mem::MaybeUninit<KernelHandle<MsiDispatcher>>,
     ) -> zx_status_t;
 }
 

@@ -14,6 +14,7 @@
 #include <zircon/types.h>
 
 #include <kernel/dpc.h>
+#include <kernel/ffi.h>
 #include <kernel/timer.h>
 #include <object/dispatcher.h>
 #include <object/handle.h>
@@ -23,8 +24,9 @@ class TimerDispatcher;
 
 extern "C" {
 
-zx_status_t cpp_timer_dispatcher_create(uint32_t options, zx_clock_t clock_id,
-                                        KernelHandle<TimerDispatcher>* handle_out);
+zx_status_t cpp_timer_dispatcher_create(
+    uint32_t options, zx_clock_t clock_id,
+    ffi::Uninitialized<KernelHandle<TimerDispatcher>>* handle_out);
 void cpp_timer_dispatcher_init_dpc(void* dpc_storage, const TimerDispatcher* disp);
 void timer_irq_callback(Timer* timer, zx_time_t now, void* arg);
 
@@ -62,8 +64,9 @@ class TimerDispatcher final : public Dispatcher {
   Lock<CriticalMutex>* get_lock() const final;
 
  private:
-  friend zx_status_t cpp_timer_dispatcher_create(uint32_t options, zx_clock_t clock_id,
-                                                 KernelHandle<TimerDispatcher>* handle_out);
+  friend zx_status_t cpp_timer_dispatcher_create(
+      uint32_t options, zx_clock_t clock_id,
+      ffi::Uninitialized<KernelHandle<TimerDispatcher>>* handle_out);
   TimerDispatcher(uint32_t options, zx_clock_t clock_id);
 
   OpaqueStorage<kTimerDispatcherStateSize, kTimerDispatcherStateAlign> opaque_storage_;

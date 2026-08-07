@@ -156,7 +156,7 @@ impl SuspendTokenDispatcher {
         let mut handle_out = MaybeUninit::<KernelHandle<Self>>::uninit();
 
         // SAFETY: `handle_out` points to uninitialized memory allocated for a KernelHandle.
-        let status = unsafe { cpp_suspend_token_dispatcher_create(handle_out.as_mut_ptr()) };
+        let status = unsafe { cpp_suspend_token_dispatcher_create(&raw mut handle_out) };
         Status::ok(status)?;
 
         // SAFETY: `cpp_suspend_token_dispatcher_create` returned ZX_OK and initialized

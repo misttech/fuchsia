@@ -8,20 +8,22 @@
 
 #include <fbl/alloc_checker.h>
 #include <fbl/ref_ptr.h>
+#include <kernel/ffi.h>
 #include <ktl/utility.h>
 #include <object/handle.h>
 #include <object/suspend_token_dispatcher.h>
 
 extern "C" {
 
-zx_status_t cpp_suspend_token_dispatcher_create(KernelHandle<SuspendTokenDispatcher>* handle_out) {
+zx_status_t cpp_suspend_token_dispatcher_create(
+    ffi::Uninitialized<KernelHandle<SuspendTokenDispatcher>>* handle_out) {
   fbl::AllocChecker ac;
   KernelHandle new_handle(fbl::AdoptRef(new (&ac) SuspendTokenDispatcher()));
   if (!ac.check()) {
     return ZX_ERR_NO_MEMORY;
   }
 
-  new (handle_out) KernelHandle<SuspendTokenDispatcher>(ktl::move(new_handle));
+  handle_out->Initialize(ktl::move(new_handle));
   return ZX_OK;
 }
 

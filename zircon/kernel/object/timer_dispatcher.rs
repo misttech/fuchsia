@@ -149,8 +149,7 @@ impl TimerDispatcher {
 
         let mut handle_out = MaybeUninit::<KernelHandle<Self>>::uninit();
         // SAFETY: handle_out points to valid uninitialized memory for KernelHandle<Self>.
-        let status =
-            unsafe { cpp_timer_dispatcher_create(options, clock_id, handle_out.as_mut_ptr()) };
+        let status = unsafe { cpp_timer_dispatcher_create(options, clock_id, &raw mut handle_out) };
         Status::ok(status)?;
         // SAFETY: cpp_timer_dispatcher_create initialized the handle.
         unsafe { Ok((handle_out.assume_init(), DEFAULT_RIGHTS)) }

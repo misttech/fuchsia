@@ -124,7 +124,7 @@ impl LogDispatcher {
         let rights = Self::default_rights(flags);
         let mut handle_out = MaybeUninit::<KernelHandle<Self>>::uninit();
         // SAFETY: `handle_out` points to local stack memory and is valid for writing.
-        let status = unsafe { cpp_log_dispatcher_create(flags, rights, handle_out.as_mut_ptr()) };
+        let status = unsafe { cpp_log_dispatcher_create(flags, rights, &raw mut handle_out) };
         Status::ok(status)?;
         // SAFETY: `cpp_log_dispatcher_create` returned success, so
         // `handle_out` is initialized.

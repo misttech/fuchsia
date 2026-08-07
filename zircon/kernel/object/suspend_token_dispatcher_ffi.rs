@@ -17,7 +17,7 @@ unsafe extern "C" {
     /// `handle_out` must point to writable, uninitialized memory allocated for
     /// `KernelHandle<SuspendTokenDispatcher>`.
     pub fn cpp_suspend_token_dispatcher_create(
-        handle_out: *mut KernelHandle<SuspendTokenDispatcher>,
+        handle_out: *mut core::mem::MaybeUninit<KernelHandle<SuspendTokenDispatcher>>,
     ) -> zx_status_t;
 }
 

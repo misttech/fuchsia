@@ -10,21 +10,23 @@
 
 #include <fbl/alloc_checker.h>
 #include <fbl/ref_ptr.h>
+#include <kernel/ffi.h>
 #include <kernel/scheduler_state.h>
 #include <object/handle.h>
 #include <object/profile_dispatcher.h>
 
 extern "C" {
 
-zx_status_t cpp_profile_dispatcher_create(const zx_profile_info_t* info,
-                                          KernelHandle<ProfileDispatcher>* handle_out) {
+zx_status_t cpp_profile_dispatcher_create(
+    const zx_profile_info_t* info,
+    ffi::Uninitialized<KernelHandle<ProfileDispatcher>>* handle_out) {
   fbl::AllocChecker ac;
   auto disp = fbl::AdoptRef(new (&ac) ProfileDispatcher(*info));
   if (!ac.check()) {
     return ZX_ERR_NO_MEMORY;
   }
 
-  new (handle_out) KernelHandle<ProfileDispatcher>(ktl::move(disp));
+  handle_out->Initialize(ktl::move(disp));
   return ZX_OK;
 }
 

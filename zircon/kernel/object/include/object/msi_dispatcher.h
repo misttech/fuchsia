@@ -14,6 +14,7 @@
 #include <zircon/types.h>
 
 #include <fbl/ref_ptr.h>
+#include <kernel/ffi.h>
 #include <object/dispatcher.h>
 #include <object/handle.h>
 #include <object/msi_allocation.h>
@@ -24,7 +25,7 @@ class MsiDispatcher;
 extern "C" {
 
 zx_status_t cpp_msi_dispatcher_create(MsiAllocation* msi_alloc_raw,
-                                      KernelHandle<MsiDispatcher>* handle_out);
+                                      ffi::Uninitialized<KernelHandle<MsiDispatcher>>* handle_out);
 void rust_msi_dispatcher_state_init(void* storage, void* dispatcher, MsiAllocation* msi_alloc);
 void rust_msi_dispatcher_state_destroy(void* state);
 Lock<CriticalMutex>* rust_msi_dispatcher_state_get_lock(const void* state);
@@ -56,8 +57,8 @@ class MsiDispatcher final : public Dispatcher {
   Lock<CriticalMutex>* get_lock() const final;
 
  private:
-  friend zx_status_t cpp_msi_dispatcher_create(MsiAllocation* msi_alloc_raw,
-                                               KernelHandle<MsiDispatcher>* handle_out);
+  friend zx_status_t cpp_msi_dispatcher_create(
+      MsiAllocation* msi_alloc_raw, ffi::Uninitialized<KernelHandle<MsiDispatcher>>* handle_out);
   explicit MsiDispatcher(fbl::RefPtr<MsiAllocation> msi_alloc);
 
   OpaqueStorage<kMsiDispatcherStateSize, kMsiDispatcherStateAlign> opaque_storage_;
