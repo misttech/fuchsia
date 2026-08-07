@@ -29,9 +29,12 @@ static_assert(sizeof(zbi_dcfg_generic32_watchdog_t) == 64,
 static_assert(alignof(zbi_dcfg_generic32_watchdog_t) == 8,
               "zbi_dcfg_generic32_watchdog_t alignment mismatch");
 
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE bool cpp_watchdog_translate_paddr(uint64_t* paddr);
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE bool cpp_watchdog_is_force_disabled_cmdline();
 
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE bool cpp_watchdog_translate_paddr(uint64_t* paddr) {
   if (*paddr == 0 || is_kernel_address(*paddr)) {
     return true;
@@ -46,6 +49,7 @@ FFI_ALWAYS_INLINE bool cpp_watchdog_translate_paddr(uint64_t* paddr) {
   return (*paddr != 0);
 }
 
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE bool cpp_watchdog_is_force_disabled_cmdline() {
   return BootOptions::Get()->force_watchdog_disabled;
 }

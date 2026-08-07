@@ -7,7 +7,7 @@
 // Ported from zircon/kernel/dev/hw_watchdog/generic32/hw_watchdog.cc
 
 use crate::kernel::timer::{Deadline, SlackMode, Timer, TimerSlack, ZX_CLOCK_BOOT};
-use crate::platform_rs::timer::current_boot_time;
+use crate::platform_rs::timer::{DurationBoot, InstantBoot, current_boot_time};
 use core::ptr::with_exposed_provenance_mut;
 use debug::dprintf;
 use regio::{Mmio, MmioPtr, RwSafe};
@@ -78,9 +78,9 @@ pub struct GenericWatchdog32Inner {
     /// Driver configuration received during early boot.
     pub cfg: ZbiDcfgGeneric32Watchdog,
     /// Result code (`zx_status_t`) of the early initialization phase.
-    pub early_init_result: i32,
+    pub early_init_result: Status,
     /// Timestamp (`zx_instant_boot_t`) when the watchdog was last pet.
-    pub last_pet_time: i64,
+    pub last_pet_time: InstantBoot,
     /// Zircon kernel timer used for scheduling periodic pet callbacks.
     pub pet_timer: core::mem::MaybeUninit<Timer>,
     pub pet_timer_initialized: bool,
@@ -105,8 +105,8 @@ impl GenericWatchdog32Inner {
                 flags: 0,
                 reserved: 0,
             },
-            early_init_result: -1, // Status::INTERNAL.into_raw()
-            last_pet_time: 0,
+            early_init_result: Status::INTERNAL,
+            last_pet_time: InstantBoot(0),
             pet_timer: core::mem::MaybeUninit::uninit(),
             pet_timer_initialized: false,
             is_enabled: false,
@@ -133,8 +133,8 @@ impl GenericWatchdog32Inner {
         });
     }
 
-    fn pet_locked(&mut self) -> i64 {
-        let now = current_boot_time().0;
+    fn pet_locked(&mut self) -> InstantBoot {
+        let now = current_boot_time();
         if !self.is_petting_suppressed {
             self.last_pet_time = now;
             // SAFETY: `self.cfg.pet_action` contains the validated MMIO address for petting.
@@ -147,7 +147,7 @@ impl GenericWatchdog32Inner {
         if self.is_enabled {
             let last_pet = self.pet_locked();
             let timeout = self.cfg.watchdog_period_nsec;
-            let next_pet_time = last_pet.saturating_add(timeout / 2);
+            let next_pet_time = last_pet.0.saturating_add(timeout / 2);
             let slack = timeout / 4;
             if self.pet_timer_initialized {
                 // SAFETY: G_WATCHDOG is a global static, so pet_timer is in a stable location
@@ -179,18 +179,18 @@ impl GenericWatchdog32Inner {
         }
 
         if config.pet_action.addr == 0 {
-            self.early_init_result = Status::INVALID_ARGS.into_raw();
+            self.early_init_result = Status::INVALID_ARGS;
             return;
         }
         if config.watchdog_period_nsec < ZBI_KERNEL_DRIVER_GENERIC32_WATCHDOG_MIN_PERIOD {
-            self.early_init_result = Status::INVALID_ARGS.into_raw();
+            self.early_init_result = Status::INVALID_ARGS;
             return;
         }
 
         self.cfg = *config;
         // SAFETY: `self.cfg.pet_action.addr` is a pointer to the address field in our local config copy, valid for modification by the C++ translation shim.
         if !unsafe { cpp_watchdog_translate_paddr(&mut self.cfg.pet_action.addr) } {
-            self.early_init_result = Status::IO.into_raw();
+            self.early_init_result = Status::IO;
             return;
         }
         // SAFETY: `enable_action.addr` and `disable_action.addr` point to valid `u64` address fields in `self.cfg`.
@@ -213,11 +213,11 @@ impl GenericWatchdog32Inner {
             self.is_enabled = false;
         }
 
-        self.early_init_result = Status::OK.into_raw();
+        self.early_init_result = Status::OK;
     }
 
     fn init(&mut self) {
-        if self.early_init_result != Status::OK.into_raw() {
+        if self.early_init_result != Status::OK {
             dprintf!(
                 INFO,
                 "WDT: Generic watchdog driver attempted to load, but failed during early init (res {}).\n",
@@ -339,65 +339,52 @@ impl core::ops::Deref for WatchdogHolder {
 ///
 /// `arg` must be a pointer to `GenericWatchdog32`.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_watchdog_on_pet_timer(arg: *mut core::ffi::c_void) {
+unsafe extern "C" fn rust_watchdog_on_pet_timer(arg: *mut core::ffi::c_void) {
     // SAFETY: `arg` is verified upon timer registration (`cpp_watchdog_timer_set`) to be a pointer to `G_WATCHDOG`.
     let watchdog = unsafe { &*(arg as *const GenericWatchdog32) };
     ksync::lock!(let mut guard = watchdog.lock_lock());
     guard.as_mut().fields_mut().inner.handle_pet_timer_locked();
 }
 
-extern "C" fn thunk_pet() {
-    ksync::lock!(let mut guard = G_WATCHDOG.lock_lock());
-    let inner = guard.as_mut().fields_mut().inner;
-    if inner.is_enabled {
-        inner.pet_locked();
+impl crate::pdev_watchdog::WatchdogOps for GenericWatchdog32 {
+    fn pet(&self) {
+        ksync::lock!(let mut guard = self.lock_lock());
+        let inner = guard.as_mut().fields_mut().inner;
+        if inner.is_enabled {
+            inner.pet_locked();
+        }
+    }
+
+    fn set_enabled(&self, enb: bool) -> Result<(), Status> {
+        ksync::lock!(let mut guard = self.lock_lock());
+        guard.as_mut().fields_mut().inner.set_enabled(enb)
+    }
+
+    fn is_enabled(&self) -> bool {
+        ksync::lock!(let guard = self.lock_lock());
+        guard.fields().inner.is_enabled
+    }
+
+    fn get_timeout_nsec(&self) -> DurationBoot {
+        ksync::lock!(let guard = self.lock_lock());
+        DurationBoot(guard.fields().inner.cfg.watchdog_period_nsec)
+    }
+
+    fn get_last_pet_time(&self) -> InstantBoot {
+        ksync::lock!(let guard = self.lock_lock());
+        guard.fields().inner.last_pet_time
+    }
+
+    fn suppress_petting(&self, suppress: bool) {
+        ksync::lock!(let mut guard = self.lock_lock());
+        guard.as_mut().fields_mut().inner.is_petting_suppressed = suppress;
+    }
+
+    fn is_petting_suppressed(&self) -> bool {
+        ksync::lock!(let guard = self.lock_lock());
+        guard.fields().inner.is_petting_suppressed
     }
 }
-
-extern "C" fn thunk_set_enabled(enabled: bool) -> i32 {
-    ksync::lock!(let mut guard = G_WATCHDOG.lock_lock());
-    guard
-        .as_mut()
-        .fields_mut()
-        .inner
-        .set_enabled(enabled)
-        .map_or_else(|s| s.into_raw(), |_| Status::OK.into_raw())
-}
-
-extern "C" fn thunk_is_enabled() -> bool {
-    ksync::lock!(let guard = G_WATCHDOG.lock_lock());
-    guard.fields().inner.is_enabled
-}
-
-extern "C" fn thunk_get_timeout_nsec() -> i64 {
-    ksync::lock!(let guard = G_WATCHDOG.lock_lock());
-    guard.fields().inner.cfg.watchdog_period_nsec
-}
-
-extern "C" fn thunk_get_last_pet_time() -> i64 {
-    ksync::lock!(let guard = G_WATCHDOG.lock_lock());
-    guard.fields().inner.last_pet_time
-}
-
-extern "C" fn thunk_suppress_petting(suppress: bool) {
-    ksync::lock!(let mut guard = G_WATCHDOG.lock_lock());
-    guard.as_mut().fields_mut().inner.is_petting_suppressed = suppress;
-}
-
-extern "C" fn thunk_is_petting_suppressed() -> bool {
-    ksync::lock!(let guard = G_WATCHDOG.lock_lock());
-    guard.fields().inner.is_petting_suppressed
-}
-
-static THUNKS: crate::pdev_watchdog::PdevWatchdogOps = crate::pdev_watchdog::PdevWatchdogOps {
-    pet: thunk_pet,
-    set_enabled: thunk_set_enabled,
-    is_enabled: thunk_is_enabled,
-    get_timeout_nsec: thunk_get_timeout_nsec,
-    get_last_pet_time: thunk_get_last_pet_time,
-    suppress_petting: thunk_suppress_petting,
-    is_petting_suppressed: thunk_is_petting_suppressed,
-};
 
 /// Early single-threaded initialization routine for the generic 32-bit watchdog driver.
 ///
@@ -409,18 +396,20 @@ static THUNKS: crate::pdev_watchdog::PdevWatchdogOps = crate::pdev_watchdog::Pde
 pub unsafe extern "C" fn generic_32bit_watchdog_early_init(
     config: *const ZbiDcfgGeneric32Watchdog,
 ) {
-    // SAFETY: Called once during early single-threaded boot before any references to G_WATCHDOG.
-    unsafe { G_WATCHDOG.init_in_place() };
     if config.is_null() {
         return;
     }
-    ksync::lock!(let mut guard = G_WATCHDOG.lock_lock());
-    // SAFETY: `config` is checked to be non-null and guaranteed by caller to point to a valid `ZbiDcfgGeneric32Watchdog`.
-    let inner = guard.as_mut().fields_mut().inner;
-    inner.init_early(unsafe { &*config });
-    if inner.early_init_result == Status::OK.into_raw() {
-        // SAFETY: Registering THUNKS operations table with pdev watchdog layer.
-        unsafe { crate::pdev_watchdog::pdev_register_watchdog(&THUNKS) };
+    // SAFETY: Called once during early single-threaded boot before any references to G_WATCHDOG.
+    unsafe { G_WATCHDOG.init_in_place() };
+    let is_ok = {
+        ksync::lock!(let mut guard = G_WATCHDOG.lock_lock());
+        // SAFETY: `config` is checked to be non-null and guaranteed by caller to point to a valid `ZbiDcfgGeneric32Watchdog`.
+        let inner = guard.as_mut().fields_mut().inner;
+        inner.init_early(unsafe { &*config });
+        inner.early_init_result == Status::OK
+    };
+    if is_ok {
+        crate::pdev_watchdog::register_watchdog(&*G_WATCHDOG);
     }
 }
 
@@ -491,17 +480,17 @@ mod tests {
             reserved: 0,
         };
         inner.init_early(&bad_config);
-        assert_eq!(inner.early_init_result, Status::INVALID_ARGS.into_raw());
+        assert_eq!(inner.early_init_result.into_raw(), Status::INVALID_ARGS.into_raw());
 
         let mut mock_mmio: u32 = 0;
         bad_config.pet_action.addr = core::ptr::addr_of_mut!(mock_mmio) as u64;
         bad_config.watchdog_period_nsec = ZBI_KERNEL_DRIVER_GENERIC32_WATCHDOG_MIN_PERIOD - 1;
         inner.init_early(&bad_config);
-        assert_eq!(inner.early_init_result, Status::INVALID_ARGS.into_raw());
+        assert_eq!(inner.early_init_result.into_raw(), Status::INVALID_ARGS.into_raw());
 
         bad_config.watchdog_period_nsec = ZBI_KERNEL_DRIVER_GENERIC32_WATCHDOG_MIN_PERIOD;
         inner.init_early(&bad_config);
-        assert_eq!(inner.early_init_result, Status::OK.into_raw());
+        assert_eq!(inner.early_init_result.into_raw(), Status::OK.into_raw());
     }
 
     /// Tests watchdog state transitions when enabling, disabling, and suppressing petting.
@@ -534,7 +523,7 @@ mod tests {
 
         let mut inner = GenericWatchdog32Inner::new();
         inner.init_early(&config);
-        assert_eq!(inner.early_init_result, Status::OK.into_raw());
+        assert_eq!(inner.early_init_result.into_raw(), Status::OK.into_raw());
         assert_false!(inner.is_enabled);
 
         assert_true!(inner.set_enabled(true).is_ok());
@@ -554,7 +543,7 @@ mod tests {
         assert_eq!(mock_dis, 4);
     }
 
-    /// Tests global boot handoff null safety and `THUNKS` operations table callbacks.
+    /// Tests global boot handoff null safety and `WatchdogOps` trait implementation.
     #[test]
     fn test_generic32_thunks_and_handoff_apis() {
         // SAFETY: Testing global C-ABI initialization functions with null pointers, which should safely early-return as no-ops.
@@ -563,12 +552,19 @@ mod tests {
             generic_32bit_watchdog_init_post_vm(core::ptr::null());
         }
 
-        // Verify `THUNKS` operations table callbacks.
-        assert_false!((THUNKS.is_enabled)());
-        (THUNKS.suppress_petting)(true);
-        assert_true!((THUNKS.is_petting_suppressed)());
-        (THUNKS.suppress_petting)(false);
-        assert_false!((THUNKS.is_petting_suppressed)());
-        (THUNKS.pet)();
+        // Verify trait methods on a local `GenericWatchdog32` instance.
+        let initializer = pin_init::pin_init!(GenericWatchdog32 {
+            inner: ksync::KCell::new(GenericWatchdog32Inner::new()),
+            lock <- ksync::KSpinlock::init(),
+        });
+        pin_init::stack_pin_init!(let watchdog = initializer);
+
+        use crate::pdev_watchdog::WatchdogOps as _;
+        assert_false!(watchdog.is_enabled());
+        watchdog.suppress_petting(true);
+        assert_true!(watchdog.is_petting_suppressed());
+        watchdog.suppress_petting(false);
+        assert_false!(watchdog.is_petting_suppressed());
+        watchdog.pet();
     }
 }

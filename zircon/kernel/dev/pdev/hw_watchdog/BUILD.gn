@@ -4,12 +4,7 @@
 # license that can be found in the LICENSE file or at
 # https://opensource.org/licenses/MIT
 
-import("//build/cpp/library_headers.gni")
 import("//zircon/kernel/kernel_rust_mod.gni")
-
-library_headers("headers") {
-  headers = [ "pdev/watchdog.h" ]
-}
 
 kernel_rust_mod("watchdog-rs") {
   output_name = "pdev_watchdog"
@@ -24,7 +19,6 @@ kernel_rust_mod("watchdog-rs") {
 
 source_set("hw_watchdog") {
   sources = [ "console.cc" ]
-  public_deps = [ ":headers" ]
   deps = [
     ":watchdog-rs",
     "//zircon/kernel/lib/arch",
