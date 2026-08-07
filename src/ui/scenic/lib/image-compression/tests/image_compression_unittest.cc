@@ -264,3 +264,29 @@ TEST_F(ImageCompressionTest, VmoSizeIncompatibleWithWidthAndHeight) {
   RunLoopUntilIdle();
   EXPECT_EQ(flag, true);
 }
+
+// Test that EncodePng succeeds when in_vmo is larger than the raw image size (e.g. sysmem padding).
+TEST_F(ImageCompressionTest, InVmoLargerThanRawImage) {
+  // Define large in_vmo with extra sysmem padding.
+  zx::vmo padded_in_vmo, padded_in_vmo_copy;
+  zx_status_t status =
+      zx::vmo::create(bytes_to_write_ + 2 * zx_system_get_page_size(), 0, &padded_in_vmo);
+  EXPECT_EQ(status, ZX_OK);
+  EXPECT_EQ(padded_in_vmo.duplicate(ZX_RIGHT_SAME_RIGHTS, &padded_in_vmo_copy), ZX_OK);
+
+  fuchsia::ui::compression::internal::ImageCompressorEncodePngRequest request;
+  request.set_raw_vmo(std::move(padded_in_vmo_copy));
+  request.set_image_dimensions(size_);
+  request.set_png_vmo(std::move(out_vmo_copy_));
+
+  bool flag = false;
+  client_ptr_->EncodePng(
+      std::move(request),
+      [&flag](fuchsia::ui::compression::internal::ImageCompressor_EncodePng_Result result) {
+        EXPECT_TRUE(result.is_response());
+        flag = true;
+      });
+
+  RunLoopUntilIdle();
+  EXPECT_EQ(flag, true);
+}

@@ -33,15 +33,6 @@ void ImageCompression::EncodePng(EncodePngRequest& request, EncodePngCompleter::
     return;
   }
 
-  // Convert in_vmo to a useable format.
-  uint64_t in_vmo_size;
-  request.raw_vmo()->get_size(&in_vmo_size);
-  fsl::SizedVmo raw_image = fsl::SizedVmo(std::move(*request.raw_vmo()), in_vmo_size);
-
-  // Convert png_vmo to a useable format.
-  uint64_t png_vmo_size;
-  request.png_vmo()->get_size(&png_vmo_size);
-
   // Ensure both vmo sizes are consistent with the client-given width and height.
   const uint32_t width = request.image_dimensions()->width();
   const uint32_t height = request.image_dimensions()->height();
@@ -49,24 +40,36 @@ void ImageCompression::EncodePng(EncodePngRequest& request, EncodePngCompleter::
   // We are assuming BGRA_8 format for the input.
   const uint32_t pixel_size = 4;
   const uint32_t stride = width * pixel_size;
+  const uint64_t raw_image_size = static_cast<uint64_t>(width) * height * pixel_size;
+
+  // Convert in_vmo to a usable format.
+  uint64_t in_vmo_size;
+  request.raw_vmo()->get_size(&in_vmo_size);
+
+  // Convert png_vmo to a usable format.
+  uint64_t png_vmo_size;
+  request.png_vmo()->get_size(&png_vmo_size);
 
   // Do some size checks.
 
   // Check that the stated width and height is compatible with |in_vmo_size|.
-  if (width * height * pixel_size > in_vmo_size) {
+  if (raw_image_size > in_vmo_size) {
     FX_LOGS(WARNING) << "ImageCompression::EncodePng(): in_vmo is too small";
     async_completer.Reply(
         fit::as_error(fuchsia::ui::compression::internal::ImageCompressionError::INVALID_ARGS));
     return;
   }
 
-  // Check that the png_vmo_size is large enough to hold any potential PNG encoding of |in_vmo|.
-  if (png_vmo_size < in_vmo_size + zx_system_get_page_size()) {
+  // Check that the png_vmo_size is large enough to hold any potential PNG encoding of the raw
+  // image.
+  if (png_vmo_size < raw_image_size + zx_system_get_page_size()) {
     FX_LOGS(WARNING) << "ImageCompression::EncodePng(): png_vmo is too small";
     async_completer.Reply(
         fit::as_error(fuchsia::ui::compression::internal::ImageCompressionError::INVALID_ARGS));
     return;
   }
+
+  fsl::SizedVmo raw_image = fsl::SizedVmo(std::move(*request.raw_vmo()), raw_image_size);
 
   // Start libpng specific operations.
   png_structp png_ptr = png_create_write_struct(PNG_LIBPNG_VER_STRING, nullptr, nullptr, nullptr);
