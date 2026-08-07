@@ -8,7 +8,7 @@ import sys
 from typing import Any
 
 from utils import run_jiri
-from worktree import NoFreeWorktreesError
+from worktree import NoFreeWorktreesError, WorktreeState
 from worktree_pool import WorktreePool
 
 
@@ -19,6 +19,14 @@ def run(args: Any, pool: WorktreePool) -> None:
     if not task_name:
         print("Error: Must specify a worktree name", file=sys.stderr)
         sys.exit(1)
+
+    for wt in pool.get_worktrees():
+        if wt.get_state() == WorktreeState.LEASED:
+            lease = wt.get_lease_info()
+            if lease and lease.task_id == task_name:
+                raise ValueError(
+                    f"Task '{task_name}' is already active (leased by '{wt.name}')"
+                )
 
     try:
         if pool_name:

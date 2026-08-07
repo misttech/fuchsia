@@ -207,6 +207,25 @@ class TestActiveAddSubcommand(unittest.TestCase):
         assert lease is not None
         self.assertEqual(lease.task_id, "my-feat")
 
+    def test_add_already_leased_task_fails(self) -> None:
+        wt_path1 = self.jiri_root / "worktrees" / "wt1"
+        wt_path2 = self.jiri_root / "worktrees" / "wt2"
+        wt_path1.mkdir(parents=True, exist_ok=True)
+        wt_path2.mkdir(parents=True, exist_ok=True)
+        self.pool.registry_file.write_text(f"{wt_path1}\n{wt_path2}\n")
+
+        args1 = argparse.Namespace(
+            name="my-feat", pool_name=None, sync=False, json=False
+        )
+        add_cmd.run(args1, self.pool)
+
+        args2 = argparse.Namespace(
+            name="my-feat", pool_name=None, sync=False, json=False
+        )
+        with self.assertRaises(ValueError) as context:
+            add_cmd.run(args2, self.pool)
+        self.assertIn("already active", str(context.exception))
+
 
 class TestPoolAddSubcommand(unittest.TestCase):
     def setUp(self) -> None:
