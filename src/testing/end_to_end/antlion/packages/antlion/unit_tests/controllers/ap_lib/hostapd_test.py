@@ -9,9 +9,10 @@ from unittest.mock import Mock
 
 from antlion.controllers.ap_lib import hostapd
 from antlion.libs.proc.job import Result
+from honeydew.typing.custom_types import MacAddress
 
 # MAC address that will be used in these tests.
-STA_MAC = "aa:bb:cc:dd:ee:ff"
+STA_MAC = MacAddress("aa:bb:cc:dd:ee:ff")
 
 # Abbreviated output of hostapd_cli STA commands, showing various AUTH/ASSOC/AUTHORIZED states.
 STA_OUTPUT_WITHOUT_STA_AUTHENTICATED = b"""aa:bb:cc:dd:ee:ff
