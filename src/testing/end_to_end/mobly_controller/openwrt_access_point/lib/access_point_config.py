@@ -13,7 +13,6 @@ import string
 from typing import Literal, Optional, Protocol, TypeAlias
 
 import fidl_fuchsia_wlan_policy as f_wlan_policy
-from honeydew.typing.custom_types import MacAddress
 from openwrt_access_point.lib.hostapd_options import HostapdOptions
 from openwrt_access_point.lib.uci_bss_options import UciBssOptions
 from openwrt_access_point.lib.uci_radio_options import UciRadioOptions
@@ -106,8 +105,8 @@ class SecurityOwe:
 
 @dataclasses.dataclass(frozen=True)
 class SecurityOweTransition:
-    open_bssid: MacAddress
-    owe_bssid: MacAddress
+    open_bssid: str
+    owe_bssid: str
     pmf_support: Literal[Pmf.REQUIRED] = Pmf.REQUIRED
 
     @property

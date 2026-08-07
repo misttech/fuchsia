@@ -6,8 +6,6 @@
 
 from enum import IntEnum, unique
 
-from honeydew.typing.custom_types import MacAddress
-
 
 @unique
 class ApReachability(IntEnum):
@@ -191,7 +189,7 @@ class NeighborReportElement:
 
     def __init__(
         self,
-        bssid: MacAddress,
+        bssid: str,
         bssid_information: BssidInformation,
         operating_class: int,
         channel_number: int,
@@ -218,7 +216,7 @@ class NeighborReportElement:
         self._phy_type = phy_type
 
     @property
-    def bssid(self) -> MacAddress:
+    def bssid(self) -> str:
         return self._bssid
 
     @property

@@ -437,18 +437,12 @@ class MacAddress:
         b[0] &= 0xFD
         return MacAddress(b)
 
-    def with_last_octet_incremented(self) -> MacAddress:
-        """Return a copy of the MAC address with the last octet incremented by 1."""
+    def with_octet_incremented(self, index: int) -> MacAddress:
+        """Return a copy of the MAC address with the octet at `index` incremented by 1."""
+        if not 0 <= index < 6:
+            raise ValueError(f"Invalid index {index}")
         b = bytearray(self._mac)
-        b[-1] = (b[-1] + 1) % 256
-        return MacAddress(b)
-
-    def with_last_octet(self, o: int) -> MacAddress:
-        """Return a copy of the MAC address with the last octet set to `o`."""
-        if not 0 <= o < 255:
-            raise ValueError(f"Octet must fit in a single byte: {o}")
-        b = bytearray(self._mac)
-        b[-1] = o
+        b[index] = (b[index] + 1) % 256
         return MacAddress(b)
 
     def __str__(self) -> str:

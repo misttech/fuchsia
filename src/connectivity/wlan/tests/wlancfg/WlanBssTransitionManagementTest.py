@@ -141,7 +141,7 @@ class WlanBssTransitionManagementTest(
         await super().teardown_test()
 
     def get_single_sta_status(
-        self, mac: MacAddress, band: Band
+        self, mac: str | MacAddress, band: Band
     ) -> StationStatus:
         """Gets station status and asserts there is only one interface."""
         assert self.openwrt_ap is not None, "openwrt_ap is not initialized"
@@ -152,7 +152,7 @@ class WlanBssTransitionManagementTest(
         return list(sta_dict.values())[0]
 
     def get_single_sta_ext_capabilities(
-        self, mac: MacAddress, band: Band
+        self, mac: str | MacAddress, band: Band
     ) -> ExtendedCapabilities:
         """Gets extended capabilities and asserts there is only one interface."""
         assert self.openwrt_ap is not None, "openwrt_ap is not initialized"

@@ -21,7 +21,6 @@ from antlion.controllers.ap_lib.wireless_network_management import (
 )
 from antlion.controllers.utils_lib.commands import shell
 from antlion.logger import LogLevel
-from honeydew.typing.custom_types import MacAddress
 from libs.proc.runner import Runner
 from tenacity import retry, retry_if_exception_type, stop_after_attempt
 
@@ -160,7 +159,7 @@ class Hostapd(object):
             raise Error("Internal error: current channel could not be parsed")
         return channel
 
-    def get_stas(self) -> set[MacAddress]:
+    def get_stas(self) -> set[str]:
         """Return MAC addresses of all associated STAs."""
         list_sta_result = self._run_hostapd_cli_cmd("list_sta")
         stas = set()
@@ -168,10 +167,10 @@ class Hostapd(object):
             # Each line must be a valid MAC address. Capture it.
             m = re.match(r"((?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2})", line)
             if m:
-                stas.add(MacAddress(m.group(1)))
+                stas.add(m.group(1))
         return stas
 
-    def _sta(self, sta_mac: MacAddress) -> str:
+    def _sta(self, sta_mac: str) -> str:
         """Return hostapd's detailed info about an associated STA.
 
         Returns:
@@ -182,7 +181,7 @@ class Hostapd(object):
         return self._run_hostapd_cli_cmd(f"sta {sta_mac}")
 
     def get_sta_extended_capabilities(
-        self, sta_mac: MacAddress
+        self, sta_mac: str
     ) -> ExtendedCapabilities:
         """Get extended capabilities for the given STA, as seen by the AP.
 
@@ -208,7 +207,7 @@ class Hostapd(object):
                 f"ext_capab contains invalid hex string repr {raw_ext_capab}"
             )
 
-    def sta_authenticated(self, sta_mac: MacAddress) -> bool:
+    def sta_authenticated(self, sta_mac: str) -> bool:
         """Is the given STA authenticated?
 
         Args:
@@ -222,7 +221,7 @@ class Hostapd(object):
         m = re.search(r"flags=.*\[AUTH\]", sta_result, re.MULTILINE)
         return bool(m)
 
-    def sta_associated(self, sta_mac: MacAddress) -> bool:
+    def sta_associated(self, sta_mac: str) -> bool:
         """Is the given STA associated?
 
         Args:
@@ -236,7 +235,7 @@ class Hostapd(object):
         m = re.search(r"flags=.*\[ASSOC\]", sta_result, re.MULTILINE)
         return bool(m)
 
-    def sta_authorized(self, sta_mac: MacAddress) -> bool:
+    def sta_authorized(self, sta_mac: str) -> bool:
         """Is the given STA authorized (802.1X controlled port open)?
 
         Args:
@@ -251,7 +250,7 @@ class Hostapd(object):
         return bool(m)
 
     def _bss_tm_req(
-        self, client_mac: MacAddress, request: BssTransitionManagementRequest
+        self, client_mac: str, request: BssTransitionManagementRequest
     ) -> None:
         """Send a hostapd BSS Transition Management request command to a STA.
 
@@ -297,7 +296,7 @@ class Hostapd(object):
         self._run_hostapd_cli_cmd(bss_tm_req_cmd)
 
     def send_bss_transition_management_req(
-        self, sta_mac: MacAddress, request: BssTransitionManagementRequest
+        self, sta_mac: str, request: BssTransitionManagementRequest
     ) -> None:
         """Send a BSS Transition Management request to an associated STA.
 
