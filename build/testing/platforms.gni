@@ -170,18 +170,6 @@ test_platforms = [
     cpu = "arm64"
   },
   {
-    device_type = "AmpereAltraMax-M128-30"
-    cpu = "arm64"
-  },
-  {
-    device_type = "AmpereOne-A192-32X"
-    cpu = "arm64"
-  },
-  {
-    device_type = "Cavium-ThunderX2"
-    cpu = "arm64"
-  },
-  {
     device_type = "Kola"
     cpu = "arm64"
   },

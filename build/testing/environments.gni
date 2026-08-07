@@ -16,11 +16,8 @@ _all_named_host_envs = []
 # environment dimensions, are known to Infrastructure.
 device_types = {
   aemu = "AEMU"
-  ampere_altra = "AmpereAltraMax-M128-30"
-  ampere_one = "AmpereOne-A192-32X"
   astro = "Astro"
   atlas = "Atlas"
-  cavium = "Cavium-ThunderX2"
   crosvm = "crosvm"
   gce = "GCE"
   iris = "Iris"
@@ -254,42 +251,6 @@ _all_named_fuchsia_envs += [
   {
     name = "iris"
     env = iris_env
-  },
-]
-
-ampere_altra_env = {
-  dimensions = {
-    device_type = device_types.ampere_altra
-  }
-}
-_all_named_fuchsia_envs += [
-  {
-    name = "ampere_altra"
-    env = ampere_altra_env
-  },
-]
-
-ampere_one_env = {
-  dimensions = {
-    device_type = device_types.ampere_one
-  }
-}
-_all_named_fuchsia_envs += [
-  {
-    name = "ampere_one"
-    env = ampere_one_env
-  },
-]
-
-cavium_env = {
-  dimensions = {
-    device_type = device_types.cavium
-  }
-}
-_all_named_fuchsia_envs += [
-  {
-    name = "cavium"
-    env = cavium_env
   },
 ]
 
