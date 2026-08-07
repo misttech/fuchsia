@@ -18,6 +18,15 @@ use syn::{
 pub fn bitfield_repr(attr: TokenStream, item: TokenStream) -> TokenStream {
     let attr: TokenStream2 = attr.into();
     let item: TokenStream2 = item.into();
+
+    // TODO(https://fxbug.dev/525077555): Add
+    // ```
+    // #[zerocopy(crate = "::bitrs::__zerocopy")
+    // ```
+    // once https://github.com/google/zerocopy/pull/3544 lands in-tree. This
+    // changes enables the derive macros themselves to use the re-exported
+    // version of zerocopy in their expansions, allowing dependent crates not
+    // have to explicitlty depend on zerocopy.
     quote! {
         #[repr(#attr)]
         #[derive(

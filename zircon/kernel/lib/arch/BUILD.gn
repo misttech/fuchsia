@@ -138,12 +138,23 @@ rustc_library("arch-rs") {
   edition = "2024"
 
   sources = [
+    "src/arm64/cache.rs",
+    "src/arm64/feature.rs",
+    "src/arm64/memory.rs",
+    "src/arm64/mod.rs",
+    "src/arm64/system.rs",
     "src/lib.rs",
     "src/x86/cpuid.rs",
     "src/x86/mod.rs",
   ]
 
-  deps = [ "//src/lib/bitrs" ]
+  deps = [
+    "//src/lib/bitrs",
+
+    # TODO(https://fxbug.dev/525077555): Make this implicit through bitrs once
+    # https://github.com/google/zerocopy/pull/3544 lands in-tree.
+    "//third_party/rust_crates:zerocopy",
+  ]
 
   if (is_host) {
     test_deps = [ "//src/lib/regio:regio-testing" ]
