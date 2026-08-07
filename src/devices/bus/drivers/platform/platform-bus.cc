@@ -26,6 +26,7 @@
 #include <zircon/system/public/zircon/syscalls-next.h>
 
 #include <bind/fuchsia/cpp/bind.h>
+#include <bind/fuchsia/hardware/platform/device/cpp/bind.h>
 #include <bind/fuchsia/platform/cpp/bind.h>
 #include <fbl/algorithm.h>
 
@@ -426,6 +427,8 @@ void PlatformBus::AddCompositeNodeSpec(AddCompositeNodeSpecRequestView request, 
               fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_PID, pid),
               fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_DID, did),
               fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_INSTANCE_ID, instance_id),
+              fdf::MakeProperty2(bind_fuchsia_hardware_platform_device::SERVICE,
+                                 bind_fuchsia_hardware_platform_device::SERVICE_ZIRCONTRANSPORT),
           },
   }});
   zx::result composite_node_manager =
@@ -670,7 +673,7 @@ zx::result<> PlatformBus::Start(fdf::DriverContext context) {
           {{ZBI_KERNEL_DRIVER_ARM_GIC_V2, fuchsia_sysinfo::wire::InterruptControllerType::kGicV2},
            {ZBI_KERNEL_DRIVER_ARM_GIC_V3, fuchsia_sysinfo::wire::InterruptControllerType::kGicV3},
            {ZBI_KERNEL_DRIVER_RISCV_PLIC, fuchsia_sysinfo::wire::InterruptControllerType::kPlic}},
-      };
+  };
 
   for (const auto& [driver, controller] : interrupt_driver_type_mapping) {
     auto boot_item = GetBootItem(ZBI_TYPE_KERNEL_DRIVER, driver);

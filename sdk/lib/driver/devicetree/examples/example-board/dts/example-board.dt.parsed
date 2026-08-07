@@ -75,6 +75,7 @@ composite_node_specs {
         property { fuchsia.BIND_PLATFORM_DEV_VID = GENERIC (0) }
         property { fuchsia.BIND_PLATFORM_DEV_DID = DEVICETREE (50) }
         property { fuchsia.BIND_PLATFORM_DEV_INSTANCE_ID = 1 }
+        property { fuchsia.hardware.platform.device.Service = "fuchsia.hardware.platform.device.Service.ZirconTransport" }
       }
     }
   }
@@ -93,6 +94,7 @@ composite_node_specs {
         property { fuchsia.BIND_PLATFORM_DEV_VID = GENERIC (0) }
         property { fuchsia.BIND_PLATFORM_DEV_DID = DEVICETREE (50) }
         property { fuchsia.BIND_PLATFORM_DEV_INSTANCE_ID = 3 }
+        property { fuchsia.hardware.platform.device.Service = "fuchsia.hardware.platform.device.Service.ZirconTransport" }
       }
     }
   }

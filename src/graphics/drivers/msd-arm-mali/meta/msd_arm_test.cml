@@ -5,7 +5,7 @@
     include: [ "//src/graphics/drivers/msd-arm-mali/meta/msd_arm.shard.cml" ],
     program: {
         binary: "driver/msd_arm_test.so",
-        bind: "meta/bind/msd_arm_bind.bindbc",
+        bind: "meta/bind/msd_arm.bindbc",
     },
     capabilities: [
         {
