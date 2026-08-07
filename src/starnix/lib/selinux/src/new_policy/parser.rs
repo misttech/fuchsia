@@ -18,12 +18,23 @@ use selinux_policy_derive::{Parse, Serialize};
 pub struct PolicyCursor<'a> {
     data: &'a [u8],
     offset: usize,
+    policy_version: u32,
 }
 
 impl<'a> PolicyCursor<'a> {
     /// Creates a new [`PolicyCursor`] wrapping the supplied `data`.
     pub fn new(data: &'a [u8]) -> Self {
-        Self { data, offset: 0 }
+        Self { data, offset: 0, policy_version: 0 }
+    }
+
+    /// Sets the SELinux policy database version on this cursor.
+    pub fn set_policy_version(&mut self, version: u32) {
+        self.policy_version = version;
+    }
+
+    /// Returns the SELinux policy database version recorded on this cursor.
+    pub fn policy_version(&self) -> u32 {
+        self.policy_version
     }
 
     /// Returns the current offset of the cursor.
@@ -164,7 +175,7 @@ impl Validate for u32 {
 }
 
 /// Container representing a `u32` count followed by that many raw bytes.
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ByteArray {
     data: Box<[u8]>,
 }

@@ -79,9 +79,17 @@ impl Validate for Signature {
 }
 
 /// Version of the SELinux policy database.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Parse, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 pub struct PolicyVersion {
     value: u32,
+}
+
+impl Parse for PolicyVersion {
+    fn parse(cursor: &mut PolicyCursor<'_>) -> Result<Self, ParseError> {
+        let value = u32::parse(cursor)?;
+        cursor.set_policy_version(value);
+        Ok(Self { value })
+    }
 }
 
 impl PolicyVersion {

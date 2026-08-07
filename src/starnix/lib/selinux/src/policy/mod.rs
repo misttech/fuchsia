@@ -12,24 +12,20 @@ pub mod view;
 mod constraints;
 mod security_context;
 
-pub use crate::new_policy::{
-    AccessDecision, AccessVectorRules, IndexedAccessVectorRules, SELINUX_AVD_FLAGS_PERMISSIVE,
-    XpermsBitmap,
-};
-pub use arrays::FsUseType;
-pub use index::FsUseLabelAndType;
-pub use parser::PolicyCursor;
-pub use security_context::{SecurityContext, SecurityContextError};
-
 pub use crate::new_policy::traits::{HasName, HasPolicyId, PolicyId};
 pub use crate::new_policy::{
-    AccessVector, CategoryId, ClassId, HandleUnknown, MlsLevel, MlsRange, POLICYDB_VERSION_MAX,
-    PermissionId, RoleId, SensitivityId, TypeId, User, UserId,
+    AccessDecision, AccessVector, AccessVectorRules, CategoryId, ClassId, HandleUnknown,
+    IndexedAccessVectorRules, MlsLevel, MlsRange, POLICYDB_VERSION_MAX, PermissionId, RoleId,
+    SELINUX_AVD_FLAGS_PERMISSIVE, SensitivityId, TypeId, User, UserId, XpermsBitmap,
 };
 use crate::{ClassPermission, KernelClass, NullessByteStr, ObjectClass, new_policy as new};
+pub use arrays::FsUseType;
+pub use index::FsUseLabelAndType;
 use index::PolicyIndex;
 use parsed_policy::ParsedPolicy;
+pub use parser::PolicyCursor;
 use parser::PolicyData;
+pub use security_context::{SecurityContext, SecurityContextError};
 
 use anyhow::Context as _;
 use std::fmt::Debug;
@@ -549,7 +545,6 @@ pub(super) mod tests {
     };
     use crate::new_policy::traits::HasPolicyId;
     use crate::{FileClass, InitialSid, KernelClass};
-
     use anyhow::Context as _;
     use serde::Deserialize;
 
@@ -658,7 +653,7 @@ pub(super) mod tests {
 
             // Returned policy bytes must be identical to input policy bytes.
             let binary_policy = policy.serialize();
-            assert_eq!(policy_bytes, &binary_policy[..]);
+            assert_eq!(policy_bytes, binary_policy.as_ref());
         }
     }
 

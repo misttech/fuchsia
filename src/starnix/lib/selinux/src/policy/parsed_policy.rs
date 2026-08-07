@@ -3,9 +3,8 @@
 // found in the LICENSE file.
 
 use super::arrays::{
-    Context, DeprecatedFilenameTransition, FilenameTransition, FilenameTransitionList, FsUse,
-    GenericFsContext, IPv6Node, InfinitiBandEndPort, InfinitiBandPartitionKey, InitialSid,
-    MIN_POLICY_VERSION_FOR_INFINITIBAND_PARTITION_KEY, NamedContextPair, Node, Port,
+    Context, FsUse, GenericFsContext, IPv6Node, InfinitiBandEndPort, InfinitiBandPartitionKey,
+    InitialSid, MIN_POLICY_VERSION_FOR_INFINITIBAND_PARTITION_KEY, NamedContextPair, Node, Port,
     RangeTransition, SimpleArray,
 };
 use super::error::{ParseError, ValidateError};
@@ -27,7 +26,7 @@ use crate::new_policy::rules::{
     XPERMS_TYPE_IOCTL_PREFIXES, XPERMS_TYPE_NLMSG, XpermsBitmap,
 };
 use crate::new_policy::traits::{HasPolicyId, PolicyId};
-use crate::new_policy::{Class, NewPolicy, PolicyVersion};
+use crate::new_policy::{Class, NewPolicy};
 use crate::policy::arrays::FsContext;
 use crate::policy::view::CustomKeyHashedView;
 use crate::{NullessByteStr, PolicyCap};
@@ -53,7 +52,6 @@ pub struct ParsedPolicy {
     /// [`NewPolicy`] that handles the header and base tables.
     new_policy: Arc<NewPolicy>,
 
-    filename_transition_list: FilenameTransitionList,
     initial_sids: SimpleArray<InitialSid>,
     filesystems: SimpleArray<NamedContextPair>,
     ports: SimpleArray<Port>,
@@ -302,30 +300,12 @@ impl ParsedPolicy {
         class: ClassId,
         name: NullessByteStr<'_>,
     ) -> Option<TypeId> {
-        match &self.filename_transition_list {
-            FilenameTransitionList::PolicyVersionGeq33(list) => {
-                let entry = list.data.iter().find(|transition| {
-                    transition.target_type() == target_type
-                        && transition.target_class() == class
-                        && transition.name_bytes() == name.as_bytes()
-                })?;
-                entry
-                    .outputs()
-                    .iter()
-                    .find(|entry| entry.has_source_type(source_type))
-                    .map(|x| x.out_type())
-            }
-            FilenameTransitionList::PolicyVersionLeq32(list) => list
-                .data
-                .iter()
-                .find(|transition| {
-                    transition.target_class() == class
-                        && transition.target_type() == target_type
-                        && transition.source_type() == source_type
-                        && transition.name_bytes() == name.as_bytes()
-                })
-                .map(|x| x.out_type()),
-        }
+        self.new_policy.filename_transitions().compute_filename_transition(
+            source_type,
+            target_type,
+            class,
+            name.as_bytes(),
+        )
     }
 
     // Validate that all sensitivity and category IDs referenced in the MLS level are
@@ -423,19 +403,6 @@ fn parse_policy_remaining(
 ) -> Result<(ParsedPolicy, usize), anyhow::Error> {
     let tail = PolicyCursor::new(&rest_data);
 
-    let (filename_transition_list, tail) = if new_policy.version() >= PolicyVersion::V33 {
-        let (filename_transition_list, tail) = SimpleArray::<FilenameTransition>::parse(tail)
-            .map_err(Into::<anyhow::Error>::into)
-            .context("parsing standard filename transitions")?;
-        (FilenameTransitionList::PolicyVersionGeq33(filename_transition_list), tail)
-    } else {
-        let (filename_transition_list, tail) =
-            SimpleArray::<DeprecatedFilenameTransition>::parse(tail)
-                .map_err(Into::<anyhow::Error>::into)
-                .context("parsing deprecated filename transitions")?;
-        (FilenameTransitionList::PolicyVersionLeq32(filename_transition_list), tail)
-    };
-
     let (initial_sids, tail) = SimpleArray::<InitialSid>::parse(tail)
         .map_err(Into::<anyhow::Error>::into)
         .context("parsing initial sids")?;
@@ -507,7 +474,6 @@ fn parse_policy_remaining(
             data: rest_data,
             new_policy: Arc::new(new_policy),
 
-            filename_transition_list,
             initial_sids,
             filesystems,
             ports,
@@ -534,10 +500,6 @@ impl ParsedPolicy {
             new_policy: self.new_policy.clone(),
         };
 
-        self.filename_transition_list
-            .validate(&context)
-            .map_err(Into::<anyhow::Error>::into)
-            .context("validating filename_transition_list")?;
         self.initial_sids
             .validate(&context)
             .map_err(Into::<anyhow::Error>::into)

@@ -25,6 +25,7 @@ rustc_library("selinux") {
     "src/new_policy/constraints.rs",
     "src/new_policy/context.rs",
     "src/new_policy/error.rs",
+    "src/new_policy/filename_transitions.rs",
     "src/new_policy/id_type.rs",
     "src/new_policy/indexed.rs",
     "src/new_policy/metadata.rs",

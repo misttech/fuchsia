@@ -127,6 +127,11 @@ impl ExtensibleBitmap {
         self.items.is_empty()
     }
 
+    /// Returns the number of set bits in this bitmap.
+    pub fn count(&self) -> usize {
+        self.items.iter().map(|item| item.map.count_ones() as usize).sum()
+    }
+
     /// Returns an iterator that yields contiguous `(low, high)` ranges of set bit indices.
     pub fn spans(&self) -> BitSpansIter<'_> {
         let mut items = self.items.iter().peekable();
@@ -454,6 +459,11 @@ impl<T: PolicyId, const WITH_ID_ZERO: bool> IdSet<T, WITH_ID_ZERO> {
         self.bitmap.is_empty()
     }
 
+    /// Returns the number of IDs in this set.
+    pub fn count(&self) -> usize {
+        self.bitmap.count()
+    }
+
     /// Returns an iterator over the IDs in this set.
     pub fn iter(&self) -> impl Iterator<Item = T> + '_ {
         self.bitmap
@@ -629,6 +639,7 @@ mod tests {
 
         let bits: Vec<u32> = bitmap.indices_of_set_bits().collect();
         assert_eq!(bits, vec![0, 2, 65]);
+        assert_eq!(bitmap.count(), 3);
     }
 
     #[test]
@@ -644,7 +655,7 @@ mod tests {
         let mut cursor = PolicyCursor::new(&bytes);
         let id_set = IdSet::<TypeId, false>::parse(&mut cursor).unwrap();
 
-        assert!(!id_set.is_empty());
+        assert_eq!(id_set.count(), 2);
         assert!(id_set.contains(TypeId::from_u32(1).unwrap()));
         assert!(!id_set.contains(TypeId::from_u32(2).unwrap()));
         assert!(id_set.contains(TypeId::from_u32(3).unwrap()));

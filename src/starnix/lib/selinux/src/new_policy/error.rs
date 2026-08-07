@@ -41,6 +41,14 @@ pub enum ParseError {
     UnexpectedConstraintTypeNames,
     #[error("duplicate rule for key {key:?}, kind: {kind:?}")]
     DuplicateAccessVectorRule { key: RuleKey, kind: RuleKind },
+    #[error(
+        "duplicate filename transition for target_type {target_type:?}, target_class {target_class:?}, filename {filename:?}"
+    )]
+    DuplicateFilenameTransition {
+        target_type: super::TypeId,
+        target_class: super::ClassId,
+        filename: Vec<u8>,
+    },
     #[error("index out of range: {index} (maximum supported is {max})")]
     IndexOutOfRange { index: usize, max: usize },
 }

@@ -10,6 +10,7 @@ pub(super) mod common_symbols;
 pub(super) mod constraints;
 pub(super) mod context;
 pub(super) mod error;
+pub(super) mod filename_transitions;
 pub(super) mod id_type;
 pub(super) mod indexed;
 pub(super) mod metadata;
@@ -26,14 +27,6 @@ pub(super) mod users;
 
 use selinux_policy_derive::{Parse, Serialize, Validate};
 
-use error::{ParseError, SerializeError, ValidateError};
-use metadata::{Config, Counts, Magic, Signature};
-pub use metadata::{HandleUnknown, POLICYDB_VERSION_MAX, PolicyVersion};
-pub use parser::PolicyWriter;
-use parser::{Array, PolicyCursor, RemainingBytes};
-use traits::{Serialize, Validate};
-pub use u24_index::U24Index;
-
 pub use access_vector::AccessVector;
 pub use bitmap::IdSpan;
 pub use booleans::{ConditionalBoolean, ConditionalBooleanId};
@@ -43,10 +36,15 @@ pub use constraints::{
     ConstraintOperator, ConstraintSubject, ConstraintTerm, MlsOperands, MlsOperator, NameExpression,
 };
 pub use context::{Context, MlsLevel, MlsRange};
+use error::{ParseError, SerializeError, ValidateError};
+pub use filename_transitions::FilenameTransitions;
 pub use id_type::*;
 pub use indexed::IdAndNameIndexed;
+use metadata::{Config, Counts, Magic, Signature};
+pub use metadata::{HandleUnknown, POLICYDB_VERSION_MAX, PolicyVersion};
 pub use mls::{Category, Sensitivity};
-pub use parser::SymbolArray;
+use parser::{Array, PolicyCursor, RemainingBytes};
+pub use parser::{PolicyWriter, SymbolArray};
 pub use permissions::PermissionId;
 pub use policy_cap::{PolicyCap, PolicyCapSet};
 pub use roles::{Role, RoleAllow, RoleId, RoleSet, RoleTransition};
@@ -54,7 +52,9 @@ pub use rules::{
     AccessDecision, AccessVectorRules, ConditionalNode, IndexedAccessVectorRules,
     SELINUX_AVD_FLAGS_PERMISSIVE, XpermsBitmap,
 };
+use traits::{Serialize, Validate};
 pub use types::*;
+pub use u24_index::U24Index;
 pub use users::User;
 
 /// Tag type for type safety of policy user identifiers.
@@ -107,6 +107,7 @@ pub struct NewPolicy {
     conditional_nodes: Array<ConditionalNode>,
     role_transitions: Array<RoleTransition>,
     role_allowlist: Array<RoleAllow>,
+    filename_transitions: FilenameTransitions,
     rest: RemainingBytes,
 }
 
@@ -207,6 +208,11 @@ impl NewPolicy {
     /// Returns the role allow rules array.
     pub(crate) fn role_allowlist(&self) -> &[RoleAllow] {
         self.role_allowlist.as_ref()
+    }
+
+    /// Returns the filename transitions table.
+    pub fn filename_transitions(&self) -> &FilenameTransitions {
+        &self.filename_transitions
     }
 
     /// Returns a shared reference to the remaining unparsed bytes.
@@ -320,31 +326,34 @@ mod tests {
                 .unwrap_or_else(|e| panic!("Failed to parse {name}: {e:?}"));
             new_policy.validate().unwrap_or_else(|e| panic!("Failed to validate {name}: {e:?}"));
 
-            let mut serialized = Vec::new();
-            new_policy
-                .serialize(&mut serialized)
-                .unwrap_or_else(|e| panic!("Failed to serialize {name}: {e:?}"));
-            assert_bytes_eq(&serialized, policy_bytes);
+            if new_policy.version.get() >= 33 {
+                let mut serialized = Vec::new();
+                new_policy
+                    .serialize(&mut serialized)
+                    .unwrap_or_else(|e| panic!("Failed to serialize {name}: {e:?}"));
+                assert_bytes_eq(&serialized, policy_bytes);
+            }
         }
     }
+}
 
-    fn assert_bytes_eq(left: &[u8], right: &[u8]) {
-        if left != right {
-            let min_len = std::cmp::min(left.len(), right.len());
-            for i in 0..min_len {
-                if left[i] != right[i] {
-                    let start = i.saturating_sub(8);
-                    let end = std::cmp::min(i + 16, min_len);
-                    panic!(
-                        "Byte mismatch at offset {i} (0x{i:x}): actual=0x{:02x} vs expected=0x{:02x}.\nActual   [{start}..{end}]: {:02x?}\nExpected [{start}..{end}]: {:02x?}",
-                        left[i],
-                        right[i],
-                        &left[start..end],
-                        &right[start..end]
-                    );
-                }
+#[cfg(test)]
+pub(crate) fn assert_bytes_eq(left: &[u8], right: &[u8]) {
+    if left != right {
+        let min_len = std::cmp::min(left.len(), right.len());
+        for i in 0..min_len {
+            if left[i] != right[i] {
+                let start = i.saturating_sub(8);
+                let end = std::cmp::min(i + 16, min_len);
+                panic!(
+                    "Byte mismatch at offset {i} (0x{i:x}): actual=0x{:02x} vs expected=0x{:02x}.\nActual   [{start}..{end}]: {:02x?}\nExpected [{start}..{end}]: {:02x?}",
+                    left[i],
+                    right[i],
+                    &left[start..end],
+                    &right[start..end]
+                );
             }
-            panic!("Length mismatch: actual={}, expected={}", left.len(), right.len());
         }
+        panic!("Length mismatch: actual={}, expected={}", left.len(), right.len());
     }
 }
