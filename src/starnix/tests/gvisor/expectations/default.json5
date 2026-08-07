@@ -801,6 +801,7 @@
                 // TODO(https://fxbug.dev/468074994): Support network namespaces.
                 "NetlinkRouteTest.ChangeNetnsAndOtherAttrsTogether",
                 "NetlinkRouteTest.LinIndexOrder",
+                "NetlinkRouteTest.LinkInfoKind",
                 "NetlinkRouteTest.LinkMulticastGroupNamespaced",
                 "NetlinkRouteTest.LinkedToNetns",
                 "NetworkNamespaceTest.CloneNewNetWithCloneNewUserDoesNotNeedCapSysAdmin",
