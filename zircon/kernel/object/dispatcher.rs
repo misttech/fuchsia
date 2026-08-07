@@ -10,8 +10,11 @@ use super::dispatcher_ffi::{
 };
 use super::handle::HandleValue;
 use super::process_dispatcher_ffi::cpp_handle_table_get_dispatcher;
+use core::marker::PhantomData;
 use core::mem::MaybeUninit;
-use ksync::LockToken;
+use fbl::{Recyclable, RefPtr, pin_make_ref_counted, ref_counted};
+use kalloc::AllocError;
+use ksync::{KMutex, LockToken, RawCriticalMutex, guarded};
 use zx_status::Status;
 use zx_types::zx_rights_t;
 
@@ -217,7 +220,7 @@ impl Dispatcher {
     ///
     /// - `ZX_ERR_BAD_HANDLE` if `handle` is not valid.
     /// - `ZX_ERR_WRONG_TYPE` if the dispatcher's type does not match `T::TYPE`.
-    pub fn get<T>(handle: HandleValue) -> Result<fbl::RefPtr<T>, Status>
+    pub fn get<T>(handle: HandleValue) -> Result<RefPtr<T>, Status>
     where
         T: DispatcherOps + fbl::HasRefCount + fbl::Recyclable,
     {
@@ -231,10 +234,7 @@ impl Dispatcher {
     /// - `ZX_ERR_BAD_HANDLE` if `handle` is not valid.
     /// - `ZX_ERR_WRONG_TYPE` if the dispatcher's type does not match `T::TYPE`.
     /// - `ZX_ERR_ACCESS_DENIED` if `handle` lacks the requested `rights`.
-    pub fn get_with_rights<T>(
-        handle: HandleValue,
-        rights: zx_rights_t,
-    ) -> Result<fbl::RefPtr<T>, Status>
+    pub fn get_with_rights<T>(handle: HandleValue, rights: zx_rights_t) -> Result<RefPtr<T>, Status>
     where
         T: DispatcherOps + fbl::HasRefCount + fbl::Recyclable,
     {
@@ -252,8 +252,8 @@ impl Dispatcher {
     /// Resolves a handle to a dispatcher and returns its associated rights.
     pub fn get_dispatcher_and_rights(
         handle: HandleValue,
-    ) -> Result<(fbl::RefPtr<Dispatcher>, zx_rights_t), Status> {
-        let mut ref_ptr = MaybeUninit::<fbl::RefPtr<Dispatcher>>::zeroed();
+    ) -> Result<(RefPtr<Dispatcher>, zx_rights_t), Status> {
+        let mut ref_ptr = MaybeUninit::<RefPtr<Dispatcher>>::zeroed();
         let mut actual_rights = MaybeUninit::<zx_rights_t>::zeroed();
         // SAFETY: ref_ptr and actual_rights point to valid, writable uninitialized memory.
         unsafe {
@@ -274,5 +274,29 @@ impl DispatcherOps for Dispatcher {
 
     fn dispatcher(&self) -> *const Dispatcher {
         self
+    }
+}
+
+/// Peered dispatchers have opposing endpoints to coordinate state with. For example, writing into
+/// one endpoint of a Channel needs to modify `zx_signals_t` state (for the readability bit) on the
+/// opposite side. To coordinate their state, they share a mutex, which is held by the
+/// `PeerHolder`. Both endpoints have a `RefPtr` back to the `PeerHolder`; no one else ever does.
+#[guarded]
+#[ref_counted]
+#[derive(Recyclable)]
+#[repr(C)]
+pub struct PeerHolder<Endpoint> {
+    #[mutex]
+    pub mu: KMutex<RawCriticalMutex>,
+    _phantom: PhantomData<Endpoint>,
+}
+
+impl<Endpoint> PeerHolder<Endpoint> {
+    /// Creates a new `PeerHolder`.
+    pub fn create() -> Result<RefPtr<Self>, AllocError> {
+        pin_make_ref_counted!(Self {
+            mu <- KMutex::init(),
+            _phantom: PhantomData,
+        })
     }
 }
