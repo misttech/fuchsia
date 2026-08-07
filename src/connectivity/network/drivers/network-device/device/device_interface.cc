@@ -13,6 +13,8 @@
 #include <lib/fit/defer.h>
 #include <lib/trace/event.h>
 
+#include <tuple>
+
 #include <fbl/alloc_checker.h>
 
 #include "definitions.h"
@@ -657,6 +659,7 @@ void DeviceInterface::OpenSession(OpenSessionRequestView request,
     // This is safe because we can only get here if session_ is nullptr,
     // and we always remove all VMOs before setting session_ to nullptr.
     ZX_ASSERT_MSG(vmo_store_.count() == 0, "Must have no sessions");
+
     for (netdev::wire::DataVmo& data_vmo : session_info.data()) {
       VmoId vmo_id = data_vmo.id();
       const uint16_t num_rx_buffers = data_vmo.num_rx_buffers();
@@ -672,6 +675,7 @@ void DeviceInterface::OpenSession(OpenSessionRequestView request,
         unprepared_vmos_.push_back(&vmo_store_.GetVmo(vmo_id)->meta());
       }
     }
+
     session->AssertParentTxLock(*this);
     session->InstallTx();
     session->Bind(std::move(endpoints->server));
@@ -693,41 +697,72 @@ void DeviceInterface::OpenSession(OpenSessionRequestView request,
   }
 
   auto response = std::move(sync_result.value());
-  fdf::Arena arena('NETD');
-  PrepareVmos(
-      std::move(to_prepare), std::move(arena),
-      [this, response = std::move(response), completer = completer.ToAsync()](
-          fit::result<std::tuple<zx_status_t, DataVmoList>> result) mutable {
-        if (result.is_error()) {
-          auto& [status, rest_vmos] = result.error_value();
-          LOGF_ERROR("cannot prepare VMOs for new session: %s", zx_status_get_string(status));
-          while (!rest_vmos.is_empty()) {
-            DataVmoMeta* vmo = rest_vmos.pop_front();
-            fbl::AutoLock lock(&control_lock_);
-            if (zx::result<zx::vmo> result = vmo_store_.Unregister(vmo->id); !result.is_ok()) {
-              LOGF_WARN("%s: Failed to unregister VMO %u: %s", session_->name(), vmo->id,
-                        result.status_string());
-            }
-          }
-          completer.ReplyError(ZX_ERR_INTERNAL);
-          // Dropping of the session channel will cause the session to
-          // be dead and hence undo all the prepared VMOs.
-          return;
-        }
-        completer.ReplySuccess(std::move(response.session), std::move(response.fifos));
-      });
-}
-
-void DeviceInterface::PrepareVmos(
-    DataVmoList vmos, fdf::Arena arena,
-    fit::callback<void(fit::result<std::tuple<zx_status_t, DataVmoList>>)> cb) {
-  if (vmos.is_empty()) {
-    cb(zx::ok());
+  if (to_prepare.is_empty()) {
+    completer.ReplySuccess(std::move(response.session), std::move(response.fifos));
     return;
   }
-  DataVmoMeta* cur = &vmos.front();
 
-  ZX_ASSERT_MSG(!cur->prepared, "vmo %d is already prepared", cur->id);
+  bool shoud_start_preparing;
+  {
+    fbl::AutoLock lock(&control_lock_);
+    shoud_start_preparing = PrepareVmosLocked(
+        std::move(to_prepare),
+        [this, response = std::move(response), completer = completer.ToAsync()](
+            fit::result<std::tuple<zx_status_t, DataVmoList>> result) mutable {
+          if (result.is_error()) {
+            auto& [status, rest_vmos] = result.error_value();
+            LOGF_WARN("cannot prepare VMOs for new session: %s", zx_status_get_string(status));
+            fbl::AutoLock lock(&control_lock_);
+            unprepared_vmos_.splice(unprepared_vmos_.end(), rest_vmos);
+            completer.ReplyError(ZX_ERR_INTERNAL);
+            // Dropping of the session channel will cause the session to
+            // be dead and hence undo all the prepared VMOs.
+            return;
+          }
+          completer.ReplySuccess(std::move(response.session), std::move(response.fifos));
+        });
+  }
+  if (shoud_start_preparing) {
+    fdf::Arena arena('NETD');
+    PrepareNextVmo(std::move(arena));
+  }
+}
+
+bool DeviceInterface::PrepareVmosLocked(
+    DataVmoList vmos, fit::callback<void(fit::result<std::tuple<zx_status_t, DataVmoList>>)> cb) {
+  ZX_ASSERT(!vmos.is_empty());
+  for (auto& vmo : vmos) {
+    vmo.state = VmoState::kPreparing;
+  }
+  bool should_start = pending_prepare_vmos_.is_empty();
+  vmos.back().batch_completion = std::move(cb);
+  pending_prepare_vmos_.splice(pending_prepare_vmos_.end(), vmos);
+  return should_start;
+}
+
+bool DeviceInterface::ReleaseVmosLocked(
+    DataVmoList vmos, fit::callback<void(fit::result<std::tuple<zx_status_t, DataVmoList>>)> cb) {
+  ZX_ASSERT(!vmos.is_empty());
+  for (auto& vmo : vmos) {
+    vmo.state = VmoState::kReleasing;
+  }
+  bool should_start = pending_release_vmos_.is_empty();
+  vmos.back().batch_completion = std::move(cb);
+  pending_release_vmos_.splice(pending_release_vmos_.end(), vmos);
+  return should_start;
+}
+
+void DeviceInterface::PrepareNextVmo(fdf::Arena arena) {
+  DataVmoMeta* cur;
+  {
+    fbl::AutoLock lock(&control_lock_);
+    if (pending_prepare_vmos_.is_empty()) {
+      PruneDeadSession();
+      return;
+    }
+    cur = &pending_prepare_vmos_.front();
+  }
+  ZX_ASSERT_MSG(cur->state == VmoState::kPreparing, "vmo %d is not in preparing state", cur->id);
 
   zx::vmo duplicated_vmo;
   zx_status_t status;
@@ -736,14 +771,43 @@ void DeviceInterface::PrepareVmos(
     DataVmoStore::StoredVmo* stored_vmo = vmo_store_.GetVmo(cur->id);
     status = stored_vmo->vmo()->duplicate(ZX_RIGHT_SAME_RIGHTS, &duplicated_vmo);
   }
+  fit::callback<void(fdf::Arena, zx_status_t)> fail = [this, cur](fdf::Arena arena,
+                                                                  zx_status_t status) {
+    DataVmoList failed_batch;
+    fit::callback<void(fit::result<std::tuple<zx_status_t, DataVmoList>>)> batch_cb;
+    bool last_vmo = false;
+    {
+      fbl::AutoLock lock(&control_lock_);
+      ZX_ASSERT(!pending_prepare_vmos_.is_empty() && &pending_prepare_vmos_.front() == cur);
+      while (!pending_prepare_vmos_.is_empty()) {
+        DataVmoMeta* node = pending_prepare_vmos_.pop_front();
+        node->state = VmoState::kUnprepared;
+        failed_batch.push_back(node);
+        if (node->batch_completion) {
+          batch_cb = std::move(node->batch_completion);
+          break;
+        }
+      }
+      last_vmo = pending_prepare_vmos_.is_empty();
+    }
+    if (batch_cb) {
+      batch_cb(zx::error(std::make_tuple(status, std::move(failed_batch))));
+    }
+    if (last_vmo) {
+      SharedAutoLock lock(&control_lock_);
+      PruneDeadSession();
+      return;
+    }
+    PrepareNextVmo(std::move(arena));
+  };
   if (status != ZX_OK) {
     LOGF_ERROR("Failed to duplicate VMO %d: %s", cur->id, zx_status_get_string(status));
-    cb(zx::error(std::make_tuple(status, std::move(vmos))));
+    fail(std::move(arena), status);
     return;
   }
   device_impl_.buffer(arena)
       ->PrepareVmo(cur->id, std::move(duplicated_vmo))
-      .Then([this, cur, vmos = std::move(vmos), arena = std::move(arena), cb = std::move(cb)](
+      .Then([this, cur, fail = std::move(fail), arena = std::move(arena)](
                 fdf::WireUnownedResult<netdriver::NetworkDeviceImpl::PrepareVmo>& result) mutable {
         LOGF_TRACE("%s: driver PrepareVmo for VMO %d completed, ok=%d", __FUNCTION__, cur->id,
                    result.ok());
@@ -751,49 +815,102 @@ void DeviceInterface::PrepareVmos(
           LOGF_ERROR("PrepareVmo failed: %s", result.ok() ? zx_status_get_string(result.value().s)
                                                           : result.FormatDescription().c_str());
           zx_status_t err = result.ok() ? result.value().s : result.error().status();
-          cb(zx::error(std::make_tuple(err, std::move(vmos))));
+          fail(std::move(arena), err);
           return;
         }
-        DataVmoMeta* popped = vmos.pop_front();
-        ZX_ASSERT(popped == cur);
+        fit::callback<void(fit::result<std::tuple<zx_status_t, DataVmoList>>)> batch_cb;
+        bool last_vmo = false;
         {
           fbl::AutoLock lock(&control_lock_);
-          cur->prepared = true;
+          DataVmoMeta* popped = pending_prepare_vmos_.pop_front();
+          ZX_ASSERT(popped == cur);
+          cur->state = VmoState::kPrepared;
           prepared_vmos_.push_back(cur);
+          if (cur->batch_completion) {
+            batch_cb = std::move(cur->batch_completion);
+          }
+          last_vmo = pending_prepare_vmos_.is_empty();
         }
-        PrepareVmos(std::move(vmos), std::move(arena), std::move(cb));
+        if (batch_cb) {
+          batch_cb(fit::ok());
+        }
+        if (last_vmo) {
+          SharedAutoLock lock(&control_lock_);
+          PruneDeadSession();
+          return;
+        }
+        PrepareNextVmo(std::move(arena));
       });
 }
 
-void DeviceInterface::ReleaseVmos(
-    DataVmoList vmos, fdf::Arena arena,
-    fit::callback<void(fit::result<std::tuple<zx_status_t, DataVmoList>>)> cb) {
-  if (vmos.is_empty()) {
-    cb(fit::ok());
-    return;
+void DeviceInterface::ReleaseNextVmo(fdf::Arena arena) {
+  DataVmoMeta* cur;
+  {
+    fbl::AutoLock lock(&control_lock_);
+    if (pending_release_vmos_.is_empty()) {
+      PruneDeadSession();
+      return;
+    }
+    cur = &pending_release_vmos_.front();
   }
-  DataVmoMeta* cur = &vmos.front();
-
-  ZX_ASSERT_MSG(cur->prepared, "vmo %d is not prepared", cur->id);
+  ZX_ASSERT_MSG(cur->state == VmoState::kReleasing, "vmo %d is not in releasing state", cur->id);
 
   device_impl_.buffer(arena)->ReleaseVmo(cur->id).Then(
-      [this, cur, vmos = std::move(vmos), arena = std::move(arena), cb = std::move(cb)](
+      [this, cur, arena = std::move(arena)](
           fdf::WireUnownedResult<netdriver::NetworkDeviceImpl::ReleaseVmo>& result) mutable {
         LOGF_TRACE("%s: driver ReleaseVmo for VMO %d completed, ok=%d", __FUNCTION__, cur->id,
                    result.ok());
+        bool last_vmo = false;
         if (!result.ok()) {
           LOGF_ERROR("ReleaseVmo failed: %s", result.FormatDescription().c_str());
-          cb(fit::error(std::make_tuple(result.status(), std::move(vmos))));
+          DataVmoList failed_batch;
+          fit::callback<void(fit::result<std::tuple<zx_status_t, DataVmoList>>)> batch_cb;
+          {
+            fbl::AutoLock lock(&control_lock_);
+            ZX_ASSERT(!pending_release_vmos_.is_empty() && &pending_release_vmos_.front() == cur);
+            while (!pending_release_vmos_.is_empty()) {
+              DataVmoMeta* node = pending_release_vmos_.pop_front();
+              node->state = VmoState::kPrepared;
+              failed_batch.push_back(node);
+              if (node->batch_completion) {
+                batch_cb = std::move(node->batch_completion);
+                break;
+              }
+            }
+            last_vmo = pending_release_vmos_.is_empty();
+          }
+          if (batch_cb) {
+            batch_cb(fit::error(std::make_tuple(result.status(), std::move(failed_batch))));
+          }
+          if (last_vmo) {
+            SharedAutoLock lock(&control_lock_);
+            PruneDeadSession();
+            return;
+          }
+          ReleaseNextVmo(std::move(arena));
           return;
         }
-        DataVmoMeta* popped = vmos.pop_front();
-        ZX_ASSERT(popped == cur);
+        fit::callback<void(fit::result<std::tuple<zx_status_t, DataVmoList>>)> batch_cb;
         {
           fbl::AutoLock lock(&control_lock_);
-          cur->prepared = false;
+          DataVmoMeta* popped = pending_release_vmos_.pop_front();
+          ZX_ASSERT(popped == cur);
+          cur->state = VmoState::kUnprepared;
           unprepared_vmos_.push_back(cur);
+          if (cur->batch_completion) {
+            batch_cb = std::move(cur->batch_completion);
+          }
+          last_vmo = pending_release_vmos_.is_empty();
         }
-        ReleaseVmos(std::move(vmos), std::move(arena), std::move(cb));
+        if (batch_cb) {
+          batch_cb(fit::ok());
+        }
+        if (last_vmo) {
+          SharedAutoLock lock(&control_lock_);
+          PruneDeadSession();
+          return;
+        }
+        ReleaseNextVmo(std::move(arena));
       });
 }
 
@@ -801,217 +918,259 @@ void DeviceInterface::RegisterForTx(
     cpp20::span<const VmoId> vmos,
     fidl::WireServer<netdev::Session>::RegisterForTxCompleter::Async completer) {
   LOGF_TRACE("%s: %zu VMOs", __FUNCTION__, vmos.size());
-  fbl::AutoLock lock(&control_lock_);
-  if (teardown_state_ != TeardownState::RUNNING) {
-    completer.Reply(0, ZX_ERR_BAD_STATE);
-    return;
-  }
-  if (session_ == nullptr) {
-    completer.Reply(0, ZX_ERR_BAD_STATE);
-    return;
-  }
-  session_->AssertParentControlLock(*this);
-  if (session_->IsDying()) {
-    completer.Reply(0, ZX_ERR_BAD_STATE);
-    return;
-  }
-
-  // We use `seen` as a bitmask to detect duplicate VMOs in the request.
-  // This static assert ensures that `seen` has enough bits to represent
-  // all possible VMO IDs up to `netdev::kMaxDataVmos`.
-  uint32_t seen = 0;
-  static_assert(sizeof(seen) * 8 == netdev::kMaxDataVmos);
-  for (VmoId id : vmos) {
-    if (id >= netdev::kMaxDataVmos) {
-      completer.Reply(0, ZX_ERR_NOT_FOUND);
+  {
+    fbl::AutoLock lock(&control_lock_);
+    if (teardown_state_ != TeardownState::RUNNING) {
+      completer.Reply(0, ZX_ERR_BAD_STATE);
       return;
     }
-    uint32_t mask = 1U << id;
-    if (seen & mask) {
-      completer.Reply(0, ZX_ERR_INVALID_ARGS);
+    if (session_ == nullptr) {
+      completer.Reply(0, ZX_ERR_BAD_STATE);
       return;
     }
-    seen |= mask;
-
-    auto* stored_vmo = vmo_store_.GetVmo(id);
-    if (!stored_vmo) {
-      LOGF_WARN("RegisterForTx: VMO %d not found, replying NOT_FOUND", id);
-      completer.Reply(0, ZX_ERR_NOT_FOUND);
+    session_->AssertParentControlLock(*this);
+    if (session_->IsDying()) {
+      completer.Reply(0, ZX_ERR_BAD_STATE);
       return;
     }
-    if (stored_vmo->meta().tx_registered) {
-      LOGF_WARN("RegisterForTx: VMO %d already registered for TX, replying ALREADY_EXISTS", id);
-      completer.Reply(0, ZX_ERR_ALREADY_EXISTS);
+
+    // We use `seen` as a bitmask to detect duplicate VMOs in the request.
+    // This static assert ensures that `seen` has enough bits to represent
+    // all possible VMO IDs up to `netdev::kMaxDataVmos`.
+    uint32_t seen = 0;
+    static_assert(sizeof(seen) * 8 == netdev::kMaxDataVmos);
+    for (VmoId id : vmos) {
+      if (id >= netdev::kMaxDataVmos) {
+        completer.Reply(0, ZX_ERR_NOT_FOUND);
+        return;
+      }
+      uint32_t mask = 1U << id;
+      if (seen & mask) {
+        completer.Reply(0, ZX_ERR_INVALID_ARGS);
+        return;
+      }
+      seen |= mask;
+
+      auto* stored_vmo = vmo_store_.GetVmo(id);
+      if (!stored_vmo) {
+        LOGF_WARN("RegisterForTx: VMO %d not found, replying NOT_FOUND", id);
+        completer.Reply(0, ZX_ERR_NOT_FOUND);
+        return;
+      }
+      if (stored_vmo->meta().tx_registered) {
+        LOGF_WARN("RegisterForTx: VMO %d already registered for TX, replying ALREADY_EXISTS", id);
+        completer.Reply(0, ZX_ERR_ALREADY_EXISTS);
+        return;
+      }
+      if (stored_vmo->meta().state == VmoState::kReleasing ||
+          stored_vmo->meta().state == VmoState::kPreparing) {
+        LOGF_WARN("%s: VMO %hu has pending operation, cannot register for Tx", __FUNCTION__, id);
+        completer.Reply(0, ZX_ERR_SHOULD_WAIT);
+        return;
+      }
+    }
+
+    DataVmoList to_prepare;
+    bool has_skipped = false;
+    for (auto it = vmos.begin(); it != vmos.end(); ++it) {
+      auto* stored_vmo = vmo_store_.GetVmo(*it);
+      stored_vmo->meta().tx_registered = true;
+      switch (stored_vmo->meta().state) {
+        case VmoState::kPreparing:
+        case VmoState::kReleasing:
+          __UNREACHABLE;
+        case VmoState::kPrepared:
+          has_skipped = true;
+          continue;
+        case VmoState::kUnprepared: {
+          unprepared_vmos_.erase(stored_vmo->meta());
+          to_prepare.push_back(&stored_vmo->meta());
+        }
+      }
+    }
+    uint8_t total = static_cast<uint8_t>(vmos.size());
+    if (to_prepare.is_empty()) {
+      lock.release();
+      completer.Reply(total, ZX_OK);
       return;
     }
-  }
 
-  DataVmoList to_prepare;
-  bool has_skipped = false;
-  for (VmoId id : vmos) {
-    auto* stored_vmo = vmo_store_.GetVmo(id);
-    stored_vmo->meta().tx_registered = true;
-    if (stored_vmo->meta().prepared) {
-      has_skipped = true;
-      continue;
+    // If we have skipped a VMO, we need to keep the original list of VMO IDs to
+    // find out how many VMOs succeeded. Otherwise, the entirety is in the
+    // to_prepare list and we don't need any allocation.
+    std::vector<VmoId> vmo_ids;
+    if (has_skipped) {
+      vmo_ids = std::vector<VmoId>(vmos.begin(), vmos.end());
     }
-    unprepared_vmos_.erase(stored_vmo->meta());
-    to_prepare.push_back(&stored_vmo->meta());
-  }
-  lock.release();
-
-  uint8_t total = static_cast<uint8_t>(vmos.size());
-  if (to_prepare.is_empty()) {
-    completer.Reply(total, ZX_OK);
-    return;
-  }
-
-  // If we have skipped a VMO, we need to keep the original list of VMO IDs to
-  // find out how many VMOs succeeded. Otherwise, the entirety is in the
-  // to_prepare list and we don't need any allocation.
-  std::vector<VmoId> vmo_ids;
-  if (has_skipped) {
-    vmo_ids = std::vector<VmoId>(vmos.begin(), vmos.end());
+    bool should_start = PrepareVmosLocked(
+        std::move(to_prepare),
+        [this, completer = std::move(completer), vmo_ids = std::move(vmo_ids),
+         total](fit::result<std::tuple<zx_status_t, DataVmoList>> result) mutable {
+          if (result.is_error()) {
+            auto& [status, rest_vmos] = result.error_value();
+            {
+              fbl::AutoLock lock(&control_lock_);
+              if (!vmo_ids.empty() && !rest_vmos.is_empty()) {
+                auto it = std::ranges::find(vmo_ids, rest_vmos.front().id);
+                for (; it != vmo_ids.end(); ++it) {
+                  auto* stored_vmo = vmo_store_.GetVmo(*it);
+                  stored_vmo->meta().tx_registered = false;
+                  total--;
+                }
+              } else {
+                for (auto& vmo : rest_vmos) {
+                  vmo.tx_registered = false;
+                  total--;
+                }
+              }
+              for (auto& vmo : rest_vmos) {
+                vmo.state = VmoState::kUnprepared;
+              }
+              unprepared_vmos_.splice(unprepared_vmos_.end(), rest_vmos);
+            }
+            completer.Reply(total, status);
+            return;
+          }
+          completer.Reply(total, ZX_OK);
+        });
+    if (!should_start) {
+      return;
+    }
   }
   fdf::Arena arena('NETD');
-  PrepareVmos(std::move(to_prepare), std::move(arena),
-              [this, completer = std::move(completer), vmo_ids = std::move(vmo_ids),
-               total](fit::result<std::tuple<zx_status_t, DataVmoList>> result) mutable {
-                if (result.is_error()) {
-                  auto& [status, rest_vmos] = result.error_value();
-                  {
-                    fbl::AutoLock lock(&control_lock_);
-                    if (!vmo_ids.empty()) {
-                      auto it = std::ranges::find(vmo_ids, rest_vmos.front().id);
-                      for (; it != vmo_ids.end(); ++it) {
-                        auto* stored_vmo = vmo_store_.GetVmo(*it);
-                        stored_vmo->meta().tx_registered = false;
-                        total--;
-                      }
-                    } else {
-                      for (auto& vmo : rest_vmos) {
-                        vmo.tx_registered = false;
-                        total--;
-                      }
-                    }
-                    unprepared_vmos_.splice(unprepared_vmos_.end(), rest_vmos);
-                  }
-                  completer.Reply(total, status);
-                  return;
-                }
-                completer.Reply(total, ZX_OK);
-              });
+  PrepareNextVmo(std::move(arena));
 }
 
 void DeviceInterface::UnregisterForTx(
     cpp20::span<const VmoId> vmos,
     fidl::WireServer<netdev::Session>::UnregisterForTxCompleter::Async completer) {
   LOGF_TRACE("%s: %zu VMOs", __FUNCTION__, vmos.size());
-  fbl::AutoLock lock(&control_lock_);
-  if (teardown_state_ != TeardownState::RUNNING) {
-    completer.Reply(0, ZX_ERR_BAD_STATE);
-    return;
-  }
-  if (session_ == nullptr) {
-    completer.Reply(0, ZX_ERR_BAD_STATE);
-    return;
-  }
-  session_->AssertParentControlLock(*this);
-  if (session_->IsDying()) {
-    completer.Reply(0, ZX_ERR_BAD_STATE);
-    return;
-  }
-
-  // We use `seen` as a bitmask to detect duplicate VMOs in the request.
-  // This static assert ensures that `seen` has enough bits to represent
-  // all possible VMO IDs up to `netdev::kMaxDataVmos`.
-  uint32_t seen = 0;
-  static_assert(sizeof(seen) * 8 == netdev::kMaxDataVmos);
-  for (VmoId id : vmos) {
-    if (id >= netdev::kMaxDataVmos) {
-      completer.Reply(0, ZX_ERR_INVALID_ARGS);
+  {
+    fbl::AutoLock lock(&control_lock_);
+    if (teardown_state_ != TeardownState::RUNNING) {
+      completer.Reply(0, ZX_ERR_BAD_STATE);
       return;
     }
-    uint32_t mask = 1U << id;
-    if (seen & mask) {
-      completer.Reply(0, ZX_ERR_INVALID_ARGS);
+    if (session_ == nullptr) {
+      completer.Reply(0, ZX_ERR_BAD_STATE);
       return;
     }
-    seen |= mask;
-
-    auto* stored_vmo = vmo_store_.GetVmo(id);
-    if (!stored_vmo) {
-      LOGF_WARN("UnregisterForTx: VMO %d not found, replying NOT_FOUND", id);
-      completer.Reply(0, ZX_ERR_NOT_FOUND);
+    session_->AssertParentControlLock(*this);
+    if (session_->IsDying()) {
+      completer.Reply(0, ZX_ERR_BAD_STATE);
       return;
     }
-    if (!stored_vmo->meta().tx_registered) {
-      LOGF_WARN("UnregisterForTx: VMO %d not registered for TX, replying INVALID_ARGS", id);
-      completer.Reply(0, ZX_ERR_INVALID_ARGS);
+
+    // We use `seen` as a bitmask to detect duplicate VMOs in the request.
+    // This static assert ensures that `seen` has enough bits to represent
+    // all possible VMO IDs up to `netdev::kMaxDataVmos`.
+    uint32_t seen = 0;
+    static_assert(sizeof(seen) * 8 == netdev::kMaxDataVmos);
+    for (VmoId id : vmos) {
+      if (id >= netdev::kMaxDataVmos) {
+        completer.Reply(0, ZX_ERR_INVALID_ARGS);
+        return;
+      }
+      uint32_t mask = 1U << id;
+      if (seen & mask) {
+        completer.Reply(0, ZX_ERR_INVALID_ARGS);
+        return;
+      }
+      seen |= mask;
+
+      auto* stored_vmo = vmo_store_.GetVmo(id);
+      if (!stored_vmo) {
+        LOGF_WARN("UnregisterForTx: VMO %d not found, replying NOT_FOUND", id);
+        completer.Reply(0, ZX_ERR_NOT_FOUND);
+        return;
+      }
+      if (!stored_vmo->meta().tx_registered) {
+        LOGF_WARN("UnregisterForTx: VMO %d not registered for TX, replying INVALID_ARGS", id);
+        completer.Reply(0, ZX_ERR_INVALID_ARGS);
+        return;
+      }
+      if (stored_vmo->meta().state == VmoState::kReleasing ||
+          stored_vmo->meta().state == VmoState::kPreparing) {
+        LOGF_WARN("%s: VMO %hu has pending operation, cannot unregister for Tx", __FUNCTION__, id);
+        completer.Reply(0, ZX_ERR_SHOULD_WAIT);
+        return;
+      }
+    }
+
+    DataVmoList to_release;
+    bool has_skipped = false;
+    for (VmoId id : vmos) {
+      auto* stored_vmo = vmo_store_.GetVmo(id);
+      stored_vmo->meta().tx_registered = false;
+      switch (stored_vmo->meta().state) {
+        case VmoState::kPreparing:
+        case VmoState::kReleasing:
+          __UNREACHABLE;
+        case VmoState::kUnprepared:
+          has_skipped = true;
+          continue;
+        case VmoState::kPrepared: {
+          if (stored_vmo->meta().num_rx_buffers != 0) {
+            has_skipped = true;
+            continue;
+          }
+          prepared_vmos_.erase(stored_vmo->meta());
+          to_release.push_back(&stored_vmo->meta());
+        }
+      }
+    }
+    uint8_t total_release = static_cast<uint8_t>(vmos.size());
+    if (to_release.is_empty()) {
+      lock.release();
+      completer.Reply(total_release, ZX_OK);
       return;
     }
-  }
 
-  DataVmoList to_release;
-  bool has_skipped = false;
-  for (VmoId id : vmos) {
-    auto* stored_vmo = vmo_store_.GetVmo(id);
-    stored_vmo->meta().tx_registered = false;
-    if (!stored_vmo->meta().prepared) {
-      has_skipped = true;
-      continue;
+    // If we have skipped a VMO, we need to keep the original list of VMO IDs to
+    // find out how many VMOs succeeded. Otherwise, the entirety is in the
+    // to_release list and we don't need any allocation.
+    std::vector<VmoId> vmo_ids;
+    if (has_skipped) {
+      vmo_ids = std::vector<VmoId>(vmos.begin(), vmos.end());
     }
-    if (stored_vmo->meta().num_rx_buffers != 0) {
-      has_skipped = true;
-      continue;
+    bool should_start = ReleaseVmosLocked(
+        std::move(to_release),
+        [this, completer = std::move(completer), vmo_ids = std::move(vmo_ids),
+         total = total_release](fit::result<std::tuple<zx_status_t, DataVmoList>> result) mutable {
+          if (result.is_error()) {
+            auto& [status, rest_vmos] = result.error_value();
+            {
+              fbl::AutoLock lock(&control_lock_);
+              // Undo the tx_registered so that the operation can be tried again.
+              if (!vmo_ids.empty() && !rest_vmos.is_empty()) {
+                auto it = std::ranges::find(vmo_ids, rest_vmos.front().id);
+                for (; it != vmo_ids.end(); ++it) {
+                  auto* stored_vmo = vmo_store_.GetVmo(*it);
+                  stored_vmo->meta().tx_registered = true;
+                  total--;
+                }
+              } else {
+                for (auto& vmo : rest_vmos) {
+                  vmo.tx_registered = true;
+                  total--;
+                }
+              }
+              for (auto& vmo : rest_vmos) {
+                vmo.state = VmoState::kPrepared;
+              }
+              prepared_vmos_.splice(prepared_vmos_.end(), rest_vmos);
+            }
+            completer.Reply(total, status);
+            return;
+          }
+          completer.Reply(total, ZX_OK);
+        });
+    if (!should_start) {
+      return;
     }
-    prepared_vmos_.erase(stored_vmo->meta());
-    to_release.push_back(&stored_vmo->meta());
-  }
-  lock.release();
-
-  uint8_t total = static_cast<uint8_t>(vmos.size());
-  if (to_release.is_empty()) {
-    completer.Reply(total, ZX_OK);
-    return;
-  }
-
-  // If we have skipped a VMO, we need to keep the original list of VMO IDs to
-  // find out how many VMOs succeeded. Otherwise, the entirety is in the
-  // to_release list and we don't need any allocation.
-  std::vector<VmoId> vmo_ids;
-  if (has_skipped) {
-    vmo_ids = std::vector<VmoId>(vmos.begin(), vmos.end());
   }
   fdf::Arena arena('NETD');
-  ReleaseVmos(std::move(to_release), std::move(arena),
-              [this, completer = std::move(completer), vmo_ids = std::move(vmo_ids),
-               total](fit::result<std::tuple<zx_status_t, DataVmoList>> result) mutable {
-                if (result.is_error()) {
-                  auto& [status, rest_vmos] = result.error_value();
-                  {
-                    fbl::AutoLock lock(&control_lock_);
-                    // Undo the tx_registered so that the operation can be tried again.
-                    if (!vmo_ids.empty()) {
-                      auto it = std::ranges::find(vmo_ids, rest_vmos.front().id);
-                      for (; it != vmo_ids.end(); ++it) {
-                        auto* stored_vmo = vmo_store_.GetVmo(*it);
-                        stored_vmo->meta().tx_registered = true;
-                        total--;
-                      }
-                    } else {
-                      for (auto& vmo : rest_vmos) {
-                        vmo.tx_registered = true;
-                        total--;
-                      }
-                    }
-                    prepared_vmos_.splice(prepared_vmos_.end(), rest_vmos);
-                  }
-                  completer.Reply(total, status);
-                  return;
-                }
-                completer.Reply(total, ZX_OK);
-              });
+  ReleaseNextVmo(std::move(arena));
 }
 
 void DeviceInterface::GetPort(GetPortRequestView request, GetPortCompleter::Sync& _completer) {
@@ -1520,6 +1679,10 @@ void DeviceInterface::PruneDeadSession() __TA_REQUIRES_SHARED(control_lock_) {
   if (!session_->IsDying()) {
     return;
   }
+  if (!pending_prepare_vmos_.is_empty() || !pending_release_vmos_.is_empty()) {
+    LOGF_TRACE("%s: VMO operations still pending", __FUNCTION__);
+    return;
+  }
   if (!session_->ShouldDestroy()) {
     LOGF_TRACE("%s: %s still pending", __FUNCTION__, session_->name());
     return;
@@ -1535,53 +1698,76 @@ void DeviceInterface::PruneDeadSession() __TA_REQUIRES_SHARED(control_lock_) {
   // always safe.
   async::PostTask(dispatchers_.impl_->async_dispatcher(), [this]() {
     DataVmoList vmos;
+    bool should_start_release = false;
+    bool is_empty = false;
     {
       fbl::AutoLock lock(&control_lock_);
       LOGF_TRACE("destroying %s", session_->name());
       vmos = std::move(prepared_vmos_);
+      is_empty = vmos.is_empty();
+      if (!is_empty) {
+        should_start_release = ReleaseVmosLocked(
+            std::move(vmos),
+            [this](fit::result<std::tuple<zx_status_t, DataVmoList>> result) mutable {
+              if (result.is_error()) {
+                fbl::AutoLock lock(&control_lock_);
+                auto&& [status, rest] = result.error_value();
+                // We failed to release it from the vendor driver, we should still
+                // unregister it locally.
+                DataVmoMeta* failed = rest.pop_front();
+                failed->state = VmoState::kUnprepared;
+                if (zx::result<zx::vmo> result = vmo_store_.Unregister(failed->id);
+                    !result.is_ok()) {
+                  LOGF_ERROR("%s: Failed to unregister fail-to-release VMO %u: %s",
+                             session_->name(), failed->id, result.status_string());
+                }
+                // Retry to release the rest of the VMOs.
+                for (auto& v : rest) {
+                  v.state = VmoState::kPrepared;
+                }
+                prepared_vmos_ = std::move(rest);
+                PruneDeadSession();
+                return;
+              }
+              RemoveDeadSession();
+            });
+      }
     }
-
+    if (is_empty) {
+      RemoveDeadSession();
+      return;
+    }
+    if (!should_start_release) {
+      return;
+    }
     fdf::Arena arena('NETD');
-    ReleaseVmos(
-        std::move(vmos), std::move(arena),
-        [this, arena = std::move(arena)](
-            fit::result<std::tuple<zx_status_t, DataVmoList>> result) mutable {
-          if (result.is_error()) {
-            fbl::AutoLock lock(&control_lock_);
-            auto&& [status, rest] = result.error_value();
-            // We failed to release it from the vendor driver, we should still
-            // unregister it locally.
-            DataVmoMeta* failed = rest.pop_front();
-            if (zx::result<zx::vmo> result = vmo_store_.Unregister(failed->id); !result.is_ok()) {
-              LOGF_ERROR("%s: Failed to unregister fail-to-release VMO %u: %s", session_->name(),
-                         failed->id, result.status_string());
-            }
-            // Retry to release the rest of the VMOs.
-            prepared_vmos_ = std::move(rest);
-            PruneDeadSession();
-            return;
-          }
-          {
-            fbl::AutoLock rx_lock(&rx_lock_);
-            rx_queue_->AssertParentRxLocked(*this);
-            rx_queue_->SetSession(nullptr);
-          }
-          control_lock_.Acquire();
-          std::string session_name = session_->name();
-          ZX_ASSERT_MSG(prepared_vmos_.is_empty(), "should not have left over prepared vmos");
-          while (!unprepared_vmos_.is_empty()) {
-            DataVmoMeta* cur = unprepared_vmos_.pop_front();
-            ZX_ASSERT_MSG(!cur->prepared, "VMO %d in unprepared_vmos_ is prepared", cur->id);
-            if (zx::result<zx::vmo> result = vmo_store_.Unregister(cur->id); !result.is_ok()) {
-              LOGF_ERROR("%s: Failed to unregister unprepared VMO %u: %s", session_name.c_str(),
-                         cur->id, result.status_string());
-            }
-          }
-          session_ = nullptr;
-          evt_session_died_.Trigger(session_name.c_str());
-          ContinueTeardown(TeardownState::SESSION);
-        });
+    ReleaseNextVmo(std::move(arena));
   });
+}
+
+void DeviceInterface::RemoveDeadSession() __TA_EXCLUDES(rx_lock_) __TA_EXCLUDES(control_lock_) {
+  {
+    fbl::AutoLock rx_lock(&rx_lock_);
+    rx_queue_->AssertParentRxLocked(*this);
+    rx_queue_->SetSession(nullptr);
+  }
+  control_lock_.Acquire();
+  std::string session_name = session_->name();
+  ZX_ASSERT_MSG(prepared_vmos_.is_empty(), "should not have leftover prepared vmos");
+  ZX_ASSERT_MSG(pending_prepare_vmos_.is_empty(), "should not have leftover pending prepare vmos");
+  ZX_ASSERT_MSG(pending_release_vmos_.is_empty(), "should not have leftover pending release vmos");
+  while (!unprepared_vmos_.is_empty()) {
+    DataVmoMeta* cur = unprepared_vmos_.pop_front();
+    ZX_ASSERT_MSG(cur->state == VmoState::kUnprepared,
+                  "VMO %d in unprepared_vmos_ is not unprepared", cur->id);
+    if (zx::result<zx::vmo> result = vmo_store_.Unregister(cur->id); !result.is_ok()) {
+      LOGF_ERROR("%s: Failed to unregister unprepared VMO %u: %s", session_name.c_str(), cur->id,
+                 result.status_string());
+    }
+  }
+  session_ = nullptr;
+  evt_session_died_.Trigger(session_name.c_str());
+  ContinueTeardown(TeardownState::SESSION);
 }
 
 void DeviceInterface::CommitSession() {

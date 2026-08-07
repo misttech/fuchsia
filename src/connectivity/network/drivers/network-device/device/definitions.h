@@ -25,14 +25,26 @@ template <typename T>
 using BufferParts = std::array<T, netdriver::kMaxBufferParts>;
 using netdev::wire::VmoId;
 
+enum class VmoState : uint8_t {
+  kUnprepared,
+  kPreparing,
+  kPrepared,
+  kReleasing,
+};
+
+struct DataVmoMeta;
+using DataVmoList = fbl::DoublyLinkedList<DataVmoMeta*>;
+
 struct DataVmoMeta : public fbl::DoublyLinkedListable<DataVmoMeta*, fbl::NodeOptions::AllowMove> {
   const VmoId id;
   const uint16_t num_rx_buffers;
-  bool tx_registered;
-  bool prepared;
+  bool tx_registered{false};
+  VmoState state{VmoState::kUnprepared};
+  // Callback invoked when this VMO (as the last in a batch) completes preparation or release.
+  // control_lock_ is not held when the callback is called.
+  fit::callback<void(fit::result<std::tuple<zx_status_t, DataVmoList>>)> batch_completion;
 };
 using DataVmoStore = vmo_store::VmoStore<vmo_store::SlabStorage<uint8_t, DataVmoMeta>>;
-using DataVmoList = fbl::DoublyLinkedList<DataVmoMeta*>;
 }  // namespace internal
 
 }  // namespace network

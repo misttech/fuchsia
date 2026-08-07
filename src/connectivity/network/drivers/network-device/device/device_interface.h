@@ -104,7 +104,7 @@ class DeviceInterface : public fidl::WireServer<netdev::Device>,
     if (!stored_vmo) {
       return false;
     }
-    return stored_vmo->meta().prepared;
+    return stored_vmo->meta().state == VmoState::kPrepared;
   }
 
   // Returns the device-owned buffer count threshold at which we should trigger RxQueue work. If the
@@ -265,25 +265,36 @@ class DeviceInterface : public fidl::WireServer<netdev::Device>,
 
   PendingDeviceOperation SetDeviceStatus(DeviceStatus status) __TA_REQUIRES(control_lock_);
 
-  // Asynchronously prepares a list of VMOs with the device implementation driver.
-  //
-  // Prepares the VMOs in `vmos` sequentially. If preparation fails for a VMO,
-  // the process is aborted, and the callback `cb` is invoked with the error
-  // status and the list of unprocessed VMOs, which has the failed VMO at its head.
-  // Upon success, each VMO is marked as prepared and added to `prepared_vmos_`.
-  void PrepareVmos(DataVmoList vmos, fdf::Arena arena,
-                   fit::callback<void(fit::result<std::tuple<zx_status_t, DataVmoList>>)> cb)
-      __TA_EXCLUDES(control_lock_);
+  // Posts a list of VMOs onto the pending queue to prepare with the device implementation driver.
+  // The function itself does not make calls to the implementation driver, which is done by
+  // |PrepareNextVmo|, if there is an ongoing |PrepareNextVmo|, these VMOs will be eventually
+  // picked up. The callback is called when the last VMO is prepared or a failure happens earlier
+  // in the batch. Returns whether |PrepareNextVmo| should be called.
+  [[nodiscard]] bool PrepareVmosLocked(
+      DataVmoList vmos, fit::callback<void(fit::result<std::tuple<zx_status_t, DataVmoList>>)> cb)
+      __TA_REQUIRES(control_lock_);
 
-  // Asynchronously releases a list of VMOs from the device implementation driver.
-  //
-  // Releases the VMOs in `vmos` sequentially. If release fails for a VMO,
-  // the process is aborted, and the callback `cb` is invoked with the error
-  // status and the list of remaining VMOs, which has the failed VMO at its head.
-  // Upon success, each VMO is marked as not prepared and added to `unprepared_vmos_`.
-  void ReleaseVmos(DataVmoList vmos, fdf::Arena arena,
-                   fit::callback<void(fit::result<std::tuple<zx_status_t, DataVmoList>>)> cb)
-      __TA_EXCLUDES(control_lock_);
+  // Posts a list of VMOs onto the pending queue to release with the device implementation driver.
+  // The function itself does not make calls to the implementation driver, which is done by
+  // |ReleaseNextVmo|, if there is an ongoing |ReleaseNextVmo|, these VMOs will be eventually
+  // picked up. The callback is called when the last VMO is released or a failure happens earlier
+  // in the batch. Returns whether |ReleaseNextVmo| should be called.
+  [[nodiscard]] bool ReleaseVmosLocked(
+      DataVmoList vmos, fit::callback<void(fit::result<std::tuple<zx_status_t, DataVmoList>>)> cb)
+      __TA_REQUIRES(control_lock_);
+
+  // Asynchronously starts to prepare the VMOs in the |pending_prepare_vmo_| list until the pending
+  // queue is empty. If preparation fails for a VMO, it skips all the rest VMOs in that batch by
+  // finding a valid |batch_completion|. The callback is then called with either |fit::ok()| or
+  // the error status and the list of unprocessed VMOs, which has the failed VMO at its head.
+  // Upon success, each VMO is marked as prepared and added to `prepared_vmos_`.
+  void PrepareNextVmo(fdf::Arena arena) __TA_EXCLUDES(control_lock_);
+  // Asynchronously starts to release the VMOs in the |pending_release_vmo_| list until the pending
+  // queue is empty. If release fails for a VMO, it skips all the rest VMOs in that batch by finding
+  // a valid |batch_completion|. The callback is then called with either |fit::ok()| or the error
+  // status and the list of unprocessed VMOs, which has the failed VMO at its head.
+  // Upon success, each VMO is marked as unprepared and added to `unprepared_vmos_`.
+  void ReleaseNextVmo(fdf::Arena arena) __TA_EXCLUDES(control_lock_);
 
   // Continues a teardown process, if one is running.
   //
@@ -315,6 +326,9 @@ class DeviceInterface : public fidl::WireServer<netdev::Device>,
 
   // Destroys the dead session if it reports it can be destroyed through `Session::CanDestroy`.
   void PruneDeadSession() __TA_REQUIRES_SHARED(control_lock_);
+  // Once |PruneDeadSession| has confirmed all resources have been released, it calls into this
+  // to remove the session and continues teardown.
+  void RemoveDeadSession() __TA_EXCLUDES(rx_lock_) __TA_EXCLUDES(control_lock_);
   // Notifies all sessions that the transmit queue has available spots to take in transmit frames.
   void NotifyTxQueueAvailable() __TA_REQUIRES_SHARED(control_lock_);
 
@@ -339,6 +353,8 @@ class DeviceInterface : public fidl::WireServer<netdev::Device>,
   DataVmoStore vmo_store_ __TA_GUARDED(control_lock_);
   DataVmoList prepared_vmos_ __TA_GUARDED(control_lock_);
   DataVmoList unprepared_vmos_ __TA_GUARDED(control_lock_);
+  DataVmoList pending_prepare_vmos_ __TA_GUARDED(control_lock_);
+  DataVmoList pending_release_vmos_ __TA_GUARDED(control_lock_);
   BindingList bindings_ __TA_GUARDED(control_lock_);
 
   PortWatcher::List port_watchers_ __TA_GUARDED(control_lock_);
