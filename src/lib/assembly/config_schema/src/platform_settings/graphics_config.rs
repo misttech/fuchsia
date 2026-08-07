@@ -16,6 +16,10 @@ pub struct GraphicsConfig {
     /// Which Vulkan ICDs to allow.
     #[serde(skip_serializing_if = "crate::common::is_default")]
     pub vulkan_icd: VulkanIcd,
+
+    /// Configuration for fake display.
+    #[serde(skip_serializing_if = "crate::common::is_default")]
+    pub fake_display: FakeDisplayConfig,
 }
 
 #[derive(Debug, Default, Deserialize, Serialize, PartialEq, JsonSchema, Clone, Copy)]
@@ -24,6 +28,28 @@ pub struct VulkanIcd {
     pub allow_magma: Option<bool>,
     pub allow_goldfish: Option<bool>,
     pub allow_lavapipe: Option<bool>,
+}
+
+/// Allows using a default "off" setting, enabling the fake display AIB
+/// with default values, or enabling the AIB with customized dimensions.
+#[derive(Debug, Default, Deserialize, Serialize, PartialEq, JsonSchema, Clone, Copy)]
+#[serde(rename_all = "snake_case", untagged)]
+pub enum FakeDisplayConfig {
+    #[default]
+    Off,
+    OnWithDefaultValues,
+    Values(FakeDisplayValues),
+}
+
+/// Requires supplying both width and height when customizing.
+#[derive(Debug, Default, Deserialize, Serialize, PartialEq, JsonSchema, Clone, Copy)]
+#[serde(deny_unknown_fields)]
+pub struct FakeDisplayValues {
+    /// Width of the fake display in pixels.
+    pub width: u32,
+
+    /// Height of the fake display in pixels.
+    pub height: u32,
 }
 
 /// Platform configuration options for the virtual console

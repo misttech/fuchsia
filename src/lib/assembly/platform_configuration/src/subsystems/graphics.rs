@@ -5,7 +5,9 @@
 use crate::subsystems::prelude::*;
 use assembly_config_capabilities::{Config, ConfigNestedValueType, ConfigValueType};
 use assembly_config_schema::board_config::Architecture;
-use assembly_config_schema::platform_settings::graphics_config::GraphicsConfig;
+use assembly_config_schema::platform_settings::graphics_config::{
+    FakeDisplayConfig, GraphicsConfig,
+};
 use assembly_config_schema::platform_settings::ui_config::PlatformUiConfig;
 use assembly_constants::BoardFeature;
 
@@ -91,8 +93,38 @@ impl DefineSubsystemConfiguration<(&GraphicsConfig, &PlatformUiConfig)>
                 )?;
         }
 
-        if context.board_config.provides_feature(BoardFeature::FakeDisplay) && ui_config.enabled {
-            builder.platform_bundle("fake_display_stack_host")?;
+        match &graphics_config.fake_display {
+            FakeDisplayConfig::Values(values) => {
+                if !ui_config.enabled {
+                    anyhow::bail!(
+                        "graphics.fake_display cannot be configured when ui.enabled is false"
+                    );
+                }
+                builder.platform_bundle("fake_display_stack_host")?;
+                let mut component = builder
+                    .package("fake-display-stack-host")
+                    .component("meta/fake-display-stack-host.cm")?;
+                component.field("active_width_px", values.width)?;
+                component.field("active_height_px", values.height)?;
+            }
+            FakeDisplayConfig::OnWithDefaultValues => {
+                if !ui_config.enabled {
+                    anyhow::bail!(
+                        "graphics.fake_display cannot be configured when ui.enabled is false"
+                    );
+                }
+                builder.platform_bundle("fake_display_stack_host")?;
+            }
+
+            // TODO(https://fxbug.dev/543145106): Remove BoardFeature::FakeDisplay and force product configs
+            // to set the fake display settings.
+            FakeDisplayConfig::Off => {
+                if context.board_config.provides_feature(BoardFeature::FakeDisplay)
+                    && ui_config.enabled
+                {
+                    builder.platform_bundle("fake_display_stack_host")?;
+                }
+            }
         }
 
         builder.set_config_capability("fuchsia.virtcon.BufferCount", Config::new_void())?;
@@ -357,6 +389,7 @@ mod tests {
                 allow_lavapipe: Some(true),
             },
             virtual_console: VirtconConfig { enable: Some(false), ..Default::default() },
+            ..Default::default()
         };
         let mut builder = ConfigurationBuilderImpl::default();
         GraphicsSubsystemConfig::define_configuration(
@@ -374,6 +407,170 @@ mod tests {
                 "lavapipe_pkg".to_string()
             ]
             .into()
+        );
+    }
+
+    #[test]
+    fn test_fake_display_custom_dimensions() {
+        use assembly_config_schema::platform_settings::graphics_config::{
+            FakeDisplayConfig, FakeDisplayValues,
+        };
+
+        let board_config = BoardConfig {
+            provided_features: vec!["fuchsia::fake_display".to_string()],
+            ..Default::default()
+        };
+        let context = ConfigurationContext {
+            board_config: &board_config,
+            ..ConfigurationContext::default_for_tests()
+        };
+        let config = GraphicsConfig {
+            fake_display: FakeDisplayConfig::Values(FakeDisplayValues {
+                width: 1080,
+                height: 2410,
+            }),
+            ..Default::default()
+        };
+        let mut builder = ConfigurationBuilderImpl::default();
+        GraphicsSubsystemConfig::define_configuration(
+            &context,
+            &(&config, &PlatformUiConfig { enabled: true, ..Default::default() }),
+            &mut builder,
+        )
+        .unwrap();
+        let config = builder.build();
+        let component_config = config
+            .package_configs
+            .get("fake-display-stack-host")
+            .unwrap()
+            .components
+            .get("meta/fake-display-stack-host.cm")
+            .unwrap();
+        assert_eq!(
+            component_config.fields.get("active_width_px").unwrap(),
+            &serde_json::json!(1080)
+        );
+        assert_eq!(
+            component_config.fields.get("active_height_px").unwrap(),
+            &serde_json::json!(2410)
+        );
+    }
+
+    // TODO(https://fxbug.dev/543145106): Remove BoardFeature::FakeDisplay and force product configs
+    // to set the fake display settings.
+    #[test]
+    fn test_fake_display_from_product_config_without_board_feature() {
+        use assembly_config_schema::platform_settings::graphics_config::{
+            FakeDisplayConfig, FakeDisplayValues,
+        };
+
+        let board_config = BoardConfig::default();
+        let context = ConfigurationContext {
+            board_config: &board_config,
+            ..ConfigurationContext::default_for_tests()
+        };
+        let config = GraphicsConfig {
+            fake_display: FakeDisplayConfig::Values(FakeDisplayValues {
+                width: 1080,
+                height: 2410,
+            }),
+            ..Default::default()
+        };
+        let mut builder = ConfigurationBuilderImpl::default();
+        GraphicsSubsystemConfig::define_configuration(
+            &context,
+            &(&config, &PlatformUiConfig { enabled: true, ..Default::default() }),
+            &mut builder,
+        )
+        .unwrap();
+        let config = builder.build();
+        assert!(config.bundles.contains("fake_display_stack_host"));
+        let component_config = config
+            .package_configs
+            .get("fake-display-stack-host")
+            .unwrap()
+            .components
+            .get("meta/fake-display-stack-host.cm")
+            .unwrap();
+        assert_eq!(
+            component_config.fields.get("active_width_px").unwrap(),
+            &serde_json::json!(1080)
+        );
+        assert_eq!(
+            component_config.fields.get("active_height_px").unwrap(),
+            &serde_json::json!(2410)
+        );
+    }
+
+    #[test]
+    fn test_fake_display_on_with_default_values() {
+        use assembly_config_schema::platform_settings::graphics_config::FakeDisplayConfig;
+
+        let board_config = BoardConfig::default();
+        let context = ConfigurationContext {
+            board_config: &board_config,
+            ..ConfigurationContext::default_for_tests()
+        };
+        let config = GraphicsConfig {
+            fake_display: FakeDisplayConfig::OnWithDefaultValues,
+            ..Default::default()
+        };
+        let mut builder = ConfigurationBuilderImpl::default();
+        GraphicsSubsystemConfig::define_configuration(
+            &context,
+            &(&config, &PlatformUiConfig { enabled: true, ..Default::default() }),
+            &mut builder,
+        )
+        .unwrap();
+        let config = builder.build();
+        assert!(config.bundles.contains("fake_display_stack_host"));
+        assert!(!config.package_configs.contains_key("fake-display-stack-host"));
+    }
+
+    #[test]
+    fn test_fake_display_from_board_config_backward_compatibility() {
+        let board_config = BoardConfig {
+            provided_features: vec!["fuchsia::fake_display".to_string()],
+            ..Default::default()
+        };
+        let context = ConfigurationContext {
+            board_config: &board_config,
+            ..ConfigurationContext::default_for_tests()
+        };
+        let config = GraphicsConfig::default();
+        let mut builder = ConfigurationBuilderImpl::default();
+        GraphicsSubsystemConfig::define_configuration(
+            &context,
+            &(&config, &PlatformUiConfig { enabled: true, ..Default::default() }),
+            &mut builder,
+        )
+        .unwrap();
+        let config = builder.build();
+        assert!(config.bundles.contains("fake_display_stack_host"));
+        assert!(!config.package_configs.contains_key("fake-display-stack-host"));
+    }
+
+    #[test]
+    fn test_fake_display_error_when_ui_disabled() {
+        use assembly_config_schema::platform_settings::graphics_config::{
+            FakeDisplayConfig, FakeDisplayValues,
+        };
+
+        let context = ConfigurationContext::default_for_tests();
+        let config = GraphicsConfig {
+            fake_display: FakeDisplayConfig::Values(FakeDisplayValues { width: 720, height: 1280 }),
+            ..Default::default()
+        };
+        let mut builder = ConfigurationBuilderImpl::default();
+        let result = GraphicsSubsystemConfig::define_configuration(
+            &context,
+            &(&config, &PlatformUiConfig { enabled: false, ..Default::default() }),
+            &mut builder,
+        );
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "graphics.fake_display cannot be configured when ui.enabled is false"
         );
     }
 }
