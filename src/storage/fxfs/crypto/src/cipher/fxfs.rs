@@ -1,7 +1,7 @@
 // Copyright 2025 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-use super::{Cipher, SECTOR_SIZE, Tweak, UnwrappedKey, XtsProcessor};
+use super::{Cipher, SECTOR_SIZE, Tweak, UnwrappedKey, XtsInPlaceProcessor};
 use aes::Aes256;
 use aes::cipher::{BlockCipherDecrypt, BlockCipherEncrypt, KeyInit};
 use anyhow::Error;
@@ -43,7 +43,7 @@ impl Cipher for FxfsCipher {
             let mut tweak = Tweak(upper_tweak | (sector_offset as u128));
             // The same key is used for encrypting the data and computing the tweak.
             self.key.encrypt_block(tweak.as_mut_bytes().try_into().unwrap());
-            self.key.encrypt_with_backend(XtsProcessor::new_in_place(tweak, sector));
+            self.key.encrypt_with_backend(XtsInPlaceProcessor::new(tweak, sector));
             sector_offset += 1;
             offset += SECTOR_SIZE as usize;
         }
@@ -69,7 +69,7 @@ impl Cipher for FxfsCipher {
             let mut tweak = Tweak(upper_tweak | (sector_offset as u128));
             // The same key is used for encrypting the data and computing the tweak.
             self.key.encrypt_block(tweak.as_mut_bytes().try_into().unwrap());
-            self.key.decrypt_with_backend(XtsProcessor::new_in_place(tweak, sector));
+            self.key.decrypt_with_backend(XtsInPlaceProcessor::new(tweak, sector));
             sector_offset += 1;
             offset += SECTOR_SIZE as usize;
         }

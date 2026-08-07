@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use super::{Cipher, Tweak, UnwrappedKey, XtsProcessor};
+use super::{Cipher, Tweak, UnwrappedKey, XtsInPlaceProcessor};
 use aes::Aes256;
 use aes::cipher::inout::InOutBuf;
 use aes::cipher::{
@@ -282,7 +282,7 @@ impl FscryptSoftwareInoLblk32FileCipher {
 
         for block in buffer.chunks_exact_mut(BLOCK_SIZE) {
             self.xts_key2.encrypt_block(tweak.as_mut_bytes().try_into().unwrap());
-            self.xts_key1.encrypt_with_backend(XtsProcessor::new_in_place(
+            self.xts_key1.encrypt_with_backend(XtsInPlaceProcessor::new(
                 Tweak(tweak),
                 MutPtrByteSlice::from(&mut block[..]),
             ));
@@ -296,7 +296,7 @@ impl FscryptSoftwareInoLblk32FileCipher {
         assert_eq!(buffer.len() % BLOCK_SIZE, 0);
         for block in buffer.chunks_exact_mut(BLOCK_SIZE) {
             self.xts_key2.encrypt_block(tweak.as_mut_bytes().try_into().unwrap());
-            self.xts_key1.decrypt_with_backend(XtsProcessor::new_in_place(
+            self.xts_key1.decrypt_with_backend(XtsInPlaceProcessor::new(
                 Tweak(tweak),
                 MutPtrByteSlice::from(&mut block[..]),
             ));

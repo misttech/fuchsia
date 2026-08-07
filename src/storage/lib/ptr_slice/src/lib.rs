@@ -325,44 +325,6 @@ impl<'a> MutPtrByteSlice<'a> {
         }
     }
 
-    /// Informs the memory subsystem that the slice is about to be completely overwritten,
-    /// optimizing cache line allocation and avoiding Read-For-Ownership (RFO) DRAM reads on
-    /// supported architectures (such as ARM64 via `dc zva`).
-    ///
-    /// # Semantics
-    ///
-    /// - On architectures where supported (e.g. ARM64 `dc zva`), this pre-allocates cache lines
-    ///   in L1/L2 and zeroes them without issuing Write-Allocate DRAM reads.
-    /// - On other architectures, this is a no-op.
-    /// - Callers **must not** rely on existing data being preserved, nor must they rely on the
-    ///   buffer being zeroed.
-    pub fn zero_no_rfo(&mut self) {
-        #[cfg(target_arch = "aarch64")]
-        {
-            const CACHE_LINE_SIZE: usize = 64;
-            let addr = self.slice as *mut u8 as usize;
-            let end = addr + self.len();
-
-            let aligned_start = addr.next_multiple_of(CACHE_LINE_SIZE);
-            let aligned_end = end - end % CACHE_LINE_SIZE;
-
-            if aligned_start < aligned_end {
-                let mut p = aligned_start;
-                while p < aligned_end {
-                    // SAFETY: `p` is within the valid mapped memory bounds of `self.slice`.
-                    unsafe {
-                        core::arch::asm!(
-                            "dc zva, {0}",
-                            in(reg) p,
-                            options(nostack, preserves_flags),
-                        );
-                    }
-                    p += CACHE_LINE_SIZE;
-                }
-            }
-        }
-    }
-
     /// Fills the slice with the given byte value.
     pub fn fill(&mut self, val: u8) {
         // SAFETY: `self.slice` is valid for writes of `self.len()` bytes.
@@ -690,6 +652,13 @@ pub struct ElemMut<'a, T> {
     _marker: PhantomData<&'a mut T>,
 }
 
+impl<T> ElemMut<'_, T> {
+    /// Returns the raw pointer to the element.
+    pub fn as_ptr(&self) -> *mut T {
+        self.ptr
+    }
+}
+
 impl<T: Copy + FromBytes> ElemMut<'_, T> {
     /// Reads the value from the element.
     ///
@@ -966,25 +935,5 @@ mod tests {
         let written = writer.into_written();
         assert_eq!(written.len(), 4);
         assert_eq!(&bytes[..], &[1, 2, 3, 4]);
-    }
-
-    #[test]
-    fn test_zero_no_rfo() {
-        let mut bytes = [0xabu8; 256];
-        let mut slice = MutPtrByteSlice::from(&mut bytes[..]);
-        slice.zero_no_rfo();
-
-        #[cfg(target_arch = "aarch64")]
-        {
-            let addr = bytes.as_ptr() as usize;
-            let end = addr + 256;
-            let aligned_start = addr.next_multiple_of(64);
-            let aligned_end = end - end % 64;
-            if aligned_start < aligned_end {
-                let offset_start = aligned_start - addr;
-                let offset_end = aligned_end - addr;
-                assert_eq!(&bytes[offset_start..offset_end], &[0u8; 256][offset_start..offset_end]);
-            }
-        }
     }
 }

@@ -13,8 +13,8 @@ pub mod fscrypt_ino_lblk32;
 mod fscrypt_test_data;
 pub(crate) mod fxfs;
 
-// TODO(https://fxbug.dev/375700939): Support different padding sizes based on SET_ENCRYPTION_POLICY
-// flags.
+// TODO(https://fxbug.dev/375700939): Support different padding sizes based on
+// SET_ENCRYPTION_POLICY flags.
 // Note: This constant is used in platform code. It would be nice to move all fscrypt
 // internals into fxfs_lib and keep platform as simple as possible.
 pub const FSCRYPT_PADDING: usize = 16;
@@ -200,4 +200,4 @@ pub enum FindKeyResult {
     Key(Arc<dyn Cipher>),
 }
 
-pub use storage_xts::{Tweak, XtsProcessor};
+pub use storage_xts::{Tweak, XtsInPlaceProcessor};
