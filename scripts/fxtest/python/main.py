@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import atexit
 from collections import defaultdict
 from dataclasses import dataclass
 from dataclasses import field
@@ -471,6 +472,7 @@ class AsyncMain:
         self._config_file = config_file
         self._replay_mode = replay_mode
         self._exec_env: environment.ExecutionEnvironment | None = None
+        self._emu_instance_dir: tempfile.TemporaryDirectory[str] | None = None
         self._end_execution_request_event = end_execution_request_event
         self._termination_callback_event = termination_callback_event
 
@@ -715,7 +717,7 @@ class AsyncMain:
                 package_server_event.set()
                 await package_server_task
             if emulator_started:
-                await self._stop_emulator()
+                await self._teardown_emulator()
             recorder.emit_end(error=error, id=id)
 
         # If enabled, try to build and update the selected tests.
@@ -2151,8 +2153,61 @@ class AsyncMain:
             await asyncio.sleep(1)
         return False
 
+    async def _resolve_target_ip(
+        self, nodename: str, ffx_config: tuple[str, ...] = ()
+    ) -> str | None:
+        """Resolve the target IP address and SSH port for a given nodename.
+
+        Args:
+            nodename (str): The nodename of the target to search for.
+            ffx_config (tuple[str, ...], optional): Config arguments for ffx. Defaults to ().
+
+        Returns:
+            str | None: The resolved target address string, or None if not found.
+        """
+        recorder = self._recorder
+        exec_env = self._exec_env
+        assert exec_env is not None
+
+        target_list_output = await execution.run_command(
+            *exec_env.fx_cmd_line(
+                "ffx",
+                "--machine",
+                "json",
+                *ffx_config,
+                "target",
+                "list",
+            ),
+            recorder=recorder,
+            quiet_mode=True,
+        )
+        if not target_list_output or target_list_output.return_code != 0:
+            return None
+
+        try:
+            targets = json.loads(target_list_output.stdout)
+            for t in targets:
+                if t.get("nodename") == nodename:
+                    for addr in t.get("addresses", []):
+                        ip = addr.get("ip")
+                        port = addr.get("ssh_port")
+                        if not ip or port is None:
+                            recorder.emit_warning_message(
+                                f"Invalid address for {nodename}: {addr}"
+                            )
+                            continue
+                        if port == 0:
+                            return ip
+                        return f"[{ip}]:{port}" if ":" in ip else f"{ip}:{port}"
+        except json.JSONDecodeError:
+            pass
+        return None
+
     async def _start_emulator(self) -> bool:
         """Start a headless emulator.
+
+        Note: As a side effect, this exports os.environ["FUCHSIA_NODENAME"] to the
+        discovered emulator IP address and SSH port so downstream commands target it.
 
         Returns:
             bool: True if the emulator starts successfully, False otherwise.
@@ -2161,47 +2216,130 @@ class AsyncMain:
         exec_env = self._exec_env
         assert exec_env is not None
 
+        # Configure `ffx emu` to use an anonymous instance directory and --net user so that
+        # emulator instances are private and independent of other `fx test` invocations.
+        self._emu_instance_dir = tempfile.TemporaryDirectory(
+            prefix="fxtest-emu-"
+        )
+        config_args = (
+            "--config",
+            f"emu.instance_dir={self._emu_instance_dir.name}",
+        )
+
+        emu_name = os.path.basename(self._emu_instance_dir.name)
         recorder.emit_instruction_message(
             "\nNo active device detected. Starting a headless emulator..."
         )
         output = await execution.run_command(
-            *exec_env.fx_cmd_line("ffx", "emu", "start", "--headless"),
+            *exec_env.fx_cmd_line(
+                "ffx",
+                *config_args,
+                "emu",
+                "start",
+                "--headless",
+                "--net",
+                "user",
+                "--name",
+                emu_name,
+            ),
             recorder=recorder,
         )
         if output is None or output.return_code != 0:
             recorder.emit_warning_message("Failed to start emulator.")
             return False
 
+        # Register atexit teardown hook as a fallback to prevent
+        # orphaned/zombie emulators on asyncio.CancelledError from SIGINT, etc.
+        atexit.register(self._fallback_stop_emulator)
+
         # Wait for the emulator to be ready.
         recorder.emit_instruction_message("Waiting for emulator to be ready...")
         wait_output = await execution.run_command(
-            *exec_env.fx_cmd_line("ffx", "target", "wait"),
+            *exec_env.fx_cmd_line(
+                "ffx",
+                *config_args,
+                "--target",
+                emu_name,
+                "target",
+                "wait",
+            ),
             recorder=recorder,
         )
         if wait_output is None or wait_output.return_code != 0:
             recorder.emit_warning_message(
                 "Emulator failed to become ready in time."
             )
+            await self._teardown_emulator()
             return False
 
+        # Resolve the emulator's IP address and port.
+        emu_addr = await self._resolve_target_ip(emu_name, config_args)
+        if not emu_addr:
+            recorder.emit_warning_message(
+                "Failed to resolve temporary emulator IP address."
+            )
+            await self._teardown_emulator()
+            return False
+
+        recorder.emit_instruction_message(f"Emulator ready at {emu_addr}")
+        os.environ["FUCHSIA_NODENAME"] = emu_addr
         return True
 
-    async def _stop_emulator(self) -> bool:
-        """Stop the headless emulator.
+    def _get_emu_stop_cmd(self) -> list[str]:
+        assert self._exec_env is not None
+        assert self._emu_instance_dir is not None
+        return self._exec_env.fx_cmd_line(
+            "ffx",
+            "--config",
+            f"emu.instance_dir={self._emu_instance_dir.name}",
+            "emu",
+            "stop",
+            os.path.basename(self._emu_instance_dir.name),
+        )
+
+    async def _teardown_emulator(self) -> bool:
+        """Stop the headless emulator and cleanup its temporary directory.
 
         Returns:
             bool: True if the emulator stops successfully, False otherwise.
         """
         recorder = self._recorder
-        exec_env = self._exec_env
-        assert exec_env is not None
+        if self._emu_instance_dir is None:
+            return True
 
         recorder.emit_instruction_message("\nStopping the headless emulator...")
         output = await execution.run_command(
-            *exec_env.fx_cmd_line("ffx", "emu", "stop"),
+            *self._get_emu_stop_cmd(),
             recorder=recorder,
         )
+        atexit.unregister(self._fallback_stop_emulator)
+        try:
+            self._emu_instance_dir.cleanup()
+        except Exception as e:
+            recorder.emit_warning_message(
+                "Failed to clean up temporary emulator instance directory at "
+                f"{self._emu_instance_dir.name}: {e}"
+            )
+        self._emu_instance_dir = None
+        os.environ.pop("FUCHSIA_NODENAME", None)
+
         return output is not None and output.return_code == 0
+
+    def _fallback_stop_emulator(self) -> None:
+        """Stops the headless emulator synchronously, suitable for atexit."""
+        if self._emu_instance_dir is None or self._exec_env is None:
+            return
+
+        try:
+            subprocess.run(
+                self._get_emu_stop_cmd(),
+                check=False,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=5,
+            )
+        except Exception:
+            pass
 
 
 @functools.lru_cache

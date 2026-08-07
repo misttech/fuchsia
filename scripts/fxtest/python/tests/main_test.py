@@ -864,34 +864,82 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
         async def handler(
             *args: typing.Any, **kwargs: typing.Any
         ) -> typing.Any:
-            if "target" in args and "list" in args:
-                return mock.MagicMock(return_code=0, stdout="", stderr="")
             if "emu" in args and "start" in args:
+                self.assertTrue(
+                    any("emu.instance_dir=" in str(a) for a in args)
+                )
                 nonlocal emu_started
                 emu_started = True
                 return mock.MagicMock(
                     return_code=0, stdout="Started emu", stderr=""
                 )
             if "emu" in args and "stop" in args:
+                self.assertEqual(
+                    os.environ.get("FUCHSIA_NODENAME"), "127.0.0.1:12345"
+                )
+                self.assertTrue(
+                    any("emu.instance_dir=" in str(a) for a in args)
+                )
                 nonlocal emu_stopped
                 emu_stopped = True
                 return mock.MagicMock(
                     return_code=0, stdout="Stopped emu", stderr=""
                 )
+            if "target" in args and "wait" in args:
+                self.assertIn("--target", args)
+                self.assertIn("fuchsia-emulator", args)
             return mock.MagicMock(return_code=0, stdout="", stderr="")
 
         self._mock_has_active_device(False)
         self._mock_wait_for_repository_registration(True)
-        self._mock_run_command(0, async_handler=handler)
+        mock_json = json.dumps(
+            [
+                {
+                    "nodename": "fuchsia-emulator",
+                    "addresses": [{"ip": "127.0.0.1", "ssh_port": 12345}],
+                }
+            ]
+        )
+        self._mock_run_command(0, async_handler=handler, stdout=mock_json)
         self._mock_has_package_server_connected_to_device(True)
         self._mock_has_tests_in_base([])
 
-        ret = await main.async_main_wrapper(
-            args.parse_args(["--simple", "--no-build"])
+        mock_tempdir = mock.MagicMock()
+        mock_tempdir.name = "/tmp/fuchsia-emulator"
+        with (
+            mock.patch(
+                "main.tempfile.TemporaryDirectory", return_value=mock_tempdir
+            ),
+            mock.patch.dict(os.environ, {}, clear=False),
+        ):
+            ret = await main.async_main_wrapper(
+                args.parse_args(["--simple", "--no-build"])
+            )
+            self.assertEqual(ret, 0)
+            self.assertTrue(emu_started)
+            self.assertTrue(emu_stopped)
+
+    async def test_resolve_target_ip(self) -> None:
+        """Test _resolve_target_ip returns address string on success and None on failure."""
+        app = main.AsyncMain.__new__(main.AsyncMain)
+        app._recorder = mock.Mock()
+        app._exec_env = mock.Mock()
+        app._exec_env.fx_cmd_line.side_effect = lambda *args: list(args)
+
+        mock_json = json.dumps(
+            [
+                {
+                    "nodename": "my-emu",
+                    "addresses": [{"ip": "127.0.0.1", "ssh_port": 8022}],
+                }
+            ]
         )
-        self.assertEqual(ret, 0)
-        self.assertTrue(emu_started)
-        self.assertTrue(emu_stopped)
+        self._mock_run_command(0, stdout=mock_json)
+        addr = await app._resolve_target_ip("my-emu")
+        self.assertEqual(addr, "127.0.0.1:8022")
+
+        missing = await app._resolve_target_ip("other-emu")
+        self.assertIsNone(missing)
 
     async def test_no_allow_temporary_emulator_does_not_start_emulator(
         self,
@@ -1000,15 +1048,16 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
         self,
     ) -> None:
         """Test that if there is no active device initially, an emulator is spawned
-        and FUCHSIA_NODENAME is set to its name.
+        and FUCHSIA_NODENAME is set to its address.
         """
         emu_started = False
         emu_stopped = False
+        emu_nodename_during_stop = None
 
         async def handler(
             *args: typing.Any, **kwargs: typing.Any
         ) -> typing.Any:
-            nonlocal emu_started, emu_stopped
+            nonlocal emu_started, emu_stopped, emu_nodename_during_stop
             if "target" in args and "default" in args and "get" in args:
                 return mock.MagicMock(
                     return_code=1, stdout="", stderr="", was_timeout=False
@@ -1022,6 +1071,9 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
                                 {
                                     "nodename": "fuchsia-temp-emulator",
                                     "rcs_state": "Y",
+                                    "addresses": [
+                                        {"ip": "127.0.0.1", "ssh_port": 12345}
+                                    ],
                                 }
                             ]
                         ),
@@ -1040,6 +1092,7 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
                     was_timeout=False,
                 )
             if "emu" in args and "stop" in args:
+                emu_nodename_during_stop = os.environ.get("FUCHSIA_NODENAME")
                 emu_stopped = True
                 return mock.MagicMock(
                     return_code=0,
@@ -1058,16 +1111,21 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
         self._mock_has_package_server_connected_to_device(True)
         self._mock_has_tests_in_base([])
 
-        with mock.patch.dict(os.environ, {}):
+        mock_tempdir = mock.MagicMock()
+        mock_tempdir.name = "/tmp/fuchsia-temp-emulator"
+        with (
+            mock.patch(
+                "main.tempfile.TemporaryDirectory", return_value=mock_tempdir
+            ),
+            mock.patch.dict(os.environ, {}, clear=False),
+        ):
             ret = await main.async_main_wrapper(
                 args.parse_args(["--simple", "--no-build"])
             )
             self.assertEqual(ret, 0)
             self.assertTrue(emu_started)
             self.assertTrue(emu_stopped)
-            self.assertEqual(
-                os.environ.get("FUCHSIA_NODENAME"), "fuchsia-temp-emulator"
-            )
+            self.assertEqual(emu_nodename_during_stop, "127.0.0.1:12345")
 
     async def test_one_active_device_sets_nodename(self) -> None:
         """Test that if there is exactly one active device connected,
