@@ -168,6 +168,42 @@ TEST(PortTest, WaitAsyncBootTimestamp) {
   EXPECT_GE(after.get(), packet.signal.timestamp);
 }
 
+TEST(PortStressTest, QueuePacketAfterPortClosedConcurrentRace) {
+  constexpr size_t kIterations = 500;
+  constexpr size_t kNumEvents = 32;
+
+  for (size_t iter = 0; iter < kIterations; ++iter) {
+    zx::port port;
+    ASSERT_OK(zx::port::create(0u, &port));
+
+    zx::event events[kNumEvents];
+    for (size_t i = 0; i < kNumEvents; ++i) {
+      ASSERT_OK(zx::event::create(0u, &events[i]));
+      ASSERT_OK(events[i].wait_async(port, i + 1, ZX_EVENT_SIGNALED, 0u));
+    }
+
+    std::atomic<bool> running{true};
+    std::barrier sync_point(2);
+    std::thread signaler([&]() {
+      sync_point.arrive_and_wait();
+      while (running.load(std::memory_order_seq_cst)) {
+        for (size_t i = 0; i < kNumEvents; ++i) {
+          events[i].signal(0u, ZX_EVENT_SIGNALED);
+          events[i].signal(ZX_EVENT_SIGNALED, 0u);
+        }
+      }
+    });
+
+    sync_point.arrive_and_wait();
+    // Resetting the port sets zero_handles_ = true and unlinks observers while dropping
+    // the lock in CallUnlocked. Concurrent signal matches encounter zero_handles_ == true,
+    // safely returning ZX_ERR_BAD_HANDLE without crashing or leaking memory.
+    port.reset();
+    running.store(false, std::memory_order_seq_cst);
+    signaler.join();
+  }
+}
+
 // What matters here is not so much the return values, but that the system doesn't
 // crash as a result of the order. Refer to the diagram at the top of port_dispatcher.h.
 TEST(PortTest, AsyncWaitCloseOrder) {
