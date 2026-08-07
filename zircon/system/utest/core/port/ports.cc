@@ -125,6 +125,49 @@ TEST(PortTest, AsyncWaitChannel) {
   EXPECT_OK(ch[1].wait_async(port, kEventKey, ZX_CHANNEL_READABLE, 0));
 }
 
+TEST(PortTest, WaitAsyncBootTimestamp) {
+  zx::port port;
+  zx::event event;
+  ASSERT_OK(zx::port::create(0u, &port));
+  ASSERT_OK(zx::event::create(0u, &event));
+
+  // 1. Verify mutually exclusive timestamp flags return ZX_ERR_INVALID_ARGS.
+  EXPECT_EQ(event.wait_async(port, 1u, ZX_EVENT_SIGNALED,
+                             ZX_WAIT_ASYNC_TIMESTAMP | ZX_WAIT_ASYNC_BOOT_TIMESTAMP),
+            ZX_ERR_INVALID_ARGS);
+
+  // 2. Verify that without timestamp options (options = 0), packet.signal.timestamp is 0.
+  ASSERT_OK(event.wait_async(port, 1u, ZX_EVENT_SIGNALED, 0u));
+  ASSERT_OK(event.signal(0u, ZX_EVENT_SIGNALED));
+
+  zx_port_packet_t packet = {};
+  ASSERT_OK(port.wait(zx::time::infinite(), &packet));
+
+  EXPECT_EQ(packet.key, 1u);
+  EXPECT_EQ(packet.type, ZX_PKT_TYPE_SIGNAL_ONE);
+  EXPECT_EQ(packet.signal.trigger, ZX_EVENT_SIGNALED);
+  EXPECT_EQ(packet.signal.timestamp, 0u);
+
+  // Reset the signal for the next wait.
+  ASSERT_OK(event.signal(ZX_EVENT_SIGNALED, 0u));
+
+  // 3. Verify that ZX_WAIT_ASYNC_BOOT_TIMESTAMP returns a bounded boot timeline timestamp.
+  ASSERT_OK(event.wait_async(port, 2u, ZX_EVENT_SIGNALED, ZX_WAIT_ASYNC_BOOT_TIMESTAMP));
+
+  const zx::time_boot before = zx::clock::get_boot();
+  ASSERT_OK(event.signal(0u, ZX_EVENT_SIGNALED));
+  const zx::time_boot after = zx::clock::get_boot();
+
+  packet = {};
+  ASSERT_OK(port.wait(zx::time::infinite(), &packet));
+
+  EXPECT_EQ(packet.key, 2u);
+  EXPECT_EQ(packet.type, ZX_PKT_TYPE_SIGNAL_ONE);
+  EXPECT_EQ(packet.signal.trigger, ZX_EVENT_SIGNALED);
+  EXPECT_LE(before.get(), packet.signal.timestamp);
+  EXPECT_GE(after.get(), packet.signal.timestamp);
+}
+
 // What matters here is not so much the return values, but that the system doesn't
 // crash as a result of the order. Refer to the diagram at the top of port_dispatcher.h.
 TEST(PortTest, AsyncWaitCloseOrder) {
