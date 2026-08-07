@@ -1,14 +1,9 @@
 # Copyright 2025 The Fuchsia Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
-"""
-Tests fulfillment of roam requests from the SME FIDL roam API.
-"""
-import logging
-
-logger = logging.getLogger(__name__)
 
 import asyncio
+import logging
 import time
 from dataclasses import dataclass
 
@@ -56,6 +51,8 @@ from openwrt_access_point.lib.access_point_config import (
 from openwrt_access_point.lib.access_point_config_mapper import (
     AccessPointConfigMapper as ConfigMapper,
 )
+
+logger = logging.getLogger(__name__)
 
 # Allows test to raise an error if the permutation logic is changed accidentally.
 # 18 cases expect roam to succeed (9 2.4GHz to 5GHz, 9 5GHz to 2.4GHz)

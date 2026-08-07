@@ -1,16 +1,8 @@
 # Copyright 2024 The Fuchsia Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
-"""
-Tests for connecting to an access point.
-"""
+
 import logging
-
-from openwrt_access_point.lib.access_point_config_mapper import (
-    AccessPointConfigMapper as ConfigMapper,
-)
-
-logger = logging.getLogger(__name__)
 
 import fidl_fuchsia_wlan_common as fidl_common
 import fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211
@@ -42,6 +34,11 @@ from openwrt_access_point.lib.access_point_config import (
     SecurityOpen,
     SecurityWpa2,
 )
+from openwrt_access_point.lib.access_point_config_mapper import (
+    AccessPointConfigMapper as ConfigMapper,
+)
+
+logger = logging.getLogger(__name__)
 
 
 class ConnectToApTest(base_test.ConnectionBaseTestClass):

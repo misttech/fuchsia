@@ -6,14 +6,10 @@ import logging
 from dataclasses import dataclass
 from datetime import timedelta
 
-from antlion.controllers.access_point import AccessPoint
-
-logger = logging.getLogger(__name__)
-
-
 import fidl_fuchsia_wlan_common as fw_common
 import fidl_fuchsia_wlan_device_service as fw_device_service
 import fidl_fuchsia_wlan_sme as fw_sme
+from antlion.controllers.access_point import AccessPoint
 from fuchsia_controller_py import ZxStatus
 from fuchsia_wlan_base_test import FuchsiaWlanBaseTest
 from honeydew.typing.custom_types import FidlEndpoint
@@ -21,6 +17,8 @@ from mobly import signals
 from mobly.asserts import assert_equal
 from mobly.records import TestResultRecord
 from openwrt_access_point import OpenWrtAP
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)

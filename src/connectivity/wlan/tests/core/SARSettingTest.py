@@ -1,22 +1,8 @@
 # Copyright 2025 The Fuchsia Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
-"""
-Tests for SAR settings.
-"""
+
 import logging
-
-from openwrt_access_point import OpenWrtAP
-from openwrt_access_point.lib.access_point_config import (
-    DEFAULT_2G_CHANNEL,
-    AccessPointConfig,
-    BssSettings,
-    RadioConfig,
-    SecurityOpen,
-)
-
-logger = logging.getLogger(__name__)
-
 
 import fidl_fuchsia_wlan_device_service as fidl_device_svc
 import fidl_fuchsia_wlan_internal as fidl_security
@@ -36,6 +22,16 @@ from antlion.controllers.ap_lib.hostapd_security import (
 from core_testing import base_test
 from honeydew.typing.custom_types import FidlEndpoint
 from mobly import asserts, signals, test_runner
+from openwrt_access_point import OpenWrtAP
+from openwrt_access_point.lib.access_point_config import (
+    DEFAULT_2G_CHANNEL,
+    AccessPointConfig,
+    BssSettings,
+    RadioConfig,
+    SecurityOpen,
+)
+
+logger = logging.getLogger(__name__)
 
 
 class SARSettingTest(base_test.ConnectionBaseTestClass):

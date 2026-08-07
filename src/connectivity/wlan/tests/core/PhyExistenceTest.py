@@ -1,20 +1,14 @@
 # Copyright 2025 The Fuchsia Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
-"""
-Test that the device has exactly one phy.
 
-This test could assert at least one phy; however, it's likely an error today
-if there is more than one phy listed.
-"""
 import logging
-
-logger = logging.getLogger(__name__)
-
 
 from core_testing import base_test
 from mobly import test_runner
 from mobly.asserts import assert_equal
+
+logger = logging.getLogger(__name__)
 
 
 class PhyExistenceTest(base_test.CoreBaseTestClass):

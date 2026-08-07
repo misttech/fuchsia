@@ -1,14 +1,9 @@
 # Copyright 2025 The Fuchsia Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
-"""
-Tests for validating performance of firmware PM_MODEs.
-"""
+
 import asyncio
 import logging
-
-logger = logging.getLogger(__name__)
-
 
 import fidl_fuchsia_wlan_common as fidl_common
 import fidl_fuchsia_wlan_device_service as fidl_device_svc
@@ -44,6 +39,8 @@ from openwrt_access_point.lib.access_point_config import (
     RadioConfig,
     SecurityOpen,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class FirmwarePowerModesTest(base_test.ConnectionBaseTestClass):
