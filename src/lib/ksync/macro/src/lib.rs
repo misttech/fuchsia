@@ -11,8 +11,9 @@ use syn::{Fields, Ident, ItemStruct, Type, TypePath, parse_macro_input};
 struct MutexField {
     ident: Ident,
     class_ident: Ident,
+    class_type: proc_macro2::TokenStream,
     mutex_type: proc_macro2::TokenStream,
-    custom_class: Option<Ident>,
+    custom_class: Option<Type>,
     is_phantom: bool,
 }
 
@@ -30,7 +31,7 @@ struct FieldAttrAnalysis {
     guarded_by: Option<Ident>,
     is_pinned: bool,
     is_unpinned: bool,
-    custom_class: Option<Ident>,
+    custom_class: Option<Type>,
 }
 
 fn parse_field_attributes(
@@ -50,11 +51,11 @@ fn parse_field_attributes(
         if attr.path().is_ident("mutex") {
             analysis.is_mutex = true;
             if let syn::Meta::List(meta_list) = &attr.meta {
-                match meta_list.parse_args::<Ident>() {
-                    Ok(ident) => analysis.custom_class = Some(ident),
+                match meta_list.parse_args::<Type>() {
+                    Ok(ty) => analysis.custom_class = Some(ty),
                     Err(_) => errors.push(syn::Error::new(
                         meta_list.span(),
-                        "#[mutex(LockClass)] accepts at most one identifier representing the lock class.",
+                        "#[mutex(LockClass)] accepts a type representing the lock class.",
                     )),
                 }
             } else if !matches!(attr.meta, syn::Meta::Path(_)) {
@@ -118,30 +119,45 @@ fn check_unique_name(
 struct GenericsInfo<'a> {
     params_no_defaults: Punctuated<syn::GenericParam, syn::token::Comma>,
     ty_params: Vec<proc_macro2::TokenStream>,
+    class_params_no_defaults: Punctuated<syn::GenericParam, syn::token::Comma>,
+    class_ty_params: Vec<proc_macro2::TokenStream>,
     phantom_ty_params: Vec<&'a Ident>,
+    phantom_lifetimes: Vec<&'a syn::Lifetime>,
 }
 
 fn extract_generics_info<'a>(generics: &'a syn::Generics) -> GenericsInfo<'a> {
-    let ty_params = generics
-        .params
-        .iter()
-        .filter_map(|param| match param {
+    let mut ty_params = Vec::new();
+    let mut class_ty_params = Vec::new();
+    let mut class_params_no_defaults = Punctuated::new();
+    let mut phantom_ty_params = Vec::new();
+    let mut phantom_lifetimes = Vec::new();
+
+    for param in &generics.params {
+        match param {
             syn::GenericParam::Type(type_param) => {
                 let ident = &type_param.ident;
-                Some(quote! { #ident })
+                ty_params.push(quote! { #ident });
+                class_ty_params.push(quote! { #ident });
+                phantom_ty_params.push(ident);
+
+                let mut p = type_param.clone();
+                p.default = None;
+                class_params_no_defaults.push(syn::GenericParam::Type(p));
             }
             syn::GenericParam::Const(const_param) => {
                 let ident = &const_param.ident;
-                Some(quote! { #ident })
+                ty_params.push(quote! { #ident });
             }
             syn::GenericParam::Lifetime(lifetime_param) => {
                 let lifetime = &lifetime_param.lifetime;
-                Some(quote! { #lifetime })
-            }
-        })
-        .collect();
+                ty_params.push(quote! { #lifetime });
+                class_ty_params.push(quote! { #lifetime });
+                phantom_lifetimes.push(lifetime);
 
-    let phantom_ty_params = generics.type_params().map(|p| &p.ident).collect();
+                class_params_no_defaults.push(syn::GenericParam::Lifetime(lifetime_param.clone()));
+            }
+        }
+    }
 
     let mut params_no_defaults = generics.params.clone();
     for param in &mut params_no_defaults {
@@ -152,7 +168,14 @@ fn extract_generics_info<'a>(generics: &'a syn::Generics) -> GenericsInfo<'a> {
         }
     }
 
-    GenericsInfo { params_no_defaults, ty_params, phantom_ty_params }
+    GenericsInfo {
+        params_no_defaults,
+        ty_params,
+        class_params_no_defaults,
+        class_ty_params,
+        phantom_ty_params,
+        phantom_lifetimes,
+    }
 }
 
 #[derive(Default)]
@@ -306,6 +329,9 @@ fn generate_lock_class_registration(
     lock_ident: &Ident,
     mu_camel: &str,
     class_ident: &Ident,
+    class_impl_generics: &proc_macro2::TokenStream,
+    class_ty_generics: &proc_macro2::TokenStream,
+    where_clause: Option<&syn::WhereClause>,
     reg_init: proc_macro2::TokenStream,
 ) -> proc_macro2::TokenStream {
     let struct_upper = struct_ident.to_string().to_ascii_uppercase();
@@ -321,7 +347,7 @@ fn generate_lock_class_registration(
         #[used]
         static #reg_ident: ::ksync::LockClassRegistration = #reg_init;
 
-        impl ::ksync::LockClass for #class_ident {
+        impl #class_impl_generics ::ksync::LockClass for #class_ident #class_ty_generics #where_clause {
             const ID: *mut ::core::ffi::c_void = #reg_ident.get();
         }
     }
@@ -349,7 +375,7 @@ fn generate_token_guard(
     struct_ident: &Ident,
     ty_generics: &impl quote::ToTokens,
     where_clause: Option<&syn::WhereClause>,
-    class_ident: &Ident,
+    class_type: &proc_macro2::TokenStream,
     token_guard_ident: &Ident,
     fields_ident: &Ident,
     token_guard_decl_generics: &proc_macro2::TokenStream,
@@ -363,14 +389,14 @@ fn generate_token_guard(
         #[allow(dead_code)]
         #struct_vis struct #token_guard_ident #token_guard_decl_generics #where_clause {
             parent: &'b #struct_ident #ty_generics,
-            token: &'b ::ksync::LockToken<'a, #class_ident>,
+            token: &'b ::ksync::LockToken<'a, #class_type>,
         }
 
         impl #token_guard_impl_generics #token_guard_ident #token_guard_ty_generics #where_clause {
             #accessors
 
             #[inline]
-            #struct_vis fn token(&self) -> &::ksync::LockToken<'a, #class_ident> {
+            #struct_vis fn token(&self) -> &::ksync::LockToken<'a, #class_type> {
                 self.token
             }
 
@@ -392,7 +418,7 @@ fn generate_token_guard_mut(
     struct_ident: &Ident,
     ty_generics: &impl quote::ToTokens,
     where_clause: Option<&syn::WhereClause>,
-    class_ident: &Ident,
+    class_type: &proc_macro2::TokenStream,
     token_guard_mut_ident: &Ident,
     read_fields_ident: &Ident,
     write_fields_ident: &Ident,
@@ -408,19 +434,19 @@ fn generate_token_guard_mut(
         #[allow(dead_code)]
         #struct_vis struct #token_guard_mut_ident #token_guard_decl_generics #where_clause {
             parent: &'b #struct_ident #ty_generics,
-            token: &'b mut ::ksync::LockToken<'a, #class_ident>,
+            token: &'b mut ::ksync::LockToken<'a, #class_type>,
         }
 
         impl #token_guard_impl_generics #token_guard_mut_ident #token_guard_ty_generics #where_clause {
             #accessors
 
             #[inline]
-            #struct_vis fn token(&self) -> &::ksync::LockToken<'a, #class_ident> {
+            #struct_vis fn token(&self) -> &::ksync::LockToken<'a, #class_type> {
                 &*self.token
             }
 
             #[inline]
-            #struct_vis fn token_mut(&mut self) -> &mut ::ksync::LockToken<'a, #class_ident> {
+            #struct_vis fn token_mut(&mut self) -> &mut ::ksync::LockToken<'a, #class_type> {
                 &mut *self.token
             }
 
@@ -546,6 +572,8 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
     let struct_ident = &input_struct.ident;
     let struct_vis = &input_struct.vis;
 
+    let generics_info = extract_generics_info(&input_struct.generics);
+
     let mut mutex_fields_processed = Vec::new();
     let mut brwlock_fields_processed = Vec::new();
     let mut generated_names = std::collections::HashSet::new();
@@ -564,8 +592,18 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
             &mut errors,
         );
 
-        let class_ident = match custom_class {
-            Some(ref ident) => ident.clone(),
+        let (class_ident, class_type) = match custom_class {
+            Some(ref ty) => {
+                let ident = if let syn::Type::Path(syn::TypePath { path, .. }) = ty {
+                    path.segments
+                        .last()
+                        .map(|s| s.ident.clone())
+                        .unwrap_or_else(|| format_ident!("CustomClass"))
+                } else {
+                    format_ident!("CustomClass")
+                };
+                (ident, quote! { #ty })
+            }
             None => {
                 let class_name = format!("{struct_ident}{mu_camel}Class");
                 check_unique_name(
@@ -576,7 +614,14 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
                     &mut generated_names,
                     &mut errors,
                 );
-                format_ident!("{class_name}")
+                let ident = format_ident!("{class_name}");
+                let ty = if generics_info.class_ty_params.is_empty() {
+                    quote! { #ident }
+                } else {
+                    let class_ty_params = &generics_info.class_ty_params;
+                    quote! { #ident <#(#class_ty_params),*> }
+                };
+                (ident, ty)
             }
         };
 
@@ -585,6 +630,7 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
         mutex_fields_processed.push(MutexField {
             ident: field_ident,
             class_ident,
+            class_type,
             mutex_type,
             custom_class,
             is_phantom,
@@ -625,9 +671,17 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
         );
 
         let class_ident = format_ident!("{class_name}");
+        let class_type = if generics_info.class_ty_params.is_empty() {
+            quote! { #class_ident }
+        } else {
+            let class_ty_params = &generics_info.class_ty_params;
+            quote! { #class_ident <#(#class_ty_params),*> }
+        };
+
         brwlock_fields_processed.push(MutexField {
             ident: field_ident,
             class_ident,
+            class_type,
             mutex_type: quote! { ::ksync::RawBrwLockPi },
             custom_class: None,
             is_phantom: false,
@@ -647,41 +701,41 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
             if let Some(mutex_field) =
                 mutex_fields_processed.iter().find(|m| m.ident == *field_ident)
             {
-                let class_ident = &mutex_field.class_ident;
+                let class_type = &mutex_field.class_type;
                 let mutex_type = &mutex_field.mutex_type;
                 if let Type::Path(ref mut type_path) = field.ty {
                     if let Some(last_segment) = type_path.path.segments.last_mut() {
                         last_segment.ident = format_ident!("KMutex");
                         last_segment.arguments = syn::PathArguments::AngleBracketed(
-                            syn::parse2(quote! { <#class_ident, #mutex_type> }).unwrap(),
+                            syn::parse2(quote! { <#class_type, #mutex_type> }).unwrap(),
                         );
                     }
                 }
             } else if let Some(brwlock_field) =
                 brwlock_fields_processed.iter().find(|m| m.ident == *field_ident)
             {
-                let class_ident = &brwlock_field.class_ident;
+                let class_type = &brwlock_field.class_type;
                 if let Type::Path(ref mut type_path) = field.ty {
                     if let Some(last_segment) = type_path.path.segments.last_mut() {
                         last_segment.ident = format_ident!("BrwLockPi");
                         last_segment.arguments = syn::PathArguments::AngleBracketed(
-                            syn::parse2(quote! { <#class_ident> }).unwrap(),
+                            syn::parse2(quote! { <#class_type> }).unwrap(),
                         );
                     }
                 }
             } else if let Some(guarded_field) =
                 guarded_fields.iter().find(|f| f.ident == *field_ident)
             {
-                let class_ident_opt = mutex_fields_processed
+                let class_type_opt = mutex_fields_processed
                     .iter()
                     .chain(brwlock_fields_processed.iter())
                     .find(|m| m.ident == guarded_field.mutex_ident)
-                    .map(|m| &m.class_ident);
+                    .map(|m| &m.class_type);
 
-                if let Some(class_ident) = class_ident_opt {
+                if let Some(class_type) = class_type_opt {
                     let original_ty = &field.ty;
                     field.ty =
-                        syn::parse2(quote! { ::ksync::KCell<#original_ty, #class_ident> }).unwrap();
+                        syn::parse2(quote! { ::ksync::KCell<#original_ty, #class_type> }).unwrap();
                     field.attrs.push(syn::parse_quote!(#[allow(dead_code)]));
                 } else {
                     errors.push(syn::Error::new(
@@ -702,11 +756,11 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
     }
 
     let (impl_generics, ty_generics, where_clause) = input_struct.generics.split_for_impl();
-    let generics_info = extract_generics_info(&input_struct.generics);
 
     let params_with_bounds = &generics_info.params_no_defaults;
     let ty_params = &generics_info.ty_params;
     let phantom_ty_params = &generics_info.phantom_ty_params;
+    let phantom_lifetimes = &generics_info.phantom_lifetimes;
 
     let fields_decl_generics = quote! { <'b, #params_with_bounds> };
     let fields_ty_generics = quote! { <'b, #(#ty_params),*> };
@@ -715,15 +769,46 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
     let token_guard_impl_generics = quote! { <'b, 'a, #params_with_bounds> };
     let token_guard_ty_generics = quote! { <'b, 'a, #(#ty_params),*> };
 
+    let (class_decl_generics, class_impl_generics, class_ty_generics) =
+        if generics_info.class_ty_params.is_empty() {
+            (quote! {}, quote! {}, quote! {})
+        } else {
+            let class_params_no_defaults = &generics_info.class_params_no_defaults;
+            let class_ty_params = &generics_info.class_ty_params;
+            (
+                quote! { <#class_params_no_defaults> },
+                quote! { <#class_params_no_defaults> },
+                quote! { <#(#class_ty_params),*> },
+            )
+        };
+
+    let marker_phantom = quote! {
+        ::core::marker::PhantomData<(
+            #(& #phantom_lifetimes (),)*
+            fn() -> (*const (#(#phantom_ty_params),*)),
+        )>
+    };
+
     // Marker structs for custom classes
     let mut marker_structs = quote! {};
     for lock in mutex_fields_processed.iter().chain(brwlock_fields_processed.iter()) {
         if lock.custom_class.is_none() {
             let class_ident = &lock.class_ident;
-            marker_structs.extend(quote! {
-                #[allow(non_camel_case_types)]
-                #struct_vis struct #class_ident;
-            });
+            if input_struct.generics.params.is_empty() {
+                marker_structs.extend(quote! {
+                    #[allow(non_camel_case_types)]
+                    #[derive(Default, Debug, Clone, Copy)]
+                    #struct_vis struct #class_ident;
+                });
+            } else {
+                marker_structs.extend(quote! {
+                    #[allow(non_camel_case_types)]
+                    #[derive(Default, Debug, Clone, Copy)]
+                    #struct_vis struct #class_ident #class_decl_generics (
+                        pub #marker_phantom
+                    );
+                });
+            }
         }
     }
 
@@ -732,6 +817,7 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
     for mutex in &mutex_fields_processed {
         let mu_ident = &mutex.ident;
         let class_ident = &mutex.class_ident;
+        let class_type = &mutex.class_type;
         let mutex_type = &mutex.mutex_type;
 
         let mu_camel = to_camel_case(&mu_ident.to_string());
@@ -780,6 +866,9 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
                 mu_ident,
                 &mu_camel,
                 class_ident,
+                &class_impl_generics,
+                &class_ty_generics,
+                where_clause,
                 quote! { ::ksync::LockClassRegistration::with_flags(#string_reg_ident, #flags_expr) },
             )
         } else {
@@ -808,9 +897,9 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
             quote! { <'a, #(#ty_params),*> }
         };
         let guard_inner_type = if mutex.is_phantom {
-            quote! { ::ksync::KMutexGuard<'a, #class_ident, M> }
+            quote! { ::ksync::KMutexGuard<'a, #class_type, M> }
         } else {
-            quote! { ::ksync::KMutexGuard<'a, #class_ident, #mutex_type> }
+            quote! { ::ksync::KMutexGuard<'a, #class_type, #mutex_type> }
         };
 
         let lock_method_def = if mutex.is_phantom {
@@ -818,7 +907,7 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
                 #[inline]
                 #struct_vis fn #lock_method_ident<'a, M: ::ksync::RawLock>(
                     &'a self,
-                    real_mutex: &'a ::ksync::KMutex<#class_ident, M>,
+                    real_mutex: &'a ::ksync::KMutex<#class_type, M>,
                 ) -> impl pin_init::PinInit<#guard_ident #guard_ty_generics, ::core::convert::Infallible> {
                     pin_init::pin_init!(#guard_ident {
                         parent: self,
@@ -843,7 +932,7 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
             #[inline]
             #struct_vis fn #guard_method_ident<'b, 'a>(
                 &'b self,
-                token: &'b ::ksync::LockToken<'a, #class_ident>,
+                token: &'b ::ksync::LockToken<'a, #class_type>,
             ) -> #token_guard_ident #token_guard_ty_generics {
                 #token_guard_ident { parent: self, token }
             }
@@ -851,7 +940,7 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
             #[inline]
             #struct_vis fn #guard_mut_method_ident<'b, 'a>(
                 &'b self,
-                token: &'b mut ::ksync::LockToken<'a, #class_ident>,
+                token: &'b mut ::ksync::LockToken<'a, #class_type>,
             ) -> #token_guard_mut_ident #token_guard_ty_generics {
                 #token_guard_mut_ident { parent: self, token }
             }
@@ -866,7 +955,7 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
             struct_ident,
             &ty_generics,
             where_clause,
-            class_ident,
+            class_type,
             &token_guard_ident,
             &fields_ident,
             &token_guard_decl_generics,
@@ -882,7 +971,7 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
             struct_ident,
             &ty_generics,
             where_clause,
-            class_ident,
+            class_type,
             &token_guard_mut_ident,
             &fields_ident,
             &fields_mut_ident,
@@ -917,12 +1006,12 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
                 #guard_accessors
 
                 #[inline]
-                #struct_vis fn token(&self) -> &::ksync::LockToken<'a, #class_ident> {
+                #struct_vis fn token(&self) -> &::ksync::LockToken<'a, #class_type> {
                     self.inner.token()
                 }
 
                 #[inline]
-                #struct_vis fn token_mut(self: ::core::pin::Pin<&mut Self>) -> &mut ::ksync::LockToken<'a, #class_ident> {
+                #struct_vis fn token_mut(self: ::core::pin::Pin<&mut Self>) -> &mut ::ksync::LockToken<'a, #class_type> {
                     let me = unsafe { self.get_unchecked_mut() };
                     let inner_pin = unsafe { ::core::pin::Pin::new_unchecked(&mut me.inner) };
                     inner_pin.token_mut()
@@ -963,6 +1052,7 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
     for brwlock in &brwlock_fields_processed {
         let lock_ident = &brwlock.ident;
         let class_ident = &brwlock.class_ident;
+        let class_type = &brwlock.class_type;
 
         let mu_camel = to_camel_case(&lock_ident.to_string());
         let read_guard_ident = format_ident!("{struct_ident}{mu_camel}ReadGuard");
@@ -1013,6 +1103,9 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
             lock_ident,
             &mu_camel,
             class_ident,
+            &class_impl_generics,
+            &class_ty_generics,
+            where_clause,
             quote! { ::ksync::LockClassRegistration::new(&#string_reg_ident) },
         );
 
@@ -1030,7 +1123,7 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
             struct_ident,
             &ty_generics,
             where_clause,
-            class_ident,
+            class_type,
             &read_token_guard_ident,
             &read_fields_ident,
             &token_guard_decl_generics,
@@ -1046,7 +1139,7 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
             struct_ident,
             &ty_generics,
             where_clause,
-            class_ident,
+            class_type,
             &write_token_guard_ident,
             &read_fields_ident,
             &write_fields_ident,
@@ -1059,7 +1152,7 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
             &field_code.write_fields_init,
         );
 
-        let read_guard_inner = quote! { ::ksync::BrwLockPiReadGuard<'a, #class_ident> };
+        let read_guard_inner = quote! { ::ksync::BrwLockPiReadGuard<'a, #class_type> };
         let read_guard_struct = generate_pinned_guard_struct(
             struct_vis,
             struct_ident,
@@ -1072,7 +1165,7 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
             &read_guard_inner,
         );
 
-        let write_guard_inner = quote! { ::ksync::BrwLockPiWriteGuard<'a, #class_ident> };
+        let write_guard_inner = quote! { ::ksync::BrwLockPiWriteGuard<'a, #class_type> };
         let write_guard_struct = generate_pinned_guard_struct(
             struct_vis,
             struct_ident,
@@ -1155,7 +1248,7 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
                 #[inline]
                 #struct_vis fn #guard_read_method_ident<'b, 'a>(
                     &'b self,
-                    token: &'b ::ksync::LockToken<'a, #class_ident>,
+                    token: &'b ::ksync::LockToken<'a, #class_type>,
                 ) -> #read_token_guard_ident #token_guard_ty_generics {
                     #read_token_guard_ident { parent: self, token }
                 }
@@ -1163,7 +1256,7 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
                 #[inline]
                 #struct_vis fn #guard_write_method_ident<'b, 'a>(
                     &'b self,
-                    token: &'b mut ::ksync::LockToken<'a, #class_ident>,
+                    token: &'b mut ::ksync::LockToken<'a, #class_type>,
                 ) -> #write_token_guard_ident #token_guard_ty_generics {
                     #write_token_guard_ident { parent: self, token }
                 }

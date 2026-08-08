@@ -61,6 +61,26 @@ mod ksync_tests {
         target: fbl::RefPtr<GuardedMutexObj>,
     }
 
+    #[ksync::guarded]
+    #[fbl::ref_counted]
+    #[derive(fbl::Recyclable)]
+    #[pin_data]
+    #[repr(C)]
+    struct GuardedGenericObj<T> {
+        #[mutex]
+        mu: ksync::KMutex,
+        #[guarded_by(mu)]
+        value: T,
+    }
+
+    #[ksync::guarded]
+    struct GuardedGenericPhantomObj<T> {
+        #[mutex(GuardedGenericObjMuClass<T>)]
+        mu: ksync::KMutex<ksync::PhantomMutex>,
+        #[guarded_by(mu)]
+        target: fbl::RefPtr<GuardedGenericObj<T>>,
+    }
+
     unsafe extern "C" {
         fn cpp_verify_mutex_id(
             lock: *const core::ffi::c_void,
@@ -234,6 +254,34 @@ mod ksync_tests {
             // that we read back the same value (200) that was written via `phantom_obj`.
             ksync::lock!(let guard = real_obj.lock_mu());
             expect_true!(*guard.value() == 200);
+        }
+    }
+
+    /// test PhantomMutex with generic LockClass
+    #[test]
+    fn generic_phantom_mutex() {
+        let real_obj = fbl::pin_make_ref_counted!(GuardedGenericObj {
+            mu <- ksync::KMutex::init(),
+            value: 42.into(),
+        })
+        .unwrap();
+
+        let real_obj_clone = real_obj.clone();
+        stack_pin_init!(let phantom_obj = pin_init!(GuardedGenericPhantomObj {
+            mu: ksync::KMutex::new(ksync::PhantomMutex),
+            target: ksync::KCell::new(real_obj_clone),
+        }));
+
+        {
+            ksync::lock!(let mut guard = phantom_obj.lock_mu(&real_obj.mu));
+            let target = guard.target().clone();
+            expect_true!(*target.guard_mu(guard.token()).value() == 42);
+            *target.guard_mu_mut(guard.as_mut().token_mut()).value_mut() = 99;
+        }
+
+        {
+            ksync::lock!(let guard = real_obj.lock_mu());
+            expect_true!(*guard.value() == 99);
         }
     }
 
