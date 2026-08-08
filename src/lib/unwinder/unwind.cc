@@ -114,13 +114,10 @@ void Unwinder::Step(Memory* stack, Frame& current, Frame& next) {
   }
 
   // For non-signal frames, try CFI first because it's the most accurate one.
-  // TODO(https://fxbug.dev/316047562): Make CFI work on RISC-V.
-  if (current.regs.arch() != Registers::Arch::kRiscv64) {
-    if (auto err = TryUnwinder(&cfi_unwinder_, stack, current, next); err.ok()) {
-      success = true;
-    } else {
-      err_msg += "; CFI: " + err.msg();
-    }
+  if (auto err = TryUnwinder(&cfi_unwinder_, stack, current, next); err.ok()) {
+    success = true;
+  } else {
+    err_msg += "; CFI: " + err.msg();
   }
 
   // Try ArmEhAbi before the others because it will play well with CFI. Note that this is only

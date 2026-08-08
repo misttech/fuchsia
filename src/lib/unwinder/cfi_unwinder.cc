@@ -162,12 +162,6 @@ fit::result<Error, bool> CfiUnwinder::Step(Memory* stack, const Registers& curre
 
 void CfiUnwinder::AsyncStep(AsyncMemory* stack, const Frame& current,
                             fit::callback<void(Error, Registers)> cb) {
-  // TODO(https://fxbug.dev/316047562): Make CFI work on RISC-V.
-  if (current.regs.arch() == Registers::Arch::kRiscv64) {
-    return cb(Error("RISC-V is not supported with the CFI Unwinder."),
-              Registers(current.regs.arch()));
-  }
-
   AsyncStep(stack, current.regs, current.pc_is_return_address, std::move(cb));
 }
 
