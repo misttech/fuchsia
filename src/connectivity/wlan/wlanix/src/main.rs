@@ -3162,8 +3162,17 @@ async fn main() {
         fuchsia_inspect::component::inspector().root().create_child(CLIENT_STATS_NODE_NAME),
         &format!("root/{CLIENT_STATS_NODE_NAME}"),
         wlan_telemetry::TelemetryConfig {
+            enable_connect_disconnect: true,
+            enable_iface_logger: true,
+            enable_power_logger: true,
+            enable_recovery_logger: true,
+            enable_scan_logger: true,
+            enable_pno_scan_logger: true,
+            enable_sme_timeout_logger: true,
+            enable_toggle_logger: true,
+            enable_tx_power_scenario_logger: true,
+            enable_client_iface_counters_logger: true,
             device_mobility: wlan_telemetry::DeviceMobility::Mobile,
-            ..wlan_telemetry::TelemetryConfig::all()
         },
         wlan_telemetry::CobaltAllowlist::All,
     );

@@ -26,24 +26,6 @@ pub struct TelemetryConfig {
     pub device_mobility: DeviceMobility,
 }
 
-impl TelemetryConfig {
-    pub fn all() -> Self {
-        Self {
-            enable_connect_disconnect: true,
-            enable_iface_logger: true,
-            enable_power_logger: true,
-            enable_recovery_logger: true,
-            enable_scan_logger: true,
-            enable_pno_scan_logger: true,
-            enable_sme_timeout_logger: true,
-            enable_toggle_logger: true,
-            enable_tx_power_scenario_logger: true,
-            enable_client_iface_counters_logger: true,
-            device_mobility: DeviceMobility::Mobile,
-        }
-    }
-}
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum CobaltAllowlist {
     All,
@@ -66,12 +48,6 @@ mod tests {
     #[fuchsia::test]
     fn test_telemetry_config_default() {
         let config = TelemetryConfig::default();
-        assert_eq!(config.device_mobility, DeviceMobility::Mobile);
-    }
-
-    #[fuchsia::test]
-    fn test_telemetry_config_all() {
-        let config = TelemetryConfig::all();
         assert_eq!(config.device_mobility, DeviceMobility::Mobile);
     }
 }
