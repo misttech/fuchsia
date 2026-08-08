@@ -77,6 +77,16 @@ The [`lib/captive-thread/registers.h`](include/lib/captive-thread/registers.h)
 header provides some convenient APIs for picking apart the register data in
 terms of each machine's ABI use of its registers.
 
+### Single-Step
+
+When the machine supports single-step, `CaptiveThread` makes it easy to use.
+The `ResolveExceptionSingleStep()` and `ResumeSingleStep()` methods augment
+their baseline counterparts by enabling single-step for the thread.  It will
+soon report the expected exception so that the thread's state can be accessed
+after a single machine instruction.  The `StepToException()` shorthand method
+combines `ResolveExceptionSingleStep()` with `WaitForException()` for easy
+repeated use.
+
 ## Testing Support
 
 The additional [testing](testing) library provides gmock matchers and related

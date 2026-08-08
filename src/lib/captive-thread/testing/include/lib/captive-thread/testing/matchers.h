@@ -120,6 +120,12 @@ MATCHER_P(IsPageFault, matcher,
       AllOf(IsPageFault(), address_matcher), *report, result_listener);
 }
 
+MATCHER(IsSingleStep, "") {
+  return ::testing::ExplainMatchResult(WithType(kSingleStepException), arg, result_listener);
+}
+
+constexpr auto GotSingleStep() { return GotException(IsSingleStep()); }
+
 // HasRegisters() just checks that the registers can be fetched at all, which
 // requires a stopped thread.  HasRegister<zx_thread_state_*_regs_t>() can
 // specify which registers, the default being zx_thread_state_general_regs_t.

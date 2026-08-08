@@ -228,6 +228,11 @@ auto& StoppedRegs(auto& regs) {
   return std::get<std::unique_ptr<Regs>>(regs);
 }
 
+zx::result<> SetSingleStep(zx::unowned_thread thread, bool on) {
+  const zx_thread_state_single_step_t kStep = on ? 1 : 0;
+  return zx::make_result(thread->write_state(ZX_THREAD_STATE_SINGLE_STEP, &kStep, sizeof(kStep)));
+}
+
 }  // namespace
 
 // Start the thread and wait for it to get ready.  Until it's ready,
@@ -345,9 +350,30 @@ void CaptiveThread::ResolveException() {
   ResumeInternal();
 }
 
+zx::result<> CaptiveThread::ResolveExceptionSingleStep() {
+  ZX_ASSERT(InException());
+  if (zx::result step = SetSingleStep(thread_handle_.borrow(), true); step.is_error()) {
+    return step;
+  }
+  singlestep_ = true;
+  MarkHandled(exception_.borrow());
+  ResumeInternal();
+  return zx::ok();
+}
+
 void CaptiveThread::Resume() {
   ZX_ASSERT(IsStopped());
   ResumeInternal();
+}
+
+zx::result<> CaptiveThread::ResumeSingleStep() {
+  ZX_ASSERT(IsStopped());
+  if (zx::result step = SetSingleStep(thread_handle_.borrow(), true); step.is_error()) {
+    return step;
+  }
+  singlestep_ = true;
+  ResumeInternal();
+  return zx::ok();
 }
 
 void CaptiveThread::ResumeInternal() {
@@ -409,6 +435,13 @@ zx::result<CaptiveThread*> CaptiveThread::Wait(zx::time deadline, bool suspend_o
     ZX_DEBUG_ASSERT(bytes == sizeof(info));
     ZX_DEBUG_ASSERT(handles == 1);
     ZX_DEBUG_ASSERT(info.type == exception_report_->header.type);
+    if (singlestep_) {
+      // Reset single-step state after any stop.
+      singlestep_ = false;
+      if (auto result = SetSingleStep(thread_handle_.borrow(), false); result.is_error()) {
+        return result.take_error();
+      }
+    }
   } else if (thread_pending & ZX_THREAD_SUSPENDED) {
     ZX_DEBUG_ASSERT(suspend_ok);
   } else {
@@ -427,6 +460,13 @@ void PrintTo(const CaptiveThread& thread, std::ostream* os) {
   } else {
     *os << "no exception";
   }
+}
+
+zx::result<CaptiveThread*> CaptiveThread::StepToException(zx::time deadline) {
+  if (zx::result step = ResolveExceptionSingleStep(); step.is_error()) {
+    return step.take_error();
+  }
+  return WaitForException(deadline);
 }
 
 }  // namespace captive_thread

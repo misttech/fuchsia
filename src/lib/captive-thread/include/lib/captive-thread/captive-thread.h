@@ -32,6 +32,9 @@ constexpr zx_excp_type_t kTrapException =
 #endif
     ;
 
+// kSingleStepException is what zx_thread_state_single_step_t{1} produces.
+constexpr zx_excp_type_t kSingleStepException = ZX_EXCP_HW_BREAKPOINT;
+
 constexpr uint64_t kTrapInstructionSize =
 #if defined(__x86_64__) || defined(__riscv_c)
     2
@@ -160,6 +163,13 @@ class CaptiveThread {
   // (system crash service, etc.).
   void Resume();
 
+  // As above, but resume with single-step enabled.
+  zx::result<> ResolveExceptionSingleStep();
+  zx::result<> ResumeSingleStep();
+
+  // This is shorthand for ResolveExceptionSingleStep() and WaitForException().
+  zx::result<CaptiveThread*> StepToException(zx::time deadline = zx::time::infinite());
+
   friend void PrintTo(const CaptiveThread&, std::ostream* os);
 
  private:
@@ -178,6 +188,7 @@ class CaptiveThread {
   zx_thread_state_general_regs_t exit_regs_;
   std::optional<zx_exception_report_t> exception_report_;
   RegsTuple stopped_regs_;
+  bool singlestep_ = false;
 
   // Note this member is declared last so others are initialized first.
   std::thread thread_;

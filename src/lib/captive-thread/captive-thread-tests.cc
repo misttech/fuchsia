@@ -228,4 +228,49 @@ TEST(CaptiveThreadTests, ResolveException) {
   EXPECT_TRUE(finished);
 }
 
+TEST(CaptiveThreadTests, SingleStep) {
+  using captive_thread::testing::GotSingleStep;
+
+  bool started = true, finished = false;
+  captive_thread::CaptiveThread thread{[&started, &finished] {
+    started = true;
+    Crash();
+    finished = true;
+  }};
+  ASSERT_THAT(thread.WaitForException(),
+              AllOf(captive_thread::testing::IsTrap(),  //
+                    captive_thread::testing::HasRegisters()));
+  EXPECT_TRUE(started);
+  EXPECT_FALSE(finished);
+  auto regs = *thread.Registers();
+  captive_thread::SpecialRegisters(regs).pc() += captive_thread::kTrapInstructionSize;
+  zx::result result = thread.SetRegisters(regs);
+  ASSERT_TRUE(result.is_ok()) << result.status_string();
+
+  zx::result step = thread.ResolveExceptionSingleStep();
+  if (step.is_error()) {
+    ASSERT_EQ(step.error_value(), ZX_ERR_NOT_SUPPORTED) << step.status_string();
+    GTEST_SKIP() << "single-step not supported on this machine";
+  }
+
+  EXPECT_THAT(thread.WaitForException(), GotSingleStep());
+  EXPECT_FALSE(finished);  // It needs more than one instruction to get there.
+
+  // Single-step until it's done the store.
+  int steps = 1;
+  do {
+    zx::result step = thread.ResolveExceptionSingleStep();
+    ASSERT_TRUE(step.is_ok()) << step.status_value() << " at step " << steps;
+    ++steps;
+  } while (::testing::Value(thread.WaitForException(), GotSingleStep()) && !finished);
+
+  // If the loop broke for another reason, the assert will report why.
+  EXPECT_TRUE(finished) << "after step " << steps;
+  ASSERT_THAT(thread.WaitForException(), GotSingleStep()) << "after step " << steps;
+
+  // Now let it run to completion without getting another single-step trap.
+  thread.ResolveException();
+  thread.BlockUntilSuccess();
+}
+
 }  // namespace
