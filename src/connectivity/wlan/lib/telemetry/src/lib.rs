@@ -42,6 +42,9 @@ pub enum TelemetryEvent {
     Disconnect {
         info: DisconnectInfo,
     },
+    ChannelSwitched {
+        channel: wlan_common::channel::Channel,
+    },
     // We should maintain docstrings if we can see any possibility of ambiguity for an enum
     /// Client connections enabled or disabled
     ClientConnectionsToggle {
@@ -282,6 +285,11 @@ pub fn serve_telemetry(
                             }
                             if let Some(ref power_logger) = power_logger {
                                 power_logger.handle_iface_disconnect(info.iface_id).await;
+                            }
+                        }
+                        ChannelSwitched { channel } => {
+                            if let Some(ref connect_disconnect) = connect_disconnect {
+                                connect_disconnect.handle_channel_switched(channel).await;
                             }
                         }
                         ClientConnectionsToggle { event } => {

@@ -1595,9 +1595,6 @@ impl Telemetry {
                         cbw,
                         info.new_primary_channel.band,
                     );
-                    self.stats_logger
-                        .log_device_connected_channel_cobalt_metrics(state.ap_state.tracked.channel)
-                        .await;
                 }
             }
             TelemetryEvent::PolicyRoamScan { reasons } => {
@@ -2992,18 +2989,6 @@ impl StatsLogger {
         ));
     }
 
-    async fn log_device_connected_channel_cobalt_metrics(&mut self, channel: Channel) {
-        let mut metric_events = vec![];
-
-        append_device_connected_channel_cobalt_metrics(&mut metric_events, channel);
-
-        self.throttled_error_logger.throttle_error(log_cobalt_batch!(
-            self.cobalt_proxy,
-            &metric_events,
-            "log_device_connected_channel_cobalt_metrics",
-        ));
-    }
-
     async fn log_policy_roam_scan_metrics(&mut self, reasons: Vec<RoamReason>) {
         self.throttled_error_logger.throttle_error(log_cobalt!(
             self.cobalt_proxy,
@@ -4168,24 +4153,6 @@ impl StatsLogger {
             }
         }
     }
-}
-
-fn append_device_connected_channel_cobalt_metrics(
-    metric_events: &mut Vec<MetricEvent>,
-    channel: Channel,
-) {
-    metric_events.push(MetricEvent {
-        metric_id: metrics::DEVICE_CONNECTED_TO_AP_BREAKDOWN_BY_PRIMARY_CHANNEL_METRIC_ID,
-        event_codes: vec![channel.primary as u32],
-        payload: MetricEventPayload::Count(1),
-    });
-
-    let channel_band_dim = convert::convert_channel_band(channel.band);
-    metric_events.push(MetricEvent {
-        metric_id: metrics::DEVICE_CONNECTED_TO_AP_BREAKDOWN_BY_CHANNEL_BAND_METRIC_ID,
-        event_codes: vec![channel_band_dim as u32],
-        payload: MetricEventPayload::Count(1),
-    });
 }
 
 #[allow(clippy::enum_variant_names, reason = "mass allow for https://fxbug.dev/381896734")]

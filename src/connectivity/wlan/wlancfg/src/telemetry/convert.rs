@@ -6,8 +6,9 @@ use crate::client::roaming::lib::RoamReason;
 use fidl_fuchsia_wlan_common as fidl_common;
 use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
 use fidl_fuchsia_wlan_sme as fidl_sme;
+use log::error;
 use wlan_common::bss::Protection as BssProtection;
-use wlan_common::channel::Channel;
+use wlan_common::channel::{Bandwidth, Channel};
 use wlan_metrics_registry as metrics;
 
 pub fn convert_disconnect_source(
@@ -254,6 +255,23 @@ pub fn convert_to_wlan_telemetry_event(
         crate::telemetry::TelemetryEvent::RecoveryEvent { .. } => {
             Some(wlan_telemetry::TelemetryEvent::RecoveryEvent)
         }
+        crate::telemetry::TelemetryEvent::OnChannelSwitched { info } => {
+            let bandwidth =
+                match Bandwidth::from_fidl(info.bandwidth, info.vht_secondary_80_channel.number) {
+                    Ok(bandwidth) => bandwidth,
+                    Err(e) => {
+                        error!("Invalid Bandwidth in ChannelSwitchInfo: {}", e);
+                        Bandwidth::Cbw20
+                    }
+                };
+            Some(wlan_telemetry::TelemetryEvent::ChannelSwitched {
+                channel: Channel::new(
+                    info.new_primary_channel.number,
+                    bandwidth,
+                    info.new_primary_channel.band,
+                ),
+            })
+        }
         _ => None,
     }
 }
@@ -478,6 +496,31 @@ mod tests {
         assert_matches!(
             convert_to_wlan_telemetry_event(&event),
             Some(wlan_telemetry::TelemetryEvent::IfaceDestructionFailure)
+        );
+    }
+
+    #[fuchsia::test]
+    fn test_convert_on_channel_switched() {
+        let event = crate::telemetry::TelemetryEvent::OnChannelSwitched {
+            info: fidl_fuchsia_wlan_internal::ChannelSwitchInfo {
+                new_primary_channel: fidl_ieee80211::ChannelNumber {
+                    band: fidl_ieee80211::WlanBand::FiveGhz,
+                    number: 157,
+                },
+                bandwidth: fidl_ieee80211::ChannelBandwidth::Cbw20,
+                vht_secondary_80_channel: fidl_ieee80211::ChannelNumber {
+                    band: fidl_ieee80211::WlanBand::FiveGhz,
+                    number: 0,
+                },
+            },
+        };
+        assert_matches!(
+            convert_to_wlan_telemetry_event(&event),
+            Some(wlan_telemetry::TelemetryEvent::ChannelSwitched { channel }) => {
+                assert_eq!(channel.primary, 157);
+                assert_eq!(channel.band, fidl_ieee80211::WlanBand::FiveGhz);
+                assert_eq!(channel.bandwidth, Bandwidth::Cbw20);
+            }
         );
     }
 

@@ -446,18 +446,7 @@ impl ConnectDisconnectLogger {
                 });
         }
 
-        metric_events.push(MetricEvent {
-            metric_id: metrics::DEVICE_CONNECTED_TO_AP_BREAKDOWN_BY_PRIMARY_CHANNEL_METRIC_ID,
-            event_codes: vec![bss.channel.primary as u32],
-            payload: MetricEventPayload::Count(1),
-        });
-
-        let channel_band_dim = convert_channel_band(bss.channel.band);
-        metric_events.push(MetricEvent {
-            metric_id: metrics::DEVICE_CONNECTED_TO_AP_BREAKDOWN_BY_CHANNEL_BAND_METRIC_ID,
-            event_codes: vec![channel_band_dim as u32],
-            payload: MetricEventPayload::Count(1),
-        });
+        append_device_connected_channel_cobalt_metrics(&mut metric_events, bss.channel);
 
         let oui_string = bss.bssid.to_oui_uppercase("");
         metric_events.push(MetricEvent {
@@ -474,6 +463,16 @@ impl ConnectDisconnectLogger {
         });
 
         log_cobalt_batch!(self.cobalt_proxy, &metric_events, "log_device_connected_cobalt_metrics");
+    }
+
+    pub async fn handle_channel_switched(&self, channel: Channel) {
+        let mut metric_events = vec![];
+        append_device_connected_channel_cobalt_metrics(&mut metric_events, channel);
+        log_cobalt_batch!(
+            self.cobalt_proxy,
+            &metric_events,
+            "log_device_connected_channel_cobalt_metrics"
+        );
     }
 
     pub async fn log_disconnect(&self, info: &DisconnectInfo) {
@@ -976,6 +975,24 @@ fn float_to_ten_thousandth(value: f64) -> i64 {
     (value * 10000f64) as i64
 }
 
+fn append_device_connected_channel_cobalt_metrics(
+    metric_events: &mut Vec<MetricEvent>,
+    channel: Channel,
+) {
+    metric_events.push(MetricEvent {
+        metric_id: metrics::DEVICE_CONNECTED_TO_AP_BREAKDOWN_BY_PRIMARY_CHANNEL_METRIC_ID,
+        event_codes: vec![channel.primary as u32],
+        payload: MetricEventPayload::Count(1),
+    });
+
+    let channel_band_dim = convert_channel_band(channel.band);
+    metric_events.push(MetricEvent {
+        metric_id: metrics::DEVICE_CONNECTED_TO_AP_BREAKDOWN_BY_CHANNEL_BAND_METRIC_ID,
+        event_codes: vec![channel_band_dim as u32],
+        payload: MetricEventPayload::Count(1),
+    });
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1240,6 +1257,40 @@ mod tests {
                     as u32
             ]
         );
+    }
+
+    #[fuchsia::test]
+    fn test_handle_channel_switched() {
+        let mut test_helper = setup_test();
+        let logger = ConnectDisconnectLogger::new(
+            test_helper.filtered_cobalt_logger(),
+            &test_helper.inspect_node,
+            &test_helper.inspect_metadata_node,
+            &test_helper.inspect_metadata_path,
+            &test_helper.mock_time_matrix_client,
+            DeviceMobility::Mobile,
+        );
+
+        let channel = Channel::new(157, Bandwidth::Cbw40, fidl_ieee80211::WlanBand::FiveGhz);
+        let mut test_fut = pin!(logger.handle_channel_switched(channel));
+        assert_eq!(
+            test_helper.run_until_stalled_drain_cobalt_events(&mut test_fut),
+            Poll::Ready(())
+        );
+
+        let metrics_channel = test_helper.get_logged_metrics(
+            metrics::DEVICE_CONNECTED_TO_AP_BREAKDOWN_BY_PRIMARY_CHANNEL_METRIC_ID,
+        );
+        assert_eq!(metrics_channel.len(), 1);
+        assert_eq!(metrics_channel[0].event_codes, vec![157]);
+        assert_eq!(metrics_channel[0].payload, MetricEventPayload::Count(1));
+
+        let metrics_band = test_helper.get_logged_metrics(
+            metrics::DEVICE_CONNECTED_TO_AP_BREAKDOWN_BY_CHANNEL_BAND_METRIC_ID,
+        );
+        assert_eq!(metrics_band.len(), 1);
+        assert_eq!(metrics_band[0].event_codes, vec![2]); // Band5Ghz
+        assert_eq!(metrics_band[0].payload, MetricEventPayload::Count(1));
     }
 
     #[fuchsia::test]
