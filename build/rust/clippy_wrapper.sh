@@ -14,6 +14,7 @@ Options:
   --jq FILE : path to 'jq' (required)
   --deps FILE : path to .deps argfile (required)
   --transdeps FILE : path to .transdeps argfile (required)
+  --depfile FILE : path to depfile to emit (optional)
   --fail : clippy cause failure
   --quiet : produce output without printing or failing
 
@@ -28,6 +29,7 @@ quiet=0
 ignore_rustc=0
 deps_rspfile=
 transdeps_rspfile=
+depfile=
 
 # Extract options before --
 prev_opt=
@@ -55,6 +57,8 @@ do
     --deps=*) deps_rspfile="$optarg" ;;
     --transdeps) prev_opt=transdeps_rspfile ;;
     --transdeps=*) transdeps_rspfile="$optarg" ;;
+    --depfile) prev_opt=depfile ;;
+    --depfile=*) depfile="$optarg" ;;
     --fail) fail=1 ;;
     --quiet) quiet=1 ;;
     --clippy-only) ignore_rustc=1 ;;
@@ -128,6 +132,10 @@ command=(
   --error-format=json
   --json=diagnostic-rendered-ansi
 )
+
+if [[ -n "$depfile" ]]; then
+  command+=( --emit "dep-info=$depfile" )
+fi
 
 RUSTC_LOG=error "${command[@]}" 2>"$output"
 result="$?"
