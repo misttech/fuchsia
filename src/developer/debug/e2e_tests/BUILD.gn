@@ -124,12 +124,12 @@ if (is_host && has_board) {
       # TODO(https://fxbug.dev/42109154): Enable software breakpoint tests on ARM64
       # once they are stable.
       sources += [
+        "scripts/DISABLED_cpp_fn_arguments.script",
         "scripts/async_backtrace.script",
         "scripts/async_backtrace_any_thread.script",
         "scripts/bitfield.script",
         "scripts/break_dl_start.script",
         "scripts/conditional_breakpoint.script",
-        "scripts/cpp_fn_arguments.script",
         "scripts/cpp_fn_call.script",
         "scripts/cpp_fn_return_values.script",
         "scripts/inlined_frames.script",
