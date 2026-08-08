@@ -15,7 +15,7 @@ use windowed_stats::experimental::series::statistic::Union;
 use windowed_stats::experimental::series::{SamplingProfile, TimeMatrix};
 use wlan_legacy_metrics_registry as metrics;
 
-#[derive(Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub enum ScanResult {
     Complete { num_results: usize },
     Failed,

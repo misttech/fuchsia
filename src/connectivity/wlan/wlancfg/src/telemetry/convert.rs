@@ -272,6 +272,12 @@ pub fn convert_to_wlan_telemetry_event(
                 ),
             })
         }
+        crate::telemetry::TelemetryEvent::SmeScanStart => {
+            Some(wlan_telemetry::TelemetryEvent::ScanStart)
+        }
+        crate::telemetry::TelemetryEvent::SmeScanResult { result } => {
+            Some(wlan_telemetry::TelemetryEvent::ScanResult { result: *result })
+        }
         _ => None,
     }
 }
@@ -521,6 +527,26 @@ mod tests {
                 assert_eq!(channel.band, fidl_ieee80211::WlanBand::FiveGhz);
                 assert_eq!(channel.bandwidth, Bandwidth::Cbw20);
             }
+        );
+    }
+
+    #[fuchsia::test]
+    fn test_convert_sme_scan_start() {
+        assert_matches!(
+            convert_to_wlan_telemetry_event(&crate::telemetry::TelemetryEvent::SmeScanStart),
+            Some(wlan_telemetry::TelemetryEvent::ScanStart)
+        );
+    }
+
+    #[fuchsia::test]
+    fn test_convert_sme_scan_result() {
+        assert_matches!(
+            convert_to_wlan_telemetry_event(&crate::telemetry::TelemetryEvent::SmeScanResult {
+                result: wlan_telemetry::ScanResult::Complete { num_results: 5 }
+            }),
+            Some(wlan_telemetry::TelemetryEvent::ScanResult {
+                result: wlan_telemetry::ScanResult::Complete { num_results: 5 }
+            })
         );
     }
 

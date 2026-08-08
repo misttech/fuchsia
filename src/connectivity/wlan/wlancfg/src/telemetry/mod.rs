@@ -394,6 +394,10 @@ pub enum TelemetryEvent {
     SmeTimeout {
         source: TimeoutSource,
     },
+    SmeScanStart,
+    SmeScanResult {
+        result: wlan_telemetry::ScanResult,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -514,6 +518,7 @@ pub fn get_telemetry_config() -> wlan_telemetry::TelemetryConfig {
         enable_toggle_logger: true,
         enable_recovery_logger: true,
         enable_client_iface_counters_logger: true,
+        enable_scan_logger: true,
         device_mobility: wlan_telemetry::DeviceMobility::Stationary,
         ..Default::default()
     }
@@ -558,6 +563,11 @@ pub fn get_cobalt_allowlist() -> wlan_telemetry::CobaltAllowlist {
         metrics::INTERFACE_DESTRUCTION_FAILURE_METRIC_ID,
         metrics::SME_OPERATION_TIMEOUT_METRIC_ID,
         metrics::SME_OPERATION_TIMEOUT_2_METRIC_ID,
+        metrics::SCAN_OCCURRENCE_METRIC_ID,
+        metrics::SCAN_FULFILLMENT_TIME_METRIC_ID,
+        metrics::EMPTY_SCAN_RESULTS_METRIC_ID,
+        metrics::CLIENT_SCAN_FAILURE_METRIC_ID,
+        metrics::ABORTED_SCAN_METRIC_ID,
     ]))
 }
 
@@ -1732,6 +1742,7 @@ impl Telemetry {
                         .await
                 }
             }
+            TelemetryEvent::SmeScanStart | TelemetryEvent::SmeScanResult { .. } => {}
         }
     }
 

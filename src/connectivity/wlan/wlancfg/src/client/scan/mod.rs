@@ -290,7 +290,14 @@ async fn perform_scan(
             return (scan_request, Err(types::ScanError::GeneralError));
         }
     };
+    telemetry_sender.send(TelemetryEvent::SmeScanStart);
     let scan_results = sme_scan(&sme_proxy, &scan_request.sme_req, &mut scan_defects).await;
+    let sme_scan_result = match &scan_results {
+        Ok(results) => wlan_telemetry::ScanResult::Complete { num_results: results.len() },
+        Err(types::ScanError::Cancelled) => wlan_telemetry::ScanResult::Cancelled,
+        Err(_) => wlan_telemetry::ScanResult::Failed,
+    };
+    telemetry_sender.send(TelemetryEvent::SmeScanResult { result: sme_scan_result });
     report_scan_defects_to_sme(&sme_proxy, &scan_results, &scan_request.sme_req).await;
 
     match scan_results {
@@ -916,6 +923,13 @@ mod tests {
 
         // Since the scanning process went off without a hitch, there should not be any defect
         // metrics logged.
+        assert_matches!(telemetry_receiver.try_next(), Ok(Some(TelemetryEvent::SmeScanStart)));
+        assert_matches!(
+            telemetry_receiver.try_next(),
+            Ok(Some(TelemetryEvent::SmeScanResult {
+                result: wlan_telemetry::ScanResult::Complete { num_results: 3 }
+            }))
+        );
         assert_matches!(
             telemetry_receiver.try_next(),
             Ok(Some(TelemetryEvent::ScanEvent {inspect_data, scan_defects})) => {
@@ -963,6 +977,13 @@ mod tests {
         });
 
         // Verify that an empty scan result has been logged
+        assert_matches!(telemetry_receiver.try_next(), Ok(Some(TelemetryEvent::SmeScanStart)));
+        assert_matches!(
+            telemetry_receiver.try_next(),
+            Ok(Some(TelemetryEvent::SmeScanResult {
+                result: wlan_telemetry::ScanResult::Complete { num_results: 0 }
+            }))
+        );
         assert_matches!(
             telemetry_receiver.try_next(),
             Ok(Some(TelemetryEvent::ScanEvent {inspect_data, scan_defects})) => {
@@ -1016,6 +1037,13 @@ mod tests {
 
         // Verify that a scan defect has not been logged; this should only be logged for
         // passive scans because it is common for active scans.
+        assert_matches!(telemetry_receiver.try_next(), Ok(Some(TelemetryEvent::SmeScanStart)));
+        assert_matches!(
+            telemetry_receiver.try_next(),
+            Ok(Some(TelemetryEvent::SmeScanResult {
+                result: wlan_telemetry::ScanResult::Complete { num_results: 0 }
+            }))
+        );
         assert_matches!(telemetry_receiver.try_next(), Ok(Some(TelemetryEvent::ScanEvent { scan_defects, .. })) => {
             assert!(scan_defects.is_empty());
         });
@@ -1700,6 +1728,13 @@ mod tests {
         // Verify inspect data was sent to telemetry module.
         let readable_ie: String =
             scan_result.bss_description.ies.iter().map(|n| n.to_string()).join(",");
+        assert_matches!(telemetry_receiver.try_next(), Ok(Some(TelemetryEvent::SmeScanStart)));
+        assert_matches!(
+            telemetry_receiver.try_next(),
+            Ok(Some(TelemetryEvent::SmeScanResult {
+                result: wlan_telemetry::ScanResult::Complete { num_results: 1 }
+            }))
+        );
         assert_matches!(
             telemetry_receiver.try_next(),
             Ok(Some(TelemetryEvent::ScanEvent {inspect_data, scan_defects})) => {
