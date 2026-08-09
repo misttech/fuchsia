@@ -6,7 +6,7 @@
 
 use core::cmp::min;
 use core::mem::size_of;
-pub use sapphire_emboss::att::AttOpcode as Opcode;
+pub use sapphire_emboss::att::{AttOpcode as Opcode, ErrorCode};
 use sapphire_uuid::Uuid;
 use strum_macros::FromRepr;
 use zerocopy::byteorder::little_endian::U16;
@@ -51,40 +51,6 @@ impl From<Uuid> for UuidFormat {
     /// Otherwise, returns `UuidFormat::Uuid128`.
     fn from(uuid: Uuid) -> Self {
         if uuid.is_u16() { Self::Uuid16 } else { Self::Uuid128 }
-    }
-}
-
-/// ATT Error Codes
-#[derive(
-    TryFromBytes, IntoBytes, KnownLayout, Immutable, Debug, Clone, Copy, PartialEq, Eq, FromRepr,
-)]
-#[repr(u8)]
-pub enum ErrorCode {
-    InvalidHandle = 0x01,
-    ReadNotPermitted = 0x02,
-    WriteNotPermitted = 0x03,
-    InvalidPdu = 0x04,
-    InsufficientAuthentication = 0x05,
-    RequestNotSupported = 0x06,
-    InvalidOffset = 0x07,
-    InsufficientAuthorization = 0x08,
-    PrepareQueueFull = 0x09,
-    AttributeNotFound = 0x0A,
-    AttributeNotLong = 0x0B,
-    InsufficientEncryptionKeySize = 0x0C,
-    InvalidAttributeValueLength = 0x0D,
-    UnlikelyError = 0x0E,
-    InsufficientEncryption = 0x0F,
-    UnsupportedGroupType = 0x10,
-    InsufficientResources = 0x11,
-    ValueNotAllowed = 0x13,
-}
-
-impl TryFrom<u8> for ErrorCode {
-    type Error = u8;
-
-    fn try_from(val: u8) -> Result<Self, Self::Error> {
-        Self::from_repr(val).ok_or(val)
     }
 }
 
@@ -273,7 +239,21 @@ pub struct HandlesInformation {
 pub struct ErrorRsp {
     pub request_opcode: u8,
     pub attribute_handle: U16,
-    pub error_code: ErrorCode,
+    pub error_code: u8,
+}
+
+impl ErrorRsp {
+    pub fn new(
+        request_opcode: impl Into<u8>,
+        attribute_handle: u16,
+        error_code: ErrorCode,
+    ) -> Self {
+        Self {
+            request_opcode: request_opcode.into(),
+            attribute_handle: U16::new(attribute_handle),
+            error_code: u8::from(error_code),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -775,26 +755,11 @@ mod tests {
         let parsed = ErrorRsp::try_read_from_bytes(&err_bytes[..]).unwrap();
         assert_eq!(parsed.request_opcode, u8::from(Opcode::ATT_EXCHANGE_MTU_REQ));
         assert_eq!(parsed.attribute_handle.get(), 5);
-        assert_eq!(parsed.error_code, ErrorCode::RequestNotSupported);
+        assert_eq!(parsed.error_code, u8::from(ErrorCode::REQUEST_NOT_SUPPORTED));
 
-        let new_err = ErrorRsp {
-            request_opcode: u8::from(Opcode::ATT_EXCHANGE_MTU_REQ),
-            attribute_handle: U16::new(5),
-            error_code: ErrorCode::RequestNotSupported,
-        };
+        let new_err =
+            ErrorRsp::new(Opcode::ATT_EXCHANGE_MTU_REQ, 5, ErrorCode::REQUEST_NOT_SUPPORTED);
         assert_eq!(new_err.as_bytes(), &err_bytes[..]);
-
-        // Validation fails if error_code value is invalid
-        let invalid_err_bytes = [0x02, 0x05, 0x00, 0xff]; // invalid error code 0xff
-        let parse_result = ErrorRsp::try_read_from_bytes(&invalid_err_bytes[..]);
-        assert!(parse_result.is_err());
-    }
-
-    #[test]
-    fn test_error_code_try_from() {
-        assert_eq!(ErrorCode::try_from(0x01), Ok(ErrorCode::InvalidHandle));
-        assert_eq!(ErrorCode::try_from(0x06), Ok(ErrorCode::RequestNotSupported));
-        assert_eq!(ErrorCode::try_from(0xff), Err(0xff));
     }
 
     #[test]

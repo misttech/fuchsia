@@ -283,7 +283,7 @@ where
             //
             // see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.1.1)
             Err(BearerRecvError::HeaderTooShort) => {
-                self.send_error_response(0u8, None, ErrorCode::InvalidPdu).await?;
+                self.send_error_response(0u8, None, ErrorCode::INVALID_PDU).await?;
                 return Ok(());
             }
             Err(BearerRecvError::BufferTooSmall) => {
@@ -297,7 +297,7 @@ where
             //
             // see (Vol 3, Part F, 3.4.1.1)
             Err(BearerRecvError::PacketTooLarge { opcode }) => {
-                self.send_error_response(opcode, None, ErrorCode::InvalidPdu).await?;
+                self.send_error_response(opcode, None, ErrorCode::INVALID_PDU).await?;
                 return Ok(());
             }
 
@@ -306,7 +306,8 @@ where
             //
             // see (Vol 3, Part F, 3.4.1.1)
             Err(BearerRecvError::InvalidOpcode(raw_opcode)) => {
-                self.send_error_response(raw_opcode, None, ErrorCode::RequestNotSupported).await?;
+                self.send_error_response(raw_opcode, None, ErrorCode::REQUEST_NOT_SUPPORTED)
+                    .await?;
                 return Ok(());
             }
         };
@@ -339,11 +340,11 @@ where
             Ok(()) => Ok(()),
             Err(TransactionError::ServerError(e)) => Err(e),
             Err(TransactionError::UnexpectedPdu { received_opcode }) => {
-                self.send_error_response(received_opcode, None, ErrorCode::RequestNotSupported)
+                self.send_error_response(received_opcode, None, ErrorCode::REQUEST_NOT_SUPPORTED)
                     .await
             }
             Err(TransactionError::InvalidPdu { request_opcode }) => {
-                self.send_error_response(request_opcode, None, ErrorCode::InvalidPdu).await
+                self.send_error_response(request_opcode, None, ErrorCode::INVALID_PDU).await
             }
             Err(TransactionError::ErrorResponse {
                 request_opcode,
@@ -404,7 +405,7 @@ where
             return Err(TransactionError::ErrorResponse {
                 request_opcode: Opcode::ATT_FIND_INFORMATION_REQ,
                 attribute_handle: start,
-                error_code: ErrorCode::InvalidHandle,
+                error_code: ErrorCode::INVALID_HANDLE,
             });
         }
 
@@ -417,7 +418,7 @@ where
                 return Err(TransactionError::ErrorResponse {
                     request_opcode: Opcode::ATT_FIND_INFORMATION_REQ,
                     attribute_handle: start,
-                    error_code: ErrorCode::AttributeNotFound,
+                    error_code: ErrorCode::ATTRIBUTE_NOT_FOUND,
                 });
             }
         };
@@ -497,7 +498,7 @@ where
             return Err(TransactionError::ErrorResponse {
                 request_opcode: Opcode::ATT_FIND_BY_TYPE_VALUE_REQ,
                 attribute_handle: start,
-                error_code: ErrorCode::InvalidHandle,
+                error_code: ErrorCode::INVALID_HANDLE,
             });
         }
 
@@ -546,7 +547,7 @@ where
             return Err(TransactionError::ErrorResponse {
                 request_opcode: Opcode::ATT_FIND_BY_TYPE_VALUE_REQ,
                 attribute_handle: start,
-                error_code: ErrorCode::AttributeNotFound,
+                error_code: ErrorCode::ATTRIBUTE_NOT_FOUND,
             });
         }
 
@@ -664,7 +665,7 @@ where
             return Err(TransactionError::ErrorResponse {
                 request_opcode: req_opcode,
                 attribute_handle: start_handle_val,
-                error_code: ErrorCode::InvalidHandle,
+                error_code: ErrorCode::INVALID_HANDLE,
             });
         }
 
@@ -684,7 +685,7 @@ where
             return Err(TransactionError::ErrorResponse {
                 request_opcode: req_opcode,
                 attribute_handle: start_handle_val,
-                error_code: ErrorCode::AttributeNotFound,
+                error_code: ErrorCode::ATTRIBUTE_NOT_FOUND,
             });
         }
 
@@ -818,7 +819,7 @@ where
             Opcode::ATT_READ_BY_GROUP_TYPE_REQ,
             Opcode::ATT_READ_BY_GROUP_TYPE_RSP,
             |buf, handle, attr| {
-                let group_end = attr.group_end_handle().ok_or(ErrorCode::UnsupportedGroupType)?;
+                let group_end = attr.group_end_handle().ok_or(ErrorCode::UNSUPPORTED_GROUP_TYPE)?;
                 let header = ReadByGroupTypeRspEntryHeader {
                     attribute_handle: U16::new(handle.value()),
                     end_group_handle: U16::new(group_end),
@@ -845,7 +846,7 @@ where
             TransactionError::ErrorResponse {
                 request_opcode: Opcode::ATT_WRITE_REQ,
                 attribute_handle: handle_val,
-                error_code: ErrorCode::InvalidHandle,
+                error_code: ErrorCode::INVALID_HANDLE,
             }
         })?;
 
@@ -905,7 +906,7 @@ where
             TransactionError::ErrorResponse {
                 request_opcode: Opcode::ATT_PREPARE_WRITE_REQ,
                 attribute_handle: handle_val,
-                error_code: ErrorCode::InvalidHandle,
+                error_code: ErrorCode::INVALID_HANDLE,
             }
         })?;
 
@@ -923,7 +924,7 @@ where
             return Err(TransactionError::ErrorResponse {
                 request_opcode: Opcode::ATT_PREPARE_WRITE_REQ,
                 attribute_handle: handle_val,
-                error_code: ErrorCode::InvalidAttributeValueLength,
+                error_code: ErrorCode::INVALID_ATTRIBUTE_VALUE_LENGTH,
             });
         }
 
@@ -931,12 +932,12 @@ where
             PrepareError::QueueFull => TransactionError::ErrorResponse {
                 request_opcode: Opcode::ATT_PREPARE_WRITE_REQ,
                 attribute_handle: handle_val,
-                error_code: ErrorCode::PrepareQueueFull,
+                error_code: ErrorCode::PREPARE_QUEUE_FULL,
             },
             PrepareError::PayloadTooLarge => TransactionError::ErrorResponse {
                 request_opcode: Opcode::ATT_PREPARE_WRITE_REQ,
                 attribute_handle: handle_val,
-                error_code: ErrorCode::InvalidAttributeValueLength,
+                error_code: ErrorCode::INVALID_ATTRIBUTE_VALUE_LENGTH,
             },
         })?;
 
@@ -984,7 +985,7 @@ where
                             return Err(TransactionError::ErrorResponse {
                                 request_opcode: Opcode::ATT_EXECUTE_WRITE_REQ,
                                 attribute_handle: handle_val,
-                                error_code: ErrorCode::InvalidHandle,
+                                error_code: ErrorCode::INVALID_HANDLE,
                             });
                         }
                     };
@@ -994,7 +995,7 @@ where
                             return Err(TransactionError::ErrorResponse {
                                 request_opcode: Opcode::ATT_EXECUTE_WRITE_REQ,
                                 attribute_handle: handle_val,
-                                error_code: ErrorCode::InvalidHandle,
+                                error_code: ErrorCode::INVALID_HANDLE,
                             });
                         }
                     };
@@ -1033,7 +1034,7 @@ where
             TransactionError::ErrorResponse {
                 request_opcode,
                 attribute_handle: handle_val,
-                error_code: ErrorCode::InvalidHandle,
+                error_code: ErrorCode::INVALID_HANDLE,
             }
         })?;
         attr.read_chunk(self.peer_id, offset, buf).await.map_err(|error_code| {
@@ -1071,11 +1072,7 @@ where
         let handle_raw = attribute_handle.map(|h| h.value()).unwrap_or(0);
         let builder = PacketBuilder {
             header: Header::new(Opcode::ATT_ERROR_RSP),
-            payload: ErrorRsp {
-                request_opcode: request_opcode.into(),
-                attribute_handle: U16::new(handle_raw),
-                error_code,
-            },
+            payload: ErrorRsp::new(request_opcode, handle_raw, error_code),
         };
         let tx_packet = builder.as_packet();
         self.send_packet(tx_packet).await
@@ -1230,14 +1227,14 @@ where
 /// Converts a raw 16-bit value into a valid `AttributeHandle`.
 ///
 /// If `val` is invalid (i.e. `0x0000`), returns an ATT Error Response with
-/// `ErrorCode::InvalidHandle` for the given request `opcode`.
+/// `ErrorCode::INVALID_HANDLE` for the given request `opcode`.
 ///
 /// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.2.2).
 fn to_handle(val: u16, opcode: Opcode) -> Result<AttributeHandle, TransactionError> {
     AttributeHandle::try_from(val).map_err(|_| TransactionError::ErrorResponse {
         request_opcode: opcode,
         attribute_handle: val,
-        error_code: ErrorCode::InvalidHandle,
+        error_code: ErrorCode::INVALID_HANDLE,
     })
 }
 
@@ -1368,7 +1365,7 @@ mod tests {
                 assert_eq!(packet.header.opcode, Opcode::ATT_ERROR_RSP.into());
                 let err = ErrorRsp::try_read_from_bytes(&packet.data[..]).unwrap();
                 assert_eq!(err.request_opcode, Opcode::ATT_EXCHANGE_MTU_RSP as u8);
-                assert_eq!(err.error_code, ErrorCode::RequestNotSupported);
+                assert_eq!(err.error_code, ErrorCode::REQUEST_NOT_SUPPORTED.into());
 
                 // 2. Server should still be running! Send valid ExchangeMtuReq (0x02)
                 let builder = PacketBuilder {
@@ -1425,7 +1422,7 @@ mod tests {
                 assert_eq!(packet.header.opcode, Opcode::ATT_ERROR_RSP.into());
                 let err = ErrorRsp::try_read_from_bytes(&packet.data[..]).unwrap();
                 assert_eq!(err.request_opcode, Opcode::ATT_EXCHANGE_MTU_REQ as u8);
-                assert_eq!(err.error_code, ErrorCode::InvalidPdu);
+                assert_eq!(err.error_code, ErrorCode::INVALID_PDU.into());
             });
 
             let server_handle = executor.spawn(async move {
@@ -1467,7 +1464,7 @@ mod tests {
                 assert_eq!(packet.header.opcode, Opcode::ATT_ERROR_RSP.into());
                 let err = ErrorRsp::try_read_from_bytes(&packet.data[..]).unwrap();
                 assert_eq!(err.request_opcode, 0x00);
-                assert_eq!(err.error_code, ErrorCode::InvalidPdu);
+                assert_eq!(err.error_code, ErrorCode::INVALID_PDU.into());
 
                 // 2. Server should log the error and stay alive. Send a valid ExchangeMtuReq.
                 let builder = PacketBuilder {
@@ -1522,7 +1519,7 @@ mod tests {
                 assert_eq!(packet.header.opcode, Opcode::ATT_ERROR_RSP.into());
                 let err = ErrorRsp::try_read_from_bytes(&packet.data[..]).unwrap();
                 assert_eq!(err.request_opcode, 0x99);
-                assert_eq!(err.error_code, ErrorCode::RequestNotSupported);
+                assert_eq!(err.error_code, ErrorCode::REQUEST_NOT_SUPPORTED.into());
             });
 
             let server_handle = executor.spawn(async move {
@@ -1564,7 +1561,7 @@ mod tests {
                 assert_eq!(packet.header.opcode, Opcode::ATT_ERROR_RSP.into());
                 let err = ErrorRsp::try_read_from_bytes(&packet.data[..]).unwrap();
                 assert_eq!(err.request_opcode, Opcode::ATT_EXCHANGE_MTU_REQ as u8);
-                assert_eq!(err.error_code, ErrorCode::InvalidPdu);
+                assert_eq!(err.error_code, ErrorCode::INVALID_PDU.into());
             });
 
             let server_handle = executor.spawn(async move {
@@ -1698,7 +1695,7 @@ mod tests {
                 let err = ErrorRsp::try_read_from_bytes(&packet.data[..]).unwrap();
                 assert_eq!(err.request_opcode, Opcode::ATT_FIND_INFORMATION_REQ as u8);
                 assert_eq!(err.attribute_handle.get(), 0);
-                assert_eq!(err.error_code, ErrorCode::InvalidHandle);
+                assert_eq!(err.error_code, ErrorCode::INVALID_HANDLE.into());
 
                 // 2. Invalid Handle (start > end)
                 let builder = PacketBuilder {
@@ -1715,7 +1712,7 @@ mod tests {
                 let err = ErrorRsp::try_read_from_bytes(&packet.data[..]).unwrap();
                 assert_eq!(err.request_opcode, Opcode::ATT_FIND_INFORMATION_REQ as u8);
                 assert_eq!(err.attribute_handle.get(), 3);
-                assert_eq!(err.error_code, ErrorCode::InvalidHandle);
+                assert_eq!(err.error_code, ErrorCode::INVALID_HANDLE.into());
 
                 // 3. Attribute Not Found (no attributes in 5..=10)
                 let builder = PacketBuilder {
@@ -1732,7 +1729,7 @@ mod tests {
                 let err = ErrorRsp::try_read_from_bytes(&packet.data[..]).unwrap();
                 assert_eq!(err.request_opcode, Opcode::ATT_FIND_INFORMATION_REQ as u8);
                 assert_eq!(err.attribute_handle.get(), 5);
-                assert_eq!(err.error_code, ErrorCode::AttributeNotFound);
+                assert_eq!(err.error_code, ErrorCode::ATTRIBUTE_NOT_FOUND.into());
             });
 
             let server_handle = executor.spawn(async move {
@@ -1855,7 +1852,7 @@ mod tests {
                 assert_eq!(packet.header.opcode, Opcode::ATT_ERROR_RSP.into());
                 let err = ErrorRsp::try_read_from_bytes(&packet.data[..]).unwrap();
                 assert_eq!(err.request_opcode, Opcode::ATT_FIND_BY_TYPE_VALUE_REQ as u8);
-                assert_eq!(err.error_code, ErrorCode::AttributeNotFound);
+                assert_eq!(err.error_code, ErrorCode::ATTRIBUTE_NOT_FOUND.into());
             });
 
             let server_handle = executor.spawn(async move {
@@ -1951,7 +1948,7 @@ mod tests {
                 let err = ErrorRsp::try_read_from_bytes(&packet.data[..]).unwrap();
                 assert_eq!(err.request_opcode, Opcode::ATT_READ_REQ as u8);
                 assert_eq!(err.attribute_handle.get(), 0);
-                assert_eq!(err.error_code, ErrorCode::InvalidHandle);
+                assert_eq!(err.error_code, ErrorCode::INVALID_HANDLE.into());
             });
 
             let server_handle = executor.spawn(async move {
@@ -2000,7 +1997,7 @@ mod tests {
                 let err = ErrorRsp::try_read_from_bytes(&packet.data[..]).unwrap();
                 assert_eq!(err.request_opcode, Opcode::ATT_READ_REQ as u8);
                 assert_eq!(err.attribute_handle.get(), 99);
-                assert_eq!(err.error_code, ErrorCode::InvalidHandle);
+                assert_eq!(err.error_code, ErrorCode::INVALID_HANDLE.into());
             });
 
             let server_handle = executor.spawn(async move {
@@ -2152,7 +2149,7 @@ mod tests {
                 let err = ErrorRsp::try_read_from_bytes(&packet.data[..]).unwrap();
                 assert_eq!(err.request_opcode, Opcode::ATT_READ_BLOB_REQ as u8);
                 assert_eq!(err.attribute_handle.get(), 1);
-                assert_eq!(err.error_code, ErrorCode::InvalidOffset);
+                assert_eq!(err.error_code, ErrorCode::INVALID_OFFSET.into());
             });
 
             let server_handle = executor.spawn(async move {
@@ -2336,7 +2333,7 @@ mod tests {
                 assert_eq!(packet.header.opcode, Opcode::ATT_ERROR_RSP.into());
                 let err = ErrorRsp::try_read_from_bytes(&packet.data[..]).unwrap();
                 assert_eq!(err.request_opcode, Opcode::ATT_READ_BY_TYPE_REQ as u8);
-                assert_eq!(err.error_code, ErrorCode::AttributeNotFound);
+                assert_eq!(err.error_code, ErrorCode::ATTRIBUTE_NOT_FOUND.into());
 
                 // 2. Query with invalid range (start > end)
                 let uuid = Uuid::from_u16(0x2A00);
@@ -2360,7 +2357,7 @@ mod tests {
                 assert_eq!(packet.header.opcode, Opcode::ATT_ERROR_RSP.into());
                 let err = ErrorRsp::try_read_from_bytes(&packet.data[..]).unwrap();
                 assert_eq!(err.request_opcode, Opcode::ATT_READ_BY_TYPE_REQ as u8);
-                assert_eq!(err.error_code, ErrorCode::InvalidHandle);
+                assert_eq!(err.error_code, ErrorCode::INVALID_HANDLE.into());
             });
 
             let server_handle = executor.spawn(async move {
@@ -2506,7 +2503,7 @@ mod tests {
                 assert_eq!(packet.header.opcode, Opcode::ATT_ERROR_RSP.into());
                 let err = ErrorRsp::try_read_from_bytes(&packet.data[..]).unwrap();
                 assert_eq!(err.request_opcode, Opcode::ATT_READ_BY_GROUP_TYPE_REQ as u8);
-                assert_eq!(err.error_code, ErrorCode::UnsupportedGroupType);
+                assert_eq!(err.error_code, ErrorCode::UNSUPPORTED_GROUP_TYPE.into());
             });
 
             let server_handle = executor.spawn(async move {
@@ -2675,7 +2672,7 @@ mod tests {
 
             let mut db = MockDb::new();
             let attr = MockAttribute::new(Uuid::from_u16(0x2A00), b"Val");
-            attr.set_write_error(ErrorCode::WriteNotPermitted);
+            attr.set_write_error(ErrorCode::WRITE_NOT_PERMITTED);
             db.insert(h(10), attr);
 
             let mut server = new_server(
@@ -2711,7 +2708,7 @@ mod tests {
                     let err = ErrorRsp::try_read_from_bytes(&packet.data[..]).unwrap();
                     assert_eq!(err.request_opcode, Opcode::ATT_WRITE_REQ as u8);
                     assert_eq!(err.attribute_handle.get(), 99);
-                    assert_eq!(err.error_code, ErrorCode::InvalidHandle);
+                    assert_eq!(err.error_code, ErrorCode::INVALID_HANDLE.into());
                 }
             });
 
@@ -2791,7 +2788,7 @@ mod tests {
 
             let mut db = MockDb::new();
             let readonly_attr = MockAttribute::new(Uuid::from_u16(0x2A00), b"InitialValue");
-            readonly_attr.set_write_error(ErrorCode::WriteNotPermitted);
+            readonly_attr.set_write_error(ErrorCode::WRITE_NOT_PERMITTED);
             db.insert(h(10), readonly_attr);
 
             let mut server = new_server(
@@ -2959,7 +2956,7 @@ mod tests {
                 let rsp = ErrorRsp::try_read_from_bytes(&packet.data).unwrap();
                 assert_eq!(rsp.request_opcode, Opcode::ATT_PREPARE_WRITE_REQ as u8);
                 assert_eq!(rsp.attribute_handle.get(), 10);
-                assert_eq!(rsp.error_code, ErrorCode::InvalidOffset);
+                assert_eq!(rsp.error_code, ErrorCode::INVALID_OFFSET.into());
             });
 
             let server_handle = executor.spawn(async move {
@@ -3020,7 +3017,7 @@ mod tests {
                 let packet = app_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
                 assert_eq!(packet.header.opcode, Opcode::ATT_ERROR_RSP.into());
                 let rsp = ErrorRsp::try_read_from_bytes(&packet.data).unwrap();
-                assert_eq!(rsp.error_code, ErrorCode::PrepareQueueFull);
+                assert_eq!(rsp.error_code, ErrorCode::PREPARE_QUEUE_FULL.into());
             });
 
             let server_handle = executor.spawn(async move {
@@ -3169,7 +3166,7 @@ mod tests {
             let (app_channel, test_tx, test_rx) = setup_mock_channel();
             let mut db = MockDb::new();
             let attr = MockAttribute::new(Uuid::from_u16(0x2A00), b"InitialValue");
-            attr.set_write_error(ErrorCode::WriteNotPermitted);
+            attr.set_write_error(ErrorCode::WRITE_NOT_PERMITTED);
             db.insert(h(10), attr);
 
             let mut server = new_server(
@@ -3206,7 +3203,7 @@ mod tests {
                 let packet = app_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
                 assert_eq!(packet.header.opcode, Opcode::ATT_ERROR_RSP.into());
                 let rsp = ErrorRsp::try_read_from_bytes(&packet.data).unwrap();
-                assert_eq!(rsp.error_code, ErrorCode::WriteNotPermitted);
+                assert_eq!(rsp.error_code, ErrorCode::WRITE_NOT_PERMITTED.into());
                 assert_eq!(rsp.attribute_handle.get(), 10);
             });
 

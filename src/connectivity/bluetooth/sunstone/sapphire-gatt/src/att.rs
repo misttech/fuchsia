@@ -1052,7 +1052,7 @@ mod tests {
                         let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
                         assert_eq!(packet.header.opcode, Opcode::ATT_ERROR_RSP.into());
                         let err = ErrorRsp::try_read_from_bytes(&packet.data[..]).unwrap();
-                        assert_eq!(err.error_code, ErrorCode::InvalidHandle);
+                        assert_eq!(err.error_code, ErrorCode::INVALID_HANDLE.into());
 
                         let mut rx_buf2 = [MaybeUninit::uninit(); 512];
                         // Test ending handle = 0
@@ -1067,7 +1067,7 @@ mod tests {
                         let packet2 = client_rx_bearer.next_packet(&mut rx_buf2).await.unwrap();
                         assert_eq!(packet2.header.opcode, Opcode::ATT_ERROR_RSP.into());
                         let err2 = ErrorRsp::try_read_from_bytes(&packet2.data[..]).unwrap();
-                        assert_eq!(err2.error_code, ErrorCode::InvalidHandle);
+                        assert_eq!(err2.error_code, ErrorCode::INVALID_HANDLE.into());
                     });
 
                     executor.run_until_stalled();
@@ -1099,7 +1099,7 @@ mod tests {
                     let client_handle = executor.spawn(async move {
                         let mut rx_buf = [MaybeUninit::uninit(); 512];
                         let result = client.find_information(start, end, &mut rx_buf).await;
-                        assert_eq!(result, Err(ClientError::ErrorResponse(ErrorCode::InvalidHandle)));
+                        assert_eq!(result, Err(ClientError::ErrorResponse(ErrorCode::INVALID_HANDLE)));
                     });
 
                     executor.run_until_stalled();
@@ -1189,7 +1189,7 @@ mod tests {
                                     assert_eq!(UuidFormat::from(*attr.uuid()), UuidFormat::Uuid128);
                                 }
                             }
-                            Err(ClientError::ErrorResponse(ErrorCode::AttributeNotFound)) => {
+                            Err(ClientError::ErrorResponse(ErrorCode::ATTRIBUTE_NOT_FOUND)) => {
                                 assert!(!db.has_attributes_in_range(start.value(), end.value()));
                             }
                             other => panic!("Unexpected result: {:?}", other),
@@ -1229,7 +1229,7 @@ mod tests {
                         client.exchange_mtu().await.unwrap();
                         let mut rx_buf = [MaybeUninit::uninit(); 512];
                         let result = client.find_by_type_value(start, end, target_type, &target_value, &mut rx_buf).await;
-                        assert_eq!(result, Err(ClientError::ErrorResponse(ErrorCode::InvalidHandle)));
+                        assert_eq!(result, Err(ClientError::ErrorResponse(ErrorCode::INVALID_HANDLE)));
                     });
 
                     executor.run_until_stalled();
@@ -1335,7 +1335,7 @@ mod tests {
                                     assert!(matches_type);
                                 }
                             }
-                            Err(ClientError::ErrorResponse(ErrorCode::AttributeNotFound)) => {
+                            Err(ClientError::ErrorResponse(ErrorCode::ATTRIBUTE_NOT_FOUND)) => {
                                 // Verify that no attributes in the range match the type and value.
                                 // Handle 1: type 0x2A00, value b"Value1"
                                 // Handle 10: type 0x2A01, value b"Value10"
@@ -1381,7 +1381,7 @@ mod tests {
                         let mut rx_buf = [MaybeUninit::uninit(); 512];
                         let uuid = Uuid::from_u16(random_uuid_16);
                         let result = client.read_by_type(start, end, &uuid, &mut rx_buf).await;
-                        assert_eq!(result.err(), Some(ClientError::ErrorResponse(ErrorCode::InvalidHandle)));
+                        assert_eq!(result.err(), Some(ClientError::ErrorResponse(ErrorCode::INVALID_HANDLE)));
                     });
 
                     executor.run_until_stalled();
@@ -1488,7 +1488,7 @@ mod tests {
                                 }
                                 assert!(count > 0);
                             }
-                            Err(ClientError::ErrorResponse(ErrorCode::AttributeNotFound)) => {
+                            Err(ClientError::ErrorResponse(ErrorCode::ATTRIBUTE_NOT_FOUND)) => {
                                 // Verify that indeed no attributes in range [start, end] match target_uuid
                                 for h_val in start.value()..=end.value() {
                                     if let Some(handle) = AttributeHandle::new(h_val) {
@@ -1534,7 +1534,7 @@ mod tests {
                         let mut rx_buf = [MaybeUninit::uninit(); 512];
                         let uuid = Uuid::from_u16(random_uuid_16);
                         let result = client.read_by_group_type(start, end, &uuid, &mut rx_buf).await;
-                        assert_eq!(result.err(), Some(ClientError::ErrorResponse(ErrorCode::InvalidHandle)));
+                        assert_eq!(result.err(), Some(ClientError::ErrorResponse(ErrorCode::INVALID_HANDLE)));
                     });
 
                     executor.run_until_stalled();
@@ -1647,7 +1647,7 @@ mod tests {
                                 }
                                 assert!(count > 0);
                             }
-                            Err(ClientError::ErrorResponse(ErrorCode::AttributeNotFound)) => {
+                            Err(ClientError::ErrorResponse(ErrorCode::ATTRIBUTE_NOT_FOUND)) => {
                                 for h_val in start.value()..=end.value() {
                                     if let Some(handle) = AttributeHandle::new(h_val) {
                                         if let Some(attr) = db.find_attribute(handle) {
@@ -1656,7 +1656,7 @@ mod tests {
                                     }
                                 }
                             }
-                            Err(ClientError::ErrorResponse(ErrorCode::UnsupportedGroupType)) => {
+                            Err(ClientError::ErrorResponse(ErrorCode::UNSUPPORTED_GROUP_TYPE)) => {
                                 let mut has_non_grouping = false;
                                 for h_val in start.value()..=end.value() {
                                     if let Some(handle) = AttributeHandle::new(h_val) {
@@ -1733,14 +1733,14 @@ mod tests {
                                 assert!(offset as usize <= initial_len);
                                 assert!(offset as usize + test_data.len() <= MAX_ATTRIBUTE_SIZE);
                             }
-                            Err(ClientError::ErrorResponse(ErrorCode::InvalidHandle)) => {
+                            Err(ClientError::ErrorResponse(ErrorCode::INVALID_HANDLE)) => {
                                 assert!(!is_valid_handle);
                             }
-                            Err(ClientError::ErrorResponse(ErrorCode::InvalidOffset)) => {
+                            Err(ClientError::ErrorResponse(ErrorCode::INVALID_OFFSET)) => {
                                 assert!(is_valid_handle);
                                 assert!(offset as usize > initial_len);
                             }
-                            Err(ClientError::ErrorResponse(ErrorCode::InvalidAttributeValueLength)) => {
+                            Err(ClientError::ErrorResponse(ErrorCode::INVALID_ATTRIBUTE_VALUE_LENGTH)) => {
                                 assert!(is_valid_handle);
                                 assert!(offset as usize + test_data.len() > MAX_ATTRIBUTE_SIZE);
                             }
@@ -1868,7 +1868,7 @@ mod tests {
                                             // Write 2 fails due to truncation from Write 1.
                                             assert_eq!(
                                                 exec_res.expect_err("expected execution failure"),
-                                                ClientError::ErrorResponse(ErrorCode::InvalidOffset)
+                                                ClientError::ErrorResponse(ErrorCode::INVALID_OFFSET)
                                             );
                                             val1_expected = val1;
                                             val10_expected = val10;

@@ -102,7 +102,7 @@ impl Attribute for MockAttribute {
     /// Reads a chunk of the attribute value starting at `offset` into `buf`.
     ///
     /// Capped by `buf.len()` and the remaining length of the value.
-    /// Returns `Err(ErrorCode::InvalidOffset)` if `offset` is out of bounds of the value.
+    /// Returns `Err(ErrorCode::INVALID_OFFSET)` if `offset` is out of bounds of the value.
     async fn read_chunk(
         &self,
         _peer_id: PeerId,
@@ -112,7 +112,7 @@ impl Attribute for MockAttribute {
         let offset = offset as usize;
         let value = self.value.lock();
         if offset > value.len() {
-            return Err(ErrorCode::InvalidOffset);
+            return Err(ErrorCode::INVALID_OFFSET);
         }
         let len = cmp::min(buf.len(), value.len() - offset);
         buf[..len].copy_from_slice(&value[offset..offset + len]);
@@ -132,16 +132,16 @@ impl Attribute for MockAttribute {
         let offset = offset as usize;
         let mut value = self.value.lock();
         if offset > value.len() {
-            return Err(ErrorCode::InvalidOffset);
+            return Err(ErrorCode::INVALID_OFFSET);
         }
         if offset + data.len() > MAX_ATTRIBUTE_SIZE {
-            return Err(ErrorCode::InvalidAttributeValueLength);
+            return Err(ErrorCode::INVALID_ATTRIBUTE_VALUE_LENGTH);
         }
         if offset == 0 {
             value.clear();
         }
         value.truncate(offset);
-        value.try_extend(data).map_err(|_| ErrorCode::InsufficientResources)?;
+        value.try_extend(data).map_err(|_| ErrorCode::INSUFFICIENT_RESOURCES)?;
         Ok(())
     }
 }

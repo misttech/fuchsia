@@ -17,7 +17,6 @@ use crate::att::pdu::{
     UuidFormat, WriteCmdHeader, WriteReqHeader,
 };
 use crate::att::router::{BearerRouter, BearerRxHandle, RouteFilter};
-use sapphire_emboss::att::Error::UnknownEnum;
 use sapphire_emboss::att::{AttErrorRsp, AttExchangeMtuRsp, AttHeader};
 
 use core::cmp::{max, min};
@@ -282,13 +281,8 @@ where
                     Ok(op) => op,
                     Err(_) => return Err(ClientError::InvalidIncomingData),
                 };
-                let raw_err = match err.error_code().try_read() {
-                    Ok(code) => u8::from(code),
-                    Err(UnknownEnum(raw)) => raw,
-                    Err(_) => return Err(ClientError::InvalidIncomingData),
-                };
                 let err_code =
-                    ErrorCode::try_from(raw_err).map_err(|_| ClientError::InvalidIncomingData)?;
+                    err.error_code().try_read().map_err(|_| ClientError::InvalidIncomingData)?;
                 if err_req_op == req_opcode {
                     Err(ClientError::ErrorResponse(err_code))
                 } else {
@@ -342,7 +336,7 @@ where
                 self.bearer_rx.set_mtu(negotiated_mtu);
                 Ok(())
             }
-            Err(ClientError::ErrorResponse(ErrorCode::RequestNotSupported)) => {
+            Err(ClientError::ErrorResponse(ErrorCode::REQUEST_NOT_SUPPORTED)) => {
                 // Safely recover by locking in the default fallback MTU
                 self.bearer_tx.set_mtu(DEFAULT_STARTING_MTU);
                 self.bearer_rx.set_mtu(DEFAULT_STARTING_MTU);
@@ -918,11 +912,11 @@ mod tests {
                 // ErrorResponse payload: request opcode 0x02, handle 0x0000, error code 0x06 (RequestNotSupported)
                 let builder = PacketBuilder {
                     header: Header::new(Opcode::ATT_ERROR_RSP),
-                    payload: ErrorRsp {
-                        request_opcode: Opcode::ATT_EXCHANGE_MTU_REQ.into(),
-                        attribute_handle: U16::new(0),
-                        error_code: ErrorCode::RequestNotSupported,
-                    },
+                    payload: ErrorRsp::new(
+                        Opcode::ATT_EXCHANGE_MTU_REQ,
+                        0,
+                        ErrorCode::REQUEST_NOT_SUPPORTED,
+                    ),
                 };
 
                 let tx_packet = builder.as_packet();
@@ -963,11 +957,11 @@ mod tests {
 
                 let builder = PacketBuilder {
                     header: Header::new(Opcode::ATT_ERROR_RSP),
-                    payload: ErrorRsp {
-                        request_opcode: Opcode::ATT_EXCHANGE_MTU_REQ.into(),
-                        attribute_handle: U16::new(0),
-                        error_code: ErrorCode::InsufficientAuthentication,
-                    },
+                    payload: ErrorRsp::new(
+                        Opcode::ATT_EXCHANGE_MTU_REQ,
+                        0,
+                        ErrorCode::INSUFFICIENT_AUTHENTICATION,
+                    ),
                 };
 
                 let tx_packet = builder.as_packet();
@@ -980,7 +974,7 @@ mod tests {
                 let res = client.exchange_mtu().await;
                 assert_eq!(
                     res,
-                    Err(ClientError::ErrorResponse(ErrorCode::InsufficientAuthentication))
+                    Err(ClientError::ErrorResponse(ErrorCode::INSUFFICIENT_AUTHENTICATION))
                 );
             });
 
@@ -1086,11 +1080,11 @@ mod tests {
                 // Respond with ErrorRsp (InvalidHandle)
                 let builder = PacketBuilder {
                     header: Header::new(Opcode::ATT_ERROR_RSP),
-                    payload: ErrorRsp {
-                        request_opcode: Opcode::ATT_FIND_INFORMATION_REQ as u8,
-                        attribute_handle: U16::new(10),
-                        error_code: ErrorCode::InvalidHandle,
-                    },
+                    payload: ErrorRsp::new(
+                        Opcode::ATT_FIND_INFORMATION_REQ,
+                        10,
+                        ErrorCode::INVALID_HANDLE,
+                    ),
                 };
                 let mut server_tx_bearer = BearerTx::new(server_tx);
                 server_tx_bearer.send(builder.as_packet()).await.unwrap();
@@ -1100,7 +1094,7 @@ mod tests {
             let client_handle = executor.spawn(async move {
                 let mut rx_buf = [MaybeUninit::uninit(); 64];
                 let res = client.find_information(h(10), h(20), &mut rx_buf).await;
-                assert_eq!(res, Err(ClientError::ErrorResponse(ErrorCode::InvalidHandle)));
+                assert_eq!(res, Err(ClientError::ErrorResponse(ErrorCode::INVALID_HANDLE)));
             });
 
             executor.run_until_stalled();
@@ -1189,7 +1183,7 @@ mod tests {
                     payload: ErrorRsp {
                         request_opcode: Opcode::ATT_FIND_BY_TYPE_VALUE_REQ as u8,
                         attribute_handle: U16::new(1),
-                        error_code: ErrorCode::AttributeNotFound,
+                        error_code: u8::from(ErrorCode::ATTRIBUTE_NOT_FOUND),
                     },
                 };
                 let mut server_tx_bearer = BearerTx::new(server_tx);
@@ -1201,7 +1195,7 @@ mod tests {
                 let res = client
                     .find_by_type_value(h(1), h(10), 0x2800, &[0x0D, 0x18], &mut rx_buf)
                     .await;
-                assert_eq!(res, Err(ClientError::ErrorResponse(ErrorCode::AttributeNotFound)));
+                assert_eq!(res, Err(ClientError::ErrorResponse(ErrorCode::ATTRIBUTE_NOT_FOUND)));
             });
 
             executor.run_until_stalled();
@@ -1275,11 +1269,7 @@ mod tests {
 
                 let builder = PacketBuilder {
                     header: Header::new(Opcode::ATT_ERROR_RSP),
-                    payload: ErrorRsp {
-                        request_opcode: Opcode::ATT_READ_REQ as u8,
-                        attribute_handle: U16::new(1),
-                        error_code: ErrorCode::InvalidHandle,
-                    },
+                    payload: ErrorRsp::new(Opcode::ATT_READ_REQ, 1, ErrorCode::INVALID_HANDLE),
                 };
                 let mut server_tx_bearer = BearerTx::new(server_tx);
                 server_tx_bearer.send(builder.as_packet()).await.unwrap();
@@ -1288,7 +1278,7 @@ mod tests {
             let client_handle = executor.spawn(async move {
                 let mut rx_buf = [MaybeUninit::uninit(); 64];
                 let res = client.read(h(1), &mut rx_buf).await;
-                assert_eq!(res, Err(ClientError::ErrorResponse(ErrorCode::InvalidHandle)));
+                assert_eq!(res, Err(ClientError::ErrorResponse(ErrorCode::INVALID_HANDLE)));
             });
 
             executor.run_until_stalled();
@@ -1363,11 +1353,7 @@ mod tests {
 
                 let builder = PacketBuilder {
                     header: Header::new(Opcode::ATT_ERROR_RSP),
-                    payload: ErrorRsp {
-                        request_opcode: Opcode::ATT_READ_BLOB_REQ as u8,
-                        attribute_handle: U16::new(1),
-                        error_code: ErrorCode::InvalidOffset,
-                    },
+                    payload: ErrorRsp::new(Opcode::ATT_READ_BLOB_REQ, 1, ErrorCode::INVALID_OFFSET),
                 };
                 let mut server_tx_bearer = BearerTx::new(server_tx);
                 server_tx_bearer.send(builder.as_packet()).await.unwrap();
@@ -1376,7 +1362,7 @@ mod tests {
             let client_handle = executor.spawn(async move {
                 let mut rx_buf = [MaybeUninit::uninit(); 64];
                 let res = client.read_blob(h(1), 100, &mut rx_buf).await;
-                assert_eq!(res, Err(ClientError::ErrorResponse(ErrorCode::InvalidOffset)));
+                assert_eq!(res, Err(ClientError::ErrorResponse(ErrorCode::INVALID_OFFSET)));
             });
 
             executor.run_until_stalled();
@@ -1497,7 +1483,7 @@ mod tests {
                     payload: ErrorRsp {
                         request_opcode: Opcode::ATT_READ_BY_TYPE_REQ as u8,
                         attribute_handle: U16::new(1),
-                        error_code: ErrorCode::AttributeNotFound,
+                        error_code: u8::from(ErrorCode::ATTRIBUTE_NOT_FOUND),
                     },
                 };
                 let mut server_tx_bearer = BearerTx::new(server_tx);
@@ -1508,7 +1494,7 @@ mod tests {
                 let mut rx_buf = [MaybeUninit::uninit(); 64];
                 let uuid = Uuid::from_u16(0x2800);
                 let res = client.read_by_type(h(1), h(10), &uuid, &mut rx_buf).await;
-                assert_eq!(res, Err(ClientError::ErrorResponse(ErrorCode::AttributeNotFound)));
+                assert_eq!(res, Err(ClientError::ErrorResponse(ErrorCode::ATTRIBUTE_NOT_FOUND)));
             });
 
             executor.run_until_stalled();
@@ -1616,11 +1602,11 @@ mod tests {
                 // Respond with ErrorRsp (UnsupportedGroupType)
                 let builder = PacketBuilder {
                     header: Header::new(Opcode::ATT_ERROR_RSP),
-                    payload: ErrorRsp {
-                        request_opcode: Opcode::ATT_READ_BY_GROUP_TYPE_REQ as u8,
-                        attribute_handle: U16::new(1),
-                        error_code: ErrorCode::UnsupportedGroupType,
-                    },
+                    payload: ErrorRsp::new(
+                        Opcode::ATT_READ_BY_GROUP_TYPE_REQ,
+                        1,
+                        ErrorCode::UNSUPPORTED_GROUP_TYPE,
+                    ),
                 };
                 let mut server_tx_bearer = BearerTx::new(server_tx);
                 server_tx_bearer.send(builder.as_packet()).await.unwrap();
@@ -1630,7 +1616,7 @@ mod tests {
                 let mut rx_buf = [MaybeUninit::uninit(); 64];
                 let uuid = Uuid::from_u16(0x2800);
                 let res = client.read_by_group_type(h(1), h(10), &uuid, &mut rx_buf).await;
-                assert_eq!(res, Err(ClientError::ErrorResponse(ErrorCode::UnsupportedGroupType)));
+                assert_eq!(res, Err(ClientError::ErrorResponse(ErrorCode::UNSUPPORTED_GROUP_TYPE)));
             });
 
             executor.run_until_stalled();
@@ -1707,11 +1693,11 @@ mod tests {
                 // 2. Respond with ErrorRsp (WriteNotPermitted)
                 let builder = PacketBuilder {
                     header: Header::new(Opcode::ATT_ERROR_RSP),
-                    payload: ErrorRsp {
-                        request_opcode: Opcode::ATT_WRITE_REQ.into(),
-                        attribute_handle: U16::new(10),
-                        error_code: ErrorCode::WriteNotPermitted,
-                    },
+                    payload: ErrorRsp::new(
+                        Opcode::ATT_WRITE_REQ,
+                        10,
+                        ErrorCode::WRITE_NOT_PERMITTED,
+                    ),
                 };
                 server_tx_bearer.send(builder.as_packet()).await.unwrap();
             });
@@ -1722,7 +1708,7 @@ mod tests {
                 let result = client.write(h(10), b"Sunstone", &mut rx_buf).await;
                 assert_eq!(
                     result.err(),
-                    Some(ClientError::ErrorResponse(ErrorCode::WriteNotPermitted))
+                    Some(ClientError::ErrorResponse(ErrorCode::WRITE_NOT_PERMITTED))
                 );
             });
 
@@ -1858,11 +1844,11 @@ mod tests {
                 // Respond with ErrorRsp (InvalidOffset)
                 let err_builder = PacketBuilder {
                     header: Header::new(Opcode::ATT_ERROR_RSP),
-                    payload: ErrorRsp {
-                        request_opcode: Opcode::ATT_PREPARE_WRITE_REQ as u8,
-                        attribute_handle: U16::new(10),
-                        error_code: ErrorCode::InvalidOffset,
-                    },
+                    payload: ErrorRsp::new(
+                        Opcode::ATT_PREPARE_WRITE_REQ,
+                        10,
+                        ErrorCode::INVALID_OFFSET,
+                    ),
                 };
                 server_tx.send(err_builder.as_packet()).await.unwrap();
             });
@@ -1872,7 +1858,7 @@ mod tests {
                 let result = client.prepare_write(h(10), 5, b"Part1", &mut rx_buf).await;
                 assert_eq!(
                     result.err(),
-                    Some(ClientError::ErrorResponse(ErrorCode::InvalidOffset))
+                    Some(ClientError::ErrorResponse(ErrorCode::INVALID_OFFSET))
                 );
             });
 
