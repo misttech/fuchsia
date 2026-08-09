@@ -144,11 +144,9 @@ class Userboot {
   Userboot(HandoffEnd::Elf userboot, HandoffEnd::Elf vdso)
       : userboot_elf_{ktl::move(userboot)}, vdso_elf_{ktl::move(vdso)} {}
 
-  [[nodiscard]] zx_status_t Start(ProcessDispatcher& process, VmAddressRegionDispatcher& root_vmar,
-                                  fbl::RefPtr<ThreadDispatcher> thread, HandleOwner arg_handle,
-                                  HandleOwner& out_vmar) {
+  [[nodiscard]] zx_status_t Map(VmAddressRegionDispatcher& root_vmar, HandleOwner& out_vmar) {
     // Map in the userboot image along with the vDSO.
-    zx::result mapped = Map(root_vmar);
+    zx::result mapped = MapElfAndVdso(root_vmar);
     RETURN_IF_NOT_OK(mapped.status_value(), mapped.status_value());
     out_vmar = ktl::move(mapped->userboot_vmar);
     dprintf(SPEW, "userboot: %-31s @  %#" PRIxPTR "\n", "entry point", mapped->userboot_entry);
@@ -157,9 +155,16 @@ class Userboot {
     zx::result<uintptr_t> sp = MapStack(root_vmar, mapped->stack_size);
     RETURN_IF_NOT_OK(sp.status_value(), sp.status_value());
 
+    entry_ = mapped->userboot_entry;
+    sp_ = sp.value();
+    vdso_base_ = mapped->vdso_base;
+    return ZX_OK;
+  }
+
+  [[nodiscard]] zx_status_t Start(ProcessDispatcher& process, fbl::RefPtr<ThreadDispatcher> thread,
+                                  HandleOwner arg_handle) const {
     // Start the process running.
-    return process.Start(ktl::move(thread), mapped->userboot_entry, sp.value(),
-                         ktl::move(arg_handle), mapped->vdso_base);
+    return process.Start(ktl::move(thread), entry_, sp_, ktl::move(arg_handle), vdso_base_);
   }
 
  private:
@@ -170,7 +175,7 @@ class Userboot {
     size_t stack_size;
   };
 
-  zx::result<Mapped> Map(VmAddressRegionDispatcher& root_vmar) {
+  zx::result<Mapped> MapElfAndVdso(VmAddressRegionDispatcher& root_vmar) {
     // Map userboot proper.
     zx::result userboot = MapHandoffElf(ktl::move(userboot_elf_), root_vmar);
     if (userboot.is_error()) {
@@ -234,6 +239,9 @@ class Userboot {
 
   HandoffEnd::Elf userboot_elf_;
   HandoffEnd::Elf vdso_elf_;
+  zx_vaddr_t entry_{0};
+  uintptr_t sp_{0};
+  zx_vaddr_t vdso_base_{0};
 };
 
 // Keep a global reference to the kcounters vmo so that the kcounters
@@ -527,11 +535,9 @@ void userboot_init(HandoffEnd handoff_end) {
   RETURN_IF_NOT_OK(bootstrap_vmos(ktl::move(handoff_end), system_capability_handles, userboot));
   RETURN_IF_NOT(userboot.has_value());
 
-  // Start userboot process, mapping it and obtaining vmar_loaded.
+  // Map userboot and obtain vmar_loaded.
   HandleOwner vmar_loaded;
-  RETURN_IF_NOT_OK(userboot->Start(*process_handle.dispatcher(), *vmar_handle.dispatcher(),
-                                   ktl::move(thread), bootstrap_channel->TakeUserHandle(),
-                                   vmar_loaded));
+  RETURN_IF_NOT_OK(userboot->Map(*vmar_handle.dispatcher(), vmar_loaded));
   RETURN_IF_NOT(vmar_loaded);
 
   // Convert process and root VMAR handles.
@@ -592,6 +598,10 @@ void userboot_init(HandoffEnd handoff_end) {
                 send_status, info.return_code, info.flags);
     return;
   }
+
+  // Start userboot process now that all bootstrap messages are sent.
+  RETURN_IF_NOT_OK(
+      userboot->Start(*process, ktl::move(thread), bootstrap_channel->TakeUserHandle()));
 
   kill_userboot.cancel();
 
