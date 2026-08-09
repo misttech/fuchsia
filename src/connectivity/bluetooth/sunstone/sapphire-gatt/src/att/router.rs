@@ -25,36 +25,36 @@ impl RouteFilter {
         match self {
             RouteFilter::Responses => matches!(
                 opcode,
-                Opcode::ErrorRsp
-                    | Opcode::ExchangeMtuRsp
-                    | Opcode::FindInformationRsp
-                    | Opcode::FindByTypeValueRsp
-                    | Opcode::ReadByTypeRsp
-                    | Opcode::ReadRsp
-                    | Opcode::ReadBlobRsp
-                    | Opcode::ReadByGroupTypeRsp
-                    | Opcode::WriteRsp
-                    | Opcode::PrepareWriteRsp
-                    | Opcode::ExecuteWriteRsp
+                Opcode::ATT_ERROR_RSP
+                    | Opcode::ATT_EXCHANGE_MTU_RSP
+                    | Opcode::ATT_FIND_INFORMATION_RSP
+                    | Opcode::ATT_FIND_BY_TYPE_VALUE_RSP
+                    | Opcode::ATT_READ_BY_TYPE_RSP
+                    | Opcode::ATT_READ_RSP
+                    | Opcode::ATT_READ_BLOB_RSP
+                    | Opcode::ATT_READ_BY_GROUP_TYPE_RSP
+                    | Opcode::ATT_WRITE_RSP
+                    | Opcode::ATT_PREPARE_WRITE_RSP
+                    | Opcode::ATT_EXECUTE_WRITE_RSP
             ),
             RouteFilter::Requests => matches!(
                 opcode,
-                Opcode::ExchangeMtuReq
-                    | Opcode::FindInformationReq
-                    | Opcode::FindByTypeValueReq
-                    | Opcode::ReadByTypeReq
-                    | Opcode::ReadReq
-                    | Opcode::ReadBlobReq
-                    | Opcode::ReadByGroupTypeReq
-                    | Opcode::WriteReq
-                    | Opcode::WriteCmd
-                    | Opcode::PrepareWriteReq
-                    | Opcode::ExecuteWriteReq
+                Opcode::ATT_EXCHANGE_MTU_REQ
+                    | Opcode::ATT_FIND_INFORMATION_REQ
+                    | Opcode::ATT_FIND_BY_TYPE_VALUE_REQ
+                    | Opcode::ATT_READ_BY_TYPE_REQ
+                    | Opcode::ATT_READ_REQ
+                    | Opcode::ATT_READ_BLOB_REQ
+                    | Opcode::ATT_READ_BY_GROUP_TYPE_REQ
+                    | Opcode::ATT_WRITE_REQ
+                    | Opcode::ATT_WRITE_CMD
+                    | Opcode::ATT_PREPARE_WRITE_REQ
+                    | Opcode::ATT_EXECUTE_WRITE_REQ
             ),
             RouteFilter::ServerEvents => {
-                matches!(opcode, Opcode::HandleValueNtf | Opcode::HandleValueInd)
+                matches!(opcode, Opcode::ATT_HANDLE_VALUE_NTF | Opcode::ATT_HANDLE_VALUE_IND)
             }
-            RouteFilter::Confirmations => matches!(opcode, Opcode::HandleValueCnf),
+            RouteFilter::Confirmations => matches!(opcode, Opcode::ATT_HANDLE_VALUE_CFM),
         }
     }
 }
@@ -220,7 +220,7 @@ mod tests {
             let _sender_handle = executor.spawn(async move {
                 for i in 0..4u16 {
                     let header = PacketBuilder {
-                        header: Header { opcode: Opcode::HandleValueNtf },
+                        header: Header::new(Opcode::ATT_HANDLE_VALUE_NTF),
                         payload: HandleValueNtfHeader { attribute_handle: U16::new(i + 1) },
                     };
                     let mut tx_buf = [0u8; 64];
@@ -265,7 +265,7 @@ mod tests {
 
             let _sender_handle = executor.spawn(async move {
                 let header = PacketBuilder {
-                    header: Header { opcode: Opcode::HandleValueNtf },
+                    header: Header::new(Opcode::ATT_HANDLE_VALUE_NTF),
                     payload: HandleValueNtfHeader { attribute_handle: U16::new(0x0001) },
                 };
                 let mut tx_buf = [0u8; 64];
@@ -286,7 +286,7 @@ mod tests {
                 assert!(matches!(res, Err(BearerRecvError::BufferTooSmall)));
 
                 let p = notification_rx_handle.next_packet(&mut large_rx_buf).await.unwrap();
-                assert_eq!(p.header.opcode, Opcode::HandleValueNtf);
+                assert_eq!(p.header.opcode, Opcode::ATT_HANDLE_VALUE_NTF.into());
             });
 
             executor.run_until_stalled();
@@ -305,7 +305,7 @@ mod tests {
 
             let sender_handle = executor.spawn(async move {
                 let header = PacketBuilder {
-                    header: Header { opcode: Opcode::ReadReq },
+                    header: Header::new(Opcode::ATT_READ_REQ),
                     payload: ReadReq { attribute_handle: U16::new(0x0001) },
                 };
                 let _ = client_tx_bearer.send(header.as_packet()).await;
@@ -314,7 +314,7 @@ mod tests {
             let test_server_listener = executor.spawn(async move {
                 let mut rx_buf = [MaybeUninit::uninit(); MAX_SUPPORTED_MTU];
                 let p = server_rx_handle.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(p.header.opcode, Opcode::ReadReq);
+                assert_eq!(p.header.opcode, Opcode::ATT_READ_REQ.into());
                 let req = ReadReq::try_ref_from_bytes(&p.data).unwrap();
                 assert_eq!(req.attribute_handle.get(), 0x0001);
             });

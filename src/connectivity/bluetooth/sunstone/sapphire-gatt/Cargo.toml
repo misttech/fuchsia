@@ -14,6 +14,7 @@ sapphire-sync = { path = "../sapphire-sync" }
 sapphire-collections = { path = "../sapphire-collections" }
 sapphire-uuid = { path = "../sapphire-uuid" }
 sapphire-peer-cache = { path = "../sapphire-peer-cache" }
+sapphire-emboss = { path = "../sapphire-emboss" }
 
 [dev-dependencies]
 sapphire-async = { path = "../sapphire-async", features = ["testing"] }

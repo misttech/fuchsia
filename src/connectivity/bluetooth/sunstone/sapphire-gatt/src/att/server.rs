@@ -27,6 +27,7 @@ use core::mem::{MaybeUninit, size_of};
 use core::ptr::NonNull;
 use sapphire_collections::storage::StorageFamily;
 use sapphire_collections::vec::Vec;
+use sapphire_emboss::att::AttHeader;
 use sapphire_peer_cache::PeerId;
 use sapphire_sync::mutex::raw::{RawMutex, SingleThreadMutex};
 use sapphire_uuid::Uuid;
@@ -310,18 +311,27 @@ where
             }
         };
 
-        let transaction_result = match rx_packet.header.opcode {
-            Opcode::ExchangeMtuReq => self.handle_exchange_mtu(&rx_packet.data).await,
-            Opcode::FindInformationReq => self.handle_find_information(&rx_packet.data).await,
-            Opcode::FindByTypeValueReq => self.handle_find_by_type_value(&rx_packet.data).await,
-            Opcode::ReadReq => self.handle_read(&rx_packet.data).await,
-            Opcode::ReadBlobReq => self.handle_read_blob(&rx_packet.data).await,
-            Opcode::ReadByTypeReq => self.handle_read_by_type(&rx_packet.data).await,
-            Opcode::ReadByGroupTypeReq => self.handle_read_by_group_type(&rx_packet.data).await,
-            Opcode::WriteReq => self.handle_write_req(&rx_packet.data).await,
-            Opcode::WriteCmd => self.handle_write_cmd(&rx_packet.data).await,
-            Opcode::PrepareWriteReq => self.handle_prepare_write(&rx_packet.data).await,
-            Opcode::ExecuteWriteReq => self.handle_execute_write(&rx_packet.data).await,
+        let header = AttHeader::new(rx_packet.as_bytes());
+        let opcode = header
+            .attribute_opcode()
+            .try_read()
+            .expect("packet opcode already validated by bearer");
+        let transaction_result = match opcode {
+            Opcode::ATT_EXCHANGE_MTU_REQ => self.handle_exchange_mtu(&rx_packet.data).await,
+            Opcode::ATT_FIND_INFORMATION_REQ => self.handle_find_information(&rx_packet.data).await,
+            Opcode::ATT_FIND_BY_TYPE_VALUE_REQ => {
+                self.handle_find_by_type_value(&rx_packet.data).await
+            }
+            Opcode::ATT_READ_REQ => self.handle_read(&rx_packet.data).await,
+            Opcode::ATT_READ_BLOB_REQ => self.handle_read_blob(&rx_packet.data).await,
+            Opcode::ATT_READ_BY_TYPE_REQ => self.handle_read_by_type(&rx_packet.data).await,
+            Opcode::ATT_READ_BY_GROUP_TYPE_REQ => {
+                self.handle_read_by_group_type(&rx_packet.data).await
+            }
+            Opcode::ATT_WRITE_REQ => self.handle_write_req(&rx_packet.data).await,
+            Opcode::ATT_WRITE_CMD => self.handle_write_cmd(&rx_packet.data).await,
+            Opcode::ATT_PREPARE_WRITE_REQ => self.handle_prepare_write(&rx_packet.data).await,
+            Opcode::ATT_EXECUTE_WRITE_REQ => self.handle_execute_write(&rx_packet.data).await,
             other => Err(TransactionError::UnexpectedPdu { received_opcode: other }),
         };
 
@@ -355,8 +365,9 @@ where
     ///
     /// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.2.1) and (Vol 3, Part G, Section 5.2.1)
     async fn handle_exchange_mtu(&mut self, data: &[u8]) -> Result<(), TransactionError> {
-        let req = ExchangeMtuReq::read_from_bytes(data)
-            .map_err(|_| TransactionError::InvalidPdu { request_opcode: Opcode::ExchangeMtuReq })?;
+        let req = ExchangeMtuReq::read_from_bytes(data).map_err(|_| {
+            TransactionError::InvalidPdu { request_opcode: Opcode::ATT_EXCHANGE_MTU_REQ }
+        })?;
         let client_mtu = req.client_rx_mtu.get();
 
         let negotiated_mtu = max(DEFAULT_STARTING_MTU, min(client_mtu, self.server_rx_mtu));
@@ -367,7 +378,7 @@ where
 
         // Respond with ExchangeMtuRsp containing our supported rx MTU
         let builder = PacketBuilder {
-            header: Header { opcode: Opcode::ExchangeMtuRsp },
+            header: Header::new(Opcode::ATT_EXCHANGE_MTU_RSP),
             payload: ExchangeMtuRsp { server_rx_mtu: U16::new(self.server_rx_mtu) },
         };
 
@@ -384,27 +395,27 @@ where
     async fn handle_find_information(&mut self, data: &[u8]) -> Result<(), TransactionError> {
         // Read request and validate handle range invariants.
         let req = FindInformationReq::read_from_bytes(data).map_err(|_| {
-            TransactionError::InvalidPdu { request_opcode: Opcode::FindInformationReq }
+            TransactionError::InvalidPdu { request_opcode: Opcode::ATT_FIND_INFORMATION_REQ }
         })?;
         let start = req.starting_handle.get();
         let end = req.ending_handle.get();
 
         if start > end {
             return Err(TransactionError::ErrorResponse {
-                request_opcode: Opcode::FindInformationReq,
+                request_opcode: Opcode::ATT_FIND_INFORMATION_REQ,
                 attribute_handle: start,
                 error_code: ErrorCode::InvalidHandle,
             });
         }
 
-        let start_handle = to_handle(start, Opcode::FindInformationReq)?;
-        let end_handle = to_handle(end, Opcode::FindInformationReq)?;
+        let start_handle = to_handle(start, Opcode::ATT_FIND_INFORMATION_REQ)?;
+        let end_handle = to_handle(end, Opcode::ATT_FIND_INFORMATION_REQ)?;
         let mut attributes = self.database.query_range(start_handle, end_handle).peekable();
         let format = match attributes.peek() {
             Some((_, attr)) => UuidFormat::from(*attr.uuid()),
             None => {
                 return Err(TransactionError::ErrorResponse {
-                    request_opcode: Opcode::FindInformationReq,
+                    request_opcode: Opcode::ATT_FIND_INFORMATION_REQ,
                     attribute_handle: start,
                     error_code: ErrorCode::AttributeNotFound,
                 });
@@ -419,7 +430,7 @@ where
 
         // Serialize the PDU-specific header using PacketBuilder
         let header = PacketBuilder {
-            header: Header { opcode: Opcode::FindInformationRsp },
+            header: Header::new(Opcode::ATT_FIND_INFORMATION_RSP),
             payload: FindInformationRspHeader { format },
         };
 
@@ -475,7 +486,7 @@ where
     /// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.3.3).
     async fn handle_find_by_type_value(&mut self, data: &[u8]) -> Result<(), TransactionError> {
         let req = FindByTypeValueReq::try_ref_from_bytes(data).map_err(|_| {
-            TransactionError::InvalidPdu { request_opcode: Opcode::FindByTypeValueReq }
+            TransactionError::InvalidPdu { request_opcode: Opcode::ATT_FIND_BY_TYPE_VALUE_REQ }
         })?;
         let start = req.header.starting_handle.get();
         let end = req.header.ending_handle.get();
@@ -484,7 +495,7 @@ where
 
         if start > end {
             return Err(TransactionError::ErrorResponse {
-                request_opcode: Opcode::FindByTypeValueReq,
+                request_opcode: Opcode::ATT_FIND_BY_TYPE_VALUE_REQ,
                 attribute_handle: start,
                 error_code: ErrorCode::InvalidHandle,
             });
@@ -497,7 +508,7 @@ where
         );
 
         // DynamicPacketBuilder is used for a variable-length list of response entries.
-        let header = Header { opcode: Opcode::FindByTypeValueRsp };
+        let header = Header::new(Opcode::ATT_FIND_BY_TYPE_VALUE_RSP);
 
         let mut builder = DynamicPacketBuilder::<_, HandlesInformation>::new(
             &mut tx_buf,
@@ -505,8 +516,8 @@ where
             self.effective_mtu(),
         );
 
-        let start_handle = to_handle(start, Opcode::FindByTypeValueReq)?;
-        let end_handle = to_handle(end, Opcode::FindByTypeValueReq)?;
+        let start_handle = to_handle(start, Opcode::ATT_FIND_BY_TYPE_VALUE_REQ)?;
+        let end_handle = to_handle(end, Opcode::ATT_FIND_BY_TYPE_VALUE_REQ)?;
         let attributes = self.database.query_range(start_handle, end_handle).filter(|(_, attr)| {
             <[u8; 2]>::try_from(*attr.uuid())
                 .is_ok_and(|bytes16| u16::from_le_bytes(bytes16) == attr_type)
@@ -533,7 +544,7 @@ where
         let tx_packet = builder.as_packet();
         if tx_packet.data.is_empty() {
             return Err(TransactionError::ErrorResponse {
-                request_opcode: Opcode::FindByTypeValueReq,
+                request_opcode: Opcode::ATT_FIND_BY_TYPE_VALUE_REQ,
                 attribute_handle: start,
                 error_code: ErrorCode::AttributeNotFound,
             });
@@ -550,7 +561,7 @@ where
     async fn handle_read(&mut self, data: &[u8]) -> Result<(), TransactionError> {
         // Parse the incoming Read Request.
         let req = ReadReq::read_from_bytes(data)
-            .map_err(|_| TransactionError::InvalidPdu { request_opcode: Opcode::ReadReq })?;
+            .map_err(|_| TransactionError::InvalidPdu { request_opcode: Opcode::ATT_READ_REQ })?;
 
         let handle_val = req.attribute_handle.get();
 
@@ -558,14 +569,19 @@ where
         let mut val_buf = [0u8; MAX_ATTRIBUTE_SIZE];
         let response_capacity = self.effective_mtu() - size_of::<Header>();
         let read_len = self
-            .read_attribute_at(handle_val, 0, Opcode::ReadReq, &mut val_buf[..response_capacity])
+            .read_attribute_at(
+                handle_val,
+                0,
+                Opcode::ATT_READ_REQ,
+                &mut val_buf[..response_capacity],
+            )
             .await?;
 
         // Format and send the Read Response.
         let mut tx_buf = [0u8; MAX_SUPPORTED_MTU];
         let mut builder = DynamicPacketBuilder::<_, u8>::new(
             &mut tx_buf,
-            Header { opcode: Opcode::ReadRsp },
+            Header::new(Opcode::ATT_READ_RSP),
             self.effective_mtu(),
         );
         builder.extend_from_slice(&val_buf[..read_len]).expect("read response fits within MTU");
@@ -579,8 +595,9 @@ where
     /// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.4.3 & 3.4.4.4)
     async fn handle_read_blob(&mut self, data: &[u8]) -> Result<(), TransactionError> {
         // Parse the incoming Read Blob Request.
-        let req = ReadBlobReq::read_from_bytes(data)
-            .map_err(|_| TransactionError::InvalidPdu { request_opcode: Opcode::ReadBlobReq })?;
+        let req = ReadBlobReq::read_from_bytes(data).map_err(|_| TransactionError::InvalidPdu {
+            request_opcode: Opcode::ATT_READ_BLOB_REQ,
+        })?;
 
         let handle_val = req.attribute_handle.get();
         let offset = req.value_offset.get();
@@ -592,7 +609,7 @@ where
             .read_attribute_at(
                 handle_val,
                 offset,
-                Opcode::ReadBlobReq,
+                Opcode::ATT_READ_BLOB_REQ,
                 &mut val_buf[..response_capacity],
             )
             .await?;
@@ -601,7 +618,7 @@ where
         let mut tx_buf = [0u8; MAX_SUPPORTED_MTU];
         let mut builder = DynamicPacketBuilder::<_, u8>::new(
             &mut tx_buf,
-            Header { opcode: Opcode::ReadBlobRsp },
+            Header::new(Opcode::ATT_READ_BLOB_RSP),
             self.effective_mtu(),
         );
         builder
@@ -720,7 +737,7 @@ where
 
         // Initialize the output packet builder with the correct header length.
         let header = PacketBuilder {
-            header: Header { opcode: rsp_opcode },
+            header: Header::new(rsp_opcode),
             payload: u8::try_from(first_entry_header_len + first_read_len)
                 .expect("Range response payload length fits in u8"),
         };
@@ -779,8 +796,8 @@ where
     async fn handle_read_by_type(&mut self, payload: &[u8]) -> Result<(), TransactionError> {
         self.handle_read_by_type_generic::<ReadByTypeReq>(
             payload,
-            Opcode::ReadByTypeReq,
-            Opcode::ReadByTypeRsp,
+            Opcode::ATT_READ_BY_TYPE_REQ,
+            Opcode::ATT_READ_BY_TYPE_RSP,
             |buf, handle, _attr| {
                 let handle_size = size_of::<AttributeHandle>();
                 buf[..handle_size].copy_from_slice(&handle.value().to_le_bytes());
@@ -798,8 +815,8 @@ where
     async fn handle_read_by_group_type(&mut self, payload: &[u8]) -> Result<(), TransactionError> {
         self.handle_read_by_type_generic::<ReadByGroupTypeReq>(
             payload,
-            Opcode::ReadByGroupTypeReq,
-            Opcode::ReadByGroupTypeRsp,
+            Opcode::ATT_READ_BY_GROUP_TYPE_REQ,
+            Opcode::ATT_READ_BY_GROUP_TYPE_RSP,
             |buf, handle, attr| {
                 let group_end = attr.group_end_handle().ok_or(ErrorCode::UnsupportedGroupType)?;
                 let header = ReadByGroupTypeRspEntryHeader {
@@ -819,14 +836,14 @@ where
     /// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Sections 3.4.5.1 & 3.4.5.2).
     async fn handle_write_req(&mut self, payload: &[u8]) -> Result<(), TransactionError> {
         let req = WriteReq::try_ref_from_bytes(payload)
-            .map_err(|_| TransactionError::InvalidPdu { request_opcode: Opcode::WriteReq })?;
+            .map_err(|_| TransactionError::InvalidPdu { request_opcode: Opcode::ATT_WRITE_REQ })?;
 
         let handle_val = req.header.attribute_handle.get();
-        let handle = to_handle(handle_val, Opcode::WriteReq)?;
+        let handle = to_handle(handle_val, Opcode::ATT_WRITE_REQ)?;
 
         let attr = self.database.find_attribute(handle).ok_or_else(|| {
             TransactionError::ErrorResponse {
-                request_opcode: Opcode::WriteReq,
+                request_opcode: Opcode::ATT_WRITE_REQ,
                 attribute_handle: handle_val,
                 error_code: ErrorCode::InvalidHandle,
             }
@@ -834,14 +851,14 @@ where
 
         attr.write_chunk(self.peer_id, 0, &req.attribute_value).await.map_err(|error_code| {
             TransactionError::ErrorResponse {
-                request_opcode: Opcode::WriteReq,
+                request_opcode: Opcode::ATT_WRITE_REQ,
                 attribute_handle: handle_val,
                 error_code,
             }
         })?;
 
         let builder =
-            PacketBuilder { header: Header { opcode: Opcode::WriteRsp }, payload: WriteRsp };
+            PacketBuilder { header: Header::new(Opcode::ATT_WRITE_RSP), payload: WriteRsp };
         self.send_packet(builder.as_packet()).await?;
 
         Ok(())
@@ -857,7 +874,7 @@ where
         };
 
         let handle_val = req.header.attribute_handle.get();
-        let handle = match to_handle(handle_val, Opcode::WriteCmd) {
+        let handle = match to_handle(handle_val, Opcode::ATT_WRITE_CMD) {
             Ok(h) => h,
             Err(_) => return Ok(()), // Silently discard invalid handles
         };
@@ -877,16 +894,16 @@ where
     /// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.6.1).
     async fn handle_prepare_write(&mut self, payload: &[u8]) -> Result<(), TransactionError> {
         let req = PrepareWriteReq::try_ref_from_bytes(payload).map_err(|_| {
-            TransactionError::InvalidPdu { request_opcode: Opcode::PrepareWriteReq }
+            TransactionError::InvalidPdu { request_opcode: Opcode::ATT_PREPARE_WRITE_REQ }
         })?;
 
         let handle_val = req.header.attribute_handle.get();
-        let handle = to_handle(handle_val, Opcode::PrepareWriteReq)?;
+        let handle = to_handle(handle_val, Opcode::ATT_PREPARE_WRITE_REQ)?;
         let offset = req.header.value_offset.get();
 
         let attr = self.database.find_attribute(handle).ok_or_else(|| {
             TransactionError::ErrorResponse {
-                request_opcode: Opcode::PrepareWriteReq,
+                request_opcode: Opcode::ATT_PREPARE_WRITE_REQ,
                 attribute_handle: handle_val,
                 error_code: ErrorCode::InvalidHandle,
             }
@@ -895,7 +912,7 @@ where
         // Validate offset. If offset > attribute value length, return InvalidOffset.
         attr.read_chunk(self.peer_id, offset, &mut []).await.map_err(|error_code| {
             TransactionError::ErrorResponse {
-                request_opcode: Opcode::PrepareWriteReq,
+                request_opcode: Opcode::ATT_PREPARE_WRITE_REQ,
                 attribute_handle: handle_val,
                 error_code,
             }
@@ -904,7 +921,7 @@ where
         // Enforce maximum BT Spec attribute value length (512 bytes)
         if usize::from(offset) + req.part_attribute_value.len() > MAX_ATTRIBUTE_SIZE {
             return Err(TransactionError::ErrorResponse {
-                request_opcode: Opcode::PrepareWriteReq,
+                request_opcode: Opcode::ATT_PREPARE_WRITE_REQ,
                 attribute_handle: handle_val,
                 error_code: ErrorCode::InvalidAttributeValueLength,
             });
@@ -912,19 +929,19 @@ where
 
         self.prepare_storage.try_push(req).map_err(|error| match error {
             PrepareError::QueueFull => TransactionError::ErrorResponse {
-                request_opcode: Opcode::PrepareWriteReq,
+                request_opcode: Opcode::ATT_PREPARE_WRITE_REQ,
                 attribute_handle: handle_val,
                 error_code: ErrorCode::PrepareQueueFull,
             },
             PrepareError::PayloadTooLarge => TransactionError::ErrorResponse {
-                request_opcode: Opcode::PrepareWriteReq,
+                request_opcode: Opcode::ATT_PREPARE_WRITE_REQ,
                 attribute_handle: handle_val,
                 error_code: ErrorCode::InvalidAttributeValueLength,
             },
         })?;
 
         let header = PacketBuilder {
-            header: Header { opcode: Opcode::PrepareWriteRsp },
+            header: Header::new(Opcode::ATT_PREPARE_WRITE_RSP),
             payload: req.header,
         };
         let mut tx_buf = [0u8; MAX_SUPPORTED_MTU];
@@ -941,11 +958,11 @@ where
     /// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.6.3).
     async fn handle_execute_write(&mut self, payload: &[u8]) -> Result<(), TransactionError> {
         let req = ExecuteWriteReq::read_from_bytes(payload).map_err(|_| {
-            TransactionError::InvalidPdu { request_opcode: Opcode::ExecuteWriteReq }
+            TransactionError::InvalidPdu { request_opcode: Opcode::ATT_EXECUTE_WRITE_REQ }
         })?;
 
         let flags = ExecuteWriteFlags::from_repr(req.flags).ok_or_else(|| {
-            TransactionError::InvalidPdu { request_opcode: Opcode::ExecuteWriteReq }
+            TransactionError::InvalidPdu { request_opcode: Opcode::ATT_EXECUTE_WRITE_REQ }
         })?;
 
         match flags {
@@ -965,7 +982,7 @@ where
                             // Note: Returning early drops the draining iterator, triggering
                             // RAII cancellation and clearing of all remaining queued writes.
                             return Err(TransactionError::ErrorResponse {
-                                request_opcode: Opcode::ExecuteWriteReq,
+                                request_opcode: Opcode::ATT_EXECUTE_WRITE_REQ,
                                 attribute_handle: handle_val,
                                 error_code: ErrorCode::InvalidHandle,
                             });
@@ -975,7 +992,7 @@ where
                         Some(a) => a,
                         None => {
                             return Err(TransactionError::ErrorResponse {
-                                request_opcode: Opcode::ExecuteWriteReq,
+                                request_opcode: Opcode::ATT_EXECUTE_WRITE_REQ,
                                 attribute_handle: handle_val,
                                 error_code: ErrorCode::InvalidHandle,
                             });
@@ -986,7 +1003,7 @@ where
                         attr.write_chunk(self.peer_id, offset, &req.part_attribute_value).await
                     {
                         return Err(TransactionError::ErrorResponse {
-                            request_opcode: Opcode::ExecuteWriteReq,
+                            request_opcode: Opcode::ATT_EXECUTE_WRITE_REQ,
                             attribute_handle: handle_val,
                             error_code,
                         });
@@ -996,7 +1013,7 @@ where
         }
 
         let builder = PacketBuilder {
-            header: Header { opcode: Opcode::ExecuteWriteRsp },
+            header: Header::new(Opcode::ATT_EXECUTE_WRITE_RSP),
             payload: ExecuteWriteRsp {},
         };
         self.send_packet(builder.as_packet()).await?;
@@ -1053,7 +1070,7 @@ where
     ) -> Result<(), ServerError> {
         let handle_raw = attribute_handle.map(|h| h.value()).unwrap_or(0);
         let builder = PacketBuilder {
-            header: Header { opcode: Opcode::ErrorRsp },
+            header: Header::new(Opcode::ATT_ERROR_RSP),
             payload: ErrorRsp {
                 request_opcode: request_opcode.into(),
                 attribute_handle: U16::new(handle_raw),
@@ -1124,7 +1141,7 @@ where
         );
 
         let header = PacketBuilder {
-            header: Header { opcode: Opcode::HandleValueNtf },
+            header: Header::new(Opcode::ATT_HANDLE_VALUE_NTF),
             payload: HandleValueNtfHeader { attribute_handle: U16::new(handle) },
         };
         let mut tx_buf = [0u8; MAX_SUPPORTED_MTU];
@@ -1178,7 +1195,7 @@ where
         );
 
         let header = PacketBuilder {
-            header: Header { opcode: Opcode::HandleValueInd },
+            header: Header::new(Opcode::ATT_HANDLE_VALUE_IND),
             payload: HandleValueIndHeader { attribute_handle: U16::new(handle) },
         };
         let mut tx_buf = [0u8; MAX_SUPPORTED_MTU];
@@ -1288,7 +1305,7 @@ mod tests {
             let client_handle = executor.spawn(async move {
                 // Send ExchangeMtuReq requesting 512-byte MTU
                 let builder = PacketBuilder {
-                    header: Header { opcode: Opcode::ExchangeMtuReq },
+                    header: Header::new(Opcode::ATT_EXCHANGE_MTU_REQ),
                     payload: ExchangeMtuReq { client_rx_mtu: U16::new(CLIENT_PREFERRED_MTU) },
                 };
 
@@ -1300,7 +1317,7 @@ mod tests {
                 let mut rx_buf = [MaybeUninit::uninit(); 32];
                 let mut client_rx_bearer = BearerRx::new(app_channel.receiver);
                 let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ExchangeMtuRsp);
+                assert_eq!(packet.header.opcode, Opcode::ATT_EXCHANGE_MTU_RSP.into());
 
                 let rsp = ExchangeMtuRsp::read_from_bytes(&packet.data[..]).unwrap();
                 assert_eq!(rsp.server_rx_mtu.get(), SERVER_MTU);
@@ -1340,7 +1357,7 @@ mod tests {
 
                 // 1. Send ExchangeMtuRsp (0x03) as a request (valid opcode but unsupported request)
                 let builder = PacketBuilder {
-                    header: Header { opcode: Opcode::ExchangeMtuRsp },
+                    header: Header::new(Opcode::ATT_EXCHANGE_MTU_RSP),
                     payload: ExchangeMtuRsp { server_rx_mtu: U16::new(SERVER_MTU) },
                 };
                 let tx_packet = builder.as_packet();
@@ -1348,14 +1365,14 @@ mod tests {
 
                 // Expect ErrorRsp indicating RequestNotSupported (0x06) for ExchangeMtuRsp (0x03)
                 let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ErrorRsp);
+                assert_eq!(packet.header.opcode, Opcode::ATT_ERROR_RSP.into());
                 let err = ErrorRsp::try_read_from_bytes(&packet.data[..]).unwrap();
-                assert_eq!(err.request_opcode, Opcode::ExchangeMtuRsp as u8);
+                assert_eq!(err.request_opcode, Opcode::ATT_EXCHANGE_MTU_RSP as u8);
                 assert_eq!(err.error_code, ErrorCode::RequestNotSupported);
 
                 // 2. Server should still be running! Send valid ExchangeMtuReq (0x02)
                 let builder = PacketBuilder {
-                    header: Header { opcode: Opcode::ExchangeMtuReq },
+                    header: Header::new(Opcode::ATT_EXCHANGE_MTU_REQ),
                     payload: ExchangeMtuReq { client_rx_mtu: U16::new(CLIENT_PREFERRED_MTU) },
                 };
                 let tx_packet = builder.as_packet();
@@ -1363,7 +1380,7 @@ mod tests {
 
                 // Expect ExchangeMtuRsp from server
                 let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ExchangeMtuRsp);
+                assert_eq!(packet.header.opcode, Opcode::ATT_EXCHANGE_MTU_RSP.into());
                 let rsp = ExchangeMtuRsp::read_from_bytes(&packet.data[..]).unwrap();
                 assert_eq!(rsp.server_rx_mtu.get(), SERVER_MTU);
             });
@@ -1400,14 +1417,14 @@ mod tests {
 
                 // 1. Send ExchangeMtuReq but with truncated (empty) payload
                 let tx_packet =
-                    Packet::try_ref_from_bytes(&[Opcode::ExchangeMtuReq as u8]).unwrap();
+                    Packet::try_ref_from_bytes(&[Opcode::ATT_EXCHANGE_MTU_REQ as u8]).unwrap();
                 client_tx_bearer.send(tx_packet).await.unwrap();
 
                 // Expect ErrorRsp indicating InvalidPdu (0x04) for ExchangeMtuReq (0x02)
                 let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ErrorRsp);
+                assert_eq!(packet.header.opcode, Opcode::ATT_ERROR_RSP.into());
                 let err = ErrorRsp::try_read_from_bytes(&packet.data[..]).unwrap();
-                assert_eq!(err.request_opcode, Opcode::ExchangeMtuReq as u8);
+                assert_eq!(err.request_opcode, Opcode::ATT_EXCHANGE_MTU_REQ as u8);
                 assert_eq!(err.error_code, ErrorCode::InvalidPdu);
             });
 
@@ -1447,14 +1464,14 @@ mod tests {
 
                 // Expect ErrorRsp indicating InvalidPdu for opcode 0x00
                 let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ErrorRsp);
+                assert_eq!(packet.header.opcode, Opcode::ATT_ERROR_RSP.into());
                 let err = ErrorRsp::try_read_from_bytes(&packet.data[..]).unwrap();
                 assert_eq!(err.request_opcode, 0x00);
                 assert_eq!(err.error_code, ErrorCode::InvalidPdu);
 
                 // 2. Server should log the error and stay alive. Send a valid ExchangeMtuReq.
                 let builder = PacketBuilder {
-                    header: Header { opcode: Opcode::ExchangeMtuReq },
+                    header: Header::new(Opcode::ATT_EXCHANGE_MTU_REQ),
                     payload: ExchangeMtuReq { client_rx_mtu: U16::new(CLIENT_PREFERRED_MTU) },
                 };
                 let tx_packet = builder.as_packet();
@@ -1462,7 +1479,7 @@ mod tests {
 
                 // Expect ExchangeMtuRsp
                 let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ExchangeMtuRsp);
+                assert_eq!(packet.header.opcode, Opcode::ATT_EXCHANGE_MTU_RSP.into());
                 let rsp = ExchangeMtuRsp::read_from_bytes(&packet.data[..]).unwrap();
                 assert_eq!(rsp.server_rx_mtu.get(), SERVER_MTU);
             });
@@ -1502,7 +1519,7 @@ mod tests {
 
                 // Expect ErrorRsp indicating RequestNotSupported for request opcode 0x99
                 let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ErrorRsp);
+                assert_eq!(packet.header.opcode, Opcode::ATT_ERROR_RSP.into());
                 let err = ErrorRsp::try_read_from_bytes(&packet.data[..]).unwrap();
                 assert_eq!(err.request_opcode, 0x99);
                 assert_eq!(err.error_code, ErrorCode::RequestNotSupported);
@@ -1539,14 +1556,14 @@ mod tests {
 
                 // Default MTU is 23. Send a 30-byte packet directly over L2CAP.
                 let mut oversized = [0u8; 30];
-                oversized[0] = Opcode::ExchangeMtuReq.into();
+                oversized[0] = Opcode::ATT_EXCHANGE_MTU_REQ.into();
                 sender.send(&oversized).await.unwrap();
 
                 // Expect ErrorRsp indicating InvalidPdu for request opcode 0x02
                 let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ErrorRsp);
+                assert_eq!(packet.header.opcode, Opcode::ATT_ERROR_RSP.into());
                 let err = ErrorRsp::try_read_from_bytes(&packet.data[..]).unwrap();
-                assert_eq!(err.request_opcode, Opcode::ExchangeMtuReq as u8);
+                assert_eq!(err.request_opcode, Opcode::ATT_EXCHANGE_MTU_REQ as u8);
                 assert_eq!(err.error_code, ErrorCode::InvalidPdu);
             });
 
@@ -1589,7 +1606,7 @@ mod tests {
 
                 // 1. Send FindInformationReq for 1..=2
                 let builder = PacketBuilder {
-                    header: Header { opcode: Opcode::FindInformationReq },
+                    header: Header::new(Opcode::ATT_FIND_INFORMATION_REQ),
                     payload: FindInformationReq {
                         starting_handle: U16::new(1),
                         ending_handle: U16::new(2),
@@ -1599,7 +1616,7 @@ mod tests {
 
                 // Expect FindInformationRsp with only handle 1 (since handle 2 has a different format)
                 let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::FindInformationRsp);
+                assert_eq!(packet.header.opcode, Opcode::ATT_FIND_INFORMATION_RSP.into());
 
                 let rsp =
                     FindInformationRsp::<InformationData16>::try_ref_from_bytes(&packet.data[..])
@@ -1611,7 +1628,7 @@ mod tests {
 
                 // 2. Send FindInformationReq for 1..=0xFFFF (querying past end of database)
                 let builder = PacketBuilder {
-                    header: Header { opcode: Opcode::FindInformationReq },
+                    header: Header::new(Opcode::ATT_FIND_INFORMATION_REQ),
                     payload: FindInformationReq {
                         starting_handle: U16::new(1),
                         ending_handle: U16::new(0xFFFF),
@@ -1621,7 +1638,7 @@ mod tests {
 
                 // Expect the same FindInformationRsp containing only handle 1
                 let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::FindInformationRsp);
+                assert_eq!(packet.header.opcode, Opcode::ATT_FIND_INFORMATION_RSP.into());
 
                 let rsp =
                     FindInformationRsp::<InformationData16>::try_ref_from_bytes(&packet.data[..])
@@ -1668,7 +1685,7 @@ mod tests {
 
                 // 1. Invalid Handle (start = 0)
                 let builder = PacketBuilder {
-                    header: Header { opcode: Opcode::FindInformationReq },
+                    header: Header::new(Opcode::ATT_FIND_INFORMATION_REQ),
                     payload: FindInformationReq {
                         starting_handle: U16::new(0),
                         ending_handle: U16::new(2),
@@ -1677,15 +1694,15 @@ mod tests {
                 client_tx_bearer.send(builder.as_packet()).await.unwrap();
 
                 let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ErrorRsp);
+                assert_eq!(packet.header.opcode, Opcode::ATT_ERROR_RSP.into());
                 let err = ErrorRsp::try_read_from_bytes(&packet.data[..]).unwrap();
-                assert_eq!(err.request_opcode, Opcode::FindInformationReq as u8);
+                assert_eq!(err.request_opcode, Opcode::ATT_FIND_INFORMATION_REQ as u8);
                 assert_eq!(err.attribute_handle.get(), 0);
                 assert_eq!(err.error_code, ErrorCode::InvalidHandle);
 
                 // 2. Invalid Handle (start > end)
                 let builder = PacketBuilder {
-                    header: Header { opcode: Opcode::FindInformationReq },
+                    header: Header::new(Opcode::ATT_FIND_INFORMATION_REQ),
                     payload: FindInformationReq {
                         starting_handle: U16::new(3),
                         ending_handle: U16::new(2),
@@ -1694,15 +1711,15 @@ mod tests {
                 client_tx_bearer.send(builder.as_packet()).await.unwrap();
 
                 let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ErrorRsp);
+                assert_eq!(packet.header.opcode, Opcode::ATT_ERROR_RSP.into());
                 let err = ErrorRsp::try_read_from_bytes(&packet.data[..]).unwrap();
-                assert_eq!(err.request_opcode, Opcode::FindInformationReq as u8);
+                assert_eq!(err.request_opcode, Opcode::ATT_FIND_INFORMATION_REQ as u8);
                 assert_eq!(err.attribute_handle.get(), 3);
                 assert_eq!(err.error_code, ErrorCode::InvalidHandle);
 
                 // 3. Attribute Not Found (no attributes in 5..=10)
                 let builder = PacketBuilder {
-                    header: Header { opcode: Opcode::FindInformationReq },
+                    header: Header::new(Opcode::ATT_FIND_INFORMATION_REQ),
                     payload: FindInformationReq {
                         starting_handle: U16::new(5),
                         ending_handle: U16::new(10),
@@ -1711,9 +1728,9 @@ mod tests {
                 client_tx_bearer.send(builder.as_packet()).await.unwrap();
 
                 let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ErrorRsp);
+                assert_eq!(packet.header.opcode, Opcode::ATT_ERROR_RSP.into());
                 let err = ErrorRsp::try_read_from_bytes(&packet.data[..]).unwrap();
-                assert_eq!(err.request_opcode, Opcode::FindInformationReq as u8);
+                assert_eq!(err.request_opcode, Opcode::ATT_FIND_INFORMATION_REQ as u8);
                 assert_eq!(err.attribute_handle.get(), 5);
                 assert_eq!(err.error_code, ErrorCode::AttributeNotFound);
             });
@@ -1758,7 +1775,7 @@ mod tests {
 
                 // Send request for 0x2800 with value 0x180D
                 let header = PacketBuilder {
-                    header: Header { opcode: Opcode::FindByTypeValueReq },
+                    header: Header::new(Opcode::ATT_FIND_BY_TYPE_VALUE_REQ),
                     payload: FindByTypeValueReqHeader {
                         starting_handle: U16::new(1),
                         ending_handle: U16::new(10),
@@ -1776,7 +1793,7 @@ mod tests {
 
                 // Expect FindByTypeValueRsp with entry [1, 5]
                 let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::FindByTypeValueRsp);
+                assert_eq!(packet.header.opcode, Opcode::ATT_FIND_BY_TYPE_VALUE_RSP.into());
                 let entries = <[HandlesInformation]>::ref_from_bytes(&packet.data[..]).unwrap();
                 assert_eq!(entries.len(), 1);
                 assert_eq!(entries[0].attribute_handle.get(), 1);
@@ -1818,7 +1835,7 @@ mod tests {
 
                 // 1. Attribute Not Found (value mismatch 0x180F)
                 let header = PacketBuilder {
-                    header: Header { opcode: Opcode::FindByTypeValueReq },
+                    header: Header::new(Opcode::ATT_FIND_BY_TYPE_VALUE_REQ),
                     payload: FindByTypeValueReqHeader {
                         starting_handle: U16::new(1),
                         ending_handle: U16::new(10),
@@ -1835,9 +1852,9 @@ mod tests {
                 client_tx_bearer.send(builder.as_packet()).await.unwrap();
 
                 let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ErrorRsp);
+                assert_eq!(packet.header.opcode, Opcode::ATT_ERROR_RSP.into());
                 let err = ErrorRsp::try_read_from_bytes(&packet.data[..]).unwrap();
-                assert_eq!(err.request_opcode, Opcode::FindByTypeValueReq as u8);
+                assert_eq!(err.request_opcode, Opcode::ATT_FIND_BY_TYPE_VALUE_REQ as u8);
                 assert_eq!(err.error_code, ErrorCode::AttributeNotFound);
             });
 
@@ -1876,14 +1893,14 @@ mod tests {
 
                 // Send ReadReq for handle 1
                 let builder = PacketBuilder {
-                    header: Header { opcode: Opcode::ReadReq },
+                    header: Header::new(Opcode::ATT_READ_REQ),
                     payload: ReadReq { attribute_handle: U16::new(1) },
                 };
                 client_tx_bearer.send(builder.as_packet()).await.unwrap();
 
                 // Expect ReadRsp containing "Sunstone"
                 let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ReadRsp);
+                assert_eq!(packet.header.opcode, Opcode::ATT_READ_RSP.into());
                 let expected: &[u8] = b"Sunstone";
                 assert_eq!(packet.data, *expected);
             });
@@ -1923,16 +1940,16 @@ mod tests {
 
                 // Read Request for handle 0 (invalid handle value)
                 let builder = PacketBuilder {
-                    header: Header { opcode: Opcode::ReadReq },
+                    header: Header::new(Opcode::ATT_READ_REQ),
                     payload: ReadReq { attribute_handle: U16::new(0) },
                 };
                 client_tx_bearer.send(builder.as_packet()).await.unwrap();
 
                 // Expect ErrorRsp indicating InvalidHandle for handle 0
                 let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ErrorRsp);
+                assert_eq!(packet.header.opcode, Opcode::ATT_ERROR_RSP.into());
                 let err = ErrorRsp::try_read_from_bytes(&packet.data[..]).unwrap();
-                assert_eq!(err.request_opcode, Opcode::ReadReq as u8);
+                assert_eq!(err.request_opcode, Opcode::ATT_READ_REQ as u8);
                 assert_eq!(err.attribute_handle.get(), 0);
                 assert_eq!(err.error_code, ErrorCode::InvalidHandle);
             });
@@ -1972,16 +1989,16 @@ mod tests {
 
                 // Read Request for handle 99 (non-existent handle)
                 let builder = PacketBuilder {
-                    header: Header { opcode: Opcode::ReadReq },
+                    header: Header::new(Opcode::ATT_READ_REQ),
                     payload: ReadReq { attribute_handle: U16::new(99) },
                 };
                 client_tx_bearer.send(builder.as_packet()).await.unwrap();
 
                 // Expect ErrorRsp indicating InvalidHandle for handle 99
                 let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ErrorRsp);
+                assert_eq!(packet.header.opcode, Opcode::ATT_ERROR_RSP.into());
                 let err = ErrorRsp::try_read_from_bytes(&packet.data[..]).unwrap();
-                assert_eq!(err.request_opcode, Opcode::ReadReq as u8);
+                assert_eq!(err.request_opcode, Opcode::ATT_READ_REQ as u8);
                 assert_eq!(err.attribute_handle.get(), 99);
                 assert_eq!(err.error_code, ErrorCode::InvalidHandle);
             });
@@ -2024,14 +2041,14 @@ mod tests {
 
                 // Send ReadReq for handle 1
                 let builder = PacketBuilder {
-                    header: Header { opcode: Opcode::ReadReq },
+                    header: Header::new(Opcode::ATT_READ_REQ),
                     payload: ReadReq { attribute_handle: U16::new(1) },
                 };
                 client_tx_bearer.send(builder.as_packet()).await.unwrap();
 
                 // Expect ReadRsp containing first 22 bytes of long_val (MTU - 1)
                 let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ReadRsp);
+                assert_eq!(packet.header.opcode, Opcode::ATT_READ_RSP.into());
                 let expected: &[u8] = b"0123456789012345678901";
                 assert_eq!(packet.data, *expected);
             });
@@ -2071,7 +2088,7 @@ mod tests {
 
                 // Send ReadBlobReq for handle 1, offset 3
                 let builder = PacketBuilder {
-                    header: Header { opcode: Opcode::ReadBlobReq },
+                    header: Header::new(Opcode::ATT_READ_BLOB_REQ),
                     payload: ReadBlobReq {
                         attribute_handle: U16::new(1),
                         value_offset: U16::new(3),
@@ -2081,7 +2098,7 @@ mod tests {
 
                 // Expect ReadBlobRsp containing "stone"
                 let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ReadBlobRsp);
+                assert_eq!(packet.header.opcode, Opcode::ATT_READ_BLOB_RSP.into());
                 let expected: &[u8] = b"stone";
                 assert_eq!(packet.data, *expected);
             });
@@ -2121,7 +2138,7 @@ mod tests {
 
                 // Send ReadBlobReq for handle 1, offset 10 (length of "Sunstone" is 8)
                 let builder = PacketBuilder {
-                    header: Header { opcode: Opcode::ReadBlobReq },
+                    header: Header::new(Opcode::ATT_READ_BLOB_REQ),
                     payload: ReadBlobReq {
                         attribute_handle: U16::new(1),
                         value_offset: U16::new(10),
@@ -2131,9 +2148,9 @@ mod tests {
 
                 // Expect ErrorRsp indicating InvalidOffset
                 let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ErrorRsp);
+                assert_eq!(packet.header.opcode, Opcode::ATT_ERROR_RSP.into());
                 let err = ErrorRsp::try_read_from_bytes(&packet.data[..]).unwrap();
-                assert_eq!(err.request_opcode, Opcode::ReadBlobReq as u8);
+                assert_eq!(err.request_opcode, Opcode::ATT_READ_BLOB_REQ as u8);
                 assert_eq!(err.attribute_handle.get(), 1);
                 assert_eq!(err.error_code, ErrorCode::InvalidOffset);
             });
@@ -2176,7 +2193,7 @@ mod tests {
 
                 // Send ReadBlobReq for handle 1, offset 5
                 let builder = PacketBuilder {
-                    header: Header { opcode: Opcode::ReadBlobReq },
+                    header: Header::new(Opcode::ATT_READ_BLOB_REQ),
                     payload: ReadBlobReq {
                         attribute_handle: U16::new(1),
                         value_offset: U16::new(5),
@@ -2188,7 +2205,7 @@ mod tests {
                 // long_val[5..] is "5678901234567890123456789"
                 // 22 bytes from offset 5: "5678901234567890123456"
                 let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ReadBlobRsp);
+                assert_eq!(packet.header.opcode, Opcode::ATT_READ_BLOB_RSP.into());
                 let expected: &[u8] = b"5678901234567890123456";
                 assert_eq!(packet.data, *expected);
             });
@@ -2229,7 +2246,7 @@ mod tests {
 
                 let uuid = Uuid::from_u16(0x2A00);
                 let header_builder = PacketBuilder {
-                    header: Header { opcode: Opcode::ReadByTypeReq },
+                    header: Header::new(Opcode::ATT_READ_BY_TYPE_REQ),
                     payload: ReadByTypeReqHeader {
                         starting_handle: U16::new(1),
                         ending_handle: U16::new(10),
@@ -2245,7 +2262,7 @@ mod tests {
                 client_tx_bearer.send(builder.as_packet()).await.unwrap();
 
                 let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ReadByTypeRsp);
+                assert_eq!(packet.header.opcode, Opcode::ATT_READ_BY_TYPE_RSP.into());
 
                 const VALUE_SIZE: usize = 8;
                 const ENTRY_SIZE: u8 = (size_of::<AttributeHandle>() + VALUE_SIZE) as u8;
@@ -2300,7 +2317,7 @@ mod tests {
                 // 1. Query for non-existent UUID 0x2A01
                 let uuid = Uuid::from_u16(0x2A01);
                 let header_builder = PacketBuilder {
-                    header: Header { opcode: Opcode::ReadByTypeReq },
+                    header: Header::new(Opcode::ATT_READ_BY_TYPE_REQ),
                     payload: ReadByTypeReqHeader {
                         starting_handle: U16::new(1),
                         ending_handle: U16::new(10),
@@ -2316,15 +2333,15 @@ mod tests {
                 client_tx_bearer.send(builder.as_packet()).await.unwrap();
 
                 let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ErrorRsp);
+                assert_eq!(packet.header.opcode, Opcode::ATT_ERROR_RSP.into());
                 let err = ErrorRsp::try_read_from_bytes(&packet.data[..]).unwrap();
-                assert_eq!(err.request_opcode, Opcode::ReadByTypeReq as u8);
+                assert_eq!(err.request_opcode, Opcode::ATT_READ_BY_TYPE_REQ as u8);
                 assert_eq!(err.error_code, ErrorCode::AttributeNotFound);
 
                 // 2. Query with invalid range (start > end)
                 let uuid = Uuid::from_u16(0x2A00);
                 let header_builder = PacketBuilder {
-                    header: Header { opcode: Opcode::ReadByTypeReq },
+                    header: Header::new(Opcode::ATT_READ_BY_TYPE_REQ),
                     payload: ReadByTypeReqHeader {
                         starting_handle: U16::new(10), // start = 10
                         ending_handle: U16::new(5),    // end = 5
@@ -2340,9 +2357,9 @@ mod tests {
                 client_tx_bearer.send(builder.as_packet()).await.unwrap();
 
                 let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ErrorRsp);
+                assert_eq!(packet.header.opcode, Opcode::ATT_ERROR_RSP.into());
                 let err = ErrorRsp::try_read_from_bytes(&packet.data[..]).unwrap();
-                assert_eq!(err.request_opcode, Opcode::ReadByTypeReq as u8);
+                assert_eq!(err.request_opcode, Opcode::ATT_READ_BY_TYPE_REQ as u8);
                 assert_eq!(err.error_code, ErrorCode::InvalidHandle);
             });
 
@@ -2382,7 +2399,7 @@ mod tests {
 
                 // 1. MTU Exchange (negotiate NEGOTIATED_MTU bytes)
                 let header_builder = PacketBuilder {
-                    header: Header { opcode: Opcode::ExchangeMtuReq },
+                    header: Header::new(Opcode::ATT_EXCHANGE_MTU_REQ),
                     payload: ExchangeMtuReq { client_rx_mtu: U16::new(NEGOTIATED_MTU) },
                 };
                 let mut tx_buf = [0u8; NEGOTIATED_MTU as usize];
@@ -2390,14 +2407,14 @@ mod tests {
                 client_tx_bearer.send(builder.as_packet()).await.unwrap();
 
                 let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ExchangeMtuRsp);
+                assert_eq!(packet.header.opcode, Opcode::ATT_EXCHANGE_MTU_RSP.into());
                 client_rx_bearer.set_mtu(NEGOTIATED_MTU);
                 client_tx_bearer.set_mtu(NEGOTIATED_MTU);
 
                 // 2. Read By Group Type Request
                 let uuid = Uuid::from_u16(0x2800);
                 let header_builder = PacketBuilder {
-                    header: Header { opcode: Opcode::ReadByGroupTypeReq },
+                    header: Header::new(Opcode::ATT_READ_BY_GROUP_TYPE_REQ),
                     payload: ReadByGroupTypeReqHeader {
                         starting_handle: U16::new(1),
                         ending_handle: U16::new(10),
@@ -2413,7 +2430,7 @@ mod tests {
                 client_tx_bearer.send(builder.as_packet()).await.unwrap();
 
                 let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ReadByGroupTypeRsp);
+                assert_eq!(packet.header.opcode, Opcode::ATT_READ_BY_GROUP_TYPE_RSP.into());
 
                 // Parse the response using the client results parser and verify the returned
                 // attribute group data list entries.
@@ -2470,7 +2487,7 @@ mod tests {
                 // 1. Query for grouping type 0x2A00 which contains a non-grouping attribute
                 let uuid = Uuid::from_u16(0x2A00);
                 let header_builder = PacketBuilder {
-                    header: Header { opcode: Opcode::ReadByGroupTypeReq },
+                    header: Header::new(Opcode::ATT_READ_BY_GROUP_TYPE_REQ),
                     payload: ReadByGroupTypeReqHeader {
                         starting_handle: U16::new(1),
                         ending_handle: U16::new(10),
@@ -2486,9 +2503,9 @@ mod tests {
                 client_tx_bearer.send(builder.as_packet()).await.unwrap();
 
                 let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ErrorRsp);
+                assert_eq!(packet.header.opcode, Opcode::ATT_ERROR_RSP.into());
                 let err = ErrorRsp::try_read_from_bytes(&packet.data[..]).unwrap();
-                assert_eq!(err.request_opcode, Opcode::ReadByGroupTypeReq as u8);
+                assert_eq!(err.request_opcode, Opcode::ATT_READ_BY_GROUP_TYPE_REQ as u8);
                 assert_eq!(err.error_code, ErrorCode::UnsupportedGroupType);
             });
 
@@ -2530,7 +2547,7 @@ mod tests {
 
                 // 1. MTU Exchange
                 let header_builder = PacketBuilder {
-                    header: Header { opcode: Opcode::ExchangeMtuReq },
+                    header: Header::new(Opcode::ATT_EXCHANGE_MTU_REQ),
                     payload: ExchangeMtuReq { client_rx_mtu: U16::new(NEGOTIATED_MTU) },
                 };
                 let mut tx_buf = [0u8; NEGOTIATED_MTU as usize];
@@ -2538,14 +2555,14 @@ mod tests {
                 client_tx_bearer.send(builder.as_packet()).await.unwrap();
 
                 let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ExchangeMtuRsp);
+                assert_eq!(packet.header.opcode, Opcode::ATT_EXCHANGE_MTU_RSP.into());
                 client_rx_bearer.set_mtu(NEGOTIATED_MTU);
                 client_tx_bearer.set_mtu(NEGOTIATED_MTU);
 
                 // 2. Read By Group Type Request
                 let uuid = Uuid::from_u16(0x2800);
                 let header_builder = PacketBuilder {
-                    header: Header { opcode: Opcode::ReadByGroupTypeReq },
+                    header: Header::new(Opcode::ATT_READ_BY_GROUP_TYPE_REQ),
                     payload: ReadByGroupTypeReqHeader {
                         starting_handle: U16::new(1),
                         ending_handle: U16::new(10),
@@ -2561,7 +2578,7 @@ mod tests {
                 client_tx_bearer.send(builder.as_packet()).await.unwrap();
 
                 let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ReadByGroupTypeRsp);
+                assert_eq!(packet.header.opcode, Opcode::ATT_READ_BY_GROUP_TYPE_RSP.into());
 
                 // Parse the response and verify that only the first entry was packed
                 // due to subsequent entries having different lengths.
@@ -2612,7 +2629,7 @@ mod tests {
 
                 // Write Request for handle 10, value "Sunstone"
                 let header_builder = PacketBuilder {
-                    header: Header { opcode: Opcode::WriteReq },
+                    header: Header::new(Opcode::ATT_WRITE_REQ),
                     payload: WriteReqHeader { attribute_handle: U16::new(10) },
                 };
                 let mut tx_buf = [0u8; SERVER_MTU as usize];
@@ -2626,7 +2643,7 @@ mod tests {
 
                 // Expect WriteRsp
                 let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::WriteRsp);
+                assert_eq!(packet.header.opcode, Opcode::ATT_WRITE_RSP.into());
                 assert!(packet.data.is_empty());
             });
 
@@ -2677,7 +2694,7 @@ mod tests {
                 // Write Request for non-existent handle 99
                 {
                     let header_builder = PacketBuilder {
-                        header: Header { opcode: Opcode::WriteReq },
+                        header: Header::new(Opcode::ATT_WRITE_REQ),
                         payload: WriteReqHeader { attribute_handle: U16::new(99) },
                     };
                     let mut tx_buf = [0u8; SERVER_MTU as usize];
@@ -2690,9 +2707,9 @@ mod tests {
                     client_tx_bearer.send(builder.as_packet()).await.unwrap();
 
                     let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                    assert_eq!(packet.header.opcode, Opcode::ErrorRsp);
+                    assert_eq!(packet.header.opcode, Opcode::ATT_ERROR_RSP.into());
                     let err = ErrorRsp::try_read_from_bytes(&packet.data[..]).unwrap();
-                    assert_eq!(err.request_opcode, Opcode::WriteReq as u8);
+                    assert_eq!(err.request_opcode, Opcode::ATT_WRITE_REQ as u8);
                     assert_eq!(err.attribute_handle.get(), 99);
                     assert_eq!(err.error_code, ErrorCode::InvalidHandle);
                 }
@@ -2734,7 +2751,7 @@ mod tests {
                 let mut builder = DynamicPacketBuilder::new(
                     &mut tx_buf,
                     PacketBuilder {
-                        header: Header { opcode: Opcode::WriteCmd },
+                        header: Header::new(Opcode::ATT_WRITE_CMD),
                         payload: WriteCmdHeader { attribute_handle: U16::new(10) },
                     },
                     128,
@@ -2795,7 +2812,7 @@ mod tests {
                 let mut builder = DynamicPacketBuilder::new(
                     &mut tx_buf,
                     PacketBuilder {
-                        header: Header { opcode: Opcode::WriteCmd },
+                        header: Header::new(Opcode::ATT_WRITE_CMD),
                         payload: WriteCmdHeader { attribute_handle: U16::new(99) },
                     },
                     128,
@@ -2808,7 +2825,7 @@ mod tests {
                 let mut builder = DynamicPacketBuilder::new(
                     &mut tx_buf,
                     PacketBuilder {
-                        header: Header { opcode: Opcode::WriteCmd },
+                        header: Header::new(Opcode::ATT_WRITE_CMD),
                         payload: WriteCmdHeader { attribute_handle: U16::new(10) },
                     },
                     128,
@@ -2817,10 +2834,8 @@ mod tests {
                 app_tx_bearer.send(builder.as_packet()).await.unwrap();
 
                 // 3. Malformed payload
-                let builder = PacketBuilder {
-                    header: Header { opcode: Opcode::WriteCmd },
-                    payload: [0u8; 1],
-                };
+                let builder =
+                    PacketBuilder { header: Header::new(Opcode::ATT_WRITE_CMD), payload: [0u8; 1] };
                 app_tx_bearer.send(builder.as_packet()).await.unwrap();
 
                 drop(app_tx_bearer);
@@ -2866,7 +2881,7 @@ mod tests {
                 let mut builder = DynamicPacketBuilder::new(
                     &mut tx_buf,
                     PacketBuilder {
-                        header: Header { opcode: Opcode::PrepareWriteReq },
+                        header: Header::new(Opcode::ATT_PREPARE_WRITE_REQ),
                         payload: PrepareWriteHeader {
                             attribute_handle: U16::new(10),
                             value_offset: U16::new(0),
@@ -2880,7 +2895,7 @@ mod tests {
                 // Read response
                 let mut rx_buf = [MaybeUninit::uninit(); 128];
                 let packet = app_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::PrepareWriteRsp);
+                assert_eq!(packet.header.opcode, Opcode::ATT_PREPARE_WRITE_RSP.into());
                 let rsp = PrepareWriteRsp::try_ref_from_bytes(&packet.data).unwrap();
                 assert_eq!(rsp.header.attribute_handle.get(), 10);
                 assert_eq!(rsp.header.value_offset.get(), 0);
@@ -2926,7 +2941,7 @@ mod tests {
                 let mut builder = DynamicPacketBuilder::new(
                     &mut tx_buf,
                     PacketBuilder {
-                        header: Header { opcode: Opcode::PrepareWriteReq },
+                        header: Header::new(Opcode::ATT_PREPARE_WRITE_REQ),
                         payload: PrepareWriteHeader {
                             attribute_handle: U16::new(10),
                             value_offset: U16::new(13),
@@ -2940,9 +2955,9 @@ mod tests {
                 // Read response (should be ErrorRsp with InvalidOffset)
                 let mut rx_buf = [MaybeUninit::uninit(); 128];
                 let packet = app_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ErrorRsp);
+                assert_eq!(packet.header.opcode, Opcode::ATT_ERROR_RSP.into());
                 let rsp = ErrorRsp::try_read_from_bytes(&packet.data).unwrap();
-                assert_eq!(rsp.request_opcode, Opcode::PrepareWriteReq as u8);
+                assert_eq!(rsp.request_opcode, Opcode::ATT_PREPARE_WRITE_REQ as u8);
                 assert_eq!(rsp.attribute_handle.get(), 10);
                 assert_eq!(rsp.error_code, ErrorCode::InvalidOffset);
             });
@@ -2989,7 +3004,7 @@ mod tests {
                 let mut builder = DynamicPacketBuilder::new(
                     &mut tx_buf,
                     PacketBuilder {
-                        header: Header { opcode: Opcode::PrepareWriteReq },
+                        header: Header::new(Opcode::ATT_PREPARE_WRITE_REQ),
                         payload: PrepareWriteHeader {
                             attribute_handle: U16::new(10),
                             value_offset: U16::new(0),
@@ -3003,7 +3018,7 @@ mod tests {
                 // Read response (should be ErrorRsp with PrepareQueueFull)
                 let mut rx_buf = [MaybeUninit::uninit(); 128];
                 let packet = app_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ErrorRsp);
+                assert_eq!(packet.header.opcode, Opcode::ATT_ERROR_RSP.into());
                 let rsp = ErrorRsp::try_read_from_bytes(&packet.data).unwrap();
                 assert_eq!(rsp.error_code, ErrorCode::PrepareQueueFull);
             });
@@ -3060,7 +3075,7 @@ mod tests {
 
                 // Send ExecuteWriteReq with WriteAll flag
                 let builder = PacketBuilder {
-                    header: Header { opcode: Opcode::ExecuteWriteReq },
+                    header: Header::new(Opcode::ATT_EXECUTE_WRITE_REQ),
                     payload: ExecuteWriteReq { flags: ExecuteWriteFlags::WriteAll as u8 },
                 };
                 app_tx_bearer.send(builder.as_packet()).await.unwrap();
@@ -3068,7 +3083,7 @@ mod tests {
                 // Expect ExecuteWriteRsp
                 let mut rx_buf = [MaybeUninit::uninit(); 128];
                 let packet = app_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ExecuteWriteRsp);
+                assert_eq!(packet.header.opcode, Opcode::ATT_EXECUTE_WRITE_RSP.into());
             });
 
             let server_handle = executor.spawn(async move {
@@ -3121,14 +3136,14 @@ mod tests {
 
                 // Send ExecuteWriteReq with CancelAll flag
                 let builder = PacketBuilder {
-                    header: Header { opcode: Opcode::ExecuteWriteReq },
+                    header: Header::new(Opcode::ATT_EXECUTE_WRITE_REQ),
                     payload: ExecuteWriteReq { flags: ExecuteWriteFlags::CancelAll as u8 },
                 };
                 app_tx_bearer.send(builder.as_packet()).await.unwrap();
 
                 let mut rx_buf = [MaybeUninit::uninit(); 128];
                 let packet = app_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ExecuteWriteRsp);
+                assert_eq!(packet.header.opcode, Opcode::ATT_EXECUTE_WRITE_RSP.into());
             });
 
             let server_handle = executor.spawn(async move {
@@ -3182,14 +3197,14 @@ mod tests {
                 let mut app_rx_bearer = BearerRx::new(app_channel.receiver);
 
                 let builder = PacketBuilder {
-                    header: Header { opcode: Opcode::ExecuteWriteReq },
+                    header: Header::new(Opcode::ATT_EXECUTE_WRITE_REQ),
                     payload: ExecuteWriteReq { flags: ExecuteWriteFlags::WriteAll as u8 },
                 };
                 app_tx_bearer.send(builder.as_packet()).await.unwrap();
 
                 let mut rx_buf = [MaybeUninit::uninit(); 128];
                 let packet = app_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ErrorRsp);
+                assert_eq!(packet.header.opcode, Opcode::ATT_ERROR_RSP.into());
                 let rsp = ErrorRsp::try_read_from_bytes(&packet.data).unwrap();
                 assert_eq!(rsp.error_code, ErrorCode::WriteNotPermitted);
                 assert_eq!(rsp.attribute_handle.get(), 10);
@@ -3224,7 +3239,7 @@ mod tests {
                 let mut rx_buf = [MaybeUninit::uninit(); MAX_SUPPORTED_MTU];
                 let sdu = test_rx.recv(&mut rx_buf).await.unwrap();
                 let packet = Packet::try_ref_from_bytes(sdu).unwrap();
-                assert_eq!(packet.header.opcode, Opcode::HandleValueNtf);
+                assert_eq!(packet.header.opcode, Opcode::ATT_HANDLE_VALUE_NTF.into());
                 let ntf = HandleValueNtf::try_ref_from_bytes(&packet.data).unwrap();
                 assert_eq!(ntf.header.attribute_handle.get(), 0x1234);
                 assert_eq!(ntf.attribute_value, [0xAA, 0xBB, 0xCC]);
@@ -3262,14 +3277,14 @@ mod tests {
             let client_handle = executor.spawn(async move {
                 let mut rx_buf = [MaybeUninit::uninit(); MAX_SUPPORTED_MTU];
                 let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::HandleValueInd);
+                assert_eq!(packet.header.opcode, Opcode::ATT_HANDLE_VALUE_IND.into());
                 let ind = HandleValueInd::try_ref_from_bytes(&packet.data).unwrap();
                 assert_eq!(ind.header.attribute_handle.get(), 0x5678);
                 assert_eq!(ind.attribute_value, [0x11, 0x22]);
 
                 // Respond with HandleValueCnf
                 let cnf = PacketBuilder {
-                    header: Header { opcode: Opcode::HandleValueCnf },
+                    header: Header::new(Opcode::ATT_HANDLE_VALUE_CFM.into()),
                     payload: HandleValueCnf {},
                 };
                 let _ = client_tx_bearer.send(cnf.as_packet()).await;

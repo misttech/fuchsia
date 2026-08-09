@@ -6,46 +6,11 @@
 
 use core::cmp::min;
 use core::mem::size_of;
+pub use sapphire_emboss::att::AttOpcode as Opcode;
 use sapphire_uuid::Uuid;
 use strum_macros::FromRepr;
 use zerocopy::byteorder::little_endian::U16;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, TryFromBytes, Unaligned};
-
-/// ATT opcodes
-///
-/// Defined in the Bluetooth core spec v6.0, Vol 3, Part F, 3.4.1.1
-#[derive(
-    TryFromBytes, IntoBytes, KnownLayout, Immutable, Debug, Clone, Copy, PartialEq, Eq, FromRepr,
-)]
-#[repr(u8)]
-pub enum Opcode {
-    ErrorRsp = 0x01,
-    ExchangeMtuReq = 0x02,
-    ExchangeMtuRsp = 0x03,
-    FindInformationReq = 0x04,
-    FindInformationRsp = 0x05,
-    FindByTypeValueReq = 0x06,
-    FindByTypeValueRsp = 0x07,
-    ReadByTypeReq = 0x08,
-    ReadByTypeRsp = 0x09,
-    ReadReq = 0x0A,
-    ReadRsp = 0x0B,
-    ReadBlobReq = 0x0C,
-    ReadBlobRsp = 0x0D,
-    ReadByGroupTypeReq = 0x10,
-    ReadByGroupTypeRsp = 0x11,
-    WriteReq = 0x12,
-    WriteRsp = 0x13,
-    WriteCmd = 0x52,
-    PrepareWriteReq = 0x16,
-    PrepareWriteRsp = 0x17,
-    ExecuteWriteReq = 0x18,
-    ExecuteWriteRsp = 0x19,
-    HandleValueNtf = 0x1B,
-    HandleValueInd = 0x1D,
-    HandleValueCnf = 0x1E,
-}
-
 /// The UUID format types supported in Find Information Response.
 #[derive(
     TryFromBytes,
@@ -89,20 +54,6 @@ impl From<Uuid> for UuidFormat {
     }
 }
 
-impl TryFrom<u8> for Opcode {
-    type Error = u8;
-
-    fn try_from(val: u8) -> Result<Self, Self::Error> {
-        Self::from_repr(val).ok_or(val)
-    }
-}
-
-impl From<Opcode> for u8 {
-    fn from(op: Opcode) -> Self {
-        op as u8
-    }
-}
-
 /// ATT Error Codes
 #[derive(
     TryFromBytes, IntoBytes, KnownLayout, Immutable, Debug, Clone, Copy, PartialEq, Eq, FromRepr,
@@ -138,10 +89,22 @@ impl TryFrom<u8> for ErrorCode {
 }
 
 /// A parsed view into any incoming packet's header.
-#[derive(TryFromBytes, IntoBytes, KnownLayout, Immutable, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(C, packed)]
 pub struct Header {
-    pub opcode: Opcode,
+    pub opcode: u8,
+}
+
+impl Header {
+    pub fn new(opcode: Opcode) -> Self {
+        Self { opcode: opcode as u8 }
+    }
+}
+
+impl From<Opcode> for Header {
+    fn from(opcode: Opcode) -> Self {
+        Self::new(opcode)
+    }
 }
 
 /// A generic unsized ATT packet containing a verified header and variable payload data.
@@ -810,12 +773,12 @@ mod tests {
     fn test_error_rsp() {
         let err_bytes = [0x02, 0x05, 0x00, 0x06]; // opcode 0x02, handle 0x0005, error code 0x06 (RequestNotSupported)
         let parsed = ErrorRsp::try_read_from_bytes(&err_bytes[..]).unwrap();
-        assert_eq!(parsed.request_opcode, Opcode::ExchangeMtuReq.into());
+        assert_eq!(parsed.request_opcode, u8::from(Opcode::ATT_EXCHANGE_MTU_REQ));
         assert_eq!(parsed.attribute_handle.get(), 5);
         assert_eq!(parsed.error_code, ErrorCode::RequestNotSupported);
 
         let new_err = ErrorRsp {
-            request_opcode: Opcode::ExchangeMtuReq.into(),
+            request_opcode: u8::from(Opcode::ATT_EXCHANGE_MTU_REQ),
             attribute_handle: U16::new(5),
             error_code: ErrorCode::RequestNotSupported,
         };
@@ -837,17 +800,11 @@ mod tests {
     #[test]
     fn test_header() {
         let hdr_bytes = [0x02];
-        let parsed = Header::try_read_from_bytes(&hdr_bytes[..]).unwrap();
-        assert_eq!(parsed.opcode, Opcode::ExchangeMtuReq);
+        let parsed = Header::read_from_bytes(&hdr_bytes).unwrap();
+        assert_eq!(parsed.opcode, u8::from(Opcode::ATT_EXCHANGE_MTU_REQ));
 
-        let new_hdr = Header { opcode: Opcode::ExchangeMtuReq };
-        assert_eq!(new_hdr.as_bytes(), &hdr_bytes[..]);
-    }
-
-    #[test]
-    fn test_header_invalid_opcode() {
-        let invalid_hdr_bytes = [0xff];
-        assert!(Header::try_read_from_bytes(&invalid_hdr_bytes[..]).is_err());
+        let new_hdr = Header::new(Opcode::ATT_EXCHANGE_MTU_REQ);
+        assert_eq!(new_hdr.as_bytes(), &hdr_bytes);
     }
 
     #[test]

@@ -68,6 +68,7 @@ if (is_host) {
     ]
     features = []
     deps = [
+      "sapphire-emboss",
       "//third_party/rust_crates:futures",
       "//third_party/rust_crates:proptest",
       "//third_party/rust_crates:sapphire-async",

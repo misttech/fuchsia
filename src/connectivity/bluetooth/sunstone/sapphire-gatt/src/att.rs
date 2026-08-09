@@ -1042,7 +1042,7 @@ mod tests {
 
                         // Test starting handle = 0
                         let builder = PacketBuilder {
-                            header: Header { opcode: Opcode::FindInformationReq },
+                            header: Header::new(Opcode::ATT_FIND_INFORMATION_REQ),
                             payload: FindInformationReq {
                                 starting_handle: U16::new(0),
                                 ending_handle: U16::new(handle),
@@ -1050,14 +1050,14 @@ mod tests {
                         };
                         client_tx_bearer.send(builder.as_packet()).await.unwrap();
                         let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                        assert_eq!(packet.header.opcode, Opcode::ErrorRsp);
+                        assert_eq!(packet.header.opcode, Opcode::ATT_ERROR_RSP.into());
                         let err = ErrorRsp::try_read_from_bytes(&packet.data[..]).unwrap();
                         assert_eq!(err.error_code, ErrorCode::InvalidHandle);
 
                         let mut rx_buf2 = [MaybeUninit::uninit(); 512];
                         // Test ending handle = 0
                         let builder2 = PacketBuilder {
-                            header: Header { opcode: Opcode::FindInformationReq },
+                            header: Header::new(Opcode::ATT_FIND_INFORMATION_REQ),
                             payload: FindInformationReq {
                                 starting_handle: U16::new(handle),
                                 ending_handle: U16::new(0),
@@ -1065,7 +1065,7 @@ mod tests {
                         };
                         client_tx_bearer.send(builder2.as_packet()).await.unwrap();
                         let packet2 = client_rx_bearer.next_packet(&mut rx_buf2).await.unwrap();
-                        assert_eq!(packet2.header.opcode, Opcode::ErrorRsp);
+                        assert_eq!(packet2.header.opcode, Opcode::ATT_ERROR_RSP.into());
                         let err2 = ErrorRsp::try_read_from_bytes(&packet2.data[..]).unwrap();
                         assert_eq!(err2.error_code, ErrorCode::InvalidHandle);
                     });

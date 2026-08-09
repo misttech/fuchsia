@@ -11,6 +11,7 @@ use zerocopy::{IntoBytes, TryFromBytes};
 
 use sapphire_collections::storage::ArrayStorage;
 use sapphire_collections::vec::Vec;
+use sapphire_emboss::att::AttHeader;
 
 /// The default starting ATT MTU size defined by the BT Core Spec
 ///
@@ -123,7 +124,8 @@ impl<Rx> BearerRx<Rx> {
     /// - `Some(Err(raw_opcode))` if a packet is staged but its raw opcode byte is invalid.
     pub fn staged_opcode(&self) -> Option<Result<Opcode, u8>> {
         let raw = *self.staged_buf.first()?;
-        Some(Opcode::from_repr(raw).ok_or(raw))
+        let header = AttHeader::new(&self.staged_buf[..]);
+        Some(header.attribute_opcode().try_read().map_err(|_| raw))
     }
 }
 
@@ -155,7 +157,10 @@ where
     pub async fn peek_opcode(&mut self) -> Opcode {
         loop {
             if let Ok(packet) = self.stage_next_sdu().await {
-                return packet.header.opcode;
+                return AttHeader::new(packet.as_bytes())
+                    .attribute_opcode()
+                    .try_read()
+                    .expect("staged packet has valid opcode");
             }
         }
     }
@@ -204,7 +209,10 @@ where
         }
 
         let raw_opcode = self.staged_buf[0];
-        if Packet::try_ref_from_bytes(&self.staged_buf).is_err() {
+        let header = AttHeader::new(&self.staged_buf[..]);
+        if Packet::try_ref_from_bytes(&self.staged_buf).is_err()
+            || header.attribute_opcode().try_read().is_err()
+        {
             self.staged_buf.clear();
             return Err(BearerRecvError::InvalidOpcode(raw_opcode));
         }
@@ -312,7 +320,7 @@ mod tests {
                 let mut bearer_rx = BearerRx::new(app_channel.receiver);
                 let mut buf = [MaybeUninit::uninit(); 32];
                 let recv_packet = bearer_rx.next_packet(&mut buf).await.expect("recv succeeds");
-                assert_eq!(recv_packet.header.opcode, Opcode::ExchangeMtuRsp);
+                assert_eq!(recv_packet.header.opcode, Opcode::ATT_EXCHANGE_MTU_RSP.into());
                 assert_eq!(&recv_packet.data, &[0x04, 0x05]);
             });
 
