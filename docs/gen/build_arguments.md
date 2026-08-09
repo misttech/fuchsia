@@ -27,7 +27,7 @@ main repository.
 
 **Current value (from the default):** `[]`
 
-From //BUILD.gn:114
+From //BUILD.gn:108
 
 ### additional_default_targets
 
@@ -36,7 +36,7 @@ the //:default target
 
 **Current value (from the default):** `[]`
 
-From //BUILD.gn:130
+From //BUILD.gn:124
 
 ### additional_tefmocheck_labels
 
@@ -45,7 +45,7 @@ Defaults to empty.
 
 **Current value (from the default):** `[]`
 
-From //BUILD.gn:134
+From //BUILD.gn:128
 
 ### all_cpu_kernel_boot_tests
 
@@ -81,7 +81,7 @@ It will be set below and passed to other toolchains through toolchain_args
 
 **Current value (from the default):** `[]`
 
-From //build/config/BUILDCONFIG.gn:774
+From //build/config/BUILDCONFIG.gn:775
 
 ### allowed_test_device_types
 
@@ -139,7 +139,7 @@ The result will be built and uploaded to CIPD by infra.
 
 **Current value (from the default):** `[]`
 
-From //BUILD.gn:118
+From //BUILD.gn:112
 
 ### assembly_partitions_configs
 
@@ -148,7 +148,7 @@ The result will be built and uploaded to CIPD by infra.
 
 **Current value (from the default):** `[]`
 
-From //BUILD.gn:126
+From //BUILD.gn:120
 
 ### assembly_product_configs
 
@@ -157,15 +157,7 @@ The result will be built and uploaded to CIPD by infra.
 
 **Current value (from the default):** `[]`
 
-From //BUILD.gn:122
-
-### authorized_ssh_keys_label
-
-DEPRECATED, left to trigger warnings
-
-**Current value (from the default):** `false`
-
-From //BUILD.gn:151
+From //BUILD.gn:116
 
 ### avb_atx_metadata
 
@@ -198,15 +190,6 @@ From //build/images/vbmeta.gni:17
 **Current value (from the default):** `""`
 
 From //build/images/vbmeta.gni:17
-
-### base_package_labels
-
-These remain only to allow for a soft-transition with developer's
-local args.gn files.
-
-**Current value (from the default):** `false`
-
-From //BUILD.gn:33
 
 ### basic_env_names
 
@@ -356,7 +339,7 @@ in args.gn.
 
 **Current value (from the default):** `[]`
 
-From //build/bazel/bazel_root_targets_list.gni:110
+From //build/bazel/bazel_root_targets_list.gni:119
 
 ### bazel_upload_build_events
 
@@ -621,27 +604,27 @@ only want to build and define a small subset of the tree.
 
 **Current value for `target_cpu = "arm64"`:** `[]`
 
-From //out/not-default/args.gn:15
+From //out/not-default/args.gn:13
 
 **Overridden from the default:** `[]`
 
-From //BUILD.gn:142
+From //BUILD.gn:136
 
 **Current value for `target_cpu = "riscv64"`:** `[]`
 
-From //out/not-default/args.gn:15
+From //out/not-default/args.gn:13
 
 **Overridden from the default:** `[]`
 
-From //BUILD.gn:142
+From //BUILD.gn:136
 
 **Current value for `target_cpu = "x64"`:** `[]`
 
-From //out/not-default/args.gn:15
+From //out/not-default/args.gn:13
 
 **Overridden from the default:** `[]`
 
-From //BUILD.gn:142
+From //BUILD.gn:136
 
 ### build_should_trace_actions
 
@@ -652,12 +635,6 @@ An action that accesses undeclared inputs or outputs will fail the build.
 **Current value (from the default):** `false`
 
 From //build/tracer/tracer.gni:12
-
-### cache_package_labels
-
-**Current value (from the default):** `false`
-
-From //BUILD.gn:34
 
 ### call_graph_section
 
@@ -1027,7 +1004,7 @@ This should never be set as a build argument.
 }
   static = {
   clang_rt = "lib/clang/23/lib/riscv64-unknown-fuchsia/libclang_rt.lsan.a"
-  clang_rt_cxx = ""
+  clang_rt_cxx = "../../../../out/not-default/libclang_rt.lsan_cxx.a"
 }
 }
   tsan = {
@@ -2110,10 +2087,45 @@ From //build/config/compiler.gni:82
 }]
   install_host_tool = true
 }, {
+  bazel_label = "//tools/fidl/fidlgen_go:fidlgen_go"
+  copy_outputs = [{
+  bazel = "{{BAZEL_TARGET_OUT_DIR}}/fidlgen_go_/fidlgen_go"
+  ninja = "fidlgen_go"
+}]
+  install_host_tool = true
+}, {
+  bazel_label = "//tools/fidl/fidlgen_python:fidlgen_python"
+  copy_outputs = [{
+  bazel = "{{BAZEL_TARGET_OUT_DIR}}/fidlgen_python_/fidlgen_python"
+  ninja = "fidlgen_python"
+}]
+  install_host_tool = true
+}, {
+  bazel_label = "//tools/fidl/fidlgen_syzkaller:fidlgen_syzkaller"
+  copy_outputs = [{
+  bazel = "{{BAZEL_TARGET_OUT_DIR}}/fidlgen_syzkaller_/fidlgen_syzkaller"
+  ninja = "fidlgen_syzkaller"
+}]
+  install_host_tool = true
+}, {
   bazel_label = "//tools/fidl/gidl-format:gidl-format"
   copy_outputs = [{
   bazel = "{{BAZEL_TARGET_OUT_DIR}}/gidl-format_/gidl-format"
   ninja = "gidl-format"
+}]
+  install_host_tool = true
+}, {
+  bazel_label = "//tools/fidl/gidl/cmd/gidl:gidl"
+  copy_outputs = [{
+  bazel = "{{BAZEL_TARGET_OUT_DIR}}/gidl_/gidl"
+  ninja = "gidl"
+}]
+  install_host_tool = true
+}, {
+  bazel_label = "//tools/fidl/gidl/cmd/gidl_audit:gidl_audit"
+  copy_outputs = [{
+  bazel = "{{BAZEL_TARGET_OUT_DIR}}/gidl_audit_/gidl_audit"
+  ninja = "gidl_audit"
 }]
   install_host_tool = true
 }, {
@@ -2190,6 +2202,13 @@ From //build/config/compiler.gni:82
   bazel_label = "//tools/fidl/fidldoc:fidldoc"
   install_host_tool = true
 }, {
+  bazel_label = "//tools/fidl/fidlgen_rust:fidlgen_rust"
+  copy_outputs = [{
+  bazel = "{{BAZEL_TARGET_OUT_DIR}}/fidlgen_rust_/fidlgen_rust"
+  ninja = "fidlgen_rust"
+}]
+  install_host_tool = true
+}, {
   bazel_label = "//tools/fidl/fidlmerge:fidlmerge"
   copy_outputs = [{
   bazel = "{{BAZEL_TARGET_OUT_DIR}}/fidlmerge_/fidlmerge"
@@ -2241,12 +2260,39 @@ From //build/config/compiler.gni:82
   install_host_tool = true
   ninja_name = "clang_doc_filter"
 }, {
+  bazel_label = "//tools/check-licenses:check-licenses"
+  copy_outputs = [{
+  bazel = "{{BAZEL_TARGET_OUT_DIR}}/check-licenses_/check-licenses"
+  ninja = "check-licenses"
+}]
+  install_host_tool = true
+}, {
+  bazel_label = "//tools/check-licenses/util/cmd/gn/generate_project_json:check-licenses-gen-project-json"
+  copy_outputs = [{
+  bazel = "{{BAZEL_TARGET_OUT_DIR}}/check-licenses-gen-project-json_/check-licenses-gen-project-json"
+  ninja = "check-licenses-gen-project-json"
+}]
+  install_host_tool = true
+}, {
+  bazel_label = "//tools/check-licenses/util/cmd/gn/generate_intermediate_json:generate_intermediate_json_cmd"
+  copy_outputs = [{
+  bazel = "{{BAZEL_TARGET_OUT_DIR}}/generate_intermediate_json_cmd_/generate_intermediate_json_cmd"
+  ninja = "generate_intermediate_json_cmd"
+}]
+  install_host_tool = true
+}, {
   bazel_label = "//src/lib/testing/expectation/tool:list_test_expectations"
   copy_outputs = [{
   bazel = "{{BAZEL_TARGET_OUT_DIR}}/list_test_expectations"
   ninja = "list_test_expectations"
 }]
   install_host_tool = true
+}, {
+  bazel_label = "//build/config/python/generate_python_api_symbols"
+  copy_outputs = [{
+  bazel = "{{BAZEL_TARGET_OUT_DIR}}/generate_python_api_symbols_/generate_python_api_symbols"
+  ninja = "generate_python_api_symbols"
+}]
 }, {
   bazel_label = "//build/bazel/toolchains/tests:build"
   bazel_name = "build.stamp"
@@ -2276,7 +2322,7 @@ From //build/config/compiler.gni:82
 }]
 ```
 
-From //build/bazel/bazel_root_targets_list.gni:53
+From //build/bazel/bazel_root_targets_list.gni:56
 
 ### default_configs
 
@@ -2289,17 +2335,6 @@ From //third_party/pigweed/src/pw_build/gn_internal/defaults.gni:34
 **Current value (from the default):** `[]`
 
 From //third_party/pigweed/src/pw_build/gn_internal/defaults.gni:35
-
-### delegated_network_provisioning
-
-DO NOT SET THIS IN A PRODUCT DEFINITION!!  FOR DEVELOPER USE ONLY
-TODO(https://fxbug.dev/42082693): Remove this when we have a solution for
-changing the netcfg configuration at runtime.
-LINT.IfChange
-
-**Current value (from the default):** `false`
-
-From //src/connectivity/policy/netcfg/delegated_network_provisioning.gni:10
 
 ### delivery_blob_type
 
@@ -2326,29 +2361,9 @@ A developer-only argument that is used to add tests to the build without
 going through the test-type validate that the above sets of tests are.
 These are always a dependency of the main product assembly.
 
-**Current value for `target_cpu = "arm64"`:** `[]`
+**Current value (from the default):** `[]`
 
-From //out/not-default/args.gn:24
-
-**Overridden from the default:** `[]`
-
-From //BUILD.gn:92
-
-**Current value for `target_cpu = "riscv64"`:** `[]`
-
-From //out/not-default/args.gn:24
-
-**Overridden from the default:** `[]`
-
-From //BUILD.gn:92
-
-**Current value for `target_cpu = "x64"`:** `[]`
-
-From //out/not-default/args.gn:24
-
-**Overridden from the default:** `[]`
-
-From //BUILD.gn:92
+From //BUILD.gn:86
 
 ### dir_docker
 
@@ -3365,9 +3380,9 @@ From //third_party/pigweed/src/modules.gni:27
 
 ### dir_pw_third_party_boringssl
 
-If compiling backends with boringssl, this variable is set to the path to the
-boringssl source code. When set, a pw_source_set for the boringssl library is
-created at "$pw_external_boringssl".
+If compiling backends with boringssl, this variable is set to the path to
+the boringssl source code. When set, a pw_source_set for the boringssl
+library is created at "$pw_external_boringssl".
 
 **Current value (from the default):** `""`
 
@@ -3691,7 +3706,7 @@ As these cannot be part of the legacy AIB for a product, there is no
 
 **Current value (from the default):** `[]`
 
-From //BUILD.gn:52
+From //BUILD.gn:50
 
 ### dont_profile_source_files
 
@@ -3715,29 +3730,19 @@ From //build/config/compiler.gni:96
 Host-driven, "end-to-end" tests that run on a Fuchsia image (either real
 hardware or emulated).
 
-**Current value for `target_cpu = "arm64"`:** `[]`
+**Current value (from the default):** `[]`
 
-From //out/not-default/args.gn:20
+From //BUILD.gn:75
 
-**Overridden from the default:** `[]`
+### emboss_build_dir_to_root
 
-From //BUILD.gn:81
+An optional relative path from `root_build_dir` to `//`, which can be used
+by `emboss_cc_library` and `emboss_rust_library` to rebase `embossc` source
+files.
 
-**Current value for `target_cpu = "riscv64"`:** `[]`
+**Current value (from the default):** `""`
 
-From //out/not-default/args.gn:20
-
-**Overridden from the default:** `[]`
-
-From //BUILD.gn:81
-
-**Current value for `target_cpu = "x64"`:** `[]`
-
-From //out/not-default/args.gn:20
-
-**Overridden from the default:** `[]`
-
-From //BUILD.gn:81
+From //third_party/github.com/google/experimental-emboss-rust/build_defs.gni:38
 
 ### enable_assembly_heapdump
 
@@ -3881,7 +3886,7 @@ From //third_party/perfetto/gn/perfetto.gni:230
 
 **Current value (from the default):** `false`
 
-From //third_party/perfetto/gn/perfetto.gni:432
+From //third_party/perfetto/gn/perfetto.gni:435
 
 ### enable_perfetto_fuzzers
 
@@ -3898,7 +3903,7 @@ enable this by default.
 
 **Current value (from the default):** `false`
 
-From //third_party/perfetto/gn/perfetto.gni:426
+From //third_party/perfetto/gn/perfetto.gni:429
 
 ### enable_perfetto_heapprofd
 
@@ -3922,7 +3927,7 @@ From //third_party/perfetto/gn/perfetto.gni:174
 
 **Current value (from the default):** `false`
 
-From //third_party/perfetto/gn/perfetto.gni:420
+From //third_party/perfetto/gn/perfetto.gni:423
 
 ### enable_perfetto_llvm_symbolizer
 
@@ -3930,7 +3935,7 @@ Enables the use of the LLVM symbolizer in trace_processor.
 
 **Current value (from the default):** `false`
 
-From //third_party/perfetto/gn/perfetto.gni:436
+From //third_party/perfetto/gn/perfetto.gni:439
 
 ### enable_perfetto_lockfree_taskrunner
 
@@ -3956,7 +3961,7 @@ can take a couple of minutes).
 
 **Current value (from the default):** `false`
 
-From //third_party/perfetto/gn/perfetto.gni:467
+From //third_party/perfetto/gn/perfetto.gni:470
 
 ### enable_perfetto_pcre2
 
@@ -3967,7 +3972,7 @@ fall back to the std::regex backend.
 
 **Current value (from the default):** `false`
 
-From //third_party/perfetto/gn/perfetto.gni:409
+From //third_party/perfetto/gn/perfetto.gni:412
 
 ### enable_perfetto_platform_services
 
@@ -3981,7 +3986,7 @@ Enables the protovm_compiler tool.
 
 **Current value (from the default):** `false`
 
-From //third_party/perfetto/gn/perfetto.gni:447
+From //third_party/perfetto/gn/perfetto.gni:450
 
 ### enable_perfetto_re2
 
@@ -3989,7 +3994,7 @@ Enables RE2 support.
 
 **Current value (from the default):** `false`
 
-From //third_party/perfetto/gn/perfetto.gni:412
+From //third_party/perfetto/gn/perfetto.gni:415
 
 ### enable_perfetto_rt_mutex
 
@@ -4006,7 +4011,7 @@ rerunning gn.
 
 **Current value (from the default):** `false`
 
-From //third_party/perfetto/gn/perfetto.gni:462
+From //third_party/perfetto/gn/perfetto.gni:465
 
 ### enable_perfetto_sock_inotify
 
@@ -4078,7 +4083,7 @@ From //third_party/perfetto/gn/perfetto.gni:351
 
 **Current value (from the default):** `false`
 
-From //third_party/perfetto/gn/perfetto.gni:451
+From //third_party/perfetto/gn/perfetto.gni:454
 
 ### enable_perfetto_traced_perf
 
@@ -4105,7 +4110,7 @@ From //third_party/perfetto/gn/perfetto.gni:343
 
 **Current value (from the default):** `false`
 
-From //third_party/perfetto/gn/perfetto.gni:455
+From //third_party/perfetto/gn/perfetto.gni:458
 
 ### enable_perfetto_unittests
 
@@ -4129,7 +4134,7 @@ From //third_party/perfetto/gn/perfetto.gni:206
 
 **Current value (from the default):** `false`
 
-From //third_party/perfetto/gn/perfetto.gni:441
+From //third_party/perfetto/gn/perfetto.gni:444
 
 ### enable_perfetto_x64_cpu_opt
 
@@ -4147,7 +4152,7 @@ From //third_party/perfetto/gn/perfetto.gni:390
 
 **Current value (from the default):** `false`
 
-From //third_party/perfetto/gn/perfetto.gni:402
+From //third_party/perfetto/gn/perfetto.gni:404
 
 ### enable_power_manager_debug
 
@@ -4292,17 +4297,17 @@ From //build/assembly/tools/assembly/BUILD.gn:20
 Include a mechanism for the kernel to sample threads and write the results
 to a buffer
 
-**Current value (from the default):** `false`
+**Current value (from the default):** `true`
 
 From //zircon/kernel/params.gni:112
 
 ### export_bazel_host_tests
 
-Set to True to make Bazel host tests visible to Fuchsia test runners, i.e.
-`fx test` and `botanist`. This feature is still experimental but will become
-the default. See https://fxbug.dev/349341932.
+Configures whether Bazel host tests show up in tests.json so they're visible
+to Fuchsia test runners, i.e. `fx test` and `botanist`.
+LINT.IfChange
 
-**Current value (from the default):** `false`
+**Current value (from the default):** `true`
 
 From //build/config/export_bazel_host_tests.gni:9
 
@@ -4323,7 +4328,7 @@ packages instead of explicitly adding the labels of the
 
 **Current value (from the default):** `[]`
 
-From //BUILD.gn:66
+From //BUILD.gn:64
 
 ### extra_bazel_assembly_targets
 
@@ -4370,7 +4375,7 @@ This is just added to [`known_variants`](#known_variants).
 
 **Current value (from the default):** `[]`
 
-From //build/config/BUILDCONFIG.gn:532
+From //build/config/BUILDCONFIG.gn:533
 
 ### fat_lto_objects
 
@@ -4420,6 +4425,17 @@ If true, Flatland will log an excruciating amount of data.  For debugging.
 **Current value (from the default):** `false`
 
 From //src/ui/scenic/lib/utils/build_args.gni:7
+
+### focaltech_driver_flavor
+
+Toggles between the C++ and Rust driver implementations.
+
+TODO(https://fxbug.dev/527192080): Remove the toggle after the Rust port is completed.
+Valid values: "cpp", "rust"
+
+**Current value (from the default):** `"cpp"`
+
+From //src/ui/input/drivers/focaltech/BUILD.gn:16
 
 ### font_catalog_paths
 
@@ -4636,6 +4652,17 @@ From //build/go/go_build.gni:21
 
 From //build/go/go_build.gni:17
 
+### goodix_driver_flavor
+
+Toggles between the C++ and Rust driver implementations.
+
+TODO(https://fxbug.dev/527195603): Remove the toggle after the Rust port is completed.
+Valid values: "cpp", "rust"
+
+**Current value (from the default):** `"cpp"`
+
+From //src/ui/input/drivers/goodix/BUILD.gn:16
+
 ### graphics_compute_generate_debug_shaders
 
 
@@ -4748,29 +4775,9 @@ From //build/board.gni:8
 
 Fully hermetic tests (both by packaging and at runtime)
 
-**Current value for `target_cpu = "arm64"`:** `[]`
+**Current value (from the default):** `[]`
 
-From //out/not-default/args.gn:18
-
-**Overridden from the default:** `[]`
-
-From //BUILD.gn:73
-
-**Current value for `target_cpu = "riscv64"`:** `[]`
-
-From //out/not-default/args.gn:18
-
-**Overridden from the default:** `[]`
-
-From //BUILD.gn:73
-
-**Current value for `target_cpu = "x64"`:** `[]`
-
-From //out/not-default/args.gn:18
-
-**Overridden from the default:** `[]`
-
-From //BUILD.gn:73
+From //BUILD.gn:71
 
 ### host_byteorder
 
@@ -4792,27 +4799,27 @@ These will be added to the build using the host toolchain.
 
 **Current value for `target_cpu = "arm64"`:** `[]`
 
-From //out/not-default/args.gn:10
+From //out/not-default/args.gn:14
 
 **Overridden from the default:** `[]`
 
-From //BUILD.gn:99
+From //BUILD.gn:93
 
 **Current value for `target_cpu = "riscv64"`:** `[]`
 
-From //out/not-default/args.gn:10
+From //out/not-default/args.gn:14
 
 **Overridden from the default:** `[]`
 
-From //BUILD.gn:99
+From //BUILD.gn:93
 
 **Current value for `target_cpu = "x64"`:** `[]`
 
-From //out/not-default/args.gn:10
+From //out/not-default/args.gn:14
 
 **Overridden from the default:** `[]`
 
-From //BUILD.gn:99
+From //BUILD.gn:93
 
 ### host_os
 
@@ -4825,29 +4832,9 @@ image, or the compiled OS itself, not even for their host_test_data().
 
 These will be added to the build using the host toolchain.
 
-**Current value for `target_cpu = "arm64"`:** `[]`
+**Current value (from the default):** `[]`
 
-From //out/not-default/args.gn:21
-
-**Overridden from the default:** `[]`
-
-From //BUILD.gn:87
-
-**Current value for `target_cpu = "riscv64"`:** `[]`
-
-From //out/not-default/args.gn:21
-
-**Overridden from the default:** `[]`
-
-From //BUILD.gn:87
-
-**Current value for `target_cpu = "x64"`:** `[]`
-
-From //out/not-default/args.gn:21
-
-**Overridden from the default:** `[]`
-
-From //BUILD.gn:87
+From //BUILD.gn:81
 
 ### host_tools_base_path_override
 
@@ -5513,7 +5500,7 @@ Each element of the list is one variant, which is a scope defining:
   tags = ["gcc"]
 }, {
   configs = ["//build/config/profile:heapdump"]
-  tags = ["fuchsia-only", "heapdump", "instrumented", "instrumentation-runtime", "kernel-excluded", "needs-compiler-abi"]
+  tags = ["fuchsia-only", "heapdump", "instrumented", "instrumentation-runtime", "kernel-excluded", "needs-compiler-abi", "uses-shlibs"]
 }]
 ```
 
@@ -6441,7 +6428,7 @@ to off; the consumer opts in via perfetto_sdk_config.h (see build_config.h).
 
 **Current value (from the default):** `false`
 
-From //third_party/perfetto/gn/perfetto.gni:491
+From //third_party/perfetto/gn/perfetto.gni:494
 
 ### perfetto_build_with_android
 
@@ -6510,7 +6497,7 @@ Note: that if this is enabled `perfetto_use_system_protobuf` should be also.
 
 **Current value (from the default):** `false`
 
-From //third_party/perfetto/gn/perfetto.gni:477
+From //third_party/perfetto/gn/perfetto.gni:480
 
 ### perfetto_use_system_protobuf
 
@@ -6519,7 +6506,7 @@ from /usr/include instead of the hermetic one.
 
 **Current value (from the default):** `false`
 
-From //third_party/perfetto/gn/perfetto.gni:481
+From //third_party/perfetto/gn/perfetto.gni:484
 
 ### perfetto_use_system_sqlite
 
@@ -6528,13 +6515,13 @@ from /usr/include instead of the hermetic one.
 
 **Current value (from the default):** `false`
 
-From //third_party/perfetto/gn/perfetto.gni:485
+From //third_party/perfetto/gn/perfetto.gni:488
 
 ### perfetto_use_system_zlib
 
 **Current value (from the default):** `false`
 
-From //third_party/perfetto/gn/perfetto.gni:487
+From //third_party/perfetto/gn/perfetto.gni:490
 
 ### perfetto_verbose_logs_enabled
 
@@ -6606,7 +6593,7 @@ Example:
 
 **Current value for `target_cpu = "arm64"`:** `[]`
 
-From //out/not-default/args.gn:26
+From //out/not-default/args.gn:17
 
 **Overridden from the default:** `[]`
 
@@ -6614,7 +6601,7 @@ From //build/assembly/developer_overrides.gni:516
 
 **Current value for `target_cpu = "riscv64"`:** `[]`
 
-From //out/not-default/args.gn:26
+From //out/not-default/args.gn:17
 
 **Overridden from the default:** `[]`
 
@@ -6622,7 +6609,7 @@ From //build/assembly/developer_overrides.gni:516
 
 **Current value for `target_cpu = "x64"`:** `[]`
 
-From //out/not-default/args.gn:26
+From //out/not-default/args.gn:17
 
 **Overridden from the default:** `[]`
 
@@ -6664,7 +6651,7 @@ bundle.
 
 **Current value (from the default):** `[]`
 
-From //BUILD.gn:146
+From //BUILD.gn:140
 
 ### profile_source_files
 
@@ -6997,8 +6984,8 @@ From //third_party/pigweed/src/pw_build/python_gn_args.gni:32
 
 ### pw_build_PYTHON_STATIC_ANALYSIS_TOOLS
 
-DOCSTAG: [python-static-analysis-tools]
-Default set of Python static alaysis tools to run for pw_python_package targets.
+DOCSTAG: [python-static-analysis-tools] Default set of Python static alaysis
+tools to run for pw_python_package targets.
 
 **Current value (from the default):** `["pylint", "mypy"]`
 
@@ -7238,16 +7225,18 @@ From //third_party/pigweed/src/pw_containers/BUILD.gn:31
 
 ### pw_emboss_build_dir_to_root
 
-An optional relative path from `root_build_dir` to `//`, which can be used by
-`emboss_cc_library` to rebase `embossc` source files.
+An optional relative path from `root_build_dir` to `//`, which can be used
+by `emboss_cc_library` to rebase `embossc` source files.
 
-Normally we don't need to define this manually ourselves and can rely on builtin GN functions to
-`rebase_path()` against `root_build_dir`, but that approach is unreliable for
-[build environments where `//out` is a symlink pointing to a directory outside of `//`][1],
-since [GN always provides `root_build_dir` as an absolute symlink-derefed path][2].
+Normally we don't need to define this manually ourselves and can rely on
+builtin GN functions to `rebase_path()` against `root_build_dir`, but that
+approach is unreliable for [build environments where `//out` is a symlink
+pointing to a directory outside of `//`][1], since [GN always provides
+`root_build_dir` as an absolute symlink-derefed path][2].
 
-When this is the case, we shouldn't use `root_build_dir` directly and must instead construct a
-"lexically local" version of `root_build_dir` which is a subpath of `//`.
+When this is the case, we shouldn't use `root_build_dir` directly and must
+instead construct a "lexically local" version of `root_build_dir` which is a
+subpath of `//`.
 
 Here's an example demonstrating this:
 
@@ -7270,11 +7259,12 @@ Would be equivalent to:
 Which evaluates to:
     "../../src/foo.emb"
 
-While both of these examples resolve to the same file, `embossc` attempts to place generated
-header files as siblings to the source .emb files, making it sensitive to the lexical
-representation of the path. `emboss_cc_library` also cancels out the leading `../` segments
-invoking `embossc` with an `--output-path` of nested r"(fake/)*" directories to ensure
-these generated files are contained within out directory.
+While both of these examples resolve to the same file, `embossc` attempts to
+place generated header files as siblings to the source .emb files, making it
+sensitive to the lexical representation of the path. `emboss_cc_library`
+also cancels out the leading `../` segments invoking `embossc` with an
+`--output-path` of nested r"(fake/)*" directories to ensure these generated
+files are contained within out directory.
 
 In the first example, the output path is:
   "gen/fake/fake/fake/../../../home/alice/foo_project/src/foo.h"
@@ -7287,16 +7277,17 @@ The second example places header files in the correct path:
 Which simplifies to:
   "gen/src/foo.h"
 
-By using `pw_emboss_build_dir_to_root` as the logical relative path from `root_build_dir` to
-`//`, it's possible to lexically construct a `symlink_safe_build_dir` which behaves like
-`root_build_dir` without resolving symlinks.
+By using `pw_emboss_build_dir_to_root` as the logical relative path from
+`root_build_dir` to `//`, it's possible to lexically construct a
+`symlink_safe_build_dir` which behaves like `root_build_dir` without
+resolving symlinks.
 
 [1]: https://cs.opensource.google/fuchsia/fuchsia/+/main:scripts/cog/cartfs_out_directory.py
 [2]: https://gn.googlesource.com/gn/+/e7f3202128bdb2429872fdb138626a010b2bff7f/src/gn/setup.cc#759
 
 **Current value (from the default):** `""`
 
-From //third_party/pigweed/src/third_party/emboss/build_defs.gni:71
+From //third_party/pigweed/src/third_party/emboss/build_defs.gni:75
 
 ### pw_env_setup_CIPD_BAZEL
 
@@ -8991,7 +8982,7 @@ extension mechanism for IDK bits outside of the main repository.
 
 **Current value (from the default):** `[]`
 
-From //BUILD.gn:109
+From //BUILD.gn:103
 
 ### sdk_cross_compile_host_tools
 
@@ -9025,7 +9016,7 @@ From //build/bazel/bazel_root_targets_list.gni:28
 Identifier for the Core SDK.
 LINT.IfChange
 
-**Current value (from the default):** `"32.99991231.0.1"`
+**Current value (from the default):** `"33.99991231.0.1"`
 
 From //sdk/config.gni:8
 
@@ -9166,7 +9157,7 @@ is satisfied if any of the strings matches against the candidate string.
 
 **Current value (from the default):** `[]`
 
-From //build/config/BUILDCONFIG.gn:764
+From //build/config/BUILDCONFIG.gn:765
 
 ### select_variant_canonical
 
@@ -9176,7 +9167,7 @@ See //build/toolchain/clang_toolchain.gni for details.
 
 **Current value (from the default):** `[]`
 
-From //build/config/BUILDCONFIG.gn:769
+From //build/config/BUILDCONFIG.gn:770
 
 ### select_variant_shortcuts
 
@@ -9253,7 +9244,7 @@ a list that can be spliced into [`select_variant`](#select_variant).
 }]
 ```
 
-From //build/config/BUILDCONFIG.gn:539
+From //build/config/BUILDCONFIG.gn:540
 
 ### skip_buildtools_check
 
@@ -9261,7 +9252,7 @@ Skip buildtools dependency checks (needed for ChromeOS).
 
 **Current value (from the default):** `false`
 
-From //third_party/perfetto/gn/perfetto.gni:470
+From //third_party/perfetto/gn/perfetto.gni:473
 
 ### smp_max_cpus
 
@@ -9437,21 +9428,49 @@ From //src/sysmem/server/BUILD.gn:29
 
 **Current value for `target_cpu = "arm64"`:** `"arm64"`
 
-From //out/not-default/args.gn:11
+From //out/not-default/args.gn:10
 
 **Overridden from the default:** `""`
 
 **Current value for `target_cpu = "riscv64"`:** `"riscv64"`
 
-From //out/not-default/args.gn:11
+From //out/not-default/args.gn:10
 
 **Overridden from the default:** `""`
 
 **Current value for `target_cpu = "x64"`:** `"x64"`
 
-From //out/not-default/args.gn:11
+From //out/not-default/args.gn:10
 
 **Overridden from the default:** `""`
+
+### target_labels
+
+Targets to add to the build graph in the default (Fuchsia) toolchain.
+
+**Current value for `target_cpu = "arm64"`:** `["//bundles/docs_roller"]`
+
+From //out/not-default/args.gn:15
+
+**Overridden from the default:** `[]`
+
+From //BUILD.gn:38
+
+**Current value for `target_cpu = "riscv64"`:** `["//bundles/docs_roller"]`
+
+From //out/not-default/args.gn:15
+
+**Overridden from the default:** `[]`
+
+From //BUILD.gn:38
+
+**Current value for `target_cpu = "x64"`:** `["//bundles/docs_roller"]`
+
+From //out/not-default/args.gn:15
+
+**Overridden from the default:** `[]`
+
+From //BUILD.gn:38
 
 ### target_os
 
@@ -9518,36 +9537,15 @@ afterwards.
 
 **Current value (from the default):** `""`
 
-From //BUILD.gn:105
+From //BUILD.gn:99
 
 ### test_package_labels
 
-Non-hermetic tests (at runtime).  Non-test packages found in this group will
-be flagged as an error by the build.
+DEPRECATED, left to trigger warnings
 
-**Current value for `target_cpu = "arm64"`:** `[]`
+**Current value (from the default):** `[]`
 
-From //out/not-default/args.gn:19
-
-**Overridden from the default:** `[]`
-
-From //BUILD.gn:77
-
-**Current value for `target_cpu = "riscv64"`:** `[]`
-
-From //out/not-default/args.gn:19
-
-**Overridden from the default:** `[]`
-
-From //BUILD.gn:77
-
-**Current value for `target_cpu = "x64"`:** `[]`
-
-From //out/not-default/args.gn:19
-
-**Overridden from the default:** `[]`
-
-From //BUILD.gn:77
+From //BUILD.gn:149
 
 ### thinlto_cache_dir
 
@@ -9589,7 +9587,7 @@ for details and documentation for each field.
 }
 ```
 
-From //build/config/BUILDCONFIG.gn:951
+From //build/config/BUILDCONFIG.gn:952
 
 ### truncate_build_info_commit_date
 
@@ -9646,29 +9644,9 @@ in the 'universe' package set, which represents all software that is
 produced that is to be published to a package repository or to the SDK by
 the build.
 
-**Current value for `target_cpu = "arm64"`:** `["//bundles/docs_roller"]`
+**Current value (from the default):** `[]`
 
-From //out/not-default/args.gn:14
-
-**Overridden from the default:** `[]`
-
-From //BUILD.gn:40
-
-**Current value for `target_cpu = "riscv64"`:** `["//bundles/docs_roller"]`
-
-From //out/not-default/args.gn:14
-
-**Overridden from the default:** `[]`
-
-From //BUILD.gn:40
-
-**Current value for `target_cpu = "x64"`:** `["//bundles/docs_roller"]`
-
-From //out/not-default/args.gn:14
-
-**Overridden from the default:** `[]`
-
-From //BUILD.gn:40
+From //BUILD.gn:35
 
 ### update_goldens
 
@@ -9835,6 +9813,23 @@ From //build/images/vbmeta.gni:14
 
 From //build/images/vbmeta.gni:14
 
+### use_vim3_dml
+
+If true, use the newer vim3-dml driver instead of the vim3-devicetree
+driver.
+
+**Current value (from the default):** `false`
+
+From //boards/vim3/args.gni:9
+
+### use_zxsh
+
+If true, use zxsh as the BootFS shell binary (/boot/bin/sh) instead of dash.
+
+**Current value (from the default):** `true`
+
+From //src/zircon/bin/zxsh/zxsh.gni:7
+
 ### using_fuchsia_sdk
 
 Only set in buildroots where targets configure themselves for use with the
@@ -9951,12 +9946,6 @@ and descriptor files required to load the libraries.
 **Current value (from the default):** `"//prebuilt/third_party/vulkan_runtime/linux-x64"`
 
 From //src/lib/vulkan/build/config.gni:17
-
-### vulkan_loader_allow_goldfish
-
-**Current value (from the default):** `true`
-
-From //src/graphics/bin/vulkan_loader/BUILD.gn:9
 
 ### vulkan_sdk
 
@@ -10104,7 +10093,7 @@ This allows testing for a Zircon-specific toolchain with:
 
 **Current value (from the default):** `false`
 
-From //build/config/BUILDCONFIG.gn:968
+From //build/config/BUILDCONFIG.gn:969
 
 ### zircon_tracelog
 
