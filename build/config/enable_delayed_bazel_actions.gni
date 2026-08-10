@@ -8,5 +8,5 @@ declare_args() {
   # of them through a special worker script that can combine several
   # `bazel build` invocations into a single one.
   # See https://fxbug.dev/468100333
-  enable_delayed_bazel_actions = false
+  enable_delayed_bazel_actions = true
 }
