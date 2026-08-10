@@ -96,7 +96,7 @@ impl<T> AtomicConstPtr<T> {
     /// a `Result` of `Ok(previous_value)` if the function returned `Some(_)`, else
     /// `Err(previous_value)`.
     #[inline]
-    pub fn fetch_update<F>(
+    pub fn try_update<F>(
         &self,
         set_order: Ordering,
         fetch_order: Ordering,
@@ -106,7 +106,7 @@ impl<T> AtomicConstPtr<T> {
         F: FnMut(*const T) -> Option<*const T>,
     {
         self.inner
-            .fetch_update(set_order, fetch_order, |p| f(p.cast_const()).map(|c| c.cast_mut()))
+            .try_update(set_order, fetch_order, |p| f(p.cast_const()).map(|c| c.cast_mut()))
             .map(|p| p.cast_const())
             .map_err(|p| p.cast_const())
     }
@@ -172,7 +172,7 @@ mod tests {
         assert_eq!(res, Ok(&DUMMY as *const u32));
         assert_eq!(ptr.load(Ordering::SeqCst), &DUMMY2 as *const u32);
 
-        let update_res = ptr.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |p| {
+        let update_res = ptr.try_update(Ordering::SeqCst, Ordering::SeqCst, |p| {
             if p == &DUMMY2 as *const u32 { Some(&DUMMY as *const u32) } else { None }
         });
         assert_eq!(update_res, Ok(&DUMMY2 as *const u32));
