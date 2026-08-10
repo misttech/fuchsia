@@ -21,12 +21,11 @@ namespace feedback_data {
 namespace system_log_recorder {
 
 SystemLogWriter::SystemLogWriter(const std::string& logs_dir, size_t max_num_files,
-                                 LogMessageStore* store, const std::string& metadata_path)
+                                 const std::string& metadata_path)
     : logs_dir_(logs_dir),
       max_num_files_(max_num_files),
       metadata_({}, kFirstFileNumber),
-      metadata_path_(metadata_path),
-      store_(store) {
+      metadata_path_(metadata_path) {
   FX_CHECK(max_num_files_ > 0);
   if (!files::CreateDirectory(logs_dir)) {
     FX_LOGS(WARNING) << "Failed to create logs directory, will re-try on the next block, no logs "
@@ -85,9 +84,8 @@ void SystemLogWriter::StartNewFile() {
       open(Path(next_file_num).c_str(), O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR));
 }
 
-void SystemLogWriter::Write() {
+bool SystemLogWriter::Write(const LogMessageStore::ConsumeResult& result) {
   TRACE_DURATION("feedback:io", "SystemLogWriter::Write");
-  const LogMessageStore::ConsumeResult result = store_->Consume();
 
   // The file descriptor could be negative if the file failed to open.
   if (current_file_descriptor_.is_valid()) {
@@ -102,10 +100,23 @@ void SystemLogWriter::Write() {
     StartNewFile();
   }
 
-  metadata_.ToFile(metadata_path_);
+  return metadata_.ToFile(metadata_path_);
 }
 
-void SystemLogWriter::Fsync() { fsync(current_file_descriptor_.get()); }
+bool SystemLogWriter::Fsync() {
+  if (!current_file_descriptor_.is_valid()) {
+    return false;
+  }
+
+  return fsync(current_file_descriptor_.get()) == 0;
+}
+
+void SystemLogWriter::DeleteLogs() {
+  current_file_descriptor_.reset();
+  files::DeletePath(logs_dir_, /*recursive=*/true);
+  files::DeletePath(metadata_path_, /*recursive=*/true);
+  metadata_.Clear();
+}
 
 std::string SystemLogWriter::Path(const size_t file_num) const {
   return files::JoinPath(logs_dir_, std::to_string(file_num));

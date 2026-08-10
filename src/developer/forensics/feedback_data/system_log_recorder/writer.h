@@ -22,13 +22,18 @@ class SystemLogWriter {
  public:
   static constexpr size_t kFirstFileNumber = 0u;
 
-  SystemLogWriter(const std::string& logs_dir, size_t max_num_files, LogMessageStore* store,
+  SystemLogWriter(const std::string& logs_dir, size_t max_num_files,
                   const std::string& metadata_path = feedback::kCurrentDiskBackedLogsMetadataPath);
 
-  void Write();
+  // Returns true if metadata was successfully written to disk.
+  bool Write(const LogMessageStore::ConsumeResult& result);
 
   // Instructs the class to call `fsync` on the currently open file to ensure data makes it disk.
-  void Fsync();
+  // Returns true if successful.
+  bool Fsync();
+
+  // Deletes all logs from disk.
+  void DeleteLogs();
 
  private:
   // Truncates the first file to start anew.
@@ -44,7 +49,6 @@ class SystemLogWriter {
   const std::string metadata_path_;
 
   fbl::unique_fd current_file_descriptor_;
-  LogMessageStore* store_;
 };
 
 }  // namespace system_log_recorder

@@ -9,7 +9,6 @@
 #include <lib/fpromise/result.h>
 
 #include <deque>
-#include <mutex>
 
 #include "src/developer/forensics/feedback_data/log_source.h"
 #include "src/developer/forensics/feedback_data/system_log_recorder/encoding/encoder.h"
@@ -21,7 +20,7 @@ namespace forensics {
 namespace feedback_data {
 namespace system_log_recorder {
 
-// Thread-safe store of log messages.
+// This class is thread-unsafe. All methods must be invoked on the same dispatcher.
 //
 // Buffer:
 // The store has a buffer with limited capacity that is filled with successive Add() calls. This
@@ -100,7 +99,6 @@ class LogMessageStore : public LogSink {
   // Resets variables keeping track of the last pushed message
   void ResetLastPushedMessage();
 
-  std::mutex mtx_;
   std::deque<std::string> buffer_;
 
   ContainerStats buffer_stats_;

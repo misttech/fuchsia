@@ -6,8 +6,13 @@
 #define SRC_DEVELOPER_FORENSICS_FEEDBACK_DATA_SYSTEM_LOG_RECORDER_SYSTEM_LOG_RECORDER_H_
 
 #include <lib/async/cpp/task.h>
+#include <lib/async_patterns/cpp/dispatcher_bound.h>
+#include <lib/async_patterns/cpp/receiver.h>
+#include <lib/fit/function.h>
 #include <lib/sys/cpp/service_directory.h>
 #include <lib/zx/time.h>
+
+#include <queue>
 
 #include "src/developer/forensics/feedback_data/log_source.h"
 #include "src/developer/forensics/feedback_data/system_log_recorder/encoding/encoder.h"
@@ -36,20 +41,25 @@ class SystemLogRecorder {
                     std::unique_ptr<Encoder> encoder);
   void Start();
 
-  void Flush(const std::optional<std::string>& message);
+  // Flushes cached logs to disk and calls |callback| when complete.
+  void Flush(const std::optional<std::string>& message, ::fit::callback<void()> callback);
+
   void StopAndDeleteLogs();
 
  private:
   void PeriodicWriteTask();
+  void OnWriteComplete(bool success);
+  void OnFlushComplete(bool success);
 
   async_dispatcher_t* archive_dispatcher_;
-  async_dispatcher_t* write_dispatcher_;
   const zx::duration write_period_;
-  const std::string logs_dir_;
+  bool is_running_;
 
   LogMessageStore store_;
   LogSource log_source_;
-  SystemLogWriter writer_;
+  async_patterns::DispatcherBound<SystemLogWriter> writer_;
+  async_patterns::Receiver<SystemLogRecorder> receiver_;
+  std::queue<::fit::callback<void()>> flush_callbacks_;
 
   async::TaskClosureMethod<SystemLogRecorder, &SystemLogRecorder::PeriodicWriteTask>
       periodic_write_task_{this};

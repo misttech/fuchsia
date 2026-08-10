@@ -53,6 +53,8 @@ source_set("src") {
     "//sdk/fidl/fuchsia.feedback:fuchsia.feedback_hlcpp",
     "//sdk/fidl/fuchsia.process.lifecycle:fuchsia.process.lifecycle_hlcpp",
     "//sdk/lib/async-loop:async-loop-cpp",
+    "//sdk/lib/async_patterns/cpp",
+    "//sdk/lib/fit",
     "//sdk/lib/fit-promise",
     "//sdk/lib/sys/cpp",
     "//src/developer/forensics/feedback_data:log_source",

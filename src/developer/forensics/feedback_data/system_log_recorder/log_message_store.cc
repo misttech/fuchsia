@@ -65,8 +65,6 @@ void LogMessageStore::ResetLastPushedMessage() {
 bool LogMessageStore::Add(LogSink::MessageOr message) {
   TRACE_DURATION("feedback:io", "LogMessageStore::Add");
 
-  std::lock_guard<std::mutex> lk(mtx_);
-
   if (message.is_ok()) {
     redactor_->Redact(message.value().msg);
     for (std::string& tag : message.value().tags) {
@@ -135,8 +133,6 @@ bool LogMessageStore::Add(LogSink::MessageOr message) {
 
 LogMessageStore::ConsumeResult LogMessageStore::Consume() {
   TRACE_DURATION("feedback:io", "LogMessageStore::Consume");
-
-  std::lock_guard<std::mutex> lk(mtx_);
 
   // Optionally log whether the last message was repeated. Stop logging if this warning message has
   // been logged consecutively for more than kRepeatedBuffers times.

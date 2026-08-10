@@ -28,6 +28,8 @@ namespace feedback_data {
 namespace system_log_recorder {
 namespace {
 
+using ::testing::ElementsAre;
+
 constexpr zx::duration kTimeWaitForLimitedLogs = zx::sec(60);
 
 // Only change "X" for one character. i.e. X -> 12 is not allowed.
@@ -441,9 +443,14 @@ TEST_F(SystemLogRecorderTest, SingleThreaded_Flush) {
   recorder.Start();
 
   RunLoopFor(kTimeWaitForLimitedLogs);
-
   RunLoopFor(kArchivePeriod);
-  recorder.Flush(kFlushStr);
+
+  bool flushed = false;
+  recorder.Flush(kFlushStr, [&flushed] { flushed = true; });
+  EXPECT_FALSE(flushed);
+
+  RunLoopUntilIdle();
+  EXPECT_TRUE(flushed);
 
   std::string contents;
 
@@ -480,6 +487,135 @@ FLUSH
 !!! DROPPED 6 MESSAGES !!!
 FLUSH
 [15604.000][07559][07687][] INFO: line 8
+)");
+}
+
+TEST_F(SystemLogRecorderTest, SingleThreadedMultipleFlushes) {
+  const zx::duration kArchivePeriod = zx::msec(750);
+  const zx::duration kWriterPeriod = zx::sec(1);
+
+  const std::vector<std::vector<std::string>> json_batches({
+      {
+          BuildLogMessage("line 0"),
+          BuildLogMessage("line 1"),
+      },
+      {},
+  });
+
+  stubs::DiagnosticsArchive archive(
+      dispatcher(),
+      std::make_unique<stubs::DiagnosticsBatchIteratorDelayedBatches>(
+          dispatcher(), json_batches, kTimeWaitForLimitedLogs, kArchivePeriod, /*strict=*/true));
+
+  InjectServiceProvider(&archive, kArchiveAccessorName);
+
+  files::ScopedTempDir temp_dir;
+
+  const std::string kFlushStr1 = "FLUSH 1\n";
+  const std::string kFlushStr2 = "FLUSH 2\n";
+
+  const StorageSize kWriteSize = kMaxLogLineSize * 2 + kDroppedFormatStrSize +
+                                 StorageSize::Bytes(kFlushStr1.size() + kFlushStr2.size());
+
+  SystemLogRecorder recorder(dispatcher(), dispatcher(), services(),
+                             SystemLogRecorder::WriteParameters{
+                                 .period = kWriterPeriod,
+                                 .max_write_size = kWriteSize,
+                                 .logs_dir = temp_dir.path(),
+                                 .max_num_files = 2u,
+                                 .total_log_size = 2u * kWriteSize,
+                             },
+                             std::make_unique<IdentityRedactor>(inspect::BoolProperty()),
+                             std::make_unique<IdentityEncoder>());
+  recorder.Start();
+
+  RunLoopFor(kTimeWaitForLimitedLogs);
+  RunLoopFor(kArchivePeriod);
+
+  std::vector<int> flush_order;
+  recorder.Flush(kFlushStr1, [&flush_order] { flush_order.push_back(1); });
+  recorder.Flush(kFlushStr2, [&flush_order] { flush_order.push_back(2); });
+  EXPECT_TRUE(flush_order.empty());
+
+  RunLoopUntilIdle();
+  EXPECT_THAT(flush_order, ElementsAre(1, 2));
+
+  std::string contents;
+  files::ScopedTempDir output_dir;
+  const std::string output_path = files::JoinPath(output_dir.path(), "output.txt");
+
+  IdentityDecoder decoder;
+
+  float compression_ratio;
+  ASSERT_TRUE(Concatenate(temp_dir.path(), kMaxDecompressedSize, &decoder, output_path,
+                          &compression_ratio));
+  EXPECT_EQ(compression_ratio, 1.0);
+
+  ASSERT_TRUE(files::ReadFileToString(output_path, &contents));
+  EXPECT_EQ(contents, R"([15604.000][07559][07687][] INFO: line 0
+[15604.000][07559][07687][] INFO: line 1
+FLUSH 1
+FLUSH 2
+)");
+}
+
+TEST_F(SystemLogRecorderTest, MultipleDispatchersRecordsLogs) {
+  std::unique_ptr<async::LoopInterface> write_loop = test_loop().StartNewLoop();
+
+  const zx::duration kArchivePeriod = zx::msec(750);
+  const zx::duration kWriterPeriod = zx::sec(1);
+
+  const std::vector<std::vector<std::string>> json_batches({
+      {
+          BuildLogMessage("line 0"),
+          BuildLogMessage("line 1"),
+      },
+      {
+          BuildLogMessage("line 2"),
+          BuildLogMessage("line 3"),
+      },
+      {},
+  });
+
+  stubs::DiagnosticsArchive archive(
+      dispatcher(), std::make_unique<stubs::DiagnosticsBatchIteratorDelayedBatches>(
+                        dispatcher(), json_batches, /*initial_delay=*/zx::nsec(0), kArchivePeriod,
+                        /*strict=*/false));
+
+  InjectServiceProvider(&archive, kArchiveAccessorName);
+
+  files::ScopedTempDir temp_dir;
+
+  const StorageSize kWriteSize = kMaxLogLineSize * 2;
+
+  SystemLogRecorder recorder(dispatcher(), write_loop->dispatcher(), services(),
+                             SystemLogRecorder::WriteParameters{
+                                 .period = kWriterPeriod,
+                                 .max_write_size = kWriteSize,
+                                 .logs_dir = temp_dir.path(),
+                                 .max_num_files = 2u,
+                                 .total_log_size = 2u * kWriteSize,
+                             },
+                             std::make_unique<IdentityRedactor>(inspect::BoolProperty()),
+                             std::make_unique<IdentityEncoder>());
+  recorder.Start();
+
+  RunLoopFor(kWriterPeriod * 2);
+
+  files::ScopedTempDir output_dir;
+  const std::string output_path = files::JoinPath(output_dir.path(), "output.txt");
+  IdentityDecoder decoder;
+
+  std::string contents;
+  float compression_ratio;
+  ASSERT_TRUE(Concatenate(temp_dir.path(), kMaxDecompressedSize, &decoder, output_path,
+                          &compression_ratio));
+
+  ASSERT_TRUE(files::ReadFileToString(output_path, &contents));
+  EXPECT_EQ(contents, R"([15604.000][07559][07687][] INFO: line 0
+[15604.000][07559][07687][] INFO: line 1
+[15604.000][07559][07687][] INFO: line 2
+[15604.000][07559][07687][] INFO: line 3
 )");
 }
 

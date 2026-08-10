@@ -81,8 +81,8 @@ int main() {
       &controller, std::move(lifecycle_channel), main_loop.dispatcher());
 
   controller.SetStop([&] {
-    recorder.Flush(ShutdownMessage(timekeeper::SystemClock().BootNow()));
-    lifecycle_binding.Close(ZX_OK);
+    recorder.Flush(ShutdownMessage(timekeeper::SystemClock().BootNow()),
+                   [&] { lifecycle_binding.Close(ZX_OK); });
     // Don't stop the loop so incoming logs can be persisted while waiting to terminate
     // components.
   });

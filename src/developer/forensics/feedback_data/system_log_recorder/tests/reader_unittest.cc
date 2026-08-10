@@ -156,7 +156,7 @@ TEST(ReaderTest, SortsMessages) {
 
   LogMessageStore store(StorageSize::Kilobytes(8), StorageSize::Kilobytes(8),
                         MakeIdentityRedactor(), MakeIdentityEncoder());
-  SystemLogWriter writer(temp_dir.path(), 1u, &store);
+  SystemLogWriter writer(temp_dir.path(), 1u);
 
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 0", zx::msec(0))));
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 3", zx::msec(3))));
@@ -167,7 +167,7 @@ TEST(ReaderTest, SortsMessages) {
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "duplicated line", zx::msec(6))));
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "duplicated line", zx::msec(7))));
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "multi\nline\nmessage", zx::msec(4))));
-  writer.Write();
+  writer.Write(store.Consume());
 
   files::ScopedTempDir output_dir;
   const std::string output_path = files::JoinPath(output_dir.path(), "output.txt");
@@ -232,20 +232,20 @@ TEST(ReaderTest, SortsMessagesMultipleFiles) {
   // Set the block and buffer to both hold 4 log messages.
   LogMessageStore store(kMaxLogLineSize * 4, kMaxLogLineSize * 4, MakeIdentityRedactor(),
                         MakeIdentityEncoder());
-  SystemLogWriter writer(temp_dir.path(), 8u, &store);
+  SystemLogWriter writer(temp_dir.path(), 8u);
 
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 0", zx::msec(0))));
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 3", zx::msec(3))));
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 2", zx::msec(2))));
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 1", zx::msec(1))));
-  writer.Write();
+  writer.Write(store.Consume());
 
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line11", zx::msec(1))));
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "dup", zx::msec(5))));
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "dup", zx::msec(6))));
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "dup", zx::msec(7))));
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line\n4", zx::msec(4))));
-  writer.Write();
+  writer.Write(store.Consume());
 
   files::ScopedTempDir output_dir;
   const std::string output_path = files::JoinPath(output_dir.path(), "output.txt");
