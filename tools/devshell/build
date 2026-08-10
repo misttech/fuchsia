@@ -555,17 +555,17 @@ function main {
   local need_fx_gen_for=()
 
   if [[ -z "${no_checks}" ]]; then
-    # If a fuchsia-cog daemon is running, notify it to suspend its build tasks
+    # If a fuchsia-workspace daemon is running, notify it to suspend its build tasks
     # until this `fx build` invocation completes.
     # This prevents the daemon from building concurrently, which slows down
     # local builds by ~40-100%.
-    local -r fuchsia_cog="${_FUCHSIA_COG_CLI:-/google/bin/releases/fuchsia-cog-cli/fuchsia-cog}"
-    if [[ -x "${fuchsia_cog}" ]]; then
+    local -r fuchsia_workspace="${_FUCHSIA_WORKSPACE_CLI:-/google/bin/releases/fuchsia-workspace-cli/fuchsia-workspace}"
+    if [[ -x "${fuchsia_workspace}" ]]; then
       # This is a best-effort, non-blocking, fire-and-forget request.
       if [[ -n "${verbose}" ]]; then
-        timeout 5s "${fuchsia_cog}" daemon yield "$$" </dev/null &
+        timeout 5s "${fuchsia_workspace}" daemon yield "$$" </dev/null &
       else
-        timeout 5s "${fuchsia_cog}" daemon yield "$$" </dev/null >/dev/null 2>&1 &
+        timeout 5s "${fuchsia_workspace}" daemon yield "$$" </dev/null >/dev/null 2>&1 &
       fi
     fi
 
