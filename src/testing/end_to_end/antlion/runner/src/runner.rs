@@ -52,7 +52,6 @@ fn test_affected_by_b_401318909(test_name: String) -> bool {
         "policy_scan_test",
         "regulatory_compliance_test",
         "saved_networks_test",
-        "soft_ap_test",
         "vape_interop_test",
         "wlan_driver_restart_test",
         "wlan_misc_scenario",
@@ -91,11 +90,7 @@ impl Runner for ProcessRunner {
             }
         }
 
-        println!(
-            "Launching antlion to run: \"{} {}\"\n",
-            self.python_bin,
-            args.iter().format(" "),
-        );
+        println!("Launching antlion to run: \"{} {}\"\n", self.python_bin, args.iter().format(" "),);
 
         let mut child =
             Command::new(&self.python_bin).args(args).spawn().context("Failed to spawn antlion")?;
