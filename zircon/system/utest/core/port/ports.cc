@@ -1706,6 +1706,42 @@ TEST(PortTest, CancelKeyAccessDenied) {
   EXPECT_EQ(reduced_port.cancel_key(0u, 0u), ZX_ERR_ACCESS_DENIED);
 }
 
+TEST(PortTest, WaitAsyncPortWrongType) {
+  zx::event event, not_a_port;
+  ASSERT_OK(zx::event::create(0u, &event));
+  ASSERT_OK(zx::event::create(0u, &not_a_port));
+
+  // Passing a non-port handle as the port argument returns ZX_ERR_WRONG_TYPE.
+  EXPECT_EQ(event.wait_async(*zx::unowned_port(not_a_port.get()), 1u, ZX_EVENT_SIGNALED, 0u),
+            ZX_ERR_WRONG_TYPE);
+}
+
+TEST(PortTest, WaitAsyncPortAccessDenied) {
+  zx::port port;
+  zx::event event;
+  ASSERT_OK(zx::port::create(0u, &port));
+  ASSERT_OK(zx::event::create(0u, &event));
+
+  // Remove ZX_RIGHT_WRITE from the port handle.
+  zx::port reduced_port;
+  ASSERT_OK(port.replace(ZX_DEFAULT_PORT_RIGHTS & ~ZX_RIGHT_WRITE, &reduced_port));
+
+  EXPECT_EQ(event.wait_async(reduced_port, 1u, ZX_EVENT_SIGNALED, 0u), ZX_ERR_ACCESS_DENIED);
+}
+
+TEST(PortTest, WaitAsyncTargetAccessDenied) {
+  zx::port port;
+  zx::event event;
+  ASSERT_OK(zx::port::create(0u, &port));
+  ASSERT_OK(zx::event::create(0u, &event));
+
+  // Remove ZX_RIGHT_WAIT from the event handle.
+  zx::event reduced_event;
+  ASSERT_OK(event.replace(ZX_DEFAULT_EVENT_RIGHTS & ~ZX_RIGHT_WAIT, &reduced_event));
+
+  EXPECT_EQ(reduced_event.wait_async(port, 1u, ZX_EVENT_SIGNALED, 0u), ZX_ERR_ACCESS_DENIED);
+}
+
 // Regression test for https://fxbug.dev/540007680
 TEST(PortStressTest, CancelKeyDestructorReentersPortLock) {
   constexpr uint64_t kChannelKey = 0xC0FFEEull;
