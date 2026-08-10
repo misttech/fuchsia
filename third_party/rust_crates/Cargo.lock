@@ -4732,6 +4732,7 @@ dependencies = [
  "futures",
  "sapphire-async",
  "sapphire-collections",
+ "sapphire-emboss",
  "sapphire-peer-cache",
  "sapphire-sync",
  "sapphire-uuid",

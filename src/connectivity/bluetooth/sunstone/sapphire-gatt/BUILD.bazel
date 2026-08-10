@@ -65,6 +65,7 @@ rust_library(
     deps = [
         "//third_party/rust_crates/intree/sunstone/sapphire-async:sapphire_async",
         "//third_party/rust_crates/intree/sunstone/sapphire-collections:sapphire_collections",
+        "//third_party/rust_crates/intree/sunstone/sapphire-emboss:sapphire_emboss",
         "//third_party/rust_crates/intree/sunstone/sapphire-peer-cache:sapphire_peer_cache",
         "//third_party/rust_crates/intree/sunstone/sapphire-sync:sapphire_sync",
         "//third_party/rust_crates/intree/sunstone/sapphire-uuid:sapphire_uuid",
