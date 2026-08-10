@@ -828,6 +828,8 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
         let token_guard_mut_ident = format_ident!("{struct_ident}{mu_camel}TokenGuardMut");
 
         let lock_method_ident = format_ident!("lock_{mu_ident}", span = mu_ident.span());
+        let lock_policy_method_ident =
+            format_ident!("lock_{mu_ident}_policy", span = mu_ident.span());
         let guard_method_ident = format_ident!("guard_{mu_ident}", span = mu_ident.span());
         let guard_mut_method_ident = format_ident!("guard_{mu_ident}_mut", span = mu_ident.span());
 
@@ -880,26 +882,32 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
             params.push(syn::parse_quote!(M: ::ksync::RawLock = ::ksync::RawMutex));
             quote! { <'a, #params> }
         } else {
-            quote! { <'a, #params_with_bounds> }
+            let mut params = params_with_bounds.clone();
+            params.push(syn::parse_quote!(P: ::ksync::LockPolicy<#mutex_type> = <#mutex_type as ::ksync::RawLock>::DefaultPolicy));
+            quote! { <'a, #params>  }
         };
         let guard_impl_generics = if mutex.is_phantom {
             let mut params = params_with_bounds.clone();
             params.push(syn::parse_quote!(M: ::ksync::RawLock));
             quote! { <'a, #params> }
         } else {
-            quote! { <'a, #params_with_bounds> }
+            let mut params = params_with_bounds.clone();
+            params.push(syn::parse_quote!(P: ::ksync::LockPolicy<#mutex_type>));
+            quote! { <'a, #params> }
         };
         let guard_ty_generics = if mutex.is_phantom {
             let mut args = ty_params.clone();
             args.push(quote! { M });
             quote! { <'a, #(#args),*> }
         } else {
-            quote! { <'a, #(#ty_params),*> }
+            let mut args = ty_params.clone();
+            args.push(quote! { P });
+            quote! { <'a, #(#args),*> }
         };
         let guard_inner_type = if mutex.is_phantom {
             quote! { ::ksync::KMutexGuard<'a, #class_type, M> }
         } else {
-            quote! { ::ksync::KMutexGuard<'a, #class_type, #mutex_type> }
+            quote! { ::ksync::KMutexGuard<'a, #class_type, #mutex_type, P> }
         };
 
         let lock_method_def = if mutex.is_phantom {
@@ -917,9 +925,20 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
             }
         } else {
             let return_ty_generics = quote! { <'_, #(#ty_params),*> };
+            let mut policy_args = ty_params.clone();
+            policy_args.push(quote! { P });
+            let policy_return_ty_generics = quote! { <'_, #(#policy_args),*> };
             quote! {
                 #[inline]
                 #struct_vis fn #lock_method_ident(&self) -> impl pin_init::PinInit<#guard_ident #return_ty_generics, ::core::convert::Infallible> {
+                    pin_init::pin_init!(#guard_ident {
+                        parent: self,
+                        inner <- ::ksync::KMutexGuard::new(&self.#mu_ident),
+                    })
+                }
+                #[inline]
+                #struct_vis fn #lock_policy_method_ident<P: ::ksync::LockPolicy<#mutex_type>>(&self)
+                    -> impl pin_init::PinInit<#guard_ident #policy_return_ty_generics, ::core::convert::Infallible> {
                     pin_init::pin_init!(#guard_ident {
                         parent: self,
                         inner <- ::ksync::KMutexGuard::new(&self.#mu_ident),
