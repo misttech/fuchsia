@@ -83,12 +83,16 @@ const std::vector kResetRegisterRules = {
                             bind_fuchsia_hardware_registers::SERVICE_ZIRCONTRANSPORT),
     fdf::MakeAcceptBindRule(bind_fuchsia_register::NAME,
                             bind_fuchsia_amlogic_platform::NAME_REGISTER_SPICC0_RESET),
+    fdf::MakeAcceptBindRule(bind_fuchsia::NAME,
+                            bind_fuchsia_amlogic_platform::NAME_REGISTER_SPICC0_RESET),
 };
 
 const std::vector kResetRegisterProperties = {
     fdf::MakeProperty2(bind_fuchsia_hardware_registers::SERVICE,
                        bind_fuchsia_hardware_registers::SERVICE_ZIRCONTRANSPORT),
     fdf::MakeProperty2(bind_fuchsia_register::NAME,
+                       bind_fuchsia_amlogic_platform::NAME_REGISTER_SPICC0_RESET),
+    fdf::MakeProperty2(bind_fuchsia::NAME,
                        bind_fuchsia_amlogic_platform::NAME_REGISTER_SPICC0_RESET),
 };
 

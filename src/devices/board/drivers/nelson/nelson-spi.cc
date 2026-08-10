@@ -90,12 +90,14 @@ fdf::wire::CompositeNodeSpec MakeSpiCompositeNodeSpec(fidl::AnyArena& fidl_arena
       fdf::MakeAcceptBindRule(bind_fuchsia_hardware_registers::SERVICE,
                               bind_fuchsia_hardware_registers::SERVICE_ZIRCONTRANSPORT),
       fdf::MakeAcceptBindRule(bind_fuchsia_register::NAME, register_id),
+      fdf::MakeAcceptBindRule(bind_fuchsia::NAME, register_id),
   };
 
   const std::vector kResetRegisterProperties = {
       fdf::MakeProperty2(bind_fuchsia_hardware_registers::SERVICE,
                          bind_fuchsia_hardware_registers::SERVICE_ZIRCONTRANSPORT),
       fdf::MakeProperty2(bind_fuchsia_register::NAME, register_id),
+      fdf::MakeProperty2(bind_fuchsia::NAME, register_id),
   };
 
   const std::vector<fdf::BindRule2> kGpioInitRules = std::vector{

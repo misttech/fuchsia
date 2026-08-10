@@ -11,6 +11,7 @@
 
 #include <string>
 
+#include <bind/fuchsia/cpp/bind.h>
 #include <bind/fuchsia/register/cpp/bind.h>
 #include <fbl/auto_lock.h>
 
@@ -195,6 +196,7 @@ zx::result<> RegistersDevice::CreateNode(Register<T>& reg) {
   offers.push_back(fdf::MakeOffer2<fuchsia_hardware_registers::Service>(arena, reg.id()));
   auto properties = std::vector{
       fdf::MakeProperty2(arena, bind_fuchsia_register::NAME, reg.id()),
+      fdf::MakeProperty2(arena, bind_fuchsia::NAME, reg.id()),
   };
   auto args = fuchsia_driver_framework::wire::NodeAddArgs::Builder(arena)
                   .name(arena, "register-" + reg.id())

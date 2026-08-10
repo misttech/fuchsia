@@ -104,12 +104,16 @@ zx_status_t Astro::MaliInit() {
                                         bind_fuchsia_hardware_registers::SERVICE_ZIRCONTRANSPORT),
                 fdf::MakeAcceptBindRule(bind_fuchsia_register::NAME,
                                         bind_fuchsia_amlogic_platform::NAME_REGISTER_MALI_RESET),
+                fdf::MakeAcceptBindRule(bind_fuchsia::NAME,
+                                        bind_fuchsia_amlogic_platform::NAME_REGISTER_MALI_RESET),
             },
         .properties =
             {
                 fdf::MakeProperty2(bind_fuchsia_hardware_registers::SERVICE,
                                    bind_fuchsia_hardware_registers::SERVICE_ZIRCONTRANSPORT),
                 fdf::MakeProperty2(bind_fuchsia_register::NAME,
+                                   bind_fuchsia_amlogic_platform::NAME_REGISTER_MALI_RESET),
+                fdf::MakeProperty2(bind_fuchsia::NAME,
                                    bind_fuchsia_amlogic_platform::NAME_REGISTER_MALI_RESET),
             },
     }};

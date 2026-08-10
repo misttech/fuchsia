@@ -124,17 +124,30 @@ static VIM3_PARSER_CONFIG: DmlParserConfig = DmlParserConfig {
             ..DEFAULT_SERVICE_BIND_CONFIG
         },
         "fuchsia.hardware.registers.Service" => ServiceBindConfig {
-            rules: &[PropertyRule {
-                bind_key: "fuchsia.register.NAME",
-                sources: &[
-                    ValueSource::ConstraintKey("name"),
-                    ValueSource::ResourceName,
-                    ValueSource::ResourceNode,
-                ],
-                value_type: RuleValueType::String,
-                destination: Destination::Both,
-                required: true,
-            }],
+            rules: &[
+                PropertyRule {
+                    bind_key: "fuchsia.register.NAME",
+                    sources: &[
+                        ValueSource::ConstraintKey("name"),
+                        ValueSource::ResourceName,
+                        ValueSource::ResourceNode,
+                    ],
+                    value_type: RuleValueType::String,
+                    destination: Destination::Both,
+                    required: true,
+                },
+                PropertyRule {
+                    bind_key: "fuchsia.NAME",
+                    sources: &[
+                        ValueSource::ConstraintKey("name"),
+                        ValueSource::ResourceName,
+                        ValueSource::ResourceNode,
+                    ],
+                    value_type: RuleValueType::String,
+                    destination: Destination::Both,
+                    required: true,
+                },
+            ],
             parent_key_sources: &[
                 ValueSource::Template("register-{name}"),
                 ValueSource::Template("register-{res.name}"),
