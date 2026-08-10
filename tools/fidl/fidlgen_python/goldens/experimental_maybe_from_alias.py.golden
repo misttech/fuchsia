@@ -3,24 +3,22 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from fidl_codec import add_ir_path, encode_fidl_object
 import sys
 import typing
 import enum
 
 import fidl
-from fidl._ir import get_fidl_ir_map
 
-_ir_path = get_fidl_ir_map()["test.experimentalmaybefromalias"]
-add_ir_path(_ir_path)
 
 from fidl._client import EventHandlerBase, FidlClient  # type: ignore[unused-ignore,unused-import]
-import fidl._construct  # type: ignore[unused-ignore,unused-import]
 from fidl._server import ServerBase  # type: ignore[unused-ignore,unused-import]
 from fidl._fidl_common import DomainError, FrameworkError, MethodInfo, FidlProtocolMarker, normalize_identifier  # type: ignore[unused-ignore,unused-import]
 
 from abc import abstractmethod, ABC  # type: ignore[unused-ignore,unused-import]
 import collections.abc  # type: ignore[unused-ignore,unused-import]
+
+
+_UNDEFINED: typing.Any = object()
 
 
 @dataclass
@@ -65,12 +63,415 @@ class Testing:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "test.experimentalmaybefromalias",
-            "test.experimentalmaybefromalias/Testing",
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 704)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 704)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_uint64(self.u1, _offset + 0)
+        encoder.write_vector(
+            self.u2,
+            _offset + 8,
+            lambda val, enc, off: enc.write_uint64(val, off),
+            8,
+        )
+        encoder.write_array(
+            self.u3,
+            _offset + 24,
+            lambda val, enc, off: enc.write_uint64(val, off),
+            8,
+            1,
+        )
+        encoder.write_vector(
+            self.u4,
+            _offset + 32,
+            lambda val, enc, off: enc.write_vector(
+                val, off, lambda val, enc, off: enc.write_uint64(val, off), 8
+            ),
+            16,
+        )
+        encoder.write_vector(
+            self.u5,
+            _offset + 48,
+            lambda val, enc, off: enc.write_array(
+                val, off, lambda val, enc, off: enc.write_uint64(val, off), 8, 1
+            ),
+            8,
+        )
+        encoder.write_array(
+            self.u6,
+            _offset + 64,
+            lambda val, enc, off: enc.write_vector(
+                val, off, lambda val, enc, off: enc.write_uint64(val, off), 8
+            ),
+            16,
+            4,
+        )
+        encoder.write_array(
+            self.u7,
+            _offset + 128,
+            lambda val, enc, off: enc.write_array(
+                val, off, lambda val, enc, off: enc.write_uint64(val, off), 8, 1
+            ),
+            8,
+            4,
+        )
+        encoder.write_vector(
+            self.v1,
+            _offset + 160,
+            lambda val, enc, off: enc.write_uint64(val, off),
+            8,
+        )
+        encoder.write_vector(
+            self.v2,
+            _offset + 176,
+            lambda val, enc, off: enc.write_vector(
+                val, off, lambda val, enc, off: enc.write_uint64(val, off), 8
+            ),
+            16,
+        )
+        encoder.write_array(
+            self.v3,
+            _offset + 192,
+            lambda val, enc, off: enc.write_vector(
+                val, off, lambda val, enc, off: enc.write_uint64(val, off), 8
+            ),
+            16,
+            4,
+        )
+        encoder.write_array(
+            self.a1,
+            _offset + 256,
+            lambda val, enc, off: enc.write_uint64(val, off),
+            8,
+            1,
+        )
+        encoder.write_vector(
+            self.a2,
+            _offset + 264,
+            lambda val, enc, off: enc.write_array(
+                val, off, lambda val, enc, off: enc.write_uint64(val, off), 8, 1
+            ),
+            8,
+        )
+        encoder.write_array(
+            self.a3,
+            _offset + 280,
+            lambda val, enc, off: enc.write_array(
+                val, off, lambda val, enc, off: enc.write_uint64(val, off), 8, 1
+            ),
+            8,
+            4,
+        )
+        encoder.write_handle(self.r1, _offset + 312, obj_type=4, rights=61454)
+        encoder.write_vector(
+            self.r2,
+            _offset + 320,
+            lambda val, enc, off: enc.write_handle(
+                val, off, obj_type=4, rights=61454
+            ),
+            4,
+        )
+        encoder.write_array(
+            self.r3,
+            _offset + 336,
+            lambda val, enc, off: enc.write_handle(
+                val, off, obj_type=4, rights=61454
+            ),
+            4,
+            4,
+        )
+        encoder.write_vector(
+            self.b1,
+            _offset + 352,
+            lambda val, enc, off: enc.write_uint8(val, off),
+            1,
+        )
+        encoder.write_vector(
+            self.b2,
+            _offset + 368,
+            lambda val, enc, off: enc.write_vector(
+                val, off, lambda val, enc, off: enc.write_uint8(val, off), 1
+            ),
+            16,
+        )
+        encoder.write_array(
+            self.b3,
+            _offset + 384,
+            lambda val, enc, off: enc.write_vector(
+                val, off, lambda val, enc, off: enc.write_uint8(val, off), 1
+            ),
+            16,
+            4,
+        )
+        encoder.write_string(self.s1, _offset + 448)
+        encoder.write_vector(
+            self.s2,
+            _offset + 464,
+            lambda val, enc, off: enc.write_string(val, off),
+            16,
+        )
+        encoder.write_array(
+            self.s3,
+            _offset + 480,
+            lambda val, enc, off: enc.write_string(val, off),
+            16,
+            4,
+        )
+        encoder.write_vector(
+            self.vv1,
+            _offset + 544,
+            lambda val, enc, off: enc.write_uint64(val, off),
+            8,
+        )
+        encoder.write_vector(
+            self.vv2,
+            _offset + 560,
+            lambda val, enc, off: enc.write_vector(
+                val, off, lambda val, enc, off: enc.write_uint64(val, off), 8
+            ),
+            16,
+        )
+        encoder.write_array(
+            self.vv3,
+            _offset + 576,
+            lambda val, enc, off: enc.write_vector(
+                val, off, lambda val, enc, off: enc.write_uint64(val, off), 8
+            ),
+            16,
+            3,
+        )
+        encoder.write_array(
+            self.aa1,
+            _offset + 624,
+            lambda val, enc, off: enc.write_uint64(val, off),
+            8,
+            2,
+        )
+        encoder.write_vector(
+            self.aa2,
+            _offset + 640,
+            lambda val, enc, off: enc.write_array(
+                val, off, lambda val, enc, off: enc.write_uint64(val, off), 8, 2
+            ),
+            16,
+        )
+        encoder.write_array(
+            self.aa3,
+            _offset + 656,
+            lambda val, enc, off: enc.write_array(
+                val, off, lambda val, enc, off: enc.write_uint64(val, off), 8, 2
+            ),
+            16,
+            3,
+        )
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        u1 = decoder.read_uint64(_offset + 0)
+        u2 = decoder.read_vector(
+            _offset + 8,
+            lambda dec, off: dec.read_uint64(off),
+            8,
+            nullable=False,
+        )
+        u3 = decoder.read_array(
+            _offset + 24, lambda dec, off: dec.read_uint64(off), 8, 1
+        )
+        u4 = decoder.read_vector(
+            _offset + 32,
+            lambda dec, off: dec.read_vector(
+                off, lambda dec, off: dec.read_uint64(off), 8, nullable=False
+            ),
+            16,
+            nullable=False,
+        )
+        u5 = decoder.read_vector(
+            _offset + 48,
+            lambda dec, off: dec.read_array(
+                off, lambda dec, off: dec.read_uint64(off), 8, 1
+            ),
+            8,
+            nullable=False,
+        )
+        u6 = decoder.read_array(
+            _offset + 64,
+            lambda dec, off: dec.read_vector(
+                off, lambda dec, off: dec.read_uint64(off), 8, nullable=False
+            ),
+            16,
+            4,
+        )
+        u7 = decoder.read_array(
+            _offset + 128,
+            lambda dec, off: dec.read_array(
+                off, lambda dec, off: dec.read_uint64(off), 8, 1
+            ),
+            8,
+            4,
+        )
+        v1 = decoder.read_vector(
+            _offset + 160,
+            lambda dec, off: dec.read_uint64(off),
+            8,
+            nullable=True,
+        )
+        v2 = decoder.read_vector(
+            _offset + 176,
+            lambda dec, off: dec.read_vector(
+                off, lambda dec, off: dec.read_uint64(off), 8, nullable=True
+            ),
+            16,
+            nullable=False,
+        )
+        v3 = decoder.read_array(
+            _offset + 192,
+            lambda dec, off: dec.read_vector(
+                off, lambda dec, off: dec.read_uint64(off), 8, nullable=True
+            ),
+            16,
+            4,
+        )
+        a1 = decoder.read_array(
+            _offset + 256, lambda dec, off: dec.read_uint64(off), 8, 1
+        )
+        a2 = decoder.read_vector(
+            _offset + 264,
+            lambda dec, off: dec.read_array(
+                off, lambda dec, off: dec.read_uint64(off), 8, 1
+            ),
+            8,
+            nullable=False,
+        )
+        a3 = decoder.read_array(
+            _offset + 280,
+            lambda dec, off: dec.read_array(
+                off, lambda dec, off: dec.read_uint64(off), 8, 1
+            ),
+            8,
+            4,
+        )
+        r1 = decoder.read_handle(_offset + 312, nullable=True)
+        r2 = decoder.read_vector(
+            _offset + 320,
+            lambda dec, off: dec.read_handle(off, nullable=True),
+            4,
+            nullable=False,
+        )
+        r3 = decoder.read_array(
+            _offset + 336,
+            lambda dec, off: dec.read_handle(off, nullable=True),
+            4,
+            4,
+        )
+        b1 = decoder.read_vector(
+            _offset + 352,
+            lambda dec, off: dec.read_uint8(off),
+            1,
+            nullable=False,
+        )
+        b2 = decoder.read_vector(
+            _offset + 368,
+            lambda dec, off: dec.read_vector(
+                off, lambda dec, off: dec.read_uint8(off), 1, nullable=False
+            ),
+            16,
+            nullable=False,
+        )
+        b3 = decoder.read_array(
+            _offset + 384,
+            lambda dec, off: dec.read_vector(
+                off, lambda dec, off: dec.read_uint8(off), 1, nullable=False
+            ),
+            16,
+            4,
+        )
+        s1 = decoder.read_string(_offset + 448, nullable=False)
+        s2 = decoder.read_vector(
+            _offset + 464,
+            lambda dec, off: dec.read_string(off, nullable=False),
+            16,
+            nullable=False,
+        )
+        s3 = decoder.read_array(
+            _offset + 480,
+            lambda dec, off: dec.read_string(off, nullable=False),
+            16,
+            4,
+        )
+        vv1 = decoder.read_vector(
+            _offset + 544,
+            lambda dec, off: dec.read_uint64(off),
+            8,
+            nullable=False,
+        )
+        vv2 = decoder.read_vector(
+            _offset + 560,
+            lambda dec, off: dec.read_vector(
+                off, lambda dec, off: dec.read_uint64(off), 8, nullable=False
+            ),
+            16,
+            nullable=False,
+        )
+        vv3 = decoder.read_array(
+            _offset + 576,
+            lambda dec, off: dec.read_vector(
+                off, lambda dec, off: dec.read_uint64(off), 8, nullable=False
+            ),
+            16,
+            3,
+        )
+        aa1 = decoder.read_array(
+            _offset + 624, lambda dec, off: dec.read_uint64(off), 8, 2
+        )
+        aa2 = decoder.read_vector(
+            _offset + 640,
+            lambda dec, off: dec.read_array(
+                off, lambda dec, off: dec.read_uint64(off), 8, 2
+            ),
+            16,
+            nullable=False,
+        )
+        aa3 = decoder.read_array(
+            _offset + 656,
+            lambda dec, off: dec.read_array(
+                off, lambda dec, off: dec.read_uint64(off), 8, 2
+            ),
+            16,
+            3,
+        )
+        return cls(
+            u1=u1,
+            u2=u2,
+            u3=u3,
+            u4=u4,
+            u5=u5,
+            u6=u6,
+            u7=u7,
+            v1=v1,
+            v2=v2,
+            v3=v3,
+            a1=a1,
+            a2=a2,
+            a3=a3,
+            r1=r1,
+            r2=r2,
+            r3=r3,
+            b1=b1,
+            b2=b2,
+            b3=b3,
+            s1=s1,
+            s2=s2,
+            s3=s3,
+            vv1=vv1,
+            vv2=vv2,
+            vv3=vv3,
+            aa1=aa1,
+            aa2=aa2,
+            aa3=aa3,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -127,40 +528,16 @@ class MyProtocolServer(ServerBase, ABC):
     library = "test.experimentalmaybefromalias"
     method_map: typing.Dict[int, MethodInfo] = {}
 
-    @staticmethod
-    def construct_response_object(
-        response_ident: str, response_obj: typing.Any
-    ) -> typing.Any:
-        return fidl._construct.construct_response_object(
-            response_ident, response_obj
-        )
-
 
 class MyProtocolClient(FidlClient):
     __fidl_kind__ = "client"
     library = "test.experimentalmaybefromalias"
-
-    @staticmethod
-    def construct_response_object(
-        response_ident: str, response_obj: typing.Any
-    ) -> typing.Any:
-        return fidl._construct.construct_response_object(
-            response_ident, response_obj
-        )
 
 
 class MyProtocolEventHandler(EventHandlerBase, ABC):
     __fidl_kind__ = "event_handler"
     library = "test.experimentalmaybefromalias"
     method_map: typing.Dict[int, MethodInfo] = {}
-
-    @staticmethod
-    def construct_response_object(
-        response_ident: str, response_obj: typing.Any
-    ) -> typing.Any:
-        return fidl._construct.construct_response_object(
-            response_ident, response_obj
-        )
 
 
 MyProtocolMarker = FidlProtocolMarker(

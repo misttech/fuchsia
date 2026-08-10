@@ -9,10 +9,10 @@ from fuchsia_controller_py import BaseHandle, Context, Channel, Event, Handle, S
 import fidl_test_conformance as test_conformance
 
 import struct
+import typing
 import unittest
 
-from fidl import construct_response_object
-from fidl_codec import decode_standalone
+
 
 class EncodeConformanceTests(unittest.TestCase):
 {{ range .EncodeSuccessCases }}
@@ -46,9 +46,7 @@ class DecodeConformanceTests(unittest.TestCase):
         handles: list[int] = []
         {{- end }}
         encoded_bytes = {{ .Bytes }}
-        type_name = "{{ .ValueType }}"
-        value = decode_standalone(type_name=type_name, bytes=encoded_bytes, handles=handles)
-        value = construct_response_object(type_name, value)
+        value: typing.Any = {{ .ValueType }}.decode(encoded_bytes, handles)
 {{ .EqualityCheck }}
 {{ end }}
 

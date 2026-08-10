@@ -3,24 +3,22 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from fidl_codec import add_ir_path, encode_fidl_object
 import sys
 import typing
 import enum
 
 import fidl
-from fidl._ir import get_fidl_ir_map
 
-_ir_path = get_fidl_ir_map()["fidl.clientsuite"]
-add_ir_path(_ir_path)
 
 from fidl._client import EventHandlerBase, FidlClient  # type: ignore[unused-ignore,unused-import]
-import fidl._construct  # type: ignore[unused-ignore,unused-import]
 from fidl._server import ServerBase  # type: ignore[unused-ignore,unused-import]
 from fidl._fidl_common import DomainError, FrameworkError, MethodInfo, FidlProtocolMarker, normalize_identifier  # type: ignore[unused-ignore,unused-import]
 
 from abc import abstractmethod, ABC  # type: ignore[unused-ignore,unused-import]
 import collections.abc  # type: ignore[unused-ignore,unused-import]
+
+
+_UNDEFINED: typing.Any = object()
 
 
 @dataclass
@@ -36,11 +34,19 @@ class Empty:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self, "fidl.clientsuite", "fidl.clientsuite/Empty"
-        )
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 1)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 1)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        pass
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        return cls()
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
     # of needing to support creation of a "default object" before decoding.
@@ -64,10 +70,21 @@ class NonEmptyPayload:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self, "fidl.clientsuite", "fidl.clientsuite/NonEmptyPayload"
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 4)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 4)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_int32(self.some_field, _offset + 0)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        some_field = decoder.read_int32(_offset + 0)
+        return cls(
+            some_field=some_field,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -94,13 +111,19 @@ class OpenTargetFlexibleTwoWayErrResponse:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "fidl.clientsuite",
-            "fidl.clientsuite/OpenTarget_FlexibleTwoWayErr_Response",
-        )
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 1)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 1)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        pass
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        return cls()
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
     # of needing to support creation of a "default object" before decoding.
@@ -122,13 +145,19 @@ class OpenTargetFlexibleTwoWayResponse:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "fidl.clientsuite",
-            "fidl.clientsuite/OpenTarget_FlexibleTwoWay_Response",
-        )
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 1)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 1)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        pass
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        return cls()
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
     # of needing to support creation of a "default object" before decoding.
@@ -150,13 +179,19 @@ class OpenTargetStrictTwoWayErrResponse:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "fidl.clientsuite",
-            "fidl.clientsuite/OpenTarget_StrictTwoWayErr_Response",
-        )
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 1)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 1)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        pass
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        return cls()
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
     # of needing to support creation of a "default object" before decoding.
@@ -180,12 +215,21 @@ class RunnerCallFlexibleOneWayRequest:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "fidl.clientsuite",
-            "fidl.clientsuite/RunnerCallFlexibleOneWayRequest",
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 4)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 4)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_handle(self.target, _offset + 0, obj_type=4, rights=61454)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        target = decoder.read_handle(_offset + 0, nullable=False)
+        return cls(
+            target=target,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -214,12 +258,21 @@ class RunnerCallFlexibleTwoWayErrRequest:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "fidl.clientsuite",
-            "fidl.clientsuite/RunnerCallFlexibleTwoWayErrRequest",
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 4)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 4)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_handle(self.target, _offset + 0, obj_type=4, rights=61454)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        target = decoder.read_handle(_offset + 0, nullable=False)
+        return cls(
+            target=target,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -250,12 +303,21 @@ class RunnerCallFlexibleTwoWayFieldsErrRequest:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "fidl.clientsuite",
-            "fidl.clientsuite/RunnerCallFlexibleTwoWayFieldsErrRequest",
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 4)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 4)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_handle(self.target, _offset + 0, obj_type=4, rights=61454)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        target = decoder.read_handle(_offset + 0, nullable=False)
+        return cls(
+            target=target,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -284,12 +346,21 @@ class RunnerCallFlexibleTwoWayFieldsRequest:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "fidl.clientsuite",
-            "fidl.clientsuite/RunnerCallFlexibleTwoWayFieldsRequest",
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 4)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 4)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_handle(self.target, _offset + 0, obj_type=4, rights=61454)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        target = decoder.read_handle(_offset + 0, nullable=False)
+        return cls(
+            target=target,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -318,12 +389,21 @@ class RunnerCallFlexibleTwoWayRequest:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "fidl.clientsuite",
-            "fidl.clientsuite/RunnerCallFlexibleTwoWayRequest",
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 4)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 4)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_handle(self.target, _offset + 0, obj_type=4, rights=61454)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        target = decoder.read_handle(_offset + 0, nullable=False)
+        return cls(
+            target=target,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -352,12 +432,21 @@ class RunnerCallOneWayNoRequestRequest:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "fidl.clientsuite",
-            "fidl.clientsuite/RunnerCallOneWayNoRequestRequest",
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 4)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 4)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_handle(self.target, _offset + 0, obj_type=4, rights=61454)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        target = decoder.read_handle(_offset + 0, nullable=False)
+        return cls(
+            target=target,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -387,12 +476,24 @@ class RunnerCallOneWayStructRequestRequest:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "fidl.clientsuite",
-            "fidl.clientsuite/RunnerCallOneWayStructRequestRequest",
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 8)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 8)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_handle(self.target, _offset + 0, obj_type=4, rights=61454)
+        NonEmptyPayload._encode(self.request, encoder, _offset + 4)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        target = decoder.read_handle(_offset + 0, nullable=False)
+        request = NonEmptyPayload._decode(decoder, _offset + 4)
+        return cls(
+            target=target,
+            request=request,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -423,12 +524,24 @@ class RunnerCallOneWayTableRequestRequest:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "fidl.clientsuite",
-            "fidl.clientsuite/RunnerCallOneWayTableRequestRequest",
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 24)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 24)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_handle(self.target, _offset + 0, obj_type=4, rights=61454)
+        TablePayload._encode(self.request, encoder, _offset + 8)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        target = decoder.read_handle(_offset + 0, nullable=False)
+        request = TablePayload._decode(decoder, _offset + 8)
+        return cls(
+            target=target,
+            request=request,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -459,12 +572,24 @@ class RunnerCallOneWayUnionRequestRequest:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "fidl.clientsuite",
-            "fidl.clientsuite/RunnerCallOneWayUnionRequestRequest",
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 24)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 24)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_handle(self.target, _offset + 0, obj_type=4, rights=61454)
+        UnionPayload._encode(self.request, encoder, _offset + 8)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        target = decoder.read_handle(_offset + 0, nullable=False)
+        request = UnionPayload._decode(decoder, _offset + 8)
+        return cls(
+            target=target,
+            request=request,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -494,12 +619,21 @@ class RunnerCallStrictOneWayRequest:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "fidl.clientsuite",
-            "fidl.clientsuite/RunnerCallStrictOneWayRequest",
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 4)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 4)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_handle(self.target, _offset + 0, obj_type=4, rights=61454)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        target = decoder.read_handle(_offset + 0, nullable=False)
+        return cls(
+            target=target,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -528,12 +662,21 @@ class RunnerCallStrictTwoWayErrRequest:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "fidl.clientsuite",
-            "fidl.clientsuite/RunnerCallStrictTwoWayErrRequest",
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 4)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 4)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_handle(self.target, _offset + 0, obj_type=4, rights=61454)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        target = decoder.read_handle(_offset + 0, nullable=False)
+        return cls(
+            target=target,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -564,12 +707,21 @@ class RunnerCallStrictTwoWayFieldsErrRequest:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "fidl.clientsuite",
-            "fidl.clientsuite/RunnerCallStrictTwoWayFieldsErrRequest",
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 4)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 4)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_handle(self.target, _offset + 0, obj_type=4, rights=61454)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        target = decoder.read_handle(_offset + 0, nullable=False)
+        return cls(
+            target=target,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -598,12 +750,21 @@ class RunnerCallStrictTwoWayFieldsRequest:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "fidl.clientsuite",
-            "fidl.clientsuite/RunnerCallStrictTwoWayFieldsRequest",
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 4)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 4)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_handle(self.target, _offset + 0, obj_type=4, rights=61454)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        target = decoder.read_handle(_offset + 0, nullable=False)
+        return cls(
+            target=target,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -632,12 +793,21 @@ class RunnerCallStrictTwoWayRequest:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "fidl.clientsuite",
-            "fidl.clientsuite/RunnerCallStrictTwoWayRequest",
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 4)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 4)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_handle(self.target, _offset + 0, obj_type=4, rights=61454)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        target = decoder.read_handle(_offset + 0, nullable=False)
+        return cls(
+            target=target,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -666,12 +836,21 @@ class RunnerCallTwoWayNoPayloadRequest:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "fidl.clientsuite",
-            "fidl.clientsuite/RunnerCallTwoWayNoPayloadRequest",
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 4)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 4)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_handle(self.target, _offset + 0, obj_type=4, rights=61454)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        target = decoder.read_handle(_offset + 0, nullable=False)
+        return cls(
+            target=target,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -702,12 +881,21 @@ class RunnerCallTwoWayStructPayloadErrRequest:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "fidl.clientsuite",
-            "fidl.clientsuite/RunnerCallTwoWayStructPayloadErrRequest",
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 4)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 4)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_handle(self.target, _offset + 0, obj_type=4, rights=61454)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        target = decoder.read_handle(_offset + 0, nullable=False)
+        return cls(
+            target=target,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -736,12 +924,21 @@ class RunnerCallTwoWayStructPayloadRequest:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "fidl.clientsuite",
-            "fidl.clientsuite/RunnerCallTwoWayStructPayloadRequest",
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 4)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 4)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_handle(self.target, _offset + 0, obj_type=4, rights=61454)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        target = decoder.read_handle(_offset + 0, nullable=False)
+        return cls(
+            target=target,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -771,12 +968,24 @@ class RunnerCallTwoWayStructRequestRequest:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "fidl.clientsuite",
-            "fidl.clientsuite/RunnerCallTwoWayStructRequestRequest",
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 8)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 8)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_handle(self.target, _offset + 0, obj_type=4, rights=61454)
+        NonEmptyPayload._encode(self.request, encoder, _offset + 4)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        target = decoder.read_handle(_offset + 0, nullable=False)
+        request = NonEmptyPayload._decode(decoder, _offset + 4)
+        return cls(
+            target=target,
+            request=request,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -806,12 +1015,21 @@ class RunnerCallTwoWayTablePayloadRequest:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "fidl.clientsuite",
-            "fidl.clientsuite/RunnerCallTwoWayTablePayloadRequest",
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 4)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 4)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_handle(self.target, _offset + 0, obj_type=4, rights=61454)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        target = decoder.read_handle(_offset + 0, nullable=False)
+        return cls(
+            target=target,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -841,12 +1059,24 @@ class RunnerCallTwoWayTableRequestRequest:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "fidl.clientsuite",
-            "fidl.clientsuite/RunnerCallTwoWayTableRequestRequest",
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 24)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 24)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_handle(self.target, _offset + 0, obj_type=4, rights=61454)
+        TablePayload._encode(self.request, encoder, _offset + 8)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        target = decoder.read_handle(_offset + 0, nullable=False)
+        request = TablePayload._decode(decoder, _offset + 8)
+        return cls(
+            target=target,
+            request=request,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -876,12 +1106,21 @@ class RunnerCallTwoWayUnionPayloadRequest:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "fidl.clientsuite",
-            "fidl.clientsuite/RunnerCallTwoWayUnionPayloadRequest",
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 4)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 4)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_handle(self.target, _offset + 0, obj_type=4, rights=61454)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        target = decoder.read_handle(_offset + 0, nullable=False)
+        return cls(
+            target=target,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -911,12 +1150,24 @@ class RunnerCallTwoWayUnionRequestRequest:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "fidl.clientsuite",
-            "fidl.clientsuite/RunnerCallTwoWayUnionRequestRequest",
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 24)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 24)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_handle(self.target, _offset + 0, obj_type=4, rights=61454)
+        UnionPayload._encode(self.request, encoder, _offset + 8)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        target = decoder.read_handle(_offset + 0, nullable=False)
+        request = UnionPayload._decode(decoder, _offset + 8)
+        return cls(
+            target=target,
+            request=request,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -946,12 +1197,21 @@ class RunnerGetVersionResponse:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "fidl.clientsuite",
-            "fidl.clientsuite/RunnerGetVersionResponse",
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 8)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 8)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_uint64(self.version, _offset + 0)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        version = decoder.read_uint64(_offset + 0)
+        return cls(
+            version=version,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -980,12 +1240,21 @@ class RunnerIsTestEnabledRequest:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "fidl.clientsuite",
-            "fidl.clientsuite/RunnerIsTestEnabledRequest",
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 4)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 4)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        Test._encode(self.test, encoder, _offset + 0)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        test = Test._decode(decoder, _offset + 0)
+        return cls(
+            test=test,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -1014,12 +1283,21 @@ class RunnerIsTestEnabledResponse:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "fidl.clientsuite",
-            "fidl.clientsuite/RunnerIsTestEnabledResponse",
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 1)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 1)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_bool(self.is_enabled, _offset + 0)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        is_enabled = decoder.read_bool(_offset + 0)
+        return cls(
+            is_enabled=is_enabled,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -1049,12 +1327,26 @@ class RunnerReceiveAjarEventsRequest:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "fidl.clientsuite",
-            "fidl.clientsuite/RunnerReceiveAjarEventsRequest",
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 8)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 8)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_handle(self.target, _offset + 0, obj_type=4, rights=61454)
+        encoder.write_handle(
+            self.reporter, _offset + 4, obj_type=4, rights=61454
+        )
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        target = decoder.read_handle(_offset + 0, nullable=False)
+        reporter = decoder.read_handle(_offset + 4, nullable=False)
+        return cls(
+            target=target,
+            reporter=reporter,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -1085,12 +1377,26 @@ class RunnerReceiveClosedEventsRequest:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "fidl.clientsuite",
-            "fidl.clientsuite/RunnerReceiveClosedEventsRequest",
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 8)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 8)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_handle(self.target, _offset + 0, obj_type=4, rights=61454)
+        encoder.write_handle(
+            self.reporter, _offset + 4, obj_type=4, rights=61454
+        )
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        target = decoder.read_handle(_offset + 0, nullable=False)
+        reporter = decoder.read_handle(_offset + 4, nullable=False)
+        return cls(
+            target=target,
+            reporter=reporter,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -1121,12 +1427,26 @@ class RunnerReceiveOpenEventsRequest:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "fidl.clientsuite",
-            "fidl.clientsuite/RunnerReceiveOpenEventsRequest",
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 8)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 8)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_handle(self.target, _offset + 0, obj_type=4, rights=61454)
+        encoder.write_handle(
+            self.reporter, _offset + 4, obj_type=4, rights=61454
+        )
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        target = decoder.read_handle(_offset + 0, nullable=False)
+        reporter = decoder.read_handle(_offset + 4, nullable=False)
+        return cls(
+            target=target,
+            reporter=reporter,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -1156,10 +1476,21 @@ class UnknownEvent:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self, "fidl.clientsuite", "fidl.clientsuite/UnknownEvent"
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 8)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 8)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_uint64(self.ordinal, _offset + 0)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        ordinal = decoder.read_uint64(_offset + 0)
+        return cls(
+            ordinal=ordinal,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -1194,10 +1525,64 @@ class BindingsProperties:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self, "fidl.clientsuite", "fidl.clientsuite/BindingsProperties"
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 16)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 16)
+
+    def _encode(self, encoder: fidl.Encoder, offset: int) -> None:
+        max_ord = 0
+        if self.io_style is not None:
+            max_ord = max(max_ord, 1)
+
+        if max_ord == 0:
+            encoder.write_inline(offset, b"\x00" * 8 + b"\xff" * 8)
+            return
+
+        encoder.write_uint64(max_ord, offset)
+        encoder.write_uint64(0xFFFFFFFFFFFFFFFF, offset + 8)
+
+        def encode_envelopes(
+            val: typing.Any, enc: fidl.Encoder, start_offset: int
+        ) -> None:
+            if max_ord >= 1:
+                enc.write_envelope(
+                    val.io_style, start_offset + 0, IoStyle._encode, 4, True
+                )
+
+        encoder.ool_tasks.append(
+            lambda: encoder.write_ool_struct(
+                self, encode_envelopes, max_ord * 8
+            )
+        )
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        _max_ord = decoder.read_uint64(_offset)
+        _presence = decoder.read_uint64(_offset + 8)
+        if _presence == 0:
+            return cls()
+
+        _pad_mod = decoder.ool_offset % 8
+        if _pad_mod != 0:
+            decoder.ool_offset += 8 - _pad_mod
+        _env_array_start = decoder.ool_offset
+        decoder.ool_offset += _max_ord * 8
+
+        io_style = None
+        for _ord_idx in range(1, _max_ord + 1):
+            _env_offset = _env_array_start + (_ord_idx - 1) * 8
+            if _ord_idx == 1:
+                io_style = decoder.read_envelope(
+                    _env_offset, IoStyle._decode, 4
+                )
+            else:
+                decoder.skip_envelope(_env_offset)
+
+        return cls(
+            io_style=io_style,
         )
 
     @classmethod
@@ -1226,10 +1611,68 @@ class TablePayload:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self, "fidl.clientsuite", "fidl.clientsuite/TablePayload"
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 16)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 16)
+
+    def _encode(self, encoder: fidl.Encoder, offset: int) -> None:
+        max_ord = 0
+        if self.some_field is not None:
+            max_ord = max(max_ord, 1)
+
+        if max_ord == 0:
+            encoder.write_inline(offset, b"\x00" * 8 + b"\xff" * 8)
+            return
+
+        encoder.write_uint64(max_ord, offset)
+        encoder.write_uint64(0xFFFFFFFFFFFFFFFF, offset + 8)
+
+        def encode_envelopes(
+            val: typing.Any, enc: fidl.Encoder, start_offset: int
+        ) -> None:
+            if max_ord >= 1:
+                enc.write_envelope(
+                    val.some_field,
+                    start_offset + 0,
+                    lambda val, enc, off: enc.write_int32(val, off),
+                    4,
+                    True,
+                )
+
+        encoder.ool_tasks.append(
+            lambda: encoder.write_ool_struct(
+                self, encode_envelopes, max_ord * 8
+            )
+        )
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        _max_ord = decoder.read_uint64(_offset)
+        _presence = decoder.read_uint64(_offset + 8)
+        if _presence == 0:
+            return cls()
+
+        _pad_mod = decoder.ool_offset % 8
+        if _pad_mod != 0:
+            decoder.ool_offset += 8 - _pad_mod
+        _env_array_start = decoder.ool_offset
+        decoder.ool_offset += _max_ord * 8
+
+        some_field = None
+        for _ord_idx in range(1, _max_ord + 1):
+            _env_offset = _env_array_start + (_ord_idx - 1) * 8
+            if _ord_idx == 1:
+                some_field = decoder.read_envelope(
+                    _env_offset, lambda dec, off: dec.read_int32(off), 4
+                )
+            else:
+                decoder.skip_envelope(_env_offset)
+
+        return cls(
+            some_field=some_field,
         )
 
     @classmethod
@@ -1268,8 +1711,8 @@ class AjarTargetEventReport:
 
     def __init__(
         self,
-        fidl_error: typing.Optional[int | FidlErrorKind] = None,
-        unknown_event: typing.Optional[UnknownEvent] = None,
+        fidl_error: typing.Optional[int | FidlErrorKind] = _UNDEFINED,
+        unknown_event: typing.Optional[UnknownEvent] = _UNDEFINED,
         _empty: typing.Optional[tuple[()]] = None,
     ):
         object.__init__(self)
@@ -1279,14 +1722,16 @@ class AjarTargetEventReport:
         number_of_variants = 0
         variants = []
 
-        if fidl_error is not None:
-            self._fidl_error = fidl_error
-            variants.append("fidl_error")
-            number_of_variants += 1
-        if unknown_event is not None:
-            self._unknown_event = unknown_event
-            variants.append("unknown_event")
-            number_of_variants += 1
+        if fidl_error is not _UNDEFINED:
+            if fidl_error is not None:
+                self._fidl_error = fidl_error
+                variants.append("fidl_error")
+                number_of_variants += 1
+        if unknown_event is not _UNDEFINED:
+            if unknown_event is not None:
+                self._unknown_event = unknown_event
+                variants.append("unknown_event")
+                number_of_variants += 1
         if number_of_variants != 1:
             raise TypeError(
                 f"Exactly one variant must be specified for {self.__fidl_raw_type__}: {variants}"
@@ -1307,11 +1752,59 @@ class AjarTargetEventReport:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self, "fidl.clientsuite", "fidl.clientsuite/AjarTargetEventReport"
-        )
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 16)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 16)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        if hasattr(self, "_fidl_error"):
+            encoder.write_uint64(1, _offset)
+            encoder.write_envelope(
+                getattr(self, "_fidl_error"),
+                _offset + 8,
+                FidlErrorKind._encode,
+                4,
+                True,
+            )
+            return
+        if hasattr(self, "_unknown_event"):
+            encoder.write_uint64(2, _offset)
+            encoder.write_envelope(
+                getattr(self, "_unknown_event"),
+                _offset + 8,
+                UnknownEvent._encode,
+                8,
+                False,
+            )
+            return
+        encoder.write_inline(_offset, b"\x00" * 16)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        ordinal = decoder.read_uint64(_offset)
+        if ordinal == 0:
+            return cls(_empty=())
+        if ordinal == 1:
+            val = decoder.read_envelope(
+                _offset + 8,
+                FidlErrorKind._decode,
+                4,
+            )
+            return cls(fidl_error=val)
+        if ordinal == 2:
+            val = decoder.read_envelope(
+                _offset + 8,
+                UnknownEvent._decode,
+                8,
+            )
+            return cls(unknown_event=val)
+
+        # Skip unknown envelope
+        decoder.skip_envelope(_offset + 8)
+        raise ValueError(f"Unknown union ordinal {ordinal}")
 
     @classmethod
     def make_default(cls) -> typing.Self:
@@ -1366,11 +1859,11 @@ class ClosedTargetEventReport:
 
     def __init__(
         self,
-        fidl_error: typing.Optional[int | FidlErrorKind] = None,
-        on_event_no_payload: typing.Optional[Empty] = None,
-        on_event_struct_payload: typing.Optional[NonEmptyPayload] = None,
-        on_event_table_payload: typing.Optional[TablePayload] = None,
-        on_event_union_payload: typing.Optional[UnionPayload] = None,
+        fidl_error: typing.Optional[int | FidlErrorKind] = _UNDEFINED,
+        on_event_no_payload: typing.Optional[Empty] = _UNDEFINED,
+        on_event_struct_payload: typing.Optional[NonEmptyPayload] = _UNDEFINED,
+        on_event_table_payload: typing.Optional[TablePayload] = _UNDEFINED,
+        on_event_union_payload: typing.Optional[UnionPayload] = _UNDEFINED,
         _empty: typing.Optional[tuple[()]] = None,
     ):
         object.__init__(self)
@@ -1380,26 +1873,31 @@ class ClosedTargetEventReport:
         number_of_variants = 0
         variants = []
 
-        if fidl_error is not None:
-            self._fidl_error = fidl_error
-            variants.append("fidl_error")
-            number_of_variants += 1
-        if on_event_no_payload is not None:
-            self._on_event_no_payload = on_event_no_payload
-            variants.append("on_event_no_payload")
-            number_of_variants += 1
-        if on_event_struct_payload is not None:
-            self._on_event_struct_payload = on_event_struct_payload
-            variants.append("on_event_struct_payload")
-            number_of_variants += 1
-        if on_event_table_payload is not None:
-            self._on_event_table_payload = on_event_table_payload
-            variants.append("on_event_table_payload")
-            number_of_variants += 1
-        if on_event_union_payload is not None:
-            self._on_event_union_payload = on_event_union_payload
-            variants.append("on_event_union_payload")
-            number_of_variants += 1
+        if fidl_error is not _UNDEFINED:
+            if fidl_error is not None:
+                self._fidl_error = fidl_error
+                variants.append("fidl_error")
+                number_of_variants += 1
+        if on_event_no_payload is not _UNDEFINED:
+            if on_event_no_payload is not None:
+                self._on_event_no_payload = on_event_no_payload
+                variants.append("on_event_no_payload")
+                number_of_variants += 1
+        if on_event_struct_payload is not _UNDEFINED:
+            if on_event_struct_payload is not None:
+                self._on_event_struct_payload = on_event_struct_payload
+                variants.append("on_event_struct_payload")
+                number_of_variants += 1
+        if on_event_table_payload is not _UNDEFINED:
+            if on_event_table_payload is not None:
+                self._on_event_table_payload = on_event_table_payload
+                variants.append("on_event_table_payload")
+                number_of_variants += 1
+        if on_event_union_payload is not _UNDEFINED:
+            if on_event_union_payload is not None:
+                self._on_event_union_payload = on_event_union_payload
+                variants.append("on_event_union_payload")
+                number_of_variants += 1
         if number_of_variants != 1:
             raise TypeError(
                 f"Exactly one variant must be specified for {self.__fidl_raw_type__}: {variants}"
@@ -1432,11 +1930,110 @@ class ClosedTargetEventReport:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self, "fidl.clientsuite", "fidl.clientsuite/ClosedTargetEventReport"
-        )
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 16)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 16)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        if hasattr(self, "_fidl_error"):
+            encoder.write_uint64(1, _offset)
+            encoder.write_envelope(
+                getattr(self, "_fidl_error"),
+                _offset + 8,
+                FidlErrorKind._encode,
+                4,
+                True,
+            )
+            return
+        if hasattr(self, "_on_event_no_payload"):
+            encoder.write_uint64(2, _offset)
+            encoder.write_envelope(
+                getattr(self, "_on_event_no_payload"),
+                _offset + 8,
+                Empty._encode,
+                1,
+                True,
+            )
+            return
+        if hasattr(self, "_on_event_struct_payload"):
+            encoder.write_uint64(3, _offset)
+            encoder.write_envelope(
+                getattr(self, "_on_event_struct_payload"),
+                _offset + 8,
+                NonEmptyPayload._encode,
+                4,
+                True,
+            )
+            return
+        if hasattr(self, "_on_event_table_payload"):
+            encoder.write_uint64(4, _offset)
+            encoder.write_envelope(
+                getattr(self, "_on_event_table_payload"),
+                _offset + 8,
+                TablePayload._encode,
+                16,
+                False,
+            )
+            return
+        if hasattr(self, "_on_event_union_payload"):
+            encoder.write_uint64(5, _offset)
+            encoder.write_envelope(
+                getattr(self, "_on_event_union_payload"),
+                _offset + 8,
+                UnionPayload._encode,
+                16,
+                False,
+            )
+            return
+        encoder.write_inline(_offset, b"\x00" * 16)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        ordinal = decoder.read_uint64(_offset)
+        if ordinal == 0:
+            return cls(_empty=())
+        if ordinal == 1:
+            val = decoder.read_envelope(
+                _offset + 8,
+                FidlErrorKind._decode,
+                4,
+            )
+            return cls(fidl_error=val)
+        if ordinal == 2:
+            val = decoder.read_envelope(
+                _offset + 8,
+                Empty._decode,
+                1,
+            )
+            return cls(on_event_no_payload=val)
+        if ordinal == 3:
+            val = decoder.read_envelope(
+                _offset + 8,
+                NonEmptyPayload._decode,
+                4,
+            )
+            return cls(on_event_struct_payload=val)
+        if ordinal == 4:
+            val = decoder.read_envelope(
+                _offset + 8,
+                TablePayload._decode,
+                16,
+            )
+            return cls(on_event_table_payload=val)
+        if ordinal == 5:
+            val = decoder.read_envelope(
+                _offset + 8,
+                UnionPayload._decode,
+                16,
+            )
+            return cls(on_event_union_payload=val)
+
+        # Skip unknown envelope
+        decoder.skip_envelope(_offset + 8)
+        raise ValueError(f"Unknown union ordinal {ordinal}")
 
     @classmethod
     def make_default(cls) -> typing.Self:
@@ -1476,8 +2073,8 @@ class ClosedTargetTwoWayStructPayloadErrResult:
 
     def __init__(
         self,
-        response: typing.Optional[NonEmptyPayload] = None,
-        err: typing.Optional[int] = None,
+        response: typing.Optional[NonEmptyPayload] = _UNDEFINED,
+        err: typing.Optional[int] = _UNDEFINED,
         _empty: typing.Optional[tuple[()]] = None,
     ):
         object.__init__(self)
@@ -1487,14 +2084,16 @@ class ClosedTargetTwoWayStructPayloadErrResult:
         number_of_variants = 0
         variants = []
 
-        if response is not None:
-            self._response = response
-            variants.append("response")
-            number_of_variants += 1
-        if err is not None:
-            self._err = err
-            variants.append("err")
-            number_of_variants += 1
+        if response is not _UNDEFINED:
+            if response is not None:
+                self._response = response
+                variants.append("response")
+                number_of_variants += 1
+        if err is not _UNDEFINED:
+            if err is not None:
+                self._err = err
+                variants.append("err")
+                number_of_variants += 1
         if number_of_variants > 1:
             raise TypeError(
                 f"Exactly one variant must be specified for {self.__fidl_raw_type__}: {variants}"
@@ -1515,13 +2114,59 @@ class ClosedTargetTwoWayStructPayloadErrResult:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "fidl.clientsuite",
-            "fidl.clientsuite/ClosedTarget_TwoWayStructPayloadErr_Result",
-        )
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 16)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 16)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        if hasattr(self, "_response"):
+            encoder.write_uint64(1, _offset)
+            encoder.write_envelope(
+                getattr(self, "_response"),
+                _offset + 8,
+                NonEmptyPayload._encode,
+                4,
+                True,
+            )
+            return
+        if hasattr(self, "_err"):
+            encoder.write_uint64(2, _offset)
+            encoder.write_envelope(
+                getattr(self, "_err"),
+                _offset + 8,
+                lambda val, enc, off: enc.write_int32(val, off),
+                4,
+                True,
+            )
+            return
+        encoder.write_inline(_offset, b"\x00" * 16)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        ordinal = decoder.read_uint64(_offset)
+        if ordinal == 0:
+            return cls(_empty=())
+        if ordinal == 1:
+            val = decoder.read_envelope(
+                _offset + 8,
+                NonEmptyPayload._decode,
+                4,
+            )
+            return cls(response=val)
+        if ordinal == 2:
+            val = decoder.read_envelope(
+                _offset + 8,
+                lambda dec, off: dec.read_int32(off),
+                4,
+            )
+            return cls(err=val)
+
+        # Skip unknown envelope
+        decoder.skip_envelope(_offset + 8)
+        raise ValueError(f"Unknown union ordinal {ordinal}")
 
     def unwrap(self) -> NonEmptyPayload:
         """Returns the response if result does not contain an error. Otherwise, raises an exception."""
@@ -1584,8 +2229,8 @@ class EmptyResultClassification:
 
     def __init__(
         self,
-        success: typing.Optional[Empty] = None,
-        fidl_error: typing.Optional[int | FidlErrorKind] = None,
+        success: typing.Optional[Empty] = _UNDEFINED,
+        fidl_error: typing.Optional[int | FidlErrorKind] = _UNDEFINED,
         _empty: typing.Optional[tuple[()]] = None,
     ):
         object.__init__(self)
@@ -1595,14 +2240,16 @@ class EmptyResultClassification:
         number_of_variants = 0
         variants = []
 
-        if success is not None:
-            self._success = success
-            variants.append("success")
-            number_of_variants += 1
-        if fidl_error is not None:
-            self._fidl_error = fidl_error
-            variants.append("fidl_error")
-            number_of_variants += 1
+        if success is not _UNDEFINED:
+            if success is not None:
+                self._success = success
+                variants.append("success")
+                number_of_variants += 1
+        if fidl_error is not _UNDEFINED:
+            if fidl_error is not None:
+                self._fidl_error = fidl_error
+                variants.append("fidl_error")
+                number_of_variants += 1
         if number_of_variants != 1:
             raise TypeError(
                 f"Exactly one variant must be specified for {self.__fidl_raw_type__}: {variants}"
@@ -1623,13 +2270,59 @@ class EmptyResultClassification:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "fidl.clientsuite",
-            "fidl.clientsuite/EmptyResultClassification",
-        )
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 16)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 16)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        if hasattr(self, "_success"):
+            encoder.write_uint64(1, _offset)
+            encoder.write_envelope(
+                getattr(self, "_success"),
+                _offset + 8,
+                Empty._encode,
+                1,
+                True,
+            )
+            return
+        if hasattr(self, "_fidl_error"):
+            encoder.write_uint64(3, _offset)
+            encoder.write_envelope(
+                getattr(self, "_fidl_error"),
+                _offset + 8,
+                FidlErrorKind._encode,
+                4,
+                True,
+            )
+            return
+        encoder.write_inline(_offset, b"\x00" * 16)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        ordinal = decoder.read_uint64(_offset)
+        if ordinal == 0:
+            return cls(_empty=())
+        if ordinal == 1:
+            val = decoder.read_envelope(
+                _offset + 8,
+                Empty._decode,
+                1,
+            )
+            return cls(success=val)
+        if ordinal == 3:
+            val = decoder.read_envelope(
+                _offset + 8,
+                FidlErrorKind._decode,
+                4,
+            )
+            return cls(fidl_error=val)
+
+        # Skip unknown envelope
+        decoder.skip_envelope(_offset + 8)
+        raise ValueError(f"Unknown union ordinal {ordinal}")
 
     @classmethod
     def make_default(cls) -> typing.Self:
@@ -1672,9 +2365,9 @@ class EmptyResultWithErrorClassification:
 
     def __init__(
         self,
-        success: typing.Optional[Empty] = None,
-        application_error: typing.Optional[int] = None,
-        fidl_error: typing.Optional[int | FidlErrorKind] = None,
+        success: typing.Optional[Empty] = _UNDEFINED,
+        application_error: typing.Optional[int] = _UNDEFINED,
+        fidl_error: typing.Optional[int | FidlErrorKind] = _UNDEFINED,
         _empty: typing.Optional[tuple[()]] = None,
     ):
         object.__init__(self)
@@ -1684,18 +2377,21 @@ class EmptyResultWithErrorClassification:
         number_of_variants = 0
         variants = []
 
-        if success is not None:
-            self._success = success
-            variants.append("success")
-            number_of_variants += 1
-        if application_error is not None:
-            self._application_error = application_error
-            variants.append("application_error")
-            number_of_variants += 1
-        if fidl_error is not None:
-            self._fidl_error = fidl_error
-            variants.append("fidl_error")
-            number_of_variants += 1
+        if success is not _UNDEFINED:
+            if success is not None:
+                self._success = success
+                variants.append("success")
+                number_of_variants += 1
+        if application_error is not _UNDEFINED:
+            if application_error is not None:
+                self._application_error = application_error
+                variants.append("application_error")
+                number_of_variants += 1
+        if fidl_error is not _UNDEFINED:
+            if fidl_error is not None:
+                self._fidl_error = fidl_error
+                variants.append("fidl_error")
+                number_of_variants += 1
         if number_of_variants != 1:
             raise TypeError(
                 f"Exactly one variant must be specified for {self.__fidl_raw_type__}: {variants}"
@@ -1720,13 +2416,76 @@ class EmptyResultWithErrorClassification:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "fidl.clientsuite",
-            "fidl.clientsuite/EmptyResultWithErrorClassification",
-        )
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 16)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 16)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        if hasattr(self, "_success"):
+            encoder.write_uint64(1, _offset)
+            encoder.write_envelope(
+                getattr(self, "_success"),
+                _offset + 8,
+                Empty._encode,
+                1,
+                True,
+            )
+            return
+        if hasattr(self, "_application_error"):
+            encoder.write_uint64(2, _offset)
+            encoder.write_envelope(
+                getattr(self, "_application_error"),
+                _offset + 8,
+                lambda val, enc, off: enc.write_int32(val, off),
+                4,
+                True,
+            )
+            return
+        if hasattr(self, "_fidl_error"):
+            encoder.write_uint64(3, _offset)
+            encoder.write_envelope(
+                getattr(self, "_fidl_error"),
+                _offset + 8,
+                FidlErrorKind._encode,
+                4,
+                True,
+            )
+            return
+        encoder.write_inline(_offset, b"\x00" * 16)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        ordinal = decoder.read_uint64(_offset)
+        if ordinal == 0:
+            return cls(_empty=())
+        if ordinal == 1:
+            val = decoder.read_envelope(
+                _offset + 8,
+                Empty._decode,
+                1,
+            )
+            return cls(success=val)
+        if ordinal == 2:
+            val = decoder.read_envelope(
+                _offset + 8,
+                lambda dec, off: dec.read_int32(off),
+                4,
+            )
+            return cls(application_error=val)
+        if ordinal == 3:
+            val = decoder.read_envelope(
+                _offset + 8,
+                FidlErrorKind._decode,
+                4,
+            )
+            return cls(fidl_error=val)
+
+        # Skip unknown envelope
+        decoder.skip_envelope(_offset + 8)
+        raise ValueError(f"Unknown union ordinal {ordinal}")
 
     @classmethod
     def make_default(cls) -> typing.Self:
@@ -1764,8 +2523,8 @@ class NonEmptyResultClassification:
 
     def __init__(
         self,
-        success: typing.Optional[NonEmptyPayload] = None,
-        fidl_error: typing.Optional[int | FidlErrorKind] = None,
+        success: typing.Optional[NonEmptyPayload] = _UNDEFINED,
+        fidl_error: typing.Optional[int | FidlErrorKind] = _UNDEFINED,
         _empty: typing.Optional[tuple[()]] = None,
     ):
         object.__init__(self)
@@ -1775,14 +2534,16 @@ class NonEmptyResultClassification:
         number_of_variants = 0
         variants = []
 
-        if success is not None:
-            self._success = success
-            variants.append("success")
-            number_of_variants += 1
-        if fidl_error is not None:
-            self._fidl_error = fidl_error
-            variants.append("fidl_error")
-            number_of_variants += 1
+        if success is not _UNDEFINED:
+            if success is not None:
+                self._success = success
+                variants.append("success")
+                number_of_variants += 1
+        if fidl_error is not _UNDEFINED:
+            if fidl_error is not None:
+                self._fidl_error = fidl_error
+                variants.append("fidl_error")
+                number_of_variants += 1
         if number_of_variants != 1:
             raise TypeError(
                 f"Exactly one variant must be specified for {self.__fidl_raw_type__}: {variants}"
@@ -1803,13 +2564,59 @@ class NonEmptyResultClassification:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "fidl.clientsuite",
-            "fidl.clientsuite/NonEmptyResultClassification",
-        )
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 16)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 16)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        if hasattr(self, "_success"):
+            encoder.write_uint64(1, _offset)
+            encoder.write_envelope(
+                getattr(self, "_success"),
+                _offset + 8,
+                NonEmptyPayload._encode,
+                4,
+                True,
+            )
+            return
+        if hasattr(self, "_fidl_error"):
+            encoder.write_uint64(3, _offset)
+            encoder.write_envelope(
+                getattr(self, "_fidl_error"),
+                _offset + 8,
+                FidlErrorKind._encode,
+                4,
+                True,
+            )
+            return
+        encoder.write_inline(_offset, b"\x00" * 16)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        ordinal = decoder.read_uint64(_offset)
+        if ordinal == 0:
+            return cls(_empty=())
+        if ordinal == 1:
+            val = decoder.read_envelope(
+                _offset + 8,
+                NonEmptyPayload._decode,
+                4,
+            )
+            return cls(success=val)
+        if ordinal == 3:
+            val = decoder.read_envelope(
+                _offset + 8,
+                FidlErrorKind._decode,
+                4,
+            )
+            return cls(fidl_error=val)
+
+        # Skip unknown envelope
+        decoder.skip_envelope(_offset + 8)
+        raise ValueError(f"Unknown union ordinal {ordinal}")
 
     @classmethod
     def make_default(cls) -> typing.Self:
@@ -1852,9 +2659,9 @@ class NonEmptyResultWithErrorClassification:
 
     def __init__(
         self,
-        success: typing.Optional[NonEmptyPayload] = None,
-        application_error: typing.Optional[int] = None,
-        fidl_error: typing.Optional[int | FidlErrorKind] = None,
+        success: typing.Optional[NonEmptyPayload] = _UNDEFINED,
+        application_error: typing.Optional[int] = _UNDEFINED,
+        fidl_error: typing.Optional[int | FidlErrorKind] = _UNDEFINED,
         _empty: typing.Optional[tuple[()]] = None,
     ):
         object.__init__(self)
@@ -1864,18 +2671,21 @@ class NonEmptyResultWithErrorClassification:
         number_of_variants = 0
         variants = []
 
-        if success is not None:
-            self._success = success
-            variants.append("success")
-            number_of_variants += 1
-        if application_error is not None:
-            self._application_error = application_error
-            variants.append("application_error")
-            number_of_variants += 1
-        if fidl_error is not None:
-            self._fidl_error = fidl_error
-            variants.append("fidl_error")
-            number_of_variants += 1
+        if success is not _UNDEFINED:
+            if success is not None:
+                self._success = success
+                variants.append("success")
+                number_of_variants += 1
+        if application_error is not _UNDEFINED:
+            if application_error is not None:
+                self._application_error = application_error
+                variants.append("application_error")
+                number_of_variants += 1
+        if fidl_error is not _UNDEFINED:
+            if fidl_error is not None:
+                self._fidl_error = fidl_error
+                variants.append("fidl_error")
+                number_of_variants += 1
         if number_of_variants != 1:
             raise TypeError(
                 f"Exactly one variant must be specified for {self.__fidl_raw_type__}: {variants}"
@@ -1900,13 +2710,76 @@ class NonEmptyResultWithErrorClassification:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "fidl.clientsuite",
-            "fidl.clientsuite/NonEmptyResultWithErrorClassification",
-        )
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 16)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 16)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        if hasattr(self, "_success"):
+            encoder.write_uint64(1, _offset)
+            encoder.write_envelope(
+                getattr(self, "_success"),
+                _offset + 8,
+                NonEmptyPayload._encode,
+                4,
+                True,
+            )
+            return
+        if hasattr(self, "_application_error"):
+            encoder.write_uint64(2, _offset)
+            encoder.write_envelope(
+                getattr(self, "_application_error"),
+                _offset + 8,
+                lambda val, enc, off: enc.write_int32(val, off),
+                4,
+                True,
+            )
+            return
+        if hasattr(self, "_fidl_error"):
+            encoder.write_uint64(3, _offset)
+            encoder.write_envelope(
+                getattr(self, "_fidl_error"),
+                _offset + 8,
+                FidlErrorKind._encode,
+                4,
+                True,
+            )
+            return
+        encoder.write_inline(_offset, b"\x00" * 16)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        ordinal = decoder.read_uint64(_offset)
+        if ordinal == 0:
+            return cls(_empty=())
+        if ordinal == 1:
+            val = decoder.read_envelope(
+                _offset + 8,
+                NonEmptyPayload._decode,
+                4,
+            )
+            return cls(success=val)
+        if ordinal == 2:
+            val = decoder.read_envelope(
+                _offset + 8,
+                lambda dec, off: dec.read_int32(off),
+                4,
+            )
+            return cls(application_error=val)
+        if ordinal == 3:
+            val = decoder.read_envelope(
+                _offset + 8,
+                FidlErrorKind._decode,
+                4,
+            )
+            return cls(fidl_error=val)
+
+        # Skip unknown envelope
+        decoder.skip_envelope(_offset + 8)
+        raise ValueError(f"Unknown union ordinal {ordinal}")
 
     @classmethod
     def make_default(cls) -> typing.Self:
@@ -1954,10 +2827,10 @@ class OpenTargetEventReport:
 
     def __init__(
         self,
-        fidl_error: typing.Optional[int | FidlErrorKind] = None,
-        unknown_event: typing.Optional[UnknownEvent] = None,
-        strict_event: typing.Optional[Empty] = None,
-        flexible_event: typing.Optional[Empty] = None,
+        fidl_error: typing.Optional[int | FidlErrorKind] = _UNDEFINED,
+        unknown_event: typing.Optional[UnknownEvent] = _UNDEFINED,
+        strict_event: typing.Optional[Empty] = _UNDEFINED,
+        flexible_event: typing.Optional[Empty] = _UNDEFINED,
         _empty: typing.Optional[tuple[()]] = None,
     ):
         object.__init__(self)
@@ -1967,22 +2840,26 @@ class OpenTargetEventReport:
         number_of_variants = 0
         variants = []
 
-        if fidl_error is not None:
-            self._fidl_error = fidl_error
-            variants.append("fidl_error")
-            number_of_variants += 1
-        if unknown_event is not None:
-            self._unknown_event = unknown_event
-            variants.append("unknown_event")
-            number_of_variants += 1
-        if strict_event is not None:
-            self._strict_event = strict_event
-            variants.append("strict_event")
-            number_of_variants += 1
-        if flexible_event is not None:
-            self._flexible_event = flexible_event
-            variants.append("flexible_event")
-            number_of_variants += 1
+        if fidl_error is not _UNDEFINED:
+            if fidl_error is not None:
+                self._fidl_error = fidl_error
+                variants.append("fidl_error")
+                number_of_variants += 1
+        if unknown_event is not _UNDEFINED:
+            if unknown_event is not None:
+                self._unknown_event = unknown_event
+                variants.append("unknown_event")
+                number_of_variants += 1
+        if strict_event is not _UNDEFINED:
+            if strict_event is not None:
+                self._strict_event = strict_event
+                variants.append("strict_event")
+                number_of_variants += 1
+        if flexible_event is not _UNDEFINED:
+            if flexible_event is not None:
+                self._flexible_event = flexible_event
+                variants.append("flexible_event")
+                number_of_variants += 1
         if number_of_variants != 1:
             raise TypeError(
                 f"Exactly one variant must be specified for {self.__fidl_raw_type__}: {variants}"
@@ -2011,11 +2888,93 @@ class OpenTargetEventReport:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self, "fidl.clientsuite", "fidl.clientsuite/OpenTargetEventReport"
-        )
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 16)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 16)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        if hasattr(self, "_fidl_error"):
+            encoder.write_uint64(1, _offset)
+            encoder.write_envelope(
+                getattr(self, "_fidl_error"),
+                _offset + 8,
+                FidlErrorKind._encode,
+                4,
+                True,
+            )
+            return
+        if hasattr(self, "_unknown_event"):
+            encoder.write_uint64(2, _offset)
+            encoder.write_envelope(
+                getattr(self, "_unknown_event"),
+                _offset + 8,
+                UnknownEvent._encode,
+                8,
+                False,
+            )
+            return
+        if hasattr(self, "_strict_event"):
+            encoder.write_uint64(3, _offset)
+            encoder.write_envelope(
+                getattr(self, "_strict_event"),
+                _offset + 8,
+                Empty._encode,
+                1,
+                True,
+            )
+            return
+        if hasattr(self, "_flexible_event"):
+            encoder.write_uint64(4, _offset)
+            encoder.write_envelope(
+                getattr(self, "_flexible_event"),
+                _offset + 8,
+                Empty._encode,
+                1,
+                True,
+            )
+            return
+        encoder.write_inline(_offset, b"\x00" * 16)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        ordinal = decoder.read_uint64(_offset)
+        if ordinal == 0:
+            return cls(_empty=())
+        if ordinal == 1:
+            val = decoder.read_envelope(
+                _offset + 8,
+                FidlErrorKind._decode,
+                4,
+            )
+            return cls(fidl_error=val)
+        if ordinal == 2:
+            val = decoder.read_envelope(
+                _offset + 8,
+                UnknownEvent._decode,
+                8,
+            )
+            return cls(unknown_event=val)
+        if ordinal == 3:
+            val = decoder.read_envelope(
+                _offset + 8,
+                Empty._decode,
+                1,
+            )
+            return cls(strict_event=val)
+        if ordinal == 4:
+            val = decoder.read_envelope(
+                _offset + 8,
+                Empty._decode,
+                1,
+            )
+            return cls(flexible_event=val)
+
+        # Skip unknown envelope
+        decoder.skip_envelope(_offset + 8)
+        raise ValueError(f"Unknown union ordinal {ordinal}")
 
     @classmethod
     def make_default(cls) -> typing.Self:
@@ -2058,9 +3017,9 @@ class OpenTargetFlexibleTwoWayErrResult:
 
     def __init__(
         self,
-        response: typing.Optional[None] = None,
-        err: typing.Optional[int] = None,
-        framework_err: typing.Optional[fidl.FrameworkError] = None,
+        response: typing.Optional[None] = _UNDEFINED,
+        err: typing.Optional[int] = _UNDEFINED,
+        framework_err: typing.Optional[fidl.FrameworkError] = _UNDEFINED,
         _empty: typing.Optional[tuple[()]] = None,
     ):
         object.__init__(self)
@@ -2070,18 +3029,20 @@ class OpenTargetFlexibleTwoWayErrResult:
         number_of_variants = 0
         variants = []
 
-        if response is not None:
+        if response is not _UNDEFINED:
             self._response = response
             variants.append("response")
             number_of_variants += 1
-        if err is not None:
-            self._err = err
-            variants.append("err")
-            number_of_variants += 1
-        if framework_err is not None:
-            self._framework_err = framework_err
-            variants.append("framework_err")
-            number_of_variants += 1
+        if err is not _UNDEFINED:
+            if err is not None:
+                self._err = err
+                variants.append("err")
+                number_of_variants += 1
+        if framework_err is not _UNDEFINED:
+            if framework_err is not None:
+                self._framework_err = framework_err
+                variants.append("framework_err")
+                number_of_variants += 1
         if number_of_variants > 1:
             raise TypeError(
                 f"Exactly one variant must be specified for {self.__fidl_raw_type__}: {variants}"
@@ -2106,13 +3067,76 @@ class OpenTargetFlexibleTwoWayErrResult:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "fidl.clientsuite",
-            "fidl.clientsuite/OpenTarget_FlexibleTwoWayErr_Result",
-        )
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 16)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 16)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        if hasattr(self, "_response"):
+            encoder.write_uint64(1, _offset)
+            encoder.write_envelope(
+                getattr(self, "_response"),
+                _offset + 8,
+                OpenTargetFlexibleTwoWayErrResponse._encode,
+                1,
+                True,
+            )
+            return
+        if hasattr(self, "_err"):
+            encoder.write_uint64(2, _offset)
+            encoder.write_envelope(
+                getattr(self, "_err"),
+                _offset + 8,
+                lambda val, enc, off: enc.write_int32(val, off),
+                4,
+                True,
+            )
+            return
+        if hasattr(self, "_framework_err"):
+            encoder.write_uint64(3, _offset)
+            encoder.write_envelope(
+                getattr(self, "_framework_err"),
+                _offset + 8,
+                lambda val, enc, off: enc.write_int32(val, off),
+                4,
+                True,
+            )
+            return
+        encoder.write_inline(_offset, b"\x00" * 16)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        ordinal = decoder.read_uint64(_offset)
+        if ordinal == 0:
+            return cls(_empty=())
+        if ordinal == 1:
+            val = decoder.read_envelope(
+                _offset + 8,
+                lambda dec, off: None,
+                1,
+            )
+            return cls(response=val)
+        if ordinal == 2:
+            val = decoder.read_envelope(
+                _offset + 8,
+                lambda dec, off: dec.read_int32(off),
+                4,
+            )
+            return cls(err=val)
+        if ordinal == 3:
+            val = decoder.read_envelope(
+                _offset + 8,
+                lambda dec, off: FrameworkError(dec.read_int32(off)),
+                4,
+            )
+            return cls(framework_err=val)
+
+        # Skip unknown envelope
+        decoder.skip_envelope(_offset + 8)
+        raise ValueError(f"Unknown union ordinal {ordinal}")
 
     def unwrap(self) -> None:
         """Returns the response if result does not contain an error. Otherwise, raises an exception."""
@@ -2181,9 +3205,9 @@ class OpenTargetFlexibleTwoWayFieldsErrResult:
 
     def __init__(
         self,
-        response: typing.Optional[NonEmptyPayload] = None,
-        err: typing.Optional[int] = None,
-        framework_err: typing.Optional[fidl.FrameworkError] = None,
+        response: typing.Optional[NonEmptyPayload] = _UNDEFINED,
+        err: typing.Optional[int] = _UNDEFINED,
+        framework_err: typing.Optional[fidl.FrameworkError] = _UNDEFINED,
         _empty: typing.Optional[tuple[()]] = None,
     ):
         object.__init__(self)
@@ -2193,18 +3217,21 @@ class OpenTargetFlexibleTwoWayFieldsErrResult:
         number_of_variants = 0
         variants = []
 
-        if response is not None:
-            self._response = response
-            variants.append("response")
-            number_of_variants += 1
-        if err is not None:
-            self._err = err
-            variants.append("err")
-            number_of_variants += 1
-        if framework_err is not None:
-            self._framework_err = framework_err
-            variants.append("framework_err")
-            number_of_variants += 1
+        if response is not _UNDEFINED:
+            if response is not None:
+                self._response = response
+                variants.append("response")
+                number_of_variants += 1
+        if err is not _UNDEFINED:
+            if err is not None:
+                self._err = err
+                variants.append("err")
+                number_of_variants += 1
+        if framework_err is not _UNDEFINED:
+            if framework_err is not None:
+                self._framework_err = framework_err
+                variants.append("framework_err")
+                number_of_variants += 1
         if number_of_variants > 1:
             raise TypeError(
                 f"Exactly one variant must be specified for {self.__fidl_raw_type__}: {variants}"
@@ -2229,13 +3256,76 @@ class OpenTargetFlexibleTwoWayFieldsErrResult:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "fidl.clientsuite",
-            "fidl.clientsuite/OpenTarget_FlexibleTwoWayFieldsErr_Result",
-        )
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 16)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 16)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        if hasattr(self, "_response"):
+            encoder.write_uint64(1, _offset)
+            encoder.write_envelope(
+                getattr(self, "_response"),
+                _offset + 8,
+                NonEmptyPayload._encode,
+                4,
+                True,
+            )
+            return
+        if hasattr(self, "_err"):
+            encoder.write_uint64(2, _offset)
+            encoder.write_envelope(
+                getattr(self, "_err"),
+                _offset + 8,
+                lambda val, enc, off: enc.write_int32(val, off),
+                4,
+                True,
+            )
+            return
+        if hasattr(self, "_framework_err"):
+            encoder.write_uint64(3, _offset)
+            encoder.write_envelope(
+                getattr(self, "_framework_err"),
+                _offset + 8,
+                lambda val, enc, off: enc.write_int32(val, off),
+                4,
+                True,
+            )
+            return
+        encoder.write_inline(_offset, b"\x00" * 16)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        ordinal = decoder.read_uint64(_offset)
+        if ordinal == 0:
+            return cls(_empty=())
+        if ordinal == 1:
+            val = decoder.read_envelope(
+                _offset + 8,
+                NonEmptyPayload._decode,
+                4,
+            )
+            return cls(response=val)
+        if ordinal == 2:
+            val = decoder.read_envelope(
+                _offset + 8,
+                lambda dec, off: dec.read_int32(off),
+                4,
+            )
+            return cls(err=val)
+        if ordinal == 3:
+            val = decoder.read_envelope(
+                _offset + 8,
+                lambda dec, off: FrameworkError(dec.read_int32(off)),
+                4,
+            )
+            return cls(framework_err=val)
+
+        # Skip unknown envelope
+        decoder.skip_envelope(_offset + 8)
+        raise ValueError(f"Unknown union ordinal {ordinal}")
 
     def unwrap(self) -> NonEmptyPayload:
         """Returns the response if result does not contain an error. Otherwise, raises an exception."""
@@ -2300,8 +3390,8 @@ class OpenTargetFlexibleTwoWayFieldsResult:
 
     def __init__(
         self,
-        response: typing.Optional[NonEmptyPayload] = None,
-        framework_err: typing.Optional[fidl.FrameworkError] = None,
+        response: typing.Optional[NonEmptyPayload] = _UNDEFINED,
+        framework_err: typing.Optional[fidl.FrameworkError] = _UNDEFINED,
         _empty: typing.Optional[tuple[()]] = None,
     ):
         object.__init__(self)
@@ -2311,14 +3401,16 @@ class OpenTargetFlexibleTwoWayFieldsResult:
         number_of_variants = 0
         variants = []
 
-        if response is not None:
-            self._response = response
-            variants.append("response")
-            number_of_variants += 1
-        if framework_err is not None:
-            self._framework_err = framework_err
-            variants.append("framework_err")
-            number_of_variants += 1
+        if response is not _UNDEFINED:
+            if response is not None:
+                self._response = response
+                variants.append("response")
+                number_of_variants += 1
+        if framework_err is not _UNDEFINED:
+            if framework_err is not None:
+                self._framework_err = framework_err
+                variants.append("framework_err")
+                number_of_variants += 1
         if number_of_variants > 1:
             raise TypeError(
                 f"Exactly one variant must be specified for {self.__fidl_raw_type__}: {variants}"
@@ -2339,13 +3431,59 @@ class OpenTargetFlexibleTwoWayFieldsResult:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "fidl.clientsuite",
-            "fidl.clientsuite/OpenTarget_FlexibleTwoWayFields_Result",
-        )
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 16)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 16)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        if hasattr(self, "_response"):
+            encoder.write_uint64(1, _offset)
+            encoder.write_envelope(
+                getattr(self, "_response"),
+                _offset + 8,
+                NonEmptyPayload._encode,
+                4,
+                True,
+            )
+            return
+        if hasattr(self, "_framework_err"):
+            encoder.write_uint64(3, _offset)
+            encoder.write_envelope(
+                getattr(self, "_framework_err"),
+                _offset + 8,
+                lambda val, enc, off: enc.write_int32(val, off),
+                4,
+                True,
+            )
+            return
+        encoder.write_inline(_offset, b"\x00" * 16)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        ordinal = decoder.read_uint64(_offset)
+        if ordinal == 0:
+            return cls(_empty=())
+        if ordinal == 1:
+            val = decoder.read_envelope(
+                _offset + 8,
+                NonEmptyPayload._decode,
+                4,
+            )
+            return cls(response=val)
+        if ordinal == 3:
+            val = decoder.read_envelope(
+                _offset + 8,
+                lambda dec, off: FrameworkError(dec.read_int32(off)),
+                4,
+            )
+            return cls(framework_err=val)
+
+        # Skip unknown envelope
+        decoder.skip_envelope(_offset + 8)
+        raise ValueError(f"Unknown union ordinal {ordinal}")
 
     def unwrap(self) -> NonEmptyPayload:
         """Returns the response if result does not contain an error. Otherwise, raises an exception."""
@@ -2408,8 +3546,8 @@ class OpenTargetFlexibleTwoWayResult:
 
     def __init__(
         self,
-        response: typing.Optional[None] = None,
-        framework_err: typing.Optional[fidl.FrameworkError] = None,
+        response: typing.Optional[None] = _UNDEFINED,
+        framework_err: typing.Optional[fidl.FrameworkError] = _UNDEFINED,
         _empty: typing.Optional[tuple[()]] = None,
     ):
         object.__init__(self)
@@ -2419,14 +3557,15 @@ class OpenTargetFlexibleTwoWayResult:
         number_of_variants = 0
         variants = []
 
-        if response is not None:
+        if response is not _UNDEFINED:
             self._response = response
             variants.append("response")
             number_of_variants += 1
-        if framework_err is not None:
-            self._framework_err = framework_err
-            variants.append("framework_err")
-            number_of_variants += 1
+        if framework_err is not _UNDEFINED:
+            if framework_err is not None:
+                self._framework_err = framework_err
+                variants.append("framework_err")
+                number_of_variants += 1
         if number_of_variants > 1:
             raise TypeError(
                 f"Exactly one variant must be specified for {self.__fidl_raw_type__}: {variants}"
@@ -2447,13 +3586,59 @@ class OpenTargetFlexibleTwoWayResult:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "fidl.clientsuite",
-            "fidl.clientsuite/OpenTarget_FlexibleTwoWay_Result",
-        )
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 16)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 16)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        if hasattr(self, "_response"):
+            encoder.write_uint64(1, _offset)
+            encoder.write_envelope(
+                getattr(self, "_response"),
+                _offset + 8,
+                OpenTargetFlexibleTwoWayResponse._encode,
+                1,
+                True,
+            )
+            return
+        if hasattr(self, "_framework_err"):
+            encoder.write_uint64(3, _offset)
+            encoder.write_envelope(
+                getattr(self, "_framework_err"),
+                _offset + 8,
+                lambda val, enc, off: enc.write_int32(val, off),
+                4,
+                True,
+            )
+            return
+        encoder.write_inline(_offset, b"\x00" * 16)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        ordinal = decoder.read_uint64(_offset)
+        if ordinal == 0:
+            return cls(_empty=())
+        if ordinal == 1:
+            val = decoder.read_envelope(
+                _offset + 8,
+                lambda dec, off: None,
+                1,
+            )
+            return cls(response=val)
+        if ordinal == 3:
+            val = decoder.read_envelope(
+                _offset + 8,
+                lambda dec, off: FrameworkError(dec.read_int32(off)),
+                4,
+            )
+            return cls(framework_err=val)
+
+        # Skip unknown envelope
+        decoder.skip_envelope(_offset + 8)
+        raise ValueError(f"Unknown union ordinal {ordinal}")
 
     def unwrap(self) -> None:
         """Returns the response if result does not contain an error. Otherwise, raises an exception."""
@@ -2515,8 +3700,8 @@ class OpenTargetStrictTwoWayErrResult:
 
     def __init__(
         self,
-        response: typing.Optional[None] = None,
-        err: typing.Optional[int] = None,
+        response: typing.Optional[None] = _UNDEFINED,
+        err: typing.Optional[int] = _UNDEFINED,
         _empty: typing.Optional[tuple[()]] = None,
     ):
         object.__init__(self)
@@ -2526,14 +3711,15 @@ class OpenTargetStrictTwoWayErrResult:
         number_of_variants = 0
         variants = []
 
-        if response is not None:
+        if response is not _UNDEFINED:
             self._response = response
             variants.append("response")
             number_of_variants += 1
-        if err is not None:
-            self._err = err
-            variants.append("err")
-            number_of_variants += 1
+        if err is not _UNDEFINED:
+            if err is not None:
+                self._err = err
+                variants.append("err")
+                number_of_variants += 1
         if number_of_variants > 1:
             raise TypeError(
                 f"Exactly one variant must be specified for {self.__fidl_raw_type__}: {variants}"
@@ -2554,13 +3740,59 @@ class OpenTargetStrictTwoWayErrResult:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "fidl.clientsuite",
-            "fidl.clientsuite/OpenTarget_StrictTwoWayErr_Result",
-        )
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 16)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 16)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        if hasattr(self, "_response"):
+            encoder.write_uint64(1, _offset)
+            encoder.write_envelope(
+                getattr(self, "_response"),
+                _offset + 8,
+                OpenTargetStrictTwoWayErrResponse._encode,
+                1,
+                True,
+            )
+            return
+        if hasattr(self, "_err"):
+            encoder.write_uint64(2, _offset)
+            encoder.write_envelope(
+                getattr(self, "_err"),
+                _offset + 8,
+                lambda val, enc, off: enc.write_int32(val, off),
+                4,
+                True,
+            )
+            return
+        encoder.write_inline(_offset, b"\x00" * 16)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        ordinal = decoder.read_uint64(_offset)
+        if ordinal == 0:
+            return cls(_empty=())
+        if ordinal == 1:
+            val = decoder.read_envelope(
+                _offset + 8,
+                lambda dec, off: None,
+                1,
+            )
+            return cls(response=val)
+        if ordinal == 2:
+            val = decoder.read_envelope(
+                _offset + 8,
+                lambda dec, off: dec.read_int32(off),
+                4,
+            )
+            return cls(err=val)
+
+        # Skip unknown envelope
+        decoder.skip_envelope(_offset + 8)
+        raise ValueError(f"Unknown union ordinal {ordinal}")
 
     def unwrap(self) -> None:
         """Returns the response if result does not contain an error. Otherwise, raises an exception."""
@@ -2624,8 +3856,8 @@ class OpenTargetStrictTwoWayFieldsErrResult:
 
     def __init__(
         self,
-        response: typing.Optional[NonEmptyPayload] = None,
-        err: typing.Optional[int] = None,
+        response: typing.Optional[NonEmptyPayload] = _UNDEFINED,
+        err: typing.Optional[int] = _UNDEFINED,
         _empty: typing.Optional[tuple[()]] = None,
     ):
         object.__init__(self)
@@ -2635,14 +3867,16 @@ class OpenTargetStrictTwoWayFieldsErrResult:
         number_of_variants = 0
         variants = []
 
-        if response is not None:
-            self._response = response
-            variants.append("response")
-            number_of_variants += 1
-        if err is not None:
-            self._err = err
-            variants.append("err")
-            number_of_variants += 1
+        if response is not _UNDEFINED:
+            if response is not None:
+                self._response = response
+                variants.append("response")
+                number_of_variants += 1
+        if err is not _UNDEFINED:
+            if err is not None:
+                self._err = err
+                variants.append("err")
+                number_of_variants += 1
         if number_of_variants > 1:
             raise TypeError(
                 f"Exactly one variant must be specified for {self.__fidl_raw_type__}: {variants}"
@@ -2663,13 +3897,59 @@ class OpenTargetStrictTwoWayFieldsErrResult:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "fidl.clientsuite",
-            "fidl.clientsuite/OpenTarget_StrictTwoWayFieldsErr_Result",
-        )
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 16)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 16)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        if hasattr(self, "_response"):
+            encoder.write_uint64(1, _offset)
+            encoder.write_envelope(
+                getattr(self, "_response"),
+                _offset + 8,
+                NonEmptyPayload._encode,
+                4,
+                True,
+            )
+            return
+        if hasattr(self, "_err"):
+            encoder.write_uint64(2, _offset)
+            encoder.write_envelope(
+                getattr(self, "_err"),
+                _offset + 8,
+                lambda val, enc, off: enc.write_int32(val, off),
+                4,
+                True,
+            )
+            return
+        encoder.write_inline(_offset, b"\x00" * 16)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        ordinal = decoder.read_uint64(_offset)
+        if ordinal == 0:
+            return cls(_empty=())
+        if ordinal == 1:
+            val = decoder.read_envelope(
+                _offset + 8,
+                NonEmptyPayload._decode,
+                4,
+            )
+            return cls(response=val)
+        if ordinal == 2:
+            val = decoder.read_envelope(
+                _offset + 8,
+                lambda dec, off: dec.read_int32(off),
+                4,
+            )
+            return cls(err=val)
+
+        # Skip unknown envelope
+        decoder.skip_envelope(_offset + 8)
+        raise ValueError(f"Unknown union ordinal {ordinal}")
 
     def unwrap(self) -> NonEmptyPayload:
         """Returns the response if result does not contain an error. Otherwise, raises an exception."""
@@ -2732,8 +4012,8 @@ class TableResultClassification:
 
     def __init__(
         self,
-        success: typing.Optional[TablePayload] = None,
-        fidl_error: typing.Optional[int | FidlErrorKind] = None,
+        success: typing.Optional[TablePayload] = _UNDEFINED,
+        fidl_error: typing.Optional[int | FidlErrorKind] = _UNDEFINED,
         _empty: typing.Optional[tuple[()]] = None,
     ):
         object.__init__(self)
@@ -2743,14 +4023,16 @@ class TableResultClassification:
         number_of_variants = 0
         variants = []
 
-        if success is not None:
-            self._success = success
-            variants.append("success")
-            number_of_variants += 1
-        if fidl_error is not None:
-            self._fidl_error = fidl_error
-            variants.append("fidl_error")
-            number_of_variants += 1
+        if success is not _UNDEFINED:
+            if success is not None:
+                self._success = success
+                variants.append("success")
+                number_of_variants += 1
+        if fidl_error is not _UNDEFINED:
+            if fidl_error is not None:
+                self._fidl_error = fidl_error
+                variants.append("fidl_error")
+                number_of_variants += 1
         if number_of_variants != 1:
             raise TypeError(
                 f"Exactly one variant must be specified for {self.__fidl_raw_type__}: {variants}"
@@ -2771,13 +4053,59 @@ class TableResultClassification:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "fidl.clientsuite",
-            "fidl.clientsuite/TableResultClassification",
-        )
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 16)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 16)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        if hasattr(self, "_success"):
+            encoder.write_uint64(1, _offset)
+            encoder.write_envelope(
+                getattr(self, "_success"),
+                _offset + 8,
+                TablePayload._encode,
+                16,
+                False,
+            )
+            return
+        if hasattr(self, "_fidl_error"):
+            encoder.write_uint64(3, _offset)
+            encoder.write_envelope(
+                getattr(self, "_fidl_error"),
+                _offset + 8,
+                FidlErrorKind._encode,
+                4,
+                True,
+            )
+            return
+        encoder.write_inline(_offset, b"\x00" * 16)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        ordinal = decoder.read_uint64(_offset)
+        if ordinal == 0:
+            return cls(_empty=())
+        if ordinal == 1:
+            val = decoder.read_envelope(
+                _offset + 8,
+                TablePayload._decode,
+                16,
+            )
+            return cls(success=val)
+        if ordinal == 3:
+            val = decoder.read_envelope(
+                _offset + 8,
+                FidlErrorKind._decode,
+                4,
+            )
+            return cls(fidl_error=val)
+
+        # Skip unknown envelope
+        decoder.skip_envelope(_offset + 8)
+        raise ValueError(f"Unknown union ordinal {ordinal}")
 
     @classmethod
     def make_default(cls) -> typing.Self:
@@ -2810,7 +4138,7 @@ class UnionPayload:
 
     def __init__(
         self,
-        some_variant: typing.Optional[int] = None,
+        some_variant: typing.Optional[int] = _UNDEFINED,
         _empty: typing.Optional[tuple[()]] = None,
     ):
         object.__init__(self)
@@ -2820,10 +4148,11 @@ class UnionPayload:
         number_of_variants = 0
         variants = []
 
-        if some_variant is not None:
-            self._some_variant = some_variant
-            variants.append("some_variant")
-            number_of_variants += 1
+        if some_variant is not _UNDEFINED:
+            if some_variant is not None:
+                self._some_variant = some_variant
+                variants.append("some_variant")
+                number_of_variants += 1
         if number_of_variants != 1:
             raise TypeError(
                 f"Exactly one variant must be specified for {self.__fidl_raw_type__}: {variants}"
@@ -2840,11 +4169,42 @@ class UnionPayload:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self, "fidl.clientsuite", "fidl.clientsuite/UnionPayload"
-        )
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 16)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 16)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        if hasattr(self, "_some_variant"):
+            encoder.write_uint64(1, _offset)
+            encoder.write_envelope(
+                getattr(self, "_some_variant"),
+                _offset + 8,
+                lambda val, enc, off: enc.write_int32(val, off),
+                4,
+                True,
+            )
+            return
+        encoder.write_inline(_offset, b"\x00" * 16)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        ordinal = decoder.read_uint64(_offset)
+        if ordinal == 0:
+            return cls(_empty=())
+        if ordinal == 1:
+            val = decoder.read_envelope(
+                _offset + 8,
+                lambda dec, off: dec.read_int32(off),
+                4,
+            )
+            return cls(some_variant=val)
+
+        # Skip unknown envelope
+        decoder.skip_envelope(_offset + 8)
+        raise ValueError(f"Unknown union ordinal {ordinal}")
 
     @classmethod
     def make_default(cls) -> typing.Self:
@@ -2882,8 +4242,8 @@ class UnionResultClassification:
 
     def __init__(
         self,
-        success: typing.Optional[UnionPayload] = None,
-        fidl_error: typing.Optional[int | FidlErrorKind] = None,
+        success: typing.Optional[UnionPayload] = _UNDEFINED,
+        fidl_error: typing.Optional[int | FidlErrorKind] = _UNDEFINED,
         _empty: typing.Optional[tuple[()]] = None,
     ):
         object.__init__(self)
@@ -2893,14 +4253,16 @@ class UnionResultClassification:
         number_of_variants = 0
         variants = []
 
-        if success is not None:
-            self._success = success
-            variants.append("success")
-            number_of_variants += 1
-        if fidl_error is not None:
-            self._fidl_error = fidl_error
-            variants.append("fidl_error")
-            number_of_variants += 1
+        if success is not _UNDEFINED:
+            if success is not None:
+                self._success = success
+                variants.append("success")
+                number_of_variants += 1
+        if fidl_error is not _UNDEFINED:
+            if fidl_error is not None:
+                self._fidl_error = fidl_error
+                variants.append("fidl_error")
+                number_of_variants += 1
         if number_of_variants != 1:
             raise TypeError(
                 f"Exactly one variant must be specified for {self.__fidl_raw_type__}: {variants}"
@@ -2921,128 +4283,209 @@ class UnionResultClassification:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "fidl.clientsuite",
-            "fidl.clientsuite/UnionResultClassification",
-        )
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 16)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 16)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        if hasattr(self, "_success"):
+            encoder.write_uint64(1, _offset)
+            encoder.write_envelope(
+                getattr(self, "_success"),
+                _offset + 8,
+                UnionPayload._encode,
+                16,
+                False,
+            )
+            return
+        if hasattr(self, "_fidl_error"):
+            encoder.write_uint64(3, _offset)
+            encoder.write_envelope(
+                getattr(self, "_fidl_error"),
+                _offset + 8,
+                FidlErrorKind._encode,
+                4,
+                True,
+            )
+            return
+        encoder.write_inline(_offset, b"\x00" * 16)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        ordinal = decoder.read_uint64(_offset)
+        if ordinal == 0:
+            return cls(_empty=())
+        if ordinal == 1:
+            val = decoder.read_envelope(
+                _offset + 8,
+                UnionPayload._decode,
+                16,
+            )
+            return cls(success=val)
+        if ordinal == 3:
+            val = decoder.read_envelope(
+                _offset + 8,
+                FidlErrorKind._decode,
+                4,
+            )
+            return cls(fidl_error=val)
+
+        # Skip unknown envelope
+        decoder.skip_envelope(_offset + 8)
+        raise ValueError(f"Unknown union ordinal {ordinal}")
 
     @classmethod
     def make_default(cls) -> typing.Self:
         return cls(_empty=())
 
 
-FidlErrorKind = enum.IntEnum(
-    "FidlErrorKind",
-    {
-        "__fidl_kind__": "enum",
-        "__fidl_type__": "FidlErrorKind",
-        "__fidl_raw_type__": "fidl.clientsuite/FidlErrorKind",
-        "__strict__": True,
-        "OTHER_ERROR": 1,
-        "DECODING_ERROR": 2,
-        "CHANNEL_PEER_CLOSED": 3,
-        "UNKNOWN_METHOD": 4,
-        "UNEXPECTED_MESSAGE": 5,
-        "EMPTY__": 0,
-        "make_default": classmethod(lambda cls: cls(0)),
-    },
-)
+class FidlErrorKind(enum.IntEnum):
+    OTHER_ERROR = 1
+    DECODING_ERROR = 2
+    CHANNEL_PEER_CLOSED = 3
+    UNKNOWN_METHOD = 4
+    UNEXPECTED_MESSAGE = 5
+    EMPTY__ = 0
+
+    __fidl_kind__ = "enum"
+    __fidl_type__ = "FidlErrorKind"
+    __fidl_raw_type__ = "fidl.clientsuite/FidlErrorKind"
+    __strict__ = True
+    __fidl_inline_size__ = 4
+
+    def _encode(self: int, enc: fidl.Encoder, off: int) -> None:
+        enc.write_uint32(int(self), off)
+
+    @classmethod
+    def _decode(cls, dec: fidl.Decoder, off: int) -> typing.Self:
+        return cls(dec.read_uint32(off))
+
+    @classmethod
+    def make_default(cls) -> typing.Self:
+        return cls(0)
 
 
-IoStyle = enum.IntEnum(
-    "IoStyle",
-    {
-        "__fidl_kind__": "enum",
-        "__fidl_type__": "IoStyle",
-        "__fidl_raw_type__": "fidl.clientsuite/IoStyle",
-        "__strict__": True,
-        "SYNC": 1,
-        "ASYNC": 2,
-        "EMPTY__": 0,
-        "make_default": classmethod(lambda cls: cls(0)),
-    },
-)
+class IoStyle(enum.IntEnum):
+    SYNC = 1
+    ASYNC = 2
+    EMPTY__ = 0
+
+    __fidl_kind__ = "enum"
+    __fidl_type__ = "IoStyle"
+    __fidl_raw_type__ = "fidl.clientsuite/IoStyle"
+    __strict__ = True
+    __fidl_inline_size__ = 4
+
+    def _encode(self: int, enc: fidl.Encoder, off: int) -> None:
+        enc.write_uint32(int(self), off)
+
+    @classmethod
+    def _decode(cls, dec: fidl.Decoder, off: int) -> typing.Self:
+        return cls(dec.read_uint32(off))
+
+    @classmethod
+    def make_default(cls) -> typing.Self:
+        return cls(0)
 
 
-Test = enum.IntEnum(
-    "Test",
-    {
-        "__fidl_kind__": "enum",
-        "__fidl_type__": "Test",
-        "__fidl_raw_type__": "fidl.clientsuite/Test",
-        "__strict__": False,
-        "SETUP": 1,
-        "TWO_WAY_NO_PAYLOAD": 2,
-        "TWO_WAY_STRUCT_PAYLOAD": 42,
-        "TWO_WAY_TABLE_PAYLOAD": 43,
-        "TWO_WAY_UNION_PAYLOAD": 44,
-        "TWO_WAY_RESULT_WITH_PAYLOAD": 45,
-        "TWO_WAY_RESULT_WITH_ERROR": 46,
-        "TWO_WAY_STRUCT_REQUEST": 52,
-        "TWO_WAY_TABLE_REQUEST": 53,
-        "TWO_WAY_UNION_REQUEST": 54,
-        "ONE_WAY_NO_REQUEST": 48,
-        "ONE_WAY_STRUCT_REQUEST": 49,
-        "ONE_WAY_TABLE_REQUEST": 50,
-        "ONE_WAY_UNION_REQUEST": 51,
-        "RECEIVE_EVENT_NO_PAYLOAD": 55,
-        "RECEIVE_EVENT_STRUCT_PAYLOAD": 56,
-        "RECEIVE_EVENT_TABLE_PAYLOAD": 57,
-        "RECEIVE_EVENT_UNION_PAYLOAD": 58,
-        "GRACEFUL_FAILURE_DURING_CALL_AFTER_PEER_CLOSE": 3,
-        "RECEIVE_EVENT_BAD_MAGIC_NUMBER": 60,
-        "RECEIVE_EVENT_UNEXPECTED_TXID": 61,
-        "RECEIVE_EVENT_UNKNOWN_ORDINAL": 62,
-        "RECEIVE_RESPONSE_BAD_MAGIC_NUMBER": 63,
-        "RECEIVE_RESPONSE_UNEXPECTED_TXID": 64,
-        "RECEIVE_RESPONSE_WRONG_ORDINAL_KNOWN": 65,
-        "RECEIVE_RESPONSE_WRONG_ORDINAL_UNKNOWN": 67,
-        "V1_TWO_WAY_NO_PAYLOAD": 40,
-        "V1_TWO_WAY_STRUCT_PAYLOAD": 41,
-        "ONE_WAY_CALL_DO_NOT_REPORT_PEER_CLOSED": 59,
-        "ONE_WAY_STRICT_SEND": 4,
-        "ONE_WAY_FLEXIBLE_SEND": 5,
-        "TWO_WAY_STRICT_SEND": 6,
-        "TWO_WAY_STRICT_SEND_MISMATCHED_STRICTNESS": 7,
-        "TWO_WAY_STRICT_SEND_NON_EMPTY_PAYLOAD": 38,
-        "TWO_WAY_STRICT_ERROR_SYNTAX_SEND_SUCCESS_RESPONSE": 8,
-        "TWO_WAY_STRICT_ERROR_SYNTAX_SEND_ERROR_RESPONSE": 9,
-        "TWO_WAY_STRICT_ERROR_SYNTAX_SEND_UNKNOWN_METHOD_RESPONSE": 10,
-        "TWO_WAY_STRICT_ERROR_SYNTAX_SEND_MISMATCHED_STRICTNESS_UNKNOWN_METHOD_RESPONSE": 11,
-        "TWO_WAY_STRICT_ERROR_SYNTAX_SEND_NON_EMPTY_PAYLOAD": 39,
-        "TWO_WAY_FLEXIBLE_SEND_SUCCESS_RESPONSE": 12,
-        "TWO_WAY_FLEXIBLE_SEND_ERROR_RESPONSE": 13,
-        "TWO_WAY_FLEXIBLE_SEND_UNKNOWN_METHOD_RESPONSE": 14,
-        "TWO_WAY_FLEXIBLE_SEND_MISMATCHED_STRICTNESS_UNKNOWN_METHOD_RESPONSE": 15,
-        "TWO_WAY_FLEXIBLE_SEND_OTHER_FRAMEWORK_ERR_RESPONSE": 16,
-        "TWO_WAY_FLEXIBLE_SEND_NON_EMPTY_PAYLOAD_SUCCESS_RESPONSE": 17,
-        "TWO_WAY_FLEXIBLE_SEND_NON_EMPTY_PAYLOAD_UNKNOWN_METHOD_RESPONSE": 18,
-        "TWO_WAY_FLEXIBLE_ERROR_SYNTAX_SEND_SUCCESS_RESPONSE": 19,
-        "TWO_WAY_FLEXIBLE_ERROR_SYNTAX_SEND_ERROR_RESPONSE": 20,
-        "TWO_WAY_FLEXIBLE_ERROR_SYNTAX_SEND_UNKNOWN_METHOD_RESPONSE": 21,
-        "TWO_WAY_FLEXIBLE_ERROR_SYNTAX_SEND_MISMATCHED_STRICTNESS_UNKNOWN_METHOD_RESPONSE": 22,
-        "TWO_WAY_FLEXIBLE_ERROR_SYNTAX_SEND_OTHER_FRAMEWORK_ERR_RESPONSE": 23,
-        "TWO_WAY_FLEXIBLE_ERROR_SYNTAX_SEND_NON_EMPTY_PAYLOAD_SUCCESS_RESPONSE": 24,
-        "TWO_WAY_FLEXIBLE_ERROR_SYNTAX_SEND_NON_EMPTY_PAYLOAD_UNKNOWN_METHOD_RESPONSE": 25,
-        "RECEIVE_STRICT_EVENT": 26,
-        "RECEIVE_STRICT_EVENT_MISMATCHED_STRICTNESS": 27,
-        "RECEIVE_FLEXIBLE_EVENT": 28,
-        "RECEIVE_FLEXIBLE_EVENT_MISMATCHED_STRICTNESS": 29,
-        "UNKNOWN_STRICT_EVENT_OPEN_PROTOCOL": 30,
-        "UNKNOWN_FLEXIBLE_EVENT_OPEN_PROTOCOL": 31,
-        "UNKNOWN_STRICT_EVENT_AJAR_PROTOCOL": 32,
-        "UNKNOWN_FLEXIBLE_EVENT_AJAR_PROTOCOL": 33,
-        "UNKNOWN_STRICT_EVENT_CLOSED_PROTOCOL": 34,
-        "UNKNOWN_FLEXIBLE_EVENT_CLOSED_PROTOCOL": 35,
-        "UNKNOWN_STRICT_SERVER_INITIATED_TWO_WAY": 36,
-        "UNKNOWN_FLEXIBLE_SERVER_INITIATED_TWO_WAY": 37,
-        "EMPTY__": 0,
-        "make_default": classmethod(lambda cls: cls(0)),
-    },
-)
+class Test(enum.IntFlag):
+    SETUP = 1
+    TWO_WAY_NO_PAYLOAD = 2
+    TWO_WAY_STRUCT_PAYLOAD = 42
+    TWO_WAY_TABLE_PAYLOAD = 43
+    TWO_WAY_UNION_PAYLOAD = 44
+    TWO_WAY_RESULT_WITH_PAYLOAD = 45
+    TWO_WAY_RESULT_WITH_ERROR = 46
+    TWO_WAY_STRUCT_REQUEST = 52
+    TWO_WAY_TABLE_REQUEST = 53
+    TWO_WAY_UNION_REQUEST = 54
+    ONE_WAY_NO_REQUEST = 48
+    ONE_WAY_STRUCT_REQUEST = 49
+    ONE_WAY_TABLE_REQUEST = 50
+    ONE_WAY_UNION_REQUEST = 51
+    RECEIVE_EVENT_NO_PAYLOAD = 55
+    RECEIVE_EVENT_STRUCT_PAYLOAD = 56
+    RECEIVE_EVENT_TABLE_PAYLOAD = 57
+    RECEIVE_EVENT_UNION_PAYLOAD = 58
+    GRACEFUL_FAILURE_DURING_CALL_AFTER_PEER_CLOSE = 3
+    RECEIVE_EVENT_BAD_MAGIC_NUMBER = 60
+    RECEIVE_EVENT_UNEXPECTED_TXID = 61
+    RECEIVE_EVENT_UNKNOWN_ORDINAL = 62
+    RECEIVE_RESPONSE_BAD_MAGIC_NUMBER = 63
+    RECEIVE_RESPONSE_UNEXPECTED_TXID = 64
+    RECEIVE_RESPONSE_WRONG_ORDINAL_KNOWN = 65
+    RECEIVE_RESPONSE_WRONG_ORDINAL_UNKNOWN = 67
+    V1_TWO_WAY_NO_PAYLOAD = 40
+    V1_TWO_WAY_STRUCT_PAYLOAD = 41
+    ONE_WAY_CALL_DO_NOT_REPORT_PEER_CLOSED = 59
+    ONE_WAY_STRICT_SEND = 4
+    ONE_WAY_FLEXIBLE_SEND = 5
+    TWO_WAY_STRICT_SEND = 6
+    TWO_WAY_STRICT_SEND_MISMATCHED_STRICTNESS = 7
+    TWO_WAY_STRICT_SEND_NON_EMPTY_PAYLOAD = 38
+    TWO_WAY_STRICT_ERROR_SYNTAX_SEND_SUCCESS_RESPONSE = 8
+    TWO_WAY_STRICT_ERROR_SYNTAX_SEND_ERROR_RESPONSE = 9
+    TWO_WAY_STRICT_ERROR_SYNTAX_SEND_UNKNOWN_METHOD_RESPONSE = 10
+    TWO_WAY_STRICT_ERROR_SYNTAX_SEND_MISMATCHED_STRICTNESS_UNKNOWN_METHOD_RESPONSE = (
+        11
+    )
+    TWO_WAY_STRICT_ERROR_SYNTAX_SEND_NON_EMPTY_PAYLOAD = 39
+    TWO_WAY_FLEXIBLE_SEND_SUCCESS_RESPONSE = 12
+    TWO_WAY_FLEXIBLE_SEND_ERROR_RESPONSE = 13
+    TWO_WAY_FLEXIBLE_SEND_UNKNOWN_METHOD_RESPONSE = 14
+    TWO_WAY_FLEXIBLE_SEND_MISMATCHED_STRICTNESS_UNKNOWN_METHOD_RESPONSE = 15
+    TWO_WAY_FLEXIBLE_SEND_OTHER_FRAMEWORK_ERR_RESPONSE = 16
+    TWO_WAY_FLEXIBLE_SEND_NON_EMPTY_PAYLOAD_SUCCESS_RESPONSE = 17
+    TWO_WAY_FLEXIBLE_SEND_NON_EMPTY_PAYLOAD_UNKNOWN_METHOD_RESPONSE = 18
+    TWO_WAY_FLEXIBLE_ERROR_SYNTAX_SEND_SUCCESS_RESPONSE = 19
+    TWO_WAY_FLEXIBLE_ERROR_SYNTAX_SEND_ERROR_RESPONSE = 20
+    TWO_WAY_FLEXIBLE_ERROR_SYNTAX_SEND_UNKNOWN_METHOD_RESPONSE = 21
+    TWO_WAY_FLEXIBLE_ERROR_SYNTAX_SEND_MISMATCHED_STRICTNESS_UNKNOWN_METHOD_RESPONSE = (
+        22
+    )
+    TWO_WAY_FLEXIBLE_ERROR_SYNTAX_SEND_OTHER_FRAMEWORK_ERR_RESPONSE = 23
+    TWO_WAY_FLEXIBLE_ERROR_SYNTAX_SEND_NON_EMPTY_PAYLOAD_SUCCESS_RESPONSE = 24
+    TWO_WAY_FLEXIBLE_ERROR_SYNTAX_SEND_NON_EMPTY_PAYLOAD_UNKNOWN_METHOD_RESPONSE = (
+        25
+    )
+    RECEIVE_STRICT_EVENT = 26
+    RECEIVE_STRICT_EVENT_MISMATCHED_STRICTNESS = 27
+    RECEIVE_FLEXIBLE_EVENT = 28
+    RECEIVE_FLEXIBLE_EVENT_MISMATCHED_STRICTNESS = 29
+    UNKNOWN_STRICT_EVENT_OPEN_PROTOCOL = 30
+    UNKNOWN_FLEXIBLE_EVENT_OPEN_PROTOCOL = 31
+    UNKNOWN_STRICT_EVENT_AJAR_PROTOCOL = 32
+    UNKNOWN_FLEXIBLE_EVENT_AJAR_PROTOCOL = 33
+    UNKNOWN_STRICT_EVENT_CLOSED_PROTOCOL = 34
+    UNKNOWN_FLEXIBLE_EVENT_CLOSED_PROTOCOL = 35
+    UNKNOWN_STRICT_SERVER_INITIATED_TWO_WAY = 36
+    UNKNOWN_FLEXIBLE_SERVER_INITIATED_TWO_WAY = 37
+    EMPTY__ = 0
+
+    @property
+    def name(self) -> str:
+        name = super().name
+        return name if name is not None else f"UNKNOWN_{int(self)}"
+
+    __fidl_kind__ = "enum"
+    __fidl_type__ = "Test"
+    __fidl_raw_type__ = "fidl.clientsuite/Test"
+    __strict__ = False
+    __fidl_inline_size__ = 4
+
+    def _encode(self: int, enc: fidl.Encoder, off: int) -> None:
+        enc.write_uint32(int(self), off)
+
+    @classmethod
+    def _decode(cls, dec: fidl.Decoder, off: int) -> typing.Self:
+        return cls(dec.read_uint32(off))
+
+    @classmethod
+    def make_default(cls) -> typing.Self:
+        return cls(0)
 
 
 # Generated constants
@@ -3054,40 +4497,16 @@ class AjarTargetServer(ServerBase, ABC):
     library = "fidl.clientsuite"
     method_map: typing.Dict[int, MethodInfo] = {}
 
-    @staticmethod
-    def construct_response_object(
-        response_ident: str, response_obj: typing.Any
-    ) -> typing.Any:
-        return fidl._construct.construct_response_object(
-            response_ident, response_obj
-        )
-
 
 class AjarTargetClient(FidlClient):
     __fidl_kind__ = "client"
     library = "fidl.clientsuite"
-
-    @staticmethod
-    def construct_response_object(
-        response_ident: str, response_obj: typing.Any
-    ) -> typing.Any:
-        return fidl._construct.construct_response_object(
-            response_ident, response_obj
-        )
 
 
 class AjarTargetEventHandler(EventHandlerBase, ABC):
     __fidl_kind__ = "event_handler"
     library = "fidl.clientsuite"
     method_map: typing.Dict[int, MethodInfo] = {}
-
-    @staticmethod
-    def construct_response_object(
-        response_ident: str, response_obj: typing.Any
-    ) -> typing.Any:
-        return fidl._construct.construct_response_object(
-            response_ident, response_obj
-        )
 
 
 AjarTargetMarker = FidlProtocolMarker(
@@ -3109,14 +4528,6 @@ class AjarTargetEventReporterServer(ServerBase, ABC):
         ),
     }
 
-    @staticmethod
-    def construct_response_object(
-        response_ident: str, response_obj: typing.Any
-    ) -> typing.Any:
-        return fidl._construct.construct_response_object(
-            response_ident, response_obj
-        )
-
     ReportEventResponse: typing.TypeAlias = None
 
     @abstractmethod
@@ -3133,14 +4544,6 @@ class AjarTargetEventReporterServer(ServerBase, ABC):
 class AjarTargetEventReporterClient(FidlClient):
     __fidl_kind__ = "client"
     library = "fidl.clientsuite"
-
-    @staticmethod
-    def construct_response_object(
-        response_ident: str, response_obj: typing.Any
-    ) -> typing.Any:
-        return fidl._construct.construct_response_object(
-            response_ident, response_obj
-        )
 
     def report_event(
         self,
@@ -3166,17 +4569,16 @@ class AjarTargetEventReporterEventHandler(EventHandlerBase, ABC):
     library = "fidl.clientsuite"
     method_map: typing.Dict[int, MethodInfo] = {}
 
-    @staticmethod
-    def construct_response_object(
-        response_ident: str, response_obj: typing.Any
-    ) -> typing.Any:
-        return fidl._construct.construct_response_object(
-            response_ident, response_obj
-        )
-
 
 AjarTargetEventReporterMarker = FidlProtocolMarker(
     "(nondiscoverable) fidl.clientsuite/AjarTargetEventReporter"
+)
+
+
+fidl.register_method(
+    5150872472050569784,
+    AjarTargetEventReport,
+    None,
 )
 
 
@@ -3281,14 +4683,6 @@ class ClosedTargetServer(ServerBase, ABC):
             response_identifier="",
         ),
     }
-
-    @staticmethod
-    def construct_response_object(
-        response_ident: str, response_obj: typing.Any
-    ) -> typing.Any:
-        return fidl._construct.construct_response_object(
-            response_ident, response_obj
-        )
 
     TwoWayNoPayloadResponse: typing.TypeAlias = None
 
@@ -3496,14 +4890,6 @@ class ClosedTargetClient(FidlClient):
     __fidl_kind__ = "client"
     library = "fidl.clientsuite"
 
-    @staticmethod
-    def construct_response_object(
-        response_ident: str, response_obj: typing.Any
-    ) -> typing.Any:
-        return fidl._construct.construct_response_object(
-            response_ident, response_obj
-        )
-
     def two_way_no_payload(
         self,
     ) -> collections.abc.Coroutine[typing.Any, typing.Any, None]:
@@ -3514,7 +4900,6 @@ class ClosedTargetClient(FidlClient):
                 8823160117673072416,
                 "fidl.clientsuite",
                 msg,
-                "",
             ),
         )
         return ret
@@ -3529,7 +4914,6 @@ class ClosedTargetClient(FidlClient):
                 4197391242806919613,
                 "fidl.clientsuite",
                 msg,
-                normalize_identifier("fidl.clientsuite/NonEmptyPayload"),
             ),
         )
         return ret
@@ -3544,7 +4928,6 @@ class ClosedTargetClient(FidlClient):
                 6034278263774013116,
                 "fidl.clientsuite",
                 msg,
-                normalize_identifier("fidl.clientsuite/TablePayload"),
             ),
         )
         return ret
@@ -3559,7 +4942,6 @@ class ClosedTargetClient(FidlClient):
                 2303581613023334284,
                 "fidl.clientsuite",
                 msg,
-                normalize_identifier("fidl.clientsuite/UnionPayload"),
             ),
         )
         return ret
@@ -3578,9 +4960,6 @@ class ClosedTargetClient(FidlClient):
                 7112457167486827531,
                 "fidl.clientsuite",
                 msg,
-                normalize_identifier(
-                    "fidl.clientsuite/ClosedTarget_TwoWayStructPayloadErr_Result"
-                ),
             ),
         )
         return ret
@@ -3599,7 +4978,6 @@ class ClosedTargetClient(FidlClient):
                 5762209808438257078,
                 "fidl.clientsuite",
                 msg,
-                "",
             ),
         )
         return ret
@@ -3618,7 +4996,6 @@ class ClosedTargetClient(FidlClient):
                 4411466441619884495,
                 "fidl.clientsuite",
                 msg,
-                "",
             ),
         )
         return ret
@@ -3637,7 +5014,6 @@ class ClosedTargetClient(FidlClient):
                 8852700443574767223,
                 "fidl.clientsuite",
                 msg,
-                "",
             ),
         )
         return ret
@@ -3741,14 +5117,6 @@ class ClosedTargetEventHandler(EventHandlerBase, ABC):
         ),
     }
 
-    @staticmethod
-    def construct_response_object(
-        response_ident: str, response_obj: typing.Any
-    ) -> typing.Any:
-        return fidl._construct.construct_response_object(
-            response_ident, response_obj
-        )
-
     @abstractmethod
     def on_event_no_payload(
         self,
@@ -3782,6 +5150,88 @@ ClosedTargetMarker = FidlProtocolMarker(
 )
 
 
+fidl.register_method(
+    8823160117673072416,
+    None,
+    None,
+)
+fidl.register_method(
+    4197391242806919613,
+    None,
+    NonEmptyPayload,
+)
+fidl.register_method(
+    6034278263774013116,
+    None,
+    TablePayload,
+)
+fidl.register_method(
+    2303581613023334284,
+    None,
+    UnionPayload,
+)
+fidl.register_method(
+    7112457167486827531,
+    None,
+    ClosedTargetTwoWayStructPayloadErrResult,
+)
+fidl.register_method(
+    5762209808438257078,
+    NonEmptyPayload,
+    None,
+)
+fidl.register_method(
+    4411466441619884495,
+    TablePayload,
+    None,
+)
+fidl.register_method(
+    8852700443574767223,
+    UnionPayload,
+    None,
+)
+fidl.register_method(
+    880285710761691653,
+    None,
+    None,
+)
+fidl.register_method(
+    2745184144532233426,
+    NonEmptyPayload,
+    None,
+)
+fidl.register_method(
+    1894745725882679327,
+    TablePayload,
+    None,
+)
+fidl.register_method(
+    1453322211393998309,
+    UnionPayload,
+    None,
+)
+fidl.register_method(
+    5685716274827179686,
+    None,
+    None,
+)
+fidl.register_method(
+    5253669518495638118,
+    None,
+    NonEmptyPayload,
+)
+fidl.register_method(
+    8251567748156745542,
+    None,
+    TablePayload,
+)
+fidl.register_method(
+    7621842152112557728,
+    None,
+    UnionPayload,
+)
+
+
 class ClosedTargetEventReporterServer(ServerBase, ABC):
     __fidl_kind__ = "server"
     library = "fidl.clientsuite"
@@ -3795,14 +5245,6 @@ class ClosedTargetEventReporterServer(ServerBase, ABC):
             response_identifier="",
         ),
     }
-
-    @staticmethod
-    def construct_response_object(
-        response_ident: str, response_obj: typing.Any
-    ) -> typing.Any:
-        return fidl._construct.construct_response_object(
-            response_ident, response_obj
-        )
 
     ReportEventResponse: typing.TypeAlias = None
 
@@ -3820,14 +5262,6 @@ class ClosedTargetEventReporterServer(ServerBase, ABC):
 class ClosedTargetEventReporterClient(FidlClient):
     __fidl_kind__ = "client"
     library = "fidl.clientsuite"
-
-    @staticmethod
-    def construct_response_object(
-        response_ident: str, response_obj: typing.Any
-    ) -> typing.Any:
-        return fidl._construct.construct_response_object(
-            response_ident, response_obj
-        )
 
     def report_event(
         self,
@@ -3859,17 +5293,16 @@ class ClosedTargetEventReporterEventHandler(EventHandlerBase, ABC):
     library = "fidl.clientsuite"
     method_map: typing.Dict[int, MethodInfo] = {}
 
-    @staticmethod
-    def construct_response_object(
-        response_ident: str, response_obj: typing.Any
-    ) -> typing.Any:
-        return fidl._construct.construct_response_object(
-            response_ident, response_obj
-        )
-
 
 ClosedTargetEventReporterMarker = FidlProtocolMarker(
     "(nondiscoverable) fidl.clientsuite/ClosedTargetEventReporter"
+)
+
+
+fidl.register_method(
+    7172279718796493934,
+    ClosedTargetEventReport,
+    None,
 )
 
 
@@ -3958,14 +5391,6 @@ class OpenTargetServer(ServerBase, ABC):
             response_identifier="fidl.clientsuite/OpenTarget_FlexibleTwoWayFieldsErr_Result",
         ),
     }
-
-    @staticmethod
-    def construct_response_object(
-        response_ident: str, response_obj: typing.Any
-    ) -> typing.Any:
-        return fidl._construct.construct_response_object(
-            response_ident, response_obj
-        )
 
     StrictOneWayResponse: typing.TypeAlias = None
 
@@ -4130,14 +5555,6 @@ class OpenTargetClient(FidlClient):
     __fidl_kind__ = "client"
     library = "fidl.clientsuite"
 
-    @staticmethod
-    def construct_response_object(
-        response_ident: str, response_obj: typing.Any
-    ) -> typing.Any:
-        return fidl._construct.construct_response_object(
-            response_ident, response_obj
-        )
-
     def strict_one_way(
         self,
     ) -> None:
@@ -4172,7 +5589,6 @@ class OpenTargetClient(FidlClient):
                 995098632483095874,
                 "fidl.clientsuite",
                 msg,
-                "",
             ),
         )
         return ret
@@ -4187,7 +5603,6 @@ class OpenTargetClient(FidlClient):
                 8775166568163566307,
                 "fidl.clientsuite",
                 msg,
-                normalize_identifier("fidl.clientsuite/NonEmptyPayload"),
             ),
         )
         return ret
@@ -4206,9 +5621,6 @@ class OpenTargetClient(FidlClient):
                 6063427118545698440,
                 "fidl.clientsuite",
                 msg,
-                normalize_identifier(
-                    "fidl.clientsuite/OpenTarget_StrictTwoWayErr_Result"
-                ),
             ),
         )
         return ret
@@ -4227,9 +5639,6 @@ class OpenTargetClient(FidlClient):
                 9059738677182539537,
                 "fidl.clientsuite",
                 msg,
-                normalize_identifier(
-                    "fidl.clientsuite/OpenTarget_StrictTwoWayFieldsErr_Result"
-                ),
             ),
         )
         return ret
@@ -4248,9 +5657,6 @@ class OpenTargetClient(FidlClient):
                 7373850992214410631,
                 "fidl.clientsuite",
                 msg,
-                normalize_identifier(
-                    "fidl.clientsuite/OpenTarget_FlexibleTwoWay_Result"
-                ),
             ),
         )
         return ret
@@ -4269,9 +5675,6 @@ class OpenTargetClient(FidlClient):
                 4087393006943873764,
                 "fidl.clientsuite",
                 msg,
-                normalize_identifier(
-                    "fidl.clientsuite/OpenTarget_FlexibleTwoWayFields_Result"
-                ),
             ),
         )
         return ret
@@ -4290,9 +5693,6 @@ class OpenTargetClient(FidlClient):
                 7932048879253591162,
                 "fidl.clientsuite",
                 msg,
-                normalize_identifier(
-                    "fidl.clientsuite/OpenTarget_FlexibleTwoWayErr_Result"
-                ),
             ),
         )
         return ret
@@ -4311,9 +5711,6 @@ class OpenTargetClient(FidlClient):
                 1029425766479692362,
                 "fidl.clientsuite",
                 msg,
-                normalize_identifier(
-                    "fidl.clientsuite/OpenTarget_FlexibleTwoWayFieldsErr_Result"
-                ),
             ),
         )
         return ret
@@ -4341,14 +5738,6 @@ class OpenTargetEventHandler(EventHandlerBase, ABC):
         ),
     }
 
-    @staticmethod
-    def construct_response_object(
-        response_ident: str, response_obj: typing.Any
-    ) -> typing.Any:
-        return fidl._construct.construct_response_object(
-            response_ident, response_obj
-        )
-
     @abstractmethod
     def strict_event(
         self,
@@ -4367,6 +5756,68 @@ OpenTargetMarker = FidlProtocolMarker(
 )
 
 
+fidl.register_method(
+    7904024199254697828,
+    None,
+    None,
+)
+fidl.register_method(
+    1119507890521778684,
+    None,
+    None,
+)
+fidl.register_method(
+    995098632483095874,
+    None,
+    None,
+)
+fidl.register_method(
+    8775166568163566307,
+    None,
+    NonEmptyPayload,
+)
+fidl.register_method(
+    6063427118545698440,
+    None,
+    OpenTargetStrictTwoWayErrResult,
+)
+fidl.register_method(
+    9059738677182539537,
+    None,
+    OpenTargetStrictTwoWayFieldsErrResult,
+)
+fidl.register_method(
+    7373850992214410631,
+    None,
+    OpenTargetFlexibleTwoWayResult,
+)
+fidl.register_method(
+    4087393006943873764,
+    None,
+    OpenTargetFlexibleTwoWayFieldsResult,
+)
+fidl.register_method(
+    7932048879253591162,
+    None,
+    OpenTargetFlexibleTwoWayErrResult,
+)
+fidl.register_method(
+    1029425766479692362,
+    None,
+    OpenTargetFlexibleTwoWayFieldsErrResult,
+)
+fidl.register_method(
+    3110049402570307488,
+    None,
+    None,
+)
+fidl.register_method(
+    5824395118547404952,
+    None,
+    None,
+)
+
+
 class OpenTargetEventReporterServer(ServerBase, ABC):
     __fidl_kind__ = "server"
     library = "fidl.clientsuite"
@@ -4380,14 +5831,6 @@ class OpenTargetEventReporterServer(ServerBase, ABC):
             response_identifier="",
         ),
     }
-
-    @staticmethod
-    def construct_response_object(
-        response_ident: str, response_obj: typing.Any
-    ) -> typing.Any:
-        return fidl._construct.construct_response_object(
-            response_ident, response_obj
-        )
 
     ReportEventResponse: typing.TypeAlias = None
 
@@ -4405,14 +5848,6 @@ class OpenTargetEventReporterServer(ServerBase, ABC):
 class OpenTargetEventReporterClient(FidlClient):
     __fidl_kind__ = "client"
     library = "fidl.clientsuite"
-
-    @staticmethod
-    def construct_response_object(
-        response_ident: str, response_obj: typing.Any
-    ) -> typing.Any:
-        return fidl._construct.construct_response_object(
-            response_ident, response_obj
-        )
 
     def report_event(
         self,
@@ -4442,17 +5877,16 @@ class OpenTargetEventReporterEventHandler(EventHandlerBase, ABC):
     library = "fidl.clientsuite"
     method_map: typing.Dict[int, MethodInfo] = {}
 
-    @staticmethod
-    def construct_response_object(
-        response_ident: str, response_obj: typing.Any
-    ) -> typing.Any:
-        return fidl._construct.construct_response_object(
-            response_ident, response_obj
-        )
-
 
 OpenTargetEventReporterMarker = FidlProtocolMarker(
     "(nondiscoverable) fidl.clientsuite/OpenTargetEventReporter"
+)
+
+
+fidl.register_method(
+    8118645339567199818,
+    OpenTargetEventReport,
+    None,
 )
 
 
@@ -4693,14 +6127,6 @@ class RunnerServer(ServerBase, ABC):
             response_identifier="",
         ),
     }
-
-    @staticmethod
-    def construct_response_object(
-        response_ident: str, response_obj: typing.Any
-    ) -> typing.Any:
-        return fidl._construct.construct_response_object(
-            response_ident, response_obj
-        )
 
     GetVersionResponse: typing.TypeAlias = RunnerGetVersionResponse
 
@@ -5124,14 +6550,6 @@ class RunnerClient(FidlClient):
     __fidl_kind__ = "client"
     library = "fidl.clientsuite"
 
-    @staticmethod
-    def construct_response_object(
-        response_ident: str, response_obj: typing.Any
-    ) -> typing.Any:
-        return fidl._construct.construct_response_object(
-            response_ident, response_obj
-        )
-
     def get_version(
         self,
     ) -> collections.abc.Coroutine[
@@ -5146,9 +6564,6 @@ class RunnerClient(FidlClient):
                 6151094865554034132,
                 "fidl.clientsuite",
                 msg,
-                normalize_identifier(
-                    "fidl.clientsuite/RunnerGetVersionResponse"
-                ),
             ),
         )
         return ret
@@ -5171,9 +6586,6 @@ class RunnerClient(FidlClient):
                 8456568861872716880,
                 "fidl.clientsuite",
                 msg,
-                normalize_identifier(
-                    "fidl.clientsuite/RunnerIsTestEnabledResponse"
-                ),
             ),
         )
         return ret
@@ -5188,7 +6600,6 @@ class RunnerClient(FidlClient):
                 6518872820703682864,
                 "fidl.clientsuite",
                 msg,
-                "",
             ),
         )
         return ret
@@ -5205,7 +6616,6 @@ class RunnerClient(FidlClient):
                 8553849771382515254,
                 "fidl.clientsuite",
                 msg,
-                normalize_identifier("fidl.clientsuite/BindingsProperties"),
             ),
         )
         return ret
@@ -5228,9 +6638,6 @@ class RunnerClient(FidlClient):
                 6029318298044407969,
                 "fidl.clientsuite",
                 msg,
-                normalize_identifier(
-                    "fidl.clientsuite/EmptyResultClassification"
-                ),
             ),
         )
         return ret
@@ -5253,9 +6660,6 @@ class RunnerClient(FidlClient):
                 2659811426878208326,
                 "fidl.clientsuite",
                 msg,
-                normalize_identifier(
-                    "fidl.clientsuite/NonEmptyResultClassification"
-                ),
             ),
         )
         return ret
@@ -5278,9 +6682,6 @@ class RunnerClient(FidlClient):
                 517424185216448362,
                 "fidl.clientsuite",
                 msg,
-                normalize_identifier(
-                    "fidl.clientsuite/TableResultClassification"
-                ),
             ),
         )
         return ret
@@ -5303,9 +6704,6 @@ class RunnerClient(FidlClient):
                 9064011510580525152,
                 "fidl.clientsuite",
                 msg,
-                normalize_identifier(
-                    "fidl.clientsuite/UnionResultClassification"
-                ),
             ),
         )
         return ret
@@ -5328,9 +6726,6 @@ class RunnerClient(FidlClient):
                 3100628808697771749,
                 "fidl.clientsuite",
                 msg,
-                normalize_identifier(
-                    "fidl.clientsuite/NonEmptyResultWithErrorClassification"
-                ),
             ),
         )
         return ret
@@ -5355,9 +6750,6 @@ class RunnerClient(FidlClient):
                 8935324979276061509,
                 "fidl.clientsuite",
                 msg,
-                normalize_identifier(
-                    "fidl.clientsuite/EmptyResultClassification"
-                ),
             ),
         )
         return ret
@@ -5382,9 +6774,6 @@ class RunnerClient(FidlClient):
                 7212342332333000126,
                 "fidl.clientsuite",
                 msg,
-                normalize_identifier(
-                    "fidl.clientsuite/EmptyResultClassification"
-                ),
             ),
         )
         return ret
@@ -5409,9 +6798,6 @@ class RunnerClient(FidlClient):
                 5469041625659498910,
                 "fidl.clientsuite",
                 msg,
-                normalize_identifier(
-                    "fidl.clientsuite/EmptyResultClassification"
-                ),
             ),
         )
         return ret
@@ -5434,9 +6820,6 @@ class RunnerClient(FidlClient):
                 2645564239868906505,
                 "fidl.clientsuite",
                 msg,
-                normalize_identifier(
-                    "fidl.clientsuite/EmptyResultClassification"
-                ),
             ),
         )
         return ret
@@ -5461,9 +6844,6 @@ class RunnerClient(FidlClient):
                 3830919545774453792,
                 "fidl.clientsuite",
                 msg,
-                normalize_identifier(
-                    "fidl.clientsuite/EmptyResultClassification"
-                ),
             ),
         )
         return ret
@@ -5488,9 +6868,6 @@ class RunnerClient(FidlClient):
                 8304956294418347759,
                 "fidl.clientsuite",
                 msg,
-                normalize_identifier(
-                    "fidl.clientsuite/EmptyResultClassification"
-                ),
             ),
         )
         return ret
@@ -5515,9 +6892,6 @@ class RunnerClient(FidlClient):
                 702155129378639542,
                 "fidl.clientsuite",
                 msg,
-                normalize_identifier(
-                    "fidl.clientsuite/EmptyResultClassification"
-                ),
             ),
         )
         return ret
@@ -5540,9 +6914,6 @@ class RunnerClient(FidlClient):
                 5682710877569041515,
                 "fidl.clientsuite",
                 msg,
-                normalize_identifier(
-                    "fidl.clientsuite/EmptyResultClassification"
-                ),
             ),
         )
         return ret
@@ -5565,9 +6936,6 @@ class RunnerClient(FidlClient):
                 8238193170653898775,
                 "fidl.clientsuite",
                 msg,
-                normalize_identifier(
-                    "fidl.clientsuite/EmptyResultClassification"
-                ),
             ),
         )
         return ret
@@ -5590,9 +6958,6 @@ class RunnerClient(FidlClient):
                 2281631162221649191,
                 "fidl.clientsuite",
                 msg,
-                normalize_identifier(
-                    "fidl.clientsuite/EmptyResultClassification"
-                ),
             ),
         )
         return ret
@@ -5615,9 +6980,6 @@ class RunnerClient(FidlClient):
                 8027963207886237987,
                 "fidl.clientsuite",
                 msg,
-                normalize_identifier(
-                    "fidl.clientsuite/NonEmptyResultClassification"
-                ),
             ),
         )
         return ret
@@ -5640,9 +7002,6 @@ class RunnerClient(FidlClient):
                 5897108006990753562,
                 "fidl.clientsuite",
                 msg,
-                normalize_identifier(
-                    "fidl.clientsuite/EmptyResultWithErrorClassification"
-                ),
             ),
         )
         return ret
@@ -5665,9 +7024,6 @@ class RunnerClient(FidlClient):
                 8044305163731028997,
                 "fidl.clientsuite",
                 msg,
-                normalize_identifier(
-                    "fidl.clientsuite/NonEmptyResultWithErrorClassification"
-                ),
             ),
         )
         return ret
@@ -5690,9 +7046,6 @@ class RunnerClient(FidlClient):
                 293287060805479753,
                 "fidl.clientsuite",
                 msg,
-                normalize_identifier(
-                    "fidl.clientsuite/EmptyResultClassification"
-                ),
             ),
         )
         return ret
@@ -5715,9 +7068,6 @@ class RunnerClient(FidlClient):
                 3677636279746006765,
                 "fidl.clientsuite",
                 msg,
-                normalize_identifier(
-                    "fidl.clientsuite/NonEmptyResultClassification"
-                ),
             ),
         )
         return ret
@@ -5740,9 +7090,6 @@ class RunnerClient(FidlClient):
                 6763272537909111383,
                 "fidl.clientsuite",
                 msg,
-                normalize_identifier(
-                    "fidl.clientsuite/EmptyResultWithErrorClassification"
-                ),
             ),
         )
         return ret
@@ -5765,9 +7112,6 @@ class RunnerClient(FidlClient):
                 8854931429453661326,
                 "fidl.clientsuite",
                 msg,
-                normalize_identifier(
-                    "fidl.clientsuite/NonEmptyResultWithErrorClassification"
-                ),
             ),
         )
         return ret
@@ -5788,7 +7132,6 @@ class RunnerClient(FidlClient):
                 5249652665483729643,
                 "fidl.clientsuite",
                 msg,
-                "",
             ),
         )
         return ret
@@ -5809,7 +7152,6 @@ class RunnerClient(FidlClient):
                 889006526008657827,
                 "fidl.clientsuite",
                 msg,
-                "",
             ),
         )
         return ret
@@ -5830,7 +7172,6 @@ class RunnerClient(FidlClient):
                 8765983170380094431,
                 "fidl.clientsuite",
                 msg,
-                "",
             ),
         )
         return ret
@@ -5841,13 +7182,152 @@ class RunnerEventHandler(EventHandlerBase, ABC):
     library = "fidl.clientsuite"
     method_map: typing.Dict[int, MethodInfo] = {}
 
-    @staticmethod
-    def construct_response_object(
-        response_ident: str, response_obj: typing.Any
-    ) -> typing.Any:
-        return fidl._construct.construct_response_object(
-            response_ident, response_obj
-        )
-
 
 RunnerMarker = FidlProtocolMarker("fidl.clientsuite.Runner")
+
+
+fidl.register_method(
+    6151094865554034132,
+    None,
+    RunnerGetVersionResponse,
+)
+fidl.register_method(
+    8456568861872716880,
+    RunnerIsTestEnabledRequest,
+    RunnerIsTestEnabledResponse,
+)
+fidl.register_method(
+    6518872820703682864,
+    None,
+    None,
+)
+fidl.register_method(
+    8553849771382515254,
+    None,
+    BindingsProperties,
+)
+fidl.register_method(
+    6029318298044407969,
+    RunnerCallTwoWayNoPayloadRequest,
+    EmptyResultClassification,
+)
+fidl.register_method(
+    2659811426878208326,
+    RunnerCallTwoWayStructPayloadRequest,
+    NonEmptyResultClassification,
+)
+fidl.register_method(
+    517424185216448362,
+    RunnerCallTwoWayTablePayloadRequest,
+    TableResultClassification,
+)
+fidl.register_method(
+    9064011510580525152,
+    RunnerCallTwoWayUnionPayloadRequest,
+    UnionResultClassification,
+)
+fidl.register_method(
+    3100628808697771749,
+    RunnerCallTwoWayStructPayloadErrRequest,
+    NonEmptyResultWithErrorClassification,
+)
+fidl.register_method(
+    8935324979276061509,
+    RunnerCallTwoWayStructRequestRequest,
+    EmptyResultClassification,
+)
+fidl.register_method(
+    7212342332333000126,
+    RunnerCallTwoWayTableRequestRequest,
+    EmptyResultClassification,
+)
+fidl.register_method(
+    5469041625659498910,
+    RunnerCallTwoWayUnionRequestRequest,
+    EmptyResultClassification,
+)
+fidl.register_method(
+    2645564239868906505,
+    RunnerCallOneWayNoRequestRequest,
+    EmptyResultClassification,
+)
+fidl.register_method(
+    3830919545774453792,
+    RunnerCallOneWayStructRequestRequest,
+    EmptyResultClassification,
+)
+fidl.register_method(
+    8304956294418347759,
+    RunnerCallOneWayTableRequestRequest,
+    EmptyResultClassification,
+)
+fidl.register_method(
+    702155129378639542,
+    RunnerCallOneWayUnionRequestRequest,
+    EmptyResultClassification,
+)
+fidl.register_method(
+    5682710877569041515,
+    RunnerCallStrictOneWayRequest,
+    EmptyResultClassification,
+)
+fidl.register_method(
+    8238193170653898775,
+    RunnerCallFlexibleOneWayRequest,
+    EmptyResultClassification,
+)
+fidl.register_method(
+    2281631162221649191,
+    RunnerCallStrictTwoWayRequest,
+    EmptyResultClassification,
+)
+fidl.register_method(
+    8027963207886237987,
+    RunnerCallStrictTwoWayFieldsRequest,
+    NonEmptyResultClassification,
+)
+fidl.register_method(
+    5897108006990753562,
+    RunnerCallStrictTwoWayErrRequest,
+    EmptyResultWithErrorClassification,
+)
+fidl.register_method(
+    8044305163731028997,
+    RunnerCallStrictTwoWayFieldsErrRequest,
+    NonEmptyResultWithErrorClassification,
+)
+fidl.register_method(
+    293287060805479753,
+    RunnerCallFlexibleTwoWayRequest,
+    EmptyResultClassification,
+)
+fidl.register_method(
+    3677636279746006765,
+    RunnerCallFlexibleTwoWayFieldsRequest,
+    NonEmptyResultClassification,
+)
+fidl.register_method(
+    6763272537909111383,
+    RunnerCallFlexibleTwoWayErrRequest,
+    EmptyResultWithErrorClassification,
+)
+fidl.register_method(
+    8854931429453661326,
+    RunnerCallFlexibleTwoWayFieldsErrRequest,
+    NonEmptyResultWithErrorClassification,
+)
+fidl.register_method(
+    5249652665483729643,
+    RunnerReceiveClosedEventsRequest,
+    None,
+)
+fidl.register_method(
+    889006526008657827,
+    RunnerReceiveAjarEventsRequest,
+    None,
+)
+fidl.register_method(
+    8765983170380094431,
+    RunnerReceiveOpenEventsRequest,
+    None,
+)

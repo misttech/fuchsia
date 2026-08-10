@@ -3,24 +3,22 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from fidl_codec import add_ir_path, encode_fidl_object
 import sys
 import typing
 import enum
 
 import fidl
-from fidl._ir import get_fidl_ir_map
 
-_ir_path = get_fidl_ir_map()["test.padding"]
-add_ir_path(_ir_path)
 
 from fidl._client import EventHandlerBase, FidlClient  # type: ignore[unused-ignore,unused-import]
-import fidl._construct  # type: ignore[unused-ignore,unused-import]
 from fidl._server import ServerBase  # type: ignore[unused-ignore,unused-import]
 from fidl._fidl_common import DomainError, FrameworkError, MethodInfo, FidlProtocolMarker, normalize_identifier  # type: ignore[unused-ignore,unused-import]
 
 from abc import abstractmethod, ABC  # type: ignore[unused-ignore,unused-import]
 import collections.abc  # type: ignore[unused-ignore,unused-import]
+
+
+_UNDEFINED: typing.Any = object()
 
 
 @dataclass
@@ -39,10 +37,24 @@ class Padding1ByteEnd:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self, "test.padding", "test.padding/Padding1ByteEnd"
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 4)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 4)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_uint16(self.a, _offset + 0)
+        encoder.write_uint8(self.b, _offset + 2)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        a = decoder.read_uint16(_offset + 0)
+        b = decoder.read_uint8(_offset + 2)
+        return cls(
+            a=a,
+            b=b,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -73,10 +85,24 @@ class Padding1ByteMiddle:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self, "test.padding", "test.padding/Padding1ByteMiddle"
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 4)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 4)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_uint8(self.a, _offset + 0)
+        encoder.write_uint16(self.b, _offset + 2)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        a = decoder.read_uint8(_offset + 0)
+        b = decoder.read_uint16(_offset + 2)
+        return cls(
+            a=a,
+            b=b,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -108,10 +134,27 @@ class Padding2ByteAlignmentLength6:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self, "test.padding", "test.padding/Padding2ByteAlignmentLength6"
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 6)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 6)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_uint8(self.a, _offset + 0)
+        encoder.write_uint16(self.b, _offset + 2)
+        encoder.write_uint8(self.c, _offset + 4)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        a = decoder.read_uint8(_offset + 0)
+        b = decoder.read_uint16(_offset + 2)
+        c = decoder.read_uint8(_offset + 4)
+        return cls(
+            a=a,
+            b=b,
+            c=c,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -143,10 +186,24 @@ class Padding2ByteEnd:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self, "test.padding", "test.padding/Padding2ByteEnd"
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 8)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 8)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_uint32(self.a, _offset + 0)
+        encoder.write_uint16(self.b, _offset + 4)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        a = decoder.read_uint32(_offset + 0)
+        b = decoder.read_uint16(_offset + 4)
+        return cls(
+            a=a,
+            b=b,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -177,10 +234,24 @@ class Padding2ByteMiddle:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self, "test.padding", "test.padding/Padding2ByteMiddle"
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 8)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 8)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_uint16(self.a, _offset + 0)
+        encoder.write_uint32(self.b, _offset + 4)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        a = decoder.read_uint16(_offset + 0)
+        b = decoder.read_uint32(_offset + 4)
+        return cls(
+            a=a,
+            b=b,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -211,10 +282,24 @@ class Padding3ByteEnd:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self, "test.padding", "test.padding/Padding3ByteEnd"
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 8)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 8)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_uint32(self.a, _offset + 0)
+        encoder.write_uint8(self.b, _offset + 4)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        a = decoder.read_uint32(_offset + 0)
+        b = decoder.read_uint8(_offset + 4)
+        return cls(
+            a=a,
+            b=b,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -245,10 +330,24 @@ class Padding3ByteMiddle:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self, "test.padding", "test.padding/Padding3ByteMiddle"
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 8)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 8)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_uint8(self.a, _offset + 0)
+        encoder.write_uint32(self.b, _offset + 4)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        a = decoder.read_uint8(_offset + 0)
+        b = decoder.read_uint32(_offset + 4)
+        return cls(
+            a=a,
+            b=b,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -281,10 +380,30 @@ class Padding4ByteAlignmentLength12:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self, "test.padding", "test.padding/Padding4ByteAlignmentLength12"
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 12)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 12)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_uint32(self.a, _offset + 0)
+        encoder.write_uint8(self.b, _offset + 4)
+        encoder.write_uint16(self.c, _offset + 6)
+        encoder.write_uint16(self.d, _offset + 8)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        a = decoder.read_uint32(_offset + 0)
+        b = decoder.read_uint8(_offset + 4)
+        c = decoder.read_uint16(_offset + 6)
+        d = decoder.read_uint16(_offset + 8)
+        return cls(
+            a=a,
+            b=b,
+            c=c,
+            d=d,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -317,10 +436,24 @@ class Padding4ByteEnd:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self, "test.padding", "test.padding/Padding4ByteEnd"
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 16)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 16)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_uint64(self.a, _offset + 0)
+        encoder.write_uint32(self.b, _offset + 8)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        a = decoder.read_uint64(_offset + 0)
+        b = decoder.read_uint32(_offset + 8)
+        return cls(
+            a=a,
+            b=b,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -351,10 +484,24 @@ class Padding4ByteMiddle:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self, "test.padding", "test.padding/Padding4ByteMiddle"
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 16)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 16)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_uint32(self.a, _offset + 0)
+        encoder.write_uint64(self.b, _offset + 8)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        a = decoder.read_uint32(_offset + 0)
+        b = decoder.read_uint64(_offset + 8)
+        return cls(
+            a=a,
+            b=b,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -386,10 +533,27 @@ class Padding5ByteEnd:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self, "test.padding", "test.padding/Padding5ByteEnd"
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 16)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 16)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_uint64(self.a, _offset + 0)
+        encoder.write_uint16(self.b, _offset + 8)
+        encoder.write_uint8(self.c, _offset + 10)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        a = decoder.read_uint64(_offset + 0)
+        b = decoder.read_uint16(_offset + 8)
+        c = decoder.read_uint8(_offset + 10)
+        return cls(
+            a=a,
+            b=b,
+            c=c,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -422,10 +586,27 @@ class Padding5ByteMiddle:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self, "test.padding", "test.padding/Padding5ByteMiddle"
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 16)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 16)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_uint16(self.a, _offset + 0)
+        encoder.write_uint8(self.b, _offset + 2)
+        encoder.write_uint64(self.c, _offset + 8)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        a = decoder.read_uint16(_offset + 0)
+        b = decoder.read_uint8(_offset + 2)
+        c = decoder.read_uint64(_offset + 8)
+        return cls(
+            a=a,
+            b=b,
+            c=c,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -457,10 +638,24 @@ class Padding6ByteEnd:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self, "test.padding", "test.padding/Padding6ByteEnd"
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 16)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 16)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_uint64(self.a, _offset + 0)
+        encoder.write_uint16(self.b, _offset + 8)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        a = decoder.read_uint64(_offset + 0)
+        b = decoder.read_uint16(_offset + 8)
+        return cls(
+            a=a,
+            b=b,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -491,10 +686,24 @@ class Padding6ByteMiddle:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self, "test.padding", "test.padding/Padding6ByteMiddle"
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 16)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 16)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_uint16(self.a, _offset + 0)
+        encoder.write_uint64(self.b, _offset + 8)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        a = decoder.read_uint16(_offset + 0)
+        b = decoder.read_uint64(_offset + 8)
+        return cls(
+            a=a,
+            b=b,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -525,10 +734,24 @@ class Padding7ByteEnd:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self, "test.padding", "test.padding/Padding7ByteEnd"
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 16)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 16)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_uint64(self.a, _offset + 0)
+        encoder.write_uint8(self.b, _offset + 8)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        a = decoder.read_uint64(_offset + 0)
+        b = decoder.read_uint8(_offset + 8)
+        return cls(
+            a=a,
+            b=b,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -559,10 +782,24 @@ class Padding7ByteMiddle:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self, "test.padding", "test.padding/Padding7ByteMiddle"
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 16)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 16)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_uint8(self.a, _offset + 0)
+        encoder.write_uint64(self.b, _offset + 8)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        a = decoder.read_uint8(_offset + 0)
+        b = decoder.read_uint64(_offset + 8)
+        return cls(
+            a=a,
+            b=b,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence

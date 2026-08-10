@@ -3,24 +3,22 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from fidl_codec import add_ir_path, encode_fidl_object
 import sys
 import typing
 import enum
 
 import fidl
-from fidl._ir import get_fidl_ir_map
 
-_ir_path = get_fidl_ir_map()["test.encapsulatedstructs"]
-add_ir_path(_ir_path)
 
 from fidl._client import EventHandlerBase, FidlClient  # type: ignore[unused-ignore,unused-import]
-import fidl._construct  # type: ignore[unused-ignore,unused-import]
 from fidl._server import ServerBase  # type: ignore[unused-ignore,unused-import]
 from fidl._fidl_common import DomainError, FrameworkError, MethodInfo, FidlProtocolMarker, normalize_identifier  # type: ignore[unused-ignore,unused-import]
 
 from abc import abstractmethod, ABC  # type: ignore[unused-ignore,unused-import]
 import collections.abc  # type: ignore[unused-ignore,unused-import]
+
+
+_UNDEFINED: typing.Any = object()
 
 
 @dataclass
@@ -38,12 +36,21 @@ class ArrayInt16Int8:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "test.encapsulatedstructs",
-            "test.encapsulatedstructs/ArrayInt16Int8",
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 12)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 12)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_array(self.arr, _offset + 0, Int16Int8._encode, 4, 3)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        arr = decoder.read_array(_offset + 0, Int16Int8._decode, 4, 3)
+        return cls(
+            arr=arr,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -73,12 +80,24 @@ class Int16Int8:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "test.encapsulatedstructs",
-            "test.encapsulatedstructs/Int16Int8",
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 4)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 4)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_int16(self.a, _offset + 0)
+        encoder.write_int8(self.b, _offset + 2)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        a = decoder.read_int16(_offset + 0)
+        b = decoder.read_int8(_offset + 2)
+        return cls(
+            a=a,
+            b=b,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -109,12 +128,24 @@ class Int8Int32:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "test.encapsulatedstructs",
-            "test.encapsulatedstructs/Int8Int32",
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 8)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 8)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_int8(self.a, _offset + 0)
+        encoder.write_int32(self.b, _offset + 4)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        a = decoder.read_int8(_offset + 0)
+        b = decoder.read_int32(_offset + 4)
+        return cls(
+            a=a,
+            b=b,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -145,12 +176,28 @@ class NonInlineStructTestStruct:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "test.encapsulatedstructs",
-            "test.encapsulatedstructs/NonInlineStructTestStruct",
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 16)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 16)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_optional_struct(
+            self.element, _offset + 0, Int16Int8._encode, 4
+        )
+        encoder.write_handle(self.h, _offset + 8, obj_type=0, rights=2147483648)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        element = decoder.read_optional_struct(
+            _offset + 0, Int16Int8._decode, 4
+        )
+        h = decoder.read_handle(_offset + 8, nullable=False)
+        return cls(
+            element=element,
+            h=h,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -182,12 +229,27 @@ class StructPaddingTestStruct:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "test.encapsulatedstructs",
-            "test.encapsulatedstructs/StructPaddingTestStruct",
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 24)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 24)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        Int16Int8._encode(self.trailing, encoder, _offset + 0)
+        Int8Int32._encode(self.inner, encoder, _offset + 4)
+        ArrayInt16Int8._encode(self.array, encoder, _offset + 12)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        trailing = Int16Int8._decode(decoder, _offset + 0)
+        inner = Int8Int32._decode(decoder, _offset + 4)
+        array = ArrayInt16Int8._decode(decoder, _offset + 12)
+        return cls(
+            trailing=trailing,
+            inner=inner,
+            array=array,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -219,12 +281,24 @@ class TopLevelStruct:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "test.encapsulatedstructs",
-            "test.encapsulatedstructs/TopLevelStruct",
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 40)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 40)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        StructPaddingTestStruct._encode(self.a, encoder, _offset + 0)
+        NonInlineStructTestStruct._encode(self.b, encoder, _offset + 24)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        a = StructPaddingTestStruct._decode(decoder, _offset + 0)
+        b = NonInlineStructTestStruct._decode(decoder, _offset + 24)
+        return cls(
+            a=a,
+            b=b,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence

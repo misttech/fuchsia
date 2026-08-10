@@ -132,7 +132,6 @@ template("fidl_python") {
       library_deps = [
         "//src/developer/ffx/lib/fuchsia-controller:fidl_bindings",
         "//src/developer/ffx/lib/fuchsia-controller:fuchsia_controller_py",
-        "//src/developer/ffx/lib/fuchsia-controller/cpp:fidl_codec",
       ]
       data_deps = [
         ":${fidl_target}_host_test_data",

@@ -3,19 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from fidl_codec import add_ir_path, encode_fidl_object
 import sys
 import typing
 import enum
 
 import fidl
-from fidl._ir import get_fidl_ir_map
 
-_ir_path = get_fidl_ir_map()["test.protocolpayloads"]
-add_ir_path(_ir_path)
 
 from fidl._client import EventHandlerBase, FidlClient  # type: ignore[unused-ignore,unused-import]
-import fidl._construct  # type: ignore[unused-ignore,unused-import]
 from fidl._server import ServerBase  # type: ignore[unused-ignore,unused-import]
 from fidl._fidl_common import DomainError, FrameworkError, MethodInfo, FidlProtocolMarker, normalize_identifier  # type: ignore[unused-ignore,unused-import]
 
@@ -23,6 +18,9 @@ from abc import abstractmethod, ABC  # type: ignore[unused-ignore,unused-import]
 import collections.abc  # type: ignore[unused-ignore,unused-import]
 
 import fidl_test_protocolpayloads_imported
+
+
+_UNDEFINED: typing.Any = object()
 
 
 @dataclass
@@ -41,12 +39,24 @@ class LocalStructPayload:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "test.protocolpayloads",
-            "test.protocolpayloads/LocalStructPayload",
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 8)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 8)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_uint32(self.a, _offset + 0)
+        encoder.write_uint32(self.b, _offset + 4)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        a = decoder.read_uint32(_offset + 0)
+        b = decoder.read_uint32(_offset + 4)
+        return cls(
+            a=a,
+            b=b,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -77,12 +87,24 @@ class MainProtocolOnAnonRequest:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "test.protocolpayloads",
-            "test.protocolpayloads/MainProtocolOnAnonRequest",
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 8)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 8)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_uint32(self.a, _offset + 0)
+        encoder.write_uint32(self.b, _offset + 4)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        a = decoder.read_uint32(_offset + 0)
+        b = decoder.read_uint32(_offset + 4)
+        return cls(
+            a=a,
+            b=b,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -113,12 +135,24 @@ class MainProtocolOneWayAnonRequest:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "test.protocolpayloads",
-            "test.protocolpayloads/MainProtocolOneWayAnonRequest",
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 8)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 8)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_uint32(self.a, _offset + 0)
+        encoder.write_uint32(self.b, _offset + 4)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        a = decoder.read_uint32(_offset + 0)
+        b = decoder.read_uint32(_offset + 4)
+        return cls(
+            a=a,
+            b=b,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -149,12 +183,24 @@ class MainProtocolTwoWayAnonRequest:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "test.protocolpayloads",
-            "test.protocolpayloads/MainProtocolTwoWayAnonRequest",
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 8)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 8)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_uint32(self.a, _offset + 0)
+        encoder.write_uint32(self.b, _offset + 4)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        a = decoder.read_uint32(_offset + 0)
+        b = decoder.read_uint32(_offset + 4)
+        return cls(
+            a=a,
+            b=b,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -185,12 +231,24 @@ class MainProtocolTwoWayAnonResponse:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "test.protocolpayloads",
-            "test.protocolpayloads/MainProtocolTwoWayAnonResponse",
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 8)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 8)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_uint32(self.a, _offset + 0)
+        encoder.write_uint32(self.b, _offset + 4)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        a = decoder.read_uint32(_offset + 0)
+        b = decoder.read_uint32(_offset + 4)
+        return cls(
+            a=a,
+            b=b,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -223,12 +281,24 @@ class MainProtocolTwoWayAnonWithErrorRequest:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "test.protocolpayloads",
-            "test.protocolpayloads/MainProtocolTwoWayAnonWithErrorRequest",
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 8)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 8)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_uint32(self.a, _offset + 0)
+        encoder.write_uint32(self.b, _offset + 4)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        a = decoder.read_uint32(_offset + 0)
+        b = decoder.read_uint32(_offset + 4)
+        return cls(
+            a=a,
+            b=b,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -261,12 +331,24 @@ class MainProtocolTwoWayAnonWithErrorResponse:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "test.protocolpayloads",
-            "test.protocolpayloads/MainProtocol_TwoWayAnonWithError_Response",
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 8)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 8)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_uint32(self.a, _offset + 0)
+        encoder.write_uint32(self.b, _offset + 4)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        a = decoder.read_uint32(_offset + 0)
+        b = decoder.read_uint32(_offset + 4)
+        return cls(
+            a=a,
+            b=b,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -316,8 +398,8 @@ class MainProtocolTwoWayAnonWithErrorResult:
         self,
         response: typing.Optional[
             MainProtocolTwoWayAnonWithErrorResponse
-        ] = None,
-        err: typing.Optional[int] = None,
+        ] = _UNDEFINED,
+        err: typing.Optional[int] = _UNDEFINED,
         _empty: typing.Optional[tuple[()]] = None,
     ):
         object.__init__(self)
@@ -327,14 +409,16 @@ class MainProtocolTwoWayAnonWithErrorResult:
         number_of_variants = 0
         variants = []
 
-        if response is not None:
-            self._response = response
-            variants.append("response")
-            number_of_variants += 1
-        if err is not None:
-            self._err = err
-            variants.append("err")
-            number_of_variants += 1
+        if response is not _UNDEFINED:
+            if response is not None:
+                self._response = response
+                variants.append("response")
+                number_of_variants += 1
+        if err is not _UNDEFINED:
+            if err is not None:
+                self._err = err
+                variants.append("err")
+                number_of_variants += 1
         if number_of_variants > 1:
             raise TypeError(
                 f"Exactly one variant must be specified for {self.__fidl_raw_type__}: {variants}"
@@ -355,13 +439,59 @@ class MainProtocolTwoWayAnonWithErrorResult:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "test.protocolpayloads",
-            "test.protocolpayloads/MainProtocol_TwoWayAnonWithError_Result",
-        )
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 16)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 16)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        if hasattr(self, "_response"):
+            encoder.write_uint64(1, _offset)
+            encoder.write_envelope(
+                getattr(self, "_response"),
+                _offset + 8,
+                MainProtocolTwoWayAnonWithErrorResponse._encode,
+                8,
+                False,
+            )
+            return
+        if hasattr(self, "_err"):
+            encoder.write_uint64(2, _offset)
+            encoder.write_envelope(
+                getattr(self, "_err"),
+                _offset + 8,
+                lambda val, enc, off: enc.write_uint32(val, off),
+                4,
+                True,
+            )
+            return
+        encoder.write_inline(_offset, b"\x00" * 16)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        ordinal = decoder.read_uint64(_offset)
+        if ordinal == 0:
+            return cls(_empty=())
+        if ordinal == 1:
+            val = decoder.read_envelope(
+                _offset + 8,
+                MainProtocolTwoWayAnonWithErrorResponse._decode,
+                8,
+            )
+            return cls(response=val)
+        if ordinal == 2:
+            val = decoder.read_envelope(
+                _offset + 8,
+                lambda dec, off: dec.read_uint32(off),
+                4,
+            )
+            return cls(err=val)
+
+        # Skip unknown envelope
+        decoder.skip_envelope(_offset + 8)
+        raise ValueError(f"Unknown union ordinal {ordinal}")
 
     def unwrap(self) -> MainProtocolTwoWayAnonWithErrorResponse:
         """Returns the response if result does not contain an error. Otherwise, raises an exception."""
@@ -430,8 +560,8 @@ class MainProtocolTwoWayImportWithErrorResult:
         self,
         response: typing.Optional[
             fidl_test_protocolpayloads_imported.ImportStructPayload
-        ] = None,
-        err: typing.Optional[int] = None,
+        ] = _UNDEFINED,
+        err: typing.Optional[int] = _UNDEFINED,
         _empty: typing.Optional[tuple[()]] = None,
     ):
         object.__init__(self)
@@ -441,14 +571,16 @@ class MainProtocolTwoWayImportWithErrorResult:
         number_of_variants = 0
         variants = []
 
-        if response is not None:
-            self._response = response
-            variants.append("response")
-            number_of_variants += 1
-        if err is not None:
-            self._err = err
-            variants.append("err")
-            number_of_variants += 1
+        if response is not _UNDEFINED:
+            if response is not None:
+                self._response = response
+                variants.append("response")
+                number_of_variants += 1
+        if err is not _UNDEFINED:
+            if err is not None:
+                self._err = err
+                variants.append("err")
+                number_of_variants += 1
         if number_of_variants > 1:
             raise TypeError(
                 f"Exactly one variant must be specified for {self.__fidl_raw_type__}: {variants}"
@@ -471,13 +603,59 @@ class MainProtocolTwoWayImportWithErrorResult:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "test.protocolpayloads",
-            "test.protocolpayloads/MainProtocol_TwoWayImportWithError_Result",
-        )
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 16)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 16)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        if hasattr(self, "_response"):
+            encoder.write_uint64(1, _offset)
+            encoder.write_envelope(
+                getattr(self, "_response"),
+                _offset + 8,
+                fidl_test_protocolpayloads_imported.ImportStructPayload._encode,
+                4,
+                True,
+            )
+            return
+        if hasattr(self, "_err"):
+            encoder.write_uint64(2, _offset)
+            encoder.write_envelope(
+                getattr(self, "_err"),
+                _offset + 8,
+                lambda val, enc, off: enc.write_uint32(val, off),
+                4,
+                True,
+            )
+            return
+        encoder.write_inline(_offset, b"\x00" * 16)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        ordinal = decoder.read_uint64(_offset)
+        if ordinal == 0:
+            return cls(_empty=())
+        if ordinal == 1:
+            val = decoder.read_envelope(
+                _offset + 8,
+                fidl_test_protocolpayloads_imported.ImportStructPayload._decode,
+                4,
+            )
+            return cls(response=val)
+        if ordinal == 2:
+            val = decoder.read_envelope(
+                _offset + 8,
+                lambda dec, off: dec.read_uint32(off),
+                4,
+            )
+            return cls(err=val)
+
+        # Skip unknown envelope
+        decoder.skip_envelope(_offset + 8)
+        raise ValueError(f"Unknown union ordinal {ordinal}")
 
     def unwrap(self) -> fidl_test_protocolpayloads_imported.ImportStructPayload:
         """Returns the response if result does not contain an error. Otherwise, raises an exception."""
@@ -542,8 +720,8 @@ class MainProtocolTwoWayLocalWithErrorResult:
 
     def __init__(
         self,
-        response: typing.Optional[LocalStructPayload] = None,
-        err: typing.Optional[int] = None,
+        response: typing.Optional[LocalStructPayload] = _UNDEFINED,
+        err: typing.Optional[int] = _UNDEFINED,
         _empty: typing.Optional[tuple[()]] = None,
     ):
         object.__init__(self)
@@ -553,14 +731,16 @@ class MainProtocolTwoWayLocalWithErrorResult:
         number_of_variants = 0
         variants = []
 
-        if response is not None:
-            self._response = response
-            variants.append("response")
-            number_of_variants += 1
-        if err is not None:
-            self._err = err
-            variants.append("err")
-            number_of_variants += 1
+        if response is not _UNDEFINED:
+            if response is not None:
+                self._response = response
+                variants.append("response")
+                number_of_variants += 1
+        if err is not _UNDEFINED:
+            if err is not None:
+                self._err = err
+                variants.append("err")
+                number_of_variants += 1
         if number_of_variants > 1:
             raise TypeError(
                 f"Exactly one variant must be specified for {self.__fidl_raw_type__}: {variants}"
@@ -581,13 +761,59 @@ class MainProtocolTwoWayLocalWithErrorResult:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "test.protocolpayloads",
-            "test.protocolpayloads/MainProtocol_TwoWayLocalWithError_Result",
-        )
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 16)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 16)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        if hasattr(self, "_response"):
+            encoder.write_uint64(1, _offset)
+            encoder.write_envelope(
+                getattr(self, "_response"),
+                _offset + 8,
+                LocalStructPayload._encode,
+                8,
+                False,
+            )
+            return
+        if hasattr(self, "_err"):
+            encoder.write_uint64(2, _offset)
+            encoder.write_envelope(
+                getattr(self, "_err"),
+                _offset + 8,
+                lambda val, enc, off: enc.write_uint32(val, off),
+                4,
+                True,
+            )
+            return
+        encoder.write_inline(_offset, b"\x00" * 16)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        ordinal = decoder.read_uint64(_offset)
+        if ordinal == 0:
+            return cls(_empty=())
+        if ordinal == 1:
+            val = decoder.read_envelope(
+                _offset + 8,
+                LocalStructPayload._decode,
+                8,
+            )
+            return cls(response=val)
+        if ordinal == 2:
+            val = decoder.read_envelope(
+                _offset + 8,
+                lambda dec, off: dec.read_uint32(off),
+                4,
+            )
+            return cls(err=val)
+
+        # Skip unknown envelope
+        decoder.skip_envelope(_offset + 8)
+        raise ValueError(f"Unknown union ordinal {ordinal}")
 
     def unwrap(self) -> LocalStructPayload:
         """Returns the response if result does not contain an error. Otherwise, raises an exception."""
@@ -720,14 +946,6 @@ class MainProtocolServer(ServerBase, ABC):
             response_identifier="test.protocolpayloads/MainProtocol_TwoWayAnonWithError_Result",
         ),
     }
-
-    @staticmethod
-    def construct_response_object(
-        response_ident: str, response_obj: typing.Any
-    ) -> typing.Any:
-        return fidl._construct.construct_response_object(
-            response_ident, response_obj
-        )
 
     OneWayComposedResponse: typing.TypeAlias = None
 
@@ -950,14 +1168,6 @@ class MainProtocolClient(FidlClient):
     __fidl_kind__ = "client"
     library = "test.protocolpayloads"
 
-    @staticmethod
-    def construct_response_object(
-        response_ident: str, response_obj: typing.Any
-    ) -> typing.Any:
-        return fidl._construct.construct_response_object(
-            response_ident, response_obj
-        )
-
     def one_way_composed(
         self,
         *,
@@ -996,9 +1206,6 @@ class MainProtocolClient(FidlClient):
                 2542459230546612144,
                 "test.protocolpayloads",
                 msg,
-                normalize_identifier(
-                    "test.protocolpayloads.imported/ImportStructPayload"
-                ),
             ),
         )
         return ret
@@ -1025,9 +1232,6 @@ class MainProtocolClient(FidlClient):
                 7681984876526769495,
                 "test.protocolpayloads",
                 msg,
-                normalize_identifier(
-                    "test.protocolpayloads.imported/ComposedProtocol_TwoWayComposedWithError_Result"
-                ),
             ),
         )
         return ret
@@ -1068,9 +1272,6 @@ class MainProtocolClient(FidlClient):
                 8374292137648566031,
                 "test.protocolpayloads",
                 msg,
-                normalize_identifier(
-                    "test.protocolpayloads/LocalStructPayload"
-                ),
             ),
         )
         return ret
@@ -1095,9 +1296,6 @@ class MainProtocolClient(FidlClient):
                 2898559119954589948,
                 "test.protocolpayloads",
                 msg,
-                normalize_identifier(
-                    "test.protocolpayloads/MainProtocol_TwoWayLocalWithError_Result"
-                ),
             ),
         )
         return ret
@@ -1140,9 +1338,6 @@ class MainProtocolClient(FidlClient):
                 2374708679656510579,
                 "test.protocolpayloads",
                 msg,
-                normalize_identifier(
-                    "test.protocolpayloads.imported/ImportStructPayload"
-                ),
             ),
         )
         return ret
@@ -1165,9 +1360,6 @@ class MainProtocolClient(FidlClient):
                 4286143084949642173,
                 "test.protocolpayloads",
                 msg,
-                normalize_identifier(
-                    "test.protocolpayloads/MainProtocol_TwoWayImportWithError_Result"
-                ),
             ),
         )
         return ret
@@ -1210,9 +1402,6 @@ class MainProtocolClient(FidlClient):
                 629880979996923737,
                 "test.protocolpayloads",
                 msg,
-                normalize_identifier(
-                    "test.protocolpayloads/MainProtocolTwoWayAnonResponse"
-                ),
             ),
         )
         return ret
@@ -1237,9 +1426,6 @@ class MainProtocolClient(FidlClient):
                 6368863385719175734,
                 "test.protocolpayloads",
                 msg,
-                normalize_identifier(
-                    "test.protocolpayloads/MainProtocol_TwoWayAnonWithError_Result"
-                ),
             ),
         )
         return ret
@@ -1283,14 +1469,6 @@ class MainProtocolEventHandler(EventHandlerBase, ABC):
         ),
     }
 
-    @staticmethod
-    def construct_response_object(
-        response_ident: str, response_obj: typing.Any
-    ) -> typing.Any:
-        return fidl._construct.construct_response_object(
-            response_ident, response_obj
-        )
-
     @abstractmethod
     def on_composed(
         self,
@@ -1322,4 +1500,86 @@ class MainProtocolEventHandler(EventHandlerBase, ABC):
 
 MainProtocolMarker = FidlProtocolMarker(
     "(nondiscoverable) test.protocolpayloads/MainProtocol"
+)
+
+
+fidl.register_method(
+    2602591870026304272,
+    fidl_test_protocolpayloads_imported.ImportStructPayload,
+    None,
+)
+fidl.register_method(
+    2542459230546612144,
+    fidl_test_protocolpayloads_imported.ImportStructPayload,
+    fidl_test_protocolpayloads_imported.ImportStructPayload,
+)
+fidl.register_method(
+    7681984876526769495,
+    fidl_test_protocolpayloads_imported.ImportStructPayload,
+    fidl_test_protocolpayloads_imported.ComposedProtocolTwoWayComposedWithErrorResult,
+)
+fidl.register_method(
+    1872339328378152762,
+    None,
+    fidl_test_protocolpayloads_imported.ImportStructPayload,
+)
+fidl.register_method(
+    7755175439334311701,
+    LocalStructPayload,
+    None,
+)
+fidl.register_method(
+    8374292137648566031,
+    LocalStructPayload,
+    LocalStructPayload,
+)
+fidl.register_method(
+    2898559119954589948,
+    LocalStructPayload,
+    MainProtocolTwoWayLocalWithErrorResult,
+)
+fidl.register_method(
+    5135782819583756313,
+    None,
+    LocalStructPayload,
+)
+fidl.register_method(
+    3344777159365288972,
+    fidl_test_protocolpayloads_imported.ImportStructPayload,
+    None,
+)
+fidl.register_method(
+    2374708679656510579,
+    fidl_test_protocolpayloads_imported.ImportStructPayload,
+    fidl_test_protocolpayloads_imported.ImportStructPayload,
+)
+fidl.register_method(
+    4286143084949642173,
+    fidl_test_protocolpayloads_imported.ImportStructPayload,
+    MainProtocolTwoWayImportWithErrorResult,
+)
+fidl.register_method(
+    1996489653379631369,
+    None,
+    fidl_test_protocolpayloads_imported.ImportStructPayload,
+)
+fidl.register_method(
+    811587311021806764,
+    MainProtocolOneWayAnonRequest,
+    None,
+)
+fidl.register_method(
+    629880979996923737,
+    MainProtocolTwoWayAnonRequest,
+    MainProtocolTwoWayAnonResponse,
+)
+fidl.register_method(
+    6368863385719175734,
+    MainProtocolTwoWayAnonWithErrorRequest,
+    MainProtocolTwoWayAnonWithErrorResult,
+)
+fidl.register_method(
+    4815229650203439104,
+    None,
+    MainProtocolOnAnonRequest,
 )

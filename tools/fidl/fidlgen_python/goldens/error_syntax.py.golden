@@ -3,19 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from fidl_codec import add_ir_path, encode_fidl_object
 import sys
 import typing
 import enum
 
 import fidl
-from fidl._ir import get_fidl_ir_map
 
-_ir_path = get_fidl_ir_map()["test.errorsyntax"]
-add_ir_path(_ir_path)
 
 from fidl._client import EventHandlerBase, FidlClient  # type: ignore[unused-ignore,unused-import]
-import fidl._construct  # type: ignore[unused-ignore,unused-import]
 from fidl._server import ServerBase  # type: ignore[unused-ignore,unused-import]
 from fidl._fidl_common import DomainError, FrameworkError, MethodInfo, FidlProtocolMarker, normalize_identifier  # type: ignore[unused-ignore,unused-import]
 
@@ -23,6 +18,9 @@ from abc import abstractmethod, ABC  # type: ignore[unused-ignore,unused-import]
 import collections.abc  # type: ignore[unused-ignore,unused-import]
 
 import fidl_test_errorsyntax_parent
+
+
+_UNDEFINED: typing.Any = object()
 
 
 @dataclass
@@ -42,12 +40,21 @@ class ExampleUseOfErrorSyntaxCallWhichMayFailRequest:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "test.errorsyntax",
-            "test.errorsyntax/ExampleUseOfErrorSyntaxCallWhichMayFailRequest",
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 16)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 16)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_string(self.s, _offset + 0)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        s = decoder.read_string(_offset + 0, nullable=False)
+        return cls(
+            s=s,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -78,12 +85,21 @@ class ExampleUseOfErrorSyntaxCallWhichMayFailResponse:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "test.errorsyntax",
-            "test.errorsyntax/ExampleUseOfErrorSyntax_CallWhichMayFail_Response",
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 8)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 8)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_int64(self.value, _offset + 0)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        value = decoder.read_int64(_offset + 0)
+        return cls(
+            value=value,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -132,8 +148,8 @@ class ExampleUseOfErrorSyntaxCallWhichMayFailResult:
         self,
         response: typing.Optional[
             ExampleUseOfErrorSyntaxCallWhichMayFailResponse
-        ] = None,
-        err: typing.Optional[int] = None,
+        ] = _UNDEFINED,
+        err: typing.Optional[int] = _UNDEFINED,
         _empty: typing.Optional[tuple[()]] = None,
     ):
         object.__init__(self)
@@ -143,14 +159,16 @@ class ExampleUseOfErrorSyntaxCallWhichMayFailResult:
         number_of_variants = 0
         variants = []
 
-        if response is not None:
-            self._response = response
-            variants.append("response")
-            number_of_variants += 1
-        if err is not None:
-            self._err = err
-            variants.append("err")
-            number_of_variants += 1
+        if response is not _UNDEFINED:
+            if response is not None:
+                self._response = response
+                variants.append("response")
+                number_of_variants += 1
+        if err is not _UNDEFINED:
+            if err is not None:
+                self._err = err
+                variants.append("err")
+                number_of_variants += 1
         if number_of_variants > 1:
             raise TypeError(
                 f"Exactly one variant must be specified for {self.__fidl_raw_type__}: {variants}"
@@ -173,13 +191,59 @@ class ExampleUseOfErrorSyntaxCallWhichMayFailResult:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "test.errorsyntax",
-            "test.errorsyntax/ExampleUseOfErrorSyntax_CallWhichMayFail_Result",
-        )
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 16)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 16)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        if hasattr(self, "_response"):
+            encoder.write_uint64(1, _offset)
+            encoder.write_envelope(
+                getattr(self, "_response"),
+                _offset + 8,
+                ExampleUseOfErrorSyntaxCallWhichMayFailResponse._encode,
+                8,
+                False,
+            )
+            return
+        if hasattr(self, "_err"):
+            encoder.write_uint64(2, _offset)
+            encoder.write_envelope(
+                getattr(self, "_err"),
+                _offset + 8,
+                lambda val, enc, off: enc.write_uint32(val, off),
+                4,
+                True,
+            )
+            return
+        encoder.write_inline(_offset, b"\x00" * 16)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        ordinal = decoder.read_uint64(_offset)
+        if ordinal == 0:
+            return cls(_empty=())
+        if ordinal == 1:
+            val = decoder.read_envelope(
+                _offset + 8,
+                ExampleUseOfErrorSyntaxCallWhichMayFailResponse._decode,
+                8,
+            )
+            return cls(response=val)
+        if ordinal == 2:
+            val = decoder.read_envelope(
+                _offset + 8,
+                lambda dec, off: dec.read_uint32(off),
+                4,
+            )
+            return cls(err=val)
+
+        # Skip unknown envelope
+        decoder.skip_envelope(_offset + 8)
+        raise ValueError(f"Unknown union ordinal {ordinal}")
 
     def unwrap(self) -> ExampleUseOfErrorSyntaxCallWhichMayFailResponse:
         """Returns the response if result does not contain an error. Otherwise, raises an exception."""
@@ -233,14 +297,6 @@ class ExampleUseOfErrorSyntaxServer(ServerBase, ABC):
         ),
     }
 
-    @staticmethod
-    def construct_response_object(
-        response_ident: str, response_obj: typing.Any
-    ) -> typing.Any:
-        return fidl._construct.construct_response_object(
-            response_ident, response_obj
-        )
-
     ComposedCallWhichMayFailResponse: typing.TypeAlias = typing.Union[
         DomainError,
         fidl_test_errorsyntax_parent.ParentUsesErrorSyntaxComposedCallWhichMayFailResponse,
@@ -280,14 +336,6 @@ class ExampleUseOfErrorSyntaxClient(FidlClient):
     __fidl_kind__ = "client"
     library = "test.errorsyntax"
 
-    @staticmethod
-    def construct_response_object(
-        response_ident: str, response_obj: typing.Any
-    ) -> typing.Any:
-        return fidl._construct.construct_response_object(
-            response_ident, response_obj
-        )
-
     def composed_call_which_may_fail(
         self,
         *,
@@ -310,9 +358,6 @@ class ExampleUseOfErrorSyntaxClient(FidlClient):
                 3565108794310607393,
                 "test.errorsyntax",
                 msg,
-                normalize_identifier(
-                    "test.errorsyntax.parent/ParentUsesErrorSyntax_ComposedCallWhichMayFail_Result"
-                ),
             ),
         )
         return ret
@@ -337,9 +382,6 @@ class ExampleUseOfErrorSyntaxClient(FidlClient):
                 3757408930698888354,
                 "test.errorsyntax",
                 msg,
-                normalize_identifier(
-                    "test.errorsyntax/ExampleUseOfErrorSyntax_CallWhichMayFail_Result"
-                ),
             ),
         )
         return ret
@@ -350,15 +392,19 @@ class ExampleUseOfErrorSyntaxEventHandler(EventHandlerBase, ABC):
     library = "test.errorsyntax"
     method_map: typing.Dict[int, MethodInfo] = {}
 
-    @staticmethod
-    def construct_response_object(
-        response_ident: str, response_obj: typing.Any
-    ) -> typing.Any:
-        return fidl._construct.construct_response_object(
-            response_ident, response_obj
-        )
-
 
 ExampleUseOfErrorSyntaxMarker = FidlProtocolMarker(
     "(nondiscoverable) test.errorsyntax/ExampleUseOfErrorSyntax"
+)
+
+
+fidl.register_method(
+    3565108794310607393,
+    fidl_test_errorsyntax_parent.ParentUsesErrorSyntaxComposedCallWhichMayFailRequest,
+    fidl_test_errorsyntax_parent.ParentUsesErrorSyntaxComposedCallWhichMayFailResult,
+)
+fidl.register_method(
+    3757408930698888354,
+    ExampleUseOfErrorSyntaxCallWhichMayFailRequest,
+    ExampleUseOfErrorSyntaxCallWhichMayFailResult,
 )

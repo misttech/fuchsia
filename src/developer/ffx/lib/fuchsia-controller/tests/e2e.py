@@ -4,13 +4,13 @@
 import asyncio
 import os
 import os.path
+import struct
 import sys
 import typing
 import unittest
 
 import fidl_fuchsia_controller_test as fc_test
 import fidl_fuchsia_developer_ffx as ffx_fidl
-from fidl_codec import encode_fidl_message, method_ordinal
 from fuchsia_controller_py import (
     Channel,
     Context,
@@ -106,24 +106,27 @@ class EndToEnd(unittest.IsolatedAsyncioTestCase):
         coro = echo_proxy.echo_string(value="foo")
         buf, _ = await async_ch1.read()
         txid = int.from_bytes(buf[0:4], sys.byteorder)
-        encoded_bytes, _ = encode_fidl_message(
-            object=ffx_fidl.EchoEchoStringRequest(value="foo"),
-            library="fuchsia.developer.ffx",
-            type_name="fuchsia.developer.ffx/EchoEchoStringRequest",
-            txid=txid,
-            ordinal=method_ordinal(
-                protocol="fuchsia.developer.ffx/Echo", method="EchoString"
-            ),
+
+        ordinal = next(
+            ord
+            for ord, info in ffx_fidl.EchoServer.method_map.items()
+            if info.name == "echo_string"
+        )
+
+        def encode_message(obj: typing.Any) -> tuple[bytes, list[typing.Any]]:
+            if obj is not None:
+                payload, handles = obj.encode()
+            else:
+                payload, handles = b"", []
+            header = struct.pack("<IHBBQ", txid, 0x02, 0x00, 0x01, ordinal)
+            return header + payload, handles
+
+        encoded_bytes, _ = encode_message(
+            ffx_fidl.EchoEchoStringRequest(value="foo")
         )
         self.assertEqual(buf, encoded_bytes)
-        msg = encode_fidl_message(
-            object=ffx_fidl.EchoEchoStringResponse(response="otherthing"),
-            library="fuchsia.developer.ffx",
-            type_name="fuchsia.developer.ffx/EchoEchoStringResponse",
-            txid=txid,
-            ordinal=method_ordinal(
-                protocol="fuchsia.developer.ffx/Echo", method="EchoString"
-            ),
+        msg = encode_message(
+            ffx_fidl.EchoEchoStringResponse(response="otherthing")
         )
         async_ch1.write(msg)
         result = await coro

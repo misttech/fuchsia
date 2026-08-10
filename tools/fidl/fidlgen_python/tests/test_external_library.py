@@ -6,8 +6,6 @@ import unittest
 
 import fidl_test_python_otherstruct as test_python_otherstruct
 import fidl_test_python_struct as test_python_struct
-from fidl import construct_response_object
-from fidl_codec import decode_standalone
 
 
 class ExternalLibraryTestsuite(unittest.TestCase):
@@ -35,11 +33,9 @@ class ExternalLibraryTestsuite(unittest.TestCase):
         # fmt: off
         encoded_bytes = bytearray([0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00])
         # fmt: on
-        type_name = "test.python.struct/StructWithExternalStructField"
-        value = decode_standalone(
-            type_name=type_name, bytes=encoded_bytes, handles=handles
+        value = test_python_struct.StructWithExternalStructField.decode(
+            encoded_bytes, handles
         )
-        value = construct_response_object(type_name, value)
         self.assertEqual(
             value,
             test_python_struct.StructWithExternalStructField(
@@ -60,11 +56,9 @@ class ExternalLibraryTestsuite(unittest.TestCase):
         # fmt: off
         encoded_bytes = bytearray([0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00])
         # fmt: on
-        type_name = "test.python.struct/StructWithExternalEnumField"
-        value = decode_standalone(
-            type_name=type_name, bytes=encoded_bytes, handles=handles
+        value = test_python_struct.StructWithExternalEnumField.decode(
+            encoded_bytes, handles
         )
-        value = construct_response_object(type_name, value)
         self.assertEqual(
             value,
             test_python_struct.StructWithExternalEnumField(value=0),

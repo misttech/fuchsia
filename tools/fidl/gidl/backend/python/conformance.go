@@ -121,7 +121,7 @@ func decodeSuccessCases(gidlDecodeSuccesses []ir.DecodeSuccess, schema mixer.Sch
 				Context:       encodingContext(encoding.WireFormat),
 				HandleDefs:    buildHandleDefs(decodeSuccess.HandleDefs),
 				Handles:       buildHandles(encoding.Handles),
-				ValueType:     decl.Name(),
+				ValueType:     declName(decl),
 				Bytes:         buildBytes(encoding.Bytes),
 				EqualityCheck: equalityCheck,
 			})

@@ -3,24 +3,22 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from fidl_codec import add_ir_path, encode_fidl_object
 import sys
 import typing
 import enum
 
 import fidl
-from fidl._ir import get_fidl_ir_map
 
-_ir_path = get_fidl_ir_map()["test.protocolrequest"]
-add_ir_path(_ir_path)
 
 from fidl._client import EventHandlerBase, FidlClient  # type: ignore[unused-ignore,unused-import]
-import fidl._construct  # type: ignore[unused-ignore,unused-import]
 from fidl._server import ServerBase  # type: ignore[unused-ignore,unused-import]
 from fidl._fidl_common import DomainError, FrameworkError, MethodInfo, FidlProtocolMarker, normalize_identifier  # type: ignore[unused-ignore,unused-import]
 
 from abc import abstractmethod, ABC  # type: ignore[unused-ignore,unused-import]
 import collections.abc  # type: ignore[unused-ignore,unused-import]
+
+
+_UNDEFINED: typing.Any = object()
 
 
 @dataclass
@@ -38,12 +36,21 @@ class ParentGetChildRequestResponse:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "test.protocolrequest",
-            "test.protocolrequest/ParentGetChildRequestResponse",
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 4)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 4)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_handle(self.r, _offset + 0, obj_type=4, rights=61454)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        r = decoder.read_handle(_offset + 0, nullable=False)
+        return cls(
+            r=r,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -72,12 +79,21 @@ class ParentGetChildResponse:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "test.protocolrequest",
-            "test.protocolrequest/ParentGetChildResponse",
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 4)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 4)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_handle(self.c, _offset + 0, obj_type=4, rights=61454)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        c = decoder.read_handle(_offset + 0, nullable=False)
+        return cls(
+            c=c,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -106,12 +122,21 @@ class ParentTakeChildRequest:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "test.protocolrequest",
-            "test.protocolrequest/ParentTakeChildRequest",
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 4)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 4)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_handle(self.c, _offset + 0, obj_type=4, rights=61454)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        c = decoder.read_handle(_offset + 0, nullable=False)
+        return cls(
+            c=c,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -140,12 +165,21 @@ class ParentTakeChildRequestRequest:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "test.protocolrequest",
-            "test.protocolrequest/ParentTakeChildRequestRequest",
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 4)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 4)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_handle(self.r, _offset + 0, obj_type=4, rights=61454)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        r = decoder.read_handle(_offset + 0, nullable=False)
+        return cls(
+            r=r,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -164,40 +198,16 @@ class ChildServer(ServerBase, ABC):
     library = "test.protocolrequest"
     method_map: typing.Dict[int, MethodInfo] = {}
 
-    @staticmethod
-    def construct_response_object(
-        response_ident: str, response_obj: typing.Any
-    ) -> typing.Any:
-        return fidl._construct.construct_response_object(
-            response_ident, response_obj
-        )
-
 
 class ChildClient(FidlClient):
     __fidl_kind__ = "client"
     library = "test.protocolrequest"
-
-    @staticmethod
-    def construct_response_object(
-        response_ident: str, response_obj: typing.Any
-    ) -> typing.Any:
-        return fidl._construct.construct_response_object(
-            response_ident, response_obj
-        )
 
 
 class ChildEventHandler(EventHandlerBase, ABC):
     __fidl_kind__ = "event_handler"
     library = "test.protocolrequest"
     method_map: typing.Dict[int, MethodInfo] = {}
-
-    @staticmethod
-    def construct_response_object(
-        response_ident: str, response_obj: typing.Any
-    ) -> typing.Any:
-        return fidl._construct.construct_response_object(
-            response_ident, response_obj
-        )
 
 
 ChildMarker = FidlProtocolMarker("(nondiscoverable) test.protocolrequest/Child")
@@ -240,14 +250,6 @@ class ParentServer(ServerBase, ABC):
             response_identifier="",
         ),
     }
-
-    @staticmethod
-    def construct_response_object(
-        response_ident: str, response_obj: typing.Any
-    ) -> typing.Any:
-        return fidl._construct.construct_response_object(
-            response_ident, response_obj
-        )
 
     GetChildResponse: typing.TypeAlias = ParentGetChildResponse
 
@@ -304,14 +306,6 @@ class ParentClient(FidlClient):
     __fidl_kind__ = "client"
     library = "test.protocolrequest"
 
-    @staticmethod
-    def construct_response_object(
-        response_ident: str, response_obj: typing.Any
-    ) -> typing.Any:
-        return fidl._construct.construct_response_object(
-            response_ident, response_obj
-        )
-
     def get_child(
         self,
     ) -> collections.abc.Coroutine[
@@ -326,9 +320,6 @@ class ParentClient(FidlClient):
                 881818649151440699,
                 "test.protocolrequest",
                 msg,
-                normalize_identifier(
-                    "test.protocolrequest/ParentGetChildResponse"
-                ),
             ),
         )
         return ret
@@ -347,9 +338,6 @@ class ParentClient(FidlClient):
                 1096855814967598201,
                 "test.protocolrequest",
                 msg,
-                normalize_identifier(
-                    "test.protocolrequest/ParentGetChildRequestResponse"
-                ),
             ),
         )
         return ret
@@ -392,15 +380,29 @@ class ParentEventHandler(EventHandlerBase, ABC):
     library = "test.protocolrequest"
     method_map: typing.Dict[int, MethodInfo] = {}
 
-    @staticmethod
-    def construct_response_object(
-        response_ident: str, response_obj: typing.Any
-    ) -> typing.Any:
-        return fidl._construct.construct_response_object(
-            response_ident, response_obj
-        )
-
 
 ParentMarker = FidlProtocolMarker(
     "(nondiscoverable) test.protocolrequest/Parent"
+)
+
+
+fidl.register_method(
+    881818649151440699,
+    None,
+    ParentGetChildResponse,
+)
+fidl.register_method(
+    1096855814967598201,
+    None,
+    ParentGetChildRequestResponse,
+)
+fidl.register_method(
+    4470101341872267920,
+    ParentTakeChildRequest,
+    None,
+)
+fidl.register_method(
+    2333981071306416007,
+    ParentTakeChildRequestRequest,
+    None,
 )

@@ -3,24 +3,22 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from fidl_codec import add_ir_path, encode_fidl_object
 import sys
 import typing
 import enum
 
 import fidl
-from fidl._ir import get_fidl_ir_map
 
-_ir_path = get_fidl_ir_map()["test.union"]
-add_ir_path(_ir_path)
 
 from fidl._client import EventHandlerBase, FidlClient  # type: ignore[unused-ignore,unused-import]
-import fidl._construct  # type: ignore[unused-ignore,unused-import]
 from fidl._server import ServerBase  # type: ignore[unused-ignore,unused-import]
 from fidl._fidl_common import DomainError, FrameworkError, MethodInfo, FidlProtocolMarker, normalize_identifier  # type: ignore[unused-ignore,unused-import]
 
 from abc import abstractmethod, ABC  # type: ignore[unused-ignore,unused-import]
 import collections.abc  # type: ignore[unused-ignore,unused-import]
+
+
+_UNDEFINED: typing.Any = object()
 
 
 @dataclass
@@ -36,9 +34,19 @@ class Empty:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(self, "test.union", "test.union/Empty")
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 1)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 1)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        pass
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        return cls()
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
     # of needing to support creation of a "default object" before decoding.
@@ -62,10 +70,28 @@ class NullableUnionStruct:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self, "test.union", "test.union/NullableUnionStruct"
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 16)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 16)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        if self.the_union is not None:
+            Union._encode(self.the_union, encoder, _offset + 0)
+        else:
+            encoder.write_inline(_offset + 0, b"\x00" * 16)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        the_union = (
+            None
+            if decoder.read_uint64(_offset + 0) == 0
+            else Union._decode(decoder, _offset + 0)
+        )
+        return cls(
+            the_union=the_union,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -94,9 +120,22 @@ class Pasta:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(self, "test.union", "test.union/Pasta")
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 16)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 16)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_string(self.sauce, _offset + 0)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        sauce = decoder.read_string(_offset + 0, nullable=False)
+        return cls(
+            sauce=sauce,
+        )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
     # of needing to support creation of a "default object" before decoding.
@@ -124,9 +163,32 @@ class Pizza:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(self, "test.union", "test.union/Pizza")
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 16)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 16)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_vector(
+            self.toppings,
+            _offset + 0,
+            lambda val, enc, off: enc.write_string(val, off),
+            16,
+        )
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        toppings = decoder.read_vector(
+            _offset + 0,
+            lambda dec, off: dec.read_string(off, nullable=False),
+            16,
+            nullable=False,
+        )
+        return cls(
+            toppings=toppings,
+        )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
     # of needing to support creation of a "default object" before decoding.
@@ -154,10 +216,28 @@ class StructWithNullableUnion:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self, "test.union", "test.union/StructWithNullableUnion"
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 16)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 16)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        if self.x1 is not None:
+            OlderSimpleUnion._encode(self.x1, encoder, _offset + 0)
+        else:
+            encoder.write_inline(_offset + 0, b"\x00" * 16)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        x1 = (
+            None
+            if decoder.read_uint64(_offset + 0) == 0
+            else OlderSimpleUnion._decode(decoder, _offset + 0)
+        )
+        return cls(
+            x1=x1,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -188,12 +268,21 @@ class TestProtocolFlexibleUnionHenceResponseMustBeHeapAllocatedResponse:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "test.union",
-            "test.union/TestProtocolFlexibleUnionHenceResponseMustBeHeapAllocatedResponse",
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 16)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 16)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        OlderSimpleUnion._encode(self.xu, encoder, _offset + 0)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        xu = OlderSimpleUnion._decode(decoder, _offset + 0)
+        return cls(
+            xu=xu,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -224,12 +313,21 @@ class TestProtocolStrictUnionHenceResponseMayBeStackAllocatedResponse:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "test.union",
-            "test.union/TestProtocolStrictUnionHenceResponseMayBeStackAllocatedResponse",
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 16)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 16)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        StrictBoundedUnion._encode(self.xu, encoder, _offset + 0)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        xu = StrictBoundedUnion._decode(decoder, _offset + 0)
+        return cls(
+            xu=xu,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -260,10 +358,27 @@ class UnionSandwich:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self, "test.union", "test.union/UnionSandwich"
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 32)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 32)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_uint32(self.a, _offset + 0)
+        ExplicitFlexibleUnion._encode(self.u, encoder, _offset + 8)
+        encoder.write_uint32(self.b, _offset + 24)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        a = decoder.read_uint32(_offset + 0)
+        u = ExplicitFlexibleUnion._decode(decoder, _offset + 8)
+        b = decoder.read_uint32(_offset + 24)
+        return cls(
+            a=a,
+            u=u,
+            b=b,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -304,11 +419,25 @@ class EmptyFlexibleUnion:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self, "test.union", "test.union/EmptyFlexibleUnion"
-        )
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 16)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 16)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_inline(_offset, b"\x00" * 16)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        ordinal = decoder.read_uint64(_offset)
+        if ordinal == 0:
+            return cls()
+
+        # Skip unknown envelope
+        decoder.skip_envelope(_offset + 8)
+        raise ValueError(f"Unknown union ordinal {ordinal}")
 
     @classmethod
     def make_default(cls) -> typing.Self:
@@ -346,8 +475,8 @@ class ExplicitFlexibleUnion:
 
     def __init__(
         self,
-        i: typing.Optional[int] = None,
-        f: typing.Optional[float] = None,
+        i: typing.Optional[int] = _UNDEFINED,
+        f: typing.Optional[float] = _UNDEFINED,
         _empty: typing.Optional[tuple[()]] = None,
     ):
         object.__init__(self)
@@ -357,14 +486,16 @@ class ExplicitFlexibleUnion:
         number_of_variants = 0
         variants = []
 
-        if i is not None:
-            self._i = i
-            variants.append("i")
-            number_of_variants += 1
-        if f is not None:
-            self._f = f
-            variants.append("f")
-            number_of_variants += 1
+        if i is not _UNDEFINED:
+            if i is not None:
+                self._i = i
+                variants.append("i")
+                number_of_variants += 1
+        if f is not _UNDEFINED:
+            if f is not None:
+                self._f = f
+                variants.append("f")
+                number_of_variants += 1
         if number_of_variants != 1:
             raise TypeError(
                 f"Exactly one variant must be specified for {self.__fidl_raw_type__}: {variants}"
@@ -385,11 +516,59 @@ class ExplicitFlexibleUnion:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self, "test.union", "test.union/ExplicitFlexibleUnion"
-        )
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 16)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 16)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        if hasattr(self, "_i"):
+            encoder.write_uint64(1, _offset)
+            encoder.write_envelope(
+                getattr(self, "_i"),
+                _offset + 8,
+                lambda val, enc, off: enc.write_int64(val, off),
+                8,
+                False,
+            )
+            return
+        if hasattr(self, "_f"):
+            encoder.write_uint64(4, _offset)
+            encoder.write_envelope(
+                getattr(self, "_f"),
+                _offset + 8,
+                lambda val, enc, off: enc.write_float32(val, off),
+                4,
+                True,
+            )
+            return
+        encoder.write_inline(_offset, b"\x00" * 16)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        ordinal = decoder.read_uint64(_offset)
+        if ordinal == 0:
+            return cls(_empty=())
+        if ordinal == 1:
+            val = decoder.read_envelope(
+                _offset + 8,
+                lambda dec, off: dec.read_int64(off),
+                8,
+            )
+            return cls(i=val)
+        if ordinal == 4:
+            val = decoder.read_envelope(
+                _offset + 8,
+                lambda dec, off: dec.read_float32(off),
+                4,
+            )
+            return cls(f=val)
+
+        # Skip unknown envelope
+        decoder.skip_envelope(_offset + 8)
+        raise ValueError(f"Unknown union ordinal {ordinal}")
 
     @classmethod
     def make_default(cls) -> typing.Self:
@@ -427,8 +606,8 @@ class ExplicitFoo:
 
     def __init__(
         self,
-        i: typing.Optional[int] = None,
-        s: typing.Optional[str] = None,
+        i: typing.Optional[int] = _UNDEFINED,
+        s: typing.Optional[str] = _UNDEFINED,
         _empty: typing.Optional[tuple[()]] = None,
     ):
         object.__init__(self)
@@ -438,14 +617,16 @@ class ExplicitFoo:
         number_of_variants = 0
         variants = []
 
-        if i is not None:
-            self._i = i
-            variants.append("i")
-            number_of_variants += 1
-        if s is not None:
-            self._s = s
-            variants.append("s")
-            number_of_variants += 1
+        if i is not _UNDEFINED:
+            if i is not None:
+                self._i = i
+                variants.append("i")
+                number_of_variants += 1
+        if s is not _UNDEFINED:
+            if s is not None:
+                self._s = s
+                variants.append("s")
+                number_of_variants += 1
         if number_of_variants != 1:
             raise TypeError(
                 f"Exactly one variant must be specified for {self.__fidl_raw_type__}: {variants}"
@@ -466,9 +647,59 @@ class ExplicitFoo:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(self, "test.union", "test.union/ExplicitFoo")
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 16)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 16)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        if hasattr(self, "_i"):
+            encoder.write_uint64(1, _offset)
+            encoder.write_envelope(
+                getattr(self, "_i"),
+                _offset + 8,
+                lambda val, enc, off: enc.write_int32(val, off),
+                4,
+                True,
+            )
+            return
+        if hasattr(self, "_s"):
+            encoder.write_uint64(2, _offset)
+            encoder.write_envelope(
+                getattr(self, "_s"),
+                _offset + 8,
+                lambda val, enc, off: enc.write_string(val, off),
+                16,
+                False,
+            )
+            return
+        encoder.write_inline(_offset, b"\x00" * 16)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        ordinal = decoder.read_uint64(_offset)
+        if ordinal == 0:
+            return cls(_empty=())
+        if ordinal == 1:
+            val = decoder.read_envelope(
+                _offset + 8,
+                lambda dec, off: dec.read_int32(off),
+                4,
+            )
+            return cls(i=val)
+        if ordinal == 2:
+            val = decoder.read_envelope(
+                _offset + 8,
+                lambda dec, off: dec.read_string(off, nullable=False),
+                16,
+            )
+            return cls(s=val)
+
+        # Skip unknown envelope
+        decoder.skip_envelope(_offset + 8)
+        raise ValueError(f"Unknown union ordinal {ordinal}")
 
     @classmethod
     def make_default(cls) -> typing.Self:
@@ -506,8 +737,8 @@ class ExplicitPizzaOrPasta:
 
     def __init__(
         self,
-        pizza: typing.Optional[Pizza] = None,
-        pasta: typing.Optional[Pasta] = None,
+        pizza: typing.Optional[Pizza] = _UNDEFINED,
+        pasta: typing.Optional[Pasta] = _UNDEFINED,
         _empty: typing.Optional[tuple[()]] = None,
     ):
         object.__init__(self)
@@ -517,14 +748,16 @@ class ExplicitPizzaOrPasta:
         number_of_variants = 0
         variants = []
 
-        if pizza is not None:
-            self._pizza = pizza
-            variants.append("pizza")
-            number_of_variants += 1
-        if pasta is not None:
-            self._pasta = pasta
-            variants.append("pasta")
-            number_of_variants += 1
+        if pizza is not _UNDEFINED:
+            if pizza is not None:
+                self._pizza = pizza
+                variants.append("pizza")
+                number_of_variants += 1
+        if pasta is not _UNDEFINED:
+            if pasta is not None:
+                self._pasta = pasta
+                variants.append("pasta")
+                number_of_variants += 1
         if number_of_variants != 1:
             raise TypeError(
                 f"Exactly one variant must be specified for {self.__fidl_raw_type__}: {variants}"
@@ -545,11 +778,59 @@ class ExplicitPizzaOrPasta:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self, "test.union", "test.union/ExplicitPizzaOrPasta"
-        )
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 16)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 16)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        if hasattr(self, "_pizza"):
+            encoder.write_uint64(1, _offset)
+            encoder.write_envelope(
+                getattr(self, "_pizza"),
+                _offset + 8,
+                Pizza._encode,
+                16,
+                False,
+            )
+            return
+        if hasattr(self, "_pasta"):
+            encoder.write_uint64(4, _offset)
+            encoder.write_envelope(
+                getattr(self, "_pasta"),
+                _offset + 8,
+                Pasta._encode,
+                16,
+                False,
+            )
+            return
+        encoder.write_inline(_offset, b"\x00" * 16)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        ordinal = decoder.read_uint64(_offset)
+        if ordinal == 0:
+            return cls(_empty=())
+        if ordinal == 1:
+            val = decoder.read_envelope(
+                _offset + 8,
+                Pizza._decode,
+                16,
+            )
+            return cls(pizza=val)
+        if ordinal == 4:
+            val = decoder.read_envelope(
+                _offset + 8,
+                Pasta._decode,
+                16,
+            )
+            return cls(pasta=val)
+
+        # Skip unknown envelope
+        decoder.skip_envelope(_offset + 8)
+        raise ValueError(f"Unknown union ordinal {ordinal}")
 
     @classmethod
     def make_default(cls) -> typing.Self:
@@ -587,8 +868,8 @@ class ExplicitStrictFoo:
 
     def __init__(
         self,
-        i: typing.Optional[int] = None,
-        s: typing.Optional[str] = None,
+        i: typing.Optional[int] = _UNDEFINED,
+        s: typing.Optional[str] = _UNDEFINED,
         _empty: typing.Optional[tuple[()]] = None,
     ):
         object.__init__(self)
@@ -598,14 +879,16 @@ class ExplicitStrictFoo:
         number_of_variants = 0
         variants = []
 
-        if i is not None:
-            self._i = i
-            variants.append("i")
-            number_of_variants += 1
-        if s is not None:
-            self._s = s
-            variants.append("s")
-            number_of_variants += 1
+        if i is not _UNDEFINED:
+            if i is not None:
+                self._i = i
+                variants.append("i")
+                number_of_variants += 1
+        if s is not _UNDEFINED:
+            if s is not None:
+                self._s = s
+                variants.append("s")
+                number_of_variants += 1
         if number_of_variants != 1:
             raise TypeError(
                 f"Exactly one variant must be specified for {self.__fidl_raw_type__}: {variants}"
@@ -626,11 +909,59 @@ class ExplicitStrictFoo:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self, "test.union", "test.union/ExplicitStrictFoo"
-        )
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 16)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 16)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        if hasattr(self, "_i"):
+            encoder.write_uint64(2, _offset)
+            encoder.write_envelope(
+                getattr(self, "_i"),
+                _offset + 8,
+                lambda val, enc, off: enc.write_int32(val, off),
+                4,
+                True,
+            )
+            return
+        if hasattr(self, "_s"):
+            encoder.write_uint64(3, _offset)
+            encoder.write_envelope(
+                getattr(self, "_s"),
+                _offset + 8,
+                lambda val, enc, off: enc.write_string(val, off),
+                16,
+                False,
+            )
+            return
+        encoder.write_inline(_offset, b"\x00" * 16)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        ordinal = decoder.read_uint64(_offset)
+        if ordinal == 0:
+            return cls(_empty=())
+        if ordinal == 2:
+            val = decoder.read_envelope(
+                _offset + 8,
+                lambda dec, off: dec.read_int32(off),
+                4,
+            )
+            return cls(i=val)
+        if ordinal == 3:
+            val = decoder.read_envelope(
+                _offset + 8,
+                lambda dec, off: dec.read_string(off, nullable=False),
+                16,
+            )
+            return cls(s=val)
+
+        # Skip unknown envelope
+        decoder.skip_envelope(_offset + 8)
+        raise ValueError(f"Unknown union ordinal {ordinal}")
 
     @classmethod
     def make_default(cls) -> typing.Self:
@@ -670,8 +1001,8 @@ class ExplicitUnion:
 
     def __init__(
         self,
-        primitive: typing.Optional[int] = None,
-        string_needs_constructor: typing.Optional[str] = None,
+        primitive: typing.Optional[int] = _UNDEFINED,
+        string_needs_constructor: typing.Optional[str] = _UNDEFINED,
         _empty: typing.Optional[tuple[()]] = None,
     ):
         object.__init__(self)
@@ -681,14 +1012,16 @@ class ExplicitUnion:
         number_of_variants = 0
         variants = []
 
-        if primitive is not None:
-            self._primitive = primitive
-            variants.append("primitive")
-            number_of_variants += 1
-        if string_needs_constructor is not None:
-            self._string_needs_constructor = string_needs_constructor
-            variants.append("string_needs_constructor")
-            number_of_variants += 1
+        if primitive is not _UNDEFINED:
+            if primitive is not None:
+                self._primitive = primitive
+                variants.append("primitive")
+                number_of_variants += 1
+        if string_needs_constructor is not _UNDEFINED:
+            if string_needs_constructor is not None:
+                self._string_needs_constructor = string_needs_constructor
+                variants.append("string_needs_constructor")
+                number_of_variants += 1
         if number_of_variants != 1:
             raise TypeError(
                 f"Exactly one variant must be specified for {self.__fidl_raw_type__}: {variants}"
@@ -709,11 +1042,59 @@ class ExplicitUnion:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self, "test.union", "test.union/ExplicitUnion"
-        )
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 16)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 16)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        if hasattr(self, "_primitive"):
+            encoder.write_uint64(1, _offset)
+            encoder.write_envelope(
+                getattr(self, "_primitive"),
+                _offset + 8,
+                lambda val, enc, off: enc.write_int32(val, off),
+                4,
+                True,
+            )
+            return
+        if hasattr(self, "_string_needs_constructor"):
+            encoder.write_uint64(3, _offset)
+            encoder.write_envelope(
+                getattr(self, "_string_needs_constructor"),
+                _offset + 8,
+                lambda val, enc, off: enc.write_string(val, off),
+                16,
+                False,
+            )
+            return
+        encoder.write_inline(_offset, b"\x00" * 16)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        ordinal = decoder.read_uint64(_offset)
+        if ordinal == 0:
+            return cls(_empty=())
+        if ordinal == 1:
+            val = decoder.read_envelope(
+                _offset + 8,
+                lambda dec, off: dec.read_int32(off),
+                4,
+            )
+            return cls(primitive=val)
+        if ordinal == 3:
+            val = decoder.read_envelope(
+                _offset + 8,
+                lambda dec, off: dec.read_string(off, nullable=False),
+                16,
+            )
+            return cls(string_needs_constructor=val)
+
+        # Skip unknown envelope
+        decoder.skip_envelope(_offset + 8)
+        raise ValueError(f"Unknown union ordinal {ordinal}")
 
     @classmethod
     def make_default(cls) -> typing.Self:
@@ -746,7 +1127,7 @@ class FieldCollision:
 
     def __init__(
         self,
-        field_collision_tag: typing.Optional[int] = None,
+        field_collision_tag: typing.Optional[int] = _UNDEFINED,
         _empty: typing.Optional[tuple[()]] = None,
     ):
         object.__init__(self)
@@ -756,10 +1137,11 @@ class FieldCollision:
         number_of_variants = 0
         variants = []
 
-        if field_collision_tag is not None:
-            self._field_collision_tag = field_collision_tag
-            variants.append("field_collision_tag")
-            number_of_variants += 1
+        if field_collision_tag is not _UNDEFINED:
+            if field_collision_tag is not None:
+                self._field_collision_tag = field_collision_tag
+                variants.append("field_collision_tag")
+                number_of_variants += 1
         if number_of_variants != 1:
             raise TypeError(
                 f"Exactly one variant must be specified for {self.__fidl_raw_type__}: {variants}"
@@ -776,11 +1158,42 @@ class FieldCollision:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self, "test.union", "test.union/FieldCollision"
-        )
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 16)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 16)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        if hasattr(self, "_field_collision_tag"):
+            encoder.write_uint64(1, _offset)
+            encoder.write_envelope(
+                getattr(self, "_field_collision_tag"),
+                _offset + 8,
+                lambda val, enc, off: enc.write_int32(val, off),
+                4,
+                True,
+            )
+            return
+        encoder.write_inline(_offset, b"\x00" * 16)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        ordinal = decoder.read_uint64(_offset)
+        if ordinal == 0:
+            return cls(_empty=())
+        if ordinal == 1:
+            val = decoder.read_envelope(
+                _offset + 8,
+                lambda dec, off: dec.read_int32(off),
+                4,
+            )
+            return cls(field_collision_tag=val)
+
+        # Skip unknown envelope
+        decoder.skip_envelope(_offset + 8)
+        raise ValueError(f"Unknown union ordinal {ordinal}")
 
     @classmethod
     def make_default(cls) -> typing.Self:
@@ -818,8 +1231,8 @@ class FlexibleFoo:
 
     def __init__(
         self,
-        s: typing.Optional[str] = None,
-        i: typing.Optional[int] = None,
+        s: typing.Optional[str] = _UNDEFINED,
+        i: typing.Optional[int] = _UNDEFINED,
         _empty: typing.Optional[tuple[()]] = None,
     ):
         object.__init__(self)
@@ -829,14 +1242,16 @@ class FlexibleFoo:
         number_of_variants = 0
         variants = []
 
-        if s is not None:
-            self._s = s
-            variants.append("s")
-            number_of_variants += 1
-        if i is not None:
-            self._i = i
-            variants.append("i")
-            number_of_variants += 1
+        if s is not _UNDEFINED:
+            if s is not None:
+                self._s = s
+                variants.append("s")
+                number_of_variants += 1
+        if i is not _UNDEFINED:
+            if i is not None:
+                self._i = i
+                variants.append("i")
+                number_of_variants += 1
         if number_of_variants != 1:
             raise TypeError(
                 f"Exactly one variant must be specified for {self.__fidl_raw_type__}: {variants}"
@@ -857,9 +1272,59 @@ class FlexibleFoo:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(self, "test.union", "test.union/FlexibleFoo")
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 16)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 16)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        if hasattr(self, "_s"):
+            encoder.write_uint64(1, _offset)
+            encoder.write_envelope(
+                getattr(self, "_s"),
+                _offset + 8,
+                lambda val, enc, off: enc.write_string(val, off),
+                16,
+                False,
+            )
+            return
+        if hasattr(self, "_i"):
+            encoder.write_uint64(2, _offset)
+            encoder.write_envelope(
+                getattr(self, "_i"),
+                _offset + 8,
+                lambda val, enc, off: enc.write_int32(val, off),
+                4,
+                True,
+            )
+            return
+        encoder.write_inline(_offset, b"\x00" * 16)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        ordinal = decoder.read_uint64(_offset)
+        if ordinal == 0:
+            return cls(_empty=())
+        if ordinal == 1:
+            val = decoder.read_envelope(
+                _offset + 8,
+                lambda dec, off: dec.read_string(off, nullable=False),
+                16,
+            )
+            return cls(s=val)
+        if ordinal == 2:
+            val = decoder.read_envelope(
+                _offset + 8,
+                lambda dec, off: dec.read_int32(off),
+                4,
+            )
+            return cls(i=val)
+
+        # Skip unknown envelope
+        decoder.skip_envelope(_offset + 8)
+        raise ValueError(f"Unknown union ordinal {ordinal}")
 
     @classmethod
     def make_default(cls) -> typing.Self:
@@ -897,8 +1362,8 @@ class FlexiblePizzaOrPasta:
 
     def __init__(
         self,
-        pizza: typing.Optional[Pizza] = None,
-        pasta: typing.Optional[Pasta] = None,
+        pizza: typing.Optional[Pizza] = _UNDEFINED,
+        pasta: typing.Optional[Pasta] = _UNDEFINED,
         _empty: typing.Optional[tuple[()]] = None,
     ):
         object.__init__(self)
@@ -908,14 +1373,16 @@ class FlexiblePizzaOrPasta:
         number_of_variants = 0
         variants = []
 
-        if pizza is not None:
-            self._pizza = pizza
-            variants.append("pizza")
-            number_of_variants += 1
-        if pasta is not None:
-            self._pasta = pasta
-            variants.append("pasta")
-            number_of_variants += 1
+        if pizza is not _UNDEFINED:
+            if pizza is not None:
+                self._pizza = pizza
+                variants.append("pizza")
+                number_of_variants += 1
+        if pasta is not _UNDEFINED:
+            if pasta is not None:
+                self._pasta = pasta
+                variants.append("pasta")
+                number_of_variants += 1
         if number_of_variants != 1:
             raise TypeError(
                 f"Exactly one variant must be specified for {self.__fidl_raw_type__}: {variants}"
@@ -936,11 +1403,59 @@ class FlexiblePizzaOrPasta:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self, "test.union", "test.union/FlexiblePizzaOrPasta"
-        )
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 16)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 16)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        if hasattr(self, "_pizza"):
+            encoder.write_uint64(1, _offset)
+            encoder.write_envelope(
+                getattr(self, "_pizza"),
+                _offset + 8,
+                Pizza._encode,
+                16,
+                False,
+            )
+            return
+        if hasattr(self, "_pasta"):
+            encoder.write_uint64(2, _offset)
+            encoder.write_envelope(
+                getattr(self, "_pasta"),
+                _offset + 8,
+                Pasta._encode,
+                16,
+                False,
+            )
+            return
+        encoder.write_inline(_offset, b"\x00" * 16)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        ordinal = decoder.read_uint64(_offset)
+        if ordinal == 0:
+            return cls(_empty=())
+        if ordinal == 1:
+            val = decoder.read_envelope(
+                _offset + 8,
+                Pizza._decode,
+                16,
+            )
+            return cls(pizza=val)
+        if ordinal == 2:
+            val = decoder.read_envelope(
+                _offset + 8,
+                Pasta._decode,
+                16,
+            )
+            return cls(pasta=val)
+
+        # Skip unknown envelope
+        decoder.skip_envelope(_offset + 8)
+        raise ValueError(f"Unknown union ordinal {ordinal}")
 
     @classmethod
     def make_default(cls) -> typing.Self:
@@ -988,11 +1503,11 @@ class FlexibleUnion:
 
     def __init__(
         self,
-        primitive: typing.Optional[int] = None,
-        string_needs_constructor: typing.Optional[str] = None,
+        primitive: typing.Optional[int] = _UNDEFINED,
+        string_needs_constructor: typing.Optional[str] = _UNDEFINED,
         vector_string_also_needs_constructor: typing.Optional[
             typing.Sequence[str]
-        ] = None,
+        ] = _UNDEFINED,
         _empty: typing.Optional[tuple[()]] = None,
     ):
         object.__init__(self)
@@ -1002,20 +1517,23 @@ class FlexibleUnion:
         number_of_variants = 0
         variants = []
 
-        if primitive is not None:
-            self._primitive = primitive
-            variants.append("primitive")
-            number_of_variants += 1
-        if string_needs_constructor is not None:
-            self._string_needs_constructor = string_needs_constructor
-            variants.append("string_needs_constructor")
-            number_of_variants += 1
-        if vector_string_also_needs_constructor is not None:
-            self._vector_string_also_needs_constructor = (
-                vector_string_also_needs_constructor
-            )
-            variants.append("vector_string_also_needs_constructor")
-            number_of_variants += 1
+        if primitive is not _UNDEFINED:
+            if primitive is not None:
+                self._primitive = primitive
+                variants.append("primitive")
+                number_of_variants += 1
+        if string_needs_constructor is not _UNDEFINED:
+            if string_needs_constructor is not None:
+                self._string_needs_constructor = string_needs_constructor
+                variants.append("string_needs_constructor")
+                number_of_variants += 1
+        if vector_string_also_needs_constructor is not _UNDEFINED:
+            if vector_string_also_needs_constructor is not None:
+                self._vector_string_also_needs_constructor = (
+                    vector_string_also_needs_constructor
+                )
+                variants.append("vector_string_also_needs_constructor")
+                number_of_variants += 1
         if number_of_variants != 1:
             raise TypeError(
                 f"Exactly one variant must be specified for {self.__fidl_raw_type__}: {variants}"
@@ -1042,11 +1560,86 @@ class FlexibleUnion:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self, "test.union", "test.union/FlexibleUnion"
-        )
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 16)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 16)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        if hasattr(self, "_primitive"):
+            encoder.write_uint64(1, _offset)
+            encoder.write_envelope(
+                getattr(self, "_primitive"),
+                _offset + 8,
+                lambda val, enc, off: enc.write_int32(val, off),
+                4,
+                True,
+            )
+            return
+        if hasattr(self, "_string_needs_constructor"):
+            encoder.write_uint64(2, _offset)
+            encoder.write_envelope(
+                getattr(self, "_string_needs_constructor"),
+                _offset + 8,
+                lambda val, enc, off: enc.write_string(val, off),
+                16,
+                False,
+            )
+            return
+        if hasattr(self, "_vector_string_also_needs_constructor"):
+            encoder.write_uint64(3, _offset)
+            encoder.write_envelope(
+                getattr(self, "_vector_string_also_needs_constructor"),
+                _offset + 8,
+                lambda val, enc, off: enc.write_vector(
+                    val,
+                    off,
+                    lambda val, enc, off: enc.write_string(val, off),
+                    16,
+                ),
+                16,
+                False,
+            )
+            return
+        encoder.write_inline(_offset, b"\x00" * 16)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        ordinal = decoder.read_uint64(_offset)
+        if ordinal == 0:
+            return cls(_empty=())
+        if ordinal == 1:
+            val = decoder.read_envelope(
+                _offset + 8,
+                lambda dec, off: dec.read_int32(off),
+                4,
+            )
+            return cls(primitive=val)
+        if ordinal == 2:
+            val = decoder.read_envelope(
+                _offset + 8,
+                lambda dec, off: dec.read_string(off, nullable=False),
+                16,
+            )
+            return cls(string_needs_constructor=val)
+        if ordinal == 3:
+            val = decoder.read_envelope(
+                _offset + 8,
+                lambda dec, off: dec.read_vector(
+                    off,
+                    lambda dec, off: dec.read_string(off, nullable=False),
+                    16,
+                    nullable=False,
+                ),
+                16,
+            )
+            return cls(vector_string_also_needs_constructor=val)
+
+        # Skip unknown envelope
+        decoder.skip_envelope(_offset + 8)
+        raise ValueError(f"Unknown union ordinal {ordinal}")
 
     @classmethod
     def make_default(cls) -> typing.Self:
@@ -1089,9 +1682,9 @@ class NewerSimpleUnion:
 
     def __init__(
         self,
-        i: typing.Optional[int] = None,
-        s: typing.Optional[str] = None,
-        v: typing.Optional[typing.Sequence[str]] = None,
+        i: typing.Optional[int] = _UNDEFINED,
+        s: typing.Optional[str] = _UNDEFINED,
+        v: typing.Optional[typing.Sequence[str]] = _UNDEFINED,
         _empty: typing.Optional[tuple[()]] = None,
     ):
         object.__init__(self)
@@ -1101,18 +1694,21 @@ class NewerSimpleUnion:
         number_of_variants = 0
         variants = []
 
-        if i is not None:
-            self._i = i
-            variants.append("i")
-            number_of_variants += 1
-        if s is not None:
-            self._s = s
-            variants.append("s")
-            number_of_variants += 1
-        if v is not None:
-            self._v = v
-            variants.append("v")
-            number_of_variants += 1
+        if i is not _UNDEFINED:
+            if i is not None:
+                self._i = i
+                variants.append("i")
+                number_of_variants += 1
+        if s is not _UNDEFINED:
+            if s is not None:
+                self._s = s
+                variants.append("s")
+                number_of_variants += 1
+        if v is not _UNDEFINED:
+            if v is not None:
+                self._v = v
+                variants.append("v")
+                number_of_variants += 1
         if number_of_variants != 1:
             raise TypeError(
                 f"Exactly one variant must be specified for {self.__fidl_raw_type__}: {variants}"
@@ -1137,11 +1733,86 @@ class NewerSimpleUnion:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self, "test.union", "test.union/NewerSimpleUnion"
-        )
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 16)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 16)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        if hasattr(self, "_i"):
+            encoder.write_uint64(1, _offset)
+            encoder.write_envelope(
+                getattr(self, "_i"),
+                _offset + 8,
+                lambda val, enc, off: enc.write_int64(val, off),
+                8,
+                False,
+            )
+            return
+        if hasattr(self, "_s"):
+            encoder.write_uint64(2, _offset)
+            encoder.write_envelope(
+                getattr(self, "_s"),
+                _offset + 8,
+                lambda val, enc, off: enc.write_string(val, off),
+                16,
+                False,
+            )
+            return
+        if hasattr(self, "_v"):
+            encoder.write_uint64(3, _offset)
+            encoder.write_envelope(
+                getattr(self, "_v"),
+                _offset + 8,
+                lambda val, enc, off: enc.write_vector(
+                    val,
+                    off,
+                    lambda val, enc, off: enc.write_string(val, off),
+                    16,
+                ),
+                16,
+                False,
+            )
+            return
+        encoder.write_inline(_offset, b"\x00" * 16)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        ordinal = decoder.read_uint64(_offset)
+        if ordinal == 0:
+            return cls(_empty=())
+        if ordinal == 1:
+            val = decoder.read_envelope(
+                _offset + 8,
+                lambda dec, off: dec.read_int64(off),
+                8,
+            )
+            return cls(i=val)
+        if ordinal == 2:
+            val = decoder.read_envelope(
+                _offset + 8,
+                lambda dec, off: dec.read_string(off, nullable=False),
+                16,
+            )
+            return cls(s=val)
+        if ordinal == 3:
+            val = decoder.read_envelope(
+                _offset + 8,
+                lambda dec, off: dec.read_vector(
+                    off,
+                    lambda dec, off: dec.read_string(off, nullable=False),
+                    16,
+                    nullable=False,
+                ),
+                16,
+            )
+            return cls(v=val)
+
+        # Skip unknown envelope
+        decoder.skip_envelope(_offset + 8)
+        raise ValueError(f"Unknown union ordinal {ordinal}")
 
     @classmethod
     def make_default(cls) -> typing.Self:
@@ -1179,8 +1850,8 @@ class OlderSimpleUnion:
 
     def __init__(
         self,
-        i: typing.Optional[int] = None,
-        f: typing.Optional[float] = None,
+        i: typing.Optional[int] = _UNDEFINED,
+        f: typing.Optional[float] = _UNDEFINED,
         _empty: typing.Optional[tuple[()]] = None,
     ):
         object.__init__(self)
@@ -1190,14 +1861,16 @@ class OlderSimpleUnion:
         number_of_variants = 0
         variants = []
 
-        if i is not None:
-            self._i = i
-            variants.append("i")
-            number_of_variants += 1
-        if f is not None:
-            self._f = f
-            variants.append("f")
-            number_of_variants += 1
+        if i is not _UNDEFINED:
+            if i is not None:
+                self._i = i
+                variants.append("i")
+                number_of_variants += 1
+        if f is not _UNDEFINED:
+            if f is not None:
+                self._f = f
+                variants.append("f")
+                number_of_variants += 1
         if number_of_variants != 1:
             raise TypeError(
                 f"Exactly one variant must be specified for {self.__fidl_raw_type__}: {variants}"
@@ -1218,11 +1891,59 @@ class OlderSimpleUnion:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self, "test.union", "test.union/OlderSimpleUnion"
-        )
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 16)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 16)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        if hasattr(self, "_i"):
+            encoder.write_uint64(1, _offset)
+            encoder.write_envelope(
+                getattr(self, "_i"),
+                _offset + 8,
+                lambda val, enc, off: enc.write_int64(val, off),
+                8,
+                False,
+            )
+            return
+        if hasattr(self, "_f"):
+            encoder.write_uint64(2, _offset)
+            encoder.write_envelope(
+                getattr(self, "_f"),
+                _offset + 8,
+                lambda val, enc, off: enc.write_float32(val, off),
+                4,
+                True,
+            )
+            return
+        encoder.write_inline(_offset, b"\x00" * 16)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        ordinal = decoder.read_uint64(_offset)
+        if ordinal == 0:
+            return cls(_empty=())
+        if ordinal == 1:
+            val = decoder.read_envelope(
+                _offset + 8,
+                lambda dec, off: dec.read_int64(off),
+                8,
+            )
+            return cls(i=val)
+        if ordinal == 2:
+            val = decoder.read_envelope(
+                _offset + 8,
+                lambda dec, off: dec.read_float32(off),
+                4,
+            )
+            return cls(f=val)
+
+        # Skip unknown envelope
+        decoder.skip_envelope(_offset + 8)
+        raise ValueError(f"Unknown union ordinal {ordinal}")
 
     @classmethod
     def make_default(cls) -> typing.Self:
@@ -1260,8 +1981,8 @@ class PizzaOrPasta:
 
     def __init__(
         self,
-        pizza: typing.Optional[Pizza] = None,
-        pasta: typing.Optional[Pasta] = None,
+        pizza: typing.Optional[Pizza] = _UNDEFINED,
+        pasta: typing.Optional[Pasta] = _UNDEFINED,
         _empty: typing.Optional[tuple[()]] = None,
     ):
         object.__init__(self)
@@ -1271,14 +1992,16 @@ class PizzaOrPasta:
         number_of_variants = 0
         variants = []
 
-        if pizza is not None:
-            self._pizza = pizza
-            variants.append("pizza")
-            number_of_variants += 1
-        if pasta is not None:
-            self._pasta = pasta
-            variants.append("pasta")
-            number_of_variants += 1
+        if pizza is not _UNDEFINED:
+            if pizza is not None:
+                self._pizza = pizza
+                variants.append("pizza")
+                number_of_variants += 1
+        if pasta is not _UNDEFINED:
+            if pasta is not None:
+                self._pasta = pasta
+                variants.append("pasta")
+                number_of_variants += 1
         if number_of_variants != 1:
             raise TypeError(
                 f"Exactly one variant must be specified for {self.__fidl_raw_type__}: {variants}"
@@ -1299,9 +2022,59 @@ class PizzaOrPasta:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(self, "test.union", "test.union/PizzaOrPasta")
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 16)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 16)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        if hasattr(self, "_pizza"):
+            encoder.write_uint64(1, _offset)
+            encoder.write_envelope(
+                getattr(self, "_pizza"),
+                _offset + 8,
+                Pizza._encode,
+                16,
+                False,
+            )
+            return
+        if hasattr(self, "_pasta"):
+            encoder.write_uint64(2, _offset)
+            encoder.write_envelope(
+                getattr(self, "_pasta"),
+                _offset + 8,
+                Pasta._encode,
+                16,
+                False,
+            )
+            return
+        encoder.write_inline(_offset, b"\x00" * 16)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        ordinal = decoder.read_uint64(_offset)
+        if ordinal == 0:
+            return cls(_empty=())
+        if ordinal == 1:
+            val = decoder.read_envelope(
+                _offset + 8,
+                Pizza._decode,
+                16,
+            )
+            return cls(pizza=val)
+        if ordinal == 2:
+            val = decoder.read_envelope(
+                _offset + 8,
+                Pasta._decode,
+                16,
+            )
+            return cls(pasta=val)
+
+        # Skip unknown envelope
+        decoder.skip_envelope(_offset + 8)
+        raise ValueError(f"Unknown union ordinal {ordinal}")
 
     @classmethod
     def make_default(cls) -> typing.Self:
@@ -1339,8 +2112,8 @@ class ReverseOrdinalUnion:
 
     def __init__(
         self,
-        first: typing.Optional[int] = None,
-        second: typing.Optional[int] = None,
+        first: typing.Optional[int] = _UNDEFINED,
+        second: typing.Optional[int] = _UNDEFINED,
         _empty: typing.Optional[tuple[()]] = None,
     ):
         object.__init__(self)
@@ -1350,14 +2123,16 @@ class ReverseOrdinalUnion:
         number_of_variants = 0
         variants = []
 
-        if first is not None:
-            self._first = first
-            variants.append("first")
-            number_of_variants += 1
-        if second is not None:
-            self._second = second
-            variants.append("second")
-            number_of_variants += 1
+        if first is not _UNDEFINED:
+            if first is not None:
+                self._first = first
+                variants.append("first")
+                number_of_variants += 1
+        if second is not _UNDEFINED:
+            if second is not None:
+                self._second = second
+                variants.append("second")
+                number_of_variants += 1
         if number_of_variants != 1:
             raise TypeError(
                 f"Exactly one variant must be specified for {self.__fidl_raw_type__}: {variants}"
@@ -1378,11 +2153,59 @@ class ReverseOrdinalUnion:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self, "test.union", "test.union/ReverseOrdinalUnion"
-        )
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 16)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 16)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        if hasattr(self, "_first"):
+            encoder.write_uint64(1, _offset)
+            encoder.write_envelope(
+                getattr(self, "_first"),
+                _offset + 8,
+                lambda val, enc, off: enc.write_uint32(val, off),
+                4,
+                True,
+            )
+            return
+        if hasattr(self, "_second"):
+            encoder.write_uint64(2, _offset)
+            encoder.write_envelope(
+                getattr(self, "_second"),
+                _offset + 8,
+                lambda val, enc, off: enc.write_uint32(val, off),
+                4,
+                True,
+            )
+            return
+        encoder.write_inline(_offset, b"\x00" * 16)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        ordinal = decoder.read_uint64(_offset)
+        if ordinal == 0:
+            return cls(_empty=())
+        if ordinal == 1:
+            val = decoder.read_envelope(
+                _offset + 8,
+                lambda dec, off: dec.read_uint32(off),
+                4,
+            )
+            return cls(first=val)
+        if ordinal == 2:
+            val = decoder.read_envelope(
+                _offset + 8,
+                lambda dec, off: dec.read_uint32(off),
+                4,
+            )
+            return cls(second=val)
+
+        # Skip unknown envelope
+        decoder.skip_envelope(_offset + 8)
+        raise ValueError(f"Unknown union ordinal {ordinal}")
 
     @classmethod
     def make_default(cls) -> typing.Self:
@@ -1415,7 +2238,7 @@ class StrictBoundedUnion:
 
     def __init__(
         self,
-        v: typing.Optional[typing.Sequence[int]] = None,
+        v: typing.Optional[typing.Sequence[int]] = _UNDEFINED,
         _empty: typing.Optional[tuple[()]] = None,
     ):
         object.__init__(self)
@@ -1425,10 +2248,11 @@ class StrictBoundedUnion:
         number_of_variants = 0
         variants = []
 
-        if v is not None:
-            self._v = v
-            variants.append("v")
-            number_of_variants += 1
+        if v is not _UNDEFINED:
+            if v is not None:
+                self._v = v
+                variants.append("v")
+                number_of_variants += 1
         if number_of_variants != 1:
             raise TypeError(
                 f"Exactly one variant must be specified for {self.__fidl_raw_type__}: {variants}"
@@ -1445,11 +2269,46 @@ class StrictBoundedUnion:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self, "test.union", "test.union/StrictBoundedUnion"
-        )
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 16)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 16)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        if hasattr(self, "_v"):
+            encoder.write_uint64(1, _offset)
+            encoder.write_envelope(
+                getattr(self, "_v"),
+                _offset + 8,
+                lambda val, enc, off: enc.write_vector(
+                    val, off, lambda val, enc, off: enc.write_uint8(val, off), 1
+                ),
+                16,
+                False,
+            )
+            return
+        encoder.write_inline(_offset, b"\x00" * 16)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        ordinal = decoder.read_uint64(_offset)
+        if ordinal == 0:
+            return cls(_empty=())
+        if ordinal == 1:
+            val = decoder.read_envelope(
+                _offset + 8,
+                lambda dec, off: dec.read_vector(
+                    off, lambda dec, off: dec.read_uint8(off), 1, nullable=False
+                ),
+                16,
+            )
+            return cls(v=val)
+
+        # Skip unknown envelope
+        decoder.skip_envelope(_offset + 8)
+        raise ValueError(f"Unknown union ordinal {ordinal}")
 
     @classmethod
     def make_default(cls) -> typing.Self:
@@ -1487,8 +2346,8 @@ class StrictFoo:
 
     def __init__(
         self,
-        s: typing.Optional[str] = None,
-        i: typing.Optional[int] = None,
+        s: typing.Optional[str] = _UNDEFINED,
+        i: typing.Optional[int] = _UNDEFINED,
         _empty: typing.Optional[tuple[()]] = None,
     ):
         object.__init__(self)
@@ -1498,14 +2357,16 @@ class StrictFoo:
         number_of_variants = 0
         variants = []
 
-        if s is not None:
-            self._s = s
-            variants.append("s")
-            number_of_variants += 1
-        if i is not None:
-            self._i = i
-            variants.append("i")
-            number_of_variants += 1
+        if s is not _UNDEFINED:
+            if s is not None:
+                self._s = s
+                variants.append("s")
+                number_of_variants += 1
+        if i is not _UNDEFINED:
+            if i is not None:
+                self._i = i
+                variants.append("i")
+                number_of_variants += 1
         if number_of_variants != 1:
             raise TypeError(
                 f"Exactly one variant must be specified for {self.__fidl_raw_type__}: {variants}"
@@ -1526,9 +2387,59 @@ class StrictFoo:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(self, "test.union", "test.union/StrictFoo")
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 16)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 16)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        if hasattr(self, "_s"):
+            encoder.write_uint64(1, _offset)
+            encoder.write_envelope(
+                getattr(self, "_s"),
+                _offset + 8,
+                lambda val, enc, off: enc.write_string(val, off),
+                16,
+                False,
+            )
+            return
+        if hasattr(self, "_i"):
+            encoder.write_uint64(2, _offset)
+            encoder.write_envelope(
+                getattr(self, "_i"),
+                _offset + 8,
+                lambda val, enc, off: enc.write_int32(val, off),
+                4,
+                True,
+            )
+            return
+        encoder.write_inline(_offset, b"\x00" * 16)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        ordinal = decoder.read_uint64(_offset)
+        if ordinal == 0:
+            return cls(_empty=())
+        if ordinal == 1:
+            val = decoder.read_envelope(
+                _offset + 8,
+                lambda dec, off: dec.read_string(off, nullable=False),
+                16,
+            )
+            return cls(s=val)
+        if ordinal == 2:
+            val = decoder.read_envelope(
+                _offset + 8,
+                lambda dec, off: dec.read_int32(off),
+                4,
+            )
+            return cls(i=val)
+
+        # Skip unknown envelope
+        decoder.skip_envelope(_offset + 8)
+        raise ValueError(f"Unknown union ordinal {ordinal}")
 
     @classmethod
     def make_default(cls) -> typing.Self:
@@ -1566,8 +2477,8 @@ class StrictPizzaOrPasta:
 
     def __init__(
         self,
-        pizza: typing.Optional[Pizza] = None,
-        pasta: typing.Optional[Pasta] = None,
+        pizza: typing.Optional[Pizza] = _UNDEFINED,
+        pasta: typing.Optional[Pasta] = _UNDEFINED,
         _empty: typing.Optional[tuple[()]] = None,
     ):
         object.__init__(self)
@@ -1577,14 +2488,16 @@ class StrictPizzaOrPasta:
         number_of_variants = 0
         variants = []
 
-        if pizza is not None:
-            self._pizza = pizza
-            variants.append("pizza")
-            number_of_variants += 1
-        if pasta is not None:
-            self._pasta = pasta
-            variants.append("pasta")
-            number_of_variants += 1
+        if pizza is not _UNDEFINED:
+            if pizza is not None:
+                self._pizza = pizza
+                variants.append("pizza")
+                number_of_variants += 1
+        if pasta is not _UNDEFINED:
+            if pasta is not None:
+                self._pasta = pasta
+                variants.append("pasta")
+                number_of_variants += 1
         if number_of_variants != 1:
             raise TypeError(
                 f"Exactly one variant must be specified for {self.__fidl_raw_type__}: {variants}"
@@ -1605,11 +2518,59 @@ class StrictPizzaOrPasta:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self, "test.union", "test.union/StrictPizzaOrPasta"
-        )
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 16)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 16)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        if hasattr(self, "_pizza"):
+            encoder.write_uint64(1, _offset)
+            encoder.write_envelope(
+                getattr(self, "_pizza"),
+                _offset + 8,
+                Pizza._encode,
+                16,
+                False,
+            )
+            return
+        if hasattr(self, "_pasta"):
+            encoder.write_uint64(2, _offset)
+            encoder.write_envelope(
+                getattr(self, "_pasta"),
+                _offset + 8,
+                Pasta._encode,
+                16,
+                False,
+            )
+            return
+        encoder.write_inline(_offset, b"\x00" * 16)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        ordinal = decoder.read_uint64(_offset)
+        if ordinal == 0:
+            return cls(_empty=())
+        if ordinal == 1:
+            val = decoder.read_envelope(
+                _offset + 8,
+                Pizza._decode,
+                16,
+            )
+            return cls(pizza=val)
+        if ordinal == 2:
+            val = decoder.read_envelope(
+                _offset + 8,
+                Pasta._decode,
+                16,
+            )
+            return cls(pasta=val)
+
+        # Skip unknown envelope
+        decoder.skip_envelope(_offset + 8)
+        raise ValueError(f"Unknown union ordinal {ordinal}")
 
     @classmethod
     def make_default(cls) -> typing.Self:
@@ -1652,9 +2613,9 @@ class StrictSimpleUnion:
 
     def __init__(
         self,
-        i: typing.Optional[int] = None,
-        f: typing.Optional[float] = None,
-        s: typing.Optional[str] = None,
+        i: typing.Optional[int] = _UNDEFINED,
+        f: typing.Optional[float] = _UNDEFINED,
+        s: typing.Optional[str] = _UNDEFINED,
         _empty: typing.Optional[tuple[()]] = None,
     ):
         object.__init__(self)
@@ -1664,18 +2625,21 @@ class StrictSimpleUnion:
         number_of_variants = 0
         variants = []
 
-        if i is not None:
-            self._i = i
-            variants.append("i")
-            number_of_variants += 1
-        if f is not None:
-            self._f = f
-            variants.append("f")
-            number_of_variants += 1
-        if s is not None:
-            self._s = s
-            variants.append("s")
-            number_of_variants += 1
+        if i is not _UNDEFINED:
+            if i is not None:
+                self._i = i
+                variants.append("i")
+                number_of_variants += 1
+        if f is not _UNDEFINED:
+            if f is not None:
+                self._f = f
+                variants.append("f")
+                number_of_variants += 1
+        if s is not _UNDEFINED:
+            if s is not None:
+                self._s = s
+                variants.append("s")
+                number_of_variants += 1
         if number_of_variants != 1:
             raise TypeError(
                 f"Exactly one variant must be specified for {self.__fidl_raw_type__}: {variants}"
@@ -1700,11 +2664,76 @@ class StrictSimpleUnion:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self, "test.union", "test.union/StrictSimpleUnion"
-        )
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 16)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 16)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        if hasattr(self, "_i"):
+            encoder.write_uint64(1, _offset)
+            encoder.write_envelope(
+                getattr(self, "_i"),
+                _offset + 8,
+                lambda val, enc, off: enc.write_int32(val, off),
+                4,
+                True,
+            )
+            return
+        if hasattr(self, "_f"):
+            encoder.write_uint64(2, _offset)
+            encoder.write_envelope(
+                getattr(self, "_f"),
+                _offset + 8,
+                lambda val, enc, off: enc.write_float32(val, off),
+                4,
+                True,
+            )
+            return
+        if hasattr(self, "_s"):
+            encoder.write_uint64(3, _offset)
+            encoder.write_envelope(
+                getattr(self, "_s"),
+                _offset + 8,
+                lambda val, enc, off: enc.write_string(val, off),
+                16,
+                False,
+            )
+            return
+        encoder.write_inline(_offset, b"\x00" * 16)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        ordinal = decoder.read_uint64(_offset)
+        if ordinal == 0:
+            return cls(_empty=())
+        if ordinal == 1:
+            val = decoder.read_envelope(
+                _offset + 8,
+                lambda dec, off: dec.read_int32(off),
+                4,
+            )
+            return cls(i=val)
+        if ordinal == 2:
+            val = decoder.read_envelope(
+                _offset + 8,
+                lambda dec, off: dec.read_float32(off),
+                4,
+            )
+            return cls(f=val)
+        if ordinal == 3:
+            val = decoder.read_envelope(
+                _offset + 8,
+                lambda dec, off: dec.read_string(off, nullable=False),
+                16,
+            )
+            return cls(s=val)
+
+        # Skip unknown envelope
+        decoder.skip_envelope(_offset + 8)
+        raise ValueError(f"Unknown union ordinal {ordinal}")
 
     @classmethod
     def make_default(cls) -> typing.Self:
@@ -1752,11 +2781,11 @@ class StrictUnion:
 
     def __init__(
         self,
-        primitive: typing.Optional[int] = None,
-        string_needs_constructor: typing.Optional[str] = None,
+        primitive: typing.Optional[int] = _UNDEFINED,
+        string_needs_constructor: typing.Optional[str] = _UNDEFINED,
         vector_string_also_needs_constructor: typing.Optional[
             typing.Sequence[str]
-        ] = None,
+        ] = _UNDEFINED,
         _empty: typing.Optional[tuple[()]] = None,
     ):
         object.__init__(self)
@@ -1766,20 +2795,23 @@ class StrictUnion:
         number_of_variants = 0
         variants = []
 
-        if primitive is not None:
-            self._primitive = primitive
-            variants.append("primitive")
-            number_of_variants += 1
-        if string_needs_constructor is not None:
-            self._string_needs_constructor = string_needs_constructor
-            variants.append("string_needs_constructor")
-            number_of_variants += 1
-        if vector_string_also_needs_constructor is not None:
-            self._vector_string_also_needs_constructor = (
-                vector_string_also_needs_constructor
-            )
-            variants.append("vector_string_also_needs_constructor")
-            number_of_variants += 1
+        if primitive is not _UNDEFINED:
+            if primitive is not None:
+                self._primitive = primitive
+                variants.append("primitive")
+                number_of_variants += 1
+        if string_needs_constructor is not _UNDEFINED:
+            if string_needs_constructor is not None:
+                self._string_needs_constructor = string_needs_constructor
+                variants.append("string_needs_constructor")
+                number_of_variants += 1
+        if vector_string_also_needs_constructor is not _UNDEFINED:
+            if vector_string_also_needs_constructor is not None:
+                self._vector_string_also_needs_constructor = (
+                    vector_string_also_needs_constructor
+                )
+                variants.append("vector_string_also_needs_constructor")
+                number_of_variants += 1
         if number_of_variants != 1:
             raise TypeError(
                 f"Exactly one variant must be specified for {self.__fidl_raw_type__}: {variants}"
@@ -1806,9 +2838,86 @@ class StrictUnion:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(self, "test.union", "test.union/StrictUnion")
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 16)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 16)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        if hasattr(self, "_primitive"):
+            encoder.write_uint64(1, _offset)
+            encoder.write_envelope(
+                getattr(self, "_primitive"),
+                _offset + 8,
+                lambda val, enc, off: enc.write_int32(val, off),
+                4,
+                True,
+            )
+            return
+        if hasattr(self, "_string_needs_constructor"):
+            encoder.write_uint64(2, _offset)
+            encoder.write_envelope(
+                getattr(self, "_string_needs_constructor"),
+                _offset + 8,
+                lambda val, enc, off: enc.write_string(val, off),
+                16,
+                False,
+            )
+            return
+        if hasattr(self, "_vector_string_also_needs_constructor"):
+            encoder.write_uint64(3, _offset)
+            encoder.write_envelope(
+                getattr(self, "_vector_string_also_needs_constructor"),
+                _offset + 8,
+                lambda val, enc, off: enc.write_vector(
+                    val,
+                    off,
+                    lambda val, enc, off: enc.write_string(val, off),
+                    16,
+                ),
+                16,
+                False,
+            )
+            return
+        encoder.write_inline(_offset, b"\x00" * 16)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        ordinal = decoder.read_uint64(_offset)
+        if ordinal == 0:
+            return cls(_empty=())
+        if ordinal == 1:
+            val = decoder.read_envelope(
+                _offset + 8,
+                lambda dec, off: dec.read_int32(off),
+                4,
+            )
+            return cls(primitive=val)
+        if ordinal == 2:
+            val = decoder.read_envelope(
+                _offset + 8,
+                lambda dec, off: dec.read_string(off, nullable=False),
+                16,
+            )
+            return cls(string_needs_constructor=val)
+        if ordinal == 3:
+            val = decoder.read_envelope(
+                _offset + 8,
+                lambda dec, off: dec.read_vector(
+                    off,
+                    lambda dec, off: dec.read_string(off, nullable=False),
+                    16,
+                    nullable=False,
+                ),
+                16,
+            )
+            return cls(vector_string_also_needs_constructor=val)
+
+        # Skip unknown envelope
+        decoder.skip_envelope(_offset + 8)
+        raise ValueError(f"Unknown union ordinal {ordinal}")
 
     @classmethod
     def make_default(cls) -> typing.Self:
@@ -1856,11 +2965,11 @@ class Union:
 
     def __init__(
         self,
-        primitive: typing.Optional[int] = None,
-        string_needs_constructor: typing.Optional[str] = None,
+        primitive: typing.Optional[int] = _UNDEFINED,
+        string_needs_constructor: typing.Optional[str] = _UNDEFINED,
         vector_string_also_needs_constructor: typing.Optional[
             typing.Sequence[str]
-        ] = None,
+        ] = _UNDEFINED,
         _empty: typing.Optional[tuple[()]] = None,
     ):
         object.__init__(self)
@@ -1870,20 +2979,23 @@ class Union:
         number_of_variants = 0
         variants = []
 
-        if primitive is not None:
-            self._primitive = primitive
-            variants.append("primitive")
-            number_of_variants += 1
-        if string_needs_constructor is not None:
-            self._string_needs_constructor = string_needs_constructor
-            variants.append("string_needs_constructor")
-            number_of_variants += 1
-        if vector_string_also_needs_constructor is not None:
-            self._vector_string_also_needs_constructor = (
-                vector_string_also_needs_constructor
-            )
-            variants.append("vector_string_also_needs_constructor")
-            number_of_variants += 1
+        if primitive is not _UNDEFINED:
+            if primitive is not None:
+                self._primitive = primitive
+                variants.append("primitive")
+                number_of_variants += 1
+        if string_needs_constructor is not _UNDEFINED:
+            if string_needs_constructor is not None:
+                self._string_needs_constructor = string_needs_constructor
+                variants.append("string_needs_constructor")
+                number_of_variants += 1
+        if vector_string_also_needs_constructor is not _UNDEFINED:
+            if vector_string_also_needs_constructor is not None:
+                self._vector_string_also_needs_constructor = (
+                    vector_string_also_needs_constructor
+                )
+                variants.append("vector_string_also_needs_constructor")
+                number_of_variants += 1
         if number_of_variants != 1:
             raise TypeError(
                 f"Exactly one variant must be specified for {self.__fidl_raw_type__}: {variants}"
@@ -1910,9 +3022,86 @@ class Union:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(self, "test.union", "test.union/Union")
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 16)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 16)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        if hasattr(self, "_primitive"):
+            encoder.write_uint64(1, _offset)
+            encoder.write_envelope(
+                getattr(self, "_primitive"),
+                _offset + 8,
+                lambda val, enc, off: enc.write_int32(val, off),
+                4,
+                True,
+            )
+            return
+        if hasattr(self, "_string_needs_constructor"):
+            encoder.write_uint64(2, _offset)
+            encoder.write_envelope(
+                getattr(self, "_string_needs_constructor"),
+                _offset + 8,
+                lambda val, enc, off: enc.write_string(val, off),
+                16,
+                False,
+            )
+            return
+        if hasattr(self, "_vector_string_also_needs_constructor"):
+            encoder.write_uint64(3, _offset)
+            encoder.write_envelope(
+                getattr(self, "_vector_string_also_needs_constructor"),
+                _offset + 8,
+                lambda val, enc, off: enc.write_vector(
+                    val,
+                    off,
+                    lambda val, enc, off: enc.write_string(val, off),
+                    16,
+                ),
+                16,
+                False,
+            )
+            return
+        encoder.write_inline(_offset, b"\x00" * 16)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        ordinal = decoder.read_uint64(_offset)
+        if ordinal == 0:
+            return cls(_empty=())
+        if ordinal == 1:
+            val = decoder.read_envelope(
+                _offset + 8,
+                lambda dec, off: dec.read_int32(off),
+                4,
+            )
+            return cls(primitive=val)
+        if ordinal == 2:
+            val = decoder.read_envelope(
+                _offset + 8,
+                lambda dec, off: dec.read_string(off, nullable=False),
+                16,
+            )
+            return cls(string_needs_constructor=val)
+        if ordinal == 3:
+            val = decoder.read_envelope(
+                _offset + 8,
+                lambda dec, off: dec.read_vector(
+                    off,
+                    lambda dec, off: dec.read_string(off, nullable=False),
+                    16,
+                    nullable=False,
+                ),
+                16,
+            )
+            return cls(vector_string_also_needs_constructor=val)
+
+        # Skip unknown envelope
+        decoder.skip_envelope(_offset + 8)
+        raise ValueError(f"Unknown union ordinal {ordinal}")
 
     @classmethod
     def make_default(cls) -> typing.Self:
@@ -1945,7 +3134,7 @@ class UnionContainingEmptyStruct:
 
     def __init__(
         self,
-        empty: typing.Optional[Empty] = None,
+        empty: typing.Optional[Empty] = _UNDEFINED,
         _empty: typing.Optional[tuple[()]] = None,
     ):
         object.__init__(self)
@@ -1955,10 +3144,11 @@ class UnionContainingEmptyStruct:
         number_of_variants = 0
         variants = []
 
-        if empty is not None:
-            self._empty = empty
-            variants.append("empty")
-            number_of_variants += 1
+        if empty is not _UNDEFINED:
+            if empty is not None:
+                self._empty = empty
+                variants.append("empty")
+                number_of_variants += 1
         if number_of_variants != 1:
             raise TypeError(
                 f"Exactly one variant must be specified for {self.__fidl_raw_type__}: {variants}"
@@ -1975,11 +3165,42 @@ class UnionContainingEmptyStruct:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self, "test.union", "test.union/UnionContainingEmptyStruct"
-        )
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 16)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 16)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        if hasattr(self, "_empty"):
+            encoder.write_uint64(1, _offset)
+            encoder.write_envelope(
+                getattr(self, "_empty"),
+                _offset + 8,
+                Empty._encode,
+                1,
+                True,
+            )
+            return
+        encoder.write_inline(_offset, b"\x00" * 16)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        ordinal = decoder.read_uint64(_offset)
+        if ordinal == 0:
+            return cls(_empty=())
+        if ordinal == 1:
+            val = decoder.read_envelope(
+                _offset + 8,
+                Empty._decode,
+                1,
+            )
+            return cls(empty=val)
+
+        # Skip unknown envelope
+        decoder.skip_envelope(_offset + 8)
+        raise ValueError(f"Unknown union ordinal {ordinal}")
 
     @classmethod
     def make_default(cls) -> typing.Self:
@@ -2012,7 +3233,7 @@ class UnionWithAttributes:
 
     def __init__(
         self,
-        x: typing.Optional[int] = None,
+        x: typing.Optional[int] = _UNDEFINED,
         _empty: typing.Optional[tuple[()]] = None,
     ):
         object.__init__(self)
@@ -2022,10 +3243,11 @@ class UnionWithAttributes:
         number_of_variants = 0
         variants = []
 
-        if x is not None:
-            self._x = x
-            variants.append("x")
-            number_of_variants += 1
+        if x is not _UNDEFINED:
+            if x is not None:
+                self._x = x
+                variants.append("x")
+                number_of_variants += 1
         if number_of_variants != 1:
             raise TypeError(
                 f"Exactly one variant must be specified for {self.__fidl_raw_type__}: {variants}"
@@ -2042,11 +3264,42 @@ class UnionWithAttributes:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self, "test.union", "test.union/UnionWithAttributes"
-        )
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 16)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 16)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        if hasattr(self, "_x"):
+            encoder.write_uint64(1, _offset)
+            encoder.write_envelope(
+                getattr(self, "_x"),
+                _offset + 8,
+                lambda val, enc, off: enc.write_int64(val, off),
+                8,
+                False,
+            )
+            return
+        encoder.write_inline(_offset, b"\x00" * 16)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        ordinal = decoder.read_uint64(_offset)
+        if ordinal == 0:
+            return cls(_empty=())
+        if ordinal == 1:
+            val = decoder.read_envelope(
+                _offset + 8,
+                lambda dec, off: dec.read_int64(off),
+                8,
+            )
+            return cls(x=val)
+
+        # Skip unknown envelope
+        decoder.skip_envelope(_offset + 8)
+        raise ValueError(f"Unknown union ordinal {ordinal}")
 
     @classmethod
     def make_default(cls) -> typing.Self:
@@ -2074,14 +3327,6 @@ class TestProtocolServer(ServerBase, ABC):
             response_identifier="test.union/TestProtocolFlexibleUnionHenceResponseMustBeHeapAllocatedResponse",
         ),
     }
-
-    @staticmethod
-    def construct_response_object(
-        response_ident: str, response_obj: typing.Any
-    ) -> typing.Any:
-        return fidl._construct.construct_response_object(
-            response_ident, response_obj
-        )
 
     StrictUnionHenceResponseMayBeStackAllocatedResponse: typing.TypeAlias = (
         TestProtocolStrictUnionHenceResponseMayBeStackAllocatedResponse
@@ -2122,14 +3367,6 @@ class TestProtocolClient(FidlClient):
     __fidl_kind__ = "client"
     library = "test.union"
 
-    @staticmethod
-    def construct_response_object(
-        response_ident: str, response_obj: typing.Any
-    ) -> typing.Any:
-        return fidl._construct.construct_response_object(
-            response_ident, response_obj
-        )
-
     def strict_union_hence_response_may_be_stack_allocated(
         self,
     ) -> collections.abc.Coroutine[
@@ -2148,9 +3385,6 @@ class TestProtocolClient(FidlClient):
                 6628358876445129155,
                 "test.union",
                 msg,
-                normalize_identifier(
-                    "test.union/TestProtocolStrictUnionHenceResponseMayBeStackAllocatedResponse"
-                ),
             ),
         )
         return ret
@@ -2173,9 +3407,6 @@ class TestProtocolClient(FidlClient):
                 7588545459451501794,
                 "test.union",
                 msg,
-                normalize_identifier(
-                    "test.union/TestProtocolFlexibleUnionHenceResponseMustBeHeapAllocatedResponse"
-                ),
             ),
         )
         return ret
@@ -2186,15 +3417,19 @@ class TestProtocolEventHandler(EventHandlerBase, ABC):
     library = "test.union"
     method_map: typing.Dict[int, MethodInfo] = {}
 
-    @staticmethod
-    def construct_response_object(
-        response_ident: str, response_obj: typing.Any
-    ) -> typing.Any:
-        return fidl._construct.construct_response_object(
-            response_ident, response_obj
-        )
-
 
 TestProtocolMarker = FidlProtocolMarker(
     "(nondiscoverable) test.union/TestProtocol"
+)
+
+
+fidl.register_method(
+    6628358876445129155,
+    None,
+    TestProtocolStrictUnionHenceResponseMayBeStackAllocatedResponse,
+)
+fidl.register_method(
+    7588545459451501794,
+    None,
+    TestProtocolFlexibleUnionHenceResponseMustBeHeapAllocatedResponse,
 )

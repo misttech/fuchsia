@@ -3,24 +3,22 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from fidl_codec import add_ir_path, encode_fidl_object
 import sys
 import typing
 import enum
 
 import fidl
-from fidl._ir import get_fidl_ir_map
 
-_ir_path = get_fidl_ir_map()["test.versions"]
-add_ir_path(_ir_path)
 
 from fidl._client import EventHandlerBase, FidlClient  # type: ignore[unused-ignore,unused-import]
-import fidl._construct  # type: ignore[unused-ignore,unused-import]
 from fidl._server import ServerBase  # type: ignore[unused-ignore,unused-import]
 from fidl._fidl_common import DomainError, FrameworkError, MethodInfo, FidlProtocolMarker, normalize_identifier  # type: ignore[unused-ignore,unused-import]
 
 from abc import abstractmethod, ABC  # type: ignore[unused-ignore,unused-import]
 import collections.abc  # type: ignore[unused-ignore,unused-import]
+
+
+_UNDEFINED: typing.Any = object()
 
 
 @dataclass
@@ -38,9 +36,22 @@ class Struct:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(self, "test.versions", "test.versions/Struct")
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 4)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 4)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_uint32(self.x, _offset + 0)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        x = decoder.read_uint32(_offset + 0)
+        return cls(
+            x=x,
+        )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
     # of needing to support creation of a "default object" before decoding.
@@ -74,9 +85,69 @@ class Table:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(self, "test.versions", "test.versions/Table")
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 16)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 16)
+
+    def _encode(self, encoder: fidl.Encoder, offset: int) -> None:
+        max_ord = 0
+        if self.x is not None:
+            max_ord = max(max_ord, 1)
+
+        if max_ord == 0:
+            encoder.write_inline(offset, b"\x00" * 8 + b"\xff" * 8)
+            return
+
+        encoder.write_uint64(max_ord, offset)
+        encoder.write_uint64(0xFFFFFFFFFFFFFFFF, offset + 8)
+
+        def encode_envelopes(
+            val: typing.Any, enc: fidl.Encoder, start_offset: int
+        ) -> None:
+            if max_ord >= 1:
+                enc.write_envelope(
+                    val.x,
+                    start_offset + 0,
+                    lambda val, enc, off: enc.write_uint32(val, off),
+                    4,
+                    True,
+                )
+
+        encoder.ool_tasks.append(
+            lambda: encoder.write_ool_struct(
+                self, encode_envelopes, max_ord * 8
+            )
+        )
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        _max_ord = decoder.read_uint64(_offset)
+        _presence = decoder.read_uint64(_offset + 8)
+        if _presence == 0:
+            return cls()
+
+        _pad_mod = decoder.ool_offset % 8
+        if _pad_mod != 0:
+            decoder.ool_offset += 8 - _pad_mod
+        _env_array_start = decoder.ool_offset
+        decoder.ool_offset += _max_ord * 8
+
+        x = None
+        for _ord_idx in range(1, _max_ord + 1):
+            _env_offset = _env_array_start + (_ord_idx - 1) * 8
+            if _ord_idx == 1:
+                x = decoder.read_envelope(
+                    _env_offset, lambda dec, off: dec.read_uint32(off), 4
+                )
+            else:
+                decoder.skip_envelope(_env_offset)
+
+        return cls(
+            x=x,
+        )
 
     @classmethod
     def make_default(cls) -> typing.Self:
@@ -109,7 +180,7 @@ class Union:
 
     def __init__(
         self,
-        x: typing.Optional[int] = None,
+        x: typing.Optional[int] = _UNDEFINED,
         _empty: typing.Optional[tuple[()]] = None,
     ):
         object.__init__(self)
@@ -119,10 +190,11 @@ class Union:
         number_of_variants = 0
         variants = []
 
-        if x is not None:
-            self._x = x
-            variants.append("x")
-            number_of_variants += 1
+        if x is not _UNDEFINED:
+            if x is not None:
+                self._x = x
+                variants.append("x")
+                number_of_variants += 1
         if number_of_variants != 1:
             raise TypeError(
                 f"Exactly one variant must be specified for {self.__fidl_raw_type__}: {variants}"
@@ -139,40 +211,93 @@ class Union:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(self, "test.versions", "test.versions/Union")
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 16)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 16)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        if hasattr(self, "_x"):
+            encoder.write_uint64(1, _offset)
+            encoder.write_envelope(
+                getattr(self, "_x"),
+                _offset + 8,
+                lambda val, enc, off: enc.write_uint32(val, off),
+                4,
+                True,
+            )
+            return
+        encoder.write_inline(_offset, b"\x00" * 16)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        ordinal = decoder.read_uint64(_offset)
+        if ordinal == 0:
+            return cls(_empty=())
+        if ordinal == 1:
+            val = decoder.read_envelope(
+                _offset + 8,
+                lambda dec, off: dec.read_uint32(off),
+                4,
+            )
+            return cls(x=val)
+
+        # Skip unknown envelope
+        decoder.skip_envelope(_offset + 8)
+        raise ValueError(f"Unknown union ordinal {ordinal}")
 
     @classmethod
     def make_default(cls) -> typing.Self:
         return cls(_empty=())
 
 
-Enum = enum.IntEnum(
-    "Enum",
-    {
-        "__fidl_kind__": "enum",
-        "__fidl_type__": "Enum",
-        "__fidl_raw_type__": "test.versions/Enum",
-        "__strict__": False,
-        "A": 1,
-        "EMPTY__": 0,
-        "make_default": classmethod(lambda cls: cls(0)),
-    },
-)
+class Enum(enum.IntFlag):
+    A = 1
+    EMPTY__ = 0
+
+    @property
+    def name(self) -> str:
+        name = super().name
+        return name if name is not None else f"UNKNOWN_{int(self)}"
+
+    __fidl_kind__ = "enum"
+    __fidl_type__ = "Enum"
+    __fidl_raw_type__ = "test.versions/Enum"
+    __strict__ = False
+    __fidl_inline_size__ = 4
+
+    def _encode(self: int, enc: fidl.Encoder, off: int) -> None:
+        enc.write_uint32(int(self), off)
+
+    @classmethod
+    def _decode(cls, dec: fidl.Decoder, off: int) -> typing.Self:
+        return cls(dec.read_uint32(off))
+
+    @classmethod
+    def make_default(cls) -> typing.Self:
+        return cls(0)
 
 
-Bits = enum.IntFlag(
-    "Bits",
-    {
-        "__fidl_kind__": "bits",
-        "__fidl_type__": "Bits",
-        "__fidl_raw_type__": "test.versions/Bits",
-        "__strict__": False,
-        "A": 1,
-        "make_default": classmethod(lambda cls: cls(value=0)),
-    },
-)
+class Bits(enum.IntFlag):
+    A = 1
+    __fidl_kind__ = "bits"
+    __fidl_type__ = "Bits"
+    __fidl_raw_type__ = "test.versions/Bits"
+    __strict__ = False
+    __fidl_inline_size__ = 4
+
+    def _encode(self: int, enc: fidl.Encoder, off: int) -> None:
+        enc.write_uint32(int(self), off)
+
+    @classmethod
+    def _decode(cls, dec: fidl.Decoder, off: int) -> typing.Self:
+        return cls(dec.read_uint32(off))
+
+    @classmethod
+    def make_default(cls) -> typing.Self:
+        return cls(value=0)
 
 
 # Generated constants
@@ -189,40 +314,16 @@ class OtherProtocolServer(ServerBase, ABC):
     library = "test.versions"
     method_map: typing.Dict[int, MethodInfo] = {}
 
-    @staticmethod
-    def construct_response_object(
-        response_ident: str, response_obj: typing.Any
-    ) -> typing.Any:
-        return fidl._construct.construct_response_object(
-            response_ident, response_obj
-        )
-
 
 class OtherProtocolClient(FidlClient):
     __fidl_kind__ = "client"
     library = "test.versions"
-
-    @staticmethod
-    def construct_response_object(
-        response_ident: str, response_obj: typing.Any
-    ) -> typing.Any:
-        return fidl._construct.construct_response_object(
-            response_ident, response_obj
-        )
 
 
 class OtherProtocolEventHandler(EventHandlerBase, ABC):
     __fidl_kind__ = "event_handler"
     library = "test.versions"
     method_map: typing.Dict[int, MethodInfo] = {}
-
-    @staticmethod
-    def construct_response_object(
-        response_ident: str, response_obj: typing.Any
-    ) -> typing.Any:
-        return fidl._construct.construct_response_object(
-            response_ident, response_obj
-        )
 
 
 OtherProtocolMarker = FidlProtocolMarker(
@@ -244,14 +345,6 @@ class ProtocolServer(ServerBase, ABC):
         ),
     }
 
-    @staticmethod
-    def construct_response_object(
-        response_ident: str, response_obj: typing.Any
-    ) -> typing.Any:
-        return fidl._construct.construct_response_object(
-            response_ident, response_obj
-        )
-
     FooResponse: typing.TypeAlias = None
 
     @abstractmethod
@@ -267,14 +360,6 @@ class ProtocolServer(ServerBase, ABC):
 class ProtocolClient(FidlClient):
     __fidl_kind__ = "client"
     library = "test.versions"
-
-    @staticmethod
-    def construct_response_object(
-        response_ident: str, response_obj: typing.Any
-    ) -> typing.Any:
-        return fidl._construct.construct_response_object(
-            response_ident, response_obj
-        )
 
     def foo(
         self,
@@ -294,13 +379,12 @@ class ProtocolEventHandler(EventHandlerBase, ABC):
     library = "test.versions"
     method_map: typing.Dict[int, MethodInfo] = {}
 
-    @staticmethod
-    def construct_response_object(
-        response_ident: str, response_obj: typing.Any
-    ) -> typing.Any:
-        return fidl._construct.construct_response_object(
-            response_ident, response_obj
-        )
-
 
 ProtocolMarker = FidlProtocolMarker("(nondiscoverable) test.versions/Protocol")
+
+
+fidl.register_method(
+    6231434419097198905,
+    None,
+    None,
+)

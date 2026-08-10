@@ -4,23 +4,22 @@
 
 import inspect
 import logging
-from abc import abstractmethod
+import struct
 from inspect import getframeinfo, stack
-from typing import Any, cast
+from typing import Any
 
 import fuchsia_controller_py as fc
-from fidl_codec import decode_fidl_request, encode_fidl_message
 
 from ._fidl_common import (
     DomainError,
     FidlMessage,
     FidlMeta,
     FrameworkError,
-    GenericResult,
     parse_ordinal,
     parse_txid,
 )
 from ._ipc import GlobalHandleWaker, HandleWaker
+from ._registry import get_registered_method
 
 # Rather than make a long server UUID, this will be a monotonically increasing
 # ID to differentiate servers for debugging purposes.
@@ -44,13 +43,6 @@ class ServerBase(
     _channel: fc.Channel | None
     library: str
     method_map: dict[int, Any]
-
-    @staticmethod
-    @abstractmethod
-    def construct_response_object(
-        response_ident: str, response_obj: Any
-    ) -> Any:
-        ...
 
     def __str__(self) -> str:
         return f"server:{type(self).__name__}:{id(self)}"
@@ -136,45 +128,32 @@ class ServerBase(
             )
         if info.has_result:
             _LOGGER.debug(f"{self} received method response {res}")
+            method_reg = get_registered_method(ordinal)
+            if method_reg is None:
+                raise RuntimeError(f"Unknown ordinal {ordinal}")
+            _, response_cls = method_reg
+            assert response_cls is not None
             if type(res) is DomainError:
-                res = GenericResult(
-                    fidl_type=info.response_identifier, err=res.error
-                )
+                res = response_cls(err=res.error)
             elif type(res) is FrameworkError:
-                res = GenericResult(
-                    fidl_type=info.response_identifier, framework_err=res
-                )
+                res = response_cls(framework_err=res)
             else:
                 if res is None:
-                    res = GenericResult(
-                        fidl_type=info.response_identifier, response=object()
-                    )
+                    res = response_cls(response=None)
                 else:
-                    res = GenericResult(
-                        fidl_type=info.response_identifier, response=res
-                    )
+                    res = response_cls(response=res)
+
         if res is not None:
-            encoded_fidl_message = encode_fidl_message(
-                ordinal=ordinal,
-                object=res,
-                library=self.library,
-                txid=txid,
-                type_name=res.__fidl_raw_type__,
-            )
-            if self._channel is None:
-                raise ValueError("Channel is already closed")
-            self._channel.write(encoded_fidl_message)
-        elif info.empty_response:
-            encoded_fidl_message = encode_fidl_message(
-                ordinal=ordinal,
-                object=None,
-                library=self.library,
-                txid=txid,
-                type_name=None,
-            )
-            if self._channel is None:
-                raise ValueError("Channel is already closed")
-            self._channel.write(encoded_fidl_message)
+            payload_bytes, handles = res.encode()
+        else:
+            payload_bytes, handles = b"", []
+
+        header = struct.pack("<IHBBQ", txid, 0x02, 0x00, 0x01, ordinal)
+        encoded_msg = header + payload_bytes
+
+        if self._channel is None:
+            raise ValueError("Channel is already closed")
+        self._channel.write((encoded_msg, handles))
         return True
 
     async def _channel_read(self) -> FidlMessage:
@@ -197,30 +176,36 @@ class ServerBase(
         raw_msg = await self._channel_read()
         ordinal = parse_ordinal(raw_msg)
         txid = parse_txid(raw_msg)
+        method = get_registered_method(ordinal)
+        if method is None:
+            raise RuntimeError(f"Unknown ordinal {ordinal}")
+        request_cls, _ = method
+
         handles = raw_msg[1]
         verified_handles: list[int] = [0] * len(handles)
         for i in range(len(handles)):
-            # Asserting is not enough for mypy, we must also cast.
-            hdl = cast(fc.BaseHandle, handles[i])
-            assert isinstance(hdl, fc.BaseHandle)
-            verified_handles[i] = hdl.take()
-        msg = decode_fidl_request(bytes=raw_msg[0], handles=verified_handles)
-        result_obj = self.construct_response_object(
-            self.method_map[ordinal].request_ident, msg
-        )
+            hdl = handles[i]
+            if isinstance(hdl, tuple):
+                verified_handles[i] = hdl[1]
+            else:
+                verified_handles[i] = hdl.take()
+
+        if request_cls is not None:
+            result_obj = request_cls.decode(raw_msg[0][16:], verified_handles)
+        else:
+            result_obj = None
+
         return result_obj, txid, ordinal
 
     def _send_event(self, ordinal: int, library: str, msg_obj: Any) -> None:
-        type_name = None
         if msg_obj is not None:
-            type_name = msg_obj.__fidl_raw_type__
-        encoded_fidl_message = encode_fidl_message(
-            ordinal=ordinal,
-            object=msg_obj,
-            library=library,
-            txid=0,
-            type_name=type_name,
-        )
+            payload_bytes, handles = msg_obj.encode()
+        else:
+            payload_bytes, handles = b"", []
+
+        header = struct.pack("<IHBBQ", 0, 0x02, 0x00, 0x01, ordinal)
+        encoded_msg = header + payload_bytes
+
         if self._channel is None:
             raise ValueError("Channel is already closed")
-        self._channel.write(encoded_fidl_message)
+        self._channel.write((encoded_msg, handles))

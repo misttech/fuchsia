@@ -53,7 +53,7 @@ class {{ .PythonName }}:
     def __init__(
         self,
         {{- range .PythonMembers }}
-        {{ .PythonName }}: typing.Optional[{{ .PythonType.PythonName }}] = None,
+        {{ .PythonName }}: typing.Optional[{{ .PythonType.PythonName }}] = _UNDEFINED,
         {{- end }}
         _empty: typing.Optional[tuple[()]]=None,
     ):
@@ -65,10 +65,17 @@ class {{ .PythonName }}:
         variants = []
 
         {{ range .PythonMembers -}}
-        if {{ .PythonName }} is not None:
+        if {{ .PythonName }} is not _UNDEFINED:
+            {{- if (eq .PythonType.PythonName "None") }}
             self._{{ .PythonName }} = {{ .PythonName }}
             variants.append('{{ .PythonName }}')
             number_of_variants += 1
+            {{- else }}
+            if {{ .PythonName }} is not None:
+                self._{{ .PythonName }} = {{ .PythonName }}
+                variants.append('{{ .PythonName }}')
+                number_of_variants += 1
+            {{- end }}
         {{ end -}}
 
         if {{ if .IsResult }}number_of_variants > 1{{ else }}number_of_variants != 1{{ end }}:
@@ -90,9 +97,47 @@ class {{ .PythonName }}:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(self, "{{ .Library }}", "{{ .Name }}")
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 16)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 16)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        {{- range .PythonMembers }}
+        if hasattr(self, "_{{ .PythonName }}"):
+            encoder.write_uint64({{ .Ordinal }}, _offset)
+            encoder.write_envelope(
+                getattr(self, "_{{ .PythonName }}"),
+                _offset + 8,
+                {{ .EncoderFn }},
+                {{ .TypeSize }},
+                {{ if .IsInline }}True{{ else }}False{{ end }},
+            )
+            return
+        {{- end }}
+        encoder.write_inline(_offset, b'\x00' * 16)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        ordinal = decoder.read_uint64(_offset)
+        if ordinal == 0:
+            return cls({{ if .PythonMembers }}_empty=(){{ end }})
+
+        {{- range .PythonMembers }}
+        if ordinal == {{ .Ordinal }}:
+            val = decoder.read_envelope(
+                _offset + 8,
+                {{ .DecoderFn }},
+                {{ .TypeSize }},
+            )
+            return cls({{ .PythonName }}=val)
+        {{- end }}
+
+        # Skip unknown envelope
+        decoder.skip_envelope(_offset + 8)
+        raise ValueError(f"Unknown union ordinal {ordinal}")
 
 
     {{ if .IsResult }}

@@ -5,13 +5,12 @@
 import asyncio
 import inspect
 import logging
-from abc import abstractmethod
+import struct
 from collections.abc import Coroutine
 from inspect import getframeinfo, stack
-from typing import Any, Dict, Set, cast
+from typing import Any, Dict, Set
 
 import fuchsia_controller_py as fc
-from fidl_codec import decode_fidl_response, encode_fidl_message
 
 from ._fidl_common import (
     FIDL_EPITAPH_ORDINAL,
@@ -25,6 +24,7 @@ from ._fidl_common import (
     parse_txid,
 )
 from ._ipc import GlobalHandleWaker, HandleWaker
+from ._registry import get_registered_method
 
 # The active TXID (mutable).
 TXID: TXID_Type = 0
@@ -35,15 +35,12 @@ EVENT_TXID: TXID_Type = 0
 _CLIENT_ID = 0
 _LOGGER = logging.getLogger("fidl.client")
 
+# FIDL transactional message header size:
+# txid (4B) + at-rest flags (2B) + dynamic flags (2B) + magic (1B) + reserved (1B) + ordinal (8B)
+_FIDL_MESSAGE_HEADER_SIZE = 16
+
 
 class FidlClient(metaclass=FidlMeta):
-    @staticmethod
-    @abstractmethod
-    def construct_response_object(
-        response_ident: str, response_obj: Any
-    ) -> Any:
-        ...
-
     def __init__(
         self,
         channel: int | fc.Channel,
@@ -100,16 +97,28 @@ class FidlClient(metaclass=FidlMeta):
         if txid != EVENT_TXID:
             self.pending_txids.remove(txid)
 
-    def _decode(self, txid: TXID_Type, msg: FidlMessage) -> Dict[str, Any]:
+    def _decode(self, txid: TXID_Type, msg: FidlMessage) -> Any:
         self._clean_staging(txid)
+        ordinal = parse_ordinal(msg)
+        method = get_registered_method(ordinal)
+        if method is None:
+            raise RuntimeError(f"Unknown ordinal {ordinal}")
+        _, response_cls = method
+
         handles = msg[1]
         verified_handles: list[int] = [0] * len(handles)
         for i in range(len(handles)):
-            # Asserting is not enough for mypy, we must also cast.
-            hdl = cast(fc.BaseHandle, handles[i])
-            assert isinstance(hdl, fc.BaseHandle)
-            verified_handles[i] = hdl.take()
-        return decode_fidl_response(bytes=msg[0], handles=verified_handles)
+            hdl = handles[i]
+            if isinstance(hdl, tuple):
+                verified_handles[i] = hdl[1]
+            else:
+                verified_handles[i] = hdl.take()
+
+        if response_cls is not None:
+            return response_cls.decode(
+                msg[0][_FIDL_MESSAGE_HEADER_SIZE:], verified_handles
+            )
+        return None
 
     async def next_event(self) -> FidlMessage | None:
         """Attempts to read the next FIDL event from this client.
@@ -260,7 +269,6 @@ class FidlClient(metaclass=FidlMeta):
         ordinal: int,
         library: str,
         msg_obj: Any,
-        response_ident: str,
     ) -> Coroutine[Any, Any, Any]:
         """Sends a two-way asynchronous FIDL request.
 
@@ -268,10 +276,9 @@ class FidlClient(metaclass=FidlMeta):
             ordinal: The method ordinal (for encoding).
             library: The FIDL library from which this method ordinal exists.
             msg_obj: The object being sent.
-            response_ident: The full FIDL identifier of the response object, e.g. foo.bar/Baz
 
         Returns:
-            The object from the two-way function, as constructed from the response_ident type.
+            The object from the two-way function.
         """
         global TXID
         TXID += 1
@@ -279,8 +286,7 @@ class FidlClient(metaclass=FidlMeta):
         self._send_one_way_fidl_request(TXID, ordinal, library, msg_obj)
 
         async def result(txid: int) -> Any:
-            res = await self._read_and_decode(txid)
-            return self.construct_response_object(response_ident, res)
+            return await self._read_and_decode(txid)
 
         return result(TXID)
 
@@ -294,19 +300,17 @@ class FidlClient(metaclass=FidlMeta):
             library: The FIDL library from which this method ordinal exists.
             msg_obj: The object being sent.
         """
-        type_name = None
         if msg_obj is not None:
-            type_name = msg_obj.__fidl_raw_type__
-        encoded_fidl_message = encode_fidl_message(
-            ordinal=ordinal,
-            object=msg_obj,
-            library=library,
-            txid=txid,
-            type_name=type_name,
-        )
+            payload_bytes, handles = msg_obj.encode()
+        else:
+            payload_bytes, handles = b"", []
+
+        header = struct.pack("<IHBBQ", txid, 0x02, 0x00, 0x01, ordinal)
+        encoded_msg = header + payload_bytes
+
         if self._channel is None:
             raise ValueError("Channel is already closed")
-        self._channel.write(encoded_fidl_message)
+        self._channel.write((encoded_msg, handles))
 
 
 class EventHandlerBase(
@@ -320,13 +324,6 @@ class EventHandlerBase(
 
     client: FidlClient
     method_map: Dict[int, Any]
-
-    @staticmethod
-    @abstractmethod
-    def construct_response_object(
-        response_ident: str, response_obj: Any
-    ) -> Any:
-        ...
 
     def __init__(self, client: FidlClient) -> None:
         self.client = client
@@ -352,20 +349,27 @@ class EventHandlerBase(
 
     async def _handle_request_helper(self, msg: FidlMessage) -> None:
         ordinal = parse_ordinal(msg)
+        method = get_registered_method(ordinal)
+        if method is None:
+            raise RuntimeError(f"Unknown ordinal {ordinal}")
+        _, response_cls = method  # Events are registered as response_cls
+
         handles = msg[1]
         verified_handles: list[int] = [0] * len(handles)
         for i in range(len(handles)):
-            # Asserting is not enough for mypy, we must also cast.
-            hdl = cast(fc.BaseHandle, handles[i])
-            assert isinstance(hdl, fc.BaseHandle)
-            verified_handles[i] = hdl.take()
-        decoded_msg = decode_fidl_response(
-            bytes=msg[0], handles=verified_handles
-        )
-        method = self.method_map[ordinal]
-        request_ident = method.request_ident
-        request_obj = self.construct_response_object(request_ident, decoded_msg)
-        method_lambda = getattr(self, method.name)
+            hdl = handles[i]
+            if isinstance(hdl, tuple):
+                verified_handles[i] = hdl[1]
+            else:
+                verified_handles[i] = hdl.take()
+
+        if response_cls is not None:
+            request_obj = response_cls.decode(msg[0][16:], verified_handles)
+        else:
+            request_obj = None
+
+        method_meta = self.method_map[ordinal]
+        method_lambda = getattr(self, method_meta.name)
         if request_obj is not None:
             res = method_lambda(request_obj)
         else:

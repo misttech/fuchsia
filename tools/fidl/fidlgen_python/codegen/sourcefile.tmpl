@@ -13,18 +13,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from fidl_codec import add_ir_path, encode_fidl_object
 import sys
 import typing
 import enum
 
 import fidl
-from fidl._ir import get_fidl_ir_map
-_ir_path = get_fidl_ir_map()["{{ .Name }}"]
-add_ir_path(_ir_path)
+
 
 from fidl._client import EventHandlerBase, FidlClient # type: ignore[unused-ignore,unused-import]
-import fidl._construct # type: ignore[unused-ignore,unused-import]
 from fidl._server import ServerBase # type: ignore[unused-ignore,unused-import]
 from fidl._fidl_common import DomainError, FrameworkError, MethodInfo, FidlProtocolMarker, normalize_identifier # type: ignore[unused-ignore,unused-import]
 
@@ -34,6 +30,8 @@ import collections.abc # type: ignore[unused-ignore,unused-import]
 {{ range .PythonExternalModules -}}
 import {{ . }}
 {{ end }}
+
+_UNDEFINED: typing.Any = object()
 
 {{ range .PythonUnsupportedTypes }}
 class {{ .PythonName }}:
@@ -45,6 +43,13 @@ class {{ .PythonName }}:
             {{ . | escapeQuotes | trimSpace }}
             {{- end }}
             """)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        raise NotImplementedError("{{ .Identifier }} is unsupported")
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        raise NotImplementedError("{{ .Identifier }} is unsupported")
 {{ end }}
 
 

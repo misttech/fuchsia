@@ -57,12 +57,18 @@ type PythonTable struct {
 	Library       string
 	PythonName    string
 	PythonMembers []PythonTableMember
+	EncoderBody   string
+	DecoderBody   string
 }
 
 type PythonTableMember struct {
 	fidlgen.TableMember
 	PythonType PythonType
 	PythonName string
+	EncoderFn  string
+	DecoderFn  string
+	TypeSize   int
+	IsInline   bool
 }
 
 type PythonStruct struct {
@@ -74,8 +80,10 @@ type PythonStruct struct {
 
 type PythonStructMember struct {
 	fidlgen.StructMember
-	PythonType PythonType
-	PythonName string
+	PythonType  PythonType
+	PythonName  string
+	EncoderCall string
+	DecoderCall string
 }
 
 type PythonUnion struct {
@@ -90,6 +98,10 @@ type PythonUnionMember struct {
 	fidlgen.UnionMember
 	PythonType PythonType
 	PythonName string
+	EncoderFn  string
+	DecoderFn  string
+	TypeSize   int
+	IsInline   bool
 }
 
 type PythonAlias struct {
@@ -175,6 +187,24 @@ func (c *compiler) lookupDeclInfo(val fidlgen.EncodedCompoundIdentifier) *fidlge
 	}
 	log.Fatalf("Identifier missing from DeclInfoMap: %v", val)
 	return nil
+}
+
+func (c *compiler) lookupStructSize(val fidlgen.EncodedCompoundIdentifier) int {
+	for _, s := range c.PythonRoot.Root.Structs {
+		if s.Name == val {
+			return s.TypeShapeV2.InlineSize
+		}
+	}
+	for _, s := range c.PythonRoot.Root.ExternalStructs {
+		if s.Name == val {
+			return s.TypeShapeV2.InlineSize
+		}
+	}
+	if declInfo := c.lookupDeclInfo(val); declInfo != nil && declInfo.TypeShapeV2 != nil {
+		return declInfo.TypeShapeV2.InlineSize
+	}
+	log.Fatalf("Cannot determine struct size for identifier: %v", val)
+	return 0
 }
 
 func compileCamelIdentifier(val fidlgen.Identifier) string {
@@ -424,11 +454,17 @@ func (c *compiler) compileTableMember(val fidlgen.TableMember) PythonTableMember
 	if t == nil {
 		log.Fatalf("Type not supported")
 	}
-	return PythonTableMember{
+	member := PythonTableMember{
 		TableMember: val,
 		PythonType:  *t,
 		PythonName:  changeIfReserved(compileSnakeIdentifier(val.Name)),
 	}
+	member.EncoderFn = c.compileEncoderFn(val.Type)
+	member.DecoderFn = c.compileDecoderFn(val.Type)
+	member.TypeSize = val.Type.TypeShapeV2.InlineSize
+	ts := val.Type.TypeShapeV2
+	member.IsInline = ts.InlineSize <= 4
+	return member
 }
 
 func (c *compiler) compileTable(val fidlgen.Table) PythonTable {
@@ -445,6 +481,9 @@ func (c *compiler) compileTable(val fidlgen.Table) PythonTable {
 		python_table.PythonMembers = append(python_table.PythonMembers, member)
 	}
 
+	python_table.EncoderBody = c.compileTableEncoderBody(python_table)
+	python_table.DecoderBody = c.compileTableDecoderBody(python_table)
+
 	return python_table
 }
 
@@ -458,11 +497,14 @@ func (c *compiler) compileStructMember(val fidlgen.StructMember) (PythonStructMe
 		message := UnsupportedMessage(fmt.Sprintf("Failed to compile type of %s", val.Name))
 		return PythonStructMember{}, &message
 	}
-	return PythonStructMember{
+	member := PythonStructMember{
 		StructMember: val,
 		PythonType:   *t,
 		PythonName:   changeIfReserved(compileSnakeIdentifier(val.Name)),
-	}, nil
+	}
+	member.EncoderCall = c.compileMemberEncoderCall(member, "_offset")
+	member.DecoderCall = c.compileMemberDecoderCall(member, "_offset")
+	return member, nil
 }
 
 func (c *compiler) compileStruct(val fidlgen.Struct) (PythonStruct, *PythonUnsupported) {
@@ -701,11 +743,17 @@ func (c *compiler) compileUnionMember(val fidlgen.UnionMember) PythonUnionMember
 	if t == nil {
 		log.Fatalf("Type not supported")
 	}
-	return PythonUnionMember{
+	member := PythonUnionMember{
 		UnionMember: val,
 		PythonType:  *t,
 		PythonName:  changeIfReserved(compileSnakeIdentifier(val.Name)),
 	}
+	member.EncoderFn = c.compileEncoderFn(val.Type)
+	member.DecoderFn = c.compileDecoderFn(val.Type)
+	member.TypeSize = val.Type.TypeShapeV2.InlineSize
+	ts := val.Type.TypeShapeV2
+	member.IsInline = ts.InlineSize <= 4
+	return member
 }
 
 func (c *compiler) compileUnion(val fidlgen.Union) PythonUnion {
@@ -937,4 +985,320 @@ func Compile(root fidlgen.Root) PythonRoot {
 	}
 
 	return c.PythonRoot
+}
+
+func (c *compiler) compileEncoderFn(typ fidlgen.Type) string {
+	switch typ.Kind {
+	case fidlgen.PrimitiveType:
+		return fmt.Sprintf("lambda val, enc, off: enc.write_%s(val, off)", typ.PrimitiveSubtype)
+	case fidlgen.StringType:
+		return "lambda val, enc, off: enc.write_string(val, off)"
+	case fidlgen.HandleType:
+		objType := fidlgen.ObjectTypeFromHandleSubtype(typ.HandleSubtype)
+		return fmt.Sprintf("lambda val, enc, off: enc.write_handle(val, off, obj_type=%d, rights=%d)", objType, uint32(typ.HandleRights))
+	case fidlgen.EndpointType:
+		rights := uint32(typ.HandleRights)
+		if rights == 0 {
+			rights = 61454
+		}
+		return fmt.Sprintf("lambda val, enc, off: enc.write_handle(val, off, obj_type=4, rights=%d)", rights)
+	case fidlgen.IdentifierType:
+		declInfo := c.lookupDeclInfo(typ.Identifier)
+		typeName := *c.compileDeclIdentifier(typ.Identifier)
+		switch declInfo.Type {
+		case fidlgen.StructDeclType:
+			if typ.Nullable {
+				declSize := c.lookupStructSize(typ.Identifier)
+				return fmt.Sprintf("lambda val, enc, off: enc.write_optional_struct(val, off, %s._encode, %d)", typeName, declSize)
+			} else {
+				return fmt.Sprintf("%s._encode", typeName)
+			}
+		case fidlgen.UnionDeclType:
+			if typ.Nullable {
+				return fmt.Sprintf("lambda val, enc, off: %s._encode(val, enc, off) if val is not None else enc.write_inline(off, b'\\x00' * 16)", typeName)
+			} else {
+				return fmt.Sprintf("%s._encode", typeName)
+			}
+		case fidlgen.TableDeclType:
+			return fmt.Sprintf("%s._encode", typeName)
+		case fidlgen.EnumDeclType, fidlgen.BitsDeclType:
+			return fmt.Sprintf("%s._encode", typeName)
+		default:
+			panic(fmt.Sprintf("unknown decl type: %s", declInfo.Type))
+		}
+	case fidlgen.VectorType:
+		elemEnc := c.compileEncoderFn(*typ.ElementType)
+		elemSize := typ.ElementType.TypeShapeV2.InlineSize
+		return fmt.Sprintf("lambda val, enc, off: enc.write_vector(val, off, %s, %d)", elemEnc, elemSize)
+	case fidlgen.ArrayType:
+		elemEnc := c.compileEncoderFn(*typ.ElementType)
+		elemSize := typ.ElementType.TypeShapeV2.InlineSize
+		count := *typ.ElementCount
+		return fmt.Sprintf("lambda val, enc, off: enc.write_array(val, off, %s, %d, %d)", elemEnc, elemSize, count)
+	case fidlgen.InternalType:
+		switch typ.InternalSubtype {
+		case "framework_error", "transport_error":
+			return "lambda val, enc, off: enc.write_int32(val, off)"
+		default:
+			panic(fmt.Sprintf("unknown internal subtype: %s", typ.InternalSubtype))
+		}
+	default:
+		panic(fmt.Sprintf("unknown type kind: %s", typ.Kind))
+	}
+}
+
+func (c *compiler) compileDecoderFn(typ fidlgen.Type) string {
+	switch typ.Kind {
+	case fidlgen.PrimitiveType:
+		return fmt.Sprintf("lambda dec, off: dec.read_%s(off)", typ.PrimitiveSubtype)
+	case fidlgen.StringType:
+		return fmt.Sprintf("lambda dec, off: dec.read_string(off, nullable=%s)", pyBool(typ.Nullable))
+	case fidlgen.HandleType:
+		return fmt.Sprintf("lambda dec, off: dec.read_handle(off, nullable=%s)", pyBool(typ.Nullable))
+	case fidlgen.EndpointType:
+		return fmt.Sprintf("lambda dec, off: dec.read_handle(off, nullable=%s)", pyBool(typ.Nullable))
+	case fidlgen.IdentifierType:
+		declInfo := c.lookupDeclInfo(typ.Identifier)
+		typeName := *c.compileDeclIdentifier(typ.Identifier)
+		switch declInfo.Type {
+		case fidlgen.StructDeclType:
+			if _, ok := c.PythonRoot.EmptySuccessStructs[typ.Identifier]; ok {
+				return "lambda dec, off: None"
+			}
+			if typ.Nullable {
+				declSize := c.lookupStructSize(typ.Identifier)
+				return fmt.Sprintf("lambda dec, off: dec.read_optional_struct(off, %s._decode, %d)", typeName, declSize)
+			} else {
+				return fmt.Sprintf("%s._decode", typeName)
+			}
+
+		case fidlgen.UnionDeclType:
+			if typ.Nullable {
+				return fmt.Sprintf("lambda dec, off: None if dec.read_uint64(off) == 0 else %s._decode(dec, off)", typeName)
+			} else {
+				return fmt.Sprintf("%s._decode", typeName)
+			}
+		case fidlgen.TableDeclType:
+			return fmt.Sprintf("%s._decode", typeName)
+		case fidlgen.EnumDeclType, fidlgen.BitsDeclType:
+			return fmt.Sprintf("%s._decode", typeName)
+		default:
+			panic(fmt.Sprintf("unknown decl type: %s", declInfo.Type))
+		}
+	case fidlgen.VectorType:
+		elemDec := c.compileDecoderFn(*typ.ElementType)
+		elemSize := typ.ElementType.TypeShapeV2.InlineSize
+		return fmt.Sprintf("lambda dec, off: dec.read_vector(off, %s, %d, nullable=%s)", elemDec, elemSize, pyBool(typ.Nullable))
+	case fidlgen.ArrayType:
+		elemDec := c.compileDecoderFn(*typ.ElementType)
+		elemSize := typ.ElementType.TypeShapeV2.InlineSize
+		count := *typ.ElementCount
+		return fmt.Sprintf("lambda dec, off: dec.read_array(off, %s, %d, %d)", elemDec, elemSize, count)
+	case fidlgen.InternalType:
+		switch typ.InternalSubtype {
+		case "framework_error", "transport_error":
+			return "lambda dec, off: FrameworkError(dec.read_int32(off))"
+		default:
+			panic(fmt.Sprintf("unknown internal subtype: %s", typ.InternalSubtype))
+		}
+	default:
+		panic(fmt.Sprintf("unknown type kind: %s", typ.Kind))
+	}
+}
+
+func (c *compiler) compileEncoderCallForType(typ fidlgen.Type, varName string, offsetExpr string) string {
+	switch typ.Kind {
+	case fidlgen.PrimitiveType:
+		return fmt.Sprintf("encoder.write_%s(%s, %s)", typ.PrimitiveSubtype, varName, offsetExpr)
+	case fidlgen.StringType:
+		return fmt.Sprintf("encoder.write_string(%s, %s)", varName, offsetExpr)
+	case fidlgen.HandleType:
+		objType := fidlgen.ObjectTypeFromHandleSubtype(typ.HandleSubtype)
+		return fmt.Sprintf("encoder.write_handle(%s, %s, obj_type=%d, rights=%d)", varName, offsetExpr, objType, uint32(typ.HandleRights))
+	case fidlgen.EndpointType:
+		rights := uint32(typ.HandleRights)
+		if rights == 0 {
+			rights = 61454
+		}
+		return fmt.Sprintf("encoder.write_handle(%s, %s, obj_type=4, rights=%d)", varName, offsetExpr, rights)
+	case fidlgen.IdentifierType:
+		declInfo := c.lookupDeclInfo(typ.Identifier)
+		typeName := *c.compileDeclIdentifier(typ.Identifier)
+		switch declInfo.Type {
+		case fidlgen.StructDeclType:
+			if typ.Nullable {
+				declSize := c.lookupStructSize(typ.Identifier)
+				return fmt.Sprintf("encoder.write_optional_struct(%s, %s, %s._encode, %d)", varName, offsetExpr, typeName, declSize)
+			} else {
+				return fmt.Sprintf("%s._encode(%s, encoder, %s)", typeName, varName, offsetExpr)
+			}
+		case fidlgen.UnionDeclType:
+			if typ.Nullable {
+				return fmt.Sprintf("if %s is not None:\n    %s._encode(%s, encoder, %s)\nelse:\n    encoder.write_inline(%s, b'\\x00' * 16)", varName, typeName, varName, offsetExpr, offsetExpr)
+			} else {
+				return fmt.Sprintf("%s._encode(%s, encoder, %s)", typeName, varName, offsetExpr)
+			}
+		case fidlgen.TableDeclType:
+			return fmt.Sprintf("%s._encode(%s, encoder, %s)", typeName, varName, offsetExpr)
+		case fidlgen.EnumDeclType, fidlgen.BitsDeclType:
+			return fmt.Sprintf("%s._encode(%s, encoder, %s)", typeName, varName, offsetExpr)
+		default:
+			panic(fmt.Sprintf("unknown decl type: %s", declInfo.Type))
+		}
+	case fidlgen.VectorType:
+		elemEnc := c.compileEncoderFn(*typ.ElementType)
+		elemSize := typ.ElementType.TypeShapeV2.InlineSize
+		return fmt.Sprintf("encoder.write_vector(%s, %s, %s, %d)", varName, offsetExpr, elemEnc, elemSize)
+	case fidlgen.ArrayType:
+		elemEnc := c.compileEncoderFn(*typ.ElementType)
+		elemSize := typ.ElementType.TypeShapeV2.InlineSize
+		count := *typ.ElementCount
+		return fmt.Sprintf("encoder.write_array(%s, %s, %s, %d, %d)", varName, offsetExpr, elemEnc, elemSize, count)
+	case fidlgen.InternalType:
+		switch typ.InternalSubtype {
+		case "framework_error", "transport_error":
+			return fmt.Sprintf("encoder.write_int32(%s, %s)", varName, offsetExpr)
+		default:
+			panic(fmt.Sprintf("unknown internal subtype: %s", typ.InternalSubtype))
+		}
+	default:
+		panic(fmt.Sprintf("unknown type kind: %s", typ.Kind))
+	}
+}
+
+func (c *compiler) compileDecoderCallForType(typ fidlgen.Type, offsetExpr string) string {
+	switch typ.Kind {
+	case fidlgen.PrimitiveType:
+		return fmt.Sprintf("decoder.read_%s(%s)", typ.PrimitiveSubtype, offsetExpr)
+	case fidlgen.StringType:
+		return fmt.Sprintf("decoder.read_string(%s, nullable=%s)", offsetExpr, pyBool(typ.Nullable))
+	case fidlgen.HandleType:
+		return fmt.Sprintf("decoder.read_handle(%s, nullable=%s)", offsetExpr, pyBool(typ.Nullable))
+	case fidlgen.EndpointType:
+		return fmt.Sprintf("decoder.read_handle(%s, nullable=%s)", offsetExpr, pyBool(typ.Nullable))
+	case fidlgen.IdentifierType:
+		declInfo := c.lookupDeclInfo(typ.Identifier)
+		typeName := *c.compileDeclIdentifier(typ.Identifier)
+		switch declInfo.Type {
+		case fidlgen.StructDeclType:
+			if typ.Nullable {
+				declSize := c.lookupStructSize(typ.Identifier)
+				return fmt.Sprintf("decoder.read_optional_struct(%s, %s._decode, %d)", offsetExpr, typeName, declSize)
+			} else {
+				return fmt.Sprintf("%s._decode(decoder, %s)", typeName, offsetExpr)
+			}
+		case fidlgen.UnionDeclType:
+			if typ.Nullable {
+				return fmt.Sprintf("(None if decoder.read_uint64(%s) == 0 else %s._decode(decoder, %s))", offsetExpr, typeName, offsetExpr)
+			} else {
+				return fmt.Sprintf("%s._decode(decoder, %s)", typeName, offsetExpr)
+			}
+		case fidlgen.TableDeclType:
+			return fmt.Sprintf("%s._decode(decoder, %s)", typeName, offsetExpr)
+		case fidlgen.EnumDeclType, fidlgen.BitsDeclType:
+			return fmt.Sprintf("%s._decode(decoder, %s)", typeName, offsetExpr)
+		default:
+			panic(fmt.Sprintf("unknown decl type: %s", declInfo.Type))
+		}
+	case fidlgen.VectorType:
+		elemDec := c.compileDecoderFn(*typ.ElementType)
+		elemSize := typ.ElementType.TypeShapeV2.InlineSize
+		return fmt.Sprintf("decoder.read_vector(%s, %s, %d, nullable=%s)", offsetExpr, elemDec, elemSize, pyBool(typ.Nullable))
+	case fidlgen.ArrayType:
+		elemDec := c.compileDecoderFn(*typ.ElementType)
+		elemSize := typ.ElementType.TypeShapeV2.InlineSize
+		count := *typ.ElementCount
+		return fmt.Sprintf("decoder.read_array(%s, %s, %d, %d)", offsetExpr, elemDec, elemSize, count)
+	case fidlgen.InternalType:
+		switch typ.InternalSubtype {
+		case "framework_error", "transport_error":
+			return fmt.Sprintf("FrameworkError(decoder.read_int32(%s))", offsetExpr)
+		default:
+			panic(fmt.Sprintf("unknown internal subtype: %s", typ.InternalSubtype))
+		}
+	default:
+		panic(fmt.Sprintf("unknown type kind: %s", typ.Kind))
+	}
+}
+
+func (c *compiler) compileMemberEncoderCall(member PythonStructMember, offsetName string) string {
+	typ := member.PythonType.Type
+	memberOffset := member.FieldShapeV2.Offset
+	varName := fmt.Sprintf("self.%s", member.PythonName)
+	return c.compileEncoderCallForType(typ, varName, fmt.Sprintf("%s + %d", offsetName, memberOffset))
+}
+
+func (c *compiler) compileMemberDecoderCall(member PythonStructMember, offsetName string) string {
+	typ := member.PythonType.Type
+	memberOffset := member.FieldShapeV2.Offset
+	offsetExpr := fmt.Sprintf("%s + %d", offsetName, memberOffset)
+	return c.compileDecoderCallForType(typ, offsetExpr)
+}
+
+func (c *compiler) compileTableEncoderBody(table PythonTable) string {
+	var sb strings.Builder
+	maxOrd := 0
+	if len(table.PythonMembers) > 0 {
+		maxOrd = table.PythonMembers[len(table.PythonMembers)-1].Ordinal
+	}
+
+	memberMap := make(map[int]PythonTableMember)
+	for _, m := range table.PythonMembers {
+		memberMap[m.Ordinal] = m
+	}
+
+	for i := 1; i <= maxOrd; i++ {
+		sb.WriteString(fmt.Sprintf("if max_ord >= %d:\n", i))
+		if m, ok := memberMap[i]; ok {
+			isInline := "False"
+			if m.IsInline {
+				isInline = "True"
+			}
+			sb.WriteString(fmt.Sprintf("    enc.write_envelope(val.%s, start_offset + %d, %s, %d, %s)\n",
+				m.PythonName, (i-1)*8, m.EncoderFn, m.TypeSize, isInline))
+		} else {
+			sb.WriteString(fmt.Sprintf("    enc.write_inline(start_offset + %d, b'\\x00' * 8)\n", (i-1)*8))
+		}
+	}
+	return sb.String()
+}
+
+func (c *compiler) compileTableDecoderBody(table PythonTable) string {
+	var sb strings.Builder
+
+	// Initialize all known members to None
+	for _, m := range table.PythonMembers {
+		sb.WriteString(fmt.Sprintf("%s = None\n", m.PythonName))
+	}
+
+	sb.WriteString("for _ord_idx in range(1, _max_ord + 1):\n")
+	sb.WriteString("    _env_offset = _env_array_start + (_ord_idx - 1) * 8\n")
+
+	first := true
+	for _, m := range table.PythonMembers {
+		cond := "elif"
+		if first {
+			cond = "if"
+			first = false
+		}
+		sb.WriteString(fmt.Sprintf("    %s _ord_idx == %d:\n", cond, m.Ordinal))
+		sb.WriteString(fmt.Sprintf("        %s = decoder.read_envelope(_env_offset, %s, %d)\n",
+			m.PythonName, m.DecoderFn, m.TypeSize))
+	}
+
+	if len(table.PythonMembers) > 0 {
+		sb.WriteString("    else:\n")
+		sb.WriteString("        decoder.skip_envelope(_env_offset)\n")
+	} else {
+		sb.WriteString("    decoder.skip_envelope(_env_offset)\n")
+	}
+
+	return sb.String()
+}
+
+func pyBool(b bool) string {
+	if b {
+		return "True"
+	}
+	return "False"
 }

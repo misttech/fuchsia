@@ -170,3 +170,16 @@ def normalize_identifier(identifier: str) -> str:
     if identifier.endswith("_Result") or identifier.endswith("_Response"):
         return identifier.replace("_", "")
     return identifier
+
+
+class Unsupported:
+    """Sentinel type used by fidlgen_python to stub out unsupported FIDL constructs.
+
+    When fidlgen_python encounters unsupported types (such as structs with deprecated
+    defaults), it generates stub classes whose `__init__` requires an instance of
+    `fidl.Unsupported`. Because `Unsupported` raises `NotImplementedError` when
+    instantiated, this prevents construction of unsupported FIDL types at runtime.
+    """
+
+    def __init__(self, _unsupported: typing.Self) -> None:
+        raise NotImplementedError

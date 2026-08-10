@@ -3,24 +3,22 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from fidl_codec import add_ir_path, encode_fidl_object
 import sys
 import typing
 import enum
 
 import fidl
-from fidl._ir import get_fidl_ir_map
 
-_ir_path = get_fidl_ir_map()["test.protocols"]
-add_ir_path(_ir_path)
 
 from fidl._client import EventHandlerBase, FidlClient  # type: ignore[unused-ignore,unused-import]
-import fidl._construct  # type: ignore[unused-ignore,unused-import]
 from fidl._server import ServerBase  # type: ignore[unused-ignore,unused-import]
 from fidl._fidl_common import DomainError, FrameworkError, MethodInfo, FidlProtocolMarker, normalize_identifier  # type: ignore[unused-ignore,unused-import]
 
 from abc import abstractmethod, ABC  # type: ignore[unused-ignore,unused-import]
 import collections.abc  # type: ignore[unused-ignore,unused-import]
+
+
+_UNDEFINED: typing.Any = object()
 
 
 @dataclass
@@ -39,12 +37,24 @@ class ChannelProtocolEventARequest:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "test.protocols",
-            "test.protocols/ChannelProtocolEventARequest",
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 16)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 16)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_int64(self.a, _offset + 0)
+        encoder.write_int64(self.b, _offset + 8)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        a = decoder.read_int64(_offset + 0)
+        b = decoder.read_int64(_offset + 8)
+        return cls(
+            a=a,
+            b=b,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -75,12 +85,24 @@ class ChannelProtocolMethodARequest:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "test.protocols",
-            "test.protocols/ChannelProtocolMethodARequest",
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 16)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 16)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_int64(self.a, _offset + 0)
+        encoder.write_int64(self.b, _offset + 8)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        a = decoder.read_int64(_offset + 0)
+        b = decoder.read_int64(_offset + 8)
+        return cls(
+            a=a,
+            b=b,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -111,12 +133,24 @@ class ChannelProtocolMethodBRequest:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "test.protocols",
-            "test.protocols/ChannelProtocolMethodBRequest",
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 16)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 16)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_int64(self.a, _offset + 0)
+        encoder.write_int64(self.b, _offset + 8)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        a = decoder.read_int64(_offset + 0)
+        b = decoder.read_int64(_offset + 8)
+        return cls(
+            a=a,
+            b=b,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -146,12 +180,21 @@ class ChannelProtocolMethodBResponse:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "test.protocols",
-            "test.protocols/ChannelProtocolMethodBResponse",
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 8)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 8)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_int64(self.result, _offset + 0)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        result = decoder.read_int64(_offset + 0)
+        return cls(
+            result=result,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -180,12 +223,23 @@ class ChannelProtocolMutateSocketRequest:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "test.protocols",
-            "test.protocols/ChannelProtocolMutateSocketRequest",
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 4)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 4)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_handle(
+            self.a, _offset + 0, obj_type=14, rights=2147483648
+        )
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        a = decoder.read_handle(_offset + 0, nullable=False)
+        return cls(
+            a=a,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -214,12 +268,23 @@ class ChannelProtocolMutateSocketResponse:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "test.protocols",
-            "test.protocols/ChannelProtocolMutateSocketResponse",
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 4)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 4)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_handle(
+            self.b, _offset + 0, obj_type=14, rights=2147483648
+        )
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        b = decoder.read_handle(_offset + 0, nullable=False)
+        return cls(
+            b=b,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -248,12 +313,21 @@ class ChannelProtocolTakeHandleRequest:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "test.protocols",
-            "test.protocols/ChannelProtocolTakeHandleRequest",
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 4)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 4)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_handle(self.h, _offset + 0, obj_type=0, rights=2147483648)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        h = decoder.read_handle(_offset + 0, nullable=False)
+        return cls(
+            h=h,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -282,12 +356,21 @@ class HandleRightsProtocolAnEventRequest:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "test.protocols",
-            "test.protocols/HandleRightsProtocolAnEventRequest",
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 4)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 4)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_handle(self.h, _offset + 0, obj_type=14, rights=3)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        h = decoder.read_handle(_offset + 0, nullable=False)
+        return cls(
+            h=h,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -318,12 +401,21 @@ class HandleRightsProtocolNoResponseMethodRequest:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "test.protocols",
-            "test.protocols/HandleRightsProtocolNoResponseMethodRequest",
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 4)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 4)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_handle(self.h, _offset + 0, obj_type=14, rights=3)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        h = decoder.read_handle(_offset + 0, nullable=False)
+        return cls(
+            h=h,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -354,12 +446,21 @@ class HandleRightsProtocolResponseMethodRequest:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "test.protocols",
-            "test.protocols/HandleRightsProtocolResponseMethodRequest",
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 4)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 4)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_handle(self.h, _offset + 0, obj_type=14, rights=3)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        h = decoder.read_handle(_offset + 0, nullable=False)
+        return cls(
+            h=h,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -390,12 +491,21 @@ class HandleRightsProtocolResponseMethodResponse:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "test.protocols",
-            "test.protocols/HandleRightsProtocolResponseMethodResponse",
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 4)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 4)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_handle(self.h, _offset + 0, obj_type=14, rights=2)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        h = decoder.read_handle(_offset + 0, nullable=False)
+        return cls(
+            h=h,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -438,12 +548,63 @@ class ManyParametersFifteenRequest:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "test.protocols",
-            "test.protocols/ManyParametersFifteenRequest",
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 15)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 15)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_bool(self.p1, _offset + 0)
+        encoder.write_bool(self.p2, _offset + 1)
+        encoder.write_bool(self.p3, _offset + 2)
+        encoder.write_bool(self.p4, _offset + 3)
+        encoder.write_bool(self.p5, _offset + 4)
+        encoder.write_bool(self.p6, _offset + 5)
+        encoder.write_bool(self.p7, _offset + 6)
+        encoder.write_bool(self.p8, _offset + 7)
+        encoder.write_bool(self.p9, _offset + 8)
+        encoder.write_bool(self.p10, _offset + 9)
+        encoder.write_bool(self.p11, _offset + 10)
+        encoder.write_bool(self.p12, _offset + 11)
+        encoder.write_bool(self.p13, _offset + 12)
+        encoder.write_bool(self.p14, _offset + 13)
+        encoder.write_bool(self.p15, _offset + 14)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        p1 = decoder.read_bool(_offset + 0)
+        p2 = decoder.read_bool(_offset + 1)
+        p3 = decoder.read_bool(_offset + 2)
+        p4 = decoder.read_bool(_offset + 3)
+        p5 = decoder.read_bool(_offset + 4)
+        p6 = decoder.read_bool(_offset + 5)
+        p7 = decoder.read_bool(_offset + 6)
+        p8 = decoder.read_bool(_offset + 7)
+        p9 = decoder.read_bool(_offset + 8)
+        p10 = decoder.read_bool(_offset + 9)
+        p11 = decoder.read_bool(_offset + 10)
+        p12 = decoder.read_bool(_offset + 11)
+        p13 = decoder.read_bool(_offset + 12)
+        p14 = decoder.read_bool(_offset + 13)
+        p15 = decoder.read_bool(_offset + 14)
+        return cls(
+            p1=p1,
+            p2=p2,
+            p3=p3,
+            p4=p4,
+            p5=p5,
+            p6=p6,
+            p7=p7,
+            p8=p8,
+            p9=p9,
+            p10=p10,
+            p11=p11,
+            p12=p12,
+            p13=p13,
+            p14=p14,
+            p15=p15,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -486,12 +647,21 @@ class MethodWithUnionUnionMethodRequest:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "test.protocols",
-            "test.protocols/MethodWithUnionUnionMethodRequest",
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 16)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 16)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        TheUnion._encode(self.u, encoder, _offset + 0)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        u = TheUnion._decode(decoder, _offset + 0)
+        return cls(
+            u=u,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -520,12 +690,28 @@ class MethodWithUnionUnionMethodResponse:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "test.protocols",
-            "test.protocols/MethodWithUnionUnionMethodResponse",
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 16)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 16)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        if self.u is not None:
+            TheUnion._encode(self.u, encoder, _offset + 0)
+        else:
+            encoder.write_inline(_offset + 0, b"\x00" * 16)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        u = (
+            None
+            if decoder.read_uint64(_offset + 0) == 0
+            else TheUnion._decode(decoder, _offset + 0)
+        )
+        return cls(
+            u=u,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -557,10 +743,34 @@ class ProtocolEnds:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self, "test.protocols", "test.protocols/ProtocolEnds"
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 16)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 16)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_handle(self.client, _offset + 0, obj_type=4, rights=61454)
+        encoder.write_handle(self.server, _offset + 4, obj_type=4, rights=61454)
+        encoder.write_handle(
+            self.client_opt, _offset + 8, obj_type=4, rights=61454
+        )
+        encoder.write_handle(
+            self.server_opt, _offset + 12, obj_type=4, rights=61454
+        )
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        client = decoder.read_handle(_offset + 0, nullable=False)
+        server = decoder.read_handle(_offset + 4, nullable=False)
+        client_opt = decoder.read_handle(_offset + 8, nullable=True)
+        server_opt = decoder.read_handle(_offset + 12, nullable=True)
+        return cls(
+            client=client,
+            server=server,
+            client_opt=client_opt,
+            server_opt=server_opt,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -592,12 +802,21 @@ class WithAndWithoutRequestResponseNoRequestWithResponseResponse:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "test.protocols",
-            "test.protocols/WithAndWithoutRequestResponseNoRequestWithResponseResponse",
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 16)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 16)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_string(self.ret, _offset + 0)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        ret = decoder.read_string(_offset + 0, nullable=False)
+        return cls(
+            ret=ret,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -628,12 +847,21 @@ class WithAndWithoutRequestResponseOnWithResponseRequest:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "test.protocols",
-            "test.protocols/WithAndWithoutRequestResponseOnWithResponseRequest",
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 16)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 16)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_string(self.ret, _offset + 0)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        ret = decoder.read_string(_offset + 0, nullable=False)
+        return cls(
+            ret=ret,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -664,12 +892,21 @@ class WithAndWithoutRequestResponseWithRequestEmptyResponseRequest:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "test.protocols",
-            "test.protocols/WithAndWithoutRequestResponseWithRequestEmptyResponseRequest",
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 16)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 16)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_string(self.arg, _offset + 0)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        arg = decoder.read_string(_offset + 0, nullable=False)
+        return cls(
+            arg=arg,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -698,12 +935,21 @@ class WithAndWithoutRequestResponseWithRequestNoResponseRequest:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "test.protocols",
-            "test.protocols/WithAndWithoutRequestResponseWithRequestNoResponseRequest",
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 16)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 16)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_string(self.arg, _offset + 0)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        arg = decoder.read_string(_offset + 0, nullable=False)
+        return cls(
+            arg=arg,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -734,12 +980,21 @@ class WithAndWithoutRequestResponseWithRequestWithResponseRequest:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "test.protocols",
-            "test.protocols/WithAndWithoutRequestResponseWithRequestWithResponseRequest",
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 16)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 16)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_string(self.arg, _offset + 0)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        arg = decoder.read_string(_offset + 0, nullable=False)
+        return cls(
+            arg=arg,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -770,12 +1025,21 @@ class WithAndWithoutRequestResponseWithRequestWithResponseResponse:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "test.protocols",
-            "test.protocols/WithAndWithoutRequestResponseWithRequestWithResponseResponse",
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 16)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 16)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_string(self.ret, _offset + 0)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        ret = decoder.read_string(_offset + 0, nullable=False)
+        return cls(
+            ret=ret,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -802,13 +1066,19 @@ class WithErrorSyntaxErrorAsEnumResponse:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "test.protocols",
-            "test.protocols/WithErrorSyntax_ErrorAsEnum_Response",
-        )
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 1)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 1)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        pass
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        return cls()
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
     # of needing to support creation of a "default object" before decoding.
@@ -832,13 +1102,19 @@ class WithErrorSyntaxErrorAsPrimitiveResponse:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "test.protocols",
-            "test.protocols/WithErrorSyntax_ErrorAsPrimitive_Response",
-        )
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 1)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 1)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        pass
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        return cls()
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
     # of needing to support creation of a "default object" before decoding.
@@ -862,12 +1138,21 @@ class WithErrorSyntaxHandleInResultResponse:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "test.protocols",
-            "test.protocols/WithErrorSyntax_HandleInResult_Response",
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 4)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 4)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_handle(self.h, _offset + 0, obj_type=0, rights=2147483648)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        h = decoder.read_handle(_offset + 0, nullable=False)
+        return cls(
+            h=h,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -900,12 +1185,27 @@ class WithErrorSyntaxResponseAsStructResponse:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "test.protocols",
-            "test.protocols/WithErrorSyntax_ResponseAsStruct_Response",
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 24)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 24)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_int64(self.a, _offset + 0)
+        encoder.write_int64(self.b, _offset + 8)
+        encoder.write_int64(self.c, _offset + 16)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        a = decoder.read_int64(_offset + 0)
+        b = decoder.read_int64(_offset + 8)
+        c = decoder.read_int64(_offset + 16)
+        return cls(
+            a=a,
+            b=b,
+            c=c,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -936,12 +1236,21 @@ class WithProtocolEndsClientEndsRequest:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "test.protocols",
-            "test.protocols/WithProtocolEndsClientEndsRequest",
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 4)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 4)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_handle(self.in_, _offset + 0, obj_type=4, rights=61454)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        in_ = decoder.read_handle(_offset + 0, nullable=False)
+        return cls(
+            in_=in_,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -970,12 +1279,21 @@ class WithProtocolEndsClientEndsResponse:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "test.protocols",
-            "test.protocols/WithProtocolEndsClientEndsResponse",
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 4)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 4)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_handle(self.out, _offset + 0, obj_type=4, rights=61454)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        out = decoder.read_handle(_offset + 0, nullable=True)
+        return cls(
+            out=out,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -1004,12 +1322,21 @@ class WithProtocolEndsServerEndsRequest:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "test.protocols",
-            "test.protocols/WithProtocolEndsServerEndsRequest",
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 4)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 4)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_handle(self.in_, _offset + 0, obj_type=4, rights=61454)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        in_ = decoder.read_handle(_offset + 0, nullable=True)
+        return cls(
+            in_=in_,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -1038,12 +1365,21 @@ class WithProtocolEndsServerEndsResponse:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "test.protocols",
-            "test.protocols/WithProtocolEndsServerEndsResponse",
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 4)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 4)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        encoder.write_handle(self.out, _offset + 0, obj_type=4, rights=61454)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        out = decoder.read_handle(_offset + 0, nullable=False)
+        return cls(
+            out=out,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -1074,12 +1410,21 @@ class WithProtocolEndsStructContainingEndsRequest:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "test.protocols",
-            "test.protocols/WithProtocolEndsStructContainingEndsRequest",
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 16)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 16)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        ProtocolEnds._encode(self.in_, encoder, _offset + 0)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        in_ = ProtocolEnds._decode(decoder, _offset + 0)
+        return cls(
+            in_=in_,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -1110,12 +1455,21 @@ class WithProtocolEndsStructContainingEndsResponse:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "test.protocols",
-            "test.protocols/WithProtocolEndsStructContainingEndsResponse",
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 16)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 16)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        ProtocolEnds._encode(self.out, encoder, _offset + 0)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        out = ProtocolEnds._decode(decoder, _offset + 0)
+        return cls(
+            out=out,
         )
 
     # TODO(https://fxbug.dev/394421154): Assigning None (incorrectly) to each type is a consequence
@@ -1155,7 +1509,7 @@ class TheUnion:
 
     def __init__(
         self,
-        v: typing.Optional[int] = None,
+        v: typing.Optional[int] = _UNDEFINED,
         _empty: typing.Optional[tuple[()]] = None,
     ):
         object.__init__(self)
@@ -1165,10 +1519,11 @@ class TheUnion:
         number_of_variants = 0
         variants = []
 
-        if v is not None:
-            self._v = v
-            variants.append("v")
-            number_of_variants += 1
+        if v is not _UNDEFINED:
+            if v is not None:
+                self._v = v
+                variants.append("v")
+                number_of_variants += 1
         if number_of_variants != 1:
             raise TypeError(
                 f"Exactly one variant must be specified for {self.__fidl_raw_type__}: {variants}"
@@ -1185,11 +1540,42 @@ class TheUnion:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self, "test.protocols", "test.protocols/TheUnion"
-        )
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 16)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 16)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        if hasattr(self, "_v"):
+            encoder.write_uint64(1, _offset)
+            encoder.write_envelope(
+                getattr(self, "_v"),
+                _offset + 8,
+                lambda val, enc, off: enc.write_uint32(val, off),
+                4,
+                True,
+            )
+            return
+        encoder.write_inline(_offset, b"\x00" * 16)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        ordinal = decoder.read_uint64(_offset)
+        if ordinal == 0:
+            return cls(_empty=())
+        if ordinal == 1:
+            val = decoder.read_envelope(
+                _offset + 8,
+                lambda dec, off: dec.read_uint32(off),
+                4,
+            )
+            return cls(v=val)
+
+        # Skip unknown envelope
+        decoder.skip_envelope(_offset + 8)
+        raise ValueError(f"Unknown union ordinal {ordinal}")
 
     @classmethod
     def make_default(cls) -> typing.Self:
@@ -1227,8 +1613,8 @@ class WithErrorSyntaxErrorAsEnumResult:
 
     def __init__(
         self,
-        response: typing.Optional[None] = None,
-        err: typing.Optional[int | ErrorEnum] = None,
+        response: typing.Optional[None] = _UNDEFINED,
+        err: typing.Optional[int | ErrorEnum] = _UNDEFINED,
         _empty: typing.Optional[tuple[()]] = None,
     ):
         object.__init__(self)
@@ -1238,14 +1624,15 @@ class WithErrorSyntaxErrorAsEnumResult:
         number_of_variants = 0
         variants = []
 
-        if response is not None:
+        if response is not _UNDEFINED:
             self._response = response
             variants.append("response")
             number_of_variants += 1
-        if err is not None:
-            self._err = err
-            variants.append("err")
-            number_of_variants += 1
+        if err is not _UNDEFINED:
+            if err is not None:
+                self._err = err
+                variants.append("err")
+                number_of_variants += 1
         if number_of_variants > 1:
             raise TypeError(
                 f"Exactly one variant must be specified for {self.__fidl_raw_type__}: {variants}"
@@ -1266,13 +1653,59 @@ class WithErrorSyntaxErrorAsEnumResult:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "test.protocols",
-            "test.protocols/WithErrorSyntax_ErrorAsEnum_Result",
-        )
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 16)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 16)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        if hasattr(self, "_response"):
+            encoder.write_uint64(1, _offset)
+            encoder.write_envelope(
+                getattr(self, "_response"),
+                _offset + 8,
+                WithErrorSyntaxErrorAsEnumResponse._encode,
+                1,
+                True,
+            )
+            return
+        if hasattr(self, "_err"):
+            encoder.write_uint64(2, _offset)
+            encoder.write_envelope(
+                getattr(self, "_err"),
+                _offset + 8,
+                ErrorEnum._encode,
+                4,
+                True,
+            )
+            return
+        encoder.write_inline(_offset, b"\x00" * 16)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        ordinal = decoder.read_uint64(_offset)
+        if ordinal == 0:
+            return cls(_empty=())
+        if ordinal == 1:
+            val = decoder.read_envelope(
+                _offset + 8,
+                lambda dec, off: None,
+                1,
+            )
+            return cls(response=val)
+        if ordinal == 2:
+            val = decoder.read_envelope(
+                _offset + 8,
+                ErrorEnum._decode,
+                4,
+            )
+            return cls(err=val)
+
+        # Skip unknown envelope
+        decoder.skip_envelope(_offset + 8)
+        raise ValueError(f"Unknown union ordinal {ordinal}")
 
     def unwrap(self) -> None:
         """Returns the response if result does not contain an error. Otherwise, raises an exception."""
@@ -1334,8 +1767,8 @@ class WithErrorSyntaxErrorAsPrimitiveResult:
 
     def __init__(
         self,
-        response: typing.Optional[None] = None,
-        err: typing.Optional[int] = None,
+        response: typing.Optional[None] = _UNDEFINED,
+        err: typing.Optional[int] = _UNDEFINED,
         _empty: typing.Optional[tuple[()]] = None,
     ):
         object.__init__(self)
@@ -1345,14 +1778,15 @@ class WithErrorSyntaxErrorAsPrimitiveResult:
         number_of_variants = 0
         variants = []
 
-        if response is not None:
+        if response is not _UNDEFINED:
             self._response = response
             variants.append("response")
             number_of_variants += 1
-        if err is not None:
-            self._err = err
-            variants.append("err")
-            number_of_variants += 1
+        if err is not _UNDEFINED:
+            if err is not None:
+                self._err = err
+                variants.append("err")
+                number_of_variants += 1
         if number_of_variants > 1:
             raise TypeError(
                 f"Exactly one variant must be specified for {self.__fidl_raw_type__}: {variants}"
@@ -1373,13 +1807,59 @@ class WithErrorSyntaxErrorAsPrimitiveResult:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "test.protocols",
-            "test.protocols/WithErrorSyntax_ErrorAsPrimitive_Result",
-        )
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 16)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 16)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        if hasattr(self, "_response"):
+            encoder.write_uint64(1, _offset)
+            encoder.write_envelope(
+                getattr(self, "_response"),
+                _offset + 8,
+                WithErrorSyntaxErrorAsPrimitiveResponse._encode,
+                1,
+                True,
+            )
+            return
+        if hasattr(self, "_err"):
+            encoder.write_uint64(2, _offset)
+            encoder.write_envelope(
+                getattr(self, "_err"),
+                _offset + 8,
+                lambda val, enc, off: enc.write_uint32(val, off),
+                4,
+                True,
+            )
+            return
+        encoder.write_inline(_offset, b"\x00" * 16)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        ordinal = decoder.read_uint64(_offset)
+        if ordinal == 0:
+            return cls(_empty=())
+        if ordinal == 1:
+            val = decoder.read_envelope(
+                _offset + 8,
+                lambda dec, off: None,
+                1,
+            )
+            return cls(response=val)
+        if ordinal == 2:
+            val = decoder.read_envelope(
+                _offset + 8,
+                lambda dec, off: dec.read_uint32(off),
+                4,
+            )
+            return cls(err=val)
+
+        # Skip unknown envelope
+        decoder.skip_envelope(_offset + 8)
+        raise ValueError(f"Unknown union ordinal {ordinal}")
 
     def unwrap(self) -> None:
         """Returns the response if result does not contain an error. Otherwise, raises an exception."""
@@ -1441,8 +1921,10 @@ class WithErrorSyntaxHandleInResultResult:
 
     def __init__(
         self,
-        response: typing.Optional[WithErrorSyntaxHandleInResultResponse] = None,
-        err: typing.Optional[int] = None,
+        response: typing.Optional[
+            WithErrorSyntaxHandleInResultResponse
+        ] = _UNDEFINED,
+        err: typing.Optional[int] = _UNDEFINED,
         _empty: typing.Optional[tuple[()]] = None,
     ):
         object.__init__(self)
@@ -1452,14 +1934,16 @@ class WithErrorSyntaxHandleInResultResult:
         number_of_variants = 0
         variants = []
 
-        if response is not None:
-            self._response = response
-            variants.append("response")
-            number_of_variants += 1
-        if err is not None:
-            self._err = err
-            variants.append("err")
-            number_of_variants += 1
+        if response is not _UNDEFINED:
+            if response is not None:
+                self._response = response
+                variants.append("response")
+                number_of_variants += 1
+        if err is not _UNDEFINED:
+            if err is not None:
+                self._err = err
+                variants.append("err")
+                number_of_variants += 1
         if number_of_variants > 1:
             raise TypeError(
                 f"Exactly one variant must be specified for {self.__fidl_raw_type__}: {variants}"
@@ -1480,13 +1964,59 @@ class WithErrorSyntaxHandleInResultResult:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "test.protocols",
-            "test.protocols/WithErrorSyntax_HandleInResult_Result",
-        )
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 16)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 16)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        if hasattr(self, "_response"):
+            encoder.write_uint64(1, _offset)
+            encoder.write_envelope(
+                getattr(self, "_response"),
+                _offset + 8,
+                WithErrorSyntaxHandleInResultResponse._encode,
+                4,
+                True,
+            )
+            return
+        if hasattr(self, "_err"):
+            encoder.write_uint64(2, _offset)
+            encoder.write_envelope(
+                getattr(self, "_err"),
+                _offset + 8,
+                lambda val, enc, off: enc.write_uint32(val, off),
+                4,
+                True,
+            )
+            return
+        encoder.write_inline(_offset, b"\x00" * 16)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        ordinal = decoder.read_uint64(_offset)
+        if ordinal == 0:
+            return cls(_empty=())
+        if ordinal == 1:
+            val = decoder.read_envelope(
+                _offset + 8,
+                WithErrorSyntaxHandleInResultResponse._decode,
+                4,
+            )
+            return cls(response=val)
+        if ordinal == 2:
+            val = decoder.read_envelope(
+                _offset + 8,
+                lambda dec, off: dec.read_uint32(off),
+                4,
+            )
+            return cls(err=val)
+
+        # Skip unknown envelope
+        decoder.skip_envelope(_offset + 8)
+        raise ValueError(f"Unknown union ordinal {ordinal}")
 
     def unwrap(self) -> WithErrorSyntaxHandleInResultResponse:
         """Returns the response if result does not contain an error. Otherwise, raises an exception."""
@@ -1551,8 +2081,8 @@ class WithErrorSyntaxResponseAsStructResult:
         self,
         response: typing.Optional[
             WithErrorSyntaxResponseAsStructResponse
-        ] = None,
-        err: typing.Optional[int] = None,
+        ] = _UNDEFINED,
+        err: typing.Optional[int] = _UNDEFINED,
         _empty: typing.Optional[tuple[()]] = None,
     ):
         object.__init__(self)
@@ -1562,14 +2092,16 @@ class WithErrorSyntaxResponseAsStructResult:
         number_of_variants = 0
         variants = []
 
-        if response is not None:
-            self._response = response
-            variants.append("response")
-            number_of_variants += 1
-        if err is not None:
-            self._err = err
-            variants.append("err")
-            number_of_variants += 1
+        if response is not _UNDEFINED:
+            if response is not None:
+                self._response = response
+                variants.append("response")
+                number_of_variants += 1
+        if err is not _UNDEFINED:
+            if err is not None:
+                self._err = err
+                variants.append("err")
+                number_of_variants += 1
         if number_of_variants > 1:
             raise TypeError(
                 f"Exactly one variant must be specified for {self.__fidl_raw_type__}: {variants}"
@@ -1590,13 +2122,59 @@ class WithErrorSyntaxResponseAsStructResult:
             raise TypeError("Subscripted item must be a string")
         return getattr(self, item)
 
-    # TODO(https://fxbug.dev/394421154): We should probably return a more readable type.
-    def encode(self) -> tuple[bytes, list[tuple[int, int, int, int, int]]]:
-        return encode_fidl_object(
-            self,
-            "test.protocols",
-            "test.protocols/WithErrorSyntax_ResponseAsStruct_Result",
-        )
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        return fidl.encode_struct(self, type(self)._encode, 16)
+
+    @classmethod
+    def decode(cls, data: bytes, handles: list[typing.Any]) -> typing.Self:
+        return fidl.decode_struct(data, handles, cls._decode, 16)
+
+    def _encode(self, encoder: fidl.Encoder, _offset: int) -> None:
+        if hasattr(self, "_response"):
+            encoder.write_uint64(1, _offset)
+            encoder.write_envelope(
+                getattr(self, "_response"),
+                _offset + 8,
+                WithErrorSyntaxResponseAsStructResponse._encode,
+                24,
+                False,
+            )
+            return
+        if hasattr(self, "_err"):
+            encoder.write_uint64(2, _offset)
+            encoder.write_envelope(
+                getattr(self, "_err"),
+                _offset + 8,
+                lambda val, enc, off: enc.write_uint32(val, off),
+                4,
+                True,
+            )
+            return
+        encoder.write_inline(_offset, b"\x00" * 16)
+
+    @classmethod
+    def _decode(cls, decoder: fidl.Decoder, _offset: int) -> typing.Self:
+        ordinal = decoder.read_uint64(_offset)
+        if ordinal == 0:
+            return cls(_empty=())
+        if ordinal == 1:
+            val = decoder.read_envelope(
+                _offset + 8,
+                WithErrorSyntaxResponseAsStructResponse._decode,
+                24,
+            )
+            return cls(response=val)
+        if ordinal == 2:
+            val = decoder.read_envelope(
+                _offset + 8,
+                lambda dec, off: dec.read_uint32(off),
+                4,
+            )
+            return cls(err=val)
+
+        # Skip unknown envelope
+        decoder.skip_envelope(_offset + 8)
+        raise ValueError(f"Unknown union ordinal {ordinal}")
 
     def unwrap(self) -> WithErrorSyntaxResponseAsStructResponse:
         """Returns the response if result does not contain an error. Otherwise, raises an exception."""
@@ -1628,19 +2206,27 @@ class WithErrorSyntaxResponseAsStructResult:
         return cls(_empty=())
 
 
-ErrorEnum = enum.IntEnum(
-    "ErrorEnum",
-    {
-        "__fidl_kind__": "enum",
-        "__fidl_type__": "ErrorEnum",
-        "__fidl_raw_type__": "test.protocols/ErrorEnum",
-        "__strict__": True,
-        "ERR_FOO": 1,
-        "ERR_BAR": 2,
-        "EMPTY__": 0,
-        "make_default": classmethod(lambda cls: cls(0)),
-    },
-)
+class ErrorEnum(enum.IntEnum):
+    ERR_FOO = 1
+    ERR_BAR = 2
+    EMPTY__ = 0
+
+    __fidl_kind__ = "enum"
+    __fidl_type__ = "ErrorEnum"
+    __fidl_raw_type__ = "test.protocols/ErrorEnum"
+    __strict__ = True
+    __fidl_inline_size__ = 4
+
+    def _encode(self: int, enc: fidl.Encoder, off: int) -> None:
+        enc.write_uint32(int(self), off)
+
+    @classmethod
+    def _decode(cls, dec: fidl.Decoder, off: int) -> typing.Self:
+        return cls(dec.read_uint32(off))
+
+    @classmethod
+    def make_default(cls) -> typing.Self:
+        return cls(0)
 
 
 class AnotherDiscoverableProtocolServer(ServerBase, ABC):
@@ -1648,40 +2234,16 @@ class AnotherDiscoverableProtocolServer(ServerBase, ABC):
     library = "test.protocols"
     method_map: typing.Dict[int, MethodInfo] = {}
 
-    @staticmethod
-    def construct_response_object(
-        response_ident: str, response_obj: typing.Any
-    ) -> typing.Any:
-        return fidl._construct.construct_response_object(
-            response_ident, response_obj
-        )
-
 
 class AnotherDiscoverableProtocolClient(FidlClient):
     __fidl_kind__ = "client"
     library = "test.protocols"
-
-    @staticmethod
-    def construct_response_object(
-        response_ident: str, response_obj: typing.Any
-    ) -> typing.Any:
-        return fidl._construct.construct_response_object(
-            response_ident, response_obj
-        )
 
 
 class AnotherDiscoverableProtocolEventHandler(EventHandlerBase, ABC):
     __fidl_kind__ = "event_handler"
     library = "test.protocols"
     method_map: typing.Dict[int, MethodInfo] = {}
-
-    @staticmethod
-    def construct_response_object(
-        response_ident: str, response_obj: typing.Any
-    ) -> typing.Any:
-        return fidl._construct.construct_response_object(
-            response_ident, response_obj
-        )
 
 
 AnotherDiscoverableProtocolMarker = FidlProtocolMarker(
@@ -1726,14 +2288,6 @@ class ChannelProtocolServer(ServerBase, ABC):
             response_identifier="test.protocols/ChannelProtocolMutateSocketResponse",
         ),
     }
-
-    @staticmethod
-    def construct_response_object(
-        response_ident: str, response_obj: typing.Any
-    ) -> typing.Any:
-        return fidl._construct.construct_response_object(
-            response_ident, response_obj
-        )
 
     MethodAResponse: typing.TypeAlias = None
 
@@ -1800,14 +2354,6 @@ class ChannelProtocolClient(FidlClient):
     __fidl_kind__ = "client"
     library = "test.protocols"
 
-    @staticmethod
-    def construct_response_object(
-        response_ident: str, response_obj: typing.Any
-    ) -> typing.Any:
-        return fidl._construct.construct_response_object(
-            response_ident, response_obj
-        )
-
     def method_a(
         self,
         *,
@@ -1846,9 +2392,6 @@ class ChannelProtocolClient(FidlClient):
                 8903004957800778182,
                 "test.protocols",
                 msg,
-                normalize_identifier(
-                    "test.protocols/ChannelProtocolMethodBResponse"
-                ),
             ),
         )
         return ret
@@ -1867,7 +2410,6 @@ class ChannelProtocolClient(FidlClient):
                 591935489944717925,
                 "test.protocols",
                 msg,
-                "",
             ),
         )
         return ret
@@ -1890,9 +2432,6 @@ class ChannelProtocolClient(FidlClient):
                 7411742788430590287,
                 "test.protocols",
                 msg,
-                normalize_identifier(
-                    "test.protocols/ChannelProtocolMutateSocketResponse"
-                ),
             ),
         )
         return ret
@@ -1912,14 +2451,6 @@ class ChannelProtocolEventHandler(EventHandlerBase, ABC):
         ),
     }
 
-    @staticmethod
-    def construct_response_object(
-        response_ident: str, response_obj: typing.Any
-    ) -> typing.Any:
-        return fidl._construct.construct_response_object(
-            response_ident, response_obj
-        )
-
     @abstractmethod
     def event_a(
         self,
@@ -1930,6 +2461,33 @@ class ChannelProtocolEventHandler(EventHandlerBase, ABC):
 
 ChannelProtocolMarker = FidlProtocolMarker(
     "(nondiscoverable) test.protocols/ChannelProtocol"
+)
+
+
+fidl.register_method(
+    3155008840945527714,
+    ChannelProtocolMethodARequest,
+    None,
+)
+fidl.register_method(
+    2220452875311597006,
+    None,
+    ChannelProtocolEventARequest,
+)
+fidl.register_method(
+    8903004957800778182,
+    ChannelProtocolMethodBRequest,
+    ChannelProtocolMethodBResponse,
+)
+fidl.register_method(
+    591935489944717925,
+    ChannelProtocolTakeHandleRequest,
+    None,
+)
+fidl.register_method(
+    7411742788430590287,
+    ChannelProtocolMutateSocketRequest,
+    ChannelProtocolMutateSocketResponse,
 )
 
 
@@ -1947,14 +2505,6 @@ class DiscoverableProtocolServer(ServerBase, ABC):
         ),
     }
 
-    @staticmethod
-    def construct_response_object(
-        response_ident: str, response_obj: typing.Any
-    ) -> typing.Any:
-        return fidl._construct.construct_response_object(
-            response_ident, response_obj
-        )
-
     MethodResponse: typing.TypeAlias = None
 
     @abstractmethod
@@ -1970,14 +2520,6 @@ class DiscoverableProtocolServer(ServerBase, ABC):
 class DiscoverableProtocolClient(FidlClient):
     __fidl_kind__ = "client"
     library = "test.protocols"
-
-    @staticmethod
-    def construct_response_object(
-        response_ident: str, response_obj: typing.Any
-    ) -> typing.Any:
-        return fidl._construct.construct_response_object(
-            response_ident, response_obj
-        )
 
     def method(
         self,
@@ -1997,17 +2539,16 @@ class DiscoverableProtocolEventHandler(EventHandlerBase, ABC):
     library = "test.protocols"
     method_map: typing.Dict[int, MethodInfo] = {}
 
-    @staticmethod
-    def construct_response_object(
-        response_ident: str, response_obj: typing.Any
-    ) -> typing.Any:
-        return fidl._construct.construct_response_object(
-            response_ident, response_obj
-        )
-
 
 DiscoverableProtocolMarker = FidlProtocolMarker(
     "test.protocols.DiscoverableProtocol"
+)
+
+
+fidl.register_method(
+    3455873048082739435,
+    None,
+    None,
 )
 
 
@@ -2032,14 +2573,6 @@ class HandleRightsProtocolServer(ServerBase, ABC):
             response_identifier="test.protocols/HandleRightsProtocolResponseMethodResponse",
         ),
     }
-
-    @staticmethod
-    def construct_response_object(
-        response_ident: str, response_obj: typing.Any
-    ) -> typing.Any:
-        return fidl._construct.construct_response_object(
-            response_ident, response_obj
-        )
 
     NoResponseMethodResponse: typing.TypeAlias = None
 
@@ -2086,14 +2619,6 @@ class HandleRightsProtocolClient(FidlClient):
     __fidl_kind__ = "client"
     library = "test.protocols"
 
-    @staticmethod
-    def construct_response_object(
-        response_ident: str, response_obj: typing.Any
-    ) -> typing.Any:
-        return fidl._construct.construct_response_object(
-            response_ident, response_obj
-        )
-
     def no_response_method(
         self,
         *,
@@ -2130,9 +2655,6 @@ class HandleRightsProtocolClient(FidlClient):
                 5956276128041940295,
                 "test.protocols",
                 msg,
-                normalize_identifier(
-                    "test.protocols/HandleRightsProtocolResponseMethodResponse"
-                ),
             ),
         )
         return ret
@@ -2152,14 +2674,6 @@ class HandleRightsProtocolEventHandler(EventHandlerBase, ABC):
         ),
     }
 
-    @staticmethod
-    def construct_response_object(
-        response_ident: str, response_obj: typing.Any
-    ) -> typing.Any:
-        return fidl._construct.construct_response_object(
-            response_ident, response_obj
-        )
-
     @abstractmethod
     def an_event(
         self,
@@ -2170,6 +2684,23 @@ class HandleRightsProtocolEventHandler(EventHandlerBase, ABC):
 
 HandleRightsProtocolMarker = FidlProtocolMarker(
     "(nondiscoverable) test.protocols/HandleRightsProtocol"
+)
+
+
+fidl.register_method(
+    1155044649514904573,
+    HandleRightsProtocolNoResponseMethodRequest,
+    None,
+)
+fidl.register_method(
+    5956276128041940295,
+    HandleRightsProtocolResponseMethodRequest,
+    HandleRightsProtocolResponseMethodResponse,
+)
+fidl.register_method(
+    476727631355490611,
+    None,
+    HandleRightsProtocolAnEventRequest,
 )
 
 
@@ -2187,14 +2718,6 @@ class ManyParametersServer(ServerBase, ABC):
         ),
     }
 
-    @staticmethod
-    def construct_response_object(
-        response_ident: str, response_obj: typing.Any
-    ) -> typing.Any:
-        return fidl._construct.construct_response_object(
-            response_ident, response_obj
-        )
-
     FifteenResponse: typing.TypeAlias = None
 
     @abstractmethod
@@ -2211,14 +2734,6 @@ class ManyParametersServer(ServerBase, ABC):
 class ManyParametersClient(FidlClient):
     __fidl_kind__ = "client"
     library = "test.protocols"
-
-    @staticmethod
-    def construct_response_object(
-        response_ident: str, response_obj: typing.Any
-    ) -> typing.Any:
-        return fidl._construct.construct_response_object(
-            response_ident, response_obj
-        )
 
     def fifteen(
         self,
@@ -2270,17 +2785,16 @@ class ManyParametersEventHandler(EventHandlerBase, ABC):
     library = "test.protocols"
     method_map: typing.Dict[int, MethodInfo] = {}
 
-    @staticmethod
-    def construct_response_object(
-        response_ident: str, response_obj: typing.Any
-    ) -> typing.Any:
-        return fidl._construct.construct_response_object(
-            response_ident, response_obj
-        )
-
 
 ManyParametersMarker = FidlProtocolMarker(
     "(nondiscoverable) test.protocols/ManyParameters"
+)
+
+
+fidl.register_method(
+    6423043252952467815,
+    ManyParametersFifteenRequest,
+    None,
 )
 
 
@@ -2298,14 +2812,6 @@ class MethodWithUnionServer(ServerBase, ABC):
         ),
     }
 
-    @staticmethod
-    def construct_response_object(
-        response_ident: str, response_obj: typing.Any
-    ) -> typing.Any:
-        return fidl._construct.construct_response_object(
-            response_ident, response_obj
-        )
-
     UnionMethodResponse: typing.TypeAlias = MethodWithUnionUnionMethodResponse
 
     @abstractmethod
@@ -2322,14 +2828,6 @@ class MethodWithUnionServer(ServerBase, ABC):
 class MethodWithUnionClient(FidlClient):
     __fidl_kind__ = "client"
     library = "test.protocols"
-
-    @staticmethod
-    def construct_response_object(
-        response_ident: str, response_obj: typing.Any
-    ) -> typing.Any:
-        return fidl._construct.construct_response_object(
-            response_ident, response_obj
-        )
 
     def union_method(
         self,
@@ -2349,9 +2847,6 @@ class MethodWithUnionClient(FidlClient):
                 4124874338266649112,
                 "test.protocols",
                 msg,
-                normalize_identifier(
-                    "test.protocols/MethodWithUnionUnionMethodResponse"
-                ),
             ),
         )
         return ret
@@ -2362,17 +2857,16 @@ class MethodWithUnionEventHandler(EventHandlerBase, ABC):
     library = "test.protocols"
     method_map: typing.Dict[int, MethodInfo] = {}
 
-    @staticmethod
-    def construct_response_object(
-        response_ident: str, response_obj: typing.Any
-    ) -> typing.Any:
-        return fidl._construct.construct_response_object(
-            response_ident, response_obj
-        )
-
 
 MethodWithUnionMarker = FidlProtocolMarker(
     "(nondiscoverable) test.protocols/MethodWithUnion"
+)
+
+
+fidl.register_method(
+    4124874338266649112,
+    MethodWithUnionUnionMethodRequest,
+    MethodWithUnionUnionMethodResponse,
 )
 
 
@@ -2381,40 +2875,16 @@ class PlatformServerServer(ServerBase, ABC):
     library = "test.protocols"
     method_map: typing.Dict[int, MethodInfo] = {}
 
-    @staticmethod
-    def construct_response_object(
-        response_ident: str, response_obj: typing.Any
-    ) -> typing.Any:
-        return fidl._construct.construct_response_object(
-            response_ident, response_obj
-        )
-
 
 class PlatformServerClient(FidlClient):
     __fidl_kind__ = "client"
     library = "test.protocols"
-
-    @staticmethod
-    def construct_response_object(
-        response_ident: str, response_obj: typing.Any
-    ) -> typing.Any:
-        return fidl._construct.construct_response_object(
-            response_ident, response_obj
-        )
 
 
 class PlatformServerEventHandler(EventHandlerBase, ABC):
     __fidl_kind__ = "event_handler"
     library = "test.protocols"
     method_map: typing.Dict[int, MethodInfo] = {}
-
-    @staticmethod
-    def construct_response_object(
-        response_ident: str, response_obj: typing.Any
-    ) -> typing.Any:
-        return fidl._construct.construct_response_object(
-            response_ident, response_obj
-        )
 
 
 PlatformServerMarker = FidlProtocolMarker("test.protocols.PlatformServer")
@@ -2473,14 +2943,6 @@ class WithAndWithoutRequestResponseServer(ServerBase, ABC):
             response_identifier="test.protocols/WithAndWithoutRequestResponseWithRequestWithResponseResponse",
         ),
     }
-
-    @staticmethod
-    def construct_response_object(
-        response_ident: str, response_obj: typing.Any
-    ) -> typing.Any:
-        return fidl._construct.construct_response_object(
-            response_ident, response_obj
-        )
 
     NoRequestNoResponseResponse: typing.TypeAlias = None
 
@@ -2588,14 +3050,6 @@ class WithAndWithoutRequestResponseClient(FidlClient):
     __fidl_kind__ = "client"
     library = "test.protocols"
 
-    @staticmethod
-    def construct_response_object(
-        response_ident: str, response_obj: typing.Any
-    ) -> typing.Any:
-        return fidl._construct.construct_response_object(
-            response_ident, response_obj
-        )
-
     def no_request_no_response(
         self,
     ) -> None:
@@ -2618,7 +3072,6 @@ class WithAndWithoutRequestResponseClient(FidlClient):
                 1631193469798418024,
                 "test.protocols",
                 msg,
-                "",
             ),
         )
         return ret
@@ -2641,9 +3094,6 @@ class WithAndWithoutRequestResponseClient(FidlClient):
                 9037369643591427517,
                 "test.protocols",
                 msg,
-                normalize_identifier(
-                    "test.protocols/WithAndWithoutRequestResponseNoRequestWithResponseResponse"
-                ),
             ),
         )
         return ret
@@ -2678,7 +3128,6 @@ class WithAndWithoutRequestResponseClient(FidlClient):
                 2877322062572412767,
                 "test.protocols",
                 msg,
-                "",
             ),
         )
         return ret
@@ -2705,9 +3154,6 @@ class WithAndWithoutRequestResponseClient(FidlClient):
                 6417226585456833969,
                 "test.protocols",
                 msg,
-                normalize_identifier(
-                    "test.protocols/WithAndWithoutRequestResponseWithRequestWithResponseResponse"
-                ),
             ),
         )
         return ret
@@ -2735,14 +3181,6 @@ class WithAndWithoutRequestResponseEventHandler(EventHandlerBase, ABC):
         ),
     }
 
-    @staticmethod
-    def construct_response_object(
-        response_ident: str, response_obj: typing.Any
-    ) -> typing.Any:
-        return fidl._construct.construct_response_object(
-            response_ident, response_obj
-        )
-
     @abstractmethod
     def on_empty_response(
         self,
@@ -2759,6 +3197,48 @@ class WithAndWithoutRequestResponseEventHandler(EventHandlerBase, ABC):
 
 WithAndWithoutRequestResponseMarker = FidlProtocolMarker(
     "(nondiscoverable) test.protocols/WithAndWithoutRequestResponse"
+)
+
+
+fidl.register_method(
+    5413654872775949227,
+    None,
+    None,
+)
+fidl.register_method(
+    1631193469798418024,
+    None,
+    None,
+)
+fidl.register_method(
+    9037369643591427517,
+    None,
+    WithAndWithoutRequestResponseNoRequestWithResponseResponse,
+)
+fidl.register_method(
+    7326057319832554103,
+    WithAndWithoutRequestResponseWithRequestNoResponseRequest,
+    None,
+)
+fidl.register_method(
+    2877322062572412767,
+    WithAndWithoutRequestResponseWithRequestEmptyResponseRequest,
+    None,
+)
+fidl.register_method(
+    6417226585456833969,
+    WithAndWithoutRequestResponseWithRequestWithResponseRequest,
+    WithAndWithoutRequestResponseWithRequestWithResponseResponse,
+)
+fidl.register_method(
+    5397663296507358806,
+    None,
+    None,
+)
+fidl.register_method(
+    5811598563493228968,
+    None,
+    WithAndWithoutRequestResponseOnWithResponseRequest,
 )
 
 
@@ -2799,14 +3279,6 @@ class WithErrorSyntaxServer(ServerBase, ABC):
             response_identifier="test.protocols/WithErrorSyntax_HandleInResult_Result",
         ),
     }
-
-    @staticmethod
-    def construct_response_object(
-        response_ident: str, response_obj: typing.Any
-    ) -> typing.Any:
-        return fidl._construct.construct_response_object(
-            response_ident, response_obj
-        )
 
     ResponseAsStructResponse: typing.TypeAlias = typing.Union[
         DomainError,
@@ -2875,14 +3347,6 @@ class WithErrorSyntaxClient(FidlClient):
     __fidl_kind__ = "client"
     library = "test.protocols"
 
-    @staticmethod
-    def construct_response_object(
-        response_ident: str, response_obj: typing.Any
-    ) -> typing.Any:
-        return fidl._construct.construct_response_object(
-            response_ident, response_obj
-        )
-
     def response_as_struct(
         self,
     ) -> collections.abc.Coroutine[
@@ -2897,9 +3361,6 @@ class WithErrorSyntaxClient(FidlClient):
                 268248568430741139,
                 "test.protocols",
                 msg,
-                normalize_identifier(
-                    "test.protocols/WithErrorSyntax_ResponseAsStruct_Result"
-                ),
             ),
         )
         return ret
@@ -2918,9 +3379,6 @@ class WithErrorSyntaxClient(FidlClient):
                 6930994461233198567,
                 "test.protocols",
                 msg,
-                normalize_identifier(
-                    "test.protocols/WithErrorSyntax_ErrorAsPrimitive_Result"
-                ),
             ),
         )
         return ret
@@ -2939,9 +3397,6 @@ class WithErrorSyntaxClient(FidlClient):
                 5491891352371277635,
                 "test.protocols",
                 msg,
-                normalize_identifier(
-                    "test.protocols/WithErrorSyntax_ErrorAsEnum_Result"
-                ),
             ),
         )
         return ret
@@ -2960,9 +3415,6 @@ class WithErrorSyntaxClient(FidlClient):
                 1371676333068455103,
                 "test.protocols",
                 msg,
-                normalize_identifier(
-                    "test.protocols/WithErrorSyntax_HandleInResult_Result"
-                ),
             ),
         )
         return ret
@@ -2973,17 +3425,31 @@ class WithErrorSyntaxEventHandler(EventHandlerBase, ABC):
     library = "test.protocols"
     method_map: typing.Dict[int, MethodInfo] = {}
 
-    @staticmethod
-    def construct_response_object(
-        response_ident: str, response_obj: typing.Any
-    ) -> typing.Any:
-        return fidl._construct.construct_response_object(
-            response_ident, response_obj
-        )
-
 
 WithErrorSyntaxMarker = FidlProtocolMarker(
     "(nondiscoverable) test.protocols/WithErrorSyntax"
+)
+
+
+fidl.register_method(
+    268248568430741139,
+    None,
+    WithErrorSyntaxResponseAsStructResult,
+)
+fidl.register_method(
+    6930994461233198567,
+    None,
+    WithErrorSyntaxErrorAsPrimitiveResult,
+)
+fidl.register_method(
+    5491891352371277635,
+    None,
+    WithErrorSyntaxErrorAsEnumResult,
+)
+fidl.register_method(
+    1371676333068455103,
+    None,
+    WithErrorSyntaxHandleInResultResult,
 )
 
 
@@ -3016,14 +3482,6 @@ class WithProtocolEndsServer(ServerBase, ABC):
             response_identifier="test.protocols/WithProtocolEndsStructContainingEndsResponse",
         ),
     }
-
-    @staticmethod
-    def construct_response_object(
-        response_ident: str, response_obj: typing.Any
-    ) -> typing.Any:
-        return fidl._construct.construct_response_object(
-            response_ident, response_obj
-        )
 
     ClientEndsResponse: typing.TypeAlias = WithProtocolEndsClientEndsResponse
 
@@ -3070,14 +3528,6 @@ class WithProtocolEndsClient(FidlClient):
     __fidl_kind__ = "client"
     library = "test.protocols"
 
-    @staticmethod
-    def construct_response_object(
-        response_ident: str, response_obj: typing.Any
-    ) -> typing.Any:
-        return fidl._construct.construct_response_object(
-            response_ident, response_obj
-        )
-
     def client_ends(
         self,
         *,
@@ -3096,9 +3546,6 @@ class WithProtocolEndsClient(FidlClient):
                 5870448041025163330,
                 "test.protocols",
                 msg,
-                normalize_identifier(
-                    "test.protocols/WithProtocolEndsClientEndsResponse"
-                ),
             ),
         )
         return ret
@@ -3121,9 +3568,6 @@ class WithProtocolEndsClient(FidlClient):
                 8115535094437022259,
                 "test.protocols",
                 msg,
-                normalize_identifier(
-                    "test.protocols/WithProtocolEndsServerEndsResponse"
-                ),
             ),
         )
         return ret
@@ -3148,9 +3592,6 @@ class WithProtocolEndsClient(FidlClient):
                 4076866772260025813,
                 "test.protocols",
                 msg,
-                normalize_identifier(
-                    "test.protocols/WithProtocolEndsStructContainingEndsResponse"
-                ),
             ),
         )
         return ret
@@ -3161,15 +3602,24 @@ class WithProtocolEndsEventHandler(EventHandlerBase, ABC):
     library = "test.protocols"
     method_map: typing.Dict[int, MethodInfo] = {}
 
-    @staticmethod
-    def construct_response_object(
-        response_ident: str, response_obj: typing.Any
-    ) -> typing.Any:
-        return fidl._construct.construct_response_object(
-            response_ident, response_obj
-        )
-
 
 WithProtocolEndsMarker = FidlProtocolMarker(
     "(nondiscoverable) test.protocols/WithProtocolEnds"
+)
+
+
+fidl.register_method(
+    5870448041025163330,
+    WithProtocolEndsClientEndsRequest,
+    WithProtocolEndsClientEndsResponse,
+)
+fidl.register_method(
+    8115535094437022259,
+    WithProtocolEndsServerEndsRequest,
+    WithProtocolEndsServerEndsResponse,
+)
+fidl.register_method(
+    4076866772260025813,
+    WithProtocolEndsStructContainingEndsRequest,
+    WithProtocolEndsStructContainingEndsResponse,
 )

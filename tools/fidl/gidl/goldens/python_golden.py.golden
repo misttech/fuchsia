@@ -5,10 +5,10 @@ from fuchsia_controller_py import BaseHandle, Context, Channel, Event, Handle, S
 import fidl_test_conformance as test_conformance
 
 import struct
+import typing
 import unittest
 
-from fidl import construct_response_object
-from fidl_codec import decode_standalone
+
 
 class EncodeConformanceTests(unittest.TestCase):
 
@@ -298,9 +298,7 @@ class DecodeConformanceTests(unittest.TestCase):
 0x01,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
 
 ])
-        type_name = "test.conformance/GoldenBoolStruct"
-        value = decode_standalone(type_name=type_name, bytes=encoded_bytes, handles=handles)
-        value = construct_response_object(type_name, value)
+        value: typing.Any = test_conformance.GoldenBoolStruct.decode(encoded_bytes, handles)
         self.assertEqual(value, test_conformance.GoldenBoolStruct(v=True))
 
 
@@ -311,9 +309,7 @@ class DecodeConformanceTests(unittest.TestCase):
 0x01,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
 
 ])
-        type_name = "test.conformance/GoldenIntStruct"
-        value = decode_standalone(type_name=type_name, bytes=encoded_bytes, handles=handles)
-        value = construct_response_object(type_name, value)
+        value: typing.Any = test_conformance.GoldenIntStruct.decode(encoded_bytes, handles)
         self.assertEqual(value, test_conformance.GoldenIntStruct(v=1))
 
 
@@ -324,9 +320,7 @@ class DecodeConformanceTests(unittest.TestCase):
 0x01,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
 
 ])
-        type_name = "test.conformance/GoldenUintStruct"
-        value = decode_standalone(type_name=type_name, bytes=encoded_bytes, handles=handles)
-        value = construct_response_object(type_name, value)
+        value: typing.Any = test_conformance.GoldenUintStruct.decode(encoded_bytes, handles)
         self.assertEqual(value, test_conformance.GoldenUintStruct(v=1))
 
 
@@ -337,9 +331,7 @@ class DecodeConformanceTests(unittest.TestCase):
 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
 
 ])
-        type_name = "test.conformance/GoldenFloatStruct"
-        value = decode_standalone(type_name=type_name, bytes=encoded_bytes, handles=handles)
-        value = construct_response_object(type_name, value)
+        value: typing.Any = test_conformance.GoldenFloatStruct.decode(encoded_bytes, handles)
         self.assertEqual(value, test_conformance.GoldenFloatStruct(v=0))
 
 
@@ -350,9 +342,7 @@ class DecodeConformanceTests(unittest.TestCase):
 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
 
 ])
-        type_name = "test.conformance/GoldenDoubleStruct"
-        value = decode_standalone(type_name=type_name, bytes=encoded_bytes, handles=handles)
-        value = construct_response_object(type_name, value)
+        value: typing.Any = test_conformance.GoldenDoubleStruct.decode(encoded_bytes, handles)
         self.assertEqual(value, test_conformance.GoldenDoubleStruct(v=0))
 
 
@@ -365,9 +355,7 @@ class DecodeConformanceTests(unittest.TestCase):
 0x61,0x62,0x63,0x64,0x00,0x00,0x00,0x00,
 
 ])
-        type_name = "test.conformance/GoldenStringStruct"
-        value = decode_standalone(type_name=type_name, bytes=encoded_bytes, handles=handles)
-        value = construct_response_object(type_name, value)
+        value: typing.Any = test_conformance.GoldenStringStruct.decode(encoded_bytes, handles)
         self.assertEqual(value, test_conformance.GoldenStringStruct(v="abcd"))
 
 
@@ -380,9 +368,7 @@ class DecodeConformanceTests(unittest.TestCase):
 0x61,0x62,0x63,0x64,0x00,0x00,0x00,0x00,
 
 ])
-        type_name = "test.conformance/GoldenNullableStringStruct"
-        value = decode_standalone(type_name=type_name, bytes=encoded_bytes, handles=handles)
-        value = construct_response_object(type_name, value)
+        value: typing.Any = test_conformance.GoldenNullableStringStruct.decode(encoded_bytes, handles)
         self.assertEqual(value, test_conformance.GoldenNullableStringStruct(v="abcd"))
 
 
@@ -394,9 +380,7 @@ class DecodeConformanceTests(unittest.TestCase):
 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
 
 ])
-        type_name = "test.conformance/GoldenNullableStringStruct"
-        value = decode_standalone(type_name=type_name, bytes=encoded_bytes, handles=handles)
-        value = construct_response_object(type_name, value)
+        value: typing.Any = test_conformance.GoldenNullableStringStruct.decode(encoded_bytes, handles)
         self.assertEqual(value, test_conformance.GoldenNullableStringStruct(v=None))
 
 
@@ -407,9 +391,7 @@ class DecodeConformanceTests(unittest.TestCase):
 0x01,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
 
 ])
-        type_name = "test.conformance/GoldenEnumStruct"
-        value = decode_standalone(type_name=type_name, bytes=encoded_bytes, handles=handles)
-        value = construct_response_object(type_name, value)
+        value: typing.Any = test_conformance.GoldenEnumStruct.decode(encoded_bytes, handles)
         self.assertEqual(value, test_conformance.GoldenEnumStruct(v=1))
 
 
@@ -420,9 +402,7 @@ class DecodeConformanceTests(unittest.TestCase):
 0x01,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
 
 ])
-        type_name = "test.conformance/GoldenBitsStruct"
-        value = decode_standalone(type_name=type_name, bytes=encoded_bytes, handles=handles)
-        value = construct_response_object(type_name, value)
+        value: typing.Any = test_conformance.GoldenBitsStruct.decode(encoded_bytes, handles)
         self.assertEqual(value, test_conformance.GoldenBitsStruct(v=1))
 
 
@@ -435,9 +415,7 @@ class DecodeConformanceTests(unittest.TestCase):
 0x01,0x00,0x00,0x00,0x00,0x00,0x01,0x00,
 
 ])
-        type_name = "test.conformance/GoldenTableStruct"
-        value = decode_standalone(type_name=type_name, bytes=encoded_bytes, handles=handles)
-        value = construct_response_object(type_name, value)
+        value: typing.Any = test_conformance.GoldenTableStruct.decode(encoded_bytes, handles)
         self.assertEqual(value, test_conformance.GoldenTableStruct(v=test_conformance.GoldenTable(v=1)))
 
 
@@ -449,9 +427,7 @@ class DecodeConformanceTests(unittest.TestCase):
 0x01,0x00,0x00,0x00,0x00,0x00,0x01,0x00,
 
 ])
-        type_name = "test.conformance/GoldenUnionStruct"
-        value = decode_standalone(type_name=type_name, bytes=encoded_bytes, handles=handles)
-        value = construct_response_object(type_name, value)
+        value: typing.Any = test_conformance.GoldenUnionStruct.decode(encoded_bytes, handles)
         self.assertEqual(value, test_conformance.GoldenUnionStruct(v=test_conformance.GoldenUnion(v=1)))
 
 
@@ -463,9 +439,7 @@ class DecodeConformanceTests(unittest.TestCase):
 0x01,0x00,0x00,0x00,0x00,0x00,0x01,0x00,
 
 ])
-        type_name = "test.conformance/GoldenNullableUnionStruct"
-        value = decode_standalone(type_name=type_name, bytes=encoded_bytes, handles=handles)
-        value = construct_response_object(type_name, value)
+        value: typing.Any = test_conformance.GoldenNullableUnionStruct.decode(encoded_bytes, handles)
         self.assertEqual(value, test_conformance.GoldenNullableUnionStruct(v=test_conformance.GoldenUnion(v=1)))
 
 
@@ -477,9 +451,7 @@ class DecodeConformanceTests(unittest.TestCase):
 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
 
 ])
-        type_name = "test.conformance/GoldenNullableUnionStruct"
-        value = decode_standalone(type_name=type_name, bytes=encoded_bytes, handles=handles)
-        value = construct_response_object(type_name, value)
+        value: typing.Any = test_conformance.GoldenNullableUnionStruct.decode(encoded_bytes, handles)
         self.assertEqual(value, test_conformance.GoldenNullableUnionStruct(v=None))
 
 
@@ -490,9 +462,7 @@ class DecodeConformanceTests(unittest.TestCase):
 0x01,0x02,0x03,0x04,0x00,0x00,0x00,0x00,
 
 ])
-        type_name = "test.conformance/GoldenByteArrayStruct"
-        value = decode_standalone(type_name=type_name, bytes=encoded_bytes, handles=handles)
-        value = construct_response_object(type_name, value)
+        value: typing.Any = test_conformance.GoldenByteArrayStruct.decode(encoded_bytes, handles)
         self.assertEqual(value, test_conformance.GoldenByteArrayStruct(v=[1, 2, 3, 4]))
 
 
@@ -503,9 +473,7 @@ class DecodeConformanceTests(unittest.TestCase):
 0x01,0x00,0x02,0x00,0x00,0x00,0x00,0x00,
 
 ])
-        type_name = "test.conformance/GoldenStructArrayStruct"
-        value = decode_standalone(type_name=type_name, bytes=encoded_bytes, handles=handles)
-        value = construct_response_object(type_name, value)
+        value: typing.Any = test_conformance.GoldenStructArrayStruct.decode(encoded_bytes, handles)
         self.assertEqual(value, test_conformance.GoldenStructArrayStruct(v=[test_conformance.GoldenIntStruct(v=1), test_conformance.GoldenIntStruct(v=2)]))
 
 
@@ -519,9 +487,7 @@ class DecodeConformanceTests(unittest.TestCase):
 0x01,0x02,0x03,0x04,0x00,0x00,0x00,0x00,
 
 ])
-        type_name = "test.conformance/GoldenByteVectorStruct"
-        value = decode_standalone(type_name=type_name, bytes=encoded_bytes, handles=handles)
-        value = construct_response_object(type_name, value)
+        value: typing.Any = test_conformance.GoldenByteVectorStruct.decode(encoded_bytes, handles)
         self.assertEqual(value, test_conformance.GoldenByteVectorStruct(v=[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4]))
 
 
@@ -534,9 +500,7 @@ class DecodeConformanceTests(unittest.TestCase):
 0x01,0x02,0x03,0x04,0x00,0x00,0x00,0x00,
 
 ])
-        type_name = "test.conformance/GoldenNullableByteVectorStruct"
-        value = decode_standalone(type_name=type_name, bytes=encoded_bytes, handles=handles)
-        value = construct_response_object(type_name, value)
+        value: typing.Any = test_conformance.GoldenNullableByteVectorStruct.decode(encoded_bytes, handles)
         self.assertEqual(value, test_conformance.GoldenNullableByteVectorStruct(v=[1, 2, 3, 4]))
 
 
@@ -548,9 +512,7 @@ class DecodeConformanceTests(unittest.TestCase):
 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
 
 ])
-        type_name = "test.conformance/GoldenNullableByteVectorStruct"
-        value = decode_standalone(type_name=type_name, bytes=encoded_bytes, handles=handles)
-        value = construct_response_object(type_name, value)
+        value: typing.Any = test_conformance.GoldenNullableByteVectorStruct.decode(encoded_bytes, handles)
         self.assertEqual(value, test_conformance.GoldenNullableByteVectorStruct(v=None))
 
 
@@ -563,9 +525,7 @@ class DecodeConformanceTests(unittest.TestCase):
 0x01,0x00,0x02,0x00,0x00,0x00,0x00,0x00,
 
 ])
-        type_name = "test.conformance/GoldenStructVectorStruct"
-        value = decode_standalone(type_name=type_name, bytes=encoded_bytes, handles=handles)
-        value = construct_response_object(type_name, value)
+        value: typing.Any = test_conformance.GoldenStructVectorStruct.decode(encoded_bytes, handles)
         self.assertEqual(value, test_conformance.GoldenStructVectorStruct(v=[test_conformance.GoldenIntStruct(v=1), test_conformance.GoldenIntStruct(v=2)]))
 
 
@@ -577,9 +537,7 @@ class DecodeConformanceTests(unittest.TestCase):
 0x01,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
 
 ])
-        type_name = "test.conformance/GoldenNullableStruct"
-        value = decode_standalone(type_name=type_name, bytes=encoded_bytes, handles=handles)
-        value = construct_response_object(type_name, value)
+        value: typing.Any = test_conformance.GoldenNullableStruct.decode(encoded_bytes, handles)
         self.assertEqual(value, test_conformance.GoldenNullableStruct(v=test_conformance.GoldenBoolStruct(v=True)))
 
 
@@ -590,9 +548,7 @@ class DecodeConformanceTests(unittest.TestCase):
 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
 
 ])
-        type_name = "test.conformance/GoldenNullableStruct"
-        value = decode_standalone(type_name=type_name, bytes=encoded_bytes, handles=handles)
-        value = construct_response_object(type_name, value)
+        value: typing.Any = test_conformance.GoldenNullableStruct.decode(encoded_bytes, handles)
         self.assertEqual(value, test_conformance.GoldenNullableStruct(v=None))
 
 
@@ -608,9 +564,7 @@ ctx.event_create_pair()[0],
 0xff,0xff,0xff,0xff,0x00,0x00,0x00,0x00,
 
 ])
-        type_name = "test.conformance/GoldenHandleBasicRightsStruct"
-        value = decode_standalone(type_name=type_name, bytes=encoded_bytes, handles=handles)
-        value = construct_response_object(type_name, value)
+        value: typing.Any = test_conformance.GoldenHandleBasicRightsStruct.decode(encoded_bytes, handles)
         self.assertEqual(fuchsia_controller_py.Handle(value.v).koid(), handle_koids[0])
 
 
@@ -626,9 +580,7 @@ ctx.event_create_pair()[0],
 0xff,0xff,0xff,0xff,0x00,0x00,0x00,0x00,
 
 ])
-        type_name = "test.conformance/GoldenNullableHandleStruct"
-        value = decode_standalone(type_name=type_name, bytes=encoded_bytes, handles=handles)
-        value = construct_response_object(type_name, value)
+        value: typing.Any = test_conformance.GoldenNullableHandleStruct.decode(encoded_bytes, handles)
         self.assertIsNotNone(value.v)
         self.assertEqual(fuchsia_controller_py.Handle(value.v).koid(), handle_koids[0])
 
@@ -640,9 +592,7 @@ ctx.event_create_pair()[0],
 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
 
 ])
-        type_name = "test.conformance/GoldenNullableHandleStruct"
-        value = decode_standalone(type_name=type_name, bytes=encoded_bytes, handles=handles)
-        value = construct_response_object(type_name, value)
+        value: typing.Any = test_conformance.GoldenNullableHandleStruct.decode(encoded_bytes, handles)
         self.assertEqual(value, test_conformance.GoldenNullableHandleStruct(v=None))
 
 
@@ -661,9 +611,7 @@ ctx.event_create_pair()[0],
 0xff,0xff,0xff,0xff,0x01,0x00,0x01,0x00,
 
 ])
-        type_name = "test.conformance/GoldenTableStruct"
-        value = decode_standalone(type_name=type_name, bytes=encoded_bytes, handles=handles)
-        value = construct_response_object(type_name, value)
+        value: typing.Any = test_conformance.GoldenTableStruct.decode(encoded_bytes, handles)
         self.assertEqual(value, test_conformance.GoldenTableStruct(v=test_conformance.GoldenTable()))
 
 

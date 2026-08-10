@@ -2,13 +2,14 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 import asyncio
+import struct
 import unittest
 from typing import Any, Dict
 from unittest.mock import MagicMock, Mock
 
 import fidl_fuchsia_developer_ffx as ffx
 from fidl import HandleWaker
-from fidl_codec import encode_fidl_message, method_ordinal
+from fidl._registry import get_method_ordinal
 from fuchsia_controller_py import Channel, FcTransportStatus
 
 
@@ -123,26 +124,17 @@ class FidlClientTests(unittest.IsolatedAsyncioTestCase):
         got = await proxy._get_staged_message(1)
         self.assertEqual(got, (bytearray([1, 2, 3]), []))
 
-        # This part is a little silly. The decode_fidl_message
-        # function can't be mocked, so we're decoding with an actual
-        # FIDL message we know is loaded (the Echo protocol from ffx).
-        class DecodeObj:
-            pass
+        # Find ordinal from registry
+        ordinal = get_method_ordinal("EchoEchoStringResponse")
+        self.assertIsNotNone(ordinal)
 
-        obj = DecodeObj()
-        obj.__dict__["value"] = "foo"
-        proxy._decode(
-            1,
-            encode_fidl_message(
-                object=obj,
-                library="fuchsia.developer.ffx",
-                type_name="fuchsia.developer.ffx/EchoEchoStringRequest",
-                txid=1,
-                ordinal=method_ordinal(
-                    protocol="fuchsia.developer.ffx/Echo", method="EchoString"
-                ),
-            ),
-        )
+        response_obj = ffx.EchoEchoStringResponse(response="foo")
+        payload, handles = response_obj.encode()
+
+        header = struct.pack("<IHBBQ", 1, 0x02, 0x00, 0x01, ordinal)
+        msg_bytes = header + payload
+
+        proxy._decode(1, (msg_bytes, handles))
         # Verifies state is cleaned up.
         self.assertEqual(len(proxy.staged_messages), 0)
         self.assertEqual(len(proxy.pending_txids), 0)

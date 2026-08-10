@@ -6,7 +6,6 @@ package codegen
 
 import (
 	"embed"
-	"fmt"
 	"strings"
 	"text/template"
 
@@ -30,18 +29,24 @@ func EscapeQuotes(s string) string {
 	return s
 }
 
-func IndentNonEmpty4(s string) string {
+func indent(s string, spaces int) string {
 	if s == "" {
 		return ""
 	}
-	return fmt.Sprintf("    %s", s)
+	prefix := strings.Repeat(" ", spaces)
+	return prefix + strings.ReplaceAll(s, "\n", "\n"+prefix)
+}
+
+func IndentNonEmpty4(s string) string {
+	return indent(s, 4)
 }
 
 func IndentNonEmpty8(s string) string {
-	if s == "" {
-		return ""
-	}
-	return fmt.Sprintf("        %s", s)
+	return indent(s, 8)
+}
+
+func IndentNonEmpty12(s string) string {
+	return indent(s, 12)
 }
 
 func NewGenerator(blackPath string, pyprojectTomlPath string) *Generator {
@@ -49,10 +54,11 @@ func NewGenerator(blackPath string, pyprojectTomlPath string) *Generator {
 
 	return &Generator{
 		Generator: fidlgen.NewGenerator("PythonTemplates", templates, formatter, template.FuncMap{
-			"escapeQuotes":    EscapeQuotes,
-			"trimSpace":       strings.TrimSpace,
-			"indentNonEmpty4": IndentNonEmpty4,
-			"indentNonEmpty8": IndentNonEmpty8,
+			"escapeQuotes":     EscapeQuotes,
+			"trimSpace":        strings.TrimSpace,
+			"indentNonEmpty4":  IndentNonEmpty4,
+			"indentNonEmpty8":  IndentNonEmpty8,
+			"indentNonEmpty12": IndentNonEmpty12,
 		})}
 }
 
