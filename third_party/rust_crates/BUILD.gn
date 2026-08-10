@@ -21601,6 +21601,48 @@ rustc_library("syn-v2_0_119") {
   applicable_licenses = [ ":syn-v2_0_119.license" ]
 }
 
+license("syn-v3_0_3.license") {
+  public_package_name = "syn"
+  license_files = [
+    "//third_party/rust_crates/vendor/syn-3.0.3/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/syn-3.0.3/LICENSE-MIT",
+  ]
+}
+
+rustc_library("syn-v3_0_3") {
+  crate_name = "syn"
+  source_root = "//third_party/rust_crates/vendor/syn-3.0.3/src/lib.rs"
+  output_name = "syn-f41787da2766aad8"
+  edition = "2021"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+  deps += [ ":proc-macro2-v1_0_106" ]
+  deps += [ ":quote-v1_0_45" ]
+  deps += [ ":unicode-ident-v1_0_19" ]
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=f41787da2766aad8",
+    "-Cextra-filename=-f41787da2766aad8",
+    "--cfg=feature=\"clone-impls\"",
+    "--cfg=feature=\"default\"",
+    "--cfg=feature=\"derive\"",
+    "--cfg=feature=\"full\"",
+    "--cfg=feature=\"parsing\"",
+    "--cfg=feature=\"printing\"",
+    "--cfg=feature=\"proc-macro\"",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":syn-v3_0_3.license" ]
+}
+
 license("synstructure-v0_13_2.license") {
   public_package_name = "synstructure"
   license_files =
@@ -22458,7 +22500,7 @@ rustc_library("tokio-v1_53_1") {
   deps += [ ":bytes-v1_11_1" ]
   deps += [ ":mio-v1_2_1" ]
   deps += [ ":pin-project-lite-v0_2_17" ]
-  deps += [ ":tokio-macros-v2_7_1($host_toolchain)" ]
+  deps += [ ":tokio-macros-v2_7_2($host_toolchain)" ]
   if (true && current_os == "linux") {
     deps += [ ":libc-v0_2_189" ]
     deps += [ ":mio-v1_2_1" ]
@@ -22532,16 +22574,16 @@ rustc_library("tokio-v1_53_1") {
   applicable_licenses = [ ":tokio-v1_53_1.license" ]
 }
 
-license("tokio-macros-v2_7_1.license") {
+license("tokio-macros-v2_7_2.license") {
   public_package_name = "tokio_macros"
   license_files =
-      [ "//third_party/rust_crates/vendor/tokio-macros-2.7.1/LICENSE" ]
+      [ "//third_party/rust_crates/vendor/tokio-macros-2.7.2/LICENSE" ]
 }
 
-rustc_macro("tokio-macros-v2_7_1") {
+rustc_macro("tokio-macros-v2_7_2") {
   crate_name = "tokio_macros"
-  source_root = "//third_party/rust_crates/vendor/tokio-macros-2.7.1/src/lib.rs"
-  output_name = "tokio_macros-a27017bc426f9d1c"
+  source_root = "//third_party/rust_crates/vendor/tokio-macros-2.7.2/src/lib.rs"
+  output_name = "tokio_macros-797c2ca3cc72fb08"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -22550,19 +22592,19 @@ rustc_macro("tokio-macros-v2_7_1") {
   deps = []
   deps += [ ":proc-macro2-v1_0_106" ]
   deps += [ ":quote-v1_0_45" ]
-  deps += [ ":syn-v2_0_119" ]
+  deps += [ ":syn-v3_0_3" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=a27017bc426f9d1c",
-    "-Cextra-filename=-a27017bc426f9d1c",
+    "-Cmetadata=797c2ca3cc72fb08",
+    "-Cextra-filename=-797c2ca3cc72fb08",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":tokio-macros-v2_7_1.license" ]
+  applicable_licenses = [ ":tokio-macros-v2_7_2.license" ]
 }
 
 license("tokio-rustls-v0_26_4.license") {

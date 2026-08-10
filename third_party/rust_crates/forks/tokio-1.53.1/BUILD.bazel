@@ -89,10 +89,10 @@ rust_library(
     edition = "2021",
     proc_macro_deps = select({
         "@rules_rust//rust/platform:aarch64-unknown-linux-gnu": [
-            "//third_party/rust_crates/vendor/tokio-macros-2.7.1:tokio_macros",  # aarch64-unknown-linux-gnu
+            "//third_party/rust_crates/vendor/tokio-macros-2.7.2:tokio_macros",  # aarch64-unknown-linux-gnu
         ],
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [
-            "//third_party/rust_crates/vendor/tokio-macros-2.7.1:tokio_macros",  # x86_64-unknown-linux-gnu
+            "//third_party/rust_crates/vendor/tokio-macros-2.7.2:tokio_macros",  # x86_64-unknown-linux-gnu
         ],
         "//conditions:default": [],
     }),
