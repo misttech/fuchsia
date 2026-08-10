@@ -60,7 +60,7 @@ TEST_F(DeviceEnumerationTest, NelsonTest) {
       "i2c-2.aml-i2c.i2c.i2c-2-73.ti_ina231_mlb.ti-ina231",
       "i2c-2.aml-i2c.i2c.i2c-2-64.ti_ina231_speakers.ti-ina231",
       "i2c-0.aml-i2c.i2c.i2c-0-112.shtv3",
-      "gt6853-touch.gt6853_touch.gt6853",
+      "goodix-gt6853-touch.goodix_gt6853_touch.goodix-gt6853",
 
       // Amber LED.
       "gpio-light.aml_light",
@@ -103,7 +103,7 @@ TEST_F(DeviceEnumerationTest, NelsonTest) {
       // One of these touch devices could be on P0/P1 boards.
       "nelson-buttons.buttons",
       // This is the only possible touch device for P2 and beyond.
-      "gt6853-touch.gt6853",
+      "goodix-gt6853-touch.goodix_gt6853_touch.goodix-gt6853",
   };
   VerifyOneOf(kTouchscreenNodeMonikers);
 

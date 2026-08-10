@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef SRC_UI_INPUT_DRIVERS_GT6853_CPP_GT6853_H_
-#define SRC_UI_INPUT_DRIVERS_GT6853_CPP_GT6853_H_
+#ifndef SRC_UI_INPUT_DRIVERS_GOODIX_GT6853_CPP_GOODIX_GT6853_H_
+#define SRC_UI_INPUT_DRIVERS_GOODIX_GT6853_CPP_GOODIX_GT6853_H_
 
 #include <fidl/fuchsia.hardware.gpio/cpp/wire.h>
 #include <fidl/fuchsia.input.report/cpp/wire.h>
@@ -202,4 +202,4 @@ class Gt6853Device : public DeviceType, public ddk::EmptyProtocol<ZX_PROTOCOL_IN
 
 }  // namespace touch
 
-#endif  // SRC_UI_INPUT_DRIVERS_GT6853_CPP_GT6853_H_
+#endif  // SRC_UI_INPUT_DRIVERS_GOODIX_GT6853_CPP_GOODIX_GT6853_H_

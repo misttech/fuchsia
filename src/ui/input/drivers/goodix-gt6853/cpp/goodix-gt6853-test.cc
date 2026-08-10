@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "gt6853.h"
+#include "goodix-gt6853.h"
 
 #include <endian.h>
 #include <lib/async-loop/cpp/loop.h>

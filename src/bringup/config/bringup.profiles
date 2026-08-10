@@ -34,7 +34,7 @@
     "fuchsia.storage.blobfs.compression.decompressor": { "capacity": "1ms", "period": "2ms" },
     "fuchsia.storage.memfs.main": { "capacity": "1800us", "period": "2800us" },
     "fuchsia.storage.minfs.main": { "capacity": "1800us", "period": "2800us" },
-    "fuchsia.ui.input.drivers.gt6853.device": { "capacity": "200us", "period": "1ms" },
+    "fuchsia.ui.input.drivers.goodix-gt6853.device": { "capacity": "200us", "period": "1ms" },
     "fuchsia.ui.input.drivers.focaltech.device": { "capacity": "200us", "period": "1ms" },
     "fuchsia.ui.input.drivers.goodix.gt92xx.device": { "capacity": "200us", "period": "1ms" },
   },

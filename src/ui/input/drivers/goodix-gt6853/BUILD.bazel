@@ -10,9 +10,9 @@ package(
 )
 
 fuchsia_prebuilt_package(
-    name = "gt6853",
-    archive = "@gn_targets//src/ui/input/drivers/gt6853:gt6853",
+    name = "goodix-gt6853",
+    archive = "@gn_targets//src/ui/input/drivers/goodix-gt6853:goodix-gt6853",
     drivers = [
-        "meta/gt6853.cm",
+        "meta/goodix-gt6853.cm",
     ],
 )

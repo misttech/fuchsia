@@ -5,23 +5,23 @@
 use fdf_component::{Driver, DriverContext, DriverError, Node, driver_register};
 use log::info;
 
-struct Gt6853Driver {
+struct GoodixGt6853Driver {
     _node: Node,
 }
 
-driver_register!(Gt6853Driver);
+driver_register!(GoodixGt6853Driver);
 
-impl Driver for Gt6853Driver {
-    const NAME: &str = "gt6853";
+impl Driver for GoodixGt6853Driver {
+    const NAME: &str = "goodix-gt6853";
 
     async fn start(mut context: DriverContext) -> Result<Self, DriverError> {
-        info!("Gt6853Driver (Rust Skeleton) started!");
+        info!("GoodixGt6853Driver (Rust Skeleton) started!");
         let _node = context.take_node()?;
         Ok(Self { _node })
     }
 
     async fn stop(&self) {
-        info!("Gt6853Driver (Rust Skeleton) stopped!");
+        info!("GoodixGt6853Driver (Rust Skeleton) stopped!");
     }
 }
 

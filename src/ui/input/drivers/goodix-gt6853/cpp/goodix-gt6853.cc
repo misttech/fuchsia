@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "gt6853.h"
+#include "goodix-gt6853.h"
 
 #include <endian.h>
 #include <lib/ddk/binding_driver.h>
@@ -123,8 +123,8 @@ zx_status_t Gt6853Device::Create(void* ctx, zx_device_t* parent) {
     return status;
   }
 
-  if ((status = device->DdkAdd(ddk::DeviceAddArgs("gt6853").set_inspect_vmo(
-           device->inspector_.DuplicateVmo()))) != ZX_OK) {
+  if ((status = device->DdkAdd(ddk::DeviceAddArgs("goodix-gt6853")
+                                   .set_inspect_vmo(device->inspector_.DuplicateVmo()))) != ZX_OK) {
     zxlogf(ERROR, "DdkAdd failed: %d", status);
     return status;
   }
@@ -232,7 +232,7 @@ Gt6853Contact Gt6853Device::ParseContact(const uint8_t* const contact_buffer) {
 }
 
 zx_status_t Gt6853Device::Init() {
-  root_ = inspector_.GetRoot().CreateChild("gt6853");
+  root_ = inspector_.GetRoot().CreateChild("goodix-gt6853");
   firmware_status_ = root_.CreateString("firmware_status", "initialization failed");
   config_status_ = root_.CreateString("config_status", "initialization failed");
 
@@ -315,7 +315,7 @@ zx_status_t Gt6853Device::Init() {
 
   // Set scheduling role for device thread.
   {
-    const char* role_name = "fuchsia.ui.input.drivers.gt6853.device";
+    const char* role_name = "fuchsia.ui.input.drivers.goodix-gt6853.device";
     status = device_set_profile_by_role(parent(), zx_thread_self(), role_name, strlen(role_name));
     if (status != ZX_OK) {
       zxlogf(WARNING, "Failed to apply role to worker: %d", status);

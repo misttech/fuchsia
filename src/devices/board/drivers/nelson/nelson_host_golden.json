@@ -170,7 +170,7 @@
     },
     {
         "drivers": [
-            "fuchsia-boot:///gt6853#meta/gt6853.cm"
+            "fuchsia-boot:///goodix-gt6853#meta/goodix-gt6853.cm"
         ]
     },
     {

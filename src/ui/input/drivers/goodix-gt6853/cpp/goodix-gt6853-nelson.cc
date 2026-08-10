@@ -6,7 +6,7 @@
 #include <lib/ddk/metadata.h>
 #include <lib/device-protocol/display-panel.h>
 
-#include "gt6853.h"
+#include "goodix-gt6853.h"
 
 namespace touch {
 

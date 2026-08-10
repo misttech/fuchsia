@@ -115,7 +115,7 @@ zx::result<> PostInit::InitTouch(const fdf::Namespace& incoming) {
   };
 
   fpbus::Node touch_dev;
-  touch_dev.name() = "gt6853-touch";
+  touch_dev.name() = "goodix-gt6853-touch";
   touch_dev.vid() = PDEV_VID_GOODIX;
   touch_dev.did() = PDEV_DID_GOODIX_GT6853;
   touch_dev.metadata() = display_panel_metadata;
@@ -139,8 +139,8 @@ zx::result<> PostInit::InitTouch(const fdf::Namespace& incoming) {
       }},
   };
 
-  auto composite_node_spec =
-      fuchsia_driver_framework::CompositeNodeSpec{{.name = "gt6853_touch", .parents2 = parents}};
+  auto composite_node_spec = fuchsia_driver_framework::CompositeNodeSpec{
+      {.name = "goodix_gt6853_touch", .parents2 = parents}};
 
   fidl::Arena<> fidl_arena;
   fdf::Arena arena('TOUC');
