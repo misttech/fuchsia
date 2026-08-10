@@ -7,19 +7,17 @@ use crate::process::{BinderProcess, BinderProcessGuard};
 
 use starnix_core::mm::{MemoryAccessor, MemoryAccessorExt};
 
-use starnix_core::task::{
-    CurrentTask, EventHandler, Kernel, SchedulerState, SimpleWaiter, Task, WaitCanceler, WaitQueue,
-    Waiter,
-};
+use starnix_core::task::{EventHandler, Kernel, SimpleWaiter, WaitCanceler, WaitQueue, Waiter};
 
 use starnix_logging::{log_trace, log_warn};
-use starnix_sync::{BinderThreadStateLock, LockDepGuard, LockDepMutex, ordered_lock};
+use starnix_sync::{
+    BinderThreadRequeueEventLock, BinderThreadStateLock, InterruptibleEvent, LockDepGuard,
+    LockDepMutex, ordered_lock,
+};
 use starnix_uapi::vfs::FdEvents;
 
 use crossbeam::queue::SegQueue;
-use starnix_types::ownership::{
-    OwnedRef, Releasable, ReleaseGuard, TempRef, WeakRef, release_on_error,
-};
+use starnix_types::ownership::{OwnedRef, Releasable, TempRef, WeakRef};
 use starnix_types::user_buffer::UserBuffer;
 use starnix_uapi::errors::{EACCES, EPERM, ESRCH, Errno};
 use starnix_uapi::user_address::UserRef;
@@ -168,6 +166,11 @@ pub struct BinderThread {
 
     /// A shared queue of available threads for the `BinderProcess`.
     pub available_threads: Arc<SegQueue<WeakRef<BinderThread>>>,
+
+    /// The event that this thread is currently blocked on when waiting for an unscheduled
+    /// transaction, if any. This allows dequeuing worker threads to inspect and requeue the
+    /// event to inherit priority without acquiring `state`.
+    pub requeue_event: LockDepMutex<Option<Arc<InterruptibleEvent>>, BinderThreadRequeueEventLock>,
 }
 
 impl BinderThread {
@@ -189,6 +192,7 @@ impl BinderThread {
             registration: AtomicU8::new(RegistrationState::Unregistered.to_u8()),
             command_queue_waiters,
             available_threads,
+            requeue_event: LockDepMutex::new(None),
         })
     }
 
@@ -203,6 +207,25 @@ impl BinderThread {
     ) -> (BinderThreadGuard<'a>, BinderThreadGuard<'a>) {
         let (g1, g2) = ordered_lock(&t1.state, &t2.state);
         (BinderThreadGuard { guard: g1, thread: t1 }, BinderThreadGuard { guard: g2, thread: t2 })
+    }
+}
+
+/// An RAII registration that associates an `InterruptibleEvent` with a `BinderThread` while waiting.
+///
+/// Note: This does NOT hold a lock while alive. It only sets the event upon creation and
+/// clears it back to `None` on drop.
+pub struct RequeueEventRegistration<'a>(&'a BinderThread);
+
+impl<'a> RequeueEventRegistration<'a> {
+    pub fn new(thread: &'a BinderThread, event: Arc<InterruptibleEvent>) -> Self {
+        *thread.requeue_event.lock() = Some(event);
+        Self(thread)
+    }
+}
+
+impl Drop for RequeueEventRegistration<'_> {
+    fn drop(&mut self) {
+        *self.0.requeue_event.lock() = None;
     }
 }
 
@@ -336,23 +359,18 @@ impl BinderThreadState {
     /// the calling process/thread are dead.
     pub fn pop_transaction_caller(
         &mut self,
-        current_task: &CurrentTask,
-    ) -> Result<
-        (TempRef<'static, BinderProcess>, TempRef<'static, BinderThread>, SchedulerGuard),
-        TransactionError,
-    > {
+    ) -> Result<(TempRef<'static, BinderProcess>, TempRef<'static, BinderThread>), TransactionError>
+    {
         let transaction = self.transactions.pop().ok_or_else(|| errno!(EINVAL))?;
         match transaction {
-            TransactionRole::Receiver(peer, scheduler_state) => {
+            TransactionRole::Receiver(peer) => {
                 log_trace!(
                     "binder transaction popped from thread {} for peer {:?}",
                     self.tid,
                     peer
                 );
-                let (process, thread) = release_on_error!(scheduler_state, current_task, {
-                    peer.upgrade().ok_or(TransactionError::Dead)
-                });
-                Ok((process, thread, scheduler_state))
+                let (process, thread) = peer.upgrade().ok_or(TransactionError::Dead)?;
+                Ok((process, thread))
             }
             TransactionRole::Sender(_) => {
                 log_warn!("caller got confused, nothing to reply to!");
@@ -369,7 +387,7 @@ impl BinderThreadState {
 impl Releasable for BinderThreadState {
     type Context<'a> = &'a Kernel;
 
-    fn release<'a>(self, context: Self::Context<'a>) {
+    fn release<'a>(self, _context: Self::Context<'a>) {
         log_trace!("Dropping BinderThreadState id={}", self.tid);
         // If there are any transactions queued, we need to tell the caller that this thread is now
         // dead.
@@ -379,16 +397,8 @@ impl Releasable for BinderThreadState {
 
         // If there are any transactions that this thread was processing, we need to tell the caller
         // that this thread is now dead and to not expect a reply.
-
-        // The scheduler state need to be restored to the initial one.
-        let mut updated_scheduler_state = false;
         for transaction in self.transactions {
-            if let TransactionRole::Receiver(peer, scheduler_state) = transaction {
-                if !updated_scheduler_state {
-                    updated_scheduler_state = scheduler_state.release_for_task(context, self.tid);
-                } else {
-                    scheduler_state.disarm();
-                }
+            if let TransactionRole::Receiver(peer) = transaction {
                 if let Some(peer_thread) = peer.thread.upgrade() {
                     let sender_thread = &mut peer_thread.lock();
                     generate_dead_replies_for_transactions(
@@ -484,8 +494,6 @@ pub enum Command {
         sender: WeakBinderPeer,
         /// The transaction payload.
         data: TransactionData,
-        /// The eventual scheduler state to use when the transaction is running.
-        scheduler_state: Option<SchedulerState>,
     },
     /// Commands a binder thread to process an incoming reply to its transaction.
     /// Sent from the server to the client.
@@ -755,7 +763,7 @@ pub enum TransactionRole {
 
     /// The binder thread is receiving a transaction and is expected to reply to the peer binder
     /// process and thread.
-    Receiver(WeakBinderPeer, SchedulerGuard),
+    Receiver(WeakBinderPeer),
 }
 
 #[derive(Debug)]
@@ -815,50 +823,6 @@ impl TransactionRole {
             // The transaction specifies a `target_thread` that does not match `thread`, or the
             // transaction's `target_proc` does not match `process`.
             _ => false,
-        }
-    }
-}
-
-#[derive(Debug, Default)]
-pub struct SchedulerGuard(Option<ReleaseGuard<SchedulerState>>);
-
-impl SchedulerGuard {
-    pub fn release_for_task(self, kernel: &Kernel, tid: pid_t) -> bool {
-        if let Ok(task) = kernel.pids.read().get_task(tid) {
-            self.release(&task);
-            return true;
-        } else {
-            // The task has been killed. There is no scheduler state to update.
-            self.disarm();
-            return false;
-        };
-    }
-
-    pub fn disarm(self) {
-        if let Some(scheduler_state) = self.0 {
-            ReleaseGuard::take(scheduler_state);
-        }
-    }
-}
-
-impl From<SchedulerState> for SchedulerGuard {
-    fn from(scheduler_state: SchedulerState) -> Self {
-        Self(Some(scheduler_state.into()))
-    }
-}
-
-impl Releasable for SchedulerGuard {
-    type Context<'a> = &'a Task;
-
-    fn release<'a>(self, task: &'a Task) {
-        if let Some(scheduler_state) = self.0 {
-            let scheduler_state = ReleaseGuard::take(scheduler_state);
-            if let Err(e) = task.set_scheduler_state(scheduler_state) {
-                log_warn!(
-                    "Unable to update scheduler state of task {} to {scheduler_state:?}: {e:?}",
-                    task.tid
-                );
-            }
         }
     }
 }

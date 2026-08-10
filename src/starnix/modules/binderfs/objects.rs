@@ -6,9 +6,8 @@ use crate::process::BinderProcess;
 use crate::shared_memory::TransactionBuffers;
 use crate::thread::{BinderThread, Command};
 use bitflags::bitflags;
-use starnix_core::task::SchedulerState;
 use starnix_core::vfs::FdNumber;
-use starnix_logging::{log_error, log_trace, log_warn, track_stub};
+use starnix_logging::{log_error, log_trace, track_stub};
 use starnix_sync::{BinderObjectLevel, LockDepGuard, LockDepMutex};
 use starnix_types::ownership::{DropGuard, Releasable, WeakRef};
 use starnix_uapi::arc_key::ArcKey;
@@ -400,26 +399,6 @@ impl BinderObjectFlags {
             log_error!("Unknown flag value for object: {:#}", value);
             errno!(EINVAL)
         })
-    }
-
-    pub fn get_scheduler_state(&self) -> Option<SchedulerState> {
-        let bits = self.bits();
-        let priority = bits & uapi::flat_binder_object_flags_FLAT_BINDER_FLAG_PRIORITY_MASK;
-        let policy = (bits & uapi::flat_binder_object_flags_FLAT_BINDER_FLAG_SCHED_POLICY_MASK)
-            >> uapi::flat_binder_object_shifts_FLAT_BINDER_FLAG_SCHED_POLICY_SHIFT;
-        let priority = u8::try_from(priority).expect("priority should fit in a u8");
-        let policy = u8::try_from(policy).expect("policy should fit in a u8");
-        if priority == 0 && policy == 0 {
-            None
-        } else {
-            match SchedulerState::from_binder(policy, priority) {
-                Ok(scheduler_state) => Some(scheduler_state),
-                Err(e) => {
-                    log_warn!("Unable to parse scheduler state {policy}:{priority}: {e:?}");
-                    None
-                }
-            }
-        }
     }
 }
 

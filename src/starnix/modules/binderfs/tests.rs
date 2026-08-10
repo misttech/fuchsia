@@ -15,7 +15,7 @@ pub mod tests {
     };
     use crate::shared_memory::{SharedMemory, TransactionBuffers};
     use crate::thread::{
-        BinderThread, Command, RegistrationState, SchedulerGuard, TransactionError,
+        BinderThread, Command, RegistrationState, RequeueEventRegistration, TransactionError,
         TransactionRole, WeakBinderPeer,
     };
     use crate::user_memory_cursor::UserMemoryCursor;
@@ -3870,7 +3870,6 @@ pub mod tests {
                 let mut proc_b_thread_state = proc_b.thread.lock();
                 proc_b_thread_state.transactions.push(TransactionRole::Receiver(
                     WeakBinderPeer::new(&proc_a.proc, &proc_a.thread),
-                    SchedulerGuard::default(),
                 ));
             }
             device
@@ -4712,6 +4711,72 @@ pub mod tests {
                 local,
                 BinderObjectFlags::empty(),
             );
+        })
+        .await;
+    }
+
+    #[fuchsia::test]
+    async fn unscheduled_sync_transaction_requeues_pi_to_worker_thread() {
+        spawn_kernel_and_run(async |current_task| {
+            let device = BinderDevice::default();
+            let proc_a = BinderProcessFixture::new(current_task, &device);
+            let proc_b = BinderProcessFixture::new_current(current_task, &device);
+
+            let transaction = binder_transaction_data_sg {
+                transaction_data: binder_transaction_data {
+                    target: binder_transaction_data__bindgen_ty_1 { handle: 0 },
+                    code: 42,
+                    ..binder_transaction_data::default()
+                },
+                buffers_size: 0,
+            };
+
+            // Set proc_b as context manager so proc_a can send a transaction to it.
+            let context_manager =
+                BinderObject::new_context_manager_marker(&proc_b.proc, BinderObjectFlags::empty());
+            *device.context_manager.lock() = Some(context_manager);
+
+            // 1. proc_a sends synchronous transaction to proc_b (queued on process queue).
+            device
+                .handle_transaction(&proc_a.context(current_task), &mut Vec::new(), transaction)
+                .expect("A sends transaction to B");
+
+            // 2. proc_a.thread sets its requeue_event as it prepares to wait for the reply.
+            let event = InterruptibleEvent::new();
+            let _requeue_registration =
+                RequeueEventRegistration::new(&proc_a.thread, event.clone());
+
+            // Simulate proc_a starting to wait.
+            let (tx, rx) = std::sync::mpsc::channel();
+            let event_clone = event.clone();
+            let blocked_thread = std::thread::spawn(move || {
+                let guard = event_clone.begin_wait();
+                tx.send(()).unwrap();
+                let _ = guard.block_until(None, zx::MonotonicInstant::INFINITE);
+            });
+
+            // Wait until blocked_thread has called begin_wait().
+            rx.recv().unwrap();
+
+            // Verify before requeue that the event has no owner.
+            assert_eq!(event.get_owner(), None);
+
+            // 3. proc_b.thread (the worker thread) calls handle_thread_read to dequeue the transaction from process queue.
+            let read_buffer_addr = map_memory(current_task, UserAddress::default(), *PAGE_SIZE);
+            device
+                .handle_thread_read(
+                    &proc_b.context(current_task),
+                    &UserBuffer { address: read_buffer_addr, length: *PAGE_SIZE as usize },
+                )
+                .expect("B reads transaction");
+
+            // 4. Verify that Zircon Futex Priority Inheritance ownership was transferred synchronously to proc_b.thread!
+            let worker_koid = proc_b.thread.thread.koid().unwrap();
+            assert_eq!(event.get_owner(), Some(worker_koid));
+
+            // Clean up: notify event and join blocked thread.
+            event.notify();
+            blocked_thread.join().unwrap();
         })
         .await;
     }

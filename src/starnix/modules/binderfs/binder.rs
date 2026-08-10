@@ -16,8 +16,8 @@ use crate::resource_accessor::{
 };
 use crate::shared_memory::{SharedBuffer, SharedMemory, TransactionBuffers};
 use crate::thread::{
-    BinderThread, BinderThreadGuard, BinderThreadState, Command, RegistrationState, SchedulerGuard,
-    TransactionError, TransactionRole, TransactionSender, WeakBinderPeer,
+    BinderThread, BinderThreadGuard, BinderThreadState, Command, RegistrationState,
+    RequeueEventRegistration, TransactionError, TransactionRole, TransactionSender, WeakBinderPeer,
 };
 use crate::user_memory_cursor::UserMemoryCursor;
 use fidl::endpoints::ClientEnd;
@@ -31,8 +31,7 @@ use starnix_core::mm::{
 
 use starnix_core::security;
 use starnix_core::task::{
-    CurrentTask, EventHandler, Kernel, SchedulerState, SimpleWaiter, Task, ThreadGroupKey,
-    WaitCanceler, Waiter,
+    CurrentTask, EventHandler, Kernel, SimpleWaiter, Task, ThreadGroupKey, WaitCanceler, Waiter,
 };
 use starnix_core::vfs::buffers::{InputBuffer, OutputBuffer};
 use starnix_core::vfs::{
@@ -1103,7 +1102,7 @@ impl BinderDriver {
                 } else {
                     let target_thread = match match context.binder_thread.lock().transactions.last()
                     {
-                        Some(TransactionRole::Receiver(rx, _)) => rx.upgrade(),
+                        Some(TransactionRole::Receiver(rx)) => rx.upgrade(),
                         _ => None,
                     } {
                         Some((proc, thread)) if proc.key == target_proc.key => Some(thread),
@@ -1135,32 +1134,9 @@ impl BinderDriver {
                         .into(),
                     );
 
-                    // There are 2 ways to declare a scheduler state for the transaction.
-                    // 1. The object might contain a specific minimal scheduler state to use.
-                    // 2. The current task has a non-realtime priority[0] or the object has been
-                    //    configured to inherit realtime priorities from callers.
-                    //
-                    // The results must always be the best scheduler state according to these rules.
-                    //
-                    // [0]: "The binder driver has always supported nice priority inheritance." from
-                    // https://source.android.com/docs/core/architecture/hidl/binder-ipc#rt-priority
-                    let mut scheduler_state = object.flags.get_scheduler_state();
-                    let current_scheduler_state = context.current_task.read().scheduler_state;
-                    if !current_scheduler_state.is_realtime()
-                        || object.flags.contains(BinderObjectFlags::INHERIT_RT)
-                    {
-                        // Only supercede the scheduler state from the object if this task's is higher.
-                        if scheduler_state.is_none_or(|p: SchedulerState| {
-                            p.is_less_than_for_binder(current_scheduler_state)
-                        }) {
-                            scheduler_state = Some(current_scheduler_state);
-                        }
-                    }
-
                     let command = Command::Transaction {
                         sender: WeakBinderPeer::new(context.binder_proc, context.binder_thread),
                         data: transaction,
-                        scheduler_state,
                     };
 
                     if let Some(target_thread) = target_thread {
@@ -1204,58 +1180,54 @@ impl BinderDriver {
         data: binder_transaction_data_sg,
     ) -> Result<(), TransactionError> {
         // Find the process and thread that initiated the transaction. This reply is for them.
-        let (target_proc, target_thread, scheduler_state) =
-            context.binder_thread.lock().pop_transaction_caller(context.current_task)?;
-        if let Err(e) = release_after!(
-            scheduler_state,
-            context.current_task,
-            || -> Result<(), TransactionError> {
-                let target_task = target_proc.get_task().ok_or(TransactionError::Dead)?;
+        let (target_proc, target_thread) = context.binder_thread.lock().pop_transaction_caller()?;
+        let mut send_reply = || -> Result<(), TransactionError> {
+            let target_task = target_proc.get_task().ok_or(TransactionError::Dead)?;
 
-                // Copy the transaction data to the target process.
-                let (buffers, transaction_state) = self.copy_transaction_buffers(
-                    context,
-                    files,
-                    &target_task,
-                    target_proc.get_resource_accessor(target_task.deref()),
-                    &target_proc,
-                    &data,
-                    None,
-                )?;
+            // Copy the transaction data to the target process.
+            let (buffers, transaction_state) = self.copy_transaction_buffers(
+                context,
+                files,
+                &target_task,
+                target_proc.get_resource_accessor(target_task.deref()),
+                &target_proc,
+                &data,
+                None,
+            )?;
 
-                // Register the transaction buffer.
-                target_proc.lock().active_transactions.insert(
-                    buffers.data.address,
-                    ActiveTransaction {
-                        request_type: RequestType::RequestResponse,
-                        state: transaction_state.into_state(),
-                    }
-                    .into(),
-                );
-
-                // Atomically enqueue the reply on the target thread and the
-                // transaction complete command on the local thread.
-                {
-                    let (mut target_thread, mut binder_thread) =
-                        BinderThread::ordered_lock(&target_thread, context.binder_thread);
-                    target_thread.enqueue_command(Command::Reply(TransactionData {
-                        peer_pid: context.binder_proc.key.pid(),
-                        peer_tid: context.binder_thread.tid,
-                        peer_euid: context.current_task.current_creds().euid,
-
-                        object: FlatBinderObject::Remote { handle: Handle::ContextManager },
-                        code: data.transaction_data.code,
-                        flags: data.transaction_data.flags,
-
-                        buffers,
-                    }));
-
-                    binder_thread.enqueue_command(Command::TransactionComplete);
+            // Register the transaction buffer.
+            target_proc.lock().active_transactions.insert(
+                buffers.data.address,
+                ActiveTransaction {
+                    request_type: RequestType::RequestResponse,
+                    state: transaction_state.into_state(),
                 }
+                .into(),
+            );
 
-                Ok(())
+            // Atomically enqueue the reply on the target thread and the
+            // transaction complete command on the local thread.
+            {
+                let (mut target_thread, mut binder_thread) =
+                    BinderThread::ordered_lock(&target_thread, context.binder_thread);
+                target_thread.enqueue_command(Command::Reply(TransactionData {
+                    peer_pid: context.binder_proc.key.pid(),
+                    peer_tid: context.binder_thread.tid,
+                    peer_euid: context.current_task.current_creds().euid,
+
+                    object: FlatBinderObject::Remote { handle: Handle::ContextManager },
+                    code: data.transaction_data.code,
+                    flags: data.transaction_data.flags,
+
+                    buffers,
+                }));
+
+                binder_thread.enqueue_command(Command::TransactionComplete);
             }
-        ) {
+
+            Ok(())
+        };
+        if let Err(e) = send_reply() {
             // Sending to the target process failed, notify of the transaction failure.
             let _ = e.dispatch(&target_thread);
             return Err(e);
@@ -1268,11 +1240,20 @@ impl BinderDriver {
     fn get_active_command(
         thread_state: &mut BinderThreadState,
         proc_state: &mut crate::process::BinderProcessState,
+        worker_thread: &zx::Thread,
     ) -> Option<Command> {
         if !thread_state.command_queue.is_empty() || !thread_state.transactions.is_empty() {
             thread_state.command_queue.pop_front()
         } else {
-            proc_state.command_queue.pop_front()
+            let command = proc_state.command_queue.pop_front();
+            if let Some(Command::Transaction { sender, .. }) = &command {
+                if let Some((_proc, sender_thread)) = sender.upgrade() {
+                    if let Some(event) = &*sender_thread.requeue_event.lock() {
+                        let _ = event.assign_new_owner(worker_thread);
+                    }
+                }
+            }
+            command
         }
     }
 
@@ -1301,21 +1282,24 @@ impl BinderDriver {
                 return Ok(0);
             }
 
-            let command =
-                Self::get_active_command(&mut thread_state, &mut proc_state).or_else(|| {
-                    // If there is no pending command, but the current transaction is marked as dead,
-                    // pop the transaction and dispatch a `DeadReply`.
-                    match thread_state.transactions.last() {
-                        Some(TransactionRole::Sender(TransactionSender {
-                            is_alive: false,
-                            ..
-                        })) => {
-                            thread_state.transactions.pop();
-                            Some(Command::DeadReply)
-                        }
-                        _ => None,
+            let command = Self::get_active_command(
+                &mut thread_state,
+                &mut proc_state,
+                &context.binder_thread.thread,
+            )
+            .or_else(|| {
+                // If there is no pending command, but the current transaction is marked as dead,
+                // pop the transaction and dispatch a `DeadReply`.
+                match thread_state.transactions.last() {
+                    Some(TransactionRole::Sender(TransactionSender {
+                        is_alive: false, ..
+                    })) => {
+                        thread_state.transactions.pop();
+                        Some(Command::DeadReply)
                     }
-                });
+                    _ => None,
+                }
+            });
 
             // If we have sent a request and are about to wait for a response, the thread we've
             // sent to should inherit our priority while we wait.
@@ -1337,36 +1321,10 @@ impl BinderDriver {
                 let bytes_written =
                     command.write_to_memory(context.memory_accessor, read_buffer)?;
                 let has_pending_proc_commands = match command {
-                    Command::Transaction { sender, scheduler_state, .. } => {
+                    Command::Transaction { sender, .. } => {
                         // The transaction is synchronous and we're expected to give a reply, so
                         // push the transaction onto the transaction stack.
-
-                        // If the transaction must inherit the sender scheduler state, let update the
-                        // scheduler state, and keep track of the previous one.
-                        let scheduler_state = (|| {
-                            // If we know the target thread, we can inherit via futex PI rather
-                            // than making a call to the scheduler api.
-                            if let Some(scheduler_state) = scheduler_state
-                                && target_thread.is_none()
-                            {
-                                let old_scheduler_state =
-                                    context.current_task.read().scheduler_state;
-                                if old_scheduler_state.is_less_than_for_binder(scheduler_state) {
-                                    match context.current_task.set_scheduler_state(scheduler_state)
-                                    {
-                                        Ok(()) => return SchedulerGuard::from(old_scheduler_state),
-                                        Err(e) => {
-                                            log_warn!(
-                                                "Unable to update scheduler state of task {} to {scheduler_state:?}: {e:?}",
-                                                context.current_task.tid
-                                            );
-                                        }
-                                    }
-                                }
-                            }
-                            SchedulerGuard::default()
-                        })();
-                        let tx = TransactionRole::Receiver(sender, scheduler_state);
+                        let tx = TransactionRole::Receiver(sender);
                         thread_state.transactions.push(tx);
                         false
                     }
@@ -1419,6 +1377,11 @@ impl BinderDriver {
             // the thread queue and the process queue, and loop back to check whether some work is
             // available.
             let event = InterruptibleEvent::new();
+            let _requeue_registration = if target_thread.is_none() {
+                Some(RequeueEventRegistration::new(context.binder_thread, event.clone()))
+            } else {
+                None
+            };
             let (mut waiter, guard) = SimpleWaiter::new(&event);
             thread_state.command_queue.wait_async_simple(&mut waiter);
 
@@ -1443,15 +1406,11 @@ impl BinderDriver {
 
             // Put this thread to sleep. If we know the thread we are sending to, use that to
             // inherit priority.
-            if let Some(thread) = target_thread {
-                context.current_task.block_with_owner_until(
-                    guard,
-                    &*thread,
-                    zx::MonotonicInstant::INFINITE,
-                )?;
-            } else {
-                context.current_task.block_until(guard, zx::MonotonicInstant::INFINITE)?;
-            }
+            context.current_task.block_with_optional_owner_until(
+                guard,
+                target_thread.as_deref(),
+                zx::MonotonicInstant::INFINITE,
+            )?;
         }
     }
 
