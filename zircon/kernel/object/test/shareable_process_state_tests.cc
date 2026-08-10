@@ -21,7 +21,7 @@ bool IncrementDecrement() {
 
   KernelHandle<EventPairDispatcher> eventpair[2];
   zx_rights_t rights;
-  ASSERT_EQ(EventPairDispatcher::Create(&eventpair[0], &eventpair[1], &rights), ZX_OK);
+  ASSERT_EQ(rust_event_pair_dispatcher_create(&eventpair[0], &eventpair[1], &rights), ZX_OK);
 
   EXPECT_EQ(state.handle_table().HandleCount(), (uint32_t)0);
 

@@ -177,7 +177,6 @@ pub(crate) use impl_dispatcher_facade_with_state;
 /// Helper macro to declare facade structs and implement common facade traits, state access methods,
 /// and peered dispatcher operations (init_peer, get_related_koid, user_signal_self,
 /// user_signal_peer, on_zero_handles) for PeeredDispatcher subtypes with state.
-#[allow(unused_macros)]
 macro_rules! impl_peered_dispatcher_facade_with_state {
     (
         $(#[$meta:meta])* $vis:vis struct $type:ident,
@@ -251,11 +250,9 @@ macro_rules! impl_peered_dispatcher_facade_with_state {
         }
     };
 }
-#[allow(unused_imports)]
 pub(crate) use impl_peered_dispatcher_facade_with_state;
 
 /// Helper macro to generate standard `rust_<type>_state_init` and peered FFI trampolines.
-#[allow(unused_macros)]
 macro_rules! impl_peered_dispatcher_state_init {
     ($type:ident, $state:ident $(, $arg:ident : $arg_ty:ty)* $(,)?) => {
         paste::paste! {
@@ -313,7 +310,6 @@ macro_rules! impl_peered_dispatcher_state_init {
         }
     };
 }
-#[allow(unused_imports)]
 pub(crate) use impl_peered_dispatcher_state_init;
 
 /// Helper macro to generate standard `rust_<type>_state_init` FFI trampolines.

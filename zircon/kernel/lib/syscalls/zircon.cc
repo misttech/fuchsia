@@ -27,7 +27,6 @@
 #include <ktl/algorithm.h>
 #include <ktl/atomic.h>
 #include <object/event_dispatcher.h>
-#include <object/event_pair_dispatcher.h>
 #include <object/handle.h>
 #include <object/log_dispatcher.h>
 #include <object/process_dispatcher.h>
@@ -87,28 +86,6 @@ zx_instant_mono_ticks_t sys_ticks_get_via_kernel() {
 zx_instant_boot_ticks_t sys_ticks_get_boot_via_kernel() {
   kcounter_add(syscalls_zx_ticks_get_boot, 1);
   return current_boot_ticks();
-}
-
-// zx_status_t zx_eventpair_create
-zx_status_t sys_eventpair_create(uint32_t options, zx_handle_t* out0, zx_handle_t* out1) {
-  if (options != 0u)  // No options defined/supported yet.
-    return ZX_ERR_NOT_SUPPORTED;
-
-  auto up = ProcessDispatcher::GetCurrent();
-  zx_status_t res = up->EnforceBasicPolicy(ZX_POL_NEW_EVENTPAIR);
-  if (res != ZX_OK)
-    return res;
-
-  KernelHandle<EventPairDispatcher> handle0, handle1;
-  zx_rights_t rights;
-  zx_status_t result = EventPairDispatcher::Create(&handle0, &handle1, &rights);
-
-  if (result == ZX_OK)
-    result = up->MakeAndAddHandle(ktl::move(handle0), rights, out0);
-  if (result == ZX_OK)
-    result = up->MakeAndAddHandle(ktl::move(handle1), rights, out1);
-
-  return result;
 }
 
 // zx_status_t zx_cprng_draw_once

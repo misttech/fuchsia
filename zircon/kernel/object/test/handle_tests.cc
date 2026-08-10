@@ -190,7 +190,7 @@ bool KernelHandleUpgrade() {
   // whether its on_zero_handles() has been called.
   KernelHandle<EventPairDispatcher> eventpair[2];
   zx_rights_t rights;
-  ASSERT_EQ(EventPairDispatcher::Create(&eventpair[0], &eventpair[1], &rights), ZX_OK);
+  ASSERT_EQ(rust_event_pair_dispatcher_create(&eventpair[0], &eventpair[1], &rights), ZX_OK);
   {
     HandleOwner handle_owner;
     {

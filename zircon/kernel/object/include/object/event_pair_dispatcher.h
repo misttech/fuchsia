@@ -7,29 +7,39 @@
 #ifndef ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_EVENT_PAIR_DISPATCHER_H_
 #define ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_EVENT_PAIR_DISPATCHER_H_
 
-#include <sys/types.h>
+#include <lib/object-constants.h>
 #include <zircon/rights.h>
 #include <zircon/types.h>
 
-#include <fbl/ref_ptr.h>
+#include <kernel/ffi.h>
 #include <object/dispatcher.h>
 #include <object/handle.h>
+#include <object/opaque_storage.h>
 
-class EventPairDispatcher final
-    : public PeeredDispatcher<EventPairDispatcher, ZX_DEFAULT_EVENTPAIR_RIGHTS, ZX_EVENT_SIGNALED> {
+class EventPairDispatcher;
+
+DECLARE_PEERED_DISPATCHER_RUST_PROTOS(EventPairDispatcher, rust_event_pair_dispatcher)
+
+extern "C" {
+zx_status_t cpp_event_pair_dispatcher_create(
+    void* holder, ffi::Uninitialized<KernelHandle<EventPairDispatcher>>* handle_out);
+zx_status_t rust_event_pair_dispatcher_create(KernelHandle<EventPairDispatcher>* handle0_out,
+                                              KernelHandle<EventPairDispatcher>* handle1_out,
+                                              zx_rights_t* rights_out);
+}  // extern "C"
+
+class EventPairDispatcher final : public Dispatcher {
  public:
-  static zx_status_t Create(KernelHandle<EventPairDispatcher>* handle0,
-                            KernelHandle<EventPairDispatcher>* handle1, zx_rights_t* rights);
-
+  explicit EventPairDispatcher(void* holder);
   ~EventPairDispatcher() final;
-  zx_obj_type_t get_type() const final { return ZX_OBJ_TYPE_EVENTPAIR; }
 
-  // PeeredDispatcher implementation.
-  void on_zero_handles_locked() TA_REQ(get_lock());
-  void OnPeerZeroHandlesLocked() TA_REQ(get_lock());
+  DECLARE_PEERED_DISPATCHER_RUST_METHODS(rust_event_pair_dispatcher, ZX_OBJ_TYPE_EVENTPAIR, true)
+
+ protected:
+  Lock<CriticalMutex>* get_lock() const final;
 
  private:
-  explicit EventPairDispatcher(fbl::RefPtr<PeerHolder<EventPairDispatcher>> holder);
+  OpaqueStorage<kEventPairDispatcherStateSize, kEventPairDispatcherStateAlign> opaque_storage_;
 };
 
 #endif  // ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_EVENT_PAIR_DISPATCHER_H_

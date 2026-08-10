@@ -4,11 +4,11 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-use crate::object::{EventDispatcher, HandleValue, ProcessDispatcher};
+use crate::object::{EventDispatcher, EventPairDispatcher, HandleValue, ProcessDispatcher};
 use debug::ltracef;
 use syscalls_macro::syscall;
 use zx_status::{ErrorStatus, Status};
-use zx_types::ZX_POL_NEW_EVENT;
+use zx_types::{ZX_POL_NEW_EVENT, ZX_POL_NEW_EVENTPAIR};
 
 const LOCAL_TRACE: u32 = 0;
 
@@ -25,5 +25,27 @@ pub fn sys_event_create(options: u32, out: &mut HandleValue) -> Result<(), Error
     let (kernel_handle, rights) = EventDispatcher::create(options)?;
     let user_handle = kernel_handle.make_and_add_handle(rights)?;
     *out = user_handle;
+    Ok(())
+}
+
+#[syscall]
+pub fn sys_eventpair_create(
+    options: u32,
+    out0: &mut HandleValue,
+    out1: &mut HandleValue,
+) -> Result<(), ErrorStatus> {
+    ltracef!("options {:#x}\n", options);
+
+    if options != 0 {
+        return Err(Status::NOT_SUPPORTED.into());
+    }
+
+    ProcessDispatcher::with_current(|up| up.enforce_basic_policy(ZX_POL_NEW_EVENTPAIR))?;
+
+    let (handle0, handle1, rights) = EventPairDispatcher::create()?;
+    let user_handle0 = handle0.make_and_add_handle(rights)?;
+    let user_handle1 = handle1.make_and_add_handle(rights)?;
+    *out0 = user_handle0;
+    *out1 = user_handle1;
     Ok(())
 }
