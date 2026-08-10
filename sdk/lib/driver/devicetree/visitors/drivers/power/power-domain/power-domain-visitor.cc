@@ -12,6 +12,7 @@
 
 #include <vector>
 
+#include <bind/fuchsia/cpp/bind.h>
 #include <bind/fuchsia/hardware/power/cpp/bind.h>
 #include <bind/fuchsia/hardware/powerdomain/cpp/bind.h>
 #include <bind/fuchsia/power/cpp/bind.h>
@@ -102,6 +103,7 @@ zx::result<> PowerDomainVisitor::AddChildNodeSpec(fdf_devicetree::Node& child, u
 
   if (name) {
     properties.push_back(fdf::MakeProperty2(bind_fuchsia_power::POWER_DOMAIN_NAME, *name));
+    properties.push_back(fdf::MakeProperty2(bind_fuchsia::NAME, *name));
   }
 
   auto power_node = fuchsia_driver_framework::ParentSpec2{{

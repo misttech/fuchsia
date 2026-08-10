@@ -36,6 +36,7 @@ devicetree_visitor("power-domain-visitor") {
   non_sdk_deps = [
     "//sdk/fidl/fuchsia.hardware.power:fuchsia.hardware.power_bindlib_cpp",
     "//sdk/fidl/fuchsia.hardware.powerdomain:fuchsia.hardware.powerdomain_bindlib_cpp",
+    "//src/devices/bind/fuchsia:fuchsia_cpp",
     "//src/devices/bind/fuchsia.power:fuchsia.power_cpp",
     "//src/lib/ddk",
   ]
@@ -50,6 +51,7 @@ test("power-domain-visitor-test-bin") {
     "//sdk/lib/driver/devicetree/testing:visitor-test-helper",
     "//sdk/lib/driver/devicetree/visitors:registry",
     "//sdk/lib/driver/devicetree/visitors/default/bind-property",
+    "//src/devices/bind/fuchsia:fuchsia_cpp",
     "//src/devices/bind/fuchsia.power:fuchsia.power_cpp",
     "//src/lib/fxl/test:gtest_main",
   ]

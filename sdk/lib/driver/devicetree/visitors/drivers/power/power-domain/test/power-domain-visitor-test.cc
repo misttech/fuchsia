@@ -13,6 +13,7 @@
 
 #include <cstdint>
 
+#include <bind/fuchsia/cpp/bind.h>
 #include <bind/fuchsia/hardware/power/cpp/bind.h>
 #include <bind/fuchsia/hardware/powerdomain/cpp/bind.h>
 #include <bind/fuchsia/power/cpp/bind.h>
@@ -53,7 +54,8 @@ TEST(PowerDomainVisitorTest, TestMetadataAndBindProperty) {
       {{fdf::MakeProperty2(bind_fuchsia_hardware_power::SERVICE,
                            bind_fuchsia_hardware_power::SERVICE_ZIRCONTRANSPORT),
         fdf::MakeProperty2(bind_fuchsia_power::POWER_DOMAIN, static_cast<uint32_t>(TEST_DOMAIN_ID)),
-        fdf::MakeProperty2(bind_fuchsia_power::POWER_DOMAIN_NAME, "ice")}},
+        fdf::MakeProperty2(bind_fuchsia_power::POWER_DOMAIN_NAME, "ice"),
+        fdf::MakeProperty2(bind_fuchsia::NAME, "ice")}},
       cpufreq_node_spec[0].parents2()->at(1).properties(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
       {{fdf::MakeAcceptBindRule(bind_fuchsia_hardware_power::SERVICE,
@@ -120,7 +122,8 @@ TEST(PowerDomainVisitorTest, TestBasicPowerDomain) {
       {{fdf::MakeProperty2(bind_fuchsia_hardware_powerdomain::SERVICE,
                            bind_fuchsia_hardware_powerdomain::SERVICE_ZIRCONTRANSPORT),
         fdf::MakeProperty2(bind_fuchsia_power::POWER_DOMAIN, 2u),
-        fdf::MakeProperty2(bind_fuchsia_power::POWER_DOMAIN_NAME, "basic_power_2")}},
+        fdf::MakeProperty2(bind_fuchsia_power::POWER_DOMAIN_NAME, "basic_power_2"),
+        fdf::MakeProperty2(bind_fuchsia::NAME, "basic_power_2")}},
       device_basic_2_node_spec[0].parents2()->at(1).properties(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
       {{fdf::MakeAcceptBindRule(bind_fuchsia_hardware_powerdomain::SERVICE,
