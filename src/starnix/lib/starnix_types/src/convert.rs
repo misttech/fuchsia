@@ -2,8 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_starnix_binder as fbinder;
 use starnix_uapi::open_flags::OpenFlags;
-use {fidl_fuchsia_io as fio, fidl_fuchsia_starnix_binder as fbinder};
+use std::ops::Bound;
 
 pub trait FromFidl<T>: Sized {
     fn from_fidl(value: T) -> Self;
@@ -117,6 +119,31 @@ impl FromFidl<fbinder::FileFlags> for OpenFlags {
     }
 }
 
+/// Extension trait for `std::ops::Bound` to allow fallible mapping of its contents.
+///
+/// This is useful in situations where range bounds must be converted into a different type
+/// prior to range-queries (e.g. converting a `Bound<usize>` received from an API but needing
+/// to index into an internal structure requiring `Bound<std::num::NonZeroU16>`), where
+/// the conversion operation itself is fallible (e.g. `try_from`).
+pub trait BoundExt<T> {
+    fn try_map<U, E, F>(self, f: F) -> Result<Bound<U>, E>
+    where
+        F: FnOnce(T) -> Result<U, E>;
+}
+
+impl<T> BoundExt<T> for Bound<T> {
+    fn try_map<U, E, F>(self, f: F) -> Result<Bound<U>, E>
+    where
+        F: FnOnce(T) -> Result<U, E>,
+    {
+        match self {
+            Bound::Unbounded => Ok(Bound::Unbounded),
+            Bound::Included(x) => Ok(Bound::Included(f(x)?)),
+            Bound::Excluded(x) => Ok(Bound::Excluded(f(x)?)),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -155,5 +182,29 @@ mod tests {
                 | fio::OpenFlags::RIGHT_WRITABLE
                 | fio::OpenFlags::POSIX_WRITABLE,
         );
+    }
+
+    #[::fuchsia::test]
+    fn test_bound_try_map() {
+        let f = |x: usize| -> Result<std::num::NonZeroU16, &'static str> {
+            let val = u16::try_from(x).map_err(|_| "out of range")?;
+            std::num::NonZeroU16::new(val).ok_or("is zero")
+        };
+
+        assert_eq!(
+            Bound::<usize>::Unbounded.try_map(f),
+            Ok(Bound::<std::num::NonZeroU16>::Unbounded)
+        );
+        assert_eq!(
+            Bound::Included(5usize).try_map(f),
+            Ok(Bound::Included(std::num::NonZeroU16::new(5).unwrap()))
+        );
+        assert_eq!(
+            Bound::Excluded(3usize).try_map(f),
+            Ok(Bound::Excluded(std::num::NonZeroU16::new(3).unwrap()))
+        );
+
+        assert_eq!(Bound::Included(usize::MAX).try_map(f), Err("out of range"));
+        assert_eq!(Bound::Included(0usize).try_map(f), Err("is zero"));
     }
 }
