@@ -95,6 +95,9 @@ use syn::{Data, DeriveInput, parse_macro_input};
 ///
 /// - **Enum Only**: This macro is strictly restricted to `enum` declarations. Attempting to derive
 ///   `TraceableError` on a `struct` or `union` will result in a compilation-time panic.
+/// - **`std::error::Error` Requirement**: The derived implementation of `source_error()` delegates directly
+///   to `std::error::Error::source(self)`. Therefore, any type deriving `TraceableError` must also implement
+///   `std::error::Error` (e.g., via `#[derive(thiserror::Error)]`).
 ///
 /// # Examples
 ///
@@ -229,6 +232,10 @@ pub fn derive_traceable_error(input: TokenStream) -> TokenStream {
                 match self {
                     #(#chain_match_arms)*
                 }
+            }
+
+            fn source_error(&self) -> Option<&(dyn ::std::error::Error + 'static)> {
+                ::std::error::Error::source(self)
             }
         }
     };

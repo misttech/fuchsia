@@ -42,6 +42,14 @@ pub trait TraceableError: std::fmt::Debug + std::fmt::Display {
     fn diagnostic_code(&self) -> String {
         self.chain_codes().join("-")
     }
+
+    /// Returns the underlying causal error, if any, as a dynamic `std::error::Error`.
+    ///
+    /// If your type also implements `std::error::Error`, you should override this
+    /// to return `self.source()`. The `#[derive(TraceableError)]` macro does this automatically.
+    fn source_error(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        None
+    }
 }
 
 impl TraceableError for anyhow::Error {
@@ -61,6 +69,14 @@ impl TraceableError for anyhow::Error {
             boxed.chain_codes()
         } else {
             vec!["anyhow".to_string()]
+        }
+    }
+
+    fn source_error(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        if let Some(boxed) = self.downcast_ref::<TraceableBox>() {
+            std::error::Error::source(boxed)
+        } else {
+            self.source()
         }
     }
 }
@@ -114,31 +130,15 @@ impl TraceableBox {
 
 impl std::fmt::Display for TraceableBox {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mut err_str = self.0.to_string();
-        let chain = self.0.chain_codes();
-        let diag_code = self.0.diagnostic_code();
-
-        let mut sub_slice = diag_code.as_str();
-        for (i, layer) in chain.iter().enumerate() {
-            let suffix = format!(" [{}]", sub_slice);
-            if let Some(stripped) = err_str.strip_suffix(&suffix) {
-                err_str = stripped.to_string();
-                break;
-            }
-            if i + 1 < chain.len() {
-                sub_slice = &sub_slice[layer.len() + 1..];
-            }
-        }
-
-        if err_str.is_empty() {
-            write!(f, "[{}]", diag_code)
-        } else {
-            write!(f, "{} [{}]", err_str, diag_code)
-        }
+        write!(f, "{}", self.0)
     }
 }
 
-impl std::error::Error for TraceableBox {}
+impl std::error::Error for TraceableBox {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        self.0.source_error()
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -166,7 +166,7 @@ mod tests {
     }
 
     #[test]
-    fn test_traceable_box_display_deduplicates_suffix() {
+    fn test_traceable_box_display_delegates() {
         #[derive(Debug)]
         struct InnerError;
         impl std::fmt::Display for InnerError {
@@ -202,10 +202,12 @@ mod tests {
         }
 
         let inner_box = TraceableBox::from(InnerError);
-        assert_eq!(inner_box.to_string(), "root failure [Inner]");
+        assert_eq!(inner_box.to_string(), "root failure");
+        assert_eq!(inner_box.diagnostic_code(), "Inner");
 
         let outer_box = TraceableBox::from(OuterError(inner_box));
-        assert_eq!(outer_box.to_string(), "outer wrapper: root failure [Outer-Inner]");
+        assert_eq!(outer_box.to_string(), "outer wrapper: root failure");
+        assert_eq!(outer_box.diagnostic_code(), "Outer-Inner");
     }
 
     #[test]
@@ -227,8 +229,7 @@ mod tests {
 
         let boxed_err = consume_box().unwrap_err();
         assert_eq!(boxed_err.chain_codes().len(), 1);
-        assert!(boxed_err.to_string().contains("root failure"));
-        assert!(boxed_err.to_string().contains("[anyhow]"));
+        assert_eq!(boxed_err.to_string(), "root failure");
     }
 
     #[test]
@@ -239,11 +240,6 @@ mod tests {
         let boxed_anyhow: TraceableBox = anyhow_err.into();
 
         let display_str = boxed_anyhow.to_string();
-        let occurrences = display_str.matches("[DummyError]").count();
-        assert_eq!(
-            occurrences, 1,
-            "Expected '[DummyError]' to appear only once in: {}",
-            display_str
-        );
+        assert_eq!(display_str, "DummyError");
     }
 }

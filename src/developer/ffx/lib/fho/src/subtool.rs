@@ -16,6 +16,7 @@ use std::fs::File;
 use std::os::unix::process::ExitStatusExt;
 use std::path::PathBuf;
 use std::process::ExitStatus;
+use traceable_error::TraceableError;
 use writer::ToolIO;
 
 /// The main trait for defining an ffx tool. This is not intended
@@ -216,7 +217,15 @@ impl<T: FfxTool<E>, E: Into<Error> + 'static> ToolRunner for FhoTool<T, E> {
                 Err(user_error!("--schema is not supported for this command (subtool)."))
             }
         } else {
-            self.main.main(writer).await.map(|_| ExitStatus::from_raw(0)).map_err(|e| e.into())
+            let r = self.main.main(writer).await;
+            match r {
+                Ok(()) => Ok(ExitStatus::from_raw(0)),
+                Err(e) => {
+                    let fho_err: Error = e.into();
+                    log::error!("[{}]: {:?}", fho_err.diagnostic_code(), fho_err);
+                    Err(fho_err)
+                }
+            }
         };
         let res = metrics
             .command_finished(&res, &self.redacted_args, self.enhanced_args.as_deref())

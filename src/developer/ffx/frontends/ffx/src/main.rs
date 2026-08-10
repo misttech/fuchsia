@@ -17,6 +17,7 @@ use fho::FhoEnvironment;
 use std::collections::HashSet;
 use std::os::unix::process::ExitStatusExt;
 use std::process::ExitStatus;
+use traceable_error::TraceableError;
 
 /// The command to be invoked and everything it needs to invoke
 struct FfxSubCommand {
@@ -212,6 +213,9 @@ impl ToolRunner for FfxSubCommand {
             let res = run_legacy_subcommand(self.app, self.context, self.cmd)
                 .await
                 .map(|_| ExitStatus::from_raw(0));
+            if let Err(ref e) = res {
+                log::error!("[{}]: {:?}", e.diagnostic_code(), e);
+            }
             metrics.command_finished(&res, &redacted_args, enhanced_args.as_deref()).await.and(res)
         }
     }

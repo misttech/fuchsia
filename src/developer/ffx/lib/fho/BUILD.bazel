@@ -41,6 +41,7 @@ rustc_library(
         "//src/developer/ffx/config:lib",
         "//src/developer/ffx/lib/diagnostics/analytics/state:lib",
         "//src/developer/ffx/lib/fho/metadata:lib",
+        "//src/developer/ffx/lib/traceable_error:lib",
         "//src/developer/lib/writer:lib",
         "//third_party/rust_crates/vendor:anyhow",
         "//third_party/rust_crates/vendor:argh",

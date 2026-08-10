@@ -49,8 +49,10 @@ rustc_binary(
         "//src/developer/ffx/config:lib",
         "//src/developer/ffx/lib/errors:lib",
         "//src/developer/ffx/lib/fho:lib",
+        "//src/developer/ffx/lib/traceable_error:lib",
         "//src/lib/fuchsia-async",
         "//third_party/rust_crates/vendor:argh",
+        "//third_party/rust_crates/vendor:log",
     ],
 )
 

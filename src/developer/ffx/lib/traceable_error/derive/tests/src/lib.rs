@@ -13,16 +13,9 @@ enum SimpleError {
     CodeOne,
 }
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
+#[error("RootError")]
 struct RootError;
-
-impl std::fmt::Display for RootError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "RootError")
-    }
-}
-
-impl std::error::Error for RootError {}
 
 impl TraceableError for RootError {
     fn layer_code(&self) -> String {
@@ -41,16 +34,16 @@ enum FromError {
 
 #[derive(Debug, thiserror::Error, TraceableError)]
 enum ChainedError {
-    #[error("Wrapped")]
+    #[error("Wrapped: {0}")]
     Wrapped(#[source] RootError),
-    #[error("FromError")]
+    #[error("FromError: {0}")]
     FromError(#[from] FromError),
 }
 
 #[derive(Debug, thiserror::Error, TraceableError)]
 enum OpaqueError {
-    #[error("Wrapped")]
     #[trace(opaque)]
+    #[error("Wrapped: {0}")]
     Wrapped(#[source] RootError),
 }
 

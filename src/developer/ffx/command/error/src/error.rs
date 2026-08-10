@@ -105,12 +105,15 @@ fn write_display(f: &mut std::fmt::Formatter<'_>, error: &anyhow::Error) -> std:
         // This will print: "this thing broke: this thing broke"
         //
         // This check will prevent that from happening without removing the context chain.
+        // We check for containment using `.contains()` (rather than exact equality or
+        // ends_with) to robustly handle cases where a wrapper's message includes its
+        // source's message (which is common with `#[error("...: {0}")]`).
         let err_string = format!("{}", e);
         // There have been issues with empty strings in the past when formatting errors. Make
         // sure to explicitly show that an empty string is in one of the errors so that it can
         // be caught. This sort of thing used to happen with certain SSH errors.
         let err_string = if err_string.is_empty() { "\"\"".to_owned() } else { err_string };
-        if err_string == previous_error {
+        if previous_error.contains(&err_string) {
             continue;
         }
         write!(f, ": {}", err_string)?;
@@ -389,5 +392,29 @@ mod tests {
         let non_fatal = NonFatalError(inner);
         let err = Error::User(anyhow!(non_fatal));
         assert_eq!(format!("{}", err), "non-fatal error encountered: inner error");
+    }
+
+    #[test]
+    fn test_error_doesnt_duplicate_alternating() {
+        #[derive(thiserror::Error, Debug)]
+        #[error("Prefix: {0}")]
+        struct OuterError(#[source] anyhow::Error);
+
+        #[derive(thiserror::Error, Debug)]
+        #[error("NonFatal")]
+        struct NonFatal(#[source] anyhow::Error);
+
+        #[derive(thiserror::Error, Debug)]
+        #[error("TargetNotFound")]
+        struct TargetNotFound;
+
+        let leaf = TargetNotFound;
+        let non_fatal = NonFatal(anyhow::Error::new(leaf));
+        let fho_err = Error::User(anyhow::Error::new(non_fatal));
+        let outer = OuterError(anyhow::Error::new(fho_err));
+        let top = Error::User(anyhow::Error::new(outer));
+
+        let formatted = top.to_string();
+        assert_eq!(formatted, "Prefix: NonFatal: TargetNotFound");
     }
 }
