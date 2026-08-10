@@ -1404,11 +1404,11 @@ group("pem-3.0.6") {
 }
 
 group("percent-encoding") {
-  public_deps = [ ":percent-encoding-v2_3_1" ]
+  public_deps = [ ":percent-encoding-v2_3_2" ]
 }
 
-group("percent-encoding-2.3.1") {
-  public_deps = [ ":percent-encoding-v2_3_1" ]
+group("percent-encoding-2.3.2") {
+  public_deps = [ ":percent-encoding-v2_3_2" ]
 }
 
 group("pest") {
@@ -3608,7 +3608,7 @@ rustc_library("askama-v0_15_6") {
   deps = []
   deps += [ ":askama_macros-v0_15_6($host_toolchain)" ]
   deps += [ ":itoa-v1_0_18" ]
-  deps += [ ":percent-encoding-v2_3_1" ]
+  deps += [ ":percent-encoding-v2_3_2" ]
   deps += [ ":serde-v1_0_228" ]
   deps += [ ":serde_json-v1_0_149" ]
 
@@ -9486,7 +9486,7 @@ rustc_library("form_urlencoded-v1_2_2") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":percent-encoding-v2_3_1" ]
+  deps += [ ":percent-encoding-v2_3_2" ]
 
   rustenv = []
 
@@ -15231,19 +15231,19 @@ rustc_library("pem-rfc7468-v1_0_0") {
   applicable_licenses = [ ":pem-rfc7468-v1_0_0.license" ]
 }
 
-license("percent-encoding-v2_3_1.license") {
+license("percent-encoding-v2_3_2.license") {
   public_package_name = "percent_encoding"
   license_files = [
-    "//third_party/rust_crates/vendor/percent-encoding-2.3.1/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/percent-encoding-2.3.1/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/percent-encoding-2.3.2/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/percent-encoding-2.3.2/LICENSE-MIT",
   ]
 }
 
-rustc_library("percent-encoding-v2_3_1") {
+rustc_library("percent-encoding-v2_3_2") {
   crate_name = "percent_encoding"
   source_root =
-      "//third_party/rust_crates/vendor/percent-encoding-2.3.1/src/lib.rs"
-  output_name = "percent_encoding-b96dd0efe6657d98"
+      "//third_party/rust_crates/vendor/percent-encoding-2.3.2/src/lib.rs"
+  output_name = "percent_encoding-1e75cd0c332146df"
   edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
@@ -15255,8 +15255,8 @@ rustc_library("percent-encoding-v2_3_1") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=b96dd0efe6657d98",
-    "-Cextra-filename=-b96dd0efe6657d98",
+    "-Cmetadata=1e75cd0c332146df",
+    "-Cextra-filename=-1e75cd0c332146df",
     "--cfg=feature=\"alloc\"",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"std\"",
@@ -15264,7 +15264,7 @@ rustc_library("percent-encoding-v2_3_1") {
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":percent-encoding-v2_3_1.license" ]
+  applicable_licenses = [ ":percent-encoding-v2_3_2.license" ]
 }
 
 license("pest-v2_8_6.license") {
@@ -23406,7 +23406,7 @@ rustc_library("tuf-v0_3_0-beta14") {
   deps += [ ":hyper-v1_11_0" ]
   deps += [ ":itoa-v1_0_18" ]
   deps += [ ":log-v0_4_29" ]
-  deps += [ ":percent-encoding-v2_3_1" ]
+  deps += [ ":percent-encoding-v2_3_2" ]
   deps += [ ":ring-v0_17_14" ]
   deps += [ ":serde-v1_0_228" ]
   deps += [ ":serde_json-v1_0_149" ]
@@ -23461,7 +23461,7 @@ rustc_test("tuf-v0_3_0-beta14.test") {
   deps += [ ":itoa-v1_0_18" ]
   deps += [ ":log-v0_4_29" ]
   deps += [ ":maplit-v1_0_2" ]
-  deps += [ ":percent-encoding-v2_3_1" ]
+  deps += [ ":percent-encoding-v2_3_2" ]
   deps += [ ":pretty_assertions-v1_4_1" ]
   deps += [ ":ring-v0_17_14" ]
   deps += [ ":serde-v1_0_228" ]
@@ -24314,7 +24314,7 @@ rustc_library("url-v2_3_1") {
   deps = []
   deps += [ ":form_urlencoded-v1_2_2" ]
   deps += [ ":idna-v0_3_0" ]
-  deps += [ ":percent-encoding-v2_3_1" ]
+  deps += [ ":percent-encoding-v2_3_2" ]
   deps += [ ":serde-v1_0_228" ]
 
   rustenv = []
@@ -24436,7 +24436,7 @@ rustc_library("valico-v4_0_0") {
   deps += [ ":fancy-regex-v0_11_0" ]
   deps += [ ":json-pointer-v0_3_4" ]
   deps += [ ":jsonway-v2_0_0" ]
-  deps += [ ":percent-encoding-v2_3_1" ]
+  deps += [ ":percent-encoding-v2_3_2" ]
   deps += [ ":phf-v0_14_0" ]
   deps += [ ":serde-v1_0_228" ]
   deps += [ ":serde_json-v1_0_149" ]

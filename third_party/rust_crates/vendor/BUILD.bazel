@@ -1885,14 +1885,14 @@ alias(
 )
 
 alias(
-    name = "percent-encoding-2.3.1",
-    actual = "//third_party/rust_crates/vendor/percent-encoding-2.3.1:percent_encoding",
+    name = "percent-encoding-2.3.2",
+    actual = "//third_party/rust_crates/vendor/percent-encoding-2.3.2:percent_encoding",
     tags = ["manual"],
 )
 
 alias(
     name = "percent-encoding",
-    actual = "//third_party/rust_crates/vendor/percent-encoding-2.3.1:percent_encoding",
+    actual = "//third_party/rust_crates/vendor/percent-encoding-2.3.2:percent_encoding",
     tags = ["manual"],
 )
 
