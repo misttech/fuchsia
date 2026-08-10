@@ -13,6 +13,5 @@ fx-config-read
 fx-command-exec host-tool ffx config get connectivity.enable_usb 2>/dev/null | grep true >/dev/null 2>&1 && (echo "USB is already enabled"; exit 0)
 
 fx-command-exec host-tool ffx config set connectivity.enable_usb true
-fx-command-exec host-tool ffx daemon stop
 
 fx-command-exec host-tool ffx target list -f addresses --allow-addrs usb | grep usb >/dev/null 2>&1 || (echo "USB was enabled but no USB device was found. Make sure your device is plugged in and try `ffx target list` to verify it has a USB address."; exit 1)
