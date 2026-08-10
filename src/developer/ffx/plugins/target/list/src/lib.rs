@@ -9,12 +9,9 @@ use ffx_config::EnvironmentContext;
 use ffx_list_args::ListCommand;
 use ffx_target::{TargetInfo, TargetInfoQuery};
 use ffx_writer::{ToolIO as _, VerifiedMachineWriter};
-use fho::{Deferred, FfxError, FfxMain, FfxTool, deferred};
-use fidl_fuchsia_developer_ffx::{self as ffx};
-use futures::TryStreamExt;
+use fho::{FfxError, FfxMain, FfxTool};
 use target_behavior::{ConnectionBehavior, target_interface};
 use target_formatter::{JsonTarget, JsonTargetFormatter, TargetFormatter};
-use target_holders::daemon_protocol;
 use thiserror::Error;
 
 #[derive(FfxError, thiserror::Error, Debug)]
@@ -58,10 +55,6 @@ pub enum ListError {
     #[error("Failed to get default target specifier: {0}")]
     GetDefaultTargetSpecifier(#[source] anyhow::Error),
 
-    #[unexpected]
-    #[error("Could not get direct connector for {0}")]
-    NoDirectConnector(ffx_target::TargetInfoQuery),
-
     #[user]
     #[error("Failed to resolve target address: {0}")]
     TargetResolution(#[from] target_behavior::TargetResolutionError),
@@ -89,8 +82,6 @@ pub enum ListError {
 pub struct ListTool {
     #[command]
     cmd: ListCommand,
-    #[with(deferred(daemon_protocol()))]
-    tc_proxy: Deferred<ffx::TargetCollectionProxy>,
     context: EnvironmentContext,
     fho_env: fho::FhoEnvironment,
 }
@@ -109,21 +100,10 @@ impl FfxMain for ListTool {
 
 impl ListTool {
     async fn main_impl(self, mut writer: <Self as FfxMain>::Writer) -> Result<(), ListError> {
-        // XXX Shouldn't check `is_strict()`. Eventually we'll _always_ do local discovery,
-        // at which point this check goes away.
-        let direct_mode = self.context.is_strict()
-            || self.context.get_direct_connection_mode()
-            || !ffx_target::is_discovery_enabled(&self.context);
-
         let list_query = TargetInfoQuery::try_from(self.cmd.nodename.clone())
             .map_err(|e| ListError::QueryParse(e.to_string()))?;
 
-        let mut infos = if direct_mode {
-            self.list_targets_direct(list_query).await?
-        } else {
-            let fidl_infos = list_targets(self.tc_proxy.await?, &self.cmd).await?;
-            fidl_infos.into_iter().map(TargetInfo::from).collect()
-        };
+        let mut infos = self.list_targets_direct(list_query).await?;
 
         let spec = ffx_target::get_target_specifier(&self.context)
             .map_err(ListError::GetDefaultTargetSpecifier)?;
@@ -166,9 +146,7 @@ impl ListTool {
                     context.override_target_specifier(&self.cmd.nodename);
                     let target_env = target_interface(&self.fho_env);
                     let behavior = target_env.init_connection_behavior(&context).await?;
-                    let ConnectionBehavior::DirectConnector(ref connector) = *behavior else {
-                        return Err(ListError::NoDirectConnector(query));
-                    };
+                    let ConnectionBehavior::Direct(ref connector) = *behavior;
                     let resolution = connector.resolution().await?;
                     let target_info = resolution
                         .get_target_info(addr, &context)
@@ -243,34 +221,6 @@ async fn show_targets(
     Ok(())
 }
 
-async fn list_targets(
-    tc_proxy: ffx::TargetCollectionProxy,
-    cmd: &ListCommand,
-) -> Result<Vec<ffx::TargetInfo>, ListError> {
-    let (reader, server) = fidl::endpoints::create_endpoints::<ffx::TargetCollectionReaderMarker>();
-
-    tc_proxy
-        .list_targets(
-            &ffx::TargetQuery { string_matcher: cmd.nodename.clone(), ..Default::default() },
-            reader,
-        )
-        .map_err(ListError::Fidl)?;
-    let mut res = Vec::new();
-    let mut stream = server.into_stream();
-    while let Some(ffx::TargetCollectionReaderRequest::Next { entry, responder }) =
-        stream.try_next().await.map_err(ListError::Fidl)?
-    {
-        responder.send().map_err(ListError::Fidl)?;
-        if entry.len() > 0 {
-            res.extend(entry);
-        } else {
-            break;
-        }
-    }
-
-    Ok(res)
-}
-
 fn query_type(query: &str) -> &str {
     match TargetInfoQuery::try_from(query) {
         Ok(TargetInfoQuery::NodenameOrId(_)) => "nodename_or_id",
@@ -302,267 +252,9 @@ mod test {
     use addr::TargetAddr;
     use anyhow::Result;
     use ffx_command::FfxCommandLine;
-    use ffx_list_args::{AddressTypes, Format};
+    use ffx_list_args::AddressTypes;
     use ffx_target::info::{RemoteControlState, TargetState};
     use ffx_writer::TestBuffers;
-    use fidl_fuchsia_developer_ffx as ffx;
-    use fidl_fuchsia_developer_ffx::TargetInfo as FidlTargetInfo;
-    use regex::Regex;
-    use std::net::IpAddr;
-    use target_behavior::DirectConnector;
-    use target_holders::fake_daemon_proxy;
-
-    fn tab_list_cmd(nodename: Option<String>) -> ListCommand {
-        ListCommand { nodename, format: Format::Tabular, ..Default::default() }
-    }
-
-    fn to_fidl_target(nodename: String, vsock: bool) -> FidlTargetInfo {
-        let addr: TargetAddr = if vsock {
-            TargetAddr::VSockCtx(42)
-        } else {
-            TargetAddr::new(
-                IpAddr::from([0xfe80, 0x0, 0x0, 0x0, 0xdead, 0xbeef, 0xbeef, 0xbeef]),
-                3,
-                0,
-            )
-        };
-        FidlTargetInfo {
-            nodename: Some(nodename),
-            addresses: Some(vec![addr.into()]),
-            age_ms: Some(101),
-            rcs_state: Some(ffx::RemoteControlState::Up),
-            target_state: Some(ffx::TargetState::Unknown),
-            ..Default::default()
-        }
-    }
-
-    fn setup_fake_target_collection_server(
-        num_tests: usize,
-        vsock: bool,
-    ) -> ffx::TargetCollectionProxy {
-        fake_daemon_proxy(move |req| match req {
-            ffx::TargetCollectionRequest::ListTargets { query, reader, .. } => {
-                let reader = reader.into_proxy();
-                let fidl_values: Vec<FidlTargetInfo> =
-                    if query.string_matcher.as_deref().map(|s| s.is_empty()).unwrap_or(true) {
-                        (0..num_tests)
-                            .map(|i| format!("Test {}", i))
-                            .map(|name| to_fidl_target(name, vsock))
-                            .collect()
-                    } else {
-                        let v = query.string_matcher.unwrap();
-                        (0..num_tests)
-                            .map(|i| format!("Test {}", i))
-                            .filter(|t| *t == v)
-                            .map(|name| to_fidl_target(name, vsock))
-                            .collect()
-                    };
-                fuchsia_async::Task::local(async move {
-                    let mut iter = fidl_values.chunks(10);
-                    loop {
-                        let chunk = iter.next().unwrap_or(&[]);
-                        reader.next(&chunk).await.unwrap();
-                        if chunk.is_empty() {
-                            break;
-                        }
-                    }
-                })
-                .detach();
-            }
-            r => panic!("unexpected request: {:?}", r),
-        })
-    }
-
-    async fn try_run_list_test(
-        num_tests: usize,
-        cmd: ListCommand,
-        vsock: bool,
-    ) -> Result<String, ListError> {
-        let proxy = setup_fake_target_collection_server(num_tests, vsock);
-        let test_buffers = TestBuffers::default();
-        let mut writer = VerifiedMachineWriter::new_test(None, &test_buffers);
-        let infos = list_targets(proxy, &cmd).await?.into_iter().map(|ti| ti.into()).collect();
-        show_targets(cmd, infos, &mut writer).await?;
-        Ok(test_buffers.into_stdout_str())
-    }
-
-    async fn run_list_test(num_tests: usize, cmd: ListCommand, vsock: bool) -> String {
-        try_run_list_test(num_tests, cmd, vsock).await.unwrap()
-    }
-
-    #[fuchsia::test]
-    async fn test_machine_schema() {
-        let proxy = setup_fake_target_collection_server(3, false);
-        let test_buffers = TestBuffers::default();
-        let mut writer =
-            VerifiedMachineWriter::new_test(Some(ffx_writer::Format::Json), &test_buffers);
-        let cmd = ListCommand { format: Format::Tabular, ..Default::default() };
-        let infos = list_targets(proxy, &cmd)
-            .await
-            .expect("list targets")
-            .into_iter()
-            .map(|ti| ti.into())
-            .collect();
-        show_targets(cmd, infos, &mut writer).await.expect("show_targets");
-        let data_str = test_buffers.into_stdout_str();
-        let data = serde_json::from_str(&data_str).expect("json value");
-        match VerifiedMachineWriter::<Vec<JsonTarget>>::verify_schema(&data) {
-            Ok(_) => (),
-            Err(e) => {
-                panic!("error verifying schema of {data:?}: {e}");
-            }
-        };
-    }
-
-    #[fuchsia::test]
-    async fn test_machine_schema_vsock() {
-        let proxy = setup_fake_target_collection_server(3, true);
-        let test_buffers = TestBuffers::default();
-        let mut writer =
-            VerifiedMachineWriter::new_test(Some(ffx_writer::Format::Json), &test_buffers);
-        let cmd = ListCommand { format: Format::Tabular, ..Default::default() };
-        let infos = list_targets(proxy, &cmd)
-            .await
-            .expect("list targets")
-            .into_iter()
-            .map(|ti| ti.into())
-            .collect();
-        show_targets(cmd, infos, &mut writer).await.expect("show_targets");
-        let data_str = test_buffers.into_stdout_str();
-        let data = serde_json::from_str(&data_str).expect("json value");
-        match VerifiedMachineWriter::<Vec<JsonTarget>>::verify_schema(&data) {
-            Ok(_) => (),
-            Err(e) => {
-                panic!("error verifying schema of {data:?}: {e}");
-            }
-        };
-    }
-
-    #[fuchsia::test]
-    async fn test_list_with_no_devices_and_no_nodename() -> Result<()> {
-        let output = run_list_test(0, tab_list_cmd(None), false).await;
-        assert_eq!("".to_string(), output);
-        let output = run_list_test(0, tab_list_cmd(None), true).await;
-        assert_eq!("".to_string(), output);
-        Ok(())
-    }
-
-    #[fuchsia::test]
-    async fn test_list_with_one_device_and_no_nodename() -> Result<()> {
-        let output = run_list_test(1, tab_list_cmd(None), false).await;
-        let value = format!("Test {}", 0);
-        let node_listing = Regex::new(&value).expect("test regex");
-        assert_eq!(
-            1,
-            node_listing.find_iter(&output).count(),
-            "could not find \"{}\" nodename in output:\n{}",
-            value,
-            output
-        );
-        Ok(())
-    }
-
-    #[fuchsia::test]
-    async fn test_list_with_one_device_and_no_nodename_vsock() -> Result<()> {
-        let output = run_list_test(1, tab_list_cmd(None), true).await;
-        let value = format!("Test {}", 0);
-        let node_listing = Regex::new(&value).expect("test regex");
-        assert_eq!(
-            1,
-            node_listing.find_iter(&output).count(),
-            "could not find \"{}\" nodename in output:\n{}",
-            value,
-            output
-        );
-        Ok(())
-    }
-
-    #[fuchsia::test]
-    async fn test_list_with_multiple_devices_and_no_nodename() -> Result<()> {
-        let num_tests = 10;
-        let output = run_list_test(num_tests, tab_list_cmd(None), false).await;
-        for x in 0..num_tests {
-            let value = format!("Test {}", x);
-            let node_listing = Regex::new(&value).expect("test regex");
-            assert_eq!(
-                1,
-                node_listing.find_iter(&output).count(),
-                "could not find \"{}\" nodename in output:\n{}",
-                value,
-                output
-            );
-        }
-        Ok(())
-    }
-
-    #[fuchsia::test]
-    async fn test_list_with_one_device_and_matching_nodename() -> Result<()> {
-        let output = run_list_test(1, tab_list_cmd(Some("Test 0".to_string())), false).await;
-        let value = format!("Test {}", 0);
-        let node_listing = Regex::new(&value).expect("test regex");
-        assert_eq!(
-            1,
-            node_listing.find_iter(&output).count(),
-            "could not find \"{}\" nodename in output:\n{}",
-            value,
-            output
-        );
-        Ok(())
-    }
-
-    #[fuchsia::test]
-    async fn test_list_with_one_device_and_not_matching_nodename() -> Result<()> {
-        let res = try_run_list_test(1, tab_list_cmd(Some("blarg".to_string())), false).await;
-        assert!(res.is_err());
-        assert!(matches!(
-            res.unwrap_err(),
-            ListError::ShowTargets(ShowTargetsError::DeviceNotFound(ref name)) if name == "blarg"
-        ));
-        Ok(())
-    }
-
-    #[fuchsia::test]
-    async fn test_list_with_multiple_devices_and_not_matching_nodename() -> Result<()> {
-        let num_tests = 25;
-        let res =
-            try_run_list_test(num_tests, tab_list_cmd(Some("blarg".to_string())), false).await;
-        assert!(res.is_err());
-        assert!(matches!(
-            res.unwrap_err(),
-            ListError::ShowTargets(ShowTargetsError::DeviceNotFound(ref name)) if name == "blarg"
-        ));
-        Ok(())
-    }
-
-    #[fuchsia::test]
-    async fn test_list_with_multiple_devices_and_matching_nodename() -> Result<()> {
-        let output = run_list_test(25, tab_list_cmd(Some("Test 19".to_string())), false).await;
-        let value = format!("Test {}", 0);
-        let node_listing = Regex::new(&value).expect("test regex");
-        assert_eq!(0, node_listing.find_iter(&output).count());
-        let value = format!("Test {}", 19);
-        let node_listing = Regex::new(&value).expect("test regex");
-        assert_eq!(1, node_listing.find_iter(&output).count());
-        Ok(())
-    }
-
-    #[fuchsia::test]
-    async fn test_list_with_address_types_none() -> Result<()> {
-        let num_tests = 25;
-        let cmd_none = ListCommand {
-            no_ipv4: true,
-            no_ipv6: true,
-            allow_addrs: AddressTypes::IP,
-            ..Default::default()
-        };
-        let res = try_run_list_test(num_tests, cmd_none, false).await;
-        assert!(res.is_err());
-        assert!(matches!(
-            res.unwrap_err(),
-            ListError::ShowTargets(ShowTargetsError::NoAddressTypes)
-        ));
-        Ok(())
-    }
 
     #[test]
     fn test_address_types_from_cmd() -> Result<()> {
@@ -607,14 +299,7 @@ mod test {
         env: &ffx_config::TestEnv,
         fho_env: fho::FhoEnvironment,
     ) -> ListTool {
-        ListTool {
-            cmd,
-            tc_proxy: fho::TryFromEnvWith::try_from_env_with(deferred(daemon_protocol()), &fho_env)
-                .await
-                .expect("deferred tc_proxy failed"),
-            fho_env,
-            context: env.context.clone(),
-        }
+        ListTool { cmd, fho_env, context: env.context.clone() }
     }
 
     #[fuchsia::test]
@@ -625,9 +310,7 @@ mod test {
 
         let resolution =
             ffx_target::Resolution::mock(|| Err(anyhow::anyhow!("MockConnectionError")));
-        let behavior = ConnectionBehavior::DirectConnector(
-            DirectConnector::from_resolution_for_test(resolution),
-        );
+        let behavior = ConnectionBehavior::fake_direct_connector(resolution);
 
         let target_env = target_interface(&fho_env);
         target_env.set_behavior_for_test(behavior);
@@ -649,11 +332,10 @@ mod test {
         let ffx_cmd_line = FfxCommandLine::default();
         let fho_env = fho::FhoEnvironment::new(&env.context, &ffx_cmd_line);
 
-        let behavior = ConnectionBehavior::DirectConnector(
-            DirectConnector::from_resolution_for_test(ffx_target::Resolution::mock(|| {
+        let behavior =
+            ConnectionBehavior::fake_direct_connector(ffx_target::Resolution::mock(|| {
                 panic!("Resolution should not be called when no_probe is true");
-            })),
-        );
+            }));
         let target_env = target_interface(&fho_env);
         target_env.set_behavior_for_test(behavior);
 
@@ -675,11 +357,10 @@ mod test {
         let ffx_cmd_line = FfxCommandLine::default();
         let fho_env = fho::FhoEnvironment::new(&env.context, &ffx_cmd_line);
 
-        let behavior = ConnectionBehavior::DirectConnector(
-            DirectConnector::from_resolution_for_test(ffx_target::Resolution::mock(|| {
+        let behavior =
+            ConnectionBehavior::fake_direct_connector(ffx_target::Resolution::mock(|| {
                 panic!("Resolution should not be called when format is Addresses");
-            })),
-        );
+            }));
         let target_env = target_interface(&fho_env);
         target_env.set_behavior_for_test(behavior);
 

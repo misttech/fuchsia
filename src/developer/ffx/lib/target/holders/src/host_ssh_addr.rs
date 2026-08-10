@@ -4,8 +4,6 @@
 
 use std::ops::Deref;
 
-use crate::TargetProxyHolder;
-use anyhow::anyhow;
 use async_trait::async_trait;
 
 use ffx_ssh::parse::HostAddr;
@@ -60,27 +58,15 @@ impl TryFromEnv for HostAddrHolder {
     async fn try_from_env(env: &FhoEnvironment) -> std::result::Result<Self, Self::Error> {
         let target_env = target_interface(env);
         let behavior = target_env.init_connection_behavior(env.environment_context()).await?;
-        match *behavior {
-            ConnectionBehavior::DaemonConnector(_) => {
-                // Get a target proxy
-                let tp = TargetProxyHolder::try_from_env(env).await?;
-                let id = tp
-                    .identity()
-                    .await
-                    .map_err(|e| anyhow!("Got Error getting target identity: {}", e))?;
-                Ok(HostAddrHolder::from(id.ssh_host_address))
-            }
-            ConnectionBehavior::DirectConnector(ref direct) => {
-                let conn = direct
-                    .resolution()
-                    .await
-                    .map_err(|e| e.into_command_error())?
-                    .get_connection(env.environment_context())
-                    .await
-                    .map_err(|e| e.into_command_error())?;
-                let host_addr_info = conn.host_ssh_address();
-                Ok(HostAddrHolder::from(host_addr_info))
-            }
-        }
+        let ConnectionBehavior::Direct(ref dc) = *behavior;
+        let conn = dc
+            .resolution()
+            .await
+            .map_err(|e| e.into_command_error())?
+            .get_connection(env.environment_context())
+            .await
+            .map_err(|e| e.into_command_error())?;
+        let host_addr_info = conn.host_ssh_address();
+        Ok(HostAddrHolder::from(host_addr_info))
     }
 }

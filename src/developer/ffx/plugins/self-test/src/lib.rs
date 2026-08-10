@@ -14,7 +14,6 @@ use std::time::Duration;
 
 mod component;
 mod config;
-mod daemon;
 mod experiment;
 mod target;
 mod test;
@@ -48,12 +47,6 @@ pub async fn selftest(context: &EnvironmentContext, cmd: SelftestCommand) -> Res
         config::test_set_then_get,
         experiment::test_not_enabled,
         experiment::test_enabled,
-        daemon::test_echo,
-        daemon::test_config_flag,
-        daemon::test_stop,
-        daemon::test_no_autostart,
-        daemon::test_isolate_cleanup,
-        daemon::test_cleanup_on_signal,
     ];
 
     let mut target_tests =

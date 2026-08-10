@@ -42,7 +42,6 @@ WANT_FFX_SUBTOOLS = [
     "component",
     "config",
     "coverage",
-    "daemon",
     "debug",
     "doctor",
     "driver",

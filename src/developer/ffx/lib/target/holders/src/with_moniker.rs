@@ -37,13 +37,13 @@ where
     ) -> std::result::Result<Self::Output, Self::Error> {
         let rcs_instance = crate::connect_to_rcs(&env).await?;
         if let Ok(proxy) =
-            rcs_fdomain::toolbox::connect_with_timeout::<P::Protocol>(&rcs_instance, self.timeout)
+            rcs_fdomain::toolbox::connect_with_timeout::<P::Protocol>(&*rcs_instance, self.timeout)
                 .await
         {
             return Ok(proxy);
         }
         crate::remote_control_proxy::open_moniker(
-            &rcs_instance,
+            &*rcs_instance,
             rcs_fdomain::OpenDirType::ExposedDir,
             &self.moniker,
             self.timeout,
@@ -81,7 +81,7 @@ impl TryFromEnvWith for ExposedDirectoryConnector {
             &self.moniker,
             rcs_fdomain::OpenDirType::ExposedDir,
             &self.capability_name,
-            &rcs,
+            &*rcs,
         )
         .await
         .map_err(|e| fho::bug!(e))?;
@@ -127,12 +127,12 @@ where
     async fn try_from_env_with(self, env: &FhoEnvironment) -> Result<Self::Output> {
         let rcs = crate::connect_to_rcs(env).await?;
         if let Ok(proxy) =
-            rcs_fdomain::toolbox::connect_with_timeout::<P::Protocol>(&rcs, self.timeout).await
+            rcs_fdomain::toolbox::connect_with_timeout::<P::Protocol>(&*rcs, self.timeout).await
         {
             return Ok(Some(proxy));
         }
         let output = match crate::remote_control_proxy::open_moniker(
-            &rcs,
+            &*rcs,
             rcs_fdomain::OpenDirType::ExposedDir,
             &self.moniker,
             self.timeout,

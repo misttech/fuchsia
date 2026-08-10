@@ -6,12 +6,11 @@ use async_trait::async_trait;
 use ffx_config::{ConfigError, EnvironmentContext};
 use ffx_target_remove_args::RemoveCommand;
 use ffx_writer::{ToolIO as _, VerifiedMachineWriter};
-use fho::{Deferred, FfxMain, FfxTool, Result, bug, deferred, return_bug, return_user_error};
+use fho::{FfxMain, FfxTool, Result, bug, return_bug, return_user_error};
 use fidl_fuchsia_developer_ffx as ffx;
 use manual_targets::{Config, ManualTargets, ManualTargetsError};
 use schemars::JsonSchema;
 use serde::Serialize;
-use target_holders::daemon_protocol;
 
 #[derive(Debug, Serialize, JsonSchema)]
 pub enum CommandStatus {
@@ -27,8 +26,6 @@ pub enum CommandStatus {
 pub struct RemoveTool {
     #[command]
     cmd: RemoveCommand,
-    #[with(deferred(daemon_protocol()))]
-    target_collection_proxy: Deferred<ffx::TargetCollectionProxy>,
     context: EnvironmentContext,
 }
 
@@ -41,17 +38,7 @@ impl FfxMain for RemoveTool {
     type Error = ::fho::Error;
 
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
-        let res = if self.context.get_direct_connection_mode() {
-            Self::remove_direct_impl(&self.context, self.cmd, &mut writer).await
-        } else {
-            Self::remove_impl(
-                &self.context,
-                self.target_collection_proxy.await?,
-                self.cmd,
-                &mut writer,
-            )
-            .await
-        };
+        let res = Self::remove_direct_impl(&self.context, self.cmd, &mut writer).await;
         match res {
             Ok(message) => {
                 if writer.is_machine() {
@@ -110,6 +97,7 @@ impl RemoveTool {
             return_user_error!("need to specify a target name or address or use the --all option")
         }
     }
+    #[allow(dead_code)]
     async fn remove_impl(
         context: &EnvironmentContext,
         target_collection: ffx::TargetCollectionProxy,
@@ -134,6 +122,7 @@ impl RemoveTool {
         }
     }
 
+    #[allow(dead_code)]
     async fn remove_all_targets(
         writer: &mut <Self as FfxMain>::Writer,
         target_collection: &ffx::TargetCollectionProxy,
@@ -177,33 +166,17 @@ mod test {
 
     use ffx_writer::{Format, TestBuffers};
     use serde_json::json;
-    use target_holders::fake_daemon_proxy;
-
-    fn setup_fake_target_collection_proxy<T: 'static + Fn(String) -> bool + Send>(
-        test: T,
-    ) -> ffx::TargetCollectionProxy {
-        fake_daemon_proxy(move |req| match req {
-            ffx::TargetCollectionRequest::RemoveTarget { target_id, responder } => {
-                let result = test(target_id);
-                responder.send(result).unwrap();
-            }
-            _ => assert!(false),
-        })
-    }
 
     #[fuchsia::test]
     async fn test_remove_existing_target() {
         let env = ffx_config::test_init_with_daemon().expect("test_init");
-        let server = setup_fake_target_collection_proxy(|id| {
-            assert_eq!(id, "correct-horse-battery-staple".to_owned());
-            true
-        });
+        let mt = Config::new_from_context(&env.context);
+        mt.storage_set(json!({"correct-horse-battery-staple": 0})).await.unwrap();
         let tool = RemoveTool {
             cmd: RemoveCommand {
                 all: false,
                 name_or_addr: Some("correct-horse-battery-staple".to_owned()),
             },
-            target_collection_proxy: Deferred::from_output(Ok(server)),
             context: env.context.clone(),
         };
         let test_buffers = TestBuffers::default();
@@ -215,13 +188,11 @@ mod test {
     #[fuchsia::test]
     async fn test_remove_nonexisting_target() {
         let env = ffx_config::test_init_with_daemon().expect("test_init");
-        let server = setup_fake_target_collection_proxy(|_| false);
         let tool = RemoveTool {
             cmd: RemoveCommand {
                 all: false,
                 name_or_addr: Some("incorrect-donkey-battery-jazz".to_owned()),
             },
-            target_collection_proxy: Deferred::from_output(Ok(server)),
             context: env.context.clone(),
         };
         let test_buffers = TestBuffers::default();
@@ -234,13 +205,11 @@ mod test {
     #[fuchsia::test]
     async fn test_remove_machine_nonexisting_target() {
         let env = ffx_config::test_init_with_daemon().expect("test_init");
-        let server = setup_fake_target_collection_proxy(|_| false);
         let tool = RemoveTool {
             cmd: RemoveCommand {
                 all: false,
                 name_or_addr: Some("incorrect-donkey-battery-jazz".to_owned()),
             },
-            target_collection_proxy: Deferred::from_output(Ok(server)),
             context: env.context.clone(),
         };
         let test_buffers = TestBuffers::default();
@@ -258,10 +227,8 @@ mod test {
         let env = ffx_config::test_init_with_daemon().expect("test_init");
         let mt = Config::new_from_context(&env.context);
         mt.storage_set(json!({"127.0.0.1:8022": 0, "127.0.0.1:8023": 12345})).await.unwrap();
-        let server = setup_fake_target_collection_proxy(|_| true);
         let tool = RemoveTool {
             cmd: RemoveCommand { all: true, name_or_addr: None },
-            target_collection_proxy: Deferred::from_output(Ok(server)),
             context: env.context.clone(),
         };
         let test_buffers = TestBuffers::default();
@@ -278,10 +245,8 @@ mod test {
     async fn test_remove_all_targets_none() {
         let env = ffx_config::test_init_with_daemon().expect("test_init");
 
-        let server = setup_fake_target_collection_proxy(|_| panic!("should not be called"));
         let tool = RemoveTool {
             cmd: RemoveCommand { all: true, name_or_addr: None },
-            target_collection_proxy: Deferred::from_output(Ok(server)),
             context: env.context.clone(),
         };
         let test_buffers = TestBuffers::default();
@@ -303,12 +268,8 @@ mod test {
         let mt = Config::new_from_context(&env.context);
         mt.storage_set(json!({"127.0.0.1:8022": 0, "127.0.0.1:8023": 12345})).await.unwrap();
 
-        let server = setup_fake_target_collection_proxy(|_| {
-            unreachable!("proxy should not be used in direct mode");
-        });
         let tool = RemoveTool {
             cmd: RemoveCommand { all: false, name_or_addr: Some("127.0.0.1:8022".to_owned()) },
-            target_collection_proxy: Deferred::from_output(Ok(server)),
             context: env.context.clone(),
         };
         let test_buffers = TestBuffers::default();
@@ -331,12 +292,8 @@ mod test {
         let mt = Config::new_from_context(&env.context);
         mt.storage_set(json!({"127.0.0.1:8022": 0, "127.0.0.1:8023": 12345})).await.unwrap();
 
-        let server = setup_fake_target_collection_proxy(|_| {
-            unreachable!("proxy should not be used in direct mode");
-        });
         let tool = RemoveTool {
             cmd: RemoveCommand { all: true, name_or_addr: None },
-            target_collection_proxy: Deferred::from_output(Ok(server)),
             context: env.context.clone(),
         };
         let test_buffers = TestBuffers::default();

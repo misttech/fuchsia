@@ -31,8 +31,6 @@ ffx_plugin("ffx_target_repository_register") {
     "//third_party/rust_crates:url",
   ]
   test_deps = [
-    "//sdk/fidl/fuchsia.net:fuchsia.net_rust_fdomain",
-    "//src/developer/ffx/fidl:fuchsia.developer.ffx_rust",
     "//src/developer/ffx/lib/target/behavior:lib",
     "//src/lib/fdomain/client",
     "//src/lib/fdomain/local",

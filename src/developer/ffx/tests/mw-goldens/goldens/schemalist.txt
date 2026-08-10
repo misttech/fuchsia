@@ -1,6 +1,5 @@
 component_destroy.json
 component_show.json
-daemon_stop.json
 debug_symbol-index_list.json
 debug_symbol-index_add.json
 debug_symbol-index_remove.json

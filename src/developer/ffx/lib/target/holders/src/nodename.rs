@@ -4,9 +4,9 @@
 
 use async_trait::async_trait;
 use std::ops::Deref;
-use target_behavior::target_interface;
+use target_behavior::{ConnectionBehavior, target_interface};
 
-use fho::{FhoEnvironment, TryFromEnv, bug};
+use fho::{FhoEnvironment, TryFromEnv};
 
 /// Holder struct for the target's Nodename.
 #[derive(Debug, Clone)]
@@ -18,21 +18,15 @@ impl TryFromEnv for NodenameHolder {
     async fn try_from_env(env: &FhoEnvironment) -> std::result::Result<Self, Self::Error> {
         let target_env = target_interface(env);
         let behavior = target_env.init_connection_behavior(env.environment_context()).await?;
-        let identity = match &*behavior {
-            target_behavior::ConnectionBehavior::DaemonConnector(injector) => {
-                let target = injector.target_factory().await?;
-                target.identity().await.map_err(|e| bug!(e))?.nodename
-            }
-            target_behavior::ConnectionBehavior::DirectConnector(conn) => {
-                conn.resolution()
-                    .await
-                    .map_err(|e| e.into_command_error())?
-                    .identify(&env.environment_context())
-                    .await
-                    .map_err(|e| e.into_command_error())?
-                    .nodename
-            }
-        };
+        let ConnectionBehavior::Direct(ref dc) = *behavior;
+        let identity = dc
+            .resolution()
+            .await
+            .map_err(|e| e.into_command_error())?
+            .identify(&env.environment_context())
+            .await
+            .map_err(|e| e.into_command_error())?
+            .nodename;
         Ok(Self(identity))
     }
 }
