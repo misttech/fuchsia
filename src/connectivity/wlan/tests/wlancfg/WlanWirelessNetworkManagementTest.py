@@ -10,6 +10,7 @@ from typing import FrozenSet
 
 import fidl_fuchsia_wlan_policy as f_wlan_policy
 import fuchsia_wlan_base_test
+import honeydew.affordances.connectivity.wlan.core as wlan_core
 from antlion.controllers.access_point import setup_ap
 from antlion.controllers.ap_lib import hostapd_constants
 from antlion.controllers.ap_lib.hostapd_security import (
@@ -25,7 +26,10 @@ from antlion.controllers.ap_lib.wireless_network_management import (
     BssTransitionCandidateList,
     BssTransitionManagementRequest,
 )
-from honeydew.affordances.connectivity.wlan.utils.types import CountryCode
+from honeydew.affordances.connectivity.wlan.utils.types import (
+    CountryCode,
+    MacAddress,
+)
 from mobly import asserts, signals, test_runner
 from openwrt_access_point import Radio, StationStatus
 from openwrt_access_point.lib.access_point_config import (
@@ -53,6 +57,9 @@ class WlanWirelessNetworkManagementTest(
     * One Whirlwind access point
     """
 
+    phy: wlan_core.Phy
+    client_iface: wlan_core.ClientIface
+
     async def setup_class(self) -> None:
         await super().setup_class()
 
@@ -60,6 +67,8 @@ class WlanWirelessNetworkManagementTest(
         await self.dut.wlan_policy.set_country_code(
             CountryCode.UNITED_STATES_OF_AMERICA
         )
+
+        self.phy = await self.dut.wlan_core.ensure_single_phy()
 
         if self.openwrt_aps:
             self.openwrt_ap = self.openwrt_aps[0]
@@ -69,7 +78,9 @@ class WlanWirelessNetworkManagementTest(
         else:
             raise signals.TestAbortClass("Requires at least one access point")
 
-    def get_single_sta_status(self, mac: str, band: Band) -> StationStatus:
+    def get_single_sta_status(
+        self, mac: str | MacAddress, band: Band
+    ) -> StationStatus:
         """Gets station status and asserts there is only one interface."""
         assert self.openwrt_ap is not None, "openwrt_ap is not initialized"
         sta_dict = self.openwrt_ap.get_sta_status(mac, band)
@@ -79,7 +90,7 @@ class WlanWirelessNetworkManagementTest(
         return list(sta_dict.values())[0]
 
     def get_single_sta_ext_capabilities(
-        self, mac: str, band: Band
+        self, mac: str | MacAddress, band: Band
     ) -> ExtendedCapabilities:
         """Gets extended capabilities and asserts there is only one interface."""
         assert self.openwrt_ap is not None, "openwrt_ap is not initialized"
@@ -92,6 +103,13 @@ class WlanWirelessNetworkManagementTest(
     async def setup_test(self) -> None:
         await super().setup_test()
         await self.dut.wlan_policy.ensure_clean_state()
+        client_ifaces = await self.phy.get_client_ifaces()
+        asserts.assert_equal(
+            len(client_ifaces),
+            1,
+            f"Expected exactly 1 client interface on PHY, got {len(client_ifaces)}",
+        )
+        self.client_iface = client_ifaces[0]
 
     async def teardown_test(self) -> None:
         await self.dut.wlan_policy.ensure_clean_state()
@@ -129,21 +147,6 @@ class WlanWirelessNetworkManagementTest(
             security=security,
             additional_ap_parameters=additional_ap_parameters,
             wnm_features=wnm_features,
-        )
-
-    async def _get_client_mac(self) -> str:
-        """Get the MAC address of the DUT client interface.
-
-        Returns:
-            str, MAC address of the DUT client interface.
-        Raises:
-            ValueError if there is no DUT client interface.
-        """
-        ifaces = await self.dut.wlan_core.query_interfaces()
-        for mac in ifaces.client:
-            return str(mac)
-        raise ValueError(
-            "Failed to get client interface mac address. No client interface found."
         )
 
     async def test_bss_transition_is_not_advertised_when_ap_supported_dut_unsupported(
@@ -184,7 +187,7 @@ class WlanWirelessNetworkManagementTest(
             ssid, f_wlan_policy.SecurityType.NONE
         )
 
-        client_mac = await self._get_client_mac()
+        client_mac = await self.client_iface.get_mac_address()
         # Verify that DUT is actually associated (as seen from AP).
 
         if self.openwrt_ap:
@@ -255,7 +258,7 @@ class WlanWirelessNetworkManagementTest(
             ssid, f_wlan_policy.SecurityType.NONE
         )
 
-        client_mac = await self._get_client_mac()
+        client_mac = await self.client_iface.get_mac_address()
         # Verify that DUT is actually associated (as seen from AP).
         if self.openwrt_ap:
             sta_status = self.get_single_sta_status(
@@ -343,7 +346,7 @@ class WlanWirelessNetworkManagementTest(
         )
 
         # Verify that DUT is actually associated (as seen from AP).
-        client_mac = await self._get_client_mac()
+        client_mac = await self.client_iface.get_mac_address()
         if self.openwrt_ap:
             sta_status = self.get_single_sta_status(
                 client_mac, band=Band.BAND_2G

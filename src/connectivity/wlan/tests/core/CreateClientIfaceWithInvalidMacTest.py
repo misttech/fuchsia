@@ -4,15 +4,23 @@
 
 import logging
 
-import fidl_fuchsia_wlan_common as fw_common
-from core_testing import base_test
+import fuchsia_wlan_base_test
+import honeydew.affordances.connectivity.wlan.core as wlan_core
 from honeydew.typing.custom_types import MacAddress
 from mobly import asserts, test_runner
 
 logger = logging.getLogger(__name__)
 
 
-class CreateClientIfaceWithInvalidMacTest(base_test.CoreBaseTestClass):
+class CreateClientIfaceWithInvalidMacTest(
+    fuchsia_wlan_base_test.FuchsiaWlanBaseTest
+):
+    phy: wlan_core.Phy
+
+    async def setup_class(self) -> None:
+        await super().setup_class()
+        self.phy = await self.dut.wlan_core.ensure_single_phy()
+
     async def test_create_client_iface_with_universal_unicast_mac(self) -> None:
         mac = (
             MacAddress.random()
@@ -24,19 +32,16 @@ class CreateClientIfaceWithInvalidMacTest(base_test.CoreBaseTestClass):
             f"Attempting to create client iface with universally administered unicast MAC {mac}..."
         )
 
-        create_iface_result = await self.test_kit.device_monitor.create_iface(
-            phy_id=self.test_kit.phy_id,
-            role=fw_common.WlanMacRole.CLIENT,
-            sta_address=bytes(mac),
-        )
-
-        if create_iface_result.err is None:
-            asserts.fail(
-                f"CreateIface successfully created an interface with an invalid MAC address: {create_iface_result}"
+        try:
+            await self.phy.create_client_iface(sta_address=mac)
+        except AssertionError as e:
+            logger.info(
+                f"CreateIface correctly rejected the invalid MAC with error: {e}"
             )
+            return
 
-        logger.info(
-            f"CreateIface correctly rejected the invalid MAC with error: {create_iface_result}"
+        asserts.fail(
+            "CreateIface successfully created an interface with an invalid MAC address."
         )
 
     async def test_create_client_iface_with_local_multicast_mac(
@@ -49,22 +54,19 @@ class CreateClientIfaceWithInvalidMacTest(base_test.CoreBaseTestClass):
         )
 
         logger.info(
-            f"Attempting to create client iface with locally administered multicast MAC {mac}..."
+            f"Attempting to create client iface with universally administered unicast MAC {mac}..."
         )
 
-        create_iface_result = await self.test_kit.device_monitor.create_iface(
-            phy_id=self.test_kit.phy_id,
-            role=fw_common.WlanMacRole.CLIENT,
-            sta_address=bytes(mac),
-        )
-
-        if create_iface_result.err is None:
-            asserts.fail(
-                f"CreateIface successfully created an interface with an invalid MAC address: {create_iface_result}"
+        try:
+            await self.phy.create_client_iface(sta_address=mac)
+        except AssertionError as e:
+            logger.info(
+                f"CreateIface correctly rejected the invalid MAC with error: {e}"
             )
+            return
 
-        logger.info(
-            f"CreateIface correctly rejected the invalid MAC with error: {create_iface_result}"
+        asserts.fail(
+            "CreateIface successfully created an interface with an invalid MAC address."
         )
 
     async def test_create_client_iface_with_universal_multicast_mac(
@@ -77,22 +79,19 @@ class CreateClientIfaceWithInvalidMacTest(base_test.CoreBaseTestClass):
         )
 
         logger.info(
-            f"Attempting to create client iface with universally administered multicast MAC {mac}..."
+            f"Attempting to create client iface with universally administered unicast MAC {mac}..."
         )
 
-        create_iface_result = await self.test_kit.device_monitor.create_iface(
-            phy_id=self.test_kit.phy_id,
-            role=fw_common.WlanMacRole.CLIENT,
-            sta_address=bytes(mac),
-        )
-
-        if create_iface_result.err is None:
-            asserts.fail(
-                f"CreateIface successfully created an interface with an invalid MAC address: {create_iface_result}"
+        try:
+            await self.phy.create_client_iface(sta_address=mac)
+        except AssertionError as e:
+            logger.info(
+                f"CreateIface correctly rejected the invalid MAC with error: {e}"
             )
+            return
 
-        logger.info(
-            f"CreateIface correctly rejected the invalid MAC with error: {create_iface_result}"
+        asserts.fail(
+            "CreateIface successfully created an interface with an invalid MAC address."
         )
 
 

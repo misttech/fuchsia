@@ -13,7 +13,7 @@ assert(is_host, "WLAN end-to-end tests only supported for host testing")
 antlion_host_test("create_ap_iface_with_null_mac_test") {
   main_source = "CreateApIfaceWithNullMacTest.py"
   libraries = [
-    "//src/connectivity/wlan/tests/core/core_testing",
+    "//src/testing/end_to_end/mobly_base_tests:fuchsia_wlan_base_test",
     "//sdk/fidl/fuchsia.wlan.device.service:fuchsia.wlan.device.service_host_test_data",
   ]
 }
@@ -21,7 +21,7 @@ antlion_host_test("create_ap_iface_with_null_mac_test") {
 antlion_host_test("create_ap_iface_with_particular_mac_test") {
   main_source = "CreateApIfaceWithParticularMacTest.py"
   libraries = [
-    "//src/connectivity/wlan/tests/core/core_testing",
+    "//src/testing/end_to_end/mobly_base_tests:fuchsia_wlan_base_test",
     "//sdk/fidl/fuchsia.wlan.device.service:fuchsia.wlan.device.service_host_test_data",
   ]
 }
@@ -29,7 +29,7 @@ antlion_host_test("create_ap_iface_with_particular_mac_test") {
 antlion_host_test("create_client_iface_with_null_mac_test") {
   main_source = "CreateClientIfaceWithNullMacTest.py"
   libraries = [
-    "//src/connectivity/wlan/tests/core/core_testing",
+    "//src/testing/end_to_end/mobly_base_tests:fuchsia_wlan_base_test",
     "//sdk/fidl/fuchsia.wlan.device.service:fuchsia.wlan.device.service_host_test_data",
   ]
 }
@@ -37,7 +37,7 @@ antlion_host_test("create_client_iface_with_null_mac_test") {
 antlion_host_test("create_client_iface_with_particular_mac_test") {
   main_source = "CreateClientIfaceWithParticularMacTest.py"
   libraries = [
-    "//src/connectivity/wlan/tests/core/core_testing",
+    "//src/testing/end_to_end/mobly_base_tests:fuchsia_wlan_base_test",
     "//sdk/fidl/fuchsia.wlan.device.service:fuchsia.wlan.device.service_host_test_data",
   ]
 }
@@ -45,7 +45,7 @@ antlion_host_test("create_client_iface_with_particular_mac_test") {
 antlion_host_test("create_client_iface_with_invalid_mac_test") {
   main_source = "CreateClientIfaceWithInvalidMacTest.py"
   libraries = [
-    "//src/connectivity/wlan/tests/core/core_testing",
+    "//src/testing/end_to_end/mobly_base_tests:fuchsia_wlan_base_test",
     "//sdk/fidl/fuchsia.wlan.device.service:fuchsia.wlan.device.service_host_test_data",
   ]
 }
@@ -53,8 +53,8 @@ antlion_host_test("create_client_iface_with_invalid_mac_test") {
 antlion_host_test("country_code_test") {
   main_source = "CountryCodeTest.py"
   libraries = [
-    "//src/connectivity/wlan/tests/core/core_testing",
     "//src/testing/end_to_end/honeydew",
+    "//src/testing/end_to_end/mobly_base_tests:fuchsia_wlan_base_test",
     "//sdk/fidl/fuchsia.wlan.device.service:fuchsia.wlan.device.service_host_test_data",
   ]
 }
@@ -63,7 +63,7 @@ antlion_host_test("connect_to_ap_test") {
   main_source = "ConnectToApTest.py"
   libraries = [
     "//src/connectivity/wlan/tests/common",
-    "//src/connectivity/wlan/tests/core/core_testing",
+    "//src/testing/end_to_end/mobly_base_tests:fuchsia_wlan_base_test",
     "//sdk/fidl/fuchsia.wlan.common:fuchsia.wlan.common_host_test_data",
     "//sdk/fidl/fuchsia.wlan.internal:fuchsia.wlan.internal_host_test_data",
     "//sdk/fidl/fuchsia.wlan.device.service:fuchsia.wlan.device.service_host_test_data",
@@ -76,7 +76,7 @@ antlion_host_test("firmware_power_modes_test") {
   main_source = "FirmwarePowerModesTest.py"
   libraries = [
     "//src/connectivity/wlan/tests/common",
-    "//src/connectivity/wlan/tests/core/core_testing",
+    "//src/testing/end_to_end/mobly_base_tests:fuchsia_wlan_base_test",
     "//sdk/fidl/fuchsia.wlan.common:fuchsia.wlan.common_host_test_data",
     "//sdk/fidl/fuchsia.wlan.internal:fuchsia.wlan.internal_host_test_data",
     "//sdk/fidl/fuchsia.wlan.device.service:fuchsia.wlan.device.service_host_test_data",
@@ -88,7 +88,7 @@ antlion_host_test("firmware_power_modes_test") {
 antlion_host_test("phy_existence_test") {
   main_source = "PhyExistenceTest.py"
   libraries = [
-    "//src/connectivity/wlan/tests/core/core_testing",
+    "//src/testing/end_to_end/mobly_base_tests:fuchsia_wlan_base_test",
     "//sdk/fidl/fuchsia.wlan.device.service:fuchsia.wlan.device.service_host_test_data",
   ]
 }
@@ -97,7 +97,7 @@ antlion_host_test("roam_request_test") {
   main_source = "RoamRequestTest.py"
   libraries = [
     "//src/connectivity/wlan/tests/common",
-    "//src/connectivity/wlan/tests/core/core_testing",
+    "//src/testing/end_to_end/mobly_base_tests:fuchsia_wlan_base_test",
     "//sdk/fidl/fuchsia.wlan.common:fuchsia.wlan.common_host_test_data",
     "//sdk/fidl/fuchsia.wlan.internal:fuchsia.wlan.internal_host_test_data",
     "//sdk/fidl/fuchsia.wlan.device.service:fuchsia.wlan.device.service_host_test_data",
@@ -112,7 +112,7 @@ antlion_host_test("roam_request_test_should_succeed") {
   main_source = "RoamRequestTest.py"
   libraries = [
     "//src/connectivity/wlan/tests/common",
-    "//src/connectivity/wlan/tests/core/core_testing",
+    "//src/testing/end_to_end/mobly_base_tests:fuchsia_wlan_base_test",
     "//sdk/fidl/fuchsia.wlan.common:fuchsia.wlan.common_host_test_data",
     "//sdk/fidl/fuchsia.wlan.internal:fuchsia.wlan.internal_host_test_data",
     "//sdk/fidl/fuchsia.wlan.device.service:fuchsia.wlan.device.service_host_test_data",
@@ -126,7 +126,7 @@ antlion_host_test("roam_request_test_should_succeed") {
 antlion_host_test("sar_setting_test") {
   main_source = "SARSettingTest.py"
   libraries = [
-    "//src/connectivity/wlan/tests/core/core_testing",
+    "//src/testing/end_to_end/mobly_base_tests:fuchsia_wlan_base_test",
     "//sdk/fidl/fuchsia.wlan.common:fuchsia.wlan.common_host_test_data",
     "//sdk/fidl/fuchsia.wlan.internal:fuchsia.wlan.internal_host_test_data",
     "//sdk/fidl/fuchsia.wlan.device.service:fuchsia.wlan.device.service_host_test_data",
@@ -139,7 +139,7 @@ antlion_host_test("wlan_scan_test") {
   main_source = "WlanScanTest.py"
   libraries = [
     "//src/connectivity/wlan/tests/common",
-    "//src/connectivity/wlan/tests/core/core_testing",
+    "//src/testing/end_to_end/mobly_base_tests:fuchsia_wlan_base_test",
     "//sdk/fidl/fuchsia.wlan.common:fuchsia.wlan.common_host_test_data",
     "//sdk/fidl/fuchsia.wlan.internal:fuchsia.wlan.internal_host_test_data",
     "//sdk/fidl/fuchsia.wlan.device.service:fuchsia.wlan.device.service_host_test_data",
@@ -151,7 +151,7 @@ antlion_host_test("wlan_scan_test") {
 antlion_host_test("wlan_driver_restart_test") {
   main_source = "WlanDriverRestartTest.py"
   libraries = [
-    "//src/connectivity/wlan/tests/core/core_testing",
+    "//src/testing/end_to_end/mobly_base_tests:fuchsia_wlan_base_test",
     "//sdk/fidl/fuchsia.wlan.device.service:fuchsia.wlan.device.service_host_test_data",
   ]
 }

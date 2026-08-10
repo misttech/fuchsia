@@ -45,7 +45,7 @@ from honeydew.auxiliary_devices.power_switch.power_switch_using_dmc import (
 )
 from honeydew.transports.ffx.config import FfxConfig
 from honeydew.transports.ffx.ffx import FFX
-from honeydew.typing.custom_types import DeviceInfo, IpPort
+from honeydew.typing.custom_types import DeviceInfo, FidlEndpoint, IpPort
 from mobly import logger, signals
 
 MOBLY_CONTROLLER_CONFIG_NAME: str = "FuchsiaDevice"
@@ -78,6 +78,10 @@ FFX_PROXY_TIMEOUT_SEC = 3
 #  2. An active scan is queued for the newly saved network (~7s)
 #  3. The initial connection attempt fails (~1s)
 IP_ADDRESS_TIMEOUT = 30
+
+_DEVICE_MONITOR_PROXY = FidlEndpoint(
+    "core/wlandevicemonitor", "fuchsia.wlan.device.service.DeviceMonitor"
+)
 
 
 class FuchsiaDeviceError(signals.ControllerError):
@@ -358,37 +362,54 @@ class FuchsiaDevice:
         self.wlan_client_interfaces = {}
         self.wlan_ap_interfaces = {}
 
-        # TODO(http://fxb/75909): This tedium is necessary to get the interface name
-        # because only netstack has that information. The bug linked here is
-        # to reconcile some of the information between the two perspectives, at
-        # which point we can eliminate this step.
+        import fidl_fuchsia_wlan_common as f_wlan_common
+        import fidl_fuchsia_wlan_device_service as f_wlan_device_service
+
+        fc = self.honeydew_fd.fuchsia_controller
+        proxy = f_wlan_device_service.DeviceMonitorClient(
+            fc.connect_device_proxy(_DEVICE_MONITOR_PROXY)
+        )
+        loop = fuchsia_async_extension.get_loop()
+        ifaces = loop.run_until_complete(proxy.list_ifaces()).iface_list
+
+        wlan_interfaces_by_mac: dict[str, dict[str, int]] = {
+            "client": {},
+            "ap": {},
+        }
+        for iface_id in ifaces:
+            try:
+                resp = (
+                    loop.run_until_complete(
+                        proxy.query_iface(iface_id=iface_id)
+                    )
+                    .unwrap()
+                    .resp
+                )
+                mac = "%02x:%02x:%02x:%02x:%02x:%02x" % tuple(resp.sta_addr)
+                if resp.role == f_wlan_common.WlanMacRole.CLIENT:
+                    wlan_interfaces_by_mac["client"][mac] = iface_id
+                elif resp.role == f_wlan_common.WlanMacRole.AP:
+                    wlan_interfaces_by_mac["ap"][mac] = iface_id
+            except (AssertionError, Exception):
+                pass
+
         netstack_interfaces = (
             self.honeydew_fd.netstack_deprecated_sync.list_interfaces()
         )
-        wlan_interfaces_by_mac = (
-            fuchsia_async_extension.get_loop().run_until_complete(
-                self.honeydew_fd.wlan_core.query_interfaces()
-            )
-        )
-
         for netstack_iface in netstack_interfaces:
             if netstack_iface.mac is None:
-                self.log.debug(
-                    f"No MAC address for iface {netstack_iface.name}"
-                )
                 continue
-
-            if netstack_iface.mac in wlan_interfaces_by_mac.client:
+            mac_str = str(netstack_iface.mac)
+            if mac_str in wlan_interfaces_by_mac["client"]:
                 self.wlan_client_interfaces[
                     netstack_iface.name
-                ] = wlan_interfaces_by_mac.client[netstack_iface.mac]
-            elif netstack_iface.mac in wlan_interfaces_by_mac.ap:
+                ] = wlan_interfaces_by_mac["client"][mac_str]
+            elif mac_str in wlan_interfaces_by_mac["ap"]:
                 self.wlan_ap_interfaces[
                     netstack_iface.name
-                ] = wlan_interfaces_by_mac.ap[netstack_iface.mac]
+                ] = wlan_interfaces_by_mac["ap"][mac_str]
 
-        # Set test interfaces to value from config, else the first found
-        # interface, else None
+        # Set test interfaces to value from config, else None
         if self.wlan_client_test_interface_name is None:
             self.wlan_client_test_interface_name = next(
                 iter(self.wlan_client_interfaces), None
