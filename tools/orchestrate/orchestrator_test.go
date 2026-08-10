@@ -81,11 +81,6 @@ func (m *mockFFXClient) SetupFfx(ctx context.Context, repoName string) error {
 	return call.retErr
 }
 
-func (m *mockFFXClient) DaemonStop(ctx context.Context) error {
-	call := m.recordCall("DaemonStop")
-	return call.retErr
-}
-
 func (m *mockFFXClient) EmuStop(ctx context.Context) error {
 	call := m.recordCall("EmuStop")
 	return call.retErr
@@ -381,8 +376,7 @@ func runOrchestratorScenario(t *testing.T, isEmulator bool, runInput *RunInput, 
 		mockFfx.expectCall("EmuStop") // From stopEmulator
 	}
 
-	mockFfx.expectCall("DaemonStop") // From stopDaemon
-	mockFfx.expectCall("Close")      // From ffx.Close
+	mockFfx.expectCall("Close") // From ffx.Close
 
 	// Create the orchestrator and inject mock
 	orchestrator := NewTestOrchestrator(deviceConfig)

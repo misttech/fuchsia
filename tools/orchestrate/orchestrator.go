@@ -29,7 +29,6 @@ type FFXClient interface {
 
 	// High-level provisioning operations
 	SetupFfx(ctx context.Context, repoName string) error
-	DaemonStop(ctx context.Context) error
 	ProductDownload(ctx context.Context, transferURL, outDir, authPath string) error
 	EmuStart(ctx context.Context, productDir, name string) error
 	EmuStop(ctx context.Context) error
@@ -59,7 +58,6 @@ type TestOrchestrator struct {
 }
 
 var (
-	ffxDaemonLog  = filepath.Join(utils.GetOutputsDir(), "ffx_daemon.log")
 	ffxConfigDump = filepath.Join(utils.GetOutputsDir(), "ffx_config.txt")
 	subrunnerLog  = filepath.Join(utils.GetOutputsDir(), "subrunner.log")
 	targetLog     = filepath.Join(utils.GetOutputsDir(), "target.log")
@@ -135,11 +133,6 @@ func (r *TestOrchestrator) Run(ctx context.Context, in *RunInput, testCmd []stri
 		if err := r.ffx.SetupFfx(ctx, r.repoName); err != nil {
 			return fmt.Errorf("SetupFfx: %w", err)
 		}
-		defer func() {
-			if err := r.ffx.DaemonStop(context.Background()); err != nil {
-				fmt.Printf("DaemonStop: %v\n", err)
-			}
-		}()
 		productDir := ""
 		if in.Target().TransferURL != "" {
 			fmt.Println("=== orchestrate - Downloading Product Bundle (2/6) ===")

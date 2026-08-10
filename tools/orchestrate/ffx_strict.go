@@ -96,7 +96,6 @@ func NewFFXStrictClient(ctx context.Context, ffxPath, outputsDir, repoName strin
 			"repository.default":              repoName,
 			"repository.server.enabled":       false,
 			"log.level":                       "Debug",
-			"daemon.autostart":                false,
 		},
 	}
 
@@ -575,10 +574,5 @@ func isXdgVar(val string) bool {
 
 // SetupFfx is a no-op for strict mode since ffxutil.FFXInstance handles repository configuration internally.
 func (c *FFXStrictClient) SetupFfx(ctx context.Context, repoName string) error {
-	return nil
-}
-
-// DaemonStop is a no-op for strict mode because it operates daemonlessly.
-func (c *FFXStrictClient) DaemonStop(ctx context.Context) error {
 	return nil
 }

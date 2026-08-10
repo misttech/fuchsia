@@ -16,7 +16,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"time"
 
 	utils "go.fuchsia.dev/fuchsia/tools/orchestrate/utils"
 )
@@ -103,7 +102,7 @@ type Option struct {
 	// IsolateDir is used.
 	PublicSSH []string
 
-	// EnableCSO enables circuit-switched-overnet in the ffx daemon.
+	// EnableCSO enables circuit-switched-overnet.
 	// If set to false, the ffx default value is used.
 	//
 	// Note: This option is only used to write the default ffx config when
@@ -207,8 +206,7 @@ func (f *Ffx) ApplyEnv(env []string) ([]string, error) {
 		env = append(env, xdg_env_var+"="+f.Dir)
 	}
 	sshDir := filepath.Join(wd, "openssh-portable", "bin")
-	// For non-daemon commands, the path to the ssh binary is required. Previously this was only
-	// needed for execution of `ffx daemon start`.
+	// The path to the ssh binary is required.
 	env = utils.AppendPath(env, sshDir)
 	return env, nil
 }
@@ -283,15 +281,6 @@ func (f *Ffx) GetDefaultTarget(ctx context.Context) (string, error) {
 	}
 	// An extra '\n' is added at the end of defaultName.
 	return strings.TrimSpace(defaultName), nil
-}
-
-// WaitForDaemon tries a few times to check that the daemon is up
-// and returns an error if it fails to respond.
-func (f *Ffx) WaitForDaemon(ctx context.Context) error {
-	return utils.RunWithRetries(ctx, 500*time.Millisecond, 3, func() error {
-		_, err := f.RunCmdSync(ctx, "daemon", "echo")
-		return err
-	})
 }
 
 // Flash uses "ffx target flash" to flash a product bundle into a device.
@@ -503,7 +492,7 @@ func (f *Ffx) Symbolize(ctx context.Context, input io.Reader, output io.Writer) 
 	return cmd.Run()
 }
 
-// SetupFfx configures ffx, starts the daemon, and waits for it to be ready.
+// SetupFfx configures ffx.
 func (f *Ffx) SetupFfx(ctx context.Context, repoName string) error {
 	cmds := [][]string{
 		{"config", "set", "log.level", "Debug"},
@@ -513,7 +502,6 @@ func (f *Ffx) SetupFfx(ctx context.Context, repoName string) error {
 		{"config", "set", "discovery.mdns.enabled", "false"},
 		{"config", "set", "fastboot.usb.disabled", "true"},
 		{"config", "set", "proactive_log.enabled", "false"},
-		{"config", "set", "daemon.autostart", "false"},
 		{"config", "set", "overnet.cso", "only"},
 		{"config", "set", "repository.default", repoName},
 		{"config", "set", "repository.server.enabled", "false"},
@@ -538,13 +526,6 @@ func (f *Ffx) SetupFfx(ctx context.Context, repoName string) error {
 		return fmt.Errorf("dumpFfxConfig: %w", err)
 	}
 
-	ffxDaemonLog := filepath.Join(logDir, "ffx_daemon.log")
-	if err := f.daemonStart(ctx, ffxDaemonLog); err != nil {
-		return fmt.Errorf("ffx daemon start: %w", err)
-	}
-	if err := f.WaitForDaemon(ctx); err != nil {
-		return fmt.Errorf("ffx daemon wait: %w", err)
-	}
 	return nil
 }
 
@@ -563,38 +544,9 @@ func (f *Ffx) dumpFfxConfig(ctx context.Context, outputPath string) error {
 	return cmd.Run()
 }
 
-func (f *Ffx) daemonStart(ctx context.Context, outputPath string) error {
-	logFile, err := os.Create(outputPath)
-	if err != nil {
-		return fmt.Errorf("os.Create: %w", err)
-	}
-	defer logFile.Close()
-	cmd, err := f.CmdContext(ctx, "daemon", "start")
-	if err != nil {
-		return err
-	}
-	cmd.Stdout = logFile
-	cmd.Stderr = logFile
-	if err := cmd.Start(); err != nil {
-		return err
-	}
-	go func() {
-		if err := cmd.Wait(); err != nil {
-			log.Printf("ffx daemon start finished: %v", err)
-		}
-	}()
-	return nil
-}
-
 // EmuStop stops all running emulator instances.
 func (f *Ffx) EmuStop(ctx context.Context) error {
 	_, err := f.RunCmdSync(ctx, "emu", "stop", "--all")
-	return err
-}
-
-// DaemonStop stops the ffx daemon.
-func (f *Ffx) DaemonStop(ctx context.Context) error {
-	_, err := f.RunCmdSync(ctx, "daemon", "stop", "--no-wait")
 	return err
 }
 
