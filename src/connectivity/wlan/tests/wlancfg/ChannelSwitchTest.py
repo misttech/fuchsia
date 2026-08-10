@@ -261,7 +261,7 @@ class ChannelSwitchTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                         f"channel {current_channel}"
                     )
 
-                got_channel = status.connected.channel.number
+                got_channel = status.connected.primary.number
 
                 if got_channel == previous_channel:
                     if time.time() > must_change_channel_by:
@@ -473,7 +473,7 @@ class ChannelSwitchTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                     raise signals.TestFailure(
                         f"want connected status, got {status}"
                     )
-                return status.connected.channel.number
+                return status.connected.primary.number
         raise EnvironmentError("Could not determine SoftAP channel")
 
 

@@ -174,7 +174,7 @@ class HiddenNetworksTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         )
 
         # Reboot the device and check that it auto connects.
-        self.dut.reboot()
+        await self.dut.reboot()
         await self.dut.wlan_policy.start_client_connections()
         try:
             await self.dut.wlan_policy.wait_for_network_state(

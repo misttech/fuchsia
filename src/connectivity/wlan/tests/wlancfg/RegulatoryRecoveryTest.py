@@ -139,6 +139,10 @@ class RegulatoryRecoveryTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             ap_updates = await self.dut.wlan_policy_ap.get_update()
             if len(ap_updates) != 1:
                 raise signals.TestFailure(f"No APs are running: {ap_updates}")
+            if ap_updates[0].id_ is None:
+                raise signals.TestFailure(
+                    f"No network ID in AP update: {ap_updates}"
+                )
             asserts.assert_equal(
                 ap_updates[0].id_.ssid, "test_ssid", "Wrong ssid", ap_updates
             )
