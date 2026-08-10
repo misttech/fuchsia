@@ -301,6 +301,11 @@ void WlanInterface::Init(InitRequestView request, InitCompleter::Sync& completer
 
   {
     std::lock_guard<std::shared_mutex> guard(wdev_->netdev->if_proto_lock);
+    if (wdev_->netdev->if_proto.is_valid()) {
+      BRCMF_ERR("Failed to initialize interface: if_proto already bound");
+      completer.ReplyError(ZX_ERR_ALREADY_BOUND);
+      return;
+    }
     wdev_->netdev->if_proto =
         fidl::WireSyncClient<fuchsia_wlan_fullmac::WlanFullmacImplIfc>(std::move(request->ifc()));
   }

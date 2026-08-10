@@ -882,6 +882,13 @@ static zx_status_t brcmf_cfg80211_del_ap_iface(struct brcmf_cfg80211_info* cfg,
   if (brcmf_feat_is_enabled(ifp, BRCMF_FEAT_MFG)) {
     // If we are operating with manufacturing FW, we just have a single IF. Pretend like it was
     // deleted.
+    //
+    // For standard APs, if_proto is natively cleared when ndev is deleted during teardown.
+    // However, MFG APs recycle ndev instead of deleting it, so we explicitly clear if_proto here.
+    {
+      std::lock_guard<std::shared_mutex> guard(ndev->if_proto_lock);
+      ndev->if_proto = fidl::WireSyncClient<fuchsia_wlan_fullmac::WlanFullmacImplIfc>();
+    }
     return ZX_OK;
   }
 
@@ -8352,6 +8359,10 @@ zx_status_t brcmf_cfg80211_del_iface(struct brcmf_cfg80211_info* cfg, struct wir
       // The default client iface 0 is always assumed to exist by the driver, and is never
       // explicitly deleted.
       ndev->sme_channel.reset();
+      {
+        std::lock_guard<std::shared_mutex> guard(ndev->if_proto_lock);
+        ndev->if_proto = fidl::WireSyncClient<fuchsia_wlan_fullmac::WlanFullmacImplIfc>();
+      }
       ndev->needs_free_net_device = true;
       brcmf_write_net_device_name(ndev, kPrimaryNetworkInterfaceName);
       return ZX_OK;
