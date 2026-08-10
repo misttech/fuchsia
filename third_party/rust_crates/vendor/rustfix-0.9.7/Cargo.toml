@@ -11,9 +11,9 @@
 
 [package]
 edition = "2024"
-rust-version = "1.91"
+rust-version = "1.93"
 name = "rustfix"
-version = "0.9.5"
+version = "0.9.7"
 authors = [
     "Pascal Hertleif <killercup@gmail.com>",
     "Oliver Schneider <oli-obk@users.noreply.github.com>",
@@ -44,27 +44,19 @@ version = "1.0.228"
 features = ["derive"]
 
 [dependencies.serde_json]
-version = "1.0.148"
+version = "1.0.149"
 
 [dependencies.thiserror]
-version = "2.0.17"
-
-[dependencies.tracing]
-version = "0.1.44"
-features = ["std"]
-default-features = false
+version = "2.0.18"
 
 [dev-dependencies.anyhow]
-version = "1.0.100"
+version = "1.0.102"
 
 [dev-dependencies.proptest]
-version = "1.9.0"
-
-[dev-dependencies.similar]
-version = "2.7.0"
+version = "1.11.0"
 
 [dev-dependencies.snapbox]
-version = "0.6.23"
+version = "1.2.0"
 features = [
     "diff",
     "dir",
@@ -74,15 +66,12 @@ features = [
 ]
 
 [dev-dependencies.tempfile]
-version = "3.24.0"
-
-[dev-dependencies.tracing-subscriber]
-version = "0.3.22"
-features = ["env-filter"]
+version = "3.27.0"
 
 [lints.clippy]
 dbg_macro = "warn"
 disallowed_methods = "warn"
+disallowed_types = "warn"
 print_stderr = "warn"
 print_stdout = "warn"
 self_named_module_files = "warn"

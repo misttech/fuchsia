@@ -529,7 +529,7 @@ _NORMAL_DEPENDENCIES = {
             "proc-macro2": Label("//third_party/rust_crates/vendor/proc-macro2-1.0.106:proc_macro2"),
             "pulldown-cmark": Label("//third_party/rust_crates/vendor/pulldown-cmark-0.13.4:pulldown_cmark"),
             "quote": Label("//third_party/rust_crates/vendor/quote-1.0.45:quote"),
-            "rustfix": Label("//third_party/rust_crates/vendor/rustfix-0.9.5:rustfix"),
+            "rustfix": Label("//third_party/rust_crates/vendor/rustfix-0.9.7:rustfix"),
             "rustls-native-certs": Label("//third_party/rust_crates/vendor/rustls-native-certs-0.8.4:rustls_native_certs"),
             "semver": Label("//third_party/rust_crates/vendor/semver-1.0.28:semver"),
             "serde_yaml": Label("//third_party/rust_crates/vendor/serde_yaml-0.9.34+deprecated:serde_yaml"),

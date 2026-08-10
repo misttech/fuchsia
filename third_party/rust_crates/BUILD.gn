@@ -1833,13 +1833,13 @@ group("rustc-hash-1.0.1") {
 
 if (!(current_os == "fuchsia")) {
   group("rustfix") {
-    public_deps = [ ":rustfix-v0_9_5" ]
+    public_deps = [ ":rustfix-v0_9_7" ]
   }
 }
 
 if (!(current_os == "fuchsia")) {
-  group("rustfix-0.9.5") {
-    public_deps = [ ":rustfix-v0_9_5" ]
+  group("rustfix-0.9.7") {
+    public_deps = [ ":rustfix-v0_9_7" ]
   }
 }
 
@@ -18733,18 +18733,18 @@ rustc_library("rustc-hash-v2_1_1") {
   applicable_licenses = [ ":rustc-hash-v2_1_1.license" ]
 }
 
-license("rustfix-v0_9_5.license") {
+license("rustfix-v0_9_7.license") {
   public_package_name = "rustfix"
   license_files = [
-    "//third_party/rust_crates/vendor/rustfix-0.9.5/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/rustfix-0.9.5/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/rustfix-0.9.7/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/rustfix-0.9.7/LICENSE-MIT",
   ]
 }
 
-rustc_library("rustfix-v0_9_5") {
+rustc_library("rustfix-v0_9_7") {
   crate_name = "rustfix"
-  source_root = "//third_party/rust_crates/vendor/rustfix-0.9.5/src/lib.rs"
-  output_name = "rustfix-f78b9a9eb4911869"
+  source_root = "//third_party/rust_crates/vendor/rustfix-0.9.7/src/lib.rs"
+  output_name = "rustfix-b073f477ca90360a"
   edition = "2024"
   disable_clippy = true
   enforce_source_listing = false
@@ -18754,19 +18754,18 @@ rustc_library("rustfix-v0_9_5") {
   deps += [ ":serde-v1_0_228" ]
   deps += [ ":serde_json-v1_0_149" ]
   deps += [ ":thiserror-v2_0_18" ]
-  deps += [ ":tracing-v0_1_44" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=f78b9a9eb4911869",
-    "-Cextra-filename=-f78b9a9eb4911869",
+    "-Cmetadata=b073f477ca90360a",
+    "-Cextra-filename=-b073f477ca90360a",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":rustfix-v0_9_5.license" ]
+  applicable_licenses = [ ":rustfix-v0_9_7.license" ]
 }
 
 license("rustix-v1_1_4.license") {
