@@ -59,8 +59,7 @@ void TestFn(zx::unowned_event event) {
 }
 
 // Call f for each record read from the sampler.
-zx::result<> ForEachRecord(zx_handle_t sampler, size_t buffer_size,
-                           fit::function<void(std::span<uint64_t>)> f) {
+zx::result<> ForEachRecord(zx_handle_t sampler, fit::function<void(std::span<uint64_t>)> f) {
   size_t max_size;
   if (zx_status_t status = zx_sampler_read(sampler, nullptr, 0, &max_size); status != ZX_OK) {
     return zx::error(status);
@@ -68,19 +67,21 @@ zx::result<> ForEachRecord(zx_handle_t sampler, size_t buffer_size,
 
   size_t actual;
   std::vector<uint64_t> data(max_size / 8);
-  if (zx_status_t status = zx_sampler_read(sampler, data.data(), max_size, &actual);
+  if (zx_status_t status =
+          zx_sampler_read(sampler, data.data(), data.size() * sizeof(uint64_t), &actual);
       status != ZX_OK) {
     return zx::error(status);
   }
 
   size_t offset = 0;
-  while (offset < actual) {
+  const size_t actual_words = std::min(actual / sizeof(uint64_t), data.size());
+  while (offset < actual_words) {
     uint64_t* header = data.data() + offset;
     if (*header == 0) {
       break;
     }
     size_t record_words = fxt::RecordFields::RecordSize::Get<size_t>(*header);
-    if (record_words == 0) {
+    if (record_words == 0 || record_words > actual_words - offset) {
       return zx::error(ZX_ERR_OUT_OF_RANGE);
     }
     std::span<uint64_t> record{header, record_words};
@@ -90,12 +91,12 @@ zx::result<> ForEachRecord(zx_handle_t sampler, size_t buffer_size,
   return zx::ok();
 }
 
-zx::result<> ReadNRecords(zx_handle_t sampler, size_t buffer_size, size_t N) {
+zx::result<> ReadNRecords(zx_handle_t sampler, size_t N) {
   size_t record_count{0};
   zx::time deadline = zx::deadline_after(zx::sec(30));
   while (zx::clock::get_monotonic() < deadline) {
-    if (zx::result res = ForEachRecord(sampler, buffer_size,
-                                       [&record_count](std::span<uint64_t>) { record_count += 1; });
+    if (zx::result res =
+            ForEachRecord(sampler, [&record_count](std::span<uint64_t>) { record_count += 1; });
         res.is_error()) {
       return res.take_error();
     }
@@ -106,14 +107,13 @@ zx::result<> ReadNRecords(zx_handle_t sampler, size_t buffer_size, size_t N) {
   return zx::error(ZX_ERR_TIMED_OUT);
 }
 
-zx::result<> ReadNRecordsContainingTid(zx_handle_t sampler, size_t buffer_size,
-                                       zx_koid_t desired_tid, size_t N) {
+zx::result<> ReadNRecordsContainingTid(zx_handle_t sampler, zx_koid_t desired_tid, size_t N) {
   size_t record_count{0};
   zx::time deadline = zx::deadline_after(zx::sec(30));
   auto f = [&record_count, desired_tid](std::span<uint64_t> record_data) {
+    ZX_ASSERT(record_data.size() >= 4);
     ZX_ASSERT(fxt::RecordFields::Type::Get<size_t>(record_data[0]) ==
               static_cast<size_t>(fxt::RecordType::kProfiler));
-    ZX_ASSERT(record_data.size() >= 4);
     // Record format looks like
     // 0-7  : header
     // 8-15 : ts
@@ -125,7 +125,7 @@ zx::result<> ReadNRecordsContainingTid(zx_handle_t sampler, size_t buffer_size,
     }
   };
   while (zx::clock::get_monotonic() < deadline) {
-    if (zx::result res = ForEachRecord(sampler, buffer_size, f); res.is_error()) {
+    if (zx::result res = ForEachRecord(sampler, f); res.is_error()) {
       return res.take_error();
     }
     if (record_count >= N) {
@@ -172,7 +172,7 @@ TEST(ThreadSampler, StartStop) {
   zx_koid_t tid = GetTid(native_handle);
   ASSERT_NE(tid, ZX_KOID_INVALID);
 
-  ASSERT_OK(ReadNRecordsContainingTid(sampler, buffer_size, tid, 10).status_value());
+  ASSERT_OK(ReadNRecordsContainingTid(sampler, tid, 10).status_value());
   ASSERT_OK(zx_sampler_stop(sampler));
   ASSERT_OK(event.signal(0, ZX_USER_SIGNAL_1));
   sample_thread.join();
@@ -277,7 +277,7 @@ TEST(ThreadSampler, DroppedSampler) {
   create_res = zx_sampler_create(sampling_resource.get(), 0, &config, &sampler);
   ASSERT_OK(create_res);
   ASSERT_OK(zx_sampler_start(sampler));
-  ASSERT_OK(ReadNRecordsContainingTid(sampler, buffer_size, tid, 10).status_value());
+  ASSERT_OK(ReadNRecordsContainingTid(sampler, tid, 10).status_value());
   ASSERT_OK(zx_sampler_stop(sampler));
 
   ASSERT_OK(event.signal(0, ZX_USER_SIGNAL_1));
@@ -326,7 +326,7 @@ TEST(ThreadSampler, NonRunningThread) {
   ASSERT_NO_FATAL_FAILURE(test_thread.Start(threads_test_wait_loop, event_handle));
   ASSERT_OK(event.wait_one(ZX_USER_SIGNAL_0, zx::time::infinite(), nullptr));
 
-  ASSERT_OK(ReadNRecordsContainingTid(sampler, buffer_size, tid, 10).status_value());
+  ASSERT_OK(ReadNRecordsContainingTid(sampler, tid, 10).status_value());
   ASSERT_OK(zx_sampler_stop(sampler));
   ASSERT_OK(event.signal(0, ZX_USER_SIGNAL_1));
 
@@ -374,7 +374,7 @@ TEST(ThreadSampler, HighFrequency) {
 
   ASSERT_OK(zx_sampler_start(sampler));
 
-  ASSERT_OK(ReadNRecords(sampler, buffer_size, 10).status_value());
+  ASSERT_OK(ReadNRecords(sampler, 10).status_value());
 
   ASSERT_OK(zx_sampler_stop(sampler));
 
