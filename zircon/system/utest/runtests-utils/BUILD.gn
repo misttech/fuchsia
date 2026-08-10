@@ -84,18 +84,25 @@ resource("packaged-raw-profile") {
     "test/sys/runtests-utils-testdata/profile/15822697145192797690.profraw",
   ]
 
-  # TODO(https://fxbug.dev/333762947): To unblock the clang roll, we can upload
+  # TODO(https://fxbug.dev/539649726): To unblock the clang roll, we can upload
   # the new profraw file with the updated llvm profdata header format. We can't
   # replace it completely because the new format would break existing tests, so
   # we can do a quick check to see which version of the toolchain we're using
   # and dispatch to the appropriate file.
   #
-  # "SkDvAQt_IN7-4-_K2xShZJxH9sfemvCs0bioG10wxIEC" is the cipd ID for the older
+  # "iqsK1xnW4IG8hxWRZ-n5R5CoS9b1wNf6pHZAqS0G4ccC" is the cipd ID for the older
   # toolchain with the older format. We should remove this after rolling clang.
-  if (clang_version_string == "SkDvAQt_IN7-4-_K2xShZJxH9sfemvCs0bioG10wxIEC") {
+  #
+  # This profile was generated via
+  #
+  # ``` $ clang
+  # -fprofile-instr-generate=/abspath/to/zircon/system/utest/runtests-utils/helper/15822697145192797690.profraw
+  # -Wl,--build-id -o code code.c $ ./code code.c is just an empty main
+  # function. Running it makes the profile. ```
+  if (clang_version_string == "iqsK1xnW4IG8hxWRZ-n5R5CoS9b1wNf6pHZAqS0G4ccC") {
     sources = [ "helper/15822697145192797690.profraw" ]
   } else {
-    sources = [ "helper/15822697145192797690.v10.profraw" ]
+    sources = [ "helper/15822697145192797690.v11.profraw" ]
   }
 }
 
