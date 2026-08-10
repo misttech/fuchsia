@@ -13,10 +13,7 @@ import fuchsia_base_test
 import openwrt_access_point
 from antlion import controllers
 from antlion.controllers.access_point import AccessPoint
-from antlion.controllers.ap_lib import hostapd_constants
-from antlion.controllers.packet_capture import PacketCapture
 from antlion.controllers.pdu import PduDevice
-from antlion.test_utils.wifi import wifi_test_utils as wutils
 from honeydew.typing.custom_types import FidlEndpoint
 from mobly import signals
 from mobly.asserts import assert_equal, fail
@@ -265,9 +262,6 @@ class IfaceBaseTestClass(WifiChipBaseTestClass):
 class ConnectionBaseTestClass(IfaceBaseTestClass):
     __access_point: AccessPoint | OpenWrtAP | None
     pdu_devices: list[PduDevice] | None
-    packet_capture: list[PacketCapture] | None
-    packet_logger: PacketCapture | None
-    packet_log_pid: dict[str, int] | None
     nl80211_proxy: fidl_wlanix.Nl80211Client
 
     def access_point(self) -> AccessPoint | OpenWrtAP:
@@ -278,9 +272,6 @@ class ConnectionBaseTestClass(IfaceBaseTestClass):
     async def setup_class(self) -> None:
         await super().setup_class()
         self.pdu_devices = None
-        self.packet_capture = None
-        self.packet_logger = None
-        self.packet_log_pid = {}
 
         access_points = await self.register_controller(
             controllers.access_point,
@@ -305,18 +296,6 @@ class ConnectionBaseTestClass(IfaceBaseTestClass):
             required=False,
         )
 
-        self.packet_capture = await self.register_controller(
-            controllers.packet_capture, required=False
-        )
-        if self.packet_capture and len(self.packet_capture) > 0:
-            self.packet_logger = self.packet_capture[0]
-            self.packet_logger.configure_monitor_mode(
-                "2G", hostapd_constants.AP_DEFAULT_CHANNEL_2G
-            )
-            self.packet_logger.configure_monitor_mode(
-                "5G", hostapd_constants.AP_DEFAULT_CHANNEL_5G
-            )
-
         ap = self.access_point()
         if isinstance(ap, AccessPoint):
             ap.stop_all_aps()
@@ -324,20 +303,7 @@ class ConnectionBaseTestClass(IfaceBaseTestClass):
     async def setup_test(self) -> None:
         await super().setup_test()
 
-        # Start a packet capture that can be used for debugging tests upon success or failure.
-        if self.packet_logger:
-            self.packet_log_pid = wutils.start_pcap(
-                self.packet_logger, "dual", self.current_test_info.name
-            )
-
     async def teardown_test(self) -> None:
-        # Save a packet capture for debugging
-        if self.packet_logger and self.packet_log_pid:
-            wutils.stop_pcap(
-                self.packet_logger, self.packet_log_pid, test_status=True
-            )
-            self.packet_log_pid = {}
-
         # Maintain the invariant that every test starts with no access points.
         ap = self.access_point()
         if isinstance(ap, OpenWrtAP):
@@ -357,13 +323,6 @@ class ConnectionBaseTestClass(IfaceBaseTestClass):
             the test execution including exception objects.
         """
         await super().on_fail(record)
-        # Save a packet capture for debugging
-        if self.packet_logger and self.packet_log_pid:
-            wutils.stop_pcap(
-                self.packet_logger, self.packet_log_pid, test_status=False
-            )
-            self.packet_log_pid = {}
-
         # Maintain the invariant that every test starts with no access points.
         ap = self.access_point()
         if isinstance(ap, AccessPoint):
