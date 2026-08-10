@@ -620,7 +620,19 @@ void RndisFunction::SetConfigured(SetConfiguredRequest& request,
 
 void RndisFunction::SetInterface(SetInterfaceRequest& request,
                                  SetInterfaceCompleter::Sync& completer) {
-  completer.Reply(zx::ok());
+  uint8_t interface = request.interface();
+  uint8_t alt_setting = request.alt_setting();
+
+  if (interface == descriptors_.communication_interface.b_interface_number ||
+      interface == descriptors_.data_interface.b_interface_number) {
+    if (alt_setting != 0) {
+      completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
+      return;
+    }
+    completer.Reply(zx::ok());
+    return;
+  }
+  completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
 }
 
 void RndisFunction::handle_unknown_method(

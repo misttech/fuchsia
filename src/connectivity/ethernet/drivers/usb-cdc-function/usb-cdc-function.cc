@@ -490,8 +490,19 @@ void UsbCdcFunction::SetInterface(SetInterfaceRequest &request,
     return;
   }
 
+  // The communication interface only supports alternative setting 0.
+  // No endpoint configuration is required for this interface.
+  if (interface == descriptors_.comm_intf.b_interface_number) {
+    if (alt_setting != 0) {
+      completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
+      return;
+    }
+    completer.Reply(zx::ok());
+    return;
+  }
+
   if (interface != descriptors_.cdc_intf_0.b_interface_number || alt_setting > 1) {
-    completer.Reply(zx::error(ZX_ERR_INVALID_ARGS));
+    completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
     return;
   }
 
@@ -721,10 +732,9 @@ zx::result<> UsbCdcFunction::Start(fdf::DriverContext context) {
 
   if (auto status = outgoing()->AddService<fnetdev::Service>(std::move(handler));
       status.is_error()) {
-    fdf::error("Failed to add service: {}", status);
+    fdf::error("failed to add netdev service handler: {}", status.status_string());
     return status.take_error();
   }
-
   std::vector offers = child_.CreateOffers2();
   offers.push_back(fdf::MakeOffer2<fnetdev::Service>());
 

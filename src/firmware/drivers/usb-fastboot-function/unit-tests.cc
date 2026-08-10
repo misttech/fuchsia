@@ -120,7 +120,7 @@ class UsbFastbootFunctionTest : public ::testing::Test {
     {
       fidl::Result result = function_client_->SetInterface({{
           .interface = 0,
-          .alt_setting = 1,
+          .alt_setting = 0,
       }});
       ASSERT_TRUE(result.is_ok()) << result.error_value().FormatDescription();
     }

@@ -352,7 +352,7 @@ void UsbAdbDevice::TxComplete(std::vector<fendpoint::Completion> completions) {
 }
 
 void UsbAdbDevice::Control(ControlRequest& request, ControlCompleter::Sync& completer) {
-  completer.Reply(zx::ok(std::vector<uint8_t>{}));
+  completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
 }
 
 void UsbAdbDevice::EnableEndpoints() {
@@ -461,6 +461,13 @@ void UsbAdbDevice::SetConfigured(SetConfiguredRequest& request,
 void UsbAdbDevice::SetInterface(SetInterfaceRequest& request,
                                 SetInterfaceCompleter::Sync& completer) {
   zxlogf(INFO, "SetInterface called");
+  uint8_t interface = request.interface();
+  uint8_t alt_setting = request.alt_setting();
+
+  if (interface != descriptors_.adb_intf.b_interface_number || alt_setting != 0) {
+    completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
+    return;
+  }
   completer.Reply(zx::ok());
 }
 

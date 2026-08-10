@@ -310,7 +310,7 @@ void UsbFastbootFunction::Receive(
 }
 
 void UsbFastbootFunction::Control(ControlRequest& request, ControlCompleter::Sync& completer) {
-  completer.Reply(zx::ok(std::vector<uint8_t>{}));
+  completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
 }
 
 zx_status_t UsbFastbootFunction::ConfigureEndpoints(bool enable) {
@@ -364,11 +364,11 @@ void UsbFastbootFunction::SetInterface(SetInterfaceRequest& request,
   uint8_t interface = request.interface();
   uint8_t alt_setting = request.alt_setting();
   fdf::info("interface - {}  alt_setting - {}.", interface, alt_setting);
-  if (interface != descriptors_.fastboot_intf.b_interface_number || alt_setting > 1) {
-    completer.Reply(zx::error(ZX_ERR_INVALID_ARGS));
+  if (interface != descriptors_.fastboot_intf.b_interface_number || alt_setting != 0) {
+    completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
     return;
   }
-  completer.Reply(zx::make_result(ConfigureEndpoints(alt_setting)));
+  completer.Reply(zx::ok());
 }
 
 void UsbFastbootFunction::handle_unknown_method(

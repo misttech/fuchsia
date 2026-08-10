@@ -298,7 +298,7 @@ void VsockUsb::SetInterface(SetInterfaceRequest& request, SetInterfaceCompleter:
     FDF_LOG(WARNING, "SetInterface called on unexpected interface or alt setting (expected %x, %x)",
             descriptors_.data_interface.b_interface_number,
             descriptors_.data_interface.b_alternate_setting);
-    completer.Reply(zx::error(ZX_ERR_INVALID_ARGS));
+    completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
     return;
   }
   if (std::holds_alternative<Running>(state_)) {
