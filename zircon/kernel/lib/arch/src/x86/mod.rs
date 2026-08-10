@@ -3,3 +3,16 @@
 // found in the LICENSE file.
 
 pub mod cpuid;
+mod extension;
+mod feature;
+
+pub use extension::*;
+pub use feature::*;
+
+/// Enumeration of vendors.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum Vendor {
+    Intel,
+    Amd,
+    Unknown,
+}
