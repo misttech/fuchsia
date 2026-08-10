@@ -271,6 +271,51 @@ TEST(PortTest, QueuePacketLimitExceededGeneratesPolicyException) {
   worker.join();
 }
 
+// Tests the race where zx_port_cancel_key cancels active PortObservers while the
+// watched objects concurrently assert signals, triggering the is_canceled()
+// paths in QueuePacketLocked and MaybeReapLocked across multiple observers sharing the same key.
+TEST(PortStressTest, CancelKeyActiveObserverRace) {
+  zx::port port;
+  ASSERT_OK(zx::port::create(0u, &port));
+
+  constexpr size_t kNumEvents = 8;
+  zx::event events[kNumEvents];
+  for (auto& event : events) {
+    ASSERT_OK(zx::event::create(0u, &event));
+  }
+
+  constexpr uint64_t kKey = 0xca4c;
+  constexpr size_t kIterations = 2000;
+
+  std::atomic<bool> done{false};
+
+  std::thread signaler([&]() {
+    while (!done.load(std::memory_order_seq_cst)) {
+      for (auto& event : events) {
+        event.signal(0u, ZX_USER_SIGNAL_0);
+        event.signal(ZX_USER_SIGNAL_0, 0u);
+      }
+    }
+  });
+
+  for (size_t i = 0; i < kIterations; ++i) {
+    for (auto& event : events) {
+      event.wait_async(port, kKey, ZX_USER_SIGNAL_0, 0u);
+    }
+
+    zx_status_t cancel_status = port.cancel_key(0u, kKey);
+    EXPECT_TRUE(cancel_status == ZX_OK || cancel_status == ZX_ERR_NOT_FOUND);
+
+    // Drain any delivered packets to avoid queue buildup.
+    zx_port_packet_t packet = {};
+    while (port.wait(zx::time(0), &packet) == ZX_OK) {
+    }
+  }
+
+  done.store(true, std::memory_order_seq_cst);
+  signaler.join();
+}
+
 // What matters here is not so much the return values, but that the system doesn't
 // crash as a result of the order. Refer to the diagram at the top of port_dispatcher.h.
 TEST(PortTest, AsyncWaitCloseOrder) {
