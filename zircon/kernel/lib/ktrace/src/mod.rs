@@ -614,6 +614,7 @@ impl KTrace {
     /// Low-level helper to write a generic FXT event record.
     ///
     /// This is not inlined to reduce code size at the instrumentation sites.
+    #[allow(clippy::too_many_arguments)]
     #[inline(never)]
     #[cold]
     pub fn emit_event(
