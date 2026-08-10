@@ -7,6 +7,7 @@
 
 #include <lib/stdcompat/bit.h>
 #include <stdlib.h>
+#include <zircon/assert.h>
 
 #include <algorithm>
 #include <limits>
@@ -22,9 +23,17 @@ template <class T, class U, class L = std::conditional_t<sizeof(T) >= sizeof(U),
 constexpr const L round_up(const T& val_, const U& multiple_) {
   const L val = static_cast<L>(val_);
   const L multiple = static_cast<L>(multiple_);
-  return val == 0                             ? 0
-         : cpp20::has_single_bit<L>(multiple) ? (val + (multiple - 1)) & ~(multiple - 1)
-                                              : ((val + (multiple - 1)) / multiple) * multiple;
+  if (val == 0) {
+    return 0;
+  }
+  if (multiple == 0) {
+    ZX_PANIC("fbl::round_up: multiple is 0");
+  }
+  if (val > std::numeric_limits<L>::max() - (multiple - 1)) {
+    ZX_PANIC("fbl::round_up: integer overflow");
+  }
+  return cpp20::has_single_bit<L>(multiple) ? (val + (multiple - 1)) & ~(multiple - 1)
+                                            : ((val + (multiple - 1)) / multiple) * multiple;
 }
 
 // round_down rounds down val until it is divisible by multiple.

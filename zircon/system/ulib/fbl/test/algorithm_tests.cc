@@ -13,6 +13,7 @@ namespace {
 TEST(AlgorithmTest, RoundUp) {
   EXPECT_EQ(fbl::round_up(0u, 1u), 0u);
   EXPECT_EQ(fbl::round_up(0u, 5u), 0u);
+  EXPECT_EQ(fbl::round_up(0u, 0u), 0u);
   EXPECT_EQ(fbl::round_up(5u, 5u), 5u);
 
   EXPECT_EQ(fbl::round_up(1u, 6u), 6u);
@@ -67,5 +68,26 @@ TEST(AlgorithmTest, RoundDown) {
   EXPECT_EQ(fbl::round_down(2U, large_int), 0);
   EXPECT_EQ(fbl::round_down(2LLU, large_int), 0);
 }
+
+#if defined(__Fuchsia__)
+TEST(AlgorithmTest, RoundUpDeathTest) {
+  // Test multiple = 0 and val != 0 (must panic)
+  ASSERT_DEATH([] { fbl::round_up(10u, 0u); });
+
+  // Test overflow with same types (uint32_t, uint32_t)
+  ASSERT_DEATH([] { fbl::round_up(0xffffffffu, 2u); });
+
+  // Test overflow with heterogeneous types (uint16_t, uint16_t)
+  ASSERT_DEATH([] { fbl::round_up(static_cast<uint16_t>(0xffff), static_cast<uint16_t>(2)); });
+
+  // Test overflow with uint64_t
+  ASSERT_DEATH([] { fbl::round_up(0xffffffffffffffffull, 2ull); });
+
+  // Test overflow with multiple that is not a power of 2 (multiple has > 1 bit)
+  ASSERT_DEATH([] { fbl::round_up(0xffffffffu, 3u); });
+  ASSERT_DEATH([] { fbl::round_up(0xffffffffffffffffull, 3ull); });
+  ASSERT_DEATH([] { fbl::round_up(static_cast<uint16_t>(0xffff), static_cast<uint16_t>(3)); });
+}
+#endif
 
 }  // namespace
