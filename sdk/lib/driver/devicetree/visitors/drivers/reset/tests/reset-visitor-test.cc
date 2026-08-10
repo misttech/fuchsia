@@ -88,7 +88,7 @@ TEST(ResetVisitorTest, TestResetProperty) {
       {{
           fdf::MakeProperty2(bind_fuchsia_hardware_reset::SERVICE,
                              bind_fuchsia_hardware_reset::SERVICE_ZIRCONTRANSPORT),
-          fdf::MakeProperty2(bind_fuchsia_reset::NAME, RESET_NAME_0),
+          fdf::MakeProperty2(bind_fuchsia::NAME, RESET_NAME_0),
       }},
       (*parents)[1].properties(), false));
 
@@ -107,7 +107,7 @@ TEST(ResetVisitorTest, TestResetProperty) {
       {{
           fdf::MakeProperty2(bind_fuchsia_hardware_reset::SERVICE,
                              bind_fuchsia_hardware_reset::SERVICE_ZIRCONTRANSPORT),
-          fdf::MakeProperty2(bind_fuchsia_reset::NAME, RESET_NAME_1),
+          fdf::MakeProperty2(bind_fuchsia::NAME, RESET_NAME_1),
       }},
       (*parents)[2].properties(), false));
 
@@ -126,7 +126,7 @@ TEST(ResetVisitorTest, TestResetProperty) {
       {{
           fdf::MakeProperty2(bind_fuchsia_hardware_reset::SERVICE,
                              bind_fuchsia_hardware_reset::SERVICE_ZIRCONTRANSPORT),
-          fdf::MakeProperty2(bind_fuchsia_reset::NAME, RESET_NAME_2),
+          fdf::MakeProperty2(bind_fuchsia::NAME, RESET_NAME_2),
       }},
       (*parents)[3].properties(), false));
 }

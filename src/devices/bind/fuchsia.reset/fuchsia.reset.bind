@@ -11,4 +11,4 @@ uint RESET_ID;
 uint CONTROLLER_ID;
 
 // The string name of this reset pin.
-string NAME;
+

@@ -135,7 +135,7 @@ zx::result<> ResetVisitor::AddChildNodeSpec(fdf_devicetree::Node& child, uint32_
   std::vector bind_properties = {{
       fdf::MakeProperty2(bind_fuchsia_hardware_reset::SERVICE,
                          bind_fuchsia_hardware_reset::SERVICE_ZIRCONTRANSPORT),
-      fdf::MakeProperty2(bind_fuchsia_reset::NAME, reset_name),
+      fdf::MakeProperty2(bind_fuchsia::NAME, reset_name),
   }};
 
   auto reset_node = fuchsia_driver_framework::ParentSpec2{

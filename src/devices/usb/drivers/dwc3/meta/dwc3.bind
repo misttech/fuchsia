@@ -73,7 +73,7 @@ optional parent "utmi-clk" {
 }
 
 optional parent "reset" {
-  fuchsia.reset.NAME == "core_reset";
+  fuchsia.NAME == "core_reset";
 }
 
 optional parent "regulator" {
