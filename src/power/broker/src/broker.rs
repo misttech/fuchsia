@@ -1079,59 +1079,43 @@ impl Broker {
         let dependent_level = dependency.dependent.level;
         let dependent_id = dependency.dependent.element_id;
 
-        let mut leases_to_update = HashSet::new();
+        let leases_to_update: HashSet<LeaseID> = self
+            .catalog
+            .claims
+            .pending
+            .for_required_element(dependent_id)
+            .chain(self.catalog.claims.activated.for_required_element(dependent_id))
+            .filter(|claim| claim.requires().level >= dependent_level)
+            .map(|claim| claim.lease_id)
+            .collect();
 
-        if let Some(claim_ids) =
-            self.catalog.claims.pending.claims_by_required_element_id.get(&dependent_id)
-        {
-            for claim_id in claim_ids {
-                if let Some(claim) = self.catalog.claims.pending.claims.get(claim_id) {
-                    if claim.requires().level >= dependent_level {
-                        leases_to_update.insert(claim.lease_id);
-                    }
-                }
-            }
-        }
-
-        if let Some(claim_ids) =
-            self.catalog.claims.activated.claims_by_required_element_id.get(&dependent_id)
-        {
-            for claim_id in claim_ids {
-                if let Some(claim) = self.catalog.claims.activated.claims.get(claim_id) {
-                    if claim.requires().level >= dependent_level {
-                        leases_to_update.insert(claim.lease_id);
-                    }
-                }
-            }
-        }
+        let mut new_dependencies =
+            self.catalog.topology.all_direct_and_indirect_dependencies(&dependency.requires);
+        new_dependencies.push(dependency);
 
         let mut all_new_claims = Vec::new();
         for lease_id in &leases_to_update {
-            let mut new_dependencies =
-                self.catalog.topology.all_direct_and_indirect_dependencies(&dependency.requires);
-            new_dependencies.push(dependency.clone());
-
             let mut claims_created = Vec::new();
-            for dep in new_dependencies {
+            for dep in &new_dependencies {
                 let exists =
-                    self.catalog.claims.pending.for_lease(*lease_id).any(|c| c.dependency == dep)
+                    self.catalog.claims.pending.for_lease(*lease_id).any(|c| &c.dependency == dep)
                         || self
                             .catalog
                             .claims
                             .activated
                             .for_lease(*lease_id)
-                            .any(|c| c.dependency == dep);
+                            .any(|c| &c.dependency == dep);
 
                 if !exists {
-                    let claim = self.catalog.add_claim(dep, *lease_id);
+                    let claim = self.catalog.add_claim(dep.clone(), *lease_id);
                     claims_created.push(claim);
                 }
             }
 
             let essential_claims = self.catalog.filter_out_redundant_claims(claims_created);
-            for claim in &essential_claims {
+            for claim in essential_claims {
                 self.catalog.claims.pending.add(claim.clone());
-                all_new_claims.push(claim.clone());
+                all_new_claims.push(claim);
             }
         }
 
