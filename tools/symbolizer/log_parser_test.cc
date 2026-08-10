@@ -218,8 +218,9 @@ TEST_F(LogParserTest, MalformedAndUnclosedTagsMixed) {
       .WillOnce([](uint64_t frame_id, uint64_t address, Symbolizer::AddressType type,
                    std::string_view message,
                    Symbolizer::StringOutputFn output) { output("frame_0"); });
+  EXPECT_CALL(symbolizer_, Reset(false, Symbolizer::ResetType::kUnknown)).Times(1);
   ProcessOneLine("{{{bt:0:0x100}}}{{{invalid{{{reset}}}");
-  EXPECT_EQ(output_.str(), "frame_0\n{{{invalid{{{reset}}}\n");
+  EXPECT_EQ(output_.str(), "frame_0\n{{{invalid\n");
   output_.str("");
   output_.clear();
 
@@ -229,6 +230,12 @@ TEST_F(LogParserTest, MalformedAndUnclosedTagsMixed) {
                    Symbolizer::StringOutputFn output) { output("frame_valid"); });
   ProcessOneLine("prefix {{{bt:0:0x1000}}} middle {{{unclosed_tag_without_end");
   EXPECT_EQ(output_.str(), "prefix frame_valid middle {{{unclosed_tag_without_end\n");
+}
+
+TEST_F(LogParserTest, InvalidTagWithValidNonPrintingTag) {
+  EXPECT_CALL(symbolizer_, Module(0, "libc.so", "8ce60b")).Times(1);
+  ProcessOneLine("prefix {{{module:0x0:libc.so:elf:8ce60b}}} middle {{{invalid_tag}}} suffix");
+  EXPECT_EQ(output_.str(), "prefix  middle {{{invalid_tag}}} suffix\n");
 }
 
 TEST_F(LogParserTest, ZeroLengthPrefixesAndSuffixes) {
@@ -361,6 +368,33 @@ TEST_F(LogParserTest, DroppedCallback) {
   EXPECT_EQ(output_.str(), "line2 frame_1_symbolized\n");
 }
 
+TEST_F(LogParserTest, StrayOpenDelimiters) {
+  EXPECT_CALL(symbolizer_, Backtrace(0, 0x1000, Symbolizer::AddressType::kUnknown, "", _))
+      .WillOnce([](uint64_t frame_id, uint64_t address, Symbolizer::AddressType type,
+                   std::string_view message,
+                   Symbolizer::StringOutputFn output) { output("frame_0"); });
+  ProcessOneLine("random {{{ text {{{bt:0:0x1000}}}");
+  EXPECT_EQ(output_.str(), "random {{{ text frame_0\n");
+  output_.str("");
+  output_.clear();
+
+  EXPECT_CALL(symbolizer_, Backtrace(0, 0x2000, Symbolizer::AddressType::kUnknown, "", _))
+      .WillOnce([](uint64_t frame_id, uint64_t address, Symbolizer::AddressType type,
+                   std::string_view message,
+                   Symbolizer::StringOutputFn output) { output("frame_nested"); });
+  ProcessOneLine("{{{ {{{ {{{bt:0:0x2000}}} suffix");
+  EXPECT_EQ(output_.str(), "{{{ {{{ frame_nested suffix\n");
+}
+
+TEST_F(LogParserTest, StrayCloseDelimiters) {
+  EXPECT_CALL(symbolizer_, Backtrace(0, 0x1000, Symbolizer::AddressType::kUnknown, "", _))
+      .WillOnce([](uint64_t frame_id, uint64_t address, Symbolizer::AddressType type,
+                   std::string_view message,
+                   Symbolizer::StringOutputFn output) { output("frame_0"); });
+  ProcessOneLine("foo }}} bar {{{bt:0:0x1000}}}");
+  EXPECT_EQ(output_.str(), "foo }}} bar frame_0\n");
+}
+
 TEST_F(LogParserTest, Dart) {
   {
     EXPECT_CALL(symbolizer_, Reset(true, Symbolizer::ResetType::kUnknown));
@@ -395,6 +429,30 @@ TEST_F(LogParserTest, Dart) {
     EXPECT_FALSE(output_.str().empty());
     output_.clear();
   }
+}
+
+TEST_F(LogParserTest, MultiLineMarkup) {
+  ProcessOneLine("line1 prefix {{{bt:0:0x1000");
+  EXPECT_EQ(output_.str(), "line1 prefix {{{bt:0:0x1000\n");
+  output_.str("");
+  output_.clear();
+  ProcessOneLine("pc}}} line2 suffix");
+  EXPECT_EQ(output_.str(), "pc}}} line2 suffix\n");
+}
+
+TEST_F(LogParserTest, AsymmetricBraces) {
+  ProcessOneLine("{{{{bt:0:0x1000}}}}");
+  EXPECT_EQ(output_.str(), "{{{{bt:0:0x1000}}}}\n");
+}
+
+TEST_F(LogParserTest, EmptyTag) {
+  ProcessOneLine("prefix {{{}}} middle {{{   }}} suffix");
+  EXPECT_EQ(output_.str(), "prefix {{{}}} middle {{{   }}} suffix\n");
+}
+
+TEST_F(LogParserTest, NestedBracesInTag) {
+  ProcessOneLine("{{{module:0:foo{{{bar:elf:1234}}}");
+  EXPECT_EQ(output_.str(), "{{{module:0:foo{{{bar:elf:1234}}}\n");
 }
 
 }  // namespace

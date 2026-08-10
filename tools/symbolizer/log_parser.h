@@ -7,6 +7,7 @@
 
 #include <deque>
 #include <iostream>
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -27,9 +28,43 @@ namespace symbolizer {
 //    symbol file, the output will stall, even if the next line contains no markup.
 // 3. Multiple markups per line are supported.
 //
-// TODO(https://fxbug.dev/541229517): Investigate a two-pass tokenizing parser to replace the
-// single-pass string scanner in ProcessNextLine, improving delimiter recovery and text
-// preservation.
+// The markup parsing operates via a lazy, zero-allocation pull parser architecture:
+// - Lexing (LogTokenIterator): Scans lines into zero-allocation string_view tokens (kText/kMarkup)
+//   on demand via Next(). If an opening `{{{` delimiter is followed by a second `{{{` prior to
+//   `}}}`, the earlier `{{{` fragment is classified as kText. This cleanly recovers from stray
+//   `{{{` delimiters (e.g., `random {{{ text {{{bt:0:0x1000}}}`).
+// - Evaluation: Consumes tokens from LogTokenIterator in a single streaming pass without allocating
+//   an intermediate token vector. Surrounding syslog headers (e.g., "context1: ") are discarded
+//   for lines containing only valid non-printing metadata tags (module, reset) and no active output
+//   tags.
+
+enum class TokenType {
+  kText,
+  kMarkup,
+};
+
+struct LogToken {
+  TokenType type;
+  std::string_view text;
+  std::string_view raw;
+};
+
+// Lazy, zero-allocation pull parser over a line of symbolizer markup.
+class LogTokenIterator {
+ public:
+  explicit LogTokenIterator(std::string_view line) : line_(line) {}
+
+  std::optional<LogToken> Next();
+
+  bool PeekNextMarkup() const;
+
+  std::string_view RemainingText() const { return line_.substr(pos_); }
+
+ private:
+  std::string_view line_;
+  size_t pos_ = 0;
+};
+
 //
 // In addition to the symbolizer markup format described above, this class also supports symbolizing
 // Dart stack traces in AOT mode with --dwarf_stack_traces option, which looks like

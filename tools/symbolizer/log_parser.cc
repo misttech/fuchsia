@@ -4,6 +4,9 @@
 
 #include "tools/symbolizer/log_parser.h"
 
+#include <lib/fit/defer.h>
+#include <lib/syslog/cpp/macros.h>
+
 #include <charconv>
 #include <cstdint>
 #include <deque>
@@ -11,10 +14,7 @@
 #include <string>
 #include <string_view>
 #include <utility>
-#include <vector>
 
-#include "lib/fit/defer.h"
-#include "lib/syslog/cpp/macros.h"
 #include "src/lib/fxl/strings/split_string.h"
 #include "src/lib/fxl/strings/trim.h"
 #include "tools/symbolizer/symbolizer.h"
@@ -47,9 +47,60 @@ bool ParseInt(std::string_view string, int_t &i, int base = 10) {
 
 }  // namespace
 
-// TODO(https://fxbug.dev/541229517): Investigate a two-pass tokenizing parser to replace the
-// single-pass string scanner in ProcessNextLine, improving delimiter recovery and text
-// preservation.
+std::optional<LogToken> LogTokenIterator::Next() {
+  if (pos_ >= line_.size()) {
+    return std::nullopt;
+  }
+
+  const size_t start = line_.find("{{{", pos_);
+  if (start == std::string_view::npos) {
+    const std::string_view text_segment = line_.substr(pos_);
+    pos_ = line_.size();
+    return LogToken{TokenType::kText, text_segment, text_segment};
+  }
+
+  if (start > pos_) {
+    const std::string_view text_segment = line_.substr(pos_, start - pos_);
+    pos_ = start;
+    return LogToken{TokenType::kText, text_segment, text_segment};
+  }
+
+  const size_t end = line_.find("}}}", start + 3);
+  const size_t next_start = line_.find("{{{", start + 3);
+
+  if (end == std::string_view::npos || (next_start != std::string_view::npos && next_start < end)) {
+    const size_t text_end = (next_start != std::string_view::npos) ? next_start : line_.size();
+    const std::string_view text_segment = line_.substr(start, text_end - start);
+    pos_ = text_end;
+    return LogToken{TokenType::kText, text_segment, text_segment};
+  }
+
+  const std::string_view markup_text = line_.substr(start + 3, end - (start + 3));
+  const std::string_view raw_text = line_.substr(start, end + 3 - start);
+  pos_ = end + 3;
+  return LogToken{TokenType::kMarkup, markup_text, raw_text};
+}
+
+bool LogTokenIterator::PeekNextMarkup() const {
+  size_t search_pos = pos_;
+  while (true) {
+    const size_t start = line_.find("{{{", search_pos);
+    if (start == std::string_view::npos) {
+      return false;
+    }
+    const size_t end = line_.find("}}}", start + 3);
+    const size_t next_start = line_.find("{{{", start + 3);
+    if (end == std::string_view::npos) {
+      return false;
+    }
+    if (next_start != std::string_view::npos && next_start < end) {
+      search_pos = next_start;
+      continue;
+    }
+    return true;
+  }
+}
+
 bool LogParser::ProcessNextLine() {
   std::string line;
 
@@ -58,93 +109,79 @@ bool LogParser::ProcessNextLine() {
     return false;
   }
 
-  // Handle symbolizer markup.
-  struct MarkupMatch {
-    size_t start;
-    size_t end;
-  };
-  std::vector<MarkupMatch> matches;
-  size_t pos = 0;
-  while (pos < line.size()) {
-    auto start = line.find("{{{", pos);
-    if (start == std::string::npos) {
-      break;
-    }
-    auto end = line.find("}}}", start + 3);
-    if (end == std::string::npos) {
-      break;
-    }
-    matches.push_back({.start = start, .end = end});
-    pos = end + 3;
-  }
+  LogTokenIterator it(line);
+  if (it.PeekNextMarkup()) {
+    enum class LineDisposition {
+      kUnset,
+      kSuppressPrefix,
+      kEmitSurroundingText,
+    };
 
-  if (!matches.empty()) {
-    bool has_valid_markup = false;
-    bool has_active_output = false;
+    LineDisposition disposition = LineDisposition::kUnset;
     bool last_tag_dropped = false;
-    std::string_view line_view(line);
-    size_t last_end = 0;
     std::string pending_prefix;
 
-    for (size_t i = 0; i < matches.size(); ++i) {
-      const size_t start = matches[i].start;
-      const size_t end = matches[i].end;
-
-      // Extract text surrounding the current markup tag `{{{...}}}`:
-      // - prefix_segment: text between previous tag end (last_end) and current tag start.
-      // - markup_text: text inside `{{{` and `}}}`.
-      // - suffix_segment: text after the last tag's `}}}` (only provided to the final tag's
-      // callback).
-      const std::string_view prefix_segment = line_view.substr(last_end, start - last_end);
-      const std::string_view markup_text = line_view.substr(start + 3, end - start - 3);
-      const std::string_view suffix_segment =
-          (i == matches.size() - 1) ? line_view.substr(end + 3) : "";
-
-      // Combine any unprinted preceding text/markup with the current segment's prefix.
-      std::string current_prefix = pending_prefix + std::string(prefix_segment);
-      pending_prefix = "";
-
-      auto [output, entry] = CreateOutputFn(current_prefix, suffix_segment);
-      const bool ok = ProcessMarkup(markup_text, std::move(output));
-      if (ok) {
-        has_valid_markup = true;
-      }
-
-      if (entry->state != OutputEntry::State::kDropped) {
-        has_active_output = true;
-        last_tag_dropped = false;
+    while (auto token = it.Next()) {
+      if (token->type == TokenType::kText) {
+        pending_prefix += std::string(token->text);
       } else {
-        last_tag_dropped = true;
-        // If the callback was dropped without emitting output (e.g. for non-printing tags like
-        // module/reset, or invalid/unrecognized tags), defer outputting current_prefix.
-        // - If markup was invalid (!ok), preserve the original raw tag `{{{...}}}` in
-        // pending_prefix.
-        // - If markup was valid (e.g. `reset` tag), drop the tag text and carry forward only
-        // current_prefix.
-        if (!ok) {
-          pending_prefix = current_prefix + std::string(line_view.substr(start, end + 3 - start));
+        const bool is_last_markup = !it.PeekNextMarkup();
+
+        std::string current_prefix = std::move(pending_prefix);
+        pending_prefix = "";
+
+        std::string suffix_segment;
+        if (is_last_markup) {
+          suffix_segment = std::string(it.RemainingText());
+        }
+
+        auto [output, entry] = CreateOutputFn(current_prefix, suffix_segment);
+        const bool ok = ProcessMarkup(token->text, std::move(output));
+        if (ok) {
+          if (disposition == LineDisposition::kUnset) {
+            disposition = LineDisposition::kSuppressPrefix;
+          }
         } else {
-          pending_prefix = current_prefix;
+          disposition = LineDisposition::kEmitSurroundingText;
+        }
+
+        if (entry->state != OutputEntry::State::kDropped) {
+          disposition = LineDisposition::kEmitSurroundingText;
+          last_tag_dropped = false;
+        } else {
+          last_tag_dropped = true;
+          // If the tag emitted no output, defer outputting current_prefix.
+          // For invalid markup (!ok), retain the raw tag text in pending_prefix
+          // so it can be printed verbatim. For valid silent markup (e.g. module,
+          // reset), omit the tag text but keep current_prefix in case subsequent
+          // tokens on the line require emitting surrounding text.
+          if (!ok) {
+            pending_prefix = current_prefix + std::string(token->raw);
+          } else {
+            pending_prefix = current_prefix;
+          }
+        }
+
+        if (is_last_markup) {
+          if (last_tag_dropped) {
+            pending_prefix += std::string(it.RemainingText());
+          }
+          break;
         }
       }
-      last_end = end + 3;
     }
 
     if (last_tag_dropped) {
-      if (matches.back().end + 3 <= line.size()) {
-        const std::string_view trailing_suffix = line_view.substr(matches.back().end + 3);
-        pending_prefix += std::string(trailing_suffix);
-      }
-      // Note: Surrounding text (e.g. syslog prefixes like "context1: ") is intentionally
-      // discarded when a line contains only valid non-printing tags (like module/reset/mmap)
-      // and no active output tags.
-      if (!pending_prefix.empty() && (has_active_output || !has_valid_markup)) {
+      // Discard standalone valid silent tags (e.g. "[klog] INFO: {{{module:...}}}")
+      // along with their surrounding text. If the line contained any invalid or
+      // output-producing tags, emit the accumulated surrounding text.
+      if (!pending_prefix.empty() && disposition == LineDisposition::kEmitSurroundingText) {
         OutputRaw(pending_prefix);
         return true;
       }
     }
 
-    if (has_valid_markup) {
+    if (disposition != LineDisposition::kUnset) {
       return true;
     }
   }
