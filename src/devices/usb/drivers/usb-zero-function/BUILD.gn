@@ -18,7 +18,10 @@ fuchsia_rust_driver("usb-zero-function-driver") {
   edition = "2024"
   with_unit_tests = true
   source_root = "src/lib.rs"
-  sources = [ "src/lib.rs" ]
+  sources = [
+    "src/lib.rs",
+    "src/tests.rs",
+  ]
   deps = [
     "//sdk/fidl/fuchsia.hardware.usb.descriptor:fuchsia.hardware.usb.descriptor_rust",
     "//sdk/fidl/fuchsia.hardware.usb.endpoint:fuchsia.hardware.usb.endpoint_rust",
