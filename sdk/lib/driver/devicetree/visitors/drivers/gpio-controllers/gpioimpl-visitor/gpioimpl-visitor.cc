@@ -354,7 +354,6 @@ zx::result<> GpioImplVisitor::AddPinStatesNodeSpec(fdf_devicetree::Node& child,
                   bind_fuchsia_hardware_pin::PIN_STATES_SERVICE,
                   bind_fuchsia_hardware_pin::PIN_STATES_SERVICE_ZIRCONTRANSPORT),
               fdf::MakeAcceptBindRule(bind_fuchsia_pin::CONTROLLER, controller_id),
-              fdf::MakeAcceptBindRule(bind_fuchsia_pin::NAME, client_name),
               fdf::MakeAcceptBindRule(bind_fuchsia::NAME, client_name),
           },
       .properties =

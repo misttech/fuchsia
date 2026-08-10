@@ -416,7 +416,6 @@ zx::result<> PinStatesDevice::AddDevice(
 
   std::vector<fuchsia_driver_framework::NodeProperty2> props{
       fdf::MakeProperty2(bind_fuchsia_pin::CONTROLLER, controller_id_),
-      fdf::MakeProperty2(bind_fuchsia_pin::NAME, pin_states_.name()),
       fdf::MakeProperty2(bind_fuchsia::NAME, pin_states_.name()),
   };
 

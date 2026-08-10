@@ -261,7 +261,6 @@ TEST(GpioImplVisitorTest, TestGpiosProperty) {
       {{fdf::MakeAcceptBindRule(bind_fuchsia_hardware_pin::PIN_STATES_SERVICE,
                                 bind_fuchsia_hardware_pin::PIN_STATES_SERVICE_ZIRCONTRANSPORT),
         fdf::MakeAcceptBindRule(bind_fuchsia_pin::CONTROLLER, gpioA_id),
-        fdf::MakeAcceptBindRule(bind_fuchsia_pin::NAME, std::string("audio-ffffc000")),
         fdf::MakeAcceptBindRule(bind_fuchsia::NAME, std::string("audio-ffffc000"))}},
       (*mgr_request_audio.parents2())[3].bind_rules(), false));
 

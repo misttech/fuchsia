@@ -5,4 +5,3 @@
 library fuchsia.pin;
 
 uint CONTROLLER;
-string NAME;

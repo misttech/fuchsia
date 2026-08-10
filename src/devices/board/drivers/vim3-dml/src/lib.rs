@@ -54,13 +54,6 @@ static VIM3_PARSER_CONFIG: DmlParserConfig = DmlParserConfig {
         "fuchsia.hardware.pin.PinStatesService" => ServiceBindConfig {
             rules: &[
                 PropertyRule {
-                    bind_key: "fuchsia.pin.NAME",
-                    sources: &[ValueSource::ResourceNode],
-                    value_type: RuleValueType::String,
-                    destination: Destination::BindRules,
-                    required: true,
-                },
-                PropertyRule {
                     bind_key: "fuchsia.NAME",
                     sources: &[ValueSource::ResourceNode],
                     value_type: RuleValueType::String,
