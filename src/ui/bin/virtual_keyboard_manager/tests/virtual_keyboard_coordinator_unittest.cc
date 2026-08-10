@@ -21,8 +21,10 @@ namespace {
 
 class FakeVirtualKeyboardController : public VirtualKeyboardController {
  public:
-  FakeVirtualKeyboardController() = default;
+  explicit FakeVirtualKeyboardController(zx_koid_t view_koid = 100) : view_koid_(view_koid) {}
   ~FakeVirtualKeyboardController() override = default;
+
+  zx_koid_t view_koid() const override { return view_koid_; }
 
   // |fuchsia.input.virtualkeyboard.Controller|
   void SetTextType(::fuchsia::input::virtualkeyboard::TextType text_type) override {
@@ -48,6 +50,7 @@ class FakeVirtualKeyboardController : public VirtualKeyboardController {
   const std::optional<bool>& is_visible() { return is_visible_; }
 
  private:
+  zx_koid_t view_koid_;
   std::optional<bool> is_visible_;
 };
 
@@ -76,9 +79,15 @@ TEST_F(VirtualKeyboardCoordinatorTest, NotifyVisibilityChangeDoesNotCrashWhenCon
 
 TEST_F(VirtualKeyboardCoordinatorTest, NotifyVisibilityChangePropagatesUserChanges) {
   FidlBoundVirtualKeyboardCoordinator coordinator(context_provider()->context());
-  auto controller = std::make_unique<FakeVirtualKeyboardController>();
+  scenic::ViewRefPair view_ref_pair = scenic::ViewRefPair::New();
+  zx_info_handle_basic_t view_ref_info{};
+  ASSERT_EQ(ZX_OK,
+            view_ref_pair.view_ref.reference.get_info(ZX_INFO_HANDLE_BASIC, &view_ref_info,
+                                                      sizeof(view_ref_info), nullptr, nullptr));
+  auto controller = std::make_unique<FakeVirtualKeyboardController>(view_ref_info.koid);
   FakeVirtualKeyboardController* controller_ptr = controller.get();
   coordinator.SetControllerForTest(std::move(controller));
+  coordinator.NotifyFocusChange(std::move(view_ref_pair.view_ref));
   coordinator.NotifyVisibilityChange(
       false, fuchsia::input::virtualkeyboard::VisibilityChangeReason::USER_INTERACTION);
   ASSERT_EQ(false, controller_ptr->is_visible());

@@ -22,6 +22,8 @@ class VirtualKeyboardController : public fuchsia::input::virtualkeyboard::Contro
 
   virtual ~VirtualKeyboardController() = default;
 
+  virtual zx_koid_t view_koid() const = 0;
+
   // Called by VirtualKeyboardCoordinator.
   virtual void OnUserAction(UserAction action) = 0;
 };
@@ -32,6 +34,8 @@ class FidlBoundVirtualKeyboardController : public VirtualKeyboardController {
                                      zx_koid_t view_koid,
                                      fuchsia::input::virtualkeyboard::TextType text_type);
   ~FidlBoundVirtualKeyboardController() override;
+
+  zx_koid_t view_koid() const override { return view_koid_; }
 
   // |fuchsia.input.virtualkeyboard.Controller|
   // Called either via IPC, or from unit tests.

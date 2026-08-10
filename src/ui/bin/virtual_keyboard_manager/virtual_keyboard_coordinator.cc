@@ -57,6 +57,15 @@ void FidlBoundVirtualKeyboardCoordinator::Create(
   }
   view_koid = view_ref_info.koid;
 
+  for (const auto& binding : controller_bindings_.bindings()) {
+    FX_DCHECK(binding->impl());
+    if (binding->impl()->view_koid() == view_koid) {
+      FX_LOGS(ERROR) << __FUNCTION__ << ": controller already bound for view_koid=" << view_koid;
+      controller_request.Close(ZX_ERR_ALREADY_EXISTS);
+      return;
+    }
+  }
+
   auto controller =
       std::make_unique<FidlBoundVirtualKeyboardController>(GetWeakPtr(), view_koid, text_type);
   controller_bindings_.AddBinding(
@@ -85,11 +94,17 @@ void FidlBoundVirtualKeyboardCoordinator::NotifyVisibilityChange(
   }
 
   FX_DCHECK(reason == fuchsia::input::virtualkeyboard::VisibilityChangeReason::USER_INTERACTION);
+  if (!focused_view_koid_.has_value()) {
+    return;
+  }
   for (const auto& controller : controller_bindings_.bindings()) {
     FX_DCHECK(controller->impl());
-    controller->impl()->OnUserAction(is_visible
-                                         ? VirtualKeyboardController::UserAction::SHOW_KEYBOARD
-                                         : VirtualKeyboardController::UserAction::HIDE_KEYBOARD);
+    if (controller->impl()->view_koid() == focused_view_koid_.value()) {
+      controller->impl()->OnUserAction(is_visible
+                                           ? VirtualKeyboardController::UserAction::SHOW_KEYBOARD
+                                           : VirtualKeyboardController::UserAction::HIDE_KEYBOARD);
+      break;
+    }
   }
 }
 
@@ -160,10 +175,13 @@ void FidlBoundVirtualKeyboardCoordinator::NotifyFocusChange(
     // So we don't need to cache any information here to ensure that the keyboard is hidden.
   }
 
-  // Inform controllers.
+  // Inform controllers for views that are not the newly focused view.
   for (const auto& controller : controller_bindings_.bindings()) {
     FX_DCHECK(controller->impl());
-    controller->impl()->OnUserAction(VirtualKeyboardController::UserAction::HIDE_KEYBOARD);
+    if (!focused_view_koid_.has_value() ||
+        controller->impl()->view_koid() != focused_view_koid_.value()) {
+      controller->impl()->OnUserAction(VirtualKeyboardController::UserAction::HIDE_KEYBOARD);
+    }
   }
 
   if (std::holds_alternative<zx_koid_t>(ApplyFocusedRequest())) {

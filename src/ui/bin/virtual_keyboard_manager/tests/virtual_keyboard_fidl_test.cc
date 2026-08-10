@@ -153,6 +153,33 @@ TEST_F(VirtualKeyboardFidlTest, MultipleControllersAreSupported) {
   RunLoopUntilIdle();
   ASSERT_EQ(ZX_OK, controller2_status) << "status = " << zx_status_get_string(controller2_status);
 }
+
+TEST_F(VirtualKeyboardFidlTest, DuplicateControllerForSameViewRefFails) {
+  fuchsia::input::virtualkeyboard::ControllerCreatorPtr controller_creator;
+  ConnectToPublicService(controller_creator.NewRequest());
+
+  auto view_ref_pair = scenic::ViewRefPair::New();
+
+  fuchsia::input::virtualkeyboard::ControllerPtr controller1;
+  controller_creator->Create(fidl::Clone(view_ref_pair.view_ref),
+                             fuchsia::input::virtualkeyboard::TextType::ALPHANUMERIC,
+                             controller1.NewRequest());
+  zx_status_t controller1_status = ZX_OK;
+  controller1.set_error_handler(
+      [&controller1_status](zx_status_t stat) { controller1_status = stat; });
+
+  fuchsia::input::virtualkeyboard::ControllerPtr controller2;
+  controller_creator->Create(fidl::Clone(view_ref_pair.view_ref),
+                             fuchsia::input::virtualkeyboard::TextType::ALPHANUMERIC,
+                             controller2.NewRequest());
+  zx_status_t controller2_status = ZX_OK;
+  controller2.set_error_handler(
+      [&controller2_status](zx_status_t stat) { controller2_status = stat; });
+
+  RunLoopUntilIdle();
+  ASSERT_EQ(ZX_OK, controller1_status);
+  ASSERT_EQ(ZX_ERR_ALREADY_EXISTS, controller2_status);
+}
 }  // namespace fuchsia_input_virtualkeyboard_controller_connections
 
 // Tests that verify the behavior of the methods of `fuchsia.input.virtualkeyboard.Controller`.
@@ -298,6 +325,7 @@ TEST_F(VirtualKeyboardFidlTest,
        WatchVisibility_SecondCallIsResolvedByManagerReportOfUserInteraction) {
   // Create controller.
   auto [controller, view_ref, view_ref_control] = CreateControllerClient();
+  UpdateFocusedView(fidl::Clone(view_ref));
 
   // Send first watch, which completes immediately.
   controller->WatchVisibility([](bool vis) {});
@@ -319,10 +347,12 @@ TEST_F(VirtualKeyboardFidlTest,
   ASSERT_TRUE(got_watch_visibility_result);
 }
 
-TEST_F(VirtualKeyboardFidlTest, WatchVisibility_AllControllersAreToldOfUserInteraction) {
+TEST_F(VirtualKeyboardFidlTest, WatchVisibility_OnlyFocusedControllerIsToldOfUserInteraction) {
   // Create controller.
   auto [controller1, view_ref1, view_ref_control1] = CreateControllerClient();
   auto [controller2, view_ref2, view_ref_control2] = CreateControllerClient();
+
+  UpdateFocusedView(fidl::Clone(view_ref1));
 
   // Send first watch for each controller, which completes immediately.
   controller1->WatchVisibility([](bool vis) {});
@@ -342,9 +372,9 @@ TEST_F(VirtualKeyboardFidlTest, WatchVisibility_AllControllersAreToldOfUserInter
                   []() {});
   RunLoopUntilIdle();
 
-  // Verify that the watch completed.
+  // Verify that only the focused controller received the notification.
   ASSERT_TRUE(c1_got_watch_visibility_result);
-  ASSERT_TRUE(c2_got_watch_visibility_result);
+  ASSERT_FALSE(c2_got_watch_visibility_result);
 }
 
 }  // namespace fuchsia_input_virtualkeyboard_controller_methods
