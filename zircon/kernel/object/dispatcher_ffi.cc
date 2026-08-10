@@ -4,6 +4,7 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+#include <kernel/ffi.h>
 #include <object/dispatcher.h>
 
 extern "C" {
@@ -29,6 +30,11 @@ zx_koid_t cpp_dispatcher_get_koid(const Dispatcher* disp) { return disp->get_koi
 
 void cpp_dispatcher_recycle(Dispatcher* disp) {
   fbl::internal::recycler<Dispatcher>::recycle(disp);
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE zx_koid_t cpp_dispatcher_get_related_koid(const Dispatcher* disp) {
+  return disp->get_related_koid();
 }
 
 }  // extern "C"

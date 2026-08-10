@@ -137,6 +137,7 @@ kernel_rust_mod("syscalls-rs") {
     "debuglog.rs",
     "event.rs",
     "iommu.rs",
+    "job.rs",
     "lib.rs",
     "membarrier.rs",
     "msi.rs",

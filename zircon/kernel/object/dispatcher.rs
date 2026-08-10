@@ -5,8 +5,9 @@
 // https://opensource.org/licenses/MIT
 
 use super::dispatcher_ffi::{
-    cpp_dispatcher_get_ref_counted, cpp_dispatcher_get_type, cpp_dispatcher_on_zero_handles,
-    cpp_dispatcher_recycle, cpp_dispatcher_update_state, cpp_dispatcher_update_state_locked,
+    cpp_dispatcher_get_ref_counted, cpp_dispatcher_get_related_koid, cpp_dispatcher_get_type,
+    cpp_dispatcher_on_zero_handles, cpp_dispatcher_recycle, cpp_dispatcher_update_state,
+    cpp_dispatcher_update_state_locked,
 };
 use super::handle::HandleValue;
 use super::process_dispatcher_ffi::cpp_handle_table_get_dispatcher;
@@ -361,6 +362,12 @@ impl Dispatcher {
         unsafe { super::dispatcher_ffi::cpp_dispatcher_get_koid(self) }
     }
 
+    /// Returns the related koid of this Dispatcher.
+    pub fn get_related_koid(&self) -> zx_types::zx_koid_t {
+        // SAFETY: self is a valid reference to an initialized Dispatcher.
+        unsafe { cpp_dispatcher_get_related_koid(self) }
+    }
+
     /// Safely downcasts a `&Dispatcher` reference to a specific facade reference `&T` if the
     /// dispatcher types match.
     pub fn downcast<T: DispatcherOps>(&self) -> Option<&T> {
@@ -412,9 +419,9 @@ impl Dispatcher {
     /// Resolves a handle to a dispatcher and returns its associated rights.
     pub fn get_dispatcher_and_rights(
         handle: HandleValue,
-    ) -> Result<(RefPtr<Dispatcher>, zx_rights_t), Status> {
-        let mut ref_ptr = MaybeUninit::<RefPtr<Dispatcher>>::zeroed();
-        let mut actual_rights = MaybeUninit::<zx_rights_t>::zeroed();
+    ) -> Result<(fbl::RefPtr<Dispatcher>, zx_rights_t), Status> {
+        let mut ref_ptr = MaybeUninit::<fbl::RefPtr<Dispatcher>>::uninit();
+        let mut actual_rights = MaybeUninit::<zx_rights_t>::uninit();
         // SAFETY: ref_ptr and actual_rights point to valid, writable uninitialized memory.
         unsafe {
             let status = cpp_handle_table_get_dispatcher(

@@ -149,6 +149,7 @@ extern "C" {
 void cpp_dispatcher_update_state(Dispatcher* disp, zx_signals_t clear_mask, zx_signals_t set_mask);
 void cpp_dispatcher_update_state_locked(Dispatcher* disp, zx_signals_t clear_mask,
                                         zx_signals_t set_mask);
+zx_koid_t cpp_dispatcher_get_related_koid(const Dispatcher* disp);
 }
 
 class Dispatcher : private fbl::RefCountedUpgradeable<Dispatcher>,

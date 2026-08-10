@@ -6,11 +6,13 @@
 
 use super::dispatcher::DispatcherOps;
 use super::handle::{HandleOwner, HandleValue, KernelHandle};
+use super::job_dispatcher::JobDispatcher;
 use super::process_dispatcher_ffi::{
     cpp_process_dispatcher_current, cpp_process_dispatcher_enforce_basic_policy,
     cpp_process_dispatcher_get_info, cpp_process_dispatcher_is_current,
     cpp_process_dispatcher_kill, cpp_process_dispatcher_make_and_add_handle,
-    cpp_process_dispatcher_resume, cpp_process_dispatcher_start, cpp_process_dispatcher_suspend,
+    cpp_process_dispatcher_resume, cpp_process_dispatcher_set_critical_to_job,
+    cpp_process_dispatcher_start, cpp_process_dispatcher_suspend,
 };
 use super::thread_dispatcher::ThreadDispatcher;
 use zx_status::Status;
@@ -155,5 +157,23 @@ impl ProcessDispatcher {
     pub fn get_info(&self) -> zx_info_process_t {
         // SAFETY: `self` is a valid `ProcessDispatcher` reference.
         unsafe { cpp_process_dispatcher_get_info(self as *const _) }
+    }
+
+    /// Sets this process as critical to the given job.
+    pub fn set_critical_to_job(
+        &self,
+        job: fbl::RefPtr<JobDispatcher>,
+        retcode_nonzero: bool,
+    ) -> Result<(), Status> {
+        // SAFETY: `self` is a valid `ProcessDispatcher` reference, and `job` transfers an acquired
+        // reference count into C++.
+        let status = unsafe {
+            cpp_process_dispatcher_set_critical_to_job(
+                self as *const _ as *mut _,
+                fbl::RefPtr::into_raw(job) as *mut _,
+                retcode_nonzero,
+            )
+        };
+        Status::ok(status)
     }
 }

@@ -25,4 +25,7 @@ unsafe extern "C" {
     -> zx_types::zx_obj_type_t;
     pub(crate) fn cpp_dispatcher_get_koid(dispatcher: *const Dispatcher) -> zx_types::zx_koid_t;
     pub(crate) fn cpp_dispatcher_recycle(dispatcher: *const Dispatcher);
+    pub(crate) fn cpp_dispatcher_get_related_koid(
+        dispatcher: *const Dispatcher,
+    ) -> zx_types::zx_koid_t;
 }

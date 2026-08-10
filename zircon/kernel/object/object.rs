@@ -49,7 +49,7 @@ pub use event_dispatcher::EventDispatcher;
 pub use event_pair_dispatcher::EventPairDispatcher;
 pub use handle::{HandleValue, KernelHandle};
 pub use iommu_dispatcher::IommuDispatcher;
-pub use job_dispatcher::JobDispatcher;
+pub use job_dispatcher::*;
 pub use log_dispatcher::*;
 pub use msi_allocation::MsiAllocation;
 pub use msi_dispatcher::MsiDispatcher;

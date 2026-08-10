@@ -14,6 +14,7 @@
 #include <fbl/intrusive_double_list.h>
 #include <fbl/name.h>
 #include <fbl/ref_counted.h>
+#include <kernel/ffi.h>
 #include <kernel/lockdep.h>
 #include <ktl/array.h>
 #include <object/dispatcher.h>
@@ -312,6 +313,25 @@ void StartRootJobObserver();
 
 extern "C" {
 bool cpp_job_dispatcher_is_root(const JobDispatcher* job);
+zx_status_t cpp_job_dispatcher_create(uint32_t flags, JobDispatcher* parent,
+                                      ffi::Uninitialized<KernelHandle<JobDispatcher>>* handle,
+                                      zx_rights_t* rights);
+zx_status_t cpp_job_dispatcher_set_basic_policy_v1(JobDispatcher* job, uint32_t mode,
+                                                   const zx_policy_basic_v1_t* policy,
+                                                   size_t count);
+zx_status_t cpp_job_dispatcher_set_basic_policy_v2(JobDispatcher* job, uint32_t mode,
+                                                   const zx_policy_basic_v2_t* policy,
+                                                   size_t count);
+zx_status_t cpp_job_dispatcher_set_timer_slack_policy(JobDispatcher* job,
+                                                      const zx_policy_timer_slack_t* policy);
+JobDispatcher* cpp_job_dispatcher_get_root_job();
+JobDispatcher* cpp_job_dispatcher_parent(const JobDispatcher* job);
+uint32_t cpp_job_dispatcher_max_height(const JobDispatcher* job);
+bool cpp_job_dispatcher_kill(JobDispatcher* job, int64_t return_code);
+void cpp_job_dispatcher_set_kill_on_oom(JobDispatcher* job, bool value);
+bool cpp_job_dispatcher_get_kill_on_oom(const JobDispatcher* job);
+bool cpp_job_dispatcher_kill_job_with_kill_on_oom(JobDispatcher* job);
+void cpp_job_dispatcher_get_info(const JobDispatcher* job, zx_info_job_t* info_out);
 }
 
 #endif  // ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_JOB_DISPATCHER_H_

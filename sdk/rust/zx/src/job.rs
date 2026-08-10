@@ -153,6 +153,7 @@ impl Job {
                 let sys_pol = sys::zx_policy_timer_slack {
                     min_slack: min_slack_duration.into_nanos(),
                     default_mode: default_mode.into(),
+                    _padding: [0; 4],
                 };
                 let sys_count = 1;
 

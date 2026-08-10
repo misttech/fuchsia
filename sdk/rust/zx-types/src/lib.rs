@@ -2126,17 +2126,37 @@ zx_info_timer_t!(zx_info_timer_t);
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
-pub struct zx_policy_basic {
+#[cfg_attr(feature = "zerocopy", derive(FromBytes, IntoBytes, Immutable, KnownLayout))]
+pub struct zx_policy_basic_v1 {
     pub condition: u32,
     pub policy: u32,
 }
 
+pub type zx_policy_basic_v1_t = zx_policy_basic_v1;
+pub type zx_policy_basic = zx_policy_basic_v1;
+pub type zx_policy_basic_t = zx_policy_basic_v1;
+
 #[repr(C)]
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[cfg_attr(feature = "zerocopy", derive(FromBytes, IntoBytes, Immutable, KnownLayout))]
+pub struct zx_policy_basic_v2 {
+    pub condition: u32,
+    pub action: u32,
+    pub flags: u32,
+}
+
+pub type zx_policy_basic_v2_t = zx_policy_basic_v2;
+
+#[repr(C)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[cfg_attr(feature = "zerocopy", derive(FromBytes, IntoBytes, Immutable, KnownLayout))]
 pub struct zx_policy_timer_slack {
     pub min_slack: zx_duration_t,
     pub default_mode: u32,
+    pub _padding: [u8; 4],
 }
+
+pub type zx_policy_timer_slack_t = zx_policy_timer_slack;
 
 multiconst!(u32, [
     // policy options
@@ -2144,6 +2164,8 @@ multiconst!(u32, [
     ZX_JOB_POL_ABSOLUTE = 1;
 
     // policy topic
+    ZX_JOB_POL_BASIC_V1 = 0;
+    ZX_JOB_POL_BASIC_V2 = 0x0100_0000;
     ZX_JOB_POL_BASIC = 0;
     ZX_JOB_POL_TIMER_SLACK = 1;
 

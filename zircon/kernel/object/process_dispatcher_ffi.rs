@@ -6,6 +6,7 @@
 
 use super::dispatcher::Dispatcher;
 use super::handle::{HandleValue, KernelHandle};
+use super::job_dispatcher::JobDispatcher;
 use super::process_dispatcher::ProcessDispatcher;
 use super::thread_dispatcher::ThreadDispatcher;
 use zx_types::{zx_info_process_t, zx_rights_t, zx_status_t, zx_vaddr_t};
@@ -94,15 +95,13 @@ unsafe extern "C" {
     ///
     /// Upon success, the `out_dispatcher` argument is initialized by C++ to contain a
     /// `fbl::RefPtr<Dispatcher>` pointing to the dispatcher associated with the given handle.
-    /// The caller typically uses `MaybeUninit::zeroed()` to initialize `out_dispatcher` and
-    /// checks the return status to determine if C++ initialized the value.
+    /// The caller typically uses `MaybeUninit::uninit()` and checks the return status to
+    /// determine if C++ initialized the value.
     ///
     /// # Safety
     ///
-    /// `out_dispatcher` must point to memory for a `fbl::RefPtr<Dispatcher>` that is initialized
-    /// by the caller.  Usually this will be zeroed memory, but pointers to valid
-    /// `fbl::RefPtr<Dispatcher>` values are also acceptable.
-    /// `out_rights` must point to writable memory.
+    /// `out_dispatcher` must point to valid uninitialized memory for a `fbl::RefPtr<Dispatcher>`.
+    /// `out_rights` must point to valid uninitialized memory for a `zx_rights_t`.
     pub(crate) fn cpp_handle_table_get_dispatcher(
         handle: HandleValue,
         out_dispatcher: *mut fbl::RefPtr<Dispatcher>,
@@ -132,4 +131,16 @@ unsafe extern "C" {
     pub(crate) fn cpp_process_dispatcher_get_info(
         process: *const ProcessDispatcher,
     ) -> zx_info_process_t;
+
+    /// Sets a process as critical to a job.
+    ///
+    /// # Safety
+    ///
+    /// `process` must point to a valid `ProcessDispatcher`.
+    /// `job` must point to a valid `JobDispatcher` whose reference was transferred.
+    pub(crate) fn cpp_process_dispatcher_set_critical_to_job(
+        process: *mut ProcessDispatcher,
+        job: *mut JobDispatcher,
+        retcode_nonzero: bool,
+    ) -> zx_status_t;
 }
