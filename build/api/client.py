@@ -1183,43 +1183,6 @@ class FileToTestPackageCommand(ScriptCommandBase):
 #####
 
 
-def _run_gn_desc_task(
-    gn_path: str, build_dir: str, type_arg: str, quiet: bool
-) -> tuple[str, dict[str, T.Any]]:
-    import json
-    import subprocess
-    import time
-
-    def _log(msg: str) -> None:
-        if not quiet:
-            print(f"[{time.strftime('%H:%M:%S')}] {msg}", file=sys.stderr)
-
-    _log(f"Running gn desc for {type_arg}...")
-    cmd = [
-        gn_path,
-        "desc",
-        build_dir,
-        "//*",
-        type_arg,
-        "--format=json",
-    ]
-    try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        _log(f"Finished gn desc for {type_arg}.")
-        return type_arg, json.loads(result.stdout)
-    except subprocess.CalledProcessError as e:
-        _log(f"Error running gn desc for {type_arg}: {e.stderr}")
-        return type_arg, {}
-    except json.JSONDecodeError as e:
-        _log(f"Error parsing JSON output for {type_arg}: {e}")
-        return type_arg, {}
-
-
 class TargetMetadataCommand(ScriptCommandBase):
     """Collects target metadata for the build.
 
@@ -1227,8 +1190,8 @@ class TargetMetadataCommand(ScriptCommandBase):
     """
 
     DESCRIPTION = """
-Runs queries against the build graph to collect deps, sources, and inputs for all targets,
-and merges them into a single JSON file along with their source directories.
+Collects deps, sources, and inputs for all targets from project.json,
+and merges them into a JSON file along with their source directories.
 """
 
     TARGET_METADATA_VERSION = 1
@@ -1244,44 +1207,29 @@ and merges them into a single JSON file along with their source directories.
 
     def run(self, args: argparse.Namespace) -> int:
         import json
-        import multiprocessing
         import time
 
         def _log(msg: str) -> None:
             if not args.quiet:
                 print(f"[{time.strftime('%H:%M:%S')}] {msg}", file=sys.stderr)
 
-        gn_path = (
-            args.fuchsia_dir / f"prebuilt/third_party/gn/{args.host_tag}/gn"
-        )
-        if not gn_path.exists():
-            _error(f"GN executable not found at: {gn_path}")
+        project_json_path = args.build_dir / "project.json"
+        if not project_json_path.exists():
+            _error(f"project.json file not found at: {project_json_path}")
             return 1
 
-        _log("Running queries in parallel...")
-        types = ["deps", "sources", "inputs"]
+        _log(f"Loading {project_json_path}...")
+        try:
+            with project_json_path.open("r") as f:
+                project_data = json.load(f)
+        except Exception as e:
+            _error(f"Failed to read project.json at {project_json_path}: {e}")
+            return 1
 
-        args_list = [
-            (str(gn_path), str(args.build_dir), t, args.quiet) for t in types
-        ]
+        targets_data = project_data.get("targets", {})
 
-        with multiprocessing.Pool(processes=len(types)) as pool:
-            results = pool.starmap(_run_gn_desc_task, args_list)
-
-        data = dict(results)
-
-        deps_data = data.get("deps", {})
-        sources_data = data.get("sources", {})
-        inputs_data = data.get("inputs", {})
-
-        _log("Merging data...")
+        _log("Processing target metadata...")
         merged_data: dict[str, dict[str, T.Any]] = {}
-
-        all_targets = (
-            set(deps_data.keys())
-            | set(sources_data.keys())
-            | set(inputs_data.keys())
-        )
 
         def strip_label_to_file_or_dir_name(labels: list[str]) -> list[str]:
             """Strips a target label to a file or directory name.
@@ -1296,21 +1244,24 @@ and merges them into a single JSON file along with their source directories.
                 label.split(":")[0].lstrip("@").lstrip("//") for label in labels
             ]
 
-        for target in all_targets:
+        for target, target_entry in targets_data.items():
             target_info: dict[str, T.Any] = {}
-            # Target is a target label in either GN or Bazel format, and the correspond to
+            # Target is a target label in either GN or Bazel format, and corresponds to
             # the same label in the keys of the output dictionary.
-            if target in deps_data:
-                target_info["deps"] = deps_data[target].get("deps", [])
+            if "deps" in target_entry and target_entry["deps"] is not None:
+                target_info["deps"] = target_entry["deps"]
             # Sources are paths from the root of the source tree to files.
-            if target in sources_data:
+            if (
+                "sources" in target_entry
+                and target_entry["sources"] is not None
+            ):
                 target_info["sources"] = strip_label_to_file_or_dir_name(
-                    sources_data[target].get("sources", [])
+                    target_entry["sources"]
                 )
             # Inputs are paths from the root of the source tree to files.
-            if target in inputs_data:
+            if "inputs" in target_entry and target_entry["inputs"] is not None:
                 target_info["inputs"] = strip_label_to_file_or_dir_name(
-                    inputs_data[target].get("inputs", [])
+                    target_entry["inputs"]
                 )
 
             # Extract source_dir from the GN label: //foo/bar:baz(...) -> foo/bar

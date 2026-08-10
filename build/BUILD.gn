@@ -564,7 +564,10 @@ action("target_metadata") {
   target_metadata_depfile = "${root_build_dir}/target_metadata.d"
 
   script = "//build/scripts/generate_target_metadata.py"
-  inputs = [ "//build/api/client.py" ]
+  inputs = [
+    "//build/api/client.py",
+    "${root_build_dir}/project.json",
+  ]
   outputs = [ target_metadata_file ]
   args = [
     "--client-binary",
@@ -577,6 +580,7 @@ action("target_metadata") {
     rebase_path(target_metadata_depfile, root_build_dir),
     "--quiet",
   ]
+  deps = [ "//tools/gn_desc:gn_project_json($default_toolchain)" ]
   depfile = target_metadata_depfile
   check_for_output_dir_leaks = false
   hermetic_deps = false

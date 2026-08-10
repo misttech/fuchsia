@@ -753,33 +753,24 @@ Done!
     def test_target_metadata(self) -> None:
         self.maxDiff = None
 
-        # Create a fake gn executable
-        gn_path = self._top_dir / f"prebuilt/third_party/gn/{self._host_tag}/gn"
-        gn_path.parent.mkdir(parents=True, exist_ok=True)
-        gn_path.write_text(
-            f"""#!{sys.executable}
-import sys
-import json
-
-args = sys.argv[1:]
-if b"deps" in " ".join(args).encode():
-    print(json.dumps({{
-        "//foo:bar": {{"deps": ["//baz:qux"]}},
-        "//foo:baz": {{"deps": []}}
-    }}))
-elif b"sources" in " ".join(args).encode():
-    print(json.dumps({{
-        "//foo:bar": {{"sources": ["//foo/bar.cc"]}},
-        "//foo:baz": {{"sources": ["//foo/baz.cc"]}}
-    }}))
-elif b"inputs" in " ".join(args).encode():
-    print(json.dumps({{
-        "//foo:bar": {{"inputs": ["//foo/bar.h"]}},
-        "//foo:baz": {{"inputs": []}}
-    }}))
-"""
+        # Create project.json in build_dir
+        _write_json(
+            self._build_dir / "project.json",
+            {
+                "targets": {
+                    "//foo:bar": {
+                        "deps": ["//baz:qux"],
+                        "sources": ["//foo/bar.cc"],
+                        "inputs": ["//foo/bar.h"],
+                    },
+                    "//foo:baz": {
+                        "deps": [],
+                        "sources": ["//foo/baz.cc"],
+                        "inputs": [],
+                    },
+                }
+            },
         )
-        gn_path.chmod(0o755)
 
         output_file = self._top_dir / "target_metadata.json"
 
