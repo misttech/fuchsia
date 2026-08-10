@@ -10,7 +10,6 @@
     program: {
         binary: "data/tests/virtmagma_conformance_tests",
         uid: "0",
-        features: [ "magma" ],
     },
     offer: [
         {
