@@ -24,7 +24,6 @@ source_set("ktrace") {
 }
 
 kernel_rust_mod("ktrace-rs") {
-  visibility = [ ":*" ]
   output_name = "ktrace_rs"
   source_root = "src/mod.rs"
   sources = [ "src/mod.rs" ]
