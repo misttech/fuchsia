@@ -79,6 +79,176 @@ class TestCaseResultTest(unittest.TestCase):
             )
 
 
+_METRICS_TEST_PARAMS = [
+    param(
+        "cpu",
+        processor=cpu_metrics.CpuMetricsProcessor(aggregates_only=False),
+        model_file="cpu_metric.json",
+        expected_results=[
+            TCR(label="CpuLoad", unit=U.percent, values=[43, 20]),
+        ],
+    ),
+    param(
+        "cpu_aggregates",
+        processor=cpu_metrics.CpuMetricsProcessor(aggregates_only=True),
+        model_file="cpu_metric.json",
+        expected_results=trace_utils.standard_metrics_set(
+            # ts in the json is in microseconds, durations is in ns.
+            [43, 20],
+            "Cpu",
+            U.percent,
+            durations=[1000000000, 1100000000],
+        ),
+    ),
+    param(
+        "fps",
+        processor=fps_metrics.FpsMetricsProcessor(aggregates_only=False),
+        model_file="fps_metric.json",
+        expected_results=[
+            TCR(
+                label="Fps",
+                unit=U.framesPerSecond,
+                values=[10000000.0, 5000000.0],
+            )
+        ],
+    ),
+    param(
+        "fps_aggregates",
+        processor=fps_metrics.FpsMetricsProcessor(aggregates_only=True),
+        model_file="fps_metric.json",
+        expected_results=trace_utils.standard_metrics_set(
+            [10000000.0, 5000000.0],
+            "Fps",
+            U.framesPerSecond,
+        ),
+    ),
+    param(
+        "scenic",
+        processor=scenic_metrics.ScenicMetricsProcessor(aggregates_only=False),
+        model_file="scenic_metric.json",
+        expected_results=[
+            TCR(
+                label="RenderCpu",
+                unit=U.milliseconds,
+                values=[0.09, 0.08],
+            ),
+            TCR(
+                label="RenderTotal",
+                unit=U.milliseconds,
+                values=[0.11, 0.112],
+            ),
+        ],
+    ),
+    param(
+        "scenic_aggregates",
+        processor=scenic_metrics.ScenicMetricsProcessor(aggregates_only=True),
+        model_file="scenic_metric.json",
+        expected_results=(
+            trace_utils.standard_metrics_set(
+                [0.09, 0.08],
+                "RenderCpu",
+                U.milliseconds,
+            )
+            + trace_utils.standard_metrics_set(
+                [0.11, 0.112],
+                "RenderTotal",
+                U.milliseconds,
+            )
+        ),
+    ),
+    param(
+        "scenic_no_render_total",
+        processor=scenic_metrics.ScenicMetricsProcessor(
+            aggregates_only=False, include_render_total=False
+        ),
+        model_file="scenic_metric.json",
+        expected_results=[
+            TCR(
+                label="RenderCpu",
+                unit=U.milliseconds,
+                values=[0.09, 0.08],
+            ),
+        ],
+    ),
+    param(
+        "app_render",
+        processor=app_render_metrics.AppRenderLatencyMetricsProcessor(
+            "flatland-view-provider-example",
+            aggregates_only=False,
+        ),
+        model_file="app_render_metric.json",
+        expected_results=[
+            TCR(
+                label="AppRenderVsyncLatency",
+                unit=U.milliseconds,
+                values=[0.004, 0.002, 0.001, 0.006, 0.008],
+            ),
+            TCR(
+                label="AppFps",
+                unit=U.framesPerSecond,
+                values=[
+                    125000.0,
+                    111111.11111111111,
+                    66666.66666666667,
+                    83333.33333333333,
+                ],
+            ),
+        ],
+    ),
+    param(
+        "app_render_aggregates",
+        processor=app_render_metrics.AppRenderLatencyMetricsProcessor(
+            "flatland-view-provider-example",
+            aggregates_only=True,
+        ),
+        model_file="app_render_metric.json",
+        expected_results=(
+            trace_utils.standard_metrics_set(
+                [0.004, 0.002, 0.001, 0.006, 0.008],
+                "AppRenderVsyncLatency",
+                U.milliseconds,
+            )
+            + trace_utils.standard_metrics_set(
+                [
+                    125000.0,
+                    111111.11111111111,
+                    66666.66666666667,
+                    83333.33333333333,
+                ],
+                "AppFps",
+                U.framesPerSecond,
+            )
+        ),
+    ),
+    param(
+        "input",
+        processor=input_latency_metrics.InputLatencyMetricsProcessor(
+            aggregates_only=False,
+        ),
+        model_file="input_latency_metric.json",
+        expected_results=[
+            TCR(
+                label="total_input_latency",
+                unit=U.milliseconds,
+                values=[0.003, 0.002, 0.007, 0.009],
+            ),
+        ],
+    ),
+    param(
+        "input_aggregates",
+        processor=input_latency_metrics.InputLatencyMetricsProcessor(
+            aggregates_only=True,
+        ),
+        model_file="input_latency_metric.json",
+        expected_results=trace_utils.standard_metrics_set(
+            [0.003, 0.002, 0.007, 0.009],
+            "InputLatency",
+            U.milliseconds,
+        ),
+    ),
+]
+
+
 class MetricProcessorsTest(unittest.TestCase):
     """Tests for the various MetricProcessors."""
 
@@ -93,184 +263,17 @@ class MetricProcessorsTest(unittest.TestCase):
             os.path.join(runtime_deps_path, model_file_name)
         )
 
-    @parameterized.expand(
-        [
-            param(
-                "cpu",
-                processor=cpu_metrics.CpuMetricsProcessor(
-                    aggregates_only=False
-                ),
-                model_file="cpu_metric.json",
-                expected_results=[
-                    TCR(label="CpuLoad", unit=U.percent, values=[43, 20]),
-                ],
-            ),
-            param(
-                "cpu_aggregates",
-                processor=cpu_metrics.CpuMetricsProcessor(aggregates_only=True),
-                model_file="cpu_metric.json",
-                expected_results=trace_utils.standard_metrics_set(
-                    # ts in the json is in microseconds, durations is in ns.
-                    [43, 20],
-                    "Cpu",
-                    U.percent,
-                    durations=[1000000000, 1100000000],
-                ),
-            ),
-            param(
-                "fps",
-                processor=fps_metrics.FpsMetricsProcessor(
-                    aggregates_only=False
-                ),
-                model_file="fps_metric.json",
-                expected_results=[
-                    TCR(
-                        label="Fps",
-                        unit=U.framesPerSecond,
-                        values=[10000000.0, 5000000.0],
-                    )
-                ],
-            ),
-            param(
-                "fps_aggregates",
-                processor=fps_metrics.FpsMetricsProcessor(aggregates_only=True),
-                model_file="fps_metric.json",
-                expected_results=trace_utils.standard_metrics_set(
-                    [10000000.0, 5000000.0],
-                    "Fps",
-                    U.framesPerSecond,
-                ),
-            ),
-            param(
-                "scenic",
-                processor=scenic_metrics.ScenicMetricsProcessor(
-                    aggregates_only=False
-                ),
-                model_file="scenic_metric.json",
-                expected_results=[
-                    TCR(
-                        label="RenderCpu",
-                        unit=U.milliseconds,
-                        values=[0.09, 0.08],
-                    ),
-                    TCR(
-                        label="RenderTotal",
-                        unit=U.milliseconds,
-                        values=[0.11, 0.112],
-                    ),
-                ],
-            ),
-            param(
-                "scenic_aggregates",
-                processor=scenic_metrics.ScenicMetricsProcessor(
-                    aggregates_only=True
-                ),
-                model_file="scenic_metric.json",
-                expected_results=(
-                    trace_utils.standard_metrics_set(
-                        [0.09, 0.08],
-                        "RenderCpu",
-                        U.milliseconds,
-                    )
-                    + trace_utils.standard_metrics_set(
-                        [0.11, 0.112],
-                        "RenderTotal",
-                        U.milliseconds,
-                    )
-                ),
-            ),
-            param(
-                "scenic_no_render_total",
-                processor=scenic_metrics.ScenicMetricsProcessor(
-                    aggregates_only=False, include_render_total=False
-                ),
-                model_file="scenic_metric.json",
-                expected_results=[
-                    TCR(
-                        label="RenderCpu",
-                        unit=U.milliseconds,
-                        values=[0.09, 0.08],
-                    ),
-                ],
-            ),
-            param(
-                "app_render",
-                processor=app_render_metrics.AppRenderLatencyMetricsProcessor(
-                    "flatland-view-provider-example",
-                    aggregates_only=False,
-                ),
-                model_file="app_render_metric.json",
-                expected_results=[
-                    TCR(
-                        label="AppRenderVsyncLatency",
-                        unit=U.milliseconds,
-                        values=[0.004, 0.002, 0.001, 0.006, 0.008],
-                    ),
-                    TCR(
-                        label="AppFps",
-                        unit=U.framesPerSecond,
-                        values=[
-                            125000.0,
-                            111111.11111111111,
-                            66666.66666666667,
-                            83333.33333333333,
-                        ],
-                    ),
-                ],
-            ),
-            param(
-                "app_render_aggregates",
-                processor=app_render_metrics.AppRenderLatencyMetricsProcessor(
-                    "flatland-view-provider-example",
-                    aggregates_only=True,
-                ),
-                model_file="app_render_metric.json",
-                expected_results=(
-                    trace_utils.standard_metrics_set(
-                        [0.004, 0.002, 0.001, 0.006, 0.008],
-                        "AppRenderVsyncLatency",
-                        U.milliseconds,
-                    )
-                    + trace_utils.standard_metrics_set(
-                        [
-                            125000.0,
-                            111111.11111111111,
-                            66666.66666666667,
-                            83333.33333333333,
-                        ],
-                        "AppFps",
-                        U.framesPerSecond,
-                    )
-                ),
-            ),
-            param(
-                "input",
-                processor=input_latency_metrics.InputLatencyMetricsProcessor(
-                    aggregates_only=False,
-                ),
-                model_file="input_latency_metric.json",
-                expected_results=[
-                    TCR(
-                        label="total_input_latency",
-                        unit=U.milliseconds,
-                        values=[0.003, 0.002, 0.007, 0.009],
-                    ),
-                ],
-            ),
-            param(
-                "input_aggregates",
-                processor=input_latency_metrics.InputLatencyMetricsProcessor(
-                    aggregates_only=True,
-                ),
-                model_file="input_latency_metric.json",
-                expected_results=trace_utils.standard_metrics_set(
-                    [0.003, 0.002, 0.007, 0.009],
-                    "InputLatency",
-                    U.milliseconds,
-                ),
-            ),
-        ]
-    )
+    def _load_fxt_model(self, fxt_file: str) -> trace_model.Model:
+        runtime_deps_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+            "runtime_deps",
+        )
+        return trace_importing.create_model_from_trace_file_path(
+            os.path.join(runtime_deps_path, fxt_file),
+            without_json_conversion=True,
+        )
+
+    @parameterized.expand(_METRICS_TEST_PARAMS)
     def test_processor(
         self,
         _: str,
@@ -290,6 +293,29 @@ class MetricProcessorsTest(unittest.TestCase):
         self.assertNotEqual(docs["code_path"], "")
 
         # Improves assertEqual output when comparing lists.
+        self.maxDiff = 10000
+        self.assertEqual(actual_results, expected_results)
+
+    @parameterized.expand(_METRICS_TEST_PARAMS)
+    def test_processor_fxt(
+        self,
+        _: str,
+        processor: trace_metrics.MetricsProcessor,
+        model_file: str,
+        expected_results: list[TCR],
+    ) -> None:
+        """Tests a processor's outputs with a given input model loaded from an FXT file"""
+        fxt_file = model_file.replace(".json", ".fxt")
+        model = self._load_fxt_model(fxt_file)
+        actual_results = list(processor.process_metrics(model))
+
+        docs = processor.describe(actual_results)
+        self.assertEqual(
+            docs.get("classname", ""), processor.__class__.__name__
+        )
+        self.assertNotEqual(docs["doc"], "")
+        self.assertNotEqual(docs["code_path"], "")
+
         self.maxDiff = 10000
         self.assertEqual(actual_results, expected_results)
 

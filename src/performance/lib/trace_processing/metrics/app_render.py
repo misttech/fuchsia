@@ -81,7 +81,10 @@ class AppRenderLatencyMetricsProcessor(trace_metrics.MetricsProcessor):
         for present_flow_event in present_flow_events:
             if not isinstance(present_flow_event, trace_model.FlowEvent):
                 continue
-            if present_flow_event.phase != trace_model.FlowEventPhase.START:
+            if present_flow_event.phase not in (
+                trace_model.FlowEventPhase.START,
+                trace_model.FlowEventPhase.STEP,
+            ):
                 continue
 
             vsync = trace_utils.get_nearest_following_flow_event(
@@ -92,7 +95,7 @@ class AppRenderLatencyMetricsProcessor(trace_metrics.MetricsProcessor):
                 continue
 
             latency = vsync.start - present_flow_event.start
-            present_latencies.append(latency.to_milliseconds_f())
+            present_latencies.append(round(latency.to_milliseconds_f(), 3))
             vsync_events.append(vsync)
 
         if len(vsync_events) == 0:

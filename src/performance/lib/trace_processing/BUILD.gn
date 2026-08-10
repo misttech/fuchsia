@@ -28,6 +28,7 @@ python_library("trace_processing") {
     "metrics/suspend.py",
     "metrics/wakeup.py",
     "trace_importing.py",
+    "trace_importing_fxt.py",
     "trace_metrics.py",
     "trace_model.py",
     "trace_time.py",
@@ -35,6 +36,7 @@ python_library("trace_processing") {
   ]
   library_deps = [
     "//src/performance/lib/reporting",
+    "//src/performance/lib/tp_shell",
     "//src/performance/lib/trace_processing:process_monitor",
     "//src/performance/trace2json:bin",
   ]

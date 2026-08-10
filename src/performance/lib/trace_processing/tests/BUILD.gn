@@ -25,6 +25,7 @@ host_test_data("trace_importing_test_data") {
     "data/flow_event_binding.json",
     "data/flow_ids.json",
     "data/id2_async.json",
+    "data/model.fxt",
     "data/model.json",
     "data/sched_data.json",
     "data/split_model.json",
@@ -36,10 +37,15 @@ host_test_data("trace_importing_test_data") {
 
 host_test_data("trace_metrics_test_data") {
   sources = [
+    "data/app_render_metric.fxt",
     "data/app_render_metric.json",
+    "data/cpu_metric.fxt",
     "data/cpu_metric.json",
+    "data/fps_metric.fxt",
     "data/fps_metric.json",
+    "data/input_latency_metric.fxt",
     "data/input_latency_metric.json",
+    "data/scenic_metric.fxt",
     "data/scenic_metric.json",
   ]
 
@@ -83,6 +89,12 @@ python_host_test("trace_importing_test") {
   ]
 }
 
+python_host_test("trace_importing_fxt_test") {
+  main_source = "trace_importing_fxt_test.py"
+  libraries = [ "//src/performance/lib/trace_processing" ]
+  deps = [ ":trace_importing_test_data" ]
+}
+
 python_host_test("trace_metrics_test") {
   main_source = "trace_metrics_test.py"
   sources = [ "test_utils.py" ]
@@ -112,6 +124,7 @@ group("tests") {
     ":cpu_breakdown_test",
     ":memory_test",
     ":power_metrics_test",
+    ":trace_importing_fxt_test",
     ":trace_importing_test",
     ":trace_metrics_test",
     ":trace_model_test",

@@ -15,6 +15,7 @@ from collections import defaultdict
 from importlib.resources import as_file, files
 from typing import Any, Dict, List, NamedTuple, Optional, Self, TextIO, Tuple
 
+from tp_shell import PerfettoTraceProcessor
 from trace_processing import data  # type: ignore[attr-defined]
 from trace_processing import trace_model, trace_time
 
@@ -361,6 +362,7 @@ def create_model_from_trace_file_path(
     trace2json_path: str | os.PathLike[Any] | None = None,
     patterns: set[str] | None = None,
     categories: set[str] | None = None,
+    without_json_conversion: bool = False,
 ) -> trace_model.Model:
     """Converts the specified trace file to JSON.
 
@@ -376,6 +378,7 @@ def create_model_from_trace_file_path(
                   matches one of the elements of `patterns`, OR it is in one of the categories
                   listed here.
                   Pass None or the empty set to defer entirely to `patterns`.
+      without_json_conversion: Whether to skip the json conversion and use the trace processor shell to query the trace file for events instead.
 
     Raises:
       subprocess.CalledProcessError: The trace2json process returned an error.
@@ -383,10 +386,39 @@ def create_model_from_trace_file_path(
     Returns:
         A Model object.
     """
+    if without_json_conversion:
+        # Import lazily to avoid circular dependency between trace_importing and trace_importing_fxt.
+        from trace_processing import trace_importing_fxt
+
+        return trace_importing_fxt.create_model_from_fxt_path_directly(
+            str(trace_path), patterns, categories
+        )
     return create_model_from_file_path(
         convert_trace_file_to_json(
             trace_path, trace2json_path, patterns, categories
         )
+    )
+
+
+def create_model_using_tp_shell(
+    session: PerfettoTraceProcessor,
+    patterns: set[str] | None = None,
+    categories: set[str] | None = None,
+) -> trace_model.Model:
+    """Creates a trace model directly from an active PerfettoTraceProcessor session.
+
+    Args:
+        session: Active PerfettoTraceProcessor instance.
+        patterns: Optional set of regex patterns to filter events.
+        categories: Optional set of categories to filter events.
+
+    Returns:
+        A Model object.
+    """
+    from trace_processing import trace_importing_fxt
+
+    return trace_importing_fxt.create_model_from_tp_session(
+        session, patterns, categories
     )
 
 
@@ -485,7 +517,7 @@ def create_model_from_file_paths(
                 scheduling_records,
             )
 
-    return _construct_model(
+    return construct_model(
         pid_to_name, tid_to_name, tid_to_pid, result_events, scheduling_records
     )
 
@@ -875,7 +907,7 @@ def consume_json_to_create_model(
                 scheduling_records,
             )
 
-    return _construct_model(
+    return construct_model(
         pid_to_name, tid_to_name, tid_to_pid, result_events, scheduling_records
     )
 
@@ -911,7 +943,7 @@ def _ingest_system_record(
         )
 
 
-def _construct_model(
+def construct_model(
     pid_to_name: dict[int, str],
     tid_to_name: dict[int, str],
     tid_to_pid: dict[int, int],

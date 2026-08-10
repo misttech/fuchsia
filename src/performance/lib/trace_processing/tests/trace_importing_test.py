@@ -36,6 +36,18 @@ class TraceImportingTest(unittest.TestCase):
         )
         test_utils.assertModelsEqual(self, model, model_from_json)
 
+    def test_create_model_from_fxt_directly(self) -> None:
+        """Test case to ensure we can load a model from an FXT file directly."""
+
+        model: trace_model.Model = test_utils.get_test_model(is_fxt=True)
+        model_from_fxt: trace_model.Model = (
+            trace_importing.create_model_from_trace_file_path(
+                os.path.join(self._runtime_deps_path, "model.fxt"),
+                without_json_conversion=True,
+            )
+        )
+        test_utils.assertModelsEqual(self, model, model_from_fxt)
+
     def test_create_model_from_split_files(self) -> None:
         """Test case to ensure we can load a model from split files"""
 
