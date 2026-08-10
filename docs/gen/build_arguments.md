@@ -937,7 +937,7 @@ This should never be set as a build argument.
 }
   static = {
   clang_rt = "../../../../out/not-default/libclang_rt.hwasan.a"
-  clang_rt_cxx = "../../../../out/not-default/libclang_rt.hwasan_cxx.a"
+  clang_rt_cxx = ""
 }
 }
   lsan = {
@@ -951,7 +951,7 @@ This should never be set as a build argument.
 }
   tsan = {
   shared = {
-  clang_rt = ""
+  clang_rt = "../../../../out/not-default/libclang_rt.tsan.so"
 }
   static = {
   clang_rt = "../../../../out/not-default/libclang_rt.tsan.a"
@@ -3777,7 +3777,7 @@ of them through a special worker script that can combine several
 `bazel build` invocations into a single one.
 See https://fxbug.dev/468100333
 
-**Current value (from the default):** `false`
+**Current value (from the default):** `true`
 
 From //build/config/enable_delayed_bazel_actions.gni:11
 
