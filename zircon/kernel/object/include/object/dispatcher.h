@@ -65,6 +65,28 @@ struct CanaryTag;
   Class::~Class() { destroy_fn(&opaque_storage_); }                     \
   Lock<CriticalMutex>* Class::get_lock() const { return get_lock_fn(&opaque_storage_); }
 
+#define DECLARE_PEERED_DISPATCHER_RUST_PROTOS(Class, prefix)                    \
+  extern "C" {                                                                  \
+  zx_koid_t prefix##_get_related_koid(const Class* disp);                       \
+  zx_status_t prefix##_user_signal_self(const Class* disp, uint32_t clear_mask, \
+                                        uint32_t set_mask);                     \
+  zx_status_t prefix##_user_signal_peer(const Class* disp, uint32_t clear_mask, \
+                                        uint32_t set_mask);                     \
+  void prefix##_on_zero_handles(const Class* disp);                             \
+  }
+
+#define DECLARE_PEERED_DISPATCHER_RUST_METHODS(prefix, obj_type, waitable)             \
+  zx_obj_type_t get_type() const final { return obj_type; }                            \
+  zx_koid_t get_related_koid() const final { return prefix##_get_related_koid(this); } \
+  bool is_waitable() const final { return waitable; }                                  \
+  zx_status_t user_signal_self(uint32_t clear_mask, uint32_t set_mask) final {         \
+    return prefix##_user_signal_self(this, clear_mask, set_mask);                      \
+  }                                                                                    \
+  zx_status_t user_signal_peer(uint32_t clear_mask, uint32_t set_mask) final {         \
+    return prefix##_user_signal_peer(this, clear_mask, set_mask);                      \
+  }                                                                                    \
+  void on_zero_handles() final { prefix##_on_zero_handles(this); }
+
 #define DECLARE_DISPTAG(T, E, M)                     \
   class T;                                           \
   template <>                                        \

@@ -243,6 +243,7 @@ kernel_rust_mod("object-rs") {
     "//third_party/rust_crates:zerocopy",
     "//zircon/kernel/lib/counters:counters-rs",
     "//zircon/kernel/lib/object-constants:object-constants-rs",
+    "//zircon/kernel/lib/relaxed_atomic:relaxed_atomic-rs",
     "//zircon/kernel/lib/user_copy:user-copy-rs",
     "//zircon/kernel/platform:platform-rs",
     "//zircon/system/ulib/fbl/rust:fbl",

@@ -15,6 +15,7 @@ use core::mem::MaybeUninit;
 use fbl::{Recyclable, RefPtr, pin_make_ref_counted, ref_counted};
 use kalloc::AllocError;
 use ksync::{KMutex, LockToken, RawCriticalMutex, guarded};
+use relaxed_atomic::RelaxedAtomicU64;
 use zx_status::Status;
 use zx_types::zx_rights_t;
 
@@ -96,9 +97,17 @@ pub(crate) use impl_dispatcher_facade;
 /// Helper macro to declare facade structs and implement common facade traits and state access
 /// methods for Dispatcher subtypes with state.
 macro_rules! impl_dispatcher_facade_with_state {
-    ($(#[$meta:meta])* $vis:vis struct $type:ident, $state:ident, $obj_type:expr, $offset_const:expr) => {
+    (
+        @base
+        $(#[$meta:meta])* $vis:vis struct $type:ident,
+        $state:ident,
+        $obj_type:expr,
+        $offset_const:expr,
+        $lock_class:ty,
+        $get_lock:expr
+    ) => {
         paste::paste! {
-            $crate::object::dispatcher::impl_dispatcher_facade!($(#[$meta])* $vis struct $type, $obj_type, [<$state LockClass>]);
+            $crate::object::dispatcher::impl_dispatcher_facade!($(#[$meta])* $vis struct $type, $obj_type, $lock_class);
 
             impl $type {
                 /// Returns a reference to the underlying state object.
@@ -123,11 +132,11 @@ macro_rules! impl_dispatcher_facade_with_state {
             #[unsafe(no_mangle)]
             pub unsafe extern "C" fn [<rust_ $type:snake _state_get_lock>](
                 ptr: *const $state,
-            ) -> *mut ksync::KMutex<[<$state LockClass>], ksync::RawCriticalMutex> {
+            ) -> *mut ksync::KMutex<$lock_class, ksync::RawCriticalMutex> {
                 // SAFETY: The caller guarantees `ptr` points to a valid,
                 // initialized `$state`.
                 unsafe {
-                    let lock_ref = &(*ptr).lock;
+                    let lock_ref: &ksync::KMutex<$lock_class, ksync::RawCriticalMutex> = ($get_lock)(ptr);
                     zr::ToMutPtr::to_mut_ptr(lock_ref)
                 }
             }
@@ -149,8 +158,163 @@ macro_rules! impl_dispatcher_facade_with_state {
             }
         }
     };
+    ($(#[$meta:meta])* $vis:vis struct $type:ident, $state:ident, $obj_type:expr, $offset_const:expr) => {
+        paste::paste! {
+            $crate::object::dispatcher::impl_dispatcher_facade_with_state!(
+                @base
+                $(#[$meta])* $vis struct $type,
+                $state,
+                $obj_type,
+                $offset_const,
+                [<$state LockClass>],
+                |ptr: *const $state| &(*ptr).lock
+            );
+        }
+    };
 }
 pub(crate) use impl_dispatcher_facade_with_state;
+
+/// Helper macro to declare facade structs and implement common facade traits, state access methods,
+/// and peered dispatcher operations (init_peer, get_related_koid, user_signal_self,
+/// user_signal_peer, on_zero_handles) for PeeredDispatcher subtypes with state.
+#[allow(unused_macros)]
+macro_rules! impl_peered_dispatcher_facade_with_state {
+    (
+        $(#[$meta:meta])* $vis:vis struct $type:ident,
+        $state:ident,
+        $obj_type:expr,
+        $offset_const:expr,
+        allowed_signals: $allowed_signals:expr $(,)?
+    ) => {
+        $crate::object::dispatcher::impl_dispatcher_facade_with_state!(
+            @base
+            $(#[$meta])* $vis struct $type,
+            $state,
+            $obj_type,
+            $offset_const,
+            $crate::object::dispatcher::PeerHolderMuClass<$type>,
+            |ptr: *const $state| &(&(*ptr).peered.holder).mu
+        );
+
+        impl $type {
+            /// Initializes the peer reference and peer KOID.
+            pub(crate) fn init_peer(&self, peer: fbl::RefPtr<Self>) {
+                let peer_koid = peer.get_koid();
+                ksync::lock!(let mut guard = self.state().peered.lock());
+                *guard.as_mut().peer_mut() = Some(peer);
+                self.state().peered.set_peer_koid(peer_koid);
+            }
+
+            /// Returns the related KOID of the peer dispatcher.
+            pub fn get_related_koid(&self) -> zx_types::zx_koid_t {
+                self.state().peered.peer_koid()
+            }
+
+            /// Signals this dispatcher endpoint.
+            pub fn user_signal_self(
+                &self,
+                clear_mask: u32,
+                set_mask: u32,
+            ) -> Result<(), zx_status::Status> {
+                if (set_mask & !$allowed_signals) != 0 || (clear_mask & !$allowed_signals) != 0 {
+                    return Err(zx_status::Status::INVALID_ARGS);
+                }
+                ksync::lock!(let guard = self.state().peered.lock());
+                self.update_state_locked(guard.token(), clear_mask, set_mask);
+                Ok(())
+            }
+
+            /// Signals the peer dispatcher endpoint.
+            pub fn user_signal_peer(
+                &self,
+                clear_mask: u32,
+                set_mask: u32,
+            ) -> Result<(), zx_status::Status> {
+                if (set_mask & !$allowed_signals) != 0 || (clear_mask & !$allowed_signals) != 0 {
+                    return Err(zx_status::Status::INVALID_ARGS);
+                }
+                ksync::lock!(let guard = self.state().peered.lock());
+                let peer = guard.peer().as_ref().ok_or(zx_status::Status::PEER_CLOSED)?;
+                peer.update_state_locked(guard.token(), clear_mask, set_mask);
+                Ok(())
+            }
+
+            /// Handles zero handles condition by clearing the peer reference and asserting peer
+            /// closed on peer.
+            pub fn on_zero_handles(&self) {
+                ksync::lock!(let mut guard = self.state().peered.lock());
+                if let Some(p) = guard.as_mut().peer_mut().take() {
+                    *p.state().peered.guard_mu_mut(guard.as_mut().token_mut()).peer_mut() = None;
+                    p.update_state_locked(guard.token(), 0, zx_types::ZX_OBJECT_PEER_CLOSED);
+                }
+            }
+        }
+    };
+}
+#[allow(unused_imports)]
+pub(crate) use impl_peered_dispatcher_facade_with_state;
+
+/// Helper macro to generate standard `rust_<type>_state_init` and peered FFI trampolines.
+#[allow(unused_macros)]
+macro_rules! impl_peered_dispatcher_state_init {
+    ($type:ident, $state:ident $(, $arg:ident : $arg_ty:ty)* $(,)?) => {
+        paste::paste! {
+            /// Initializes a `$state` in-place using `$state::init(holder, ...)`.
+            ///
+            /// # Safety
+            ///
+            /// `ptr` must point to uninitialized memory of at least `size_of::<$state>()` bytes.
+            #[unsafe(no_mangle)]
+            pub unsafe extern "C" fn [<rust_ $type:snake _state_init>](
+                ptr: *mut $state,
+                holder: fbl::RefPtr<$crate::object::dispatcher::PeerHolder<$type>>,
+                $( $arg : $arg_ty ),*
+            ) {
+                // SAFETY: `ptr` points to uninitialized memory allocated for `$state`.
+                unsafe {
+                    let _ = pin_init::PinInit::__pinned_init(
+                        $state::init(holder, $( $arg ),*),
+                        ptr,
+                    );
+                }
+            }
+
+            #[unsafe(no_mangle)]
+            pub unsafe extern "C" fn [<rust_ $type:snake _get_related_koid>](
+                dispatcher: &$type,
+            ) -> zx_types::zx_koid_t {
+                dispatcher.get_related_koid()
+            }
+
+            #[unsafe(no_mangle)]
+            pub unsafe extern "C" fn [<rust_ $type:snake _user_signal_self>](
+                dispatcher: &$type,
+                clear_mask: u32,
+                set_mask: u32,
+            ) -> zx_types::zx_status_t {
+                zx_status::Status::result_into_raw(dispatcher.user_signal_self(clear_mask, set_mask))
+            }
+
+            #[unsafe(no_mangle)]
+            pub unsafe extern "C" fn [<rust_ $type:snake _user_signal_peer>](
+                dispatcher: &$type,
+                clear_mask: u32,
+                set_mask: u32,
+            ) -> zx_types::zx_status_t {
+                zx_status::Status::result_into_raw(dispatcher.user_signal_peer(clear_mask, set_mask))
+            }
+
+            #[unsafe(no_mangle)]
+            pub unsafe extern "C" fn [<rust_ $type:snake _on_zero_handles>](
+                dispatcher: &$type,
+            ) {
+                dispatcher.on_zero_handles();
+            }
+        }
+    };
+}
+#[allow(unused_imports)]
+pub(crate) use impl_peered_dispatcher_state_init;
 
 /// Helper macro to generate standard `rust_<type>_state_init` FFI trampolines.
 macro_rules! impl_dispatcher_state_init {
@@ -160,8 +324,8 @@ macro_rules! impl_dispatcher_state_init {
             ///
             /// # Safety
             ///
-            /// `ptr` must point to uninitialized memory of at least `size_of::<$state>()`
-            /// bytes, and `dispatcher` must point to the enclosing `$type`.
+            /// `ptr` must point to uninitialized memory of at least `size_of::<$state>()` bytes,
+            /// and `dispatcher` must point to the enclosing `$type`.
             #[unsafe(no_mangle)]
             pub unsafe extern "C" fn [<rust_ $type:snake _state_init>](
                 ptr: *mut $state,
@@ -298,5 +462,62 @@ impl<Endpoint> PeerHolder<Endpoint> {
             mu <- KMutex::init(),
             _phantom: PhantomData,
         })
+    }
+}
+
+/// State shared by peered dispatcher subtypes.
+///
+/// Peered dispatchers have opposing endpoints to coordinate state with (such as peer KOID, the peer
+/// reference, and the shared `PeerHolder` mutex).
+#[guarded]
+#[repr(C)]
+pub struct PeeredState<T: fbl::IsOpaqueRefCounted> {
+    peer_koid: RelaxedAtomicU64,
+    pub holder: RefPtr<PeerHolder<T>>,
+    #[guarded_by(mu)]
+    pub peer: Option<RefPtr<T>>,
+    #[mutex(PeerHolderMuClass<T>)]
+    pub mu: KMutex<ksync::PhantomMutex>,
+}
+
+impl<T: fbl::IsOpaqueRefCounted> PeeredState<T> {
+    /// Initializes a `PeeredState` with the given `PeerHolder`.
+    pub fn init(
+        holder: RefPtr<PeerHolder<T>>,
+    ) -> impl pin_init::PinInit<Self, core::convert::Infallible> {
+        pin_init::pin_init!(Self {
+            peer_koid: RelaxedAtomicU64::new(0),
+            holder,
+            peer: ksync::KCell::new(None),
+            mu: KMutex::new(ksync::PhantomMutex),
+        })
+    }
+
+    /// Returns the peer KOID as `zx_koid_t`, or `0` if not yet initialized.
+    #[inline]
+    pub fn peer_koid(&self) -> zx_types::zx_koid_t {
+        self.peer_koid.load()
+    }
+
+    /// Returns the peer KOID as `Option<NonZero<zx_koid_t>>`, or `None` if not yet initialized.
+    #[inline]
+    pub fn peer_koid_non_zero(&self) -> Option<core::num::NonZero<zx_types::zx_koid_t>> {
+        core::num::NonZero::new(self.peer_koid.load())
+    }
+
+    /// Sets the peer KOID.
+    #[inline]
+    pub fn set_peer_koid(&self, koid: zx_types::zx_koid_t) {
+        self.peer_koid.store(koid);
+    }
+
+    /// Locks the underlying shared `PeerHolder` mutex (`self.holder.mu`) and returns a guard for
+    /// accessing fields protected by `self.mu`.
+    #[inline]
+    pub fn lock(
+        &self,
+    ) -> impl pin_init::PinInit<PeeredStateMuGuard<'_, T, RawCriticalMutex>, core::convert::Infallible>
+    {
+        self.lock_mu(&self.holder.mu)
     }
 }
