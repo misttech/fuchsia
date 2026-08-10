@@ -12,8 +12,9 @@ from antlion.controllers.ap_lib.radio_measurement import (
     NeighborReportElement,
     PhyType,
 )
+from honeydew.typing.custom_types import MacAddress
 
-EXPECTED_BSSID = "01:23:45:ab:cd:ef"
+EXPECTED_BSSID = MacAddress("01:23:45:ab:cd:ef")
 EXPECTED_BSSID_INFO_CAP = BssidInformationCapabilities(
     spectrum_management=True, qos=True, apsd=True, radio_measurement=True
 )

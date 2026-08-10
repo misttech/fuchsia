@@ -379,20 +379,24 @@ class CustomTypesTests(unittest.TestCase):
         ).with_universally_administered_bit()
         self.assertEqual(bytes(mac)[0] & 0x02, 0)
 
-    def test_mac_with_octet_incremented(self) -> None:
+    def test_mac_with_last_octet_incremented(self) -> None:
         mac = custom_types.MacAddress(
             "00:00:00:00:00:00"
-        ).with_octet_incremented(5)
+        ).with_last_octet_incremented()
         self.assertEqual(str(mac), "00:00:00:00:00:01")
 
         # Test wrap around
         mac = custom_types.MacAddress(
             "ff:ff:ff:ff:ff:ff"
-        ).with_octet_incremented(5)
+        ).with_last_octet_incremented()
         self.assertEqual(str(mac), "ff:ff:ff:ff:ff:00")
 
+    def test_mac_with_last_octet(self) -> None:
+        mac = custom_types.MacAddress("00:00:00:00:00:00").with_last_octet(0x0A)
+        self.assertEqual(str(mac), "00:00:00:00:00:0a")
+
         with self.assertRaises(ValueError):
-            mac.with_octet_incremented(6)
+            mac.with_last_octet(0x100)
 
     def test_mac_eq_and_hash(self) -> None:
         """Test MAC addresses correctly act as dictionary keys."""

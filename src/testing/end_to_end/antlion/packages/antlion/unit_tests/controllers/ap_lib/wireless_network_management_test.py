@@ -15,16 +15,17 @@ from antlion.controllers.ap_lib.wireless_network_management import (
     BssTransitionCandidateList,
     BssTransitionManagementRequest,
 )
+from honeydew.typing.custom_types import MacAddress
 
 EXPECTED_NEIGHBOR_1 = NeighborReportElement(
-    bssid="01:23:45:ab:cd:ef",
+    bssid=MacAddress("01:23:45:ab:cd:ef"),
     bssid_information=BssidInformation(),
     operating_class=81,
     channel_number=1,
     phy_type=PhyType.HT,
 )
 EXPECTED_NEIGHBOR_2 = NeighborReportElement(
-    bssid="cd:ef:ab:45:67:89",
+    bssid=MacAddress("cd:ef:ab:45:67:89"),
     bssid_information=BssidInformation(),
     operating_class=121,
     channel_number=149,
