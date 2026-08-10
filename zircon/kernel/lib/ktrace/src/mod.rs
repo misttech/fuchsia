@@ -617,6 +617,7 @@ impl KTrace {
     #[allow(clippy::too_many_arguments)]
     #[inline(never)]
     #[cold]
+    #[allow(clippy::too_many_arguments)]
     pub fn emit_event(
         &self,
         event_type: EventType,

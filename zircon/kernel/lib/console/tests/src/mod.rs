@@ -83,8 +83,8 @@ mod console_tests {
         if to_copy > 0 {
             unsafe {
                 core::ptr::copy_nonoverlapping(
-                    str_ptr as *const u8,
-                    state.buf.add(state.len),
+                    str_ptr,
+                    state.buf.add(state.len) as *mut core::ffi::c_char,
                     to_copy,
                 );
             }

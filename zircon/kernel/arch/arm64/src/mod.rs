@@ -158,7 +158,7 @@ pub fn dump(state: &zx_restricted_state_t) {
     let mut w = KernelConsoleWriter;
     let _ = write!(w, "CPSR: {:#18x}\n  PC: {:#18x}\n", state.cpsr, state.pc);
     for i in 0..31 {
-        let _ = write!(w, " X{:02}: {:#18x}\n", i, state.r[i]);
+        let _ = writeln!(w, " X{:02}: {:#18x}", i, state.r[i]);
     }
     let _ = write!(w, "  SP: {:#18x}\nTPIDR_EL0: {:#18x}\n", state.sp, state.tpidr_el0);
 }

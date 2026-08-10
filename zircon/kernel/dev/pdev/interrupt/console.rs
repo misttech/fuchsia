@@ -27,7 +27,7 @@ struct IrqInfo {
 impl IrqInfo {
     #[allow(clippy::absurd_extreme_comparisons)]
     fn valid_irq_num(irq_num: u32) -> bool {
-        irq_num >= FIRST_VALID_IRQ && irq_num < LAST_VALID_IRQ
+        (FIRST_VALID_IRQ..LAST_VALID_IRQ).contains(&irq_num)
     }
 
     fn get(irq_num: u32) -> Self {
@@ -101,7 +101,7 @@ fn usage(ret: Status) -> c_int {
     ret.into_raw()
 }
 
-unsafe fn arg_cstr<'a>(arg: &'a CmdArgs) -> Option<&'a CStr> {
+unsafe fn arg_cstr(arg: &CmdArgs) -> Option<&CStr> {
     if arg.arg_str.is_null() { None } else { Some(unsafe { CStr::from_ptr(arg.arg_str) }) }
 }
 
