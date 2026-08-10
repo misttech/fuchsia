@@ -170,7 +170,7 @@ ClockDispatcher::ClockDispatcher(uint64_t options, zx_time_t backstop_time,
     static_assert(kMappedSize == kPageSize, "Mapped clock size must be exactly one page");
 
     paddr_t pa;
-    const zx_status_t res = vmo_->GetPage(0, 0, nullptr, nullptr, nullptr, &pa);
+    const zx_status_t res = vmo_->GetPage(0, 0, nullptr, nullptr, &pa);
     ASSERT_MSG(res == ZX_OK, "Failed to get storage page for mappable clock (%d)", res);
     ASSERT_MSG(is_physmap_phys_addr(pa),
                "Mappable clock storage page is not in the physmap 0x%016lx", pa);

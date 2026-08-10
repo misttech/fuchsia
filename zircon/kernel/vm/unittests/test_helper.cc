@@ -92,7 +92,7 @@ zx_status_t make_partially_committed_pager_vmo(size_t num_pages, size_t committe
 
     if (out_pages) {
       for (uint64_t i = 0; i < committed_pages; i++) {
-        status = vmo->GetPage(i * kPageSize, 0, nullptr, nullptr, &out_pages[i], nullptr);
+        status = vmo->GetPage(i * kPageSize, 0, nullptr, &out_pages[i], nullptr);
         if (status != ZX_OK) {
           return status;
         }
@@ -147,8 +147,8 @@ zx_status_t supply_pager_vmo_pages(VmObjectPaged* vmo, uint64_t page_offset, uin
 
   if (out_pages) {
     for (uint64_t i = 0; i < num_pages; i++) {
-      status = vmo->GetPage((page_offset + i) * kPageSize, 0, nullptr, nullptr,
-                            &out_pages[page_offset + i], nullptr);
+      status = vmo->GetPage((page_offset + i) * kPageSize, 0, nullptr, &out_pages[page_offset + i],
+                            nullptr);
       if (status != ZX_OK) {
         return status;
       }

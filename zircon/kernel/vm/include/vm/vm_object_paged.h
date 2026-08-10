@@ -317,8 +317,8 @@ class VmObjectPaged final : public VmObject, public VmDeferredDeleter<VmObjectPa
     return cow_pages_locked()->DebugLookupDepthLocked();
   }
 
-  zx_status_t GetPage(uint64_t offset, uint pf_flags, list_node* alloc_list,
-                      MultiPageRequest* page_request, vm_page_t** page, paddr_t* pa) override;
+  zx_status_t GetPage(uint64_t offset, uint pf_flags, MultiPageRequest* page_request,
+                      vm_page_t** page, paddr_t* pa) override;
 
   // Gets a reference to a LookupCursor for the specified range in the VMO. The returned cursor and
   // all the items returned by the cursor are only valid as long as the lock is contiguous held.

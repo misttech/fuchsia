@@ -73,8 +73,8 @@ class VmObjectPhysical final : public VmObject, public VmDeferredDeleter<VmObjec
 
   void Dump(uint depth, bool verbose) override;
 
-  zx_status_t GetPage(uint64_t offset, uint pf_flags, list_node* alloc_list,
-                      MultiPageRequest* page_request, vm_page_t** page, paddr_t* pa) override {
+  zx_status_t GetPage(uint64_t offset, uint pf_flags, MultiPageRequest* page_request,
+                      vm_page_t** page, paddr_t* pa) override {
     return ZX_ERR_NOT_SUPPORTED;
   }
 

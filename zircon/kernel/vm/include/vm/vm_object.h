@@ -602,14 +602,13 @@ class VmObject : public fbl::ContainableBaseClasses<
   // can be batched. The caller should continue to make successive GetPage requests
   // until this returns ZX_ERR_SHOULD_WAIT. If the caller runs out of requests, it
   // should finalize the request with PageSource::FinalizeRequest.
-  virtual zx_status_t GetPage(uint64_t offset, uint pf_flags, list_node* alloc_list,
-                              MultiPageRequest* page_request, vm_page_t** page, paddr_t* pa) = 0;
+  virtual zx_status_t GetPage(uint64_t offset, uint pf_flags, MultiPageRequest* page_request,
+                              vm_page_t** page, paddr_t* pa) = 0;
 
   // Helper variant of GetPage that will retry the operation after waiting on a PageRequest if
   // required.
   // Must not be called with any locks held.
-  zx_status_t GetPageBlocking(uint64_t offset, uint pf_flags, list_node* alloc_list,
-                              vm_page_t** page, paddr_t* pa);
+  zx_status_t GetPageBlocking(uint64_t offset, uint pf_flags, vm_page_t** page, paddr_t* pa);
 
   // Attempt to add a new mapping to the mapping list of this object. Can fail with
   // ZX_ERR_OUT_OF_MEMORY.

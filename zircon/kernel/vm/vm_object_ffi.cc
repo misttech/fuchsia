@@ -86,7 +86,7 @@ FFI_ALWAYS_INLINE VmObject* cpp_vm_object_create_clone(VmObject* vmo, Resizabili
 
 FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_get_page_blocking(VmObject* vmo, uint64_t offset,
                                                               uint32_t pf_flags) {
-  return vmo->GetPageBlocking(offset, pf_flags, nullptr, nullptr, nullptr);
+  return vmo->GetPageBlocking(offset, pf_flags, nullptr, nullptr);
 }
 
 FFI_ALWAYS_INLINE void cpp_vm_object_set_user_id(VmObject* vmo, uint64_t user_id) {

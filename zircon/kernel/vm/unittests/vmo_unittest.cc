@@ -152,7 +152,7 @@ bool vmo_commit_compressed_pages_test() {
     // Write some data (possibly zero) to the page.
     EXPECT_OK(vmo->Write(&i, i * kPageSize, sizeof(i)));
     vm_page_t* page;
-    status = vmo->GetPageBlocking(i * kPageSize, 0, nullptr, &page, nullptr);
+    status = vmo->GetPageBlocking(i * kPageSize, 0, &page, nullptr);
     ASSERT_OK(status);
     auto compressor = compression->AcquireCompressor();
     ASSERT_OK(compressor.get().Arm());
@@ -1479,7 +1479,7 @@ bool vmo_clones_of_compressed_pages_test() {
   EXPECT_TRUE(verify_continuous_attribution_bytes(*vmo, kPageSize));
 
   vm_page_t* page = nullptr;
-  status = vmo->GetPageBlocking(0, 0, nullptr, &page, nullptr);
+  status = vmo->GetPageBlocking(0, 0, &page, nullptr);
   ASSERT_OK(status);
   ASSERT_NONNULL(page);
   {
@@ -1626,7 +1626,7 @@ bool vmo_move_pages_on_access_test() {
 
   PageRequest request;
   // If we lookup the page then it should be moved to specifically the first page queue.
-  status = vmo->GetPageBlocking(0, VMM_PF_FLAG_SW_FAULT, nullptr, nullptr, nullptr);
+  status = vmo->GetPageBlocking(0, VMM_PF_FLAG_SW_FAULT, nullptr, nullptr);
   EXPECT_EQ(ZX_OK, status);
   size_t queue;
   EXPECT_TRUE(pmm_page_queues()->DebugPageIsReclaim(page, &queue));
@@ -1638,7 +1638,7 @@ bool vmo_move_pages_on_access_test() {
   EXPECT_EQ(1u, queue);
 
   // Touching the page should move it back to the first queue.
-  status = vmo->GetPageBlocking(0, VMM_PF_FLAG_SW_FAULT, nullptr, nullptr, nullptr);
+  status = vmo->GetPageBlocking(0, VMM_PF_FLAG_SW_FAULT, nullptr, nullptr);
   EXPECT_EQ(ZX_OK, status);
   EXPECT_TRUE(pmm_page_queues()->DebugPageIsReclaim(page, &queue));
   EXPECT_EQ(0u, queue);
@@ -1649,14 +1649,14 @@ bool vmo_move_pages_on_access_test() {
                             &child);
   ASSERT_EQ(ZX_OK, status);
 
-  status = child->GetPageBlocking(0, VMM_PF_FLAG_SW_FAULT, nullptr, nullptr, nullptr);
+  status = child->GetPageBlocking(0, VMM_PF_FLAG_SW_FAULT, nullptr, nullptr);
   EXPECT_EQ(ZX_OK, status);
   EXPECT_TRUE(pmm_page_queues()->DebugPageIsReclaim(page, &queue));
   EXPECT_EQ(0u, queue);
   pmm_page_queues()->RotateReclaimQueues();
   EXPECT_TRUE(pmm_page_queues()->DebugPageIsReclaim(page, &queue));
   EXPECT_EQ(1u, queue);
-  status = child->GetPageBlocking(0, VMM_PF_FLAG_SW_FAULT, nullptr, nullptr, nullptr);
+  status = child->GetPageBlocking(0, VMM_PF_FLAG_SW_FAULT, nullptr, nullptr);
   EXPECT_EQ(ZX_OK, status);
   EXPECT_TRUE(pmm_page_queues()->DebugPageIsReclaim(page, &queue));
   EXPECT_EQ(0u, queue);
@@ -1729,7 +1729,7 @@ bool vmo_eviction_hints_test() {
   EXPECT_EQ(1u, queue);
 
   // Touching the page should move it back to the first queue.
-  status = vmo->GetPageBlocking(0, VMM_PF_FLAG_SW_FAULT, nullptr, nullptr, nullptr);
+  status = vmo->GetPageBlocking(0, VMM_PF_FLAG_SW_FAULT, nullptr, nullptr);
   EXPECT_EQ(ZX_OK, status);
   EXPECT_TRUE(pmm_page_queues()->DebugPageIsReclaim(pages[0], &queue));
   EXPECT_EQ(0u, queue);
@@ -2493,7 +2493,7 @@ bool vmo_attribution_dedup_test() {
   EXPECT_TRUE(verify_continuous_attribution_bytes(*vmo, 2ul * kPageSize + 0));
 
   vm_page_t* page;
-  status = vmo->GetPageBlocking(0, 0, nullptr, &page, nullptr);
+  status = vmo->GetPageBlocking(0, 0, &page, nullptr);
   ASSERT_EQ(ZX_OK, status);
 
   // Dedupe the first page.
@@ -2503,7 +2503,7 @@ bool vmo_attribution_dedup_test() {
   EXPECT_TRUE(verify_continuous_attribution_bytes(*vmo, kPageSize));
 
   // Dedupe the second page.
-  status = vmo->GetPageBlocking(kPageSize, 0, nullptr, &page, nullptr);
+  status = vmo->GetPageBlocking(kPageSize, 0, &page, nullptr);
   ASSERT_EQ(ZX_OK, status);
   ASSERT_TRUE(vmop->DebugGetCowPages()->DedupZeroPage(page, kPageSize));
   EXPECT_TRUE(vmo->GetAttributedMemory() == AttributionCounts{});
@@ -2555,7 +2555,7 @@ bool vmo_attribution_compression_test() {
 
   // Compress the first page.
   vm_page_t* page = nullptr;
-  status = vmo->GetPageBlocking(0, 0, nullptr, &page, nullptr);
+  status = vmo->GetPageBlocking(0, 0, &page, nullptr);
   ASSERT_EQ(ZX_OK, status);
   {
     auto compressor = compression->AcquireCompressor();
@@ -2571,7 +2571,7 @@ bool vmo_attribution_compression_test() {
     reclamation_count = new_reclamation_count;
   }
   // Compress the second page.
-  status = vmo->GetPageBlocking(kPageSize, 0, nullptr, &page, nullptr);
+  status = vmo->GetPageBlocking(kPageSize, 0, &page, nullptr);
   ASSERT_EQ(ZX_OK, status);
   {
     auto compressor = compression->AcquireCompressor();
@@ -2589,14 +2589,14 @@ bool vmo_attribution_compression_test() {
   }
 
   // Attempting to read the first page will require a decompress.
-  status = vmo->GetPageBlocking(0, VMM_PF_FLAG_HW_FAULT, nullptr, &page, nullptr);
+  status = vmo->GetPageBlocking(0, VMM_PF_FLAG_HW_FAULT, &page, nullptr);
   ASSERT_EQ(ZX_OK, status);
   EXPECT_TRUE(vmo->GetAttributedMemory() == make_private_attribution_counts(kPageSize, 0));
   EXPECT_TRUE(verify_continuous_attribution_bytes(*vmo, kPageSize));
   EXPECT_EQ(reclamation_count, vmo->ReclamationEventCount());
 
   // Reading the second page will just get the zero page.
-  status = vmo->GetPageBlocking(kPageSize, VMM_PF_FLAG_HW_FAULT, nullptr, &page, nullptr);
+  status = vmo->GetPageBlocking(kPageSize, VMM_PF_FLAG_HW_FAULT, &page, nullptr);
   ASSERT_EQ(ZX_OK, status);
   EXPECT_TRUE(vmo->GetAttributedMemory() == make_private_attribution_counts(kPageSize, 0));
   EXPECT_TRUE(verify_continuous_attribution_bytes(*vmo, kPageSize));
@@ -2772,7 +2772,7 @@ bool vmo_discardable_states_test() {
 
   // Cannot discard when locked.
   vm_page_t* page;
-  ASSERT_OK(vmo->GetPageBlocking(0, 0, nullptr, &page, nullptr));
+  ASSERT_OK(vmo->GetPageBlocking(0, 0, &page, nullptr));
   EXPECT_FALSE(Pmm::Node().GetPageQueues()->DebugPageIsReclaim(page));
   auto reclaimed = vmo->DebugGetCowPages()->ReclaimPage(
       page, 0, VmCowPages::EvictionAction::FollowHint, nullptr);
@@ -2815,7 +2815,7 @@ bool vmo_discardable_states_test() {
   EXPECT_EQ(kSize, lock_state.discarded_size);
 
   EXPECT_EQ(ZX_OK, vmo->CommitRange(0, kSize));
-  ASSERT_OK(vmo->GetPageBlocking(0, 0, nullptr, &page, nullptr));
+  ASSERT_OK(vmo->GetPageBlocking(0, 0, &page, nullptr));
   EXPECT_FALSE(Pmm::Node().GetPageQueues()->DebugPageIsReclaim(page));
 
   // Try lock should succeed now.
@@ -2833,7 +2833,7 @@ bool vmo_discardable_states_test() {
   EXPECT_TRUE(vmo->DebugGetCowPages()->DebugGetDiscardableTracker()->DebugIsReclaimable());
   EXPECT_FALSE(vmo->DebugGetCowPages()->DebugGetDiscardableTracker()->DebugIsUnreclaimable());
   EXPECT_FALSE(vmo->DebugGetCowPages()->DebugGetDiscardableTracker()->DebugIsDiscarded());
-  ASSERT_OK(vmo->GetPageBlocking(0, 0, nullptr, &page, nullptr));
+  ASSERT_OK(vmo->GetPageBlocking(0, 0, &page, nullptr));
   if (Pmm::Node().GetPageQueues()->ReclaimIsOnlyPagerBacked()) {
     EXPECT_TRUE(Pmm::Node().GetPageQueues()->DebugPageIsAnonymous(page));
   } else {
@@ -2845,7 +2845,7 @@ bool vmo_discardable_states_test() {
   EXPECT_TRUE(vmo->DebugGetCowPages()->DebugGetDiscardableTracker()->DebugIsUnreclaimable());
   EXPECT_FALSE(vmo->DebugGetCowPages()->DebugGetDiscardableTracker()->DebugIsReclaimable());
   EXPECT_FALSE(vmo->DebugGetCowPages()->DebugGetDiscardableTracker()->DebugIsDiscarded());
-  ASSERT_OK(vmo->GetPageBlocking(0, 0, nullptr, &page, nullptr));
+  ASSERT_OK(vmo->GetPageBlocking(0, 0, &page, nullptr));
   EXPECT_FALSE(Pmm::Node().GetPageQueues()->DebugPageIsReclaim(page));
 
   EXPECT_EQ(0u, lock_state.offset);
@@ -2858,14 +2858,14 @@ bool vmo_discardable_states_test() {
   EXPECT_TRUE(vmo->DebugGetCowPages()->DebugGetDiscardableTracker()->DebugIsReclaimable());
   EXPECT_FALSE(vmo->DebugGetCowPages()->DebugGetDiscardableTracker()->DebugIsUnreclaimable());
   EXPECT_FALSE(vmo->DebugGetCowPages()->DebugGetDiscardableTracker()->DebugIsDiscarded());
-  ASSERT_OK(vmo->GetPageBlocking(0, 0, nullptr, &page, nullptr));
+  ASSERT_OK(vmo->GetPageBlocking(0, 0, &page, nullptr));
   if (Pmm::Node().GetPageQueues()->ReclaimIsOnlyPagerBacked()) {
     EXPECT_TRUE(Pmm::Node().GetPageQueues()->DebugPageIsAnonymous(page));
   } else {
     EXPECT_TRUE(Pmm::Node().GetPageQueues()->DebugPageIsReclaim(page));
   }
 
-  ASSERT_OK(vmo->GetPageBlocking(0, 0, nullptr, &page, nullptr));
+  ASSERT_OK(vmo->GetPageBlocking(0, 0, &page, nullptr));
   reclaimed = vmo->DebugGetCowPages()->ReclaimPage(page, 0, VmCowPages::EvictionAction::FollowHint,
                                                    nullptr);
   ASSERT_TRUE(reclaimed.is_ok());
@@ -2895,7 +2895,7 @@ bool vmo_discard_test() {
   EXPECT_EQ(ZX_OK, vmo->TryLockRange(0, kSize));
   EXPECT_EQ(ZX_OK, vmo->CommitRange(0, kSize));
   vm_page_t* page = nullptr;
-  ASSERT_OK(vmo->GetPageBlocking(0, 0, nullptr, &page, nullptr));
+  ASSERT_OK(vmo->GetPageBlocking(0, 0, &page, nullptr));
   EXPECT_EQ(kSize, vmo->size());
   EXPECT_TRUE(make_private_attribution_counts(kSize, 0) == vmo->GetAttributedMemory());
   EXPECT_TRUE(verify_continuous_attribution_bytes(*vmo, kSize));
@@ -2948,7 +2948,7 @@ bool vmo_discard_test() {
 
   // Commit and pin some pages, then unlock.
   EXPECT_EQ(ZX_OK, vmo->CommitRangePinned(0, kSize, false));
-  ASSERT_OK(vmo->GetPageBlocking(0, 0, nullptr, &page, nullptr));
+  ASSERT_OK(vmo->GetPageBlocking(0, 0, &page, nullptr));
   EXPECT_TRUE(make_private_attribution_counts(kSize, 0) == vmo->GetAttributedMemory());
   EXPECT_TRUE(verify_continuous_attribution_bytes(*vmo, kSize));
   EXPECT_EQ(ZX_OK, vmo->UnlockRange(0, kNewSize));
@@ -2994,7 +2994,7 @@ bool vmo_discard_test() {
     user_memory->put(val, offset);
   }
   EXPECT_EQ(ZX_OK, vmo->UnlockRange(0, kNewSize));
-  ASSERT_OK(vmo->GetPageBlocking(0, 0, nullptr, &page, nullptr));
+  ASSERT_OK(vmo->GetPageBlocking(0, 0, &page, nullptr));
   if (Pmm::Node().GetPageQueues()->ReclaimIsOnlyPagerBacked()) {
     EXPECT_TRUE(Pmm::Node().GetPageQueues()->DebugPageIsAnonymous(page));
   } else {
@@ -3005,7 +3005,7 @@ bool vmo_discard_test() {
   vmo.reset();
   status = VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, VmObjectPaged::kResizable, kSize, &vmo);
   ASSERT_EQ(ZX_OK, status);
-  ASSERT_OK(vmo->GetPageBlocking(0, VMM_PF_FLAG_SW_FAULT, nullptr, &page, nullptr));
+  ASSERT_OK(vmo->GetPageBlocking(0, VMM_PF_FLAG_SW_FAULT, &page, nullptr));
   reclaimed = vmo->DebugGetCowPages()->ReclaimPage(page, 0, VmCowPages::EvictionAction::FollowHint,
                                                    nullptr);
   EXPECT_TRUE(reclaimed.is_error());
@@ -3070,7 +3070,7 @@ bool vmo_discard_failure_test() {
   // Unlock and discard.
   EXPECT_EQ(ZX_OK, vmo->UnlockRange(0, kSize));
   vm_page_t* page;
-  ASSERT_OK(vmo->GetPageBlocking(0, 0, nullptr, &page, nullptr));
+  ASSERT_OK(vmo->GetPageBlocking(0, 0, &page, nullptr));
   auto reclaimed = vmo->DebugGetCowPages()->ReclaimPage(
       page, 0, VmCowPages::EvictionAction::FollowHint, nullptr);
   ASSERT_TRUE(reclaimed.is_ok());
@@ -3173,7 +3173,7 @@ bool vmo_discardable_counts_test() {
       if (rand() % 2) {
         // Discarded pages won't show up under locked or unlocked counts.
         vm_page_t* page;
-        ASSERT_OK(vmos[i]->GetPageBlocking(0, 0, nullptr, &page, nullptr));
+        ASSERT_OK(vmos[i]->GetPageBlocking(0, 0, &page, nullptr));
         auto reclaimed = vmos[i]->DebugGetCowPages()->ReclaimPage(
             page, 0, VmCowPages::EvictionAction::FollowHint, nullptr);
         ASSERT_TRUE(reclaimed.is_ok());
@@ -3221,7 +3221,7 @@ bool vmo_lookup_compressed_pages_test() {
 
   // Compress the page.
   vm_page_t* page;
-  status = vmo->GetPageBlocking(0, 0, nullptr, &page, nullptr);
+  status = vmo->GetPageBlocking(0, 0, &page, nullptr);
   ASSERT_OK(status);
   {
     auto compressor = compression->AcquireCompressor();
@@ -3234,18 +3234,18 @@ bool vmo_lookup_compressed_pages_test() {
 
   // Looking up the page for read or write, without it being a fault, should fail and not cause the
   // page to get decompressed.
-  EXPECT_NE(ZX_OK, vmo->GetPageBlocking(0, 0, nullptr, nullptr, nullptr));
+  EXPECT_NE(ZX_OK, vmo->GetPageBlocking(0, 0, nullptr, nullptr));
   EXPECT_TRUE(make_private_attribution_counts(0, kPageSize) == vmo->GetAttributedMemory());
   EXPECT_TRUE(verify_continuous_attribution_bytes(*vmo, kPageSize));
-  EXPECT_NE(ZX_OK, vmo->GetPageBlocking(0, VMM_PF_FLAG_WRITE, nullptr, nullptr, nullptr));
+  EXPECT_NE(ZX_OK, vmo->GetPageBlocking(0, VMM_PF_FLAG_WRITE, nullptr, nullptr));
   EXPECT_TRUE(make_private_attribution_counts(0, kPageSize) == vmo->GetAttributedMemory());
   EXPECT_TRUE(verify_continuous_attribution_bytes(*vmo, kPageSize));
 
   // Read or write faults should decompress.
-  ASSERT_OK(vmo->GetPageBlocking(0, VMM_PF_FLAG_HW_FAULT, nullptr, &page, nullptr));
+  ASSERT_OK(vmo->GetPageBlocking(0, VMM_PF_FLAG_HW_FAULT, &page, nullptr));
   EXPECT_TRUE(make_private_attribution_counts(kPageSize, 0) == vmo->GetAttributedMemory());
   EXPECT_TRUE(verify_continuous_attribution_bytes(*vmo, kPageSize));
-  status = vmo->GetPageBlocking(0, 0, nullptr, &page, nullptr);
+  status = vmo->GetPageBlocking(0, 0, &page, nullptr);
   ASSERT_OK(status);
   {
     auto compressor = compression->AcquireCompressor();
@@ -3256,8 +3256,7 @@ bool vmo_lookup_compressed_pages_test() {
   EXPECT_TRUE(make_private_attribution_counts(0, kPageSize) == vmo->GetAttributedMemory());
   EXPECT_TRUE(verify_continuous_attribution_bytes(*vmo, kPageSize));
 
-  EXPECT_OK(
-      vmo->GetPageBlocking(0, VMM_PF_FLAG_WRITE | VMM_PF_FLAG_SW_FAULT, nullptr, &page, nullptr));
+  EXPECT_OK(vmo->GetPageBlocking(0, VMM_PF_FLAG_WRITE | VMM_PF_FLAG_SW_FAULT, &page, nullptr));
   EXPECT_TRUE(make_private_attribution_counts(kPageSize, 0) == vmo->GetAttributedMemory());
   EXPECT_TRUE(verify_continuous_attribution_bytes(*vmo, kPageSize));
 
@@ -3283,16 +3282,14 @@ bool vmo_write_does_not_commit_test() {
       vmo->CreateClone(Resizability::NonResizable, SnapshotType::Full, 0, kPageSize, false, &clone);
 
   // Querying the page for read in the clone should return it.
-  EXPECT_OK(clone->GetPageBlocking(0, 0, nullptr, nullptr, nullptr));
+  EXPECT_OK(clone->GetPageBlocking(0, 0, nullptr, nullptr));
 
   // Querying for write, without any fault flags, should not work as the page is not committed in
   // the clone.
-  EXPECT_EQ(ZX_ERR_NOT_FOUND,
-            clone->GetPageBlocking(0, VMM_PF_FLAG_WRITE, nullptr, nullptr, nullptr));
+  EXPECT_EQ(ZX_ERR_NOT_FOUND, clone->GetPageBlocking(0, VMM_PF_FLAG_WRITE, nullptr, nullptr));
 
   // Adding a fault flag should cause the lookup to succeed.
-  EXPECT_OK(clone->GetPageBlocking(0, VMM_PF_FLAG_WRITE | VMM_PF_FLAG_SW_FAULT, nullptr, nullptr,
-                                   nullptr));
+  EXPECT_OK(clone->GetPageBlocking(0, VMM_PF_FLAG_WRITE | VMM_PF_FLAG_SW_FAULT, nullptr, nullptr));
 
   END_TEST;
 }
@@ -3317,7 +3314,7 @@ bool vmo_dirty_pages_test() {
   EXPECT_EQ(1u, queue);
 
   // Accessing the page should move it back to the first queue.
-  EXPECT_OK(vmo->GetPageBlocking(0, VMM_PF_FLAG_SW_FAULT, nullptr, nullptr, nullptr));
+  EXPECT_OK(vmo->GetPageBlocking(0, VMM_PF_FLAG_SW_FAULT, nullptr, nullptr));
   EXPECT_TRUE(pmm_page_queues()->DebugPageIsReclaim(page, &queue));
   EXPECT_EQ(0u, queue);
 
@@ -3333,7 +3330,7 @@ bool vmo_dirty_pages_test() {
               vmo->GetAttributedMemoryInRange(0, kPageSize));
 
   // Accessing the page again should not move the page out of the dirty queue.
-  EXPECT_OK(vmo->GetPageBlocking(0, VMM_PF_FLAG_SW_FAULT, nullptr, nullptr, nullptr));
+  EXPECT_OK(vmo->GetPageBlocking(0, VMM_PF_FLAG_SW_FAULT, nullptr, nullptr));
   EXPECT_FALSE(pmm_page_queues()->DebugPageIsReclaim(page));
   EXPECT_TRUE(pmm_page_queues()->DebugPageIsPagerBackedDirty(page));
 
@@ -3375,7 +3372,7 @@ bool vmo_dirty_pages_writeback_test() {
               vmo->GetAttributedMemoryInRange(0, kPageSize));
 
   // Accessing the page should not move the page out of the dirty queue either.
-  ASSERT_OK(vmo->GetPageBlocking(0, VMM_PF_FLAG_SW_FAULT, nullptr, nullptr, nullptr));
+  ASSERT_OK(vmo->GetPageBlocking(0, VMM_PF_FLAG_SW_FAULT, nullptr, nullptr));
   EXPECT_FALSE(pmm_page_queues()->DebugPageIsReclaim(page));
   EXPECT_TRUE(pmm_page_queues()->DebugPageIsPagerBackedDirty(page));
 
@@ -3708,7 +3705,7 @@ bool vmo_supply_compressed_pages_test() {
   EXPECT_OK(vmo->Write(&data, 0, sizeof(data)));
 
   vm_page_t* page;
-  zx_status_t status = vmo->GetPageBlocking(0, 0, nullptr, &page, nullptr);
+  zx_status_t status = vmo->GetPageBlocking(0, 0, &page, nullptr);
   ASSERT_OK(status);
 
   {
@@ -4308,7 +4305,7 @@ bool vmo_prefetch_compressed_pages_test() {
 
   // Compress the second page.
   vm_page_t* page;
-  status = vmo->GetPageBlocking(kPageSize, 0, nullptr, &page, nullptr);
+  status = vmo->GetPageBlocking(kPageSize, 0, &page, nullptr);
   ASSERT_OK(status);
   {
     auto compressor = compression->AcquireCompressor();
@@ -5287,8 +5284,7 @@ static bool vmo_get_page_offset_test() {
     // the local page list.
 
     __UNINITIALIZED MultiPageRequest page_request;
-    zx_status_t status =
-        vmo->GetPage(i, VMM_PF_FLAG_FAULT_MASK, nullptr, &page_request, &page, nullptr);
+    zx_status_t status = vmo->GetPage(i, VMM_PF_FLAG_FAULT_MASK, &page_request, &page, nullptr);
     if (status == ZX_ERR_SHOULD_WAIT) {
       // The stub page provider does not support waiting.
       page_request.CancelRequests();

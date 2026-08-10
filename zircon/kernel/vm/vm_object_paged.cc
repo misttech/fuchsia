@@ -1992,8 +1992,8 @@ zx_status_t VmObjectPaged::UnlockRange(uint64_t offset, uint64_t len) {
   return cow_pages_locked()->UnlockRangeLocked(*cow_range);
 }
 
-zx_status_t VmObjectPaged::GetPage(uint64_t offset, uint pf_flags, list_node* alloc_list,
-                                   MultiPageRequest* page_request, vm_page_t** page, paddr_t* pa) {
+zx_status_t VmObjectPaged::GetPage(uint64_t offset, uint pf_flags, MultiPageRequest* page_request,
+                                   vm_page_t** page, paddr_t* pa) {
   __UNINITIALIZED VmCowPages::DeferredOps deferred(cow_pages_.get());
   Guard<CriticalMutex> guard{lock()};
   const bool write = pf_flags & VMM_PF_FLAG_WRITE;
