@@ -436,18 +436,6 @@ if (host_os == "linux" && !is_asan) {
     metrics_name = "fuchsia.microbenchmarks.starnix.txt"
     manifest = "meta/starnix_microbenchmarks.cml"
   }
-
-  if (target_cpu == "arm64") {
-    starnix_microbenchmark_rules("starnix_microbenchmarks_aarch32") {
-      test_target_toolchain = target_linux_arch32_toolchain
-      metrics_name = "fuchsia.microbenchmarks.starnix_aarch32.txt"
-      manifest = "meta/starnix_microbenchmarks_aarch32.cml"
-
-      test_specs = {
-        environments = arch32_envs
-      }
-    }
-  }
 }
 
 # This contains all the dependencies necessary for running
@@ -470,12 +458,6 @@ group("tests") {
         ":starnix_microbenchmarks_perftestmode",
         ":starnix_microbenchmarks_unittestmode",
       ]
-      if (target_cpu == "arm64") {
-        deps += [
-          ":starnix_microbenchmarks_aarch32_perftestmode",
-          ":starnix_microbenchmarks_aarch32_unittestmode",
-        ]
-      }
     }
   }
 }
@@ -497,8 +479,5 @@ group("benchmarks") {
   # NOTE: Minfs does not support the POSIX attributes required to run Starnix.
   if (!is_asan && host_os == "linux" && data_filesystem_format != "minfs") {
     deps += [ ":starnix_microbenchmarks_test" ]
-    if (target_cpu == "arm64") {
-      deps += [ ":starnix_microbenchmarks_aarch32_test" ]
-    }
   }
 }
