@@ -5,16 +5,14 @@
 use crate::fuchsia::errors::map_to_status;
 use crate::fuchsia::fxblob::directory::BlobDirectory;
 use crate::fuchsia::pager::PagerBacked;
-use anyhow::{Error, anyhow};
+use anyhow::Error;
 use fidl_fuchsia_storage_mapping as fmapping;
 use fuchsia_merkle::Hash;
 use futures::TryStreamExt;
-use futures::lock::Mutex;
 use fxfs::errors::FxfsError;
 use log::{error, warn};
 use mapping::{Extents, MappingCommand, RawMappingCommand};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
 use vmo_fifo::AsyncSender;
 
 // The `vmo-fifo` divides the VMO into two regions: a fixed-size command slots region, and a
@@ -32,14 +30,66 @@ const MAPPING_VMO_SIZE: u64 = 512 * 1024;
 // extent), 64,512 extents can map up to ~252MB of blob data (or ~504MB if block size is 8KB).
 const PENDING_COMMANDS_CAPACITY: u32 = 256;
 
-/// This maintains state for mappings between the driver paging system and Fxfs.
-///
-/// Note: It is the responsibility of the client to track concurrent attempts to open files and
-/// broker them properly.
-pub struct BlobMappingServer {
+/// BlobMappingProvider services requests to open mapping sessions over a given BlobDirectory.
+pub struct BlobMappingProvider {
     blob_directory: Arc<BlobDirectory>,
-    sender: Mutex<AsyncSender<RawMappingCommand>>,
-    next_key: AtomicU64,
+}
+
+impl BlobMappingProvider {
+    pub fn new(blob_directory: Arc<BlobDirectory>) -> Result<Self, Error> {
+        Ok(Self { blob_directory })
+    }
+
+    pub async fn handle_mapping_provider_requests(
+        self: Arc<Self>,
+        mut stream: fmapping::MappingProviderRequestStream,
+    ) {
+        while let Ok(Some(request)) = stream.try_next().await {
+            match request {
+                fmapping::MappingProviderRequest::OpenSession { session, responder } => {
+                    let vmo = match zx::Vmo::create(MAPPING_VMO_SIZE) {
+                        Ok(v) => v,
+                        Err(e) => {
+                            let _ = responder.send(Err(e.into_raw()));
+                            continue;
+                        }
+                    };
+                    let sender = match AsyncSender::<RawMappingCommand>::new(
+                        vmo,
+                        8,
+                        PENDING_COMMANDS_CAPACITY,
+                    ) {
+                        Ok(s) => s,
+                        Err(e) => {
+                            let _ = responder.send(Err(e.into_raw()));
+                            continue;
+                        }
+                    };
+                    let vmo_clone = match sender.vmo().duplicate_handle(zx::Rights::SAME_RIGHTS) {
+                        Ok(v) => v,
+                        Err(e) => {
+                            let _ = responder.send(Err(e.into_raw()));
+                            continue;
+                        }
+                    };
+                    if let Err(error) = responder.send(Ok(vmo_clone)) {
+                        error!(error:?; "Failed to send open session response");
+                    } else {
+                        let mapping_session =
+                            BlobMappingSession::new(self.blob_directory.clone(), sender);
+                        self.blob_directory.volume().scope().spawn(async move {
+                            mapping_session
+                                .handle_mapping_session_requests(session.into_stream())
+                                .await;
+                        });
+                    }
+                }
+                fmapping::MappingProviderRequest::_UnknownMethod { ordinal, .. } => {
+                    warn!(ordinal; "Unknown MappingProvider method");
+                }
+            }
+        }
+    }
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -50,32 +100,25 @@ pub struct OpenedBlob {
     pub size: u64,
 }
 
-impl BlobMappingServer {
-    pub fn new(blob_directory: Arc<BlobDirectory>) -> Result<Self, Error> {
-        let vmo = zx::Vmo::create(MAPPING_VMO_SIZE)
-            .map_err(|s| anyhow!("Failed to create VMO: {}", s))?;
+/// `BlobMappingSession` services requests to open or close blobs within a `BlobDirectory`.
+/// Upon opening a blob, the blob's underlying extents (data and merkle blocks) are retrieved and
+/// then forwarded to client asynchronously via `sender`. A a session-unique `key` is assigned for
+/// each opened blob, which the client can reference during a `Close` request.
+pub struct BlobMappingSession {
+    blob_directory: Arc<BlobDirectory>,
+    sender: AsyncSender<RawMappingCommand>,
+    next_key: u64,
+}
 
-        // We allow up to 256 pending commands. This is a guess - we may have to adjust this.
-        let sender = AsyncSender::<RawMappingCommand>::new(
-            vmo,
-            8,                         // alignment
-            PENDING_COMMANDS_CAPACITY, // capacity of commands
-        )
-        .map_err(|s| anyhow!("Failed to create Sender: {}", s))?;
-
-        Ok(Self { blob_directory, sender: Mutex::new(sender), next_key: AtomicU64::new(1) })
-    }
-
-    /// Returns a duplicated handle to the mapping VMO.
-    pub async fn clone_mapping(&self) -> Result<zx::Vmo, zx::Status> {
-        let sender = self.sender.lock().await;
-        sender.vmo().duplicate_handle(zx::Rights::SAME_RIGHTS)
+impl BlobMappingSession {
+    pub fn new(blob_directory: Arc<BlobDirectory>, sender: AsyncSender<RawMappingCommand>) -> Self {
+        Self { blob_directory, sender, next_key: 1 }
     }
 
     /// Retrieves the extent mappings for the blob and registers the blob in the mapping session.
     /// Returns an `OpenedBlob` containing the node size and the uniquely generated key used to
     /// identify this blob in this session.
-    pub async fn open_blob(&self, hash: Hash) -> Result<OpenedBlob, Error> {
+    async fn open_blob(&mut self, hash: Hash) -> Result<OpenedBlob, Error> {
         let node = self.blob_directory.open_blob(&hash.into()).await?.ok_or(FxfsError::NotFound)?;
 
         let extents = node.get_mapping_extents().await?;
@@ -83,13 +126,12 @@ impl BlobMappingServer {
         let blob_count = extents.data.len() as u32;
         let metadata_count = extents.merkle.len() as u32;
 
-        let key = self.next_key.fetch_add(1, Ordering::Relaxed);
+        let key = self.next_key;
+        self.next_key += 1;
         let allocation_size = (blob_count + metadata_count) as usize * std::mem::size_of::<u64>();
 
         if allocation_size > 0 {
-            let mut sender = self.sender.lock().await;
-
-            let mut payload = sender.reserve_payload(allocation_size).await?;
+            let mut payload = self.sender.reserve_payload(allocation_size).await?;
             let offset_in_vmo = payload.offset();
 
             for (mut chunk, val_res) in payload.data().chunks_mut(std::mem::size_of::<u64>()).zip(
@@ -100,7 +142,7 @@ impl BlobMappingServer {
             }
 
             let command = MappingCommand::Mappings {
-                key,
+                key: key as u64,
                 offset: offset_in_vmo as u32,
                 metadata_count,
                 blob_count,
@@ -113,51 +155,13 @@ impl BlobMappingServer {
     }
 
     /// Unregisters the blob mapping and signals the block driver to terminate tracking.
-    // TODO(https://fxbug.dev/543224915): We may be able to remove this lock by refactoring the
-    // BlobMappingServer such that a mapping connection is created and passed to
-    // `handle_mapping_session_requests`.
-    pub async fn close_blob(&self, key: u64) -> Result<(), Error> {
-        let mut sender = self.sender.lock().await;
-        sender.push(MappingCommand::CloseBlob { key }.into()).await?;
+    async fn close_blob(&mut self, key: u64) -> Result<(), Error> {
+        self.sender.push(MappingCommand::CloseBlob { key }.into()).await?;
         Ok(())
     }
 
-    pub async fn handle_mapping_provider_requests(
-        self: Arc<Self>,
-        mut stream: fmapping::MappingProviderRequestStream,
-    ) {
-        while let Ok(Some(request)) = stream.try_next().await {
-            match request {
-                fmapping::MappingProviderRequest::OpenSession { session, responder } => {
-                    match self.clone_mapping().await {
-                        Ok(vmo) => {
-                            if let Err(error) = responder.send(Ok(vmo)) {
-                                error!(error:?; "Failed to send open session response");
-                            } else {
-                                let server_clone = self.clone();
-                                self.blob_directory.volume().scope().spawn(async move {
-                                    server_clone
-                                        .handle_mapping_session_requests(session.into_stream())
-                                        .await;
-                                });
-                            }
-                        }
-                        Err(status) => {
-                            if let Err(error) = responder.send(Err(status.into_raw())) {
-                                warn!(error:?; "Failed to send mapping session response");
-                            }
-                        }
-                    }
-                }
-                fmapping::MappingProviderRequest::_UnknownMethod { ordinal, .. } => {
-                    warn!(ordinal; "Unknown MappingProvider method");
-                }
-            }
-        }
-    }
-
     pub async fn handle_mapping_session_requests(
-        self: Arc<Self>,
+        mut self,
         mut stream: fmapping::MappingSessionRequestStream,
     ) {
         while let Ok(Some(request)) = stream.try_next().await {
@@ -214,7 +218,7 @@ mod tests {
     use vmo_fifo::Receiver;
 
     #[fuchsia::test]
-    async fn test_blob_mapping_server() {
+    async fn test_blob_mapping_provider() {
         let fixture = new_blob_fixture().await;
         // Test with a large amount of non-compressible data to generate many extents
         let data = vec![42; 300_000];
@@ -242,8 +246,12 @@ mod tests {
         // will wait forever for this blob to be fully closed, causing a test timeout.
         drop(node);
 
-        let server = BlobMappingServer::new(blob_dir).expect("Failed to create BlobMappingServer");
-        let client_mapping = server.clone_mapping().await.expect("Failed to clone VMO mapping");
+        let vmo = zx::Vmo::create(MAPPING_VMO_SIZE).unwrap();
+        let client_mapping = vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap();
+        let sender =
+            AsyncSender::<RawMappingCommand>::new(vmo, 8, PENDING_COMMANDS_CAPACITY).unwrap();
+
+        let mut session = BlobMappingSession::new(blob_dir, sender);
 
         let receiver_task = fasync::unblock(move || {
             let mut receiver = Receiver::<RawMappingCommand>::new(client_mapping, 256)
@@ -288,12 +296,12 @@ mod tests {
         });
 
         let server_task = async move {
-            let OpenedBlob { key, .. } = server.open_blob(hash).await.expect("open_blob failed");
+            let OpenedBlob { key, .. } = session.open_blob(hash).await.expect("open_blob failed");
             assert_eq!(key, 1);
 
-            server.close_blob(key).await.expect("close_blob failed on existing key");
+            session.close_blob(key).await.expect("close_blob failed on existing key");
 
-            std::mem::drop(server);
+            std::mem::drop(session);
         };
 
         futures::join!(receiver_task, server_task);
@@ -313,14 +321,17 @@ mod tests {
             .downcast::<BlobDirectory>()
             .expect("Failed to downcast");
 
-        let server = BlobMappingServer::new(blob_dir).expect("Failed to create server");
+        let vmo = zx::Vmo::create(MAPPING_VMO_SIZE).unwrap();
+        let sender =
+            AsyncSender::<RawMappingCommand>::new(vmo, 8, PENDING_COMMANDS_CAPACITY).unwrap();
+        let mut session = BlobMappingSession::new(blob_dir, sender);
         let hash = Hash::from([1u8; 32]);
-        server
+        session
             .open_blob(hash)
             .await
             .expect_err("open_blob should fail with blob that doesn't exist");
 
-        std::mem::drop(server);
+        std::mem::drop(session);
         fixture.close().await;
     }
 
@@ -336,9 +347,12 @@ mod tests {
             .downcast::<BlobDirectory>()
             .expect("Failed to downcast");
 
-        let server = BlobMappingServer::new(blob_dir).expect("Failed to create server");
-        server.close_blob(42).await.expect("close_blob should return Ok with invalid key");
-        std::mem::drop(server);
+        let vmo = zx::Vmo::create(MAPPING_VMO_SIZE).unwrap();
+        let sender =
+            AsyncSender::<RawMappingCommand>::new(vmo, 8, PENDING_COMMANDS_CAPACITY).unwrap();
+        let mut session = BlobMappingSession::new(blob_dir, sender);
+        session.close_blob(42).await.expect("close_blob should return Ok with invalid key");
+        std::mem::drop(session);
 
         fixture.close().await;
     }
@@ -359,8 +373,9 @@ mod tests {
             .expect("Failed to downcast root directory to BlobDirectory");
 
         let scope = blob_dir.volume().scope().clone();
-        let server =
-            Arc::new(BlobMappingServer::new(blob_dir).expect("Failed to create BlobMappingServer"));
+        let server = Arc::new(
+            BlobMappingProvider::new(blob_dir).expect("Failed to create BlobMappingProvider"),
+        );
 
         // Spawn the mapping provider stream.
         let (provider_proxy, provider_server_end) =

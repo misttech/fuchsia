@@ -9,7 +9,7 @@ use crate::fuchsia::component::map_to_raw_status;
 use crate::fuchsia::directory::FxDirectory;
 use crate::fuchsia::dirent_cache::DirentCacheKey;
 use crate::fuchsia::fxblob::blob::FxBlob;
-use crate::fuchsia::fxblob::mapping_server::BlobMappingServer;
+use crate::fuchsia::fxblob::mapping_provider::BlobMappingProvider;
 use crate::fuchsia::fxblob::writer::DeliveryBlobWriter;
 use crate::fuchsia::node::{FxNode, GetResult, OpenedNode};
 use crate::fuchsia::volume::{FxVolume, RootDir};
@@ -97,12 +97,14 @@ impl RootDir for BlobDirectory {
             vfs::service::host(move |r| this.clone().handle_blob_creator_requests(r)),
         )?;
 
-        let mapping_server = Arc::new(
-            BlobMappingServer::new(self.clone()).expect("Failed to create BlobMappingServer"),
+        let mapping_provider = Arc::new(
+            BlobMappingProvider::new(self.clone()).expect("Failed to create BlobMappingProvider"),
         );
         svc_dir.add_entry(
             MappingProviderMarker::PROTOCOL_NAME,
-            vfs::service::host(move |r| mapping_server.clone().handle_mapping_provider_requests(r)),
+            vfs::service::host(move |r| {
+                mapping_provider.clone().handle_mapping_provider_requests(r)
+            }),
         )?;
 
         svc_dir.add_entry(
