@@ -5,11 +5,12 @@
 use anyhow::Error;
 use cm_stress_tests_lib::{Child, create_child, stop_child};
 use fidl::endpoints::RequestStream;
+use fidl_test_componentmanager_stresstests as fstresstests;
+use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_sync::Mutex;
 use futures::prelude::*;
 use std::sync::Arc;
-use {fidl_test_componentmanager_stresstests as fstresstests, fuchsia_async as fasync};
 
 #[fuchsia::main(logging_tags = ["child_for_stress_test"])]
 async fn main() -> Result<(), Error> {
@@ -63,11 +64,7 @@ async fn main() -> Result<(), Error> {
                         responder.send().unwrap();
                     }
                     fstresstests::ChildRealmRequest::StopChildren { responder } => {
-                        // TODO: this variable triggered the `must_not_suspend` lint and may be held across an await
-                        // If this is the case, it is an error. See https://fxbug.dev/42168913 for more details
-                        let mut children_vec = children_vec.lock();
-                        let mut children = vec![];
-                        children.append(&mut children_vec);
+                        let children = std::mem::take(&mut *children_vec.lock());
 
                         stream::iter(children)
                             .for_each_concurrent(None, |child| async {
