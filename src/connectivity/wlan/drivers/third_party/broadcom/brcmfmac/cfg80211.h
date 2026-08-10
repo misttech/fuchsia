@@ -667,6 +667,9 @@ zx_status_t brcmf_if_get_iface_stats(net_device* ndev,
 zx_status_t brcmf_if_get_iface_histogram_stats(
     net_device* ndev, fuchsia_wlan_stats::wire::IfaceHistogramStats* out_stats,
     fidl::AnyArena& arena);
+zx_status_t brcmf_if_get_signal_report(net_device* ndev,
+                                       fuchsia_wlan_stats::wire::SignalReport* out_signal_report,
+                                       fidl::AnyArena& arena);
 zx_status_t brcmf_if_set_multicast_promisc(net_device* ndev, bool enable);
 zx_status_t brcmf_if_sae_handshake_resp(
     net_device* ndev,

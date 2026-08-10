@@ -536,8 +536,25 @@ void WlanInterface::GetIfaceHistogramStats(GetIfaceHistogramStatsCompleter::Sync
   }
 }
 
+// Max size of SignalReport.
+constexpr size_t kSignalReportBufferSize =
+    fidl::MaxSizeInChannel<fuchsia_wlan_stats::wire::SignalReport,
+                           fidl::MessageDirection::kSending>();
+
 void WlanInterface::GetSignalReport(GetSignalReportCompleter::Sync& completer) {
-  completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
+  std::shared_lock<std::shared_mutex> guard(lock_);
+  fidl::Arena<kSignalReportBufferSize> table_arena;
+  fuchsia_wlan_stats::wire::SignalReport out_signal_report;
+  if (wdev_ == nullptr) {
+    completer.ReplyError(ZX_ERR_BAD_STATE);
+    return;
+  }
+  zx_status_t status = brcmf_if_get_signal_report(wdev_->netdev, &out_signal_report, table_arena);
+  if (status != ZX_OK) {
+    completer.ReplyError(status);
+  } else {
+    completer.ReplySuccess(out_signal_report);
+  }
 }
 
 void WlanInterface::SaeHandshakeResp(SaeHandshakeRespRequestView request,

@@ -5685,6 +5685,68 @@ zx_status_t brcmf_if_get_iface_histogram_stats(
   return ZX_OK;
 }
 
+zx_status_t brcmf_if_get_signal_report(net_device* ndev,
+                                       fuchsia_wlan_stats::wire::SignalReport* out_signal_report,
+                                       fidl::AnyArena& arena) {
+  struct brcmf_cfg80211_info* cfg = ndev_to_if(ndev)->drvr->config;
+
+  std::shared_lock<std::shared_mutex> guard(ndev->if_proto_lock);
+  if (!ndev->if_proto.is_valid()) {
+    BRCMF_IFDBG(WLANIF, ndev, "interface stopped -- skipping get signal report");
+    return ZX_ERR_INTERNAL;
+  }
+
+  struct brcmf_if* ifp = ndev_to_if(ndev);
+
+  if (brcmf_feat_is_enabled(ifp, BRCMF_FEAT_MFG)) {
+    return ZX_ERR_NOT_SUPPORTED;
+  }
+
+  auto stats_builder = fuchsia_wlan_stats::wire::SignalReport::Builder(arena);
+
+  if (!brcmf_test_bit(brcmf_vif_status_bit_t::CONNECTED, &ifp->vif->sme_state)) {
+    *out_signal_report = stats_builder.Build();
+    return ZX_OK;
+  }
+
+  auto connection_signal_report_builder =
+      fuchsia_wlan_stats::wire::ConnectionSignalReport::Builder(arena);
+
+  int8_t rssi = 0, snr = 0;
+  zx_status_t status = brcmf_get_rssi_snr(ndev, &rssi, &snr);
+  if (status == ZX_OK) {
+    connection_signal_report_builder.rssi_dbm(rssi).snr_db(snr);
+  } else {
+    BRCMF_INFO("Failed to get RSSI and SNR: %s", zx_status_get_string(status));
+  }
+
+  uint32_t fw_rate = 0;
+  bcme_status_t fw_err = BCME_OK;
+  status = brcmf_fil_cmd_data_get(ifp, BRCMF_C_GET_RATE, &fw_rate, sizeof(fw_rate), &fw_err);
+  if (status == ZX_OK) {
+    connection_signal_report_builder.tx_rate_500kbps(fw_rate);
+  } else {
+    BRCMF_INFO("Failed to get rate: %s, fw err %s", zx_status_get_string(status),
+               brcmf_fil_get_errstr(fw_err));
+  }
+
+  uint16_t chanspec = 0;
+  uint8_t ctl_chan = 0;
+  status = brcmf_get_ctrl_channel(ifp, &chanspec, &ctl_chan);
+  if (status == ZX_OK) {
+    connection_signal_report_builder
+        .primary(chanspec_to_primary_channel_number(&cfg->d11inf, chanspec))
+        .bandwidth(chanspec_to_channel_bandwidth(&cfg->d11inf, chanspec))
+        .vht_secondary_80_channel(chanspec_to_secondary80(&cfg->d11inf, chanspec));
+  } else {
+    BRCMF_INFO("Failed to get control channel: %s", zx_status_get_string(status));
+  }
+
+  *out_signal_report =
+      stats_builder.connection_signal_report(connection_signal_report_builder.Build()).Build();
+  return ZX_OK;
+}
+
 static void brcmf_clear_assoc_ies(struct brcmf_cfg80211_info* cfg) {
   struct brcmf_cfg80211_connect_info* conn_info = cfg_to_conn(cfg);
 

@@ -138,6 +138,7 @@ class ConnectTest : public SimTest {
 
   void GetIfaceStats(fuchsia_wlan_stats::wire::IfaceStats* out_stats);
   void GetIfaceHistogramStats(fuchsia_wlan_stats::wire::IfaceHistogramStats* out_stats);
+  void GetSignalReport(fuchsia_wlan_stats::wire::SignalReport* out_signal_report);
   void DetailedHistogramErrorInject();
 
   // Event handlers
@@ -503,6 +504,57 @@ void ConnectTest::GetIfaceHistogramStats(fuchsia_wlan_stats::wire::IfaceHistogra
   if (!result->is_error()) {
     *out_stats = result->value()->stats;
   }
+}
+
+void ConnectTest::GetSignalReport(fuchsia_wlan_stats::wire::SignalReport* out_signal_report) {
+  auto result = client_ifc_.client_.buffer(client_ifc_.test_arena_)->GetSignalReport();
+  EXPECT_TRUE(result.ok());
+  if (!result->is_error()) {
+    *out_signal_report = *result->value();
+  }
+}
+
+TEST_F(ConnectTest, GetSignalReportTest_NotConnected) {
+  Init();
+
+  simulation::FakeAp ap(env_.get(), kDefaultBssid, kDefaultSsid, kDefaultChannel,
+                        fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20, 0);
+  ap.EnableBeacon(zx::msec(100));
+  ap.SetAssocHandling(simulation::FakeAp::ASSOC_REFUSED);
+
+  context_.expected_results.push_front(wlan_ieee80211::StatusCode::kRefusedReasonUnspecified);
+  fuchsia_wlan_stats::wire::SignalReport signal_report = {};
+
+  env_->ScheduleNotification(std::bind(&ConnectTest::GetSignalReport, this, &signal_report),
+                             zx::msec(5));
+  env_->ScheduleNotification(std::bind(&ConnectTest::StartConnect, this), zx::msec(10));
+
+  env_->Run(kTestDuration);
+
+  ASSERT_FALSE(signal_report.has_connection_signal_report());
+}
+
+TEST_F(ConnectTest, GetSignalReportTest_Connected) {
+  Init();
+
+  simulation::FakeAp ap(env_.get(), kDefaultBssid, kDefaultSsid, kDefaultChannel,
+                        fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20, 0);
+  ap.EnableBeacon(zx::msec(100));
+
+  context_.expected_results.push_front(wlan_ieee80211::StatusCode::kSuccess);
+  fuchsia_wlan_stats::wire::SignalReport signal_report = {};
+
+  env_->ScheduleNotification(std::bind(&ConnectTest::StartConnect, this), zx::msec(10));
+  env_->ScheduleNotification(std::bind(&ConnectTest::GetSignalReport, this, &signal_report),
+                             zx::msec(30));
+
+  env_->Run(kTestDuration);
+
+  ASSERT_TRUE(signal_report.has_connection_signal_report());
+  auto conn_report = signal_report.connection_signal_report();
+  EXPECT_EQ(conn_report.rssi_dbm(), kDefaultSimFwRssi);
+  EXPECT_EQ(conn_report.snr_db(), kDefaultSimFwSnr);
+  EXPECT_EQ(conn_report.primary().number, kDefaultChannel.number);
 }
 
 // This test is to verify that GetIfaceStats still returns a response even when the
