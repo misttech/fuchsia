@@ -116,57 +116,12 @@ type FixerRenderer struct {
 	mu             sync.Mutex
 }
 
-func (r *FixerRenderer) Run(ctx context.Context, files <-chan v2pipeline.ClassifiedFile, errors <-chan v2pipeline.ComplianceError) error {
-	// We need to run the standard Reporter logic to update READMEs
-	// but we'll wrap it so we can capture what it does.
-	reportCfg := r.Config.Report
-	reportCfg.VerifyReadmes = true
-	reportCfg.WriteReadmes = true
-	reportCfg.GenerateArtifacts = false
-	reporter := v2report.NewReporter(r.FuchsiaDir, "", reportCfg)
+func (r *FixerRenderer) Run(ctx context.Context, projects []*v2pipeline.Project, errors []v2pipeline.ComplianceError) error {
+	reporter := v2report.NewReporter(r.FuchsiaDir, "", r.Config.Report)
+	_ = reporter.Run(ctx, projects, errors)
 
-	// We'll collect all errors first
-	var errs []v2pipeline.ComplianceError
-	var cFiles []v2pipeline.ClassifiedFile
-
-	var wg sync.WaitGroup
-	wg.Add(2)
-	go func() {
-		defer wg.Done()
-		for e := range errors {
-			errs = append(errs, e)
-		}
-	}()
-	go func() {
-		defer wg.Done()
-		for f := range files {
-			cFiles = append(cFiles, f)
-		}
-	}()
-	wg.Wait()
-
-	// 1. Let the reporter handle README updates
-	// We simulate the Renderer run by calling its logic manually
-	// Actually, easier to just copy the relevant bit or just let reporter run and capture its errors.
-
-	// Tee channels for reporter
-	reportFiles := make(chan v2pipeline.ClassifiedFile, len(cFiles))
-	reportErrors := make(chan v2pipeline.ComplianceError, len(errs))
-	for _, f := range cFiles {
-		reportFiles <- f
-	}
-	for _, e := range errs {
-		reportErrors <- e
-	}
-	close(reportFiles)
-	close(reportErrors)
-
-	// The reporter will return an error if READMEs are out of date but it also WRITES them to disk.
-	// We ignore the error but track the result.
-	_ = reporter.Run(ctx, reportFiles, reportErrors)
-
-	// 2. Process all errors and apply fixes
-	for _, e := range errs {
+	// Process all errors and apply fixes
+	for _, e := range errors {
 		fmt.Printf(" [Fixer] Processing error: %s (%s)\n", e.CheckName, e.FilePath)
 		r.applyFix(e)
 	}

@@ -127,7 +127,7 @@ int main() { return 0; }`)
 
 	hasCopyright := false
 	for _, match := range res.Matches {
-		if match.SPDXID == "FuchsiaCopyright" {
+		if match.SPDXID == "FuchsiaCopyright" || match.MatchType == "Copyright" {
 			hasCopyright = true
 			if len(match.Text) == 0 {
 				t.Error("Expected matched text to be populated, got empty bytes")

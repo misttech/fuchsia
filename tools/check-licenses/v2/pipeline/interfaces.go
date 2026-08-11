@@ -4,7 +4,49 @@
 
 package pipeline
 
-import "context"
+import (
+	"context"
+	"strings"
+
+	"go.fuchsia.dev/fuchsia/tools/readme_fuchsia"
+)
+
+type Readme = readme_fuchsia.Readme
+type UnknownField = readme_fuchsia.UnknownField
+
+// ReadmeSegment represents one package section in a README.fuchsia file.
+type ReadmeSegment struct {
+	Original *Readme
+	Updated  *Readme
+}
+
+// ReadmeFile represents a README.fuchsia document containing one or more package segments.
+type ReadmeFile struct {
+	Path     string
+	Segments []*ReadmeSegment
+}
+
+// OriginalSegments returns the original parsed Readme metadata structs.
+func (rf *ReadmeFile) OriginalSegments() []*Readme {
+	var result []*Readme
+	for _, s := range rf.Segments {
+		if s.Original != nil {
+			result = append(result, s.Original)
+		}
+	}
+	return result
+}
+
+// UpdatedSegments returns the updated Readme metadata structs.
+func (rf *ReadmeFile) UpdatedSegments() []*Readme {
+	var result []*Readme
+	for _, s := range rf.Segments {
+		if s.Updated != nil {
+			result = append(result, s.Updated)
+		}
+	}
+	return result
+}
 
 // RawPath represents the output of the Discovery Stage (Crawler).
 type RawPath struct {
@@ -22,10 +64,23 @@ type FileInfo struct {
 
 // Project represents the output of the Project Boundary Stage (Grouper).
 type Project struct {
-	RootPath     string
-	Files        []FileInfo
-	ManifestName string // Package name in repository manifest, if known
-	IsPrivate    bool   // True if project originates from a proprietary/private repository
+	RootPath        string
+	Files           []FileInfo
+	ManifestName    string // Package name in repository manifest, if known
+	IsPrivate       bool   // True if project originates from a proprietary/private repository
+	Readme          *ReadmeFile
+	ClassifiedFiles []ClassifiedFile
+}
+
+// FoundLicenses returns all classified files that contain confirmed license matches.
+func (p *Project) FoundLicenses() []ClassifiedFile {
+	var found []ClassifiedFile
+	for _, cf := range p.ClassifiedFiles {
+		if cf.HasLicenses() {
+			found = append(found, cf)
+		}
+	}
+	return found
 }
 
 // FilteredProject represents the output of the Build Graph Filtering Stage (Pruner).
@@ -44,6 +99,16 @@ type LicenseMatch struct {
 	Text        []byte // The exact matched text block
 }
 
+// IsLicense returns true if the match is a valid license match (not a copyright header or internal metadata).
+func (m LicenseMatch) IsLicense() bool {
+	return m.MatchType != "Copyright" && !strings.HasPrefix(m.MatchType, "_")
+}
+
+// IsCopyright returns true if the match is a copyright header.
+func (m LicenseMatch) IsCopyright() bool {
+	return m.MatchType == "Copyright"
+}
+
 // ClassifiedFile represents the output of the Ingestion Stage (Classifier).
 type ClassifiedFile struct {
 	Path          string
@@ -53,6 +118,20 @@ type ClassifiedFile struct {
 
 	// Matches contains every discrete license or copyright block found in the file.
 	Matches []LicenseMatch
+}
+
+// HasLicenses returns true if the file is explicitly marked as a primary license file
+// or contains at least one non-copyright, non-internal license pattern match.
+func (cf ClassifiedFile) HasLicenses() bool {
+	if cf.IsLicenseFile {
+		return true
+	}
+	for _, m := range cf.Matches {
+		if m.IsLicense() {
+			return true
+		}
+	}
+	return false
 }
 
 // ComplianceError represents a violation found during the Validation Stage (Policy Engine).
@@ -94,8 +173,26 @@ type Validator interface {
 	Run(ctx context.Context, in <-chan ClassifiedFile) (<-chan ComplianceError, error)
 }
 
-// Renderer defines the contract for Stage 6: Deduplication and generators.
+// Renderer defines the contract for Stage 6: Consuming analyzed projects and compliance errors.
 type Renderer interface {
-	// Run deduplicates and generates final artifacts from ClassifiedFiles and ComplianceErrors.
-	Run(ctx context.Context, files <-chan ClassifiedFile, errors <-chan ComplianceError) error
+	Run(ctx context.Context, projects []*Project, errors []ComplianceError) error
+}
+
+// MultiRenderer executes multiple independent renderers in sequence.
+type MultiRenderer []Renderer
+
+func (mr MultiRenderer) Run(ctx context.Context, projects []*Project, errors []ComplianceError) error {
+	for _, r := range mr {
+		if err := r.Run(ctx, projects, errors); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// RenderFunc allows standard functions to satisfy the Renderer interface.
+type RenderFunc func(ctx context.Context, projects []*Project, errors []ComplianceError) error
+
+func (f RenderFunc) Run(ctx context.Context, projects []*Project, errors []ComplianceError) error {
+	return f(ctx, projects, errors)
 }

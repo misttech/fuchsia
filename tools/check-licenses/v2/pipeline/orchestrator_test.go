@@ -90,31 +90,11 @@ type mockRenderer struct {
 	called bool
 }
 
-func (m *mockRenderer) Run(ctx context.Context, files <-chan ClassifiedFile, errors <-chan ComplianceError) error {
+func (m *mockRenderer) Run(ctx context.Context, projects []*Project, errors []ComplianceError) error {
 	m.called = true
-	var errCount int
-
-	errChan := make(chan int)
-	go func() {
-		count := 0
-		for range errors {
-			count++
-		}
-		errChan <- count
-	}()
-
-	go func() {
-		for range files {
-			// drain
-		}
-	}()
-
-	errCount = <-errChan
-
-	if errCount > 0 {
-		return fmt.Errorf("Pipeline failed with %d errors", errCount)
+	if len(errors) > 0 {
+		return fmt.Errorf("Pipeline failed with %d errors", len(errors))
 	}
-
 	return nil
 }
 

@@ -190,3 +190,18 @@ func IsProjectBoundary(dir, fuchsiaDir string, outOfTreeReadmes map[string]strin
 
 	return false, "", nil, nil
 }
+
+// ResolveProjectRoot returns the governing logical project root directory for a discovered Readme and README file path.
+func ResolveProjectRoot(r *Readme, readmePath, fuchsiaDir string, outOfTreeReadmes map[string]string) string {
+	logicalRoot := filepath.Dir(readmePath)
+	for logPath, physPath := range outOfTreeReadmes {
+		if physPath == readmePath {
+			logicalRoot = filepath.Join(fuchsiaDir, logPath)
+			break
+		}
+	}
+	if r != nil && r.Location != "" && r.Location != "." {
+		logicalRoot = filepath.Join(logicalRoot, r.Location)
+	}
+	return logicalRoot
+}

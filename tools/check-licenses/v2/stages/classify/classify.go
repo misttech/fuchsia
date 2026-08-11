@@ -322,7 +322,7 @@ func (c *Classifier) ClassifyFile(path string, projectRoot string, isLicense boo
 			defer metrics.ClassifierDuration.Track()()
 			results := c.Engine.Match(chunk)
 			for _, match := range results.Matches {
-				if match.Name != "" {
+				if match.Name != "" && !strings.HasPrefix(match.MatchType, "_") {
 					metrics.LicenseDetected.Inc(match.Name, "unrecognized", "unrecognized")
 					matches = append(matches, pipeline.LicenseMatch{
 						SPDXID:      match.Name,

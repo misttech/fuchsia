@@ -161,3 +161,15 @@ func deduplicateAndSort(items []string) []string {
 	sort.Strings(result)
 	return result
 }
+
+// FilterClassifiedFiles returns only the classified files that contain valid license matches
+// (excluding copyright-only matches and internal metadata matches starting with '_').
+func FilterClassifiedFiles(files []pipeline.ClassifiedFile) []pipeline.ClassifiedFile {
+	var found []pipeline.ClassifiedFile
+	for _, cf := range files {
+		if cf.HasLicenses() {
+			found = append(found, cf)
+		}
+	}
+	return found
+}

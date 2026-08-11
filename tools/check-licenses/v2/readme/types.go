@@ -5,11 +5,15 @@
 package readme
 
 import (
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/v2/pipeline"
 	"go.fuchsia.dev/fuchsia/tools/readme_fuchsia"
 )
 
 type Readme = readme_fuchsia.Readme
 type UnknownField = readme_fuchsia.UnknownField
+
+type ReadmeSegment = pipeline.ReadmeSegment
+type ReadmeFile = pipeline.ReadmeFile
 
 // Config defines the configuration methods needed by the readme package.
 type Config interface {

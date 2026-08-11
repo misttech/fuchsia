@@ -44,14 +44,28 @@ func (o *Orchestrator) Run(ctx context.Context, rootDirs []string) error {
 
 	// Stage 2: Group (Project Boundary)
 	log.Printf("[Orchestrator] Starting Stage 2: Boundary Resolution (Grouping files into projects)...")
-	projects, err := o.Grouper.Run(ctx, rawPaths)
+	projectsChan, err := o.Grouper.Run(ctx, rawPaths)
 	if err != nil {
 		return fmt.Errorf("grouping stage failed: %w", err)
 	}
 
+	var allProjects []*Project
+	projectsByRoot := make(map[string]*Project)
+	for p := range projectsChan {
+		pCopy := p
+		allProjects = append(allProjects, &pCopy)
+		projectsByRoot[p.RootPath] = &pCopy
+	}
+
 	// Stage 3: Prune (Build Graph Filter)
 	log.Printf("[Orchestrator] Starting Stage 3: Pruning (Filtering projects by build graph)...")
-	filteredProjects, err := o.Pruner.Run(ctx, projects)
+	filteredProjectsChan := make(chan Project, len(allProjects))
+	for _, p := range allProjects {
+		filteredProjectsChan <- *p
+	}
+	close(filteredProjectsChan)
+
+	filteredProjects, err := o.Pruner.Run(ctx, filteredProjectsChan)
 	if err != nil {
 		return fmt.Errorf("pruning stage failed: %w", err)
 	}
@@ -65,19 +79,18 @@ func (o *Orchestrator) Run(ctx context.Context, rootDirs []string) error {
 
 	// Stage 5: Validate (Policy Engine)
 	log.Printf("[Orchestrator] Starting Stage 5: Validation (Checking policies)...")
-	// We need to tee the classified files channel so both the Validator and Renderer can consume it.
 	filesForValidator := make(chan ClassifiedFile)
-	filesForRenderer := make(chan ClassifiedFile)
 
 	go func() {
 		defer close(filesForValidator)
-		defer close(filesForRenderer)
 		for f := range classifiedFiles {
+			if proj, ok := projectsByRoot[f.ProjectRoot]; ok {
+				proj.ClassifiedFiles = append(proj.ClassifiedFiles, f)
+			}
 			if ctx.Err() != nil {
 				return
 			}
 			filesForValidator <- f
-			filesForRenderer <- f
 		}
 	}()
 
@@ -86,11 +99,17 @@ func (o *Orchestrator) Run(ctx context.Context, rootDirs []string) error {
 		return fmt.Errorf("validation stage failed to start: %w", err)
 	}
 
-	// Stage 6: Render (Report Generation)
-	log.Printf("[Orchestrator] Starting Stage 6: Reporting (Generating artifacts)...")
-	// The Renderer blocks until both input channels are closed (which happens when upstream completes).
-	if err := o.Renderer.Run(ctx, filesForRenderer, complianceErrors); err != nil {
-		return fmt.Errorf("rendering stage failed: %w", err)
+	var allErrors []ComplianceError
+	for e := range complianceErrors {
+		allErrors = append(allErrors, e)
+	}
+
+	// Stage 6: Render (Reporting & Output Sinks)
+	log.Printf("[Orchestrator] Starting Stage 6: Reporting (Executing renderers)...")
+	if o.Renderer != nil {
+		if err := o.Renderer.Run(ctx, allProjects, allErrors); err != nil {
+			return err
+		}
 	}
 
 	log.Printf("[Orchestrator] Pipeline execution completed successfully.")

@@ -6,6 +6,7 @@ package readme
 
 import (
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"go.fuchsia.dev/fuchsia/tools/readme_fuchsia"
@@ -15,17 +16,15 @@ import (
 // and no unknown fields. It also verifies that referenced paths exist on disk.
 // Returns a slice of all encountered errors.
 func Validate(fuchsiaDir, readmeFilePath string, readmes []*Readme, config Config) []error {
-	readmeDir := filepath.Dir(readmeFilePath)
-	if config != nil && config.OutOfTreeReadmes() != nil {
-		outOfTree := config.OutOfTreeReadmes()
-		for logicalPath, physicalPath := range outOfTree {
-			if filepath.Clean(physicalPath) == filepath.Clean(readmeFilePath) {
-				readmeDir = filepath.Join(fuchsiaDir, logicalPath)
-				break
-			}
-		}
-		IsProjectBoundary(readmeDir, fuchsiaDir, outOfTree)
+	var outOfTree map[string]string
+	if config != nil {
+		outOfTree = config.OutOfTreeReadmes()
 	}
+	var firstReadme *Readme
+	if len(readmes) > 0 {
+		firstReadme = readmes[0]
+	}
+	readmeDir := ResolveProjectRoot(firstReadme, readmeFilePath, fuchsiaDir, outOfTree)
 
 	relBaseDir, err := filepath.Rel(fuchsiaDir, readmeDir)
 	if err != nil {
@@ -64,4 +63,41 @@ func Validate(fuchsiaDir, readmeFilePath string, readmes []*Readme, config Confi
 	}
 
 	return errs
+}
+
+// DeclarationsMatch checks if the LicenseFiles and SourceFiles slices match between two Readme structs.
+func DeclarationsMatch(a, b *Readme) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return compareSlices(a.LicenseFiles, b.LicenseFiles) && compareSlices(a.SourceFiles, b.SourceFiles)
+}
+
+// DeclarationsMatchAll checks if all corresponding Readme segments in two slices have matching LicenseFiles and SourceFiles.
+func DeclarationsMatchAll(a, b []*Readme) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if !DeclarationsMatch(a[i], b[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+func compareSlices(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	aCopy := append([]string(nil), a...)
+	bCopy := append([]string(nil), b...)
+	sort.Strings(aCopy)
+	sort.Strings(bCopy)
+	for i := range aCopy {
+		if aCopy[i] != bCopy[i] {
+			return false
+		}
+	}
+	return true
 }

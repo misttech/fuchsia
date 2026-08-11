@@ -35,6 +35,7 @@ go_library(
     visibility = ["//tools/check-licenses:__subpackages__"],
     deps = [
         "//tools/check-licenses/metrics",
+        "//tools/readme_fuchsia:readme_fuchsia_lib",
     ],
 )
 
@@ -287,6 +288,7 @@ host_go_test(
     target_compatible_with = HOST_CONSTRAINTS,
     deps = [
         "//tools/check-licenses/metrics",
+        "//tools/readme_fuchsia:readme_fuchsia_lib",
     ],
 )
 
