@@ -39,21 +39,6 @@ actual application logic.
 While release builds might make stacks slightly harder to follow due to
 inlining, they provide an accurate representation of the actual performance.
 
-### Enable Kernel Assisted Sampling
-
-Kernel assisted sampling significantly reduces the overhead of taking stack
-samples. Add the following argument to your `fx set` command:
-
-```posix-terminal
-fx set <PRODUCT>.<BOARD> \
-    --release \
-    --args='experimental_thread_sampler_enabled=true'
-```
-
-Note: The kernel assisted sampling is strongly recommended, but not required.
-Without the kernel assisted sampling, the sampling frequency will be
-dramatically reduced.
-
 ## Common Use Cases and Examples
 
 ### System-Wide Profiling
