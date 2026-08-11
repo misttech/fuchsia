@@ -84,7 +84,8 @@ graph TD
   `KCell`, `LockToken`, `#[guarded]`).
 * **`fbl`**: Intrusive containers (`DoublyLinkedList`, `SinglyLinkedList`,
   `WavlTree`), reference counting (`#[ref_counted]`, `RefPtr`), and FFI
-  recycling (`Recyclable`).
+  recycling (`Recyclable`). Non-intrusive containers (`Array`, `InlineArray`,
+  `Vector`].
 * **`ltrace`**: Module-level conditional debug tracing (`LOCAL_TRACE`,
   `ltracef!`, `ltrace_entry!`).
 * **`zx-status`**: Canonical `zx_status::Status` error types for `Result<T,
@@ -173,6 +174,9 @@ pub fn get_slice(mapped_addr: usize, size: usize) -> &'static [u8] {
 - Custom Raw Locks: If custom locking primitives (`RawLock`) are used, always
   define and use a lightweight RAII `LockGuard` helper so early returns (`?`)
   automatically unlock.
+- Locks support different policies when acquiring, this is most notable of
+  spinlocks that can save or not save IRQs when acquired. Ensure that the
+  correctly matching policy is used in the Rust lock acquisition as the C++.
 
 ```rust
 #[guarded]
@@ -249,13 +253,17 @@ pin_init!(Self {
   fuzzers in a separate crate using `rustc_fuzzer`, `fuzz`, and `arbitrary`. Add
   fuzzer components to `BUILD.gn`.
 
-### 3.9. Local Trace Logging (`ltrace`)
+### 3.9. Local Trace Logging (`ltrace`), `dprintf` and `printf`
 - Preserve all C++ `LOCAL_TRACE` / `LTRACE` statements.
-- Depend on `//zircon/kernel/lib/ltrace:ltrace`.
+- Depend on `//zircon/kernel/lib/debugltrace`.
 - Define module-scoped `const LOCAL_TRACE: u32 = 0;` at the top of each file.
 - Use `ltracef!`, `ltrace_entry!`, `ltrace_exit!`, `ltrace_entry_obj!`, etc.
   When `LOCAL_TRACE` is `0`, dead-branch elimination eliminates all CPU and
   string footprint in production builds.
+- Preserve `dprintf` using the `dprintf!` macro from `//zircon/kernel/lib/debug`
+- Preserve `printf` by calling out to the libc `printf` from Rust by defining,
+  and using, an `extern "C" unsafe fn printf(format: *const core::ffi::c_char,
+  ...) -> core::ffi::c_int;`
 
 ### 3.10. Code Organization, Ergonomics, & Visibility
 - **File Structure Parity**: Organize Rust modules matching C++ header/source
@@ -357,6 +365,11 @@ Reviewers and Coders must audit code against this checklist:
      initialization routines receiving uninitialized storage from Rust do not
      take raw `T*`; they take `ffi::Uninitialized<T>*` and initialize in-place
      via `Initialize(...)`.
+22.  []  **Documentation parity**: Code, datastructure and other comments in the
+     C++ are copied over to Rust with the minimal required updates for changes
+     to symbols names.
+23.  [] **Assertions**: Assertions are copied over and correctly use assert! or
+     debug_assert! as matching the C++ use of ASSERT or DEBUG_ASSERT.
 
 ---
 
