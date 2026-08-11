@@ -117,8 +117,9 @@ type FixerRenderer struct {
 }
 
 func (r *FixerRenderer) Run(ctx context.Context, projects []*v2pipeline.Project, errors []v2pipeline.ComplianceError) error {
-	reporter := v2report.NewReporter(r.FuchsiaDir, "", r.Config.Report)
-	_ = reporter.Run(ctx, projects, errors)
+	// 1. Let ReadmeWriter handle README updates
+	writer := v2report.NewReadmeWriter(r.FuchsiaDir, false)
+	_ = writer.Run(ctx, projects, errors)
 
 	// Process all errors and apply fixes
 	for _, e := range errors {
