@@ -72,7 +72,9 @@ go_library(
     name = "v2_stages_report",
     srcs = [
         "v2/stages/report/config.go",
+        "v2/stages/report/notice.go",
         "v2/stages/report/report.go",
+        "v2/stages/report/spdx.go",
     ],
     importpath = "go.fuchsia.dev/fuchsia/tools/check-licenses/v2/stages/report",
     target_compatible_with = HOST_CONSTRAINTS,
@@ -200,7 +202,9 @@ host_go_test(
     name = "v2_stages_report_test",
     size = "small",
     srcs = [
+        "v2/stages/report/notice_test.go",
         "v2/stages/report/report_test.go",
+        "v2/stages/report/spdx_test.go",
     ],
     embed = [":v2_stages_report"],
     target_compatible_with = HOST_CONSTRAINTS,

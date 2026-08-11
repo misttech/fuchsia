@@ -30,5 +30,10 @@ func NewReporter(fuchsiaDir, outDir string, config Config) *Reporter {
 
 func (r *Reporter) Run(ctx context.Context, projects []*pipeline.Project, errors []pipeline.ComplianceError) error {
 	var renderers pipeline.MultiRenderer
+
+	if r.Config.GenerateArtifacts {
+		renderers = append(renderers, NewNoticeRenderer(r.OutDir), NewSpdxRenderer(r.OutDir))
+	}
+
 	return renderers.Run(ctx, projects, errors)
 }
