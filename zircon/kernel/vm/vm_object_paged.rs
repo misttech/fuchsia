@@ -12,12 +12,13 @@ use core::mem::ManuallyDrop;
 use core::ops::Deref;
 use fbl::{IsOpaqueRefCounted, RefPtr};
 use vm_object_paged_bindings as bindings;
+use zr::Opaque;
 use zx_status::Status;
 
 /// VMO representing a paged range of copy-on-write memory.
 #[repr(C)]
 pub struct VmObjectPaged {
-    raw: bindings::VmObjectPaged,
+    raw: Opaque<bindings::VmObjectPaged>,
     phantom: PhantomPinned,
 }
 
@@ -27,7 +28,7 @@ impl VmObjectPaged {
 
     /// Domain-specific conversion: returns raw FFI pointer for `VmObjectPaged`.
     pub fn as_raw(&self) -> *mut bindings::VmObjectPaged {
-        core::ptr::from_ref(&self.raw).cast_mut()
+        self.raw.get()
     }
 
     /// Domain-specific conversion: constructs a `RefPtr<VmObjectPaged>` from a raw FFI pointer.

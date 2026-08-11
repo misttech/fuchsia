@@ -8,6 +8,7 @@ use super::page_state::VmPageState;
 use crate::kernel::types::PAddr;
 use core::ptr::NonNull;
 use page_bindings as bindings;
+use zr::Opaque;
 
 pub use bindings::vm_page_t;
 
@@ -15,7 +16,7 @@ pub const OBJECT_MAX_PIN_COUNT: u32 = bindings::VM_PAGE_OBJECT_MAX_PIN_COUNT;
 
 /// Type-safe wrapper around a raw pointer to a kernel page.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct VmPagePtr(NonNull<bindings::vm_page_t>);
+pub struct VmPagePtr(NonNull<Opaque<bindings::vm_page_t>>);
 
 impl VmPagePtr {
     /// Creates a `VmPagePtr` from a raw pointer.
@@ -24,6 +25,8 @@ impl VmPagePtr {
     ///
     /// The caller must ensure that `ptr` is a valid pointer to a kernel page.
     pub const unsafe fn from_raw(ptr: *mut bindings::vm_page_t) -> Option<Self> {
+        // `bindings::vm_page_t` and `Opaque<bindings::vm_page_t>` are layout compatible.
+        let ptr: *mut Opaque<bindings::vm_page_t> = ptr.cast();
         match NonNull::new(ptr) {
             Some(nn) => Some(Self(nn)),
             None => None,
@@ -32,7 +35,9 @@ impl VmPagePtr {
 
     /// Returns the raw pointer.
     pub fn as_raw(self) -> *mut bindings::vm_page_t {
-        self.0.as_ptr()
+        let ptr: *mut Opaque<bindings::vm_page_t> = self.0.as_ptr();
+        // `Opaque<bindings::vm_page_t>` and `bindings::vm_page_t` are layout compatible.
+        ptr.cast()
     }
 
     /// Returns whether this page is in the FREE state. When in the FREE state the page is assumed

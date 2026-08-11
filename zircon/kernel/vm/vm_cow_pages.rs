@@ -11,12 +11,13 @@ use core::ptr::NonNull;
 use fbl::{HasRefCount, Recyclable, RefCounted, RefPtr};
 use kalloc::AllocError;
 use vm_cow_pages_bindings as bindings;
+use zr::Opaque;
 use zx_status::Status;
 
 /// A copy-on-write page hierarchy.
 #[repr(C)]
 pub struct VmCowPages {
-    raw: bindings::VmCowPages,
+    raw: Opaque<bindings::VmCowPages>,
     phantom: PhantomPinned,
 }
 
@@ -42,7 +43,7 @@ unsafe impl Recyclable for VmCowPages {
 impl VmCowPages {
     /// Domain-specific conversion: returns raw pointer for `VmCowPages`.
     pub fn as_raw(&self) -> *mut bindings::VmCowPages {
-        core::ptr::from_ref(&self.raw).cast_mut()
+        self.raw.get()
     }
 
     /// Domain-specific conversion: constructs a `RefPtr<VmCowPages>` from an exported pointer.

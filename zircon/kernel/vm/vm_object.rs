@@ -17,6 +17,7 @@ use core::ptr::NonNull;
 use fbl::{HasRefCount, Recyclable, RefPtr};
 use kalloc::AllocError;
 use vm_object_bindings as bindings;
+use zr::Opaque;
 use zx_status::Status;
 use zx_types::zx_status_t;
 
@@ -28,7 +29,7 @@ pub use bindings::{Resizability, SnapshotType, VmObject_EvictionHint as Eviction
 /// into an address space via VmAddressRegion::CreateVmMapping
 #[repr(C)]
 pub struct VmObject {
-    raw: bindings::VmObject,
+    raw: Opaque<bindings::VmObject>,
     phantom: PhantomData<PhantomPinned>,
 }
 
@@ -37,7 +38,7 @@ impl VmObject {
 
     /// Domain-specific conversion: returns raw pointer for `VmObject`.
     pub fn as_raw(&self) -> *mut bindings::VmObject {
-        core::ptr::from_ref(&self.raw).cast_mut()
+        self.raw.get()
     }
 
     /// Domain-specific conversion: constructs a `RefPtr` from an exported pointer.

@@ -7,20 +7,21 @@
 use crate::vm::page::VmPagePtr;
 use core::marker::{PhantomData, PhantomPinned};
 use page_queues_bindings as bindings;
+use zr::Opaque;
 
 #[derive(Debug)]
 pub struct QueueAge(pub usize);
 
 #[repr(C)]
 pub struct PageQueues {
-    raw: bindings::PageQueues,
+    raw: Opaque<bindings::PageQueues>,
     phantom: PhantomData<PhantomPinned>,
 }
 
 impl PageQueues {
     /// Domain-specific conversion: returns raw pointer for `PageQueues`.
     pub fn as_raw(&self) -> *mut bindings::PageQueues {
-        core::ptr::from_ref(&self.raw).cast_mut()
+        self.raw.get()
     }
 
     /// Returns whether `page` is in the wired queue.
