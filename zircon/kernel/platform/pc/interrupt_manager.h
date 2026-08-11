@@ -109,7 +109,7 @@ class InterruptManager {
       x86_vector = 0;
     }
 
-    if (x86_vector == 0 && handler == nullptr) {
+    if (x86_vector == 0 && !handler) {
       return ZX_OK;
     }
 
@@ -148,7 +148,7 @@ class InterruptManager {
 
     DEBUG_ASSERT(x86_vector != 0);
 
-    bool handler_set = handler != nullptr;
+    bool handler_set = static_cast<bool>(handler);
 
     // Update the handler table and register the x86 vector with the io_apic.
     bool set = handler_table_[x86_vector].SetHandler(ktl::move(handler), permanent);
@@ -262,14 +262,14 @@ class InterruptManager {
         // Once permanent is set to true we know that handler and arg are immutable and so it is
         // safe to read them without holding the lock.
         [this]() TA_NO_THREAD_SAFETY_ANALYSIS {
-          DEBUG_ASSERT(handler_);
-          handler_();
+          DEBUG_ASSERT(handler_.fn);
+          handler_.fn(handler_.cookie);
         }();
         return true;
       } else {
         Guard<SpinLock, NoIrqSave> guard{&lock_};
-        if (handler_) {
-          handler_();
+        if (handler_.fn) {
+          handler_.fn(handler_.cookie);
           return true;
         }
         return false;
@@ -285,7 +285,7 @@ class InterruptManager {
       if (permanent()) {
         return false;
       }
-      if (handler && handler_) {
+      if (handler.fn && handler_.fn) {
         return false;
       }
 

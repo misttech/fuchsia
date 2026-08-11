@@ -189,10 +189,12 @@ void MsiInterruptDispatcher::GetDiagnostics(WakeVector::Diagnostics& diagnostics
 }
 
 zx_status_t MsiInterruptDispatcher::RegisterInterruptHandler() {
-  register_int_fn_(&alloc_->block(), msi_id_, [this]() {
-    this->InterruptHandler();
-    kcounter_add(dispatcher_msi_interrupt_count, 1);
-  });
+  register_int_fn_(&alloc_->block(), msi_id_,
+                   interrupt_handler_t{this, [](void* cookie) {
+                                         auto* self = static_cast<MsiInterruptDispatcher*>(cookie);
+                                         self->InterruptHandler();
+                                         kcounter_add(dispatcher_msi_interrupt_count, 1);
+                                       }});
   return ZX_OK;
 }
 

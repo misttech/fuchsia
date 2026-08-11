@@ -561,6 +561,7 @@ zx_status_t Smmu::AllocateIrqs(const ktl::span<const zbi_dcfg_arm_smmu_irq_t>& s
         // should not be allowed to do so.
         new (&dst[i].irq_def) IrqDef{src[i]};
         dst[i].ndx = static_cast<uint16_t>(i);
+        dst[i].smmu = this;
       }
     }
   }
@@ -630,13 +631,19 @@ zx_status_t Smmu::RegisterIrqs() {
     // _potential_ for deadlock later on once we are operational if we fail to
     // rigorously follow the lock ordering rules at all times.
     //
-    guard.CallUnlocked([&, num = v.irq_def.num, ndx = v.ndx]() {
+    guard.CallUnlocked([&, num = v.irq_def.num, v_ptr = &v]() {
       if constexpr (kIsGlobal) {
         status = register_int_handler(
-            num, [thiz = fbl::RefPtr(this), ndx]() { thiz->HandleGlobalIrq(ndx); });
+            num, interrupt_handler_t{v_ptr, [](void* cookie) {
+                                       auto* vec = static_cast<GlobalIrqVector*>(cookie);
+                                       vec->smmu->HandleGlobalIrq(vec->ndx);
+                                     }});
       } else {
         status = register_int_handler(
-            num, [thiz = fbl::RefPtr(this), ndx]() { thiz->HandleContextIrq(ndx); });
+            num, interrupt_handler_t{v_ptr, [](void* cookie) {
+                                       auto* vec = static_cast<ContextIrqVector*>(cookie);
+                                       vec->smmu->HandleContextIrq(vec->ndx);
+                                     }});
       }
     });
 

@@ -7,7 +7,6 @@
 #ifndef ZIRCON_KERNEL_DEV_INTERRUPT_INCLUDE_DEV_INTERRUPT_H_
 #define ZIRCON_KERNEL_DEV_INTERRUPT_INCLUDE_DEV_INTERRUPT_H_
 
-#include <lib/fit/function.h>
 #include <sys/types.h>
 #include <zircon/compiler.h>
 #include <zircon/types.h>
@@ -21,7 +20,19 @@ constexpr uint32_t MAX_MSI_IRQS = 32;
 constexpr uint32_t MAX_INTERRUPTS = 1024;
 
 using interrupt_vector_t = uint32_t;
-using interrupt_handler_t = fit::inline_function<void()>;
+
+struct interrupt_handler_t {
+  void* cookie = nullptr;
+  void (*fn)(void*) = nullptr;
+
+  interrupt_handler_t() = default;
+  interrupt_handler_t(decltype(nullptr)) : cookie(nullptr), fn(nullptr) {}
+  interrupt_handler_t(void (*f)(void*)) : cookie(nullptr), fn(f) {}
+  interrupt_handler_t(void* c, void (*f)(void*)) : cookie(c), fn(f) {}
+
+  explicit operator bool() const { return fn != nullptr; }
+};
+static_assert(sizeof(interrupt_handler_t) == 16);
 
 enum class interrupt_trigger_mode : uint32_t {
   EDGE,
@@ -141,8 +152,6 @@ interrupt_vector_t remap_interrupt(interrupt_vector_t vector);
 // sends an inter-processor interrupt
 zx_status_t interrupt_send_ipi(cpu_mask_t target, mp_ipi ipi);
 
-void interrupt_init_percpu_early();
-
 // performs per-cpu initialization for the interrupt controller
 void interrupt_init_percpu();
 
@@ -159,6 +168,9 @@ struct msi_block_t {
   bool allocated;        // Whether or not this block has been allocated
   bool is_32bit;         // 32 bit if true, 64 bit otherwise
 };
+
+static_assert(sizeof(msi_block_t) == 24, "msi_block_t size mismatch");
+static_assert(alignof(msi_block_t) == 8, "msi_block_t alignment mismatch");
 
 // Methods used to determine if a platform supports MSI or not, and if so,
 // whether or not the platform can mask individual MSI vectors at the

@@ -179,6 +179,9 @@ class Armv7MmioTimer {
 
    private:
     void IrqHandlerThunk();
+    static void IrqHandlerThunkHelper(void* cookie) {
+      static_cast<Timer*>(cookie)->IrqHandlerThunk();
+    }
 
     zx_status_t CancelTimerLocked() TA_REQ(irq_lock_);
 

@@ -663,17 +663,21 @@ void ArmGicInitPostVm(const zbi_dcfg_arm_gic_v3_driver_t& config) {
 
   pdev_register_interrupts(&gic_ops);
 
-  zx_status_t status = gic_register_sgi_handler(static_cast<uint32_t>(mp_ipi::GENERIC) + ipi_base,
-                                                &mp_mbx_generic_irq);
+  zx_status_t status =
+      gic_register_sgi_handler(static_cast<uint32_t>(mp_ipi::GENERIC) + ipi_base,
+                               interrupt_handler_t{nullptr, [](void*) { mp_mbx_generic_irq(); }});
   DEBUG_ASSERT(status == ZX_OK);
-  status = gic_register_sgi_handler(static_cast<uint32_t>(mp_ipi::RESCHEDULE) + ipi_base,
-                                    &mp_mbx_reschedule_irq);
+  status = gic_register_sgi_handler(
+      static_cast<uint32_t>(mp_ipi::RESCHEDULE) + ipi_base,
+      interrupt_handler_t{nullptr, [](void*) { mp_mbx_reschedule_irq(); }});
   DEBUG_ASSERT(status == ZX_OK);
-  status = gic_register_sgi_handler(static_cast<uint32_t>(mp_ipi::INTERRUPT) + ipi_base,
-                                    &mp_mbx_interrupt_irq);
+  status =
+      gic_register_sgi_handler(static_cast<uint32_t>(mp_ipi::INTERRUPT) + ipi_base,
+                               interrupt_handler_t{nullptr, [](void*) { mp_mbx_interrupt_irq(); }});
   DEBUG_ASSERT(status == ZX_OK);
-  status = gic_register_sgi_handler(static_cast<uint32_t>(mp_ipi::HALT) + ipi_base,
-                                    &arm_ipi_halt_handler);
+  status =
+      gic_register_sgi_handler(static_cast<uint32_t>(mp_ipi::HALT) + ipi_base,
+                               interrupt_handler_t{nullptr, [](void*) { arm_ipi_halt_handler(); }});
   DEBUG_ASSERT(status == ZX_OK);
 
   gicv3_hw_interface_register();

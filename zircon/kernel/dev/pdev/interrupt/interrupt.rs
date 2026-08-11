@@ -11,7 +11,6 @@ pub mod console;
 #[cfg(not(console_enabled))]
 use debug as _;
 
-use core::cell::UnsafeCell;
 use core::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
 use pin_init as _;
 #[cfg(ktest)]
@@ -22,35 +21,16 @@ use zx_status::Status;
 // zircon/kernel/dev/pdev/interrupt/include/pdev/interrupt.h
 
 pub use dev_interrupt::{
-    InterruptPolarity, InterruptTriggerMode, InterruptVector, MAX_INTERRUPTS, MsiBlock,
+    InterruptHandler, InterruptPolarity, InterruptTriggerMode, InterruptVector, MAX_INTERRUPTS,
+    MsiBlock,
 };
 
-#[repr(C, align(16))]
-pub struct CppInterruptHandler {
-    data: [u8; 32],
-}
-
-impl CppInterruptHandler {
-    const fn empty() -> Self {
-        Self { data: [0; 32] }
-    }
-}
-
 pub struct IntHandlerStruct {
-    handler: UnsafeCell<CppInterruptHandler>,
+    handler: InterruptHandler,
     permanent: AtomicBool,
-    has_handler: AtomicBool,
-    is_initialized: AtomicBool,
 }
 
 unsafe impl Sync for IntHandlerStruct {}
-
-const EMPTY_HANDLER: IntHandlerStruct = IntHandlerStruct {
-    handler: UnsafeCell::new(CppInterruptHandler::empty()),
-    permanent: AtomicBool::new(false),
-    has_handler: AtomicBool::new(false),
-    is_initialized: AtomicBool::new(false),
-};
 
 #[ksync::guarded]
 pub struct PdevInterruptManager {
@@ -98,7 +78,11 @@ impl PdevInterruptHolder {
             let uninit_mut: &'static mut core::mem::MaybeUninit<PdevInterruptManager> =
                 &mut *self.0.get();
             let initializer = pin_init::pin_init!(PdevInterruptManager {
-                table: ksync::KCell::new([EMPTY_HANDLER; MAX_INTERRUPTS]),
+                table: ksync::KCell::new([
+                    const {IntHandlerStruct {
+                        handler: InterruptHandler::DEFAULT,
+                        permanent: AtomicBool::new(false),
+                    }}; MAX_INTERRUPTS]),
                 lock <- ksync::KSpinlock::init(),
             });
             let _ = uninit_mut.write_pin_init(initializer);
@@ -115,23 +99,6 @@ impl core::ops::Deref for PdevInterruptHolder {
         // or usage, and lives in static storage forever.
         unsafe { &*self.0.get().cast::<PdevInterruptManager>() }
     }
-}
-
-unsafe extern "C" {
-    fn cpp_interrupt_handler_assign(
-        dest: *mut CppInterruptHandler,
-        src: *mut core::ffi::c_void,
-        is_initialized: bool,
-    );
-    fn cpp_interrupt_handler_invoke(handler: *const CppInterruptHandler);
-    fn cpp_interrupt_handler_is_valid(handler: *const core::ffi::c_void) -> bool;
-
-    fn cpp_pdev_ops_msi_register_handler(
-        ops: *const PdevInterruptOps,
-        block: *const MsiBlock,
-        msi_id: u32,
-        handler: *mut core::ffi::c_void,
-    );
 }
 
 #[repr(C)]
@@ -172,7 +139,8 @@ pub struct PdevInterruptOps {
         out_block: *mut MsiBlock,
     ) -> Status,
     pub msi_free_block: extern "C" fn(block: *mut MsiBlock),
-    pub msi_register_handler: *const core::ffi::c_void,
+    pub msi_register_handler:
+        extern "C" fn(block: *mut MsiBlock, msi_id: u32, handler: InterruptHandler),
     pub get_status: Option<
         extern "C" fn(
             vector: InterruptVector,
@@ -248,6 +216,8 @@ extern "C" fn default_msi_alloc_block(_: u32, _: bool, _: bool, _: *mut MsiBlock
 }
 extern "C" fn default_msi_free_block(_: *mut MsiBlock) {}
 
+extern "C" fn default_msi_register_handler(_: *mut MsiBlock, _: u32, _: InterruptHandler) {}
+
 // By default most of these are empty stubs and the particular interrupt controller must override
 // all of them.
 static DEFAULT_OPS: PdevInterruptOps = PdevInterruptOps {
@@ -274,7 +244,7 @@ static DEFAULT_OPS: PdevInterruptOps = PdevInterruptOps {
     msi_mask_unmask: default_msi_mask_unmask,
     msi_alloc_block: default_msi_alloc_block,
     msi_free_block: default_msi_free_block,
-    msi_register_handler: core::ptr::null(), // never called for default
+    msi_register_handler: default_msi_register_handler,
     get_status: None,
 };
 
@@ -310,17 +280,14 @@ pub unsafe extern "C" fn pdev_invoke_int_if_present(vector: InterruptVector) -> 
     if slot.permanent.load(Ordering::Relaxed) {
         // Once permanent is set to true we know that handler is immutable and so it is safe
         // to read without holding the lock.
-        // SAFETY: slot.handler.get() returns a raw pointer to CppInterruptHandler inside PDEV_INTERRUPTS.
-        // The handler is guaranteed to be initialized and valid if permanent is true.
-        unsafe { cpp_interrupt_handler_invoke(slot.handler.get()) };
+        slot.handler.invoke();
         return true;
     }
 
     ksync::lock!(let guard = PDEV_INTERRUPTS.lock_lock());
     let slot = &guard.fields().table[vector.0 as usize];
-    if slot.has_handler.load(Ordering::Relaxed) {
-        // SAFETY: slot.handler.get() returns a valid pointer to CppInterruptHandler inside PDEV_INTERRUPTS.
-        unsafe { cpp_interrupt_handler_invoke(slot.handler.get()) };
+    if slot.handler.present() {
+        slot.handler.invoke();
         true
     } else {
         false
@@ -331,10 +298,10 @@ pub unsafe extern "C" fn pdev_invoke_int_if_present(vector: InterruptVector) -> 
 ///
 /// # Safety
 ///
-/// - `handler_ptr` must point to a valid C++ interrupt handler if non-null.
-pub unsafe fn register_int_handler(
+/// - The global interrupt ops must be registered.
+unsafe fn register_int_handler_common(
     vector: InterruptVector,
-    handler_ptr: *mut core::ffi::c_void,
+    handler: InterruptHandler,
     permanent: bool,
 ) -> Result<(), Status> {
     let ops = get_ops();
@@ -342,56 +309,57 @@ pub unsafe fn register_int_handler(
     if !unsafe { ((*ops).is_valid)(vector, 0) } {
         return Err(Status::INVALID_ARGS);
     }
-    // SAFETY: handler_ptr is a valid pointer to interrupt_handler_t on the caller's stack.
-    let has_new_handler = unsafe { cpp_interrupt_handler_is_valid(handler_ptr) };
 
     ksync::lock!(let mut guard = PDEV_INTERRUPTS.lock_lock());
-    let slot = &guard.as_mut().fields_mut().table[vector.0 as usize];
-    if (has_new_handler && slot.has_handler.load(Ordering::Relaxed))
-        || slot.permanent.load(Ordering::Relaxed)
-    {
+    let slot = &mut guard.as_mut().fields_mut().table[vector.0 as usize];
+    if (handler.present() && slot.handler.present()) || slot.permanent.load(Ordering::Relaxed) {
         return Err(Status::ALREADY_BOUND);
     }
 
-    let is_initialized = slot.is_initialized.load(Ordering::Relaxed);
-    // SAFETY: slot.handler.get() is a valid pointer to CppInterruptHandler inside PDEV_INTERRUPTS.
-    // handler_ptr is a valid pointer to interrupt_handler_t on the caller's stack.
-    unsafe { cpp_interrupt_handler_assign(slot.handler.get(), handler_ptr, is_initialized) };
-
-    slot.is_initialized.store(true, Ordering::Relaxed);
-    slot.has_handler.store(has_new_handler, Ordering::Relaxed);
+    slot.handler = handler;
     slot.permanent.store(permanent, Ordering::Relaxed);
 
     Ok(())
 }
 
-/// Registers an interrupt handler shim.
+/// Registers an interrupt handler for the specified vector.
 ///
 /// # Safety
 ///
-/// - The caller must ensure that `handler_ptr` points to a valid C++ interrupt handler.
 /// - The global interrupt ops must be registered.
 #[unsafe(no_mangle)]
-unsafe extern "C" fn rust_register_int_handler_shim(
+unsafe extern "C" fn register_int_handler(
     vector: InterruptVector,
-    handler_ptr: *mut core::ffi::c_void,
-    permanent: bool,
+    handler: InterruptHandler,
 ) -> Status {
-    // SAFETY: forwarded from caller.
-    match unsafe { register_int_handler(vector, handler_ptr, permanent) } {
-        Ok(()) => Status::OK,
-        Err(status) => status,
-    }
+    unsafe { register_int_handler_common(vector, handler, false) }.into()
 }
 
-/// Checks if an interrupt is registered.
+/// Registers a permanent interrupt handler for the specified vector.
+///
+/// # Safety
+///
+/// - The global interrupt ops must be registered.
+#[unsafe(no_mangle)]
+unsafe extern "C" fn register_permanent_int_handler(
+    vector: InterruptVector,
+    handler: InterruptHandler,
+) -> Status {
+    unsafe { register_int_handler_common(vector, handler, true) }.into()
+}
+
+/// Checks if an interrupt is registered
+///
+/// # Safety
+///
+/// The vector must be within valid range, and HANDLER_TABLE must be initialized.
 pub fn is_interrupt_registered(vector: u32) -> bool {
     if vector as usize >= MAX_INTERRUPTS {
         return false;
     }
     ksync::lock!(let guard = PDEV_INTERRUPTS.lock_lock());
     let slot = &guard.fields().table[vector as usize];
-    slot.has_handler.load(Ordering::Relaxed)
+    slot.handler.present()
 }
 
 /// Queries the status of an interrupt vector.
@@ -422,16 +390,6 @@ pub fn query_interrupt_config(
         }
     }
     (None, None)
-}
-
-/// Checks if an interrupt is registered (C-ABI shim).
-///
-/// # Safety
-///
-/// The vector must be within valid range, and HANDLER_TABLE must be initialized.
-#[unsafe(no_mangle)]
-unsafe extern "C" fn rust_is_interrupt_registered(vector: u32) -> bool {
-    is_interrupt_registered(vector)
 }
 
 /// Masks the specified interrupt vector.
@@ -558,8 +516,7 @@ pub unsafe extern "C" fn interrupt_send_ipi(target: u32, ipi: u32) -> Status {
 /// # Safety
 ///
 /// The global interrupt ops must be registered.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn interrupt_init_percpu_early() {
+fn interrupt_init_percpu_early(_level: init::LkInitLevel) {
     unsafe { ((*get_ops()).init_percpu_early)() }
 }
 
@@ -690,39 +647,15 @@ pub unsafe extern "C" fn msi_free_block(block: *mut MsiBlock) {
 /// - `block` must point to a valid, initialized `MsiBlock`.
 /// - `handler` must point to a valid interrupt handler function or be null.
 #[unsafe(no_mangle)]
-unsafe extern "C" fn rust_msi_register_handler(
-    block: *const MsiBlock,
+pub unsafe extern "C" fn msi_register_handler(
+    block: *mut MsiBlock,
     msi_id: u32,
-    handler: *mut core::ffi::c_void,
+    handler: InterruptHandler,
 ) {
-    unsafe { cpp_pdev_ops_msi_register_handler(get_ops(), block, msi_id, handler) };
+    unsafe { ((*get_ops()).msi_register_handler)(block, msi_id, handler) }
 }
 
-/// Queries the status of an interrupt vector.
-///
-/// # Safety
-///
-/// - The global interrupt ops must be registered.
-/// - `out_pending` and `out_enabled` must point to valid, writable `bool` memory slots.
-#[unsafe(no_mangle)]
-unsafe extern "C" fn rust_get_interrupt_status(
-    vector: u32,
-    out_pending: *mut bool,
-    out_enabled: *mut bool,
-) -> Status {
-    let ops = get_ops();
-    unsafe {
-        if let Some(get_status) = (*ops).get_status {
-            get_status(InterruptVector(vector), out_pending, out_enabled)
-        } else {
-            Status::NOT_SUPPORTED
-        }
-    }
-}
 unsafe impl Sync for PdevInterruptOps {}
-
-const _: () = assert!(core::mem::size_of::<CppInterruptHandler>() == 32);
-const _: () = assert!(core::mem::align_of::<CppInterruptHandler>() == 16);
 
 /// PDEV interrupt layer kernel tests.
 #[cfg(ktest)]
@@ -748,8 +681,13 @@ mod tests {
     /// Test unregistered interrupt vector state query.
     #[test]
     fn test_pdev_unregistered_interrupt_state() {
-        unsafe {
-            assert_false!(rust_is_interrupt_registered(999));
-        }
+        assert_false!(is_interrupt_registered(999));
     }
 }
+
+init::lk_init_hook_flags!(
+    interrupt_init_percpu_early,
+    interrupt_init_percpu_early,
+    init::LK_INIT_LEVEL_PLATFORM_EARLY,
+    init::LkInitFlags::SecondaryCpus
+);

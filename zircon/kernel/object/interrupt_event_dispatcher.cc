@@ -153,7 +153,11 @@ void InterruptEventDispatcher::DeactivateInterrupt() {
 }
 
 zx_status_t InterruptEventDispatcher::RegisterInterruptHandler() {
-  return register_int_handler(vector_, [this]() { InterruptHandler(); });
+  return register_int_handler(
+      vector_,
+      interrupt_handler_t{this, [](void* cookie) {
+                            static_cast<InterruptEventDispatcher*>(cookie)->InterruptHandler();
+                          }});
 }
 
 void InterruptEventDispatcher::UnregisterInterruptHandler() {

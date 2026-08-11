@@ -78,7 +78,7 @@ bool TestRegisterInterruptHandler() {
   ASSERT_EQ(im->Init(), ZX_OK);
 
   unsigned int kIrq1 = 1;
-  interrupt_handler_t handler1 = []() { return; };
+  interrupt_handler_t handler1 = {nullptr, [](void*) { return; }};
 
   // Register a handler for the interrupt
   ASSERT_EQ(im->RegisterInterruptHandler(kIrq1, ktl::move(handler1)), ZX_OK);
@@ -102,8 +102,8 @@ bool TestRegisterInterruptHandlerTwice() {
 
   unsigned int kIrq = 1;
 
-  interrupt_handler_t handler1 = []() { return; };
-  interrupt_handler_t handler2 = []() { return; };
+  interrupt_handler_t handler1 = {nullptr, [](void*) { return; }};
+  interrupt_handler_t handler2 = {nullptr, [](void*) { return; }};
 
   ASSERT_EQ(im->RegisterInterruptHandler(kIrq, ktl::move(handler1)), ZX_OK);
   uint8_t irq_x86_vector = FakeIoApic::entries[kIrq].x86_vector;
@@ -149,12 +149,12 @@ bool TestRegisterInterruptHandlerTooMany() {
   // can validate it.  All of these should succeed, but will exhaust the
   // allocator.
   for (unsigned i = 0; i < InterruptManager<FakeIoApic>::kNumCpuVectors; ++i) {
-    interrupt_handler_t handler = []() { return; };
+    interrupt_handler_t handler = {nullptr, [](void*) { return; }};
     ASSERT_EQ(im->RegisterInterruptHandler(i, ktl::move(handler)), ZX_OK);
   }
 
   // Try to allocate one more
-  interrupt_handler_t handler = []() { return; };
+  interrupt_handler_t handler = {nullptr, [](void*) { return; }};
   ASSERT_EQ(im->RegisterInterruptHandler(InterruptManager<FakeIoApic>::kNumCpuVectors,
                                          ktl::move(handler)),
             ZX_ERR_NO_RESOURCES);

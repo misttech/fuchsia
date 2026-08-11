@@ -333,8 +333,12 @@ void UartDriverHandoffLate(const uart::all::Driver& serial) {
     }
 
     // Register IRQ Handler.
-    auto irq_handler = [&driver]() { driver.Interrupt(tx_irq_handler, rx_irq_handler); };
-    zx_status_t irq_register_result = register_permanent_int_handler(*uart_irq, irq_handler);
+    auto irq_handler_helper = [](void* cookie) {
+      auto* drv = static_cast<DriverType*>(cookie);
+      drv->Interrupt(tx_irq_handler, rx_irq_handler);
+    };
+    zx_status_t irq_register_result =
+        register_permanent_int_handler(*uart_irq, interrupt_handler_t{&driver, irq_handler_helper});
     DEBUG_ASSERT(irq_register_result == ZX_OK);
 
     // Init UART Interrupts.

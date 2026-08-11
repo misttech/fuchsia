@@ -9,8 +9,8 @@
 use crate::arch_rs::riscv64::{boot_hart_id, curr_hart_id};
 use crate::kernel::types::PAddr;
 use crate::pdev_interrupt::{
-    InterruptPolarity, InterruptTriggerMode, InterruptVector, MsiBlock, PdevInterruptOps,
-    pdev_invoke_int_if_present, pdev_register_interrupts,
+    InterruptHandler, InterruptPolarity, InterruptTriggerMode, InterruptVector, MsiBlock,
+    PdevInterruptOps, pdev_invoke_int_if_present, pdev_register_interrupts,
 };
 use crate::vm::arch_vm_aspace::{
     ARCH_MMU_FLAG_PERM_READ, ARCH_MMU_FLAG_PERM_WRITE, ARCH_MMU_FLAG_UNCACHED_DEVICE,
@@ -263,6 +263,14 @@ extern "C" fn plic_msi_free_block(_block: *mut MsiBlock) {
     panic!("PLIC MSI free block unimplemented");
 }
 
+extern "C" fn plic_msi_register_handler(
+    _block: *mut MsiBlock,
+    _msi_id: u32,
+    _handler: InterruptHandler,
+) {
+    panic!("PLIC MSI register handler unimplemented")
+}
+
 static PLIC_OPS: PdevInterruptOps = PdevInterruptOps {
     mask: plic_mask_interrupt,
     unmask: plic_unmask_interrupt,
@@ -287,7 +295,7 @@ static PLIC_OPS: PdevInterruptOps = PdevInterruptOps {
     msi_mask_unmask: plic_msi_mask_unmask,
     msi_alloc_block: plic_msi_alloc_block,
     msi_free_block: plic_msi_free_block,
-    msi_register_handler: core::ptr::null(),
+    msi_register_handler: plic_msi_register_handler,
     get_status: None,
 };
 

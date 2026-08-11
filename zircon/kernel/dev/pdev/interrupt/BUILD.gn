@@ -16,16 +16,6 @@ library_headers("headers") {
   ]
 }
 
-source_set("ffi") {
-  sources = [ "interrupt_ffi.cc" ]
-  public_deps = [ ":headers" ]
-  deps = [
-    "//zircon/kernel/lib/arch",
-    "//zircon/kernel/lib/console",
-    "//zircon/kernel/lib/init",
-  ]
-}
-
 kernel_rust_mod("interrupt-rs") {
   output_name = "pdev_interrupt"
   source_root = "interrupt.rs"
@@ -45,8 +35,5 @@ kernel_rust_mod("interrupt-rs") {
 
 source_set("interrupt") {
   public_deps = [ ":headers" ]
-  deps = [
-    ":ffi",
-    ":interrupt-rs",
-  ]
+  deps = [ ":interrupt-rs" ]
 }

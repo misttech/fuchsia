@@ -130,12 +130,14 @@ class Smmu final : public iommu::Iommu, public fbl::DoublyLinkedListable<fbl::Re
   friend class StreamMatchRegGroup;
 
   struct GlobalIrqVector {
+    Smmu* smmu{nullptr};
     IrqDef irq_def;
     uint32_t ndx{0};
     bool registered{false};
   };
 
   struct ContextIrqVector {
+    Smmu* smmu{nullptr};
     IrqDef irq_def;
     uint32_t ndx{0};
     bool enabled{false};

@@ -245,7 +245,7 @@ static inline void write_ctl(uint32_t val) { reg_procs.write_ctl(val); }
 static inline void write_cval(uint64_t val) { reg_procs.write_cval(val); }
 [[maybe_unused]] static inline void write_tval(uint32_t val) { reg_procs.write_tval(val); }
 
-static void platform_tick() {
+static void platform_tick(void* cookie) {
   write_ctl(0);
   timer_tick();
 }
@@ -624,7 +624,8 @@ void ArmGenericTimerInitPostVm(const zbi_dcfg_arm_generic_timer_driver_t& config
   // Set up the hardware timer irq handler for this vector. Use the permanent irq handler
   // registration scheme since it is enabled on all cpus and does not need any locking
   // for reentrancy and deregistration purposes.
-  zx_status_t status = register_permanent_int_handler(timer_irq, &platform_tick);
+  zx_status_t status =
+      register_permanent_int_handler(timer_irq, interrupt_handler_t{nullptr, &platform_tick});
   DEBUG_ASSERT(status == ZX_OK);
 
   // enable the IRQ on the boot cpu

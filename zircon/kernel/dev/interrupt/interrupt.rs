@@ -58,6 +58,26 @@ impl core::ops::Deref for InterruptVector {
     }
 }
 
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Default)]
+pub struct InterruptHandler {
+    pub cookie: *mut core::ffi::c_void,
+    pub r#fn: Option<extern "C" fn(*mut core::ffi::c_void) -> ()>,
+}
+
+zr::static_assert_size_and_align!(InterruptHandler, 16, 8);
+
+impl InterruptHandler {
+    pub const DEFAULT: Self = Self { cookie: core::ptr::null_mut(), r#fn: None };
+    pub fn present(&self) -> bool {
+        self.r#fn.is_some()
+    }
+    pub fn invoke(&self) {
+        debug_assert!(self.present());
+        (self.r#fn.unwrap())(self.cookie)
+    }
+}
+
 /// The trigger mode of an interrupt.
 #[repr(u32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

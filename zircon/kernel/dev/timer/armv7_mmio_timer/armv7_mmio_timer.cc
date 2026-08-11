@@ -184,7 +184,7 @@ void Armv7MmioTimer::Timer::Setup() {
                                                                       : interrupt_polarity::HIGH;
 
       configure_interrupt(irq(), irq_mode, irq_polarity);
-      register_int_handler(irq(), [this]() { IrqHandlerThunk(); });
+      register_int_handler(irq(), interrupt_handler_t{this, &Timer::IrqHandlerThunkHelper});
       unmask_interrupt(irq());
     } else {
       supported_ = false;
