@@ -4,6 +4,7 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+#include <lib/arch/asm.h>
 #include <lib/arch/nop.h>
 #include <lib/arch/x86/boot-cpuid.h>
 #include <lib/arch/x86/bug.h>
@@ -37,10 +38,11 @@
 
 #include <ktl/enforce.h>
 
-extern char __x86_indirect_thunk_r11;
-extern char interrupt_non_nmi_maybe_mds_buff_overwrite;
-extern char interrupt_nmi_maybe_mds_buff_overwrite;
-extern char syscall_maybe_mds_buff_overwrite;
+extern "C" arch::AsmLabel __x86_indirect_thunk_r11;
+
+extern "C" arch::AsmLabel interrupt_non_nmi_maybe_mds_buff_overwrite;
+extern "C" arch::AsmLabel interrupt_nmi_maybe_mds_buff_overwrite;
+extern "C" arch::AsmLabel syscall_maybe_mds_buff_overwrite;
 
 namespace {
 
@@ -378,8 +380,9 @@ static bool test_spectre_v2_mitigations() {
 
 static bool test_mds_taa_mitigation() {
   BEGIN_TEST;
-  for (char* src : {&interrupt_non_nmi_maybe_mds_buff_overwrite,
-                    &interrupt_nmi_maybe_mds_buff_overwrite, &syscall_maybe_mds_buff_overwrite}) {
+  for (const auto* src :
+       {&interrupt_non_nmi_maybe_mds_buff_overwrite, &interrupt_nmi_maybe_mds_buff_overwrite,
+        &syscall_maybe_mds_buff_overwrite}) {
     unsigned char check_buffer[5];
     memcpy(check_buffer, src, sizeof(check_buffer));
     if (x86_cpu_should_md_clear_on_user_return()) {
