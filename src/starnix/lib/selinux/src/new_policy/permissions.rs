@@ -25,13 +25,6 @@ pub struct Permission {
     name: Box<[u8]>,
 }
 
-impl Permission {
-    /// Returns the 0-based index of this permission in the access vector (0..31).
-    pub fn index(&self) -> u8 {
-        (self.id.as_u32() - 1) as u8
-    }
-}
-
 impl Parse for Permission {
     fn parse(cursor: &mut PolicyCursor<'_>) -> Result<Self, ParseError> {
         let length = u32::parse(cursor)? as usize;

@@ -21,11 +21,13 @@ pub struct Sensitivity {
 
 impl Sensitivity {
     /// Returns whether this sensitivity was declared as an alias in policy.
+    #[cfg(test)]
     pub fn is_alias(&self) -> bool {
         self.is_alias
     }
 
     /// Default [`MlsLevel`] associated with this sensitivity.
+    #[cfg(test)]
     pub fn level(&self) -> &MlsLevel {
         &self.level
     }
@@ -86,6 +88,7 @@ pub struct Category {
 
 impl Category {
     /// Returns whether this category was declared as an alias in policy.
+    #[cfg(test)]
     pub fn is_alias(&self) -> bool {
         self.is_alias
     }

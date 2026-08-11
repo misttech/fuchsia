@@ -43,10 +43,6 @@ impl Role {
         self.bounds
     }
 
-    pub fn dominates(&self) -> &RoleSet {
-        &self.dominates
-    }
-
     pub fn types(&self) -> &TypeSet {
         &self.types
     }

@@ -310,6 +310,7 @@ impl AccessRule {
     }
 
     /// Returns whether this rule is enabled.
+    #[cfg(test)]
     pub fn enabled(&self) -> bool {
         self.enabled
     }
@@ -331,6 +332,7 @@ impl TypeRule {
     }
 
     /// Returns whether this rule is enabled.
+    #[cfg(test)]
     pub fn enabled(&self) -> bool {
         self.enabled
     }
@@ -352,6 +354,7 @@ impl XpermRule {
     }
 
     /// Returns whether this rule is enabled.
+    #[cfg(test)]
     pub fn enabled(&self) -> bool {
         self.enabled
     }
@@ -497,23 +500,9 @@ pub struct AccessVectorRules {
 
 impl AccessVectorRules {
     /// Returns the standard access vector rules.
+    #[cfg(test)]
     pub fn av_rules(&self) -> &[AccessRule] {
         &self.av_rules
-    }
-
-    /// Returns the type transition, change, and member rules.
-    pub fn type_rules(&self) -> &[TypeRule] {
-        &self.type_rules
-    }
-
-    /// Returns the extended permission rules.
-    pub fn xperm_rules(&self) -> &[XpermRule] {
-        &self.xperm_rules
-    }
-
-    /// Returns the order of rule kinds as parsed from the policy.
-    pub fn rule_order(&self) -> &[RuleKind] {
-        &self.rule_order
     }
 }
 

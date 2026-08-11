@@ -87,14 +87,19 @@ pub struct PolicyVersion {
 impl Parse for PolicyVersion {
     fn parse(cursor: &mut PolicyCursor<'_>) -> Result<Self, ParseError> {
         let value = u32::parse(cursor)?;
-        cursor.set_policy_version(value);
-        Ok(Self { value })
+        let version = Self { value };
+        cursor.set_policy_version(version);
+        Ok(version)
     }
 }
 
 impl PolicyVersion {
     pub const V30: Self = Self { value: 30 };
+    pub const V31: Self = Self { value: 31 };
     pub const V33: Self = Self { value: 33 };
+
+    /// Minimum policy version supporting InfiniBand partition keys and end ports.
+    pub const MIN_INFINIBAND: Self = Self { value: 31 };
 
     /// Returns the raw policy version value.
     pub fn get(&self) -> u32 {

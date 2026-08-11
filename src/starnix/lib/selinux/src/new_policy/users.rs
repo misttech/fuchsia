@@ -34,6 +34,7 @@ impl User {
         &self.range
     }
 
+    #[cfg(test)]
     pub fn default_level(&self) -> &MlsLevel {
         &self.default_level
     }

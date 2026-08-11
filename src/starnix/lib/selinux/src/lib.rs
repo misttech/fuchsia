@@ -32,7 +32,7 @@ pub use policy::ClassId;
 
 pub use starnix_uapi::selinux::{InitialSid, ReferenceInitialSid, SecurityId, TaskAttrs};
 
-use policy::arrays::FsUseType;
+use new_policy::FsUseType;
 
 /// Identifies a specific class by its policy-defined Id, or as a kernel object class enum Id.
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]

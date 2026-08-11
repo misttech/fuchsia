@@ -5,7 +5,7 @@
 use std::num::NonZeroU16;
 
 use hashbrown::HashTable;
-use selinux_policy_derive::{HasPolicyId, Parse, Serialize};
+use selinux_policy_derive::{HasPolicyId, Parse, Serialize, Validate};
 
 use super::bitmap::IdSet;
 use super::error::{ParseError, SerializeError, ValidateError};
@@ -38,17 +38,13 @@ impl Validate for TypeId {
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+/// Classification of a type symbol (alias, primary type, or attribute).
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Parse, Serialize, Validate)]
+#[policy(wire_type = u32)]
 pub enum TypeKind {
-    Alias,
-    Type,
-    Attribute,
-}
-
-impl TypeKind {
-    pub const ALIAS: u32 = 0;
-    pub const TYPE: u32 = 1;
-    pub const ATTRIBUTE: u32 = 3;
+    Alias = 0,
+    Type = 1,
+    Attribute = 3,
 }
 
 /// Parsed SELinux type, containing an ID, a name, properties, and optional bounds.
@@ -76,7 +72,7 @@ impl Type {
 struct BinaryTypeMetadata {
     length: u32,
     id: u32,
-    properties: u32,
+    properties: TypeKind,
     bounds: u32,
 }
 
@@ -85,18 +81,7 @@ impl Parse for Type {
         let metadata = BinaryTypeMetadata::parse(cursor)?;
         let name = cursor.read_bytes(metadata.length as usize)?.to_vec().into_boxed_slice();
 
-        let properties_val = metadata.properties;
-        let properties = match properties_val {
-            TypeKind::ALIAS => TypeKind::Alias,
-            TypeKind::TYPE => TypeKind::Type,
-            TypeKind::ATTRIBUTE => TypeKind::Attribute,
-            v => {
-                return Err(ParseError::InvalidEnumValue {
-                    enum_name: "TypeKind",
-                    value: v as u64,
-                });
-            }
-        };
+        let properties = metadata.properties;
 
         let bounds = TypeId::from_u32(metadata.bounds);
         let id =
@@ -108,15 +93,10 @@ impl Parse for Type {
 
 impl Serialize for Type {
     fn serialize(&self, writer: &mut PolicyWriter<'_>) -> Result<(), SerializeError> {
-        let properties_val = match self.properties {
-            TypeKind::Alias => TypeKind::ALIAS,
-            TypeKind::Type => TypeKind::TYPE,
-            TypeKind::Attribute => TypeKind::ATTRIBUTE,
-        };
         let metadata = BinaryTypeMetadata {
             length: self.name.len() as u32,
             id: self.id.as_u32(),
-            properties: properties_val,
+            properties: self.properties,
             bounds: self.bounds.map_or(0, |id| id.as_u32()),
         };
         metadata.serialize(writer)?;

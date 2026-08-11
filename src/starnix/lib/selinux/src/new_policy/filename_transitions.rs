@@ -241,7 +241,7 @@ impl FilenameTransitions {
 
 impl Parse for FilenameTransitions {
     fn parse(cursor: &mut PolicyCursor<'_>) -> Result<Self, ParseError> {
-        if cursor.policy_version() >= 33 {
+        if cursor.policy_version() >= PolicyVersion::V33 {
             let list = Array::<FilenameTransition>::parse(cursor)?;
             return Self::new(list);
         }
@@ -297,7 +297,7 @@ mod tests {
         4u32.serialize(&mut policy_writer).unwrap(); // out_type
 
         let mut cursor = PolicyCursor::new(&bytes);
-        cursor.set_policy_version(33);
+        cursor.set_policy_version(PolicyVersion::V33);
         let transitions = cursor.parse::<FilenameTransitions>().expect("parse geq33");
 
         let s_id = TypeId::new(NonZeroU16::new(1).unwrap());
@@ -340,7 +340,7 @@ mod tests {
         4u32.serialize(&mut policy_writer).unwrap(); // out_type
 
         let mut cursor = PolicyCursor::new(&bytes);
-        cursor.set_policy_version(30);
+        cursor.set_policy_version(PolicyVersion::V30);
         let transitions = cursor.parse::<FilenameTransitions>().expect("parse leq32");
 
         let s1_id = TypeId::new(NonZeroU16::new(1).unwrap());
@@ -437,7 +437,7 @@ mod tests {
         5u32.serialize(&mut policy_writer).unwrap(); // out_type
 
         let mut cursor = PolicyCursor::new(&bytes);
-        cursor.set_policy_version(33);
+        cursor.set_policy_version(PolicyVersion::V33);
         let result = cursor.parse::<FilenameTransitions>();
         assert!(matches!(result, Err(ParseError::DuplicateFilenameTransition { .. })));
     }

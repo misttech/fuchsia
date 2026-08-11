@@ -30,18 +30,6 @@ impl<T: PolicyId> ConstraintSets<T> {
     pub fn is_empty(&self) -> bool {
         self.include_set.is_empty() && self.exclude_set.is_empty() && self.flags == 0
     }
-
-    pub fn include_set(&self) -> &IdSet<T> {
-        &self.include_set
-    }
-
-    pub fn exclude_set(&self) -> &IdSet<T> {
-        &self.exclude_set
-    }
-
-    pub fn flags(&self) -> u32 {
-        self.flags
-    }
 }
 
 const TARGET_FLAG: u32 = 0x8;
@@ -166,11 +154,6 @@ impl<T: PolicyId> NameExpression<T> {
     /// Returns the set of names compared against.
     pub fn names(&self) -> &IdSet<T> {
         &self.names
-    }
-
-    /// Returns the constraint type sets associated with the expression, if any.
-    pub fn constraint_sets(&self) -> Option<&ConstraintSets<T>> {
-        self.constraint_sets.as_deref()
     }
 }
 

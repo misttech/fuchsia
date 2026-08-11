@@ -16,6 +16,7 @@ pub(super) mod indexed;
 pub(super) mod initial_sids;
 pub(super) mod metadata;
 pub(super) mod mls;
+pub(super) mod object_contexts;
 pub(super) mod parser;
 pub(super) mod permissions;
 pub(super) mod policy_cap;
@@ -45,6 +46,7 @@ pub use initial_sids::InitialSids;
 use metadata::{Config, Counts, Magic, Signature};
 pub use metadata::{HandleUnknown, POLICYDB_VERSION_MAX, PolicyVersion};
 pub use mls::{Category, Sensitivity};
+pub use object_contexts::*;
 use parser::{Array, PolicyCursor, RemainingBytes};
 pub use parser::{PolicyWriter, SymbolArray};
 pub use permissions::PermissionId;
@@ -111,6 +113,7 @@ pub struct NewPolicy {
     role_allowlist: Array<RoleAllow>,
     filename_transitions: FilenameTransitions,
     initial_sids: InitialSids,
+    object_contexts: ObjectContexts,
     rest: RemainingBytes,
 }
 
@@ -221,6 +224,11 @@ impl NewPolicy {
     /// Returns the initial SIDs table.
     pub fn initial_sids(&self) -> &InitialSids {
         &self.initial_sids
+    }
+
+    /// Returns the object contexts table.
+    pub fn object_contexts(&self) -> &ObjectContexts {
+        &self.object_contexts
     }
 
     /// Returns a shared reference to the remaining unparsed bytes.
@@ -334,7 +342,7 @@ mod tests {
                 .unwrap_or_else(|e| panic!("Failed to parse {name}: {e:?}"));
             new_policy.validate().unwrap_or_else(|e| panic!("Failed to validate {name}: {e:?}"));
 
-            if new_policy.version.get() >= 33 {
+            if new_policy.version() >= PolicyVersion::V33 {
                 let mut serialized = Vec::new();
                 new_policy
                     .serialize(&mut serialized)

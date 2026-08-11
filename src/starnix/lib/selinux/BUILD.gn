@@ -32,6 +32,7 @@ rustc_library("selinux") {
     "src/new_policy/metadata.rs",
     "src/new_policy/mls.rs",
     "src/new_policy/mod.rs",
+    "src/new_policy/object_contexts.rs",
     "src/new_policy/parser.rs",
     "src/new_policy/permissions.rs",
     "src/new_policy/policy_cap.rs",

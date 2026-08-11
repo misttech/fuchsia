@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use super::arrays::{FsContext, FsUseType};
+use super::arrays::FsContext;
 use super::security_context::SecurityContext;
 use super::{
     AccessDecision, AccessVector, ClassId, MlsLevel, ParsedPolicy, PermissionId, RoleId, TypeId,
@@ -10,8 +10,8 @@ use super::{
 use crate::new_policy::rules::{HasRuleKey, RuleKind};
 use crate::new_policy::traits::{HasName, HasPolicyId};
 use crate::new_policy::{
-    Class, ClassDefault, ClassDefaultRange, CommonSymbol, HandleUnknown, IdAndNameIndexed,
-    SymbolArray,
+    Class, ClassDefault, ClassDefaultRange, CommonSymbol, FsUseType, HandleUnknown,
+    IdAndNameIndexed, SymbolArray,
 };
 use crate::{
     ClassPermission as _, KernelClass, KernelPermission, NullessByteStr, PolicyCap,
@@ -125,16 +125,6 @@ impl PolicyIndex {
             cached_object_r_role,
             cached_process_class,
         };
-
-        // Verify that the initial Security Contexts are all defined, and valid.
-        for initial_sids in crate::InitialSid::all_variants() {
-            index.resolve_initial_context(*initial_sids);
-        }
-
-        // Validate the contexts used in fs_use statements.
-        for fs_use in index.parsed_policy.fs_uses() {
-            SecurityContext::new_from_policy_context(fs_use.context());
-        }
 
         Ok(index)
     }
@@ -254,7 +244,6 @@ impl PolicyIndex {
 
         let type_ = override_type.unwrap_or_else(|| {
             let transition = self
-                .parsed_policy
                 .access_vector_rules()
                 .find_type_rules(source.type_(), target.type_(), policy_class.id())
                 .find(|rule| rule.kind() == RuleKind::TypeTransition)
@@ -357,7 +346,7 @@ impl PolicyIndex {
     /// well-known (or "initial") Id.
     pub(super) fn initial_context(&self, id: crate::InitialSid) -> SecurityContext {
         // All [`InitialSid`] have already been verified as resolvable, by `new()`.
-        self.resolve_initial_context(id)
+        SecurityContext::from_policy_context(self.parsed_policy.initial_context(id))
     }
 
     /// If there is an fs_use statement for the given filesystem type, returns the associated
@@ -366,12 +355,12 @@ impl PolicyIndex {
         &self,
         fs_type: NullessByteStr<'_>,
     ) -> Option<FsUseLabelAndType> {
-        self.parsed_policy
+        self.object_contexts()
             .fs_uses()
             .iter()
             .find(|fs_use| fs_use.fs_type() == fs_type.as_bytes())
             .map(|fs_use| FsUseLabelAndType {
-                context: SecurityContext::new_from_policy_context(fs_use.context()),
+                context: SecurityContext::from_policy_context(fs_use.context()),
                 use_type: fs_use.behavior(),
             })
     }
@@ -387,7 +376,7 @@ impl PolicyIndex {
         class: Option<crate::KernelClass>,
     ) -> Option<SecurityContext> {
         let node_path = if class == Some(crate::FileClass::LnkFile.into())
-            && !self.parsed_policy.has_policycap(PolicyCap::GenfsSeclabelSymlinks)
+            && !self.has_policycap(PolicyCap::GenfsSeclabelSymlinks)
         {
             // Symlinks receive the filesystem root label by default, rather than a label dependent on
             // the `node_path`. Path based labels may be enabled with the "genfs_seclabel_symlinks"
@@ -401,7 +390,6 @@ impl PolicyIndex {
 
         // All contexts listed in the policy for the file system type.
         let fs_contexts = self
-            .parsed_policy
             .genfscon_find_all(std::str::from_utf8(fs_type.as_bytes()).expect("fs type is valid"));
 
         #[derive(PartialEq)]
@@ -473,14 +461,7 @@ impl PolicyIndex {
 
         // The returned SecurityContext must be valid with respect to the policy, since otherwise
         // we'd have rejected the policy load.
-        result.and_then(|fs_context| {
-            Some(SecurityContext::new_from_policy_context(fs_context.context()))
-        })
-    }
-
-    /// Helper used to construct and validate well-known [`SecurityContext`] values.
-    fn resolve_initial_context(&self, id: crate::InitialSid) -> SecurityContext {
-        SecurityContext::from_policy_context(self.parsed_policy.initial_context(id))
+        Some(SecurityContext::from_policy_context(result?.context()))
     }
 
     fn role_transition_new_role(
@@ -489,8 +470,7 @@ impl PolicyIndex {
         type_: TypeId,
         class: &Class,
     ) -> Option<RoleId> {
-        self.parsed_policy
-            .role_transitions()
+        self.role_transitions()
             .iter()
             .find(|role_transition| {
                 role_transition.current_role() == current_role
@@ -501,7 +481,7 @@ impl PolicyIndex {
     }
 
     fn role_transition_is_explicitly_allowed(&self, source_role: RoleId, new_role: RoleId) -> bool {
-        self.parsed_policy.role_allowlist().iter().any(|role_allow| {
+        self.role_allowlist().iter().any(|role_allow| {
             role_allow.source_role() == source_role && role_allow.new_role() == new_role
         })
     }
@@ -513,12 +493,7 @@ impl PolicyIndex {
         class: &Class,
         name: &[u8],
     ) -> Option<TypeId> {
-        self.parsed_policy.compute_filename_transition(
-            source_type,
-            target_type,
-            class.id().into(),
-            name,
-        )
+        self.compute_filename_transition(source_type, target_type, class.id().into(), name)
     }
 
     fn range_transition_new_range(
@@ -527,7 +502,7 @@ impl PolicyIndex {
         target_type: TypeId,
         class: &Class,
     ) -> Option<(MlsLevel, Option<MlsLevel>)> {
-        for range_transition in self.parsed_policy.range_transitions() {
+        for range_transition in self.range_transitions() {
             if range_transition.source_type() == source_type
                 && range_transition.target_type() == target_type
                 && range_transition.target_class() == class.id().into()

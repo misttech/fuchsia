@@ -18,22 +18,22 @@ use selinux_policy_derive::{Parse, Serialize};
 pub struct PolicyCursor<'a> {
     data: &'a [u8],
     offset: usize,
-    policy_version: u32,
+    policy_version: PolicyVersion,
 }
 
 impl<'a> PolicyCursor<'a> {
     /// Creates a new [`PolicyCursor`] wrapping the supplied `data`.
     pub fn new(data: &'a [u8]) -> Self {
-        Self { data, offset: 0, policy_version: 0 }
+        Self { data, offset: 0, policy_version: PolicyVersion::V30 }
     }
 
     /// Sets the SELinux policy database version on this cursor.
-    pub fn set_policy_version(&mut self, version: u32) {
+    pub fn set_policy_version(&mut self, version: PolicyVersion) {
         self.policy_version = version;
     }
 
     /// Returns the SELinux policy database version recorded on this cursor.
-    pub fn policy_version(&self) -> u32 {
+    pub fn policy_version(&self) -> PolicyVersion {
         self.policy_version
     }
 
@@ -264,6 +264,34 @@ impl Serialize for u64 {
 
 impl Validate for u64 {
     fn validate(&self, _policy: &NewPolicy) -> Result<(), ValidateError> {
+        Ok(())
+    }
+}
+
+impl<T: Parse, const N: usize> Parse for [T; N] {
+    fn parse(cursor: &mut PolicyCursor<'_>) -> Result<Self, ParseError> {
+        let mut items = Vec::with_capacity(N);
+        for _ in 0..N {
+            items.push(T::parse(cursor)?);
+        }
+        Ok(items.try_into().ok().expect("pushed N items"))
+    }
+}
+
+impl<T: Serialize, const N: usize> Serialize for [T; N] {
+    fn serialize(&self, writer: &mut PolicyWriter<'_>) -> Result<(), SerializeError> {
+        for item in self {
+            item.serialize(writer)?;
+        }
+        Ok(())
+    }
+}
+
+impl<T: Validate, const N: usize> Validate for [T; N] {
+    fn validate(&self, policy: &NewPolicy) -> Result<(), ValidateError> {
+        for item in self {
+            item.validate(policy)?;
+        }
         Ok(())
     }
 }

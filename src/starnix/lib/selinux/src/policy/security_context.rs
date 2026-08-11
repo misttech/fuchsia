@@ -4,8 +4,7 @@
 
 use super::index::PolicyIndex;
 use super::new::{CategorySetBuilder, Context, IdSpan, MlsLevel, MlsRange};
-use super::parser::PolicyCursor;
-use super::{CategoryId, Parse, PolicyValidationContext, RoleId, TypeId, UserId, Validate};
+use super::{CategoryId, RoleId, TypeId, UserId};
 use crate::NullessByteStr;
 use crate::new_policy::NewPolicy;
 use crate::new_policy::traits::{HasName, HasPolicyId};
@@ -42,16 +41,6 @@ impl SecurityContext {
 
     pub(super) fn from_policy_context(context: &Context) -> SecurityContext {
         SecurityContext { inner: context.clone() }
-    }
-
-    /// Constructs a [`SecurityContext`] from a legacy [`super::arrays::Context`].
-    /// TODO(b/527401888): Remove once legacy policy parser is removed.
-    pub(super) fn new_from_policy_context(context: &super::arrays::Context) -> SecurityContext {
-        let low = context.low_level().clone();
-        let high = context.high_level().clone();
-        let mls_range = MlsRange::new(low, high);
-        let inner = Context::new(context.user(), context.role(), context.type_(), mls_range);
-        SecurityContext { inner }
     }
 }
 
@@ -313,56 +302,6 @@ impl IdSpan<CategoryId> {
             ]
             .join(b".".as_ref()),
         }
-    }
-}
-
-/// Temporary adapter implementing legacy policy Parse trait by delegating to new_policy trait during migration.
-impl Parse for MlsLevel {
-    type Error = anyhow::Error;
-
-    fn parse<'a>(cursor: PolicyCursor<'a>) -> Result<(Self, PolicyCursor<'a>), Self::Error> {
-        let offset = cursor.offset() as usize;
-        let slice = &cursor.data().as_ref()[offset..];
-        let mut new_cursor = crate::new_policy::parser::PolicyCursor::new(slice);
-        let level = <Self as crate::new_policy::traits::Parse>::parse(&mut new_cursor)
-            .map_err(|e| anyhow::anyhow!("Parse error: {:?}", e))?;
-        let bytes_parsed = new_cursor.offset();
-        let new_offset = cursor.offset() + bytes_parsed as u32;
-        Ok((level, PolicyCursor::new_at(cursor.data(), new_offset)))
-    }
-}
-
-/// Temporary adapter implementing legacy policy Validate trait by delegating to new_policy trait during migration.
-impl Validate for MlsLevel {
-    type Error = anyhow::Error;
-
-    fn validate(&self, context: &PolicyValidationContext) -> Result<(), Self::Error> {
-        crate::new_policy::traits::Validate::validate(self, &context.new_policy).map_err(Into::into)
-    }
-}
-
-/// Temporary adapter implementing legacy policy Parse trait by delegating to new_policy trait during migration.
-impl Parse for MlsRange {
-    type Error = anyhow::Error;
-
-    fn parse<'a>(cursor: PolicyCursor<'a>) -> Result<(Self, PolicyCursor<'a>), Self::Error> {
-        let offset = cursor.offset() as usize;
-        let slice = &cursor.data().as_ref()[offset..];
-        let mut new_cursor = crate::new_policy::parser::PolicyCursor::new(slice);
-        let range = <Self as crate::new_policy::traits::Parse>::parse(&mut new_cursor)
-            .map_err(|e| anyhow::anyhow!("Parse error: {:?}", e))?;
-        let bytes_parsed = new_cursor.offset();
-        let new_offset = cursor.offset() + bytes_parsed as u32;
-        Ok((range, PolicyCursor::new_at(cursor.data(), new_offset)))
-    }
-}
-
-/// Temporary adapter implementing legacy policy Validate trait by delegating to new_policy trait during migration.
-impl Validate for MlsRange {
-    type Error = anyhow::Error;
-
-    fn validate(&self, context: &PolicyValidationContext) -> Result<(), Self::Error> {
-        crate::new_policy::traits::Validate::validate(self, &context.new_policy).map_err(Into::into)
     }
 }
 

@@ -14,12 +14,11 @@ mod security_context;
 
 pub use crate::new_policy::traits::{HasName, HasPolicyId, PolicyId};
 pub use crate::new_policy::{
-    AccessDecision, AccessVector, AccessVectorRules, CategoryId, ClassId, HandleUnknown,
+    AccessDecision, AccessVector, AccessVectorRules, CategoryId, ClassId, FsUseType, HandleUnknown,
     IndexedAccessVectorRules, MlsLevel, MlsRange, POLICYDB_VERSION_MAX, PermissionId, RoleId,
     SELINUX_AVD_FLAGS_PERMISSIVE, SensitivityId, TypeId, User, UserId, XpermsBitmap,
 };
 use crate::{ClassPermission, KernelClass, NullessByteStr, ObjectClass, new_policy as new};
-pub use arrays::FsUseType;
 pub use index::FsUseLabelAndType;
 use index::PolicyIndex;
 use parsed_policy::ParsedPolicy;
@@ -33,34 +32,7 @@ use std::num::NonZeroU32;
 use std::ops::Deref;
 
 use std::sync::Arc;
-use zerocopy::{
-    FromBytes, Immutable, KnownLayout, Ref, SplitByteSlice, Unaligned, little_endian as le,
-};
-
-impl<T, Tag> Parse for crate::new_policy::IdType<T, Tag>
-where
-    crate::new_policy::IdType<T, Tag>: crate::new_policy::traits::PolicyId,
-{
-    type Error = error::ParseError;
-
-    fn parse<'a>(bytes: PolicyCursor<'a>) -> Result<(Self, PolicyCursor<'a>), Self::Error> {
-        let (id_val, tail) = PolicyCursor::parse::<le::U32>(bytes)?;
-        let id = Self::try_from(id_val.get())
-            .map_err(|_| error::ParseError::InvalidId { value: id_val.get() })?;
-        Ok((id, tail))
-    }
-}
-
-impl<T, Tag> Validate for crate::new_policy::IdType<T, Tag>
-where
-    crate::new_policy::IdType<T, Tag>: crate::new_policy::traits::PolicyId,
-{
-    type Error = anyhow::Error;
-
-    fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
-        Ok(())
-    }
-}
+use zerocopy::{FromBytes, Immutable, KnownLayout, Ref, SplitByteSlice, little_endian as le};
 
 /// Encapsulates the result of a permissions calculation, between
 /// source & target domains, for a specific class. Decisions describe
@@ -421,17 +393,6 @@ pub(super) trait Counted {
     fn count(&self) -> u32;
 }
 
-impl<T: Validate> Validate for Option<T> {
-    type Error = <T as Validate>::Error;
-
-    fn validate(&self, context: &PolicyValidationContext) -> Result<(), Self::Error> {
-        match self {
-            Some(value) => value.validate(context),
-            None => Ok(()),
-        }
-    }
-}
-
 impl<T: Validate> Validate for Vec<T> {
     type Error = <T as Validate>::Error;
 
@@ -448,16 +409,6 @@ impl Validate for le::U32 {
 
     /// Using a raw `le::U32` implies no additional constraints on its value. To operate with
     /// constraints, define a `struct T(le::U32);` and `impl Validate for T { ... }`.
-    fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
-        Ok(())
-    }
-}
-
-impl Validate for u8 {
-    type Error = anyhow::Error;
-
-    /// Using a raw `u8` implies no additional constraints on its value. To operate with
-    /// constraints, define a `struct T(u8);` and `impl Validate for T { ... }`.
     fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
         Ok(())
     }
@@ -511,11 +462,41 @@ impl<M: Counted + Parse, T: Parse> Parse for Array<M, T> {
     }
 }
 
-impl<T: Clone + Debug + FromBytes + KnownLayout + Immutable + PartialEq + Unaligned> Parse for T {
+impl Parse for le::U32 {
     type Error = anyhow::Error;
 
     fn parse<'a>(bytes: PolicyCursor<'a>) -> Result<(Self, PolicyCursor<'a>), Self::Error> {
-        bytes.parse::<T>().map_err(anyhow::Error::from)
+        bytes.parse::<le::U32>().map_err(anyhow::Error::from)
+    }
+}
+
+impl Parse for arrays::RangeTransitionMetadata {
+    type Error = anyhow::Error;
+
+    fn parse<'a>(bytes: PolicyCursor<'a>) -> Result<(Self, PolicyCursor<'a>), Self::Error> {
+        bytes.parse::<arrays::RangeTransitionMetadata>().map_err(anyhow::Error::from)
+    }
+}
+
+impl<T: crate::new_policy::traits::Parse> Parse for T {
+    type Error = anyhow::Error;
+
+    fn parse<'a>(bytes: PolicyCursor<'a>) -> Result<(Self, PolicyCursor<'a>), Self::Error> {
+        let offset = bytes.offset() as usize;
+        let slice = &bytes.data().as_ref()[offset..];
+        let mut new_cursor = crate::new_policy::parser::PolicyCursor::new(slice);
+        let item = <T as crate::new_policy::traits::Parse>::parse(&mut new_cursor)
+            .map_err(|e| anyhow::anyhow!("Parse error: {:?}", e))?;
+        let new_offset = bytes.offset() + new_cursor.offset() as u32;
+        Ok((item, PolicyCursor::new_at(bytes.data(), new_offset)))
+    }
+}
+
+impl<T: crate::new_policy::traits::Validate> Validate for T {
+    type Error = anyhow::Error;
+
+    fn validate(&self, context: &PolicyValidationContext) -> Result<(), Self::Error> {
+        crate::new_policy::traits::Validate::validate(self, &context.new_policy).map_err(Into::into)
     }
 }
 

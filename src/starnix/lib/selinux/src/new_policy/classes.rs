@@ -115,6 +115,7 @@ impl Class {
         &self.constraints
     }
 
+    #[cfg(test)]
     pub fn validate_transitions(&self) -> &[ConstraintTerm] {
         &self.validate_transitions
     }

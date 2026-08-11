@@ -2,16 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use super::arrays::{
-    Context, FsUse, GenericFsContext, IPv6Node, InfinitiBandEndPort, InfinitiBandPartitionKey,
-    MIN_POLICY_VERSION_FOR_INFINITIBAND_PARTITION_KEY, NamedContextPair, Node, Port,
-    RangeTransition, SimpleArray,
-};
-use super::error::{ParseError, ValidateError};
-use crate::new_policy::TypeSet;
-use crate::new_policy::bitmap::IdSet;
-
+use super::arrays::{GenericFsContext, RangeTransition, SimpleArray};
 use super::constraints::evaluate_constraint;
+use super::error::{ParseError, ValidateError};
 use super::parser::{PolicyCursor, PolicyData};
 use super::security_context::SecurityContext;
 use super::view::Hashable;
@@ -20,6 +13,7 @@ use super::{
     RoleId, SELINUX_AVD_FLAGS_PERMISSIVE, SensitivityId, TypeId, UserId, Validate,
     XpermsAccessDecision, XpermsKind,
 };
+use crate::new_policy::{Context, TypeSet};
 
 use crate::PolicyCap;
 use crate::new_policy::rules::{
@@ -51,14 +45,6 @@ pub struct ParsedPolicy {
     /// [`NewPolicy`] that handles the header and base tables.
     new_policy: Arc<NewPolicy>,
 
-    filesystems: SimpleArray<NamedContextPair>,
-    ports: SimpleArray<Port>,
-    network_interfaces: SimpleArray<NamedContextPair>,
-    nodes: SimpleArray<Node>,
-    fs_uses: SimpleArray<FsUse>,
-    ipv6_nodes: SimpleArray<IPv6Node>,
-    infinitiband_partition_keys: Option<SimpleArray<InfinitiBandPartitionKey>>,
-    infinitiband_end_ports: Option<SimpleArray<InfinitiBandEndPort>>,
     /// A set of labeling statements to apply to given filesystems and/or their subdirectories.
     /// Corresponds to the `genfscon` labeling statement in the policy.
     generic_fs_contexts: CustomKeyHashedView<GenericFsContext>,
@@ -265,10 +251,6 @@ impl ParsedPolicy {
         XpermsAccessDecision { allow, auditallow, auditdeny }
     }
 
-    pub(super) fn fs_uses(&self) -> &[FsUse] {
-        &self.fs_uses.data
-    }
-
     pub(super) fn genfscon_find_all(&self, fs_type: &str) -> impl Iterator<Item = FsContext> {
         let query = GenericFsContext::for_query(fs_type);
         self.generic_fs_contexts.find_all(query, &self.data)
@@ -328,7 +310,7 @@ impl ParsedPolicy {
     fn validate_mls_range(
         &self,
         low_level: &MlsLevel,
-        high_level: &Option<MlsLevel>,
+        high_level: Option<&MlsLevel>,
         sensitivity_ids: &HashSet<SensitivityId>,
         category_ids: &HashSet<CategoryId>,
     ) -> Result<(), anyhow::Error> {
@@ -399,44 +381,6 @@ fn parse_policy_remaining(
 ) -> Result<(ParsedPolicy, usize), anyhow::Error> {
     let tail = PolicyCursor::new(&rest_data);
 
-    let (filesystems, tail) = SimpleArray::<NamedContextPair>::parse(tail)
-        .map_err(Into::<anyhow::Error>::into)
-        .context("parsing filesystem contexts")?;
-
-    let (ports, tail) = SimpleArray::<Port>::parse(tail)
-        .map_err(Into::<anyhow::Error>::into)
-        .context("parsing ports")?;
-
-    let (network_interfaces, tail) = SimpleArray::<NamedContextPair>::parse(tail)
-        .map_err(Into::<anyhow::Error>::into)
-        .context("parsing network interfaces")?;
-
-    let (nodes, tail) = SimpleArray::<Node>::parse(tail)
-        .map_err(Into::<anyhow::Error>::into)
-        .context("parsing nodes")?;
-
-    let (fs_uses, tail) = SimpleArray::<FsUse>::parse(tail)
-        .map_err(Into::<anyhow::Error>::into)
-        .context("parsing fs uses")?;
-
-    let (ipv6_nodes, tail) = SimpleArray::<IPv6Node>::parse(tail)
-        .map_err(Into::<anyhow::Error>::into)
-        .context("parsing ipv6 nodes")?;
-
-    let (infinitiband_partition_keys, infinitiband_end_ports, tail) =
-        if new_policy.version().get() >= MIN_POLICY_VERSION_FOR_INFINITIBAND_PARTITION_KEY {
-            let (infinity_band_partition_keys, tail) =
-                SimpleArray::<InfinitiBandPartitionKey>::parse(tail)
-                    .map_err(Into::<anyhow::Error>::into)
-                    .context("parsing infiniti band partition keys")?;
-            let (infinitiband_end_ports, tail) = SimpleArray::<InfinitiBandEndPort>::parse(tail)
-                .map_err(Into::<anyhow::Error>::into)
-                .context("parsing infiniti band end ports")?;
-            (Some(infinity_band_partition_keys), Some(infinitiband_end_ports), tail)
-        } else {
-            (None, None, tail)
-        };
-
     let (generic_fs_contexts, tail) = CustomKeyHashedView::<GenericFsContext>::parse(tail)
         .map_err(Into::<anyhow::Error>::into)
         .context("parsing generic filesystem contexts")?;
@@ -466,14 +410,6 @@ fn parse_policy_remaining(
             data: rest_data,
             new_policy: Arc::new(new_policy),
 
-            filesystems,
-            ports,
-            network_interfaces,
-            nodes,
-            fs_uses,
-            ipv6_nodes,
-            infinitiband_partition_keys,
-            infinitiband_end_ports,
             generic_fs_contexts,
             range_transitions,
             attribute_maps,
@@ -489,38 +425,6 @@ impl ParsedPolicy {
             new_policy: self.new_policy.clone(),
         };
 
-        self.filesystems
-            .validate(&context)
-            .map_err(Into::<anyhow::Error>::into)
-            .context("validating filesystems")?;
-        self.ports
-            .validate(&context)
-            .map_err(Into::<anyhow::Error>::into)
-            .context("validating ports")?;
-        self.network_interfaces
-            .validate(&context)
-            .map_err(Into::<anyhow::Error>::into)
-            .context("validating network_interfaces")?;
-        self.nodes
-            .validate(&context)
-            .map_err(Into::<anyhow::Error>::into)
-            .context("validating nodes")?;
-        self.fs_uses
-            .validate(&context)
-            .map_err(Into::<anyhow::Error>::into)
-            .context("validating fs_uses")?;
-        self.ipv6_nodes
-            .validate(&context)
-            .map_err(Into::<anyhow::Error>::into)
-            .context("validating ipv6 nodes")?;
-        self.infinitiband_partition_keys
-            .validate(&context)
-            .map_err(Into::<anyhow::Error>::into)
-            .context("validating infinitiband_partition_keys")?;
-        self.infinitiband_end_ports
-            .validate(&context)
-            .map_err(Into::<anyhow::Error>::into)
-            .context("validating infinitiband_end_ports")?;
         self.generic_fs_contexts
             .validate(&context)
             .map_err(Into::<anyhow::Error>::into)
@@ -542,20 +446,6 @@ impl ParsedPolicy {
             self.new_policy.sensitivities().iter().map(|x| x.id()).collect();
         let category_ids: HashSet<CategoryId> =
             self.new_policy.categories().iter().map(|x| x.id()).collect();
-
-        // Validate that contexts specified in filesystem labeling rules only use
-        // policy-defined Ids for their fields. Check that MLS levels are internally
-        // consistent.
-        for fs_use in &self.fs_uses.data {
-            self.validate_context(
-                fs_use.context(),
-                &user_ids,
-                &role_ids,
-                &type_ids,
-                &sensitivity_ids,
-                &category_ids,
-            )?;
-        }
 
         // Validate that contexts specified in genfscon rules only use
         // policy-defined Ids for their fields. Check that MLS levels are internally
@@ -603,31 +493,6 @@ fn validate_id<IdType: Debug + Eq + Hash>(
         return Err(ValidateError::UnknownId { kind: debug_kind, id: format!("{:?}", id) }.into());
     }
     Ok(())
-}
-
-impl<T: PolicyId, const WITH_ID_ZERO: bool> Parse for IdSet<T, WITH_ID_ZERO> {
-    type Error = anyhow::Error;
-
-    fn parse<'a>(cursor: PolicyCursor<'a>) -> Result<(Self, PolicyCursor<'a>), Self::Error> {
-        let offset = cursor.offset() as usize;
-        let slice = &cursor.data().as_ref()[offset..];
-        let mut new_cursor = crate::new_policy::parser::PolicyCursor::new(slice);
-        let id_set = <Self as crate::new_policy::traits::Parse>::parse(&mut new_cursor)
-            .map_err(|e| anyhow::anyhow!("Parse error: {:?}", e))?;
-        let bytes_parsed = new_cursor.offset();
-        let new_offset = cursor.offset() + bytes_parsed as u32;
-        Ok((id_set, PolicyCursor::new_at(cursor.data(), new_offset)))
-    }
-}
-
-impl<T: PolicyId + crate::new_policy::traits::Validate, const WITH_ID_ZERO: bool> Validate
-    for IdSet<T, WITH_ID_ZERO>
-{
-    type Error = anyhow::Error;
-
-    fn validate(&self, context: &PolicyValidationContext) -> Result<(), Self::Error> {
-        crate::new_policy::traits::Validate::validate(self, &context.new_policy).map_err(Into::into)
-    }
 }
 
 #[cfg(test)]
