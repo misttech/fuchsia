@@ -9,12 +9,19 @@ use fidl_fuchsia_driver_test as fdt;
 use fidl_fuchsia_hardware_power_battery as fbattery;
 use fidl_test_hardwarepowercontrol as ftest_battery;
 
+use fidl_fuchsia_hardware_power_source as fsource;
 use fidl_fuchsia_power_battery as fpower;
 use fidl_fuchsia_power_battery_test as spower;
+use fidl_fuchsia_power_system as fsystem;
 use fidl_fuchsia_testing as ftesting;
-use fuchsia_component_test::{Capability, ChildOptions, RealmBuilder, RealmInstance, Ref, Route};
+use fuchsia_async as fasync;
+use fuchsia_component_test::{
+    Capability, ChildOptions, LocalComponentHandles, RealmBuilder, RealmInstance, Ref, Route,
+};
 use fuchsia_driver_test::{DriverTestRealmBuilder, DriverTestRealmInstance};
-use futures::StreamExt as _;
+use futures::channel::mpsc;
+use futures::future::FutureExt as _;
+use futures::{SinkExt as _, StreamExt as _};
 use test_case::test_case;
 use test_util::assert_gt;
 use zx;
@@ -34,9 +41,98 @@ enum FidlRouteMode {
 const BATTERY_MANAGER_URL: &str = "#meta/battery_manager_fake_time.cm";
 const FAKE_CLOCK_URL: &str = "#meta/fake_clock.cm";
 
-async fn setup_realm(mode: FidlRouteMode) -> Result<RealmInstance> {
+#[derive(Debug, PartialEq, Eq)]
+enum LeaseEvent {
+    Acquired(String),
+    Dropped(String),
+}
+
+async fn run_fake_sag(
+    handles: LocalComponentHandles,
+    event_sender: mpsc::Sender<LeaseEvent>,
+) -> Result<(), anyhow::Error> {
+    use fuchsia_component::server as fserver;
+    use futures::TryStreamExt as _;
+
+    let mut fs = fserver::ServiceFs::new();
+    let mut tasks = vec![];
+
+    fs.dir("svc").add_fidl_service(move |mut stream: fsystem::ActivityGovernorRequestStream| {
+        let mut event_sender = event_sender.clone();
+        tasks.push(fasync::Task::local(async move {
+            while let Some(request) =
+                stream.try_next().await.expect("failed to serve ActivityGovernor")
+            {
+                match request {
+                    fsystem::ActivityGovernorRequest::AcquireWakeLease { name, responder } => {
+                        log::info!("Fake SAG: AcquireWakeLease called: {}", name);
+                        let (local_token, remote_token) = zx::EventPair::create();
+
+                        let _ = event_sender.send(LeaseEvent::Acquired(name.clone())).await;
+
+                        let mut event_sender = event_sender.clone();
+                        fasync::Task::local(async move {
+                            let _ = fasync::OnSignals::new(
+                                &local_token,
+                                zx::Signals::OBJECT_PEER_CLOSED,
+                            )
+                            .await;
+                            log::info!("Fake SAG: Lease token dropped for {}", name);
+                            let _ = event_sender.send(LeaseEvent::Dropped(name)).await;
+                        })
+                        .detach();
+
+                        responder.send(Ok(remote_token)).expect("failed to send response");
+                    }
+                    fsystem::ActivityGovernorRequest::AcquireUnmonitoredWakeLease {
+                        name,
+                        responder,
+                    } => {
+                        log::info!("Fake SAG: AcquireUnmonitoredWakeLease called: {}", name);
+                        let (local_token, remote_token) = zx::EventPair::create();
+
+                        let _ = event_sender.send(LeaseEvent::Acquired(name.clone())).await;
+
+                        let mut event_sender = event_sender.clone();
+                        fasync::Task::local(async move {
+                            let _ = fasync::OnSignals::new(
+                                &local_token,
+                                zx::Signals::OBJECT_PEER_CLOSED,
+                            )
+                            .await;
+                            log::info!("Fake SAG: Lease token dropped for {}", name);
+                            let _ = event_sender.send(LeaseEvent::Dropped(name)).await;
+                        })
+                        .detach();
+
+                        responder.send(Ok(remote_token)).expect("failed to send response");
+                    }
+                    _ => panic!("Fake SAG: Unimplemented method"),
+                }
+            }
+        }));
+    });
+
+    fs.serve_connection(handles.outgoing_dir)?;
+    fs.collect::<()>().await;
+    Ok(())
+}
+
+async fn setup_realm(
+    mode: FidlRouteMode,
+    suspend_enabled: bool,
+) -> Result<(RealmInstance, mpsc::Receiver<LeaseEvent>)> {
     let builder = RealmBuilder::new().await?;
     builder.driver_test_realm_setup().await?;
+
+    let (event_sender, event_receiver) = mpsc::channel(10);
+    let fake_sag = builder
+        .add_local_child(
+            "fake_sag",
+            move |handles| run_fake_sag(handles, event_sender.clone()).boxed(),
+            ChildOptions::new(),
+        )
+        .await?;
 
     let mut dtr_exposes = vec![];
     if mode == FidlRouteMode::NewOnly || mode == FidlRouteMode::Both {
@@ -62,14 +158,15 @@ async fn setup_realm(mode: FidlRouteMode) -> Result<RealmInstance> {
 
     let fake_clock = builder.add_child("fake_clock", FAKE_CLOCK_URL, ChildOptions::new()).await?;
 
-    // Route LogSink to battery_manager and fake_clock
+    // Route LogSink to battery_manager, fake_clock and fake_sag
     builder
         .add_route(
             Route::new()
                 .capability(Capability::protocol_by_name("fuchsia.logger.LogSink"))
                 .from(Ref::parent())
                 .to(&battery_manager)
-                .to(&fake_clock),
+                .to(&fake_clock)
+                .to(&fake_sag),
         )
         .await?;
 
@@ -105,10 +202,17 @@ async fn setup_realm(mode: FidlRouteMode) -> Result<RealmInstance> {
         .await?;
 
     builder
+        .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
+            name: "fuchsia.power.SuspendEnabled".parse().unwrap(),
+            value: suspend_enabled.into(),
+        }))
+        .await?;
+
+    builder
         .add_route(
             Route::new()
                 .capability(Capability::configuration("fuchsia.power.SuspendEnabled"))
-                .from(Ref::void())
+                .from(Ref::self_())
                 .to(&battery_manager),
         )
         .await?;
@@ -150,6 +254,16 @@ async fn setup_realm(mode: FidlRouteMode) -> Result<RealmInstance> {
         )
         .await?;
 
+    // Route ActivityGovernor protocol from fake_sag to battery_manager
+    builder
+        .add_route(
+            Route::new()
+                .capability(Capability::protocol::<fsystem::ActivityGovernorMarker>())
+                .from(&fake_sag)
+                .to(&battery_manager),
+        )
+        .await?;
+
     let realm = builder.build().await?;
 
     realm
@@ -164,7 +278,7 @@ async fn setup_realm(mode: FidlRouteMode) -> Result<RealmInstance> {
         })
         .await?;
 
-    Ok(realm)
+    Ok((realm, event_receiver))
 }
 
 fn assert_default_battery_info(info: &fpower::BatteryInfo) {
@@ -199,7 +313,7 @@ async fn wait_for_battery_info(
 #[test_case(FidlRouteMode::Both; "both")]
 #[fuchsia::test]
 async fn test_get_battery_info(mode: FidlRouteMode) -> Result<()> {
-    let realm = setup_realm(mode).await?;
+    let (realm, _lease_events) = setup_realm(mode, false).await?;
     let battery_mgr: fpower::BatteryManagerProxy =
         realm.root.connect_to_protocol_at_exposed_dir()?;
 
@@ -217,7 +331,7 @@ async fn test_get_battery_info(mode: FidlRouteMode) -> Result<()> {
 
 #[fuchsia::test]
 async fn test_watcher() -> Result<()> {
-    let realm = setup_realm(FidlRouteMode::Both).await?;
+    let (realm, _lease_events) = setup_realm(FidlRouteMode::Both, false).await?;
     let battery_mgr: fpower::BatteryManagerProxy =
         realm.root.connect_to_protocol_at_exposed_dir()?;
 
@@ -232,7 +346,7 @@ async fn test_watcher() -> Result<()> {
 
 #[fuchsia::test]
 async fn test_simulator() -> Result<()> {
-    let realm = setup_realm(FidlRouteMode::Both).await?;
+    let (realm, _lease_events) = setup_realm(FidlRouteMode::Both, false).await?;
     let battery_mgr: fpower::BatteryManagerProxy =
         realm.root.connect_to_protocol_at_exposed_dir()?;
     let simulator: spower::BatterySimulatorProxy =
@@ -282,7 +396,7 @@ async fn test_simulator() -> Result<()> {
 
 #[fuchsia::test]
 async fn test_watch_dynamic_updates() -> Result<()> {
-    let realm = setup_realm(FidlRouteMode::NewOnly).await?;
+    let (realm, _lease_events) = setup_realm(FidlRouteMode::NewOnly, false).await?;
 
     let battery_mgr: fpower::BatteryManagerProxy =
         realm.root.connect_to_protocol_at_exposed_dir()?;
@@ -344,7 +458,7 @@ async fn test_watch_dynamic_updates() -> Result<()> {
 
 #[fuchsia::test]
 async fn test_shutdown_offset_scaling() -> Result<()> {
-    let realm = setup_realm(FidlRouteMode::NewOnly).await?;
+    let (realm, _lease_events) = setup_realm(FidlRouteMode::NewOnly, false).await?;
 
     let battery_mgr: fpower::BatteryManagerProxy =
         realm.root.connect_to_protocol_at_exposed_dir()?;
@@ -425,6 +539,120 @@ async fn test_shutdown_offset_scaling() -> Result<()> {
 
     // 5. Raw level above 100% (101.0%) -> Scaled level capped at 100.0%
     update_and_check(&control, &fake_clock_control, &mut watcher_stream, 101.0, 100.0).await?;
+
+    Ok(())
+}
+
+#[fuchsia::test]
+async fn test_charging_wake_lease() -> Result<()> {
+    // 1. Setup realm with suspend_enabled = true
+    let (realm, mut lease_events) = setup_realm(FidlRouteMode::NewOnly, true).await?;
+
+    let battery_mgr: fpower::BatteryManagerProxy =
+        realm.root.connect_to_protocol_at_exposed_dir()?;
+    let service = fuchsia_component::client::Service::open_from_dir(
+        realm.root.get_exposed_dir(),
+        ftest_battery::ServiceMarker,
+    )?;
+    let service_instance = service.watch_for_any().await?;
+    let control = service_instance.connect_to_control()?;
+
+    // 2. The battery-manager starts watching driver updates.
+    // It should immediately connect to fake_sag and acquire the startup lease "battery_manager".
+    // Wait for the first LeaseEvent::Acquired("battery_manager")
+    let event1 = lease_events.next().await.ok_or_else(|| anyhow::anyhow!("lease_events ended"))?;
+    assert_eq!(event1, LeaseEvent::Acquired("battery_manager".to_string()));
+
+    // 3. Connect a watcher client to battery_manager
+    let (watcher_client, watcher_stream) =
+        fidl::endpoints::create_request_stream::<fpower::BatteryInfoWatcherMarker>();
+    battery_mgr.watch(watcher_client)?;
+
+    // Wait for the initial update from driver first
+    let (_info, mut watcher_stream) = wait_for_battery_info(watcher_stream).await?;
+
+    // The startup lease should be dropped now
+    let event_drop =
+        lease_events.next().await.ok_or_else(|| anyhow::anyhow!("lease_events ended"))?;
+    assert_eq!(event_drop, LeaseEvent::Dropped("battery_manager".to_string()));
+
+    // 4. Inject a charging status update via Driver Control (AcAdapter plugged in)
+    control
+        .set_battery_status(&fbattery::Status {
+            level_percent: Some(50.0),
+            charge_status: Some(fbattery::ChargeStatus::Charging),
+            source_status: Some(fsource::Status {
+                present: Some(true),
+                current_role: Some(fsource::Role::Sink(fsource::SinkRole {
+                    type_: Some(fsource::SourceType::Ac),
+                    ..Default::default()
+                })),
+                ..Default::default()
+            }),
+            ..Default::default()
+        })
+        .await?;
+
+    // Wait for the watcher stream to propagate the Charging status
+    loop {
+        if let Some(Ok(fpower::BatteryInfoWatcherRequest::OnChangeBatteryInfo {
+            info,
+            responder,
+            ..
+        })) = watcher_stream.next().await
+        {
+            responder.send()?;
+            if info.charge_status == Some(fpower::ChargeStatus::Charging)
+                && info.charge_source == Some(fpower::ChargeSource::AcAdapter)
+            {
+                break;
+            }
+        } else {
+            return Err(anyhow::anyhow!("Watcher stream ended prematurely"));
+        }
+    }
+
+    // 5. Verify that fake_sag receives AcquireUnmonitoredWakeLease("charging_block_suspension")
+    let event2 = lease_events.next().await.ok_or_else(|| anyhow::anyhow!("lease_events ended"))?;
+    assert_eq!(event2, LeaseEvent::Acquired("charging_block_suspension".to_string()));
+
+    // 6. Unplug the charger (Discharging, no source)
+    control
+        .set_battery_status(&fbattery::Status {
+            level_percent: Some(50.0),
+            charge_status: Some(fbattery::ChargeStatus::Discharging),
+            source_status: Some(fsource::Status {
+                present: Some(true),
+                current_role: Some(fsource::Role::Sink(fsource::SinkRole {
+                    type_: Some(fsource::SourceType::Battery),
+                    ..Default::default()
+                })),
+                ..Default::default()
+            }),
+            ..Default::default()
+        })
+        .await?;
+
+    // Wait for the watcher stream to propagate the Discharging status
+    loop {
+        if let Some(Ok(fpower::BatteryInfoWatcherRequest::OnChangeBatteryInfo {
+            info,
+            responder,
+            ..
+        })) = watcher_stream.next().await
+        {
+            responder.send()?;
+            if info.charge_status == Some(fpower::ChargeStatus::Discharging) {
+                break;
+            }
+        } else {
+            return Err(anyhow::anyhow!("Watcher stream ended prematurely"));
+        }
+    }
+
+    // 7. Verify that the wake lease was dropped (Fake SAG detects PEER_CLOSED)
+    let event3 = lease_events.next().await.ok_or_else(|| anyhow::anyhow!("lease_events ended"))?;
+    assert_eq!(event3, LeaseEvent::Dropped("charging_block_suspension".to_string()));
 
     Ok(())
 }
