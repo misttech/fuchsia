@@ -4652,17 +4652,6 @@ From //build/go/go_build.gni:21
 
 From //build/go/go_build.gni:17
 
-### goodix_driver_flavor
-
-Toggles between the C++ and Rust driver implementations.
-
-TODO(https://fxbug.dev/527195603): Remove the toggle after the Rust port is completed.
-Valid values: "cpp", "rust"
-
-**Current value (from the default):** `"cpp"`
-
-From //src/ui/input/drivers/goodix/BUILD.gn:16
-
 ### goodix_gt6853_driver_flavor
 
 Toggles between the C++ and Rust driver implementations.
@@ -4673,6 +4662,17 @@ Valid values: "cpp", "rust"
 **Current value (from the default):** `"cpp"`
 
 From //src/ui/input/drivers/goodix-gt6853/BUILD.gn:20
+
+### goodix_gt92xx_driver_flavor
+
+Toggles between the C++ and Rust driver implementations.
+
+TODO(https://fxbug.dev/527195603): Remove the toggle after the Rust port is completed.
+Valid values: "cpp", "rust"
+
+**Current value (from the default):** `"cpp"`
+
+From //src/ui/input/drivers/goodix-gt92xx/BUILD.gn:16
 
 ### graphics_compute_generate_debug_shaders
 
