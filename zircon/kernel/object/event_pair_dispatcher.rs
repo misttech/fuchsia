@@ -107,4 +107,14 @@ impl EventPairDispatcher {
 
         Ok((handle0, handle1, DEFAULT_RIGHTS))
     }
+
+    /// Handles zero handles condition by clearing the peer reference and asserting peer
+    /// closed on peer.
+    pub fn on_zero_handles(&self) {
+        ksync::lock!(let mut guard = self.state().peered.lock());
+        if let Some(p) = guard.as_mut().peer_mut().take() {
+            *p.state().peered.guard_mu_mut(guard.as_mut().token_mut()).peer_mut() = None;
+            p.update_state_locked(guard.token(), 0, zx_types::ZX_OBJECT_PEER_CLOSED);
+        }
+    }
 }

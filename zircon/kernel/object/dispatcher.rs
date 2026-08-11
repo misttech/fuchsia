@@ -177,7 +177,7 @@ pub(crate) use impl_dispatcher_facade_with_state;
 
 /// Helper macro to declare facade structs and implement common facade traits, state access methods,
 /// and peered dispatcher operations (init_peer, get_related_koid, user_signal_self,
-/// user_signal_peer, on_zero_handles) for PeeredDispatcher subtypes with state.
+/// user_signal_peer) for PeeredDispatcher subtypes with state.
 macro_rules! impl_peered_dispatcher_facade_with_state {
     (
         $(#[$meta:meta])* $vis:vis struct $type:ident,
@@ -237,16 +237,6 @@ macro_rules! impl_peered_dispatcher_facade_with_state {
                 let peer = guard.peer().as_ref().ok_or(zx_status::Status::PEER_CLOSED)?;
                 peer.update_state_locked(guard.token(), clear_mask, set_mask);
                 Ok(())
-            }
-
-            /// Handles zero handles condition by clearing the peer reference and asserting peer
-            /// closed on peer.
-            pub fn on_zero_handles(&self) {
-                ksync::lock!(let mut guard = self.state().peered.lock());
-                if let Some(p) = guard.as_mut().peer_mut().take() {
-                    *p.state().peered.guard_mu_mut(guard.as_mut().token_mut()).peer_mut() = None;
-                    p.update_state_locked(guard.token(), 0, zx_types::ZX_OBJECT_PEER_CLOSED);
-                }
             }
         }
     };
