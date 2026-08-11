@@ -33,6 +33,7 @@ unsafe extern "C" {
     fn cpp_thread_preempt_disable();
     fn cpp_thread_preempt_enable();
     fn cpp_thread_current_sleep_relative(duration: DurationMono) -> zx_status_t;
+    fn cpp_thread_current_soft_fault(va: usize, flags: u32) -> zx_status_t;
     fn cpp_restricted_enter(vector_table_ptr: usize, context: usize) -> zx_status_t;
 }
 
@@ -289,6 +290,13 @@ impl Drop for AutoExpiringPreemptDisabler {
 pub fn sleep_relative(duration: DurationMono) -> Result<(), Status> {
     // SAFETY: cpp_thread_current_sleep_relative is safe to call at any time in thread context.
     let status = unsafe { cpp_thread_current_sleep_relative(duration) };
+    Status::ok(status)
+}
+
+/// Soft faults a page at the given virtual address for the current thread.
+pub fn soft_fault(va: usize, flags: u32) -> Result<(), Status> {
+    // SAFETY: cpp_thread_current_soft_fault is safe to call from thread context.
+    let status = unsafe { cpp_thread_current_soft_fault(va, flags) };
     Status::ok(status)
 }
 

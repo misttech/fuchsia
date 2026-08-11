@@ -36,6 +36,7 @@ void cpp_thread_preempt_clear_timeslice_extension();
 void cpp_thread_preempt_disable();
 void cpp_thread_preempt_enable();
 zx_status_t cpp_thread_current_sleep_relative(zx_duration_mono_t duration);
+zx_status_t cpp_thread_current_soft_fault(vaddr_t va, uint flags);
 zx_status_t cpp_restricted_enter(uintptr_t vector_table_ptr, uintptr_t context);
 
 void* cpp_thread_create_default(const char* name, thread_start_routine entry, void* arg) {
@@ -90,6 +91,11 @@ void cpp_thread_preempt_enable() { Thread::Current::preemption_state().PreemptRe
 zx_status_t cpp_thread_current_sleep_relative(zx_duration_mono_t duration) {
   return Thread::Current::SleepRelative(duration);
 }
+
+zx_status_t cpp_thread_current_soft_fault(vaddr_t va, uint flags) {
+  return Thread::Current::SoftFault(va, flags);
+}
+
 zx_status_t cpp_restricted_enter(uintptr_t vector_table_ptr, uintptr_t context) {
   return RestrictedEnter(vector_table_ptr, context);
 }
