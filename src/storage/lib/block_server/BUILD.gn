@@ -14,6 +14,8 @@ block_server_sources = [
   "src/callback_interface/block_service.rs",
   "src/decompression_tests.rs",
   "src/lib.rs",
+  "src/testing.rs",
+  "src/verifier.rs",
 ]
 
 block_server_deps = [
@@ -25,7 +27,9 @@ block_server_deps = [
   "//src/lib/fuchsia-sync",
   "//src/lib/trace/rust:trace",
   "//src/storage/lib/block_protocol",
+  "//src/storage/lib/delivery_blob",
   "//src/storage/lib/mapping",
+  "//src/storage/lib/ptr_slice",
   "//src/storage/lib/storage_device",
   "//third_party/rust_crates:anyhow",
   "//third_party/rust_crates:futures",

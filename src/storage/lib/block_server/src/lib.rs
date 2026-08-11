@@ -21,6 +21,10 @@ use storage_device::buffer::Buffer;
 pub mod async_interface;
 pub mod c_interface;
 pub mod callback_interface;
+pub mod verifier;
+
+#[cfg(test)]
+pub mod testing;
 
 #[cfg(test)]
 mod decompression_tests;
@@ -539,6 +543,19 @@ pub trait SessionManager: 'static {
         async { Err(zx::Status::NOT_SUPPORTED) }
     }
 
+    /// Opens a new mapper session.
+    fn open_mapper_session(
+        _orchestrator: Arc<Self::Orchestrator>,
+        _session: fidl::endpoints::ServerEnd<fblock::MapperSessionMarker>,
+        _mapping_vmo: zx::Vmo,
+        _offset_map: OffsetMap,
+        _block_size: u32,
+        _port: zx::Port,
+        _delivery_queue: zx::Vmo,
+    ) -> impl Future<Output = Result<(), Error>> + Send {
+        async { Err(anyhow::anyhow!("Mapper session not supported")) }
+    }
+
     /// Returns the active requests.
     fn active_requests(&self) -> &ActiveRequests<Self::Session>;
 }
@@ -580,6 +597,93 @@ impl<SM: SessionManager> BlockServer<SM> {
         }
         scope.await;
         Ok(())
+    }
+
+    /// Called to process requests for fuchsia.storage.block.Mapper.
+    pub async fn handle_mapper_requests(
+        &self,
+        mut requests: fblock::MapperRequestStream,
+    ) -> Result<(), Error> {
+        let scope = fasync::Scope::new();
+        loop {
+            match requests.try_next().await {
+                Ok(Some(request)) => {
+                    if let Some(session) = self.handle_mapper_request(request).await? {
+                        scope.spawn(async move {
+                            if let Err(error) = session.await {
+                                log::warn!(error:?; "Mapper session failed");
+                            }
+                        });
+                    }
+                }
+                Ok(None) => break,
+                Err(error) => log::warn!(error:?; "Invalid mapper request"),
+            }
+        }
+        scope.await;
+        Ok(())
+    }
+
+    /// Processes a Mapper request. If a new session task is created, it is
+    /// returned.
+    async fn handle_mapper_request(
+        &self,
+        request: fblock::MapperRequest,
+    ) -> Result<Option<impl Future<Output = Result<(), Error>> + Send + use<SM>>, Error> {
+        match request {
+            fblock::MapperRequest::OpenSession {
+                session,
+                mapping_vmo,
+                mapping_offset,
+                port,
+                delivery_queue,
+                responder,
+            } => {
+                let info = self.device_info();
+                let offset_map = if let Some(mapping) = mapping_offset {
+                    let initial_mapping = BlockOffsetMapping {
+                        target_block_offset: mapping.target_block_offset,
+                        length: mapping.length,
+                    };
+                    if let Some(max) = info.block_count() {
+                        if initial_mapping
+                            .target_block_offset
+                            .checked_add(initial_mapping.length)
+                            .unwrap_or(u64::MAX)
+                            > max
+                        {
+                            log::warn!(
+                                "Invalid mapping for mapper session: {initial_mapping:?} (max {max})"
+                            );
+                            responder.send(Err(zx::Status::INVALID_ARGS.into_raw()))?;
+                            return Ok(None);
+                        }
+                    }
+                    match OffsetMap::new(vec![initial_mapping]) {
+                        Ok(map) => map,
+                        Err(status) => {
+                            responder.send(Err(status.into_raw()))?;
+                            return Ok(None);
+                        }
+                    }
+                } else {
+                    OffsetMap::empty()
+                };
+
+                let fut = SM::open_mapper_session(
+                    self.orchestrator.clone(),
+                    session,
+                    mapping_vmo,
+                    offset_map,
+                    self.block_size,
+                    port,
+                    delivery_queue,
+                );
+                responder.send(Ok(()))?;
+                return Ok(Some(fut));
+            }
+            fblock::MapperRequest::_UnknownMethod { .. } => Ok(None),
+        }
     }
 
     /// Processes a Block request.  If a new session task is created in response to the request,
@@ -4230,5 +4334,88 @@ mod tests {
                 std::mem::drop(proxy);
             }
         );
+    }
+
+    #[fuchsia::test]
+    async fn test_mapper_open_session() {
+        let interface = Arc::new(MockInterface::default());
+        let block_server = BlockServer::new(512, interface);
+
+        let (mapper_proxy, mapper_stream) =
+            fidl::endpoints::create_proxy_and_stream::<fblock::MapperMarker>();
+        let scope = fasync::Scope::new();
+        scope.spawn(async move {
+            let _ = block_server.handle_mapper_requests(mapper_stream).await;
+        });
+
+        let (_mapper_session_proxy, mapper_session_server) =
+            fidl::endpoints::create_proxy::<fblock::MapperSessionMarker>();
+        let mapping_vmo = zx::Vmo::create(4096).unwrap();
+        let port = zx::Port::create();
+        let delivery_queue = zx::Vmo::create(4096).unwrap();
+
+        let res = mapper_proxy
+            .open_session(mapper_session_server, mapping_vmo, None, port, delivery_queue)
+            .await
+            .unwrap();
+        assert_matches!(res, Ok(()));
+    }
+
+    #[fuchsia::test]
+    async fn test_mapper_blob_page_request() {
+        use crate::callback_interface::SessionManager;
+        use crate::testing::MockInterface;
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        let interface = Arc::new(MockInterface::new(tx));
+        let session_manager = Arc::new(SessionManager::new(interface.clone(), 512));
+        let block_server = BlockServer::new(512, session_manager.clone());
+
+        let sm_completer = session_manager.clone();
+        std::thread::spawn(move || {
+            while let Ok(req) = rx.recv() {
+                sm_completer.complete_request(req.request_id, zx::Status::OK);
+            }
+        });
+
+        let (mapper_proxy, mapper_stream) =
+            fidl::endpoints::create_proxy_and_stream::<fblock::MapperMarker>();
+        let scope = fasync::Scope::new();
+        scope.spawn(async move {
+            let _ = block_server.handle_mapper_requests(mapper_stream).await;
+        });
+
+        let pager = Arc::new(zx::Pager::create(zx::PagerOptions::empty()).unwrap());
+        let port = zx::Port::create();
+        let key = 1001u64;
+        let paged_vmo = pager.create_vmo(zx::VmoOptions::empty(), &port, key, 4096).unwrap();
+
+        let (_mapper_session_proxy, mapper_session_server) =
+            fidl::endpoints::create_proxy::<fblock::MapperSessionMarker>();
+        let mapping_vmo = zx::Vmo::create(4096).unwrap();
+        let delivery_queue = zx::Vmo::create(4096).unwrap();
+
+        let res = mapper_proxy
+            .open_session(mapper_session_server, mapping_vmo, None, port, delivery_queue)
+            .await
+            .unwrap();
+        assert_matches!(res, Ok(()));
+
+        let verifier = interface.verifier.lock().as_ref().unwrap().clone();
+        verifier.set_pager(pager);
+        verifier.register_vmo(key, paged_vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap());
+
+        let extents = mapping::Extents::from_encoded(&[(8u64 << 32) | 0u64]).unwrap();
+        let blob = Arc::new(mapping::Blob::new(extents, 4096, None));
+        interface.blobs.insert(key, blob);
+
+        let reader_thread = std::thread::spawn(move || {
+            let mut buf = [0u8; 4096];
+            paged_vmo.read(&mut buf, 0).expect("paged vmo read failed");
+            buf
+        });
+
+        let read_bytes = reader_thread.join().unwrap();
+        assert_eq!(read_bytes.len(), 4096);
     }
 }

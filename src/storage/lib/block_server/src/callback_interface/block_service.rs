@@ -122,30 +122,12 @@ mod tests {
 
     const BLOCK_SIZE: u32 = 512;
 
-    struct MockInterface {
-        request_sender: std::sync::mpsc::Sender<Request>,
-    }
-
-    impl Interface for MockInterface {
-        type Orchestrator = SessionManager<Self>;
-
-        fn get_info(&self) -> Cow<'_, DeviceInfo> {
-            Cow::Owned(DeviceInfo::Block(BlockInfo { block_count: 1024, ..Default::default() }))
-        }
-
-        fn spawn_session(&self, _session: Arc<Session<Self>>) {}
-
-        fn on_requests(&self, requests: &[Request]) {
-            for request in requests {
-                self.request_sender.send(request.clone()).unwrap();
-            }
-        }
-    }
+    use crate::testing::MockInterface;
 
     #[test]
     fn test_into_block_service_memoization() {
         let (tx, _rx) = std::sync::mpsc::channel();
-        let interface = Arc::new(MockInterface { request_sender: tx });
+        let interface = Arc::new(MockInterface::new(tx));
         let session_manager = Arc::new(SessionManager::new(interface.clone(), BLOCK_SIZE));
 
         let service1 = session_manager.into_block_service(&session_manager);
@@ -207,7 +189,7 @@ mod tests {
     #[test]
     fn test_default_callback_block_service_weak_ref_no_cycle() {
         let (tx, _rx) = std::sync::mpsc::channel();
-        let interface = Arc::new(MockInterface { request_sender: tx });
+        let interface = Arc::new(MockInterface::new(tx));
         let session_manager = Arc::new(SessionManager::new(interface, BLOCK_SIZE));
         let service = DefaultCallbackBlockService::<MockInterface>::new(&session_manager);
         assert!(service.orchestrator().is_some());
@@ -221,7 +203,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_default_callback_block_service_read_aligned_range() {
         let (tx, rx) = std::sync::mpsc::channel();
-        let interface = Arc::new(MockInterface { request_sender: tx });
+        let interface = Arc::new(MockInterface::new(tx));
         let session_manager = Arc::new(SessionManager::new(interface.clone(), BLOCK_SIZE));
         let service = session_manager.into_block_service(&session_manager);
 
@@ -261,7 +243,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_default_callback_block_service_read_aligned_range_failure() {
         let (tx, rx) = std::sync::mpsc::channel();
-        let interface = Arc::new(MockInterface { request_sender: tx });
+        let interface = Arc::new(MockInterface::new(tx));
         let session_manager = Arc::new(SessionManager::new(interface.clone(), BLOCK_SIZE));
         let service = session_manager.into_block_service(&session_manager);
 

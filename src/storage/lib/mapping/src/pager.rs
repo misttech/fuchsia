@@ -20,7 +20,7 @@ pub fn run_pager_loop<B: DataBuffer>(
     port: &Port,
     service: Arc<dyn BlockService>,
     blobs: &Blobs,
-    mut buffer_factory: impl FnMut(u64, usize) -> B + Send + 'static,
+    mut buffer_factory: impl FnMut(u64, u64, usize) -> B + Send + 'static,
 ) {
     loop {
         match port.wait(zx::MonotonicInstant::INFINITE) {
@@ -33,7 +33,7 @@ pub fn run_pager_loop<B: DataBuffer>(
                         let offset = pager_packet.range().start;
                         let length = pager_packet.range().end - offset;
                         if let Some(blob) = blobs.get(key) {
-                            let dest_buf = buffer_factory(offset, length as usize);
+                            let dest_buf = buffer_factory(key, offset, length as usize);
                             blob.read_range(offset..offset + length, service.as_ref(), dest_buf);
                         }
                     }
@@ -59,7 +59,7 @@ impl PagerThread {
         port: Port,
         service: Arc<dyn BlockService>,
         blobs: Arc<Blobs>,
-        buffer_factory: impl FnMut(u64, usize) -> B + Send + 'static,
+        buffer_factory: impl FnMut(u64, u64, usize) -> B + Send + 'static,
     ) -> Self {
         let thread_port = port.duplicate_handle(Rights::SAME_RIGHTS).expect("duplicate port");
         let thread_blobs = Arc::clone(&blobs);
@@ -96,8 +96,9 @@ mod tests {
         let port = Port::create();
         let service = Arc::new(FakeBlockService::new(vec![0u8; 4096]));
         let blobs = Arc::new(Blobs::new());
-        let thread =
-            PagerThread::spawn(port, service, blobs, |_offset, _len| TestVecBuffer::new(4096).0);
+        let thread = PagerThread::spawn(port, service, blobs, |_key, _offset, _len| {
+            TestVecBuffer::new(4096).0
+        });
         drop(thread);
     }
 

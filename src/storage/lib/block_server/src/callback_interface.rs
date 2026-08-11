@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::verifier::Verifier;
 use crate::{
     ActiveRequests, DecodedRequest, DeviceInfo, HandleRequestResult, IntoOrchestrator, OffsetMap,
     Operation, RequestId, SessionHelper, TraceFlowId, WriteFlags,
@@ -61,6 +62,19 @@ pub trait Interface: Send + Sync + Unpin + 'static {
         orchestrator: &Arc<Self::Orchestrator>,
     ) -> Arc<dyn BlockService> {
         Arc::new(DefaultCallbackBlockService::<Self>::new(orchestrator))
+    }
+
+    /// Called when a new mapper session is opened.
+    /// Returns the [`mapping::Blobs`] registry and [`Verifier`] for page
+    /// delivery.
+    fn on_open_mapper_session(
+        &self,
+        _mapping_vmo: &zx::Vmo,
+        _offset_map: &OffsetMap,
+        delivery_queue: zx::Vmo,
+    ) -> Result<(Arc<mapping::Blobs>, Arc<Verifier>), zx::Status> {
+        let verifier = Arc::new(Verifier::new(delivery_queue));
+        Ok((Arc::new(mapping::Blobs::new()), verifier))
     }
 }
 
@@ -172,6 +186,31 @@ impl<I: Interface + ?Sized> super::SessionManager for SessionManager<I> {
         let _ = session.fifo.signal(zx::Signals::empty(), SHUTDOWN_SIGNAL);
 
         result
+    }
+
+    async fn open_mapper_session(
+        orchestrator: Arc<Self::Orchestrator>,
+        session: fidl::endpoints::ServerEnd<fblock::MapperSessionMarker>,
+        mapping_vmo: zx::Vmo,
+        offset_map: OffsetMap,
+        _block_size: u32,
+        port: zx::Port,
+        delivery_queue: zx::Vmo,
+    ) -> Result<(), Error> {
+        let sm: &SessionManager<I> = orchestrator.as_ref().borrow();
+        let service = sm.into_block_service(&orchestrator);
+        let (blobs, verifier) =
+            sm.interface.on_open_mapper_session(&mapping_vmo, &offset_map, delivery_queue)?;
+
+        let _pager_thread =
+            mapping::PagerThread::spawn(port, service, blobs, move |key, offset, len| {
+                verifier.get_buffer(key, offset, len)
+            });
+        let mut stream = session.into_stream();
+        while let Some(_request) = stream.try_next().await? {
+            // Future MapperSession requests
+        }
+        Ok(())
     }
 
     fn get_info(&self) -> Cow<'_, super::DeviceInfo> {
@@ -635,7 +674,7 @@ impl<I: Interface<Orchestrator = SessionManager<I>>> IntoOrchestrator for Arc<Se
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::BlockInfo;
+    use crate::testing::MockInterface;
     use block_protocol::{BlockFifoCommand, BlockFifoRequest, BlockFifoResponse};
     use fidl::endpoints::create_proxy_and_stream;
     use fidl_fuchsia_storage_block as fblock;
@@ -643,34 +682,10 @@ mod tests {
 
     const BLOCK_SIZE: u32 = 512;
 
-    struct MockInterface {
-        request_sender: std::sync::mpsc::Sender<Request>,
-    }
-
-    impl Interface for MockInterface {
-        type Orchestrator = SessionManager<Self>;
-
-        fn get_info(&self) -> Cow<'_, DeviceInfo> {
-            Cow::Owned(DeviceInfo::Block(BlockInfo { block_count: 1024, ..Default::default() }))
-        }
-
-        fn spawn_session(&self, session: Arc<Session<Self>>) {
-            std::thread::spawn(move || {
-                session.run();
-            });
-        }
-
-        fn on_requests(&self, requests: &[Request]) {
-            for request in requests {
-                self.request_sender.send(request.clone()).unwrap();
-            }
-        }
-    }
-
     #[fuchsia::test]
     async fn test_basic_request() {
         let (tx, rx) = std::sync::mpsc::channel();
-        let interface = Arc::new(MockInterface { request_sender: tx });
+        let interface = Arc::new(MockInterface::new(tx));
         let session_manager = Arc::new(SessionManager::new(interface.clone(), BLOCK_SIZE));
 
         let sm_clone = session_manager.clone();
@@ -731,7 +746,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_write_request() {
         let (tx, rx) = std::sync::mpsc::channel();
-        let interface = Arc::new(MockInterface { request_sender: tx });
+        let interface = Arc::new(MockInterface::new(tx));
         let session_manager = Arc::new(SessionManager::new(interface.clone(), BLOCK_SIZE));
 
         let sm_clone = session_manager.clone();
@@ -791,7 +806,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_flush_request() {
         let (tx, rx) = std::sync::mpsc::channel();
-        let interface = Arc::new(MockInterface { request_sender: tx });
+        let interface = Arc::new(MockInterface::new(tx));
         let session_manager = Arc::new(SessionManager::new(interface.clone(), BLOCK_SIZE));
 
         let sm_clone = session_manager.clone();
@@ -844,7 +859,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_trim_request() {
         let (tx, rx) = std::sync::mpsc::channel();
-        let interface = Arc::new(MockInterface { request_sender: tx });
+        let interface = Arc::new(MockInterface::new(tx));
         let session_manager = Arc::new(SessionManager::new(interface.clone(), BLOCK_SIZE));
 
         let sm_clone = session_manager.clone();
@@ -897,7 +912,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_close_vmo() {
         let (tx, rx) = std::sync::mpsc::channel();
-        let interface = Arc::new(MockInterface { request_sender: tx });
+        let interface = Arc::new(MockInterface::new(tx));
         let session_manager = Arc::new(SessionManager::new(interface.clone(), BLOCK_SIZE));
 
         let sm_clone = session_manager.clone();
@@ -954,7 +969,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_error() {
         let (tx, rx) = std::sync::mpsc::channel();
-        let interface = Arc::new(MockInterface { request_sender: tx });
+        let interface = Arc::new(MockInterface::new(tx));
         let session_manager = Arc::new(SessionManager::new(interface.clone(), BLOCK_SIZE));
 
         let sm_clone = session_manager.clone();
@@ -1004,7 +1019,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_teardown_with_active_requests() {
         let (tx, rx) = std::sync::mpsc::channel();
-        let interface = Arc::new(MockInterface { request_sender: tx });
+        let interface = Arc::new(MockInterface::new(tx));
         let session_manager = Arc::new(SessionManager::new(interface.clone(), BLOCK_SIZE));
 
         let sm_clone = session_manager.clone();
@@ -1061,7 +1076,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_teardown_with_active_grouped_requests() {
         let (tx, rx) = std::sync::mpsc::channel();
-        let interface = Arc::new(MockInterface { request_sender: tx });
+        let interface = Arc::new(MockInterface::new(tx));
         let session_manager = Arc::new(SessionManager::new(interface.clone(), BLOCK_SIZE));
 
         let sm_clone = session_manager.clone();
@@ -1139,7 +1154,7 @@ mod tests {
         use futures::FutureExt as _;
 
         let (tx, rx) = std::sync::mpsc::channel();
-        let interface = Arc::new(MockInterface { request_sender: tx });
+        let interface = Arc::new(MockInterface::new(tx));
         let session_manager = Arc::new(SessionManager::new(interface.clone(), BLOCK_SIZE));
 
         let sm_clone = session_manager.clone();
@@ -1186,7 +1201,7 @@ mod tests {
         let mut timer_fut =
             std::pin::pin!(fasync::Timer::new(std::time::Duration::from_millis(100)).fuse());
         futures::select! {
-            res = close_fut => panic!("close completed too early: {:?}", res),
+            res = close_fut => panic!("close completed too early: {res:?}"),
             _ = timer_fut => {}
         }
 

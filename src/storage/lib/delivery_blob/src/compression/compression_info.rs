@@ -292,7 +292,8 @@ impl<C: Borrow<CompressionInfo>, B: DataBuffer> StreamingDecompressor<C, B> {
             let decompress_chunk = |compressed_src: PtrByteSlice<'_>,
                                     dest_buf: &mut B|
              -> Result<(), ChunkedArchiveError> {
-                let mut dest_buffer = dest_buf.mut_ptr_slice().subslice_mut(0..chunk_size as usize);
+                let buffer_len = std::cmp::min(dest_buf.mut_ptr_slice().len(), chunk_size as usize);
+                let mut dest_buffer = dest_buf.mut_ptr_slice().subslice_mut(0..buffer_len);
                 let remaining = (self.uncompressed_size.saturating_sub(self.range.start)) as usize;
                 let chunk_uncompressed_len = if remaining < chunk_size as usize {
                     // Zero the block tail if this partial final chunk is smaller than chunk_size.
@@ -316,7 +317,7 @@ impl<C: Borrow<CompressionInfo>, B: DataBuffer> StreamingDecompressor<C, B> {
                 if decompressed_bytes != chunk_uncompressed_len {
                     return Err(ChunkedArchiveError::IntegrityError);
                 }
-                dest_buf.commit(chunk_uncompressed_len)?;
+                dest_buf.commit(buffer_len)?;
                 Ok(())
             };
 

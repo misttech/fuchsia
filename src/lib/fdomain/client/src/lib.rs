@@ -68,6 +68,8 @@ pub use Handle as Vmar;
 pub use Handle as Vmo;
 #[rustfmt::skip]
 pub use Handle as Counter;
+#[rustfmt::skip]
+pub use Handle as Port;
 
 use proto::f_domain_ordinals as ordinals;
 

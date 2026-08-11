@@ -526,3 +526,25 @@ closed protocol Block {
         status zx.Status;
     });
 };
+
+/// Exposed by the block driver, routed via fshost to pkg-cache.
+@discoverable
+open protocol Mapper {
+    /// Bootstraps the driver mapper with the mapping VMO and verifier handles.
+    flexible OpenSession(resource struct {
+        session server_end:MapperSession;
+        /// VMO that contains the mappings.
+        mapping_vmo zx.Handle:VMO;
+        /// Used by gpt to forward with an offset.
+        mapping_offset box<BlockOffsetMapping>;
+        /// Page requests will be delivered on the port.
+        port zx.Handle:PORT;
+        /// Completed requests are delivered on this queue.
+        delivery_queue zx.Handle:VMO;
+    }) -> () error zx.Status;
+};
+
+/// Represents an active driver mapping session.
+open protocol MapperSession {
+    compose fuchsia.unknown.Closeable;
+};

@@ -74,14 +74,12 @@ impl Blob {
                     let valid_len =
                         min(buffer.len() as u64, uncompressed_size.saturating_sub(current_offset))
                             as usize;
-                    if valid_len > 0 {
-                        dest_buf
-                            .mut_ptr_slice()
-                            .subslice_mut(0..valid_len)
-                            .copy_from_ptr_slice(buffer.as_ptr_slice().subslice(0..valid_len));
-                        if dest_buf.commit(valid_len).is_err() {
-                            return ControlFlow::Break(());
-                        }
+                    let dest = dest_buf.mut_ptr_slice().subslice_mut(0..buffer.len());
+                    let (mut head, mut tail) = dest.split_at_mut(valid_len);
+                    head.copy_from_ptr_slice(buffer.as_ptr_slice().subslice(0..valid_len));
+                    tail.fill(0);
+                    if dest_buf.commit(buffer.len()).is_err() {
+                        return ControlFlow::Break(());
                     }
                     current_offset += buffer.len() as u64;
                     ControlFlow::Continue(())
@@ -233,7 +231,11 @@ mod tests {
 
         assert_eq!(
             rx.commits(),
-            vec![(0, chunk_size), (chunk_size as u64, chunk_size), (chunk_size as u64 * 2, 1024)]
+            vec![
+                (0, chunk_size),
+                (chunk_size as u64, chunk_size),
+                (chunk_size as u64 * 2, chunk_size)
+            ]
         );
         assert_eq!(&rx.output()[..uncompressed_size], &uncompressed_data[..]);
     }
@@ -389,7 +391,7 @@ mod tests {
         let (dest_buf, rx) = TestVecBuffer::new(8192);
         blob.read_range(0..8192, &service, dest_buf);
 
-        assert_eq!(rx.commits(), vec![(0, 5000)]);
+        assert_eq!(rx.commits(), vec![(0, 8192)]);
         assert_eq!(&rx.output()[..5000], &expected_data[..5000]);
     }
 
@@ -437,7 +439,7 @@ mod tests {
         let (dest_buf, rx) = TestVecBuffer::new_with_offset(32768, tail_start);
         blob.read_range(tail_start..(uncompressed_size as u64), &service, dest_buf);
 
-        assert_eq!(rx.commits(), vec![(tail_start, 1024)]);
+        assert_eq!(rx.commits(), vec![(tail_start, chunk_size)]);
         assert_eq!(&rx.output()[..1024], &uncompressed_data[65536..]);
     }
 
@@ -486,7 +488,7 @@ mod tests {
         dest_buf.data.fill(0xFF);
         blob.read_range(0..(uncompressed_size as u64), &service, dest_buf);
 
-        assert_eq!(rx.commits(), vec![(0, chunk_size), (chunk_size as u64, 1024)]);
+        assert_eq!(rx.commits(), vec![(0, chunk_size), (chunk_size as u64, chunk_size)]);
         assert_eq!(&rx.output()[..uncompressed_size], &uncompressed_data[..]);
         assert_eq!(&rx.output()[uncompressed_size..65536], &[0u8; 31744]);
     }
