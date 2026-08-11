@@ -53,6 +53,8 @@ wlancfg_tests_for_fyi = [
   "//src/connectivity/wlan/tests/wlancfg:wlan_misc_scenario_test",
   "//src/connectivity/wlan/tests/wlancfg:wlan_target_security_test",
   "//src/testing/end_to_end/antlion/tests/wlan/compliance:wlan_security_type_test",
+  "//src/connectivity/wlan/tests/wlancfg:reboot_ap_test_quick",
+  "//src/connectivity/wlan/tests/wlancfg:reboot_dut_test_quick",
   "//src/connectivity/wlan/tests/wlancfg:wlan_wireless_network_management_test",
 ]
 
@@ -63,4 +65,10 @@ wlancfg_tests_for_fyi_long = [
   "//src/connectivity/wlan/tests/wlancfg:channel_switch_test_with_soft_ap",
   "//src/connectivity/wlan/tests/wlancfg:channel_switch_test_without_soft_ap",
   "//src/connectivity/wlan/tests/wlancfg:connection_stress_test",
+  "//src/connectivity/wlan/tests/wlancfg:reboot_ap_open_test",
+  "//src/connectivity/wlan/tests/wlancfg:reboot_ap_wpa2_test",
+  "//src/connectivity/wlan/tests/wlancfg:reboot_ap_wpa3_test",
+  "//src/connectivity/wlan/tests/wlancfg:reboot_dut_open_test",
+  "//src/connectivity/wlan/tests/wlancfg:reboot_dut_wpa2_test",
+  "//src/connectivity/wlan/tests/wlancfg:reboot_dut_wpa3_test",
 ]

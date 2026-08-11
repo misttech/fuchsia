@@ -175,6 +175,94 @@ antlion_host_test("wlan_bss_transition_management_test") {
   ]
 }
 
+antlion_host_test("reboot_ap_open_test") {
+  main_source = "//src/connectivity/wlan/tests/wlancfg/WlanRebootTest.py"
+  libraries = [
+    "//sdk/fidl/fuchsia.wlan.policy:fuchsia.wlan.policy_python",
+    "//src/testing/end_to_end/honeydew",
+    "//src/testing/end_to_end/mobly_base_tests:fuchsia_wlan_base_test",
+    "//src/testing/end_to_end/mobly_controller/openwrt_access_point:openwrt_access_point",
+  ]
+  test_cases = [ "re:test.+ap.+open.+" ]
+}
+
+antlion_host_test("reboot_ap_wpa2_test") {
+  main_source = "//src/connectivity/wlan/tests/wlancfg/WlanRebootTest.py"
+  libraries = [
+    "//sdk/fidl/fuchsia.wlan.policy:fuchsia.wlan.policy_python",
+    "//src/testing/end_to_end/honeydew",
+    "//src/testing/end_to_end/mobly_base_tests:fuchsia_wlan_base_test",
+    "//src/testing/end_to_end/mobly_controller/openwrt_access_point:openwrt_access_point",
+  ]
+  test_cases = [ "re:test.+ap.+wpa2.+" ]
+}
+
+antlion_host_test("reboot_ap_wpa3_test") {
+  main_source = "//src/connectivity/wlan/tests/wlancfg/WlanRebootTest.py"
+  libraries = [
+    "//sdk/fidl/fuchsia.wlan.policy:fuchsia.wlan.policy_python",
+    "//src/testing/end_to_end/honeydew",
+    "//src/testing/end_to_end/mobly_base_tests:fuchsia_wlan_base_test",
+    "//src/testing/end_to_end/mobly_controller/openwrt_access_point:openwrt_access_point",
+  ]
+  test_cases = [ "re:test.+ap.+wpa3.+" ]
+}
+
+antlion_host_test("reboot_dut_open_test") {
+  main_source = "//src/connectivity/wlan/tests/wlancfg/WlanRebootTest.py"
+  libraries = [
+    "//sdk/fidl/fuchsia.wlan.policy:fuchsia.wlan.policy_python",
+    "//src/testing/end_to_end/honeydew",
+    "//src/testing/end_to_end/mobly_base_tests:fuchsia_wlan_base_test",
+    "//src/testing/end_to_end/mobly_controller/openwrt_access_point:openwrt_access_point",
+  ]
+  test_cases = [ "re:test.+dut.+open.+" ]
+}
+
+antlion_host_test("reboot_dut_wpa2_test") {
+  main_source = "//src/connectivity/wlan/tests/wlancfg/WlanRebootTest.py"
+  libraries = [
+    "//sdk/fidl/fuchsia.wlan.policy:fuchsia.wlan.policy_python",
+    "//src/testing/end_to_end/honeydew",
+    "//src/testing/end_to_end/mobly_base_tests:fuchsia_wlan_base_test",
+    "//src/testing/end_to_end/mobly_controller/openwrt_access_point:openwrt_access_point",
+  ]
+  test_cases = [ "re:test.+dut.+wpa2.+" ]
+}
+
+antlion_host_test("reboot_dut_wpa3_test") {
+  main_source = "//src/connectivity/wlan/tests/wlancfg/WlanRebootTest.py"
+  libraries = [
+    "//sdk/fidl/fuchsia.wlan.policy:fuchsia.wlan.policy_python",
+    "//src/testing/end_to_end/honeydew",
+    "//src/testing/end_to_end/mobly_base_tests:fuchsia_wlan_base_test",
+    "//src/testing/end_to_end/mobly_controller/openwrt_access_point:openwrt_access_point",
+  ]
+  test_cases = [ "re:test.+dut.+wpa3.+" ]
+}
+
+antlion_host_test("reboot_ap_test_quick") {
+  main_source = "//src/connectivity/wlan/tests/wlancfg/WlanRebootTest.py"
+  libraries = [
+    "//sdk/fidl/fuchsia.wlan.policy:fuchsia.wlan.policy_python",
+    "//src/testing/end_to_end/honeydew",
+    "//src/testing/end_to_end/mobly_base_tests:fuchsia_wlan_base_test",
+    "//src/testing/end_to_end/mobly_controller/openwrt_access_point:openwrt_access_point",
+  ]
+  test_cases = [ "test_soft_reboot_ap_5g_open_ipv4_ipv6" ]
+}
+
+antlion_host_test("reboot_dut_test_quick") {
+  main_source = "//src/connectivity/wlan/tests/wlancfg/WlanRebootTest.py"
+  libraries = [
+    "//sdk/fidl/fuchsia.wlan.policy:fuchsia.wlan.policy_python",
+    "//src/testing/end_to_end/honeydew",
+    "//src/testing/end_to_end/mobly_base_tests:fuchsia_wlan_base_test",
+    "//src/testing/end_to_end/mobly_controller/openwrt_access_point:openwrt_access_point",
+  ]
+  test_cases = [ "test_soft_reboot_dut_5g_open_ipv4_ipv6" ]
+}
+
 # This is a helper group so developers can easily add all tests to their build.
 # It is not run by infra. You should not directly add tests here, but rather to
 # one of the other groups below so it runs in infra.
