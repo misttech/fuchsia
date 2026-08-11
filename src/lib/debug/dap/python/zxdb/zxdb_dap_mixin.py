@@ -5,8 +5,8 @@
 from typing import Any, Protocol
 
 from pydantic import Field, model_validator
-from pydap.dap_types import DapBaseModel
-from pydap.models import StackTraceArguments, StackTraceResponse
+from pydap.dap_types import DapBaseModel, Thread
+from pydap.models import Response, StackTraceArguments, StackTraceResponse
 
 
 class ZxdbStackTraceArguments(StackTraceArguments):
@@ -39,6 +39,44 @@ class ZxdbDetachArguments(DapBaseModel):
         return self
 
 
+class ZxdbProcessArguments(DapBaseModel):
+    """Arguments for `zxdb.Process` request.
+
+    Attributes:
+        pid: Optional process ID to query.
+    """
+
+    pid: int | None = None
+
+
+class ZxdbProcessInfo(DapBaseModel):
+    """Process info returned by `zxdb.Process` request.
+
+    Attributes:
+        id: Process ID (KOID).
+        name: Process name.
+        threads: List of threads associated with the process.
+    """
+
+    id: int
+    name: str
+    threads: list[Thread] = Field(default_factory=list)
+
+
+class ZxdbProcessResponseBody(DapBaseModel):
+    """Response body for `zxdb.Process` request."""
+
+    processes: list[ZxdbProcessInfo] = Field(default_factory=list)
+
+
+class ZxdbProcessResponse(Response):
+    """Response for `zxdb.Process` request."""
+
+    body: ZxdbProcessResponseBody = Field(
+        default_factory=ZxdbProcessResponseBody
+    )
+
+
 class SupportsSendRequest(Protocol):
     async def _send_request(
         self,
@@ -58,6 +96,16 @@ class ZxdbDapMixin:
     ) -> dict[str, Any]:
         """Sends a custom zxdb detach request."""
         return await self._send_request("zxdb.Detach", args)
+
+    async def zxdb_process(
+        self: SupportsSendRequest,
+        args: ZxdbProcessArguments | None = None,
+    ) -> ZxdbProcessResponse:
+        """Sends a custom zxdb process query request."""
+        resp = await self._send_request(
+            "zxdb.Process", args or ZxdbProcessArguments()
+        )
+        return ZxdbProcessResponse.model_validate(resp)
 
     async def zxdb_stack_trace(
         self: SupportsSendRequest,

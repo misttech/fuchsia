@@ -7,6 +7,10 @@ from pydap.client import DapClient
 from .zxdb_dap_mixin import (
     ZxdbDapMixin,
     ZxdbDetachArguments,
+    ZxdbProcessArguments,
+    ZxdbProcessInfo,
+    ZxdbProcessResponse,
+    ZxdbProcessResponseBody,
     ZxdbStackTraceArguments,
 )
 
@@ -19,5 +23,9 @@ __all__ = [
     "ZxdbDapClient",
     "ZxdbDapMixin",
     "ZxdbDetachArguments",
+    "ZxdbProcessArguments",
+    "ZxdbProcessInfo",
+    "ZxdbProcessResponse",
+    "ZxdbProcessResponseBody",
     "ZxdbStackTraceArguments",
 ]
