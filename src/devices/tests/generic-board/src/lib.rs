@@ -12,6 +12,7 @@ use log::info;
 use fidl_fuchsia_io as fio;
 
 use anyhow::Context;
+use fidl::Status;
 
 use dml_config::parser::{
     Destination, DmlParserConfig, PropertyRule, RuleValueType, ServiceBindConfig, TransportType,
@@ -67,7 +68,7 @@ impl Driver for GenericBoardDriver {
             .get_board_info()
             .await
             .context("Failed to call GetBoardInfo")?
-            .map_err(anyhow::Error::new)
+            .map_err(|e| e.err().unwrap_or(Status::INTERNAL))
             .context("GetBoardInfo returned error")?;
         info!("Board info: {:?}", board_info);
 

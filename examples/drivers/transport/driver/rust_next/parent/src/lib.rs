@@ -151,7 +151,7 @@ mod tests {
         client.set_bitrate(BITRATE).await.unwrap().unwrap();
 
         // Set the bitrate to a value that should not succeed.
-        client.set_bitrate(BITRATE + 1).await.unwrap().unwrap_err();
+        let _ = client.set_bitrate(BITRATE + 1).await.unwrap().unwrap_err();
 
         // Send a Transact() request and verify the read data.
         let result = client.transact(Vec::<i2cimpl::I2cImplOp>::new()).await.unwrap();

@@ -485,7 +485,7 @@ impl TouchBinding {
                 // keep other feature as is.
                 let mut report = match device_proxy.get_feature_report().await? {
                     Ok(res) => res.report,
-                    Err(e) => return Err(format_err!("get_feature_report failed: {}", e)),
+                    Err(e) => return Err(format_err!("get_feature_report failed: {e:?}")),
                 };
                 let mut touch = report
                     .touch
@@ -501,7 +501,7 @@ impl TouchBinding {
                         log::info!("touchpad: set touchpad_enabled to {}", enable);
                         Ok(())
                     }
-                    Err(e) => Err(format_err!("set_feature_report failed: {}", e)),
+                    Err(e) => Err(format_err!("set_feature_report failed: {e:?}")),
                 }
             }
         }

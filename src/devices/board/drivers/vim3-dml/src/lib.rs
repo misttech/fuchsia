@@ -315,9 +315,9 @@ impl Driver for Vim3DmlDriver {
             .get_board_info()
             .await
             .context("Failed to call GetBoardInfo")?
-            .map_err(anyhow::Error::new)
+            .map_err(|e| e.err().unwrap_or(zx::Status::INTERNAL))
             .context("GetBoardInfo returned error")?;
-        info!("Board info: {:?}", board_info);
+        info!("Board info: {board_info:?}");
 
         // Verify board name if needed, but VIM3 should be fine.
 

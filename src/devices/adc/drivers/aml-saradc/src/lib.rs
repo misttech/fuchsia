@@ -247,7 +247,11 @@ impl Driver for AmlSaradc {
         let adc_mmio = pdev.map_mmio_by_id(0).await?;
         let ao_mmio = pdev.map_mmio_by_id(1).await?;
 
-        let irq = pdev.get_interrupt_by_id(0, 0).await??.irq;
+        let irq = pdev
+            .get_interrupt_by_id(0, 0)
+            .await?
+            .map_err(|s| s.err().unwrap_or(zx::Status::INTERNAL))?
+            .irq;
 
         let mut device = AmlSaradcDevice {
             adc_regs: AdcRegsBlock::new(adc_mmio),

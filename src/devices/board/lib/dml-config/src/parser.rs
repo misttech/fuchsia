@@ -605,13 +605,14 @@ pub async fn publish_dml_devices(
             .add_spec_with(spec)
             .await
             .context("AddSpec request failed")?
-            .map_err(|e| anyhow!("AddSpec failed: {:?}", e))?;
+            .map_err(|e| anyhow!("AddSpec failed: {e:?}"))?;
 
         if dev.compatible.is_some() {
             log::info!("DML-CONFIG: Adding node: {}", dev_name);
             pbus.node_add(node)
                 .await
                 .context("NodeAdd request failed")?
+                .map_err(|e| e.err().unwrap_or(zx::Status::INTERNAL))
                 .context("NodeAdd failed")?;
         }
     }

@@ -28,8 +28,6 @@ use fidl_next_fuchsia_hardware_platform_device as fpdev;
 use fidl_fuchsia_hardware_spi_businfo as fspi_businfo;
 use fidl_next_fuchsia_hardware_clock::ClockGetRateResponse;
 
-use anyhow::Context;
-
 mod spi_device;
 use spi_device::DwSpiDevice;
 
@@ -72,27 +70,39 @@ impl Driver for DwSpiDriver {
 
     async fn start(mut context: DriverContext) -> Result<Self, DriverError> {
         let powerdomain = context.connect_to_powerdomain("power-domain")?;
-        powerdomain.enable().await?.context("Failed to enable power domain")?;
+        powerdomain.enable().await?.map_err(|s| {
+            anyhow::Error::new(s.err().unwrap_or(Status::INTERNAL))
+                .context("Failed to enable power domain")
+        })?;
 
         let clock_bus = context.connect_to_clock("clock-bus")?;
-        clock_bus.enable().await?.context("Failed to enable bus clock")?;
+        clock_bus.enable().await?.map_err(|s| {
+            anyhow::Error::new(s.err().unwrap_or(Status::INTERNAL))
+                .context("Failed to enable bus clock")
+        })?;
 
         let parent_clock_hz = clock_bus
             .get_rate()
             .await
             .map_err(|_| Status::INTERNAL)
-            .flatten()
+            .and_then(|res| res.map_err(|_| Status::INTERNAL))
             .inspect_err(|e| {
-                error!("Failed to get bus clock rate: {e}");
+                error!("Failed to get bus clock rate: {e:?}");
             })
             .unwrap_or(ClockGetRateResponse { hz: 0 })
             .hz;
 
         let clock_regs = context.connect_to_clock("clock-registers")?;
-        clock_regs.enable().await?.context("Failed to enable registers clock")?;
+        clock_regs.enable().await?.map_err(|s| {
+            anyhow::Error::new(s.err().unwrap_or(Status::INTERNAL))
+                .context("Failed to enable registers clock")
+        })?;
 
         let reset = context.connect_to_reset("reset")?;
-        reset.toggle().await?.context("Failed to toggle reset")?;
+        reset.toggle().await?.map_err(|s| {
+            anyhow::Error::new(s.err().unwrap_or(Status::INTERNAL))
+                .context("Failed to toggle reset")
+        })?;
 
         let cs_gpio = {
             let cs_gpio = context.connect_to_gpio("gpio-cs-0")?;
@@ -106,8 +116,14 @@ impl Driver for DwSpiDriver {
         };
 
         let pdev = context.connect_to_pdev()?;
-        let interrupt =
-            pdev.get_interrupt_by_id(0, 0).await?.context("Failed to get interrupt")?.irq;
+        let interrupt = pdev
+            .get_interrupt_by_id(0, 0)
+            .await?
+            .map_err(|s| {
+                anyhow::Error::new(s.err().unwrap_or(Status::INTERNAL))
+                    .context("Failed to get interrupt")
+            })?
+            .irq;
         let mut device = DwSpiDevice::new(pdev.map_mmio_by_id(0).await?, cs_gpio, interrupt);
 
         let max_bus_clock_hz = DwSpiDriver::get_max_bus_clock(&pdev).await;

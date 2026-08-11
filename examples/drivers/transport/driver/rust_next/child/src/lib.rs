@@ -31,7 +31,11 @@ impl Driver for DriverTransportChild {
         let node = context.take_node()?;
 
         let device = get_i2cimpl_device(&context)?.spawn();
-        let transfer_size = device.get_max_transfer_size().await??.size;
+        let transfer_size = device
+            .get_max_transfer_size()
+            .await?
+            .map_err(|s| s.err().unwrap_or(zx::Status::INTERNAL))?
+            .size;
         info!("i2cimpl max transfer size: {transfer_size}");
 
         info!("Adding child node with i2cimpl max transfer size as a property value");
@@ -40,7 +44,7 @@ impl Driver for DriverTransportChild {
             .build();
         node.add_child(child_node).await?;
 
-        device.set_bitrate(0x5u32).await??;
+        device.set_bitrate(0x5u32).await?.map_err(|s| s.err().unwrap_or(zx::Status::INTERNAL))?;
 
         Ok(Self { node })
     }

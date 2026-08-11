@@ -562,7 +562,7 @@ impl LoaderServerHandler<Channel> for UserbootLoaderServer {
             }
         }
 
-        let (rv, object) = lib_vmo.map_or((Status::NOT_FOUND, None), |v| (Status::OK, Some(v)));
+        let (rv, object) = lib_vmo.map_or((Err(Status::NOT_FOUND), None), |v| (Ok(()), Some(v)));
         let _ = responder.respond(LoaderLoadObjectResponse { rv, object }).await;
     }
 
@@ -576,7 +576,7 @@ impl LoaderServerHandler<Channel> for UserbootLoaderServer {
         let config_str = payload.config.as_str();
         self.exclusive = config_str.ends_with('!');
         self.subdir = config_str.strip_suffix('!').unwrap_or(config_str).to_string();
-        let _ = responder.respond(Status::OK).await;
+        let _ = responder.respond(Ok(())).await;
     }
 
     /// Clones the loader service handle (unsupported in userboot).
@@ -585,7 +585,7 @@ impl LoaderServerHandler<Channel> for UserbootLoaderServer {
         _request: Request<Clone, Channel>,
         responder: Responder<Clone, Channel>,
     ) {
-        let _ = responder.respond(Status::NOT_SUPPORTED).await;
+        let _ = responder.respond(Err(Status::NOT_SUPPORTED)).await;
     }
 }
 

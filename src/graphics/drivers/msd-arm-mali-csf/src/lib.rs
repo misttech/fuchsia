@@ -41,8 +41,15 @@ impl Driver for MsdArmMaliCsf {
         log::info!("GPU id: 0x{:x}", regs::GpuId::read(&mmio).0);
         log::info!("GPU coherency: {:?}", regs::CoherencyFeatures::read(&mmio));
 
-        let bti = pdev.get_bti_by_id(0).await??.bti;
-        let smc: zx::NullableHandle = pdev.get_smc_by_id(0).await??.smc.into_handle().into();
+        let bti =
+            pdev.get_bti_by_id(0).await?.map_err(|s| s.err().unwrap_or(zx::Status::INTERNAL))?.bti;
+        let smc: zx::NullableHandle = pdev
+            .get_smc_by_id(0)
+            .await?
+            .map_err(|s| s.err().unwrap_or(zx::Status::INTERNAL))?
+            .smc
+            .into_handle()
+            .into();
         let mapper = mem::CrosVmMapper::new(bti, smc);
         let interrupts = DeviceInterrupts::new(&pdev).await?;
 

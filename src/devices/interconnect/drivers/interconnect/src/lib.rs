@@ -86,7 +86,7 @@ impl Child {
         let response = match result {
             Ok(response) => Ok(response),
             Err(err) => {
-                error!("Failed to set bandwidth with {err}");
+                error!("Failed to set bandwidth with {err:?}");
                 Err(err)
             }
         }?;
@@ -210,7 +210,7 @@ impl InterconnectDriver {
                     sync_graph.borrow_mut().update_stats(result.aggregated_bandwidth);
                 }
                 Ok(Err(err)) => {
-                    error!("Failed to set bandwidth with {err}");
+                    error!("Failed to set bandwidth with {err:?}");
                 }
             };
         });

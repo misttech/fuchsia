@@ -40,18 +40,21 @@ impl PlatformDevice for fidl_next::Client<fpdev::Device> {
     type Mmio = MmioRegion<VmoMemory>;
 
     async fn map_mmio_by_id(&self, id: u32) -> Result<Self::Mmio, DriverError> {
-        let mmio = self.get_mmio_by_id(id).await??;
+        let mmio =
+            self.get_mmio_by_id(id).await?.map_err(|s| s.err().unwrap_or(Status::INTERNAL))?;
         Ok(map_mmio(mmio)?)
     }
 
     async fn map_mmio_by_name(&self, name: &str) -> Result<Self::Mmio, DriverError> {
-        let mmio = self.get_mmio_by_name(name).await??;
+        let mmio =
+            self.get_mmio_by_name(name).await?.map_err(|s| s.err().unwrap_or(Status::INTERNAL))?;
         Ok(map_mmio(mmio)?)
     }
 
     async fn get_typed_metadata<T: Persistable + Serializable>(&self) -> Result<T, DriverError> {
         let name = T::SERIALIZABLE_NAME;
-        let metadata_res = self.get_metadata(name).await??;
+        let metadata_res =
+            self.get_metadata(name).await?.map_err(|s| s.err().unwrap_or(Status::INTERNAL))?;
         fidl::unpersist(&metadata_res.metadata).map_err(|err| {
             error!("Failed to parse pdev metadata: {err}");
             DriverError::Status(Status::INVALID_ARGS)
@@ -62,7 +65,8 @@ impl PlatformDevice for fidl_next::Client<fpdev::Device> {
         &self,
     ) -> Result<T, DriverError> {
         let name = "fuchsia.driver.metadata.Dictionary";
-        let metadata_res = self.get_metadata(name).await??;
+        let metadata_res =
+            self.get_metadata(name).await?.map_err(|s| s.err().unwrap_or(Status::INTERNAL))?;
         let dict: fidl_fuchsia_driver_metadata::Dictionary =
             fidl::unpersist(&metadata_res.metadata).map_err(|err| {
                 error!("Failed to unpersist dictionary: {err}");

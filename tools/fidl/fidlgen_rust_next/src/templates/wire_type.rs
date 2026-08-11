@@ -126,7 +126,7 @@ impl fmt::Display for WireTypeTemplate<'_> {
                             && from_alias.name.decl_name().non_canonical() == "Status"
                     })
                 {
-                    write!(f, "::fidl_next::wire::fuchsia::Status")?;
+                    write!(f, "::fidl_next::wire::fuchsia::StatusResult")?;
                 } else {
                     write!(f, "{}", self.wire_prim(*subtype))?;
                 }

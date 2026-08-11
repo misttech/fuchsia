@@ -304,7 +304,7 @@ async fn test_vmo_registration() {
     let range = fmem::natural::Range { vmo: vmo, offset: 0, size: 4096 };
     let res =
         client.register_vmo(0, 1, range, SharedVmoRight::READ).await.expect("FIDL call failed");
-    assert_eq!(res.unwrap_err(), zx::Status::ALREADY_EXISTS);
+    assert_eq!(res.unwrap_err(), Err(zx::Status::ALREADY_EXISTS));
 
     // Unregister the VMO and make sure it's the same one we registered.
     let unreg_vmo = client
@@ -317,7 +317,7 @@ async fn test_vmo_registration() {
 
     // Unregistering again should fail.
     let res = client.unregister_vmo(0, 1).await.expect("FIDL call failed");
-    assert_eq!(res.unwrap_err(), zx::Status::NOT_FOUND);
+    assert_eq!(res.unwrap_err(), Err(zx::Status::NOT_FOUND));
 
     let vmo = Vmo::create(4096).unwrap();
     let range = fmem::natural::Range { vmo: vmo, offset: 0, size: 4096 };
@@ -339,10 +339,10 @@ async fn test_vmo_registration() {
     client.release_registered_vmos(0).await.unwrap();
 
     let res = client.unregister_vmo(0, 2).await.expect("FIDL call failed");
-    assert_eq!(res.unwrap_err(), zx::Status::NOT_FOUND);
+    assert_eq!(res.unwrap_err(), Err(zx::Status::NOT_FOUND));
 
     let res = client.unregister_vmo(0, 3).await.expect("FIDL call failed");
-    assert_eq!(res.unwrap_err(), zx::Status::NOT_FOUND);
+    assert_eq!(res.unwrap_err(), Err(zx::Status::NOT_FOUND));
 
     started_driver.stop_driver().await;
 }
@@ -805,18 +805,18 @@ async fn test_vmo_validation() {
     // Invalid VMO ID
     let buffer = fsharedmemory::natural::SharedVmoBuffer { vmo_id: 99, offset: 0, size: 5 };
     let res = client.transmit_vmo(0, buffer).await.unwrap();
-    assert_eq!(res.unwrap_err(), zx::Status::NOT_FOUND);
+    assert_eq!(res.unwrap_err(), Err(zx::Status::NOT_FOUND));
 
     // Out of range (offset + size > registered size)
     let buffer = fsharedmemory::natural::SharedVmoBuffer { vmo_id: 1, offset: 1020, size: 10 };
     let res = client.transmit_vmo(0, buffer).await.unwrap();
-    assert_eq!(res.unwrap_err(), zx::Status::OUT_OF_RANGE);
+    assert_eq!(res.unwrap_err(), Err(zx::Status::OUT_OF_RANGE));
 
     // Out of range (overflow)
     let buffer =
         fsharedmemory::natural::SharedVmoBuffer { vmo_id: 1, offset: u64::MAX - 2, size: 10 };
     let res = client.transmit_vmo(0, buffer).await.unwrap();
-    assert_eq!(res.unwrap_err(), zx::Status::OUT_OF_RANGE);
+    assert_eq!(res.unwrap_err(), Err(zx::Status::OUT_OF_RANGE));
 
     started_driver.stop_driver().await;
 }

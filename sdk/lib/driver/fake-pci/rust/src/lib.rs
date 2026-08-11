@@ -988,7 +988,7 @@ mod tests {
             .expect("Failed to send get_bar request for non-existent BAR");
         assert_eq!(
             err_res.expect_err("Expected NOT_FOUND for non-existent BAR"),
-            zx::Status::NOT_FOUND
+            Err(zx::Status::NOT_FOUND)
         );
     }
 
@@ -1064,7 +1064,7 @@ mod tests {
             .set_interrupt_mode(fpci::InterruptMode::Msi, 2)
             .await
             .expect("set_interrupt_mode failed");
-        assert_eq!(bad_state_res.unwrap_err(), zx::Status::BAD_STATE);
+        assert_eq!(bad_state_res.unwrap_err(), Err(zx::Status::BAD_STATE));
 
         // Drop mapped handle, now switching mode works
         std::mem::drop(mapped);
@@ -1076,7 +1076,7 @@ mod tests {
 
         // Ack interrupt should fail for MSI mode
         let ack_err = client.ack_interrupt().await.expect("ack_interrupt failed");
-        assert_eq!(ack_err.unwrap_err(), zx::Status::BAD_STATE);
+        assert_eq!(ack_err.unwrap_err(), Err(zx::Status::BAD_STATE));
 
         // Map MSI 0
         let map_msi = client.map_interrupt(0).await.expect("map_interrupt failed");
@@ -1108,10 +1108,10 @@ mod tests {
 
         // Writes in header space [0, 63] via FIDL fail with OUT_OF_RANGE
         let w8_header = client.write_config8(0, 0xff).await.expect("write_config8");
-        assert_eq!(w8_header.unwrap_err(), zx::Status::OUT_OF_RANGE);
+        assert_eq!(w8_header.unwrap_err(), Err(zx::Status::OUT_OF_RANGE));
 
         let w16_header = client.write_config16(0x3e, 0xffff).await.expect("write_config16");
-        assert_eq!(w16_header.unwrap_err(), zx::Status::OUT_OF_RANGE);
+        assert_eq!(w16_header.unwrap_err(), Err(zx::Status::OUT_OF_RANGE));
 
         // Valid reads and writes in range [0x40, 0xFF]
         let w8_valid = client.write_config8(0x40, 0xab).await.expect("write_config8");
@@ -1123,10 +1123,10 @@ mod tests {
 
         // Out of bounds past 256 bytes fails with OUT_OF_RANGE over FIDL
         let r_oob = client.read_config8(256).await.expect("read_config8");
-        assert_eq!(r_oob.unwrap_err(), zx::Status::OUT_OF_RANGE);
+        assert_eq!(r_oob.unwrap_err(), Err(zx::Status::OUT_OF_RANGE));
 
         let w_oob = client.write_config8(256, 0x12).await.expect("write_config8");
-        assert_eq!(w_oob.unwrap_err(), zx::Status::OUT_OF_RANGE);
+        assert_eq!(w_oob.unwrap_err(), Err(zx::Status::OUT_OF_RANGE));
     }
 
     #[fixture(run_test_with_fake)]

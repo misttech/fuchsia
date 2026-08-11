@@ -673,9 +673,9 @@ impl Driver {
         match start_result {
             Ok(Ok(())) => {}
             Ok(Err(status)) => {
-                warn!("Driver failed to start: {}", status);
+                warn!("Driver failed to start: {status:?}");
                 self.shutdown(driver_request);
-                return Err(status);
+                return Err(status.err().unwrap_or(Status::INTERNAL));
             }
             Err(e) => {
                 warn!("Driver start FIDL error: {:?}", e);

@@ -412,7 +412,7 @@ mod tests {
                 .await
                 .unwrap();
 
-            assert_eq!(res.unwrap_err(), Status::INVALID_ARGS);
+            assert_eq!(res.unwrap_err(), Err(Status::INVALID_ARGS));
 
             client_task.await.unwrap();
 
@@ -461,7 +461,7 @@ mod tests {
                 .await
                 .unwrap();
 
-            assert_eq!(res.unwrap_err(), Status::INTERNAL);
+            assert_eq!(res.unwrap_err(), Err(Status::INTERNAL));
 
             client_task.await.unwrap();
 

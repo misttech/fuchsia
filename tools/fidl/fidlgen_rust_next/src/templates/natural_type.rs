@@ -87,7 +87,7 @@ impl fmt::Display for NaturalTypeTemplate<'_> {
                             && from_alias.name.decl_name().non_canonical() == "Status"
                     })
                 {
-                    write!(f, "::fidl_next::fuchsia::zx::Status")?;
+                    write!(f, "::core::result::Result<(), ::fidl_next::fuchsia::zx::Status>")?;
                 } else {
                     write!(f, "{}", self.natural_prim(*subtype))?;
                 }
