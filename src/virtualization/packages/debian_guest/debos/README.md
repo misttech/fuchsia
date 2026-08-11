@@ -8,4 +8,4 @@ sudo apt install debos
 ```
 
 To build an image, it is easiest to use the `build-image.sh` script in the
-parent directory.
+parent directory. See the README in that directory for more information.

@@ -186,10 +186,11 @@
                 "TunTap/TunTapTest.CreateTunTapDevice/0",
                 "TunTap/TunTapTest.CreateTunTapDevice/1",
 
-                // TODO(https://fxbug.dev/437171876): Machina is missing /sys/devices/ interfaces.
-                "UdevTest.AddDevMapper",
+                // TODO(https://fxbug.dev/437171876): Machina is both missing the evdev module (event
+                // handler interface), and does not have any default input devices configured. For this
+                // test to pass, we'd need to add the missing module and either configure a default
+                // input device or modify the test to account for a potentially missing.
                 "UdevTest.AddInput",
-                "UdevTest.RemoveDevMapper",
 
                 // TODO(https://fxbug.dev/436904274): Expectation relies on kernel version >= 5.13.
                 "UffdTest.NoOperationsBeforeInit",

@@ -93,6 +93,7 @@ nls_utf8
 nls_base
 unicode
 nls_ascii
+dm_mod
 EOF
 
 # Explicitly disable resume from swap. This is to ensure we never try to to
@@ -100,7 +101,7 @@ EOF
 # swap partition anyways.
 echo "RESUME=none" > /etc/initramfs-tools/conf.d/resume
 
-# Reduce the number of mouldes in initramfs to make it smaller.
+# Reduce the number of modules in initramfs to make it smaller.
 #
 # By default `modules=most` is used here, which pulls in a large number of
 # modules for things like USB, filesystems, networking, etc. We have
