@@ -6,13 +6,25 @@
 
 #include "src/developer/debug/zxdb/client/process.h"
 #include "src/developer/debug/zxdb/client/session.h"
+#include "src/developer/debug/zxdb/client/system.h"
+#include "src/developer/debug/zxdb/client/target.h"
 #include "src/developer/debug/zxdb/client/thread.h"
+#include "src/developer/debug/zxdb/debug_adapter/context.h"
+
+namespace dap {
+
+DAP_IMPLEMENT_STRUCT_TYPEINFO_EXT(ThreadZxdb, Thread, "", DAP_FIELD(processId, "processId"))
+DAP_IMPLEMENT_STRUCT_TYPEINFO_EXT(ThreadEventZxdb, ThreadEvent, "thread",
+                                  DAP_FIELD(processId, "processId"))
+DAP_IMPLEMENT_STRUCT_TYPEINFO(ThreadsResponseZxdb, "", DAP_FIELD(threads, "threads"))
+
+}  // namespace dap
 
 namespace zxdb {
 
-dap::ResponseOrError<dap::ThreadsResponse> OnRequestThreads(DebugAdapterContext* ctx,
-                                                            const dap::ThreadsRequest& req) {
-  dap::ThreadsResponse response = {};
+dap::ResponseOrError<dap::ThreadsResponseZxdb> OnRequestThreads(
+    DebugAdapterContext* ctx, const dap::ThreadsRequest& /*req*/) {
+  dap::ThreadsResponseZxdb response = {};
   auto targets = ctx->session()->system().GetTargets();
   for (auto target : targets) {
     if (!target) {
@@ -24,9 +36,10 @@ dap::ResponseOrError<dap::ThreadsResponse> OnRequestThreads(DebugAdapterContext*
     }
     auto threads = process->GetThreads();
     for (auto thread : threads) {
-      dap::Thread thread_info;
+      dap::ThreadZxdb thread_info;
       thread_info.id = thread->GetKoid();
       thread_info.name = thread->GetName();
+      thread_info.processId = process->GetKoid();
       response.threads.push_back(thread_info);
     }
   }

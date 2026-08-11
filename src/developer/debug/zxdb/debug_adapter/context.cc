@@ -169,10 +169,23 @@ void DebugAdapterContext::Init() {
     return OnRequestAttach(this, req);
   });
 
-  dap_->registerHandler([this](const dap::ThreadsRequest& req) {
-    DEBUG_LOG(DebugAdapter) << "ThreadRequest received";
-    return OnRequestThreads(this, req);
-  });
+  // cppdap statically associates dap::ThreadsRequest with the standard
+  // dap::ThreadsResponse when using the high-level registerHandler API.
+  // We register using the low-level untyped callback so we can provide
+  // the extended dap::ThreadsResponseZxdb type information to onSuccess
+  // and onError, returning processId with each thread.
+  dap_->registerHandler(
+      dap::TypeOf<dap::ThreadsRequest>::type(),
+      [this](const void* args, const dap::Session::RequestHandlerSuccessCallback& onSuccess,
+             const dap::Session::RequestHandlerErrorCallback& onError) {
+        DEBUG_LOG(DebugAdapter) << "ThreadsRequest received";
+        auto res = OnRequestThreads(this, *static_cast<const dap::ThreadsRequest*>(args));
+        if (res.error) {
+          onError(dap::TypeOf<dap::ThreadsResponseZxdb>::type(), res.error);
+        } else {
+          onSuccess(dap::TypeOf<dap::ThreadsResponseZxdb>::type(), &res.response);
+        }
+      });
 
   dap_->registerHandler(
       [this](const dap::PauseRequest& req,
@@ -344,16 +357,22 @@ void DebugAdapterContext::OnStreamReadable() {
 }
 
 void DebugAdapterContext::DidCreateThread(Thread* thread) {
-  dap::ThreadEvent event;
+  dap::ThreadEventZxdb event;
   event.reason = "started";
   event.threadId = thread->GetKoid();
+  if (thread->GetProcess()) {
+    event.processId = thread->GetProcess()->GetKoid();
+  }
   dap_->send(event);
 }
 
 void DebugAdapterContext::WillDestroyThread(Thread* thread) {
-  dap::ThreadEvent event;
+  dap::ThreadEventZxdb event;
   event.reason = "exited";
   event.threadId = thread->GetKoid();
+  if (thread->GetProcess()) {
+    event.processId = thread->GetProcess()->GetKoid();
+  }
   dap_->send(event);
 }
 

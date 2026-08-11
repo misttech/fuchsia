@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <dap/typeof.h>
 #include <gtest/gtest.h>
 
 #include "src/developer/debug/ipc/protocol.h"
@@ -9,6 +10,7 @@
 #include "src/developer/debug/zxdb/client/mock_remote_api.h"
 #include "src/developer/debug/zxdb/client/target_impl.h"
 #include "src/developer/debug/zxdb/debug_adapter/context_test.h"
+#include "src/developer/debug/zxdb/debug_adapter/handlers/request_threads.h"
 
 namespace zxdb {
 
@@ -482,6 +484,52 @@ TEST_F(ContextTest, PartialInitializeRequest) {
 
   RunPendingClientCalls();
   EXPECT_TRUE(event_received);
+}
+
+TEST_F(ContextTest, ThreadAndEventProcessId) {
+  InitializeDebugging();
+
+  // Test ThreadEvent has processId
+  bool event_received = false;
+  client().registerHandler([&](const dap::ThreadEventZxdb& arg) {
+    EXPECT_EQ(arg.threadId, static_cast<dap::integer>(kThreadKoid));
+    ASSERT_TRUE(arg.processId.has_value());
+    EXPECT_EQ(arg.processId.value(), static_cast<dap::integer>(kProcessKoid));
+    event_received = true;
+  });
+
+  InjectProcess(kProcessKoid);
+  RunClient();  // process started event
+
+  InjectThread(kProcessKoid, kThreadKoid);
+  RunClient();  // thread started event
+  EXPECT_TRUE(event_received);
+
+  // Test ThreadsResponse has processId in each thread
+  dap::ThreadsRequest req;
+  dap::ResponseOrError<dap::ThreadsResponseZxdb> got;
+
+  bool response_received = false;
+  client().send(dap::TypeOf<dap::ThreadsRequest>::type(),
+                dap::TypeOf<dap::ThreadsResponseZxdb>::type(), &req,
+                [&](const void* res, const dap::Error* err) {
+                  if (err) {
+                    got.error = *err;
+                  } else {
+                    got.response = *reinterpret_cast<const dap::ThreadsResponseZxdb*>(res);
+                  }
+                  response_received = true;
+                });
+
+  context().OnStreamReadable();
+  RunClient();  // run client to receive threads response
+
+  ASSERT_TRUE(response_received);
+  ASSERT_FALSE(got.error);
+  ASSERT_EQ(got.response.threads.size(), 1u);
+  EXPECT_EQ(got.response.threads[0].id, static_cast<dap::integer>(kThreadKoid));
+  ASSERT_TRUE(got.response.threads[0].processId.has_value());
+  EXPECT_EQ(got.response.threads[0].processId.value(), static_cast<dap::integer>(kProcessKoid));
 }
 
 }  // namespace zxdb
