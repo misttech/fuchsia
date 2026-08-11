@@ -185,6 +185,16 @@ function check_running_on_supported_platform {
   fi
 }
 
+function check_running_in_agent_sandbox {
+  if [[ "${ANTIGRAVITY_AGENT:-}" == "1" ]] && \
+     grep -q -E '^Seccomp:[[:space:]]*[1-9]' \
+       "${_FX_PROC_STATUS:-/proc/self/status}" 2>/dev/null; then
+    fx-error "Running fx in a sandboxed environment is not supported."
+    fx-error "Please re-run the command with 'BypassSandbox: true'."
+    exit 1
+  fi
+}
+
 # LINT.IfChange
 function find_tree_root {
   local parent="$1"
@@ -448,6 +458,11 @@ done
 # Check if we are running on a supported platform. We currently do not support macOS
 # so this will fail if run on a macOS system.
 check_running_on_supported_platform
+
+# Some antigravity agent harnesses run subprocesses under a restrictive sandbox
+# by default, which can interfere with build and ffx functionality.
+# See https://fxbug.dev/544810279 for more context.
+check_running_in_agent_sandbox
 
 if [[ $# -lt 1 ]]; then
   usage

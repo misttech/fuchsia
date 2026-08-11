@@ -312,4 +312,55 @@ TEST_fx-antigravity-quiet-build() {
   BT_EXPECT_EQ "${out}" "FX_BUILD_QUIET="
 }
 
+TEST_fx-antigravity-sandbox-check() {
+  local subcommand="mycommand1"
+  _create_subcommand "${subcommand}" "tools/devshell" "success"
+
+  local mock_status_sandboxed="${BT_TEMP_DIR}/mock_proc_status_sandboxed"
+  cat >"${mock_status_sandboxed}" <<EOF
+Name:	bash
+State:	S (sleeping)
+Seccomp:	2
+Seccomp_filters:	2
+EOF
+
+  local mock_status_unsandboxed="${BT_TEMP_DIR}/mock_proc_status_unsandboxed"
+  cat >"${mock_status_unsandboxed}" <<EOF
+Name:	bash
+State:	S (sleeping)
+Seccomp:	0
+Seccomp_filters:	0
+EOF
+
+  local mock_status_no_seccomp="${BT_TEMP_DIR}/mock_proc_status_no_seccomp"
+  cat >"${mock_status_no_seccomp}" <<EOF
+Name:	bash
+State:	S (sleeping)
+EOF
+
+  local out="${BT_TEMP_DIR}/out.txt"
+
+  # Case 1: In agent sandbox (ANTIGRAVITY_AGENT=1, Seccomp=2) -> should fail with error message
+  BT_EXPECT_FAIL _FX_PROC_STATUS="${mock_status_sandboxed}" ANTIGRAVITY_AGENT=1 "${fx}" "${subcommand}" >"${out}" 2>&1
+  BT_EXPECT_FILE_CONTAINS_SUBSTRING "${out}" "Running fx in a sandboxed environment is not supported."
+  BT_EXPECT_FILE_CONTAINS_SUBSTRING "${out}" "BypassSandbox: true"
+
+  # Case 2: In agent unsandboxed (ANTIGRAVITY_AGENT=1, Seccomp=0) -> should succeed
+  local res
+  res=$(_FX_PROC_STATUS="${mock_status_unsandboxed}" ANTIGRAVITY_AGENT=1 "${fx}" "${subcommand}" 2>&1)
+  BT_EXPECT_EQ "${res}" "success"
+
+  # Case 3: Not in agent (ANTIGRAVITY_AGENT unset, Seccomp=2) -> should succeed (normal non-agent env)
+  res=$(_FX_PROC_STATUS="${mock_status_sandboxed}" ANTIGRAVITY_AGENT= "${fx}" "${subcommand}" 2>&1)
+  BT_EXPECT_EQ "${res}" "success"
+
+  # Case 4: Status file has no Seccomp line (ANTIGRAVITY_AGENT=1) -> should succeed
+  res=$(_FX_PROC_STATUS="${mock_status_no_seccomp}" ANTIGRAVITY_AGENT=1 "${fx}" "${subcommand}" 2>&1)
+  BT_EXPECT_EQ "${res}" "success"
+
+  # Case 5: Status file does not exist (ANTIGRAVITY_AGENT=1) -> should succeed
+  res=$(_FX_PROC_STATUS="${BT_TEMP_DIR}/nonexistent" ANTIGRAVITY_AGENT=1 "${fx}" "${subcommand}" 2>&1)
+  BT_EXPECT_EQ "${res}" "success"
+}
+
 BT_RUN_TESTS "$@"
