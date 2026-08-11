@@ -519,6 +519,25 @@ func (c *FFXStrictClient) TargetWait(ctx context.Context) error {
 	return nil
 }
 
+func (c *FFXStrictClient) TargetShow(ctx context.Context) (string, error) {
+	c.mu.Lock()
+	target := c.ffxInst.GetTarget()
+	c.mu.Unlock()
+
+	if target == "" {
+		return "", fmt.Errorf("no target is set")
+	}
+
+	// FFXWithTarget returns a shallow copy of FFXInstance with the target set.
+	// We use it here to snapshot the target and ensure thread-safety.
+	inst := ffxutil.FFXWithTarget(c.ffxInst, target)
+	out, err := inst.RunAndGetOutput(ctx, "--target", target, "target", "show")
+	if err != nil {
+		return "", fmt.Errorf("target show failed: %w", err)
+	}
+	return out, nil
+}
+
 var xdgEnvVars = []string{"HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME"}
 
 func (c *FFXStrictClient) ApplyEnv(env []string) ([]string, error) {

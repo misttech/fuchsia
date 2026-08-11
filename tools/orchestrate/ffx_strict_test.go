@@ -864,3 +864,50 @@ exit 0
 		t.Errorf("Expected '--target my-target' in args, got: %s", args)
 	}
 }
+
+func TestFFXStrictClient_TargetShow(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+	argsFile := filepath.Join(tmpDir, "args.txt")
+	script := fmt.Sprintf(`#!/bin/bash
+echo "$@" >> %s
+echo "showing target"
+exit 0
+`, argsFile)
+	fakeFfx := createFakeFfx(t, tmpDir, script)
+
+	ctx := context.Background()
+	client, err := NewFFXStrictClient(ctx, fakeFfx, tmpDir, "test-repo")
+	if err != nil {
+		t.Fatalf("NewFFXStrictClient failed: %v", err)
+	}
+	defer client.Close()
+
+	// Should fail without a target set
+	_, err = client.TargetShow(ctx)
+	if err == nil {
+		t.Fatalf("TargetShow expected error when no target is set")
+	}
+
+	target := "my-target"
+	client.SetDefaultTarget(&target)
+
+	out, err := client.TargetShow(ctx)
+	if err != nil {
+		t.Fatalf("TargetShow failed: %v", err)
+	}
+
+	if !strings.Contains(out, "showing target") {
+		t.Errorf("Expected output to contain 'showing target', got %q", out)
+	}
+
+	data, err := os.ReadFile(argsFile)
+	if err != nil {
+		t.Fatalf("Failed to read args file: %v", err)
+	}
+	args := string(data)
+
+	if !strings.Contains(args, "--target my-target target show") {
+		t.Errorf("Expected '--target my-target target show' in args, got: %s", args)
+	}
+}
