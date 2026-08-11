@@ -4,7 +4,6 @@
 
 import("//build/components.gni")
 import("//build/rust/rustc_binary.gni")
-import("//src/zircon/bin/zxsh/zxsh.gni")
 
 fuchsia_component_manifest("manifest") {
   component_name = "debug-dash-launcher"
@@ -93,14 +92,9 @@ fuchsia_package("debug-dash-launcher") {
     ":component",
     "//src/diagnostics/iquery:inspect_bin",
     "//src/diagnostics/log_listener:bin",
+    "//src/zircon/bin/zxsh:sh",
     "//third_party/sbase:bins",
   ]
-  if (use_zxsh) {
-    deps += [ "//src/zircon/bin/zxsh:sh" ]
-  } else {
-    deps += [ "//zircon/third_party/uapp/dash" ]
-  }
-
   # This package is added by product assembly into non-eng builds only.
   # It should not be added manually anywhere else.
   #

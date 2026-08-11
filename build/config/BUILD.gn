@@ -900,7 +900,6 @@ config("Wno-missing-declarations") {
 config("Wno-unused-function") {
   cflags = [ "-Wno-unused-function" ]
   visibility = [
-    "//zircon/third_party/uapp/dash",
     "//zircon/third_party/ulib/musl/ldso",
     "//zircon/third_party/ulib/musl/src/network",
     "//zircon/third_party/ulib/musl/src/time",
@@ -1174,7 +1173,6 @@ config("Wno-conversion") {
     "//zircon/system/ulib/tftp:*",
     "//zircon/third_party/dev/ethernet/e1000:*",
     "//zircon/third_party/lib/jitterentropy",
-    "//zircon/third_party/uapp/dash:*",
     "//zircon/third_party/uapp/fsck-msdosfs:*",
     "//zircon/third_party/uapp/mkfs-msdosfs:*",
     "//zircon/third_party/ulib/cksum:*",
@@ -1219,7 +1217,6 @@ config("Wno-implicit-fallthrough") {
     "//third_party/lz4",
     "//third_party/rust_crates/compat/brotli",
     "//zircon/third_party/dev/ethernet/e1000:e1000_third_party",
-    "//zircon/third_party/uapp/dash",
     "//zircon/third_party/ulib/boringssl",
     "//zircon/tools/lz4",
   ]
@@ -1232,7 +1229,6 @@ config("Wno-unused-but-set-parameter") {
   visibility = [
     "//third_party/*",
     "//vendor/*",
-    "//zircon/third_party/uapp/dash",
   ]
 }
 
@@ -1248,7 +1244,6 @@ config("Wno-unused-but-set-variable") {
     "//src/media/audio/drivers/usb-audio/*",
     "//third_party/*",
     "//vendor/*",
-    "//zircon/third_party/uapp/dash",
   ]
 }
 

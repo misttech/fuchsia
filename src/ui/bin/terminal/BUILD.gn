@@ -7,7 +7,6 @@ import("//build/components.gni")
 import("//build/rust/rustc_binary.gni")
 import("//build/rust/rustc_library.gni")
 import("//src/ui/bin/terminal/terminal_args.gni")
-import("//src/zircon/bin/zxsh/zxsh.gni")
 
 group("tests") {
   testonly = true
@@ -147,12 +146,8 @@ fuchsia_test_component("terminal_tests_component") {
     ":italic_font",
     ":lib_test",
     "//src/testing/zx-test-util:exit_with_code_util",
+    "//src/zircon/bin/zxsh:sh",
   ]
-  if (use_zxsh) {
-    deps += [ "//src/zircon/bin/zxsh:sh" ]
-  } else {
-    deps += [ "//zircon/third_party/uapp/dash" ]
-  }
   test_type = "system"
 }
 

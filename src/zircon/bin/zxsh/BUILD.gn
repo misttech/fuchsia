@@ -138,7 +138,6 @@ fuchsia_unittest_package("zxsh_tests") {
   deps = [
     ":bin",
     ":bin_test",
-    "//zircon/third_party/uapp/dash",
   ]
 }
 

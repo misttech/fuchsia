@@ -4,7 +4,6 @@
 import("//build/components.gni")
 import("//build/rust/rustc_binary.gni")
 import("//build/rust/rustc_test.gni")
-import("//src/zircon/bin/zxsh/zxsh.gni")
 
 rustc_test("developer_console_integration_test") {
   edition = "2024"
@@ -45,12 +44,10 @@ rustc_binary("developer_console_integration_test_support_bin") {
 
 fuchsia_component("developer-console-test-support") {
   manifest = "meta/developer-console-test-support.cml"
-  deps = [ ":developer_console_integration_test_support_bin" ]
-  if (use_zxsh) {
-    deps += [ "//src/zircon/bin/zxsh:sh" ]
-  } else {
-    deps += [ "//zircon/third_party/uapp/dash" ]
-  }
+  deps = [
+    ":developer_console_integration_test_support_bin",
+    "//src/zircon/bin/zxsh:sh",
+  ]
 }
 
 fuchsia_unittest_package("developer-console-integration-test") {

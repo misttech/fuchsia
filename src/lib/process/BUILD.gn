@@ -4,7 +4,6 @@
 
 import("//build/components.gni")
 import("//build/testing/cc_test_executable.gni")
-import("//src/zircon/bin/zxsh/zxsh.gni")
 
 source_set("process") {
   sources = [
@@ -41,12 +40,10 @@ cc_test_executable("unittests") {
 
 fuchsia_unittest_package("process_unittests") {
   manifest = "meta/process_unittests.cml"
-  deps = [ ":unittests" ]
-  if (use_zxsh) {
-    deps += [ "//src/zircon/bin/zxsh:sh" ]
-  } else {
-    deps += [ "//zircon/third_party/uapp/dash" ]
-  }
+  deps = [
+    ":unittests",
+    "//src/zircon/bin/zxsh:sh",
+  ]
 }
 
 group("tests") {

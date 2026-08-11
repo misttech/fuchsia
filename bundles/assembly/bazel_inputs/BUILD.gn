@@ -2,8 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//src/zircon/bin/zxsh/zxsh.gni")
-
 # Every AIB in //bundles/assembly/BUILD.gn has a same-named group in this file,
 # which is the list of all inputs that make up that AIB, which need to come from
 # GN instead of being created within Bazel itself.
@@ -297,11 +295,7 @@ fuchsia_package("embeddable_userdebug.bootfs_files_package") {
     "//src/sys/tools/component:bootfs",
     "//src/zircon/bin/kcounter:bootfs",
   ]
-  if (use_zxsh) {
-    deps += [ "//src/zircon/bin/zxsh:bootfs" ]
-  } else {
-    deps += [ "//zircon/third_party/uapp/dash:bootfs" ]
-  }
+  deps += [ "//src/zircon/bin/zxsh:bootfs" ]
 }
 
 export_fuchsia_package_to_bazel(

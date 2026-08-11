@@ -4,7 +4,6 @@
 
 import("//build/components.gni")
 import("//build/rust/rustc_test.gni")
-import("//src/zircon/bin/zxsh/zxsh.gni")
 
 rustc_test("test_bin") {
   output_name = "debug_dash_launcher_test"
@@ -28,12 +27,8 @@ fuchsia_unittest_package("debug-dash-launcher-test") {
     "mock_resolver",
     "//src/bringup/bin/ptysvc:component",
     "//src/sys/tools/debug-dash-launcher:component",
+    "//src/zircon/bin/zxsh:sh",
   ]
-  if (use_zxsh) {
-    deps += [ "//src/zircon/bin/zxsh:sh" ]
-  } else {
-    deps += [ "//zircon/third_party/uapp/dash" ]
-  }
 }
 
 group("integration_test") {

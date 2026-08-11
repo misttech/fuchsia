@@ -9822,14 +9822,6 @@ driver.
 
 From //boards/vim3/args.gni:9
 
-### use_zxsh
-
-If true, use zxsh as the BootFS shell binary (/boot/bin/sh) instead of dash.
-
-**Current value (from the default):** `true`
-
-From //src/zircon/bin/zxsh/zxsh.gni:7
-
 ### using_fuchsia_sdk
 
 Only set in buildroots where targets configure themselves for use with the

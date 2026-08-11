@@ -128,7 +128,7 @@ target. This is not to be confused with the use of SSH as a tunneling protocol,
 which is useful for instance as a transport for Overnet.
 
 Engineering builds of Fuchsia today include an SSH daemon that runs with
-unsandboxed access to global namespaces and serves the [`dash`][dash] shell to
+unsandboxed access to global namespaces and serves the `dash` shell to
 the client. The same daemon also allows [SCP] functionality for a similar degree
 of read/write access to global namespaces, for instance global mutable storage.
 All too often, this serves as a way around the FSI, allowing test authors to
@@ -469,7 +469,6 @@ additional justification or otherwise be discouraged by the platform team.
 
 [acts]: https://android.googlesource.com/platform/tools/test/connectivity/+/HEAD/acts
 [cf]: /docs/concepts/components/v2/README.md
-[dash]: /zircon/third_party/uapp/dash/
 [ffx-components]: /docs/development/tools/ffx/getting-started.md#interacting_with_components
 [ffx-plugins]: /docs/development/tools/ffx/development/README.md
 [ffx-proxy-plugin]: /docs/development/tools/ffx/development/README.md#fidl-proxy

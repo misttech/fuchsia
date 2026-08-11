@@ -20,7 +20,7 @@ impossible to scale for the following reasons:
 
 - Out-of-tree testing relies on deprecated platform features, protocols, and
   tools. Most notably: using the SSH protocol to issue commands on the target
-  (such as with [`fx shell`][fx-shell] or [`fssh`][fssh]), [`dash`][dash] as a
+  (such as with [`fx shell`][fx-shell] or [`fssh`][fssh]), `dash` as a
   system interface, [`fx log`][fx-log] to collect system-wide logs during the
   test, and using the SCP protocol (such as with [`fx scp`][fx-scp]) to collect
   other test artifacts as side effects on a global mutable filesystem. These
@@ -291,7 +291,6 @@ covered in a [separate roadmap document][oot-system-testing].
 [covargs]: /tools/debug/covargs/
 [coverage]: /docs/contribute/testing/coverage.md
 [dac]: /docs/contribute/roadmap/2020/overview.md#implementing_drivers_as_components
-[dash]: /zircon/third_party/uapp/dash/
 [driver-abi-stability]: /docs/contribute/roadmap/2021/stable_driver_runtime.md
 [ffx]: /docs/development/tools/ffx/getting-started.md
 [ffx-plugin]: /docs/development/tools/ffx/development/README.md
