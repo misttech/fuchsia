@@ -248,15 +248,13 @@ template("run_fuchsia_bazel_sdk_tests") {
         _remote_build_strategy = invoker.remote_build_strategy
       }
 
-      # The remote_services.bazelrc file is required when remote builds are
-      # enabled, or when bazel_upload_build_events is not empty, as it will
-      # usually be the name of a --config value defined in that file.
-      if (_remote_build || bazel_upload_build_events != "") {
-        _remote_services_bazelrc =
-            "${root_build_dir}/regenerator_outputs/remote_services.bazelrc"
-        args += [ "--bazelrc=" +
-                  rebase_path(_remote_services_bazelrc, root_build_dir) ]
-      }
+      # The remote_services.bazelrc file contains configurations for RBE and BES
+      # / ResultStore. It is unconditionally generated and included here to keep
+      # the build graph invariant and insensitive to observational settings.
+      _remote_services_bazelrc =
+          "${root_build_dir}/regenerator_outputs/remote_services.bazelrc"
+      args += [ "--bazelrc=" +
+                rebase_path(_remote_services_bazelrc, root_build_dir) ]
       if (_remote_build) {
         if (_remote_build_strategy == "remote") {
           args += [ "--bazel-config=remote" ]

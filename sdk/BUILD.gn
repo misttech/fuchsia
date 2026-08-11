@@ -1053,7 +1053,6 @@ if (current_toolchain == default_toolchain) {
       link_rbe_exec_strategy = link_rbe_exec_strategy
       rust_rbe_enable = rust_rbe_enable
       rust_rbe_exec_strategy = rust_rbe_exec_strategy
-      ninja_upload_build_events = ninja_upload_build_events
       update_goldens = update_goldens
       build_should_trace_actions = build_should_trace_actions
     }

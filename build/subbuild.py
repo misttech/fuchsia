@@ -241,18 +241,12 @@ def main() -> int:
         logger.error(f"Missing gn prebuilt binary: {gn_path}")
         return 1
 
-    if args.upload_build_events in {"resultstore", "resultstore_infra"}:
-        # Use a drop-in replacement for ninja that enables ResultStore.
-        ninja_path = fuchsia_dir / "build" / "resultstore" / "rs-sub-ninja.sh"
-    else:
-        ninja_path = (
-            fuchsia_dir
-            / "prebuilt"
-            / "third_party"
-            / "ninja"
-            / host_tag
-            / "ninja"
-        )
+    # Use a drop-in replacement for ninja that enables ResultStore passively.
+    # Enabling ResultStore is triggered by the inherited environment variable
+    # FX_INTERNAL_RESULTSTORE_NINJA, which is set by build/scripts/main_build.py.
+    # When disabled, the un-needed wrappers will be bypassed down to raw ninja
+    # with zero overhead.
+    ninja_path = fuchsia_dir / "build" / "resultstore" / "rs-sub-ninja.sh"
     if not ninja_path.exists():
         logger.error(f"Missing ninja prebuilt binary: {ninja_path}")
         return 1
@@ -295,6 +289,7 @@ def main() -> int:
         dest_file = build_dir / file
         shutil.copy2(source_file, dest_file)
 
+    # LINT.IfChange(subbuild_config)
     subbuild_config_json_path = build_dir.parent / "subbuild_config.json"
     if not subbuild_config_json_path.exists():
         logger.error(f"Missing {subbuild_config_json_path}")
@@ -317,6 +312,7 @@ def main() -> int:
     trace_build_actions = subbuild_config.get(
         "build_should_trace_actions", False
     )
+    # LINT.ThenChange(//sdk/BUILD.gn:subbuild_config)
 
     args_gn_content = _ARGS_GN_TEMPLATE.format(
         cpu=target_cpu,
