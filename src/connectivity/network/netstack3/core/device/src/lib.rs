@@ -25,6 +25,7 @@ mod internal {
     pub(super) mod blackhole;
     pub(super) mod config;
     pub(super) mod ethernet;
+    pub(super) mod gro;
     pub(super) mod id;
     pub(super) mod loopback;
     pub(super) mod pure_ip;
@@ -126,6 +127,7 @@ pub use internal::config::{
     DeviceConfigurationUpdate, DeviceConfigurationUpdateError, NdpConfiguration,
     NdpConfigurationUpdate,
 };
+pub use internal::gro::{GroInputItem, GroIter, GroOutputItem, MaybeContiguousBuffer};
 pub use internal::id::{BaseDeviceId, DeviceId, DeviceProvider, WeakDeviceId};
 pub use internal::state::{
     DeviceStateSpec, DeviceTxOffloadSpecContext, IpLinkDeviceState, IpLinkDeviceStateInner,

@@ -20,8 +20,9 @@ use net_types::ip::{Ip, IpVersion, Ipv4, Ipv6, Ipv6Addr, Mtu, Subnet};
 use net_types::{MulticastAddr, UnicastAddr};
 use netstack3_core::device::{
     EthernetCreationProperties, EthernetDeviceId, EthernetLinkDevice, EthernetWeakDeviceId,
-    MaxEthernetFrameSize, PureIpDevice, PureIpDeviceCreationProperties, PureIpDeviceId,
-    PureIpDeviceReceiveFrameMetadata, PureIpWeakDeviceId, RecvEthernetFrameMeta,
+    GroInputItem, GroIter, GroOutputItem, MaxEthernetFrameSize, MaybeContiguousBuffer,
+    PureIpDevice, PureIpDeviceCreationProperties, PureIpDeviceId, PureIpDeviceReceiveFrameMetadata,
+    PureIpWeakDeviceId, RecvEthernetFrameMeta,
 };
 use netstack3_core::routes::RawMetric;
 use netstack3_core::sync::RwLock as CoreRwLock;
@@ -44,6 +45,35 @@ use crate::bindings::{
 enum NetdeviceId {
     Ethernet(EthernetDeviceId<BindingsCtx>),
     PureIp(PureIpDeviceId<BindingsCtx>),
+}
+
+#[derive(Debug)]
+struct RxBuffer(netdevice_client::Buffer<netdevice_client::Rx>);
+
+impl MaybeContiguousBuffer for RxBuffer {
+    fn len(&self) -> usize {
+        let Self(buf) = self;
+        buf.len()
+    }
+
+    fn linearized<'a>(&'a mut self, vec: &'a mut Vec<u8>) -> &'a mut [u8] {
+        let Self(buf) = self;
+        if buf.as_slice().is_some() {
+            // Ok to unwrap because either both or neither of `as_slice` and
+            // `as_slice_mut` return `Some`. Borrow checker limitations prevent
+            // us from just checking `if let Some(...) = buf.as_slice_mut() {`.
+            buf.as_slice_mut().unwrap()
+        } else {
+            let frame_length = buf.len();
+            if vec.len() < frame_length {
+                vec.resize(frame_length, 0);
+            }
+            let slice = &mut vec[..frame_length];
+            let read_len = buf.io().read_at(0, slice);
+            debug_assert_eq!(read_len, frame_length);
+            slice
+        }
+    }
 }
 
 /// Like [`WeakDeviceId`], but restricted to netdevice devices.
@@ -112,7 +142,7 @@ pub(crate) enum Error {
 
 const DEFAULT_BUFFER_LENGTH: usize = 2048;
 
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum FrameType {
     Ethernet,
     Ipv4,
@@ -203,8 +233,10 @@ impl NetdeviceWorker {
         };
 
         let mut rx_ready_storage = session.new_rx_ready_storage();
-        // Keep a buffer around in case we're receiving fragmented buffers.
-        let mut linearized_buffer = Vec::new();
+        // Maintain persistent buffers for GRO coalescing and linearization of
+        // fragmented buffers to avoid repeated allocations.
+        let mut coalescing_buffer = Vec::new();
+        let mut linearization_buffer = Vec::new();
         loop {
             let rx_buffers = futures::select! {
                 r = session.recv(&mut rx_ready_storage).fuse() => r.map_err(Error::Client)?,
@@ -213,13 +245,23 @@ impl NetdeviceWorker {
                     Err(e) => return Err(Error::Client(e))
                 }
             };
-            for rx_result in rx_buffers {
-                let mut rx = rx_result.map_err(Error::Client)?;
-                let rx_meta = rx.meta();
-                let port = rx_meta.port();
-                let id = if let Some(id) = state.lock().await.get(&port) {
-                    id.clone()
-                } else {
+            // Here we intentionally lock the port slab once for the entire
+            // batch rather than once per buffer. This should not present a
+            // significant problem since ports are seldom added or removed.
+            let state = state.lock().await;
+            let mut gro = GroIter::new(
+                rx_buffers.map(build_gro_input),
+                &mut coalescing_buffer,
+                &mut linearization_buffer,
+            );
+            while let Some(item) = gro.next() {
+                let GroOutputItem {
+                    target: GroPortTarget { port, frame_type },
+                    checksum_offload,
+                    slice,
+                } = item?;
+
+                let Some(id) = state.get(&port) else {
                     debug!("dropping frame for port {:?}, no device mapping available", port);
                     continue;
                 };
@@ -227,91 +269,106 @@ impl NetdeviceWorker {
                 trace_duration!("netdevice::recv");
 
                 let Some(id) = id.upgrade() else {
-                    // This is okay because we hold a weak reference; the device may
-                    // be removed under us. Note that when the device removal has
-                    // completed, the interface's `PortHandler` will be uninstalled
-                    // from the port slab (table of ports for this network device).
+                    // This is okay because we hold a weak reference; the device
+                    // may be removed under us. Note that when the device
+                    // removal has completed, the interface's `PortHandler` will
+                    // be uninstalled from the port slab (table of ports for
+                    // this network device).
                     debug!("received frame for device after it has been removed; device_id={id:?}");
-                    // We continue because even though we got frames for a removed
-                    // device, this network device may have other ports that will
-                    // receive and handle frames.
+                    // We continue because even though we got frames for a
+                    // removed device, this network device may have other ports
+                    // that will receive and handle frames.
                     continue;
                 };
 
-                let frame_type = rx_meta.frame_type().map_err(Error::Client)?.try_into()?;
-                let checksum_offloading = match rx_meta.rx_checksum_offloading() {
-                    Some(netdevice_client::ChecksumRxOffloading::Offloaded(n)) => {
-                        ChecksumRxOffloading::Offloaded(Some(n))
-                    }
-                    None => ChecksumRxOffloading::Offloaded(None),
-                };
-                std::mem::drop(rx_meta);
-                let parsing_context = NetworkParsingContext::new(checksum_offloading);
-                let rx_data = match rx.as_slice_mut() {
-                    Some(slice) => slice,
-                    None => {
-                        let frame_length = rx.len();
-                        if linearized_buffer.len() < frame_length {
-                            linearized_buffer.resize(frame_length, 0);
-                        }
-                        let linearized = &mut linearized_buffer[..frame_length];
-                        // TODO(https://fxbug.dev/42051635): pass strongly owned
-                        // buffers down to the stack instead of copying it out when
-                        // it's fragmented.
-                        let read_len = rx.io().read_at(0, linearized);
-                        debug_assert_eq!(read_len, frame_length);
-                        linearized
-                    }
-                };
-                let buf = packet::Buf::new(rx_data, ..);
-                match id {
-                    NetdeviceId::Ethernet(id) => {
-                        match frame_type {
-                            FrameType::Ethernet => {}
-                            f @ FrameType::Ipv4 | f @ FrameType::Ipv6 => {
-                                // NB: When the port was attached, `Ethernet` was
-                                // the only permitted frame type; anything else here
-                                // indicates a bug in `netdevice_client` or the core
-                                // netdevice driver.
-                                return Err(Error::MismatchedRxFrameType {
-                                    port_class: PortWireFormat::Ethernet,
-                                    frame_type: f,
-                                });
-                            }
-                        }
-                        ctx.api().device::<EthernetLinkDevice>().receive_frame(
-                            RecvEthernetFrameMeta { device_id: id.clone(), parsing_context },
-                            buf,
-                        )
-                    }
-                    NetdeviceId::PureIp(id) => {
-                        let ip_version = match frame_type {
-                            FrameType::Ipv4 => IpVersion::V4,
-                            FrameType::Ipv6 => IpVersion::V6,
-                            f @ FrameType::Ethernet => {
-                                // NB: When the port was attached, `IPv4` & `Ipv6`
-                                // were the only permitted frame types; anything
-                                // else here indicates a bug in `netdevice_client` or
-                                // the core netdevice driver.
-                                return Err(Error::MismatchedRxFrameType {
-                                    port_class: PortWireFormat::Ip,
-                                    frame_type: f,
-                                });
-                            }
-                        };
-                        ctx.api().device::<PureIpDevice>().receive_frame(
-                            PureIpDeviceReceiveFrameMetadata {
-                                device_id: id.clone(),
-                                ip_version,
-                                parsing_context,
-                            },
-                            buf,
-                        )
-                    }
-                }
+                let parsing_context = NetworkParsingContext::new(checksum_offload);
+                let buf = packet::Buf::new(slice, ..);
+                receive_frame(&mut ctx, id, frame_type, parsing_context, buf)?;
             }
         }
     }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct GroPortTarget {
+    port: netdevice_client::Port,
+    frame_type: FrameType,
+}
+
+/// Converts an rx buffer into a format suitable for processing by GRO.
+///
+/// `Err` indicates that a critical error was encountered and the worker should
+/// be terminated.
+fn build_gro_input(
+    rx_result: Result<netdevice_client::Buffer<netdevice_client::Rx>, netdevice_client::Error>,
+) -> Result<GroInputItem<RxBuffer, GroPortTarget>, Error> {
+    let rx = rx_result.map_err(Error::Client)?;
+    let rx_meta = rx.meta();
+    let port = rx_meta.port();
+    let frame_type = rx_meta.frame_type().map_err(Error::Client)?.try_into()?;
+    let checksum_offloading = match rx_meta.rx_checksum_offloading() {
+        Some(netdevice_client::ChecksumRxOffloading::Offloaded(n)) => {
+            ChecksumRxOffloading::Offloaded(Some(n))
+        }
+        None => ChecksumRxOffloading::Offloaded(None),
+    };
+    std::mem::drop(rx_meta);
+
+    Ok(GroInputItem {
+        buffer: RxBuffer(rx),
+        target: GroPortTarget { port, frame_type },
+        checksum_offload: checksum_offloading,
+    })
+}
+
+fn receive_frame<B: packet::BufferMut + std::fmt::Debug>(
+    ctx: &mut Ctx,
+    id: NetdeviceId,
+    frame_type: FrameType,
+    parsing_context: NetworkParsingContext,
+    buf: B,
+) -> Result<(), Error> {
+    match id {
+        NetdeviceId::Ethernet(id) => {
+            match frame_type {
+                FrameType::Ethernet => {}
+                f @ FrameType::Ipv4 | f @ FrameType::Ipv6 => {
+                    // NB: When the port was attached, `Ethernet` was
+                    // the only permitted frame type; anything else here
+                    // indicates a bug in `netdevice_client` or the core
+                    // netdevice driver.
+                    return Err(Error::MismatchedRxFrameType {
+                        port_class: PortWireFormat::Ethernet,
+                        frame_type: f,
+                    });
+                }
+            }
+            ctx.api()
+                .device::<EthernetLinkDevice>()
+                .receive_frame(RecvEthernetFrameMeta { device_id: id, parsing_context }, buf);
+        }
+        NetdeviceId::PureIp(id) => {
+            let ip_version = match frame_type {
+                FrameType::Ipv4 => IpVersion::V4,
+                FrameType::Ipv6 => IpVersion::V6,
+                f @ FrameType::Ethernet => {
+                    // NB: When the port was attached, `IPv4` & `Ipv6`
+                    // were the only permitted frame types; anything
+                    // else here indicates a bug in `netdevice_client` or
+                    // the core netdevice driver.
+                    return Err(Error::MismatchedRxFrameType {
+                        port_class: PortWireFormat::Ip,
+                        frame_type: f,
+                    });
+                }
+            };
+            ctx.api().device::<PureIpDevice>().receive_frame(
+                PureIpDeviceReceiveFrameMetadata { device_id: id, ip_version, parsing_context },
+                buf,
+            );
+        }
+    }
+    Ok(())
 }
 
 pub(crate) struct DeviceHandler {

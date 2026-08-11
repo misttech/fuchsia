@@ -80,8 +80,9 @@ pub mod device {
         ArpConfiguration, ArpConfigurationUpdate, DeviceBufferBindingsTypes, DeviceClassMatcher,
         DeviceConfiguration, DeviceConfigurationUpdate, DeviceConfigurationUpdateError,
         DeviceCounters, DeviceId, DeviceIdAndNameMatcher, DeviceLayerEventDispatcher,
-        DeviceLayerStateTypes, DeviceProvider, DeviceSendFrameError, NdpConfiguration,
-        NdpConfigurationUpdate, WeakDeviceId,
+        DeviceLayerStateTypes, DeviceProvider, DeviceSendFrameError, GroInputItem, GroIter,
+        GroOutputItem, MaybeContiguousBuffer, NdpConfiguration, NdpConfigurationUpdate,
+        WeakDeviceId,
     };
 }
 

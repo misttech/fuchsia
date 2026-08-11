@@ -17,6 +17,7 @@ rustc_library_with_features("netstack3-device") {
     "src/blackhole.rs",
     "src/config.rs",
     "src/ethernet.rs",
+    "src/gro.rs",
     "src/id.rs",
     "src/lib.rs",
     "src/loopback.rs",
