@@ -77,8 +77,9 @@ pub async fn pb_create_with_sdk_version(
         };
 
     // Build a product bundle.
-    let mut pb_builder =
-        ProductBundleBuilder::new(cmd.product_name.clone()).sdk_version(sdk_version.to_string());
+    let mut pb_builder = ProductBundleBuilder::new(cmd.product_name.clone())
+        .sdk_version(sdk_version.to_string())
+        .include_blobs(cmd.include_blobs);
 
     if let Some(system_path) = &cmd.system_a {
         let system = AssembledSystem::from_dir(system_path)?;
@@ -185,6 +186,7 @@ mod test {
                 delivery_blob_type: None,
                 with_deprecated_flash_manifest: false,
                 gerrit_size_report: None,
+                include_blobs: true,
             },
             /*sdk_version=*/ "",
             tool_provider,
@@ -263,6 +265,7 @@ mod test {
                 delivery_blob_type: None,
                 with_deprecated_flash_manifest: false,
                 gerrit_size_report: None,
+                include_blobs: true,
             },
             /*sdk_version=*/ "",
             tool_provider,
@@ -347,6 +350,7 @@ mod test {
                     delivery_blob_type: None,
                     with_deprecated_flash_manifest: false,
                     gerrit_size_report: None,
+                    include_blobs: true,
                 },
                 /*sdk_version=*/ "",
                 tool_provider,
@@ -401,6 +405,7 @@ mod test {
                 delivery_blob_type: Some(1),
                 with_deprecated_flash_manifest: false,
                 gerrit_size_report: None,
+                include_blobs: true,
             },
             /*sdk_version=*/ "",
             tool_provider,
@@ -497,6 +502,7 @@ mod test {
                 delivery_blob_type: None,
                 with_deprecated_flash_manifest: false,
                 gerrit_size_report: None,
+                include_blobs: true,
             },
             /*sdk_version=*/ "",
             tool_provider,
@@ -593,6 +599,7 @@ mod test {
                 delivery_blob_type: None,
                 with_deprecated_flash_manifest: true,
                 gerrit_size_report: None,
+                include_blobs: true,
             },
             /*sdk_version=*/ "",
             tool_provider,

@@ -70,4 +70,10 @@ pub struct CreateCommand {
     /// mapped to partitions.
     #[argh(option)]
     pub gerrit_size_report: Option<Utf8PathBuf>,
+
+    /// whether to copy blobs into the output product bundle directory.
+    /// Note that when set to false, running `ffx repository server start` command
+    /// will take longer because it has to extract the blobs from the filesystem image.
+    #[argh(option, default = "true")]
+    pub include_blobs: bool,
 }

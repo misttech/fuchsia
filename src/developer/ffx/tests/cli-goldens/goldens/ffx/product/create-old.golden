@@ -174,6 +174,18 @@
       "short": null,
       "description": "an optional image size report to generate that indicates the sizes of the images when mapped to partitions.",
       "hidden": false
+    },
+    {
+      "kind": {
+        "Option": {
+          "arg_name": "include-blobs"
+        }
+      },
+      "optionality": "optional",
+      "long": "--include-blobs",
+      "short": null,
+      "description": "whether to copy blobs into the output product bundle directory. Note that when set to false, running `ffx repository server start` command will take longer because it has to extract the blobs from the filesystem image.",
+      "hidden": false
     }
   ],
   "notes": [],

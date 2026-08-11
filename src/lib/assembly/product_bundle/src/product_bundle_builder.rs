@@ -104,6 +104,7 @@ pub struct ProductBundleBuilder {
     update_details: Option<UpdateDetails>,
     repository_details: Option<RepositoryDetails>,
     gerrit_size_report: Option<Utf8PathBuf>,
+    include_blobs: bool,
 }
 
 /// The details needed to build an update package.
@@ -132,7 +133,14 @@ impl ProductBundleBuilder {
             update_details: None,
             repository_details: None,
             gerrit_size_report: None,
+            include_blobs: true,
         }
+    }
+
+    /// Set whether blobs should be included in the product bundle repository.
+    pub fn include_blobs(mut self, include_blobs: bool) -> Self {
+        self.include_blobs = include_blobs;
+        self
     }
 
     /// Set the SDK version if built from the SDK.
@@ -206,6 +214,7 @@ impl ProductBundleBuilder {
             update_details,
             repository_details,
             gerrit_size_report,
+            include_blobs,
         } = self;
 
         // Resolve the product bundle version in precedence order:
@@ -327,6 +336,7 @@ impl ProductBundleBuilder {
                 blobs_path,
                 out_dir,
                 ota_manifest_path,
+                include_blobs,
             )
             .await?
         } else {
@@ -479,6 +489,7 @@ async fn write_repositories(
     blobs_path: impl AsRef<Utf8Path>,
     out_dir: impl AsRef<Utf8Path>,
     ota_manifest_path: Option<Utf8PathBuf>,
+    include_blobs: bool,
 ) -> std::result::Result<Vec<Repository>, ProductBundleBuildError> {
     let tuf_keys = repository_details.tuf_keys;
     let blobs_path = blobs_path.as_ref();
@@ -497,10 +508,13 @@ async fn write_repositories(
         FileSystemRepository::builder(main_metadata_path.to_path_buf(), blobs_path.to_path_buf())
             .delivery_blob_type(repository_details.delivery_blob_type)
             .build();
-    let mut repo_builder = RepoBuilder::create(&repo, &repo_keys)
-        .add_package_manifests(packages_a.into_iter())
-        .await
-        .map_err(ProductBundleBuildError::WriteRepositories)?;
+    let mut repo_builder = RepoBuilder::create(&repo, &repo_keys);
+    if include_blobs {
+        repo_builder = repo_builder
+            .add_package_manifests(packages_a.into_iter())
+            .await
+            .map_err(ProductBundleBuildError::WriteRepositories)?;
+    }
     if let Some(update_package) = update_package {
         repo_builder = repo_builder
             .add_package_manifests(
@@ -519,10 +533,14 @@ async fn write_repositories(
     )
     .delivery_blob_type(repository_details.delivery_blob_type)
     .build();
-    RepoBuilder::create(&recovery_repo, &repo_keys)
-        .add_package_manifests(packages_r.into_iter())
-        .await
-        .map_err(ProductBundleBuildError::WriteRepositories)?
+    let mut recovery_repo_builder = RepoBuilder::create(&recovery_repo, &repo_keys);
+    if include_blobs {
+        recovery_repo_builder = recovery_repo_builder
+            .add_package_manifests(packages_r.into_iter())
+            .await
+            .map_err(ProductBundleBuildError::WriteRepositories)?;
+    }
+    recovery_repo_builder
         .commit()
         .await
         .map_err(ProductBundleBuildError::WriteRepositories)?;
@@ -1055,5 +1073,72 @@ mod test {
         match pb {
             ProductBundle::V2(pb) => assert_eq!(pb.product_version, "unversioned"),
         }
+    }
+
+    #[fuchsia::test]
+    async fn test_include_blobs_option() {
+        let tempdir = TempDir::new().unwrap();
+        let tempdir = Utf8Path::from_path(tempdir.path()).unwrap();
+        let tools = FakeToolProvider::default();
+        let partitions = PartitionsConfig::default();
+        let partitions_path = tempdir.join("partitions");
+        partitions.write_to_dir(&partitions_path, None::<Utf8PathBuf>).unwrap();
+
+        let pb_dir = tempdir.join("pb_no_blobs");
+        let _pb = ProductBundleBuilder::new("name")
+            .system(make_test_system("version", &partitions_path), Slot::A)
+            .include_blobs(false)
+            .build(Box::new(tools), &pb_dir)
+            .await
+            .unwrap();
+
+        let blobs_dir = pb_dir.join("blobs");
+        assert!(blobs_dir.exists());
+        let entries: Vec<_> = std::fs::read_dir(blobs_dir.as_std_path())
+            .unwrap()
+            .map(|res| res.unwrap().file_name().into_string().unwrap())
+            .collect();
+        assert_eq!(entries, vec![".ensure-one-file".to_string()]);
+    }
+
+    #[fuchsia::test]
+    async fn test_include_blobs_option_with_update_package() {
+        let tempdir = TempDir::new().unwrap();
+        let tempdir = Utf8Path::from_path(tempdir.path()).unwrap();
+        let tools = FakeToolProvider::new_with_side_effect(blobfs_side_effect);
+
+        let zbi_path = tempdir.join("zbi");
+        let mut zbi_file = std::fs::File::create(&zbi_path).unwrap();
+        zbi_file.write_all(b"zbi contents").unwrap();
+
+        let tuf_keys = tempdir.join("keys");
+        test_utils::make_repo_keys_dir(&tuf_keys);
+
+        let partitions = PartitionsConfig::default();
+        let partitions_path = tempdir.join("partitions");
+        partitions.write_to_dir(&partitions_path, None::<Utf8PathBuf>).unwrap();
+
+        let mut system = make_test_system("version", &partitions_path);
+        system.images = vec![Image::ZBI { path: zbi_path, signed: false }];
+
+        let pb_dir = tempdir.join("pb_no_blobs_update_pkg");
+        let _pb = ProductBundleBuilder::new("name")
+            .system(system, Slot::A)
+            .update_package(42)
+            .repository(delivery_blob::DeliveryBlobType::Type1, tuf_keys)
+            .include_blobs(false)
+            .build(Box::new(tools), &pb_dir)
+            .await
+            .unwrap();
+
+        let blobs_dir = pb_dir.join("blobs");
+        assert!(blobs_dir.exists());
+        let entries: Vec<_> = std::fs::read_dir(blobs_dir.as_std_path())
+            .unwrap()
+            .map(|res| res.unwrap().file_name().into_string().unwrap())
+            .collect();
+        // Update package blobs should still be published, in addition to .ensure-one-file.
+        assert!(entries.contains(&".ensure-one-file".to_string()));
+        assert!(entries.len() > 1);
     }
 }
