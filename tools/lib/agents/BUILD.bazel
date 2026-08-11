@@ -1,0 +1,41 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+package(
+    default_applicable_licenses = ["//:license"],
+    default_visibility = ["//visibility:public"],
+)
+
+# @bazel2gn:skip
+genrule(
+    name = "copy_agents_txt",
+    srcs = ["//tools/devshell/lib:agents.txt"],
+    outs = ["agents.txt"],
+    cmd = "cp $< $@",
+)
+
+# @bazel2gn:skip
+go_library(
+    name = "agents",
+    srcs = [
+        "agents.go",
+    ],
+    embedsrcs = [
+        ":copy_agents_txt",
+    ],
+    importpath = "go.fuchsia.dev/fuchsia/tools/lib/agents",
+)
+
+# @bazel2gn:skip
+go_test(
+    name = "agents_tests",
+    srcs = [
+        "agents_test.go",
+    ],
+    embed = [
+        ":agents",
+    ],
+)
