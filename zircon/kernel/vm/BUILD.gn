@@ -394,6 +394,29 @@ kernel_bindgen_crate("vm-fault-bindings") {
   expect_lints = [ "non_camel_case_types" ]
 }
 
+kernel_bindgen_crate("attribution-bindings") {
+  visibility = [ ":*" ]
+  headers = [ "include/vm/attribution.h" ]
+  non_rust_deps = [ ":bindgen_common_deps" ]
+  output_name = "attribution_bindings.rs"
+  cpp = true
+
+  edition = "2024"
+  notice_year = 2026
+  type_allowlist = [
+    "vm::AttributionCounts",
+    "vm::FractionalBytes",
+  ]
+  additional_bindgen_flags = [
+    "--opaque-type=vm::FractionalBytes",
+    "--with-derive-partialeq",
+    "--with-derive-eq",
+    "--no-recursive-allowlist",
+  ]
+  raw_lines = [ "#![no_std]" ]
+  expect_lints = [ "non_camel_case_types" ]
+}
+
 kernel_bindgen_crate("page-source-bindings") {
   visibility = [ ":*" ]
   headers = [ "include/vm/page_source_ffi.h" ]
@@ -448,6 +471,7 @@ kernel_bindgen_crate("vm-object-bindings") {
     "cpp_vm_object_parent_user_id",
     "cpp_vm_object_lookup",
     "cpp_vm_object_get_page",
+    "cpp_vm_object_get_attributed_memory",
   ]
   type_allowlist = [
     "EvictionHint",
@@ -457,6 +481,7 @@ kernel_bindgen_crate("vm-object-bindings") {
     "cpp_vm_object_lookup_fn",
   ]
   type_blocklist = [
+    "AttributionCounts",
     "MultiPageRequest",
     "paddr_t",
     "vm_page_t",
@@ -483,12 +508,14 @@ kernel_bindgen_crate("vm-object-bindings") {
   ]
   var_allowlist = [ "VmObject_MAX_SIZE" ]
   deps = [
+    ":attribution-bindings",
     ":page-bindings",
     ":page-source-bindings",
     "//sdk/rust/zx-types",
   ]
   raw_lines = [
     "#![no_std]",
+    "use attribution_bindings::vm_AttributionCounts;",
     "use page_bindings::vm_page_t;",
     "use page_source_bindings::MultiPageRequest;",
     "use zx_types::zx_paddr_t as paddr_t;",
@@ -602,6 +629,7 @@ kernel_rust_mod("vm-rs") {
   source_root = "mod.rs"
   sources = [
     "arch_vm_aspace.rs",
+    "attribution.rs",
     "fault.rs",
     "mod.rs",
     "page.rs",
@@ -623,6 +651,7 @@ kernel_rust_mod("vm-rs") {
   ]
 
   deps = [
+    ":attribution-bindings",
     ":page-bindings",
     ":page-queues-bindings",
     ":page-source-bindings",
@@ -658,25 +687,32 @@ kernel_bindgen_crate("test-helper-bindings") {
   function_allowlist = [
     "cpp_make_committed_pager_vmo",
     "cpp_make_partially_committed_pager_vmo",
+    "cpp_make_private_attribution_counts",
     "cpp_verify_private_attribution_counts",
     "cpp_verify_continuous_attribution_bytes",
   ]
   type_blocklist = [
+    "AttributionCounts",
+    "VmObject",
+    "VmObjectPaged",
     "vm_page_t",
     "zx_status_t",
-    "VmObjectPaged",
   ]
 
   additional_bindgen_flags = [ "--no-recursive-allowlist" ]
 
   raw_lines = [
     "#![no_std]",
+    "use attribution_bindings::vm_AttributionCounts;",
     "use page_bindings::vm_page_t;",
+    "use vm_object_bindings::VmObject;",
     "use vm_object_paged_bindings::VmObjectPaged;",
     "use zx_types::zx_status_t;",
   ]
   deps = [
+    ":attribution-bindings",
     ":page-bindings",
+    ":vm-object-bindings",
     ":vm-object-paged-bindings",
     "//sdk/rust/zx-types",
   ]

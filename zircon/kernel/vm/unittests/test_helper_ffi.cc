@@ -35,4 +35,15 @@ FFI_ALWAYS_INLINE zx_status_t cpp_make_partially_committed_pager_vmo(
   return status;
 }
 
+FFI_ALWAYS_INLINE bool cpp_verify_continuous_attribution_bytes(VmObject* vmo,
+                                                               uint64_t expected_bytes) {
+  return vm_unittest::verify_continuous_attribution_bytes(*vmo, expected_bytes);
+}
+
+FFI_ALWAYS_INLINE void cpp_make_private_attribution_counts(uint64_t uncompressed,
+                                                           uint64_t compressed,
+                                                           vm::AttributionCounts* out_counts) {
+  *out_counts = vm_unittest::make_private_attribution_counts(uncompressed, compressed);
+}
+
 }  // extern "C"

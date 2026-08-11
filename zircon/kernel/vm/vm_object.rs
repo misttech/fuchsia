@@ -5,6 +5,7 @@
 // https://opensource.org/licenses/MIT
 
 use super::arch_vm_aspace::ArchMmuFlags;
+use super::attribution::AttributionCounts;
 use super::page::VmPagePtr;
 use super::page_source::MultiPageRequest;
 use super::vm_object_paged::VmObjectPaged;
@@ -319,6 +320,17 @@ impl VmObject {
         Status::ok(status)?;
         let page = unsafe { VmPagePtr::from_raw(page_ptr) }.expect("page pointer is non-null");
         Ok((page, PAddr(paddr)))
+    }
+
+    /// Returns the attribution counts for this VMO.
+    pub fn get_attributed_memory(&self) -> AttributionCounts {
+        let mut counts = core::mem::MaybeUninit::uninit();
+        // SAFETY: `self.as_raw()` points to a live `VmObject`, and `counts` is valid for writing.
+        unsafe {
+            bindings::cpp_vm_object_get_attributed_memory(self.as_raw(), counts.as_mut_ptr());
+        }
+        // SAFETY: `cpp_vm_object_get_attributed_memory` certainly wrote out the attribution counts.
+        unsafe { counts.assume_init() }
     }
 }
 

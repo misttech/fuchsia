@@ -12,6 +12,9 @@
 #include <zircon/compiler.h>
 #include <zircon/types.h>
 
+#include <vm/attribution.h>
+
+#include "vm/vm_object.h"
 #include "vm/vm_object_paged.h"
 
 __BEGIN_CDECLS
@@ -23,6 +26,10 @@ zx_status_t cpp_make_partially_committed_pager_vmo(size_t num_pages, size_t comm
                                                    bool trap_dirty, bool resizable,
                                                    bool ignore_requests, vm_page_t** out_pages,
                                                    VmObjectPaged** out_vmo);
+
+bool cpp_verify_continuous_attribution_bytes(VmObject* vmo, uint64_t expected_bytes);
+void cpp_make_private_attribution_counts(uint64_t uncompressed, uint64_t compressed,
+                                         vm::AttributionCounts* out_counts);
 __END_CDECLS
 
 #endif  // ZIRCON_KERNEL_VM_UNITTESTS_TEST_HELPER_FFI_H_

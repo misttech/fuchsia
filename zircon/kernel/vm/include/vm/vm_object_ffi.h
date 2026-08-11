@@ -11,6 +11,7 @@
 #include <zircon/types.h>
 
 #include <kernel/ffi.h>
+#include <vm/attribution.h>
 #include <vm/fault.h>
 
 #include "vm/page_source.h"
@@ -56,6 +57,7 @@ zx_status_t cpp_vm_object_lookup(VmObject* vmo, uint64_t offset, uint64_t len, v
 zx_status_t cpp_vm_object_get_page(VmObject* vmo, uint64_t offset, uint32_t pf_flags,
                                    MultiPageRequest* page_request, vm_page_t** out_page,
                                    paddr_t* out_pa);
+void cpp_vm_object_get_attributed_memory(const VmObject* vmo, vm::AttributionCounts* out_counts);
 
 __END_CDECLS
 

@@ -21,6 +21,7 @@ mod vmo_rs {
     use crate::vm::vm_object_physical::VmObjectPhysical;
     use crate::vm_unittests::test_helper::{
         make_committed_pager_vmo, make_partially_committed_pager_vmo,
+        make_private_attribution_counts, verify_continuous_attribution_bytes,
     };
     use page::SIZE as PAGE_SIZE_USIZE;
     use pin_init::stack_pin_init;
@@ -103,6 +104,24 @@ mod vmo_rs {
         let vmo = VmObjectPaged::create(ALLOC_FLAG_ANY, 0, VmObject::MAX_SIZE + PAGE_SIZE);
         // should be too large
         expect_eq!(Status::result_into_raw(vmo.map(|_| ())), Status::OUT_OF_RANGE.into_raw());
+    }
+
+    /// Creates a vm object, commits memory.
+    #[test]
+    fn vmo_commit_test() {
+        let _scanner_disable = AutoVmScannerDisable::new();
+
+        let alloc_size = PAGE_SIZE * 16;
+        // vmobject creation
+        let vmo = unwrap_ok!(VmObjectPaged::create(pmm::ALLOC_FLAG_ANY, 0, alloc_size));
+
+        let ret = vmo.commit_range(0, alloc_size);
+        // committing vm object
+        expect_ok!(ret);
+        expect_true!(make_private_attribution_counts(alloc_size, 0) == vmo.get_attributed_memory());
+        expect_true!(verify_continuous_attribution_bytes(&vmo, alloc_size));
+        // SAFETY: Pages remain attached to `vmo` during assertion.
+        expect_true!(unsafe { pages_in_any_anonymous_queue(&vmo, 0, alloc_size) });
     }
 
     /// Checks that VMOs must be page aligned sizes.

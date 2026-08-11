@@ -114,4 +114,9 @@ FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_get_page(VmObject* vmo, uint64_t off
   return vmo->GetPage(offset, pf_flags, page_request, out_page, out_pa);
 }
 
+FFI_ALWAYS_INLINE void cpp_vm_object_get_attributed_memory(const VmObject* vmo,
+                                                           vm::AttributionCounts* out_counts) {
+  *out_counts = vmo->GetAttributedMemory();
+}
+
 }  // extern "C"

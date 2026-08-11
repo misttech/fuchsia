@@ -4,7 +4,9 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+use crate::vm::attribution::AttributionCounts;
 use crate::vm::page::{VmPagePtr, vm_page_t};
+use crate::vm::vm_object::VmObject;
 use crate::vm::vm_object_paged::VmObjectPaged;
 use fbl::RefPtr;
 use test_helper_bindings as bindings;
@@ -86,4 +88,25 @@ pub fn make_partially_committed_pager_vmo<const C: usize>(
     });
 
     Ok((vmo, pages))
+}
+
+/// Verifies that `vmo` has `expected_bytes` tracked by continuous attribution.
+pub fn verify_continuous_attribution_bytes(vmo: &VmObject, expected_bytes: u64) -> bool {
+    // SAFETY: `vmo.as_raw()` points to a live `VmObjectPaged`.
+    unsafe { bindings::cpp_verify_continuous_attribution_bytes(vmo.as_raw(), expected_bytes) }
+}
+
+/// Helper function that produces a filled out AttributionCounts for testing.
+pub fn make_private_attribution_counts(uncompressed: u64, compressed: u64) -> AttributionCounts {
+    let mut counts = core::mem::MaybeUninit::uninit();
+    // SAFETY: `counts.as_mut_ptr()` is valid for writing AttributionCounts.
+    unsafe {
+        bindings::cpp_make_private_attribution_counts(
+            uncompressed,
+            compressed,
+            counts.as_mut_ptr(),
+        );
+    }
+    // SAFETY: `cpp_make_private_attribution_counts` certainly wrote out the attribution counts.
+    unsafe { counts.assume_init() }
 }
