@@ -2719,6 +2719,111 @@ VK_TEST_F(VulkanRendererTest, ReadbackTest) {
                  });
 }
 
+// Check that rendering a list of layers that includes an unresolvable / missing image ID
+// does not cause vector size mismatch crashes in RectangleCompositor::DrawBatch and
+// filters out the missing layer without drawing it.
+VK_TEST_F(VulkanRendererTest, UnresolvableImageLayerFiltered) {
+  async::TestLoop loop;
+  auto [escher, renderer] = CreateEscherAndPrewarmedRenderer();
+  auto sysmem_allocator = CreateSysmemAllocatorClient(loop.dispatcher());
+
+  // Setup the render target collection.
+  allocation::GlobalBufferCollectionId target_id = allocation::GenerateUniqueBufferCollectionId();
+  auto [local_token, dup_token] = SysmemTokens::Create(sysmem_allocator);
+  auto promise1 =
+      renderer->ImportBufferCollection(target_id, sysmem_allocator, std::move(dup_token),
+                                       BufferCollectionUsage::kRenderTarget, std::nullopt);
+  ASSERT_TRUE(RunPromise(loop, std::move(promise1)));
+  fuchsia::sysmem2::BufferCollectionSyncPtr target_ptr;
+  fidl::Arena arena;
+  fidl::OneWayStatus result = sysmem_allocator->BindSharedCollection(
+      fuchsia_sysmem2::wire::AllocatorBindSharedCollectionRequest::Builder(arena)
+          .token(std::move(local_token))
+          .buffer_collection_request(fidl::ServerEnd<fuchsia_sysmem2::BufferCollection>(
+              target_ptr.NewRequest().TakeChannel()))
+          .Build());
+  ASSERT_TRUE(result.ok());
+
+  zx_status_t status =
+      target_ptr->SetConstraints(fuchsia::sysmem2::BufferCollectionSetConstraintsRequest{});
+  ASSERT_EQ(status, ZX_OK);
+  {
+    fuchsia::sysmem2::BufferCollection_WaitForAllBuffersAllocated_Result wait_result;
+    auto status = target_ptr->WaitForAllBuffersAllocated(&wait_result);
+    ASSERT_EQ(status, ZX_OK);
+    ASSERT_TRUE(!wait_result.is_framework_err());
+    ASSERT_TRUE(!wait_result.is_err());
+    ASSERT_TRUE(wait_result.is_response());
+  }
+  target_ptr->Release();
+
+  // Setup the readback collection to verify that layer2 was filtered out.
+  const uint32_t kTargetWidth = 16;
+  const uint32_t kTargetHeight = 8;
+  fuchsia::sysmem2::BufferCollectionInfo readback_info;
+  fuchsia::sysmem2::BufferCollectionSyncPtr readback_ptr;
+  auto readback_id = SetupBufferCollection(
+      loop, 1, kTargetWidth, kTargetHeight, BufferCollectionUsage::kReadback, renderer.get(),
+      sysmem_allocator, &readback_info, readback_ptr, target_id);
+  EXPECT_EQ(target_id, readback_id);
+
+  ImageMetadata render_target = {.collection_id = target_id,
+                                 .identifier = allocation::GenerateUniqueImageId(),
+                                 .vmo_index = 0,
+                                 .width = kTargetWidth,
+                                 .height = kTargetHeight};
+  auto promise2 = renderer->ImportBufferImage(render_target, BufferCollectionUsage::kRenderTarget);
+  ASSERT_TRUE(RunPromise(loop, std::move(promise2)));
+  auto promise3 = renderer->ImportBufferImage(render_target, BufferCollectionUsage::kReadback);
+  ASSERT_TRUE(RunPromise(loop, std::move(promise3)));
+
+  // Layer 1: Solid red layer (valid).
+  ImageRect rect1(glm::vec2(0, 0), glm::vec2(kTargetWidth, kTargetHeight));
+  ResolvedLayer layer1 = {
+      .rect = rect1,
+      .multiply_color = {1.f, 1.f, 1.f, 1.f},
+      .blend_mode = BlendMode::kPremultipliedAlpha(),
+      .content = ResolvedLayer::SolidColorContent{.color = {1.f, 0.f, 0.f, 1.f}},
+  };
+
+  // Layer 2: Image content layer pointing to an unknown/missing image ID, covering full screen.
+  ImageRect rect2(glm::vec2(0, 0), glm::vec2(kTargetWidth, kTargetHeight));
+  ImageMetadata missing_image = {.collection_id = allocation::GenerateUniqueBufferCollectionId(),
+                                 .identifier = allocation::GenerateUniqueImageId(),
+                                 .width = kTargetWidth,
+                                 .height = kTargetHeight};
+  ResolvedLayer layer2 = {
+      .rect = rect2,
+      .multiply_color = {1.f, 1.f, 1.f, 1.f},
+      .blend_mode = BlendMode::kPremultipliedAlpha(),
+      .content =
+          ResolvedLayer::ImageContent{
+              .image_id = missing_image.identifier,
+              .width = missing_image.width,
+              .height = missing_image.height,
+          },
+  };
+
+  ResolvedLayer layers[] = {layer1, layer2};
+  // Rendering should filter out layer2 gracefully without crashing in DrawBatch.
+  renderer->Render(render_target, std::span<const ResolvedLayer>(layers, 2), {});
+  renderer->WaitIdle();
+
+  // Read back pixels and verify layer2 (missing image) was completely filtered out,
+  // leaving layer1 (solid red) intact across the entire render target.
+  MapHostPointer(readback_info, 0, HostPointerAccessMode::kReadOnly,
+                 [&](const uint8_t* vmo_host, uint32_t num_bytes) mutable {
+                   uint8_t linear_vals[num_bytes];
+                   sRGBtoLinear(vmo_host, linear_vals, num_bytes);
+                   for (uint32_t i = 0; i < kTargetWidth; i++) {
+                     for (uint32_t j = 0; j < kTargetHeight; j++) {
+                       auto pixel = GetPixel(linear_vals, kTargetWidth, i, j);
+                       EXPECT_EQ(pixel, glm::ivec4(255, 0, 0, 255));
+                     }
+                   }
+                 });
+}
+
 class VulkanRendererParameterizedAFBCTest
     : public VulkanRendererTest,
       public ::testing::WithParamInterface<allocation::BufferCollectionUsage> {};

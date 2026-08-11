@@ -140,47 +140,39 @@ std::array<glm::ivec2, 4> FlipUVs(const std::array<glm::ivec2, 4>& uvs, const Im
   return flipped_uvs;
 }
 
-std::pmr::vector<escher::Rectangle2D> GetNormalizedUvRects(std::span<const ResolvedLayer> layers,
-                                                           std::pmr::memory_resource* resource) {
-  std::pmr::vector<escher::Rectangle2D> normalized_rects(resource);
-  normalized_rects.reserve(layers.size());
+escher::Rectangle2D GetNormalizedUvRect(const ResolvedLayer& layer) {
+  const ImageRect& rect = layer.rect;
+  const fuchsia::ui::composition::Orientation orientation = rect.orientation;
+  float w = 1.f;
+  float h = 1.f;
+  if (std::holds_alternative<ResolvedLayer::ImageContent>(layer.content)) {
+    const auto& image = std::get<ResolvedLayer::ImageContent>(layer.content);
+    w = static_cast<float>(image.width);
+    h = static_cast<float>(image.height);
+  }
+  FX_DCHECK(w >= 0.f && h >= 0.f);
 
-  for (const auto& layer : layers) {
-    const ImageRect& rect = layer.rect;
-    const fuchsia::ui::composition::Orientation orientation = rect.orientation;
-    float w = 1.f;
-    float h = 1.f;
-    if (std::holds_alternative<ResolvedLayer::ImageContent>(layer.content)) {
-      const auto& image = std::get<ResolvedLayer::ImageContent>(layer.content);
-      w = static_cast<float>(image.width);
-      h = static_cast<float>(image.height);
-    }
-    FX_DCHECK(w >= 0.f && h >= 0.f);
+  // First, reorder the UVs based on whether the image was flipped.
+  const auto texel_uvs = FlipUVs(rect.texel_uvs, layer.flip);
 
-    // First, reorder the UVs based on whether the image was flipped.
-    const auto texel_uvs = FlipUVs(rect.texel_uvs, layer.flip);
-
-    // Reorder based on rotation and normalize the texel UVs. Normalization is based on the width
-    // and height of the image that is sampled from. Reordering is based on orientation. The texel
-    // UVs are listed in clockwise-order starting at the top-left corner of the texture. They need
-    // to be reordered so that they are listed in clockwise-order and the UV that maps to the
-    // top-left corner of the escher::Rectangle2D is listed first. For instance, if the rectangle is
-    // rotated 90_CCW, the first texel UV of the ImageRect, at index 0, is at index 3 in the
-    // escher::Rectangle2D.
-    std::array<glm::vec2, 4> normalized_uvs;
-    // |fuchsia::ui::composition::Orientation| is an enum value in the range [1, 4].
-    int starting_index = static_cast<int>(orientation) - 1;
-    for (int j = 0; j < 4; j++) {
-      const int index = (starting_index + j) % 4;
-      // Clamp values to ensure they are normalized to the range [0, 1].
-      normalized_uvs[j] = glm::vec2(clamp(static_cast<float>(texel_uvs[index].x), 0, w) / w,
-                                    clamp(static_cast<float>(texel_uvs[index].y), 0, h) / h);
-    }
-
-    normalized_rects.push_back({rect.origin, rect.extent, normalized_uvs});
+  // Reorder based on rotation and normalize the texel UVs. Normalization is based on the width
+  // and height of the image that is sampled from. Reordering is based on orientation. The texel
+  // UVs are listed in clockwise-order starting at the top-left corner of the texture. They need
+  // to be reordered so that they are listed in clockwise-order and the UV that maps to the
+  // top-left corner of the escher::Rectangle2D is listed first. For instance, if the rectangle is
+  // rotated 90_CCW, the first texel UV of the ImageRect, at index 0, is at index 3 in the
+  // escher::Rectangle2D.
+  std::array<glm::vec2, 4> normalized_uvs;
+  // |fuchsia::ui::composition::Orientation| is an enum value in the range [1, 4].
+  int starting_index = static_cast<int>(orientation) - 1;
+  for (int j = 0; j < 4; j++) {
+    const int index = (starting_index + j) % 4;
+    // Clamp values to ensure they are normalized to the range [0, 1].
+    normalized_uvs[j] = glm::vec2(clamp(static_cast<float>(texel_uvs[index].x), 0, w) / w,
+                                  clamp(static_cast<float>(texel_uvs[index].y), 0, h) / h);
   }
 
-  return normalized_rects;
+  return {rect.origin, rect.extent, normalized_uvs};
 }
 
 std::atomic<uint64_t> next_buffer_collection_id = 1;
@@ -883,8 +875,10 @@ void VkRenderer::Render(const ImageMetadata& render_target, std::span<const Reso
   }
 
   TRACE_DURATION_BEGIN("gfx", "VkRenderer::Render[transform_display_list]");
+  std::pmr::vector<escher::Rectangle2D> normalized_rects(&resource);
   std::pmr::vector<escher::TexturePtr> textures(&resource);
   std::pmr::vector<escher::RectangleCompositor::ColorData> color_data(&resource);
+  normalized_rects.reserve(layers.size());
   textures.reserve(layers.size());
   color_data.reserve(layers.size());
   for (const auto& layer : layers) {
@@ -902,6 +896,8 @@ void VkRenderer::Render(const ImageMetadata& render_target, std::span<const Reso
       continue;
     }
     const escher::TexturePtr& texture_ptr = texture_it->second;
+
+    normalized_rects.push_back(GetNormalizedUvRect(layer));
 
     // When we are not in protected mode, replace any protected content with black solid color.
     if (!render_in_protected_mode && texture_ptr->image()->use_protected_memory()) {
@@ -949,8 +945,6 @@ void VkRenderer::Render(const ImageMetadata& render_target, std::span<const Reso
   command_buffer->impl()->TransitionImageLayout(output_image, vk::ImageLayout::eUndefined,
                                                 render_image_layout, VK_QUEUE_FAMILY_FOREIGN_EXT,
                                                 escher_->device()->vk_main_queue_family());
-
-  const auto normalized_rects = GetNormalizedUvRects(layers, &resource);
 
   // Now the compositor can finally draw.
   compositor_.DrawBatch(command_buffer, normalized_rects, textures, color_data, output_image,
