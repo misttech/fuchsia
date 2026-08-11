@@ -102,14 +102,28 @@ fn parse_battery_manager_config(contents: &str, path: &str) -> Result<BatteryMan
             return Err(err);
         }
 
+        // TODO(https://fxbug.dev/540034557): When chg_cv_limits_uv is added, validate that
+        // chg_cc_limits_ua column count exactly matches chg_cv_limits_uv.len().
+        // For now, TTF estimation only requires num_cols >= tier_thresholds.len().
+        let expected_min_cols = tier_thresholds.len();
+        let num_cols = cc_matrix.first().map(|r| r.len()).unwrap_or(0);
+        if num_cols < expected_min_cols {
+            let err = anyhow::format_err!(
+                "Invalid battery manager config at '{path}': \
+                chg_cc_limits_ua column count ({num_cols}) must be at least \
+                ttf_tier_thresholds count ({expected_min_cols}).",
+            );
+            error!("{err}");
+            return Err(err);
+        }
+
         for (i, row) in cc_matrix.iter().enumerate() {
-            if row.len() != tier_thresholds.len() {
+            if row.len() != num_cols {
                 let err = anyhow::format_err!(
                     "Invalid battery manager config at '{path}': \
                     chg_cc_limits_ua row {i} length ({}) must match \
-                    ttf_tier_thresholds count ({}).",
-                    row.len(),
-                    tier_thresholds.len()
+                    row 0 length ({num_cols}).",
+                    row.len()
                 );
                 error!("{err}");
                 return Err(err);
@@ -168,6 +182,24 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_battery_manager_config_cc_limits_with_extra_columns() {
+        // Valid matrix with more columns (4) than ttf_tier_thresholds (2)
+        let json = r#"{
+            "ttf_charge_temp_limits": [0, 10000, 20000],
+            "ttf_tier_thresholds": [0.0, 84.0],
+            "chg_cc_limits_ua": [
+                [200000, 100000, 50000, 25000],
+                [200000, 100000, 50000, 25000]
+            ]
+        }"#;
+        let config = parse_battery_manager_config(json, "test_path").unwrap();
+        let cc_limits = config.chg_cc_limits_ua.unwrap();
+        assert_eq!(cc_limits.len(), 2);
+        assert_eq!(cc_limits[0].len(), 4);
+        assert_eq!(cc_limits[1].len(), 4);
+    }
+
+    #[test]
     fn test_parse_battery_manager_config_mismatched_cc_limits() {
         // Mismatched row count (temp_limits has 3 entries expecting 2 rows, but chg_cc_limits_ua
         // has 1 row)
@@ -181,16 +213,28 @@ mod tests {
         let err = parse_battery_manager_config(json_rows, "test_path").unwrap_err();
         assert!(err.to_string().contains("row count"));
 
-        // Mismatched col count (row has 1 element, but ttf_tier_thresholds has 2 elements)
-        let json_cols = r#"{
+        // Column count less than ttf_tier_thresholds (1 col < 2 tier thresholds)
+        let json_fewer_cols = r#"{
             "ttf_charge_temp_limits": [0, 10000, 20000],
             "ttf_tier_thresholds": [0.0, 84.0],
             "chg_cc_limits_ua": [
                 [200000],
+                [200000]
+            ]
+        }"#;
+        let err = parse_battery_manager_config(json_fewer_cols, "test_path").unwrap_err();
+        assert!(err.to_string().contains("column count"));
+
+        // Non-uniform row lengths (row 1 has 2 cols, row 0 has 3 cols)
+        let json_ragged_cols = r#"{
+            "ttf_charge_temp_limits": [0, 10000, 20000],
+            "ttf_tier_thresholds": [0.0, 84.0],
+            "chg_cc_limits_ua": [
+                [200000, 100000, 50000],
                 [200000, 100000]
             ]
         }"#;
-        let err = parse_battery_manager_config(json_cols, "test_path").unwrap_err();
-        assert!(err.to_string().contains("row 0 length"));
+        let err = parse_battery_manager_config(json_ragged_cols, "test_path").unwrap_err();
+        assert!(err.to_string().contains("row 1 length"));
     }
 }
