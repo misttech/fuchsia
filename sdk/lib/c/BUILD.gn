@@ -196,8 +196,15 @@ group("libc_source_set.deps") {
   visibility = [ "./*" ]
   public_deps = [ "include:headers" ]
 
-  # include-preempt/src/__support/CPP/new.h uses <fbl/alloc_checker.h>.
-  public_deps += [ "//zircon/system/ulib/fbl" ]
+  if (is_kernel) {
+    public_deps += [
+      "//zircon/kernel/lib/ktl:headers",
+      "//zircon/kernel/lib/libc:headers",
+    ]
+  } else {
+    # include-preempt/src/__support/CPP/new.h uses <fbl/alloc_checker.h>.
+    public_deps += [ "//zircon/system/ulib/fbl" ]
+  }
 }
 
 # Every libc_test() implicitly depends on this.
@@ -627,91 +634,92 @@ if (toolchain_environment != "user.libc") {
   }
 }
 
-# Believe it.
+if (is_fuchsia && !is_kernel) {
+  # Believe it.
+  prebuilt_python_dir = "//prebuilt/third_party/python3/$host_platform"
 
-prebuilt_python_dir = "//prebuilt/third_party/python3/$host_platform"
-
-group("rust-static-libc") {
-  visibility = [ ":static" ]
-  public_configs = [
-    ":rust-static-libc.config",
-    "//build/config/fuchsia:static_rust_standard_library",
-  ]
-  public_deps = [ ":rust-static-linker" ]
-}
-
-# The Rust linker will be replaced by the wrapper script in Python.  But the
-# RBE sandbox requires extra plumbing to be able to run the hermetic prebuilt
-# Python, and that requires a little sh wrapper script.  The contents could be
-# in a generated_file() that happens at `gn gen` time, but there's no way to
-# make a file executable that way.  So another Python script is required to
-# generate the sh wrapper script required to run the Python wrapper script.
-action("rust-static-linker") {
-  visibility = [ ":rust-static-libc" ]
-  outputs = [ "$target_gen_dir/rust-static-linker" ]
-  mnemonic = "GENERATE"
-  script = "gen-wrapper.py"
-  args = [ "--output=" + rebase_path(outputs[0], root_build_dir) ] +
-         rebase_path([
-                       "$prebuilt_python_dir/bin/python3",
-                       "rust-static-linker.py",
-                     ],
-                     root_build_dir)
-}
-
-compiler_config("rust-static-libc.config") {
-  if (linker == "lld") {
-    assert(!is_gcc)
-    linker_path = "$clang_prefix/lld"
-  } else {
-    assert(is_gcc)
-    assert(linker == "")
-    linker_path = "$gcc_tool_dir/$clang_cpu-elf-ld"
+  group("rust-static-libc") {
+    visibility = [ ":static" ]
+    public_configs = [
+      ":rust-static-libc.config",
+      "//build/config/fuchsia:static_rust_standard_library",
+    ]
+    public_deps = [ ":rust-static-linker" ]
   }
 
-  inputs = get_target_outputs(":rust-static-linker") + [
-             linker_path,
-             prebuilt_python_dir,
-             "rust-static-linker.py",
-           ]
-  rustflags = [ "-Clinker=" + rebase_path(inputs[0], root_build_dir) ]
-  rust_linker_flags =
-      [ "--wrapper-run=" + rebase_path(linker_path, root_build_dir) ]
-  if (rust_rbe_enable) {
-    rustflags += [ "--remote-inputs=" +
-                   string_join(",", rebase_path(inputs, root_build_dir)) ]
+  # The Rust linker will be replaced by the wrapper script in Python.  But the
+  # RBE sandbox requires extra plumbing to be able to run the hermetic prebuilt
+  # Python, and that requires a little sh wrapper script.  The contents could be
+  # in a generated_file() that happens at `gn gen` time, but there's no way to
+  # make a file executable that way.  So another Python script is required to
+  # generate the sh wrapper script required to run the Python wrapper script.
+  action("rust-static-linker") {
+    visibility = [ ":rust-static-libc" ]
+    outputs = [ "$target_gen_dir/rust-static-linker" ]
+    mnemonic = "GENERATE"
+    script = "gen-wrapper.py"
+    args = [ "--output=" + rebase_path(outputs[0], root_build_dir) ] +
+           rebase_path([
+                         "$prebuilt_python_dir/bin/python3",
+                         "rust-static-linker.py",
+                       ],
+                       root_build_dir)
   }
 
-  # Turn the two-argument forms into single-argument forms to normalize.
-  wrapper_join = [
-    "-l",
-    "-L",
-    "-z",
-  ]
-  wrapper_join_eq = [
-    "--dynamic-linker",
-    "-dynamic-linker",
-  ]
-  foreach(join, wrapper_join) {
-    rust_linker_flags += [ "--wrapper-join=$join" ]
-  }
-  foreach(join_eq, wrapper_join_eq) {
-    rust_linker_flags += [ "--wrapper-join-eq=$join_eq" ]
-  }
+  compiler_config("rust-static-libc.config") {
+    if (linker == "lld") {
+      assert(!is_gcc)
+      linker_path = "$clang_prefix/lld"
+    } else {
+      assert(is_gcc)
+      assert(linker == "")
+      linker_path = "$gcc_tool_dir/$clang_cpu-elf-ld"
+    }
 
-  # Match after normalization things what shouldn't be in there, but just oy.
-  pt_interp = "${toolchain_variant.libprefix}ld.so.1"
-  wrapper_elide = [
-    "-lc",
-    "-lfdio",
-    "-lunwind",
-    "-L" + rebase_path(sysroot, root_build_dir),
-    "--sysroot=" + rebase_path(sysroot, root_build_dir),
-    "--dynamic-linker=$pt_interp",
-    "-dynamic-linker=$pt_interp",
-  ]
-  foreach(elide, wrapper_elide) {
-    rust_linker_flags += [ "--wrapper-elide=$elide" ]
+    inputs = get_target_outputs(":rust-static-linker") + [
+               linker_path,
+               prebuilt_python_dir,
+               "rust-static-linker.py",
+             ]
+    rustflags = [ "-Clinker=" + rebase_path(inputs[0], root_build_dir) ]
+    rust_linker_flags =
+        [ "--wrapper-run=" + rebase_path(linker_path, root_build_dir) ]
+    if (rust_rbe_enable) {
+      rustflags += [ "--remote-inputs=" +
+                     string_join(",", rebase_path(inputs, root_build_dir)) ]
+    }
+
+    # Turn the two-argument forms into single-argument forms to normalize.
+    wrapper_join = [
+      "-l",
+      "-L",
+      "-z",
+    ]
+    wrapper_join_eq = [
+      "--dynamic-linker",
+      "-dynamic-linker",
+    ]
+    foreach(join, wrapper_join) {
+      rust_linker_flags += [ "--wrapper-join=$join" ]
+    }
+    foreach(join_eq, wrapper_join_eq) {
+      rust_linker_flags += [ "--wrapper-join-eq=$join_eq" ]
+    }
+
+    # Match after normalization things what shouldn't be in there, but just oy.
+    pt_interp = "${toolchain_variant.libprefix}ld.so.1"
+    wrapper_elide = [
+      "-lc",
+      "-lfdio",
+      "-lunwind",
+      "-L" + rebase_path(sysroot, root_build_dir),
+      "--sysroot=" + rebase_path(sysroot, root_build_dir),
+      "--dynamic-linker=$pt_interp",
+      "-dynamic-linker=$pt_interp",
+    ]
+    foreach(elide, wrapper_elide) {
+      rust_linker_flags += [ "--wrapper-elide=$elide" ]
+    }
   }
 }
 

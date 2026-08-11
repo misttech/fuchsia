@@ -43,6 +43,11 @@ static_library("libc") {
     ":ctype",
     "string",
     "//zircon/system/ulib/zircon-internal",
+
+    # These aren't used directly and we don't provide a <wchar.h> to declare
+    # them.  But some may be used directly by the compiler when wchar_t strings
+    # are used (e.g. in UEFI).
+    "//sdk/lib/c/wchar:wchar-minimal",
   ]
 
   if (toolchain_environment == "kernel") {

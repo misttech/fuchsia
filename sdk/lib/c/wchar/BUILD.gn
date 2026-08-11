@@ -5,6 +5,13 @@
 import("../libc.gni")
 
 llvm_libc_source_set("wchar") {
+  functions = [ "wcsdup" ]
+  deps = [ ":wchar-minimal" ]
+}
+
+llvm_libc_source_set("wchar-minimal") {
+  visibility = [ "//zircon/kernel/lib/libc/*" ]
+
   functions = [
     "wcpcpy",
     "wcpncpy",
@@ -13,7 +20,6 @@ llvm_libc_source_set("wchar") {
     "wcscmp",
     "wcscpy",
     "wcscspn",
-    "wcsdup",
     "wcslen",
     "wcsncat",
     "wcsncmp",
