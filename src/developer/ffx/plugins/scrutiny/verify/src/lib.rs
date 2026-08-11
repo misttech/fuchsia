@@ -14,6 +14,7 @@ use std::path::PathBuf;
 mod bootfs;
 mod component_resolvers;
 mod kernel_cmdline;
+mod ota;
 mod pre_signing;
 mod route_sources;
 mod routes;
@@ -69,6 +70,7 @@ impl FfxMain for ScrutinyVerifyTool {
             SubCommand::StructuredConfig(subcommand) => {
                 structured_config::verify(subcommand, recovery).await
             }
+            SubCommand::Ota(subcommand) => ota::verify(subcommand).await,
         }?;
 
         if let Some(depfile_path) = self.cmd.depfile.as_ref() {

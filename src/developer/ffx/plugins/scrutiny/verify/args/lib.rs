@@ -5,6 +5,7 @@
 pub mod bootfs;
 pub mod component_resolvers;
 pub mod kernel_cmdline;
+pub mod ota;
 pub mod pre_signing;
 pub mod route_sources;
 pub mod routes;
@@ -46,4 +47,5 @@ pub enum SubCommand {
     Routes(routes::Command),
     StaticPkgs(static_pkgs::Command),
     StructuredConfig(structured_config::Command),
+    Ota(ota::Command),
 }

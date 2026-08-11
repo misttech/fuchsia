@@ -13,6 +13,7 @@ rustc_library("delivery_blob") {
     "//src/developer/ffx/plugins/package/blob/*",
     "//src/developer/ffx/plugins/product/*",
     "//src/developer/ffx/plugins/product_bundle/*",
+    "//src/developer/ffx/plugins/scrutiny/*",
     "//src/lib/assembly/*",
     "//src/security/lib/scrutiny/*",
     "//src/storage/*",
