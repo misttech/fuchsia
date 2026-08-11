@@ -11,5 +11,4 @@ extend uint fuchsia.BIND_PROTOCOL {
 };
 
 uint POWER_DOMAIN;
-string POWER_DOMAIN_NAME;
 uint POWER_DOMAIN_NODE_ID;

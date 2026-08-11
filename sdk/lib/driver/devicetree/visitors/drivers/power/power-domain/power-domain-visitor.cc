@@ -102,7 +102,6 @@ zx::result<> PowerDomainVisitor::AddChildNodeSpec(fdf_devicetree::Node& child, u
   }
 
   if (name) {
-    properties.push_back(fdf::MakeProperty2(bind_fuchsia_power::POWER_DOMAIN_NAME, *name));
     properties.push_back(fdf::MakeProperty2(bind_fuchsia::NAME, *name));
   }
 
