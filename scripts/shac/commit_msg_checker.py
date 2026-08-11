@@ -11,6 +11,7 @@ Based on //docs/contribute/commit-message-style-guide.md:
 """
 
 import argparse
+import collections
 import json
 import re
 import subprocess
@@ -29,6 +30,31 @@ FOOTER_REGEX = re.compile(
 # Reverts and relands take the original subject and prepend "Revert " or "Reland ".
 # These are exempt from the length check to avoid manual rewrites of auto-generated subjects.
 REVERT_RELAND_REGEX = re.compile(r"^(?:Revert(?:\^\d+)?|Reland) ")
+
+
+class MetadataRule(TypedDict):
+    mode: Literal["single", "unique_value"]
+    level: Literal["warning", "error"]
+
+
+METADATA_RULES: dict[str, MetadataRule] = {
+    "Change-Id": {
+        "mode": "single",
+        "level": "error",
+    },
+    "TAG": {
+        "mode": "unique_value",
+        "level": "warning",
+    },
+    "CONV": {
+        "mode": "unique_value",
+        "level": "warning",
+    },
+}
+
+METADATA_TAG_REGEX = re.compile(
+    rf"^({'|'.join(re.escape(k) for k in METADATA_RULES)})[:=]\s*(.+)"
+)
 
 
 class Finding(TypedDict, total=False):
@@ -88,6 +114,42 @@ def check_commit_message(
             }
         )
 
+    key_counts: dict[str, int] = collections.defaultdict(int)
+    seen_metadata: set[tuple[str, str]] = set()
+
+    for i, line in enumerate(lines, start=1):
+        m_meta = METADATA_TAG_REGEX.match(line)
+        if not m_meta:
+            continue
+
+        key, val = m_meta.group(1), m_meta.group(2).strip()
+        rule = METADATA_RULES.get(key)
+        if not rule:
+            continue
+
+        if rule["mode"] == "single":
+            key_counts[key] += 1
+            if key_counts[key] > 1:
+                findings.append(
+                    {
+                        "level": rule["level"],
+                        "message": f"Multiple '{key}:' footers found. Ensure only one {key} is present.",
+                        "filepath": filepath,
+                        "line": i,
+                    }
+                )
+        elif rule["mode"] == "unique_value":
+            if (key, val) in seen_metadata:
+                findings.append(
+                    {
+                        "level": rule["level"],
+                        "message": f"Duplicate '{key}' metadata line found ('{val}'). Ensure duplicate {key} lines are removed.",
+                        "filepath": filepath,
+                        "line": i,
+                    }
+                )
+            else:
+                seen_metadata.add((key, val))
     return findings
 
 

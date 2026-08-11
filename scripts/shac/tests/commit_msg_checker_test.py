@@ -60,6 +60,84 @@ class TestCommitMessageChecker(unittest.TestCase):
         findings = commit_msg_checker.check_commit_message(msg)
         self.assertEqual(findings, [])
 
+    def test_revert_message_quoted_change_id_allowed(self) -> None:
+        msg = (
+            'Revert "Some commit"\n\n'
+            "This reverts commit 12345.\n\n"
+            "> Change-Id: Ioldchangeid\n"
+            "> Bug: 123\n\n"
+            "Bug: 123\n"
+            "Test: Reverting patch\n"
+            "Change-Id: I1234567890123456789012345678901234567890\n"
+        )
+        findings = commit_msg_checker.check_commit_message(msg)
+        self.assertEqual(findings, [])
+
+    def test_multiple_change_id_errors(self) -> None:
+        msg = (
+            "Subject line\n\n"
+            "Bug: 123\n"
+            "Test: Unit test\n"
+            "Change-Id: I1111111111111111111111111111111111111111\n"
+            "Change-Id: I2222222222222222222222222222222222222222\n"
+        )
+        findings = commit_msg_checker.check_commit_message(msg)
+        self.assertTrue(
+            any(
+                f["level"] == "error"
+                and "Multiple 'Change-Id:' footers" in f["message"]
+                for f in findings
+            )
+        )
+
+    def test_agent_metadata_single_allowed(self) -> None:
+        msg = (
+            "Subject line\n\n"
+            "Bug: 123\n"
+            "Test: Unit test\n"
+            "TAG: agy\n"
+            "CONV: 6344ad16-d9ce-483d-9b98-affe2f24feac\n"
+        )
+        findings = commit_msg_checker.check_commit_message(msg)
+        self.assertEqual(findings, [])
+
+    def test_agent_metadata_different_tags_allowed(self) -> None:
+        msg = (
+            "Subject line\n\n"
+            "Bug: 123\n"
+            "Test: Unit test\n"
+            "TAG: agy\n"
+            "TAG: refactor\n"
+            "CONV: 6344ad16-first\n"
+            "CONV: 6344ad16-second\n"
+        )
+        findings = commit_msg_checker.check_commit_message(msg)
+        self.assertEqual(findings, [])
+
+    def test_agent_metadata_duplicate_warns(self) -> None:
+        msg = (
+            "Subject line\n\n"
+            "Bug: 123\n"
+            "Test: Unit test\n"
+            "TAG=agy\n"
+            "TAG: agy\n"
+            "CONV=6344ad16-same\n"
+            "CONV: 6344ad16-same\n"
+        )
+        findings = commit_msg_checker.check_commit_message(msg)
+        self.assertTrue(
+            any(
+                "Duplicate 'TAG' metadata line" in f["message"]
+                for f in findings
+            )
+        )
+        self.assertTrue(
+            any(
+                "Duplicate 'CONV' metadata line" in f["message"]
+                for f in findings
+            )
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
