@@ -9,17 +9,21 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"github.com/google/subcommands"
 
-	v2config "go.fuchsia.dev/fuchsia/tools/check-licenses/v2/config"
-	"go.fuchsia.dev/fuchsia/tools/check-licenses/v2/readme"
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/v2/pipeline"
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/v2/stages/boundary"
 	"go.fuchsia.dev/fuchsia/tools/check-licenses/v2/stages/classify"
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/v2/stages/discover"
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/v2/stages/prune"
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/v2/stages/report"
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/v2/stages/validate"
 )
 
 type ProjectCheckCommand struct {
 	fuchsiaDir string
+	fileList   string
 }
 
 func (*ProjectCheckCommand) Name() string { return "check" }
@@ -27,111 +31,103 @@ func (*ProjectCheckCommand) Synopsis() string {
 	return "Analyzes specific files and validates them against their parent README.fuchsia."
 }
 func (*ProjectCheckCommand) Usage() string {
-	return `check <files...>:
+	return `check [-file-list <path>] <files...>:
   Checks if the specified files are declared in their parent README.fuchsia.
+  Use -file-list to specify a file containing paths to check, one per line.
 `
 }
 
-func (c *ProjectCheckCommand) SetFlags(f *flag.FlagSet) {}
+func (c *ProjectCheckCommand) SetFlags(f *flag.FlagSet) {
+	f.StringVar(&c.fileList, "file-list", "", "Path to a file containing a list of file paths to check, one per line.")
+}
 
 func (c *ProjectCheckCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...interface{}) subcommands.ExitStatus {
-	if f.NArg() < 1 {
-		fmt.Fprintln(os.Stderr, "Error: at least one file path must be provided.")
+	// Step 1: Load target paths and repository input context.
+	inputPaths, err := LoadTargets(c.fileList, c.fuchsiaDir, f.Args())
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return subcommands.ExitUsageError
 	}
 
-	fuchsiaDir, _, err := ResolveAndValidatePath(c.fuchsiaDir, f.Arg(0))
+	inputCtx, err := LoadInputContext(c.fuchsiaDir, inputPaths[0])
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return subcommands.ExitFailure
 	}
 
-	builder := v2config.NewBuilder(fuchsiaDir)
-	if err := builder.Assemble(); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to assemble configuration: %v\n", err)
-		return subcommands.ExitFailure
-	}
-	config := builder.Config
-
-	classifier, err := classify.NewClassifier(config.Classify)
+	// Step 2: Initialize pipeline stages for target evaluation.
+	classifier, err := classify.NewClassifier(inputCtx.Config.Classify)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to initialize classifier: %v\n", err)
 		return subcommands.ExitFailure
 	}
 
+	discoverer := discover.NewCrawler(inputCtx.FuchsiaDir, inputCtx.Config.Discover)
+	boundaryCfg := inputCtx.Config.Boundary
+	boundaryCfg.FilesInReadmeOnly = false
+	grouper := boundary.NewGrouper(inputCtx.FuchsiaDir, boundaryCfg)
+	pruner := prune.NewPruner(nil)
+	validator := validate.NewValidator(inputCtx.FuchsiaDir, inputCtx.Config.Validate)
+
+	// Step 3: Iterate through input targets, running Orchestrator with Stage 6 TargetComplianceVerifier.
+	cache := make(map[string]error)
 	hasErrors := false
-	for _, targetPath := range f.Args() {
-		fuchsiaDir, relTargetPath, err := ResolveAndValidatePath(c.fuchsiaDir, targetPath)
+
+	for _, inputPath := range inputPaths {
+		projectRoot, err := inputCtx.ResolveProjectRoot(inputPath)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-			hasErrors = true
-			continue
-		}
-		absPath := filepath.Join(fuchsiaDir, relTargetPath)
-		info, err := os.Stat(absPath)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "❌ Error: path does not exist: %s\n", targetPath)
+			fmt.Fprintf(os.Stderr, "❌ Error: %v\n", err)
 			hasErrors = true
 			continue
 		}
 
-		var projectRoot string
-		if info.IsDir() {
-			projectRoot = absPath
-		} else {
-			r, bestReadmePath, err := readme.FindProjectReadme(absPath, fuchsiaDir, config.Boundary.OutOfTreeReadmes)
-			if err == nil && bestReadmePath != "" && r != nil {
-				logicalDir := filepath.Dir(bestReadmePath)
-				for logPath, physPath := range config.Boundary.OutOfTreeReadmes {
-					if physPath == bestReadmePath {
-						logicalDir = filepath.Join(fuchsiaDir, logPath)
+		if prevErr, processed := cache[projectRoot]; !processed {
+			var targetProj *pipeline.Project
+			verifier := report.NewTargetComplianceVerifier(inputCtx.FuchsiaDir, inputPath, inputCtx.Config)
+			passPrinter := pipeline.RenderFunc(func(ctx context.Context, projects []*pipeline.Project, errors []pipeline.ComplianceError) error {
+				for _, p := range projects {
+					if p.RootPath == projectRoot {
+						targetProj = p
 						break
 					}
 				}
-				projectRoot = logicalDir
-			} else {
-				projectRoot = filepath.Dir(absPath)
-			}
-		}
+				return nil
+			})
 
-		originalReadmes, updatedReadmes, readmePath, _, _, foundLicenses, err := RunProjectPipeline(ctx, fuchsiaDir, projectRoot, config, classifier)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "❌ Error analyzing project %s: %v\n", targetPath, err)
+			renderers := pipeline.MultiRenderer{verifier, passPrinter}
+			orchestrator := pipeline.NewOrchestrator(discoverer, grouper, pruner, classifier, validator, renderers)
+			runErr := orchestrator.Run(ctx, []string{projectRoot})
+			if runErr != nil {
+				fmt.Fprintf(os.Stderr, "❌ Error in %s: %v\n", inputPath, runErr)
+				hasErrors = true
+				cache[projectRoot] = runErr
+				continue
+			}
+
+			// Step 4: Output pass confirmation for compliant targets.
+			if targetProj != nil && targetProj.Readme != nil {
+				projectName := "Unknown Project"
+				origs := targetProj.Readme.OriginalSegments()
+				if len(origs) > 0 && origs[0].Name != "" {
+					projectName = origs[0].Name
+				} else {
+					projectName = findProjectBasename(inputCtx.FuchsiaDir, inputPath, inputCtx.Config)
+				}
+
+				if inputPath == "" || inputPath == "." {
+					fmt.Printf("✅ Passed: %s\n", projectName)
+				} else {
+					fmt.Printf("✅ Passed: %s (%s)\n", projectName, inputPath)
+				}
+			}
+
+			cache[projectRoot] = nil
+		} else if prevErr != nil {
 			hasErrors = true
-			continue
-		}
-
-		if readmeErrs := readme.Validate(fuchsiaDir, readmePath, originalReadmes, config); len(readmeErrs) > 0 {
-			for _, rErr := range readmeErrs {
-				fmt.Fprintf(os.Stderr, "❌ Error in %s: %v\n", targetPath, rErr)
-			}
-			hasErrors = true
-			continue
-		}
-
-		if err := verifyTargetCompliance(originalReadmes, updatedReadmes, absPath, projectRoot, info.IsDir(), foundLicenses); err != nil {
-			relTarget, _ := filepath.Rel(fuchsiaDir, absPath)
-			if relTarget == "." {
-				relTarget = targetPath
-			}
-			fmt.Fprintf(os.Stderr, "❌ Error in %s: %v\n", relTarget, err)
-			hasErrors = true
-		} else {
-			projectName := "Unknown Project"
-			if len(originalReadmes) > 0 && originalReadmes[0].Name != "" {
-				projectName = originalReadmes[0].Name
-			} else {
-				projectName = findProjectBasename(fuchsiaDir, relTargetPath, config)
-			}
-
-			if relTargetPath == "" || relTargetPath == "." {
-				fmt.Printf("✅ Passed: %s\n", projectName)
-			} else {
-				fmt.Printf("✅ Passed: %s (%s)\n", projectName, targetPath)
-			}
 		}
 	}
 
+	// Step 5: Return overall success or failure status.
 	if hasErrors {
 		return subcommands.ExitFailure
 	}
