@@ -25,6 +25,7 @@
 #include "src/developer/debug/zxdb/debug_adapter/handlers/request_launch.h"
 #include "src/developer/debug/zxdb/debug_adapter/handlers/request_next.h"
 #include "src/developer/debug/zxdb/debug_adapter/handlers/request_pause.h"
+#include "src/developer/debug/zxdb/debug_adapter/handlers/request_process.h"
 #include "src/developer/debug/zxdb/debug_adapter/handlers/request_scopes.h"
 #include "src/developer/debug/zxdb/debug_adapter/handlers/request_stacktrace.h"
 #include "src/developer/debug/zxdb/debug_adapter/handlers/request_step_in.h"
@@ -245,6 +246,11 @@ void DebugAdapterContext::Init() {
         DEBUG_LOG(DebugAdapter) << "ZxdbDetachRequest received";
         OnRequestZxdbDetach(this, req, callback);
       });
+
+  dap_->registerHandler([this](const dap::ZxdbProcessRequest& req) {
+    DEBUG_LOG(DebugAdapter) << "ZxdbProcessRequest received";
+    return OnRequestZxdbProcess(this, req);
+  });
 
   dap_->registerHandler([this](const dap::DisconnectRequest& req) {
     DEBUG_LOG(DebugAdapter) << "DisconnectRequest received";
