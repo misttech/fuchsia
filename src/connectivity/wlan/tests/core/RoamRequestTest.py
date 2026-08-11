@@ -395,29 +395,41 @@ class RoamRequestTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         scan_results = await iface.passive_scan(channels=channels)
 
         # Parse out scanned BSSs from the test network
+        if roam_params.ssid not in scan_results:
+            raise signals.TestError(
+                f"Failed to find test network SSID '{roam_params.ssid}' in scan results. Found SSIDs: {list(scan_results.keys())}"
+            )
+
+        bss_desc_list = scan_results[roam_params.ssid]
         bss_desc_2g = None
         bss_desc_5g = None
-        for ssid, bss_description_list in scan_results.items():
-            if ssid == roam_params.ssid:
-                first_bss_description = bss_description_list[0]
-                channel = first_bss_description.primary.number
-                if channel in hostapd_constants.US_CHANNELS_2G:
-                    bss_desc_2g = first_bss_description
-                elif channel in hostapd_constants.US_CHANNELS_5G:
-                    bss_desc_5g = first_bss_description
-                else:
+        for bss_description in bss_desc_list:
+            channel = bss_description.primary.number
+            if channel in hostapd_constants.US_CHANNELS_2G:
+                if bss_desc_2g is not None:
                     raise signals.TestError(
-                        f"First BSS for test network SSID '{ssid}' found on unexpected channel: {channel}:\n\n{scan_results}"
+                        f"Found multiple 2.4GHz BSSs for test network SSID '{roam_params.ssid}':\n\n{bss_desc_list}"
                     )
+                bss_desc_2g = bss_description
+            elif channel in hostapd_constants.US_CHANNELS_5G:
+                if bss_desc_5g is not None:
+                    raise signals.TestError(
+                        f"Found multiple 5GHz BSSs for test network SSID '{roam_params.ssid}':\n\n{bss_desc_list}"
+                    )
+                bss_desc_5g = bss_description
+            else:
+                raise signals.TestError(
+                    f"BSS for test network SSID '{roam_params.ssid}' found on unexpected channel: {channel}:\n\n{bss_desc_list}"
+                )
 
         # Verify there are two BSSs seen for the test network
         if bss_desc_2g is None:
             raise signals.TestError(
-                f"Failed to see 2.4GHz BSS for SSID '{ssid}' in scan results"
+                f"Failed to see 2.4GHz BSS for SSID '{roam_params.ssid}' in scan results: {bss_desc_list}"
             )
         if bss_desc_5g is None:
             raise signals.TestError(
-                f"Failed to see 5GHz BSS for SSID '{ssid}' in scan results"
+                f"Failed to see 5GHz BSS for SSID '{roam_params.ssid}' in scan results: {bss_desc_list}"
             )
 
         if test_params.origin_band == hostapd_constants.BandType.BAND_2G:
