@@ -9,6 +9,7 @@
 use core::hash::Hash;
 
 use derivative::Derivative;
+use log::debug;
 use net_types::LinkLocalUnicastAddr;
 use net_types::ip::{Ipv6Addr, Subnet};
 use netstack3_base::{
@@ -20,6 +21,11 @@ use netstack3_hashmap::hash_map::Entry;
 use packet_formats::icmp::ndp::NonZeroNdpLifetime;
 
 use crate::internal::types::RoutePreference;
+
+/// The maximum number of discovered routes the stack will track.
+///
+/// If new routes are discovered that would exceed this limit, they are ignored.
+const MAX_DISCOVERED_ROUTES: usize = 4096;
 
 /// Route discovery state on a device.
 #[derive(Debug)]
@@ -215,6 +221,7 @@ impl<BC: Ipv6RouteDiscoveryBindingsContext, CC: Ipv6RouteDiscoveryContext<BC>>
                     if !config.allow_default_route && route.subnet.prefix() == 0 {
                         return;
                     }
+                    let num_routes = routes.len();
                     let newly_added = match routes.entry(route) {
                         Entry::Occupied(mut entry) => {
                             let old_properties = entry.get_mut();
@@ -231,6 +238,13 @@ impl<BC: Ipv6RouteDiscoveryBindingsContext, CC: Ipv6RouteDiscoveryContext<BC>>
                             false
                         }
                         Entry::Vacant(entry) => {
+                            if num_routes >= MAX_DISCOVERED_ROUTES {
+                                debug!(
+                                    "IPv6 Discovered Routes table is full. Not adding {route:?}"
+                                );
+                                return;
+                            }
+
                             core_ctx.add_discovered_ipv6_route(
                                 bindings_ctx,
                                 device_id,
@@ -397,7 +411,7 @@ mod tests {
         gateway: None,
     };
     const PROP2: Ipv6DiscoveredRouteProperties =
-        Ipv6DiscoveredRouteProperties { route_preference: RoutePreference::Medium };
+        Ipv6DiscoveredRouteProperties { route_preference: RoutePreference::High };
 
     const ONE_SECOND: NonZeroDuration = NonZeroDuration::from_secs(1).unwrap();
     const TWO_SECONDS: NonZeroDuration = NonZeroDuration::from_secs(2).unwrap();
@@ -687,5 +701,83 @@ mod tests {
         bindings_ctx.timers.assert_no_timers_installed();
         let route_table = &core_ctx.state.route_table.route_table;
         assert!(route_table.is_empty(), "route_table={route_table:?}");
+    }
+
+    #[test]
+    fn max_discovered_routes() {
+        let CtxPair { mut core_ctx, mut bindings_ctx } = new_context();
+
+        fn make_route(i: u16) -> Ipv6DiscoveredRoute {
+            Ipv6DiscoveredRoute {
+                subnet: Subnet::new(Ipv6Addr::new([0x2001, 0xdb8, 0, 0, 0, 0, 0, i]), 128)
+                    .expect("should be a valid IPv6 Subnet"),
+                gateway: None,
+            }
+        }
+
+        // Fill the routing table to the limit.
+        for i in 0..MAX_DISCOVERED_ROUTES {
+            let route = make_route(i as u16);
+            discover_new_route(
+                &mut core_ctx,
+                &mut bindings_ctx,
+                route,
+                PROP1,
+                NonZeroNdpLifetime::Infinite,
+            );
+        }
+        assert_eq!(core_ctx.state.route_table.route_table.len(), MAX_DISCOVERED_ROUTES);
+
+        // Try to add one more route, it should be ignored.
+        let extra_route = make_route(MAX_DISCOVERED_ROUTES as u16);
+        RouteDiscoveryHandler::update_route(
+            &mut core_ctx,
+            &mut bindings_ctx,
+            &FakeDeviceId,
+            extra_route,
+            PROP1,
+            Some(NonZeroNdpLifetime::Infinite),
+            &Default::default(),
+        );
+        assert_eq!(core_ctx.state.route_table.route_table.len(), MAX_DISCOVERED_ROUTES);
+        assert!(!core_ctx.state.route_table.route_table.contains_key(&extra_route));
+
+        // Update an existing route, it should be allowed.
+        let route_to_update = make_route(0);
+        RouteDiscoveryHandler::update_route(
+            &mut core_ctx,
+            &mut bindings_ctx,
+            &FakeDeviceId,
+            route_to_update,
+            PROP2,
+            Some(NonZeroNdpLifetime::Infinite),
+            &Default::default(),
+        );
+        assert_eq!(core_ctx.state.route_table.route_table.get(&route_to_update), Some(&PROP2));
+
+        // Delete an existing route, it should be allowed.
+        let route_to_delete = make_route(0);
+        RouteDiscoveryHandler::update_route(
+            &mut core_ctx,
+            &mut bindings_ctx,
+            &FakeDeviceId,
+            route_to_delete,
+            PROP2,
+            None,
+            &Default::default(),
+        );
+        assert_eq!(core_ctx.state.route_table.route_table.len(), MAX_DISCOVERED_ROUTES - 1);
+        assert!(!core_ctx.state.route_table.route_table.contains_key(&route_to_delete));
+
+        // Now we should be able to add the extra route.
+        discover_new_route(
+            &mut core_ctx,
+            &mut bindings_ctx,
+            extra_route,
+            PROP1,
+            NonZeroNdpLifetime::Infinite,
+        );
+        assert_eq!(core_ctx.state.route_table.route_table.len(), MAX_DISCOVERED_ROUTES);
+        assert!(core_ctx.state.route_table.route_table.contains_key(&extra_route));
     }
 }
