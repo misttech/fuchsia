@@ -249,9 +249,8 @@ if (is_host) {
     # automatically be merged in by that machinery, but if it comes from an
     # external subtool or a library it has to be manually added to this list.
     sources = [
-      rebase_path("//src/developer/ffx/data/config.json"),
-      rebase_path("//src/developer/ffx/daemon/data/config.json"),
-      rebase_path("//src/developer/ffx/lib/pbms/data/config.json"),
+      "//src/developer/ffx/data/config.json",
+      "//src/developer/ffx/lib/pbms/data/config.json",
     ]
 
     # Merge the values, not just the top level.
@@ -259,9 +258,7 @@ if (is_host) {
 
     # Add in the 'dual-mode' config default files if we're doing dual mode
     if (ffx_build_dual_mode_plugins_as_subtools) {
-      foreach(config, dual_mode_defaults) {
-        sources += [ rebase_path(config) ]
-      }
+      sources += dual_mode_defaults
     }
 
     # Add any dynamically generated config.json files (ie. from ffx plugin
