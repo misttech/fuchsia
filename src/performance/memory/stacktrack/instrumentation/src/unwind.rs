@@ -31,10 +31,7 @@ pub fn unwind_if_deeper(threshold_fp: u64, buffer: &mut [Frame]) -> Option<NonZe
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    unsafe extern "C" {
-        fn __sanitizer_fast_backtrace(buffer: *mut usize, max_frames: usize) -> usize;
-    }
+    use zx_libc::sanitizer::fast_backtrace;
 
     #[inline(never)]
     fn test_unwind_inner_3() {
@@ -44,9 +41,7 @@ mod tests {
 
         // Capture using __sanitizer_fast_backtrace as a reference.
         let mut reference_buf = [0; 128];
-        let reference_count =
-            unsafe { __sanitizer_fast_backtrace(reference_buf.as_mut_ptr(), reference_buf.len()) };
-        let reference_buf = &reference_buf[..reference_count];
+        let reference_buf = fast_backtrace(&mut reference_buf);
 
         // Count matching frames at the top of the stack (longest common suffix).
         let mut match_count = 0;

@@ -5,6 +5,7 @@
 use heapdump_vmo::stack_trace_compression;
 use std::ffi::c_void;
 use std::sync::atomic::{AtomicBool, Ordering};
+use zx_libc::sanitizer::fast_backtrace;
 
 use crate::{PerThreadData, Profiler, with_profiler};
 
@@ -22,10 +23,6 @@ const STACK_TRACE_MAXIMUM_COMPRESSED_SIZE: usize =
 /// the Profiler needs to duplicate the same logic, but protected by Mutex.
 static QUICK_EARLY_RETURN: AtomicBool = AtomicBool::new(false);
 
-unsafe extern "C" {
-    fn __sanitizer_fast_backtrace(buffer: *mut usize, buffer_size: usize) -> usize;
-}
-
 pub fn enable_quick_early_return() {
     QUICK_EARLY_RETURN.store(true, Ordering::Relaxed);
 }
@@ -42,9 +39,7 @@ fn with_profiler_and_call_site(
 
     // Collect stack trace outside of the recursion guard to avoid including it in the stack trace.
     let mut stack_buf = [0; STACK_TRACE_MAXIMUM_DEPTH];
-    let stack_len =
-        unsafe { __sanitizer_fast_backtrace(stack_buf.as_mut_ptr(), STACK_TRACE_MAXIMUM_DEPTH) };
-    let stack = &stack_buf[..stack_len];
+    let stack = fast_backtrace(&mut stack_buf);
 
     with_profiler(|profiler, thread_data| {
         // Compress the stack trace.

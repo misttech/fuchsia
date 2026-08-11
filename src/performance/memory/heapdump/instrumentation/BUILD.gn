@@ -41,6 +41,8 @@ rustc_staticlib("core") {
     "//src/performance/memory/heapdump/lib/heapdump_vmo",
   ]
 
+  non_test_deps = [ "//sdk/lib/c/rust" ]
+
   test_deps = [ "//third_party/rust_crates:assert_matches" ]
 
   dynamic_libstd = false

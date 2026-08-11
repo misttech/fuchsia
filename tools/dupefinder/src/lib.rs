@@ -365,6 +365,7 @@ impl SourceLine {
             || self.function.contains("__scudo_realloc_allocate_hook")
             || self.function.contains("_core_rustc_static::hooks::with_profiler_and_call_site")
             || self.function.contains("__sanitizer_fast_backtrace")
+            || self.function.contains("zx_libc::sanitizer::fast_backtrace")
         {
             return false;
         }

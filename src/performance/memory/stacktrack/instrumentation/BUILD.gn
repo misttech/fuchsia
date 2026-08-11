@@ -28,6 +28,7 @@ rustc_staticlib("core") {
   deps = [
     ":unwind",
     "//sdk/fidl/fuchsia.memory.stacktrack.process:fuchsia.memory.stacktrack.process_rust",
+    "//sdk/lib/c/rust",
     "//sdk/rust/zx",
     "//src/lib/fuchsia-runtime",
     "//src/performance/memory/stacktrack/lib/stacktrack_vmo",
