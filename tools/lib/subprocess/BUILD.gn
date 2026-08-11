@@ -56,3 +56,8 @@ if (is_host) {
     deps = [ "//third_party/golibs:github.com/google/go-cmp/cmp" ]
   }
 }
+group("tests") {
+  deps = [ ":subprocess_tests" ]
+  visibility = [ "//tools:*" ]
+  testonly = true
+}

@@ -11,6 +11,7 @@ test_suite(
     target_compatible_with = HOST_CONSTRAINTS,
     tests = [
         "//tools/check-licenses:tests",
+        "//tools/lib/subprocess:tests",
         "//tools/whereiscl:host_tests",
     ],
 )
