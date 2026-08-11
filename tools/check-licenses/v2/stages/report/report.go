@@ -35,5 +35,7 @@ func (r *Reporter) Run(ctx context.Context, projects []*pipeline.Project, errors
 		renderers = append(renderers, NewNoticeRenderer(r.OutDir), NewSpdxRenderer(r.OutDir))
 	}
 
+	renderers = append(renderers, NewConsoleErrorReporter(r.FuchsiaDir))
+
 	return renderers.Run(ctx, projects, errors)
 }

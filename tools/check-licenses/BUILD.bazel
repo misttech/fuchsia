@@ -72,6 +72,8 @@ go_library(
     name = "v2_stages_report",
     srcs = [
         "v2/stages/report/config.go",
+        "v2/stages/report/console_errors.go",
+        "v2/stages/report/metrics_printer.go",
         "v2/stages/report/notice.go",
         "v2/stages/report/report.go",
         "v2/stages/report/spdx.go",
@@ -202,6 +204,8 @@ host_go_test(
     name = "v2_stages_report_test",
     size = "small",
     srcs = [
+        "v2/stages/report/console_errors_test.go",
+        "v2/stages/report/metrics_printer_test.go",
         "v2/stages/report/notice_test.go",
         "v2/stages/report/report_test.go",
         "v2/stages/report/spdx_test.go",
