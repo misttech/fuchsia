@@ -529,8 +529,7 @@ impl Fvm {
         }
 
         let fvm_inspect = fuchsia_inspect::component::inspector().root().create_child("fvm");
-        let per_partition_inspect =
-            fuchsia_inspect::component::inspector().root().create_child("partitions");
+        let per_partition_inspect = fvm_inspect.create_child("partitions");
 
         // Build the mappings.
         let metadata = &mut inner.metadata;

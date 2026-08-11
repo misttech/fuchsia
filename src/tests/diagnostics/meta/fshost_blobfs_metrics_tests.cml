@@ -10,6 +10,12 @@
             // Verify the filesystem type (which is hard-coded and stable)
             "bootstrap/fshost/fvm2/blobfs-collection*:root/fs.info:type WHERE [a] a == 2657701153",
 
+            // Verify total slices reserved in FVM
+            "bootstrap/fshost/fvm2:root/fvm/partitions/blobfs:total_slices_reserved WHERE [a] a > 0",
+
+            // Verify FVM format version
+            "bootstrap/fshost/fvm2:root/fvm/mount_time:version_combo",
+
             // Verify total bytes of filesystem is nonzero
             "bootstrap/fshost/fvm2/blobfs-collection*:root/fs.usage:total_bytes WHERE [a] a > 0",
 
