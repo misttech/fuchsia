@@ -407,3 +407,8 @@ static int cmd_resource(int argc, const cmd_args* argv, uint32_t flags) {
 STATIC_COMMAND_START
 STATIC_COMMAND("resource", "Inspect physical address space resource allocations", &cmd_resource)
 STATIC_COMMAND_END(resource)
+
+extern "C" zx_status_t cpp_resource_dispatcher_inititialize_allocator(uintptr_t base, size_t size);
+extern "C" zx_status_t cpp_resource_dispatcher_inititialize_allocator(uintptr_t base, size_t size) {
+  return ResourceDispatcher::InitializeAllocator(ZX_RSRC_KIND_IRQ, base, size);
+}

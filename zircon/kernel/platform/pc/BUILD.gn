@@ -6,6 +6,7 @@
 
 import("//build/cpp/library_headers.gni")
 import("//build/toolchain/toolchain_environment.gni")
+import("//zircon/kernel/kernel_rust_mod.gni")
 
 source_set("pc") {
   public_deps = [ ":headers" ]
@@ -28,6 +29,7 @@ source_set("pc") {
   ]
 
   deps = [
+    ":platform_pc",
     "//sdk/lib/zbi-format",
     "//src/lib/zbitl",
     "//zircon/kernel/arch/x86:headers",
@@ -98,4 +100,22 @@ source_set("tests") {
 group("kernel-tests") {
   testonly = true
   deps = [ ":tests" ]
+}
+
+kernel_rust_mod("platform_pc") {
+  source_root = "mod.rs"
+  sources = [
+    "interrupt_manager.rs",
+    "interrupts.rs",
+    "mod.rs",
+  ]
+  deps = [
+    "//sdk/rust/zx-status",
+    "//sdk/rust/zx-types",
+    "//src/lib/ksync",
+    "//zircon/kernel/lib/acpi_lite/rust:acpi_lite",
+    "//zircon/kernel/lib/unittest:unittest-rs",
+    "//zircon/system/ulib/bitmap/rust:bitmap",
+    "//zircon/system/ulib/fbl/rust:fbl",
+  ]
 }

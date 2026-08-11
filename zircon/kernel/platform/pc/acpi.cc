@@ -32,6 +32,7 @@ void rust_acpi_parser_dump_tables(const void* parser);
 size_t rust_acpi_parser_num_tables(const void* parser);
 const acpi_lite::AcpiSdtHeader* rust_acpi_parser_get_table_at_index(const void* parser,
                                                                     size_t index);
+const void* cpp_global_acpi_parser_state();
 }
 
 namespace {
@@ -57,6 +58,11 @@ int ConsoleAcpiDump(int argc, const cmd_args* argv, uint32_t flags) {
 AcpiLiteParser& GlobalAcpiLiteParser() {
   ASSERT_MSG(global_acpi_parser != nullptr, "PlatformInitAcpi() not called.");
   return *global_acpi_parser;
+}
+
+extern "C" const void* cpp_global_acpi_parser_state() {
+  assert(global_acpi_parser);
+  return &global_acpi_parser->state();
 }
 
 void PlatformInitAcpi(zx_paddr_t acpi_rsdp) {

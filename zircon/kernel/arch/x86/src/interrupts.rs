@@ -10,9 +10,7 @@
 pub struct X86InterruptVector(pub u8);
 
 impl X86InterruptVector {
-    pub fn count() -> usize {
-        256
-    }
+    pub const COUNT: usize = 256;
 }
 
 pub const X86_INT_DIVIDE_0: X86InterruptVector = X86InterruptVector(0);

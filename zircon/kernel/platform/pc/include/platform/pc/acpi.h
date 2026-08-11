@@ -35,6 +35,7 @@ class AcpiLiteParser final : public acpi_lite::AcpiParserInterface {
   // pointer |p| points to memory at least |p->length| bytes long.
   const acpi_lite::AcpiSdtHeader* GetTableAtIndex(size_t index) const override;
 
+  const RustAcpiLite& state() const { return state_; }
   void DumpTables();
 
  private:

@@ -210,7 +210,8 @@ void msi_free_block(msi_block_t* block);
 // Register a handler function for a given msi_id within an msi_block. Passing a
 // NULL handler will effectively unregister a handler for a given msi_id within the
 // block.
-void msi_register_handler(const msi_block_t* block, uint msi_id, interrupt_handler_t handler);
+extern "C" void msi_register_handler(const msi_block_t* block, uint msi_id,
+                                     interrupt_handler_t handler);
 
 __END_CDECLS
 

@@ -59,6 +59,9 @@ pub struct IoApicIsaOverride {
     pub global_irq: u32,
 }
 
+pub const IO_APIC_IRQ_MASK: bool = true;
+pub const IO_APIC_IRQ_UNMASK: bool = false;
+
 const _: () = {
     assert!(core::mem::size_of::<IoApicDescriptor>() == 16);
     assert!(core::mem::align_of::<IoApicDescriptor>() == 8);

@@ -53,17 +53,17 @@ struct GsiRange {
 };
 
 // Functionality provided by the local APIC
-void apic_vm_init();
-void apic_local_init();
+extern "C" void apic_vm_init();
+extern "C" void apic_local_init();
 uint8_t apic_local_id();
-uint8_t apic_bsp_id();  // The APIC ID of the bootstrap processor
+extern "C" uint8_t apic_bsp_id();  // The APIC ID of the bootstrap processor
 void apic_irq_set(unsigned int vector, bool enable);
 void apic_send_ipi(uint8_t vector, uint32_t dst_apic_id, enum apic_interrupt_delivery_mode dm);
 void apic_send_self_ipi(uint8_t vector, enum apic_interrupt_delivery_mode dm);
 void apic_send_broadcast_ipi(uint8_t vector, enum apic_interrupt_delivery_mode dm);
 void apic_send_broadcast_self_ipi(uint8_t vector, enum apic_interrupt_delivery_mode dm);
 void apic_send_mask_ipi(uint8_t vector, cpu_mask_t mask, enum apic_interrupt_delivery_mode dm);
-void apic_issue_eoi();
+extern "C" void apic_issue_eoi();
 
 zx_status_t apic_timer_set_oneshot(uint32_t count, uint8_t divisor, bool masked);
 void apic_timer_set_tsc_deadline(uint64_t deadline);

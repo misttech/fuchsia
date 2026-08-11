@@ -9,7 +9,7 @@
 
 #include <stdint.h>
 
-void pic_map(uint8_t pic1, uint8_t pic2);
-void pic_disable();
+extern "C" void pic_map(uint8_t pic1, uint8_t pic2);
+extern "C" void pic_disable();
 
 #endif  // ZIRCON_KERNEL_PLATFORM_PC_INCLUDE_PLATFORM_PC_PIC_H_

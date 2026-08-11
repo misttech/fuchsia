@@ -47,7 +47,7 @@ static constexpr uint64_t kX86CanonicalAddressMask = ~((uint64_t{1} << (kX86VAdd
 // Called by assembly.
 extern "C" void x86_exception_handler(struct iframe_t* frame);
 extern "C" void x86_nmi_handler(struct iframe_t* frame);
-void platform_irq(struct iframe_t* frame);
+extern "C" void platform_irq(struct iframe_t* frame);
 
 struct arch_exception_context {
   struct iframe_t* frame;
