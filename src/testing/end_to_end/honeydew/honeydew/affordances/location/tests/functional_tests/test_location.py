@@ -6,7 +6,10 @@
 import logging
 
 import fuchsia_base_test
-from honeydew.affordances.connectivity.wlan.utils.types import CountryCode
+from honeydew.affordances.connectivity.wlan.utils.types import (
+    KNOWN_COUNTRY_CODES,
+    CountryCode,
+)
 from mobly import test_runner
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
@@ -20,7 +23,9 @@ class LocationTests(fuchsia_base_test.FuchsiaBaseTest):
 
     async def test_set_region(self) -> None:
         """Verify set_region() works on device."""
-        await self.dut.location.set_region(CountryCode.UNITED_STATES_OF_AMERICA)
+        await self.dut.location.set_region(
+            KNOWN_COUNTRY_CODES["UNITED_STATES_OF_AMERICA"]
+        )
 
     async def test_set_region_fails(self) -> None:
         """Verify set_region() fails on device with incorrect args."""
@@ -31,7 +36,7 @@ class LocationTests(fuchsia_base_test.FuchsiaBaseTest):
         #
         # TODO(http://b/370600007): Replace with assert_raises once there is
         # error checking in set_region.
-        await self.dut.location.set_region("??")
+        await self.dut.location.set_region(CountryCode("??"))
 
 
 if __name__ == "__main__":

@@ -9,6 +9,9 @@ import fidl_fuchsia_location_namedplace as f_location_namedplace
 import fuchsia_async_extension
 from fuchsia_controller_py import FcTransportStatus
 from honeydew import affordances_capable, errors
+from honeydew.affordances.connectivity.wlan.utils.types import (
+    CountryCode,
+)
 from honeydew.affordances.location import location
 from honeydew.affordances.location.errors import HoneydewLocationError
 from honeydew.transports.ffx import ffx as ffx_transport
@@ -100,23 +103,20 @@ class AsyncLocationUsingFc(location.AsyncLocation):
             )
         )
 
-    async def set_region(self, region_code: str) -> None:
+    async def set_region(self, region_code: CountryCode) -> None:
         """Set regulatory region.
 
         Args:
-            region_code: 2-byte ASCII string.
+            region_code: 2-byte country code
 
         Raises:
             HoneydewLocationError: Error from location stack
             TypeError: Invalid region_code format
         """
-        if len(region_code) != 2:
-            raise TypeError(
-                f'Expected region_code to be length 2, got "{region_code}"'
-            )
-
         try:
-            self._regulatory_region_configurator.set_region(region=region_code)
+            self._regulatory_region_configurator.set_region(
+                region=str(region_code)
+            )
         except FcTransportStatus as status:
             _LOGGER.error("set_region error = %s", status)
             raise HoneydewLocationError(
@@ -160,11 +160,11 @@ class LocationUsingFc(location.Location):
         """
         self._inner.verify_supported()
 
-    def set_region(self, region_code: str) -> None:
+    def set_region(self, region_code: CountryCode) -> None:
         """Set regulatory region.
 
         Args:
-            region_code: 2-byte ASCII string.
+            region_code: 2-byte country code.
 
         Raises:
             HoneydewLocationError: Error from location stack

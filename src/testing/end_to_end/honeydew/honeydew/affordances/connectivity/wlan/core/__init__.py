@@ -403,17 +403,19 @@ class Phy:
         ]
 
     async def get_country(self) -> CountryCode:
-        return CountryCode.from_bytes(
-            (await self.device_monitor.get_country(phy_id=self.id))
-            .unwrap()
-            .resp.alpha2
+        return CountryCode(
+            bytes(
+                (await self.device_monitor.get_country(phy_id=self.id))
+                .unwrap()
+                .resp.alpha2
+            )
         )
 
     async def set_country(self, country_code: CountryCode) -> None:
         response = await self.device_monitor.set_country(
             req=f_wlan_device_service.SetCountryRequest(
                 phy_id=self.id,
-                alpha2=country_code.to_bytes(),
+                alpha2=bytes(country_code),
             )
         )
         if response.status != ZxStatus.ZX_OK:

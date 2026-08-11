@@ -23,7 +23,7 @@ from honeydew.affordances.connectivity.wlan.core import (
     ConnectTransactionEventHandler,
 )
 from honeydew.affordances.connectivity.wlan.utils.types import (
-    CountryCode,
+    KNOWN_COUNTRY_CODES,
     MacAddress,
 )
 from mobly import signals, test_runner
@@ -138,7 +138,9 @@ class RoamRequestTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         self.phy = await self.dut.wlan_core.ensure_single_phy()
 
         # Set country to US so that 5 GHz channels are supported.
-        await self.phy.set_country(CountryCode.UNITED_STATES_OF_AMERICA)
+        await self.phy.set_country(
+            KNOWN_COUNTRY_CODES["UNITED_STATES_OF_AMERICA"]
+        )
 
     async def setup_test(self) -> None:
         await super().setup_test()

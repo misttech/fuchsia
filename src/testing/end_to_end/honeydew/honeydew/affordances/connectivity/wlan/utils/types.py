@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import enum
 from dataclasses import dataclass
-from typing import Protocol, Self, Sequence
+from typing import Protocol
 
 import fidl_fuchsia_wlan_device_service as f_wlan_device_service
 import fidl_fuchsia_wlan_ieee80211 as f_wlan_ieee80211
@@ -314,82 +314,93 @@ class BssDescriptionParser:
         return None
 
 
-class CountryCode(enum.StrEnum):
-    """Country codes used for configuring WLAN.
+class CountryCode:
+    """Country codes used for configuring WLAN."""
 
-    This is a list countries and their respective Alpha-2 codes. It comes from
-    http://cs/h/turquoise-internal/turquoise/+/main:src/devices/board/drivers/nelson/nelson-sdio.cc?l=79.
-    TODO(http://b/337930095): We need to add the other product specific country code
-    lists and test for them.
-    """
+    _code: bytes
 
-    AUSTRIA = "AT"
-    AUSTRALIA = "AU"
-    BELGIUM = "BE"
-    BULGARIA = "BG"
-    CANADA = "CA"
-    SWITZERLAND = "CH"
-    CHILE = "CL"
-    COLOMBIA = "CO"
-    CYPRUS = "CY"
-    CZECHIA = "CZ"
-    GERMANY = "DE"
-    DENMARK = "DK"
-    ESTONIA = "EE"
-    GREECE_EU = "EL"
-    SPAIN = "ES"
-    FINLAND = "FI"
-    FRANCE = "FR"
-    UNITED_KINGDOM_OF_GREAT_BRITAIN = "GB"
-    GREECE = "GR"
-    CROATIA = "HR"
-    HUNGARY = "HU"
-    IRELAND = "IE"
-    INDIA = "IN"
-    ICELAND = "IS"
-    ITALY = "IT"
-    JAPAN = "JP"
-    KOREA = "KR"
-    LIECHTENSTEIN = "LI"
-    LITHUANIA = "LT"
-    LUXEMBOURG = "LU"
-    LATVIA = "LV"
-    MALTA = "MT"
-    MEXICO = "MX"
-    NETHERLANDS = "NL"
-    NORWAY = "NO"
-    NEW_ZEALAND = "NZ"
-    PERU = "PE"
-    POLAND = "PL"
-    PORTUGAL = "PT"
-    ROMANIA = "RO"
-    SWEDEN = "SE"
-    SINGAPORE = "SG"
-    SLOVENIA = "SI"
-    SLOVAKIA = "SK"
-    TURKEY = "TR"
-    TAIWAN = "TW"
-    UNITED_STATES_OF_AMERICA = "US"
-    WORLDWIDE = "WW"
-    USER_XZ = "XZ"
-    # WW and 00 both refer to worldwide mode
-    WORLDWIDE_ZEROES = "00"
+    def __init__(self, code: str | bytes | bytearray) -> None:
+        if isinstance(code, str):
+            code_bytes = code.encode("ascii")
+        else:
+            code_bytes = bytes(code)
 
-    @classmethod
-    def from_bytes(cls, data: Sequence[int]) -> Self:
-        """Create an instance from a 2-byte UTF-8 encoded string."""
-        if len(data) != 2:
-            raise ValueError(f"Expected exactly 2 ASCII bytes, got {data!r}")
+        if len(code_bytes) != 2:
+            raise ValueError(
+                f"Expected exactly 2 ASCII bytes, got {len(code_bytes)}"
+            )
 
-        try:
-            code_str = bytes(data).decode("ascii")
-        except UnicodeDecodeError as e:
-            raise ValueError(f"Bytes {data!r} are not valid ASCII") from e
+        self._code = code_bytes
 
-        return cls(code_str)
+    def __bytes__(self) -> bytes:
+        return self._code
 
-    def to_bytes(self) -> bytes:
-        return self.encode("ascii")
+    def __str__(self) -> str:
+        return self._code.decode("ascii")
+
+    def __repr__(self) -> str:
+        return f"CountryCode('{self}')"
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, CountryCode):
+            return False
+        return self._code == other._code
+
+    def __hash__(self) -> int:
+        return hash(self._code)
+
+
+KNOWN_COUNTRY_CODES = {
+    "AUSTRIA": CountryCode("AT"),
+    "AUSTRALIA": CountryCode("AU"),
+    "BELGIUM": CountryCode("BE"),
+    "BULGARIA": CountryCode("BG"),
+    "CANADA": CountryCode("CA"),
+    "SWITZERLAND": CountryCode("CH"),
+    "CHILE": CountryCode("CL"),
+    "COLOMBIA": CountryCode("CO"),
+    "CYPRUS": CountryCode("CY"),
+    "CZECHIA": CountryCode("CZ"),
+    "GERMANY": CountryCode("DE"),
+    "DENMARK": CountryCode("DK"),
+    "ESTONIA": CountryCode("EE"),
+    "GREECE_EU": CountryCode("EL"),
+    "SPAIN": CountryCode("ES"),
+    "FINLAND": CountryCode("FI"),
+    "FRANCE": CountryCode("FR"),
+    "UNITED_KINGDOM_OF_GREAT_BRITAIN": CountryCode("GB"),
+    "GREECE": CountryCode("GR"),
+    "CROATIA": CountryCode("HR"),
+    "HUNGARY": CountryCode("HU"),
+    "IRELAND": CountryCode("IE"),
+    "INDIA": CountryCode("IN"),
+    "ICELAND": CountryCode("IS"),
+    "ITALY": CountryCode("IT"),
+    "JAPAN": CountryCode("JP"),
+    "KOREA": CountryCode("KR"),
+    "LIECHTENSTEIN": CountryCode("LI"),
+    "LITHUANIA": CountryCode("LT"),
+    "LUXEMBOURG": CountryCode("LU"),
+    "LATVIA": CountryCode("LV"),
+    "MALTA": CountryCode("MT"),
+    "MEXICO": CountryCode("MX"),
+    "NETHERLANDS": CountryCode("NL"),
+    "NORWAY": CountryCode("NO"),
+    "NEW_ZEALAND": CountryCode("NZ"),
+    "PERU": CountryCode("PE"),
+    "POLAND": CountryCode("PL"),
+    "PORTUGAL": CountryCode("PT"),
+    "ROMANIA": CountryCode("RO"),
+    "SWEDEN": CountryCode("SE"),
+    "SINGAPORE": CountryCode("SG"),
+    "SLOVENIA": CountryCode("SI"),
+    "SLOVAKIA": CountryCode("SK"),
+    "TURKEY": CountryCode("TR"),
+    "TAIWAN": CountryCode("TW"),
+    "UNITED_STATES_OF_AMERICA": CountryCode("US"),
+    "USER_XZ": CountryCode("XZ"),
+    "WORLDWIDE_ZEROES": CountryCode("00"),
+}
 
 
 @dataclass(frozen=True)

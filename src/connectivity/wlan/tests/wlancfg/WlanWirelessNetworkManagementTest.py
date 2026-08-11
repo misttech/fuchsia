@@ -27,7 +27,7 @@ from antlion.controllers.ap_lib.wireless_network_management import (
     BssTransitionManagementRequest,
 )
 from honeydew.affordances.connectivity.wlan.utils.types import (
-    CountryCode,
+    KNOWN_COUNTRY_CODES,
     MacAddress,
 )
 from mobly import asserts, signals, test_runner
@@ -65,7 +65,7 @@ class WlanWirelessNetworkManagementTest(
 
         # Set country code US to support 5G bands for roaming test.
         await self.dut.wlan_policy.set_country_code(
-            CountryCode.UNITED_STATES_OF_AMERICA
+            KNOWN_COUNTRY_CODES["UNITED_STATES_OF_AMERICA"]
         )
 
         self.phy = await self.dut.wlan_core.ensure_single_phy()

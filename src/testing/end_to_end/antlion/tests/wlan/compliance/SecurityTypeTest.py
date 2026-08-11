@@ -21,7 +21,7 @@ from antlion.controllers.ap_lib.hostapd_security import (
     SecurityMode,
 )
 from honeydew.affordances.connectivity.wlan.utils.types import (
-    CountryCode,
+    KNOWN_COUNTRY_CODES,
 )
 from mobly import signals, test_runner
 from mobly.records import TestResultRecord
@@ -475,7 +475,7 @@ class SecurityTypeTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             self.access_point.stop_all_aps()
 
         await self.dut.wlan_policy.set_country_code(
-            CountryCode.UNITED_STATES_OF_AMERICA
+            KNOWN_COUNTRY_CODES["UNITED_STATES_OF_AMERICA"]
         )
 
     async def setup_test(self) -> None:

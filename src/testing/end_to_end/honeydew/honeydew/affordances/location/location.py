@@ -6,17 +6,20 @@
 import abc
 
 from honeydew.affordances import affordance
+from honeydew.affordances.connectivity.wlan.utils.types import (
+    CountryCode,
+)
 
 
 class AsyncLocation(abc.ABC):
     """Abstract base class for an async Location affordance."""
 
     @abc.abstractmethod
-    async def set_region(self, region_code: str) -> None:
+    async def set_region(self, region_code: CountryCode) -> None:
         """Set regulatory region.
 
         Args:
-            region_code: 2-byte ASCII string.
+            region_code: 2-byte country code.
 
         Raises:
             HoneydewLocationError: Error from location stack
@@ -29,11 +32,11 @@ class Location(affordance.Affordance):
 
     # List all the public methods
     @abc.abstractmethod
-    def set_region(self, region_code: str) -> None:
+    def set_region(self, region_code: CountryCode) -> None:
         """Set regulatory region.
 
         Args:
-            region_code: 2-byte ASCII string.
+            region_code: 2-byte country code.
 
         Raises:
             HoneydewLocationError: Error from location stack

@@ -341,39 +341,21 @@ class AsyncWlanPolicyUsingFc(wlan_policy.AsyncWlanPolicy, AsyncLazyReady):
                         phy_id=phy_id
                     )
                     phy_country_codes.append(
-                        CountryCode.from_bytes(bytes(res.unwrap().resp.alpha2))
+                        CountryCode(bytes(res.unwrap().resp.alpha2))
                     )
                 except (AssertionError, ZxStatus, FcTransportStatus) as e:
                     raise wlan_errors.HoneydewWlanError(
                         f"DeviceMonitor.GetCountry(phy_id={phy_id}) error"
                     ) from e
 
-            # TODO(https://fxbug.dev/469784448): USER_XZ is the equivalent of WORLDWIDE
-            # on some devices.
-            if country_code == CountryCode.USER_XZ:
-                if all(
-                    [CountryCode.WORLDWIDE == cc for cc in phy_country_codes]
-                ):
-                    # Mutate country_code to what was actually set in each PHY.
-                    country_code = CountryCode.WORLDWIDE
-                    break
-            else:
-                if all([country_code == cc for cc in phy_country_codes]):
-                    break
+            if all([country_code == cc for cc in phy_country_codes]):
+                break
 
             await asyncio.sleep(_COUNTRY_CODE_CHECK_INTERVAL.total_seconds())
         else:
-            if country_code == CountryCode.WORLDWIDE:
-                _LOGGER.warning(
-                    "Failed to set %s. Trying %s.",
-                    CountryCode.WORLDWIDE,
-                    CountryCode.USER_XZ,
-                )
-                return await self.set_country_code(CountryCode.USER_XZ)
-            else:
-                raise RuntimeError(
-                    f"Failed to set DUT country code to {country_code}."
-                )
+            raise RuntimeError(
+                f"Failed to set DUT country code to {country_code}."
+            )
         _LOGGER.info(
             "All PHYs configured for new country code: %s", country_code
         )

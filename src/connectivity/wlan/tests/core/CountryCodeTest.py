@@ -6,7 +6,9 @@ import logging
 
 import fuchsia_wlan_base_test
 import honeydew.affordances.connectivity.wlan.core as wlan_core
-from honeydew.affordances.connectivity.wlan.utils.types import CountryCode
+from honeydew.affordances.connectivity.wlan.utils.types import (
+    KNOWN_COUNTRY_CODES,
+)
 from mobly import asserts, test_runner
 
 logger = logging.getLogger(__name__)
@@ -24,9 +26,12 @@ class CountryCodeTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         logger.info(f"Original country code is {original_country_code}")
 
         # Set a new country code
-        new_country_code = [
-            cc for cc in CountryCode if cc != original_country_code
-        ][0]
+        new_country_code = (
+            KNOWN_COUNTRY_CODES["UNITED_STATES_OF_AMERICA"]
+            if original_country_code
+            != KNOWN_COUNTRY_CODES["UNITED_STATES_OF_AMERICA"]
+            else KNOWN_COUNTRY_CODES["JAPAN"]
+        )
         logger.info(f"Setting country code to {new_country_code}...")
         await self.phy.set_country(new_country_code)
 

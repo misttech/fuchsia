@@ -22,7 +22,7 @@ from honeydew.affordances.connectivity.wlan.utils.errors import (
     HoneydewWlanError,
 )
 from honeydew.affordances.connectivity.wlan.utils.types import (
-    CountryCode,
+    KNOWN_COUNTRY_CODES,
 )
 from mobly import asserts, signals, test_runner
 from openwrt_access_point.lib.access_point_config import (
@@ -74,7 +74,7 @@ class ChannelSwitchTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
 
         # Set country code US for 5G DFS channels
         await self.dut.wlan_policy.set_country_code(
-            CountryCode.UNITED_STATES_OF_AMERICA
+            KNOWN_COUNTRY_CODES["UNITED_STATES_OF_AMERICA"]
         )
 
         self.phy = await self.dut.wlan_core.ensure_single_phy()

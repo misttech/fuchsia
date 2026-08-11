@@ -18,7 +18,9 @@ import logging
 import fidl_fuchsia_wlan_policy as f_wlan_policy
 import fuchsia_wlan_base_test
 from antlion.controllers.access_point import setup_ap
-from honeydew.affordances.connectivity.wlan.utils.types import CountryCode
+from honeydew.affordances.connectivity.wlan.utils.types import (
+    KNOWN_COUNTRY_CODES,
+)
 from mobly import signals, test_runner
 from openwrt_access_point.lib.access_point_config import (
     DEFAULT_2G_CHANNEL,
@@ -63,7 +65,7 @@ class BeaconLossTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         self.in_use_interface: str | None = None
 
         await self.dut.wlan_policy.set_country_code(
-            CountryCode.UNITED_STATES_OF_AMERICA
+            KNOWN_COUNTRY_CODES["UNITED_STATES_OF_AMERICA"]
         )
 
     async def setup_test(self) -> None:

@@ -15,7 +15,9 @@ from antlion.controllers.ap_lib.hostapd_security import (
 from honeydew.affordances.connectivity.wlan.utils.errors import (
     HoneydewWlanError,
 )
-from honeydew.affordances.connectivity.wlan.utils.types import CountryCode
+from honeydew.affordances.connectivity.wlan.utils.types import (
+    KNOWN_COUNTRY_CODES,
+)
 from mobly import asserts, signals, test_runner
 from openwrt_access_point.lib.access_point_config import (
     DEFAULT_5G_CHANNEL,
@@ -41,7 +43,7 @@ class WlanMiscScenarioTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
     async def setup_class(self) -> None:
         await super().setup_class()
         await self.dut.wlan_policy.set_country_code(
-            CountryCode.UNITED_STATES_OF_AMERICA
+            KNOWN_COUNTRY_CODES["UNITED_STATES_OF_AMERICA"]
         )
         self.log = logging.getLogger()
 

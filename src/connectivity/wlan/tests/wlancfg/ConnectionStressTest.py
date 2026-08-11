@@ -17,7 +17,9 @@ from antlion.controllers.access_point import setup_ap
 from antlion.controllers.ap_lib.hostapd_security import (
     Security as DeprecatedSecurity,
 )
-from honeydew.affordances.connectivity.wlan.utils.types import CountryCode
+from honeydew.affordances.connectivity.wlan.utils.types import (
+    KNOWN_COUNTRY_CODES,
+)
 from mobly import asserts, signals, test_runner
 from openwrt_access_point.lib.access_point_config import (
     DEFAULT_2G_CHANNEL,
@@ -131,7 +133,7 @@ class ConnectionStressTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
 
         # Set country code US for 5G DFS channels
         await self.dut.wlan_policy.set_country_code(
-            CountryCode.UNITED_STATES_OF_AMERICA
+            KNOWN_COUNTRY_CODES["UNITED_STATES_OF_AMERICA"]
         )
 
         # The base class FuchsiaWlanBaseTest setup_class registers access_points

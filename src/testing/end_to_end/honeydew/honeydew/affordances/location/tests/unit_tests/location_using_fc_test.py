@@ -10,6 +10,9 @@ from unittest import mock
 import fidl_fuchsia_location_namedplace as f_location_namedplace
 from fuchsia_controller_py import FcTransportStatus
 from honeydew import affordances_capable
+from honeydew.affordances.connectivity.wlan.utils.types import (
+    CountryCode,
+)
 from honeydew.affordances.location import location_using_fc
 from honeydew.affordances.location.errors import HoneydewLocationError
 from honeydew.errors import NotSupportedError
@@ -87,7 +90,7 @@ class LocationFCTests(unittest.IsolatedAsyncioTestCase):
         self.location_obj._regulatory_region_configurator.set_region.return_value = (
             None
         )
-        await self.location_obj.set_region("AT")
+        await self.location_obj.set_region(CountryCode("AT"))
 
     async def test_set_region_fails_internal_error(self) -> None:
         """Verify set_region fails when the location stack errors."""
@@ -98,12 +101,7 @@ class LocationFCTests(unittest.IsolatedAsyncioTestCase):
             FcTransportStatus.FC_ERR_INTERNAL
         )
         with self.assertRaises(HoneydewLocationError):
-            await self.location_obj.set_region("AT")
-
-    async def test_set_region_fails_invalid_region_code(self) -> None:
-        """Verify set_region fails immediately with invalid input."""
-        with self.assertRaises(TypeError):
-            await self.location_obj.set_region("?")
+            await self.location_obj.set_region(CountryCode("AT"))
 
 
 if __name__ == "__main__":
