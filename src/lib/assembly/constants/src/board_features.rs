@@ -77,6 +77,8 @@ pub enum BoardFeature {
     SharedRegisters,
     /// Software-based cryptography support for boards lacking hardware acceleration.
     SoftCrypto,
+    /// A/B slot management support (switching slots, marking slots successful, etc).
+    SlotManagement,
     /// Hardware-backed inline storage encryption support.
     StorageInlineCrypto,
     /// Power management features for storage devices.
@@ -146,6 +148,7 @@ impl AsRef<str> for BoardFeature {
             Self::SdmmcCqe => "fuchsia::sdmmc_cqe",
             Self::SharedRegisters => "fuchsia::shared_registers",
             Self::SoftCrypto => "fuchsia::soft_crypto",
+            Self::SlotManagement => "fuchsia::slot_management",
             Self::StorageInlineCrypto => "fuchsia::storage_inline_crypto",
             Self::StoragePowerManagement => "fuchsia::storage_power_management",
             Self::Suspender => "fuchsia::suspender",

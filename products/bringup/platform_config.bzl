@@ -23,6 +23,10 @@ PLATFORM_CONFIG_BASE_JSON = {
         "filesystems": {
             "image_mode": "no_image",
         },
+        # Bootstrap configuration does not contain the real
+        # system-update-committer, so we request the auto-slot-committer instead
+        # to prevent slots being marked as unbootable.
+        "auto_slot_committer": True,
     },
 }
 

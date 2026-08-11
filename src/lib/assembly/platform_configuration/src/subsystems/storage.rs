@@ -55,10 +55,12 @@ impl DefineSubsystemConfiguration<(&StorageConfig, &StorageToolsConfig, &Recover
             }
         }
 
-        // Add auto-slot-committer if requested. This unconditionally marks the current slot as
-        // successful on boot, to avoid triggering bootloader slot failure logic after consecutive
-        // boots.
-        if storage_config.auto_slot_committer {
+        // Add auto-slot-committer if requested and supported by the board. This unconditionally
+        // marks the current slot as successful on boot, to avoid triggering bootloader slot
+        // failure logic after consecutive boots.
+        if storage_config.auto_slot_committer
+            && context.board_config.provides_feature(BoardFeature::SlotManagement)
+        {
             builder.platform_bundle("auto_slot_committer")?;
         }
 
