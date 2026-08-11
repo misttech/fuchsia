@@ -19,7 +19,6 @@
 
 #include <bind/fuchsia/cpp/bind.h>
 #include <bind/fuchsia/hardware/interconnect/cpp/bind.h>
-#include <bind/fuchsia/interconnect/cpp/bind.h>
 
 namespace interconnect_dt {
 
@@ -207,7 +206,7 @@ zx::result<> InterconnectVisitor::AddChildNodeSpec(fdf_devicetree::Node& child, 
           },
       .properties =
           {
-              fdf::MakeProperty2(bind_fuchsia_interconnect::PATH_NAME, std::string(path_name)),
+              fdf::MakeProperty2(bind_fuchsia::NAME, std::string(path_name)),
               fdf::MakeProperty2(bind_fuchsia_hardware_interconnect::PATHSERVICE,
                                  bind_fuchsia_hardware_interconnect::PATHSERVICE_ZIRCONTRANSPORT),
           },

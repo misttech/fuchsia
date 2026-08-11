@@ -30,22 +30,22 @@ optional parent "dwc3-phy" {
 
 optional parent "interconnect-usb-ddr" {
   fuchsia.hardware.interconnect.PathService == fuchsia.hardware.interconnect.PathService.ZirconTransport;
-  fuchsia.interconnect.PATH_NAME == "usb-ddr";
+  fuchsia.NAME == "usb-ddr";
 }
 
 optional parent "interconnect-usb-ipa" {
   fuchsia.hardware.interconnect.PathService == fuchsia.hardware.interconnect.PathService.ZirconTransport;
-  fuchsia.interconnect.PATH_NAME == "usb-ipa";
+  fuchsia.NAME == "usb-ipa";
 }
 
 optional parent "interconnect-ddr-usb" {
   fuchsia.hardware.interconnect.PathService == fuchsia.hardware.interconnect.PathService.ZirconTransport;
-  fuchsia.interconnect.PATH_NAME == "ddr-usb";
+  fuchsia.NAME == "ddr-usb";
 }
 
 optional parent "usb-interconnect" {
   fuchsia.hardware.interconnect.PathService == fuchsia.hardware.interconnect.PathService.ZirconTransport;
-  fuchsia.interconnect.PATH_NAME == "usb-interconnect";
+  fuchsia.NAME == "usb-interconnect";
 }
 
 optional parent "core-clk" {

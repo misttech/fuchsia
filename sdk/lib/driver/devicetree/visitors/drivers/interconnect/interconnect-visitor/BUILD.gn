@@ -31,7 +31,6 @@ devicetree_visitor("interconnect-visitor") {
   non_sdk_deps = [
     "//sdk/fidl/fuchsia.hardware.interconnect:fuchsia.hardware.interconnect_bindlib_cpp",
     "//src/devices/bind/fuchsia:fuchsia_cpp",
-    "//src/devices/bind/fuchsia.interconnect:fuchsia.interconnect_cpp",
     "//src/lib/ddk",
   ]
 }
@@ -46,7 +45,6 @@ test("interconnect-visitor-test-bin") {
     "//sdk/lib/driver/devicetree/visitors/default/bind-property",
     "//sdk/lib/driver/devicetree/visitors/default/mmio",
     "//src/devices/bind/fuchsia:fuchsia_cpp",
-    "//src/devices/bind/fuchsia.interconnect:fuchsia.interconnect_cpp",
     "//src/devices/bind/fuchsia.platform:fuchsia.platform_cpp",
     "//src/lib/fxl/test:gtest_main",
   ]

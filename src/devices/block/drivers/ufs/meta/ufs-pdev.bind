@@ -4,6 +4,8 @@
 
 composite ufs_pdev;
 
+using fuchsia;
+
 primary parent "pdev" {
   fuchsia.devicetree.FIRST_COMPATIBLE == "google,ufshc";
 }
@@ -14,5 +16,5 @@ parent "phy" {
 
 optional parent "ufs-interconnect" {
   fuchsia.hardware.interconnect.PathService == fuchsia.hardware.interconnect.PathService.ZirconTransport;
-  fuchsia.interconnect.PATH_NAME == "ufs-interconnect";
+  fuchsia.NAME == "ufs-interconnect";
 }

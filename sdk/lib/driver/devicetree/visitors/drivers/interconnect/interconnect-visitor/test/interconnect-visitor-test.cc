@@ -16,7 +16,6 @@
 
 #include <bind/fuchsia/cpp/bind.h>
 #include <bind/fuchsia/hardware/interconnect/cpp/bind.h>
-#include <bind/fuchsia/interconnect/cpp/bind.h>
 #include <bind/fuchsia/platform/cpp/bind.h>
 #include <gtest/gtest.h>
 
@@ -114,7 +113,7 @@ TEST(InterconnectVisitorTest, InterconnectsProperty) {
     EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
         {{fdf::MakeProperty2(bind_fuchsia_hardware_interconnect::PATHSERVICE,
                              bind_fuchsia_hardware_interconnect::PATHSERVICE_ZIRCONTRANSPORT),
-          fdf::MakeProperty2(bind_fuchsia_interconnect::PATH_NAME, std::string(PATH1_NAME))}},
+          fdf::MakeProperty2(bind_fuchsia::NAME, std::string(PATH1_NAME))}},
         (*mgr_request.parents2())[1].properties(), false));
     EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
         {{fdf::MakeAcceptBindRule(bind_fuchsia_hardware_interconnect::PATHSERVICE,
@@ -125,7 +124,7 @@ TEST(InterconnectVisitorTest, InterconnectsProperty) {
     EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
         {{fdf::MakeProperty2(bind_fuchsia_hardware_interconnect::PATHSERVICE,
                              bind_fuchsia_hardware_interconnect::PATHSERVICE_ZIRCONTRANSPORT),
-          fdf::MakeProperty2(bind_fuchsia_interconnect::PATH_NAME, std::string(PATH2_NAME))}},
+          fdf::MakeProperty2(bind_fuchsia::NAME, std::string(PATH2_NAME))}},
         (*mgr_request.parents2())[2].properties(), false));
     EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
         {{fdf::MakeAcceptBindRule(bind_fuchsia_hardware_interconnect::PATHSERVICE,
@@ -149,7 +148,7 @@ TEST(InterconnectVisitorTest, InterconnectsProperty) {
     EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
         {{fdf::MakeProperty2(bind_fuchsia_hardware_interconnect::PATHSERVICE,
                              bind_fuchsia_hardware_interconnect::PATHSERVICE_ZIRCONTRANSPORT),
-          fdf::MakeProperty2(bind_fuchsia_interconnect::PATH_NAME, std::string(PATH3_NAME))}},
+          fdf::MakeProperty2(bind_fuchsia::NAME, std::string(PATH3_NAME))}},
         (*mgr_request.parents2())[1].properties(), false));
     EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
         {{fdf::MakeAcceptBindRule(bind_fuchsia_hardware_interconnect::PATHSERVICE,
