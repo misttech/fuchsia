@@ -1167,6 +1167,7 @@ class AsyncMain:
         exec_env = self._exec_env
         assert exec_env is not None
         allow_build_updates = self._flags.build_updates
+        error: str | None = None
 
         # Bazel labels start with @@ and have no toolchain suffix.
         # GN Labels start with // and end with a toolchain, starting with
@@ -1264,10 +1265,8 @@ class AsyncMain:
                 show_output=not exec_env.log_to_stdout(),
             )
 
-            error = None
             if return_code != 0:
                 error = f"Build returned non-zero exit code {return_code}"
-            if error is not None:
                 recorder.emit_end(error, id=build_id)
                 return False
 
@@ -1279,10 +1278,8 @@ class AsyncMain:
                 show_output=not exec_env.log_to_stdout(),
             )
 
-            error = None
             if return_code != 0:
                 error = f"Build returned non-zero exit code {return_code}"
-            if error is not None:
                 recorder.emit_end(error, id=build_id)
                 return False
 

@@ -1536,6 +1536,27 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
                 "//build/images/updates:package_lists", prefix_list
             )
 
+    async def test_build_empty_selections(self) -> None:
+        """Test that building with no selected tests does not raise UnboundLocalError."""
+        self._mock_run_command(0)
+        self._mock_has_package_server_connected_to_device(True)
+        self._mock_has_tests_in_base([])
+
+        app = main.AsyncMain.__new__(main.AsyncMain)
+        app._recorder = event.EventRecorder()
+        app._flags = args.parse_args(["--simple"])
+        app._exec_env = environment.ExecutionEnvironment.initialize_from_args(
+            app._flags
+        )
+        empty_selections = selection_types.TestSelections(
+            selected=[],
+            selected_but_not_run=[],
+            best_score={},
+            group_matches=[],
+            fuzzy_distance_threshold=0,
+        )
+        self.assertTrue(await app._do_build(empty_selections))
+
     async def test_no_build(self) -> None:
         """Test that we can run all tests and report success"""
 
