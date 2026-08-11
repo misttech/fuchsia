@@ -82,7 +82,6 @@ class TestParams:
 class RoamTestParameters:
     ssid: str
     origin_password: str | None
-    target_password: str | None
 
 
 _DUT_SECURITY_MODES: frozenset[Security] = frozenset(
@@ -357,7 +356,7 @@ class RoamRequestTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                 ssid=ssid,
                 security=deprecated_security_5g,
             )
-        return RoamTestParameters(ssid, origin_password, target_password)
+        return RoamTestParameters(ssid, origin_password)
 
     async def _test_logic(
         self,
