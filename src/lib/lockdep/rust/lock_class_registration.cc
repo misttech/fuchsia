@@ -77,6 +77,10 @@ class RustLockClassRegistrar {
 
 static RustLockClassRegistrar registrar;
 
+#if WITH_LOCK_DEP
+extern "C" void lockdep_assert_no_locks_held() { lockdep::AssertNoLocksHeld(); }
+#endif
+
 #endif  // WITH_LOCK_DEP || feature level >= 1
 
 #endif  // _KERNEL

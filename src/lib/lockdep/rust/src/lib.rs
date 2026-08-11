@@ -131,3 +131,21 @@ mod disabled {
 
 #[cfg(not(any(feature = "lock_dep", feature = "lock_metadata_only")))]
 pub use disabled::LockClassRegistration;
+
+/// Asserts that the current thread holds no tracked locks.
+///
+/// When lock validation is enabled, this checks the current thread's lock state
+/// and panics or generates a kernel oops if any tracked locks are held.
+/// When lock validation is disabled, this is a zero-cost no-op.
+#[inline(always)]
+pub fn assert_no_locks_held() {
+    #[cfg(feature = "lock_dep")]
+    {
+        unsafe extern "C" {
+            fn lockdep_assert_no_locks_held();
+        }
+        // SAFETY: `lockdep_assert_no_locks_held` only inspects thread-local lock state
+        // and does not violate Rust memory safety or aliasing invariants.
+        unsafe { lockdep_assert_no_locks_held() }
+    }
+}
