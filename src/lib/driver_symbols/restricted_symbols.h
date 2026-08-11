@@ -86,7 +86,7 @@ inline constexpr std::string_view kCreateThreadSymbolsDriversAllowlist[] = {
     "#meta/goldfish_control.cm",
     "#meta/goldfish_sync.cm",
     "#meta/goodix-gt6853.cm",
-    "#meta/goodix.cm",
+    "#meta/goodix-gt92xx.cm",
     "#meta/gvnic.cm",
     "#meta/hdmi-audio-codec.cm",
     "#meta/hid-input-report.cm",

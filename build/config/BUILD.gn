@@ -1149,7 +1149,7 @@ config("Wno-conversion") {
     "//src/ui/a11y/lib/util:*",
     "//src/ui/backlight/drivers/ti-lp8556:*",
     "//src/ui/examples/escher/common:*",
-    "//src/ui/input/drivers/goodix:*",
+    "//src/ui/input/drivers/goodix-gt92xx:*",
     "//src/ui/input/drivers/pc-ps2:*",
     "//src/ui/input/lib/hid:*",
     "//src/ui/input/lib/hid-input-report:*",

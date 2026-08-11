@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef SRC_UI_INPUT_DRIVERS_GOODIX_CPP_GT92XX_H_
-#define SRC_UI_INPUT_DRIVERS_GOODIX_CPP_GT92XX_H_
+#ifndef SRC_UI_INPUT_DRIVERS_GOODIX_GT92XX_CPP_GOODIX_GT92XX_H_
+#define SRC_UI_INPUT_DRIVERS_GOODIX_GT92XX_CPP_GOODIX_GT92XX_H_
 
 #include <fidl/fuchsia.hardware.gpio/cpp/wire.h>
 #include <fidl/fuchsia.input.report/cpp/wire.h>
@@ -263,4 +263,4 @@ class Gt92xxDevice : public DeviceType, public ddk::EmptyProtocol<ZX_PROTOCOL_IN
 };
 }  // namespace goodix
 
-#endif  // SRC_UI_INPUT_DRIVERS_GOODIX_CPP_GT92XX_H_
+#endif  // SRC_UI_INPUT_DRIVERS_GOODIX_GT92XX_CPP_GOODIX_GT92XX_H_

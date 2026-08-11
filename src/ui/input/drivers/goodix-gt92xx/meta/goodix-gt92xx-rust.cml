@@ -9,8 +9,8 @@
     ],
     program: {
         runner: "driver",
-        binary: "driver/goodix-rust.so",
-        bind: "meta/bind/goodix.bindbc",
+        binary: "driver/goodix-gt92xx-rust.so",
+        bind: "meta/bind/goodix-gt92xx.bindbc",
     },
     use: [
         { service: "fuchsia.hardware.gpio.Service" },

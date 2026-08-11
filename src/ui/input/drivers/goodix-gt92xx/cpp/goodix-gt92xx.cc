@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "gt92xx.h"
+#include "goodix-gt92xx.h"
 
 #include <endian.h>
 #include <lib/ddk/binding_driver.h>
@@ -230,7 +230,7 @@ zx_status_t Gt92xxDevice::Create(zx_device_t* device) {
 
   // Set scheduler role for device thread.
   {
-    const char* role_name = "fuchsia.ui.input.drivers.goodix.gt92xx.device";
+    const char* role_name = "fuchsia.ui.input.drivers.goodix-gt92xx.device";
     status =
         device_set_profile_by_role(goodix_dev->parent(), thrd_get_zx_handle(goodix_dev->thread_),
                                    role_name, strlen(role_name));

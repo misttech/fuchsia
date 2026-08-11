@@ -195,7 +195,7 @@
     },
     {
         "drivers": [
-            "?fuchsia-pkg://fuchsia.com/goodix#meta/goodix.cm"
+            "?fuchsia-pkg://fuchsia.com/goodix-gt92xx#meta/goodix-gt92xx.cm"
         ]
     },
     {

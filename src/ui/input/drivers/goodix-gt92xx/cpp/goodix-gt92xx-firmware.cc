@@ -5,7 +5,7 @@
 #include <endian.h>
 #include <lib/ddk/debug.h>
 
-#include "gt92xx.h"
+#include "goodix-gt92xx.h"
 
 namespace {
 

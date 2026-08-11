@@ -13,7 +13,7 @@
 
 #include <gtest/gtest.h>
 
-#include "gt92xx.h"
+#include "goodix-gt92xx.h"
 #include "src/devices/gpio/testing/fake-gpio/fake-gpio.h"
 #include "src/devices/testing/mock-ddk/mock-device.h"
 #include "src/lib/testing/predicates/status.h"

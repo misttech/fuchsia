@@ -13,13 +13,13 @@ declare_args() {
   #
   # TODO(https://fxbug.dev/527195603): Remove the toggle after the Rust port is completed.
   # Valid values: "cpp", "rust"
-  goodix_driver_flavor = "cpp"
+  goodix_gt92xx_driver_flavor = "cpp"
 }
 
-driver_bind_rules("gt92xx_bind") {
-  rules = "meta/goodix.bind"
-  bind_output = "goodix.bindbc"
-  tests = "meta/bind_tests.json"
+driver_bind_rules("goodix_gt92xx_bind") {
+  rules = "meta/goodix-gt92xx.bind"
+  bind_output = "goodix-gt92xx.bindbc"
+  tests = "meta/goodix-gt92xx-bind-test.json"
   deps = [
     "//sdk/fidl/fuchsia.hardware.gpio:fuchsia.hardware.gpio_bindlib",
     "//sdk/fidl/fuchsia.hardware.i2c:fuchsia.hardware.i2c_bindlib",
@@ -36,18 +36,18 @@ astro_firmware_path =
 
 fuchsia_cc_driver("driver-cpp") {
   legacy = true
-  output_name = "goodix-cpp"
+  output_name = "goodix-gt92xx-cpp"
   configs += [
     "//build/config:all_source",
     "//build/config/fuchsia:enable_zircon_asserts",
   ]
   sources = [
-    "cpp/gt92xx-firmware.cc",
-    "cpp/gt92xx.cc",
+    "cpp/goodix-gt92xx-firmware.cc",
+    "cpp/goodix-gt92xx.cc",
   ]
   defines = [ "GT9293_ASTRO_FIRMWARE_PATH=\"$astro_firmware_path\"" ]
   deps = [
-    ":gt92xx_bind",
+    ":goodix_gt92xx_bind",
     "//sdk/fidl/fuchsia.hardware.gpio:fuchsia.hardware.gpio_cpp",
     "//sdk/fidl/fuchsia.input.report:fuchsia.input.report_cpp",
     "//sdk/lib/driver/mmio/cpp",
@@ -73,14 +73,14 @@ fuchsia_cc_driver("driver-cpp") {
 fuchsia_rust_driver("driver-rust") {
   edition = "2024"
   source_root = "rust/src/lib.rs"
-  output_name = "goodix-rust"
+  output_name = "goodix-gt92xx-rust"
   with_unit_tests = true
   sources = [
     "rust/src/driver.rs",
     "rust/src/lib.rs",
   ]
   deps = [
-    ":gt92xx_bind",
+    ":goodix_gt92xx_bind",
     "//sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_rust",
     "//sdk/lib/driver/component/rust",
     "//sdk/rust/zx",
@@ -89,21 +89,21 @@ fuchsia_rust_driver("driver-rust") {
 }
 
 fuchsia_driver_component("component-cpp") {
-  info = "meta/goodix-module-info.json"
-  component_name = "goodix"
-  manifest = "meta/goodix-cpp.cml"
+  info = "meta/goodix-gt92xx-module-info.json"
+  component_name = "goodix-gt92xx"
+  manifest = "meta/goodix-gt92xx-cpp.cml"
   deps = [ ":driver-cpp" ]
 }
 
 fuchsia_driver_component("component-rust") {
-  info = "meta/goodix-module-info.json"
-  component_name = "goodix"
-  manifest = "meta/goodix-rust.cml"
+  info = "meta/goodix-gt92xx-module-info.json"
+  component_name = "goodix-gt92xx"
+  manifest = "meta/goodix-gt92xx-rust.cml"
   deps = [ ":driver-rust" ]
 }
 
 group("component") {
-  if (goodix_driver_flavor == "rust") {
+  if (goodix_gt92xx_driver_flavor == "rust") {
     deps = [ ":component-rust" ]
   } else {
     deps = [ ":component-cpp" ]
@@ -117,11 +117,11 @@ if (internal_access) {
   }
 }
 
-# Active Package: always use "goodix" to align with the board configuration's
-# dependencies.
-fuchsia_driver_package("goodix") {
+# Active Package: always use "goodix-gt92xx" to align with the board
+# configuration's dependencies.
+fuchsia_driver_package("goodix-gt92xx") {
   export_to_bazel = true
-  package_name = "goodix"
+  package_name = "goodix-gt92xx"
   driver_components = [ ":component" ]
 
   deps = []
@@ -132,21 +132,21 @@ fuchsia_driver_package("goodix") {
 
 group("test") {
   testonly = true
-  deps = [ ":gt92xx-test" ]
+  deps = [ ":goodix-gt92xx-test" ]
 }
 
-test("gt92xx-test") {
-  output_name = "gt92xx-test"
+test("goodix-gt92xx-test") {
+  output_name = "goodix-gt92xx-test"
   configs += [ "//build/config:all_source" ]
   sources = [
-    "cpp/gt92xx-firmware-test.cc",
-    "cpp/gt92xx-firmware.cc",
-    "cpp/gt92xx-test.cc",
-    "cpp/gt92xx.cc",
+    "cpp/goodix-gt92xx-firmware-test.cc",
+    "cpp/goodix-gt92xx-firmware.cc",
+    "cpp/goodix-gt92xx-test.cc",
+    "cpp/goodix-gt92xx.cc",
   ]
   defines = [ "GT9293_ASTRO_FIRMWARE_PATH=\"$astro_firmware_path\"" ]
   deps = [
-    ":gt92xx_bind",
+    ":goodix_gt92xx_bind",
     "//sdk/fidl/fuchsia.hardware.gpio:fuchsia.hardware.gpio_cpp",
     "//sdk/fidl/fuchsia.hardware.i2c:fuchsia.hardware.i2c_cpp",
     "//sdk/fidl/fuchsia.input.report:fuchsia.input.report_cpp",
@@ -180,9 +180,9 @@ test("gt92xx-test") {
   configs += [ "//build/config:Wno-conversion" ]
 }
 
-fuchsia_unittest_package("gt92xx-test-package") {
-  package_name = "gt92xx-test"
-  deps = [ ":gt92xx-test" ]
+fuchsia_unittest_package("goodix-gt92xx-test-package") {
+  package_name = "goodix-gt92xx-test"
+  deps = [ ":goodix-gt92xx-test" ]
   test_specs = {
     log_settings = {
       max_severity = "ERROR"
@@ -191,16 +191,16 @@ fuchsia_unittest_package("gt92xx-test-package") {
 }
 
 # The Rust unit test package: compiled and run in CI/CQ regardless of flavor.
-fuchsia_unittest_package("goodix-rust-test-package") {
-  package_name = "goodix-rust-test"
+fuchsia_unittest_package("goodix-gt92xx-rust-test-package") {
+  package_name = "goodix-gt92xx-rust-test"
   deps = [ ":driver-rust_test" ]
 }
 
 group("tests") {
   testonly = true
   deps = [
-    ":goodix-rust-test-package",
-    ":gt92xx-test-package",
-    ":gt92xx_bind_test",
+    ":goodix-gt92xx-rust-test-package",
+    ":goodix-gt92xx-test-package",
+    ":goodix_gt92xx_bind_test",
   ]
 }
