@@ -444,7 +444,7 @@ _NORMAL_DEPENDENCIES = {
             "ring": Label("//third_party/rust_crates/vendor/ring-0.17.14:ring"),
             "rkyv": Label("//third_party/rust_crates/vendor/rkyv-0.8.16:rkyv"),
             "rsa": Label("//third_party/rust_crates/vendor/rsa-0.9.10:rsa"),
-            "rustc-hash": Label("//third_party/rust_crates/vendor/rustc-hash-1.0.1:rustc_hash"),
+            "rustc-hash": Label("//third_party/rust_crates/vendor/rustc-hash-2.1.3:rustc_hash"),
             "rustls": Label("//third_party/rust_crates/vendor/rustls-0.23.42:rustls"),
             "rustls-pemfile": Label("//third_party/rust_crates/vendor/rustls-pemfile-2.2.0:rustls_pemfile"),
             "rustls-webpki": Label("//third_party/rust_crates/vendor/rustls-webpki-0.102.8:webpki"),
