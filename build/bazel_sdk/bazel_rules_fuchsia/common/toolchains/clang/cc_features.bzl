@@ -521,6 +521,28 @@ def get_default_compile_flags_feature(
                     ),
                 ] if is_host else [],
             ),
+            # See https://fxbug.dev/542560456: Linking Rust binaries when
+            # Asan is enabled fails surprisingly with undefined symbols
+            # __cxa_begin_catch, std::terminate() and __gxx_personality_v0
+            # referenced from the host libclang_rt.asan_cxx.a library.
+            #
+            # These symbols are provided by libc++ which is normally an
+            # implicit dependency to all link actions when --driver-mode=g++
+            # is used. For some reason, this doesn't work, so add an explicit
+            # -lc++ here to work-around this.
+            flag_set(
+                actions = [
+                    ACTION_NAMES.cpp_link_executable,
+                    ACTION_NAMES.cpp_link_dynamic_library,
+                    ACTION_NAMES.cpp_link_nodeps_dynamic_library,
+                ],
+                flag_groups = [flag_group(flags = ["-lc++"])] if is_host else [],
+                with_features = [
+                    with_feature_set(
+                        features = ["clang_sanitizer"],
+                    ),
+                ],
+            ),
             # These are ldflags that will be added to dbg builds
             flag_set(
                 actions = _all_link_actions,
