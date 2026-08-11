@@ -39,7 +39,6 @@ impl FfxMain for ExploreTool {
     type Error = ::fho::Error;
 
     async fn main(self, mut writer: Self::Writer) -> Result<()> {
-        #[allow(clippy::large_futures)]
         match explore_cmd(self.cmd, self.dash_launcher_proxy).await {
             Ok(()) => {
                 writer.machine(&CommandStatus::Ok {})?;
@@ -89,7 +88,6 @@ async fn explore_cmd(cmd: ExploreCommand, dash_launcher: fdash::LauncherProxy) -
             e => bug!("Unexpected error launching dash: {:?}", e),
         })?;
 
-    #[allow(clippy::large_futures)]
     let () = socket_to_stdio::connect_fdomain_socket_to_stdio(client, stdout).await?;
 
     let exit_code = wait_for_shell_exit(&dash_launcher).await?;

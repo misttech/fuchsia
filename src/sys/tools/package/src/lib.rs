@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Context as _};
+use anyhow::{Context as _, anyhow};
 use fidl_fuchsia_dash as fdash;
 use fuchsia_component::client::connect_to_protocol;
 use futures::stream::StreamExt as _;
@@ -20,7 +20,6 @@ pub async fn exec() -> anyhow::Result<()> {
             // TODO(https://fxbug.dev/42077838): Use Stdout::raw when a command is not provided.
             let stdout = socket_to_stdio::Stdout::buffered();
 
-            #[allow(clippy::large_futures)]
             explore_cmd(args, dash_launcher, stdout).await
         }
     }
@@ -51,7 +50,6 @@ async fn explore_cmd(
             e => anyhow!("Error exploring package: {e:?}"),
         })?;
 
-    #[allow(clippy::large_futures)]
     let () = socket_to_stdio::connect_socket_to_stdio(client, stdout).await?;
 
     let exit_code = wait_for_shell_exit(&dash_launcher).await?;

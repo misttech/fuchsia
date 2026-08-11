@@ -1340,7 +1340,6 @@ mod test {
     // Verify that daemon-based target connection retries utilize the exponential backoff delay,
     // avoiding high-frequency retry loops when encountering non-fatal connection errors.
     #[fuchsia::test]
-    #[allow(clippy::large_futures)]
     async fn test_daemon_remote_proxy_retry_rate() {
         let env = test_init().unwrap();
         let (daemon_proxy, daemon_stream) =

@@ -59,7 +59,6 @@ pub async fn exec() -> Result<()> {
             // not provided.
             let stdout = Stdout::buffered();
 
-            #[allow(clippy::large_futures)]
             explore_cmd(
                 args.query,
                 args.ns_layout,

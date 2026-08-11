@@ -6,7 +6,9 @@ use crate::explore::*;
 use crate::query::get_cml_moniker_from_query;
 use anyhow::{Result, anyhow};
 use flex_client::ProxyHasDomain;
-use {flex_fuchsia_dash as fdash, flex_fuchsia_data as fdata, flex_fuchsia_sys2 as fsys};
+use flex_fuchsia_dash as fdash;
+use flex_fuchsia_data as fdata;
+use flex_fuchsia_sys2 as fsys;
 
 pub async fn explore_cmd(
     query: String,
@@ -40,11 +42,9 @@ pub async fn explore_cmd(
     explore_over_socket(moniker, server, tool_urls, command, ns_layout, &dash_launcher).await?;
 
     #[cfg(not(feature = "fdomain"))]
-    #[allow(clippy::large_futures)]
     socket_to_stdio::connect_socket_to_stdio(client, stdout).await?;
 
     #[cfg(feature = "fdomain")]
-    #[allow(clippy::large_futures)]
     socket_to_stdio::connect_fdomain_socket_to_stdio(client, stdout).await?;
 
     let exit_code = wait_for_shell_exit(&dash_launcher).await?;

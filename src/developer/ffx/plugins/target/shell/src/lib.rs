@@ -48,7 +48,6 @@ impl FfxMain for ShellTool {
 
         let stdio = async move {
             let stdout = if interactive { Stdout::raw()? } else { Stdout::buffered() };
-            #[allow(clippy::large_futures)]
             socket_to_stdio::connect_fdomain_socket_to_stdio(client, stdout)
                 .map_err(|e| fho::bug!(e))
                 .await
@@ -59,7 +58,6 @@ impl FfxMain for ShellTool {
             Err(e) => Err(fho::bug!(e)),
         });
 
-        #[allow(clippy::large_futures)]
         let (exit_code, ()) = futures::future::try_join(launch, stdio).await?;
         if !interactive {
             fho::exit_with_code!(exit_code as i32);

@@ -64,7 +64,6 @@ pub async fn connect_socket_to_stdio(
     socket: fidl::Socket,
     stdout: Stdout<'_>,
 ) -> anyhow::Result<()> {
-    #[allow(clippy::large_futures)]
     connect_socket_to_stdio_impl(
         fuchsia_async::Socket::from_socket(socket),
         || std::io::stdin().lock(),
@@ -78,7 +77,6 @@ pub async fn connect_fdomain_socket_to_stdio(
     socket: fdomain_client::Socket,
     stdout: Stdout<'_>,
 ) -> anyhow::Result<()> {
-    #[allow(clippy::large_futures)]
     connect_socket_to_stdio_impl(socket, || std::io::stdin().lock(), stdout)?.await
 }
 
@@ -118,8 +116,8 @@ where
     };
 
     let socket_to_stdout = async move {
+        let mut buf = vec![0u8; fio::MAX_BUF as usize];
         loop {
-            let mut buf = [0u8; fio::MAX_BUF as usize];
             let bytes_read = socket_in.read(&mut buf).await.context("reading from socket")?;
             if bytes_read == 0 {
                 break;
