@@ -25,4 +25,14 @@ FFI_ALWAYS_INLINE zx_status_t cpp_make_committed_pager_vmo(size_t num_pages, boo
   return status;
 }
 
+FFI_ALWAYS_INLINE zx_status_t cpp_make_partially_committed_pager_vmo(
+    size_t num_pages, size_t committed_pages, bool trap_dirty, bool resizable, bool ignore_requests,
+    vm_page_t** out_pages, VmObjectPaged** out_vmo) {
+  fbl::RefPtr<VmObjectPaged> vmo;
+  zx_status_t status = vm_unittest::make_partially_committed_pager_vmo(
+      num_pages, committed_pages, trap_dirty, resizable, ignore_requests, out_pages, &vmo);
+  *out_vmo = fbl::ExportToRawPtr(&vmo);
+  return status;
+}
+
 }  // extern "C"

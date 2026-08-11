@@ -10,6 +10,7 @@
 
 #include <kernel/ffi.h>
 
+#include "vm/page_source.h"
 #include "vm/vm_object.h"
 #include "vm/vm_object_paged.h"
 
@@ -104,6 +105,13 @@ FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_lookup(VmObject* vmo, uint64_t offse
   return vmo->Lookup(offset, len, [ctx, callback](uint64_t offset, paddr_t pa) {
     return callback(ctx, offset, pa);
   });
+}
+
+FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_get_page(VmObject* vmo, uint64_t offset,
+                                                     uint32_t pf_flags,
+                                                     MultiPageRequest* page_request,
+                                                     vm_page_t** out_page, paddr_t* out_pa) {
+  return vmo->GetPage(offset, pf_flags, page_request, out_page, out_pa);
 }
 
 }  // extern "C"

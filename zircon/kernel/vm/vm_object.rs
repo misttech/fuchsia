@@ -5,10 +5,13 @@
 // https://opensource.org/licenses/MIT
 
 use super::arch_vm_aspace::ArchMmuFlags;
+use super::page::VmPagePtr;
+use super::page_source::MultiPageRequest;
 use super::vm_object_paged::VmObjectPaged;
 use crate::kernel::types::PAddr;
 use core::marker::{PhantomData, PhantomPinned};
 use core::mem::ManuallyDrop;
+use core::pin::Pin;
 use core::ptr::NonNull;
 use fbl::{HasRefCount, Recyclable, RefPtr};
 use kalloc::AllocError;
@@ -269,6 +272,53 @@ impl VmObject {
             )
         };
         Status::ok(status)
+    }
+
+    /// Gets a pointer to the page structure at the specified offset.
+    /// Valid flags are `fault::flag::*`.
+    ///
+    /// `page_request` must be `Some` if any flags in `fault::flag::FAULT_MASK` are set, unless
+    /// the caller knows that the VMO is not paged.
+    ///
+    /// Returns `Err(Status::SHOULD_WAIT)` if the caller should try again after waiting on the
+    /// `MultiPageRequest`.
+    ///
+    /// Returns `Err(Status::NEXT)` if `page_request` supports batching and the current request
+    /// can be batched. The caller should continue to make successive `get_page` requests
+    /// until this returns `Err(Status::SHOULD_WAIT)`. If the caller runs out of requests, it
+    /// should finalize the request with `PageSource::FinalizeRequest`.
+    ///
+    /// # Safety
+    ///
+    /// Callers must satisfy all safety, batching, and lifecycle obligations described in the
+    /// documentation above.
+    pub unsafe fn get_page(
+        &self,
+        offset: u64,
+        pf_flags: u32,
+        page_request: Option<Pin<&mut MultiPageRequest>>,
+    ) -> Result<(VmPagePtr, PAddr), Status> {
+        let req_ptr = match page_request {
+            Some(req) => req.as_raw(),
+            None => core::ptr::null_mut(),
+        };
+        let mut page_ptr = core::ptr::null_mut();
+        let mut paddr: zx_types::zx_paddr_t = 0;
+        // SAFETY: Caller of `get_page` guarantees underlying safety obligations are met. All
+        // pointers passed to `cpp_vm_object_get_page` are valid for required accesses.
+        let status = unsafe {
+            bindings::cpp_vm_object_get_page(
+                self.as_raw(),
+                offset,
+                pf_flags,
+                req_ptr,
+                &mut page_ptr,
+                &mut paddr,
+            )
+        };
+        Status::ok(status)?;
+        let page = unsafe { VmPagePtr::from_raw(page_ptr) }.expect("page pointer is non-null");
+        Ok((page, PAddr(paddr)))
     }
 }
 

@@ -11,6 +11,7 @@ mod vmo_rs {
     use crate::vm::arch_vm_aspace::ARCH_MMU_FLAG_UNCACHED;
     use crate::vm::fault;
     use crate::vm::page::VmPagePtr;
+    use crate::vm::page_source::MultiPageRequest;
     use crate::vm::physical_page_borrowing_config::ScopedLoaningEnabled;
     use crate::vm::pinned_vm_object::PinnedVmObject;
     use crate::vm::pmm::{self, ALLOC_FLAG_ANY, PmmOptDelayReuse, paddr_to_vm_page};
@@ -18,8 +19,11 @@ mod vmo_rs {
     use crate::vm::vm_object::{EvictionHint, Resizability, SnapshotType, VmObject};
     use crate::vm::vm_object_paged::VmObjectPaged;
     use crate::vm::vm_object_physical::VmObjectPhysical;
-    use crate::vm_unittests::test_helper::make_committed_pager_vmo;
+    use crate::vm_unittests::test_helper::{
+        make_committed_pager_vmo, make_partially_committed_pager_vmo,
+    };
     use page::SIZE as PAGE_SIZE_USIZE;
+    use pin_init::stack_pin_init;
     use unittest::{
         assert_eq, assert_false, assert_ok, expect_eq, expect_false, expect_ok, expect_true,
         unwrap_ok,
@@ -799,6 +803,38 @@ mod vmo_rs {
         // VMO, which is not a valid request.  However, under the hood, we'll make it far enough to create
         // the VMO even thought it will be destroyed before the call returns.
         assert_eq!(Status::result_into_raw(vmo.map(|_| ())), Status::INVALID_ARGS.into_raw());
+    }
+
+    /// Tests accessing all offsets of a VMO via GetPage.
+    #[test]
+    fn vmo_get_page_offset_test() {
+        // Test that all offsets of a VMO are accessible via GetPage.
+        //
+        // This is a regression test for https://fxbug.dev/515752748.
+        let _scanner_disable = AutoVmScannerDisable::new();
+
+        let size = 10 * PAGE_SIZE;
+        // Request zero committed pages with [].
+        let (vmo, []) = unwrap_ok!(make_partially_committed_pager_vmo(
+            10, /*trap_dirty=*/ false, /*resizable=*/ false,
+            /*ignore_requests=*/ true
+        ));
+
+        for i in (0..size).step_by(PAGE_SIZE_USIZE) {
+            // Use fault::flag::FAULT_MASK so that GetPage attempts to acquire a page if none is
+            // present in the local page list.
+            stack_pin_init!(let page_request = MultiPageRequest::new());
+            // SAFETY: Test owns the VMO and page request, meeting all underlying safety
+            // obligations.
+            let status =
+                unsafe { vmo.get_page(i, fault::flag::FAULT_MASK, Some(page_request.as_mut())) };
+            if status == Err(Status::SHOULD_WAIT) {
+                // The stub page provider does not support waiting.
+                page_request.cancel_requests();
+            } else {
+                expect_ok!(status.map(|_| ()));
+            }
+        }
     }
 
     /// Tests that snapshot creation inherits ever_pinned_ into the hidden parent.

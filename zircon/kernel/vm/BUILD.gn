@@ -32,6 +32,7 @@ source_set("vm") {
     "page_queues.cc",
     "page_queues_ffi.cc",
     "page_source.cc",
+    "page_source_ffi.cc",
     "page_state.cc",
     "physical_page_borrowing_config.cc",
     "physical_page_borrowing_config_ffi.cc",
@@ -393,6 +394,29 @@ kernel_bindgen_crate("vm-fault-bindings") {
   expect_lints = [ "non_camel_case_types" ]
 }
 
+kernel_bindgen_crate("page-source-bindings") {
+  visibility = [ ":*" ]
+  headers = [ "include/vm/page_source_ffi.h" ]
+  non_rust_deps = [ ":bindgen_common_deps" ]
+  output_name = "page_source_bindings.rs"
+  cpp = true
+
+  edition = "2024"
+  notice_year = 2026
+  function_allowlist = [
+    "cpp_multi_page_request_construct",
+    "cpp_multi_page_request_destroy",
+    "cpp_multi_page_request_cancel_requests",
+  ]
+  type_allowlist = [ "MultiPageRequest" ]
+  additional_bindgen_flags = [
+    "--opaque-type=MultiPageRequest",
+    "--no-recursive-allowlist",
+    "--blocklist-function=MultiPageRequest_.*",
+  ]
+  raw_lines = [ "#![no_std]" ]
+}
+
 kernel_bindgen_crate("vm-object-bindings") {
   visibility = [ ":*" ]
   headers = [ "include/vm/vm_object_ffi.h" ]
@@ -423,6 +447,7 @@ kernel_bindgen_crate("vm-object-bindings") {
     "cpp_vm_object_user_id",
     "cpp_vm_object_parent_user_id",
     "cpp_vm_object_lookup",
+    "cpp_vm_object_get_page",
   ]
   type_allowlist = [
     "EvictionHint",
@@ -432,6 +457,9 @@ kernel_bindgen_crate("vm-object-bindings") {
     "cpp_vm_object_lookup_fn",
   ]
   type_blocklist = [
+    "MultiPageRequest",
+    "paddr_t",
+    "vm_page_t",
     "zx_status_t",
     "VmObject_AttributionCounts",
     "VmObject_ChildObserverLock",
@@ -454,9 +482,16 @@ kernel_bindgen_crate("vm-object-bindings") {
     "--blocklist-function=VmObject_.*",
   ]
   var_allowlist = [ "VmObject_MAX_SIZE" ]
-  deps = [ "//sdk/rust/zx-types" ]
+  deps = [
+    ":page-bindings",
+    ":page-source-bindings",
+    "//sdk/rust/zx-types",
+  ]
   raw_lines = [
     "#![no_std]",
+    "use page_bindings::vm_page_t;",
+    "use page_source_bindings::MultiPageRequest;",
+    "use zx_types::zx_paddr_t as paddr_t;",
     "use zx_types::zx_status_t;",
   ]
   expect_lints = [
@@ -571,6 +606,7 @@ kernel_rust_mod("vm-rs") {
     "mod.rs",
     "page.rs",
     "page_queues.rs",
+    "page_source.rs",
     "page_state.rs",
     "physical_page_borrowing_config.rs",
     "pinned_vm_object.rs",
@@ -589,6 +625,7 @@ kernel_rust_mod("vm-rs") {
   deps = [
     ":page-bindings",
     ":page-queues-bindings",
+    ":page-source-bindings",
     ":physical-page-borrowing-config-bindings",
     ":pmm-bindings",
     ":scanner-bindings",
@@ -618,7 +655,12 @@ kernel_bindgen_crate("test-helper-bindings") {
 
   edition = "2024"
   notice_year = 2026
-  function_allowlist = [ "cpp_make_committed_pager_vmo" ]
+  function_allowlist = [
+    "cpp_make_committed_pager_vmo",
+    "cpp_make_partially_committed_pager_vmo",
+    "cpp_verify_private_attribution_counts",
+    "cpp_verify_continuous_attribution_bytes",
+  ]
   type_blocklist = [
     "vm_page_t",
     "zx_status_t",

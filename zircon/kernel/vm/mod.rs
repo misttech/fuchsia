@@ -8,6 +8,7 @@ pub mod arch_vm_aspace;
 pub mod fault;
 pub mod page;
 pub mod page_queues;
+pub mod page_source;
 pub mod page_state;
 pub mod physical_page_borrowing_config;
 pub mod pinned_vm_object;

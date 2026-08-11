@@ -13,6 +13,7 @@
 #include <kernel/ffi.h>
 #include <vm/fault.h>
 
+#include "vm/page_source.h"
 #include "vm/vm_object.h"
 
 __BEGIN_CDECLS
@@ -52,6 +53,9 @@ uint64_t cpp_vm_object_user_id(const VmObject* vmo);
 uint64_t cpp_vm_object_parent_user_id(const VmObject* vmo);
 zx_status_t cpp_vm_object_lookup(VmObject* vmo, uint64_t offset, uint64_t len, void* ctx,
                                  cpp_vm_object_lookup_fn callback);
+zx_status_t cpp_vm_object_get_page(VmObject* vmo, uint64_t offset, uint32_t pf_flags,
+                                   MultiPageRequest* page_request, vm_page_t** out_page,
+                                   paddr_t* out_pa);
 
 __END_CDECLS
 

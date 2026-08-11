@@ -19,6 +19,10 @@ __BEGIN_CDECLS
 zx_status_t cpp_make_committed_pager_vmo(size_t num_pages, bool trap_dirty, bool resizable,
                                          vm_page_t** out_pages, VmObjectPaged** out_vmo);
 
+zx_status_t cpp_make_partially_committed_pager_vmo(size_t num_pages, size_t committed_pages,
+                                                   bool trap_dirty, bool resizable,
+                                                   bool ignore_requests, vm_page_t** out_pages,
+                                                   VmObjectPaged** out_vmo);
 __END_CDECLS
 
 #endif  // ZIRCON_KERNEL_VM_UNITTESTS_TEST_HELPER_FFI_H_
