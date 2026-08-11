@@ -839,22 +839,11 @@ class BazelActionRunner(object):
             #
             # NOTE: Path to command.log should be stable, because we explicitly set
             # output_base. See https://bazel.build/run/scripts#command-log.
-            if verify_unknown_gn_targets(
+            verify_unknown_gn_targets(
                 (self.paths.output_base / "command.log")
                 .read_text()
                 .splitlines(),
                 targets,
-            ):
-                raise BazelActionError()
-
-            # This is a different error, just print it as is.
-            #
-            # Note most build users are not interested in executing bazel directly, so hiding this
-            # message bechind a flag.
-            print(
-                "\nERROR when calling Bazel. To reproduce, run this in the Ninja output directory:\n\n  %s\n"
-                % " ".join(shlex.quote(c) for c in ret.args),
-                file=sys.stderr,
             )
             raise BazelActionError()
 
