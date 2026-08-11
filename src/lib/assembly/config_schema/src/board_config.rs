@@ -376,6 +376,10 @@ pub struct PlatformSettings {
     #[serde(skip_serializing_if = "crate::common::is_default")]
     pub graphics: GraphicsConfig,
 
+    /// Configure security related features
+    #[serde(skip_serializing_if = "crate::common::is_default")]
+    pub security: SecurityConfig,
+
     /// Sysmem board defaults. This can be overridden field-by-field by the same
     /// struct in platform config.
     ///
@@ -384,6 +388,15 @@ pub struct PlatformSettings {
     /// struct.
     #[serde(skip_serializing_if = "crate::common::is_default")]
     pub sysmem_defaults: BoardSysmemConfig,
+}
+
+/// This struct defines security configurations specified by board.
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
+#[serde(default, deny_unknown_fields)]
+pub struct SecurityConfig {
+    /// Absolute URL of the board-provided realm of components for proprietary TEE.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tee_realm_url: Option<String>,
 }
 
 /// This struct defines connectivity configurations.
@@ -583,6 +596,7 @@ mod test {
                     boot_item_interface_flip_low_mac_bit: false,
                 },
                 graphics: GraphicsConfig::default(),
+                security: SecurityConfig::default(),
                 sysmem_defaults: BoardSysmemConfig::default(),
             },
             ..Default::default()

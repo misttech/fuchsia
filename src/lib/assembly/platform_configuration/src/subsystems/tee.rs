@@ -11,9 +11,7 @@ use assembly_config_schema::assembly_input_bundle::{
 };
 use assembly_config_schema::platform_settings::recovery_config::RecoveryConfig;
 use assembly_config_schema::platform_settings::session_config::PlatformSessionConfig;
-use assembly_config_schema::product_settings::{
-    GlobalPlatformTee, GlobalPlatformTeeClient, ProprietaryTee, Tee,
-};
+use assembly_config_schema::product_settings::{GlobalPlatformTee, GlobalPlatformTeeClient, Tee};
 use assembly_constants::{BlobfsCompiledPackageDestination, CompiledPackageDestination, FileEntry};
 use cml::types::capability::Capability;
 use cml::types::child::Child;
@@ -52,33 +50,50 @@ impl
             );
         }
 
-        match tee {
-            Tee::NoTee => Ok(()),
-            Tee::Undefined => define_global_platform_tee_configuration(
-                context,
-                transitional_tee_clients,
-                recovery_config,
-                global_platform_trusted_app_guids,
-                session.enabled,
-                builder,
-            ),
-            Tee::GlobalPlatform(GlobalPlatformTee { clients }) => {
-                define_global_platform_tee_configuration(
+        if tee == &Tee::NoTee {
+            return Ok(());
+        }
+
+        // The proprietary TEE realm URL is provided by the board config for Standard
+        // feature set level builds. For backward compatibility during migration, fallback
+        // to product config if the board config does not set a URL.
+        // TODO(https://fxbug.dev/450270543): Remove product config fallback once board
+        // configs set `tee_realm_url`.
+        let board_tee_url = if *context.feature_set_level == FeatureSetLevel::Standard {
+            context.board_config.platform.security.tee_realm_url.as_deref()
+        } else {
+            None
+        };
+        let proprietary_tee_url = board_tee_url.or(match tee {
+            Tee::Proprietary(proprietary_tee) => Some(proprietary_tee.tee_realm_url.as_str()),
+            _ => None,
+        });
+
+        if let Some(url) = proprietary_tee_url {
+            define_proprietary_tee_configuration(context, url, recovery_config, session, builder)
+        } else {
+            match tee {
+                Tee::NoTee => unreachable!(),
+                Tee::Undefined => define_global_platform_tee_configuration(
                     context,
-                    clients,
+                    transitional_tee_clients,
                     recovery_config,
                     global_platform_trusted_app_guids,
                     session.enabled,
                     builder,
-                )
+                ),
+                Tee::GlobalPlatform(GlobalPlatformTee { clients }) => {
+                    define_global_platform_tee_configuration(
+                        context,
+                        clients,
+                        recovery_config,
+                        global_platform_trusted_app_guids,
+                        session.enabled,
+                        builder,
+                    )
+                }
+                Tee::Proprietary(_) => unreachable!(),
             }
-            Tee::Proprietary(proprietary_tee) => define_proprietary_tee_configuration(
-                context,
-                proprietary_tee,
-                recovery_config,
-                session,
-                builder,
-            ),
         }
     }
 }
@@ -419,7 +434,7 @@ fn get_global_platform_tee_trusted_app_guids(
 
 fn define_proprietary_tee_configuration(
     context: &ConfigurationContext<'_>,
-    proprietary_tee: &ProprietaryTee,
+    tee_realm_url: &str,
     recovery_config: &RecoveryConfig,
     session: &PlatformSessionConfig,
     builder: &mut dyn ConfigurationBuilder,
@@ -430,7 +445,7 @@ fn define_proprietary_tee_configuration(
         "proprietary_tee_manager.no_session.core_shard.cml.template"
     };
     util::add_platform_declared_product_provided_component(
-        proprietary_tee.tee_realm_url.as_str(),
+        tee_realm_url,
         core_shard_template,
         context,
         builder,
@@ -447,7 +462,9 @@ mod tests {
     use crate::CompletedConfiguration;
     use crate::subsystems::ConfigurationBuilderImpl;
     use assembly_config_schema::BoardConfig;
-    use assembly_config_schema::product_settings::{TeeClientConfigData, TeeClientFeatures};
+    use assembly_config_schema::product_settings::{
+        ProprietaryTee, TeeClientConfigData, TeeClientFeatures,
+    };
     use assembly_images_config::BoardFilesystemConfig;
     use camino::{Utf8Path, Utf8PathBuf};
     use std::collections::BTreeMap;
@@ -963,6 +980,105 @@ mod tests {
             &*BOARD_INFO_WITH_GLOBAL_PLATFORM_TEE_TRUSTED_APP_GUIDS_AND_TEE_TRUSTED_APP_GUIDS;
         context.resource_dir = Utf8Path::from_path(resource_dir).unwrap().to_path_buf();
         context
+    }
+
+    #[test]
+    fn board_provided_tee_realm_url() {
+        let resource_dir = tempfile::TempDir::new().unwrap();
+        populate_resource_dir(resource_dir.path());
+
+        let mut board_config = BoardConfig { name: "Test Board".into(), ..Default::default() };
+        board_config.platform.security.tee_realm_url =
+            Some("fuchsia-pkg://test.fuchsia.com/board_tee#meta/realm.cm".into());
+
+        let mut context = ConfigurationContext::default_for_tests();
+        context.board_config = &board_config;
+        context.resource_dir = Utf8Path::from_path(resource_dir.path()).unwrap().to_path_buf();
+
+        // 1. Board config URL with Tee::Undefined in product config.
+        let mut builder = ConfigurationBuilderImpl::default();
+        TeeConfig::define_configuration(
+            &context,
+            &(&Tee::Undefined, &Default::default(), &Default::default(), &Default::default()),
+            &mut builder,
+        )
+        .expect("defining configuration with board tee_realm_url");
+        let completed = builder.build();
+        assert!(
+            completed
+                .core_shards
+                .iter()
+                .any(|path| path.as_str().contains("proprietary_tee_manager"))
+        );
+
+        // 2. Board config URL takes precedence when product config also has Tee::Proprietary.
+        let product_tee = Tee::Proprietary(ProprietaryTee {
+            tee_realm_url: "fuchsia-pkg://test.fuchsia.com/product_tee#meta/realm.cm".into(),
+        });
+        let mut builder = ConfigurationBuilderImpl::default();
+        TeeConfig::define_configuration(
+            &context,
+            &(&product_tee, &Default::default(), &Default::default(), &Default::default()),
+            &mut builder,
+        )
+        .expect("defining configuration with board tee_realm_url overriding product");
+        let completed = builder.build();
+        assert!(
+            completed
+                .core_shards
+                .iter()
+                .any(|path| path.as_str().contains("proprietary_tee_manager"))
+        );
+
+        // 3. Board config URL is ignored on non-Standard feature set levels
+        // (bringup, zedboot/recovery).
+        for level in
+            [FeatureSetLevel::Bootstrap, FeatureSetLevel::Utility, FeatureSetLevel::Embeddable]
+        {
+            let mut context_non_standard = ConfigurationContext::default_for_tests();
+            context_non_standard.board_config = &board_config;
+            context_non_standard.feature_set_level = &level;
+            context_non_standard.resource_dir =
+                Utf8Path::from_path(resource_dir.path()).unwrap().to_path_buf();
+            let mut builder = ConfigurationBuilderImpl::default();
+            TeeConfig::define_configuration(
+                &context_non_standard,
+                &(&Tee::Undefined, &Default::default(), &Default::default(), &Default::default()),
+                &mut builder,
+            )
+            .expect("defining configuration on non-standard feature set level");
+            let completed = builder.build();
+            assert!(
+                !completed
+                    .core_shards
+                    .iter()
+                    .any(|path| path.as_str().contains("proprietary_tee_manager"))
+            );
+        }
+
+        // 4. Product config TEE (e.g. GlobalPlatform) still processes on non-Standard
+        // feature set levels.
+        let mut context_utility = ConfigurationContext::default_for_tests();
+        context_utility.board_config = &board_config;
+        context_utility.feature_set_level = &FeatureSetLevel::Utility;
+        context_utility.resource_dir =
+            Utf8Path::from_path(resource_dir.path()).unwrap().to_path_buf();
+        let global_platform_tee =
+            Tee::GlobalPlatform(GlobalPlatformTee { clients: non_empty_tee_clients() });
+        let mut builder = ConfigurationBuilderImpl::default();
+        TeeConfig::define_configuration(
+            &context_utility,
+            &(&global_platform_tee, &Default::default(), &Default::default(), &Default::default()),
+            &mut builder,
+        )
+        .expect("defining global platform TEE configuration on Utility level");
+        let completed = builder.build();
+        assert!(
+            completed
+                .core_shards
+                .iter()
+                .any(|path| path.as_str().contains("tee_manager.core_shard.cml"))
+        );
     }
 
     fn populate_resource_dir(resource_dir: &Path) {
