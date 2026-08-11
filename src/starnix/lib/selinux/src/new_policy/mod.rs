@@ -356,13 +356,13 @@ mod tests {
 
         let kernel_context =
             new_policy.initial_sids().get_by_id(crate::InitialSid::Kernel as u32).unwrap();
-        assert!(new_policy.users().get_by_id(kernel_context.user_id()).is_some());
-        assert!(new_policy.roles().get_by_id(kernel_context.role_id()).is_some());
+        assert!(new_policy.users().get_by_id(kernel_context.user()).is_some());
+        assert!(new_policy.roles().get_by_id(kernel_context.role()).is_some());
 
         let unlabeled_context =
             new_policy.initial_sids().get_by_id(crate::InitialSid::Unlabeled as u32).unwrap();
-        assert!(new_policy.users().get_by_id(unlabeled_context.user_id()).is_some());
-        assert!(new_policy.roles().get_by_id(unlabeled_context.role_id()).is_some());
+        assert!(new_policy.users().get_by_id(unlabeled_context.user()).is_some());
+        assert!(new_policy.roles().get_by_id(unlabeled_context.role()).is_some());
     }
 }
 

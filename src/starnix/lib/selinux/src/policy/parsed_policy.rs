@@ -355,9 +355,9 @@ impl ParsedPolicy {
         sensitivity_ids: &HashSet<SensitivityId>,
         category_ids: &HashSet<CategoryId>,
     ) -> Result<(), anyhow::Error> {
-        validate_id(user_ids, context.user_id(), "user")?;
-        validate_id(role_ids, context.role_id(), "role")?;
-        validate_id(type_ids, context.type_id(), "type")?;
+        validate_id(user_ids, context.user(), "user")?;
+        validate_id(role_ids, context.role(), "role")?;
+        validate_id(type_ids, context.type_(), "type")?;
         self.validate_mls_range(
             context.low_level(),
             context.high_level(),

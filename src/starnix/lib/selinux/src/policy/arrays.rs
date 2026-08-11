@@ -59,13 +59,13 @@ pub(super) struct Context {
 }
 
 impl Context {
-    pub(super) fn user_id(&self) -> UserId {
+    pub(super) fn user(&self) -> UserId {
         UserId::from_u32(self.metadata.user.get()).unwrap()
     }
-    pub(super) fn role_id(&self) -> RoleId {
+    pub(super) fn role(&self) -> RoleId {
         RoleId::from_u32(self.metadata.role.get()).unwrap()
     }
-    pub(super) fn type_id(&self) -> TypeId {
+    pub(super) fn type_(&self) -> TypeId {
         TypeId::from_u32(self.metadata.context_type.get()).unwrap()
     }
     pub(super) fn low_level(&self) -> &MlsLevel {

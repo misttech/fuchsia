@@ -50,42 +50,20 @@ impl SecurityContext {
         let low = context.low_level().clone();
         let high = context.high_level().clone();
         let mls_range = MlsRange::new(low, high);
-        let inner =
-            Context::new(context.user_id(), context.role_id(), context.type_id(), mls_range);
+        let inner = Context::new(context.user(), context.role(), context.type_(), mls_range);
         SecurityContext { inner }
     }
+}
 
-    /// Returns the user component of the security context.
-    pub fn user(&self) -> UserId {
-        self.inner.user_id()
+impl std::ops::Deref for SecurityContext {
+    type Target = Context;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
     }
+}
 
-    /// Returns the role component of the security context.
-    pub fn role(&self) -> RoleId {
-        self.inner.role_id()
-    }
-
-    /// Returns the type component of the security context.
-    pub fn type_(&self) -> TypeId {
-        self.inner.type_id()
-    }
-
-    /// Returns the [lowest] security level of the context.
-    pub fn low_level(&self) -> &MlsLevel {
-        self.inner.low_level()
-    }
-
-    /// Returns the highest security level, if it allows a range.
-    pub fn high_level(&self) -> Option<&MlsLevel> {
-        self.inner.high_level().as_ref()
-    }
-
-    /// Returns the high level if distinct from the low level, or
-    /// else returns the low level.
-    pub fn effective_high_level(&self) -> &MlsLevel {
-        self.high_level().unwrap_or_else(|| self.low_level())
-    }
-
+impl SecurityContext {
     /// Returns [`SecurityContext`] parsed from `security_context`, against the supplied
     /// `policy`. The returned structure is guaranteed to be valid for this `policy`.
     ///

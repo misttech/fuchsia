@@ -155,17 +155,17 @@ impl Context {
     }
 
     /// Returns the user ID.
-    pub fn user_id(&self) -> UserId {
+    pub fn user(&self) -> UserId {
         self.user
     }
 
     /// Returns the role ID.
-    pub fn role_id(&self) -> RoleId {
+    pub fn role(&self) -> RoleId {
         self.role
     }
 
     /// Returns the type ID.
-    pub fn type_id(&self) -> TypeId {
+    pub fn type_(&self) -> TypeId {
         self.context_type
     }
 
@@ -175,7 +175,12 @@ impl Context {
     }
 
     /// Returns the high security level, if present.
-    pub fn high_level(&self) -> &Option<MlsLevel> {
-        &self.mls_range.high
+    pub fn high_level(&self) -> Option<&MlsLevel> {
+        self.mls_range.high.as_ref()
+    }
+
+    /// Returns the high level if distinct from the low level, or else returns the low level.
+    pub fn effective_high_level(&self) -> &MlsLevel {
+        self.high_level().unwrap_or_else(|| self.low_level())
     }
 }
