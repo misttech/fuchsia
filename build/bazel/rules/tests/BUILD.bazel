@@ -8,6 +8,31 @@ This file will always contain tests for rules and macros.
 
 During the migration, it also contains migrated targets that are not yet
 otherwise part of the build.
+
+There are three top-level targets:
+* "host_tests": A `test_suite()` that includes all Bazel tests within the
+  `rules/` directory to be run in the host configuration. Run with `bazel test`
+  using the host configuration.
+* "quick_tests": A build-only target that provides significant coverage of the
+  rules and macros defined within the `rules/` directory while completing
+  reasonably quickly. Run with `bazel build` using the `fuchsia_platform`
+  configuration.
+* "tests": A build-only target that includes "quick_tests", additional
+  build-only tests of the rules and macros that take longer to run, and specific
+  production targets relevant to the rules and macros (or, during the migration,
+  that are not yet otherwise part of the build). Run with `bazel build` using
+  the `fuchsia_platform` configuration.
+
+Add a new target by adding it as a dependency to the appropriate target(s) as follows:
+* A Bazel test to be run in the host configuration: Add to "host_tests".
+* A direct build-only test of a rule or macro defined in `rules/` that
+  builds reasonably quickly:
+    - If it supports Fuchsia, add it to "quick_build_only_tests".
+    - If it supports the host platform, add it to "quick_targets_to_build_in_host_configuration".
+* Otherwise, especially if it is a build-only target that is not yet otherwise
+  part of the build and/or takes a long time to build:
+    - If it supports Fuchsia, add it to "long_build_only_tests".
+    - If it supports the host platform, add it to "long_targets_to_build_in_host_configuration".
 """
 
 load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
@@ -56,7 +81,7 @@ filegroup(
     name = "quick_build_only_tests",
     testonly = True,
     srcs = [
-        ":build_only_tests_in_host_configuration",
+        ":quick_build_only_tests_in_host_configuration",
         "//build/bazel/bazel_idk/tests:analysis_tests",
         "//build/bazel/bazel_idk/tests:api_level_and_cpu_combinations_build_only_tests",
         "//build/bazel/bazel_idk/tests:build_only_tests",
@@ -76,11 +101,33 @@ filegroup(
 )
 
 filegroup(
-    name = "targets_to_build_in_host_configuration",
+    name = "quick_targets_to_build_in_host_configuration",
     testonly = True,
     srcs = [
         "//build/bazel/bazel_idk/tests:targets_to_build_in_host_configurations",
 
+        # Aspect tests
+        "//build/bazel/aspects/tests",
+    ],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+)
+
+# Builds targets for which building successfully is the test using the host configuration.
+build_for_host(
+    name = "quick_build_only_tests_in_host_configuration",
+    testonly = True,
+    stamp = "quick_build_only_tests_in_host_configuration.stamp",
+    # This target transitions to the host config ("exec") to build the test targets.
+    # To build the targets directly for the host platform, build the dependency
+    # directly.
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    deps = [":quick_targets_to_build_in_host_configuration"],
+)
+
+filegroup(
+    name = "long_targets_to_build_in_host_configuration",
+    testonly = True,
+    srcs = [
         # Host tools not in the IDK
         "//tools/cargo-gnaw:cargo-gnaw-bin",
         "//tools/fidl/fidlgen_rust",
@@ -95,9 +142,6 @@ filegroup(
         "//src/zircon/lib/zircon",
         "//zircon/system/ulib/zx",
 
-        # Aspect tests
-        "//build/bazel/aspects/tests",
-
         # To guard against build regression before ffx main binary target is fully migrated.
         "//src/developer/ffx/frontends/ffx",
     ],
@@ -106,14 +150,14 @@ filegroup(
 
 # Builds targets for which building successfully is the test using the host configuration.
 build_for_host(
-    name = "build_only_tests_in_host_configuration",
+    name = "long_build_only_tests_in_host_configuration",
     testonly = True,
-    stamp = "build_only_tests_in_host_configuration.stamp",
+    stamp = "long_build_only_tests_in_host_configuration.stamp",
     # This target transitions to the host config ("exec") to build the test targets.
     # To build the targets directly for the host platform, build the dependency
     # directly.
     target_compatible_with = ["@platforms//os:fuchsia"],
-    deps = [":targets_to_build_in_host_configuration"],
+    deps = [":long_targets_to_build_in_host_configuration"],
 )
 
 # Builds targets for which building successfully is the test.
@@ -121,6 +165,7 @@ filegroup(
     name = "long_build_only_tests",
     testonly = True,
     srcs = [
+        ":long_build_only_tests_in_host_configuration",
         # Build the IDKs to exercise all the atoms migrated so far.
         "//sdk:fuchsia_idk_molecule_idk",
         "//sdk:in_tree_idk_molecule_idk",
