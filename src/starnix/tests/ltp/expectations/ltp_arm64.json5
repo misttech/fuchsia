@@ -6,12 +6,6 @@
         {
             type: "skip",
             matchers: [
-                // Seems to need vDSO clock to not flake.
-                "clock_gettime04",
-                "cve-2015-3290",
-                "epoll_create01",
-                "epoll_create02",
-
                 // This test only runs on x86_64.
                 "signal06",
 
