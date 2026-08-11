@@ -477,6 +477,23 @@ TEST_F(NvmeTest, NodeToken) {
   ASSERT_EQ(info1.koid, info2.koid);
 }
 
+TEST_F(NvmeTest, InitFailureCleansUpThreads) {
+  TestNvme::controller_.AddAdminCommand(
+      nvme::AdminCommandOpcode::kIdentify,
+      [](Submission& default_submission, const TransactionData& data, Completion& completion) {
+        completion.set_status_code_type(StatusCodeType::kGeneric)
+            .set_status_code(GenericStatus::kInvalidField);
+      });
+
+  ASSERT_OK(zx::event::create(0, &node_token_));
+  zx::event token_copy;
+  ASSERT_OK(node_token_.duplicate(ZX_RIGHT_SAME_RIGHTS, &token_copy));
+
+  zx::result<> result = driver_test().StartDriverWithCustomStartArgs(
+      [&](fdf::DriverStartArgs& args) { args.node_token(std::move(token_copy)); });
+  EXPECT_TRUE(result.is_error());
+}
+
 }  // namespace nvme
 
 FUCHSIA_DRIVER_EXPORT2(nvme::TestNvme);

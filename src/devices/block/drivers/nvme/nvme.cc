@@ -290,6 +290,8 @@ void Nvme::Stop(fdf::StopCompleter completer) {
   }
 }
 
+Nvme::~Nvme() { PerformTeardown(); }
+
 void Nvme::PerformTeardown() {
   {
     std::lock_guard<std::mutex> lock(commands_lock_);
@@ -298,13 +300,17 @@ void Nvme::PerformTeardown() {
   if (pci_.is_valid()) {
     pci_.SetBusMastering(false);
   }
-  irq_.destroy();  // Make irq_.wait() in IrqLoop() return ZX_ERR_CANCELED.
+  if (irq_.is_valid()) {
+    irq_.destroy();  // Make irq_.wait() in IrqLoop() return ZX_ERR_CANCELED.
+  }
   if (irq_thread_started_) {
     thrd_join(irq_thread_, nullptr);
+    irq_thread_started_ = false;
   }
   if (io_thread_started_) {
     sync_completion_signal(&io_signal_);
     thrd_join(io_thread_, nullptr);
+    io_thread_started_ = false;
   }
 
   // Error out any pending commands
@@ -794,6 +800,7 @@ zx::result<> Nvme::Start(fdf::DriverContext context) {
   zx_status_t status = Init();
   if (status != ZX_OK) {
     fdf::error("Driver initialization failed: {}", zx_status_get_string(status));
+    PerformTeardown();
     return zx::error(status);
   }
 

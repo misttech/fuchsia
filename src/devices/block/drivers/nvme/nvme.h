@@ -36,6 +36,7 @@ class Nvme : public fdf::DriverBase2 {
   static constexpr char kDriverName[] = "nvme";
 
   explicit Nvme() : fdf::DriverBase2(kDriverName) {}
+  ~Nvme() override;
 
   zx::result<> Start(fdf::DriverContext context) override;
 
@@ -111,7 +112,7 @@ class Nvme : public fdf::DriverBase2 {
   std::mutex commands_lock_;
   // The pending list consists of commands that have been received via QueueIoCommand() and are
   // waiting for IO to start.
-  list_node_t pending_commands_ TA_GUARDED(commands_lock_);
+  list_node_t pending_commands_ TA_GUARDED(commands_lock_) = LIST_INITIAL_VALUE(pending_commands_);
 
   // Admin submission and completion queues.
   std::unique_ptr<QueuePair> admin_queue_;

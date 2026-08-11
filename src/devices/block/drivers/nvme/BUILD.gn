@@ -151,6 +151,11 @@ fuchsia_unittest_component("nvme-unit-tests") {
 }
 
 fuchsia_test_package("nvme-tests") {
+  test_specs = {
+    log_settings = {
+      max_severity = "ERROR"
+    }
+  }
   test_components = [
     ":nvme-queue-pair-tests",
     ":nvme-queue-tests",
