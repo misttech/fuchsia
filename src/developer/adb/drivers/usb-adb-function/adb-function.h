@@ -145,11 +145,9 @@ class UsbAdbDevice : public fdf::DriverBase2,
 
   // Helper methods to get free request buffer and queue the request for transmitting.
   void SendQueued();
-  bool SendQueuedOnce();
 
   // Helper methods to get free request buffer and queue the request for receiving.
   void ReceiveQueued();
-  bool ReceiveQueuedOnce();
 
   // USB request completion callback methods.
   void TxComplete(std::vector<fendpoint::Completion> completion);

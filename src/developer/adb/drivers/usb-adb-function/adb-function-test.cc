@@ -872,4 +872,60 @@ TEST_F(UsbAdbTest, IsConfiguredReflectsDeconfigureState) {
       [&](UsbAdbEnvironment& env) { EXPECT_FALSE(env.fake_dev_->is_configured()); });
 }
 
+TEST_F(UsbAdbTest, OfflineTxQueuedAndFlushedOnline) {
+  auto [client_end, server_end] = fidl::Endpoints<fadb::UsbAdbImpl>::Create();
+  ASSERT_TRUE(client_->StartAdb(std::move(server_end)).ok());
+  auto usb_impl = fidl::WireClient<fadb::UsbAdbImpl>(
+      std::move(client_end), fdf::Dispatcher::GetCurrent()->async_dispatcher());
+
+  // Queue a TX request while offline.
+  std::vector<uint8_t> test_data(100, 0xAA);
+  std::atomic<bool> tx_completed = false;
+  usb_impl->QueueTx(fidl::VectorView<uint8_t>::FromExternal(test_data.data(), test_data.size()))
+      .ThenExactlyOnce([&](fidl::WireUnownedResult<fadb::UsbAdbImpl::QueueTx>& result) {
+        if (result.ok() && result->is_ok()) {
+          tx_completed = true;
+        }
+      });
+
+  // Wait for the driver to receive and queue the request in its software queue.
+  ASSERT_TRUE(driver_test_.runtime().RunWithTimeoutOrUntil(
+      [&]() {
+        size_t count = 0;
+        driver_test_.RunInDriverContext(
+            [&](UsbAdbDevice& dev) { count = UsbAdbTestHelper::TxPendingReqsCount(dev); });
+        return count == 1;
+      },
+      zx::sec(5)));
+
+  // Verify that nothing has been queued to the hardware yet.
+  driver_test_.RunInEnvironmentTypeContext([&](UsbAdbEnvironment& env) {
+    EXPECT_EQ(env.fake_dev_->fake_endpoint(kBulkInEp).pending_request_count(), 0u);
+  });
+
+  // Now bring USB online.
+  WaitConfigured();
+  EnableUsb();
+
+  // The driver should now automatically dequeue the request and queue it to bulk IN endpoint.
+  ASSERT_TRUE(driver_test_.runtime().RunWithTimeoutOrUntil(
+      [&]() {
+        size_t pending_endpoints = 0;
+        driver_test_.RunInEnvironmentTypeContext([&](UsbAdbEnvironment& env) {
+          pending_endpoints = env.fake_dev_->fake_endpoint(kBulkInEp).pending_request_count();
+        });
+        return pending_endpoints == 1;
+      },
+      zx::sec(5)));
+
+  // Complete the request at the hardware layer.
+  driver_test_.RunInEnvironmentTypeContext([&](UsbAdbEnvironment& env) {
+    env.fake_dev_->fake_endpoint(kBulkInEp).RequestComplete(ZX_OK, test_data.size());
+  });
+
+  // Wait for the FIDL callback to finish.
+  ASSERT_TRUE(driver_test_.runtime().RunWithTimeoutOrUntil([&]() { return tx_completed.load(); },
+                                                           zx::sec(5)));
+}
+
 }  // namespace usb_adb_function

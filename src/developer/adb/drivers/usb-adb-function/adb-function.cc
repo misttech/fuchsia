@@ -135,126 +135,129 @@ void UsbAdbDevice::ResetOrStopUsb() {
 }
 
 void UsbAdbDevice::SendQueued() {
+  // Early return if not online. In kAwaitingUsbConnection (offline), QueueTx calls
+  // SendQueued to buffer outgoing transactions in `tx_pending_reqs_`, which will be
+  // flushed when transitioning to kOnline in EnableEndpoints.
   if (state_ != State::kOnline) {
-    ZX_PANIC("Unexpected state: %d", state_);
-  }
-  while (SendQueuedOnce()) {
-  }
-}
-
-// Returns true if any progress was made. Returns false if we didn't send
-// anything, and therefore calling this again won't be useful until something
-// changes.
-bool UsbAdbDevice::SendQueuedOnce() {
-  if (tx_pending_reqs_.empty()) {
-    return false;
+    return;
   }
 
-  auto& current = tx_pending_reqs_.front();
-  std::vector<fuchsia_hardware_usb_request::Request> requests;
-  while (current.start < current.request.data().size()) {
-    auto req = bulk_in_ep_.GetRequest();
-    if (!req) {
-      break;
-    }
-    req->clear_buffers();
+  while (!tx_pending_reqs_.empty()) {
+    auto& current = tx_pending_reqs_.front();
+    std::vector<fuchsia_hardware_usb_request::Request> requests;
+    while (current.start < current.request.data().size()) {
+      auto req = bulk_in_ep_.GetRequest();
+      if (!req) {
+        break;
+      }
+      // Reset request buffers before copying new payload data.
+      req->clear_buffers();
 
-    size_t to_copy = std::min(current.request.data().size() - current.start, kVmoDataSize);
-    zx::result<std::vector<size_t>> actual = req->CachedCopyTo(
-        0, current.request.data().data() + current.start, to_copy, bulk_in_ep_.GetMapped());
-    if (actual.is_error() || actual->size() != (*req)->data()->size()) {
-      zxlogf(ERROR, "CachedCopyTo failed or size mismatch");
-      bulk_in_ep_.PutRequest(std::move(req.value()));
-      break;
-    }
-    size_t actual_total = 0;
-    for (size_t i = 0; i < actual->size(); i++) {
-      // Fill in size of data.
-      (*req)->data()->at(i).size((*actual)[i]);
-      actual_total += (*actual)[i];
+      size_t to_copy = std::min(current.request.data().size() - current.start, kVmoDataSize);
+      zx::result<std::vector<size_t>> actual = req->CachedCopyTo(
+          0, current.request.data().data() + current.start, to_copy, bulk_in_ep_.GetMapped());
+      if (actual.is_error() || actual->size() != (*req)->data()->size()) {
+        zxlogf(ERROR, "CachedCopyTo failed or size mismatch");
+        bulk_in_ep_.PutRequest(std::move(req.value()));
+        break;
+      }
+      size_t actual_total = 0;
+      for (size_t i = 0; i < actual->size(); i++) {
+        // Fill in size of data.
+        (*req)->data()->at(i).size((*actual)[i]);
+        actual_total += (*actual)[i];
+      }
+
+      requests.emplace_back(req->take_request());
+      current.start += actual_total;
     }
 
-    requests.emplace_back(req->take_request());
-    current.start += actual_total;
-  }
+    if (requests.empty()) {
+      // Out of hardware request descriptors; return until in-flight completions return descriptors.
+      return;
+    }
 
-  if (requests.empty()) {
-    return false;
-  }
-  auto result = bulk_in_ep_->QueueRequests(std::move(requests));
-  if (result.is_error()) {
-    zxlogf(ERROR, "Failed to QueueRequests %s", result.error_value().FormatDescription().c_str());
-    for (auto& req : requests) {
-      bulk_in_ep_.PutRequest(usb::FidlRequest(std::move(req)));
+    // QueueRequests transfers ownership of `requests` to the endpoint FIDL client transport.
+    // If QueueRequests fails, the endpoint channel is closed/unbound; mark transaction failed and
+    // return.
+    auto result = bulk_in_ep_->QueueRequests(std::move(requests));
+    if (result.is_error()) {
+      zxlogf(ERROR, "Failed to QueueRequests %s", result.error_value().FormatDescription().c_str());
+      CompleteTxn(current.completer, ZX_ERR_IO);
+      tx_pending_reqs_.pop();
+      UpdateQueueStats();
+      return;
+    }
+
+    if (current.start == current.request.data().size()) {
+      CompleteTxn(current.completer, ZX_OK);
+      tx_pending_reqs_.pop();
+      UpdateQueueStats();
+    } else {
+      // Transaction was partially queued due to descriptor exhaustion.
+      // Return and wait for in-flight requests to complete before queueing remaining bytes.
+      return;
     }
   }
-
-  if (current.start == current.request.data().size()) {
-    CompleteTxn(current.completer, ZX_OK);
-    tx_pending_reqs_.pop();
-    UpdateQueueStats();
-  }
-
-  return true;
 }
 
 void UsbAdbDevice::ReceiveQueued() {
+  // Defensive safeguard to ensure we only process RX completions and pending replies
+  // when the driver state is kOnline.
   if (state_ != State::kOnline) {
-    ZX_PANIC("Unexpected state: %d", state_);
-  }
-  while (ReceiveQueuedOnce()) {
-  }
-}
-
-bool UsbAdbDevice::ReceiveQueuedOnce() {
-  if (pending_replies_.empty() || rx_requests_.empty()) {
-    return false;
+    return;
   }
 
-  auto completion = std::move(pending_replies_.front());
-  pending_replies_.pop();
+  while (!pending_replies_.empty() && !rx_requests_.empty()) {
+    auto completion = std::move(pending_replies_.front());
+    pending_replies_.pop();
 
-  zx_status_t status = *completion.status();
-  auto req = usb::FidlRequest(std::move(completion.request().value()));
+    zx_status_t status = *completion.status();
+    auto req = usb::FidlRequest(std::move(completion.request().value()));
 
-  if (status != ZX_OK) {
-    zxlogf(ERROR, "RxComplete called with error %s.", zx_status_get_string(status));
-    bulk_out_inspect_.AddFailedRxBytes(req.length());
-    rx_requests_.front().Reply(fit::error(ZX_ERR_INTERNAL));
-  } else {
-    // This should always be true because when we registered VMOs, we only registered one per
-    // request.
-    ZX_ASSERT(req->data()->size() == 1);
-    auto addr = bulk_out_ep_.GetMappedAddr(req.request(), 0);
-    if (!addr.has_value()) {
-      zxlogf(ERROR, "Failed to get mapped");
+    if (status != ZX_OK) {
+      zxlogf(ERROR, "RxComplete called with error %s.", zx_status_get_string(status));
+      bulk_out_inspect_.AddFailedRxBytes(req.length());
       rx_requests_.front().Reply(fit::error(ZX_ERR_INTERNAL));
     } else {
-      auto status = req.CacheFlushInvalidate(bulk_out_ep_.GetMapped());
-      if (status != ZX_OK) {
-        zxlogf(ERROR, "Cache flush and invalidate failed %s", zx_status_get_string(status));
+      // This should always be true because when we registered VMOs, we only registered one per
+      // request.
+      ZX_ASSERT(req->data()->size() == 1);
+      auto addr = bulk_out_ep_.GetMappedAddr(req.request(), 0);
+      if (!addr.has_value()) {
+        zxlogf(ERROR, "Failed to get mapped");
+        rx_requests_.front().Reply(fit::error(ZX_ERR_INTERNAL));
+      } else {
+        auto flush_status = req.CacheFlushInvalidate(bulk_out_ep_.GetMapped());
+        if (flush_status != ZX_OK) {
+          zxlogf(ERROR, "Cache flush and invalidate failed %s", zx_status_get_string(flush_status));
+        }
+        size_t rx_bytes = completion.transfer_size().value_or(0);
+        if (rx_bytes > kVmoDataSize) {
+          zxlogf(ERROR, "USB completion transfer_size %zu exceeds VMO size %zu", rx_bytes,
+                 kVmoDataSize);
+        }
+        rx_bytes = std::min(rx_bytes, kVmoDataSize);
+        rx_requests_.front().Reply(fit::ok(std::vector<uint8_t>(
+            reinterpret_cast<uint8_t*>(*addr), reinterpret_cast<uint8_t*>(*addr) + rx_bytes)));
+        bulk_out_inspect_.AddRxBytes(rx_bytes);
       }
-      rx_requests_.front().Reply(fit::ok(
-          std::vector<uint8_t>(reinterpret_cast<uint8_t*>(*addr),
-                               reinterpret_cast<uint8_t*>(*addr) + *completion.transfer_size())));
-      bulk_out_inspect_.AddRxBytes(*completion.transfer_size());
+    }
+    rx_requests_.pop();
+    UpdateQueueStats();
+    req.reset_buffers(bulk_out_ep_.GetMapped());
+
+    // QueueRequests transfers ownership of `requests` via std::move to the endpoint FIDL client,
+    // leaving `requests` empty. If QueueRequests returns an error (e.g. channel closed), return
+    // early as endpoint teardown is initiated.
+    std::vector<fuchsia_hardware_usb_request::Request> requests;
+    requests.emplace_back(req.take_request());
+    auto result = bulk_out_ep_->QueueRequests(std::move(requests));
+    if (result.is_error()) {
+      zxlogf(ERROR, "Failed to QueueRequests %s", result.error_value().FormatDescription().c_str());
+      return;
     }
   }
-  rx_requests_.pop();
-  UpdateQueueStats();
-  req.reset_buffers(bulk_out_ep_.GetMapped());
-
-  std::vector<fuchsia_hardware_usb_request::Request> requests;
-  requests.emplace_back(req.take_request());
-  auto result = bulk_out_ep_->QueueRequests(std::move(requests));
-  if (result.is_error()) {
-    zxlogf(ERROR, "Failed to QueueRequests %s", result.error_value().FormatDescription().c_str());
-    for (auto& r : requests) {
-      bulk_out_ep_.PutRequest(usb::FidlRequest(std::move(r)));
-    }
-  }
-
-  return true;
 }
 
 void UsbAdbDevice::QueueTx(QueueTxRequest& request, QueueTxCompleter::Sync& completer) {
@@ -411,12 +414,13 @@ void UsbAdbDevice::EnableEndpoints() {
 
     requests.emplace_back(req->take_request());
   }
+
+  // QueueRequests transfers ownership of `requests` via std::move to the endpoint FIDL client,
+  // leaving `requests` empty. If QueueRequests returns an error (e.g. channel closed), endpoint
+  // teardown is initiated.
   auto result = bulk_out_ep_->QueueRequests(std::move(requests));
   if (result.is_error()) {
     zxlogf(ERROR, "Failed to QueueRequests %s", result.error_value().FormatDescription().c_str());
-    for (auto& r : requests) {
-      bulk_out_ep_.PutRequest(usb::FidlRequest(std::move(r)));
-    }
   }
 
   if (adb_binding_.has_value()) {
@@ -432,6 +436,9 @@ void UsbAdbDevice::EnableEndpoints() {
     state_property_.Set(StateToString(state_));
     RecordEvent("state_changed: kOnline");
   }
+
+  SendQueued();
+  ReceiveQueued();
 }
 
 void UsbAdbDevice::SetConfigured(SetConfiguredRequest& request,
