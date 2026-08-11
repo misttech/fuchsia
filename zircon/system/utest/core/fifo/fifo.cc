@@ -484,4 +484,16 @@ TEST(FifoTest, ReadWriteNullActualCount) {
   EXPECT_EQ(actual_element, 1234u);
 }
 
+TEST(FifoTest, WritePeerClosedReturnsPeerClosed) {
+  zx::fifo fifo_a, fifo_b;
+  ASSERT_OK(zx::fifo::create(8, kElementSize, 0, &fifo_a, &fifo_b));
+
+  // Close the peer FIFO endpoint.
+  fifo_a.reset();
+
+  ElementType element = 42;
+  size_t actual_count = 0;
+  EXPECT_STATUS(fifo_b.write(kElementSize, &element, 1, &actual_count), ZX_ERR_PEER_CLOSED);
+}
+
 }  // namespace
