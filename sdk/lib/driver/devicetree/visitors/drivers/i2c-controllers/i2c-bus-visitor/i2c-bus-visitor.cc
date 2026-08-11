@@ -14,6 +14,7 @@
 #include <zircon/assert.h>
 #include <zircon/errors.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <optional>
 #include <utility>
@@ -92,20 +93,30 @@ zx::result<> I2cBusVisitor::ParseChild(I2cController& controller, fdf_devicetree
   }
 
   for (const uint32_t address : *reg) {
-    fuchsia_hardware_i2c_businfo::I2CChannel channel;
-    channel.address() = address;
+    bool duplicate = std::ranges::any_of(controller.channels, [address](const auto& ch) {
+      return ch.address() && *ch.address() == address;
+    });
 
-    std::string child_name;
-    if (reg->size() > 1) {
-      child_name = fbl::StringPrintf("%s-0x%02x", child.name().c_str(), address).c_str();
+    if (!duplicate) {
+      fuchsia_hardware_i2c_businfo::I2CChannel channel;
+      channel.address() = address;
+
+      std::string child_name;
+      if (reg->size() > 1) {
+        child_name = fbl::StringPrintf("%s-0x%02x", child.name().c_str(), address).c_str();
+      } else {
+        child_name = child.name();
+      }
+      channel.name() = std::move(child_name);
+
+      controller.channels.emplace_back(channel);
+      fdf::debug("I2c channel '{}' added at address {:#x} to controller '{}'", *channel.name(),
+                 address, parent.name());
     } else {
-      child_name = child.name();
+      fdf::debug(
+          "I2c channel at address {:#x} already exists in controller '{}', skipping metadata addition",
+          address, parent.name());
     }
-    channel.name() = std::move(child_name);
-
-    controller.channels.emplace_back(channel);
-    fdf::debug("I2c channel '{}' added at address {:#x} to controller '{}'", *channel.name(),
-               address, parent.name());
 
     zx::result<> add_child_result = AddChildNodeSpec(child, controller.bus_id, address);
     if (add_child_result.is_error()) {

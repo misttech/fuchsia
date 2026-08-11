@@ -42,7 +42,7 @@ TEST(I2cBusVisitorTest, TestI2CChannels) {
   ASSERT_EQ(ZX_OK, i2c_tester->manager()->Walk(visitors).status_value());
   ASSERT_TRUE(i2c_tester->DoPublish().is_ok());
 
-  ASSERT_EQ(5lu, i2c_tester->GetCompositeNodeSpecs().size());
+  ASSERT_EQ(6lu, i2c_tester->GetCompositeNodeSpecs().size());
 
   uint32_t node_tested_count = 0;
   std::vector<fuchsia_hardware_platform_bus::Node> nodes = i2c_tester->GetPbusNodes("i2c-");
@@ -85,6 +85,25 @@ TEST(I2cBusVisitorTest, TestI2CChannels) {
                                                                        parent_specs.end());
 
     if (node_name == "child-c") {
+      ASSERT_EQ(i2c_nodes.size(), 1lu);
+      EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
+          {
+              fdf::MakeProperty2(bind_fuchsia_hardware_i2c::SERVICE,
+                                 bind_fuchsia_hardware_i2c::SERVICE_ZIRCONTRANSPORT),
+              fdf::MakeProperty2(bind_fuchsia::I2C_ADDRESS, uint32_t{I2C_ADDRESS1}),
+          },
+          i2c_nodes[0].properties(), false));
+      EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
+          {{
+              fdf::MakeAcceptBindRule(bind_fuchsia_hardware_i2c::SERVICE,
+                                      bind_fuchsia_hardware_i2c::SERVICE_ZIRCONTRANSPORT),
+              fdf::MakeAcceptBindRule(bind_fuchsia::I2C_BUS_ID, 0u),
+              fdf::MakeAcceptBindRule(bind_fuchsia::I2C_ADDRESS, uint32_t{I2C_ADDRESS1}),
+          }},
+          i2c_nodes[0].bind_rules(), false));
+    }
+
+    if (node_name == "child-dup-c") {
       ASSERT_EQ(i2c_nodes.size(), 1lu);
       EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
           {
@@ -161,7 +180,7 @@ TEST(I2cBusVisitorTest, TestI2CChannels) {
     node_tested_count++;
   }
 
-  ASSERT_EQ(node_tested_count, 4u);
+  ASSERT_EQ(node_tested_count, 5u);
 }
 
 }  // namespace i2c_bus_dt

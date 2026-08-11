@@ -55,6 +55,11 @@ test("i2c-bus-visitor-test-bin") {
 
 dtb("i2c-dtb") {
   sources = [ "test/dts/i2c.dts.S" ]
+
+  # -Wno-unique_unit_address is needed because the test DTS (i2c.dts.S)
+  # intentionally defines duplicate unit addresses (child@c and child-dup@c)
+  # to test duplicate channel detection.
+  dtcflags = [ "-Wno-unique_unit_address" ]
 }
 
 resource("i2c-dtb-file") {

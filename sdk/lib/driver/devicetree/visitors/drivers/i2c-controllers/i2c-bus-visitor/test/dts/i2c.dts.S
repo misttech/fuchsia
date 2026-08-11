@@ -22,6 +22,11 @@
 			reg = <I2C_ADDRESS1>;
 		};
 
+		child-dup@c {
+			compatible = "fuchsia,test";
+			reg = <I2C_ADDRESS1>;
+		};
+
 		child@1e {
 			compatible = "fuchsia,test";
 			reg = <I2C_ADDRESS2>;
