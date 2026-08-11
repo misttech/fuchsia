@@ -5,6 +5,8 @@
 package readme
 
 import (
+	"fmt"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -56,6 +58,9 @@ func UpdateWithClassifiedFiles(fuchsiaDir, absDir string, readmes []*Readme, fou
 			continue
 		}
 		relToReadme, _ := filepath.Rel(absDir, cf.Path)
+		if isGeneratedNoticeFile(cf.Path, r, relToReadme) {
+			continue
+		}
 
 		isPrimary := cf.IsLicenseFile
 		if !isPrimary {
@@ -77,9 +82,12 @@ func UpdateWithClassifiedFiles(fuchsiaDir, absDir string, readmes []*Readme, fou
 		}
 	}
 
+	readmeSourceFiles := make(map[*Readme][]sourceMatchInfo)
+
 	for _, r := range readmes {
 		r.LicenseFiles = nil
 		r.SourceFiles = nil
+		r.GeneratedNoticeFiles = nil
 		r.Licenses = nil
 	}
 
@@ -90,6 +98,10 @@ func UpdateWithClassifiedFiles(fuchsiaDir, absDir string, readmes []*Readme, fou
 		}
 
 		relToReadme, _ := filepath.Rel(absDir, cf.Path)
+		if isGeneratedNoticeFile(cf.Path, r, relToReadme) {
+			continue
+		}
+
 		relToFuchsia, _ := filepath.Rel(fuchsiaDir, cf.Path)
 		isNonLicense := false
 		for _, nlf := range r.NonLicenseFiles {
@@ -137,15 +149,99 @@ func UpdateWithClassifiedFiles(fuchsiaDir, absDir string, readmes []*Readme, fou
 				r.Licenses = append(r.Licenses, l)
 			}
 		} else {
-			r.SourceFiles = append(r.SourceFiles, relToReadme)
+			for l := range lics {
+				r.Licenses = append(r.Licenses, l)
+			}
+			readmeSourceFiles[r] = append(readmeSourceFiles[r], sourceMatchInfo{
+				relPath: relToReadme,
+				cf:      cf,
+			})
 		}
 	}
 
 	for _, r := range readmes {
+		loc := filepath.Clean(r.Location)
+		readmeDir := absDir
+		if loc != "" && loc != "." {
+			readmeDir = filepath.Join(absDir, loc)
+		}
+		noticePath := filepath.Join(readmeDir, "NOTICE.fuchsia")
+
+		if len(readmeSourceFiles[r]) > 0 {
+			content := generateNoticeContent(readmeSourceFiles[r])
+			if err := os.WriteFile(noticePath, []byte(content), 0644); err == nil {
+				r.GeneratedNoticeFiles = []string{"NOTICE.fuchsia"}
+			}
+		} else {
+			os.Remove(noticePath)
+			r.GeneratedNoticeFiles = nil
+		}
+
 		r.Licenses = deduplicateAndSort(r.Licenses)
 		r.LicenseFiles = deduplicateAndSort(r.LicenseFiles)
-		r.SourceFiles = deduplicateAndSort(r.SourceFiles)
+		r.SourceFiles = nil
+		r.GeneratedNoticeFiles = deduplicateAndSort(r.GeneratedNoticeFiles)
 	}
+}
+
+type sourceMatchInfo struct {
+	relPath string
+	cf      pipeline.ClassifiedFile
+}
+
+func generateNoticeContent(matches []sourceMatchInfo) string {
+	type noticeBlock struct {
+		text  string
+		files []string
+	}
+	blockMap := make(map[string]*noticeBlock)
+
+	for _, m := range matches {
+		for _, lm := range m.cf.Matches {
+			if lm.MatchType == "Copyright" || strings.HasPrefix(lm.MatchType, "_") {
+				continue
+			}
+			txt := strings.TrimSpace(string(lm.Text))
+			if txt == "" {
+				continue
+			}
+			nb, ok := blockMap[txt]
+			if !ok {
+				nb = &noticeBlock{text: txt}
+				blockMap[txt] = nb
+			}
+			nb.files = append(nb.files, m.relPath)
+		}
+	}
+
+	var blocks []*noticeBlock
+	for _, nb := range blockMap {
+		nb.files = deduplicateAndSort(nb.files)
+		blocks = append(blocks, nb)
+	}
+
+	sort.Slice(blocks, func(i, j int) bool {
+		if len(blocks[i].files) > 0 && len(blocks[j].files) > 0 {
+			if blocks[i].files[0] != blocks[j].files[0] {
+				return blocks[i].files[0] < blocks[j].files[0]
+			}
+		}
+		return blocks[i].text < blocks[j].text
+	})
+
+	var b strings.Builder
+	for _, nb := range blocks {
+		b.WriteString("================================================================================\n")
+		b.WriteString("The following files are covered by this license:\n")
+		for _, f := range nb.files {
+			b.WriteString(fmt.Sprintf("  - %s\n", f))
+		}
+		b.WriteString("--------------------------------------------------------------------------------\n")
+		b.WriteString(nb.text)
+		b.WriteString("\n================================================================================\n\n")
+	}
+
+	return strings.TrimSpace(b.String()) + "\n"
 }
 
 func deduplicateAndSort(items []string) []string {
@@ -172,4 +268,16 @@ func FilterClassifiedFiles(files []pipeline.ClassifiedFile) []pipeline.Classifie
 		}
 	}
 	return found
+}
+
+func isGeneratedNoticeFile(path string, r *Readme, relToReadme string) bool {
+	if filepath.Base(path) == "NOTICE.fuchsia" {
+		return true
+	}
+	for _, gnf := range r.GeneratedNoticeFiles {
+		if filepath.Clean(gnf) == relToReadme {
+			return true
+		}
+	}
+	return false
 }

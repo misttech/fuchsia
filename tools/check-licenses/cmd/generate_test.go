@@ -6,110 +6,66 @@ package main
 
 import (
 	"context"
+	"flag"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
+	"time"
 
-	"go.fuchsia.dev/fuchsia/tools/check-licenses/v2/pipeline"
-	"go.fuchsia.dev/fuchsia/tools/check-licenses/v2/stages/classify"
+	"github.com/google/subcommands"
 )
 
-func TestCustomClassifier_Run(t *testing.T) {
+func TestGenerateCommand_ExecuteV2Pipeline(t *testing.T) {
 	tempDir := t.TempDir()
+	scaffoldV2Config(t, tempDir)
 
-	// Scaffold patterns for base classifier
-	patternsDir := filepath.Join(tempDir, "tools", "check-licenses", "assets", "patterns")
-	copyrightPatternDir := filepath.Join(patternsDir, "_Header", "FuchsiaCopyright")
-	os.MkdirAll(copyrightPatternDir, 0755)
-	os.WriteFile(filepath.Join(copyrightPatternDir, "fuchsia.txt"), []byte("// Copyright 2026 The Fuchsia Authors. All rights reserved.\n"), 0644)
-
-	baseClassifier, err := classify.NewClassifier(classify.Config{
-		Threshold:        0.8,
-		PatternDirs:      []string{patternsDir},
-		TargetExtensions: map[string]bool{".cc": true},
-	})
-	if err != nil {
-		t.Fatal(err)
+	outDir := filepath.Join(tempDir, "out")
+	cmd := &GenerateCommand{
+		fuchsiaDir: tempDir,
+		outDir:     outDir,
+		logLevel:   0,
 	}
 
-	cc := &CustomClassifier{
-		Base:       baseClassifier,
-		FuchsiaDir: tempDir,
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if err := cmd.executeV2Pipeline(ctx, "//:default"); err != nil {
+		t.Fatalf("executeV2Pipeline failed: %v", err)
 	}
 
-	// Scaffold project and files
-	projDir := filepath.Join(tempDir, "my_project")
-	os.MkdirAll(projDir, 0755)
-
-	// 1. Dedicated License File
-	licenseFile := filepath.Join(projDir, "LICENSE")
-	os.WriteFile(licenseFile, []byte("This is a custom verbatim license."), 0644)
-
-	// 2. Source File with header
-	sourceFile := filepath.Join(projDir, "main.cc")
-	os.WriteFile(sourceFile, []byte("// Copyright 2026 The Fuchsia Authors. All rights reserved.\nvoid main() {}"), 0644)
-
-	// 3. README.fuchsia designating them
-	readmeContent := `Name: my_project
-URL: http://foo
-Version: 1.0
-Revision: abc
-Security Critical: no
-License File: LICENSE
-Source File: main.cc
-`
-	os.WriteFile(filepath.Join(projDir, "README.fuchsia"), []byte(readmeContent), 0644)
-
-	inChan := make(chan pipeline.FilteredProject, 1)
-	inChan <- pipeline.FilteredProject{
-		Project: pipeline.Project{
-			RootPath: projDir,
-			Files: []pipeline.FileInfo{
-				{Path: licenseFile},
-				{Path: sourceFile},
-			},
-		},
+	metricsFile := filepath.Join(outDir, "metrics.json")
+	if _, err := os.Stat(metricsFile); os.IsNotExist(err) {
+		t.Errorf("Expected metrics.json to be generated at %s", metricsFile)
 	}
-	close(inChan)
+}
 
-	ctx := context.Background()
-	outChan, err := cc.Run(ctx, inChan)
-	if err != nil {
-		t.Fatal(err)
+func TestGenerateCommand_Execute(t *testing.T) {
+	origDir, _ := os.Getwd()
+	defer os.Chdir(origDir)
+
+	tempDir := t.TempDir()
+	scaffoldV2Config(t, tempDir)
+
+	outDir := filepath.Join(tempDir, "out")
+	cmd := &GenerateCommand{
+		fuchsiaDir: tempDir,
+		outDir:     outDir,
+		logLevel:   0,
 	}
 
-	var classifiedFiles []pipeline.ClassifiedFile
-	for cf := range outChan {
-		classifiedFiles = append(classifiedFiles, cf)
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	cmd.SetFlags(fs)
+	fs.Parse([]string{"--fuchsia_dir", tempDir, "--out_dir", outDir, "--v2", "--output_license_file=false"})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if status := cmd.Execute(ctx, fs); status != subcommands.ExitSuccess {
+		t.Errorf("Expected ExitSuccess, got %v", status)
 	}
 
-	cc.PrintErrors()
-	for _, cf := range classifiedFiles {
-		t.Logf("Classified file: %s", cf.Path)
-	}
-
-	if len(classifiedFiles) != 1 {
-		t.Fatalf("Expected 1 classified file (verbatim LICENSE), got %d", len(classifiedFiles))
-	}
-
-	cf := classifiedFiles[0]
-	if cf.Path != licenseFile {
-		t.Errorf("Expected classified file to be %s, got %s", licenseFile, cf.Path)
-	}
-	if !cf.IsLicenseFile {
-		t.Errorf("Expected LICENSE to be marked as license file")
-	}
-	if len(cf.Matches) != 1 {
-		t.Errorf("Expected 1 match for LICENSE, got %d", len(cf.Matches))
-	} else if string(cf.Matches[0].Text) != "This is a custom verbatim license." {
-		t.Errorf("Expected verbatim text, got %s", string(cf.Matches[0].Text))
-	}
-
-	// Verify that main.cc triggered an error because classifier couldn't find a match
-	if len(cc.Errors) != 1 {
-		t.Errorf("Expected 1 error for main.cc, got %d", len(cc.Errors))
-	} else if !strings.Contains(cc.Errors[0], "Classifier could not detect a license in Source File") {
-		t.Errorf("Expected error message to mention classifier failure, got: %s", cc.Errors[0])
+	metricsFile := filepath.Join(outDir, "metrics.json")
+	if _, err := os.Stat(metricsFile); os.IsNotExist(err) {
+		t.Errorf("Expected metrics.json to be generated at %s", metricsFile)
 	}
 }

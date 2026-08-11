@@ -91,15 +91,15 @@ func (p *GenerateCommand) SetFlags(f *flag.FlagSet) {
 	f.BoolVar(&p.verifyReadmes, "verify_readmes", false, "Flag for verifying if README.fuchsia files accurately reflect project licenses in v2 pipeline.")
 }
 
-func (p *GenerateCommand) Execute(_ context.Context, f *flag.FlagSet, _ ...interface{}) subcommands.ExitStatus {
-	if err := p.executeImpl(f); err != nil {
+func (p *GenerateCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...interface{}) subcommands.ExitStatus {
+	if err := p.executeImpl(ctx, f); err != nil {
 		fmt.Fprintf(os.Stderr, "check-licenses generate: %s\nSee go/fuchsia-licenses-playbook for information on resolving common errors.\n", err)
 		return subcommands.ExitFailure
 	}
 	return subcommands.ExitSuccess
 }
 
-func (p *GenerateCommand) executeImpl(f *flag.FlagSet) error {
+func (p *GenerateCommand) executeImpl(ctx context.Context, f *flag.FlagSet) error {
 	var err error
 
 	if err := p.setupLogging(); err != nil {
@@ -184,7 +184,7 @@ func (p *GenerateCommand) executeImpl(f *flag.FlagSet) error {
 			}
 		}
 
-		if err := p.executeV2Pipeline(target); err != nil {
+		if err := p.executeV2Pipeline(ctx, target); err != nil {
 			return fmt.Errorf("failed to execute v2 pipeline: %w", err)
 		}
 		return nil
@@ -410,6 +410,78 @@ func (p *GenerateCommand) initialize() error {
 		return err
 	} else {
 		metrics.AddArtifact("cmd/_config.json", b)
+	}
+
+	return nil
+}
+
+func printMetricsSummary(checkNames []string, isV2 bool, logLevel int, outDir string) error {
+	// Print standard terminal metrics summary
+	log.Println("\n[check-licenses] Execution Summary")
+	log.Println("----------------------------------")
+	log.Printf("Total Wall Time:                  %v\n", metrics.TotalRuntime.GetTotalDuration())
+	log.Printf("Time spent in GN Filter:          %v\n", metrics.FilterDuration.GetTotalDuration())
+	log.Printf("Wall time spent in Classifier:    %v\n", metrics.AnalyzeDuration.GetTotalDuration())
+	log.Printf("Thread time spent in Classifier:  %v\n", metrics.ClassifierDuration.GetTotalDuration())
+
+	totalFiles, _ := metrics.TotalFilesProcessed.GetCount()
+	licenseFiles, _ := metrics.LicenseFilesFound.GetCount()
+	sourceFilesWithLic, _ := metrics.SourceFilesWithLicenses.GetCount()
+
+	log.Printf("Total Files Processed:            %d\n", totalFiles)
+	log.Printf("License Files Found:              %d\n", licenseFiles)
+	log.Printf("Source Files with Licenses:       %d\n", sourceFilesWithLic)
+
+	var projectsAnalyzed int64
+	var err error
+	if isV2 {
+		projectsAnalyzed, err = metrics.ProjectsProcessed.GetCount("kept_by_gn")
+	} else {
+		projectsAnalyzed, err = metrics.ProjectsProcessed.GetCount("analyzed")
+	}
+	if err != nil {
+		projectsAnalyzed = 0
+	}
+	log.Printf("Projects Analyzed:         %d\n", projectsAnalyzed)
+
+	rawTexts, err := metrics.LicenseDeduplication.GetCount("raw_texts")
+	if err != nil {
+		rawTexts = 0
+	}
+	uniqueTexts, err := metrics.LicenseDeduplication.GetCount("unique_texts")
+	if err != nil {
+		uniqueTexts = 0
+	}
+	compression := 0.0
+	if rawTexts > 0 {
+		compression = float64(rawTexts-uniqueTexts) / float64(rawTexts) * 100.0
+	}
+	log.Printf("Licenses Deduplicated:     %.1f%% compression (%d raw -> %d unique)\n", compression, rawTexts, uniqueTexts)
+
+	var validationErrors int64 = 0
+	var allowlistHits int64 = 0
+
+	for _, name := range checkNames {
+		vErr, _ := metrics.ValidationErrors.GetCount(name)
+		validationErrors += vErr
+
+		aHits, _ := metrics.AllowlistHits.GetCount(name)
+		allowlistHits += aHits
+	}
+
+	log.Printf("Validation Errors:         %d (%d Hidden by Allowlist)\n", validationErrors, allowlistHits)
+
+	if outDir != "" {
+		if err := os.MkdirAll(outDir, 0755); err != nil {
+			log.Printf("Failed to create outDir for metrics: %v\n", err)
+		} else {
+			metricsExportPath := filepath.Join(outDir, "metrics.json")
+			if err := metrics.Export(metricsExportPath); err != nil {
+				log.Printf("Failed to export metrics to JSON: %v\n", err)
+			} else {
+				log.Printf("\nExported full metrics to:  %s\n", metricsExportPath)
+			}
+		}
 	}
 
 	return nil

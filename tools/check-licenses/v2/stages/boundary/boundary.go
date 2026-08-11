@@ -165,6 +165,16 @@ func (g *Grouper) Run(ctx context.Context, in <-chan pipeline.RawPath) (<-chan p
 					if listedInReadme {
 						break
 					}
+					for _, gnf := range r.GeneratedNoticeFiles {
+						if filepath.Clean(gnf) == relToReadme || filepath.Clean(gnf) == relToFuchsia {
+							listedInReadme = true
+							isLicenseFile = true
+							break
+						}
+					}
+					if listedInReadme {
+						break
+					}
 					for _, sf := range r.SourceFiles {
 						if filepath.Clean(sf) == relToReadme || filepath.Clean(sf) == relToFuchsia {
 							listedInReadme = true

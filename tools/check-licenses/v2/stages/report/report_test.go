@@ -15,9 +15,13 @@ import (
 	"go.fuchsia.dev/fuchsia/tools/check-licenses/v2/pipeline"
 )
 
-func TestReporter_RunSuccess(t *testing.T) {
+func TestMultiRenderer_RunSuccess(t *testing.T) {
 	outDir := t.TempDir()
-	reporter := NewReporter(t.TempDir(), outDir, Config{GenerateArtifacts: true})
+	renderers := pipeline.MultiRenderer{
+		NewNoticeRenderer(outDir),
+		NewSpdxRenderer(outDir),
+		NewMetricsRenderer(outDir),
+	}
 
 	projects := []*pipeline.Project{
 		{
@@ -52,7 +56,7 @@ func TestReporter_RunSuccess(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	err := reporter.Run(ctx, projects, nil)
+	err := renderers.Run(ctx, projects, nil)
 	if err != nil {
 		t.Fatalf("Expected successful run, got error: %v", err)
 	}
@@ -78,8 +82,8 @@ func TestReporter_RunSuccess(t *testing.T) {
 	}
 }
 
-func TestReporter_RunFailure(t *testing.T) {
-	reporter := NewReporter(t.TempDir(), "", Config{})
+func TestConsoleErrorReporter_RunFailure(t *testing.T) {
+	reporter := NewConsoleErrorReporter(t.TempDir())
 
 	errors := []pipeline.ComplianceError{
 		{

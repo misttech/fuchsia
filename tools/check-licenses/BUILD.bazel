@@ -77,7 +77,6 @@ go_library(
         "v2/stages/report/notice.go",
         "v2/stages/report/readme_verifier.go",
         "v2/stages/report/readme_writer.go",
-        "v2/stages/report/report.go",
         "v2/stages/report/spdx.go",
         "v2/stages/report/target_verifier.go",
     ],

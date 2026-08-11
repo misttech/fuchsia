@@ -97,32 +97,20 @@ func (p *ValidateCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...int
 	}
 
 	validator := v2validate.NewValidator(fuchsiaDir, config.Validate)
-	reportCfg := config.Report
-	reportCfg.VerifyReadmes = true
-	reportCfg.WriteReadmes = false
-	reportCfg.GenerateArtifacts = false
-	reporter := v2report.NewReporter(fuchsiaDir, p.outDir, reportCfg)
+	renderers := v2pipeline.MultiRenderer{
+		v2report.NewReadmeVerifier(fuchsiaDir),
+		v2report.NewMetricsRenderer(p.outDir),
+		v2report.NewConsoleErrorReporter(fuchsiaDir),
+	}
 
-	orchestrator := v2pipeline.NewOrchestrator(discoverer, grouper, pruner, classifier, validator, reporter)
+	orchestrator := v2pipeline.NewOrchestrator(discoverer, grouper, pruner, classifier, validator, renderers)
 
 	if err := orchestrator.Run(ctx, []string{fuchsiaDir}); err != nil {
 		fmt.Fprintf(os.Stderr, "Validation failed: %v\n", err)
 		return subcommands.ExitFailure
 	}
 
-	var checkNames []string
-	for k := range config.Validate.PolicyExceptions {
-		checkNames = append(checkNames, k)
-	}
-	for k := range config.Validate.AllowedLicenses {
-		checkNames = append(checkNames, "AllowedLicenses_"+k)
-	}
-
 	log.Printf("Validation completed successfully in %v\n", time.Since(startTime))
-
-	if err := printMetricsSummary(checkNames, true, p.logLevel, p.outDir); err != nil {
-		return subcommands.ExitFailure
-	}
 
 	return subcommands.ExitSuccess
 }

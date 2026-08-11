@@ -30,7 +30,7 @@ func formatSingle(r *Readme) string {
 	readmeVal := reflect.ValueOf(r).Elem()
 	t := readmeVal.Type()
 
-	hasLicenses := len(r.Licenses) > 0 || len(r.LicenseFiles) > 0 || len(r.SourceFiles) > 0 || len(r.NonLicenseFiles) > 0
+	hasLicenses := len(r.Licenses) > 0 || len(r.LicenseFiles) > 0 || len(r.GeneratedNoticeFiles) > 0 || len(r.SourceFiles) > 0 || len(r.NonLicenseFiles) > 0
 	printedLicensesNewline := false
 
 	// We use reflection to iterate through the struct fields in the exact order
@@ -58,7 +58,7 @@ func formatSingle(r *Readme) string {
 		val := readmeVal.Field(i)
 
 		// Formatting heuristics to match legacy behavior
-		if hasLicenses && !printedLicensesNewline && (key == "License" || key == "License File" || key == "Source File" || key == "Non-License File") {
+		if hasLicenses && !printedLicensesNewline && (key == "License" || key == "License File" || key == "Generated Notice File" || key == "Source File" || key == "Non-License File") {
 			b.WriteString("\n")
 			printedLicensesNewline = true
 		}
