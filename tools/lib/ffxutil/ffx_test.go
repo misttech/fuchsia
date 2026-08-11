@@ -98,7 +98,9 @@ func TestFFXInstance(t *testing.T) {
 
 	assertRunsExpectedCmd(ffx.StartFFXMonitor(ctx, "8081", "", ""), stdout, "monitor start --nodename target --port 8081 --no-usb")
 
-	assertRunsExpectedCmd(ffx.Stop(), stdout, "daemon stop -t 4000")
+	if err := ffx.Stop(); err != nil {
+		t.Errorf("ffx.Stop() = %s", err)
+	}
 
 	fPrivKey := ffx.GetSshPrivateKey()
 	if sshPriv != fPrivKey {

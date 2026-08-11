@@ -862,10 +862,6 @@ func (f *FFXInstance) WaitForDaemon(ctx context.Context) error {
 
 // Stop stops the daemon.
 func (f *FFXInstance) Stop() error {
-	if !f.isStrict() {
-		// Wait up to 4000ms for daemon to shut down.
-		return f.Run(context.Background(), "daemon", "stop", "-t", "4000")
-	}
 	return nil
 }
 
