@@ -16,6 +16,12 @@
 
 namespace spmi_dt {
 
+// Devicetree visitor for SPMI controllers, targets, sub-targets, and consumer nodes.
+//
+// Supports publishing SPMI controllers with their target/sub-target metadata to platform bus,
+// generating composite node specs for SPMI targets and sub-targets, and routing TargetService or
+// SubTargetService parent specs to consumer nodes that reference SPMI nodes via the `spmis`
+// property.
 class SpmiVisitor : public fdf_devicetree::Visitor {
  public:
   SpmiVisitor();
@@ -26,7 +32,8 @@ class SpmiVisitor : public fdf_devicetree::Visitor {
   zx::result<> FinalizeNode(fdf_devicetree::Node& node) override;
 
  private:
-  struct SubTarget {
+  // Tracks parent specs and reference state for an SPMI target or sub-target node.
+  struct SpmiNode {
     std::vector<fuchsia_driver_framework::ParentSpec2> parent_specs;
     bool has_reference_property = false;
   };
@@ -41,16 +48,16 @@ class SpmiVisitor : public fdf_devicetree::Visitor {
       uint32_t controller_id, const fuchsia_hardware_spmi::TargetInfo& parent,
       fdf_devicetree::ChildNode& node);
 
-  static zx::result<> FinalizeSubTarget(const SubTarget& sub_target, fdf_devicetree::Node& node);
-  zx::result<> FinalizeSubTargetReferences(const std::set<uint32_t>& sub_target_references,
-                                           fdf_devicetree::Node& node);
+  static zx::result<> FinalizeSpmiNode(const SpmiNode& spmi_node, fdf_devicetree::Node& node);
+  zx::result<> FinalizeReferences(const std::set<uint32_t>& spmi_references,
+                                  fdf_devicetree::Node& node);
 
   std::unique_ptr<fdf_devicetree::PropertyParser> spmi_parser_;
-  // Maps sub-target node ID to SubTarget struct.
-  std::map<uint32_t, SubTarget> sub_targets_;
-  // Maps the ID of a node containing a reference property to all of the IDs of the sub-target nodes
+  // Maps target or sub-target node ID to SpmiNode struct.
+  std::map<uint32_t, SpmiNode> spmi_nodes_;
+  // Maps the ID of a node containing a reference property to all of the IDs of the SPMI nodes
   // that were referenced.
-  std::map<uint32_t, std::set<uint32_t>> sub_target_references_;
+  std::map<uint32_t, std::set<uint32_t>> spmi_references_;
 };
 
 }  // namespace spmi_dt

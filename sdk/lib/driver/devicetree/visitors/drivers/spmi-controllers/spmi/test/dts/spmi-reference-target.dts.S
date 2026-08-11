@@ -27,7 +27,7 @@
 		compatible = "vendor1,not-spmi-controller";
 		reg = <0xabce0000 0x1000>;
 
-		/* Referencing a target here instead of a sub-target should not be allowed */
-		spmis = <&target_a>;
+		/* The duplicate target_a entry should be ignored. */
+		spmis = <&target_a>, <&target_a>;
 	};
 };

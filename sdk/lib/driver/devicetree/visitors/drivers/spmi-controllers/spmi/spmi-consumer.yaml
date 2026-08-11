@@ -20,7 +20,7 @@ properties:
     minItems: 1
     $ref: /schemas/types.yaml#/definitions/phandle-array
     items:
-      description: phandles of SPMI sub-target nodes.
+      description: phandles of SPMI target or sub-target nodes.
 
 additionalProperties: true
 
