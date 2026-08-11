@@ -113,12 +113,35 @@ func (g *Grouper) Run(ctx context.Context, in <-chan pipeline.RawPath) (<-chan p
 
 			if _, exists := projects[root]; !exists {
 				relRoot, _ := filepath.Rel(g.FuchsiaDir, root)
-				projects[root] = &pipeline.Project{
+				proj := &pipeline.Project{
 					RootPath:     root,
 					Files:        []pipeline.FileInfo{},
 					ManifestName: g.Config.ManifestNameFor(relRoot),
 					IsPrivate:    g.Config.IsPrivateProject(relRoot),
 				}
+				readmePath := filepath.Join(root, "README.fuchsia")
+				if rPaths, ok := physicalReadmes[root]; ok && len(rPaths) > 0 {
+					readmePath = rPaths[0]
+				}
+				if readmes, ok := projectRoots[root]; ok && len(readmes) > 0 {
+					var segs []*pipeline.ReadmeSegment
+					for _, r := range readmes {
+						if r != nil {
+							clone := *r
+							segs = append(segs, &pipeline.ReadmeSegment{
+								Original: r,
+								Updated:  &clone,
+							})
+						}
+					}
+					if len(segs) > 0 {
+						proj.Readme = &pipeline.ReadmeFile{
+							Path:     readmePath,
+							Segments: segs,
+						}
+					}
+				}
+				projects[root] = proj
 			}
 
 			// Determine if this specific file needs a custom parser based on the parsed Readmes at this root
@@ -242,9 +265,19 @@ func (g *Grouper) BelongsToProject(targetPath, projectRoot string) bool {
 	if g == nil {
 		return true
 	}
+
+	cleanTarget := strings.TrimPrefix(targetPath, "//")
+	cleanProjRoot := strings.TrimPrefix(projectRoot, "//")
+
+	if cleanTarget != cleanProjRoot && cleanProjRoot != "" && cleanProjRoot != "." {
+		if !strings.HasPrefix(cleanTarget, cleanProjRoot+"/") {
+			return false
+		}
+	}
+
 	absTarget := targetPath
 	if !filepath.IsAbs(absTarget) {
-		absTarget = filepath.Join(g.FuchsiaDir, strings.TrimPrefix(targetPath, "//"))
+		absTarget = filepath.Join(g.FuchsiaDir, cleanTarget)
 	}
 	r, readmePath, err := readme.FindProjectReadme(absTarget, g.FuchsiaDir, g.Config.OutOfTreeReadmes)
 	if err != nil || r == nil {
@@ -264,5 +297,8 @@ func (g *Grouper) BelongsToProject(targetPath, projectRoot string) bool {
 		pLogicalRoot = filepath.Join(pLogicalRoot, r.Location)
 	}
 	pRelRoot, _ := filepath.Rel(g.FuchsiaDir, pLogicalRoot)
-	return pRelRoot == projectRoot
+	if pRelRoot == "." {
+		pRelRoot = ""
+	}
+	return pRelRoot == cleanProjRoot
 }

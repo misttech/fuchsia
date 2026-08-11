@@ -159,9 +159,15 @@ func ResolveAndValidatePath(fuchsiaDir, inputPath string) (string, string, error
 		return "", "", fmt.Errorf("failed to get absolute path for fuchsia_dir %s: %w", fuchsiaDir, err)
 	}
 
-	absInputPath, err := filepath.Abs(inputPath)
-	if err != nil {
-		return "", "", fmt.Errorf("failed to get absolute path for %s: %w", inputPath, err)
+	var absInputPath string
+	if filepath.IsAbs(inputPath) {
+		absInputPath = filepath.Clean(inputPath)
+	} else {
+		if wd, err := os.Getwd(); err == nil && (wd == absFuchsiaDir || strings.HasPrefix(wd, absFuchsiaDir+string(filepath.Separator))) {
+			absInputPath = filepath.Join(wd, inputPath)
+		} else {
+			absInputPath = filepath.Join(absFuchsiaDir, inputPath)
+		}
 	}
 
 	rel, err := filepath.Rel(absFuchsiaDir, absInputPath)
@@ -172,6 +178,54 @@ func ResolveAndValidatePath(fuchsiaDir, inputPath string) (string, string, error
 		rel = ""
 	}
 	return absFuchsiaDir, rel, nil
+}
+
+// InputContext encapsulates the workspace root, resolved input paths, and assembled configuration.
+type InputContext struct {
+	FuchsiaDir string
+	RelPath    string
+	AbsPath    string
+	Config     *v2config.MasterConfig
+}
+
+// LoadInputContext normalizes the input path within the Fuchsia workspace and loads the v2 MasterConfig.
+func LoadInputContext(fuchsiaDirFlag, inputPath string) (*InputContext, error) {
+	absFuchsia, relPath, err := ResolveAndValidatePath(fuchsiaDirFlag, inputPath)
+	if err != nil {
+		return nil, err
+	}
+	absPath := filepath.Join(absFuchsia, relPath)
+	builder := v2config.NewBuilder(absFuchsia)
+	if err := builder.Assemble(); err != nil {
+		return nil, fmt.Errorf("failed to assemble configuration: %w", err)
+	}
+	return &InputContext{
+		FuchsiaDir: absFuchsia,
+		RelPath:    relPath,
+		AbsPath:    absPath,
+		Config:     builder.Config,
+	}, nil
+}
+
+// ResolveProjectRoot resolves the governing logical project root directory for a given input path.
+func (ic *InputContext) ResolveProjectRoot(inputPath string) (string, error) {
+	fuchsiaDir, relPath, err := ResolveAndValidatePath(ic.FuchsiaDir, inputPath)
+	if err != nil {
+		return "", err
+	}
+	absPath := filepath.Join(fuchsiaDir, relPath)
+	info, err := os.Stat(absPath)
+	if err != nil {
+		return "", fmt.Errorf("path does not exist: %s", inputPath)
+	}
+	r, bestReadmePath, err := v2readme.FindProjectReadme(absPath, fuchsiaDir, ic.Config.Boundary.OutOfTreeReadmes)
+	if err == nil && bestReadmePath != "" && r != nil {
+		return v2readme.ResolveProjectRoot(r, bestReadmePath, fuchsiaDir, ic.Config.Boundary.OutOfTreeReadmes), nil
+	}
+	if info.IsDir() {
+		return absPath, nil
+	}
+	return filepath.Dir(absPath), nil
 }
 
 // UpdateConfigFile reads, mutates, and writes back a ConfigFile.
@@ -193,4 +247,30 @@ func UpdateConfigFile(destFile string, mutate func(*v2config.ConfigFile)) error 
 		return fmt.Errorf("failed to write config file %s: %w", destFile, err)
 	}
 	return nil
+}
+
+// LoadTargets parses and combines target paths from both the command line arguments and an optional file list.
+func LoadTargets(fileList, fuchsiaDir string, args []string) ([]string, error) {
+	var targets []string
+	if fileList != "" {
+		absList := fileList
+		if !filepath.IsAbs(absList) {
+			absList = filepath.Join(fuchsiaDir, fileList)
+		}
+		data, err := os.ReadFile(absList)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read file-list %s: %w", fileList, err)
+		}
+		for _, line := range strings.Split(string(data), "\n") {
+			line = strings.TrimSpace(line)
+			if line != "" && !strings.HasPrefix(line, "#") {
+				targets = append(targets, line)
+			}
+		}
+	}
+	targets = append(targets, args...)
+	if len(targets) == 0 {
+		return nil, fmt.Errorf("at least one target path must be provided via positional arguments or -file-list")
+	}
+	return targets, nil
 }

@@ -259,10 +259,10 @@ func TestBelongsToProject(t *testing.T) {
 			expected:    true,
 		},
 		{
-			name:        "Policy on parent directory is inherited",
+			name:        "Policy on parent directory is not inherited by sub-project",
 			policyPath:  "third_party",
 			projectRoot: "third_party/foo",
-			expected:    true,
+			expected:    false,
 		},
 		{
 			name:        "Policy on unrelated directory is false",
@@ -292,9 +292,10 @@ func TestBelongsToProject(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := belongsToProject(tt.policyPath, tt.projectRoot, fuchsiaDir, grouper)
+			cleanP := strings.TrimPrefix(tt.policyPath, "//")
+			result := grouper.BelongsToProject(cleanP, tt.projectRoot)
 			if result != tt.expected {
-				t.Errorf("belongsToProject(%q, %q) = %v, want %v", tt.policyPath, tt.projectRoot, result, tt.expected)
+				t.Errorf("BelongsToProject(%q, %q) = %v, want %v", cleanP, tt.projectRoot, result, tt.expected)
 			}
 		})
 	}
@@ -340,5 +341,87 @@ func TestProjectCommand_Update_UnclassifiedLicense(t *testing.T) {
 
 	if !strings.Contains(content, "License File: LICENSE") || !strings.Contains(content, "License: Unclassified") {
 		t.Errorf("Expected LICENSE to be retained with Unclassified license, got:\n%s", content)
+	}
+}
+
+func TestProjectCommand_Update_FileListAndMultiTarget(t *testing.T) {
+	tempDir := t.TempDir()
+	scaffoldV2Config(t, tempDir)
+
+	mitPatternDir := filepath.Join(tempDir, "tools", "check-licenses", "assets", "patterns", "Permissive", "MIT")
+	os.MkdirAll(mitPatternDir, 0755)
+	os.WriteFile(filepath.Join(mitPatternDir, "mit.txt"), []byte(mockMITLicenseText), 0644)
+	os.MkdirAll(filepath.Join(tempDir, "tools", "check-licenses", "assets", "configs"), 0755)
+
+	projA := filepath.Join(tempDir, "third_party", "projA")
+	projB := filepath.Join(tempDir, "third_party", "projB")
+	os.MkdirAll(projA, 0755)
+	os.MkdirAll(projB, 0755)
+
+	os.WriteFile(filepath.Join(projA, "LICENSE"), []byte(mockMITLicenseText), 0644)
+	os.WriteFile(filepath.Join(projA, "README.fuchsia"), []byte("Name: projA\nURL: http://a\nVersion: 1.0\nRevision: abc\nSecurity Critical: no\n"), 0644)
+
+	os.WriteFile(filepath.Join(projB, "LICENSE"), []byte(mockMITLicenseText), 0644)
+	os.WriteFile(filepath.Join(projB, "README.fuchsia"), []byte("Name: projB\nURL: http://b\nVersion: 1.0\nRevision: abc\nSecurity Critical: no\n"), 0644)
+
+	fileListPath := filepath.Join(tempDir, "update_list.txt")
+	os.WriteFile(fileListPath, []byte("third_party/projA\n"), 0644)
+
+	cmd := &ProjectCommand{fuchsiaDir: tempDir}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	cmd.SetFlags(fs)
+	fs.Parse([]string{"--fuchsia_dir", tempDir, "update", "-file-list", fileListPath, projB})
+	if status := cmd.Execute(ctx, fs); status != subcommands.ExitSuccess {
+		t.Errorf("Expected ExitSuccess for multi-target update, got %v", status)
+	}
+
+	for _, p := range []string{projA, projB} {
+		content, err := os.ReadFile(filepath.Join(p, "README.fuchsia"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(content), "License File: LICENSE") {
+			t.Errorf("Expected LICENSE to be added to %s README, got:\n%s", p, string(content))
+		}
+	}
+}
+
+func TestProjectCommand_Check_FileListAndMultiTarget(t *testing.T) {
+	tempDir := t.TempDir()
+	scaffoldV2Config(t, tempDir)
+
+	mitPatternDir := filepath.Join(tempDir, "tools", "check-licenses", "assets", "patterns", "Permissive", "MIT")
+	os.MkdirAll(mitPatternDir, 0755)
+	os.WriteFile(filepath.Join(mitPatternDir, "mit.txt"), []byte(mockMITLicenseText), 0644)
+	os.MkdirAll(filepath.Join(tempDir, "tools", "check-licenses", "assets", "configs"), 0755)
+
+	projA := filepath.Join(tempDir, "third_party", "projA")
+	projB := filepath.Join(tempDir, "third_party", "projB")
+	os.MkdirAll(projA, 0755)
+	os.MkdirAll(projB, 0755)
+
+	fileA := filepath.Join(projA, "declared.cc")
+	fileB := filepath.Join(projB, "declared.cc")
+	os.WriteFile(fileA, []byte("/* "+mockMITLicenseText+" */\nint a() {}"), 0644)
+	os.WriteFile(fileB, []byte("/* "+mockMITLicenseText+" */\nint b() {}"), 0644)
+
+	os.WriteFile(filepath.Join(projA, "README.fuchsia"), []byte("Name: projA\nURL: http://a\nVersion: 1.0\nRevision: abc\nSecurity Critical: no\nLicense: MIT\nLicense File: declared.cc\n"), 0644)
+	os.WriteFile(filepath.Join(projB, "README.fuchsia"), []byte("Name: projB\nURL: http://b\nVersion: 1.0\nRevision: abc\nSecurity Critical: no\nLicense: MIT\nLicense File: declared.cc\n"), 0644)
+
+	fileListPath := filepath.Join(tempDir, "check_list.txt")
+	os.WriteFile(fileListPath, []byte(fileA+"\n"), 0644)
+
+	cmd := &ProjectCommand{fuchsiaDir: tempDir}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	cmd.SetFlags(fs)
+	fs.Parse([]string{"--fuchsia_dir", tempDir, "check", "-file-list", fileListPath, fileB})
+	if status := cmd.Execute(ctx, fs); status != subcommands.ExitSuccess {
+		t.Errorf("Expected ExitSuccess for multi-target check, got %v", status)
 	}
 }
