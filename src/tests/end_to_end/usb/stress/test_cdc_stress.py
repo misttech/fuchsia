@@ -89,6 +89,7 @@ class CdcStressTest(fuchsia_base_test.FuchsiaBaseTest):
             ssh_addr,
             "Pre-flight check failed: Unable to obtain FFX SSH target address.",
         )
+        assert ssh_addr is not None  # satisfy mypy typing
         raw_ssh_ip = str(ssh_addr.ip).split("%")[0]
         _LOGGER.info(
             "Active FFX SSH raw IP: %s | CDC IPs: %s | WLAN IPs: %s",
@@ -314,6 +315,7 @@ class CdcStressTest(fuchsia_base_test.FuchsiaBaseTest):
             ssh_addr,
             "Failed to obtain FFX SSH target address.",
         )
+        assert ssh_addr is not None  # satisfy mypy typing
         target_ip = str(ssh_addr.ip)
         parsed_ip = ipaddress.ip_address(target_ip.split("%")[0])
         ip_version = parsed_ip.version
