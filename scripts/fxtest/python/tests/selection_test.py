@@ -441,6 +441,24 @@ class SelectTestsTest(unittest.IsolatedAsyncioTestCase):
             selection.NO_MATCH_DISTANCE,
         )
 
+    async def test_group_matches_isolation(self) -> None:
+        """Test that multiple match groups have isolated match lists."""
+        tests = [
+            self._make_package_test("src/tests", "foo-pkg", "bar-test"),
+            self._make_host_test("src/other-tests", "binary_test"),
+        ]
+        exec_env = self._make_exec_env()
+        result = await selection.select_tests(
+            tests,
+            ["bar-test", "non_existent_test"],
+            exec_env,
+        )
+        self.assertEqual(len(result.group_matches), 2)
+        _, matches1 = result.group_matches[0]
+        _, matches2 = result.group_matches[1]
+        self.assertEqual(len(matches1), 1)
+        self.assertEqual(len(matches2), 0)
+
     async def test_package_and_component(self) -> None:
         """Test that --package and/or --component works"""
         tests = [

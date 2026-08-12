@@ -1127,17 +1127,24 @@ class AsyncMain:
                     maximum_parallel=10,
                 )
 
-                if any([val is None for val in outputs]):
-                    return
-
                 for group, output in zip(missing_groups, outputs):
-                    assert output is not None  # Checked above
-                    recorder.emit_verbatim_message(
-                        f"\nFor `{group}`, did you mean any of the following?\n"
-                    )
-                    recorder.emit_verbatim_message(output.stdout)
+                    if output is not None and output.stdout:
+                        recorder.emit_verbatim_message(
+                            f"\nFor `{group}`, did you mean any of the following?\n"
+                        )
+                        recorder.emit_verbatim_message(output.stdout)
 
-        if missing_groups:
+        if not selections.selected:
+            if missing_groups:
+                raise self._SelectionValidationError(
+                    "No tests found for the following selections:\n "
+                    + "\n ".join([str(m) for m in missing_groups])
+                )
+            else:
+                raise self._SelectionValidationError(
+                    "No tests found matching criteria."
+                )
+        elif not flags.allow_empty_selection and missing_groups:
             raise self._SelectionValidationError(
                 "No tests found for the following selections:\n "
                 + "\n ".join([str(m) for m in missing_groups])
@@ -1161,7 +1168,7 @@ class AsyncMain:
                 tests_str = ", ".join(e2e_tests)
                 raise self._SelectionValidationError(
                     f"The following tests are e2e tests, but the --e2e flag was not provided:\n  {tests_str}\n"
-                    "Please pass --e2e to run e2e tests."
+                    + "Please pass --e2e to run e2e tests."
                 )
 
     def _validate_package_merkle_hashes(

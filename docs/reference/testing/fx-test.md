@@ -317,6 +317,12 @@ The above command line contains two selection clauses:
 
 Tests matching either of the above clauses are selected.
 
+**`--[no-]allow-empty-selection`** toggles whether individual selection clauses
+that match no tests are permitted (default `true`). Passing
+`--no-allow-empty-selection` fails immediately if any specified clause matches
+nothing, which is useful in scripts to ensure every query selects tests. If no
+tests are selected in total, `fx test` always fails.
+
 Test selections are fuzzy-matched using a Damerau-Levenshtein
 distance of 3 by default (e.g. "my_tset" will match "my-test").
 **`--fuzzy <N>`** can be used to override this value to `N`, where

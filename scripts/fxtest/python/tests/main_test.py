@@ -2811,6 +2811,147 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Use `fx run-boot-test` or `fx core-tests`", err_msg)
         self.assertIn("my_boot_test", err_msg)
 
+    @mock.patch("main.run_commands_in_parallel")
+    async def test_validate_test_selections_missing_groups_raises_even_if_suggestions_fail(
+        self, mock_run_commands: mock.AsyncMock
+    ) -> None:
+        """Tests that _validate_test_selections raises even if suggestions return None."""
+        mock_run_commands.return_value = [None]
+        mock_group = mock.MagicMock()
+        mock_group.names = {"non_existent_test"}
+        mock_group.components = set()
+        mock_group.packages = set()
+        mock_group.__str__ = mock.MagicMock(return_value="non_existent_test")
+
+        mock_selections = mock.MagicMock()
+        mock_selections.group_matches = [(mock_group, [])]
+        mock_selections.selected = []
+
+        app = main.AsyncMain.__new__(main.AsyncMain)
+        app._recorder = mock.Mock()
+        app._flags = mock.Mock()
+        app._flags.exact = False
+        app._flags.show_suggestions = True
+        app._flags.suggestion_count = 5
+        app._flags.style = False
+        app._flags.host = False
+        app._flags.device = False
+        app._flags.remote_suggestions = False
+        app._flags.remote_suggestion_builder = []
+        app._flags.selection = ["non_existent_test"]
+        app._exec_env = mock.Mock()
+        app._exec_env.fx_cmd_line.side_effect = lambda *args: list(args)
+
+        with self.assertRaises(main.AsyncMain._SelectionValidationError) as ctx:
+            await app._validate_test_selections(mock_selections)
+
+        self.assertIn(
+            "No tests found for the following selections", str(ctx.exception)
+        )
+
+    async def test_validate_test_selections_partial_match_allowed_by_default(
+        self,
+    ) -> None:
+        """Tests that a partial match with some empty selection groups is allowed by default."""
+        mock_test = mock.MagicMock()
+        mock_test.name.return_value = "my_test"
+        mock_test.is_boot_test.return_value = False
+        mock_test.is_e2e_test.return_value = False
+
+        mock_group1 = mock.MagicMock()
+        mock_group1.names = {"my_test"}
+        mock_group1.components = set()
+        mock_group1.packages = set()
+
+        mock_group2 = mock.MagicMock()
+        mock_group2.names = {"missing_test"}
+        mock_group2.components = set()
+        mock_group2.packages = set()
+        mock_group2.__str__ = mock.MagicMock(return_value="missing_test")
+
+        mock_selections = mock.MagicMock()
+        mock_selections.group_matches = [
+            (mock_group1, [mock_test]),
+            (mock_group2, []),
+        ]
+        mock_selections.selected = [mock_test]
+
+        app = main.AsyncMain.__new__(main.AsyncMain)
+        app._recorder = mock.Mock()
+        app._flags = mock.Mock()
+        app._flags.exact = False
+        app._flags.show_suggestions = False
+        app._flags.allow_empty_selection = True
+        app._flags.selection = ["my_test", "missing_test"]
+        app._flags.e2e = False
+        app._exec_env = mock.Mock()
+
+        # Should not raise exception
+        await app._validate_test_selections(mock_selections)
+
+    async def test_validate_test_selections_partial_match_fails_when_not_allowed(
+        self,
+    ) -> None:
+        """Tests that a partial match fails when allow_empty_selection is False."""
+        mock_test = mock.MagicMock()
+        mock_test.name.return_value = "my_test"
+        mock_test.is_boot_test.return_value = False
+        mock_test.is_e2e_test.return_value = False
+
+        mock_group1 = mock.MagicMock()
+        mock_group1.names = {"my_test"}
+        mock_group1.components = set()
+        mock_group1.packages = set()
+
+        mock_group2 = mock.MagicMock()
+        mock_group2.names = {"missing_test"}
+        mock_group2.components = set()
+        mock_group2.packages = set()
+        mock_group2.__str__ = mock.MagicMock(return_value="missing_test")
+
+        mock_selections = mock.MagicMock()
+        mock_selections.group_matches = [
+            (mock_group1, [mock_test]),
+            (mock_group2, []),
+        ]
+        mock_selections.selected = [mock_test]
+
+        app = main.AsyncMain.__new__(main.AsyncMain)
+        app._recorder = mock.Mock()
+        app._flags = mock.Mock()
+        app._flags.exact = False
+        app._flags.show_suggestions = False
+        app._flags.allow_empty_selection = False
+        app._flags.selection = ["my_test", "missing_test"]
+        app._flags.e2e = False
+        app._exec_env = mock.Mock()
+
+        with self.assertRaises(main.AsyncMain._SelectionValidationError) as ctx:
+            await app._validate_test_selections(mock_selections)
+
+        self.assertIn("missing_test", str(ctx.exception))
+
+    async def test_validate_test_selections_no_matches_with_selection(
+        self,
+    ) -> None:
+        """Tests that _validate_test_selections raises when selection flag is given but selected is empty."""
+        mock_selections = mock.MagicMock()
+        mock_selections.group_matches = []
+        mock_selections.selected = []
+
+        app = main.AsyncMain.__new__(main.AsyncMain)
+        app._recorder = mock.Mock()
+        app._flags = mock.Mock()
+        app._flags.exact = False
+        app._flags.show_suggestions = False
+        app._flags.selection = ["some_test"]
+        app._exec_env = mock.Mock()
+
+        with self.assertRaises(main.AsyncMain._SelectionValidationError) as ctx:
+            await app._validate_test_selections(mock_selections)
+
+        self.assertIn("No tests found matching criteria.", str(ctx.exception))
+
     async def test_has_active_device(self) -> None:
         """Tests that _has_active_device correctly detects active devices."""
         app = main.AsyncMain.__new__(main.AsyncMain)

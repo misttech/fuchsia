@@ -126,7 +126,7 @@ async def select_tests(
 
     match_groups = _parse_selection_command_line(selection)
 
-    tests_to_run: typing.Set[Test] = set()
+    tests_to_run: set[Test] = set()
     group_matches: list[tuple[selection_types.MatchGroup, list[str]]] = []
     best_matches: dict[str, int] = defaultdict(lambda: NO_MATCH_DISTANCE)
     TRAILING_PATH = re.compile(r"/([\w\-_\.]+)$")
@@ -155,12 +155,12 @@ async def select_tests(
     def extract_package(entry: Test) -> str | None:
         return entry.package_name()
 
-    matched: list[str] = []
     match_tasks = []
 
     for group in match_groups:
 
         async def task_handler(group: selection_types.MatchGroup) -> None:
+            matched: list[str] = []
             id: event.Id | None = None
             if recorder is not None:
                 # Hide the children of this event group. The runtime

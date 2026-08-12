@@ -86,6 +86,7 @@ class Flags:
     only_e2e: bool
     selection: typing.List[str]
     fuzzy: int
+    allow_empty_selection: bool
     show_suggestions: bool
     suggestion_count: int
 
@@ -516,6 +517,13 @@ def parse_args(
         type=int,
         default=3,
         help="The Damerau–Levenshtein distance threshold for fuzzy matching tests",
+    )
+    selection.add_argument(
+        "--allow-empty-selection",
+        action=argparse.BooleanOptionalAction,
+        type=bool,
+        help="If True and multiple selections are provided, allow individual selections that match no tests as long as at least one test is selected. Default is True.",
+        default=True,
     )
     selection.add_argument(
         "--show-suggestions",

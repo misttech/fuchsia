@@ -30,6 +30,14 @@ class TestArgs(unittest.TestCase):
     def test_empty(self) -> None:
         flags = args.parse_args([])
         flags.validate()
+        self.assertTrue(flags.allow_empty_selection)
+
+    def test_allow_empty_selection(self) -> None:
+        flags = args.parse_args(["--allow-empty-selection"])
+        self.assertTrue(flags.allow_empty_selection)
+
+        flags_no = args.parse_args(["--no-allow-empty-selection"])
+        self.assertFalse(flags_no.allow_empty_selection)
 
     @parameterized.expand(
         [
