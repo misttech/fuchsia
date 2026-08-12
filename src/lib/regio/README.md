@@ -135,8 +135,8 @@ let _: u8 = unsafe { uart.at(RXDATA) }.read().data();
 
 ## arm64 system registers
 
-`regio::arm64::SysReg` defines an arm64 system register, aliasing `Register`.
-It takes a system register 'spec' as a generic parameter, all of which have been
+`regio::arm64::SysReg` defines an arm64 system register, aliasing `Register`. It
+takes a system register 'spec' as a generic parameter, all of which have been
 stamped out in the `regio::arm64::spec` submodule with names equal to their
 official mnemonics.
 
@@ -146,6 +146,21 @@ use regio::arm64::{SysReg, spec};
 const TPIDR_EL0: SysReg<spec::TPIDR_EL0, u64> = SysReg::new();
 
 println!("TPIDR_EL0: {:#x}", TPIDR_EL0.read().get());
+```
+
+## riscv64 CSRs
+
+`regio::riscv64::Csr` defines a riscv64 CSR, aliasing `Register`. It takes a CSR
+'encoding' as a generic parameter, all of which have been stamped out in the
+`regio::riscv64::encoding` submodule with names equal to their official
+mnemonics.
+
+```rust
+use regio::riscv64::{Csr, encoding};
+
+const TIME: Csr<encoding::time, u64> = Csr::new();
+
+println!("time: {:#x}", TIME.read());
 ```
 
 ## x86 CPUID

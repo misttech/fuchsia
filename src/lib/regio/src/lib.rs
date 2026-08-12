@@ -6,6 +6,7 @@
 
 pub mod arm64;
 mod mmio;
+pub mod riscv64;
 pub mod traits;
 pub mod x86;
 

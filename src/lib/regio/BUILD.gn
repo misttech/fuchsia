@@ -13,6 +13,8 @@ regio_common = {
     "src/arm64/spec.rs",
     "src/lib.rs",
     "src/mmio.rs",
+    "src/riscv64/encoding.rs",
+    "src/riscv64/mod.rs",
     "src/testing.rs",
     "src/traits.rs",
     "src/x86/cpuid.rs",
