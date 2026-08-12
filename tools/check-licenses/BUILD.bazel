@@ -73,6 +73,7 @@ go_library(
     srcs = [
         "v2/stages/report/config.go",
         "v2/stages/report/console_errors.go",
+        "v2/stages/report/fixer.go",
         "v2/stages/report/metrics_printer.go",
         "v2/stages/report/notice.go",
         "v2/stages/report/readme_verifier.go",
@@ -207,6 +208,7 @@ host_go_test(
     size = "small",
     srcs = [
         "v2/stages/report/console_errors_test.go",
+        "v2/stages/report/fixer_test.go",
         "v2/stages/report/metrics_printer_test.go",
         "v2/stages/report/notice_test.go",
         "v2/stages/report/readme_verifier_test.go",

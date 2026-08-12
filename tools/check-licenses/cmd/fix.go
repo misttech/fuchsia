@@ -9,33 +9,34 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"path/filepath"
-	"sort"
-	"sync"
 
 	"github.com/google/subcommands"
 
-	v2config "go.fuchsia.dev/fuchsia/tools/check-licenses/v2/config"
-	v2pipeline "go.fuchsia.dev/fuchsia/tools/check-licenses/v2/pipeline"
-	v2boundary "go.fuchsia.dev/fuchsia/tools/check-licenses/v2/stages/boundary"
-	v2classify "go.fuchsia.dev/fuchsia/tools/check-licenses/v2/stages/classify"
-	v2discover "go.fuchsia.dev/fuchsia/tools/check-licenses/v2/stages/discover"
-	v2prune "go.fuchsia.dev/fuchsia/tools/check-licenses/v2/stages/prune"
-	v2report "go.fuchsia.dev/fuchsia/tools/check-licenses/v2/stages/report"
-	v2validate "go.fuchsia.dev/fuchsia/tools/check-licenses/v2/stages/validate"
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/v2/pipeline"
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/v2/stages/boundary"
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/v2/stages/classify"
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/v2/stages/discover"
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/v2/stages/prune"
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/v2/stages/report"
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/v2/stages/validate"
 )
 
+// FixCommand implements the `fx check-licenses fix` subcommand, which automatically
+// resolves license policy violations (e.g. copyright headers, README attributions,
+// missing license exceptions, and allowlists) on disk.
 type FixCommand struct {
 	fuchsiaDir string
 }
 
 func (*FixCommand) Name() string { return "fix" }
+
 func (*FixCommand) Synopsis() string {
 	return "Automatically fix compliance issues for a project or file."
 }
+
 func (*FixCommand) Usage() string {
-	return `fix <path>:
-  Runs the compliance pipeline on the given path and attempts to automatically:
+	return `fix [<path>]:
+  Runs the compliance pipeline on the given path (defaults to //) and attempts to automatically:
   - Add missing Fuchsia copyright headers.
   - Update README.fuchsia files with correct license attributions.
   - Add policy exceptions for projects missing licenses.
@@ -51,171 +52,66 @@ func (c *FixCommand) SetFlags(f *flag.FlagSet) {
 }
 
 func (c *FixCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...interface{}) subcommands.ExitStatus {
-	if f.NArg() != 1 {
-		fmt.Fprintln(os.Stderr, "Usage: fx check-licenses fix <path>")
+	// Parse positional arguments; default to the entire Fuchsia workspace root ("//") if omitted.
+	if f.NArg() > 1 {
+		fmt.Fprintln(os.Stderr, "Usage: fx check-licenses fix [<path>]")
 		return subcommands.ExitUsageError
 	}
 
-	targetPath := f.Arg(0)
-	fuchsiaDir, targetPath, err := ResolveAndValidatePath(c.fuchsiaDir, targetPath)
+	targetPath := "//"
+	if f.NArg() == 1 {
+		targetPath = f.Arg(0)
+	}
+
+	// Resolve target workspace context and configuration assembly.
+	ic, err := LoadInputContext(c.fuchsiaDir, targetPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return subcommands.ExitFailure
 	}
-	absTargetPath := filepath.Join(fuchsiaDir, targetPath)
 
-	fmt.Printf("🔍 Starting auto-fix for %s...\n", targetPath)
-
-	// 1. Assembly Phase
-	builder := v2config.NewBuilder(fuchsiaDir)
-	if err := builder.Assemble(); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to assemble configuration: %v\n", err)
+	// Always resolve to the enclosing logical project root directory, matching project commands behavior.
+	projectRoot, err := ic.ResolveProjectRoot(targetPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error resolving project root for %s: %v\n", targetPath, err)
 		return subcommands.ExitFailure
 	}
-	config := builder.Config
 
-	// 2. Instantiate Stages
-	discoverer := v2discover.NewCrawler(fuchsiaDir, config.Discover)
-	boundaryCfg := config.Boundary
+	fmt.Printf("🔍 Starting auto-fix for project %s...\n", projectRoot)
+
+	// Step 1: Initialize analysis stages (Discover, Group, Prune, Classify, Validate).
+	discoverer := discover.NewCrawler(ic.FuchsiaDir, ic.Config.Discover)
+
+	boundaryCfg := ic.Config.Boundary
 	boundaryCfg.FilesInReadmeOnly = false
-	grouper := v2boundary.NewGrouper(fuchsiaDir, boundaryCfg)
-	pruner := v2prune.NewPruner(nil) // No build graph pruning during fix
+	grouper := boundary.NewGrouper(ic.FuchsiaDir, boundaryCfg)
 
-	classifier, err := v2classify.NewClassifier(config.Classify)
+	pruner := prune.NewPruner(nil) // Disable build-graph pruning so all target files are analyzed.
+
+	classifier, err := classify.NewClassifier(ic.Config.Classify)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to initialize classifier: %v\n", err)
 		return subcommands.ExitFailure
 	}
 
-	validator := v2validate.NewValidator(fuchsiaDir, config.Validate)
+	validator := validate.NewValidator(ic.FuchsiaDir, ic.Config.Validate)
 
-	fixer := &FixerRenderer{
-		FuchsiaDir: fuchsiaDir,
-		Config:     config,
-		FixedCount: make(map[string][]string),
+	// Step 2: Assemble Stage 6 explicit renderers to update READMEs and apply compliance fixes.
+	fixer := report.NewFixerRenderer(ic.FuchsiaDir, ic.Config.Boundary.OutOfTreeReadmes, ic.Config.IsPrivateProject, ic.Config.ManifestNameFor)
+	renderers := pipeline.MultiRenderer{
+		report.NewReadmeWriter(ic.FuchsiaDir, false),
+		fixer,
 	}
 
-	orchestrator := v2pipeline.NewOrchestrator(discoverer, grouper, pruner, classifier, validator, fixer)
-
-	// We scope the discovery to the target path!
-	if err := orchestrator.Run(ctx, []string{absTargetPath}); err != nil {
+	// Step 3: Run the compliance pipeline scoped to the enclosing project root directory.
+	orchestrator := pipeline.NewOrchestrator(discoverer, grouper, pruner, classifier, validator, renderers)
+	if err := orchestrator.Run(ctx, []string{projectRoot}); err != nil {
 		fmt.Fprintf(os.Stderr, "Pipeline failed: %v\n", err)
 		return subcommands.ExitFailure
 	}
 
+	// Step 4: Display a summary of applied fixes and required follow-up actions (e.g. OSRB bug assignments).
 	fixer.PrintSummary()
 
 	return subcommands.ExitSuccess
-}
-
-type FixerRenderer struct {
-	FuchsiaDir     string
-	Config         *v2config.MasterConfig
-	FixedCount     map[string][]string
-	NewConfigFiles []string
-	mu             sync.Mutex
-}
-
-func (r *FixerRenderer) Run(ctx context.Context, projects []*v2pipeline.Project, errors []v2pipeline.ComplianceError) error {
-	// 1. Let ReadmeWriter handle README updates
-	writer := v2report.NewReadmeWriter(r.FuchsiaDir, false)
-	_ = writer.Run(ctx, projects, errors)
-
-	// Process all errors and apply fixes
-	for _, e := range errors {
-		fmt.Printf(" [Fixer] Processing error: %s (%s)\n", e.CheckName, e.FilePath)
-		r.applyFix(e)
-	}
-
-	return nil
-}
-
-func (r *FixerRenderer) applyFix(e v2pipeline.ComplianceError) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	switch e.CheckName {
-	case v2config.CheckNameReadmeFuchsiaNeedsUpdate:
-		r.FixedCount["README Updates"] = append(r.FixedCount["README Updates"], e.FilePath)
-
-	case v2config.PolicyCheckAllFuchsiaAuthorSourceFilesMustHaveCopyrightHeaders:
-		if err := ApplyCopyrightFix(r.FuchsiaDir, e.FilePath, false); err != nil {
-			fmt.Fprintf(os.Stderr, " [Fixer] Failed to apply copyright fix for %s: %v\n", e.FilePath, err)
-		} else {
-			r.FixedCount["Copyright Headers"] = append(r.FixedCount["Copyright Headers"], e.FilePath)
-		}
-
-	case v2config.PolicyCheckAllProjectsMustHaveALicense:
-		if path, err := AddPolicyException(r.FuchsiaDir, e.CheckName, e.Project, "TODO: Auto-generated by fx check-licenses fix", "Auto-generated exception via fix"); err != nil {
-			fmt.Fprintf(os.Stderr, " [Fixer] Failed to add policy exception for %s: %v\n", e.Project, err)
-		} else {
-			r.FixedCount["Policy Exceptions (Missing License)"] = append(r.FixedCount["Policy Exceptions (Missing License)"], e.Project)
-			if path != "" {
-				r.NewConfigFiles = append(r.NewConfigFiles, path)
-			}
-		}
-
-	case v2config.PolicyCheckAllLicenseTextsMustBeRecognized:
-		if path, err := AddPolicyException(r.FuchsiaDir, e.CheckName, e.FilePath, "TODO: Auto-generated by fx check-licenses fix", "Auto-generated exception via fix"); err != nil {
-			fmt.Fprintf(os.Stderr, " [Fixer] Failed to add policy exception for %s: %v\n", e.FilePath, err)
-		} else {
-			r.FixedCount["Policy Exceptions (Unrecognized License)"] = append(r.FixedCount["Policy Exceptions (Unrecognized License)"], e.FilePath)
-			if path != "" {
-				r.NewConfigFiles = append(r.NewConfigFiles, path)
-			}
-		}
-
-	case v2config.CheckNameAllLicensePatternUsagesMustBeApproved:
-		if path, err := AddAllowlistEntry(r.FuchsiaDir, e.LicenseID, e.Project, "TODO: Auto-generated by fx check-licenses fix", "Auto-generated allowlist entry via fix"); err != nil {
-			fmt.Fprintf(os.Stderr, " [Fixer] Failed to add allowlist entry for %s: %v\n", e.Project, err)
-		} else {
-			r.FixedCount["Allowlist Entries ("+e.LicenseID+")"] = append(r.FixedCount["Allowlist Entries ("+e.LicenseID+")"], e.Project)
-			if path != "" {
-				r.NewConfigFiles = append(r.NewConfigFiles, path)
-			}
-		}
-	}
-}
-
-func (r *FixerRenderer) PrintSummary() {
-	if len(r.FixedCount) == 0 {
-		fmt.Println("\n✨ No issues found. Everything looks good!")
-		return
-	}
-
-	fmt.Printf("\n✅ Applied fixes for the following categories:\n")
-
-	// Sort categories for deterministic output
-	var categories []string
-	for cat := range r.FixedCount {
-		categories = append(categories, cat)
-	}
-	sort.Strings(categories)
-
-	for _, cat := range categories {
-		paths := r.FixedCount[cat]
-		fmt.Printf("\n[%s]\n", cat)
-		sort.Strings(paths)
-		for _, p := range paths {
-			rel, _ := filepath.Rel(r.FuchsiaDir, p)
-			if rel == "" {
-				rel = p
-			}
-			fmt.Printf("  - %s\n", rel)
-		}
-	}
-
-	if len(r.NewConfigFiles) > 0 {
-		fmt.Printf("\n⚠️  ACTION REQUIRED:\n")
-		fmt.Printf("You must file an OSRB bug for any newly added policy exceptions or allowlist entries.\n")
-		fmt.Printf("Please update the 'bug' field in these files:\n")
-		sort.Strings(r.NewConfigFiles)
-		for _, path := range r.NewConfigFiles {
-			rel, _ := filepath.Rel(r.FuchsiaDir, path)
-			if rel == "" {
-				rel = path
-			}
-			fmt.Printf("  - %s\n", rel)
-		}
-	}
 }
