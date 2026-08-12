@@ -14,7 +14,7 @@ use net_types::LinkLocalUnicastAddr;
 use net_types::ip::{Ipv6Addr, Subnet};
 use netstack3_base::{
     AnyDevice, CoreTimerContext, DeviceIdContext, HandleableTimer, InstantBindingsTypes,
-    LocalTimerHeap, TimerBindingsTypes, TimerContext, WeakDeviceIdentifier,
+    LocalTimerHeap, TimerBindingsTypes, TimerContext, TokenBucket, WeakDeviceIdentifier,
 };
 use netstack3_hashmap::HashMap;
 use netstack3_hashmap::hash_map::Entry;
@@ -27,6 +27,11 @@ use crate::internal::types::RoutePreference;
 /// If new routes are discovered that would exceed this limit, they are ignored.
 const MAX_DISCOVERED_ROUTES: usize = 4096;
 
+/// The maximum number of routes that can be discovered per second.
+///
+/// If new routes are discovered that would exceed this limit, they are ignored.
+const MAX_DISCOVERIES_PER_SECOND: u64 = 256;
+
 /// Route discovery state on a device.
 #[derive(Debug)]
 pub struct Ipv6RouteDiscoveryState<BT: Ipv6RouteDiscoveryBindingsTypes> {
@@ -36,6 +41,10 @@ pub struct Ipv6RouteDiscoveryState<BT: Ipv6RouteDiscoveryBindingsTypes> {
     // infinite lifetime must not.
     routes: HashMap<Ipv6DiscoveredRoute, Ipv6DiscoveredRouteProperties>,
     timers: LocalTimerHeap<Ipv6DiscoveredRoute, (), BT>,
+    // Rate limit the discovery of routes. Add and update operations are rate
+    // limited whereas delete operations are not. Delete operations are self
+    // rate limiting, since they require the entry be present in the table.
+    rate_limit: TokenBucket<BT::Instant>,
 }
 
 impl<BT: Ipv6RouteDiscoveryBindingsTypes> Ipv6RouteDiscoveryState<BT> {
@@ -58,6 +67,7 @@ impl<BC: Ipv6RouteDiscoveryBindingsContext> Ipv6RouteDiscoveryState<BC> {
                 bindings_ctx,
                 Ipv6DiscoveredRouteTimerId { device_id },
             ),
+            rate_limit: TokenBucket::new(MAX_DISCOVERIES_PER_SECOND),
         }
     }
 }
@@ -215,12 +225,19 @@ impl<BC: Ipv6RouteDiscoveryBindingsContext, CC: Ipv6RouteDiscoveryContext<BC>>
         config: &RouteDiscoveryConfiguration,
     ) {
         self.with_discovered_routes_mut(device_id, |state, core_ctx| {
-            let Ipv6RouteDiscoveryState { routes, timers } = state;
+            let Ipv6RouteDiscoveryState { routes, timers, rate_limit } = state;
             match lifetime {
                 Some(lifetime) => {
                     if !config.allow_default_route && route.subnet.prefix() == 0 {
                         return;
                     }
+                    if !rate_limit.try_take(bindings_ctx) {
+                        debug!(
+                            "IPv6 Discovered routes rate limited. Ignoring update for {route:?}"
+                        );
+                        return;
+                    }
+
                     let num_routes = routes.len();
                     let newly_added = match routes.entry(route) {
                         Entry::Occupied(mut entry) => {
@@ -302,7 +319,7 @@ impl<BC: Ipv6RouteDiscoveryBindingsContext, CC: Ipv6RouteDiscoveryContext<BC>>
         };
         core_ctx.with_discovered_routes_mut(
             &device_id,
-            |Ipv6RouteDiscoveryState { routes, timers }, core_ctx| {
+            |Ipv6RouteDiscoveryState { routes, timers, rate_limit: _ }, core_ctx| {
                 let Some((route, ())) = timers.pop(bindings_ctx) else {
                     return;
                 };
@@ -703,17 +720,17 @@ mod tests {
         assert!(route_table.is_empty(), "route_table={route_table:?}");
     }
 
+    fn make_route(i: u16) -> Ipv6DiscoveredRoute {
+        Ipv6DiscoveredRoute {
+            subnet: Subnet::new(Ipv6Addr::new([0x2001, 0xdb8, 0, 0, 0, 0, 0, i]), 128)
+                .expect("should be a valid IPv6 Subnet"),
+            gateway: None,
+        }
+    }
+
     #[test]
     fn max_discovered_routes() {
         let CtxPair { mut core_ctx, mut bindings_ctx } = new_context();
-
-        fn make_route(i: u16) -> Ipv6DiscoveredRoute {
-            Ipv6DiscoveredRoute {
-                subnet: Subnet::new(Ipv6Addr::new([0x2001, 0xdb8, 0, 0, 0, 0, 0, i]), 128)
-                    .expect("should be a valid IPv6 Subnet"),
-                gateway: None,
-            }
-        }
 
         // Fill the routing table to the limit.
         for i in 0..MAX_DISCOVERED_ROUTES {
@@ -725,6 +742,8 @@ mod tests {
                 PROP1,
                 NonZeroNdpLifetime::Infinite,
             );
+            // NB: Advance the clock to avoid rate limiting in this test.
+            bindings_ctx.timers.instant.sleep(core::time::Duration::from_secs(1));
         }
         assert_eq!(core_ctx.state.route_table.route_table.len(), MAX_DISCOVERED_ROUTES);
 
@@ -778,6 +797,60 @@ mod tests {
             NonZeroNdpLifetime::Infinite,
         );
         assert_eq!(core_ctx.state.route_table.route_table.len(), MAX_DISCOVERED_ROUTES);
+        assert!(core_ctx.state.route_table.route_table.contains_key(&extra_route));
+    }
+
+    #[test]
+    fn rate_limiting() {
+        let CtxPair { mut core_ctx, mut bindings_ctx } = new_context();
+
+        // We can add up to the limit routes immediately (initial burst).
+        for i in 0..MAX_DISCOVERIES_PER_SECOND {
+            let route = make_route(i as u16);
+            discover_new_route(
+                &mut core_ctx,
+                &mut bindings_ctx,
+                route,
+                PROP1,
+                NonZeroNdpLifetime::Infinite,
+            );
+        }
+        assert_eq!(
+            core_ctx.state.route_table.route_table.len(),
+            MAX_DISCOVERIES_PER_SECOND as usize
+        );
+
+        // Rate limiting should prevent an additional route from being added.
+        let extra_route = make_route(MAX_DISCOVERIES_PER_SECOND as u16);
+        RouteDiscoveryHandler::update_route(
+            &mut core_ctx,
+            &mut bindings_ctx,
+            &FakeDeviceId,
+            extra_route,
+            PROP1,
+            Some(NonZeroNdpLifetime::Infinite),
+            &Default::default(),
+        );
+        assert_eq!(
+            core_ctx.state.route_table.route_table.len(),
+            MAX_DISCOVERIES_PER_SECOND as usize
+        );
+        assert!(!core_ctx.state.route_table.route_table.contains_key(&extra_route));
+
+        // Advance time by 1 second. The rate limit should be reset and
+        // the add should succeed.
+        bindings_ctx.timers.instant.sleep(core::time::Duration::from_secs(1));
+        discover_new_route(
+            &mut core_ctx,
+            &mut bindings_ctx,
+            extra_route,
+            PROP1,
+            NonZeroNdpLifetime::Infinite,
+        );
+        assert_eq!(
+            core_ctx.state.route_table.route_table.len(),
+            (MAX_DISCOVERIES_PER_SECOND + 1) as usize
+        );
         assert!(core_ctx.state.route_table.route_table.contains_key(&extra_route));
     }
 }
