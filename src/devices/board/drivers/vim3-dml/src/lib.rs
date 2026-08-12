@@ -24,22 +24,13 @@ use dml_config::parser::{
 static VIM3_PARSER_CONFIG: DmlParserConfig = DmlParserConfig {
     service_configs: phf::phf_map! {
         "fuchsia.hardware.gpio.Service" => ServiceBindConfig {
-            rules: &[
-                PropertyRule {
-                    bind_key: "fuchsia.BIND_GPIO_PIN",
-                    sources: &[ValueSource::ConstraintKey("pin")],
-                    value_type: RuleValueType::Integer,
-                    destination: Destination::BindRules,
-                    required: true,
-                },
-                PropertyRule {
-                    bind_key: "fuchsia.NAME",
-                    sources: &[ValueSource::ConstraintKey("name"), ValueSource::ResourceName],
-                    value_type: RuleValueType::String,
-                    destination: Destination::Properties,
-                    required: true,
-                },
-            ],
+            rules: &[PropertyRule {
+                bind_key: "fuchsia.BIND_GPIO_PIN",
+                sources: &[ValueSource::ConstraintKey("pin")],
+                value_type: RuleValueType::Integer,
+                destination: Destination::BindRules,
+                required: true,
+            }],
             parent_key_sources: &[
                 ValueSource::ResourceName,
                 ValueSource::Template("gpio-{name}"),
@@ -95,27 +86,12 @@ static VIM3_PARSER_CONFIG: DmlParserConfig = DmlParserConfig {
                     destination: Destination::BindRules,
                     required: false,
                 },
-                PropertyRule {
-                    bind_key: "fuchsia.NAME",
-                    sources: &[ValueSource::ConstraintKey("name"), ValueSource::ResourceName],
-                    value_type: RuleValueType::String,
-                    destination: Destination::Properties,
-                    required: true,
-                },
             ],
             parent_key_sources: &[ValueSource::ResourceName, ValueSource::Template("clock-{name}")],
             ..DEFAULT_SERVICE_BIND_CONFIG
         },
         "fuchsia.hardware.registers.Service" => ServiceBindConfig {
-            rules: &[
-                PropertyRule {
-                    bind_key: "fuchsia.NAME",
-                    sources: &[ValueSource::ConstraintKey("name"), ValueSource::ResourceName],
-                    value_type: RuleValueType::String,
-                    destination: Destination::Both,
-                    required: true,
-                },
-            ],
+            rules: &[],
             parent_key_sources: &[
                 ValueSource::Template("register-{name}"),
                 ValueSource::Template("register-{res.name}"),
@@ -165,15 +141,7 @@ static VIM3_PARSER_CONFIG: DmlParserConfig = DmlParserConfig {
             ..DEFAULT_SERVICE_BIND_CONFIG
         },
         "fuchsia.hardware.vreg.Service" => ServiceBindConfig {
-            rules: &[
-                PropertyRule {
-                    bind_key: "fuchsia.NAME",
-                    sources: &[ValueSource::ConstraintKey("name"), ValueSource::ResourceName],
-                    value_type: RuleValueType::String,
-                    destination: Destination::Both,
-                    required: true,
-                },
-            ],
+            rules: &[],
             parent_key_sources: &[ValueSource::ResourceName, ValueSource::Template("vreg-{name}")],
             ..DEFAULT_SERVICE_BIND_CONFIG
         },

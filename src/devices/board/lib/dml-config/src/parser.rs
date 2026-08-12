@@ -315,6 +315,13 @@ pub fn generate_parent_spec_generic(
         apply_rule(provider, provider_id, rule, res, constraint, &mut bind_rules, &mut properties)?;
     }
 
+    if !properties.iter().any(|p| p.key == "fuchsia.NAME") {
+        let name_opt = crate::get_string(constraint, "name").or_else(|| res.name.clone());
+        if let Some(name) = name_opt {
+            properties.push(make_property2("fuchsia.NAME", property_string(&name)));
+        }
+    }
+
     let resolved_key = service_config.parent_key_sources.iter().find_map(|source| {
         match resolve_value(provider, provider_id, source, res, constraint) {
             Some(ResolvedValue::String(k)) => Some(k),
