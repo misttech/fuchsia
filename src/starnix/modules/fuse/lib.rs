@@ -48,6 +48,11 @@ use starnix_uapi::{
 };
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, VecDeque};
+
+const FUSE_DEFAULT_MAX_PAGES: u16 = 32;
+
+static FUSE_DEFAULT_MAX_WRITE: std::sync::LazyLock<u32> =
+    std::sync::LazyLock::new(|| (FUSE_DEFAULT_MAX_PAGES as u32) * (*PAGE_SIZE as u32));
 use std::ops::{Deref, DerefMut};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Weak};
@@ -772,7 +777,7 @@ impl FileOps for FuseFileObject {
         &self,
         file: &FileObject,
         current_task: &CurrentTask,
-        offset: usize,
+        mut offset: usize,
         data: &mut dyn OutputBuffer,
     ) -> Result<usize, Errno> {
         if file.node().info().mode.is_dir() {
@@ -787,36 +792,82 @@ impl FileOps for FuseFileObject {
         if offset >= file_size {
             return Ok(0);
         }
-        let target_size = std::cmp::min(data.available(), file_size - offset);
+        let mut target_size = std::cmp::min(data.available(), file_size - offset);
         if target_size == 0 {
             return Ok(0);
         }
 
+        let max_transfer = self.connection.max_transfer_size();
         let node = Self::get_fuse_node(file);
-        let response = self.connection.lock().execute_operation(
-            current_task,
-            node,
-            FuseOperation::Read(uapi::fuse_read_in {
-                fh: self.open_out.fh,
-                offset: offset.try_into().map_err(|_| errno!(EINVAL))?,
-                size: target_size.try_into().unwrap_or(u32::MAX),
-                read_flags: 0,
-                lock_owner: 0,
-                flags: 0,
-                padding: 0,
-            }),
-        )?;
-        let FuseResponse::Read(read_out) = response else {
-            return error!(EINVAL);
-        };
-        data.write(&read_out)
+        let mut total_read = 0;
+
+        while target_size > 0 {
+            let chunk_size = std::cmp::min(target_size, max_transfer);
+            let response = self.connection.lock().execute_operation(
+                current_task,
+                node,
+                FuseOperation::Read(uapi::fuse_read_in {
+                    fh: self.open_out.fh,
+                    offset: offset.try_into().map_err(|_| errno!(EINVAL))?,
+                    size: chunk_size.try_into().map_err(|_| errno!(EINVAL))?,
+                    read_flags: 0,
+                    lock_owner: 0,
+                    flags: 0,
+                    padding: 0,
+                }),
+            );
+
+            let response = match response {
+                Ok(r) => r,
+                Err(e) => {
+                    if total_read > 0 {
+                        return Ok(total_read);
+                    } else {
+                        return Err(e);
+                    }
+                }
+            };
+
+            let FuseResponse::Read(read_out) = response else {
+                if total_read > 0 {
+                    return Ok(total_read);
+                } else {
+                    return error!(EINVAL);
+                }
+            };
+            let read_out_len = read_out.len();
+            if read_out_len == 0 {
+                break; // EOF from daemon
+            }
+            let to_write = std::cmp::min(read_out_len, chunk_size);
+            let write_len = match data.write(&read_out[..to_write]) {
+                Ok(len) => len,
+                Err(e) => {
+                    if total_read > 0 {
+                        return Ok(total_read);
+                    } else {
+                        return Err(e);
+                    }
+                }
+            };
+            offset += write_len;
+            total_read += write_len;
+            target_size = target_size.saturating_sub(write_len);
+            if write_len < to_write {
+                break;
+            }
+            if read_out_len < chunk_size {
+                break; // Short read from daemon
+            }
+        }
+        Ok(total_read)
     }
 
     fn write(
         &self,
         file: &FileObject,
         current_task: &CurrentTask,
-        offset: usize,
+        mut offset: usize,
         data: &mut dyn InputBuffer,
     ) -> Result<usize, Errno> {
         if file.node().info().mode.is_dir() {
@@ -826,32 +877,77 @@ impl FileOps for FuseFileObject {
             return file_object.ops().write(&file_object, current_task, offset, data);
         }
         let node = Self::get_fuse_node(file);
-        let content = data.peek_all()?;
-        let response = self.connection.lock().execute_operation(
-            current_task,
-            node,
-            FuseOperation::Write {
-                write_in: uapi::fuse_write_in {
-                    fh: self.open_out.fh,
-                    offset: offset.try_into().map_err(|_| errno!(EINVAL))?,
-                    size: content.len().try_into().map_err(|_| errno!(EINVAL))?,
-                    write_flags: 0,
-                    lock_owner: 0,
-                    flags: 0,
-                    padding: 0,
+
+        let max_transfer = self.connection.max_transfer_size();
+        let mut total_written = 0;
+
+        while data.available() > 0 {
+            let chunk_size = std::cmp::min(data.available(), max_transfer);
+            let mut chunk = Vec::with_capacity(chunk_size);
+            let peeked = data.peek(chunk.spare_capacity_mut())?;
+            if peeked == 0 {
+                break;
+            }
+            // SAFETY: `data.peek` guarantees that it has initialized `peeked` bytes in the
+            // buffer. `peeked` is `<= chunk_size` (which is the capacity of the vector).
+            unsafe {
+                chunk.set_len(peeked);
+            }
+
+            let response = self.connection.lock().execute_operation(
+                current_task,
+                node,
+                FuseOperation::Write {
+                    write_in: uapi::fuse_write_in {
+                        fh: self.open_out.fh,
+                        offset: offset.try_into().map_err(|_| errno!(EINVAL))?,
+                        size: peeked.try_into().map_err(|_| errno!(EINVAL))?,
+                        write_flags: 0,
+                        lock_owner: 0,
+                        flags: 0,
+                        padding: 0,
+                    },
+                    content: chunk,
                 },
-                content,
-            },
-        )?;
-        let FuseResponse::Write(write_out) = response else {
-            return error!(EINVAL);
-        };
-        node.invalidate_attributes();
+            );
 
-        let written = write_out.size as usize;
+            let response = match response {
+                Ok(r) => r,
+                Err(e) => {
+                    if total_written > 0 {
+                        break;
+                    } else {
+                        return Err(e);
+                    }
+                }
+            };
 
-        data.advance(written)?;
-        Ok(written)
+            let FuseResponse::Write(write_out) = response else {
+                if total_written > 0 {
+                    break;
+                } else {
+                    return error!(EINVAL);
+                }
+            };
+
+            let written = std::cmp::min(write_out.size as usize, peeked);
+            offset += written;
+            total_written += written;
+            if let Err(e) = data.advance(written) {
+                if total_written > 0 {
+                    break;
+                } else {
+                    return Err(e);
+                }
+            }
+            if written < peeked {
+                break; // Short write from daemon
+            }
+        }
+        if total_written > 0 {
+            node.invalidate_attributes();
+        }
+        Ok(total_written)
     }
 
     fn seek(
@@ -891,8 +987,25 @@ impl FileOps for FuseFileObject {
         default_seek(current_offset, target, || default_eof_offset(file, current_task))
     }
 
-    fn sync(&self, _file: &FileObject, _current_task: &CurrentTask) -> Result<(), Errno> {
-        track_stub!(TODO("https://fxbug.dev/352359968"), "FUSE fsync()");
+    fn sync(&self, file: &FileObject, current_task: &CurrentTask) -> Result<(), Errno> {
+        let node = Self::get_fuse_node(file);
+        let is_dir = file.node().info().mode.is_dir();
+        let _response = self.connection.lock().execute_operation(
+            current_task,
+            node,
+            FuseOperation::Fsync { fh: self.open_out.fh, is_dir, datasync: false },
+        )?;
+        Ok(())
+    }
+
+    fn data_sync(&self, file: &FileObject, current_task: &CurrentTask) -> Result<(), Errno> {
+        let node = Self::get_fuse_node(file);
+        let is_dir = file.node().info().mode.is_dir();
+        let _response = self.connection.lock().execute_operation(
+            current_task,
+            node,
+            FuseOperation::Fsync { fh: self.open_out.fh, is_dir, datasync: true },
+        )?;
         Ok(())
     }
 
@@ -1673,18 +1786,39 @@ impl FuseConnection {
             self.state.lock(),
         ))
     }
+
+    fn max_transfer_size(&self) -> usize {
+        self.lock()
+            .configuration
+            .map(|c| c.max_transfer_size())
+            .unwrap_or(*FUSE_DEFAULT_MAX_WRITE as usize)
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
 struct FuseConfiguration {
     flags: FuseInitFlags,
+    max_write: u32,
+    max_pages: u16,
+}
+
+impl FuseConfiguration {
+    fn max_transfer_size(&self) -> usize {
+        let limit_by_write = self.max_write as usize;
+        let limit_by_pages = (self.max_pages as usize) * (*PAGE_SIZE as usize);
+        std::cmp::min(limit_by_write, limit_by_pages)
+    }
 }
 
 impl TryFrom<uapi::fuse_init_out> for FuseConfiguration {
     type Error = Errno;
     fn try_from(init_out: uapi::fuse_init_out) -> Result<Self, Errno> {
         let flags = FuseInitFlags::try_from(init_out)?;
-        Ok(Self { flags })
+        let max_write =
+            if init_out.max_write == 0 { *FUSE_DEFAULT_MAX_WRITE } else { init_out.max_write };
+        let max_pages =
+            if init_out.max_pages == 0 { FUSE_DEFAULT_MAX_PAGES } else { init_out.max_pages };
+        Ok(Self { flags, max_write, max_pages })
     }
 }
 
@@ -2154,6 +2288,9 @@ enum RunningOperationKind {
     Create,
     Flush,
     Forget,
+    Fsync {
+        dir: bool,
+    },
     GetAttr,
     Init {
         /// The FUSE fs that triggered this operation.
@@ -2208,6 +2345,13 @@ impl RunningOperationKind {
             Self::Create => uapi::fuse_opcode_FUSE_CREATE,
             Self::Flush => uapi::fuse_opcode_FUSE_FLUSH,
             Self::Forget => uapi::fuse_opcode_FUSE_FORGET,
+            Self::Fsync { dir } => {
+                if *dir {
+                    uapi::fuse_opcode_FUSE_FSYNCDIR
+                } else {
+                    uapi::fuse_opcode_FUSE_FSYNC
+                }
+            }
             Self::GetAttr => uapi::fuse_opcode_FUSE_GETATTR,
             Self::GetXAttr { .. } => uapi::fuse_opcode_FUSE_GETXATTR,
             Self::Init { .. } => uapi::fuse_opcode_FUSE_INIT,
@@ -2329,6 +2473,7 @@ impl RunningOperationKind {
                 Ok(FuseResponse::Readdir(result))
             }
             Self::Flush
+            | Self::Fsync { .. }
             | Self::Release { .. }
             | Self::RemoveXAttr
             | Self::Rename
@@ -2399,6 +2544,11 @@ enum FuseOperation {
     Create(uapi::fuse_create_in, FsString),
     Flush(uapi::fuse_open_out),
     Forget(uapi::fuse_forget_in),
+    Fsync {
+        fh: u64,
+        is_dir: bool,
+        datasync: bool,
+    },
     GetAttr,
     Init {
         /// The FUSE fs that triggered this operation.
@@ -2559,6 +2709,11 @@ impl FuseOperation {
                 data.write_all(message.as_bytes())
             }
             Self::Forget(forget_in) => data.write_all(forget_in.as_bytes()),
+            Self::Fsync { fh, datasync, .. } => {
+                let fsync_flags = if *datasync { uapi::FUSE_FSYNC_FDATASYNC } else { 0 };
+                let message = uapi::fuse_fsync_in { fh: *fh, fsync_flags, padding: 0 };
+                data.write_all(message.as_bytes())
+            }
             Self::GetAttr | Self::Readlink | Self::Statfs => Ok(0),
             Self::GetXAttr { getxattr_in, name } => {
                 let mut len = data.write_all(getxattr_in.as_bytes())?;
@@ -2666,6 +2821,13 @@ impl FuseOperation {
             Self::Create { .. } => uapi::fuse_opcode_FUSE_CREATE,
             Self::Flush(_) => uapi::fuse_opcode_FUSE_FLUSH,
             Self::Forget(_) => uapi::fuse_opcode_FUSE_FORGET,
+            Self::Fsync { is_dir, .. } => {
+                if *is_dir {
+                    uapi::fuse_opcode_FUSE_FSYNCDIR
+                } else {
+                    uapi::fuse_opcode_FUSE_FSYNC
+                }
+            }
             Self::GetAttr => uapi::fuse_opcode_FUSE_GETATTR,
             Self::GetXAttr { .. } => uapi::fuse_opcode_FUSE_GETXATTR,
             Self::Init { .. } => uapi::fuse_opcode_FUSE_INIT,
@@ -2713,6 +2875,7 @@ impl FuseOperation {
             Self::Create { .. } => RunningOperationKind::Create,
             Self::Flush(_) => RunningOperationKind::Flush,
             Self::Forget(_) => RunningOperationKind::Forget,
+            Self::Fsync { is_dir, .. } => RunningOperationKind::Fsync { dir: *is_dir },
             Self::GetAttr => RunningOperationKind::GetAttr,
             Self::GetXAttr { getxattr_in, .. } => {
                 RunningOperationKind::GetXAttr { size: getxattr_in.size }
