@@ -438,11 +438,7 @@ class AsyncMain:
     ]
 
     _PACKAGE_MANIFESTS_FROM_METADATA_PATH = [
-        "gen",
-        "build",
-        "images",
-        "updates",
-        "package_manifests_from_metadata.list.package_metadata",
+        "package_manifests_from_metadata.list",
     ]
 
     def __init__(
@@ -1282,27 +1278,36 @@ class AsyncMain:
                 "E2E test selected, building updates package"
             )
         elif tests.has_device_test():
-            package_repo = package_repository.PackageRepository.from_env(
-                exec_env
-            )
-            device_test_names = [
-                package_name
-                for test in tests.selected
-                if (package_name := test.package_name()) is not None
-            ]
+            missing_packages: list[str] = []
+            try:
+                package_repo = package_repository.PackageRepository.from_env(
+                    exec_env
+                )
+                device_test_names = [
+                    package_name
+                    for test in tests.selected
+                    if (package_name := test.package_name()) is not None
+                ]
 
-            missing_packages = sorted(
-                set(
-                    filter(
-                        lambda name: name not in package_repo.name_to_merkle,
-                        device_test_names,
+                missing_packages = sorted(
+                    set(
+                        filter(
+                            lambda name: name
+                            not in package_repo.name_to_merkle,
+                            device_test_names,
+                        )
                     )
                 )
-            )
+            except package_repository.PackageRepositoryError:
+                missing_packages = [
+                    package_name
+                    for test in tests.selected
+                    if (package_name := test.package_name()) is not None
+                ]
 
-            if missing_packages:
+            if missing_packages and allow_build_updates:
                 recorder.emit_info_message(
-                    f"Missing {len(missing_packages)} from package lists. Regenerating test lists."
+                    f"Missing {len(missing_packages)} from package lists. Regenerating test lists and building updates."
                 )
                 packages_string = "   - " + "\n   - ".join(
                     missing_packages[:10]
@@ -1312,10 +1317,15 @@ class AsyncMain:
                         f"\n   (and {len(missing_packages) - 10} more)"
                     )
                 recorder.emit_instruction_message(packages_string)
-                # We need to rebuild package lists to ensure the added tests are visible.
-                # See https://fxbug.dev/442839521 and https://fxbug.dev/448165046 for details.
+                # Rebuild lightweight package lists and discoverable metadata so
+                # the added test packages can be published without requiring a full build.
                 build_command_line.extend(
-                    ["--default", "//build/images/updates:package_lists"]
+                    [
+                        "--default",
+                        "//build/images/updates:package_lists",
+                        "//build/images/updates:discoverable_manifests_from_metadata.list",
+                        "//build/images/updates:prepare_publish",
+                    ]
                 )
 
         build_id = recorder.emit_build_start(targets=build_command_line)
@@ -1357,6 +1367,8 @@ class AsyncMain:
             except self._PublishException as e:
                 error = e.reason
 
+        package_repository.PackageRepository.from_env_cached.cache_clear()
+
         if not error and not await self._post_build_checklist(tests, build_id):
             error = "Post build checklist failed"
 
@@ -1392,27 +1404,29 @@ class AsyncMain:
         # rebuild. To solve this problem, we actually synthesize a
         # new package manifest consisting of the original
         # all_package_manifests.list plus any new packages listed in
-        # the generated file "package_manifests_from_metadata.list.package_metadata".
+        # the generated file "package_manifests_from_metadata.list".
         # The new combined file will contain tests added using `fx add-test`.
         all_package_manifests = os.path.join(
             exec_env.out_dir,
             *self._ALL_PACKAGE_MANIFESTS_PATH,
         )
 
-        # Load the original package manifest list.
-        package_manifest: dict[str, typing.Any]
-        with open(all_package_manifests) as f:
-            package_manifest = json.load(f)
+        version = "1"
+        manifest_list: list[str] = []
+        if os.path.isfile(all_package_manifests):
+            try:
+                with open(all_package_manifests) as f:
+                    package_manifest = json.load(f)
+                manifest_list = package_manifest.get("content", {}).get(
+                    "manifests", []
+                )
+                version = package_manifest.get("version", "1")
+            except Exception:
+                raise self._PublishException(
+                    "BUG: Failed to load manifest list from all_package_manifests.list\nPlease file a bug."
+                )
 
-        manifest_list: list[str]
-        try:
-            manifest_list = package_manifest["content"]["manifests"]
-        except KeyError:
-            raise self._PublishException(
-                "BUG: Failed to load manifest list from all_package_manifests.list\nPlease file a bug."
-            )
-
-        # Load the generated list file, which just has a package manifest path per line.
+        # Load the generated list file (package_manifests_from_metadata.list).
         manifests_metadata_path = os.path.abspath(
             os.path.join(
                 exec_env.out_dir,
@@ -1420,18 +1434,28 @@ class AsyncMain:
             )
         )
 
-        # Read all lines from the generated file, merging them back into the package manifest.
+        # Read all entries from the generated file, merging them back into the package manifest.
         if os.path.isfile(manifests_metadata_path):
-            lines: list[str]
             with open(manifests_metadata_path) as f:
-                lines = [
-                    stripped_line
-                    for l in f.readlines()
-                    if (stripped_line := l.strip()) != ""
-                ]
-            manifest_list = list(set(manifest_list).union(lines))
+                try:
+                    data = json.load(f)
+                    meta_manifests = data.get("content", {}).get(
+                        "manifests", []
+                    )
+                    if "version" in data:
+                        version = data["version"]
+                except json.JSONDecodeError:
+                    meta_manifests = [
+                        stripped_line
+                        for l in f.readlines()
+                        if (stripped_line := l.strip()) != ""
+                    ]
+            manifest_list = list(set(manifest_list).union(meta_manifests))
 
-        package_manifest["content"]["manifests"] = manifest_list
+        package_manifest = {
+            "content": {"manifests": sorted(manifest_list)},
+            "version": version or "1",
+        }
 
         with tempfile.TemporaryDirectory() as td:
             # Generate a merged temporary manifest.

@@ -164,22 +164,21 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
         )
 
         # Simulate the generated package metadata to test merging.
-        gen_dir = os.path.join(
-            self.out_dir, "gen", "build", "images", "updates"
-        )
-        os.makedirs(gen_dir)
         with open(
-            os.path.join(
-                gen_dir, "package_manifests_from_metadata.list.package_metadata"
-            ),
+            os.path.join(self.out_dir, "package_manifests_from_metadata.list"),
             "w",
         ) as f:
-            f.writelines(
-                [
-                    "obj/foo/package_manifest.json",
-                    "obj/bar/package_manifest.json",
-                    "obj/baz/package_manifest.json",
-                ]
+            json.dump(
+                {
+                    "content": {
+                        "manifests": [
+                            "obj/foo/package_manifest.json",
+                            "obj/bar/package_manifest.json",
+                            "obj/baz/package_manifest.json",
+                        ]
+                    }
+                },
+                f,
             )
 
         self._mock_get_device_environment(
@@ -1601,6 +1600,8 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
                     "//src/sys:foo_test_package",
                     "--default",
                     "//build/images/updates:package_lists",
+                    "//build/images/updates:discoverable_manifests_from_metadata.list",
+                    "//build/images/updates:prepare_publish",
                 ),
                 (
                     "fx",
@@ -1681,6 +1682,57 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
             fuzzy_distance_threshold=0,
         )
         self.assertTrue(await app._do_build(empty_selections))
+
+    @mock.patch("main.run_build_with_suspended_output")
+    async def test_do_build_missing_packages_includes_updates_target(
+        self, mock_build: mock.AsyncMock
+    ) -> None:
+        """Test that device tests with missing packages add lightweight package list targets."""
+        mock_build.return_value = 0
+        self._mock_has_tests_in_base([])
+
+        app = main.AsyncMain.__new__(main.AsyncMain)
+        app._recorder = event.EventRecorder()
+        app._flags = args.parse_args(["--simple"])
+        app._exec_env = environment.ExecutionEnvironment.initialize_from_args(
+            app._flags
+        )
+        app._publish_packages = mock.AsyncMock()
+
+        mock_test = test_list_file.Test(
+            build=tests_json_file.TestEntry(
+                test=tests_json_file.TestSection(
+                    name="fuchsia-pkg://fuchsia.com/my-missing-pkg#meta/my-test.cm",
+                    label="//src/sys:my_test(//build/toolchain/fuchsia:x64)",
+                    os="fuchsia",
+                    package_url="fuchsia-pkg://fuchsia.com/my-missing-pkg#meta/my-test.cm",
+                )
+            )
+        )
+
+        device_selections = selection_types.TestSelections(
+            selected=[mock_test],
+            selected_but_not_run=[],
+            best_score={},
+            group_matches=[],
+            fuzzy_distance_threshold=0,
+        )
+
+        with mock.patch(
+            "package_repository.PackageRepository.from_env"
+        ) as mock_repo:
+            mock_repo.return_value = mock.MagicMock(name_to_merkle={})
+            self.assertTrue(await app._do_build(device_selections))
+
+        mock_build.assert_called_once()
+        build_targets = mock_build.call_args[0][1]
+        self.assertIn("//build/images/updates:package_lists", build_targets)
+        self.assertIn(
+            "//build/images/updates:discoverable_manifests_from_metadata.list",
+            build_targets,
+        )
+        self.assertIn("//build/images/updates:prepare_publish", build_targets)
+        self.assertNotIn("//build/images/updates", build_targets)
 
     async def test_no_build(self) -> None:
         """Test that we can run all tests and report success"""
