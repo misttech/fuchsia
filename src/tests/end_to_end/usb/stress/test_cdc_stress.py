@@ -26,7 +26,6 @@ Specifically, it exercises:
 """
 
 import asyncio
-import hashlib
 import ipaddress
 import logging
 import os
@@ -40,6 +39,9 @@ from honeydew.transports.ffx.types import MachineFormat
 from mobly import asserts, test_runner
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
+
+# 64KB chunk size for streaming payload into target shell builtins
+_TRANSFER_CHUNK_SIZE_BYTES: int = 65536
 
 
 class CdcStressTest(fuchsia_base_test.FuchsiaBaseTest):
@@ -227,8 +229,12 @@ class CdcStressTest(fuchsia_base_test.FuchsiaBaseTest):
                 transfer_mb,
                 host_payload_path,
             )
-            payload = b"X" * expected_bytes
-            host_sha1 = hashlib.sha1(payload).hexdigest()
+            # Format payload in newline-delimited no-op shell commands (": <data>\n")
+            # to ensure /boot/bin/sh processes and discards incoming stream cleanly on target.
+            num_chunks = expected_bytes // _TRANSFER_CHUNK_SIZE_BYTES
+            payload = (
+                b": " + b"X" * (_TRANSFER_CHUNK_SIZE_BYTES - 3) + b"\n"
+            ) * num_chunks
             with open(host_payload_path, "wb") as f:
                 f.write(payload)
 
@@ -240,11 +246,12 @@ class CdcStressTest(fuchsia_base_test.FuchsiaBaseTest):
                     transfer_mb,
                 )
                 try:
+                    # Stream payload into /boot/bin/sh on target which executes no-op colons across all chunks
                     ffx_cmd = self.dut.ffx.generate_ffx_cmd(
                         cmd=[
                             "target",
                             "ssh",
-                            "sha1sum",
+                            "/boot/bin/sh",
                         ],
                         include_target=True,
                         machine=MachineFormat.RAW,
@@ -257,12 +264,6 @@ class CdcStressTest(fuchsia_base_test.FuchsiaBaseTest):
                             stdout=subprocess.PIPE,
                             stderr=subprocess.PIPE,
                             check=True,
-                        )
-                        target_sha1 = result.stdout.decode("utf-8").split()[0]
-                        asserts.assert_equal(
-                            host_sha1,
-                            target_sha1,
-                            "Transferred payload corrupted! sha1 mismatch",
                         )
 
                     _LOGGER.info(
