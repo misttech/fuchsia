@@ -4,22 +4,27 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+use super::dispatcher::{
+    DispatcherOps, PeerHolder, PeeredState, impl_peered_dispatcher_facade_with_state,
+};
+use super::event_pair_dispatcher_ffi::cpp_event_pair_dispatcher_create;
+use super::handle::KernelHandle;
+use core::convert::Infallible;
 use core::mem::MaybeUninit;
-
+use core::pin::Pin;
 use counters_rs::define_kcounter;
 use fbl::{Canary, RefPtr};
 use ksync::guarded;
+use object_constants_rs::{
+    kEventPairDispatcherStateAlign, kEventPairDispatcherStateOffset, kEventPairDispatcherStateSize,
+};
 use pin_init::{PinInit, pin_data, pin_init, pinned_drop};
 use zx_status::Status;
 use zx_types::{
-    ZX_EVENT_SIGNALED, ZX_OBJ_TYPE_EVENTPAIR, ZX_RIGHT_DUPLICATE, ZX_RIGHT_INSPECT,
-    ZX_RIGHT_SIGNAL, ZX_RIGHT_SIGNAL_PEER, ZX_RIGHT_TRANSFER, ZX_RIGHT_WAIT, ZX_USER_SIGNAL_ALL,
-    zx_rights_t,
+    ZX_EVENT_SIGNALED, ZX_OBJ_TYPE_EVENTPAIR, ZX_OBJECT_PEER_CLOSED, ZX_RIGHT_DUPLICATE,
+    ZX_RIGHT_INSPECT, ZX_RIGHT_SIGNAL, ZX_RIGHT_SIGNAL_PEER, ZX_RIGHT_TRANSFER, ZX_RIGHT_WAIT,
+    ZX_USER_SIGNAL_ALL, zx_rights_t,
 };
-
-use super::dispatcher::{DispatcherOps, PeerHolder, PeeredState};
-use super::handle::KernelHandle;
-use object_constants_rs as object_constants;
 
 pub const DEFAULT_RIGHTS: zx_rights_t = ZX_RIGHT_TRANSFER
     | ZX_RIGHT_DUPLICATE
@@ -32,8 +37,8 @@ pub const ALLOWED_SIGNALS: u32 = ZX_USER_SIGNAL_ALL | ZX_EVENT_SIGNALED;
 
 zr::static_assert_size_and_align!(
     EventPairDispatcherState,
-    object_constants::kEventPairDispatcherStateSize,
-    object_constants::kEventPairDispatcherStateAlign,
+    kEventPairDispatcherStateSize,
+    kEventPairDispatcherStateAlign,
 );
 
 define_kcounter!(DISPATCHER_EVENTPAIR_CREATE_COUNT, "dispatcher.eventpair.create", Sum);
@@ -50,9 +55,7 @@ pub struct EventPairDispatcherState {
 }
 
 impl EventPairDispatcherState {
-    pub fn init(
-        holder: RefPtr<PeerHolder<EventPairDispatcher>>,
-    ) -> impl PinInit<Self, core::convert::Infallible> {
+    pub fn init(holder: RefPtr<PeerHolder<EventPairDispatcher>>) -> impl PinInit<Self, Infallible> {
         DISPATCHER_EVENTPAIR_CREATE_COUNT.add(1);
         pin_init!(Self {
             canary: Canary::new(),
@@ -63,16 +66,16 @@ impl EventPairDispatcherState {
 
 #[pinned_drop]
 impl PinnedDrop for EventPairDispatcherState {
-    fn drop(self: core::pin::Pin<&mut Self>) {
+    fn drop(self: Pin<&mut Self>) {
         DISPATCHER_EVENTPAIR_DESTROY_COUNT.add(1);
     }
 }
 
-crate::object::dispatcher::impl_peered_dispatcher_facade_with_state!(
+impl_peered_dispatcher_facade_with_state!(
     pub struct EventPairDispatcher,
     EventPairDispatcherState,
     ZX_OBJ_TYPE_EVENTPAIR,
-    object_constants::kEventPairDispatcherStateOffset,
+    kEventPairDispatcherStateOffset,
     allowed_signals: ALLOWED_SIGNALS,
 );
 
@@ -90,7 +93,7 @@ impl EventPairDispatcher {
             |holder: RefPtr<PeerHolder<Self>>| -> Result<KernelHandle<Self>, Status> {
                 let mut handle = MaybeUninit::<KernelHandle<Self>>::uninit();
                 let status = unsafe {
-                    super::event_pair_dispatcher_ffi::cpp_event_pair_dispatcher_create(
+                    cpp_event_pair_dispatcher_create(
                         RefPtr::into_raw(holder) as *mut _,
                         &mut handle,
                     )
@@ -114,7 +117,7 @@ impl EventPairDispatcher {
         ksync::lock!(let mut guard = self.state().peered.lock());
         if let Some(p) = guard.as_mut().peer_mut().take() {
             *p.state().peered.guard_mu_mut(guard.as_mut().token_mut()).peer_mut() = None;
-            p.update_state_locked(guard.token(), 0, zx_types::ZX_OBJECT_PEER_CLOSED);
+            p.update_state_locked(guard.token(), 0, ZX_OBJECT_PEER_CLOSED);
         }
     }
 }
