@@ -45,58 +45,56 @@ TEST_F(RemoteDeviceIdProviderTest, DeviceIdToAnnotations) {
                              }));
 }
 
-TEST(LocalDeviceIdProviderTest, GetOnUpdate) {
-  files::ScopedTempDir tmp_dir;
-  auto ReadFile = [](const std::string& path) {
+class LocalDeviceIdProviderTest : public UnitTestFixture {
+ protected:
+  static std::string ReadFile(const std::string& path) {
     std::string file_contents;
     FX_CHECK(files::ReadFileToString(path, &file_contents));
     return file_contents;
-  };
-
-  {
-    std::string device_id_path;
-
-    ASSERT_TRUE(tmp_dir.NewTempFileWithData(kDefaultDeviceId, &device_id_path));
-    LocalDeviceIdProvider device_id_provider(device_id_path);
-
-    Annotations annotations;
-    device_id_provider.GetOnUpdate(
-        [&annotations](Annotations result) { annotations = std::move(result); });
-
-    EXPECT_THAT(annotations, UnorderedElementsAreArray({
-                                 Pair(kDeviceFeedbackIdKey, ErrorOrString(kDefaultDeviceId)),
-                             }));
-    EXPECT_EQ(ReadFile(device_id_path), kDefaultDeviceId);
   }
 
-  {
-    std::string device_id_path;
+  files::ScopedTempDir tmp_dir_;
+};
 
-    ASSERT_TRUE(tmp_dir.NewTempFileWithData(kInvalidDeviceId, &device_id_path));
-    LocalDeviceIdProvider device_id_provider(device_id_path);
+TEST_F(LocalDeviceIdProviderTest, PreservesValidId) {
+  std::string device_id_path;
+  ASSERT_TRUE(tmp_dir_.NewTempFileWithData(kDefaultDeviceId, &device_id_path));
 
-    Annotations annotations;
+  LocalDeviceIdProvider device_id_provider(device_id_path);
+  Annotations annotations;
+  device_id_provider.GetOnUpdate(
+      [&annotations](Annotations result) { annotations = std::move(result); });
 
-    device_id_provider.GetOnUpdate(
-        [&annotations](Annotations result) { annotations = std::move(result); });
+  EXPECT_THAT(annotations, UnorderedElementsAreArray({
+                               Pair(kDeviceFeedbackIdKey, ErrorOrString(kDefaultDeviceId)),
+                           }));
+  EXPECT_EQ(ReadFile(device_id_path), kDefaultDeviceId);
+}
 
-    ASSERT_TRUE(annotations.at(kDeviceFeedbackIdKey).HasValue());
-    EXPECT_NE(annotations.at(kDeviceFeedbackIdKey).Value(), kInvalidDeviceId);
-    EXPECT_EQ(ReadFile(device_id_path), annotations.at(kDeviceFeedbackIdKey).Value());
-  }
+TEST_F(LocalDeviceIdProviderTest, ReplacesInvalidId) {
+  std::string device_id_path;
+  ASSERT_TRUE(tmp_dir_.NewTempFileWithData(kInvalidDeviceId, &device_id_path));
 
-  {
-    std::string device_id_path = files::JoinPath(tmp_dir.path(), "device_id_file.txt");
+  LocalDeviceIdProvider device_id_provider(device_id_path);
+  Annotations annotations;
+  device_id_provider.GetOnUpdate(
+      [&annotations](Annotations result) { annotations = std::move(result); });
 
-    LocalDeviceIdProvider device_id_provider(device_id_path);
+  ASSERT_TRUE(annotations.at(kDeviceFeedbackIdKey).HasValue());
+  EXPECT_NE(annotations.at(kDeviceFeedbackIdKey).Value(), kInvalidDeviceId);
+  EXPECT_EQ(ReadFile(device_id_path), annotations.at(kDeviceFeedbackIdKey).Value());
+}
 
-    Annotations annotations;
-    device_id_provider.GetOnUpdate(
-        [&annotations](Annotations result) { annotations = std::move(result); });
+TEST_F(LocalDeviceIdProviderTest, GeneratesNewIdWhenFileMissing) {
+  const std::string device_id_path = files::JoinPath(tmp_dir_.path(), "device_id_file.txt");
 
-    EXPECT_TRUE(annotations.contains(kDeviceFeedbackIdKey));
-    EXPECT_EQ(ReadFile(device_id_path), annotations.at(kDeviceFeedbackIdKey).Value());
-  }
+  LocalDeviceIdProvider device_id_provider(device_id_path);
+  Annotations annotations;
+  device_id_provider.GetOnUpdate(
+      [&annotations](Annotations result) { annotations = std::move(result); });
+
+  EXPECT_TRUE(annotations.contains(kDeviceFeedbackIdKey));
+  EXPECT_EQ(ReadFile(device_id_path), annotations.at(kDeviceFeedbackIdKey).Value());
 }
 
 }  // namespace
