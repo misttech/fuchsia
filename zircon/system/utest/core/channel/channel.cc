@@ -2008,5 +2008,62 @@ TEST(ChannelTest, CallInvalidArgsPointerReturnsInvalidArgs) {
             ZX_ERR_INVALID_ARGS);
 }
 
+TEST(ChannelTest, WriteIovecBoundedInvalidPointerReturnsInvalidArgs) {
+  zx::channel local, remote;
+  ASSERT_OK(zx::channel::create(0, &local, &remote));
+
+  // Passing an invalid pointer with num_iovecs <= 16 (bounded).
+  EXPECT_EQ(
+      local.write(ZX_CHANNEL_WRITE_USE_IOVEC, reinterpret_cast<const void*>(1), 4, nullptr, 0),
+      ZX_ERR_INVALID_ARGS);
+}
+
+TEST(ChannelTest, WriteIovecUnboundedInvalidPointerReturnsInvalidArgs) {
+  zx::channel local, remote;
+  ASSERT_OK(zx::channel::create(0, &local, &remote));
+
+  // Passing an invalid pointer with num_iovecs > 16 (unbounded).
+  EXPECT_EQ(
+      local.write(ZX_CHANNEL_WRITE_USE_IOVEC, reinterpret_cast<const void*>(1), 20, nullptr, 0),
+      ZX_ERR_INVALID_ARGS);
+}
+
+TEST(ChannelTest, WriteIovecBoundedNonZeroReservedReturnsInvalidArgs) {
+  zx::channel local, remote;
+  ASSERT_OK(zx::channel::create(0, &local, &remote));
+
+  constexpr uint32_t kNumIovecs = 4;
+  char data[kNumIovecs] = {0};
+  zx_channel_iovec_t iovecs[kNumIovecs] = {};
+  for (uint32_t i = 0; i < kNumIovecs; ++i) {
+    iovecs[i].buffer = &data[i];
+    iovecs[i].capacity = 1;
+    iovecs[i].reserved = 0;
+  }
+  iovecs[2].reserved = 1;
+
+  EXPECT_EQ(local.write(ZX_CHANNEL_WRITE_USE_IOVEC, iovecs, kNumIovecs, nullptr, 0),
+            ZX_ERR_INVALID_ARGS);
+}
+
+TEST(ChannelTest, WriteIovecUnboundedNonZeroReservedReturnsInvalidArgs) {
+  zx::channel local, remote;
+  ASSERT_OK(zx::channel::create(0, &local, &remote));
+
+  constexpr uint32_t kNumIovecs = 20;
+  char data[kNumIovecs] = {0};
+  zx_channel_iovec_t iovecs[kNumIovecs] = {};
+  for (uint32_t i = 0; i < kNumIovecs; ++i) {
+    iovecs[i].buffer = &data[i];
+    iovecs[i].capacity = 1;
+    iovecs[i].reserved = 0;
+  }
+  // Set non-zero reserved field in the second chunk (index >= 16).
+  iovecs[18].reserved = 1;
+
+  EXPECT_EQ(local.write(ZX_CHANNEL_WRITE_USE_IOVEC, iovecs, kNumIovecs, nullptr, 0),
+            ZX_ERR_INVALID_ARGS);
+}
+
 }  // namespace
 }  // namespace channel
