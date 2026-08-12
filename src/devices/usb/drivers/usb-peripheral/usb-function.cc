@@ -189,6 +189,10 @@ UsbFunction::~UsbFunction() {
 void UsbFunction::ConnectToEndpoint(ConnectToEndpointRequest& request,
                                     ConnectToEndpointCompleter::Sync& completer) {
   TRACE_DURATION("usb-peripheral", __func__);
+  if (!peripheral_->ValidateEndpoint(index_, request.ep_addr())) {
+    completer.Reply(fit::as_error(ZX_ERR_NOT_FOUND));
+    return;
+  }
   auto status = peripheral_->ConnectToEndpoint(request.ep_addr(), std::move(request.ep()));
   if (status != ZX_OK) {
     completer.Reply(fit::as_error(status));
@@ -200,6 +204,11 @@ void UsbFunction::ConnectToEndpoint(ConnectToEndpointRequest& request,
 void UsbFunction::AllocResources(AllocResourcesRequest& request,
                                  AllocResourcesCompleter::Sync& completer) {
   TRACE_DURATION("usb-peripheral", __func__);
+  if (function_intf_.is_valid()) {
+    fdf::error("AllocResources failed: already configured");
+    completer.Reply(fit::as_error(ZX_ERR_BAD_STATE));
+    return;
+  }
 
   zx::result result = peripheral_->AllocResources(index_, request.interface_count(),
                                                   request.endpoints(), request.strings());
@@ -219,6 +228,11 @@ void UsbFunction::AllocResources(AllocResourcesRequest& request,
 void UsbFunction::EndpointSetStall(EndpointSetStallRequest& request,
                                    EndpointSetStallCompleter::Sync& completer) {
   TRACE_DURATION("usb-peripheral", __func__, "ep_address", request.endpoint_address());
+  if (!function_intf_.is_valid()) {
+    fdf::error("EndpointSetStall failed: not configured");
+    completer.Reply(fit::as_error(ZX_ERR_BAD_STATE));
+    return;
+  }
   zx_status_t status = CommonEndpointSetStall(request.endpoint_address());
   if (status != ZX_OK) {
     completer.Reply(fit::as_error(status));
@@ -230,6 +244,11 @@ void UsbFunction::EndpointSetStall(EndpointSetStallRequest& request,
 void UsbFunction::EndpointClearStall(EndpointClearStallRequest& request,
                                      EndpointClearStallCompleter::Sync& completer) {
   TRACE_DURATION("usb-peripheral", __func__, "ep_address", request.endpoint_address());
+  if (!function_intf_.is_valid()) {
+    fdf::error("EndpointClearStall failed: not configured");
+    completer.Reply(fit::as_error(ZX_ERR_BAD_STATE));
+    return;
+  }
   zx_status_t status = CommonEndpointClearStall(request.endpoint_address());
   if (status != ZX_OK) {
     completer.Reply(fit::as_error(status));
@@ -241,6 +260,11 @@ void UsbFunction::EndpointClearStall(EndpointClearStallRequest& request,
 void UsbFunction::ConfigureEndpoint(ConfigureEndpointRequest& request,
                                     ConfigureEndpointCompleter::Sync& completer) {
   TRACE_DURATION("usb-peripheral", __func__, "ep_address", request.endpoint_address());
+  if (!function_intf_.is_valid()) {
+    fdf::error("ConfigureEndpoint failed: not configured");
+    completer.Reply(fit::as_error(ZX_ERR_BAD_STATE));
+    return;
+  }
   zx_status_t status =
       CommonEndpointConfigure(request.endpoint_address(), request.endpoint_configuration());
   if (status != ZX_OK) {
@@ -253,6 +277,11 @@ void UsbFunction::ConfigureEndpoint(ConfigureEndpointRequest& request,
 void UsbFunction::DisableEndpoint(DisableEndpointRequest& request,
                                   DisableEndpointCompleter::Sync& completer) {
   TRACE_DURATION("usb-peripheral", __func__, "ep_address", request.endpoint_address());
+  if (!function_intf_.is_valid()) {
+    fdf::error("DisableEndpoint failed: not configured");
+    completer.Reply(fit::as_error(ZX_ERR_BAD_STATE));
+    return;
+  }
   zx_status_t status = CommonEndpointDisable(request.endpoint_address());
   if (status != ZX_OK) {
     completer.Reply(fit::as_error(status));

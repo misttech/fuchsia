@@ -352,6 +352,21 @@ TEST_F(UsbPeripheralFunctionTest, ConfigureFailsIfAlreadyBound) {
   EXPECT_STATUS(second_configure_res.value(), ZX_ERR_ALREADY_BOUND);
 }
 
+TEST_F(UsbPeripheralFunctionTest, ConnectToEndpointFailsIfEpNotAllocated) {
+  ExpectControllerStarted(false);
+
+  zx::result function_client_result = ConnectFunction();
+  ASSERT_OK(function_client_result);
+  fidl::WireSyncClient<ffunction::UsbFunction> function_client =
+      std::move(function_client_result.value());
+
+  auto ep_endpoints = fidl::Endpoints<fendpoint::Endpoint>::Create();
+  // Try to connect to endpoint 1 (which hasn't been allocated).
+  fidl::WireResult connect_res =
+      function_client->ConnectToEndpoint(1, std::move(ep_endpoints.server));
+  ASSERT_TRUE(connect_res.ok()) << connect_res.FormatDescription();
+  EXPECT_STATUS(connect_res.value(), ZX_ERR_NOT_FOUND);
+}
 
 TEST_F(UsbPeripheralFunctionTest, ConnectToEndpointSuccessAndSequencing) {
   ExpectControllerStarted(false);
@@ -568,6 +583,28 @@ TEST_F(UsbPeripheralFunctionTest, DeconfigureTrivialSuccessIfNotConfigured) {
   fidl::WireResult deconfig_res = function_client->Deconfigure();
   ASSERT_TRUE(deconfig_res.ok()) << deconfig_res.FormatDescription();
   ASSERT_TRUE(deconfig_res->is_ok()) << zx_status_get_string(deconfig_res->error_value());
+}
+
+TEST_F(UsbPeripheralFunctionTest, AllocResourcesFailsIfInvalidDirection) {
+  zx::result function_client_result = ConnectFunction();
+  ASSERT_OK(function_client_result);
+  fidl::WireSyncClient<ffunction::UsbFunction> function_client =
+      std::move(function_client_result.value());
+
+  fidl::Arena arena;
+  auto endpoints = fidl::VectorView<ffunction::wire::EndpointResource>(arena, 1);
+  endpoints[0].direction = static_cast<fdescriptor::wire::EndpointDirection>(99);
+  auto ep_endpoints = fidl::Endpoints<fendpoint::Endpoint>::Create();
+  endpoints[0].endpoint = std::move(ep_endpoints.server);
+
+  fidl::WireResult alloc_res = function_client->AllocResources(1, endpoints, {});
+  if (alloc_res.ok()) {
+    ASSERT_TRUE(alloc_res->is_error());
+    EXPECT_STATUS(alloc_res->error_value(), ZX_ERR_INVALID_ARGS);
+  } else {
+    // If FIDL serialization failed, it's also acceptable validation.
+    EXPECT_STATUS(alloc_res.status(), ZX_ERR_INVALID_ARGS);
+  }
 }
 
 TEST_F(UsbPeripheralFunctionTest, DeconfigureAllowsReconfigure) {
@@ -1006,6 +1043,16 @@ TEST_F(UsbPeripheralFunctionTest, EndpointSetStall) {
     EXPECT_EQ(env.dci().set_stalls_[0], ep_addr);
   });
 
+  // Test double call to SetStall is forwarded and succeeds.
+  auto res_double = function_client->EndpointSetStall(ep_addr);
+  ASSERT_TRUE(res_double.ok()) << res_double.FormatDescription();
+  ASSERT_OK(res_double.value());
+
+  dut().RunInEnvironmentTypeContext([ep_addr](UsbPeripheralTestEnvironment& env) {
+    EXPECT_EQ(env.dci().set_stalls_.size(), 2u);
+    EXPECT_EQ(env.dci().set_stalls_[1], ep_addr);
+  });
+
   // Test an unknown/failing endpoint stall by toggling `fail_stall_` in our mock.
   dut().RunInEnvironmentTypeContext(
       [](UsbPeripheralTestEnvironment& env) { env.dci().fail_stall_ = true; });
@@ -1040,6 +1087,16 @@ TEST_F(UsbPeripheralFunctionTest, EndpointClearStall) {
   dut().RunInEnvironmentTypeContext([ep_addr](UsbPeripheralTestEnvironment& env) {
     EXPECT_EQ(env.dci().clear_stalls_.size(), 1u);
     EXPECT_EQ(env.dci().clear_stalls_[0], ep_addr);
+  });
+
+  // Test double call to ClearStall is forwarded and succeeds.
+  auto res_double = function_client->EndpointClearStall(ep_addr);
+  ASSERT_TRUE(res_double.ok()) << res_double.FormatDescription();
+  ASSERT_OK(res_double.value());
+
+  dut().RunInEnvironmentTypeContext([ep_addr](UsbPeripheralTestEnvironment& env) {
+    EXPECT_EQ(env.dci().clear_stalls_.size(), 2u);
+    EXPECT_EQ(env.dci().clear_stalls_[1], ep_addr);
   });
 
   // Test an unknown/failing endpoint stall by toggling `fail_stall_` in our mock.
@@ -1152,6 +1209,16 @@ TEST_F(UsbPeripheralFunctionTest, DisableEndpoint) {
     EXPECT_EQ(env.dci().disabled_endpoints_[0], ep_addr);
   });
 
+  // Test double call to DisableEndpoint is forwarded and succeeds.
+  auto res_double = function_client->DisableEndpoint(ep_addr);
+  ASSERT_TRUE(res_double.ok()) << res_double.FormatDescription();
+  ASSERT_TRUE(res_double->is_ok()) << zx_status_get_string(res_double->error_value());
+
+  dut().RunInEnvironmentTypeContext([ep_addr](UsbPeripheralTestEnvironment& env) {
+    EXPECT_EQ(env.dci().disabled_endpoints_.size(), 2u);
+    EXPECT_EQ(env.dci().disabled_endpoints_[1], ep_addr);
+  });
+
   // Test unknown endpoint disable
   uint8_t unallocated_ep_addr = (ep_addr == 0x81) ? 0x82 : 0x81;
   auto res2 = function_client->DisableEndpoint(unallocated_ep_addr);
@@ -1166,6 +1233,97 @@ TEST_F(UsbPeripheralFunctionTest, DisableEndpoint) {
   EXPECT_STATUS(res3.value(), ZX_ERR_IO_NOT_PRESENT);
 }
 
+TEST_F(UsbPeripheralFunctionTest, StateTransitionErrors) {
+  zx::result function_client_result = ConnectFunction();
+  ASSERT_OK(function_client_result);
+  fidl::WireSyncClient<ffunction::UsbFunction> function_client =
+      std::move(function_client_result.value());
+
+  fidl::Arena arena;
+  auto endpoints = fidl::VectorView<ffunction::wire::EndpointResource>(arena, 1);
+  endpoints[0].direction = fdescriptor::wire::EndpointDirection::kIn;
+  endpoints[0].ep_info = BulkEpInfo(arena);
+  endpoints[0].max_packet_size = 512;
+  auto ep_endpoints = fidl::Endpoints<fendpoint::Endpoint>::Create();
+  endpoints[0].endpoint = std::move(ep_endpoints.server);
+
+  fidl::WireResult alloc_res =
+      function_client->AllocResources(1, endpoints, fidl::VectorView<fidl::StringView>());
+  ASSERT_TRUE(alloc_res.ok());
+  ASSERT_OK(alloc_res.value());
+
+  uint8_t ep_addr = alloc_res->value()->endpoint_addrs[0];
+
+  // 1. Test endpoint methods before Configure -> should return ZX_ERR_BAD_STATE.
+  {
+    auto res = function_client->EndpointSetStall(ep_addr);
+    ASSERT_TRUE(res.ok());
+    EXPECT_STATUS(res.value(), ZX_ERR_BAD_STATE);
+  }
+  {
+    auto res = function_client->EndpointClearStall(ep_addr);
+    ASSERT_TRUE(res.ok());
+    EXPECT_STATUS(res.value(), ZX_ERR_BAD_STATE);
+  }
+  {
+    ffunction::wire::EndpointDescriptor desc = {
+        .bm_attributes = 1,
+        .w_max_packet_size = 2,
+        .b_interval = 3,
+    };
+    auto config_builder = ffunction::wire::EndpointConfiguration::Builder(arena);
+    config_builder.descriptor(desc);
+    auto res = function_client->ConfigureEndpoint(ep_addr, config_builder.Build());
+    ASSERT_TRUE(res.ok());
+    EXPECT_STATUS(res.value(), ZX_ERR_BAD_STATE);
+  }
+  {
+    auto res = function_client->DisableEndpoint(ep_addr);
+    ASSERT_TRUE(res.ok());
+    EXPECT_STATUS(res.value(), ZX_ERR_BAD_STATE);
+  }
+
+  // 2. Configure the function.
+  zx::result fake_function_result = BindFakeFunction();
+  ASSERT_OK(fake_function_result);
+  auto [fake_function, fake_function_endpoint] = std::move(fake_function_result.value());
+
+  usb_interface_descriptor_t intf_desc = {
+      .b_length = sizeof(usb_interface_descriptor_t),
+      .b_descriptor_type = USB_DT_INTERFACE,
+      .b_interface_number = alloc_res->value()->interface_nums[0],
+      .b_alternate_setting = 0,
+      .b_num_endpoints = 1,
+      .b_interface_class = 8,
+      .b_interface_sub_class = 6,
+      .b_interface_protocol = 80,
+  };
+  usb_endpoint_descriptor_t ep_desc = {
+      .b_length = sizeof(usb_endpoint_descriptor_t),
+      .b_descriptor_type = USB_DT_ENDPOINT,
+      .b_endpoint_address = ep_addr,
+      .bm_attributes = static_cast<uint8_t>(fdescriptor::EndpointType::kBulk),
+      .w_max_packet_size = 512,
+  };
+  std::vector<uint8_t> descriptors(sizeof(intf_desc) + sizeof(ep_desc));
+  memcpy(descriptors.data(), &intf_desc, sizeof(intf_desc));
+  memcpy(descriptors.data() + sizeof(intf_desc), &ep_desc, sizeof(ep_desc));
+
+  fidl::WireResult configure_res = function_client->Configure(
+      fidl::VectorView<uint8_t>::FromExternal(descriptors.data(), descriptors.size()),
+      std::move(fake_function_endpoint));
+  ASSERT_TRUE(configure_res.ok());
+  ASSERT_OK(configure_res.value());
+
+  // 3. Test AllocResources after Configure -> should return ZX_ERR_BAD_STATE.
+  {
+    auto endpoints2 = fidl::VectorView<ffunction::wire::EndpointResource>(arena, 0);
+    fidl::WireResult alloc_res2 =
+        function_client->AllocResources(1, endpoints2, fidl::VectorView<fidl::StringView>());
+    ASSERT_TRUE(alloc_res2.ok());
+    EXPECT_STATUS(alloc_res2.value(), ZX_ERR_BAD_STATE);
+  }
+}
 
 TEST_F(UsbPeripheralFunctionTest, ConfigureEndpointDuringSetConfigured) {
   zx::result function_client_result = ConnectFunction();
@@ -1498,6 +1656,212 @@ TEST_F(UsbPeripheralAllocationTest, AllocationRollback) {
       [&](UsbPeripheralTestEnvironment& env) { freed_endpoints = env.dci().freed_endpoints(); });
   ASSERT_EQ(freed_endpoints.size(), 1u);
   EXPECT_EQ(freed_endpoints[0], 0x81);
+}
+
+// Stall EP0 if Control returns error
+TEST_F(UsbPeripheralFunctionTest, ControlStallsEp0OnError) {
+  zx::result function_client_result = ConnectFunction();
+  ASSERT_OK(function_client_result);
+  fidl::WireSyncClient<ffunction::UsbFunction> function_client =
+      std::move(function_client_result.value());
+
+  zx::result fake_function_result = BindFakeFunction();
+  ASSERT_OK(fake_function_result);
+  auto [fake_function, fake_function_endpoint] = std::move(fake_function_result.value());
+
+  fidl::WireResult alloc_res = function_client->AllocResources(1, {}, {});
+  ASSERT_TRUE(alloc_res.ok()) << alloc_res.status_string();
+  ASSERT_TRUE(alloc_res->is_ok());
+  uint8_t interface_num = alloc_res->value()->interface_nums[0];
+
+  usb_interface_descriptor_t intf_desc = {
+      .b_length = sizeof(usb_interface_descriptor_t),
+      .b_descriptor_type = USB_DT_INTERFACE,
+      .b_interface_number = interface_num,
+      .b_alternate_setting = 0,
+      .b_num_endpoints = 0,
+      .b_interface_class = 8,
+      .b_interface_sub_class = 6,
+      .b_interface_protocol = 80,
+  };
+  std::vector<uint8_t> descriptors(sizeof(intf_desc));
+  memcpy(descriptors.data(), &intf_desc, sizeof(intf_desc));
+
+  fidl::WireResult configure_res = function_client->Configure(
+      fidl::VectorView<uint8_t>::FromExternal(descriptors.data(), descriptors.size()),
+      std::move(fake_function_endpoint));
+  ASSERT_TRUE(configure_res.ok());
+  ASSERT_OK(configure_res.value());
+
+  ASSERT_OK(dci()->SetConnected(true).status());
+  ExpectState(UsbPeripheral::DeviceState::kHostConnected);
+
+  fidl::Arena arena;
+  std::vector<uint8_t> unused;
+
+  // Configure first.
+  fdescriptor::wire::UsbSetup setup;
+  setup.bm_request_type = USB_DIR_OUT | USB_RECIP_DEVICE | USB_TYPE_STANDARD;
+  setup.b_request = USB_REQ_SET_CONFIGURATION;
+  setup.w_value = 1;  // Configuration 1
+  setup.w_index = 0;
+  setup.w_length = 0;
+
+  fidl::WireUnownedResult config_res =
+      dci().buffer(arena)->Control(setup, fidl::VectorView<uint8_t>::FromExternal(unused));
+  EXPECT_TRUE(config_res.ok()) << config_res.FormatDescription();
+  ASSERT_OK(config_res.value());
+  fake_function->WaitUntilCalled();
+
+  // Set control status to return error.
+  fake_function->set_control_status(ZX_ERR_NOT_SUPPORTED);
+
+  // Test Control via provided endpoint request (vendor request, directed to interface).
+  setup.bm_request_type = USB_DIR_IN | USB_RECIP_INTERFACE | USB_TYPE_VENDOR;
+  setup.b_request = 0xAA;
+  setup.w_value = 0x01;
+  setup.w_index = interface_num;  // Use interface_num to route to this function.
+  setup.w_length = 3;
+
+  fidl::WireUnownedResult control_res =
+      dci().buffer(arena)->Control(setup, fidl::VectorView<uint8_t>::FromExternal(unused));
+
+  // The control call should return error status.
+  ASSERT_TRUE(control_res.ok()) << control_res.FormatDescription();
+  ASSERT_TRUE(control_res->is_error());
+  EXPECT_STATUS(control_res->error_value(), ZX_ERR_NOT_SUPPORTED);
+}
+
+// [INTF-2.2] Stall EP0 if SetConfigured returns error
+TEST_F(UsbPeripheralFunctionTest, SetConfiguredStallsEp0OnError) {
+  zx::result function_client_result = ConnectFunction();
+  ASSERT_OK(function_client_result);
+  fidl::WireSyncClient<ffunction::UsbFunction> function_client =
+      std::move(function_client_result.value());
+
+  zx::result fake_function_result = BindFakeFunction();
+  ASSERT_OK(fake_function_result);
+  auto [fake_function, fake_function_endpoint] = std::move(fake_function_result.value());
+
+  fidl::WireResult alloc_res = function_client->AllocResources(1, {}, {});
+  ASSERT_TRUE(alloc_res.ok()) << alloc_res.status_string();
+  ASSERT_TRUE(alloc_res->is_ok());
+  uint8_t interface_num = alloc_res->value()->interface_nums[0];
+
+  usb_interface_descriptor_t intf_desc = {
+      .b_length = sizeof(usb_interface_descriptor_t),
+      .b_descriptor_type = USB_DT_INTERFACE,
+      .b_interface_number = interface_num,
+      .b_alternate_setting = 0,
+      .b_num_endpoints = 0,
+      .b_interface_class = 8,
+      .b_interface_sub_class = 6,
+      .b_interface_protocol = 80,
+  };
+  std::vector<uint8_t> descriptors(sizeof(intf_desc));
+  memcpy(descriptors.data(), &intf_desc, sizeof(intf_desc));
+
+  fidl::WireResult configure_res = function_client->Configure(
+      fidl::VectorView<uint8_t>::FromExternal(descriptors.data(), descriptors.size()),
+      std::move(fake_function_endpoint));
+  ASSERT_TRUE(configure_res.ok());
+  ASSERT_OK(configure_res.value());
+
+  ASSERT_OK(dci()->SetConnected(true).status());
+  ExpectState(UsbPeripheral::DeviceState::kHostConnected);
+
+  // Set SetConfigured status to return error.
+  fake_function->set_set_configured_status(ZX_ERR_BAD_STATE);
+
+  fidl::Arena arena;
+  std::vector<uint8_t> unused;
+  fdescriptor::wire::UsbSetup setup;
+  setup.bm_request_type = USB_DIR_OUT | USB_RECIP_DEVICE | USB_TYPE_STANDARD;
+  setup.b_request = USB_REQ_SET_CONFIGURATION;
+  setup.w_value = 1;
+  setup.w_index = 0;
+  setup.w_length = 0;
+
+  fidl::WireUnownedResult control_res =
+      dci().buffer(arena)->Control(setup, fidl::VectorView<uint8_t>::FromExternal(unused));
+
+  // The control call should return error status.
+  ASSERT_TRUE(control_res.ok()) << control_res.FormatDescription();
+  ASSERT_TRUE(control_res->is_error());
+  EXPECT_STATUS(control_res->error_value(), ZX_ERR_BAD_STATE);
+}
+
+// [INTF-3.2] Stall EP0 if SetInterface returns error
+TEST_F(UsbPeripheralFunctionTest, SetInterfaceStallsEp0OnError) {
+  zx::result function_client_result = ConnectFunction();
+  ASSERT_OK(function_client_result);
+  fidl::WireSyncClient<ffunction::UsbFunction> function_client =
+      std::move(function_client_result.value());
+
+  zx::result fake_function_result = BindFakeFunction();
+  ASSERT_OK(fake_function_result);
+  auto [fake_function, fake_function_endpoint] = std::move(fake_function_result.value());
+
+  fidl::WireResult alloc_res = function_client->AllocResources(1, {}, {});
+  ASSERT_TRUE(alloc_res.ok()) << alloc_res.status_string();
+  ASSERT_TRUE(alloc_res->is_ok());
+  uint8_t interface_num = alloc_res->value()->interface_nums[0];
+
+  usb_interface_descriptor_t intf_desc = {
+      .b_length = sizeof(usb_interface_descriptor_t),
+      .b_descriptor_type = USB_DT_INTERFACE,
+      .b_interface_number = interface_num,
+      .b_alternate_setting = 0,
+      .b_num_endpoints = 0,
+      .b_interface_class = 8,
+      .b_interface_sub_class = 6,
+      .b_interface_protocol = 80,
+  };
+  std::vector<uint8_t> descriptors(sizeof(intf_desc));
+  memcpy(descriptors.data(), &intf_desc, sizeof(intf_desc));
+
+  fidl::WireResult configure_res = function_client->Configure(
+      fidl::VectorView<uint8_t>::FromExternal(descriptors.data(), descriptors.size()),
+      std::move(fake_function_endpoint));
+  ASSERT_TRUE(configure_res.ok());
+  ASSERT_OK(configure_res.value());
+
+  ASSERT_OK(dci()->SetConnected(true).status());
+  ExpectState(UsbPeripheral::DeviceState::kHostConnected);
+
+  fidl::Arena arena;
+  std::vector<uint8_t> unused;
+
+  // Configure first.
+  fdescriptor::wire::UsbSetup setup;
+  setup.bm_request_type = USB_DIR_OUT | USB_RECIP_DEVICE | USB_TYPE_STANDARD;
+  setup.b_request = USB_REQ_SET_CONFIGURATION;
+  setup.w_value = 1;  // Configuration 1
+  setup.w_index = 0;
+  setup.w_length = 0;
+
+  fidl::WireUnownedResult config_res =
+      dci().buffer(arena)->Control(setup, fidl::VectorView<uint8_t>::FromExternal(unused));
+  EXPECT_TRUE(config_res.ok()) << config_res.FormatDescription();
+  ASSERT_OK(config_res.value());
+  fake_function->WaitUntilCalled();
+
+  // Set SetInterface status to return error.
+  fake_function->set_set_interface_status(ZX_ERR_NOT_SUPPORTED);
+
+  setup.bm_request_type = USB_DIR_OUT | USB_RECIP_INTERFACE | USB_TYPE_STANDARD;
+  setup.b_request = USB_REQ_SET_INTERFACE;
+  setup.w_value = 1;  // Alt setting 1
+  setup.w_index = interface_num;
+  setup.w_length = 0;
+
+  fidl::WireUnownedResult control_res =
+      dci().buffer(arena)->Control(setup, fidl::VectorView<uint8_t>::FromExternal(unused));
+
+  // The control call should return error status.
+  ASSERT_TRUE(control_res.ok()) << control_res.FormatDescription();
+  ASSERT_TRUE(control_res->is_error());
+  EXPECT_STATUS(control_res->error_value(), ZX_ERR_NOT_SUPPORTED);
 }
 
 }  // namespace

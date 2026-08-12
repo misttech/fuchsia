@@ -261,6 +261,33 @@ TEST_F(UnmanagedUsbPeripheralTest, ClearFunctionsWhenNoneAdded) {
   ExpectState(UsbPeripheral::DeviceState::kNoConfiguration);
 }
 
+TEST_F(UnmanagedUsbPeripheralTest, ClearFunctionsDoubleCallIsNoOp) {
+  StartDriverWithConfig(usb_peripheral_config::Config{});
+
+  auto client = this->Client();
+
+  zx::result endpoints = fidl::CreateEndpoints<fperipheral::Events>();
+  ASSERT_OK(endpoints);
+
+  FakeEvents fake_events;
+  fake_events.Bind(std::move(endpoints->server));
+
+  auto set_listener_res = client->SetStateChangeListener(std::move(endpoints->client));
+  ASSERT_TRUE(set_listener_res.ok()) << set_listener_res.FormatDescription();
+
+  // Clear functions once.
+  auto clear_res = client->ClearFunctions();
+  ASSERT_TRUE(clear_res.ok()) << clear_res.FormatDescription();
+  fake_events.WaitUntilCleared(this->dut().runtime());
+
+  // Clear functions twice - should succeed and be a no-op since no functions are bound.
+  auto clear_res2 = client->ClearFunctions();
+  ASSERT_TRUE(clear_res2.ok()) << clear_res2.FormatDescription();
+
+  fake_events.Unbind();
+  ExpectState(UsbPeripheral::DeviceState::kNoConfiguration);
+}
+
 TEST_F(UnmanagedUsbPeripheralTest, KbootFunctionsOverrideFunctions) {
   usb_peripheral_config::Config config;
   config.functions() = {"ums"};
@@ -1071,6 +1098,69 @@ TEST_F(UnmanagedUsbPeripheralReadyTest, ConfiguredGetStatusTests) {
     EXPECT_EQ(res_get2->value()->read[0], 0);  // cleared
     EXPECT_EQ(res_get2->value()->read[1], 0);
   }
+}
+
+TEST_F(UnmanagedUsbPeripheralReadyTest, StartControllerFailsFromDci) {
+  usb_peripheral_config::Config config;
+  config.functions() = {"test"};
+  StartDriverWithConfig(config);
+
+  // Tell DCI mock to fail StartController.
+  this->dut().RunInEnvironmentTypeContext(
+      [](UsbPeripheralTestEnvironment& env) { env.dci().fail_start_ = true; });
+
+  auto res = TransitionToPeripheralReady();
+  ASSERT_TRUE(res.is_error());
+  EXPECT_STATUS(res.error_value(), ZX_ERR_IO_NOT_PRESENT);
+
+  // Verify state stays at kWaitForFunctionBind since configuration failed to start the controller.
+  ExpectState(UsbPeripheral::DeviceState::kWaitForFunctionBind);
+  ExpectControllerStarted(false);
+}
+
+TEST_F(UnmanagedUsbPeripheralReadyTest, StopControllerFailsFromDci) {
+  usb_peripheral_config::Config config;
+  config.functions() = {"test"};
+  StartDriverWithConfig(config);
+
+  // Successfully configure and transition to peripheral ready first.
+  auto res = TransitionToPeripheralReady();
+  ASSERT_OK(res);
+
+  // Tell DCI mock to fail StopController.
+  this->dut().RunInEnvironmentTypeContext(
+      [](UsbPeripheralTestEnvironment& env) { env.dci().fail_stop_ = true; });
+
+  // Call ClearFunctions. Even though StopController fails, it should still succeed
+  // and teardown the functions to kNoConfiguration state.
+  auto client = this->Client();
+
+  zx::result endpoints = fidl::CreateEndpoints<fperipheral::Events>();
+  ASSERT_OK(endpoints);
+
+  FakeEvents fake_events;
+  fake_events.Bind(std::move(endpoints->server));
+
+  auto set_listener_res = client->SetStateChangeListener(std::move(endpoints->client));
+  ASSERT_TRUE(set_listener_res.ok()) << set_listener_res.FormatDescription();
+
+  auto clear_res = client->ClearFunctions();
+  ASSERT_TRUE(clear_res.ok()) << clear_res.FormatDescription();
+
+  fake_events.WaitUntilCleared(this->dut().runtime());
+  fake_events.Unbind();
+
+  // Verify we successfully cleaned up and reached kNoConfiguration.
+  ExpectState(UsbPeripheral::DeviceState::kNoConfiguration);
+  // DCI stop failed, so from fake DCI's point of view, it is still started.
+  ExpectControllerStarted(true);
+
+  // Reset failure flag and manually set controller_started to false to allow clean teardown in
+  // TearDown()
+  this->dut().RunInEnvironmentTypeContext([](UsbPeripheralTestEnvironment& env) {
+    env.dci().fail_stop_ = false;
+    env.dci().set_controller_started(false);
+  });
 }
 
 }  // namespace

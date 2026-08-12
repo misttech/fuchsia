@@ -119,11 +119,19 @@ class FakeDevice : public fidl::WireServer<fdci::UsbDci> {
   }
 
   void StartController(StartControllerCompleter::Sync& completer) override {
+    if (fail_start_) {
+      completer.ReplyError(ZX_ERR_IO_NOT_PRESENT);
+      return;
+    }
     controller_started_ = true;
     completer.ReplySuccess();
   }
 
   void StopController(StopControllerCompleter::Sync& completer) override {
+    if (fail_stop_) {
+      completer.ReplyError(ZX_ERR_IO);
+      return;
+    }
     controller_started_ = false;
     endpoints_.clear();
     completer.ReplySuccess();
@@ -259,6 +267,7 @@ class FakeDevice : public fidl::WireServer<fdci::UsbDci> {
   libsync::Completion& set_interface_called() { return set_interface_called_; }
 
   bool controller_started() const { return controller_started_; }
+  void set_controller_started(bool started) { controller_started_ = started; }
 
   void set_stop_completion(libsync::Completion* stop_completion) {
     stop_completion_ = stop_completion;
@@ -280,6 +289,8 @@ class FakeDevice : public fidl::WireServer<fdci::UsbDci> {
 
   bool fail_already_bound_ = false;
   bool fail_stall_ = false;
+  bool fail_start_ = false;
+  bool fail_stop_ = false;
   std::vector<uint8_t> set_stalls_;
   std::vector<uint8_t> clear_stalls_;
 
@@ -318,9 +329,13 @@ class FakeUsbFunction : public fidl::testing::WireTestBase<ffunction::UsbFunctio
   void Control(ControlRequestView req, ControlCompleter::Sync& completer) override {
     control_called_ = true;
     control_req_ = req->setup.b_request;
-    fidl::Arena arena;
-    std::vector<uint8_t> read_data = {1, 2, 3};
-    completer.buffer(arena).ReplySuccess(fidl::VectorView<uint8_t>::FromExternal(read_data));
+    if (control_status_ != ZX_OK) {
+      completer.ReplyError(control_status_);
+    } else {
+      fidl::Arena arena;
+      std::vector<uint8_t> read_data = {1, 2, 3};
+      completer.buffer(arena).ReplySuccess(fidl::VectorView<uint8_t>::FromExternal(read_data));
+    }
     call_completed_.Signal();
   }
 
@@ -332,7 +347,11 @@ class FakeUsbFunction : public fidl::testing::WireTestBase<ffunction::UsbFunctio
     if (on_set_configured_) {
       on_set_configured_();
     }
-    completer.ReplySuccess();
+    if (set_configured_status_ != ZX_OK) {
+      completer.ReplyError(set_configured_status_);
+    } else {
+      completer.ReplySuccess();
+    }
     call_completed_.Signal();
   }
 
@@ -340,7 +359,11 @@ class FakeUsbFunction : public fidl::testing::WireTestBase<ffunction::UsbFunctio
     set_interface_called_ = true;
     interface_ = req->interface;
     alt_setting_ = req->alt_setting;
-    completer.ReplySuccess();
+    if (set_interface_status_ != ZX_OK) {
+      completer.ReplyError(set_interface_status_);
+    } else {
+      completer.ReplySuccess();
+    }
     call_completed_.Signal();
   }
 
@@ -384,6 +407,9 @@ class FakeUsbFunction : public fidl::testing::WireTestBase<ffunction::UsbFunctio
   bool set_interface_called() const { return set_interface_called_; }
 
   void set_on_set_configured(fit::function<void()> cb) { on_set_configured_ = std::move(cb); }
+  void set_control_status(zx_status_t status) { control_status_ = status; }
+  void set_set_configured_status(zx_status_t status) { set_configured_status_ = status; }
+  void set_set_interface_status(zx_status_t status) { set_interface_status_ = status; }
   uint8_t interface() const { return interface_; }
   uint8_t alt_setting() const { return alt_setting_; }
 
@@ -398,9 +424,12 @@ class FakeUsbFunction : public fidl::testing::WireTestBase<ffunction::UsbFunctio
 
   bool control_called_ = false;
   uint8_t control_req_ = 0;
+  zx_status_t control_status_ = ZX_OK;
 
   bool set_configured_called_ = false;
   bool configured_ = false;
+  zx_status_t set_configured_status_ = ZX_OK;
+  zx_status_t set_interface_status_ = ZX_OK;
   std::vector<bool> configured_history_;
   fit::function<void()> on_set_configured_;
 
