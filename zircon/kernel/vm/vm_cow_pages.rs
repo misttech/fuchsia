@@ -14,6 +14,44 @@ use vm_cow_pages_bindings as bindings;
 use zr::Opaque;
 use zx_status::Status;
 
+pub type VmCowReclaimFailure = bindings::VmCowReclaimFailure;
+pub type PageSourceType = bindings::PageSourceType;
+
+/// Used to track dirty_state in the vm_page_t.
+///
+/// The transitions between the three states can roughly be summarized as follows:
+/// 1. A page starts off as Clean when supplied.
+/// 2. A write transitions the page from Clean to Dirty.
+/// 3. A writeback_begin moves the Dirty page to AwaitingClean.
+/// 4. A writeback_end moves the AwaitingClean page to Clean.
+/// 5. A write that comes in while the writeback is in progress (i.e. the page is AwaitingClean)
+///    moves the AwaitingClean page back to Dirty.
+pub type DirtyState = bindings::VmCowPages_DirtyState;
+
+pub type EvictionAction = bindings::VmCowPages_EvictionAction;
+
+pub mod options {
+    use vm_cow_pages_bindings as bindings;
+
+    pub const NONE: u32 = bindings::VmCowPagesOptions_kNone;
+    pub const USER_PAGER_BACKED_ROOT: u32 = bindings::VmCowPagesOptions_kUserPagerBackedRoot;
+    pub const PAGE_SOURCE_ROOT: u32 = bindings::VmCowPagesOptions_kPageSourceRoot;
+
+    /// With this clear, zeroing a page tries to decommit the page.  With this set, zeroing never
+    /// decommits the page.  Currently this is only set for contiguous VMOs.
+    //
+    // TODO(dustingreen): Once we're happy with the reliability of page borrowing, we should be able
+    // to relax this restriction.  We may still need to flush zeroes to RAM during reclaim to
+    // mitigate a hypothetical client incorrectly assuming that cache-clean status will remain
+    // intact while pages aren't pinned, but that mitigation should be sufficient (even assuming
+    // such a client) to allow implicit decommit when zeroing or when zero scanning, as long as no
+    // clients are doing DMA to/from contiguous while not pinned.
+    pub const CANNOT_DECOMMIT_ZERO_PAGES: u32 =
+        bindings::VmCowPagesOptions_kCannotDecommitZeroPages;
+
+    pub const HIDDEN: u32 = bindings::VmCowPagesOptions_kHidden;
+}
+
 /// A copy-on-write page hierarchy.
 #[repr(C)]
 pub struct VmCowPages {

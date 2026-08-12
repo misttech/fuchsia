@@ -650,16 +650,43 @@ kernel_bindgen_crate("vm-cow-pages-bindings") {
     "cpp_vm_cow_pages_should_delay_reuse_on_free",
     "cpp_vm_cow_pages_debug_get_parent",
   ]
-  type_allowlist = [ "VmCowPages" ]
+  type_allowlist = [
+    "DirtyState",
+    "EvictionAction",
+    "PageSourceType",
+    "VmCowPages",
+    "VmCowPagesOptions",
+    "VmCowReclaimFailure",
+  ]
   type_blocklist = [
     "PmmOptDelayReuse",
     "vm_page_t",
     "zx_status_t",
+    "VmCowPages_AddPageTransaction",
+    "VmCowPages_AttributionCounts",
+    "VmCowPages_CanOverwriteSlot",
+    "VmCowPages_DirtyRangeEnumerateFunction",
+    "VmCowPages_DiscardablePageCounts",
+    "VmCowPages_LockedPtr",
+    "VmCowPages_LockedRefPtr",
+    "VmCowPages_LookupReadableFunction",
+    "VmCowPages_PageLookup",
+    "VmCowPages_ParentAndRange",
+    "VmCowPages_RangeChangeOp",
   ]
-  additional_bindgen_flags = [
-    "--opaque-type=VmCowPages",
-    "--no-recursive-allowlist",
-    "--blocklist-item=VmCowPages_.*",
+  var_allowlist = [ "VmCowPagesOptions_.*" ]
+  opaque_types = [ "VmCowPages" ]
+  rustified_enum = [
+    "PageSourceType",
+    "VmCowPages_DirtyState",
+    "VmCowPages_EvictionAction",
+    "VmCowReclaimFailure",
+  ]
+  function_blocklist = [ "VmCowPages_.*" ]
+  additional_bindgen_flags = [ "--no-recursive-allowlist" ]
+  expect_lints = [
+    "non_camel_case_types",
+    "non_upper_case_globals",
   ]
 
   edition = "2024"
