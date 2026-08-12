@@ -46,23 +46,12 @@ class Worktree:
         self.path = Path(path).resolve()
         self.main_checkout_dir = Path(main_checkout_dir).resolve()
         self.meta_dir = self.path / ".jiri_root"
-        self.state_file = self.meta_dir / "worktree-state"
         self.lease_file = self.meta_dir / "lease.json"
 
     def get_state(self) -> WorktreeState:
         if self.lease_file.exists():
             return WorktreeState.LEASED
-        if not self.state_file.exists():
-            return WorktreeState.FREE
-        state_str = self.state_file.read_text().strip()
-        try:
-            return WorktreeState(state_str)
-        except ValueError:
-            return WorktreeState.FREE
-
-    def set_state(self, state: WorktreeState) -> None:
-        self.meta_dir.mkdir(parents=True, exist_ok=True)
-        self.state_file.write_text(f"{state.value}\n")
+        return WorktreeState.FREE
 
     def get_lease_info(self) -> LeaseInfo | None:
         if not self.lease_file.exists():
@@ -199,8 +188,6 @@ class Worktree:
         for bd in self.build_dirs():
             bd.backup_args()
 
-        self.set_state(WorktreeState.LEASED)
-
     def release_lease(self) -> None:
         state = self.get_state()
         if state != WorktreeState.LEASED:
@@ -224,5 +211,3 @@ class Worktree:
                 os.remove(self.lease_file)
         except OSError as e:
             raise RuntimeError(f"Failed to remove lease file: {e}")
-
-        self.set_state(WorktreeState.FREE)

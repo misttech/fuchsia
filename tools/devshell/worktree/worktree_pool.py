@@ -173,7 +173,7 @@ class WorktreePool:
 
         run_jiri(self.jiri_root, ["worktree", "add", str(wt_path)], check=True)
         wt = Worktree(name, wt_path, self.fuchsia_dir)
-        wt.set_state(wt.get_state())  # ensure meta dir / default state
+        wt.meta_dir.mkdir(parents=True, exist_ok=True)
         return wt
 
     def remove_worktree(self, name: str, force: bool = False) -> None:
