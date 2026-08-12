@@ -24,7 +24,6 @@
 #include <bind/fuchsia/hardware/registers/cpp/bind.h>
 #include <bind/fuchsia/i2c/cpp/bind.h>
 #include <bind/fuchsia/isp/cpp/bind.h>
-#include <bind/fuchsia/register/cpp/bind.h>
 #include <bind/fuchsia/sony/platform/cpp/bind.h>
 #include <soc/aml-common/aml-registers.h>
 #include <soc/aml-meson/g12b-clk.h>
@@ -483,8 +482,6 @@ zx_status_t Sherlock::CameraInit() {
           {
               fdf::MakeAcceptBindRule(bind_fuchsia_hardware_registers::SERVICE,
                                       bind_fuchsia_hardware_registers::SERVICE_ZIRCONTRANSPORT),
-              fdf::MakeAcceptBindRule(bind_fuchsia_register::NAME,
-                                      bind_fuchsia_amlogic_platform::NAME_REGISTER_ISP_RESET),
               fdf::MakeAcceptBindRule(bind_fuchsia::NAME,
                                       bind_fuchsia_amlogic_platform::NAME_REGISTER_ISP_RESET),
           },
@@ -492,8 +489,6 @@ zx_status_t Sherlock::CameraInit() {
           {
               fdf::MakeProperty2(bind_fuchsia_hardware_registers::SERVICE,
                                  bind_fuchsia_hardware_registers::SERVICE_ZIRCONTRANSPORT),
-              fdf::MakeProperty2(bind_fuchsia_register::NAME,
-                                 bind_fuchsia_amlogic_platform::NAME_REGISTER_ISP_RESET),
               fdf::MakeProperty2(bind_fuchsia::NAME,
                                  bind_fuchsia_amlogic_platform::NAME_REGISTER_ISP_RESET),
           },

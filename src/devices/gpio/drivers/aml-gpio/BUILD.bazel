@@ -20,11 +20,11 @@ fuchsia_driver_bind_bytecode(
     output = "aml-gpio.bindbc",
     rules = "meta/aml-gpio.bind",
     deps = [
+        "@fuchsia_sdk//bind/fuchsia",
         "@fuchsia_sdk//bind/fuchsia.amlogic.platform",
         "@fuchsia_sdk//bind/fuchsia.devicetree",
         "@fuchsia_sdk//bind/fuchsia.platform",
         "@fuchsia_sdk//bind/fuchsia.power",
-        "@fuchsia_sdk//bind/fuchsia.register",
     ],
 )
 

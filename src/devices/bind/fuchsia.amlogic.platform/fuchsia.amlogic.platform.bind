@@ -97,7 +97,7 @@ enum PWM_ID {
   AO_D,
 };
 
-extend string fuchsia.register.NAME {
+extend string fuchsia.NAME {
   REGISTER_USB_PHY_V2_RESET = "usb_phy_v2_reset",
   REGISTER_NNA_RESET_LEVEL2 = "nna_reset_level2",
   REGISTER_MALI_RESET = "mali_reset",

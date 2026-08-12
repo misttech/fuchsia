@@ -31,7 +31,7 @@ type MaskEntry = table {
 };
 
 type RegistersMetadataEntry = table {
-    /// Name for binding purposes (BIND_REGISTER_NAME device property).
+    /// Name for binding purposes (fuchsia.NAME device property).
     1: name string:MAX_NAME_LENGTH;
 
     /// MMIO ID for MMIO corresponding to register.

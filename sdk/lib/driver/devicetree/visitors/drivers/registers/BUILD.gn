@@ -33,7 +33,6 @@ devicetree_visitor("registers-visitor") {
   non_sdk_deps = [
     "//sdk/fidl/fuchsia.hardware.registers:fuchsia.hardware.registers_bindlib_cpp",
     "//src/devices/bind/fuchsia:fuchsia_cpp",
-    "//src/devices/bind/fuchsia.register:fuchsia.register_cpp",
     "//src/lib/ddk",
   ]
 }
@@ -48,7 +47,6 @@ test("registers-visitor-test-bin") {
     "//sdk/lib/driver/devicetree/visitors/default/bind-property",
     "//sdk/lib/driver/devicetree/visitors/default/mmio",
     "//src/devices/bind/fuchsia:fuchsia_cpp",
-    "//src/devices/bind/fuchsia.register:fuchsia.register_cpp",
     "//src/lib/fxl/test:gtest_main",
   ]
 }

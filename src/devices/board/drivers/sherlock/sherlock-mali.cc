@@ -16,7 +16,6 @@
 #include <bind/fuchsia/cpp/bind.h>
 #include <bind/fuchsia/hardware/gpu/mali/cpp/bind.h>
 #include <bind/fuchsia/hardware/registers/cpp/bind.h>
-#include <bind/fuchsia/register/cpp/bind.h>
 #include <soc/aml-common/aml-registers.h>
 #include <soc/aml-t931/t931-hw.h>
 
@@ -101,8 +100,6 @@ zx_status_t Sherlock::MaliInit() {
             {
                 fdf::MakeAcceptBindRule(bind_fuchsia_hardware_registers::SERVICE,
                                         bind_fuchsia_hardware_registers::SERVICE_ZIRCONTRANSPORT),
-                fdf::MakeAcceptBindRule(bind_fuchsia_register::NAME,
-                                        bind_fuchsia_amlogic_platform::NAME_REGISTER_MALI_RESET),
                 fdf::MakeAcceptBindRule(bind_fuchsia::NAME,
                                         bind_fuchsia_amlogic_platform::NAME_REGISTER_MALI_RESET),
             },
@@ -110,8 +107,6 @@ zx_status_t Sherlock::MaliInit() {
             {
                 fdf::MakeProperty2(bind_fuchsia_hardware_registers::SERVICE,
                                    bind_fuchsia_hardware_registers::SERVICE_ZIRCONTRANSPORT),
-                fdf::MakeProperty2(bind_fuchsia_register::NAME,
-                                   bind_fuchsia_amlogic_platform::NAME_REGISTER_MALI_RESET),
                 fdf::MakeProperty2(bind_fuchsia::NAME,
                                    bind_fuchsia_amlogic_platform::NAME_REGISTER_MALI_RESET),
             },

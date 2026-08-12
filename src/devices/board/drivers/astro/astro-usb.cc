@@ -20,7 +20,6 @@
 #include <bind/fuchsia/cpp/bind.h>
 #include <bind/fuchsia/hardware/registers/cpp/bind.h>
 #include <bind/fuchsia/hardware/usb/phy/cpp/bind.h>
-#include <bind/fuchsia/register/cpp/bind.h>
 #include <soc/aml-common/aml-registers.h>
 #include <soc/aml-s905d2/s905d2-hw.h>
 #include <usb/cdc.h>
@@ -140,8 +139,6 @@ zx_status_t AddUsbPhyComposite(fdf::WireSyncClient<fpbus::PlatformBus>& pbus,
   const std::vector<fdf::BindRule2> kResetRegisterRules = std::vector{
       fdf::MakeAcceptBindRule(bind_fuchsia_hardware_registers::SERVICE,
                               bind_fuchsia_hardware_registers::SERVICE_ZIRCONTRANSPORT),
-      fdf::MakeAcceptBindRule(bind_fuchsia_register::NAME,
-                              bind_fuchsia_amlogic_platform::NAME_REGISTER_USB_PHY_V2_RESET),
       fdf::MakeAcceptBindRule(bind_fuchsia::NAME,
                               bind_fuchsia_amlogic_platform::NAME_REGISTER_USB_PHY_V2_RESET),
   };
@@ -149,8 +146,6 @@ zx_status_t AddUsbPhyComposite(fdf::WireSyncClient<fpbus::PlatformBus>& pbus,
   const std::vector<fdf::NodeProperty2> kResetRegisterProperties = std::vector{
       fdf::MakeProperty2(bind_fuchsia_hardware_registers::SERVICE,
                          bind_fuchsia_hardware_registers::SERVICE_ZIRCONTRANSPORT),
-      fdf::MakeProperty2(bind_fuchsia_register::NAME,
-                         bind_fuchsia_amlogic_platform::NAME_REGISTER_USB_PHY_V2_RESET),
       fdf::MakeProperty2(bind_fuchsia::NAME,
                          bind_fuchsia_amlogic_platform::NAME_REGISTER_USB_PHY_V2_RESET),
   };

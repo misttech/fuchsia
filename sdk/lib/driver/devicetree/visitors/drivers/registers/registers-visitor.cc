@@ -23,7 +23,6 @@
 
 #include <bind/fuchsia/cpp/bind.h>
 #include <bind/fuchsia/hardware/registers/cpp/bind.h>
-#include <bind/fuchsia/register/cpp/bind.h>
 
 namespace registers_dt {
 
@@ -130,12 +129,9 @@ zx::result<> RegistersVisitor::AddChildNodeSpec(fdf_devicetree::Node& child,
   };
 
   if (register_name) {
-    bind_rules.emplace_back(fdf::MakeAcceptBindRule(bind_fuchsia_register::NAME, *register_name));
     bind_rules.emplace_back(fdf::MakeAcceptBindRule(bind_fuchsia::NAME, *register_name));
-    bind_properties.emplace_back(fdf::MakeProperty2(bind_fuchsia_register::NAME, *register_name));
     bind_properties.emplace_back(fdf::MakeProperty2(bind_fuchsia::NAME, *register_name));
   } else {
-    bind_rules.emplace_back(fdf::MakeAcceptBindRule(bind_fuchsia_register::NAME, child.fdf_name()));
     bind_rules.emplace_back(fdf::MakeAcceptBindRule(bind_fuchsia::NAME, child.fdf_name()));
   }
 

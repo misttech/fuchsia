@@ -20,7 +20,6 @@
 #include <bind/fuchsia/hardware/gpio/cpp/bind.h>
 #include <bind/fuchsia/hardware/registers/cpp/bind.h>
 #include <bind/fuchsia/platform/cpp/bind.h>
-#include <bind/fuchsia/register/cpp/bind.h>
 #include <fbl/algorithm.h>
 #include <soc/aml-common/aml-registers.h>
 #include <soc/aml-t931/t931-gpio.h>
@@ -81,8 +80,6 @@ const std::vector kGpioSpiProperties = {
 const std::vector kResetRegisterRules = {
     fdf::MakeAcceptBindRule(bind_fuchsia_hardware_registers::SERVICE,
                             bind_fuchsia_hardware_registers::SERVICE_ZIRCONTRANSPORT),
-    fdf::MakeAcceptBindRule(bind_fuchsia_register::NAME,
-                            bind_fuchsia_amlogic_platform::NAME_REGISTER_SPICC0_RESET),
     fdf::MakeAcceptBindRule(bind_fuchsia::NAME,
                             bind_fuchsia_amlogic_platform::NAME_REGISTER_SPICC0_RESET),
 };
@@ -90,8 +87,6 @@ const std::vector kResetRegisterRules = {
 const std::vector kResetRegisterProperties = {
     fdf::MakeProperty2(bind_fuchsia_hardware_registers::SERVICE,
                        bind_fuchsia_hardware_registers::SERVICE_ZIRCONTRANSPORT),
-    fdf::MakeProperty2(bind_fuchsia_register::NAME,
-                       bind_fuchsia_amlogic_platform::NAME_REGISTER_SPICC0_RESET),
     fdf::MakeProperty2(bind_fuchsia::NAME,
                        bind_fuchsia_amlogic_platform::NAME_REGISTER_SPICC0_RESET),
 };

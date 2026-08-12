@@ -109,7 +109,7 @@ zx::result<> AmlUsbPhyDevice::Start(fdf::DriverContext context) {
     zx::result result =
         incoming->Connect<fuchsia_hardware_registers::Service::Device>("register-reset");
     if (result.is_error()) {
-      fdf::error("Failed to open i2c service: {}", result);
+      fdf::error("Failed to open registers service: {}", result);
       return result.take_error();
     }
     reset_register = std::move(result.value());

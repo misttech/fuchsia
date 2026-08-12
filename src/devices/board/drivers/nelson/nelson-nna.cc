@@ -11,7 +11,6 @@
 #include <bind/fuchsia/amlogic/platform/cpp/bind.h>
 #include <bind/fuchsia/cpp/bind.h>
 #include <bind/fuchsia/hardware/registers/cpp/bind.h>
-#include <bind/fuchsia/register/cpp/bind.h>
 #include <soc/aml-common/aml-registers.h>
 #include <soc/aml-s905d3/s905d3-hw.h>
 
@@ -75,9 +74,6 @@ zx_status_t Nelson::NnaInit() {
               fdf::MakeAcceptBindRule(bind_fuchsia_hardware_registers::SERVICE,
                                       bind_fuchsia_hardware_registers::SERVICE_ZIRCONTRANSPORT),
               fdf::MakeAcceptBindRule(
-                  bind_fuchsia_register::NAME,
-                  bind_fuchsia_amlogic_platform::NAME_REGISTER_NNA_RESET_LEVEL2),
-              fdf::MakeAcceptBindRule(
                   bind_fuchsia::NAME,
                   bind_fuchsia_amlogic_platform::NAME_REGISTER_NNA_RESET_LEVEL2),
           },
@@ -85,8 +81,6 @@ zx_status_t Nelson::NnaInit() {
           {
               fdf::MakeProperty2(bind_fuchsia_hardware_registers::SERVICE,
                                  bind_fuchsia_hardware_registers::SERVICE_ZIRCONTRANSPORT),
-              fdf::MakeProperty2(bind_fuchsia_register::NAME,
-                                 bind_fuchsia_amlogic_platform::NAME_REGISTER_NNA_RESET_LEVEL2),
               fdf::MakeProperty2(bind_fuchsia::NAME,
                                  bind_fuchsia_amlogic_platform::NAME_REGISTER_NNA_RESET_LEVEL2),
           },

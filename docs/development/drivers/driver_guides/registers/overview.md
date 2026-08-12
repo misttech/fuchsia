@@ -99,7 +99,7 @@ as an example on how to use the registers driver.
 
       ```c++ {:.devsite-disable-click-to-copy}
       {% verbatim %}
-      zx::result metadata = fidl_metadata::registers::RegistersMetadataToFidl<uint32_t>(kRegisters);
+      zx::result metadata = fidl_metadata::registers::RegistersMetadataToFidl(kRegisters);
       if (!metadata.is_ok()) {
         zxlogf(ERROR, "Failed to convert registers to metadata %s", metadata.status_string());
         return metadata.error_value();
@@ -126,7 +126,7 @@ as an example on how to use the registers driver.
       ```c++ {:.devsite-disable-click-to-copy}
       static const fidl_metadata::registers::Register<uint32_t> kRegisters[]{
           {
-              .bind_id = aml_registers::REGISTER_USB_PHY_V2_RESET,
+              .name = bind_fuchsia_amlogic_platform::NAME_REGISTER_USB_PHY_V2_RESET,
               .mmio_id = kResetMmio,
               .masks =
                   {
@@ -145,7 +145,7 @@ as an example on how to use the registers driver.
       };
       ```
 
-      * `bind_id`: The unique ID for each bitfield definition that is
+      * `name`: The unique name for each bitfield definition that is
         used to identify it during binding.
       * `mmio_id`: The ID corresponding to the MMIO that this bitfield
         is in reference to.
@@ -168,7 +168,7 @@ as an example on how to use the registers driver.
    The registers driver will create a device that serves [registers-util.fidl][registers-util.fidl]
    with bind properties:
    ``` {:.devsite-disable-click-to-copy}
-   bind_fuchsia_register::NAME == bind_id
+   bind_fuchsia::NAME == name
    ```
 
 1. Binding to the registers driver
