@@ -297,7 +297,7 @@ _NORMAL_DEPENDENCIES = {
             "aes-gcm": Label("//third_party/rust_crates/vendor/aes-gcm-0.11.0:aes_gcm"),
             "aes-gcm-siv": Label("//third_party/rust_crates/vendor/aes-gcm-siv-0.12.0-rc.3:aes_gcm_siv"),
             "ansi_term": Label("//third_party/rust_crates/vendor/ansi_term-0.12.1:ansi_term"),
-            "anyhow": Label("//third_party/rust_crates/vendor/anyhow-1.0.102:anyhow"),
+            "anyhow": Label("//third_party/rust_crates/vendor/anyhow-1.0.104:anyhow"),
             "arbitrary": Label("//third_party/rust_crates/vendor/arbitrary-1.4.2:arbitrary"),
             "arc-swap": Label("//third_party/rust_crates/vendor/arc-swap-1.9.1:arc_swap"),
             "argh": Label("//third_party/rust_crates/vendor/argh-0.1.19:argh"),

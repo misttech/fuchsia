@@ -46,11 +46,11 @@ group("ansi_term-0.12.1") {
 }
 
 group("anyhow") {
-  public_deps = [ ":anyhow-v1_0_102" ]
+  public_deps = [ ":anyhow-v1_0_104" ]
 }
 
-group("anyhow-1.0.102") {
-  public_deps = [ ":anyhow-v1_0_102" ]
+group("anyhow-1.0.104") {
+  public_deps = [ ":anyhow-v1_0_104" ]
 }
 
 group("arbitrary") {
@@ -3225,16 +3225,16 @@ rustc_library("anstyle-v1_0_13") {
   applicable_licenses = [ ":anstyle-v1_0_13.license" ]
 }
 
-license("anyhow-v1_0_102.license") {
+license("anyhow-v1_0_104.license") {
   public_package_name = "anyhow"
   license_files =
-      [ "//third_party/rust_crates/vendor/anyhow-1.0.102/LICENSE-APACHE" ]
+      [ "//third_party/rust_crates/vendor/anyhow-1.0.104/LICENSE-APACHE" ]
 }
 
-rustc_library("anyhow-v1_0_102") {
+rustc_library("anyhow-v1_0_104") {
   crate_name = "anyhow"
-  source_root = "//third_party/rust_crates/vendor/anyhow-1.0.102/src/lib.rs"
-  output_name = "anyhow-928d63ec1bcb981b"
+  source_root = "//third_party/rust_crates/vendor/anyhow-1.0.104/src/lib.rs"
+  output_name = "anyhow-9fdba90c77a51119"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -3246,8 +3246,8 @@ rustc_library("anyhow-v1_0_102") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=928d63ec1bcb981b",
-    "-Cextra-filename=-928d63ec1bcb981b",
+    "-Cmetadata=9fdba90c77a51119",
+    "-Cextra-filename=-9fdba90c77a51119",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"std\"",
     "--cfg=std_backtrace",
@@ -3255,7 +3255,7 @@ rustc_library("anyhow-v1_0_102") {
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":anyhow-v1_0_102.license" ]
+  applicable_licenses = [ ":anyhow-v1_0_104.license" ]
 }
 
 license("arbitrary-v1_4_2.license") {
@@ -13089,7 +13089,7 @@ rustc_binary("mock-omaha-server.mock-omaha-server-v0_5_0") {
 
   deps = []
   deps += [ ":tokio-v1_53_1" ]
-  deps += [ ":anyhow-v1_0_102" ]
+  deps += [ ":anyhow-v1_0_104" ]
   deps += [ ":argh-v0_1_19" ]
   deps += [ ":derive_builder-v0_20_2" ]
   deps += [ ":hex-v0_4_3" ]
@@ -13142,7 +13142,7 @@ rustc_test("mock-omaha-server.mock-omaha-server-v0_5_0.test") {
 
   deps = []
   deps += [ ":tokio-v1_53_1" ]
-  deps += [ ":anyhow-v1_0_102" ]
+  deps += [ ":anyhow-v1_0_104" ]
   deps += [ ":argh-v0_1_19" ]
   deps += [ ":derive_builder-v0_20_2" ]
   deps += [ ":hex-v0_4_3" ]
@@ -13196,7 +13196,7 @@ rustc_library("mock-omaha-server-v0_5_0") {
 
   deps = []
   deps += [ ":tokio-v1_53_1" ]
-  deps += [ ":anyhow-v1_0_102" ]
+  deps += [ ":anyhow-v1_0_104" ]
   deps += [ ":argh-v0_1_19" ]
   deps += [ ":derive_builder-v0_20_2" ]
   deps += [ ":hex-v0_4_3" ]
@@ -13252,7 +13252,7 @@ rustc_test("mock-omaha-server-v0_5_0.test") {
 
   deps = []
   deps += [ ":tokio-v1_53_1" ]
-  deps += [ ":anyhow-v1_0_102" ]
+  deps += [ ":anyhow-v1_0_104" ]
   deps += [ ":argh-v0_1_19" ]
   deps += [ ":derive_builder-v0_20_2" ]
   deps += [ ":hex-v0_4_3" ]
@@ -14388,7 +14388,7 @@ rustc_library("omaha_client-v0_4_1") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":anyhow-v1_0_102" ]
+  deps += [ ":anyhow-v1_0_104" ]
   deps += [ ":bytes-v1_11_1" ]
   deps += [ ":chrono-v0_4_45" ]
   deps += [ ":ecdsa-v0_17_0" ]
@@ -16751,7 +16751,7 @@ rustc_macro("prost-derive-v0_14_4") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":anyhow-v1_0_102" ]
+  deps += [ ":anyhow-v1_0_104" ]
   deps += [ ":itertools-v0_14_0" ]
   deps += [ ":proc-macro2-v1_0_106" ]
   deps += [ ":quote-v1_0_45" ]
@@ -18348,7 +18348,7 @@ icu_rustc_library("rust_icu_common-v5_6_0") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":anyhow-v1_0_102" ]
+  deps += [ ":anyhow-v1_0_104" ]
   deps += [ ":rust_icu_sys-v5_6_0" ]
   deps += [ ":thiserror-v1_0_69" ]
 
@@ -18599,7 +18599,7 @@ icu_rustc_library("rust_icu_uloc-v5_6_0") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":anyhow-v1_0_102" ]
+  deps += [ ":anyhow-v1_0_104" ]
   deps += [ ":log-v0_4_29" ]
   deps += [ ":paste-v1_0_15($host_toolchain)" ]
   deps += [ ":rust_icu_common-v5_6_0" ]

@@ -30,7 +30,7 @@ aes = "0.9.1"
 aes-gcm = "0.11.0"
 aes-gcm-siv = "0.12.0-rc.3"
 ansi_term = "0.12.0"
-anyhow = "1.0.102"
+anyhow = "1.0.104"
 arbitrary = { version = "1.4.2", features = ["derive"] }
 arc-swap = { version = "1.9.1", features = ["weak"] }
 argh = "0.1.19"
@@ -546,7 +546,7 @@ rustflags = [ "--cfg=feature=\\\"folded_multiply\\\"" ]
 [gn.package.alloca."0.4.0"]
 deps = [ "//third_party/rust_crates/compat/alloca-0.4.0:alloca-c" ]
 
-[gn.package.anyhow."1.0.102"]
+[gn.package.anyhow."1.0.104"]
 rustflags = [
   "--cfg=std_backtrace",
   # TODO(https://github.com/rust-lang/rust/pull/99301): uncomment when generic member access is stable
