@@ -15,6 +15,7 @@ if (is_host) {
     library_name = "zxdb_dap"
     sources = [
       "__init__.py",
+      "models.py",
       "zxdb_dap_mixin.py",
     ]
     deps = [ "//src/lib/debug/dap/python:lib" ]

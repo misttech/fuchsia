@@ -3,7 +3,7 @@
 # found in the LICENSE file.
 
 from enum import Enum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import Field, model_serializer
 
@@ -92,6 +92,26 @@ class Event(DapBaseModel):
     type: str
     event: str
     body: dict[str, Any] | None = None
+
+
+class ThreadEventBody(DapBaseModel):
+    """Body of the standard thread event.
+
+    Attributes:
+        reason: The reason for the event.
+        thread_id: The identifier of the thread.
+    """
+
+    reason: Literal["started", "exited"] | str
+    thread_id: int
+
+
+class ThreadEvent(Event):
+    """Standard thread event."""
+
+    type: Literal["event"] = "event"
+    event: Literal["thread"] = "thread"
+    body: ThreadEventBody
 
 
 class InitializeArguments(DapBaseModel):

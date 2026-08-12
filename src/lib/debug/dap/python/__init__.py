@@ -31,6 +31,8 @@ from .models import (
     StackTraceResponse,
     StepInArguments,
     StepOutArguments,
+    ThreadEvent,
+    ThreadEventBody,
     ThreadsResponse,
     VariablesArguments,
     VariablesResponse,

@@ -7,6 +7,7 @@ from typing import Any, Protocol
 from pydantic import Field, model_validator
 from pydap.dap_types import DapBaseModel, Thread
 from pydap.models import Response, StackTraceArguments, StackTraceResponse
+from zxdb_dap.models import ZxdbThreadsResponse
 
 
 class ZxdbStackTraceArguments(StackTraceArguments):
@@ -114,3 +115,14 @@ class ZxdbDapMixin:
         """Sends a custom zxdb stackTrace request."""
         resp = await self._send_request("stackTrace", args)
         return StackTraceResponse.model_validate(resp)
+
+    async def threads(
+        self: SupportsSendRequest,
+    ) -> ZxdbThreadsResponse:
+        """Sends a threads request.
+
+        Returns:
+            ZxdbThreadsResponse: Response containing zxdb threads.
+        """
+        resp = await self._send_request("threads")
+        return ZxdbThreadsResponse.model_validate(resp)

@@ -8,12 +8,17 @@ import json
 import unittest
 from typing import Any
 
+from pydantic import ValidationError
 from pydap.client import DapError
 from zxdb_dap import (
+    ThreadEvent,
     ZxdbDapClient,
     ZxdbDetachArguments,
     ZxdbProcessArguments,
     ZxdbStackTraceArguments,
+    ZxdbThread,
+    ZxdbThreadEvent,
+    ZxdbThreadsResponse,
 )
 
 
@@ -261,6 +266,159 @@ class TestZxdbDapMixin(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(req_val["command"], "stackTrace")
         self.assertEqual(req_val["arguments"]["threadId"], 5678)
         self.assertTrue(req_val["arguments"]["remoteUnwind"])
+
+    async def test_threads_response_process_id(self) -> None:
+        client = ZxdbDapClient()
+        reader, writer = self._start_client(client)
+        send_task = asyncio.create_task(client.threads())
+
+        await asyncio.wait_for(writer.drained.wait(), timeout=2.0)
+
+        buffer_val = writer.buffer.getvalue()
+        headers, body = buffer_val.split(b"\r\n\r\n", 1)
+        req_val = json.loads(body.decode("utf-8"))
+        seq = req_val["seq"]
+
+        response = {
+            "seq": 10,
+            "type": "response",
+            "request_seq": seq,
+            "success": True,
+            "command": "threads",
+            "body": {
+                "threads": [
+                    {"id": 1234, "name": "main", "processId": 5678},
+                ]
+            },
+        }
+
+        feed_dap_response(reader, response)
+
+        resp = await send_task
+        self.assertTrue(resp.success)
+        self.assertTrue(isinstance(resp, ZxdbThreadsResponse))
+        self.assertEqual(len(resp.body.threads), 1)
+        self.assertEqual(resp.body.threads[0].id, 1234)
+        self.assertEqual(resp.body.threads[0].name, "main")
+        self.assertEqual(resp.body.threads[0].process_id, 5678)
+
+    async def test_threads_response_process_id_optional(self) -> None:
+        client = ZxdbDapClient()
+        reader, writer = self._start_client(client)
+        send_task = asyncio.create_task(client.threads())
+
+        await asyncio.wait_for(writer.drained.wait(), timeout=2.0)
+
+        buffer_val = writer.buffer.getvalue()
+        headers, body = buffer_val.split(b"\r\n\r\n", 1)
+        req_val = json.loads(body.decode("utf-8"))
+        seq = req_val["seq"]
+
+        response = {
+            "seq": 10,
+            "type": "response",
+            "request_seq": seq,
+            "success": True,
+            "command": "threads",
+            "body": {
+                "threads": [
+                    {"id": 1234, "name": "main"},
+                ]
+            },
+        }
+
+        feed_dap_response(reader, response)
+
+        resp = await send_task
+        self.assertTrue(resp.success)
+        self.assertTrue(isinstance(resp, ZxdbThreadsResponse))
+        self.assertEqual(len(resp.body.threads), 1)
+        self.assertEqual(resp.body.threads[0].id, 1234)
+        self.assertEqual(resp.body.threads[0].name, "main")
+        self.assertIsNone(resp.body.threads[0].process_id)
+
+    def test_thread_event_process_id(self) -> None:
+        event_dict = {
+            "seq": 1,
+            "type": "event",
+            "event": "thread",
+            "body": {
+                "reason": "started",
+                "threadId": 1234,
+                "processId": 5678,
+            },
+        }
+        event = ZxdbThreadEvent.model_validate(event_dict)
+        self.assertEqual(event.event, "thread")
+        self.assertEqual(event.body.reason, "started")
+        self.assertEqual(event.body.thread_id, 1234)
+        self.assertEqual(event.body.process_id, 5678)
+
+    def test_standard_thread_event_without_process_id(self) -> None:
+        event_dict = {
+            "seq": 1,
+            "type": "event",
+            "event": "thread",
+            "body": {
+                "reason": "started",
+                "threadId": 1234,
+            },
+        }
+        event = ThreadEvent.model_validate(event_dict)
+        self.assertEqual(event.event, "thread")
+        self.assertEqual(event.body.reason, "started")
+        self.assertEqual(event.body.thread_id, 1234)
+
+    def test_zxdb_thread_dump_dap_process_id(self) -> None:
+        thread = ZxdbThread(id=1, name="test", process_id=1234)
+        dap_dict = thread.dump_dap()
+        self.assertEqual(dap_dict["id"], 1)
+        self.assertEqual(dap_dict["name"], "test")
+        self.assertEqual(dap_dict["processId"], 1234)
+
+    def test_thread_event_validation_invalid_event(self) -> None:
+        event_dict = {
+            "seq": 1,
+            "type": "event",
+            "event": "stopped",
+            "body": {
+                "reason": "started",
+                "threadId": 1234,
+                "processId": 5678,
+            },
+        }
+        with self.assertRaises(ValidationError):
+            ThreadEvent.model_validate(event_dict)
+
+    def test_thread_event_validation_custom_reason(self) -> None:
+        event_dict = {
+            "seq": 1,
+            "type": "event",
+            "event": "thread",
+            "body": {
+                "reason": "unknown_reason",
+                "threadId": 1234,
+            },
+        }
+        event = ThreadEvent.model_validate(event_dict)
+        self.assertEqual(event.body.reason, "unknown_reason")
+        self.assertEqual(event.body.thread_id, 1234)
+
+    def test_zxdb_thread_event_validation_custom_reason(self) -> None:
+        event_dict = {
+            "seq": 1,
+            "type": "event",
+            "event": "thread",
+            "body": {
+                "reason": "custom_reason",
+                "threadId": 1234,
+                "processId": 5678,
+            },
+        }
+        event = ZxdbThreadEvent.model_validate(event_dict)
+        self.assertEqual(event.body.reason, "custom_reason")
+        self.assertEqual(event.body.thread_id, 1234)
+        self.assertEqual(event.body.process_id, 5678)
 
 
 if __name__ == "__main__":

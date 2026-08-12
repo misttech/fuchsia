@@ -3,8 +3,15 @@
 # found in the LICENSE file.
 
 from pydap.client import DapClient
-
-from .zxdb_dap_mixin import (
+from pydap.models import ThreadEvent, ThreadEventBody
+from zxdb_dap.models import (
+    ZxdbThread,
+    ZxdbThreadEvent,
+    ZxdbThreadEventBody,
+    ZxdbThreadsResponse,
+    ZxdbThreadsResponseBody,
+)
+from zxdb_dap.zxdb_dap_mixin import (
     ZxdbDapMixin,
     ZxdbDetachArguments,
     ZxdbProcessArguments,
@@ -28,4 +35,10 @@ __all__ = [
     "ZxdbProcessResponse",
     "ZxdbProcessResponseBody",
     "ZxdbStackTraceArguments",
+    "ThreadEvent",
+    "ZxdbThread",
+    "ZxdbThreadEvent",
+    "ZxdbThreadEventBody",
+    "ZxdbThreadsResponse",
+    "ZxdbThreadsResponseBody",
 ]
