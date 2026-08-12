@@ -5,6 +5,9 @@
 // https://opensource.org/licenses/MIT
 
 pub mod acpi;
+pub mod cmos_bootbyte;
 pub mod hpet;
 pub mod interrupt_manager;
 pub mod interrupts;
+pub mod keyboard;
+pub mod pic;

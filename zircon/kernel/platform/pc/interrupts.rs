@@ -5,6 +5,7 @@
 // https://opensource.org/licenses/MIT
 
 use super::interrupt_manager::InterruptManager;
+use super::pic::{pic_disable, pic_map};
 use crate::arch_rs::x86::apic::{
     ApicInterruptDeliveryMode, ApicInterruptDstMode, GsiRange, IoApicDescriptor, IoApicIsaOverride,
 };
@@ -70,8 +71,6 @@ fn get_interrupt_manager() -> &'static InterruptManager<RealIoApic> {
 static mut GSI_RANGE: Option<GsiRange> = None;
 
 unsafe extern "C" {
-    fn pic_map(pic1: u8, pic2: u8);
-    fn pic_disable();
     fn apic_vm_init();
     fn apic_local_init();
     fn apic_issue_eoi();
@@ -117,12 +116,8 @@ fn parse_isa_override(
 
 /// Initializes the APIC platform and registers the interrupt manager.
 fn platform_init_apic(_level: init::LkInitLevel) {
-    // SAFETY: This is called early in boot on the bootstrap processor (BSP) to initialize
-    // PIC mapping and disable the legacy PIC, ensuring interrupts are routed to APICs.
-    unsafe {
-        pic_map(0x20, 0x28);
-        pic_disable();
-    }
+    pic_map(0x20, 0x28);
+    pic_disable();
 
     // SAFETY: `cpp_global_acpi_parser_state` retrieves a pointer to the global ACPI parser
     // constructed during boot. This is safe to call on the main thread during boot.
@@ -360,10 +355,7 @@ pub extern "C" fn remap_interrupt(vector: u32) -> u32 {
 /// Disables legacy interrupts globally.
 #[unsafe(no_mangle)]
 pub extern "C" fn shutdown_interrupts() {
-    // SAFETY: Disabling PIC is safe to call during system shutdown.
-    unsafe {
-        pic_disable();
-    }
+    pic_disable();
 }
 
 /// Suspends interrupts on the current CPU. Returns Status::NOT_SUPPORTED on PC.

@@ -13,13 +13,10 @@ source_set("pc") {
 
   sources = [
     "acpi.cc",
-    "cmos_bootbyte.cc",
     "dev-init.cc",
     "efi_expected.cc",
     "interrupts.cc",
-    "keyboard.cc",
     "memory.cc",
-    "pic.cc",
     "platform.cc",
     "power.cc",
     "smbios.cc",
@@ -105,10 +102,13 @@ kernel_rust_mod("platform_pc") {
   source_root = "mod.rs"
   sources = [
     "acpi.rs",
+    "cmos_bootbyte.rs",
     "hpet.rs",
     "interrupt_manager.rs",
     "interrupts.rs",
+    "keyboard.rs",
     "mod.rs",
+    "pic.rs",
   ]
   deps = [
     "//sdk/rust/zx-status",
