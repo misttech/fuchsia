@@ -274,15 +274,20 @@ def main() -> int:
                     f.write(f"{timestamp}\n")
 
         rc = 0
+        output = ""
 
+    except bazel_action_impl.BazelActionScriptError as e:
+        rc = 1
+        output = str(e)
     except bazel_action_impl.BazelActionError:
         rc = 1
+        output = ""
 
     time_profile.stop()
     if _DEBUG_TIME_PROFILE:
         time_profile.print(0.001)
 
-    response = DelayedActionsResponse(ninja_request.request_id, rc, "")
+    response = DelayedActionsResponse(ninja_request.request_id, rc, output)
     write_file_if_changed(args.delayed_actions_response, response.to_json())
 
     # Done!  (Don't return the 'rc' from above, that's for the action itself,

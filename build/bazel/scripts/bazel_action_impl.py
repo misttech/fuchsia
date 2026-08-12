@@ -1303,22 +1303,39 @@ class _BazelOutputCopier(object):
             )
 
         if missing_directories:
-            raise MissingOutputDirectoryError(
-                "\nError: Directory provided to --directory-outputs is missing, got:\n\n%s\n"
-                % "\n".join(str(d) for d in missing_directories)
-            )
+            missing_list = "\n  ".join(str(d) for d in missing_directories)
+            error_msg = f"""
+BAZEL_ACTION_ERROR: Missing output directory.
+
+The following expected directory output(s) were missing:
+
+  {missing_list}
+"""
+            raise MissingOutputDirectoryError(error_msg)
 
         if unwanted_files:
-            raise DirectoryOutputConfigError(
-                "\nError: Non-directories are not allowed in --directory-outputs Bazel path, got:\n\n%s\n"
-                % "\n".join(str(f) for f in unwanted_files)
-            )
+            unwanted_list = "\n  ".join(str(f) for f in unwanted_files)
+            error_msg = f"""
+BAZEL_ACTION_ERROR: Non-directory output path.
+
+The following output directory path(s) exist but are not directories:
+
+  {unwanted_list}
+"""
+            raise DirectoryOutputConfigError(error_msg)
 
         if invalid_tracked_files:
-            raise MissingTrackedFileError(
-                "\nError: Missing or non-directory tracked files from --directory-outputs Bazel path:\n\n%s\n"
-                % "\n".join(str(f) for f in invalid_tracked_files)
-            )
+            missing_list = "\n  ".join(str(f) for f in invalid_tracked_files)
+            error_msg = f"""
+BAZEL_ACTION_ERROR: Missing tracked output file(s).
+
+The following expected tracked file(s) inside output directories were missing or not regular files:
+
+  {missing_list}
+
+To fix this, check that the Bazel action or assembly configuration produced the expected files with the expected filenames.
+"""
+            raise MissingTrackedFileError(error_msg)
 
         if dir_copies:
             time_profile.start(
