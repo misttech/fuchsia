@@ -5,9 +5,12 @@
 
 from __future__ import annotations
 
+import asyncio
+import enum
 import logging
 import re
 import subprocess
+import time
 
 import fidl_fuchsia_net_interfaces as f_net_interfaces
 import fidl_fuchsia_net_root as f_net_root
@@ -20,6 +23,7 @@ from honeydew.affordances.connectivity.netstack.errors import (
 from honeydew.affordances.connectivity.netstack.types import (
     InterfaceProperties,
     PingResult,
+    PortClass,
 )
 from honeydew.transports.ffx import errors as ffx_errors
 from honeydew.transports.ffx import ffx as ffx_transport
@@ -43,6 +47,12 @@ _STATE_PROXY = FidlEndpoint(
 _INTERFACES_PROXY = FidlEndpoint(
     "core/network/netstack", "fuchsia.net.root.Interfaces"
 )
+
+
+@enum.unique
+class _AddressFamily(enum.Enum):
+    IPV4 = "IPv4"
+    IPV6 = "IPv6"
 
 
 class Netstack:
@@ -300,4 +310,95 @@ class Netstack:
             rtt_avg_ms=float(rtt_match.group(3)) if rtt_match else None,
             rtt_max_ms=float(rtt_match.group(2)) if rtt_match else None,
             rtt_mdev_ms=None,
+        )
+
+    async def _wait_for_addr(
+        self,
+        address_family: _AddressFamily,
+        interface_id: int,
+        timeout: int = 30,
+    ) -> None:
+        end_time = time.time() + timeout
+        while time.time() < end_time:
+            interfaces = await self.list_interfaces()
+            for iface in interfaces:
+                has_addr = (
+                    iface.ipv4_addresses
+                    if address_family == _AddressFamily.IPV4
+                    else iface.ipv6_addresses
+                )
+                if iface.id_ == interface_id and has_addr:
+                    return
+            await asyncio.sleep(1)
+        raise HoneydewNetstackError(
+            f"Timed out after {timeout} seconds waiting for an {address_family.value} address"
+            f" on interface ID {interface_id}"
+        )
+
+    async def wait_for_ipv4_addr(
+        self,
+        interface_id: int,
+        timeout: int = 30,
+    ) -> None:
+        """Waits for an interface with the specified ID to have an IPv4 address.
+
+        Args:
+            interface_id: Interface ID to wait for.
+            timeout: Max time in seconds to wait.
+
+        Raises:
+            HoneydewNetstackError: If timeout occurs before an address is assigned.
+        """
+        await self._wait_for_addr(
+            address_family=_AddressFamily.IPV4,
+            interface_id=interface_id,
+            timeout=timeout,
+        )
+
+    async def wait_for_ipv6_addr(
+        self,
+        interface_id: int,
+        timeout: int = 30,
+    ) -> None:
+        """Waits for an interface with the specified ID to have an IPv6 address.
+
+        Args:
+            interface_id: Interface ID to wait for.
+            timeout: Max time in seconds to wait.
+
+        Raises:
+            HoneydewNetstackError: If timeout occurs before an address is assigned.
+        """
+        await self._wait_for_addr(
+            address_family=_AddressFamily.IPV6,
+            interface_id=interface_id,
+            timeout=timeout,
+        )
+
+    async def wait_for_interface(
+        self,
+        port_class: PortClass,
+        timeout: int = 30,
+    ) -> InterfaceProperties:
+        """Waits for an interface with the specified port class to become available.
+
+        Args:
+            port_class: Port class to wait for.
+            timeout: Max time in seconds to wait.
+
+        Returns:
+            Interface properties of the matching interface.
+
+        Raises:
+            HoneydewNetstackError: If timeout occurs before interface is found.
+        """
+        end_time = time.time() + timeout
+        while time.time() < end_time:
+            interfaces = await self.list_interfaces()
+            for interface in interfaces:
+                if interface.port_class is port_class:
+                    return interface
+            await asyncio.sleep(1)
+        raise HoneydewNetstackError(
+            f"Timed out after {timeout} seconds waiting for a {port_class.name} interface"
         )

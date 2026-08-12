@@ -35,6 +35,7 @@ from honeydew.transports.fuchsia_controller import (
 from honeydew.typing.custom_types import MacAddress
 
 _TEST_MAC: MacAddress = MacAddress("12:34:56:78:90:ab")
+_TEST_INTERFACE_ID: int = 1
 
 _T = TypeVar("_T")
 
@@ -201,6 +202,290 @@ class NetstackFCTests(unittest.IsolatedAsyncioTestCase):
                 ),
             ],
         )
+
+    @mock.patch("asyncio.sleep", return_value=None)
+    async def test_wait_for_ipv4_addr_success(
+        self, mock_sleep: mock.Mock
+    ) -> None:
+        """Test if wait_for_ipv4_addr succeeds when the address appears."""
+        self.netstack_obj._state_proxy = mock.MagicMock(
+            spec=f_net_interfaces.StateClient
+        )
+
+        is_first_call = True
+
+        def get_watcher(
+            # pylint: disable-next=unused-argument
+            options: f_net_interfaces.WatcherOptions,
+            watcher: int,
+        ) -> None:
+            nonlocal is_first_call
+            if is_first_call:
+                is_first_call = False
+                items = [
+                    InterfaceProperties(
+                        _TEST_INTERFACE_ID,
+                        "wlan1",
+                        mac=_TEST_MAC,
+                        ipv4_addresses=[],
+                        ipv6_addresses=[],
+                        port_class=PortClass.WLAN_CLIENT,
+                    )
+                ]
+            else:
+                items = [
+                    InterfaceProperties(
+                        _TEST_INTERFACE_ID,
+                        "wlan1",
+                        mac=_TEST_MAC,
+                        ipv4_addresses=[IPv4Address("192.168.1.1")],
+                        ipv6_addresses=[],
+                        port_class=PortClass.WLAN_CLIENT,
+                    )
+                ]
+
+            server = TestWatcherImpl(Channel(watcher), items=items)
+            self.watcher = asyncio.create_task(server.serve())
+
+        self.netstack_obj._state_proxy.get_watcher = mock.Mock(
+            wraps=get_watcher,
+        )
+
+        self.netstack_obj._interfaces_proxy = mock.MagicMock(
+            spec=f_net_root.InterfacesClient
+        )
+        mac_result = f_net_root.InterfacesGetMacResult(
+            response=f_net_root.InterfacesGetMacResponse(
+                mac=f_net.MacAddress(octets=list(bytes(_TEST_MAC))),
+            )
+        )
+        self.netstack_obj._interfaces_proxy.get_mac.side_effect = (
+            lambda *args, **kwargs: _async_response(mac_result)
+        )
+
+        await self.netstack_obj.wait_for_ipv4_addr(
+            interface_id=_TEST_INTERFACE_ID, timeout=5
+        )
+
+    @mock.patch("asyncio.sleep", return_value=None)
+    async def test_wait_for_ipv6_addr_success(
+        self, mock_sleep: mock.Mock
+    ) -> None:
+        """Test if wait_for_ipv6_addr succeeds when the address appears."""
+        self.netstack_obj._state_proxy = mock.MagicMock(
+            spec=f_net_interfaces.StateClient
+        )
+
+        is_first_call = True
+
+        def get_watcher(
+            # pylint: disable-next=unused-argument
+            options: f_net_interfaces.WatcherOptions,
+            watcher: int,
+        ) -> None:
+            nonlocal is_first_call
+            if is_first_call:
+                is_first_call = False
+                items = [
+                    InterfaceProperties(
+                        _TEST_INTERFACE_ID,
+                        "wlan1",
+                        mac=_TEST_MAC,
+                        ipv4_addresses=[],
+                        ipv6_addresses=[],
+                        port_class=PortClass.WLAN_CLIENT,
+                    )
+                ]
+            else:
+                items = [
+                    InterfaceProperties(
+                        _TEST_INTERFACE_ID,
+                        "wlan1",
+                        mac=_TEST_MAC,
+                        ipv4_addresses=[],
+                        ipv6_addresses=[IPv6Address("fe80::2")],
+                        port_class=PortClass.WLAN_CLIENT,
+                    )
+                ]
+
+            server = TestWatcherImpl(Channel(watcher), items=items)
+            self.watcher = asyncio.create_task(server.serve())
+
+        self.netstack_obj._state_proxy.get_watcher = mock.Mock(
+            wraps=get_watcher,
+        )
+
+        self.netstack_obj._interfaces_proxy = mock.MagicMock(
+            spec=f_net_root.InterfacesClient
+        )
+        mac_result = f_net_root.InterfacesGetMacResult(
+            response=f_net_root.InterfacesGetMacResponse(
+                mac=f_net.MacAddress(octets=list(bytes(_TEST_MAC))),
+            )
+        )
+        self.netstack_obj._interfaces_proxy.get_mac.side_effect = (
+            lambda *args, **kwargs: _async_response(mac_result)
+        )
+
+        await self.netstack_obj.wait_for_ipv6_addr(
+            interface_id=_TEST_INTERFACE_ID, timeout=5
+        )
+
+    @mock.patch("asyncio.sleep", return_value=None)
+    @mock.patch("time.time")
+    async def test_wait_for_addr_timeout(
+        self, mock_time: mock.Mock, mock_sleep: mock.Mock
+    ) -> None:
+        """Test if wait_for_ipv4_addr times out when address never appears."""
+        mock_time.side_effect = [0.0, 3.0]
+
+        self.netstack_obj._state_proxy = mock.MagicMock(
+            spec=f_net_interfaces.StateClient
+        )
+
+        def get_watcher(
+            # pylint: disable-next=unused-argument
+            options: f_net_interfaces.WatcherOptions,
+            watcher: int,
+        ) -> None:
+            items = [
+                InterfaceProperties(
+                    _TEST_INTERFACE_ID,
+                    "wlan1",
+                    mac=_TEST_MAC,
+                    ipv4_addresses=[],
+                    ipv6_addresses=[],
+                    port_class=PortClass.WLAN_CLIENT,
+                )
+            ]
+            server = TestWatcherImpl(Channel(watcher), items=items)
+            self.watcher = asyncio.create_task(server.serve())
+
+        self.netstack_obj._state_proxy.get_watcher = mock.Mock(
+            wraps=get_watcher,
+        )
+
+        self.netstack_obj._interfaces_proxy = mock.MagicMock(
+            spec=f_net_root.InterfacesClient
+        )
+        mac_result = f_net_root.InterfacesGetMacResult(
+            response=f_net_root.InterfacesGetMacResponse(
+                mac=f_net.MacAddress(octets=list(bytes(_TEST_MAC))),
+            )
+        )
+        self.netstack_obj._interfaces_proxy.get_mac.side_effect = (
+            lambda *args, **kwargs: _async_response(mac_result)
+        )
+
+        with self.assertRaises(HoneydewNetstackError) as context:
+            await self.netstack_obj.wait_for_ipv4_addr(
+                interface_id=_TEST_INTERFACE_ID, timeout=2
+            )
+
+        self.assertIn("Timed out", str(context.exception))
+
+    @mock.patch("asyncio.sleep", return_value=None)
+    async def test_wait_for_interface_success(
+        self, mock_sleep: mock.Mock
+    ) -> None:
+        """Test if wait_for_interface succeeds when the interface appears."""
+        self.netstack_obj._state_proxy = mock.MagicMock(
+            spec=f_net_interfaces.StateClient
+        )
+
+        def get_watcher(
+            # pylint: disable-next=unused-argument
+            options: f_net_interfaces.WatcherOptions,
+            watcher: int,
+        ) -> None:
+            items = [
+                InterfaceProperties(
+                    _TEST_INTERFACE_ID,
+                    "wlan1",
+                    mac=_TEST_MAC,
+                    ipv4_addresses=[],
+                    ipv6_addresses=[],
+                    port_class=PortClass.WLAN_CLIENT,
+                )
+            ]
+            server = TestWatcherImpl(Channel(watcher), items=items)
+            self.watcher = asyncio.create_task(server.serve())
+
+        self.netstack_obj._state_proxy.get_watcher = mock.Mock(
+            wraps=get_watcher,
+        )
+
+        self.netstack_obj._interfaces_proxy = mock.MagicMock(
+            spec=f_net_root.InterfacesClient
+        )
+        mac_result = f_net_root.InterfacesGetMacResult(
+            response=f_net_root.InterfacesGetMacResponse(
+                mac=f_net.MacAddress(octets=list(bytes(_TEST_MAC))),
+            )
+        )
+        self.netstack_obj._interfaces_proxy.get_mac.side_effect = (
+            lambda *args, **kwargs: _async_response(mac_result)
+        )
+
+        iface = await self.netstack_obj.wait_for_interface(
+            port_class=PortClass.WLAN_CLIENT, timeout=5
+        )
+        self.assertEqual(iface.id_, _TEST_INTERFACE_ID)
+        self.assertEqual(iface.name, "wlan1")
+        self.assertEqual(iface.port_class, PortClass.WLAN_CLIENT)
+
+    @mock.patch("asyncio.sleep", return_value=None)
+    @mock.patch("time.time")
+    async def test_wait_for_interface_timeout(
+        self, mock_time: mock.Mock, mock_sleep: mock.Mock
+    ) -> None:
+        """Test if wait_for_interface times out when interface never appears."""
+        mock_time.side_effect = [0.0, 3.0]
+
+        self.netstack_obj._state_proxy = mock.MagicMock(
+            spec=f_net_interfaces.StateClient
+        )
+
+        def get_watcher(
+            # pylint: disable-next=unused-argument
+            options: f_net_interfaces.WatcherOptions,
+            watcher: int,
+        ) -> None:
+            items = [
+                InterfaceProperties(
+                    _TEST_INTERFACE_ID,
+                    "eth1",
+                    mac=_TEST_MAC,
+                    ipv4_addresses=[],
+                    ipv6_addresses=[],
+                    port_class=PortClass.ETHERNET,
+                )
+            ]
+            server = TestWatcherImpl(Channel(watcher), items=items)
+            self.watcher = asyncio.create_task(server.serve())
+
+        self.netstack_obj._state_proxy.get_watcher = mock.Mock(
+            wraps=get_watcher,
+        )
+
+        self.netstack_obj._interfaces_proxy = mock.MagicMock(
+            spec=f_net_root.InterfacesClient
+        )
+        mac_result = f_net_root.InterfacesGetMacResult(
+            response=f_net_root.InterfacesGetMacResponse(
+                mac=f_net.MacAddress(octets=list(bytes(_TEST_MAC))),
+            )
+        )
+        self.netstack_obj._interfaces_proxy.get_mac.side_effect = (
+            lambda *args, **kwargs: _async_response(mac_result)
+        )
+
+        with self.assertRaises(HoneydewNetstackError) as context:
+            await self.netstack_obj.wait_for_interface(
+                port_class=PortClass.WLAN_CLIENT, timeout=2
+            )
+
+        self.assertIn("Timed out", str(context.exception))
 
     async def test_ping_success(self) -> None:
         """Test successful ping execution and output parsing."""
