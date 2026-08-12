@@ -12,4 +12,7 @@
     use: [
         { service: "fuchsia.hardware.spi.TestService" },
     ],
+    config: {
+        spi_bus_count: { type: "uint8" },
+    },
 }

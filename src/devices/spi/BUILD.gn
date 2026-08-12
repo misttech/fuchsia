@@ -13,8 +13,5 @@ group("drivers") {
 
 group("tests") {
   testonly = true
-  deps = [
-    "drivers:tests",
-    "tests",
-  ]
+  deps = [ "drivers:tests" ]
 }

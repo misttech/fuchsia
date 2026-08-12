@@ -1,0 +1,76 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//build/components.gni")
+import("//build/rust/rustc_test.gni")
+
+# Defines a SPI integration test package.
+#
+# Parameters
+#
+#   spi_bus_count (required)
+#     [int] The number of SPI buses to configure.
+#
+#   test_specs (required)
+#     [scope] Test specifications.
+#
+template("spi_integration_test") {
+  assert(defined(invoker.spi_bus_count), "spi_bus_count must be defined")
+  assert(defined(invoker.test_specs), "test_specs must be defined")
+
+  _manifest_target = "${target_name}_manifest"
+  _config_lib_target = "${target_name}_config_lib"
+  _bin_target = "${target_name}_bin"
+  _component_target = "${target_name}_component"
+  _config_values_target = "${target_name}_config_values"
+  _package_target = target_name
+
+  fuchsia_component_manifest(_manifest_target) {
+    testonly = true
+    manifest = "//src/devices/spi/tests/spi-integration-test/meta/spi-integration-test.cml"
+  }
+
+  fuchsia_structured_config_rust_lib(_config_lib_target) {
+    testonly = true
+    cm_label = ":$_manifest_target"
+    name = "spi_integration_test_config"
+  }
+
+  rustc_test(_bin_target) {
+    output_name = "spi_integration_test"
+    edition = "2024"
+    source_root = "//src/devices/spi/tests/spi-integration-test/src/lib.rs"
+    sources = [ "//src/devices/spi/tests/spi-integration-test/src/lib.rs" ]
+    deps = [
+      ":$_config_lib_target",
+      "//sdk/fidl/fuchsia.hardware.spi:fuchsia.hardware.spi_rust",
+      "//src/lib/fidl/rust/fidl",
+      "//src/lib/fuchsia",
+      "//src/lib/fuchsia-component",
+      "//src/lib/fuchsia-fs",
+      "//third_party/rust_crates:anyhow",
+      "//third_party/rust_crates:futures",
+    ]
+  }
+
+  fuchsia_test_component(_component_target) {
+    cm_label = ":$_manifest_target"
+    deps = [ ":$_bin_target" ]
+    test_type = "driver_system"
+  }
+
+  fuchsia_structured_config_values(_config_values_target) {
+    testonly = true
+    cm_label = ":$_manifest_target"
+    values = {
+      spi_bus_count = invoker.spi_bus_count
+    }
+  }
+
+  fuchsia_test_package(_package_target) {
+    test_components = [ ":$_component_target" ]
+    deps = [ ":$_config_values_target" ]
+    test_specs = invoker.test_specs
+  }
+}
