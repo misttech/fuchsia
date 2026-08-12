@@ -364,6 +364,8 @@ TEST_P(RestrictedMode, Bench) {
              t / iter * ZX_SEC(1) / zx::ticks::per_second(), t.get(), iter);
     }
 
+    zx::nanosleep(zx::deadline_after(zx::msec(10)));
+
     {
       // For way of comparison, time a null syscall.
       auto t = zx::ticks::now();
@@ -378,6 +380,8 @@ TEST_P(RestrictedMode, Bench) {
       printf("test syscall %ld ns per call (%ld raw ticks), %d iters\n",
              t / iter * ZX_SEC(1) / zx::ticks::per_second(), t.get(), iter);
     }
+
+    zx::nanosleep(zx::deadline_after(zx::msec(10)));
 
     // In-thread exception handling
     auto t = zx::ticks::now();
@@ -396,6 +400,8 @@ TEST_P(RestrictedMode, Bench) {
 
     printf("in-thread exceptions %ld ns per round trip (%ld raw ticks) %d iters\n",
            t / iter * ZX_SEC(1) / zx::ticks::per_second(), t.get(), iter);
+
+    zx::nanosleep(zx::deadline_after(zx::msec(10)));
   }
 }
 
