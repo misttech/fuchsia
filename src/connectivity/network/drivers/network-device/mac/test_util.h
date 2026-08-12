@@ -39,6 +39,9 @@ class FakeMacDeviceImpl : public fdf::WireServer<fuchsia_hardware_network_driver
 
   zx_status_t WaitConfigurationChanged();
 
+  // Unbinds the server endpoint from the dispatcher, closing the connection.
+  void Unbind();
+
   const fuchsia_net::wire::MacAddress& mac() { return mac_; }
 
   fidl::WireTableBuilder<fuchsia_hardware_network_driver::wire::Features>& features() {

@@ -92,7 +92,7 @@ zx_status_t MacInterface::Bind(async_dispatcher_t* dispatcher,
   // DFv2. For now, dispatching to do the work eliminates known deadlocks.
   async::PostTask(dispatcher, [this]() {
     fbl::AutoLock lock(&lock_);
-    Consolidate([]() {});
+    Consolidate([](zx_status_t /*status*/) {});
   });
   return ZX_OK;
 }
@@ -132,7 +132,7 @@ std::optional<netdev::wire::MacFilterMode> MacInterface::ConvertMode(
   }
 }
 
-void MacInterface::Consolidate(fit::function<void()> callback) {
+void MacInterface::Consolidate(fit::function<void(zx_status_t)> callback) {
   netdev::wire::MacFilterMode mode = default_mode_;
   // Gather the most permissive mode that the clients want.
   for (auto& c : clients_) {
@@ -186,9 +186,10 @@ void MacInterface::Consolidate(fit::function<void()> callback) {
                 fdf::WireUnownedResult<fuchsia_hardware_network_driver::MacAddr::SetMode>& result) {
         if (!result.ok()) {
           LOGF_ERROR("SetMode() failed: %s", result.error().FormatDescription().c_str());
+          callback(ZX_ERR_INTERNAL);
           return;
         }
-        callback();
+        callback(ZX_OK);
       });
 }
 
@@ -199,7 +200,7 @@ void MacInterface::CloseClient(MacClientInstance* client) {
   // has completed. The client cannot be kept in clients_ as it must not take part in consolidation
   // now that it's closed.
   dead_clients_.push_back(clients_.erase(*client));
-  Consolidate([client, this]() {
+  Consolidate([client, this](zx_status_t /*status*/) {
     fit::callback<void()> teardown;
     {
       fbl::AutoLock lock(&lock_);
@@ -307,7 +308,8 @@ void MacClientInstance::SetMode(SetModeRequestView request, SetModeCompleter::Sy
   if (resolved_mode.has_value()) {
     fbl::AutoLock lock(&parent_->lock_);
     state_.filter_mode = resolved_mode.value();
-    parent_->Consolidate([completer = completer.ToAsync()]() mutable { completer.Reply(ZX_OK); });
+    parent_->Consolidate(
+        [completer = completer.ToAsync()](zx_status_t status) mutable { completer.Reply(status); });
   } else {
     completer.Reply(ZX_ERR_NOT_SUPPORTED);
   }
@@ -321,7 +323,9 @@ void MacClientInstance::AddMulticastAddress(AddMulticastAddressRequestView reque
     fbl::AutoLock lock(&parent_->lock_);
     if (state_.addresses.size() < netdriver::wire::kMaxMacFilter) {
       state_.addresses.insert(ClientState::Addr{request->address});
-      parent_->Consolidate([completer = completer.ToAsync()]() mutable { completer.Reply(ZX_OK); });
+      parent_->Consolidate([completer = completer.ToAsync()](zx_status_t status) mutable {
+        completer.Reply(status);
+      });
     } else {
       completer.Reply(ZX_ERR_NO_RESOURCES);
     }
@@ -335,7 +339,8 @@ void MacClientInstance::RemoveMulticastAddress(RemoveMulticastAddressRequestView
   } else {
     fbl::AutoLock lock(&parent_->lock_);
     state_.addresses.erase(ClientState::Addr{request->address});
-    parent_->Consolidate([completer = completer.ToAsync()]() mutable { completer.Reply(ZX_OK); });
+    parent_->Consolidate(
+        [completer = completer.ToAsync()](zx_status_t status) mutable { completer.Reply(status); });
   }
 }
 

@@ -289,5 +289,53 @@ TEST_F(MacDeviceTest, MulticastFilterCountGreaterThanMaxMacFilter) {
   ASSERT_EQ(impl_.addresses().size(), netdriver::wire::kMaxMacFilter);
 }
 
+TEST_F(MacDeviceTest, TeardownWithOpenClientConsolidationFailure) {
+  ASSERT_OK(CreateDevice());
+  fidl::WireSyncClient<netdev::MacAddressing> client = OpenInstance();
+
+  // Unbind the device from the client so that SetMode fails with
+  // ZX_ERR_PEER_CLOSED during consolidation.
+  impl_.Unbind();
+
+  // Calling Teardown unbinds open clients and consolidates MAC addresses.
+  // Teardown must complete despite the consolidation failure.
+  std::unique_ptr dev = std::move(device_);
+  sync_completion_t completion;
+  dev->Teardown([&completion]() { sync_completion_signal(&completion); });
+  ASSERT_OK(sync_completion_wait(&completion, zx::sec(5).get()));
+}
+
+TEST_F(MacDeviceTest, ConsolidationFailureReturnsInternalError) {
+  ASSERT_OK(CreateDevice());
+  fidl::WireSyncClient<netdev::MacAddressing> client = OpenInstance();
+
+  // Unbind the device from the client so that SetMode fails with
+  // ZX_ERR_PEER_CLOSED during consolidation.
+  impl_.Unbind();
+
+  // Each of the following three methods perform MAC address consolidation after
+  // making local changes. Check that each results in ZX_ERR_INTERNAL if
+  // consolidation fails.
+
+  {
+    fidl::WireResult result = client->SetMode(netdev::wire::MacFilterMode::kPromiscuous);
+    ASSERT_OK(result.status());
+    ASSERT_STATUS(result.value().status, ZX_ERR_INTERNAL);
+  }
+
+  MacAddress addr{{0x01, 0x01, 0x02, 0x03, 0x04, 0x05}};
+  {
+    fidl::WireResult result = client->AddMulticastAddress(addr);
+    ASSERT_OK(result.status());
+    ASSERT_STATUS(result.value().status, ZX_ERR_INTERNAL);
+  }
+
+  {
+    fidl::WireResult result = client->RemoveMulticastAddress(addr);
+    ASSERT_OK(result.status());
+    ASSERT_STATUS(result.value().status, ZX_ERR_INTERNAL);
+  }
+}
+
 }  // namespace testing
 }  // namespace network

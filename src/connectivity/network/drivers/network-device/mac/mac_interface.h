@@ -51,7 +51,7 @@ class MacInterface : public ::network::MacAddrDeviceInterface {
   friend MacClientInstance;
   // Consolidates all the requested operating modes and multicast filtering from all the attached
   // clients into a final operating mode and sets it on the parent device implementation.
-  void Consolidate(fit::function<void()> callback) __TA_REQUIRES(lock_);
+  void Consolidate(fit::function<void(zx_status_t)> callback) __TA_REQUIRES(lock_);
   // Closes a client instance, causing a new operating mode to be calculated once the instance state
   // is removed. If the `MacInterface` is undergoing a teardown, the teardown will be finished if
   // there are no more open client instances.

@@ -84,6 +84,13 @@ void FakeMacDeviceImpl::SetMode(
   completer.buffer(arena).Reply();
 }
 
+void FakeMacDeviceImpl::Unbind() {
+  if (binding_.has_value()) {
+    binding_->Unbind();
+    binding_.reset();
+  }
+}
+
 zx_status_t FakeMacDeviceImpl::WaitConfigurationChanged() {
   zx_status_t status = event_.wait_one(kConfigurationChangedEvent, zx::time::infinite(), nullptr);
   event_.signal(kConfigurationChangedEvent, 0);
