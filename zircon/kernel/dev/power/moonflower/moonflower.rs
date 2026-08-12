@@ -6,7 +6,12 @@
 //
 // Ported from zircon/kernel/dev/power/moonflower/moonflower-power.cc
 
-use crate::pdev_power::{PdevPowerOps, PowerCpuState, PowerRebootFlags, rust_pdev_register_power};
+use crate::pdev_power::{
+    CONTROL_INTERFACE_ARM_WFI, CONTROL_INTERFACE_CPU_DRIVER,
+    K_POWER_LEVEL_OPTIONS_DOMAIN_INDEPENDENT, PdevPowerOps, PowerCpuState, PowerDomainConfigFfi,
+    PowerRebootFlags, ProcessorPowerLevelFfi, power_management_register_domains,
+    rust_pdev_register_power,
+};
 use core::sync::atomic::{AtomicPtr, Ordering};
 use debug::dprintf;
 use regio::{MmioBank, MmioPtr, Offset, RwSafe};
@@ -202,6 +207,79 @@ pub extern "C" fn moonflower_power_init_early() {
     // kernel.
     unsafe {
         rust_pdev_register_power(&MOONFLOWER_POWER_OPS);
+    }
+}
+
+/// Initializes Moonflower power domain and energy model for the kernel scheduler.
+#[unsafe(no_mangle)]
+pub extern "C" fn moonflower_power_init() {
+    dprintf!(INFO, "POWER: initializing moonflower power domain\n");
+
+    let wfi_name = c"WFI".as_ptr();
+    let lowsvs_name = c"LowSVS".as_ptr();
+    let svs_name = c"SVS".as_ptr();
+    let nominal_name = c"Nominal".as_ptr();
+    let turbo_name = c"Turbo".as_ptr();
+
+    let levels = [
+        ProcessorPowerLevelFfi {
+            options: K_POWER_LEVEL_OPTIONS_DOMAIN_INDEPENDENT,
+            processing_rate: 0,
+            power_coefficient_nw: 100_000,
+            control_interface: CONTROL_INTERFACE_ARM_WFI,
+            control_argument: 0,
+            diagnostic_name: wfi_name,
+        },
+        ProcessorPowerLevelFfi {
+            options: 0,
+            processing_rate: 360,
+            power_coefficient_nw: 20_000_000,
+            control_interface: CONTROL_INTERFACE_CPU_DRIVER,
+            control_argument: 3,
+            diagnostic_name: lowsvs_name,
+        },
+        ProcessorPowerLevelFfi {
+            options: 0,
+            processing_rate: 506,
+            power_coefficient_nw: 31_000_000,
+            control_interface: CONTROL_INTERFACE_CPU_DRIVER,
+            control_argument: 2,
+            diagnostic_name: svs_name,
+        },
+        ProcessorPowerLevelFfi {
+            options: 0,
+            processing_rate: 798,
+            power_coefficient_nw: 66_000_000,
+            control_interface: CONTROL_INTERFACE_CPU_DRIVER,
+            control_argument: 1,
+            diagnostic_name: nominal_name,
+        },
+        ProcessorPowerLevelFfi {
+            options: 0,
+            processing_rate: 1000,
+            power_coefficient_nw: 102_000_000,
+            control_interface: CONTROL_INTERFACE_CPU_DRIVER,
+            control_argument: 0,
+            diagnostic_name: turbo_name,
+        },
+    ];
+
+    let domain_config = [PowerDomainConfigFfi {
+        domain_id: 0,
+        cpu_mask: 0xf,
+        levels: levels.as_ptr(),
+        level_count: levels.len(),
+    }];
+
+    let status = power_management_register_domains(&domain_config);
+    if status == Status::OK {
+        dprintf!(INFO, "POWER: Registered moonflower power domain\n");
+    } else {
+        dprintf!(
+            CRITICAL,
+            "POWER: Failed to register moonflower power domain: {}\n",
+            status.into_raw()
+        );
     }
 }
 

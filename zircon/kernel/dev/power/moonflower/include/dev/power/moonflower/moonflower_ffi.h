@@ -16,7 +16,7 @@ __BEGIN_CDECLS
 uintptr_t cpp_moonflower_get_opp_vaddr();
 int64_t cpp_moonflower_tz_config_hw_for_ram_dump(uint64_t disable_wd_dbg,
                                                  uint64_t boot_partition_sel);
-int64_t cpp_moonflower_tz_io_write(zx_paddr_t paddr, uint32_t val);
+int64_t cpp_moonflower_tz_io_write(paddr_t paddr, uint32_t val);
 
 __END_CDECLS
 
