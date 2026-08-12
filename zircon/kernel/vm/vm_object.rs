@@ -24,6 +24,11 @@ use zx_types::zx_status_t;
 
 pub use bindings::{Resizability, SnapshotType, VmObject_EvictionHint as EvictionHint};
 
+/// Argument that specifies the context in which we are supplying pages.
+pub type SupplyOptions = bindings::SupplyOptions;
+
+pub type VmObjectReadWriteOptions = bindings::VmObjectReadWriteOptions;
+
 /// The base vm object that holds a range of bytes of data
 ///
 /// Can be created without mapping and used as a container of data, or mappable

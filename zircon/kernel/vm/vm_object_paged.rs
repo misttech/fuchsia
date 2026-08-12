@@ -23,8 +23,13 @@ pub struct VmObjectPaged {
 }
 
 impl VmObjectPaged {
-    pub const ALWAYS_PINNED: u32 = bindings::VmObjectPaged_kAlwaysPinned;
     pub const RESIZABLE: u32 = bindings::VmObjectPaged_kResizable;
+    pub const CONTIGUOUS: u32 = bindings::VmObjectPaged_kContiguous;
+    pub const SLICE: u32 = bindings::VmObjectPaged_kSlice;
+    pub const DISCARDABLE: u32 = bindings::VmObjectPaged_kDiscardable;
+    pub const ALWAYS_PINNED: u32 = bindings::VmObjectPaged_kAlwaysPinned;
+    pub const REFERENCE: u32 = bindings::VmObjectPaged_kReference;
+    pub const CAN_BLOCK_ON_PAGE_REQUESTS: u32 = bindings::VmObjectPaged_kCanBlockOnPageRequests;
 
     /// Domain-specific conversion: returns raw FFI pointer for `VmObjectPaged`.
     pub fn as_raw(&self) -> *mut bindings::VmObjectPaged {

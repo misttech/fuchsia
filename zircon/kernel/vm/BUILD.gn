@@ -524,7 +524,9 @@ kernel_bindgen_crate("vm-object-bindings") {
     "EvictionHint",
     "Resizability",
     "SnapshotType",
+    "SupplyOptions",
     "VmObject",
+    "VmObjectReadWriteOptions",
     "cpp_vm_object_lookup_fn",
   ]
   type_blocklist = [
@@ -545,14 +547,16 @@ kernel_bindgen_crate("vm-object-bindings") {
     "VmObject_OnWriteBytesTransferredCallback",
     "VmObject_RangeChangeOp",
   ]
-  additional_bindgen_flags = [
-    "--opaque-type=VmObject",
-    "--rustified-enum=VmObject_EvictionHint",
-    "--rustified-enum=Resizability",
-    "--rustified-enum=SnapshotType",
-    "--no-recursive-allowlist",
-    "--blocklist-function=VmObject_.*",
+  opaque_types = [ "VmObject" ]
+  rustified_enum = [
+    "Resizability",
+    "SnapshotType",
+    "SupplyOptions",
+    "VmObjectReadWriteOptions",
+    "VmObject_EvictionHint",
   ]
+  function_blocklist = [ "VmObject_.*" ]
+  additional_bindgen_flags = [ "--no-recursive-allowlist" ]
   var_allowlist = [ "VmObject_MAX_SIZE" ]
   deps = [
     ":attribution-bindings",
@@ -600,13 +604,16 @@ kernel_bindgen_crate("vm-object-paged-bindings") {
   ]
   var_allowlist = [
     "VmObjectPaged_kAlwaysPinned",
+    "VmObjectPaged_kCanBlockOnPageRequests",
+    "VmObjectPaged_kContiguous",
+    "VmObjectPaged_kDiscardable",
+    "VmObjectPaged_kReference",
     "VmObjectPaged_kResizable",
+    "VmObjectPaged_kSlice",
   ]
-  additional_bindgen_flags = [
-    "--opaque-type=VmObjectPaged",
-    "--no-recursive-allowlist",
-    "--blocklist-function=VmObjectPaged_.*",
-  ]
+  opaque_types = [ "VmObjectPaged" ]
+  function_blocklist = [ "VmObjectPaged_.*" ]
+  additional_bindgen_flags = [ "--no-recursive-allowlist" ]
   expect_lints = [
     "non_camel_case_types",
     "non_upper_case_globals",
