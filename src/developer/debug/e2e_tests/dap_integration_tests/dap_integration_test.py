@@ -134,7 +134,7 @@ class TestDapBreakpointLine(DapTestCase):
         pretty_types_path = get_dap_source_path(
             "src/developer/debug/e2e_tests/inferiors/pretty_types.cc"
         )
-        line_number = 34
+        line_number = 38
         bp_resp = await self.set_breakpoints(
             SetBreakpointsArguments(
                 source=Source(path=pretty_types_path),

@@ -9,6 +9,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_set>
+#include <vector>
 
 class Parent {
  public:
@@ -30,6 +31,13 @@ int main() {
   // TODO(https://fxbug.dev/461736288): Fix pretty-printing std::unordered_set.
   // std::unordered_set<int> set = {0, 1, 2};
   auto span = std::span<const char>(sv.begin() + 1, 2);
+
+  std::vector<int> vals = {3, 4, 5, 6};
+
+  for (auto it = vals.begin(); it != vals.end(); ++it) {
+    std::cout << *it;
+  }
+  std::cout << "\n";
 
   std::cout << sv << p->a;
 }

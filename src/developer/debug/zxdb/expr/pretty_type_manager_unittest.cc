@@ -50,24 +50,26 @@ TEST_F(PrettyTypeManagerTest, StdVector) {
   auto v2_namespace = fxl::MakeRefCounted<Namespace>("__2");
   SymbolTestParentSetter v2_namespace_parent(v2_namespace, std_namespace);
 
-  // The capacity is actually a compressed_pair.
-  auto cap_pair = MakeCollectionType(DwarfTag::kStructureType, "compresed_pair",
-                                     {{"__value_", int32_ptr_type}});
+  // The modern libc++ vector uses __layout_ containing __begin_, __size_, __capacity_.
+  auto layout_type = MakeCollectionType(
+      DwarfTag::kStructureType, "__layout_",
+      {{"__begin_", int32_ptr_type}, {"__size_", uint64_type}, {"__capacity_", uint64_type}});
 
-  auto vector_type = MakeCollectionType(
-      DwarfTag::kClassType, "vector<int32_t, std::__2::allocator<int32_t> >",
-      {{"__begin_", int32_ptr_type}, {"__end_", int32_ptr_type}, {"__end_cap_", cap_pair}});
+  auto vector_type =
+      MakeCollectionType(DwarfTag::kClassType, "vector<int32_t, std::__2::allocator<int32_t> >",
+                         {{"__layout_", layout_type}});
   SymbolTestParentSetter vector_type_parent(vector_type, v2_namespace);
 
   auto int32_param = fxl::MakeRefCounted<TemplateParameter>("T", int32_type, false);
   auto allocator_param = fxl::MakeRefCounted<TemplateParameter>("allocator", allocator_type, false);
   vector_type->set_template_params({LazySymbol(int32_param), LazySymbol(allocator_param)});
 
-  ExprValue vec_value(vector_type, {
-                                       0x00, 0x11, 0x22, 0, 0, 0, 0, 0,  // __begin_
-                                       0x08, 0x11, 0x22, 0, 0, 0, 0, 0,  // __end_ = __begin_ + 8
-                                       0x10, 0x11, 0x22, 0, 0, 0, 0, 0,  // __end_cap_ = __begin+16
-                                   });
+  ExprValue vec_value(vector_type,
+                      {
+                          0x00, 0x11, 0x22, 0, 0, 0, 0, 0,  // __layout_.__begin_
+                          0x02, 0x00, 0x00, 0, 0, 0, 0, 0,  // __layout_.__size_ = 2
+                          0x04, 0x00, 0x00, 0, 0, 0, 0, 0,  // __layout_.__capacity_ = 4
+                      });
 
   PrettyTypeManager manager;
   PrettyType* pretty_vector = manager.GetForType(vector_type.get());
@@ -230,16 +232,15 @@ TEST_F(PrettyTypeManagerTest, RustStringObject) {
           {"buf",
            MakeCollectionType(
                DwarfTag::kStructureType, "RawVec",
-               {{"inner",
-                 MakeCollectionType(
-                     DwarfTag::kStructureType, "RawVecInner",
-                     {{"ptr", MakeCollectionType(
-                                  DwarfTag::kStructureType, "Pointer",
-                                  {{"pointer", MakeCollectionType(
-                                                   DwarfTag::kStructureType,
-                                                   "core::ptr::Unique<u8>",
-                                                   {{"pointer", MakeRustCharPointerType()}})}})},
-                      {"cap", MakeUint64Type()}})}})},
+               {{"inner", MakeCollectionType(
+                              DwarfTag::kStructureType, "RawVecInner",
+                              {{"ptr", MakeCollectionType(
+                                           DwarfTag::kStructureType, "Pointer",
+                                           {{"pointer",
+                                             MakeCollectionType(
+                                                 DwarfTag::kStructureType, "core::ptr::Unique<u8>",
+                                                 {{"pointer", MakeRustCharPointerType()}})}})},
+                               {"cap", MakeUint64Type()}})}})},
           {"len", MakeUint64Type()},
       });
   SymbolTestParentSetter vec_type_parent(vec_type, vec_namespace);

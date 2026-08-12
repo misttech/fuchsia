@@ -147,15 +147,15 @@ void PrettyTypeManager::AddDefaultCppPrettyTypes() {
   // Note that we don't have vector<bool> yet but need to add a pretty-printer for it to
   // preferentially match over the non-bool version (the longest match will be taken). This will
   // result in errors but it will be better than misleading results.
-  cpp_.emplace_back(
-      InternalGlob("std::__2::vector<*>"),
-      std::make_unique<PrettyArray>("__begin_", "__end_ - __begin_", "",
-                                    GetterList{{"size", "__end_ - __begin_"},
-                                               {"capacity", "__end_cap_.__value_ - __begin_"},
-                                               {"data", "__begin_"},
-                                               {"empty", "__end_ == __begin_"},
-                                               {"front", "*__begin_"},
-                                               {"back", "__begin_[__end_ - __begin_ - 1]"}}));
+  cpp_.emplace_back(InternalGlob("std::__2::vector<*>"),
+                    std::make_unique<PrettyArray>(
+                        "__layout_.__begin_", "__layout_.__size_", "",
+                        GetterList{{"size", "__layout_.__size_"},
+                                   {"capacity", "__layout_.__capacity_"},
+                                   {"data", "__layout_.__begin_"},
+                                   {"empty", "__layout_.__size_ == 0"},
+                                   {"front", "*__layout_.__begin_"},
+                                   {"back", "__layout_.__begin_[__layout_.__size_ - 1]"}}));
   cpp_.emplace_back(InternalGlob("std::__2::vector<bool, *>"),
                     std::make_unique<PrettyArray>("vector_bool_printer_not_implemented_yet",
                                                   "vector_bool_printer_not_implemented_yet", ""));
