@@ -87,29 +87,39 @@ zx_status_t riscv_status_to_zx_status(arch::RiscvSbiError error) {
   }
 }
 
-zx::result<power_cpu_state> sbi_get_cpu_state(uint64_t hart_id) {
+zx_status_t sbi_get_cpu_state(uint64_t hart_id, power_cpu_state *out_state) {
+  if (!out_state) {
+    return ZX_ERR_INVALID_ARGS;
+  }
   arch::RiscvSbiRet ret = arch::RiscvSbi::HartGetStatus(static_cast<arch::HartId>(hart_id));
   if (ret.error != arch::RiscvSbiError::kSuccess) {
-    return zx::error(riscv_status_to_zx_status(ret.error));
+    return riscv_status_to_zx_status(ret.error);
   }
   switch (static_cast<arch::RiscvSbiHartState>(ret.value)) {
     case arch::RiscvSbiHartState::kStarted:
-      return zx::success(power_cpu_state::STARTED);
+      *out_state = power_cpu_state::STARTED;
+      return ZX_OK;
     case arch::RiscvSbiHartState::kStopped:
-      return zx::success(power_cpu_state::STOPPED);
+      *out_state = power_cpu_state::STOPPED;
+      return ZX_OK;
     case arch::RiscvSbiHartState::kStartPending:
-      return zx::success(power_cpu_state::START_PENDING);
+      *out_state = power_cpu_state::START_PENDING;
+      return ZX_OK;
     case arch::RiscvSbiHartState::kStopPending:
-      return zx::success(power_cpu_state::STOP_PENDING);
+      *out_state = power_cpu_state::STOP_PENDING;
+      return ZX_OK;
     case arch::RiscvSbiHartState::kSuspended:
-      return zx::success(power_cpu_state::SUSPENDED);
+      *out_state = power_cpu_state::SUSPENDED;
+      return ZX_OK;
     case arch::RiscvSbiHartState::kSuspendPending:
-      return zx::success(power_cpu_state::SUSPEND_PENDING);
+      *out_state = power_cpu_state::SUSPEND_PENDING;
+      return ZX_OK;
     case arch::RiscvSbiHartState::kResumePending:
-      return zx::success(power_cpu_state::RESUME_PENDING);
+      *out_state = power_cpu_state::RESUME_PENDING;
+      return ZX_OK;
     default:
       // We should never reach here.
-      return zx::error(ZX_ERR_INTERNAL);
+      return ZX_ERR_INTERNAL;
   }
 }
 

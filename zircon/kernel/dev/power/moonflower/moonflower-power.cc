@@ -158,23 +158,32 @@ zx_status_t moonflower_opp_set(uint32_t domain_id, uint64_t opp) {
   return ZX_OK;
 }
 
-zx::result<uint64_t> moonflower_opp_get(uint32_t domain_id) {
+zx_status_t moonflower_opp_get(uint32_t domain_id, uint64_t* out_opp) {
   if (opp_index_reg == nullptr) {
-    return zx::error(ZX_ERR_BAD_STATE);
+    return ZX_ERR_BAD_STATE;
   }
-  if (domain_id != kDomainId) {
-    return zx::error(ZX_ERR_INVALID_ARGS);
+  if (domain_id != kDomainId || out_opp == nullptr) {
+    return ZX_ERR_INVALID_ARGS;
   }
 
-  return zx::ok<uint32_t>(kMaxOppIndex - MmioRead32(opp_index_reg));
+  *out_opp = kMaxOppIndex - MmioRead32(opp_index_reg);
+  return ZX_OK;
 }
 
-zx::result<size_t> moonflower_opp_get_domain_count() { return zx::ok(kPowerDomainCount); }
+zx_status_t moonflower_opp_get_domain_count(size_t* out_count) {
+  if (out_count == nullptr) {
+    return ZX_ERR_INVALID_ARGS;
+  }
+  *out_count = kPowerDomainCount;
+  return ZX_OK;
+}
 
 void init_opp_reg() {
   opp_index_reg =
       reinterpret_cast<MMIO_PTR volatile uint32_t*>(periph_paddr_to_vaddr(0xf521000 + 0x920));
-  dprintf(INFO, "POWER: current opp %" PRIu64 "\n", moonflower_opp_get(kDomainId).value_or(-1));
+  uint64_t opp = 0;
+  moonflower_opp_get(kDomainId, &opp);
+  dprintf(INFO, "POWER: current opp %" PRIu64 "\n", opp);
 }
 
 // Set up standard pdev power looks except for reboot, which needs to tweak the

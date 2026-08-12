@@ -71,9 +71,15 @@ void PsciInit(const zbi_dcfg_arm_psci_driver_t& config,
 uint32_t psci_get_version();
 uint32_t psci_get_feature(uint32_t psci_call);
 
+#include <zircon/compiler.h>
+
+__BEGIN_CDECLS
+
 /* powers down the calling cpu - only returns if call fails */
 zx_status_t psci_cpu_off();
 zx_status_t psci_cpu_on(uint64_t mpid, paddr_t entry, uint64_t context);
+
+__END_CDECLS
 
 // Specifies whether a requested power state can target more than the calling
 // CPU.
@@ -136,15 +142,18 @@ struct psci_cpu_resume_context {
   uint64_t regs[2 * 14]{};
 };
 
-int64_t psci_get_affinity_info(uint64_t mpid);
-zx::result<power_cpu_state> psci_get_cpu_state(uint64_t mpid);
+__BEGIN_CDECLS
 
+int64_t psci_get_affinity_info(uint64_t mpid);
+zx_status_t psci_get_cpu_state(uint64_t mpid, power_cpu_state* out_state);
 zx_status_t psci_system_off();
 zx_status_t psci_system_reset(power_reboot_flags flags);
 zx_status_t psci_system_reset_cold();
 
 // Used when calling SYSTEM_RESET2 directly
 zx_status_t psci_system_reset2_raw(uint32_t reset_type, uint32_t cookie);
+
+__END_CDECLS
 
 enum psci_suspend_mode : uint32_t { platform_coordinated = 0, os_initiated = 1 };
 zx_status_t psci_set_suspend_mode(psci_suspend_mode mode);

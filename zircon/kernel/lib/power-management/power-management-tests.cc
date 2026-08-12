@@ -358,28 +358,36 @@ ktl::optional<uint32_t> g_mock_opp_set_domain;
 ktl::optional<uint64_t> g_mock_opp_set_opp;
 zx_status_t g_mock_opp_set_status;
 ktl::optional<uint32_t> g_mock_opp_get_domain;
-zx::result<uint64_t> g_mock_opp_get_result;
-zx::result<size_t> g_mock_opp_get_domain_count_result;
+zx_status_t g_mock_opp_get_status;
+uint64_t g_mock_opp_get_value;
+zx_status_t g_mock_opp_get_domain_count_status;
+size_t g_mock_opp_get_domain_count_value;
 
 const pdev_power_ops kMockPowerOps = {
     .reboot = [](power_reboot_flags flags) -> zx_status_t { return ZX_OK; },
     .shutdown = []() -> zx_status_t { return ZX_OK; },
     .cpu_off = []() -> zx_status_t { return ZX_OK; },
     .cpu_on = [](uint64_t mpid, paddr_t entry, uint64_t context) -> zx_status_t { return ZX_OK; },
-    .get_cpu_state = [](uint64_t hw_cpu_id) -> zx::result<power_cpu_state> {
-      return zx::error(ZX_ERR_NOT_SUPPORTED);
+    .get_cpu_state = [](uint64_t hw_cpu_id, power_cpu_state* out_state) -> zx_status_t {
+      return ZX_ERR_NOT_SUPPORTED;
     },
     .opp_set = [](uint32_t domain_id, uint64_t opp) -> zx_status_t {
       g_mock_opp_set_domain = domain_id;
       g_mock_opp_set_opp = opp;
       return g_mock_opp_set_status;
     },
-    .opp_get = [](uint32_t domain_id) -> zx::result<uint64_t> {
+    .opp_get = [](uint32_t domain_id, uint64_t* out_opp) -> zx_status_t {
       g_mock_opp_get_domain = domain_id;
-      return g_mock_opp_get_result;
+      if (g_mock_opp_get_status == ZX_OK && out_opp) {
+        *out_opp = g_mock_opp_get_value;
+      }
+      return g_mock_opp_get_status;
     },
-    .opp_get_domain_count = []() -> zx::result<size_t> {
-      return g_mock_opp_get_domain_count_result;
+    .opp_get_domain_count = [](size_t* out_count) -> zx_status_t {
+      if (g_mock_opp_get_domain_count_status == ZX_OK && out_count) {
+        *out_count = g_mock_opp_get_domain_count_value;
+      }
+      return g_mock_opp_get_domain_count_status;
     },
 };
 
@@ -388,8 +396,10 @@ void ResetMockPowerOps() {
   g_mock_opp_set_opp = ktl::nullopt;
   g_mock_opp_set_status = ZX_OK;
   g_mock_opp_get_domain = ktl::nullopt;
-  g_mock_opp_get_result = zx::ok(uint64_t{0});
-  g_mock_opp_get_domain_count_result = zx::ok(size_t{0});
+  g_mock_opp_get_status = ZX_OK;
+  g_mock_opp_get_value = 0;
+  g_mock_opp_get_domain_count_status = ZX_OK;
+  g_mock_opp_get_domain_count_value = 0;
 }
 
 struct AutoMockPowerOps {
@@ -409,15 +419,17 @@ bool PDevPowerLevelControllerIsSupported() {
   AutoMockPowerOps mock;
 
   // The controller is not supported if retrieving the domain count fails.
-  g_mock_opp_get_domain_count_result = zx::error(ZX_ERR_NOT_SUPPORTED);
+  g_mock_opp_get_domain_count_status = ZX_ERR_NOT_SUPPORTED;
   EXPECT_FALSE(PDevPowerLevelController::IsSupported());
 
   // The controller is not supported if the domain count is 0.
-  g_mock_opp_get_domain_count_result = zx::ok(size_t{0});
+  g_mock_opp_get_domain_count_status = ZX_OK;
+  g_mock_opp_get_domain_count_value = 0;
   EXPECT_FALSE(PDevPowerLevelController::IsSupported());
 
   // The controller is supported if the domain count is greater than 0.
-  g_mock_opp_get_domain_count_result = zx::ok(size_t{2});
+  g_mock_opp_get_domain_count_status = ZX_OK;
+  g_mock_opp_get_domain_count_value = 2;
   EXPECT_TRUE(PDevPowerLevelController::IsSupported());
 
   END_TEST;
@@ -446,7 +458,8 @@ bool PDevPowerLevelControllerPostValidation() {
   PDevPowerLevelController::ResetForTest();
 
   AutoMockPowerOps mock;
-  g_mock_opp_get_domain_count_result = zx::ok(size_t{2});
+  g_mock_opp_get_domain_count_status = ZX_OK;
+  g_mock_opp_get_domain_count_value = 2;
 
   zx::result<fbl::RefPtr<PDevPowerLevelController>> controller_result =
       PDevPowerLevelController::Get(0);
@@ -479,14 +492,15 @@ bool PDevPowerLevelControllerPostValidation() {
   // Validate that errors from power_opp_get_domain_count are correctly
   // propagated on creation.
   PDevPowerLevelController::ResetForTest();
-  g_mock_opp_get_domain_count_result = zx::error(ZX_ERR_BAD_STATE);
+  g_mock_opp_get_domain_count_status = ZX_ERR_BAD_STATE;
   const zx::result<fbl::RefPtr<PDevPowerLevelController>> get_error_result =
       PDevPowerLevelController::Get(0);
   EXPECT_EQ(get_error_result.error_value(), ZX_ERR_BAD_STATE);
 
   // Validate that domain_id is checked against domain count during Get().
   PDevPowerLevelController::ResetForTest();
-  g_mock_opp_get_domain_count_result = zx::ok(size_t{2});
+  g_mock_opp_get_domain_count_status = ZX_OK;
+  g_mock_opp_get_domain_count_value = 2;
   const zx::result<fbl::RefPtr<PDevPowerLevelController>> get_oob_result =
       PDevPowerLevelController::Get(2);
   EXPECT_EQ(get_oob_result.error_value(), ZX_ERR_OUT_OF_RANGE);
@@ -521,7 +535,8 @@ bool PDevPowerLevelControllerGetPowerLevelValidation() {
   PDevPowerLevelController::ResetForTest();
 
   AutoMockPowerOps mock;
-  g_mock_opp_get_domain_count_result = zx::ok(size_t{2});
+  g_mock_opp_get_domain_count_status = ZX_OK;
+  g_mock_opp_get_domain_count_value = 2;
 
   zx::result<fbl::RefPtr<PDevPowerLevelController>> controller_result =
       PDevPowerLevelController::Get(0);
@@ -535,7 +550,8 @@ bool PDevPowerLevelControllerGetPowerLevelValidation() {
 
   // Validate that a valid domain query returns the value fetched from the pdev
   // backend.
-  g_mock_opp_get_result = zx::ok(uint64_t{42});
+  g_mock_opp_get_status = ZX_OK;
+  g_mock_opp_get_value = 42;
   zx::result<uint64_t> current_power_level_result = controller->GetCurrentPowerLevel(0);
   ASSERT_TRUE(current_power_level_result.is_ok());
   ASSERT_TRUE(g_mock_opp_get_domain.has_value());

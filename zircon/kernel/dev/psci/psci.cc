@@ -296,17 +296,23 @@ int64_t psci_get_affinity_info(uint64_t mpid) {
   return static_cast<int64_t>(do_psci_call(PSCI64_AFFINITY_INFO, mpid, 0, 0));
 }
 
-zx::result<power_cpu_state> psci_get_cpu_state(uint64_t mpid) {
+zx_status_t psci_get_cpu_state(uint64_t mpid, power_cpu_state* out_state) {
+  if (!out_state) {
+    return ZX_ERR_INVALID_ARGS;
+  }
   int64_t aff_info = psci_get_affinity_info(mpid);
   switch (aff_info) {
     case 0:
-      return zx::success(power_cpu_state::ON);
+      *out_state = power_cpu_state::ON;
+      return ZX_OK;
     case 1:
-      return zx::success(power_cpu_state::OFF);
+      *out_state = power_cpu_state::OFF;
+      return ZX_OK;
     case 2:
-      return zx::success(power_cpu_state::ON_PENDING);
+      *out_state = power_cpu_state::ON_PENDING;
+      return ZX_OK;
     default:
-      return zx::error(psci_status_to_zx_status(aff_info));
+      return psci_status_to_zx_status(aff_info);
   }
 }
 
