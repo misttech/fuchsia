@@ -4,6 +4,7 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+pub mod acpi;
 pub mod hpet;
 pub mod interrupt_manager;
 pub mod interrupts;

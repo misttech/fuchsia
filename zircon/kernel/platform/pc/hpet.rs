@@ -4,6 +4,7 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+use crate::platform_pc::acpi::global_acpi_lite_parser;
 use crate::vm::arch_vm_aspace::{
     ARCH_MMU_FLAG_PERM_READ, ARCH_MMU_FLAG_PERM_WRITE, ARCH_MMU_FLAG_UNCACHED_DEVICE,
 };
@@ -84,7 +85,6 @@ const TIMER_CONF_INT_EN: u64 = 1 << 2;
 
 // FFI Declarations
 unsafe extern "C" {
-    fn cpp_global_acpi_parser_state() -> *const core::ffi::c_void;
     fn cpp_hpet_set_ticks_to_clock_monotonic(n: u32, d: u32);
 }
 
@@ -204,21 +204,15 @@ fn platform_hpet_init(_level: init::LkInitLevel) {
     };
 
     // Look up the HPET table.
-    let parser_ptr = unsafe { cpp_global_acpi_parser_state() };
-    if parser_ptr.is_null() {
-        dprintf!(INFO, "No HPET ACPI table found (no ACPI parser).\n");
-        return;
-    }
-    // SAFETY: parser_ptr is checked for null, and ACPI tables are read-only and static after boot.
-    let parser = unsafe { &*(parser_ptr as *const acpi_lite::AcpiParser<'static>) };
-    let hpet_desc =
-        match acpi_lite::get_table_by_type::<acpi_lite::structures::AcpiHpetTable>(parser) {
-            Some(desc) => desc,
-            None => {
-                dprintf!(INFO, "No HPET ACPI table found.\n");
-                return;
-            }
-        };
+    let hpet_desc = match acpi_lite::get_table_by_type::<acpi_lite::structures::AcpiHpetTable>(
+        global_acpi_lite_parser(),
+    ) {
+        Some(desc) => desc,
+        None => {
+            dprintf!(INFO, "No HPET ACPI table found.\n");
+            return;
+        }
+    };
 
     let hpet_address = hpet_desc.address.address;
 

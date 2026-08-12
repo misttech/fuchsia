@@ -214,7 +214,6 @@ source_set("x86") {
     "spinlock.cc",
     "start.S",
     "start16.S",
-    "suspend.cc",
     "system_topology.cc",
     "thread.cc",
     "timer_freq.cc",
@@ -312,6 +311,8 @@ kernel_rust_mod("arch-x86-rs") {
     "src/interrupts.rs",
     "src/ioapic.rs",
     "src/mod.rs",
+    "src/suspend.rs",
+    "src/x86.rs",
   ]
   deps = [
     "//sdk/rust/zx-status",
@@ -320,6 +321,7 @@ kernel_rust_mod("arch-x86-rs") {
     "//src/lib/ksync",
     "//src/lib/regio",
     "//third_party/rust_crates:pin-init",
+    "//zircon/kernel/lib/acpi_lite/rust:acpi_lite",
     "//zircon/kernel/lib/debug",
     "//zircon/kernel/lib/page:page-rs",
     "//zircon/system/ulib/fbl/rust:fbl",

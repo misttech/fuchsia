@@ -104,6 +104,7 @@ group("kernel-tests") {
 kernel_rust_mod("platform_pc") {
   source_root = "mod.rs"
   sources = [
+    "acpi.rs",
     "hpet.rs",
     "interrupt_manager.rs",
     "interrupts.rs",

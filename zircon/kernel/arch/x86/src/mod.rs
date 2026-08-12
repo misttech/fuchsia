@@ -7,6 +7,8 @@
 pub mod apic;
 pub mod interrupts;
 pub mod ioapic;
+pub mod suspend;
+pub mod x86;
 
 /// Architecture-specific saved normal mode state for x86_64.
 ///
