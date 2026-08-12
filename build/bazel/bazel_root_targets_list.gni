@@ -29,6 +29,15 @@ declare_args() {
     {
       bazel_label = "//zircon/tools/merkleroot"
     },
+    {
+      bazel_label = "//tools/orchestrate:orchestrate"
+      copy_outputs = [
+        {
+          bazel = "{{BAZEL_TARGET_OUT_DIR}}/orchestrate_/orchestrate"
+          ninja = "orchestrate"
+        },
+      ]
+    },
   ]
 }
 

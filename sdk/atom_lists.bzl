@@ -71,6 +71,7 @@ BUILD_HOST_TOOLS_ATOMS = [
     "//tools/fidl/fidlc:fidlc_idk",
     "//tools/fidl/fidlgen_cpp:fidlgen_cpp_idk",
     "//tools/fidl/fidlgen_hlcpp:fidlgen_hlcpp_idk",
+    "//tools/orchestrate:orchestrate_idk",
 ]
 
 _NON_BUILD_HOST_TOOLS_ATOMS_REQUIRED_BY_BAZEL_SDK = [
