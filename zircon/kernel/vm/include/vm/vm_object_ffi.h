@@ -58,6 +58,8 @@ zx_status_t cpp_vm_object_get_page(VmObject* vmo, uint64_t offset, uint32_t pf_f
                                    MultiPageRequest* page_request, vm_page_t** out_page,
                                    paddr_t* out_pa);
 void cpp_vm_object_get_attributed_memory(const VmObject* vmo, vm::AttributionCounts* out_counts);
+zx_status_t cpp_vm_object_read(VmObject* vmo, void* ptr, uint64_t offset, size_t len);
+zx_status_t cpp_vm_object_zero_range(VmObject* vmo, uint64_t offset, uint64_t len);
 
 __END_CDECLS
 

@@ -5,5 +5,16 @@
 // https://opensource.org/licenses/MIT
 
 use attribution_bindings as bindings;
+use core::mem::MaybeUninit;
 
 pub use bindings::vm_AttributionCounts as AttributionCounts;
+
+/// Returns an `AttributionCounts` initialized to zero.
+pub fn zero() -> AttributionCounts {
+    let mut counts = MaybeUninit::uninit();
+    // SAFETY: `cpp_attribution_counts_zero` initializes `counts`.
+    unsafe {
+        bindings::cpp_attribution_counts_zero(counts.as_mut_ptr());
+        counts.assume_init()
+    }
+}

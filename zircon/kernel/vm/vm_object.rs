@@ -10,8 +10,9 @@ use super::page::VmPagePtr;
 use super::page_source::MultiPageRequest;
 use super::vm_object_paged::VmObjectPaged;
 use crate::kernel::types::PAddr;
+use core::ffi::c_void;
 use core::marker::{PhantomData, PhantomPinned};
-use core::mem::ManuallyDrop;
+use core::mem::{ManuallyDrop, MaybeUninit};
 use core::pin::Pin;
 use core::ptr::NonNull;
 use fbl::{HasRefCount, Recyclable, RefPtr};
@@ -323,7 +324,7 @@ impl VmObject {
         Ok((page, PAddr(paddr)))
     }
 
-    /// Returns the attribution counts for this VMO.
+    /// Returns the number of physical bytes currently attributed to this VMO.
     pub fn get_attributed_memory(&self) -> AttributionCounts {
         let mut counts = core::mem::MaybeUninit::uninit();
         // SAFETY: `self.as_raw()` points to a live `VmObject`, and `counts` is valid for writing.
@@ -332,6 +333,38 @@ impl VmObject {
         }
         // SAFETY: `cpp_vm_object_get_attributed_memory` certainly wrote out the attribution counts.
         unsafe { counts.assume_init() }
+    }
+
+    /// Read/write operators against kernel pointers only.
+    /// May block on user pager requests and must be called without locks held.
+    ///
+    /// Reads `data.len()` bytes from the VMO at `offset` into `data`.
+    /// Returns a slice of initialized bytes on success.
+    pub fn read<'a>(
+        &self,
+        offset: u64,
+        data: &'a mut [MaybeUninit<u8>],
+    ) -> Result<&'a mut [u8], Status> {
+        let ptr: *mut MaybeUninit<u8> = data.as_mut_ptr();
+        let ptr: *mut c_void = ptr.cast();
+
+        // SAFETY: `self.as_raw()` points to a live `VmObject`, and `ptr` points to a
+        // buffer valid for writing `data.len()` bytes.
+        let status =
+            unsafe { bindings::cpp_vm_object_read(self.as_raw(), ptr, offset, data.len()) };
+        Status::ok(status)?;
+
+        // SAFETY: When `cpp_vm_object_read` returns `ZX_OK`, all `data.len()` bytes in `data`
+        // have been initialized by the kernel.
+        Ok(unsafe { data.assume_init_mut() })
+    }
+
+    /// Zero a range of the VMO. May release physical pages in the process.
+    /// May block on user pager requests and must be called without locks held.
+    pub fn zero_range(&self, offset: u64, len: u64) -> Result<(), Status> {
+        // SAFETY: `self.as_raw()` points to a live `VmObject`.
+        let status = unsafe { bindings::cpp_vm_object_zero_range(self.as_raw(), offset, len) };
+        Status::ok(status)
     }
 }
 

@@ -9,7 +9,6 @@
 #[unittest::suite]
 mod vmo_rs {
     use crate::vm::arch_vm_aspace::ARCH_MMU_FLAG_UNCACHED;
-    use crate::vm::fault;
     use crate::vm::page::VmPagePtr;
     use crate::vm::page_source::MultiPageRequest;
     use crate::vm::physical_page_borrowing_config::ScopedLoaningEnabled;
@@ -19,15 +18,19 @@ mod vmo_rs {
     use crate::vm::vm_object::{EvictionHint, Resizability, SnapshotType, VmObject};
     use crate::vm::vm_object_paged::VmObjectPaged;
     use crate::vm::vm_object_physical::VmObjectPhysical;
+    use crate::vm::{attribution, fault};
     use crate::vm_unittests::test_helper::{
         make_committed_pager_vmo, make_partially_committed_pager_vmo,
         make_private_attribution_counts, verify_continuous_attribution_bytes,
     };
+    use core::mem::MaybeUninit;
+    use debug::dprintf;
+    use fbl::Vector;
     use page::SIZE as PAGE_SIZE_USIZE;
     use pin_init::stack_pin_init;
     use unittest::{
-        assert_eq, assert_false, assert_ok, expect_eq, expect_false, expect_ok, expect_true,
-        unwrap_ok,
+        assert_eq, assert_false, assert_ok, assert_true, expect_eq, expect_false, expect_ok,
+        expect_true, unwrap_ok,
     };
     use zx_status::Status;
 
@@ -522,6 +525,99 @@ mod vmo_rs {
         let queue = unsafe { pmm::page_queues().debug_page_is_reclaim(page) }
             .expect("page is in reclaim queue");
         expect_eq!(0, queue.0);
+    }
+
+    /// Tests memory attribution under various operations.
+    #[test]
+    fn vmo_attribution_ops_test() {
+        // Tests that memory attribution behaves as expected under various operations performed on
+        // the vmo that can change its page list - committing / decommitting pages, reading /
+        // writing, zero range, resizing.
+        let _scanner_disable = AutoVmScannerDisable::new();
+
+        for is_ppb_enabled in [false, true] {
+            dprintf!(INFO, "is_ppb_enabled: {}\n", u32::from(is_ppb_enabled));
+
+            let _scoped_loaning = ScopedLoaningEnabled::new(is_ppb_enabled);
+
+            let vmo = unwrap_ok!(VmObjectPaged::create(
+                pmm::ALLOC_FLAG_ANY,
+                VmObjectPaged::RESIZABLE,
+                4 * PAGE_SIZE,
+            ));
+
+            let mut expected_attribution_counts = attribution::zero();
+            expected_attribution_counts.uncompressed_bytes = 0;
+            expect_true!(vmo.get_attributed_memory() == expected_attribution_counts);
+            expect_true!(verify_continuous_attribution_bytes(&vmo, 0));
+
+            let status = vmo.commit_range(0, 4 * PAGE_SIZE);
+            assert_ok!(status);
+            expected_attribution_counts = make_private_attribution_counts(4 * PAGE_SIZE, 0);
+            expect_true!(vmo.get_attributed_memory() == expected_attribution_counts);
+            expect_true!(verify_continuous_attribution_bytes(&vmo, 4 * PAGE_SIZE));
+
+            // Committing the same range again will be a no-op.
+            let status = vmo.commit_range(0, 4 * PAGE_SIZE);
+            assert_ok!(status);
+            expect_true!(vmo.get_attributed_memory() == expected_attribution_counts);
+            expect_true!(verify_continuous_attribution_bytes(&vmo, 4 * PAGE_SIZE));
+
+            let status = vmo.decommit_range(0, 4 * PAGE_SIZE);
+            assert_ok!(status);
+            expected_attribution_counts = make_private_attribution_counts(0, 0);
+            expect_true!(vmo.get_attributed_memory() == expected_attribution_counts);
+            expect_true!(verify_continuous_attribution_bytes(&vmo, 0));
+
+            let status = vmo.commit_range(0, 4 * PAGE_SIZE);
+            assert_ok!(status);
+            expected_attribution_counts = make_private_attribution_counts(4 * PAGE_SIZE, 0);
+            expect_true!(vmo.get_attributed_memory() == expected_attribution_counts);
+            expect_true!(verify_continuous_attribution_bytes(&vmo, 4 * PAGE_SIZE));
+
+            let status = vmo.decommit_range(0, 4 * PAGE_SIZE);
+            assert_ok!(status);
+            expected_attribution_counts = make_private_attribution_counts(0, 0);
+            expect_true!(vmo.get_attributed_memory() == expected_attribution_counts);
+            expect_true!(verify_continuous_attribution_bytes(&vmo, 0));
+
+            let mut buf = Vector::<MaybeUninit<u8>>::new();
+            assert_true!(buf.resize_with(2 * PAGE_SIZE_USIZE, MaybeUninit::uninit).is_ok());
+
+            // Read the first two pages.
+            let data = unwrap_ok!(vmo.read(0, &mut buf[..PAGE_SIZE_USIZE * 2]));
+            // Since these are zero pages being read, this won't commit any pages in
+            // the vmo.
+            expect_true!(vmo.get_attributed_memory() == expected_attribution_counts);
+            expect_true!(verify_continuous_attribution_bytes(&vmo, 0));
+
+            // Write the first two pages, committing them.
+            let status = vmo.write(0, data);
+            assert_ok!(status);
+            expected_attribution_counts = make_private_attribution_counts(2 * PAGE_SIZE, 0);
+            expect_true!(vmo.get_attributed_memory() == expected_attribution_counts);
+            expect_true!(verify_continuous_attribution_bytes(&vmo, 2 * PAGE_SIZE));
+
+            // Write the last two pages, committing them.
+            let status = vmo.write(2 * PAGE_SIZE, data);
+            assert_ok!(status);
+            expected_attribution_counts = make_private_attribution_counts(4 * PAGE_SIZE, 0);
+            expect_true!(vmo.get_attributed_memory() == expected_attribution_counts);
+            expect_true!(verify_continuous_attribution_bytes(&vmo, 4 * PAGE_SIZE));
+
+            let status = vmo.resize(2 * PAGE_SIZE);
+            assert_ok!(status);
+            expected_attribution_counts = make_private_attribution_counts(2 * PAGE_SIZE, 0);
+            expect_true!(vmo.get_attributed_memory() == expected_attribution_counts);
+            expect_true!(verify_continuous_attribution_bytes(&vmo, 2 * PAGE_SIZE));
+
+            // Zero'ing the range will decommit pages.
+            let status = vmo.zero_range(0, 2 * PAGE_SIZE);
+            assert_ok!(status);
+            expected_attribution_counts = make_private_attribution_counts(0, 0);
+            expect_true!(vmo.get_attributed_memory() == expected_attribution_counts);
+            expect_true!(verify_continuous_attribution_bytes(&vmo, 0));
+        }
     }
 
     /// Tests parent merging and user ID updates when VMO hierarchies collapse.

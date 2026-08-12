@@ -119,4 +119,14 @@ FFI_ALWAYS_INLINE void cpp_vm_object_get_attributed_memory(const VmObject* vmo,
   *out_counts = vmo->GetAttributedMemory();
 }
 
+FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_read(VmObject* vmo, void* ptr, uint64_t offset,
+                                                 size_t len) {
+  return vmo->Read(ptr, offset, len);
+}
+
+FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_zero_range(VmObject* vmo, uint64_t offset,
+                                                       uint64_t len) {
+  return vmo->ZeroRange(offset, len);
+}
+
 }  // extern "C"

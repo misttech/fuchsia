@@ -17,6 +17,7 @@ source_set("vm") {
   sources = [
     "anonymous_page_request.cc",
     "arch_vm_aspace_ffi.cc",
+    "attribution_ffi.cc",
     "compression.cc",
     "compressor.cc",
     "continuous_attribution_tracker.cc",
@@ -421,13 +422,14 @@ kernel_bindgen_crate("vm-fault-bindings") {
 
 kernel_bindgen_crate("attribution-bindings") {
   visibility = [ ":*" ]
-  headers = [ "include/vm/attribution.h" ]
+  headers = [ "include/vm/attribution_ffi.h" ]
   non_rust_deps = [ ":bindgen_common_deps" ]
   output_name = "attribution_bindings.rs"
   cpp = true
 
   edition = "2024"
   notice_year = 2026
+  function_allowlist = [ "cpp_attribution_counts_zero" ]
   type_allowlist = [
     "vm::AttributionCounts",
     "vm::FractionalBytes",
@@ -497,6 +499,8 @@ kernel_bindgen_crate("vm-object-bindings") {
     "cpp_vm_object_lookup",
     "cpp_vm_object_get_page",
     "cpp_vm_object_get_attributed_memory",
+    "cpp_vm_object_read",
+    "cpp_vm_object_zero_range",
   ]
   type_allowlist = [
     "EvictionHint",
@@ -754,7 +758,11 @@ kernel_rust_mod("vm-rs-unittests") {
     "unittests/test_helper.rs",
     "unittests/vmo_unittest.rs",
   ]
-  deps = [ ":test-helper-bindings" ]
+  deps = [
+    ":test-helper-bindings",
+    "//zircon/kernel/lib/debug",
+    "//zircon/system/ulib/fbl/rust:fbl",
+  ]
   test_deps = [ "//zircon/kernel/lib/unittest:unittest-rs" ]
 }
 
