@@ -183,6 +183,7 @@ class Session : public fidl::WireServer<netdev::Session> {
   inline void TxTaken() { in_flight_tx_++; }
   inline void RxTaken() { in_flight_rx_++; }
   inline void StopRx() __TA_REQUIRES(parent_->rx_lock()) { rx_valid_ = false; }
+  inline bool IsRxValid() const __TA_REQUIRES(parent_->rx_lock()) { return rx_valid_; }
   [[nodiscard]] inline bool ShouldDestroy() {
     if (in_flight_rx_ == 0 && in_flight_tx_ == 0) {
       bool expect = false;
@@ -198,6 +199,8 @@ class Session : public fidl::WireServer<netdev::Session> {
   const fbl::RefPtr<RefCountedFifo>& rx_fifo() { return fifo_rx_; }
   const zx::fifo& tx_fifo() const { return fifo_tx_; }
   const char* name() const { return name_.data(); }
+  buffer_descriptor_t* checked_descriptor(uint16_t index);
+  const buffer_descriptor_t* checked_descriptor(uint16_t index) const;
 
   bool IsDying() const __TA_REQUIRES_SHARED(parent_->control_lock()) { return dying_; }
 
@@ -244,11 +247,9 @@ class Session : public fidl::WireServer<netdev::Session> {
   // Returns zx::error otherwise.
   zx::result<bool> DetachPortLocked(uint8_t port_id, std::optional<uint8_t> salt)
       __TA_REQUIRES(parent_->control_lock());
-
-  buffer_descriptor_t* checked_descriptor(uint16_t index);
-  const buffer_descriptor_t* checked_descriptor(uint16_t index) const;
   buffer_descriptor_t& descriptor(uint16_t index);
   const buffer_descriptor_t& descriptor(uint16_t index) const;
+
   // Loads a completed rx buffer information back into the descriptor with the
   // provided index.
   zx_status_t LoadRxInfo(const RxFrameInfo& info) __TA_REQUIRES(parent_->rx_lock());

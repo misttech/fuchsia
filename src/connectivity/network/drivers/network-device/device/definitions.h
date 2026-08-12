@@ -25,6 +25,15 @@ template <typename T>
 using BufferParts = std::array<T, netdriver::kMaxBufferParts>;
 using netdev::wire::VmoId;
 
+constexpr uint32_t kInvalidIdx = std::numeric_limits<uint32_t>::max();
+
+struct DefaultVmoNodeTag {};
+struct RxVmoNodeTag {};
+
+struct DataVmoMeta;
+using DataVmoList = fbl::TaggedDoublyLinkedList<DataVmoMeta*, DefaultVmoNodeTag>;
+using RxVmoList = fbl::TaggedDoublyLinkedList<DataVmoMeta*, RxVmoNodeTag>;
+
 enum class VmoState : uint8_t {
   kUnprepared,
   kPreparing,
@@ -32,10 +41,11 @@ enum class VmoState : uint8_t {
   kReleasing,
 };
 
-struct DataVmoMeta;
-using DataVmoList = fbl::DoublyLinkedList<DataVmoMeta*>;
-
-struct DataVmoMeta : public fbl::DoublyLinkedListable<DataVmoMeta*, fbl::NodeOptions::AllowMove> {
+struct DataVmoMeta : public fbl::ContainableBaseClasses<
+                         fbl::TaggedDoublyLinkedListable<DataVmoMeta*, DefaultVmoNodeTag,
+                                                         fbl::NodeOptions::AllowMove>,
+                         fbl::TaggedDoublyLinkedListable<DataVmoMeta*, RxVmoNodeTag,
+                                                         fbl::NodeOptions::AllowMove>> {
   const VmoId id;
   const uint16_t num_rx_buffers;
   bool tx_registered{false};
@@ -43,6 +53,19 @@ struct DataVmoMeta : public fbl::DoublyLinkedListable<DataVmoMeta*, fbl::NodeOpt
   // Callback invoked when this VMO (as the last in a batch) completes preparation or release.
   // control_lock_ is not held when the callback is called.
   fit::callback<void(fit::result<std::tuple<zx_status_t, DataVmoList>>)> batch_completion;
+
+  // RxQueue runtime state, rx_lock_ needs to be locked when accessing the following fields.
+
+  // How many buffers are being withheld. Withheld buffers are buffers that are sent by client,
+  // but not eligible for pushing as the device impl's Rx space buffer. These buffers are in
+  // |in_flight_|, but not in |available_queue_|. There are 2 reasons for this to happen:
+  //   1) The VMO for the buffer has not been prepared, so we cannot send it.
+  //   2) We've decided to release the target VMO, the buffers from that VMO are withheld to allow
+  //      progress on the release.
+  uint32_t withheld_rx_buffers{0};
+  // The index of the head of an in-flight Rx buffer. The buffers from the same VMO are chained
+  // through |RxQueue::InFlightBuffer::next_withheld_inflight_buffer|.
+  uint32_t head_withheld_rx_buffers{kInvalidIdx};
 };
 using DataVmoStore = vmo_store::VmoStore<vmo_store::SlabStorage<uint8_t, DataVmoMeta>>;
 }  // namespace internal

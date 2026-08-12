@@ -8,14 +8,17 @@
 #include <lib/fit/defer.h>
 #include <lib/sync/cpp/completion.h>
 
+#include <chrono>
 #include <future>
 #include <limits>
+#include <thread>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include <sdk/lib/syslog/cpp/log_settings.h>
 
 #include "device_interface.h"
+#include "lib/sync/completion.h"
 #include "log.h"
 #include "session.h"
 #include "src/connectivity/network/drivers/network-device/mac/test_util.h"
@@ -28,7 +31,7 @@
 #define ENABLE_TIMEOUTS 0
 
 #if ENABLE_TIMEOUTS
-#define TEST_DEADLINE zx::deadline_after(zx::msec(5000))
+#define TEST_DEADLINE zx::deadline_after(zx::msec(10000))
 #else
 #define TEST_DEADLINE zx::time::infinite()
 #endif
@@ -79,19 +82,30 @@ class NetworkDeviceTest : public ::testing::Test {
   static constexpr uint16_t kDescriptorIndex3 = 3;
   static constexpr uint16_t kDescriptorIndex4 = 4;
 
+  // Rx buffer estimator parameters used in tests.
+  // Alpha is 1.0 so that the moving average immediately updates to the latest sample rate.
+  static constexpr double kTestEstimatorAlpha = 1.0;
+  static constexpr zx::duration kTestEstimatorDelayBudget = zx::msec(5);
+  // Use an infinite sample interval so that tests can deterministically trigger timer ticks
+  // manually.
+  static constexpr zx::duration kTestEstimatorSampleInterval = zx::duration::infinite();
+
+  // Short timeout for negative assertions where an event should not occur.
+  static constexpr zx::duration kPositiveTimeout = zx::msec(10);
+
   void SetUp() override {
     auto impl_dispatcher = fdf::UnsynchronizedDispatcher::Create(
         {}, "", [this](fdf_dispatcher_t*) { impl_dispatcher_shutdown_.Signal(); });
-    ASSERT_OK(impl_dispatcher.status_value());
+    ASSERT_OK(impl_dispatcher);
     impl_dispatcher_ = std::move(impl_dispatcher.value());
 
     auto ifc_dispatcher = fdf::UnsynchronizedDispatcher::Create(
         {}, "", [this](fdf_dispatcher_t*) { ifc_dispatcher_shutdown_.Signal(); });
-    ASSERT_OK(ifc_dispatcher.status_value());
+    ASSERT_OK(ifc_dispatcher);
     ifc_dispatcher_ = std::move(ifc_dispatcher.value());
     auto port_dispatcher = fdf::UnsynchronizedDispatcher::Create(
         {}, "", [this](fdf_dispatcher_t*) { port_dispatcher_shutdown_.Signal(); });
-    ASSERT_OK(port_dispatcher.status_value());
+    ASSERT_OK(port_dispatcher);
     port_dispatcher_ = std::move(port_dispatcher.value());
 
     fuchsia_logging::LogSettingsBuilder()
@@ -277,6 +291,11 @@ class NetworkDeviceTest : public ::testing::Test {
     static_cast<internal::DeviceInterface*>(device_.get())->evt_rx_queue_packet_.Set(std::move(h));
   }
 
+  void SetEvtRxVmoOpFinishedHandler(fit::function<void(zx_status_t)> h) {
+    static_cast<internal::DeviceInterface*>(device_.get())
+        ->evt_rx_vmo_op_finished_.Set(std::move(h));
+  }
+
   void SetEvtTxCompleteHandler(fit::function<void()> h) {
     static_cast<internal::DeviceInterface*>(device_.get())->evt_tx_complete_.Set(std::move(h));
   }
@@ -309,6 +328,69 @@ class NetworkDeviceTest : public ::testing::Test {
       EXPECT_EQ(key, internal::RxQueue::kTriggerRxKey);
       completion->Signal();
     };
+  }
+
+  void UpdatePacketArrivalRate(uint64_t sample_rate) {
+    auto* dev = static_cast<internal::DeviceInterface*>(device_.get());
+    dev->UpdatePacketArrivalRate(sample_rate);
+  }
+
+  // Emulates a timer firing for the Rx VMO management. This call clears out the current peak
+  // measurement of the packet arrival rate. With |kTestEstimatorAlpha|, this will cause the arrival
+  // rate to become 0. It also triggers the VMO release evaluation.
+  void TriggerTimerTick() {
+    auto* dev = static_cast<internal::DeviceInterface*>(device_.get());
+    dev->TriggerTimerTick();
+  }
+
+  static netdriver::wire::RxBufferManagement DefaultSimpleRxBufferParams(fdf::Arena& arena) {
+    return netdriver::wire::RxBufferManagement::WithSimple(
+        arena, netdriver::wire::Simple{
+                   .alpha = kTestEstimatorAlpha,
+                   .delay_budget = kTestEstimatorDelayBudget.get(),
+                   .sample_interval = kTestEstimatorSampleInterval.get(),
+               });
+  }
+
+  void UpdateRxBufferParams(const netdriver::wire::RxBufferManagement& params) {
+    fdf::Arena arena('NETD');
+    libsync::Completion completion;
+    impl_.client().buffer(arena)->UpdateRxBufferParams(params).Then(
+        [&completion](
+            fdf::WireUnownedResult<netdriver::NetworkDeviceIfc::UpdateRxBufferParams>& result) {
+          EXPECT_OK(result.status());
+          EXPECT_TRUE(result.value().is_ok());
+          completion.Signal();
+        });
+    completion.Wait();
+  }
+
+  zx::result<std::vector<TestSession::VmoConfig>> CreateTwoVmoConfigs(
+      uint16_t num_rx_buffers_per_vmo = 4) {
+    std::vector<TestSession::VmoConfig> vmo_configs;
+    zx::vmo vmo0, vmo1;
+    if (zx_status_t status =
+            zx::vmo::create(kDefaultDescriptorCount * kDefaultBufferLength, 0, &vmo0);
+        status != ZX_OK) {
+      return zx::error(status);
+    }
+    if (zx_status_t status =
+            zx::vmo::create(kDefaultDescriptorCount * kDefaultBufferLength, 0, &vmo1);
+        status != ZX_OK) {
+      return zx::error(status);
+    }
+    vmo_configs.push_back({.vmo = std::move(vmo0), .num_rx_buffers = num_rx_buffers_per_vmo});
+    vmo_configs.push_back({.vmo = std::move(vmo1), .num_rx_buffers = num_rx_buffers_per_vmo});
+    return zx::ok(std::move(vmo_configs));
+  }
+
+  void TriggerTicksUntil(libsync::Completion& completion) {
+    while (!completion.signaled()) {
+      TriggerTimerTick();
+      if (completion.Wait(zx::deadline_after(kPositiveTimeout)) == ZX_OK) {
+        break;
+      }
+    }
   }
 
  protected:
@@ -1765,8 +1847,11 @@ TEST_F(NetworkDeviceTest, RxQueueIdlesOnPausedSession) {
   } observed_key;
 
   sync_completion_t completion;
+  sync_completion_t key_read;
+  sync_completion_signal(&key_read);
 
-  auto get_next_key = [&observed_key, &completion](zx::duration timeout) -> zx::result<uint64_t> {
+  auto get_next_key = [&observed_key, &completion,
+                       &key_read](zx::duration timeout) -> zx::result<uint64_t> {
     zx_status_t status = sync_completion_wait(&completion, timeout.get());
     fbl::AutoLock l(&observed_key.lock);
     std::optional k = observed_key.key;
@@ -1781,19 +1866,23 @@ TEST_F(NetworkDeviceTest, RxQueueIdlesOnPausedSession) {
     }
     uint64_t key = *k;
     observed_key.key.reset();
+    sync_completion_signal(&key_read);
     return zx::ok(key);
   };
 
-  SetEvtRxQueuePacketHandler([&observed_key, &completion](uint64_t key) {
+  SetEvtRxQueuePacketHandler([&observed_key, &completion, &key_read](uint64_t key) {
+    sync_completion_wait(&key_read, ZX_TIME_INFINITE);
+    sync_completion_reset(&key_read);
     fbl::AutoLock l(&observed_key.lock);
     std::optional k = observed_key.key;
     EXPECT_EQ(k, std::nullopt);
     observed_key.key = key;
     sync_completion_signal(&completion);
   });
-  auto undo = fit::defer([this]() {
+  auto undo = fit::defer([this, &key_read]() {
     // Clear event handler so we don't see any of the teardown.
     SetEvtRxQueuePacketHandler(nullptr);
+    sync_completion_signal(&key_read);
   });
 
   TestSession session;
@@ -1803,6 +1892,11 @@ TEST_F(NetworkDeviceTest, RxQueueIdlesOnPausedSession) {
     zx::result key = get_next_key(zx::duration::infinite());
     ASSERT_OK(key.status_value());
     ASSERT_EQ(key.value(), internal::RxQueue::kSessionSwitchKey);
+  }
+  {
+    zx::result key = get_next_key(zx::duration::infinite());
+    ASSERT_OK(key.status_value());
+    ASSERT_EQ(key.value(), internal::RxQueue::kTriggerRxKey);
   }
 
   session.ResetDescriptor(kDescriptorIndex0);
@@ -2026,6 +2120,411 @@ TEST_F(NetworkDeviceTest, UnregisteredTxVmosDoNotLeak) {
     ASSERT_OK(session.Close());
     ASSERT_OK(WaitSessionDied());
   }
+}
+
+TEST_F(NetworkDeviceTest, RxBufferManagementSwitch) {
+  impl_.info().min_rx_buffers = 4;
+  ASSERT_OK(CreateDeviceWithPort13());
+
+  fdf::Arena arena('NETD');
+  UpdateRxBufferParams(DefaultSimpleRxBufferParams(arena));
+
+  zx::result vmo_configs = CreateTwoVmoConfigs();
+  ASSERT_OK(vmo_configs);
+
+  libsync::Completion vmo1_prepared;
+  impl_.set_prepare_vmo_handler([&vmo1_prepared](uint8_t id, const zx::vmo& vmo, auto& completer) {
+    fdf::Arena arena('NETD');
+    completer.buffer(arena).Reply(ZX_OK);
+    if (id == 1) {
+      vmo1_prepared.Signal();
+    }
+    return true;
+  });
+
+  TestSession session;
+  ASSERT_OK(OpenSession(&session, kDefaultDescriptorCount, kDefaultBufferLength,
+                        std::move(vmo_configs.value()), "session_a", netdev::wire::SessionFlags(),
+                        /*register_for_tx=*/false));
+  ASSERT_OK(AttachSessionPort(session, port13_));
+
+  session.ResetDescriptor(0, 0, 0);
+  session.ResetDescriptor(1, 0, kDefaultBufferLength);
+  session.ResetDescriptor(2, 0, 2 * kDefaultBufferLength);
+  session.ResetDescriptor(3, 0, 3 * kDefaultBufferLength);
+  session.SendRx(0);
+  session.SendRx(1);
+  session.SendRx(2);
+  session.SendRx(3);
+
+  // In Simple mode with no traffic, only VMO 0 is prepared.
+  EXPECT_FALSE(vmo1_prepared.signaled());
+
+  // Switch to Static mode -> should immediately prepare all VMOs including VMO 1.
+  UpdateRxBufferParams(netdriver::wire::RxBufferManagement::WithStatic_(netdriver::wire::Static{}));
+  EXPECT_OK(vmo1_prepared.Wait(TEST_DEADLINE));
+  impl_.set_prepare_vmo_handler(nullptr);
+
+  libsync::Completion vmo1_released;
+  impl_.set_release_vmo_handler([&vmo1_released](uint8_t id) {
+    if (id == 1) {
+      vmo1_released.Signal();
+    }
+  });
+
+  // Switch back to Simple mode -> should allow excess VMO 1 to be dynamically released.
+  UpdateRxBufferParams(DefaultSimpleRxBufferParams(arena));
+
+  // Emulate timer tick while VMO 1 buffers have not been returned. VMO 1 must not be released.
+  TriggerTimerTick();
+  EXPECT_STATUS(vmo1_released.Wait(zx::deadline_after(kPositiveTimeout)), ZX_ERR_TIMED_OUT);
+
+  // Return descriptors for VMO 1 back to the Rx queue so they are withheld for release.
+  session.ResetDescriptor(4, 1, 0);
+  session.ResetDescriptor(5, 1, kDefaultBufferLength);
+  session.ResetDescriptor(6, 1, 2 * kDefaultBufferLength);
+  session.ResetDescriptor(7, 1, 3 * kDefaultBufferLength);
+  session.SendRx(4);
+  session.SendRx(5);
+  session.SendRx(6);
+  session.SendRx(7);
+
+  // Emulate timer ticks until candidate VMO 1 is released.
+  TriggerTicksUntil(vmo1_released);
+
+  // Assert VMO 1 is dynamically released.
+  EXPECT_OK(vmo1_released.Wait(TEST_DEADLINE));
+  impl_.set_release_vmo_handler(nullptr);
+}
+
+TEST_F(NetworkDeviceTest, RxBufferManagementMultipleRequests) {
+  impl_.info().min_rx_buffers = 4;
+  ASSERT_OK(CreateDeviceWithPort13());
+
+  fdf::Arena arena('NETD');
+  UpdateRxBufferParams(DefaultSimpleRxBufferParams(arena));
+
+  zx::result vmo_configs = CreateTwoVmoConfigs();
+  ASSERT_OK(vmo_configs);
+
+  std::atomic<int> prepare_vmo1_count = 0;
+  libsync::Completion vmo1_prepared;
+  impl_.set_prepare_vmo_handler(
+      [&prepare_vmo1_count, &vmo1_prepared](uint8_t id, const zx::vmo& vmo, auto& completer) {
+        fdf::Arena arena('NETD');
+        completer.buffer(arena).Reply(ZX_OK);
+        if (id == 1) {
+          prepare_vmo1_count++;
+          vmo1_prepared.Signal();
+        }
+        return true;
+      });
+
+  TestSession session;
+  ASSERT_OK(OpenSession(&session, kDefaultDescriptorCount, kDefaultBufferLength,
+                        std::move(vmo_configs.value()), "session_a", netdev::wire::SessionFlags(),
+                        /*register_for_tx=*/false));
+  ASSERT_OK(AttachSessionPort(session, port13_));
+
+  EXPECT_EQ(prepare_vmo1_count.load(), 0);
+
+  // Call RequestRxSpace(8) 3 times rapidly.
+  ASSERT_OK(impl_.client().buffer(arena)->RequestRxSpace(8).status());
+  ASSERT_OK(impl_.client().buffer(arena)->RequestRxSpace(8).status());
+  ASSERT_OK(impl_.client().buffer(arena)->RequestRxSpace(8).status());
+
+  EXPECT_OK(vmo1_prepared.Wait(TEST_DEADLINE));
+  impl_.set_prepare_vmo_handler(nullptr);
+  // Assert request deduplication: PrepareVmo(1) should be called exactly once.
+  EXPECT_EQ(prepare_vmo1_count.load(), 1);
+}
+
+TEST_F(NetworkDeviceTest, RxBufferManagementTxRegisteredVmo) {
+  impl_.info().min_rx_buffers = 4;
+  ASSERT_OK(CreateDeviceWithPort13());
+
+  fdf::Arena arena('NETD');
+  UpdateRxBufferParams(DefaultSimpleRxBufferParams(arena));
+
+  zx::result vmo_configs = CreateTwoVmoConfigs();
+  ASSERT_OK(vmo_configs);
+
+  TestSession session;
+  // Open session with register_for_tx = false in OpenSession (we explicitly RegisterForTx below).
+  ASSERT_OK(OpenSession(&session, kDefaultDescriptorCount, kDefaultBufferLength,
+                        std::move(vmo_configs.value()), "session_a", netdev::wire::SessionFlags(),
+                        /*register_for_tx=*/false));
+  ASSERT_OK(AttachSessionPort(session, port13_));
+
+  uint8_t vmo1_id = 1;
+  ASSERT_OK(session.session()
+                ->RegisterForTx(fidl::VectorView<uint8_t>::FromExternal(&vmo1_id, 1))
+                .status());
+
+  libsync::Completion vmo1_released;
+  impl_.set_release_vmo_handler([&vmo1_released](uint8_t id) {
+    if (id == 1) {
+      vmo1_released.Signal();
+    }
+  });
+
+  // Request space for 8 buffers so VMO 1 is prepared.
+  ASSERT_OK(impl_.client().buffer(arena)->RequestRxSpace(8).status());
+
+  TriggerTimerTick();
+
+  session.ResetDescriptor(4, 1, 0);
+  session.ResetDescriptor(5, 1, kDefaultBufferLength);
+  session.ResetDescriptor(6, 1, 2 * kDefaultBufferLength);
+  session.ResetDescriptor(7, 1, 3 * kDefaultBufferLength);
+  session.SendRx(4);
+  session.SendRx(5);
+  session.SendRx(6);
+  session.SendRx(7);
+
+  // Because VMO 1 is registered for Tx, its buffers are not withheld and are made available
+  // immediately.
+  ASSERT_OK(WaitRxAvailable());
+
+  // Emulate a timer tick with no incoming traffic to attempt release.
+  TriggerTimerTick();
+
+  // Assert VMO 1 is NEVER released because it is registered for Tx.
+  EXPECT_STATUS(vmo1_released.Wait(zx::deadline_after(kPositiveTimeout)), ZX_ERR_TIMED_OUT);
+  impl_.set_release_vmo_handler(nullptr);
+}
+
+TEST_F(NetworkDeviceTest, RxBufferManagementPrepareError) {
+  impl_.info().min_rx_buffers = 4;
+  ASSERT_OK(CreateDeviceWithPort13());
+
+  fdf::Arena arena('NETD');
+  UpdateRxBufferParams(DefaultSimpleRxBufferParams(arena));
+
+  zx::result vmo_configs = CreateTwoVmoConfigs();
+  ASSERT_OK(vmo_configs);
+
+  libsync::Completion vmo1_attempted;
+  // Fail PrepareVmo for VMO 1.
+  impl_.set_prepare_vmo_handler([&vmo1_attempted](uint8_t id, const zx::vmo& vmo, auto& completer) {
+    fdf::Arena arena('NETD');
+    if (id == 1) {
+      vmo1_attempted.Signal();
+      completer.buffer(arena).Reply(ZX_ERR_NO_MEMORY);
+      return false;
+    }
+    completer.buffer(arena).Reply(ZX_OK);
+    return true;
+  });
+
+  TestSession session;
+  ASSERT_OK(OpenSession(&session, kDefaultDescriptorCount, kDefaultBufferLength,
+                        std::move(vmo_configs.value()), "session_a", netdev::wire::SessionFlags(),
+                        /*register_for_tx=*/false));
+  ASSERT_OK(AttachSessionPort(session, port13_));
+
+  ASSERT_OK(impl_.client().buffer(arena)->RequestRxSpace(8).status());
+  EXPECT_OK(vmo1_attempted.Wait(TEST_DEADLINE));
+  impl_.set_prepare_vmo_handler(nullptr);
+}
+
+TEST_F(NetworkDeviceTest, RxBufferManagementReleaseRxVmo) {
+  impl_.info().min_rx_buffers = 4;
+  ASSERT_OK(CreateDeviceWithPort13());
+
+  fdf::Arena arena('NETD');
+  UpdateRxBufferParams(DefaultSimpleRxBufferParams(arena));
+
+  zx::result vmo_configs = CreateTwoVmoConfigs();
+  ASSERT_OK(vmo_configs);
+
+  libsync::Completion vmo1_prepared;
+  impl_.set_prepare_vmo_handler([&vmo1_prepared](uint8_t id, const zx::vmo& vmo, auto& completer) {
+    fdf::Arena arena('NETD');
+    completer.buffer(arena).Reply(ZX_OK);
+    if (id == 1) {
+      vmo1_prepared.Signal();
+    }
+    return true;
+  });
+
+  TestSession session;
+  ASSERT_OK(OpenSession(&session, kDefaultDescriptorCount, kDefaultBufferLength,
+                        std::move(vmo_configs.value()), "session_a", netdev::wire::SessionFlags(),
+                        /*register_for_tx=*/false));
+  ASSERT_OK(AttachSessionPort(session, port13_));
+
+  session.ResetDescriptor(0, 0, 0);
+  session.ResetDescriptor(1, 0, kDefaultBufferLength);
+  session.ResetDescriptor(2, 0, 2 * kDefaultBufferLength);
+  session.ResetDescriptor(3, 0, 3 * kDefaultBufferLength);
+  session.SendRx(0);
+  session.SendRx(1);
+  session.SendRx(2);
+  session.SendRx(3);
+
+  EXPECT_FALSE(vmo1_prepared.signaled());
+
+  libsync::Completion vmo1_op_finished;
+  SetEvtRxVmoOpFinishedHandler([&vmo1_op_finished](zx_status_t status) {
+    if (status == ZX_OK) {
+      vmo1_op_finished.Signal();
+    }
+  });
+
+  // Request space for all 8 buffers so VMO 1 is prepared.
+  ASSERT_OK(impl_.client().buffer(arena)->RequestRxSpace(8).status());
+  EXPECT_OK(vmo1_prepared.Wait(TEST_DEADLINE));
+  impl_.set_prepare_vmo_handler(nullptr);
+  EXPECT_OK(vmo1_op_finished.Wait(TEST_DEADLINE));
+  SetEvtRxVmoOpFinishedHandler(nullptr);
+
+  // Emulate a timer tick with no incoming traffic to decay target buffers.
+  TriggerTimerTick();
+
+  libsync::Completion vmo1_released;
+  impl_.set_release_vmo_handler([&vmo1_released](uint8_t id) {
+    if (id == 1) {
+      vmo1_released.Signal();
+    }
+  });
+
+  // Return descriptors for VMO 1 back to the Rx queue so they are withheld for release.
+  session.ResetDescriptor(4, 1, 0);
+  session.ResetDescriptor(5, 1, kDefaultBufferLength);
+  session.ResetDescriptor(6, 1, 2 * kDefaultBufferLength);
+  session.ResetDescriptor(7, 1, 3 * kDefaultBufferLength);
+  session.SendRx(4);
+  session.SendRx(5);
+  session.SendRx(6);
+  session.SendRx(7);
+
+  // Emulate timer ticks until candidate VMO 1 is released.
+  TriggerTicksUntil(vmo1_released);
+
+  // Assert VMO 1 is dynamically released while session is running.
+  EXPECT_OK(vmo1_released.Wait(TEST_DEADLINE));
+  impl_.set_release_vmo_handler(nullptr);
+}
+
+TEST_F(NetworkDeviceTest, RxBufferManagementRequestRxSpacePreparesVmo) {
+  impl_.info().min_rx_buffers = 4;
+  ASSERT_OK(CreateDeviceWithPort13());
+
+  fdf::Arena arena('NETD');
+  UpdateRxBufferParams(DefaultSimpleRxBufferParams(arena));
+
+  zx::result vmo_configs = CreateTwoVmoConfigs();
+  ASSERT_OK(vmo_configs);
+
+  libsync::Completion vmo1_prepared;
+  impl_.set_prepare_vmo_handler([&vmo1_prepared](uint8_t id, const zx::vmo& vmo, auto& completer) {
+    fdf::Arena arena('NETD');
+    completer.buffer(arena).Reply(ZX_OK);
+    if (id == 1) {
+      vmo1_prepared.Signal();
+    }
+    return true;
+  });
+
+  TestSession session;
+  ASSERT_OK(OpenSession(&session, kDefaultDescriptorCount, kDefaultBufferLength,
+                        std::move(vmo_configs.value()), "session_a", netdev::wire::SessionFlags(),
+                        /*register_for_tx=*/false));
+  ASSERT_OK(AttachSessionPort(session, port13_));
+
+  // At open session, only VMO 0 is prepared.
+  EXPECT_FALSE(vmo1_prepared.signaled());
+
+  // Calling RequestRxSpace(8) should cause VMO 1 to be prepared.
+  ASSERT_OK(impl_.client().buffer(arena)->RequestRxSpace(8).status());
+
+  // Verify that PrepareVmo for VMO 1 was actually invoked!
+  EXPECT_OK(vmo1_prepared.Wait(TEST_DEADLINE));
+  impl_.set_prepare_vmo_handler(nullptr);
+}
+
+TEST_F(NetworkDeviceTest, RxBufferManagementEndToEndSimulatedTraffic) {
+  impl_.info().min_rx_buffers = 4;
+  ASSERT_OK(CreateDeviceWithPort13());
+
+  fdf::Arena arena('NETD');
+  UpdateRxBufferParams(DefaultSimpleRxBufferParams(arena));
+
+  zx::result vmo_configs = CreateTwoVmoConfigs();
+  ASSERT_OK(vmo_configs);
+
+  libsync::Completion vmo1_prepared;
+  impl_.set_prepare_vmo_handler([&vmo1_prepared](uint8_t id, const zx::vmo& vmo, auto& completer) {
+    fdf::Arena arena('NETD');
+    completer.buffer(arena).Reply(ZX_OK);
+    if (id == 1) {
+      vmo1_prepared.Signal();
+    }
+    return true;
+  });
+
+  TestSession session;
+  ASSERT_OK(OpenSession(&session, kDefaultDescriptorCount, kDefaultBufferLength,
+                        std::move(vmo_configs.value()), "session_a", netdev::wire::SessionFlags(),
+                        /*register_for_tx=*/false));
+  ASSERT_OK(AttachSessionPort(session, port13_));
+
+  session.ResetDescriptor(0, 0, 0);
+  session.ResetDescriptor(1, 0, kDefaultBufferLength);
+  session.ResetDescriptor(2, 0, 2 * kDefaultBufferLength);
+  session.ResetDescriptor(3, 0, 3 * kDefaultBufferLength);
+  session.SendRx(0);
+  session.SendRx(1);
+  session.SendRx(2);
+  session.SendRx(3);
+
+  // Before traffic simulation, target is low (4 buffers), only VMO 0 is prepared.
+  EXPECT_FALSE(vmo1_prepared.signaled());
+
+  libsync::Completion vmo1_op_finished;
+  SetEvtRxVmoOpFinishedHandler([&vmo1_op_finished](zx_status_t status) {
+    if (status == ZX_OK) {
+      vmo1_op_finished.Signal();
+    }
+  });
+
+  // Simulate 1,600 pps traffic -> target buffers = 8 -> automatically requests space & prepares
+  // VMO 1.
+  UpdatePacketArrivalRate(1600);
+
+  // Assert end-to-end VMO preparation triggered!
+  EXPECT_OK(vmo1_prepared.Wait(TEST_DEADLINE));
+  EXPECT_OK(vmo1_op_finished.Wait(TEST_DEADLINE));
+  impl_.set_prepare_vmo_handler(nullptr);
+  SetEvtRxVmoOpFinishedHandler(nullptr);
+
+  // Emulate timer ticks with no incoming traffic to decay target buffers.
+  TriggerTimerTick();  // Clears out the peak packet rate.
+  UpdatePacketArrivalRate(800);
+  TriggerTimerTick();
+
+  libsync::Completion vmo1_released;
+  impl_.set_release_vmo_handler([&vmo1_released](uint8_t id) {
+    if (id == 1) {
+      vmo1_released.Signal();
+    }
+  });
+
+  // Return descriptors for VMO 1 back to the Rx queue so they are withheld for release.
+  session.ResetDescriptor(4, 1, 0);
+  session.ResetDescriptor(5, 1, kDefaultBufferLength);
+  session.ResetDescriptor(6, 1, 2 * kDefaultBufferLength);
+  session.ResetDescriptor(7, 1, 3 * kDefaultBufferLength);
+  session.SendRx(4);
+  session.SendRx(5);
+  session.SendRx(6);
+  session.SendRx(7);
+
+  // Emulate timer ticks until candidate VMO 1 is released.
+  TriggerTicksUntil(vmo1_released);
+
+  impl_.set_release_vmo_handler(nullptr);
 }
 
 TEST_F(NetworkDeviceTest, TxBadPorts) {
@@ -3269,7 +3768,7 @@ TEST_F(NetworkDeviceTest, QueueRxSpaceBatches) {
   impl_.info().rx_depth = kRxDescriptorCount;
   ASSERT_OK(CreateDeviceWithPort13());
   TestSession session;
-  ASSERT_OK(OpenSession(&session, kRxDescriptorCount + kDefaultTxDepth));
+  ASSERT_OK(OpenSession(&session, kRxDescriptorCount * 2));
   ASSERT_OK(AttachSessionPort(session, port13_));
   ASSERT_OK(WaitSessionStarted());
   ASSERT_OK(WaitStart());
@@ -3625,7 +4124,7 @@ class MultiVmoSessionTest : public NetworkDeviceTest {
     for (size_t i = 0; i < kVmos; ++i) {
       zx::vmo vmo;
       ASSERT_OK(zx::vmo::create(kDefaultDescriptorCount * kDefaultBufferLength / kVmos, 0, &vmo));
-      vmos.push_back({.vmo = std::move(vmo), .num_rx_buffers = 0});
+      vmos.push_back({.vmo = std::move(vmo), .num_rx_buffers = kDefaultDescriptorCount / 2});
     }
     ASSERT_OK(
         OpenSession(&session_, kDefaultDescriptorCount, kDefaultBufferLength, std::move(vmos)));

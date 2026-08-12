@@ -221,6 +221,7 @@ struct DeviceInfo {
   uint16_t tx_depth;
   uint16_t rx_depth;
   uint16_t rx_threshold;
+  uint16_t min_rx_buffers;
   uint8_t max_buffer_parts;
   uint32_t max_buffer_length;
   uint32_t buffer_alignment;
@@ -235,6 +236,7 @@ class FakeNetworkDeviceImpl
  public:
   using PrepareVmoHandler =
       fit::function<bool(uint8_t, const zx::vmo&, PrepareVmoCompleter::Sync&)>;
+  using ReleaseVmoHandler = fit::function<void(uint8_t)>;
   // |dispatcher| is optional, if it is not provided the impl dispatcher from a call to CreateChild
   // is used instead. This is provided for tests that don't call CreateChild.
   explicit FakeNetworkDeviceImpl(fdf_dispatcher_t* dispatcher = nullptr);
@@ -337,6 +339,9 @@ class FakeNetworkDeviceImpl
   void set_prepare_vmo_handler(PrepareVmoHandler handler) {
     prepare_vmo_handler_ = std::move(handler);
   }
+  void set_release_vmo_handler(ReleaseVmoHandler handler) {
+    release_vmo_handler_ = std::move(handler);
+  }
 
   fdf::WireSharedClient<fuchsia_hardware_network_driver::NetworkDeviceIfc>& client() {
     return device_client_;
@@ -402,6 +407,7 @@ class FakeNetworkDeviceImpl
   fit::function<void()> pending_stop_callback_ __TA_GUARDED(lock_);
   fit::function<void()> on_start_ __TA_GUARDED(lock_);
   PrepareVmoHandler prepare_vmo_handler_;
+  ReleaseVmoHandler release_vmo_handler_;
 };
 
 class RxFidlReturnTransaction {

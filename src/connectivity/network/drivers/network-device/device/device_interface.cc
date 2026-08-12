@@ -543,14 +543,30 @@ void DeviceInterface::DelegateRxLease(
 void DeviceInterface::UpdateRxBufferParams(
     netdriver::wire::NetworkDeviceIfcUpdateRxBufferParamsRequest* request, fdf::Arena& arena,
     UpdateRxBufferParamsCompleter::Sync& completer) {
-  // TODO(https://fxbug.dev/438527741): Implement Rx buffer management.
+  {
+    fbl::AutoLock lock(&control_lock_);
+    device_info_.rx_buffer_management(fidl::ToNatural(request->param));
+  }
+  {
+    fbl::AutoLock rx_lock(&rx_lock_);
+    rx_queue_->AssertParentRxLocked(*this);
+    rx_queue_->SetRxBufferManagement(fidl::ToNatural(request->param));
+    rx_queue_->RequestRxSpace();
+  }
   completer.buffer(arena).Reply(fit::ok());
 }
 
 void DeviceInterface::RequestRxSpace(
     netdriver::wire::NetworkDeviceIfcRequestRxSpaceRequest* request, fdf::Arena& arena,
     RequestRxSpaceCompleter::Sync&) {
-  // TODO(https://fxbug.dev/438527741): Implement Rx buffer management.
+  fbl::AutoLock rx_lock(&rx_lock_);
+  rx_queue_->AssertParentRxLocked(*this);
+  uint16_t target = static_cast<uint16_t>(
+      std::min(request->requested, static_cast<uint64_t>(std::numeric_limits<uint16_t>::max())));
+
+  if (rx_queue_->SetTargetRxBuffersIfMore(target)) {
+    rx_queue_->RequestRxSpace();
+  };
 }
 
 void DeviceInterface::GetInfo(GetInfoCompleter::Sync& completer) {
@@ -593,6 +609,9 @@ void DeviceInterface::GetInfo(GetInfoCompleter::Sync& completer) {
   if (max_buffer_length.has_value() && max_buffer_length.value() != 0) {
     device_base_info_builder.max_buffer_length(max_buffer_length.value());
   }
+  if (device_info_.min_rx_buffers().has_value()) {
+    device_base_info_builder.min_rx_buffers(device_info_.min_rx_buffers().value());
+  }
 
   netdev::wire::DeviceBaseInfo device_base_info = device_base_info_builder.Build();
 
@@ -605,11 +624,40 @@ void DeviceInterface::GetInfo(GetInfoCompleter::Sync& completer) {
   completer.Reply(device_info);
 }
 
+namespace {
+
+// VMOs are sorted by ID to ensure a deterministic order in which RxQueue prepares and releases
+// VMOs. This allows RxQueue to determine if a buffer's backing VMO is prepared with device impl
+// efficiently. If the VMO ID is smaller than the last VMO ID in use, it must be prepared and ready
+// to be queued to the device impl. Because the VMOs are created by the client, there is no
+// guarantee that they are sorted by ID. For VMOs that are already sorted, this method always pushes
+// to the end of the list.
+void InsertRxVmoSorted(RxVmoList& list, DataVmoMeta* meta) {
+  if (meta->num_rx_buffers == 0) {
+    return;
+  }
+  if (list.is_empty() || list.back().id <= meta->id) {
+    list.push_back(meta);
+    return;
+  }
+  auto it = list.end();
+  do {
+    --it;
+    if (it->id <= meta->id) {
+      list.insert(++it, meta);
+      return;
+    }
+  } while (it != list.begin());
+  list.push_front(meta);
+}
+
+}  // namespace
+
 void DeviceInterface::OpenSession(OpenSessionRequestView request,
                                   OpenSessionCompleter::Sync& completer) {
-  DataVmoList to_prepare;
+  bool has_rx_vmo = false;
   zx::result sync_result = [this, &request,
-                            &to_prepare]() -> zx::result<netdev::wire::DeviceOpenSessionResponse> {
+                            &has_rx_vmo]() -> zx::result<netdev::wire::DeviceOpenSessionResponse> {
     fbl::AutoLock rx_lock(&rx_lock_);
     fbl::AutoLock tx_lock(&tx_lock_);
     fbl::AutoLock lock(&control_lock_);
@@ -659,6 +707,7 @@ void DeviceInterface::OpenSession(OpenSessionRequestView request,
     // This is safe because we can only get here if session_ is nullptr,
     // and we always remove all VMOs before setting session_ to nullptr.
     ZX_ASSERT_MSG(vmo_store_.count() == 0, "Must have no sessions");
+    RxVmoList sorted_rx_vmos;
 
     for (netdev::wire::DataVmo& data_vmo : session_info.data()) {
       VmoId vmo_id = data_vmo.id();
@@ -669,12 +718,12 @@ void DeviceInterface::OpenSession(OpenSessionRequestView request,
           status != ZX_OK) {
         return zx::error(status);
       }
-      if (num_rx_buffers > 0) {
-        to_prepare.push_back(&vmo_store_.GetVmo(vmo_id)->meta());
-      } else {
-        unprepared_vmos_.push_back(&vmo_store_.GetVmo(vmo_id)->meta());
-      }
+      DataVmoMeta* meta = &vmo_store_.GetVmo(vmo_id)->meta();
+      unprepared_vmos_.push_back(meta);
+      InsertRxVmoSorted(sorted_rx_vmos, meta);
     }
+
+    has_rx_vmo = !sorted_rx_vmos.is_empty();
 
     session->AssertParentTxLock(*this);
     session->InstallTx();
@@ -682,7 +731,10 @@ void DeviceInterface::OpenSession(OpenSessionRequestView request,
 
     session_ = std::move(session);
     rx_queue_->AssertParentRxLocked(*this);
+    rx_queue_->SetRxVmos(std::move(sorted_rx_vmos));
     rx_queue_->SetSession(session_.get());
+    rx_queue_->SetRxBufferManagement(device_info_.rx_buffer_management().value_or(
+        fuchsia_hardware_network_driver::RxBufferManagement::WithStatic_({})));
     rx_queue_->TriggerSessionChanged();
 
     return zx::ok(netdev::wire::DeviceOpenSessionResponse{
@@ -695,37 +747,28 @@ void DeviceInterface::OpenSession(OpenSessionRequestView request,
     completer.ReplyError(sync_result.error_value());
     return;
   }
-
   auto response = std::move(sync_result.value());
-  if (to_prepare.is_empty()) {
+  if (!has_rx_vmo) {
     completer.ReplySuccess(std::move(response.session), std::move(response.fifos));
     return;
   }
 
-  bool shoud_start_preparing;
-  {
-    fbl::AutoLock lock(&control_lock_);
-    shoud_start_preparing = PrepareVmosLocked(
-        std::move(to_prepare),
-        [this, response = std::move(response), completer = completer.ToAsync()](
-            fit::result<std::tuple<zx_status_t, DataVmoList>> result) mutable {
-          if (result.is_error()) {
-            auto& [status, rest_vmos] = result.error_value();
-            LOGF_WARN("cannot prepare VMOs for new session: %s", zx_status_get_string(status));
-            fbl::AutoLock lock(&control_lock_);
-            unprepared_vmos_.splice(unprepared_vmos_.end(), rest_vmos);
-            completer.ReplyError(ZX_ERR_INTERNAL);
-            // Dropping of the session channel will cause the session to
-            // be dead and hence undo all the prepared VMOs.
-            return;
-          }
-          completer.ReplySuccess(std::move(response.session), std::move(response.fifos));
-        });
-  }
-  if (shoud_start_preparing) {
-    fdf::Arena arena('NETD');
-    PrepareNextVmo(std::move(arena));
-  }
+  fbl::AutoLock rx_lock(&rx_lock_);
+  rx_queue_->AssertParentRxLocked(*this);
+  rx_queue_->RequestRxSpace([this, response = std::move(response), completer = completer.ToAsync()](
+                                fit::result<std::tuple<zx_status_t, DataVmoList>> result) mutable {
+    if (result.is_error()) {
+      auto& [status, rest_vmos] = result.error_value();
+      LOGF_WARN("cannot prepare VMOs for new session: %s", zx_status_get_string(status));
+      fbl::AutoLock lock(&control_lock_);
+      unprepared_vmos_.splice(unprepared_vmos_.end(), rest_vmos);
+      completer.ReplyError(ZX_ERR_INTERNAL);
+      // Dropping of the session channel will cause the session to
+      // be dead and hence undo all the prepared VMOs.
+      return;
+    }
+    completer.ReplySuccess(std::move(response.session), std::move(response.fifos));
+  });
 }
 
 bool DeviceInterface::PrepareVmosLocked(
@@ -1230,6 +1273,160 @@ void DeviceInterface::Clone(CloneRequestView request, CloneCompleter::Sync& _com
   }
 }
 
+void DeviceInterface::DecommitVmo(netdev::VmoId vmo_id) {
+  DataVmoStore::StoredVmo* stored_vmo;
+  {
+    fbl::AutoLock lock(&control_lock_);
+    stored_vmo = vmo_store_.GetVmo(vmo_id);
+    ZX_ASSERT(stored_vmo != nullptr);
+    ZX_ASSERT(stored_vmo->meta().state == VmoState::kUnprepared);
+    ZX_ASSERT(!stored_vmo->meta().tx_registered);
+    ZX_ASSERT(stored_vmo->meta().withheld_rx_buffers == stored_vmo->meta().num_rx_buffers);
+  }
+  uint64_t size;
+  ZX_ASSERT(stored_vmo->vmo()->get_size(&size) == ZX_OK);
+  // TODO(https://fxbug.dev/542730293): The client should inform us of the range of the VMO that is
+  // valid for RX buffers so we only decommit that range.
+  zx_status_t status = stored_vmo->vmo()->op_range(ZX_VMO_OP_DECOMMIT, 0, size, nullptr, 0);
+  // Not a fatal error if we failed to decommit the pages.
+  if (status != ZX_OK) {
+    LOGF_ERROR("cannot decommit VMO %d: %s", vmo_id, zx_status_get_string(status));
+  }
+}
+
+bool DeviceInterface::PrepareRxVmos(
+    RxVmoList::iterator start, RxVmoList::iterator* in_out_end,
+    fit::callback<void(fit::result<std::tuple<zx_status_t, DataVmoList>>)> cb) {
+  DataVmoList to_prepare;
+  RxVmoList::iterator end = *in_out_end;
+  RxVmoList::iterator last_releasing = end;
+  bool should_start_prepare = false;
+  {
+    fbl::AutoLock lock(&control_lock_);
+    if (session_ == nullptr) {
+      *in_out_end = start;
+      return false;
+    }
+    session_->AssertParentRxLock(*this);
+    if (!session_->IsRxValid()) {
+      *in_out_end = start;
+      return false;
+    }
+    bool has_preparing = false;
+    for (auto it = start; it != end; ++it) {
+      switch (it->state) {
+        case VmoState::kReleasing:
+          last_releasing = it;
+          break;
+        case VmoState::kPreparing:
+          has_preparing = true;
+          __FALLTHROUGH;
+        case VmoState::kPrepared:
+          continue;
+        case VmoState::kUnprepared:
+          unprepared_vmos_.erase(*it);
+          to_prepare.push_back(&*it);
+      }
+    }
+    if (to_prepare.is_empty()) {
+      // No preparing or releasing VMO, everything is prepared.
+      if (!has_preparing && last_releasing == end) {
+        lock.release();
+        *in_out_end = end;
+        if (cb) {
+          cb(fit::ok());
+        }
+        return true;
+      }
+      *in_out_end = start;
+      return false;
+    }
+    should_start_prepare =
+        PrepareVmosLocked(std::move(to_prepare),
+                          [this, cb = std::move(cb)](
+                              fit::result<std::tuple<zx_status_t, DataVmoList>> result) mutable {
+                            zx_status_t status = ZX_OK;
+                            if (result.is_error()) {
+                              auto& [err_status, rest_vmos] = result.error_value();
+                              status = err_status;
+                              fbl::AutoLock lock(&control_lock_);
+                              for (auto& vmo : rest_vmos) {
+                                vmo.state = VmoState::kUnprepared;
+                              }
+                              unprepared_vmos_.splice(unprepared_vmos_.end(), rest_vmos);
+                            }
+                            {
+                              fbl::AutoLock lock(&rx_lock_);
+                              if (rx_queue_) {
+                                rx_queue_->AssertParentRxLocked(*this);
+                                rx_queue_->VmoOpFinished(status);
+                              }
+                            }
+                            NotifyRxVmoOpFinished(status);
+                            if (cb) {
+                              cb(std::move(result));
+                            }
+                          });
+  }
+  *in_out_end = last_releasing;
+  if (should_start_prepare) {
+    async::PostTask(dispatchers_.impl_->async_dispatcher(), [this]() {
+      fdf::Arena arena('NETD');
+      PrepareNextVmo(std::move(arena));
+    });
+  }
+  return false;
+}
+
+bool DeviceInterface::ReleaseRxVmo(DataVmoMeta& vmo) {
+  DataVmoList to_release;
+  bool should_start_release = false;
+  {
+    fbl::AutoLock lock(&control_lock_);
+    if (vmo.tx_registered || vmo.state != VmoState::kPrepared) {
+      return false;
+    }
+    if (session_ == nullptr) {
+      return false;
+    }
+    session_->AssertParentRxLock(*this);
+    if (!session_->IsRxValid()) {
+      return false;
+    }
+    prepared_vmos_.erase(vmo);
+    to_release.push_back(&vmo);
+    should_start_release = ReleaseVmosLocked(
+        std::move(to_release), [this](fit::result<std::tuple<zx_status_t, DataVmoList>> result) {
+          zx_status_t status = ZX_OK;
+          if (result.is_error()) {
+            auto& [status, rest_vmos] = result.error_value();
+            {
+              fbl::AutoLock lock(&control_lock_);
+              for (auto& v : rest_vmos) {
+                v.state = VmoState::kPrepared;
+              }
+              prepared_vmos_.splice(prepared_vmos_.end(), rest_vmos);
+            }
+          }
+          {
+            fbl::AutoLock lock(&rx_lock_);
+            if (rx_queue_) {
+              rx_queue_->AssertParentRxLocked(*this);
+              rx_queue_->VmoOpFinished(status);
+            }
+          }
+          NotifyRxVmoOpFinished(status);
+        });
+  }
+  if (should_start_release) {
+    async::PostTask(dispatchers_.impl_->async_dispatcher(), [this]() {
+      fdf::Arena arena('NETD');
+      ReleaseNextVmo(std::move(arena));
+    });
+  }
+  return true;
+}
+
 uint16_t DeviceInterface::rx_fifo_depth() const {
   return TransformFifoDepth(device_info_.rx_depth().value_or(0));
 }
@@ -1610,6 +1807,20 @@ fbl::RefPtr<RefCountedFifo> DeviceInterface::rx_fifo() {
   return nullptr;
 }
 
+void DeviceInterface::UpdatePacketArrivalRate(uint64_t sample_rate) {
+  fbl::AutoLock lock(&rx_lock_);
+  ZX_ASSERT(rx_queue_);
+  rx_queue_->AssertParentRxLocked(*this);
+  rx_queue_->UpdatePeakRateInSamplePeriod(sample_rate);
+}
+
+void DeviceInterface::TriggerTimerTick() {
+  fbl::AutoLock lock(&rx_lock_);
+  ZX_ASSERT(rx_queue_);
+  rx_queue_->AssertParentRxLocked(*this);
+  rx_queue_->TimerTick();
+}
+
 void DeviceInterface::NotifyTxQueueAvailable() { tx_queue_->Resume(); }
 
 void DeviceInterface::NotifyTxReturned(bool was_full) {
@@ -1750,6 +1961,7 @@ void DeviceInterface::RemoveDeadSession() __TA_EXCLUDES(rx_lock_) __TA_EXCLUDES(
     fbl::AutoLock rx_lock(&rx_lock_);
     rx_queue_->AssertParentRxLocked(*this);
     rx_queue_->SetSession(nullptr);
+    rx_queue_->SetRxVmos({});
   }
   control_lock_.Acquire();
   std::string session_name = session_->name();
@@ -1805,6 +2017,10 @@ zx_status_t DeviceInterface::CanCreatePortWithId(uint8_t port_id) {
 }
 
 void DeviceInterface::NotifyRxQueuePacket(uint64_t key) { evt_rx_queue_packet_.Trigger(key); }
+
+void DeviceInterface::NotifyRxVmoOpFinished(zx_status_t status) {
+  evt_rx_vmo_op_finished_.Trigger(status);
+}
 
 void DeviceInterface::NotifyTxComplete() { evt_tx_complete_.Trigger(); }
 

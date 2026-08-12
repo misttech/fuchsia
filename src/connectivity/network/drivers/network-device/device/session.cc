@@ -712,11 +712,11 @@ bool Session::LoadAvailableRxDescriptors(RxQueue::SessionTransaction& transact) 
   if (rx_avail_queue_count_ == 0) {
     return false;
   }
+  bool available = false;
   while (transact.remaining() != 0 && rx_avail_queue_count_ != 0) {
-    rx_avail_queue_count_--;
-    transact.Push(rx_avail_queue_[rx_avail_queue_count_]);
+    available |= transact.Push(rx_avail_queue_[--rx_avail_queue_count_]);
   }
-  return true;
+  return available;
 }
 
 zx_status_t Session::FetchRxDescriptors() {
@@ -745,9 +745,12 @@ zx_status_t Session::LoadRxDescriptors(RxQueue::SessionTransaction& transact) {
   } else if (!rx_valid_) {
     return ZX_ERR_BAD_STATE;
   }
-  // If we get here, we either have available descriptors or fetching more
-  // descriptors succeeded. Loading from the available pool must succeed.
-  ZX_ASSERT(LoadAvailableRxDescriptors(transact));
+  // We may fail loading in the available queue, because buffers are
+  // either for a VMO that is unused or being retired. Those are held
+  // and not available.
+  if (!LoadAvailableRxDescriptors(transact)) {
+    return ZX_ERR_SHOULD_WAIT;
+  }
   return ZX_OK;
 }
 

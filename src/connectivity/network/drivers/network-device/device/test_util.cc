@@ -341,6 +341,9 @@ void FakeNetworkDeviceImpl::GetInfo(fdf::Arena& arena, GetInfoCompleter::Sync& c
       .min_tx_buffer_length(info_.min_tx_buffer_length)
       .tx_head_length(info_.tx_head_length)
       .tx_tail_length(info_.tx_tail_length);
+  if (info_.min_rx_buffers != 0) {
+    builder.min_rx_buffers(info_.min_rx_buffers);
+  }
 
   completer.buffer(arena).Reply(builder.Build());
 }
@@ -442,6 +445,9 @@ void FakeNetworkDeviceImpl::PrepareVmo(
 void FakeNetworkDeviceImpl::ReleaseVmo(
     fuchsia_hardware_network_driver::wire::NetworkDeviceImplReleaseVmoRequest* request,
     fdf::Arena& arena, ReleaseVmoCompleter::Sync& completer) {
+  if (release_vmo_handler_) {
+    release_vmo_handler_(request->id);
+  }
   zx::vmo& slot = vmos_[request->id];
   EXPECT_TRUE(slot.is_valid()) << "vmo " << static_cast<uint32_t>(request->id)
                                << " already released";

@@ -173,6 +173,11 @@ void DeviceAdapter::GetInfo(
           .buffer_alignment(1)
           .min_rx_buffer_length(parent_->config().min_rx_buffer_length)
           .min_tx_buffer_length(parent_->config().min_tx_buffer_length)
+          .min_rx_buffers(kFifoDepth)
+          // Use default Simple parameters to exercise dynamic Rx buffer management in tun tests.
+          .rx_buffer_management(
+              fuchsia_hardware_network_driver::wire::RxBufferManagement::WithSimple(
+                  arena, fuchsia_hardware_network_driver::wire::Simple{}))
           .Build();
   completer.buffer(arena).Reply(info);
 }
@@ -210,6 +215,7 @@ void DeviceAdapter::QueueRxSpace(
   bool has_buffers;
   {
     fbl::AutoLock lock(&rx_lock_);
+    rx_space_requested_ = false;
     const fidl::VectorView<fuchsia_hardware_network_driver::wire::RxSpaceBuffer>& buffers =
         request->buffers;
     if (!rx_available_) {
@@ -319,6 +325,7 @@ zx::result<size_t> DeviceAdapter::WriteRxFrame(
 
   fbl::AutoLock lock(&rx_lock_);
   if (rx_buffers_.empty()) {
+    RequestRxSpace();
     return zx::error(ZX_ERR_SHOULD_WAIT);
   }
   zx::result alloc = AllocRxSpace(count);
@@ -507,6 +514,9 @@ zx::result<RxBuffer> DeviceAdapter::AllocRxSpace(size_t length) __TA_REQUIRES(rx
   // The available rx buffers weren't sufficient to allocate the required space,
   // so we need to reclaim the space from the buffer.
   ReclaimRxSpace(std::move(buffer));
+  if (rx_buffers_.empty()) {
+    RequestRxSpace();
+  }
   return zx::error(ZX_ERR_SHOULD_WAIT);
 }
 
@@ -567,6 +577,21 @@ zx_status_t DeviceAdapter::DelegateRxLease(fuchsia_hardware_network::wire::Deleg
   fdf::Arena arena(0u);
   fidl::OneWayStatus status = device_iface_.buffer(arena)->DelegateRxLease(lease);
   return status.status();
+}
+
+void DeviceAdapter::RequestRxSpace() {
+  if (rx_space_requested_) {
+    return;
+  }
+  rx_space_requested_ = true;
+
+  fdf::Arena arena(0u);
+  // We attempt to request the entire Rx FIFO to be filled because we don't
+  // want buffer starvation. The memory can be reclaimed back slowly.
+  fidl::OneWayStatus status = device_iface_.buffer(arena)->RequestRxSpace(kFifoDepth);
+  if (!status.ok()) {
+    FX_PLOGST(ERROR, "tun", status.status()) << "failed to request rx space";
+  }
 }
 
 }  // namespace tun

@@ -162,6 +162,8 @@ class DeviceAdapter : public fdf::WireServer<fuchsia_hardware_network_driver::Ne
   // Allocates rx buffer space with at least `length` bytes.
   zx::result<RxBuffer> AllocRxSpace(size_t length) __TA_REQUIRES(rx_lock_);
   void ReclaimRxSpace(RxBuffer buffer) __TA_REQUIRES(rx_lock_);
+  // Requests |kFifoDepth| rx space buffers from the interface.
+  void RequestRxSpace() __TA_REQUIRES(rx_lock_);
 
   std::unique_ptr<NetworkDeviceInterface> device_;
   DeviceAdapterParent* const parent_;  // pointer to parent, not owned.
@@ -179,6 +181,7 @@ class DeviceAdapter : public fdf::WireServer<fuchsia_hardware_network_driver::Ne
   std::queue<fuchsia_hardware_network_driver::wire::RxSpaceBuffer> rx_buffers_
       __TA_GUARDED(rx_lock_);
   bool rx_available_ __TA_GUARDED(rx_lock_) = false;
+  bool rx_space_requested_ __TA_GUARDED(rx_lock_) = false;
   std::vector<fuchsia_hardware_network_driver::wire::RxBuffer> return_rx_list_
       __TA_GUARDED(rx_lock_);
   std::array<fuchsia_hardware_network_driver::wire::RxBufferPart, kFifoDepth> return_rx_parts_

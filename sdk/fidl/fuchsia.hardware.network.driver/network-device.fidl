@@ -302,7 +302,9 @@ type RxBufferManagement = flexible union {
         /// This is used to calculate the arrival rate:
         /// `Rate_n = alpha * Sample_n + (1 - alpha) * Rate_(n-1)`
         /// The bigger this value, the more sensitive it is to the latest sample.
-        /// Must be in the range [0, 1].
+        ///
+        /// Must be in the range (0, 1]. Defaults to server-assigned value if zero
+        /// or unset.
         alpha float64;
         /// Wait time budget at the driver.
         ///
@@ -320,7 +322,24 @@ type RxBufferManagement = flexible union {
         ///    sense to go any bigger than that and you can decrease it and monitor
         ///    for packet drops. You can compare the value against common interrupt
         ///    coalescing configurations for reference.
+        ///
+        /// Defaults to server-assigned value if zero or unset.
         delay_budget zx.Duration;
+        /// The sampling interval for estimating packet arrival rate.
+        ///
+        /// Determines how frequently the arrival rate is sampled and updated.
+        ///
+        /// Defaults to server-assigned value if zero or unset.
+        sample_interval zx.Duration;
+        /// The multiple of variance to consider when triggering immediate
+        /// buffer requests.
+        ///
+        /// When the current packet arrival rate exceeds the average arrival
+        /// rate by more than `variance_threshold` times the variance, the
+        /// queue will immediately request additional buffers.
+        ///
+        /// Must be positive. Defaults to server-assigned value if zero or unset.
+        variance_threshold float64;
     };
 };
 

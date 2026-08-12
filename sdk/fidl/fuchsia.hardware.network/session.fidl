@@ -190,10 +190,12 @@ type SessionInfo = resource table {
     /// 16-bit indices transmitted over the FIFOs index a descriptor in this VMO
     /// (byte offset = descriptor_length * 8 * index).
     1: descriptors zx.Handle:VMO;
-    /// VMOs containing frame data. Required
+    /// VMOs containing frame data. Required.
     ///
     /// Descriptors contain byte-offsets and vmo ids that are used to index regions
     /// in data VMOs.
+    ///
+    /// For Rx VMOs managed by the device interface, VMOs are committed in ID order.
     2: data vector<DataVmo>:MAX_DATA_VMOS;
     /// Requested descriptor version. Required.
     ///

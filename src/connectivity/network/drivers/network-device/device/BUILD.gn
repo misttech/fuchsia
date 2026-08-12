@@ -31,6 +31,8 @@ driver_source_split("device") {
     "rx_queue.h",
     "session.cc",
     "session.h",
+    "simple_rx_buffer_estimator.cc",
+    "simple_rx_buffer_estimator.h",
     "status_watcher.cc",
     "status_watcher.h",
     "tx_queue.cc",
@@ -79,6 +81,7 @@ test("test_bin") {
   sources = [
     "data_structs-test.cc",
     "network_device-test.cc",
+    "simple_rx_buffer_estimator-test.cc",
     "status_watcher-test.cc",
   ]
 

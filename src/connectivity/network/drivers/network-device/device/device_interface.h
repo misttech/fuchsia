@@ -191,6 +191,8 @@ class DeviceInterface : public fidl::WireServer<netdev::Device>,
 
   // Event observer hook for Rx queue packets.
   void NotifyRxQueuePacket(uint64_t key);
+  // Event observer hook for Rx VMO operation finish.
+  void NotifyRxVmoOpFinished(zx_status_t status);
   // Event observer hook for Tx complete.
   void NotifyTxComplete();
 
@@ -207,10 +209,32 @@ class DeviceInterface : public fidl::WireServer<netdev::Device>,
   // opted in to receive leases. Drops the pending lease immediately otherwise.
   void TryDelegateRxLease(uint64_t completed_frame_index) __TA_REQUIRES_SHARED(control_lock_)
       __TA_REQUIRES(rx_lock_);
+  // Decommits the VMO by its ID. The VMO must be released from the device impl and all the buffers
+  // from this Rx VMO must be withheld.
+  void DecommitVmo(netdev::VmoId vmo_id) __TA_EXCLUDES(control_lock_) __TA_REQUIRES(rx_lock_);
+  // Submits a batch of Rx VMOs for preparation. It skips any VMO that has already been prepared.
+  // Returns whether the batch is already prepared.
+  // |in_out_end| specifies the end of the range on input, and on output is set to the iterator
+  // past the last VMO submitted for preparation before any lock is released, or to |start| if
+  // nothing could be prepared.
+  bool PrepareRxVmos(RxVmoList::iterator start, RxVmoList::iterator* in_out_end,
+                     fit::callback<void(fit::result<std::tuple<zx_status_t, DataVmoList>>)> cb)
+      __TA_EXCLUDES(control_lock_) __TA_REQUIRES(rx_lock_);
+  // Attempts to release the Rx VMO. Returns true if the VMO has successfully transitioned to
+  // VmoState::kReleasing (meaning a release operation is now pending or starting). Returns false if
+  // the release attempt failed (e.g., the VMO is also registered for Tx, not currently prepared,
+  // or the session is invalid).
+  [[nodiscard]] bool ReleaseRxVmo(DataVmoMeta& vmo) __TA_EXCLUDES(control_lock_)
+      __TA_REQUIRES(rx_lock_);
 
  private:
   friend testing::NetworkDeviceTest;
   friend testing::FakeNetworkDeviceImpl;
+
+  // Updates the packet arrival rate on the Rx queue for testing.
+  void UpdatePacketArrivalRate(uint64_t sample_rate);
+  // Triggers a timer tick on the Rx queue for testing.
+  void TriggerTimerTick();
 
   // Helper class to keep track of clients bound to DeviceInterface.
   class Binding : public fbl::DoublyLinkedListable<std::unique_ptr<Binding>> {
@@ -380,6 +404,7 @@ class DeviceInterface : public fidl::WireServer<netdev::Device>,
   // NB: This will be called with control_lock_ held.
   EventHook<fit::function<void(const char*)>> evt_session_died_;
   EventHook<fit::function<void(uint64_t)>> evt_rx_queue_packet_;
+  EventHook<fit::function<void(zx_status_t)>> evt_rx_vmo_op_finished_;
   EventHook<fit::function<void()>> evt_tx_complete_;
 };
 

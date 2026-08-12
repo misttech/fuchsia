@@ -149,7 +149,13 @@ void RxQueue::PurgeSession() {
   fbl::AutoLock lock(&parent_->rx_lock());
   // Get rid of all available buffers that belong to the session and stop its rx path.
   session_->AssertParentRxLock(*parent_);
+  if (rx_vmo_state_.estimator) {
+    rx_vmo_state_.estimator.reset();
+  }
   session_->StopRx();
+  for (auto it = rx_vmo_state_.vmos.begin(); it != rx_vmo_state_.vmos.end(); ++it) {
+    ReleaseWithheldBuffers(it);
+  }
   for (auto nu = available_queue_->count(); nu > 0; nu--) {
     auto b = available_queue_->Pop();
     in_flight_->Free(b);
@@ -164,7 +170,7 @@ std::tuple<RxQueue::InFlightBuffer*, uint32_t> RxQueue::GetBuffer() {
   // Need to fetch more from the session.
   if (in_flight_->available() == 0) {
     // No more space to keep in flight buffers.
-    LOG_ERROR("can't fit more in-flight buffers");
+    // Not an error because buffers can be held for VMOs not prepared.
     return std::make_tuple(nullptr, 0);
   }
 
@@ -210,6 +216,17 @@ zx_status_t RxQueue::PrepareBuff(fuchsia_hardware_network_driver::wire::RxSpaceB
 void RxQueue::CompleteRxList(
     const fidl::VectorView<::fuchsia_hardware_network_driver::wire::RxBuffer>& rx_buffer_list) {
   fbl::AutoLock lock(&parent_->rx_lock());
+  if (rx_vmo_state_.estimator) {
+    zx::time now = zx::clock::get_monotonic();
+    if (rx_vmo_state_.last_complete_time != zx::time::infinite_past()) {
+      zx::duration elapsed = now - rx_vmo_state_.last_complete_time;
+      if (elapsed.get()) {
+        uint64_t sample_rate = std::max(rx_buffer_list.size() * ZX_SEC(1) / elapsed.get(), 1UL);
+        UpdatePeakRateInSamplePeriod(sample_rate);
+      }
+    }
+    rx_vmo_state_.last_complete_time = now;
+  }
   ZX_ASSERT_MSG(session_ != nullptr,
                 "Session should not be null while we still have inflight buffers");
   SharedAutoLock control_lock(&parent_->control_lock());
@@ -233,7 +250,7 @@ void RxQueue::CompleteRxList(
     if (device_buffer_count_ >= rx_parts.size()) {
       device_buffer_count_ -= rx_parts.size();
     } else {
-      LOGF_ERROR("device returned more rx parts (%ld) than device_buffer_count_ (%ld)",
+      LOGF_ERROR("device returned more rx parts (%ld) than device_buffer_count_ (%hu)",
                  rx_parts.size(), device_buffer_count_);
       device_buffer_count_ = 0;
     }
@@ -285,7 +302,8 @@ void RxQueue::CompleteRxList(
     }
   }
   parent_->CommitSession();
-  if (device_buffer_count_ <= parent_->rx_notify_threshold()) {
+  if (device_buffer_count_ <=
+      std::min(parent_->rx_notify_threshold(), rx_vmo_state_.target_available_buffers)) {
     TriggerRxWatch();
   }
   parent_->TryDelegateRxLease(rx_completed_frame_index_);
@@ -306,10 +324,17 @@ int RxQueue::WatchThread(
       }
       parent_->NotifyRxQueuePacket(packet.key);
       switch (packet.key) {
+        case kTimerWatchKey: {
+          {
+            fbl::AutoLock lock(&parent_->rx_lock());
+            TimerTick();
+          }
+          break;
+        }
         case kQuitWatchKey:
           LOG_TRACE("RxQueue::WatchThread got quit key");
           return ZX_OK;
-        case kSessionSwitchKey:
+        case kSessionSwitchKey: {
           if (observed_fifo && waiting_on_fifo) {
             if (zx_status_t status = rx_watch_port_.cancel_key(0u, kFifoWatchKey);
                 status != ZX_OK) {
@@ -321,7 +346,7 @@ int RxQueue::WatchThread(
           }
           observed_fifo = parent_->rx_fifo();
           LOGF_TRACE("RxQueue FIFO changed, valid=%d", static_cast<bool>(observed_fifo));
-          break;
+        } break;
         case kFifoWatchKey:
           if ((packet.signal.observed & ZX_FIFO_PEER_CLOSED) || packet.status != ZX_OK) {
             // If observing the FIFO fails, we're assuming that the session is being closed. We're
@@ -335,27 +360,29 @@ int RxQueue::WatchThread(
           }
           waiting_on_fifo = false;
           break;
+
         default:
           ZX_ASSERT_MSG(packet.key == kTriggerRxKey, "Unrecognized packet in rx queue");
           break;
       }
 
-      size_t pushed = 0;
+      uint16_t pushed = 0;
       bool should_wait_on_fifo;
 
       fbl::AutoLock rx_lock(&parent_->rx_lock());
       SharedAutoLock control_lock(&parent_->control_lock());
       const uint16_t rx_depth = parent_->info().rx_depth().value_or(0);
-      size_t push_count = rx_depth > device_buffer_count_ ? rx_depth - device_buffer_count_ : 0;
+      const uint16_t target = std::min(rx_vmo_state_.current_available_buffers, rx_depth);
+      uint16_t push_count = target - device_buffer_count_;
       if (parent_->IsDataPlaneOpen()) {
         for (; pushed < push_count; pushed++) {
-          if (PrepareBuff(&space_buffers[pushed]) != ZX_OK) {
+          if (zx_status_t status = PrepareBuff(&space_buffers[pushed]); status != ZX_OK) {
             break;
           }
         }
       }
 
-      if (fifo_readable && push_count == 0 && in_flight_->available()) {
+      if (fifo_readable && in_flight_->available()) {
         RxSessionTransaction transaction(this);
         parent_->LoadRxDescriptors(transaction);
       }
@@ -363,12 +390,12 @@ int RxQueue::WatchThread(
       // Otherwise, we'll trigger the loop again once the device calls CompleteRx.
       //
       // Similarly, we should not wait on the FIFO if the device has not started yet.
-      should_wait_on_fifo = device_buffer_count_ < rx_depth && parent_->IsDataPlaneOpen();
+      should_wait_on_fifo = device_buffer_count_ < target && parent_->IsDataPlaneOpen();
 
       // We release the main rx queue and control locks before calling into the parent device so we
       // don't cause a re-entrant deadlock.
-      rx_lock.release();
       control_lock.release();
+      rx_lock.release();
 
       if (pushed != 0) {
         // Send buffers in batches of at most |kMaxRxSpaceBuffer| at a time to stay within the
@@ -403,13 +430,242 @@ int RxQueue::WatchThread(
       }
     }
   };
-
   zx_status_t status = loop();
   if (status != ZX_OK) {
     LOGF_ERROR("RxQueue::WatchThread finished loop with error: %s", zx_status_get_string(status));
   }
   LOG_TRACE("watch thread done");
   return 0;
+}
+
+void RxQueue::SetRxVmos(RxVmoList rx_vmos) {
+  if (rx_vmos.is_empty()) {
+    rx_vmo_state_.vmos.clear();
+  } else {
+    rx_vmo_state_.vmos = std::move(rx_vmos);
+  }
+  rx_vmo_state_.total_buffers = 0;
+  rx_vmo_state_.current_available_buffers = 0;
+  rx_vmo_state_.target_available_buffers = 0;
+  rx_vmo_state_.pending_op = VmoOperation{};
+  rx_vmo_state_.last_in_use = rx_vmo_state_.vmos.end();
+  for (auto it = rx_vmo_state_.vmos.begin(); it != rx_vmo_state_.vmos.end(); ++it) {
+    it->withheld_rx_buffers = 0;
+    it->head_withheld_rx_buffers = kInvalidIdx;
+    ZX_ASSERT(rx_vmo_state_.total_buffers <=
+              std::numeric_limits<uint16_t>::max() - it->num_rx_buffers);
+    rx_vmo_state_.total_buffers += it->num_rx_buffers;
+    if (it->state == VmoState::kPrepared) {
+      rx_vmo_state_.current_available_buffers += it->num_rx_buffers;
+      rx_vmo_state_.target_available_buffers += it->num_rx_buffers;
+      rx_vmo_state_.last_in_use = it;
+    }
+  }
+}
+
+void RxQueue::ReleaseWithheldBuffers(RxVmoList::iterator target) {
+  while (target->head_withheld_rx_buffers != kInvalidIdx) {
+    InFlightBuffer& buffer = in_flight_->Get(target->head_withheld_rx_buffers);
+    uint32_t next = buffer.next_withheld_inflight_buffer;
+    buffer.next_withheld_inflight_buffer = kInvalidIdx;
+    available_queue_->Push(target->head_withheld_rx_buffers);
+    target->head_withheld_rx_buffers = next;
+    target->withheld_rx_buffers--;
+  }
+  ZX_ASSERT(target->withheld_rx_buffers == 0);
+}
+
+void RxQueue::SetRxBufferManagement(const netdriver::RxBufferManagement& management)
+    __TA_REQUIRES(parent_->rx_lock()) {
+  auto new_estimator = RxBufferEstimatorFromFidl(management);
+
+  bool request_rx_space = false;
+  if (new_estimator) {
+    uint16_t default_min =
+        rx_vmo_state_.vmos.is_empty() ? 0 : rx_vmo_state_.vmos.begin()->num_rx_buffers;
+    rx_vmo_state_.min_buffers = parent_->info().min_rx_buffers().value_or(
+        parent_->info().rx_threshold().value_or(default_min));
+    request_rx_space = SetTargetRxBuffersIfMore(rx_vmo_state_.min_buffers);
+  } else {
+    rx_vmo_state_.min_buffers = rx_vmo_state_.target_available_buffers =
+        rx_vmo_state_.total_buffers;
+  }
+
+  if (rx_vmo_state_.estimator) {
+    rx_vmo_state_.estimator.reset();
+  }
+
+  rx_vmo_state_.estimator = std::move(new_estimator);
+
+  if (rx_vmo_state_.estimator) {
+    if (zx_status_t status = rx_vmo_state_.estimator->RearmTimer(rx_watch_port_, kTimerWatchKey);
+        status != ZX_OK) {
+      rx_vmo_state_.estimator.reset();
+      rx_vmo_state_.min_buffers = rx_vmo_state_.target_available_buffers =
+          rx_vmo_state_.total_buffers;
+      LOGF_ERROR("failed to set the timer, reverting back to static management: %s",
+                 zx_status_get_string(status));
+      return;
+    }
+  }
+}
+
+void RxQueue::UpdatePeakRateInSamplePeriod(uint64_t sample_rate) __TA_REQUIRES(parent_->rx_lock()) {
+  ZX_ASSERT(rx_vmo_state_.estimator);
+  if (sample_rate > rx_vmo_state_.current_max_packet_rate) {
+    rx_vmo_state_.current_max_packet_rate = sample_rate;
+    uint16_t need_immediate_buffers = rx_vmo_state_.estimator->NeedImmediateBuffers(sample_rate);
+    if (SetTargetRxBuffersIfMore(need_immediate_buffers)) {
+      RequestRxSpace();
+    }
+  }
+}
+
+void RxQueue::MaybeReleaseCandidateVmo() {
+  // Attempt to release the candidate VMO (`last_in_use`) if:
+  // 1. The candidate VMO is in use (`IsValid`).
+  // 2. All of its Rx buffers are sent by client but not in available queue.
+  // 3. No other VMO operation is currently in progress (`pending_op.type == kNone`).
+  // 4. Removing its buffers still leaves enough available buffers to meet the target.
+  if (rx_vmo_state_.last_in_use.IsValid() &&
+      rx_vmo_state_.last_in_use->withheld_rx_buffers == rx_vmo_state_.last_in_use->num_rx_buffers &&
+      rx_vmo_state_.pending_op.type == VmoOperation::Type::kNone &&
+      rx_vmo_state_.target_available_buffers <=
+          rx_vmo_state_.current_available_buffers - rx_vmo_state_.last_in_use->num_rx_buffers) {
+    rx_vmo_state_.pending_op.type = VmoOperation::Type::kReleaseSingle;
+    if (parent_->ReleaseRxVmo(*rx_vmo_state_.last_in_use)) {
+      LOGF_TRACE("RxQueue: Releasing Rx VMO %u", rx_vmo_state_.last_in_use->id);
+    } else {
+      rx_vmo_state_.pending_op = VmoOperation{};
+      // We fail to release this VMO because it is registered for Tx, release all held
+      // buffers because we won't be able to release it anyway.
+      ReleaseWithheldBuffers(rx_vmo_state_.last_in_use);
+    }
+  }
+}
+
+void RxQueue::TimerTick() {
+  if (!rx_vmo_state_.estimator) {
+    rx_vmo_state_.current_max_packet_rate = 0;
+    return;
+  }
+  rx_vmo_state_.estimator->Update(rx_vmo_state_.current_max_packet_rate);
+  if (SetTargetRxBuffers(rx_vmo_state_.estimator->CalculateTargetBuffers())) {
+    RequestRxSpace();
+  }
+  MaybeReleaseCandidateVmo();
+  rx_vmo_state_.current_max_packet_rate = 0;
+  if (zx_status_t status = rx_vmo_state_.estimator->RearmTimer(rx_watch_port_, kTimerWatchKey);
+      status != ZX_OK) {
+    rx_vmo_state_.estimator.reset();
+    rx_vmo_state_.target_available_buffers = rx_vmo_state_.min_buffers =
+        rx_vmo_state_.total_buffers;
+    RequestRxSpace();
+  }
+}
+
+bool RxQueue::SetTargetRxBuffers(uint16_t target) __TA_REQUIRES(parent_->rx_lock()) {
+  uint16_t old_target = rx_vmo_state_.target_available_buffers;
+  rx_vmo_state_.target_available_buffers =
+      std::min(std::max(rx_vmo_state_.min_buffers, target), rx_vmo_state_.total_buffers);
+
+  return rx_vmo_state_.target_available_buffers > old_target;
+}
+
+bool RxQueue::SetTargetRxBuffersIfMore(uint16_t target) __TA_REQUIRES(parent_->rx_lock()) {
+  if (target > rx_vmo_state_.target_available_buffers) {
+    return SetTargetRxBuffers(target);
+  }
+  return false;
+}
+
+void RxQueue::RequestRxSpace(
+    fit::callback<void(fit::result<std::tuple<zx_status_t, DataVmoList>>)> cb) {
+  if (rx_vmo_state_.vmos.is_empty() || !session_) {
+    return;
+  }
+
+  if (rx_vmo_state_.pending_op.type != VmoOperation::Type::kNone) {
+    return;
+  }
+
+  if (rx_vmo_state_.last_in_use.IsValid() &&
+      rx_vmo_state_.target_available_buffers >
+          rx_vmo_state_.current_available_buffers - rx_vmo_state_.last_in_use->num_rx_buffers &&
+      rx_vmo_state_.last_in_use->withheld_rx_buffers) {
+    LOGF_TRACE("RxQueue: there are %d inflight buffers being withheld, making them available",
+               rx_vmo_state_.last_in_use->withheld_rx_buffers);
+    ReleaseWithheldBuffers(rx_vmo_state_.last_in_use);
+  }
+
+  uint16_t total_available_buffers = rx_vmo_state_.current_available_buffers;
+  auto start_it = rx_vmo_state_.last_in_use.IsValid() ? std::next(rx_vmo_state_.last_in_use)
+                                                      : rx_vmo_state_.vmos.begin();
+  auto end_it = start_it;
+  while (total_available_buffers < rx_vmo_state_.target_available_buffers &&
+         end_it != rx_vmo_state_.vmos.end()) {
+    total_available_buffers = total_available_buffers + end_it->num_rx_buffers;
+    ++end_it;
+  }
+  if (end_it != start_it) {
+    rx_vmo_state_.pending_op.type = VmoOperation::Type::kPrepareBatch;
+    rx_vmo_state_.pending_op.first_vmo_to_not_prepare = end_it;
+    if (parent_->PrepareRxVmos(start_it, &rx_vmo_state_.pending_op.first_vmo_to_not_prepare,
+                               std::move(cb))) {
+      VmoOpFinished();
+    } else if (rx_vmo_state_.pending_op.first_vmo_to_not_prepare == start_it) {
+      rx_vmo_state_.pending_op = VmoOperation{};
+    }
+    return;
+  }
+}
+
+void RxQueue::VmoOpFinished(zx_status_t status) {
+  if (status != ZX_OK) {
+    LOGF_WARN("RxQueue: VmoOpFinished failed with status %s", zx_status_get_string(status));
+    rx_vmo_state_.pending_op = VmoOperation{};
+    session_->Kill();
+    return;
+  }
+  if (!session_) {
+    rx_vmo_state_.pending_op = VmoOperation{};
+    return;
+  }
+  session_->AssertParentRxLock(*parent_);
+  if (!session_->IsRxValid()) {
+    rx_vmo_state_.pending_op = VmoOperation{};
+    return;
+  }
+  switch (rx_vmo_state_.pending_op.type) {
+    case VmoOperation::Type::kNone:
+      break;
+    case VmoOperation::Type::kPrepareBatch: {
+      auto start_it = rx_vmo_state_.last_in_use.IsValid() ? std::next(rx_vmo_state_.last_in_use)
+                                                          : rx_vmo_state_.vmos.begin();
+      for (auto it = start_it; it != rx_vmo_state_.pending_op.first_vmo_to_not_prepare; it++) {
+        LOGF_TRACE("RxQueue: Rx VMO %u prepared successfully", it->id);
+        rx_vmo_state_.current_available_buffers += it->num_rx_buffers;
+        ReleaseWithheldBuffers(it);
+      }
+      rx_vmo_state_.last_in_use = std::prev(rx_vmo_state_.pending_op.first_vmo_to_not_prepare);
+      break;
+    }
+    case VmoOperation::Type::kReleaseSingle: {
+      ZX_ASSERT(rx_vmo_state_.last_in_use->withheld_rx_buffers ==
+                rx_vmo_state_.last_in_use->num_rx_buffers);
+      LOGF_TRACE("RxQueue: Rx VMO %u released successfully", rx_vmo_state_.last_in_use->id);
+      parent_->DecommitVmo(rx_vmo_state_.last_in_use->id);
+      ZX_ASSERT(rx_vmo_state_.current_available_buffers >=
+                rx_vmo_state_.last_in_use->num_rx_buffers);
+      rx_vmo_state_.current_available_buffers -= rx_vmo_state_.last_in_use->num_rx_buffers;
+      --rx_vmo_state_.last_in_use;
+      break;
+    }
+  }
+  rx_vmo_state_.pending_op = VmoOperation{};
+  // Target may have changed during the pending operation.
+  RequestRxSpace();
+  TriggerRxWatch();
 }
 
 uint32_t RxQueue::SessionTransaction::remaining() __TA_REQUIRES(queue_->parent_->rx_lock()) {
@@ -419,13 +675,66 @@ uint32_t RxQueue::SessionTransaction::remaining() __TA_REQUIRES(queue_->parent_-
   return queue_->in_flight_->available();
 }
 
-void RxQueue::SessionTransaction::Push(uint16_t descriptor)
+bool RxQueue::SessionTransaction::Push(uint16_t descriptor)
     __TA_REQUIRES(queue_->parent_->rx_lock()) {
+  const buffer_descriptor_t* desc = queue_->session_->checked_descriptor(descriptor);
+  if (!desc) {
+    LOGF_ERROR("unknown descriptor from session: %d", descriptor);
+    queue_->session_->Kill();
+    return false;
+  }
   // NB: __TA_REQUIRES here is just encoding that a SessionTransaction always holds a lock for
   // its parent queue, the protection from misuse comes from the annotations on
   // `SessionTransaction`'s constructor and destructor.
   uint32_t idx = queue_->in_flight_->Push(InFlightBuffer(descriptor));
-  queue_->available_queue_->Push(idx);
+
+  netdev::VmoId vmo_id = desc->vmo_id;
+  // If the VMO is before the last Rx VMO in use, then it must not be in the process of
+  // release, make it available.
+  if (queue_->rx_vmo_state_.last_in_use.IsValid() &&
+      vmo_id < queue_->rx_vmo_state_.last_in_use->id) {
+    queue_->available_queue_->Push(idx);
+    return true;
+  }
+
+  // If the VMO is the last Rx VMO in use:
+  if (queue_->rx_vmo_state_.last_in_use.IsValid() &&
+      vmo_id == queue_->rx_vmo_state_.last_in_use->id) {
+    // If this VMO is registered for tx, we cannot release this VMO, so might as well
+    // just use the full VMO.
+    if (queue_->rx_vmo_state_.last_in_use->tx_registered) {
+      queue_->ReleaseWithheldBuffers(queue_->rx_vmo_state_.last_in_use);
+      queue_->available_queue_->Push(idx);
+      return true;
+    }
+    // Otherwise, we check if the target buffer count can be achieved without this VMO,
+    // if possible, we have to make this buffer available immediately.
+    if (queue_->rx_vmo_state_.target_available_buffers >
+        queue_->rx_vmo_state_.current_available_buffers -
+            queue_->rx_vmo_state_.last_in_use->num_rx_buffers) {
+      queue_->ReleaseWithheldBuffers(queue_->rx_vmo_state_.last_in_use);
+      queue_->available_queue_->Push(idx);
+      return true;
+    }
+  }
+
+  // Finally, we can't make the buffer available because of either of the reasons:
+  // 1) This VMO is not prepared, so we need to withhold it until the VMO is prepared.
+  // 2) This VMO is the last in use and eligible for release. We need to withhold these
+  //    buffers so that the release operation can make progress.
+  auto begin = queue_->rx_vmo_state_.last_in_use.IsValid() ? queue_->rx_vmo_state_.last_in_use
+                                                           : queue_->rx_vmo_state_.vmos.begin();
+  auto it = std::find_if(begin, queue_->rx_vmo_state_.vmos.end(),
+                         [vmo_id](DataVmoMeta& meta) { return meta.id == vmo_id; });
+  if (it == queue_->rx_vmo_state_.vmos.end()) {
+    LOGF_ERROR("unknown vmo id from session: %d", vmo_id);
+    queue_->session_->Kill();
+    return false;
+  }
+  it->withheld_rx_buffers++;
+  queue_->in_flight_->Get(idx).next_withheld_inflight_buffer = it->head_withheld_rx_buffers;
+  it->head_withheld_rx_buffers = idx;
+  return false;
 }
 
 }  // namespace network::internal
