@@ -29,7 +29,9 @@ async fn main() -> Result<(), Error> {
     if let Err(e) = fuchsia_scheduler::set_role_for_root_vmar(MEMORY_ROLE_NAME) {
         warn!(e:%; "failed to set memory role");
     }
-    fuchsia_trace_provider::trace_provider_create_with_fdio();
+    let scope_dispatcher = libasync_scope_dispatcher::ScopeDispatcher::new();
+    let trace_provider =
+        fuchsia_trace_provider::TraceProvider::new_with_fdio(&scope_dispatcher, None);
     let _inspect_server_task = inspect_runtime::publish(
         fuchsia_inspect::component::inspector(),
         inspect_runtime::PublishOptions::default(),
@@ -102,6 +104,10 @@ async fn main() -> Result<(), Error> {
         kernel_manager::run_suspend_worker(suspend_receiver, suspend_context.clone(), &kernels);
 
     futures::future::join(fs_loop, suspend_worker).await;
+
+    drop(trace_provider);
+    scope_dispatcher.shutdown().await;
+
     Ok(())
 }
 

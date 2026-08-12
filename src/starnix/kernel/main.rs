@@ -169,8 +169,9 @@ async fn main() -> Result<(), Error> {
     let mut health = fuchsia_inspect::component::health();
     health.set_starting_up();
 
-    fuchsia_trace_provider::trace_provider_create_with_fdio();
-    fuchsia_trace_provider::trace_provider_wait_for_init();
+    let scope_dispatcher = libasync_scope_dispatcher::ScopeDispatcher::new();
+    let trace_provider =
+        fuchsia_trace_provider::TraceProvider::new_with_fdio(&scope_dispatcher, None);
     fuchsia_trace::instant!(CATEGORY_STARNIX, NAME_START_KERNEL, fuchsia_trace::Scope::Thread);
 
     let _lockup_detector_task = lockup_detector::start_thread_lockup_detector();
@@ -267,6 +268,9 @@ async fn main() -> Result<(), Error> {
             }
         }
     }
+
+    drop(trace_provider);
+    scope_dispatcher.shutdown().await;
 
     Ok(())
 }

@@ -30,8 +30,9 @@ enum Services {
 #[fuchsia::main(logging_tags=["starnix_test_runner"])]
 async fn main() -> Result<(), Error> {
     debug!("starnix test runner started");
-    fuchsia_trace_provider::trace_provider_create_with_fdio();
-    fuchsia_trace_provider::trace_provider_wait_for_init();
+    let scope_dispatcher = libasync_scope_dispatcher::ScopeDispatcher::new();
+    let trace_provider =
+        fuchsia_trace_provider::TraceProvider::new_with_fdio(&scope_dispatcher, None);
     let mut fs = ServiceFs::new_local();
     fs.dir("svc").add_fidl_service(Services::ComponentRunner);
     fs.take_and_serve_directory_handle()?;
@@ -57,6 +58,9 @@ async fn main() -> Result<(), Error> {
     if let Err(e) = debian_guest.shutdown().await {
         log::warn!("Failed to gracefully shutdown the Debian guest: {}", e);
     }
+
+    drop(trace_provider);
+    scope_dispatcher.shutdown().await;
 
     Ok(())
 }

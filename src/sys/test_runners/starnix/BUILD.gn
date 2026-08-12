@@ -19,6 +19,7 @@ rustc_binary("bin") {
     "//sdk/fidl/fuchsia.test:fuchsia.test_rust",
     "//sdk/fidl/fuchsia.test:rust_measure_tape_for_case",
     "//sdk/fidl/fuchsia.virtualization:fuchsia.virtualization_rust",
+    "//sdk/lib/async/rust/scope_dispatcher",
     "//sdk/rust/zx",
     "//src/lib/fdio/rust:fdio",
     "//src/lib/fidl/rust/fidl",

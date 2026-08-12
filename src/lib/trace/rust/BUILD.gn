@@ -114,12 +114,15 @@ rustc_library("trace-provider") {
   edition = "2024"
   source_root = "trace-provider/src/lib.rs"
   deps = [
-    ":rust-trace-provider",
     "//sdk/lib/async/rust",
     "//sdk/lib/async/rust/sys",
     "//sdk/rust/zx",
+  ]
+  non_rust_deps = [
+    ":rust-trace-provider",
     "//zircon/system/ulib/trace-provider",
   ]
+  public_configs = [ "//build/config/fuchsia:static_cpp_standard_library" ]
 
   sources = [ "trace-provider/src/lib.rs" ]
 }
