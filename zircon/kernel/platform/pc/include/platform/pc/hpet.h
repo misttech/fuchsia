@@ -11,6 +11,8 @@
 #include <zircon/compiler.h>
 #include <zircon/types.h>
 
+__BEGIN_CDECLS
+
 bool hpet_is_present();
 
 uint64_t hpet_get_value();
@@ -23,7 +25,6 @@ void hpet_wait_ms(uint16_t ms);
 
 uint64_t hpet_ticks_per_ms();
 
-// Storage resides in platform/pc/timer.cpp
-extern affine::Ratio hpet_ticks_to_clock_monotonic;
+__END_CDECLS
 
 #endif  // ZIRCON_KERNEL_PLATFORM_PC_INCLUDE_PLATFORM_PC_HPET_H_

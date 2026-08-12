@@ -16,7 +16,6 @@ source_set("pc") {
     "cmos_bootbyte.cc",
     "dev-init.cc",
     "efi_expected.cc",
-    "hpet.cc",
     "interrupts.cc",
     "keyboard.cc",
     "memory.cc",
@@ -105,6 +104,7 @@ group("kernel-tests") {
 kernel_rust_mod("platform_pc") {
   source_root = "mod.rs"
   sources = [
+    "hpet.rs",
     "interrupt_manager.rs",
     "interrupts.rs",
     "mod.rs",
@@ -114,7 +114,9 @@ kernel_rust_mod("platform_pc") {
     "//sdk/rust/zx-types",
     "//src/lib/ksync",
     "//zircon/kernel/lib/acpi_lite/rust:acpi_lite",
+    "//zircon/kernel/lib/debug",
     "//zircon/kernel/lib/unittest:unittest-rs",
+    "//zircon/system/ulib/affine/rust:affine",
     "//zircon/system/ulib/bitmap/rust:bitmap",
     "//zircon/system/ulib/fbl/rust:fbl",
   ]

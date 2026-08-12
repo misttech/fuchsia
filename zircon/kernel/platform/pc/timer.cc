@@ -121,7 +121,7 @@ static affine::Ratio rdtsc_ticks_to_clock_monotonic;
 
 // HPET calibration values
 static struct fp_32_64 ns_per_hpet;
-affine::Ratio hpet_ticks_to_clock_monotonic;  // Non-static so that hpet_init has access
+static affine::Ratio hpet_ticks_to_clock_monotonic;
 
 // An affine transformation from times sampled from the EarlyTicks timeline to
 // the chosen ticks timeline.  By default, this transformation is set up as:
@@ -858,3 +858,8 @@ zx_instant_mono_ticks_t platform_convert_early_ticks(arch::EarlyTicks sample) {
 // have an invariant TSC which is accessible from usermode.  For now, we just
 // take the syscall hit instead of attempting to get more fancy.
 bool platform_usermode_can_access_tick_registers(void) { return (wall_clock == CLOCK_TSC); }
+
+extern "C" void cpp_hpet_set_ticks_to_clock_monotonic(uint32_t N, uint32_t D);
+extern "C" void cpp_hpet_set_ticks_to_clock_monotonic(uint32_t N, uint32_t D) {
+  hpet_ticks_to_clock_monotonic = affine::Ratio(N, D);
+}
