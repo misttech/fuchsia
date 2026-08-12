@@ -368,10 +368,10 @@ pub fn query_interrupt_status(vector: u32) -> (Option<bool>, Option<bool>) {
     let mut pending = false;
     let mut enabled = false;
     unsafe {
-        if let Some(get_status) = (*ops).get_status {
-            if get_status(InterruptVector(vector), &mut pending, &mut enabled) == Status::OK {
-                return (Some(pending), Some(enabled));
-            }
+        if let Some(get_status) = (*ops).get_status
+            && get_status(InterruptVector(vector), &mut pending, &mut enabled) == Status::OK
+        {
+            return (Some(pending), Some(enabled));
         }
     }
     (None, None)
