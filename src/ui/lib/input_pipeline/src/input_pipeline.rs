@@ -8,12 +8,9 @@ use crate::input_device::{InputEventType, InputPipelineFeatureFlags};
 use crate::input_handler::Handler;
 use crate::{Dispatcher, Incoming, Transport, input_device, input_handler, metrics};
 use anyhow::{Context, Error, format_err};
-use fidl::endpoints;
-use fidl_fuchsia_io as fio;
+use fidl::endpoints::Proxy;
 use focus_chain_provider::FocusChainProviderPublisher;
 
-use fuchsia_component::directory::AsRefDirectory;
-use fuchsia_fs::directory::{WatchEvent, Watcher};
 use fuchsia_inspect::NumericProperty;
 use fuchsia_inspect::health::Reporter;
 use fuchsia_sync::Mutex;
@@ -23,7 +20,6 @@ use futures::{FutureExt, StreamExt, TryStreamExt};
 use itertools::Itertools;
 use metrics_registry::*;
 use sorted_vec_map::SortedVecMap;
-use std::path::Path;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, LazyLock};
@@ -386,28 +382,27 @@ impl InputPipeline {
         let input_event_sender = input_pipeline.device_event_sender.clone();
         let input_device_bindings = input_pipeline.input_device_bindings.clone();
         let devices_node = input_pipeline.inspect_node.create_child("input_devices");
+        let devices_node_weak = devices_node.clone_weak();
+        input_pipeline.inspect_node.record(devices_node);
         let feature_flags = input_pipeline.feature_flags.clone();
         let incoming = incoming.clone();
         let watcher_fut = async move {
-            // Watches the input device directory for new input devices. Creates new InputDeviceBindings
+            let devices_discovered = devices_node_weak.create_uint("devices_discovered", 0);
+            let devices_connected = devices_node_weak.create_uint("devices_connected", 0);
+            // Watches the input device service for new input devices. Creates new InputDeviceBindings
             // that send InputEvents to `input_event_receiver`.
             match async {
-                let (dir_proxy, server) = endpoints::create_proxy::<fio::DirectoryMarker>();
-                incoming
-                    .as_ref_directory()
-                    .open(input_device::INPUT_REPORT_PATH, fio::PERM_READABLE, server.into())
-                    .with_context(|| {
-                        format!("failed to open {}", input_device::INPUT_REPORT_PATH)
-                    })?;
-                let device_watcher =
-                    Watcher::new(&dir_proxy).await.context("failed to create watcher")?;
+                let service = incoming
+                    .open_service(fidl_fuchsia_input_report::ServiceMarker)
+                    .context("failed to open service")?;
                 Self::watch_for_devices(
-                    device_watcher,
-                    dir_proxy,
-                    &input_device_types,
+                    service,
+                    input_device_types,
                     input_event_sender,
                     input_device_bindings,
-                    &devices_node,
+                    &devices_node_weak,
+                    &devices_discovered,
+                    &devices_connected,
                     false, /* break_on_idle */
                     feature_flags,
                     metrics_logger.clone(),
@@ -430,6 +425,8 @@ impl InputPipeline {
                         ));
                 }
             }
+            devices_node_weak.record(devices_discovered);
+            devices_node_weak.record(devices_connected);
         }.boxed_local();
 
         input_pipeline.watcher_fut = Some(watcher_fut);
@@ -485,88 +482,127 @@ impl InputPipeline {
         tasks.run().await;
     }
 
-    /// Watches the input report service directory for new input devices. Creates InputDeviceBindings
+    async fn connect_and_bind_device(
+        instance: &fidl_fuchsia_input_report::ServiceProxy,
+        device_types: &[input_device::InputDeviceType],
+        input_event_sender: &UnboundedSender<Vec<input_device::InputEvent>>,
+        bindings: &InputDeviceBindingMap,
+        input_devices_node: &fuchsia_inspect::Node,
+        devices_discovered: &fuchsia_inspect::UintProperty,
+        devices_connected: &fuchsia_inspect::UintProperty,
+        feature_flags: input_device::InputPipelineFeatureFlags,
+        metrics_logger: metrics::MetricsLogger,
+    ) {
+        let filename = instance.instance_name().to_string();
+        log::info!("found input device {}", filename);
+        devices_discovered.add(1);
+
+        let res = async {
+            let device_proxy =
+                instance.connect_to_input_device().context("connect to input device")?;
+            let channel = device_proxy
+                .into_client_end()
+                .map_err(|_| format_err!("failed to get client end"))?
+                .into_channel();
+            let device_client = fidl_next::ClientEnd::<
+                fidl_next_fuchsia_input_report::InputDevice,
+                zx::Channel,
+            >::from_untyped(channel);
+            let device_client = Dispatcher::client_from_zx_channel(device_client).spawn();
+            add_device_bindings(
+                device_types,
+                &filename,
+                device_client,
+                input_event_sender,
+                bindings,
+                get_next_device_id(),
+                input_devices_node,
+                Some(devices_connected),
+                feature_flags,
+                metrics_logger,
+                false,
+            )
+            .await;
+            Ok::<(), Error>(())
+        }
+        .await;
+
+        if let Err(e) = res {
+            log::error!("Failed to connect and bind input device {}: {:?}", filename, e);
+        }
+    }
+
+    /// Watches the input report service for new input devices. Creates InputDeviceBindings
     /// if new devices match a type in `device_types`.
     ///
     /// # Parameters
-    /// - `device_watcher`: Watches the input report service directory for new devices.
-    /// - `dir_proxy`: The directory containing InputDevice connections.
+    /// - `service`: The service to watch for new devices.
     /// - `device_types`: The types of devices to watch for.
     /// - `input_event_sender`: The channel new InputDeviceBindings will send InputEvents to.
     /// - `bindings`: Holds all the InputDeviceBindings
     /// - `input_devices_node`: The parent node for all device bindings' inspect nodes.
+    /// - `devices_discovered`: Inspect property to track discovered devices.
+    /// - `devices_connected`: Inspect property to track connected devices.
     /// - `break_on_idle`: If true, stops watching for devices once all existing devices are handled.
+    /// - `feature_flags`: The feature flags.
     /// - `metrics_logger`: The metrics logger.
     ///
     /// # Errors
-    /// If the input report service directory or a file within it cannot be read.
+    /// If the input report service or a connection within it fails.
     async fn watch_for_devices(
-        mut device_watcher: Watcher,
-        dir_proxy: fio::DirectoryProxy,
-        device_types: &[input_device::InputDeviceType],
+        service: fuchsia_component::client::Service<fidl_fuchsia_input_report::ServiceMarker>,
+        device_types: Vec<input_device::InputDeviceType>,
         input_event_sender: UnboundedSender<Vec<input_device::InputEvent>>,
         bindings: InputDeviceBindingMap,
         input_devices_node: &fuchsia_inspect::Node,
+        devices_discovered: &fuchsia_inspect::UintProperty,
+        devices_connected: &fuchsia_inspect::UintProperty,
         break_on_idle: bool,
         feature_flags: input_device::InputPipelineFeatureFlags,
         metrics_logger: metrics::MetricsLogger,
     ) -> Result<(), Error> {
-        // Add non-static properties to inspect node.
-        let devices_discovered = input_devices_node.create_uint("devices_discovered", 0);
-        let devices_connected = input_devices_node.create_uint("devices_connected", 0);
-        while let Some(msg) = device_watcher.try_next().await? {
-            if let Ok(instance_name) = msg.filename.into_os_string().into_string() {
-                if instance_name == "." {
-                    continue;
-                }
-
-                match msg.event {
-                    WatchEvent::EXISTING | WatchEvent::ADD_FILE => {
-                        log::info!("found input device {}", instance_name);
-                        devices_discovered.add(1);
-                        let device_path = Path::new(&instance_name).join("input_device");
-                        let device_proxy = match input_device::get_device_from_dir_entry_path(
-                            &dir_proxy,
-                            &device_path,
-                        ) {
-                            Ok(proxy) => proxy,
-                            Err(e) => {
-                                log::error!(
-                                    "Failed to connect to input device {}: {:?}",
-                                    instance_name,
-                                    e
-                                );
-                                continue;
-                            }
-                        };
-                        add_device_bindings(
-                            device_types,
-                            &instance_name,
-                            device_proxy,
-                            &input_event_sender,
-                            &bindings,
-                            get_next_device_id(),
-                            input_devices_node,
-                            Some(&devices_connected),
-                            feature_flags.clone(),
-                            metrics_logger.clone(),
-                            false,
-                        )
-                        .await;
-                    }
-                    WatchEvent::IDLE => {
-                        if break_on_idle {
-                            break;
-                        }
-                    }
-                    _ => (),
-                }
+        if break_on_idle {
+            let instances = service.enumerate().await?;
+            for instance in instances {
+                Self::connect_and_bind_device(
+                    &instance,
+                    &device_types,
+                    &input_event_sender,
+                    &bindings,
+                    input_devices_node,
+                    devices_discovered,
+                    devices_connected,
+                    feature_flags.clone(),
+                    metrics_logger.clone(),
+                )
+                .await;
             }
+            Ok(())
+        } else {
+            let mut instances = service
+                .watch()
+                .await
+                .context("failed to watch input-report service")?
+                .err_into::<Error>()
+                .boxed();
+
+            while let Some(instance) = instances.try_next().await? {
+                Self::connect_and_bind_device(
+                    &instance,
+                    &device_types,
+                    &input_event_sender,
+                    &bindings,
+                    input_devices_node,
+                    devices_discovered,
+                    devices_connected,
+                    feature_flags.clone(),
+                    metrics_logger.clone(),
+                )
+                .await;
+            }
+
+            Err(format_err!("Input pipeline stopped watching for new input devices."))
         }
-        // Ensure inspect properties persist for debugging if device watch loop ends.
-        input_devices_node.record(devices_discovered);
-        input_devices_node.record(devices_connected);
-        Err(format_err!("Input pipeline stopped watching for new input devices."))
     }
 
     /// Handles the incoming InputDeviceRegistryRequestStream.
@@ -891,6 +927,7 @@ mod tests {
     use async_trait::async_trait;
     use diagnostics_assertions::AnyProperty;
     use fidl::endpoints::{create_proxy_and_stream, create_request_stream};
+    use fidl_fuchsia_io as fio;
     use fuchsia_async as fasync;
     use futures::FutureExt;
     use pretty_assertions::assert_eq;
@@ -1102,34 +1139,30 @@ mod tests {
         // Create a pseudo directory representing a service instance for an input device.
         let mut count: i8 = 0;
         let dir = pseudo_directory! {
-            "instance_0" => pseudo_directory! {
-                "input_device" => pseudo_fs_service::host(
-                    move |mut request_stream: fidl_fuchsia_input_report::InputDeviceRequestStream| {
-                        async move {
-                            while count < 3 {
-                                if let Some(input_device_request) =
-                                    request_stream.try_next().await.unwrap()
-                                {
-                                    handle_input_device_request(input_device_request);
-                                    count += 1;
+            "fuchsia.input.report.Service" => pseudo_directory! {
+                "instance_0" => pseudo_directory! {
+                    "input_device" => pseudo_fs_service::host(
+                        move |mut request_stream: fidl_fuchsia_input_report::InputDeviceRequestStream| {
+                            async move {
+                                while count < 3 {
+                                    if let Some(input_device_request) =
+                                        request_stream.try_next().await.unwrap()
+                                    {
+                                        handle_input_device_request(input_device_request);
+                                        count += 1;
+                                    }
                                 }
-                            }
 
-                        }.boxed()
-                    },
-                )
+                            }.boxed()
+                        },
+                    )
+                }
             }
         };
 
-        // Create a Watcher on the pseudo directory.
-        let dir_proxy_for_watcher = vfs::directory::serve_read_only(
-            dir.clone(),
-            vfs::execution_scope::ExecutionScope::new(),
-        );
-        let device_watcher = Watcher::new(&dir_proxy_for_watcher).await.unwrap();
         // Get a proxy to the pseudo directory for the input pipeline. The input pipeline uses this
         // proxy to get connections to input devices.
-        let dir_proxy_for_pipeline =
+        let svc_proxy =
             vfs::directory::serve_read_only(dir, vfs::execution_scope::ExecutionScope::new());
 
         let (input_event_sender, _input_event_receiver) = futures::channel::mpsc::unbounded();
@@ -1151,13 +1184,28 @@ mod tests {
             }
         });
 
+        let devices_discovered = input_devices.create_uint("devices_discovered", 0);
+        let devices_connected = input_devices.create_uint("devices_connected", 0);
+
+        let dir = fuchsia_fs::directory::open_directory_async(
+            &svc_proxy,
+            "fuchsia.input.report.Service",
+            fio::PERM_READABLE,
+        )
+        .expect("open service directory");
+        let service = fuchsia_component::client::Service::from_service_dir_proxy(
+            dir,
+            fidl_fuchsia_input_report::ServiceMarker,
+        );
+
         let _ = InputPipeline::watch_for_devices(
-            device_watcher,
-            dir_proxy_for_pipeline,
-            &supported_device_types,
+            service,
+            supported_device_types,
             input_event_sender,
             bindings.clone(),
             &input_devices,
+            &devices_discovered,
+            &devices_connected,
             true, /* break_on_idle */
             InputPipelineFeatureFlags { enable_merge_touch_events: false },
             metrics::MetricsLogger::default(),
@@ -1216,34 +1264,30 @@ mod tests {
         // Create a pseudo directory representing a service instance for an input device.
         let mut count: i8 = 0;
         let dir = pseudo_directory! {
-            "instance_0" => pseudo_directory! {
-                "input_device" => pseudo_fs_service::host(
-                    move |mut request_stream: fidl_fuchsia_input_report::InputDeviceRequestStream| {
-                        async move {
-                            while count < 1 {
-                                if let Some(input_device_request) =
-                                    request_stream.try_next().await.unwrap()
-                                {
-                                    handle_input_device_request(input_device_request);
-                                    count += 1;
+            "fuchsia.input.report.Service" => pseudo_directory! {
+                "instance_0" => pseudo_directory! {
+                    "input_device" => pseudo_fs_service::host(
+                        move |mut request_stream: fidl_fuchsia_input_report::InputDeviceRequestStream| {
+                            async move {
+                                while count < 1 {
+                                    if let Some(input_device_request) =
+                                        request_stream.try_next().await.unwrap()
+                                    {
+                                        handle_input_device_request(input_device_request);
+                                        count += 1;
+                                    }
                                 }
-                            }
 
-                        }.boxed()
-                    },
-                )
+                            }.boxed()
+                        },
+                    )
+                }
             }
         };
 
-        // Create a Watcher on the pseudo directory.
-        let dir_proxy_for_watcher = vfs::directory::serve_read_only(
-            dir.clone(),
-            vfs::execution_scope::ExecutionScope::new(),
-        );
-        let device_watcher = Watcher::new(&dir_proxy_for_watcher).await.unwrap();
         // Get a proxy to the pseudo directory for the input pipeline. The input pipeline uses this
         // proxy to get connections to input devices.
-        let dir_proxy_for_pipeline =
+        let svc_proxy =
             vfs::directory::serve_read_only(dir, vfs::execution_scope::ExecutionScope::new());
 
         let (input_event_sender, _input_event_receiver) = futures::channel::mpsc::unbounded();
@@ -1265,13 +1309,28 @@ mod tests {
             }
         });
 
+        let devices_discovered = input_devices.create_uint("devices_discovered", 0);
+        let devices_connected = input_devices.create_uint("devices_connected", 0);
+
+        let dir = fuchsia_fs::directory::open_directory_async(
+            &svc_proxy,
+            "fuchsia.input.report.Service",
+            fio::PERM_READABLE,
+        )
+        .expect("open service directory");
+        let service = fuchsia_component::client::Service::from_service_dir_proxy(
+            dir,
+            fidl_fuchsia_input_report::ServiceMarker,
+        );
+
         let _ = InputPipeline::watch_for_devices(
-            device_watcher,
-            dir_proxy_for_pipeline,
-            &supported_device_types,
+            service,
+            supported_device_types,
             input_event_sender,
             bindings.clone(),
             &input_devices,
+            &devices_discovered,
+            &devices_connected,
             true, /* break_on_idle */
             InputPipelineFeatureFlags { enable_merge_touch_events: false },
             metrics::MetricsLogger::default(),

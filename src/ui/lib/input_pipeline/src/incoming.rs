@@ -28,6 +28,14 @@ mod dso {
             Self(incoming)
         }
 
+        pub fn open_service<S: fidl::endpoints::ServiceMarker>(
+            &self,
+            marker: S,
+        ) -> Result<fuchsia_component::client::Service<S>, anyhow::Error> {
+            fuchsia_component::client::Service::open_from_dir_prefix(&*self.0, "svc", marker)
+                .context("Service::open_from_dir_prefix")
+        }
+
         pub fn connect_protocol<T: Connect>(&self) -> Result<T, anyhow::Error> {
             self.0.connect_protocol().context("connect_protocol")
         }
@@ -90,6 +98,13 @@ mod elf {
             Self {}
         }
 
+        pub fn open_service<S: fidl::endpoints::ServiceMarker>(
+            &self,
+            marker: S,
+        ) -> Result<fuchsia_component::client::Service<S>, anyhow::Error> {
+            fuchsia_component::client::Service::open(marker).context("Service::open")
+        }
+
         pub fn connect_protocol<T: Connect>(&self) -> Result<T, anyhow::Error> {
             connect::connect_to_protocol::<T>()
         }
@@ -120,7 +135,38 @@ mod elf {
             flags: fio::Flags,
             server_end: zx::Channel,
         ) -> Result<(), anyhow::Error> {
-            fdio::open(path, flags, server_end).context("Directory::open")
+            let path = path.trim_start_matches('/');
+            let absolute_path = if path.starts_with("svc/")
+                || path == "svc"
+                || path.starts_with("pkg/")
+                || path == "pkg"
+                || path.starts_with("dev/")
+                || path == "dev"
+                || path.starts_with("tmp/")
+                || path == "tmp"
+                || path.starts_with("hub/")
+                || path == "hub"
+                || path.starts_with("data/")
+                || path == "data"
+                || path.starts_with("cache/")
+                || path == "cache"
+                || path.starts_with("config/")
+                || path == "config"
+                || path.starts_with("incoming/")
+                || path == "incoming"
+            {
+                format!("/{}", path)
+            } else if path.is_empty() {
+                "/".to_string()
+            } else {
+                // If it does not start with any recognized root namespace entry,
+                // assume it is a service/protocol under "/svc/".
+                format!("/svc/{}", path)
+            };
+
+            let namespace =
+                fdio::Namespace::installed().context("failed to get installed namespace")?;
+            namespace.open(&absolute_path, flags, server_end).context("Namespace::open")
         }
     }
 }

@@ -3,12 +3,11 @@
 // found in the LICENSE file.
 
 use crate::{
-    Dispatcher, Incoming, Transport, consumer_controls_binding, keyboard_binding,
-    light_sensor_binding, metrics, mouse_binding, touch_binding,
+    Dispatcher, Transport, consumer_controls_binding, keyboard_binding, light_sensor_binding,
+    metrics, mouse_binding, touch_binding,
 };
-use anyhow::{Error, format_err};
+use anyhow::Error;
 use async_trait::async_trait;
-use fidl_fuchsia_io as fio;
 use fidl_next_fuchsia_input_report::InputDevice;
 use fuchsia_inspect::health::Reporter;
 use fuchsia_inspect::{
@@ -19,7 +18,6 @@ use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
 use futures::stream::StreamExt;
 use metrics_registry::*;
 use sorted_vec_map::SortedVecSet;
-use std::path::Path;
 use strum_macros::{Display, EnumCount};
 
 pub use input_device_constants::InputDeviceType;
@@ -29,9 +27,6 @@ pub struct InputPipelineFeatureFlags {
     /// Merge touch events in same InputReport frame if they are same contact and movement only.
     pub enable_merge_touch_events: bool,
 }
-
-/// The path to the input-report service directory.
-pub static INPUT_REPORT_PATH: &str = "/svc/fuchsia.input.report.Service";
 
 const LATENCY_HISTOGRAM_PROPERTIES: ExponentialHistogramParams<i64> = ExponentialHistogramParams {
     floor: 0,
@@ -555,26 +550,6 @@ pub async fn get_device_binding(
     }
 }
 
-/// Returns a proxy to the InputDevice in `entry_path` if it exists.
-///
-/// # Parameters
-/// - `dir_proxy`: The directory containing InputDevice connections.
-/// - `entry_path`: The directory entry that contains an InputDevice.
-///
-/// # Errors
-/// If there is an error connecting to the InputDevice in `entry_path`.
-pub fn get_device_from_dir_entry_path(
-    dir_proxy: &fio::DirectoryProxy,
-    entry_path: &Path,
-) -> Result<fidl_next::Client<fidl_next_fuchsia_input_report::InputDevice, Transport>, Error> {
-    let input_device_path =
-        entry_path.to_str().ok_or_else(|| format_err!("Failed to get entry path as a string."))?;
-
-    let input_device = Incoming::connect_protocol_next_at(dir_proxy, input_device_path)
-        .map_err(|e| format_err!("Failed to connect to InputDevice: {:?}", e))?;
-    Ok(input_device.spawn())
-}
-
 /// Returns the event time if it exists, otherwise returns the current time.
 ///
 /// # Parameters
@@ -610,7 +585,7 @@ impl std::convert::TryFrom<InputEvent> for UnhandledInputEvent {
     fn try_from(event: InputEvent) -> Result<UnhandledInputEvent, Self::Error> {
         match event.handled {
             Handled::Yes => {
-                Err(format_err!("Attempted to treat a handled InputEvent as unhandled"))
+                Err(anyhow::anyhow!("Attempted to treat a handled InputEvent as unhandled"))
             }
             Handled::No => Ok(UnhandledInputEvent {
                 device_event: event.device_event,
