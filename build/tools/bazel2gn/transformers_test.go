@@ -287,18 +287,16 @@ func TestLdflagsConversion(t *testing.T) {
 		wantGN string
 	}{
 		{
-			name: "overwritten ldflags",
+			name: "raw_overwrite ldflags",
 			bazel: `cc_library(
 	name = "test",
 	ldflags = [
-		"-Wl,--something", # @bazel2gn:path_overwrite:-Wl,--something_overwritten
 		"-Wl,--something", # @bazel2gn:raw_overwrite:"-Wl,--something_overwritten"
 		"-Wl,--another",
 	],
 )`,
 			wantGN: `static_library("test") {
 	ldflags = [
-		"-Wl,--something_overwritten",
 		"-Wl,--something_overwritten",
 		"-Wl,--another",
 	]
@@ -313,6 +311,31 @@ func TestLdflagsConversion(t *testing.T) {
 			}
 			if diff := cmp.Diff(gotGN, tc.wantGN); diff != "" {
 				t.Errorf("Diff found after GN conversion (-got +want):\n%s\nBazel source:\n%s", diff, tc.bazel)
+			}
+		})
+	}
+}
+
+func TestLdflagsConversionErrors(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		bazel string
+	}{
+		{
+			name: "path_overwrite ldflags",
+			bazel: `cc_library(
+	name = "test",
+	ldflags = [
+		"-Wl,--something", # @bazel2gn:path_overwrite:-Wl,--something_overwritten
+	],
+)`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := toSyntaxFile(t, tc.bazel)
+			_, err := bazelToGN(f)
+			if err == nil {
+				t.Errorf("Unexpected success converting Bazel targets. Bazel source:\n%s", tc.bazel)
 			}
 		})
 	}

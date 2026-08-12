@@ -126,7 +126,7 @@ func TestRustenvConversionErrors(t *testing.T) {
 			f := toSyntaxFile(t, tc.bazel)
 			_, err := bazelToGN(f)
 			if err == nil {
-				t.Fatal("Expecting failure converting Bazel targets, got nil")
+				t.Errorf("Unexpected success converting Bazel targets. Bazel source:\n%s", tc.bazel)
 			}
 		})
 	}

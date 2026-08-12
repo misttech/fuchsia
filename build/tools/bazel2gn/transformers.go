@@ -194,8 +194,10 @@ func bazelLdflagsToGN(expr syntax.Expr) (syntax.Expr, error) {
 		lit.Raw = flag
 		return lit, nil
 	}
-	if flag, ok := overwrittenPath(lit); ok {
-		lit.Raw = fmt.Sprintf(`"%s"`, flag)
+	if _, ok := overwrittenPath(lit); ok {
+		// TODO(https://fxbug.dev/543568916): Replace with a general solution for unhandled annotations.
+		return nil, fmt.Errorf("use %q instead of %q to overwrite `ldflags`",
+			rawOverwriteAnnotationPrefix, pathOverwriteAnnotationPrefix)
 	}
 	return lit, nil
 }

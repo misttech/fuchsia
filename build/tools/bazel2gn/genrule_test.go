@@ -128,7 +128,7 @@ func TestGenRuleConversionError(t *testing.T) {
 			f := toSyntaxFile(t, tc.bazel)
 			_, err := bazelToGN(f)
 			if err == nil {
-				t.Fatalf("Expected error but got none")
+				t.Errorf("Unexpected success converting Bazel targets. Bazel source:\n%s", tc.bazel)
 			}
 		})
 	}
