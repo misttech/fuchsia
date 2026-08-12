@@ -68,19 +68,22 @@ fn matches_key(
 pub struct FilenameTransitions {
     transitions: Array<FilenameTransition>,
     index: HashTable<U24Index>,
+    target_types: IdSet<TypeId>,
     hasher: RapidBuildHasher,
 }
 
 impl FilenameTransitions {
-    fn build_index(
-        transitions: &[FilenameTransition],
-        hasher: &RapidBuildHasher,
-    ) -> Result<HashTable<U24Index>, ParseError> {
+    /// Constructs a [`FilenameTransitions`] table and builds its lookup index and target type bitmap over `transitions`.
+    pub fn new(transitions: Array<FilenameTransition>) -> Result<Self, ParseError> {
+        let hasher = RapidBuildHasher::default();
         let mut index = HashTable::with_capacity(transitions.len());
+        let mut target_types = Vec::with_capacity(transitions.len());
+
         for (i, transition) in transitions.iter().enumerate() {
+            target_types.push(transition.transition_type);
             let u24_idx: U24Index = i.try_into()?;
             let hash = hash_key(
-                hasher,
+                &hasher,
                 transition.transition_type,
                 transition.transition_class,
                 &transition.filename,
@@ -97,7 +100,7 @@ impl FilenameTransitions {
                 },
                 |&idx| {
                     let t = &transitions[usize::from(idx)];
-                    hash_key(hasher, t.transition_type, t.transition_class, &t.filename)
+                    hash_key(&hasher, t.transition_type, t.transition_class, &t.filename)
                 },
             ) {
                 hashbrown::hash_table::Entry::Occupied(_) => {
@@ -112,14 +115,18 @@ impl FilenameTransitions {
                 }
             }
         }
-        Ok(index)
+
+        Ok(Self {
+            transitions,
+            index,
+            target_types: IdSet::from_ids(target_types),
+            hasher,
+        })
     }
 
-    /// Constructs a [`FilenameTransitions`] table and builds its lookup index over `transitions`.
-    pub fn new(transitions: Array<FilenameTransition>) -> Result<Self, ParseError> {
-        let hasher = RapidBuildHasher::default();
-        let index = Self::build_index(&transitions, &hasher)?;
-        Ok(Self { transitions, index, hasher })
+    /// Returns `true` if any filename transitions are defined for `target_type`.
+    pub fn has_filename_transitions_for_target_type(&self, target_type: TypeId) -> bool {
+        self.target_types.contains(target_type)
     }
 
     /// Looks up the resulting output type for a file created by `source_type` in `target_type`
@@ -131,6 +138,9 @@ impl FilenameTransitions {
         class: ClassId,
         name: &[u8],
     ) -> Option<TypeId> {
+        if !self.target_types.contains(target_type) {
+            return None;
+        }
         let hash = hash_key(&self.hasher, target_type, class, name);
         let idx = self.index.find(hash, |&i| {
             matches_key(&self.transitions[usize::from(i)], target_type, class, name)
