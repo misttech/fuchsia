@@ -97,21 +97,29 @@ pub(crate) async fn set_discovery(
     proxies: &mut Proxies,
     discovery: bool,
 ) -> Result<(), anyhow::Error> {
-    let mut discovery_session = proxies.discovery_session.lock();
     if !discovery {
-        if discovery_session.take().is_none() {
+        if proxies.discovery_session.lock().take().is_none() {
             eprintln!("Asked to revoke nonexistent discovery session.");
         }
         return Ok(());
     }
-    if discovery_session.is_some() {
+
+    if proxies.discovery_session.lock().is_some() {
         return Ok(());
     }
+
     let (token, discovery_session_server) = fidl::endpoints::create_proxy();
     if let Err(err) = proxies.access_proxy.start_discovery(discovery_session_server).await? {
         return Err(anyhow!("fuchsia.bluetooth.sys.Access/StartDiscovery error: {err:?}"));
     }
-    *discovery_session = Some(token);
+
+    {
+        let mut session = proxies.discovery_session.lock();
+        if session.is_none() {
+            *session = Some(token);
+        }
+    }
+
     // Allow discovery session to activate.
     Timer::new(std::time::Duration::from_secs(1)).await;
     Ok(())
@@ -121,14 +129,14 @@ pub(crate) async fn set_discoverability(
     proxies: &mut Proxies,
     discoverable: bool,
 ) -> Result<(), anyhow::Error> {
-    let mut discoverability_session = proxies.discoverability_session.lock();
     if !discoverable {
-        if discoverability_session.take().is_none() {
+        if proxies.discoverability_session.lock().take().is_none() {
             eprintln!("Asked to revoke nonexistent discoverability session.");
         }
         return Ok(());
     }
-    if discoverability_session.is_some() {
+
+    if proxies.discoverability_session.lock().is_some() {
         return Ok(());
     }
     let (token, discoverability_session_server) = fidl::endpoints::create_proxy();
@@ -136,7 +144,14 @@ pub(crate) async fn set_discoverability(
     {
         return Err(anyhow!("fuchsia.bluetooth.sys.Access/MakeDiscoverable error: {err:?}"));
     }
-    *discoverability_session = Some(token);
+
+    {
+        let mut session = proxies.discoverability_session.lock();
+        if session.is_none() {
+            *session = Some(token);
+        }
+    }
+
     Ok(())
 }
 
