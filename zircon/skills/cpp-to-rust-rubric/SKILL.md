@@ -365,11 +365,13 @@ Reviewers and Coders must audit code against this checklist:
      initialization routines receiving uninitialized storage from Rust do not
      take raw `T*`; they take `ffi::Uninitialized<T>*` and initialize in-place
      via `Initialize(...)`.
-22.  []  **Documentation parity**: Code, datastructure and other comments in the
+22.  [ ] **Documentation parity**: Code, datastructure and other comments in the
      C++ are copied over to Rust with the minimal required updates for changes
      to symbols names.
-23.  [] **Assertions**: Assertions are copied over and correctly use assert! or
+23.  [ ] **Assertions**: Assertions are copied over and correctly use assert! or
      debug_assert! as matching the C++ use of ASSERT or DEBUG_ASSERT.
+24.  [ ] **Canary assertions**: Canary assertions are copied over to Rust and
+     are correctly used.
 
 ---
 
