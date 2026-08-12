@@ -6,7 +6,12 @@
 //
 // Ported from zircon/kernel/dev/power/iris/power.cc
 
-use crate::pdev_power::{PdevPowerOps, PowerCpuState, PowerRebootFlags, rust_pdev_register_power};
+use crate::pdev_power::{
+    CONTROL_INTERFACE_ARM_WFI, CONTROL_INTERFACE_CPU_DRIVER,
+    K_POWER_LEVEL_OPTIONS_DOMAIN_INDEPENDENT, PdevPowerOps, PowerCpuState, PowerDomainConfigFfi,
+    PowerRebootFlags, ProcessorPowerLevelFfi, power_management_register_domains,
+    rust_pdev_register_power,
+};
 use core::sync::atomic::{AtomicPtr, Ordering};
 use debug::dprintf;
 use regio::{MmioBank, MmioPtr, Offset, RwSafe};
@@ -198,6 +203,109 @@ pub extern "C" fn iris_power_init_early() {
     unsafe {
         rust_pdev_register_power(&IRIS_POWER_OPS);
     }
+}
+
+/// Initializes Iris power domains and energy models for the kernel scheduler.
+#[unsafe(no_mangle)]
+pub extern "C" fn iris_power_init() {
+    if !cfg!(iris_register_energy_model) {
+        dprintf!(INFO, "POWER: Iris energy model registration disabled\n");
+        return;
+    }
+
+    dprintf!(INFO, "POWER: initializing iris power domains\n");
+
+    let wfi_name = c"WFI".as_ptr();
+    let opp_name = c"OPP".as_ptr();
+
+    const FREQUENCY_LITTLE: &[u32] = &[
+        2246400, 2169600, 2092800, 2054400, 2016000, 1996800, 1881600, 1766400, 1632000, 1555200,
+        1459200, 1363200, 1286400, 1190400, 1036800, 883200, 729600, 533000, 460800, 422400,
+        345600, 268800,
+    ];
+    const FREQUENCY_MEDIUM: &[u32] = &[
+        3052800, 2937600, 2841600, 2688000, 2534400, 2400000, 2284800, 2188800, 2092800, 1939200,
+        1862400, 1785600, 1670400, 1536000, 1401600, 1267200, 1075200, 921600, 729600, 652800,
+        533000, 400000, 266500, 177600,
+    ];
+    const FREQUENCY_BIG: &[u32] = &[
+        3782400, 3590400, 3398400, 3168000, 2937600, 2707200, 2592000, 2457600, 2342400, 2208000,
+        2073600, 1920000, 1766400, 1593600, 1420800, 1305600, 1152000, 1036800, 883200, 800000,
+        533000, 400000, 266500,
+    ];
+
+    struct DomainConfig {
+        domain_id: u32,
+        cpu_mask: u64,
+        max_rate: u64,
+        frequencies: &'static [u32],
+    }
+
+    const DOMAINS: [DomainConfig; 4] = [
+        // Domain 0: Little (CPUs 0-1)
+        DomainConfig { domain_id: 0, cpu_mask: 0x03, max_rate: 150, frequencies: FREQUENCY_LITTLE },
+        // Domain 1: Medium 1 (CPUs 2-4)
+        DomainConfig { domain_id: 1, cpu_mask: 0x1c, max_rate: 703, frequencies: FREQUENCY_MEDIUM },
+        // Domain 2: Medium 2 (CPUs 5-6)
+        DomainConfig { domain_id: 2, cpu_mask: 0x60, max_rate: 703, frequencies: FREQUENCY_MEDIUM },
+        // Domain 3: Big (CPU 7)
+        DomainConfig { domain_id: 3, cpu_mask: 0x80, max_rate: 1000, frequencies: FREQUENCY_BIG },
+    ];
+
+    let mut levels = [ProcessorPowerLevelFfi {
+        options: 0,
+        processing_rate: 0,
+        power_coefficient_nw: 0,
+        control_interface: 0,
+        control_argument: 0,
+        diagnostic_name: core::ptr::null(),
+    }; 25];
+
+    // Register each power domain iteratively to minimize kernel stack footprint (~1.2 KB instead of
+    // ~4.65 KB).
+    for config in DOMAINS.iter() {
+        levels[0] = ProcessorPowerLevelFfi {
+            options: K_POWER_LEVEL_OPTIONS_DOMAIN_INDEPENDENT,
+            processing_rate: 0,
+            power_coefficient_nw: 100_000,
+            control_interface: CONTROL_INTERFACE_ARM_WFI,
+            control_argument: 0,
+            diagnostic_name: wfi_name,
+        };
+
+        let max_freq = config.frequencies[0] as u64;
+        for (opp, &freq) in config.frequencies.iter().enumerate() {
+            let rate = ((freq as u64 * config.max_rate) + max_freq - 1) / max_freq;
+            levels[opp + 1] = ProcessorPowerLevelFfi {
+                options: 0,
+                processing_rate: rate,
+                power_coefficient_nw: (rate * 200_000) + 10_000_000,
+                control_interface: CONTROL_INTERFACE_CPU_DRIVER,
+                control_argument: opp as u64,
+                diagnostic_name: opp_name,
+            };
+        }
+
+        let domain_config = PowerDomainConfigFfi {
+            domain_id: config.domain_id,
+            cpu_mask: config.cpu_mask,
+            levels: levels.as_ptr(),
+            level_count: config.frequencies.len() + 1,
+        };
+
+        let status = power_management_register_domains(&[domain_config]);
+        if status != Status::OK {
+            dprintf!(
+                CRITICAL,
+                "POWER: Failed to register iris power domain {}: {}\n",
+                config.domain_id,
+                status.into_raw()
+            );
+            return;
+        }
+    }
+
+    dprintf!(INFO, "POWER: Registered iris power domains\n");
 }
 
 /// In-kernel unit tests for the Iris power driver.
