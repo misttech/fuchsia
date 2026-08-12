@@ -36,6 +36,7 @@ test("sysconfig-sync-client-test") {
 
 fuchsia_unittest_package("sysconfig-sync-client-test-package") {
   package_name = "sysconfig-sync-client-test"
+  manifest = "meta/sysconfig-sync-client-test.cml"
   deps = [
     ":sysconfig-sync-client-test",
     "//src/devices/board/drivers/integration-test",

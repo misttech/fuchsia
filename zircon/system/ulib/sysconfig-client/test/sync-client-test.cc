@@ -200,9 +200,24 @@ void ValidateBuffer(void* buffer, size_t size, uint8_t expected = 0x5c) {
   }
 }
 
+// It takes too long to create the SkipBlockDevice for each individual test; on slower builds
+// e.g. emulated asan it can cause these tests to timeout. Instead we have a single global that
+// we initialize once, and just reset the contents to default 0xFF for each test.
+thread_local std::optional<SkipBlockDevice> g_device;
+
 class SyncClientTest : public zxtest::Test {
  protected:
-  SyncClientTest() { ASSERT_NO_FATAL_FAILURE(SkipBlockDevice::Create(NandInfo(), &device_)); }
+  SyncClientTest() {
+    // Initialize the backing global if it hasn't been yet.
+    if (!g_device.has_value()) {
+      ASSERT_NO_FATAL_FAILURE(SkipBlockDevice::Create(NandInfo(), &g_device));
+    }
+    device_ = &*g_device;
+
+    // Reset state.
+    memset(device_->mapper().start(), 0xff, device_->mapper().size());
+    CreateBadBlockMap(device_->mapper().start());
+  }
 
   void ValidateWritten(size_t offset, size_t size, uint8_t expected = 0x4a) {
     for (size_t block = 4; block < 5; block++) {
@@ -235,7 +250,7 @@ class SyncClientTest : public zxtest::Test {
   void TestLayoutUpdate(std::optional<sysconfig_header> current_header,
                         const sysconfig_header& target_header);
 
-  std::optional<SkipBlockDevice> device_;
+  SkipBlockDevice* device_;
 };
 
 TEST_F(SyncClientTest, CreateAstro) {
