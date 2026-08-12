@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include <lib/fit/defer.h>
+#include <lib/zx/event.h>
 #include <lib/zx/fifo.h>
 #include <lib/zx/vmar.h>
 #include <lib/zx/vmo.h>
@@ -526,6 +527,239 @@ TEST(FifoTest, ReadWriteKernelAddressBufferReturnsInvalidArgs) {
   ASSERT_OK(fifo_a.write(kElementSize, &element, 1, &actual_count));
 
   EXPECT_STATUS(fifo_b.read(kElementSize, kernel_buffer, 1, &actual_count), ZX_ERR_INVALID_ARGS);
+}
+
+TEST(FifoTest, CreateArithmeticOverflow) {
+  zx_handle_t out0 = ZX_HANDLE_INVALID;
+  zx_handle_t out1 = ZX_HANDLE_INVALID;
+  EXPECT_STATUS(zx_fifo_create(SIZE_MAX, 2, 0, &out0, &out1), ZX_ERR_OUT_OF_RANGE);
+  EXPECT_STATUS(zx_fifo_create(2, SIZE_MAX, 0, &out0, &out1), ZX_ERR_OUT_OF_RANGE);
+  EXPECT_STATUS(zx_fifo_create(SIZE_MAX / 2, 4, 0, &out0, &out1), ZX_ERR_OUT_OF_RANGE);
+
+  zx::fifo fifo_a, fifo_b;
+  EXPECT_STATUS(zx::fifo::create(UINT32_MAX, 2, 0, &fifo_a, &fifo_b), ZX_ERR_OUT_OF_RANGE);
+  EXPECT_STATUS(zx::fifo::create(2, UINT32_MAX, 0, &fifo_a, &fifo_b), ZX_ERR_OUT_OF_RANGE);
+  EXPECT_STATUS(zx::fifo::create(1 << 20, 1 << 20, 0, &fifo_a, &fifo_b), ZX_ERR_OUT_OF_RANGE);
+}
+
+TEST(FifoTest, CreateMinAndMaxSizes) {
+  zx::fifo fifo_a, fifo_b;
+  // Minimum valid sizes
+  EXPECT_OK(zx::fifo::create(1, 1, 0, &fifo_a, &fifo_b));
+
+  // Maximum buffer boundary: count * elem_size == 4096
+  EXPECT_OK(zx::fifo::create(4096, 1, 0, &fifo_a, &fifo_b));
+  EXPECT_OK(zx::fifo::create(1, 4096, 0, &fifo_a, &fifo_b));
+
+  // Exceeding maximum buffer size (4097 bytes)
+  EXPECT_STATUS(zx::fifo::create(4097, 1, 0, &fifo_a, &fifo_b), ZX_ERR_OUT_OF_RANGE);
+  EXPECT_STATUS(zx::fifo::create(1, 4097, 0, &fifo_a, &fifo_b), ZX_ERR_OUT_OF_RANGE);
+}
+
+TEST(FifoTest, DefaultRightsAndType) {
+  zx::fifo fifo_a, fifo_b;
+  ASSERT_OK(zx::fifo::create(8, kElementSize, 0, &fifo_a, &fifo_b));
+
+  zx_info_handle_basic_t info_a = {};
+  ASSERT_OK(fifo_a.get_info(ZX_INFO_HANDLE_BASIC, &info_a, sizeof(info_a), nullptr, nullptr));
+  EXPECT_EQ(info_a.type, ZX_OBJ_TYPE_FIFO);
+  EXPECT_EQ(info_a.rights, ZX_DEFAULT_FIFO_RIGHTS);
+
+  zx_info_handle_basic_t info_b = {};
+  ASSERT_OK(fifo_b.get_info(ZX_INFO_HANDLE_BASIC, &info_b, sizeof(info_b), nullptr, nullptr));
+  EXPECT_EQ(info_b.type, ZX_OBJ_TYPE_FIFO);
+  EXPECT_EQ(info_b.rights, ZX_DEFAULT_FIFO_RIGHTS);
+}
+
+TEST(FifoTest, UserSignalsAndSignalPeer) {
+  zx::fifo fifo_a, fifo_b;
+  ASSERT_OK(zx::fifo::create(8, kElementSize, 0, &fifo_a, &fifo_b));
+
+  // Signal self with user signal
+  ASSERT_OK(fifo_a.signal(0, ZX_USER_SIGNAL_0));
+  EXPECT_SIGNALS(fifo_a, ZX_FIFO_WRITABLE | ZX_USER_SIGNAL_0);
+  EXPECT_SIGNALS(fifo_b, ZX_FIFO_WRITABLE);
+
+  // Signal peer with user signal
+  ASSERT_OK(fifo_a.signal_peer(0, ZX_USER_SIGNAL_1));
+  EXPECT_SIGNALS(fifo_a, ZX_FIFO_WRITABLE | ZX_USER_SIGNAL_0);
+  EXPECT_SIGNALS(fifo_b, ZX_FIFO_WRITABLE | ZX_USER_SIGNAL_1);
+
+  // Clear user signals
+  ASSERT_OK(fifo_a.signal(ZX_USER_SIGNAL_0, 0));
+  EXPECT_SIGNALS(fifo_a, ZX_FIFO_WRITABLE);
+  ASSERT_OK(fifo_a.signal_peer(ZX_USER_SIGNAL_1, 0));
+  EXPECT_SIGNALS(fifo_b, ZX_FIFO_WRITABLE);
+
+  // Non-user signals cannot be modified via signal / signal_peer
+  EXPECT_STATUS(fifo_a.signal(0, ZX_FIFO_READABLE), ZX_ERR_INVALID_ARGS);
+  EXPECT_STATUS(fifo_a.signal_peer(0, ZX_FIFO_READABLE), ZX_ERR_INVALID_ARGS);
+
+  // Close fifo_a and verify signal on surviving endpoint fifo_b still works
+  fifo_a.reset();
+  EXPECT_SIGNALS(fifo_b, ZX_FIFO_PEER_CLOSED);
+  ASSERT_OK(fifo_b.signal(0, ZX_USER_SIGNAL_2));
+  EXPECT_SIGNALS(fifo_b, ZX_FIFO_PEER_CLOSED | ZX_USER_SIGNAL_2);
+}
+
+TEST(FifoTest, WriteToClosedPeerReturnsPeerClosed) {
+  zx::fifo fifo_a, fifo_b;
+  ASSERT_OK(zx::fifo::create(8, kElementSize, 0, &fifo_a, &fifo_b));
+
+  fifo_b.reset();
+  EXPECT_SIGNALS(fifo_a, ZX_FIFO_PEER_CLOSED);
+
+  ElementType element = 42;
+  size_t actual_count = 0;
+  EXPECT_STATUS(fifo_a.write(kElementSize, &element, 1, &actual_count), ZX_ERR_PEER_CLOSED);
+}
+
+TEST(FifoTest, SingleElementCapacity) {
+  zx::fifo fifo_a, fifo_b;
+  ASSERT_OK(zx::fifo::create(1, kElementSize, 0, &fifo_a, &fifo_b));
+
+  EXPECT_SIGNALS(fifo_a, ZX_FIFO_WRITABLE);
+  EXPECT_SIGNALS(fifo_b, ZX_FIFO_WRITABLE);
+
+  ElementType element = 100;
+  size_t actual_count = 0;
+
+  // Write 1 element -> FIFO becomes full, fifo_a loses WRITABLE, fifo_b becomes READABLE | WRITABLE
+  ASSERT_OK(fifo_a.write(kElementSize, &element, 1, &actual_count));
+  EXPECT_EQ(actual_count, 1u);
+  EXPECT_SIGNALS(fifo_a, 0u);
+  EXPECT_SIGNALS(fifo_b, ZX_FIFO_READABLE | ZX_FIFO_WRITABLE);
+
+  // Further write should fail with SHOULD_WAIT
+  EXPECT_STATUS(fifo_a.write(kElementSize, &element, 1, &actual_count), ZX_ERR_SHOULD_WAIT);
+
+  // Read 1 element -> FIFO becomes empty, fifo_b loses READABLE, fifo_a becomes WRITABLE
+  ElementType read_element = 0;
+  ASSERT_OK(fifo_b.read(kElementSize, &read_element, 1, &actual_count));
+  EXPECT_EQ(actual_count, 1u);
+  EXPECT_EQ(read_element, 100u);
+  EXPECT_SIGNALS(fifo_a, ZX_FIFO_WRITABLE);
+  EXPECT_SIGNALS(fifo_b, ZX_FIFO_WRITABLE);
+
+  // Further read should fail with SHOULD_WAIT
+  EXPECT_STATUS(fifo_b.read(kElementSize, &read_element, 1, &actual_count), ZX_ERR_SHOULD_WAIT);
+}
+
+TEST(FifoTest, WriteRollbackOnWrapAroundFault) {
+  const size_t kVmoSize = zx_system_get_page_size();
+  zx::vmo vmo;
+  ASSERT_OK(zx::vmo::create(kVmoSize, 0, &vmo));
+
+  VmoMapWithPadding map;
+  zx_vaddr_t addr;
+  ASSERT_OK(map.Map(vmo, kVmoSize, &addr));
+
+  // Buffer placed such that 1 element is within mapped memory, and the next is in unmapped padding.
+  void* buffer = reinterpret_cast<void*>(addr + kVmoSize - sizeof(ElementType));
+  *reinterpret_cast<ElementType*>(buffer) = 0xAA;
+
+  zx::fifo fifo_a, fifo_b;
+  ASSERT_OK(zx::fifo::create(4, kElementSize, 0, &fifo_a, &fifo_b));
+
+  // Advance head and tail to offset 3 by writing and reading 3 elements.
+  ElementType elements[3] = {1, 2, 3};
+  size_t actual_count = 0;
+  ASSERT_OK(fifo_a.write(kElementSize, elements, 3, &actual_count));
+  ASSERT_EQ(actual_count, 3u);
+  ASSERT_OK(fifo_b.read(kElementSize, elements, 3, &actual_count));
+  ASSERT_EQ(actual_count, 3u);
+
+  // FIFO is empty, head=3, tail=3.
+  // Writing 2 elements will write 1 element at index 3 (success) and wrap around to index 0,
+  // where copying the 2nd element from buffer will fault.
+  EXPECT_STATUS(fifo_a.write(kElementSize, buffer, 2, &actual_count), ZX_ERR_INVALID_ARGS);
+
+  // Verify rollback: FIFO must still be empty, not readable.
+  EXPECT_SIGNALS(fifo_b, ZX_FIFO_WRITABLE);
+  ElementType read_elements[4] = {};
+  EXPECT_STATUS(fifo_b.read(kElementSize, read_elements, 4, &actual_count), ZX_ERR_SHOULD_WAIT);
+
+  // Verify that subsequent valid writes and reads work properly across the wrap.
+  ElementType valid_elements[2] = {10, 20};
+  ASSERT_OK(fifo_a.write(kElementSize, valid_elements, 2, &actual_count));
+  ASSERT_EQ(actual_count, 2u);
+
+  ASSERT_OK(fifo_b.read(kElementSize, read_elements, 2, &actual_count));
+  ASSERT_EQ(actual_count, 2u);
+  EXPECT_EQ(read_elements[0], 10u);
+  EXPECT_EQ(read_elements[1], 20u);
+}
+
+TEST(FifoTest, ReadRollbackOnWrapAroundFault) {
+  const size_t kVmoSize = zx_system_get_page_size();
+  zx::vmo vmo;
+  ASSERT_OK(zx::vmo::create(kVmoSize, 0, &vmo));
+
+  VmoMapWithPadding map;
+  zx_vaddr_t addr;
+  ASSERT_OK(map.Map(vmo, kVmoSize, &addr));
+
+  // Buffer placed such that 1 element is within mapped memory, and the next is in unmapped padding.
+  void* buffer = reinterpret_cast<void*>(addr + kVmoSize - sizeof(ElementType));
+
+  zx::fifo fifo_a, fifo_b;
+  ASSERT_OK(zx::fifo::create(4, kElementSize, 0, &fifo_a, &fifo_b));
+
+  // Advance head and tail to offset 3.
+  ElementType elements[3] = {1, 2, 3};
+  size_t actual_count = 0;
+  ASSERT_OK(fifo_a.write(kElementSize, elements, 3, &actual_count));
+  ASSERT_EQ(actual_count, 3u);
+  ASSERT_OK(fifo_b.read(kElementSize, elements, 3, &actual_count));
+  ASSERT_EQ(actual_count, 3u);
+
+  // Write 2 elements spanning the wrap (element at index 3, and element at index 0).
+  ElementType write_elements[2] = {0x11, 0x22};
+  ASSERT_OK(fifo_a.write(kElementSize, write_elements, 2, &actual_count));
+  ASSERT_EQ(actual_count, 2u);
+
+  // Reading 2 elements across the wrap into partial bad buffer will copy 1st element (index 3)
+  // and fault copying 2nd element (index 0).
+  EXPECT_STATUS(fifo_b.read(kElementSize, buffer, 2, &actual_count), ZX_ERR_INVALID_ARGS);
+
+  // Verify rollback: FIFO must still contain both elements.
+  ElementType read_elements[2] = {};
+  ASSERT_OK(fifo_b.read(kElementSize, read_elements, 2, &actual_count));
+  ASSERT_EQ(actual_count, 2u);
+  EXPECT_EQ(read_elements[0], 0x11u);
+  EXPECT_EQ(read_elements[1], 0x22u);
+}
+
+TEST(FifoTest, InvalidHandleAndWrongType) {
+  ElementType element = 1;
+  size_t actual_count = 0;
+
+  // Invalid handle
+  EXPECT_STATUS(zx_fifo_write(ZX_HANDLE_INVALID, kElementSize, &element, 1, &actual_count),
+                ZX_ERR_BAD_HANDLE);
+  EXPECT_STATUS(zx_fifo_read(ZX_HANDLE_INVALID, kElementSize, &element, 1, &actual_count),
+                ZX_ERR_BAD_HANDLE);
+
+  // Wrong object type (event instead of fifo)
+  zx::event event;
+  ASSERT_OK(zx::event::create(0, &event));
+  EXPECT_STATUS(zx_fifo_write(event.get(), kElementSize, &element, 1, &actual_count),
+                ZX_ERR_WRONG_TYPE);
+  EXPECT_STATUS(zx_fifo_read(event.get(), kElementSize, &element, 1, &actual_count),
+                ZX_ERR_WRONG_TYPE);
+}
+
+TEST(FifoTest, ReadWriteBadActualCount) {
+  zx::fifo fifo_a, fifo_b;
+  ASSERT_OK(zx::fifo::create(8, kElementSize, 0, &fifo_a, &fifo_b));
+
+  ElementType element = 1234;
+  auto bad_actual_ptr = reinterpret_cast<size_t*>(1);
+
+  EXPECT_STATUS(zx_fifo_write(fifo_a.get(), kElementSize, &element, 1, bad_actual_ptr),
+                ZX_ERR_INVALID_ARGS);
+  EXPECT_STATUS(zx_fifo_read(fifo_b.get(), kElementSize, &element, 1, bad_actual_ptr),
+                ZX_ERR_INVALID_ARGS);
 }
 
 }  // namespace
