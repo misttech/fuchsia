@@ -2078,7 +2078,7 @@ dependencies = [
  "x509-cert 0.2.5",
  "x509-cert 0.3.0",
  "xattr",
- "xml-rs",
+ "xml",
  "zerocopy",
  "zeroize",
  "zip",
@@ -6197,10 +6197,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "xml-rs"
-version = "0.8.26"
+name = "xml"
+version = "1.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a62ce76d9b56901b19a74f19431b0d8b3bc7ca4ad685a746dfd78ca8f4fc6bda"
+checksum = "2f45bb2c13fec6a6cb4c0f76a7e94839e110a14ec803ec2940777a94c347bc52"
 
 [[package]]
 name = "yansi"

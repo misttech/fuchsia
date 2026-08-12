@@ -402,7 +402,10 @@ impl Parser for FolderListing {
         };
 
         // Process start of folder listing element.
-        let xml_event = reader.next()?;
+        let mut xml_event = reader.next()?;
+        while matches!(xml_event, XmlEvent::Doctype { .. } | XmlEvent::Comment(_)) {
+            xml_event = reader.next()?;
+        }
         let _ = Self::validate_folder_listing_element(xml_event)?;
 
         prev.push(ParsedXmlEvent::FolderListingElement);
@@ -479,6 +482,7 @@ impl Parser for FolderListing {
                     }
                     finished_document = true;
                 }
+                XmlEvent::Doctype { .. } | XmlEvent::Comment(_) => {}
                 _ => return invalid_elem_err,
             }
         }

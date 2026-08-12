@@ -17,7 +17,7 @@ if (is_host) {
     "//third_party/rust_crates:simplelog",
     "//third_party/rust_crates:toml",
     "//third_party/rust_crates:walkdir",
-    "//third_party/rust_crates:xml-rs",
+    "//third_party/rust_crates:xml",
     "//tools/cargo-gnaw:cargo-gnaw-lib",
     "//tools/gn_desc/gn_graph",
     "//tools/gn_desc/gn_json",

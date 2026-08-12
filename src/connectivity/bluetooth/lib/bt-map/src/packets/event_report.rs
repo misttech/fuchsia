@@ -8,13 +8,13 @@ use objects::{Builder, ObexObjectError as Error, Parser};
 use std::collections::HashSet;
 use std::fmt;
 use std::str::FromStr;
+use xml::EventWriter;
 use xml::attribute::OwnedAttribute;
 use xml::reader::{ParserConfig, XmlEvent};
 use xml::writer::{EmitterConfig, XmlEvent as XmlWriteEvent};
-use xml::EventWriter;
 
-use crate::packets::{bool_to_string, str_to_bool, truncate_string, ISO_8601_TIME_FORMAT};
 use crate::MessageType;
+use crate::packets::{ISO_8601_TIME_FORMAT, bool_to_string, str_to_bool, truncate_string};
 
 // From MAP v1.4.2 section 3.1.7 Event-Report Object:
 //
@@ -440,11 +440,17 @@ impl Parser for EventReport {
         };
 
         // Process start of `MAP-event-report` element.
-        let xml_event = reader.next()?;
+        let mut xml_event = reader.next()?;
+        while matches!(xml_event, XmlEvent::Doctype { .. } | XmlEvent::Comment(_)) {
+            xml_event = reader.next()?;
+        }
         let version = EventReport::check_map_event_report_element(xml_event)?;
 
         // Process start of `event` element.
-        let xml_event: XmlEvent = reader.next()?;
+        let mut xml_event: XmlEvent = reader.next()?;
+        while matches!(xml_event, XmlEvent::Doctype { .. } | XmlEvent::Comment(_)) {
+            xml_event = reader.next()?;
+        }
         let invalid_elem_err = Err(Error::InvalidData(format!("{:?}", xml_event)));
         let event_report: EventReport = match xml_event {
             XmlEvent::StartElement { ref name, .. } => match name.local_name.as_str() {

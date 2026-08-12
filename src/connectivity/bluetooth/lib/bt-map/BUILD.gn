@@ -20,7 +20,7 @@ rustc_library("bt-map") {
     "//third_party/rust_crates:hex",
     "//third_party/rust_crates:log",
     "//third_party/rust_crates:thiserror",
-    "//third_party/rust_crates:xml-rs",
+    "//third_party/rust_crates:xml",
   ]
 
   test_deps = [ "//src/lib/fuchsia" ]

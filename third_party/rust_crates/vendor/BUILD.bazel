@@ -3511,14 +3511,14 @@ alias(
 )
 
 alias(
-    name = "xml-rs-0.8.26",
-    actual = "//third_party/rust_crates/vendor/xml-rs-0.8.26:xml",
+    name = "xml-1.4.0",
+    actual = "//third_party/rust_crates/vendor/xml-1.4.0:xml",
     tags = ["manual"],
 )
 
 alias(
-    name = "xml-rs",
-    actual = "//third_party/rust_crates/vendor/xml-rs-0.8.26:xml",
+    name = "xml",
+    actual = "//third_party/rust_crates/vendor/xml-1.4.0:xml",
     tags = ["manual"],
 )
 

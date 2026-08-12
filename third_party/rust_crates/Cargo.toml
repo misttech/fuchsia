@@ -274,7 +274,7 @@ vte = "0.15"
 walkdir = "2.5.0"
 which = "8.0.4"
 winnow = "0.7.13"
-xml-rs = "0.8"
+xml = "1.4.0"
 zerocopy = { version = "0.8.48", features = ["derive", "simd"] }
 zstd = "0.13.3"
 zstd-safe = "7.2.4"

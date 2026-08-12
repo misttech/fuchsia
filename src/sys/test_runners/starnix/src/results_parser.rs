@@ -21,7 +21,9 @@ pub fn parse_results(test_type: TestType, contents: &str) -> Result<TestOutput, 
             let mut iter = EventReader::new(contents.as_bytes())
                 .into_iter()
                 .filter(|p| match p {
-                    Ok(XmlEvent::Whitespace(..)) => false,
+                    Ok(
+                        XmlEvent::Whitespace(..) | XmlEvent::Doctype { .. } | XmlEvent::Comment(..),
+                    ) => false,
                     _ => true,
                 })
                 .map_while(|r| match r {
@@ -342,12 +344,8 @@ mod tests {
             timestamp="2011-10-31T18:52:42Z">
   <testsuite name="MathTest" tests="2" failures="1" disabled="0" errors="0" time="0.015s">
     <testcase name="Addition" status="run" time="0.007s" classname="addition">
-      <failure message="Value of: add(1, 1)
-  Actual: 3
-  Expected: 2" type=""></failure>
-      <failure message="Value of: add(1, -1)
-  Actual: 1
-  Expected: 0" type=""></failure>
+      <failure message="Value of: add(1, 1)&#xA;  Actual: 3&#xA;  Expected: 2" type=""></failure>
+      <failure message="Value of: add(1, -1)&#xA;  Actual: 1&#xA;  Expected: 0" type=""></failure>
     </testcase>
     <testcase name="Subtraction" status="run" time="0.005s" classname="subtraction" />
   </testsuite>

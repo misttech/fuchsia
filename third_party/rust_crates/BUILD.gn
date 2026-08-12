@@ -2696,12 +2696,12 @@ if (!(current_os == "fuchsia")) {
   }
 }
 
-group("xml-rs") {
-  public_deps = [ ":xml-rs-v0_8_26" ]
+group("xml") {
+  public_deps = [ ":xml-v1_4_0" ]
 }
 
-group("xml-rs-0.8.26") {
-  public_deps = [ ":xml-rs-v0_8_26" ]
+group("xml-1.4.0") {
+  public_deps = [ ":xml-v1_4_0" ]
 }
 
 group("zerocopy") {
@@ -25325,15 +25325,15 @@ rustc_library("xattr-v1_6_1") {
   applicable_licenses = [ ":xattr-v1_6_1.license" ]
 }
 
-license("xml-rs-v0_8_26.license") {
+license("xml-v1_4_0.license") {
   public_package_name = "xml"
-  license_files = [ "//third_party/rust_crates/vendor/xml-rs-0.8.26/LICENSE" ]
+  license_files = [ "//third_party/rust_crates/vendor/xml-1.4.0/LICENSE" ]
 }
 
-rustc_library("xml-rs-v0_8_26") {
+rustc_library("xml-v1_4_0") {
   crate_name = "xml"
-  source_root = "//third_party/rust_crates/vendor/xml-rs-0.8.26/src/lib.rs"
-  output_name = "xml-3a87947d219317bc"
+  source_root = "//third_party/rust_crates/vendor/xml-1.4.0/src/lib.rs"
+  output_name = "xml-dd105991d0fb20e1"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -25345,13 +25345,13 @@ rustc_library("xml-rs-v0_8_26") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=3a87947d219317bc",
-    "-Cextra-filename=-3a87947d219317bc",
+    "-Cmetadata=dd105991d0fb20e1",
+    "-Cextra-filename=-dd105991d0fb20e1",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":xml-rs-v0_8_26.license" ]
+  applicable_licenses = [ ":xml-v1_4_0.license" ]
 }
 
 license("yansi-v1_0_1.license") {

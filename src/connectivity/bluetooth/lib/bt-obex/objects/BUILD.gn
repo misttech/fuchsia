@@ -13,7 +13,7 @@ rustc_library("objects") {
     "//third_party/rust_crates:bitflags",
     "//third_party/rust_crates:chrono",
     "//third_party/rust_crates:thiserror",
-    "//third_party/rust_crates:xml-rs",
+    "//third_party/rust_crates:xml",
   ]
 
   test_deps = [ "//src/lib/fuchsia" ]

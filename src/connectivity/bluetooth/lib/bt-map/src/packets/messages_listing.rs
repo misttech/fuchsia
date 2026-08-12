@@ -2,20 +2,20 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use chrono::naive::NaiveDateTime;
 use chrono::DateTime;
+use chrono::naive::NaiveDateTime;
 use objects::{Builder, ObexObjectError as Error, Parser};
 use std::collections::HashSet;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::str::FromStr;
+use xml::EventWriter;
 use xml::attribute::OwnedAttribute;
 use xml::reader::{ParserConfig, XmlEvent};
 use xml::writer::{EmitterConfig, XmlEvent as XmlWriteEvent};
-use xml::EventWriter;
 
-use crate::packets::{bool_to_string, str_to_bool, truncate_string, ISO_8601_TIME_FORMAT};
 use crate::MessageType;
+use crate::packets::{ISO_8601_TIME_FORMAT, bool_to_string, str_to_bool, truncate_string};
 
 // From MAP v1.4.2 section 3.1.6 Message-Listing Object:
 //
@@ -670,7 +670,10 @@ impl Parser for MessagesListing {
         };
 
         // Process start of folder listing element.
-        let xml_event = reader.next()?;
+        let mut xml_event = reader.next()?;
+        while matches!(xml_event, XmlEvent::Doctype { .. } | XmlEvent::Comment(_)) {
+            xml_event = reader.next()?;
+        }
         let version = MessagesListing::validate_messages_listing_element(xml_event)?;
 
         prev.push(ParsedXmlEvent::MessagesListingElement);
@@ -721,6 +724,7 @@ impl Parser for MessagesListing {
                     }
                     finished_document = true;
                 }
+                XmlEvent::Doctype { .. } | XmlEvent::Comment(_) => {}
                 _ => return invalid_elem_err,
             }
         }
