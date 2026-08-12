@@ -496,4 +496,21 @@ TEST(FifoTest, WritePeerClosedReturnsPeerClosed) {
   EXPECT_STATUS(fifo_b.write(kElementSize, &element, 1, &actual_count), ZX_ERR_PEER_CLOSED);
 }
 
+TEST(FifoTest, ReadWriteBadActualCountReturnsInvalidArgs) {
+  zx::fifo fifo_a, fifo_b;
+  ASSERT_OK(zx::fifo::create(8, kElementSize, 0, &fifo_a, &fifo_b));
+
+  size_t* bad_actual_count = reinterpret_cast<size_t*>(1);
+
+  ElementType element = 1234;
+  EXPECT_STATUS(fifo_a.write(kElementSize, &element, 1, bad_actual_count), ZX_ERR_INVALID_ARGS);
+
+  // Write a valid element so that the FIFO has content for the read attempt.
+  ASSERT_OK(fifo_a.write(kElementSize, &element, 1, nullptr));
+
+  ElementType actual_element = 0;
+  EXPECT_STATUS(fifo_b.read(kElementSize, &actual_element, 1, bad_actual_count),
+                ZX_ERR_INVALID_ARGS);
+}
+
 }  // namespace
