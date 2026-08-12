@@ -3097,14 +3097,14 @@ alias(
 )
 
 alias(
-    name = "thiserror-2.0.18",
-    actual = "//third_party/rust_crates/vendor/thiserror-2.0.18:thiserror",
+    name = "thiserror-2.0.20",
+    actual = "//third_party/rust_crates/vendor/thiserror-2.0.20:thiserror",
     tags = ["manual"],
 )
 
 alias(
     name = "thiserror",
-    actual = "//third_party/rust_crates/vendor/thiserror-2.0.18:thiserror",
+    actual = "//third_party/rust_crates/vendor/thiserror-2.0.20:thiserror",
     tags = ["manual"],
 )
 

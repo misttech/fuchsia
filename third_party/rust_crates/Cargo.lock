@@ -585,7 +585,7 @@ dependencies = [
  "log",
  "parking_lot 0.12.5",
  "pin-project",
- "thiserror 2.0.18",
+ "thiserror 2.0.20",
 ]
 
 [[package]]
@@ -600,7 +600,7 @@ dependencies = [
  "log",
  "num",
  "parking_lot 0.12.5",
- "thiserror 2.0.18",
+ "thiserror 2.0.20",
 ]
 
 [[package]]
@@ -608,7 +608,7 @@ name = "bt-common"
 version = "0.0.1"
 dependencies = [
  "futures",
- "thiserror 2.0.18",
+ "thiserror 2.0.20",
  "uuid",
 ]
 
@@ -619,7 +619,7 @@ dependencies = [
  "bt-common",
  "futures",
  "parking_lot 0.12.5",
- "thiserror 2.0.18",
+ "thiserror 2.0.20",
 ]
 
 [[package]]
@@ -631,7 +631,7 @@ dependencies = [
  "futures",
  "parking_lot 0.12.5",
  "pin-project",
- "thiserror 2.0.18",
+ "thiserror 2.0.20",
 ]
 
 [[package]]
@@ -642,7 +642,7 @@ dependencies = [
  "bt-gatt",
  "futures",
  "parking_lot 0.12.5",
- "thiserror 2.0.18",
+ "thiserror 2.0.20",
 ]
 
 [[package]]
@@ -720,7 +720,7 @@ dependencies = [
  "semver",
  "serde",
  "serde_json",
- "thiserror 2.0.18",
+ "thiserror 2.0.20",
 ]
 
 [[package]]
@@ -2043,7 +2043,7 @@ dependencies = [
  "termion",
  "test-case",
  "textwrap",
- "thiserror 2.0.18",
+ "thiserror 2.0.20",
  "tokio",
  "tokio-rustls",
  "tokio-stream",
@@ -2385,7 +2385,7 @@ dependencies = [
  "pest_derive",
  "serde",
  "serde_json",
- "thiserror 2.0.18",
+ "thiserror 2.0.20",
 ]
 
 [[package]]
@@ -3339,7 +3339,7 @@ dependencies = [
  "serde_repr",
  "sha2 0.11.0",
  "signature 3.0.0",
- "thiserror 2.0.18",
+ "thiserror 2.0.20",
  "typed-builder",
  "uuid",
 ]
@@ -4547,7 +4547,7 @@ checksum = "4ab550bf03e3428c98b8e0354800a18f366f1f5f25544b908463b4634374f34f"
 dependencies = [
  "serde",
  "serde_json",
- "thiserror 2.0.18",
+ "thiserror 2.0.20",
 ]
 
 [[package]]
@@ -4704,7 +4704,7 @@ version = "0.1.0"
 dependencies = [
  "sapphire-collections",
  "sapphire-sync",
- "thiserror 2.0.18",
+ "thiserror 2.0.20",
 ]
 
 [[package]]
@@ -4728,7 +4728,7 @@ dependencies = [
  "sapphire-uuid",
  "strum",
  "strum_macros",
- "thiserror 2.0.18",
+ "thiserror 2.0.20",
  "zerocopy",
 ]
 
@@ -4741,7 +4741,7 @@ dependencies = [
  "sapphire-collections",
  "sapphire-rpc-macro",
  "sapphire-sync",
- "thiserror 2.0.18",
+ "thiserror 2.0.20",
 ]
 
 [[package]]
@@ -5437,11 +5437,11 @@ dependencies = [
 
 [[package]]
 name = "thiserror"
-version = "2.0.18"
+version = "2.0.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4288b5bcbc7920c07a1149a35cf9590a2aa808e0bc1eafaade0b80947865fbc4"
+checksum = "ec86235f5fcc2a73650310756d2ac5b138a5780bbbdfae3eeccec992c435ba4f"
 dependencies = [
- "thiserror-impl 2.0.18",
+ "thiserror-impl 2.0.20",
 ]
 
 [[package]]
@@ -5457,13 +5457,13 @@ dependencies = [
 
 [[package]]
 name = "thiserror-impl"
-version = "2.0.18"
+version = "2.0.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ebc4ee7f67670e9b64d05fa4253e753e016c6c95ff35b89b7941d6b856dec1d5"
+checksum = "bc04cd3e1236dd4a98afca4569f2deb3f120e5422a4023be2cb683f8486292af"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.119",
+ "syn 3.0.3",
 ]
 
 [[package]]
@@ -5783,7 +5783,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
- "thiserror 2.0.18",
+ "thiserror 2.0.20",
  "untrusted",
  "url",
 ]

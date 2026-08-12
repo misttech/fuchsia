@@ -168,7 +168,7 @@ CRATE_ANNOTATIONS = {
     ],
     "thiserror": [
         crate.annotation(
-            version = "2.0.18",
+            version = "2.0.20",
             # TODO(https://github.com/rust-lang/rust/pull/99301): Making this exception for
             # an unstable feature is currently the only viable way we get thiserror to build in
             # the Fuchsia tree.
