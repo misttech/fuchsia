@@ -28,7 +28,6 @@ use tuf::pouf::Pouf1;
 use tuf::repository::RepositoryProvider as TufRepositoryProvider;
 use url::Url;
 
-const X_GOOG_STORED_CONTENT_LENGTH: &str = "x-goog-stored-content-length";
 const UNKNOWN_CONTENT_LEN_BUF_SIZE: usize = 8_196;
 
 /// Helper trait that lets us mock gcs::client::Client for testing.
@@ -160,19 +159,10 @@ where
                         });
                     }
 
-                    // If we didn't get a `Content-Length`, then maybe the artifact was stored
-                    // compressed, and sent to us uncompressed. When this happens, we instead get a
-                    // `x-goog-stored-content-length` header.
-                    //
-                    // See https://cloud.google.com/storage/docs/transcoding for more details.
-                    if resp.headers().contains_key(X_GOOG_STORED_CONTENT_LENGTH) {
-                        return self.get_with_stored_content_len(resp.into_body(), range).await;
-                    }
-
-                    Err(Error::Other(anyhow!(
-                    "response missing Content-Length or x-goog-stored-content-length headers: {}",
-                    url
-                )))
+                    // If we didn't get a `Content-Length` header (e.g. dynamic transcoding
+                    // or chunked transfer encoding), buffer through a spooled temp file
+                    // to compute the final resource length.
+                    return self.get_with_stored_content_len(resp.into_body(), range).await;
                 }
                 StatusCode::NOT_FOUND => Err(Error::NotFound),
                 StatusCode::RANGE_NOT_SATISFIABLE => Err(Error::RangeNotSatisfiable),
@@ -351,6 +341,8 @@ mod tests {
     use assert_matches::assert_matches;
     use camino::{Utf8Path, Utf8PathBuf};
     use std::fs::File;
+
+    const X_GOOG_STORED_CONTENT_LENGTH: &str = "x-goog-stored-content-length";
 
     type BoxBody = http_body_util::combinators::BoxBody<hyper::body::Bytes, hyper::Error>;
 

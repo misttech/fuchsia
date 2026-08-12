@@ -276,26 +276,19 @@ impl Client {
             .with_context(|| format!("gcs streaming from {:?} {:?}", bucket, object))?;
         if res.status() == StatusCode::OK {
             let mut at: u64 = 0;
-            let length = if res.headers().contains_key(CONTENT_LENGTH) {
-                res.headers()
-                    .get(CONTENT_LENGTH)
-                    .context("getting content length")?
-                    .to_str()?
-                    .parse::<u64>()
-                    .context("parsing content length as u64")?
-            } else if res.headers().contains_key("x-goog-stored-content-length") {
+            let mut of = if let Some(content_len) = res.headers().get(CONTENT_LENGTH) {
+                content_len.to_str()?.parse::<u64>().context("parsing content length as u64")?
+            } else if let Some(stored_len) = res.headers().get("x-goog-stored-content-length") {
                 // The size of gzipped files is a guess.
-                res.headers()["x-goog-stored-content-length"]
+                stored_len
                     .to_str()
                     .context("getting x-goog content length as str")?
                     .parse::<u64>()
                     .context("parsing x-goog content length as u64")?
                     * 3
             } else {
-                println!("missing content-length in {}: res.headers() {:?}", object, res.headers());
-                bail!("missing content-length in header");
+                0
             };
-            let mut of = length;
             // Throttle the progress UI updates to avoid burning CPU on changes
             // the user will have trouble seeing anyway. Without throttling,
             // around 20% of the execution time can be spent updating the
