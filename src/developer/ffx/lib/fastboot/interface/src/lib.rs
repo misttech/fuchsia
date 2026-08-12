@@ -10,9 +10,9 @@ pub mod util;
 
 pub mod test {
     use super::fastboot_interface::{
-        Fastboot, FastbootError, FastbootInterface, RebootEvent, StreamCommand, UploadProgress,
-        Variable,
+        Fastboot, FastbootError, FastbootInterface, RebootEvent, UploadProgress, Variable,
     };
+    use super::stream::StreamCommand;
     use async_trait::async_trait;
     use chrono::Duration;
     use std::collections::HashMap;

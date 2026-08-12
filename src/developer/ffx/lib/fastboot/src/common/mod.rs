@@ -420,7 +420,7 @@ async fn streaming_flash_impl<T: FastbootInterface>(
         partition_start_word.into(),
     );
 
-    let (prog_client, prog_server) = mpsc::channel(command_list.commands_count());
+    let (prog_client, prog_server) = mpsc::channel(command_list.commands.len());
 
     let server_task = async |mut prog_server: Receiver<UploadProgress>| -> Result<()> {
         while let Some(upload) = prog_server.recv().await {
@@ -429,10 +429,10 @@ async fn streaming_flash_impl<T: FastbootInterface>(
         Ok(())
     };
 
-    let mut stream_task = async |prog_client: Sender<UploadProgress>| -> Result<()> {
+    let stream_task = async |prog_client: Sender<UploadProgress>| -> Result<()> {
         // TODO: map the damn error
         let _ = prog_client.send(UploadProgress::OnStarted { size: expected }).await;
-        for command in command_list.commands_iter() {
+        for command in command_list.commands {
             fastboot_interface.stream(name, command, &prog_client, timeout).await?;
         }
         // TODO: map the damn error

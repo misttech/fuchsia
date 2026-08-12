@@ -3,10 +3,11 @@
 // found in the LICENSE file.
 
 use crate::fastboot_interface::{
-    Fastboot, FastbootError, FastbootInterface, FlashError, RebootEvent, StageError, StreamCommand,
-    StreamOp, UploadProgress, Variable,
+    Fastboot, FastbootError, FastbootInterface, FlashError, RebootEvent, StageError,
+    UploadProgress, Variable,
 };
 use crate::interface_factory::InterfaceFactory;
+use crate::stream::{StreamCommand, StreamOp};
 use anyhow::{Result, anyhow};
 use async_trait::async_trait;
 use chrono::Duration;
@@ -605,24 +606,33 @@ impl<T: AsyncRead + AsyncWrite + Unpin + Debug + Send> Fastboot for FastbootProx
         timeout: Duration,
     ) -> Result<(), FastbootError> {
         let progress_listener = ProgressListener::new(listener);
-        let StreamCommand { offset, op } = stream_command;
+        let StreamCommand { offset_bytes, op } = stream_command;
         let ctx = self.ctx.clone();
         let interface = self.interface().await?;
 
         let (finishing_cmd, length) = match op {
-            StreamOp::Fill { val, length } => {
-                log::trace!("fastboot: filling {} bytes", length);
+            StreamOp::Fill { val, length_bytes } => {
+                log::trace!("fastboot: filling {} bytes", length_bytes);
                 progress_listener
-                    .on_progress(offset + length)
+                    .on_progress(offset_bytes + length_bytes)
                     .await
                     .map_err(|e| fastboot::FastbootError::from(e))?;
 
-                (Command::StreamFill { partition: name.to_owned(), offset, length, val }, length)
+                (
+                    Command::StreamFill {
+                        partition: name.to_owned(),
+                        offset_bytes,
+                        length_bytes,
+                        val,
+                    },
+                    length_bytes,
+                )
             }
             StreamOp::Flash { data, crc32 } => {
-                upload_data(&ctx, data, interface, &progress_listener, timeout, offset).await?;
+                upload_data(&ctx, data, interface, &progress_listener, timeout, offset_bytes)
+                    .await?;
                 (
-                    Command::StreamFlash { partition: name.to_owned(), offset, crc32 },
+                    Command::StreamFlash { partition: name.to_owned(), offset_bytes, crc32 },
                     u64::try_from(data.len()).unwrap(),
                 )
             }

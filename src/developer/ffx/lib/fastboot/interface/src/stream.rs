@@ -1,9 +1,7 @@
 // Copyright 2026 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-use crate::fastboot_interface;
 use crate::util::{U32_SIZE, convert_log_err};
-use crc32fast;
 use std::cmp::min;
 use std::range::Range;
 use zerocopy::IntoBytes;
@@ -13,8 +11,9 @@ use zerocopy::IntoBytes;
 // and leverage device async I/O to speed partition flashing.
 //
 // Terminology used for the data structures in this module:
-// * A `StreamCommandList` is a partition image and a list of commands
-//   to write it to the target partition.
+// * A `StreamCommandList` is a list of commands that describe how to write a
+//   partition image to the target partition. These commands are independent and
+//   idempotent.
 // * A `StreamCommand` is a range within the target partition and a description
 //   of what the device should do within that range to generate data to write.
 // * A `StreamOp` is a description of the bytes defining the owning `StreamCommand`:
@@ -22,74 +21,43 @@ use zerocopy::IntoBytes;
 //
 // `Chunk` and `Payload` correspond to `StreamCommand` and `StreamOp` but are
 // used as intermediate structures while processing the partition image into operations.
-
-#[derive(Debug, PartialEq, Eq, Copy, Clone)]
-enum StreamOp {
-    /// Arbitrary data backed by a checksum
-    Flash { crc32: u32 },
-    /// A repeated value
-    Fill { val: u32 },
+#[derive(Debug, PartialEq)]
+pub enum StreamOp<'a> {
+    Flash { data: &'a [u8], crc32: u32 },
+    Fill { val: u32, length_bytes: u64 },
 }
 
-impl StreamOp {
-    fn from_data(data: &[u32], range: Range<u64>) -> Self {
-        Self::Flash { crc32: crc32fast::hash(&(data[convert_range(range)]).as_bytes()) }
+impl<'a> StreamOp<'a> {
+    fn from_data(data: &'a [u8]) -> Self {
+        Self::Flash { data, crc32: crc32fast::hash(data) }
     }
 
-    fn from_fill(val: u32) -> Self {
-        Self::Fill { val }
+    fn from_fill(val: u32, length_bytes: u64) -> Self {
+        Self::Fill { val, length_bytes }
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Copy, Clone)]
-struct StreamCommand {
-    /// The range within the partition to write.
-    range: Range<u64>,
-    /// The operation to generate write data.
-    op: StreamOp,
+#[derive(Debug, PartialEq)]
+pub struct StreamCommand<'a> {
+    pub offset_bytes: u64,
+    pub op: StreamOp<'a>,
 }
 
-impl<'a> StreamCommand {
-    fn from_data(data: &[u32], range: Range<u64>) -> Self {
-        Self { range, op: StreamOp::from_data(data, range) }
+impl<'a> StreamCommand<'a> {
+    fn from_fill(val: u32, offset_words: u64, length_words: u64) -> Self {
+        Self {
+            offset_bytes: offset_words * U32_SIZE,
+            op: StreamOp::from_fill(val, length_words * U32_SIZE),
+        }
     }
 
-    fn from_fill(val: u32, range: Range<u64>) -> Self {
-        Self { range, op: StreamOp::from_fill(val) }
+    fn from_data(data: &'a [u32], offset_words: u64) -> Self {
+        Self { offset_bytes: offset_words * U32_SIZE, op: StreamOp::from_data(data.as_bytes()) }
     }
 }
 
 pub struct StreamCommandList<'a> {
-    data: &'a [u32],
-    commands: Vec<StreamCommand>,
-}
-
-impl<'a> StreamCommandList<'a> {
-    /// Iterate over the commands and associated data segments.
-    pub fn commands_iter(&self) -> impl Iterator<Item = fastboot_interface::StreamCommand<'a>> {
-        self.commands.iter().map(|c| (c, self.data).into())
-    }
-
-    pub fn commands_count(&self) -> usize {
-        self.commands.len()
-    }
-}
-
-impl<'a> From<(&StreamCommand, &'a [u32])> for fastboot_interface::StreamCommand<'a> {
-    fn from(value: (&StreamCommand, &'a [u32])) -> Self {
-        let (command, data) = value;
-        let StreamCommand { range, op } = *command;
-        let op = match op {
-            StreamOp::Fill { val } => {
-                fastboot_interface::StreamOp::Fill { val, length: range_length(range) * U32_SIZE }
-            }
-            StreamOp::Flash { crc32 } => fastboot_interface::StreamOp::Flash {
-                data: &data[convert_range(range)].as_bytes(),
-                crc32,
-            },
-        };
-        fastboot_interface::StreamCommand { offset: range.start * U32_SIZE, op }
-    }
+    pub commands: Vec<StreamCommand<'a>>,
 }
 
 struct Chunk {
@@ -130,6 +98,10 @@ impl Chunk {
         Self::from_payload(range, Payload::from_segment(&data[convert_range(range)]))
     }
 
+    fn start_word(&self) -> u64 {
+        self.range.start
+    }
+
     fn len_words(&self) -> u64 {
         range_length(self.range)
     }
@@ -152,11 +124,11 @@ where
 // The current chunk is either expanded to include the new segment OR
 // is wrapped up into a completed command, pushed to the command vector,
 // and a new work-in-progress chunk is returned.
-fn process_segment(
-    data: &[u32],
+fn process_segment<'a>(
+    data: &'a [u32],
     segment_range: Range<u64>,
     max_download_words: u64,
-    commands: &mut Vec<StreamCommand>,
+    commands: &mut Vec<StreamCommand<'a>>,
     chunk: Chunk,
 ) -> Chunk {
     use Payload::*;
@@ -166,11 +138,14 @@ fn process_segment(
     match (chunk.payload, new_payload) {
         // New payload is a flash or a fill with a different value
         (p1 @ Fill(val), p2) if p1 != p2 => {
-            commands.push(StreamCommand::from_fill(val, chunk.range));
+            commands.push(StreamCommand::from_fill(val, chunk.start_word(), chunk.len_words()));
             Chunk::from_payload(segment_range, new_payload)
         }
         (Flash, Fill(_)) => {
-            commands.push(StreamCommand::from_data(data, chunk.range));
+            commands.push(StreamCommand::from_data(
+                &data[convert_range(chunk.range)],
+                chunk.start_word(),
+            ));
             Chunk::from_payload(segment_range, new_payload)
         }
         (Flash, Flash)
@@ -180,7 +155,10 @@ fn process_segment(
             // Can't have a Flash segment longer than max_download_words.
             // Even though the following chunk is also raw data, we need to
             // split it up into multiple commands.
-            commands.push(StreamCommand::from_data(data, chunk.range));
+            commands.push(StreamCommand::from_data(
+                &data[convert_range(chunk.range)],
+                chunk.start_word(),
+            ));
             Chunk::from_payload(segment_range, new_payload)
         }
         // Matching fill or under max size flash
@@ -218,13 +196,15 @@ pub fn generate_command_list<'a>(
         chunk = process_segment(data, segment_range, max_download_words, &mut commands, chunk);
     }
 
-    let operation = match chunk.payload {
-        Payload::Fill(val) => StreamCommand::from_fill(val, chunk.range),
-        Payload::Flash => StreamCommand::from_data(data, chunk.range),
+    let final_command = match chunk.payload {
+        Payload::Fill(val) => StreamCommand::from_fill(val, chunk.start_word(), chunk.len_words()),
+        Payload::Flash => {
+            StreamCommand::from_data(&data[convert_range(chunk.range)], chunk.start_word())
+        }
     };
-    commands.push(operation);
+    commands.push(final_command);
 
-    StreamCommandList { data, commands }
+    StreamCommandList { commands }
 }
 
 #[cfg(test)]
@@ -232,16 +212,10 @@ mod test {
     use super::*;
     use crate::util::multi_chain;
 
-    impl StreamCommand {
-        fn new(start: u64, end: u64, op: StreamOp) -> Self {
-            Self { range: Range { start, end }, op }
-        }
-    }
-
     #[fuchsia::test()]
     fn test_stream_command_generation_basic() {
         const SEGMENT_SIZE_WORDS: u32 = 1024;
-        let flash_data = 0..SEGMENT_SIZE_WORDS;
+        let flash_data = 0u32..SEGMENT_SIZE_WORDS;
         let fill_data = std::iter::repeat(0u32).take(SEGMENT_SIZE_WORDS as usize);
         let data = multi_chain!(
             flash_data.clone(),
@@ -255,13 +229,12 @@ mod test {
         let command_list =
             generate_command_list(data.as_slice(), 1 << 28, SEGMENT_SIZE_WORDS.into(), 0);
 
-        let crc32 = 0xf15f689b;
         assert_eq!(
             command_list.commands,
             [
-                StreamCommand::new(0, 1024, StreamOp::Flash { crc32 }),
-                StreamCommand::new(1024, 4096, StreamOp::Fill { val: 0 }),
-                StreamCommand::new(4096, 5120, StreamOp::Flash { crc32 }),
+                StreamCommand::from_data(&Vec::from_iter(flash_data.clone()), 0),
+                StreamCommand::from_fill(0, 1024, 3 * 1024),
+                StreamCommand::from_data(&Vec::from_iter(flash_data.clone()), 4096),
             ]
         );
     }
@@ -293,11 +266,11 @@ mod test {
         assert_eq!(
             command_list.commands,
             [
-                StreamCommand::new(0, 2048, StreamOp::Fill { val: 0 }),
-                StreamCommand::new(2048, 4096, StreamOp::Fill { val: 1 }),
-                StreamCommand::new(4096, 5120, StreamOp::Fill { val: 0 }),
-                StreamCommand::new(5120, 9216, StreamOp::Fill { val: 1 }),
-                StreamCommand::new(9216, 11264, StreamOp::Fill { val: 0 })
+                StreamCommand::from_fill(0, 0, 2048),
+                StreamCommand::from_fill(1, 2048, 2048),
+                StreamCommand::from_fill(0, 4096, 1024),
+                StreamCommand::from_fill(1, 5120, 4096),
+                StreamCommand::from_fill(0, 9216, 2048),
             ]
         );
     }
@@ -326,19 +299,14 @@ mod test {
             0,
         );
 
-        let crc32 = crc32fast::hash(
-            multi_chain!(flash_data.clone(), flash_data.clone())
-                .collect::<Vec<_>>()
-                .as_slice()
-                .as_bytes(),
-        );
+        let command_data = multi_chain!(flash_data.clone(), flash_data.clone()).collect::<Vec<_>>();
         assert_eq!(
             command_list.commands,
             [
-                StreamCommand::new(0, 2048, StreamOp::Flash { crc32 }),
-                StreamCommand::new(2048, 4096, StreamOp::Flash { crc32 }),
-                StreamCommand::new(4096, 6144, StreamOp::Flash { crc32 }),
-                StreamCommand::new(6144, 8192, StreamOp::Flash { crc32 }),
+                StreamCommand::from_data(&command_data, 0),
+                StreamCommand::from_data(&command_data, 2048),
+                StreamCommand::from_data(&command_data, 4096),
+                StreamCommand::from_data(&command_data, 6144),
             ]
         );
     }
@@ -353,7 +321,7 @@ mod test {
             flash_data.clone(),
             flash_data.clone(),
             flash_data.clone(),
-            flash_data.clone()
+            flash_data.clone(),
         )
         .collect::<Vec<_>>();
 
@@ -364,10 +332,7 @@ mod test {
             (SEGMENT_SIZE_WORDS / 2).into(),
         );
 
-        assert_eq!(
-            command_list.commands,
-            [StreamCommand::new(0, 4608, StreamOp::Flash { crc32: 0x7fb83cdc })]
-        );
+        assert_eq!(command_list.commands, [StreamCommand::from_data(&data, 0)]);
     }
 
     #[fuchsia::test()]
@@ -375,12 +340,13 @@ mod test {
         const SEGMENT_SIZE_WORDS: u32 = 1024;
 
         let fill_zero = std::iter::repeat(0u32).take(SEGMENT_SIZE_WORDS as usize);
+        let flash_data = 0..(SEGMENT_SIZE_WORDS / 2);
         let data = multi_chain!(
             fill_zero.clone(),
             fill_zero.clone(),
             fill_zero.clone(),
             fill_zero.clone(),
-            0..(SEGMENT_SIZE_WORDS / 2)
+            flash_data.clone(),
         )
         .collect::<Vec<_>>();
 
@@ -390,8 +356,8 @@ mod test {
         assert_eq!(
             command_list.commands,
             [
-                StreamCommand::new(0, 4096, StreamOp::Fill { val: 0 }),
-                StreamCommand::new(4096, 4608, StreamOp::Flash { crc32: 0x6feca6e2 })
+                StreamCommand::from_fill(0, 0, 4096),
+                StreamCommand::from_data(&flash_data.collect::<Vec<_>>(), 4096)
             ]
         );
     }
@@ -404,6 +370,6 @@ mod test {
         let command_list =
             generate_command_list(data.as_slice(), 1 << 28, SEGMENT_SIZE_WORDS.into(), 0);
 
-        assert_eq!(command_list.commands, [StreamCommand::new(0, 8, StreamOp::Fill { val: 0 })]);
+        assert_eq!(command_list.commands, [StreamCommand::from_fill(0, 0, 8)]);
     }
 }

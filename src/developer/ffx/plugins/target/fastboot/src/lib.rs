@@ -303,6 +303,7 @@ mod test {
     use super::*;
     use chrono::Duration;
     use ffx_fastboot_interface::fastboot_interface::*;
+    use ffx_fastboot_interface::stream::StreamCommand;
     use ffx_fastboot_tool_args::AuthorizeSubcommand;
     use ffx_writer::{Format, TestBuffers};
     use serde_json::json;

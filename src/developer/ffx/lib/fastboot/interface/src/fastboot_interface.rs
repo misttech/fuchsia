@@ -8,6 +8,8 @@ use chrono::Duration;
 use fastboot::command::Command;
 use tokio::sync::mpsc::Sender;
 
+use crate::stream::StreamCommand;
+
 pub trait FastbootInterface: std::fmt::Debug + Fastboot {}
 
 #[async_trait]
@@ -56,16 +58,6 @@ pub trait Fastboot: Send {
         listener: &Sender<UploadProgress>,
         timeout: Duration,
     ) -> Result<(), FastbootError>;
-}
-
-pub enum StreamOp<'a> {
-    Flash { data: &'a [u8], crc32: u32 },
-    Fill { val: u32, length: u64 },
-}
-
-pub struct StreamCommand<'a> {
-    pub offset: u64,
-    pub op: StreamOp<'a>,
 }
 
 // We sometimes get called with the Box<FastbootInterface> that
