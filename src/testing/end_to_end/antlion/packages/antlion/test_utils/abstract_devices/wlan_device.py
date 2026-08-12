@@ -38,7 +38,11 @@ class FuchsiaWlanDevice:
     async def _get_client_iface(self) -> wlan_core.ClientIface:
         if self._client_iface is None:
             phy = await self.device.honeydew_fd.wlan_core.ensure_single_phy()
-            self._client_iface = await phy.create_client_iface()
+            client_ifaces = await phy.get_client_ifaces()
+            if client_ifaces:
+                self._client_iface = client_ifaces[0]
+            else:
+                self._client_iface = await phy.create_client_iface()
         return self._client_iface
 
     @property
