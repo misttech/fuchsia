@@ -339,7 +339,7 @@ in args.gn.
 
 **Current value (from the default):** `[]`
 
-From //build/bazel/bazel_root_targets_list.gni:119
+From //build/bazel/bazel_root_targets_list.gni:128
 
 ### bazel_upload_build_events
 
@@ -951,7 +951,7 @@ This should never be set as a build argument.
 }
   tsan = {
   shared = {
-  clang_rt = "../../../../out/not-default/libclang_rt.tsan.so"
+  clang_rt = ""
 }
   static = {
   clang_rt = "../../../../out/not-default/libclang_rt.tsan.a"
@@ -2053,6 +2053,12 @@ From //build/config/compiler.gni:82
 [{
   bazel_label = "//zircon/tools/merkleroot"
 }, {
+  bazel_label = "//tools/orchestrate:orchestrate"
+  copy_outputs = [{
+  bazel = "{{BAZEL_TARGET_OUT_DIR}}/orchestrate_/orchestrate"
+  ninja = "orchestrate"
+}]
+}, {
   bazel_label = "//build/beads/.agent/skills/migrating_host_tool_to_bazel/examples/go/after:go_example_bin_migrated"
   copy_outputs = [{
   bazel = "{{BAZEL_TARGET_OUT_DIR}}/go_example_bin_migrated_/go_example_bin_migrated"
@@ -2322,7 +2328,7 @@ From //build/config/compiler.gni:82
 }]
 ```
 
-From //build/bazel/bazel_root_targets_list.gni:56
+From //build/bazel/bazel_root_targets_list.gni:65
 
 ### default_configs
 
@@ -3844,7 +3850,7 @@ disabled.
 
 **Current value (from the default):** `false`
 
-From //zircon/kernel/params.gni:136
+From //zircon/kernel/params.gni:142
 
 ### enable_mdns_trace
 
@@ -5164,6 +5170,17 @@ By default, log verbose font messages in tests.
 **Current value (from the default):** `true`
 
 From //src/fonts/tests/integration/BUILD.gn:20
+
+### iris_register_energy_model
+
+Controls whether the Iris CPU power driver registers the energy model,
+enabling runtime processor power management (RPPM) by the kernel scheduler.
+Defaulted to false to prevent regressing existing builds until priority
+assignments on Iris are tuned.
+
+**Current value (from the default):** `false`
+
+From //zircon/kernel/params.gni:134
 
 ### is_analysis
 
@@ -9006,6 +9023,12 @@ This is a separate because they can be cross-compiled on SDK builders.
 ```none
 [{
   bazel_label = "//zircon/tools/merkleroot"
+}, {
+  bazel_label = "//tools/orchestrate:orchestrate"
+  copy_outputs = [{
+  bazel = "{{BAZEL_TARGET_OUT_DIR}}/orchestrate_/orchestrate"
+  ninja = "orchestrate"
+}]
 }]
 ```
 
