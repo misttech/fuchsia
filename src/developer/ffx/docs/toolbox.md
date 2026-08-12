@@ -14,7 +14,7 @@ The **Toolbox** component (`/core/toolbox` or similar product configurations) ac
 
 ```mermaid
 graph TD
-    Host["Host Terminal (ffx plugin)"] -- Overnet Transport --> RCS["Remote Control Service (RCS)"]
+    Host["Host Terminal (ffx plugin)"] -- FDomain Transport --> RCS["Remote Control Service (RCS)"]
     RCS -- Namespace Capability Query --> Toolbox["Toolbox Component (/core/toolbox)"]
     Toolbox -- Route Protocol --> Archivist["Archivist (Logs Engine)"]
     Toolbox -- Route Protocol --> Lifecycle["Component Manager (Lifecycle)"]
