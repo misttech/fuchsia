@@ -97,7 +97,10 @@ fuchsia_driver_package("package") {
 }
 
 test("usb-peripheral-unittest-bin") {
-  sources = [ "usb-peripheral-test.cc" ]
+  sources = [
+    "usb-peripheral-function-test.cc",
+    "usb-peripheral-lifecycle-test.cc",
+  ]
   output_name = "usb-peripheral-unittest"
   deps = [
     ":common",
