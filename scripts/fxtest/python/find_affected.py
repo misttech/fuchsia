@@ -139,8 +139,8 @@ async def get_dirty_files(
             stderr = toplevel_res.stderr if toplevel_res else "None"
             recorder.emit_instruction_message(
                 "ERROR: You must run fx test from inside a git repository to use --show-affected-tests.\n"
-                f"STDOUT: {stdout}\n"
-                f"STDERR: {stderr}"
+                + f"STDOUT: {stdout}\n"
+                + f"STDERR: {stderr}"
             )
         return None
 
@@ -148,7 +148,7 @@ async def get_dirty_files(
     if recorder:
         recorder.emit_instruction_message(f"Querying repository: {repo_root}")
 
-    dirty_files = []
+    dirty_files: list[str] = []
     diff_base = affected_since
     if not diff_base:
         diff_base = await get_diff_base(recorder)
@@ -165,14 +165,14 @@ async def get_dirty_files(
         recorder=recorder,
     )
 
-    if not diff_res or diff_res.return_code != 0 or diff_res.stdout is None:
+    if not diff_res or diff_res.return_code != 0:
         if recorder:
             stdout = diff_res.stdout if diff_res else "None"
             stderr = diff_res.stderr if diff_res else "None"
             recorder.emit_warning_message(
                 f"Failed to run git diff against {diff_base}\n"
-                f"STDOUT: {stdout}\n"
-                f"STDERR: {stderr}"
+                + f"STDOUT: {stdout}\n"
+                + f"STDERR: {stderr}"
             )
         return None
 
@@ -235,21 +235,36 @@ class AffectedTarget:
     pure_label: str
     pb_configs: list[str]
     command: str
+    is_host: bool = False
 
 
 def format_affected_targets(
     label_to_results: dict[str, FormattedResult]
 ) -> list[AffectedTarget]:
     """Sorts and formats affected targets into their respective commands."""
-    results = []
+    results: list[AffectedTarget] = []
     for label, res in sorted(label_to_results.items()):
         pure_label = label.split("(")[0]
         if res.is_host:
             cmd = f"fx add-host-test {pure_label}"
         else:
             cmd = f"fx add-test {pure_label}"
-        results.append(AffectedTarget(pure_label, res.pb_configs, cmd))
+        results.append(
+            AffectedTarget(pure_label, res.pb_configs, cmd, is_host=res.is_host)
+        )
     return results
+
+
+def format_affected_commands(targets: list[AffectedTarget]) -> list[str]:
+    """Formats grouped command lines for all identified affected targets."""
+    commands: list[str] = []
+    device_targets = [t.pure_label for t in targets if not t.is_host]
+    host_targets = [t.pure_label for t in targets if t.is_host]
+    if device_targets:
+        commands.append(f"fx add-test {' '.join(device_targets)}")
+    if host_targets:
+        commands.append(f"fx add-host-test {' '.join(host_targets)}")
+    return commands
 
 
 def clean_gathered_results(
@@ -284,7 +299,7 @@ def parse_build_api_output(
         return []
 
     out_text = out_client.stdout.strip() if out_client.stdout else ""
-    parsed_results = []
+    parsed_results: list[AffectedResult] = []
     for line in out_text.splitlines():
         line = line.strip()
         if not line:
@@ -461,5 +476,6 @@ async def show_affected_tests(
             f"{statusinfo.highlight(target.pure_label, style=flags.style)} ({', '.join(target.pb_configs)})"
         )
 
-        dim_cmd = statusinfo.dim(f"  > {target.command}", style=flags.style)
+    for cmd in format_affected_commands(targets):
+        dim_cmd = statusinfo.dim(f"\n  > {cmd}", style=flags.style)
         recorder.emit_verbatim_message(dim_cmd)

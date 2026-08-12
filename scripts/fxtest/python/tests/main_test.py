@@ -434,11 +434,19 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
                 "//src/sys:foo_test",
                 ["core.x64"],
                 "fx add-test //src/sys:foo_test",
+                is_host=False,
+            ),
+            find_affected.AffectedTarget(
+                "//src/sys:baz_test",
+                ["core.x64"],
+                "fx add-test //src/sys:baz_test",
+                is_host=False,
             ),
             find_affected.AffectedTarget(
                 "//src/sys:bar_test",
                 ["core.x64"],
                 "fx add-host-test //src/sys:bar_test",
+                is_host=True,
             ),
         ]
 
@@ -450,19 +458,22 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
         recorder = mock.Mock()
 
         labels = await app._add_affected_tests(targets, exec_env, recorder)
+        labels = labels or []
 
-        self.assertEqual(len(labels), 2)
+        self.assertEqual(len(labels), 3)
         self.assertIn("//src/sys:foo_test", labels)
+        self.assertIn("//src/sys:baz_test", labels)
         self.assertIn("//src/sys:bar_test", labels)
 
         self.assertEqual(mock_run_command.call_count, 2)
 
-        # Verify first call adding target test
+        # Verify first call adding target tests in a single command
         first_call = mock_run_command.call_args_list[0]
         self.assertIn("add-test", first_call[0])
         self.assertIn("//src/sys:foo_test", first_call[0])
+        self.assertIn("//src/sys:baz_test", first_call[0])
 
-        # Verify second call adding host test
+        # Verify second call adding host test in a single command
         second_call = mock_run_command.call_args_list[1]
         self.assertIn("add-host-test", second_call[0])
         self.assertIn("//src/sys:bar_test", second_call[0])

@@ -44,6 +44,37 @@ class TestFindAffected(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(output[3].command, "fx add-test //src/other:bar")
         self.assertListEqual(output[3].pb_configs, ["core.x64"])
 
+    def test_format_affected_commands(self) -> None:
+        """Tests formatting grouped add-test / add-host-test command lines for affected targets."""
+        targets = [
+            find_affected.AffectedTarget(
+                "//src/arm:arm64",
+                ["core.arm64"],
+                "fx add-test //src/arm:arm64",
+                is_host=False,
+            ),
+            find_affected.AffectedTarget(
+                "//src/host:x64",
+                ["core.x64"],
+                "fx add-host-test //src/host:x64",
+                is_host=True,
+            ),
+            find_affected.AffectedTarget(
+                "//src/my_test:foo",
+                ["core.x64"],
+                "fx add-test //src/my_test:foo",
+                is_host=False,
+            ),
+        ]
+        cmds = find_affected.format_affected_commands(targets)
+        self.assertEqual(
+            cmds,
+            [
+                "fx add-test //src/arm:arm64 //src/my_test:foo",
+                "fx add-host-test //src/host:x64",
+            ],
+        )
+
     def test_clean_gathered_results(self) -> None:
         """Tests merging results from multiple build invocations into a target-to-product mapping."""
         # Simulated raw output from run_find_affected

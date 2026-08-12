@@ -886,19 +886,28 @@ class AsyncMain:
         recorder.emit_instruction_message(
             f"\nAdding {len(targets)} affected test(s) to build graph..."
         )
-        added_labels = []
-        for target in targets:
-            cmd_args = target.command.split()[1:]
-            cmd = exec_env.fx_cmd_line(*cmd_args)
+        device_targets = [t.pure_label for t in targets if not t.is_host]
+        host_targets = [t.pure_label for t in targets if t.is_host]
+
+        if device_targets:
+            cmd = exec_env.fx_cmd_line("add-test", *device_targets)
             res = await execution.run_command(*cmd, recorder=recorder)
             if res is None or res.return_code != 0:
                 recorder.emit_warning_message(
-                    f"\nFailed to add affected test to build graph: {target.pure_label}"
+                    f"\nFailed to add affected test(s) to build graph: {' '.join(device_targets)}"
                 )
                 return None
-            added_labels.append(target.pure_label)
 
-        return added_labels
+        if host_targets:
+            cmd = exec_env.fx_cmd_line("add-host-test", *host_targets)
+            res = await execution.run_command(*cmd, recorder=recorder)
+            if res is None or res.return_code != 0:
+                recorder.emit_warning_message(
+                    f"\nFailed to add affected host test(s) to build graph: {' '.join(host_targets)}"
+                )
+                return None
+
+        return [t.pure_label for t in targets]
 
     async def _load_test_list(
         self,
