@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#![cfg_attr(not(test), no_std)]
+mod paging;
+mod system;
 
-pub mod arm64;
-pub mod riscv64;
-pub mod x86;
+pub use paging::*;
+pub use system::*;
