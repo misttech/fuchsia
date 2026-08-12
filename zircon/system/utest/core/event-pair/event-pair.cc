@@ -175,4 +175,84 @@ TEST(EventPairTest, WaitAccessDeniedMissingWaitRight) {
                 reduced_eventpair.wait_one(ZX_USER_SIGNAL_0, zx::time::infinite_past(), &pending));
 }
 
+TEST(EventPairTest, DuplicateHandlesAndPeerClosed) {
+  zx::eventpair eventpair_0, eventpair_1;
+  ASSERT_OK(zx::eventpair::create(0, &eventpair_0, &eventpair_1));
+
+  zx::eventpair dup_0a, dup_0b;
+  ASSERT_OK(eventpair_0.duplicate(ZX_RIGHT_SAME_RIGHTS, &dup_0a));
+  ASSERT_OK(eventpair_0.duplicate(ZX_RIGHT_SAME_RIGHTS, &dup_0b));
+
+  // Resetting original handle should not trigger peer closed while duplicates exist.
+  eventpair_0.reset();
+  EXPECT_EQ(GetPendingSignals(eventpair_1), 0);
+
+  // Resetting first duplicate still leaves second duplicate alive.
+  dup_0a.reset();
+  EXPECT_EQ(GetPendingSignals(eventpair_1), 0);
+
+  // Surviving duplicate can still signal peer.
+  ASSERT_OK(dup_0b.signal_peer(0, ZX_USER_SIGNAL_0));
+  EXPECT_EQ(GetPendingSignals(eventpair_1), ZX_USER_SIGNAL_0);
+
+  // Resetting last handle triggers peer closed on peer endpoint.
+  dup_0b.reset();
+  EXPECT_EQ(GetPendingSignals(eventpair_1), ZX_EVENTPAIR_PEER_CLOSED | ZX_USER_SIGNAL_0);
+}
+
+TEST(EventPairTest, SignalSelfAfterPeerClosed) {
+  zx::eventpair eventpair_0, eventpair_1;
+  ASSERT_OK(zx::eventpair::create(0, &eventpair_0, &eventpair_1));
+
+  eventpair_1.reset();
+  EXPECT_EQ(GetPendingSignals(eventpair_0), ZX_EVENTPAIR_PEER_CLOSED);
+
+  // Surviving endpoint can still modify its own user signals.
+  ASSERT_OK(eventpair_0.signal(0, ZX_USER_SIGNAL_3));
+  EXPECT_EQ(GetPendingSignals(eventpair_0), ZX_EVENTPAIR_PEER_CLOSED | ZX_USER_SIGNAL_3);
+
+  ASSERT_OK(eventpair_0.signal(ZX_USER_SIGNAL_3, 0));
+  EXPECT_EQ(GetPendingSignals(eventpair_0), ZX_EVENTPAIR_PEER_CLOSED);
+}
+
+TEST(EventPairTest, InvalidSignalBits) {
+  zx::eventpair eventpair_0, eventpair_1;
+  ASSERT_OK(zx::eventpair::create(0, &eventpair_0, &eventpair_1));
+
+  // ZX_EVENTPAIR_PEER_CLOSED cannot be asserted or cleared by userspace.
+  EXPECT_STATUS(ZX_ERR_INVALID_ARGS, eventpair_0.signal(0, ZX_EVENTPAIR_PEER_CLOSED));
+  EXPECT_STATUS(ZX_ERR_INVALID_ARGS, eventpair_0.signal(ZX_EVENTPAIR_PEER_CLOSED, 0));
+  EXPECT_STATUS(ZX_ERR_INVALID_ARGS, eventpair_0.signal_peer(0, ZX_EVENTPAIR_PEER_CLOSED));
+  EXPECT_STATUS(ZX_ERR_INVALID_ARGS, eventpair_0.signal_peer(ZX_EVENTPAIR_PEER_CLOSED, 0));
+
+  // Non-allowed signal bits (outside ZX_USER_SIGNAL_ALL | ZX_EVENT_SIGNALED) return
+  // ZX_ERR_INVALID_ARGS.
+  EXPECT_STATUS(ZX_ERR_INVALID_ARGS, eventpair_0.signal(0, 1u << 4));
+  EXPECT_STATUS(ZX_ERR_INVALID_ARGS, eventpair_0.signal_peer(0, 1u << 4));
+  EXPECT_STATUS(ZX_ERR_INVALID_ARGS, eventpair_0.signal(0, 1u << 23));
+  EXPECT_STATUS(ZX_ERR_INVALID_ARGS, eventpair_0.signal_peer(0, 1u << 23));
+
+  // ZX_EVENT_SIGNALED is allowed.
+  ASSERT_OK(eventpair_0.signal(0, ZX_EVENT_SIGNALED));
+  EXPECT_EQ(GetPendingSignals(eventpair_0), ZX_EVENT_SIGNALED);
+  ASSERT_OK(eventpair_0.signal(ZX_EVENT_SIGNALED, 0));
+  EXPECT_EQ(GetPendingSignals(eventpair_0), 0);
+
+  ASSERT_OK(eventpair_0.signal_peer(0, ZX_EVENT_SIGNALED));
+  EXPECT_EQ(GetPendingSignals(eventpair_1), ZX_EVENT_SIGNALED);
+  ASSERT_OK(eventpair_0.signal_peer(ZX_EVENT_SIGNALED, 0));
+  EXPECT_EQ(GetPendingSignals(eventpair_1), 0);
+}
+
+TEST(EventPairTest, InvalidHandleAndWrongType) {
+  // Invalid handle
+  EXPECT_STATUS(ZX_ERR_BAD_HANDLE, zx_object_signal_peer(ZX_HANDLE_INVALID, 0, ZX_USER_SIGNAL_0));
+
+  // Non-peered object type without ZX_RIGHT_SIGNAL_PEER (event) returns ZX_ERR_ACCESS_DENIED
+  zx_handle_t event = ZX_HANDLE_INVALID;
+  ASSERT_OK(zx_event_create(0, &event));
+  EXPECT_STATUS(ZX_ERR_ACCESS_DENIED, zx_object_signal_peer(event, 0, ZX_USER_SIGNAL_0));
+  zx_handle_close(event);
+}
+
 }  // namespace
