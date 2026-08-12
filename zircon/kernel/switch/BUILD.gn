@@ -383,9 +383,13 @@ variant("kernel_config") {
     "EXPERIMENTAL_FORCE_NEW_WAKEUP_ACCOUNTING=$experimental_force_enable_new_wakeup_accounting",
     "EXPERIMENTAL_CONTINUOUS_PER_VMO_ATTRIBUTION_ENABLED=$experimental_continuous_per_vmo_attribution_enabled",
     "CHANNEL_MESSAGE_BODY_TRACING_ENABLED=$channel_message_body_tracing_enabled",
+    "IRIS_REGISTER_ENERGY_MODEL=$iris_register_energy_model",
   ]
 
   rustflags += [ "--cfg=debug_print_level=\"$kernel_debug_print_level\"" ]
+  if (iris_register_energy_model) {
+    rustflags += [ "--cfg=iris_register_energy_model" ]
+  }
 
   if (kernel_no_userabi) {
     defines += [ "KERNEL_NO_USERABI" ]

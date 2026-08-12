@@ -12,6 +12,8 @@
 __BEGIN_CDECLS
 
 void iris_power_init_early();
+void iris_power_init();
+uintptr_t cpp_iris_get_opp_vaddr();
 
 __END_CDECLS
 

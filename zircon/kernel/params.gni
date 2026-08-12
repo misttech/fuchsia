@@ -126,6 +126,12 @@ declare_args() {
   # Include partial channel message bodies in IPC traces. # This is intended as
   # a local debugging feature and is not intended for production use.
   channel_message_body_tracing_enabled = false
+
+  # Controls whether the Iris CPU power driver registers the energy model,
+  # enabling runtime processor power management (RPPM) by the kernel scheduler.
+  # Defaulted to false to prevent regressing existing builds until priority
+  # assignments on Iris are tuned.
+  iris_register_energy_model = false
 }
 
 declare_args() {

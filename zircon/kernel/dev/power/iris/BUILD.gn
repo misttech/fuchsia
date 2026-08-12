@@ -17,16 +17,21 @@ kernel_rust_mod("iris-rs") {
   sources = [ "iris.rs" ]
   deps = [
     "//sdk/rust/zx-status",
+    "//src/lib/regio",
     "//zircon/kernel/lib/debug",
   ]
   test_deps = [ "//zircon/kernel/lib/unittest:unittest-rs" ]
 }
 
 source_set("iris") {
+  sources = [ "iris_ffi.cc" ]
   public_deps = [ ":headers" ]
   deps = [
     ":iris-rs",
     "//zircon/kernel/dev/pdev/power",
     "//zircon/kernel/dev/psci",
+    "//zircon/kernel/lib/arch",
+    "//zircon/kernel/lib/power-management",
+    "//zircon/system/ulib/fbl",
   ]
 }
