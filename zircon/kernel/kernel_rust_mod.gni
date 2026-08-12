@@ -37,6 +37,7 @@ template("_kernel_rust_mod_impl") {
   # This is semantically in Rust generating a single source file that contains:
   # ```
   # <... the $source_root file's contents ...>
+  # #[allow(unused_attributes)]
   # #[path "$gen_dir_to_root_build_dir"]
   # mod _imports {
   #   #[path "../path/from/root_build_dir/to/foo/source/dir"]
@@ -256,6 +257,7 @@ template("_kernel_rust_mod_impl") {
           "// kernel_rust_mod() source paths are relative to root_build_dir.",
           "// The `_imports` module exists just to make the collected paths",
           "// below resolve relative to this generated file.",
+          "#[allow(unused_attributes)]",
           "#[path = \"${gen_dir_to_root_build_dir}\"]",
           "mod _imports {",
         ]
