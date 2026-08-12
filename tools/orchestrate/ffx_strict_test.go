@@ -911,3 +911,46 @@ exit 0
 		t.Errorf("Expected '--target my-target target show' in args, got: %s", args)
 	}
 }
+
+func TestFFXStrictClient_TargetSnapshot(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+	argsFile := filepath.Join(tmpDir, "args.txt")
+	script := fmt.Sprintf(`#!/bin/bash
+echo "$@" >> %s
+exit 0
+`, argsFile)
+	fakeFfx := createFakeFfx(t, tmpDir, script)
+
+	ctx := context.Background()
+	client, err := NewFFXStrictClient(ctx, fakeFfx, tmpDir, "test-repo")
+	if err != nil {
+		t.Fatalf("NewFFXStrictClient failed: %v", err)
+	}
+	defer client.Close()
+
+	target := "my-target"
+	client.SetDefaultTarget(&target)
+
+	snapshotDir := filepath.Join(tmpDir, "snapshot")
+	err = client.TargetSnapshot(ctx, snapshotDir)
+	if err != nil {
+		t.Fatalf("TargetSnapshot failed: %v", err)
+	}
+
+	data, err := os.ReadFile(argsFile)
+	if err != nil {
+		t.Fatalf("Failed to read args file: %v", err)
+	}
+	args := string(data)
+
+	if !strings.Contains(args, "target snapshot --dir") {
+		t.Errorf("Expected 'target snapshot --dir' in args, got: %s", args)
+	}
+	if !strings.Contains(args, snapshotDir) {
+		t.Errorf("Expected snapshot dir %q in args, got: %s", snapshotDir, args)
+	}
+	if !strings.Contains(args, "--target my-target") {
+		t.Errorf("Expected '--target my-target' in args, got: %s", args)
+	}
+}

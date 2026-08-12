@@ -538,6 +538,20 @@ func (c *FFXStrictClient) TargetShow(ctx context.Context) (string, error) {
 	return out, nil
 }
 
+func (c *FFXStrictClient) TargetSnapshot(ctx context.Context, dir string) error {
+	c.mu.Lock()
+	target := c.ffxInst.GetTarget()
+	c.mu.Unlock()
+
+	// FFXWithTarget returns a shallow copy of FFXInstance with the target set.
+	// We use it here to snapshot the target and ensure thread-safety.
+	inst := ffxutil.FFXWithTarget(c.ffxInst, target)
+	if err := inst.Snapshot(ctx, dir, ""); err != nil {
+		return fmt.Errorf("target snapshot failed: %w", err)
+	}
+	return nil
+}
+
 var xdgEnvVars = []string{"HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME"}
 
 func (c *FFXStrictClient) ApplyEnv(env []string) ([]string, error) {
