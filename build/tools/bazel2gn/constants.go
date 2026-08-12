@@ -26,7 +26,8 @@ const skipAnnotation = "# @bazel2gn:skip"
 
 // pathOverwriteAnnotationPrefix is a comment annotation prefix that indicates a path should be
 // overwritten in GN. In this case bazel2gn will ignore the value set in the BUILD.bazel file
-// and use the value specified in the annotation in the BUILD.gn file instead.
+// and use the value specified in the annotation in the BUILD.gn file instead. The value specified
+// in the annotation will be wrapped in double quotes.
 const pathOverwriteAnnotationPrefix = "# @bazel2gn:path_overwrite:"
 
 // rawOverwriteAnnotationPrefix is a comment annotation prefix that indicates a value should be

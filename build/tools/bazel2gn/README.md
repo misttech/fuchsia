@@ -133,7 +133,7 @@ annotations are placed.
 #### `@bazel2gn:skip`
 
 This annotation tells `bazel2gn` to skip the annotated statement. It is useful
-for ignoring targets that are no longer useful in GN. This annotation has to be
+for ignoring targets that are no longer useful in GN. This annotation must be
 placed right above the statement it is annotating to take effect.
 
 **Example:**
@@ -163,7 +163,7 @@ rustc_library("foo") {
 
 This annotation tells `bazel2gn` an assignment is an explicit clear.
 It is useful when you want to explicitly set an attribute to empty in GN,
-which would otherwise result in list concatenation in GN. This annotation has to
+which would otherwise result in list concatenation in GN. This annotation must
 be placed on the same line as the assignment it is annotating to take effect.
 
 NOTE: This currently only applies to the `configs` attribute in GN.
@@ -190,8 +190,9 @@ source_set("foo") {
 #### `@bazel2gn:path_overwrite:<path>`
 
 This annotation allows you to overwrite a specific path in a list. It is useful
-when a file path in Bazel is different from its path in GN. This annotation has
-to be placed on the same line as the path it is overwriting to take effect.
+when a file path in Bazel is different from its path in GN. This annotation must
+be placed on the same line as the path it is overwriting to take effect.
+The specified value will be wrapped in double quotes.
 
 **Example:**
 
@@ -213,6 +214,39 @@ source_set("foo") {
     "foo.cc",
     "bar_replaced.cc",
   ]
+}
+```
+
+#### `@bazel2gn:raw_overwrite:<value>`
+
+<!-- TODO(https://fxbug.dev/543568916) Specify where this and other annotations
+     are supported once a decision is made about which scenarios to support
+     and that is reflected in the implementation. -->
+Where supported, this annotation allows you to overwrite a value with the exact
+text that follows the annotation. It is useful when a non-path value is
+different in GN, including cases where GN features like `rebase_path()` must be
+used. This annotation must be placed on the same line as the value it is
+overwriting to take effect.
+
+**Example:**
+
+```bzl
+cc_library(
+    name = "foo",
+    ...
+    ldflags = [
+        "-Wl,--version-script=sdk/lib/fdio/fdio.ld",  # @bazel2gn:raw_overwrite:"-Wl,--version-script=" + rebase_path("fdio.ld", root_build_dir)
+    ],
+)
+```
+
+**Converted GN:**
+
+```gn
+source_set("foo") {
+    ...
+  ldflags =
+      [ "-Wl,--version-script=" + rebase_path("fdio.ld", root_build_dir) ]
 }
 ```
 

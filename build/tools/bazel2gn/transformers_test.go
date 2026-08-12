@@ -182,7 +182,7 @@ func TestDepsConversion(t *testing.T) {
 	}
 }
 
-func TestPathsConversion(t *testing.T) {
+func TestPathOverwriteAnnotation(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
 		bazel  string
@@ -292,11 +292,13 @@ func TestLdflagsConversion(t *testing.T) {
 	name = "test",
 	ldflags = [
 		"-Wl,--something", # @bazel2gn:path_overwrite:-Wl,--something_overwritten
+		"-Wl,--something", # @bazel2gn:raw_overwrite:"-Wl,--something_overwritten"
 		"-Wl,--another",
 	],
 )`,
 			wantGN: `static_library("test") {
 	ldflags = [
+		"-Wl,--something_overwritten",
 		"-Wl,--something_overwritten",
 		"-Wl,--another",
 	]
