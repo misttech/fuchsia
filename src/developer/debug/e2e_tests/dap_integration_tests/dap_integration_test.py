@@ -17,7 +17,9 @@ from pydap.dap_types import Source, SourceBreakpoint
 from pydap.models import (
     InitializeArguments,
     LaunchArguments,
+    ScopesArguments,
     SetBreakpointsArguments,
+    VariablesArguments,
 )
 from zxdb_dap import ZxdbStackTraceArguments
 
@@ -162,6 +164,221 @@ class TestDapBreakpointLine(DapTestCase):
         self.assertTrue(len(frames) > 0)
 
         self.assertEqual(frames[0]["line"], line_number)
+
+
+class TestDapPrettyTypes(DapTestCase):
+    require_build_type = ["optimize=none"]
+
+    async def test_pretty_types(self) -> None:
+        pretty_types_path = get_dap_source_path(
+            "src/developer/debug/e2e_tests/inferiors/pretty_types.cc"
+        )
+        line_number = 38
+        bp_resp = await self.set_breakpoints(
+            SetBreakpointsArguments(
+                source=Source(path=pretty_types_path),
+                breakpoints=[SourceBreakpoint(line=line_number)],
+            )
+        )
+        self.assertTrue(bp_resp["success"])
+        self.assertEqual(len(bp_resp["body"]["breakpoints"]), 1)
+        bp_id = bp_resp["body"]["breakpoints"][0]["id"]
+
+        self.launch(
+            LaunchArguments(
+                process="fuchsia-pkg://fuchsia.com/zxdb_e2e_inferiors#meta/pretty_types.cm"
+            )
+        )
+        stopped_event = await self.on_event("stopped", timeout=120.0)
+        self.assertEqual(stopped_event["body"]["reason"], "breakpoint")
+        self.assertIn(bp_id, stopped_event["body"]["hitBreakpointIds"])
+
+        thread_id = stopped_event["body"]["threadId"]
+        stack_resp = await self.zxdb_stack_trace(
+            ZxdbStackTraceArguments(thread_id=thread_id, remote_unwind=True)
+        )
+        frames = stack_resp["body"]["stackFrames"]
+        self.assertTrue(len(frames) > 0)
+        frame_id = frames[0]["id"]
+
+        scopes_resp = await self.scopes(ScopesArguments(frame_id=frame_id))
+        self.assertTrue(scopes_resp["success"])
+        locals_scope = next(
+            s for s in scopes_resp["body"]["scopes"] if s["name"] == "Locals"
+        )
+        locals_ref = locals_scope["variablesReference"]
+
+        vars_resp = await self.variables(
+            VariablesArguments(variables_reference=locals_ref)
+        )
+        self.assertTrue(vars_resp["success"])
+        vars_by_name = {v["name"]: v for v in vars_resp["body"]["variables"]}
+
+        self.assertIn("vals", vars_by_name)
+        self.assertIn("std::__2::vector", vars_by_name["vals"]["type"])
+        self.assertIn("it", vars_by_name)
+        self.assertEqual(vars_by_name["it"]["value"], "iterator")
+        self.assertIn("sv", vars_by_name)
+        if vars_by_name["sv"]["value"] != "<optimized out>":
+            self.assertEqual(vars_by_name["sv"]["value"], '"abc"')
+        self.assertIn("span", vars_by_name)
+        self.assertIn("std::__2::span", vars_by_name["span"]["type"])
+
+        # In DAP, compound collections (like std::vector) return an empty top-level
+        # value string, while their elements are populated as child variables under
+        # variablesReference.
+        vals_ref = vars_by_name["vals"]["variablesReference"]
+        self.assertGreater(vals_ref, 0)
+        vals_children_resp = await self.variables(
+            VariablesArguments(variables_reference=vals_ref)
+        )
+        self.assertTrue(vals_children_resp["success"])
+        vals_children = {
+            v["name"]: v["value"]
+            for v in vals_children_resp["body"]["variables"]
+        }
+        self.assertEqual(vals_children["[0]"], "3")
+        self.assertEqual(vals_children["[1]"], "4")
+        self.assertEqual(vals_children["[2]"], "5")
+        self.assertEqual(vals_children["[3]"], "6")
+
+        # Expanding an iterator yields a dereferenced child node prefixed with '*'.
+        it_ref = vars_by_name["it"]["variablesReference"]
+        self.assertGreater(it_ref, 0)
+        it_children_resp = await self.variables(
+            VariablesArguments(variables_reference=it_ref)
+        )
+        self.assertTrue(it_children_resp["success"])
+        it_children = {
+            v["name"]: v["value"] for v in it_children_resp["body"]["variables"]
+        }
+        self.assertEqual(it_children["*it"], "3")
+
+
+class TestDapPrettyTypesRust(DapTestCase):
+    require_build_type = ["optimize=none"]
+
+    async def test_pretty_types_rust(self) -> None:
+        pretty_types_path = get_dap_source_path(
+            "src/developer/debug/e2e_tests/inferiors/pretty_types.rs"
+        )
+        line_number = 51
+        bp_resp = await self.set_breakpoints(
+            SetBreakpointsArguments(
+                source=Source(path=pretty_types_path),
+                breakpoints=[SourceBreakpoint(line=line_number)],
+            )
+        )
+        self.assertTrue(bp_resp["success"])
+        self.assertEqual(len(bp_resp["body"]["breakpoints"]), 1)
+        bp_id = bp_resp["body"]["breakpoints"][0]["id"]
+
+        self.launch(
+            LaunchArguments(
+                process="fuchsia-pkg://fuchsia.com/zxdb_e2e_inferiors#meta/pretty_types_rust.cm"
+            )
+        )
+        stopped_event = await self.on_event("stopped", timeout=120.0)
+        self.assertEqual(stopped_event["body"]["reason"], "breakpoint")
+        self.assertIn(bp_id, stopped_event["body"]["hitBreakpointIds"])
+
+        thread_id = stopped_event["body"]["threadId"]
+        stack_resp = await self.zxdb_stack_trace(
+            ZxdbStackTraceArguments(thread_id=thread_id, remote_unwind=True)
+        )
+        frames = stack_resp["body"]["stackFrames"]
+        self.assertTrue(len(frames) > 0)
+        # Breakpoints on lines with function calls (e.g. heap.pop()) can stop in an
+        # inlined standard library helper frame. Select the main frame for locals.
+        main_frame = next(
+            (f for f in frames if "main" in f.get("name", "")), frames[0]
+        )
+        frame_id = main_frame["id"]
+
+        scopes_resp = await self.scopes(ScopesArguments(frame_id=frame_id))
+        self.assertTrue(scopes_resp["success"])
+        locals_scope = next(
+            s for s in scopes_resp["body"]["scopes"] if s["name"] == "Locals"
+        )
+        locals_ref = locals_scope["variablesReference"]
+
+        vars_resp = await self.variables(
+            VariablesArguments(variables_reference=locals_ref)
+        )
+        self.assertTrue(vars_resp["success"])
+        vars_by_name = {v["name"]: v for v in vars_resp["body"]["variables"]}
+
+        self.assertIn("s", vars_by_name)
+        self.assertEqual(vars_by_name["s"]["value"], '"hello"')
+        self.assertIn("os_str", vars_by_name)
+        self.assertEqual(vars_by_name["os_str"]["value"], '"osstr"')
+        self.assertIn("heap", vars_by_name)
+        self.assertIn("BinaryHeap", vars_by_name["heap"]["type"])
+        self.assertIn("v", vars_by_name)
+        self.assertIn("NestedVecs", vars_by_name["v"]["type"])
+
+        # Expand heap children
+        heap_ref = vars_by_name["heap"]["variablesReference"]
+        self.assertGreater(heap_ref, 0)
+        heap_children_resp = await self.variables(
+            VariablesArguments(variables_reference=heap_ref)
+        )
+        self.assertTrue(heap_children_resp["success"])
+        heap_children = {
+            v["name"]: v for v in heap_children_resp["body"]["variables"]
+        }
+        self.assertIn("[0]", heap_children)
+        self.assertIn("[1]", heap_children)
+        self.assertIn("[2]", heap_children)
+        self.assertIn("[3]", heap_children)
+        self.assertIn("[4]", heap_children)
+
+        elem0_ref = heap_children["[0]"]["variablesReference"]
+        self.assertGreater(elem0_ref, 0)
+        elem0_resp = await self.variables(
+            VariablesArguments(variables_reference=elem0_ref)
+        )
+        self.assertTrue(elem0_resp["success"])
+        elem0_fields = {
+            v["name"]: v["value"] for v in elem0_resp["body"]["variables"]
+        }
+        self.assertEqual(elem0_fields["num"], "10")
+
+        # Expand NestedVecs v fields and nested vector children
+        v_ref = vars_by_name["v"]["variablesReference"]
+        self.assertGreater(v_ref, 0)
+        v_fields_resp = await self.variables(
+            VariablesArguments(variables_reference=v_ref)
+        )
+        self.assertTrue(v_fields_resp["success"])
+        v_fields = {v["name"]: v for v in v_fields_resp["body"]["variables"]}
+        self.assertIn("input", v_fields)
+        self.assertIn("output", v_fields)
+
+        input_ref = v_fields["input"]["variablesReference"]
+        self.assertGreater(input_ref, 0)
+        input_children_resp = await self.variables(
+            VariablesArguments(variables_reference=input_ref)
+        )
+        self.assertTrue(input_children_resp["success"])
+        input_children = {
+            v["name"]: v for v in input_children_resp["body"]["variables"]
+        }
+        self.assertIn("[0]", input_children)
+        self.assertIn("[1]", input_children)
+        self.assertIn("[2]", input_children)
+        self.assertIn("[3]", input_children)
+
+        input_elem0_ref = input_children["[0]"]["variablesReference"]
+        self.assertGreater(input_elem0_ref, 0)
+        input_elem0_resp = await self.variables(
+            VariablesArguments(variables_reference=input_elem0_ref)
+        )
+        self.assertTrue(input_elem0_resp["success"])
+        input_elem0_fields = {
+            v["name"]: v["value"] for v in input_elem0_resp["body"]["variables"]
+        }
+        self.assertEqual(input_elem0_fields["num"], "1")
 
 
 class TestLaunch(DapTestCase):

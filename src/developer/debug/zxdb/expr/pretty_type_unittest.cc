@@ -209,4 +209,26 @@ TEST_F(PrettyTypeTest, PrettyWrappedValue) {
   EXPECT_EQ(">]", node.wrapper_suffix());
 }
 
+TEST_F(PrettyTypeTest, PrettyIterator) {
+  auto structure =
+      MakeCollectionType(DwarfTag::kStructureType, "TestIter", {{"val", MakeInt32Type()}});
+  ExprValue value(static_cast<int32_t>(42), structure);
+
+  PrettyIterator pretty("val");
+
+  FormatNode node("it", value);
+  node.set_type("TestIter");
+  auto eval_context = fxl::MakeRefCounted<MockEvalContext>();
+  FormatOptions options;
+
+  bool complete = false;
+  pretty.Format(&node, options, eval_context,
+                fit::defer_callback([&complete]() { complete = true; }));
+  EXPECT_TRUE(complete);
+  ASSERT_EQ(1u, node.children().size());
+  EXPECT_EQ("*it", node.children()[0]->name());
+  SyncFillAndDescribeFormatNode(eval_context, node.children()[0].get(), options);
+  EXPECT_EQ(42, node.children()[0]->value().GetAs<int32_t>());
+}
+
 }  // namespace zxdb

@@ -520,7 +520,8 @@ void PrettyIterator::Format(FormatNode* node, const FormatOptions& options,
                      weak_node->set_description("iterator");
 
                      // Make the dereference child node the value.
-                     auto deref_node = std::make_unique<FormatNode>("*", value.take_value());
+                     auto deref_node =
+                         std::make_unique<FormatNode>("*" + weak_node->name(), value.take_value());
                      deref_node->set_child_kind(FormatNode::kPointerExpansion);
                      weak_node->children().push_back(std::move(deref_node));
                    });

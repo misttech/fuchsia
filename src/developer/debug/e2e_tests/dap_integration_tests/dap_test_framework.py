@@ -38,8 +38,10 @@ from pydap.models import (
     EvaluateArguments,
     InitializeArguments,
     LaunchArguments,
+    ScopesArguments,
     SetBreakpointsArguments,
     StackTraceArguments,
+    VariablesArguments,
 )
 from zxdb_dap import ZxdbDapClient, ZxdbStackTraceArguments
 
@@ -600,6 +602,12 @@ class DapTestFramework:
     def set_breakpoints(self, args: SetBreakpointsArguments) -> RequestFuture:
         return self._send_wrapper("setBreakpoints", args)
 
+    def scopes(self, args: ScopesArguments) -> RequestFuture:
+        return self._send_wrapper("scopes", args)
+
+    def variables(self, args: VariablesArguments) -> RequestFuture:
+        return self._send_wrapper("variables", args)
+
     def disconnect(
         self, args: Optional[DisconnectArguments] = None
     ) -> RequestFuture:
@@ -998,6 +1006,12 @@ class DapTestCase(unittest.IsolatedAsyncioTestCase):
 
     def set_breakpoints(self, args: SetBreakpointsArguments) -> RequestFuture:
         return self.framework.set_breakpoints(args)
+
+    def scopes(self, args: ScopesArguments) -> RequestFuture:
+        return self.framework.scopes(args)
+
+    def variables(self, args: VariablesArguments) -> RequestFuture:
+        return self.framework.variables(args)
 
     def split_request(self, seq: int, delay: float = 0.1) -> None:
         self.framework.split_request(seq, delay)
