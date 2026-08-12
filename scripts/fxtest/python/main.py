@@ -1900,6 +1900,10 @@ class AsyncMain:
                 except execution.TestCouldNotRun as e:
                     status = event.TestSuiteStatus.FAILED_TO_START
                     message = str(e)
+                    test_failure_observed = True
+                    to_run.abort_group.set()
+                    if flags.fail:
+                        abort_all_tests_event.set()
                 except execution.TestSkipped as e:
                     status = event.TestSuiteStatus.SKIPPED
                     message = str(e)

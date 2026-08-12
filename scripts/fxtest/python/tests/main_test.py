@@ -1798,6 +1798,109 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(any(["bar_test" in v[0] for v in call_prefixes]))
         self.assertFalse(any(["baz_test" in v[0] for v in call_prefixes]))
 
+    async def test_abort_all_tests_event_triggered_with_fail(self) -> None:
+        """Test that abort_all_tests_event is triggered by running multiple tests with the --fail flag."""
+        foo_started = asyncio.Event()
+        foo_abort_signal: asyncio.Event | None = None
+
+        async def command_handler(
+            *args: typing.Any, **kwargs: typing.Any
+        ) -> mock.MagicMock:
+            nonlocal foo_abort_signal
+            command_str = " ".join(str(a) for a in args)
+            if "foo-test" in command_str:
+                foo_abort_signal = kwargs.get("abort_signal")
+                assert foo_abort_signal is not None
+                foo_started.set()
+                # Wait until abort_signal is triggered by the failure of bar_test.
+                await foo_abort_signal.wait()
+                return mock.MagicMock(
+                    return_code=0,
+                    stdout="",
+                    stderr="",
+                    was_timeout=False,
+                )
+            elif "bar_test" in command_str:
+                # Ensure foo-test has started running concurrently before bar_test fails.
+                await foo_started.wait()
+                return mock.MagicMock(
+                    return_code=1,
+                    stdout="bar_test failed",
+                    stderr="",
+                    was_timeout=False,
+                )
+            return mock.MagicMock(
+                return_code=0,
+                stdout="",
+                stderr="",
+                was_timeout=False,
+            )
+
+        command_mock = self._mock_run_command(0)
+        command_mock.side_effect = command_handler
+        self._mock_has_package_server_connected_to_device(True)
+        self._mock_has_tests_in_base([])
+
+        recorder = event.EventRecorder()
+        ret = await main.async_main_wrapper(
+            args.parse_args(["--simple", "--no-build", "--fail"]),
+            recorder=recorder,
+        )
+
+        self.assertEqual(ret, 1)
+
+        # Verify that abort_all_tests_event was passed as abort_signal and was set.
+        assert foo_abort_signal is not None
+        self.assertTrue(foo_abort_signal.is_set())
+
+        # foo-test and bar_test ran concurrently; baz_test was aborted before running.
+        call_prefixes = self._make_call_args_prefix_set(
+            command_mock.call_args_list
+        )
+        self.assertTrue(any(["bar_test" in v[0] for v in call_prefixes]))
+        self.assertTrue(any(["foo-test" in " ".join(v) for v in call_prefixes]))
+        self.assertFalse(any(["baz_test" in v[0] for v in call_prefixes]))
+
+        # Verify test suite statuses from recorded events:
+        # bar_test should have FAILED, and foo-test should have ABORTED due to the failure.
+        suite_statuses = [
+            (payload_event.status, payload_event.message)
+            async for e in recorder.iter()
+            if (payload := e.payload) is not None
+            and (payload_event := payload.test_suite_ended) is not None
+        ]
+        self.assertIn(
+            (
+                event.TestSuiteStatus.FAILED,
+                None,
+            ),
+            suite_statuses,
+        )
+        self.assertIn(
+            (
+                event.TestSuiteStatus.ABORTED,
+                "Test suite aborted due to another failure",
+            ),
+            suite_statuses,
+        )
+
+    @mock.patch.object(execution.TestExecution, "run")
+    async def test_test_could_not_run_returns_failure(
+        self, mock_test_run: mock.AsyncMock
+    ) -> None:
+        """Test that TestCouldNotRun (e.g. missing Merkle hash) causes fx test to exit with code 1."""
+        mock_test_run.side_effect = execution.TestCouldNotRun(
+            "Missing Merkle hash"
+        )
+        self._mock_run_command(0)
+        self._mock_has_package_server_connected_to_device(True)
+        self._mock_has_tests_in_base([])
+
+        ret = await main.async_main_wrapper(
+            args.parse_args(["--simple", "--no-build", "bar_test"])
+        )
+        self.assertEqual(ret, 1)
+
     async def test_count(self) -> None:
         """Test that we can re-run a test multiple times with --count"""
 
