@@ -1973,6 +1973,19 @@
             "audit_expectations": []
         },
         {
+            "name": "SocketPassSecTest.UnixDomainDatagram",
+            "audit_expectations": [
+                "avc:  denied  { setopt } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:unix_dgram_socket_test_t:s0 tclass=unix_dgram_socket permissive=1",
+                "avc:  denied  { write } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:unix_dgram_socket_test_t:s0 tclass=unix_dgram_socket permissive=1",
+                "avc:  denied  { sendto } for scontext=test_u:test_r:unix_dgram_socket_test_t:s0 tcontext=test_u:test_r:unix_dgram_socket_test_t:s0 tclass=unix_dgram_socket permissive=1",
+                "avc:  denied  { read } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:unix_dgram_socket_test_t:s0 tclass=unix_dgram_socket permissive=1"
+            ]
+        },
+        {
+            "name": "SocketPassSecTest.UnixDomainDatagramSendBeforePassSec",
+            "audit_expectations": []
+        },
+        {
             "name": "SocketPeerSecTest.UnixDomainDatagram",
             "audit_expectations": [
                 "avc:  denied  { getopt } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:unix_dgram_socket_test_t:s0 tclass=unix_dgram_socket permissive=1"

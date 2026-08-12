@@ -704,6 +704,87 @@ TEST(SocketPeerSecTest, SocketPairUnixDatagram) {
   EXPECT_EQ(GetPeerSec(fd2.get()), fit::error(ENOPROTOOPT));
 }
 
+#ifndef SCM_SECURITY
+#define SCM_SECURITY 0x03
+#endif
+
+fit::result<int, std::string> RecvMsgSecurityContext(int fd) {
+  char buf[64]{};
+  struct iovec iov = {
+      .iov_base = buf,
+      .iov_len = sizeof(buf),
+  };
+  char cmsg_buf[CMSG_SPACE(256)]{};
+  struct msghdr msg = {
+      .msg_iov = &iov,
+      .msg_iovlen = 1,
+      .msg_control = cmsg_buf,
+      .msg_controllen = sizeof(cmsg_buf),
+  };
+  if (recvmsg(fd, &msg, 0) == -1) {
+    return fit::error(errno);
+  }
+  for (struct cmsghdr* cmsg = CMSG_FIRSTHDR(&msg); cmsg != nullptr;
+       cmsg = CMSG_NXTHDR(&msg, cmsg)) {
+    if (cmsg->cmsg_level == SOL_SOCKET && cmsg->cmsg_type == SCM_SECURITY) {
+      char* sec = reinterpret_cast<char*>(CMSG_DATA(cmsg));
+      size_t sec_len = cmsg->cmsg_len - sizeof(struct cmsghdr);
+      return RemoveTrailingNul(std::string(sec, sec_len));
+    }
+  }
+  return fit::error(ENODATA);
+}
+
+TEST(SocketPassSecTest, UnixDomainDatagram) {
+  ASSERT_EQ(WriteTaskAttr("current", "test_u:test_r:socket_test_t:s0"), fit::ok());
+
+  int fds[2];
+  ASSERT_THAT(socketpair(AF_UNIX, SOCK_DGRAM, 0, fds), SyscallSucceeds());
+  fbl::unique_fd sender(fds[0]);
+  fbl::unique_fd receiver(fds[1]);
+
+  EXPECT_THAT(GetLabel(sender.get()), IsOk("test_u:test_r:unix_dgram_socket_test_t:s0"));
+  EXPECT_THAT(GetLabel(receiver.get()), IsOk("test_u:test_r:unix_dgram_socket_test_t:s0"));
+
+  // Enable SO_PASSSEC on the receiver.
+  int one = 1;
+  ASSERT_THAT(setsockopt(receiver.get(), SOL_SOCKET, SO_PASSSEC, &one, sizeof(one)),
+              SyscallSucceeds());
+
+  // Send message after SO_PASSSEC is enabled.
+  const char kPayload[] = "hello";
+  ASSERT_EQ(send(sender.get(), kPayload, sizeof(kPayload), 0), (ssize_t)sizeof(kPayload));
+
+  // Receive message and verify that SCM_SECURITY contains the sender's security context.
+  EXPECT_THAT(RecvMsgSecurityContext(receiver.get()),
+              IsOk("test_u:test_r:unix_dgram_socket_test_t:s0"));
+}
+
+TEST(SocketPassSecTest, UnixDomainDatagramSendBeforePassSec) {
+  ASSERT_EQ(WriteTaskAttr("current", "test_u:test_r:socket_test_t:s0"), fit::ok());
+
+  int fds[2];
+  ASSERT_THAT(socketpair(AF_UNIX, SOCK_DGRAM, 0, fds), SyscallSucceeds());
+  fbl::unique_fd sender(fds[0]);
+  fbl::unique_fd receiver(fds[1]);
+
+  EXPECT_THAT(GetLabel(sender.get()), IsOk("test_u:test_r:unix_dgram_socket_test_t:s0"));
+  EXPECT_THAT(GetLabel(receiver.get()), IsOk("test_u:test_r:unix_dgram_socket_test_t:s0"));
+
+  // Send message BEFORE SO_PASSSEC is enabled on the receiver.
+  const char kPayload[] = "hello";
+  ASSERT_EQ(send(sender.get(), kPayload, sizeof(kPayload), 0), (ssize_t)sizeof(kPayload));
+
+  // Enable SO_PASSSEC on the receiver AFTER the message has been queued.
+  int one = 1;
+  ASSERT_THAT(setsockopt(receiver.get(), SOL_SOCKET, SO_PASSSEC, &one, sizeof(one)),
+              SyscallSucceeds());
+
+  // Receive message and verify that SCM_SECURITY contains the sender's security context.
+  EXPECT_THAT(RecvMsgSecurityContext(receiver.get()),
+              IsOk("test_u:test_r:unix_dgram_socket_test_t:s0"));
+}
+
 struct SocketBindTestCase {
   const char* label;
   int expected_errno;

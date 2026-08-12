@@ -618,7 +618,7 @@ impl SocketOps for UnixSocket {
                 let creds = creds.unwrap_or_else(|| current_task.current_ucred());
                 ancillary_data.push(AncillaryData::Unix(UnixControlData::Credentials(creds)));
             }
-            if peer.passsec {
+            if socket.socket_type == SocketType::Datagram {
                 // TODO: https://fxbug.dev/364568855 - Store the opaque LSM property value, and expand
                 // it to a string upon readmsg.
                 let context = security::socket_getpeersec_dgram(current_task, socket);
@@ -1059,6 +1059,12 @@ impl UnixSocketInner {
         if self.passcred {
             // Allow credentials to take priority if they are enabled, so insert at 0.
             info.ancillary_data.insert(0, creds_message);
+        }
+
+        // Security labels are only delivered if passsec is currently enabled on this socket.
+        if !self.passsec {
+            info.ancillary_data
+                .retain(|m| !matches!(m, AncillaryData::Unix(UnixControlData::Security(..))));
         }
 
         Ok(info)
