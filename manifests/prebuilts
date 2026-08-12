@@ -620,23 +620,6 @@
              path="prebuilt/.build-id"
              version="git_revision:25091161bc0a5750540ff2c4b73862e746d8c225"
              attributes="debug-symbols,debug-symbols-x64"/>
-    <package name="fuchsia/drivers/wlan/intel/iwlwifi/x86_64"
-             path="prebuilt/drivers/wlan/intel/iwlwifi"
-             version="git_revision:fed48df4159cbf4d4085a72f808ba6ece6f2a8a5"/>
-    <package name="fuchsia/drivers/wlan/intel/iwlwifi/debug-symbols-x86_64"
-             path="prebuilt/.build-id"
-             version="git_revision:fed48df4159cbf4d4085a72f808ba6ece6f2a8a5"
-             attributes="debug-symbols,debug-symbols-x64"/>
-    <package name="fuchsia/drivers/rtc/pcf8563/arm64"
-             path="prebuilt/drivers/rtc/pcf8563"
-             version="git_revision:9e4d55033ef6af20fd91c058bce06da0a2a62341"/>
-    <package name="fuchsia/drivers/rtc/board_input_bundle_set"
-             path="prebuilt/drivers/rtc/pcf8563/board_input_bundle_set"
-             version="git_revision:9e4d55033ef6af20fd91c058bce06da0a2a62341"/>
-    <package name="fuchsia/drivers/rtc/pcf8563/debug-symbols-arm64"
-             path="prebuilt/.build-id"
-             version="git_revision:9e4d55033ef6af20fd91c058bce06da0a2a62341"
-             attributes="debug-symbols,debug-symbols-arm64"/>
 
      <!-- Components built OOT -->
     <package name="fuchsia/prebuilt/bt-host/arm64"

@@ -43,8 +43,6 @@
           "prebuilt/connectivity/openthread/radio-firmware": true,
           "prebuilt/connectivity/wlan/firmware/broadcom/brcmfmac": true,
           "prebuilt/drivers/backlight": true,
-          "prebuilt/drivers/wlan/intel/iwlwifi": true,
-          "prebuilt/drivers/wlan/intel/iwlwifi": true,
           "prebuilt/fsatrace": true,
           "prebuilt/infra/test_durations/fuchsia": true,
           "prebuilt/sdk-samples/fortune-teller": true,

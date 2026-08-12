@@ -65,31 +65,6 @@
         "instance_id": "xszoY6jKK24tdluHaPguCQ2NEiuFno7Gcfvk32vKuJ8C"
     },
     {
-        "package": "fuchsia/drivers/rtc/board_input_bundle_set",
-        "version": "git_revision:9e4d55033ef6af20fd91c058bce06da0a2a62341",
-        "instance_id": "iZ3SrEsKCNGy8JcImcocf9R3zmgosTpEIpqsaNgQ3CUC"
-    },
-    {
-        "package": "fuchsia/drivers/rtc/pcf8563/arm64",
-        "version": "git_revision:9e4d55033ef6af20fd91c058bce06da0a2a62341",
-        "instance_id": "QbP6JRKSeETsI2zexz4_nw4tt8wDXBFkp15ItI1vK-AC"
-    },
-    {
-        "package": "fuchsia/drivers/rtc/pcf8563/debug-symbols-arm64",
-        "version": "git_revision:9e4d55033ef6af20fd91c058bce06da0a2a62341",
-        "instance_id": "De0rulFbLQNSPqC2seiGGwLjfGDZAZunauxix1V7mpgC"
-    },
-    {
-        "package": "fuchsia/drivers/wlan/intel/iwlwifi/debug-symbols-x86_64",
-        "version": "git_revision:fed48df4159cbf4d4085a72f808ba6ece6f2a8a5",
-        "instance_id": "TdFAtAV3ZJVDsCYERmzxxs61p61IIkZIXKtzH5ud5XcC"
-    },
-    {
-        "package": "fuchsia/drivers/wlan/intel/iwlwifi/x86_64",
-        "version": "git_revision:fed48df4159cbf4d4085a72f808ba6ece6f2a8a5",
-        "instance_id": "Nj1a3NnvNc6fEkTXCjF7rE2xYZTaJ89irUc2dtx7EtcC"
-    },
-    {
         "package": "fuchsia/firmware/arm-trusted-firmware-qemu-bios",
         "version": "version:arm-trusted-firmware=da738d5eae93af342fdc4995dd3c05acb4c9d757;u-boot=127a42c7257a6ffbbd1575ed1cbaa8f5408a44b3,1",
         "instance_id": "8kHGDbyUEhVbpAIFfkWqoAi1s-GWWxEBuwyej_WwozUC"
