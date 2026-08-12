@@ -244,6 +244,12 @@ impl FileOps for PerfEventFile {
     fileops_impl_noop_sync!();
 
     fn close(self: Box<Self>, file: &FileObjectState, current_task: &CurrentTask) {
+        {
+            let mut perf_event_file = self.perf_event_file.write();
+            // Ensure we disable so we clean up resources if the user closes without disabling.
+            perf_event_file.disabled = 1;
+            ping_receiver(perf_event_file.ioctl_sender.clone(), IoctlOp::Disable);
+        }
         let perf_state = get_perf_state(&current_task.kernel);
         let mut events = perf_state.format_id_lookup_table.lock();
         events.remove(&file.id);
