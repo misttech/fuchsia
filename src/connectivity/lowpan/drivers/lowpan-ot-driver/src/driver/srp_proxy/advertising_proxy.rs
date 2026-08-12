@@ -1250,7 +1250,9 @@ impl AdvertisingProxyInner {
             services.insert(service_name, AdvertisingProxyServiceState::Publishing(task));
         }
 
-        services.retain(|name, _| seen_services.contains(name));
+        if update_id.is_none() {
+            services.retain(|name, _| seen_services.contains(name));
+        }
 
         if let Some(update_id) = update_id {
             if let Some(update) = self.outstanding_updates.get(&update_id) {
