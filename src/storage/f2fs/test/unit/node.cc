@@ -38,6 +38,52 @@ zx_status_t GetLockedDnodePage(VnodeF2fs &vnode, pgoff_t index, LockedPage *out)
   return page_or.status_value();
 }
 
+// A file offset that maps to a level-2 (single-indirect) path:
+// inode -> indirect (kNodeInd1Block) -> direct -> data.
+constexpr pgoff_t kLevel2Index = kAddrsPerInode + kAddrsPerBlock * 2;
+
+// The node path to kLevel2Index plus the real intermediate IndirectNode nid and its
+// child DirectNode nid, as produced by BuildLevel2Tree().
+struct Level2Tree {
+  NodePath path;
+  nid_t indirect_nid = 0;
+  nid_t direct_nid = 0;
+};
+
+// Allocates a level-2 block map for |vnode| and fills |*out|, verifying the node types so
+// that a caller's later corruption is meaningful. Wrap calls in ASSERT_NO_FATAL_FAILURE so
+// an inner assertion failure propagates to the test.
+void BuildLevel2Tree(VnodeF2fs &vnode, Level2Tree *out) {
+  {
+    LockedPage dnode_page;
+    ASSERT_EQ(GetLockedDnodePage(vnode, kLevel2Index, &dnode_page), ZX_OK);
+  }
+
+  auto path_or = vnode.GetNodePath(kLevel2Index);
+  ASSERT_TRUE(path_or.is_ok());
+  ASSERT_EQ(path_or->depth, static_cast<size_t>(2));
+
+  NodeManager &node_manager = vnode.fs()->GetNodeManager();
+  {
+    LockedPage ipage;
+    ASSERT_EQ(node_manager.GetNodePage(vnode.Ino(), &ipage), ZX_OK);
+    out->indirect_nid = ipage.GetPage<NodePage>().GetNid(path_or->offset_in_node[0]);
+  }
+  {
+    LockedPage ind_page;
+    ASSERT_EQ(node_manager.GetNodePage(out->indirect_nid, &ind_page), ZX_OK);
+    ASSERT_FALSE(ind_page.GetPage<NodePage>().IsDnode());
+    out->direct_nid = ind_page.GetPage<NodePage>().GetNid(path_or->offset_in_node[1]);
+  }
+  {
+    LockedPage dir_page;
+    ASSERT_EQ(node_manager.GetNodePage(out->direct_nid, &dir_page), ZX_OK);
+    ASSERT_TRUE(dir_page.GetPage<NodePage>().IsDnode());
+  }
+
+  out->path = *path_or;
+}
+
 void FaultInjectToDnodeAndTruncate(NodeManager &node_manager, fbl::RefPtr<VnodeF2fs> &vnode,
                                    pgoff_t page_index, block_t fault_address,
                                    zx_status_t exception_type) TA_NO_THREAD_SAFETY_ANALYSIS {
@@ -1229,6 +1275,105 @@ TEST_F(NodeManagerTest, MalformedNodeTree) TA_NO_THREAD_SAFETY_ANALYSIS {
   // without out-of-bounds memory access.
   ASSERT_EQ(vnode->TruncateInodeBlocks(direct_index), ZX_OK);
 
+  ASSERT_EQ(vnode->Close(), ZX_OK);
+  vnode.reset();
+  ASSERT_EQ(vnode2->Close(), ZX_OK);
+  vnode2.reset();
+}
+
+TEST_F(NodeManagerTest, MalformedNodeTreeAtIndirectLevel) TA_NO_THREAD_SAFETY_ANALYSIS {
+  // The intermediate-node type check in Find/GetLockedDnodePage (the
+  // `i < level - 1 && IsDnode()` clause: an intermediate node must be an IndirectNode,
+  // not a DirectNode) fires only at depth >= 2, so a level-1 path does not reach it.
+  // This test builds a level-2 (single-indirect) path and points the intermediate slot
+  // at a *real* DirectNode, so dropping that clause in production makes these
+  // assertions fail.
+  fbl::RefPtr<VnodeF2fs> vnode;
+  FileTester::VnodeWithoutParent(fs_.get(), S_IFREG, vnode);
+  ASSERT_TRUE(vnode->NewInodePage().is_ok());
+
+  Level2Tree tree;
+  ASSERT_NO_FATAL_FAILURE(BuildLevel2Tree(*vnode, &tree));
+
+  // Corrupt the intermediate slot (kNodeInd1Block) to point at the DirectNode instead
+  // of the IndirectNode: the node at level < depth-1 is now a Dnode. (direct_nid is a
+  // real leaf of this same tree, so no cycle is introduced.)
+  {
+    LockedPage ipage;
+    ASSERT_EQ(fs_->GetNodeManager().GetNodePage(vnode->Ino(), &ipage), ZX_OK);
+    ipage.WaitOnWriteback();
+    ipage.GetPage<NodePage>().SetNid(kNodeInd1Block, tree.direct_nid);
+    ipage.SetDirty();
+  }
+
+  ASSERT_EQ(fs_->GetNodeManager().FindLockedDnodePage(tree.path).status_value(), ZX_ERR_NOT_FOUND);
+  ASSERT_EQ(fs_->GetNodeManager().GetLockedDnodePage(tree.path, false).status_value(),
+            ZX_ERR_NOT_FOUND);
+
+  // Restore the intermediate pointer so the tree is well-formed for truncation/teardown.
+  {
+    LockedPage ipage;
+    ASSERT_EQ(fs_->GetNodeManager().GetNodePage(vnode->Ino(), &ipage), ZX_OK);
+    ipage.WaitOnWriteback();
+    ipage.GetPage<NodePage>().SetNid(kNodeInd1Block, tree.indirect_nid);
+    ipage.SetDirty();
+  }
+
+  ASSERT_EQ(vnode->TruncateInodeBlocks(kLevel2Index), ZX_OK);
+  vnode->SetBlockCount(0);
+  fs_->SyncFs();
+  ASSERT_EQ(vnode->Close(), ZX_OK);
+  vnode.reset();
+}
+
+TEST_F(NodeManagerTest, MalformedNodeTreeLeafIsIndirect) TA_NO_THREAD_SAFETY_ANALYSIS {
+  // Complements MalformedNodeTreeAtIndirectLevel by exercising the leaf clause
+  // `i == level - 1 && !IsDnode()` (a leaf of the path must be a DirectNode). The
+  // wrong-typed node here is *another file's* IndirectNode, so no cycle/self-reference
+  // is introduced -- pointing the leaf at its own parent would instead deadlock on
+  // NodePage re-lock, which is a separate defect not under test here.
+  fbl::RefPtr<VnodeF2fs> vnode;
+  FileTester::VnodeWithoutParent(fs_.get(), S_IFREG, vnode);
+  ASSERT_TRUE(vnode->NewInodePage().is_ok());
+
+  fbl::RefPtr<VnodeF2fs> vnode2;
+  FileTester::VnodeWithoutParent(fs_.get(), S_IFREG, vnode2);
+  ASSERT_TRUE(vnode2->NewInodePage().is_ok());
+
+  Level2Tree tree, foreign;
+  ASSERT_NO_FATAL_FAILURE(BuildLevel2Tree(*vnode, &tree));
+  ASSERT_NO_FATAL_FAILURE(BuildLevel2Tree(*vnode2, &foreign));
+  ASSERT_NE(foreign.indirect_nid, tree.indirect_nid);
+
+  // Corrupt the leaf slot to point at another file's IndirectNode where a DirectNode is
+  // expected: the node at level == depth - 1 is now a non-Dnode. (BuildLevel2Tree has
+  // already verified foreign.indirect_nid is an IndirectNode.)
+  {
+    LockedPage ind_page;
+    ASSERT_EQ(fs_->GetNodeManager().GetNodePage(tree.indirect_nid, &ind_page), ZX_OK);
+    ind_page.WaitOnWriteback();
+    ind_page.GetPage<NodePage>().SetNid(tree.path.offset_in_node[1], foreign.indirect_nid);
+    ind_page.SetDirty();
+  }
+
+  ASSERT_EQ(fs_->GetNodeManager().FindLockedDnodePage(tree.path).status_value(), ZX_ERR_NOT_FOUND);
+  ASSERT_EQ(fs_->GetNodeManager().GetLockedDnodePage(tree.path, false).status_value(),
+            ZX_ERR_NOT_FOUND);
+
+  // Restore the leaf pointer so both trees are well-formed for teardown.
+  {
+    LockedPage ind_page;
+    ASSERT_EQ(fs_->GetNodeManager().GetNodePage(tree.indirect_nid, &ind_page), ZX_OK);
+    ind_page.WaitOnWriteback();
+    ind_page.GetPage<NodePage>().SetNid(tree.path.offset_in_node[1], tree.direct_nid);
+    ind_page.SetDirty();
+  }
+
+  ASSERT_EQ(vnode->TruncateInodeBlocks(kLevel2Index), ZX_OK);
+  vnode->SetBlockCount(0);
+  ASSERT_EQ(vnode2->TruncateInodeBlocks(kLevel2Index), ZX_OK);
+  vnode2->SetBlockCount(0);
+  fs_->SyncFs();
   ASSERT_EQ(vnode->Close(), ZX_OK);
   vnode.reset();
   ASSERT_EQ(vnode2->Close(), ZX_OK);
