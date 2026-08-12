@@ -25,6 +25,6 @@ type Format = strict enum {
     /// Dump read results per the Diagnostics FXT
     /// Schema specifications. This is only supported
     /// for logs.
-    @available(added=HEAD)
+    @available(added=NEXT)
     FXT = 5;
 };

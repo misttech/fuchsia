@@ -113,6 +113,11 @@
     },
     {
         "kind": "enum/member",
+        "name": "fuchsia.diagnostics/Format.FXT",
+        "value": "5"
+    },
+    {
+        "kind": "enum/member",
         "name": "fuchsia.diagnostics/Format.JSON",
         "value": "1"
     },
