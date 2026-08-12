@@ -107,7 +107,7 @@ impl FilenameTransitions {
                     return Err(ParseError::DuplicateFilenameTransition {
                         target_type: transition.transition_type,
                         target_class: transition.transition_class,
-                        filename: transition.filename.as_ref().to_vec(),
+                        filename: transition.filename.as_ref().into(),
                     });
                 }
                 hashbrown::hash_table::Entry::Vacant(vacant) => {

@@ -5,6 +5,7 @@
 use std::num::NonZeroU16;
 
 use hashbrown::HashTable;
+use hashbrown::hash_table::Entry;
 use selinux_policy_derive::{HasPolicyId, Parse, Serialize, Validate};
 
 use super::bitmap::IdSet;
@@ -134,26 +135,37 @@ impl Parse for Types {
         let ordered = Array::<Type>::parse(cursor)?;
 
         // Build indices
-        let mut by_id = Vec::new();
+        let mut by_id = Vec::with_capacity(ordered.len());
         let hasher = rapidhash::RapidBuildHasher::default();
-        let mut by_name = HashTable::new();
+        let mut by_name = HashTable::with_capacity(ordered.len());
 
-        for (index, t) in ordered.iter().enumerate() {
+        for (index, item) in ordered.iter().enumerate() {
             let u24_idx: U24Index = index.try_into()?;
-            if t.properties == TypeKind::Type || t.properties == TypeKind::Attribute {
-                let id = t.id.as_u32() as usize;
+            if item.properties == TypeKind::Type || item.properties == TypeKind::Attribute {
+                let id = item.id.as_u32() as usize;
                 if id > by_id.len() {
                     by_id.resize(id, None);
+                } else if by_id[id - 1].is_some() {
+                    return Err(ParseError::DuplicateId { id: item.id.as_u32() });
                 }
                 by_id[id - 1] = Some(u24_idx);
             }
-            if t.properties == TypeKind::Type || t.properties == TypeKind::Alias {
-                let hash = hash_name(&hasher, t.name.as_ref());
-                by_name.insert_unique(hash, u24_idx, |&idx| {
-                    hash_name(&hasher, ordered[idx].name.as_ref())
-                });
+            if item.properties == TypeKind::Type || item.properties == TypeKind::Alias {
+                let name = item.name.as_ref();
+                let hash = hash_name(&hasher, name);
+                let Entry::Vacant(entry) = by_name.entry(
+                    hash,
+                    |&idx| ordered[usize::from(idx)].name.as_ref() == name,
+                    |&idx| hash_name(&hasher, ordered[usize::from(idx)].name.as_ref()),
+                ) else {
+                    return Err(ParseError::DuplicateName { name: name.into() });
+                };
+                entry.insert(u24_idx);
             }
         }
+
+        by_id.shrink_to_fit();
+        by_name.shrink_to_fit(|&idx| hash_name(&hasher, ordered[usize::from(idx)].name.as_ref()));
 
         Ok(Self { primary_names_count, ordered, by_id: by_id.into_boxed_slice(), by_name, hasher })
     }
@@ -197,5 +209,142 @@ impl Types {
 
     pub fn iter(&self) -> impl Iterator<Item = &Type> {
         self.ordered.iter()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::new_policy::metadata::PolicyVersion;
+
+    #[test]
+    fn test_types_lookup() {
+        let mut bytes = Vec::new();
+        let mut policy_writer = PolicyWriter::new(PolicyVersion::V33, &mut bytes);
+        2u32.serialize(&mut policy_writer).unwrap(); // primary_names_count
+        2u32.serialize(&mut policy_writer).unwrap(); // ordered count = 2
+
+        let t1 = Type {
+            id: TypeId::new(NonZeroU16::new(1).unwrap()),
+            name: Box::from(b"foo".as_slice()),
+            properties: TypeKind::Type,
+            bounds: None,
+        };
+        t1.serialize(&mut policy_writer).unwrap();
+
+        let t2 = Type {
+            id: TypeId::new(NonZeroU16::new(2).unwrap()),
+            name: Box::from(b"bar".as_slice()),
+            properties: TypeKind::Type,
+            bounds: None,
+        };
+        t2.serialize(&mut policy_writer).unwrap();
+
+        let mut cursor = PolicyCursor::new(&bytes);
+        let types = Types::parse(&mut cursor).expect("parse types");
+
+        assert_eq!(
+            types.get_by_id(TypeId::new(NonZeroU16::new(1).unwrap())).map(|t| t.name()),
+            Some(b"foo".as_slice())
+        );
+        assert_eq!(
+            types.get_by_id(TypeId::new(NonZeroU16::new(2).unwrap())).map(|t| t.name()),
+            Some(b"bar".as_slice())
+        );
+        assert!(types.get_by_id(TypeId::new(NonZeroU16::new(3).unwrap())).is_none());
+
+        assert_eq!(
+            types.get_by_name(b"foo").map(|t| t.id),
+            Some(TypeId::new(NonZeroU16::new(1).unwrap()))
+        );
+        assert_eq!(
+            types.get_by_name(b"bar").map(|t| t.id),
+            Some(TypeId::new(NonZeroU16::new(2).unwrap()))
+        );
+        assert!(types.get_by_name(b"baz").is_none());
+    }
+
+    #[test]
+    fn test_types_duplicate_id() {
+        let mut bytes = Vec::new();
+        let mut policy_writer = PolicyWriter::new(PolicyVersion::V33, &mut bytes);
+        2u32.serialize(&mut policy_writer).unwrap(); // primary_names_count
+        2u32.serialize(&mut policy_writer).unwrap(); // ordered count = 2
+
+        let t1 = Type {
+            id: TypeId::new(NonZeroU16::new(1).unwrap()),
+            name: Box::from(b"foo".as_slice()),
+            properties: TypeKind::Type,
+            bounds: None,
+        };
+        t1.serialize(&mut policy_writer).unwrap();
+
+        let t2 = Type {
+            id: TypeId::new(NonZeroU16::new(1).unwrap()),
+            name: Box::from(b"bar".as_slice()),
+            properties: TypeKind::Type,
+            bounds: None,
+        };
+        t2.serialize(&mut policy_writer).unwrap();
+
+        let mut cursor = PolicyCursor::new(&bytes);
+        let result = Types::parse(&mut cursor);
+        assert!(matches!(result, Err(ParseError::DuplicateId { id: 1 })));
+    }
+
+    #[test]
+    fn test_types_duplicate_name() {
+        let mut bytes = Vec::new();
+        let mut policy_writer = PolicyWriter::new(PolicyVersion::V33, &mut bytes);
+        2u32.serialize(&mut policy_writer).unwrap(); // primary_names_count
+        2u32.serialize(&mut policy_writer).unwrap(); // ordered count = 2
+
+        let t1 = Type {
+            id: TypeId::new(NonZeroU16::new(1).unwrap()),
+            name: Box::from(b"foo".as_slice()),
+            properties: TypeKind::Type,
+            bounds: None,
+        };
+        t1.serialize(&mut policy_writer).unwrap();
+
+        let t2 = Type {
+            id: TypeId::new(NonZeroU16::new(2).unwrap()),
+            name: Box::from(b"foo".as_slice()),
+            properties: TypeKind::Type,
+            bounds: None,
+        };
+        t2.serialize(&mut policy_writer).unwrap();
+
+        let mut cursor = PolicyCursor::new(&bytes);
+        let result = Types::parse(&mut cursor);
+        assert!(matches!(result, Err(ParseError::DuplicateName { name }) if name == b"foo"));
+    }
+
+    #[test]
+    fn test_types_duplicate_alias_name() {
+        let mut bytes = Vec::new();
+        let mut policy_writer = PolicyWriter::new(PolicyVersion::V33, &mut bytes);
+        1u32.serialize(&mut policy_writer).unwrap(); // primary_names_count
+        2u32.serialize(&mut policy_writer).unwrap(); // ordered count = 2
+
+        let t1 = Type {
+            id: TypeId::new(NonZeroU16::new(1).unwrap()),
+            name: Box::from(b"foo".as_slice()),
+            properties: TypeKind::Type,
+            bounds: None,
+        };
+        t1.serialize(&mut policy_writer).unwrap();
+
+        let t2 = Type {
+            id: TypeId::new(NonZeroU16::new(1).unwrap()),
+            name: Box::from(b"foo".as_slice()),
+            properties: TypeKind::Alias,
+            bounds: None,
+        };
+        t2.serialize(&mut policy_writer).unwrap();
+
+        let mut cursor = PolicyCursor::new(&bytes);
+        let result = Types::parse(&mut cursor);
+        assert!(matches!(result, Err(ParseError::DuplicateName { name }) if name == b"foo"));
     }
 }

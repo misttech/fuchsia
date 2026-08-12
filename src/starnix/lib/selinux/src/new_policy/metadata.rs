@@ -72,7 +72,9 @@ impl Validate for Signature {
             return Err(ValidateError::InvalidSignatureLength { found_length: len });
         }
         if self.value.as_ref() != POLICYDB_SIGNATURE {
-            return Err(ValidateError::InvalidSignature { found_signature: self.value.to_vec() });
+            return Err(ValidateError::InvalidSignature {
+                found_signature: self.value.as_ref().into(),
+            });
         }
         Ok(())
     }

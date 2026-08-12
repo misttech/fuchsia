@@ -2,15 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use super::NewPolicy;
 use super::context::Context;
-use super::error::ValidateError;
 use super::parser::Array;
-use super::traits::Validate;
-use selinux_policy_derive::{Parse, Serialize};
+use selinux_policy_derive::{Parse, Serialize, Validate};
 
 /// Policy entry defining an initial security context for a well-known security ID.
-#[derive(Debug, Clone, PartialEq, Eq, Parse, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Parse, Serialize, Validate)]
 pub struct InitialSid {
     id: u32,
     context: Context,
@@ -28,15 +25,8 @@ impl InitialSid {
     }
 }
 
-impl Validate for InitialSid {
-    fn validate(&self, policy: &NewPolicy) -> Result<(), ValidateError> {
-        self.context.validate(policy)?;
-        Ok(())
-    }
-}
-
 /// Table of [`InitialSid`] entries defining initial security contexts for well-known security IDs.
-#[derive(Debug, Clone, PartialEq, Eq, Parse, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Parse, Serialize, Validate)]
 pub struct InitialSids {
     entries: Array<InitialSid>,
 }
@@ -55,13 +45,6 @@ impl InitialSids {
     /// Returns `true` if the initial SID table is empty.
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
-    }
-}
-
-impl Validate for InitialSids {
-    fn validate(&self, policy: &NewPolicy) -> Result<(), ValidateError> {
-        self.entries.validate(policy)?;
-        Ok(())
     }
 }
 

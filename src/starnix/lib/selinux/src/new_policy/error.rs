@@ -8,6 +8,7 @@ use super::metadata::{
     POLICYDB_VERSION_MIN, SELINUX_MAGIC,
 };
 use super::rules::{RuleKey, RuleKind};
+use bstr::BString;
 use thiserror::Error;
 
 /// Errors that may be encountered parsing a binary policy.
@@ -37,8 +38,6 @@ pub enum ParseError {
     TrailingBytes { num_bytes: usize },
     #[error("unexpected non-empty type set in constraint")]
     UnexpectedConstraintTypeSet,
-    #[error("unexpected non-empty names in type constraint")]
-    UnexpectedConstraintTypeNames,
     #[error("duplicate rule for key {key:?}, kind: {kind:?}")]
     DuplicateAccessVectorRule { key: RuleKey, kind: RuleKind },
     #[error(
@@ -47,8 +46,12 @@ pub enum ParseError {
     DuplicateFilenameTransition {
         target_type: super::TypeId,
         target_class: super::ClassId,
-        filename: Vec<u8>,
+        filename: BString,
     },
+    #[error("duplicate ID: {id}")]
+    DuplicateId { id: u32 },
+    #[error("duplicate name: {name:?}")]
+    DuplicateName { name: BString },
     #[error("index out of range: {index} (maximum supported is {max})")]
     IndexOutOfRange { index: usize, max: usize },
 }
@@ -88,8 +91,8 @@ pub enum ValidateError {
     InvalidPolicyVersion { found_policy_version: u32 },
     #[error("expected primary names count <= {expected_at_most}, but found {found}")]
     InvalidPrimaryNamesCount { expected_at_most: u32, found: u32 },
-    #[error("expected signature {POLICYDB_SIGNATURE:?}, but found {:?}", bstr::BStr::new(found_signature.as_slice()))]
-    InvalidSignature { found_signature: Vec<u8> },
+    #[error("expected signature {POLICYDB_SIGNATURE:?}, but found {found_signature:?}")]
+    InvalidSignature { found_signature: BString },
     #[error(
         "expected signature length in range [0, {POLICYDB_STRING_MAX_LENGTH}], but found {found_length}"
     )]
@@ -107,7 +110,7 @@ pub enum ValidateError {
     )]
     OutOfOrderExtensibleBitmapItems { found_start_bit: u32, min_start: u32 },
     #[error("referenced common symbol {name:?} is not defined")]
-    UndefinedCommonSymbol { name: Vec<u8> },
+    UndefinedCommonSymbol { name: BString },
     #[error("undefined {kind} Id value {id}")]
     UnknownId { kind: &'static str, id: u32 },
 }

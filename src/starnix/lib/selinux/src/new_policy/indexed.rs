@@ -7,6 +7,7 @@ use std::hash::{BuildHasher, Hash, Hasher};
 use std::ops::Deref;
 
 use hashbrown::HashTable;
+use hashbrown::hash_table::Entry;
 
 use super::error::{ParseError, SerializeError, ValidateError};
 use super::parser::{PolicyCursor, PolicyWriter};
@@ -27,7 +28,7 @@ pub(super) fn hash_name(hasher: &rapidhash::RapidBuildHasher, name: &[u8]) -> u6
 /// parsed).
 ///
 /// The order of elements in the original collection is currently retained, to
-/// allow the `IdAndNameIndexed<C>` to serialize the collection into exactly the same
+/// allow [`IdAndNameIndexed`] to serialize the collection into exactly the same
 /// byte sequence as it was parsed from.
 pub struct IdAndNameIndexed<C> {
     container: C,
@@ -53,15 +54,26 @@ where
             let id = item.id().as_u32() as usize;
             if id >= id_to_index.len() {
                 id_to_index.resize(id + 1, None);
+            } else if id_to_index[id].is_some() {
+                return Err(ParseError::DuplicateId { id: item.id().as_u32() });
             }
             let u24_idx: U24Index = index.try_into()?;
             id_to_index[id] = Some(u24_idx);
 
             let name = item.name();
             let hash = hash_name(&hasher, name);
-            name_to_index
-                .insert_unique(hash, u24_idx, |&idx| hash_name(&hasher, container[idx].name()));
+            let Entry::Vacant(entry) = name_to_index.entry(
+                hash,
+                |&idx| container[usize::from(idx)].name() == name,
+                |&idx| hash_name(&hasher, container[usize::from(idx)].name()),
+            ) else {
+                return Err(ParseError::DuplicateName { name: name.into() });
+            };
+            entry.insert(u24_idx);
         }
+
+        id_to_index.shrink_to_fit();
+        name_to_index.shrink_to_fit(|&idx| hash_name(&hasher, container[usize::from(idx)].name()));
 
         Ok(Self { container, id_to_index: id_to_index.into_boxed_slice(), name_to_index, hasher })
     }
@@ -187,5 +199,25 @@ mod tests {
             Some(&TestItem { id: TestId::for_test(2), name: "bar" })
         );
         assert_eq!(indexed.get_by_name(b"baz"), None);
+    }
+
+    #[test]
+    fn test_indexed_duplicate_id() {
+        let items: &[TestItem] = &[
+            TestItem { id: TestId::for_test(1), name: "foo" },
+            TestItem { id: TestId::for_test(1), name: "bar" },
+        ];
+        let result = IdAndNameIndexed::new(items);
+        assert!(matches!(result, Err(ParseError::DuplicateId { id: 1 })));
+    }
+
+    #[test]
+    fn test_indexed_duplicate_name() {
+        let items: &[TestItem] = &[
+            TestItem { id: TestId::for_test(1), name: "foo" },
+            TestItem { id: TestId::for_test(2), name: "foo" },
+        ];
+        let result = IdAndNameIndexed::new(items);
+        assert!(matches!(result, Err(ParseError::DuplicateName { name }) if name == b"foo"));
     }
 }

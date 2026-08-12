@@ -210,7 +210,7 @@ impl Validate for Class {
         if !self.common_name.is_empty() {
             let common_symbol =
                 policy.common_symbols().get_by_name(&self.common_name).ok_or_else(|| {
-                    ValidateError::UndefinedCommonSymbol { name: self.common_name.to_vec() }
+                    ValidateError::UndefinedCommonSymbol { name: self.common_name.as_ref().into() }
                 })?;
             common_permissions_count = common_symbol.permissions().len();
         }
