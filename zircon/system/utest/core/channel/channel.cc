@@ -2092,5 +2092,52 @@ TEST(ChannelTest, WriteIovecUnboundedSuccess) {
   }
 }
 
+TEST(ChannelTest, WriteInvalidOptionsReturnsInvalidArgs) {
+  zx::channel local, remote;
+  ASSERT_OK(zx::channel::create(0, &local, &remote));
+
+  char data = 'a';
+  EXPECT_EQ(local.write(0xFF, &data, sizeof(data), nullptr, 0), ZX_ERR_INVALID_ARGS);
+  EXPECT_EQ(local.write_etc(0xFF, &data, sizeof(data), nullptr, 0), ZX_ERR_INVALID_ARGS);
+}
+
+TEST(ChannelTest, CallPayloadTooSmallReturnsInvalidArgs) {
+  zx::channel local, remote;
+  ASSERT_OK(zx::channel::create(0, &local, &remote));
+
+  // Write payload size less than sizeof(zx_txid_t) (4 bytes).
+  char wr_buf[2] = {0};
+  char rd_buf[4] = {0};
+  zx_channel_call_args_t args = {
+      .wr_bytes = wr_buf,
+      .wr_handles = nullptr,
+      .rd_bytes = rd_buf,
+      .rd_handles = nullptr,
+      .wr_num_bytes = sizeof(wr_buf),
+      .wr_num_handles = 0,
+      .rd_num_bytes = sizeof(rd_buf),
+      .rd_num_handles = 0,
+  };
+
+  uint32_t actual_bytes = 0;
+  uint32_t actual_handles = 0;
+  EXPECT_EQ(local.call(0, zx::time::infinite(), &args, &actual_bytes, &actual_handles),
+            ZX_ERR_INVALID_ARGS);
+
+  // 0-byte payload should also fail.
+  args.wr_num_bytes = 0;
+  EXPECT_EQ(local.call(0, zx::time::infinite(), &args, &actual_bytes, &actual_handles),
+            ZX_ERR_INVALID_ARGS);
+}
+
+TEST(ChannelTest, WriteIovecTooManyIovecsReturnsOutOfRange) {
+  zx::channel local, remote;
+  ASSERT_OK(zx::channel::create(0, &local, &remote));
+
+  EXPECT_EQ(
+      local.write(ZX_CHANNEL_WRITE_USE_IOVEC, nullptr, ZX_CHANNEL_MAX_MSG_IOVECS + 1, nullptr, 0),
+      ZX_ERR_OUT_OF_RANGE);
+}
+
 }  // namespace
 }  // namespace channel
