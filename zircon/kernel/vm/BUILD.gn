@@ -37,6 +37,7 @@ source_set("vm") {
     "physical_page_borrowing_config.cc",
     "physical_page_borrowing_config_ffi.cc",
     "physical_page_provider.cc",
+    "physmap_ffi.cc",
     "pinned_vm_object.cc",
     "pmm.cc",
     "pmm_arena.cc",
@@ -240,6 +241,30 @@ kernel_bindgen_crate("vm-constants-rs") {
   expect_lints = [ "non_upper_case_globals" ]
 
   raw_lines = [ "#![no_std]" ]
+}
+
+kernel_bindgen_crate("physmap-bindings") {
+  visibility = [ ":*" ]
+  headers = [ "include/vm/physmap_ffi.h" ]
+  non_rust_deps = [ ":bindgen_common_deps" ]
+  output_name = "physmap_bindings.rs"
+  cpp = true
+
+  notice_year = 2026
+  function_allowlist = [ "cpp_paddr_to_physmap" ]
+  type_blocklist = [
+    "zx_paddr_t",
+    "zx_vaddr_t",
+  ]
+  additional_bindgen_flags = [ "--no-recursive-allowlist" ]
+  deps = [ "//sdk/rust/zx-types" ]
+
+  edition = "2024"
+
+  raw_lines = [
+    "#![no_std]",
+    "pub use zx_types::{zx_paddr_t, zx_vaddr_t};",
+  ]
 }
 
 kernel_bindgen_crate("pmm-bindings") {
@@ -637,6 +662,7 @@ kernel_rust_mod("vm-rs") {
     "page_source.rs",
     "page_state.rs",
     "physical_page_borrowing_config.rs",
+    "physmap.rs",
     "pinned_vm_object.rs",
     "pmm.rs",
     "scanner.rs",
@@ -656,6 +682,7 @@ kernel_rust_mod("vm-rs") {
     ":page-queues-bindings",
     ":page-source-bindings",
     ":physical-page-borrowing-config-bindings",
+    ":physmap-bindings",
     ":pmm-bindings",
     ":scanner-bindings",
     ":vm-constants-rs",

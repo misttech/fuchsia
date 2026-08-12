@@ -12,6 +12,7 @@ pub mod page_queues;
 pub mod page_source;
 pub mod page_state;
 pub mod physical_page_borrowing_config;
+pub mod physmap;
 pub mod pinned_vm_object;
 pub mod pmm;
 pub mod scanner;
