@@ -86,6 +86,7 @@ test_scripts = [
   "tests/fx-internal/reentry_test",
   "tests/fx-internal/vars_test",
   "tests/fx-internal/verify_default_keys_test",
+  "tests/subcommands/fx_add_test_test",
   "tests/subcommands/fx_build_test",
   "tests/subcommands/fx_config_load_test",
   "tests/subcommands/fx_cp_test",
@@ -189,6 +190,8 @@ host_script_test_data("fx_bash_tests") {
         # Essential tools and libraries for fx build and its tests
         "//tools/devshell/build",
         "//tools/devshell/build-metrics",
+        "//tools/devshell/contrib/add-host-test",
+        "//tools/devshell/contrib/add-test",
         "//tools/devshell/contrib/ffx",
         "//tools/devshell/contrib/lint",
         "//tools/devshell/contrib/lib/count-ninja-actions.py",
