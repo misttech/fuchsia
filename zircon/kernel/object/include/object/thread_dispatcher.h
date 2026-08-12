@@ -21,6 +21,7 @@
 #include <fbl/ref_counted.h>
 #include <fbl/ref_ptr.h>
 #include <kernel/event.h>
+#include <kernel/ffi.h>
 #include <kernel/owned_wait_queue.h>
 #include <kernel/thread.h>
 #include <ktl/atomic.h>
@@ -398,5 +399,39 @@ class ThreadDispatcher final : public SoloDispatcher<ThreadDispatcher, ZX_DEFAUL
 
   DECLARE_SPINLOCK(ThreadDispatcher) scheduler_stats_writer_exclusion_lock_;
 };
+
+extern "C" {
+bool cpp_thread_dispatcher_is_current(const ThreadDispatcher* thread);
+zx_status_t cpp_thread_dispatcher_create(
+    ProcessDispatcher* process, uint32_t flags, const char* name_ptr, size_t name_len,
+    ffi::Uninitialized<KernelHandle<ThreadDispatcher>>* out_handle,
+    ffi::Uninitialized<zx_rights_t>* out_rights);
+zx_status_t cpp_thread_dispatcher_initialize(ThreadDispatcher* thread);
+zx_status_t cpp_thread_dispatcher_start(ThreadDispatcher* thread, zx_vaddr_t entry,
+                                        zx_vaddr_t stack, uint64_t arg1, uint64_t arg2, uint64_t tp,
+                                        uint64_t abi_reg, bool ensure_initial_thread);
+void cpp_thread_dispatcher_exit_current();
+void cpp_thread_dispatcher_kill_current();
+void cpp_thread_dispatcher_kill(ThreadDispatcher* thread);
+zx_status_t cpp_thread_dispatcher_suspend(ThreadDispatcher* thread);
+void cpp_thread_dispatcher_resume(ThreadDispatcher* thread);
+zx_status_t cpp_thread_dispatcher_restricted_kick(ThreadDispatcher* thread);
+zx_status_t cpp_thread_dispatcher_read_state(ThreadDispatcher* thread, uint32_t state_kind,
+                                             void* buffer, size_t buffer_size);
+zx_status_t cpp_thread_dispatcher_write_state(ThreadDispatcher* thread, uint32_t state_kind,
+                                              const void* buffer, size_t buffer_size);
+zx_status_t cpp_thread_dispatcher_set_base_profile(ThreadDispatcher* thread,
+                                                   const SchedulerState::BaseProfile* profile);
+zx_status_t cpp_thread_dispatcher_set_soft_affinity(ThreadDispatcher* thread, cpu_mask_t mask);
+void cpp_thread_dispatcher_get_info_for_userspace(const ThreadDispatcher* thread,
+                                                  ffi::Uninitialized<zx_info_thread_t>* out_info);
+zx_status_t cpp_thread_dispatcher_get_stats_for_userspace(
+    ThreadDispatcher* thread, ffi::Uninitialized<zx_info_thread_stats_t>* out_info);
+void cpp_thread_dispatcher_get_runtime_stats(const ThreadDispatcher* thread,
+                                             ffi::Uninitialized<zx_info_task_runtime_t>* out_info);
+zx_status_t cpp_sys_thread_raise_exception(uint32_t options, zx_excp_type_t type,
+                                           const zx_exception_context_t* user_context);
+zx_status_t cpp_sys_thread_legacy_yield(uint32_t options);
+}
 
 #endif  // ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_THREAD_DISPATCHER_H_

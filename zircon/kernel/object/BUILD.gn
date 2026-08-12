@@ -104,6 +104,7 @@ source_set("object") {
     "//zircon/kernel/lib/object-constants",
     "//zircon/kernel/lib/object_cache",
     "//zircon/kernel/lib/page",
+    "//zircon/kernel/lib/page-map",
     "//zircon/kernel/lib/page_cache",
     "//zircon/kernel/lib/root_resource_filter",
     "//zircon/kernel/lib/thread_sampler",

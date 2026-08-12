@@ -5,12 +5,12 @@
 // https://opensource.org/licenses/MIT
 
 use crate::kernel::thread::restricted_enter;
-use crate::object::HandleValue;
+use crate::object::{Dispatcher, HandleValue, ThreadDispatcher};
 use crate::user_copy::UserOutPtr;
 use debug::ltracef;
 use syscalls_macro::syscall;
 use zx_status::{ErrorStatus, Status};
-use zx_types::{zx_exception_report_t, zx_handle_t, zx_status_t};
+use zx_types::{ZX_RIGHT_MANAGE_THREAD, zx_exception_report_t, zx_status_t};
 
 // Disable local tracing by default for this file.
 const LOCAL_TRACE: u32 = 0;
@@ -21,7 +21,6 @@ unsafe extern "C" {
         out_handle: *mut HandleValue,
     ) -> zx_status_t;
     fn cpp_restricted_unbind_state() -> zx_status_t;
-    fn cpp_restricted_kick(handle: zx_handle_t) -> zx_status_t;
 }
 
 /// Enters restricted mode using the given vector table pointer and context.
@@ -102,8 +101,8 @@ pub fn sys_restricted_kick(handle: HandleValue, options: u32) -> Result<(), Erro
     if options != 0 {
         return Err(Status::INVALID_ARGS.into());
     }
-    // SAFETY: cpp_restricted_kick looks up the ThreadDispatcher and kicks it safely.
-    let status = unsafe { cpp_restricted_kick(handle.raw_value()) };
-    Status::ok(status)?;
+
+    let thread = Dispatcher::get_with_rights::<ThreadDispatcher>(handle, ZX_RIGHT_MANAGE_THREAD)?;
+    thread.restricted_kick()?;
     Ok(())
 }

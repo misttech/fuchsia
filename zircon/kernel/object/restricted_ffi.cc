@@ -7,6 +7,7 @@
 #include <lib/user_copy/user_ptr.h>
 #include <zircon/types.h>
 
+#include <kernel/ffi.h>
 #include <kernel/restricted_state.h>
 #include <kernel/thread.h>
 #include <object/process_dispatcher.h>
@@ -18,7 +19,6 @@ extern "C" {
 zx_status_t cpp_restricted_bind_state(zx_exception_report_t* out_exception_ptr,
                                       zx_handle_t* out_handle);
 zx_status_t cpp_restricted_unbind_state();
-zx_status_t cpp_restricted_kick(zx_handle_t handle);
 
 zx_status_t cpp_restricted_bind_state(zx_exception_report_t* out_exception_ptr,
                                       zx_handle_t* out_handle) {
@@ -64,22 +64,10 @@ zx_status_t cpp_restricted_bind_state(zx_exception_report_t* out_exception_ptr,
   return ZX_OK;
 }
 
-zx_status_t cpp_restricted_unbind_state() {
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE zx_status_t cpp_restricted_unbind_state() {
   Thread::Current::Get()->set_restricted_state(nullptr);
   return ZX_OK;
-}
-
-zx_status_t cpp_restricted_kick(zx_handle_t handle) {
-  auto up = ProcessDispatcher::GetCurrent();
-  fbl::RefPtr<ThreadDispatcher> thread;
-  // TODO(https://fxbug.dev/42077353): Decide if this is the correct right for this operation.
-  zx_status_t status =
-      up->handle_table().GetDispatcherWithRights(*up, handle, ZX_RIGHT_MANAGE_THREAD, &thread);
-  if (status != ZX_OK) {
-    return status;
-  }
-
-  return thread->RestrictedKick();
 }
 
 }  // extern "C"

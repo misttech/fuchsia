@@ -188,18 +188,22 @@ pub fn is_user_accessible(va: usize) -> bool {
     (va & X86_CANONICAL_ADDRESS_MASK) == 0
 }
 
-/// Validates the x86_64 register state before entering restricted mode.
-pub fn validate_state_pre_restricted_entry(state: &zx_restricted_state_t) -> Result<(), Status> {
+/// Checks if a virtual address is in canonical form on x86_64.
+///
+/// An address is canonical if bits [N - 1, 63] are all either 0 (the low half of
+/// canonical addresses) or all 1 (the high half of canonical addresses).
+#[inline]
+pub fn is_vaddr_canonical(va: u64) -> bool {
     // See [intel/vol1]: 3.3.7.1 Canonical Addressing, and
     // [amd/vol1]: 2.1.3 Canonical Address Form.
     const X86_VADDR_BITS: usize = 48;
     const X86_CANONICAL_ADDRESS_MASK: u64 = !((1u64 << (X86_VADDR_BITS - 1)) - 1);
+    ((va & X86_CANONICAL_ADDRESS_MASK) == 0)
+        || ((va & X86_CANONICAL_ADDRESS_MASK) == X86_CANONICAL_ADDRESS_MASK)
+}
 
-    fn is_vaddr_canonical(va: u64) -> bool {
-        ((va & X86_CANONICAL_ADDRESS_MASK) == 0)
-            || ((va & X86_CANONICAL_ADDRESS_MASK) == X86_CANONICAL_ADDRESS_MASK)
-    }
-
+/// Validates the x86_64 register state before entering restricted mode.
+pub fn validate_state_pre_restricted_entry(state: &zx_restricted_state_t) -> Result<(), Status> {
     // validate that RIP is within user space
     if !is_user_accessible(state.ip as usize) {
         ltracef!("fail due to bad ip {:#x}\n", state.ip);

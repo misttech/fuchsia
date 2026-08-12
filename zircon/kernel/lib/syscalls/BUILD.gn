@@ -59,6 +59,7 @@ source_set("impl") {
     "system_ffi.cc",
     "task.cc",
     "test.cc",
+    "thread_ffi.cc",
     "vmar.cc",
     "vmo.cc",
     "zircon.cc",
@@ -147,6 +148,7 @@ kernel_rust_mod("syscalls-rs") {
     "system.rs",
     "task.rs",
     "test.rs",
+    "thread.rs",
     "timer.rs",
   ]
   deps = [
