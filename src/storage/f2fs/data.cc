@@ -14,8 +14,11 @@
 
 namespace f2fs {
 
-static constexpr block_t kInvalidNodeOffset = std::numeric_limits<block_t>::max();
-static bool IsSameDnode(NodePath &path, uint32_t node_offset) {
+static constexpr size_t kInvalidNodeOffset = std::numeric_limits<size_t>::max();
+// Both offsets must come from NodePath, which derives them from the requested file offset.
+// Caching an on-disk OfsOfNode() instead would let a forged footer collide with a deeper
+// level's offset and reuse the wrong node without traversing to it.
+static bool IsSameDnode(NodePath &path, size_t node_offset) {
   if (node_offset == kInvalidNodeOffset) {
     return false;
   }
@@ -284,7 +287,7 @@ zx::result<std::vector<LockedPage>> VnodeF2fs::WriteBegin(const size_t offset, c
 
 zx::result<std::vector<block_t>> VnodeF2fs::GetAddresses(const std::vector<pgoff_t> &indices) {
   std::vector<block_t> data_block_addresses(indices.size());
-  uint32_t prev_node_offset = kInvalidNodeOffset;
+  size_t prev_node_offset = kInvalidNodeOffset;
   std::vector<pgoff_t> allocated;
   auto invalidate_addrs = fit::defer([&]() TA_NO_THREAD_SAFETY_ANALYSIS {
     for (pgoff_t addr : allocated) {
@@ -312,7 +315,7 @@ zx::result<std::vector<block_t>> VnodeF2fs::GetAddresses(const std::vector<pgoff
       }
       AddBlocksUnsafe(path->num_new_nodes);
       dnode_page = *std::move(next_page);
-      prev_node_offset = dnode_page.GetPage<NodePage>().OfsOfNode();
+      prev_node_offset = path->node_offset[path->depth];
     }
 
     size_t ofs_in_dnode = GetOfsInDnode(*path);
@@ -341,7 +344,7 @@ zx::result<std::vector<block_t>> VnodeF2fs::GetAddresses(pgoff_t index, size_t c
 
 zx::result<std::vector<block_t>> VnodeF2fs::FindAddresses(const std::vector<pgoff_t> &indices) {
   std::vector<block_t> data_block_addresses(indices.size());
-  uint32_t prev_node_offset = kInvalidNodeOffset;
+  size_t prev_node_offset = kInvalidNodeOffset;
   LockedPage dnode_page;
 
   for (uint32_t iter = 0; iter < indices.size(); ++iter) {
@@ -367,7 +370,7 @@ zx::result<std::vector<block_t>> VnodeF2fs::FindAddresses(const std::vector<pgof
         return next_page.take_error();
       }
       dnode_page = *std::move(next_page);
-      prev_node_offset = dnode_page.GetPage<NodePage>().OfsOfNode();
+      prev_node_offset = path->node_offset[path->depth];
     }
     ZX_DEBUG_ASSERT(dnode_page != nullptr);
 

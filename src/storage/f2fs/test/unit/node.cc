@@ -1380,6 +1380,53 @@ TEST_F(NodeManagerTest, MalformedNodeTreeLeafIsIndirect) TA_NO_THREAD_SAFETY_ANA
   vnode2.reset();
 }
 
+TEST_F(NodeManagerTest, DnodeCacheKeyedOnRequestedOffset) TA_NO_THREAD_SAFETY_ANALYSIS {
+  // FindAddresses() reuses the dnode it holds while consecutive indices resolve to the same
+  // node, skipping the traversal and its node-type checks. Both sides of that comparison
+  // must come from NodePath: keyed on the page's on-disk OfsOfNode() instead, a forged
+  // footer collides with a deeper level's offset, and the inode page returned by the
+  // depth-0 lookup gets reused where the level-1 direct node belongs.
+  fbl::RefPtr<VnodeF2fs> vnode;
+  FileTester::VnodeWithoutParent(fs_.get(), S_IFREG, vnode);
+  ASSERT_TRUE(vnode->NewInodePage().is_ok());
+
+  // Index 0 lives in the inode's i_addr[]. kLevel1Index lives in the first direct node at
+  // in-node offset kAddrsPerInode, which is one past the end of i_addr[] -- i.e. i_nid[0].
+  constexpr pgoff_t kLevel1Index = static_cast<pgoff_t>(kAddrsPerInode) * 2;
+  const std::vector<pgoff_t> indices = {0, kLevel1Index};
+
+  zx::result allocated = vnode->GetAddresses(indices);
+  ASSERT_TRUE(allocated.is_ok());
+  const block_t level1_addr = (*allocated)[1];
+
+  block_t forged_reuse_result;
+  {
+    LockedPage ipage;
+    ASSERT_EQ(fs_->GetNodeManager().GetNodePage(vnode->Ino(), &ipage), ZX_OK);
+    // What a forged reuse would read instead of level1_addr.
+    forged_reuse_result = ipage.GetPage<NodePage>().GetNid(kNodeDir1Block);
+
+    // Claim the first direct node's offset, so a cache keyed on the on-disk value would
+    // report this inode as the node the level-1 path expects.
+    ipage.WaitOnWriteback();
+    ipage->GetAddress<Node>()->footer.flag =
+        CpuToLe(uint32_t{1} << static_cast<int>(BitShift::kOffsetBitShift));
+    ipage.SetDirty();
+    ASSERT_EQ(ipage.GetPage<NodePage>().OfsOfNode(), uint32_t{1});
+    ASSERT_TRUE(ipage.GetPage<NodePage>().IsInode());
+  }
+  ASSERT_NE(forged_reuse_result, level1_addr);
+
+  // Both indices in one request, so index 0 seeds the reuse state for kLevel1Index.
+  zx::result found = vnode->FindAddresses(indices);
+  ASSERT_TRUE(found.is_ok());
+  EXPECT_EQ((*found)[1], level1_addr);
+  EXPECT_NE((*found)[1], forged_reuse_result);
+
+  ASSERT_EQ(vnode->Close(), ZX_OK);
+  vnode.reset();
+}
+
 TEST_F(NodeManagerTest, IsDnodeDoubleIndirectSubtree) TA_NO_THREAD_SAFETY_ANALYSIS {
   // Test node classification in double-indirect subtrees (files > ~8MB).
   // In double-indirect subtrees, nodes appear in repeating groups of (kNidsPerBlock + 1):
