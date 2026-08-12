@@ -36,6 +36,22 @@ if [[ $1 == "--help" ]]; then
     exit 0
 fi
 
+if [[ "$1" == "--target-list" ]]; then
+    if [[ $# -lt 2 ]]; then
+        usage
+        echo "ERROR: Missing argument for --target-list"
+        exit 1
+    fi
+    if [[ $# -lt 3 ]]; then
+        usage
+        echo "ERROR: Too few arguments. At least one label is required."
+        exit 1
+    fi
+    DESTINATION_LABEL="$2"
+    shift # past argument
+    shift # past value
+fi
+
 if [[ $# -lt 1 ]]; then
     usage
     echo "ERROR: Too few arguments. At least one label is required."
