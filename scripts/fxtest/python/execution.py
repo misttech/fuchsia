@@ -739,26 +739,15 @@ class TestExecution:
                         self._exec_env
                     )
                 )
-
-                name = package_repository.extract_package_name_from_url(
+                component_url = package_repo.resolve_component_url(
                     component_url
                 )
-                if name is None:
-                    raise TestCouldNotRun(
-                        "Failed to parse package name for Merkle root matching.\nTry running with --no-use-package-hash or run fx build."
-                    )
-
-                if name not in package_repo.name_to_merkle:
-                    raise TestCouldNotRun(
-                        f"Could not find a Merkle hash for this test: {component_url}\nTry running with --no-use-package-hash or run fx build."
-                    )
-
-                suffix = f"?hash={package_repo.name_to_merkle[name]}"
-                component_url = component_url.replace("#", f"{suffix}#", 1)
-
             except package_repository.PackageRepositoryError as e:
                 raise TestCouldNotRun(
-                    f"Could not load a Merkle hash for this test ({str(e)})\nTry running with --no-use-package-hash or run fx build."
+                    f"Could not load a Merkle hash for this test ({str(e)})"
+                    f"{package_repository.MERKLE_ERROR_HELP_SUFFIX}"
+                    if package_repository.MERKLE_ERROR_HELP_SUFFIX not in str(e)
+                    else str(e)
                 )
         return component_url
 

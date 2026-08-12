@@ -952,6 +952,112 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
         missing = await app._resolve_target_ip("other-emu")
         self.assertIsNone(missing)
 
+    async def test_missing_package_merkle_hash_fails_before_emulator_start(
+        self,
+    ) -> None:
+        """Test that missing package Merkle hash fails fast (ret == 1) before starting the emulator."""
+        with open(self.package_target_file_path, "w") as f:
+            f.write('{"signed": {"targets": {}}}')
+
+        emu_started = False
+
+        async def handler(*args: typing.Any, **kwargs: typing.Any) -> None:
+            if "emu" in args and "start" in args:
+                nonlocal emu_started
+                emu_started = True
+
+        self._mock_has_active_device(False)
+        self._mock_wait_for_repository_registration(True)
+        self._mock_run_command(0, async_handler=handler)
+        self._mock_has_package_server_connected_to_device(True)
+        self._mock_has_tests_in_base([])
+
+        recorder = event.EventRecorder()
+        ret = await main.async_main_wrapper(
+            args.parse_args(["--simple", "--no-build"]),
+            recorder=recorder,
+        )
+        self.assertEqual(ret, 1)
+        self.assertFalse(emu_started)
+        warnings = [
+            e.payload.user_message.value
+            for e in recorder._events
+            if e.payload and e.payload.user_message
+        ]
+        self.assertTrue(
+            any("Could not find a Merkle hash" in w for w in warnings)
+        )
+
+    async def test_no_use_package_hash_skips_validation(self) -> None:
+        """Test that --no-use-package-hash skips Merkle validation and proceeds to start emulator."""
+        with open(self.package_target_file_path, "w") as f:
+            f.write('{"signed": {"targets": {}}}')
+
+        emu_started = False
+        emu_stopped = False
+
+        async def handler(*args: typing.Any, **kwargs: typing.Any) -> None:
+            if "emu" in args and "start" in args:
+                nonlocal emu_started
+                emu_started = True
+            if "emu" in args and "stop" in args:
+                nonlocal emu_stopped
+                emu_stopped = True
+
+        self._mock_has_active_device(False)
+        self._mock_wait_for_repository_registration(True)
+        mock_json = json.dumps(
+            [
+                {
+                    "nodename": "fuchsia-emulator",
+                    "addresses": [{"ip": "127.0.0.1", "ssh_port": 12345}],
+                }
+            ]
+        )
+        self._mock_run_command(0, async_handler=handler, stdout=mock_json)
+        self._mock_has_package_server_connected_to_device(True)
+        self._mock_has_tests_in_base([])
+
+        mock_tempdir = mock.MagicMock()
+        mock_tempdir.name = "/tmp/fuchsia-emulator"
+        with (
+            mock.patch(
+                "main.tempfile.TemporaryDirectory", return_value=mock_tempdir
+            ),
+            mock.patch.dict(os.environ, {}, clear=False),
+        ):
+            ret = await main.async_main_wrapper(
+                args.parse_args(
+                    ["--simple", "--no-build", "--no-use-package-hash"]
+                )
+            )
+            self.assertEqual(ret, 0)
+            self.assertTrue(emu_started)
+            self.assertTrue(emu_stopped)
+
+    async def test_host_only_tests_bypass_merkle_validation(self) -> None:
+        """Test that host-only tests bypass package Merkle validation even if targets are empty."""
+        with open(self.package_target_file_path, "w") as f:
+            f.write('{"signed": {"targets": {}}}')
+
+        emu_started = False
+
+        async def handler(*args: typing.Any, **kwargs: typing.Any) -> None:
+            if "emu" in args and "start" in args:
+                nonlocal emu_started
+                emu_started = True
+
+        self._mock_has_active_device(False)
+        self._mock_run_command(0, async_handler=handler)
+        self._mock_has_package_server_connected_to_device(True)
+        self._mock_has_tests_in_base([])
+
+        ret = await main.async_main_wrapper(
+            args.parse_args(["--simple", "--no-build", "--host"])
+        )
+        self.assertEqual(ret, 0)
+        self.assertFalse(emu_started)
+
     async def test_no_allow_temporary_emulator_does_not_start_emulator(
         self,
     ) -> None:
@@ -1458,8 +1564,16 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
             # This will trigger rebuilding package lists.
             f.write('{"signed": {"targets": {}}}')
 
+        def build_handler(*args: typing.Any, **kwargs: typing.Any) -> int:
+            shutil.copy(
+                os.path.join(self.test_data_path, "package-targets.json"),
+                self.package_target_file_path,
+            )
+            return 0
+
         command_mock = self._mock_run_command(0)
         subprocess_mock = self._mock_subprocess_call(0)
+        subprocess_mock.side_effect = build_handler
         self._mock_has_package_server_connected_to_device(True)
         self._mock_has_tests_in_base([])
 

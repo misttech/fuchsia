@@ -758,6 +758,10 @@ class AsyncMain:
                     "OTA failed, attempting to run tests anyway"
                 )
 
+        if not self._validate_package_merkle_hashes(selections):
+            await end_execution("Failed to validate package Merkle hashes.")
+            return 1
+
         if need_emulator and flags.allow_temporary_emulator:
             if not await self._start_emulator():
                 await end_execution("Failed to start emulator.")
@@ -1159,6 +1163,54 @@ class AsyncMain:
                     f"The following tests are e2e tests, but the --e2e flag was not provided:\n  {tests_str}\n"
                     "Please pass --e2e to run e2e tests."
                 )
+
+    def _validate_package_merkle_hashes(
+        self,
+        selections: selection_types.TestSelections,
+    ) -> bool:
+        """Validate that all selected device tests have valid Merkle hashes in the repository.
+
+        Args:
+            selections (TestSelections): The selections to validate.
+
+        Returns:
+            bool: True if validation succeeded, False if any Merkle hash is missing.
+        """
+        if not self._flags.use_package_hash or self._flags.list_runtime_deps:
+            return True
+
+        device_tests = [
+            test for test in selections.selected if test.is_pure_device_test()
+        ]
+        if not device_tests:
+            return True
+
+        if self._exec_env is None:
+            return False
+
+        try:
+            package_repo = package_repository.PackageRepository.from_env_cached(
+                self._exec_env
+            )
+        except package_repository.PackageRepositoryError as e:
+            self._recorder.emit_warning_message(
+                f"Could not load package repository ({str(e)})"
+                f"{package_repository.MERKLE_ERROR_HELP_SUFFIX}"
+            )
+            return False
+
+        has_error = False
+        for test in device_tests:
+            url = test.build.test.package_url
+            if not url:
+                continue
+            try:
+                package_repo.resolve_component_url(url)
+            except package_repository.PackageRepositoryError as e:
+                self._recorder.emit_warning_message(str(e))
+                has_error = True
+
+        return not has_error
 
     async def _do_build(
         self,

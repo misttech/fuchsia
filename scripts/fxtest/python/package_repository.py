@@ -84,6 +84,36 @@ class PackageRepository:
         """
         return cls.from_env(exec_env)
 
+    def resolve_component_url(self, component_url: str) -> str:
+        """Resolve a component URL to include its Merkle hash.
+
+        Args:
+            component_url (str): The component URL.
+
+        Returns:
+            str: The component URL with ?hash=<merkle> inserted.
+
+        Raises:
+            PackageRepositoryError: If parsing fails or the Merkle hash is missing.
+        """
+        name = extract_package_name_from_url(component_url)
+        if name is None:
+            raise PackageRepositoryError(
+                f"Failed to parse package name for Merkle root matching: {component_url}"
+                f"{MERKLE_ERROR_HELP_SUFFIX}"
+            )
+        if name not in self.name_to_merkle:
+            raise PackageRepositoryError(
+                f"Could not find a Merkle hash for this test: {component_url}"
+                f"{MERKLE_ERROR_HELP_SUFFIX}"
+            )
+        suffix = f"?hash={self.name_to_merkle[name]}"
+        return component_url.replace("#", f"{suffix}#", 1)
+
+
+MERKLE_ERROR_HELP_SUFFIX = (
+    "\nTry running with --no-use-package-hash or run fx build."
+)
 
 _PACKAGE_NAME_REGEX = re.compile(r"fuchsia-pkg://fuchsia\.com/([^/#]+)#")
 
