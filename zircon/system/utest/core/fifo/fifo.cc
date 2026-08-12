@@ -79,7 +79,7 @@ TEST(FifoTest, InvalidParametersReturnOutOfRange) {
   EXPECT_EQ(zx::fifo::create(128, 33, 0, &fifo_a, &fifo_b),
             ZX_ERR_OUT_OF_RANGE);  // too large
   EXPECT_EQ(zx::fifo::create(0, 0, 1, &fifo_a, &fifo_b),
-            ZX_ERR_OUT_OF_RANGE);  // invalid options
+            ZX_ERR_INVALID_ARGS);  // invalid options
 }
 
 TEST(FifoTest, EndpointsAreRelated) {

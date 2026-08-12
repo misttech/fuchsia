@@ -8,6 +8,7 @@ mod counter;
 mod debug;
 mod debuglog;
 mod event;
+mod fifo;
 mod iommu;
 mod job;
 mod membarrier;

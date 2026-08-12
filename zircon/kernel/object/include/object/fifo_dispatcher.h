@@ -7,53 +7,37 @@
 #ifndef ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_FIFO_DISPATCHER_H_
 #define ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_FIFO_DISPATCHER_H_
 
-#include <lib/user_copy/user_ptr.h>
+#include <lib/object-constants.h>
 #include <stdint.h>
-#include <zircon/rights.h>
 #include <zircon/types.h>
 
-#include <fbl/ref_counted.h>
-#include <ktl/variant.h>
+#include <kernel/ffi.h>
 #include <object/dispatcher.h>
 #include <object/handle.h>
+#include <object/opaque_storage.h>
 
-class FifoDispatcher final : public PeeredDispatcher<FifoDispatcher, ZX_DEFAULT_FIFO_RIGHTS> {
+class FifoDispatcher;
+
+DECLARE_PEERED_DISPATCHER_RUST_PROTOS(FifoDispatcher, rust_fifo_dispatcher)
+
+extern "C" {
+zx_status_t cpp_fifo_dispatcher_create(
+    void* holder, uint32_t count, uint32_t elem_size, void* data,
+    ffi::Uninitialized<KernelHandle<FifoDispatcher>>* handle_out);
+}  // extern "C"
+
+class FifoDispatcher final : public Dispatcher {
  public:
-  static zx_status_t Create(size_t elem_count, size_t elem_size, uint32_t options,
-                            KernelHandle<FifoDispatcher>* handle0,
-                            KernelHandle<FifoDispatcher>* handle1, zx_rights_t* rights);
-
+  FifoDispatcher(void* holder, uint32_t count, uint32_t elem_size, void* data);
   ~FifoDispatcher() final;
 
-  zx_obj_type_t get_type() const final { return ZX_OBJ_TYPE_FIFO; }
+  DECLARE_PEERED_DISPATCHER_RUST_METHODS(rust_fifo_dispatcher, ZX_OBJ_TYPE_FIFO, true)
 
-  // May block on page requests and must be called without locks held.
-  zx_status_t WriteFromUser(size_t elem_size, user_in_ptr<const uint8_t> src, size_t count,
-                            size_t* actual);
-  // May block on page requests and must be called without locks held.
-  zx_status_t ReadToUser(size_t elem_size, user_out_ptr<uint8_t> dst, size_t count, size_t* actual);
-
-  // PeeredDispatcher implementation.
-  void on_zero_handles_locked() TA_REQ(get_lock());
-  void OnPeerZeroHandlesLocked() TA_REQ(get_lock());
+ protected:
+  Lock<CriticalMutex>* get_lock() const final;
 
  private:
-  FifoDispatcher(fbl::RefPtr<PeerHolder<FifoDispatcher>> holder, uint32_t options,
-                 uint32_t elem_count, uint32_t elem_size, ktl::unique_ptr<uint8_t[]> data);
-  ktl::variant<zx_status_t, UserCopyCaptureFaultsResult> WriteSelfLocked(
-      size_t elem_size, user_in_ptr<const uint8_t> ptr, size_t count, size_t* actual)
-      TA_REQ(get_lock());
-  ktl::variant<zx_status_t, UserCopyCaptureFaultsResult> ReadToUserLocked(
-      size_t elem_size, user_out_ptr<uint8_t> ptr, size_t count, size_t* actual) TA_REQ(get_lock());
-
-  const uint64_t elem_count_;
-  const uint32_t elem_size_;
-
-  uint64_t head_ TA_GUARDED(get_lock());
-  uint64_t tail_ TA_GUARDED(get_lock());
-  ktl::unique_ptr<uint8_t[]> data_ TA_GUARDED(get_lock());
-
-  static constexpr uint32_t kMaxSizeBytes = ZX_FIFO_MAX_SIZE_BYTES;
+  OpaqueStorage<kFifoDispatcherStateSize, kFifoDispatcherStateAlign> opaque_storage_;
 };
 
 #endif  // ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_FIFO_DISPATCHER_H_

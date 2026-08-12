@@ -29,6 +29,11 @@ constexpr size_t kEventPairDispatcherStateSize = 32;
 constexpr size_t kEventPairDispatcherStateAlign = 8;
 constexpr size_t kEventPairDispatcherStateOffset = 48;
 
+// Size and alignment for FifoDispatcherState.
+constexpr size_t kFifoDispatcherStateSize = 72;
+constexpr size_t kFifoDispatcherStateAlign = 8;
+constexpr size_t kFifoDispatcherStateOffset = 48;
+
 // Size and alignment for IommuDispatcherState.
 constexpr size_t kIommuDispatcherStateSize = 48;
 constexpr size_t kIommuDispatcherStateAlign = 8;
