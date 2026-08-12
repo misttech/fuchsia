@@ -987,12 +987,12 @@ async fn collect_blob_id_iterator(
     blobs
 }
 
-type OtaDownloaderResultSender = oneshot::Sender<Result<(), fpkg::ResolveError>>;
+type OtaDownloaderResultSender = oneshot::Sender<Result<u64, fpkg::ResolveError>>;
 struct MockOtaDownloaderService {
     interactions: SystemUpdaterInteractions,
     blobs: HashMap<Hash, Vec<u8>>,
     blobfs: Arc<BlobfsRamdisk>,
-    fetch_blob_response: Mutex<Option<Result<(), fpkg::ResolveError>>>,
+    fetch_blob_response: Mutex<Option<Result<u64, fpkg::ResolveError>>>,
     blockers: Mutex<HashMap<Hash, oneshot::Sender<OtaDownloaderResultSender>>>,
 }
 
@@ -1017,7 +1017,7 @@ impl MockOtaDownloaderService {
         receiver
     }
 
-    fn set_fetch_blob_response(&self, response: Result<(), fpkg::ResolveError>) {
+    fn set_fetch_blob_response(&self, response: Result<u64, fpkg::ResolveError>) {
         self.fetch_blob_response.lock().replace(response);
     }
 
@@ -1063,7 +1063,7 @@ impl MockOtaDownloaderService {
                                     .write_blob_with_overwrite(hash, content, overwrite_existing)
                                     .await
                                     .unwrap();
-                                responder.send(Ok(()))?;
+                                responder.send(Ok(content.len() as u64))?;
                             } else {
                                 responder.send(Err(fpkg::ResolveError::BlobNotFound))?;
                             }

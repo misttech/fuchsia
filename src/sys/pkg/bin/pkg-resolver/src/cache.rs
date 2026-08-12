@@ -120,7 +120,7 @@ pub async fn cache_package<'a>(
             Err(_) => true,
         };
         if fetch_meta_far {
-            let () = blob_fetcher
+            let _size = blob_fetcher
                 .push(
                     merkle,
                     FetchBlobContext {
@@ -145,7 +145,7 @@ pub async fn cache_package<'a>(
                         fetch_res,
                         "processor exists"
                     ) {
-                        Ok(()) => {}
+                        Ok(_) => {}
                         Err(e) if e.is_unexpected_pkg_cache_closed() => {
                             first_closed_error.get_or_insert(e);
                         }
@@ -500,7 +500,7 @@ impl work_queue::TryMerge for FetchBlobContext {
 /// the queue and terminate its output stream.
 #[derive(Clone)]
 pub struct BlobFetcher {
-    sender: work_queue::WorkSender<BlobId, FetchBlobContext, Result<(), Arc<FetchError>>>,
+    sender: work_queue::WorkSender<BlobId, FetchBlobContext, Result<u64, Arc<FetchError>>>,
 }
 
 impl BlobFetcher {
@@ -543,7 +543,7 @@ impl BlobFetcher {
         &self,
         blob_id: BlobId,
         context: FetchBlobContext,
-    ) -> impl Future<Output = Result<Result<(), Arc<FetchError>>, work_queue::Closed>> {
+    ) -> impl Future<Output = Result<Result<u64, Arc<FetchError>>, work_queue::Closed>> {
         self.sender.push(blob_id, context)
     }
 
@@ -557,7 +557,7 @@ impl BlobFetcher {
         &self,
         entries: impl Iterator<Item = (BlobId, FetchBlobContext)>,
     ) -> impl Iterator<
-        Item = impl Future<Output = Result<Result<(), Arc<FetchError>>, work_queue::Closed>>,
+        Item = impl Future<Output = Result<Result<u64, Arc<FetchError>>, work_queue::Closed>>,
     > {
         self.sender.push_all(entries)
     }
@@ -570,7 +570,7 @@ async fn fetch_blob(
     merkle: BlobId,
     context: FetchBlobContext,
     blob_fetch_params: BlobFetchParams,
-) -> Result<(), FetchError> {
+) -> Result<u64, FetchError> {
     let trace_id = ftrace::Id::new();
     let FetchBlobContext { blob_base_url, parent_trace_id, opener } = context;
     let guard = ftrace::async_enter!(
@@ -609,7 +609,7 @@ async fn fetch_blob_http(
     blob_fetch_params: BlobFetchParams,
     stats: &Mutex<Stats>,
     trace_id: ftrace::Id,
-) -> Result<(), FetchError> {
+) -> Result<u64, FetchError> {
     let mirror_stats = &stats.lock().for_mirror(blob_base_url.to_string());
     let blob_url = &make_blob_url(blob_base_url, &merkle).map_err(FetchError::BlobUrl)?;
     inspect.set_mirror(&blob_url.to_string());
@@ -643,9 +643,10 @@ async fn fetch_blob_http(
                     }
                     inspect.state(inspect::Http::CloseBlob);
                     // `blob` is dropped when download_blob returns which cancels the creation.
-                    res?;
+                    res
+                } else {
+                    Ok(0)
                 }
-                Ok(())
             }
             .await;
 
@@ -657,7 +658,7 @@ async fn fetch_blob_http(
                     flaked.store(true, Ordering::SeqCst);
                 }
                 Err(FetchErrorKind::NotFound | FetchErrorKind::Other) => {}
-                Ok(()) => {
+                Ok(_) => {
                     if flaked.load(Ordering::SeqCst) {
                         mirror_stats.network_blips().increment();
                     }

@@ -1147,7 +1147,7 @@ impl<B: Blobfs> TestEnv<B> {
         &self,
         hash: pkg::BlobId,
         base_url: impl AsRef<str>,
-    ) -> Result<(), fpkg::ResolveError> {
+    ) -> Result<u64, fpkg::ResolveError> {
         self.proxies
             .ota_downloader
             .fetch_blob(&hash.into(), base_url.as_ref(), false)

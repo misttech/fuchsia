@@ -257,8 +257,7 @@ type InstallationProgress = table {
     1: fraction_completed float32;
 
     /// The number of bytes downloaded during this installation attempt. Less
-    /// than or equal to [`UpdateInfo.download_size`] and only present if that
-    /// field is also present.
+    /// than or equal to [`UpdateInfo.download_size`] if that field is present.
     2: bytes_downloaded uint64;
 };
 

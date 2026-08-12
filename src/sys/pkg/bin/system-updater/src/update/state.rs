@@ -100,11 +100,7 @@ impl Prepare {
         ))
         .await;
 
-        Stage {
-            info,
-            progress: ProgressTracker::new(progress_goal),
-            bytes: ProgressTracker::new(info.download_size()),
-        }
+        Stage { info, bytes_downloaded: 0, progress: ProgressTracker::new(progress_goal) }
     }
 
     /// Transition to the FailPrepare terminal state.
@@ -117,7 +113,7 @@ impl Prepare {
 #[must_use]
 pub struct Stage {
     info: UpdateInfo,
-    bytes: ProgressTracker,
+    bytes_downloaded: u64,
     progress: ProgressTracker,
 }
 
@@ -125,7 +121,7 @@ impl Stage {
     fn progress(&self) -> Progress {
         Progress::builder()
             .fraction_completed(self.progress.as_fraction())
-            .bytes_downloaded(self.bytes.current)
+            .bytes_downloaded(self.bytes_downloaded)
             .build()
     }
 
@@ -133,16 +129,18 @@ impl Stage {
         UpdateInfoAndProgress::builder().info(self.info).progress(self.progress()).build()
     }
 
-    /// Increment the progress by `n` and emit a status update if not throttled.
-    pub async fn add_progress(&mut self, co: &mut Yield<State>, n: u64) {
-        self.progress.add(n);
+    /// Increment the progress by `progress` and bytes downloaded by `bytes` and emit a status
+    /// update if not throttled.
+    pub async fn add_progress(&mut self, co: &mut Yield<State>, progress: u64, bytes: u64) {
+        self.progress.add(progress);
+        self.bytes_downloaded = self.bytes_downloaded.saturating_add(bytes);
         self.progress.yield_if_due(co, State::Stage(self.info_progress())).await;
     }
 
     /// Transition to the Fetch state.
     pub async fn enter_fetch(mut self, co: &mut Yield<State>) -> Fetch {
         self.progress.yield_if_due(co, State::Fetch(self.info_progress())).await;
-        Fetch { bytes: self.bytes, progress: self.progress }
+        Fetch { info: self.info, bytes_downloaded: self.bytes_downloaded, progress: self.progress }
     }
 
     /// Transition to the FailStage terminal state.
@@ -154,19 +152,20 @@ impl Stage {
 /// The Fetch state.
 #[must_use]
 pub struct Fetch {
-    bytes: ProgressTracker,
+    info: UpdateInfo,
+    bytes_downloaded: u64,
     progress: ProgressTracker,
 }
 
 impl Fetch {
     fn info(&self) -> UpdateInfo {
-        UpdateInfo::builder().download_size(self.bytes.goal).build()
+        self.info
     }
 
     fn progress(&self) -> Progress {
         Progress::builder()
             .fraction_completed(self.progress.as_fraction())
-            .bytes_downloaded(self.bytes.current)
+            .bytes_downloaded(self.bytes_downloaded)
             .build()
     }
 
@@ -174,18 +173,23 @@ impl Fetch {
         UpdateInfoAndProgress::builder().info(self.info()).progress(self.progress()).build()
     }
 
-    /// Increment the progress by `n` and emit a status update if not throttled.
-    pub async fn add_progress(&mut self, co: &mut Yield<State>, n: u64) {
-        self.progress.add(n);
+    /// Increment the progress by `progress` and bytes downloaded by `bytes` and emit a status
+    /// update if not throttled.
+    pub async fn add_progress(&mut self, co: &mut Yield<State>, progress: u64, bytes: u64) {
+        self.progress.add(progress);
+        self.bytes_downloaded = self.bytes_downloaded.saturating_add(bytes);
         self.progress.yield_if_due(co, State::Fetch(self.info_progress())).await;
     }
 
     /// Transition to the Commit state.
     pub async fn enter_commit(self, co: &mut Yield<State>) -> Commit {
         debug_assert!(self.progress.done());
-        debug_assert!(self.bytes.done());
         co.yield_(State::Commit(self.info_progress())).await;
-        Commit { info: self.info(), progress: self.progress }
+        Commit {
+            info: self.info(),
+            bytes_downloaded: self.bytes_downloaded,
+            progress: self.progress,
+        }
     }
 
     /// Transition to the FailFetch terminal state.
@@ -198,20 +202,21 @@ impl Fetch {
 #[must_use]
 pub struct Commit {
     info: UpdateInfo,
+    bytes_downloaded: u64,
     progress: ProgressTracker,
 }
 
 impl Commit {
     /// Transition to the WaitToReboot state.
     pub async fn enter_wait_to_reboot(self, co: &mut Yield<State>) -> WaitToReboot {
-        co.yield_(State::WaitToReboot(UpdateInfoAndProgress::done(self.info))).await;
-        WaitToReboot { info: self.info }
+        co.yield_(State::WaitToReboot(self.info_progress())).await;
+        WaitToReboot { info: self.info, bytes_downloaded: self.bytes_downloaded }
     }
 
     fn progress(&self) -> Progress {
         Progress::builder()
             .fraction_completed(self.progress.as_fraction())
-            .bytes_downloaded(self.info.download_size())
+            .bytes_downloaded(self.bytes_downloaded)
             .build()
     }
 
@@ -229,18 +234,27 @@ impl Commit {
 #[must_use]
 pub struct WaitToReboot {
     info: UpdateInfo,
+    bytes_downloaded: u64,
 }
 
 impl WaitToReboot {
+    fn progress(&self) -> Progress {
+        Progress::builder().fraction_completed(1.0).bytes_downloaded(self.bytes_downloaded).build()
+    }
+
+    fn info_progress(&self) -> UpdateInfoAndProgress {
+        UpdateInfoAndProgress::builder().info(self.info).progress(self.progress()).build()
+    }
+
     /// Transition to the Reboot terminal state.
     pub async fn enter_reboot(self, co: &mut Yield<State>) {
-        let state = State::Reboot(UpdateInfoAndProgress::done(self.info));
+        let state = State::Reboot(self.info_progress());
         co.yield_(state).await;
     }
 
     /// Transition to the DeferReboot terminal state.
     pub async fn enter_defer_reboot(self, co: &mut Yield<State>) {
-        let state = State::DeferReboot(UpdateInfoAndProgress::done(self.info));
+        let state = State::DeferReboot(self.info_progress());
         co.yield_(state).await;
     }
 }
@@ -307,10 +321,10 @@ mod tests {
                 let info = UpdateInfo::builder().download_size(0).build();
                 let state = Prepare::enter(&mut co).await;
                 let mut state = state.enter_stage(&mut co, info, 32).await;
-                state.add_progress(&mut co, 8).await;
-                state.add_progress(&mut co, 8).await;
+                state.add_progress(&mut co, 8, 10).await;
+                state.add_progress(&mut co, 8, 20).await;
                 let mut state = state.enter_fetch(&mut co).await;
-                state.add_progress(&mut co, 16).await;
+                state.add_progress(&mut co, 16, 30).await;
                 let state = state.enter_commit(&mut co).await;
                 let state = state.enter_wait_to_reboot(&mut co).await;
                 state.enter_reboot(&mut co).await;
@@ -328,49 +342,49 @@ mod tests {
                 State::Stage(
                     UpdateInfoAndProgress::new(
                         info,
-                        Progress::builder().fraction_completed(0.25).bytes_downloaded(0).build()
+                        Progress::builder().fraction_completed(0.25).bytes_downloaded(10).build()
                     )
                     .unwrap()
                 ),
                 State::Stage(
                     UpdateInfoAndProgress::new(
                         info,
-                        Progress::builder().fraction_completed(0.5).bytes_downloaded(0).build()
+                        Progress::builder().fraction_completed(0.5).bytes_downloaded(30).build()
                     )
                     .unwrap()
                 ),
                 State::Fetch(
                     UpdateInfoAndProgress::new(
                         info,
-                        Progress::builder().fraction_completed(0.5).bytes_downloaded(0).build()
+                        Progress::builder().fraction_completed(0.5).bytes_downloaded(30).build()
                     )
                     .unwrap()
                 ),
                 State::Fetch(
                     UpdateInfoAndProgress::new(
                         info,
-                        Progress::builder().fraction_completed(1.0).bytes_downloaded(0).build()
+                        Progress::builder().fraction_completed(1.0).bytes_downloaded(60).build()
                     )
                     .unwrap()
                 ),
                 State::Commit(
                     UpdateInfoAndProgress::new(
                         info,
-                        Progress::builder().fraction_completed(1.0).bytes_downloaded(0).build()
+                        Progress::builder().fraction_completed(1.0).bytes_downloaded(60).build()
                     )
                     .unwrap()
                 ),
                 State::WaitToReboot(
                     UpdateInfoAndProgress::new(
                         info,
-                        Progress::builder().fraction_completed(1.0).bytes_downloaded(0).build()
+                        Progress::builder().fraction_completed(1.0).bytes_downloaded(60).build()
                     )
                     .unwrap()
                 ),
                 State::Reboot(
                     UpdateInfoAndProgress::new(
                         info,
-                        Progress::builder().fraction_completed(1.0).bytes_downloaded(0).build()
+                        Progress::builder().fraction_completed(1.0).bytes_downloaded(60).build()
                     )
                     .unwrap()
                 ),
@@ -379,13 +393,13 @@ mod tests {
 
         assert_eq!(
             collect_states(|mut co| async move {
-                WaitToReboot { info }.enter_defer_reboot(&mut co).await;
+                WaitToReboot { info, bytes_downloaded: 60 }.enter_defer_reboot(&mut co).await;
             })
             .await,
             vec![State::DeferReboot(
                 UpdateInfoAndProgress::new(
                     info,
-                    Progress::builder().fraction_completed(1.0).bytes_downloaded(0).build()
+                    Progress::builder().fraction_completed(1.0).bytes_downloaded(60).build()
                 )
                 .unwrap()
             ),]
@@ -415,7 +429,7 @@ mod tests {
                     .enter_stage(&mut co, UpdateInfo::builder().download_size(0).build(), 4)
                     .await;
                 let mut state = state.enter_fetch(&mut co).await;
-                state.add_progress(&mut co, 1).await;
+                state.add_progress(&mut co, 1, 10).await;
                 state.fail(&mut co, FetchFailureReason::Internal).await
             })
             .await,
@@ -438,14 +452,14 @@ mod tests {
                 State::Fetch(
                     UpdateInfoAndProgress::new(
                         info,
-                        Progress::builder().fraction_completed(0.25).bytes_downloaded(0).build()
+                        Progress::builder().fraction_completed(0.25).bytes_downloaded(10).build()
                     )
                     .unwrap()
                 ),
                 State::FailFetch(
                     UpdateInfoAndProgress::new(
                         info,
-                        Progress::builder().fraction_completed(0.25).bytes_downloaded(0).build()
+                        Progress::builder().fraction_completed(0.25).bytes_downloaded(10).build()
                     )
                     .unwrap()
                     .with_fetch_reason(FetchFailureReason::Internal)
@@ -464,8 +478,8 @@ mod tests {
                 let mut state = state
                     .enter_stage(&mut co, UpdateInfo::builder().download_size(0).build(), 4)
                     .await;
-                state.add_progress(&mut co, 2).await;
-                state.add_progress(&mut co, 1).await;
+                state.add_progress(&mut co, 2, 20).await;
+                state.add_progress(&mut co, 1, 10).await;
                 state.fail(&mut co, StageFailureReason::Internal).await
             })
             .await,
@@ -481,21 +495,21 @@ mod tests {
                 State::Stage(
                     UpdateInfoAndProgress::new(
                         info,
-                        Progress::builder().fraction_completed(0.5).bytes_downloaded(0).build()
+                        Progress::builder().fraction_completed(0.5).bytes_downloaded(20).build()
                     )
                     .unwrap()
                 ),
                 State::Stage(
                     UpdateInfoAndProgress::new(
                         info,
-                        Progress::builder().fraction_completed(0.75).bytes_downloaded(0).build()
+                        Progress::builder().fraction_completed(0.75).bytes_downloaded(30).build()
                     )
                     .unwrap()
                 ),
                 State::FailStage(
                     UpdateInfoAndProgress::new(
                         info,
-                        Progress::builder().fraction_completed(0.75).bytes_downloaded(0).build()
+                        Progress::builder().fraction_completed(0.75).bytes_downloaded(30).build()
                     )
                     .unwrap()
                     .with_stage_reason(StageFailureReason::Internal)
@@ -512,9 +526,9 @@ mod tests {
             let info = UpdateInfo::builder().download_size(0).build();
             let mut state = Prepare::enter(&mut co).await.enter_stage(&mut co, info, 100_000).await;
 
-            state.add_progress(&mut co, 10).await;
-            state.add_progress(&mut co, 10).await;
-            state.add_progress(&mut co, 1000).await;
+            state.add_progress(&mut co, 10, 0).await;
+            state.add_progress(&mut co, 10, 0).await;
+            state.add_progress(&mut co, 1000, 0).await;
         })
         .into_yielded();
         let mut generator = std::pin::pin!(generator);
@@ -549,10 +563,10 @@ mod tests {
             let info = UpdateInfo::builder().download_size(0).build();
             let mut state = Prepare::enter(&mut co).await.enter_stage(&mut co, info, 100_000).await;
 
-            state.add_progress(&mut co, 10).await;
-            state.add_progress(&mut co, 10).await;
+            state.add_progress(&mut co, 10, 0).await;
+            state.add_progress(&mut co, 10, 0).await;
             let _ = rx.await;
-            state.add_progress(&mut co, 10).await;
+            state.add_progress(&mut co, 10, 0).await;
         })
         .into_yielded();
         let mut generator = std::pin::pin!(generator);

@@ -746,7 +746,7 @@ async fn retry_image_blob_fetch_once_packageless() {
             sender.send(Err(ResolveError::NoSpace)).unwrap();
             let sender_2 = handle_zbi_blob_2.await.unwrap();
             let () = blobfs.write_blob(zbi_hash, zbi_content).await.unwrap();
-            sender_2.send(Ok(())).unwrap();
+            sender_2.send(Ok(zbi_content.len() as u64)).unwrap();
         }
     });
 

@@ -19,11 +19,16 @@ closed protocol OtaDownloader {
     /// + request `base_url` the base URL of the blob, including delivery blob type, the full URL of
     ///   the blob will be constructed as "$base_url/$hash".
     /// + request `overwrite_existing` whether to overwrite the blob if it is already present.
+    /// - response `bytes_fetched` the size in bytes of the delivery blob fetched (the number of
+    ///   bytes downloaded, which is not necessarily equal to the size of the uncompressed
+    ///   contents), or 0 if the blob was already present.
     /// * error indicates failure. See `fuchsia.pkg.ResolveError` for values and error
     ///   scenarios.
     strict FetchBlob(struct {
         hash fuchsia.pkg.BlobId;
         base_url fuchsia.url.Url;
         overwrite_existing bool;
-    }) -> () error fuchsia.pkg.ResolveError;
+    }) -> (struct {
+        bytes_fetched uint64;
+    }) error fuchsia.pkg.ResolveError;
 };

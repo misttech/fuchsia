@@ -241,6 +241,8 @@ async fn writes_history(update_url: &str, update_hash: &str, system_image_hash: 
         if update_url == UPDATE_PKG_URL { hashstr(6) } else { zbi_hash.to_string() };
     let expected_vbmeta_hash =
         if update_url == UPDATE_PKG_URL { hashstr(3) } else { vbmeta_hash.to_string() };
+    let expected_bytes_downloaded =
+        if update_url == UPDATE_PKG_URL { 0 } else { zbi_content.len() + vbmeta_content.len() };
 
     assert_eq!(
         env.read_history().map(strip_attempt_ids).map(strip_start_time),
@@ -278,7 +280,7 @@ async fn writes_history(update_url: &str, update_hash: &str, system_image_hash: 
                         "download_size": 0,
                     },
                     "progress": {
-                        "bytes_downloaded": 0,
+                        "bytes_downloaded": expected_bytes_downloaded,
                         "fraction_completed": 1.0,
                     },
                 },
@@ -437,6 +439,8 @@ async fn increments_attempts_counter_on_retry(
         if update_url == UPDATE_PKG_URL { hashstr(6) } else { zbi_hash.to_string() };
     let expected_vbmeta_hash =
         if update_url == UPDATE_PKG_URL { hashstr(3) } else { vbmeta_hash.to_string() };
+    let expected_bytes_downloaded =
+        if update_url == UPDATE_PKG_URL { 0 } else { zbi_content.len() + vbmeta_content.len() };
 
     assert_eq!(
         env.read_history().map(strip_attempt_ids).map(strip_start_time),
@@ -473,7 +477,7 @@ async fn increments_attempts_counter_on_retry(
                         "download_size": 0,
                     },
                     "progress": {
-                        "bytes_downloaded": 0,
+                        "bytes_downloaded": expected_bytes_downloaded,
                         "fraction_completed": 1.0,
                     },
                 },

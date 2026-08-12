@@ -134,7 +134,7 @@ async fn progress_reporting_fetch_multiple_blobs_packageless() {
 
     let sender = handle_image_blob.await.unwrap();
     let () = env.blobfs.write_blob(image_hash, &image_content).await.unwrap();
-    sender.send(Ok(())).unwrap();
+    sender.send(Ok(500)).unwrap();
 
     assert_eq!(
         attempt.next().await.unwrap().unwrap(),
@@ -144,7 +144,7 @@ async fn progress_reporting_fetch_multiple_blobs_packageless() {
                 .progress(
                     Progress::builder()
                         .fraction_completed(1000.0 / 4120.0)
-                        .bytes_downloaded(0)
+                        .bytes_downloaded(500)
                         .build()
                 )
                 .build()
@@ -154,19 +154,21 @@ async fn progress_reporting_fetch_multiple_blobs_packageless() {
     assert_eq!(attempt.next().await.unwrap().unwrap().id(), StateId::Fetch);
 
     let mut remaining_blobs = vec![
-        async move { (100.0, handle_blob1.await) }.boxed(),
-        async move { (20.0, handle_blob2.await) }.boxed(),
-        async move { (3000.0, handle_blob3.await) }.boxed(),
+        async move { (100.0, 100u64, handle_blob1.await) }.boxed(),
+        async move { (20.0, 20u64, handle_blob2.await) }.boxed(),
+        async move { (3000.0, 3000u64, handle_blob3.await) }.boxed(),
     ];
 
     let mut total_downloaded = 1000.0;
+    let mut total_bytes_downloaded = 500;
     let total_size = 4120.0;
 
     while !remaining_blobs.is_empty() {
-        let ((size, sender), _index, remaining) =
+        let ((size, blob_bytes, sender), _index, remaining) =
             futures::future::select_all(remaining_blobs).await;
-        sender.unwrap().send(Ok(())).unwrap();
+        sender.unwrap().send(Ok(blob_bytes)).unwrap();
         total_downloaded += size;
+        total_bytes_downloaded += blob_bytes;
 
         assert_eq!(
             attempt.next().await.unwrap().unwrap(),
@@ -176,7 +178,7 @@ async fn progress_reporting_fetch_multiple_blobs_packageless() {
                     .progress(
                         Progress::builder()
                             .fraction_completed(total_downloaded / total_size)
-                            .bytes_downloaded(0)
+                            .bytes_downloaded(total_bytes_downloaded)
                             .build()
                     )
                     .build()
@@ -185,9 +187,48 @@ async fn progress_reporting_fetch_multiple_blobs_packageless() {
         remaining_blobs = remaining;
     }
 
-    // In this test, we are testing Fetch updates. Let's assert the Fetch
-    // phase is over.
-    assert_eq!(attempt.next().await.unwrap().unwrap().id(), StateId::Commit);
+    assert_eq!(
+        attempt.next().await.unwrap().unwrap(),
+        State::Commit(
+            UpdateInfoAndProgress::builder()
+                .info(info)
+                .progress(
+                    Progress::builder()
+                        .fraction_completed(1.0)
+                        .bytes_downloaded(total_bytes_downloaded)
+                        .build()
+                )
+                .build()
+        )
+    );
+    assert_eq!(
+        attempt.next().await.unwrap().unwrap(),
+        State::WaitToReboot(
+            UpdateInfoAndProgress::builder()
+                .info(info)
+                .progress(
+                    Progress::builder()
+                        .fraction_completed(1.0)
+                        .bytes_downloaded(total_bytes_downloaded)
+                        .build()
+                )
+                .build()
+        )
+    );
+    assert_eq!(
+        attempt.next().await.unwrap().unwrap(),
+        State::Reboot(
+            UpdateInfoAndProgress::builder()
+                .info(info)
+                .progress(
+                    Progress::builder()
+                        .fraction_completed(1.0)
+                        .bytes_downloaded(total_bytes_downloaded)
+                        .build()
+                )
+                .build()
+        )
+    );
 }
 
 #[fuchsia::test]

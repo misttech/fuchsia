@@ -25,9 +25,15 @@ async fn test_fetch_blob() {
     let base_url = served_repository.local_url() + "/blobs/1";
 
     for blob in pkg.list_blobs() {
-        let () = env.fetch_blob(blob.into(), &base_url).await.unwrap();
+        let size = env.fetch_blob(blob.into(), &base_url).await.unwrap();
+        assert!(size > 0);
     }
     assert!(env.blobfs.list_blobs().unwrap().is_superset(&pkg.list_blobs()));
+
+    for blob in pkg.list_blobs() {
+        let size = env.fetch_blob(blob.into(), &base_url).await.unwrap();
+        assert_eq!(size, 0);
+    }
 
     env.stop().await;
 }
@@ -48,7 +54,8 @@ async fn test_fetch_blob_concurrent() {
 
     let () = futures::stream::iter(pkg.list_blobs())
         .for_each_concurrent(None, async |hash| {
-            let () = env.fetch_blob(hash.into(), &base_url).await.unwrap();
+            let size = env.fetch_blob(hash.into(), &base_url).await.unwrap();
+            assert!(size > 0);
         })
         .await;
     assert!(env.blobfs.list_blobs().unwrap().is_superset(&pkg.list_blobs()));

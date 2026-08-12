@@ -5,12 +5,13 @@
 //! Wrapper types for the State union.
 
 use event_queue::Event;
+use fidl_fuchsia_update_installer as fidl;
+use fuchsia_inspect as inspect;
 use proptest::prelude::*;
 use proptest_derive::Arbitrary;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use typed_builder::TypedBuilder;
-use {fidl_fuchsia_update_installer as fidl, fuchsia_inspect as inspect};
 
 /// The state of an update installation attempt.
 #[derive(Arbitrary, Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -72,7 +73,7 @@ pub struct Progress {
 
 /// An UpdateInfo and Progress that are guaranteed to be consistent with each other.
 ///
-/// Specifically, `progress.bytes_downloaded <= info.download_size`.
+/// Specifically, `progress.bytes_downloaded <= info.download_size` when `info.download_size != 0`.
 #[derive(Clone, Copy, Debug, Serialize, PartialEq, PartialOrd)]
 pub struct UpdateInfoAndProgress {
     info: UpdateInfo,
@@ -309,7 +310,7 @@ impl UpdateInfoAndProgress {
         info: UpdateInfo,
         progress: Progress,
     ) -> Result<Self, BytesFetchedExceedsDownloadSize> {
-        if progress.bytes_downloaded > info.download_size {
+        if info.download_size != 0 && progress.bytes_downloaded > info.download_size {
             return Err(BytesFetchedExceedsDownloadSize);
         }
 
@@ -361,13 +362,13 @@ impl UpdateInfoAndProgressBuilder {
 
 impl UpdateInfoAndProgressBuilderWithInfo {
     /// Sets the Progress field, clamping `progress.bytes_downloaded` to be `<=
-    /// info.download_size`. Users of this API should independently ensure that this invariant is
-    /// not violated.
+    /// info.download_size` when `info.download_size != 0`. Users of this API should independently
+    /// ensure that this invariant is not violated.
     pub fn progress(
         self,
         mut progress: Progress,
     ) -> UpdateInfoAndProgressBuilderWithInfoAndProgress {
-        if progress.bytes_downloaded > self.info.download_size {
+        if self.info.download_size != 0 && progress.bytes_downloaded > self.info.download_size {
             progress.bytes_downloaded = self.info.download_size;
         }
 
@@ -911,7 +912,7 @@ fn arb_info_and_progress() -> impl Strategy<Value = (UpdateInfo, Progress)> {
             info: UpdateInfo
         )(
             fraction_completed: f32,
-            bytes_downloaded in 0..=info.download_size
+            bytes_downloaded in 0..=if info.download_size == 0 { u64::MAX } else { info.download_size }
         ) -> Progress {
             Progress::builder()
                 .fraction_completed(fraction_completed)
@@ -940,9 +941,9 @@ mod tests {
         }
     }
 
-    /// Returns a strategy generating (a, b) such that a < b.
-    fn a_lt_b() -> impl Strategy<Value = (u64, u64)> {
-        (0..u64::MAX).prop_flat_map(|a| (Just(a), a + 1..))
+    /// Returns a strategy generating (a, b) such that 0 < a < b.
+    fn zero_lt_a_lt_b() -> impl Strategy<Value = (u64, u64)> {
+        (1..u64::MAX).prop_flat_map(|a| (Just(a), a + 1..))
     }
 
     proptest! {
@@ -1014,7 +1015,7 @@ mod tests {
 
         #[test]
         fn update_info_and_progress_new_rejects_too_many_bytes(
-            (a, b) in a_lt_b(),
+            (a, b) in zero_lt_a_lt_b(),
             mut info: UpdateInfo,
             mut progress: Progress
         ) {
@@ -1075,7 +1076,7 @@ mod tests {
         }
 
         #[test]
-        fn state_rejects_too_many_bytes_fetched(state: State, (a, b) in a_lt_b()) {
+        fn state_rejects_too_many_bytes_fetched(state: State, (a, b) in zero_lt_a_lt_b()) {
             let mut as_fidl: fidl::State = state.into();
 
             let break_info_progress = |info: &mut Option<fidl::UpdateInfo>, progress: &mut Option<fidl::InstallationProgress>| {

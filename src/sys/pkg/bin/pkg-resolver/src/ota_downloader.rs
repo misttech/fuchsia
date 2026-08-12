@@ -50,7 +50,7 @@ async fn fetch_blob(
     hash: pkg::BlobId,
     base_url: String,
     overwrite_existing: bool,
-) -> Result<(), (anyhow::Error, ResolveError)> {
+) -> Result<u64, (anyhow::Error, ResolveError)> {
     let base_url = base_url
         .parse::<http::Uri>()
         .with_context(|| format!("parsing url {base_url:?}"))
@@ -60,9 +60,10 @@ async fn fetch_blob(
         base_url,
         ftrace::Id::new(),
     );
-    let () = blob_fetcher.push(hash, context).await.expect("processor exists").map_err(|e| {
-        let resolve_error = e.to_resolve_error();
-        (e.into(), resolve_error)
-    })?;
-    Ok(())
+    let blob_size =
+        blob_fetcher.push(hash, context).await.expect("processor exists").map_err(|e| {
+            let resolve_error = e.to_resolve_error();
+            (e.into(), resolve_error)
+        })?;
+    Ok(blob_size)
 }
