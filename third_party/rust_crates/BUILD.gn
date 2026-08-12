@@ -174,11 +174,11 @@ group("async-stream-0.3.6") {
 }
 
 group("async-trait") {
-  public_deps = [ ":async-trait-v0_1_89($host_toolchain)" ]
+  public_deps = [ ":async-trait-v0_1_92($host_toolchain)" ]
 }
 
-group("async-trait-0.1.89") {
-  public_deps = [ ":async-trait-v0_1_89" ]
+group("async-trait-0.1.92") {
+  public_deps = [ ":async-trait-v0_1_92" ]
 }
 
 group("base64") {
@@ -4080,18 +4080,18 @@ rustc_library("async-task-v4_7_1") {
   applicable_licenses = [ ":async-task-v4_7_1.license" ]
 }
 
-license("async-trait-v0_1_89.license") {
+license("async-trait-v0_1_92.license") {
   public_package_name = "async_trait"
   license_files = [
-    "//third_party/rust_crates/vendor/async-trait-0.1.89/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/async-trait-0.1.89/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/async-trait-0.1.92/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/async-trait-0.1.92/LICENSE-MIT",
   ]
 }
 
-rustc_macro("async-trait-v0_1_89") {
+rustc_macro("async-trait-v0_1_92") {
   crate_name = "async_trait"
-  source_root = "//third_party/rust_crates/vendor/async-trait-0.1.89/src/lib.rs"
-  output_name = "async_trait-fe851dfe5735304a"
+  source_root = "//third_party/rust_crates/vendor/async-trait-0.1.92/src/lib.rs"
+  output_name = "async_trait-1b00759650c0df34"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -4100,19 +4100,19 @@ rustc_macro("async-trait-v0_1_89") {
   deps = []
   deps += [ ":proc-macro2-v1_0_106" ]
   deps += [ ":quote-v1_0_45" ]
-  deps += [ ":syn-v2_0_119" ]
+  deps += [ ":syn-v3_0_3" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=fe851dfe5735304a",
-    "-Cextra-filename=-fe851dfe5735304a",
+    "-Cmetadata=1b00759650c0df34",
+    "-Cextra-filename=-1b00759650c0df34",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":async-trait-v0_1_89.license" ]
+  applicable_licenses = [ ":async-trait-v0_1_92.license" ]
 }
 
 license("atomic-waker-v1_1_2.license") {
@@ -21603,6 +21603,7 @@ rustc_library("syn-v3_0_3") {
     "--cfg=feature=\"parsing\"",
     "--cfg=feature=\"printing\"",
     "--cfg=feature=\"proc-macro\"",
+    "--cfg=feature=\"visit-mut\"",
   ]
 
   visibility = [ ":*" ]
@@ -23204,7 +23205,7 @@ rustc_library("trust-dns-proto-v0_22_0") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":async-trait-v0_1_89($host_toolchain)" ]
+  deps += [ ":async-trait-v0_1_92($host_toolchain)" ]
   deps += [ ":cfg-if-v1_0_4" ]
   deps += [ ":data-encoding-v2_11_0" ]
   deps += [ ":enum-as-inner-v0_5_1($host_toolchain)" ]

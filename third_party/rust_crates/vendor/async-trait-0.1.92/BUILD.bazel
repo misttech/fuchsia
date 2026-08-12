@@ -22,7 +22,7 @@ package_info(
     name = "package_info",
     package_name = "async-trait",
     package_url = "https://github.com/dtolnay/async-trait",
-    package_version = "0.1.89",
+    package_version = "0.1.92",
 )
 
 license(
@@ -71,10 +71,10 @@ rust_proc_macro(
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    version = "0.1.89",
+    version = "0.1.92",
     deps = [
         "//third_party/rust_crates/vendor/proc-macro2-1.0.106:proc_macro2",
         "//third_party/rust_crates/vendor/quote-1.0.45:quote",
-        "//third_party/rust_crates/vendor/syn-2.0.119:syn",
+        "//third_party/rust_crates/vendor/syn-3.0.3:syn",
     ],
 )
