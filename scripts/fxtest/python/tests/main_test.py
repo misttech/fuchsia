@@ -1389,6 +1389,92 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
         self.assertIsNotNone(serve_abort_signal)
         self.assertTrue(serve_abort_signal.is_set())  # type: ignore
 
+    async def test_package_server_termination_when_deregister_fails(
+        self,
+    ) -> None:
+        """Test that we terminate the package server even if deregister fails"""
+
+        serve_abort_signal: asyncio.Event | None = None
+
+        async def command_handler(
+            *args: typing.Any, **kwargs: typing.Any
+        ) -> None:
+            nonlocal serve_abort_signal
+            if "serve" in args:
+                serve_abort_signal = kwargs.get("abort_signal")
+            elif "deregister" in args:
+                raise RuntimeError("Deregistration failed")
+
+        command_mock = self._mock_run_command(0, async_handler=command_handler)
+        self._mock_has_package_server_connected_to_device(False)
+        self._mock_has_tests_in_base([])
+
+        ret = await main.async_main_wrapper(
+            args.parse_args(
+                ["--simple", "--no-build", "--allow-temporary-package-server"]
+            )
+        )
+        self.assertEqual(ret, 0)
+        self.assertIsNotNone(serve_abort_signal)
+        self.assertTrue(serve_abort_signal.is_set())  # type: ignore
+
+    async def test_package_server_termination_when_deregister_returns_error(
+        self,
+    ) -> None:
+        """Test that we terminate the package server even if deregister returns non-zero exit code"""
+
+        serve_abort_signal: asyncio.Event | None = None
+
+        async def command_side_effect(
+            *args: typing.Any, **kwargs: typing.Any
+        ) -> mock.MagicMock:
+            nonlocal serve_abort_signal
+            if "serve" in args:
+                serve_abort_signal = kwargs.get("abort_signal")
+                return mock.MagicMock(
+                    return_code=0, stdout="", stderr="", was_timeout=False
+                )
+            if "deregister" in args:
+                return mock.MagicMock(
+                    return_code=1, stdout="", stderr="", was_timeout=False
+                )
+            return mock.MagicMock(
+                return_code=0, stdout="", stderr="", was_timeout=False
+            )
+
+        m = mock.AsyncMock(side_effect=command_side_effect)
+        patch = mock.patch.object(execution, "run_command", m)
+        patch.start()
+        self.addCleanup(patch.stop)
+        patch2 = mock.patch.object(selection.execution, "run_command", m)
+        patch2.start()
+        self.addCleanup(patch2.stop)
+
+        self._mock_has_package_server_connected_to_device(False)
+        self._mock_has_tests_in_base([])
+
+        recorder = event.EventRecorder()
+        ret = await main.async_main_wrapper(
+            args.parse_args(
+                ["--simple", "--no-build", "--allow-temporary-package-server"]
+            ),
+            recorder=recorder,
+        )
+        self.assertEqual(ret, 0)
+        self.assertIsNotNone(serve_abort_signal)
+        self.assertTrue(serve_abort_signal.is_set())  # type: ignore
+        warnings = [
+            e.payload.user_message.value
+            for e in recorder._events
+            if e.payload and e.payload.user_message
+        ]
+        self.assertTrue(
+            any(
+                "Failed to deregister temporary package repository" in w
+                for w in warnings
+            )
+        )
+
     async def test_full_success(self) -> None:
         """Test that we can run all tests and report success"""
 

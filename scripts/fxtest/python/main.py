@@ -711,9 +711,21 @@ class AsyncMain:
                 and package_server_task is not None
             ):
                 package_server_event.set()
-                await package_server_task
+                try:
+                    await asyncio.wait_for(package_server_task, timeout=15.0)
+                except TimeoutError:
+                    recorder.emit_warning_message(
+                        "Timed out waiting for package server task to complete."
+                    )
             if emulator_started:
-                await self._teardown_emulator()
+                try:
+                    await asyncio.wait_for(
+                        self._teardown_emulator(), timeout=30.0
+                    )
+                except TimeoutError:
+                    recorder.emit_warning_message(
+                        "Timed out waiting for emulator teardown."
+                    )
             recorder.emit_end(error=error, id=id)
 
         # If enabled, try to build and update the selected tests.
@@ -2119,20 +2131,39 @@ class AsyncMain:
                 )
             )
             await cancel_event.wait()
-            await execution.run_command(
-                *exec_env.fx_cmd_line(
-                    "ffx",
-                    "target",
-                    "repository",
-                    "deregister",
-                    "-r",
-                    repo_name,
-                ),
-                recorder=recorder,
-                quiet_mode=True,
-            )
-            repo_deregistered_event.set()
-            await serve_task
+            try:
+                deregister_output = await execution.run_command(
+                    *exec_env.fx_cmd_line(
+                        "ffx",
+                        "target",
+                        "repository",
+                        "deregister",
+                        "-r",
+                        repo_name,
+                    ),
+                    recorder=recorder,
+                    quiet_mode=True,
+                    timeout=5.0,
+                )
+                if (
+                    deregister_output is None
+                    or deregister_output.return_code != 0
+                ):
+                    raise RuntimeError(
+                        f"exit code {deregister_output.return_code if deregister_output is not None else -1}"
+                    )
+            except Exception as e:
+                recorder.emit_warning_message(
+                    f"Failed to deregister temporary package repository {repo_name}: {e}"
+                )
+            finally:
+                repo_deregistered_event.set()
+                try:
+                    await asyncio.wait_for(serve_task, timeout=10.0)
+                except TimeoutError:
+                    recorder.emit_warning_message(
+                        f"Timed out waiting for temporary package server ({repo_name}) to stop."
+                    )
 
         return (asyncio.create_task(impl()), cancel_event)
 
