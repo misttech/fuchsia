@@ -586,7 +586,7 @@ impl<B: PacketBuffer, S: AsyncRead + AsyncWrite + Send + 'static> Connection<B, 
                 );
             }
         } else {
-            warn!(
+            trace!(
                 "Received reset packet for connection that didn't \
                 exist on address {address:?}. Ignoring"
             );
