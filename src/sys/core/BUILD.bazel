@@ -17,7 +17,9 @@ exports_files(
         "meta/lavapipe-disabled.core_shard.cml",
         "meta/lavapipe.core_shard.cml",
         "meta/restricted-storage.core_shard.cml",
+        "meta/restricted_swd.core_shard.cml",
         "meta/unrestricted-storage.core_shard.cml",
+        "meta/unrestricted_swd.core_shard.cml",
     ],
     visibility = ["//bundles/assembly:__subpackages__"],
 )

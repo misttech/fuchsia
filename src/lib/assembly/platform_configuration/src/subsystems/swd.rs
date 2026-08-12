@@ -6,7 +6,8 @@ use crate::subsystems::prelude::*;
 use anyhow::{Context, Result, anyhow, bail};
 use assembly_config_capabilities::{Config, ConfigNestedValueType, ConfigValueType};
 use assembly_config_schema::platform_settings::swd_config::{
-    OtaConfigs, PolicyConfig, PolicyLabels, SwdConfig, UpdateChecker, VerificationFailureAction,
+    OtaConfigs, PolicyConfig, PolicyLabels, SwdConfig, SwdTrustStore, UpdateChecker,
+    VerificationFailureAction,
 };
 use assembly_constants::FileEntry;
 use camino::Utf8PathBuf;
@@ -145,6 +146,15 @@ impl DefineSubsystemConfiguration<SwdConfig> for SwdSubsystemConfig {
                 manifest_public_keys,
             ),
         )?;
+
+        if matches!(context.feature_set_level, FeatureSetLevel::Standard | FeatureSetLevel::Utility)
+        {
+            let bundle_name = match subsystem_config.trust_store {
+                SwdTrustStore::Public => "swd_trust_store_public",
+                SwdTrustStore::Restricted => "swd_trust_store_restricted",
+            };
+            builder.platform_bundle(bundle_name)?;
+        }
 
         Ok(())
     }
@@ -393,5 +403,52 @@ mod tests {
             })
         );
         assert_eq!(on_verification_failure, VerificationFailureAction::Reboot);
+    }
+
+    #[test]
+    fn test_swd_trust_store_config() {
+        use crate::subsystems::ConfigurationBuilderImpl;
+
+        let context = ConfigurationContext {
+            feature_set_level: &FeatureSetLevel::Standard,
+            build_type: &BuildType::Eng,
+            board_config: &Default::default(),
+            gendir: Default::default(),
+            resource_dir: Default::default(),
+            developer_only_options: Default::default(),
+        };
+
+        // Case 1: Default (should be public)
+        {
+            let mut builder: ConfigurationBuilderImpl = Default::default();
+            let config = SwdConfig::default();
+            let result = SwdSubsystemConfig::define_configuration(&context, &config, &mut builder);
+            assert!(result.is_ok());
+            let completed_config = builder.build();
+            assert!(completed_config.bundles.contains("swd_trust_store_public"));
+            assert!(!completed_config.bundles.contains("swd_trust_store_restricted"));
+        }
+
+        // Case 2: Explicitly "restricted"
+        {
+            let mut builder: ConfigurationBuilderImpl = Default::default();
+            let config = SwdConfig { trust_store: SwdTrustStore::Restricted, ..Default::default() };
+            let result = SwdSubsystemConfig::define_configuration(&context, &config, &mut builder);
+            assert!(result.is_ok());
+            let completed_config = builder.build();
+            assert!(completed_config.bundles.contains("swd_trust_store_restricted"));
+            assert!(!completed_config.bundles.contains("swd_trust_store_public"));
+        }
+
+        // Case 3: Explicitly "public"
+        {
+            let mut builder: ConfigurationBuilderImpl = Default::default();
+            let config = SwdConfig { trust_store: SwdTrustStore::Public, ..Default::default() };
+            let result = SwdSubsystemConfig::define_configuration(&context, &config, &mut builder);
+            assert!(result.is_ok());
+            let completed_config = builder.build();
+            assert!(completed_config.bundles.contains("swd_trust_store_public"));
+            assert!(!completed_config.bundles.contains("swd_trust_store_restricted"));
+        }
     }
 }

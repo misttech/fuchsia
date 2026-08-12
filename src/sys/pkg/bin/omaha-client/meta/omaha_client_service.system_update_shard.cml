@@ -99,8 +99,9 @@
             to: "#omaha-client-service",
         },
         {
-            directory: "root-ssl-certificates",
+            directory: "swd-root-ssl-certificates",
             from: "parent",
+            as: "root-ssl-certificates",
             to: "#omaha-client-service",
         },
         {

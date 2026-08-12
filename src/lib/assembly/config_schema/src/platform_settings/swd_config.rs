@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 
 /// A representative struct of all the configurable details of the software delivery system made
 /// available to a product owner
-#[derive(Default, Clone, Debug, Deserialize, Serialize, PartialEq, JsonSchema, WalkPaths)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, JsonSchema, WalkPaths)]
 #[serde(default, deny_unknown_fields)]
 #[serde(rename(serialize = "software_delivery"))]
 #[serde(rename(deserialize = "software_delivery"))]
@@ -39,6 +39,21 @@ pub struct SwdConfig {
     /// Each key must be 32 bytes and encoded as a 64 bytes hex string.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub ota_manifest_public_keys: Vec<String>,
+
+    #[serde(default)]
+    #[serde(skip_serializing_if = "crate::common::is_default")]
+    pub trust_store: SwdTrustStore,
+}
+
+
+
+/// The trust store to use for SWD.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SwdTrustStore {
+    #[default]
+    Public,
+    Restricted,
 }
 
 /// The SWD Policies are laid out in
@@ -73,6 +88,7 @@ pub enum VerificationFailureAction {
     Reboot,
     Disabled,
 }
+
 
 /// Configuration for the Omaha Client
 #[derive(Default, Clone, Debug, Deserialize, Serialize, PartialEq, JsonSchema, WalkPaths)]

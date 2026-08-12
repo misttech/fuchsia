@@ -691,6 +691,14 @@ group("core_realm_user_and_userdebug") {
   deps = [ "//bundles/assembly/bazel_inputs/src/sys/pkg/bin/pkg-resolver" ]
 }
 
+group("swd_trust_store_restricted") {
+  deps = []
+}
+
+group("swd_trust_store_public") {
+  deps = []
+}
+
 group("core_realm_development_access") {
   deps = [
     "//bundles/assembly/bazel_inputs/src/developer/forensics/snapshot:pkg",

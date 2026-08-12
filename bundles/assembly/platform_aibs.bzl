@@ -238,6 +238,8 @@ platform_aib_names = bringup_platform_aib_names + [
     "product_provided_update_checker",
     "omaha_client",
     "system_update_configurator",
+    "swd_trust_store_restricted",
+    "swd_trust_store_public",
 
     # Memory monitor
     "memory_monitor",

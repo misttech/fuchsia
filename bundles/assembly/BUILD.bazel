@@ -1906,6 +1906,24 @@ assembly_input_bundle(
     ],
 )
 
+# Core realm shard for restricted SWD routing (used when trust_store is set to restricted).
+# buildifier: leave-alone
+assembly_input_bundle(
+    name = "swd_trust_store_restricted",
+    core_shards = [
+        "//src/sys/core:meta/restricted_swd.core_shard.cml",
+    ],
+)
+
+# Core realm shard for unrestricted SWD routing (used when trust_store is set to public).
+# buildifier: leave-alone
+assembly_input_bundle(
+    name = "swd_trust_store_public",
+    core_shards = [
+        "//src/sys/core:meta/unrestricted_swd.core_shard.cml",
+    ],
+)
+
 # This is the AIB that adds the services necessary for developers to access a
 # target running Fuchsia from their development host using tools like `ffx`.
 #

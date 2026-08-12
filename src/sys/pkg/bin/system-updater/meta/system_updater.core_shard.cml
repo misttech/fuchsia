@@ -39,11 +39,6 @@
             to: "#system-update",
         },
         {
-            protocol: [ "fuchsia.net.http.Loader" ],
-            from: "#network",
-            to: "#system-update",
-        },
-        {
             directory: [
                 "build-info",
                 "system",
