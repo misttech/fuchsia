@@ -47,10 +47,10 @@ pub(crate) fn read_battery_manager_config(path: &str) -> Result<BatteryManagerCo
 }
 
 fn parse_battery_manager_config(contents: &str, path: &str) -> Result<BatteryManagerConfig, Error> {
-    let config: BatteryManagerConfig = serde_json::from_str(contents).map_err(|e| {
+    let config: BatteryManagerConfig = serde_json5::from_str(contents).map_err(|e| {
         let err = anyhow::format_err!(
             "Failed to parse battery manager config at '{path}': {e}. \
-            Ensure the configuration file contains valid JSON matching the \
+            Ensure the configuration file contains valid JSON5 matching the \
             BatteryManagerConfig schema."
         );
         error!("{err}");
@@ -145,6 +145,38 @@ mod tests {
         }"#;
         let config = parse_battery_manager_config(json, "test_path").unwrap();
         assert_eq!(config.shutdown_offset_percent, 3.0);
+    }
+
+    #[test]
+    fn test_parse_battery_manager_config_json5_features() {
+        // Test JSON5 comments, trailing commas, and unquoted keys
+        let json5 = r#"{
+            // Comment line
+            shutdown_offset_percent: 3.0,
+            /* Multi-line
+               comment */
+            ttf_tier_thresholds: [0.0, 84.0, 90.0,],
+            ttf_charge_temp_limits: [0, 10000, 20000, 42000, 46000,],
+            chg_cc_limits_ua: [
+                [200000, 100000, 100000,],
+                [275000, 100000, 100000,],
+                [500000, 500000, 200000,],
+                [400000, 400000, 200000,],
+            ],
+        }"#;
+        let config = parse_battery_manager_config(json5, "test_path").unwrap();
+        assert_eq!(config.shutdown_offset_percent, 3.0);
+        assert_eq!(config.ttf_tier_thresholds, Some(vec![0.0, 84.0, 90.0]));
+        assert_eq!(config.ttf_charge_temp_limits, Some(vec![0, 10000, 20000, 42000, 46000]));
+        assert_eq!(
+            config.chg_cc_limits_ua,
+            Some(vec![
+                vec![200_000, 100_000, 100_000],
+                vec![275_000, 100_000, 100_000],
+                vec![500_000, 500_000, 200_000],
+                vec![400_000, 400_000, 200_000],
+            ])
+        );
     }
 
     #[test]

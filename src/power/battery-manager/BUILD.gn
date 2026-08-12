@@ -36,7 +36,7 @@ battery_manager_deps = [
   "//third_party/rust_crates:futures",
   "//third_party/rust_crates:log",
   "//third_party/rust_crates:serde",
-  "//third_party/rust_crates:serde_json",
+  "//third_party/rust_crates:serde_json5",
   "//third_party/rust_crates:strum",
   "//third_party/rust_crates:strum_macros",
 ]
