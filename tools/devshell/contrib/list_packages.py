@@ -12,8 +12,6 @@ import re
 from collections.abc import Callable, Iterable, Iterator
 from typing import Any
 
-FUCHSIA_BUILD_DIR = os.environ.get("FUCHSIA_BUILD_DIR")
-
 
 # Print all the packages in sorted order, one per line.
 def print_packages(packages: Iterable[str]) -> None:
@@ -24,15 +22,15 @@ def print_packages(packages: Iterable[str]) -> None:
 # Extracts the list of package names that are accepted by filter_ from a
 # decoded package list manifest.
 def extract_packages_from_listing(
-    manifest_paths: dict[str, Any], filter_: Callable[[str], bool]
+    manifest_data: dict[str, Any],
+    filter_: Callable[[str], bool],
+    build_dir: str,
 ) -> Iterator[str]:
     packages: list[str] = []
-    for manifest in manifest_paths["content"]["manifests"]:
-        packages.append(
-            json.load(open(f"{FUCHSIA_BUILD_DIR}/{manifest}"))["package"][
-                "name"
-            ]
-        )
+    for manifest in manifest_data["content"]["manifests"]:
+        manifest_path = os.path.join(build_dir, manifest)
+        with open(manifest_path) as f:
+            packages.append(json.load(f)["package"]["name"])
     return filter(filter_, packages)
 
 
@@ -68,13 +66,22 @@ def main() -> None:
     else:
         filter_ = lambda s: True
 
-    if FUCHSIA_BUILD_DIR is None:
+    build_dir = os.environ.get("FUCHSIA_BUILD_DIR")
+    if not build_dir:
         raise RuntimeError(
             'Environment variable "FUCHSIA_BUILD_DIR" is not set.'
         )
 
-    with open(f"{FUCHSIA_BUILD_DIR}/all_package_manifests.list") as f:
-        packages = extract_packages_from_listing(json.load(f), filter_)
+    manifest_list_path = os.path.join(build_dir, "all_package_manifests.list")
+    if not os.path.exists(manifest_list_path):
+        raise RuntimeError(
+            f"'{manifest_list_path}' not found. Run 'fx build' or 'fx build updates' to assemble package manifests."
+        )
+
+    with open(manifest_list_path) as f:
+        packages = extract_packages_from_listing(
+            json.load(f), filter_, build_dir=build_dir
+        )
     print_packages(packages)
 
 
