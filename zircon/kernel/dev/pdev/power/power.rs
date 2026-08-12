@@ -5,6 +5,17 @@
 // https://opensource.org/licenses/MIT
 //
 // Ported from zircon/kernel/dev/pdev/power/power.cc
+//
+// Platform Device (pdev) Power Driver Interface.
+//
+// Provides platform-level abstraction and dispatch for system power operations,
+// including system reboot, shutdown, CPU core power state management, and
+// dynamic Operating Performance Point (OPP) control for CPU power domains.
+
+#[cfg(console_enabled)]
+pub mod console;
+#[cfg(not(console_enabled))]
+use debug as _;
 
 use core::sync::atomic::Ordering;
 #[cfg(ktest)]
@@ -43,21 +54,22 @@ pub enum PowerCpuState {
 #[repr(C)]
 pub struct PdevPowerOps {
     /// Reboots the system according to the provided reboot flags.
-    pub reboot: Option<extern "C" fn(flags: PowerRebootFlags) -> i32>,
+    pub reboot: Option<extern "C" fn(flags: PowerRebootFlags) -> Status>,
     /// Powers off / shuts down the system.
-    pub shutdown: Option<extern "C" fn() -> i32>,
+    pub shutdown: Option<extern "C" fn() -> Status>,
     /// Powers off the current CPU.
-    pub cpu_off: Option<extern "C" fn() -> i32>,
+    pub cpu_off: Option<extern "C" fn() -> Status>,
     /// Initiates power-on sequence for the specified hardware CPU.
-    pub cpu_on: Option<extern "C" fn(hw_cpu_id: u64, entry: u64, context: u64) -> i32>,
+    pub cpu_on: Option<extern "C" fn(hw_cpu_id: u64, entry: u64, context: u64) -> Status>,
     /// Retrieves the current power state of the specified CPU.
-    pub get_cpu_state: Option<extern "C" fn(hw_cpu_id: u64, out_state: *mut PowerCpuState) -> i32>,
+    pub get_cpu_state:
+        Option<extern "C" fn(hw_cpu_id: u64, out_state: *mut PowerCpuState) -> Status>,
     /// Sets the Operating Performance Point (OPP) for the specified power domain.
-    pub opp_set: Option<extern "C" fn(domain_id: u32, opp: u64) -> i32>,
+    pub opp_set: Option<extern "C" fn(domain_id: u32, opp: u64) -> Status>,
     /// Retrieves the active Operating Performance Point (OPP) for the specified power domain.
-    pub opp_get: Option<extern "C" fn(domain_id: u32, out_opp: *mut u64) -> i32>,
+    pub opp_get: Option<extern "C" fn(domain_id: u32, out_opp: *mut u64) -> Status>,
     /// Returns the number of supported OPP control domains.
-    pub opp_get_domain_count: Option<extern "C" fn(out_count: *mut usize) -> i32>,
+    pub opp_get_domain_count: Option<extern "C" fn(out_count: *mut usize) -> Status>,
 }
 
 zr::static_assert!(core::mem::size_of::<PowerRebootFlags>() == 4);
@@ -118,15 +130,14 @@ unsafe extern "C" {
     fn cpp_power_management_register_domains(
         domains: *const PowerDomainConfigFfi,
         domain_count: usize,
-    ) -> i32;
+    ) -> Status;
 }
 
 /// Registers the provided power domain configurations and energy models with the kernel scheduler.
 pub fn power_management_register_domains(domains: &[PowerDomainConfigFfi]) -> Status {
     let ptr = if domains.is_empty() { core::ptr::null() } else { domains.as_ptr() };
     // SAFETY: `domains` is a valid slice of `PowerDomainConfigFfi`.
-    let res = unsafe { cpp_power_management_register_domains(ptr, domains.len()) };
-    Status::from_raw(res)
+    unsafe { cpp_power_management_register_domains(ptr, domains.len()) }
 }
 
 static DEFAULT_OPS: PdevPowerOps = PdevPowerOps {
@@ -154,7 +165,12 @@ fn get_ops() -> &'static PdevPowerOps {
     }
 }
 
-/// Registers the platform power operations table.
+/// Registers the platform power operations table with `'static` lifetime.
+pub fn pdev_register_power(ops: &'static PdevPowerOps) {
+    POWER_OPS.store(ops as *const PdevPowerOps, Ordering::Release);
+}
+
+/// Registers the platform power operations table from C-ABI.
 ///
 /// # Safety
 ///
@@ -189,7 +205,7 @@ pub unsafe extern "C" fn rust_pdev_swap_power_for_test(
 pub extern "C" fn rust_power_reboot(flags: PowerRebootFlags) {
     let ops = get_ops();
     if let Some(reboot_fn) = ops.reboot {
-        reboot_fn(flags);
+        let _ = reboot_fn(flags);
     }
 }
 
@@ -198,26 +214,22 @@ pub extern "C" fn rust_power_reboot(flags: PowerRebootFlags) {
 pub extern "C" fn rust_power_shutdown() {
     let ops = get_ops();
     if let Some(shutdown_fn) = ops.shutdown {
-        shutdown_fn();
+        let _ = shutdown_fn();
     }
 }
 
 /// Powers off the calling CPU.
 #[unsafe(no_mangle)]
-pub extern "C" fn rust_power_cpu_off() -> i32 {
+pub extern "C" fn rust_power_cpu_off() -> Status {
     let ops = get_ops();
-    if let Some(cpu_off_fn) = ops.cpu_off { cpu_off_fn() } else { Status::OK.into_raw() }
+    if let Some(cpu_off_fn) = ops.cpu_off { cpu_off_fn() } else { Status::OK }
 }
 
 /// Powers on the CPU with the specified hardware ID.
 #[unsafe(no_mangle)]
-pub extern "C" fn rust_power_cpu_on(hw_cpu_id: u64, entry: u64, context: u64) -> i32 {
+pub extern "C" fn rust_power_cpu_on(hw_cpu_id: u64, entry: u64, context: u64) -> Status {
     let ops = get_ops();
-    if let Some(cpu_on_fn) = ops.cpu_on {
-        cpu_on_fn(hw_cpu_id, entry, context)
-    } else {
-        Status::OK.into_raw()
-    }
+    if let Some(cpu_on_fn) = ops.cpu_on { cpu_on_fn(hw_cpu_id, entry, context) } else { Status::OK }
 }
 
 /// Retrieves the power state of the CPU with the specified hardware ID.
@@ -229,26 +241,26 @@ pub extern "C" fn rust_power_cpu_on(hw_cpu_id: u64, entry: u64, context: u64) ->
 pub unsafe extern "C" fn rust_power_get_cpu_state(
     hw_cpu_id: u64,
     out_state: *mut PowerCpuState,
-) -> i32 {
+) -> Status {
     if out_state.is_null() {
-        return Status::INVALID_ARGS.into_raw();
+        return Status::INVALID_ARGS;
     }
     let ops = get_ops();
     if let Some(get_cpu_state_fn) = ops.get_cpu_state {
         get_cpu_state_fn(hw_cpu_id, out_state)
     } else {
-        Status::NOT_SUPPORTED.into_raw()
+        Status::NOT_SUPPORTED
     }
 }
 
 /// Sets the Operating Performance Point (OPP) for the specified domain.
 #[unsafe(no_mangle)]
-pub extern "C" fn rust_power_opp_set(domain_id: u32, opp: u64) -> i32 {
+pub extern "C" fn rust_power_opp_set(domain_id: u32, opp: u64) -> Status {
     let ops = get_ops();
     if let Some(opp_set_fn) = ops.opp_set {
         opp_set_fn(domain_id, opp)
     } else {
-        Status::NOT_SUPPORTED.into_raw()
+        Status::NOT_SUPPORTED
     }
 }
 
@@ -258,15 +270,15 @@ pub extern "C" fn rust_power_opp_set(domain_id: u32, opp: u64) -> i32 {
 ///
 /// `out_opp` must point to valid, writable memory for a `u64`.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_power_opp_get(domain_id: u32, out_opp: *mut u64) -> i32 {
+pub unsafe extern "C" fn rust_power_opp_get(domain_id: u32, out_opp: *mut u64) -> Status {
     if out_opp.is_null() {
-        return Status::INVALID_ARGS.into_raw();
+        return Status::INVALID_ARGS;
     }
     let ops = get_ops();
     if let Some(opp_get_fn) = ops.opp_get {
         opp_get_fn(domain_id, out_opp)
     } else {
-        Status::NOT_SUPPORTED.into_raw()
+        Status::NOT_SUPPORTED
     }
 }
 
@@ -276,15 +288,15 @@ pub unsafe extern "C" fn rust_power_opp_get(domain_id: u32, out_opp: *mut u64) -
 ///
 /// `out_count` must point to valid, writable memory for a `usize`.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_power_opp_get_domain_count(out_count: *mut usize) -> i32 {
+pub unsafe extern "C" fn rust_power_opp_get_domain_count(out_count: *mut usize) -> Status {
     if out_count.is_null() {
-        return Status::INVALID_ARGS.into_raw();
+        return Status::INVALID_ARGS;
     }
     let ops = get_ops();
     if let Some(opp_get_domain_count_fn) = ops.opp_get_domain_count {
         opp_get_domain_count_fn(out_count)
     } else {
-        Status::NOT_SUPPORTED.into_raw()
+        Status::NOT_SUPPORTED
     }
 }
 
@@ -299,7 +311,7 @@ mod tests {
         rust_power_opp_set, rust_power_reboot, rust_power_shutdown,
     };
     use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
-    use unittest::assert_eq;
+    use unittest::{assert_eq, assert_ok, assert_true};
     use zx_status::Status;
 
     static TEST_REBOOT_CALLED: AtomicU32 = AtomicU32::new(0);
@@ -309,63 +321,63 @@ mod tests {
     static TEST_OPP_SET_DOMAIN: AtomicU32 = AtomicU32::new(0);
     static TEST_OPP_SET_VALUE: AtomicU64 = AtomicU64::new(0);
 
-    extern "C" fn test_reboot(flags: PowerRebootFlags) -> i32 {
+    extern "C" fn test_reboot(flags: PowerRebootFlags) -> Status {
         TEST_REBOOT_CALLED.store(flags as u32 + 1, Ordering::Relaxed);
-        Status::OK.into_raw()
+        Status::OK
     }
 
-    extern "C" fn test_shutdown() -> i32 {
+    extern "C" fn test_shutdown() -> Status {
         TEST_SHUTDOWN_CALLED.fetch_add(1, Ordering::Relaxed);
-        Status::OK.into_raw()
+        Status::OK
     }
 
-    extern "C" fn test_cpu_off() -> i32 {
+    extern "C" fn test_cpu_off() -> Status {
         TEST_CPU_OFF_CALLED.fetch_add(1, Ordering::Relaxed);
-        Status::OK.into_raw()
+        Status::OK
     }
 
-    extern "C" fn test_cpu_on(hw_cpu_id: u64, _entry: u64, _context: u64) -> i32 {
+    extern "C" fn test_cpu_on(hw_cpu_id: u64, _entry: u64, _context: u64) -> Status {
         TEST_CPU_ON_HW_ID.store(hw_cpu_id, Ordering::Relaxed);
-        Status::OK.into_raw()
+        Status::OK
     }
 
-    extern "C" fn test_get_cpu_state(hw_cpu_id: u64, out_state: *mut PowerCpuState) -> i32 {
+    extern "C" fn test_get_cpu_state(hw_cpu_id: u64, out_state: *mut PowerCpuState) -> Status {
         if !out_state.is_null() {
             // SAFETY: Caller provides a valid pointer for test.
             unsafe {
                 *out_state = if hw_cpu_id == 42 { PowerCpuState::On } else { PowerCpuState::Off };
             }
         }
-        Status::OK.into_raw()
+        Status::OK
     }
 
-    extern "C" fn test_opp_set(domain_id: u32, opp: u64) -> i32 {
+    extern "C" fn test_opp_set(domain_id: u32, opp: u64) -> Status {
         TEST_OPP_SET_DOMAIN.store(domain_id, Ordering::Relaxed);
         TEST_OPP_SET_VALUE.store(opp, Ordering::Relaxed);
-        Status::OK.into_raw()
+        Status::OK
     }
 
-    extern "C" fn test_opp_get(domain_id: u32, out_opp: *mut u64) -> i32 {
+    extern "C" fn test_opp_get(domain_id: u32, out_opp: *mut u64) -> Status {
         if domain_id == 1 && !out_opp.is_null() {
             // SAFETY: Caller provides a valid pointer for test.
             unsafe {
                 *out_opp = 7;
             }
-            Status::OK.into_raw()
+            Status::OK
         } else {
-            Status::INVALID_ARGS.into_raw()
+            Status::INVALID_ARGS
         }
     }
 
-    extern "C" fn test_opp_get_domain_count(out_count: *mut usize) -> i32 {
+    extern "C" fn test_opp_get_domain_count(out_count: *mut usize) -> Status {
         if !out_count.is_null() {
             // SAFETY: Caller provides a valid pointer for test.
             unsafe {
                 *out_count = 2;
             }
-            Status::OK.into_raw()
+            Status::OK
         } else {
-            Status::INVALID_ARGS.into_raw()
+            Status::INVALID_ARGS
         }
     }
 
@@ -406,25 +418,25 @@ mod tests {
     fn test_default_ops_fallback() {
         let _guard = TestOpsGuard::new(core::ptr::null());
 
-        assert_eq!(rust_power_cpu_off(), Status::OK.into_raw());
-        assert_eq!(rust_power_cpu_on(1, 0, 0), Status::OK.into_raw());
+        assert_ok!(rust_power_cpu_off());
+        assert_ok!(rust_power_cpu_on(1, 0, 0));
 
         let mut cpu_state = PowerCpuState::Off;
         // SAFETY: Pointer to local stack variable is valid and aligned.
         let state_res = unsafe { rust_power_get_cpu_state(1, &mut cpu_state) };
-        assert_eq!(state_res, Status::NOT_SUPPORTED.into_raw());
+        assert_true!(state_res == Status::NOT_SUPPORTED);
 
-        assert_eq!(rust_power_opp_set(0, 1), Status::NOT_SUPPORTED.into_raw());
+        assert_true!(rust_power_opp_set(0, 1) == Status::NOT_SUPPORTED);
 
         let mut opp = 0u64;
         // SAFETY: Pointer to local stack variable is valid and aligned.
         let opp_res = unsafe { rust_power_opp_get(0, &mut opp) };
-        assert_eq!(opp_res, Status::NOT_SUPPORTED.into_raw());
+        assert_true!(opp_res == Status::NOT_SUPPORTED);
 
         let mut domain_count = 0usize;
         // SAFETY: Pointer to local stack variable is valid and aligned.
         let count_res = unsafe { rust_power_opp_get_domain_count(&mut domain_count) };
-        assert_eq!(count_res, Status::NOT_SUPPORTED.into_raw());
+        assert_true!(count_res == Status::NOT_SUPPORTED);
     }
 
     /// Tests that registered power ops are dispatched correctly.
@@ -444,35 +456,32 @@ mod tests {
         assert_eq!(TEST_SHUTDOWN_CALLED.load(Ordering::Relaxed), 1);
 
         TEST_CPU_OFF_CALLED.store(0, Ordering::Relaxed);
-        assert_eq!(rust_power_cpu_off(), Status::OK.into_raw());
+        assert_ok!(rust_power_cpu_off());
         assert_eq!(TEST_CPU_OFF_CALLED.load(Ordering::Relaxed), 1);
 
         TEST_CPU_ON_HW_ID.store(0, Ordering::Relaxed);
-        assert_eq!(rust_power_cpu_on(1234, 0, 0), Status::OK.into_raw());
+        assert_ok!(rust_power_cpu_on(1234, 0, 0));
         assert_eq!(TEST_CPU_ON_HW_ID.load(Ordering::Relaxed), 1234);
 
         let mut state = PowerCpuState::Off;
         // SAFETY: Valid pointer to stack variable.
-        assert_eq!(unsafe { rust_power_get_cpu_state(42, &mut state) }, Status::OK.into_raw());
+        assert_ok!(unsafe { rust_power_get_cpu_state(42, &mut state) });
         assert_eq!(state, PowerCpuState::On);
 
         TEST_OPP_SET_DOMAIN.store(0, Ordering::Relaxed);
         TEST_OPP_SET_VALUE.store(0, Ordering::Relaxed);
-        assert_eq!(rust_power_opp_set(3, 5), Status::OK.into_raw());
+        assert_ok!(rust_power_opp_set(3, 5));
         assert_eq!(TEST_OPP_SET_DOMAIN.load(Ordering::Relaxed), 3);
         assert_eq!(TEST_OPP_SET_VALUE.load(Ordering::Relaxed), 5);
 
         let mut opp = 0u64;
         // SAFETY: Valid pointer to stack variable.
-        assert_eq!(unsafe { rust_power_opp_get(1, &mut opp) }, Status::OK.into_raw());
+        assert_ok!(unsafe { rust_power_opp_get(1, &mut opp) });
         assert_eq!(opp, 7);
 
         let mut domain_count = 0usize;
         // SAFETY: Valid pointer to stack variable.
-        assert_eq!(
-            unsafe { rust_power_opp_get_domain_count(&mut domain_count) },
-            Status::OK.into_raw()
-        );
+        assert_ok!(unsafe { rust_power_opp_get_domain_count(&mut domain_count) });
         assert_eq!(domain_count, 2);
     }
 
@@ -482,19 +491,17 @@ mod tests {
         let _guard = TestOpsGuard::new(&TEST_OPS);
 
         // SAFETY: Testing null pointer validation behavior.
-        assert_eq!(
-            unsafe { rust_power_get_cpu_state(1, core::ptr::null_mut()) },
-            Status::INVALID_ARGS.into_raw()
+        assert_true!(
+            unsafe { rust_power_get_cpu_state(1, core::ptr::null_mut()) } == Status::INVALID_ARGS
         );
         // SAFETY: Testing null pointer validation behavior.
-        assert_eq!(
-            unsafe { rust_power_opp_get(1, core::ptr::null_mut()) },
-            Status::INVALID_ARGS.into_raw()
+        assert_true!(
+            unsafe { rust_power_opp_get(1, core::ptr::null_mut()) } == Status::INVALID_ARGS
         );
         // SAFETY: Testing null pointer validation behavior.
-        assert_eq!(
-            unsafe { rust_power_opp_get_domain_count(core::ptr::null_mut()) },
-            Status::INVALID_ARGS.into_raw()
+        assert_true!(
+            unsafe { rust_power_opp_get_domain_count(core::ptr::null_mut()) }
+                == Status::INVALID_ARGS
         );
     }
 

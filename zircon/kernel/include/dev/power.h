@@ -33,6 +33,11 @@ enum class power_cpu_state {
   RESUME_PENDING,
 };
 
+static_assert(sizeof(power_reboot_flags) == 4, "power_reboot_flags size mismatch");
+static_assert(alignof(power_reboot_flags) == 4, "power_reboot_flags align mismatch");
+static_assert(sizeof(power_cpu_state) == 4, "power_cpu_state size mismatch");
+static_assert(alignof(power_cpu_state) == 4, "power_cpu_state align mismatch");
+
 void power_reboot(power_reboot_flags flags);
 void power_shutdown();
 zx_status_t power_cpu_off();

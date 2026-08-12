@@ -11,6 +11,7 @@
 #include <zircon/types.h>
 
 #include <dev/power.h>
+#include <kernel/cpu.h>
 
 // power interface
 struct pdev_power_ops {
@@ -30,5 +31,17 @@ static_assert(alignof(pdev_power_ops) == 8, "pdev_power_ops align mismatch");
 void pdev_register_power(const pdev_power_ops* ops);
 
 const pdev_power_ops* pdev_swap_power_for_test(const pdev_power_ops* ops);
+
+__BEGIN_CDECLS
+
+void cpp_rppm_dump();
+zx_status_t cpp_rppm_update_active_power_level(cpu_num_t cpu, uint8_t power_level);
+bool cpp_rppm_request_power_level_for_testing(cpu_num_t cpu, uint8_t power_level);
+zx_status_t cpp_rppm_get_active_power_level(cpu_num_t cpu, uint8_t* out_power_level);
+zx_status_t cpp_rppm_update_processing_limits(uint64_t cpu_mask, uint64_t min_rate,
+                                              uint64_t max_rate);
+size_t cpp_rppm_get_processor_count();
+
+__END_CDECLS
 
 #endif  // ZIRCON_KERNEL_DEV_PDEV_POWER_INCLUDE_PDEV_POWER_H_

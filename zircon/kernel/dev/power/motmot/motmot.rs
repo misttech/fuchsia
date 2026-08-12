@@ -5,11 +5,16 @@
 // https://opensource.org/licenses/MIT
 //
 // Ported from zircon/kernel/dev/power/motmot/power.cc
+//
+// Motmot SoC CPU Power and Performance Driver.
+//
+// Implements platform power lifecycle operations (reboot, shutdown, CPU on/off)
+// for the Motmot platform via ARM PSCI firmware interfaces.
 
 #[cfg(ktest)]
 use unittest as _;
 
-use crate::pdev_power::{PdevPowerOps, PowerRebootFlags, rust_pdev_register_power};
+use crate::pdev_power::{PdevPowerOps, PowerRebootFlags, pdev_register_power};
 use debug::dprintf;
 use zx_status::Status;
 
@@ -27,7 +32,7 @@ const PS_HOLD_CTRL_DATA: u32 = 1 << 8;
 unsafe extern "C" {
     fn cpp_motmot_modify_register_via_smc(phys_addr: usize, mask: u32, val: u32) -> u64;
     fn cpp_motmot_cpu_off_wfi_loop() -> !;
-    fn psci_cpu_on(hw_cpu_id: u64, entry: u64, context: u64) -> i32;
+    fn psci_cpu_on(hw_cpu_id: u64, entry: u64, context: u64) -> Status;
 }
 
 /// Modifies PMU registers via ARM SMC calls.
@@ -37,7 +42,7 @@ fn modify_register_via_smc(phys_addr: usize, mask: u32, val: u32) -> u64 {
 }
 
 /// Reboots the Motmot platform via PMU SWRESET SMC call.
-extern "C" fn motmot_reboot(flags: PowerRebootFlags) -> i32 {
+extern "C" fn motmot_reboot(flags: PowerRebootFlags) -> Status {
     match flags {
         PowerRebootFlags::Bootloader | PowerRebootFlags::Recovery => {
             dprintf!(INFO, "Motmot does not support rebooting into recovery or bootloader yet.\n");
@@ -48,19 +53,19 @@ extern "C" fn motmot_reboot(flags: PowerRebootFlags) -> i32 {
     let result = modify_register_via_smc(SYSTEM_CONFIGURATION_REG, SWRESET_SYSTEM, SWRESET_SYSTEM);
     modify_register_via_smc(SYSTEM_CONFIGURATION_REG, SWRESET_SYSTEM, SWRESET_SYSTEM);
     dprintf!(INFO, "Reboot command failed, result was {:#x}.\n", result);
-    Status::BAD_STATE.into_raw()
+    Status::BAD_STATE
 }
 
 /// Shuts down the Motmot platform by clearing PS_HOLD_CTRL_DATA via SMC call.
-extern "C" fn motmot_shutdown() -> i32 {
+extern "C" fn motmot_shutdown() -> Status {
     dprintf!(INFO, "Sending shutdown command via SMC\n");
     let result = modify_register_via_smc(PAD_CTRL_PWR_HOLD_REG, PS_HOLD_CTRL_DATA, 0);
     dprintf!(INFO, "Shutdown command failed, result was {:#x}.\n", result);
-    Status::BAD_STATE.into_raw()
+    Status::BAD_STATE
 }
 
 /// Powers off the calling CPU core by looping on WFI with interrupts disabled.
-extern "C" fn motmot_cpu_off() -> i32 {
+extern "C" fn motmot_cpu_off() -> Status {
     // SAFETY: Disables interrupts and loops on WFI to halt the CPU core.
     unsafe {
         cpp_motmot_cpu_off_wfi_loop();
@@ -68,7 +73,7 @@ extern "C" fn motmot_cpu_off() -> i32 {
 }
 
 /// Powers on the specified hardware CPU core via PSCI CPU on.
-extern "C" fn motmot_cpu_on(hw_cpu_id: u64, entry: u64, context: u64) -> i32 {
+extern "C" fn motmot_cpu_on(hw_cpu_id: u64, entry: u64, context: u64) -> Status {
     // SAFETY: Invokes PSCI CPU on call.
     unsafe { psci_cpu_on(hw_cpu_id, entry, context) }
 }
@@ -88,10 +93,7 @@ static MOTMOT_POWER_OPS: PdevPowerOps = PdevPowerOps {
 #[unsafe(no_mangle)]
 pub extern "C" fn motmot_power_init_early() {
     dprintf!(INFO, "POWER: registering motmot power hooks\n");
-    // SAFETY: MOTMOT_POWER_OPS has static lifetime and remains valid for the lifetime of the kernel.
-    unsafe {
-        rust_pdev_register_power(&MOTMOT_POWER_OPS);
-    }
+    pdev_register_power(&MOTMOT_POWER_OPS);
 }
 
 /// In-kernel unit tests for the Motmot power driver.

@@ -14,10 +14,14 @@ library_headers("headers") {
 kernel_rust_mod("power-rs") {
   output_name = "pdev_power"
   source_root = "power.rs"
-  sources = [ "power.rs" ]
+  sources = [
+    "console.rs",
+    "power.rs",
+  ]
   deps = [
     "//sdk/rust/zx-status",
     "//src/lib/zr",
+    "//zircon/kernel/lib/debug",
   ]
   test_deps = [ "//zircon/kernel/lib/unittest:unittest-rs" ]
 }
