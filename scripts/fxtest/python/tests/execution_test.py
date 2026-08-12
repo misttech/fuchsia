@@ -754,7 +754,7 @@ class TestExecution(unittest.IsolatedAsyncioTestCase):
             )
 
             assertTestExecutionFailsUsingMerkleHash(
-                "Could not load a Merkle hash",
+                r"(?s)Could not load a Merkle hash.*Try running fx build\.",
                 make_test("foo_test"),
                 missing_exec_env,
             )
@@ -795,19 +795,21 @@ class TestExecution(unittest.IsolatedAsyncioTestCase):
             broken_test.info.execution.component_url = "foo_test"
 
             assertTestExecutionFailsUsingMerkleHash(
-                "Failed to parse package name", broken_test, exec_env
+                r"(?s)Failed to parse package name for Merkle root matching.*foo_test.*",
+                broken_test,
+                exec_env,
             )
 
             # This test has an entry, but no merkle.
             assertTestExecutionFailsUsingMerkleHash(
-                "Could not find a Merkle hash for this test",
+                r"(?s)Could not find a Merkle hash for this test.*Try running fx build\.",
                 make_test("bar_test"),
                 exec_env,
             )
 
             # This test has no entry.
             assertTestExecutionFailsUsingMerkleHash(
-                "Could not find a Merkle hash for this test",
+                r"(?s)Could not find a Merkle hash for this test.*Try running fx build\.",
                 make_test("baz_test"),
                 exec_env,
             )

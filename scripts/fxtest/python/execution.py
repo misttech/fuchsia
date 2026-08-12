@@ -744,7 +744,7 @@ class TestExecution:
                 )
             except package_repository.PackageRepositoryError as e:
                 raise TestCouldNotRun(
-                    f"Could not load a Merkle hash for this test ({str(e)})"
+                    f"Could not load a Merkle hash for this test ({str(e)}).\nTry running fx build."
                     f"{package_repository.MERKLE_ERROR_HELP_SUFFIX}"
                     if package_repository.MERKLE_ERROR_HELP_SUFFIX not in str(e)
                     else str(e)

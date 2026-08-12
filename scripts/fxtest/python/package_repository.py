@@ -99,21 +99,19 @@ class PackageRepository:
         name = extract_package_name_from_url(component_url)
         if name is None:
             raise PackageRepositoryError(
-                f"Failed to parse package name for Merkle root matching: {component_url}"
+                f"Failed to parse package name for Merkle root matching: {component_url} "
                 f"{MERKLE_ERROR_HELP_SUFFIX}"
             )
         if name not in self.name_to_merkle:
             raise PackageRepositoryError(
-                f"Could not find a Merkle hash for this test: {component_url}"
+                f"Could not find a Merkle hash for this test: {component_url} "
                 f"{MERKLE_ERROR_HELP_SUFFIX}"
             )
         suffix = f"?hash={self.name_to_merkle[name]}"
         return component_url.replace("#", f"{suffix}#", 1)
 
 
-MERKLE_ERROR_HELP_SUFFIX = (
-    "\nTry running with --no-use-package-hash or run fx build."
-)
+MERKLE_ERROR_HELP_SUFFIX = "\nTry running fx build."
 
 _PACKAGE_NAME_REGEX = re.compile(r"fuchsia-pkg://fuchsia\.com/([^/#]+)#")
 
