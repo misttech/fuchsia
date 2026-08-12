@@ -36,6 +36,20 @@ unsafe extern "C" {
         src: *const core::ffi::c_void,
         len: usize,
     ) -> i32;
+    fn cpp_arch_copy_from_user_capture_faults(
+        dst: *mut core::ffi::c_void,
+        src: *const core::ffi::c_void,
+        len: usize,
+        fault_va: *mut usize,
+        fault_flags: *mut u32,
+    ) -> i32;
+    fn cpp_arch_copy_to_user_capture_faults(
+        dst: *mut core::ffi::c_void,
+        src: *const core::ffi::c_void,
+        len: usize,
+        fault_va: *mut usize,
+        fault_flags: *mut u32,
+    ) -> i32;
 }
 
 /// Returns true if interrupts are disabled on the current CPU.
@@ -139,4 +153,88 @@ pub unsafe fn arch_copy_to_user(
     len: usize,
 ) -> Result<(), Status> {
     Status::ok(unsafe { cpp_arch_copy_to_user(dst, src, len) })
+}
+
+/// Page fault information captured during a user copy operation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FaultInfo {
+    pub pf_va: usize,
+    pub pf_flags: u32,
+}
+
+/// Error type returned by user copy routines that capture page faults.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct UserCopyCaptureFaultsError {
+    pub status: Status,
+    pub fault_info: Option<FaultInfo>,
+}
+
+impl From<Status> for UserCopyCaptureFaultsError {
+    fn from(status: Status) -> Self {
+        Self { status, fault_info: None }
+    }
+}
+
+#[inline(always)]
+fn capture_faults_result(
+    status: i32,
+    fault_va: usize,
+    fault_flags: u32,
+) -> Result<(), UserCopyCaptureFaultsError> {
+    if let Err(status) = Status::ok(status) {
+        let fault_info = if fault_va != 0 || fault_flags != 0 {
+            Some(FaultInfo { pf_va: fault_va, pf_flags: fault_flags })
+        } else {
+            None
+        };
+        Err(UserCopyCaptureFaultsError { status, fault_info })
+    } else {
+        Ok(())
+    }
+}
+
+/// Copies `len` bytes from user memory at `src` into kernel memory at `dst`, capturing any page
+/// faults.
+///
+/// # Safety
+/// Caller must ensure `dst` points to at least `len` bytes of valid memory
+/// and `src` is a user pointer.
+#[inline(always)]
+pub unsafe fn arch_copy_from_user_capture_faults(
+    dst: *mut core::ffi::c_void,
+    src: *const core::ffi::c_void,
+    len: usize,
+) -> Result<(), UserCopyCaptureFaultsError> {
+    let mut fault_va = 0usize;
+    let mut fault_flags = 0u32;
+    let status = unsafe {
+        cpp_arch_copy_from_user_capture_faults(
+            dst,
+            src,
+            len,
+            &raw mut fault_va,
+            &raw mut fault_flags,
+        )
+    };
+    capture_faults_result(status, fault_va, fault_flags)
+}
+
+/// Copies `len` bytes from kernel memory at `src` into user memory at `dst`, capturing any page
+/// faults.
+///
+/// # Safety
+/// Caller must ensure `src` points to at least `len` bytes of valid memory
+/// and `dst` is a user pointer.
+#[inline(always)]
+pub unsafe fn arch_copy_to_user_capture_faults(
+    dst: *mut core::ffi::c_void,
+    src: *const core::ffi::c_void,
+    len: usize,
+) -> Result<(), UserCopyCaptureFaultsError> {
+    let mut fault_va = 0usize;
+    let mut fault_flags = 0u32;
+    let status = unsafe {
+        cpp_arch_copy_to_user_capture_faults(dst, src, len, &raw mut fault_va, &raw mut fault_flags)
+    };
+    capture_faults_result(status, fault_va, fault_flags)
 }
