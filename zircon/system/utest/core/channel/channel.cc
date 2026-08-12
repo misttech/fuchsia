@@ -1937,5 +1937,76 @@ TEST(ChannelCallEtcTest, CallEtcInvalidArgs) {
             ZX_ERR_INVALID_ARGS);
 }
 
+TEST(ChannelTest, CreateInvalidOptionsReturnsInvalidArgs) {
+  zx::channel local, remote;
+  EXPECT_EQ(zx::channel::create(1, &local, &remote), ZX_ERR_INVALID_ARGS);
+  EXPECT_EQ(zx::channel::create(0xFF, &local, &remote), ZX_ERR_INVALID_ARGS);
+}
+
+TEST(ChannelTest, ReadInvalidOptionsReturnsNotSupported) {
+  zx::channel local, remote;
+  ASSERT_OK(zx::channel::create(0, &local, &remote));
+
+  EXPECT_EQ(remote.read(0xFF, nullptr, nullptr, 0, 0, nullptr, nullptr), ZX_ERR_NOT_SUPPORTED);
+}
+
+TEST(ChannelTest, ReadInvalidActualPointersReturnsInvalidArgs) {
+  zx::channel local, remote;
+  ASSERT_OK(zx::channel::create(0, &local, &remote));
+
+  char byte = 'x';
+  ASSERT_OK(local.write(0, &byte, sizeof(byte), nullptr, 0));
+
+  uint32_t* bad_ptr = reinterpret_cast<uint32_t*>(1);
+  char read_byte = 0;
+  uint32_t actual_handles = 0;
+
+  // Failing copy_to_user on actual_bytes.
+  EXPECT_EQ(remote.read(0, &read_byte, nullptr, sizeof(read_byte), 0, bad_ptr, &actual_handles),
+            ZX_ERR_INVALID_ARGS);
+
+  // Re-write to ensure channel has a message for the next read attempt.
+  ASSERT_OK(local.write(0, &byte, sizeof(byte), nullptr, 0));
+
+  uint32_t actual_bytes = 0;
+  // Failing copy_to_user on actual_handles.
+  EXPECT_EQ(remote.read(0, &read_byte, nullptr, sizeof(read_byte), 0, &actual_bytes, bad_ptr),
+            ZX_ERR_INVALID_ARGS);
+}
+
+TEST(ChannelTest, CallInvalidOptionsReturnsInvalidArgs) {
+  zx::channel local, remote;
+  ASSERT_OK(zx::channel::create(0, &local, &remote));
+
+  char wr_buf[4] = {0};
+  char rd_buf[4] = {0};
+  zx_channel_call_args_t args = {
+      .wr_bytes = wr_buf,
+      .wr_handles = nullptr,
+      .rd_bytes = rd_buf,
+      .rd_handles = nullptr,
+      .wr_num_bytes = sizeof(wr_buf),
+      .wr_num_handles = 0,
+      .rd_num_bytes = sizeof(rd_buf),
+      .rd_num_handles = 0,
+  };
+
+  uint32_t actual_bytes = 0;
+  uint32_t actual_handles = 0;
+  EXPECT_EQ(local.call(0xFF, zx::time::infinite(), &args, &actual_bytes, &actual_handles),
+            ZX_ERR_INVALID_ARGS);
+}
+
+TEST(ChannelTest, CallInvalidArgsPointerReturnsInvalidArgs) {
+  zx::channel local, remote;
+  ASSERT_OK(zx::channel::create(0, &local, &remote));
+
+  uint32_t actual_bytes = 0;
+  uint32_t actual_handles = 0;
+  EXPECT_EQ(local.call(0, zx::time::infinite(), reinterpret_cast<const zx_channel_call_args_t*>(1),
+                       &actual_bytes, &actual_handles),
+            ZX_ERR_INVALID_ARGS);
+}
+
 }  // namespace
 }  // namespace channel
