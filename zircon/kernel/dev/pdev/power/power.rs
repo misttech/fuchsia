@@ -67,6 +67,68 @@ zr::static_assert!(core::mem::align_of::<PowerCpuState>() == 4);
 zr::static_assert!(core::mem::size_of::<PdevPowerOps>() == 64);
 zr::static_assert!(core::mem::align_of::<PdevPowerOps>() == 8);
 
+/// Power level options flag: entity power level is independent of other CPUs in the domain.
+pub const K_POWER_LEVEL_OPTIONS_DOMAIN_INDEPENDENT: u32 = 1;
+
+/// Control interface identifier for ARM WFI (Wait-For-Interrupt) transitions.
+pub const CONTROL_INTERFACE_ARM_WFI: u32 = 0;
+
+/// Control interface identifier for CPU power driver transitions.
+pub const CONTROL_INTERFACE_CPU_DRIVER: u32 = 1;
+
+/// FFI representation of a processor power level for energy model registration.
+#[repr(C)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct ProcessorPowerLevelFfi {
+    /// Power level options (e.g. `kPowerLevelOptionsDomainIndependent`).
+    pub options: u32,
+    /// Processing rate associated with this power level.
+    pub processing_rate: u64,
+    /// Power consumption coefficient in nanowatts.
+    pub power_coefficient_nw: u64,
+    /// Power control interface (0 for `kArmWfi`, 1 for `kCpuDriver`).
+    pub control_interface: u32,
+    /// Control argument passed to the power control interface.
+    pub control_argument: u64,
+    /// Optional diagnostic name string pointer for debugging/inspect.
+    pub diagnostic_name: *const core::ffi::c_char,
+}
+
+zr::static_assert!(core::mem::size_of::<ProcessorPowerLevelFfi>() == 48);
+zr::static_assert!(core::mem::align_of::<ProcessorPowerLevelFfi>() == 8);
+
+/// FFI representation of a power domain configuration for energy model registration.
+#[repr(C)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct PowerDomainConfigFfi {
+    /// Domain identifier.
+    pub domain_id: u32,
+    /// Bitmask of CPU core IDs belonging to this power domain.
+    pub cpu_mask: u64,
+    /// Pointer to the array of supported power levels.
+    pub levels: *const ProcessorPowerLevelFfi,
+    /// Number of power levels in the `levels` array.
+    pub level_count: usize,
+}
+
+zr::static_assert!(core::mem::size_of::<PowerDomainConfigFfi>() == 32);
+zr::static_assert!(core::mem::align_of::<PowerDomainConfigFfi>() == 8);
+
+unsafe extern "C" {
+    fn cpp_power_management_register_domains(
+        domains: *const PowerDomainConfigFfi,
+        domain_count: usize,
+    ) -> i32;
+}
+
+/// Registers the provided power domain configurations and energy models with the kernel scheduler.
+pub fn power_management_register_domains(domains: &[PowerDomainConfigFfi]) -> Status {
+    let ptr = if domains.is_empty() { core::ptr::null() } else { domains.as_ptr() };
+    // SAFETY: `domains` is a valid slice of `PowerDomainConfigFfi`.
+    let res = unsafe { cpp_power_management_register_domains(ptr, domains.len()) };
+    Status::from_raw(res)
+}
+
 static DEFAULT_OPS: PdevPowerOps = PdevPowerOps {
     reboot: None,
     shutdown: None,
@@ -231,10 +293,10 @@ pub unsafe extern "C" fn rust_power_opp_get_domain_count(out_count: *mut usize) 
 #[unittest::suite(name = "pdev_power")]
 mod tests {
     use crate::pdev_power::{
-        PdevPowerOps, PowerCpuState, PowerRebootFlags, rust_pdev_swap_power_for_test,
-        rust_power_cpu_off, rust_power_cpu_on, rust_power_get_cpu_state, rust_power_opp_get,
-        rust_power_opp_get_domain_count, rust_power_opp_set, rust_power_reboot,
-        rust_power_shutdown,
+        PdevPowerOps, PowerCpuState, PowerRebootFlags, power_management_register_domains,
+        rust_pdev_swap_power_for_test, rust_power_cpu_off, rust_power_cpu_on,
+        rust_power_get_cpu_state, rust_power_opp_get, rust_power_opp_get_domain_count,
+        rust_power_opp_set, rust_power_reboot, rust_power_shutdown,
     };
     use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
     use unittest::assert_eq;
@@ -434,5 +496,12 @@ mod tests {
             unsafe { rust_power_opp_get_domain_count(core::ptr::null_mut()) },
             Status::INVALID_ARGS.into_raw()
         );
+    }
+
+    /// Tests registering an empty domain slice with power_management_register_domains.
+    #[test]
+    fn test_power_management_register_domains_empty() {
+        let status = power_management_register_domains(&[]);
+        assert!(status == Status::OK);
     }
 }

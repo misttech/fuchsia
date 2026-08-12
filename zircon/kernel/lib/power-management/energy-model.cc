@@ -181,3 +181,88 @@ const PowerLevel* EnergyModel::FindActivePowerLevelForRate(ProcessingRate proces
 }
 
 }  // namespace power_management
+
+#ifdef _KERNEL
+#include <debug.h>
+#include <lib/power-management/pdev-power-level-controller.h>
+
+#include <fbl/array.h>
+#include <kernel/scheduler.h>
+
+extern "C" zx_status_t cpp_power_management_register_domains(const power_domain_config_ffi* domains,
+                                                             size_t domain_count) {
+  if (!domains && domain_count > 0) {
+    return ZX_ERR_INVALID_ARGS;
+  }
+
+  power_management::PowerDomainSet domain_set;
+
+  for (size_t i = 0; i < domain_count; ++i) {
+    const auto& config = domains[i];
+    if (!config.levels && config.level_count > 0) {
+      return ZX_ERR_INVALID_ARGS;
+    }
+
+    fbl::AllocChecker ac;
+    auto levels = fbl::MakeArray<power_management::ProcessorPowerLevel>(&ac, config.level_count);
+    if (!ac.check()) {
+      dprintf(CRITICAL, "POWER: Failed to allocate power levels array for domain %u\n",
+              config.domain_id);
+      return ZX_ERR_NO_MEMORY;
+    }
+
+    for (size_t j = 0; j < config.level_count; ++j) {
+      const auto& ffi_level = config.levels[j];
+      levels[j] = {
+          .options = ffi_level.options,
+          .processing_rate = ffi_level.processing_rate,
+          .power_coefficient_nw = ffi_level.power_coefficient_nw,
+          .control_interface = (ffi_level.control_interface == 0)
+                                   ? power_management::ControlInterface::kArmWfi
+                                   : power_management::ControlInterface::kCpuDriver,
+          .control_argument = ffi_level.control_argument,
+          .diagnostic_name = ffi_level.diagnostic_name ? ffi_level.diagnostic_name : "",
+      };
+    }
+
+    auto energy_model_result = power_management::EnergyModel::Create(
+        ktl::span<const power_management::ProcessorPowerLevel>(levels.data(), levels.size()), {});
+    if (energy_model_result.is_error()) {
+      dprintf(CRITICAL, "POWER: Failed to create energy model for domain %u: %d\n",
+              config.domain_id, energy_model_result.status_value());
+      return energy_model_result.status_value();
+    }
+
+    auto controller_result = power_management::PDevPowerLevelController::Get(config.domain_id);
+    if (controller_result.is_error()) {
+      dprintf(CRITICAL, "POWER: Failed to get PDevPowerLevelController for domain %u: %d\n",
+              config.domain_id, controller_result.status_value());
+      return controller_result.status_value();
+    }
+
+    auto domain = fbl::MakeRefCountedChecked<power_management::PowerDomain>(
+        &ac, config.domain_id, static_cast<cpu_mask_t>(config.cpu_mask),
+        std::move(energy_model_result).value(), std::move(controller_result).value());
+    if (!ac.check()) {
+      dprintf(CRITICAL, "POWER: Failed to allocate PowerDomain for domain %u\n", config.domain_id);
+      return ZX_ERR_NO_MEMORY;
+    }
+
+    auto register_result = domain_set.Add(std::move(domain));
+    if (register_result.is_error()) {
+      dprintf(CRITICAL, "POWER: Failed to add power domain %u to set: %d\n", config.domain_id,
+              register_result.status_value());
+      return register_result.status_value();
+    }
+  }
+
+  Scheduler::SetPowerDomainSet(std::move(domain_set));
+  dprintf(INFO, "POWER: Registered power domains in scheduler\n");
+  return ZX_OK;
+}
+#else
+extern "C" zx_status_t cpp_power_management_register_domains(const power_domain_config_ffi* domains,
+                                                             size_t domain_count) {
+  return ZX_ERR_NOT_SUPPORTED;
+}
+#endif

@@ -568,4 +568,33 @@ class PowerDomainSet {
 
 }  // namespace power_management
 
+__BEGIN_CDECLS
+
+struct processor_power_level_ffi {
+  uint32_t options;
+  uint64_t processing_rate;
+  uint64_t power_coefficient_nw;
+  uint32_t control_interface;  // 0 = kArmWfi, 1 = kCpuDriver
+  uint64_t control_argument;
+  const char* diagnostic_name;
+};
+
+struct power_domain_config_ffi {
+  uint32_t domain_id;
+  uint64_t cpu_mask;
+  const processor_power_level_ffi* levels;
+  size_t level_count;
+};
+
+static_assert(sizeof(processor_power_level_ffi) == 48, "processor_power_level_ffi size mismatch");
+static_assert(alignof(processor_power_level_ffi) == 8, "processor_power_level_ffi align mismatch");
+
+static_assert(sizeof(power_domain_config_ffi) == 32, "power_domain_config_ffi size mismatch");
+static_assert(alignof(power_domain_config_ffi) == 8, "power_domain_config_ffi align mismatch");
+
+zx_status_t cpp_power_management_register_domains(const power_domain_config_ffi* domains,
+                                                  size_t domain_count);
+
+__END_CDECLS
+
 #endif  // ZIRCON_KERNEL_LIB_POWER_MANAGEMENT_INCLUDE_LIB_POWER_MANAGEMENT_ENERGY_MODEL_H_
