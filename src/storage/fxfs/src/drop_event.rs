@@ -10,7 +10,13 @@ pub struct DropEvent(Event);
 
 impl Drop for DropEvent {
     fn drop(&mut self) {
-        self.0.notify(usize::MAX);
+        // `Event` doesn't allocate its internal state until a listener is registered or a
+        // notification is sent. Since we're in the Drop impl, no new listeners can be
+        // registered. If there are no listeners, then we can skip sending the notification,
+        // avoiding unnecessary heap allocation and mutex locking in `Event`.
+        if self.0.total_listeners() > 0 {
+            self.0.notify(usize::MAX);
+        }
     }
 }
 
