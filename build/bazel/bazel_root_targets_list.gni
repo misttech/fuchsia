@@ -37,6 +37,7 @@ declare_args() {
           ninja = "orchestrate"
         },
       ]
+      install_host_tool = true
     },
   ]
 }
