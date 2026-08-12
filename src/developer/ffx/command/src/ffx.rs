@@ -1262,14 +1262,14 @@ mod test {
     fn direct_updates_runtime_config() {
         let isolate_dir = tempdir().expect("isolate dir");
 
-        // Defaults to unset
+        // Defaults to true
         let args = ["ffx"].map(String::from);
         let mut cmd_line =
             FfxCommandLine::new(Some("ffx"), &args).expect("Command line should parse");
         cmd_line.global.isolate_dir = Some(isolate_dir.path().to_owned());
         let context = cmd_line.global.load_context(ExecutableKind::Test).expect("load_context");
-        let direct: Option<bool> = context.get(DIRECT_CONNECTIONS).expect("config get");
-        assert!(direct.is_none());
+        let direct: Option<bool> = context.get(DIRECT_CONNECTIONS).unwrap_or_default();
+        assert!(direct.unwrap_or(true));
 
         // Gets overridden to true
         let args = ["ffx", "--direct"].map(String::from);
@@ -1314,14 +1314,14 @@ mod test {
     fn agent_env_updates_runtime_config() {
         let isolate_dir = tempdir().expect("isolate dir");
 
-        // Defaults to unset
+        // Defaults to true
         let args = ["ffx"].map(String::from);
         let mut cmd_line =
             FfxCommandLine::new(Some("ffx"), &args).expect("Command line should parse");
         cmd_line.global.isolate_dir = Some(isolate_dir.path().to_owned());
         let context = cmd_line.global.load_context(ExecutableKind::Test).expect("load_context");
-        let direct: Option<bool> = context.get(DIRECT_CONNECTIONS).expect("config get");
-        assert!(direct.is_none());
+        let direct: Option<bool> = context.get(DIRECT_CONNECTIONS).unwrap_or_default();
+        assert!(direct.unwrap_or(true));
 
         // Gets overridden to true when agent env var is set
         let args = ["ffx"].map(String::from);

@@ -36,9 +36,6 @@ pub enum ContextError {
     #[error("Failed to load config domain: {0}")]
     DomainLoad(#[from] ffx_config_domain::FileError),
 
-    #[error("Failed to get build ID: {0}")]
-    BuildId(#[from] buildid::Error),
-
     #[error("SDK load error: {0}")]
     SdkLoad(String),
 
@@ -421,11 +418,6 @@ impl EnvironmentContext {
     /// Returns version info about the running ffx binary
     pub fn build_info(&self) -> ffx_build_version::VersionInfo {
         ffx_build_version::build_info()
-    }
-
-    /// Returns a unique identifier denoting the version of the daemon binary.
-    pub fn daemon_version_string(&self) -> Result<String, ContextError> {
-        Ok(buildid::get_build_id()?)
     }
 
     pub fn env_kind(&self) -> &EnvironmentKind {

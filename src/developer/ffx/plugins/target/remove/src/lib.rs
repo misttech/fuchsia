@@ -169,7 +169,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_remove_existing_target() {
-        let env = ffx_config::test_init_with_daemon().expect("test_init");
+        let env = ffx_config::test_init().expect("test_init");
         let mt = Config::new_from_context(&env.context);
         mt.storage_set(json!({"correct-horse-battery-staple": 0})).await.unwrap();
         let tool = RemoveTool {
@@ -187,7 +187,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_remove_nonexisting_target() {
-        let env = ffx_config::test_init_with_daemon().expect("test_init");
+        let env = ffx_config::test_init().expect("test_init");
         let tool = RemoveTool {
             cmd: RemoveCommand {
                 all: false,
@@ -204,7 +204,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_remove_machine_nonexisting_target() {
-        let env = ffx_config::test_init_with_daemon().expect("test_init");
+        let env = ffx_config::test_init().expect("test_init");
         let tool = RemoveTool {
             cmd: RemoveCommand {
                 all: false,
@@ -224,7 +224,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_remove_all_targets_some() {
-        let env = ffx_config::test_init_with_daemon().expect("test_init");
+        let env = ffx_config::test_init().expect("test_init");
         let mt = Config::new_from_context(&env.context);
         mt.storage_set(json!({"127.0.0.1:8022": 0, "127.0.0.1:8023": 12345})).await.unwrap();
         let tool = RemoveTool {
@@ -243,7 +243,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_remove_all_targets_none() {
-        let env = ffx_config::test_init_with_daemon().expect("test_init");
+        let env = ffx_config::test_init().expect("test_init");
 
         let tool = RemoveTool {
             cmd: RemoveCommand { all: true, name_or_addr: None },

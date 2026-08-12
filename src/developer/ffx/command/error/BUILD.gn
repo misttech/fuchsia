@@ -55,7 +55,6 @@ rustc_library("lib") {
   proc_macro_deps = [ "//src/developer/ffx/lib/traceable_error/derive:lib" ]
   assert_no_deps = [
     "//src/developer/ffx/config/*",
-    "//src/developer/ffx/daemon/*",
     "//src/developer/ffx/frontends/*",
     "//src/developer/ffx/playground/*",
     "//src/developer/ffx/plugins/*",

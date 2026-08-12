@@ -24,7 +24,6 @@ rustc_library(
     ],
     tags = [
         "assert_no_deps=//src/developer/ffx/config/*",
-        "assert_no_deps=//src/developer/ffx/daemon/*",
         "assert_no_deps=//src/developer/ffx/frontends/*",
         "assert_no_deps=//src/developer/ffx/playground/*",
         "assert_no_deps=//src/developer/ffx/plugins/*",

@@ -329,15 +329,3 @@ pub fn test_init() -> Result<TestEnv> {
     // environment anymore.
     test_builder_with_envs().build()
 }
-
-/// Creates a `TestEnv` with the following defaults:
-///  - Backed by `EnvironmentKind::Isolated`,
-///  - inherits environment variables from the real test environment, and
-///  - sets "connectivity.direct" and "connectivity.enable_network" to false to
-///    ensure test isolation and avoid interference in unit tests.
-pub fn test_init_with_daemon() -> Result<TestEnv> {
-    test_builder_with_envs()
-        .runtime_config("connectivity.direct", false)
-        .runtime_config("connectivity.enable_network", false)
-        .build()
-}

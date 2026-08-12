@@ -73,7 +73,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_machine_output() {
-        let env = ffx_config::test_init_with_daemon().expect("test_init_with_daemon");
+        let env = ffx_config::test_init().expect("test_init");
         let tool = AddTool {
             cmd: AddCommand { addr: "[f000::1%1]:640".to_owned(), nowait: true },
             context: env.context.clone(),
@@ -90,7 +90,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_machine_output_err() {
-        let env = ffx_config::test_init_with_daemon().expect("test_init_with_daemon");
+        let env = ffx_config::test_init().expect("test_init");
         let tool = AddTool {
             cmd: AddCommand { addr: "invalid_address-100".into(), nowait: false },
             context: env.context.clone(),

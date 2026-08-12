@@ -210,22 +210,8 @@ pub async fn run<T: ToolSuite>(icmd: InitializedCmd) -> Result<ExitStatus> {
     }
 
     // initialize logging
-
-    // Yecch, this is unreasonably specific. But it is to preserve compatibility
-    // with the daemon, which is going away, at which point this code can also
-    // go away.
-    let log_dest = if app.subcommand.len() >= 2
-        && app.subcommand[0..2] == ["daemon", "start"]
-        && app.log_destination.is_none()
-    {
-        // The daemon should by default produce output on stdout, not ffx.log,
-        // because integrators who turn off daemon.autostart are expecting to
-        // manage the output.
-        Some(ffx_config::logging::LogDestination::Stdout)
-    } else {
-        app.log_destination.clone()
-    };
-    ffx_config::logging::init(&context, app.verbose, &log_dest).map_err(anyhow::Error::from)?;
+    ffx_config::logging::init(&context, app.verbose, &app.log_destination)
+        .map_err(anyhow::Error::from)?;
 
     let metrics = MetricsSession::start(&context).await?;
     log::debug!("metrics session started");

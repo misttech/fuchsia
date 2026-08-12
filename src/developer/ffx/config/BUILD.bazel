@@ -55,7 +55,6 @@ rustc_library(
         "DOMAINS_TEST_DATA_PATH": "TODO",  # @bazel2gn:value_overwrite:${_domains_test_data_path}
     },
     tags = [
-        "assert_no_deps=//src/developer/ffx/daemon/*",
         "assert_no_deps=//src/developer/ffx/lib/target/*",
     ],
     target_compatible_with = HOST_CONSTRAINTS,
@@ -70,7 +69,6 @@ rustc_library(
         "//src/developer/ffx/command/error:lib",
         "//src/developer/ffx/config/domain:lib",
         "//src/developer/ffx/config/macro:config-macros",
-        "//src/developer/ffx/lib/buildid:lib",
         "//src/developer/ffx/lib/errors:lib",
         "//src/developer/ffx/lib/logging:lib",
         "//src/developer/ffx/lib/sdk:lib",
