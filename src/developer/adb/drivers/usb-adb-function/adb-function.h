@@ -154,7 +154,8 @@ class UsbAdbDevice : public fdf::DriverBase2,
   void RxComplete(std::vector<fendpoint::Completion> completion);
 
   fidl::SyncClient<fuchsia_hardware_usb_function::UsbFunction> function_;
-  std::optional<fidl::ServerBindingRef<fuchsia_hardware_usb_function::UsbFunctionInterface>>
+  // Owning ServerBinding for USB function interface.
+  std::optional<fidl::ServerBinding<fuchsia_hardware_usb_function::UsbFunctionInterface>>
       usb_function_binding_;
 
   // UsbAdbImpl service binding. ServerEnds passed into StartAdb() end up here.

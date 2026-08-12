@@ -29,6 +29,9 @@ class UsbAdbTestHelper {
  public:
   static State state(const UsbAdbDevice& device) { return device.state_; }
   static void set_state(UsbAdbDevice& device, State state) { device.state_ = state; }
+  static bool has_usb_function_binding(const UsbAdbDevice& device) {
+    return device.usb_function_binding_.has_value();
+  }
   static bool InternalPoolsFull(UsbAdbDevice& device) {
     return device.bulk_out_ep_.RequestsFull() && device.bulk_in_ep_.RequestsFull();
   }
@@ -928,4 +931,52 @@ TEST_F(UsbAdbTest, OfflineTxQueuedAndFlushedOnline) {
                                                            zx::sec(5)));
 }
 
+TEST_F(UsbAdbTest, UsbFunctionBindingReconfigure) {
+  // Establish an initial ADB connection
+  auto [client_end1, server_end1] = fidl::Endpoints<fadb::UsbAdbImpl>::Create();
+  auto result1 = client_->StartAdb(std::move(server_end1));
+  ASSERT_TRUE(result1.ok());
+
+  // Wait for iface_client_ to become valid
+  ASSERT_NO_FATAL_FAILURE(EnsureIfaceBound());
+
+  auto config_result_first = iface_client_->SetConfigured({{
+      .configured = true,
+      .speed = fuchsia_hardware_usb_descriptor::UsbSpeed::kHigh,
+  }});
+  ASSERT_TRUE(config_result_first.is_ok());
+
+  CancelAllUsbRequestsOnDeconfigure();
+
+  auto deconfig_result = iface_client_->SetConfigured({{
+      .configured = false,
+      .speed = fuchsia_hardware_usb_descriptor::UsbSpeed::kHigh,
+  }});
+  ASSERT_TRUE(deconfig_result.is_ok());
+
+  iface_client_ = {};
+  ASSERT_NO_FATAL_FAILURE(EnsureIfaceBound());
+
+  auto config_result = iface_client_->SetConfigured({{
+      .configured = true,
+      .speed = fuchsia_hardware_usb_descriptor::UsbSpeed::kHigh,
+  }});
+  ASSERT_TRUE(config_result.is_ok());
+
+  // Let the message loop process the asynchronous unbind handlers
+  driver_test_.runtime().RunUntilIdle();
+
+  // Verify that driver is online AND usb_function_binding_ remains bound.
+  driver_test_.RunInDriverContext([&](UsbAdbDevice& dev) {
+    EXPECT_EQ(UsbAdbTestHelper::state(dev), State::kOnline);
+    EXPECT_TRUE(UsbAdbTestHelper::has_usb_function_binding(dev));
+  });
+
+  // Verify the channel to usb_function_binding_ is still live by making a synchronous call.
+  auto ping_result = iface_client_->SetConfigured({{
+      .configured = true,
+      .speed = fuchsia_hardware_usb_descriptor::UsbSpeed::kHigh,
+  }});
+  EXPECT_TRUE(ping_result.is_ok());
+}
 }  // namespace usb_adb_function

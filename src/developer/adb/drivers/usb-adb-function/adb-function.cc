@@ -61,10 +61,14 @@ void UsbAdbDevice::StartAdb(StartAdbRequestView request, StartAdbCompleter::Sync
   }
   zxlogf(INFO, "ADB client connected");
 
+  // Note: adb_binding_ is a fidl::ServerBinding (owning handle). Destroying or replacing
+  // adb_binding_ synchronously cancels any pending unbind tasks in the FIDL runtime, so connection
+  // ID tracking is not required here.
   adb_binding_.emplace(fdf::Dispatcher::GetCurrent()->async_dispatcher(),
                        std::move(request->interface), this, [this](fidl::UnbindInfo info) {
                          zxlogf(INFO, "Device closed with reason '%s'",
                                 info.FormatDescription().c_str());
+                         adb_binding_.reset();
                          ResetOrStopUsb();
                        });
   completer.ReplySuccess();
@@ -119,7 +123,6 @@ void UsbAdbDevice::ResetOrStopUsb() {
            deconfigure.error_value().FormatDescription().c_str());
   }
   if (usb_function_binding_.has_value()) {
-    usb_function_binding_->Unbind();
     usb_function_binding_.reset();
   }
 
@@ -648,7 +651,12 @@ void UsbAdbDevice::StartUsb() {
   if (iface_endpoints.is_error()) {
     ZX_PANIC("CreateEndpoints failed %s", zx_status_get_string(iface_endpoints.error_value()));
   }
-  usb_function_binding_ = fidl::BindServer(dispatcher(), std::move(iface_endpoints->server), this);
+  usb_function_binding_.emplace(
+      dispatcher(), std::move(iface_endpoints->server), this, [this](fidl::UnbindInfo info) {
+        zxlogf(INFO, "usb_function_binding_ successfully and fully unbound: %s",
+               info.FormatDescription().c_str());
+        usb_function_binding_.reset();
+      });
 
   std::vector<uint8_t> descriptors_buffer(sizeof(descriptors_));
   memcpy(descriptors_buffer.data(), &descriptors_, sizeof(descriptors_));
