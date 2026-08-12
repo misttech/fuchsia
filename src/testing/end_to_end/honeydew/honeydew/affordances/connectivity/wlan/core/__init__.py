@@ -496,15 +496,15 @@ class WlanCore(AsyncLazyReady):
                         phy_id = next_txn.phy_id
                     elif isinstance(
                         next_txn,
-                        f_wlan_device_service.DeviceWatcherOnIfaceAddedRequest,
+                        (
+                            f_wlan_device_service.DeviceWatcherOnIfaceAddedRequest,
+                            f_wlan_device_service.DeviceWatcherOnIfaceRemovedRequest,
+                            f_wlan_device_service.DeviceWatcherOnPhyRemovedRequest,
+                        ),
                     ):
                         logger.info(
-                            "Ignoring notification of existing iface %s",
-                            next_txn.iface_id,
-                        )
-                    else:
-                        raise HoneydewWlanError(
-                            f"Expected OnPhyAdded or OnIfaceAdded, but received: {next_txn}"
+                            "Ignoring DeviceWatcher event: %s",
+                            next_txn,
                         )
                 except TimeoutError:
                     logger.debug("Assuming all DeviceWatcher events observed.")
