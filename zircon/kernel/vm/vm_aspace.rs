@@ -13,6 +13,17 @@ use fbl::RefPtr;
 use zr::ToMutPtr;
 use zx_status::Status;
 
+/// For region creation routines
+pub mod vmm_flag {
+    use vm_aspace_bindings as bindings;
+
+    /// allocate at specific address
+    pub const VALLOC_SPECIFIC: u32 = bindings::VmAspace_VMM_FLAG_VALLOC_SPECIFIC;
+
+    /// commit memory up front (no demand paging)
+    pub const COMMIT: u32 = bindings::VmAspace_VMM_FLAG_COMMIT;
+}
+
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Type {

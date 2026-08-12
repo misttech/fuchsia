@@ -420,6 +420,24 @@ kernel_bindgen_crate("vm-fault-bindings") {
   expect_lints = [ "non_camel_case_types" ]
 }
 
+kernel_bindgen_crate("vm-aspace-bindings") {
+  visibility = [ ":*" ]
+  headers = [ "include/vm/vm_aspace.h" ]
+  non_rust_deps = [ ":bindgen_common_deps" ]
+  output_name = "vm_aspace_bindings.rs"
+  cpp = true
+
+  notice_year = 2026
+  var_allowlist = [ "VmAspace_VMM_FLAG_.*" ]
+
+  edition = "2024"
+  raw_lines = [ "#![no_std]" ]
+  expect_lints = [
+    "non_camel_case_types",
+    "non_upper_case_globals",
+  ]
+}
+
 kernel_bindgen_crate("attribution-bindings") {
   visibility = [ ":*" ]
   headers = [ "include/vm/attribution_ffi.h" ]
@@ -689,6 +707,7 @@ kernel_rust_mod("vm-rs") {
     ":physmap-bindings",
     ":pmm-bindings",
     ":scanner-bindings",
+    ":vm-aspace-bindings",
     ":vm-constants-rs",
     ":vm-cow-pages-bindings",
     ":vm-fault-bindings",
