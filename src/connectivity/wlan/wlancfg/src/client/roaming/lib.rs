@@ -4,14 +4,14 @@
 
 use crate::client::config_management::Credential;
 use crate::client::types;
-use crate::util::historical_list::{HistoricalList, Timestamped};
 use crate::util::pseudo_energy::{EwmaSignalData, RssiVelocity};
+use fidl_fuchsia_wlan_common as fidl_common;
+use fidl_fuchsia_wlan_internal as fidl_internal;
+use fidl_fuchsia_wlan_sme as fidl_sme;
+use fuchsia_async as fasync;
 use log::error;
+use wlan_common::historical_list::{HistoricalList, Timestamped};
 use wlan_common::sequestered::Sequestered;
-use {
-    fidl_fuchsia_wlan_common as fidl_common, fidl_fuchsia_wlan_internal as fidl_internal,
-    fidl_fuchsia_wlan_sme as fidl_sme, fuchsia_async as fasync,
-};
 
 pub const ROAMING_CHANNEL_BUFFER_SIZE: usize = 100;
 /// This is how many past roam events will be remembered for limiting roams per day. Each roam

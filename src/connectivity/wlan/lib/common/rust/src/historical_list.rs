@@ -2,13 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fuchsia_async as fasync;
 use log::warn;
 use std::collections::VecDeque;
 
 /// Trait for time function, for use in HistoricalList functions
 pub trait Timestamped {
-    fn time(&self) -> fasync::MonotonicInstant;
+    fn time(&self) -> fuchsia_async::MonotonicInstant;
 }
 
 /// Struct for list that stores historical data in a VecDeque, up to the some number of most
@@ -42,7 +41,7 @@ where
     #[allow(clippy::needless_return, reason = "mass allow for https://fxbug.dev/381896734")]
     /// Retrieve list of entries with a time more recent than earliest_time, sorted from oldest to
     /// newest. May be empty.
-    pub fn get_recent(&self, earliest_time: fasync::MonotonicInstant) -> Vec<T> {
+    pub fn get_recent(&self, earliest_time: fuchsia_async::MonotonicInstant) -> Vec<T> {
         let i = self.0.partition_point(|data| data.time() < earliest_time);
         return self.0.iter().skip(i).cloned().collect();
     }
@@ -50,7 +49,7 @@ where
     #[allow(clippy::needless_return, reason = "mass allow for https://fxbug.dev/381896734")]
     /// Retrieve list of entries with a time before than latest_time, sorted from oldest to
     /// newest. May be empty.
-    pub fn get_before(&self, latest_time: fasync::MonotonicInstant) -> Vec<T> {
+    pub fn get_before(&self, latest_time: fuchsia_async::MonotonicInstant) -> Vec<T> {
         let i = self.0.partition_point(|data| data.time() <= latest_time);
         return self.0.iter().take(i).cloned().collect();
     }
@@ -59,8 +58,8 @@ where
     /// oldest to newest. May be empty.
     pub fn get_between(
         &self,
-        earliest_time: fasync::MonotonicInstant,
-        latest_time: fasync::MonotonicInstant,
+        earliest_time: fuchsia_async::MonotonicInstant,
+        latest_time: fuchsia_async::MonotonicInstant,
     ) -> Vec<T> {
         let i = self.0.partition_point(|data| data.time() < earliest_time);
         let j = self.0.partition_point(|data| data.time() <= latest_time);
@@ -77,22 +76,28 @@ where
     }
 }
 
+// Allow for storing just timestamps
+impl Timestamped for zx::MonotonicInstant {
+    fn time(&self) -> fuchsia_async::MonotonicInstant {
+        fuchsia_async::MonotonicInstant::from_zx(*self)
+    }
+}
+impl Timestamped for fuchsia_async::MonotonicInstant {
+    fn time(&self) -> fuchsia_async::MonotonicInstant {
+        *self
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use zx::MonotonicDuration;
 
-    impl Timestamped for fasync::MonotonicInstant {
-        fn time(&self) -> fasync::MonotonicInstant {
-            *self
-        }
-    }
-
-    const EARLIEST_TIME: fasync::MonotonicInstant =
-        fasync::MonotonicInstant::from_nanos(1_000_000_000);
+    const EARLIEST_TIME: fuchsia_async::MonotonicInstant =
+        fuchsia_async::MonotonicInstant::from_nanos(1_000_000_000);
     fn create_test_list(
-        earlist_time: fasync::MonotonicInstant,
-    ) -> HistoricalList<fasync::MonotonicInstant> {
+        earlist_time: fuchsia_async::MonotonicInstant,
+    ) -> HistoricalList<fuchsia_async::MonotonicInstant> {
         HistoricalList(VecDeque::from_iter([
             earlist_time,
             earlist_time + MonotonicDuration::from_seconds(1),

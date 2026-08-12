@@ -8,7 +8,6 @@ use crate::client::roaming::roam_monitor::RoamMonitorApi;
 use crate::client::types;
 use crate::config_management::SavedNetworksManagerApi;
 use crate::telemetry::{TelemetryEvent, TelemetrySender};
-use crate::util::historical_list::Timestamped;
 use crate::util::pseudo_energy::EwmaSignalData;
 use async_trait::async_trait;
 use fidl_fuchsia_wlan_common as fidl_common;
@@ -18,6 +17,7 @@ use fuchsia_async as fasync;
 use futures::lock::Mutex;
 use log::{error, info};
 use std::sync::Arc;
+use wlan_common::historical_list::Timestamped;
 
 pub const MIN_BACKOFF_BETWEEN_ROAM_SCANS: zx::MonotonicDuration =
     zx::MonotonicDuration::from_minutes(1);

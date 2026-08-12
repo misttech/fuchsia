@@ -9,7 +9,6 @@ use crate::client;
 use crate::client::roaming::lib::{PolicyRoamRequest, RoamReason};
 use crate::mode_management::{Defect, IfaceFailure};
 use crate::telemetry::windowed_stats::WindowedStats;
-use crate::util::historical_list::{HistoricalList, Timestamped};
 use crate::util::pseudo_energy::{EwmaSignalData, RssiVelocity};
 use anyhow::{Context, Error, format_err};
 use cobalt_client::traits::AsEventCode;
@@ -39,6 +38,7 @@ use std::ops::Add;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Once};
 use wlan_common::channel::{Bandwidth, Channel};
+use wlan_common::historical_list::{HistoricalList, Timestamped};
 use wlan_metrics_registry as metrics;
 use wlan_telemetry::{ThrottledErrorLogger, TimeoutSource};
 

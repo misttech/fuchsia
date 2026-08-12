@@ -3,13 +3,13 @@
 // found in the LICENSE file.
 
 use crate::config_management::{self};
-use crate::util::historical_list::Timestamped;
 use fidl_fuchsia_wlan_internal as fidl_internal;
 use fidl_fuchsia_wlan_policy as fidl_policy;
 use fidl_fuchsia_wlan_sme as fidl_sme;
 use fuchsia_async::MonotonicInstant;
 use wlan_common::bss::BssDescription;
 use wlan_common::channel::Channel;
+use wlan_common::historical_list::Timestamped;
 use wlan_common::security::SecurityAuthenticator;
 use wlan_common::sequestered::Sequestered;
 use wlan_metrics_registry::{
@@ -154,7 +154,7 @@ pub struct TimestampedSignal {
     pub time: MonotonicInstant,
 }
 impl Timestamped for TimestampedSignal {
-    fn time(&self) -> MonotonicInstant {
+    fn time(&self) -> fuchsia_async::MonotonicInstant {
         self.time
     }
 }

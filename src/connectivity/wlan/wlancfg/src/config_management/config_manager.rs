@@ -9,6 +9,7 @@ use super::network_config::{
 };
 use super::stash_conversion::*;
 use crate::client::types::{self, ScanObservation};
+use crate::config_management::new_past_connection_list;
 use crate::telemetry::{TelemetryEvent, TelemetrySender};
 use anyhow::format_err;
 use async_trait::async_trait;
@@ -512,7 +513,7 @@ impl SavedNetworksManagerApi for SavedNetworksManager {
             .get(id)
             .filter(|config| &config.credential == credential)
             .map(|config| config.perf_stats.past_connections.get_list_for_bss(bssid))
-            .unwrap_or_default()
+            .unwrap_or_else(|| new_past_connection_list())
     }
 }
 
@@ -2117,14 +2118,14 @@ mod tests {
         );
 
         // Check that get_past_connections gets the two PastConnectionLists for the BSSIDs.
-        let mut expected_past_connections = PastConnectionList::default();
+        let mut expected_past_connections = new_past_connection_list();
         expected_past_connections.add(data_1);
         expected_past_connections.add(data_2);
         let actual_past_connections =
             saved_networks_manager.get_past_connections(&id, &credential, &bssid_1).await;
         assert_eq!(actual_past_connections, expected_past_connections);
 
-        let mut expected_past_connections = PastConnectionList::default();
+        let mut expected_past_connections = new_past_connection_list();
         expected_past_connections.add(data_3);
         let actual_past_connections =
             saved_networks_manager.get_past_connections(&id, &credential, &bssid_2).await;
@@ -2135,7 +2136,7 @@ mod tests {
         let actual_past_connections = saved_networks_manager
             .get_past_connections(&id, &Credential::Password(b"other-password".to_vec()), &bssid_1)
             .await;
-        assert_eq!(actual_past_connections, PastConnectionList::default());
+        assert_eq!(actual_past_connections, new_past_connection_list());
     }
 
     fn fake_successful_connect_result() -> fidl_sme::ConnectResult {

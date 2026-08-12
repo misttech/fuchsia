@@ -13,7 +13,6 @@ use crate::telemetry::{
     AVERAGE_SCORE_DELTA_MINIMUM_DURATION, DisconnectInfo, METRICS_SHORT_CONNECT_DURATION,
     TelemetryEvent, TelemetrySender,
 };
-use crate::util::historical_list::HistoricalList;
 use crate::util::listener::Message::NotifyListeners;
 use crate::util::listener::{ClientListenerMessageSender, ClientNetworkState, ClientStateUpdate};
 use crate::util::state_machine::{self, ExitReason, IntoStateExt, StateMachineStatusPublisher};
@@ -36,6 +35,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 use wlan_common::bss::BssDescription;
 use wlan_common::channel::{Bandwidth, Channel};
+use wlan_common::historical_list::HistoricalList;
 use wlan_common::sequestered::Sequestered;
 
 const MAX_CONNECTION_ATTEMPTS: u8 = 4; // arbitrarily chosen until we have some data
@@ -1238,7 +1238,7 @@ mod tests {
     use super::*;
     use crate::client::roaming::lib::{PolicyRoamRequest, RoamTriggerData};
     use crate::client::roaming::local_roam_manager::RoamServiceRequest;
-    use crate::config_management::{PastConnectionList, network_config};
+    use crate::config_management::{network_config, new_past_connection_list};
     use crate::util::listener;
     use crate::util::state_machine::{StateMachineStatusReader, status_publisher_and_reader};
     use crate::util::testing::{
@@ -3041,7 +3041,7 @@ mod tests {
             types::ApState::from(BssDescription::try_from(bss_description.clone()).unwrap());
 
         // Add a PastConnectionData for the connected network to be send in BSS quality data.
-        let mut past_connections = PastConnectionList::default();
+        let mut past_connections = new_past_connection_list();
         let mut past_connection_data = random_connection_data();
         past_connection_data.bssid = ieee80211::Bssid::from(bss_description.bssid);
         past_connections.add(past_connection_data);

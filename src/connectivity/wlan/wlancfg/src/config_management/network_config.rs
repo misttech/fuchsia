@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use crate::client::types as client_types;
-use crate::util::historical_list::{HistoricalList, Timestamped};
 use arbitrary::Arbitrary;
 #[cfg(test)]
 use fidl_fuchsia_wlan_internal as fidl_internal;
@@ -13,6 +12,7 @@ use log::info;
 use std::cmp::Reverse;
 use std::collections::{HashMap, HashSet};
 use std::fmt::{self, Debug};
+use wlan_common::historical_list::{HistoricalList, Timestamped};
 use wlan_common::security::wep::WepKey;
 use wlan_common::security::wpa::WpaDescriptor;
 use wlan_common::security::wpa::credential::{Passphrase, Psk};
@@ -20,7 +20,7 @@ use wlan_common::security::{SecurityAuthenticator, SecurityDescriptor};
 
 /// The max number of connection results we will store per BSS at a time. For now, this number is
 /// chosen arbitartily.
-const NUM_CONNECTION_RESULTS_PER_BSS: usize = 10;
+pub const NUM_CONNECTION_RESULTS_PER_BSS: usize = 10;
 /// constants for the constraints on valid credential values
 const WEP_40_ASCII_LEN: usize = 5;
 const WEP_40_HEX_LEN: usize = 10;
@@ -175,10 +175,8 @@ impl Timestamped for PastConnectionData {
 
 /// Data structures for storing historical connection information for a BSS.
 pub type PastConnectionList = HistoricalList<PastConnectionData>;
-impl Default for PastConnectionList {
-    fn default() -> Self {
-        Self::new(NUM_CONNECTION_RESULTS_PER_BSS)
-    }
+pub fn new_past_connection_list() -> PastConnectionList {
+    PastConnectionList::new(NUM_CONNECTION_RESULTS_PER_BSS)
 }
 
 /// Struct for map from BSSID to HistoricalList
@@ -1319,7 +1317,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_past_connections_list_add_when_full() {
-        let mut past_connections_list = PastConnectionList::default();
+        let mut past_connections_list = new_past_connection_list();
         let curr_time = fasync::MonotonicInstant::now();
 
         // Add to list, exceeding the capacity by one entry
@@ -1341,7 +1339,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_past_connections_list_add_and_get() {
-        let mut past_connections_list = PastConnectionList::default();
+        let mut past_connections_list = new_past_connection_list();
         let curr_time = fasync::MonotonicInstant::now();
         assert!(past_connections_list.get_recent(curr_time).is_empty());
 

@@ -8,7 +8,7 @@ use crate::client::roaming::roam_monitor::RoamMonitorApi;
 use crate::client::{scan, types as client_types};
 use crate::config_management::{
     Credential, NetworkConfig, NetworkConfigError, NetworkIdentifier, PastConnectionData,
-    PastConnectionList, SavedNetworksManagerApi,
+    PastConnectionList, SavedNetworksManagerApi, new_past_connection_list,
 };
 use anyhow::format_err;
 use async_trait::async_trait;
@@ -86,7 +86,7 @@ impl FakeSavedNetworksManager {
             fail_all_stores: false,
             lookup_compatible_response: Mutex::new(LookupCompatibleResponse::new()),
             scan_result_records: Arc::new(Mutex::new(vec![])),
-            past_connections_response: PastConnectionList::default(),
+            past_connections_response: new_past_connection_list(),
             is_network_single_bss_resp: Mutex::new(None),
         }
     }
@@ -116,7 +116,7 @@ impl FakeSavedNetworksManager {
             fail_all_stores: false,
             lookup_compatible_response: Mutex::new(LookupCompatibleResponse::new()),
             scan_result_records: Arc::new(Mutex::new(vec![])),
-            past_connections_response: PastConnectionList::default(),
+            past_connections_response: new_past_connection_list(),
             is_network_single_bss_resp: Mutex::new(None),
         }
     }

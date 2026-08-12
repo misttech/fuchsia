@@ -15,6 +15,7 @@ pub mod channel;
 pub mod data_writer;
 pub mod energy;
 pub mod error;
+pub mod historical_list;
 pub mod ie;
 pub mod mac;
 pub mod mgmt_writer;

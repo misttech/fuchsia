@@ -339,7 +339,7 @@ mod tests {
             ),
             previous_connect_reason: crate::client::types::ConnectReason::IdleInterfaceAutoconnect,
             ap_state,
-            signals: crate::util::historical_list::HistoricalList::new(8),
+            signals: wlan_common::historical_list::HistoricalList::new(8),
         };
 
         let converted = convert_disconnect_info(&info);
@@ -412,7 +412,7 @@ mod tests {
             ),
             previous_connect_reason: crate::client::types::ConnectReason::IdleInterfaceAutoconnect,
             ap_state: bss.clone().into(),
-            signals: crate::util::historical_list::HistoricalList::new(8),
+            signals: wlan_common::historical_list::HistoricalList::new(8),
         };
 
         let converted_disconnect =
