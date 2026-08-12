@@ -85,6 +85,7 @@ group("tests_no_e2e") {
   assert_no_deps = e2e_test_libs
 
   deps = [
+    ":bazel_host_tests",
     "//tools/artifactory:tests",
     "//tools/auto_owners:tests($host_toolchain)",
     "//tools/bindc:tests",
@@ -149,7 +150,6 @@ bazel_host_test_suite("bazel_host_tests") {
 group("tests") {
   testonly = true
   deps = [
-    ":bazel_host_tests",
     ":e2e_tests",
     ":tests_no_e2e",
 
