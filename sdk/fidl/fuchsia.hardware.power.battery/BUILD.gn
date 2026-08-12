@@ -37,6 +37,7 @@ fidl("fuchsia.hardware.power.battery") {
   sources = [ "battery.fidl" ]
   sdk_area = "Power"
   sdk_category = "partner"
+  enable_rust_next = true
   stable = false
   visibility = [ "*" ]
   public_deps = [
