@@ -1219,4 +1219,126 @@ TEST(SocketTest, SetDispositionWrongType) {
   EXPECT_STATUS(zx_socket_set_disposition(vmo.get(), 0, 0), ZX_ERR_WRONG_TYPE);
 }
 
+TEST(SocketTest, InvalidHandles) {
+  char buffer = 'a';
+  size_t actual = 0;
+  EXPECT_STATUS(zx_socket_write(ZX_HANDLE_INVALID, 0, &buffer, 1, &actual), ZX_ERR_BAD_HANDLE);
+  EXPECT_STATUS(zx_socket_read(ZX_HANDLE_INVALID, 0, &buffer, 1, &actual), ZX_ERR_BAD_HANDLE);
+  EXPECT_STATUS(zx_socket_set_disposition(ZX_HANDLE_INVALID, 0, 0), ZX_ERR_BAD_HANDLE);
+}
+
+TEST(SocketTest, DefaultRightsAndType) {
+  zx::socket local, remote;
+  ASSERT_OK(zx::socket::create(0, &local, &remote));
+
+  zx_info_handle_basic_t info_local = {};
+  ASSERT_OK(
+      local.get_info(ZX_INFO_HANDLE_BASIC, &info_local, sizeof(info_local), nullptr, nullptr));
+  EXPECT_EQ(info_local.type, ZX_OBJ_TYPE_SOCKET);
+  EXPECT_EQ(info_local.rights, ZX_DEFAULT_SOCKET_RIGHTS);
+
+  zx_info_handle_basic_t info_remote = {};
+  ASSERT_OK(
+      remote.get_info(ZX_INFO_HANDLE_BASIC, &info_remote, sizeof(info_remote), nullptr, nullptr));
+  EXPECT_EQ(info_remote.type, ZX_OBJ_TYPE_SOCKET);
+  EXPECT_EQ(info_remote.rights, ZX_DEFAULT_SOCKET_RIGHTS);
+}
+
+TEST(SocketTest, WriteZeroBytesNullBuffer) {
+  zx::socket local, remote;
+  ASSERT_OK(zx::socket::create(0, &local, &remote));
+
+  size_t actual = 99;
+  EXPECT_OK(zx_socket_write(local.get(), 0, nullptr, 0, &actual));
+  EXPECT_EQ(actual, 0u);
+
+  // When peer is closed, write returns PEER_CLOSED even for zero-byte writes.
+  remote.reset();
+  EXPECT_STATUS(zx_socket_write(local.get(), 0, nullptr, 0, &actual), ZX_ERR_PEER_CLOSED);
+}
+
+TEST(SocketTest, WriteAndReadSizeOverflow) {
+  zx::socket local, remote;
+  ASSERT_OK(zx::socket::create(0, &local, &remote));
+
+  char buffer = 'a';
+  const size_t overflow_size = (1ULL << 32) + 1;
+  EXPECT_STATUS(zx_socket_write(local.get(), 0, &buffer, overflow_size, nullptr),
+                ZX_ERR_INVALID_ARGS);
+  EXPECT_STATUS(zx_socket_read(local.get(), 0, &buffer, overflow_size, nullptr),
+                ZX_ERR_INVALID_ARGS);
+}
+
+TEST(SocketTest, SetDispositionNoOpAndClosedPeer) {
+  zx::socket local, remote;
+  ASSERT_OK(zx::socket::create(0, &local, &remote));
+
+  // No-op disposition update
+  EXPECT_OK(local.set_disposition(0, 0));
+
+  // When peer is closed, setting disposition on local endpoint still succeeds
+  remote.reset();
+  EXPECT_EQ(GetSignals(local), ZX_SOCKET_PEER_CLOSED);
+
+  EXPECT_OK(local.set_disposition(ZX_SOCKET_DISPOSITION_WRITE_DISABLED, 0));
+  EXPECT_EQ(GetSignals(local), ZX_SOCKET_PEER_CLOSED | ZX_SOCKET_WRITE_DISABLED);
+
+  EXPECT_OK(local.set_disposition(ZX_SOCKET_DISPOSITION_WRITE_ENABLED, 0));
+  EXPECT_EQ(GetSignals(local), ZX_SOCKET_PEER_CLOSED | ZX_SOCKET_WRITABLE);
+}
+
+TEST(SocketTest, SetReadThresholdOnClosedPeer) {
+  zx::socket local, remote;
+  ASSERT_OK(zx::socket::create(0, &local, &remote));
+
+  zx_info_socket_t info{};
+  ASSERT_OK(local.get_info(ZX_INFO_SOCKET, &info, sizeof(info), nullptr, nullptr));
+
+  remote.reset();
+
+  // Setting RX threshold on local endpoint succeeds even after peer is closed
+  size_t threshold = info.rx_buf_max;
+  EXPECT_OK(local.set_property(ZX_PROP_SOCKET_RX_THRESHOLD, &threshold, sizeof(threshold)));
+
+  // Value greater than max returns INVALID_ARGS
+  size_t invalid_threshold = info.rx_buf_max + 1;
+  EXPECT_STATUS(local.set_property(ZX_PROP_SOCKET_RX_THRESHOLD, &invalid_threshold,
+                                   sizeof(invalid_threshold)),
+                ZX_ERR_INVALID_ARGS);
+
+  // Disabling threshold with 0 succeeds
+  threshold = 0;
+  EXPECT_OK(local.set_property(ZX_PROP_SOCKET_RX_THRESHOLD, &threshold, sizeof(threshold)));
+}
+
+TEST(SocketTest, GetInfoClosedPeer) {
+  zx::socket local, remote;
+  ASSERT_OK(zx::socket::create(0, &local, &remote));
+
+  remote.reset();
+
+  zx_info_socket_t info{};
+  ASSERT_OK(local.get_info(ZX_INFO_SOCKET, &info, sizeof(info), nullptr, nullptr));
+  EXPECT_GT(info.rx_buf_max, 0u);
+  EXPECT_EQ(info.rx_buf_size, 0u);
+  EXPECT_EQ(info.tx_buf_max, 0u);
+  EXPECT_EQ(info.tx_buf_size, 0u);
+}
+
+TEST(SocketTest, NonAllowedSignals) {
+  zx::socket local, remote;
+  ASSERT_OK(zx::socket::create(0, &local, &remote));
+
+  // Modifying system-controlled signals returns INVALID_ARGS
+  EXPECT_STATUS(local.signal(0, ZX_SOCKET_READABLE), ZX_ERR_INVALID_ARGS);
+  EXPECT_STATUS(local.signal(0, ZX_SOCKET_WRITE_DISABLED), ZX_ERR_INVALID_ARGS);
+  EXPECT_STATUS(local.signal(0, ZX_SOCKET_PEER_CLOSED), ZX_ERR_INVALID_ARGS);
+
+  // User signals are permitted
+  ASSERT_OK(local.signal(0, ZX_USER_SIGNAL_0));
+  EXPECT_EQ(GetSignals(local), ZX_SOCKET_WRITABLE | ZX_USER_SIGNAL_0);
+  ASSERT_OK(local.signal(ZX_USER_SIGNAL_0, 0));
+  EXPECT_EQ(GetSignals(local), ZX_SOCKET_WRITABLE);
+}
+
 }  // namespace
