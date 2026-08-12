@@ -12,6 +12,7 @@ from typing import Any
 import fuchsia_base_test
 import perf_publish.publish as publish
 import test_data
+from honeydew.transports.ffx.types import MachineFormat
 from memory import profile
 from mobly import test_runner
 
@@ -55,7 +56,7 @@ class PowerMemoryBenchmarkTest(fuchsia_base_test.FuchsiaBaseTest):
             ],
             include_target=True,
             include_target_name=True,
-            machine="raw",
+            machine=MachineFormat.RAW,
         )
         _LOGGER.info("Running command: %s", " ".join(cmd))
 
