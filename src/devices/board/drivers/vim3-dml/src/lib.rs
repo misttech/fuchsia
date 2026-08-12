@@ -33,12 +33,8 @@ static VIM3_PARSER_CONFIG: DmlParserConfig = DmlParserConfig {
                     required: true,
                 },
                 PropertyRule {
-                    bind_key: "fuchsia.gpio.FUNCTION",
-                    sources: &[
-                        ValueSource::Template("fuchsia.gpio.FUNCTION.{name}"),
-                        ValueSource::Template("fuchsia.gpio.FUNCTION.{res.name}"),
-                        ValueSource::Template("fuchsia.gpio.FUNCTION.gpio-{pin}"),
-                    ],
+                    bind_key: "fuchsia.NAME",
+                    sources: &[ValueSource::ConstraintKey("name"), ValueSource::ResourceName],
                     value_type: RuleValueType::String,
                     destination: Destination::Properties,
                     required: true,
@@ -100,21 +96,8 @@ static VIM3_PARSER_CONFIG: DmlParserConfig = DmlParserConfig {
                     required: false,
                 },
                 PropertyRule {
-                    bind_key: "fuchsia.clock.FUNCTION",
-                    sources: &[
-                        ValueSource::Template("fuchsia.clock.FUNCTION.{name}"),
-                        ValueSource::Template("fuchsia.clock.FUNCTION.{res.name}"),
-                    ],
-                    value_type: RuleValueType::String,
-                    destination: Destination::Properties,
-                    required: true,
-                },
-                PropertyRule {
-                    bind_key: "fuchsia.clock.NAME",
-                    sources: &[
-                        ValueSource::Template("{name}"),
-                        ValueSource::Template("{res.name}"),
-                    ],
+                    bind_key: "fuchsia.NAME",
+                    sources: &[ValueSource::ConstraintKey("name"), ValueSource::ResourceName],
                     value_type: RuleValueType::String,
                     destination: Destination::Properties,
                     required: true,
@@ -127,11 +110,7 @@ static VIM3_PARSER_CONFIG: DmlParserConfig = DmlParserConfig {
             rules: &[
                 PropertyRule {
                     bind_key: "fuchsia.NAME",
-                    sources: &[
-                        ValueSource::ConstraintKey("name"),
-                        ValueSource::ResourceName,
-                        ValueSource::ResourceNode,
-                    ],
+                    sources: &[ValueSource::ConstraintKey("name"), ValueSource::ResourceName],
                     value_type: RuleValueType::String,
                     destination: Destination::Both,
                     required: true,
@@ -140,7 +119,6 @@ static VIM3_PARSER_CONFIG: DmlParserConfig = DmlParserConfig {
             parent_key_sources: &[
                 ValueSource::Template("register-{name}"),
                 ValueSource::Template("register-{res.name}"),
-                ValueSource::Template("register-{res.node}"),
             ],
             ..DEFAULT_SERVICE_BIND_CONFIG
         },
