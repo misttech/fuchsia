@@ -3,14 +3,16 @@
 # found in the LICENSE file.
 
 load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
-load("//build/bazel/rules/host:defs.bzl", "cc_binary_host_tool")
+load("//build/bazel/rules/idk:idk_host_tool.bzl", "idk_cc_binary_host_tool")
 
 package(default_applicable_licenses = ["//:license"])
 
-cc_binary_host_tool(
+idk_cc_binary_host_tool(
     name = "merkleroot",
     srcs = ["merkleroot.cc"],
-    # This tool is in the IDK and can be cross-compiled for other CPUs.
+    api_area = "Zircon",
+    category = "partner",
+    idk_name = "merkleroot",
     target_compatible_with = HOST_OS_CONSTRAINTS,
     deps = [
         "//src/lib/digest",
