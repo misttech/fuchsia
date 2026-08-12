@@ -34,7 +34,18 @@ def extract_packages_from_listing(
     return filter(filter_, packages)
 
 
-def parse_args() -> argparse.Namespace:
+def get_filter(
+    pattern: str | None, exact: bool = False
+) -> Callable[[str], bool]:
+    if not pattern:
+        return lambda s: True
+    regex = re.compile(pattern)
+    if exact:
+        return lambda s: bool(regex.fullmatch(s))
+    return lambda s: bool(regex.search(s))
+
+
+def get_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="""
 list-packages lists the packages that the build is aware of. These are
@@ -43,28 +54,36 @@ Note: list-packages DOES NOT list all packages that *could* be built, only
 those that are included in the current build configuration.
 """,
         epilog="""
+The package list is derived from all_package_manifests.list (which is produced
+during image assembly / full build).
 See https://fuchsia.dev/fuchsia-src/development/build/software_assembly/build_configuration
 for more information about using these package sets.
 """,
     )
     parser.add_argument(
+        "-e",
+        "--exact",
+        action="store_true",
+        help="match the pattern exactly against the full package name (regex fullmatch)",
+    )
+    parser.add_argument(
         "pattern",
         nargs="?",
-        help="list only packages that full match this regular expression",
+        help="list only packages matching this regular expression (matches substrings by default, or full names with -e/--exact)",
     )
-    return parser.parse_args()
+    return parser
 
 
 def main() -> None:
-    args = parse_args()
+    parser = get_parser()
+    args = parser.parse_args()
 
     # If a custom regex for package names is provided, use that to filter
     # results; otherwise, return all results
-    if args.pattern:
-        regex = re.compile(args.pattern)
-        filter_ = lambda s: bool(regex.fullmatch(s))
-    else:
-        filter_ = lambda s: True
+    try:
+        filter_ = get_filter(args.pattern, exact=args.exact)
+    except re.error as e:
+        parser.error(f"invalid regular expression '{args.pattern}': {e}")
 
     build_dir = os.environ.get("FUCHSIA_BUILD_DIR")
     if not build_dir:

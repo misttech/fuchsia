@@ -6,6 +6,17 @@
 #### CATEGORY=Build
 ### List which packages are built.
 
+## Usage: fx list-packages [-e|--exact] [PATTERN]
+##
+## Lists packages included in the current build configuration.
+##
+## Flags:
+##   -e, --exact   Match PATTERN exactly against the full package name
+##
+## Arguments:
+##   PATTERN       Regular expression to filter packages (substring match by default)
+##
+
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
 source "$SCRIPT_DIR/../lib/vars.sh" || exit $?
 
