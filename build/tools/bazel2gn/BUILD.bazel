@@ -43,6 +43,7 @@ go_binary_host_tool(
 
 go_test(
     name = "bazel2gn_tests",
+    size = "small",
     srcs = [
         "bazel2gn_test.go",
         "constants_test.go",

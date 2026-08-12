@@ -658,7 +658,6 @@ func hasSkipAnnotation(node syntax.Node) (bool, error) {
 func hasAnnotation(comments []syntax.Comment, annotation string) bool {
 	for _, comment := range comments {
 		if comment.Text == annotation {
-			fmt.Printf("found skip annotation %v %v\n", comment, annotation)
 			return true
 		}
 	}
