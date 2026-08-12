@@ -9,14 +9,14 @@ import argparse
 import json
 import os
 import re
-import sys
-from typing import Callable, List
+from collections.abc import Callable, Iterable, Iterator
+from typing import Any
 
 FUCHSIA_BUILD_DIR = os.environ.get("FUCHSIA_BUILD_DIR")
 
 
 # Print all the packages in sorted order, one per line.
-def print_packages(packages: List[str]) -> None:
+def print_packages(packages: Iterable[str]) -> None:
     for p in sorted(packages):
         print(p)
 
@@ -24,8 +24,8 @@ def print_packages(packages: List[str]) -> None:
 # Extracts the list of package names that are accepted by filter_ from a
 # decoded package list manifest.
 def extract_packages_from_listing(
-    manifest_paths, filter_: Callable[[str], bool]
-) -> [str]:
+    manifest_paths: dict[str, Any], filter_: Callable[[str], bool]
+) -> Iterator[str]:
     packages: list[str] = []
     for manifest in manifest_paths["content"]["manifests"]:
         packages.append(
@@ -69,7 +69,7 @@ def main() -> None:
         filter_ = lambda s: True
 
     if FUCHSIA_BUILD_DIR is None:
-        raise RuntimError(
+        raise RuntimeError(
             'Environment variable "FUCHSIA_BUILD_DIR" is not set.'
         )
 
@@ -79,4 +79,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()
