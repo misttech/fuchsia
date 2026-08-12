@@ -5,15 +5,16 @@
 import("//build/assembly/assembled_system.gni")
 import("//build/assembly/board_configuration.gni")
 import("//build/assembly/product_assembly_configuration.gni")
+import("//build/assembly/product_bundle.gni")
 import("//build/board.gni")
 import("//build/components/fuchsia_package.gni")
 import("//build/rust/rustc_test.gni")
 import("//build/testing/host_test_data.gni")
 
-_assemble_system_target_name = "assembly"
-_assemble_system_recovery_target_name = "assembly_recovery"
-
 if (is_fuchsia) {
+  _assemble_system_target_name = "assembly"
+  _assemble_system_recovery_target_name = "assembly_recovery"
+
   # `assembled_system` needs at least one package in base_packages.
   fuchsia_package("empty-pkg") {
     testonly = true
@@ -110,6 +111,17 @@ if (is_fuchsia) {
     board_config_label = ":board_config"
     ramdisk_in_zbi = true
   }
+
+  product_bundle("product_bundle") {
+    testonly = true
+    name = "product_bundle"
+    system_a = "$target_out_dir/$_assemble_system_target_name"
+    system_r = "$target_out_dir/$_assemble_system_recovery_target_name"
+    deps = [
+      ":$_assemble_system_recovery_target_name",
+      ":$_assemble_system_target_name",
+    ]
+  }
 }
 
 if (is_host) {
@@ -119,28 +131,13 @@ if (is_host) {
       deps = [ ":scrutiny_ffx_integration_test" ]
     }
 
-    host_test_data("testdata") {
-      deps = [
-        ":${_assemble_system_recovery_target_name}.image_assembler($target_toolchain)",
-        ":${_assemble_system_target_name}.image_assembler($target_toolchain)",
-      ]
-      sources = [
-        get_label_info(
-                ":${_assemble_system_target_name}.image_assembler($target_toolchain)",
-                "target_out_dir") +
-            "/${_assemble_system_target_name}_gen/blob.blk",
-        get_label_info(
-                ":${_assemble_system_target_name}.image_assembler($target_toolchain)",
-                "target_out_dir") + "/${_assemble_system_target_name}_gen/${_assemble_system_target_name}.zbi",
-        get_label_info(
-                ":${_assemble_system_recovery_target_name}.image_assembler($target_toolchain)",
-                "target_out_dir") + "/${_assemble_system_recovery_target_name}_gen/${_assemble_system_recovery_target_name}.zbi",
-      ]
-      outputs = [ "$target_out_dir/testdata/{{source_file_part}}" ]
+    _product_bundle_out_dir =
+        get_label_info(":product_bundle($target_toolchain)", "target_out_dir") +
+        "/product_bundle"
 
-      metadata = {
-        package_barrier = []
-      }
+    host_test_data("testdata") {
+      deps = [ ":product_bundle($target_toolchain)" ]
+      sources = [ _product_bundle_out_dir ]
     }
 
     # Required for the test to be able to call ffx.
@@ -152,15 +149,11 @@ if (is_host) {
 
     config("config") {
       ffx_path = "$target_out_dir/host_tools/ffx-scrutiny"
-      blobfs_path = "$target_out_dir/testdata/blob.blk"
-      zbi_path = "$target_out_dir/testdata/${_assemble_system_target_name}.zbi"
-      recovery_zbi_path = "$target_out_dir/testdata/${_assemble_system_recovery_target_name}.zbi"
 
       rustenv = [
         "FFX_TOOL_PATH=" + rebase_path(ffx_path, root_build_dir),
-        "BLOBFS_PATH=" + rebase_path(blobfs_path, root_build_dir),
-        "ZBI_PATH=" + rebase_path(zbi_path, root_build_dir),
-        "RECOVERY_ZBI_PATH=" + rebase_path(recovery_zbi_path, root_build_dir),
+        "PRODUCT_BUNDLE_PATH=" +
+            rebase_path(_product_bundle_out_dir, root_build_dir),
       ]
     }
 
@@ -184,11 +177,5 @@ if (is_host) {
     # If there's no board, just stub out the host_tests group.
     group("host_tests") {
     }
-
-    # And then these vars aren't needed.
-    not_needed([
-                 "_assemble_system_target_name",
-                 "_assemble_system_recovery_target_name",
-               ])
   }
 }

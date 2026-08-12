@@ -14,10 +14,6 @@ if (is_fuchsia) {
 if (is_host) {
   group("host_tests") {
     testonly = true
-
-    # TODO(https://fxbug.dev/42076896): Support Fxblob in scrutiny
-    if (!fxfs_blob) {
-      deps = [ "scrutiny_ffx_integration:host_tests" ]
-    }
+    deps = [ "scrutiny_ffx_integration:host_tests" ]
   }
 }
