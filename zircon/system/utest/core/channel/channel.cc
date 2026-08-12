@@ -2065,5 +2065,32 @@ TEST(ChannelTest, WriteIovecUnboundedNonZeroReservedReturnsInvalidArgs) {
             ZX_ERR_INVALID_ARGS);
 }
 
+TEST(ChannelTest, WriteIovecUnboundedSuccess) {
+  zx::channel local, remote;
+  ASSERT_OK(zx::channel::create(0, &local, &remote));
+
+  constexpr uint32_t kNumIovecs = 20;
+  char data[kNumIovecs];
+  zx_channel_iovec_t iovecs[kNumIovecs] = {};
+  for (uint32_t i = 0; i < kNumIovecs; ++i) {
+    data[i] = static_cast<char>('a' + i);
+    iovecs[i].buffer = &data[i];
+    iovecs[i].capacity = 1;
+    iovecs[i].reserved = 0;
+  }
+
+  ASSERT_OK(local.write(ZX_CHANNEL_WRITE_USE_IOVEC, iovecs, kNumIovecs, nullptr, 0));
+
+  char read_buf[kNumIovecs] = {0};
+  uint32_t actual_bytes = 0;
+  uint32_t actual_handles = 0;
+  ASSERT_OK(remote.read(0, read_buf, nullptr, sizeof(read_buf), 0, &actual_bytes, &actual_handles));
+  EXPECT_EQ(actual_bytes, kNumIovecs);
+  EXPECT_EQ(actual_handles, 0u);
+  for (uint32_t i = 0; i < kNumIovecs; ++i) {
+    EXPECT_EQ(read_buf[i], static_cast<char>('a' + i));
+  }
+}
+
 }  // namespace
 }  // namespace channel
