@@ -324,7 +324,11 @@ kernel_bindgen_crate("page-queues-bindings") {
     "cpp_page_queues_debug_page_is_reclaim",
     "cpp_page_queues_rotate_reclaim_queues",
   ]
-  type_allowlist = [ "PageQueues" ]
+  type_allowlist = [
+    "AgeReason",
+    "LruAction",
+    "PageQueues",
+  ]
   type_blocklist = [
     "fbl_RefPtr",
     "vm_page_t",
@@ -335,11 +339,14 @@ kernel_bindgen_crate("page-queues-bindings") {
     "PageQueues_Counts",
     "PageQueues_ActiveInactiveCounts",
   ]
-  additional_bindgen_flags = [
-    "--opaque-type=PageQueues",
-    "--no-recursive-allowlist",
-    "--blocklist-function=PageQueues_.*",
+  var_allowlist = [ "PageQueues_k.*" ]
+  opaque_types = [ "PageQueues" ]
+  rustified_enum = [
+    "PageQueues_AgeReason",
+    "PageQueues_LruAction",
   ]
+  function_blocklist = [ "PageQueues_.*" ]
+  additional_bindgen_flags = [ "--no-recursive-allowlist" ]
   deps = [
     ":page-bindings",
     "//sdk/rust/zx-types",
@@ -347,6 +354,7 @@ kernel_bindgen_crate("page-queues-bindings") {
   raw_lines = [
     "#![no_std]",
     "use page_bindings::vm_page_t;",
+    "pub use zx_types::zx_duration_mono_t;",
     "pub use zx_types::zx_paddr_t;",
   ]
   expect_lints = [
