@@ -235,15 +235,6 @@ impl TxState {
     }
 }
 
-/// Configuration for a single Tx VMO.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) struct TxVmoConfig {
-    /// The VMO ID.
-    pub(super) vmo_id: netdev::VmoId,
-    /// Number of Tx buffers to allocate in this VMO.
-    pub(super) num_buffers: u16,
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

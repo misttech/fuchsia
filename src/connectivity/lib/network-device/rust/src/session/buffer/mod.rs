@@ -19,8 +19,7 @@ use static_assertions::{const_assert, const_assert_eq};
 use zx::sys::ZX_MIN_PAGE_SHIFT;
 
 use crate::error::{Error, Result};
-use crate::session::tx::TxVmoConfig;
-use crate::session::{DEFAULT_VMO_ID, Port};
+use crate::session::{DEFAULT_VMO_ID, Port, VmoConfig};
 use types::{ChainLength, DESCID_NO_NEXT};
 
 pub use pool::{
@@ -238,15 +237,16 @@ impl Descriptors {
     ///
     /// * `buffer_stride * total` > u64::MAX.
     fn new(
-        tx_vmos: &[TxVmoConfig],
-        num_rx: NonZeroU16,
+        rx_vmos: &[VmoConfig],
+        tx_vmos: &[VmoConfig],
         buffer_stride: NonZeroU64,
         descriptors_vmo: &zx::Vmo,
     ) -> Result<(Self, Vec<DescId<Tx>>, Vec<DescId<Rx>>)> {
+        let num_rx: u16 = rx_vmos.iter().map(|v| v.num_buffers).sum();
         let num_tx: u16 = tx_vmos.iter().map(|v| v.num_buffers).sum();
         let total = num_tx
-            .checked_add(num_rx.get())
-            .ok_or(Error::Config("too many descriptors".to_string()))?;
+            .checked_add(num_rx)
+            .ok_or_else(|| Error::Config("too many descriptors".to_string()))?;
 
         // The unwrap is safe because it is guaranteed that the base address
         // returned will be non-zero.
@@ -298,20 +298,29 @@ impl Descriptors {
             }
         }
 
-        // Initialize Rx descriptors. They always belong to the default VMO
-        // (represented by `DEFAULT_VMO_ID`). For separate VMOs, offsets in the
-        // default VMO start at 0. For single VMO, offsets share the default VMO
-        // and start after Tx to accommodate existing tests.
-        let single_data_vmo = tx_vmos.len() == 1 && tx_vmos[0].vmo_id == DEFAULT_VMO_ID;
-        rx.iter_mut().enumerate().for_each(|(i, desc)| {
-            let buffer_index_within_vmo = if single_data_vmo {
-                u64::from(desc.get())
-            } else {
-                u64::try_from(i).expect("Rx buffer numbers must fit u64")
-            };
-            let offset = buffer_stride.get() * buffer_index_within_vmo;
-            init_descriptor(&descriptors, desc, offset, DEFAULT_VMO_ID);
-        });
+        // Initialize Rx descriptors. For separate VMOs, offsets in the VMO
+        // start at 0. For a single shared VMO, Rx buffers share the VMO and
+        // start after Tx.
+        let single_data_vmo =
+            tx_vmos.len() == 1 && rx_vmos.len() == 1 && tx_vmos[0].vmo_id == rx_vmos[0].vmo_id;
+        if single_data_vmo {
+            assert_eq!(tx_vmos[0].vmo_id, DEFAULT_VMO_ID);
+            assert_eq!(rx_vmos[0].vmo_id, DEFAULT_VMO_ID);
+        }
+        let mut rx_desc_idx = 0usize;
+        for vmo_config in rx_vmos {
+            for buffer_idx_within_vmo in 0..vmo_config.num_buffers {
+                let desc = &mut rx[rx_desc_idx];
+                let buffer_index_within_vmo = if single_data_vmo {
+                    u64::from(desc.get())
+                } else {
+                    u64::from(buffer_idx_within_vmo)
+                };
+                let offset = buffer_stride.get() * buffer_index_within_vmo;
+                init_descriptor(&descriptors, desc, offset, vmo_config.vmo_id);
+                rx_desc_idx += 1;
+            }
+        }
 
         Ok((descriptors, tx, rx))
     }
@@ -666,13 +675,14 @@ mod tests {
 
     #[test]
     fn get_descriptor_after_vmo_write() {
-        let tx_vmos = &[TxVmoConfig { vmo_id: 0, num_buffers: TX_BUFFERS.get() }];
+        let rx_vmos = &[VmoConfig { vmo_id: 0, num_buffers: RX_BUFFERS.get() }];
+        let tx_vmos = &[VmoConfig { vmo_id: 0, num_buffers: TX_BUFFERS.get() }];
         let count = TX_BUFFERS.get() + RX_BUFFERS.get();
         let size = u64::try_from(NETWORK_DEVICE_DESCRIPTOR_LENGTH * usize::from(count))
             .expect("vmo_size overflows u64");
         let vmo = zx::Vmo::create(size).expect("create descriptors VMO");
         let (descriptors, tx, rx) =
-            Descriptors::new(tx_vmos, RX_BUFFERS, BUFFER_STRIDE, &vmo).expect("create descriptors");
+            Descriptors::new(rx_vmos, tx_vmos, BUFFER_STRIDE, &vmo).expect("create descriptors");
         vmo.write(&[netdev::FrameType::Ethernet.into_primitive()][..], 0).expect("vmo write");
         assert_eq!(tx.len(), usize::from(TX_BUFFERS.get()));
         assert_eq!(rx.len(), usize::from(RX_BUFFERS.get()));
@@ -687,13 +697,14 @@ mod tests {
         const HEAD_LEN: u16 = 1;
         const DATA_LEN: u32 = 2;
         const TAIL_LEN: u16 = 3;
-        let tx_vmos = &[TxVmoConfig { vmo_id: 0, num_buffers: TX_BUFFERS.get() }];
+        let rx_vmos = &[VmoConfig { vmo_id: 0, num_buffers: RX_BUFFERS.get() }];
+        let tx_vmos = &[VmoConfig { vmo_id: 0, num_buffers: TX_BUFFERS.get() }];
         let count = TX_BUFFERS.get() + RX_BUFFERS.get();
         let size = u64::try_from(NETWORK_DEVICE_DESCRIPTOR_LENGTH * usize::from(count))
             .expect("vmo_size overflows u64");
         let vmo = zx::Vmo::create(size).expect("create descriptors VMO");
         let (descriptors, mut tx, _rx) =
-            Descriptors::new(tx_vmos, RX_BUFFERS, BUFFER_STRIDE, &vmo).expect("create descriptors");
+            Descriptors::new(rx_vmos, tx_vmos, BUFFER_STRIDE, &vmo).expect("create descriptors");
         {
             let mut descriptor = descriptors.borrow_mut(&mut tx[0]);
             descriptor.initialize(ChainLength::ZERO, HEAD_LEN, DATA_LEN, TAIL_LEN);

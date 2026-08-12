@@ -156,10 +156,10 @@ impl Pool {
         };
 
         let descriptor_count = config
-            .num_rx_buffers
+            .num_rx_buffers()
             .get()
             .checked_add(config.num_tx_buffers().get())
-            .ok_or(Error::Config("too many descriptors".to_string()))?;
+            .ok_or_else(|| Error::Config("too many descriptors".to_string()))?;
         let descriptor_vmo_size =
             u64::try_from(super::NETWORK_DEVICE_DESCRIPTOR_LENGTH * usize::from(descriptor_count))
                 .expect("vmo_size overflows u64");
@@ -169,18 +169,14 @@ impl Pool {
 
         let Config {
             buffer_stride,
-            num_rx_buffers,
+            rx_vmos,
             tx_vmos,
             options,
             buffer_layout,
             buffer_usage_sample_interval: _,
         } = config;
-        let num_tx_buffers = {
-            let sum: u16 = tx_vmos.iter().map(|v| v.num_buffers).sum();
-            NonZeroU16::new(sum).expect("num_tx_buffers is zero")
-        };
-        let num_buffers = num_rx_buffers.get() + num_tx_buffers.get();
-        let single_data_vmo = tx_vmos.len() == 1 && tx_vmos[0].vmo_id == DEFAULT_VMO_ID;
+        let single_data_vmo =
+            tx_vmos.len() == 1 && rx_vmos.len() == 1 && tx_vmos[0].vmo_id == rx_vmos[0].vmo_id;
         let decommittable_tx_vmo_ids = if single_data_vmo {
             vec![]
         } else {
@@ -189,9 +185,12 @@ impl Pool {
 
         let page_size = u64::from(zx::system_get_page_size());
         let data_vmos = if single_data_vmo {
+            assert_eq!(tx_vmos[0].vmo_id, DEFAULT_VMO_ID);
+            assert_eq!(rx_vmos[0].vmo_id, DEFAULT_VMO_ID);
             const VMO_NAME: zx::Name =
                 const_unwrap::const_unwrap_result(zx::Name::new("netdevice:data"));
-            let size = (buffer_stride.get() * u64::from(num_buffers)).next_multiple_of(page_size);
+            let size =
+                (buffer_stride.get() * u64::from(descriptor_count)).next_multiple_of(page_size);
             let data_vmo = create_and_name_vmo(size, &VMO_NAME)?;
             vec![data_vmo]
         } else {
@@ -200,21 +199,20 @@ impl Pool {
             const TX_VMO_NAME: zx::Name =
                 const_unwrap::const_unwrap_result(zx::Name::new("netdevice:tx_data"));
 
-            let rx_size =
-                (buffer_stride.get() * u64::from(num_rx_buffers.get())).next_multiple_of(page_size);
-            let rx_vmo = create_and_name_vmo(rx_size, &RX_VMO_NAME)?;
-
-            std::iter::once(Ok(rx_vmo))
-                .chain(tx_vmos.iter().map(|vmo_config| {
+            rx_vmos
+                .iter()
+                .map(|vmo_config| (vmo_config, &RX_VMO_NAME))
+                .chain(tx_vmos.iter().map(|vmo_config| (vmo_config, &TX_VMO_NAME)))
+                .map(|(vmo_config, name)| {
                     let size = (buffer_stride.get() * u64::from(vmo_config.num_buffers))
                         .next_multiple_of(page_size);
-                    create_and_name_vmo(size, &TX_VMO_NAME)
-                }))
+                    create_and_name_vmo(size, name)
+                })
                 .collect::<Result<Vec<_>>>()?
         };
 
         let (descriptors, mut tx_free, mut rx_free) =
-            Descriptors::new(&tx_vmos, num_rx_buffers, buffer_stride, &descriptors_vmo)?;
+            Descriptors::new(&rx_vmos, &tx_vmos, buffer_stride, &descriptors_vmo)?;
 
         for rx_desc in rx_free.iter_mut() {
             descriptors.borrow_mut(rx_desc).initialize(
@@ -267,14 +265,14 @@ impl Pool {
             .map_err(|status| Error::Map("allocate vmar", status))?;
         let base = NonNull::new(vmar_start as *mut u8).expect("must not be null");
 
-        map_data_vmo(&vmar, 0, 0)?;
+        for i in 0..rx_vmos.len() {
+            map_data_vmo(&vmar, i, 0)?;
+        }
 
         let decommittable_tx_vmar = (!single_data_vmo)
             .then(|| {
-                // TODO(https://fxbug.dev/438527741): Remove this constant when Rx path
-                // supports dynamic VMO management.
-                const NUM_RX_VMO: usize = 1;
-                let rx_size = vmo_offsets[NUM_RX_VMO];
+                let num_rx_vmo = rx_vmos.len();
+                let rx_size = vmo_offsets[num_rx_vmo];
                 let tx_vmar_len = total_len - rx_size;
                 let (tx_vmar, _tx_vmar_base) = vmar
                     .allocate(
@@ -286,7 +284,7 @@ impl Pool {
                             | zx::VmarFlags::CAN_MAP_SPECIFIC,
                     )
                     .map_err(|status| Error::Map("allocate tx-vmar", status))?;
-                for i in NUM_RX_VMO..data_vmos.len() {
+                for i in num_rx_vmo..data_vmos.len() {
                     map_data_vmo(&tx_vmar, i, rx_size)?;
                 }
                 Ok::<_, Error>(tx_vmar)
@@ -1622,7 +1620,7 @@ mod tests {
     use std::pin::pin;
     use std::task::Poll;
 
-    use crate::session::tx::TxVmoConfig;
+    use crate::session::VmoConfig;
 
     const DEFAULT_MIN_TX_BUFFER_HEAD: u16 = 4;
     const DEFAULT_MIN_TX_BUFFER_TAIL: u16 = 8;
@@ -1642,8 +1640,11 @@ mod tests {
     fn default_config() -> Config {
         Config {
             buffer_stride: NonZeroU64::new(DEFAULT_BUFFER_LENGTH.get() as u64).unwrap(),
-            num_rx_buffers: DEFAULT_RX_BUFFERS,
-            tx_vmos: vec![TxVmoConfig {
+            rx_vmos: vec![VmoConfig {
+                vmo_id: DEFAULT_VMO_ID,
+                num_buffers: DEFAULT_RX_BUFFERS.get(),
+            }],
+            tx_vmos: vec![VmoConfig {
                 vmo_id: DEFAULT_VMO_ID,
                 num_buffers: DEFAULT_TX_BUFFERS.get(),
             }],
@@ -2355,10 +2356,9 @@ mod tests {
     #[test]
     fn vmo_indices_tracking() {
         let mut config = default_config();
-        config.tx_vmos = vec![
-            TxVmoConfig { vmo_id: 0, num_buffers: 2 },
-            TxVmoConfig { vmo_id: 1, num_buffers: 4 },
-        ];
+        config.rx_vmos = vec![VmoConfig { vmo_id: 0, num_buffers: DEFAULT_RX_BUFFERS.get() }];
+        config.tx_vmos =
+            vec![VmoConfig { vmo_id: 1, num_buffers: 2 }, VmoConfig { vmo_id: 2, num_buffers: 4 }];
 
         let (pool, _descriptors, _vmos) = Pool::new_test_pool(config);
 
@@ -2471,8 +2471,7 @@ mod tests {
         let mut config = default_config();
         config.buffer_layout.length = 64;
         config.buffer_stride = NonZeroU64::new(64).unwrap();
-        config.tx_vmos = vec![TxVmoConfig { vmo_id: DEFAULT_VMO_ID, num_buffers: 1 }];
-        config.num_rx_buffers = NonZeroU16::new(1).unwrap();
+        config.tx_vmos = vec![VmoConfig { vmo_id: DEFAULT_VMO_ID, num_buffers: 1 }];
 
         let (mut pool, _descriptors_vmo, _data_vmos) = Pool::new_test_pool(config);
         Arc::get_mut(&mut pool)

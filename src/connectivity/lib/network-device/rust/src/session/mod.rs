@@ -34,7 +34,7 @@ use buffer::{
 pub use buffer::{
     Buffer, ChecksumRxOffloading, Rx, RxMetadata, SinglePartTxBuffer, Tx, TxMetadataMut,
 };
-use tx::{BufferUsageEstimator, TxState, TxVmoConfig};
+use tx::{BufferUsageEstimator, TxState};
 
 // TODO(https://fxbug.dev/438527741): This is the VMO ID used for single VMO
 // clients (Rx + Tx in the same VMO). When VMO split is applied everywhere,
@@ -268,8 +268,12 @@ impl Inner {
                 .enumerate()
                 .map(|(idx, vmo)| {
                     let vmo_id = netdev::VmoId::try_from(idx).expect("invalid vmo id");
-                    let num_rx_buffers =
-                        if vmo_id == DEFAULT_VMO_ID { config.num_rx_buffers.get() } else { 0 };
+                    let num_rx_buffers = config
+                        .rx_vmos
+                        .iter()
+                        .find(|v| v.vmo_id == vmo_id)
+                        .map(|v| v.num_buffers)
+                        .unwrap_or(0);
                     fidl_fuchsia_hardware_network::DataVmo {
                         id: Some(vmo_id),
                         vmo: Some(vmo),
@@ -283,7 +287,9 @@ impl Inner {
                 data: Some(data),
                 descriptor_version: Some(NETWORK_DEVICE_DESCRIPTOR_VERSION),
                 descriptor_length: Some(descriptor_length),
-                descriptor_count: Some(config.num_tx_buffers().get() + config.num_rx_buffers.get()),
+                descriptor_count: Some(
+                    config.num_tx_buffers().get() + config.num_rx_buffers().get(),
+                ),
                 options: Some(config.options),
                 ..Default::default()
             }
@@ -308,7 +314,7 @@ impl Inner {
         zx::Status::ok(status).map_err(Error::RegisterForTx)?;
         assert_eq!(s, 1);
 
-        let num_rx_buffers = config.num_rx_buffers.get().into();
+        let num_rx_buffers = config.num_rx_buffers().get().into();
 
         Ok(Arc::new(Self {
             pool,
@@ -441,15 +447,24 @@ impl Future for Task {
     }
 }
 
+/// Configuration for a single VMO.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct VmoConfig {
+    /// The VMO ID.
+    pub(crate) vmo_id: netdev::VmoId,
+    /// Number of buffers to allocate in this VMO.
+    pub(crate) num_buffers: u16,
+}
+
 /// Session configuration.
 #[derive(Debug, Clone)]
 pub struct Config {
     /// Buffer stride on VMO, in bytes.
     buffer_stride: NonZeroU64,
-    /// Number of rx descriptors to allocate.
-    num_rx_buffers: NonZeroU16,
+    /// Collection of rx VMO configurations.
+    rx_vmos: Vec<VmoConfig>,
     /// Collection of tx VMO configurations.
-    tx_vmos: Vec<TxVmoConfig>,
+    tx_vmos: Vec<VmoConfig>,
     /// Session flags.
     options: netdev::SessionFlags,
     /// Buffer layout.
@@ -458,6 +473,12 @@ pub struct Config {
 }
 
 impl Config {
+    /// Returns the total number of Rx buffers across all VMOs.
+    pub fn num_rx_buffers(&self) -> NonZeroU16 {
+        let sum: u16 = self.rx_vmos.iter().map(|v| v.num_buffers).sum();
+        NonZeroU16::new(sum).expect("num_rx_buffers is zero")
+    }
+
     /// Returns the total number of Tx buffers across all VMOs.
     pub fn num_tx_buffers(&self) -> NonZeroU16 {
         let sum: u16 = self.tx_vmos.iter().map(|v| v.num_buffers).sum();
@@ -578,7 +599,7 @@ impl DeviceInfo {
                     min_tx_buffer_head,
                     min_tx_buffer_tail,
                     max_buffer_parts: _,
-                    min_rx_buffers: _,
+                    min_rx_buffers,
                 },
         } = self;
         if NETWORK_DEVICE_DESCRIPTOR_VERSION != *descriptor_version {
@@ -603,9 +624,8 @@ impl DeviceInfo {
 
         let num_rx_buffers =
             NonZeroU16::new(*rx_depth).ok_or_else(|| Error::Config("no RX buffers".to_owned()))?;
-        if *tx_depth == 0 {
-            return Err(Error::Config("no TX buffers".to_owned()));
-        }
+        let num_tx_buffers =
+            NonZeroU16::new(*tx_depth).ok_or_else(|| Error::Config("no TX buffers".to_owned()))?;
 
         let max_buffer_length = max_buffer_length
             .and_then(|max| {
@@ -655,11 +675,14 @@ impl DeviceInfo {
             )));
         }
 
-        let num_buffers =
-            rx_depth.checked_add(*tx_depth).filter(|num| *num != u16::MAX).ok_or_else(|| {
+        let num_buffers = num_rx_buffers
+            .get()
+            .checked_add(num_tx_buffers.get())
+            .filter(|num| *num != u16::MAX)
+            .ok_or_else(|| {
                 Error::Config(format!(
                     "too many buffers requested: {} + {} > u16::MAX",
-                    rx_depth, tx_depth
+                    num_rx_buffers, num_tx_buffers
                 ))
             })?;
 
@@ -701,31 +724,51 @@ impl DeviceInfo {
         options.set(netdev::SessionFlags::RECEIVE_RX_POWER_LEASES, watch_rx_leases);
 
         let page_size = u64::from(zx::system_get_page_size());
-        let min_tx_buffers = u16::try_from(std::cmp::max(1, page_size / buffer_stride.get()))
-            .map_err(|TryFromIntError { .. }| Error::Config("Too many Tx buffers".to_owned()))?;
+        let min_buffers_per_vmo = u16::try_from(std::cmp::max(1, page_size / buffer_stride.get()))
+            .map_err(|TryFromIntError { .. }| {
+                Error::Config("Too many buffers per VMO".to_owned())
+            })?;
 
-        let tx_vmos = if multi_vmo {
-            let mut tx_vmos = Vec::new();
-            let mut current_buffers = min_tx_buffers;
-            let mut total_allocated = 0u16;
-            let mut vmo_id = 1;
-            while total_allocated < *tx_depth {
-                let num_buffers = std::cmp::min(current_buffers, *tx_depth - total_allocated);
-                tx_vmos.push(TxVmoConfig { vmo_id, num_buffers });
-                total_allocated += num_buffers;
-                vmo_id += 1;
-                if vmo_id > 2 {
-                    current_buffers *= 2;
+        let allocate_vmos =
+            |total_depth: u16, min_buffers: u16, start_vmo_id: u8| -> Result<Vec<VmoConfig>> {
+                let mut vmos = Vec::new();
+                let mut current_buffers = min_buffers;
+                let mut total_allocated = 0u16;
+                let mut vmo_id = start_vmo_id;
+                let mut vmos_allocated = 0;
+                while total_allocated < total_depth {
+                    let num_buffers = std::cmp::min(current_buffers, total_depth - total_allocated);
+                    vmos.push(VmoConfig { vmo_id, num_buffers });
+                    total_allocated += num_buffers;
+                    vmo_id = vmo_id
+                        .checked_add(1)
+                        .ok_or_else(|| Error::Config("too many vmos".to_string()))?;
+                    vmos_allocated += 1;
+                    if vmos_allocated > 1 {
+                        current_buffers = current_buffers.saturating_mul(2);
+                    }
                 }
-            }
-            tx_vmos
+                Ok(vmos)
+            };
+
+        let (rx_vmos, tx_vmos) = if multi_vmo {
+            let min_rx_buffers = min_rx_buffers.unwrap_or(num_rx_buffers);
+            let rx_vmos =
+                allocate_vmos(num_rx_buffers.get(), min_rx_buffers.get(), DEFAULT_VMO_ID)?;
+            let next_vmo_id = u8::try_from(rx_vmos.len())
+                .map_err(|_| Error::Config("too many rx vmos".to_string()))?;
+            let tx_vmos = allocate_vmos(num_tx_buffers.get(), min_buffers_per_vmo, next_vmo_id)?;
+            (rx_vmos, tx_vmos)
         } else {
-            vec![TxVmoConfig { vmo_id: DEFAULT_VMO_ID, num_buffers: *tx_depth }]
+            (
+                vec![VmoConfig { vmo_id: DEFAULT_VMO_ID, num_buffers: num_rx_buffers.get() }],
+                vec![VmoConfig { vmo_id: DEFAULT_VMO_ID, num_buffers: num_tx_buffers.get() }],
+            )
         };
 
         Ok(Config {
             buffer_stride,
-            num_rx_buffers,
+            rx_vmos,
             tx_vmos,
             options,
             buffer_layout: BufferLayout {
@@ -1220,12 +1263,64 @@ mod tests {
         let Config {
             buffer_layout: BufferLayout { length, min_tx_data: _, min_tx_head: _, min_tx_tail: _ },
             buffer_stride: _,
-            num_rx_buffers: _,
+            rx_vmos: _,
             tx_vmos: _,
             options: _,
             buffer_usage_sample_interval: _,
         } = config;
         assert_eq!(length, expected_length);
+    }
+
+    #[test]
+    fn multi_vmo_allocation_scheme() {
+        let info = DeviceInfo {
+            base_info: DeviceBaseInfo { rx_depth: 16, tx_depth: 16, ..DEFAULT_DEVICE_BASE_INFO },
+            ..DEFAULT_DEVICE_INFO
+        };
+        let config = info
+            .make_config(DerivableConfig { multi_vmo: true, ..Default::default() })
+            .expect("is valid");
+        let Config { rx_vmos, tx_vmos, .. } = config;
+        let expected_rx = vec![VmoConfig { vmo_id: 0, num_buffers: 16 }];
+        let expected_tx = vec![
+            VmoConfig { vmo_id: 1, num_buffers: 2 },
+            VmoConfig { vmo_id: 2, num_buffers: 2 },
+            VmoConfig { vmo_id: 3, num_buffers: 4 },
+            VmoConfig { vmo_id: 4, num_buffers: 8 },
+        ];
+        assert_eq!(rx_vmos, expected_rx);
+        assert_eq!(tx_vmos, expected_tx);
+    }
+
+    #[test]
+    fn multi_vmo_allocation_scheme_with_min_rx_buffers() {
+        let info = DeviceInfo {
+            base_info: DeviceBaseInfo {
+                rx_depth: 16,
+                tx_depth: 16,
+                min_rx_buffers: NonZeroU16::new(2),
+                ..DEFAULT_DEVICE_BASE_INFO
+            },
+            ..DEFAULT_DEVICE_INFO
+        };
+        let config = info
+            .make_config(DerivableConfig { multi_vmo: true, ..Default::default() })
+            .expect("is valid");
+        let Config { rx_vmos, tx_vmos, .. } = config;
+        let expected_rx = vec![
+            VmoConfig { vmo_id: 0, num_buffers: 2 },
+            VmoConfig { vmo_id: 1, num_buffers: 2 },
+            VmoConfig { vmo_id: 2, num_buffers: 4 },
+            VmoConfig { vmo_id: 3, num_buffers: 8 },
+        ];
+        let expected_tx = vec![
+            VmoConfig { vmo_id: 4, num_buffers: 2 },
+            VmoConfig { vmo_id: 5, num_buffers: 2 },
+            VmoConfig { vmo_id: 6, num_buffers: 4 },
+            VmoConfig { vmo_id: 7, num_buffers: 8 },
+        ];
+        assert_eq!(rx_vmos, expected_rx);
+        assert_eq!(tx_vmos, expected_tx);
     }
 
     pub(super) fn make_fifos<K: AllocKind>() -> (Fifo<DescId<K>>, zx::Fifo<DescId<K>>) {
