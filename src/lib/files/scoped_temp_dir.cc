@@ -36,7 +36,7 @@ void GenerateRandName(char* tp) {
   struct timespec ts;
   unsigned long r;
 
-  clock_gettime(CLOCK_REALTIME, &ts);
+  clock_gettime(CLOCK_MONOTONIC, &ts);
   r = ts.tv_nsec * 65537 ^
       (reinterpret_cast<uintptr_t>(&ts) / 16 + reinterpret_cast<uintptr_t>(tp));
   for (size_t i = 0; i < 6; i++, r >>= 5) {
