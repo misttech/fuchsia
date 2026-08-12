@@ -181,6 +181,7 @@ class NetworkDevice : public Device,
     size_t count_ = 0;
   };
   FifoQueue rx_in_flight_ __TA_GUARDED(rx_lock_);
+  bool rx_space_requested_ __TA_GUARDED(rx_lock_) = false;
 
   std::array<uint32_t, kMaxDepth> tx_in_flight_buffer_ids_ __TA_GUARDED(tx_lock_);
   std::bitset<kMaxDepth> tx_in_flight_active_ __TA_GUARDED(tx_lock_);

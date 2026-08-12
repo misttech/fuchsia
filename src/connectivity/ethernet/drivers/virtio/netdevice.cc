@@ -355,6 +355,14 @@ bool NetworkDevice::IrqRingUpdateInternal() {
       rx_.FreeDesc(id);
     });
     more_work |= rx_.ClearNoInterruptCheckHasWork();
+    if (rx_in_flight_.Empty() && !rx_space_requested_) {
+      rx_space_requested_ = true;
+      if (fidl::OneWayStatus status = ifc_.buffer(arena)->RequestRxSpace(rx_depth_); !status.ok()) {
+        fdf::error("Failed to request {} RX space: {}", rx_depth_, status.FormatDescription());
+        RemoveDevice();
+        return false;
+      }
+    }
   }
   if (size_t count = std::distance(rx_buffers.begin(), rx_it); count != 0) {
     if (fidl::OneWayStatus status = ifc_.buffer(arena)->CompleteRx(
@@ -462,6 +470,7 @@ void NetworkDevice::Start(fdf::Arena& arena, StartCompleter::Sync& completer) {
         return status;
       }
       rx_ = std::move(rx_queue);
+      rx_space_requested_ = false;
       Ring tx_queue(this);
       if (zx_status_t status = tx_queue.Init(kTxId, tx_depth_); status != ZX_OK) {
         fdf::error("failed to allocate tx virtqueue: {}", zx_status_get_string(status));
@@ -577,6 +586,7 @@ void NetworkDevice::Stop(fdf::Arena& arena, StopCompleter::Sync& completer) {
           };
           *parts_iter++ = {.id = d.buffer_id};
         }
+        rx_space_requested_ = false;
       }
       if (iter != rx_return.begin()) {
         const size_t count = std::distance(rx_return.begin(), iter);
@@ -598,19 +608,27 @@ void NetworkDevice::Stop(fdf::Arena& arena, StopCompleter::Sync& completer) {
 void NetworkDevice::GetInfo(
     fdf::Arena& arena,
     fdf::WireServer<netdev::NetworkDeviceImpl>::GetInfoCompleter::Sync& completer) {
-  netdev::wire::DeviceImplInfo info = netdev::wire::DeviceImplInfo::Builder(arena)
-                                          .tx_depth(tx_depth_)
-                                          .rx_depth(rx_depth_)
-                                          .rx_threshold(static_cast<uint16_t>(rx_depth_ / 2))
-                                          .max_buffer_parts(1)
-                                          .max_buffer_length(kFrameSize)
-                                          .buffer_alignment(kBufferAlignment)
-                                          .min_rx_buffer_length(kFrameSize)
-                                          // Minimum Ethernet frame size on the wire according to
-                                          // IEEE 802.3, minus the frame check sequence.
-                                          .min_tx_buffer_length(60)
-                                          .tx_head_length(virtio_hdr_len_)
-                                          .Build();
+  netdev::wire::DeviceImplInfo info =
+      netdev::wire::DeviceImplInfo::Builder(arena)
+          .tx_depth(tx_depth_)
+          .rx_depth(rx_depth_)
+          .rx_threshold(static_cast<uint16_t>(rx_depth_ / 2))
+          .max_buffer_parts(1)
+          .max_buffer_length(kFrameSize)
+          .buffer_alignment(kBufferAlignment)
+          .min_rx_buffer_length(kFrameSize)
+          .min_rx_buffers(rx_depth_ / 2)
+          // Minimum Ethernet frame size on the wire according to
+          // IEEE 802.3, minus the frame check sequence.
+          .min_tx_buffer_length(60)
+          .tx_head_length(virtio_hdr_len_)
+          .rx_buffer_management(netdev::wire::RxBufferManagement::WithSimple(
+              arena,
+              netdev::wire::Simple{
+                  // Empirically chosen by using a local emulator.
+                  .delay_budget = ZX_USEC(500),
+              }))
+          .Build();
   completer.buffer(arena).Reply(info);
 }
 
@@ -700,6 +718,7 @@ void NetworkDevice::QueueRxSpace(
     fdf::Arena& arena, QueueRxSpaceCompleter::Sync& completer) {
   network::SharedAutoLock lock(&state_lock_);
   std::lock_guard rx_lock(rx_lock_);
+  rx_space_requested_ = false;
   for (const auto& buffer : request->buffers) {
     const netdev::wire::BufferRegion& data = buffer.region;
 

@@ -277,8 +277,10 @@ class NetworkDeviceTests : public testing::Test, public fdf::WireServer<netdev::
                             UpdateRxBufferParamsCompleter::Sync& completer) override {
     completer.buffer(arena).Reply(fit::ok());
   }
-  void RequestRxSpace(netdev::wire::NetworkDeviceIfcRequestRxSpaceRequest* request,
-                      fdf::Arena& arena, RequestRxSpaceCompleter::Sync& completer) override {}
+  MOCK_METHOD(void, RequestRxSpace,
+              (netdev::wire::NetworkDeviceIfcRequestRxSpaceRequest * request, fdf::Arena& arena,
+               RequestRxSpaceCompleter::Sync& completer),
+              (override));
 
   void WithDevice(fit::callback<void(NetworkDevice&)> callback) {
     driver_test_.RunInDriverContext([&](VirtioNetDriver& driver) {
@@ -306,6 +308,10 @@ class NetworkDeviceTests : public testing::Test, public fdf::WireServer<netdev::
       std::scoped_lock lock(device.rx_lock_);
       callback(device, device.rx_.vring_unsafe());
     });
+  }
+  bool IsRxSpaceRequested(NetworkDevice& device) {
+    std::scoped_lock lock(device.rx_lock_);
+    return device.rx_space_requested_;
   }
 
  private:
@@ -922,6 +928,93 @@ TEST_P(VirtioVersionTests, Tx) {
   // Call irq handler and verify all buffers are returned.
   WithDevice([&](NetworkDevice& device) { device.IrqRingUpdate(); });
   completed_tx.Wait();
+}
+
+TEST_F(NetworkDeviceTests, RequestRxSpaceDebounced) {
+  ASSERT_NO_FATAL_FAILURE(StartDevice());
+  ASSERT_NO_FATAL_FAILURE(PrepareVmo());
+
+  netdev::wire::BufferRegion region = {
+      .vmo = kVmoId,
+      .offset = 0,
+      .length = NetworkDevice::kFrameSize,
+  };
+  netdev::wire::RxSpaceBuffer rx_space = {
+      .id = 1,
+      .region = region,
+  };
+
+  fdf::Arena arena(0u);
+  // Queue 1 Rx buffer.
+  ASSERT_OK(
+      netdev()
+          .buffer(arena)
+          ->QueueRxSpace(fidl::VectorView<netdev::wire::RxSpaceBuffer>::FromExternal(&rx_space, 1))
+          .status());
+
+  WithDevice([&](NetworkDevice& device) { EXPECT_FALSE(IsRxSpaceRequested(device)); });
+
+  // Mark the Rx buffer as used so it is completed during IrqRingUpdate, leaving rx_in_flight_
+  // empty.
+  WithRxRing([&](NetworkDevice& device, vring& rx_ring) {
+    uint16_t desc_idx = rx_ring.avail->ring[rx_ring.avail->idx - 1];
+    rx_ring.used->ring[rx_ring.used->idx++] = {
+        .id = desc_idx,
+        .len = static_cast<uint32_t>(device.virtio_header_len() + 10),
+    };
+  });
+
+  libsync::Completion rx_space_requested;
+  EXPECT_CALL(*this, RequestRxSpace)
+      .WillOnce([&](netdev::wire::NetworkDeviceIfcRequestRxSpaceRequest* request, fdf::Arena& arena,
+                    RequestRxSpaceCompleter::Sync& completer) {
+        EXPECT_EQ(request->requested, NetworkDevice::kMaxDepth);
+        rx_space_requested.Signal();
+      });
+  EXPECT_CALL(*this, CompleteRx).Times(testing::AnyNumber());
+
+  WithDevice([&](NetworkDevice& device) { device.IrqRingUpdate(); });
+
+  rx_space_requested.Wait();
+  WithDevice([&](NetworkDevice& device) { EXPECT_TRUE(IsRxSpaceRequested(device)); });
+
+  // Subsequent IrqRingUpdate calls while rx_in_flight_ is still empty will not call RequestRxSpace
+  // again.
+  EXPECT_CALL(*this, RequestRxSpace).Times(0);
+  WithDevice([&](NetworkDevice& device) { device.IrqRingUpdate(); });
+
+  // Queueing new Rx buffers resets the debouncing flag.
+  ASSERT_OK(
+      netdev()
+          .buffer(arena)
+          ->QueueRxSpace(fidl::VectorView<netdev::wire::RxSpaceBuffer>::FromExternal(&rx_space, 1))
+          .status());
+  WithDevice([&](NetworkDevice& device) { EXPECT_FALSE(IsRxSpaceRequested(device)); });
+
+  // Now consume the newly queued Rx buffer. It should trigger RequestRxSpace again.
+  WithRxRing([&](NetworkDevice& device, vring& rx_ring) {
+    uint16_t desc_idx = rx_ring.avail->ring[rx_ring.avail->idx - 1];
+    rx_ring.used->ring[rx_ring.used->idx++] = {
+        .id = desc_idx,
+        .len = static_cast<uint32_t>(device.virtio_header_len() + 10),
+    };
+  });
+
+  rx_space_requested.Reset();
+  EXPECT_CALL(*this, RequestRxSpace)
+      .WillOnce([&](netdev::wire::NetworkDeviceIfcRequestRxSpaceRequest* request, fdf::Arena& arena,
+                    RequestRxSpaceCompleter::Sync& completer) {
+        EXPECT_EQ(request->requested, NetworkDevice::kMaxDepth);
+        rx_space_requested.Signal();
+      });
+
+  WithDevice([&](NetworkDevice& device) { device.IrqRingUpdate(); });
+  rx_space_requested.Wait();
+  WithDevice([&](NetworkDevice& device) { EXPECT_TRUE(IsRxSpaceRequested(device)); });
+
+  // Stop resets rx_space_requested_.
+  ASSERT_OK(netdev().buffer(arena)->Stop().status());
+  WithDevice([&](NetworkDevice& device) { EXPECT_FALSE(IsRxSpaceRequested(device)); });
 }
 
 INSTANTIATE_TEST_SUITE_P(NetworkDeviceTests, VirtioVersionTests, testing::Values(true, false),
