@@ -20,6 +20,11 @@ void cpp_dispatcher_update_state_locked(Dispatcher* disp, zx_signals_t clear_mas
   disp->UpdateStateLocked(clear_mask, set_mask);
 }
 
+zx_signals_t cpp_dispatcher_signals_state_locked(const Dispatcher* disp)
+    TA_NO_THREAD_SAFETY_ANALYSIS {
+  return disp->GetSignalsStateLocked();
+}
+
 void* cpp_dispatcher_get_ref_counted(const Dispatcher* disp) {
   return disp->get_ref_counted_base();
 }

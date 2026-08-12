@@ -18,6 +18,9 @@ unsafe extern "C" {
         clear_mask: u32,
         set_mask: u32,
     );
+    pub(crate) fn cpp_dispatcher_signals_state_locked(
+        dispatcher: *const Dispatcher,
+    ) -> zx_types::zx_signals_t;
     pub(crate) fn cpp_dispatcher_get_ref_counted(
         dispatcher: *const Dispatcher,
     ) -> *mut core::ffi::c_void;

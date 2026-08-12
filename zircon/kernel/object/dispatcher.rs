@@ -6,8 +6,8 @@
 
 use super::dispatcher_ffi::{
     cpp_dispatcher_get_ref_counted, cpp_dispatcher_get_related_koid, cpp_dispatcher_get_type,
-    cpp_dispatcher_on_zero_handles, cpp_dispatcher_recycle, cpp_dispatcher_update_state,
-    cpp_dispatcher_update_state_locked,
+    cpp_dispatcher_on_zero_handles, cpp_dispatcher_recycle, cpp_dispatcher_signals_state_locked,
+    cpp_dispatcher_update_state, cpp_dispatcher_update_state_locked,
 };
 use super::handle::HandleValue;
 use super::process_dispatcher_ffi::cpp_handle_table_get_dispatcher;
@@ -52,6 +52,15 @@ pub trait DispatcherOps {
         unsafe {
             cpp_dispatcher_update_state_locked(self.dispatcher(), clear_mask, set_mask);
         }
+    }
+
+    fn signals_state_locked(
+        &self,
+        _token: &LockToken<'_, Self::LockClass>,
+    ) -> zx_types::zx_signals_t {
+        // SAFETY: self.dispatcher() is valid, and the proof token guarantees the state lock is
+        // held.
+        unsafe { cpp_dispatcher_signals_state_locked(self.dispatcher()) }
     }
 }
 
