@@ -437,12 +437,12 @@ function main {
 
       -h|--help)
         fx-print-command-help "${BASH_SOURCE[0]}"
-        exit 1
+        exit 0
         ;;
 
       --help-toolchains)
         print-toolchain-help
-        exit 1
+        exit 0
         ;;
 
       # When building GN targets, --host is an alias for --toolchain=host
