@@ -513,4 +513,19 @@ TEST(FifoTest, ReadWriteBadActualCountReturnsInvalidArgs) {
                 ZX_ERR_INVALID_ARGS);
 }
 
+TEST(FifoTest, ReadWriteKernelAddressBufferReturnsInvalidArgs) {
+  zx::fifo fifo_a, fifo_b;
+  ASSERT_OK(zx::fifo::create(4, kElementSize, 0, &fifo_a, &fifo_b));
+
+  void* kernel_buffer = reinterpret_cast<void*>(~0UL);
+  size_t actual_count = 0;
+
+  EXPECT_STATUS(fifo_a.write(kElementSize, kernel_buffer, 1, &actual_count), ZX_ERR_INVALID_ARGS);
+
+  ElementType element = 1;
+  ASSERT_OK(fifo_a.write(kElementSize, &element, 1, &actual_count));
+
+  EXPECT_STATUS(fifo_b.read(kElementSize, kernel_buffer, 1, &actual_count), ZX_ERR_INVALID_ARGS);
+}
+
 }  // namespace
