@@ -23,10 +23,13 @@ template <>
 inline dma_buffer::PhysIter FidlRequest::phys_iter(size_t idx, size_t max_length) const {
   ZX_ASSERT(request_.data()->at(idx).size());
   ZX_ASSERT(pinned_vmos_.find(idx) != pinned_vmos_.end());
-  auto length = *request_.data()->at(idx).size();
-  auto offset = *request_.data()->at(idx).offset();
+  auto length = request_.data()->at(idx).size().value();
+  // phys_iter is only called for Buffer::Tag::kData via PhysMap pinned_vmos_.
+  // PhysMap pins the sub-range and already offsets phys_list[0] by any sub-page offset,
+  // so vmo_offset must be 0 to avoid double-offsetting.
+  constexpr uint64_t vmo_offset = 0;
   return dma_buffer::PhysIter{pinned_vmos_.at(idx).phys_list, pinned_vmos_.at(idx).phys_count,
-                              offset, length, max_length};
+                              vmo_offset, length, max_length};
 }
 
 }  // namespace usb
