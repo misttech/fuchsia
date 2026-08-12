@@ -18,7 +18,6 @@ use futures::{AsyncRead, FutureExt as _, TryStreamExt as _};
 use http_body_util::{BodyExt, BodyStream};
 use hyper::header::CONTENT_LENGTH;
 use hyper::{Response, StatusCode};
-type Body = http_body_util::Full<hyper::body::Bytes>;
 use std::collections::BTreeSet;
 use std::fmt::Debug;
 use std::io::{self, Seek as _, SeekFrom, Write as _};
@@ -35,20 +34,23 @@ const UNKNOWN_CONTENT_LEN_BUF_SIZE: usize = 8_196;
 /// Helper trait that lets us mock gcs::client::Client for testing.
 #[doc(hidden)]
 #[async_trait::async_trait]
-pub trait GcsClient {
-    async fn stream(&self, bucket: &str, object: &str) -> anyhow::Result<Response<Body>>;
+pub trait GcsClient<B = gcs::client::ResponseBody> {
+    async fn stream(&self, bucket: &str, object: &str) -> anyhow::Result<Response<B>>;
 }
 
 #[async_trait::async_trait]
-impl GcsClient for gcs::client::Client {
-    async fn stream(&self, bucket: &str, object: &str) -> anyhow::Result<Response<Body>> {
+impl GcsClient<gcs::client::ResponseBody> for gcs::client::Client {
+    async fn stream(
+        &self,
+        bucket: &str,
+        object: &str,
+    ) -> anyhow::Result<Response<gcs::client::ResponseBody>> {
         gcs::client::Client::stream(self, bucket, object).await
     }
 }
 
 /// [GcsRepository] serves a package repository from a Google Cloud Storage bucket.
-#[derive(Debug)]
-pub struct GcsRepository<T = gcs::client::Client> {
+pub struct GcsRepository<T = gcs::client::Client, B = gcs::client::ResponseBody> {
     client: T,
 
     /// URL to the GCS bucket and object prefix that contains the metadata repository. This must
@@ -61,11 +63,25 @@ pub struct GcsRepository<T = gcs::client::Client> {
     /// treated as a directory.
     blob_repo_url: Url,
     aliases: BTreeSet<String>,
+    _phantom: std::marker::PhantomData<fn() -> B>,
 }
 
-impl<T> GcsRepository<T>
+impl<T: Debug, B> Debug for GcsRepository<T, B> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("GcsRepository")
+            .field("client", &self.client)
+            .field("metadata_repo_url", &self.metadata_repo_url)
+            .field("blob_repo_url", &self.blob_repo_url)
+            .field("aliases", &self.aliases)
+            .finish()
+    }
+}
+
+impl<T, B> GcsRepository<T, B>
 where
-    T: GcsClient + Debug + Send + Sync,
+    T: GcsClient<B> + Debug + Send + Sync,
+    B: hyper::body::Body<Data = hyper::body::Bytes> + Send + Sync + Unpin + 'static,
+    B::Error: std::error::Error + Send + Sync + 'static,
 {
     pub fn new(
         client: T,
@@ -91,7 +107,13 @@ where
             blob_repo_url.set_path(&format!("{}/", blob_repo_url.path()));
         }
 
-        Ok(Self { client, metadata_repo_url, blob_repo_url, aliases: BTreeSet::new() })
+        Ok(Self {
+            client,
+            metadata_repo_url,
+            blob_repo_url,
+            aliases: BTreeSet::new(),
+            _phantom: std::marker::PhantomData,
+        })
     }
 
     fn get<'a>(
@@ -190,14 +212,19 @@ where
     /// compute the actual length, then return it.
     async fn get_with_stored_content_len(
         &self,
-        body: Body,
+        mut body: B,
         range: Range,
     ) -> Result<Resource, Error> {
         let mut file = SpooledTempFile::new(UNKNOWN_CONTENT_LEN_BUF_SIZE);
 
-        let bytes = body.collect().await.unwrap().to_bytes();
-        let total_len = bytes.len() as u64;
-        file.write_all(&bytes).map_err(Error::Io)?;
+        let mut total_len = 0;
+        while let Some(frame) = body.frame().await {
+            let frame = frame.map_err(|e| Error::Other(anyhow!(e)))?;
+            if let Ok(chunk) = frame.into_data() {
+                total_len += chunk.len() as u64;
+                file.write_all(&chunk).map_err(Error::Io)?;
+            }
+        }
         file.flush().map_err(Error::Io)?;
 
         file.seek(SeekFrom::Start(0)).map_err(Error::Io)?;
@@ -216,9 +243,11 @@ where
 }
 
 #[async_trait::async_trait]
-impl<T> RepoProvider for GcsRepository<T>
+impl<T, B> RepoProvider for GcsRepository<T, B>
 where
-    T: GcsClient + Debug + Send + Sync + 'static,
+    T: GcsClient<B> + Debug + Send + Sync + 'static,
+    B: hyper::body::Body<Data = hyper::body::Bytes> + Send + Sync + Unpin + 'static,
+    B::Error: std::error::Error + Send + Sync + 'static,
 {
     fn spec(&self) -> RepositorySpec {
         RepositorySpec::Gcs {
@@ -258,9 +287,11 @@ where
     }
 }
 
-impl<T> TufRepositoryProvider<Pouf1> for GcsRepository<T>
+impl<T, B> TufRepositoryProvider<Pouf1> for GcsRepository<T, B>
 where
-    T: GcsClient + Debug + Send + Sync + 'static,
+    T: GcsClient<B> + Debug + Send + Sync + 'static,
+    B: hyper::body::Body<Data = hyper::body::Bytes> + Send + Sync + Unpin + 'static,
+    B::Error: std::error::Error + Send + Sync + 'static,
 {
     fn fetch_metadata<'a>(
         &'a self,
@@ -321,6 +352,8 @@ mod tests {
     use camino::{Utf8Path, Utf8PathBuf};
     use std::fs::File;
 
+    type BoxBody = http_body_util::combinators::BoxBody<hyper::body::Bytes, hyper::Error>;
+
     #[derive(Debug)]
     struct MockGcsClient {
         repo: FileSystemRepository,
@@ -328,8 +361,12 @@ mod tests {
     }
 
     #[async_trait::async_trait]
-    impl GcsClient for MockGcsClient {
-        async fn stream(&self, bucket: &str, mut object: &str) -> anyhow::Result<Response<Body>> {
+    impl GcsClient<BoxBody> for MockGcsClient {
+        async fn stream(
+            &self,
+            bucket: &str,
+            mut object: &str,
+        ) -> anyhow::Result<Response<BoxBody>> {
             // The gcs library allows for leading slashes, but FileSystemRepository does not, so
             // remove it.
             if let Some(o) = object.strip_prefix('/') {
@@ -357,12 +394,16 @@ mod tests {
                     Ok(Response::builder()
                         .status(StatusCode::OK)
                         .header(self.content_length_header, content_len)
-                        .body(http_body_util::Full::new(bytes.into()))
+                        .body(
+                            http_body_util::Full::new(bytes.into())
+                                .map_err(|never| match never {})
+                                .boxed(),
+                        )
                         .unwrap())
                 }
                 Err(Error::NotFound) => Ok(Response::builder()
                     .status(StatusCode::NOT_FOUND)
-                    .body(http_body_util::Full::default())
+                    .body(http_body_util::Empty::new().map_err(|never| match never {}).boxed())
                     .unwrap()),
                 res => panic!("unexpected result {res:#?}"),
             }
@@ -373,7 +414,7 @@ mod tests {
         _tmp: tempfile::TempDir,
         metadata_repo_path: Utf8PathBuf,
         blob_repo_path: Utf8PathBuf,
-        repo: GcsRepository<MockGcsClient>,
+        repo: GcsRepository<MockGcsClient, BoxBody>,
     }
 
     impl TestEnv {

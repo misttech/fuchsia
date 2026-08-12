@@ -23,10 +23,11 @@ use crate::error::GcsError;
 use anyhow::Result;
 use http_body_util::BodyExt;
 use hyper::{Method, Request};
-type Body = http_body_util::Full<hyper::body::Bytes>;
 use info::{CLIENT_ID, CLIENT_SECRET, OAUTH_REFRESH_TOKEN_ENDPOINT};
 use serde::{Deserialize, Serialize};
 use std::fmt;
+
+type Body = http_body_util::Full<hyper::body::Bytes>;
 
 #[derive(Clone, PartialEq)]
 pub struct GcsCredentials {

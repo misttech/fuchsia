@@ -16,10 +16,15 @@ use fuchsia_hyper::HttpsClient;
 use http::{StatusCode, request};
 use http_body_util::BodyExt;
 use hyper::{Method, Request, Response};
-type Body = http_body_util::Full<hyper::body::Bytes>;
 use std::fmt;
 use std::path::PathBuf;
 use url::Url;
+
+pub type Body = http_body_util::Full<hyper::body::Bytes>;
+#[cfg(not(test))]
+pub type ResponseBody = hyper::body::Incoming;
+#[cfg(test)]
+pub type ResponseBody = http_body_util::combinators::BoxBody<hyper::body::Bytes, hyper::Error>;
 
 /// Base URL for JSON API access.
 const API_BASE: &str = "https://www.googleapis.com/storage/v1";
@@ -125,7 +130,7 @@ impl TokenStore {
         https_client: &HttpsClient,
         bucket: &str,
         object: &str,
-    ) -> Result<Response<Body>> {
+    ) -> Result<Response<ResponseBody>> {
         log::debug!("download {:?}, {:?}", bucket, object);
         if bucket.is_empty() {
             bail!("bucket name cannot be empty for GCS download");
@@ -155,7 +160,7 @@ impl TokenStore {
         &self,
         https_client: &HttpsClient,
         req: Request<Body>,
-    ) -> Result<Response<Body>> {
+    ) -> Result<Response<ResponseBody>> {
         let (parts, body) = req.into_parts();
         self.execute_request(https_client, &parts, body).await
     }
@@ -165,7 +170,7 @@ impl TokenStore {
         https_client: &HttpsClient,
         parts: &http::request::Parts,
         body: Body,
-    ) -> Result<Response<Body>> {
+    ) -> Result<Response<ResponseBody>> {
         log::debug!("https_client.request {:?}", parts.uri);
         // The request is deconstructed and reconstructed here to allow `maybe_authorize`
         // to add an authorization header. The `http::Request` type does not allow
@@ -183,9 +188,6 @@ impl TokenStore {
         let auth_used = req.headers().contains_key("Authorization");
 
         let res = https_client.request(req).await.context("https_client.request")?;
-        let (res_parts, incoming) = res.into_parts();
-        let bytes = incoming.collect().await?.to_bytes();
-        let res = Response::from_parts(res_parts, Body::from(bytes));
         match res.status() {
             // Status 403 (FORBIDDEN) means an access token is needed.
             // If an access token was already used, there's no need in getting
@@ -227,7 +229,7 @@ impl TokenStore {
         &self,
         https_client: &HttpsClient,
         req: Request<Body>,
-    ) -> Result<Response<Body>> {
+    ) -> Result<Response<ResponseBody>> {
         let (parts, body) = req.into_parts();
         let body = body.collect().await?.to_bytes().to_vec();
         retry_or_last_error(default_backoff_strategy(), || async {

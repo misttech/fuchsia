@@ -16,15 +16,18 @@
 
 use fuchsia_sync::Mutex;
 use http_body_util::BodyExt;
+use http_body_util::combinators::BoxBody;
 use hyper::Request;
-pub type Body = http_body_util::Full<hyper::body::Bytes>;
 use std::collections::VecDeque;
 use std::sync::Arc;
+
+pub type Body = http_body_util::Full<hyper::body::Bytes>;
+pub type ResponseBody = BoxBody<hyper::body::Bytes, hyper::Error>;
 
 #[derive(Debug)]
 struct HttpsClientEvent {
     req: Request<Body>,
-    res: http::Result<http::Response<Body>>,
+    res: http::Result<http::Response<ResponseBody>>,
 }
 
 #[derive(Debug, Clone)]
@@ -44,10 +47,11 @@ impl HttpsClient {
     ///
     /// Note that `res` is actually a Result<> type.
     pub fn expect(&mut self, req: Request<Body>, res: http::Result<http::Response<Body>>) {
+        let res = res.map(|r| r.map(|b| b.map_err(|never| match never {}).boxed()));
         self.expected.lock().push_back(HttpsClientEvent { req, res });
     }
 
-    pub async fn request(&self, req: Request<Body>) -> http::Result<http::Response<Body>> {
+    pub async fn request(&self, req: Request<Body>) -> http::Result<http::Response<ResponseBody>> {
         let expected = self.expected.lock().pop_front().unwrap_or_else(|| {
             panic!(
                 "Error: received more https requests than expected. \

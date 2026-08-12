@@ -15,12 +15,14 @@ use fuchsia_hyper::{HttpsClient, new_https_client};
 use http_body_util::BodyExt;
 use hyper::header::CONTENT_LENGTH;
 use hyper::{Request, Response, StatusCode};
-type Body = http_body_util::Full<hyper::body::Bytes>;
 use std::fs::{File, create_dir_all};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use url::Url;
+
+pub type Body = crate::token_store::Body;
+pub type ResponseBody = crate::token_store::ResponseBody;
 
 /// A snapshot of the progress.
 #[derive(Clone, Debug, PartialEq)]
@@ -247,7 +249,7 @@ impl Client {
     }
 
     /// Reads content of a stored object (blob) from GCS.
-    pub async fn stream(&self, bucket: &str, object: &str) -> Result<Response<Body>> {
+    pub async fn stream(&self, bucket: &str, object: &str) -> Result<Response<ResponseBody>> {
         self.token_store.download(&self.https, bucket, object).await
     }
 
@@ -337,7 +339,7 @@ impl Client {
         self.token_store.upload(&self.https, bucket, object_name, file_path).await
     }
 
-    pub async fn send_request(&self, req: Request<Body>) -> Result<Response<Body>> {
+    pub async fn send_request(&self, req: Request<Body>) -> Result<Response<ResponseBody>> {
         self.token_store.send_request(&self.https, req).await
     }
 }

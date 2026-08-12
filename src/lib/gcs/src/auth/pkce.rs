@@ -15,12 +15,13 @@ use base64::engine::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD as BASE64_URL_SAFE_NO_PAD;
 use http_body_util::BodyExt;
 use hyper::{Method, Request};
-type Body = http_body_util::Full<hyper::body::Bytes>;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use std::io::{Read, Write};
 use std::net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream};
 use url::form_urlencoded;
+
+type Body = http_body_util::Full<hyper::body::Bytes>;
 
 const AUTHORIZATION_ENDPOINT: &str = "https://accounts.google.com/o/oauth2/v2/auth";
 

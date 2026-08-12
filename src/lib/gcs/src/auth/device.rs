@@ -7,13 +7,12 @@
 
 use crate::auth::info::{AUTH_SCOPE, CLIENT_ID, CLIENT_SECRET};
 use anyhow::{Context, Result, bail};
+use cfg_if::cfg_if;
 use http_body_util::BodyExt;
 use hyper::{Method, Request};
-type Body = http_body_util::Full<hyper::body::Bytes>;
 use serde::{Deserialize, Serialize};
 use std::time::{Duration, Instant};
 
-use cfg_if::cfg_if;
 cfg_if! {
     if #[cfg(test)] {
         use crate::mock_https_client::{new_https_client, HttpsClient};
@@ -24,6 +23,8 @@ cfg_if! {
         }
     }
 }
+
+type Body = http_body_util::Full<hyper::body::Bytes>;
 
 /// Request for a DeviceCodeResponse (or DeviceCodeError).
 ///
