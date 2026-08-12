@@ -51,6 +51,8 @@ func TestVisibilityConversion(t *testing.T) {
 	visibility = [
 		":__pkg__",
 		":__subpackages__",
+		"//:__pkg__",
+		"//:__subpackages__",
 		"//path/to/foo:__pkg__",
 		"//path/to/bar:__subpackages__",
 	],
@@ -59,6 +61,8 @@ func TestVisibilityConversion(t *testing.T) {
 	visibility = [
 		":*",
 		"./*",
+		"//:*",
+		"//*",
 		"//path/to/foo:*",
 		"//path/to/bar/*",
 	]

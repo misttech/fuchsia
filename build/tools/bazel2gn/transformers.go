@@ -41,6 +41,9 @@ func bazelVisibilityToGN(expr syntax.Expr) (syntax.Expr, error) {
 		// The suffix match below would result in `"/*"`, which is equivalent to
 		// public, so we must handle this case explicitly.
 		lit.Raw = `"./*"`
+	case lit.Raw == `"//:__subpackages__"`:
+		// The suffix match below would result in `"///*"` so we must handle this case explicitly.
+		lit.Raw = `"//*"`
 	case strings.HasSuffix(lit.Raw, `:__pkg__"`):
 		lit.Raw = strings.ReplaceAll(lit.Raw, `:__pkg__"`, `:*"`)
 	case strings.HasSuffix(lit.Raw, `:__subpackages__"`):
