@@ -34,6 +34,7 @@ from daemon.handlers import (
     variables,
     wait_for_event,
 )
+from daemon.state import Process, Thread
 from ffx_cmd.lib import FfxCmd
 from pydap.client import READER_STOPPED_EVENT
 from pydap.models import InitializeArguments, PauseArguments
@@ -137,7 +138,6 @@ class Daemon:
         self.active_handlers: set[asyncio.Task[Any]] = set()
         self.event_queue: asyncio.Queue[Any] = asyncio.Queue()
         self.event_waiter = DapEventWaiter()
-        self.stopped_threads: set[int] = set()
         self.active_breakpoints: dict[str, set[int]] = {}
         self.stop_event = asyncio.Event()
         self.shutdown_complete_event = asyncio.Event()
@@ -156,7 +156,8 @@ class Daemon:
         self.zxdb_reader: asyncio.StreamReader | None = None
         self.port = port
         self.connect_to_existing: bool | None = None
-        self.active_processes: dict[int, str] = {}
+        self.processes: dict[int, Process] = {}
+        self.threads: dict[int, Thread] = {}
         self.dap_proc: AsyncCommand | None = None
         self.package_server_proc: Any = None
         self.repo_name: str | None = None
@@ -194,7 +195,7 @@ class Daemon:
         """Ensures the thread is stopped. Returns immediately if it is,
         otherwise pauses it and waits for the stopped event.
         """
-        if thread_id in self.stopped_threads:
+        if (thread := self.threads.get(thread_id)) and thread.is_stopped:
             return
 
         if not self.zxdb_writer:
@@ -476,6 +477,78 @@ class Daemon:
             writer.close()
             await writer.wait_closed()
 
+    def get_or_create_process(self, process_id: int, name: str = "") -> Process:
+        """Retrieves an existing Process or registers a new one."""
+        if process_id not in self.processes:
+            self.processes[process_id] = Process(id=process_id, name=name)
+        elif name:
+            self.processes[process_id].name = name
+        return self.processes[process_id]
+
+    def get_or_create_thread(
+        self,
+        thread_id: int,
+        name: str = "",
+        process_id: int | None = None,
+    ) -> Thread:
+        """Retrieves an existing Thread or registers a new one with its owning Process."""
+        process = (
+            self.get_or_create_process(process_id)
+            if process_id is not None
+            else None
+        )
+        if thread_id not in self.threads:
+            thread = Thread(id=thread_id, name=name, process=process)
+            self.threads[thread_id] = thread
+            if process:
+                process.threads[thread_id] = thread
+        else:
+            thread = self.threads[thread_id]
+            if name:
+                thread.name = name
+            if process and thread.process != process:
+                if thread.process:
+                    thread.process.threads.pop(thread_id, None)
+                thread.process = process
+                process.threads[thread_id] = thread
+        return thread
+
+    def update_thread_cache(self, threads: list[Any]) -> None:
+        """Synchronizes thread and process state with authoritative DAP thread list.
+
+        Inserts new threads and updates process associations, and prunes stale thread IDs.
+        """
+        valid_thread_ids: set[int] = set()
+        for thread in threads:
+            thread_id = getattr(thread, "id", None)
+            if thread_id is not None:
+                valid_thread_ids.add(thread_id)
+                name = getattr(thread, "name", "")
+                process_id = getattr(thread, "process_id", None)
+                self.get_or_create_thread(
+                    thread_id, name=name, process_id=process_id
+                )
+
+        stale_thread_ids = [
+            tid for tid in self.threads if tid not in valid_thread_ids
+        ]
+        for tid in stale_thread_ids:
+            thread = self.threads.pop(tid, None)
+            if thread and thread.process:
+                thread.process.threads.pop(tid, None)
+
+    def clear_process(self, process_id: int) -> None:
+        """Clears all cached state associated with a detached or terminated process."""
+        process = self.processes.pop(process_id, None)
+        if process:
+            for tid in list(process.threads.keys()):
+                self.threads.pop(tid, None)
+
+    def clear_all_processes(self) -> None:
+        """Clears all cached process and thread state."""
+        self.processes.clear()
+        self.threads.clear()
+
     async def _process_events(self) -> None:
         allowed_events = {
             "stopped",
@@ -498,24 +571,57 @@ class Daemon:
                 break
 
             # Internal daemon actions on all events
-            if event.get("event") == "initialized":
-                self.dap_initialized_event.set()
-            elif event.get("event") == "stopped":
-                thread_id = event.get("body", {}).get("threadId")
-                self.stopped_threads.add(thread_id)
-                self.event_waiter.notify_thread_stop(thread_id, event)
-            elif event.get("event") == "continued":
-                thread_id = event.get("body", {}).get("threadId")
-                self.stopped_threads.discard(thread_id)
-            elif event.get("event") == "process":
-                body = event.get("body", {})
-                pid = body.get("systemProcessId")
-                name = body.get("name")
-                if pid is not None:
-                    self.active_processes[pid] = name
-            elif event.get("event") in ("exited", "terminated"):
-                # Assume single process for now, clear all.
-                self.active_processes.clear()
+            event_name = event.get("event")
+            body = event.get("body") or {}
+            match event_name:
+                case "initialized":
+                    self.dap_initialized_event.set()
+                case "stopped":
+                    thread_id = body.get("threadId")
+                    if thread_id is not None:
+                        thread = self.get_or_create_thread(thread_id)
+                        thread.is_stopped = True
+                        self.event_waiter.notify_thread_stop(thread_id, event)
+                case "continued":
+                    if body.get("allThreadsContinued"):
+                        for thread in self.threads.values():
+                            thread.is_stopped = False
+                    elif (thread_id := body.get("threadId")) is not None:
+                        target_thread = self.threads.get(thread_id)
+                        if target_thread is not None:
+                            target_thread.is_stopped = False
+                    else:
+                        for thread in self.threads.values():
+                            thread.is_stopped = False
+                case "thread":
+                    thread_id = body.get("threadId")
+                    reason = body.get("reason")
+                    if reason == "exited" and thread_id is not None:
+                        if thread_id in self.threads:
+                            exited_thread = self.threads.pop(thread_id)
+                            if exited_thread.process is not None:
+                                exited_thread.process.threads.pop(
+                                    thread_id, None
+                                )
+                    else:
+                        process_id = body.get("processId")
+                        if thread_id is not None:
+                            self.get_or_create_thread(
+                                thread_id, process_id=process_id
+                            )
+                case "process":
+                    pid = body.get("systemProcessId")
+                    name = str(body.get("name") or "")
+                    if pid is not None:
+                        self.get_or_create_process(pid, name=name)
+                case "detached":
+                    pid = body.get("pid") or body.get("processId")
+                    if pid is not None:
+                        self.clear_process(pid)
+                    else:
+                        self.clear_all_processes()
+                case "exited" | "terminated":
+                    self.clear_all_processes()
 
             # Only enqueue and sequence allowed events for surfacing to the CLI client
             if event.get("event") in allowed_events:

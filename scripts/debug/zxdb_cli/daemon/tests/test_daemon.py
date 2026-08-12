@@ -8,6 +8,7 @@ from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
 
 from daemon.daemon import CommandHandlerRegistry, Daemon
+from daemon.state import Process, Thread
 from pydap.client import DapError
 from shared.protocol import (
     BaseRequest,
@@ -258,14 +259,16 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
         mock_thread1 = Mock()
         mock_thread1.id = 1
         mock_thread1.name = "main"
+        mock_thread1.process_id = 1234
         mock_thread2 = Mock()
         mock_thread2.id = 2
         mock_thread2.name = "worker"
+        mock_thread2.process_id = 1234
         mock_body.threads = [mock_thread1, mock_thread2]
         mock_body.model_dump.return_value = {
             "threads": [
-                {"id": 1, "name": "main"},
-                {"id": 2, "name": "worker"},
+                {"id": 1, "name": "main", "processId": 1234},
+                {"id": 2, "name": "worker", "processId": 1234},
             ]
         }
         mock_threads_resp.body = mock_body
@@ -302,6 +305,45 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(threads[1]["id"], 2)
             self.assertEqual(threads[1]["name"], "worker")
 
+        assert daemon.threads[1].process is not None
+        assert daemon.threads[2].process is not None
+        self.assertEqual(daemon.threads[1].process.id, 1234)
+        self.assertEqual(daemon.threads[2].process.id, 1234)
+
+    async def test_update_thread_cache_evicts_stale_threads(self) -> None:
+        daemon = Daemon(port=15678)
+        daemon.get_or_create_thread(1, process_id=1234)
+        daemon.get_or_create_thread(2, process_id=1234)
+        daemon.get_or_create_thread(3, process_id=5678)
+
+        mock_thread1 = Mock()
+        mock_thread1.id = 1
+        mock_thread1.process_id = 1234
+
+        daemon.update_thread_cache([mock_thread1])
+
+        self.assertEqual(list(daemon.threads.keys()), [1])
+        assert daemon.threads[1].process is not None
+        self.assertEqual(daemon.threads[1].process.id, 1234)
+
+    def test_thread_and_process_equality(self) -> None:
+        p1 = Process(id=123, name="p1")
+        t1 = Thread(id=1, name="t1", is_stopped=False, process=p1)
+        p1.threads[1] = t1
+
+        p2 = Process(id=123, name="p2")
+        t2 = Thread(id=1, name="t2", is_stopped=True, process=p2)
+        p2.threads[1] = t2
+
+        # Verify comparisons succeed without recursion error and match on ID only.
+        self.assertEqual(t1, t2)
+        self.assertEqual(p1, p2)
+
+        t3 = Thread(id=2, process=p1)
+        p3 = Process(id=456)
+        self.assertNotEqual(t1, t3)
+        self.assertNotEqual(p1, p3)
+
     @patch("daemon.daemon.ZxdbDapClient")
     async def test_handle_get_state(self, mock_dap_client_class: Mock) -> None:
         """Verifies handle_get_state successfully queries threads and returns
@@ -313,13 +355,14 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
         mock_thread1 = Mock()
         mock_thread1.id = 1
         mock_thread1.name = "main"
+        mock_thread1.process_id = 1234
         mock_body.threads = [mock_thread1]
         mock_threads_resp.body = mock_body
         mock_dap_client.threads = AsyncMock(return_value=mock_threads_resp)
 
         daemon = Daemon(port=15678)
         daemon.zxdb_writer = Mock()
-        daemon.active_processes = {1234: "test_process"}
+        daemon.get_or_create_process(1234, name="test_process")
         daemon.active_breakpoints = {"/path/to/file.rs": {24, 12}}
 
         resp = await daemon.registry.handle("get-state", GetStateRequest())
@@ -332,6 +375,9 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(state_resp.threads[0].name, "main")
         self.assertEqual(state_resp.processes, {1234: "test_process"})
         self.assertEqual(state_resp.breakpoints, {"/path/to/file.rs": [12, 24]})
+
+        assert daemon.threads[1].process is not None
+        self.assertEqual(daemon.threads[1].process.id, 1234)
 
     @patch("daemon.daemon.ZxdbDapClient")
     async def test_handle_get_state_defensive(
@@ -347,7 +393,7 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
 
         daemon = Daemon(port=15678)
         daemon.zxdb_writer = Mock()
-        daemon.active_processes = {1234: "test_process"}
+        daemon.get_or_create_process(1234, name="test_process")
 
         resp = await daemon.registry.handle("get-state", GetStateRequest())
 
@@ -358,6 +404,53 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
             len(state_resp.threads), 0
         )  # Successfully defaulted to empty list without crashing
         self.assertEqual(state_resp.processes, {1234: "test_process"})
+
+    @patch("daemon.daemon.ZxdbDapClient")
+    async def test_handle_get_state_empty_threads_prunes_cache(
+        self, mock_dap_client_class: Mock
+    ) -> None:
+        """Verifies handle_get_state prunes cached threads when DAP returns an empty list."""
+        mock_dap_client = mock_dap_client_class.return_value
+        mock_threads_resp = Mock()
+        mock_body = Mock()
+        mock_body.threads = []
+        mock_threads_resp.body = mock_body
+        mock_dap_client.threads = AsyncMock(return_value=mock_threads_resp)
+
+        daemon = Daemon(port=15678)
+        daemon.zxdb_writer = Mock()
+        daemon.get_or_create_thread(1, process_id=1234)
+        daemon.get_or_create_process(1234, name="test_process")
+
+        resp = await daemon.registry.handle("get-state", GetStateRequest())
+
+        self.assertTrue(resp.success)
+        state_resp = resp.body
+        assert isinstance(state_resp, GetStateResponse)
+        self.assertEqual(len(state_resp.threads), 0)
+        self.assertEqual(daemon.threads, {})
+
+    @patch("daemon.daemon.ZxdbDapClient")
+    async def test_handle_threads_empty_prunes_cache(
+        self, mock_dap_client_class: Mock
+    ) -> None:
+        """Verifies handle(threads) prunes cached threads when DAP returns an empty list."""
+        mock_dap_client = mock_dap_client_class.return_value
+        mock_threads_resp = Mock()
+        mock_body = Mock()
+        mock_body.threads = []
+        mock_body.model_dump.return_value = {"threads": []}
+        mock_threads_resp.body = mock_body
+        mock_dap_client.threads = AsyncMock(return_value=mock_threads_resp)
+
+        daemon = Daemon(port=15678)
+        daemon.zxdb_writer = Mock()
+        daemon.get_or_create_thread(1, process_id=1234)
+
+        resp = await daemon.registry.handle("threads", ThreadsRequest())
+
+        self.assertTrue(resp.success)
+        self.assertEqual(daemon.threads, {})
 
     @patch("daemon.daemon.asyncio.start_unix_server")
     @patch("daemon.daemon.ZxdbDapClient")
@@ -624,7 +717,7 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
 
         daemon = Daemon(port=15678)
         daemon.zxdb_writer = Mock()
-        daemon.stopped_threads = {1}
+        daemon.get_or_create_thread(1).is_stopped = True
 
         resp = await daemon.registry.handle(
             "evaluate",
@@ -655,7 +748,7 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
 
         daemon = Daemon(port=15678)
         daemon.zxdb_writer = Mock()
-        daemon.stopped_threads = {1}
+        daemon.get_or_create_thread(1).is_stopped = True
 
         resp = await daemon.registry.handle(
             "evaluate",
@@ -665,18 +758,57 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(resp.success)
         self.assertIn("No stack frames found", resp.message or "")
 
-    async def test_handle_evaluate_thread_not_stopped(self) -> None:
+    @patch("daemon.daemon.ZxdbDapClient")
+    async def test_handle_evaluate_thread_not_stopped(
+        self, mock_dap_client_class: Mock
+    ) -> None:
+        mock_dap_client = mock_dap_client_class.return_value
+
         daemon = Daemon(port=15678)
         daemon.zxdb_writer = Mock()
-        daemon.stopped_threads = set()
+        daemon.get_or_create_thread(1).is_stopped = False
+
+        def on_pause(*args: Any, **kwargs: Any) -> dict[str, Any]:
+            daemon.event_waiter.notify_thread_stop(
+                1,
+                {
+                    "type": "event",
+                    "event": "stopped",
+                    "body": {"reason": "pause"},
+                },
+            )
+            return {"success": True}
+
+        mock_dap_client.pause_thread = AsyncMock(side_effect=on_pause)
+
+        # Mock stack trace
+        mock_stack_resp = Mock()
+        mock_frame = Mock()
+        mock_frame.id = 42
+        mock_stack_resp.body.stack_frames = [mock_frame]
+        mock_dap_client.stack_trace = AsyncMock(return_value=mock_stack_resp)
+
+        # Mock evaluate
+        mock_eval_resp = Mock()
+        mock_eval_resp.success = True
+        mock_eval_resp.body.result = "10"
+        mock_eval_resp.body.type = "int"
+        mock_eval_resp.body.variables_reference = 0
+        mock_dap_client.evaluate = AsyncMock(return_value=mock_eval_resp)
 
         resp = await daemon.registry.handle(
             "evaluate",
             EvaluateRequest(thread_id=1, frame_index=0, expression="10"),
         )
 
-        self.assertFalse(resp.success)
-        self.assertIn("Thread not stopped", resp.message or "")
+        self.assertTrue(resp.success)
+        self.assertIsNotNone(resp.body)
+        assert isinstance(resp.body, EvaluateResponse)
+        self.assertEqual(resp.body.result, "10")
+        self.assertEqual(resp.body.type, "int")
+        mock_dap_client.pause_thread.assert_called_once()
+        mock_dap_client.stack_trace.assert_called_once()
+        mock_dap_client.evaluate.assert_called_once()
 
     @patch("daemon.daemon.ZxdbDapClient")
     async def test_handle_stack_trace_elides_subtle_frames(

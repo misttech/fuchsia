@@ -32,7 +32,8 @@ async def handle(daemon: Daemon, _req: GetStateRequest) -> Response:
         threads = []
         # Defensive check to ensure zxdb DAP server successfully returned a
         # valid threads list.
-        if threads_resp.body and threads_resp.body.threads:
+        if threads_resp.body and threads_resp.body.threads is not None:
+            daemon.update_thread_cache(threads_resp.body.threads)
             for t in threads_resp.body.threads:
                 threads.append(ThreadInfo(id=t.id, name=t.name))
 
@@ -43,7 +44,7 @@ async def handle(daemon: Daemon, _req: GetStateRequest) -> Response:
         }
         state_resp = GetStateResponse(
             threads=threads,
-            processes=daemon.active_processes,
+            processes={p.id: p.name for p in daemon.processes.values()},
             breakpoints=breakpoints or None,
         )
         return Response(

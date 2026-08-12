@@ -28,7 +28,8 @@ class TestDaemonDetach(unittest.IsolatedAsyncioTestCase):
     async def test_handle_detach_all(self) -> None:
         daemon = Daemon(port=15678)
         daemon.zxdb_writer = Mock()
-        daemon.active_processes = {1234: "proc1", 5678: "proc2"}
+        daemon.get_or_create_process(1234, name="proc1")
+        daemon.get_or_create_process(5678, name="proc2")
 
         with patch.object(
             daemon.dap_client, "zxdb_detach", new_callable=AsyncMock
@@ -46,7 +47,7 @@ class TestDaemonDetach(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(args.detach_all)
 
             # Verify state side-effects
-            self.assertEqual(daemon.active_processes, {})
+            self.assertEqual(daemon.processes, {})
 
             # Verify synthesized event
             self.assertEqual(daemon.event_queue.qsize(), 1)
@@ -58,7 +59,8 @@ class TestDaemonDetach(unittest.IsolatedAsyncioTestCase):
     async def test_handle_detach_pid(self) -> None:
         daemon = Daemon(port=15678)
         daemon.zxdb_writer = Mock()
-        daemon.active_processes = {1234: "proc1", 5678: "proc2"}
+        daemon.get_or_create_process(1234, name="proc1")
+        daemon.get_or_create_process(5678, name="proc2")
 
         with patch.object(
             daemon.dap_client, "zxdb_detach", new_callable=AsyncMock
@@ -76,7 +78,8 @@ class TestDaemonDetach(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(args.pid, 1234)
 
             # Verify state side-effects
-            self.assertEqual(daemon.active_processes, {5678: "proc2"})
+            self.assertEqual(list(daemon.processes.keys()), [5678])
+            self.assertEqual(daemon.processes[5678].name, "proc2")
 
             # Verify synthesized event
             self.assertEqual(daemon.event_queue.qsize(), 1)
@@ -98,7 +101,7 @@ class TestDaemonDetach(unittest.IsolatedAsyncioTestCase):
     async def test_handle_detach_dap_failure(self) -> None:
         daemon = Daemon(port=15678)
         daemon.zxdb_writer = Mock()
-        daemon.active_processes = {1234: "proc1"}
+        daemon.get_or_create_process(1234, name="proc1")
 
         with patch.object(
             daemon.dap_client, "zxdb_detach", new_callable=AsyncMock
@@ -116,7 +119,8 @@ class TestDaemonDetach(unittest.IsolatedAsyncioTestCase):
             mock_detach.assert_called_once()
 
             # Verify state NOT modified
-            self.assertEqual(daemon.active_processes, {1234: "proc1"})
+            self.assertEqual(list(daemon.processes.keys()), [1234])
+            self.assertEqual(daemon.processes[1234].name, "proc1")
 
             # Verify NO event synthesized
             self.assertEqual(daemon.event_queue.qsize(), 0)
@@ -124,7 +128,7 @@ class TestDaemonDetach(unittest.IsolatedAsyncioTestCase):
     async def test_handle_detach_dap_exception(self) -> None:
         daemon = Daemon(port=15678)
         daemon.zxdb_writer = Mock()
-        daemon.active_processes = {1234: "proc1"}
+        daemon.get_or_create_process(1234, name="proc1")
 
         with patch.object(
             daemon.dap_client, "zxdb_detach", new_callable=AsyncMock
@@ -139,7 +143,8 @@ class TestDaemonDetach(unittest.IsolatedAsyncioTestCase):
             mock_detach.assert_called_once()
 
             # Verify state NOT modified
-            self.assertEqual(daemon.active_processes, {1234: "proc1"})
+            self.assertEqual(list(daemon.processes.keys()), [1234])
+            self.assertEqual(daemon.processes[1234].name, "proc1")
 
             # Verify NO event synthesized
             self.assertEqual(daemon.event_queue.qsize(), 0)

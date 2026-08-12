@@ -34,9 +34,9 @@ async def handle(daemon: Daemon, req: DetachRequest) -> Response:
                 message=resp.get("message", "Failed to detach from process"),
             )
         if req.all:
-            daemon.active_processes.clear()
-        elif req.pid is not None and req.pid in daemon.active_processes:
-            del daemon.active_processes[req.pid]
+            daemon.clear_all_processes()
+        elif req.pid is not None:
+            daemon.clear_process(req.pid)
 
         # Synthesize and enqueue detached event
         await daemon.event_queue.put(

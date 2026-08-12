@@ -23,6 +23,8 @@ async def handle(daemon: Daemon, _req: ThreadsRequest) -> Response:
 
     try:
         resp = await daemon.dap_client.threads()
+        if resp.body and resp.body.threads is not None:
+            daemon.update_thread_cache(resp.body.threads)
         body = resp.body.model_dump(by_alias=True) if resp.body else None
         return Response(
             success=True,

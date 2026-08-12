@@ -23,15 +23,7 @@ async def handle(daemon: Daemon, req: EvaluateRequest) -> Response:
         )
 
     try:
-        if req.thread_id not in daemon.stopped_threads:
-            return Response(
-                success=False,
-                message=(
-                    'Thread not stopped, use "fx debug cli pause '
-                    f'{req.thread_id}" to stop the thread, or set a breakpoint '
-                    'with "fx debug cli break".'
-                ),
-            )
+        await daemon.ensure_stopped(req.thread_id)
 
         # TODO(https://fxbug.dev/524209338): Paginate stack_trace call to avoid unbounded IPC.
         # Retrieve stack trace to get the frameId at the requested frame_index
