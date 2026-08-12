@@ -15,7 +15,7 @@ namespace network {
 void MacAddrDeviceInterface::Create(
     fdf::WireSharedClient<fuchsia_hardware_network_driver::MacAddr> parent,
     OnCreated&& on_created) {
-  return internal::MacInterface::Create(std::move(parent), std::move(on_created));
+  internal::MacInterface::Create(std::move(parent), std::move(on_created));
 }
 
 namespace internal {
@@ -136,7 +136,7 @@ void MacInterface::Consolidate(fit::function<void(zx_status_t)> callback) {
   netdev::wire::MacFilterMode mode = default_mode_;
   // Gather the most permissive mode that the clients want.
   for (auto& c : clients_) {
-    if ((uint32_t)c.state().filter_mode > (uint32_t)mode) {
+    if (static_cast<uint32_t>(c.state().filter_mode) > static_cast<uint32_t>(mode)) {
       mode = c.state().filter_mode;
     }
   }
@@ -195,10 +195,10 @@ void MacInterface::Consolidate(fit::function<void(zx_status_t)> callback) {
 
 void MacInterface::CloseClient(MacClientInstance* client) {
   fbl::AutoLock lock(&lock_);
-  // Keep the client alive until consolidation completes. Otherwise another client closure could
-  // observe an empty list of clients and call the the teardown callback before this consolidation
-  // has completed. The client cannot be kept in clients_ as it must not take part in consolidation
-  // now that it's closed.
+  // Keep the client alive until consolidation completes. Otherwise another
+  // client closure could observe an empty list of clients and call the teardown
+  // callback before this consolidation has completed. The client cannot be kept
+  // in clients_ as it must not take part in consolidation now that it's closed.
   dead_clients_.push_back(clients_.erase(*client));
   Consolidate([client, this](zx_status_t /*status*/) {
     fit::callback<void()> teardown;
@@ -227,7 +227,7 @@ void MacInterface::GetFeatures(fit::callback<void(zx_status_t)>&& on_complete) {
         }
 
         features_ = fidl::ToNatural(result.value().features);
-        return on_complete(ZX_OK);
+        on_complete(ZX_OK);
       });
 }
 
