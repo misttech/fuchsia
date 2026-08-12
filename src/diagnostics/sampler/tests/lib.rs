@@ -304,3 +304,91 @@ async fn sampler_inspect_test() {
         }
     );
 }
+
+/// Stress test that repeatedly increments Inspect metrics, triggers sampling cycles,
+/// and validates events across multiple iterations under continuous load.
+#[fuchsia::test]
+async fn sampler_stress_test() {
+    log::info!("Sampler stress test: initializing test realm topology...");
+    let ns = test_topology::create_realm().await.expect("initialized topology");
+    let test_app_controller = connect_to_protocol_at::<SamplerTestControllerMarker>(&ns).unwrap();
+    wait_for_single_counter_inspect(&ns).await;
+    let logger_querier = connect_to_protocol_at::<MetricEventLoggerQuerierMarker>(&ns).unwrap();
+    let _sampler_binder = connect_to_protocol_at_path::<BinderMarker>(format!(
+        "{}/fuchsia.component.SamplerBinder",
+        ns.prefix()
+    ))
+    .unwrap();
+
+    let mut project_5_events = EventVerifier::new(&logger_querier, 5);
+
+    test_app_controller.increment_int(1).await.unwrap();
+
+    // Initial state validation
+    project_5_events
+        .validate_with_count(
+            vec![
+                Event { id: 101, value: 1, codes: vec![0, 0] },
+                Event { id: 102, value: 10, codes: vec![0, 0] },
+                Event { id: 103, value: 20, codes: vec![0, 0] },
+                Event { id: 104, value: 1, codes: vec![0, 0] },
+            ],
+            "initial in stress_test",
+        )
+        .await;
+    log::info!("Sampler stress test: initial event state verified. Starting 10 stress cycles...");
+
+    // Run 10 consecutive sample cycles under load
+    for i in 1..=10 {
+        log::info!(
+            "Sampler stress test [cycle {}/10]: incrementing counter & waiting for sample...",
+            i
+        );
+        test_app_controller.increment_int(1).await.unwrap();
+        test_app_controller.wait_for_sample().await.unwrap().unwrap();
+        project_5_events
+            .validate_with_count(
+                vec![
+                    // Metric 101 (`samples:counter`) is configured as an Occurrence metric in
+                    // `test_config.json`. Sampler logs the diff between consecutive samples rather
+                    // than the cumulative count. Since we increment by 1 each cycle, the diff is 1.
+                    Event { id: 101, value: 1, codes: vec![0, 0] },
+                    // Metric 102 (`samples:integer_1`) is an Integer metric without `upload_once`.
+                    // It samples `integer_1` (initialized to 10 in test state and never mutated).
+                    // Because Integer metrics without `upload_once` are sampled every cycle,
+                    // it is uploaded every time with its current value of 10.
+                    // (Metric 103 has `upload_once: true` so it is only uploaded initially, and
+                    // Metric 104 has a 3000s poll rate so it is not polled here).
+                    Event { id: 102, value: 10, codes: vec![0, 0] },
+                ],
+                &format!("stress cycle {} in stress_test", i),
+            )
+            .await;
+        log::info!("Sampler stress test [cycle {}/10]: events validated successfully", i);
+    }
+
+    log::info!("Sampler stress test: all 10 cycles finished. Inspecting daemon health...");
+    // Verify Sampler is still healthy and responsive via Inspect
+    let accessor = connect_to_protocol_at::<fdiagnostics::ArchiveAccessorMarker>(&ns).unwrap();
+    let hierarchy = ArchiveReader::inspect()
+        .with_archive(accessor)
+        .add_selector(format!("{}:root/fuchsia.inspect.Health", test_topology::SAMPLER_NAME))
+        .snapshot()
+        .await
+        .expect("got inspect data")
+        .pop()
+        .expect("payload present")
+        .payload
+        .expect("valid payload");
+
+    assert_data_tree!(
+        hierarchy,
+        root: {
+            "fuchsia.inspect.Health": {
+                start_timestamp_nanos: AnyProperty,
+                status: AnyProperty,
+            }
+        }
+    );
+    log::info!("Sampler stress test: daemon health verified. Test complete.");
+}

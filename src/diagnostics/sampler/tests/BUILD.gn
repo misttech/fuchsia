@@ -25,6 +25,7 @@ rustc_test("integration-bin") {
     "//src/lib/fuchsia-component",
     "//src/testing/realm_client/rust",
     "//third_party/rust_crates:anyhow",
+    "//third_party/rust_crates:log",
   ]
 
   source_root = "lib.rs"
