@@ -123,9 +123,7 @@ mod tests {
         drop(child2);
         let merged = handle.into_buffer().expect("into_buffer must succeed when sole reference");
         assert_eq!(merged.len(), 2048);
-        assert!(merged.as_ptr_slice().subslice(0..1024).iter_as::<u8>().all(|b| b.read() == 0x33));
-        assert!(
-            merged.as_ptr_slice().subslice(1024..2048).iter_as::<u8>().all(|b| b.read() == 0x44)
-        );
+        assert!(merged.as_ptr_slice().subslice(0..1024).iter_as::<u8>().all(|b| b == 0x33));
+        assert!(merged.as_ptr_slice().subslice(1024..2048).iter_as::<u8>().all(|b| b == 0x44));
     }
 }

@@ -3818,7 +3818,7 @@ mod tests {
                     let mut buf = object.allocate_buffer(1000).await;
                     assert_eq!(object.read(0, buf.as_mut()).await.expect("read failed"), 1000);
                     for (i, byte) in buf.as_ptr_slice().iter_as::<u8>().enumerate() {
-                        assert_eq!(byte.read(), i as u8);
+                        assert_eq!(byte, i as u8);
                     }
                 }
             };

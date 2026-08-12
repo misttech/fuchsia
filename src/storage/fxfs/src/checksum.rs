@@ -30,7 +30,7 @@ pub fn fletcher64_ptr(buf: PtrByteSlice<'_>, previous: Checksum) -> Checksum {
     let mut lo = previous as u32;
     let mut hi = (previous >> 32) as u32;
     for chunk in buf.iter_as::<[u8; 4]>() {
-        let val = u32::from_le_bytes(chunk.read());
+        let val = u32::from_le_bytes(chunk);
         lo = lo.wrapping_add(val);
         hi = hi.wrapping_add(lo);
     }

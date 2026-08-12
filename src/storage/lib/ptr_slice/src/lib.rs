@@ -591,7 +591,7 @@ pub struct IterAs<'a, T> {
 }
 
 impl<'a, T: Copy + FromBytes> Iterator for IterAs<'a, T> {
-    type Item = Elem<'a, T>;
+    type Item = T;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.ptr == self.end {
@@ -601,25 +601,10 @@ impl<'a, T: Copy + FromBytes> Iterator for IterAs<'a, T> {
             // SAFETY: `self.ptr` is less than `self.end` (checked), so adding 1 is within the
             // bounds of the allocation.
             self.ptr = unsafe { self.ptr.add(1) };
-            Some(Elem { ptr: current, _marker: PhantomData })
+            // SAFETY: The pointer is guaranteed to be valid and aligned for `T` since alignment
+            // was verified when the iterator was created.
+            Some(unsafe { std::ptr::read(current) })
         }
-    }
-}
-
-/// A read-only typed element of a pointer slice.
-pub struct Elem<'a, T> {
-    ptr: *const T,
-    _marker: PhantomData<&'a T>,
-}
-
-impl<T: Copy + FromBytes> Elem<'_, T> {
-    /// Reads the value from the element.
-    ///
-    /// Since alignment and validity were verified once when the iterator was created,
-    /// this access is safe and fast.
-    pub fn read(&self) -> T {
-        // SAFETY: The pointer is guaranteed to be valid and aligned.
-        unsafe { std::ptr::read(self.ptr) }
     }
 }
 

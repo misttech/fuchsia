@@ -435,7 +435,7 @@ pub(crate) mod tests {
         read_aligned_range(&mappings, 0..4096, &*service, move |res| {
             let buffer = res.expect("read_aligned_range should succeed");
             assert_eq!(buffer.len(), 4096);
-            assert!(buffer.as_ptr_slice().iter_as::<u8>().all(|b| b.read() == 42));
+            assert!(buffer.as_ptr_slice().iter_as::<u8>().all(|b| b == 42));
             completed_clone.store(true, Ordering::Relaxed);
             ControlFlow::Continue(())
         });
@@ -486,7 +486,7 @@ pub(crate) mod tests {
         read_aligned_range(&mappings, 0..4096, &*service, move |res| {
             let buffer = res.expect("read_aligned_range should succeed");
             assert_eq!(buffer.len(), 4096);
-            assert!(buffer.as_ptr_slice().iter_as::<u64>().all(|b| b.read() == 0));
+            assert!(buffer.as_ptr_slice().iter_as::<u64>().all(|b| b == 0));
             completed_clone.store(true, Ordering::Relaxed);
             ControlFlow::Continue(())
         });
@@ -939,16 +939,8 @@ pub(crate) mod tests {
             count_clone.fetch_add(1, Ordering::Relaxed);
             let buffer = res.expect("merged read should succeed");
             assert_eq!(buffer.len(), 16384);
-            assert!(
-                buffer.as_ptr_slice().subslice(0..4096).iter_as::<u8>().all(|b| b.read() == 0xAA)
-            );
-            assert!(
-                buffer
-                    .as_ptr_slice()
-                    .subslice(4096..16384)
-                    .iter_as::<u8>()
-                    .all(|b| b.read() == 0xBB)
-            );
+            assert!(buffer.as_ptr_slice().subslice(0..4096).iter_as::<u8>().all(|b| b == 0xAA));
+            assert!(buffer.as_ptr_slice().subslice(4096..16384).iter_as::<u8>().all(|b| b == 0xBB));
             completed_clone.store(true, Ordering::Relaxed);
             ControlFlow::Continue(())
         });

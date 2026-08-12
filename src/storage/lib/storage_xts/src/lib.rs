@@ -101,25 +101,25 @@ fn xts_encrypt_buffer_out_of_place<B: BlockCipherEncBackend<BlockSize = U16>>(
                 options(nostack, preserves_flags),
             );
         }
-        let val0 = xts_encrypt_chunk(backend, s0.read(), tweak);
+        let val0 = xts_encrypt_chunk(backend, s0, tweak);
         d0.write(val0);
         tweak.update();
 
         let s1 = src_chunks.next().unwrap();
         let d1 = dst_chunks.next().unwrap();
-        let val1 = xts_encrypt_chunk(backend, s1.read(), tweak);
+        let val1 = xts_encrypt_chunk(backend, s1, tweak);
         d1.write(val1);
         tweak.update();
 
         let s2 = src_chunks.next().unwrap();
         let d2 = dst_chunks.next().unwrap();
-        let val2 = xts_encrypt_chunk(backend, s2.read(), tweak);
+        let val2 = xts_encrypt_chunk(backend, s2, tweak);
         d2.write(val2);
         tweak.update();
 
         let s3 = src_chunks.next().unwrap();
         let d3 = dst_chunks.next().unwrap();
-        let val3 = xts_encrypt_chunk(backend, s3.read(), tweak);
+        let val3 = xts_encrypt_chunk(backend, s3, tweak);
         d3.write(val3);
         tweak.update();
     }
@@ -139,7 +139,7 @@ fn xts_encrypt_buffer<B: BlockCipherEncBackend<BlockSize = U16>>(
     let dst_chunks = dst.iter_as_mut::<u128>();
 
     for (src_chunk, dst_chunk) in src_chunks.zip(dst_chunks) {
-        let val = xts_encrypt_chunk(backend, src_chunk.read(), tweak);
+        let val = xts_encrypt_chunk(backend, src_chunk, tweak);
         dst_chunk.write(val);
         tweak.update();
     }
@@ -186,25 +186,25 @@ fn xts_decrypt_buffer_out_of_place<B: BlockCipherDecBackend<BlockSize = U16>>(
                 options(nostack, preserves_flags),
             );
         }
-        let val0 = xts_decrypt_chunk(backend, s0.read(), tweak);
+        let val0 = xts_decrypt_chunk(backend, s0, tweak);
         d0.write(val0);
         tweak.update();
 
         let s1 = src_chunks.next().unwrap();
         let d1 = dst_chunks.next().unwrap();
-        let val1 = xts_decrypt_chunk(backend, s1.read(), tweak);
+        let val1 = xts_decrypt_chunk(backend, s1, tweak);
         d1.write(val1);
         tweak.update();
 
         let s2 = src_chunks.next().unwrap();
         let d2 = dst_chunks.next().unwrap();
-        let val2 = xts_decrypt_chunk(backend, s2.read(), tweak);
+        let val2 = xts_decrypt_chunk(backend, s2, tweak);
         d2.write(val2);
         tweak.update();
 
         let s3 = src_chunks.next().unwrap();
         let d3 = dst_chunks.next().unwrap();
-        let val3 = xts_decrypt_chunk(backend, s3.read(), tweak);
+        let val3 = xts_decrypt_chunk(backend, s3, tweak);
         d3.write(val3);
         tweak.update();
     }
@@ -224,7 +224,7 @@ fn xts_decrypt_buffer<B: BlockCipherDecBackend<BlockSize = U16>>(
     let dst_chunks = dst.iter_as_mut::<u128>();
 
     for (src_chunk, dst_chunk) in src_chunks.zip(dst_chunks) {
-        let val = xts_decrypt_chunk(backend, src_chunk.read(), tweak);
+        let val = xts_decrypt_chunk(backend, src_chunk, tweak);
         dst_chunk.write(val);
         tweak.update();
     }

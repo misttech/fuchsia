@@ -394,7 +394,7 @@ async fn load_seek_table(
     seek_table.push(0);
     let mut prev = 0;
     for chunk in buffer.subslice(0..seek_table_size).as_ptr_slice().iter_as::<[u8; 8]>() {
-        let next = u64::from_le_bytes(chunk.read());
+        let next = u64::from_le_bytes(chunk);
         // Should be in strict ascending order, otherwise something's broken, or we've gone off
         // the end and we're reading zeroes.
         if prev > next {
