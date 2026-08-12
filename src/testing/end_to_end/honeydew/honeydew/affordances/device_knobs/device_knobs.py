@@ -7,21 +7,14 @@ import abc
 from collections.abc import Awaitable, Callable
 
 import fuchsia_inspect
+from honeydew.affordances import location
+from honeydew.affordances.connectivity import netstack
 from honeydew.affordances.connectivity.bluetooth.avrcp import avrcp
 from honeydew.affordances.connectivity.bluetooth.gap import gap
 from honeydew.affordances.connectivity.bluetooth.le import le
-from honeydew.affordances.connectivity.netstack import (
-    netstack as netstack_module,
-)
 from honeydew.affordances.connectivity.wlan import core as wlan_core
-from honeydew.affordances.connectivity.wlan.wlan_policy import (
-    wlan_policy as wlan_policy_module,
-)
-from honeydew.affordances.connectivity.wlan.wlan_policy_ap import (
-    wlan_policy_ap as wlan_policy_ap_module,
-)
+from honeydew.affordances.connectivity.wlan import wlan_policy, wlan_policy_ap
 from honeydew.affordances.hello_world import hello_world
-from honeydew.affordances.location import location as location_module
 from honeydew.affordances.power.system_power_state_controller import (
     system_power_state_controller,
 )
@@ -310,7 +303,7 @@ class DeviceKnobs(abc.ABC):
 
     @properties.Affordance
     @abc.abstractmethod
-    def wlan_policy(self) -> wlan_policy_module.AsyncWlanPolicy:
+    def wlan_policy(self) -> wlan_policy.WlanPolicy:
         """Returns a WlanPolicy affordance object.
 
         Returns:
@@ -319,27 +312,7 @@ class DeviceKnobs(abc.ABC):
 
     @properties.Affordance
     @abc.abstractmethod
-    def wlan_policy_deprecated_sync(self) -> wlan_policy_module.WlanPolicy:
-        """Returns a WlanPolicy affordance object.
-
-        Returns:
-            wlan_policy.WlanPolicy object
-        """
-
-    @properties.Affordance
-    @abc.abstractmethod
-    def wlan_policy_ap(self) -> wlan_policy_ap_module.AsyncWlanPolicyAp:
-        """Returns a WlanPolicyAp affordance object.
-
-        Returns:
-            wlan_policy_ap.WlanPolicyAp object
-        """
-
-    @properties.Affordance
-    @abc.abstractmethod
-    def wlan_policy_ap_deprecated_sync(
-        self,
-    ) -> wlan_policy_ap_module.WlanPolicyAp:
+    def wlan_policy_ap(self) -> wlan_policy_ap.WlanPolicyAp:
         """Returns a WlanPolicyAp affordance object.
 
         Returns:
@@ -357,7 +330,7 @@ class DeviceKnobs(abc.ABC):
 
     @properties.Affordance
     @abc.abstractmethod
-    def netstack(self) -> netstack_module.AsyncNetstack:
+    def netstack(self) -> netstack.Netstack:
         """Returns a netstack affordance object.
 
         Returns:
@@ -366,25 +339,7 @@ class DeviceKnobs(abc.ABC):
 
     @properties.Affordance
     @abc.abstractmethod
-    def netstack_deprecated_sync(self) -> netstack_module.Netstack:
-        """Returns a netstack affordance object.
-
-        Returns:
-            netstack.Netstack object
-        """
-
-    @properties.Affordance
-    @abc.abstractmethod
-    def location(self) -> location_module.AsyncLocation:
-        """Returns a Location affordance object.
-
-        Returns:
-            location.Location object
-        """
-
-    @properties.Affordance
-    @abc.abstractmethod
-    def location_deprecated_sync(self) -> location_module.Location:
+    def location(self) -> location.Location:
         """Returns a Location affordance object.
 
         Returns:

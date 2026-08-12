@@ -10,10 +10,8 @@ from unittest import mock
 import fidl_fuchsia_location_namedplace as f_location_namedplace
 from fuchsia_controller_py import FcTransportStatus
 from honeydew import affordances_capable
-from honeydew.affordances.connectivity.wlan.utils.types import (
-    CountryCode,
-)
-from honeydew.affordances.location import location_using_fc
+from honeydew.affordances import location
+from honeydew.affordances.connectivity.wlan.utils.types import CountryCode
 from honeydew.affordances.location.errors import HoneydewLocationError
 from honeydew.errors import NotSupportedError
 from honeydew.transports.ffx import ffx as ffx_transport
@@ -49,10 +47,10 @@ class LocationFCTests(unittest.IsolatedAsyncioTestCase):
         )
 
         self.ffx_transport_obj.run.return_value = "".join(
-            location_using_fc._REQUIRED_CAPABILITIES
+            location._REQUIRED_CAPABILITIES
         )
 
-        self.location_obj = location_using_fc.AsyncLocationUsingFc(
+        self.location_obj = location.Location(
             device_name="fuchsia-emulator",
             ffx=self.ffx_transport_obj,
             fuchsia_controller=self.fc_transport_obj,
@@ -64,7 +62,7 @@ class LocationFCTests(unittest.IsolatedAsyncioTestCase):
         self.ffx_transport_obj.run.return_value = ""
 
         with self.assertRaises(NotSupportedError):
-            self.location_obj = location_using_fc.AsyncLocationUsingFc(
+            self.location_obj = location.Location(
                 device_name="fuchsia-emulator",
                 ffx=self.ffx_transport_obj,
                 fuchsia_controller=self.fc_transport_obj,

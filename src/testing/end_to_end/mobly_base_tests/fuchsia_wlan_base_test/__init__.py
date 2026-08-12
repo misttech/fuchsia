@@ -9,9 +9,7 @@ import time
 import fuchsia_base_test
 import openwrt_access_point
 from antlion.controllers import access_point
-from honeydew.affordances.connectivity.netstack.netstack import (
-    AsyncNetstack,
-)
+from honeydew.affordances.connectivity import netstack
 from honeydew.affordances.connectivity.netstack.types import (
     InterfaceProperties,
     PortClass,
@@ -96,7 +94,7 @@ class FuchsiaWlanBaseTest(fuchsia_base_test.FuchsiaBaseTest):
 
     # TODO(b/537123090): Move to netstack affordance
     async def wait_for_interface(
-        self, netstack: AsyncNetstack, port_class: PortClass
+        self, netstack: netstack.Netstack, port_class: PortClass
     ) -> str:
         """Wait for an interface to become available.
 

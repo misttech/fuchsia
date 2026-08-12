@@ -1,7 +1,6 @@
 # Copyright 2024 The Fuchsia Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
-"""Unit tests for wlan_policy_ap_using_fc.py"""
 
 import asyncio
 import types
@@ -15,15 +14,13 @@ import fidl_fuchsia_wlan_policy as f_wlan_policy
 import fuchsia_controller_py as fc
 from fuchsia_controller_py import Channel, Context, FcTransportStatus
 from honeydew import affordances_capable
+from honeydew.affordances.connectivity.wlan import wlan_policy_ap
 from honeydew.affordances.connectivity.wlan.utils.errors import (
     HoneydewWlanError,
 )
 from honeydew.affordances.connectivity.wlan.utils.types import (
     AccessPointState,
     NetworkIdentifier,
-)
-from honeydew.affordances.connectivity.wlan.wlan_policy_ap import (
-    wlan_policy_ap_using_fc,
 )
 from honeydew.errors import NotSupportedError
 from honeydew.transports.ffx import ffx as ffx_transport
@@ -69,9 +66,7 @@ async def _async_error(err: Exception) -> None:
 
 
 # pylint: disable=protected-access
-class WlanPolicyApFCTests(unittest.IsolatedAsyncioTestCase):
-    """Unit tests for wlan_policy_ap_using_fc.py"""
-
+class WlanPolicyApTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         await super().asyncSetUp()
 
@@ -103,7 +98,7 @@ class WlanPolicyApFCTests(unittest.IsolatedAsyncioTestCase):
         )
 
         self.ffx_transport_obj.run.return_value = "".join(
-            wlan_policy_ap_using_fc._REQUIRED_CAPABILITIES
+            wlan_policy_ap._REQUIRED_CAPABILITIES
         )
 
         self.access_point_state_updates_proxy: (
@@ -179,14 +174,12 @@ class WlanPolicyApFCTests(unittest.IsolatedAsyncioTestCase):
             patcher.start()
             self.addCleanup(patcher.stop)
 
-        self.wlan_policy_ap_obj = (
-            wlan_policy_ap_using_fc.AsyncWlanPolicyApUsingFc(
-                device_name="fuchsia-emulator",
-                ffx=self.ffx_transport_obj,
-                fuchsia_controller=self.fc_transport_obj,
-                reboot_affordance=self.reboot_affordance_obj,
-                fuchsia_device_close=self.fuchsia_device_close_obj,
-            )
+        self.wlan_policy_ap_obj = wlan_policy_ap.WlanPolicyAp(
+            device_name="fuchsia-emulator",
+            ffx=self.ffx_transport_obj,
+            fuchsia_controller=self.fc_transport_obj,
+            reboot_affordance=self.reboot_affordance_obj,
+            fuchsia_device_close=self.fuchsia_device_close_obj,
         )
 
         # Call make_ready() to ensure the affordance is initialized. This is
@@ -202,7 +195,7 @@ class WlanPolicyApFCTests(unittest.IsolatedAsyncioTestCase):
         self.ffx_transport_obj.run.return_value = ""
 
         with self.assertRaises(NotSupportedError):
-            wlan_policy_ap_using_fc.AsyncWlanPolicyApUsingFc(
+            wlan_policy_ap.WlanPolicyAp(
                 device_name="fuchsia-emulator",
                 ffx=self.ffx_transport_obj,
                 fuchsia_controller=self.fc_transport_obj,

@@ -30,7 +30,7 @@ wlancfg_tests_for_presubmit_no_shield_box = []
 # should go here, but most tests should likely go into `tests_for_postsubmit`.
 wlancfg_tests_for_wlan_presubmit = [
   # Though this test is defined in honeydew, it exercises wlancfg
-  "//src/testing/end_to_end/honeydew/honeydew/affordances/connectivity/wlan/wlan_policy/tests/functional_tests",
+  "//src/testing/end_to_end/honeydew/honeydew/affordances/connectivity/wlan/wlan_policy/tests:functional_tests",
 ]
 
 # These tests run in blocking CI (~once per hour).

@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from enum import Enum, StrEnum, auto, unique
 
 import fidl_fuchsia_wlan_policy as f_wlan_policy
+import fuchsia_async_extension
 from antlion import utils
 from antlion.controllers.ap_lib.hostapd_ap_preset import create_ap_preset
 from antlion.controllers.ap_lib.hostapd_constants import AP_SSID_LENGTH_2G
@@ -471,8 +472,10 @@ class WlanRebootTest(base_test.WifiBaseTest):
                 f"Waiting for DUT to disconnect from {ssid} after AP reboot. Will retry for "
                 f"{DUT_NETWORK_CONNECTION_TIMEOUT} seconds."
             )
-            self.fuchsia_device.honeydew_fd.wlan_policy_deprecated_sync.wait_for_no_connections(
-                timeout=DUT_NETWORK_CONNECTION_TIMEOUT,
+            fuchsia_async_extension.get_loop().run_until_complete(
+                self.fuchsia_device.honeydew_fd.wlan_policy.wait_for_no_connections(
+                    timeout=DUT_NETWORK_CONNECTION_TIMEOUT,
+                )
             )
             self.setup_ap(ssid, band, ip_version, security, password)
 
@@ -483,10 +486,12 @@ class WlanRebootTest(base_test.WifiBaseTest):
                     f"Checking if DUT is connected to {ssid} network. Will retry for "
                     f"{DUT_NETWORK_CONNECTION_TIMEOUT} seconds."
                 )
-                self.fuchsia_device.honeydew_fd.wlan_policy_deprecated_sync.wait_for_network_state(
-                    ssid,
-                    f_wlan_policy.ConnectionState.CONNECTED,
-                    timeout=DUT_NETWORK_CONNECTION_TIMEOUT,
+                fuchsia_async_extension.get_loop().run_until_complete(
+                    self.fuchsia_device.honeydew_fd.wlan_policy.wait_for_network_state(
+                        ssid,
+                        f_wlan_policy.ConnectionState.CONNECTED,
+                        timeout=DUT_NETWORK_CONNECTION_TIMEOUT,
+                    )
                 )
             except HoneydewWlanError as e:
                 if reboot_device == DeviceType.DUT and isinstance(

@@ -394,7 +394,9 @@ class FuchsiaDevice:
                 pass
 
         netstack_interfaces = (
-            self.honeydew_fd.netstack_deprecated_sync.list_interfaces()
+            fuchsia_async_extension.get_loop().run_until_complete(
+                self.honeydew_fd.netstack.list_interfaces()
+            )
         )
         for netstack_iface in netstack_interfaces:
             if netstack_iface.mac is None:

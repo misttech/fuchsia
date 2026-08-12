@@ -9,6 +9,7 @@ import time
 from dataclasses import dataclass
 
 import fidl_fuchsia_wlan_policy as f_wlan_policy
+import fuchsia_async_extension
 from antlion.controllers.fuchsia_lib.ssh import FuchsiaSSHProvider
 from honeydew.affordances.connectivity.wlan.utils.errors import (
     HoneydewWlanError,
@@ -93,7 +94,9 @@ class WlanPolicyController:
                     self.log.info(
                         "Removing any and all saved networks to run tests in a clean state."
                     )
-                    self.honeydew.wlan_policy_deprecated_sync.remove_all_networks()
+                    fuchsia_async_extension.get_loop().run_until_complete(
+                        self.honeydew.wlan_policy.remove_all_networks()
+                    )
 
                 # Optionally restart client connections to start tests in a good state. This should
                 # prevent issues like scans still being in progress when tests start.
@@ -107,7 +110,9 @@ class WlanPolicyController:
                     # conditions with retrying failed scans
                     time.sleep(TIME_WAIT_BETWEEN_STOP_START_CONNECTIONS)
 
-                self.honeydew.wlan_policy_deprecated_sync.start_client_connections()
+                fuchsia_async_extension.get_loop().run_until_complete(
+                    self.honeydew.wlan_policy.start_client_connections()
+                )
                 self.log.info(
                     "ACTS tests now have control of the WLAN policy layer."
                 )
@@ -129,18 +134,21 @@ class WlanPolicyController:
         )
 
     def _deconfigure_wlan(self) -> None:
-        self.honeydew.wlan_policy_deprecated_sync.stop_client_connections()
+        fuchsia_async_extension.get_loop().run_until_complete(
+            self.honeydew.wlan_policy.stop_client_connections()
+        )
         self.policy_configured = False
 
     def stop_client_connections_and_wait(
-        self, wait_time: int = DEFAULT_TIME_WAIT_FOR_CLIENT_CONNECTIONS_STATE
+        self,
+        wait_time: int = DEFAULT_TIME_WAIT_FOR_CLIENT_CONNECTIONS_STATE,
     ) -> None:
         """This function stops client connections if client connections are currently enabled,
         and waits for an update showing that the state has changed.
         """
         try:
-            client = self.honeydew.wlan_policy_deprecated_sync.get_status(
-                timeout=DEFAULT_TIME_WAIT_FOR_CLIENT_CONNECTIONS_STATE
+            client = fuchsia_async_extension.get_loop().run_until_complete(
+                self.honeydew.wlan_policy.get_status(timeout=wait_time)
             )
             if (
                 client.state
@@ -157,11 +165,15 @@ class WlanPolicyController:
                 "Unexpectedly timed out getting client state. Proceeding to stop client connections"
             )
 
-        self.honeydew.wlan_policy_deprecated_sync.stop_client_connections()
+        fuchsia_async_extension.get_loop().run_until_complete(
+            self.honeydew.wlan_policy.stop_client_connections()
+        )
         try:
-            self.honeydew.wlan_policy_deprecated_sync.wait_for_client_state(
-                expected_state=f_wlan_policy.WlanClientState.CONNECTIONS_DISABLED,
-                timeout=DEFAULT_TIME_WAIT_FOR_CLIENT_CONNECTIONS_STATE,
+            fuchsia_async_extension.get_loop().run_until_complete(
+                self.honeydew.wlan_policy.wait_for_client_state(
+                    expected_state=f_wlan_policy.WlanClientState.CONNECTIONS_DISABLED,
+                    timeout=wait_time,
+                )
             )
         except TimeoutError:
             self.log.warning(

@@ -1,7 +1,7 @@
 # Copyright 2024 The Fuchsia Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
-"""Unit tests for honeydew.affordances.fuchsia_controller.netstack."""
+"""Unit tests for honeydew.affordances.connectivity.netstack."""
 
 import asyncio
 import subprocess
@@ -18,7 +18,7 @@ import fuchsia_controller_py as fc
 from fuchsia_controller_py import Channel, ZxStatus
 from honeydew import affordances_capable
 from honeydew import errors as honeydew_errors
-from honeydew.affordances.connectivity.netstack import netstack_using_fc
+from honeydew.affordances.connectivity import netstack
 from honeydew.affordances.connectivity.netstack.errors import (
     HoneydewNetstackError,
 )
@@ -45,7 +45,7 @@ async def _async_response(response: _T) -> _T:
 
 # pylint: disable=protected-access
 class NetstackFCTests(unittest.IsolatedAsyncioTestCase):
-    """Unit tests for honeydew.affordances.fuchsia_controller.netstack."""
+    """Unit tests for honeydew.affordances.connectivity.netstack."""
 
     def setUp(self) -> None:
         super().setUp()
@@ -74,10 +74,10 @@ class NetstackFCTests(unittest.IsolatedAsyncioTestCase):
         )
 
         self.ffx_transport_obj.run.return_value = "".join(
-            netstack_using_fc._REQUIRED_CAPABILITIES
+            netstack._REQUIRED_CAPABILITIES
         )
 
-        self.netstack_obj = netstack_using_fc.AsyncNetstackUsingFc(
+        self.netstack_obj = netstack.Netstack(
             device_name="fuchsia-emulator",
             ffx=self.ffx_transport_obj,
             fuchsia_controller=self.fc_transport_obj,
@@ -91,7 +91,7 @@ class NetstackFCTests(unittest.IsolatedAsyncioTestCase):
         self.ffx_transport_obj.run.return_value = ""
 
         with self.assertRaises(NotSupportedError):
-            netstack_using_fc.AsyncNetstackUsingFc(
+            netstack.Netstack(
                 device_name="fuchsia-emulator",
                 ffx=self.ffx_transport_obj,
                 fuchsia_controller=self.fc_transport_obj,

@@ -26,6 +26,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+import fuchsia_async_extension
 from libs.proc import job
 from libs.proc.runner import CalledProcessError, Runner
 from mobly import signals
@@ -650,10 +651,8 @@ def get_interface_ip_addresses(
             for addr in ip.stdout.decode("utf-8").splitlines()
         ]
     elif isinstance(comm_channel, FuchsiaDevice):
-        for (
-            iface
-        ) in (
-            comm_channel.honeydew_fd.netstack_deprecated_sync.list_interfaces()
+        for iface in fuchsia_async_extension.get_loop().run_until_complete(
+            comm_channel.honeydew_fd.netstack.list_interfaces()
         ):
             if iface.name != interface:
                 continue

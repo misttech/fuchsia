@@ -23,12 +23,10 @@ import fuchsia_inspect
 import honeydew.affordances.connectivity.wlan.core as wlan_core
 from fuchsia_controller_py import FcTransportStatus, ZxStatus
 from honeydew import affordances_capable, errors
+from honeydew.affordances import location
 from honeydew.affordances.connectivity.bluetooth.avrcp import avrcp_using_sl4f
 from honeydew.affordances.connectivity.bluetooth.gap import gap_using_fc
-from honeydew.affordances.connectivity.wlan.wlan_policy import (
-    wlan_policy_using_fc,
-)
-from honeydew.affordances.location import location_using_fc
+from honeydew.affordances.connectivity.wlan import wlan_policy
 from honeydew.affordances.power.system_power_state_controller import (
     system_power_state_controller_using_starnix,
 )
@@ -681,7 +679,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         )
 
     @mock.patch.object(
-        location_using_fc.AsyncLocationUsingFc,
+        location.Location,
         "__init__",
         autospec=True,
         return_value=None,
@@ -689,30 +687,30 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
     @mock.patch.object(
         ffx.FFX,
         "run",
-        return_value="".join(wlan_policy_using_fc._REQUIRED_CAPABILITIES),
+        return_value="".join(wlan_policy._REQUIRED_CAPABILITIES),
         autospec=True,
     )
     @mock.patch.object(
-        wlan_policy_using_fc.AsyncWlanPolicyUsingFc,
+        wlan_policy.WlanPolicy,
         "__init__",
         autospec=True,
         return_value=None,
     )
-    def test_wlan_policy_using_fc(
+    def test_wlan_policy(
         self,
-        wlan_policy_using_fc_init: mock.Mock,
+        wlan_policy_init: mock.Mock,
         # pylint: disable-next=unused-argument
         mock_ffx_run: mock.Mock,
         # pylint: disable-next=unused-argument
-        location_using_fc_init: mock.Mock,
+        location_init: mock.Mock,
     ) -> None:
         """Test case to make sure fuchsia_device supports Fuchsia-Controller based wlan_policy
         affordance."""
         self.assertIsInstance(
             self.fd_fc_obj.wlan_policy,
-            wlan_policy_using_fc.AsyncWlanPolicyUsingFc,
+            wlan_policy.WlanPolicy,
         )
-        wlan_policy_using_fc_init.assert_called_once_with(
+        wlan_policy_init.assert_called_once_with(
             self.fd_fc_obj.wlan_policy,
             device_name=self.fd_fc_obj._device_info.name,
             ffx=self.fd_fc_obj.ffx,

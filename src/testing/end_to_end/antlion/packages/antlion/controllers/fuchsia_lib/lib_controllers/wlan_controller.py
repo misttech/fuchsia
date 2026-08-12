@@ -46,7 +46,9 @@ class WlanController:
             ConnectionError - failure to query PHYs
         """
         self.log.info(f"Setting DUT country code to {country_code}")
-        self.honeydew.location_deprecated_sync.set_region(country_code)
+        fuchsia_async_extension.get_loop().run_until_complete(
+            self.honeydew.location.set_region(country_code)
+        )
 
         self.log.info(
             f"Verifying DUT country code was correctly set to {country_code}."

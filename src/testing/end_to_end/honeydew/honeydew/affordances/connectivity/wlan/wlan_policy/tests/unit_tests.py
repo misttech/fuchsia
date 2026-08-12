@@ -1,7 +1,6 @@
 # Copyright 2023 The Fuchsia Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
-"""Unit tests for wlan_policy_using_fc.py"""
 
 import asyncio
 import types
@@ -15,6 +14,7 @@ import fuchsia_controller_py
 from fidl import GlobalHandleWaker
 from fuchsia_controller_py import Channel, Context, FcTransportStatus, ZxStatus
 from honeydew import affordances_capable
+from honeydew.affordances.connectivity.wlan import wlan_policy
 from honeydew.affordances.connectivity.wlan.utils.errors import (
     HoneydewWlanError,
 )
@@ -24,10 +24,7 @@ from honeydew.affordances.connectivity.wlan.utils.types import (
     NetworkIdentifier,
     NetworkState,
 )
-from honeydew.affordances.connectivity.wlan.wlan_policy import (
-    wlan_policy_using_fc,
-)
-from honeydew.affordances.location.location import Location
+from honeydew.affordances.location import Location
 from honeydew.errors import NotSupportedError
 from honeydew.transports.ffx import ffx as ffx_transport
 from honeydew.transports.fuchsia_controller import (
@@ -126,9 +123,7 @@ async def _async_error(err: Exception) -> None:
 
 
 # pylint: disable=protected-access
-class WlanPolicyFCTests(unittest.IsolatedAsyncioTestCase):
-    """Unit tests for wlan_policy_using_fc.py"""
-
+class WlanPolicyTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         await super().asyncSetUp()
 
@@ -170,10 +165,10 @@ class WlanPolicyFCTests(unittest.IsolatedAsyncioTestCase):
             autospec=True,
         )
         self.ffx_transport_obj.run.return_value = "".join(
-            wlan_policy_using_fc._REQUIRED_CAPABILITIES
+            wlan_policy._REQUIRED_CAPABILITIES
         )
 
-        self.wlan_policy_obj = wlan_policy_using_fc.AsyncWlanPolicyUsingFc(
+        self.wlan_policy_obj = wlan_policy.WlanPolicy(
             device_name="fuchsia-emulator",
             ffx=self.ffx_transport_obj,
             fuchsia_controller=self.fc_transport_obj,
@@ -205,9 +200,9 @@ class WlanPolicyFCTests(unittest.IsolatedAsyncioTestCase):
             fidl_endpoint: custom_types.FidlEndpoint,
         ) -> mock.MagicMock:
             if fidl_endpoint in [
-                wlan_policy_using_fc._CLIENT_PROVIDER_PROXY,
-                wlan_policy_using_fc._DEVICE_MONITOR_PROXY,
-                wlan_policy_using_fc._CLIENT_LISTENER_PROXY,
+                wlan_policy._CLIENT_PROVIDER_PROXY,
+                wlan_policy._DEVICE_MONITOR_PROXY,
+                wlan_policy._CLIENT_LISTENER_PROXY,
             ]:
                 return mock.MagicMock(spec=Channel)
             raise ValueError(f"Unexpected endpoint: {fidl_endpoint}")
@@ -275,7 +270,7 @@ class WlanPolicyFCTests(unittest.IsolatedAsyncioTestCase):
         self.ffx_transport_obj.run.return_value = ""
 
         with self.assertRaises(NotSupportedError):
-            wlan_policy_using_fc.AsyncWlanPolicyUsingFc(
+            wlan_policy.WlanPolicy(
                 device_name="fuchsia-emulator",
                 ffx=self.ffx_transport_obj,
                 fuchsia_controller=self.fc_transport_obj,

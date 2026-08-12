@@ -78,15 +78,19 @@ class FuchsiaWlanDevice:
         timeout_sec: int = DEFAULT_ASSOCIATE_TIMEOUT_SEC,
     ) -> bool:
         try:
-            self.device.honeydew_fd.wlan_policy_deprecated_sync.save_network(
-                target_ssid,
-                target_security.fuchsia_security_type(),
-                target_pwd=target_pwd,
+            fuchsia_async_extension.get_loop().run_until_complete(
+                self.device.honeydew_fd.wlan_policy.save_network(
+                    target_ssid,
+                    target_security.fuchsia_security_type(),
+                    target_pwd=target_pwd,
+                )
             )
-            self.device.honeydew_fd.wlan_policy_deprecated_sync.connect(
-                target_ssid,
-                target_security.fuchsia_security_type(),
-                timeout=timeout_sec,
+            fuchsia_async_extension.get_loop().run_until_complete(
+                self.device.honeydew_fd.wlan_policy.connect(
+                    target_ssid,
+                    target_security.fuchsia_security_type(),
+                    timeout=timeout_sec,
+                )
             )
             return True
         except HoneydewWlanError as e:
@@ -100,8 +104,12 @@ class FuchsiaWlanDevice:
         """Function to disconnect from a Fuchsia WLAN device.
         Asserts if disconnect was not successful.
         """
-        self.device.honeydew_fd.wlan_policy_deprecated_sync.remove_all_networks()
-        self.device.honeydew_fd.wlan_policy_deprecated_sync.wait_for_no_connections()
+        fuchsia_async_extension.get_loop().run_until_complete(
+            self.device.honeydew_fd.wlan_policy.remove_all_networks()
+        )
+        fuchsia_async_extension.get_loop().run_until_complete(
+            self.device.honeydew_fd.wlan_policy.wait_for_no_connections()
+        )
 
     def ping(
         self,
@@ -113,13 +121,15 @@ class FuchsiaWlanDevice:
         additional_ping_params: str | None = None,
     ) -> PingResult:
         try:
-            hd_result = self.device.honeydew_fd.netstack_deprecated_sync.ping(
-                dest_ip,
-                count=count,
-                interval=interval,
-                timeout=timeout,
-                size=size,
-                additional_ping_params=additional_ping_params,
+            hd_result = fuchsia_async_extension.get_loop().run_until_complete(
+                self.device.honeydew_fd.netstack.ping(
+                    dest_ip,
+                    count=count,
+                    interval=interval,
+                    timeout=timeout,
+                    size=size,
+                    additional_ping_params=additional_ping_params,
+                )
             )
             return PingResult(
                 raw_output=hd_result.raw_output,
