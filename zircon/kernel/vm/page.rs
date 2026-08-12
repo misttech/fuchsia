@@ -12,7 +12,15 @@ use zr::Opaque;
 
 pub use bindings::vm_page_t;
 
-pub const OBJECT_MAX_PIN_COUNT: u32 = bindings::VM_PAGE_OBJECT_MAX_PIN_COUNT;
+pub mod object {
+    use page_bindings as bindings;
+
+    pub const PIN_COUNT_BITS: u32 = bindings::VM_PAGE_OBJECT_PIN_COUNT_BITS;
+    pub const MAX_PIN_COUNT: u32 = bindings::VM_PAGE_OBJECT_MAX_PIN_COUNT;
+    pub const DIRTY_STATE_BITS: u32 = bindings::VM_PAGE_OBJECT_DIRTY_STATE_BITS;
+    pub const MAX_DIRTY_STATES: u32 = bindings::VM_PAGE_OBJECT_MAX_DIRTY_STATES;
+    pub const DIRTY_STATES_MASK: u32 = bindings::VM_PAGE_OBJECT_DIRTY_STATES_MASK;
+}
 
 /// Type-safe wrapper around a raw pointer to a kernel page.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

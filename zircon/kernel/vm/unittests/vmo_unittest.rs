@@ -342,7 +342,7 @@ mod vmo_rs {
             // SAFETY: Test owns vmo and pages remain attached during check.
             expect_true!(unsafe { pages_in_wired_queue(&vmo, 0, alloc_size) });
 
-            for _ in 1..crate::vm::page::OBJECT_MAX_PIN_COUNT {
+            for _ in 1..crate::vm::page::object::MAX_PIN_COUNT {
                 // pinning first page max times
                 expect_ok!(vmo.commit_range_pinned(0, PAGE_SIZE, false));
             }
@@ -371,7 +371,7 @@ mod vmo_rs {
             // decommitting unpinned range
             expect_ok!(vmo.decommit_range(PAGE_SIZE, 4 * PAGE_SIZE));
 
-            for _ in 2..crate::vm::page::OBJECT_MAX_PIN_COUNT {
+            for _ in 2..crate::vm::page::object::MAX_PIN_COUNT {
                 vmo.unpin(0, PAGE_SIZE);
             }
             // decommitting unpinned range
@@ -407,7 +407,7 @@ mod vmo_rs {
             // SAFETY: Test owns vmo and pages remain attached during check.
             expect_true!(unsafe { pages_in_wired_queue(&vmo, 0, alloc_size) });
 
-            for _ in 1..crate::vm::page::OBJECT_MAX_PIN_COUNT {
+            for _ in 1..crate::vm::page::object::MAX_PIN_COUNT {
                 // pinning first page max times
                 expect_ok!(vmo.commit_range_pinned(0, PAGE_SIZE, false));
             }
@@ -446,7 +446,7 @@ mod vmo_rs {
                 expect_ok!(status);
             }
 
-            for _ in 2..crate::vm::page::OBJECT_MAX_PIN_COUNT {
+            for _ in 2..crate::vm::page::object::MAX_PIN_COUNT {
                 vmo.unpin(0, PAGE_SIZE);
             }
             let status = vmo.decommit_range(0, PAGE_SIZE);

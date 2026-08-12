@@ -372,7 +372,13 @@ kernel_bindgen_crate("page-bindings") {
 
   edition = "2024"
   notice_year = 2026
-  var_allowlist = [ "VM_PAGE_OBJECT_MAX_PIN_COUNT" ]
+  var_allowlist = [
+    "VM_PAGE_OBJECT_DIRTY_STATES_MASK",
+    "VM_PAGE_OBJECT_DIRTY_STATE_BITS",
+    "VM_PAGE_OBJECT_MAX_DIRTY_STATES",
+    "VM_PAGE_OBJECT_MAX_PIN_COUNT",
+    "VM_PAGE_OBJECT_PIN_COUNT_BITS",
+  ]
   function_allowlist = [
     "cpp_get_count",
     "cpp_add_to_initial_count",
