@@ -8,7 +8,7 @@ use fidl_fuchsia_hardware_spi as fspi;
 use fuchsia_component::client::{connect_to_service_instance, open_service_at};
 use fuchsia_fs::directory::{WatchEvent, Watcher};
 use futures::StreamExt;
-use spi_integration_test_config::Config;
+use spi_system_test_config::Config;
 
 /// Discovers all available SPI devices using TestService.
 async fn discover_devices(expected_count: usize) -> Result<Vec<fspi::DeviceProxy>> {

@@ -5,7 +5,7 @@
 import("//build/components.gni")
 import("//build/rust/rustc_test.gni")
 
-# Defines a SPI integration test package.
+# Defines a SPI system test package.
 #
 # Parameters
 #
@@ -15,7 +15,7 @@ import("//build/rust/rustc_test.gni")
 #   test_specs (required)
 #     [scope] Test specifications.
 #
-template("spi_integration_test") {
+template("spi_system_test") {
   assert(defined(invoker.spi_bus_count), "spi_bus_count must be defined")
   assert(defined(invoker.test_specs), "test_specs must be defined")
 
@@ -28,20 +28,21 @@ template("spi_integration_test") {
 
   fuchsia_component_manifest(_manifest_target) {
     testonly = true
-    manifest = "//src/devices/spi/tests/spi-integration-test/meta/spi-integration-test.cml"
+    manifest =
+        "//src/devices/spi/tests/spi-system-test/meta/spi-system-test.cml"
   }
 
   fuchsia_structured_config_rust_lib(_config_lib_target) {
     testonly = true
     cm_label = ":$_manifest_target"
-    name = "spi_integration_test_config"
+    name = "spi_system_test_config"
   }
 
   rustc_test(_bin_target) {
-    output_name = "spi_integration_test"
+    output_name = "spi_system_test"
     edition = "2024"
-    source_root = "//src/devices/spi/tests/spi-integration-test/src/lib.rs"
-    sources = [ "//src/devices/spi/tests/spi-integration-test/src/lib.rs" ]
+    source_root = "//src/devices/spi/tests/spi-system-test/src/lib.rs"
+    sources = [ "//src/devices/spi/tests/spi-system-test/src/lib.rs" ]
     deps = [
       ":$_config_lib_target",
       "//sdk/fidl/fuchsia.hardware.spi:fuchsia.hardware.spi_rust",
