@@ -23,19 +23,16 @@ pub struct FilesystemContext {
 
 impl FilesystemContext {
     /// Returns the filesystem type name bytes (`<fs_type>`).
-    #[cfg(test)]
     pub fn name(&self) -> &[u8] {
         &self.name
     }
 
     /// Returns the security [`Context`] applied to the filesystem mount (`<fs_context>`).
-    #[cfg(test)]
     pub fn fs_context(&self) -> &Context {
         &self.fs_context
     }
 
     /// Returns the security [`Context`] applied to the filesystem root directory (`<root_context>`).
-    #[cfg(test)]
     pub fn root_context(&self) -> &Context {
         &self.root_context
     }
@@ -53,7 +50,6 @@ pub struct NetworkInterfaceContext {
 
 impl NetworkInterfaceContext {
     /// Returns the network interface name bytes (`<interface_name>`).
-    #[cfg(test)]
     pub fn name(&self) -> &[u8] {
         &self.name
     }
@@ -72,7 +68,6 @@ pub struct PortContext {
 
 impl PortContext {
     /// Returns the security [`Context`].
-    #[cfg(test)]
     pub fn context(&self) -> &Context {
         &self.context
     }
@@ -90,19 +85,16 @@ pub struct IPv4NodeContext {
 
 impl IPv4NodeContext {
     /// Returns the IPv4 address.
-    #[cfg(test)]
     pub fn address(&self) -> u32 {
         self.address
     }
 
     /// Returns the subnet mask.
-    #[cfg(test)]
     pub fn mask(&self) -> u32 {
         self.mask
     }
 
     /// Returns the security [`Context`].
-    #[cfg(test)]
     pub fn context(&self) -> &Context {
         &self.context
     }
@@ -157,19 +149,16 @@ pub struct IPv6NodeContext {
 
 impl IPv6NodeContext {
     /// Returns the IPv6 address 32-bit words by value.
-    #[cfg(test)]
     pub fn address(&self) -> [u32; 4] {
         self.address
     }
 
     /// Returns the IPv6 mask 32-bit words by value.
-    #[cfg(test)]
     pub fn mask(&self) -> [u32; 4] {
         self.mask
     }
 
     /// Returns the security [`Context`].
-    #[cfg(test)]
     pub fn context(&self) -> &Context {
         &self.context
     }
@@ -187,19 +176,16 @@ pub struct InfiniBandPartitionKey {
 
 impl InfiniBandPartitionKey {
     /// Returns the low partition key bound.
-    #[cfg(test)]
     pub fn low(&self) -> u32 {
         self.low
     }
 
     /// Returns the high partition key bound.
-    #[cfg(test)]
     pub fn high(&self) -> u32 {
         self.high
     }
 
     /// Returns the security [`Context`].
-    #[cfg(test)]
     pub fn context(&self) -> &Context {
         &self.context
     }
@@ -217,13 +203,11 @@ pub struct InfiniBandEndPort {
 
 impl InfiniBandEndPort {
     /// Returns the InfiniBand device name string bytes (`<device_name>`).
-    #[cfg(test)]
     pub fn name(&self) -> &[u8] {
         &self.name
     }
 
     /// Returns the security [`Context`].
-    #[cfg(test)]
     pub fn context(&self) -> &Context {
         &self.context
     }
@@ -245,25 +229,21 @@ pub struct ObjectContexts {
 
 impl ObjectContexts {
     /// Returns the filesystem labeling statements table.
-    #[cfg(test)]
     pub fn filesystems(&self) -> &[FilesystemContext] {
         &self.filesystems
     }
 
     /// Returns the network port labeling statements table.
-    #[cfg(test)]
     pub fn ports(&self) -> &[PortContext] {
         &self.ports
     }
 
     /// Returns the network interface labeling statements table.
-    #[cfg(test)]
     pub fn network_interfaces(&self) -> &[NetworkInterfaceContext] {
         &self.network_interfaces
     }
 
     /// Returns the IPv4 node labeling statements table.
-    #[cfg(test)]
     pub fn ipv4_nodes(&self) -> &[IPv4NodeContext] {
         &self.ipv4_nodes
     }
@@ -274,19 +254,16 @@ impl ObjectContexts {
     }
 
     /// Returns the IPv6 node labeling statements table.
-    #[cfg(test)]
     pub fn ipv6_nodes(&self) -> &[IPv6NodeContext] {
         &self.ipv6_nodes
     }
 
     /// Returns the InfiniBand partition key labeling statements table.
-    #[cfg(test)]
     pub fn infiniband_partition_keys(&self) -> &[InfiniBandPartitionKey] {
         &self.infiniband_partition_keys
     }
 
     /// Returns the InfiniBand end port labeling statements table.
-    #[cfg(test)]
     pub fn infiniband_end_ports(&self) -> &[InfiniBandEndPort] {
         &self.infiniband_end_ports
     }

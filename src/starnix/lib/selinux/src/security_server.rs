@@ -6,8 +6,8 @@ use crate::access_vector_cache::{
     AccessVectorCache, CacheStats, KernelXpermsAccessDecision, Query,
 };
 use crate::exceptions_config::ExceptionsConfig;
-use crate::new_policy::HandleUnknown;
 use crate::new_policy::traits::{HasName, HasPolicyId};
+use crate::new_policy::{HandleUnknown, NewPolicy};
 use crate::permission_check::{PerThreadCache, PermissionCheck};
 use crate::policy::parser::PolicyData;
 use crate::policy::{
@@ -165,6 +165,9 @@ pub struct SecurityServer {
 
     /// Optional set of exceptions to apply to access checks, via `ExceptionsConfig`.
     exceptions: Vec<String>,
+
+    /// Indicates whether `allow_unimplemented` mode is enabled.
+    allow_unimplemented: bool,
 }
 
 impl SecurityServer {
@@ -175,8 +178,13 @@ impl SecurityServer {
 
     /// Returns an instance with the specified options and exceptions configured.
     pub fn new(options: String, exceptions: Vec<String>) -> Arc<Self> {
-        // No options are currently supported.
-        assert_eq!(options, String::new());
+        let mut allow_unimplemented = false;
+        for option in options.split(',').map(str::trim).filter(|s| !s.is_empty()) {
+            match option {
+                "allow_unimplemented" => allow_unimplemented = true,
+                _ => {}
+            }
+        }
 
         let backend = Arc::new(SecurityServerBackend {
             state: RwLock::new(SecurityServerState {
@@ -190,7 +198,7 @@ impl SecurityServer {
 
         let access_vector_cache = AccessVectorCache::new(backend.clone());
 
-        Arc::new(Self { access_vector_cache, backend, exceptions })
+        Arc::new(Self { access_vector_cache, backend, exceptions, allow_unimplemented })
     }
 
     /// Converts a shared pointer to [`SecurityServer`] to a [`PermissionCheck`] without consuming
@@ -242,6 +250,9 @@ impl SecurityServer {
         // malformed or invalid.
         let unvalidated_policy = parse_policy_by_value(binary_policy)?;
         let parsed = Arc::new(unvalidated_policy.validate()?);
+        if !self.allow_unimplemented {
+            validate_no_unsupported_policy_features_used(&parsed)?;
+        }
 
         let exceptions = self.exceptions.iter().map(String::as_str).collect::<Vec<&str>>();
         let exceptions = ExceptionsConfig::new(&parsed, &exceptions)?;
@@ -755,6 +766,29 @@ fn sid_from_mount_option(
     Ok(Some(sid))
 }
 
+fn check_policy_feature_is_empty<T>(name: &'static str, items: &[T]) -> Result<(), anyhow::Error> {
+    if !items.is_empty() {
+        anyhow::bail!("Policy contains unsupported feature: {name} ({})", items.len());
+    }
+    Ok(())
+}
+
+fn validate_no_unsupported_policy_features_used(policy: &NewPolicy) -> Result<(), anyhow::Error> {
+    let ocontexts = policy.object_contexts();
+    check_policy_feature_is_empty("ports", ocontexts.ports())?;
+    check_policy_feature_is_empty("network_interfaces", ocontexts.network_interfaces())?;
+    check_policy_feature_is_empty("nodes", ocontexts.ipv4_nodes())?;
+    check_policy_feature_is_empty("ipv6_nodes", ocontexts.ipv6_nodes())?;
+    check_policy_feature_is_empty(
+        "infiniband_partition_keys",
+        ocontexts.infiniband_partition_keys(),
+    )?;
+    check_policy_feature_is_empty("infiniband_end_ports", ocontexts.infiniband_end_ports())?;
+    check_policy_feature_is_empty("filesystems", ocontexts.filesystems())?;
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -779,6 +813,16 @@ mod tests {
             security_server.load_policy(policy_bytes).map_err(|e| format!("{:?}", e))
         );
         security_server
+    }
+
+    #[test]
+    fn test_unsupported_policy_features_check() {
+        let default_server = SecurityServer::new_default();
+        let testsuite_server = SecurityServer::new("allow_unimplemented".into(), vec![]);
+
+        assert!(default_server.load_policy(MINIMAL_BINARY_POLICY.to_vec()).is_ok());
+        assert!(testsuite_server.load_policy(MINIMAL_BINARY_POLICY.to_vec()).is_ok());
+        assert!(testsuite_server.load_policy(TESTSUITE_BINARY_POLICY.to_vec()).is_ok());
     }
 
     #[test]
@@ -826,7 +870,7 @@ mod tests {
     #[test]
     fn conditional_booleans_can_be_queried() {
         let policy_bytes = TESTSUITE_BINARY_POLICY.to_vec();
-        let security_server = SecurityServer::new_default();
+        let security_server = SecurityServer::new("allow_unimplemented".into(), vec![]);
         assert_eq!(
             Ok(()),
             security_server.load_policy(policy_bytes).map_err(|e| format!("{:?}", e))
@@ -843,7 +887,7 @@ mod tests {
     #[test]
     fn conditional_booleans_can_be_changed() {
         let policy_bytes = TESTSUITE_BINARY_POLICY.to_vec();
-        let security_server = SecurityServer::new_default();
+        let security_server = SecurityServer::new("allow_unimplemented".into(), vec![]);
         assert_eq!(
             Ok(()),
             security_server.load_policy(policy_bytes).map_err(|e| format!("{:?}", e))
