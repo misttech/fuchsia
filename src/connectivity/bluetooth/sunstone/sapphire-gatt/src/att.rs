@@ -972,14 +972,15 @@ mod tests {
         use crate::att::client::{ClientError, DiscoveredInformation};
         use crate::att::database::Database;
         use crate::att::pdu::{
-            ErrorCode, ErrorRsp, FindInformationReq, Header, Opcode, PacketBuilder,
-            PrepareWriteHeader, UuidFormat,
+            ErrorCode, FindInformationReq, Header, Opcode, PacketBuilder, PrepareWriteHeader,
+            UuidFormat,
         };
         use core::mem::{MaybeUninit, size_of};
         use proptest::prelude::*;
         use sapphire_common::Uuid;
+        use sapphire_emboss::att::AttErrorRsp;
         use sapphire_peer_cache::PeerId;
-        use zerocopy::TryFromBytes;
+        use zerocopy::IntoBytes;
         use zerocopy::byteorder::little_endian::U16;
 
         const PREPARE_REQ_HEADER_SIZE: usize =
@@ -1051,8 +1052,8 @@ mod tests {
                         client_tx_bearer.send(builder.as_packet()).await.unwrap();
                         let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
                         assert_eq!(packet.header.opcode, Opcode::ATT_ERROR_RSP.into());
-                        let err = ErrorRsp::try_read_from_bytes(&packet.data[..]).unwrap();
-                        assert_eq!(err.error_code, ErrorCode::INVALID_HANDLE.into());
+                        let err = AttErrorRsp::new(packet.as_bytes());
+                        assert_eq!(err.error_code().try_read().unwrap(), ErrorCode::INVALID_HANDLE);
 
                         let mut rx_buf2 = [MaybeUninit::uninit(); 512];
                         // Test ending handle = 0
@@ -1066,8 +1067,8 @@ mod tests {
                         client_tx_bearer.send(builder2.as_packet()).await.unwrap();
                         let packet2 = client_rx_bearer.next_packet(&mut rx_buf2).await.unwrap();
                         assert_eq!(packet2.header.opcode, Opcode::ATT_ERROR_RSP.into());
-                        let err2 = ErrorRsp::try_read_from_bytes(&packet2.data[..]).unwrap();
-                        assert_eq!(err2.error_code, ErrorCode::INVALID_HANDLE.into());
+                        let err2 = AttErrorRsp::new(packet2.as_bytes());
+                        assert_eq!(err2.error_code().try_read().unwrap(), ErrorCode::INVALID_HANDLE);
                     });
 
                     executor.run_until_stalled();

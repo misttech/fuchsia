@@ -11,13 +11,13 @@ use crate::att::bearer::{
 use crate::att::database::Database;
 use crate::att::l2cap::{L2CapChannelRx, L2CapChannelTx};
 use crate::att::pdu::{
-    DynamicPacketBuilder, ErrorCode, ErrorRsp, ExchangeMtuReq, ExchangeMtuRsp, ExecuteWriteFlags,
-    ExecuteWriteReq, ExecuteWriteRsp, FindByTypeValueReq, FindInformationReq,
-    FindInformationRspHeader, HandleValueCnf, HandleValueIndHeader, HandleValueNtfHeader,
-    HandlesInformation, Header, InformationData, InformationData16, InformationData128, Opcode,
-    Packet, PacketBuilder, PrepareWriteReq, ReadBlobReq, ReadByGroupTypeReq,
-    ReadByGroupTypeRspEntryHeader, ReadByTypeReq, ReadReq, UuidFormat, WriteCmd, WriteReq,
-    WriteRsp,
+    ATT_ERROR_RSP_SIZE, ATT_EXCHANGE_MTU_REQ_SIZE, ATT_EXCHANGE_MTU_RSP_SIZE, DynamicPacketBuilder,
+    ErrorCode, ExecuteWriteFlags, ExecuteWriteReq, ExecuteWriteRsp, FindByTypeValueReq,
+    FindInformationReq, FindInformationRspHeader, HandleValueCnf, HandleValueIndHeader,
+    HandleValueNtfHeader, HandlesInformation, Header, InformationData, InformationData16,
+    InformationData128, Opcode, Packet, PacketBuilder, PrepareWriteReq, ReadBlobReq,
+    ReadByGroupTypeReq, ReadByGroupTypeRspEntryHeader, ReadByTypeReq, ReadReq, UuidFormat,
+    WriteCmd, WriteReq, WriteRsp,
 };
 use crate::att::router::BearerRxHandle;
 use core::cmp::{max, min};
@@ -28,7 +28,7 @@ use core::ptr::NonNull;
 use sapphire_collections::storage::StorageFamily;
 use sapphire_collections::vec::Vec;
 use sapphire_common::Uuid;
-use sapphire_emboss::att::AttHeader;
+use sapphire_emboss::att::{AttErrorRspMut, AttExchangeMtuReq, AttExchangeMtuRspMut, AttHeader};
 use sapphire_peer_cache::PeerId;
 use sapphire_sync::mutex::raw::{RawMutex, SingleThreadMutex};
 use thiserror::Error;
@@ -318,7 +318,7 @@ where
             .try_read()
             .expect("packet opcode already validated by bearer");
         let transaction_result = match opcode {
-            Opcode::ATT_EXCHANGE_MTU_REQ => self.handle_exchange_mtu(&rx_packet.data).await,
+            Opcode::ATT_EXCHANGE_MTU_REQ => self.handle_exchange_mtu(rx_packet.as_bytes()).await,
             Opcode::ATT_FIND_INFORMATION_REQ => self.handle_find_information(&rx_packet.data).await,
             Opcode::ATT_FIND_BY_TYPE_VALUE_REQ => {
                 self.handle_find_by_type_value(&rx_packet.data).await
@@ -365,11 +365,16 @@ where
     /// Negotiates the ATT_MTU for the connection.
     ///
     /// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.2.1) and (Vol 3, Part G, Section 5.2.1)
-    async fn handle_exchange_mtu(&mut self, data: &[u8]) -> Result<(), TransactionError> {
-        let req = ExchangeMtuReq::read_from_bytes(data).map_err(|_| {
+    async fn handle_exchange_mtu(&mut self, packet_bytes: &[u8]) -> Result<(), TransactionError> {
+        if packet_bytes.len() != ATT_EXCHANGE_MTU_REQ_SIZE {
+            return Err(TransactionError::InvalidPdu {
+                request_opcode: Opcode::ATT_EXCHANGE_MTU_REQ,
+            });
+        }
+        let req = AttExchangeMtuReq::new(packet_bytes);
+        let client_mtu = req.client_rx_mtu().try_read().map_err(|_| {
             TransactionError::InvalidPdu { request_opcode: Opcode::ATT_EXCHANGE_MTU_REQ }
         })?;
-        let client_mtu = req.client_rx_mtu.get();
 
         let negotiated_mtu = max(DEFAULT_STARTING_MTU, min(client_mtu, self.server_rx_mtu));
 
@@ -378,12 +383,12 @@ where
         self.bearer_rx.set_mtu(negotiated_mtu);
 
         // Respond with ExchangeMtuRsp containing our supported rx MTU
-        let builder = PacketBuilder {
-            header: Header::new(Opcode::ATT_EXCHANGE_MTU_RSP),
-            payload: ExchangeMtuRsp { server_rx_mtu: U16::new(self.server_rx_mtu) },
-        };
+        let mut buf = [0u8; ATT_EXCHANGE_MTU_RSP_SIZE];
+        let mut view = AttExchangeMtuRspMut::new(&mut buf[..]);
+        view.attribute_opcode().try_write(Opcode::ATT_EXCHANGE_MTU_RSP).expect("valid opcode");
+        view.server_rx_mtu().try_write(self.server_rx_mtu).expect("valid mtu");
 
-        let tx_packet = builder.as_packet();
+        let tx_packet = Packet::try_ref_from_bytes(&buf[..]).expect("valid packet");
         self.send_packet(tx_packet).await?;
 
         Ok(())
@@ -1070,11 +1075,15 @@ where
         error_code: ErrorCode,
     ) -> Result<(), ServerError> {
         let handle_raw = attribute_handle.map(|h| h.value()).unwrap_or(0);
-        let builder = PacketBuilder {
-            header: Header::new(Opcode::ATT_ERROR_RSP),
-            payload: ErrorRsp::new(request_opcode, handle_raw, error_code),
-        };
-        let tx_packet = builder.as_packet();
+        let mut buf = [0u8; ATT_ERROR_RSP_SIZE];
+        let mut view = AttErrorRspMut::new(&mut buf[..]);
+        view.attribute_opcode().try_write(Opcode::ATT_ERROR_RSP).expect("valid opcode");
+        view.request_opcode_in_error_uint()
+            .try_write(request_opcode.into())
+            .expect("valid req opcode");
+        view.attribute_handle().try_write(handle_raw).expect("valid handle");
+        view.error_code().try_write(error_code).expect("valid error code");
+        let tx_packet = Packet::try_ref_from_bytes(&buf[..]).expect("valid packet");
         self.send_packet(tx_packet).await
     }
 
@@ -1249,10 +1258,11 @@ mod tests {
     use crate::att::router::{BearerRouter, RouteFilter};
 
     use crate::att::pdu::{
-        FindByTypeValueReqHeader, FindInformationRsp, HandleValueCnf, HandleValueInd,
-        HandleValueNtf, InformationData16, PrepareWriteHeader, PrepareWriteRsp,
+        ATT_EXCHANGE_MTU_REQ_SIZE, FindByTypeValueReqHeader, FindInformationRsp, HandleValueCnf,
+        HandleValueInd, HandleValueNtf, InformationData16, PrepareWriteHeader, PrepareWriteRsp,
         ReadByGroupTypeReqHeader, ReadByTypeReqHeader, WriteCmdHeader, WriteReqHeader,
     };
+    use sapphire_emboss::att::{AttErrorRsp, AttExchangeMtuReqMut, AttExchangeMtuRsp};
 
     use core::mem::size_of;
     use sapphire_async::executor::BoundedExecutor;
@@ -1301,12 +1311,12 @@ mod tests {
             // Spawn client driver task
             let client_handle = executor.spawn(async move {
                 // Send ExchangeMtuReq requesting 512-byte MTU
-                let builder = PacketBuilder {
-                    header: Header::new(Opcode::ATT_EXCHANGE_MTU_REQ),
-                    payload: ExchangeMtuReq { client_rx_mtu: U16::new(CLIENT_PREFERRED_MTU) },
-                };
+                let mut req_buf = [0u8; ATT_EXCHANGE_MTU_REQ_SIZE];
+                let mut view = AttExchangeMtuReqMut::new(&mut req_buf[..]);
+                view.attribute_opcode().try_write(Opcode::ATT_EXCHANGE_MTU_REQ).unwrap();
+                view.client_rx_mtu().try_write(CLIENT_PREFERRED_MTU).unwrap();
 
-                let tx_packet = builder.as_packet();
+                let tx_packet = Packet::try_ref_from_bytes(&req_buf[..]).unwrap();
                 let mut client_tx_bearer = BearerTx::new(app_channel.sender);
                 client_tx_bearer.send(tx_packet).await.unwrap();
 
@@ -1314,10 +1324,12 @@ mod tests {
                 let mut rx_buf = [MaybeUninit::uninit(); 32];
                 let mut client_rx_bearer = BearerRx::new(app_channel.receiver);
                 let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ATT_EXCHANGE_MTU_RSP.into());
-
-                let rsp = ExchangeMtuRsp::read_from_bytes(&packet.data[..]).unwrap();
-                assert_eq!(rsp.server_rx_mtu.get(), SERVER_MTU);
+                let rsp = AttExchangeMtuRsp::new(packet.as_bytes());
+                assert_eq!(
+                    rsp.attribute_opcode().try_read().unwrap(),
+                    Opcode::ATT_EXCHANGE_MTU_RSP
+                );
+                assert_eq!(rsp.server_rx_mtu().try_read().unwrap(), SERVER_MTU);
             });
 
             // Spawn server driver task
@@ -1353,33 +1365,39 @@ mod tests {
                 let mut client_tx_bearer = BearerTx::new(app_channel.sender);
 
                 // 1. Send ExchangeMtuRsp (0x03) as a request (valid opcode but unsupported request)
-                let builder = PacketBuilder {
-                    header: Header::new(Opcode::ATT_EXCHANGE_MTU_RSP),
-                    payload: ExchangeMtuRsp { server_rx_mtu: U16::new(SERVER_MTU) },
-                };
-                let tx_packet = builder.as_packet();
+                let mut rsp_buf = [0u8; ATT_EXCHANGE_MTU_RSP_SIZE];
+                let mut view = AttExchangeMtuRspMut::new(&mut rsp_buf[..]);
+                view.attribute_opcode().try_write(Opcode::ATT_EXCHANGE_MTU_RSP).unwrap();
+                view.server_rx_mtu().try_write(SERVER_MTU).unwrap();
+                let tx_packet = Packet::try_ref_from_bytes(&rsp_buf[..]).unwrap();
                 client_tx_bearer.send(tx_packet).await.unwrap();
 
                 // Expect ErrorRsp indicating RequestNotSupported (0x06) for ExchangeMtuRsp (0x03)
                 let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ATT_ERROR_RSP.into());
-                let err = ErrorRsp::try_read_from_bytes(&packet.data[..]).unwrap();
-                assert_eq!(err.request_opcode, Opcode::ATT_EXCHANGE_MTU_RSP as u8);
-                assert_eq!(err.error_code, ErrorCode::REQUEST_NOT_SUPPORTED.into());
+                let err = AttErrorRsp::new(packet.as_bytes());
+                assert_eq!(err.attribute_opcode().try_read().unwrap(), Opcode::ATT_ERROR_RSP);
+                assert_eq!(
+                    err.request_opcode_in_error_uint().try_read().unwrap(),
+                    u8::from(Opcode::ATT_EXCHANGE_MTU_RSP)
+                );
+                assert_eq!(err.error_code().try_read().unwrap(), ErrorCode::REQUEST_NOT_SUPPORTED);
 
                 // 2. Server should still be running! Send valid ExchangeMtuReq (0x02)
-                let builder = PacketBuilder {
-                    header: Header::new(Opcode::ATT_EXCHANGE_MTU_REQ),
-                    payload: ExchangeMtuReq { client_rx_mtu: U16::new(CLIENT_PREFERRED_MTU) },
-                };
-                let tx_packet = builder.as_packet();
+                let mut req_buf = [0u8; ATT_EXCHANGE_MTU_REQ_SIZE];
+                let mut view = AttExchangeMtuReqMut::new(&mut req_buf[..]);
+                view.attribute_opcode().try_write(Opcode::ATT_EXCHANGE_MTU_REQ).unwrap();
+                view.client_rx_mtu().try_write(CLIENT_PREFERRED_MTU).unwrap();
+                let tx_packet = Packet::try_ref_from_bytes(&req_buf[..]).unwrap();
                 client_tx_bearer.send(tx_packet).await.unwrap();
 
                 // Expect ExchangeMtuRsp from server
                 let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ATT_EXCHANGE_MTU_RSP.into());
-                let rsp = ExchangeMtuRsp::read_from_bytes(&packet.data[..]).unwrap();
-                assert_eq!(rsp.server_rx_mtu.get(), SERVER_MTU);
+                let rsp = AttExchangeMtuRsp::new(packet.as_bytes());
+                assert_eq!(
+                    rsp.attribute_opcode().try_read().unwrap(),
+                    Opcode::ATT_EXCHANGE_MTU_RSP
+                );
+                assert_eq!(rsp.server_rx_mtu().try_read().unwrap(), SERVER_MTU);
             });
 
             let server_handle = executor.spawn(async move {
@@ -1419,10 +1437,13 @@ mod tests {
 
                 // Expect ErrorRsp indicating InvalidPdu (0x04) for ExchangeMtuReq (0x02)
                 let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ATT_ERROR_RSP.into());
-                let err = ErrorRsp::try_read_from_bytes(&packet.data[..]).unwrap();
-                assert_eq!(err.request_opcode, Opcode::ATT_EXCHANGE_MTU_REQ as u8);
-                assert_eq!(err.error_code, ErrorCode::INVALID_PDU.into());
+                let err = AttErrorRsp::new(packet.as_bytes());
+                assert_eq!(err.attribute_opcode().try_read().unwrap(), Opcode::ATT_ERROR_RSP);
+                assert_eq!(
+                    err.request_opcode_in_error_uint().try_read().unwrap(),
+                    u8::from(Opcode::ATT_EXCHANGE_MTU_REQ)
+                );
+                assert_eq!(err.error_code().try_read().unwrap(), ErrorCode::INVALID_PDU);
             });
 
             let server_handle = executor.spawn(async move {
@@ -1461,24 +1482,26 @@ mod tests {
 
                 // Expect ErrorRsp indicating InvalidPdu for opcode 0x00
                 let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ATT_ERROR_RSP.into());
-                let err = ErrorRsp::try_read_from_bytes(&packet.data[..]).unwrap();
-                assert_eq!(err.request_opcode, 0x00);
-                assert_eq!(err.error_code, ErrorCode::INVALID_PDU.into());
+                let err = AttErrorRsp::new(packet.as_bytes());
+                assert_eq!(err.attribute_opcode().try_read().unwrap(), Opcode::ATT_ERROR_RSP);
+                assert_eq!(packet.as_bytes()[1], 0x00);
+                assert_eq!(err.error_code().try_read().unwrap(), ErrorCode::INVALID_PDU);
 
                 // 2. Server should log the error and stay alive. Send a valid ExchangeMtuReq.
-                let builder = PacketBuilder {
-                    header: Header::new(Opcode::ATT_EXCHANGE_MTU_REQ),
-                    payload: ExchangeMtuReq { client_rx_mtu: U16::new(CLIENT_PREFERRED_MTU) },
-                };
-                let tx_packet = builder.as_packet();
-                sender.send(tx_packet.as_bytes()).await.unwrap();
+                let mut req_buf = [0u8; ATT_EXCHANGE_MTU_REQ_SIZE];
+                let mut view = AttExchangeMtuReqMut::new(&mut req_buf[..]);
+                view.attribute_opcode().try_write(Opcode::ATT_EXCHANGE_MTU_REQ).unwrap();
+                view.client_rx_mtu().try_write(CLIENT_PREFERRED_MTU).unwrap();
+                sender.send(&req_buf[..]).await.unwrap();
 
                 // Expect ExchangeMtuRsp
                 let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ATT_EXCHANGE_MTU_RSP.into());
-                let rsp = ExchangeMtuRsp::read_from_bytes(&packet.data[..]).unwrap();
-                assert_eq!(rsp.server_rx_mtu.get(), SERVER_MTU);
+                let rsp = AttExchangeMtuRsp::new(packet.as_bytes());
+                assert_eq!(
+                    rsp.attribute_opcode().try_read().unwrap(),
+                    Opcode::ATT_EXCHANGE_MTU_RSP
+                );
+                assert_eq!(rsp.server_rx_mtu().try_read().unwrap(), SERVER_MTU);
             });
 
             let server_handle = executor.spawn(async move {
@@ -1516,10 +1539,10 @@ mod tests {
 
                 // Expect ErrorRsp indicating RequestNotSupported for request opcode 0x99
                 let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ATT_ERROR_RSP.into());
-                let err = ErrorRsp::try_read_from_bytes(&packet.data[..]).unwrap();
-                assert_eq!(err.request_opcode, 0x99);
-                assert_eq!(err.error_code, ErrorCode::REQUEST_NOT_SUPPORTED.into());
+                let err = AttErrorRsp::new(packet.as_bytes());
+                assert_eq!(err.attribute_opcode().try_read().unwrap(), Opcode::ATT_ERROR_RSP);
+                assert_eq!(packet.as_bytes()[1], 0x99);
+                assert_eq!(err.error_code().try_read().unwrap(), ErrorCode::REQUEST_NOT_SUPPORTED);
             });
 
             let server_handle = executor.spawn(async move {
@@ -1558,10 +1581,13 @@ mod tests {
 
                 // Expect ErrorRsp indicating InvalidPdu for request opcode 0x02
                 let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ATT_ERROR_RSP.into());
-                let err = ErrorRsp::try_read_from_bytes(&packet.data[..]).unwrap();
-                assert_eq!(err.request_opcode, Opcode::ATT_EXCHANGE_MTU_REQ as u8);
-                assert_eq!(err.error_code, ErrorCode::INVALID_PDU.into());
+                let err = AttErrorRsp::new(packet.as_bytes());
+                assert_eq!(err.attribute_opcode().try_read().unwrap(), Opcode::ATT_ERROR_RSP);
+                assert_eq!(
+                    err.request_opcode_in_error_uint().try_read().unwrap(),
+                    u8::from(Opcode::ATT_EXCHANGE_MTU_REQ)
+                );
+                assert_eq!(err.error_code().try_read().unwrap(), ErrorCode::INVALID_PDU);
             });
 
             let server_handle = executor.spawn(async move {
@@ -1691,11 +1717,14 @@ mod tests {
                 client_tx_bearer.send(builder.as_packet()).await.unwrap();
 
                 let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ATT_ERROR_RSP.into());
-                let err = ErrorRsp::try_read_from_bytes(&packet.data[..]).unwrap();
-                assert_eq!(err.request_opcode, Opcode::ATT_FIND_INFORMATION_REQ as u8);
-                assert_eq!(err.attribute_handle.get(), 0);
-                assert_eq!(err.error_code, ErrorCode::INVALID_HANDLE.into());
+                let err = AttErrorRsp::new(packet.as_bytes());
+                assert_eq!(err.attribute_opcode().try_read().unwrap(), Opcode::ATT_ERROR_RSP);
+                assert_eq!(
+                    err.request_opcode_in_error_uint().try_read().unwrap(),
+                    u8::from(Opcode::ATT_FIND_INFORMATION_REQ)
+                );
+                assert_eq!(err.attribute_handle().try_read().unwrap(), 0);
+                assert_eq!(err.error_code().try_read().unwrap(), ErrorCode::INVALID_HANDLE);
 
                 // 2. Invalid Handle (start > end)
                 let builder = PacketBuilder {
@@ -1708,11 +1737,14 @@ mod tests {
                 client_tx_bearer.send(builder.as_packet()).await.unwrap();
 
                 let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ATT_ERROR_RSP.into());
-                let err = ErrorRsp::try_read_from_bytes(&packet.data[..]).unwrap();
-                assert_eq!(err.request_opcode, Opcode::ATT_FIND_INFORMATION_REQ as u8);
-                assert_eq!(err.attribute_handle.get(), 3);
-                assert_eq!(err.error_code, ErrorCode::INVALID_HANDLE.into());
+                let err = AttErrorRsp::new(packet.as_bytes());
+                assert_eq!(err.attribute_opcode().try_read().unwrap(), Opcode::ATT_ERROR_RSP);
+                assert_eq!(
+                    err.request_opcode_in_error_uint().try_read().unwrap(),
+                    u8::from(Opcode::ATT_FIND_INFORMATION_REQ)
+                );
+                assert_eq!(err.attribute_handle().try_read().unwrap(), 3);
+                assert_eq!(err.error_code().try_read().unwrap(), ErrorCode::INVALID_HANDLE);
 
                 // 3. Attribute Not Found (no attributes in 5..=10)
                 let builder = PacketBuilder {
@@ -1725,11 +1757,14 @@ mod tests {
                 client_tx_bearer.send(builder.as_packet()).await.unwrap();
 
                 let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ATT_ERROR_RSP.into());
-                let err = ErrorRsp::try_read_from_bytes(&packet.data[..]).unwrap();
-                assert_eq!(err.request_opcode, Opcode::ATT_FIND_INFORMATION_REQ as u8);
-                assert_eq!(err.attribute_handle.get(), 5);
-                assert_eq!(err.error_code, ErrorCode::ATTRIBUTE_NOT_FOUND.into());
+                let err = AttErrorRsp::new(packet.as_bytes());
+                assert_eq!(err.attribute_opcode().try_read().unwrap(), Opcode::ATT_ERROR_RSP);
+                assert_eq!(
+                    err.request_opcode_in_error_uint().try_read().unwrap(),
+                    u8::from(Opcode::ATT_FIND_INFORMATION_REQ)
+                );
+                assert_eq!(err.attribute_handle().try_read().unwrap(), 5);
+                assert_eq!(err.error_code().try_read().unwrap(), ErrorCode::ATTRIBUTE_NOT_FOUND);
             });
 
             let server_handle = executor.spawn(async move {
@@ -1849,10 +1884,13 @@ mod tests {
                 client_tx_bearer.send(builder.as_packet()).await.unwrap();
 
                 let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ATT_ERROR_RSP.into());
-                let err = ErrorRsp::try_read_from_bytes(&packet.data[..]).unwrap();
-                assert_eq!(err.request_opcode, Opcode::ATT_FIND_BY_TYPE_VALUE_REQ as u8);
-                assert_eq!(err.error_code, ErrorCode::ATTRIBUTE_NOT_FOUND.into());
+                let err = AttErrorRsp::new(packet.as_bytes());
+                assert_eq!(err.attribute_opcode().try_read().unwrap(), Opcode::ATT_ERROR_RSP);
+                assert_eq!(
+                    err.request_opcode_in_error_uint().try_read().unwrap(),
+                    u8::from(Opcode::ATT_FIND_BY_TYPE_VALUE_REQ)
+                );
+                assert_eq!(err.error_code().try_read().unwrap(), ErrorCode::ATTRIBUTE_NOT_FOUND);
             });
 
             let server_handle = executor.spawn(async move {
@@ -1944,11 +1982,14 @@ mod tests {
 
                 // Expect ErrorRsp indicating InvalidHandle for handle 0
                 let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ATT_ERROR_RSP.into());
-                let err = ErrorRsp::try_read_from_bytes(&packet.data[..]).unwrap();
-                assert_eq!(err.request_opcode, Opcode::ATT_READ_REQ as u8);
-                assert_eq!(err.attribute_handle.get(), 0);
-                assert_eq!(err.error_code, ErrorCode::INVALID_HANDLE.into());
+                let err = AttErrorRsp::new(packet.as_bytes());
+                assert_eq!(err.attribute_opcode().try_read().unwrap(), Opcode::ATT_ERROR_RSP);
+                assert_eq!(
+                    err.request_opcode_in_error_uint().try_read().unwrap(),
+                    u8::from(Opcode::ATT_READ_REQ)
+                );
+                assert_eq!(err.attribute_handle().try_read().unwrap(), 0);
+                assert_eq!(err.error_code().try_read().unwrap(), ErrorCode::INVALID_HANDLE);
             });
 
             let server_handle = executor.spawn(async move {
@@ -1993,11 +2034,14 @@ mod tests {
 
                 // Expect ErrorRsp indicating InvalidHandle for handle 99
                 let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ATT_ERROR_RSP.into());
-                let err = ErrorRsp::try_read_from_bytes(&packet.data[..]).unwrap();
-                assert_eq!(err.request_opcode, Opcode::ATT_READ_REQ as u8);
-                assert_eq!(err.attribute_handle.get(), 99);
-                assert_eq!(err.error_code, ErrorCode::INVALID_HANDLE.into());
+                let err = AttErrorRsp::new(packet.as_bytes());
+                assert_eq!(err.attribute_opcode().try_read().unwrap(), Opcode::ATT_ERROR_RSP);
+                assert_eq!(
+                    err.request_opcode_in_error_uint().try_read().unwrap(),
+                    u8::from(Opcode::ATT_READ_REQ)
+                );
+                assert_eq!(err.attribute_handle().try_read().unwrap(), 99);
+                assert_eq!(err.error_code().try_read().unwrap(), ErrorCode::INVALID_HANDLE);
             });
 
             let server_handle = executor.spawn(async move {
@@ -2145,11 +2189,14 @@ mod tests {
 
                 // Expect ErrorRsp indicating InvalidOffset
                 let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ATT_ERROR_RSP.into());
-                let err = ErrorRsp::try_read_from_bytes(&packet.data[..]).unwrap();
-                assert_eq!(err.request_opcode, Opcode::ATT_READ_BLOB_REQ as u8);
-                assert_eq!(err.attribute_handle.get(), 1);
-                assert_eq!(err.error_code, ErrorCode::INVALID_OFFSET.into());
+                let err = AttErrorRsp::new(packet.as_bytes());
+                assert_eq!(err.attribute_opcode().try_read().unwrap(), Opcode::ATT_ERROR_RSP);
+                assert_eq!(
+                    err.request_opcode_in_error_uint().try_read().unwrap(),
+                    u8::from(Opcode::ATT_READ_BLOB_REQ)
+                );
+                assert_eq!(err.attribute_handle().try_read().unwrap(), 1);
+                assert_eq!(err.error_code().try_read().unwrap(), ErrorCode::INVALID_OFFSET);
             });
 
             let server_handle = executor.spawn(async move {
@@ -2330,10 +2377,13 @@ mod tests {
                 client_tx_bearer.send(builder.as_packet()).await.unwrap();
 
                 let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ATT_ERROR_RSP.into());
-                let err = ErrorRsp::try_read_from_bytes(&packet.data[..]).unwrap();
-                assert_eq!(err.request_opcode, Opcode::ATT_READ_BY_TYPE_REQ as u8);
-                assert_eq!(err.error_code, ErrorCode::ATTRIBUTE_NOT_FOUND.into());
+                let err = AttErrorRsp::new(packet.as_bytes());
+                assert_eq!(err.attribute_opcode().try_read().unwrap(), Opcode::ATT_ERROR_RSP);
+                assert_eq!(
+                    err.request_opcode_in_error_uint().try_read().unwrap(),
+                    u8::from(Opcode::ATT_READ_BY_TYPE_REQ)
+                );
+                assert_eq!(err.error_code().try_read().unwrap(), ErrorCode::ATTRIBUTE_NOT_FOUND);
 
                 // 2. Query with invalid range (start > end)
                 let uuid = Uuid::from_u16(0x2A00);
@@ -2354,10 +2404,13 @@ mod tests {
                 client_tx_bearer.send(builder.as_packet()).await.unwrap();
 
                 let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ATT_ERROR_RSP.into());
-                let err = ErrorRsp::try_read_from_bytes(&packet.data[..]).unwrap();
-                assert_eq!(err.request_opcode, Opcode::ATT_READ_BY_TYPE_REQ as u8);
-                assert_eq!(err.error_code, ErrorCode::INVALID_HANDLE.into());
+                let err = AttErrorRsp::new(packet.as_bytes());
+                assert_eq!(err.attribute_opcode().try_read().unwrap(), Opcode::ATT_ERROR_RSP);
+                assert_eq!(
+                    err.request_opcode_in_error_uint().try_read().unwrap(),
+                    u8::from(Opcode::ATT_READ_BY_TYPE_REQ)
+                );
+                assert_eq!(err.error_code().try_read().unwrap(), ErrorCode::INVALID_HANDLE);
             });
 
             let server_handle = executor.spawn(async move {
@@ -2395,16 +2448,19 @@ mod tests {
                 let mut client_tx_bearer = BearerTx::new(app_channel.sender);
 
                 // 1. MTU Exchange (negotiate NEGOTIATED_MTU bytes)
-                let header_builder = PacketBuilder {
-                    header: Header::new(Opcode::ATT_EXCHANGE_MTU_REQ),
-                    payload: ExchangeMtuReq { client_rx_mtu: U16::new(NEGOTIATED_MTU) },
-                };
-                let mut tx_buf = [0u8; NEGOTIATED_MTU as usize];
-                let builder = DynamicPacketBuilder::<_, u8>::new(&mut tx_buf, header_builder, 23);
-                client_tx_bearer.send(builder.as_packet()).await.unwrap();
+                let mut req_buf = [0u8; ATT_EXCHANGE_MTU_REQ_SIZE];
+                let mut view = AttExchangeMtuReqMut::new(&mut req_buf[..]);
+                view.attribute_opcode().try_write(Opcode::ATT_EXCHANGE_MTU_REQ).unwrap();
+                view.client_rx_mtu().try_write(NEGOTIATED_MTU).unwrap();
+                let tx_packet = Packet::try_ref_from_bytes(&req_buf[..]).unwrap();
+                client_tx_bearer.send(tx_packet).await.unwrap();
 
                 let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ATT_EXCHANGE_MTU_RSP.into());
+                let rsp = AttExchangeMtuRsp::new(packet.as_bytes());
+                assert_eq!(
+                    rsp.attribute_opcode().try_read().unwrap(),
+                    Opcode::ATT_EXCHANGE_MTU_RSP
+                );
                 client_rx_bearer.set_mtu(NEGOTIATED_MTU);
                 client_tx_bearer.set_mtu(NEGOTIATED_MTU);
 
@@ -2500,10 +2556,13 @@ mod tests {
                 client_tx_bearer.send(builder.as_packet()).await.unwrap();
 
                 let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ATT_ERROR_RSP.into());
-                let err = ErrorRsp::try_read_from_bytes(&packet.data[..]).unwrap();
-                assert_eq!(err.request_opcode, Opcode::ATT_READ_BY_GROUP_TYPE_REQ as u8);
-                assert_eq!(err.error_code, ErrorCode::UNSUPPORTED_GROUP_TYPE.into());
+                let err = AttErrorRsp::new(packet.as_bytes());
+                assert_eq!(err.attribute_opcode().try_read().unwrap(), Opcode::ATT_ERROR_RSP);
+                assert_eq!(
+                    err.request_opcode_in_error_uint().try_read().unwrap(),
+                    u8::from(Opcode::ATT_READ_BY_GROUP_TYPE_REQ)
+                );
+                assert_eq!(err.error_code().try_read().unwrap(), ErrorCode::UNSUPPORTED_GROUP_TYPE);
             });
 
             let server_handle = executor.spawn(async move {
@@ -2543,16 +2602,19 @@ mod tests {
                 let mut client_tx_bearer = BearerTx::new(app_channel.sender);
 
                 // 1. MTU Exchange
-                let header_builder = PacketBuilder {
-                    header: Header::new(Opcode::ATT_EXCHANGE_MTU_REQ),
-                    payload: ExchangeMtuReq { client_rx_mtu: U16::new(NEGOTIATED_MTU) },
-                };
-                let mut tx_buf = [0u8; NEGOTIATED_MTU as usize];
-                let builder = DynamicPacketBuilder::<_, u8>::new(&mut tx_buf, header_builder, 23);
-                client_tx_bearer.send(builder.as_packet()).await.unwrap();
+                let mut req_buf = [0u8; ATT_EXCHANGE_MTU_REQ_SIZE];
+                let mut view = AttExchangeMtuReqMut::new(&mut req_buf[..]);
+                view.attribute_opcode().try_write(Opcode::ATT_EXCHANGE_MTU_REQ).unwrap();
+                view.client_rx_mtu().try_write(NEGOTIATED_MTU).unwrap();
+                let tx_packet = Packet::try_ref_from_bytes(&req_buf[..]).unwrap();
+                client_tx_bearer.send(tx_packet).await.unwrap();
 
                 let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ATT_EXCHANGE_MTU_RSP.into());
+                let rsp = AttExchangeMtuRsp::new(packet.as_bytes());
+                assert_eq!(
+                    rsp.attribute_opcode().try_read().unwrap(),
+                    Opcode::ATT_EXCHANGE_MTU_RSP
+                );
                 client_rx_bearer.set_mtu(NEGOTIATED_MTU);
                 client_tx_bearer.set_mtu(NEGOTIATED_MTU);
 
@@ -2704,11 +2766,14 @@ mod tests {
                     client_tx_bearer.send(builder.as_packet()).await.unwrap();
 
                     let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                    assert_eq!(packet.header.opcode, Opcode::ATT_ERROR_RSP.into());
-                    let err = ErrorRsp::try_read_from_bytes(&packet.data[..]).unwrap();
-                    assert_eq!(err.request_opcode, Opcode::ATT_WRITE_REQ as u8);
-                    assert_eq!(err.attribute_handle.get(), 99);
-                    assert_eq!(err.error_code, ErrorCode::INVALID_HANDLE.into());
+                    let err = AttErrorRsp::new(packet.as_bytes());
+                    assert_eq!(err.attribute_opcode().try_read().unwrap(), Opcode::ATT_ERROR_RSP);
+                    assert_eq!(
+                        err.request_opcode_in_error_uint().try_read().unwrap(),
+                        u8::from(Opcode::ATT_WRITE_REQ)
+                    );
+                    assert_eq!(err.attribute_handle().try_read().unwrap(), 99);
+                    assert_eq!(err.error_code().try_read().unwrap(), ErrorCode::INVALID_HANDLE);
                 }
             });
 
@@ -2952,11 +3017,14 @@ mod tests {
                 // Read response (should be ErrorRsp with InvalidOffset)
                 let mut rx_buf = [MaybeUninit::uninit(); 128];
                 let packet = app_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ATT_ERROR_RSP.into());
-                let rsp = ErrorRsp::try_read_from_bytes(&packet.data).unwrap();
-                assert_eq!(rsp.request_opcode, Opcode::ATT_PREPARE_WRITE_REQ as u8);
-                assert_eq!(rsp.attribute_handle.get(), 10);
-                assert_eq!(rsp.error_code, ErrorCode::INVALID_OFFSET.into());
+                let rsp = AttErrorRsp::new(packet.as_bytes());
+                assert_eq!(rsp.attribute_opcode().try_read().unwrap(), Opcode::ATT_ERROR_RSP);
+                assert_eq!(
+                    rsp.request_opcode_in_error_uint().try_read().unwrap(),
+                    u8::from(Opcode::ATT_PREPARE_WRITE_REQ)
+                );
+                assert_eq!(rsp.attribute_handle().try_read().unwrap(), 10);
+                assert_eq!(rsp.error_code().try_read().unwrap(), ErrorCode::INVALID_OFFSET);
             });
 
             let server_handle = executor.spawn(async move {
@@ -3015,9 +3083,9 @@ mod tests {
                 // Read response (should be ErrorRsp with PrepareQueueFull)
                 let mut rx_buf = [MaybeUninit::uninit(); 128];
                 let packet = app_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ATT_ERROR_RSP.into());
-                let rsp = ErrorRsp::try_read_from_bytes(&packet.data).unwrap();
-                assert_eq!(rsp.error_code, ErrorCode::PREPARE_QUEUE_FULL.into());
+                let rsp = AttErrorRsp::new(packet.as_bytes());
+                assert_eq!(rsp.attribute_opcode().try_read().unwrap(), Opcode::ATT_ERROR_RSP);
+                assert_eq!(rsp.error_code().try_read().unwrap(), ErrorCode::PREPARE_QUEUE_FULL);
             });
 
             let server_handle = executor.spawn(async move {
@@ -3201,10 +3269,10 @@ mod tests {
 
                 let mut rx_buf = [MaybeUninit::uninit(); 128];
                 let packet = app_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ATT_ERROR_RSP.into());
-                let rsp = ErrorRsp::try_read_from_bytes(&packet.data).unwrap();
-                assert_eq!(rsp.error_code, ErrorCode::WRITE_NOT_PERMITTED.into());
-                assert_eq!(rsp.attribute_handle.get(), 10);
+                let rsp = AttErrorRsp::new(packet.as_bytes());
+                assert_eq!(rsp.attribute_opcode().try_read().unwrap(), Opcode::ATT_ERROR_RSP);
+                assert_eq!(rsp.error_code().try_read().unwrap(), ErrorCode::WRITE_NOT_PERMITTED);
+                assert_eq!(rsp.attribute_handle().try_read().unwrap(), 10);
             });
 
             let server_handle = executor.spawn(async move {

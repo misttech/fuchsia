@@ -100,23 +100,12 @@ where
     }
 }
 
-/// Parameters for Exchange MTU Request PDU (OpCode = 0x02)
+/// Fixed protocol wire sizes (in bytes) for Emboss ATT PDUs.
 ///
-/// (see Vol 3, Part F, 3.4.2.1)
-#[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(C, packed)]
-pub struct ExchangeMtuReq {
-    pub client_rx_mtu: U16,
-}
-
-/// Parameters for Exchange MTU Response PDU (OpCode = 0x03)
-///
-/// (see Vol 3, Part F, 3.4.2.2)
-#[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(C, packed)]
-pub struct ExchangeMtuRsp {
-    pub server_rx_mtu: U16,
-}
+/// (see Vol 3, Part F, Section 3.4)
+pub const ATT_ERROR_RSP_SIZE: usize = 5;
+pub const ATT_EXCHANGE_MTU_REQ_SIZE: usize = 3;
+pub const ATT_EXCHANGE_MTU_RSP_SIZE: usize = 3;
 
 /// Parameters for Find Information Request PDU (OpCode = 0x04)
 ///
@@ -229,31 +218,6 @@ pub struct FindByTypeValueReq {
 pub struct HandlesInformation {
     pub attribute_handle: U16,
     pub group_end_handle: U16,
-}
-
-/// Parameters for Error Response PDU (OpCode = 0x01)
-///
-/// (see Vol 3, Part F, 3.4.1.1)
-#[derive(TryFromBytes, IntoBytes, KnownLayout, Immutable, Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(C, packed)]
-pub struct ErrorRsp {
-    pub request_opcode: u8,
-    pub attribute_handle: U16,
-    pub error_code: u8,
-}
-
-impl ErrorRsp {
-    pub fn new(
-        request_opcode: impl Into<u8>,
-        attribute_handle: u16,
-        error_code: ErrorCode,
-    ) -> Self {
-        Self {
-            request_opcode: request_opcode.into(),
-            attribute_handle: U16::new(attribute_handle),
-            error_code: u8::from(error_code),
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -569,6 +533,7 @@ pub struct HandleValueCnf;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sapphire_emboss::att::{AttErrorRsp, AttExchangeMtuReq, AttExchangeMtuRsp};
 
     #[test]
     fn test_write_rsp() {
@@ -577,13 +542,13 @@ mod tests {
 
     #[test]
     fn test_exchange_mtu_req() {
-        let req_bytes = [0x00, 0x02]; // 512 in little endian
-        let parsed = ExchangeMtuReq::read_from_bytes(&req_bytes[..]).unwrap();
-        assert_eq!(parsed.client_rx_mtu.get(), 512);
+        let req_bytes = [0x02, 0x00, 0x02]; // 512 in little endian
+        let view = AttExchangeMtuReq::new(&req_bytes[..]);
+        assert_eq!(view.attribute_opcode().try_read().unwrap(), Opcode::ATT_EXCHANGE_MTU_REQ);
+        assert_eq!(view.client_rx_mtu().try_read().unwrap(), 512);
 
-        // Serialization check
-        let new_req = ExchangeMtuReq { client_rx_mtu: U16::new(512) };
-        assert_eq!(new_req.as_bytes(), &req_bytes[..]);
+        let short_view = AttExchangeMtuReq::new(&req_bytes[..1]);
+        assert!(short_view.client_rx_mtu().try_read().is_err());
     }
 
     #[test]
@@ -645,12 +610,10 @@ mod tests {
 
     #[test]
     fn test_exchange_mtu_rsp() {
-        let rsp_bytes = [0x00, 0x01]; // 256 in little endian
-        let parsed = ExchangeMtuRsp::read_from_bytes(&rsp_bytes[..]).unwrap();
-        assert_eq!(parsed.server_rx_mtu.get(), 256);
-
-        let new_rsp = ExchangeMtuRsp { server_rx_mtu: U16::new(256) };
-        assert_eq!(new_rsp.as_bytes(), &rsp_bytes[..]);
+        let rsp_bytes = [0x03, 0x00, 0x01]; // 256 in little endian
+        let view = AttExchangeMtuRsp::new(&rsp_bytes[..]);
+        assert_eq!(view.attribute_opcode().try_read().unwrap(), Opcode::ATT_EXCHANGE_MTU_RSP);
+        assert_eq!(view.server_rx_mtu().try_read().unwrap(), 256);
     }
 
     #[test]
@@ -751,15 +714,19 @@ mod tests {
 
     #[test]
     fn test_error_rsp() {
-        let err_bytes = [0x02, 0x05, 0x00, 0x06]; // opcode 0x02, handle 0x0005, error code 0x06 (RequestNotSupported)
-        let parsed = ErrorRsp::try_read_from_bytes(&err_bytes[..]).unwrap();
-        assert_eq!(parsed.request_opcode, u8::from(Opcode::ATT_EXCHANGE_MTU_REQ));
-        assert_eq!(parsed.attribute_handle.get(), 5);
-        assert_eq!(parsed.error_code, u8::from(ErrorCode::REQUEST_NOT_SUPPORTED));
+        let err_bytes = [0x01, 0x02, 0x05, 0x00, 0x06]; // opcode 0x02, handle 0x0005, error 0x06 (RequestNotSupported)
+        let view = AttErrorRsp::new(&err_bytes[..]);
+        assert_eq!(view.attribute_opcode().try_read().unwrap(), Opcode::ATT_ERROR_RSP);
+        assert_eq!(
+            view.request_opcode_in_error_uint().try_read().unwrap(),
+            u8::from(Opcode::ATT_EXCHANGE_MTU_REQ)
+        );
+        assert_eq!(view.attribute_handle().try_read().unwrap(), 5);
+        assert_eq!(view.error_code().try_read().unwrap(), ErrorCode::REQUEST_NOT_SUPPORTED);
 
-        let new_err =
-            ErrorRsp::new(Opcode::ATT_EXCHANGE_MTU_REQ, 5, ErrorCode::REQUEST_NOT_SUPPORTED);
-        assert_eq!(new_err.as_bytes(), &err_bytes[..]);
+        let invalid_bytes = [0x01, 0x02, 0x05, 0x00, 0xff];
+        let invalid_view = AttErrorRsp::new(&invalid_bytes[..]);
+        assert!(invalid_view.error_code().try_read().is_err());
     }
 
     #[test]

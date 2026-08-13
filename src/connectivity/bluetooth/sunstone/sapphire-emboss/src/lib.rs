@@ -28,15 +28,15 @@ mod tests {
         let mut buffer = [0u8; 5];
         let mut view = AttErrorRspMut::new(&mut buffer[..]);
         view.attribute_opcode().try_write(AttOpcode::ATT_ERROR_RSP).unwrap();
-        view.request_opcode_in_error().try_write(AttOpcode::ATT_READ_REQ).unwrap();
+        view.request_opcode_in_error_uint().try_write(u8::from(AttOpcode::ATT_READ_REQ)).unwrap();
         view.attribute_handle().try_write(0x1234).unwrap();
         view.error_code().try_write(ErrorCode::READ_NOT_PERMITTED).unwrap();
 
         let read_view = AttErrorRsp::new(&buffer[..]);
         assert_eq!(read_view.attribute_opcode().try_read().unwrap(), AttOpcode::ATT_ERROR_RSP);
         assert_eq!(
-            read_view.request_opcode_in_error().try_read().unwrap(),
-            AttOpcode::ATT_READ_REQ
+            read_view.request_opcode_in_error_uint().try_read().unwrap(),
+            u8::from(AttOpcode::ATT_READ_REQ)
         );
         assert_eq!(read_view.attribute_handle().try_read().unwrap(), 0x1234);
         assert_eq!(read_view.error_code().try_read().unwrap(), ErrorCode::READ_NOT_PERMITTED);
