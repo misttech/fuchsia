@@ -31,23 +31,16 @@ static VIM3_PARSER_CONFIG: DmlParserConfig = DmlParserConfig {
                 destination: Destination::BindRules,
                 required: true,
             }],
-            parent_key_sources: &[
-                ValueSource::ResourceName,
-                ValueSource::Template("gpio-{name}"),
-                ValueSource::Template("gpio-gpio-{pin}"),
-            ],
             ..DEFAULT_SERVICE_BIND_CONFIG
         },
         "fuchsia.hardware.pin.PinStatesService" => ServiceBindConfig {
-            rules: &[
-                PropertyRule {
-                    bind_key: "fuchsia.NAME",
-                    sources: &[ValueSource::ResourceNode],
-                    value_type: RuleValueType::String,
-                    destination: Destination::BindRules,
-                    required: true,
-                },
-            ],
+            rules: &[PropertyRule {
+                bind_key: "fuchsia.NAME",
+                sources: &[ValueSource::ResourceNode],
+                value_type: RuleValueType::String,
+                destination: Destination::BindRules,
+                required: true,
+            }],
             ..DEFAULT_SERVICE_BIND_CONFIG
         },
         "fuchsia.hardware.i2c.Service" => ServiceBindConfig {
@@ -67,7 +60,6 @@ static VIM3_PARSER_CONFIG: DmlParserConfig = DmlParserConfig {
                     required: true,
                 },
             ],
-            parent_key_sources: &[ValueSource::ResourceName, ValueSource::Template("i2c-{name}")],
             ..DEFAULT_SERVICE_BIND_CONFIG
         },
         "fuchsia.hardware.clock.Service" => ServiceBindConfig {
@@ -87,15 +79,6 @@ static VIM3_PARSER_CONFIG: DmlParserConfig = DmlParserConfig {
                     required: false,
                 },
             ],
-            parent_key_sources: &[ValueSource::ResourceName, ValueSource::Template("clock-{name}")],
-            ..DEFAULT_SERVICE_BIND_CONFIG
-        },
-        "fuchsia.hardware.registers.Service" => ServiceBindConfig {
-            rules: &[],
-            parent_key_sources: &[
-                ValueSource::Template("register-{name}"),
-                ValueSource::Template("register-{res.name}"),
-            ],
             ..DEFAULT_SERVICE_BIND_CONFIG
         },
         "fuchsia.hardware.adc.Service" => ServiceBindConfig {
@@ -106,10 +89,6 @@ static VIM3_PARSER_CONFIG: DmlParserConfig = DmlParserConfig {
                 destination: Destination::Both,
                 required: true,
             }],
-            parent_key_sources: &[
-                ValueSource::ResourceName,
-                ValueSource::Template("adc-{channel}"),
-            ],
             ..DEFAULT_SERVICE_BIND_CONFIG
         },
         "fuchsia.hardware.pwm.Service" => ServiceBindConfig {
@@ -120,10 +99,6 @@ static VIM3_PARSER_CONFIG: DmlParserConfig = DmlParserConfig {
                 destination: Destination::BindRules,
                 required: true,
             }],
-            parent_key_sources: &[
-                ValueSource::ResourceName,
-                ValueSource::Template("pwm-{channel}"),
-            ],
             ..DEFAULT_SERVICE_BIND_CONFIG
         },
         "fuchsia.hardware.power.Service" => ServiceBindConfig {
@@ -134,15 +109,6 @@ static VIM3_PARSER_CONFIG: DmlParserConfig = DmlParserConfig {
                 destination: Destination::Both,
                 required: true,
             }],
-            parent_key_sources: &[
-                ValueSource::ResourceName,
-                ValueSource::Template("power-{domain}"),
-            ],
-            ..DEFAULT_SERVICE_BIND_CONFIG
-        },
-        "fuchsia.hardware.vreg.Service" => ServiceBindConfig {
-            rules: &[],
-            parent_key_sources: &[ValueSource::ResourceName, ValueSource::Template("vreg-{name}")],
             ..DEFAULT_SERVICE_BIND_CONFIG
         },
         "fuchsia.hardware.sdio.Service" => ServiceBindConfig {
@@ -187,13 +153,8 @@ static VIM3_PARSER_CONFIG: DmlParserConfig = DmlParserConfig {
             }],
             ..DEFAULT_SERVICE_BIND_CONFIG
         },
-        "fuchsia.hardware.ethernet.board.Service" => ServiceBindConfig {
-            parent_key_sources: &[ValueSource::Template("eth-board")],
-            ..DEFAULT_SERVICE_BIND_CONFIG
-        },
         "fuchsia.hardware.gpu.mali.Service" => ServiceBindConfig {
             transport: TransportType::Driver,
-            parent_key_sources: &[ValueSource::Template("mali")],
             ..DEFAULT_SERVICE_BIND_CONFIG
         },
     },
