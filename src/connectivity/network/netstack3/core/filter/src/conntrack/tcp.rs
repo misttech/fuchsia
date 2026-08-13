@@ -562,7 +562,7 @@ fn update_for_syn_sent(
             // know the receiver will tear down the connection.
             Some(Control::RST) => match segment.ack {
                 None => (State::SynSent(state), false),
-
+                // We previously validated the ACK, so this RST must be valid.
                 Some(_) => (State::Closed, true),
             },
 
@@ -678,6 +678,8 @@ fn update_for_established(
         Some(Control::SYN) => {
             return (State::Established(peers.into_peer_pair()), false);
         }
+        // TODO(https://fxbug.dev/546018652): RSTs in synchronized states are
+        // validated based on the sequence number only, not the ACK.
         Some(Control::RST) => return (State::Closed, true),
         Some(Control::FIN) | None => {}
     };
