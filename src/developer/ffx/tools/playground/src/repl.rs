@@ -399,7 +399,7 @@ impl Repl {
                                 "\r\n{}\r\n",
                                 completions
                                     .into_iter()
-                                    .map(|x| x.0.trim().to_owned())
+                                    .map(|x| x.0.trim().escape_default().to_string())
                                     .collect::<Vec<_>>()
                                     .join("  ")
                             );

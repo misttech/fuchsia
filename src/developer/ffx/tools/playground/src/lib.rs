@@ -194,6 +194,7 @@ pub async fn exec_playground(
             .map_err(|e| anyhow!("Could not identify host: {:?}", e))?
             .nodename
             .unwrap_or_else(|| "<unknown>".to_owned());
+        let node_name = node_name.escape_default().to_string();
         let repl = Arc::new(repl::Repl::new()?);
         let interpreter = Arc::new(interpreter);
 

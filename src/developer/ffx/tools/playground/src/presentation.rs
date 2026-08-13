@@ -12,7 +12,7 @@ use std::collections::HashMap;
 use std::io;
 use unicode_width::UnicodeWidthStr;
 
-use crate::term_util::printed_length;
+use crate::term_util::{printed_length, sanitize_str};
 
 /// Style text as a header.
 fn header_style<'a, D>(val: D, depth: usize) -> StyledContent<D>
@@ -98,9 +98,9 @@ async fn display_result_list<'a, W: AsyncWrite + Unpin + 'a>(
             })
             .collect::<Vec<_>>();
         let string = if let Ok(string) = String::from_utf8(string) {
-            string
+            sanitize_str(&string)
         } else {
-            format!("{}", Value::List(values))
+            sanitize_str(&format!("{}", Value::List(values)))
         };
         let dims = TextDimensions::for_text(&string);
         writer.write_all(string.as_bytes()).await?;
@@ -130,10 +130,11 @@ async fn display_result_list<'a, W: AsyncWrite + Unpin + 'a>(
         let Value::Object(value) = value else { unreachable!() };
 
         if column_order.is_empty() {
-            column_order = value.iter().map(|x| x.0.clone()).collect();
+            column_order = value.iter().map(|x| sanitize_str(&x.0)).collect();
         }
 
         for (column, value) in value {
+            let column = sanitize_str(&column);
             let mut value_text = Vec::new();
             let mut cursor = futures::io::Cursor::new(&mut value_text);
             let (dims, disp) =
@@ -265,11 +266,14 @@ fn display_result_inner<'a, W: AsyncWrite + Unpin + 'a>(
                 display_result_list(writer, values, interpreter, depth).await
             }
             Ok(Value::String(s)) => {
+                let s = sanitize_str(&s);
                 let ret = TextDimensions::for_text(&s);
                 writer.write_all(s.as_bytes()).await?;
                 Ok((ret, DisplayedType::Text))
             }
             Ok(Value::Object(items)) => {
+                let items: Vec<_> =
+                    items.into_iter().map(|(name, val)| (sanitize_str(&name), val)).collect();
                 let name_width =
                     items.iter().map(|x| x.0.lines().map(|y| y.width()).sum()).max().unwrap_or(0)
                         + 1;
@@ -318,13 +322,13 @@ fn display_result_inner<'a, W: AsyncWrite + Unpin + 'a>(
                 Ok((TextDimensions { lines, cols }, DisplayedType::Table))
             }
             Ok(x) => {
-                let string = format!("{x}");
+                let string = sanitize_str(&format!("{x}"));
                 let ret = TextDimensions::for_text(&string);
                 writer.write_all(string.as_bytes()).await?;
                 Ok((ret, DisplayedType::Text))
             }
             Err(x) => {
-                let content_string = format!("{x:#}");
+                let content_string = sanitize_str(&format!("{x:#}"));
                 let dim_string = format!("Err: {content_string}");
                 let ret = TextDimensions::for_text(&dim_string);
                 let string = format!(
@@ -581,5 +585,69 @@ mod test {
             ),
             got
         );
+    }
+
+    #[fuchsia::test]
+    async fn string_sanitizes_escape_sequences() {
+        let mut got = Vec::<u8>::new();
+        let ns = fidl_codec_fdomain::library::Namespace::new();
+        let fs_root = fdomain_client::Channel::from(fdomain_client::Handle::invalid()).into();
+        let (interpreter, task) = playground::interpreter::Interpreter::new(ns, fs_root).await;
+        fuchsia_async::Task::spawn(task).detach();
+
+        display_result(
+            &mut got,
+            Ok(Value::String("\x1b[31mmalicious\x1b[0m\r\ntest".to_owned())),
+            &interpreter,
+        )
+        .await
+        .unwrap();
+
+        let got = String::from_utf8(got).unwrap();
+        assert_eq!(got, "\\u{1b}[31mmalicious\\u{1b}[0m\\r\ntest\n");
+    }
+
+    #[fuchsia::test]
+    async fn u8_list_sanitizes_escape_sequences() {
+        let mut got = Vec::<u8>::new();
+        let ns = fidl_codec_fdomain::library::Namespace::new();
+        let fs_root = fdomain_client::Channel::from(fdomain_client::Handle::invalid()).into();
+        let (interpreter, task) = playground::interpreter::Interpreter::new(ns, fs_root).await;
+        fuchsia_async::Task::spawn(task).detach();
+
+        display_result(
+            &mut got,
+            Ok(Value::List(b"\x1b[6n".iter().map(|&b| Value::U8(b)).collect())),
+            &interpreter,
+        )
+        .await
+        .unwrap();
+
+        let got = String::from_utf8(got).unwrap();
+        assert_eq!(got, "\\u{1b}[6n\n");
+    }
+
+    #[fuchsia::test]
+    async fn table_sanitizes_escape_sequences() {
+        let mut got = Vec::<u8>::new();
+        let ns = fidl_codec_fdomain::library::Namespace::new();
+        let fs_root = fdomain_client::Channel::from(fdomain_client::Handle::invalid()).into();
+        let (interpreter, task) = playground::interpreter::Interpreter::new(ns, fs_root).await;
+        fuchsia_async::Task::spawn(task).detach();
+
+        display_result(
+            &mut got,
+            Ok(Value::List(vec![Value::Object(vec![(
+                "\x1b[31mheader\x1b[0m".to_owned(),
+                Value::String("\x1b[32mvalue\x1b[0m".to_owned()),
+            )])])),
+            &interpreter,
+        )
+        .await
+        .unwrap();
+
+        let got = String::from_utf8(got).unwrap();
+        let header = header_style(" \\u{1b}[31mheader\\u{1b}[0m ", 0);
+        assert_eq!(format!("{header}\n \\u{{1b}}[32mvalue\\u{{1b}}[0m  \n"), got);
     }
 }
