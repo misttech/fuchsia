@@ -2028,19 +2028,19 @@ if (!(current_os == "fuchsia")) {
 }
 
 group("serde") {
-  public_deps = [ ":serde-v1_0_228" ]
+  public_deps = [ ":serde-v1_0_229" ]
 }
 
-group("serde-1.0.228") {
-  public_deps = [ ":serde-v1_0_228" ]
+group("serde-1.0.229") {
+  public_deps = [ ":serde-v1_0_229" ]
 }
 
 group("serde_derive") {
-  public_deps = [ ":serde_derive-v1_0_228($host_toolchain)" ]
+  public_deps = [ ":serde_derive-v1_0_229($host_toolchain)" ]
 }
 
-group("serde_derive-1.0.228") {
-  public_deps = [ ":serde_derive-v1_0_228" ]
+group("serde_derive-1.0.229") {
+  public_deps = [ ":serde_derive-v1_0_229" ]
 }
 
 group("serde_json") {
@@ -3442,7 +3442,7 @@ rustc_library("argh_shared-v0_1_19") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":serde-v1_0_228" ]
+  deps += [ ":serde-v1_0_229" ]
 
   rustenv = []
 
@@ -3609,7 +3609,7 @@ rustc_library("askama-v0_15_6") {
   deps += [ ":askama_macros-v0_15_6($host_toolchain)" ]
   deps += [ ":itoa-v1_0_18" ]
   deps += [ ":percent-encoding-v2_3_2" ]
-  deps += [ ":serde-v1_0_228" ]
+  deps += [ ":serde-v1_0_229" ]
   deps += [ ":serde_json-v1_0_149" ]
 
   rustenv = []
@@ -3656,8 +3656,8 @@ rustc_library("askama_derive-v0_15_6") {
   deps += [ ":proc-macro2-v1_0_106" ]
   deps += [ ":quote-v1_0_45" ]
   deps += [ ":rustc-hash-v2_1_3" ]
-  deps += [ ":serde-v1_0_228" ]
-  deps += [ ":serde_derive-v1_0_228($host_toolchain)" ]
+  deps += [ ":serde-v1_0_229" ]
+  deps += [ ":serde_derive-v1_0_229($host_toolchain)" ]
   deps += [ ":syn-v2_0_119" ]
 
   rustenv = []
@@ -3741,8 +3741,8 @@ rustc_library("askama_parser-v0_15_6") {
 
   deps = []
   deps += [ ":rustc-hash-v2_1_3" ]
-  deps += [ ":serde-v1_0_228" ]
-  deps += [ ":serde_derive-v1_0_228($host_toolchain)" ]
+  deps += [ ":serde-v1_0_229" ]
+  deps += [ ":serde_derive-v1_0_229($host_toolchain)" ]
   deps += [ ":unicode-ident-v1_0_19" ]
   deps += [ ":winnow-v1_0_1" ]
 
@@ -4367,7 +4367,7 @@ rustc_library("basic-toml-v0_1_10") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":serde-v1_0_228" ]
+  deps += [ ":serde-v1_0_229" ]
 
   rustenv = [
     "CARGO_PKG_VERSION_MAJOR=0",
@@ -4402,7 +4402,7 @@ rustc_library("bincode-v1_3_3") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":serde-v1_0_228" ]
+  deps += [ ":serde-v1_0_229" ]
 
   rustenv = []
 
@@ -4607,7 +4607,7 @@ rustc_library("bit-vec-v0_9_1") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":serde-v1_0_228" ]
+  deps += [ ":serde-v1_0_229" ]
 
   rustenv = []
 
@@ -4744,7 +4744,7 @@ rustc_library("bitflags-v2_13_0") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":serde_core-v1_0_228" ]
+  deps += [ ":serde_core-v1_0_229" ]
 
   rustenv = []
 
@@ -4928,7 +4928,7 @@ rustc_library("bstr-v1_12_1") {
 
   deps = []
   deps += [ ":memchr-v2_8_0" ]
-  deps += [ ":serde-v1_0_228" ]
+  deps += [ ":serde-v1_0_229" ]
 
   rustenv = []
 
@@ -5412,7 +5412,7 @@ rustc_library("camino-v1_2_2") {
 
   deps = []
   deps += [ ":proptest-v1_11_0" ]
-  deps += [ ":serde_core-v1_0_228" ]
+  deps += [ ":serde_core-v1_0_229" ]
 
   rustenv = []
 
@@ -5456,7 +5456,7 @@ rustc_library("cargo_metadata-v0_23_1") {
   deps += [ ":semver-v1_0_28" ]
   deps += [ ":camino-v1_2_2" ]
   deps += [ ":cargo-platform-v0_3_1" ]
-  deps += [ ":serde-v1_0_228" ]
+  deps += [ ":serde-v1_0_229" ]
   deps += [ ":serde_json-v1_0_149" ]
   deps += [ ":thiserror-v2_0_20" ]
 
@@ -5493,7 +5493,7 @@ rustc_library("cargo-platform-v0_3_1") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":serde-v1_0_228" ]
+  deps += [ ":serde-v1_0_229" ]
 
   rustenv = []
 
@@ -5663,7 +5663,7 @@ rustc_library("chrono-v0_4_45") {
 
   deps = []
   deps += [ ":num-traits-v0_2_19" ]
-  deps += [ ":serde-v1_0_228" ]
+  deps += [ ":serde-v1_0_229" ]
   if (current_cpu == "wasm32" && !(false || false)) {
     deps += [ ":js-sys-v0_3_102" ]
     deps += [ ":wasm-bindgen-v0_2_125" ]
@@ -5751,7 +5751,7 @@ rustc_library("ciborium-v0_2_2") {
   deps = []
   deps += [ ":ciborium-io-v0_2_2" ]
   deps += [ ":ciborium-ll-v0_2_2" ]
-  deps += [ ":serde-v1_0_228" ]
+  deps += [ ":serde-v1_0_229" ]
 
   rustenv = []
 
@@ -6549,7 +6549,7 @@ rustc_library("criterion-v0_8_2") {
   deps += [ ":oorandom-v11_1_5" ]
   deps += [ ":page_size-v0_6_0" ]
   deps += [ ":regex-v1_12_3" ]
-  deps += [ ":serde-v1_0_228" ]
+  deps += [ ":serde-v1_0_229" ]
   deps += [ ":serde_json-v1_0_149" ]
   deps += [ ":tinytemplate-v1_2_1" ]
   if (false || true) {
@@ -7110,7 +7110,7 @@ rustc_library("csv-v1_4_0") {
   deps += [ ":csv-core-v0_1_13" ]
   deps += [ ":itoa-v1_0_18" ]
   deps += [ ":ryu-v1_0_22" ]
-  deps += [ ":serde_core-v1_0_228" ]
+  deps += [ ":serde_core-v1_0_229" ]
 
   rustenv = []
 
@@ -8677,7 +8677,7 @@ rustc_library("erased-serde-v0_3_31") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":serde-v1_0_228" ]
+  deps += [ ":serde-v1_0_229" ]
 
   rustenv = []
 
@@ -8757,7 +8757,7 @@ rustc_library("euclid-v0_22_14") {
 
   deps = []
   deps += [ ":num-traits-v0_2_19" ]
-  deps += [ ":serde-v1_0_228" ]
+  deps += [ ":serde-v1_0_229" ]
 
   rustenv = []
 
@@ -8794,7 +8794,7 @@ rustc_library("eui48-v1_1_0") {
 
   deps = []
   deps += [ ":regex-v1_12_3" ]
-  deps += [ ":serde-v1_0_228" ]
+  deps += [ ":serde-v1_0_229" ]
 
   rustenv = []
 
@@ -9288,7 +9288,7 @@ rustc_library("flyweights-v0_1_5") {
   deps += [ ":ahash-v0_8_12" ]
   deps += [ ":bstr-v1_12_1" ]
   deps += [ ":schemars-v0_8_22" ]
-  deps += [ ":serde-v1_0_228" ]
+  deps += [ ":serde-v1_0_229" ]
   deps += [ ":static_assertions-v1_1_0" ]
 
   rustenv = []
@@ -10647,7 +10647,7 @@ rustc_library("handlebars-v6_4_2") {
   deps += [ ":num-order-v1_2_0" ]
   deps += [ ":pest-v2_8_6" ]
   deps += [ ":pest_derive-v2_8_6($host_toolchain)" ]
-  deps += [ ":serde-v1_0_228" ]
+  deps += [ ":serde-v1_0_229" ]
   deps += [ ":serde_json-v1_0_149" ]
   deps += [ ":thiserror-v2_0_20" ]
 
@@ -10752,9 +10752,9 @@ rustc_library("hashbrown-v0_17_1") {
 
   deps = []
   deps += [ ":foldhash-v0_2_0" ]
-  deps += [ ":serde_core-v1_0_228" ]
+  deps += [ ":serde_core-v1_0_229" ]
   if (true) {
-    deps += [ ":serde-v1_0_228" ]
+    deps += [ ":serde-v1_0_229" ]
   }
 
   rustenv = []
@@ -10916,7 +10916,7 @@ rustc_library("hex-v0_4_3") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":serde-v1_0_228" ]
+  deps += [ ":serde-v1_0_229" ]
 
   rustenv = []
 
@@ -11712,7 +11712,7 @@ rustc_library("indexmap-v1_9_2") {
 
   deps = []
   deps += [ ":hashbrown-v0_12_3" ]
-  deps += [ ":serde-v1_0_228" ]
+  deps += [ ":serde-v1_0_229" ]
 
   rustenv = []
 
@@ -11750,9 +11750,9 @@ rustc_library("indexmap-v2_14_0") {
   deps = []
   deps += [ ":equivalent-v1_0_2" ]
   deps += [ ":hashbrown-v0_17_1" ]
-  deps += [ ":serde_core-v1_0_228" ]
+  deps += [ ":serde_core-v1_0_229" ]
   if (true) {
-    deps += [ ":serde-v1_0_228" ]
+    deps += [ ":serde-v1_0_229" ]
   }
 
   rustenv = []
@@ -12204,7 +12204,7 @@ rustc_library("jsonway-v2_0_0") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":serde-v1_0_228" ]
+  deps += [ ":serde-v1_0_229" ]
   deps += [ ":serde_json-v1_0_149" ]
 
   rustenv = []
@@ -12449,7 +12449,7 @@ rustc_library("lock_api-v0_4_14") {
 
   deps = []
   deps += [ ":scopeguard-v1_2_0" ]
-  deps += [ ":serde-v1_0_228" ]
+  deps += [ ":serde-v1_0_229" ]
 
   rustenv = []
 
@@ -12520,7 +12520,7 @@ rustc_library("loom-v0_7_2") {
   deps += [ ":generator-v0_8_7" ]
   deps += [ ":pin-utils-v0_1_0" ]
   deps += [ ":scoped-tls-v1_0_1" ]
-  deps += [ ":serde-v1_0_228" ]
+  deps += [ ":serde-v1_0_229" ]
   deps += [ ":serde_json-v1_0_149" ]
   deps += [ ":tracing-subscriber-v0_3_23" ]
   deps += [ ":tracing-v0_1_44" ]
@@ -13100,7 +13100,7 @@ rustc_binary("mock-omaha-server.mock-omaha-server-v0_5_0") {
   deps += [ ":mock-omaha-server-v0_5_0" ]
   deps += [ ":omaha_client-v0_4_1" ]
   deps += [ ":p256-v0_14_0" ]
-  deps += [ ":serde-v1_0_228" ]
+  deps += [ ":serde-v1_0_229" ]
   deps += [ ":serde_json-v1_0_149" ]
   deps += [ ":sha2-v0_11_0" ]
   deps += [ ":url-v2_3_1" ]
@@ -13153,7 +13153,7 @@ rustc_test("mock-omaha-server.mock-omaha-server-v0_5_0.test") {
   deps += [ ":mock-omaha-server-v0_5_0" ]
   deps += [ ":omaha_client-v0_4_1" ]
   deps += [ ":p256-v0_14_0" ]
-  deps += [ ":serde-v1_0_228" ]
+  deps += [ ":serde-v1_0_229" ]
   deps += [ ":serde_json-v1_0_149" ]
   deps += [ ":sha2-v0_11_0" ]
   deps += [ ":url-v2_3_1" ]
@@ -13206,7 +13206,7 @@ rustc_library("mock-omaha-server-v0_5_0") {
   deps += [ ":log-v0_4_29" ]
   deps += [ ":omaha_client-v0_4_1" ]
   deps += [ ":p256-v0_14_0" ]
-  deps += [ ":serde-v1_0_228" ]
+  deps += [ ":serde-v1_0_229" ]
   deps += [ ":serde_json-v1_0_149" ]
   deps += [ ":sha2-v0_11_0" ]
   deps += [ ":url-v2_3_1" ]
@@ -13262,7 +13262,7 @@ rustc_test("mock-omaha-server-v0_5_0.test") {
   deps += [ ":log-v0_4_29" ]
   deps += [ ":omaha_client-v0_4_1" ]
   deps += [ ":p256-v0_14_0" ]
-  deps += [ ":serde-v1_0_228" ]
+  deps += [ ":serde-v1_0_229" ]
   deps += [ ":serde_json-v1_0_149" ]
   deps += [ ":sha2-v0_11_0" ]
   deps += [ ":url-v2_3_1" ]
@@ -14407,7 +14407,7 @@ rustc_library("omaha_client-v0_4_1") {
   deps += [ ":pkcs8-v0_11_0" ]
   deps += [ ":pretty_assertions-v1_4_1" ]
   deps += [ ":rand-v0_9_4" ]
-  deps += [ ":serde-v1_0_228" ]
+  deps += [ ":serde-v1_0_229" ]
   deps += [ ":serde_json-v1_0_149" ]
   deps += [ ":serde_repr-v0_1_20($host_toolchain)" ]
   deps += [ ":sha2-v0_11_0" ]
@@ -15112,7 +15112,7 @@ rustc_library("pem-v3_0_6") {
 
   deps = []
   deps += [ ":base64-v0_22_1" ]
-  deps += [ ":serde_core-v1_0_228" ]
+  deps += [ ":serde_core-v1_0_229" ]
 
   rustenv = []
 
@@ -15504,7 +15504,7 @@ rustc_library("phf-v0_14_0") {
   deps = []
   deps += [ ":phf_macros-v0_14_0($host_toolchain)" ]
   deps += [ ":phf_shared-v0_14_0" ]
-  deps += [ ":serde-v1_0_228" ]
+  deps += [ ":serde-v1_0_229" ]
 
   rustenv = []
 
@@ -16953,7 +16953,7 @@ rustc_library("pulldown-cmark-v0_13_4") {
   deps += [ ":bitflags-v2_13_0" ]
   deps += [ ":getopts-v0_2_24" ]
   deps += [ ":pulldown-cmark-escape-v0_11_0" ]
-  deps += [ ":serde-v1_0_228" ]
+  deps += [ ":serde-v1_0_229" ]
   deps += [ ":unicase-v2_9_0" ]
 
   rustenv = []
@@ -18718,7 +18718,7 @@ rustc_library("rustfix-v0_9_7") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":serde-v1_0_228" ]
+  deps += [ ":serde-v1_0_229" ]
   deps += [ ":serde_json-v1_0_149" ]
   deps += [ ":thiserror-v2_0_20" ]
 
@@ -19155,7 +19155,7 @@ rustc_library("rutabaga_gfx-v0_1_75") {
   deps += [ ":log-v0_4_29" ]
   deps += [ ":mesa3d_util-v0_1_75" ]
   deps += [ ":remain-v0_2_15($host_toolchain)" ]
-  deps += [ ":serde-v1_0_228" ]
+  deps += [ ":serde-v1_0_229" ]
   deps += [ ":serde_json-v1_0_149" ]
   deps += [ ":thiserror-v1_0_69" ]
   deps += [ ":zerocopy-v0_8_48" ]
@@ -19575,7 +19575,7 @@ rustc_library("schemars-v0_8_22") {
   deps += [ ":dyn-clone-v1_0_20" ]
   deps += [ ":indexmap-v1_9_2" ]
   deps += [ ":schemars_derive-v0_8_22($host_toolchain)" ]
-  deps += [ ":serde-v1_0_228" ]
+  deps += [ ":serde-v1_0_229" ]
   deps += [ ":serde_json-v1_0_149" ]
 
   rustenv = []
@@ -19892,7 +19892,7 @@ rustc_library("semver-v1_0_28") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":serde_core-v1_0_228" ]
+  deps += [ ":serde_core-v1_0_229" ]
 
   rustenv = []
 
@@ -19906,45 +19906,45 @@ rustc_library("semver-v1_0_28") {
   ]
 
   aliased_deps = {
-    serde = ":serde_core-v1_0_228.actual"
+    serde = ":serde_core-v1_0_229.actual"
   }
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":semver-v1_0_28.license" ]
 }
 
-license("serde-v1_0_228.license") {
+license("serde-v1_0_229.license") {
   public_package_name = "serde"
   license_files = [
-    "//third_party/rust_crates/vendor/serde-1.0.228/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/serde-1.0.228/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/serde-1.0.229/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/serde-1.0.229/LICENSE-MIT",
   ]
 }
 
-rustc_library("serde-v1_0_228") {
+rustc_library("serde-v1_0_229") {
   crate_name = "serde"
-  source_root = "//third_party/rust_crates/vendor/serde-1.0.228/src/lib.rs"
-  output_name = "serde-5f65e035945297a7"
+  source_root = "//third_party/rust_crates/vendor/serde-1.0.229/src/lib.rs"
+  output_name = "serde-5cb5ef4973f9305d"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":serde_core-v1_0_228" ]
-  deps += [ ":serde_derive-v1_0_228($host_toolchain)" ]
+  deps += [ ":serde_core-v1_0_229" ]
+  deps += [ ":serde_derive-v1_0_229($host_toolchain)" ]
 
   rustenv = [
     "CARGO_PKG_VERSION_MAJOR=1",
     "CARGO_PKG_VERSION_MINOR=0",
-    "CARGO_PKG_VERSION_PATCH=228",
+    "CARGO_PKG_VERSION_PATCH=229",
     "OUT_DIR=../../../compat/serde",
   ]
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=5f65e035945297a7",
-    "-Cextra-filename=-5f65e035945297a7",
+    "-Cmetadata=5cb5ef4973f9305d",
+    "-Cextra-filename=-5cb5ef4973f9305d",
     "--cfg=feature=\"alloc\"",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"derive\"",
@@ -19954,21 +19954,21 @@ rustc_library("serde-v1_0_228") {
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":serde-v1_0_228.license" ]
+  applicable_licenses = [ ":serde-v1_0_229.license" ]
 }
 
-license("serde_core-v1_0_228.license") {
+license("serde_core-v1_0_229.license") {
   public_package_name = "serde_core"
   license_files = [
-    "//third_party/rust_crates/vendor/serde_core-1.0.228/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/serde_core-1.0.228/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/serde_core-1.0.229/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/serde_core-1.0.229/LICENSE-MIT",
   ]
 }
 
-rustc_library("serde_core-v1_0_228") {
+rustc_library("serde_core-v1_0_229") {
   crate_name = "serde_core"
-  source_root = "//third_party/rust_crates/vendor/serde_core-1.0.228/src/lib.rs"
-  output_name = "serde_core-a9a7330be03982ef"
+  source_root = "//third_party/rust_crates/vendor/serde_core-1.0.229/src/lib.rs"
+  output_name = "serde_core-fa0896c771ca5b37"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -19976,20 +19976,20 @@ rustc_library("serde_core-v1_0_228") {
 
   deps = []
   if (true) {
-    deps += [ ":serde_derive-v1_0_228($host_toolchain)" ]
+    deps += [ ":serde_derive-v1_0_229($host_toolchain)" ]
   }
 
   rustenv = [
     "CARGO_PKG_VERSION_MAJOR=1",
     "CARGO_PKG_VERSION_MINOR=0",
-    "CARGO_PKG_VERSION_PATCH=228",
+    "CARGO_PKG_VERSION_PATCH=229",
     "OUT_DIR=../../../compat/serde_core",
   ]
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=a9a7330be03982ef",
-    "-Cextra-filename=-a9a7330be03982ef",
+    "-Cmetadata=fa0896c771ca5b37",
+    "-Cextra-filename=-fa0896c771ca5b37",
     "--cfg=feature=\"alloc\"",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"result\"",
@@ -19998,22 +19998,22 @@ rustc_library("serde_core-v1_0_228") {
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":serde_core-v1_0_228.license" ]
+  applicable_licenses = [ ":serde_core-v1_0_229.license" ]
 }
 
-license("serde_derive-v1_0_228.license") {
+license("serde_derive-v1_0_229.license") {
   public_package_name = "serde_derive"
   license_files = [
-    "//third_party/rust_crates/vendor/serde_derive-1.0.228/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/serde_derive-1.0.228/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/serde_derive-1.0.229/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/serde_derive-1.0.229/LICENSE-MIT",
   ]
 }
 
-rustc_macro("serde_derive-v1_0_228") {
+rustc_macro("serde_derive-v1_0_229") {
   crate_name = "serde_derive"
   source_root =
-      "//third_party/rust_crates/vendor/serde_derive-1.0.228/src/lib.rs"
-  output_name = "serde_derive-3a80f042ab4370b2"
+      "//third_party/rust_crates/vendor/serde_derive-1.0.229/src/lib.rs"
+  output_name = "serde_derive-6e5702ca913dc32e"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -20022,24 +20022,24 @@ rustc_macro("serde_derive-v1_0_228") {
   deps = []
   deps += [ ":proc-macro2-v1_0_106" ]
   deps += [ ":quote-v1_0_45" ]
-  deps += [ ":syn-v2_0_119" ]
+  deps += [ ":syn-v3_0_3" ]
 
   rustenv = [
     "CARGO_PKG_VERSION_MAJOR=1",
     "CARGO_PKG_VERSION_MINOR=0",
-    "CARGO_PKG_VERSION_PATCH=228",
+    "CARGO_PKG_VERSION_PATCH=229",
   ]
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=3a80f042ab4370b2",
-    "-Cextra-filename=-3a80f042ab4370b2",
+    "-Cmetadata=6e5702ca913dc32e",
+    "-Cextra-filename=-6e5702ca913dc32e",
     "--cfg=feature=\"default\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":serde_derive-v1_0_228.license" ]
+  applicable_licenses = [ ":serde_derive-v1_0_229.license" ]
 }
 
 license("serde_derive_internals-v0_29_1.license") {
@@ -20099,10 +20099,10 @@ rustc_library("serde_json-v1_0_149") {
   deps += [ ":memchr-v2_8_0" ]
   deps += [ ":indexmap-v2_14_0" ]
   deps += [ ":itoa-v1_0_18" ]
-  deps += [ ":serde_core-v1_0_228" ]
+  deps += [ ":serde_core-v1_0_229" ]
   deps += [ ":zmij-v1_0_21" ]
   if (true) {
-    deps += [ ":serde-v1_0_228" ]
+    deps += [ ":serde-v1_0_229" ]
   }
 
   rustenv = []
@@ -20145,7 +20145,7 @@ rustc_library("serde_json5-v0_2_1") {
   deps = []
   deps += [ ":pest-v2_8_6" ]
   deps += [ ":pest_derive-v2_8_6($host_toolchain)" ]
-  deps += [ ":serde-v1_0_228" ]
+  deps += [ ":serde-v1_0_229" ]
 
   rustenv = []
 
@@ -20214,7 +20214,7 @@ rustc_library("serde_spanned-v1_1_1") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":serde_core-v1_0_228" ]
+  deps += [ ":serde_core-v1_0_229" ]
 
   rustenv = []
 
@@ -20254,7 +20254,7 @@ rustc_library("serde_yaml-v0_9_34+deprecated") {
   deps += [ ":indexmap-v2_14_0" ]
   deps += [ ":itoa-v1_0_18" ]
   deps += [ ":ryu-v1_0_22" ]
-  deps += [ ":serde-v1_0_228" ]
+  deps += [ ":serde-v1_0_229" ]
   deps += [ ":unsafe-libyaml-v0_2_11" ]
 
   rustenv = []
@@ -20289,7 +20289,7 @@ rustc_library("serdect-v0_1_0") {
 
   deps = []
   deps += [ ":base16ct-v0_1_1" ]
-  deps += [ ":serde-v1_0_228" ]
+  deps += [ ":serde-v1_0_229" ]
 
   rustenv = []
 
@@ -20324,7 +20324,7 @@ rustc_library("serdect-v0_4_3") {
 
   deps = []
   deps += [ ":base16ct-v1_0_0" ]
-  deps += [ ":serde-v1_0_228" ]
+  deps += [ ":serde-v1_0_229" ]
 
   rustenv = []
 
@@ -22288,7 +22288,7 @@ rustc_library("tinytemplate-v1_2_1") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":serde-v1_0_228" ]
+  deps += [ ":serde-v1_0_229" ]
   deps += [ ":serde_json-v1_0_149" ]
 
   rustenv = []
@@ -22670,7 +22670,7 @@ rustc_library("toml-v1_1_2+spec-1_1_0") {
 
   deps = []
   deps += [ ":indexmap-v2_14_0" ]
-  deps += [ ":serde_core-v1_0_228" ]
+  deps += [ ":serde_core-v1_0_229" ]
   deps += [ ":serde_spanned-v1_1_1" ]
   deps += [ ":toml_datetime-v1_1_1+spec-1_1_0" ]
   deps += [ ":toml_parser-v1_1_2+spec-1_1_0" ]
@@ -22713,7 +22713,7 @@ rustc_library("toml_datetime-v0_7_5+spec-1_1_0") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":serde_core-v1_0_228" ]
+  deps += [ ":serde_core-v1_0_229" ]
 
   rustenv = []
 
@@ -22749,7 +22749,7 @@ rustc_library("toml_datetime-v1_1_1+spec-1_1_0") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":serde_core-v1_0_228" ]
+  deps += [ ":serde_core-v1_0_229" ]
 
   rustenv = []
 
@@ -23377,7 +23377,7 @@ rustc_library("tuf-v0_3_0-beta14") {
   deps += [ ":log-v0_4_29" ]
   deps += [ ":percent-encoding-v2_3_2" ]
   deps += [ ":ring-v0_17_14" ]
-  deps += [ ":serde-v1_0_228" ]
+  deps += [ ":serde-v1_0_229" ]
   deps += [ ":serde_json-v1_0_149" ]
   deps += [ ":tempfile-v3_27_0" ]
   deps += [ ":thiserror-v2_0_20" ]
@@ -23433,7 +23433,7 @@ rustc_test("tuf-v0_3_0-beta14.test") {
   deps += [ ":percent-encoding-v2_3_2" ]
   deps += [ ":pretty_assertions-v1_4_1" ]
   deps += [ ":ring-v0_17_14" ]
-  deps += [ ":serde-v1_0_228" ]
+  deps += [ ":serde-v1_0_229" ]
   deps += [ ":serde_json-v1_0_149" ]
   deps += [ ":tempfile-v3_27_0" ]
   deps += [ ":thiserror-v2_0_20" ]
@@ -24284,7 +24284,7 @@ rustc_library("url-v2_3_1") {
   deps += [ ":form_urlencoded-v1_2_2" ]
   deps += [ ":idna-v0_3_0" ]
   deps += [ ":percent-encoding-v2_3_2" ]
-  deps += [ ":serde-v1_0_228" ]
+  deps += [ ":serde-v1_0_229" ]
 
   rustenv = []
 
@@ -24350,7 +24350,7 @@ rustc_library("uuid-v1_23_3") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":serde_core-v1_0_228" ]
+  deps += [ ":serde_core-v1_0_229" ]
   if (current_cpu == "wasm32" && (current_os == "unknown" || false)) {
     deps += [ ":wasm-bindgen-v0_2_125" ]
   }
@@ -24407,7 +24407,7 @@ rustc_library("valico-v4_0_0") {
   deps += [ ":jsonway-v2_0_0" ]
   deps += [ ":percent-encoding-v2_3_2" ]
   deps += [ ":phf-v0_14_0" ]
-  deps += [ ":serde-v1_0_228" ]
+  deps += [ ":serde-v1_0_229" ]
   deps += [ ":serde_json-v1_0_149" ]
   deps += [ ":uritemplate-next-v0_2_0" ]
   deps += [ ":url-v2_3_1" ]

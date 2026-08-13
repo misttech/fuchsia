@@ -76,7 +76,7 @@ rust_library(
         "//third_party/rust_crates/vendor/indexmap-2.14.0:indexmap",
         "//third_party/rust_crates/vendor/itoa-1.0.18:itoa",
         "//third_party/rust_crates/vendor/ryu-1.0.22:ryu",
-        "//third_party/rust_crates/vendor/serde-1.0.228:serde",
+        "//third_party/rust_crates/vendor/serde-1.0.229:serde",
         "//third_party/rust_crates/vendor/unsafe-libyaml-0.2.11:unsafe_libyaml",
     ],
 )

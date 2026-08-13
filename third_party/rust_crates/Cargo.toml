@@ -224,8 +224,8 @@ sapphire-rpc-macro = "0.1.0"
 sapphire-sync = { version = "0.1.0", features = ["std"] }
 schemars = { version = "0.8.22", features = ["chrono", "preserve_order"] }
 scopeguard = "1.2.0"
-serde = { version = "1.0.228", features = ["derive"] }
-serde_derive = "1.0.228"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_derive = "1.0.229"
 serde_json = "1.0.149"
 serde_json5 = "0.2.1"
 serde_repr = "0.1.20"
@@ -1155,30 +1155,30 @@ groups = [
 [gn.package.semver."1.0.28"]
 rustflags = []
 
-[gn.package.serde."1.0.228"]
+[gn.package.serde."1.0.229"]
 rustflags = []
 env_vars = [
   "CARGO_PKG_VERSION_MAJOR=1",
   "CARGO_PKG_VERSION_MINOR=0",
-  "CARGO_PKG_VERSION_PATCH=228",
+  "CARGO_PKG_VERSION_PATCH=229",
   "OUT_DIR=../../../compat/serde",
 ]
 
-[gn.package.serde_core."1.0.228"]
+[gn.package.serde_core."1.0.229"]
 rustflags = []
 env_vars = [
   "CARGO_PKG_VERSION_MAJOR=1",
   "CARGO_PKG_VERSION_MINOR=0",
-  "CARGO_PKG_VERSION_PATCH=228",
+  "CARGO_PKG_VERSION_PATCH=229",
   "OUT_DIR=../../../compat/serde_core",
 ]
 
-[gn.package.serde_derive."1.0.228"]
+[gn.package.serde_derive."1.0.229"]
 rustflags = []
 env_vars = [
   "CARGO_PKG_VERSION_MAJOR=1",
   "CARGO_PKG_VERSION_MINOR=0",
-  "CARGO_PKG_VERSION_PATCH=228",
+  "CARGO_PKG_VERSION_PATCH=229",
 ]
 
 [gn.package.serde_json."1.0.149"]

@@ -89,7 +89,7 @@ rust_library(
         "//third_party/rust_crates/vendor/oorandom-11.1.5:oorandom",
         "//third_party/rust_crates/vendor/page_size-0.6.0:page_size",
         "//third_party/rust_crates/vendor/regex-1.12.3:regex",
-        "//third_party/rust_crates/vendor/serde-1.0.228:serde",
+        "//third_party/rust_crates/vendor/serde-1.0.229:serde",
         "//third_party/rust_crates/vendor/serde_json-1.0.149:serde_json",
         "//third_party/rust_crates/vendor/tinytemplate-1.2.1:tinytemplate",
     ] + select({

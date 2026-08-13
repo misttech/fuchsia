@@ -79,6 +79,6 @@ rust_library(
     version = "0.4.14",
     deps = [
         "//third_party/rust_crates/vendor/scopeguard-1.2.0:scopeguard",
-        "//third_party/rust_crates/vendor/serde-1.0.228:serde",
+        "//third_party/rust_crates/vendor/serde-1.0.229:serde",
     ],
 )

@@ -80,7 +80,7 @@ rust_library(
         "//third_party/rust_crates/vendor/cfg-if-1.0.4:cfg_if",
         "//third_party/rust_crates/vendor/log-0.4.29:log",
         "//third_party/rust_crates/vendor/mesa3d_util-0.1.75:mesa3d_util",
-        "//third_party/rust_crates/vendor/serde-1.0.228:serde",
+        "//third_party/rust_crates/vendor/serde-1.0.229:serde",
         "//third_party/rust_crates/vendor/serde_json-1.0.149:serde_json",
         "//third_party/rust_crates/vendor/thiserror-1.0.69:thiserror",
         "//third_party/rust_crates/vendor/zerocopy-0.8.48:zerocopy",
