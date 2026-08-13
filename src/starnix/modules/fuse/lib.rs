@@ -797,7 +797,7 @@ impl FileOps for FuseFileObject {
             return Ok(0);
         }
 
-        let max_transfer = self.connection.max_transfer_size();
+        let max_transfer = self.connection.max_read_size();
         let node = Self::get_fuse_node(file);
         let mut total_read = 0;
 
@@ -837,7 +837,7 @@ impl FileOps for FuseFileObject {
             };
             let read_out_len = read_out.len();
             if read_out_len == 0 {
-                break; // EOF from daemon
+                return Ok(total_read); // EOF from daemon
             }
             let to_write = std::cmp::min(read_out_len, chunk_size);
             let write_len = match data.write(&read_out[..to_write]) {
@@ -854,10 +854,12 @@ impl FileOps for FuseFileObject {
             total_read += write_len;
             target_size = target_size.saturating_sub(write_len);
             if write_len < to_write {
-                break;
+                // The guest buffer is full or we hit a memory fault.
+                return Ok(total_read);
             }
             if read_out_len < chunk_size {
-                break; // Short read from daemon
+                // Short read from daemon indicates EOF or no more data available.
+                return Ok(total_read);
             }
         }
         Ok(total_read)
@@ -878,20 +880,20 @@ impl FileOps for FuseFileObject {
         }
         let node = Self::get_fuse_node(file);
 
-        let max_transfer = self.connection.max_transfer_size();
+        let max_transfer = self.connection.max_write_size();
         let mut total_written = 0;
 
         while data.available() > 0 {
             let chunk_size = std::cmp::min(data.available(), max_transfer);
             let mut chunk = Vec::with_capacity(chunk_size);
-            let peeked = data.peek(chunk.spare_capacity_mut())?;
-            if peeked == 0 {
+            let bytes_peeked = data.peek(chunk.spare_capacity_mut())?;
+            if bytes_peeked == 0 {
                 break;
             }
-            // SAFETY: `data.peek` guarantees that it has initialized `peeked` bytes in the
-            // buffer. `peeked` is `<= chunk_size` (which is the capacity of the vector).
+            // SAFETY: `data.peek` guarantees that it has initialized `bytes_peeked` bytes in the
+            // buffer. `bytes_peeked` is `<= chunk_size` (which is the capacity of the vector).
             unsafe {
-                chunk.set_len(peeked);
+                chunk.set_len(bytes_peeked);
             }
 
             let response = self.connection.lock().execute_operation(
@@ -901,7 +903,7 @@ impl FileOps for FuseFileObject {
                     write_in: uapi::fuse_write_in {
                         fh: self.open_out.fh,
                         offset: offset.try_into().map_err(|_| errno!(EINVAL))?,
-                        size: peeked.try_into().map_err(|_| errno!(EINVAL))?,
+                        size: bytes_peeked.try_into().map_err(|_| errno!(EINVAL))?,
                         write_flags: 0,
                         lock_owner: 0,
                         flags: 0,
@@ -930,17 +932,11 @@ impl FileOps for FuseFileObject {
                 }
             };
 
-            let written = std::cmp::min(write_out.size as usize, peeked);
+            let written = std::cmp::min(write_out.size as usize, bytes_peeked);
             offset += written;
             total_written += written;
-            if let Err(e) = data.advance(written) {
-                if total_written > 0 {
-                    break;
-                } else {
-                    return Err(e);
-                }
-            }
-            if written < peeked {
+            data.advance(written)?;
+            if written < bytes_peeked {
                 break; // Short write from daemon
             }
         }
@@ -988,6 +984,9 @@ impl FileOps for FuseFileObject {
     }
 
     fn sync(&self, file: &FileObject, current_task: &CurrentTask) -> Result<(), Errno> {
+        if let Some(file_object) = self.passthrough_file.upgrade() {
+            return file_object.ops().sync(&file_object, current_task);
+        }
         let node = Self::get_fuse_node(file);
         let is_dir = file.node().info().mode.is_dir();
         let _response = self.connection.lock().execute_operation(
@@ -999,6 +998,9 @@ impl FileOps for FuseFileObject {
     }
 
     fn data_sync(&self, file: &FileObject, current_task: &CurrentTask) -> Result<(), Errno> {
+        if let Some(file_object) = self.passthrough_file.upgrade() {
+            return file_object.ops().data_sync(&file_object, current_task);
+        }
         let node = Self::get_fuse_node(file);
         let is_dir = file.node().info().mode.is_dir();
         let _response = self.connection.lock().execute_operation(
@@ -1787,10 +1789,17 @@ impl FuseConnection {
         ))
     }
 
-    fn max_transfer_size(&self) -> usize {
+    fn max_read_size(&self) -> usize {
         self.lock()
             .configuration
-            .map(|c| c.max_transfer_size())
+            .map(|c| c.max_read_size())
+            .unwrap_or((FUSE_DEFAULT_MAX_PAGES as usize) * (*PAGE_SIZE as usize))
+    }
+
+    fn max_write_size(&self) -> usize {
+        self.lock()
+            .configuration
+            .map(|c| c.max_write_size())
             .unwrap_or(*FUSE_DEFAULT_MAX_WRITE as usize)
     }
 }
@@ -1803,7 +1812,13 @@ struct FuseConfiguration {
 }
 
 impl FuseConfiguration {
-    fn max_transfer_size(&self) -> usize {
+    // TODO: Support `max_read` mount option parsing if needed. For now, fall back
+    // to page-based limitation (max_pages * PAGE_SIZE).
+    fn max_read_size(&self) -> usize {
+        (self.max_pages as usize) * (*PAGE_SIZE as usize)
+    }
+
+    fn max_write_size(&self) -> usize {
         let limit_by_write = self.max_write as usize;
         let limit_by_pages = (self.max_pages as usize) * (*PAGE_SIZE as usize);
         std::cmp::min(limit_by_write, limit_by_pages)
