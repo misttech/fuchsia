@@ -768,7 +768,8 @@ static void brcmf_signal_scan_end(struct net_device* ndev, uint64_t txn_id,
       fuchsia_wlan_fullmac_wire::WlanFullmacImplIfcOnScanEndRequest::Builder(*arena);
   scan_end_builder.txn_id(txn_id);
   scan_end_builder.code(scan_result_code);
-  BRCMF_DBG(SCAN, "Signaling on_scan_end with txn_id %ld and code %d", txn_id, scan_result_code);
+  BRCMF_DBG(SCAN, "Signaling on_scan_end with txn_id %" PRIu64 " and code %u", txn_id,
+            static_cast<uint8_t>(scan_result_code));
   BRCMF_IFDBG(
       WLANIF, ndev,
       "Sending scan end event to SME. txn_id: %" PRIu64
@@ -979,7 +980,7 @@ static zx_status_t brcmf_escan_prep(
 
   /* Copy channel array if applicable */
   n_channels = request->channels().size();
-  BRCMF_DBG(SCAN, "### List of channelspecs to scan ### %d", n_channels);
+  BRCMF_DBG(SCAN, "### List of channelspecs to scan ### %u", n_channels);
   if (n_channels == 0) {
     BRCMF_ERR("Scan request contains empty channel list.");
     return ZX_ERR_INVALID_ARGS;
@@ -1935,8 +1936,8 @@ void brcmf_return_assoc_result(struct net_device* ndev,
     conf.association_id(0);
   }
 
-  BRCMF_IFDBG(WLANIF, ndev, "Sending connect result to SME. result: %" PRIu16 ", aid: %" PRIu16,
-              status_code, conf.association_id());
+  BRCMF_IFDBG(WLANIF, ndev, "Sending connect result to SME. result: %u, aid: %u",
+              static_cast<uint16_t>(status_code), conf.association_id());
   auto result = ndev->if_proto.buffer(*arena)->ConnectConf(conf.Build());
   if (!result.ok()) {
     BRCMF_ERR("Failed to send connect conf result.status: %s", result.status_string());
@@ -2069,8 +2070,8 @@ void brcmf_return_roam_result(struct net_device* ndev, const uint8_t* selected_b
     }
   }
 
-  BRCMF_IFDBG(WLANIF, ndev, "Sending roam result: 0x%x, BSSID: " FMT_MAC, status_code,
-              FMT_MAC_ARGS(selected_bssid));
+  BRCMF_IFDBG(WLANIF, ndev, "Sending roam result: 0x%x, BSSID: " FMT_MAC,
+              static_cast<uint16_t>(status_code), FMT_MAC_ARGS(selected_bssid));
   auto result = ndev->if_proto.buffer(*arena)->RoamResultInd(roam_result_builder.Build());
   if (!result.ok()) {
     BRCMF_ERR("Failed to send roam result, result.status: %s", result.status_string());
@@ -2126,8 +2127,8 @@ void brcmf_return_roam_conf(struct net_device* ndev, const uint8_t* selected_bss
     }
   }
 
-  BRCMF_IFDBG(WLANIF, ndev, "Sending roam conf: 0x%x, BSSID: " FMT_MAC, status_code,
-              FMT_MAC_ARGS(selected_bssid));
+  BRCMF_IFDBG(WLANIF, ndev, "Sending roam conf: 0x%x, BSSID: " FMT_MAC,
+              static_cast<uint16_t>(status_code), FMT_MAC_ARGS(selected_bssid));
   auto result = ndev->if_proto.buffer(*arena)->RoamConf(roam_conf_builder.Build());
   if (!result.ok()) {
     BRCMF_ERR("Failed to send roam conf, status: %s", result.status_string());
@@ -4518,7 +4519,7 @@ void brcmf_if_stop_req(net_device* ndev,
 #endif /* !defined(NDEBUG) */
   if ((req->ssid().size() != ifp->saved_softap_ssid.size()) ||
       (memcmp(req->ssid().data(), ifp->saved_softap_ssid.data(), req->ssid().size()) != 0)) {
-    BRCMF_ERR("SSID does not match running SoftAP, req SSID: " FMT_SSID, " current SSID: " FMT_SSID,
+    BRCMF_ERR("SSID does not match running SoftAP, req SSID: " FMT_SSID " current SSID: " FMT_SSID,
               FMT_SSID_BYTES(req->ssid().data(), req->ssid().size()),
               FMT_SSID_BYTES(ifp->saved_softap_ssid.data(), ifp->saved_softap_ssid.size()));
     result_code = fuchsia_wlan_fullmac_wire::StopResult::kInternalError;
@@ -4580,7 +4581,7 @@ static void brcmf_send_eapol_confirm(
               : eapol_result == fuchsia_wlan_fullmac_wire::EapolTxResult::kTransmissionFailure
                   ? "failure"
                   : "unknown",
-              eapol_result);
+              static_cast<uint8_t>(eapol_result));
   auto arena = fdf::Arena::Create(0, 0);
   if (arena.is_error()) {
     BRCMF_ERR("Failed to create Arena status=%s", arena.status_string());
@@ -4904,7 +4905,7 @@ static void brcmf_dump_if_band_cap(fuchsia_wlan_fullmac::BandCapability* band_ca
 
   size_t num_primary_channels = band_cap->primary_channels()->size();
   if (num_primary_channels > fuchsia::wlan::ieee80211::MAX_UNIQUE_CHANNEL_NUMBERS) {
-    BRCMF_DBG_UNFILTERED("Number of channels reported (%u) exceeds limit (%du), truncating",
+    BRCMF_DBG_UNFILTERED("Number of channels reported (%zu) exceeds limit (%u), truncating",
                          band_cap->primary_channels()->size(),
                          fuchsia::wlan::ieee80211::MAX_UNIQUE_CHANNEL_NUMBERS);
     num_primary_channels = fuchsia::wlan::ieee80211::MAX_UNIQUE_CHANNEL_NUMBERS;

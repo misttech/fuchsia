@@ -155,13 +155,14 @@ zx_status_t WlanInterface::AddWlanFullmacDevice() {
 
 zx_status_t WlanInterface::RemoveWlanFullmacDevice() {
   if (!wlanfullmac_controller_.is_valid()) {
-    BRCMF_ERR("Fullmac device for role %u cannot be removed because controller is invalid", Role());
+    BRCMF_ERR("Fullmac device for role %u cannot be removed because controller is invalid",
+              static_cast<uint32_t>(Role()));
     return ZX_ERR_BAD_STATE;
   }
   auto result = wlanfullmac_controller_->Remove();
   if (!result.ok()) {
-    BRCMF_ERR("Fullmac child remove failed for role %u, FIDL error: %s", Role(),
-              result.status_string());
+    BRCMF_ERR("Fullmac child remove failed for role %u, FIDL error: %s",
+              static_cast<uint32_t>(Role()), result.status_string());
     return result.status();
   }
   wlanfullmac_controller_ = {};
@@ -340,7 +341,7 @@ void WlanInterface::Query(QueryCompleter::Sync& completer) {
 void WlanInterface::handle_unknown_method(
     fidl::UnknownMethodMetadata<fuchsia_wlan_fullmac::WlanFullmacImpl> metadata,
     fidl::UnknownMethodCompleter::Sync& completer) {
-  BRCMF_ERR("Unknown method in WlanFullmacImpl protocol: 0x%llx", metadata.method_ordinal);
+  BRCMF_ERR("Unknown method in WlanFullmacImpl protocol: 0x%" PRIx64, metadata.method_ordinal);
 }
 
 void WlanInterface::QuerySecuritySupport(QuerySecuritySupportCompleter::Sync& completer) {
@@ -662,7 +663,7 @@ void WlanInterface::MacSetMode(fuchsia_hardware_network::wire::MacFilterMode mod
       status = brcmf_if_set_multicast_promisc(wdev_->netdev, true);
       break;
     default:
-      BRCMF_ERR("Unsupported MAC mode: %u", mode);
+      BRCMF_ERR("Unsupported MAC mode: %u", static_cast<uint32_t>(mode));
       break;
   }
 

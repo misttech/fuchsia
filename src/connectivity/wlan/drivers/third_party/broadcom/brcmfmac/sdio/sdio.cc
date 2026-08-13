@@ -1849,8 +1849,8 @@ static zx_status_t brcmf_sdio_tx_frames_prep(struct brcmf_sdio* bus,
       // TODO(https://fxbug.dev/403335051): Recover more gracefully from this. Right now we drop all
       // frames, ideally we would only drop individual frames or even better not take frames out of
       // the queue (or put them back) if the transfer size exceeds the max value.
-      BRCMF_ERR("TX glom size %u exceeds maximum value %u", total_size,
-                std::numeric_limits<uint16_t>());
+      BRCMF_ERR("TX glom size %zu exceeds maximum value %u", total_size,
+                std::numeric_limits<uint16_t>::max());
       return ZX_ERR_IO_OVERRUN;
     }
     brcmf_sdio_update_hwhdr(frames.begin()->Data(), static_cast<uint16_t>(total_size));

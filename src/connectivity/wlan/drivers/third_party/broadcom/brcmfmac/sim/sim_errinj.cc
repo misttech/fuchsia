@@ -160,7 +160,8 @@ void SimErrorInjector::AddErrEventInjCmd(uint32_t cmd, brcmf_fweh_event_code eve
   BRCMF_DBG(SIMERRINJ,
             "Entry pushed for cmd: %u if: %d with event_code: %u status: %u reason: %u flags: %u",
             err_inj_cmd.cmd, err_inj_cmd.ifidx.value_or(-1), err_inj_cmd.event_code,
-            err_inj_cmd.ret_status, err_inj_cmd.ret_reason, err_inj_cmd.flags);
+            static_cast<uint32_t>(err_inj_cmd.ret_status),
+            static_cast<uint16_t>(err_inj_cmd.ret_reason), err_inj_cmd.flags);
   BRCMF_DBG(SIMERRINJ, "Num entries in list: %lu\n", event_cmds_.size());
 }
 
@@ -187,8 +188,9 @@ bool SimErrorInjector::CheckIfErrEventInjCmdEnabled(
 
     if (existing_cmd.cmd == cmd) {
       BRCMF_DBG(SIMERRINJ, "Err Inj entry found cmd:%d if:%d ec:%u status %u reason %u", cmd,
-                ifidx.value_or(-1), existing_cmd.event_code, existing_cmd.ret_status,
-                existing_cmd.ret_reason);
+                ifidx.value_or(-1), existing_cmd.event_code,
+                static_cast<uint32_t>(existing_cmd.ret_status),
+                static_cast<uint16_t>(existing_cmd.ret_reason));
       event_code = existing_cmd.event_code;
       ret_status = existing_cmd.ret_status;
       ret_reason = existing_cmd.ret_reason;

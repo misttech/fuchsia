@@ -31,8 +31,9 @@
 
 __BEGIN_CDECLS
 
-void wlan_drivers_log_with_severity(LOG_SEVERITY_TYPE severity, uint32_t filter, const char* tag,
-                                    const char* file, int line, const char* fmt, ...);
+__attribute__((format(printf, 6, 7))) void wlan_drivers_log_with_severity(
+    LOG_SEVERITY_TYPE severity, uint32_t filter, const char* tag, const char* file, int line,
+    const char* fmt, ...);
 void wlan_drivers_log_hexdump(LOG_SEVERITY_TYPE severity, uint32_t filter, const char* tag,
                               const char* file, int line, const char* func, const void* data,
                               size_t length);

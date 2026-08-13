@@ -3038,7 +3038,7 @@ zx_status_t SimFirmware::IovarChanspecsGet(SimIovarGetReq* req) {
   size_t list_size_bytes =
       (chanspec_list->count * sizeof(chanspec_list->element[0])) + sizeof(chanspec_list->count);
   if (req->value_len < list_size_bytes) {
-    BRCMF_INFO("size bytes: %u, value_len: %u", list_size_bytes, req->value_len);
+    BRCMF_INFO("size bytes: %zu, value_len: %zu", list_size_bytes, req->value_len);
     return ZX_ERR_BUFFER_TOO_SMALL;
   }
   std::memcpy(req->value, chanspec_list, list_size_bytes);
