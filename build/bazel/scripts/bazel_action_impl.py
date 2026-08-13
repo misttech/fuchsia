@@ -83,7 +83,11 @@ class BazelActionError(Exception):
 
 
 class BazelActionScriptError(BazelActionError):
-    """Errors detected by the Bazel action script, not Bazel itself."""
+    """Errors detected by the Bazel action script, not Bazel itself.
+
+    The exception contains a message describing the error, that has
+    not been printed to stderr yet.
+    """
 
 
 class SourceFilesNotFoundError(BazelActionScriptError):
@@ -839,12 +843,16 @@ class BazelActionRunner(object):
             #
             # NOTE: Path to command.log should be stable, because we explicitly set
             # output_base. See https://bazel.build/run/scripts#command-log.
-            verify_unknown_gn_targets(
+            verify_error_msg = verify_unknown_gn_targets(
                 (self.paths.output_base / "command.log")
                 .read_text()
                 .splitlines(),
                 targets,
             )
+            if verify_error_msg:
+                raise BazelActionError(verify_error_msg)
+
+            # Assume Bazel printed a reasonable error to stderr already.
             raise BazelActionError()
 
         return bazel_debug_line_recorder.get_all_recorded_values()
@@ -957,7 +965,7 @@ def calculate_jobs_param(
 def verify_unknown_gn_targets(
     build_files_error: list[str],
     bazel_targets: list[str],
-) -> int:
+) -> str:
     """Check for unknown @gn_targets// dependencies.
 
     Args:
@@ -965,8 +973,8 @@ def verify_unknown_gn_targets(
         bazel_targets: list of Bazel targets invoked by the GN bazel_action() target.
 
     Returns:
-        On success, simply return 0. On failure, print a human friendly
-        error message explaining the situation to stderr, then return 1.
+        On success, and empty string. On failure, an human friendly
+        error message explaining the situation.
     """
     missing_ninja_outputs = set()
     missing_ninja_packages = set()
@@ -978,13 +986,11 @@ def verify_unknown_gn_targets(
         if pos < 0:
             # Should not happen, do not assert and let the caller print the full error
             # after this.
-            print(f"UNSUPPORTED ERROR LINE: {error_line}", file=sys.stderr)
-            return 0
+            return f"UNSUPPORTED ERROR LINE: {error_line}"
 
         ending_pos = error_line.find("'", pos)
         if ending_pos < 0:
-            print(f"UNSUPPORTED ERROR LINE: {error_line}", file=sys.stderr)
-            return 0
+            return f"UNSUPPORTED ERROR LINE: {error_line}"
 
         label = error_line[pos + 1 : ending_pos]  # skip first @.
         if error_line[:pos].endswith(": no such package '"):
@@ -1006,7 +1012,7 @@ def verify_unknown_gn_targets(
             missing_ninja_outputs.add(label)
 
     if not missing_ninja_outputs and not missing_ninja_packages:
-        return 0
+        return ""
 
     missing_outputs = sorted(missing_ninja_outputs)
     missing_packages = sorted(missing_ninja_packages)
@@ -1064,8 +1070,7 @@ Then ensure that the GN target depends on them transitively.
             missing_build_files="\n  ".join(sorted(missing_build_files)),
         )
 
-    print(_ERROR, file=sys.stderr)
-    return 1
+    return _ERROR
 
 
 def merge_target_info_outputs(

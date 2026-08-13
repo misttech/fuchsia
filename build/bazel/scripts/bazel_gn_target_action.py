@@ -467,10 +467,8 @@ def main() -> int:
             ),
             time_profile=time_profile,
         )
-    except bazel_action_impl.BazelActionScriptError as e:
+    except bazel_action_impl.BazelActionError as e:
         print(e, file=sys.stderr)
-        return 1
-    except bazel_action_impl.BazelActionError:
         return 1
 
     configured_args = action_result.configured_args
