@@ -162,14 +162,15 @@ def main() -> int:
             else:
                 parser.error(f"Can't find a Bazel target for output: {output}")
 
-    print()
-    print("Bazel targets to build:")
-    for platform, targets in sorted(targets_by_platform.items()):
+    if _DEBUG:
         print()
-        print(f"Using platform: {platform}")
-        for target in sorted(targets):
-            print(f"    {target}")
-    print()
+        print("Bazel targets to build:")
+        for platform, targets in sorted(targets_by_platform.items()):
+            print()
+            print(f"Using platform: {platform}")
+            for target in sorted(targets):
+                print(f"    {target}")
+            print()
 
     bazel_action_runner = bazel_action_impl.BazelActionRunner(
         bazel_paths,
