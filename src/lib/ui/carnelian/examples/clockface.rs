@@ -7,15 +7,15 @@ use carnelian::color::Color;
 use carnelian::render::{
     BlendMode, Context as RenderContext, Fill, FillRule, Layer, Path, PathBuilder, Raster, Style,
 };
+use carnelian::scene::LayerGroup;
 use carnelian::scene::facets::Facet;
 use carnelian::scene::scene::{Scene, SceneBuilder, SceneOrder};
-use carnelian::scene::LayerGroup;
 use carnelian::{
-    make_app_assistant, App, AppAssistant, Point, Size, ViewAssistant, ViewAssistantContext,
-    ViewAssistantPtr, ViewKey,
+    App, AppAssistant, Point, Size, ViewAssistant, ViewAssistantContext, ViewAssistantPtr, ViewKey,
+    make_app_assistant,
 };
 use chrono::{Local, Timelike};
-use euclid::{point2, size2, vec2, Angle, Transform2D};
+use euclid::{Angle, Transform2D, point2, size2, vec2};
 use std::f32;
 use zx::Event;
 
@@ -143,18 +143,18 @@ impl ClockFaceFacet {
             hour_hand,
             minute_hand,
             second_hand,
-            hour_index: std::usize::MAX,
-            minute_index: std::usize::MAX,
-            second_index: std::usize::MAX,
+            hour_index: usize::MAX,
+            minute_index: usize::MAX,
+            second_index: usize::MAX,
         }
     }
 
     fn update(&mut self, context: &mut RenderContext, size: &Size, scale: f32) {
         if self.size != *size {
             self.size = *size;
-            self.hour_index = std::usize::MAX;
-            self.minute_index = std::usize::MAX;
-            self.second_index = std::usize::MAX;
+            self.hour_index = usize::MAX;
+            self.minute_index = usize::MAX;
+            self.second_index = usize::MAX;
         }
         const MICROSECONDS_PER_SECOND: f32 = 1e+6;
         let now = Local::now();
@@ -164,8 +164,8 @@ impl ClockFaceFacet {
         let minute = now.minute() as f32 + second / 60.0;
         let hour = hour12 as f32 + minute / 60.0;
         const R0: f32 = -0.25; // Rotate from 3 to 12.
-        const STEPS: usize = 60 * 60; // Enough steps to ensure smooth movement
-                                      // of second hand each frame on a 60hz display.
+        // Enough steps to ensure smooth movement of second hand each frame on a 60hz display.
+        const STEPS: usize = 60 * 60;
         let index = ((R0 + hour / 12.0).rem_euclid(1.0) * STEPS as f32) as usize;
         if index != self.hour_index {
             let angle = index as f32 * 2.0 * f32::consts::PI / STEPS as f32;

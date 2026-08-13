@@ -76,8 +76,8 @@ mod tests {
     fn counter_add() {
         let counter = Counter::create();
         assert_eq!(counter.read().unwrap(), 0);
-        assert!(counter.add(i64::max_value()).is_ok());
-        assert_eq!(counter.read().unwrap(), i64::max_value());
+        assert!(counter.add(i64::MAX).is_ok());
+        assert_eq!(counter.read().unwrap(), i64::MAX);
         assert_eq!(counter.add(1), Err(Status::OUT_OF_RANGE));
     }
 
@@ -85,7 +85,7 @@ mod tests {
     fn counter_read_write() {
         let counter = Counter::create();
         assert_eq!(counter.read().unwrap(), 0);
-        assert!(counter.write(i64::min_value()).is_ok());
-        assert_eq!(counter.read().unwrap(), i64::min_value());
+        assert!(counter.write(i64::MIN).is_ok());
+        assert_eq!(counter.read().unwrap(), i64::MIN);
     }
 }

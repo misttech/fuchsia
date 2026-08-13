@@ -733,7 +733,7 @@ async fn get_board_info_inner(sock: fuchsia_async::net::UdpSocket, scope_id: u32
     .into();
 
     // Request a very large timeout to make sure we don't get flakes.
-    const TIMEOUT_OPTION_SECS: u8 = std::u8::MAX;
+    const TIMEOUT_OPTION_SECS: u8 = u8::MAX;
 
     #[repr(C)]
     #[derive(KnownLayout, FromBytes, Immutable, Unaligned)]

@@ -1887,7 +1887,7 @@ pub mod options {
 
             fn serialize_padding(buf: &mut [u8], length: usize) {
                 assert!(length <= buf.len());
-                assert!(length <= (std::u8::MAX as usize) + 2);
+                assert!(length <= (u8::MAX as usize) + 2);
 
                 if length == 1 {
                     // Use Pad1

@@ -6,7 +6,7 @@ use std::convert::TryInto as _;
 use std::os::unix::io::AsRawFd as _;
 
 pub trait TcpStreamExt {
-    /// Sets TCP_USER_TIMEOUT. Fuchsia supports `1..=i32::max_value()`
+    /// Sets TCP_USER_TIMEOUT. Fuchsia supports `1..=i32::MAX`
     /// milliseconds.
     fn set_user_timeout(&self, timeout: std::time::Duration) -> std::io::Result<()>;
 
@@ -120,7 +120,7 @@ mod test {
     proptest::proptest! {
         #[test]
         fn user_timeout_roundtrip
-            (timeout in 0..=i32::max_value() as u64)
+            (timeout in 0..=i32::MAX as u64)
         {
             let stream = stream().expect("failed to create stream");
             let timeout = std::time::Duration::from_millis(timeout);

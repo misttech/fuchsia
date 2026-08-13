@@ -54,11 +54,7 @@ impl DLCI {
             }
         };
 
-        if self.0 % 2 == valid_bit {
-            Ok(())
-        } else {
-            Err(RfcommError::InvalidDLCI(*self))
-        }
+        if self.0 % 2 == valid_bit { Ok(()) } else { Err(RfcommError::InvalidDLCI(*self)) }
     }
 
     /// Returns true if the DLCI is initiated by this device.
@@ -329,7 +325,7 @@ mod tests {
         let sc = ServerChannel::try_from(too_large);
         assert_matches!(sc, Err(_));
 
-        let u8_max = std::u8::MAX;
+        let u8_max = u8::MAX;
         let sc = ServerChannel::try_from(u8_max);
         assert_matches!(sc, Err(_));
     }

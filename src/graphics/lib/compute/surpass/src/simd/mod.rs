@@ -76,8 +76,6 @@ impl Simd for f32x8 {
 
 #[cfg(test)]
 mod tests {
-    use std::f32::INFINITY;
-
     use super::*;
 
     #[test]
@@ -124,7 +122,7 @@ mod tests {
     #[test]
     fn u32x8_from_f32x8() {
         let values = u32x8::from(f32x8::from_array([
-            -INFINITY,
+            -f32::INFINITY,
             -f32::MAX,
             -2.5,
             -1.0,

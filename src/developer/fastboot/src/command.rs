@@ -285,11 +285,11 @@ mod test {
 
     #[test]
     fn test_download() {
-        let download = Vec::<u8>::try_from(&Command::Download(u32::min_value()));
+        let download = Vec::<u8>::try_from(&Command::Download(u32::MIN));
         assert!(!download.is_err());
         assert_eq!(download.unwrap(), b"download:00000000".to_vec());
 
-        let download_max = Vec::<u8>::try_from(&Command::Download(u32::max_value()));
+        let download_max = Vec::<u8>::try_from(&Command::Download(u32::MAX));
         assert!(!download_max.is_err());
         assert_eq!(download_max.unwrap(), b"download:ffffffff".to_vec());
 

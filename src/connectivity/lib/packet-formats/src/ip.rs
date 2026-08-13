@@ -599,9 +599,9 @@ mod tests {
             assert_eq!(FragmentOffset::new_with_bytes(i), None);
         }
         assert_eq!(FragmentOffset::new_with_bytes(8), Some(FragmentOffset(1)));
-        assert_eq!(FragmentOffset::new_with_bytes(core::u16::MAX), None);
+        assert_eq!(FragmentOffset::new_with_bytes(u16::MAX), None);
         assert_eq!(
-            FragmentOffset::new_with_bytes(core::u16::MAX & !0x7),
+            FragmentOffset::new_with_bytes(u16::MAX & !0x7),
             Some(FragmentOffset((1 << 13) - 1)),
         );
     }

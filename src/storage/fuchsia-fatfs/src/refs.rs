@@ -221,7 +221,7 @@ impl FsRef<Dir<'static>> {
 
     pub fn open(&self, parent: Option<&Arc<FatDirectory>>, name: &str) -> Result<(), Status> {
         let open_count = self.open_count.get();
-        if open_count == std::usize::MAX {
+        if open_count == usize::MAX {
             Err(Status::UNAVAILABLE)
         } else {
             if open_count == 0 {
@@ -248,7 +248,7 @@ impl FsRef<File<'static>> {
 
     pub fn open(&self, parent: Option<&FatDirectory>, name: &str) -> Result<(), Status> {
         let open_count = self.open_count.get();
-        if open_count == std::usize::MAX {
+        if open_count == usize::MAX {
             Err(Status::UNAVAILABLE)
         } else {
             if open_count == 0 {

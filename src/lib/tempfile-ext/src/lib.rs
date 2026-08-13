@@ -134,7 +134,7 @@ mod tests {
             let dir = TempDir::new().unwrap();
             let path = dir.path().join("file");
 
-            let mut body = (0..std::u8::MAX).cycle().take(size).collect::<Vec<_>>();
+            let mut body = (0..u8::MAX).cycle().take(size).collect::<Vec<_>>();
 
             // We should persist the file if it doesn't already exist.
             let mut tmp1 = NamedTempFile::new_in(dir.path()).unwrap();

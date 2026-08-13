@@ -118,7 +118,7 @@ fn cct() {
     // Ok(449.0 * n.powi(3) + 3525.0 * n.powi(2) + 6823.3 * n + 5520.33)
     //  = 5108.754
     const EXPECTED_COLOR_TEMPERATURE: f32 = 5108.754;
-    assert!((cct - EXPECTED_COLOR_TEMPERATURE).abs() <= std::f32::EPSILON);
+    assert!((cct - EXPECTED_COLOR_TEMPERATURE).abs() <= f32::EPSILON);
 }
 
 #[fuchsia::test]

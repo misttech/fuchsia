@@ -2246,11 +2246,11 @@ mod tests {
             assert_eq!(rt_max, 99);
 
             let min_bad_policy_error =
-                sys_sched_get_priority_min(&current_task, std::u32::MAX).unwrap_err();
+                sys_sched_get_priority_min(&current_task, u32::MAX).unwrap_err();
             assert_eq!(min_bad_policy_error, errno!(EINVAL));
 
             let max_bad_policy_error =
-                sys_sched_get_priority_max(&current_task, std::u32::MAX).unwrap_err();
+                sys_sched_get_priority_max(&current_task, u32::MAX).unwrap_err();
             assert_eq!(max_bad_policy_error, errno!(EINVAL));
         })
         .await;

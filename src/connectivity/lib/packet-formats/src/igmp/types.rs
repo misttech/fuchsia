@@ -114,9 +114,7 @@ mod tests {
         // test that anything larger than max u8 tenths of seconds will cause
         // try_from to fail:
         assert_eq!(
-            IgmpResponseTimeV2::try_from(Duration::from_millis(
-                (u64::from(core::u8::MAX) + 1) * 100,
-            )),
+            IgmpResponseTimeV2::try_from(Duration::from_millis((u64::from(u8::MAX) + 1) * 100,)),
             Err(OverflowError)
         );
     }

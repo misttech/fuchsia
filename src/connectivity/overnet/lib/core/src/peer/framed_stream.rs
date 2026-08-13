@@ -237,12 +237,12 @@ mod test {
     #[fuchsia::test]
     fn roundtrips() {
         roundtrip(FrameHeader { frame_type: FrameType::Data, length: 0 });
-        roundtrip(FrameHeader { frame_type: FrameType::Data, length: std::u32::MAX as usize });
+        roundtrip(FrameHeader { frame_type: FrameType::Data, length: u32::MAX as usize });
     }
 
     #[fuchsia::test]
     fn too_long() {
-        FrameHeader { frame_type: FrameType::Data, length: (std::u32::MAX as usize) + 1 }
+        FrameHeader { frame_type: FrameType::Data, length: (u32::MAX as usize) + 1 }
             .to_bytes()
             .expect_err("Should fail");
     }

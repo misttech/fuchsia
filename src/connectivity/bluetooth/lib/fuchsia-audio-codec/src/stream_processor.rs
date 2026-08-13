@@ -770,7 +770,7 @@ mod tests {
                 let frame = (i / samples_per_frame) as f32;
                 let value =
                     ((frame * FREQUENCY / (pcm_format.frames_per_second as f32)) % 1.0) * AMPLITUDE;
-                let sample = (value * i16::max_value() as f32) as i16;
+                let sample = (value * i16::MAX as f32) as i16;
 
                 let mut sample_bytes = [0; std::mem::size_of::<i16>()];
                 NativeEndian::write_i16(&mut sample_bytes, sample);

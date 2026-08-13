@@ -94,8 +94,8 @@ fn rgbc_div() {
 
 /// Helper function that ensures both parameter fields match within epsilon range.
 fn parameters_close_enough(left: Parameters, right: Parameters) -> bool {
-    (left.slope - right.slope).abs() <= std::f32::EPSILON
-        && (left.intercept - right.intercept).abs() <= std::f32::EPSILON
+    (left.slope - right.slope).abs() <= f32::EPSILON
+        && (left.intercept - right.intercept).abs() <= f32::EPSILON
 }
 
 /// Helper function that ensures all parameters in both [Rgbc] structs match within epsilon range.
@@ -256,7 +256,7 @@ async fn calibration_new(missing_file: Option<&str>, error_strings: Option<&[&st
                     // 35.0 / 34.0
                     clear: 1.0294118,
                 },
-                |l, r| (l - r).abs() <= std::f32::EPSILON
+                |l, r| (l - r).abs() <= f32::EPSILON
             ));
             assert!(leds_match(
                 calibration.leds(),

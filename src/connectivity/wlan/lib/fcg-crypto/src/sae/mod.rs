@@ -609,7 +609,7 @@ mod tests {
         assert_eq!(sink.len(), 1);
         let confirm1_retry = expect_confirm(&mut sink);
         assert!(confirm1.to_rx().msg().confirm != confirm1_retry.to_rx().msg().confirm);
-        assert_eq!(confirm1_retry.to_rx().msg().send_confirm, u16::max_value());
+        assert_eq!(confirm1_retry.to_rx().msg().send_confirm, u16::MAX);
 
         // STA2 should complete the handshake with the resent confirm.
         let key2 = handshake.sta2_handle_confirm(confirm1_retry.to_rx());

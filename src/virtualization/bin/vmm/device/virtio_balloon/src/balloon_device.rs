@@ -484,7 +484,7 @@ mod tests {
         );
 
         // Process the request.
-        let fake_vmo_range = 1024..usize::max_value();
+        let fake_vmo_range = 1024..usize::MAX;
         device
             .process_free_page_report_chain(
                 WritableChain::new(state.queue.next_chain().unwrap(), &mem)

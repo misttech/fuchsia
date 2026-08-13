@@ -11,7 +11,7 @@ use fuchsia_async as fasync;
 
 /// Returns whether two floats are close enough to be considered equal.
 pub(crate) fn close_enough(left: f32, right: f32) -> bool {
-    (left - right).abs() <= std::f32::EPSILON
+    (left - right).abs() <= f32::EPSILON
 }
 
 /// Common data used for setting up tests.

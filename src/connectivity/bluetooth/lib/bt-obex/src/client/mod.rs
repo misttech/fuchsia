@@ -305,7 +305,7 @@ mod tests {
 
         // Upper bound should be enforced.
         let transport_max_large = 700000;
-        assert_eq!(max_packet_size_from_transport(transport_max_large), std::u16::MAX);
+        assert_eq!(max_packet_size_from_transport(transport_max_large), u16::MAX);
     }
 
     /// Returns a new ObexClient and the remote end of the transport.

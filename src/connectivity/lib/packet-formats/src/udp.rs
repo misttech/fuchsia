@@ -843,7 +843,7 @@ mod tests {
 
         // length of 0 is allowed in IPv6 if the body is long enough
         let mut buf = vec![0_u8, 0, 1, 2, 0, 0, 0xBF, 0x12];
-        buf.extend((0..core::u16::MAX).into_iter().map(|p| p as u8));
+        buf.extend((0..u16::MAX).into_iter().map(|p| p as u8));
         let bv = &mut &buf[..];
         let packet = bv
             .parse_with::<_, UdpPacket<_>>(UdpParseArgs::new(TEST_SRC_IPV6, TEST_DST_IPV6))
@@ -851,7 +851,7 @@ mod tests {
         assert!(packet.src_port().is_none());
         assert_eq!(packet.dst_port().get(), NetworkEndian::read_u16(&[1, 2]));
         assert!(packet.checksummed());
-        assert_eq!(packet.body().len(), core::u16::MAX as usize);
+        assert_eq!(packet.body().len(), u16::MAX as usize);
     }
 
     fn new_test_udp_builder() -> UdpPacketBuilder<Ipv4Addr> {
@@ -1072,7 +1072,7 @@ mod tests {
         // Now try same thing but with a body that's actually big enough to
         // justify len being 0.
         let mut buf = vec![0, 0, 1, 2, 0, 0, 0, 0, 10, 20];
-        buf.extend((0..core::u16::MAX).into_iter().map(|x| x as u8));
+        buf.extend((0..u16::MAX).into_iter().map(|x| x as u8));
         let bv = &mut &buf[..];
         let packet =
             bv.parse_with::<_, UdpPacketRaw<_>>(IpVersionMarker::<Ipv6>::default()).unwrap();

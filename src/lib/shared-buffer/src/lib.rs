@@ -1046,7 +1046,7 @@ mod tests {
         assert_eq!(overlap(4, 4, 8), Some(4));
 
         // middle branch: 'offset + copy_len' overflows usize
-        assert_eq!(overlap(4, ::core::usize::MAX, 8), Some(4));
+        assert_eq!(overlap(4, usize::MAX, 8), Some(4));
 
         // last branch: else
         assert_eq!(overlap(6, 4, 8), Some(2));

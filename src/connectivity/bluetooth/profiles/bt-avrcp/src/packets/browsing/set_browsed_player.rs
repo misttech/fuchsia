@@ -6,7 +6,7 @@ use log::{info, warn};
 use packet_encoding::{Decodable, Encodable};
 
 use crate::packets::{
-    adjust_byte_size, AdvancedDecodable, CharsetId, Error, PacketResult, StatusCode,
+    AdvancedDecodable, CharsetId, Error, PacketResult, StatusCode, adjust_byte_size,
 };
 
 /// AVRCP 1.6.2 section 6.9.3.1 SetBrowsedPlayer.
@@ -82,7 +82,7 @@ impl SetBrowsedPlayerResponse {
         num_items: u32,
         folder_names: Vec<String>,
     ) -> Result<Self, Error> {
-        if folder_names.len() > std::u8::MAX.into() {
+        if folder_names.len() > u8::MAX.into() {
             return Err(Error::InvalidMessageLength);
         }
         Ok(Self::Success(SetBrowsedPlayerResponseParams { uid_counter, num_items, folder_names }))

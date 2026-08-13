@@ -233,7 +233,7 @@ async fn send_eth_beacons<'a>(
 
     let mut timer_stream =
         Interval::new(zx::MonotonicDuration::from_nanos(DATA_FRAME_INTERVAL_NANOS));
-    let mut intervals_since_last_beacon: i64 = i64::max_value() / DATA_FRAME_INTERVAL_NANOS;
+    let mut intervals_since_last_beacon: i64 = i64::MAX / DATA_FRAME_INTERVAL_NANOS;
     loop {
         timer_stream.next().await;
 

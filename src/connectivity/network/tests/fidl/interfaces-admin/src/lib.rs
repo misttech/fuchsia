@@ -52,7 +52,6 @@ use std::collections::{HashMap, HashSet};
 use std::convert::TryInto as _;
 use std::ops::Not as _;
 use std::pin::pin;
-use std::u16;
 use test_case::test_case;
 
 #[netstack_test]

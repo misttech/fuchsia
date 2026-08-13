@@ -196,13 +196,13 @@ mod tests {
 
     #[test]
     pub fn dbm_femtowatt_conversion_bounds() {
-        for dbm in std::i8::MIN..=-120 {
+        for dbm in i8::MIN..=-120 {
             let actual_fw: FemtoWatt = DecibelMilliWatt(dbm).into();
             let expected_fw: FemtoWatt = DecibelMilliWatt(-120).into();
             assert_eq!(actual_fw.0, expected_fw.0);
         }
 
-        for dbm in 48..=std::i8::MAX {
+        for dbm in 48..=i8::MAX {
             let actual_fw: FemtoWatt = DecibelMilliWatt(dbm).into();
             let expected_fw: FemtoWatt = DecibelMilliWatt(48).into();
             assert_eq!(actual_fw.0, expected_fw.0);
@@ -211,7 +211,7 @@ mod tests {
 
     #[test]
     pub fn dbm_femtowatt_maximum_size() {
-        for dbm in std::i8::MIN..=-std::i8::MAX {
+        for dbm in i8::MIN..=-i8::MAX {
             let actual_fw: FemtoWatt = DecibelMilliWatt(dbm).into();
             assert!(actual_fw.0 < (1_u64 << 56));
         }

@@ -5770,7 +5770,6 @@ mod tests {
     use core::cell::RefCell;
     use core::num::NonZeroU16;
     use core::time::Duration;
-    use core::u16;
 
     use ip_test_macro::ip_test;
     use net_declare::{net_ip_v4, net_ip_v6};

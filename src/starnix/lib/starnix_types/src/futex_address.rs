@@ -85,7 +85,7 @@ mod tests {
 
     #[::fuchsia::test]
     fn test_maximal_address() {
-        let result = FutexAddress::try_from(usize::max_value());
+        let result = FutexAddress::try_from(usize::MAX);
         assert!(result.is_err());
     }
 

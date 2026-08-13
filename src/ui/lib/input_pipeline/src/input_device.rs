@@ -675,7 +675,7 @@ mod tests {
 
     #[test]
     fn min_event_time() {
-        let event_time = event_time_or_now(Some(std::i64::MIN));
+        let event_time = event_time_or_now(Some(i64::MIN));
         assert_eq!(event_time, zx::MonotonicInstant::INFINITE_PAST);
     }
 

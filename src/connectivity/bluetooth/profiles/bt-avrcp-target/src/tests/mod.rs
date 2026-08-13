@@ -138,7 +138,7 @@ async fn send_get_notification(target_proxy: TargetHandlerProxy) {
         .get_notification(NotificationEvent::TrackPosChanged)
         .await
         .expect("FIDL call should work");
-    assert_eq!(Ok(Notification { pos: Some(std::u32::MAX), ..Default::default() }), res);
+    assert_eq!(Ok(Notification { pos: Some(u32::MAX), ..Default::default() }), res);
 
     // Send a GetNotification request for the active session.
     let res = target_proxy

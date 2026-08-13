@@ -1242,7 +1242,7 @@ impl Default for LeaseRecord {
             previous: None,
             options: Vec::new(),
             lease_start_epoch_seconds: u64::MIN,
-            lease_length_seconds: std::u32::MAX,
+            lease_length_seconds: u32::MAX,
         }
     }
 }
@@ -2180,13 +2180,8 @@ pub mod tests {
         assert_matches::assert_matches!(
             server.records.insert(
                 ClientIdentifier::from(&disc),
-                LeaseRecord::new(
-                    Some(bound_client_ip),
-                    Vec::new(),
-                    time_source.now(),
-                    std::u32::MAX
-                )
-                .expect("failed to create lease record"),
+                LeaseRecord::new(Some(bound_client_ip), Vec::new(), time_source.now(), u32::MAX)
+                    .expect("failed to create lease record"),
             ),
             None
         );
@@ -2215,13 +2210,8 @@ pub mod tests {
         assert_matches::assert_matches!(
             server.records.insert(
                 ClientIdentifier::from(&disc),
-                LeaseRecord::new(
-                    Some(bound_client_ip),
-                    Vec::new(),
-                    time_source.now(),
-                    std::u32::MAX
-                )
-                .unwrap(),
+                LeaseRecord::new(Some(bound_client_ip), Vec::new(), time_source.now(), u32::MAX)
+                    .unwrap(),
             ),
             None
         );
@@ -2252,7 +2242,7 @@ pub mod tests {
                         .duration_since(std::time::UNIX_EPOCH)
                         .expect("invalid time value")
                         .as_secs(),
-                    lease_length_seconds: std::u32::MIN
+                    lease_length_seconds: u32::MIN
                 },
             ),
             None
@@ -2292,7 +2282,7 @@ pub mod tests {
                         .duration_since(std::time::UNIX_EPOCH)
                         .expect("invalid time value")
                         .as_secs(),
-                    lease_length_seconds: std::u32::MIN
+                    lease_length_seconds: u32::MIN
                 },
             ),
             None
@@ -2334,7 +2324,7 @@ pub mod tests {
                         .duration_since(std::time::UNIX_EPOCH)
                         .expect("invalid time value")
                         .as_secs(),
-                    lease_length_seconds: std::u32::MIN
+                    lease_length_seconds: u32::MIN
                 },
             ),
             None
@@ -2379,7 +2369,7 @@ pub mod tests {
                         .duration_since(std::time::UNIX_EPOCH)
                         .expect("invalid time value")
                         .as_secs(),
-                    lease_length_seconds: std::u32::MIN
+                    lease_length_seconds: u32::MIN
                 },
             ),
             None
@@ -2553,7 +2543,7 @@ pub mod tests {
                         DhcpOption::DomainNameServer(dns_server),
                     ],
                     time_source.now(),
-                    std::u32::MAX,
+                    u32::MAX,
                 )
                 .expect("failed to create lease record"),
             ),
@@ -2585,7 +2575,7 @@ pub mod tests {
         assert_matches::assert_matches!(
             server.records.insert(
                 client_id.clone(),
-                LeaseRecord::new(Some(requested_ip), Vec::new(), time_source.now(), std::u32::MAX)
+                LeaseRecord::new(Some(requested_ip), Vec::new(), time_source.now(), u32::MAX)
                     .expect("failed to create lease record"),
             ),
             None
@@ -2646,13 +2636,8 @@ pub mod tests {
         assert_matches::assert_matches!(
             server.records.insert(
                 ClientIdentifier::from(&req),
-                LeaseRecord::new(
-                    Some(server_offered_ip),
-                    Vec::new(),
-                    time_source.now(),
-                    std::u32::MAX,
-                )
-                .expect("failed to create lease record"),
+                LeaseRecord::new(Some(server_offered_ip), Vec::new(), time_source.now(), u32::MAX,)
+                    .expect("failed to create lease record"),
             ),
             None
         );
@@ -2683,7 +2668,7 @@ pub mod tests {
         assert_matches::assert_matches!(
             server.records.insert(
                 ClientIdentifier::from(&req),
-                LeaseRecord::new(Some(requested_ip), Vec::new(), time_source.now(), std::u32::MIN)
+                LeaseRecord::new(Some(requested_ip), Vec::new(), time_source.now(), u32::MIN)
                     .expect("failed to create lease record"),
             ),
             None
@@ -2709,7 +2694,7 @@ pub mod tests {
         assert_matches::assert_matches!(
             server.records.insert(
                 ClientIdentifier::from(&req),
-                LeaseRecord::new(Some(requested_ip), Vec::new(), time_source.now(), std::u32::MAX)
+                LeaseRecord::new(Some(requested_ip), Vec::new(), time_source.now(), u32::MAX)
                     .expect("failed to create lese record"),
             ),
             None
@@ -2773,7 +2758,7 @@ pub mod tests {
                         DhcpOption::DomainNameServer(dns_server),
                     ],
                     time_source.now(),
-                    std::u32::MAX,
+                    u32::MAX,
                 )
                 .expect("failed to create lease record"),
             ),
@@ -2854,13 +2839,8 @@ pub mod tests {
         assert_matches::assert_matches!(
             server.records.insert(
                 ClientIdentifier::from(&req),
-                LeaseRecord::new(
-                    Some(server_cached_ip),
-                    Vec::new(),
-                    time_source.now(),
-                    std::u32::MAX,
-                )
-                .expect("failed to create lease record"),
+                LeaseRecord::new(Some(server_cached_ip), Vec::new(), time_source.now(), u32::MAX,)
+                    .expect("failed to create lease record"),
             ),
             None
         );
@@ -2898,7 +2878,7 @@ pub mod tests {
                     Some(init_reboot_client_ip),
                     Vec::new(),
                     time_source.now(),
-                    std::u32::MIN,
+                    u32::MIN,
                 )
                 .expect("failed to create lease record"),
             ),
@@ -2933,7 +2913,7 @@ pub mod tests {
                     Some(init_reboot_client_ip),
                     Vec::new(),
                     time_source.now(),
-                    std::u32::MAX,
+                    u32::MAX,
                 )
                 .expect("failed to create lease record"),
             ),
@@ -2986,7 +2966,7 @@ pub mod tests {
                         DhcpOption::DomainNameServer(dns_server),
                     ],
                     time_source.now(),
-                    std::u32::MAX,
+                    u32::MAX,
                 )
                 .expect("failed to create lease record"),
             ),
@@ -3043,13 +3023,8 @@ pub mod tests {
         assert_matches::assert_matches!(
             server.records.insert(
                 ClientIdentifier::from(&req),
-                LeaseRecord::new(
-                    Some(bound_client_ip),
-                    Vec::new(),
-                    time_source.now(),
-                    std::u32::MAX
-                )
-                .expect("failed to create lease record"),
+                LeaseRecord::new(Some(bound_client_ip), Vec::new(), time_source.now(), u32::MAX)
+                    .expect("failed to create lease record"),
             ),
             None
         );
@@ -3082,13 +3057,8 @@ pub mod tests {
         assert_matches::assert_matches!(
             server.records.insert(
                 ClientIdentifier::from(&req),
-                LeaseRecord::new(
-                    Some(bound_client_ip),
-                    Vec::new(),
-                    time_source.now(),
-                    std::u32::MIN
-                )
-                .expect("failed to create lease record"),
+                LeaseRecord::new(Some(bound_client_ip), Vec::new(), time_source.now(), u32::MIN)
+                    .expect("failed to create lease record"),
             ),
             None
         );
@@ -3115,13 +3085,8 @@ pub mod tests {
         assert_matches::assert_matches!(
             server.records.insert(
                 ClientIdentifier::from(&req),
-                LeaseRecord::new(
-                    Some(bound_client_ip),
-                    Vec::new(),
-                    time_source.now(),
-                    std::u32::MAX
-                )
-                .expect("failed to create lease record"),
+                LeaseRecord::new(Some(bound_client_ip), Vec::new(), time_source.now(), u32::MAX)
+                    .expect("failed to create lease record"),
             ),
             None
         );
@@ -3608,7 +3573,7 @@ pub mod tests {
         assert_matches::assert_matches!(
             server.records.insert(
                 client_id.clone(),
-                LeaseRecord::new(Some(declined_ip), Vec::new(), time_source.now(), std::u32::MAX)
+                LeaseRecord::new(Some(declined_ip), Vec::new(), time_source.now(), u32::MAX)
                     .expect("failed to create lease record"),
             ),
             None
@@ -3636,7 +3601,7 @@ pub mod tests {
         assert_matches::assert_matches!(
             server.records.insert(
                 client_id.clone(),
-                LeaseRecord::new(Some(declined_ip), Vec::new(), time_source.now(), std::u32::MAX)
+                LeaseRecord::new(Some(declined_ip), Vec::new(), time_source.now(), u32::MAX)
                     .expect("failed to create lease record"),
             ),
             None
@@ -3676,7 +3641,7 @@ pub mod tests {
                     Some(client_ip_according_to_server),
                     Vec::new(),
                     time_source.now(),
-                    std::u32::MAX,
+                    u32::MAX,
                 )
                 .expect("failed to create lease record"),
             ),
@@ -3710,7 +3675,7 @@ pub mod tests {
         assert_matches::assert_matches!(
             server.records.insert(
                 client_id.clone(),
-                LeaseRecord::new(Some(declined_ip), Vec::new(), time_source.now(), std::u32::MIN)
+                LeaseRecord::new(Some(declined_ip), Vec::new(), time_source.now(), u32::MIN)
                     .expect("failed to create lease record"),
             ),
             None
@@ -3764,7 +3729,7 @@ pub mod tests {
         assert_matches::assert_matches!(
             server.records.insert(
                 client_id.clone(),
-                LeaseRecord::new(Some(declined_ip), Vec::new(), time_source.now(), std::u32::MAX)
+                LeaseRecord::new(Some(declined_ip), Vec::new(), time_source.now(), u32::MAX)
                     .expect("failed to create lease record"),
             ),
             None

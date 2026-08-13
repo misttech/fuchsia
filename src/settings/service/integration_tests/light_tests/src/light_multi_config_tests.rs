@@ -432,12 +432,12 @@ async fn test_set_wrong_value_type() {
     let _ = realm.destroy().await;
 }
 
-#[test_case(ColorRgb { red: 0.1, green: 0.1, blue: 1.0 + std::f32::EPSILON})]
-#[test_case(ColorRgb { red: 0.1, green: 0.1, blue: 0.0 - std::f32::EPSILON})]
-#[test_case(ColorRgb { red: 0.1, green: 1.0 + std::f32::EPSILON, blue: 0.1})]
-#[test_case(ColorRgb { red: 0.1, green: 0.0 - std::f32::EPSILON, blue: 0.1})]
-#[test_case(ColorRgb { red: 1.0 + std::f32::EPSILON, green: 0.1, blue: 0.1})]
-#[test_case(ColorRgb { red: 0.0 - std::f32::EPSILON, green: 0.1, blue: 0.1})]
+#[test_case(ColorRgb { red: 0.1, green: 0.1, blue: 1.0 + f32::EPSILON})]
+#[test_case(ColorRgb { red: 0.1, green: 0.1, blue: 0.0 - f32::EPSILON})]
+#[test_case(ColorRgb { red: 0.1, green: 1.0 + f32::EPSILON, blue: 0.1})]
+#[test_case(ColorRgb { red: 0.1, green: 0.0 - f32::EPSILON, blue: 0.1})]
+#[test_case(ColorRgb { red: 1.0 + f32::EPSILON, green: 0.1, blue: 0.1})]
+#[test_case(ColorRgb { red: 0.0 - f32::EPSILON, green: 0.1, blue: 0.1})]
 #[fuchsia::test]
 async fn test_set_invalid_rgb_values(invalid_rgb: ColorRgb) {
     let (tx, mut rx) = mpsc::channel(0);

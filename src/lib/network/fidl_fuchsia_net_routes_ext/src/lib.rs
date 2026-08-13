@@ -1896,7 +1896,7 @@ mod tests {
             state_server_end.into_stream_and_control_handle();
         let watchers_fut = state_request_stream
             .zip(futures::stream::iter(test_data.clone()))
-            .for_each_concurrent(std::usize::MAX, |(request, watcher_data)| {
+            .for_each_concurrent(usize::MAX, |(request, watcher_data)| {
                 testutil::serve_state_request::<I>(request, futures::stream::iter(watcher_data))
             });
 

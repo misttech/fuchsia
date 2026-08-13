@@ -1107,7 +1107,6 @@ mod test {
     use super::*;
 
     use futures::{AsyncReadExt, AsyncWriteExt};
-    use std::u32;
 
     #[fuchsia::test]
     async fn test_connect() {

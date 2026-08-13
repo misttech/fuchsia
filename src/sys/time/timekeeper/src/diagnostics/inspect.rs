@@ -714,7 +714,7 @@ mod tests {
             details.reference_offset,
             VALID_DETAILS.reference_to_synthetic.reference_offset.into_nanos()
         );
-        assert_eq!(details.rate_ppm, std::i32::MAX);
+        assert_eq!(details.rate_ppm, i32::MAX);
         assert_eq!(details.error_bounds, ERROR_BOUNDS);
     }
 

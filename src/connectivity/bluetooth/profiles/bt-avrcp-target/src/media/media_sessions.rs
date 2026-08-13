@@ -585,7 +585,7 @@ pub(crate) mod tests {
         let result = result_fut.await.expect("notification response");
         assert_eq!(
             result,
-            Ok(fidl_avrcp::Notification { pos: Some(std::u32::MAX), ..Default::default() }),
+            Ok(fidl_avrcp::Notification { pos: Some(u32::MAX), ..Default::default() }),
         );
     }
 
@@ -821,7 +821,7 @@ pub(crate) mod tests {
                         }
                     }
                     NotificationEvent::TrackPosChanged => {
-                        fidl_avrcp::Notification { pos: Some(std::u32::MAX), ..Default::default() }
+                        fidl_avrcp::Notification { pos: Some(u32::MAX), ..Default::default() }
                     }
                     NotificationEvent::BattStatusChanged => fidl_avrcp::Notification {
                         battery_status: Some(fidl_avrcp::BatteryStatus::Normal),
