@@ -69,3 +69,7 @@ extend uint fuchsia.BIND_PCI_CLASS {
   COPROCESSOR = 0x40,
   UNASSIGNED = 0xff,
 };
+
+// The PCI segment group (sometimes referred to as a 'Domain') that the device's bus
+// is in. BIND_PCI_TOPO is only unique within a segment.
+uint SEGMENT;

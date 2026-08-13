@@ -14,9 +14,10 @@
 
 namespace pci_child_dt {
 
-// A PCI bus/device/function address parsed from a child's `reg`.
+// A PCI bus/device/function address parsed from a child's `reg`, optionally
+// qualified by the domain of the bus the child lives on.
 struct PciChildBdf {
-  static PciChildBdf FromValue(uint32_t phys_hi) {
+  static PciChildBdf FromValue(std::optional<uint16_t> domain, uint32_t phys_hi) {
     constexpr uint32_t kBusShift = 16;
     constexpr uint32_t kBusMask = 0xff;
     constexpr uint32_t kDeviceShift = 11;
@@ -25,12 +26,17 @@ struct PciChildBdf {
     constexpr uint32_t kFunctionMask = 0x7;
 
     return PciChildBdf{
+        .domain = domain,
         .bus = static_cast<uint8_t>((phys_hi >> kBusShift) & kBusMask),
         .device = static_cast<uint8_t>((phys_hi >> kDeviceShift) & kDeviceMask),
         .function = static_cast<uint8_t>((phys_hi >> kFunctionShift) & kFunctionMask),
     };
   }
 
+  // The PCI domain (segment group) of the bus this device is on. Read from the
+  // bus's `fuchsia,pci-domain` property, 0 if it does not declare one, or nullopt
+  // when omitted.
+  std::optional<uint16_t> domain;
   uint8_t bus;
   uint8_t device;
   uint8_t function;
@@ -59,10 +65,10 @@ class PciChildVisitor : public fdf_devicetree::Visitor {
 
   zx::result<> FinalizeNode(fdf_devicetree::Node& node) override;
 
-  // The BDFs of every PCI child this visitor wired up. A board driver passes
-  // these to the PCI bus driver (via PciPlatformInfo.devicetree_bdfs) so the bus
-  // driver publishes only the fragment for these devices and lets this visitor's
-  // composite take over.
+  // The BDFs of every PCI child this visitor wired up, each qualified by the
+  // domain of the bus it is on. A board driver passes these to the PCI bus driver
+  // (via PciPlatformInfo.devicetree_bdfs) so the bus driver publishes only the
+  // fragment for these devices and lets this visitor's composite take over.
   const std::vector<PciChildBdf>& child_bdfs() const { return child_bdfs_; }
 
  private:
@@ -70,20 +76,30 @@ class PciChildVisitor : public fdf_devicetree::Visitor {
   // `device_type = "pci"` and can accommodate downstream devices.
   static bool is_match(fdf_devicetree::Node& node);
 
+  // Returns the PCI domain (segment group) that |node| belongs to. The domain is
+  // declared by the host bridge in its `fuchsia,pci-domain` property, so
+  // the nearest ancestor declaring one wins. Defaults to domain 0 when no
+  // ancestor declares one.
+  static zx::result<uint16_t> ParseDomain(fdf_devicetree::Node& node);
+
   // Parses a single child of a PCI bus node and, if it describes a PCI device,
   // adds the composite node spec parent that connects it to the PCI bus driver.
   zx::result<> ParseChild(fdf_devicetree::Node& parent, fdf_devicetree::ChildNode& child,
                           const PciChildBdf& bdf);
 
-  // Helper to parse the BDF address from a child node.
-  static zx::result<PciChildBdf> ParseBdf(const fdf_devicetree::ChildNode& child);
+  // Helper to parse the BDF address from a child node. |domain| is the optional
+  // domain of the bus |child| is on, as returned by ParseDomain().
+  static zx::result<PciChildBdf> ParseBdf(const fdf_devicetree::ChildNode& child,
+                                          std::optional<uint16_t> domain = std::nullopt);
 
   // Adds the PCI fragment parent spec to |child|. The parent is selected by the
-  // child's PCI topology (BDF). When |vendor_id|/|device_id| are present (from
-  // the optional `pci-id` property) they are advertised as properties so the
-  // child can bind a driver by PCI vendor/device id.
+  // child's PCI topology (BDF). |domain| is not used to select it yet; see
+  // AddChildNodeSpec() for what the PCI bus driver has to publish first. When
+  // |vendor_id|/|device_id| are present (from the optional `pci-id` property)
+  // they are advertised as properties so the child can bind a driver by PCI
+  // vendor/device id.
   static void AddChildNodeSpec(fdf_devicetree::ChildNode& child, uint32_t pci_topo,
-                               std::optional<uint32_t> vendor_id,
+                               std::optional<uint16_t> domain, std::optional<uint32_t> vendor_id,
                                std::optional<uint32_t> device_id);
 
   std::vector<PciChildBdf> child_bdfs_;

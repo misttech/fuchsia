@@ -30,6 +30,16 @@ properties:
   "#size-cells":
     const: 2
 
+  fuchsia,pci-domain:
+    $ref: /schemas/types.yaml#/definitions/uint32
+    description: |
+      Optional PCI domain (segment group) that this host bridge and everything
+      below it lives in. Buses nested below the host bridge (PCI-to-PCI
+      bridges) inherit it and must not declare their own. Defaults to 0 when
+      absent, so devicetrees describing a single PCI domain may omit it. Must
+      fit in 16 bits, as it becomes the PCI segment group.
+    maximum: 0xffff
+
 patternProperties:
   "^.*@[0-9a-f]+(,[0-9a-f]+)?$":
     type: object

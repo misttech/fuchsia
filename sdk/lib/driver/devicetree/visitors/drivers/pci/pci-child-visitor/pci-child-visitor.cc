@@ -12,6 +12,7 @@
 #include <zircon/assert.h>
 #include <zircon/errors.h>
 
+#include <limits>
 #include <optional>
 #include <vector>
 
@@ -21,6 +22,13 @@
 namespace pci_child_dt {
 
 namespace {
+
+// The PCI domain (segment group) that the host bridge and everything below it lives in.
+constexpr char kPciDomainProp[] = "fuchsia,pci-domain";
+
+// Domain used when the devicetree does not declare one. Devicetrees describing a
+// single PCI domain may omit `fuchsia,pci-domain` entirely.
+constexpr uint16_t kDefaultPciDomain = 0;
 
 // Packs a bus/device/function into the value used for the bind_fuchsia::PCI_TOPO
 // property. Mirrors BIND_PCI_TOPO_PACK() in <lib/ddk/binding_priv.h>, which the
@@ -37,8 +45,13 @@ zx::result<> PciChildVisitor::Visit(fdf_devicetree::Node& node,
     return zx::ok();
   }
 
+  zx::result<uint16_t> domain = ParseDomain(node);
+  if (domain.is_error()) {
+    return domain.take_error();
+  }
+
   for (auto& child : node.children()) {
-    auto bdf = ParseBdf(child);
+    auto bdf = ParseBdf(child, *domain);
     if (bdf.is_error()) {
       if (bdf.error_value() == ZX_ERR_NOT_FOUND) {
         continue;
@@ -64,6 +77,9 @@ zx::result<> PciChildVisitor::FinalizeNode(fdf_devicetree::Node& node) {
     return zx::ok();
   }
 
+  // The metadata is attached to this bus node, so it only ever describes devices
+  // in this node's domain. fuchsia_hardware_pci::Address has no domain field, so
+  // the domain is not repeated per entry.
   std::vector<fuchsia_hardware_pci::Address> local_bdfs;
 
   for (auto& child : node.children()) {
@@ -104,6 +120,38 @@ bool PciChildVisitor::is_match(fdf_devicetree::Node& node) {
   return device_type.is_ok() && *device_type == "pci";
 }
 
+zx::result<uint16_t> PciChildVisitor::ParseDomain(fdf_devicetree::Node& node) {
+  // Only the host bridge declares the domain. Buses nested below it (PCI-to-PCI
+  // bridges, which also carry `device_type = "pci"`) are part of the same domain,
+  // so walk up the enclosing chain of PCI buses until one declares it.
+  zx::result<uint32_t> domain = node.GetProperty<uint32_t>(kPciDomainProp);
+  fdf_devicetree::ParentNode parent = node.parent();
+  while (domain.status_value() == ZX_ERR_NOT_FOUND && parent && is_match(*parent.GetNode())) {
+    domain = parent.GetProperty<uint32_t>(kPciDomainProp);
+    parent = parent.parent();
+  }
+
+  if (domain.status_value() == ZX_ERR_NOT_FOUND) {
+    return zx::ok(kDefaultPciDomain);
+  }
+  if (domain.is_error()) {
+    fdf::error("Failed to parse '{}' for PCI node '{}': {}", kPciDomainProp, node.name(),
+               domain.status_string());
+
+    return domain.take_error();
+  }
+
+  // The domain becomes the PCI segment group, which is 16 bits wide.
+  if (*domain > std::numeric_limits<uint16_t>::max()) {
+    fdf::error("PCI node '{}' has a '{}' of {:#x}, which does not fit in a segment group",
+               node.name(), kPciDomainProp, *domain);
+
+    return zx::error(ZX_ERR_INVALID_ARGS);
+  }
+
+  return zx::ok(static_cast<uint16_t>(*domain));
+}
+
 zx::result<> PciChildVisitor::ParseChild(fdf_devicetree::Node& parent,
                                          fdf_devicetree::ChildNode& child, const PciChildBdf& bdf) {
   const uint32_t pci_topo = PackPciTopo(bdf.bus, bdf.device, bdf.function);
@@ -125,15 +173,17 @@ zx::result<> PciChildVisitor::ParseChild(fdf_devicetree::Node& parent,
     device_id = (*pci_id)[1];
   }
 
-  AddChildNodeSpec(child, pci_topo, vendor_id, device_id);
+  AddChildNodeSpec(child, pci_topo, bdf.domain, vendor_id, device_id);
   child_bdfs_.push_back(bdf);
-  fdf::debug("PCI device {:02x}:{:02x}.{:x} on bus '{}' wired to child '{}'", bdf.bus, bdf.device,
-             bdf.function, parent.name(), child.name());
+  fdf::debug("PCI device {:04x}:{:02x}:{:02x}.{:x} on bus '{}' wired to child '{}'",
+             bdf.domain.value_or(0), bdf.bus, bdf.device, bdf.function, parent.name(),
+             child.name());
 
   return zx::ok();
 }
 
-zx::result<PciChildBdf> PciChildVisitor::ParseBdf(const fdf_devicetree::ChildNode& child) {
+zx::result<PciChildBdf> PciChildVisitor::ParseBdf(const fdf_devicetree::ChildNode& child,
+                                                  std::optional<uint16_t> domain) {
   auto reg = child.GetProperty<std::vector<uint32_t>>("reg");
   if (reg.is_error()) {
     return reg.take_error();
@@ -141,10 +191,11 @@ zx::result<PciChildBdf> PciChildVisitor::ParseBdf(const fdf_devicetree::ChildNod
   if (reg->empty()) {
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
-  return zx::ok(PciChildBdf::FromValue((*reg)[0]));
+  return zx::ok(PciChildBdf::FromValue(domain, (*reg)[0]));
 }
 
 void PciChildVisitor::AddChildNodeSpec(fdf_devicetree::ChildNode& child, uint32_t pci_topo,
+                                       std::optional<uint16_t> domain,
                                        std::optional<uint32_t> vendor_id,
                                        std::optional<uint32_t> device_id) {
   // The fragment for this device is selected by its PCI topology (BDF). The PCI
@@ -153,6 +204,13 @@ void PciChildVisitor::AddChildNodeSpec(fdf_devicetree::ChildNode& child, uint32_
       fdf::MakeAcceptBindRule(bind_fuchsia_hardware_pci::SERVICE,
                               bind_fuchsia_hardware_pci::SERVICE_ZIRCONTRANSPORT),
       fdf::MakeAcceptBindRule(bind_fuchsia::PCI_TOPO, pci_topo),
+      // PCI_TOPO carries no domain, so devices that share a BDF across domains are
+      // indistinguishable here. Uncomment the rule below (and name the |domain|
+      // parameter above) once the PCI bus driver publishes bind_fuchsia_pci::SEGMENT
+      // on the fragment it creates for each device -- see FidlDevice::Create() in
+      // //src/devices/bus/drivers/pci/fidl.cc. Until it does, nothing would match
+      // the rule and every composite here would fail to assemble.
+      // fdf::MakeAcceptBindRule(bind_fuchsia_pci::SEGMENT, domain),
   };
 
   std::vector<fuchsia_driver_framework::NodeProperty2> properties = {

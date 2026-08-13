@@ -71,10 +71,27 @@ resource("pci-dtb-file") {
   deps = [ ":pci-dtb" ]
 }
 
+dtb("pci-invalid-domain-dtb") {
+  sources = [ "test/dts/pci-invalid-domain.dts.S" ]
+  dtcflags = [ "-q" ]
+}
+
+resource("pci-invalid-domain-dtb-file") {
+  sources = get_target_outputs(":pci-invalid-domain-dtb")
+  outputs = [ "test-data/{{source_file_part}}" ]
+  deps = [ ":pci-invalid-domain-dtb" ]
+}
+
 fuchsia_unittest_package("pci-child-visitor-test") {
   component_name = "pci-child-visitor-test"
   deps = [
     ":pci-child-visitor-test-bin",
     ":pci-dtb-file",
+    ":pci-invalid-domain-dtb-file",
   ]
+  test_specs = {
+    log_settings = {
+      max_severity = "ERROR"
+    }
+  }
 }
