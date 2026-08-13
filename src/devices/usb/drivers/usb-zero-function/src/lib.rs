@@ -12,6 +12,7 @@ use futures::channel::mpsc;
 use futures::{StreamExt, TryStreamExt};
 use log::{error, info, warn};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use zx::Status;
 
 // USB Standard Constants
@@ -112,7 +113,7 @@ struct UsbZeroFunctionDevice {
     ep_out: fusb_endpoint::EndpointProxy,
     ep_out_addr: u8,
     interface_num: u8,
-    is_configured: bool,
+    is_configured: Arc<AtomicBool>,
     vmos_registered: bool,
     endpoint_tasks: Option<(fasync::Task<()>, fasync::Task<()>)>,
     mode: TestMode,
@@ -311,7 +312,7 @@ impl UsbZeroFunctionDevice {
             ep_out,
             ep_out_addr,
             interface_num,
-            is_configured: false,
+            is_configured: Arc::new(AtomicBool::new(false)),
             vmos_registered: false,
             endpoint_tasks: None,
             mode: TestMode::default(),
@@ -326,6 +327,7 @@ impl UsbZeroFunctionDevice {
             let _ = self.ep_out.unregister_vmos(&[USB_ZERO_OUT_VMO_ID]).await;
             self.vmos_registered = false;
         }
+        self.is_configured.store(false, Ordering::Relaxed);
         let _ = self.function_client.disable_endpoint(self.ep_in_addr).await;
         let _ = self.function_client.disable_endpoint(self.ep_out_addr).await;
     }
@@ -480,7 +482,7 @@ impl UsbZeroFunctionDevice {
                 }
                 self.endpoint_tasks = None;
                 self.cleanup_endpoints().await;
-                self.is_configured = false;
+                self.is_configured.store(false, Ordering::Relaxed);
                 self.function_client
                     .deconfigure()
                     .await
@@ -569,11 +571,11 @@ impl UsbZeroFunctionDevice {
                     match status {
                         Ok(tasks) => {
                             self.endpoint_tasks = tasks;
-                            self.is_configured = configured;
+                            self.is_configured.store(configured, Ordering::Relaxed);
                             let _ = responder.send(Ok(()));
                         }
                         Err(e) => {
-                            self.is_configured = false;
+                            self.is_configured.store(false, Ordering::Relaxed);
                             let _ = responder.send(Err(e.into_raw()));
                         }
                     }
@@ -589,7 +591,7 @@ impl UsbZeroFunctionDevice {
                         } else {
                             TestMode::Loopback
                         };
-                        if self.is_configured {
+                        if self.is_configured.load(Ordering::Relaxed) {
                             self.endpoint_tasks = None;
                             self.mode = new_mode;
                             let speed = self.speed.unwrap_or(fusb_descriptor::UsbSpeed::High);
@@ -599,7 +601,7 @@ impl UsbZeroFunctionDevice {
                                     Ok(())
                                 }
                                 Err(e) => {
-                                    self.is_configured = false;
+                                    self.is_configured.store(false, Ordering::Relaxed);
                                     Err(e.into_raw())
                                 }
                             }
@@ -617,7 +619,7 @@ impl UsbZeroFunctionDevice {
                 }
             }
         }
-        if self.is_configured {
+        if self.is_configured.load(Ordering::Relaxed) {
             self.endpoint_tasks = None;
             self.cleanup_endpoints().await;
         }
