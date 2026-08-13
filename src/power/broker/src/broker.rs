@@ -590,15 +590,15 @@ impl Broker {
             &self.lookup_name(lease.underlying_element_id).into_owned() => counter
         );
 
-        // Find the set of claims that can be safely dropped immediately.
-        let claims_dropped = self.find_claims_to_drop_or_deactivate(&claims);
-        // Drop the discovered set of claims and update required levels.
-        self.drop_or_deactivate_claims(&claims_dropped);
-
         // Transition the synthetic element's current level to minimum level (OFF/0) to initiate the
         // power down.
         let minimum_level = self.catalog.minimum_level(lease.synthetic_element_id);
         self.update_current_level(lease.synthetic_element_id, minimum_level);
+
+        // Find the set of claims that can be safely dropped immediately.
+        let claims_dropped = self.find_claims_to_drop_or_deactivate(&claims);
+        // Drop the discovered set of claims and update required levels.
+        self.drop_or_deactivate_claims(&claims_dropped);
 
         // Check if the lease has no remaining claims and can be vacated immediately.
         self.vacate_lease_if_all_claims_dropped(lease_id);
@@ -774,16 +774,12 @@ impl Broker {
 
         for claim_to_check in claims {
             // If the dependent element is transiting, we cannot drop or deactivate this claim as
-            // we cannot guarantee that it hasn't yet dropped to it's destination level.
-            //
-            // If the dependent element of this claim is satisfied, we cannot drop or deactivate
-            // this claim until the claim that requires it has been deactivated AND the level of
-            // the element has dropped, regardless of whether that claim belongs to this lease.
+            // we cannot guarantee that it hasn't yet dropped to its destination level.
             if self.in_transition.contains_key(&claim_to_check.dependent().element_id) {
                 log::debug!("keeping {claim_to_check}, dependent is transiting");
                 continue;
             }
-            // If this is an claim and there exists another activated claim
+            // If this is an activated claim and there exists another activated claim
             // belonging to another lease that has not been dropped and whose
             // required level satisfies its required level, we can drop this claim immediately.
             if self.catalog.claims.activated.claims.contains_key(&claim_to_check.id) {
@@ -3190,14 +3186,14 @@ mod tests {
                 },
                 {
                     update_level: {
-                        element_id: *child,
-                        required_level: 0u64,
+                        element_id: *synthetic_id,
+                        current_level: 0u64,
                     },
                 },
                 {
                     update_level: {
-                        element_id: *synthetic_id,
-                        current_level: 0u64,
+                        element_id: *child,
+                        required_level: 0u64,
                     },
                 },
                 {
@@ -5498,5 +5494,33 @@ mod tests {
         broker.update_current_level(element_a, level_10.clone());
         assert_eq!(broker.get_lease_status(lease1.id), Some(LeaseStatus::Satisfied));
         assert_eq!(broker.get_lease_status(lease3.id), None);
+    }
+
+    #[fuchsia::test]
+    fn test_overlapping_leases_vacate_immediately() {
+        let inspect = fuchsia_inspect::Inspector::default();
+        let mut broker = Broker::new(inspect.root().create_child("test"));
+
+        let element_a = broker
+            .add_element("A", OFF.level, BINARY_POWER_LEVELS.to_vec(), vec![])
+            .expect("add_element failed");
+
+        let lease1 =
+            broker.acquire_lease(element_a, ON, zx::Koid::from_raw(1)).expect("acquire failed");
+        let lease2 =
+            broker.acquire_lease(element_a, ON, zx::Koid::from_raw(2)).expect("acquire failed");
+
+        broker.update_current_level(element_a, ON);
+        assert_eq!(broker.get_lease_status(lease1.id), Some(LeaseStatus::Satisfied));
+        assert_eq!(broker.get_lease_status(lease2.id), Some(LeaseStatus::Satisfied));
+
+        // Dropping Lease 1 while Lease 2 is active should immediately vacate Lease 1
+        // because Lease 2's active claim supports element_a at ON.
+        broker.drop_lease(lease1.id).expect("drop failed");
+        assert_eq!(broker.get_lease_status(lease1.id), None);
+        assert!(!broker.catalog.leases.contains_key(&lease1.id));
+        assert!(!broker.catalog.topology.elements.contains_key(&lease1.synthetic_element_id));
+
+        assert_eq!(broker.get_lease_status(lease2.id), Some(LeaseStatus::Satisfied));
     }
 }
