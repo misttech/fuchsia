@@ -274,11 +274,6 @@
              version="version:12.1.0rc1"
              platforms="linux-amd64,linux-arm64"
              path="prebuilt/third_party/ucd"/>
-    <!--   Vulkan Runtime (for host builds) -->
-    <package name="fuchsia/third_party/vulkan_runtime/${platform}"
-             version="build_config:f1fd0a69570165cf54cd3d7079e8d149bd064ca3df4498da5d3180819fdaa269"
-             path="prebuilt/third_party/vulkan_runtime/{{.OS}}-{{.Arch}}"
-             platforms="linux-amd64"/>
     <!-- WebM VP9 Canary Conformance Stream Tests -->
     <package name="fuchsia/test_data/third_party/webm_vp9_canary_conformance_stream"
              version="kK4-vXLTKnLwYk419u1BkZHTP2zTh8XSSSRK8Glx_5wC"
