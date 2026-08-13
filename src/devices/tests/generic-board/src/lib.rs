@@ -95,7 +95,7 @@ static GENERIC_BOARD_PARSER_CONFIG: DmlParserConfig = DmlParserConfig {
             transport: TransportType::Zircon,
             rules: &[PropertyRule {
                 bind_key: "fuchsia.NAME",
-                sources: &[ValueSource::ResourceName, ValueSource::Template("")],
+                sources: &[ValueSource::ResourceName],
                 value_type: RuleValueType::String,
                 destination: Destination::Both,
             }],

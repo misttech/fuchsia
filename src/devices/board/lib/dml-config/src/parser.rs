@@ -75,7 +75,6 @@ pub enum ValueSource {
     ConstraintKey(&'static str),
     ResourceName,
     ResourceNode,
-    Template(&'static str),
     Integer(u32),
     ProviderId,
 }
@@ -126,50 +125,8 @@ pub struct DmlParserConfig {
     pub service_configs: phf::Map<&'static str, ServiceBindConfig>,
 }
 
-fn resolve_template(
-    provider: &str,
-    provider_id: u32,
-    template: &str,
-    res: &ResourceEntry,
-    constraint: &fdr::Dictionary,
-) -> Option<String> {
-    let mut result = String::new();
-    let mut start = 0;
-    while let Some(open) = template[start..].find('{') {
-        let open_idx = start + open;
-        result.push_str(&template[start..open_idx]);
-        if let Some(close) = template[open_idx..].find('}') {
-            let close_idx = open_idx + close;
-            let key = &template[open_idx + 1..close_idx];
-            let value = match key {
-                "res.name" => res.name.clone()?,
-                "res.node" => res.node.clone()?,
-                "provider" => provider.to_string(),
-                "provider_id" => provider_id.to_string(),
-                k => {
-                    if let Some(s) = crate::get_string(constraint, k) {
-                        s
-                    } else if let Some(i) = crate::get_int64(constraint, k) {
-                        i.to_string()
-                    } else if let Some(b) = crate::get_bool(constraint, k) {
-                        b.to_string()
-                    } else {
-                        return None;
-                    }
-                }
-            };
-            result.push_str(&value);
-            start = close_idx + 1;
-        } else {
-            return None;
-        }
-    }
-    result.push_str(&template[start..]);
-    Some(result)
-}
-
 fn resolve_value(
-    provider: &str,
+    _provider: &str,
     provider_id: u32,
     source: &ValueSource,
     res: &ResourceEntry,
@@ -189,10 +146,6 @@ fn resolve_value(
         }
         ValueSource::ResourceName => res.name.clone().map(ResolvedValue::String),
         ValueSource::ResourceNode => res.node.clone().map(ResolvedValue::String),
-        ValueSource::Template(template) => {
-            resolve_template(provider, provider_id, template, res, constraint)
-                .map(ResolvedValue::String)
-        }
         ValueSource::Integer(i) => Some(ResolvedValue::Integer(*i)),
         ValueSource::ProviderId => Some(ResolvedValue::Integer(provider_id)),
     }
