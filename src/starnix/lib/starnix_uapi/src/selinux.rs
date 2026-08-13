@@ -2,11 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use fuchsia_rcu::RcuDroppable;
 use std::num::NonZeroU32;
 use zerocopy::{Immutable, IntoBytes};
 
 /// Identifies a Security Context.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, IntoBytes, Immutable)]
+#[derive(
+    Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, IntoBytes, Immutable, RcuDroppable,
+)]
 pub struct SecurityId(pub NonZeroU32);
 
 /// Initial Security Identifier (SID) values defined by the SELinux Reference Policy.
@@ -84,7 +87,7 @@ impl From<InitialSid> for SecurityId {
 }
 
 /// The SELinux security structure for `ThreadGroup`.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, RcuDroppable)]
 pub struct TaskAttrs {
     /// Current SID for the task.
     pub current_sid: SecurityId,

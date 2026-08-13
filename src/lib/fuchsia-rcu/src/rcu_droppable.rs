@@ -149,3 +149,54 @@ unsafe impl<A: RcuDroppable, B: RcuDroppable, C: RcuDroppable, D: RcuDroppable> 
     for (A, B, C, D)
 {
 }
+
+// The types we define are dead code as we don't use them. We only care that the macro parses them
+// successfully.
+#[expect(dead_code)]
+#[cfg(test)]
+mod tests {
+    use crate::RcuDroppable;
+
+    #[derive(RcuDroppable)]
+    struct UnitStruct;
+
+    #[derive(RcuDroppable)]
+    struct TupleStruct(u32, String);
+
+    #[derive(RcuDroppable)]
+    struct NamedStruct<T> {
+        foo: T,
+        bar: Vec<u8>,
+    }
+
+    #[derive(RcuDroppable)]
+    enum TestEnum<T> {
+        A(T),
+        B { val: String },
+        C,
+    }
+
+    #[derive(RcuDroppable)]
+    struct ComplexStruct {
+        atomic: std::sync::atomic::AtomicUsize,
+        range: std::ops::Range<usize>,
+        non_zero: std::num::NonZeroU32,
+        mutex: fuchsia_sync::Mutex<u32>,
+        rwlock: fuchsia_sync::RwLock<String>,
+        rcu_arc: crate::RcuArc<u32>,
+        weak: std::sync::Weak<u32>,
+    }
+
+    fn assert_rcu_droppable<T: super::RcuDroppable>() {}
+
+    #[test]
+    fn test_derive_rcu_droppable() {
+        assert_rcu_droppable::<UnitStruct>();
+        assert_rcu_droppable::<TupleStruct>();
+        assert_rcu_droppable::<NamedStruct<u32>>();
+        assert_rcu_droppable::<TestEnum<u64>>();
+        assert_rcu_droppable::<ComplexStruct>();
+        assert_rcu_droppable::<bstr::BString>();
+        assert_rcu_droppable::<futures::channel::mpsc::UnboundedSender<u32>>();
+    }
+}

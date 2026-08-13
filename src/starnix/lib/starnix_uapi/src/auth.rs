@@ -65,6 +65,9 @@ bitflags! {
     }
 }
 
+// SAFETY: Capabilities is a u64 bitflags.
+unsafe impl RcuDroppable for Capabilities {}
+
 impl Capabilities {
     pub const fn as_abi_v1(self) -> u32 {
         self.bits() as u32
@@ -224,7 +227,7 @@ pub const PTRACE_MODE_ATTACH_REALCREDS: PtraceAccessMode = PtraceAccessMode::fro
 );
 pub const PTRACE_MODE_NOAUDIT: PtraceAccessMode = PtraceAccessMode::NOAUDIT;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, RcuDroppable)]
 pub struct Credentials {
     pub uid: uid_t,
     pub gid: gid_t,
@@ -303,9 +306,6 @@ pub struct Credentials {
     pub security_state: TaskAttrs,
 }
 
-// SAFETY: Credentials does not have Drop side effects.
-unsafe impl RcuDroppable for Credentials {}
-
 bitflags! {
     #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct SecureBits: u32 {
@@ -319,6 +319,9 @@ bitflags! {
         const NO_CAP_AMBIENT_RAISE_LOCKED = 1 << uapi::SECURE_NO_CAP_AMBIENT_RAISE_LOCKED;
     }
 }
+
+// SAFETY: SecureBits is a u32 bitflags.
+unsafe impl RcuDroppable for SecureBits {}
 
 static ROOT_CREDENTIALS: LazyLock<Arc<Credentials>> =
     LazyLock::new(|| Arc::new(Credentials::with_ids(0, 0)));

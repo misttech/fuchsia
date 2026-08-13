@@ -14,6 +14,7 @@ mod rcu_weak;
 mod read_counters;
 mod state_machine;
 
+pub use fuchsia_rcu_derive::RcuDroppable;
 pub use rcu_arc::RcuArc;
 pub use rcu_box::RcuBox;
 pub use rcu_droppable::RcuDroppable;
