@@ -98,6 +98,7 @@ func TestCopyrightCommand_CommentPrefixes(t *testing.T) {
 		{"Python script", ".py", "#", false},
 		{"Shell script", ".sh", "#", false},
 		{"GN build", ".gn", "#", false},
+		{"YAML config", ".yaml", "#", false},
 		{"C++ source", ".cc", "//", false},
 		{"Rust source", ".rs", "//", false},
 		{"Assembly", ".asm", ";", false},
@@ -161,8 +162,8 @@ func TestCopyrightCommand_Shebang(t *testing.T) {
 	}
 	content := string(contentBytes)
 
-	if !strings.HasPrefix(content, "#!/bin/sh\n\n") {
-		t.Errorf("Expected file to start with shebang and empty lines, got: %s", content)
+	if !strings.HasPrefix(content, "#!/bin/sh\n# Copyright") {
+		t.Errorf("Expected file to start with shebang and copyright header, got: %s", content)
 	}
 	if !strings.Contains(content, "# Copyright") {
 		t.Error("Expected file to contain copyright header")

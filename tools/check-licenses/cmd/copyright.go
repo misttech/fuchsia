@@ -9,14 +9,14 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"time"
 
 	"github.com/google/subcommands"
+
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/v2/stages/validate"
 )
 
 type CopyrightCommand struct {
@@ -170,28 +170,6 @@ func (c *CopyrightCheckCommand) Execute(ctx context.Context, f *flag.FlagSet, _ 
 	return subcommands.ExitSuccess // 0
 }
 
-var commentCleaner = strings.NewReplacer(
-	"//", " ",
-	"/*", " ",
-	"*/", " ",
-	"#", " ",
-	";", " ",
-	"*", " ",
-	"\r", " ",
-	"\n", " ",
-	"\t", " ",
-)
-
-// Standard Fuchsia/Chromium/Android copyright regex (strict).
-// It matches the exact core license text to enforce the correct standard.
-// It ignores comment prefixes and other whitespace text via commentCleaner.
-var copyrightRegex = regexp.MustCompile(
-	`(?i)Copyright\s+[0-9,\-\s]+The\s+Fuchsia\s+Authors\.?\s*` +
-		`(?:\s*All\s+rights\s+reserved\.?)?\s+` +
-		`Use\s+of\s+this\s+source\s+code\s+is\s+governed\s+by\s+a\s+BSD-style\s+license\s+` +
-		`that\s+can\s+be\s+found\s+in\s+the\s+LICENSE\s+file`,
-)
-
 // CheckCopyright verifies if a file has a Fuchsia copyright header.
 func CheckCopyright(fuchsiaDir, filePath string) (bool, error) {
 	absPath := filePath
@@ -199,29 +177,7 @@ func CheckCopyright(fuchsiaDir, filePath string) (bool, error) {
 		absPath = filepath.Join(fuchsiaDir, filePath)
 	}
 
-	// Skip empty files (size 0). They are not required to have copyright headers.
-	stat, err := os.Stat(absPath)
-	if err == nil && stat.Size() == 0 {
-		return true, nil
-	}
-
-	// We only need to read the beginning of the file.
-	// 8192 bytes should be more than enough for the copyright header,
-	// even if there are large third-party headers before it.
-	f, err := os.Open(absPath)
-	if err != nil {
-		return false, err
-	}
-	defer f.Close()
-
-	buf := make([]byte, 8192)
-	n, err := f.Read(buf)
-	if err != nil && err != io.EOF {
-		return false, err
-	}
-
-	cleaned := commentCleaner.Replace(string(buf[:n]))
-	return copyrightRegex.MatchString(cleaned), nil
+	return validate.CheckCopyright(absPath)
 }
 
 // ApplyCopyrightFix analyzes a file and adds a Fuchsia copyright header if missing.
@@ -281,7 +237,8 @@ var commentPrefixes = map[string]string{
 	".m": "//", ".cml": "//", ".fidl": "//", ".d": "//", ".dat": "//",
 	// Script/Config-style comments
 	".py": "#", ".sh": "#", ".gn": "#", ".gni": "#", ".gyp": "#", ".gypi": "#",
-	".merkle": "#", ".ac": "#", ".am": "#",
+	".merkle": "#", ".ac": "#", ".am": "#", ".yaml": "#", ".yml": "#", ".toml": "#",
+	".bzl": "#", ".bazel": "#",
 	// Assembly
 	".asm": ";",
 	// Windows Batch
@@ -313,7 +270,7 @@ func addCopyright(filePath string) ([]byte, error) {
 	if bytes.HasPrefix(content, []byte("#!")) {
 		lines := bytes.SplitN(content, []byte("\n"), 2)
 		newContent.Write(lines[0])
-		newContent.WriteString("\n\n")
+		newContent.WriteString("\n")
 		newContent.WriteString(header)
 		if len(lines) > 1 {
 			newContent.Write(lines[1])
