@@ -247,13 +247,9 @@ struct Peer {
 
 impl Peer {
     /// Checks that an ACK segment is within the windows defined in the comment on [`Peer`].
-    fn ack_segment_valid(
-        sender: &Self,
-        receiver: &Self,
-        seq: SeqNum,
-        len: u32,
-        ack: SeqNum,
-    ) -> bool {
+    fn ack_segment_valid(peers: UpdatePeers<&Self>, seq: SeqNum, len: u32, ack: SeqNum) -> bool {
+        let UpdatePeers { sender, receiver, dir: _ } = peers;
+
         // All checks below are for the negation of the equation referenced in
         // the associated comment.
 
@@ -453,6 +449,11 @@ impl<T> UpdatePeers<T> {
             ConnectionDirection::Original => PeerPair { original: sender, reply: receiver },
             ConnectionDirection::Reply => PeerPair { original: receiver, reply: sender },
         }
+    }
+
+    fn as_ref(&self) -> UpdatePeers<&T> {
+        let Self { sender, receiver, dir } = self;
+        UpdatePeers { sender: &sender, receiver: &receiver, dir: *dir }
     }
 }
 
@@ -669,7 +670,7 @@ fn update_for_established(
         }
     };
 
-    if !Peer::ack_segment_valid(&peers.sender, &peers.receiver, seq, logical_len, ack) {
+    if !Peer::ack_segment_valid(peers.as_ref(), seq, logical_len, ack) {
         return (State::Established(peers.into_peer_pair()), false);
     }
 
@@ -703,7 +704,7 @@ fn update_for_established(
 
 #[cfg(test)]
 mod tests {
-    use super::{FinState, Peer, PeerPair, State, SynSent};
+    use super::{FinState, Peer, PeerPair, State, SynSent, UpdatePeers};
 
     use assert_matches::assert_matches;
     use netstack3_base::{
@@ -1059,18 +1060,22 @@ mod tests {
     #[test_case(SeqNum::new(424), 200, RECV_MAX_NEXT_SEQ + 1 => false; "bad equation III")]
     #[test_case(SeqNum::new(424), 200, SeqNum::new(0) => false; "bad equation IV")]
     fn ack_segment_valid_test(seq: SeqNum, len: u32, ack: SeqNum) -> bool {
-        let sender = Peer { max_next_seq: SeqNum::new(1024), ..Peer::arbitrary() };
+        let peers = UpdatePeers {
+            sender: Peer { max_next_seq: SeqNum::new(1024), ..Peer::arbitrary() },
 
-        // MAXACKWINDOW is going to be 66000 due to window shift of 0.
-        let receiver = Peer {
-            window_scale: WindowScale::new(0).unwrap(),
-            max_wnd: WindowSize::new(400).unwrap(),
-            max_next_seq: RECV_MAX_NEXT_SEQ,
-            max_wnd_seq: RECV_MAX_WND_SEQ,
-            ..Peer::arbitrary()
+            // MAXACKWINDOW is going to be 66000 due to window shift of 0.
+            receiver: Peer {
+                window_scale: WindowScale::new(0).unwrap(),
+                max_wnd: WindowSize::new(400).unwrap(),
+                max_next_seq: RECV_MAX_NEXT_SEQ,
+                max_wnd_seq: RECV_MAX_WND_SEQ,
+                ..Peer::arbitrary()
+            },
+            // The direction doesn't matter.
+            dir: ConnectionDirection::Original,
         };
 
-        Peer::ack_segment_valid(&sender, &receiver, seq, len, ack)
+        Peer::ack_segment_valid(peers.as_ref(), seq, len, ack)
     }
 
     struct PeerUpdateSenderArgs {
