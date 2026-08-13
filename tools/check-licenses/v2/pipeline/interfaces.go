@@ -6,6 +6,7 @@ package pipeline
 
 import (
 	"context"
+	"sort"
 	"strings"
 
 	"go.fuchsia.dev/fuchsia/tools/readme_fuchsia"
@@ -72,7 +73,7 @@ type Project struct {
 	ClassifiedFiles []ClassifiedFile
 }
 
-// FoundLicenses returns all classified files that contain confirmed license matches.
+// FoundLicenses returns all classified files that contain confirmed license matches, sorted by path.
 func (p *Project) FoundLicenses() []ClassifiedFile {
 	var found []ClassifiedFile
 	for _, cf := range p.ClassifiedFiles {
@@ -80,6 +81,9 @@ func (p *Project) FoundLicenses() []ClassifiedFile {
 			found = append(found, cf)
 		}
 	}
+	sort.Slice(found, func(i, j int) bool {
+		return found[i].Path < found[j].Path
+	})
 	return found
 }
 
