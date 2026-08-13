@@ -2,10 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::task::{CurrentTask, Kernel};
-use crate::vfs::pseudo::simple_directory::{SimpleDirectory, SimpleDirectoryMutator};
-use crate::vfs::pseudo::stub_empty_file::StubEmptyFile;
-use crate::vfs::{
+#![recursion_limit = "512"]
+
+use starnix_core::task::{CurrentTask, Kernel};
+use starnix_core::vfs::pseudo::simple_directory::{SimpleDirectory, SimpleDirectoryMutator};
+use starnix_core::vfs::pseudo::stub_empty_file::StubEmptyFile;
+use starnix_core::vfs::{
     CacheMode, FileSystem, FileSystemHandle, FileSystemOps, FileSystemOptions, FsStr,
 };
 use starnix_logging::bug_ref;

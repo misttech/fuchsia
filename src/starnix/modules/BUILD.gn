@@ -42,6 +42,7 @@ rustc_library("modules") {
     "//src/starnix/lib/starnix_uapi",
     "//src/starnix/modules/binderfs",
     "//src/starnix/modules/cgroupfs",
+    "//src/starnix/modules/debugfs",
     "//src/starnix/modules/device_mapper",
     "//src/starnix/modules/ext4",
     "//src/starnix/modules/functionfs",
