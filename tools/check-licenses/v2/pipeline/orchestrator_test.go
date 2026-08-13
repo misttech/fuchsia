@@ -143,3 +143,19 @@ func TestOrchestrator_RunFailure(t *testing.T) {
 		t.Fatalf("Expected pipeline to fail due to compliance error, got nil")
 	}
 }
+
+func TestOrchestrator_NilStages(t *testing.T) {
+	orchestrator := NewOrchestrator(
+		&mockDiscoverer{},
+		&mockGrouper{},
+		&mockPruner{},
+		nil,
+		&mockValidator{},
+		&mockRenderer{},
+	)
+
+	err := orchestrator.Run(context.Background(), []string{"."})
+	if err == nil {
+		t.Fatalf("Expected error when a stage is nil, got nil")
+	}
+}

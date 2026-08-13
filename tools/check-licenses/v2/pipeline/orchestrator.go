@@ -35,6 +35,10 @@ func NewOrchestrator(d Discoverer, g Grouper, p Pruner, c Classifier, v Validato
 // Run executes the pipeline synchronously, wiring the channels between stages
 // and waiting for the final Renderer stage to complete or fail.
 func (o *Orchestrator) Run(ctx context.Context, rootDirs []string) error {
+	if o.Discoverer == nil || o.Grouper == nil || o.Pruner == nil || o.Classifier == nil || o.Validator == nil || o.Renderer == nil {
+		return fmt.Errorf("all 6 pipeline stages must be non-nil")
+	}
+
 	// Stage 1: Discover (Crawler)
 	log.Printf("[Orchestrator] Starting Stage 1: Discovery (Crawling %v)...", rootDirs)
 	rawPaths, err := o.Discoverer.Run(ctx, rootDirs)
@@ -79,7 +83,7 @@ func (o *Orchestrator) Run(ctx context.Context, rootDirs []string) error {
 
 	// Stage 5: Validate (Policy Engine)
 	log.Printf("[Orchestrator] Starting Stage 5: Validation (Checking policies)...")
-	filesForValidator := make(chan ClassifiedFile)
+	filesForValidator := make(chan ClassifiedFile, 100)
 
 	go func() {
 		defer close(filesForValidator)
@@ -87,10 +91,11 @@ func (o *Orchestrator) Run(ctx context.Context, rootDirs []string) error {
 			if proj, ok := projectsByRoot[f.ProjectRoot]; ok {
 				proj.ClassifiedFiles = append(proj.ClassifiedFiles, f)
 			}
-			if ctx.Err() != nil {
+			select {
+			case <-ctx.Done():
 				return
+			case filesForValidator <- f:
 			}
-			filesForValidator <- f
 		}
 	}()
 
