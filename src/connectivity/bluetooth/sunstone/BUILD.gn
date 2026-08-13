@@ -26,6 +26,7 @@ if (is_host) {
     edition = "2024"
     source_root = "sapphire-common/src/lib.rs"
     sources = [
+      "sapphire-common/src/address.rs",
       "sapphire-common/src/lib.rs",
       "sapphire-common/src/uuid.rs",
     ]

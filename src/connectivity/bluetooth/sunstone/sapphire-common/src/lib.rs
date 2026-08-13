@@ -4,6 +4,8 @@
 
 #![no_std]
 
+pub mod address;
 pub mod uuid;
 
+pub use address::*;
 pub use uuid::*;
