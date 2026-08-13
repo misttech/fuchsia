@@ -12,6 +12,8 @@ source_set("input-report-reader") {
   ]
   public_deps = [
     "//sdk/fidl/fuchsia.input.report:fuchsia.input.report_cpp",
+    "//sdk/lib/stdcompat",
+    "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/trace",
     "//zircon/system/ulib/zx",
   ]
@@ -25,8 +27,10 @@ test("unittests") {
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/async-loop:async-loop-default",
     "//src/lib/fxl/test:gtest_main",
+    "//src/lib/testing/predicates",
     "//third_party/googletest:gtest",
     "//zircon/system/public",
+    "//zircon/system/ulib/sync:sync-cpp",
     "//zircon/system/ulib/zx",
   ]
 }

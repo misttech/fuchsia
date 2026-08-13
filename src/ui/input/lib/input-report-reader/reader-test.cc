@@ -7,9 +7,15 @@
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async/cpp/task.h>
 #include <lib/fidl/cpp/wire/server.h>
+#include <lib/sync/cpp/completion.h>
 #include <zircon/time.h>
 
+#include <algorithm>
+#include <cinttypes>
+
 #include <gtest/gtest.h>
+
+#include "src/lib/testing/predicates/status.h"
 
 struct MouseReport {
   int64_t movement_x;
@@ -33,9 +39,9 @@ class MouseDevice : public fidl::WireServer<fuchsia_input_report::InputDevice> {
   size_t SendReport(const MouseReport& report);
   // Function for testing that blocks until a new reader is connected.
   zx_status_t WaitForNextReader(zx::duration timeout) {
-    zx_status_t status = sync_completion_wait(&next_reader_wait_, timeout.get());
+    zx_status_t status = next_reader_wait_.Wait(timeout);
     if (status == ZX_OK) {
-      sync_completion_reset(&next_reader_wait_);
+      next_reader_wait_.Reset();
     }
     return ZX_OK;
   }
@@ -57,11 +63,11 @@ class MouseDevice : public fidl::WireServer<fuchsia_input_report::InputDevice> {
   void handle_unknown_method(
       fidl::UnknownMethodMetadata<fuchsia_input_report::InputDevice> metadata,
       fidl::UnknownMethodCompleter::Sync& completer) override {
-    fprintf(stderr, "Unexpected fidl method invoked: %ld", metadata.method_ordinal);
+    fprintf(stderr, "Unexpected fidl method invoked: %" PRIu64 "\n", metadata.method_ordinal);
   }
 
  private:
-  sync_completion_t next_reader_wait_;
+  libsync::Completion next_reader_wait_;
   input_report_reader::InputReportReaderManager<MouseReport, 10, kMaxBatchSize, kMaxBatchDelayNs>
       input_report_readers_;
   async::Loop loop_ = async::Loop(&kAsyncLoopConfigNeverAttachToThread);
@@ -85,24 +91,40 @@ size_t MouseDevice<kMaxBatchSize, kMaxBatchDelayNs>::SendReport(const MouseRepor
 template <size_t kMaxBatchSize, zx_duration_t kMaxBatchDelayNs>
 void MouseDevice<kMaxBatchSize, kMaxBatchDelayNs>::GetInputReportsReader(
     GetInputReportsReaderRequestView request, GetInputReportsReaderCompleter::Sync& completer) {
-  sync_completion_t wait;
+  libsync::Completion wait;
   async::PostTask(loop_.dispatcher(), [&]() {
     zx_status_t status = input_report_readers_.CreateReader(
         loop_.dispatcher(), std::move(request->reader), initial_report_);
     if (status == ZX_OK) {
       // Signal to a test framework (if it exists) that we are connected to a reader.
-      sync_completion_signal(&next_reader_wait_);
+      next_reader_wait_.Signal();
     }
-    sync_completion_signal(&wait);
+    wait.Signal();
   });
-  sync_completion_wait(&wait, ZX_TIME_INFINITE);
+  wait.Wait();
 }
 
 template <size_t kMaxBatchSize, zx_duration_t kMaxBatchDelayNs>
 void MouseDevice<kMaxBatchSize, kMaxBatchDelayNs>::GetInputReportsReaderV2(
     GetInputReportsReaderV2RequestView request, GetInputReportsReaderV2Completer::Sync& completer) {
-  // TODO(https://fxbug.dev/512966114): Implement GetInputReportsReaderV2.
-  completer.Reply(/*max_unacknowledged_reports=*/0);
+  const uint16_t max_unacknowledged_reports =
+      std::max<uint16_t>(1, request->max_unacknowledged_reports_limit);
+  libsync::Completion wait;
+  zx_status_t status = ZX_OK;
+  async::PostTask(loop_.dispatcher(), [&]() {
+    status = input_report_readers_.CreateReaderV2(loop_.dispatcher(), std::move(request->reader),
+                                                  max_unacknowledged_reports, initial_report_);
+    if (status == ZX_OK) {
+      next_reader_wait_.Signal();
+    }
+    wait.Signal();
+  });
+  wait.Wait();
+  if (status != ZX_OK) {
+    completer.Close(status);
+    return;
+  }
+  completer.Reply(max_unacknowledged_reports);
 }
 
 template <size_t kMaxBatchSize, zx_duration_t kMaxBatchDelayNs>
@@ -564,4 +586,201 @@ TEST_F(BatchedInputReportReaderTests, ReadIsDelayed) {
   }
 
   loop.Run();
+}
+
+class TestReaderV2EventHandler
+    : public fidl::WireAsyncEventHandler<fuchsia_input_report::InputReportsReaderV2> {
+ public:
+  // `loop` must outlive the `TestReaderV2EventHandler` instance.
+  explicit TestReaderV2EventHandler(async::Loop& loop) : loop_(loop) {}
+
+  void OnInputReports(
+      fidl::WireEvent<fuchsia_input_report::InputReportsReaderV2::OnInputReports>* event) override {
+    reports_received_ += event->reports.size();
+    last_stamp_ = event->last_report_stamp;
+    events_received_++;
+    loop_.Quit();
+  }
+  void handle_unknown_event(
+      fidl::UnknownEventMetadata<fuchsia_input_report::InputReportsReaderV2> metadata) override {}
+
+  size_t events_received() const { return events_received_; }
+  size_t reports_received() const { return reports_received_; }
+  uint64_t last_stamp() const { return last_stamp_; }
+
+ private:
+  async::Loop& loop_;
+  size_t events_received_ = 0;
+  size_t reports_received_ = 0;
+  uint64_t last_stamp_ = 0;
+};
+
+TEST_F(InputReportReaderTests, V2Basic) {
+  async::Loop loop = async::Loop(&kAsyncLoopConfigNeverAttachToThread);
+  auto [client_end, server_end] =
+      fidl::Endpoints<fuchsia_input_report::InputReportsReaderV2>::Create();
+  fidl::WireResult<fuchsia_input_report::InputDevice::GetInputReportsReaderV2> get_reader_result =
+      input_device_->GetInputReportsReaderV2(std::move(server_end),
+                                             /*max_unacknowledged_reports=*/5);
+  ASSERT_OK(get_reader_result.status());
+  ASSERT_EQ(5, get_reader_result.value().max_unacknowledged_reports);
+  mouse_.WaitForNextReader(zx::duration::infinite());
+
+  TestReaderV2EventHandler event_handler(loop);
+  fidl::WireClient<fuchsia_input_report::InputReportsReaderV2> client(
+      std::move(client_end), loop.dispatcher(), &event_handler);
+
+  MouseReport report;
+  report.movement_x = 100;
+  report.movement_y = 200;
+  mouse_.SendReport(report);
+
+  loop.Run();
+  ASSERT_EQ(1u, event_handler.events_received());
+  ASSERT_EQ(1u, event_handler.reports_received());
+  ASSERT_EQ(1u, event_handler.last_stamp());
+
+  // Acknowledge and send another.
+  ASSERT_EQ(ZX_OK, client->AcknowledgeReports(event_handler.last_stamp()).status());
+
+  loop.ResetQuit();
+  mouse_.SendReport(report);
+  loop.Run();
+
+  ASSERT_EQ(2u, event_handler.events_received());
+  ASSERT_EQ(2u, event_handler.reports_received());
+  ASSERT_EQ(2u, event_handler.last_stamp());
+}
+
+TEST_F(InputReportReaderTests, V2UnacknowledgedLimit) {
+  async::Loop loop = async::Loop(&kAsyncLoopConfigNeverAttachToThread);
+  auto [client_end, server_end] =
+      fidl::Endpoints<fuchsia_input_report::InputReportsReaderV2>::Create();
+  fidl::WireResult<fuchsia_input_report::InputDevice::GetInputReportsReaderV2> get_reader_result =
+      input_device_->GetInputReportsReaderV2(std::move(server_end),
+                                             /*max_unacknowledged_reports=*/2);
+  ASSERT_OK(get_reader_result.status());
+  ASSERT_EQ(2, get_reader_result.value().max_unacknowledged_reports);
+  mouse_.WaitForNextReader(zx::duration::infinite());
+
+  TestReaderV2EventHandler event_handler(loop);
+  fidl::WireClient<fuchsia_input_report::InputReportsReaderV2> client(
+      std::move(client_end), loop.dispatcher(), &event_handler);
+
+  MouseReport report = {.movement_x = 10, .movement_y = 20};
+  // Send 3 reports while max_unacknowledged_reports is 2.
+  mouse_.SendReport(report);
+  mouse_.SendReport(report);
+  mouse_.SendReport(report);
+
+  // Run the loop twice to receive the first two events.
+  loop.Run();
+  loop.ResetQuit();
+  loop.Run();
+
+  ASSERT_EQ(2u, event_handler.events_received());
+  ASSERT_EQ(2u, event_handler.last_stamp());
+
+  // Running until idle should show no 3rd event yet because limit is reached.
+  loop.ResetQuit();
+  loop.RunUntilIdle();
+  ASSERT_EQ(2u, event_handler.events_received());
+
+  // Now acknowledge up to stamp 2.
+  ASSERT_EQ(ZX_OK, client->AcknowledgeReports(2).status());
+
+  // Now the 3rd event should be received.
+  loop.Run();
+  ASSERT_EQ(3u, event_handler.events_received());
+  ASSERT_EQ(3u, event_handler.last_stamp());
+}
+
+TEST(InputReportReaderTestsV2, V2BatchSizeGrouping) {
+  async::Loop client_loop = async::Loop(&kAsyncLoopConfigNeverAttachToThread);
+  async::Loop device_loop = async::Loop(&kAsyncLoopConfigNeverAttachToThread);
+  ASSERT_EQ(device_loop.StartThread("DeviceThread"), ZX_OK);
+
+  MouseDevice</*kMaxBatchSize=*/5, /*kMaxBatchDelayNs=*/1'000'000'000> mouse;
+  ASSERT_EQ(mouse.Start(), ZX_OK);
+
+  auto [client, server] = fidl::Endpoints<fuchsia_input_report::InputDevice>::Create();
+  fidl::BindServer(device_loop.dispatcher(), std::move(server), &mouse);
+  fidl::WireSyncClient<fuchsia_input_report::InputDevice> input_device(std::move(client));
+
+  // Get reader
+  auto [client_end, server_end] =
+      fidl::Endpoints<fuchsia_input_report::InputReportsReaderV2>::Create();
+  fidl::WireResult<fuchsia_input_report::InputDevice::GetInputReportsReaderV2> get_reader_result =
+      input_device->GetInputReportsReaderV2(std::move(server_end), 10);
+  ASSERT_OK(get_reader_result.status());
+  mouse.WaitForNextReader(zx::duration::infinite());
+
+  TestReaderV2EventHandler event_handler(client_loop);
+  fidl::WireClient<fuchsia_input_report::InputReportsReaderV2> client_v2(
+      std::move(client_end), client_loop.dispatcher(), &event_handler);
+
+  MouseReport report = {.movement_x = 1, .movement_y = 2};
+  // Send 5 reports (equal to max batch size).
+  for (size_t i = 0; i < 5; i++) {
+    mouse.SendReport(report);
+  }
+
+  client_loop.Run();
+  // They should be grouped into 1 event.
+  ASSERT_EQ(1u, event_handler.events_received());
+  ASSERT_EQ(5u, event_handler.reports_received());
+}
+
+TEST(InputReportReaderTestsV2, V2BatchSizeLimit) {
+  async::Loop client_loop = async::Loop(&kAsyncLoopConfigNeverAttachToThread);
+  async::Loop device_loop = async::Loop(&kAsyncLoopConfigNeverAttachToThread);
+  ASSERT_EQ(device_loop.StartThread("DeviceThread"), ZX_OK);
+
+  MouseDevice</*kMaxBatchSize=*/3, /*kMaxBatchDelayNs=*/1'000'000'000> mouse;
+  ASSERT_EQ(mouse.Start(), ZX_OK);
+
+  auto [client, server] = fidl::Endpoints<fuchsia_input_report::InputDevice>::Create();
+  fidl::BindServer(device_loop.dispatcher(), std::move(server), &mouse);
+  fidl::WireSyncClient<fuchsia_input_report::InputDevice> input_device(std::move(client));
+
+  // Get reader with max_unacknowledged_events = 2.
+  auto [client_end, server_end] =
+      fidl::Endpoints<fuchsia_input_report::InputReportsReaderV2>::Create();
+  fidl::WireResult<fuchsia_input_report::InputDevice::GetInputReportsReaderV2> get_reader_result =
+      input_device->GetInputReportsReaderV2(std::move(server_end), 2);
+  ASSERT_OK(get_reader_result.status());
+  mouse.WaitForNextReader(zx::duration::infinite());
+
+  TestReaderV2EventHandler event_handler(client_loop);
+  fidl::WireClient<fuchsia_input_report::InputReportsReaderV2> client_v2(
+      std::move(client_end), client_loop.dispatcher(), &event_handler);
+
+  MouseReport report = {.movement_x = 10, .movement_y = 20};
+  // Send 9 reports (3 batches of 3).
+  for (size_t i = 0; i < 9; i++) {
+    mouse.SendReport(report);
+  }
+
+  // Run the loop twice to receive the first two batches.
+  client_loop.Run();
+  client_loop.ResetQuit();
+  client_loop.Run();
+
+  ASSERT_EQ(2u, event_handler.events_received());
+  ASSERT_EQ(6u, event_handler.reports_received());
+  ASSERT_EQ(2u, event_handler.last_stamp());
+
+  // Running until idle should show no 3rd batch yet because limit is reached.
+  client_loop.ResetQuit();
+  client_loop.RunUntilIdle();
+  ASSERT_EQ(2u, event_handler.events_received());
+
+  // Now acknowledge up to stamp 2.
+  ASSERT_EQ(ZX_OK, client_v2->AcknowledgeReports(2).status());
+
+  // Now the 3rd batch should be received.
+  client_loop.Run();
+  ASSERT_EQ(3u, event_handler.events_received());
+  ASSERT_EQ(9u, event_handler.reports_received());
+  ASSERT_EQ(3u, event_handler.last_stamp());
 }
