@@ -7,6 +7,14 @@ use fidl::endpoints::{RequestStream, create_endpoints};
 
 const TEST_EP_IN_ADDR: u8 = 1;
 const TEST_EP_OUT_ADDR: u8 = 2;
+
+const USB_DIR_OUT: u8 = 0x00;
+const USB_DIR_IN: u8 = 0x80;
+const USB_RECIP_DEVICE: u8 = 0x00;
+
+const USB_TYPE_VENDOR_OUT: u8 = USB_DIR_OUT | USB_TYPE_VENDOR | USB_RECIP_DEVICE;
+const USB_TYPE_VENDOR_IN: u8 = USB_DIR_IN | USB_TYPE_VENDOR | USB_RECIP_DEVICE;
+
 use futures::channel::mpsc;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -243,7 +251,7 @@ async fn test_vendor_requests() {
 
     // Test VendorRequest::SetStall (0x50)
     let setup_set_stall = fusb_descriptor::UsbSetup {
-        bm_request_type: 0x40,
+        bm_request_type: USB_TYPE_VENDOR_OUT,
         b_request: VendorRequest::SetStall as u8,
         w_value: TEST_EP_IN_ADDR as u16,
         w_index: 0,
@@ -254,7 +262,7 @@ async fn test_vendor_requests() {
 
     // Test VendorRequest::SetStall with invalid w_value (> 0xFF)
     let setup_invalid_w_value = fusb_descriptor::UsbSetup {
-        bm_request_type: 0x40,
+        bm_request_type: USB_TYPE_VENDOR_OUT,
         b_request: VendorRequest::SetStall as u8,
         w_value: 0x100,
         w_index: 0,
@@ -265,7 +273,7 @@ async fn test_vendor_requests() {
 
     // Test VendorRequest::SetStall with invalid direction bit (0xC0)
     let setup_invalid_dir = fusb_descriptor::UsbSetup {
-        bm_request_type: 0xC0,
+        bm_request_type: USB_TYPE_VENDOR_IN,
         b_request: VendorRequest::SetStall as u8,
         w_value: TEST_EP_IN_ADDR as u16,
         w_index: 0,
@@ -276,7 +284,7 @@ async fn test_vendor_requests() {
 
     // Test VendorRequest::ClearStall (0x51)
     let setup_clear_stall = fusb_descriptor::UsbSetup {
-        bm_request_type: 0x40,
+        bm_request_type: USB_TYPE_VENDOR_OUT,
         b_request: VendorRequest::ClearStall as u8,
         w_value: TEST_EP_IN_ADDR as u16,
         w_index: 0,
@@ -287,7 +295,7 @@ async fn test_vendor_requests() {
 
     // Test VendorRequest::ConfigureEndpoint (0x52)
     let setup_config_ep = fusb_descriptor::UsbSetup {
-        bm_request_type: 0x40,
+        bm_request_type: USB_TYPE_VENDOR_OUT,
         b_request: VendorRequest::ConfigureEndpoint as u8,
         w_value: TEST_EP_IN_ADDR as u16,
         w_index: 0,
@@ -298,7 +306,7 @@ async fn test_vendor_requests() {
 
     // Test VendorRequest::DisableEndpoint (0x53)
     let setup_disable_ep = fusb_descriptor::UsbSetup {
-        bm_request_type: 0x40,
+        bm_request_type: USB_TYPE_VENDOR_OUT,
         b_request: VendorRequest::DisableEndpoint as u8,
         w_value: TEST_EP_IN_ADDR as u16,
         w_index: 0,
@@ -309,7 +317,7 @@ async fn test_vendor_requests() {
 
     // Test VendorRequest::ConnectEndpoint (0x54)
     let setup_connect_ep = fusb_descriptor::UsbSetup {
-        bm_request_type: 0x40,
+        bm_request_type: USB_TYPE_VENDOR_OUT,
         b_request: VendorRequest::ConnectEndpoint as u8,
         w_value: TEST_EP_IN_ADDR as u16,
         w_index: 0,
@@ -320,7 +328,7 @@ async fn test_vendor_requests() {
 
     // Test VendorRequest::Deconfigure (0x55)
     let setup_deconfig = fusb_descriptor::UsbSetup {
-        bm_request_type: 0x40,
+        bm_request_type: USB_TYPE_VENDOR_OUT,
         b_request: VendorRequest::Deconfigure as u8,
         w_value: 0,
         w_index: 0,
@@ -331,7 +339,7 @@ async fn test_vendor_requests() {
 
     // Test VendorRequest::WritePayload (0x56 - valid data)
     let setup_write = fusb_descriptor::UsbSetup {
-        bm_request_type: 0x40,
+        bm_request_type: USB_TYPE_VENDOR_OUT,
         b_request: VendorRequest::WritePayload as u8,
         w_value: 0,
         w_index: 0,
@@ -347,7 +355,7 @@ async fn test_vendor_requests() {
 
     // Test VendorRequest::WritePayload (0x56 - w_length mismatch)
     let setup_write_mismatch = fusb_descriptor::UsbSetup {
-        bm_request_type: 0x40,
+        bm_request_type: USB_TYPE_VENDOR_OUT,
         b_request: VendorRequest::WritePayload as u8,
         w_value: 0,
         w_index: 0,
@@ -358,7 +366,7 @@ async fn test_vendor_requests() {
 
     // Test VendorRequest::ReadPayload (0x57 - valid)
     let setup_read = fusb_descriptor::UsbSetup {
-        bm_request_type: 0xC0,
+        bm_request_type: USB_TYPE_VENDOR_IN,
         b_request: VendorRequest::ReadPayload as u8,
         w_value: 0,
         w_index: 0,
@@ -373,7 +381,7 @@ async fn test_vendor_requests() {
 
     // Test VendorRequest::SetTestMode (0x58 - set Loopback mode)
     let setup_set_mode_loopback = fusb_descriptor::UsbSetup {
-        bm_request_type: 0x40,
+        bm_request_type: USB_TYPE_VENDOR_OUT,
         b_request: VendorRequest::SetTestMode as u8,
         w_value: TestMode::Loopback as u16,
         w_index: 0,
@@ -382,9 +390,20 @@ async fn test_vendor_requests() {
     let res_set_mode = proxy.control(&setup_set_mode_loopback, &[]).await.unwrap();
     assert_eq!(res_set_mode, Ok(vec![]));
 
+    // Test VendorRequest::SetTestMode (0x58 - set SourceSink mode)
+    let setup_set_mode_ss = fusb_descriptor::UsbSetup {
+        bm_request_type: USB_TYPE_VENDOR_OUT,
+        b_request: VendorRequest::SetTestMode as u8,
+        w_value: TestMode::SourceSink as u16,
+        w_index: 0,
+        w_length: 0,
+    };
+    let res_set_mode_ss = proxy.control(&setup_set_mode_ss, &[]).await.unwrap();
+    assert_eq!(res_set_mode_ss, Ok(vec![]));
+
     // Test VendorRequest::SetTestMode (0x58 - invalid mode 99)
     let setup_set_mode_invalid = fusb_descriptor::UsbSetup {
-        bm_request_type: 0x40,
+        bm_request_type: USB_TYPE_VENDOR_OUT,
         b_request: VendorRequest::SetTestMode as u8,
         w_value: 99,
         w_index: 0,
@@ -393,9 +412,41 @@ async fn test_vendor_requests() {
     let res_mode_invalid = proxy.control(&setup_set_mode_invalid, &[]).await.unwrap();
     assert_eq!(res_mode_invalid, Err(Status::INVALID_ARGS.into_raw()));
 
+    // Test VendorRequest::ControlLoopbackOut (0x5b) and ControlLoopbackIn (0x5c)
+    let setup_control_loopback_out = fusb_descriptor::UsbSetup {
+        bm_request_type: USB_TYPE_VENDOR_OUT,
+        b_request: VendorRequest::ControlLoopbackOut as u8,
+        w_value: 0,
+        w_index: 0,
+        w_length: 0,
+    };
+    let res_cl_out = proxy.control(&setup_control_loopback_out, &[]).await.unwrap();
+    assert_eq!(res_cl_out, Err(Status::NOT_SUPPORTED.into_raw()));
+
+    let setup_control_loopback_in = fusb_descriptor::UsbSetup {
+        bm_request_type: USB_TYPE_VENDOR_IN,
+        b_request: VendorRequest::ControlLoopbackIn as u8,
+        w_value: 0,
+        w_index: 0,
+        w_length: 0,
+    };
+    let res_cl_in = proxy.control(&setup_control_loopback_in, &[]).await.unwrap();
+    assert_eq!(res_cl_in, Err(Status::NOT_SUPPORTED.into_raw()));
+
+    // Test invalid vendor request (opcode 0x00 with bm_request_type = 0x40)
+    let setup_invalid_vendor = fusb_descriptor::UsbSetup {
+        bm_request_type: USB_TYPE_VENDOR_OUT,
+        b_request: 0x00,
+        w_value: 0,
+        w_index: 0,
+        w_length: 0,
+    };
+    let res_invalid_vendor = proxy.control(&setup_invalid_vendor, &[]).await.unwrap();
+    assert_eq!(res_invalid_vendor, Err(Status::NOT_SUPPORTED.into_raw()));
+
     // Test unsupported request
     let setup_unsupported = fusb_descriptor::UsbSetup {
-        bm_request_type: 0x40,
+        bm_request_type: USB_TYPE_VENDOR_OUT,
         b_request: VendorRequest::SetTestMode as u8 + 1,
         w_value: 0,
         w_index: 0,

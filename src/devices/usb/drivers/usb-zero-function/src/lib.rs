@@ -19,6 +19,11 @@ const USB_DESC_TYPE_INTERFACE: u8 = 0x04;
 const USB_DESC_TYPE_ENDPOINT: u8 = 0x05;
 const USB_CLASS_VENDOR: u8 = 0xff;
 
+// USB Setup Request Types
+const USB_TYPE_MASK: u8 = 0x60;
+const USB_TYPE_STANDARD: u8 = 0x00;
+const USB_TYPE_VENDOR: u8 = 0x40;
+
 const USB_INTERFACE_DESC_SIZE: u8 = 9;
 const USB_ENDPOINT_DESC_SIZE: u8 = 7;
 
@@ -56,30 +61,34 @@ enum VendorRequest {
     WritePayload = 0x56,
     ReadPayload = 0x57,
     SetTestMode = 0x58,
+    ControlLoopbackOut = 0x5b,
+    ControlLoopbackIn = 0x5c,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 enum ControlRequest {
     Vendor(VendorRequest),
     Standard(u8),
+    Unsupported,
 }
 
 impl ControlRequest {
-    fn parse(b_request: u8) -> Self {
-        if let Some(vendor) = VendorRequest::n(b_request) {
-            ControlRequest::Vendor(vendor)
-        } else {
-            ControlRequest::Standard(b_request)
+    fn parse(bm_request_type: u8, b_request: u8) -> Self {
+        match bm_request_type & USB_TYPE_MASK {
+            USB_TYPE_STANDARD => ControlRequest::Standard(b_request),
+            USB_TYPE_VENDOR => VendorRequest::n(b_request)
+                .map_or(ControlRequest::Unsupported, ControlRequest::Vendor),
+            _ => ControlRequest::Unsupported,
         }
     }
 }
 
-#[derive(Default, Debug, Clone, Copy, PartialEq, enumn::N)]
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, enumn::N)]
 #[repr(u8)]
 pub enum TestMode {
-    SourceSink = 1,
     #[default]
-    Loopback = 2,
+    SourceSink = 0,
+    Loopback = 1,
 }
 
 impl TryFrom<u8> for TestMode {
@@ -505,6 +514,9 @@ impl UsbZeroFunctionDevice {
                 self.mode = mode_val.try_into()?;
                 Ok(Vec::new())
             }
+            VendorRequest::ControlLoopbackOut | VendorRequest::ControlLoopbackIn => {
+                Err(Status::NOT_SUPPORTED)
+            }
         }
     }
 
@@ -513,7 +525,7 @@ impl UsbZeroFunctionDevice {
         setup: &fusb_descriptor::UsbSetup,
         write: &[u8],
     ) -> Result<Vec<u8>, Status> {
-        match ControlRequest::parse(setup.b_request) {
+        match ControlRequest::parse(setup.bm_request_type, setup.b_request) {
             ControlRequest::Vendor(vendor_req) => {
                 self.handle_vendor_request(vendor_req, setup, write).await
             }
@@ -527,6 +539,7 @@ impl UsbZeroFunctionDevice {
                 }]),
                 _ => Err(Status::NOT_SUPPORTED),
             },
+            ControlRequest::Unsupported => Err(Status::NOT_SUPPORTED),
         }
     }
     /// Processes incoming FIDL requests on the `UsbFunctionInterface` request stream,
