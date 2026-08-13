@@ -76,12 +76,14 @@ void x86_cpu_feature_init();
 /* Invoked on each CPU late in init sequence. */
 void x86_cpu_feature_late_init_percpu();
 
+extern "C" {
 extern struct cpuid_leaf _cpuid[MAX_SUPPORTED_CPUID + 1];
 extern struct cpuid_leaf _cpuid_hyp[MAX_SUPPORTED_CPUID_HYP - X86_CPUID_HYP_BASE + 1];
 extern struct cpuid_leaf _cpuid_ext[MAX_SUPPORTED_CPUID_EXT - X86_CPUID_EXT_BASE + 1];
 extern uint32_t max_cpuid;
 extern uint32_t max_ext_cpuid;
 extern uint32_t max_hyp_cpuid;
+}
 
 static inline const struct cpuid_leaf* x86_get_cpuid_leaf(enum x86_cpuid_leaf_num leaf) {
   if (leaf < X86_CPUID_HYP_BASE) {
@@ -225,7 +227,9 @@ void x86_feature_debug();
 /* cpu vendors */
 enum x86_vendor_list { X86_VENDOR_UNKNOWN, X86_VENDOR_INTEL, X86_VENDOR_AMD };
 
+extern "C" {
 extern enum x86_vendor_list x86_vendor;
+}
 
 struct x86_model_info {
   uint8_t processor_type;
@@ -262,6 +266,7 @@ enum x86_microarch_list {
   X86_MICROARCH_AMD_ZEN,
 };
 
+extern "C" {
 // Pre-computed complex features to test for or features that are tested extremely
 // regularly in the system.
 extern bool g_x86_feature_fsgsbase;
@@ -269,6 +274,7 @@ extern bool g_x86_feature_invpcid;
 // Combination of both PCID & INVLPCID features present, and enabled by kernel cmdline option.
 extern bool g_x86_feature_pcid_enabled;
 extern bool g_x86_feature_has_smap;
+}
 
 enum x86_hypervisor_list {
   X86_HYPERVISOR_UNKNOWN,
@@ -276,10 +282,12 @@ enum x86_hypervisor_list {
   X86_HYPERVISOR_KVM,
 };
 
+extern "C" {
 extern enum x86_hypervisor_list x86_hypervisor;
 extern bool g_hypervisor_has_pv_clock;
 extern bool g_hypervisor_has_pv_eoi;
 extern bool g_hypervisor_has_pv_ipi;
+}
 
 static inline bool x86_hypervisor_has_pv_clock() { return g_hypervisor_has_pv_clock; }
 
@@ -314,6 +322,7 @@ typedef struct {
   x86_idle_states_t idle_states;
 } x86_microarch_config_t;
 
+extern "C" {
 extern const x86_microarch_config_t* x86_microarch_config;
 extern bool g_has_ibpb;
 extern bool g_ras_fill_on_ctxt_switch;
@@ -325,6 +334,7 @@ extern bool g_l1d_flush_on_vmentry;
 extern bool g_md_clear_on_user_return;
 extern bool g_has_enhanced_ibrs;
 extern bool g_has_meltdown;
+}
 
 static inline const x86_microarch_config_t* x86_get_microarch_config() {
   return x86_microarch_config;

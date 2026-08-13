@@ -37,6 +37,7 @@
 
 #define LOCAL_TRACE 0
 
+extern "C" {
 struct cpuid_leaf _cpuid[MAX_SUPPORTED_CPUID + 1];
 struct cpuid_leaf _cpuid_hyp[MAX_SUPPORTED_CPUID_HYP - X86_CPUID_HYP_BASE + 1];
 struct cpuid_leaf _cpuid_ext[MAX_SUPPORTED_CPUID_EXT - X86_CPUID_EXT_BASE + 1];
@@ -78,6 +79,7 @@ enum x86_hypervisor_list x86_hypervisor;
 bool g_hypervisor_has_pv_clock;
 bool g_hypervisor_has_pv_eoi;
 bool g_hypervisor_has_pv_ipi;
+}
 
 static ktl::atomic<bool> g_cpuid_initialized;
 
@@ -1098,8 +1100,4 @@ void x86_cpu_maybe_l1d_flush(zx_status_t syscall_return) {
     }
   }
 }
-
-x86_vendor_list cpp_x86_get_vendor();
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE x86_vendor_list cpp_x86_get_vendor() { return x86_vendor; }
 }
