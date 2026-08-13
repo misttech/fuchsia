@@ -11,5 +11,5 @@ primary parent "i2c" {
 }
 
 parent "devicetree" {
-  fuchsia.devicetree.FIRST_COMPATIBLE == "nxp,pcf8563";
+  fuchsia.COMPATIBLE == "nxp,pcf8563";
 }

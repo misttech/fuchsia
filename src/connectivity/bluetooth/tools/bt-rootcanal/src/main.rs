@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Context, Error};
+use anyhow::{Context, Error, anyhow};
 use fidl_fuchsia_bluetooth_pandora::{
     RootcanalClientControllerRequest, RootcanalClientControllerRequestStream, ServiceError,
 };
@@ -27,7 +27,7 @@ use std::sync::Arc;
 const UART_MAX_FRAME_BUFFER_SIZE: usize = 1029;
 
 /// The name of the test node to which bt_hci_virtual can expect to bind, i.e. the first positional
-/// argument in `ffx driver test-node add ______ fuchsia.devicetree.FIRST_COMPATIBLE=bt`.
+/// argument in `ffx driver test-node add ______ fuchsia.COMPATIBLE=bt`.
 fn emulator_test_node_name() -> String {
     "bt-hci-emulator".to_string()
 }

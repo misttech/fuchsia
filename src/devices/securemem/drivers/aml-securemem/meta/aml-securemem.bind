@@ -7,7 +7,7 @@ composite aml_securemem;
 
 primary parent "pdev" {
   if fuchsia.BIND_PLATFORM_DEV_DID == fuchsia.platform.BIND_PLATFORM_DEV_DID.DEVICETREE {
-    fuchsia.devicetree.FIRST_COMPATIBLE == "amlogic,secure-mem";
+    fuchsia.COMPATIBLE == "amlogic,secure-mem";
   } else {
     fuchsia.BIND_PROTOCOL == fuchsia.platform.BIND_PROTOCOL.DEVICE;
     fuchsia.BIND_PLATFORM_DEV_VID == fuchsia.amlogic.platform.BIND_PLATFORM_DEV_VID.AMLOGIC;

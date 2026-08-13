@@ -12,12 +12,11 @@ using fuchsia.gpio;
 using fuchsia.clock;
 using fuchsia.hardware.clock;
 using fuchsia.platform;
-using fuchsia.devicetree;
 using fuchsia.hardware.audio;
 
 primary parent "pdev" {
   if fuchsia.BIND_PLATFORM_DEV_DID == fuchsia.platform.BIND_PLATFORM_DEV_DID.DEVICETREE {
-    fuchsia.devicetree.FIRST_COMPATIBLE == "amlogic,audio-controller";
+    fuchsia.COMPATIBLE == "amlogic,audio-controller";
   } else {
     fuchsia.BIND_PROTOCOL == fuchsia.platform.BIND_PROTOCOL.DEVICE;
     fuchsia.BIND_PLATFORM_DEV_VID == fuchsia.amlogic.platform.BIND_PLATFORM_DEV_VID.AMLOGIC;

@@ -16,7 +16,7 @@
                 "name": "Match devicetree",
                 "expected": "match",
                 "device": {
-                    "fuchsia.devicetree.FIRST_COMPATIBLE": "\"amlogic,meson-g12a-dwmac\""
+                    "fuchsia.COMPATIBLE": "\"amlogic,meson-g12a-dwmac\""
                 }
             }
         ]

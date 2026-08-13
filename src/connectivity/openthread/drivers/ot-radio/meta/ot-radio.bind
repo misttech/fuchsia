@@ -13,7 +13,7 @@ primary parent "spi" {
 parent "pdev" {
   if fuchsia.BIND_PLATFORM_DEV_DID == fuchsia.platform.BIND_PLATFORM_DEV_DID.DEVICETREE {
     fuchsia.BIND_PLATFORM_DEV_VID == fuchsia.platform.BIND_PLATFORM_DEV_VID.GENERIC;
-    fuchsia.devicetree.FIRST_COMPATIBLE == "nordic,nrf52840";
+    fuchsia.COMPATIBLE == "nordic,nrf52840";
   } else {
     fuchsia.BIND_PROTOCOL == fuchsia.platform.BIND_PROTOCOL.DEVICE;
     fuchsia.BIND_PLATFORM_DEV_VID == fuchsia.platform.BIND_PLATFORM_DEV_VID.GENERIC;

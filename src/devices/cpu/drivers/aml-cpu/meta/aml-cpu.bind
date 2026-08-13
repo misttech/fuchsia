@@ -13,10 +13,9 @@ using fuchsia.hardware.clock;
 using fuchsia.hardware.power;
 using fuchsia.platform;
 using fuchsia.power;
-using fuchsia.devicetree;
 
 parent "pdev" {
-  if fuchsia.devicetree.FIRST_COMPATIBLE == "amlogic,cpu" {
+  if fuchsia.COMPATIBLE == "amlogic,cpu" {
     true;
   } else {
     if fuchsia.BIND_PLATFORM_DEV_VID == fuchsia.google.platform.BIND_PLATFORM_DEV_VID.GOOGLE {

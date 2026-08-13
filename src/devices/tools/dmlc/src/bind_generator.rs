@@ -105,7 +105,7 @@ fn generate_simple_bind_statements_excluding(
         if let Some(compat) = &bind.compat {
             match compat {
                 Value::Array(arr) => {
-                    content.push_str("accept fuchsia.devicetree.FIRST_COMPATIBLE {\n");
+                    content.push_str("accept fuchsia.COMPATIBLE {\n");
                     for v in arr {
                         if let Some(s) = v.as_str() {
                             content.push_str(&format!("  \"{}\",\n", s));
@@ -114,8 +114,7 @@ fn generate_simple_bind_statements_excluding(
                     content.push_str("}\n");
                 }
                 Value::String(s) => {
-                    content
-                        .push_str(&format!("fuchsia.devicetree.FIRST_COMPATIBLE == \"{}\";\n", s));
+                    content.push_str(&format!("fuchsia.COMPATIBLE == \"{}\";\n", s));
                 }
                 _ => {}
             }
@@ -143,9 +142,7 @@ fn get_trigger(alt: &DmlBind) -> Result<Option<String>, anyhow::Error> {
         Ok(Some(format!("fuchsia.Service == \"{}\"", svc)))
     } else if alt.compat.is_some() && !alt.compat.as_ref().unwrap().is_array() {
         match alt.compat.as_ref().unwrap() {
-            Value::String(s) => {
-                Ok(Some(format!("fuchsia.devicetree.FIRST_COMPATIBLE == \"{}\"", s)))
-            }
+            Value::String(s) => Ok(Some(format!("fuchsia.COMPATIBLE == \"{}\"", s))),
             _ => Ok(None),
         }
     } else if alt.vid.is_some() && !alt.vid.as_ref().unwrap().is_array() {
@@ -305,8 +302,7 @@ pub fn generate_bind_file(
                     if let Some(compat) = &alt.compat {
                         match compat {
                             Value::Array(arr) => {
-                                content
-                                    .push_str("    accept fuchsia.devicetree.FIRST_COMPATIBLE {\n");
+                                content.push_str("    accept fuchsia.COMPATIBLE {\n");
                                 for v in arr {
                                     if let Some(s) = v.as_str() {
                                         content.push_str(&format!("      \"{}\",\n", s));
@@ -315,10 +311,8 @@ pub fn generate_bind_file(
                                 content.push_str("    }\n");
                             }
                             Value::String(s) => {
-                                content.push_str(&format!(
-                                    "    fuchsia.devicetree.FIRST_COMPATIBLE == \"{}\";\n",
-                                    s
-                                ));
+                                content
+                                    .push_str(&format!("    fuchsia.COMPATIBLE == \"{}\";\n", s));
                             }
                             _ => {}
                         }
@@ -417,8 +411,7 @@ pub fn generate_bind_file(
                 if let Some(compat) = &primary.compat {
                     match compat {
                         Value::Array(arr) => {
-                            let mut accept_rule =
-                                "accept fuchsia.devicetree.FIRST_COMPATIBLE {\n".to_string();
+                            let mut accept_rule = "accept fuchsia.COMPATIBLE {\n".to_string();
                             for v in arr {
                                 if let Some(s) = v.as_str() {
                                     accept_rule.push_str(&format!("      \"{}\",\n", s));
@@ -428,7 +421,7 @@ pub fn generate_bind_file(
                             rules.push(accept_rule);
                         }
                         Value::String(s) => {
-                            rules.push(format!("fuchsia.devicetree.FIRST_COMPATIBLE == \"{}\"", s));
+                            rules.push(format!("fuchsia.COMPATIBLE == \"{}\"", s));
                         }
                         _ => {}
                     }
@@ -590,7 +583,7 @@ mod tests {
         let content = generate_bind_file("my_driver", &bind, &[], "2025").unwrap();
 
         assert!(content.contains("// Copyright 2025 The Fuchsia Authors. All rights reserved."));
-        let expected = "if fuchsia.BIND_PLATFORM_DEV_VID == 125 {\n    true;\n} else if fuchsia.devicetree.FIRST_COMPATIBLE == \"fuchsia,my-compat\" {\n    true;\n} else {\n    false;\n}";
+        let expected = "if fuchsia.BIND_PLATFORM_DEV_VID == 125 {\n    true;\n} else if fuchsia.COMPATIBLE == \"fuchsia,my-compat\" {\n    true;\n} else {\n    false;\n}";
         assert!(content.contains(expected), "Expected:\n{}\n\nGot:\n{}", expected, content);
     }
 
@@ -612,7 +605,7 @@ mod tests {
         let content = generate_bind_file("my_driver", &bind, &[], "2026").unwrap();
 
         assert!(content.contains("// Copyright 2026 The Fuchsia Authors. All rights reserved."));
-        let expected = "if fuchsia.BIND_PLATFORM_DEV_VID == 125 {\n    true;\n} else {\n    accept fuchsia.devicetree.FIRST_COMPATIBLE {\n      \"fuchsia,my-compat\",\n    }\n}";
+        let expected = "if fuchsia.BIND_PLATFORM_DEV_VID == 125 {\n    true;\n} else {\n    accept fuchsia.COMPATIBLE {\n      \"fuchsia,my-compat\",\n    }\n}";
         assert!(content.contains(expected), "Expected:\n{}\n\nGot:\n{}", expected, content);
     }
 }

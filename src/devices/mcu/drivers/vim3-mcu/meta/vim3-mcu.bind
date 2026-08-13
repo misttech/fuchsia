@@ -10,7 +10,7 @@ primary parent "i2c" {
 }
 
 parent "mcu" {
-  if fuchsia.devicetree.FIRST_COMPATIBLE == "khadas,vim3-mcu" {
+  if fuchsia.COMPATIBLE == "khadas,vim3-mcu" {
     true;
   } else {
     fuchsia.BIND_PLATFORM_DEV_VID == fuchsia.khadas.platform.BIND_PLATFORM_DEV_VID.KHADAS;

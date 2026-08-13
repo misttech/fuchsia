@@ -3,4 +3,4 @@
 // found in the LICENSE file.
 
 
-fuchsia.devicetree.FIRST_COMPATIBLE == "devicetree-config-child";
+fuchsia.COMPATIBLE == "devicetree-config-child";

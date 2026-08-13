@@ -4,8 +4,9 @@
 
 composite ge2d;
 
+using fuchsia;
 
-using fuchsia.devicetree;
+
 
 primary parent "camera-sensor" {
   fuchsia.BIND_PROTOCOL == fuchsia.camera.BIND_PROTOCOL.CAMERA_SENSOR_2;
@@ -16,7 +17,7 @@ parent "canvas" {
 }
 
 parent "pdev" {
-  if fuchsia.devicetree.FIRST_COMPATIBLE == "amlogic,ge2d" {
+  if fuchsia.COMPATIBLE == "amlogic,ge2d" {
     true;
   } else {
     fuchsia.BIND_PROTOCOL == fuchsia.platform.BIND_PROTOCOL.DEVICE;

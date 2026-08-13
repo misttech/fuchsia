@@ -17,7 +17,6 @@ driver_bind_rules("bind_rules") {
     "//sdk/fidl/fuchsia.hardware.reset:fuchsia.hardware.reset_bindlib",
     "//src/devices/bind/fuchsia",
     "//src/devices/bind/fuchsia.clock",
-    "//src/devices/bind/fuchsia.devicetree",
     "//src/devices/bind/fuchsia.gpio",
     "//src/devices/bind/fuchsia.platform",
   ]

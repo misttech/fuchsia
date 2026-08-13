@@ -13,14 +13,13 @@ using fuchsia.hardware.i2c;
 using fuchsia.camera;
 using fuchsia.platform;
 using fuchsia.sony.platform;
-using fuchsia.devicetree;
 
 primary parent "mipicsi" {
   fuchsia.BIND_PROTOCOL == fuchsia.camera.BIND_PROTOCOL.MIPICSI;
 }
 
 parent "pdev" {
-  if fuchsia.devicetree.FIRST_COMPATIBLE == "sony,imx227" {
+  if fuchsia.COMPATIBLE == "sony,imx227" {
     true;
   } else {
     fuchsia.BIND_PROTOCOL == fuchsia.platform.BIND_PROTOCOL.DEVICE;

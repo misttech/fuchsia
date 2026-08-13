@@ -16,14 +16,14 @@
                 "name": "DevicetreeMatch",
                 "expected": "match",
                 "device": {
-                    "fuchsia.devicetree.FIRST_COMPATIBLE": "\"amlogic,g12a-spi\""
+                    "fuchsia.COMPATIBLE": "\"amlogic,g12a-spi\""
                 }
             },
             {
                 "name": "DevicetreeWrongCompatible",
                 "expected": "abort",
                 "device": {
-                    "fuchsia.devicetree.FIRST_COMPATIBLE": "\"amlogic,wrong-spi\""
+                    "fuchsia.COMPATIBLE": "\"amlogic,wrong-spi\""
                 }
             }
         ]

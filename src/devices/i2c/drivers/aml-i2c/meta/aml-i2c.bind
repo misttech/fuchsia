@@ -4,15 +4,16 @@
 
 composite aml_i2c;
 
+using fuchsia;
+
 using fuchsia.hardware.pin;
 using fuchsia.amlogic.platform;
-using fuchsia.devicetree;
 using fuchsia.gpio;
 using fuchsia.platform;
 
 primary parent "pdev" {
   if fuchsia.BIND_PLATFORM_DEV_DID == fuchsia.platform.BIND_PLATFORM_DEV_DID.DEVICETREE {
-    fuchsia.devicetree.FIRST_COMPATIBLE == "amlogic,meson-axg-i2c";
+    fuchsia.COMPATIBLE == "amlogic,meson-axg-i2c";
   } else {
     fuchsia.BIND_PROTOCOL == fuchsia.platform.BIND_PROTOCOL.DEVICE;
     fuchsia.BIND_PLATFORM_DEV_VID == fuchsia.amlogic.platform.BIND_PLATFORM_DEV_VID.AMLOGIC;

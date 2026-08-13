@@ -4,15 +4,16 @@
 
 composite gdc;
 
+using fuchsia;
 
-using fuchsia.devicetree;
+
 
 primary parent "camera-sensor" {
   fuchsia.BIND_PROTOCOL == fuchsia.camera.BIND_PROTOCOL.CAMERA_SENSOR_2;
 }
 
 parent "pdev" {
-  if fuchsia.devicetree.FIRST_COMPATIBLE == "arm,mali-gdc" {
+  if fuchsia.COMPATIBLE == "arm,mali-gdc" {
     true;
   } else {
     fuchsia.BIND_PROTOCOL == fuchsia.platform.BIND_PROTOCOL.DEVICE;

@@ -13,6 +13,9 @@ uint BIND_PROTOCOL;
 // A generic name property.
 string NAME;
 
+// Devicetree compatible property.
+string COMPATIBLE;
+
 // A generic ID property.
 uint ID;
 

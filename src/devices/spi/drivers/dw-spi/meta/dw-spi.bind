@@ -6,7 +6,6 @@ composite dw_spi;
 
 using fuchsia;
 using fuchsia.hardware.pin;
-using fuchsia.devicetree;
 using fuchsia.hardware.clock;
 using fuchsia.hardware.reset;
 using fuchsia.hardware.powerdomain;
@@ -14,7 +13,7 @@ using fuchsia.gpio;
 using fuchsia.hardware.gpio;
 
 primary parent "pdev" {
-  fuchsia.devicetree.FIRST_COMPATIBLE == "google,spi";
+  fuchsia.COMPATIBLE == "google,spi";
 }
 
 parent "clock-bus" {

@@ -22,7 +22,6 @@ fuchsia_driver_bind_bytecode(
     deps = [
         "@fuchsia_sdk//bind/fuchsia",
         "@fuchsia_sdk//bind/fuchsia.clock",
-        "@fuchsia_sdk//bind/fuchsia.devicetree",
         "@fuchsia_sdk//bind/fuchsia.gpio",
         "@fuchsia_sdk//fidl/fuchsia.hardware.clock:fuchsia.hardware.clock_bindlib",
         "@fuchsia_sdk//fidl/fuchsia.hardware.pin:fuchsia.hardware.pin_bindlib",

@@ -11,9 +11,9 @@ driver_bind_rules("aml-trip-bind") {
   bind_output = "aml-trip.bindbc"
   tests = "meta/aml-trip-bind-test.json"
   deps = [
+    "//src/devices/bind/fuchsia",
     "//src/devices/bind/fuchsia.amlogic.platform",
     "//src/devices/bind/fuchsia.clock",
-    "//src/devices/bind/fuchsia.devicetree",
     "//src/devices/bind/fuchsia.platform",
   ]
 }

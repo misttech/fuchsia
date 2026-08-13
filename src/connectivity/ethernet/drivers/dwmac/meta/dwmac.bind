@@ -10,7 +10,7 @@ primary parent "eth-board" {
 }
 
 parent "pdev" {
-  if fuchsia.devicetree.FIRST_COMPATIBLE == "amlogic,meson-g12a-dwmac" {
+  if fuchsia.COMPATIBLE == "amlogic,meson-g12a-dwmac" {
     true;
   } else {
     fuchsia.BIND_PROTOCOL == fuchsia.platform.BIND_PROTOCOL.DEVICE;

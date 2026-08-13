@@ -23,7 +23,7 @@ parent "gpio-reset" {
 
 optional parent "pdev" {
   fuchsia.BIND_PLATFORM_DEV_VID == fuchsia.platform.BIND_PLATFORM_DEV_VID.GENERIC;
-  accept fuchsia.devicetree.FIRST_COMPATIBLE {
+  accept fuchsia.COMPATIBLE {
     "goodix,gt92xx",
   }
 }

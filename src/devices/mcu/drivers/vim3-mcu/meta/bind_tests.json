@@ -23,7 +23,7 @@
                 "name": "Match devicetree",
                 "expected": "match",
                 "device": {
-                    "fuchsia.devicetree.FIRST_COMPATIBLE": "\"khadas,vim3-mcu\""
+                    "fuchsia.COMPATIBLE": "\"khadas,vim3-mcu\""
                 }
             }
         ]

@@ -11,10 +11,9 @@ using fuchsia.hardware.gpio;
 using fuchsia.gpio;
 using fuchsia.platform;
 using fuchsia.amlogic.platform;
-using fuchsia.devicetree;
 
 primary parent "pdev" {
-  if fuchsia.devicetree.FIRST_COMPATIBLE == "amlogic,display" {
+  if fuchsia.COMPATIBLE == "amlogic,display" {
     true;
   } else {
     fuchsia.BIND_PROTOCOL == fuchsia.platform.BIND_PROTOCOL.DEVICE;

@@ -4,15 +4,16 @@
 
 composite aml_tdm_dai;
 
+using fuchsia;
+
 using fuchsia.hardware.pin;
 using fuchsia.amlogic.platform;
 using fuchsia.clock;
-using fuchsia.devicetree;
 using fuchsia.gpio;
 using fuchsia.platform;
 
 primary parent "pdev" {
-  if fuchsia.devicetree.FIRST_COMPATIBLE == "amlogic,t931-audio-dai" {
+  if fuchsia.COMPATIBLE == "amlogic,t931-audio-dai" {
     true;
   } else {
     fuchsia.BIND_PROTOCOL == fuchsia.platform.BIND_PROTOCOL.DEVICE;

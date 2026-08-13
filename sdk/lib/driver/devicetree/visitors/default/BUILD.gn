@@ -23,8 +23,10 @@ sdk_source_set("default") {
   public = [ "default.h" ]
   include_base = "//sdk"
 
-  non_sdk_deps =
-      [ "//src/devices/bind/fuchsia.devicetree:fuchsia.devicetree_cpp" ]
+  non_sdk_deps = [
+    "//src/devices/bind/fuchsia:fuchsia_cpp",
+    "//src/devices/bind/fuchsia.devicetree:fuchsia.devicetree_cpp",
+  ]
 
   deps = [
     "bind-property",
@@ -35,6 +37,7 @@ sdk_source_set("default") {
     "mmio",
     "smc",
     "//sdk/lib/driver/logging/cpp",
+    "//src/devices/bind/fuchsia",
     "//src/devices/bind/fuchsia.devicetree",
   ]
 

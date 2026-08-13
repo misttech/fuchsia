@@ -22,7 +22,7 @@ fuchsia_driver_bind_bytecode(
     output = "example-board-bind.bindbc",
     rules = "meta/example-board.bind",
     deps = [
-        "@fuchsia_sdk//bind/fuchsia.devicetree",
+        "@fuchsia_sdk//bind/fuchsia",
         "@fuchsia_sdk//bind/fuchsia.test.platform",
         "@fuchsia_sdk//fidl/fuchsia.hardware.platform.bus:fuchsia.hardware.platform.bus_bindlib",
     ],

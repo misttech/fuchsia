@@ -7,7 +7,7 @@ composite vim3_clk;
 primary parent "pdev" {
   if fuchsia.BIND_PLATFORM_DEV_VID == fuchsia.platform.BIND_PLATFORM_DEV_VID.GENERIC {
     fuchsia.BIND_PLATFORM_DEV_DID == fuchsia.platform.BIND_PLATFORM_DEV_DID.DEVICETREE;
-    fuchsia.devicetree.FIRST_COMPATIBLE == "amlogic,g12b-clk";
+    fuchsia.COMPATIBLE == "amlogic,g12b-clk";
   } else {
     // Parent must publish the platform device protocol.
     fuchsia.BIND_PROTOCOL == fuchsia.platform.BIND_PROTOCOL.DEVICE;

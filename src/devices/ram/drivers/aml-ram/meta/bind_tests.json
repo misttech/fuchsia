@@ -53,7 +53,7 @@
                 "device": {
                     "fuchsia.BIND_PROTOCOL": "fuchsia.platform.BIND_PROTOCOL.DEVICE",
                     "fuchsia.BIND_PLATFORM_DEV_VID": "fuchsia.platform.BIND_PLATFORM_DEV_VID.GENERIC",
-                    "fuchsia.devicetree.FIRST_COMPATIBLE": "\"amlogic,ram-ctl\""
+                    "fuchsia.COMPATIBLE": "\"amlogic,ram-ctl\""
                 },
                 "expected": "match",
                 "name": "DevicetreeMatch"
@@ -62,7 +62,7 @@
                 "device": {
                     "fuchsia.BIND_PROTOCOL": "fuchsia.platform.BIND_PROTOCOL.DEVICE",
                     "fuchsia.BIND_PLATFORM_DEV_VID": "fuchsia.platform.BIND_PLATFORM_DEV_VID.GENERIC",
-                    "fuchsia.devicetree.FIRST_COMPATIBLE": "\"amlogic,wrong-ram-ctl\""
+                    "fuchsia.COMPATIBLE": "\"amlogic,wrong-ram-ctl\""
                 },
                 "expected": "abort",
                 "name": "DevicetreeWrongCompatible"

@@ -10,7 +10,7 @@
         "name": "Match devicetree",
         "expected": "match",
         "device": {
-            "fuchsia.devicetree.FIRST_COMPATIBLE": "\"generic,suspend\""
+            "fuchsia.COMPATIBLE": "\"generic,suspend\""
         }
     }
 ]

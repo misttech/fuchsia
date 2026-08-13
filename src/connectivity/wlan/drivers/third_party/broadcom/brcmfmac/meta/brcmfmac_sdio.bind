@@ -4,6 +4,8 @@
 
 composite brcmfmac_sdio;
 
+using fuchsia;
+
 using fuchsia.hardware.pin;
 using fuchsia.hardware.pin;
 using fuchsia.broadcom.platform;
@@ -11,7 +13,6 @@ using fuchsia.gpio;
 using fuchsia.hardware.gpio;
 using fuchsia.hardware.sdio;
 using fuchsia.platform;
-using fuchsia.devicetree;
 
 primary parent "sdio-function-1" {
   fuchsia.hardware.sdio.Service == fuchsia.hardware.sdio.Service.ZirconTransport;
@@ -28,7 +29,7 @@ parent "gpio-oob" {
 }
 
 parent "pdev" {
-  if fuchsia.devicetree.FIRST_COMPATIBLE == "broadcom,bcm4359" {
+  if fuchsia.COMPATIBLE == "broadcom,bcm4359" {
     true;
   } else {
     fuchsia.BIND_PROTOCOL == fuchsia.platform.BIND_PROTOCOL.DEVICE;

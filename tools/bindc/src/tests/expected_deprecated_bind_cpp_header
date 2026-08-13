@@ -18,6 +18,8 @@ static const char PROTOCOL[] = "fuchsia.BIND_PROTOCOL";
 
 static const char NAME[] = "fuchsia.NAME";
 
+static const char COMPATIBLE[] = "fuchsia.COMPATIBLE";
+
 static const char ID[] = "fuchsia.ID";
 
 static const char AUTOBIND[] = "fuchsia.BIND_AUTOBIND";

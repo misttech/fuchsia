@@ -4,19 +4,20 @@
 
 composite aml_pwm_regulator;
 
+using fuchsia;
+
 using fuchsia.hardware.pin;
 using fuchsia.gpio;
 using fuchsia.platform;
 using fuchsia.hardware.pwm;
 using fuchsia.pwm;
-using fuchsia.devicetree;
 
 primary parent "pwm" {
     fuchsia.hardware.pwm.Service == fuchsia.hardware.pwm.Service.ZirconTransport;
 }
 
 parent "pdev" {
-  if fuchsia.devicetree.FIRST_COMPATIBLE == "amlogic,pwm-regulator" {
+  if fuchsia.COMPATIBLE == "amlogic,pwm-regulator" {
     true;
   } else {
     fuchsia.BIND_PROTOCOL == fuchsia.platform.BIND_PROTOCOL.DEVICE;

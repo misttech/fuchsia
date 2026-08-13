@@ -14,7 +14,7 @@ primary parent "gpio-cs-0" {
 }
 
 parent "pdev" {
-  if fuchsia.devicetree.FIRST_COMPATIBLE == "amlogic,g12a-spi" {
+  if fuchsia.COMPATIBLE == "amlogic,g12a-spi" {
     true;
   } else {
     fuchsia.BIND_PROTOCOL == fuchsia.platform.BIND_PROTOCOL.DEVICE;

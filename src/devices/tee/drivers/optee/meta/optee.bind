@@ -7,7 +7,7 @@ composite tee;
 
 primary parent "pdev" {
   if fuchsia.BIND_PLATFORM_DEV_DID == fuchsia.platform.BIND_PLATFORM_DEV_DID.DEVICETREE {
-    fuchsia.devicetree.FIRST_COMPATIBLE == "amlogic,optee";
+    fuchsia.COMPATIBLE == "amlogic,optee";
   } else {
     fuchsia.BIND_PROTOCOL == fuchsia.platform.BIND_PROTOCOL.DEVICE;
     fuchsia.BIND_PLATFORM_DEV_VID == fuchsia.platform.BIND_PLATFORM_DEV_VID.GENERIC;

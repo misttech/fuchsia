@@ -23,7 +23,7 @@
                 "name": "Aml Mipi Devicetree",
                 "expected": "match",
                 "device": {
-                    "fuchsia.devicetree.FIRST_COMPATIBLE": "\"amlogic,mipi-csi2\""
+                    "fuchsia.COMPATIBLE": "\"amlogic,mipi-csi2\""
                 }
             }
         ]

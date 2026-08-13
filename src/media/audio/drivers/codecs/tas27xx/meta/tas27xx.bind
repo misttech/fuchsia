@@ -30,7 +30,7 @@ parent "pdev" {
     fuchsia.BIND_PROTOCOL == fuchsia.platform.BIND_PROTOCOL.DEVICE;
     fuchsia.BIND_PLATFORM_DEV_DID == fuchsia.ti.platform.BIND_PLATFORM_DEV_DID.TAS2770;
   } else {
-    fuchsia.devicetree.FIRST_COMPATIBLE == "ti,tas2770";
+    fuchsia.COMPATIBLE == "ti,tas2770";
   }
 }
 

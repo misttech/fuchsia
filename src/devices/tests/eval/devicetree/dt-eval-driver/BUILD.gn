@@ -8,7 +8,7 @@ import("//build/drivers.gni")
 driver_bind_rules("dt-eval-driver-bind") {
   testonly = true
   rules = "meta/dt-eval-driver.bind"
-  deps = [ "//src/devices/bind/fuchsia.devicetree" ]
+  deps = [ "//src/devices/bind/fuchsia" ]
 }
 
 fuchsia_rust_driver("dt-eval-driver-driver") {

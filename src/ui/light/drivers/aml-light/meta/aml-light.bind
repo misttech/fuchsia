@@ -12,10 +12,9 @@ using fuchsia.hardware.gpio;
 using fuchsia.hardware.pwm;
 using fuchsia.platform;
 using fuchsia.pwm;
-using fuchsia.devicetree;
 
 primary parent "pdev" {
-  if fuchsia.devicetree.FIRST_COMPATIBLE == "amlogic,aml-light" {
+  if fuchsia.COMPATIBLE == "amlogic,aml-light" {
     true;
   } else {
     fuchsia.BIND_PROTOCOL == fuchsia.platform.BIND_PROTOCOL.DEVICE;

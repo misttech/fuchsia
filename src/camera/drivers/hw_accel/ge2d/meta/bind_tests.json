@@ -40,7 +40,7 @@
                 "name": "Devicetree Match",
                 "expected": "match",
                 "device": {
-                    "fuchsia.devicetree.FIRST_COMPATIBLE": "\"amlogic,ge2d\""
+                    "fuchsia.COMPATIBLE": "\"amlogic,ge2d\""
                 }
             }
         ]

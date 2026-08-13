@@ -5,5 +5,5 @@
 composite mali_csf;
 
 primary parent "pdev" {
-  fuchsia.devicetree.FIRST_COMPATIBLE == "arm,mali-valhall";
+  fuchsia.COMPATIBLE == "arm,mali-valhall";
 }

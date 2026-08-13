@@ -17,7 +17,7 @@
                 "name": "Match devicetree",
                 "expected": "match",
                 "device": {
-                    "fuchsia.devicetree.FIRST_COMPATIBLE": "\"amlogic,ethernet-phy\""
+                    "fuchsia.COMPATIBLE": "\"amlogic,ethernet-phy\""
                 }
             }
         ]

@@ -50,8 +50,8 @@ fuchsia_driver_bind_bytecode(
     output = "adc-buttons.bindbc",
     rules = "meta/adc-buttons.bind",
     deps = [
+        "@fuchsia_sdk//bind/fuchsia",
         "@fuchsia_sdk//bind/fuchsia.adc",
-        "@fuchsia_sdk//bind/fuchsia.devicetree",
         "@fuchsia_sdk//bind/fuchsia.platform",
         "@fuchsia_sdk//fidl/fuchsia.hardware.adc:fuchsia.hardware.adc_bindlib",
     ],

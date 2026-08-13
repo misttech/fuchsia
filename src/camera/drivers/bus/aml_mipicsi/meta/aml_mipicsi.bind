@@ -5,7 +5,7 @@
 composite aml_mipi;
 
 primary parent "pdev" {
-  if fuchsia.devicetree.FIRST_COMPATIBLE == "amlogic,mipi-csi2" {
+  if fuchsia.COMPATIBLE == "amlogic,mipi-csi2" {
     true;
   } else {
     fuchsia.BIND_PROTOCOL == fuchsia.platform.BIND_PROTOCOL.DEVICE;

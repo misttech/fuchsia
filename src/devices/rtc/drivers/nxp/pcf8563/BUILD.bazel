@@ -29,7 +29,6 @@ fuchsia_driver_bind_bytecode(
     rules = "pcf8563.bind",
     deps = [
         "@fuchsia_sdk//bind/fuchsia",
-        "@fuchsia_sdk//bind/fuchsia.devicetree",
         "@fuchsia_sdk//fidl/fuchsia.hardware.i2c:fuchsia.hardware.i2c_bindlib",
     ],
 )

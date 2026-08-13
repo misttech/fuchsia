@@ -109,11 +109,10 @@ TEST_F(ManagerTest, TestPublishesSimpleNode) {
   ASSERT_TRUE(!board_child_node_0.properties.empty());
 
   ASSERT_TRUE(testing::CheckHasProperties(
-      {{{
-          .key = std::string(bind_fuchsia_devicetree::FIRST_COMPATIBLE),
-          .value =
-              fuchsia_driver_framework::NodePropertyValue::WithStringValue("fuchsia,sample-dt"),
-      }}},
+      {
+          fdf::MakeProperty2(bind_fuchsia::COMPATIBLE, "fuchsia,sample-dt"),
+          fdf::MakeProperty2(bind_fuchsia_devicetree::FIRST_COMPATIBLE, "fuchsia,sample-dt"),
+      },
       board_child_node_0.properties, false));
 
   auto board_child_node_1 = publisher()->GetBoardChildNodes()[1];
@@ -122,11 +121,10 @@ TEST_F(ManagerTest, TestPublishesSimpleNode) {
   ASSERT_TRUE(!board_child_node_1.properties.empty());
 
   ASSERT_TRUE(testing::CheckHasProperties(
-      {{{
-          .key = std::string(bind_fuchsia_devicetree::FIRST_COMPATIBLE),
-          .value =
-              fuchsia_driver_framework::NodePropertyValue::WithStringValue("fuchsia,sample-device"),
-      }}},
+      {
+          fdf::MakeProperty2(bind_fuchsia::COMPATIBLE, "fuchsia,sample-device"),
+          fdf::MakeProperty2(bind_fuchsia_devicetree::FIRST_COMPATIBLE, "fuchsia,sample-device"),
+      },
       board_child_node_1.properties, false));
 }
 
@@ -471,12 +469,22 @@ TEST_F(ManagerTest, TestBoardChildCompositeSpec) {
   ASSERT_TRUE(mgr_request.parents2().has_value());
   ASSERT_EQ(2lu, mgr_request.parents2()->size());
 
+  EXPECT_TRUE(testing::CheckHasProperties(
+      {{
+          fdf::MakeProperty2(bind_fuchsia::COMPATIBLE, SAMPLE_DEVICE_COMPATIBILITY),
+      }},
+      (*mgr_request.parents2())[0].properties(), true));
   EXPECT_TRUE(
       testing::CheckHasProperties({{
                                       fdf::MakeProperty2(bind_fuchsia_devicetree::FIRST_COMPATIBLE,
                                                          SAMPLE_DEVICE_COMPATIBILITY),
                                   }},
                                   (*mgr_request.parents2())[0].properties(), true));
+  EXPECT_TRUE(testing::CheckHasBindRules(
+      {
+          fdf::MakeAcceptBindRule(bind_fuchsia::COMPATIBLE, SAMPLE_DEVICE_COMPATIBILITY),
+      },
+      (*mgr_request.parents2())[0].bind_rules(), true));
   EXPECT_TRUE(testing::CheckHasBindRules(
       {
           fdf::MakeAcceptBindRule(bind_fuchsia_devicetree::FIRST_COMPATIBLE,

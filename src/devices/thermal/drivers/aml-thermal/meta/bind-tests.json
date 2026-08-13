@@ -124,7 +124,7 @@
             },
             {
                 "device": {
-                    "fuchsia.devicetree.FIRST_COMPATIBLE": "\"amlogic,g12a-thermal\""
+                    "fuchsia.COMPATIBLE": "\"amlogic,g12a-thermal\""
                 },
                 "expected": "match",
                 "name": "SuccessDevicetree"

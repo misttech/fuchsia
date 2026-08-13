@@ -16,6 +16,6 @@ parent "pdev" {
     fuchsia.BIND_PLATFORM_DEV_DID == fuchsia.ti.platform.BIND_PLATFORM_DEV_DID.BACKLIGHT;
   } else {
     fuchsia.BIND_PLATFORM_DEV_VID == fuchsia.platform.BIND_PLATFORM_DEV_VID.GENERIC;
-    fuchsia.devicetree.FIRST_COMPATIBLE == "ti,lp8556";
+    fuchsia.COMPATIBLE == "ti,lp8556";
   }
 }

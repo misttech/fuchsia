@@ -29,7 +29,7 @@
                 "expected": "match",
                 "device": {
                     "fuchsia.BIND_PLATFORM_DEV_DID": "fuchsia.platform.BIND_PLATFORM_DEV_DID.DEVICETREE",
-                    "fuchsia.devicetree.FIRST_COMPATIBLE": "\"arm,mali-gpu\"",
+                    "fuchsia.COMPATIBLE": "\"arm,mali-gpu\"",
                     "fuchsia.Service": "\"fuchsia.hardware.platform.device.Service\""
                 }
             }

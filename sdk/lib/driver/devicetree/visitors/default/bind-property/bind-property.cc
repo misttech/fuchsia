@@ -7,6 +7,7 @@
 #include <lib/driver/logging/cpp/logger.h>
 #include <zircon/status.h>
 
+#include <bind/fuchsia/cpp/bind.h>
 #include <bind/fuchsia/devicetree/cpp/bind.h>
 
 namespace fdf {
@@ -32,12 +33,15 @@ zx::result<> BindPropertyVisitor::Visit(Node& node, const devicetree::PropertyDe
     return zx::ok();
   }
 
-  fdf::NodeProperty2 prop(bind_fuchsia_devicetree::FIRST_COMPATIBLE,
+  fdf::NodeProperty2 prop(bind_fuchsia::COMPATIBLE,
                           fdf::NodePropertyValue::WithStringValue(compatible->front()));
+  node.AddBindProperty(std::move(prop));
+
+  fdf::NodeProperty2 legacy_prop(bind_fuchsia_devicetree::FIRST_COMPATIBLE,
+                                 fdf::NodePropertyValue::WithStringValue(compatible->front()));
+  node.AddBindProperty(std::move(legacy_prop));
 
   fdf::debug("Added property {} to node '{}'", compatible->front(), node.name());
-
-  node.AddBindProperty(std::move(prop));
 
   return zx::ok();
 }

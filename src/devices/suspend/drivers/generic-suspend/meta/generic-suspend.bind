@@ -7,7 +7,7 @@ composite generic_suspend;
 
 primary parent "pdev" {
     // TODO(b/374801168): Remove `amlogic,suspend` once the drive is soft transitioned.
-    accept fuchsia.devicetree.FIRST_COMPATIBLE {
+    accept fuchsia.COMPATIBLE {
         "generic,suspend",
         "amlogic,suspend",
     }

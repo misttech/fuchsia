@@ -18,7 +18,7 @@ parent "gpio" {
 parent "pdev" {
   fuchsia.BIND_PLATFORM_DEV_VID == fuchsia.platform.BIND_PLATFORM_DEV_VID.GENERIC;
   if fuchsia.BIND_PLATFORM_DEV_DID == fuchsia.platform.BIND_PLATFORM_DEV_DID.DEVICETREE {
-    fuchsia.devicetree.FIRST_COMPATIBLE == "ams,tcs3400";
+    fuchsia.COMPATIBLE == "ams,tcs3400";
   } else {
     fuchsia.BIND_PLATFORM_DEV_DID == fuchsia.platform.BIND_PLATFORM_DEV_DID.TCS3400_LIGHT;
   }

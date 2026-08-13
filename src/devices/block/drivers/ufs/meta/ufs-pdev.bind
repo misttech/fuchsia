@@ -7,7 +7,7 @@ composite ufs_pdev;
 using fuchsia;
 
 primary parent "pdev" {
-  fuchsia.devicetree.FIRST_COMPATIBLE == "google,ufshc";
+  fuchsia.COMPATIBLE == "google,ufshc";
 }
 
 parent "phy" {

@@ -23,7 +23,6 @@ driver_bind_rules("amlogic_video_bind") {
     "//src/devices/bind/fuchsia",
     "//src/devices/bind/fuchsia.amlogic.platform",
     "//src/devices/bind/fuchsia.clock",
-    "//src/devices/bind/fuchsia.devicetree",
     "//src/devices/bind/fuchsia.platform",
   ]
 }
@@ -40,7 +39,6 @@ driver_bind_rules("amlogic_video_test_bind") {
     "//src/devices/bind/fuchsia",
     "//src/devices/bind/fuchsia.amlogic.platform",
     "//src/devices/bind/fuchsia.clock",
-    "//src/devices/bind/fuchsia.devicetree",
     "//src/devices/bind/fuchsia.platform",
   ]
 }
@@ -185,7 +183,6 @@ if (target_cpu == "arm64") {
       "//sdk/lib/driver/platform-device/cpp",
       "//sdk/lib/fdio",
       "//src/devices/bind/fuchsia:fuchsia_cpp",
-      "//src/devices/bind/fuchsia.devicetree:fuchsia.devicetree_cpp",
       "//src/devices/bind/fuchsia.platform:fuchsia.platform_cpp",
       "//src/lib/ddktl",
       "//src/lib/metrics_buffer",

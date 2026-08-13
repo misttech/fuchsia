@@ -14,7 +14,7 @@ primary parent "mali" {
 
 parent "pdev" {
   fuchsia.Service == "fuchsia.hardware.platform.device.Service";
-  if fuchsia.devicetree.FIRST_COMPATIBLE == "arm,mali-gpu" {
+  if fuchsia.COMPATIBLE == "arm,mali-gpu" {
       true;
   } else if fuchsia.BIND_PROTOCOL == fuchsia.platform.BIND_PROTOCOL.DEVICE {
       fuchsia.BIND_PLATFORM_DEV_VID == fuchsia.arm.platform.BIND_PLATFORM_DEV_VID.ARM;

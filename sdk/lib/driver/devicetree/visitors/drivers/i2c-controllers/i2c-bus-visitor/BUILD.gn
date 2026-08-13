@@ -32,7 +32,6 @@ devicetree_visitor("i2c-bus-visitor") {
   ]
   non_sdk_deps = [
     "//src/devices/bind/fuchsia:fuchsia_cpp",
-    "//src/devices/bind/fuchsia.devicetree:fuchsia.devicetree_cpp",
     "//src/lib/ddk",
   ]
 }

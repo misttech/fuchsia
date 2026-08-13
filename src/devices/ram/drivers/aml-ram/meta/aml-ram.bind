@@ -17,6 +17,6 @@ primary parent "pdev" {
     }
   } else {
     fuchsia.BIND_PLATFORM_DEV_VID == fuchsia.platform.BIND_PLATFORM_DEV_VID.GENERIC;
-    fuchsia.devicetree.FIRST_COMPATIBLE == "amlogic,ram-ctl";
+    fuchsia.COMPATIBLE == "amlogic,ram-ctl";
   }
 }

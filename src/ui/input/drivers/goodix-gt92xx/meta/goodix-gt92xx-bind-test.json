@@ -46,7 +46,7 @@
                 "expected": "match",
                 "device": {
                     "fuchsia.BIND_PLATFORM_DEV_VID": "fuchsia.platform.BIND_PLATFORM_DEV_VID.GENERIC",
-                    "fuchsia.devicetree.FIRST_COMPATIBLE": "\"goodix,gt92xx\""
+                    "fuchsia.COMPATIBLE": "\"goodix,gt92xx\""
                 }
             },
             {
@@ -54,7 +54,7 @@
                 "expected": "abort",
                 "device": {
                     "fuchsia.BIND_PLATFORM_DEV_VID": "fuchsia.platform.BIND_PLATFORM_DEV_VID.GENERIC",
-                    "fuchsia.devicetree.FIRST_COMPATIBLE": "\"goodix,wrong-gt92xx\""
+                    "fuchsia.COMPATIBLE": "\"goodix,wrong-gt92xx\""
                 }
             }
         ]

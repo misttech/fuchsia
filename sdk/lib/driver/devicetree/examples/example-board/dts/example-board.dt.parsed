@@ -25,6 +25,7 @@ platform_bus_nodes {
       id = "example-metadata"
       data = [ <binary> size: 4 bytes ]
     }
+    property { fuchsia.COMPATIBLE = "fuchsia,sample-device" }
     property { fuchsia.devicetree.FIRST_COMPATIBLE = "fuchsia,sample-device" }
   }
 
@@ -36,6 +37,7 @@ platform_bus_nodes {
       iommu_id = 2
       bti_id = 2
     }
+    property { fuchsia.COMPATIBLE = "fuchsia,sample-bti-device" }
     property { fuchsia.devicetree.FIRST_COMPATIBLE = "fuchsia,sample-bti-device" }
   }
 
@@ -44,6 +46,7 @@ platform_bus_nodes {
 board_child_nodes {
   "dt-root" {
     bus_info = { bus: 3 }
+    property { fuchsia.COMPATIBLE = "fuchsia,sample-dt" }
     property { fuchsia.devicetree.FIRST_COMPATIBLE = "fuchsia,sample-dt" }
   }
 
@@ -53,9 +56,11 @@ composite_node_specs {
   "dt-root" {
     parent {
       bind_rules {
+        Accept(fuchsia.COMPATIBLE, ["fuchsia,sample-dt"])
         Accept(fuchsia.devicetree.FIRST_COMPATIBLE, ["fuchsia,sample-dt"])
       }
       properties {
+        property { fuchsia.COMPATIBLE = "fuchsia,sample-dt" }
         property { fuchsia.devicetree.FIRST_COMPATIBLE = "fuchsia,sample-dt" }
       }
     }
@@ -70,6 +75,7 @@ composite_node_specs {
         Accept(fuchsia.BIND_PLATFORM_DEV_INSTANCE_ID, [1])
       }
       properties {
+        property { fuchsia.COMPATIBLE = "fuchsia,sample-device" }
         property { fuchsia.devicetree.FIRST_COMPATIBLE = "fuchsia,sample-device" }
         property { fuchsia.BIND_PROTOCOL = PDEV (85) }
         property { fuchsia.BIND_PLATFORM_DEV_VID = GENERIC (0) }
@@ -90,6 +96,7 @@ composite_node_specs {
         Accept(fuchsia.BIND_PLATFORM_DEV_INSTANCE_ID, [3])
       }
       properties {
+        property { fuchsia.COMPATIBLE = "fuchsia,sample-bti-device" }
         property { fuchsia.devicetree.FIRST_COMPATIBLE = "fuchsia,sample-bti-device" }
         property { fuchsia.BIND_PROTOCOL = PDEV (85) }
         property { fuchsia.BIND_PLATFORM_DEV_VID = GENERIC (0) }

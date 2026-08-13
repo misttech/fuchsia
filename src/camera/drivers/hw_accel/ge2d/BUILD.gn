@@ -20,9 +20,9 @@ driver_bind_rules("ge2d_bind") {
   tests = "meta/bind_tests.json"
   deps = [
     "//sdk/fidl/fuchsia.hardware.amlogiccanvas:fuchsia.hardware.amlogiccanvas_bindlib",
+    "//src/devices/bind/fuchsia",
     "//src/devices/bind/fuchsia.amlogic.platform",
     "//src/devices/bind/fuchsia.camera",
-    "//src/devices/bind/fuchsia.devicetree",
     "//src/devices/bind/fuchsia.platform",
   ]
 }

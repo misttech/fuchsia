@@ -4,15 +4,16 @@
 
 composite aml_eth;
 
+using fuchsia;
+
 using fuchsia.hardware.pin;
 using fuchsia.amlogic.platform;
 using fuchsia.gpio;
 using fuchsia.hardware.gpio;
 using fuchsia.platform;
-using fuchsia.devicetree;
 
 primary parent "pdev" {
-  if fuchsia.devicetree.FIRST_COMPATIBLE == "amlogic,ethernet-phy" {
+  if fuchsia.COMPATIBLE == "amlogic,ethernet-phy" {
     true;
   } else {
     fuchsia.BIND_PROTOCOL == fuchsia.platform.BIND_PROTOCOL.DEVICE;

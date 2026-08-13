@@ -28,7 +28,7 @@
                 "name": "Devicetree Match",
                 "expected": "match",
                 "device": {
-                    "fuchsia.devicetree.FIRST_COMPATIBLE": "\"arm,mali-gdc\""
+                    "fuchsia.COMPATIBLE": "\"arm,mali-gdc\""
                 }
             }
         ]

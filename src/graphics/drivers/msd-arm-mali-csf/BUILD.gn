@@ -15,7 +15,7 @@ declare_args() {
 
 driver_bind_rules("bind") {
   rules = "meta/driver.bind"
-  deps = [ "//src/devices/bind/fuchsia.devicetree" ]
+  deps = [ "//src/devices/bind/fuchsia" ]
 }
 
 fuchsia_rust_driver("driver") {

@@ -5,7 +5,7 @@
 composite aml_thermal;
 
 primary parent "pdev" {
-  if fuchsia.devicetree.FIRST_COMPATIBLE == "amlogic,g12a-thermal" {
+  if fuchsia.COMPATIBLE == "amlogic,g12a-thermal" {
     true;
   } else {
     fuchsia.BIND_PROTOCOL == fuchsia.platform.BIND_PROTOCOL.DEVICE;

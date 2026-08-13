@@ -75,7 +75,7 @@
                 "name": "DevicetreeMatch",
                 "device": {
                     "fuchsia.BIND_PLATFORM_DEV_DID": "fuchsia.platform.BIND_PLATFORM_DEV_DID.DEVICETREE",
-                    "fuchsia.devicetree.FIRST_COMPATIBLE": "\"amlogic,meson-g12a-raw-nand\""
+                    "fuchsia.COMPATIBLE": "\"amlogic,meson-g12a-raw-nand\""
                 }
             }
         ]
@@ -88,7 +88,7 @@
                 "name": "DevicetreeWrongCompatible",
                 "device": {
                     "fuchsia.BIND_PLATFORM_DEV_DID": "fuchsia.platform.BIND_PLATFORM_DEV_DID.DEVICETREE",
-                    "fuchsia.devicetree.FIRST_COMPATIBLE": "\"amlogic,meson-g12a-wrong\""
+                    "fuchsia.COMPATIBLE": "\"amlogic,meson-g12a-wrong\""
                 }
             }
         ]

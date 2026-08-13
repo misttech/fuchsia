@@ -14,7 +14,7 @@ parent "pdev" {
     fuchsia.BIND_PLATFORM_DEV_PID == fuchsia.platform.BIND_PLATFORM_DEV_PID.GENERIC;
     fuchsia.BIND_PLATFORM_DEV_DID == fuchsia.ti.platform.BIND_PLATFORM_DEV_DID.TAS5720;
   } else {
-    fuchsia.devicetree.FIRST_COMPATIBLE == "ti,tas5720";
+    fuchsia.COMPATIBLE == "ti,tas5720";
   }
 }
 

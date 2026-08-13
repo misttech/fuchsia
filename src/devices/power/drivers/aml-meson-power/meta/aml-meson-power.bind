@@ -8,7 +8,7 @@ using fuchsia;
 
 
 primary parent "pdev" {
-  if fuchsia.devicetree.FIRST_COMPATIBLE == "amlogic,power" {
+  if fuchsia.COMPATIBLE == "amlogic,power" {
     true;
   } else {
     fuchsia.BIND_PLATFORM_DEV_DID == fuchsia.amlogic.platform.BIND_PLATFORM_DEV_DID.POWER;

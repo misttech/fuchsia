@@ -18,7 +18,6 @@ driver_bind_rules("dwc3_bind") {
     "//src/devices/bind/fuchsia",
     "//src/devices/bind/fuchsia.clock",
     "//src/devices/bind/fuchsia.designware.platform",
-    "//src/devices/bind/fuchsia.devicetree",
     "//src/devices/bind/fuchsia.platform",
     "//src/devices/bind/fuchsia.reset",
   ]

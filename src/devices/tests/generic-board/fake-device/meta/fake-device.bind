@@ -9,7 +9,7 @@ composite fake_device;
 using fuchsia;
 
 primary parent "pdev" {
-  fuchsia.devicetree.FIRST_COMPATIBLE == "fake,device";
+  fuchsia.COMPATIBLE == "fake,device";
   fuchsia.Service == "fuchsia.hardware.platform.device.Service";
 }
 
