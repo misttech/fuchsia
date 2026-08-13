@@ -339,7 +339,7 @@ in args.gn.
 
 **Current value (from the default):** `[]`
 
-From //build/bazel/bazel_root_targets_list.gni:128
+From //build/bazel/bazel_root_targets_list.gni:129
 
 ### bazel_upload_build_events
 
@@ -946,12 +946,12 @@ This should never be set as a build argument.
 }
   static = {
   clang_rt = "lib/clang/24/lib/armv7-unknown-linux-gnueabihf/libclang_rt.lsan.a"
-  clang_rt_cxx = "../../../../out/not-default/libclang_rt.lsan_cxx.a"
+  clang_rt_cxx = ""
 }
 }
   tsan = {
   shared = {
-  clang_rt = ""
+  clang_rt = "../../../../out/not-default/libclang_rt.tsan.so"
 }
   static = {
   clang_rt = "../../../../out/not-default/libclang_rt.tsan.a"
@@ -2058,6 +2058,7 @@ From //build/config/compiler.gni:82
   bazel = "{{BAZEL_TARGET_OUT_DIR}}/orchestrate_/orchestrate"
   ninja = "orchestrate"
 }]
+  install_host_tool = true
 }, {
   bazel_label = "//build/beads/.agent/skills/migrating_host_tool_to_bazel/examples/go/after:go_example_bin_migrated"
   copy_outputs = [{
@@ -2328,7 +2329,7 @@ From //build/config/compiler.gni:82
 }]
 ```
 
-From //build/bazel/bazel_root_targets_list.gni:65
+From //build/bazel/bazel_root_targets_list.gni:66
 
 ### default_configs
 
@@ -9029,6 +9030,7 @@ This is a separate because they can be cross-compiled on SDK builders.
   bazel = "{{BAZEL_TARGET_OUT_DIR}}/orchestrate_/orchestrate"
   ninja = "orchestrate"
 }]
+  install_host_tool = true
 }]
 ```
 
