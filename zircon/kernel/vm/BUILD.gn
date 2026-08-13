@@ -893,6 +893,7 @@ kernel_rust_mod("vm-rs-unittests") {
   ]
   deps = [
     ":test-helper-bindings",
+    "//sdk/rust/zx-types",
     "//zircon/kernel/lib/debug",
     "//zircon/system/ulib/fbl/rust:fbl",
   ]

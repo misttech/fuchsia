@@ -8,6 +8,7 @@
 #[cfg(ktest)]
 #[unittest::suite]
 mod vmo_rs {
+    use crate::kernel::types::PAddr;
     use crate::vm::arch_vm_aspace::ARCH_MMU_FLAG_UNCACHED;
     use crate::vm::page::VmPagePtr;
     use crate::vm::page_source::MultiPageRequest;
@@ -33,6 +34,7 @@ mod vmo_rs {
         expect_true, unwrap_ok,
     };
     use zx_status::Status;
+    use zx_types::ZX_KOID_KERNEL;
 
     const PAGE_SIZE: u64 = PAGE_SIZE_USIZE as u64;
 
@@ -466,6 +468,66 @@ mod vmo_rs {
         }
     }
 
+    /// Tests lookup physical address isolation on COW snapshot clone hierarchies.
+    #[test]
+    fn vmo_lookup_clone_test() {
+        let _scanner_disable = AutoVmScannerDisable::new();
+
+        const PAGE_COUNT: usize = 4;
+        let alloc_size: u64 = PAGE_SIZE * PAGE_COUNT as u64;
+        // vmobject creation
+        let vmo = unwrap_ok!(VmObjectPaged::create(ALLOC_FLAG_ANY, 0, alloc_size));
+
+        vmo.set_user_id(ZX_KOID_KERNEL);
+
+        // Commit the whole original VMO and the first and last page of the clone.
+        // vmobject creation
+        assert_ok!(vmo.commit_range(0, alloc_size));
+
+        // vmobject creation
+        let clone = unwrap_ok!(vmo.create_clone(
+            Resizability::NonResizable,
+            SnapshotType::Full,
+            0,
+            alloc_size,
+            false,
+        ));
+
+        clone.set_user_id(ZX_KOID_KERNEL);
+
+        // vmobject creation
+        assert_ok!(clone.commit_range(0, PAGE_SIZE));
+        // vmobject creation
+        assert_ok!(clone.commit_range(alloc_size - PAGE_SIZE, PAGE_SIZE));
+
+        // Lookup the paddrs for both VMOs.
+        let mut vmo_lookup = [0u64; PAGE_COUNT];
+        let mut clone_lookup = [0u64; PAGE_COUNT];
+        let vmo_lookup_func = |offset, pa: PAddr, vmo_lookup: &mut [u64; PAGE_COUNT]| {
+            vmo_lookup[(offset / PAGE_SIZE) as usize] = pa.into();
+            Err(Status::NEXT)
+        };
+        let clone_lookup_func = |offset, pa: PAddr, clone_lookup: &mut [u64; PAGE_COUNT]| {
+            clone_lookup[(offset / PAGE_SIZE) as usize] = pa.into();
+            Err(Status::NEXT)
+        };
+        // vmo lookup
+        expect_ok!(vmo.lookup(0, alloc_size, &mut vmo_lookup, vmo_lookup_func));
+        // vmo lookup
+        expect_ok!(clone.lookup(0, alloc_size, &mut clone_lookup, clone_lookup_func));
+
+        // The original VMO is now copy-on-write so we should see none of its pages,
+        // and we should only see the two pages that explicitly committed into the clone.
+        for i in 0..PAGE_COUNT {
+            // Bad paddr
+            expect_eq!(0u64, vmo_lookup[i]);
+            if i == 0 || i == PAGE_COUNT - 1 {
+                // Bad paddr
+                expect_true!(clone_lookup[i] != 0);
+            }
+        }
+    }
+
     /// Verifies that accessing a page in a pager-backed VMO promotes its LRU position.
     #[test]
     fn vmo_move_pages_on_access_test() {
@@ -617,6 +679,182 @@ mod vmo_rs {
             expected_attribution_counts = make_private_attribution_counts(0, 0);
             expect_true!(vmo.get_attributed_memory() == expected_attribution_counts);
             expect_true!(verify_continuous_attribution_bytes(&vmo, 0));
+        }
+    }
+
+    /// Tests memory attribution under various operations on contiguous VMOs.
+    #[test]
+    fn vmo_attribution_ops_contiguous_test() {
+        let _scanner_disable = AutoVmScannerDisable::new();
+
+        for is_ppb_enabled in [false, true] {
+            dprintf!(INFO, "is_ppb_enabled: {}\n", u32::from(is_ppb_enabled));
+
+            let _loaning_enabled = ScopedLoaningEnabled::new(is_ppb_enabled);
+
+            let vmo = unwrap_ok!(VmObjectPaged::create_contiguous(
+                pmm::ALLOC_FLAG_ANY,
+                4 * PAGE_SIZE,
+                /*alignment_log2=*/ 0,
+            ));
+
+            let mut expected_attribution_counts = make_private_attribution_counts(4 * PAGE_SIZE, 0);
+            expect_true!(vmo.get_attributed_memory() == expected_attribution_counts);
+            expect_true!(verify_continuous_attribution_bytes(
+                &vmo,
+                attribution::total_bytes(&expected_attribution_counts)
+            ));
+
+            let status = vmo.commit_range(0, 4 * PAGE_SIZE);
+            assert_ok!(status);
+            expect_true!(vmo.get_attributed_memory() == expected_attribution_counts);
+            expect_true!(verify_continuous_attribution_bytes(
+                &vmo,
+                attribution::total_bytes(&expected_attribution_counts)
+            ));
+
+            // Committing the same range again will be a no-op.
+            let status = vmo.commit_range(0, 4 * PAGE_SIZE);
+            assert_ok!(status);
+            expect_true!(vmo.get_attributed_memory() == expected_attribution_counts);
+            expect_true!(verify_continuous_attribution_bytes(
+                &vmo,
+                attribution::total_bytes(&expected_attribution_counts)
+            ));
+
+            let status = vmo.decommit_range(0, 4 * PAGE_SIZE);
+            if !is_ppb_enabled {
+                assert_eq!(Status::result_into_raw(status), Status::NOT_SUPPORTED.into_raw());
+                // No change because DecommitRange() failed (as expected).
+                debug_assert_eq!(
+                    expected_attribution_counts.uncompressed_bytes,
+                    4 * PAGE_SIZE_USIZE
+                );
+            } else {
+                assert_ok!(status);
+                expected_attribution_counts = make_private_attribution_counts(0, 0);
+            }
+            expect_true!(vmo.get_attributed_memory() == expected_attribution_counts);
+            expect_true!(verify_continuous_attribution_bytes(
+                &vmo,
+                attribution::total_bytes(&expected_attribution_counts)
+            ));
+
+            let status = vmo.commit_range(0, 4 * PAGE_SIZE);
+            assert_ok!(status);
+            if !is_ppb_enabled {
+                // expected_attribution_counts don't change because the pages are already present.
+                debug_assert_eq!(
+                    expected_attribution_counts.uncompressed_bytes,
+                    4 * PAGE_SIZE_USIZE
+                );
+            } else {
+                expected_attribution_counts = make_private_attribution_counts(4 * PAGE_SIZE, 0);
+            }
+            expect_true!(vmo.get_attributed_memory() == expected_attribution_counts);
+            expect_true!(verify_continuous_attribution_bytes(
+                &vmo,
+                attribution::total_bytes(&expected_attribution_counts)
+            ));
+
+            let status = vmo.decommit_range(0, 4 * PAGE_SIZE);
+            if !is_ppb_enabled {
+                assert_eq!(Status::result_into_raw(status), Status::NOT_SUPPORTED.into_raw());
+                // and expected_attribution_counts don't change because we're zeroing not
+                // decommitting.
+                debug_assert_eq!(
+                    expected_attribution_counts.uncompressed_bytes,
+                    4 * PAGE_SIZE_USIZE
+                );
+            } else {
+                assert_ok!(status);
+                expected_attribution_counts = make_private_attribution_counts(0, 0);
+            }
+            expect_true!(vmo.get_attributed_memory() == expected_attribution_counts);
+            expect_true!(verify_continuous_attribution_bytes(
+                &vmo,
+                attribution::total_bytes(&expected_attribution_counts)
+            ));
+
+            let mut buf = Vector::<MaybeUninit<u8>>::new();
+            assert_true!(buf.resize_with(2 * PAGE_SIZE_USIZE, MaybeUninit::uninit).is_ok());
+
+            // Read the first two pages. Reading will still cause pages to get committed.
+            let data = unwrap_ok!(vmo.read(0, &mut buf[..2 * PAGE_SIZE_USIZE]));
+            if !is_ppb_enabled {
+                // and expected_attribution_counts don't change because the pages are already
+                // present.
+                debug_assert_eq!(
+                    expected_attribution_counts.uncompressed_bytes,
+                    4 * PAGE_SIZE_USIZE
+                );
+            } else {
+                expected_attribution_counts = make_private_attribution_counts(2 * PAGE_SIZE, 0);
+            }
+            expect_true!(vmo.get_attributed_memory() == expected_attribution_counts);
+            expect_true!(verify_continuous_attribution_bytes(
+                &vmo,
+                attribution::total_bytes(&expected_attribution_counts)
+            ));
+
+            // Write the last two pages, committing them.
+            let status = vmo.write(2 * PAGE_SIZE, &data[..2 * PAGE_SIZE_USIZE]);
+            assert_ok!(status);
+            if !is_ppb_enabled {
+                // and expected_attribution_counts don't change because the pages are already present.
+                debug_assert_eq!(
+                    expected_attribution_counts.uncompressed_bytes,
+                    4 * PAGE_SIZE_USIZE
+                );
+            } else {
+                expected_attribution_counts = make_private_attribution_counts(4 * PAGE_SIZE, 0);
+            }
+            expect_true!(vmo.get_attributed_memory() == expected_attribution_counts);
+            expect_true!(verify_continuous_attribution_bytes(
+                &vmo,
+                attribution::total_bytes(&expected_attribution_counts)
+            ));
+
+            // Zero'ing the range will decommit pages. In the case of contiguous VMOs, we don't
+            // decommit pages (so far).
+            let status = vmo.zero_range(0, 2 * PAGE_SIZE);
+            assert_ok!(status);
+            // Zeroing doesn't decommit pages of contiguous VMOs (nor does it commit pages).
+            expect_true!(vmo.get_attributed_memory() == expected_attribution_counts);
+            expect_true!(verify_continuous_attribution_bytes(
+                &vmo,
+                attribution::total_bytes(&expected_attribution_counts)
+            ));
+
+            let status = vmo.decommit_range(0, 2 * PAGE_SIZE);
+            if !is_ppb_enabled {
+                assert_eq!(Status::result_into_raw(status), Status::NOT_SUPPORTED.into_raw());
+                debug_assert_eq!(
+                    expected_attribution_counts.uncompressed_bytes,
+                    4 * PAGE_SIZE_USIZE
+                );
+            } else {
+                assert_ok!(status);
+                // We were able to decommit two pages.
+                expected_attribution_counts = make_private_attribution_counts(2 * PAGE_SIZE, 0);
+            }
+            expect_true!(vmo.get_attributed_memory() == expected_attribution_counts);
+            expect_true!(verify_continuous_attribution_bytes(
+                &vmo,
+                attribution::total_bytes(&expected_attribution_counts)
+            ));
+
+            // Zero'ing a decommitted range (if is_ppb_enabled is true) should not commit any new
+            // pages. Empty slots in a decommitted contiguous VMO are zero by default, as the
+            // physical page provider will zero these pages on supply.
+            let status = vmo.zero_range(0, 2 * PAGE_SIZE);
+            assert_ok!(status);
+            // The attribution counts should remain unchanged.
+            expect_true!(vmo.get_attributed_memory() == expected_attribution_counts);
+            expect_true!(verify_continuous_attribution_bytes(
+                &vmo,
+                attribution::total_bytes(&expected_attribution_counts)
+            ));
         }
     }
 

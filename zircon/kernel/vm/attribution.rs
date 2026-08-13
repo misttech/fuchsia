@@ -18,3 +18,8 @@ pub fn zero() -> AttributionCounts {
         counts.assume_init()
     }
 }
+
+/// Returns the sum of uncompressed and compressed bytes.
+pub fn total_bytes(counts: &AttributionCounts) -> u64 {
+    (counts.uncompressed_bytes + counts.compressed_bytes) as u64
+}
