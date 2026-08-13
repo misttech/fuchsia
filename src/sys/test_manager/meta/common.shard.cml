@@ -162,8 +162,7 @@
             storage_id: "static_instance_id_or_moniker",
         },
 
-        // TODO(https://fxbug.dev/42075284): Adding dummy capability to make cmc tool
-        // happy. This capability is not routed to any component.
+        // This rename is needed for google-tests.
         {
             storage: "data",
             from: "#fxfs_data",
