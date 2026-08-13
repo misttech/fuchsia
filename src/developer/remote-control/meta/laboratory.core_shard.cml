@@ -62,6 +62,12 @@
             to: "#ffx-laboratory",
         },
         {
+            directory: "dev-class",
+            from: "parent",
+            to: "#ffx-laboratory",
+            availability: "optional",
+        },
+        {
             directory: "boot",
             from: "parent",
             to: "#ffx-laboratory",
