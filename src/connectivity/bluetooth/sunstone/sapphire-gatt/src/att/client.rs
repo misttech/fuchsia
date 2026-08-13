@@ -21,8 +21,8 @@ use sapphire_emboss::att::{AttErrorRsp, AttExchangeMtuRsp, AttHeader};
 
 use core::cmp::{max, min};
 use core::mem::{MaybeUninit, size_of};
+use sapphire_common::Uuid;
 use sapphire_sync::mutex::raw::RawMutex;
-use sapphire_uuid::Uuid;
 use thiserror::Error;
 use zerocopy::byteorder::little_endian::U16;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, TryFromBytes};

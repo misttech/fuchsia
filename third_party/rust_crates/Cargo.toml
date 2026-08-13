@@ -214,6 +214,7 @@ rustyline = "18.0.1"
 rutabaga_gfx = { version = "0.1.75", features = ["gfxstream"] }
 sapphire-async = { version = "0.1.0", features = ["std", "testing"] }
 sapphire-collections = { version = "0.1.0", features = ["std"] }
+sapphire-common = "0.1.0"
 sapphire-emboss = "0.1.0"
 sapphire-gatt = "0.1.0"
 sapphire-hci = "0.1.0"
@@ -221,7 +222,6 @@ sapphire-host = "0.1.0"
 sapphire-peer-cache = "0.1.0"
 sapphire-rpc-macro = "0.1.0"
 sapphire-sync = { version = "0.1.0", features = ["std"] }
-sapphire-uuid = "0.1.0"
 schemars = { version = "0.8.22", features = ["chrono", "preserve_order"] }
 scopeguard = "1.2.0"
 serde = { version = "1.0.228", features = ["derive"] }
@@ -376,6 +376,7 @@ bssl-sys = { path = "intree/bssl-sys" }
 fuchsia-cprng = { path = "intree/fuchsia-cprng" }
 sapphire-async = { path = "intree/sunstone/sapphire-async" }
 sapphire-collections = { path = "intree/sunstone/sapphire-collections" }
+sapphire-common = { path = "intree/sunstone/sapphire-common" }
 sapphire-emboss = { path = "intree/sunstone/sapphire-emboss" }
 sapphire-gatt = { path = "intree/sunstone/sapphire-gatt" }
 sapphire-hci = { path = "intree/sunstone/sapphire-hci" }
@@ -383,7 +384,6 @@ sapphire-host = { path = "intree/sunstone/sapphire-host" }
 sapphire-peer-cache = { path = "intree/sunstone/sapphire-peer-cache" }
 sapphire-rpc-macro = { path = "intree/sunstone/sapphire-rpc-macro" }
 sapphire-sync = { path = "intree/sunstone/sapphire-sync" }
-sapphire-uuid = { path = "intree/sunstone/sapphire-uuid" }
 # keep-sorted end
 
 ### Ask to Patch: crates which require a policy exception to contribute to.
@@ -639,6 +639,9 @@ uses_fuchsia_license = true
 [gn.package.sapphire-collections."0.1.0"]
 uses_fuchsia_license = true
 
+[gn.package.sapphire-common."0.1.0"]
+uses_fuchsia_license = true
+
 [gn.package.sapphire-emboss."0.1.0"]
 existing_gn_target = "//src/connectivity/bluetooth/sunstone/sapphire-emboss"
 
@@ -658,9 +661,6 @@ uses_fuchsia_license = true
 uses_fuchsia_license = true
 
 [gn.package.sapphire-sync."0.1.0"]
-uses_fuchsia_license = true
-
-[gn.package.sapphire-uuid."0.1.0"]
 uses_fuchsia_license = true
 
 [gn.package.futures-channel."0.3.31"]

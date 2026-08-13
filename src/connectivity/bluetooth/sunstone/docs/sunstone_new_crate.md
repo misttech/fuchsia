@@ -7,7 +7,7 @@ Fuchsia's build systems (GN and Bazel).
 ## Overview
 
 Sunstone is designed with a modular architecture consisting of multiple `no_std`
-helper crates (like `sapphire-uuid`, `sapphire-peer-cache`, and
+helper crates (like `sapphire-common`, `sapphire-peer-cache`, and
 `sapphire-gatt`).
 
 Fuchsia currently uses GN as its active build system (as Bazel integration is
@@ -81,9 +81,9 @@ when running `cargo new --lib`:
 members = [
   # keep-sorted start
   "sapphire-<crate-name>", # Add your new crate here,
+  "sapphire-common",
   "sapphire-gatt",
   "sapphire-peer-cache",
-  "sapphire-uuid"
   # keep-sorted end
 ]
 resolver = "3"
@@ -197,9 +197,9 @@ Add the test target to the `group("tests")` target:
 group("tests") {
   testonly = true
   deps = [
+    ":sapphire_common_test($host_toolchain)",
     ":sapphire_gatt_test($host_toolchain)",
     ":sapphire_peer_cache_test($host_toolchain)",
-    ":sapphire_uuid_test($host_toolchain)",
     ":sapphire_<crate_name_underscores>_test($host_toolchain)", # Add here
   ]
 }

@@ -27,10 +27,10 @@ use core::mem::{MaybeUninit, size_of};
 use core::ptr::NonNull;
 use sapphire_collections::storage::StorageFamily;
 use sapphire_collections::vec::Vec;
+use sapphire_common::Uuid;
 use sapphire_emboss::att::AttHeader;
 use sapphire_peer_cache::PeerId;
 use sapphire_sync::mutex::raw::{RawMutex, SingleThreadMutex};
-use sapphire_uuid::Uuid;
 use thiserror::Error;
 use zerocopy::byteorder::little_endian::U16;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, TryFromBytes};
@@ -1258,7 +1258,7 @@ mod tests {
     use sapphire_async::executor::BoundedExecutor;
     use sapphire_async::testing::TestExecutor;
     use sapphire_collections::storage::ArrayStorage;
-    use sapphire_uuid::Uuid;
+    use sapphire_common::Uuid;
     use zerocopy::{IntoBytes, TryFromBytes};
 
     fn h(val: u16) -> AttributeHandle {

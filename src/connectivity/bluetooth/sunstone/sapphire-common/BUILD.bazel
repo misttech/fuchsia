@@ -16,13 +16,13 @@ package(
 
 package_info(
     name = "package_info",
-    package_name = "sapphire-uuid",
+    package_name = "sapphire-common",
     package_url = "",
     package_version = "0.1.0",
 )
 
 rust_library(
-    name = "sapphire_uuid",
+    name = "sapphire_common",
     srcs = glob(
         include = ["**/*.rs"],
         allow_empty = False,
@@ -46,7 +46,7 @@ rust_library(
     ],
     tags = [
         "cargo-bazel",
-        "crate-name=sapphire-uuid",
+        "crate-name=sapphire-common",
         "manual",
         "noclippy",
         "norustfmt",

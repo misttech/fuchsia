@@ -22,10 +22,13 @@ if (is_host) {
     deps = [ "//third_party/rust_crates:proptest" ]
   }
 
-  rustc_test("sapphire_uuid_test") {
+  rustc_test("sapphire_common_test") {
     edition = "2024"
-    source_root = "sapphire-uuid/src/lib.rs"
-    sources = [ "sapphire-uuid/src/lib.rs" ]
+    source_root = "sapphire-common/src/lib.rs"
+    sources = [
+      "sapphire-common/src/lib.rs",
+      "sapphire-common/src/uuid.rs",
+    ]
     features = [ "testing" ]
     deps = [ "//third_party/rust_crates:proptest" ]
   }
@@ -73,9 +76,9 @@ if (is_host) {
       "//third_party/rust_crates:proptest",
       "//third_party/rust_crates:sapphire-async",
       "//third_party/rust_crates:sapphire-collections",
+      "//third_party/rust_crates:sapphire-common",
       "//third_party/rust_crates:sapphire-peer-cache",
       "//third_party/rust_crates:sapphire-sync",
-      "//third_party/rust_crates:sapphire-uuid",
       "//third_party/rust_crates:strum_macros",
       "//third_party/rust_crates:thiserror",
       "//third_party/rust_crates:zerocopy",
@@ -167,6 +170,7 @@ group("tests") {
   deps = [
     ":sapphire_async_test($host_toolchain)",
     ":sapphire_collections_test($host_toolchain)",
+    ":sapphire_common_test($host_toolchain)",
     ":sapphire_emboss_test($host_toolchain)",
     ":sapphire_gatt_test($host_toolchain)",
     ":sapphire_hci_test($host_toolchain)",
@@ -174,6 +178,5 @@ group("tests") {
     ":sapphire_peer_cache_test($host_toolchain)",
     ":sapphire_rpc_macro_test($host_toolchain)",
     ":sapphire_sync_test($host_toolchain)",
-    ":sapphire_uuid_test($host_toolchain)",
   ]
 }

@@ -7,10 +7,10 @@ use crate::att::bearer::MAX_ATTRIBUTE_SIZE;
 use crate::att::pdu::ErrorCode;
 use core::{cmp, fmt};
 use sapphire_collections::vec::StdVec;
+use sapphire_common::Uuid;
 use sapphire_peer_cache::PeerId;
 use sapphire_sync::mutex::Mutex;
 use sapphire_sync::mutex::raw::SingleThreadMutex;
-use sapphire_uuid::Uuid;
 
 // TODO(https://fxbug.dev/524267879): Replace the temporary Vec with BufferModel defined in sapphire-buffer
 //

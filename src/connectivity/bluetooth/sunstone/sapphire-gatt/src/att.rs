@@ -71,8 +71,8 @@ mod tests {
     use sapphire_async::executor::BoundedExecutor;
     use sapphire_async::testing::TestExecutor;
     use sapphire_collections::storage::ArrayStorage;
+    use sapphire_common::Uuid;
     use sapphire_peer_cache::PeerId;
-    use sapphire_uuid::Uuid;
 
     const CLIENT_PREFERRED_MTU: u16 = 512;
     const SERVER_MTU: u16 = 256;
@@ -977,8 +977,8 @@ mod tests {
         };
         use core::mem::{MaybeUninit, size_of};
         use proptest::prelude::*;
+        use sapphire_common::Uuid;
         use sapphire_peer_cache::PeerId;
-        use sapphire_uuid::Uuid;
         use zerocopy::TryFromBytes;
         use zerocopy::byteorder::little_endian::U16;
 

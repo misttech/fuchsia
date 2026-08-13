@@ -3,7 +3,7 @@
 # found in the LICENSE file.
 
 [package]
-name = "sapphire-uuid"
+name = "sapphire-common"
 version = "0.1.0"
 edition = "2024"
 

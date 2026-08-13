@@ -1997,6 +1997,7 @@ dependencies = [
  "rutabaga_gfx",
  "sapphire-async",
  "sapphire-collections",
+ "sapphire-common",
  "sapphire-emboss",
  "sapphire-gatt",
  "sapphire-hci",
@@ -2004,7 +2005,6 @@ dependencies = [
  "sapphire-peer-cache",
  "sapphire-rpc-macro",
  "sapphire-sync",
- "sapphire-uuid",
  "schemars",
  "scopeguard",
  "sec1 0.7.3",
@@ -4712,6 +4712,10 @@ name = "sapphire-collections"
 version = "0.1.0"
 
 [[package]]
+name = "sapphire-common"
+version = "0.1.0"
+
+[[package]]
 name = "sapphire-emboss"
 version = "0.1.0"
 
@@ -4722,10 +4726,10 @@ dependencies = [
  "futures",
  "sapphire-async",
  "sapphire-collections",
+ "sapphire-common",
  "sapphire-emboss",
  "sapphire-peer-cache",
  "sapphire-sync",
- "sapphire-uuid",
  "strum",
  "strum_macros",
  "thiserror 2.0.20",
@@ -4767,10 +4771,6 @@ version = "0.1.0"
 dependencies = [
  "parking_lot 0.12.5",
 ]
-
-[[package]]
-name = "sapphire-uuid"
-version = "0.1.0"
 
 [[package]]
 name = "scanlex"

@@ -1911,6 +1911,14 @@ group("sapphire-collections-0.1.0") {
   public_deps = [ ":sapphire-collections-v0_1_0" ]
 }
 
+group("sapphire-common") {
+  public_deps = [ ":sapphire-common-v0_1_0" ]
+}
+
+group("sapphire-common-0.1.0") {
+  public_deps = [ ":sapphire-common-v0_1_0" ]
+}
+
 group("sapphire-emboss") {
   public_deps = [ ":sapphire-emboss-v0_1_0" ]
 }
@@ -1965,14 +1973,6 @@ group("sapphire-sync") {
 
 group("sapphire-sync-0.1.0") {
   public_deps = [ ":sapphire-sync-v0_1_0" ]
-}
-
-group("sapphire-uuid") {
-  public_deps = [ ":sapphire-uuid-v0_1_0" ]
-}
-
-group("sapphire-uuid-0.1.0") {
-  public_deps = [ ":sapphire-uuid-v0_1_0" ]
 }
 
 group("schemars") {
@@ -19297,6 +19297,31 @@ rustc_library("sapphire-collections-v0_1_0") {
   applicable_licenses = [ "//build/licenses:fuchsia_license" ]
 }
 
+rustc_library("sapphire-common-v0_1_0") {
+  crate_name = "sapphire_common"
+  source_root =
+      "//src/connectivity/bluetooth/sunstone/sapphire-common/src/lib.rs"
+  output_name = "sapphire_common-8ffba2aecc74f25c"
+  edition = "2024"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=8ffba2aecc74f25c",
+    "-Cextra-filename=-8ffba2aecc74f25c",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ "//build/licenses:fuchsia_license" ]
+}
+
 group("sapphire-emboss-v0_1_0") {
   public_deps = [ "//src/connectivity/bluetooth/sunstone/sapphire-emboss" ]
 }
@@ -19313,10 +19338,10 @@ rustc_library("sapphire-gatt-v0_1_0") {
   deps = []
   deps += [ ":sapphire-async-v0_1_0" ]
   deps += [ ":sapphire-collections-v0_1_0" ]
+  deps += [ ":sapphire-common-v0_1_0" ]
   deps += [ ":sapphire-emboss-v0_1_0" ]
   deps += [ ":sapphire-peer-cache-v0_1_0" ]
   deps += [ ":sapphire-sync-v0_1_0" ]
-  deps += [ ":sapphire-uuid-v0_1_0" ]
   deps += [ ":futures-v0_3_31" ]
   deps += [ ":strum-v0_28_0" ]
   deps += [ ":strum_macros-v0_28_0($host_toolchain)" ]
@@ -19463,30 +19488,6 @@ rustc_library("sapphire-sync-v0_1_0") {
     "-Cextra-filename=-6c8d7c5759e4a7d6",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"std\"",
-  ]
-
-  visibility = [ ":*" ]
-
-  applicable_licenses = [ "//build/licenses:fuchsia_license" ]
-}
-
-rustc_library("sapphire-uuid-v0_1_0") {
-  crate_name = "sapphire_uuid"
-  source_root = "//src/connectivity/bluetooth/sunstone/sapphire-uuid/src/lib.rs"
-  output_name = "sapphire_uuid-d4e1391bbf65b6a9"
-  edition = "2024"
-  disable_clippy = true
-  enforce_source_listing = false
-  configs -= [ "//build/config/rust:2018_idioms" ]
-
-  deps = []
-
-  rustenv = []
-
-  rustflags = [
-    "--cap-lints=allow",
-    "-Cmetadata=d4e1391bbf65b6a9",
-    "-Cextra-filename=-d4e1391bbf65b6a9",
   ]
 
   visibility = [ ":*" ]

@@ -2521,6 +2521,18 @@ alias(
 )
 
 alias(
+    name = "sapphire-common-0.1.0",
+    actual = "//third_party/rust_crates/intree/sunstone/sapphire-common:sapphire_common",
+    tags = ["manual"],
+)
+
+alias(
+    name = "sapphire-common",
+    actual = "//third_party/rust_crates/intree/sunstone/sapphire-common:sapphire_common",
+    tags = ["manual"],
+)
+
+alias(
     name = "sapphire-emboss-0.1.0",
     actual = "//third_party/rust_crates/intree/sunstone/sapphire-emboss:sapphire_emboss",
     tags = ["manual"],
@@ -2601,18 +2613,6 @@ alias(
 alias(
     name = "sapphire-sync",
     actual = "//third_party/rust_crates/intree/sunstone/sapphire-sync:sapphire_sync",
-    tags = ["manual"],
-)
-
-alias(
-    name = "sapphire-uuid-0.1.0",
-    actual = "//third_party/rust_crates/intree/sunstone/sapphire-uuid:sapphire_uuid",
-    tags = ["manual"],
-)
-
-alias(
-    name = "sapphire-uuid",
-    actual = "//third_party/rust_crates/intree/sunstone/sapphire-uuid:sapphire_uuid",
     tags = ["manual"],
 )
 

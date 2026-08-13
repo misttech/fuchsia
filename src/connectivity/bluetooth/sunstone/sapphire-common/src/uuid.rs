@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#![no_std]
-
 /// BLE standard 16-bit, 32-bit, or 128-bit Type UUID representation.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Uuid {
@@ -159,6 +157,7 @@ impl TryFrom<Uuid> for [u8; 4] {
         Ok(u32::try_from(uuid)?.to_le_bytes())
     }
 }
+
 impl TryFrom<&[u8]> for Uuid {
     type Error = UuidError;
 

@@ -5,6 +5,7 @@
 members = [
   "sapphire-async",
   "sapphire-collections",
+  "sapphire-common",
   "sapphire-emboss",
   "sapphire-gatt",
   "sapphire-hci",
@@ -12,7 +13,6 @@ members = [
   "sapphire-peer-cache",
   "sapphire-rpc-macro",
   "sapphire-sync",
-  "sapphire-uuid",
 ]
 resolver = "3"
 

@@ -12,7 +12,7 @@ futures = {version = "=0.3.31", default-features = false, features = ["async-awa
 sapphire-async = { path = "../sapphire-async" }
 sapphire-sync = { path = "../sapphire-sync" }
 sapphire-collections = { path = "../sapphire-collections" }
-sapphire-uuid = { path = "../sapphire-uuid" }
+sapphire-common = { path = "../sapphire-common" }
 sapphire-peer-cache = { path = "../sapphire-peer-cache" }
 sapphire-emboss = { path = "../sapphire-emboss" }
 

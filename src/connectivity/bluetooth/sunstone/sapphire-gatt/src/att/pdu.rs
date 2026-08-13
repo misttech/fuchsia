@@ -6,8 +6,8 @@
 
 use core::cmp::min;
 use core::mem::size_of;
+use sapphire_common::Uuid;
 pub use sapphire_emboss::att::{AttOpcode as Opcode, ErrorCode};
-use sapphire_uuid::Uuid;
 use strum_macros::FromRepr;
 use zerocopy::byteorder::little_endian::U16;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, TryFromBytes, Unaligned};
