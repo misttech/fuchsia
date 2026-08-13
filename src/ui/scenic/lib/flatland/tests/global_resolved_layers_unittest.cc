@@ -143,16 +143,19 @@ TEST(GlobalRenderListTest, SingleImageLayerIdentityMatrix) {
 
   UberStructLayer uber_layer{
       .content =
-          UberStructLayer::ImageContent{
+          UberStructLayer::ImageModeProperties{
               .sample_rect = RectangleF({.x = 0.f, .y = 0.f, .width = 100.f, .height = 200.f}),
               .transform = RotateFlip::kIdentity(),
               .image_id = display::ImageId(42),
               .image_width = 100,
               .image_height = 200,
           },
-      .display_rect = Rectangle({.x = 0, .y = 0, .width = 100, .height = 200}),
-      .opacity = 1.f,
-      .blend_mode = BlendMode::kReplace(),
+      .common =
+          {
+              .display_rect = Rectangle({.x = 0, .y = 0, .width = 100, .height = 200}),
+              .opacity = 1.f,
+              .blend_mode = BlendMode::kReplace(),
+          },
   };
   uber_struct->layers[kLayer] = uber_layer;
   snapshot[1] = std::move(uber_struct);
@@ -194,16 +197,19 @@ TEST(GlobalRenderListTest, TranslationAndScaleApplyToDisplayRect) {
 
   UberStructLayer uber_layer{
       .content =
-          UberStructLayer::ImageContent{
+          UberStructLayer::ImageModeProperties{
               .sample_rect = RectangleF({.x = 0.f, .y = 0.f, .width = 100.f, .height = 200.f}),
               .transform = RotateFlip::kIdentity(),
               .image_id = display::ImageId(42),
               .image_width = 100,
               .image_height = 200,
           },
-      .display_rect = Rectangle({.x = 10, .y = 20, .width = 100, .height = 200}),
-      .opacity = 1.f,
-      .blend_mode = BlendMode::kReplace(),
+      .common =
+          {
+              .display_rect = Rectangle({.x = 10, .y = 20, .width = 100, .height = 200}),
+              .opacity = 1.f,
+              .blend_mode = BlendMode::kReplace(),
+          },
   };
   uber_struct->layers[kLayer] = uber_layer;
   snapshot[1] = std::move(uber_struct);
@@ -243,16 +249,19 @@ TEST(GlobalRenderListTest, Rotation90ProducesOrientationAndPermutedUVs) {
 
   UberStructLayer uber_layer{
       .content =
-          UberStructLayer::ImageContent{
+          UberStructLayer::ImageModeProperties{
               .sample_rect = RectangleF({.x = 10.f, .y = 20.f, .width = 100.f, .height = 200.f}),
               .transform = RotateFlip::kIdentity(),
               .image_id = display::ImageId(42),
               .image_width = 500,
               .image_height = 500,
           },
-      .display_rect = Rectangle({.x = 0, .y = 0, .width = 100, .height = 200}),
-      .opacity = 1.f,
-      .blend_mode = BlendMode::kReplace(),
+      .common =
+          {
+              .display_rect = Rectangle({.x = 0, .y = 0, .width = 100, .height = 200}),
+              .opacity = 1.f,
+              .blend_mode = BlendMode::kReplace(),
+          },
   };
   uber_struct->layers[kLayer] = uber_layer;
   snapshot[1] = std::move(uber_struct);
@@ -299,16 +308,19 @@ TEST(GlobalRenderListTest, FlipComposesWithRotation) {
   // Flip LEFT_RIGHT under a 90° CCW parent
   UberStructLayer uber_layer{
       .content =
-          UberStructLayer::ImageContent{
+          UberStructLayer::ImageModeProperties{
               .sample_rect = RectangleF({.x = 10.f, .y = 20.f, .width = 100.f, .height = 200.f}),
               .transform = RotateFlip::kReflectY(),  // LEFT_RIGHT
               .image_id = display::ImageId(42),
               .image_width = 500,
               .image_height = 500,
           },
-      .display_rect = Rectangle({.x = 0, .y = 0, .width = 100, .height = 200}),
-      .opacity = 1.f,
-      .blend_mode = BlendMode::kReplace(),
+      .common =
+          {
+              .display_rect = Rectangle({.x = 0, .y = 0, .width = 100, .height = 200}),
+              .opacity = 1.f,
+              .blend_mode = BlendMode::kReplace(),
+          },
   };
   uber_struct->layers[kLayer] = uber_layer;
   snapshot[1] = std::move(uber_struct);
@@ -349,16 +361,19 @@ TEST(GlobalRenderListTest, ClipShrinksDstAndUVsProportionally) {
 
   UberStructLayer uber_layer{
       .content =
-          UberStructLayer::ImageContent{
+          UberStructLayer::ImageModeProperties{
               .sample_rect = RectangleF({.x = 0.f, .y = 0.f, .width = 100.f, .height = 200.f}),
               .transform = RotateFlip::kIdentity(),
               .image_id = display::ImageId(42),
               .image_width = 100,
               .image_height = 200,
           },
-      .display_rect = Rectangle({.x = 0, .y = 0, .width = 100, .height = 200}),
-      .opacity = 1.f,
-      .blend_mode = BlendMode::kReplace(),
+      .common =
+          {
+              .display_rect = Rectangle({.x = 0, .y = 0, .width = 100, .height = 200}),
+              .opacity = 1.f,
+              .blend_mode = BlendMode::kReplace(),
+          },
   };
   uber_struct->layers[kLayer] = uber_layer;
   snapshot[1] = std::move(uber_struct);
@@ -397,16 +412,19 @@ TEST(GlobalRenderListTest, ClipToEmptyDropsLayer) {
 
   UberStructLayer uber_layer{
       .content =
-          UberStructLayer::ImageContent{
+          UberStructLayer::ImageModeProperties{
               .sample_rect = RectangleF({.x = 0.f, .y = 0.f, .width = 100.f, .height = 200.f}),
               .transform = RotateFlip::kIdentity(),
               .image_id = display::ImageId(42),
               .image_width = 100,
               .image_height = 200,
           },
-      .display_rect = Rectangle({.x = 0, .y = 0, .width = 100, .height = 200}),
-      .opacity = 1.f,
-      .blend_mode = BlendMode::kReplace(),
+      .common =
+          {
+              .display_rect = Rectangle({.x = 0, .y = 0, .width = 100, .height = 200}),
+              .opacity = 1.f,
+              .blend_mode = BlendMode::kReplace(),
+          },
   };
   uber_struct->layers[kLayer] = uber_layer;
   snapshot[1] = std::move(uber_struct);
@@ -437,25 +455,31 @@ TEST(GlobalRenderListTest, OpacityMultipliesDownTheChain) {
 
   UberStructLayer uber_layer1{
       .content =
-          UberStructLayer::ImageContent{
+          UberStructLayer::ImageModeProperties{
               .sample_rect = RectangleF({.x = 0.f, .y = 0.f, .width = 100.f, .height = 200.f}),
               .transform = RotateFlip::kIdentity(),
               .image_id = display::ImageId(42),
               .image_width = 100,
               .image_height = 200,
           },
-      .display_rect = Rectangle({.x = 0, .y = 0, .width = 100, .height = 200}),
-      .opacity = 0.5f,
-      .blend_mode = BlendMode::kReplace(),
+      .common =
+          {
+              .display_rect = Rectangle({.x = 0, .y = 0, .width = 100, .height = 200}),
+              .opacity = 0.5f,
+              .blend_mode = BlendMode::kReplace(),
+          },
   };
   UberStructLayer uber_layer2{
       .content =
-          UberStructLayer::SolidColorContent{
+          UberStructLayer::SolidColorModeProperties{
               .color = {1.f, 1.f, 1.f, 1.f},
           },
-      .display_rect = Rectangle({.x = 0, .y = 0, .width = 100, .height = 200}),
-      .opacity = 0.5f,
-      .blend_mode = BlendMode::kReplace(),
+      .common =
+          {
+              .display_rect = Rectangle({.x = 0, .y = 0, .width = 100, .height = 200}),
+              .opacity = 0.5f,
+              .blend_mode = BlendMode::kReplace(),
+          },
   };
   uber_struct->layers[kLayer1] = uber_layer1;
   uber_struct->layers[kLayer2] = uber_layer2;
@@ -571,8 +595,8 @@ TEST(GlobalRenderListTest, OpacityMultipliesDownTheChain) {
 
   // For the next sub-tests, we change per-layer opacity to 1.f.  Now, finally, demotion from
   // REPLACE -> PREMULTIPLIED will no longer occur, because the effective opacity is 1.0
-  uber_struct->layers[kLayer1].opacity = 1.f;
-  uber_struct->layers[kLayer2].opacity = 1.f;
+  uber_struct->layers[kLayer1].common.opacity = 1.f;
+  uber_struct->layers[kLayer2].common.opacity = 1.f;
 
   uber_struct->local_opacity_values[kRoot] = 1.f;
   result = ComputeGlobalResolvedLayers(topology, snapshot, global_matrices, clip_regions);
@@ -664,24 +688,30 @@ TEST(GlobalRenderListTest, EffectiveOpacityCombinesLayerAndInheritedOpacity) {
 
   uber_struct->layers[kImageLayer] = UberStructLayer{
       .content =
-          UberStructLayer::ImageContent{
+          UberStructLayer::ImageModeProperties{
               .sample_rect = RectangleF({.x = 0.f, .y = 0.f, .width = 100.f, .height = 200.f}),
               .transform = RotateFlip::kIdentity(),
               .image_id = display::ImageId(42),
           },
-      .display_rect = Rectangle({.x = 0, .y = 0, .width = 100, .height = 200}),
-      .opacity = 0.5f,
-      .blend_mode = BlendMode::kPremultipliedAlpha(),
+      .common =
+          {
+              .display_rect = Rectangle({.x = 0, .y = 0, .width = 100, .height = 200}),
+              .opacity = 0.5f,
+              .blend_mode = BlendMode::kPremultipliedAlpha(),
+          },
   };
 
   uber_struct->layers[kSolidLayer] = UberStructLayer{
       .content =
-          UberStructLayer::SolidColorContent{
+          UberStructLayer::SolidColorModeProperties{
               .color = {0.5f, 0.25f, 1.f, 0.8f},
           },
-      .display_rect = Rectangle({.x = 0, .y = 0, .width = 100, .height = 200}),
-      .opacity = 0.5f,
-      .blend_mode = BlendMode::kPremultipliedAlpha(),
+      .common =
+          {
+              .display_rect = Rectangle({.x = 0, .y = 0, .width = 100, .height = 200}),
+              .opacity = 0.5f,
+              .blend_mode = BlendMode::kPremultipliedAlpha(),
+          },
   };
   snapshot[1] = uber_struct;
 
@@ -718,22 +748,28 @@ TEST(GlobalRenderListTest, InvisibleLayersSkipped) {
     uber_struct->layer_stacks[kRoot] = {kLayer1, kLayer2};
     UberStructLayer uber_layer1{
         .content =
-            UberStructLayer::ImageContent{
+            UberStructLayer::ImageModeProperties{
                 .transform = RotateFlip::kIdentity(),
                 .image_id = display::ImageId(42),
             },
         // width is 0, therefore rect is considered empty.
-        .display_rect = Rectangle({.x = 0, .y = 0, .width = 0, .height = 200}),
-        .opacity = 1.f,
+        .common =
+            {
+                .display_rect = Rectangle({.x = 0, .y = 0, .width = 0, .height = 200}),
+                .opacity = 1.f,
+            },
     };
     UberStructLayer uber_layer2{
         .content =
-            UberStructLayer::SolidColorContent{
+            UberStructLayer::SolidColorModeProperties{
                 .color = {1.f, 1.f, 1.f, 1.f},
             },
         // height is 0, therefore rect is considered empty.
-        .display_rect = Rectangle({.x = 0, .y = 0, .width = 100, .height = 0}),
-        .opacity = 1.f,
+        .common =
+            {
+                .display_rect = Rectangle({.x = 0, .y = 0, .width = 100, .height = 0}),
+                .opacity = 1.f,
+            },
     };
     uber_struct->layers[kLayer1] = uber_layer1;
     uber_struct->layers[kLayer2] = uber_layer2;
@@ -753,21 +789,27 @@ TEST(GlobalRenderListTest, InvisibleLayersSkipped) {
     uber_struct->layer_stacks[kRoot] = {kLayer1, kLayer2};
     UberStructLayer uber_layer1{
         .content =
-            UberStructLayer::ImageContent{
+            UberStructLayer::ImageModeProperties{
                 .transform = RotateFlip::kIdentity(),
                 .image_id = display::ImageId(42),
             },
-        .display_rect = Rectangle({.x = 0, .y = 0, .width = 100, .height = 200}),
-        .opacity = 0.f,
+        .common =
+            {
+                .display_rect = Rectangle({.x = 0, .y = 0, .width = 100, .height = 200}),
+                .opacity = 0.f,
+            },
     };
     UberStructLayer uber_layer2{
         .content =
-            UberStructLayer::SolidColorContent{
+            UberStructLayer::SolidColorModeProperties{
                 .color = {1.f, 1.f, 1.f, 1.f},
             },
-        .display_rect = Rectangle({.x = 0, .y = 0, .width = 100, .height = 200}),
-        .opacity = 0.f,
-        .blend_mode = BlendMode::kReplace(),
+        .common =
+            {
+                .display_rect = Rectangle({.x = 0, .y = 0, .width = 100, .height = 200}),
+                .opacity = 0.f,
+                .blend_mode = BlendMode::kReplace(),
+            },
     };
     uber_struct->layers[kLayer1] = uber_layer1;
     uber_struct->layers[kLayer2] = uber_layer2;
@@ -786,12 +828,15 @@ TEST(GlobalRenderListTest, InvisibleLayersSkipped) {
     uber_struct->layer_stacks[kRoot] = {kLayer};
     UberStructLayer uber_layer{
         .content =
-            UberStructLayer::ImageContent{
+            UberStructLayer::ImageModeProperties{
                 .transform = RotateFlip::kIdentity(),
                 .image_id = allocation::kInvalidImageId,
             },
-        .display_rect = Rectangle({.x = 0, .y = 0, .width = 100, .height = 200}),
-        .opacity = 1.f,
+        .common =
+            {
+                .display_rect = Rectangle({.x = 0, .y = 0, .width = 100, .height = 200}),
+                .opacity = 1.f,
+            },
     };
     uber_struct->layers[kLayer] = uber_layer;
     snapshot[1] = std::move(uber_struct);
@@ -811,12 +856,15 @@ TEST(GlobalRenderListTest, InvisibleLayersSkipped) {
     uber_struct->layer_stacks[kRoot] = {kLayer};
     UberStructLayer uber_layer{
         .content =
-            UberStructLayer::SolidColorContent{
+            UberStructLayer::SolidColorModeProperties{
                 .color = {0.5f, 0.25f, 1.f, 0.f},
             },
-        .display_rect = Rectangle({.x = 0, .y = 0, .width = 100, .height = 200}),
-        .opacity = 1.f,
-        .blend_mode = BlendMode::kReplace(),
+        .common =
+            {
+                .display_rect = Rectangle({.x = 0, .y = 0, .width = 100, .height = 200}),
+                .opacity = 1.f,
+                .blend_mode = BlendMode::kReplace(),
+            },
     };
     uber_struct->layers[kLayer] = uber_layer;
     snapshot[1] = std::move(uber_struct);
@@ -851,12 +899,15 @@ TEST(GlobalRenderListTest, InheritedOpacityZeroSkipsLayers) {
 
   UberStructLayer uber_layer{
       .content =
-          UberStructLayer::SolidColorContent{
+          UberStructLayer::SolidColorModeProperties{
               .color = {1.f, 1.f, 1.f, 1.f},
           },
-      .display_rect = Rectangle({.x = 0, .y = 0, .width = 100, .height = 200}),
-      .opacity = 1.f,
-      .blend_mode = BlendMode::kReplace(),
+      .common =
+          {
+              .display_rect = Rectangle({.x = 0, .y = 0, .width = 100, .height = 200}),
+              .opacity = 1.f,
+              .blend_mode = BlendMode::kReplace(),
+          },
   };
   uber_struct->layers[kLayer] = uber_layer;
   snapshot[1] = uber_struct;
@@ -886,12 +937,12 @@ TEST(GlobalRenderListTest, StackZOrderIsBackToFront) {
 
   const auto make_layer = [](display::ImageId image_id) {
     UberStructLayer layer;
-    layer.content = UberStructLayer::ImageContent{
+    layer.content = UberStructLayer::ImageModeProperties{
         .transform = RotateFlip::kIdentity(),
         .image_id = image_id,
     };
-    layer.display_rect = Rectangle({.x = 0, .y = 0, .width = 100, .height = 200});
-    layer.opacity = 1.f;
+    layer.common.display_rect = Rectangle({.x = 0, .y = 0, .width = 100, .height = 200});
+    layer.common.opacity = 1.f;
     return layer;
   };
 
@@ -930,12 +981,15 @@ TEST(GlobalRenderListTest, DagInstancingEmitsPerPath) {
 
   UberStructLayer uber_layer{
       .content =
-          UberStructLayer::ImageContent{
+          UberStructLayer::ImageModeProperties{
               .transform = RotateFlip::kIdentity(),
               .image_id = display::ImageId(42),
           },
-      .display_rect = Rectangle({.x = 0, .y = 0, .width = 100, .height = 200}),
-      .opacity = 1.f,
+      .common =
+          {
+              .display_rect = Rectangle({.x = 0, .y = 0, .width = 100, .height = 200}),
+              .opacity = 1.f,
+          },
   };
   uber_struct->layers[kLayer] = uber_layer;
   snapshot[1] = std::move(uber_struct);
@@ -976,12 +1030,15 @@ TEST(GlobalRenderListTest, SolidColorLayer_DemotedReplace) {
 
   UberStructLayer uber_layer{
       .content =
-          UberStructLayer::SolidColorContent{
+          UberStructLayer::SolidColorModeProperties{
               .color = {0.5f, 0.25f, 1.f, 0.8f},
           },
-      .display_rect = Rectangle({.x = 0, .y = 0, .width = 100, .height = 200}),
-      .opacity = 0.5f,
-      .blend_mode = BlendMode::kReplace(),
+      .common =
+          {
+              .display_rect = Rectangle({.x = 0, .y = 0, .width = 100, .height = 200}),
+              .opacity = 0.5f,
+              .blend_mode = BlendMode::kReplace(),
+          },
   };
   uber_struct->layers[kLayer] = uber_layer;
   snapshot[1] = std::move(uber_struct);
@@ -1022,12 +1079,15 @@ TEST(GlobalRenderListTest, SolidColorLayer_SurvivingReplace) {
 
   UberStructLayer uber_layer{
       .content =
-          UberStructLayer::SolidColorContent{
+          UberStructLayer::SolidColorModeProperties{
               .color = {0.5f, 0.25f, 1.f, 0.8f},
           },
-      .display_rect = Rectangle({.x = 0, .y = 0, .width = 100, .height = 200}),
-      .opacity = 1.0f,
-      .blend_mode = BlendMode::kReplace(),
+      .common =
+          {
+              .display_rect = Rectangle({.x = 0, .y = 0, .width = 100, .height = 200}),
+              .opacity = 1.0f,
+              .blend_mode = BlendMode::kReplace(),
+          },
   };
   uber_struct->layers[kLayer] = uber_layer;
   snapshot[1] = std::move(uber_struct);
@@ -1071,12 +1131,15 @@ TEST(GlobalRenderListTest, SolidColorLayer_AlphaZeroPunch) {
 
   UberStructLayer uber_layer{
       .content =
-          UberStructLayer::SolidColorContent{
+          UberStructLayer::SolidColorModeProperties{
               .color = {0.5f, 0.25f, 1.f, 0.f},
           },
-      .display_rect = Rectangle({.x = 0, .y = 0, .width = 100, .height = 200}),
-      .opacity = 1.0f,
-      .blend_mode = BlendMode::kReplace(),
+      .common =
+          {
+              .display_rect = Rectangle({.x = 0, .y = 0, .width = 100, .height = 200}),
+              .opacity = 1.0f,
+              .blend_mode = BlendMode::kReplace(),
+          },
   };
   uber_struct->layers[kLayer] = uber_layer;
   snapshot[1] = std::move(uber_struct);
@@ -1099,7 +1162,81 @@ TEST(GlobalRenderListTest, SolidColorLayer_AlphaZeroPunch) {
   EXPECT_FLOAT_EQ(content.color[3], 0.f);
 }
 
-TEST(GlobalRenderListDeathTest, StraightAlphaSolidChecks) {
+TEST(GlobalRenderListTest, SolidColorLayer_StraightAlphaNormalized) {
+  const TransformHandle kRoot = {1, 0};
+  GlobalTopologyData topology;
+  topology.topology_vector = {kRoot};
+  topology.parent_indices = {0};
+
+  const LayerHandle kLayer(1, 1);
+  const Rectangle kDisplayRect({.x = 0, .y = 0, .width = 100, .height = 200});
+  const UberStructLayer::SolidColorModeProperties kSolidColor{.color = {1.f, 0.f, 0.f, 0.5f}};
+  const float kOpacity = 0.5f;
+
+  UberStruct::InstanceMap straight_snapshot;
+  {
+    auto uber_struct = std::make_unique<UberStruct>();
+    uber_struct->local_topology = {{kRoot, 0}};
+    uber_struct->layer_stacks[kRoot] = {kLayer};
+    uber_struct->layers[kLayer] = UberStructLayer{
+        .content = kSolidColor,
+        .common =
+            {
+                .display_rect = kDisplayRect,
+                .opacity = kOpacity,
+                .blend_mode = BlendMode::kStraightAlpha(),
+            },
+    };
+    straight_snapshot[1] = std::move(uber_struct);
+  }
+
+  UberStruct::InstanceMap premul_snapshot;
+  {
+    auto uber_struct = std::make_unique<UberStruct>();
+    uber_struct->local_topology = {{kRoot, 0}};
+    uber_struct->layer_stacks[kRoot] = {kLayer};
+    uber_struct->layers[kLayer] = UberStructLayer{
+        .content = kSolidColor,
+        .common =
+            {
+                .display_rect = kDisplayRect,
+                .opacity = kOpacity,
+                .blend_mode = BlendMode::kPremultipliedAlpha(),
+            },
+    };
+    premul_snapshot[1] = std::move(uber_struct);
+  }
+
+  std::vector<glm::mat3> global_matrices = {glm::mat3(1.f)};
+  std::vector<TransformClipRegion> clip_regions = {kUnclippedRegion};
+
+  auto straight_result =
+      ComputeGlobalResolvedLayers(topology, straight_snapshot, global_matrices, clip_regions);
+  ASSERT_EQ(straight_result.size(), 1u);
+
+  auto premul_result =
+      ComputeGlobalResolvedLayers(topology, premul_snapshot, global_matrices, clip_regions);
+  ASSERT_EQ(premul_result.size(), 1u);
+
+  // Directly assert the FIDL contract: STRAIGHT_ALPHA composites identically to
+  // PREMULTIPLIED_ALPHA for solid-color content.
+  EXPECT_EQ(straight_result[0], premul_result[0]);
+
+  // For readable failures, also assert on the straight-alpha result directly.
+  const auto& resolved_layer = straight_result[0];
+  EXPECT_EQ(resolved_layer.blend_mode, BlendMode::kPremultipliedAlpha());
+  EXPECT_EQ(resolved_layer.multiply_color, (std::array<float, 4>{0.5f, 0.5f, 0.5f, 0.5f}));
+
+  ASSERT_TRUE(std::holds_alternative<ResolvedLayer::SolidColorContent>(resolved_layer.content));
+  const auto& content = std::get<ResolvedLayer::SolidColorContent>(resolved_layer.content);
+  // Content color is premultiplied by its own alpha (0.5):
+  EXPECT_FLOAT_EQ(content.color[0], 0.5f);
+  EXPECT_FLOAT_EQ(content.color[1], 0.f);
+  EXPECT_FLOAT_EQ(content.color[2], 0.f);
+  EXPECT_FLOAT_EQ(content.color[3], 0.5f);
+}
+
+TEST(GlobalRenderListDeathTest, DanglingLayerHandleDies) {
   const TransformHandle kRoot = {1, 0};
   GlobalTopologyData topology;
   topology.topology_vector = {kRoot};
@@ -1111,17 +1248,8 @@ TEST(GlobalRenderListDeathTest, StraightAlphaSolidChecks) {
 
   const LayerHandle kLayer(1, 1);
   uber_struct->layer_stacks[kRoot] = {kLayer};
+  // Intentionally omit putting kLayer in uber_struct->layers.
 
-  UberStructLayer uber_layer{
-      .content =
-          UberStructLayer::SolidColorContent{
-              .color = {0.5f, 0.25f, 1.f, 0.8f},
-          },
-      .display_rect = Rectangle({.x = 0, .y = 0, .width = 100, .height = 200}),
-      .opacity = 1.0f,
-      .blend_mode = BlendMode::kStraightAlpha(),
-  };
-  uber_struct->layers[kLayer] = uber_layer;
   snapshot[1] = std::move(uber_struct);
 
   EXPECT_DEATH(
@@ -1146,12 +1274,15 @@ TEST(GlobalRenderListTest, MultipleSessionsMerge) {
     uber_struct->layer_stacks[kRoot1] = {kLayer};
     UberStructLayer uber_layer{
         .content =
-            UberStructLayer::ImageContent{
+            UberStructLayer::ImageModeProperties{
                 .transform = RotateFlip::kIdentity(),
                 .image_id = display::ImageId(11),
             },
-        .display_rect = Rectangle({.x = 0, .y = 0, .width = 100, .height = 200}),
-        .opacity = 1.f,
+        .common =
+            {
+                .display_rect = Rectangle({.x = 0, .y = 0, .width = 100, .height = 200}),
+                .opacity = 1.f,
+            },
     };
     uber_struct->layers[kLayer] = uber_layer;
     snapshot[1] = std::move(uber_struct);
@@ -1165,12 +1296,15 @@ TEST(GlobalRenderListTest, MultipleSessionsMerge) {
     uber_struct->layer_stacks[kRoot2] = {kLayer};
     UberStructLayer uber_layer{
         .content =
-            UberStructLayer::ImageContent{
+            UberStructLayer::ImageModeProperties{
                 .transform = RotateFlip::kIdentity(),
                 .image_id = display::ImageId(22),
             },
-        .display_rect = Rectangle({.x = 0, .y = 0, .width = 100, .height = 200}),
-        .opacity = 1.f,
+        .common =
+            {
+                .display_rect = Rectangle({.x = 0, .y = 0, .width = 100, .height = 200}),
+                .opacity = 1.f,
+            },
     };
     uber_struct->layers[kLayer] = uber_layer;
     snapshot[2] = std::move(uber_struct);
@@ -1477,14 +1611,17 @@ TEST(GlobalRenderListTest, FlatlandVersionGatesImageReplace) {
 
   UberStructLayer uber_layer{
       .content =
-          UberStructLayer::ImageContent{
+          UberStructLayer::ImageModeProperties{
               .sample_rect = RectangleF({.x = 0.f, .y = 0.f, .width = 100.f, .height = 200.f}),
               .transform = RotateFlip::kIdentity(),
               .image_id = display::ImageId(42),
           },
-      .display_rect = Rectangle({.x = 0, .y = 0, .width = 100, .height = 200}),
-      .opacity = 0.5f,
-      .blend_mode = BlendMode::kReplace(),
+      .common =
+          {
+              .display_rect = Rectangle({.x = 0, .y = 0, .width = 100, .height = 200}),
+              .opacity = 0.5f,
+              .blend_mode = BlendMode::kReplace(),
+          },
   };
   uber_struct->layers[kLayer] = uber_layer;
   snapshot[1] = uber_struct;
@@ -1512,7 +1649,7 @@ TEST(GlobalRenderListTest, FlatlandVersionGatesImageReplace) {
 
   // Case 3: flatland_version == 2, kReplace + opacity 1.0 -> no demotion, color verbatim
   {
-    uber_struct->layers[kLayer].opacity = 1.0f;
+    uber_struct->layers[kLayer].common.opacity = 1.0f;
     auto result =
         ComputeGlobalResolvedLayers(topology, snapshot, {glm::mat3(1.f)}, {kUnclippedRegion});
     ASSERT_EQ(result.size(), 1u);

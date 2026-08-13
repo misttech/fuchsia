@@ -434,11 +434,15 @@ class Flatland : public fidl::Server<fuchsia_ui_composition::Flatland>,
   // priority child of the Transform.
   std::pmr::unordered_map<ContentId, TransformHandle> content_handles_;
 
-  // Flatland2 session-internal state.
-  // TODO(https://fxbug.dev/523371761): document.  Currently these are completely separate from
-  // production code paths.
+  // Flatland2 layer state authored by this session, keyed by session-internal handles.
+  // `layer_objects_` owns the layers; `layer_stacks_` maps a stack's content handle (its
+  // attachment point in the transform graph) to the ordered list of layers it displays
+  // (back-most first).  Both API versions populate these: Flatland2 sessions directly,
+  // Flatland1 sessions through the facade, where each image or filled rect is a
+  // single-layer stack.
   std::pmr::unordered_map<LayerHandle, LayerObject> layer_objects_;
   std::pmr::unordered_map<TransformHandle, LayerStackData> layer_stacks_;
+  // Supplies the session-unique suffix for new LayerHandles.
   uint64_t next_layer_handle_ = 1;
 
   // TODO(https://fxbug.dev/523371761): public for tests.  Later, revisit whether any can be
@@ -476,13 +480,14 @@ class Flatland : public fidl::Server<fuchsia_ui_composition::Flatland>,
   // Returns the LayerObject for the given stack's content handle, or nullptr if none exists.
   LayerObject* GetFacadeLayerObject(TransformHandle content_handle);
 
-  // Helper to extract ImageContent from a layer, returning nullptr if the layer does not exist
-  // or does not contain ImageContent.
-  LayerObject::ImageContent* GetFacadeLayerImageContent(TransformHandle content_handle);
+  // Helper to extract ImageModeProperties from a layer, returning nullptr if the layer does not
+  // exist or does not contain ImageModeProperties.
+  UberStructLayer::ImageModeProperties* GetFacadeLayerImageContent(TransformHandle content_handle);
 
-  // Helper to extract SolidColorContent from a layer, returning nullptr if the layer does not exist
-  // or does not contain SolidColorContent.
-  LayerObject::SolidColorContent* GetFacadeLayerSolidColorContent(TransformHandle content_handle);
+  // Helper to extract SolidColorModeProperties from a layer, returning nullptr if the layer does
+  // not exist or does not contain SolidColorModeProperties.
+  UberStructLayer::SolidColorModeProperties* GetFacadeLayerSolidColorContent(
+      TransformHandle content_handle);
 
   // The set of link operations that are pending a call to Present(). Unlike other operations,
   // whose effects are only visible when a new UberStruct is published, Link destruction operations

@@ -1238,6 +1238,41 @@ TEST_F(FlatlandDifferentialTest, FilledRectPunch) {
   EXPECT_EQ(content.color, (std::array<float, 4>{0.f, 0.f, 0.f, 0.f}));
 }
 
+// FilledRectStraightAlpha
+// Setting STRAIGHT_ALPHA on a solid fill should be normalized to PREMULTIPLIED_ALPHA
+// and both schemas should produce identical ResolvedLayers with premultiplied color.
+TEST_F(FlatlandDifferentialTest, FilledRectStraightAlpha) {
+  auto script = [](Flatland* flatland, allocation::Allocator* allocator,
+                   std::function<void()> present_and_capture) {
+    const TransformId kRootId{1};
+    const ContentId kRectId{2};
+
+    flatland->CreateTransform(kRootId);
+    flatland->SetRootTransform(kRootId);
+
+    flatland->CreateFilledRect(kRectId);
+    flatland->SetSolidFill(kRectId, fuchsia_ui_composition::ColorRgba{0.5f, 0.25f, 0.75f, 0.5f},
+                           fuchsia_math::SizeU{120, 240});
+    flatland->SetImageBlendMode(kRectId, BlendMode::kStraightAlpha());
+
+    flatland->SetContent(kRootId, kRectId);
+    present_and_capture();
+  };
+
+  auto layers1 = RunScript(false, script);
+  auto layers2 = RunScript(true, script);
+  ExpectMultiPresentResolvedLayersEqual(layers1, layers2);
+
+  ASSERT_EQ(layers2.size(), 1U);
+  ASSERT_EQ(layers2[0].size(), 1U);
+  const auto& layer = layers2[0][0];
+  EXPECT_EQ(layer.blend_mode, BlendMode::kPremultipliedAlpha());
+  EXPECT_EQ(layer.multiply_color, (std::array<float, 4>{1.f, 1.f, 1.f, 1.f}));
+  ASSERT_TRUE(std::holds_alternative<ResolvedLayer::SolidColorContent>(layer.content));
+  const auto& content = std::get<ResolvedLayer::SolidColorContent>(layer.content);
+  EXPECT_EQ(content.color, (std::array<float, 4>{0.25f, 0.125f, 0.375f, 0.5f}));
+}
+
 // 26. FilledRectUnderFade
 // An opaque fill derives REPLACE, but under a faded ancestor the blend
 // demotes to PREMULTIPLIED_ALPHA so the fade reveals the background

@@ -292,14 +292,14 @@ void ComputeGlobalResolvedLayers(std::vector<ResolvedLayer>& output,
                                 &output, flatland_version = uber_struct->flatland_version](
                                    const UberStructLayer& layer) {
       // Skip invalid image.
-      const auto& image = std::get<UberStructLayer::ImageContent>(layer.content);
+      const auto& image = std::get<UberStructLayer::ImageModeProperties>(layer.content);
       if (image.image_id == allocation::kInvalidImageId) {
         return;
       }
 
       auto [orientation, flip] = DecomposeRotateFlip(image.transform);
       auto clipped_rect = ComputeClippedLayerRect(
-          node_global_matrix, node_clip_region, layer.display_rect, orientation, flip,
+          node_global_matrix, node_clip_region, layer.common.display_rect, orientation, flip,
           {glm::ivec2(image.sample_rect.x(), image.sample_rect.y()),
            glm::ivec2(image.sample_rect.x() + image.sample_rect.width(), image.sample_rect.y()),
            glm::ivec2(image.sample_rect.x() + image.sample_rect.width(),
@@ -310,7 +310,7 @@ void ComputeGlobalResolvedLayers(std::vector<ResolvedLayer>& output,
       }
 
       const auto [blend_mode, multiply_color] =
-          ResolveBlendAndOpacity(layer.blend_mode, layer.opacity * inherited_opacity,
+          ResolveBlendAndOpacity(layer.common.blend_mode, layer.common.opacity * inherited_opacity,
                                  /*pin_replace=*/flatland_version == 1);
 
       output.push_back(ResolvedLayer{
@@ -333,7 +333,7 @@ void ComputeGlobalResolvedLayers(std::vector<ResolvedLayer>& output,
     auto process_solid_color_layer = [inherited_opacity, &node_global_matrix, &node_clip_region, i,
                                       &output](const UberStructLayer& layer) {
       auto clipped_rect =
-          ComputeClippedLayerRect(node_global_matrix, node_clip_region, layer.display_rect,
+          ComputeClippedLayerRect(node_global_matrix, node_clip_region, layer.common.display_rect,
                                   fuchsia_ui_composition::Orientation::kCcw0Degrees,
                                   fuchsia_ui_composition::ImageFlip::kNone,
                                   {glm::ivec2(0), glm::ivec2(0), glm::ivec2(0), glm::ivec2(0)});
@@ -341,31 +341,30 @@ void ComputeGlobalResolvedLayers(std::vector<ResolvedLayer>& output,
         return;
       }
 
-      const auto [blend_mode, multiply_color] = ResolveBlendAndOpacity(
-          layer.blend_mode, layer.opacity * inherited_opacity, /*pin_replace=*/false);
+      // In the UberStructLayer, a solid's `color` is straight (non-premultiplied) RGBA.
+      // However, downstream of here in the ResolvedLayer, the blend mode must match the
+      // encoded content.  Because blending premultiplied content is slightly more efficient,
+      // we adjust STRAIGHT_ALPHA to PREMULTIPLIED_ALPHA here; the corresponding adjustment
+      // is made to `content_color` below.  NOTE: this optimization is only applicable to
+      // solid color content, because image content pixels cannot be mutated analogously.
+      const types::BlendMode normalized_blend =
+          layer.common.blend_mode == types::BlendMode::kStraightAlpha()
+              ? types::BlendMode::kPremultipliedAlpha()
+              : layer.common.blend_mode;
 
-      // Adapts Flatland session solid color representation to what is expected by renderer/display.
-      // TODO(https://fxbug.dev/523371761): ratified DESIGN-blend_mode_and_opacity and
-      // DESIGN-solid_fill_encoding decisions must match the behavior implemented here.
-      const auto& solid = std::get<UberStructLayer::SolidColorContent>(layer.content);
-      std::array<float, 4> content_color;
-      switch (layer.blend_mode.enum_value()) {
-        // Convert the straight alpha representation used in all Flatland sessions (regardless of
-        // Flatland API version) to premultiplied alpha, which is expected by downstream consumers.
-        case types::BlendMode::Enum::kReplace:
-        case types::BlendMode::Enum::kPremultipliedAlpha: {
-          const float a = solid.color[3];
-          content_color = {solid.color[0] * a, solid.color[1] * a, solid.color[2] * a, a};
-          break;
-        }
-        // Flatland1/2 APIs guarantee that solid color layers never arrive with
-        // STRAIGHT_ALPHA: Flatland1 rewrites it to PREMULTIPLIED_ALPHA at call
-        // time (visually lossless for a constant color; see `SetImageBlendMode()`
-        // in flatland.cc), and Flatland2 rejects it at the API.
-        case types::BlendMode::Enum::kStraightAlpha:
-          FX_CHECK(false) << "STRAIGHT_ALPHA is unreachable for solid color content";
-          break;
-      }
+      const auto [blend_mode, multiply_color] = ResolveBlendAndOpacity(
+          normalized_blend, layer.common.opacity * inherited_opacity, /*pin_replace=*/false);
+
+      // The blend mode computed above will not be STRAIGHT_ALPHA, so we need to compute
+      // the premultiplied `content_color` from the straight-alpha color received from the
+      // Flatland session.  See DESIGN-solid_fill_encoding (ratified).
+      // TODO(https://fxbug.dev/523371761): the ratified DESIGN-blend_mode_and_opacity
+      // decision must match the behavior implemented here.
+      FX_DCHECK(blend_mode != types::BlendMode::kStraightAlpha());
+      const auto& solid = std::get<UberStructLayer::SolidColorModeProperties>(layer.content);
+      const float a = solid.color[3];
+      const std::array<float, 4> content_color = {solid.color[0] * a, solid.color[1] * a,
+                                                  solid.color[2] * a, a};
 
       output.push_back(ResolvedLayer{
           .rect = *clipped_rect,
@@ -384,20 +383,18 @@ void ComputeGlobalResolvedLayers(std::vector<ResolvedLayer>& output,
     // isn't invisible for some reason) emit a `ResolvedLayer` into `output`.
     for (const auto& layer_handle : layer_stack_it->second) {
       auto layer_it = uber_struct->layers.find(layer_handle);
-      if (layer_it == uber_struct->layers.end()) {
-        continue;
-      }
+      FX_CHECK(layer_it != uber_struct->layers.end());
       const auto& layer = layer_it->second;
 
-      if (layer.display_rect.width() <= 0 || layer.display_rect.height() <= 0 ||
-          layer.opacity == 0.f) {
+      if (layer.common.display_rect.width() <= 0 || layer.common.display_rect.height() <= 0 ||
+          layer.common.opacity == 0.f) {
         // Invisible.
         continue;
       }
 
-      if (std::holds_alternative<UberStructLayer::ImageContent>(layer.content)) {
+      if (std::holds_alternative<UberStructLayer::ImageModeProperties>(layer.content)) {
         process_image_layer(layer);
-      } else if (std::holds_alternative<UberStructLayer::SolidColorContent>(layer.content)) {
+      } else if (std::holds_alternative<UberStructLayer::SolidColorModeProperties>(layer.content)) {
         process_solid_color_layer(layer);
       }
       static_assert(3 == std::variant_size_v<decltype(UberStructLayer::content)>,

@@ -89,8 +89,9 @@ void ComputeGlobalImageData(GlobalIndexVector& output_indices, GlobalImageVector
         // (ResolveBlendAndOpacity with pin_replace=false).
         if (image.blend_mode == BlendMode::kReplace() && opacity_values[index] < 1.0f) {
           image.blend_mode = BlendMode::kPremultipliedAlpha();
+        } else if (image.blend_mode == BlendMode::kStraightAlpha()) {
+          image.blend_mode = BlendMode::kPremultipliedAlpha();
         }
-        FX_CHECK(image.blend_mode != BlendMode::kStraightAlpha());
       }
 
       image.multiply_color[3] *= opacity_values[index];

@@ -524,10 +524,27 @@ void Flatland::Present(fuchsia_ui_composition::PresentArgs args) {
             auto obj_it = layer_objects_.find(layer_handle);
             FX_DCHECK(obj_it != layer_objects_.end());
 
-            // `LayerObject` inherits from `UberStructLayer` so we can assign directly.
-            // Use `try_emplace` because the Flatland2 API allows adding the same layer to multiple
-            // layer stacks; this avoids unnecessary copying.
-            uber_struct->layers.try_emplace(layer_handle, obj_it->second);
+            // The UberStruct contains only those layers which are currently in a layer stack.
+            auto [us_layer_it, inserted] = uber_struct->layers.try_emplace(layer_handle);
+            if (inserted) {
+              // Must copy properties for the newly-inserted layer.  Common properties are always
+              // copied, and only the mode-specific properties which match the composition mode
+              // are copied.
+              auto& us_layer = us_layer_it->second;
+              const auto& obj = obj_it->second;
+              us_layer.common = obj.common;
+              switch (obj.mode) {
+                case LayerObject::Mode::kInvisible:
+                  // The variant defaults to std::monostate, so nothing to do.
+                  break;
+                case LayerObject::Mode::kImage:
+                  us_layer.content = obj.image_mode;
+                  break;
+                case LayerObject::Mode::kSolidColor:
+                  us_layer.content = obj.solid_color_mode;
+                  break;
+              }
+            }
           }
         }
       }
@@ -1412,21 +1429,22 @@ LayerObject* Flatland::GetFacadeLayerObject(TransformHandle content_handle) {
   return &layer_it->second;
 }
 
-LayerObject::ImageContent* Flatland::GetFacadeLayerImageContent(TransformHandle content_handle) {
-  auto* layer = GetFacadeLayerObject(content_handle);
-  if (!layer || !std::holds_alternative<LayerObject::ImageContent>(layer->content)) {
-    return nullptr;
-  }
-  return &std::get<LayerObject::ImageContent>(layer->content);
-}
-
-LayerObject::SolidColorContent* Flatland::GetFacadeLayerSolidColorContent(
+UberStructLayer::ImageModeProperties* Flatland::GetFacadeLayerImageContent(
     TransformHandle content_handle) {
   auto* layer = GetFacadeLayerObject(content_handle);
-  if (!layer || !std::holds_alternative<LayerObject::SolidColorContent>(layer->content)) {
+  if (!layer || layer->mode != LayerObject::Mode::kImage) {
     return nullptr;
   }
-  return &std::get<LayerObject::SolidColorContent>(layer->content);
+  return &layer->image_mode;
+}
+
+UberStructLayer::SolidColorModeProperties* Flatland::GetFacadeLayerSolidColorContent(
+    TransformHandle content_handle) {
+  auto* layer = GetFacadeLayerObject(content_handle);
+  if (!layer || layer->mode != LayerObject::Mode::kSolidColor) {
+    return nullptr;
+  }
+  return &layer->solid_color_mode;
 }
 
 void Flatland::CreateImage(CreateImageRequest& request, CreateImageCompleter::Sync& completer) {
@@ -1490,7 +1508,7 @@ void Flatland::CreateImage(ContentId image_id,
 
   if (config_.use_flatland2_uberstruct_schema) {
     LayerHandle layer_handle = CreateLayerObject();
-    LayerObject::ImageContent content{
+    UberStructLayer::ImageModeProperties content{
         .sample_rect = {{
             .x = 0.f,
             .y = 0.f,
@@ -1502,8 +1520,9 @@ void Flatland::CreateImage(ContentId image_id,
         .image_height = properties.size()->height(),
     };
     auto& layer_object = layer_objects_[layer_handle];
-    layer_object.content = content;
-    layer_object.display_rect = {{
+    layer_object.mode = LayerObject::Mode::kImage;
+    layer_object.image_mode = content;
+    layer_object.common.display_rect = {{
         .x = 0,
         .y = 0,
         .width = static_cast<int32_t>(properties.size()->width()),
@@ -1679,16 +1698,16 @@ void Flatland::SetImageDestinationSize(ContentId image_id, fuchsia_math::SizeU s
 
   if (config_.use_flatland2_uberstruct_schema) {
     auto* layer = GetFacadeLayerObject(content_kv->second);
-    if (!layer || !std::holds_alternative<LayerObject::ImageContent>(layer->content)) {
+    if (!layer || layer->mode != LayerObject::Mode::kImage) {
       error_reporter_->ERROR() << "SetImageDestinationSize called on non-image content  "
                                << image_id.value();
       CloseConnection(FlatlandError::kBadOperation);
       return;
     }
-    layer->display_rect = types::Rectangle({.x = 0,
-                                            .y = 0,
-                                            .width = static_cast<int32_t>(size.width()),
-                                            .height = static_cast<int32_t>(size.height())});
+    layer->common.display_rect = types::Rectangle({.x = 0,
+                                                   .y = 0,
+                                                   .width = static_cast<int32_t>(size.width()),
+                                                   .height = static_cast<int32_t>(size.height())});
   } else {
     auto* image = flatland1_content_.FindImage(content_kv->second);
     if (!image || image->identifier == allocation::kInvalidImageId) {
@@ -1734,33 +1753,14 @@ void Flatland::SetImageBlendMode(ContentId image_id, BlendMode blend_mode) {
       CloseConnection(FlatlandError::kBadOperation);
       return;
     }
-    FX_CHECK(!std::holds_alternative<std::monostate>(layer->content));
-    if (std::holds_alternative<LayerObject::SolidColorContent>(layer->content) &&
-        blend_mode == types::BlendMode::kStraightAlpha()) {
-      // Blend modes apply to solid-color content too: the FIDL doc comment names
-      // CreateFilledRect content as a valid target. STRAIGHT_ALPHA is stored as
-      // kPremultipliedAlpha, which is lossless for a constant color:
-      // STRAIGHT_ALPHA blending of (color, alpha) and PREMULTIPLIED_ALPHA
-      // blending of (color * alpha, alpha) produce identical pixels. The rewrite
-      // also preserves the invariant that a stored solid's blend mode is never
-      // kStraightAlpha (FX_CHECKed at resolved-layer emission in
-      // global_resolved_layers.cc).
-      blend_mode = types::BlendMode::kPremultipliedAlpha();
-    }
-    layer->blend_mode = blend_mode;
+    FX_CHECK(layer->mode != LayerObject::Mode::kInvisible);
+    layer->common.blend_mode = blend_mode;
   } else {
     auto* image = flatland1_content_.FindImage(content_kv->second);
     if (!image) {
       error_reporter_->ERROR() << "SetImageBlendMode called on non-image content.";
       CloseConnection(FlatlandError::kBadOperation);
       return;
-    }
-
-    if (image->identifier == allocation::kInvalidImageId &&
-        blend_mode == BlendMode::kStraightAlpha()) {
-      // Same STRAIGHT_ALPHA rewrite as the facade arm of this method, so that
-      // both schemas store identical blend modes for solid-color content.
-      blend_mode = BlendMode::kPremultipliedAlpha();
     }
     image->blend_mode = blend_mode;
   }
@@ -1835,14 +1835,15 @@ void Flatland::CreateFilledRect(ContentId rect_id) {
 
   if (config_.use_flatland2_uberstruct_schema) {
     LayerHandle layer_handle = CreateLayerObject();
-    LayerObject::SolidColorContent content{
+    UberStructLayer::SolidColorModeProperties content{
         // Set default color to opaque white (matches Flatland1 default multiply_color behavior
         // before SetSolidFill is called, though it's typically set immediately after).
         .color = {1.f, 1.f, 1.f, 1.f},
     };
     auto& layer_object = layer_objects_[layer_handle];
-    layer_object.content = content;
-    layer_object.display_rect = {{.x = 0, .y = 0, .width = 0, .height = 0}};
+    layer_object.mode = LayerObject::Mode::kSolidColor;
+    layer_object.solid_color_mode = content;
+    layer_object.common.display_rect = {{.x = 0, .y = 0, .width = 0, .height = 0}};
 
     handle = CreateLayerStackData({layer_handle});
     content_handles_[rect_id] = handle;
@@ -1898,15 +1899,15 @@ void Flatland::SetSolidFill(ContentId rect_id, fuchsia_ui_composition::ColorRgba
 
   if (config_.use_flatland2_uberstruct_schema) {
     auto* layer = GetFacadeLayerObject(content_kv->second);
-    if (!layer || !std::holds_alternative<LayerObject::SolidColorContent>(layer->content)) {
+    if (!layer || layer->mode != LayerObject::Mode::kSolidColor) {
       error_reporter_->ERROR() << "Missing metadata for rect with id  " << rect_id;
       CloseConnection(FlatlandError::kBadOperation);
       return;
     }
-    auto& solid_color = std::get<LayerObject::SolidColorContent>(layer->content);
+    auto& solid_color = layer->solid_color_mode;
     solid_color.color =
         std::array<float, 4>{color.red(), color.green(), color.blue(), color.alpha()};
-    layer->display_rect = types::Rectangle({
+    layer->common.display_rect = types::Rectangle({
         .x = 0,
         .y = 0,
         .width = static_cast<int32_t>(size.width()),
@@ -1918,8 +1919,8 @@ void Flatland::SetSolidFill(ContentId rect_id, fuchsia_ui_composition::ColorRgba
     // in the other order, a later SetImageBlendMode overwrites the derived
     // value. Last call wins, matching classic Flatland1 (the CTF pixel tests
     // rely on the fill-then-blend order).
-    layer->blend_mode = color.alpha() < 1.f ? types::BlendMode::kPremultipliedAlpha()
-                                            : types::BlendMode::kReplace();
+    layer->common.blend_mode = color.alpha() < 1.f ? types::BlendMode::kPremultipliedAlpha()
+                                                   : types::BlendMode::kReplace();
   } else {
     auto* image = flatland1_content_.FindImage(content_kv->second);
     if (!image || image->identifier != allocation::kInvalidImageId) {
@@ -2011,12 +2012,12 @@ void Flatland::SetImageOpacity(ContentId image_id, float opacity) {
 
   if (config_.use_flatland2_uberstruct_schema) {
     auto* layer = GetFacadeLayerObject(content_kv->second);
-    if (!layer || !std::holds_alternative<LayerObject::ImageContent>(layer->content)) {
+    if (!layer || layer->mode != LayerObject::Mode::kImage) {
       error_reporter_->ERROR() << "SetImageOpacity called on non-image content.";
       CloseConnection(FlatlandError::kBadOperation);
       return;
     }
-    layer->opacity = opacity;
+    layer->common.opacity = opacity;
   } else {
     auto* image = flatland1_content_.FindImage(content_kv->second);
     if (!image) {
@@ -2638,21 +2639,17 @@ allocation::GlobalImageId Flatland::ReleaseLayerObject(LayerHandle handle) {
     return allocation::kInvalidImageId;
   }
 
-  auto content = it->second.content;
-  layer_objects_.erase(it);
-
-  if (!std::holds_alternative<LayerObject::ImageContent>(content)) {
-    return allocation::kInvalidImageId;
-  }
-
-  allocation::GlobalImageId released_image = std::get<LayerObject::ImageContent>(content).image_id;
-
+  // Release the image associated with the layer, if any, regardless of the current mode.
+  // Layers that never bound an image yield kInvalidImageId, which callers ignore.
+  //
   // TODO(https://fxbug.dev/523371761): this works for the Flatland1 facade, where the
   // FIDL client "image" corresponds 1-1 to:
   //   - a layer stack
   //   - a layer in the layer stack
   //   - an image assigned to the layer
   // ... but it won't work later when e.g. the same image is assigned to multiple layers.
+  const allocation::GlobalImageId released_image = it->second.image_mode.image_id;
+  layer_objects_.erase(it);
   if (released_image != allocation::kInvalidImageId) {
     images_to_release_->insert(released_image);
     return released_image;
@@ -2708,11 +2705,8 @@ void Flatland::SetLayerImageForTest(LayerHandle handle, allocation::GlobalImageI
   if (it == layer_objects_.end()) {
     return;
   }
-  if (!std::holds_alternative<LayerObject::ImageContent>(it->second.content)) {
-    it->second.content = LayerObject::ImageContent();
-    it->second.epoch++;
-  }
-  std::get<LayerObject::ImageContent>(it->second.content).image_id = image;
+  it->second.mode = LayerObject::Mode::kImage;
+  it->second.image_mode.image_id = image;
 }
 
 void Flatland::SetLayerSolidColorForTest(LayerHandle handle) {
@@ -2721,10 +2715,7 @@ void Flatland::SetLayerSolidColorForTest(LayerHandle handle) {
   if (it == layer_objects_.end()) {
     return;
   }
-  if (!std::holds_alternative<LayerObject::SolidColorContent>(it->second.content)) {
-    it->second.content = LayerObject::SolidColorContent();
-    it->second.epoch++;
-  }
+  it->second.mode = LayerObject::Mode::kSolidColor;
 }
 
 LayerObject* Flatland::GetLayerObjectForTest(LayerHandle handle) {

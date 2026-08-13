@@ -157,14 +157,23 @@ struct ResolvedLayer {
     bool operator==(const ImageContent&) const = default;
   };
 
-  // A solid-color fill.  Replaces the kInvalidImageId sentinel encoding.
+  // A solid-color fill.  `color` is premultiplied, unlike the straight RGBA
+  // that sessions store in UberStructLayer::SolidColorModeProperties::color;
+  // this is done by the global flattening walk, and the blend mode is adjusted
+  // accordingly (a stored kStraightAlpha blend mode resolves to kPremultipliedAlpha).
+  // Layer and inherited opacity are NOT folded in here; they arrive via
+  // `multiply_color`, as for image content.
   struct SolidColorContent {
     std::array<float, 4> color = {1.f, 1.f, 1.f, 1.f};
     bool operator==(const SolidColorContent&) const = default;
   };
 
   ImageRect rect;
-  std::array<float, 4> multiply_color = {1.f, 1.f, 1.f, 1.f};  // multiply color
+  // Encodes the effective opacity (layer opacity combined with inherited transform opacity),
+  // using only the alpha channel when `blend_mode == kStraightAlpha`, and all 4 channels for
+  // premultiplied blend modes.  Content opacity does not reside here; it is encoded in the
+  // pixels for `ImageContent`, or in the `color` field of `SolidColorContent`.
+  std::array<float, 4> multiply_color = {1.f, 1.f, 1.f, 1.f};
   types::BlendMode blend_mode = types::BlendMode::kReplace();
   fuchsia_ui_composition::ImageFlip flip = fuchsia_ui_composition::ImageFlip::kNone;
   std::variant<ImageContent, SolidColorContent> content;

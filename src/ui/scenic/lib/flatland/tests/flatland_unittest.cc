@@ -5983,30 +5983,6 @@ TEST_F(FlatlandTest, ImageReleaseRidesExistingMachinery) {
   RunLoopUntilIdle();
 }
 
-TEST_F(FlatlandTest, EpochIncrementsOnTypeTransition) {
-  std::shared_ptr<Flatland> flatland = CreateFlatland();
-
-  LayerHandle layer = flatland->CreateLayerObject();
-  const auto* obj = flatland->GetLayerObjectForTest(layer);
-  ASSERT_NE(obj, nullptr);
-  EXPECT_EQ(obj->epoch, 0u);
-  EXPECT_TRUE(std::holds_alternative<std::monostate>(obj->content));
-
-  // Transition to Image.
-  flatland->SetLayerImageForTest(layer, allocation::kInvalidImageId);
-  EXPECT_EQ(obj->epoch, 1u);
-  EXPECT_TRUE(std::holds_alternative<LayerObject::ImageContent>(obj->content));
-
-  // Transition to same kind: epoch should not increment.
-  flatland->SetLayerImageForTest(layer, allocation::kInvalidImageId);
-  EXPECT_EQ(obj->epoch, 1u);
-
-  // Transition to SolidColor.
-  flatland->SetLayerSolidColorForTest(layer);
-  EXPECT_EQ(obj->epoch, 2u);
-  EXPECT_TRUE(std::holds_alternative<LayerObject::SolidColorContent>(obj->content));
-}
-
 TEST_F(FlatlandTest, PresentStampsFlatlandVersion) {
   // Classic session Present -> snapshot flatland_version == 1
   {
@@ -6077,16 +6053,22 @@ TEST_F(Flatland1FacadeTest, CreateImagePopulatesLayerStackSchema) {
   ASSERT_NE(layer_it, uber_struct->layers.end());
 
   const auto& layer = layer_it->second;
-  EXPECT_TRUE(layer.display_rect == types::Rectangle({0, 0, 100, 200}));
-  EXPECT_EQ(layer.opacity, 1.f);
-  EXPECT_EQ(layer.blend_mode, types::BlendMode::kReplace());
+  EXPECT_EQ(layer.common, (UberStructLayer::CommonProperties{
+                              .display_rect = {{0, 0, 100, 200}},
+                              .opacity = 1.f,
+                              .blend_mode = types::BlendMode::kReplace(),
+                          }));
 
-  ASSERT_TRUE(std::holds_alternative<UberStructLayer::ImageContent>(layer.content));
-  const auto& content = std::get<UberStructLayer::ImageContent>(layer.content);
-  EXPECT_TRUE(content.sample_rect == types::RectangleF({0.f, 0.f, 100.f, 200.f}));
+  ASSERT_TRUE(std::holds_alternative<UberStructLayer::ImageModeProperties>(layer.content));
+  const auto& content = std::get<UberStructLayer::ImageModeProperties>(layer.content);
   EXPECT_NE(content.image_id, allocation::kInvalidImageId);
-  EXPECT_EQ(content.image_width, 100u);
-  EXPECT_EQ(content.image_height, 200u);
+  EXPECT_EQ(content, (UberStructLayer::ImageModeProperties{
+                         .sample_rect = {{0.f, 0.f, 100.f, 200.f}},
+                         .transform = types::RotateFlip::kIdentity(),
+                         .image_id = content.image_id,
+                         .image_width = 100u,
+                         .image_height = 200u,
+                     }));
 }
 
 // Flatland1FacadeTest.SampleRegionResolvesIntoSnapshot
@@ -6118,7 +6100,7 @@ TEST_F(Flatland1FacadeTest, SampleRegionResolvesIntoSnapshot) {
   auto content_handle = flatland->GetContentHandle(kImageId).value();
   auto layer_handle = uber_struct->layer_stacks.find(content_handle)->second[0];
   const auto& layer = uber_struct->layers.find(layer_handle)->second;
-  const auto& content = std::get<UberStructLayer::ImageContent>(layer.content);
+  const auto& content = std::get<UberStructLayer::ImageModeProperties>(layer.content);
 
   EXPECT_TRUE(content.sample_rect == types::RectangleF({10.f, 20.f, 30.f, 40.f}));
 }
@@ -6152,9 +6134,9 @@ TEST_F(Flatland1FacadeTest, DestinationSizeResolvesIntoSnapshot) {
   auto content_handle = flatland->GetContentHandle(kImageId).value();
   auto layer_handle = uber_struct->layer_stacks.find(content_handle)->second[0];
   const auto& layer = uber_struct->layers.find(layer_handle)->second;
-  const auto& content = std::get<UberStructLayer::ImageContent>(layer.content);
+  const auto& content = std::get<UberStructLayer::ImageModeProperties>(layer.content);
 
-  EXPECT_TRUE(layer.display_rect == types::Rectangle({0, 0, 300, 400}));
+  EXPECT_TRUE(layer.common.display_rect == types::Rectangle({0, 0, 300, 400}));
 }
 
 // Flatland1FacadeTest.OpacityBlendFlipResolveIntoSnapshot
@@ -6187,9 +6169,9 @@ TEST_F(Flatland1FacadeTest, OpacityBlendFlipResolveIntoSnapshot) {
   auto content_handle = flatland->GetContentHandle(kImageId).value();
   auto layer_handle = uber_struct->layer_stacks.find(content_handle)->second[0];
   const auto& layer = uber_struct->layers.find(layer_handle)->second;
-  EXPECT_EQ(layer.opacity, 0.5f);
-  EXPECT_EQ(layer.blend_mode, types::BlendMode::kReplace());
-  const auto& content = std::get<UberStructLayer::ImageContent>(layer.content);
+  EXPECT_EQ(layer.common.opacity, 0.5f);
+  EXPECT_EQ(layer.common.blend_mode, types::BlendMode::kReplace());
+  const auto& content = std::get<UberStructLayer::ImageModeProperties>(layer.content);
   EXPECT_EQ(content.transform, types::RotateFlip::kReflectY());
 }
 
@@ -6229,7 +6211,7 @@ TEST_F(Flatland1FacadeTest, ClampIfNearMatchesLegacy) {
     if (flag) {
       auto layer_handle = uber_struct->layer_stacks.find(content_handle)->second[0];
       const auto& layer = uber_struct->layers.find(layer_handle)->second;
-      const auto& content = std::get<UberStructLayer::ImageContent>(layer.content);
+      const auto& content = std::get<UberStructLayer::ImageModeProperties>(layer.content);
       // It should be clamped to 0,0,100,200
       EXPECT_TRUE(content.sample_rect == types::RectangleF({0.f, 0.f, 100.f, 200.f}));
     } else {
@@ -6464,18 +6446,15 @@ TEST_F(Flatland1FacadeTest, FilledRectPopulatesSolidColorSnapshot) {
   auto layer_iter = uber_struct->layers.find(layer_handle);
   ASSERT_NE(layer_iter, uber_struct->layers.end());
 
-  const auto& layer = layer_iter->second;
-  EXPECT_EQ(layer.display_rect.x(), 0);
-  EXPECT_EQ(layer.display_rect.y(), 0);
-  EXPECT_EQ(layer.display_rect.width(), 100);
-  EXPECT_EQ(layer.display_rect.height(), 200);
   // alpha == 0.4 results in `kPremultipliedAlpha` blend mode.
-  EXPECT_EQ(layer.blend_mode, types::BlendMode::kPremultipliedAlpha());
-
-  ASSERT_TRUE(
-      std::holds_alternative<UberStructLayer::SolidColorContent>(layer_iter->second.content));
-  auto solid_color = std::get<UberStructLayer::SolidColorContent>(layer.content);
-  EXPECT_EQ(solid_color.color, (std::array<float, 4>{0.1f, 0.2f, 0.3f, 0.4f}));
+  EXPECT_EQ(
+      layer_iter->second,
+      (UberStructLayer{
+          .content = UberStructLayer::SolidColorModeProperties{.color = {0.1f, 0.2f, 0.3f, 0.4f}},
+          .common = {.display_rect = {{0, 0, 100, 200}},
+                     .opacity = 1.f,
+                     .blend_mode = types::BlendMode::kPremultipliedAlpha()},
+      }));
 }
 
 // Flatland1FacadeTest.FilledRectBeforeSetSolidFill
@@ -6509,18 +6488,14 @@ TEST_F(Flatland1FacadeTest, FilledRectBeforeSetSolidFill) {
   auto layer_iter = uber_struct->layers.find(layer_handle);
   ASSERT_NE(layer_iter, uber_struct->layers.end());
 
-  const auto& layer = layer_iter->second;
-  EXPECT_EQ(layer.display_rect.x(), 0);
-  EXPECT_EQ(layer.display_rect.y(), 0);
-  EXPECT_EQ(layer.display_rect.width(), 0);
-  EXPECT_EQ(layer.display_rect.height(), 0);
   // Default solid color has alpha == 1, which results in `kReplace` blend mode.
-  EXPECT_EQ(layer.blend_mode, types::BlendMode::kReplace());
-
-  ASSERT_TRUE(
-      std::holds_alternative<UberStructLayer::SolidColorContent>(layer_iter->second.content));
-  auto solid_color = std::get<UberStructLayer::SolidColorContent>(layer.content);
-  EXPECT_EQ(solid_color.color, (std::array<float, 4>{1.f, 1.f, 1.f, 1.f}));
+  EXPECT_EQ(layer_iter->second,
+            (UberStructLayer{
+                .content = UberStructLayer::SolidColorModeProperties{.color = {1.f, 1.f, 1.f, 1.f}},
+                .common = {.display_rect = {{0, 0, 0, 0}},
+                           .opacity = 1.f,
+                           .blend_mode = types::BlendMode::kReplace()},
+            }));
 }
 
 // Flatland1FacadeTest.FilledRectInterleavesWithImagesInZOrder
@@ -6593,10 +6568,15 @@ TEST_F(Flatland1FacadeTest, FilledRectInterleavesWithImagesInZOrder) {
     LayerHandle layer_handle = stack_layers[0];
     ASSERT_TRUE(uber_struct->layers.contains(layer_handle));
     const UberStructLayer& layer = uber_struct->layers.find(layer_handle)->second;
-    ASSERT_TRUE(std::holds_alternative<UberStructLayer::ImageContent>(layer.content));
-    auto& content = std::get<UberStructLayer::ImageContent>(layer.content);
-    EXPECT_EQ(content.image_width, 100u);
-    EXPECT_EQ(content.image_height, 200u);
+    ASSERT_TRUE(std::holds_alternative<UberStructLayer::ImageModeProperties>(layer.content));
+    const auto& content = std::get<UberStructLayer::ImageModeProperties>(layer.content);
+    EXPECT_EQ(content, (UberStructLayer::ImageModeProperties{
+                           .sample_rect = {{0.f, 0.f, 100.f, 200.f}},
+                           .transform = types::RotateFlip::kIdentity(),
+                           .image_id = content.image_id,
+                           .image_width = 100u,
+                           .image_height = 200u,
+                       }));
   }
 
   // Verify Child 2 has the solid color layer
@@ -6610,10 +6590,14 @@ TEST_F(Flatland1FacadeTest, FilledRectInterleavesWithImagesInZOrder) {
     ASSERT_EQ(stack_layers.size(), 1u);
     LayerHandle layer_handle = stack_layers[0];
     ASSERT_TRUE(uber_struct->layers.contains(layer_handle));
-    const UberStructLayer& layer = uber_struct->layers.find(layer_handle)->second;
-    ASSERT_TRUE(std::holds_alternative<UberStructLayer::SolidColorContent>(layer.content));
-    auto& content = std::get<UberStructLayer::SolidColorContent>(layer.content);
-    EXPECT_EQ(content.color, (std::array<float, 4>{0.5f, 0.5f, 0.5f, 0.5f}));
+    EXPECT_EQ(
+        uber_struct->layers.find(layer_handle)->second,
+        (UberStructLayer{
+            .content = UberStructLayer::SolidColorModeProperties{.color = {0.5f, 0.5f, 0.5f, 0.5f}},
+            .common = {.display_rect = {{0, 0, 300, 400}},
+                       .opacity = 1.f,
+                       .blend_mode = types::BlendMode::kPremultipliedAlpha()},
+        }));
   }
 
   // Verify Child 3 has the image layer
@@ -6628,10 +6612,15 @@ TEST_F(Flatland1FacadeTest, FilledRectInterleavesWithImagesInZOrder) {
     LayerHandle layer_handle = stack_layers[0];
     ASSERT_TRUE(uber_struct->layers.contains(layer_handle));
     const UberStructLayer& layer = uber_struct->layers.find(layer_handle)->second;
-    ASSERT_TRUE(std::holds_alternative<UberStructLayer::ImageContent>(layer.content));
-    auto& content = std::get<UberStructLayer::ImageContent>(layer.content);
-    EXPECT_EQ(content.image_width, 300u);
-    EXPECT_EQ(content.image_height, 400u);
+    ASSERT_TRUE(std::holds_alternative<UberStructLayer::ImageModeProperties>(layer.content));
+    const auto& content = std::get<UberStructLayer::ImageModeProperties>(layer.content);
+    EXPECT_EQ(content, (UberStructLayer::ImageModeProperties{
+                           .sample_rect = {{0.f, 0.f, 300.f, 400.f}},
+                           .transform = types::RotateFlip::kIdentity(),
+                           .image_id = content.image_id,
+                           .image_width = 300u,
+                           .image_height = 400u,
+                       }));
   }
 
   // Verify that they appear in the topology in the correct Z-order.
@@ -6727,6 +6716,7 @@ TEST_F(Flatland1FacadeTest, TranslucentFillResultsInPremultiplied) {
 
   flatland->CreateFilledRect(kRectId);
   flatland->SetContent(kRootId, kRectId);
+  const TransformHandle content_handle = flatland->GetContentHandle(kRectId).value();
 
   // 1. Translucent fill -> blend_mode == kPremultipliedAlpha
   flatland->SetSolidFill(kRectId, fuchsia_ui_composition::ColorRgba{0.1f, 0.2f, 0.3f, 0.5f},
@@ -6737,12 +6727,15 @@ TEST_F(Flatland1FacadeTest, TranslucentFillResultsInPremultiplied) {
     auto snapshot = uber_struct_system_->Snapshot();
     ASSERT_TRUE(snapshot.map.contains(flatland->GetSessionId()));
     auto uber_struct = snapshot.map.find(flatland->GetSessionId())->second;
-    auto content_handle = flatland->GetContentHandle(kRectId).value();
     auto layer_handle = uber_struct->layer_stacks.find(content_handle)->second[0];
-    const auto& layer = uber_struct->layers.find(layer_handle)->second;
-    EXPECT_EQ(layer.blend_mode, types::BlendMode::kPremultipliedAlpha());
-    auto solid_color = std::get<UberStructLayer::SolidColorContent>(layer.content);
-    EXPECT_EQ(solid_color.color, (std::array<float, 4>{0.1f, 0.2f, 0.3f, 0.5f}));
+    EXPECT_EQ(
+        uber_struct->layers.find(layer_handle)->second,
+        (UberStructLayer{
+            .content = UberStructLayer::SolidColorModeProperties{.color = {0.1f, 0.2f, 0.3f, 0.5f}},
+            .common = {.display_rect = {{0, 0, 100, 200}},
+                       .opacity = 1.f,
+                       .blend_mode = types::BlendMode::kPremultipliedAlpha()},
+        }));
   }
 
   // 2. Re-fill opaque -> blend_mode == kReplace
@@ -6754,18 +6747,22 @@ TEST_F(Flatland1FacadeTest, TranslucentFillResultsInPremultiplied) {
     auto snapshot = uber_struct_system_->Snapshot();
     ASSERT_TRUE(snapshot.map.contains(flatland->GetSessionId()));
     auto uber_struct = snapshot.map.find(flatland->GetSessionId())->second;
-    auto content_handle = flatland->GetContentHandle(kRectId).value();
     auto layer_handle = uber_struct->layer_stacks.find(content_handle)->second[0];
-    const auto& layer = uber_struct->layers.find(layer_handle)->second;
-    EXPECT_EQ(layer.blend_mode, types::BlendMode::kReplace());
-    auto solid_color = std::get<UberStructLayer::SolidColorContent>(layer.content);
-    EXPECT_EQ(solid_color.color, (std::array<float, 4>{0.1f, 0.2f, 0.3f, 1.f}));
+    EXPECT_EQ(
+        uber_struct->layers.find(layer_handle)->second,
+        (UberStructLayer{
+            .content = UberStructLayer::SolidColorModeProperties{.color = {0.1f, 0.2f, 0.3f, 1.f}},
+            .common = {.display_rect = {{0, 0, 100, 200}},
+                       .opacity = 1.f,
+                       .blend_mode = types::BlendMode::kReplace()},
+        }));
   }
 }
 
-// Clients are free to set the blend mode to STRAIGHT_ALPHA, but for solid fills this
-// will be losslessly translated to PREMULTIPLIED_ALPHA.
-TEST_P(FlatlandFacadeParameterizedTest, StraightAlphaSolidNormalized) {
+// The session snapshots the blend mode the client set, including STRAIGHT_ALPHA on a
+// solid fill.  Normalization happens downstream, at emission, in
+// `ComputeGlobalResolvedLayers()`.
+TEST_P(FlatlandFacadeParameterizedTest, StraightAlphaSolidLeftUnchanged) {
   std::shared_ptr<Flatland> flatland = CreateFlatland();
   const TransformId kRootId{1};
   const ContentId kRectId{2};
@@ -6785,10 +6782,10 @@ TEST_P(FlatlandFacadeParameterizedTest, StraightAlphaSolidNormalized) {
   if (GetParam()) {
     auto layer_handle = uber_struct->layer_stacks.find(content_handle)->second[0];
     const auto& layer = uber_struct->layers.find(layer_handle)->second;
-    EXPECT_EQ(layer.blend_mode, types::BlendMode::kPremultipliedAlpha());
+    EXPECT_EQ(layer.common.blend_mode, types::BlendMode::kStraightAlpha());
   } else {
     const auto& image = uber_struct->images.find(content_handle)->second;
-    EXPECT_EQ(image.blend_mode, BlendMode::kPremultipliedAlpha());
+    EXPECT_EQ(image.blend_mode, BlendMode::kStraightAlpha());
   }
 }
 
@@ -6815,7 +6812,7 @@ TEST_P(FlatlandFacadeParameterizedTest, SolidFillRederivesBlendMode) {
   if (GetParam()) {
     auto layer_handle = uber_struct->layer_stacks.find(content_handle)->second[0];
     const auto& layer = uber_struct->layers.find(layer_handle)->second;
-    EXPECT_EQ(layer.blend_mode, types::BlendMode::kPremultipliedAlpha());
+    EXPECT_EQ(layer.common.blend_mode, types::BlendMode::kPremultipliedAlpha());
   } else {
     const auto& image = uber_struct->images.find(content_handle)->second;
     EXPECT_EQ(image.blend_mode, BlendMode::kPremultipliedAlpha());
@@ -6844,7 +6841,7 @@ TEST_P(FlatlandFacadeParameterizedTest, SolidFillThenBlendModeOverrides) {
   if (GetParam()) {
     auto layer_handle = uber_struct->layer_stacks.find(content_handle)->second[0];
     const auto& layer = uber_struct->layers.find(layer_handle)->second;
-    EXPECT_EQ(layer.blend_mode, types::BlendMode::kReplace());
+    EXPECT_EQ(layer.common.blend_mode, types::BlendMode::kReplace());
   } else {
     const auto& image = uber_struct->images.find(content_handle)->second;
     EXPECT_EQ(image.blend_mode, BlendMode::kReplace());
