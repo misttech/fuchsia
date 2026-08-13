@@ -293,6 +293,11 @@ impl Peer {
         //   On BSD systems, a window probing is always done with a packet
         //   containing one octet of data.
         let window_size = {
+            // RFC 7323 2.2:
+            //    The window field in a segment where the SYN bit is set (i.e., a <SYN>
+            //    or <SYN,ACK>) MUST NOT be scaled.
+            let window_scale =
+                if control == Some(Control::SYN) { WindowScale::ZERO } else { window_scale };
             let window_size = wnd << window_scale;
             // The unwrap below won't fail because 1 is less than
             // WindowSize::MAX.
@@ -1159,6 +1164,30 @@ mod tests {
             unacked_data: false,
             fin_state: FinState::Sent(SeqNum::new(1000 + 9)),
         }; "fin sent"
+    )]
+    #[test_case(
+        Peer {
+            window_scale: WindowScale::new(3).unwrap(),
+            max_wnd: WindowSize::new(16).unwrap(),
+            max_wnd_seq: SeqNum::new(127),
+            max_next_seq: SeqNum::new(1024),
+            unacked_data: false,
+            fin_state: FinState::NotSent,
+        },
+        PeerUpdateSenderArgs {
+            seq: SeqNum::new(1000),
+            len: 10,
+            ack: SeqNum::new(0),
+            wnd: UnscaledWindowSize::from_u32(4),
+            control: Some(Control::SYN),
+        } => Peer {
+            window_scale: WindowScale::new(3).unwrap(),
+            max_wnd: WindowSize::new(16).unwrap(),
+            max_wnd_seq: SeqNum::new(127),
+            max_next_seq: SeqNum::new(1024),
+            unacked_data: false,
+            fin_state: FinState::NotSent,
+        }; "syn ack ignores window_scale"
     )]
     fn peer_update_sender_test(peer: Peer, args: PeerUpdateSenderArgs) -> Peer {
         peer.update_sender(args.seq, args.len, args.ack, args.wnd, args.control)
