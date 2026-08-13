@@ -2,6 +2,7 @@
 
 #![cfg(test)]
 #![allow(unused_imports)]
+#![allow(clippy::approx_constant)]
 
 use {
     assert_matches::assert_matches,
