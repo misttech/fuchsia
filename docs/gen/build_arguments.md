@@ -867,7 +867,7 @@ This should never be set as a build argument.
 }
   aarch64_unknown_linux_gnu = {
   libclang_rt_profile_a = "lib/clang/24/lib/aarch64-unknown-linux-gnu/libclang_rt.profile.a"
-  libunwind_so = "../../../../out/not-default/libunwind.so"
+  libunwind_so = ""
   resource_dir = "lib/clang/24"
   variants = {
   asan = {
@@ -946,7 +946,7 @@ This should never be set as a build argument.
 }
   static = {
   clang_rt = "lib/clang/24/lib/armv7-unknown-linux-gnueabihf/libclang_rt.lsan.a"
-  clang_rt_cxx = ""
+  clang_rt_cxx = "../../../../out/not-default/libclang_rt.lsan_cxx.a"
 }
 }
   tsan = {
@@ -2064,6 +2064,20 @@ From //build/config/compiler.gni:82
   copy_outputs = [{
   bazel = "{{BAZEL_TARGET_OUT_DIR}}/go_example_bin_migrated_/go_example_bin_migrated"
   ninja = "go_example_bin_migrated"
+}]
+  install_host_tool = true
+}, {
+  bazel_label = "//tools/build/ninjago/buildstats:buildstats"
+  copy_outputs = [{
+  bazel = "{{BAZEL_TARGET_OUT_DIR}}/buildstats_/buildstats"
+  ninja = "buildstats"
+}]
+  install_host_tool = true
+}, {
+  bazel_label = "//tools/build/ninjago/ninjatrace:ninjatrace"
+  copy_outputs = [{
+  bazel = "{{BAZEL_TARGET_OUT_DIR}}/ninjatrace_/ninjatrace"
+  ninja = "ninjatrace"
 }]
   install_host_tool = true
 }, {
