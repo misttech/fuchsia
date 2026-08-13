@@ -202,6 +202,42 @@ TEST_F(InterruptTest, PortUnbindPurgesQueuedPacket) {
   EXPECT_EQ(port.wait(zx::deadline_after(zx::msec(10)), &out), ZX_ERR_TIMED_OUT);
 }
 
+// Tests that triggering an interrupt multiple times while bound to a port does not result in
+// duplicate packet delivery or unexpected queue states.
+TEST_F(InterruptTest, DuplicateTriggerIgnoredWhileQueued) {
+  zx::interrupt interrupt;
+  zx::port port;
+
+  ASSERT_OK(zx::interrupt::create(*irq_resource(), 0, ZX_INTERRUPT_VIRTUAL, &interrupt));
+  ASSERT_OK(zx::port::create(ZX_PORT_BIND_TO_INTERRUPT, &port));
+
+  ASSERT_OK(interrupt.bind(port, kKey, 0));
+
+  // Trigger the interrupt once: queues the packet with the first timestamp.
+  ASSERT_OK(interrupt.trigger(0, kSignaledTimeStamp1));
+
+  // Trigger again before reading the port packet.
+  ASSERT_OK(interrupt.trigger(0, kSignaledTimeStamp2));
+
+  // Attempting to acknowledge the interrupt while its packet is still pending on the port
+  // fails with ZX_ERR_BAD_STATE.
+  ASSERT_STATUS(interrupt.ack(), ZX_ERR_BAD_STATE);
+
+  // Verify that exactly one packet is dequeued and it carries the first timestamp.
+  zx_port_packet_t out = {};
+  ASSERT_OK(port.wait(zx::time::infinite(), &out));
+  EXPECT_EQ(out.interrupt.timestamp, kSignaledTimeStamp1.get());
+
+  // Verify no duplicate packet remains in the port queue.
+  EXPECT_EQ(port.wait(zx::deadline_after(zx::msec(10)), &out), ZX_ERR_TIMED_OUT);
+
+  // Once the port packet has been dequeued, acknowledging succeeds and re-arms the interrupt.
+  ASSERT_OK(interrupt.ack());
+  ASSERT_OK(interrupt.trigger(0, kSignaledTimeStamp2));
+  ASSERT_OK(port.wait(zx::time::infinite_past(), &out));
+  EXPECT_EQ(out.interrupt.timestamp, kSignaledTimeStamp2.get());
+}
+
 // Tests Interrupt Unbind
 TEST_F(InterruptTest, UnBindPort) {
   zx::interrupt interrupt;
