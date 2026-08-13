@@ -114,13 +114,14 @@ impl AtomicFutureHandle<'_> {
             // can use `Box::into_non_null` when it's stabilised.
             assert!(
                 hooks_map
-                    .insert(id, unsafe {
-                        NonNull::new_unchecked(Box::into_raw(Box::new(HooksWrapper {
+                    .insert(
+                        id,
+                        NonNull::from_mut(Box::leak(Box::new(HooksWrapper {
                             orig_vtable: meta.vtable,
                             hooks,
                         })))
                         .cast::<()>()
-                    })
+                    )
                     .is_none()
             );
         }

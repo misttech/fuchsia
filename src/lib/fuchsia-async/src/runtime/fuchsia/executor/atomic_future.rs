@@ -305,17 +305,15 @@ impl<'a> AtomicFutureHandle<'a> {
         F::Output: 'a,
     {
         Self(
-            unsafe {
-                NonNull::new_unchecked(Box::into_raw(Box::new(AtomicFuture {
-                    meta: Meta {
-                        vtable: &AtomicFuture::<F>::VTABLE,
-                        // The future is inactive and we start with a single reference.
-                        state: AtomicUsize::new(1 | INACTIVE),
-                        scope,
-                    },
-                    future: FutureOrResult { future: ManuallyDrop::new(future) },
-                })))
-            }
+            NonNull::from_mut(Box::leak(Box::new(AtomicFuture {
+                meta: Meta {
+                    vtable: &AtomicFuture::<F>::VTABLE,
+                    // The future is inactive and we start with a single reference.
+                    state: AtomicUsize::new(1 | INACTIVE),
+                    scope,
+                },
+                future: FutureOrResult { future: ManuallyDrop::new(future) },
+            })))
             .cast::<Meta>(),
             PhantomData,
         )
