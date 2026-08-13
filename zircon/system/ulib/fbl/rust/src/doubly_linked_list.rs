@@ -344,10 +344,21 @@ where
         if self.is_empty() { None } else { unsafe { Some(&*self.head) } }
     }
 
+    /// Returns a mutable reference to the first element of the list, or `None` if it is empty.
+    pub fn front_mut(&mut self) -> Option<&mut P::Target> {
+        if self.is_empty() { None } else { unsafe { Some(&mut *self.head) } }
+    }
+
     /// Returns a reference to the last element of the list, or `None` if it is empty.
     pub fn back(&self) -> Option<&P::Target> {
         let tail = self.get_tail();
         if is_sentinel_ptr(tail) { None } else { unsafe { Some(&*tail) } }
+    }
+
+    /// Returns a mutable reference to the last element of the list, or `None` if it is empty.
+    pub fn back_mut(&mut self) -> Option<&mut P::Target> {
+        let tail = self.get_tail();
+        if is_sentinel_ptr(tail) { None } else { unsafe { Some(&mut *tail) } }
     }
 
     /// Pushes an element to the front of the list.
@@ -1564,6 +1575,30 @@ mod tests {
         assert_eq!(iter.next().unwrap().value, 1);
         assert_eq!(iter.next().unwrap().value, 4);
         assert!(iter.next().is_none());
+
+        list.clear();
+    }
+
+    #[test]
+    fn test_front_mut_and_back_mut() {
+        stack_pin_init!(let list =
+            DoublyLinkedList::<UniquePtr<UniqueTestObject>, DefaultObjectTag, TrackingSize>::new());
+        let list = unsafe { list.get_unchecked_mut() };
+
+        assert!(list.front_mut().is_none());
+        assert!(list.back_mut().is_none());
+
+        list.push_back(UniquePtr::try_new(UniqueTestObject::new(10)).unwrap());
+        list.push_back(UniquePtr::try_new(UniqueTestObject::new(20)).unwrap());
+
+        assert_eq!(list.front_mut().unwrap().value, 10);
+        assert_eq!(list.back_mut().unwrap().value, 20);
+
+        list.front_mut().unwrap().value = 100;
+        list.back_mut().unwrap().value = 200;
+
+        assert_eq!(list.front().unwrap().value, 100);
+        assert_eq!(list.back().unwrap().value, 200);
 
         list.clear();
     }
