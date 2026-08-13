@@ -715,21 +715,106 @@ mod tests {
 
     use assert_matches::assert_matches;
     use netstack3_base::{
-        Control, HandshakeOptions, SegmentHeader, SeqNum, UnscaledWindowSize, WindowScale,
-        WindowSize,
+        Control, HandshakeOptions, Segment, SegmentHeader, SegmentOptions, SeqNum,
+        UnscaledWindowSize, WindowScale, WindowSize,
     };
     use test_case::test_case;
 
     use crate::conntrack::ConnectionDirection;
 
     const ORIGINAL_ISS: SeqNum = SeqNum::new(0);
-    const REPLY_ISS: SeqNum = SeqNum::new(8192);
-    const ORIGINAL_WND: u16 = 16;
-    const REPLY_WND: u16 = 17;
-    const ORIGINAL_WS: u8 = 3;
-    const REPLY_WS: u8 = 4;
+    const ORIGINAL_WND: UnscaledWindowSize = UnscaledWindowSize::from_u16(16);
+    const ORIGINAL_WS: WindowScale = WindowScale::new(3).unwrap();
     const ORIGINAL_PAYLOAD_LEN: usize = 12;
+
+    const REPLY_ISS: SeqNum = SeqNum::new(8192);
+    const REPLY_WND: UnscaledWindowSize = UnscaledWindowSize::from_u16(17);
+    const REPLY_WS: WindowScale = WindowScale::new(4).unwrap();
     const REPLY_PAYLOAD_LEN: usize = 13;
+
+    // The below constants represent the segments and states along the happy
+    // path of the standard TCP connection handshake (i.e. SYN, SYN/ACK,
+    // ACK). This is meant to make sure all of the tests are using consistent
+    // information and to make it obvious what each test case is doing
+    // differently from the others.
+
+    fn default_syn_sent_state() -> SynSent {
+        SynSent {
+            iss: ORIGINAL_ISS,
+            logical_len: 1,
+            advertised_window_scale: Some(ORIGINAL_WS),
+            window_size: ORIGINAL_WND << WindowScale::ZERO,
+            dir: ConnectionDirection::Original,
+        }
+    }
+
+    fn default_original_established_peer() -> Peer {
+        Peer {
+            window_scale: ORIGINAL_WS,
+            max_wnd: ORIGINAL_WND << ORIGINAL_WS,
+            max_wnd_seq: REPLY_ISS + 1 + (ORIGINAL_WND << ORIGINAL_WS),
+            max_next_seq: ORIGINAL_ISS + 1,
+            unacked_data: false,
+            fin_state: FinState::NotSent,
+        }
+    }
+
+    fn default_reply_established_peer() -> Peer {
+        Peer {
+            window_scale: REPLY_WS,
+            // In the non-simultaneous-open case, the "reply" peer hasn't sent a
+            // plain ACK, and window scale is never applied in a packet with the SYN
+            // flag set.
+            max_wnd: REPLY_WND << WindowScale::ZERO,
+            max_wnd_seq: ORIGINAL_ISS + 1 + (REPLY_WND << WindowScale::ZERO),
+            max_next_seq: REPLY_ISS + 1,
+            unacked_data: false,
+            fin_state: FinState::NotSent,
+        }
+    }
+
+    fn valid_original_syn_segment() -> SegmentHeader {
+        let (header, _) = Segment::<()>::syn(
+            ORIGINAL_ISS,
+            ORIGINAL_WND,
+            HandshakeOptions { window_scale: Some(ORIGINAL_WS), ..Default::default() },
+        )
+        .into_parts();
+        header
+    }
+
+    fn valid_reply_syn_ack_segment() -> SegmentHeader {
+        let (header, _) = Segment::<()>::syn_ack(
+            REPLY_ISS,
+            ORIGINAL_ISS + 1,
+            REPLY_WND,
+            HandshakeOptions { window_scale: Some(REPLY_WS), ..Default::default() },
+        )
+        .into_parts();
+        header
+    }
+
+    fn valid_original_established_segment() -> SegmentHeader {
+        let (header, _) = Segment::<()>::ack(
+            ORIGINAL_ISS + 1,
+            REPLY_ISS + 1,
+            ORIGINAL_WND,
+            SegmentOptions::default(),
+        )
+        .into_parts();
+        header
+    }
+
+    fn valid_reply_established_segment() -> SegmentHeader {
+        let (header, _) = Segment::<()>::ack(
+            REPLY_ISS + 1,
+            ORIGINAL_ISS + 1,
+            REPLY_WND,
+            SegmentOptions::default(),
+        )
+        .into_parts();
+        header
+    }
 
     impl Peer {
         pub fn arbitrary() -> Peer {
@@ -748,106 +833,53 @@ mod tests {
     #[test_case(Some(Control::FIN))]
     #[test_case(Some(Control::RST))]
     fn syn_sent_original_non_syn_segment(control: Option<Control>) {
-        let state = State::SynSent(SynSent {
-            iss: ORIGINAL_ISS,
-            logical_len: 3,
-            advertised_window_scale: None,
-            window_size: WindowSize::from_u32(ORIGINAL_WND as u32).unwrap(),
-            dir: ConnectionDirection::Original,
-        });
-
-        let segment = SegmentHeader {
-            seq: ORIGINAL_ISS,
-            wnd: UnscaledWindowSize::from(ORIGINAL_WND),
-            control,
-            ..Default::default()
-        };
+        let state = State::SynSent(default_syn_sent_state());
+        let segment = SegmentHeader { control, ..valid_original_syn_segment() };
 
         let expected_state = state.clone();
         assert_eq!(
-            state.update(&segment, ORIGINAL_PAYLOAD_LEN, ConnectionDirection::Original),
+            state.update(&segment, /* payload_len */ 0, ConnectionDirection::Original),
             (expected_state, false)
         );
     }
 
     #[test_case(SegmentHeader {
-        // Different from existing.
         seq: ORIGINAL_ISS + 1,
-        wnd: UnscaledWindowSize::from(ORIGINAL_WND),
-        control: Some(Control::SYN),
-        options: HandshakeOptions {
-            // Same as existing.
-            window_scale: WindowScale::new(ORIGINAL_WS),
-            ..Default::default()
-        }.into(),
-        ..Default::default()
+        ..valid_original_syn_segment()
     }; "different ISS")]
     #[test_case(SegmentHeader {
-        // Same as existing.
-        seq: ORIGINAL_ISS,
-        wnd: UnscaledWindowSize::from(ORIGINAL_WND),
-        control: Some(Control::SYN),
         options: HandshakeOptions {
-            // Different from existing.
-            window_scale: WindowScale::new(ORIGINAL_WS + 1),
+            window_scale: Some(WindowScale::new(ORIGINAL_WS.get() + 1).unwrap()),
             ..Default::default()
         }.into(),
-        ..Default::default()
+        ..valid_original_syn_segment()
     }; "different window scale")]
     #[test_case(SegmentHeader {
-        seq: ORIGINAL_ISS,
-        // ACK here is invalid.
         ack: Some(SeqNum::new(10)),
-        wnd: UnscaledWindowSize::from(ORIGINAL_WND),
-        control: Some(Control::SYN),
-        options: HandshakeOptions {
-            window_scale: WindowScale::new(2),
-            ..Default::default()
-        }.into(),
-        ..Default::default()
+        ..valid_original_syn_segment()
     }; "ack not allowed")]
     fn syn_sent_original_syn_not_retransmit(segment: SegmentHeader) {
-        let state = State::SynSent(SynSent {
-            iss: ORIGINAL_ISS,
-            logical_len: ORIGINAL_PAYLOAD_LEN as u32 + 1,
-            advertised_window_scale: WindowScale::new(ORIGINAL_WS),
-            window_size: WindowSize::from_u32(ORIGINAL_WND as u32).unwrap(),
-            dir: ConnectionDirection::Original,
-        });
+        let state = State::SynSent(default_syn_sent_state());
 
         let expected_state = state.clone();
         assert_eq!(
-            state.update(&segment, ORIGINAL_PAYLOAD_LEN, ConnectionDirection::Original),
+            state.update(&segment, /* payload_len */ 0, ConnectionDirection::Original),
             (expected_state, false)
         );
     }
 
     #[test]
     fn syn_sent_original_syn_retransmit() {
-        let state = State::SynSent(SynSent {
-            iss: ORIGINAL_ISS,
-            logical_len: ORIGINAL_PAYLOAD_LEN as u32 + 1,
-            advertised_window_scale: WindowScale::new(ORIGINAL_WS),
-            window_size: WindowSize::from_u32(ORIGINAL_WND as u32).unwrap(),
-            dir: ConnectionDirection::Original,
-        });
-
+        let state = State::SynSent(default_syn_sent_state());
         let segment = SegmentHeader {
-            seq: ORIGINAL_ISS,
-            wnd: UnscaledWindowSize::from(ORIGINAL_WND + 10),
-            control: Some(Control::SYN),
-            options: HandshakeOptions {
-                window_scale: WindowScale::new(ORIGINAL_WS),
-                ..Default::default()
-            }
-            .into(),
-            ..Default::default()
+            wnd: (u16::from(ORIGINAL_WND) + 10).into(),
+            ..valid_original_syn_segment()
         };
 
         let result = assert_matches!(
             state.update(
                 &segment,
-                ORIGINAL_PAYLOAD_LEN + 10,
+                ORIGINAL_PAYLOAD_LEN,
                 ConnectionDirection::Original
             ),
             (State::SynSent(s), true) => s
@@ -856,11 +888,10 @@ mod tests {
         assert_eq!(
             result,
             SynSent {
-                iss: ORIGINAL_ISS,
-                logical_len: ORIGINAL_PAYLOAD_LEN as u32 + 10 + 1,
-                advertised_window_scale: WindowScale::new(ORIGINAL_WS),
-                window_size: WindowSize::from_u32(ORIGINAL_WND as u32 + 10).unwrap(),
-                dir: ConnectionDirection::Original
+                logical_len: ORIGINAL_PAYLOAD_LEN as u32 + 1,
+                window_size: UnscaledWindowSize::from(u16::from(ORIGINAL_WND) + 10)
+                    << WindowScale::ZERO,
+                ..default_syn_sent_state()
             }
         )
     }
@@ -868,24 +899,12 @@ mod tests {
     #[test_case(None)]
     #[test_case(Some(Control::FIN))]
     fn syn_sent_reply_non_syn_segment(control: Option<Control>) {
-        let state = State::SynSent(SynSent {
-            iss: ORIGINAL_ISS,
-            logical_len: ORIGINAL_PAYLOAD_LEN as u32 + 1,
-            advertised_window_scale: None,
-            window_size: WindowSize::from_u32(ORIGINAL_WND as u32).unwrap(),
-            dir: ConnectionDirection::Original,
-        });
-
-        let segment = SegmentHeader {
-            seq: ORIGINAL_ISS,
-            wnd: UnscaledWindowSize::from(ORIGINAL_WND),
-            control,
-            ..Default::default()
-        };
+        let state = State::SynSent(default_syn_sent_state());
+        let segment = SegmentHeader { control, ..valid_reply_syn_ack_segment() };
 
         let expected_state = state.clone();
         assert_eq!(
-            state.update(&segment, REPLY_PAYLOAD_LEN, ConnectionDirection::Reply),
+            state.update(&segment, /* payload_len */ 0, ConnectionDirection::Reply),
             (expected_state, false)
         );
     }
@@ -896,30 +915,16 @@ mod tests {
         "smallest valid"
     )]
     #[test_case(
-        ORIGINAL_ISS + ORIGINAL_PAYLOAD_LEN as u32 + 1,
-        Some(State::Closed);
-        "largest valid"
-    )]
-    #[test_case(
-        ORIGINAL_ISS + ORIGINAL_PAYLOAD_LEN as u32 + 2,
+        ORIGINAL_ISS + 2,
         None;
         "large invalid"
     )]
     fn syn_sent_reply_rst_segment(ack: SeqNum, new_state: Option<State>) {
-        let state = State::SynSent(SynSent {
-            iss: ORIGINAL_ISS,
-            logical_len: ORIGINAL_PAYLOAD_LEN as u32 + 1,
-            advertised_window_scale: None,
-            window_size: WindowSize::from_u32(ORIGINAL_WND as u32).unwrap(),
-            dir: ConnectionDirection::Original,
-        });
-
+        let state = State::SynSent(default_syn_sent_state());
         let segment = SegmentHeader {
-            seq: ORIGINAL_ISS,
             ack: Some(ack),
-            wnd: UnscaledWindowSize::from(ORIGINAL_WND),
             control: Some(Control::RST),
-            ..Default::default()
+            ..valid_reply_syn_ack_segment()
         };
 
         let (expected_state, valid) = match new_state {
@@ -935,20 +940,8 @@ mod tests {
 
     #[test]
     fn syn_sent_reply_simultaneous_open() {
-        let state = State::SynSent(SynSent {
-            iss: ORIGINAL_ISS,
-            logical_len: ORIGINAL_PAYLOAD_LEN as u32 + 1,
-            advertised_window_scale: WindowScale::new(ORIGINAL_WS),
-            window_size: WindowSize::from_u32(ORIGINAL_WND as u32).unwrap(),
-            dir: ConnectionDirection::Original,
-        });
-
-        let segment = SegmentHeader {
-            seq: ORIGINAL_ISS,
-            wnd: UnscaledWindowSize::from(ORIGINAL_WND + 10),
-            control: Some(Control::SYN),
-            ..Default::default()
-        };
+        let state = State::SynSent(default_syn_sent_state());
+        let segment = SegmentHeader { ack: None, ..valid_reply_syn_ack_segment() };
 
         assert_eq!(
             state.update(&segment, /*payload_len*/ 0, ConnectionDirection::Reply),
@@ -957,63 +950,48 @@ mod tests {
     }
 
     #[test_case(ORIGINAL_ISS; "too low")]
-    #[test_case(ORIGINAL_ISS + ORIGINAL_PAYLOAD_LEN + 2; "too high")]
+    #[test_case(ORIGINAL_ISS + 2; "too high")]
     fn syn_sent_reply_syn_ack_not_in_range(ack: SeqNum) {
-        let state = State::SynSent(SynSent {
-            iss: ORIGINAL_ISS,
-            logical_len: ORIGINAL_PAYLOAD_LEN as u32 + 1,
-            advertised_window_scale: None,
-            window_size: WindowSize::from_u32(ORIGINAL_WND as u32).unwrap(),
-            dir: ConnectionDirection::Original,
-        });
-
-        let segment = SegmentHeader {
-            seq: REPLY_ISS,
-            ack: Some(ack),
-            wnd: UnscaledWindowSize::from(REPLY_WND),
-            control: Some(Control::SYN),
-            ..Default::default()
-        };
+        let state = State::SynSent(default_syn_sent_state());
+        let segment = SegmentHeader { ack: Some(ack), ..valid_reply_syn_ack_segment() };
 
         let expected_state = state.clone();
         assert_eq!(
-            state.update(&segment, REPLY_PAYLOAD_LEN, ConnectionDirection::Reply),
+            state.update(&segment, /* payload_len */ 0, ConnectionDirection::Reply),
             (expected_state, false)
         );
     }
 
-    #[test_case(None)]
-    #[test_case(Some(WindowScale::new(REPLY_WS).unwrap()))]
-    fn syn_sent_reply_syn_ack(reply_window_scale: Option<WindowScale>) {
+    #[test_case(None, 0, false)]
+    #[test_case(Some(REPLY_WS), 0, false)]
+    #[test_case(None, ORIGINAL_PAYLOAD_LEN, true)]
+    #[test_case(Some(REPLY_WS), ORIGINAL_PAYLOAD_LEN, true)]
+    fn syn_sent_reply_syn_ack(
+        reply_window_scale: Option<WindowScale>,
+        syn_payload_len: usize,
+        expected_unacked_data: bool,
+    ) {
         let state = State::SynSent(SynSent {
-            iss: ORIGINAL_ISS,
-            logical_len: ORIGINAL_PAYLOAD_LEN as u32 + 1,
-            advertised_window_scale: WindowScale::new(ORIGINAL_WS),
-            window_size: WindowSize::from_u32(ORIGINAL_WND as u32).unwrap(),
-            dir: ConnectionDirection::Original,
+            logical_len: syn_payload_len as u32 + 1,
+            ..default_syn_sent_state()
         });
-
         let segment = SegmentHeader {
-            seq: REPLY_ISS,
-            ack: Some(ORIGINAL_ISS + 1),
-            wnd: UnscaledWindowSize::from(REPLY_WND),
-            control: Some(Control::SYN),
             options: HandshakeOptions { window_scale: reply_window_scale, ..Default::default() }
                 .into(),
-            ..Default::default()
+            ..valid_reply_syn_ack_segment()
         };
 
         let new_state = assert_matches!(
             state.update(
                 &segment,
-                REPLY_PAYLOAD_LEN,
+                /* payload_len */ 0,
                 ConnectionDirection::Reply
             ),
             (State::Established(s), true) => s
         );
 
         let (original_window_scale, reply_window_scale) = match reply_window_scale {
-            Some(s) => (WindowScale::new(ORIGINAL_WS).unwrap(), s),
+            Some(s) => (ORIGINAL_WS, s),
             None => (WindowScale::ZERO, WindowScale::ZERO),
         };
 
@@ -1021,20 +999,20 @@ mod tests {
             new_state,
             PeerPair {
                 original: Peer {
+                    // We haven't seen a plain ACK from this peer yet, so the
+                    // window definitely hasn't been scaled (whether or not it
+                    // eventually will be).
+                    max_wnd: ORIGINAL_WND << WindowScale::ZERO,
+                    max_wnd_seq: REPLY_ISS + (ORIGINAL_WND << WindowScale::ZERO),
+                    max_next_seq: ORIGINAL_ISS + syn_payload_len + 1,
+                    unacked_data: expected_unacked_data,
                     window_scale: original_window_scale,
-                    max_wnd: WindowSize::from_u32(ORIGINAL_WND as u32).unwrap(),
-                    max_wnd_seq: REPLY_ISS + ORIGINAL_WND as u32,
-                    max_next_seq: ORIGINAL_ISS + ORIGINAL_PAYLOAD_LEN + 1,
-                    unacked_data: true,
                     fin_state: FinState::NotSent,
                 },
                 reply: Peer {
                     window_scale: reply_window_scale,
-                    max_wnd: WindowSize::from_u32(REPLY_WND as u32).unwrap(),
-                    max_wnd_seq: ORIGINAL_ISS + 1 + REPLY_WND as u32,
-                    max_next_seq: REPLY_ISS + REPLY_PAYLOAD_LEN + 1,
                     unacked_data: true,
-                    fin_state: FinState::NotSent,
+                    ..default_reply_established_peer()
                 }
             }
         );
@@ -1232,63 +1210,59 @@ mod tests {
 
     #[test_case(
         StateUpdateTestArgs {
-            segment: SegmentHeader {
-                seq: SeqNum::new(1400),
-                ack: Some(SeqNum::new(66_001)),
-                wnd: UnscaledWindowSize::from(10),
-                ..Default::default()
-            },
-            payload_len: 24,
+            segment: valid_original_established_segment(),
+            payload_len: ORIGINAL_PAYLOAD_LEN,
             dir: ConnectionDirection::Original,
             expected: Some(State::Established(PeerPair {
                 original: Peer {
-                    window_scale: WindowScale::new(2).unwrap(),
-                    max_wnd: WindowSize::new(40).unwrap(),
-                    max_wnd_seq: SeqNum::new(70_000),
-                    max_next_seq: SeqNum::new(1424),
-                    // This is becoming true because `segment.seq > original.max_next_seq`.
+                    // This is becoming true because segment.seq + payload_len >
+                    // original.max_next_seq.
                     unacked_data: true,
-                    fin_state: FinState::NotSent,
+                    max_next_seq:
+                        default_original_established_peer().max_next_seq + ORIGINAL_PAYLOAD_LEN,
+                    ..default_original_established_peer()
                 },
-                reply: Peer {
-                    window_scale: WindowScale::new(0).unwrap(),
-                    max_wnd: WindowSize::new(400).unwrap(),
-                    max_wnd_seq: SeqNum::new(1424),
-                    max_next_seq: SeqNum::new(66_001),
-                    // This is becoming true because `segment.ack == reply.max_next_seq`.
-                    unacked_data: false,
-                    fin_state: FinState::NotSent,
-                },
+                reply: default_reply_established_peer(),
             })),
         }; "update original"
     )]
     #[test_case(
         StateUpdateTestArgs {
+            segment: valid_reply_established_segment(),
+            payload_len: REPLY_PAYLOAD_LEN,
+            dir: ConnectionDirection::Reply,
+            expected: Some(State::Established(PeerPair {
+                original: default_original_established_peer(),
+                reply: Peer {
+                    // These are scaled since we saw a plain ACK (only unscaled with SYN).
+                    max_wnd: REPLY_WND << REPLY_WS,
+                    max_wnd_seq: ORIGINAL_ISS + 1 + (REPLY_WND << REPLY_WS),
+                    // This peer just sent new data.
+                    unacked_data: true,
+                    max_next_seq: default_reply_established_peer().max_next_seq + REPLY_PAYLOAD_LEN,
+                    ..default_reply_established_peer()
+                },
+            })),
+        }; "update reply"
+    )]
+    #[test_case(
+        StateUpdateTestArgs {
             segment: SegmentHeader {
-                seq: SeqNum::new(66_100),
-                ack: Some(SeqNum::new(1024)),
-                wnd: UnscaledWindowSize::from(10),
                 control: Some(Control::FIN),
-                ..Default::default()
+                ..valid_reply_established_segment()
             },
             payload_len: 0,
             dir: ConnectionDirection::Reply,
             expected: Some(State::Established(PeerPair {
-                original: Peer {
-                    window_scale: WindowScale::new(2).unwrap(),
-                    max_wnd: WindowSize::new(0).unwrap(),
-                    max_wnd_seq: SeqNum::new(70_000),
-                    max_next_seq: SeqNum::new(1024),
-                    unacked_data: false,
-                    fin_state: FinState::NotSent,
-                },
+                original: default_original_established_peer(),
                 reply: Peer {
-                    window_scale: WindowScale::new(0).unwrap(),
-                    max_wnd: WindowSize::new(400).unwrap(),
-                    max_wnd_seq: SeqNum::new(1424),
-                    max_next_seq: SeqNum::new(66_101),
+                    // These are scaled since we saw a FIN/ACK (only unscaled with SYN).
+                    max_wnd: REPLY_WND << REPLY_WS,
+                    max_wnd_seq: ORIGINAL_ISS + 1 + (REPLY_WND << REPLY_WS),
+                    max_next_seq: default_reply_established_peer().max_next_seq + 1,
                     unacked_data: true,
-                    fin_state: FinState::Sent(SeqNum::new(66_100)),
+                    fin_state: FinState::Sent(valid_reply_established_segment().seq),
+                    ..default_reply_established_peer()
                 },
             })),
         }; "closing"
@@ -1296,11 +1270,10 @@ mod tests {
     #[test_case(
         StateUpdateTestArgs {
             segment: SegmentHeader {
-                seq: SeqNum::new(1400),
-                wnd: UnscaledWindowSize::from(10),
-                ..Default::default()
+                ack: None,
+                ..valid_original_established_segment()
             },
-            payload_len: 24,
+            payload_len: ORIGINAL_PAYLOAD_LEN,
             dir: ConnectionDirection::Original,
             expected: None,
         }; "missing ack"
@@ -1309,12 +1282,10 @@ mod tests {
         StateUpdateTestArgs {
             segment: SegmentHeader {
                 // Too low. Doesn't meet equation II.
-                seq: SeqNum::new(0),
-                ack: Some(SeqNum::new(66_001)),
-                wnd: UnscaledWindowSize::from(10),
-                ..Default::default()
+                seq: valid_original_established_segment().seq - 100,
+                ..valid_original_established_segment()
             },
-            payload_len: 24,
+            payload_len: ORIGINAL_PAYLOAD_LEN,
             dir: ConnectionDirection::Original,
             expected: None,
         }; "invalid equation bounds"
@@ -1322,13 +1293,10 @@ mod tests {
     #[test_case(
         StateUpdateTestArgs {
             segment: SegmentHeader {
-                seq: SeqNum::new(1400),
-                ack: Some(SeqNum::new(66_001)),
-                wnd: UnscaledWindowSize::from(10),
                 control: Some(Control::SYN),
-                ..Default::default()
+                ..valid_original_established_segment()
             },
-            payload_len: 24,
+            payload_len: ORIGINAL_PAYLOAD_LEN,
             dir: ConnectionDirection::Original,
             expected: None,
         }; "SYN not allowed"
@@ -1336,13 +1304,11 @@ mod tests {
     #[test_case(
         StateUpdateTestArgs {
             segment: SegmentHeader {
-                seq: SeqNum::new(1400),
                 // Fails equation III.
-                ack: Some(SeqNum::new(100_000)),
-                wnd: UnscaledWindowSize::from(10),
-                ..Default::default()
+                ack: Some(valid_original_established_segment().ack.unwrap() + 10_000),
+                ..valid_original_established_segment()
             },
-            payload_len: 24,
+            payload_len: ORIGINAL_PAYLOAD_LEN,
             dir: ConnectionDirection::Original,
             expected: None,
         }; "invalid ack"
@@ -1350,35 +1316,18 @@ mod tests {
     #[test_case(
         StateUpdateTestArgs {
             segment: SegmentHeader {
-                seq: SeqNum::new(1400),
-                ack: Some(SeqNum::new(66_001)),
-                wnd: UnscaledWindowSize::from(10),
                 control: Some(Control::RST),
-                ..Default::default()
+                ..valid_original_established_segment()
             },
-            payload_len: 24,
+            payload_len: ORIGINAL_PAYLOAD_LEN,
             dir: ConnectionDirection::Original,
             expected: Some(State::Closed),
         }; "rst"
     )]
     fn established_test(args: StateUpdateTestArgs) {
         let state = State::Established(PeerPair {
-            original: Peer {
-                window_scale: WindowScale::new(2).unwrap(),
-                max_wnd: WindowSize::new(0).unwrap(),
-                max_wnd_seq: SeqNum::new(70_000),
-                max_next_seq: SeqNum::new(1024),
-                unacked_data: false,
-                fin_state: FinState::NotSent,
-            },
-            reply: Peer {
-                window_scale: WindowScale::new(0).unwrap(),
-                max_wnd: WindowSize::new(400).unwrap(),
-                max_wnd_seq: SeqNum::new(1424),
-                max_next_seq: SeqNum::new(66_001),
-                unacked_data: true,
-                fin_state: FinState::NotSent,
-            },
+            original: default_original_established_peer(),
+            reply: default_reply_established_peer(),
         });
 
         let (new_state, valid) = match args.expected {

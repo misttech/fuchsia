@@ -342,6 +342,15 @@ impl From<UnscaledWindowSize> for u16 {
     }
 }
 
+impl UnscaledWindowSize {
+    /// Helper to construct an [`UnscaledWindowSize`] in const contexts.
+    // TODO(https://github.com/rust-lang/rust/issues/143773): Remove once
+    // const_convert is stabilized.
+    pub const fn from_u16(value: u16) -> Self {
+        Self(value)
+    }
+}
+
 #[cfg(feature = "testutils")]
 mod testutils {
     use super::*;
