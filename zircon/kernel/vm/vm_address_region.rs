@@ -13,56 +13,66 @@ use fbl::RefPtr;
 use zr::ToMutPtr;
 use zx_status::Status;
 
-/// When randomly allocating subregions, reduce sprawl by placing allocations near each other.
-pub const VMAR_FLAG_COMPACT: u32 = 1 << 0;
-/// Request that the new region be at the specified offset in its parent region.
-pub const VMAR_FLAG_SPECIFIC: u32 = 1 << 1;
-/// Like `VMAR_FLAG_SPECIFIC`, but permits overwriting existing mappings.
-pub const VMAR_FLAG_SPECIFIC_OVERWRITE: u32 = 1 << 2;
-/// Allow `VmMappings` to be created inside the new region with the `SPECIFIC` or `OFFSET_IS_UPPER_LIMIT` flag.
-pub const VMAR_FLAG_CAN_MAP_SPECIFIC: u32 = 1 << 3;
-/// Allow `VmMappings` to be created inside the region with read permissions.
-pub const VMAR_FLAG_CAN_MAP_READ: u32 = 1 << 4;
-/// Allow `VmMappings` to be created inside the region with write permissions.
-pub const VMAR_FLAG_CAN_MAP_WRITE: u32 = 1 << 5;
-/// Allow `VmMappings` to be created inside the region with execute permissions.
-pub const VMAR_FLAG_CAN_MAP_EXECUTE: u32 = 1 << 6;
-/// Require that VMO backing the mapping is non-resizable.
-pub const VMAR_FLAG_REQUIRE_NON_RESIZABLE: u32 = 1 << 7;
-/// Allow VMO backings that could result in faults.
-pub const VMAR_FLAG_ALLOW_FAULTS: u32 = 1 << 8;
-/// Treat the offset as an upper limit when allocating a VMO or child VMAR.
-pub const VMAR_FLAG_OFFSET_IS_UPPER_LIMIT: u32 = 1 << 9;
-/// Opt this VMAR out of certain debugging checks.
-pub const VMAR_FLAG_DEBUG_DYNAMIC_KERNEL_MAPPING: u32 = 1 << 10;
-/// Memory accesses past the stream size rounded up to the page boundary will fault.
-pub const VMAR_FLAG_FAULT_BEYOND_STREAM_SIZE: u32 = 1 << 11;
+use vm_address_region_bindings as bindings;
 
-/// Mask of read, write, and execute permission flags.
-pub const VMAR_CAN_RWX_FLAGS: u32 =
-    VMAR_FLAG_CAN_MAP_READ | VMAR_FLAG_CAN_MAP_WRITE | VMAR_FLAG_CAN_MAP_EXECUTE;
+pub mod flag {
+    use vm_address_region_bindings as bindings;
 
-/// Memory priorities that can be applied to VMARs and mappings.
-#[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum MemoryPriority {
-    /// Default overcommit priority where reclamation is allowed.
-    Default = 0,
-    /// High priority prevents all reclamation.
-    High = 1,
+    /// When randomly allocating subregions, reduce sprawl by placing allocations near each other.
+    pub const COMPACT: u32 = bindings::VMAR_FLAG_COMPACT;
+    /// Request that the new region be at the specified offset in its parent region.
+    pub const SPECIFIC: u32 = bindings::VMAR_FLAG_SPECIFIC;
+    /// Like `VMAR_FLAG_SPECIFIC`, but permits overwriting existing mappings.
+    pub const SPECIFIC_OVERWRITE: u32 = bindings::VMAR_FLAG_SPECIFIC_OVERWRITE;
+    /// Allow `VmMappings` to be created inside the new region with the `SPECIFIC` or
+    /// `OFFSET_IS_UPPER_LIMIT` flag.
+    pub const CAN_MAP_SPECIFIC: u32 = bindings::VMAR_FLAG_CAN_MAP_SPECIFIC;
+    /// Allow `VmMappings` to be created inside the region with read permissions.
+    pub const CAN_MAP_READ: u32 = bindings::VMAR_FLAG_CAN_MAP_READ;
+    /// Allow `VmMappings` to be created inside the region with write permissions.
+    pub const CAN_MAP_WRITE: u32 = bindings::VMAR_FLAG_CAN_MAP_WRITE;
+    /// Allow `VmMappings` to be created inside the region with execute permissions.
+    pub const CAN_MAP_EXECUTE: u32 = bindings::VMAR_FLAG_CAN_MAP_EXECUTE;
+    /// Require that VMO backing the mapping is non-resizable.
+    pub const REQUIRE_NON_RESIZABLE: u32 = bindings::VMAR_FLAG_REQUIRE_NON_RESIZABLE;
+    /// Allow VMO backings that could result in faults.
+    pub const ALLOW_FAULTS: u32 = bindings::VMAR_FLAG_ALLOW_FAULTS;
+    /// Treat the offset as an upper limit when allocating a VMO or child VMAR.
+    pub const OFFSET_IS_UPPER_LIMIT: u32 = bindings::VMAR_FLAG_OFFSET_IS_UPPER_LIMIT;
+    /// Opt this VMAR out of certain debugging checks. This allows for kernel mappings that have a
+    /// more dynamic management strategy, that the regular checks would otherwise spuriously trip
+    /// on.
+    pub const DEBUG_DYNAMIC_KERNEL_MAPPING: u32 = bindings::VMAR_FLAG_DEBUG_DYNAMIC_KERNEL_MAPPING;
+    /// Memory accesses past the stream size rounded up to the page boundary will fault.
+    pub const FAULT_BEYOND_STREAM_SIZE: u32 = bindings::VMAR_FLAG_FAULT_BEYOND_STREAM_SIZE;
+
+    /// Mask of read, write, and execute permission flags.
+    pub const CAN_RWX_FLAGS: u32 = bindings::VMAR_CAN_RWX_FLAGS;
 }
 
-/// Whether to operate on children when unmapping or protecting.
-#[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum VmAddressRegionOpChildren {
-    Yes = 0,
-    No = 1,
-}
+/// Memory priorities that can be applied to VMARs and mappings to propagate to VMOs and page
+/// tables.
+pub type MemoryPriority = bindings::VmAddressRegionOrMapping_MemoryPriority;
+pub type VmAddressRegionOpChildren = bindings::VmAddressRegionOpChildren;
+pub type RangeOpType = bindings::VmAddressRegion_RangeOpType;
+pub type UnmapOptions = bindings::VmMapping_UnmapOptions;
 
-// Verify sizes match C++ 1-byte bool enum representations.
-const _: () = assert!(core::mem::size_of::<MemoryPriority>() == 1);
-const _: () = assert!(core::mem::size_of::<VmAddressRegionOpChildren>() == 1);
+/// Internal fully locked version of Destroy. Has controls to both skip the arch aspace unmapping
+/// as well as removal from the parent subregions list. These controls facilitate the fine grained
+/// control needed when splitting, merging and replacing mappings.
+///
+/// If unmap is `No` then this method is defined to never fail. `remove_region` does not impact
+/// success or failure of the operation.
+pub type DestroyUnmap = bindings::VmMapping_DestroyUnmap;
+pub type DestroyRemoveFromParent = bindings::VmMapping_DestroyRemoveFromParent;
+
+pub type Mergeable = bindings::VmMapping_Mergeable;
+
+/// Fully locked version of Activate that can additionally control whether the region is installed
+/// into the parent subregion list and vmo mapping list or not. This control exists to facilitate
+/// the fine grained control needed for splitting, merging and replacing of mappings as when set to
+/// `No` this method is defined as never failing.
+pub type ActivateInsertRegions = bindings::VmMapping_ActivateInsertRegions;
 
 /// Result of calling [`VmAddressRegion::create_vm_mapping`].
 pub struct MapResult {

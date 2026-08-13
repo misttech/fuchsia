@@ -452,6 +452,71 @@ kernel_bindgen_crate("vm-aspace-bindings") {
   ]
 }
 
+kernel_bindgen_crate("vm-address-region-bindings") {
+  visibility = [ ":*" ]
+  headers = [ "include/vm/vm_address_region.h" ]
+  non_rust_deps = [ ":bindgen_common_deps" ]
+  output_name = "vm_address_region_bindings.rs"
+  cpp = true
+
+  notice_year = 2026
+  var_allowlist = [
+    "VMAR_FLAG_.*",
+    "VMAR_CAN_RWX_FLAGS",
+  ]
+  type_allowlist = [
+    "ActivateInsertRegions",
+    "DestroyRemoveFromParent",
+    "DestroyUnmap",
+    "MemoryPriority",
+    "Mergeable",
+    "RangeOpType",
+    "UnmapOptions",
+    "VmAddressRegion",
+    "VmAddressRegionOpChildren",
+    "VmAddressRegionOrMapping",
+    "VmMapping",
+  ]
+  type_blocklist = [
+    "arch_mmu_flags_t",
+    "fbl_RefPtr",
+    "vaddr_t",
+    "VmAddressRegion_AttributionCounts",
+    "VmAddressRegion_MapResult",
+    "VmMapping_AttributionCounts",
+    "VmMapping_CurrentlyFaulting",
+    "VmMapping_FlagsRange",
+  ]
+  opaque_types = [
+    "VmAddressRegion",
+    "VmAddressRegionOrMapping",
+    "VmMapping",
+  ]
+  rustified_enum = [
+    "VmAddressRegionOpChildren",
+    "VmAddressRegionOrMapping_MemoryPriority",
+    "VmAddressRegion_RangeOpType",
+    "VmMapping_ActivateInsertRegions",
+    "VmMapping_DestroyRemoveFromParent",
+    "VmMapping_DestroyUnmap",
+    "VmMapping_Mergeable",
+    "VmMapping_UnmapOptions",
+  ]
+  function_blocklist = [
+    "VmAddressRegion_.*",
+    "VmAddressRegionOrMapping_.*",
+    "VmMapping_.*",
+  ]
+  additional_bindgen_flags = [ "--no-recursive-allowlist" ]
+
+  edition = "2024"
+  raw_lines = [ "#![no_std]" ]
+  expect_lints = [
+    "non_camel_case_types",
+    "non_upper_case_globals",
+  ]
+}
+
 kernel_bindgen_crate("attribution-bindings") {
   visibility = [ ":*" ]
   headers = [ "include/vm/attribution_ffi.h" ]
@@ -755,6 +820,7 @@ kernel_rust_mod("vm-rs") {
     ":physmap-bindings",
     ":pmm-bindings",
     ":scanner-bindings",
+    ":vm-address-region-bindings",
     ":vm-aspace-bindings",
     ":vm-constants-rs",
     ":vm-cow-pages-bindings",

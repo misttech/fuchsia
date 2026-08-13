@@ -6,7 +6,7 @@ use unittest as _;
 
 use crate::kernel::types::PAddr;
 use crate::vm::arch_vm_aspace::ARCH_MMU_FLAG_PERM_READ;
-use crate::vm::vm_address_region::VMAR_FLAG_CAN_MAP_READ;
+use crate::vm::vm_address_region as vmar;
 use crate::vm::vm_aspace::VmAspace;
 use crate::vm::vm_mapping::VmMapping;
 use crate::vm::vm_object_physical::VmObjectPhysical;
@@ -98,7 +98,7 @@ impl PhysMemReader for ZirconPhysmemReader {
             0,
             size,
             0,
-            VMAR_FLAG_CAN_MAP_READ,
+            vmar::flag::CAN_MAP_READ,
             vmo,
             0,
             ARCH_MMU_FLAG_PERM_READ,
