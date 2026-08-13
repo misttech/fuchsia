@@ -6,16 +6,18 @@ use crate::rcu_ptr::{RcuPtr, RcuReadGuard};
 use crate::rcu_read_scope::RcuReadScope;
 use crate::state_machine::rcu_drop;
 
+use crate::rcu_droppable::RcuDroppable;
+
 /// An RCU (Read-Copy-Update) wrapper around `Option<Box>`.
 ///
 /// The Box can be dereferenced from multiple threads concurrently without blocking.
 /// When the Box is replaced, reads may continue to see the old Box for some period of time.
 #[derive(Debug)]
-pub struct RcuOptionBox<T: Send + Sync + 'static> {
+pub struct RcuOptionBox<T: RcuDroppable + Sync> {
     ptr: RcuPtr<T>,
 }
 
-impl<T: Send + Sync + 'static> RcuOptionBox<T> {
+impl<T: RcuDroppable + Sync> RcuOptionBox<T> {
     /// Create a new RCU Cell from a value.
     pub fn new(data: Option<T>) -> Self {
         Self::from(data.map(|data| Box::new(data)))
@@ -62,7 +64,7 @@ impl<T: Send + Sync + 'static> RcuOptionBox<T> {
     }
 }
 
-impl<T: Clone + Send + Sync + 'static> RcuOptionBox<T> {
+impl<T: Clone + RcuDroppable + Sync> RcuOptionBox<T> {
     /// Returns a clone of the value of the wrapped Box, if present.
     ///
     /// The clone is detached from any RCU read scope.
@@ -71,27 +73,27 @@ impl<T: Clone + Send + Sync + 'static> RcuOptionBox<T> {
     }
 }
 
-impl<T: Send + Sync + 'static> Drop for RcuOptionBox<T> {
+impl<T: RcuDroppable + Sync> Drop for RcuOptionBox<T> {
     fn drop(&mut self) {
         // SAFETY: We can pass `std::ptr::null_mut` to `Self::replace`.
         unsafe { self.replace(std::ptr::null_mut()) };
     }
 }
 
-impl<T: Send + Sync + 'static> Default for RcuOptionBox<T> {
+impl<T: RcuDroppable + Sync> Default for RcuOptionBox<T> {
     fn default() -> Self {
         Self::new(None)
     }
 }
 
-impl<T: Clone + Send + Sync + 'static> Clone for RcuOptionBox<T> {
+impl<T: Clone + RcuDroppable + Sync> Clone for RcuOptionBox<T> {
     fn clone(&self) -> Self {
         let value = self.read();
         Self::new(value.map(|value| value.clone()))
     }
 }
 
-impl<T: Send + Sync + 'static> From<Option<Box<T>>> for RcuOptionBox<T> {
+impl<T: RcuDroppable + Sync> From<Option<Box<T>>> for RcuOptionBox<T> {
     fn from(value: Option<Box<T>>) -> Self {
         let ptr = value.map(|value| Box::into_raw(value)).unwrap_or(std::ptr::null_mut());
         Self { ptr: RcuPtr::new(ptr) }

@@ -8,16 +8,18 @@ use crate::state_machine::rcu_drop;
 use crate::subtle::RcuPtrRef;
 use std::sync::Arc;
 
+use crate::rcu_droppable::RcuDroppable;
+
 /// An RCU (Read-Copy-Update) wrapper around an `Arc`.
 ///
 /// The Arc can be dereferenced from multiple threads concurrently without blocking.
 /// When the Arc is replaced, reads may continue to see the old Arc pointer for some period of time.
 #[derive(Debug)]
-pub struct RcuArc<T: Send + Sync + 'static> {
+pub struct RcuArc<T: RcuDroppable + Sync> {
     ptr: RcuPtr<T>,
 }
 
-impl<T: Send + Sync + 'static> RcuArc<T> {
+impl<T: RcuDroppable + Sync> RcuArc<T> {
     /// Create a new RCU wrapper around an `Arc`.
     pub fn new(data: Arc<T>) -> Self {
         Self { ptr: RcuPtr::new(Self::into_ptr(data)) }
@@ -106,26 +108,26 @@ impl<T: Send + Sync + 'static> RcuArc<T> {
     }
 }
 
-impl<T: Send + Sync + 'static> Drop for RcuArc<T> {
+impl<T: RcuDroppable + Sync> Drop for RcuArc<T> {
     fn drop(&mut self) {
         // SAFETY: We can pass `std::ptr::null_mut`.
         unsafe { self.replace(std::ptr::null_mut()) };
     }
 }
 
-impl<T: Send + Sync + 'static> Clone for RcuArc<T> {
+impl<T: RcuDroppable + Sync> Clone for RcuArc<T> {
     fn clone(&self) -> Self {
         Self::new(self.to_arc())
     }
 }
 
-impl<T: Send + Sync + 'static> From<Arc<T>> for RcuArc<T> {
+impl<T: RcuDroppable + Sync> From<Arc<T>> for RcuArc<T> {
     fn from(data: Arc<T>) -> Self {
         Self::new(data)
     }
 }
 
-impl<T: Default + Send + Sync + 'static> Default for RcuArc<T> {
+impl<T: Default + RcuDroppable + Sync> Default for RcuArc<T> {
     fn default() -> Self {
         Self::new(Arc::new(T::default()))
     }
@@ -154,6 +156,9 @@ mod tests {
         value: usize,
         drops: Arc<AtomicUsize>,
     }
+
+    // SAFETY: DropCounter only increments an atomic counter on drop.
+    unsafe impl RcuDroppable for DropCounter {}
 
     impl DropCounter {
         pub fn new(value: usize) -> Arc<Self> {

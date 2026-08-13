@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use crate::atomic_stack::{AtomicListIterator, AtomicStack};
+use crate::rcu_droppable::RcuDroppable;
 use fuchsia_sync::Mutex;
 use std::cell::Cell;
 use std::sync::atomic::{AtomicPtr, AtomicU8, AtomicUsize, Ordering};
@@ -276,9 +277,15 @@ pub(crate) fn rcu_call(callback: impl FnOnce() + Send + Sync + 'static) {
 
 /// Schedule the object to be dropped after all in-flight read operations have completed.
 ///
-/// To wait until the object is dropped, call `rcu_synchronize()`. The object might be dropped from
-/// an arbitrary thread.
-pub fn rcu_drop<T: Send + Sync + 'static>(value: T) {
+/// To wait until the object is dropped, call `rcu_synchronize()`.
+///
+/// To be safely passed to [rcu_drop] either directly, or indirectly by an rcu container, the type
+/// must implement the marker trait [RcuDroppable] to indicate:
+/// - Dropping T must not take locks or otherwise block.
+/// - It is safe to drop T from an arbitrary thread.
+/// - There is no guarantee as to _when_ T will actually be dropped unless rcu_synchornize is
+///   called.
+pub fn rcu_drop<T: RcuDroppable + Sync>(value: T) {
     rcu_call(move || {
         std::mem::drop(value);
     });

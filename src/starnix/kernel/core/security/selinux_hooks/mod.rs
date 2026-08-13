@@ -22,7 +22,7 @@ use super::PermissionFlags;
 use crate::task::{CurrentTask, TaskPersistentInfo};
 use crate::vfs::{DirEntry, FileHandle, FileObject, FileSystem, FileSystemOps, FsNode};
 use audit::{Auditable, audit_decision};
-use fuchsia_rcu::{RcuBox, RcuReadGuard};
+use fuchsia_rcu::{RcuBox, RcuDroppable, RcuReadGuard};
 use indexmap::IndexSet;
 use selinux::permission_check::PermissionCheck;
 use selinux::policy::{FsUseType, XpermsKind};
@@ -635,6 +635,9 @@ pub(super) struct FsNodeLabelAndClass {
     pub label: FsNodeLabel,
     pub class: Option<FsNodeClass>,
 }
+
+// SAFETY: FsNodeLabelAndClass does not have Drop side effects requiring task context.
+unsafe impl RcuDroppable for FsNodeLabelAndClass {}
 
 impl FsNodeLabelAndClass {
     pub fn class(&self) -> FsNodeClass {

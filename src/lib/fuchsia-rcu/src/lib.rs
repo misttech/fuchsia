@@ -5,6 +5,7 @@
 mod atomic_stack;
 mod rcu_arc;
 mod rcu_box;
+mod rcu_droppable;
 mod rcu_option_arc;
 mod rcu_option_box;
 mod rcu_ptr;
@@ -15,6 +16,7 @@ mod state_machine;
 
 pub use rcu_arc::RcuArc;
 pub use rcu_box::RcuBox;
+pub use rcu_droppable::RcuDroppable;
 pub use rcu_option_arc::RcuOptionArc;
 pub use rcu_option_box::RcuOptionBox;
 pub use rcu_ptr::RcuReadGuard;

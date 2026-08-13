@@ -8,7 +8,7 @@ use crate::task::{CurrentTask, register_delayed_release};
 use crate::vfs::{FdNumber, FileHandle, FileReleaser};
 use bitflags::bitflags;
 use fuchsia_rcu::subtle::{RcuPtrRef, rcu_ptr_to_arc};
-use fuchsia_rcu::{RcuReadScope, rcu_drop};
+use fuchsia_rcu::{RcuDroppable, RcuReadScope, rcu_drop};
 use fuchsia_rcu_collections::rcu_array::RcuArray;
 use linux_uapi::{FD_CLOEXEC, FIOCLEX, FIONCLEX};
 use macro_rules_attribute::apply;
@@ -71,6 +71,12 @@ struct EncodedEntry {
     /// The remaining bits of `value` are a `FileHandle` converted to a raw pointer.
     value: AtomicUsize,
 }
+
+// TODO(b/525158773): Temporary impl to allow incremental RCU safety refactoring.
+// SAFETY: Encoded entry is has drop side effects as it may drop a FileHandle if it's the last
+// reference. However, we run Rcu callbacks before returning from syscalls so side effects are
+// guaranteed to be visible.
+unsafe impl RcuDroppable for EncodedEntry {}
 
 // An assert to ensure that the lowest bit of the `FileHandle` is available to store the CLOEXEC
 // bit.

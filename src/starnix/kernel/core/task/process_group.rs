@@ -5,6 +5,7 @@
 use crate::mutable_state::{state_accessor, state_implementation};
 use crate::signals::SignalInfo;
 use crate::task::{PidTable, Session, SessionDisassociation, ThreadGroup};
+use fuchsia_rcu::RcuDroppable;
 use macro_rules_attribute::apply;
 use starnix_sync::{LockDepRwLock, ProcessGroupState};
 use starnix_uapi::pid_t;
@@ -36,6 +37,10 @@ pub struct ProcessGroup {
     /// The mutable state of the ProcessGroup.
     mutable_state: LockDepRwLock<ProcessGroupMutableState, ProcessGroupState>,
 }
+
+// TODO(b/525158773): Temporary impl to allow incremental RCU safety refactoring.
+// SAFETY: We wait for an RCU grace period before returning from syscalls so side effects are guaranteed to be visible.
+unsafe impl RcuDroppable for ProcessGroup {}
 
 impl PartialEq for ProcessGroup {
     fn eq(&self, other: &Self) -> bool {

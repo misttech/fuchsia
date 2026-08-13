@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fuchsia_rcu::RcuReadScope;
+use fuchsia_rcu::{RcuDroppable, RcuReadScope};
 use fuchsia_rcu_collections::rcu_raw_hash_map::{InsertionResult, RcuRawHashMap};
 use starnix_sync::{Mutex, MutexGuard};
 use std::hash::Hash;
@@ -35,8 +35,8 @@ pub enum RcuCacheInsertionResult<V> {
 #[derive(Debug)]
 pub struct RcuCache<K, V, S = rapidhash::RapidBuildHasher>
 where
-    K: Eq + Hash + Clone + Send + Sync + 'static,
-    V: Clone + Send + Sync + 'static,
+    K: Eq + Hash + Clone + RcuDroppable + Sync,
+    V: Clone + RcuDroppable + Sync,
     S: std::hash::BuildHasher + Send + Sync + 'static,
 {
     /// The maximum number of entries in the cache.
@@ -51,8 +51,8 @@ where
 
 impl<K, V> RcuCache<K, V, rapidhash::RapidBuildHasher>
 where
-    K: Eq + Hash + Clone + Send + Sync + 'static,
-    V: Clone + Send + Sync + 'static,
+    K: Eq + Hash + Clone + RcuDroppable + Sync,
+    V: Clone + RcuDroppable + Sync,
 {
     /// Creates a new `RcuCache` with the specified capacity.
     pub fn new(capacity: usize) -> Self {
@@ -62,8 +62,8 @@ where
 
 impl<K, V, S> RcuCache<K, V, S>
 where
-    K: Eq + Hash + Clone + Send + Sync + 'static,
-    V: Clone + Send + Sync + 'static,
+    K: Eq + Hash + Clone + RcuDroppable + Sync,
+    V: Clone + RcuDroppable + Sync,
     S: std::hash::BuildHasher + Send + Sync + 'static,
 {
     /// Creates a new `RcuCache` with the specified capacity and hasher.
@@ -78,8 +78,8 @@ where
 
 impl<K, V, S> RcuCache<K, V, S>
 where
-    K: Eq + Hash + Clone + Send + Sync + 'static,
-    V: Clone + Send + Sync + 'static,
+    K: Eq + Hash + Clone + RcuDroppable + Sync,
+    V: Clone + RcuDroppable + Sync,
     S: std::hash::BuildHasher + Send + Sync + 'static,
 {
     /// Returns the capacity with which this instance was initialized.
@@ -120,8 +120,8 @@ where
 
 pub struct RcuCacheGuard<'a, K, V, S = rapidhash::RapidBuildHasher>
 where
-    K: Eq + Hash + Clone + Send + Sync + 'static,
-    V: Clone + Send + Sync + 'static,
+    K: Eq + Hash + Clone + RcuDroppable + Sync,
+    V: Clone + RcuDroppable + Sync,
     S: std::hash::BuildHasher + Send + Sync + 'static,
 {
     cache: &'a RcuCache<K, V, S>,
@@ -130,8 +130,8 @@ where
 
 impl<'a, K, V, S> RcuCacheGuard<'a, K, V, S>
 where
-    K: Eq + Hash + Clone + Send + Sync + 'static,
-    V: Clone + Send + Sync + 'static,
+    K: Eq + Hash + Clone + RcuDroppable + Sync,
+    V: Clone + RcuDroppable + Sync,
     S: std::hash::BuildHasher + Send + Sync + 'static,
 {
     pub fn get<'rcu>(&self, scope: &'rcu RcuReadScope, key: &K) -> Option<&'rcu V> {

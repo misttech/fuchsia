@@ -23,6 +23,8 @@ rustc_library("fuchsia-rcu") {
   deps = [
     "//sdk/rust/zx",
     "//src/lib/fuchsia-sync",
+    "//third_party/rust_crates:bstr",
+    "//third_party/rust_crates:futures",
   ]
 
   if (enable_rseq_backend_for_rcu) {
@@ -36,6 +38,7 @@ rustc_library("fuchsia-rcu") {
     "src/lib.rs",
     "src/rcu_arc.rs",
     "src/rcu_box.rs",
+    "src/rcu_droppable.rs",
     "src/rcu_option_arc.rs",
     "src/rcu_option_box.rs",
     "src/rcu_ptr.rs",

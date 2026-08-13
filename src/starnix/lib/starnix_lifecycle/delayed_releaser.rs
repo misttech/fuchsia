@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use fuchsia_rcu::RcuDroppable;
 use starnix_types::ownership::ReleaseGuard;
 use std::marker::PhantomData;
 use std::mem::ManuallyDrop;
@@ -14,6 +15,13 @@ pub trait ReleaserAction<T> {
 /// Wrapper around `FileObject` that ensures that a unused `FileObject` is added to the current
 /// delayed releasers to be released at the next release point.
 pub struct ObjectReleaser<T, F: ReleaserAction<T>>(ManuallyDrop<ReleaseGuard<T>>, PhantomData<F>);
+
+// TODO(b/525158773): Temporary impl to allow incremental RCU safety refactoring.
+// SAFETY: ObjectReleaser is safe to drop on RCU during initial rollout phase.
+unsafe impl<T: Send + 'static, F: ReleaserAction<T> + Send + 'static> RcuDroppable
+    for ObjectReleaser<T, F>
+{
+}
 
 impl<T: Default, F: ReleaserAction<T>> Default for ObjectReleaser<T, F> {
     fn default() -> Self {

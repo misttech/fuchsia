@@ -5,7 +5,7 @@
 #![warn(unsafe_op_in_unsafe_fn)]
 
 use fuchsia_rcu::subtle::{RcuPtr, RcuPtrRef};
-use fuchsia_rcu::{RcuReadScope, rcu_drop};
+use fuchsia_rcu::{RcuDroppable, RcuReadScope, rcu_drop};
 
 use crate::rcu_intrusive_list::{Link, RcuIntrusiveList, RcuIntrusiveListCursor, RcuListAdapter};
 
@@ -19,17 +19,24 @@ use crate::rcu_intrusive_list::{Link, RcuIntrusiveList, RcuIntrusiveListCursor, 
 /// To modify the list, you will need to use some external synchronization,
 /// such as a `Mutex`, to exclude concurrent writers.
 #[derive(Debug)]
-pub struct RcuList<T: Send + Sync + 'static, A: RcuListAdapter<T>> {
+pub struct RcuList<T: RcuDroppable + Sync, A: RcuListAdapter<T>> {
     list: RcuIntrusiveList<T, A>,
 }
 
-impl<T: Send + Sync + 'static, A: RcuListAdapter<T>> Default for RcuList<T, A> {
+// SAFETY: RcuList drops all elements through its intrusive list nodes, which are of type T
+// (implementing RcuDroppable).
+unsafe impl<T: RcuDroppable + Sync, A: RcuListAdapter<T> + Send + Sync + 'static> RcuDroppable
+    for RcuList<T, A>
+{
+}
+
+impl<T: RcuDroppable + Sync, A: RcuListAdapter<T>> Default for RcuList<T, A> {
     fn default() -> Self {
         Self { list: RcuIntrusiveList::default() }
     }
 }
 
-impl<T: Send + Sync + 'static, A: RcuListAdapter<T>> RcuList<T, A> {
+impl<T: RcuDroppable + Sync, A: RcuListAdapter<T>> RcuList<T, A> {
     /// Creates a new list with the given head and tail.
     pub fn new(head: RcuPtr<Link>, tail: RcuPtr<Link>) -> Self {
         Self { list: RcuIntrusiveList::new(head, tail) }
@@ -137,18 +144,18 @@ fn alloc<T>(scope: &RcuReadScope, data: T) -> RcuPtrRef<'_, T> {
 /// The node must have been allocated using `alloc`.
 fn deferred_dealloc<T>(node: RcuPtrRef<'_, T>)
 where
-    T: Send + Sync + 'static,
+    T: RcuDroppable + Sync,
 {
     // SAFETY: The node was allocated using `alloc`.
     let value = unsafe { Box::from_raw(node.as_mut_ptr()) };
     rcu_drop(value);
 }
 
-pub struct RcuListCursor<'a, T: Send + Sync + 'static, A: RcuListAdapter<T>> {
+pub struct RcuListCursor<'a, T: RcuDroppable + Sync, A: RcuListAdapter<T>> {
     cursor: RcuIntrusiveListCursor<'a, T, A>,
 }
 
-impl<'a, T: Send + Sync + 'static, A: RcuListAdapter<T>> RcuListCursor<'a, T, A> {
+impl<'a, T: RcuDroppable + Sync, A: RcuListAdapter<T>> RcuListCursor<'a, T, A> {
     /// Returns the element at the current cursor position.
     pub fn current(&self) -> Option<&T> {
         self.cursor.current()
@@ -176,7 +183,7 @@ impl<'a, T: Send + Sync + 'static, A: RcuListAdapter<T>> RcuListCursor<'a, T, A>
     }
 }
 
-impl<T: Send + Sync + 'static, A: RcuListAdapter<T>> Drop for RcuList<T, A> {
+impl<T: RcuDroppable + Sync, A: RcuListAdapter<T>> Drop for RcuList<T, A> {
     fn drop(&mut self) {
         // SAFETY: The list is being dropped, so there are no concurrent readers.
         unsafe { self.clear() };
@@ -195,6 +202,9 @@ mod tests {
         value: i64,
         link: Link,
     }
+
+    // SAFETY: TestNode does not perform any blocking or contextual work on drop.
+    unsafe impl RcuDroppable for TestNode {}
 
     impl TestNode {
         fn new(value: i64) -> Self {
@@ -283,6 +293,9 @@ mod tests {
             counter: Arc<AtomicUsize>,
             link: Link,
         }
+
+        // SAFETY: DropCounter only increments an atomic counter on drop.
+        unsafe impl RcuDroppable for DropCounter {}
 
         impl RcuListAdapter<DropCounter> for DropCounter {
             rcu_list_adapter!(DropCounter, link);

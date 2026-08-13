@@ -9,7 +9,7 @@ use crate::rcu_intrusive_list::{
     Link, RcuIntrusiveList, RcuIntrusiveListCursor, RcuListAdapter, rcu_list_adapter,
 };
 use crate::rcu_list::RcuList;
-use fuchsia_rcu::RcuReadScope;
+use fuchsia_rcu::{RcuDroppable, RcuReadScope};
 use std::borrow::Borrow;
 use std::hash::{BuildHasher, Hash, Hasher};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -32,6 +32,9 @@ struct Entry<K, V> {
     /// The link to the next node in the insertion chain for this bucket.
     insertion_chain: Link,
 }
+
+// SAFETY: Entry contains K and V and link fields; it is safe to drop on RCU when K and V implement RcuDroppable.
+unsafe impl<K: RcuDroppable, V: RcuDroppable> RcuDroppable for Entry<K, V> {}
 
 impl<K, V> Entry<K, V> {
     /// Create a new hash table entry.
@@ -86,8 +89,8 @@ type Bucket<K, V> = RcuList<Entry<K, V>, CollisionAdapter>;
 /// `std::collections::hash_map::RandomState` instead.
 pub struct RcuRawHashMap<K, V, S = rapidhash::RapidBuildHasher>
 where
-    K: Eq + Hash + Clone + Send + Sync + 'static,
-    V: Clone + Send + Sync + 'static,
+    K: Eq + Hash + Clone + RcuDroppable + Sync,
+    V: Clone + RcuDroppable + Sync,
     S: BuildHasher + Send + Sync + 'static,
 {
     /// The table of buckets.
@@ -105,8 +108,8 @@ where
 
 impl<K, V> Default for RcuRawHashMap<K, V, rapidhash::RapidBuildHasher>
 where
-    K: Eq + Hash + Clone + Send + Sync + 'static,
-    V: Clone + Send + Sync + 'static,
+    K: Eq + Hash + Clone + RcuDroppable + Sync,
+    V: Clone + RcuDroppable + Sync,
 {
     fn default() -> Self {
         Self::with_capacity_and_hasher(0, rapidhash::RapidBuildHasher::default())
@@ -115,8 +118,8 @@ where
 
 impl<K, V> RcuRawHashMap<K, V, rapidhash::RapidBuildHasher>
 where
-    K: Eq + Hash + Clone + Send + Sync + 'static,
-    V: Clone + Send + Sync + 'static,
+    K: Eq + Hash + Clone + RcuDroppable + Sync,
+    V: Clone + RcuDroppable + Sync,
 {
     /// Creates a new hash map with the given capacity.
     pub fn with_capacity(capacity: usize) -> Self {
@@ -126,8 +129,8 @@ where
 
 impl<K, V, S> RcuRawHashMap<K, V, S>
 where
-    K: Eq + Hash + Clone + Send + Sync + 'static,
-    V: Clone + Send + Sync + 'static,
+    K: Eq + Hash + Clone + RcuDroppable + Sync,
+    V: Clone + RcuDroppable + Sync,
     S: BuildHasher + Send + Sync + 'static,
 {
     /// Creates a new hash map with the given capacity and hasher.
@@ -341,8 +344,8 @@ where
 // TODO(https://fxbug.dev/482462174): switch back to #[derive(Debug)]
 impl<K, V, S> std::fmt::Debug for RcuRawHashMap<K, V, S>
 where
-    K: Eq + Hash + Clone + Send + Sync + 'static + std::fmt::Debug,
-    V: Clone + Send + Sync + 'static + std::fmt::Debug,
+    K: Eq + Hash + Clone + RcuDroppable + Sync + std::fmt::Debug,
+    V: Clone + RcuDroppable + Sync + std::fmt::Debug,
     S: std::hash::BuildHasher + Send + Sync + 'static,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -360,8 +363,8 @@ where
 /// See `RcuRawHashMap::cursor` for more information.
 pub struct RcuRawHashMapCursor<'a, K, V, S = rapidhash::RapidBuildHasher>
 where
-    K: Eq + Hash + Clone + Send + Sync + 'static,
-    V: Clone + Send + Sync + 'static,
+    K: Eq + Hash + Clone + RcuDroppable + Sync,
+    V: Clone + RcuDroppable + Sync,
     S: BuildHasher + Send + Sync + 'static,
 {
     inner: RcuIntrusiveListCursor<'a, Entry<K, V>, InsertionAdapter>,
@@ -370,8 +373,8 @@ where
 
 impl<'a, K, V, S> RcuRawHashMapCursor<'a, K, V, S>
 where
-    K: Eq + Hash + Clone + Send + Sync + 'static,
-    V: Clone + Send + Sync + 'static,
+    K: Eq + Hash + Clone + RcuDroppable + Sync,
+    V: Clone + RcuDroppable + Sync,
     S: BuildHasher + Send + Sync + 'static,
 {
     /// Returns the element at the current cursor position.

@@ -5,7 +5,7 @@
 use crate::mm::MemoryManager;
 use crate::task::{AbstractUnixSocketNamespace, AbstractVsockSocketNamespace, CurrentTask};
 use crate::vfs::{FdTable, FsContext, FsNodeHandle, SharedFdTable};
-use fuchsia_rcu::{RcuArc, RcuOptionArc, RcuOptionBox};
+use fuchsia_rcu::{RcuArc, RcuDroppable, RcuOptionArc, RcuOptionBox};
 use starnix_sync::{LockDepMutex, TaskFilesLock};
 use starnix_uapi::errno;
 use starnix_uapi::errors::Errno;
@@ -46,6 +46,10 @@ pub struct TaskRunningState {
     /// See https://fxbug.dev/291962828 for details.
     pub proc_pid_directory_cache: RcuOptionBox<FsNodeHandle>,
 }
+
+// TODO(b/525158773): Temporary impl to allow incremental RCU safety refactoring.
+// SAFETY: We wait for an RCU grace period before returning from syscalls so side effects are guaranteed to be visible.
+unsafe impl RcuDroppable for TaskRunningState {}
 
 impl TaskRunningState {
     #[track_caller]

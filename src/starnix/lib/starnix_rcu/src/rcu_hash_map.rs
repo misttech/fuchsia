@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fuchsia_rcu::RcuReadScope;
+use fuchsia_rcu::{RcuDroppable, RcuReadScope};
 use fuchsia_rcu_collections::rcu_raw_hash_map::{InsertionResult, RcuRawHashMap};
 use starnix_sync::Mutex;
 use std::borrow::Borrow;
@@ -18,8 +18,8 @@ use std::hash::{BuildHasher, Hash};
 /// `std::collections::hash_map::RandomState` instead.
 pub struct RcuHashMap<K, V, S = rapidhash::RapidBuildHasher>
 where
-    K: Eq + Hash + Clone + Send + Sync + 'static,
-    V: Clone + Send + Sync + 'static,
+    K: Eq + Hash + Clone + RcuDroppable + Sync,
+    V: Clone + RcuDroppable + Sync,
     S: BuildHasher + Send + Sync + 'static,
 {
     map: RcuRawHashMap<K, V, S>,
@@ -28,8 +28,8 @@ where
 
 impl<K, V> Default for RcuHashMap<K, V, rapidhash::RapidBuildHasher>
 where
-    K: Eq + Hash + Clone + Send + Sync + 'static,
-    V: Clone + Send + Sync + 'static,
+    K: Eq + Hash + Clone + RcuDroppable + Sync,
+    V: Clone + RcuDroppable + Sync,
 {
     fn default() -> Self {
         Self { map: Default::default(), mutex: Mutex::new(()) }
@@ -38,8 +38,8 @@ where
 
 impl<K, V, S> RcuHashMap<K, V, S>
 where
-    K: Eq + Hash + Clone + Send + Sync + 'static,
-    V: Clone + Send + Sync + 'static,
+    K: Eq + Hash + Clone + RcuDroppable + Sync,
+    V: Clone + RcuDroppable + Sync,
     S: BuildHasher + Send + Sync + 'static,
 {
     /// Creates a new hash map with the given capacity and hasher.
@@ -111,8 +111,8 @@ where
 // TODO(https://fxbug.dev/482462174): switch back to #[derive(Debug)]
 impl<K, V, S> std::fmt::Debug for RcuHashMap<K, V, S>
 where
-    K: Eq + Hash + std::fmt::Debug + Clone + Send + Sync + 'static,
-    V: std::fmt::Debug + Clone + Send + Sync + 'static,
+    K: Eq + Hash + std::fmt::Debug + Clone + RcuDroppable + Sync,
+    V: std::fmt::Debug + Clone + RcuDroppable + Sync,
     S: BuildHasher + Send + Sync + 'static,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -123,8 +123,8 @@ where
 /// A guard that provides exclusive access to the `RcuHashMap`.
 pub struct RcuHashMapGuard<'a, K, V, S = rapidhash::RapidBuildHasher>
 where
-    K: Eq + Hash + Clone + Send + Sync + 'static,
-    V: Clone + Send + Sync + 'static,
+    K: Eq + Hash + Clone + RcuDroppable + Sync,
+    V: Clone + RcuDroppable + Sync,
     S: BuildHasher + Send + Sync + 'static,
 {
     map: &'a RcuRawHashMap<K, V, S>,
@@ -133,8 +133,8 @@ where
 
 impl<'a, K, V, S> RcuHashMapGuard<'a, K, V, S>
 where
-    K: Eq + Hash + Clone + Send + Sync + 'static,
-    V: Clone + Send + Sync + 'static,
+    K: Eq + Hash + Clone + RcuDroppable + Sync,
+    V: Clone + RcuDroppable + Sync,
     S: BuildHasher + Send + Sync + 'static,
 {
     /// Returns a copy (clone) of the value associated with the given key, if it exists.
@@ -198,8 +198,8 @@ where
 /// A view into a single entry in the map, which may either be vacant or occupied.
 pub enum Entry<'b, 'a, K, V, S = rapidhash::RapidBuildHasher>
 where
-    K: Eq + Hash + Clone + Send + Sync + 'static,
-    V: Clone + Send + Sync + 'static,
+    K: Eq + Hash + Clone + RcuDroppable + Sync,
+    V: Clone + RcuDroppable + Sync,
     S: BuildHasher + Send + Sync + 'static,
 {
     /// An occupied entry.
@@ -210,8 +210,8 @@ where
 
 impl<'b, 'a, K, V, S> Entry<'b, 'a, K, V, S>
 where
-    K: Eq + Hash + Clone + Send + Sync + 'static,
-    V: Clone + Send + Sync + 'static,
+    K: Eq + Hash + Clone + RcuDroppable + Sync,
+    V: Clone + RcuDroppable + Sync,
     S: BuildHasher + Send + Sync + 'static,
 {
     /// Ensures a value is in the entry by inserting the result of the default function if empty,
@@ -227,8 +227,8 @@ where
 /// A view into an occupied entry in a `RcuHashMap`.
 pub struct OccupiedEntry<'b, 'a, K, V, S = rapidhash::RapidBuildHasher>
 where
-    K: Eq + Hash + Clone + Send + Sync + 'static,
-    V: Clone + Send + Sync + 'static,
+    K: Eq + Hash + Clone + RcuDroppable + Sync,
+    V: Clone + RcuDroppable + Sync,
     S: BuildHasher + Send + Sync + 'static,
 {
     guard: &'b mut RcuHashMapGuard<'a, K, V, S>,
@@ -237,8 +237,8 @@ where
 
 impl<K, V, S> OccupiedEntry<'_, '_, K, V, S>
 where
-    K: Eq + Hash + Clone + Send + Sync + 'static,
-    V: Clone + Send + Sync + 'static,
+    K: Eq + Hash + Clone + RcuDroppable + Sync,
+    V: Clone + RcuDroppable + Sync,
     S: BuildHasher + Send + Sync + 'static,
 {
     /// Gets a copy (clone) of the value in the entry.
@@ -260,8 +260,8 @@ where
 /// A view into a vacant entry in a `RcuHashMap`.
 pub struct VacantEntry<'b, 'a, K, V, S = rapidhash::RapidBuildHasher>
 where
-    K: Eq + Hash + Clone + Send + Sync + 'static,
-    V: Clone + Send + Sync + 'static,
+    K: Eq + Hash + Clone + RcuDroppable + Sync,
+    V: Clone + RcuDroppable + Sync,
     S: BuildHasher + Send + Sync + 'static,
 {
     guard: &'b mut RcuHashMapGuard<'a, K, V, S>,
@@ -270,8 +270,8 @@ where
 
 impl<'b, 'a, K, V, S> VacantEntry<'b, 'a, K, V, S>
 where
-    K: Eq + Hash + Clone + Send + Sync + 'static,
-    V: Clone + Send + Sync + 'static,
+    K: Eq + Hash + Clone + RcuDroppable + Sync,
+    V: Clone + RcuDroppable + Sync,
     S: BuildHasher + Send + Sync + 'static,
 {
     /// Sets the value of the entry with the VacantEntry's key.

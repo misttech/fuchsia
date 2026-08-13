@@ -7,16 +7,18 @@ use crate::rcu_read_scope::RcuReadScope;
 use crate::state_machine::rcu_drop;
 use std::sync::Arc;
 
+use crate::rcu_droppable::RcuDroppable;
+
 /// An RCU (Read-Copy-Update) wrapper around `Option<Arc<T>>`.
 ///
 /// The Arc can be dereferenced from multiple threads concurrently without blocking.
 /// When the Arc is replaced, reads may continue to see the old Arc pointer for some period of time.
 #[derive(Debug)]
-pub struct RcuOptionArc<T: Send + Sync + 'static> {
+pub struct RcuOptionArc<T: RcuDroppable + Sync> {
     ptr: RcuPtr<T>,
 }
 
-impl<T: Send + Sync + 'static> RcuOptionArc<T> {
+impl<T: RcuDroppable + Sync> RcuOptionArc<T> {
     /// Create a new RCU wrapper around an `Option<Arc<T>>`.
     pub fn new(data: Option<Arc<T>>) -> Self {
         Self { ptr: RcuPtr::new(Self::into_ptr(data)) }
@@ -88,26 +90,26 @@ impl<T: Send + Sync + 'static> RcuOptionArc<T> {
     }
 }
 
-impl<T: Send + Sync + 'static> Drop for RcuOptionArc<T> {
+impl<T: RcuDroppable + Sync> Drop for RcuOptionArc<T> {
     fn drop(&mut self) {
         // SAFETY: We can pass `std::ptr::null_mut`.
         unsafe { self.replace(std::ptr::null_mut()) };
     }
 }
 
-impl<T: Send + Sync + 'static> Clone for RcuOptionArc<T> {
+impl<T: RcuDroppable + Sync> Clone for RcuOptionArc<T> {
     fn clone(&self) -> Self {
         Self::new(self.to_option_arc())
     }
 }
 
-impl<T: Send + Sync + 'static> From<Option<Arc<T>>> for RcuOptionArc<T> {
+impl<T: RcuDroppable + Sync> From<Option<Arc<T>>> for RcuOptionArc<T> {
     fn from(data: Option<Arc<T>>) -> Self {
         Self::new(data)
     }
 }
 
-impl<T: Send + Sync + 'static> Default for RcuOptionArc<T> {
+impl<T: RcuDroppable + Sync> Default for RcuOptionArc<T> {
     fn default() -> Self {
         Self::new(None)
     }
@@ -123,6 +125,9 @@ mod tests {
         value: usize,
         drops: Arc<AtomicUsize>,
     }
+
+    // SAFETY: DropCounter only increments an atomic counter on drop.
+    unsafe impl RcuDroppable for DropCounter {}
 
     impl DropCounter {
         pub fn new(value: usize) -> Arc<Self> {

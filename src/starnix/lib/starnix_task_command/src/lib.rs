@@ -7,6 +7,7 @@
 //! The `TaskCommand` type and associated functions.
 
 use flyweights::FlyByteStr;
+use fuchsia_rcu::RcuDroppable;
 use std::ops::Range;
 
 /// The command for a task.
@@ -18,6 +19,9 @@ pub struct TaskCommand {
     name: FlyByteStr,
     linux_name_range: Option<Range<usize>>,
 }
+
+// SAFETY: TaskCommand contains FlyByteStr (interned string without drop side effects) and Option<Range<usize>>.
+unsafe impl RcuDroppable for TaskCommand {}
 
 impl TaskCommand {
     /// Create a new `TaskCommand` from a byte slice. The byte slice is truncated at the first null

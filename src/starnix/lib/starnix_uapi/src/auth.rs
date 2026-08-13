@@ -8,6 +8,7 @@ use crate::errors::{Errno, error};
 use crate::selinux::TaskAttrs;
 use crate::{gid_t, uapi, uid_t};
 use bitflags::bitflags;
+use fuchsia_rcu::RcuDroppable;
 use std::sync::{Arc, LazyLock};
 
 bitflags! {
@@ -301,6 +302,9 @@ pub struct Credentials {
     /// The SELinux security state of the task.
     pub security_state: TaskAttrs,
 }
+
+// SAFETY: Credentials does not have Drop side effects.
+unsafe impl RcuDroppable for Credentials {}
 
 bitflags! {
     #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]

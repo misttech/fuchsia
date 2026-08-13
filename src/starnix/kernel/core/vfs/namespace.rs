@@ -19,7 +19,7 @@ use crate::vfs::{
     fileops_impl_delegate_read_write_and_seek, fileops_impl_nonseekable, fileops_impl_noop_sync,
     fs_node_impl_not_dir,
 };
-use fuchsia_rcu::{RcuBox, RcuReadScope};
+use fuchsia_rcu::{RcuBox, RcuDroppable, RcuReadScope};
 use fuchsia_rcu_collections::rcu_raw_hash_map::RcuRawHashMap;
 use ref_cast::RefCast;
 use starnix_logging::log_warn;
@@ -179,6 +179,12 @@ pub struct Mount {
     // recommend turning the mountpoint field into an enum of Mountpoint or Namespace, maybe called
     // "parent", and then you can traverse up to the top of the tree.
 }
+
+// TODO(b/525158773): Temporary impl to allow incremental RCU safety refactoring.
+// SAFETY: We wait for an RCU grace period before returning from syscalls so side effects are guaranteed to be visible.
+unsafe impl RcuDroppable for Mount {}
+// SAFETY: We wait for an RCU grace period before returning from syscalls so side effects are guaranteed to be visible.
+unsafe impl RcuDroppable for PeerGroup {}
 type MountHandle = Arc<Mount>;
 
 /// Public representation of the mount options.
@@ -2092,6 +2098,10 @@ struct Submount {
     dir: ArcKey<DirEntry>,
     mount: MountHandle,
 }
+
+// TODO(b/525158773): Temporary impl to allow incremental RCU safety refactoring.
+// SAFETY: We wait for an RCU grace period before returning from syscalls so side effects are guaranteed to be visible.
+unsafe impl RcuDroppable for Submount {}
 
 impl Drop for Submount {
     fn drop(&mut self) {

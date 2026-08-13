@@ -12,6 +12,7 @@ rustc_library("starnix_task_command") {
   sources = [ "src/lib.rs" ]
 
   deps = [
+    "//src/lib/fuchsia-rcu",
     "//third_party/rust_crates:bstr",
     "//third_party/rust_crates:flyweights",
     "//third_party/rust_crates:memchr",

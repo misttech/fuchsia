@@ -6,16 +6,18 @@ use crate::rcu_ptr::{RcuPtr, RcuReadGuard};
 use crate::rcu_read_scope::RcuReadScope;
 use crate::state_machine::rcu_drop;
 
+use crate::rcu_droppable::RcuDroppable;
+
 /// An RCU (Read-Copy-Update) wrapper around a `Box`.
 ///
 /// The Box can be dereferenced from multiple threads concurrently without blocking.
 /// When the Box is replaced, reads may continue to see the old Box pointer for some period of time.
 #[derive(Debug)]
-pub struct RcuBox<T: Send + Sync + 'static> {
+pub struct RcuBox<T: RcuDroppable + Sync> {
     ptr: RcuPtr<T>,
 }
 
-impl<T: Send + Sync + 'static> RcuBox<T> {
+impl<T: RcuDroppable + Sync> RcuBox<T> {
     /// Create a new RCU wrapped Box from a value.
     pub fn new(data: T) -> Self {
         Self::from(Box::new(data))
@@ -59,7 +61,7 @@ impl<T: Send + Sync + 'static> RcuBox<T> {
     }
 }
 
-impl<T: Clone + Send + Sync + 'static> RcuBox<T> {
+impl<T: Clone + RcuDroppable + Sync> RcuBox<T> {
     /// Returns a clone of the value of the wrapped Box.
     ///
     /// The clone is detached from any RCU read scope.
@@ -68,27 +70,27 @@ impl<T: Clone + Send + Sync + 'static> RcuBox<T> {
     }
 }
 
-impl<T: Send + Sync + 'static> Drop for RcuBox<T> {
+impl<T: RcuDroppable + Sync> Drop for RcuBox<T> {
     fn drop(&mut self) {
         // SAFETY: We can pass `std::ptr::null_mut` to `Self::replace`.
         unsafe { self.replace(std::ptr::null_mut()) };
     }
 }
 
-impl<T: Default + Send + Sync + 'static> Default for RcuBox<T> {
+impl<T: Default + RcuDroppable + Sync> Default for RcuBox<T> {
     fn default() -> Self {
         Self::new(T::default())
     }
 }
 
-impl<T: Clone + Send + Sync + 'static> Clone for RcuBox<T> {
+impl<T: Clone + RcuDroppable + Sync> Clone for RcuBox<T> {
     fn clone(&self) -> Self {
         let value = self.read();
         Self::new(value.clone())
     }
 }
 
-impl<T: Send + Sync + 'static> From<Box<T>> for RcuBox<T> {
+impl<T: RcuDroppable + Sync> From<Box<T>> for RcuBox<T> {
     fn from(value: Box<T>) -> Self {
         Self { ptr: RcuPtr::new(Box::into_raw(value)) }
     }

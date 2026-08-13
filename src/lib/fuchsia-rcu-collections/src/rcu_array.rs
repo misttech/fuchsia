@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fuchsia_rcu::{RcuBox, RcuReadScope};
+use fuchsia_rcu::{RcuBox, RcuDroppable, RcuReadScope};
 
 /// An array-like data structure that can be read without locking.
 ///
@@ -11,11 +11,11 @@ use fuchsia_rcu::{RcuBox, RcuReadScope};
 /// are guaranteed to see a consistent snapshot of the array without blocking
 /// writers.
 #[derive(Default, Debug)]
-pub struct RcuArray<T: Send + Sync + 'static> {
+pub struct RcuArray<T: RcuDroppable + Sync> {
     inner: RcuBox<Box<[T]>>,
 }
 
-impl<T: Send + Sync + 'static> RcuArray<T> {
+impl<T: RcuDroppable + Sync> RcuArray<T> {
     /// Returns a reference to the element at the given `index`, or `None` if the
     /// index is out of bounds.
     pub fn get<'a>(&self, scope: &'a RcuReadScope, index: usize) -> Option<&'a T> {
@@ -72,14 +72,14 @@ impl<T: Send + Sync + 'static> RcuArray<T> {
     }
 }
 
-impl<T: Clone + Sync + Send + 'static> Clone for RcuArray<T> {
+impl<T: Clone + RcuDroppable + Sync> Clone for RcuArray<T> {
     fn clone(&self) -> Self {
         Self { inner: self.inner.clone() }
     }
 }
 
 /// Creates an `RcuArray` from a `Vec<T>`.
-impl<T: Send + Sync + 'static> From<Vec<T>> for RcuArray<T> {
+impl<T: RcuDroppable + Sync> From<Vec<T>> for RcuArray<T> {
     fn from(value: Vec<T>) -> Self {
         Self { inner: RcuBox::new(value.into_boxed_slice()) }
     }

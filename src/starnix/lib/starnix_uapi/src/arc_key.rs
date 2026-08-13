@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use fuchsia_rcu::RcuDroppable;
 use ref_cast::RefCast;
 use std::borrow::Borrow;
 use std::cmp::Ordering;
@@ -134,3 +135,10 @@ impl<T: std::fmt::Debug> std::fmt::Debug for PtrKey<T> {
         self.0.fmt(f)
     }
 }
+
+// SAFETY: ArcKey wraps Arc<T> and is safe to drop on RCU if T is RcuDroppable + Sync.
+unsafe impl<T: RcuDroppable + Sync> RcuDroppable for ArcKey<T> {}
+// SAFETY: WeakKey wraps Weak<T>, which only decrements the weak refcount on drop without dropping T.
+unsafe impl<T: Send + Sync + 'static> RcuDroppable for WeakKey<T> {}
+// SAFETY: PtrKey contains a raw pointer and has no drop side effects.
+unsafe impl<T: 'static> RcuDroppable for PtrKey<T> {}

@@ -10,7 +10,7 @@ use crate::vfs::{
 };
 use atomic_bitflags::atomic_bitflags;
 use bitflags::bitflags;
-use fuchsia_rcu::{RcuOptionArc, RcuReadScope};
+use fuchsia_rcu::{RcuDroppable, RcuOptionArc, RcuReadScope};
 use fuchsia_sync::ResetDependencies;
 use starnix_rcu::RcuString;
 use starnix_sync::{
@@ -144,6 +144,10 @@ pub struct DirEntry {
     // for more details, the current mitigations, and potentials for long-term solutions.
     children: DynamicLockDepRwLock<DirEntryChildren>,
 }
+
+// TODO(b/525158773): Temporary impl to allow incremental RCU safety refactoring.
+// SAFETY: We wait for an RCU grace period before returning from syscalls so side effects are guaranteed to be visible.
+unsafe impl RcuDroppable for DirEntry {}
 type DirEntryChildren = BTreeMap<FsString, Weak<DirEntry>>;
 
 pub type DirEntryHandle = Arc<DirEntry>;

@@ -851,6 +851,7 @@ mod tokens_store {
     use crate::task::Kernel;
     use derivative::Derivative;
     use fuchsia_async as fasync;
+    use fuchsia_rcu::RcuDroppable;
     use starnix_rcu::RcuHashMap;
     use starnix_rcu::rcu_hash_map::Entry;
     use starnix_uapi::uid_t;
@@ -931,6 +932,9 @@ mod tokens_store {
         // Whether the cleanup task is running.
         cleanup_task_running: bool,
     }
+
+    // SAFETY: UidEntry does not have Drop side effects.
+    unsafe impl<H: SocketTokenStoreHost> RcuDroppable for UidEntry<H> {}
 
     impl<H: SocketTokenStoreHost> UidEntry<H> {
         fn new() -> Self {

@@ -5,6 +5,7 @@
 use crate::security;
 use crate::task::{CurrentTask, MountsWriteToken};
 use crate::vfs::{ActiveNamespaceNode, CheckAccessReason, Namespace, NamespaceNode};
+use fuchsia_rcu::RcuDroppable;
 use starnix_logging::log_trace;
 use starnix_sync::LockDepRwLock;
 use starnix_uapi::auth::CAP_SYS_CHROOT;
@@ -65,6 +66,10 @@ impl FsContextState {
 pub struct FsContext {
     state: LockDepRwLock<FsContextState, starnix_sync::FsContextStateLock>,
 }
+
+// TODO(b/525158773): Temporary impl to allow incremental RCU safety refactoring.
+// SAFETY: We wait for an RCU grace period before returning from syscalls so side effects are guaranteed to be visible.
+unsafe impl RcuDroppable for FsContext {}
 
 impl FsContext {
     /// Create an FsContext for the given namespace.

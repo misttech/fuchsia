@@ -13,6 +13,7 @@ use crate::syscalls::time::TimeValPtr;
 use crate::task::{CurrentTask, EventHandler, WaitCanceler, Waiter};
 use crate::vfs::buffers::{AncillaryData, InputBuffer, MessageReadInfo, OutputBuffer};
 use crate::vfs::{DowncastedFile, FileHandle, FileObject, FsNodeHandle};
+use fuchsia_rcu::RcuDroppable;
 use starnix_logging::track_stub;
 use starnix_sync::{LockDepMutex, SocketStateLock};
 use starnix_syscalls::{SyscallArg, SyscallResult};
@@ -224,6 +225,10 @@ pub struct Socket {
     /// applied to the associated `fs_node`.
     pub security: security::SocketState,
 }
+
+// TODO(b/525158773): Temporary impl to allow incremental RCU safety refactoring.
+// SAFETY: We wait for an RCU grace period before returning from syscalls so side effects are guaranteed to be visible.
+unsafe impl RcuDroppable for Socket {}
 
 #[derive(Default)]
 struct SocketState {
