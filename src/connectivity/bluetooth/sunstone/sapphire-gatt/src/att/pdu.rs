@@ -83,49 +83,27 @@ pub struct Packet {
     pub data: [u8],
 }
 
-/// A helper struct to build fixed-size outbound packets statically on the stack
-/// without manual byte serialization or indexing.
-#[derive(IntoBytes, KnownLayout, Immutable, Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(C, packed)]
-pub struct PacketBuilder<P> {
-    pub header: Header,
-    pub payload: P,
-}
-
-impl<P> PacketBuilder<P>
-where
-    Self: IntoBytes + Immutable,
-{
-    /// Casts the builder reference directly to a validated read-only Packet reference.
-    pub fn as_packet(&self) -> &Packet {
-        Packet::try_ref_from_bytes(self.as_bytes()).expect("valid PacketBuilder layout")
-    }
-}
-
 /// Fixed protocol wire sizes (in bytes) for Emboss ATT PDUs.
 ///
 /// (see Vol 3, Part F, Section 3.4)
 pub const ATT_ERROR_RSP_SIZE: usize = 5;
 pub const ATT_EXCHANGE_MTU_REQ_SIZE: usize = 3;
 pub const ATT_EXCHANGE_MTU_RSP_SIZE: usize = 3;
+pub const ATT_FIND_INFORMATION_REQ_SIZE: usize = 5;
+pub const ATT_FIND_BY_TYPE_VALUE_REQ_HEADER_SIZE: usize = 7;
 pub const ATT_READ_REQ_SIZE: usize = 3;
 pub const ATT_READ_BLOB_REQ_SIZE: usize = 5;
+pub const ATT_READ_BY_TYPE_REQ_HEADER_SIZE: usize = 5;
+pub const ATT_READ_BY_GROUP_TYPE_REQ_HEADER_SIZE: usize = 5;
 pub const ATT_WRITE_REQ_HEADER_SIZE: usize = 3;
 pub const ATT_WRITE_RSP_SIZE: usize = 1;
 pub const ATT_WRITE_CMD_HEADER_SIZE: usize = 3;
 pub const ATT_PREPARE_WRITE_HEADER_SIZE: usize = 5;
 pub const ATT_EXECUTE_WRITE_REQ_SIZE: usize = 2;
 pub const ATT_EXECUTE_WRITE_RSP_SIZE: usize = 1;
-
-/// Parameters for Find Information Request PDU (OpCode = 0x04)
-///
-/// (see Vol 3, Part F, 3.4.3.1)
-#[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(C, packed)]
-pub struct FindInformationReq {
-    pub starting_handle: U16,
-    pub ending_handle: U16,
-}
+pub const ATT_HANDLE_VALUE_NTF_HEADER_SIZE: usize = 3;
+pub const ATT_HANDLE_VALUE_IND_HEADER_SIZE: usize = 3;
+pub const ATT_HANDLE_VALUE_CFM_SIZE: usize = 1;
 
 /// Parameters for Find Information Response PDU Header (OpCode = 0x05)
 ///
@@ -193,31 +171,6 @@ pub struct InformationData128 {
 
 impl InformationData for InformationData128 {
     const FORMAT: UuidFormat = UuidFormat::Uuid128;
-}
-
-/// Parameters for Find By Type Value Request PDU (OpCode = 0x06).
-///
-/// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.3.3).
-#[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(C, packed)]
-pub struct FindByTypeValueReqHeader {
-    pub starting_handle: U16,
-    pub ending_handle: U16,
-    pub attribute_type: U16, // 16-bit UUID only
-}
-
-/// The complete Find By Type Value Request PDU (OpCode = 0x06).
-///
-/// Contains the fixed header fields followed by the variable-length attribute value.
-///
-/// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.3.3).
-#[derive(TryFromBytes, KnownLayout, Immutable, IntoBytes, Debug)]
-#[repr(C)]
-pub struct FindByTypeValueReq {
-    /// Fixed header fields of the request.
-    pub header: FindByTypeValueReqHeader,
-    /// Variable-length attribute value to search for.
-    pub value: [u8],
 }
 
 /// Handles Information structure for Find By Type Value Response (OpCode = 0x07).
@@ -381,54 +334,14 @@ pub struct ReadByGroupTypeRsp {
     pub attribute_data_list: [u8],
 }
 
-/// Handle Value Notification Header (Opcode = 0x1B).
-///
-/// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.7.1).
-#[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(C, packed)]
-pub struct HandleValueNtfHeader {
-    pub attribute_handle: U16,
-}
-
-/// Handle Value Notification PDU (Opcode = 0x1B).
-///
-/// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.7.1).
-#[derive(TryFromBytes, KnownLayout, Immutable, IntoBytes, Debug, PartialEq, Eq)]
-#[repr(C)]
-pub struct HandleValueNtf {
-    pub header: HandleValueNtfHeader,
-    pub attribute_value: [u8],
-}
-
-#[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(C, packed)]
-pub struct HandleValueIndHeader {
-    pub attribute_handle: U16,
-}
-
-/// Handle Value Indication PDU (Opcode = 0x1D).
-///
-/// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.7.2).
-#[derive(TryFromBytes, KnownLayout, Immutable, IntoBytes, Debug, PartialEq, Eq)]
-#[repr(C)]
-pub struct HandleValueInd {
-    pub header: HandleValueIndHeader,
-    pub attribute_value: [u8],
-}
-
-/// Handle Value Confirmation PDU (Opcode = 0x1E).
-///
-/// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.7.3).
-#[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(C)]
-pub struct HandleValueCnf;
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use sapphire_emboss::att::{
         AttErrorRsp, AttExchangeMtuReq, AttExchangeMtuRsp, AttExecuteWriteReq,
-        AttPrepareWriteHeader, AttReadBlobReq, AttReadReq, AttWriteCmd,
+        AttFindByTypeValueReqHeader, AttFindInformationReq, AttHandleValueIndHeader,
+        AttHandleValueNtfHeader, AttPrepareWriteHeader, AttReadBlobReq,
+        AttReadByGroupTypeReqHeader, AttReadByTypeReqHeader, AttReadReq, AttWriteCmd,
     };
 
     #[test]
@@ -475,11 +388,14 @@ mod tests {
 
     #[test]
     fn test_read_by_type_req() {
-        let req_bytes = [0x01, 0x00, 0x05, 0x00, 0x00, 0x28]; // start 0x0001, end 0x0005, type 0x2800 (Primary Service)
-        let parsed = ReadByTypeReq::try_ref_from_bytes(&req_bytes[..]).unwrap();
-        assert_eq!(parsed.header.starting_handle.get(), 1);
-        assert_eq!(parsed.header.ending_handle.get(), 5);
-        assert_eq!(parsed.attribute_type, [0x00, 0x28]);
+        let req_bytes = [0x08, 0x01, 0x00, 0x05, 0x00]; // opcode 0x08, start 0x0001, end 0x0005
+        let view = AttReadByTypeReqHeader::new(&req_bytes[..]);
+        assert_eq!(view.attribute_opcode().try_read().unwrap(), Opcode::ATT_READ_BY_TYPE_REQ);
+        assert_eq!(view.starting_handle().try_read().unwrap(), 1);
+        assert_eq!(view.ending_handle().try_read().unwrap(), 5);
+
+        let short_view = AttReadByTypeReqHeader::new(&req_bytes[..2]);
+        assert!(short_view.ending_handle().try_read().is_err());
     }
 
     #[test]
@@ -492,11 +408,14 @@ mod tests {
 
     #[test]
     fn test_read_by_group_type_req() {
-        let req_bytes = [0x01, 0x00, 0x05, 0x00, 0x00, 0x28]; // start 0x0001, end 0x0005, type 0x2800 (Primary Service)
-        let parsed = ReadByGroupTypeReq::try_ref_from_bytes(&req_bytes[..]).unwrap();
-        assert_eq!(parsed.header.starting_handle.get(), 1);
-        assert_eq!(parsed.header.ending_handle.get(), 5);
-        assert_eq!(parsed.attribute_type, [0x00, 0x28]);
+        let req_bytes = [0x10, 0x01, 0x00, 0x05, 0x00]; // opcode 0x10, start 0x0001, end 0x0005
+        let view = AttReadByGroupTypeReqHeader::new(&req_bytes[..]);
+        assert_eq!(view.attribute_opcode().try_read().unwrap(), Opcode::ATT_READ_BY_GROUP_TYPE_REQ);
+        assert_eq!(view.starting_handle().try_read().unwrap(), 1);
+        assert_eq!(view.ending_handle().try_read().unwrap(), 5);
+
+        let short_view = AttReadByGroupTypeReqHeader::new(&req_bytes[..2]);
+        assert!(short_view.ending_handle().try_read().is_err());
     }
 
     #[test]
@@ -509,14 +428,14 @@ mod tests {
 
     #[test]
     fn test_find_information_req() {
-        let req_bytes = [0x01, 0x00, 0xff, 0xff]; // start 0x0001, end 0xffff
-        let parsed = FindInformationReq::read_from_bytes(&req_bytes[..]).unwrap();
-        assert_eq!(parsed.starting_handle.get(), 1);
-        assert_eq!(parsed.ending_handle.get(), 0xffff);
+        let req_bytes = [0x04, 0x01, 0x00, 0xff, 0xff]; // opcode 0x04, start 0x0001, end 0xffff
+        let view = AttFindInformationReq::new(&req_bytes[..]);
+        assert_eq!(view.attribute_opcode().try_read().unwrap(), Opcode::ATT_FIND_INFORMATION_REQ);
+        assert_eq!(view.starting_handle().try_read().unwrap(), 1);
+        assert_eq!(view.ending_handle().try_read().unwrap(), 0xffff);
 
-        let new_req =
-            FindInformationReq { starting_handle: U16::new(1), ending_handle: U16::new(0xffff) };
-        assert_eq!(new_req.as_bytes(), &req_bytes[..]);
+        let short_view = AttFindInformationReq::new(&req_bytes[..2]);
+        assert!(short_view.ending_handle().try_read().is_err());
     }
 
     #[test]
@@ -586,12 +505,15 @@ mod tests {
 
     #[test]
     fn test_find_by_type_value_req() {
-        // start 0x0001, end 0x000A, type 0x2800
-        let req_bytes = [0x01, 0x00, 0x0a, 0x00, 0x00, 0x28];
-        let parsed = FindByTypeValueReqHeader::read_from_bytes(&req_bytes[..]).unwrap();
-        assert_eq!(parsed.starting_handle.get(), 1);
-        assert_eq!(parsed.ending_handle.get(), 10);
-        assert_eq!(parsed.attribute_type.get(), 0x2800);
+        let req_bytes = [0x06, 0x01, 0x00, 0x0a, 0x00, 0x00, 0x28]; // opcode 0x06, start 1, end 10, type 0x2800
+        let view = AttFindByTypeValueReqHeader::new(&req_bytes[..]);
+        assert_eq!(view.attribute_opcode().try_read().unwrap(), Opcode::ATT_FIND_BY_TYPE_VALUE_REQ);
+        assert_eq!(view.starting_handle().try_read().unwrap(), 1);
+        assert_eq!(view.ending_handle().try_read().unwrap(), 10);
+        assert_eq!(view.attribute_type().try_read().unwrap(), 0x2800);
+
+        let short_view = AttFindByTypeValueReqHeader::new(&req_bytes[..4]);
+        assert!(short_view.attribute_type().try_read().is_err());
     }
 
     #[test]
@@ -666,22 +588,23 @@ mod tests {
 
     #[test]
     fn test_handle_value_ntf() {
-        let ntf_bytes = [0x05, 0x00, 0xAA, 0xBB];
-        let parsed = HandleValueNtf::try_ref_from_bytes(&ntf_bytes[..]).unwrap();
-        assert_eq!(parsed.header.attribute_handle.get(), 5);
-        assert_eq!(parsed.attribute_value, [0xAA, 0xBB]);
+        let ntf_bytes = [0x1B, 0x05, 0x00]; // opcode 0x1B (ATT_HANDLE_VALUE_NTF), handle 5
+        let view = AttHandleValueNtfHeader::new(&ntf_bytes[..]);
+        assert_eq!(view.attribute_opcode().try_read().unwrap(), Opcode::ATT_HANDLE_VALUE_NTF);
+        assert_eq!(view.attribute_handle().try_read().unwrap(), 5);
+
+        let short_view = AttHandleValueNtfHeader::new(&ntf_bytes[..1]);
+        assert!(short_view.attribute_handle().try_read().is_err());
     }
 
     #[test]
     fn test_handle_value_ind() {
-        let ind_bytes = [0x05, 0x00, 0xAA, 0xBB];
-        let parsed = HandleValueInd::try_ref_from_bytes(&ind_bytes[..]).unwrap();
-        assert_eq!(parsed.header.attribute_handle.get(), 5);
-        assert_eq!(parsed.attribute_value, [0xAA, 0xBB]);
-    }
+        let ind_bytes = [0x1D, 0x05, 0x00]; // opcode 0x1D (ATT_HANDLE_VALUE_IND), handle 5
+        let view = AttHandleValueIndHeader::new(&ind_bytes[..]);
+        assert_eq!(view.attribute_opcode().try_read().unwrap(), Opcode::ATT_HANDLE_VALUE_IND);
+        assert_eq!(view.attribute_handle().try_read().unwrap(), 5);
 
-    #[test]
-    fn test_handle_value_cnf() {
-        assert_eq!(size_of::<HandleValueCnf>(), 0);
+        let short_view = AttHandleValueIndHeader::new(&ind_bytes[..1]);
+        assert!(short_view.attribute_handle().try_read().is_err());
     }
 }

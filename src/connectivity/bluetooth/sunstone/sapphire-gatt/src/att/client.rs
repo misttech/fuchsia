@@ -10,17 +10,20 @@ use crate::att::bearer::{
 use crate::att::l2cap::{L2CapChannelRx, L2CapChannelTx};
 use crate::att::pdu::{
     ATT_ERROR_RSP_SIZE, ATT_EXCHANGE_MTU_REQ_SIZE, ATT_EXCHANGE_MTU_RSP_SIZE,
-    ATT_EXECUTE_WRITE_REQ_SIZE, ATT_PREPARE_WRITE_HEADER_SIZE, ATT_READ_BLOB_REQ_SIZE,
-    ATT_READ_REQ_SIZE, ATT_WRITE_CMD_HEADER_SIZE, ATT_WRITE_REQ_HEADER_SIZE, DynamicPacketBuilder,
-    ErrorCode, ExecuteWriteFlags, FindByTypeValueReqHeader, FindInformationReq, FindInformationRsp,
-    HandleValueCnf, HandlesInformation, Header, InformationData16, InformationData128, Opcode,
-    Packet, PacketBuilder, ReadByGroupTypeReqHeader, ReadByGroupTypeRsp,
-    ReadByGroupTypeRspEntryHeader, ReadByTypeReqHeader, ReadByTypeRsp, UuidFormat,
+    ATT_EXECUTE_WRITE_REQ_SIZE, ATT_FIND_BY_TYPE_VALUE_REQ_HEADER_SIZE,
+    ATT_FIND_INFORMATION_REQ_SIZE, ATT_HANDLE_VALUE_CFM_SIZE, ATT_PREPARE_WRITE_HEADER_SIZE,
+    ATT_READ_BLOB_REQ_SIZE, ATT_READ_BY_GROUP_TYPE_REQ_HEADER_SIZE,
+    ATT_READ_BY_TYPE_REQ_HEADER_SIZE, ATT_READ_REQ_SIZE, ATT_WRITE_CMD_HEADER_SIZE,
+    ATT_WRITE_REQ_HEADER_SIZE, DynamicPacketBuilder, ErrorCode, ExecuteWriteFlags,
+    FindInformationRsp, HandlesInformation, InformationData16, InformationData128, Opcode, Packet,
+    ReadByGroupTypeRsp, ReadByGroupTypeRspEntryHeader, ReadByTypeRsp, UuidFormat,
 };
 use crate::att::router::{BearerRouter, BearerRxHandle, RouteFilter};
 use sapphire_emboss::att::{
-    AttErrorRsp, AttExchangeMtuReqMut, AttExchangeMtuRsp, AttExecuteWriteReqMut, AttHeader,
-    AttPrepareWriteHeaderMut, AttReadBlobReqMut, AttReadReqMut, AttWriteCmdMut,
+    AttErrorRsp, AttExchangeMtuReqMut, AttExchangeMtuRsp, AttExecuteWriteReqMut,
+    AttFindByTypeValueReqHeaderMut, AttFindInformationReqMut, AttHeader, AttHeaderMut,
+    AttPrepareWriteHeaderMut, AttReadBlobReqMut, AttReadByGroupTypeReqHeaderMut,
+    AttReadByTypeReqHeaderMut, AttReadReqMut, AttWriteCmdMut,
 };
 
 use core::cmp::{max, min};
@@ -368,15 +371,12 @@ where
         ending_handle: AttributeHandle,
         rx_buf: &'a mut [MaybeUninit<u8>],
     ) -> Result<DiscoveredInformation<'a>, ClientError> {
-        // Build and transmit the Find Information Request packet.
-        let builder = PacketBuilder {
-            header: Header::new(Opcode::ATT_FIND_INFORMATION_REQ),
-            payload: FindInformationReq {
-                starting_handle: U16::new(starting_handle.value()),
-                ending_handle: U16::new(ending_handle.value()),
-            },
-        };
-        let tx_packet = builder.as_packet();
+        let mut tx_buf = [0u8; ATT_FIND_INFORMATION_REQ_SIZE];
+        let mut view = AttFindInformationReqMut::new(&mut tx_buf[..]);
+        view.attribute_opcode().try_write(Opcode::ATT_FIND_INFORMATION_REQ).expect("valid opcode");
+        view.starting_handle().try_write(starting_handle.value()).expect("valid handle");
+        view.ending_handle().try_write(ending_handle.value()).expect("valid handle");
+        let tx_packet = Packet::try_ref_from_bytes(&tx_buf[..]).expect("valid packet");
 
         let rx_packet = self
             .transaction(
@@ -426,21 +426,23 @@ where
         attribute_value: &[u8],
         rx_buf: &'a mut [MaybeUninit<u8>],
     ) -> Result<&'a [HandlesInformation], ClientError> {
-        let header_builder = PacketBuilder {
-            header: Header::new(Opcode::ATT_FIND_BY_TYPE_VALUE_REQ),
-            payload: FindByTypeValueReqHeader {
-                starting_handle: U16::new(starting_handle.value()),
-                ending_handle: U16::new(ending_handle.value()),
-                attribute_type: U16::new(attribute_type),
-            },
-        };
+        let total_size = ATT_FIND_BY_TYPE_VALUE_REQ_HEADER_SIZE + attribute_value.len();
+        assert!(
+            total_size <= self.effective_mtu(),
+            "Programming error: request packet size exceeds negotiated MTU."
+        );
         let mut tx_buf = [0u8; MAX_SUPPORTED_MTU];
-        let mut builder =
-            DynamicPacketBuilder::<_, u8>::new(&mut tx_buf, header_builder, self.effective_mtu());
-        builder
-            .extend_from_slice(attribute_value)
-            .expect("Programming error: request packet size exceeds negotiated MTU.");
-        let tx_packet = builder.as_packet();
+        let mut view = AttFindByTypeValueReqHeaderMut::new(
+            &mut tx_buf[..ATT_FIND_BY_TYPE_VALUE_REQ_HEADER_SIZE],
+        );
+        view.attribute_opcode()
+            .try_write(Opcode::ATT_FIND_BY_TYPE_VALUE_REQ)
+            .expect("valid opcode");
+        view.starting_handle().try_write(starting_handle.value()).expect("valid handle");
+        view.ending_handle().try_write(ending_handle.value()).expect("valid handle");
+        view.attribute_type().try_write(attribute_type).expect("valid attribute type");
+        tx_buf[ATT_FIND_BY_TYPE_VALUE_REQ_HEADER_SIZE..total_size].copy_from_slice(attribute_value);
+        let tx_packet = Packet::try_ref_from_bytes(&tx_buf[..total_size]).expect("valid packet");
 
         let rx_packet = self
             .transaction(
@@ -524,16 +526,14 @@ where
     ) -> Result<ReadByTypeResults<'a>, ClientError> {
         // Serialize the variable-length UUID parameter onto the end of the request header.
         let type_bytes = attribute_type.as_bytes();
-        let header_builder = PacketBuilder {
-            header: Header::new(Opcode::ATT_READ_BY_TYPE_REQ),
-            payload: ReadByTypeReqHeader {
-                starting_handle: U16::new(starting_handle.value()),
-                ending_handle: U16::new(ending_handle.value()),
-            },
-        };
+        let mut header = [0u8; ATT_READ_BY_TYPE_REQ_HEADER_SIZE];
+        let mut view = AttReadByTypeReqHeaderMut::new(&mut header);
+        view.attribute_opcode().try_write(Opcode::ATT_READ_BY_TYPE_REQ).expect("valid opcode");
+        view.starting_handle().try_write(starting_handle.value()).expect("valid handle");
+        view.ending_handle().try_write(ending_handle.value()).expect("valid handle");
         let mut tx_buf = [0u8; MAX_SUPPORTED_MTU];
         let mut builder =
-            DynamicPacketBuilder::<_, u8>::new(&mut tx_buf, header_builder, self.effective_mtu());
+            DynamicPacketBuilder::<_, u8>::new(&mut tx_buf, header, self.effective_mtu());
         builder
             .extend_from_slice(type_bytes)
             .expect("Programming error: request packet size exceeds negotiated MTU.");
@@ -581,16 +581,16 @@ where
     ) -> Result<ReadByGroupTypeResults<'a>, ClientError> {
         // Serialize the variable-length UUID parameter onto the end of the request header.
         let type_bytes = attribute_group_type.as_bytes();
-        let header_builder = PacketBuilder {
-            header: Header::new(Opcode::ATT_READ_BY_GROUP_TYPE_REQ),
-            payload: ReadByGroupTypeReqHeader {
-                starting_handle: U16::new(starting_handle.value()),
-                ending_handle: U16::new(ending_handle.value()),
-            },
-        };
+        let mut header = [0u8; ATT_READ_BY_GROUP_TYPE_REQ_HEADER_SIZE];
+        let mut view = AttReadByGroupTypeReqHeaderMut::new(&mut header);
+        view.attribute_opcode()
+            .try_write(Opcode::ATT_READ_BY_GROUP_TYPE_REQ)
+            .expect("valid opcode");
+        view.starting_handle().try_write(starting_handle.value()).expect("valid handle");
+        view.ending_handle().try_write(ending_handle.value()).expect("valid handle");
         let mut tx_buf = [0u8; MAX_SUPPORTED_MTU];
         let mut builder =
-            DynamicPacketBuilder::<_, u8>::new(&mut tx_buf, header_builder, self.effective_mtu());
+            DynamicPacketBuilder::<_, u8>::new(&mut tx_buf, header, self.effective_mtu());
         builder
             .extend_from_slice(type_bytes)
             .expect("Programming error: request packet size exceeds negotiated MTU.");
@@ -824,15 +824,17 @@ impl<Tx: L2CapChannelTx, R: AttReceiver> ServerEventStream<Tx, R> {
         match header.attribute_opcode().try_read() {
             Ok(Opcode::ATT_HANDLE_VALUE_NTF) => Ok(event),
             Ok(Opcode::ATT_HANDLE_VALUE_IND) => {
-                let header = PacketBuilder {
-                    header: Header::new(Opcode::ATT_HANDLE_VALUE_CFM),
-                    payload: HandleValueCnf {},
-                };
-                match self.bearer_tx.send(header.as_packet()).await {
+                let mut cfm_buf = [0u8; ATT_HANDLE_VALUE_CFM_SIZE];
+                let mut view = AttHeaderMut::new(&mut cfm_buf);
+                view.attribute_opcode()
+                    .try_write(Opcode::ATT_HANDLE_VALUE_CFM)
+                    .expect("valid opcode");
+                let tx_packet = Packet::try_ref_from_bytes(&cfm_buf).expect("valid packet");
+                match self.bearer_tx.send(tx_packet).await {
                     Ok(()) => {}
                     Err(BearerSendError::LinkClosed) => return Err(ClientError::LinkClosed),
                     Err(BearerSendError::PacketTooLarge) => {
-                        unreachable!("HandleValueCnf (1 byte) never exceeds minimum ATT MTU")
+                        unreachable!("HandleValueCfm (1 byte) never exceeds minimum ATT MTU")
                     }
                 }
                 Ok(event)
@@ -849,14 +851,16 @@ mod tests {
     use crate::att::l2cap::mock::setup_mock_channel;
     use crate::att::pdu::{
         ATT_ERROR_RSP_SIZE, ATT_EXCHANGE_MTU_RSP_SIZE, ATT_EXECUTE_WRITE_RSP_SIZE,
-        ATT_PREPARE_WRITE_HEADER_SIZE, DynamicPacketBuilder, FindByTypeValueReq,
-        FindInformationRspHeader, HandleValueIndHeader,
+        ATT_FIND_BY_TYPE_VALUE_REQ_HEADER_SIZE, ATT_HANDLE_VALUE_IND_HEADER_SIZE,
+        ATT_PREPARE_WRITE_HEADER_SIZE, DynamicPacketBuilder, Header,
     };
     use sapphire_async::executor::BoundedExecutor;
     use sapphire_async::testing::TestExecutor;
     use sapphire_emboss::att::{
-        AttErrorRspMut, AttExchangeMtuReq, AttExchangeMtuRspMut, AttExecuteWriteReq, AttHeaderMut,
-        AttPrepareWriteHeader, AttPrepareWriteHeaderMut, AttReadBlobReq, AttReadReq, AttWriteCmd,
+        AttErrorRspMut, AttExchangeMtuReq, AttExchangeMtuRspMut, AttExecuteWriteReq,
+        AttFindByTypeValueReqHeader, AttFindInformationReq, AttHandleValueIndHeaderMut,
+        AttHeaderMut, AttPrepareWriteHeader, AttPrepareWriteHeaderMut, AttReadBlobReq, AttReadReq,
+        AttWriteCmd,
     };
 
     const CLIENT_PREFERRED_MTU: u16 = 512;
@@ -1030,9 +1034,9 @@ mod tests {
                 let packet = server_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
                 assert_eq!(packet.header.opcode, Opcode::ATT_FIND_INFORMATION_REQ.into());
 
-                let req = FindInformationReq::read_from_bytes(&packet.data[..]).unwrap();
-                assert_eq!(req.starting_handle.get(), 1);
-                assert_eq!(req.ending_handle.get(), 10);
+                let req = AttFindInformationReq::new(packet.as_bytes());
+                assert_eq!(req.starting_handle().try_read().unwrap(), 1);
+                assert_eq!(req.ending_handle().try_read().unwrap(), 10);
 
                 // Respond with FindInformationRsp (0x05)
                 // format: 0x01 (16-bit)
@@ -1040,10 +1044,7 @@ mod tests {
                 // Handle 1: UUID 0x2A00
                 // Handle 2: UUID 0x2A24
                 let mut tx_buf = [0u8; 64];
-                let header = PacketBuilder {
-                    header: Header::new(Opcode::ATT_FIND_INFORMATION_RSP),
-                    payload: FindInformationRspHeader { format: UuidFormat::Uuid16 },
-                };
+                let header = [Opcode::ATT_FIND_INFORMATION_RSP as u8, UuidFormat::Uuid16 as u8];
                 let mut builder = DynamicPacketBuilder::<_, InformationData16>::new(
                     &mut tx_buf,
                     header,
@@ -1142,14 +1143,17 @@ mod tests {
                 let packet = server_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
                 assert_eq!(packet.header.opcode, Opcode::ATT_FIND_BY_TYPE_VALUE_REQ.into());
 
-                let req = FindByTypeValueReq::try_ref_from_bytes(&packet.data[..]).unwrap();
-                assert_eq!(req.header.starting_handle.get(), 1);
-                assert_eq!(req.header.ending_handle.get(), 10);
-                assert_eq!(req.header.attribute_type.get(), 0x2800);
-                assert_eq!(&req.value, &[0x0D, 0x18][..]);
+                let req_header = AttFindByTypeValueReqHeader::new(packet.as_bytes());
+                assert_eq!(req_header.starting_handle().try_read().unwrap(), 1);
+                assert_eq!(req_header.ending_handle().try_read().unwrap(), 10);
+                assert_eq!(req_header.attribute_type().try_read().unwrap(), 0x2800);
+                assert_eq!(
+                    &packet.as_bytes()[ATT_FIND_BY_TYPE_VALUE_REQ_HEADER_SIZE..],
+                    &[0x0D, 0x18][..]
+                );
 
                 let mut tx_buf = [0u8; 64];
-                let header = Header::new(Opcode::ATT_FIND_BY_TYPE_VALUE_RSP);
+                let header = [Opcode::ATT_FIND_BY_TYPE_VALUE_RSP as u8];
                 let mut builder = DynamicPacketBuilder::<_, HandlesInformation>::new(
                     &mut tx_buf,
                     header,
@@ -1985,11 +1989,12 @@ mod tests {
 
             let server_handle = executor.spawn(async move {
                 let mut server_tx_bearer = BearerTx::new(test_tx);
-                let header = PacketBuilder {
-                    header: Header::new(Opcode::ATT_HANDLE_VALUE_IND),
-                    payload: HandleValueIndHeader { attribute_handle: U16::new(0x1234) },
-                };
-                server_tx_bearer.send(header.as_packet()).await.unwrap();
+                let mut ind_buf = [0u8; ATT_HANDLE_VALUE_IND_HEADER_SIZE];
+                let mut view = AttHandleValueIndHeaderMut::new(&mut ind_buf);
+                view.attribute_opcode().try_write(Opcode::ATT_HANDLE_VALUE_IND).unwrap();
+                view.attribute_handle().try_write(0x1234).unwrap();
+                let tx_packet = Packet::try_ref_from_bytes(&ind_buf).unwrap();
+                server_tx_bearer.send(tx_packet).await.unwrap();
 
                 let mut rx_buf = [MaybeUninit::uninit(); 32];
                 let mut server_rx_bearer = BearerRx::new(test_rx);

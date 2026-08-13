@@ -972,16 +972,15 @@ mod tests {
         use crate::att::client::{ClientError, DiscoveredInformation};
         use crate::att::database::Database;
         use crate::att::pdu::{
-            ATT_PREPARE_WRITE_HEADER_SIZE, ErrorCode, FindInformationReq, Header, Opcode,
-            PacketBuilder, UuidFormat,
+            ATT_FIND_INFORMATION_REQ_SIZE, ATT_PREPARE_WRITE_HEADER_SIZE, ErrorCode, Opcode,
+            Packet, UuidFormat,
         };
         use core::mem::MaybeUninit;
         use proptest::prelude::*;
         use sapphire_common::Uuid;
-        use sapphire_emboss::att::AttErrorRsp;
+        use sapphire_emboss::att::{AttErrorRsp, AttFindInformationReqMut};
         use sapphire_peer_cache::PeerId;
-        use zerocopy::IntoBytes;
-        use zerocopy::byteorder::little_endian::U16;
+        use zerocopy::{IntoBytes, TryFromBytes};
 
         fn setup_db() -> MockDb {
             let mut db = MockDb::new();
@@ -1039,14 +1038,13 @@ mod tests {
                         let mut client_rx_bearer = client_router.route_to(RouteFilter::Responses).unwrap();
 
                         // Test starting handle = 0
-                        let builder = PacketBuilder {
-                            header: Header::new(Opcode::ATT_FIND_INFORMATION_REQ),
-                            payload: FindInformationReq {
-                                starting_handle: U16::new(0),
-                                ending_handle: U16::new(handle),
-                            },
-                        };
-                        client_tx_bearer.send(builder.as_packet()).await.unwrap();
+                        let mut req_buf = [0u8; ATT_FIND_INFORMATION_REQ_SIZE];
+                        let mut view = AttFindInformationReqMut::new(&mut req_buf[..]);
+                        view.attribute_opcode().try_write(Opcode::ATT_FIND_INFORMATION_REQ).unwrap();
+                        view.starting_handle().try_write(0).unwrap();
+                        view.ending_handle().try_write(handle).unwrap();
+                        let tx_packet = Packet::try_ref_from_bytes(&req_buf[..]).unwrap();
+                        client_tx_bearer.send(tx_packet).await.unwrap();
                         let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
                         assert_eq!(packet.header.opcode, Opcode::ATT_ERROR_RSP.into());
                         let err = AttErrorRsp::new(packet.as_bytes());
@@ -1054,14 +1052,13 @@ mod tests {
 
                         let mut rx_buf2 = [MaybeUninit::uninit(); 512];
                         // Test ending handle = 0
-                        let builder2 = PacketBuilder {
-                            header: Header::new(Opcode::ATT_FIND_INFORMATION_REQ),
-                            payload: FindInformationReq {
-                                starting_handle: U16::new(handle),
-                                ending_handle: U16::new(0),
-                            },
-                        };
-                        client_tx_bearer.send(builder2.as_packet()).await.unwrap();
+                        let mut req_buf2 = [0u8; ATT_FIND_INFORMATION_REQ_SIZE];
+                        let mut view2 = AttFindInformationReqMut::new(&mut req_buf2[..]);
+                        view2.attribute_opcode().try_write(Opcode::ATT_FIND_INFORMATION_REQ).unwrap();
+                        view2.starting_handle().try_write(handle).unwrap();
+                        view2.ending_handle().try_write(0).unwrap();
+                        let tx_packet2 = Packet::try_ref_from_bytes(&req_buf2[..]).unwrap();
+                        client_tx_bearer.send(tx_packet2).await.unwrap();
                         let packet2 = client_rx_bearer.next_packet(&mut rx_buf2).await.unwrap();
                         assert_eq!(packet2.header.opcode, Opcode::ATT_ERROR_RSP.into());
                         let err2 = AttErrorRsp::new(packet2.as_bytes());

@@ -198,15 +198,12 @@ mod tests {
     use crate::att::bearer::{BearerTx, MAX_SUPPORTED_MTU};
     use crate::att::client::ServerEventStream;
     use crate::att::l2cap::mock::setup_mock_channel;
-    use crate::att::pdu::{
-        ATT_READ_REQ_SIZE, DynamicPacketBuilder, HandleValueNtfHeader, Header, Opcode,
-        PacketBuilder,
-    };
+    use crate::att::pdu::{ATT_HANDLE_VALUE_NTF_HEADER_SIZE, ATT_READ_REQ_SIZE, Opcode};
     use core::mem::MaybeUninit;
     use sapphire_async::executor::BoundedExecutor;
     use sapphire_async::testing::TestExecutor;
-    use sapphire_emboss::att::{AttReadReq, AttReadReqMut};
-    use zerocopy::{IntoBytes, TryFromBytes, U16};
+    use sapphire_emboss::att::{AttHandleValueNtfHeaderMut, AttReadReq, AttReadReqMut};
+    use zerocopy::{IntoBytes, TryFromBytes};
 
     #[test]
     fn test_router_notifications() {
@@ -221,14 +218,16 @@ mod tests {
 
             let _sender_handle = executor.spawn(async move {
                 for i in 0..4u16 {
-                    let header = PacketBuilder {
-                        header: Header::new(Opcode::ATT_HANDLE_VALUE_NTF),
-                        payload: HandleValueNtfHeader { attribute_handle: U16::new(i + 1) },
-                    };
                     let mut tx_buf = [0u8; 64];
-                    let mut builder = DynamicPacketBuilder::<_, u8>::new(&mut tx_buf, header, 64);
-                    builder.extend_from_slice(&[0xAA, 0xBB]).unwrap();
-                    let _ = bearer_tx.send(builder.as_packet()).await;
+                    let mut view = AttHandleValueNtfHeaderMut::new(&mut tx_buf);
+                    view.attribute_opcode().try_write(Opcode::ATT_HANDLE_VALUE_NTF).unwrap();
+                    view.attribute_handle().try_write(i + 1).unwrap();
+                    tx_buf[ATT_HANDLE_VALUE_NTF_HEADER_SIZE..ATT_HANDLE_VALUE_NTF_HEADER_SIZE + 2]
+                        .copy_from_slice(&[0xAA, 0xBB]);
+                    let tx_packet =
+                        Packet::try_ref_from_bytes(&tx_buf[..ATT_HANDLE_VALUE_NTF_HEADER_SIZE + 2])
+                            .unwrap();
+                    let _ = bearer_tx.send(tx_packet).await;
                 }
                 futures::future::pending::<()>().await;
             });
@@ -266,14 +265,16 @@ mod tests {
             let notification_rx_handle = router.route_to(RouteFilter::ServerEvents).unwrap();
 
             let _sender_handle = executor.spawn(async move {
-                let header = PacketBuilder {
-                    header: Header::new(Opcode::ATT_HANDLE_VALUE_NTF),
-                    payload: HandleValueNtfHeader { attribute_handle: U16::new(0x0001) },
-                };
                 let mut tx_buf = [0u8; 64];
-                let mut builder = DynamicPacketBuilder::<_, u8>::new(&mut tx_buf, header, 64);
-                builder.extend_from_slice(&[0xAA, 0xBB, 0xCC, 0xDD]).unwrap();
-                let _ = bearer_tx.send(builder.as_packet()).await;
+                let mut view = AttHandleValueNtfHeaderMut::new(&mut tx_buf);
+                view.attribute_opcode().try_write(Opcode::ATT_HANDLE_VALUE_NTF).unwrap();
+                view.attribute_handle().try_write(0x0001).unwrap();
+                tx_buf[ATT_HANDLE_VALUE_NTF_HEADER_SIZE..ATT_HANDLE_VALUE_NTF_HEADER_SIZE + 4]
+                    .copy_from_slice(&[0xAA, 0xBB, 0xCC, 0xDD]);
+                let tx_packet =
+                    Packet::try_ref_from_bytes(&tx_buf[..ATT_HANDLE_VALUE_NTF_HEADER_SIZE + 4])
+                        .unwrap();
+                let _ = bearer_tx.send(tx_packet).await;
                 futures::future::pending::<()>().await;
             });
 
