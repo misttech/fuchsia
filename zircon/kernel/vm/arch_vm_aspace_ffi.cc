@@ -7,8 +7,11 @@
 #include <zircon/types.h>
 
 #include <arch/aspace.h>
+#include <arch/vm.h>
 #include <kernel/ffi.h>
 #include <vm/arch_vm_aspace.h>
+#include <vm/fault.h>
+#include <vm/handoff-end.h>
 
 extern "C" {
 zx_status_t cpp_arch_vm_aspace_init(ArchVmAspace* aspace);
@@ -40,6 +43,8 @@ zx_status_t cpp_arch_vm_aspace_harvest_accessed(
 zx_status_t cpp_arch_vm_aspace_mark_accessed(ArchVmAspace* aspace, vaddr_t vaddr, size_t count);
 bool cpp_arch_vm_aspace_accessed_since_last_check(ArchVmAspace* aspace, bool clear);
 paddr_t cpp_arch_vm_aspace_arch_table_phys(ArchVmAspace* aspace);
+paddr_t cpp_kernel_physical_address_of(uintptr_t va);
+zx_status_t cpp_vmm_page_fault_handler(uint64_t tval, uint32_t flags);
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations below once
 // cross-language inlining works.
@@ -114,4 +119,13 @@ FFI_ALWAYS_INLINE bool cpp_arch_vm_aspace_accessed_since_last_check(ArchVmAspace
 FFI_ALWAYS_INLINE paddr_t cpp_arch_vm_aspace_arch_table_phys(ArchVmAspace* aspace) {
   return aspace->arch_table_phys();
 }
+
+FFI_ALWAYS_INLINE paddr_t cpp_kernel_physical_address_of(uintptr_t va) {
+  return KernelPhysicalAddressOf(va);
 }
+
+FFI_ALWAYS_INLINE zx_status_t cpp_vmm_page_fault_handler(uint64_t tval, uint32_t flags) {
+  return vmm_page_fault_handler(tval, flags);
+}
+
+}  // extern "C"
