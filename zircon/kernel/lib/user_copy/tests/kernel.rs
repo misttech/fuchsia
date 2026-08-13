@@ -6,7 +6,7 @@
 
 /// Test suite for Rust user_copy implementation.
 #[cfg(ktest)]
-#[unittest::suite(name = "rust_user_copy")]
+#[unittest::suite(name = "user_copy_rust")]
 mod tests {
     use unittest::{UserMemory, assert_eq, assert_nonnull, assert_null, assert_true, unwrap_ok};
     use user_copy::{UserInIovec, UserInOutPtr, UserInPtr, UserOutPtr, UserStringView};

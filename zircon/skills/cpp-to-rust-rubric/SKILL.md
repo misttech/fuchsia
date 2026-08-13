@@ -249,6 +249,21 @@ pin_init!(Self {
   symbols; so in the case of the source set that contains the tests only
   contains the tests, one must define them in a `kernel_rust_mod()` target
   instead of `kernel_rust_crate()` to prevent GC.
+- **Kernel Test Suite Naming Convention**:
+  - When naming kernel Rust test suites using `#[unittest::suite]`:
+    1.  Prefer standard idiomatic module names like `mod tests { ... }` or
+        descriptive module names (e.g. `mod ksync_tests { ... }`). Do not rename
+        `mod tests` to awkward module names just to avoid `name = "..."`.
+    2.  Use the default suite name matching the module name (`#[unittest::suite]
+        mod <name>`) unless it collides with an existing C++ suite's name or is
+        a generic `mod tests`.
+    3.  Use `#[unittest::suite(name = "...")]` to explicitly specify the suite
+        name for `mod tests` or when disambiguation is required.
+    4.  If the suite name collides with an existing C++ suite's name, append
+        `_rust` to the name of the suite to disambiguate (e.g. `cbuf_rust`,
+        `timer_rust`, `mp_rust`, `user_copy_rust`).
+    5.  Do not prefix with `rust_` (e.g. avoid `rust_cbuf`, `rust_timer`,
+        `rust_mp`).
 - **Fuzz Testing**: If C++ code has fuzz tests, implement equivalent Rust
   fuzzers in a separate crate using `rustc_fuzzer`, `fuzz`, and `arbitrary`. Add
   fuzzer components to `BUILD.gn`.
@@ -383,6 +398,10 @@ Reviewers and Coders must audit code against this checklist:
      are correctly used.
 25.  [ ] **Unnecessary FFI methods**: FFI methods added, or code left in C++,
      despite there being an existing Rust implementation / port.
+26.  [ ] **Kernel Test Suite Naming**: Kernel test suites set their suite name
+     (via default module name or `#[unittest::suite(name = "...")]`) following
+     conventions: keep `mod tests` idiomatic, append `_rust` if colliding with
+     an existing C++ suite name (e.g. `cbuf_rust`), and avoid `rust_` prefixes.
 
 ---
 

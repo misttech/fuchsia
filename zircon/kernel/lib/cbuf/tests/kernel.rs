@@ -6,7 +6,7 @@
 
 /// Test suite for Rust cbuf implementation.
 #[cfg(ktest)]
-#[unittest::suite(name = "rust_cbuf")]
+#[unittest::suite(name = "cbuf_rust")]
 mod tests {
     use cbuf::Cbuf;
     use core::ffi::c_void;

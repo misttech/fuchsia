@@ -223,7 +223,7 @@ pub fn unplug_cpu(cpu: cpu_num_t) -> Result<(), Status> {
 
 /// Kernel MP unit tests.
 #[cfg(ktest)]
-#[unittest::suite(name = "rust_mp")]
+#[unittest::suite(name = "mp_rust")]
 mod tests {
     use super::{
         Deadline, MpIpiTarget, get_online_mask, is_cpu_online, sync_exec, wait_for_all_cpus_ready,

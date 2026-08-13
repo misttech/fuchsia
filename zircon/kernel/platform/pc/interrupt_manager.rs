@@ -455,7 +455,7 @@ impl<I: IoApic> InterruptManager<I> {
 
 /// PC Interrupt tests.
 #[cfg(ktest)]
-#[unittest::suite(name = "pc_interrupt_tests")]
+#[unittest::suite]
 #[allow(unused_imports)]
 mod pc_interrupt_tests {
 

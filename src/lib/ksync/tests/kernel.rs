@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 #[cfg(ktest)]
-#[unittest::suite(name = "rust_ksync")]
+#[unittest::suite]
 /// Tests for Rust ksync bindings
 mod ksync_tests {
     use pin_init::{pin_data, pin_init, stack_pin_init};
