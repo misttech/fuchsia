@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 import("//build/compiled_action.gni")
+import("//build/host.gni")
 import("//build/testing/test_spec.gni")
 import("fuchsia_package.gni")
 import("fuchsia_test_component.gni")
@@ -147,22 +148,36 @@ template("fuchsia_test_package") {
     # would push the the scheduling of the test target creation steps to after
     # the compilation of ffx, which would slow the build significantly. ffx is
     # ambiently available when these tests are run and is listed as a dependency
-    # in //bundles/infra/test:host_tools. Use the stable host-tools directory
-    # for ffx, resummarize, and test-pilot. This directory is variant-agnostic
-    # and contains the actual binaries even when variants (like coverage)
-    # redirect the primary host toolchain.
-    host_executable = "$host_tools_dir/ffx"
-    host_executable_rebased = rebase_path(host_executable, root_build_dir)
+    # in //bundles/infra/test:host_tools.
 
-    resummarize_target = "//tools/test_pilot/post_processing/resummarize:test_deps($host_toolchain)"
-    resummarize_executable = "$host_tools_dir/resummarize"
-    resummarize_executable_rebased =
-        rebase_path(resummarize_executable, root_build_dir)
+    # This isn't working yet, because the location of the host tools at runtime
+    # can vary in ways that can't be determined at build time. For example, a
+    # amd64 target cpu might require x64 host tools at runtime if a physical
+    # device is being tested or arm64 tools if a qemu instance is being used. A
+    # subsequent CL will address this problem and the problem of which flavors
+    # of host tools to build. b/443323806 tracks this work.
+    if (!defined(invoker.is_bootfs) || !invoker.is_bootfs) {
+      ffx_test_tool_target = "//src/developer/ffx/plugins/test:ffx_test_tool_test_data($host_toolchain)"
+      host_test_component_target =
+          "//src/developer/ffx:suite_test_data($host_toolchain)"
+      test_host_tool_dir =
+          get_label_info(host_test_component_target, "root_out_dir")
+      test_host_tool_dir_rebased =
+          rebase_path(test_host_tool_dir, root_build_dir)
 
-    test_pilot_target = "//tools/test_pilot:test_deps($host_toolchain)"
-    test_pilot_executable = "$host_tools_dir/test-pilot"
-    test_pilot_executable_rebased =
-        rebase_path(test_pilot_executable, root_build_dir)
+      host_executable = "$test_host_tool_dir/ffx"
+      host_executable_rebased = rebase_path(host_executable, root_build_dir)
+
+      resummarize_target = "//tools/test_pilot/post_processing/resummarize:test_deps($host_toolchain)"
+      resummarize_executable = "$test_host_tool_dir/resummarize"
+      resummarize_executable_rebased =
+          rebase_path(resummarize_executable, root_build_dir)
+
+      test_pilot_target = "//tools/test_pilot:test_deps($host_toolchain)"
+      test_pilot_executable = "$test_host_tool_dir/test-pilot"
+      test_pilot_executable_rebased =
+          rebase_path(test_pilot_executable, root_build_dir)
+    }
 
     test_deps = []
 
@@ -180,184 +195,190 @@ template("fuchsia_test_package") {
         test_url = "fuchsia-pkg://fuchsia.com/$package_name#meta/$manifest_name"
       }
 
-      _max_severity_logs = "WARN"
+      if (!defined(invoker.is_bootfs) || !invoker.is_bootfs) {
+        _max_severity_logs = "WARN"
 
-      if (defined(test_specs.log_settings)) {
-        _log_settings = {
-        }
-        _log_settings = test_specs.log_settings
-        if (defined(_log_settings.max_severity)) {
-          assert(
-              _log_severity_allowed_val + [ _log_settings.max_severity ] -
-                  [ _log_settings.max_severity ] != _log_severity_allowed_val,
-              "Invalid 'log_settings.max_severity': ${_log_settings.max_severity}, valid values are ${_log_severity_allowed_val}")
-          _max_severity_logs = _log_settings.max_severity
-        }
-        if (defined(_log_settings.min_severity)) {
-          assert(
-              _log_severity_allowed_val + [ _log_settings.min_severity ] -
-                  [ _log_settings.min_severity ] != _log_severity_allowed_val,
-              "Invalid 'log_settings.min_severity': ${_log_settings.min_severity}, valid values are ${_log_severity_allowed_val}")
-          _min_severity_logs = _log_settings.min_severity
-        }
-      }
-      _test_config = {
-      }
-      _test_config = {
-        host_test_binary = host_executable_rebased
-        host_test_args = [
-          "--log-output",
-          "{output_directory}/test/ffx.log",
-          "--strict",
-          "--config",
-          "ffx.subtool-search-paths=host-tools",
-          "--config",
-          "log.dir={output_directory}/test/ffx_logs",
-          "--config",
-          "ssh.priv={ssh_private_key_path}",
-          "--config",
-          "{ffx_config}",
-          "--machine",
-          "raw",
-          "--target",
-          "{target}",
-          "test",
-          "run",
-          "--pilot",
-          "{test_config_file}",
-          "--filter-ansi",
-        ]
-        output_directory = {
-          try_from_env = "FUCHSIA_TEST_OUTDIR"
-        }
-        resultdb_output_summary_file = {
-          try_from_env = "TEST_OUTPUT_SUMMARY_PATH"
-        }
-        target = {
-          try_from_env = "FUCHSIA_DEVICE_ADDR"
-        }
-        ssh_private_key_path = {
-          try_from_env = "FUCHSIA_SSH_KEY"
-        }
-        ffx_config = {
-          try_from_env = "FFX_CONFIG"
-        }
-        output_processors = [
-          {
-            binary = resummarize_executable_rebased
-            args = [
-              "{test_config_file}",
-              "{output_directory}/output_summary.json",
-              "{resultdb_output_summary_file}",
-            ]
-            use_on_success = true
-            use_on_failure = true
-            use_if_defined = [ "resultdb_output_summary_file" ]
-          },
-        ]
-        require = [
-          "target",
-          "ssh_private_key_path",
-        ]
-
-        # TODO(https://fxbug.dev/327640651): Add common tags for the test.
-        target_test_url = test_url
-        if (defined(test_specs.parallel)) {
-          parallel = test_specs.parallel
-        }
-        max_severity_logs = _max_severity_logs
-        if (defined(_min_severity_logs)) {
-          min_severity_logs = _min_severity_logs
+        if (defined(test_specs.log_settings)) {
+          _log_settings = {
+          }
+          _log_settings = test_specs.log_settings
+          if (defined(_log_settings.max_severity)) {
+            assert(
+                _log_severity_allowed_val + [ _log_settings.max_severity ] -
+                    [ _log_settings.max_severity ] != _log_severity_allowed_val,
+                "Invalid 'log_settings.max_severity': ${_log_settings.max_severity}, valid values are ${_log_severity_allowed_val}")
+            _max_severity_logs = _log_settings.max_severity
+          }
+          if (defined(_log_settings.min_severity)) {
+            assert(
+                _log_severity_allowed_val + [ _log_settings.min_severity ] -
+                    [ _log_settings.min_severity ] != _log_severity_allowed_val,
+                "Invalid 'log_settings.min_severity': ${_log_settings.min_severity}, valid values are ${_log_severity_allowed_val}")
+            _min_severity_logs = _log_settings.min_severity
+          }
         }
 
-        if (defined(test_specs.test_filters)) {
-          test_filters = test_specs.test_filters
+        _test_config = {
+        }
+        _test_config = {
+          host_test_binary = host_executable_rebased
+          host_test_args = [
+            "--log-output",
+            "{output_directory}/test/ffx.log",
+            "--strict",
+            "--config",
+            "ffx.subtool-search-paths=${test_host_tool_dir_rebased}",
+            "--config",
+            "log.dir={output_directory}/test/ffx_logs",
+            "--config",
+            "ssh.priv={ssh_private_key_path}",
+            "--config",
+            "{ffx_config}",
+            "--machine",
+            "raw",
+            "--target",
+            "{target}",
+            "test",
+            "run",
+            "--pilot",
+            "{test_config_file}",
+            "--filter-ansi",
+          ]
+          output_directory = {
+            try_from_env = "FUCHSIA_TEST_OUTDIR"
+          }
+          resultdb_output_summary_file = {
+            try_from_env = "TEST_OUTPUT_SUMMARY_PATH"
+          }
+          target = {
+            try_from_env = "FUCHSIA_DEVICE_ADDR"
+          }
+          ssh_private_key_path = {
+            try_from_env = "FUCHSIA_SSH_KEY"
+          }
+          ffx_config = {
+            try_from_env = "FFX_CONFIG"
+          }
+          output_processors = [
+            {
+              binary = resummarize_executable_rebased
+              args = [
+                "{test_config_file}",
+                "{output_directory}/output_summary.json",
+                "{resultdb_output_summary_file}",
+              ]
+              use_on_success = true
+              use_on_failure = true
+              use_if_defined = [ "resultdb_output_summary_file" ]
+            },
+          ]
+
+          require = [
+            "target",
+            "ssh_private_key_path",
+          ]
+
+          # TODO(https://fxbug.dev/327640651): Add common tags for the test.
+          target_test_url = test_url
+          if (defined(test_specs.parallel)) {
+            max_concurrent_test_case_runs = test_specs.parallel
+          }
+          max_severity_logs = _max_severity_logs
+          if (defined(_min_severity_logs)) {
+            min_severity_logs = _min_severity_logs
+          }
+
+          if (defined(test_specs.test_filters)) {
+            test_filters = test_specs.test_filters
+          }
+
+          ffx_config = "{}"
+        }
+        test_component_output_label =
+            "$package_name.$manifest_name.test_component_config"
+        test_component_output = "$root_out_dir/test_configs_partial/$test_component_output_label.json"
+
+        generated_file(test_component_output_label) {
+          testonly = true
+          data_keys = [ "test_components" ]
+          walk_keys = [ "test_components_barrier" ]
+          outputs = [ test_component_output ]
+          output_conversion = "json"
+          deps = [ test ]
+          visibility = [ ":*" ]
         }
 
-        ffx_config = "{}"
-      }
-      test_component_output_label =
-          "$package_name.$manifest_name.test_component_config"
-      test_component_output =
-          "$root_out_dir/test_configs_partial/$test_component_output_label.json"
+        config_file_label = "$package_name.$manifest_name.test_config_partial"
+        output_config =
+            "$root_out_dir/test_configs_partial/$config_file_label.json"
+        generated_file(config_file_label) {
+          outputs = [ output_config ]
+          contents = _test_config
+          output_conversion = "json"
+        }
 
-      generated_file(test_component_output_label) {
-        testonly = true
-        data_keys = [ "test_components" ]
-        walk_keys = [ "test_components_barrier" ]
-        outputs = [ test_component_output ]
-        output_conversion = "json"
-        deps = [ test ]
-        visibility = [ ":*" ]
-      }
+        final_test_config_name = "$package_name.$manifest_name.test_config"
+        final_output_config_path =
+            "$root_out_dir/test_configs/$final_test_config_name.json"
+        script_output_path =
+            "${root_out_dir}/${package_name}_${manifest_name}_test.sh"
+        script_output_path_rebased =
+            rebase_path(script_output_path, root_build_dir)
+        final_output_config_path_rebased =
+            rebase_path(final_output_config_path, root_build_dir)
 
-      config_file_label = "$package_name.$manifest_name.test_config_partial"
-      output_config =
-          "$root_out_dir/test_configs_partial/$config_file_label.json"
-      generated_file(config_file_label) {
-        outputs = [ output_config ]
-        contents = _test_config
-        output_conversion = "json"
-      }
+        compiled_action("${test_target}_script_gen") {
+          testonly = true
+          tool = "//build/components:test_component_host_helper"
+          outputs = [
+            script_output_path,
+            final_output_config_path,
+          ]
+          args = [
+            "--test-pilot",
+            "./${test_pilot_executable_rebased}",
+            "--component-manifest-path",
+            rebase_path(manifest_path[0], root_build_dir),
+            "--partial-test-config",
+            rebase_path(output_config, root_build_dir),
+            "--test-component-config",
+            rebase_path(test_component_output, root_build_dir),
+            "--script-output-filename",
+            script_output_path_rebased,
+            "--test-config-output-filename",
+            final_output_config_path_rebased,
+          ]
+          inputs = [
+            test_component_output,
+            output_config,
+            manifest_path[0],
+          ]
+          deps = [
+            ":$config_file_label",
+            ":$test_component_output_label",
+            test,
+          ]
+        }
+        script_outputs = []
+        script_outputs = get_target_outputs(":${test_target}_script_gen")
+        script_outputs += [ "//build/sdk/test_config_schema.json5" ]
 
-      final_test_config_name = "$package_name.$manifest_name.test_config"
-      final_output_config_path =
-          "$root_out_dir/test_configs/$final_test_config_name.json"
-      script_output_path =
-          "${root_out_dir}/${package_name}_${manifest_name}_test.sh"
-      script_output_path_rebased =
-          rebase_path(script_output_path, root_build_dir)
-      final_output_config_path_rebased =
-          rebase_path(final_output_config_path, root_build_dir)
+        group("${test_target}_runtime_deps_group") {
+          testonly = true
+          data_deps = [
+            ":${test_target}_script_gen",
+            ffx_test_tool_target,
+            host_test_component_target,
+            resummarize_target,
+            test_pilot_target,
+          ]
+          metadata = {
+            test_runtime_deps = script_outputs
 
-      compiled_action("${test_target}_script_gen") {
-        testonly = true
-        tool = "//build/components:test_component_host_helper"
-        outputs = [
-          script_output_path,
-          final_output_config_path,
-        ]
-        args = [
-          "--test-pilot",
-          test_pilot_executable_rebased,
-          "--component-manifest-path",
-          rebase_path(manifest_path[0], root_build_dir),
-          "--partial-test-config",
-          rebase_path(output_config, root_build_dir),
-          "--test-component-config",
-          rebase_path(test_component_output, root_build_dir),
-          "--script-output-filename",
-          script_output_path_rebased,
-          "--test-config-output-filename",
-          final_output_config_path_rebased,
-        ]
-        inputs = [
-          test_component_output,
-          output_config,
-          manifest_path[0],
-        ]
-        deps = [
-          ":$config_file_label",
-          ":$test_component_output_label",
-          test,
-        ]
-      }
-      script_outputs = []
-      script_outputs = get_target_outputs(":${test_target}_script_gen")
-
-      group("${test_target}_runtime_deps_group") {
-        testonly = true
-        data_deps = [
-          ":${test_target}_script_gen",
-          resummarize_target,
-          test_pilot_target,
-        ]
-        metadata = {
-          test_runtime_deps = script_outputs
-
-          # avoid adding unintended entries to the test package due to
-          # dependency on ffx.
-          distribution_entries_barrier = []
+            # avoid adding unintended entries to the test package due to
+            # dependency on ffx.
+            distribution_entries_barrier = []
+          }
         }
       }
 
@@ -373,13 +394,16 @@ template("fuchsia_test_package") {
         package_manifests = [ package_manifest ]
         package_url = test_url
 
-        # Adding new_path for transition period. We will later replace this with
-        # path.
-        new_path = script_outputs[0]
         if (!defined(data_deps)) {
           data_deps = []
         }
-        data_deps += [ ":${test_target}_runtime_deps_group" ]
+
+        if (!defined(invoker.is_bootfs) || !invoker.is_bootfs) {
+          # Adding new_path for transition period. We will later replace this
+          # with path.
+          new_path = script_outputs[0]
+          data_deps += [ ":${test_target}_runtime_deps_group" ]
+        }
       }
 
       test_deps += [ ":$test_target" ]

@@ -33,7 +33,7 @@ if (is_host) {
   host_test_data("test_deps") {
     testonly = true
     deps = [ ":install" ]
-    sources = [ "${root_out_dir}/resummarize" ]
+    sources = [ "${host_tools_dir}/resummarize" ]
   }
 }
 
