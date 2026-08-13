@@ -5,8 +5,6 @@
 #ifndef SRC_MEDIA_CODEC_CODECS_VAAPI_VP9_ACCELERATOR_H_
 #define SRC_MEDIA_CODEC_CODECS_VAAPI_VP9_ACCELERATOR_H_
 
-#include <optional>
-
 #include <src/lib/fxl/macros.h>
 
 #include "src/media/third_party/chromium_media/media/gpu/vp9_decoder.h"
@@ -23,9 +21,11 @@ class VaapiVP9Picture : public media::VP9Picture {
   VaapiVP9Picture& operator=(const VaapiVP9Picture&) = delete;
 
   scoped_refptr<VASurface> va_surface() const { return va_surface_; }
-  VASurfaceID GetVASurfaceID() const { return va_surface_->id(); }
+  VASurfaceID GetVASurfaceID() const {
+    return va_surface_ ? va_surface_->id() : VA_INVALID_SURFACE;
+  }
 
- private:
+ protected:
   // Since the Vp9Decoder will not call SubmitDecode() on duplicated pictures and instead only calls
   // OutputPicture() we can just create a VP9Picture object that has the same underlying surface.
   // The Vp9Decoder will then call OutputPicture() which will call vaSyncSurface() and then
@@ -35,6 +35,7 @@ class VaapiVP9Picture : public media::VP9Picture {
     return std::make_shared<VaapiVP9Picture>(va_surface());
   }
 
+ private:
   scoped_refptr<VASurface> va_surface_;
 };
 

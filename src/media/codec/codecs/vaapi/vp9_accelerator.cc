@@ -22,6 +22,9 @@ VP9Accelerator::~VP9Accelerator() = default;
 
 scoped_refptr<media::VP9Picture> VP9Accelerator::CreateVP9Picture() {
   auto surface = adapter_->GetVASurface();
+  if (!surface) {
+    return nullptr;
+  }
   auto surface_ptr = std::make_shared<VaapiVP9Picture>(surface);
   return surface_ptr;
 }
@@ -179,6 +182,10 @@ VP9Accelerator::Status VP9Accelerator::SubmitDecode(
   ScopedBufferID encoded_data(encoded_data_buffer_id);
 
   auto va_surface_id = static_cast<VaapiVP9Picture*>(pic.get())->GetVASurfaceID();
+  if (va_surface_id == VA_INVALID_SURFACE) {
+    FX_LOG_KV(ERROR, "Invalid surface ID for decoding");
+    return Status::kFail;
+  }
 
   status = vaBeginPicture(VADisplayWrapper::GetSingleton()->display(), adapter_->context_id(),
                           va_surface_id);

@@ -150,6 +150,10 @@ class FakeCodecAdapterEvents : public CodecAdapterEvents {
   }
 
   void onCoreCodecResetStreamAfterCurrentFrame() override {
+    std::lock_guard<std::mutex> guard(lock_);
+    if (fail_codec_count_ > 0) {
+      return;
+    }
     // This call must be called on the stream_control_thread
     async::PostTask(loop_.dispatcher(),
                     [this] { codec_adapter_->CoreCodecResetStreamAfterCurrentFrame(); });
@@ -522,8 +526,8 @@ TEST_F(Vp9VaapiTestFixture, CreateContextFailure) {
 TEST_F(Vp9VaapiTestFixture, CreateSurfacesFailure) {
   constexpr uint64_t kExpectedNumOfCodecFailures = 1u;
 
-  // Cause vaCreateContext to return a failure
-  vaCreateContextStubSetReturn(VA_STATUS_ERROR_OPERATION_FAILED);
+  // Cause vaCreateSurfaces to return a failure
+  vaCreateSurfacesStubSetReturn(VA_STATUS_ERROR_OPERATION_FAILED);
 
   CodecAndStreamInit();
 
@@ -608,6 +612,7 @@ TEST_F(Vp9VaapiTestFixture, AttemptToSwitchFormatModifier) {
 
   events_.SetBufferInitializationCompleted();
   events_.WaitForInputPacketsDone();
+  events_.WaitForOutputPacketCount(kExpectedOutputPackets);
 
   {
     auto post_cfg_constraints = decoder_->CoreCodecGetBufferCollectionConstraints2(
