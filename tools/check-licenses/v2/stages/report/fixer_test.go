@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/v2/config"
 	"go.fuchsia.dev/fuchsia/tools/check-licenses/v2/pipeline"
 )
 
@@ -21,7 +22,8 @@ func TestFixerRenderer_CopyrightFix(t *testing.T) {
 		t.Fatalf("Failed to write test source file: %v", err)
 	}
 
-	renderer := NewFixerRenderer(tempDir, nil, nil, nil)
+	cfg := config.NewMasterConfig(tempDir)
+	renderer := NewFixerRenderer(tempDir, cfg)
 	errors := []pipeline.ComplianceError{
 		{
 			CheckName: PolicyCheckAllFuchsiaAuthorSourceFilesMustHaveCopyrightHeaders,
@@ -49,7 +51,8 @@ func TestFixerRenderer_CopyrightFix(t *testing.T) {
 
 func TestFixerRenderer_PolicyExceptionFix(t *testing.T) {
 	tempDir := t.TempDir()
-	renderer := NewFixerRenderer(tempDir, nil, nil, nil)
+	cfg := config.NewMasterConfig(tempDir)
+	renderer := NewFixerRenderer(tempDir, cfg)
 
 	errors := []pipeline.ComplianceError{
 		{
@@ -83,7 +86,11 @@ func TestFixerRenderer_PolicyExceptionFix(t *testing.T) {
 
 func TestFixerRenderer_AllowlistFix(t *testing.T) {
 	tempDir := t.TempDir()
-	renderer := NewFixerRenderer(tempDir, nil, nil, nil)
+	cfg := config.NewMasterConfig(tempDir)
+	cfg.Classify.LicenseCategories = map[string]string{
+		"GPL-2.0": "Restricted",
+	}
+	renderer := NewFixerRenderer(tempDir, cfg)
 
 	errors := []pipeline.ComplianceError{
 		{

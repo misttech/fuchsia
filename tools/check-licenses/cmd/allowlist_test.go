@@ -42,11 +42,14 @@ func TestAllowlistCommand_Execute(t *testing.T) {
 
 	ctx := context.Background()
 
-	// Create dummy category
+	// Create dummy category and directories
 	catDir := filepath.Join(tempDir, "tools", "check-licenses", "assets", "configs", "allowed_licenses", "Restricted", "GPL-2.0")
 	if err := os.MkdirAll(catDir, 0755); err != nil {
 		t.Fatal(err)
 	}
+	os.MkdirAll(filepath.Join(tempDir, "src", "foo", "bar"), 0755)
+	os.MkdirAll(filepath.Join(tempDir, "vendor", "my_private_proj"), 0755)
+	os.WriteFile(filepath.Join(tempDir, "vendor", "my_private_proj", "LICENSE"), []byte("license text"), 0644)
 
 	// Test 1: Missing arguments
 	f1 := flag.NewFlagSet("test1", flag.ContinueOnError)

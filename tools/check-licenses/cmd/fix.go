@@ -96,8 +96,7 @@ func (c *FixCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...interfac
 
 	validator := validate.NewValidator(ic.FuchsiaDir, ic.Config.Validate)
 
-	// Step 2: Assemble Stage 6 explicit renderers to update READMEs and apply compliance fixes.
-	fixer := report.NewFixerRenderer(ic.FuchsiaDir, ic.Config.Boundary.OutOfTreeReadmes, ic.Config.IsPrivateProject, ic.Config.ManifestNameFor)
+	fixer := report.NewFixerRenderer(ic.FuchsiaDir, ic.Config)
 	renderers := pipeline.MultiRenderer{
 		report.NewReadmeWriter(ic.FuchsiaDir, false),
 		fixer,

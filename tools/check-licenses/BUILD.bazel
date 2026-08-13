@@ -71,7 +71,7 @@ go_library(
 go_library(
     name = "v2_stages_report",
     srcs = [
-        "v2/stages/report/config.go",
+        "v2/stages/report/allowlist_renderer.go",
         "v2/stages/report/console_errors.go",
         "v2/stages/report/fixer.go",
         "v2/stages/report/metrics_printer.go",
@@ -85,6 +85,7 @@ go_library(
     target_compatible_with = HOST_CONSTRAINTS,
     visibility = ["//tools/check-licenses:__subpackages__"],
     deps = [
+        ":v2_config",
         ":v2_pipeline",
         ":v2_readme",
         ":v2_stages_validate",
@@ -136,6 +137,7 @@ go_library(
 go_library(
     name = "v2_config",
     srcs = [
+        "v2/config/allowlist.go",
         "v2/config/builder.go",
         "v2/config/types.go",
     ],
@@ -143,10 +145,10 @@ go_library(
     target_compatible_with = HOST_CONSTRAINTS,
     visibility = ["//tools/check-licenses:__subpackages__"],
     deps = [
+        ":v2_readme",
         ":v2_stages_boundary",
         ":v2_stages_classify",
         ":v2_stages_discover",
-        ":v2_stages_report",
         ":v2_stages_validate",
     ],
 )
@@ -207,6 +209,7 @@ host_go_test(
     name = "v2_stages_report_test",
     size = "small",
     srcs = [
+        "v2/stages/report/allowlist_renderer_test.go",
         "v2/stages/report/console_errors_test.go",
         "v2/stages/report/fixer_test.go",
         "v2/stages/report/metrics_printer_test.go",

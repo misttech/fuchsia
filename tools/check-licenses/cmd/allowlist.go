@@ -8,14 +8,10 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/google/subcommands"
-
-	v2config "go.fuchsia.dev/fuchsia/tools/check-licenses/v2/config"
 )
 
 type AllowlistCommand struct {
@@ -101,104 +97,41 @@ func (c *AllowlistAddCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ..
 	return subcommands.ExitSuccess
 }
 
-// AddAllowlistEntry adds an allowed license exception for a given project path.
+// AddAllowlistEntry adds an allowed license exception for the governing enclosing project root of a path.
 func AddAllowlistEntry(fuchsiaDir, licenseName, projectPath, bug, description string) (string, error) {
-	var err error
-	fuchsiaDir, projectPath, err = ResolveAndValidatePath(fuchsiaDir, projectPath)
+	ic, err := LoadInputContext(fuchsiaDir, projectPath)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to load input context: %w", err)
+	}
+
+	projectRoot, err := ic.ResolveProjectRoot(projectPath)
+	if err != nil {
+		projectRoot = filepath.Join(ic.FuchsiaDir, filepath.Clean(projectPath))
+	}
+
+	relProjectRoot, err := filepath.Rel(ic.FuchsiaDir, projectRoot)
+	if err != nil {
+		relProjectRoot = projectRoot
 	}
 
 	// Check if this project already has an exception for this license
-	builder := v2config.NewBuilder(fuchsiaDir)
-	if err := builder.Assemble(); err != nil {
-		return "", fmt.Errorf("failed to assemble config: %w", err)
-	}
-	if list, ok := builder.Config.Validate.AllowedLicenses[licenseName]; ok {
-		if _, exists := list[projectPath]; exists {
-			fmt.Printf("Project '%s' already has an allowlist entry for '%s'. Nothing to do.\n", projectPath, licenseName)
+	if list, ok := ic.Config.Validate.AllowedLicenses[licenseName]; ok {
+		if _, exists := list[relProjectRoot]; exists {
+			fmt.Printf("Project '%s' already has an allowlist entry for '%s'. Nothing to do.\n", relProjectRoot, licenseName)
 			return "", nil
 		}
 	}
 
-	// Determine if this is a private project
-	isPrivate := false
-	if builder.Config != nil {
-		isPrivate = builder.Config.IsPrivateProject(projectPath)
-	} else if strings.HasPrefix(projectPath, "vendor/") {
-		isPrivate = true
-	}
-
-	// Find the license category by scanning both public and private allowed_licenses dirs
-	category := findLicenseCategory(fuchsiaDir, licenseName)
-	if category == "Uncategorized" {
-		return "", fmt.Errorf("unknown or unapproved license name %q. If this is a brand new license, it must first be reviewed by the OSRB and manually categorized under allowed_licenses/ first", licenseName)
-	}
-
-	configDir := filepath.Join(fuchsiaDir, "tools", "check-licenses", "assets", "configs", "allowed_licenses", category, licenseName)
-	if isPrivate {
-		configDir = filepath.Join(fuchsiaDir, "vendor", "google", "tools", "check-licenses", "assets", "configs", "allowed_licenses", category, licenseName)
-	}
-
-	if err := os.MkdirAll(configDir, 0755); err != nil {
-		return "", fmt.Errorf("failed to create config directory %s: %w", configDir, err)
-	}
-
-	baseName := findProjectBasename(fuchsiaDir, projectPath, builder.Config)
-	destFile := filepath.Join(configDir, baseName+".json")
-
-	// Read, mutate and write config file
-	if err := UpdateConfigFile(destFile, func(cfg *v2config.ConfigFile) {
-		if cfg.AllowedLicenses == nil {
-			cfg.AllowedLicenses = make(map[string][]v2config.AllowlistEntry)
-		}
-		entry := v2config.AllowlistEntry{
-			Bug:         bug,
-			Description: description,
-			Paths:       []string{projectPath},
-		}
-		cfg.AllowedLicenses[licenseName] = append(cfg.AllowedLicenses[licenseName], entry)
-	}); err != nil {
+	destFile, err := ic.Config.AddAllowlistEntry(relProjectRoot, licenseName, bug, description)
+	if err != nil {
 		return "", err
 	}
 
 	fmt.Printf("✅ Added Allowlist Entry:\n")
 	fmt.Printf("  - License: %s\n", licenseName)
-	fmt.Printf("  - Project: %s\n", projectPath)
+	fmt.Printf("  - Project: %s\n", relProjectRoot)
 	fmt.Printf("  - Bug:     %s\n", bug)
 	fmt.Printf("  - File:    %s\n\n", destFile)
 
 	return destFile, nil
-}
-
-func findLicenseCategory(fuchsiaDir, licenseName string) string {
-	dirsToSearch := []string{
-		filepath.Join(fuchsiaDir, "tools", "check-licenses", "assets", "configs", "allowed_licenses"),
-		filepath.Join(fuchsiaDir, "vendor", "google", "tools", "check-licenses", "assets", "configs", "allowed_licenses"),
-	}
-
-	for _, baseDir := range dirsToSearch {
-		if _, err := os.Stat(baseDir); os.IsNotExist(err) {
-			continue
-		}
-
-		category := ""
-		filepath.WalkDir(baseDir, func(path string, d fs.DirEntry, err error) error {
-			if err != nil || !d.IsDir() {
-				return nil
-			}
-			if d.Name() == licenseName {
-				parent := filepath.Dir(path)
-				category = filepath.Base(parent)
-				return filepath.SkipDir // found it, stop walking this branch
-			}
-			return nil
-		})
-
-		if category != "" && category != "allowed_licenses" {
-			return category
-		}
-	}
-
-	return "Uncategorized"
 }

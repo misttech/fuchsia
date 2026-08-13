@@ -81,9 +81,6 @@ func (b *Builder) Assemble() error {
 		}
 		return nil
 	})
-	if err == nil {
-		b.Config.Report.OutOfTreeReadmes = b.Config.Boundary.OutOfTreeReadmes
-	}
 	return err
 }
 

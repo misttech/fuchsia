@@ -14,7 +14,6 @@ import (
 	"go.fuchsia.dev/fuchsia/tools/check-licenses/v2/stages/boundary"
 	"go.fuchsia.dev/fuchsia/tools/check-licenses/v2/stages/classify"
 	"go.fuchsia.dev/fuchsia/tools/check-licenses/v2/stages/discover"
-	"go.fuchsia.dev/fuchsia/tools/check-licenses/v2/stages/report"
 	"go.fuchsia.dev/fuchsia/tools/check-licenses/v2/stages/validate"
 )
 
@@ -36,9 +35,6 @@ type MasterConfig struct {
 
 	// --- Injected into Validator (Stage 5) ---
 	Validate validate.Config
-
-	// --- Injected into Reporter (Stage 6) ---
-	Report report.Config
 }
 
 func resolveFuchsiaDir(dir string) string {
@@ -231,7 +227,6 @@ func NewMasterConfig(fuchsiaDir string) *MasterConfig {
 			AllowedLicenses:     make(map[string]map[string]validate.RuleMetadata),
 			CopyrightExtensions: make(map[string]bool),
 		},
-		Report: report.NewConfig(),
 	}
 	c.Classify.PatternDirs = []string{
 		filepath.Join(c.AssetRootFor(""), "patterns"),

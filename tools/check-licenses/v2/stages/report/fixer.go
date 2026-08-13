@@ -6,7 +6,6 @@ package report
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -16,8 +15,8 @@ import (
 	"sync"
 	"time"
 
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/v2/config"
 	"go.fuchsia.dev/fuchsia/tools/check-licenses/v2/pipeline"
-	"go.fuchsia.dev/fuchsia/tools/check-licenses/v2/readme"
 )
 
 // Policy check names corresponding to compliance engine rules.
@@ -32,23 +31,19 @@ const (
 // FixerRenderer is a Stage 6 renderer that mutates disk to automatically resolve
 // policy compliance errors emitted by Stage 5.
 type FixerRenderer struct {
-	FuchsiaDir       string
-	OutOfTreeReadmes map[string]string
-	IsPrivateProject func(path string) bool
-	ManifestNameFor  func(path string) string
-	FixedCount       map[string][]string
-	NewConfigFiles   []string
-	mu               sync.Mutex
+	FuchsiaDir     string
+	Config         *config.MasterConfig
+	FixedCount     map[string][]string
+	NewConfigFiles []string
+	mu             sync.Mutex
 }
 
-// NewFixerRenderer creates a new FixerRenderer without depending on v2/config directly.
-func NewFixerRenderer(fuchsiaDir string, outOfTreeReadmes map[string]string, isPrivate func(string) bool, manifestName func(string) string) *FixerRenderer {
+// NewFixerRenderer creates a new FixerRenderer.
+func NewFixerRenderer(fuchsiaDir string, cfg *config.MasterConfig) *FixerRenderer {
 	return &FixerRenderer{
-		FuchsiaDir:       fuchsiaDir,
-		OutOfTreeReadmes: outOfTreeReadmes,
-		IsPrivateProject: isPrivate,
-		ManifestNameFor:  manifestName,
-		FixedCount:       make(map[string][]string),
+		FuchsiaDir: fuchsiaDir,
+		Config:     cfg,
+		FixedCount: make(map[string][]string),
 	}
 }
 
@@ -158,17 +153,6 @@ func (r *FixerRenderer) applyCopyrightFix(filePath string) error {
 	return nil
 }
 
-type configFileMinimal struct {
-	PolicyExceptions map[string][]allowlistEntryMinimal `json:"policy_exceptions,omitempty"`
-	AllowedLicenses  map[string][]allowlistEntryMinimal `json:"allowed_licenses,omitempty"`
-}
-
-type allowlistEntryMinimal struct {
-	Bug         string   `json:"bug"`
-	Description string   `json:"description,omitempty"`
-	Paths       []string `json:"paths"`
-}
-
 func (r *FixerRenderer) addPolicyException(checkName, targetPath, bug, description string) (string, error) {
 	relPath := targetPath
 	if filepath.IsAbs(relPath) {
@@ -178,30 +162,19 @@ func (r *FixerRenderer) addPolicyException(checkName, targetPath, bug, descripti
 		}
 	}
 
-	isPrivate := false
-	if r.IsPrivateProject != nil {
-		isPrivate = r.IsPrivateProject(relPath)
-	} else if strings.HasPrefix(relPath, "vendor/") {
-		isPrivate = true
-	}
-
-	configDir := filepath.Join(r.FuchsiaDir, "tools", "check-licenses", "assets", "configs", "policy_exceptions", checkName)
-	if isPrivate {
-		configDir = filepath.Join(r.FuchsiaDir, "vendor", "google", "tools", "check-licenses", "assets", "configs", "policy_exceptions", checkName)
-	}
-
+	configDir := filepath.Join(r.Config.ConfigRootFor(relPath), "policy_exceptions", checkName)
 	if err := os.MkdirAll(configDir, 0755); err != nil {
 		return "", fmt.Errorf("failed to create config directory %s: %w", configDir, err)
 	}
 
-	baseName := r.findProjectBasename(relPath)
+	baseName := r.Config.FindProjectBasename(relPath)
 	destFile := filepath.Join(configDir, baseName+".json")
 
-	if err := updateConfigFile(destFile, func(cfg *configFileMinimal) {
+	if err := config.UpdateConfigFile(destFile, func(cfg *config.ConfigFile) {
 		if cfg.PolicyExceptions == nil {
-			cfg.PolicyExceptions = make(map[string][]allowlistEntryMinimal)
+			cfg.PolicyExceptions = make(map[string][]config.AllowlistEntry)
 		}
-		entry := allowlistEntryMinimal{
+		entry := config.AllowlistEntry{
 			Bug:         bug,
 			Description: description,
 			Paths:       []string{relPath},
@@ -215,126 +188,10 @@ func (r *FixerRenderer) addPolicyException(checkName, targetPath, bug, descripti
 }
 
 func (r *FixerRenderer) addAllowlistEntry(licenseName, projectPath, bug, description string) (string, error) {
-	relPath := projectPath
-	if filepath.IsAbs(relPath) {
-		rel, err := filepath.Rel(r.FuchsiaDir, relPath)
-		if err == nil {
-			relPath = rel
-		}
+	if r.Config == nil {
+		return "", fmt.Errorf("config is nil")
 	}
-
-	isPrivate := false
-	if r.IsPrivateProject != nil {
-		isPrivate = r.IsPrivateProject(relPath)
-	} else if strings.HasPrefix(relPath, "vendor/") {
-		isPrivate = true
-	}
-
-	category := "Restricted"
-	configDir := filepath.Join(r.FuchsiaDir, "tools", "check-licenses", "assets", "configs", "allowed_licenses", category, licenseName)
-	if isPrivate {
-		configDir = filepath.Join(r.FuchsiaDir, "vendor", "google", "tools", "check-licenses", "assets", "configs", "allowed_licenses", category, licenseName)
-	}
-
-	if err := os.MkdirAll(configDir, 0755); err != nil {
-		return "", fmt.Errorf("failed to create config directory %s: %w", configDir, err)
-	}
-
-	baseName := r.findProjectBasename(relPath)
-	destFile := filepath.Join(configDir, baseName+".json")
-
-	if err := updateConfigFile(destFile, func(cfg *configFileMinimal) {
-		if cfg.AllowedLicenses == nil {
-			cfg.AllowedLicenses = make(map[string][]allowlistEntryMinimal)
-		}
-		entry := allowlistEntryMinimal{
-			Bug:         bug,
-			Description: description,
-			Paths:       []string{relPath},
-		}
-		cfg.AllowedLicenses[licenseName] = append(cfg.AllowedLicenses[licenseName], entry)
-	}); err != nil {
-		return "", err
-	}
-
-	return destFile, nil
-}
-
-func updateConfigFile(destFile string, mutate func(*configFileMinimal)) error {
-	var cfg configFileMinimal
-	if data, err := os.ReadFile(destFile); err == nil {
-		json.Unmarshal(data, &cfg)
-	}
-
-	mutate(&cfg)
-
-	outData, err := json.MarshalIndent(cfg, "", "    ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal JSON: %w", err)
-	}
-	outData = append(outData, '\n')
-
-	if err := os.WriteFile(destFile, outData, 0644); err != nil {
-		return fmt.Errorf("failed to write config file %s: %w", destFile, err)
-	}
-	return nil
-}
-
-func (r *FixerRenderer) findProjectBasename(targetPath string) string {
-	cleanTargetPath := filepath.Clean(targetPath)
-	absTargetPath := filepath.Join(r.FuchsiaDir, cleanTargetPath)
-
-	metadataFiles := []string{"README.fuchsia", "Cargo.toml", "go.mod", "pubspec.yaml"}
-	for _, mf := range metadataFiles {
-		metaPath := filepath.Join(absTargetPath, mf)
-		if _, err := os.Stat(metaPath); err == nil {
-			if rootReadmes, subReadmes, err := readme.ParseAnyMetadata(metaPath); err == nil {
-				if len(rootReadmes) > 0 && rootReadmes[0].Name != "" {
-					return filepath.Base(rootReadmes[0].Name)
-				}
-				if len(subReadmes) > 0 && subReadmes[0].Name != "" {
-					return filepath.Base(subReadmes[0].Name)
-				}
-			}
-		}
-	}
-
-	if r.OutOfTreeReadmes != nil {
-		if virtualReadmePath, ok := r.OutOfTreeReadmes[cleanTargetPath]; ok {
-			absVirtualPath := virtualReadmePath
-			if !filepath.IsAbs(absVirtualPath) {
-				absVirtualPath = filepath.Join(r.FuchsiaDir, virtualReadmePath)
-			}
-			if _, err := os.Stat(absVirtualPath); err == nil {
-				if rootReadmes, _, err := readme.ParseAnyMetadata(absVirtualPath); err == nil && len(rootReadmes) > 0 && rootReadmes[0].Name != "" {
-					return filepath.Base(rootReadmes[0].Name)
-				}
-			}
-		}
-	}
-
-	if r.ManifestNameFor != nil {
-		if name := r.ManifestNameFor(cleanTargetPath); name != "" {
-			return filepath.Base(name)
-		}
-	}
-
-	dir := filepath.Dir(cleanTargetPath)
-	if dir == "." || dir == "/" {
-		return "root"
-	}
-
-	parts := strings.Split(cleanTargetPath, string(filepath.Separator))
-	if len(parts) > 0 && parts[0] != "" {
-		if parts[0] == "src" && len(parts) > 1 && parts[1] != "" {
-			return parts[1]
-		}
-		if parts[0] == "vendor" && len(parts) > 2 && parts[2] != "" {
-			return parts[2]
-		}
-		return parts[len(parts)-1]
-	}
-	return "project"
+	return r.Config.AddAllowlistEntry(projectPath, licenseName, bug, description)
 }
 
 func (r *FixerRenderer) PrintSummary() {
