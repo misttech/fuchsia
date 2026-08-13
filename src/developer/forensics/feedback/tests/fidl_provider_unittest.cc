@@ -165,6 +165,139 @@ TEST_F(StaticSingleFidlMethodAnnotationProviderTest, ServerDestructionDuringBack
   RunLoopFor(zx::sec(5));
 }
 
+using DynamicSingleFidlMethodAnnotationProviderTest = UnitTestFixture;
+
+class DynamicDeviceIdProvider
+    : public DynamicSingleFidlMethodAnnotationProvider<fuchsia_feedback::DeviceIdProvider,
+                                                       &GetDeviceId, ConvertDeviceId> {
+ public:
+  using DynamicSingleFidlMethodAnnotationProvider::DynamicSingleFidlMethodAnnotationProvider;
+
+  std::set<std::string> GetKeys() const override { return {kDeviceIdKey}; }
+};
+
+TEST_F(DynamicSingleFidlMethodAnnotationProviderTest, Get) {
+  DynamicDeviceIdProvider provider(dispatcher(), services(), std::make_unique<MonotonicBackoff>());
+  auto device_id_server = std::make_unique<stubs::DeviceIdProvider>(kDeviceIdValue);
+  InjectServiceProvider(device_id_server.get());
+
+  RunLoopUntilIdle();
+
+  Annotations annotations;
+  provider.Get([&annotations](Annotations a) { annotations = std::move(a); });
+
+  RunLoopUntilIdle();
+  EXPECT_THAT(annotations,
+              UnorderedElementsAreArray({Pair(kDeviceIdKey, ErrorOrString(kDeviceIdValue))}));
+  EXPECT_TRUE(device_id_server->IsBound());
+}
+
+TEST_F(DynamicSingleFidlMethodAnnotationProviderTest, GetReturnsError) {
+  DynamicDeviceIdProvider provider(dispatcher(), services(), std::make_unique<MonotonicBackoff>());
+  auto device_id_server = std::make_unique<stubs::DeviceIdProviderReturnsError>(ZX_ERR_TIMED_OUT);
+  InjectServiceProvider(device_id_server.get());
+
+  RunLoopUntilIdle();
+
+  Annotations annotations;
+  provider.Get([&annotations](Annotations a) { annotations = std::move(a); });
+
+  RunLoopUntilIdle();
+  EXPECT_THAT(annotations,
+              UnorderedElementsAreArray({Pair(kDeviceIdKey, ErrorOrString(Error::kTimeout))}));
+  EXPECT_FALSE(device_id_server->IsBound());
+}
+
+TEST_F(DynamicSingleFidlMethodAnnotationProviderTest, Reconnects) {
+  DynamicDeviceIdProvider provider(dispatcher(), services(), std::make_unique<MonotonicBackoff>());
+  auto device_id_server = std::make_unique<stubs::DeviceIdProvider>(kDeviceIdValue);
+  InjectServiceProvider(device_id_server.get());
+
+  RunLoopUntilIdle();
+  EXPECT_TRUE(device_id_server->IsBound());
+  device_id_server->CloseConnection(ZX_ERR_PEER_CLOSED);
+  EXPECT_FALSE(device_id_server->IsBound());
+
+  Annotations annotations;
+  provider.Get([&annotations](Annotations a) { annotations = std::move(a); });
+
+  RunLoopUntilIdle();
+  EXPECT_THAT(annotations, UnorderedElementsAreArray(
+                               {Pair(kDeviceIdKey, ErrorOrString(Error::kConnectionError))}));
+
+  RunLoopFor(zx::sec(1));
+  EXPECT_TRUE(device_id_server->IsBound());
+
+  annotations.clear();
+  provider.Get([&annotations](Annotations a) { annotations = std::move(a); });
+
+  RunLoopUntilIdle();
+  EXPECT_THAT(annotations,
+              UnorderedElementsAreArray({Pair(kDeviceIdKey, ErrorOrString(kDeviceIdValue))}));
+}
+
+TEST_F(DynamicSingleFidlMethodAnnotationProviderTest, DoesNotReconnectIfNotFound) {
+  DynamicDeviceIdProvider provider(dispatcher(), services(), std::make_unique<MonotonicBackoff>());
+  auto device_id_server = std::make_unique<stubs::DeviceIdProvider>(kDeviceIdValue);
+  InjectServiceProvider(device_id_server.get());
+
+  RunLoopUntilIdle();
+  EXPECT_TRUE(device_id_server->IsBound());
+  device_id_server->CloseConnection(ZX_ERR_NOT_FOUND);
+  EXPECT_FALSE(device_id_server->IsBound());
+
+  Annotations annotations;
+  provider.Get([&annotations](Annotations a) { annotations = std::move(a); });
+
+  RunLoopUntilIdle();
+  EXPECT_THAT(annotations, UnorderedElementsAreArray(
+                               {Pair(kDeviceIdKey, ErrorOrString(Error::kNotAvailableInProduct))}));
+
+  RunLoopFor(zx::sec(1));
+  EXPECT_FALSE(device_id_server->IsBound());
+
+  annotations.clear();
+  provider.Get([&annotations](Annotations a) { annotations = std::move(a); });
+
+  RunLoopUntilIdle();
+  EXPECT_THAT(annotations, UnorderedElementsAreArray(
+                               {Pair(kDeviceIdKey, ErrorOrString(Error::kNotAvailableInProduct))}));
+}
+
+TEST_F(DynamicSingleFidlMethodAnnotationProviderTest, ProviderDestructionDuringInFlightCall) {
+  auto device_id_server = std::make_unique<stubs::DeviceIdProviderNeverReturns>();
+  InjectServiceProvider(device_id_server.get());
+
+  {
+    DynamicDeviceIdProvider provider(dispatcher(), services(),
+                                     std::make_unique<MonotonicBackoff>());
+    provider.Get([](const Annotations&) {});
+    RunLoopUntilIdle();
+    EXPECT_TRUE(device_id_server->IsBound());
+  }
+
+  device_id_server->CloseConnection(ZX_ERR_PEER_CLOSED);
+  RunLoopUntilIdle();
+}
+
+TEST_F(DynamicSingleFidlMethodAnnotationProviderTest, ProviderDestructionDuringBackoff) {
+  auto device_id_server = std::make_unique<stubs::DeviceIdProvider>(kDeviceIdValue);
+  InjectServiceProvider(device_id_server.get());
+
+  {
+    DynamicDeviceIdProvider provider(dispatcher(), services(),
+                                     std::make_unique<MonotonicBackoff>());
+    RunLoopUntilIdle();
+    EXPECT_TRUE(device_id_server->IsBound());
+
+    device_id_server->CloseConnection(ZX_ERR_PEER_CLOSED);
+    RunLoopUntilIdle();
+    EXPECT_FALSE(device_id_server->IsBound());
+  }
+
+  RunLoopFor(zx::sec(5));
+}
+
 }  // namespace
 
 }  // namespace forensics::feedback

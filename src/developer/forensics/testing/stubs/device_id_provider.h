@@ -50,6 +50,17 @@ class DeviceIdProviderNeverReturns : public DeviceIdProviderBase {
   std::optional<GetIdCompleter::Async> completer_;
 };
 
+class DeviceIdProviderReturnsError : public DeviceIdProviderBase {
+ public:
+  explicit DeviceIdProviderReturnsError(zx_status_t error) : error_(error) {}
+
+  // |fuchsia_feedback::DeviceIdProvider|
+  void GetId(GetIdCompleter::Sync& completer) override;
+
+ private:
+  zx_status_t error_;
+};
+
 }  // namespace stubs
 }  // namespace forensics
 

@@ -4,13 +4,16 @@
 
 #include "src/developer/forensics/feedback/annotations/target_channel_provider.h"
 
+#include <fidl/fuchsia.update.channelcontrol/cpp/fidl.h>
+
 #include "src/developer/forensics/feedback/annotations/constants.h"
 
 namespace forensics::feedback {
 
-Annotations TargetChannelToAnnotations::operator()(const std::string& target_channel) {
+Annotations TargetChannelToAnnotations::operator()(
+    const fuchsia_update_channelcontrol::ChannelControlGetTargetResponse& response) {
   return Annotations{
-      {kSystemUpdateChannelTargetKey, ErrorOrString(target_channel)},
+      {kSystemUpdateChannelTargetKey, ErrorOrString(response.channel())},
   };
 }
 

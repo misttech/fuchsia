@@ -162,6 +162,82 @@ class StaticSingleFidlMethodAnnotationProvider : public StaticAsyncAnnotationPro
   fxl::WeakPtrFactory<StaticSingleFidlMethodAnnotationProvider> ptr_factory_{this};
 };
 
+// Dynamic async annotation provider that handles calling a single FIDL method and
+// returning the result of the call as Annotations each time Get is invoked.
+//
+// |Protocol| is the FIDL protocol being interacted with.
+// |Method| is a callable that invokes the FIDL method on fidl::Client<Protocol>.
+// |Convert| is a function object type for converting the results of the method call to Annotations.
+template <typename Protocol, auto Method, typename Convert>
+class DynamicSingleFidlMethodAnnotationProvider : public DynamicAsyncAnnotationProvider,
+                                                  public fidl::AsyncEventHandler<Protocol> {
+ public:
+  DynamicSingleFidlMethodAnnotationProvider(async_dispatcher_t* dispatcher,
+                                            std::shared_ptr<sys::ServiceDirectory> services,
+                                            std::unique_ptr<backoff::Backoff> backoff)
+      : dispatcher_(dispatcher), services_(std::move(services)), backoff_(std::move(backoff)) {
+    Connect();
+  }
+
+  void on_fidl_error(fidl::UnbindInfo error) override {
+    const internal::DisconnectResponse disconnect = internal::DisconnectResponse::BuildFrom(
+        error.status(), fidl::DiscoverableProtocolName<Protocol>);
+
+    if (!disconnect.should_reconnect) {
+      // Invalidate the client so that future requests aren't made.
+      client_ = fidl::Client<Protocol>();
+      FX_LOGS(ERROR) << fidl::DiscoverableProtocolName<
+                            Protocol> << " not found, will not attempt to reconnect";
+      return;
+    }
+
+    FX_PLOGS(WARNING, error.status()) << disconnect.log_message;
+    reconnect_task_.PostDelayed(dispatcher_, backoff_->GetNext());
+  }
+
+  void Get(::fit::callback<void(Annotations)> callback) override {
+    if (!client_.is_valid()) {
+      callback(convert_(Error::kNotAvailableInProduct));
+      return;
+    }
+
+    std::invoke(Method, client_).Then([this, callback = std::move(callback)](auto& result) mutable {
+      if (result.is_error()) {
+        FX_LOGS(ERROR) << "Call to " << fidl::DiscoverableProtocolName<Protocol> << " failed: "
+                       << result.error_value();
+        const Error error = FidlErrorToForensicsError(result.error_value());
+        callback(convert_(error));
+        return;
+      }
+
+      backoff_->Reset();
+      callback(convert_(result.value()));
+    });
+  }
+
+ private:
+  void Connect() {
+    zx::result endpoints = fidl::CreateEndpoints<Protocol>();
+    if (endpoints.is_error()) {
+      FX_LOGS(ERROR) << "Failed to create endpoints: " << endpoints.status_string();
+      return;
+    }
+
+    services_->Connect(fidl::DiscoverableProtocolName<Protocol>, endpoints->server.TakeChannel());
+    client_ = fidl::Client<Protocol>(std::move(endpoints->client), dispatcher_, this);
+  }
+
+  async_dispatcher_t* dispatcher_;
+  std::shared_ptr<sys::ServiceDirectory> services_;
+  std::unique_ptr<backoff::Backoff> backoff_;
+  Convert convert_;
+
+  fidl::Client<Protocol> client_;
+  async::TaskClosureMethod<DynamicSingleFidlMethodAnnotationProvider,
+                           &DynamicSingleFidlMethodAnnotationProvider::Connect>
+      reconnect_task_{this};
+};
+
 }  // namespace forensics::feedback
 
 #endif  // SRC_DEVELOPER_FORENSICS_FEEDBACK_ANNOTATIONS_FIDL_PROVIDER_H_

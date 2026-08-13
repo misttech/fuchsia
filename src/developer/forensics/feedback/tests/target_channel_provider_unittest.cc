@@ -4,6 +4,8 @@
 
 #include "src/developer/forensics/feedback/annotations/target_channel_provider.h"
 
+#include <fidl/fuchsia.update.channelcontrol/cpp/fidl.h>
+
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
@@ -20,15 +22,20 @@ using ::testing::UnorderedElementsAreArray;
 TEST(TargetChannelToAnnotationsTest, Convert) {
   TargetChannelToAnnotations convert;
 
-  EXPECT_THAT(convert(""), UnorderedElementsAreArray({
-                               Pair(kSystemUpdateChannelTargetKey, ErrorOrString("")),
-                           }));
-  EXPECT_THAT(convert("channel"), UnorderedElementsAreArray({
-                                      Pair(kSystemUpdateChannelTargetKey, ErrorOrString("channel")),
-                                  }));
+  fuchsia_update_channelcontrol::ChannelControlGetTargetResponse response;
+  response.channel("");
+  EXPECT_THAT(convert(response), UnorderedElementsAreArray({
+                                     Pair(kSystemUpdateChannelTargetKey, ErrorOrString("")),
+                                 }));
+
+  response.channel("channel");
+  EXPECT_THAT(convert(response), UnorderedElementsAreArray({
+                                     Pair(kSystemUpdateChannelTargetKey, ErrorOrString("channel")),
+                                 }));
+
   EXPECT_THAT(convert(Error::kConnectionError),
               UnorderedElementsAreArray({
-                  Pair(kSystemUpdateChannelTargetKey, Error::kConnectionError),
+                  Pair(kSystemUpdateChannelTargetKey, ErrorOrString(Error::kConnectionError)),
               }));
 }
 

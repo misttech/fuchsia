@@ -32,5 +32,9 @@ void DeviceIdProviderBase::SetDeviceId(std::string device_id) {
   dirty_ = false;
 }
 
+void DeviceIdProviderReturnsError::GetId(GetIdCompleter::Sync& completer) {
+  completer.Close(error_);
+}
+
 }  // namespace stubs
 }  // namespace forensics

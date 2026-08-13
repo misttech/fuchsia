@@ -547,6 +547,7 @@ cc_test_executable("target_channel_provider_unittest_exe") {
   sources = [ "target_channel_provider_unittest.cc" ]
 
   deps = [
+    "//sdk/fidl/fuchsia.update.channelcontrol:fuchsia.update.channelcontrol_cpp",
     "//src/developer/forensics/feedback/annotations:target_channel_provider",
     "//src/developer/forensics/testing:gtest_with_syslog_main",
     "//src/developer/forensics/testing:unit_test_fixture",

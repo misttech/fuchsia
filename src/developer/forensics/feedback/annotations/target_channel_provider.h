@@ -5,27 +5,34 @@
 #ifndef SRC_DEVELOPER_FORENSICS_FEEDBACK_ANNOTATIONS_TARGET_CHANNEL_PROVIDER_H_
 #define SRC_DEVELOPER_FORENSICS_FEEDBACK_ANNOTATIONS_TARGET_CHANNEL_PROVIDER_H_
 
-#include <fuchsia/update/channelcontrol/cpp/fidl.h>
+#include <fidl/fuchsia.update.channelcontrol/cpp/fidl.h>
 
-#include "src/developer/forensics/feedback/annotations/fidl_provider_hlcpp.h"
+#include "src/developer/forensics/feedback/annotations/fidl_provider.h"
 #include "src/developer/forensics/feedback/annotations/types.h"
 
 namespace forensics::feedback {
 
+namespace internal {
+
+inline auto GetTarget(fidl::Client<fuchsia_update_channelcontrol::ChannelControl>& client) {
+  return client->GetTarget();
+}
+
+}  // namespace internal
+
 struct TargetChannelToAnnotations {
-  Annotations operator()(const std::string& target_channel);
+  Annotations operator()(
+      const fuchsia_update_channelcontrol::ChannelControlGetTargetResponse& response);
   Annotations operator()(Error error);
 };
 
 // Responsible for collecting annotations for
 // fuchsia.update.channelcontrol/ChannelControl::GetTarget.
-class TargetChannelProvider
-    : public DynamicSingleHlcppFidlMethodAnnotationProvider<
-          fuchsia::update::channelcontrol::ChannelControl,
-          &fuchsia::update::channelcontrol::ChannelControl::GetTarget, TargetChannelToAnnotations> {
+class TargetChannelProvider : public DynamicSingleFidlMethodAnnotationProvider<
+                                  fuchsia_update_channelcontrol::ChannelControl,
+                                  &internal::GetTarget, TargetChannelToAnnotations> {
  public:
-  using DynamicSingleHlcppFidlMethodAnnotationProvider::
-      DynamicSingleHlcppFidlMethodAnnotationProvider;
+  using DynamicSingleFidlMethodAnnotationProvider::DynamicSingleFidlMethodAnnotationProvider;
 
   virtual ~TargetChannelProvider() = default;
 
