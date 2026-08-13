@@ -54,7 +54,9 @@ func Validate(fuchsiaDir, readmeFilePath string, readmes []*Readme, config Confi
 		var filteredErrs []error
 		for _, err := range errs {
 			msg := err.Error()
-			isMissingLicenseErr := strings.Contains(msg, "Missing required field 'License'") || strings.Contains(msg, "Missing required field 'License File'")
+			isMissingLicenseErr := strings.Contains(msg, "Missing required field 'License'") ||
+				strings.Contains(msg, "Missing required field 'License File'") ||
+				strings.Contains(msg, "Missing required field 'Generated Notice File'")
 			if !isMissingLicenseErr {
 				filteredErrs = append(filteredErrs, err)
 			}
