@@ -1600,7 +1600,9 @@ impl FileOps for RemoteDirectoryObject {
         match self
             .0
             .readdir(|mut inode_num, entry_type, name| {
-                if name == b".." {
+                if name == b"." {
+                    inode_num = file.name.entry.node.ino;
+                } else if name == b".." {
                     inode_num = if let Some(parent) = file.name.parent_within_mount() {
                         parent.node.ino
                     } else {
@@ -2765,6 +2767,7 @@ mod test {
             #[derive(Default)]
             struct Sink {
                 offset: off_t,
+                dot_inode_num: u64,
                 dot_dot_inode_num: u64,
             }
             impl DirentSink for Sink {
@@ -2775,7 +2778,10 @@ mod test {
                     entry_type: DirectoryEntryType,
                     name: &FsStr,
                 ) -> Result<(), Errno> {
-                    if name == ".." {
+                    if name == "." {
+                        self.dot_inode_num = inode_num;
+                        assert_eq!(entry_type, DirectoryEntryType::DIR);
+                    } else if name == ".." {
                         self.dot_dot_inode_num = inode_num;
                         assert_eq!(entry_type, DirectoryEntryType::DIR);
                     }
@@ -2789,7 +2795,8 @@ mod test {
             let mut sink = Sink::default();
             dir_handle.readdir(&current_task, &mut sink).expect("readdir failed");
 
-            // inode_num for .. for the root should be the same as root.
+            // inode_num for . and .. for the root should be the same as root.
+            assert_eq!(sink.dot_inode_num, ns.root().entry.node.ino);
             assert_eq!(sink.dot_dot_inode_num, ns.root().entry.node.ino);
 
             let dir_handle = sub_dir1
@@ -2799,7 +2806,8 @@ mod test {
             let mut sink = Sink::default();
             dir_handle.readdir(&current_task, &mut sink).expect("readdir failed");
 
-            // inode_num for .. for the first sub directory should be the same as root.
+            // inode_num for . should be sub_dir1, and .. should be root.
+            assert_eq!(sink.dot_inode_num, sub_dir1.entry.node.ino);
             assert_eq!(sink.dot_dot_inode_num, ns.root().entry.node.ino);
 
             let dir_handle = sub_dir2
@@ -2809,7 +2817,8 @@ mod test {
             let mut sink = Sink::default();
             dir_handle.readdir(&current_task, &mut sink).expect("readdir failed");
 
-            // inode_num for .. for the second subdir should be the first subdir.
+            // inode_num for . should be sub_dir2, and .. should be sub_dir1.
+            assert_eq!(sink.dot_inode_num, sub_dir2.entry.node.ino);
             assert_eq!(sink.dot_dot_inode_num, sub_dir1.entry.node.ino);
         })
         .await;
