@@ -7,5 +7,9 @@
 import("//zircon/kernel/kernel_rust_crate.gni")
 
 kernel_rust_crate("ktrace-macro") {
-  sources = [ "src/lib.rs" ]
+  sources = [
+    "src/disabled.rs",
+    "src/enabled.rs",
+    "src/lib.rs",
+  ]
 }
