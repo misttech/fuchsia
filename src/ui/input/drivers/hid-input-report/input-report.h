@@ -18,6 +18,7 @@
 
 #include <fbl/intrusive_double_list.h>
 
+#include "input-reports-reader-v2.h"
 #include "input-reports-reader.h"
 #include "src/ui/input/lib/hid-input-report/device.h"
 
@@ -34,6 +35,12 @@ class InputReport : public fidl::WireServer<fuchsia_input_report::InputDevice>,
 
   // InputReportBase functions.
   void RemoveReaderFromList(InputReportsReader* reader) override;
+  void RemoveReaderFromList(InputReportsReaderV2* reader) override;
+
+  // Max unacknowledged report count allowed for 1/2 second.
+  // Generic HID input devices are event/interrupt-driven.
+  // Assuming a standard max report rate of 120 Hz yields 60 reports per 1/2 second (120 Hz / 2).
+  static constexpr uint16_t kHalfSecondReportCount = 60;
 
   // FIDL functions.
   void GetInputReportsReader(GetInputReportsReaderRequestView request,
@@ -75,6 +82,7 @@ class InputReport : public fidl::WireServer<fuchsia_input_report::InputDevice>,
   // If we have a consumer control device, get a report and send it to the reader,
   // since the reader needs the device's state.
   void SendInitialConsumerControlReport(InputReportsReader* reader);
+  void SendInitialConsumerControlReport(InputReportsReaderV2* reader);
 
   std::string GetDeviceTypesString() const;
 
@@ -89,8 +97,11 @@ class InputReport : public fidl::WireServer<fuchsia_input_report::InputDevice>,
 
   std::vector<std::unique_ptr<hid_input_report::Device>> devices_;
 
+  void RegisterReader(std::unique_ptr<InputReportsReader> reader);
+
   uint32_t next_reader_id_ = 0;
   std::list<std::unique_ptr<InputReportsReader>> readers_list_;
+  std::list<std::unique_ptr<InputReportsReaderV2>> readers_v2_list_;
   sync_completion_t next_reader_wait_;
 
   inspect::Inspector inspector_;

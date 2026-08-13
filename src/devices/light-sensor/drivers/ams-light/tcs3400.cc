@@ -13,8 +13,11 @@
 #include <lib/zx/clock.h>
 #include <unistd.h>
 #include <zircon/assert.h>
+#include <zircon/status.h>
 #include <zircon/syscalls.h>
 #include <zircon/syscalls/port.h>
+
+#include <algorithm>
 
 #include <fbl/auto_lock.h>
 
@@ -375,8 +378,21 @@ void Tcs3400::GetInputReportsReader(GetInputReportsReaderRequestView request,
 
 void Tcs3400::GetInputReportsReaderV2(GetInputReportsReaderV2RequestView request,
                                       GetInputReportsReaderV2Completer::Sync& completer) {
-  // TODO(https://fxbug.dev/512966114): Implement GetInputReportsReaderV2.
-  completer.Reply(/*max_unacknowledged_reports=*/0);
+  const uint16_t max_unacknowledged_reports =
+      std::clamp<uint16_t>(request->max_unacknowledged_reports_limit, 1, kMaxReportsPerHalfSecond);
+  if (request->max_unacknowledged_reports_limit != max_unacknowledged_reports) {
+    fdf::warn("GetInputReportsReaderV2: requested limit {} clamped to {}",
+              request->max_unacknowledged_reports_limit, max_unacknowledged_reports);
+  }
+  zx_status_t status =
+      readers_.CreateReaderV2(dispatcher(), std::move(request->reader), max_unacknowledged_reports);
+  if (status != ZX_OK) {
+    fdf::error("Failed to create InputReportReaderV2: {}", zx_status_get_string(status));
+    completer.Close(status);
+    return;
+  }
+  OnNextReader();
+  completer.Reply(max_unacknowledged_reports);
 }
 
 void Tcs3400::GetDescriptor(GetDescriptorCompleter::Sync& completer) {

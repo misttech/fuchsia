@@ -177,6 +177,7 @@ test("goodix-gt6853-test") {
     "GT6853_CONFIG_9364_PATH=\"$config_9364_path\"",
     "GT6853_CONFIG_9365_PATH=\"$config_9365_path\"",
     "GT6853_FIRMWARE_PATH=\"$firmware_path\"",
+    "GT6853_TEST",
   ]
 }
 

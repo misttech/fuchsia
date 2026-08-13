@@ -25,6 +25,11 @@ class InputDevice
       public ddk::Device<InputDevice, ddk::Messageable<fuchsia_input_report::InputDevice>::Mixin>,
       public ddk::EmptyProtocol<ZX_PROTOCOL_INPUTREPORT> {
  public:
+  // Max unacknowledged report count allowed for 1/2 second.
+  // VirtIO input devices are event-driven via VirtQueue interrupt notifications.
+  // Assuming a standard max event rate of 120 Hz yields 60 reports per 1/2 second (120 Hz / 2).
+  static constexpr uint16_t kMaxReportsPerHalfSecond = 60;
+
   InputDevice(zx_device_t* device, zx::bti bti, std::unique_ptr<Backend> backend);
   virtual ~InputDevice();
 
@@ -73,18 +78,19 @@ class InputDevice
  private:
   static constexpr size_t kFeatureAndDescriptorBufferSize = 512;
 
+  static constexpr size_t kEventCount = 64;
+  // We don't currently send status events to the device, so we use the
+  // smallest value that is a power of 2, as required by virtio::Ring::Init();
+  static constexpr size_t kStatusCount = 2;
+
   void ReceiveEvent(virtio_input_event_t* event);
 
   void SelectConfig(uint8_t select, uint8_t subsel);
 
   virtio_input_config_t config_;
 
-  static const size_t kEventCount = 64;
   io_buffer_t eventq_buffers_[kEventCount];
 
-  // We don't currently send status events to the device, so we use the
-  // smallest value that is a power of 2, as required by virtio::Ring::Init();
-  static const size_t kStatusCount = 2;
   io_buffer_t statusq_buffers_[kStatusCount];
 
   fbl::Mutex lock_;

@@ -11,6 +11,7 @@
 #include <lib/hid/boot.h>
 #include <zircon/syscalls.h>
 
+#include <algorithm>
 #include <map>
 #include <sstream>
 
@@ -237,8 +238,23 @@ void I8042Device::GetInputReportsReader(GetInputReportsReaderRequestView request
 
 void I8042Device::GetInputReportsReaderV2(GetInputReportsReaderV2RequestView request,
                                           GetInputReportsReaderV2Completer::Sync& completer) {
-  // TODO(https://fxbug.dev/512966114): Implement GetInputReportsReaderV2.
-  completer.Reply(/*max_unacknowledged_reports=*/0);
+  std::scoped_lock lock(hid_lock_);
+  const uint16_t max_unacknowledged_reports =
+      std::clamp<uint16_t>(request->max_unacknowledged_reports_limit, 1, kMaxReportsPerHalfSecond);
+  if (request->max_unacknowledged_reports_limit != max_unacknowledged_reports) {
+    zxlogf(WARNING, "GetInputReportsReaderV2: requested limit %u clamped to %u",
+           request->max_unacknowledged_reports_limit, max_unacknowledged_reports);
+  }
+  zx_status_t status = input_report_readers_.CreateReaderV2(dispatcher_, std::move(request->reader),
+                                                            max_unacknowledged_reports);
+  if (status != ZX_OK) {
+    completer.Close(status);
+    return;
+  }
+#ifdef PS2_TEST
+  sync_completion_signal(&next_reader_wait_);
+#endif
+  completer.Reply(max_unacknowledged_reports);
 }
 
 void I8042Device::GetDescriptor(GetDescriptorCompleter::Sync& completer) {

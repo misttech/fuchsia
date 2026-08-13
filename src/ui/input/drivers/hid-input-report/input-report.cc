@@ -17,6 +17,8 @@
 #include <zircon/assert.h>
 #include <zircon/status.h>
 
+#include <algorithm>
+
 #include <fbl/alloc_checker.h>
 
 #include "src/ui/input/lib/hid-input-report/device.h"
@@ -27,12 +29,11 @@ namespace fhidbus = fuchsia_hardware_hidbus;
 namespace finput = fuchsia_hardware_input;
 
 void InputReport::RemoveReaderFromList(InputReportsReader* reader) {
-  for (auto iter = readers_list_.begin(); iter != readers_list_.end(); ++iter) {
-    if (iter->get() == reader) {
-      readers_list_.erase(iter);
-      break;
-    }
-  }
+  std::erase_if(readers_list_, [reader](const auto& item) { return item.get() == reader; });
+}
+
+void InputReport::RemoveReaderFromList(InputReportsReaderV2* reader) {
+  std::erase_if(readers_v2_list_, [reader](const auto& item) { return item.get() == reader; });
 }
 
 void InputReport::HandleReports(
@@ -95,6 +96,9 @@ void InputReport::HandleReport(cpp20::span<const uint8_t> report, zx::time repor
     for (auto& reader : readers_list_) {
       reader->ReceiveReport(report, report_time, device.get());
     }
+    for (auto& reader : readers_v2_list_) {
+      reader->ReceiveReport(report, report_time, device.get());
+    }
   }
 
   const zx::duration latency = zx::clock::get_monotonic() - report_time;
@@ -126,6 +130,25 @@ bool InputReport::ParseHidInputReportDescriptor(const hid::ReportDescriptor* rep
 }
 
 void InputReport::SendInitialConsumerControlReport(InputReportsReader* reader) {
+  for (auto& device : devices_) {
+    if (device->GetDeviceType() == hid_input_report::DeviceType::kConsumerControl) {
+      if (!device->InputReportId().has_value()) {
+        continue;
+      }
+
+      fidl::WireResult result =
+          input_device_->GetReport(fhidbus::ReportType::kInput, *device->InputReportId());
+      if (!result.ok() || result->is_error()) {
+        continue;
+      }
+      reader->ReceiveReport(
+          cpp20::span(result.value()->report.data(), result.value()->report.size()),
+          zx::clock::get_monotonic(), device.get());
+    }
+  }
+}
+
+void InputReport::SendInitialConsumerControlReport(InputReportsReaderV2* reader) {
   for (auto& device : devices_) {
     if (device->GetDeviceType() == hid_input_report::DeviceType::kConsumerControl) {
       if (!device->InputReportId().has_value()) {
@@ -177,9 +200,6 @@ void InputReport::GetInputReportsReader(GetInputReportsReaderRequestView request
                                         GetInputReportsReaderCompleter::Sync& completer) {
   std::unique_ptr<InputReportsReader> reader =
       std::make_unique<InputReportsReader>(this, next_reader_id_++, std::move(request->reader));
-  if (!reader) {
-    return;
-  }
 
   SendInitialConsumerControlReport(reader.get());
   readers_list_.push_back(std::move(reader));
@@ -190,8 +210,21 @@ void InputReport::GetInputReportsReader(GetInputReportsReaderRequestView request
 
 void InputReport::GetInputReportsReaderV2(GetInputReportsReaderV2RequestView request,
                                           GetInputReportsReaderV2Completer::Sync& completer) {
-  // TODO(https://fxbug.dev/512966114): Implement GetInputReportsReaderV2.
-  completer.Reply(/*max_unacknowledged_reports=*/0);
+  uint16_t max_unacknowledged =
+      std::clamp<uint16_t>(request->max_unacknowledged_reports_limit, 1, kHalfSecondReportCount);
+  if (request->max_unacknowledged_reports_limit != max_unacknowledged) {
+    fdf::warn("GetInputReportsReaderV2: requested limit {} clamped to {}",
+              request->max_unacknowledged_reports_limit, max_unacknowledged);
+  }
+
+  std::unique_ptr<InputReportsReaderV2> reader = std::make_unique<InputReportsReaderV2>(
+      this, next_reader_id_++, std::move(request->reader), max_unacknowledged);
+
+  SendInitialConsumerControlReport(reader.get());
+  readers_v2_list_.push_back(std::move(reader));
+
+  sync_completion_signal(&next_reader_wait_);
+  completer.Reply(max_unacknowledged);
 }
 
 void InputReport::GetDescriptor(GetDescriptorCompleter::Sync& completer) {

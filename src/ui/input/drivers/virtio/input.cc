@@ -12,6 +12,7 @@
 #include <zircon/compiler.h>
 #include <zircon/status.h>
 
+#include <algorithm>
 #include <memory>
 #include <utility>
 
@@ -261,8 +262,20 @@ void InputDevice::SelectConfig(uint8_t select, uint8_t subsel) {
 
 void InputDevice::GetInputReportsReaderV2(GetInputReportsReaderV2RequestView request,
                                           GetInputReportsReaderV2Completer::Sync& completer) {
-  // TODO(https://fxbug.dev/512966114): Implement GetInputReportsReaderV2.
-  completer.Reply(/*max_unacknowledged_reports=*/0);
+  const uint16_t max_unacknowledged_reports =
+      std::clamp<uint16_t>(request->max_unacknowledged_reports_limit, 1, kMaxReportsPerHalfSecond);
+  if (request->max_unacknowledged_reports_limit != max_unacknowledged_reports) {
+    zxlogf(WARNING, "GetInputReportsReaderV2: requested limit %u clamped to %u",
+           request->max_unacknowledged_reports_limit, max_unacknowledged_reports);
+  }
+  zx_status_t status =
+      hid_device_->GetInputReportsReaderV2(fdf::Dispatcher::GetCurrent()->async_dispatcher(),
+                                           std::move(request->reader), max_unacknowledged_reports);
+  if (status != ZX_OK) {
+    completer.Close(status);
+    return;
+  }
+  completer.Reply(max_unacknowledged_reports);
 }
 
 }  // namespace virtio

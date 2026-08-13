@@ -8,7 +8,9 @@
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/zx/clock.h>
 #include <zircon/assert.h>
+#include <zircon/status.h>
 
+#include <algorithm>
 #include <cinttypes>
 #include <cstddef>
 
@@ -85,7 +87,7 @@ void ButtonsDevice::ButtonsInputReport::ToFidlInputReport(
 }
 
 void ButtonsDevice::Notify(size_t button_index) {
-  auto result = GetInputReportInternal();
+  zx::result<ButtonsInputReport> result = GetInputReportInternal();
   if (result.is_error()) {
     fdf::error("GetInputReport failed {}", zx_status_get_string(result.error_value()));
   } else if (!last_report_.has_value() || *last_report_ != result.value()) {
@@ -213,11 +215,11 @@ int ButtonsDevice::Thread() {
 
 void ButtonsDevice::GetInputReportsReader(GetInputReportsReaderRequestView request,
                                           GetInputReportsReaderCompleter::Sync& completer) {
-  auto initial_report = GetInputReportInternal();
+  zx::result<ButtonsInputReport> initial_report = GetInputReportInternal();
   if (initial_report.is_error()) {
-    fdf::error("Failed to get initial report {}", initial_report);
+    fdf::error("Failed to get initial report {}", initial_report.status_string());
   }
-  auto status = readers_.CreateReader(
+  zx_status_t status = readers_.CreateReader(
       dispatcher_, std::move(request->reader),
       initial_report.is_ok() ? std::make_optional(initial_report.value()) : std::nullopt);
   if (status != ZX_OK) {
@@ -227,8 +229,25 @@ void ButtonsDevice::GetInputReportsReader(GetInputReportsReaderRequestView reque
 
 void ButtonsDevice::GetInputReportsReaderV2(GetInputReportsReaderV2RequestView request,
                                             GetInputReportsReaderV2Completer::Sync& completer) {
-  // TODO(https://fxbug.dev/512966114): Implement GetInputReportsReaderV2.
-  completer.Reply(/*max_unacknowledged_reports=*/0);
+  zx::result<ButtonsInputReport> initial_report = GetInputReportInternal();
+  if (initial_report.is_error()) {
+    fdf::error("Failed to get initial report {}", initial_report.status_string());
+  }
+  const uint16_t max_unacknowledged_reports =
+      std::clamp<uint16_t>(request->max_unacknowledged_reports_limit, 1, kMaxReportsPerHalfSecond);
+  if (request->max_unacknowledged_reports_limit != max_unacknowledged_reports) {
+    fdf::warn("GetInputReportsReaderV2: requested limit {} clamped to {}",
+              request->max_unacknowledged_reports_limit, max_unacknowledged_reports);
+  }
+  zx_status_t status = readers_.CreateReaderV2(
+      dispatcher_, std::move(request->reader), max_unacknowledged_reports,
+      initial_report.is_ok() ? std::make_optional(initial_report.value()) : std::nullopt);
+  if (status != ZX_OK) {
+    fdf::error("Failed to create a reader v2 {}", zx_status_get_string(status));
+    completer.Close(status);
+    return;
+  }
+  completer.Reply(max_unacknowledged_reports);
 }
 
 void ButtonsDevice::GetDescriptor(GetDescriptorCompleter::Sync& completer) {

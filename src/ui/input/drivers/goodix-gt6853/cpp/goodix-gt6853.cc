@@ -142,14 +142,31 @@ void Gt6853Device::GetInputReportsReader(GetInputReportsReaderRequestView reques
                                          GetInputReportsReaderCompleter::Sync& completer) {
   zx_status_t status = input_report_readers_.CreateReader(dispatcher_, std::move(request->reader));
   if (status == ZX_OK) {
+#ifdef GT6853_TEST
     sync_completion_signal(&next_reader_wait_);  // Only for tests.
+#endif
   }
 }
 
 void Gt6853Device::GetInputReportsReaderV2(GetInputReportsReaderV2RequestView request,
                                            GetInputReportsReaderV2Completer::Sync& completer) {
-  // TODO(https://fxbug.dev/512966114): Implement GetInputReportsReaderV2.
-  completer.Reply(/*max_unacknowledged_reports=*/0);
+  const uint16_t max_unacknowledged_reports =
+      std::clamp<uint16_t>(request->max_unacknowledged_reports_limit, 1, kMaxReportsPerHalfSecond);
+  if (request->max_unacknowledged_reports_limit != max_unacknowledged_reports) {
+    zxlogf(WARNING, "GetInputReportsReaderV2: requested limit %u clamped to %u",
+           request->max_unacknowledged_reports_limit, max_unacknowledged_reports);
+  }
+  zx_status_t status = input_report_readers_.CreateReaderV2(dispatcher_, std::move(request->reader),
+                                                            max_unacknowledged_reports);
+  if (status != ZX_OK) {
+    zxlogf(ERROR, "CreateReaderV2 failed %s", zx_status_get_string(status));
+    completer.Close(status);
+    return;
+  }
+#ifdef GT6853_TEST
+  sync_completion_signal(&next_reader_wait_);  // Only for tests.
+#endif
+  completer.Reply(max_unacknowledged_reports);
 }
 
 void Gt6853Device::GetDescriptor(GetDescriptorCompleter::Sync& completer) {
@@ -218,10 +235,12 @@ void Gt6853Device::GetInputReport(GetInputReportRequestView request,
   completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
 }
 
+#ifdef GT6853_TEST
 void Gt6853Device::WaitForNextReader() {
   sync_completion_wait(&next_reader_wait_, ZX_TIME_INFINITE);
   sync_completion_reset(&next_reader_wait_);
 }
+#endif
 
 Gt6853Contact Gt6853Device::ParseContact(const uint8_t* const contact_buffer) {
   Gt6853Contact ret = {};

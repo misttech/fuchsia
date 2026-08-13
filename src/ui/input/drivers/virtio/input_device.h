@@ -29,6 +29,10 @@ class HidDeviceBase {
   virtual void GetInputReportsReader(
       async_dispatcher_t* dispatcher,
       fidl::ServerEnd<fuchsia_input_report::InputReportsReader> reader) = 0;
+  virtual zx_status_t GetInputReportsReaderV2(
+      async_dispatcher_t* dispatcher,
+      fidl::ServerEnd<fuchsia_input_report::InputReportsReaderV2> reader,
+      uint16_t max_unacknowledged_reports) = 0;
   virtual zx::time SendReportToAllReaders() = 0;
 };
 
@@ -42,6 +46,13 @@ class HidDevice : public HidDeviceBase {
       async_dispatcher_t* dispatcher,
       fidl::ServerEnd<fuchsia_input_report::InputReportsReader> reader) override {
     readers_.CreateReader(dispatcher, std::move(reader));
+  }
+
+  zx_status_t GetInputReportsReaderV2(
+      async_dispatcher_t* dispatcher,
+      fidl::ServerEnd<fuchsia_input_report::InputReportsReaderV2> reader,
+      uint16_t max_unacknowledged_reports) override {
+    return readers_.CreateReaderV2(dispatcher, std::move(reader), max_unacknowledged_reports);
   }
 
   zx::time SendReportToAllReaders() override {

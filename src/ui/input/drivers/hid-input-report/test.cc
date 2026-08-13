@@ -182,6 +182,8 @@ class FixtureConfig final {
 
 class HidDevTest : public ::testing::Test {
  public:
+  static constexpr uint16_t kDefaultMaxUnacknowledgedReports = 10;
+
   void TearDown() override {
     zx::result<> result = driver_test().StopDriver();
     ASSERT_EQ(ZX_OK, result.status_value());
@@ -203,6 +205,26 @@ class HidDevTest : public ::testing::Test {
       const fidl::WireSyncClient<fuchsia_input_report::InputDevice>& sync_client) {
     auto endpoints = fidl::Endpoints<fuchsia_input_report::InputReportsReader>::Create();
     auto result = sync_client->GetInputReportsReader(std::move(endpoints.server));
+    EXPECT_OK(result.status());
+    sync_completion_t* next_reader_wait;
+    driver_test().RunInDriverContext([&next_reader_wait](InputReportDriver& driver) {
+      next_reader_wait = &driver.input_report_for_testing().next_reader_wait();
+    });
+    EXPECT_OK(sync_completion_wait(next_reader_wait, ZX_TIME_INFINITE));
+    sync_completion_reset(next_reader_wait);
+    return std::move(endpoints.client);
+  }
+
+  fidl::ClientEnd<fuchsia_input_report::InputReportsReaderV2> GetReaderV2(
+      uint16_t max_unacknowledged_reports_limit) {
+    return GetReaderV2(GetSyncClient(), max_unacknowledged_reports_limit);
+  }
+  fidl::ClientEnd<fuchsia_input_report::InputReportsReaderV2> GetReaderV2(
+      const fidl::WireSyncClient<fuchsia_input_report::InputDevice>& sync_client,
+      uint16_t max_unacknowledged_reports_limit) {
+    auto endpoints = fidl::Endpoints<fuchsia_input_report::InputReportsReaderV2>::Create();
+    auto result = sync_client->GetInputReportsReaderV2(std::move(endpoints.server),
+                                                       max_unacknowledged_reports_limit);
     EXPECT_OK(result.status());
     sync_completion_t* next_reader_wait;
     driver_test().RunInDriverContext([&next_reader_wait](InputReportDriver& driver) {
@@ -876,6 +898,99 @@ TEST_F(HidDevTest, InspectDeviceTypes) {
 
     EXPECT_STREQ(device_types->value().c_str(), "touch,touch,mouse");
   });
+}
+
+class TestReaderV2EventHandler
+    : public fidl::WireAsyncEventHandler<fuchsia_input_report::InputReportsReaderV2> {
+ public:
+  explicit TestReaderV2EventHandler(async::Loop& loop, size_t quit_after_reports = 1)
+      : loop_(loop), quit_after_reports_(quit_after_reports) {}
+
+  void OnInputReports(
+      fidl::WireEvent<fuchsia_input_report::InputReportsReaderV2::OnInputReports>* event) override {
+    reports_received_ += event->reports.size();
+    last_stamp_ = event->last_report_stamp;
+    events_received_++;
+    if (reports_received_ >= quit_after_reports_) {
+      loop_.Quit();
+    }
+  }
+  void handle_unknown_event(
+      fidl::UnknownEventMetadata<fuchsia_input_report::InputReportsReaderV2> metadata) override {}
+
+  size_t events_received() const { return events_received_; }
+  size_t reports_received() const { return reports_received_; }
+  uint64_t last_stamp() const { return last_stamp_; }
+
+  void set_quit_after_reports(size_t count) { quit_after_reports_ = count; }
+
+ private:
+  async::Loop& loop_;
+  size_t quit_after_reports_;
+  size_t events_received_ = 0;
+  size_t reports_received_ = 0;
+  uint64_t last_stamp_ = 0;
+};
+
+TEST_F(HidDevTest, ReaderV2) {
+  driver_test().RunInEnvironmentTypeContext([](InputReportTestEnvironment& env) {
+    size_t desc_len;
+    const uint8_t* report_desc = get_boot_mouse_report_desc(&desc_len);
+    env.fake_hid().SetReportDesc(ToBinaryVector(report_desc, desc_len));
+  });
+  ASSERT_TRUE(driver_test().StartDriver().is_ok());
+
+  async::Loop loop = async::Loop(&kAsyncLoopConfigNeverAttachToThread);
+  fidl::ClientEnd<fuchsia_input_report::InputReportsReaderV2> client_end =
+      GetReaderV2(kDefaultMaxUnacknowledgedReports);
+  TestReaderV2EventHandler event_handler(loop);
+  fidl::WireClient<fuchsia_input_report::InputReportsReaderV2> client(
+      std::move(client_end), loop.dispatcher(), &event_handler);
+
+  hid_boot_mouse_report_t report = {};
+  report.rel_x = 10;
+  report.rel_y = 5;
+  SendReport(ToBinaryVector(report));
+
+  loop.Run();
+  ASSERT_EQ(1u, event_handler.events_received());
+  ASSERT_EQ(1u, event_handler.reports_received());
+  ASSERT_EQ(1u, event_handler.last_stamp());
+}
+
+TEST_F(HidDevTest, ReaderV2UnacknowledgedLimit) {
+  driver_test().RunInEnvironmentTypeContext([](InputReportTestEnvironment& env) {
+    size_t desc_len;
+    const uint8_t* report_desc = get_boot_mouse_report_desc(&desc_len);
+    env.fake_hid().SetReportDesc(ToBinaryVector(report_desc, desc_len));
+  });
+  ASSERT_TRUE(driver_test().StartDriver().is_ok());
+
+  async::Loop loop = async::Loop(&kAsyncLoopConfigNeverAttachToThread);
+  fidl::ClientEnd<fuchsia_input_report::InputReportsReaderV2> client_end =
+      GetReaderV2(kDefaultMaxUnacknowledgedReports);
+  TestReaderV2EventHandler event_handler(loop, 15);
+  fidl::WireClient<fuchsia_input_report::InputReportsReaderV2> client(
+      std::move(client_end), loop.dispatcher(), &event_handler);
+
+  hid_boot_mouse_report_t report = {};
+  report.rel_x = 10;
+  report.rel_y = 5;
+
+  // Send reports up to and beyond the max unacknowledged limit (default 10).
+  for (size_t i = 0; i < 15; i++) {
+    SendReport(ToBinaryVector(report));
+  }
+
+  // Verify that prior to acknowledgment, no more than 10 reports are delivered
+  // and channel buffer contains no extra unacknowledged reports.
+  loop.RunUntilIdle();
+  EXPECT_EQ(event_handler.reports_received(), 10u);
+
+  // Acknowledge reports and verify streaming resumes to receive remaining reports.
+  (void)client->AcknowledgeReports(event_handler.last_stamp());
+  loop.Run();
+  EXPECT_EQ(event_handler.reports_received(), 15u);
 }
 
 }  // namespace hid_input_report_dev

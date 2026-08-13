@@ -112,6 +112,11 @@ class Tcs3400 : public fdf::DriverBase2,
   static constexpr size_t kMaxFeatureReports = 10;
   static constexpr size_t kFeatureAndDescriptorBufferSize = 512;
 
+  // Max unacknowledged report count allowed for 1/2 second.
+  // TCS3400 integration time step size is 2.78 ms (2780 µs), giving a max sampling rate of ~360 Hz.
+  // 360 Hz / 2 = 180 reports per 1/2 second.
+  static constexpr uint16_t kMaxReportsPerHalfSecond = 180;
+
   void DevfsConnect(fidl::ServerEnd<fuchsia_input_report::InputDevice> request);
 
   void HandlePoll();

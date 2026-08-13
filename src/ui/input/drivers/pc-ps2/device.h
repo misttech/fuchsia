@@ -84,6 +84,10 @@ using DeviceType = ddk::Device<I8042Device, ddk::Suspendable, ddk::Unbindable,
                                ddk::Messageable<fuchsia_input_report::InputDevice>::Mixin>;
 class I8042Device : public DeviceType, public ddk::EmptyProtocol<ZX_PROTOCOL_INPUTREPORT> {
  public:
+  // Max unacknowledged report count allowed for 1/2 second.
+  // PS/2 mouse default sampling rate is 100 Hz, yielding 50 reports per 1/2 second (100 Hz / 2).
+  static constexpr uint16_t kMaxReportsPerHalfSecond = 50;
+
   explicit I8042Device(Controller* parent, async_dispatcher_t* dispatcher, Port port)
       : DeviceType(parent->zxdev()),
         dispatcher_(dispatcher),

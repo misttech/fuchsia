@@ -16,10 +16,10 @@ constexpr size_t kPerLine = 16;
 void hexdump(const cpp20::span<const uint8_t> data) {
   constexpr uint32_t kCharsPerByte = 3;
   for (size_t i = 0; i < data.size_bytes(); i += kPerLine) {
-    size_t line_size = std::min(kPerLine, data.size_bytes() - i);
-    char line[kCharsPerByte * line_size];
+    const size_t line_size = std::min(kPerLine, data.size_bytes() - i);
+    char line[kCharsPerByte * kPerLine + 1] = {};
     for (size_t j = 0; j < line_size; j++) {
-      sprintf(&line[kCharsPerByte * j], "%02X ", data[i + j]);
+      snprintf(&line[kCharsPerByte * j], 4, "%02X ", data[i + j]);
     }
 
     fdf::info("hid-dump({}): {}", i, static_cast<const char*>(line));
@@ -92,6 +92,8 @@ void InputReportsReader::ReceiveReport(cpp20::span<const uint8_t> raw_report, zx
 
   // If we are full, pop the oldest report.
   if (reports_data_.full()) {
+    fdf::warn("ReceiveReport: Ring buffer full, dropping oldest report");
+    TRACE_INSTANT("input", "InputReportDrop", TRACE_SCOPE_PROCESS);
     reports_data_.pop();
   }
 

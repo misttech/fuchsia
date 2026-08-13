@@ -7,6 +7,10 @@
 #include <fidl/fuchsia.input.report/cpp/fidl.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/zx/clock.h>
+#include <zircon/status.h>
+
+#include <algorithm>
+#include <cstdint>
 
 namespace adc_buttons_device {
 
@@ -31,9 +35,9 @@ void AdcButtonsDevice::PollingTask(async_dispatcher_t* dispatcher, async::TaskBa
 
   polling_task_.PostDelayed(dispatcher_, polling_interval_);
 
-  auto report = GetInputReport();
+  zx::result<AdcButtonInputReport> report = GetInputReport();
   if (report.is_error()) {
-    fdf::error("Failed to get report {}", report);
+    fdf::error("Failed to get report {}", report.status_string());
     return;
   }
   if (rpt_.has_value() && rpt_->buttons == report->buttons) {
@@ -78,11 +82,11 @@ zx::result<AdcButtonsDevice::AdcButtonInputReport> AdcButtonsDevice::GetInputRep
 
 void AdcButtonsDevice::GetInputReportsReader(GetInputReportsReaderRequestView request,
                                              GetInputReportsReaderCompleter::Sync& completer) {
-  auto initial_report = GetInputReport();
+  zx::result<AdcButtonInputReport> initial_report = GetInputReport();
   if (initial_report.is_error()) {
-    fdf::error("Failed to get initial report {}", initial_report);
+    fdf::error("Failed to get initial report {}", initial_report.status_string());
   }
-  auto status = readers_.CreateReader(
+  zx_status_t status = readers_.CreateReader(
       dispatcher_, std::move(request->reader),
       initial_report.is_ok() ? std::make_optional(initial_report.value()) : std::nullopt);
   if (status != ZX_OK) {
@@ -92,8 +96,29 @@ void AdcButtonsDevice::GetInputReportsReader(GetInputReportsReaderRequestView re
 
 void AdcButtonsDevice::GetInputReportsReaderV2(GetInputReportsReaderV2RequestView request,
                                                GetInputReportsReaderV2Completer::Sync& completer) {
-  // TODO(https://fxbug.dev/512966114): Implement GetInputReportsReaderV2.
-  completer.Reply(/*max_unacknowledged_reports=*/0);
+  zx::result<AdcButtonInputReport> initial_report = GetInputReport();
+  if (initial_report.is_error()) {
+    fdf::error("Failed to get initial report {}", initial_report.status_string());
+  }
+  // Max unacknowledged report count allowed for 1/2 second based on the configured
+  // polling_interval_ (e.g. 20 ms polling interval yields 25 reports per 1/2 second).
+  const uint16_t kMaxReportsPerHalfSecond =
+      static_cast<uint16_t>(std::clamp<int64_t>(zx::msec(500) / polling_interval_, 1, UINT16_MAX));
+  const uint16_t max_unacknowledged_reports =
+      std::clamp<uint16_t>(request->max_unacknowledged_reports_limit, 1, kMaxReportsPerHalfSecond);
+  if (request->max_unacknowledged_reports_limit != max_unacknowledged_reports) {
+    fdf::warn("GetInputReportsReaderV2: requested limit {} clamped to {}",
+              request->max_unacknowledged_reports_limit, max_unacknowledged_reports);
+  }
+  zx_status_t status = readers_.CreateReaderV2(
+      dispatcher_, std::move(request->reader), max_unacknowledged_reports,
+      initial_report.is_ok() ? std::make_optional(initial_report.value()) : std::nullopt);
+  if (status != ZX_OK) {
+    fdf::error("CreateReaderV2 failed: {}", zx_status_get_string(status));
+    completer.Close(status);
+    return;
+  }
+  completer.Reply(max_unacknowledged_reports);
 }
 
 void AdcButtonsDevice::GetDescriptor(GetDescriptorCompleter::Sync& completer) {

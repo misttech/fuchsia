@@ -327,6 +327,7 @@ InputReportReaderManager<Report, kMaxUnreadReports, kMaxBatchSize,
   if constexpr (kMaxUnreadReports > 0) {
     // Drop old reports if the client isn't reading them out fast enough.
     while (reports_data_.size() >= kMaxUnreadReports) {
+      TRACE_INSTANT("input", "InputReportDrop", TRACE_SCOPE_PROCESS);
       reports_data_.pop_front();
       dropped_reports++;
     }
@@ -423,6 +424,7 @@ inline size_t InputReportReaderManager<Report, kMaxUnreadReports, kMaxBatchSize,
   if constexpr (kMaxUnreadReports > 0) {
     // Drop old reports if the client isn't reading them out fast enough.
     while (stamped_reports_.size() >= kMaxUnreadReports) {
+      TRACE_INSTANT("input", "InputReportDrop", TRACE_SCOPE_PROCESS);
       stamped_reports_.pop_front();
       dropped_reports++;
     }

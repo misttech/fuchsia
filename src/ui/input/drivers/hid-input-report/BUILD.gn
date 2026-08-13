@@ -28,6 +28,7 @@ group("tests") {
 source_set("driver-internals") {
   sources = [
     "input-report.cc",
+    "input-reports-reader-v2.cc",
     "input-reports-reader.cc",
   ]
   public_deps = [

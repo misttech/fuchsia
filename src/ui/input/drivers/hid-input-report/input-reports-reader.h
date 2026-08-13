@@ -15,10 +15,12 @@
 namespace hid_input_report_dev {
 
 class InputReportsReader;
+class InputReportsReaderV2;
 
 class InputReportBase {
  public:
   virtual void RemoveReaderFromList(InputReportsReader* reader) = 0;
+  virtual void RemoveReaderFromList(InputReportsReaderV2* reader) = 0;
 };
 
 class InputReportsReader : public fidl::WireServer<fuchsia_input_report::InputReportsReader> {

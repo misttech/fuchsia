@@ -37,6 +37,7 @@ class AdcButtonsDevice : public fidl::WireServer<fuchsia_input_report::InputDevi
         polling_interval_(polling_interval),
         clients_(std::move(clients)),
         buttons_(std::move(buttons)) {
+    ZX_ASSERT(polling_interval_ > zx::nsec(0));
     polling_task_.Post(dispatcher_);
   }
   void Shutdown();

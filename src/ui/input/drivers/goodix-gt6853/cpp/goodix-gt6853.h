@@ -75,6 +75,12 @@ class Gt6853Device : public DeviceType, public ddk::EmptyProtocol<ZX_PROTOCOL_IN
     kIspAddr = 0xc000,
   };
 
+  // Max unacknowledged report count allowed for 1/2 second.
+  // GT6853 touchscreens are interrupt-driven, and the report rate is configurable
+  // between 50 and 200 Hz based on the datasheet.
+  // Assuming a standard max event rate of 120 Hz yields 60 reports per 1/2 second (120 Hz / 2).
+  static constexpr uint16_t kMaxReportsPerHalfSecond = 60;
+
   Gt6853Device(zx_device_t* parent, async_dispatcher_t* dispatcher, ddk::I2cChannel i2c)
       : Gt6853Device(parent, dispatcher, std::move(i2c), {}, {}) {}
 
@@ -113,8 +119,10 @@ class Gt6853Device : public DeviceType, public ddk::EmptyProtocol<ZX_PROTOCOL_IN
     zxlogf(WARNING, "Unexpected fidl method invoked: %ld", metadata.method_ordinal);
   }
 
+#ifdef GT6853_TEST
   // Visible for testing.
   void WaitForNextReader();
+#endif
 
  private:
   enum class HostCommand : uint8_t;
@@ -178,7 +186,9 @@ class Gt6853Device : public DeviceType, public ddk::EmptyProtocol<ZX_PROTOCOL_IN
   async::IrqMethod<Gt6853Device, &Gt6853Device::HandleIrq> irq_handler_{this};
 
   input_report_reader::InputReportReaderManager<Gt6853InputReport> input_report_readers_;
+#ifdef GT6853_TEST
   sync_completion_t next_reader_wait_;
+#endif
 
   inspect::Inspector inspector_;
   inspect::Node root_;

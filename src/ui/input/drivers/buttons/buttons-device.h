@@ -36,6 +36,10 @@ constexpr uint64_t kPortKeyTimerStart = 0x100;
 constexpr uint64_t kPortKeyPollTimer = 0x1000;
 // Debounce threshold.
 constexpr uint64_t kDebounceThresholdNs = 50'000'000;
+// Max unacknowledged report count allowed for 1/2 second based on 50 ms debounce threshold (500 ms
+// / 50 ms = 10 reports per 1/2 second).
+constexpr uint16_t kMaxReportsPerHalfSecond =
+    static_cast<uint16_t>(500'000'000 / kDebounceThresholdNs);
 
 class ButtonsDevice : public fidl::WireServer<fuchsia_input_report::InputDevice> {
  public:
@@ -78,15 +82,8 @@ class ButtonsDevice : public fidl::WireServer<fuchsia_input_report::InputDevice>
   }
 
  private:
-  zx::port port_;
   friend class ButtonsDeviceTest;
   static constexpr size_t kFeatureAndDescriptorBufferSize = 512;
-
-  int Thread();
-  zx_status_t Init();
-  zx::result<bool> ReconfigurePolarity(size_t idx, uint64_t int_port);
-  zx_status_t ConfigureInterrupt(size_t idx, uint64_t int_port);
-  zx::result<bool> MatrixScan(uint32_t row, uint32_t col, zx_duration_t delay);
 
   struct ButtonsInputReport {
     zx::time event_time = zx::time(ZX_TIME_INFINITE_PAST);
@@ -109,8 +106,15 @@ class ButtonsDevice : public fidl::WireServer<fuchsia_input_report::InputDevice>
       return std::all_of(buttons.cbegin(), buttons.cend(), [](bool i) { return !i; });
     }
   };
+
+  int Thread();
+  zx_status_t Init();
+  zx::result<bool> ReconfigurePolarity(size_t idx, uint64_t int_port);
+  zx_status_t ConfigureInterrupt(size_t idx, uint64_t int_port);
+  zx::result<bool> MatrixScan(uint32_t row, uint32_t col, zx_duration_t delay);
   zx::result<ButtonsInputReport> GetInputReportInternal();
 
+  zx::port port_;
   async_dispatcher_t* dispatcher_;
 
   thrd_t thread_;
