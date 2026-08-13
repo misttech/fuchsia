@@ -222,7 +222,12 @@ zx::result<fidl::ClientEnd<fuchsia_fxfs::BlobWriter>> BlobCreator::CreateImpl(co
   if (zx_status_t status = blobfs_.GetCache().Lookup(digest, &found); status == ZX_OK) {
     auto blob = fbl::RefPtr<Blob>::Downcast(std::move(found));
 
-    if (allow_existing) {
+    if (allow_existing && blob->IsReadable()) {
+      // Check the cache if a previous version is here. If so, save a ref to it to replace it. To
+      // keep the number of states low, only allow this if the existing version is readable, and
+      // there is not another overwrite already in-flight. Also blocks if the blob is already marked
+      // deleted and has not yet been purged. It would be confusing to allow overwrite to start
+      // after a purge has been queued, but will later purge both versions.
       Blob* overwriting_by = blob->GetOverwritingBy();
       if (overwriting_by) {
         if (BlobWriter* handler = overwriting_by->GetBlobWriterHandler(); handler) {
@@ -233,12 +238,7 @@ zx::result<fidl::ClientEnd<fuchsia_fxfs::BlobWriter>> BlobCreator::CreateImpl(co
         }
       }
 
-      // Check the cache if a previous version is here. If so, save a ref to it to replace it. To
-      // keep the number of states low, only allow this if the existing version is readable, and
-      // there is not another overwrite already in-flight. Also blocks if the blob is already marked
-      // deleted and has not yet been purged. It would be confusing to allow overwrite to start
-      // after a purge has been queued, but will later purge both versions.
-      if (!blob->IsReadable() || blob->GetOverwritingBy() || blob->DeletionQueued()) {
+      if (blob->GetOverwritingBy() || blob->DeletionQueued()) {
         return zx::error(ZX_ERR_ALREADY_EXISTS);
       }
       to_overwrite = std::move(blob);

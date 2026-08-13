@@ -506,6 +506,16 @@ TEST_F(BlobWriterTest, CloseRaceTest) {
   }
 }
 
+TEST_F(BlobWriterTest, CloseRaceAllowExistingTest) {
+  auto blob = TestDeliveryBlob::CreateUncompressed(10);
+  for (int i = 0; i < 1000; ++i) {
+    auto writer_or = blob_creator().CreateExisting(blob.digest());
+    ASSERT_OK(writer_or);
+    auto writer = std::move(writer_or.value());
+    ASSERT_OK(writer.GetVmo(blob.data().size()));
+  }
+}
+
 TEST_F(BlobWriterTest, OverwriteCloseRaceTest) {
   auto blob = TestDeliveryBlob::CreateUncompressed(10);
   ASSERT_OK(blob_creator().CreateAndWriteBlob(blob));
