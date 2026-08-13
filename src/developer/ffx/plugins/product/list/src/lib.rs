@@ -104,7 +104,8 @@ impl FfxMain for ProductListTool {
         if writer.is_machine() {
             writer.machine(&pbs)?;
         } else {
-            let pb_names = pbs.iter().map(|x| x.name.clone()).collect::<Vec<_>>();
+            let pb_names =
+                pbs.iter().map(|x| x.name.escape_default().to_string()).collect::<Vec<_>>();
             let pb_string = pb_names.join("\n");
             writeln!(writer, "{}", pb_string).map_err(|e| bug!(e))?;
         }
@@ -450,5 +451,71 @@ mod test {
             }],
             pbs
         );
+    }
+
+    #[fuchsia::test]
+    async fn test_pb_list_impl_text_mode() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join(PB_MANIFEST_NAME);
+        let env: TestEnv = setup_test_env().await;
+        let mut f = File::create(&path).expect("file create");
+        f.write_all(
+            r#"[{
+            "name": "fake_name",
+            "product_version": "fake_version",
+            "transfer_manifest_url": "fake_url"
+            }]"#
+            .as_bytes(),
+        )
+        .expect("write_all");
+
+        let buffers = TestBuffers::default();
+        let writer = MachineWriter::new_test(None, &buffers);
+        let tool = ProductListTool {
+            cmd: ListCommand {
+                auth: AuthFlowChoice::Default,
+                base_url: Some(format!("file:{}", tmp.path().display())),
+                version: None,
+                branch: None,
+            },
+            context: env.context.clone(),
+        };
+
+        tool.main(writer).await.expect("testing list");
+        assert_eq!(buffers.into_stdout_str(), "fake_name\n");
+    }
+
+    #[fuchsia::test]
+    async fn test_pb_list_impl_text_mode_sanitizes_escape_sequences() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join(PB_MANIFEST_NAME);
+        let env: TestEnv = setup_test_env().await;
+        let mut f = File::create(&path).expect("file create");
+        f.write_all(
+            r#"[{
+            "name": "\u001b[31mmalicious_name\u001b[0m\r\n",
+            "product_version": "fake_version",
+            "transfer_manifest_url": "fake_url"
+            }]"#
+            .as_bytes(),
+        )
+        .expect("write_all");
+
+        let buffers = TestBuffers::default();
+        let writer = MachineWriter::new_test(None, &buffers);
+        let tool = ProductListTool {
+            cmd: ListCommand {
+                auth: AuthFlowChoice::Default,
+                base_url: Some(format!("file:{}", tmp.path().display())),
+                version: None,
+                branch: None,
+            },
+            context: env.context.clone(),
+        };
+
+        tool.main(writer).await.expect("testing list");
+        let output = buffers.into_stdout_str();
+        assert!(!output.contains('\x1b'), "output should not contain raw escape characters");
+        assert_eq!(output, "\\u{1b}[31mmalicious_name\\u{1b}[0m\\r\\n\n");
     }
 }
