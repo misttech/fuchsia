@@ -346,3 +346,52 @@ TEST(TargetsTest, TargetTreeForEachJob) {
   EXPECT_TRUE(res.is_error());
   EXPECT_EQ(res.status_value(), ZX_ERR_BAD_STATE);
 }
+
+TEST(TargetsTest, TargetTreeGetProcessTopLevel) {
+  profiler::TargetTree tree;
+  profiler::ProcessTarget p1{zx::process{ZX_HANDLE_INVALID}, 42, "test_process",
+                             std::unordered_map<zx_koid_t, profiler::ThreadTarget>{}};
+  EXPECT_TRUE(tree.AddProcess(std::move(p1)).is_ok());
+
+  zx::result<profiler::ProcessTarget*> found = tree.GetProcess(std::span<const zx_koid_t>{}, 42);
+  ASSERT_TRUE(found.is_ok());
+  ASSERT_NE(*found, nullptr);
+  EXPECT_EQ((*found)->pid, zx_koid_t{42});
+  EXPECT_EQ((*found)->name, "test_process");
+
+  zx::result<profiler::ProcessTarget*> not_found =
+      tree.GetProcess(std::span<const zx_koid_t>{}, 99);
+  EXPECT_TRUE(not_found.is_error());
+  EXPECT_EQ(not_found.status_value(), ZX_ERR_NOT_FOUND);
+}
+
+TEST(TargetsTest, TargetTreeGetProcessNested) {
+  profiler::TargetTree tree;
+  profiler::JobTarget j1{zx::job{ZX_HANDLE_INVALID}, 1, std::vector<zx_koid_t>{}};
+  profiler::JobTarget j2{zx::job{ZX_HANDLE_INVALID}, 2, std::vector<zx_koid_t>{1}};
+  profiler::JobTarget j3{zx::job{ZX_HANDLE_INVALID}, 3, std::vector<zx_koid_t>{1, 2}};
+
+  ASSERT_TRUE(tree.AddJob(std::move(j1)).is_ok());
+  ASSERT_TRUE(tree.AddJob(std::vector<zx_koid_t>{1}, std::move(j2)).is_ok());
+  ASSERT_TRUE(tree.AddJob(std::vector<zx_koid_t>{1, 2}, std::move(j3)).is_ok());
+
+  profiler::ProcessTarget p1{zx::process{ZX_HANDLE_INVALID}, 100, "nested_process",
+                             std::unordered_map<zx_koid_t, profiler::ThreadTarget>{}};
+  ASSERT_TRUE(tree.AddProcess(std::vector<zx_koid_t>{1, 2, 3}, std::move(p1)).is_ok());
+
+  const std::vector<zx_koid_t> path{1, 2, 3};
+  zx::result<profiler::ProcessTarget*> found = tree.GetProcess(path, 100);
+  ASSERT_TRUE(found.is_ok());
+  ASSERT_NE(*found, nullptr);
+  EXPECT_EQ((*found)->pid, zx_koid_t{100});
+  EXPECT_EQ((*found)->name, "nested_process");
+
+  zx::result<profiler::ProcessTarget*> not_found_pid = tree.GetProcess(path, 101);
+  EXPECT_TRUE(not_found_pid.is_error());
+  EXPECT_EQ(not_found_pid.status_value(), ZX_ERR_NOT_FOUND);
+
+  const std::vector<zx_koid_t> invalid_path{1, 2, 99};
+  zx::result<profiler::ProcessTarget*> not_found_path = tree.GetProcess(invalid_path, 100);
+  EXPECT_TRUE(not_found_path.is_error());
+  EXPECT_EQ(not_found_path.status_value(), ZX_ERR_NOT_FOUND);
+}

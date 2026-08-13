@@ -172,12 +172,7 @@ zx::result<std::vector<zx_koid_t>> GetChildrenTids(const zx::process& process) {
     return zx::error(status);
   }
 
-  if (records_read != num_threads) {
-    FX_LOGS(ERROR) << "records_read != num_threads";
-    return zx::error(ZX_ERR_BAD_STATE);
-  }
-
-  std::vector<zx_koid_t> children{threads.get(), threads.get() + num_threads};
+  std::vector<zx_koid_t> children{threads.get(), threads.get() + records_read};
   return zx::ok(children);
 }
 
@@ -386,7 +381,7 @@ zx::result<profiler::ProcessTarget*> profiler::TargetTree::GetProcess(
   if (job_path.empty()) {
     if (processes_.contains(pid)) {
       auto it = processes_.find(pid);
-      zx::ok(&it->second);
+      return zx::ok(&it->second);
     }
     return zx::error(ZX_ERR_NOT_FOUND);
   }
