@@ -5,9 +5,11 @@
 pub mod cpuid;
 mod extension;
 mod feature;
+mod system;
 
 pub use extension::*;
 pub use feature::*;
+pub use system::*;
 
 /// Enumeration of vendors.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]

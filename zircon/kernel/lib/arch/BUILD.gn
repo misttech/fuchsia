@@ -151,6 +151,7 @@ rustc_library("arch-rs") {
     "src/x86/extension.rs",
     "src/x86/feature.rs",
     "src/x86/mod.rs",
+    "src/x86/system.rs",
   ]
 
   deps = [
