@@ -12,7 +12,7 @@ use fidl_fuchsia_posix_socket as fposix_socket;
 use fidl_fuchsia_posix_socket_raw as fpraw;
 use fuchsia_async as fasync;
 use futures::TryStreamExt as _;
-use log::{error, warn};
+use log::{debug, error};
 use net_types::SpecifiedAddr;
 use net_types::ip::{Ip, IpInvariant, IpVersion, Ipv4, Ipv6};
 use netstack3_core::IpExt;
@@ -189,7 +189,10 @@ impl<I: IpExt + IpSockAddrExt> SocketWorkerHandler for SocketWorkerState<I> {
         let fposix_socket::SocketCreationOptions { marks, group, __source_breaking } = options;
         if group.is_some() {
             // TODO(https://fxbug.dev/436354514): support raw sockets in wake groups.
-            warn!("raw sockets do not support wake groups, but one was provided for {:?}", self.id);
+            debug!(
+                "raw sockets do not support wake groups, but one was provided for {:?}",
+                self.id
+            );
         }
         for (domain, mark) in marks.into_iter().map(fidl_fuchsia_net_ext::Marks::from).flatten() {
             ctx.api().raw_ip_socket().set_mark(
