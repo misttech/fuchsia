@@ -73,6 +73,19 @@ impl vfs::node::Node for ErofsDirectory {
         requested_attributes: fio::NodeAttributesQuery,
     ) -> Result<fio::NodeAttributes2, zx::Status> {
         let mtime = self.node.mtime_ns();
+        let selinux_context = self
+            .volume
+            .fs()
+            .get_xattr(&self.node, fio::SELINUX_CONTEXT_NAME.as_bytes())
+            .ok()
+            .flatten()
+            .map(|val| {
+                if val.len() <= fio::MAX_SELINUX_CONTEXT_ATTRIBUTE_LEN as usize {
+                    fio::SelinuxContext::Data(val)
+                } else {
+                    fio::SelinuxContext::UseExtendedAttributes(fio::EmptyStruct {})
+                }
+            });
         Ok(vfs::attributes!(
             requested_attributes,
             Mutable {
@@ -82,6 +95,7 @@ impl vfs::node::Node for ErofsDirectory {
                 creation_time: mtime,
                 modification_time: mtime,
                 access_time: mtime,
+                selinux_context: selinux_context,
             },
             Immutable {
                 protocols: fio::NodeProtocolKinds::DIRECTORY,

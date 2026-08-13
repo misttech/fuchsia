@@ -39,7 +39,7 @@ setfattr -n user.security -v "high" data/simple/file1
 setfattr -n user.shared -v "same_value" data/simple/file1
 setfattr -n user.shared -v "same_value" data/simple/photosynthesis
 
-mkfs.erofs -b 4096 data/simple.erofs data/simple
-mkfs.erofs -b 512 data/simple_512.erofs data/simple
+mkfs.erofs --file-contexts=data/file_contexts -b 4096 data/simple.erofs data/simple
+mkfs.erofs --file-contexts=data/file_contexts -b 512 data/simple_512.erofs data/simple
 
 echo "All golden EROFS images generated successfully."

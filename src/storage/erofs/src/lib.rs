@@ -1121,6 +1121,19 @@ mod tests {
             _ => panic!("Expected directory node"),
         };
 
+        assert_eq!(fs.get_xattr(&root_node, b"security.selinux").unwrap(), None);
+        let selinux_val = fs.get_xattr(&large_dir, b"security.selinux").unwrap().unwrap();
+        assert_eq!(
+            selinux_val,
+            b"u:object_r:very_long_selinux_context_exceeding_the_inline_limit_of_two_hundred_and_fifty_six_bytes_and_requiring_the_use_of_extended_attributes_instead_of_returning_the_context_inline_in_the_node_attributes_table_representation_as_dictated_by_the_fuchsia_io_node_fidl_specification:s0"
+        );
+        let file1_node = fs.lookup(&large_dir, "file_number_1").unwrap().unwrap();
+        let file1_selinux = fs.get_xattr(&file1_node, b"security.selinux").unwrap().unwrap();
+        assert_eq!(
+            file1_selinux,
+            b"u:object_r:very_long_selinux_context_exceeding_the_inline_limit_of_two_hundred_and_fifty_six_bytes_and_requiring_the_use_of_extended_attributes_instead_of_returning_the_context_inline_in_the_node_attributes_table_representation_as_dictated_by_the_fuchsia_io_node_fidl_specification:s0"
+        );
+
         // Skip the first two entries, . and ..
         let mut entry_offset = 2;
         let mut buffer = vec![DirectoryEntry::default(); 16];
@@ -1179,11 +1192,12 @@ mod tests {
         let file1_node = fs.lookup(&root_node, "file1").unwrap().unwrap();
 
         let xattr_names = fs.list_xattrs(&file1_node).unwrap();
-        // Should contain user.flavor, user.security, user.shared
+        // Should contain user.flavor, user.security, user.shared, security.selinux
         assert!(xattr_names.contains(&b"user.flavor".to_vec()));
         assert!(xattr_names.contains(&b"user.security".to_vec()));
         assert!(xattr_names.contains(&b"user.shared".to_vec()));
-        assert_eq!(xattr_names.len(), 3);
+        assert!(xattr_names.contains(&b"security.selinux".to_vec()));
+        assert_eq!(xattr_names.len(), 4);
 
         let flavor_val = fs.get_xattr(&file1_node, b"user.flavor").unwrap().unwrap();
         assert_eq!(flavor_val, b"vanilla");
@@ -1194,6 +1208,9 @@ mod tests {
         let shared_val = fs.get_xattr(&file1_node, b"user.shared").unwrap().unwrap();
         assert_eq!(shared_val, b"same_value");
 
+        let selinux_val = fs.get_xattr(&file1_node, b"security.selinux").unwrap().unwrap();
+        assert_eq!(selinux_val, b"u:object_r:file1_t:s0");
+
         // Check photosynthesis (has only shared xattr)
         let photo_node = fs.lookup(&root_node, "photosynthesis").unwrap().unwrap();
 
@@ -1202,6 +1219,11 @@ mod tests {
 
         let photo_shared_val = fs.get_xattr(&photo_node, b"user.shared").unwrap().unwrap();
         assert_eq!(photo_shared_val, b"same_value");
+        assert_eq!(fs.get_xattr(&photo_node, b"security.selinux").unwrap(), None);
+
+        // Check quantum (has no xattrs)
+        let quantum_node = fs.lookup(&root_node, "quantum").unwrap().unwrap();
+        assert_eq!(fs.get_xattr(&quantum_node, b"security.selinux").unwrap(), None);
 
         // Verify that we can still read the file content of photosynthesis
         let file_node = match photo_node {

@@ -14,6 +14,8 @@ use std::fs;
 use std::io::Read as _;
 use test_case::test_case;
 
+const LONG_SELINUX_CONTEXT: &[u8] = b"u:object_r:very_long_selinux_context_exceeding_the_inline_limit_of_two_hundred_and_fifty_six_bytes_and_requiring_the_use_of_extended_attributes_instead_of_returning_the_context_inline_in_the_node_attributes_table_representation_as_dictated_by_the_fuchsia_io_node_fidl_specification:s0";
+
 async fn setup_realm() -> (ErofsProxy, fuchsia_component_test::RealmInstance) {
     let builder = RealmBuilder::new().await.expect("Failed to create RealmBuilder");
 
@@ -199,11 +201,27 @@ async fn test_erofs_xattrs() {
 
     // Sort and assert
     attributes.sort();
-    let expected_attributes =
-        vec![b"user.flavor".to_vec(), b"user.security".to_vec(), b"user.shared".to_vec()];
+    let expected_attributes = vec![
+        b"security.selinux".to_vec(),
+        b"user.flavor".to_vec(),
+        b"user.security".to_vec(),
+        b"user.shared".to_vec(),
+    ];
     assert_eq!(attributes, expected_attributes);
 
     // Get specific attributes
+    let selinux_val = file_proxy
+        .get_extended_attribute(b"security.selinux")
+        .await
+        .expect("Failed to call get_extended_attribute")
+        .map_err(zx::Status::from_raw)
+        .expect("get_extended_attribute returned error");
+    let selinux_val_bytes = match selinux_val {
+        fio::ExtendedAttributeValue::Bytes(b) => b,
+        _ => panic!("Expected bytes"),
+    };
+    assert_eq!(selinux_val_bytes, b"u:object_r:file1_t:s0");
+
     let flavor_val = file_proxy
         .get_extended_attribute(b"user.flavor")
         .await
@@ -379,6 +397,56 @@ async fn test_erofs_file_attributes() {
     assert!(mut_attrs.gid.is_some());
     assert!(mut_attrs.modification_time.is_some());
     assert!(mut_attrs.modification_time.unwrap() > 0);
+    assert_eq!(
+        mut_attrs.selinux_context,
+        Some(fio::SelinuxContext::Data(b"u:object_r:file1_t:s0".to_vec()))
+    );
+
+    // Verify a file without selinux context returns None
+    let quantum_file =
+        fuchsia_fs::directory::open_file(&root_client, "quantum", fio::PERM_READABLE)
+            .await
+            .expect("Failed to open quantum");
+    let (quantum_mut_attrs, _) = quantum_file
+        .get_attributes(fio::NodeAttributesQuery::all())
+        .await
+        .expect("Failed to get attributes")
+        .map_err(zx::Status::from_raw)
+        .expect("get_attributes returned error");
+    assert_eq!(quantum_mut_attrs.selinux_context, None);
+
+    // Verify a file with a large selinux context returns UseExtendedAttributes
+    let large_dir =
+        fuchsia_fs::directory::open_directory(&root_client, "large_dir", fio::PERM_READABLE)
+            .await
+            .expect("Failed to open large_dir");
+    let large_file =
+        fuchsia_fs::directory::open_file(&large_dir, "file_number_1", fio::PERM_READABLE)
+            .await
+            .expect("Failed to open large_dir/file_number_1");
+    let (large_file_mut_attrs, _) = large_file
+        .get_attributes(fio::NodeAttributesQuery::all())
+        .await
+        .expect("Failed to get attributes")
+        .map_err(zx::Status::from_raw)
+        .expect("get_attributes returned error");
+    assert_eq!(
+        large_file_mut_attrs.selinux_context,
+        Some(fio::SelinuxContext::UseExtendedAttributes(fio::EmptyStruct {}))
+    );
+
+    let large_file_proxy = fio::FileProxy::from_channel(large_file.into_channel().unwrap());
+    let selinux_val = large_file_proxy
+        .get_extended_attribute(b"security.selinux")
+        .await
+        .expect("Failed to call get_extended_attribute")
+        .map_err(zx::Status::from_raw)
+        .expect("get_extended_attribute returned error");
+    let selinux_val_bytes = match selinux_val {
+        fio::ExtendedAttributeValue::Bytes(b) => b,
+        _ => panic!("Expected bytes"),
+    };
+    assert_eq!(selinux_val_bytes, LONG_SELINUX_CONTEXT);
 }
 
 #[fuchsia::test]
@@ -413,6 +481,36 @@ async fn test_erofs_directory_attributes() {
     assert!(mut_attrs.gid.is_some());
     assert!(mut_attrs.modification_time.is_some());
     assert!(mut_attrs.modification_time.unwrap() > 0);
+    assert_eq!(mut_attrs.selinux_context, None);
+
+    // Verify a directory with a large selinux context returns UseExtendedAttributes
+    let large_dir =
+        fuchsia_fs::directory::open_directory(&root_client, "large_dir", fio::PERM_READABLE)
+            .await
+            .expect("Failed to open large_dir");
+    let (large_dir_mut_attrs, _) = large_dir
+        .get_attributes(fio::NodeAttributesQuery::all())
+        .await
+        .expect("Failed to get attributes")
+        .map_err(zx::Status::from_raw)
+        .expect("get_attributes returned error");
+    assert_eq!(
+        large_dir_mut_attrs.selinux_context,
+        Some(fio::SelinuxContext::UseExtendedAttributes(fio::EmptyStruct {}))
+    );
+
+    let large_dir_proxy = fio::DirectoryProxy::from_channel(large_dir.into_channel().unwrap());
+    let selinux_val = large_dir_proxy
+        .get_extended_attribute(b"security.selinux")
+        .await
+        .expect("Failed to call get_extended_attribute")
+        .map_err(zx::Status::from_raw)
+        .expect("get_extended_attribute returned error");
+    let selinux_val_bytes = match selinux_val {
+        fio::ExtendedAttributeValue::Bytes(b) => b,
+        _ => panic!("Expected bytes"),
+    };
+    assert_eq!(selinux_val_bytes, LONG_SELINUX_CONTEXT);
 }
 
 #[fuchsia::test]
