@@ -378,5 +378,31 @@ TEST_F(AudioCapturerTest, ReentrantBeginShutdown) {
   EXPECT_TRUE(channel_dropped);
 }
 
+// Verify that stopping async capture when all packets are in flight / waiting completes cleanly,
+// invoking the stop callback and emitting OnEndOfStream without spinning or hanging.
+TEST_F(AudioCapturerTest, StopAsyncCaptureCleanShutdown) {
+  zx::vmo duplicate;
+  ASSERT_EQ(
+      vmo_.duplicate(ZX_RIGHT_TRANSFER | ZX_RIGHT_WRITE | ZX_RIGHT_READ | ZX_RIGHT_MAP, &duplicate),
+      ZX_OK);
+  fidl_capturer_->AddPayloadBuffer(0, std::move(duplicate));
+  RunLoopUntilIdle();
+
+  fidl_capturer_->StartAsyncCapture(480);
+  RunLoopUntilIdle();
+
+  bool stop_callback_received = false;
+  bool end_of_stream_received = false;
+  fidl_capturer_.events().OnEndOfStream = [&end_of_stream_received]() {
+    end_of_stream_received = true;
+  };
+
+  fidl_capturer_->StopAsyncCapture([&stop_callback_received]() { stop_callback_received = true; });
+  RunLoopUntilIdle();
+
+  EXPECT_TRUE(stop_callback_received);
+  EXPECT_TRUE(end_of_stream_received);
+}
+
 }  // namespace
 }  // namespace media::audio

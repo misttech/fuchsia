@@ -6,6 +6,9 @@
 
 #include <lib/syslog/cpp/macros.h>
 
+#include <atomic>
+#include <thread>
+
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
@@ -390,13 +393,138 @@ TEST_F(CapturePacketQueueTest, DynamicallyAllocatedPushErrors) {
   ASSERT_TRUE(push_result.is_error());
 }
 
-// Verify that WaitForPendingPacket returns immediately on shutdown: no block or double-unlock.
-TEST_F(CapturePacketQueueTest, WaitForPendingPacketShutdown) {
+// Verify that WaitForPendingPacket returns immediately with false when the queue is already shut
+// down (exercising the non-blocking shutdown path where NextMixerJob returns nullopt).
+TEST_F(CapturePacketQueueTest, WaitForPendingPacketWhenAlreadyShutdown) {
   CreateMapper(50);
   auto pq = CapturePacketQueue::CreateDynamicallyAllocated(payload_buffer_, kFormat);
   pq->Shutdown();
 
-  pq->WaitForPendingPacket();
+  EXPECT_FALSE(pq->WaitForPendingPacket());
+  EXPECT_EQ(pq->NextMixerJob(), std::nullopt);
+}
+
+// Verify that WaitForPendingPacket returns true immediately without blocking if pending packets
+// are already available in the queue.
+TEST_F(CapturePacketQueueTest, WaitForPendingPacketReturnsTrueWhenPacketAvailable) {
+  CreateMapper(50);
+  auto pq = CapturePacketQueue::CreateDynamicallyAllocated(payload_buffer_, kFormat);
+  auto push_result = pq->PushPending(0, 10, nullptr);
+  ASSERT_TRUE(push_result.is_ok());
+
+  EXPECT_TRUE(pq->WaitForPendingPacket());
+  auto mix_state = pq->NextMixerJob();
+  ASSERT_TRUE(mix_state.has_value());
+  EXPECT_EQ(mix_state->frames, 10u);
+}
+
+// Verify that WaitForPendingPacket blocks across threads when the queue is empty, and returns true
+// once a new packet is dynamically pushed via PushPending.
+TEST_F(CapturePacketQueueTest, WaitForPendingPacketReturnsTrueWhenPacketPushed) {
+  CreateMapper(50);
+  auto pq = CapturePacketQueue::CreateDynamicallyAllocated(payload_buffer_, kFormat);
+
+  std::atomic<bool> worker_started = false;
+  std::atomic<bool> wait_finished = false;
+  std::atomic<bool> wait_result = false;
+  std::thread worker([&pq, &worker_started, &wait_finished, &wait_result]() {
+    worker_started = true;
+    wait_result = pq->WaitForPendingPacket();
+    wait_finished = true;
+  });
+
+  while (!worker_started.load()) {
+    std::this_thread::yield();
+  }
+  std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
+  EXPECT_FALSE(wait_finished.load());
+  auto push_result = pq->PushPending(0, 10, nullptr);
+  ASSERT_TRUE(push_result.is_ok());
+
+  worker.join();
+  EXPECT_TRUE(wait_finished.load());
+  EXPECT_TRUE(wait_result.load());
+
+  auto mix_state = pq->NextMixerJob();
+  ASSERT_TRUE(mix_state.has_value());
+  EXPECT_EQ(mix_state->frames, 10u);
+}
+
+// Verify that WaitForPendingPacket blocks in preallocated mode when all packets are in flight,
+// and unblocks returning true once a packet is returned via Recycle (exercising async capture
+// overflow recovery).
+TEST_F(CapturePacketQueueTest, WaitForPendingPacketReturnsTrueWhenPacketRecycled) {
+  CreateMapper(20);
+  auto result = CapturePacketQueue::CreatePreallocated(payload_buffer_, kFormat, 10);
+  ASSERT_TRUE(result.is_ok()) << result.error();
+  auto pq = result.take_value();
+
+  // Pop both packets so the pending queue is exhausted.
+  auto mix_state1 = pq->NextMixerJob().value();
+  ASSERT_EQ(CapturePacketQueue::PacketMixStatus::Done, pq->FinishMixerJob(mix_state1));
+  auto p1 = pq->PopReady();
+
+  auto mix_state2 = pq->NextMixerJob().value();
+  ASSERT_EQ(CapturePacketQueue::PacketMixStatus::Done, pq->FinishMixerJob(mix_state2));
+  auto p2 = pq->PopReady();
+
+  ASSERT_EQ(pq->PendingSize(), 0u);
+
+  std::atomic<bool> worker_started = false;
+  std::atomic<bool> wait_finished = false;
+  std::atomic<bool> wait_result = false;
+  std::thread worker([&pq, &worker_started, &wait_finished, &wait_result]() {
+    worker_started = true;
+    wait_result = pq->WaitForPendingPacket();
+    wait_finished = true;
+  });
+
+  while (!worker_started.load()) {
+    std::this_thread::yield();
+  }
+  std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
+  EXPECT_FALSE(wait_finished.load());
+  auto recycle_result = pq->Recycle(p1->stream_packet());
+  ASSERT_TRUE(recycle_result.is_ok()) << recycle_result.error();
+
+  worker.join();
+  EXPECT_TRUE(wait_finished.load());
+  EXPECT_TRUE(wait_result.load());
+
+  auto mix_state = pq->NextMixerJob();
+  ASSERT_TRUE(mix_state.has_value());
+  EXPECT_EQ(mix_state->frames, 10u);
+}
+
+// Verify that a thread blocked in WaitForPendingPacket is unblocked and returns false when
+// Shutdown is called concurrently (exercising cancellation/shutdown during packet starvation).
+TEST_F(CapturePacketQueueTest, WaitForPendingPacketReturnsFalseOnShutdown) {
+  CreateMapper(50);
+  auto pq = CapturePacketQueue::CreateDynamicallyAllocated(payload_buffer_, kFormat);
+
+  std::atomic<bool> worker_started = false;
+  std::atomic<bool> wait_finished = false;
+  std::atomic<bool> wait_result = true;
+  std::thread worker([&pq, &worker_started, &wait_finished, &wait_result]() {
+    worker_started = true;
+    wait_result = pq->WaitForPendingPacket();
+    wait_finished = true;
+  });
+
+  while (!worker_started.load()) {
+    std::this_thread::yield();
+  }
+  std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  EXPECT_FALSE(wait_finished.load());
+
+  pq->Shutdown();
+  worker.join();
+
+  EXPECT_TRUE(wait_finished.load());
+  EXPECT_FALSE(wait_result.load());
+  EXPECT_EQ(pq->NextMixerJob(), std::nullopt);
 }
 
 }  // namespace media::audio

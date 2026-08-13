@@ -591,8 +591,12 @@ zx_status_t BaseCapturer::Process() {
       // Wait until we have another packet or have shut down.
       // This waits for the caller to ACK a packet, so it might block indefinitely.
       auto overflow_start = zx::clock::get_monotonic();
-      pq->WaitForPendingPacket();
-      if (state_.load() == State::Shutdown) {
+      bool has_packet = pq->WaitForPendingPacket();
+
+      // If the queue was shut down, or if the capturer is no longer in AsyncOperating mode
+      // (e.g. StopAsyncCapture, Shutdown, or Disconnect occurred while we were waiting),
+      // exit immediately without reporting a spurious overflow or looping.
+      if (!has_packet || state_.load() != State::AsyncOperating) {
         return ZX_OK;
       }
 

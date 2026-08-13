@@ -182,7 +182,8 @@ class CapturePacketQueue {
   void Shutdown();
 
   // Block until the pending queue is non-empty or the queue has been shut down.
-  void WaitForPendingPacket();
+  // Returns true if a pending packet is available to mix, or false if the queue was shut down.
+  bool WaitForPendingPacket();
 
  private:
   enum class Mode { Preallocated, DynamicallyAllocated };
