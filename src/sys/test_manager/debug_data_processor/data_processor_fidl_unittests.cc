@@ -155,3 +155,46 @@ TEST_F(DataProcessorFidlTest, AwaitIdleOnFinishNoVmos) {
   RunLoopUntilIdle();
   ASSERT_TRUE(finish_called);
 }
+
+TEST_F(DataProcessorFidlTest, FinishBeforeDirectorySet) {
+  bool on_done_called = false;
+  std::optional<zx_status_t> epitaph;
+  ftest_debug::DebugDataProcessorPtr data_processor_fidl_proxy;
+  data_processor_fidl_proxy.set_error_handler([&](zx_status_t status) { epitaph = status; });
+
+  DataProcessorFidl processor_fidl(
+      data_processor_fidl_proxy.NewRequest(), [&]() { on_done_called = true; },
+      [](fbl::unique_fd) { return nullptr; }, dispatcher());
+
+  bool finish_called = false;
+  data_processor_fidl_proxy->Finish([&]() { finish_called = true; });
+
+  RunLoopUntilIdle();
+  EXPECT_TRUE(on_done_called);
+  EXPECT_FALSE(finish_called);
+  ASSERT_TRUE(epitaph.has_value());
+  EXPECT_EQ(epitaph.value(), ZX_ERR_INVALID_ARGS);
+}
+
+TEST_F(DataProcessorFidlTest, AddDebugVmosBeforeDirectorySet) {
+  bool on_done_called = false;
+  std::optional<zx_status_t> epitaph;
+  ftest_debug::DebugDataProcessorPtr data_processor_fidl_proxy;
+  data_processor_fidl_proxy.set_error_handler([&](zx_status_t status) { epitaph = status; });
+
+  DataProcessorFidl processor_fidl(
+      data_processor_fidl_proxy.NewRequest(), [&]() { on_done_called = true; },
+      [](fbl::unique_fd) { return nullptr; }, dispatcher());
+
+  std::vector<ftest_debug::DebugVmo> vmos;
+  vmos.push_back(MakeDebugVmo("test-url-1", "data-sink-1"));
+  bool add_vmos_callback_called = false;
+  data_processor_fidl_proxy->AddDebugVmos(std::move(vmos),
+                                          [&]() { add_vmos_callback_called = true; });
+
+  RunLoopUntilIdle();
+  EXPECT_TRUE(on_done_called);
+  EXPECT_FALSE(add_vmos_callback_called);
+  ASSERT_TRUE(epitaph.has_value());
+  EXPECT_EQ(epitaph.value(), ZX_ERR_INVALID_ARGS);
+}

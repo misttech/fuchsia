@@ -53,6 +53,11 @@ void DataProcessorFidl::AddDebugVmos(::std::vector<::fuchsia::test::debug::Debug
 }
 
 void DataProcessorFidl::Finish(FinishCallback callback) {
+  if (!data_processor_) {
+    FX_LOGS(ERROR) << "Finish called before directory set";
+    TearDown(ZX_ERR_INVALID_ARGS);
+    return;
+  }
   data_processor_->FinishProcessing();
   wait_for_completion_.set_object(data_processor_->GetDataFlushedEvent()->get());
   wait_for_completion_.set_trigger(DATA_FLUSHED_SIGNAL);
