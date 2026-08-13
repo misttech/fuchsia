@@ -1448,13 +1448,24 @@ impl<D: LinkDevice, BC: NudBindingsTypes<D>> DynamicNeighborState<D, BC> {
                 && bindings_ctx.now().saturating_duration_since(*last_confirmed_at)
                     < core_ctx.override_lock_time() =>
             {
-                log::warn!(
-                    "Ignoring duplicate neighbor confirmation for {:?}. Current address {:?}.
-                    New address {:?}",
-                    neighbor,
-                    current,
-                    link_address
-                );
+                // If the link address matches the cached address (or is omitted, as
+                // permitted in unicast NDP advertisements per RFC 4861 section 4.4),
+                // this is a harmless duplicate confirmation and is logged at debug level.
+                // If the link address differs, it may indicate a conflict or spoofing attempt,
+                // so log at warn level.
+                if link_address.as_ref().is_some_and(|addr| addr != current) {
+                    warn!(
+                        "Ignoring duplicate neighbor confirmation for {:?}. Current address {:?}. \
+                        New address {:?}",
+                        neighbor, current, link_address
+                    );
+                } else {
+                    debug!(
+                        "Ignoring duplicate neighbor confirmation for {:?}. Current address {:?}. \
+                        New address {:?}",
+                        neighbor, current, link_address
+                    );
+                }
                 None
             }
 
