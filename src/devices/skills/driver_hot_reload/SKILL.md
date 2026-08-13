@@ -89,7 +89,7 @@ package to the device.
 Verify that the package server is running. If not, start it:
 
 ```bash
-fx serve
+fx serve --background
 ```
 
 ## Publish the Package
@@ -196,3 +196,7 @@ ffx driver restart fuchsia-pkg://fuchsia.com/the-universe-driver#meta/the-driver
         <driver-url>`
     2.  List descendants of that moniker: `ffx driver node list -o
         descendants:<moniker> -v`
+* **Active Driver URLs (BootFS vs. Packages)**: Active drivers can be either
+  `fuchsia-boot:///` (read-only bootfs) or `fuchsia-pkg://`. Always reference
+  the active driver by its exact loaded URL when inspecting or disabling it,
+  and deploy your updated code using a secondary universe package.
