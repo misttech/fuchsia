@@ -40,5 +40,6 @@ fidlgentest_go_test(
     srcs = ["ir_test.go"],
     embed = [":codegen"],
     target_compatible_with = HOST_CONSTRAINTS,
+    visibility = ["//tools:__pkg__"],
     deps = ["//third_party/golibs:github.com/google/go-cmp/cmp"],
 )

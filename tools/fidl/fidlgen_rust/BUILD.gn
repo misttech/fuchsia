@@ -75,6 +75,5 @@ group("tests") {
     ":fidlgen_rust_golden_tests($host_toolchain)",
     ":goldens",
     ":goldens($host_toolchain)",
-    "codegen:fidlgen_rust_lib_tests($host_toolchain)",
   ]
 }
