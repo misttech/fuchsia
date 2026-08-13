@@ -383,6 +383,10 @@ fidl_testdata_info = [
     ]
   },
   {
+    name = "sensitive"
+    target = "//tools/fidl/fidlc/testdata:test.sensitive"
+  },
+  {
     name = "struct"
     target = "//tools/fidl/fidlc/testdata:test.struct"
   },
