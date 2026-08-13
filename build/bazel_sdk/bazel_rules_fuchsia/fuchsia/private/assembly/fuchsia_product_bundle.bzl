@@ -721,13 +721,6 @@ def _build_fuchsia_product_bundle_impl(ctx):
         ]
         all_inputs += ctx.files.repository_keys
 
-    if ctx.file.ota_manifest_key_file != None:
-        ffx_pb_invocation += [
-            "--ota-manifest-key",
-            ctx.file.ota_manifest_key_file.path,
-        ]
-        all_inputs.append(ctx.file.ota_manifest_key_file)
-
     shell_src.extend([" ".join(ffx_pb_invocation)])
 
     # Run the whole generated script of actions.
@@ -816,11 +809,6 @@ _build_fuchsia_product_bundle = rule(
         "repository_keys": attr.label(
             doc = "A fuchsia_repository_keys target, which must be specified when update_version_file is specified.",
             providers = [FuchsiaRepositoryKeysInfo],
-            default = None,
-        ),
-        "ota_manifest_key_file": attr.label(
-            doc = "Ed25519 private key in PEM format to sign the ota manifest.",
-            allow_single_file = True,
             default = None,
         ),
         "update_epoch": attr.string(

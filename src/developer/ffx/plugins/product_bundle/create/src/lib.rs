@@ -117,10 +117,6 @@ struct SanitizedCreateCommand {
     /// The tuf keys to use.
     pub tuf_keys: Option<Utf8PathBuf>,
 
-    /// path to the Ed25519 private key in PEM format to sign the ota manifest.
-    #[allow(dead_code)]
-    pub ota_manifest_key: Option<Utf8PathBuf>,
-
     /// path to a file specifying developer-level overrides for assembly.
     pub developer_overrides: Option<Utf8PathBuf>,
 
@@ -195,7 +191,6 @@ impl TryFrom<CreateCommand> for SanitizedCreateCommand {
         let CreateCommand {
             output_name,
             tuf_keys,
-            ota_manifest_key,
             developer_overrides,
             auth,
             recovery_product_config,
@@ -221,7 +216,6 @@ impl TryFrom<CreateCommand> for SanitizedCreateCommand {
             output_name,
             auth,
             tuf_keys,
-            ota_manifest_key,
             developer_overrides,
             result,
             zbi_only,
@@ -387,7 +381,6 @@ mod test {
             recovery_board_config: Some("recovery_board".to_string()),
             output_name: None,
             tuf_keys: None,
-            ota_manifest_key: None,
             developer_overrides: None,
             stage: false,
             out: None,
@@ -416,7 +409,6 @@ mod test {
             recovery_board_config: Some("recovery_board".to_string()),
             output_name: None,
             tuf_keys: None,
-            ota_manifest_key: None,
             developer_overrides: None,
             stage: false,
             out: None,
