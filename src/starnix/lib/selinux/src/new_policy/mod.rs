@@ -45,8 +45,8 @@ pub use indexed::IdAndNameIndexed;
 pub use initial_sids::InitialSids;
 use metadata::{Config, Counts, Magic, Signature};
 pub use metadata::{HandleUnknown, POLICYDB_VERSION_MAX, PolicyVersion};
-pub use mls::{Category, Sensitivity};
-pub use object_contexts::*;
+pub use mls::{Category, RangeTransition, Sensitivity};
+pub use object_contexts::{FsUseType, GenfsCon, GenfsConPath, ObjectContexts};
 use parser::{Array, PolicyCursor, RemainingBytes};
 pub use parser::{PolicyWriter, SymbolArray};
 pub use permissions::PermissionId;
@@ -114,6 +114,8 @@ pub struct NewPolicy {
     filename_transitions: FilenameTransitions,
     initial_sids: InitialSids,
     object_contexts: ObjectContexts,
+    generic_fs_contexts: Array<GenfsCon>,
+    range_transitions: Array<RangeTransition>,
     rest: RemainingBytes,
 }
 
@@ -229,6 +231,16 @@ impl NewPolicy {
     /// Returns the object contexts table.
     pub fn object_contexts(&self) -> &ObjectContexts {
         &self.object_contexts
+    }
+
+    /// Returns generic filesystem labeling statements (`genfscon`).
+    pub(crate) fn generic_fs_contexts(&self) -> &[GenfsCon] {
+        &self.generic_fs_contexts
+    }
+
+    /// Returns the MLS range transitions array.
+    pub(crate) fn range_transitions(&self) -> &[RangeTransition] {
+        &self.range_transitions
     }
 
     /// Returns a shared reference to the remaining unparsed bytes.

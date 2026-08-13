@@ -2,13 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use selinux_policy_derive::{HasName, HasPolicyId, Parse, Serialize};
+use selinux_policy_derive::{HasName, HasPolicyId, Parse, Serialize, Validate};
 
-use super::context::MlsLevel;
+use super::classes::ClassId;
+use super::context::{MlsLevel, MlsRange};
 use super::error::{ParseError, SerializeError, ValidateError};
 use super::parser::{PolicyCursor, PolicyWriter};
 use super::traits::{Parse, PolicyId, Serialize, Validate};
-use super::{CategoryId, SensitivityId};
+use super::{CategoryId, SensitivityId, TypeId};
 
 /// MLS sensitivity level definition in an SELinux policy.
 #[derive(Debug, HasName, HasPolicyId)]
@@ -140,6 +141,37 @@ impl Validate for CategoryId {
     }
 }
 
+/// Range transition rule for target object creation under MLS.
+#[derive(Debug, Clone, PartialEq, Eq, Parse, Serialize, Validate)]
+pub struct RangeTransition {
+    source_type: TypeId,
+    target_type: TypeId,
+    target_class: ClassId,
+    mls_range: MlsRange,
+}
+
+impl RangeTransition {
+    /// Returns the source [`TypeId`].
+    pub fn source_type(&self) -> TypeId {
+        self.source_type
+    }
+
+    /// Returns the target [`TypeId`].
+    pub fn target_type(&self) -> TypeId {
+        self.target_type
+    }
+
+    /// Returns the target [`ClassId`].
+    pub fn target_class(&self) -> ClassId {
+        self.target_class
+    }
+
+    /// Returns the target [`MlsRange`].
+    pub fn mls_range(&self) -> &MlsRange {
+        &self.mls_range
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -205,6 +237,32 @@ mod tests {
         let mut writer = Vec::new();
         let mut policy_writer = PolicyWriter::new(PolicyVersion::V33, &mut writer);
         sensitivity.serialize(&mut policy_writer).expect("serialize Sensitivity");
+        assert_eq!(writer.as_slice(), &data);
+    }
+
+    #[test]
+    fn test_range_transition_parse_and_serialize() {
+        let data = [
+            1, 0, 0, 0, // source_type = 1
+            2, 0, 0, 0, // target_type = 2
+            3, 0, 0, 0, // target_class = 3
+            // MlsRange:
+            1, 0, 0, 0, // levels_count = 1
+            1, 0, 0, 0, // sensitivity_low = 1
+            64, 0, 0, 0, // map_item_size_bits = 64
+            0, 0, 0, 0, // high_bit = 0
+            0, 0, 0, 0, // categories count = 0
+        ];
+        let mut cursor = PolicyCursor::new(&data);
+        let transition = RangeTransition::parse(&mut cursor).expect("parse RangeTransition");
+        assert_eq!(transition.source_type(), TypeId::from_u32(1).unwrap());
+        assert_eq!(transition.target_type(), TypeId::from_u32(2).unwrap());
+        assert_eq!(transition.target_class(), ClassId::from_u32(3).unwrap());
+        assert_eq!(transition.mls_range().low().sensitivity(), SensitivityId::from_u32(1).unwrap());
+
+        let mut writer = Vec::new();
+        let mut policy_writer = PolicyWriter::new(PolicyVersion::V33, &mut writer);
+        transition.serialize(&mut policy_writer).expect("serialize RangeTransition");
         assert_eq!(writer.as_slice(), &data);
     }
 }

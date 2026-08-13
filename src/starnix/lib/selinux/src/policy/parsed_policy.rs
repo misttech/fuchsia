@@ -2,35 +2,25 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use super::arrays::{GenericFsContext, RangeTransition, SimpleArray};
 use super::constraints::evaluate_constraint;
 use super::error::{ParseError, ValidateError};
 use super::parser::{PolicyCursor, PolicyData};
 use super::security_context::SecurityContext;
-use super::view::Hashable;
 use super::{
-    AccessDecision, AccessVector, CategoryId, ClassId, MlsLevel, Parse, PolicyValidationContext,
-    RoleId, SELINUX_AVD_FLAGS_PERMISSIVE, SensitivityId, TypeId, UserId, Validate,
-    XpermsAccessDecision, XpermsKind,
+    AccessDecision, AccessVector, ClassId, Parse, PolicyValidationContext,
+    SELINUX_AVD_FLAGS_PERMISSIVE, TypeId, Validate, XpermsAccessDecision, XpermsKind,
 };
-use crate::new_policy::{Context, TypeSet};
-
 use crate::PolicyCap;
 use crate::new_policy::rules::{
     ExtendedPermissions, HasRuleKey, RuleKind, XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES,
     XPERMS_TYPE_IOCTL_PREFIXES, XPERMS_TYPE_NLMSG, XpermsBitmap,
 };
 use crate::new_policy::traits::{HasPolicyId, PolicyId};
-use crate::new_policy::{Class, NewPolicy};
-use crate::policy::arrays::FsContext;
-use crate::policy::view::CustomKeyHashedView;
+use crate::new_policy::{Class, GenfsConPath, NewPolicy, TypeSet};
 use std::ops::Deref;
 use std::sync::Arc;
 
 use anyhow::Context as _;
-use std::collections::HashSet;
-use std::fmt::Debug;
-use std::hash::Hash;
 use std::iter::Iterator;
 
 // As of 2026-01-30, more than five times larger than any policy seen in production or tests.
@@ -39,16 +29,9 @@ const MAXIMUM_POLICY_SIZE: usize = 1 << 24;
 /// Parsed binary policy.
 #[derive(Debug)]
 pub struct ParsedPolicy {
-    /// Raw policy data (remaining).
-    data: PolicyData,
-
     /// [`NewPolicy`] that handles the header and base tables.
     new_policy: Arc<NewPolicy>,
 
-    /// A set of labeling statements to apply to given filesystems and/or their subdirectories.
-    /// Corresponds to the `genfscon` labeling statement in the policy.
-    generic_fs_contexts: CustomKeyHashedView<GenericFsContext>,
-    range_transitions: SimpleArray<RangeTransition>,
     /// Extensible bitmaps that encode associations between types and attributes.
     attribute_maps: Vec<TypeSet>,
 }
@@ -251,13 +234,14 @@ impl ParsedPolicy {
         XpermsAccessDecision { allow, auditallow, auditdeny }
     }
 
-    pub(super) fn genfscon_find_all(&self, fs_type: &str) -> impl Iterator<Item = FsContext> {
-        let query = GenericFsContext::for_query(fs_type);
-        self.generic_fs_contexts.find_all(query, &self.data)
-    }
-
-    pub(super) fn range_transitions(&self) -> &[RangeTransition] {
-        &self.range_transitions.data
+    pub(super) fn genfscon_find_all<'a>(
+        &'a self,
+        fs_type: &'a [u8],
+    ) -> impl Iterator<Item = &'a GenfsConPath> {
+        self.generic_fs_contexts()
+            .iter()
+            .filter(move |entry| entry.fs_type() == fs_type)
+            .flat_map(|entry| entry.paths().iter())
     }
 
     pub(super) fn compute_filename_transition(
@@ -284,69 +268,6 @@ impl ParsedPolicy {
             .initial_sids()
             .get_by_id(id as u32)
             .expect("initial SID must be present in validated policy")
-    }
-
-    // Validate that all sensitivity and category IDs referenced in the MLS level are
-    // defined.
-    fn validate_mls_level(
-        &self,
-        level: &MlsLevel,
-        sensitivity_ids: &HashSet<SensitivityId>,
-        category_ids: &HashSet<CategoryId>,
-    ) -> Result<(), anyhow::Error> {
-        validate_id(sensitivity_ids, level.sensitivity(), "sensitivity")?;
-        for id in level.category_ids() {
-            validate_id(category_ids, id, "category")?;
-        }
-        Ok(())
-    }
-
-    // Validate an MLS range statement against sets of defined sensitivity and category
-    // IDs:
-    // - Verify that all sensitivity and category IDs referenced in the MLS levels are
-    //   defined.
-    // - Verify that the range is internally consistent; i.e., the high level (if any)
-    //   dominates the low level.
-    fn validate_mls_range(
-        &self,
-        low_level: &MlsLevel,
-        high_level: Option<&MlsLevel>,
-        sensitivity_ids: &HashSet<SensitivityId>,
-        category_ids: &HashSet<CategoryId>,
-    ) -> Result<(), anyhow::Error> {
-        self.validate_mls_level(low_level, sensitivity_ids, category_ids)?;
-        if let Some(high) = high_level {
-            self.validate_mls_level(high, sensitivity_ids, category_ids)?;
-            if !high.dominates(low_level) {
-                return Err(ValidateError::InvalidMlsRange {
-                    low: low_level.to_string(self).into(),
-                    high: high.to_string(self).into(),
-                }
-                .into());
-            }
-        }
-        Ok(())
-    }
-
-    fn validate_context(
-        &self,
-        context: &Context,
-        user_ids: &HashSet<UserId>,
-        role_ids: &HashSet<RoleId>,
-        type_ids: &HashSet<TypeId>,
-        sensitivity_ids: &HashSet<SensitivityId>,
-        category_ids: &HashSet<CategoryId>,
-    ) -> Result<(), anyhow::Error> {
-        validate_id(user_ids, context.user(), "user")?;
-        validate_id(role_ids, context.role(), "role")?;
-        validate_id(type_ids, context.type_(), "type")?;
-        self.validate_mls_range(
-            context.low_level(),
-            context.high_level(),
-            sensitivity_ids,
-            category_ids,
-        )?;
-        Ok(())
     }
 }
 
@@ -381,14 +302,6 @@ fn parse_policy_remaining(
 ) -> Result<(ParsedPolicy, usize), anyhow::Error> {
     let tail = PolicyCursor::new(&rest_data);
 
-    let (generic_fs_contexts, tail) = CustomKeyHashedView::<GenericFsContext>::parse(tail)
-        .map_err(Into::<anyhow::Error>::into)
-        .context("parsing generic filesystem contexts")?;
-
-    let (range_transitions, tail) = SimpleArray::<RangeTransition>::parse(tail)
-        .map_err(Into::<anyhow::Error>::into)
-        .context("parsing range transitions")?;
-
     let primary_names_count = new_policy.types().primary_names_count();
     let mut attribute_maps = Vec::with_capacity(primary_names_count as usize);
     let mut tail = tail;
@@ -405,64 +318,17 @@ fn parse_policy_remaining(
 
     let excess_bytes = rest_data.len() - tail.offset() as usize;
 
-    Ok((
-        ParsedPolicy {
-            data: rest_data,
-            new_policy: Arc::new(new_policy),
-
-            generic_fs_contexts,
-            range_transitions,
-            attribute_maps,
-        },
-        excess_bytes,
-    ))
+    Ok((ParsedPolicy { new_policy: Arc::new(new_policy), attribute_maps }, excess_bytes))
 }
 
 impl ParsedPolicy {
     pub fn validate(&self) -> Result<(), anyhow::Error> {
-        let context = PolicyValidationContext {
-            data: self.data.clone(),
-            new_policy: self.new_policy.clone(),
-        };
+        let context = PolicyValidationContext { new_policy: self.new_policy.clone() };
 
-        self.generic_fs_contexts
-            .validate(&context)
-            .map_err(Into::<anyhow::Error>::into)
-            .context("validating generic_fs_contexts")?;
-        self.range_transitions
-            .validate(&context)
-            .map_err(Into::<anyhow::Error>::into)
-            .context("validating range_transitions")?;
-        self.attribute_maps
-            .validate(&context)
-            .map_err(Into::<anyhow::Error>::into)
-            .context("validating attribute_maps")?;
-
-        // Collate the sets of user, role, type, sensitivity and category Ids.
-        let user_ids: HashSet<UserId> = self.new_policy.users().iter().map(|x| x.id()).collect();
-        let role_ids: HashSet<RoleId> = self.roles().iter().map(|x| x.id()).collect();
-        let type_ids: HashSet<TypeId> = self.new_policy.types().iter().map(|t| t.id()).collect();
-        let sensitivity_ids: HashSet<SensitivityId> =
-            self.new_policy.sensitivities().iter().map(|x| x.id()).collect();
-        let category_ids: HashSet<CategoryId> =
-            self.new_policy.categories().iter().map(|x| x.id()).collect();
-
-        // Validate that contexts specified in genfscon rules only use
-        // policy-defined Ids for their fields. Check that MLS levels are internally
-        // consistent.
-        for entry in self.generic_fs_contexts.iter(&self.data) {
-            let entry = entry?;
-            for fs_context_view in entry.values().data().iter(&self.data) {
-                let fs_context = fs_context_view.parse(&self.data);
-                self.validate_context(
-                    fs_context.context(),
-                    &user_ids,
-                    &role_ids,
-                    &type_ids,
-                    &sensitivity_ids,
-                    &category_ids,
-                )?;
-            }
+        for map in &self.attribute_maps {
+            map.validate(&context)
+                .map_err(Into::<anyhow::Error>::into)
+                .context("validating attribute_maps")?;
         }
 
         // Validate that all kernel-required initial SIDs are present in the policy.
@@ -482,17 +348,6 @@ impl ParsedPolicy {
 
         Ok(())
     }
-}
-
-fn validate_id<IdType: Debug + Eq + Hash>(
-    id_set: &HashSet<IdType>,
-    id: IdType,
-    debug_kind: &'static str,
-) -> Result<(), anyhow::Error> {
-    if !id_set.contains(&id) {
-        return Err(ValidateError::UnknownId { kind: debug_kind, id: format!("{:?}", id) }.into());
-    }
-    Ok(())
 }
 
 #[cfg(test)]

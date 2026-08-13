@@ -72,9 +72,9 @@ impl Type {
 #[derive(Parse, Serialize)]
 struct BinaryTypeMetadata {
     length: u32,
-    id: u32,
+    id: TypeId,
     properties: TypeKind,
-    bounds: u32,
+    bounds: Option<TypeId>,
 }
 
 impl Parse for Type {
@@ -82,13 +82,7 @@ impl Parse for Type {
         let metadata = BinaryTypeMetadata::parse(cursor)?;
         let name = cursor.read_bytes(metadata.length as usize)?.to_vec().into_boxed_slice();
 
-        let properties = metadata.properties;
-
-        let bounds = TypeId::from_u32(metadata.bounds);
-        let id =
-            TypeId::from_u32(metadata.id).ok_or(ParseError::InvalidId { value: metadata.id })?;
-
-        Ok(Self { id, name, properties, bounds })
+        Ok(Self { id: metadata.id, name, properties: metadata.properties, bounds: metadata.bounds })
     }
 }
 
@@ -96,9 +90,9 @@ impl Serialize for Type {
     fn serialize(&self, writer: &mut PolicyWriter<'_>) -> Result<(), SerializeError> {
         let metadata = BinaryTypeMetadata {
             length: self.name.len() as u32,
-            id: self.id.as_u32(),
+            id: self.id,
             properties: self.properties,
-            bounds: self.bounds.map_or(0, |id| id.as_u32()),
+            bounds: self.bounds,
         };
         metadata.serialize(writer)?;
         writer.write_bytes(&self.name);

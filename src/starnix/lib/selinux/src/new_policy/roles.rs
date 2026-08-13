@@ -24,8 +24,8 @@ pub type RoleSet = IdSet<RoleId>;
 #[derive(Parse, Serialize)]
 struct BinaryRoleMetadata {
     key_length: u32,
-    id: u32,
-    bounds: u32,
+    id: RoleId,
+    bounds: Option<RoleId>,
 }
 
 /// Parsed SELinux [`Role`] definition.
@@ -55,11 +55,7 @@ impl Parse for Role {
         let dominates = RoleSet::parse(cursor)?;
         let types = TypeSet::parse(cursor)?;
 
-        let bounds = RoleId::from_u32(metadata.bounds);
-        let id =
-            RoleId::from_u32(metadata.id).ok_or(ParseError::InvalidId { value: metadata.id })?;
-
-        Ok(Self { id, name, bounds, dominates, types })
+        Ok(Self { id: metadata.id, name, bounds: metadata.bounds, dominates, types })
     }
 }
 
@@ -67,8 +63,8 @@ impl Serialize for Role {
     fn serialize(&self, writer: &mut PolicyWriter<'_>) -> Result<(), SerializeError> {
         let metadata = BinaryRoleMetadata {
             key_length: self.name.len() as u32,
-            id: self.id.as_u32(),
-            bounds: self.bounds.map_or(0, |id| id.as_u32()),
+            id: self.id,
+            bounds: self.bounds,
         };
         metadata.serialize(writer)?;
         writer.write_bytes(&self.name);

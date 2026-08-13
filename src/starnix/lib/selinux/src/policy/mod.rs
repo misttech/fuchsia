@@ -2,12 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-pub mod arrays;
 pub mod error;
 pub mod index;
 pub mod parsed_policy;
 pub mod parser;
-pub mod view;
 
 mod constraints;
 mod security_context;
@@ -32,7 +30,7 @@ use std::num::NonZeroU32;
 use std::ops::Deref;
 
 use std::sync::Arc;
-use zerocopy::{FromBytes, Immutable, KnownLayout, Ref, SplitByteSlice, little_endian as le};
+use zerocopy::little_endian as le;
 
 /// Encapsulates the result of a permissions calculation, between
 /// source & target domains, for a specific class. Decisions describe
@@ -370,9 +368,6 @@ pub trait Parse: Sized {
 
 /// Context for validating a parsed policy.
 pub(super) struct PolicyValidationContext {
-    /// Policy data that is being validated.
-    pub(super) data: PolicyData,
-
     /// New policy parser representation.
     pub(super) new_policy: Arc<new::NewPolicy>,
 }
@@ -388,93 +383,11 @@ pub(super) trait Validate {
 }
 
 /// Treat a type as metadata that contains a count of subsequent data.
-pub(super) trait Counted {
-    /// Returns the count of subsequent data items.
-    fn count(&self) -> u32;
-}
-
-impl<T: Validate> Validate for Vec<T> {
-    type Error = <T as Validate>::Error;
-
-    fn validate(&self, context: &PolicyValidationContext) -> Result<(), Self::Error> {
-        for item in self {
-            item.validate(context)?;
-        }
-        Ok(())
-    }
-}
-
-impl Validate for le::U32 {
-    type Error = anyhow::Error;
-
-    /// Using a raw `le::U32` implies no additional constraints on its value. To operate with
-    /// constraints, define a `struct T(le::U32);` and `impl Validate for T { ... }`.
-    fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
-        Ok(())
-    }
-}
-
-impl<B: SplitByteSlice, T: Validate + FromBytes + KnownLayout + Immutable> Validate for Ref<B, T> {
-    type Error = <T as Validate>::Error;
-
-    fn validate(&self, context: &PolicyValidationContext) -> Result<(), Self::Error> {
-        self.deref().validate(context)
-    }
-}
-
-impl<B: SplitByteSlice, T: Counted + FromBytes + KnownLayout + Immutable> Counted for Ref<B, T> {
-    fn count(&self) -> u32 {
-        self.deref().count()
-    }
-}
-
-/// A length-encoded array that contains metadata of type `M` and a vector of data items of type `T`.
-#[derive(Clone, Debug, PartialEq)]
-struct Array<M, T> {
-    metadata: M,
-    data: Vec<T>,
-}
-
-impl<M: Counted + Parse, T: Parse> Parse for Array<M, T> {
-    /// [`Array`] abstracts over two types (`M` and `D`) that may have different [`Parse::Error`]
-    /// types. Unify error return type via [`anyhow::Error`].
-    type Error = anyhow::Error;
-
-    /// Parses [`Array`] by parsing *and validating* `metadata`, `data`, and `self`.
-    fn parse<'a>(bytes: PolicyCursor<'a>) -> Result<(Self, PolicyCursor<'a>), Self::Error> {
-        let tail = bytes;
-
-        let (metadata, tail) = M::parse(tail).map_err(Into::<anyhow::Error>::into)?;
-
-        let count = metadata.count() as usize;
-        let mut data = Vec::with_capacity(count);
-        let mut cur_tail = tail;
-        for _ in 0..count {
-            let (item, next_tail) = T::parse(cur_tail).map_err(Into::<anyhow::Error>::into)?;
-            data.push(item);
-            cur_tail = next_tail;
-        }
-        let tail = cur_tail;
-
-        let array = Self { metadata, data };
-
-        Ok((array, tail))
-    }
-}
-
 impl Parse for le::U32 {
     type Error = anyhow::Error;
 
     fn parse<'a>(bytes: PolicyCursor<'a>) -> Result<(Self, PolicyCursor<'a>), Self::Error> {
         bytes.parse::<le::U32>().map_err(anyhow::Error::from)
-    }
-}
-
-impl Parse for arrays::RangeTransitionMetadata {
-    type Error = anyhow::Error;
-
-    fn parse<'a>(bytes: PolicyCursor<'a>) -> Result<(Self, PolicyCursor<'a>), Self::Error> {
-        bytes.parse::<arrays::RangeTransitionMetadata>().map_err(anyhow::Error::from)
     }
 }
 

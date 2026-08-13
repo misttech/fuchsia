@@ -36,22 +36,36 @@ pub trait PolicyId: Copy + Clone + std::fmt::Debug + Eq + std::hash::Hash + Part
 }
 
 // Blanket implementations for all strongly-typed IDs
-impl<T> Parse for T
-where
-    T: PolicyId,
-{
+impl<T: PolicyId> Parse for T {
     fn parse(cursor: &mut PolicyCursor<'_>) -> Result<Self, ParseError> {
         let value = u32::parse(cursor)?;
         T::from_u32(value).ok_or(ParseError::InvalidId { value })
     }
 }
 
-impl<T> Serialize for T
-where
-    T: PolicyId,
-{
+impl<T: PolicyId> Serialize for T {
     fn serialize(&self, writer: &mut PolicyWriter<'_>) -> Result<(), SerializeError> {
         self.as_u32().serialize(writer)
+    }
+}
+
+impl<T: PolicyId> Parse for Option<T> {
+    fn parse(cursor: &mut PolicyCursor<'_>) -> Result<Self, ParseError> {
+        let value = u32::parse(cursor)?;
+        if value == 0 {
+            Ok(None)
+        } else {
+            T::from_u32(value).map(Some).ok_or(ParseError::InvalidId { value })
+        }
+    }
+}
+
+impl<T: PolicyId> Serialize for Option<T> {
+    fn serialize(&self, writer: &mut PolicyWriter<'_>) -> Result<(), SerializeError> {
+        match self {
+            Some(id) => id.as_u32().serialize(writer),
+            None => 0u32.serialize(writer),
+        }
     }
 }
 

@@ -43,8 +43,8 @@ impl User {
 #[derive(Parse, Serialize)]
 struct BinaryUserMetadata {
     key_length: u32,
-    id: u32,
-    bounds: u32,
+    id: UserId,
+    bounds: Option<UserId>,
 }
 
 impl Parse for User {
@@ -55,12 +55,7 @@ impl Parse for User {
         let range = MlsRange::parse(cursor)?;
         let default_level = MlsLevel::parse(cursor)?;
 
-        let bounds = UserId::from_u32(metadata.bounds);
-
-        let id =
-            UserId::from_u32(metadata.id).ok_or(ParseError::InvalidId { value: metadata.id })?;
-
-        Ok(Self { id, name, bounds, roles, range, default_level })
+        Ok(Self { id: metadata.id, name, bounds: metadata.bounds, roles, range, default_level })
     }
 }
 
@@ -68,8 +63,8 @@ impl Serialize for User {
     fn serialize(&self, writer: &mut PolicyWriter<'_>) -> Result<(), SerializeError> {
         let metadata = BinaryUserMetadata {
             key_length: self.name.len() as u32,
-            id: self.id.as_u32(),
-            bounds: self.bounds.map_or(0, |id| id.as_u32()),
+            id: self.id,
+            bounds: self.bounds,
         };
         metadata.serialize(writer)?;
         writer.write_bytes(&self.name);

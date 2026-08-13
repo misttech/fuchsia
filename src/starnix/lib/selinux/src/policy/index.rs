@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use super::arrays::FsContext;
 use super::security_context::SecurityContext;
 use super::{
     AccessDecision, AccessVector, ClassId, MlsLevel, ParsedPolicy, PermissionId, RoleId, TypeId,
@@ -10,7 +9,7 @@ use super::{
 use crate::new_policy::rules::{HasRuleKey, RuleKind};
 use crate::new_policy::traits::{HasName, HasPolicyId};
 use crate::new_policy::{
-    Class, ClassDefault, ClassDefaultRange, CommonSymbol, FsUseType, HandleUnknown,
+    Class, ClassDefault, ClassDefaultRange, CommonSymbol, FsUseType, GenfsConPath, HandleUnknown,
     IdAndNameIndexed, SymbolArray,
 };
 use crate::{
@@ -389,8 +388,7 @@ impl PolicyIndex {
         let class_id = class.and_then(|class| self.class(class.into())).map(|class| class.id());
 
         // All contexts listed in the policy for the file system type.
-        let fs_contexts = self
-            .genfscon_find_all(std::str::from_utf8(fs_type.as_bytes()).expect("fs type is valid"));
+        let fs_contexts = self.genfscon_find_all(fs_type.as_bytes());
 
         #[derive(PartialEq)]
         enum OrderType {
@@ -410,7 +408,7 @@ impl PolicyIndex {
         // Partial paths are prefix-matched, so that "/abc/default" would also be assigned label3.
         //
         // TODO(372212126): Optimize the algorithm.
-        let mut result: Option<FsContext> = None;
+        let mut result: Option<&GenfsConPath> = None;
         let mut order_type = OrderType::Unknown;
         let mut prev_path_bytes: Option<Vec<u8>> = None;
         for fs_context in fs_contexts {
@@ -505,7 +503,7 @@ impl PolicyIndex {
         for range_transition in self.range_transitions() {
             if range_transition.source_type() == source_type
                 && range_transition.target_type() == target_type
-                && range_transition.target_class() == class.id().into()
+                && range_transition.target_class() == class.id()
             {
                 let mls_range = range_transition.mls_range();
                 let low_level = mls_range.low().clone();

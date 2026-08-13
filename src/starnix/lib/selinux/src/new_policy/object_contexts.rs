@@ -4,6 +4,7 @@
 
 //! System object context labeling rules parsed from SELinux binary policy.
 
+use super::classes::ClassId;
 use super::context::Context;
 use super::error::{ParseError, SerializeError};
 use super::metadata::PolicyVersion;
@@ -21,23 +22,6 @@ pub struct FilesystemContext {
     root_context: Context,
 }
 
-impl FilesystemContext {
-    /// Returns the filesystem type name bytes (`<fs_type>`).
-    pub fn name(&self) -> &[u8] {
-        &self.name
-    }
-
-    /// Returns the security [`Context`] applied to the filesystem mount (`<fs_context>`).
-    pub fn fs_context(&self) -> &Context {
-        &self.fs_context
-    }
-
-    /// Returns the security [`Context`] applied to the filesystem root directory (`<root_context>`).
-    pub fn root_context(&self) -> &Context {
-        &self.root_context
-    }
-}
-
 /// Named context pair mapping a network interface string to device and packet security [`Context`]s.
 ///
 /// Corresponding SELinux text policy syntax: `netifcon <interface_name> <if_context> <packet_context>`.
@@ -46,13 +30,6 @@ pub struct NetworkInterfaceContext {
     name: ByteArray,
     if_context: Context,
     msg_context: Context,
-}
-
-impl NetworkInterfaceContext {
-    /// Returns the network interface name bytes (`<interface_name>`).
-    pub fn name(&self) -> &[u8] {
-        &self.name
-    }
 }
 
 /// Port specification mapping a protocol and port range to a security [`Context`].
@@ -66,13 +43,6 @@ pub struct PortContext {
     context: Context,
 }
 
-impl PortContext {
-    /// Returns the security [`Context`].
-    pub fn context(&self) -> &Context {
-        &self.context
-    }
-}
-
 /// IPv4 node specification mapping an address and mask to a security [`Context`].
 ///
 /// Corresponding SELinux text policy syntax: `nodecon <ipv4_addr> <netmask> <context>`.
@@ -81,23 +51,6 @@ pub struct IPv4NodeContext {
     address: u32,
     mask: u32,
     context: Context,
-}
-
-impl IPv4NodeContext {
-    /// Returns the IPv4 address.
-    pub fn address(&self) -> u32 {
-        self.address
-    }
-
-    /// Returns the subnet mask.
-    pub fn mask(&self) -> u32 {
-        self.mask
-    }
-
-    /// Returns the security [`Context`].
-    pub fn context(&self) -> &Context {
-        &self.context
-    }
 }
 
 /// Discriminates among the different kinds of `fs_use_*` labeling statements in policy.
@@ -147,23 +100,6 @@ pub struct IPv6NodeContext {
     context: Context,
 }
 
-impl IPv6NodeContext {
-    /// Returns the IPv6 address 32-bit words by value.
-    pub fn address(&self) -> [u32; 4] {
-        self.address
-    }
-
-    /// Returns the IPv6 mask 32-bit words by value.
-    pub fn mask(&self) -> [u32; 4] {
-        self.mask
-    }
-
-    /// Returns the security [`Context`].
-    pub fn context(&self) -> &Context {
-        &self.context
-    }
-}
-
 /// InfiniBand partition key specification (for policy versions >= [`PolicyVersion::MIN_INFINIBAND`]).
 ///
 /// Corresponding SELinux text policy syntax: `ibpkeycon <subnet_prefix> <pkey_low>-<pkey_high> <context>`.
@@ -174,23 +110,6 @@ pub struct InfiniBandPartitionKey {
     context: Context,
 }
 
-impl InfiniBandPartitionKey {
-    /// Returns the low partition key bound.
-    pub fn low(&self) -> u32 {
-        self.low
-    }
-
-    /// Returns the high partition key bound.
-    pub fn high(&self) -> u32 {
-        self.high
-    }
-
-    /// Returns the security [`Context`].
-    pub fn context(&self) -> &Context {
-        &self.context
-    }
-}
-
 /// InfiniBand end port specification (for policy versions >= [`PolicyVersion::MIN_INFINIBAND`]).
 ///
 /// Corresponding SELinux text policy syntax: `ibendportcon <device_name> <port> <context>`.
@@ -199,18 +118,6 @@ pub struct InfiniBandEndPort {
     name: ByteArray,
     port: u32,
     context: Context,
-}
-
-impl InfiniBandEndPort {
-    /// Returns the InfiniBand device name string bytes (`<device_name>`).
-    pub fn name(&self) -> &[u8] {
-        &self.name
-    }
-
-    /// Returns the security [`Context`].
-    pub fn context(&self) -> &Context {
-        &self.context
-    }
 }
 
 /// Container for system object context labeling statements (`fs_con`, `portcon`, `netifcon`,
@@ -316,12 +223,55 @@ impl Serialize for ObjectContexts {
     }
 }
 
+/// Context rule for a specific path prefix within a generic filesystem (`genfscon`).
+#[derive(Debug, Clone, PartialEq, Eq, Parse, Serialize, Validate)]
+pub struct GenfsConPath {
+    partial_path: ByteArray,
+    class: Option<ClassId>,
+    context: Context,
+}
+
+impl GenfsConPath {
+    /// Returns the partial path bytes relative to the root of the filesystem.
+    pub fn partial_path(&self) -> &[u8] {
+        &self.partial_path
+    }
+
+    /// Returns the target [`ClassId`] if specified (0 applies to all object classes).
+    pub fn class(&self) -> Option<ClassId> {
+        self.class
+    }
+
+    /// Returns the security [`Context`].
+    pub fn context(&self) -> &Context {
+        &self.context
+    }
+}
+
+/// Generic filesystem labeling statement (`genfscon [fs_type] [partial_path] [class] [context]`).
+#[derive(Debug, Clone, PartialEq, Eq, Parse, Serialize, Validate)]
+pub struct GenfsCon {
+    fs_type: ByteArray,
+    paths: Array<GenfsConPath>,
+}
+
+impl GenfsCon {
+    /// Returns the filesystem type name bytes (e.g. `b"proc"` or `b"sysfs"`).
+    pub fn fs_type(&self) -> &[u8] {
+        &self.fs_type
+    }
+
+    /// Returns the array of partial path context rules for this filesystem type.
+    pub fn paths(&self) -> &[GenfsConPath] {
+        &self.paths
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::new_policy::context::{MlsLevel, MlsRange};
     use crate::new_policy::traits::PolicyId;
-    use crate::new_policy::{CategorySet, NewPolicy, RoleId, SensitivityId, TypeId, UserId};
+    use crate::new_policy::{NewPolicy, UserId};
 
     #[test]
     fn test_object_contexts_minimal_policy() {
@@ -335,29 +285,42 @@ mod tests {
         assert!(object_contexts.ports().is_empty());
         assert!(object_contexts.network_interfaces().is_empty());
         assert!(object_contexts.ipv4_nodes().is_empty());
+        assert!(!object_contexts.fs_uses().is_empty());
         assert!(object_contexts.ipv6_nodes().is_empty());
         assert!(object_contexts.infiniband_partition_keys().is_empty());
         assert!(object_contexts.infiniband_end_ports().is_empty());
     }
 
     #[test]
-    fn test_ipv6_node_context_getters_by_value() {
-        let node = IPv6NodeContext {
-            address: [1, 2, 3, 4],
-            mask: [0xff, 0xff, 0, 0],
-            context: Context::new(
-                UserId::from_u32(1).unwrap(),
-                RoleId::from_u32(1).unwrap(),
-                TypeId::from_u32(1).unwrap(),
-                MlsRange::new(
-                    MlsLevel::new(SensitivityId::from_u32(1).unwrap(), CategorySet::empty()),
-                    None,
-                ),
-            ),
-        };
-        let addr: [u32; 4] = node.address();
-        let mask: [u32; 4] = node.mask();
-        assert_eq!(addr, [1, 2, 3, 4]);
-        assert_eq!(mask, [0xff, 0xff, 0, 0]);
+    fn test_genfscon_parse_and_serialize() {
+        let data = [
+            // GenfsCon fs_type (ByteArray: len + "sysfs"):
+            5, 0, 0, 0, b's', b'y', b's', b'f', b's', // paths count = 1:
+            1, 0, 0, 0, // GenfsConPath partial_path (ByteArray: len + "/"):
+            1, 0, 0, 0, b'/', // class = 0 (all classes):
+            0, 0, 0, 0, // Context:
+            1, 0, 0, 0, // user = 1
+            1, 0, 0, 0, // role = 1
+            1, 0, 0, 0, // type = 1
+            // MlsRange:
+            1, 0, 0, 0, // levels_count = 1
+            1, 0, 0, 0, // sensitivity_low = 1
+            64, 0, 0, 0, // map_item_size_bits = 64
+            0, 0, 0, 0, // high_bit = 0
+            0, 0, 0, 0, // categories count = 0
+        ];
+        let mut cursor = PolicyCursor::new(&data);
+        let genfscon = GenfsCon::parse(&mut cursor).expect("parse GenfsCon");
+        assert_eq!(genfscon.fs_type(), b"sysfs");
+        assert_eq!(genfscon.paths().len(), 1);
+        let path = &genfscon.paths()[0];
+        assert_eq!(path.partial_path(), b"/");
+        assert_eq!(path.class(), None);
+        assert_eq!(path.context().user(), UserId::from_u32(1).unwrap());
+
+        let mut writer = Vec::new();
+        let mut policy_writer = PolicyWriter::new(PolicyVersion::V33, &mut writer);
+        genfscon.serialize(&mut policy_writer).expect("serialize GenfsCon");
+        assert_eq!(writer.as_slice(), &data);
     }
 }
