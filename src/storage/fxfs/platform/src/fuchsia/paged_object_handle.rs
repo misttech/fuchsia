@@ -7,7 +7,7 @@ use crate::fuchsia::pager::{
     MarkDirtyRange, Pager, PagerBacked, PagerVmoStatsOptions, VmoDirtyRange,
 };
 use crate::fuchsia::volume::FxVolume;
-use anyhow::{Context, Error, anyhow, ensure};
+use anyhow::{Context, Error, anyhow, bail, ensure};
 use fidl_fuchsia_io as fio;
 use fuchsia_sync::Mutex;
 use fxfs::errors::FxfsError;
@@ -137,8 +137,8 @@ struct Inner {
     pending_shrink: PendingShrink,
 
     /// This bit is set at the top of enable_verity(). Once this bit is set, all future calls to
-    /// mark_dirty() should fail. This ensures that the contents of the file do not change while
-    /// the merkle tree is being computed or thereon after.
+    /// mark_dirty() and truncate() will fail. This ensures that the contents and size of the
+    /// file do not change while the merkle tree is being computed or thereon after.
     read_only: bool,
 
     /// True if the file is currently being flushed. There can be only one task flushing at a time.
@@ -1128,6 +1128,9 @@ impl PagedObjectHandle {
         let fs = store.filesystem();
         let _truncate_guard =
             fs.truncate_guard(store.store_object_id(), self.handle.object_id()).await;
+        if self.inner.lock().read_only {
+            bail!(anyhow!(FxfsError::AccessDenied).context("Cannot truncate verity file"));
+        }
 
         // mark_dirty uses the in-memory tracking of overwrite ranges to decide if it needs to
         // reserve pages or not, so we make sure we update that tracking first thing so we start

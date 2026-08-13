@@ -1679,6 +1679,13 @@ impl<S: HandleOwner> DataObjectHandle<S> {
         size: u64,
     ) -> Result<(), Error> {
         let mut transaction = self.new_transaction_with_options(options).await?;
+        {
+            let state = self.state.lock();
+            match &*state {
+                DataObjectState::Standard(_) => {}
+                _ => bail!(anyhow!(FxfsError::AccessDenied).context("Cannot truncate verity file")),
+            }
+        }
         let old_size = self.get_size();
         if size == old_size {
             return Ok(());
