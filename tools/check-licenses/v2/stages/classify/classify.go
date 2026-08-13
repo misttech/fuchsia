@@ -12,7 +12,9 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"sync"
 	"unicode/utf8"
 
 	classifierLib "github.com/google/licenseclassifier/v2"
@@ -60,71 +62,84 @@ func NewClassifier(config Config) (*Classifier, error) {
 // Run listens to the input channel of FilteredProjects, reads and normalizes each file,
 // executes the classification engine, and emits a ClassifiedFile struct.
 func (c *Classifier) Run(ctx context.Context, in <-chan pipeline.FilteredProject) (<-chan pipeline.ClassifiedFile, error) {
-	out := make(chan pipeline.ClassifiedFile)
+	out := make(chan pipeline.ClassifiedFile, 100)
 
 	go func() {
 		defer close(out)
 		defer metrics.AnalyzeDuration.Track()()
 
-		for proj := range in {
-			for _, fileInfo := range proj.Files {
-				path := fileInfo.Path
-				if ctx.Err() != nil {
-					return
-				}
+		numWorkers := runtime.NumCPU()
+		if numWorkers < 1 {
+			numWorkers = 1
+		}
+		var wg sync.WaitGroup
+		wg.Add(numWorkers)
 
-				metrics.TotalFilesProcessed.Inc()
+		for i := 0; i < numWorkers; i++ {
+			go func() {
+				defer wg.Done()
+				for proj := range in {
+					for _, fileInfo := range proj.Files {
+						path := fileInfo.Path
+						if ctx.Err() != nil {
+							return
+						}
 
-				if fileInfo.IsNonLicense {
-					metrics.FilesProcessed.Inc("skipped_non_license")
-					// Emit an unclassified file
-					select {
-					case <-ctx.Done():
-						return
-					case out <- pipeline.ClassifiedFile{Path: path, ProjectRoot: proj.RootPath, IsLicenseFile: false}:
-					}
-					continue
-				}
+						metrics.TotalFilesProcessed.Inc()
 
-				// If TargetExtensions is configured, skip files that don't match.
-				// However, ALWAYS classify files that look like dedicated license files
-				// (e.g., LICENSE, NOTICE, COPYING) regardless of their extension.
-				isLicense := fileInfo.IsLicenseFile || IsLicenseFilename(path)
-				if len(c.TargetExtensions) > 0 && !isLicense {
-					ext := filepath.Ext(path)
-					if !c.TargetExtensions[ext] {
-						metrics.FilesProcessed.Inc("skipped_extension")
-						// Emit an unclassified file
+						if fileInfo.IsNonLicense {
+							metrics.FilesProcessed.Inc("skipped_non_license")
+							// Emit an unclassified file
+							select {
+							case <-ctx.Done():
+								return
+							case out <- pipeline.ClassifiedFile{Path: path, ProjectRoot: proj.RootPath, IsLicenseFile: false}:
+							}
+							continue
+						}
+
+						// If TargetExtensions is configured, skip files that don't match.
+						// However, ALWAYS classify files that look like dedicated license files
+						// (e.g., LICENSE, NOTICE, COPYING) regardless of their extension.
+						isLicense := fileInfo.IsLicenseFile || IsLicenseFilename(path)
+						if len(c.TargetExtensions) > 0 && !isLicense {
+							ext := filepath.Ext(path)
+							if !c.TargetExtensions[ext] {
+								metrics.FilesProcessed.Inc("skipped_extension")
+								// Emit an unclassified file
+								select {
+								case <-ctx.Done():
+									return
+								case out <- pipeline.ClassifiedFile{Path: path, ProjectRoot: proj.RootPath, IsLicenseFile: isLicense}:
+								}
+								continue
+							}
+						}
+
+						classified, err := c.ClassifyFile(path, proj.RootPath, isLicense, fileInfo.LicenseParser)
+						if err != nil {
+							log.Printf("Failed to read/classify file %s: %v\n", path, err)
+							continue
+						}
+
+						metrics.FilesProcessed.Inc("classified")
+
+						if classified.IsLicenseFile {
+							metrics.LicenseFilesFound.Inc()
+						} else if len(classified.Matches) > 0 {
+							metrics.SourceFilesWithLicenses.Inc()
+						}
+
 						select {
 						case <-ctx.Done():
 							return
-						case out <- pipeline.ClassifiedFile{Path: path, ProjectRoot: proj.RootPath, IsLicenseFile: isLicense}:
+						case out <- *classified:
 						}
-						continue
 					}
 				}
-
-				classified, err := c.ClassifyFile(path, proj.RootPath, isLicense, fileInfo.LicenseParser)
-				if err != nil {
-					log.Printf("Failed to read/classify file %s: %v\n", path, err)
-					continue
-				}
-
-				metrics.FilesProcessed.Inc("classified")
-
-				if classified.IsLicenseFile {
-					metrics.LicenseFilesFound.Inc()
-				} else if len(classified.Matches) > 0 {
-					metrics.SourceFilesWithLicenses.Inc()
-				}
-
-				select {
-				case <-ctx.Done():
-					return
-				case out <- *classified:
-				}
-			}
+			}()
 		}
+		wg.Wait()
 	}()
 
 	return out, nil
