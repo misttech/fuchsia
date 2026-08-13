@@ -39,6 +39,11 @@ fuchsia_product_configuration(
             "kernel": {
                 "scheduler_enable_new_wakeup_accounting": True,
             },
+            "connectivity": {
+                "network": {
+                    "netstack_multi_vmo": True,
+                },
+            },
         },
         "product": {
             "build_info": DEFAULT_PRODUCT_BUILD_INFO | {
