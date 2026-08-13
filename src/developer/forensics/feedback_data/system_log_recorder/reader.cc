@@ -235,14 +235,15 @@ std::string PostProcess(const std::string_view log) {
 
 }  // namespace
 
-bool Concatenate(const std::string& logs_dir, const StorageSize max_decompressed_size,
-                 Decoder* decoder, const std::string& output_file_path, float* compression_ratio) {
+fit::result<ReaderError, std::string> Concatenate(const std::string& logs_dir,
+                                                  const StorageSize max_decompressed_size,
+                                                  Decoder* decoder, float* compression_ratio) {
   // Set the default compression to NAN in case Concatenate() fails.
   *compression_ratio = NAN;
 
   if (!files::IsDirectory(logs_dir)) {
-    FX_LOGS(WARNING) << "No previous boot logs found";
-    return false;
+    FX_LOGS(WARNING) << "No logs directory found: " << logs_dir;
+    return fit::error(ReaderError::kIoError);
   }
 
   std::vector<std::string> file_names;
@@ -277,25 +278,20 @@ bool Concatenate(const std::string& logs_dir, const StorageSize max_decompressed
   }
 
   if (total_compressed_log_size == 0) {
-    FX_LOGS(WARNING) << "The encoded previous boot log is empty";
-    return false;
+    FX_LOGS(WARNING) << "The encoded log is empty";
+    return fit::error(ReaderError::kIoError);
   }
 
   if (uncompressed_log.empty()) {
-    FX_LOGS(WARNING) << "The decoded previous boot log is empty";
-    return false;
+    FX_LOGS(WARNING) << "The decoded log is empty";
+    return fit::error(ReaderError::kDecompressionError);
   }
 
   // Sort logs and combine messages for repeated logs.
   uncompressed_log = PostProcess(uncompressed_log);
   if (uncompressed_log.empty()) {
-    FX_LOGS(WARNING) << "The post-processed previous boot log is empty";
-    return false;
-  }
-
-  if (!files::WriteFile(output_file_path, uncompressed_log)) {
-    FX_LOGS(WARNING) << "Could not write the previous boot log file: " << output_file_path;
-    return false;
+    FX_LOGS(WARNING) << "The post-processed log is empty";
+    return fit::error(ReaderError::kDecompressionError);
   }
 
   // Compression ratio rounded up to the next decimal, e.g., 2.54x compression -> 2.6x.
@@ -303,7 +299,7 @@ bool Concatenate(const std::string& logs_dir, const StorageSize max_decompressed
       (static_cast<uint32_t>(uncompressed_log.size()) * 10 - 1) / total_compressed_log_size + 1;
   *compression_ratio = (static_cast<float>(decimal_ratio)) / 10.0f;
 
-  return true;
+  return fit::ok(uncompressed_log);
 }
 
 }  // namespace system_log_recorder

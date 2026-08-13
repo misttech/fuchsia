@@ -5,6 +5,7 @@
 #ifndef SRC_DEVELOPER_FORENSICS_FEEDBACK_DATA_SYSTEM_LOG_RECORDER_SYSTEM_LOG_RECORDER_H_
 #define SRC_DEVELOPER_FORENSICS_FEEDBACK_DATA_SYSTEM_LOG_RECORDER_SYSTEM_LOG_RECORDER_H_
 
+#include <fidl/fuchsia.feedback.internal/cpp/fidl.h>
 #include <lib/async/cpp/task.h>
 #include <lib/async_patterns/cpp/dispatcher_bound.h>
 #include <lib/async_patterns/cpp/receiver.h>
@@ -15,6 +16,7 @@
 #include <queue>
 
 #include "src/developer/forensics/feedback_data/log_source.h"
+#include "src/developer/forensics/feedback_data/system_log_recorder/encoding/decoder.h"
 #include "src/developer/forensics/feedback_data/system_log_recorder/encoding/encoder.h"
 #include "src/developer/forensics/feedback_data/system_log_recorder/log_message_store.h"
 #include "src/developer/forensics/feedback_data/system_log_recorder/writer.h"
@@ -25,7 +27,7 @@ namespace forensics {
 namespace feedback_data {
 namespace system_log_recorder {
 
-class SystemLogRecorder {
+class SystemLogRecorder : public fidl::Server<fuchsia_feedback_internal::SystemLogRecorder> {
  public:
   struct WriteParameters {
     zx::duration period;
@@ -38,13 +40,22 @@ class SystemLogRecorder {
   SystemLogRecorder(async_dispatcher_t* archive_dispatcher, async_dispatcher_t* write_dispatcher,
                     std::shared_ptr<sys::ServiceDirectory> services,
                     WriteParameters write_parameters, std::unique_ptr<RedactorBase> redactor,
-                    std::unique_ptr<Encoder> encoder);
+                    std::unique_ptr<Encoder> encoder, std::unique_ptr<Decoder> decoder);
   void Start();
 
   // Flushes cached logs to disk and calls |callback| when complete.
   void Flush(const std::optional<std::string>& message, ::fit::callback<void()> callback);
 
   void StopAndDeleteLogs();
+
+  // |fuchsia_feedback_internal::SystemLogRecorder|
+  void GetCurrentBootLogs(GetCurrentBootLogsCompleter::Sync& completer) override;
+
+  void handle_unknown_method(
+      fidl::UnknownMethodMetadata<fuchsia_feedback_internal::SystemLogRecorder> metadata,
+      fidl::UnknownMethodCompleter::Sync& completer) override {
+    FX_LOGS(WARNING) << "Received an unknown method with ordinal: " << metadata.method_ordinal;
+  }
 
  private:
   void PeriodicWriteTask();

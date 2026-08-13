@@ -72,10 +72,19 @@ void CreatePreviousLogsFile(cobalt::Logger* cobalt, const StorageSize max_decomp
   // immediately after it's freed.
   feedback_data::system_log_recorder::ProductionDecoder decoder(max_decompressed_size.ToBytes());
   float compression_ratio;
-  if (!feedback_data::system_log_recorder::Concatenate(dir, max_decompressed_size, &decoder,
-                                                       write_path, &compression_ratio)) {
+  const fit::result<feedback_data::system_log_recorder::ReaderError, std::string> concatenated_log =
+      feedback_data::system_log_recorder::Concatenate(dir, max_decompressed_size, &decoder,
+                                                      &compression_ratio);
+  if (concatenated_log.is_error()) {
+    FX_LOGS(WARNING) << "Could not concatenate log files";
     return;
   }
+
+  if (!files::WriteFile(write_path, *concatenated_log)) {
+    FX_LOGS(WARNING) << "Could not write the log file: " << write_path;
+    return;
+  }
+
   FX_LOGS(INFO) << fxl::StringPrintf(
       "Found logs from previous boot cycle (compression ratio %.2f), available at %s\n",
       compression_ratio, write_path.c_str());

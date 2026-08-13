@@ -7,7 +7,6 @@
 #include <fuchsia/logger/cpp/fidl.h>
 #include <lib/syslog/cpp/log_level.h>
 
-#include <cmath>
 #include <memory>
 #include <vector>
 
@@ -23,6 +22,7 @@
 #include "src/developer/forensics/feedback_data/system_log_recorder/reader.h"
 #include "src/developer/forensics/testing/log_message.h"
 #include "src/developer/forensics/testing/scoped_memfs_manager.h"
+#include "src/developer/forensics/testing/unit_test_fixture.h"
 #include "src/developer/forensics/utils/log_format.h"
 #include "src/developer/forensics/utils/redact/redactor.h"
 #include "src/lib/files/directory.h"
@@ -33,6 +33,8 @@ namespace forensics {
 namespace feedback_data {
 namespace system_log_recorder {
 namespace {
+
+using WriterTest = UnitTestFixture;
 
 ::fpromise::result<fuchsia::logger::LogMessage, std::string> BuildLogMessage(
     const int32_t severity, const std::string& text,
@@ -50,7 +52,6 @@ const StorageSize kMaxDecompressedSize = StorageSize::Kilobytes(256);
 constexpr const char* kRootDirectory = "/root";
 constexpr const char* kWriteDirectory = "/root/write";
 constexpr const char* kReadDirectory = "/read";
-constexpr const char* kOutputFile = "/read/output.txt";
 
 class EncoderStub : public Encoder {
  public:
@@ -89,7 +90,7 @@ std::string MakeLogFilePath(const size_t file_num) {
   return files::JoinPath(kWriteDirectory, std::to_string(file_num));
 }
 
-TEST(WriterTest, VerifyFileOrdering) {
+TEST_F(WriterTest, VerifyFileOrdering) {
   // Set up the writer such that each file can fit 1 log message. When consuming a message the
   // end of block signal will be sent and a new empty file will be produced from file rotation.
   // From this behavior although we use 4 files, we only expect to retrieve the last 3 messages.
@@ -101,7 +102,7 @@ TEST(WriterTest, VerifyFileOrdering) {
 
   LogMessageStore store(kBlockSize, kBufferSize, MakeIdentityRedactor(), MakeIdentityEncoder());
   store.TurnOnRateLimiting();
-  SystemLogWriter writer(kWriteDirectory, 4u);
+  SystemLogWriter writer(kWriteDirectory, 4u, std::make_unique<IdentityDecoder>());
 
   // Written to file 0
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 1")));
@@ -140,19 +141,18 @@ TEST(WriterTest, VerifyFileOrdering) {
 )");
 
   float compression_ratio;
-  ASSERT_TRUE(Concatenate(kWriteDirectory, kMaxDecompressedSize, &decoder, kOutputFile,
-                          &compression_ratio));
+  const fit::result<ReaderError, std::string> result =
+      Concatenate(kWriteDirectory, kMaxDecompressedSize, &decoder, &compression_ratio);
+  ASSERT_TRUE(result.is_ok());
   EXPECT_EQ(compression_ratio, 1.0);
 
-  std::string contents;
-  ASSERT_TRUE(files::ReadFileToString(kOutputFile, &contents));
-  EXPECT_EQ(contents, R"([15604.000][07559][07687][] INFO: line 3
+  EXPECT_EQ(*result, R"([15604.000][07559][07687][] INFO: line 3
 [15604.000][07559][07687][] INFO: line 4
 [15604.000][07559][07687][] INFO: line 5
 )");
 }
 
-TEST(WriterTest, VerifyEncoderInput) {
+TEST_F(WriterTest, VerifyEncoderInput) {
   // Set up the writer such that each file can fit 2 log messages. We will then write 4 messages
   // and expect that the encoder receives 2 reset signals and encodes 2 log messages in each block.
   testing::ScopedMemFsManager memfs_manager;
@@ -165,7 +165,7 @@ TEST(WriterTest, VerifyEncoderInput) {
   EncoderStub* encoder_ptr = encoder.get();
   LogMessageStore store(kBlockSize, kBufferSize, MakeIdentityRedactor(), std::move(encoder));
   store.TurnOnRateLimiting();
-  SystemLogWriter writer(kWriteDirectory, 2u);
+  SystemLogWriter writer(kWriteDirectory, 2u, std::make_unique<IdentityDecoder>());
 
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 1")));
   writer.Write(store.Consume());
@@ -187,7 +187,7 @@ TEST(WriterTest, VerifyEncoderInput) {
 )");
 }
 
-TEST(WriterTest, WritesMessages) {
+TEST_F(WriterTest, WritesMessages) {
   testing::ScopedMemFsManager memfs_manager;
   memfs_manager.Create(kRootDirectory);
 
@@ -196,7 +196,7 @@ TEST(WriterTest, WritesMessages) {
   LogMessageStore store(kMaxLogLineSize * 2, kMaxLogLineSize * 2, MakeIdentityRedactor(),
                         MakeIdentityEncoder());
   store.TurnOnRateLimiting();
-  SystemLogWriter writer(kWriteDirectory, 2u);
+  SystemLogWriter writer(kWriteDirectory, 2u, std::make_unique<IdentityDecoder>());
 
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 0")));
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 1")));
@@ -207,13 +207,12 @@ TEST(WriterTest, WritesMessages) {
   IdentityDecoder decoder;
 
   float compression_ratio;
-  ASSERT_TRUE(Concatenate(kWriteDirectory, kMaxDecompressedSize, &decoder, kOutputFile,
-                          &compression_ratio));
+  const fit::result<ReaderError, std::string> result =
+      Concatenate(kWriteDirectory, kMaxDecompressedSize, &decoder, &compression_ratio);
+  ASSERT_TRUE(result.is_ok());
   EXPECT_EQ(compression_ratio, 1.0);
 
-  std::string contents;
-  ASSERT_TRUE(files::ReadFileToString(kOutputFile, &contents));
-  EXPECT_EQ(contents, R"([15604.000][07559][07687][] INFO: line 0
+  EXPECT_EQ(*result, R"([15604.000][07559][07687][] INFO: line 0
 [15604.000][07559][07687][] INFO: line 1
 !!! DROPPED 1 MESSAGES !!!
 )");
@@ -222,17 +221,17 @@ TEST(WriterTest, WritesMessages) {
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 4")));
   writer.Write(store.Consume());
 
-  ASSERT_TRUE(Concatenate(kWriteDirectory, kMaxDecompressedSize, &decoder, kOutputFile,
-                          &compression_ratio));
+  const fit::result<ReaderError, std::string> result2 =
+      Concatenate(kWriteDirectory, kMaxDecompressedSize, &decoder, &compression_ratio);
+  ASSERT_TRUE(result2.is_ok());
   EXPECT_EQ(compression_ratio, 1.0);
 
-  ASSERT_TRUE(files::ReadFileToString(kOutputFile, &contents));
-  EXPECT_EQ(contents, R"([15604.000][07559][07687][] INFO: line 3
+  EXPECT_EQ(*result2, R"([15604.000][07559][07687][] INFO: line 3
 [15604.000][07559][07687][] INFO: line 4
 )");
 }
 
-TEST(WriterTest, VerifyCompressionRatio) {
+TEST_F(WriterTest, VerifyCompressionRatio) {
   // Generate 2x data when decoding. The decoder data output is not useful, just its size.
   testing::ScopedMemFsManager memfs_manager;
   memfs_manager.Create(kRootDirectory);
@@ -240,7 +239,7 @@ TEST(WriterTest, VerifyCompressionRatio) {
   LogMessageStore store(kMaxLogLineSize * 4, kMaxLogLineSize * 4, MakeIdentityRedactor(),
                         MakeIdentityEncoder());
   store.TurnOnRateLimiting();
-  SystemLogWriter writer(kWriteDirectory, 2u);
+  SystemLogWriter writer(kWriteDirectory, 2u, std::make_unique<IdentityDecoder>());
 
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 0")));
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 1")));
@@ -251,12 +250,13 @@ TEST(WriterTest, VerifyCompressionRatio) {
   Decoder2x decoder;
 
   float compression_ratio;
-  ASSERT_TRUE(Concatenate(kWriteDirectory, kMaxDecompressedSize, &decoder, kOutputFile,
-                          &compression_ratio));
+  const fit::result<ReaderError, std::string> result =
+      Concatenate(kWriteDirectory, kMaxDecompressedSize, &decoder, &compression_ratio);
+  ASSERT_TRUE(result.is_ok());
   EXPECT_EQ(compression_ratio, 2.0);
 }
 
-TEST(WriterTest, VerifyProductionEcoding) {
+TEST_F(WriterTest, VerifyProductionEcoding) {
   testing::ScopedMemFsManager memfs_manager;
   memfs_manager.Create(kRootDirectory);
 
@@ -265,7 +265,7 @@ TEST(WriterTest, VerifyProductionEcoding) {
   LogMessageStore store(kMaxLogLineSize * 5, kMaxLogLineSize * 5, MakeIdentityRedactor(),
                         std::move(encoder));
   store.TurnOnRateLimiting();
-  SystemLogWriter writer(kWriteDirectory, 2u);
+  SystemLogWriter writer(kWriteDirectory, 2u, std::make_unique<IdentityDecoder>());
 
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 0")));
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 1")));
@@ -278,13 +278,12 @@ TEST(WriterTest, VerifyProductionEcoding) {
   ProductionDecoder decoder;
 
   float compression_ratio;
-  ASSERT_TRUE(Concatenate(kWriteDirectory, kMaxDecompressedSize, &decoder, kOutputFile,
-                          &compression_ratio));
+  const fit::result<ReaderError, std::string> result =
+      Concatenate(kWriteDirectory, kMaxDecompressedSize, &decoder, &compression_ratio);
+  ASSERT_TRUE(result.is_ok());
   EXPECT_FALSE(std::isnan(compression_ratio));
 
-  std::string contents;
-  ASSERT_TRUE(files::ReadFileToString(kOutputFile, &contents));
-  EXPECT_EQ(contents, R"([15604.000][07559][07687][] INFO: line 0
+  EXPECT_EQ(*result, R"([15604.000][07559][07687][] INFO: line 0
 [15604.000][07559][07687][] INFO: line 1
 [15604.000][07559][07687][] INFO: line 2
 [15604.000][07559][07687][] INFO: line 3
@@ -292,7 +291,7 @@ TEST(WriterTest, VerifyProductionEcoding) {
 )");
 }
 
-TEST(WriterTest, FilesAlreadyPresent) {
+TEST_F(WriterTest, FilesAlreadyPresent) {
   testing::ScopedMemFsManager memfs_manager;
   memfs_manager.Create(kRootDirectory);
 
@@ -303,7 +302,7 @@ TEST(WriterTest, FilesAlreadyPresent) {
                           std::move(encoder));
     store.TurnOnRateLimiting();
 
-    SystemLogWriter writer(kWriteDirectory, 2u);
+    SystemLogWriter writer(kWriteDirectory, 2u, std::make_unique<IdentityDecoder>());
 
     EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 0")));
     EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 1")));
@@ -316,7 +315,7 @@ TEST(WriterTest, FilesAlreadyPresent) {
                           std::move(encoder));
     store.TurnOnRateLimiting();
 
-    SystemLogWriter writer(kWriteDirectory, 2u);
+    SystemLogWriter writer(kWriteDirectory, 2u, std::make_unique<IdentityDecoder>());
 
     EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 2")));
     EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 3")));
@@ -327,20 +326,19 @@ TEST(WriterTest, FilesAlreadyPresent) {
   ProductionDecoder decoder;
 
   float compression_ratio;
-  ASSERT_TRUE(Concatenate(kWriteDirectory, kMaxDecompressedSize, &decoder, kOutputFile,
-                          &compression_ratio));
+  const fit::result<ReaderError, std::string> result =
+      Concatenate(kWriteDirectory, kMaxDecompressedSize, &decoder, &compression_ratio);
+  ASSERT_TRUE(result.is_ok());
   EXPECT_FALSE(std::isnan(compression_ratio));
 
-  std::string contents;
-  ASSERT_TRUE(files::ReadFileToString(kOutputFile, &contents));
-  EXPECT_EQ(contents, R"([15604.000][07559][07687][] INFO: line 0
+  EXPECT_EQ(*result, R"([15604.000][07559][07687][] INFO: line 0
 [15604.000][07559][07687][] INFO: line 1
 [15604.000][07559][07687][] INFO: line 2
 [15604.000][07559][07687][] INFO: line 3
 )");
 }
 
-TEST(WriterTest, FailCreateDirectory) {
+TEST_F(WriterTest, FailCreateDirectory) {
   // Don't set up kRootDirectory
   testing::ScopedMemFsManager memfs_manager;
 
@@ -349,7 +347,7 @@ TEST(WriterTest, FailCreateDirectory) {
   LogMessageStore store(kMaxLogLineSize * 2, kMaxLogLineSize * 2, MakeIdentityRedactor(),
                         MakeIdentityEncoder());
   store.TurnOnRateLimiting();
-  SystemLogWriter writer(kWriteDirectory, 2u);
+  SystemLogWriter writer(kWriteDirectory, 2u, std::make_unique<IdentityDecoder>());
 
   // Create the kRootDirectory so kWriteDirectory can be made by |writer| after the next set of
   // writes.
@@ -364,27 +362,24 @@ TEST(WriterTest, FailCreateDirectory) {
   IdentityDecoder decoder;
 
   float compression_ratio;
-  EXPECT_FALSE(Concatenate(kWriteDirectory, kMaxDecompressedSize, &decoder, kOutputFile,
-                           &compression_ratio));
-
-  std::string contents;
-  EXPECT_FALSE(files::ReadFileToString(kOutputFile, &contents));
+  EXPECT_TRUE(
+      Concatenate(kWriteDirectory, kMaxDecompressedSize, &decoder, &compression_ratio).is_error());
 
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 3")));
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 4")));
   writer.Write(store.Consume());
 
-  ASSERT_TRUE(Concatenate(kWriteDirectory, kMaxDecompressedSize, &decoder, kOutputFile,
-                          &compression_ratio));
+  const fit::result<ReaderError, std::string> result =
+      Concatenate(kWriteDirectory, kMaxDecompressedSize, &decoder, &compression_ratio);
+  ASSERT_TRUE(result.is_ok());
   EXPECT_EQ(compression_ratio, 1.0);
 
-  ASSERT_TRUE(files::ReadFileToString(kOutputFile, &contents));
-  EXPECT_EQ(contents, R"([15604.000][07559][07687][] INFO: line 3
+  EXPECT_EQ(*result, R"([15604.000][07559][07687][] INFO: line 3
 [15604.000][07559][07687][] INFO: line 4
 )");
 }
 
-TEST(WriterTest, DirectoryDisappears) {
+TEST_F(WriterTest, DirectoryDisappears) {
   testing::ScopedMemFsManager memfs_manager;
   memfs_manager.Create(kRootDirectory);
 
@@ -393,7 +388,7 @@ TEST(WriterTest, DirectoryDisappears) {
   LogMessageStore store(kMaxLogLineSize * 2, kMaxLogLineSize * 2, MakeIdentityRedactor(),
                         MakeIdentityEncoder());
   store.TurnOnRateLimiting();
-  SystemLogWriter writer(kWriteDirectory, 2u);
+  SystemLogWriter writer(kWriteDirectory, 2u, std::make_unique<IdentityDecoder>());
 
   // Destroy kWriteDirectory so the next set of writes fail and the directory is recreated.
   ASSERT_TRUE(files::DeletePath(kWriteDirectory, /*recursive=*/true));
@@ -407,27 +402,24 @@ TEST(WriterTest, DirectoryDisappears) {
   IdentityDecoder decoder;
 
   float compression_ratio;
-  EXPECT_FALSE(Concatenate(kWriteDirectory, kMaxDecompressedSize, &decoder, kOutputFile,
-                           &compression_ratio));
-
-  std::string contents;
-  EXPECT_FALSE(files::ReadFileToString(kOutputFile, &contents));
+  EXPECT_TRUE(
+      Concatenate(kWriteDirectory, kMaxDecompressedSize, &decoder, &compression_ratio).is_error());
 
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 3")));
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 4")));
   writer.Write(store.Consume());
 
-  ASSERT_TRUE(Concatenate(kWriteDirectory, kMaxDecompressedSize, &decoder, kOutputFile,
-                          &compression_ratio));
+  const fit::result<ReaderError, std::string> result =
+      Concatenate(kWriteDirectory, kMaxDecompressedSize, &decoder, &compression_ratio);
+  ASSERT_TRUE(result.is_ok());
   EXPECT_EQ(compression_ratio, 1.0);
 
-  ASSERT_TRUE(files::ReadFileToString(kOutputFile, &contents));
-  EXPECT_EQ(contents, R"([15604.000][07559][07687][] INFO: line 3
+  EXPECT_EQ(*result, R"([15604.000][07559][07687][] INFO: line 3
 [15604.000][07559][07687][] INFO: line 4
 )");
 }
 
-TEST(WriterTest, IgnoreNonNumericFiles) {
+TEST_F(WriterTest, IgnoreNonNumericFiles) {
   testing::ScopedMemFsManager memfs_manager;
   memfs_manager.Create(kRootDirectory);
   ASSERT_TRUE(files::CreateDirectory(kWriteDirectory));
@@ -438,7 +430,7 @@ TEST(WriterTest, IgnoreNonNumericFiles) {
 
   LogMessageStore store(kMaxLogLineSize * 5, kMaxLogLineSize * 5, MakeIdentityRedactor(),
                         MakeIdentityEncoder());
-  SystemLogWriter writer(kWriteDirectory, 5u);
+  SystemLogWriter writer(kWriteDirectory, 5u, std::make_unique<IdentityDecoder>());
 
   // Additional writes should continue from file 2, ignoring invalid files.
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 0")));
@@ -447,7 +439,7 @@ TEST(WriterTest, IgnoreNonNumericFiles) {
   EXPECT_TRUE(files::IsFile(files::JoinPath(kWriteDirectory, "2")));
 }
 
-TEST(WriterTest, SavesMetadata) {
+TEST_F(WriterTest, SavesMetadata) {
   testing::ScopedMemFsManager memfs_manager;
   memfs_manager.Create(kRootDirectory);
 
@@ -455,7 +447,8 @@ TEST(WriterTest, SavesMetadata) {
 
   LogMessageStore store(kMaxLogLineSize, kMaxLogLineSize, MakeIdentityRedactor(),
                         MakeIdentityEncoder());
-  SystemLogWriter writer(kWriteDirectory, /*max_num_files=*/2u, metadata_path);
+  SystemLogWriter writer(kWriteDirectory, /*max_num_files=*/2u, std::make_unique<IdentityDecoder>(),
+                         metadata_path);
 
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 0", zx::msec(100))));
   writer.Write(store.Consume());
@@ -472,7 +465,7 @@ TEST(WriterTest, SavesMetadata) {
   EXPECT_EQ(metadata->LastTimestamp()->get(), (zx::sec(15604) + zx::msec(100)).get());
 }
 
-TEST(WriterTest, SavesMetadataMultipleFiles) {
+TEST_F(WriterTest, SavesMetadataMultipleFiles) {
   testing::ScopedMemFsManager memfs_manager;
   memfs_manager.Create(kRootDirectory);
 
@@ -480,7 +473,8 @@ TEST(WriterTest, SavesMetadataMultipleFiles) {
 
   LogMessageStore store(kMaxLogLineSize, kMaxLogLineSize, MakeIdentityRedactor(),
                         MakeIdentityEncoder());
-  SystemLogWriter writer(kWriteDirectory, /*max_num_files=*/2u, metadata_path);
+  SystemLogWriter writer(kWriteDirectory, /*max_num_files=*/2u, std::make_unique<IdentityDecoder>(),
+                         metadata_path);
 
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 0", zx::msec(100))));
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 1", zx::msec(200))));
@@ -498,7 +492,7 @@ TEST(WriterTest, SavesMetadataMultipleFiles) {
   EXPECT_EQ(metadata->LastTimestamp()->get(), (zx::sec(15604) + zx::msec(200)).get());
 }
 
-TEST(WriterTest, SavesMetadataMultipleWritesInSingleBlock) {
+TEST_F(WriterTest, SavesMetadataMultipleWritesInSingleBlock) {
   testing::ScopedMemFsManager memfs_manager;
   memfs_manager.Create(kRootDirectory);
 
@@ -507,7 +501,8 @@ TEST(WriterTest, SavesMetadataMultipleWritesInSingleBlock) {
   // Block size can hold 10 log messages; buffer size holds 1 log message.
   LogMessageStore store(kMaxLogLineSize * 10, kMaxLogLineSize, MakeIdentityRedactor(),
                         MakeIdentityEncoder());
-  SystemLogWriter writer(kWriteDirectory, /*max_num_files=*/2u, metadata_path);
+  SystemLogWriter writer(kWriteDirectory, /*max_num_files=*/2u, std::make_unique<IdentityDecoder>(),
+                         metadata_path);
 
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 0", zx::msec(100))));
   writer.Write(store.Consume());
@@ -547,7 +542,7 @@ TEST(WriterTest, SavesMetadataMultipleWritesInSingleBlock) {
   EXPECT_EQ(metadata->LastTimestamp()->get(), (zx::sec(15604) + zx::msec(300)).get());
 }
 
-TEST(WriterTest, RestoresMetadataOnRestart) {
+TEST_F(WriterTest, RestoresMetadataOnRestart) {
   testing::ScopedMemFsManager memfs_manager;
   memfs_manager.Create(kRootDirectory);
 
@@ -556,7 +551,8 @@ TEST(WriterTest, RestoresMetadataOnRestart) {
   {
     LogMessageStore store(kMaxLogLineSize, kMaxLogLineSize, MakeIdentityRedactor(),
                           MakeIdentityEncoder());
-    SystemLogWriter writer(kWriteDirectory, /*max_num_files=*/4u, metadata_path);
+    SystemLogWriter writer(kWriteDirectory, /*max_num_files=*/4u,
+                           std::make_unique<IdentityDecoder>(), metadata_path);
 
     EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 0", zx::msec(100))));
     EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 1", zx::msec(200))));
@@ -576,7 +572,8 @@ TEST(WriterTest, RestoresMetadataOnRestart) {
   {
     LogMessageStore store(kMaxLogLineSize, kMaxLogLineSize, MakeIdentityRedactor(),
                           MakeIdentityEncoder());
-    SystemLogWriter writer(kWriteDirectory, /*max_num_files=*/4u, metadata_path);
+    SystemLogWriter writer(kWriteDirectory, /*max_num_files=*/4u,
+                           std::make_unique<IdentityDecoder>(), metadata_path);
 
     EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 2", zx::msec(300))));
     writer.Write(store.Consume());
@@ -592,7 +589,7 @@ TEST(WriterTest, RestoresMetadataOnRestart) {
   EXPECT_EQ(metadata->LastTimestamp()->get(), (zx::sec(15604) + zx::msec(300)).get());
 }
 
-TEST(WriterTest, RollsOutRestoredMetadataOnRotation) {
+TEST_F(WriterTest, RollsOutRestoredMetadataOnRotation) {
   testing::ScopedMemFsManager memfs_manager;
   memfs_manager.Create(kRootDirectory);
 
@@ -601,7 +598,8 @@ TEST(WriterTest, RollsOutRestoredMetadataOnRotation) {
   {
     LogMessageStore store(kMaxLogLineSize, kMaxLogLineSize, MakeIdentityRedactor(),
                           MakeIdentityEncoder());
-    SystemLogWriter writer(kWriteDirectory, /*max_num_files=*/4u, metadata_path);
+    SystemLogWriter writer(kWriteDirectory, /*max_num_files=*/4u,
+                           std::make_unique<IdentityDecoder>(), metadata_path);
 
     EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 0", zx::msec(100))));
     writer.Write(store.Consume());
@@ -628,7 +626,8 @@ TEST(WriterTest, RollsOutRestoredMetadataOnRotation) {
     // reflects remaining files on disk (files 2, 3, 4) = only 2 msgs because file 3 is empty.
     LogMessageStore store(kMaxLogLineSize, kMaxLogLineSize, MakeIdentityRedactor(),
                           MakeIdentityEncoder());
-    SystemLogWriter writer(kWriteDirectory, /*max_num_files=*/4u, metadata_path);
+    SystemLogWriter writer(kWriteDirectory, /*max_num_files=*/4u,
+                           std::make_unique<IdentityDecoder>(), metadata_path);
 
     EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 3", zx::msec(400))));
     writer.Write(store.Consume());
@@ -644,14 +643,83 @@ TEST(WriterTest, RollsOutRestoredMetadataOnRotation) {
   }
 }
 
-TEST(WriterTest, DeleteLogs) {
+TEST_F(WriterTest, DeleteLogs) {
   testing::ScopedMemFsManager memfs_manager;
   memfs_manager.Create(kRootDirectory);
 
-  SystemLogWriter writer(kWriteDirectory, /*max_num_files=*/2u);
+  SystemLogWriter writer(kWriteDirectory, /*max_num_files=*/2u,
+                         std::make_unique<IdentityDecoder>());
   EXPECT_TRUE(files::IsDirectory(kWriteDirectory));
   writer.DeleteLogs();
   EXPECT_FALSE(files::IsDirectory(kWriteDirectory));
+}
+
+TEST_F(WriterTest, FlushAndReadLogs) {
+  testing::ScopedMemFsManager memfs_manager;
+  memfs_manager.Create(kRootDirectory);
+
+  const std::string metadata_path = files::JoinPath(kRootDirectory, "metadata.json");
+
+  const StorageSize kBlockSize = kMaxLogLineSize * 5;
+  const StorageSize kBufferSize = kMaxLogLineSize * 5;
+
+  LogMessageStore store(kBlockSize, kBufferSize, MakeIdentityRedactor(),
+                        std::make_unique<IdentityEncoder>());
+  store.TurnOnRateLimiting();
+  SystemLogWriter writer(kWriteDirectory, /*max_num_files=*/2u, std::make_unique<IdentityDecoder>(),
+                         metadata_path);
+
+  EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 0", zx::msec(100))));
+  EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 1", zx::msec(200))));
+
+  std::optional<fit::result<SystemLogWriter::WriterError, SystemLogWriter::Logs>> result;
+  writer.FlushAndReadLogs(
+      store.Consume(), [&](fit::result<SystemLogWriter::WriterError, SystemLogWriter::Logs> res) {
+        result = std::move(res);
+      });
+
+  ASSERT_TRUE(result.has_value());
+  ASSERT_TRUE(result->is_ok());
+  SystemLogWriter::Logs logs = std::move(result->value());
+  ASSERT_TRUE(logs.vmo.is_valid());
+
+  uint64_t size;
+  ASSERT_EQ(logs.vmo.get_stream_size(&size), ZX_OK);
+  std::string contents(size, '\0');
+  ASSERT_EQ(logs.vmo.read(contents.data(), 0, size), ZX_OK);
+
+  EXPECT_EQ(contents, R"([15604.100][07559][07687][] INFO: line 0
+[15604.200][07559][07687][] INFO: line 1
+)");
+  ASSERT_TRUE(logs.first_timestamp.has_value());
+  ASSERT_TRUE(logs.last_timestamp.has_value());
+  EXPECT_EQ(*logs.first_timestamp, zx::time_boot((zx::sec(15604) + zx::msec(100)).get()));
+  EXPECT_EQ(*logs.last_timestamp, zx::time_boot((zx::sec(15604) + zx::msec(200)).get()));
+}
+
+TEST_F(WriterTest, FlushAndReadLogsEmptyLogs) {
+  testing::ScopedMemFsManager memfs_manager;
+  memfs_manager.Create(kRootDirectory);
+
+  const std::string metadata_path = files::JoinPath(kRootDirectory, "metadata.json");
+
+  const StorageSize kBlockSize = kMaxLogLineSize * 5;
+  const StorageSize kBufferSize = kMaxLogLineSize * 5;
+
+  LogMessageStore store(kBlockSize, kBufferSize, MakeIdentityRedactor(),
+                        std::make_unique<IdentityEncoder>());
+  SystemLogWriter writer(kWriteDirectory, /*max_num_files=*/2u, std::make_unique<IdentityDecoder>(),
+                         metadata_path);
+
+  std::optional<fit::result<SystemLogWriter::WriterError, SystemLogWriter::Logs>> result;
+  writer.FlushAndReadLogs(
+      store.Consume(), [&](fit::result<SystemLogWriter::WriterError, SystemLogWriter::Logs> res) {
+        result = std::move(res);
+      });
+
+  ASSERT_TRUE(result.has_value());
+  EXPECT_TRUE(result->is_error());
+  EXPECT_EQ(result->error_value(), SystemLogWriter::WriterError::kIoError);
 }
 
 }  // namespace

@@ -7,11 +7,13 @@
 #include <fcntl.h>
 #include <lib/syslog/cpp/macros.h>
 #include <lib/trace/event.h>
+#include <lib/zx/vmo.h>
 #include <unistd.h>
 
 #include <string>
 
 #include "src/developer/forensics/feedback_data/system_log_recorder/disk_backed_logs_metadata.h"
+#include "src/developer/forensics/feedback_data/system_log_recorder/reader.h"
 #include "src/lib/files/directory.h"
 #include "src/lib/files/path.h"
 #include "src/lib/fxl/strings/string_number_conversions.h"
@@ -21,9 +23,10 @@ namespace feedback_data {
 namespace system_log_recorder {
 
 SystemLogWriter::SystemLogWriter(const std::string& logs_dir, size_t max_num_files,
-                                 const std::string& metadata_path)
+                                 std::unique_ptr<Decoder> decoder, const std::string& metadata_path)
     : logs_dir_(logs_dir),
       max_num_files_(max_num_files),
+      decoder_(std::move(decoder)),
       metadata_({}, kFirstFileNumber),
       metadata_path_(metadata_path) {
   FX_CHECK(max_num_files_ > 0);
@@ -116,6 +119,49 @@ void SystemLogWriter::DeleteLogs() {
   files::DeletePath(logs_dir_, /*recursive=*/true);
   files::DeletePath(metadata_path_, /*recursive=*/true);
   metadata_.Clear();
+}
+
+void SystemLogWriter::FlushAndReadLogs(const LogMessageStore::ConsumeResult& result,
+                                       FlushAndReadLogsCallback callback) {
+  Write(result);
+
+  float compression_ratio;
+  const fit::result<ReaderError, std::string> uncompressed_log =
+      Concatenate(logs_dir_, feedback::kPersistedLogsTotalSize, decoder_.get(), &compression_ratio);
+
+  if (uncompressed_log.is_error()) {
+    switch (uncompressed_log.error_value()) {
+      case ReaderError::kIoError:
+        callback(fit::error(WriterError::kIoError));
+        return;
+      case ReaderError::kDecompressionError:
+        callback(fit::error(WriterError::kDecompressionError));
+        return;
+    }
+  }
+
+  const std::string& log_str = *uncompressed_log;
+
+  zx::vmo vmo;
+  zx_status_t status = zx::vmo::create(log_str.size(), /*options=*/0, &vmo);
+  if (status != ZX_OK) {
+    FX_PLOGS(WARNING, status) << "Failed to create VMO of size " << log_str.size();
+    callback(fit::error(WriterError::kVmoError));
+    return;
+  }
+
+  status = vmo.write(log_str.data(), /*offset=*/0, log_str.size());
+  if (status != ZX_OK) {
+    FX_PLOGS(WARNING, status) << "Failed to write logs to VMO";
+    callback(fit::error(WriterError::kVmoError));
+    return;
+  }
+
+  callback(fit::ok(Logs{
+      .vmo = std::move(vmo),
+      .first_timestamp = metadata_.FirstTimestamp(),
+      .last_timestamp = metadata_.LastTimestamp(),
+  }));
 }
 
 std::string SystemLogWriter::Path(const size_t file_num) const {

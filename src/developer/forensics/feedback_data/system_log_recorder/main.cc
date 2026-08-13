@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <fidl/fuchsia.feedback.internal/cpp/fidl.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
 #include <lib/fidl/cpp/binding.h>
@@ -72,7 +73,16 @@ int main() {
       // Don't set up Inspect because all messages in the previous boot log
       // are in the current boot log and counted in Inspect.
       feedback::RedactorFromConfig(nullptr /*no inspect*/, feedback_config->build_type_config),
-      std::unique_ptr<Encoder>(new ProductionEncoder()));
+      std::make_unique<ProductionEncoder>(), std::make_unique<ProductionDecoder>());
+
+  context->outgoing()->AddPublicService(
+      [&recorder](zx::channel channel, async_dispatcher_t* dispatcher) {
+        fidl::BindServer(
+            dispatcher,
+            fidl::ServerEnd<fuchsia_feedback_internal::SystemLogRecorder>(std::move(channel)),
+            &recorder);
+      },
+      fuchsia_feedback_internal::SystemLogRecorder::kDiscoverableName);
 
   // Set up the controller to shut down or flush the buffers of the system log recorder when it gets
   // the signal to do so.

@@ -29,7 +29,8 @@ SystemLogRecorder::SystemLogRecorder(async_dispatcher_t* archive_dispatcher,
                                      std::shared_ptr<sys::ServiceDirectory> services,
                                      WriteParameters write_parameters,
                                      std::unique_ptr<RedactorBase> redactor,
-                                     std::unique_ptr<Encoder> encoder)
+                                     std::unique_ptr<Encoder> encoder,
+                                     std::unique_ptr<Decoder> decoder)
     : archive_dispatcher_(archive_dispatcher),
       write_period_(write_parameters.period),
       is_running_(false),
@@ -37,7 +38,7 @@ SystemLogRecorder::SystemLogRecorder(async_dispatcher_t* archive_dispatcher,
              write_parameters.max_write_size, std::move(redactor), std::move(encoder)),
       log_source_(archive_dispatcher, std::move(services), &store_),
       writer_(write_dispatcher, std::in_place, write_parameters.logs_dir,
-              write_parameters.max_num_files),
+              write_parameters.max_num_files, std::move(decoder)),
       receiver_(this, archive_dispatcher) {}
 
 void SystemLogRecorder::Start() {
@@ -107,6 +108,39 @@ void SystemLogRecorder::OnWriteComplete(bool success) {
   if (is_running_) {
     periodic_write_task_.PostDelayed(archive_dispatcher_, write_period_);
   }
+}
+
+void SystemLogRecorder::GetCurrentBootLogs(GetCurrentBootLogsCompleter::Sync& completer) {
+  LogMessageStore::ConsumeResult result = store_.Consume();
+  writer_.AsyncCall(
+      &SystemLogWriter::FlushAndReadLogs, std::move(result),
+      [completer = completer.ToAsync()](
+          fit::result<SystemLogWriter::WriterError, SystemLogWriter::Logs> result) mutable {
+        if (result.is_error()) {
+          switch (result.error_value()) {
+            case SystemLogWriter::WriterError::kIoError:
+              completer.Reply(fit::error(fuchsia_feedback_internal::RecorderError::kIoError));
+              return;
+            case SystemLogWriter::WriterError::kDecompressionError:
+              completer.Reply(
+                  fit::error(fuchsia_feedback_internal::RecorderError::kDecompressionError));
+              return;
+            case SystemLogWriter::WriterError::kVmoError:
+              completer.Reply(fit::error(fuchsia_feedback_internal::RecorderError::kVmoError));
+              return;
+          }
+        }
+
+        fuchsia_feedback_internal::SystemLogMetadata metadata;
+        metadata.first_timestamp(result->first_timestamp);
+        metadata.last_timestamp(result->last_timestamp);
+
+        fuchsia_feedback_internal::SystemLogRecorderGetCurrentBootLogsResponse response;
+        response.logs(std::move(result->vmo));
+        response.metadata(std::move(metadata));
+
+        completer.Reply(fit::ok(std::move(response)));
+      });
 }
 
 }  // namespace system_log_recorder

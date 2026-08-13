@@ -5,12 +5,20 @@
 #ifndef SRC_DEVELOPER_FORENSICS_FEEDBACK_DATA_SYSTEM_LOG_RECORDER_WRITER_H_
 #define SRC_DEVELOPER_FORENSICS_FEEDBACK_DATA_SYSTEM_LOG_RECORDER_WRITER_H_
 
+#include <lib/fit/function.h>
+#include <lib/fit/result.h>
+#include <lib/zx/time.h>
+#include <lib/zx/vmo.h>
+
+#include <memory>
+#include <optional>
 #include <string>
 
 #include <fbl/unique_fd.h>
 
 #include "src/developer/forensics/feedback/constants.h"
 #include "src/developer/forensics/feedback_data/system_log_recorder/disk_backed_logs_metadata.h"
+#include "src/developer/forensics/feedback_data/system_log_recorder/encoding/decoder.h"
 #include "src/developer/forensics/feedback_data/system_log_recorder/log_message_store.h"
 
 namespace forensics {
@@ -18,11 +26,28 @@ namespace feedback_data {
 namespace system_log_recorder {
 
 // Consumes the full content of a store on request, writing it to a rotating set of files.
+//
+// This class is thread-unsafe. All functions must be called on the same dispatcher.
 class SystemLogWriter {
  public:
+  enum class WriterError : std::uint8_t {
+    kIoError,
+    kDecompressionError,
+    kVmoError,
+  };
+
+  struct Logs {
+    zx::vmo vmo;
+    std::optional<zx::time_boot> first_timestamp;
+    std::optional<zx::time_boot> last_timestamp;
+  };
+
+  using FlushAndReadLogsCallback = ::fit::callback<void(::fit::result<WriterError, Logs>)>;
+
   static constexpr size_t kFirstFileNumber = 0u;
 
   SystemLogWriter(const std::string& logs_dir, size_t max_num_files,
+                  std::unique_ptr<Decoder> decoder,
                   const std::string& metadata_path = feedback::kCurrentDiskBackedLogsMetadataPath);
 
   // Returns true if metadata was successfully written to disk.
@@ -35,6 +60,11 @@ class SystemLogWriter {
   // Deletes all logs from disk.
   void DeleteLogs();
 
+  // Flushes the given consume result to disk, reads all persisted logs and metadata, then passes
+  // the data to |callback|.
+  void FlushAndReadLogs(const LogMessageStore::ConsumeResult& result,
+                        FlushAndReadLogsCallback callback);
+
  private:
   // Truncates the first file to start anew.
   void StartNewFile();
@@ -44,6 +74,7 @@ class SystemLogWriter {
 
   const std::string logs_dir_;
   const size_t max_num_files_;
+  std::unique_ptr<Decoder> decoder_;
 
   DiskBackedLogsMetadata metadata_;
   const std::string metadata_path_;

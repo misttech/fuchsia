@@ -50,6 +50,7 @@ source_set("src") {
 
   public_deps = [
     "encoding:encoder",
+    "fidl:fuchsia.feedback.internal_cpp",
     "//sdk/fidl/fuchsia.feedback:fuchsia.feedback_hlcpp",
     "//sdk/fidl/fuchsia.process.lifecycle:fuchsia.process.lifecycle_hlcpp",
     "//sdk/lib/async-loop:async-loop-cpp",
@@ -64,6 +65,8 @@ source_set("src") {
   ]
 
   deps = [
+    ":reader",
+    "encoding:production",
     "//sdk/fidl/fuchsia.diagnostics:fuchsia.diagnostics_hlcpp",
     "//sdk/lib/syslog/cpp",
     "//src/developer/forensics/feedback_data:constants",
@@ -86,7 +89,10 @@ source_set("reader") {
     "reader.h",
   ]
 
-  public_deps = [ "encoding:decoder" ]
+  public_deps = [
+    "encoding:decoder",
+    "//sdk/lib/fit",
+  ]
 
   deps = [
     "//sdk/lib/syslog/cpp",

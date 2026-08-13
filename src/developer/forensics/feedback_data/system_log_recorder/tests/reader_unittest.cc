@@ -78,19 +78,15 @@ TEST(ReaderTest, MergeRepeatedMessages) {
 !!! MESSAGE REPEATED 2 MORE TIMES !!!
 )"));
 
-  files::ScopedTempDir output_dir;
-  const std::string output_path = files::JoinPath(output_dir.path(), "output.txt");
   float compression_ratio;
   IdentityDecoder decoder;
 
-  ASSERT_TRUE(Concatenate(temp_dir.path(), kMaxDecompressedSize, &decoder, output_path,
-                          &compression_ratio));
-
-  std::string contents;
-  ASSERT_TRUE(files::ReadFileToString(output_path, &contents));
+  const fit::result<ReaderError, std::string> result =
+      Concatenate(temp_dir.path(), kMaxDecompressedSize, &decoder, &compression_ratio);
+  ASSERT_TRUE(result.is_ok());
 
   // Verify output, expect: msg_0 x124 msg_1 x7.
-  EXPECT_EQ(contents, R"([00001.000][07559][07687][] INFO: line 0
+  EXPECT_EQ(*result, R"([00001.000][07559][07687][] INFO: line 0
 !!! MESSAGE REPEATED 124 MORE TIMES !!!
 [00001.000][07559][07687][] INFO: line 1
 !!! MESSAGE REPEATED 7 MORE TIMES !!!
@@ -108,18 +104,13 @@ TEST(ReaderTest, SortsMessagesNoTimeTagOnly) {
 
   EXPECT_TRUE(files::WriteFile(MakeLogFilePath(temp_dir, 0u), message));
 
-  files::ScopedTempDir output_dir;
-  const std::string output_path = files::JoinPath(output_dir.path(), "output.txt");
   float compression_ratio;
   IdentityDecoder decoder;
 
-  ASSERT_TRUE(Concatenate(temp_dir.path(), kMaxDecompressedSize, &decoder, output_path,
-                          &compression_ratio));
-
-  std::string contents;
-  ASSERT_TRUE(files::ReadFileToString(output_path, &contents));
-
-  EXPECT_EQ(contents, message);
+  const fit::result<ReaderError, std::string> result =
+      Concatenate(temp_dir.path(), kMaxDecompressedSize, &decoder, &compression_ratio);
+  ASSERT_TRUE(result.is_ok());
+  EXPECT_EQ(*result, message);
 }
 
 TEST(ReaderTest, SortsMessagesMixed) {
@@ -137,18 +128,13 @@ TEST(ReaderTest, SortsMessagesMixed) {
 
   EXPECT_TRUE(files::WriteFile(MakeLogFilePath(temp_dir, 0u), input_message));
 
-  files::ScopedTempDir output_dir;
-  const std::string output_path = files::JoinPath(output_dir.path(), "output.txt");
   float compression_ratio;
   IdentityDecoder decoder;
 
-  ASSERT_TRUE(Concatenate(temp_dir.path(), kMaxDecompressedSize, &decoder, output_path,
-                          &compression_ratio));
-
-  std::string contents;
-  ASSERT_TRUE(files::ReadFileToString(output_path, &contents));
-
-  EXPECT_EQ(contents, output_message);
+  const fit::result<ReaderError, std::string> result =
+      Concatenate(temp_dir.path(), kMaxDecompressedSize, &decoder, &compression_ratio);
+  ASSERT_TRUE(result.is_ok());
+  EXPECT_EQ(*result, output_message);
 }
 
 TEST(ReaderTest, SortsMessages) {
@@ -156,7 +142,7 @@ TEST(ReaderTest, SortsMessages) {
 
   LogMessageStore store(StorageSize::Kilobytes(8), StorageSize::Kilobytes(8),
                         MakeIdentityRedactor(), MakeIdentityEncoder());
-  SystemLogWriter writer(temp_dir.path(), 1u);
+  SystemLogWriter writer(temp_dir.path(), 1u, std::make_unique<IdentityDecoder>());
 
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 0", zx::msec(0))));
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 3", zx::msec(3))));
@@ -169,18 +155,14 @@ TEST(ReaderTest, SortsMessages) {
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "multi\nline\nmessage", zx::msec(4))));
   writer.Write(store.Consume());
 
-  files::ScopedTempDir output_dir;
-  const std::string output_path = files::JoinPath(output_dir.path(), "output.txt");
   IdentityDecoder decoder;
 
   float compression_ratio;
-  ASSERT_TRUE(Concatenate(temp_dir.path(), kMaxDecompressedSize, &decoder, output_path,
-                          &compression_ratio));
+  const fit::result<ReaderError, std::string> result =
+      Concatenate(temp_dir.path(), kMaxDecompressedSize, &decoder, &compression_ratio);
+  ASSERT_TRUE(result.is_ok());
   EXPECT_EQ(compression_ratio, 1.0);
-
-  std::string contents;
-  ASSERT_TRUE(files::ReadFileToString(output_path, &contents));
-  EXPECT_EQ(contents, R"([15604.000][07559][07687][] INFO: line 0
+  EXPECT_EQ(*result, R"([15604.000][07559][07687][] INFO: line 0
 [15604.001][07559][07687][] INFO: line 1
 [15604.001][07559][07687][] INFO: line 1.1
 [15604.002][07559][07687][] INFO: line 2
@@ -212,18 +194,13 @@ TEST(ReaderTest, SortsMessagesDifferentTimestampLength) {
 
   EXPECT_TRUE(files::WriteFile(MakeLogFilePath(temp_dir, 0u), input_message));
 
-  files::ScopedTempDir output_dir;
-  const std::string output_path = files::JoinPath(output_dir.path(), "output.txt");
   float compression_ratio;
   IdentityDecoder decoder;
 
-  ASSERT_TRUE(Concatenate(temp_dir.path(), kMaxDecompressedSize, &decoder, output_path,
-                          &compression_ratio));
-
-  std::string contents;
-  ASSERT_TRUE(files::ReadFileToString(output_path, &contents));
-
-  EXPECT_EQ(contents, output_message);
+  const fit::result<ReaderError, std::string> result =
+      Concatenate(temp_dir.path(), kMaxDecompressedSize, &decoder, &compression_ratio);
+  ASSERT_TRUE(result.is_ok());
+  EXPECT_EQ(*result, output_message);
 }
 
 TEST(ReaderTest, SortsMessagesMultipleFiles) {
@@ -232,7 +209,7 @@ TEST(ReaderTest, SortsMessagesMultipleFiles) {
   // Set the block and buffer to both hold 4 log messages.
   LogMessageStore store(kMaxLogLineSize * 4, kMaxLogLineSize * 4, MakeIdentityRedactor(),
                         MakeIdentityEncoder());
-  SystemLogWriter writer(temp_dir.path(), 8u);
+  SystemLogWriter writer(temp_dir.path(), 8u, std::make_unique<IdentityDecoder>());
 
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 0", zx::msec(0))));
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 3", zx::msec(3))));
@@ -247,18 +224,14 @@ TEST(ReaderTest, SortsMessagesMultipleFiles) {
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line\n4", zx::msec(4))));
   writer.Write(store.Consume());
 
-  files::ScopedTempDir output_dir;
-  const std::string output_path = files::JoinPath(output_dir.path(), "output.txt");
   IdentityDecoder decoder;
 
   float compression_ratio;
-  ASSERT_TRUE(Concatenate(temp_dir.path(), kMaxDecompressedSize, &decoder, output_path,
-                          &compression_ratio));
+  const fit::result<ReaderError, std::string> result =
+      Concatenate(temp_dir.path(), kMaxDecompressedSize, &decoder, &compression_ratio);
+  ASSERT_TRUE(result.is_ok());
   EXPECT_EQ(compression_ratio, 1.0);
-
-  std::string contents;
-  ASSERT_TRUE(files::ReadFileToString(output_path, &contents));
-  EXPECT_EQ(contents, R"([15604.000][07559][07687][] INFO: line 0
+  EXPECT_EQ(*result, R"([15604.000][07559][07687][] INFO: line 0
 [15604.001][07559][07687][] INFO: line 1
 [15604.001][07559][07687][] INFO: line11
 [15604.002][07559][07687][] INFO: line 2
