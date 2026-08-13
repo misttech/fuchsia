@@ -125,11 +125,11 @@ macro_rules! cpu_complete {
 /// Kernel object record (no-op when built with GCC).
 #[macro_export]
 macro_rules! kernel_object {
-    ($category:tt, $koid:expr, $obj_type:expr, $name:tt $(, $key:tt => $val:expr)* $(,)?) => {};
+    ($category:tt, $koid:expr, $obj_type:expr, $name:expr $(, $key:tt => $val:expr)* $(,)?) => {};
 }
 
 /// Kernel object record unconditionally (no-op when built with GCC).
 #[macro_export]
 macro_rules! kernel_object_always {
-    ($koid:expr, $obj_type:expr, $name:tt $(, $key:tt => $val:expr)* $(,)?) => {};
+    ($koid:expr, $obj_type:expr, $name:expr $(, $key:tt => $val:expr)* $(,)?) => {};
 }

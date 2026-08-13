@@ -6,6 +6,7 @@
 
 use crate::arch_rs::{InterruptDisableGuard, curr_cpu_num, ints_disabled};
 use crate::kernel::thread::{FxtRef, ThreadPtr};
+use crate::kernel::types::Koid;
 pub use crate::platform_rs::timer::{InstantBootTicks, timer_current_boot_ticks};
 use core::cell::UnsafeCell;
 use core::mem::{MaybeUninit, size_of};
@@ -102,6 +103,73 @@ impl<'a> From<f64> for ArgValue<'a> {
 impl<'a> From<&'a str> for ArgValue<'a> {
     fn from(v: &'a str) -> Self {
         ArgValue::String(v)
+    }
+}
+
+/// A wrapper for KOID values passed as trace arguments.
+impl<'a> From<Koid> for ArgValue<'a> {
+    fn from(v: Koid) -> Self {
+        ArgValue::Koid(v.0)
+    }
+}
+
+/// Represents an FXT string reference that can either be an interned string or an inline string byte slice.
+#[derive(Clone, Copy)]
+pub enum StringRef<'a> {
+    Interned(&'static InternedString),
+    Inline(&'a [u8]),
+}
+
+impl<'a> From<&'static InternedString> for StringRef<'a> {
+    fn from(s: &'static InternedString) -> Self {
+        StringRef::Interned(s)
+    }
+}
+
+impl<'a> From<&'a [u8]> for StringRef<'a> {
+    fn from(s: &'a [u8]) -> Self {
+        StringRef::Inline(s)
+    }
+}
+
+impl<'a> From<&'a str> for StringRef<'a> {
+    fn from(s: &'a str) -> Self {
+        StringRef::Inline(s.as_bytes())
+    }
+}
+
+impl<'a> StringRef<'a> {
+    /// Returns the FXT header entry for this string reference.
+    pub fn header_entry(&self) -> u64 {
+        match self {
+            StringRef::Interned(s) => s.id() as u64,
+            StringRef::Inline(b) => {
+                let len = b.len().min(0x7fff);
+                0x8000 | (len as u64)
+            }
+        }
+    }
+
+    /// Returns the payload size in 64-bit words required to store this string inline.
+    pub fn payload_words(&self) -> usize {
+        match self {
+            StringRef::Interned(_) => 0,
+            StringRef::Inline(b) => {
+                let len = b.len().min(0x7fff);
+                len.div_ceil(8)
+            }
+        }
+    }
+
+    /// Writes the inline string payload if applicable.
+    pub fn write(&self, res: &mut KTraceReservation<'_>) -> Result<(), Status> {
+        match self {
+            StringRef::Interned(_) => Ok(()),
+            StringRef::Inline(b) => {
+                let len = b.len().min(0x7fff);
+                res.write_bytes(&b[..len])
+            }
+        }
     }
 }
 
@@ -576,11 +644,11 @@ impl KTrace {
     /// This is not inlined to reduce code size at the instrumentation sites.
     #[inline(never)]
     #[cold]
-    pub fn emit_kernel_object_outlined(
+    pub fn emit_kernel_object_outlined<'a>(
         &self,
         koid: u64,
         obj_type: u32,
-        name: &InternedString,
+        name: impl Into<StringRef<'a>>,
         args: &[Argument<'_>],
     ) {
         let _guard = InterruptDisableGuard::new();
@@ -588,9 +656,11 @@ impl KTrace {
             return;
         }
 
+        let name = name.into();
         let base_size = 2; // Header, KOID
+        let name_size = name.payload_words();
         let args_size: usize = args.iter().map(|a| a.size_words()).sum();
-        let total_size_words = base_size + args_size;
+        let total_size_words = base_size + name_size + args_size;
 
         if total_size_words > 0xfff {
             return;
@@ -599,11 +669,13 @@ impl KTrace {
         let mut header = 7u64; // RecordType::kKernelObject (7)
         header |= (total_size_words as u64) << 4; // RecordSize
         header |= (obj_type as u64) << 16; // ObjectType
-        header |= (name.id() as u64) << 24; // NameStringRef
+        header |= (name.header_entry() & 0xffff) << 24; // NameStringRef
         header |= (args.len() as u64) << 40; // ArgumentCount
 
+        // SAFETY: Interrupts are disabled by `_guard`, guaranteeing mutual exclusion during reservation.
         if let Ok(mut res) = unsafe { self.reserve(header) } {
             let _ = res.write_word(koid);
+            let _ = name.write(&mut res);
             for arg in args {
                 let _ = arg.write(&mut res);
             }
@@ -1154,6 +1226,80 @@ mod tests {
         let arg2_val = &read_bytes[48..56];
         expect_true!(&arg2_val[0..5] == b"hello");
         expect_true!(arg2_val[5..8] == [0, 0, 0]);
+
+        // 7. Test kernel_object! macro with dynamic inline name and Koid argument.
+        kernel_object!(META_CAT, 200u64, 1u32, &b"test_proc"[..], "job" => Koid(300u64));
+
+        let mut read_bytes = [0u8; 128];
+        let read_len = unwrap_ok!(buf.read(
+            |offset, src| {
+                read_bytes[offset as usize..offset as usize + src.len()].copy_from_slice(src);
+                Ok(())
+            },
+            48,
+        ));
+
+        expect_eq!(read_len, 48);
+
+        // Verify KernelObject Header (word 0): type=7, size=6 words (48 bytes), obj_type=1, name=0x8009, args=1
+        let ko_header = u64::from_ne_bytes(read_bytes[0..8].try_into().unwrap());
+        expect_eq!(ko_header & 0xf, 7);
+        expect_eq!((ko_header >> 4) & 0xfff, 6);
+        expect_eq!((ko_header >> 16) & 0xff, 1);
+        expect_eq!((ko_header >> 24) & 0xffff, 0x8009);
+        expect_eq!((ko_header >> 40) & 0xf, 1);
+
+        // Verify KOID (word 1)
+        expect_eq!(u64::from_ne_bytes(read_bytes[8..16].try_into().unwrap()), 200);
+
+        // Verify Inline Name (words 2 & 3: 9 bytes padded to 16 bytes)
+        expect_true!(&read_bytes[16..25] == b"test_proc");
+        expect_true!(read_bytes[25..32] == [0; 7]);
+
+        // Verify Koid Argument (words 4 & 5: arg header + koid value)
+        let arg_header = u64::from_ne_bytes(read_bytes[32..40].try_into().unwrap());
+        expect_eq!(arg_header & 0xf, 8); // ArgumentType::kKoid (8)
+        expect_ne!((arg_header >> 16) & 0xffff, 0); // NameStringRef
+        expect_eq!(u64::from_ne_bytes(read_bytes[40..48].try_into().unwrap()), 300);
+    }
+
+    /// Verifies StringRef encoding and payload calculation for interned and inline strings.
+    #[test]
+    fn test_string_ref() {
+        // Interned string ref
+        let interned_ref = StringRef::from(DROP_STATS_REF);
+        expect_eq!(interned_ref.header_entry(), DROP_STATS_REF.id() as u64);
+        expect_eq!(interned_ref.payload_words(), 0);
+
+        // Inline string ref from byte slice
+        let inline_bytes_ref = StringRef::from(&b"foo"[..]);
+        expect_eq!(inline_bytes_ref.header_entry(), 0x8003);
+        expect_eq!(inline_bytes_ref.payload_words(), 1);
+
+        let inline_longer_ref = StringRef::from(&b"longer_test_string"[..]);
+        expect_eq!(inline_longer_ref.header_entry(), 0x8012);
+        expect_eq!(inline_longer_ref.payload_words(), 3);
+
+        // Inline string ref from &str
+        let inline_str_ref = StringRef::from("hello_world");
+        expect_eq!(inline_str_ref.header_entry(), 0x800b);
+        expect_eq!(inline_str_ref.payload_words(), 2);
+    }
+
+    /// Verifies Koid argument wrapping and size calculation.
+    #[test]
+    fn test_koid_argument() {
+        let koid_val = Koid(0xfeedface);
+        let arg_val: ArgValue<'_> = koid_val.into();
+        match arg_val {
+            ArgValue::Koid(v) => {
+                expect_eq!(v, 0xfeedface);
+            }
+            _ => panic!("Expected ArgValue::Koid"),
+        }
+
+        let arg = Argument::new(DROP_STATS_REF, koid_val);
+        expect_eq!(arg.size_words(), 2);
     }
 }
 
@@ -1199,4 +1345,5 @@ pub unsafe extern "C" fn rust_ktrace_test_macros() {
     complete!("kernel:meta", "rust_complete", InstantBootTicks(110i64), "val" => 111u32);
     kernel_object!("kernel:meta", 112u64, 1u32, "rust_kernel_obj", "val" => 113u32);
     kernel_object_always!(114u64, 2u32, "rust_kernel_obj_always", "val" => 115u32);
+    kernel_object!("kernel:meta", 116u64, 1u32, &b"dynamic_proc"[..], "job" => Koid(117u64));
 }

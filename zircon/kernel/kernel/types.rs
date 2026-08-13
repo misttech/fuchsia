@@ -40,6 +40,9 @@ impl From<u64> for VAddr {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Koid(pub u64);
+
 #[allow(non_camel_case_types)]
 pub type cpu_mask_t = u32;
 

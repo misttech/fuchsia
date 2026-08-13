@@ -657,8 +657,8 @@ class KTraceTests {
       return arch_curr_cpu_num();
     }();
 
-    // The total bytes written by the 10 macro events is 408 bytes.
-    constexpr size_t total_size = 408;
+    // The total bytes written by the 11 macro events is 456 bytes.
+    constexpr size_t total_size = 456;
     uint8_t actual[total_size];
     auto copy_out = [&](uint32_t offset, ktl::span<ktl::byte> src) {
       memcpy(actual + offset, src.data(), src.size());
@@ -813,6 +813,27 @@ class KTraceTests {
       ASSERT_EQ(2u, arg_header & 0xf);
       ASSERT_EQ(115u, arg_header >> 32);
       offset += 24;
+    }
+
+    // 11. KernelObject with dynamic inline name and Koid argument (size 48 bytes = 6 words)
+    {
+      uint64_t header = get_word(0);
+      ASSERT_EQ(7u, header & 0xf);                  // kKernelObject
+      ASSERT_EQ(6u, (header >> 4) & 0xfff);         // Size (6 words = 48 bytes)
+      ASSERT_EQ(1u, (header >> 16) & 0xff);         // Object Type
+      ASSERT_EQ(0x800cu, (header >> 24) & 0xffff);  // Inline string of 12 bytes
+      ASSERT_EQ(1u, (header >> 40) & 0xf);          // Arg count
+      ASSERT_EQ(116u, get_word(1));                 // KOID
+      // Name: "dynamic_proc" (12 bytes padded to 16 bytes)
+      char name_buf[16];
+      memcpy(name_buf, actual + offset + 16, 16);
+      ASSERT_BYTES_EQ(reinterpret_cast<const uint8_t*>("dynamic_proc\0\0\0\0"),
+                      reinterpret_cast<const uint8_t*>(name_buf), 16);
+      uint64_t arg_header = get_word(4);
+      ASSERT_EQ(8u, arg_header & 0xf);  // kKoid (8)
+      ASSERT_NE(0u, (arg_header >> 16) & 0xffff);
+      ASSERT_EQ(117u, get_word(5));  // Koid value
+      offset += 48;
     }
 
     ASSERT_EQ(total_size, offset);

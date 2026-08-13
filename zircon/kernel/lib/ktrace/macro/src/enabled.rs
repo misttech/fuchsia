@@ -18,6 +18,9 @@ macro_rules! resolve_string {
             unsafe { crate::ktrace_rs::InternedString::new_raw(concat!($string, "\0").as_ptr()) };
         &STRING
     }};
+    ($string:expr) => {
+        $string
+    };
 }
 
 /// Resolves a category parameter to a reference to an `InternedCategory`.
@@ -390,7 +393,7 @@ macro_rules! cpu_complete {
 /// - ...: List of key => value argument pairs.
 #[macro_export]
 macro_rules! kernel_object {
-    ($category:tt, $koid:expr, $obj_type:expr, $name:tt $(, $key:tt => $val:expr)* $(,)?) => {
+    ($category:tt, $koid:expr, $obj_type:expr, $name:expr $(, $key:tt => $val:expr)* $(,)?) => {
         {
             let category = $crate::resolve_category!($category);
             let ktrace = crate::ktrace_rs::KTrace::get_instance();
@@ -418,7 +421,7 @@ macro_rules! kernel_object {
 /// - ...: List of key => value argument pairs.
 #[macro_export]
 macro_rules! kernel_object_always {
-    ($koid:expr, $obj_type:expr, $name:tt $(, $key:tt => $val:expr)* $(,)?) => {
+    ($koid:expr, $obj_type:expr, $name:expr $(, $key:tt => $val:expr)* $(,)?) => {
         {
             let ktrace = crate::ktrace_rs::KTrace::get_instance();
             ktrace.emit_kernel_object_outlined(
