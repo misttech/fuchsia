@@ -28,6 +28,7 @@
 #include <arch/x86/pv.h>
 #include <fbl/algorithm.h>
 #include <hwreg/x86msr.h>
+#include <kernel/ffi.h>
 #include <ktl/atomic.h>
 #include <ktl/iterator.h>
 #include <platform/pc/bootbyte.h>
@@ -348,7 +349,7 @@ void x86_cpu_feature_late_init_percpu(void) {
 
   // If we are running under a hypervisor and paravirtual EOI (PV_EOI) is available, enable it.
   if (x86_hypervisor_has_pv_eoi()) {
-    PvEoi::get()->Enable(&msr_old);
+    rust_pveoi_enable_real_msr();
   }
 }
 
@@ -1097,4 +1098,8 @@ void x86_cpu_maybe_l1d_flush(zx_status_t syscall_return) {
     }
   }
 }
+
+x86_vendor_list cpp_x86_get_vendor();
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE x86_vendor_list cpp_x86_get_vendor() { return x86_vendor; }
 }

@@ -8,6 +8,7 @@
 #define ZIRCON_KERNEL_ARCH_X86_INCLUDE_ARCH_X86_PV_H_
 
 #include <lib/page/size.h>
+#include <zircon/assert.h>
 #include <zircon/types.h>
 
 #include <ktl/atomic.h>
@@ -25,7 +26,7 @@ static constexpr uint32_t kKvmFeatureClockSource = 1u << 3;
 static constexpr uint8_t kKvmSystemTimeStable = 1u << 0;
 
 // Both structures below are part of the ABI used by Xen and KVM, this ABI is not
-// defined by use we just follow it. For more detail please refer to the
+// defined by us we just follow it. For more detail please refer to the
 // documentation (https://www.kernel.org/doc/Documentation/virtual/kvm/msr.txt).
 struct pv_clock_boot_time {
   // With multiple VCPUs it is possible that one VCPU can try to read boot time
@@ -52,13 +53,36 @@ struct pv_clock_system_time {
   uint8_t flags;
   uint8_t pad1[2];
 };
-static_assert(sizeof(struct pv_clock_system_time) == 32,
-              "sizeof(pv_clock_system_time) should be 32");
+
+extern "C" {
 
 // Initialize the para-virtualized clock.
 //
 // This function should only be called by CPU 0.
-zx_status_t pv_clock_init();
+zx_status_t rust_pv_clock_init();
+
+// Initialize all PvEoi instances.
+//
+// Must be called from a context in which blocking is allowed.
+void rust_pveoi_init_all();
+
+// Enable PV_EOI for the current CPU. After it is enabled, callers may use Eoi() rather than
+// access a local APIC register if desired.
+//
+// Explicitly uses real msr accesses and is not suitable for unit testing.
+//
+// Once enabled this PvEoi object must be disabled prior to destruction.
+//
+// It is an error to enable a PvEoi object more than once over its lifetime.
+void rust_pveoi_enable_real_msr();
+// Disable PV_EOI for the current CPU.
+//
+// Explicitly uses real msr accesses and is not suitable for unit testing.
+void rust_pveoi_disable_real_msr();
+// Attempt to acknowledge and signal an end-of-interrupt (EOI) for the current CPU via a
+// paravirtual interface. If a fast acknowledge was not available, the function returns
+// false and the caller must signal an EOI via the legacy mechanism.
+bool rust_pveoi_eoi();
 
 // Shutsdown the para-virtualized clock.
 //
@@ -76,57 +100,11 @@ uint64_t pv_clock_get_tsc_freq();
 // @param icr APIC ICR value.
 // @return The number of CPUs that the IPI was delivered to, or an error value.
 int pv_ipi(uint64_t mask_low, uint64_t mask_high, uint64_t start_id, uint64_t icr);
+}
 
-class MsrAccess;
-
-// PvEoi provides optimized end-of-interrupt signaling for para-virtualized environments.
+// Initialize the para-virtualized clock.
 //
-// The initialization sequence of PvEoi instances is tricky.  All PvEoi instances should be
-// initialized by the boot CPU prior to brining the secondary CPUs online (see |InitAll|).
-class PvEoi final {
- public:
-  ~PvEoi();
-
-  // Initialize all PvEoi instances.
-  //
-  // Must be called from a context in which blocking is allowed.
-  static void InitAll();
-
-  // Initialize this PvEoi instances.
-  //
-  // Must be called from a context in which blocking is allowed.
-  void Init();
-
-  // Get the current CPU's PvEoi instance.
-  static PvEoi* get();
-
-  // Enable PV_EOI for the current CPU. After it is enabled, callers may use Eoi() rather than
-  // access a local APIC register if desired.
-  //
-  // Once enabled this PvEoi object must be disabled prior to destruction.
-  //
-  // It is an error to enable a PvEoi object more than once over its lifetime.
-  void Enable(MsrAccess* msr);
-
-  // Disable PV_EOI for the current CPU.
-  void Disable(MsrAccess* msr);
-
-  // Attempt to acknowledge and signal an end-of-interrupt (EOI) for the current CPU via a
-  // paravirtual interface. If a fast acknowledge was not available, the function returns
-  // false and the caller must signal an EOI via the legacy mechanism.
-  bool Eoi();
-
- private:
-  // state_ must be contained within a single page.  If its alignment is greater than or equal to
-  // its size, then we know it's not straddling a page boundary.
-  ktl::atomic<uint64_t> state_{0};
-  static_assert(sizeof(PvEoi::state_) < kPageSize &&
-                alignof(decltype(PvEoi::state_)) >= sizeof(PvEoi::state_));
-
-  // The physical address of state_;
-  paddr_t state_paddr_{0};
-
-  ktl::atomic<bool> enabled_{false};
-};
+// This function should only be called by CPU 0.
+inline zx_status_t pv_clock_init() { return rust_pv_clock_init(); }
 
 #endif  // ZIRCON_KERNEL_ARCH_X86_INCLUDE_ARCH_X86_PV_H_

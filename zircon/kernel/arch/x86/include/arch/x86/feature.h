@@ -53,12 +53,15 @@ enum x86_cpuid_leaf_num {
   X86_CPUID_BRAND = 0x80000002,
   X86_CPUID_AMD_TOPOLOGY = 0x8000001e,
 };
+static_assert(sizeof(x86_cpuid_leaf_num) == 4);
 
 struct x86_cpuid_bit {
   enum x86_cpuid_leaf_num leaf_num;
   uint8_t word;
   uint8_t bit;
 };
+
+static_assert(sizeof(x86_cpuid_bit) == 8);
 
 #define X86_CPUID_BIT(leaf, word, bit) \
   (struct x86_cpuid_bit) { (enum x86_cpuid_leaf_num)(leaf), (word), (bit) }

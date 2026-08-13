@@ -33,6 +33,7 @@ FFI_ALWAYS_INLINE zx_status_t capture_faults_result(UserCopyCaptureFaultsResult 
 
 extern "C" {
 
+bool cpp_arch_blocking_disallowed();
 bool cpp_arch_ints_disabled();
 void cpp_arch_disable_ints();
 void cpp_arch_enable_ints();
@@ -48,6 +49,7 @@ zx_status_t cpp_arch_copy_to_user_capture_faults(void* dst, const void* src, siz
                                                  vaddr_t* fault_va, uint* fault_flags);
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE bool cpp_arch_blocking_disallowed() { return arch_blocking_disallowed(); }
 FFI_ALWAYS_INLINE bool cpp_arch_ints_disabled() { return arch_ints_disabled(); }
 FFI_ALWAYS_INLINE void cpp_arch_disable_ints() { arch_disable_ints(); }
 FFI_ALWAYS_INLINE void cpp_arch_enable_ints() { arch_enable_ints(); }

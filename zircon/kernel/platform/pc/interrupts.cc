@@ -15,8 +15,7 @@
 
 void shutdown_interrupts_curr_cpu(void) {
   if (x86_hypervisor_has_pv_eoi()) {
-    MsrAccess msr;
-    PvEoi::get()->Disable(&msr);
+    rust_pveoi_disable_real_msr();
   }
 
   // TODO(maniscalco): Walk interrupt redirection entries and make sure nothing targets this CPU.

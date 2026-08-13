@@ -5,8 +5,13 @@
 // https://opensource.org/licenses/MIT
 
 pub mod apic;
+pub mod fake_msr_access;
+pub mod feature;
 pub mod interrupts;
 pub mod ioapic;
+pub mod platform_access;
+pub mod pv;
+pub mod registers;
 pub mod suspend;
 pub mod x86;
 

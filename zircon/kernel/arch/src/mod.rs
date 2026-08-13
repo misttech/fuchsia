@@ -16,9 +16,12 @@ pub use arch_riscv64::{self as riscv64, ArchSavedNormalState};
 #[allow(unused_imports)]
 pub use arch_x86::{self as x86, ArchSavedNormalState};
 
+pub mod ops;
+
 use zx_status::Status;
 
 unsafe extern "C" {
+    fn cpp_arch_blocking_disallowed() -> bool;
     fn cpp_arch_ints_disabled() -> bool;
     fn cpp_arch_disable_ints();
     fn cpp_arch_enable_ints();
@@ -50,6 +53,18 @@ unsafe extern "C" {
         fault_va: *mut usize,
         fault_flags: *mut u32,
     ) -> i32;
+}
+
+/// The arch_blocking_disallowed() flag is used to check that in-kernel interrupt
+/// handlers do not do any blocking operations.  This is a per-CPU flag.
+/// Various blocking operations, such as mutex.Acquire(), contain assertions
+/// that arch_blocking_disallowed() is false.
+///
+/// arch_blocking_disallowed() should only be true when interrupts are
+/// disabled.
+#[inline(always)]
+pub fn blocking_disallowed() -> bool {
+    unsafe { cpp_arch_blocking_disallowed() }
 }
 
 /// Returns true if interrupts are disabled on the current CPU.

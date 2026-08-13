@@ -9,7 +9,10 @@ import("//zircon/kernel/kernel_rust_mod.gni")
 kernel_rust_mod("arch-rs") {
   output_name = "arch_rs"
   source_root = "src/mod.rs"
-  sources = [ "src/mod.rs" ]
+  sources = [
+    "src/mod.rs",
+    "src/ops.rs",
+  ]
   deps = [ "//sdk/rust/zx-status" ]
   if (current_cpu == "arm64") {
     deps += [ "//zircon/kernel/arch/arm64:arch-arm64-rs" ]

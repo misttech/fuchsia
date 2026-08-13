@@ -81,21 +81,9 @@ library_headers("headers") {
   }
 }
 
-source_set("tests") {
-  testonly = true
-  sources = [ "interrupts_test.cc" ]
-  deps = [
-    ":headers",
-    "//zircon/kernel/dev/interrupt",
-    "//zircon/kernel/lib/console",
-    "//zircon/kernel/lib/pow2_range_allocator",
-    "//zircon/kernel/lib/unittest",
-  ]
-}
-
 group("kernel-tests") {
   testonly = true
-  deps = [ ":tests" ]
+  deps = []
 }
 
 kernel_rust_mod("platform_pc") {

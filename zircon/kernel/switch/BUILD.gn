@@ -351,6 +351,7 @@ variant("kernel_config") {
   }
 
   rustflags = []
+  rustenv = []
 
   # TODO(https://fxbug.dev/529516970): gcc building is exposed as a config due
   # to some Rust test code generating dynamic relocations specifically when
@@ -394,6 +395,8 @@ variant("kernel_config") {
   if (kernel_no_userabi) {
     defines += [ "KERNEL_NO_USERABI" ]
   }
+
+  rustenv += [ "SMP_MAX_CPUS=${smp_max_cpus}" ]
 }
 
 # Each switchset is expected to include one of these.

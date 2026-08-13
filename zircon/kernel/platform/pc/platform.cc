@@ -397,7 +397,7 @@ void platform_init(void) {
 #endif
 
   // Initialize all PvEoi instances prior to starting secondary CPUs.
-  PvEoi::InitAll();
+  rust_pveoi_init_all();
 
   platform_init_smp();
 
