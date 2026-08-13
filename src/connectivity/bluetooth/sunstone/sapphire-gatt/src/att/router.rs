@@ -199,12 +199,14 @@ mod tests {
     use crate::att::client::ServerEventStream;
     use crate::att::l2cap::mock::setup_mock_channel;
     use crate::att::pdu::{
-        DynamicPacketBuilder, HandleValueNtfHeader, Header, Opcode, PacketBuilder, ReadReq,
+        ATT_READ_REQ_SIZE, DynamicPacketBuilder, HandleValueNtfHeader, Header, Opcode,
+        PacketBuilder,
     };
     use core::mem::MaybeUninit;
     use sapphire_async::executor::BoundedExecutor;
     use sapphire_async::testing::TestExecutor;
-    use zerocopy::{TryFromBytes, U16};
+    use sapphire_emboss::att::{AttReadReq, AttReadReqMut};
+    use zerocopy::{IntoBytes, TryFromBytes, U16};
 
     #[test]
     fn test_router_notifications() {
@@ -304,19 +306,20 @@ mod tests {
             let mut server_rx_handle = router.route_to(RouteFilter::Requests).unwrap();
 
             let sender_handle = executor.spawn(async move {
-                let header = PacketBuilder {
-                    header: Header::new(Opcode::ATT_READ_REQ),
-                    payload: ReadReq { attribute_handle: U16::new(0x0001) },
-                };
-                let _ = client_tx_bearer.send(header.as_packet()).await;
+                let mut buf = [0u8; ATT_READ_REQ_SIZE];
+                let mut view = AttReadReqMut::new(&mut buf[..]);
+                view.attribute_opcode().try_write(Opcode::ATT_READ_REQ).unwrap();
+                view.attribute_handle().try_write(0x0001).unwrap();
+                let tx_packet = Packet::try_ref_from_bytes(&buf[..]).unwrap();
+                let _ = client_tx_bearer.send(tx_packet).await;
             });
 
             let test_server_listener = executor.spawn(async move {
                 let mut rx_buf = [MaybeUninit::uninit(); MAX_SUPPORTED_MTU];
                 let p = server_rx_handle.next_packet(&mut rx_buf).await.unwrap();
                 assert_eq!(p.header.opcode, Opcode::ATT_READ_REQ.into());
-                let req = ReadReq::try_ref_from_bytes(&p.data).unwrap();
-                assert_eq!(req.attribute_handle.get(), 0x0001);
+                let req = AttReadReq::new(p.as_bytes());
+                assert_eq!(req.attribute_handle().try_read().unwrap(), 0x0001);
             });
 
             executor.run_until_stalled();

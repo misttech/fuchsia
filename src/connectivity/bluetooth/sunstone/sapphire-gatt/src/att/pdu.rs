@@ -7,7 +7,9 @@
 use core::cmp::min;
 use core::mem::size_of;
 use sapphire_common::Uuid;
-pub use sapphire_emboss::att::{AttOpcode as Opcode, ErrorCode};
+pub use sapphire_emboss::att::{
+    AttExecuteWriteFlag as ExecuteWriteFlags, AttOpcode as Opcode, ErrorCode,
+};
 use strum_macros::FromRepr;
 use zerocopy::byteorder::little_endian::U16;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, TryFromBytes, Unaligned};
@@ -106,6 +108,14 @@ where
 pub const ATT_ERROR_RSP_SIZE: usize = 5;
 pub const ATT_EXCHANGE_MTU_REQ_SIZE: usize = 3;
 pub const ATT_EXCHANGE_MTU_RSP_SIZE: usize = 3;
+pub const ATT_READ_REQ_SIZE: usize = 3;
+pub const ATT_READ_BLOB_REQ_SIZE: usize = 5;
+pub const ATT_WRITE_REQ_HEADER_SIZE: usize = 3;
+pub const ATT_WRITE_RSP_SIZE: usize = 1;
+pub const ATT_WRITE_CMD_HEADER_SIZE: usize = 3;
+pub const ATT_PREPARE_WRITE_HEADER_SIZE: usize = 5;
+pub const ATT_EXECUTE_WRITE_REQ_SIZE: usize = 2;
+pub const ATT_EXECUTE_WRITE_RSP_SIZE: usize = 1;
 
 /// Parameters for Find Information Request PDU (OpCode = 0x04)
 ///
@@ -297,25 +307,6 @@ impl<'a, H: IntoBytes + Immutable, T: IntoBytes + Immutable + KnownLayout>
     }
 }
 
-/// Parameters for Read Request PDU (OpCode = 0x0A)
-///
-/// (see Vol 3, Part F, 3.4.4.1)
-#[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(C, packed)]
-pub struct ReadReq {
-    pub attribute_handle: U16,
-}
-
-/// Parameters for Read Blob Request PDU (OpCode = 0x0C)
-///
-/// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.4.3).
-#[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(C, packed)]
-pub struct ReadBlobReq {
-    pub attribute_handle: U16,
-    pub value_offset: U16,
-}
-
 /// Parameters for Read By Type Request PDU Header (OpCode = 0x08)
 ///
 /// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.4.7).
@@ -390,104 +381,6 @@ pub struct ReadByGroupTypeRsp {
     pub attribute_data_list: [u8],
 }
 
-/// Write Request Header (Opcode = 0x12).
-///
-/// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.5.1).
-#[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(C, packed)]
-pub struct WriteReqHeader {
-    pub attribute_handle: U16,
-}
-
-/// Write Request PDU (Opcode = 0x12).
-///
-/// Contains the fixed header and the variable-length attribute value to write.
-///
-/// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.5.1).
-#[derive(TryFromBytes, KnownLayout, Immutable, IntoBytes, Debug)]
-#[repr(C)]
-pub struct WriteReq {
-    pub header: WriteReqHeader,
-    pub attribute_value: [u8],
-}
-
-/// Write Response PDU (Opcode = 0x13).
-///
-/// Contains no payload parameters (represented as an empty struct).
-///
-/// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.5.2).
-#[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(C, packed)]
-pub struct WriteRsp;
-
-/// Write Command Header (Opcode = 0x52).
-///
-/// Shares the same binary layout as WriteReqHeader.
-///
-/// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.5.3).
-pub type WriteCmdHeader = WriteReqHeader;
-
-/// Write Command PDU (Opcode = 0x52).
-///
-/// Shares the same binary layout as WriteReq.
-///
-/// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.5.3).
-pub type WriteCmd = WriteReq;
-/// Prepare Write Request/Response Header.
-#[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(C, packed)]
-pub struct PrepareWriteHeader {
-    pub attribute_handle: U16,
-    pub value_offset: U16,
-}
-
-/// Prepare Write Request PDU (Opcode = 0x16).
-///
-/// Contains the fixed header and the variable-length part attribute value to write.
-///
-/// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.6.1).
-#[derive(TryFromBytes, KnownLayout, Immutable, IntoBytes, Debug)]
-#[repr(C)]
-pub struct PrepareWriteReq {
-    pub header: PrepareWriteHeader,
-    pub part_attribute_value: [u8],
-}
-
-/// Prepare Write Response PDU (Opcode = 0x17).
-///
-/// Shares the same binary layout as PrepareWriteReq.
-///
-/// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.6.2).
-pub type PrepareWriteRsp = PrepareWriteReq;
-
-/// Execute Write Request Flags.
-///
-/// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.6.3).
-#[derive(
-    TryFromBytes, IntoBytes, KnownLayout, Immutable, Debug, Clone, Copy, PartialEq, Eq, FromRepr,
-)]
-#[repr(u8)]
-pub enum ExecuteWriteFlags {
-    CancelAll = 0x00,
-    WriteAll = 0x01,
-}
-
-/// Execute Write Request PDU (Opcode = 0x18).
-///
-/// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.6.3).
-#[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(C, packed)]
-pub struct ExecuteWriteReq {
-    pub flags: u8,
-}
-
-/// Execute Write Response PDU (Opcode = 0x19).
-///
-/// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.6.4).
-#[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(C, packed)]
-pub struct ExecuteWriteRsp {}
-
 /// Handle Value Notification Header (Opcode = 0x1B).
 ///
 /// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.7.1).
@@ -533,12 +426,10 @@ pub struct HandleValueCnf;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sapphire_emboss::att::{AttErrorRsp, AttExchangeMtuReq, AttExchangeMtuRsp};
-
-    #[test]
-    fn test_write_rsp() {
-        assert_eq!(size_of::<WriteRsp>(), 0);
-    }
+    use sapphire_emboss::att::{
+        AttErrorRsp, AttExchangeMtuReq, AttExchangeMtuRsp, AttExecuteWriteReq,
+        AttPrepareWriteHeader, AttReadBlobReq, AttReadReq, AttWriteCmd,
+    };
 
     #[test]
     fn test_exchange_mtu_req() {
@@ -552,26 +443,34 @@ mod tests {
     }
 
     #[test]
-    fn test_read_req() {
-        let req_bytes = [0x01, 0x00]; // 1 in little endian
-        let parsed = ReadReq::read_from_bytes(&req_bytes[..]).unwrap();
-        assert_eq!(parsed.attribute_handle.get(), 1);
+    fn test_exchange_mtu_rsp() {
+        let rsp_bytes = [0x03, 0x00, 0x01]; // 256 in little endian
+        let view = AttExchangeMtuRsp::new(&rsp_bytes[..]);
+        assert_eq!(view.attribute_opcode().try_read().unwrap(), Opcode::ATT_EXCHANGE_MTU_RSP);
+        assert_eq!(view.server_rx_mtu().try_read().unwrap(), 256);
+    }
 
-        // Serialization check
-        let new_req = ReadReq { attribute_handle: U16::new(1) };
-        assert_eq!(new_req.as_bytes(), &req_bytes[..]);
+    #[test]
+    fn test_read_req() {
+        let req_bytes = [0x0A, 0x01, 0x00]; // opcode 0x0A, handle 1 in little endian
+        let view = AttReadReq::new(&req_bytes[..]);
+        assert_eq!(view.attribute_opcode().try_read().unwrap(), Opcode::ATT_READ_REQ);
+        assert_eq!(view.attribute_handle().try_read().unwrap(), 1);
+
+        let short_view = AttReadReq::new(&req_bytes[..1]);
+        assert!(short_view.attribute_handle().try_read().is_err());
     }
 
     #[test]
     fn test_read_blob_req() {
-        let req_bytes = [0x01, 0x00, 0x02, 0x00]; // handle = 1, offset = 2
-        let parsed = ReadBlobReq::read_from_bytes(&req_bytes[..]).unwrap();
-        assert_eq!(parsed.attribute_handle.get(), 1);
-        assert_eq!(parsed.value_offset.get(), 2);
+        let req_bytes = [0x0C, 0x01, 0x00, 0x02, 0x00]; // opcode 0x0C, handle 1, offset 2
+        let view = AttReadBlobReq::new(&req_bytes[..]);
+        assert_eq!(view.attribute_opcode().try_read().unwrap(), Opcode::ATT_READ_BLOB_REQ);
+        assert_eq!(view.attribute_handle().try_read().unwrap(), 1);
+        assert_eq!(view.value_offset().try_read().unwrap(), 2);
 
-        // Serialization check
-        let new_req = ReadBlobReq { attribute_handle: U16::new(1), value_offset: U16::new(2) };
-        assert_eq!(new_req.as_bytes(), &req_bytes[..]);
+        let short_view = AttReadBlobReq::new(&req_bytes[..2]);
+        assert!(short_view.value_offset().try_read().is_err());
     }
 
     #[test]
@@ -606,14 +505,6 @@ mod tests {
         let parsed = ReadByGroupTypeRsp::try_ref_from_bytes(&rsp_bytes[..]).unwrap();
         assert_eq!(parsed.length, 10);
         assert_eq!(parsed.attribute_data_list, [0x01, 0x02, 0x03, 0x04, 0x05]);
-    }
-
-    #[test]
-    fn test_exchange_mtu_rsp() {
-        let rsp_bytes = [0x03, 0x00, 0x01]; // 256 in little endian
-        let view = AttExchangeMtuRsp::new(&rsp_bytes[..]);
-        assert_eq!(view.attribute_opcode().try_read().unwrap(), Opcode::ATT_EXCHANGE_MTU_RSP);
-        assert_eq!(view.server_rx_mtu().try_read().unwrap(), 256);
     }
 
     #[test]
@@ -741,26 +632,36 @@ mod tests {
 
     #[test]
     fn test_write_req() {
-        let req_bytes = [0x01, 0x00, 0x0A, 0x0B, 0x0C]; // handle 0x0001, value [10, 11, 12]
-        let parsed = WriteReq::try_ref_from_bytes(&req_bytes[..]).unwrap();
-        assert_eq!(parsed.header.attribute_handle.get(), 1);
-        assert_eq!(parsed.attribute_value, [10, 11, 12]);
+        let req_bytes = [0x12, 0x01, 0x00]; // opcode 0x12 (ATT_WRITE_REQ), handle 0x0001
+        let view = AttWriteCmd::new(&req_bytes[..]);
+        assert_eq!(view.attribute_opcode().try_read().unwrap(), Opcode::ATT_WRITE_REQ);
+        assert_eq!(view.attribute_handle().try_read().unwrap(), 1);
+
+        let short_view = AttWriteCmd::new(&req_bytes[..1]);
+        assert!(short_view.attribute_handle().try_read().is_err());
     }
 
     #[test]
     fn test_prepare_write_req() {
-        let req_bytes = [0x01, 0x00, 0x05, 0x00, 0x0A, 0x0B, 0x0C]; // handle 1, offset 5, value [10, 11, 12]
-        let parsed = PrepareWriteReq::try_ref_from_bytes(&req_bytes[..]).unwrap();
-        assert_eq!(parsed.header.attribute_handle.get(), 1);
-        assert_eq!(parsed.header.value_offset.get(), 5);
-        assert_eq!(parsed.part_attribute_value, [10, 11, 12]);
+        let req_bytes = [0x16, 0x01, 0x00, 0x05, 0x00]; // opcode 0x16 (ATT_PREPARE_WRITE_REQ), handle 1, offset 5
+        let view = AttPrepareWriteHeader::new(&req_bytes[..]);
+        assert_eq!(view.attribute_opcode().try_read().unwrap(), Opcode::ATT_PREPARE_WRITE_REQ);
+        assert_eq!(view.attribute_handle().try_read().unwrap(), 1);
+        assert_eq!(view.value_offset().try_read().unwrap(), 5);
+
+        let short_view = AttPrepareWriteHeader::new(&req_bytes[..2]);
+        assert!(short_view.value_offset().try_read().is_err());
     }
 
     #[test]
     fn test_execute_write_req() {
-        let req_bytes = [0x01]; // Flags: WriteAll
-        let parsed = ExecuteWriteReq::read_from_bytes(&req_bytes[..]).unwrap();
-        assert_eq!(parsed.flags, ExecuteWriteFlags::WriteAll as u8);
+        let req_bytes = [0x18, 0x01]; // opcode 0x18, flag 0x01 (WRITE)
+        let view = AttExecuteWriteReq::new(&req_bytes[..]);
+        assert_eq!(view.attribute_opcode().try_read().unwrap(), Opcode::ATT_EXECUTE_WRITE_REQ);
+        assert_eq!(view.flags().try_read().unwrap(), ExecuteWriteFlags::WRITE);
+
+        let short_view = AttExecuteWriteReq::new(&req_bytes[..1]);
+        assert!(short_view.flags().try_read().is_err());
     }
 
     #[test]

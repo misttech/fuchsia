@@ -802,7 +802,7 @@ mod tests {
                 client.prepare_write(h(10), 5, b"World", &mut rx_buf).await.unwrap();
 
                 // 4. Execute Write (Commit)
-                client.execute_write(ExecuteWriteFlags::WriteAll, &mut rx_buf).await.unwrap();
+                client.execute_write(ExecuteWriteFlags::WRITE, &mut rx_buf).await.unwrap();
 
                 // 5. Verify the updated attribute value
                 let read_res = client.read(h(10), &mut rx_buf).await.unwrap();
@@ -849,7 +849,7 @@ mod tests {
 
                 let mut rx_buf = [MaybeUninit::uninit(); CLIENT_PREFERRED_MTU as usize];
                 client.prepare_write(h(10), 0, b"Part1", &mut rx_buf).await.unwrap();
-                client.execute_write(ExecuteWriteFlags::CancelAll, &mut rx_buf).await.unwrap();
+                client.execute_write(ExecuteWriteFlags::CANCEL, &mut rx_buf).await.unwrap();
 
                 let read_res = client.read(h(10), &mut rx_buf).await.unwrap();
                 assert_eq!(read_res, b"InitialValue"); // Value is unmodified!
@@ -972,19 +972,16 @@ mod tests {
         use crate::att::client::{ClientError, DiscoveredInformation};
         use crate::att::database::Database;
         use crate::att::pdu::{
-            ErrorCode, FindInformationReq, Header, Opcode, PacketBuilder, PrepareWriteHeader,
-            UuidFormat,
+            ATT_PREPARE_WRITE_HEADER_SIZE, ErrorCode, FindInformationReq, Header, Opcode,
+            PacketBuilder, UuidFormat,
         };
-        use core::mem::{MaybeUninit, size_of};
+        use core::mem::MaybeUninit;
         use proptest::prelude::*;
         use sapphire_common::Uuid;
         use sapphire_emboss::att::AttErrorRsp;
         use sapphire_peer_cache::PeerId;
         use zerocopy::IntoBytes;
         use zerocopy::byteorder::little_endian::U16;
-
-        const PREPARE_REQ_HEADER_SIZE: usize =
-            size_of::<Header>() + size_of::<PrepareWriteHeader>();
 
         fn setup_db() -> MockDb {
             let mut db = MockDb::new();
@@ -1704,7 +1701,7 @@ mod tests {
                         mtu,
                     );
 
-                    let max_payload = (mtu as usize) - PREPARE_REQ_HEADER_SIZE;
+                    let max_payload = (mtu as usize) - ATT_PREPARE_WRITE_HEADER_SIZE;
                     let test_data = if data.len() > max_payload { &data[..max_payload] } else { &data[..] };
 
                     let server_handle = executor.spawn(async move {
@@ -1763,7 +1760,7 @@ mod tests {
                 offset2 in 0..=20u16,
                 data1 in prop::collection::vec(any::<u8>(), 0..30),
                 data2 in prop::collection::vec(any::<u8>(), 0..30),
-                flags in prop::sample::select(vec![ExecuteWriteFlags::CancelAll, ExecuteWriteFlags::WriteAll]),
+                flags in prop::sample::select(vec![ExecuteWriteFlags::CANCEL, ExecuteWriteFlags::WRITE]),
                 mtu in 23..=256u16,
             ) {
                 let (app_channel, server_tx, server_rx) = setup_mock_channel();
@@ -1783,7 +1780,7 @@ mod tests {
                     );
 
                     // Truncate payloads to fit within negotiated MTU to prevent client panics.
-                    let max_payload = (mtu as usize) - PREPARE_REQ_HEADER_SIZE;
+                    let max_payload = (mtu as usize) - ATT_PREPARE_WRITE_HEADER_SIZE;
                     let test_data1 = if data1.len() > max_payload { &data1[..max_payload] } else { &data1[..] };
                     let test_data2 = if data2.len() > max_payload { &data2[..max_payload] } else { &data2[..] };
 
@@ -1822,11 +1819,11 @@ mod tests {
                         if p1_ok && p2_ok {
                             let exec_res = client.execute_write(flags, &mut rx_buf).await;
                             match flags {
-                                ExecuteWriteFlags::CancelAll => {
-                                    // CancelAll always succeeds and leaves values unchanged.
+                                ExecuteWriteFlags::CANCEL => {
+                                    // CANCEL always succeeds and leaves values unchanged.
                                     assert!(exec_res.is_ok());
                                 }
-                                ExecuteWriteFlags::WriteAll => {
+                                ExecuteWriteFlags::WRITE => {
                                     let mut val1 = val1_expected.clone();
                                     let mut val10 = val10_expected.clone();
 

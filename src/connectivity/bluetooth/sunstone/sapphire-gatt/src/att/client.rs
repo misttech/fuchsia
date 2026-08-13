@@ -9,15 +9,19 @@ use crate::att::bearer::{
 };
 use crate::att::l2cap::{L2CapChannelRx, L2CapChannelTx};
 use crate::att::pdu::{
-    ATT_ERROR_RSP_SIZE, ATT_EXCHANGE_MTU_REQ_SIZE, ATT_EXCHANGE_MTU_RSP_SIZE, DynamicPacketBuilder,
-    ErrorCode, ExecuteWriteFlags, ExecuteWriteReq, ExecuteWriteRsp, FindByTypeValueReqHeader,
-    FindInformationReq, FindInformationRsp, HandleValueCnf, HandlesInformation, Header,
-    InformationData16, InformationData128, Opcode, Packet, PacketBuilder, PrepareWriteHeader,
-    ReadBlobReq, ReadByGroupTypeReqHeader, ReadByGroupTypeRsp, ReadByGroupTypeRspEntryHeader,
-    ReadByTypeReqHeader, ReadByTypeRsp, ReadReq, UuidFormat, WriteCmdHeader, WriteReqHeader,
+    ATT_ERROR_RSP_SIZE, ATT_EXCHANGE_MTU_REQ_SIZE, ATT_EXCHANGE_MTU_RSP_SIZE,
+    ATT_EXECUTE_WRITE_REQ_SIZE, ATT_PREPARE_WRITE_HEADER_SIZE, ATT_READ_BLOB_REQ_SIZE,
+    ATT_READ_REQ_SIZE, ATT_WRITE_CMD_HEADER_SIZE, ATT_WRITE_REQ_HEADER_SIZE, DynamicPacketBuilder,
+    ErrorCode, ExecuteWriteFlags, FindByTypeValueReqHeader, FindInformationReq, FindInformationRsp,
+    HandleValueCnf, HandlesInformation, Header, InformationData16, InformationData128, Opcode,
+    Packet, PacketBuilder, ReadByGroupTypeReqHeader, ReadByGroupTypeRsp,
+    ReadByGroupTypeRspEntryHeader, ReadByTypeReqHeader, ReadByTypeRsp, UuidFormat,
 };
 use crate::att::router::{BearerRouter, BearerRxHandle, RouteFilter};
-use sapphire_emboss::att::{AttErrorRsp, AttExchangeMtuReqMut, AttExchangeMtuRsp, AttHeader};
+use sapphire_emboss::att::{
+    AttErrorRsp, AttExchangeMtuReqMut, AttExchangeMtuRsp, AttExecuteWriteReqMut, AttHeader,
+    AttPrepareWriteHeaderMut, AttReadBlobReqMut, AttReadReqMut, AttWriteCmdMut,
+};
 
 use core::cmp::{max, min};
 use core::mem::{MaybeUninit, size_of};
@@ -460,14 +464,15 @@ where
         handle: AttributeHandle,
         rx_buf: &'a mut [MaybeUninit<u8>],
     ) -> Result<&'a mut [u8], ClientError> {
-        // Construct the Read Request payload.
-        let req = ReadReq { attribute_handle: U16::new(handle.value()) };
-        let builder = PacketBuilder { header: Header::new(Opcode::ATT_READ_REQ), payload: req };
+        let mut buf = [0u8; ATT_READ_REQ_SIZE];
+        let mut view = AttReadReqMut::new(&mut buf[..]);
+        view.attribute_opcode().try_write(Opcode::ATT_READ_REQ).expect("valid opcode");
+        view.attribute_handle().try_write(handle.value()).expect("valid handle");
+        let tx_packet = Packet::try_ref_from_bytes(&buf[..]).expect("valid packet");
 
         // Perform the transaction and await the matching Read Response.
-        let rsp_packet = self
-            .transaction(Opcode::ATT_READ_REQ, builder.as_packet(), rx_buf, Opcode::ATT_READ_RSP)
-            .await?;
+        let rsp_packet =
+            self.transaction(Opcode::ATT_READ_REQ, tx_packet, rx_buf, Opcode::ATT_READ_RSP).await?;
 
         // Return the variable-length attribute value.
         Ok(&mut rsp_packet.data)
@@ -482,22 +487,16 @@ where
         offset: u16,
         rx_buf: &'a mut [MaybeUninit<u8>],
     ) -> Result<&'a mut [u8], ClientError> {
-        // Construct the Read Blob Request payload.
-        let req = ReadBlobReq {
-            attribute_handle: U16::new(handle.value()),
-            value_offset: U16::new(offset),
-        };
-        let builder =
-            PacketBuilder { header: Header::new(Opcode::ATT_READ_BLOB_REQ), payload: req };
+        let mut buf = [0u8; ATT_READ_BLOB_REQ_SIZE];
+        let mut view = AttReadBlobReqMut::new(&mut buf[..]);
+        view.attribute_opcode().try_write(Opcode::ATT_READ_BLOB_REQ).expect("valid opcode");
+        view.attribute_handle().try_write(handle.value()).expect("valid handle");
+        view.value_offset().try_write(offset).expect("valid offset");
+        let tx_packet = Packet::try_ref_from_bytes(&buf[..]).expect("valid packet");
 
         // Perform the transaction and await the matching Read Blob Response.
         let rsp_packet = self
-            .transaction(
-                Opcode::ATT_READ_BLOB_REQ,
-                builder.as_packet(),
-                rx_buf,
-                Opcode::ATT_READ_BLOB_RSP,
-            )
+            .transaction(Opcode::ATT_READ_BLOB_REQ, tx_packet, rx_buf, Opcode::ATT_READ_BLOB_RSP)
             .await?;
 
         // Return the variable-length value chunk.
@@ -614,23 +613,27 @@ where
     /// Initiates a Write Request procedure to write the value of an attribute.
     ///
     /// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.5.1 & 3.4.5.2).
-    pub async fn write<'a>(
+    pub async fn write(
         &mut self,
         attribute_handle: AttributeHandle,
         attribute_value: &[u8],
-        rx_buf: &'a mut [MaybeUninit<u8>],
+        rx_buf: &mut [MaybeUninit<u8>],
     ) -> Result<(), ClientError> {
-        let header_builder = PacketBuilder {
-            header: Header::new(Opcode::ATT_WRITE_REQ),
-            payload: WriteReqHeader { attribute_handle: U16::new(attribute_handle.value()) },
-        };
+        let req_len = ATT_WRITE_REQ_HEADER_SIZE + attribute_value.len();
+        assert!(
+            req_len <= self.effective_mtu(),
+            "Programming error: request packet size exceeds negotiated MTU."
+        );
+        assert!(
+            req_len <= MAX_SUPPORTED_MTU,
+            "Programming error: request packet size exceeds buffer."
+        );
         let mut tx_buf = [0u8; MAX_SUPPORTED_MTU];
-        let mut builder =
-            DynamicPacketBuilder::<_, u8>::new(&mut tx_buf, header_builder, self.effective_mtu());
-        builder
-            .extend_from_slice(attribute_value)
-            .expect("Programming error: request packet size exceeds negotiated MTU.");
-        let tx_packet = builder.as_packet();
+        let mut view = AttWriteCmdMut::new(&mut tx_buf[..ATT_WRITE_REQ_HEADER_SIZE]);
+        view.attribute_opcode().try_write(Opcode::ATT_WRITE_REQ).expect("valid opcode");
+        view.attribute_handle().try_write(attribute_handle.value()).expect("valid handle");
+        tx_buf[ATT_WRITE_REQ_HEADER_SIZE..req_len].copy_from_slice(attribute_value);
+        let tx_packet = Packet::try_ref_from_bytes(&tx_buf[..req_len]).expect("valid packet");
 
         let _rx_packet = self
             .transaction(Opcode::ATT_WRITE_REQ, tx_packet, rx_buf, Opcode::ATT_WRITE_RSP)
@@ -647,17 +650,21 @@ where
         attribute_handle: AttributeHandle,
         attribute_value: &[u8],
     ) -> Result<(), ClientError> {
-        let header_builder = PacketBuilder {
-            header: Header::new(Opcode::ATT_WRITE_CMD),
-            payload: WriteCmdHeader { attribute_handle: U16::new(attribute_handle.value()) },
-        };
+        let req_len = ATT_WRITE_CMD_HEADER_SIZE + attribute_value.len();
+        assert!(
+            req_len <= self.effective_mtu(),
+            "Programming error: request packet size exceeds negotiated MTU."
+        );
+        assert!(
+            req_len <= MAX_SUPPORTED_MTU,
+            "Programming error: request packet size exceeds buffer."
+        );
         let mut tx_buf = [0u8; MAX_SUPPORTED_MTU];
-        let mut builder =
-            DynamicPacketBuilder::<_, u8>::new(&mut tx_buf, header_builder, self.effective_mtu());
-        builder
-            .extend_from_slice(attribute_value)
-            .expect("Programming error: request packet size exceeds negotiated MTU.");
-        let tx_packet = builder.as_packet();
+        let mut view = AttWriteCmdMut::new(&mut tx_buf[..ATT_WRITE_CMD_HEADER_SIZE]);
+        view.attribute_opcode().try_write(Opcode::ATT_WRITE_CMD).expect("valid opcode");
+        view.attribute_handle().try_write(attribute_handle.value()).expect("valid handle");
+        tx_buf[ATT_WRITE_CMD_HEADER_SIZE..req_len].copy_from_slice(attribute_value);
+        let tx_packet = Packet::try_ref_from_bytes(&tx_buf[..req_len]).expect("valid packet");
 
         self.send_packet(tx_packet).await?;
         Ok(())
@@ -666,27 +673,29 @@ where
     /// Initiates a Prepare Write procedure to write a part of an attribute value.
     ///
     /// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.6.1).
-    pub async fn prepare_write<'a>(
+    pub async fn prepare_write(
         &mut self,
         attribute_handle: AttributeHandle,
         value_offset: u16,
         part_attribute_value: &[u8],
-        rx_buf: &'a mut [MaybeUninit<u8>],
+        rx_buf: &mut [MaybeUninit<u8>],
     ) -> Result<(), ClientError> {
-        let header_builder = PacketBuilder {
-            header: Header::new(Opcode::ATT_PREPARE_WRITE_REQ),
-            payload: PrepareWriteHeader {
-                attribute_handle: U16::new(attribute_handle.value()),
-                value_offset: U16::new(value_offset),
-            },
-        };
+        let req_len = ATT_PREPARE_WRITE_HEADER_SIZE + part_attribute_value.len();
+        assert!(
+            req_len <= self.effective_mtu(),
+            "Programming error: request packet size exceeds negotiated MTU."
+        );
+        assert!(
+            req_len <= MAX_SUPPORTED_MTU,
+            "Programming error: request packet size exceeds buffer."
+        );
         let mut tx_buf = [0u8; MAX_SUPPORTED_MTU];
-        let mut builder =
-            DynamicPacketBuilder::<_, u8>::new(&mut tx_buf, header_builder, self.effective_mtu());
-        builder
-            .extend_from_slice(part_attribute_value)
-            .expect("Programming error: request packet size exceeds negotiated MTU.");
-        let tx_packet = builder.as_packet();
+        let mut view = AttPrepareWriteHeaderMut::new(&mut tx_buf[..ATT_PREPARE_WRITE_HEADER_SIZE]);
+        view.attribute_opcode().try_write(Opcode::ATT_PREPARE_WRITE_REQ).expect("valid opcode");
+        view.attribute_handle().try_write(attribute_handle.value()).expect("valid handle");
+        view.value_offset().try_write(value_offset).expect("valid offset");
+        tx_buf[ATT_PREPARE_WRITE_HEADER_SIZE..req_len].copy_from_slice(part_attribute_value);
+        let tx_packet = Packet::try_ref_from_bytes(&tx_buf[..req_len]).expect("valid packet");
 
         let rx_packet = self
             .transaction(
@@ -711,16 +720,16 @@ where
     /// to reuse their existing buffer without stack duplication.
     ///
     /// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.6.3).
-    pub async fn execute_write<'a>(
+    pub async fn execute_write(
         &mut self,
         flags: ExecuteWriteFlags,
-        rx_buf: &'a mut [MaybeUninit<u8>],
+        rx_buf: &mut [MaybeUninit<u8>],
     ) -> Result<(), ClientError> {
-        let builder = PacketBuilder {
-            header: Header::new(Opcode::ATT_EXECUTE_WRITE_REQ),
-            payload: ExecuteWriteReq { flags: flags as u8 },
-        };
-        let tx_packet = builder.as_packet();
+        let mut buf = [0u8; ATT_EXECUTE_WRITE_REQ_SIZE];
+        let mut view = AttExecuteWriteReqMut::new(&mut buf[..]);
+        view.attribute_opcode().try_write(Opcode::ATT_EXECUTE_WRITE_REQ).expect("valid opcode");
+        view.flags().try_write(flags).expect("valid flags");
+        let tx_packet = Packet::try_ref_from_bytes(&buf[..]).expect("valid packet");
 
         let rx_packet = self
             .transaction(
@@ -731,8 +740,9 @@ where
             )
             .await?;
 
-        let _ = ExecuteWriteRsp::try_ref_from_bytes(&rx_packet.data)
-            .map_err(|_| ClientError::InvalidIncomingData)?;
+        if !rx_packet.data.is_empty() {
+            return Err(ClientError::InvalidIncomingData);
+        }
 
         Ok(())
     }
@@ -838,13 +848,16 @@ mod tests {
     use crate::att::bearer::BearerRx;
     use crate::att::l2cap::mock::setup_mock_channel;
     use crate::att::pdu::{
-        ATT_ERROR_RSP_SIZE, ATT_EXCHANGE_MTU_RSP_SIZE, DynamicPacketBuilder, FindByTypeValueReq,
-        FindInformationRspHeader, HandleValueIndHeader, PrepareWriteHeader, PrepareWriteReq,
-        WriteCmd, WriteReq, WriteRsp,
+        ATT_ERROR_RSP_SIZE, ATT_EXCHANGE_MTU_RSP_SIZE, ATT_EXECUTE_WRITE_RSP_SIZE,
+        ATT_PREPARE_WRITE_HEADER_SIZE, DynamicPacketBuilder, FindByTypeValueReq,
+        FindInformationRspHeader, HandleValueIndHeader,
     };
     use sapphire_async::executor::BoundedExecutor;
     use sapphire_async::testing::TestExecutor;
-    use sapphire_emboss::att::{AttErrorRspMut, AttExchangeMtuReq, AttExchangeMtuRspMut};
+    use sapphire_emboss::att::{
+        AttErrorRspMut, AttExchangeMtuReq, AttExchangeMtuRspMut, AttExecuteWriteReq, AttHeaderMut,
+        AttPrepareWriteHeader, AttPrepareWriteHeaderMut, AttReadBlobReq, AttReadReq, AttWriteCmd,
+    };
 
     const CLIENT_PREFERRED_MTU: u16 = 512;
     const SERVER_MTU: u16 = 256;
@@ -1228,8 +1241,8 @@ mod tests {
                 let packet = server_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
                 assert_eq!(packet.header.opcode, Opcode::ATT_READ_REQ.into());
 
-                let req = ReadReq::read_from_bytes(&packet.data[..]).unwrap();
-                assert_eq!(req.attribute_handle.get(), 1);
+                let req = AttReadReq::new(packet.as_bytes());
+                assert_eq!(req.attribute_handle().try_read().unwrap(), 1);
 
                 let val = b"Sunstone";
                 let mut tx_buf = [0u8; 64];
@@ -1309,9 +1322,9 @@ mod tests {
                 let packet = server_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
                 assert_eq!(packet.header.opcode, Opcode::ATT_READ_BLOB_REQ.into());
 
-                let req = ReadBlobReq::read_from_bytes(&packet.data[..]).unwrap();
-                assert_eq!(req.attribute_handle.get(), 1);
-                assert_eq!(req.value_offset.get(), 2);
+                let req = AttReadBlobReq::new(packet.as_bytes());
+                assert_eq!(req.attribute_handle().try_read().unwrap(), 1);
+                assert_eq!(req.value_offset().try_read().unwrap(), 2);
 
                 let val = b"nstone"; // Part of "Sunstone" starting at offset 2
                 let mut tx_buf = [0u8; 64];
@@ -1642,14 +1655,16 @@ mod tests {
                 // 1. Await write request
                 let packet = server_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
                 assert_eq!(packet.header.opcode, Opcode::ATT_WRITE_REQ.into());
-                let req = WriteReq::try_ref_from_bytes(&packet.data[..]).unwrap();
-                assert_eq!(req.header.attribute_handle.get(), 10);
-                assert_eq!(&req.attribute_value, &b"Sunstone"[..]);
+                let req = AttWriteCmd::new(packet.as_bytes());
+                assert_eq!(req.attribute_handle().try_read().unwrap(), 10);
+                assert_eq!(&packet.as_bytes()[ATT_WRITE_REQ_HEADER_SIZE..], b"Sunstone");
 
                 // 2. Respond with empty WriteRsp
-                let builder =
-                    PacketBuilder { header: Header::new(Opcode::ATT_WRITE_RSP), payload: WriteRsp };
-                server_tx_bearer.send(builder.as_packet()).await.unwrap();
+                let mut rsp_buf = [0u8; 1];
+                let mut rsp_view = AttHeaderMut::new(&mut rsp_buf[..]);
+                rsp_view.attribute_opcode().try_write(Opcode::ATT_WRITE_RSP).unwrap();
+                let tx_packet = Packet::try_ref_from_bytes(&rsp_buf[..]).unwrap();
+                server_tx_bearer.send(tx_packet).await.unwrap();
             });
 
             // Client driver task
@@ -1684,8 +1699,8 @@ mod tests {
                 // 1. Await write request
                 let packet = server_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
                 assert_eq!(packet.header.opcode, Opcode::ATT_WRITE_REQ.into());
-                let req = WriteReq::try_ref_from_bytes(&packet.data[..]).unwrap();
-                assert_eq!(req.header.attribute_handle.get(), 10);
+                let req = AttWriteCmd::new(packet.as_bytes());
+                assert_eq!(req.attribute_handle().try_read().unwrap(), 10);
 
                 // 2. Respond with ErrorRsp (WriteNotPermitted)
                 let err_buf =
@@ -1727,9 +1742,9 @@ mod tests {
                 let mut server_rx_bearer = BearerRx::new(test_rx);
                 let packet = server_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
                 assert_eq!(packet.header.opcode, Opcode::ATT_WRITE_CMD.into());
-                let req = WriteCmd::try_ref_from_bytes(&packet.data[..]).unwrap();
-                assert_eq!(req.header.attribute_handle.get(), 12);
-                assert_eq!(&req.attribute_value, &b"SunstoneCmd"[..]);
+                let req = AttWriteCmd::new(packet.as_bytes());
+                assert_eq!(req.attribute_handle().try_read().unwrap(), 12);
+                assert_eq!(&packet.as_bytes()[ATT_WRITE_CMD_HEADER_SIZE..], b"SunstoneCmd");
             });
 
             // Client driver task
@@ -1787,21 +1802,19 @@ mod tests {
                 // Receive PrepareWriteReq
                 let packet = server_rx.next_packet(&mut rx_buf).await.unwrap();
                 assert_eq!(packet.header.opcode, Opcode::ATT_PREPARE_WRITE_REQ.into());
-                let req = PrepareWriteReq::try_ref_from_bytes(&packet.data).unwrap();
-                assert_eq!(req.header.attribute_handle.get(), 10);
-                assert_eq!(req.header.value_offset.get(), 0);
-                assert_eq!(req.part_attribute_value, *b"Part1");
+                let req = AttPrepareWriteHeader::new(packet.as_bytes());
+                assert_eq!(req.attribute_handle().try_read().unwrap(), 10);
+                assert_eq!(req.value_offset().try_read().unwrap(), 0);
+                assert_eq!(&packet.as_bytes()[ATT_PREPARE_WRITE_HEADER_SIZE..], b"Part1");
 
                 // Echo back PrepareWriteRsp
-                let response_header = PacketBuilder {
-                    header: Header::new(Opcode::ATT_PREPARE_WRITE_RSP),
-                    payload: req.header,
-                };
-                let mut tx_buf = [0u8; 128];
-                let mut builder =
-                    DynamicPacketBuilder::<_, u8>::new(&mut tx_buf, response_header, 128);
-                builder.extend_from_slice(b"Part1").unwrap();
-                server_tx.send(builder.as_packet()).await.unwrap();
+                let mut rsp_buf = [0u8; 128];
+                rsp_buf[..packet.as_bytes().len()].copy_from_slice(packet.as_bytes());
+                let mut rsp_view = AttHeaderMut::new(&mut rsp_buf[..size_of::<Header>()]);
+                rsp_view.attribute_opcode().try_write(Opcode::ATT_PREPARE_WRITE_RSP).unwrap();
+                let tx_packet =
+                    Packet::try_ref_from_bytes(&rsp_buf[..packet.as_bytes().len()]).unwrap();
+                server_tx.send(tx_packet).await.unwrap();
             });
 
             let client_handle = executor.spawn(async move {
@@ -1874,18 +1887,16 @@ mod tests {
                 let _packet = server_rx.next_packet(&mut rx_buf).await.unwrap();
 
                 // Respond with mismatched echoed payload (mismatched offset 1 instead of 0)
-                let response_header = PacketBuilder {
-                    header: Header::new(Opcode::ATT_PREPARE_WRITE_RSP),
-                    payload: PrepareWriteHeader {
-                        attribute_handle: U16::new(10),
-                        value_offset: U16::new(1),
-                    },
-                };
-                let mut tx_buf = [0u8; 128];
-                let mut builder =
-                    DynamicPacketBuilder::<_, u8>::new(&mut tx_buf, response_header, 128);
-                builder.extend_from_slice(b"Part1").unwrap();
-                server_tx.send(builder.as_packet()).await.unwrap();
+                const PART_VAL: &[u8] = b"Part1";
+                let mut rsp_buf = [0u8; ATT_PREPARE_WRITE_HEADER_SIZE + PART_VAL.len()];
+                let mut view =
+                    AttPrepareWriteHeaderMut::new(&mut rsp_buf[..ATT_PREPARE_WRITE_HEADER_SIZE]);
+                view.attribute_opcode().try_write(Opcode::ATT_PREPARE_WRITE_RSP).unwrap();
+                view.attribute_handle().try_write(10).unwrap();
+                view.value_offset().try_write(1).unwrap();
+                rsp_buf[ATT_PREPARE_WRITE_HEADER_SIZE..].copy_from_slice(PART_VAL);
+                let tx_packet = Packet::try_ref_from_bytes(&rsp_buf[..]).unwrap();
+                server_tx.send(tx_packet).await.unwrap();
             });
 
             let client_handle = executor.spawn(async move {
@@ -1918,19 +1929,19 @@ mod tests {
 
                 let packet = server_rx.next_packet(&mut rx_buf).await.unwrap();
                 assert_eq!(packet.header.opcode, Opcode::ATT_EXECUTE_WRITE_REQ.into());
-                let req = ExecuteWriteReq::read_from_bytes(&packet.data).unwrap();
-                assert_eq!(req.flags, ExecuteWriteFlags::WriteAll as u8);
+                let req = AttExecuteWriteReq::new(packet.as_bytes());
+                assert_eq!(req.flags().try_read().unwrap(), ExecuteWriteFlags::WRITE);
 
-                let rsp_builder = PacketBuilder {
-                    header: Header::new(Opcode::ATT_EXECUTE_WRITE_RSP),
-                    payload: ExecuteWriteRsp {},
-                };
-                server_tx.send(rsp_builder.as_packet()).await.unwrap();
+                let mut rsp_buf = [0u8; ATT_EXECUTE_WRITE_RSP_SIZE];
+                let mut rsp_view = AttHeaderMut::new(&mut rsp_buf[..]);
+                rsp_view.attribute_opcode().try_write(Opcode::ATT_EXECUTE_WRITE_RSP).unwrap();
+                let tx_packet = Packet::try_ref_from_bytes(&rsp_buf[..]).unwrap();
+                server_tx.send(tx_packet).await.unwrap();
             });
 
             let client_handle = executor.spawn(async move {
                 let mut rx_buf = [MaybeUninit::uninit(); 128];
-                client.execute_write(ExecuteWriteFlags::WriteAll, &mut rx_buf).await.unwrap();
+                client.execute_write(ExecuteWriteFlags::WRITE, &mut rx_buf).await.unwrap();
             });
 
             executor.run_until_stalled();
@@ -1953,7 +1964,7 @@ mod tests {
 
             let client_handle = executor.spawn(async move {
                 let mut rx_buf = [MaybeUninit::uninit(); 128];
-                let result = client.execute_write(ExecuteWriteFlags::WriteAll, &mut rx_buf).await;
+                let result = client.execute_write(ExecuteWriteFlags::WRITE, &mut rx_buf).await;
                 assert_eq!(result.err(), Some(ClientError::LinkClosed));
             });
 
