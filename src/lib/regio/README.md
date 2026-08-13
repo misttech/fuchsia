@@ -163,6 +163,18 @@ const TIME: Csr<encoding::time, u64> = Csr::new();
 println!("time: {:#x}", TIME.read());
 ```
 
+## x86 Control Registers
+
+`Cr` and `Xcr` are aliases of `Register` used to model x86 control registers:
+
+```rust
+use regio::x86::{Cr, Xcr};
+
+const CR0: Cr<0, u64> = Cr::new();
+const CR3: Cr<3, u64> = Cr::new();
+const XCR0: Xcr<0, u64> = Cr::new();
+```
+
 ## x86 CPUID
 
 The core CPUID type is `Cpuid` for defining the layouts of a particular
