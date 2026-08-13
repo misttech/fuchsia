@@ -33,7 +33,7 @@ struct IntegrationTestArgs {}
 struct MicroBenchmarkArgs {}
 
 const VMADDR_CID_HOST: libc::c_uint = 2;
-const VMADDR_CID_ANY: libc::c_uint = std::u32::MAX;
+const VMADDR_CID_ANY: libc::c_uint = u32::MAX;
 const TEST_DATA_LEN: usize = 60000;
 
 macro_rules! get_return_value {
