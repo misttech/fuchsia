@@ -30,6 +30,11 @@ PLATFORM_BASE = {
         "type": "standard",
         "snoop": "lazy",
     },
+    "connectivity": {
+        "network": {
+            "netstack_multi_vmo": True,
+        },
+    },
     "development_support": {
         "include_sl4f": True,
         "tools": {
