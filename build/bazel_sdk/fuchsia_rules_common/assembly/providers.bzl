@@ -30,6 +30,7 @@ FuchsiaProductConfigInfo = provider(
         "directory": "Directory of the product config container",
         "build_type": "The build type of the product.",
         "build_id_dirs": "Directories containing the debug symbols",
+        "enable_example_aib": "Whether example AIBs are enabled for this product.",
     },
 )
 

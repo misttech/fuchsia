@@ -20,13 +20,6 @@ group("lib") {
   }
 }
 
-if (is_fuchsia) {
-  group("tests") {
-    testonly = true
-    public_deps = [ "tests" ]
-  }
-}
-
 if (is_host) {
   group("host_tests") {
     testonly = true

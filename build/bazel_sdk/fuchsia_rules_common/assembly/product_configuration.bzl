@@ -311,6 +311,7 @@ def common_product_configuration_impl(ctx, assembly_config_binary, bootfs_files_
             directory = product_config_dir.path,
             build_type = build_type,
             build_id_dirs = build_id_dirs,
+            enable_example_aib = getattr(ctx.attr, "enable_example_aib", False),
         ),
     ]
 

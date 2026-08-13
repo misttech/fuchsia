@@ -110,6 +110,10 @@ group("bazel_action_allowlist") {
   visibility += [
     "//build/images/guest:*",
     "//build/images/updates/tests:bazel_pb_bazel_build_group",
+    "//src/security/lib/scrutiny/collector:*",
+    "//src/security/lib/scrutiny/tests/route_verification:*",
+    "//src/security/lib/scrutiny/tests/structured_config:*",
+    "//src/security/tests/scrutiny_ffx_integration:*",
   ]
 
   # Bazel build related targets

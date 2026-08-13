@@ -71,7 +71,17 @@ def _fuchsia_product_assembly_impl(ctx):
     ffx_inputs = get_ffx_assembly_inputs(fuchsia_toolchain)
     ffx_isolate_dir = ctx.actions.declare_directory(ctx.label.name + "_ffx_isolate_dir")
 
-    ffx_invocation = get_ffx_assembly_args(fuchsia_toolchain) + [
+    ffx_invocation = get_ffx_assembly_args(fuchsia_toolchain)
+
+    # Enable the use of the example AIBs when the product configuration
+    # specifies that it needs it (this isn't available to SDK rules)
+    if getattr(product_config, "enable_example_aib", False):
+        ffx_invocation += [
+            "--config",
+            "assembly_example_enabled=true",
+        ]
+
+    ffx_invocation += [
         "--isolate-dir",
         ffx_isolate_dir.path,
         "assembly",

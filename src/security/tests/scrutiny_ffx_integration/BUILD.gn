@@ -2,125 +2,22 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/assembly/assembled_system.gni")
-import("//build/assembly/board_configuration.gni")
-import("//build/assembly/product_assembly_configuration.gni")
-import("//build/assembly/product_bundle.gni")
-import("//build/board.gni")
-import("//build/components/fuchsia_package.gni")
+import("//build/bazel/assembly/bazel_product_bundle.gni")
 import("//build/rust/rustc_test.gni")
 import("//build/testing/host_test_data.gni")
 
 if (is_fuchsia) {
-  _assemble_system_target_name = "assembly"
-  _assemble_system_recovery_target_name = "assembly_recovery"
-
-  # `assembled_system` needs at least one package in base_packages.
-  fuchsia_package("empty-pkg") {
+  bazel_product_bundle("product_bundle") {
     testonly = true
-    package_name = "empty-pkg"
-  }
-
-  _base_packages = [
-    {
-      package_target = ":empty-pkg"
-      config_data = [
-        {
-          source = "empty_config"
-          destination = "empty/empty_config"
-        },
-      ]
-    },
-  ]
-
-  board_configuration("board_config") {
-    name = "test"
-    version = "fake_version"
-    partitions_config = "//boards/partitions:default"
-    filesystems = {
-      fvm = {
-        slice_size = 1048576
-        sparse_output = {
-        }
-      }
-    }
-  }
-
-  product_assembly_configuration("product_config") {
-    testonly = true
-    platform = {
-      build_type = "eng"
-      storage = {
-        filesystems = {
-          image_name = _assemble_system_target_name
-          volume = {
-            fvm = {
-              data = {
-                data_filesystem_format = "minfs"
-              }
-              blob = {
-              }
-            }
-          }
-        }
-      }
-    }
-    base_packages = _base_packages
-    version = build_info_version
-  }
-
-  product_assembly_configuration("product_config_recovery") {
-    testonly = true
-    platform = {
-      build_type = "eng"
-      storage = {
-        filesystems = {
-          image_name = _assemble_system_recovery_target_name
-          image_mode = "ramdisk"
-          volume = {
-            fvm = {
-              data = {
-                data_filesystem_format = "minfs"
-              }
-              blob = {
-              }
-            }
-          }
-        }
-      }
-    }
-    base_packages = _base_packages
-    version = build_info_version
-  }
-
-  # `assembled_system` builds a zbi and blob.blk for consumption by the test.
-  assembled_system(_assemble_system_target_name) {
-    testonly = true
-    generate_fvm = true
-    product_assembly_config_label = ":product_config"
-    board_config_label = ":board_config"
-  }
-
-  # `assembled_system` builds a zbi, specifying `ramdisk_in_zbi = true`
-  # tests the path where the blobfs exists in the zbi and is automatically
-  # extracted as part of the zbi, such as in recovery images.
-  assembled_system(_assemble_system_recovery_target_name) {
-    testonly = true
-    generate_fvm = true
-    product_assembly_config_label = ":product_config_recovery"
-    board_config_label = ":board_config"
-    ramdisk_in_zbi = true
-  }
-
-  product_bundle("product_bundle") {
-    testonly = true
-    name = "product_bundle"
-    system_a = "$target_out_dir/$_assemble_system_target_name"
-    system_r = "$target_out_dir/$_assemble_system_recovery_target_name"
-    deps = [
-      ":$_assemble_system_recovery_target_name",
-      ":$_assemble_system_target_name",
-    ]
+    product_bundle_name = "scrutiny_ffx_integration_test"
+    bazel_product_bundle_target = ":product_bundle"
+    bazel_product_image_target = ":main_image"
+    bazel_product_config_target = ":product_config"
+    bazel_product_config_name = "product_config"
+    bazel_recovery_image_target = ":recovery_image"
+    image_has_fxfs_blob = false
+    image_use_vbmeta = false
+    bazel_inputs_from_gn = []
   }
 }
 
@@ -133,7 +30,7 @@ if (is_host) {
 
     _product_bundle_out_dir =
         get_label_info(":product_bundle($target_toolchain)", "target_out_dir") +
-        "/product_bundle"
+        "/product_bundle/product_bundle"
 
     host_test_data("testdata") {
       deps = [ ":product_bundle($target_toolchain)" ]

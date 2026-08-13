@@ -35,7 +35,7 @@ fn extract_blobfs() {
 #[test]
 fn extract_zbi() {
     let pb_path = PathBuf::from(PRODUCT_BUNDLE_PATH);
-    let zbi_path = pb_path.join("system_a/assembly.zbi");
+    let zbi_path = pb_path.join("system_a/fuchsia.zbi");
     let tmp_dir = TempDir::new().unwrap();
     let tmp_path = tmp_dir.path().to_str().unwrap();
     assert!(
@@ -58,7 +58,7 @@ fn extract_zbi() {
 #[test]
 fn extract_recovery_zbi() {
     let pb_path = PathBuf::from(PRODUCT_BUNDLE_PATH);
-    let recovery_zbi_path = pb_path.join("system_r/assembly_recovery.zbi");
+    let recovery_zbi_path = pb_path.join("system_r/fuchsia.zbi");
     let tmp_dir = TempDir::new().unwrap();
     let tmp_path = tmp_dir.path().to_str().unwrap();
     assert!(

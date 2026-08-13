@@ -10,5 +10,8 @@ exports_files(
         "client.shard.cml",
         "use.shard.cml",
     ],
-    visibility = ["//bundles/assembly:__subpackages__"],
+    visibility = [
+        "//bundles/assembly:__subpackages__",
+        "//src/security/lib/scrutiny/tests/route_verification:__pkg__",
+    ],
 )

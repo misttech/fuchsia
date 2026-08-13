@@ -32,6 +32,10 @@ _product_configuration = rule(
             providers = [FuchsiaPackageInfo],
             default = None,
         ),
+        "enable_example_aib": attr.bool(
+            doc = "Optionally enable example AIBs for testing.",
+            default = False,
+        ),
         "_assembly_config": attr.label(
             default = "@gn_targets//toolchain_host_x64/build/assembly/tools/assembly_config:assembly_config",
         ),
@@ -49,6 +53,7 @@ def product_configuration(
         base_driver_packages = None,
         ota_configuration = None,
         starnix_containers = [],
+        enable_example_aib = False,
         **kwargs):
     """Generates a product configuration file for Fuchsia platform testing (in-tree) only."""
     json_config = product_config_json if product_config_json else {}
@@ -63,5 +68,6 @@ def product_configuration(
         base_driver_packages = base_driver_packages,
         ota_configuration = ota_configuration,
         starnix_containers = starnix_containers,
+        enable_example_aib = enable_example_aib,
         **kwargs
     )
