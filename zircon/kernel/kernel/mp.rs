@@ -28,6 +28,10 @@ unsafe extern "C" {
     fn cpp_mp_reschedule_self();
     fn cpp_mp_interrupt(target: MpIpiTarget, mask: cpu_mask_t);
 
+    fn cpp_mp_mbx_generic_irq();
+    fn cpp_mp_mbx_reschedule_irq();
+    fn cpp_mp_mbx_interrupt_irq();
+
     fn cpp_mp_sync_exec(
         target: MpIpiTarget,
         mask: cpu_mask_t,
@@ -137,6 +141,24 @@ pub fn reschedule_self() {
 pub fn interrupt(target: MpIpiTarget, mask: cpu_mask_t) {
     // SAFETY: FFI call with value arguments has no safety preconditions.
     unsafe { cpp_mp_interrupt(target, mask) };
+}
+
+/// Generic mailbox interrupt handler.
+pub fn mbx_generic_irq() {
+    // SAFETY: FFI call has no safety preconditions.
+    unsafe { cpp_mp_mbx_generic_irq() };
+}
+
+/// Reschedule mailbox interrupt handler.
+pub fn mbx_reschedule_irq() {
+    // SAFETY: FFI call has no safety preconditions.
+    unsafe { cpp_mp_mbx_reschedule_irq() };
+}
+
+/// Interrupt-only mailbox interrupt handler.
+pub fn mbx_interrupt_irq() {
+    // SAFETY: FFI call has no safety preconditions.
+    unsafe { cpp_mp_mbx_interrupt_irq() };
 }
 
 /// Raw function pointer callback for synchronous cross-CPU task execution.

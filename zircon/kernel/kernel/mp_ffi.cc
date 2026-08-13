@@ -36,6 +36,10 @@ void cpp_mp_reschedule(cpu_mask_t mask, uint32_t flags);
 void cpp_mp_reschedule_self();
 void cpp_mp_interrupt(mp_ipi_target target, cpu_mask_t mask);
 
+void cpp_mp_mbx_generic_irq();
+void cpp_mp_mbx_reschedule_irq();
+void cpp_mp_mbx_interrupt_irq();
+
 void cpp_mp_sync_exec(mp_ipi_target target, cpu_mask_t mask, mp_sync_task_t task, void* context);
 
 zx_status_t cpp_mp_hotplug_cpu_mask(cpu_mask_t mask);
@@ -79,6 +83,15 @@ FFI_ALWAYS_INLINE void cpp_mp_reschedule_self() { mp_reschedule_self(); }
 FFI_ALWAYS_INLINE void cpp_mp_interrupt(mp_ipi_target target, cpu_mask_t mask) {
   mp_interrupt(target, mask);
 }
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_mp_mbx_generic_irq() { mp_mbx_generic_irq(); }
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_mp_mbx_reschedule_irq() { mp_mbx_reschedule_irq(); }
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_mp_mbx_interrupt_irq() { mp_mbx_interrupt_irq(); }
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE void cpp_mp_sync_exec(mp_ipi_target target, cpu_mask_t mask, mp_sync_task_t task,
