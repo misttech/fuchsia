@@ -64,7 +64,7 @@ where
         let i = self.0.partition_point(|data| data.time() < earliest_time);
         let j = self.0.partition_point(|data| data.time() <= latest_time);
         match j.checked_sub(i) {
-            Some(diff) if diff != 0 => self.0.iter().skip(i).take(diff).cloned().collect(),
+            Some(diff) => self.0.iter().skip(i).take(diff).cloned().collect(),
             _ => {
                 warn!(
                     "Invalid time bounds - earliest time: {:?}, latest time: {:?}",
@@ -184,16 +184,24 @@ mod tests {
         assert_eq!(
             historical_list.get_between(
                 EARLIEST_TIME + MonotonicDuration::from_seconds(10),
+                EARLIEST_TIME + MonotonicDuration::from_seconds(10)
+            ),
+            vec![]
+        );
+
+        assert_eq!(
+            historical_list.get_between(
+                EARLIEST_TIME + MonotonicDuration::from_seconds(10),
                 EARLIEST_TIME + MonotonicDuration::from_seconds(11)
             ),
             vec![]
         );
 
-        // Verify that an empty list is returned for invalid time bounds.
+        // Verify that an empty list is returned for equal and invalid time bounds.
         assert_eq!(
             historical_list
                 .get_between(EARLIEST_TIME + MonotonicDuration::from_seconds(3), EARLIEST_TIME),
             vec![]
-        )
+        );
     }
 }
