@@ -10,128 +10,141 @@ use crate::object_store::object_record::{AttributeKey, ObjectKey, ObjectKeyData,
 use crate::object_store::{AttributeId, DataObjectHandle, HandleOwner, StoreObjectHandle};
 use crate::serialized_types::{Versioned, VersionedLatest};
 use anyhow::{Context, Error};
-use fprint::TypeFingerprint;
 use fuchsia_merkle::{Hash, LeafHashCollector, MerkleVerifier};
-use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Debug)]
-pub struct BlobMetadataUnversioned {
-    pub hashes: Vec<[u8; 32]>,
-    pub chunk_size: u64,
-    pub compressed_offsets: Vec<u64>,
-    pub uncompressed_size: u64,
-}
+pub use blob_metadata::{
+    BlobFormat, BlobFormatV53, BlobMetadata, BlobMetadataUnversioned, BlobMetadataV53, MerkleLeaves,
+};
 
-pub type BlobMetadata = BlobMetadataV53;
-pub type BlobFormat = BlobFormatV53;
-pub type MerkleLeaves = Vec<[u8; 32]>;
-
-impl BlobMetadata {
+pub trait FxfsBlobMetadataExt: Sized {
     /// Reads the blob metadata from an attribute on `blob_object`. If the attribute doesn't exist
     /// then it's assumed to be `BlobMetadata::empty()`.
-    pub async fn read_from<S: HandleOwner>(
+    fn read_from<S: HandleOwner>(
         blob_object: &StoreObjectHandle<S>,
-    ) -> Result<Self, Error> {
-        let store = blob_object.store();
-        let layer_set = store.tree().layer_set();
-        let mut merger = layer_set.merger();
-        // A blob should never have both attributes and also should never have the fs-verity
-        // attribute which is ordered between them. Querying for `AttributeId::BLOB_MERKLE` will
-        // have the iterator point to that attribute if it exists. If it doesn't exist then the
-        // iterator will point the next item which will be the `AttributeId::BLOB_METADATA`
-        // attribute if it exists.
-        static_assertions::const_assert!(
-            AttributeId::BLOB_MERKLE.raw() < AttributeId::BLOB_METADATA.raw()
-        );
-        let key = ObjectKey::attribute(
-            blob_object.object_id(),
-            AttributeId::BLOB_MERKLE,
-            AttributeKey::Attribute,
-        );
-        let iter = merger.query(Query::FullRange(&key)).await?;
-        match iter.get() {
-            Some(ItemRef {
-                key:
-                    ObjectKey {
-                        object_id,
-                        data:
-                            ObjectKeyData::Attribute(AttributeId::BLOB_MERKLE, AttributeKey::Attribute),
-                    },
-                value,
-                ..
-            }) if *object_id == blob_object.object_id() => match value {
-                ObjectValue::Attribute { .. } => {
-                    let serialized_metadata = blob_object.read_attr_from_iter(iter).await?;
-                    let old_metadata: BlobMetadataUnversioned =
-                        bincode::deserialize_from(&*serialized_metadata)?;
-                    Ok(Self::from(old_metadata))
-                }
-                _ => Err(FxfsError::Inconsistent.into()),
-            },
-            Some(ItemRef {
-                key:
-                    ObjectKey {
-                        object_id,
-                        data:
-                            ObjectKeyData::Attribute(
-                                AttributeId::BLOB_METADATA,
-                                AttributeKey::Attribute,
-                            ),
-                    },
-                value,
-                ..
-            }) if *object_id == blob_object.object_id() => match value {
-                ObjectValue::Attribute { .. } => {
-                    let serialized_metadata = blob_object.read_attr_from_iter(iter).await?;
-                    Ok(Self::deserialize_with_version(&mut &*serialized_metadata)?.0)
-                }
-                _ => Err(FxfsError::Inconsistent.into()),
-            },
-            Some(ItemRef {
-                key:
-                    ObjectKey {
-                        object_id,
-                        data:
-                            ObjectKeyData::Attribute(
-                                AttributeId::FSVERITY_MERKLE,
-                                AttributeKey::Attribute,
-                            ),
-                    },
-                ..
-            }) if *object_id == blob_object.object_id() => {
-                // Blobs should not have the fs-verity attribute. This is explicitly checked because
-                // the fs-verity attribute is ordered between the 2 blob metadata attributes.
-                // `AttributeId::BLOB_MERKLE` was queried for with the expectation of finding either
-                // blob attribute. Finding the fs-verity attribute could be hiding the
-                // `AttributeId::BLOB_METADATA` attribute.
-                Err(FxfsError::Inconsistent.into())
-            }
-            // Neither attribute exists.
-            _ => Ok(Self::empty()),
-        }
-    }
+    ) -> impl std::future::Future<Output = Result<Self, Error>> + Send;
 
     /// Writes the metadata to the `AttributeId::BLOB_METADATA` attribute on `blob_object`. If the
     /// metadata is equal to `BlobMetadata::empty()` then the attribute isn't written.
-    pub async fn write_to<S: HandleOwner>(
+    fn write_to<S: HandleOwner>(
         &self,
         blob_object: &DataObjectHandle<S>,
-    ) -> Result<(), Error> {
-        // Don't write the attribute when there's no metadata.
-        if self.is_empty() {
-            return Ok(());
-        }
-        let mut buf = Vec::new();
-        self.serialize_with_version(&mut buf)?;
-        blob_object
-            .write_attr(AttributeId::BLOB_METADATA, &buf)
-            .await
-            .context("Failed to write blob metadata attribute.")
-    }
+    ) -> impl std::future::Future<Output = Result<(), Error>> + Send;
 
     /// Returns the size of the serialized metadata. If the metadata is equal to
     /// `BlobMetadata::empty()` then the metadata won't get written, so 0 is returned.
-    pub fn serialized_size(&self) -> Result<usize, Error> {
+    fn serialized_size(&self) -> Result<usize, Error>;
+
+    /// Consumes the metadata and turns it into a `MerkleVerifier`.
+    fn into_merkle_verifier(self, root: Hash) -> Result<MerkleVerifier, Error>;
+}
+
+impl FxfsBlobMetadataExt for BlobMetadata {
+    fn read_from<S: HandleOwner>(
+        blob_object: &StoreObjectHandle<S>,
+    ) -> impl std::future::Future<Output = Result<Self, Error>> + Send {
+        async move {
+            let store = blob_object.store();
+            let layer_set = store.tree().layer_set();
+            let mut merger = layer_set.merger();
+            // A blob should never have both attributes and also should never have the fs-verity
+            // attribute which is ordered between them. Querying for `AttributeId::BLOB_MERKLE` will
+            // have the iterator point to that attribute if it exists. If it doesn't exist then the
+            // iterator will point the next item which will be the `AttributeId::BLOB_METADATA`
+            // attribute if it exists.
+            static_assertions::const_assert!(
+                AttributeId::BLOB_MERKLE.raw() < AttributeId::BLOB_METADATA.raw()
+            );
+            let key = ObjectKey::attribute(
+                blob_object.object_id(),
+                AttributeId::BLOB_MERKLE,
+                AttributeKey::Attribute,
+            );
+            let iter = merger.query(Query::FullRange(&key)).await?;
+            match iter.get() {
+                Some(ItemRef {
+                    key:
+                        ObjectKey {
+                            object_id,
+                            data:
+                                ObjectKeyData::Attribute(
+                                    AttributeId::BLOB_MERKLE,
+                                    AttributeKey::Attribute,
+                                ),
+                        },
+                    value,
+                    ..
+                }) if *object_id == blob_object.object_id() => match value {
+                    ObjectValue::Attribute { .. } => {
+                        let serialized_metadata = blob_object.read_attr_from_iter(iter).await?;
+                        let old_metadata: BlobMetadataUnversioned =
+                            bincode::deserialize_from(&*serialized_metadata)?;
+                        Ok(Self::from(old_metadata))
+                    }
+                    _ => Err(FxfsError::Inconsistent.into()),
+                },
+                Some(ItemRef {
+                    key:
+                        ObjectKey {
+                            object_id,
+                            data:
+                                ObjectKeyData::Attribute(
+                                    AttributeId::BLOB_METADATA,
+                                    AttributeKey::Attribute,
+                                ),
+                        },
+                    value,
+                    ..
+                }) if *object_id == blob_object.object_id() => match value {
+                    ObjectValue::Attribute { .. } => {
+                        let serialized_metadata = blob_object.read_attr_from_iter(iter).await?;
+                        Ok(Self::deserialize_with_version(&mut &*serialized_metadata)?.0)
+                    }
+                    _ => Err(FxfsError::Inconsistent.into()),
+                },
+                Some(ItemRef {
+                    key:
+                        ObjectKey {
+                            object_id,
+                            data:
+                                ObjectKeyData::Attribute(
+                                    AttributeId::FSVERITY_MERKLE,
+                                    AttributeKey::Attribute,
+                                ),
+                        },
+                    ..
+                }) if *object_id == blob_object.object_id() => {
+                    // Blobs should not have the fs-verity attribute. This is explicitly checked
+                    // because the fs-verity attribute is ordered between the 2 blob metadata
+                    // attributes.  `AttributeId::BLOB_MERKLE` was queried for with the expectation
+                    // of finding either blob attribute. Finding the fs-verity attribute could be
+                    // hiding the `AttributeId::BLOB_METADATA` attribute.
+                    Err(FxfsError::Inconsistent.into())
+                }
+                // Neither attribute exists.
+                _ => Ok(Self::empty()),
+            }
+        }
+    }
+
+    fn write_to<S: HandleOwner>(
+        &self,
+        blob_object: &DataObjectHandle<S>,
+    ) -> impl std::future::Future<Output = Result<(), Error>> + Send {
+        async move {
+            // Don't write the attribute when there's no metadata.
+            if self.is_empty() {
+                return Ok(());
+            }
+            let mut buf = Vec::new();
+            self.serialize_with_version(&mut buf)?;
+            blob_object
+                .write_attr(AttributeId::BLOB_METADATA, &buf)
+                .await
+                .context("Failed to write blob metadata attribute.")
+        }
+    }
+
+    fn serialized_size(&self) -> Result<usize, Error> {
         if self.is_empty() {
             return Ok(0);
         }
@@ -150,38 +163,9 @@ impl BlobMetadata {
         Ok(writer.0)
     }
 
-    /// Consumes the metadata and turns it into a `MerkleVerifier`.
-    pub fn into_merkle_verifier(self, root: Hash) -> Result<MerkleVerifier, Error> {
-        let hashes = if self.merkle_leaves.is_empty() {
-            Box::new([root])
-        } else {
-            // The below code gets optimized down to just a `Vec::into_boxed_slice` on release
-            // builds because `Hash` is just a wrapper around `[u8; 32]`. There are 2 intermediate
-            // Vecs that still exist on the stack but the usage of them is optimized away. Their
-            // Drop impls still run which is just a `free` on a null pointer.
-            self.merkle_leaves.into_iter().map(Into::into).collect::<Box<[Hash]>>()
-        };
-        Ok(MerkleVerifier::new(root, hashes)?)
+    fn into_merkle_verifier(self, root: Hash) -> Result<MerkleVerifier, Error> {
+        Ok(BlobMetadataV53::into_merkle_verifier(self, root)?)
     }
-
-    /// Constructs a `BlobMetadata` that is considered to be empty. The empty metadata does not get
-    /// written out as an attribute.
-    pub fn empty() -> Self {
-        // WARNING: The empty metadata doesn't get written to an attribute so it's meaning must not
-        // be changed across versions.
-        Self { merkle_leaves: Vec::new(), format: BlobFormatV53::Uncompressed }
-    }
-
-    fn is_empty(&self) -> bool {
-        *self == Self::empty()
-    }
-}
-
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, TypeFingerprint)]
-pub struct BlobMetadataV53 {
-    #[serde(with = "crate::zerocopy_serialization")]
-    pub merkle_leaves: MerkleLeaves,
-    pub format: BlobFormatV53,
 }
 
 impl Versioned for BlobMetadataV53 {
@@ -189,30 +173,6 @@ impl Versioned for BlobMetadataV53 {
         // There's no restriction on the size of the blob metadata.
         None
     }
-}
-
-impl From<BlobMetadataUnversioned> for BlobMetadataV53 {
-    fn from(old: BlobMetadataUnversioned) -> Self {
-        if old.compressed_offsets.is_empty() {
-            Self { merkle_leaves: old.hashes, format: BlobFormat::Uncompressed }
-        } else {
-            Self {
-                merkle_leaves: old.hashes,
-                format: BlobFormat::ChunkedZstd {
-                    uncompressed_size: old.uncompressed_size,
-                    chunk_size: old.chunk_size,
-                    compressed_offsets: old.compressed_offsets,
-                },
-            }
-        }
-    }
-}
-
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, TypeFingerprint)]
-pub enum BlobFormatV53 {
-    Uncompressed,
-    ChunkedZstd { uncompressed_size: u64, chunk_size: u64, compressed_offsets: Vec<u64> },
-    ChunkedLz4 { uncompressed_size: u64, chunk_size: u64, compressed_offsets: Vec<u64> },
 }
 
 #[derive(Default)]
@@ -245,7 +205,7 @@ impl LeafHashCollector for BlobMetadataLeafHashCollector {
 mod tests {
     use super::BlobMetadata;
     use crate::blob_metadata::{
-        BlobFormat, BlobMetadataLeafHashCollector, BlobMetadataUnversioned,
+        BlobFormat, BlobMetadataLeafHashCollector, BlobMetadataUnversioned, FxfsBlobMetadataExt,
     };
     use crate::filesystem::{FxFilesystem, OpenFxFilesystem};
     use crate::object_store::transaction::{LockKey, Options, lock_keys};

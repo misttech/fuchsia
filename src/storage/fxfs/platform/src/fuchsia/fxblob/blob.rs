@@ -21,7 +21,7 @@ use fidl_fuchsia_mem::Buffer as MemBuffer;
 use fuchsia_component_client::connect_to_protocol;
 use fuchsia_merkle::{Hash, MerkleVerifier, ReadSizedMerkleVerifier};
 use futures::{StreamExt, TryStreamExt, try_join};
-use fxfs::blob_metadata::{BlobFormat, BlobMetadata};
+use fxfs::blob_metadata::{BlobFormat, BlobMetadata, FxfsBlobMetadataExt};
 use fxfs::errors::FxfsError;
 use fxfs::lock_keys;
 use fxfs::log::*;

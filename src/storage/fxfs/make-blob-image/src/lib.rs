@@ -9,7 +9,9 @@ use delivery_blob::compression::{ChunkedArchive, ChunkedArchiveOptions};
 use fuchsia_async as fasync;
 use fuchsia_merkle::{Hash, MerkleRootBuilder};
 use futures::{SinkExt as _, StreamExt as _, TryStreamExt as _, try_join};
-use fxfs::blob_metadata::{BlobFormat, BlobMetadata, BlobMetadataLeafHashCollector};
+use fxfs::blob_metadata::{
+    BlobFormat, BlobMetadata, BlobMetadataLeafHashCollector, FxfsBlobMetadataExt,
+};
 use fxfs::errors::FxfsError;
 use fxfs::filesystem::{FxFilesystemBuilder, OpenFxFilesystem};
 use fxfs::object_handle::{ObjectHandle, ReadObjectHandle, WriteBytes};
@@ -596,6 +598,7 @@ mod tests {
     use super::{BlobsJsonOutput, BlobsJsonOutputEntry, extract_blobs, make_blob_image};
     use assert_matches::assert_matches;
     use delivery_blob::compression::CompressionAlgorithm;
+    use fxfs::blob_metadata::FxfsBlobMetadataExt;
     use fxfs::filesystem::FxFilesystem;
     use fxfs::object_store::StoreOptions;
     use fxfs::object_store::directory::Directory;

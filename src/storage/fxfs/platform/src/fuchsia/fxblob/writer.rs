@@ -20,7 +20,9 @@ use fidl::endpoints::RequestStream as _;
 use fidl_fuchsia_fxfs::{BlobWriterRequest, BlobWriterRequestStream};
 use fuchsia_merkle::{BufferedMerkleRootBuilder, Hash};
 use futures::{TryStreamExt as _, try_join};
-use fxfs::blob_metadata::{BlobFormat, BlobMetadata, BlobMetadataLeafHashCollector, MerkleLeaves};
+use fxfs::blob_metadata::{
+    BlobFormat, BlobMetadata, BlobMetadataLeafHashCollector, FxfsBlobMetadataExt, MerkleLeaves,
+};
 use fxfs::errors::FxfsError;
 use fxfs::object_handle::ObjectHandle;
 use fxfs::object_store::data_object_handle::OverwriteOptions;

@@ -4,6 +4,7 @@
 
 group("lib") {
   deps = [
+    "blob_metadata",
     "mapping",
     "ramdevice_client",
     "storage_device",
@@ -15,6 +16,7 @@ group("lib") {
 group("tests") {
   testonly = true
   deps = [
+    "blob_metadata:tests",
     "blob_writer:tests",
     "block_client:tests",
     "block_server:tests",

@@ -33,6 +33,7 @@ fxfs_deps = [
   "//src/storage/fxfs/crypto",
   "//src/storage/fxfs/trace",
   "//src/storage/fxfs/unicode",
+  "//src/storage/lib/blob_metadata",
   "//src/storage/lib/fscrypt",
   "//src/storage/lib/fsverity-merkle",
   "//src/storage/lib/ptr_slice",
