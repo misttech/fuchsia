@@ -90,6 +90,9 @@ const _: () = {
     assert!(core::mem::offset_of!(Iframe, usp) == 264);
 };
 
+#[allow(unused_imports)]
+pub use arch_types_bindings::{GeneralRegsSource, UserEntryState};
+
 /// Check if a virtual address is accessible to user space on aarch64.
 ///
 /// [arm/v8]: D5.2.6 Virtual address splits / TTBR0_EL1 selection bit (VA[55] == 0).

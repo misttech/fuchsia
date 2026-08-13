@@ -181,6 +181,10 @@ const _: () = {
     assert!(core::mem::offset_of!(SyscallRegs, rsp) == 136);
 };
 
+/// Entry state for a thread.
+#[allow(unused_imports)]
+pub use arch_types_bindings::{GeneralRegsSource, UserEntryState};
+
 /// Checks if a virtual address is accessible to user mode on x86_64.
 ///
 /// This address refers to userspace if it is in the lower half of the

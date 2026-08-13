@@ -6,15 +6,20 @@
 
 #[cfg(target_arch = "aarch64")]
 #[allow(unused_imports)]
-pub use arch_arm64::{self as arm64, ArchSavedNormalState};
+pub use arch_arm64::{self as arm64, *};
 
 #[cfg(target_arch = "riscv64")]
 #[allow(unused_imports)]
-pub use arch_riscv64::{self as riscv64, ArchSavedNormalState};
+pub use arch_riscv64::{self as riscv64, *};
 
 #[cfg(target_arch = "x86_64")]
 #[allow(unused_imports)]
-pub use arch_x86::{self as x86, ArchSavedNormalState};
+pub use arch_x86::{self as x86, *};
+
+pub use arch_types_bindings::{GeneralRegsSource, UserEntryState};
+
+#[macro_use]
+pub mod api;
 
 pub mod ops;
 

@@ -1,4 +1,4 @@
-// Copyright 2026 The Fuchsia Authors
+// Copyright 2023 The Fuchsia Authors
 //
 // Use of this source code is governed by a MIT-style
 // license that can be found in the LICENSE file or at
@@ -17,6 +17,9 @@ const _: () = {
     assert!(core::mem::size_of::<ArchSavedNormalState>() == 1);
     assert!(core::mem::align_of::<ArchSavedNormalState>() == 1);
 };
+
+#[allow(unused_imports)]
+pub use arch_types_bindings::{GeneralRegsSource, UserEntryState};
 
 use debug::ltracef;
 use zx_status::Status;

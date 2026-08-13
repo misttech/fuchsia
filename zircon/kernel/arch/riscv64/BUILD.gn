@@ -127,6 +127,7 @@ if (toolchain_base_environment == "kernel") {
     deps = [
       "//sdk/rust/zx-status",
       "//sdk/rust/zx-types",
+      "//zircon/kernel/arch:arch-types-bindings",
       "//zircon/kernel/lib/debug",
     ]
   }

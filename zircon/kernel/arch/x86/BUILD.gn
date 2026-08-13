@@ -324,6 +324,7 @@ kernel_rust_mod("arch-x86-rs") {
     "//src/lib/ksync",
     "//src/lib/regio",
     "//third_party/rust_crates:pin-init",
+    "//zircon/kernel/arch:arch-types-bindings",
     "//zircon/kernel/lib/acpi_lite/rust:acpi_lite",
     "//zircon/kernel/lib/debug",
     "//zircon/kernel/lib/page:page-rs",
