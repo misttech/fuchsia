@@ -4,3 +4,5 @@
 
 """An intentionally empty BUILD.bazel file used to check the Bazel workspace configuration.
    See bazel_warm_up() in //build/regenerator.py."""
+
+package(default_applicable_licenses = ["//:license"])

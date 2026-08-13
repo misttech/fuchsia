@@ -3,3 +3,5 @@
 # found in the LICENSE file.
 
 """Transitions to different Fuchsia platform configurations."""
+
+package(default_applicable_licenses = ["//:license"])

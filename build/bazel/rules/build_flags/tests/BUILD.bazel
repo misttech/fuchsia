@@ -4,6 +4,8 @@
 
 load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
 
+package(default_applicable_licenses = ["//:license"])
+
 test_suite(
     name = "host_tests",
     target_compatible_with = HOST_CONSTRAINTS,

@@ -4,6 +4,8 @@
 
 load("@bazel_skylib//rules:common_settings.bzl", "string_flag")
 
+package(default_applicable_licenses = ["//:license"])
+
 # The target API level of the current build configuration.
 #
 # The default is "PLATFORM", which corresponds to the platform build configuration.

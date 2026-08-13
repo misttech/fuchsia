@@ -13,6 +13,8 @@ load(
     "build_flags_rust_binary_host_test",
 )
 
+package(default_applicable_licenses = ["//:license"])
+
 test_suite(
     name = "tests",
     visibility = ["//build/bazel/rules/build_flags/tests:__pkg__"],
