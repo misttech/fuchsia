@@ -10,7 +10,6 @@ import (
 	"log"
 	"path"
 	"path/filepath"
-	"strings"
 
 	"go.fuchsia.dev/fuchsia/tools/check-licenses/metrics"
 	"go.fuchsia.dev/fuchsia/tools/check-licenses/v2/pipeline"
@@ -46,14 +45,8 @@ func (c *Crawler) isSkipped(absPath string) bool {
 	}
 
 	slashRel := filepath.ToSlash(relPath)
-	for _, part := range strings.Split(slashRel, "/") {
-		if c.SkipAnywhere[part] {
-			return true
-		}
-	}
-
 	for p := slashRel; p != "." && p != "" && p != "/"; p = path.Dir(p) {
-		if c.SkipPaths[p] {
+		if c.SkipAnywhere[path.Base(p)] || c.SkipPaths[p] {
 			return true
 		}
 	}
@@ -62,7 +55,7 @@ func (c *Crawler) isSkipped(absPath string) bool {
 
 // Run walks the given root directories and streams discovered paths into the returned channel.
 func (c *Crawler) Run(ctx context.Context, rootDirs []string) (<-chan pipeline.RawPath, error) {
-	out := make(chan pipeline.RawPath)
+	out := make(chan pipeline.RawPath, 1000)
 
 	go func() {
 		defer close(out)
