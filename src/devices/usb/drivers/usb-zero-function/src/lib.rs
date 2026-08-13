@@ -648,11 +648,11 @@ async fn register_vmo(
     Ok(vmo)
 }
 
-fn queue_request(ep: &fusb_endpoint::EndpointProxy, vmo_id: u64, size: u64) {
-    let reqs = vec![fusb_request::Request {
+fn make_bulk_request(vmo_id: u64, offset: u64, size: u64) -> fusb_request::Request {
+    fusb_request::Request {
         data: Some(vec![fusb_request::BufferRegion {
             buffer: Some(fusb_request::Buffer::VmoId(vmo_id)),
-            offset: Some(0),
+            offset: Some(offset),
             size: Some(size),
             ..Default::default()
         }]),
@@ -661,10 +661,19 @@ fn queue_request(ep: &fusb_endpoint::EndpointProxy, vmo_id: u64, size: u64) {
             fusb_request::RequestInfo::Bulk(fusb_request::BulkRequestInfo::default()),
         ),
         ..Default::default()
-    }];
-    if let Err(e) = ep.queue_requests(reqs) {
-        warn!("Failed to queue endpoint request: {:?}", e);
     }
+}
+
+fn queue_requests_batch(ep: &fusb_endpoint::EndpointProxy, reqs: Vec<fusb_request::Request>) {
+    if !reqs.is_empty() {
+        if let Err(e) = ep.queue_requests(reqs) {
+            warn!("Failed to queue endpoint requests batch: {:?}", e);
+        }
+    }
+}
+
+fn queue_request(ep: &fusb_endpoint::EndpointProxy, vmo_id: u64, size: u64) {
+    queue_requests_batch(ep, vec![make_bulk_request(vmo_id, 0, size)]);
 }
 
 async fn handle_read_completion(
