@@ -746,6 +746,7 @@ mod tests {
     use super::*;
     use crate::fuchsia::testing::{TestFixture, open_dir_checked};
     use fidl::endpoints::create_proxy;
+    use fidl_fuchsia_fs_startup::CreateOptions;
     use fidl_fuchsia_io as fio;
     use fuchsia_fs::directory::{read_file, readdir};
     use fxfs::filesystem::JournalingObject;
@@ -850,7 +851,7 @@ mod tests {
 
             let _volume_and_root = fixture
                 .volumes_directory()
-                .create_and_mount_volume("vol2", None, false, None)
+                .create_and_mount_volume("vol2", None, false, CreateOptions::default())
                 .await
                 .expect("failed to create volume");
 
@@ -875,7 +876,7 @@ mod tests {
 
             let _volume_and_root = fixture
                 .volumes_directory()
-                .create_and_mount_volume("vol2", None, false, None)
+                .create_and_mount_volume("vol2", None, false, CreateOptions::default())
                 .await
                 .expect("failed to create volume");
 
@@ -894,7 +895,7 @@ mod tests {
             let store_id = {
                 let volume_and_root = fixture
                     .volumes_directory()
-                    .create_and_mount_volume("vol2", None, false, None)
+                    .create_and_mount_volume("vol2", None, false, CreateOptions::default())
                     .await
                     .expect("failed to create volume");
                 volume_and_root.volume().store().store_object_id()
@@ -928,7 +929,7 @@ mod tests {
             let store_id = {
                 let volume_and_root = fixture
                     .volumes_directory()
-                    .create_and_mount_volume("vol2", None, false, None)
+                    .create_and_mount_volume("vol2", None, false, CreateOptions::default())
                     .await
                     .expect("failed to create volume");
                 volume_and_root.volume().store().store_object_id()
@@ -954,7 +955,7 @@ mod tests {
             let debug_dir = create_debug_directory(fixture.fs(), fixture.volumes_directory());
             let volume_and_root = fixture
                 .volumes_directory()
-                .create_and_mount_volume("vol2", None, false, None)
+                .create_and_mount_volume("vol2", None, false, CreateOptions::default())
                 .await
                 .expect("failed to create volume");
             let volume = volume_and_root.volume();
@@ -1000,7 +1001,7 @@ mod tests {
 
             let volume_and_root = fixture
                 .volumes_directory()
-                .create_and_mount_volume("vol2", None, false, None)
+                .create_and_mount_volume("vol2", None, false, CreateOptions::default())
                 .await
                 .expect("failed to create volume");
             let volume = volume_and_root.volume();
@@ -1057,7 +1058,7 @@ mod tests {
             // Create a volume to generate mutations in root_store.
             let _vol2 = fixture
                 .volumes_directory()
-                .create_and_mount_volume("vol2", None, false, None)
+                .create_and_mount_volume("vol2", None, false, CreateOptions::default())
                 .await
                 .expect("failed to create volume");
 

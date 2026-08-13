@@ -810,6 +810,7 @@ mod tests {
     use async_trait::async_trait;
     use delivery_blob::CompressionMode;
     use event_listener::{Event, EventListener};
+    use fidl_fuchsia_fs_startup::CreateOptions;
     use fidl_fuchsia_io as fio;
     use fuchsia_async as fasync;
     use fuchsia_hash::Hash;
@@ -1647,7 +1648,7 @@ mod tests {
             // scope shutdown.
             let (store_id, _recorder) = {
                 let volume_and_root = volumes_directory
-                    .create_and_mount_volume("other_volume", None, false, None)
+                    .create_and_mount_volume("other_volume", None, false, CreateOptions::default())
                     .await
                     .unwrap();
                 let volume = volume_and_root.into_volume();

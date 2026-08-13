@@ -622,14 +622,17 @@ impl VolumesDirectory {
         name: &str,
         crypt: Option<Arc<dyn Crypt>>,
         as_blob: bool,
-        guid: Option<[u8; 16]>,
+        options: CreateOptions,
     ) -> Result<FxVolumeAndRoot, Error> {
         self.lock()
             .await
             .create_or_mount_volume(
                 name,
                 crypt,
-                Mode::Create { guid, low_32_bit_object_ids: false },
+                Mode::Create {
+                    guid: options.guid,
+                    low_32_bit_object_ids: options.restrict_inode_ids_to_32_bit.unwrap_or(false),
+                },
                 as_blob,
             )
             .await
@@ -1162,7 +1165,7 @@ mod tests {
     use crate::testing::TestFixtureOptions;
     use fidl::endpoints::{DiscoverableProtocolMarker, create_proxy, create_request_stream};
     use fidl_fuchsia_fs::AdminMarker;
-    use fidl_fuchsia_fs_startup::{MountOptions, VolumeProxy};
+    use fidl_fuchsia_fs_startup::{CreateOptions, MountOptions, VolumeProxy};
     use fidl_fuchsia_fxfs::{CryptRequest, FxfsKey, KeyPurpose, WrappedKey};
     use fidl_fuchsia_io as fio;
     use fuchsia_async as fasync;
@@ -1238,7 +1241,12 @@ mod tests {
         let crypt = Arc::new(new_insecure_crypt()) as Arc<dyn Crypt>;
         {
             let vol = volumes_directory
-                .create_and_mount_volume("encrypted", Some(crypt.clone()), false, None)
+                .create_and_mount_volume(
+                    "encrypted",
+                    Some(crypt.clone()),
+                    false,
+                    CreateOptions::default(),
+                )
                 .await
                 .expect("create encrypted volume failed");
             vol.volume().store().store_object_id()
@@ -1263,7 +1271,12 @@ mod tests {
         .unwrap();
 
         let error = volumes_directory
-            .create_and_mount_volume("encrypted", Some(crypt.clone()), false, None)
+            .create_and_mount_volume(
+                "encrypted",
+                Some(crypt.clone()),
+                false,
+                CreateOptions::default(),
+            )
             .await
             .err()
             .expect("Creating existing encrypted volume should fail");
@@ -1288,7 +1301,12 @@ mod tests {
 
         let crypt = Arc::new(new_insecure_crypt()) as Arc<dyn Crypt>;
         let vol = volumes_directory
-            .create_and_mount_volume("encrypted", Some(crypt.clone()), false, None)
+            .create_and_mount_volume(
+                "encrypted",
+                Some(crypt.clone()),
+                false,
+                CreateOptions::default(),
+            )
             .await
             .expect("create encrypted volume failed");
         let old_dirty = volumes_directory.pager_dirty_bytes_count.load();
@@ -1338,7 +1356,12 @@ mod tests {
         let crypt = Arc::new(new_insecure_crypt()) as Arc<dyn Crypt>;
         let volume_id = {
             let vol = volumes_directory
-                .create_and_mount_volume("encrypted", Some(crypt.clone()), false, None)
+                .create_and_mount_volume(
+                    "encrypted",
+                    Some(crypt.clone()),
+                    false,
+                    CreateOptions::default(),
+                )
                 .await
                 .expect("create encrypted volume failed");
             vol.volume().store().store_object_id()
@@ -1393,7 +1416,7 @@ mod tests {
 
         {
             let vol = volumes_directory
-                .create_and_mount_volume("unencrypted", None, false, None)
+                .create_and_mount_volume("unencrypted", None, false, CreateOptions::default())
                 .await
                 .expect("create unencrypted volume failed");
             vol.volume().store().store_object_id()
@@ -1418,7 +1441,7 @@ mod tests {
         .unwrap();
 
         let error = volumes_directory
-            .create_and_mount_volume("unencrypted", None, false, None)
+            .create_and_mount_volume("unencrypted", None, false, CreateOptions::default())
             .await
             .err()
             .expect("Creating existing unencrypted volume should fail");
@@ -1447,7 +1470,7 @@ mod tests {
 
         let volume_id = {
             let vol = volumes_directory
-                .create_and_mount_volume("unencrypted", None, false, None)
+                .create_and_mount_volume("unencrypted", None, false, CreateOptions::default())
                 .await
                 .expect("create unencrypted volume failed");
             vol.volume().store().store_object_id()
@@ -1504,14 +1527,19 @@ mod tests {
         let crypt = Arc::new(new_insecure_crypt()) as Arc<dyn Crypt>;
         {
             volumes_directory
-                .create_and_mount_volume("encrypted", Some(crypt.clone()), false, None)
+                .create_and_mount_volume(
+                    "encrypted",
+                    Some(crypt.clone()),
+                    false,
+                    CreateOptions::default(),
+                )
                 .await
                 .expect("create encrypted volume failed");
         };
         // And an unencrypted volume.
         {
             volumes_directory
-                .create_and_mount_volume("unencrypted", None, false, None)
+                .create_and_mount_volume("unencrypted", None, false, CreateOptions::default())
                 .await
                 .expect("create unencrypted volume failed");
         };
@@ -1586,7 +1614,7 @@ mod tests {
         .unwrap();
 
         let vol = volumes_directory
-            .create_and_mount_volume("vol", None, false, None)
+            .create_and_mount_volume("vol", None, false, CreateOptions::default())
             .await
             .expect("create_and_mount_volume failed");
         let guid = vol.volume().store().guid();
@@ -1622,7 +1650,12 @@ mod tests {
         .await
         .unwrap();
         volumes_directory
-            .create_and_mount_volume(VOLUME_NAME, Some(crypt.clone()), false, None)
+            .create_and_mount_volume(
+                VOLUME_NAME,
+                Some(crypt.clone()),
+                false,
+                CreateOptions::default(),
+            )
             .await
             .expect("create encrypted volume failed");
         // We have the volume mounted so delete attempts should fail.
@@ -1659,7 +1692,12 @@ mod tests {
         let crypt = Arc::new(new_insecure_crypt()) as Arc<dyn Crypt>;
         let store_id = {
             let vol = volumes_directory
-                .create_and_mount_volume("encrypted", Some(crypt.clone()), false, None)
+                .create_and_mount_volume(
+                    "encrypted",
+                    Some(crypt.clone()),
+                    false,
+                    CreateOptions::default(),
+                )
                 .await
                 .expect("create encrypted volume failed");
             vol.volume().store().store_object_id()
@@ -1772,7 +1810,12 @@ mod tests {
         let crypt = Arc::new(new_insecure_crypt()) as Arc<dyn Crypt>;
         let store_id = {
             let vol = volumes_directory
-                .create_and_mount_volume("encrypted", Some(crypt.clone()), false, None)
+                .create_and_mount_volume(
+                    "encrypted",
+                    Some(crypt.clone()),
+                    false,
+                    CreateOptions::default(),
+                )
                 .await
                 .expect("create encrypted volume failed");
             vol.volume().store().store_object_id()
@@ -1926,7 +1969,12 @@ mod tests {
 
         let crypt = Arc::new(new_insecure_crypt()) as Arc<dyn Crypt>;
         let vol = volumes_directory
-            .create_and_mount_volume("encrypted", Some(crypt.clone()), false, None)
+            .create_and_mount_volume(
+                "encrypted",
+                Some(crypt.clone()),
+                false,
+                CreateOptions::default(),
+            )
             .await
             .expect("create encrypted volume failed");
 
@@ -1963,7 +2011,7 @@ mod tests {
             .unwrap();
 
             volumes_directory
-                .create_and_mount_volume(VOLUME_NAME, None, false, None)
+                .create_and_mount_volume(VOLUME_NAME, None, false, CreateOptions::default())
                 .await
                 .expect("create unencrypted volume failed");
 
@@ -2037,7 +2085,7 @@ mod tests {
     impl VolumeInfo {
         async fn new(volumes_directory: &Arc<VolumesDirectory>, name: &'static str) -> Self {
             let volume = volumes_directory
-                .create_and_mount_volume(name, None, false, None)
+                .create_and_mount_volume(name, None, false, CreateOptions::default())
                 .await
                 .expect("create unencrypted volume failed");
 
@@ -2302,16 +2350,19 @@ mod tests {
             .await
             .unwrap();
             volumes_directory
-                .create_and_mount_volume(PREMOUNT_BLOB, None, true, None)
+                .create_and_mount_volume(PREMOUNT_BLOB, None, true, CreateOptions::default())
                 .await
                 .unwrap();
             volumes_directory
-                .create_and_mount_volume(PREMOUNT_NOBLOB, None, false, None)
+                .create_and_mount_volume(PREMOUNT_NOBLOB, None, false, CreateOptions::default())
                 .await
                 .unwrap();
-            volumes_directory.create_and_mount_volume(LIVE_BLOB, None, true, None).await.unwrap();
             volumes_directory
-                .create_and_mount_volume(LIVE_NOBLOB, None, false, None)
+                .create_and_mount_volume(LIVE_BLOB, None, true, CreateOptions::default())
+                .await
+                .unwrap();
+            volumes_directory
+                .create_and_mount_volume(LIVE_NOBLOB, None, false, CreateOptions::default())
                 .await
                 .unwrap();
 
@@ -2442,8 +2493,10 @@ mod tests {
         )
         .await
         .unwrap();
-        let volume =
-            volumes_directory.create_and_mount_volume("foo", None, true, None).await.unwrap();
+        let volume = volumes_directory
+            .create_and_mount_volume("foo", None, true, CreateOptions::default())
+            .await
+            .unwrap();
 
         // Run the recording with no time at all and ensure that it still shuts down properly.
         volumes_directory
@@ -2478,8 +2531,10 @@ mod tests {
         )
         .await
         .unwrap();
-        let volume =
-            volumes_directory.create_and_mount_volume("foo", None, true, None).await.unwrap();
+        let volume = volumes_directory
+            .create_and_mount_volume("foo", None, true, CreateOptions::default())
+            .await
+            .unwrap();
 
         volumes_directory
             .clone()
@@ -2547,7 +2602,12 @@ mod tests {
             // Create the volume unmounted.
             {
                 let volume = volumes_directory
-                    .create_and_mount_volume(TEST_VOLUME, Some(crypt.clone()), false, None)
+                    .create_and_mount_volume(
+                        TEST_VOLUME,
+                        Some(crypt.clone()),
+                        false,
+                        CreateOptions::default(),
+                    )
                     .await
                     .unwrap();
                 volumes_directory
@@ -2617,8 +2677,10 @@ mod tests {
         .await
         .unwrap();
         let name = "vol";
-        let volume =
-            volumes_directory.create_and_mount_volume(name, None, false, None).await.unwrap();
+        let volume = volumes_directory
+            .create_and_mount_volume(name, None, false, CreateOptions::default())
+            .await
+            .unwrap();
         let mut transaction = filesystem
             .root_store()
             .new_transaction(
@@ -2775,7 +2837,7 @@ mod tests {
             let name = "vol";
             let crypt = Arc::new(new_insecure_crypt());
             let volume = volumes_directory
-                .create_and_mount_volume(name, Some(crypt.clone()), false, None)
+                .create_and_mount_volume(name, Some(crypt.clone()), false, CreateOptions::default())
                 .await
                 .unwrap();
             store_id = volume.volume().store().store_object_id();
@@ -3158,7 +3220,7 @@ mod tests {
                     "encrypted",
                     Some(Arc::new(RemoteCrypt::new(client))),
                     false,
-                    None,
+                    CreateOptions::default(),
                 )
                 .await
                 .unwrap();

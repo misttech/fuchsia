@@ -1089,6 +1089,7 @@ mod tests {
     use crate::fuchsia::volume::{FxVolume, MemoryPressureConfig, MemoryPressureLevelConfig};
     use crate::fuchsia::volumes_directory::VolumesDirectory;
     use delivery_blob::CompressionMode;
+    use fidl_fuchsia_fs_startup::CreateOptions;
     use fidl_fuchsia_fxfs::{BytesAndNodes, ProjectIdMarker};
     use fidl_fuchsia_io as fio;
     use fs_inspect::FsInspectVolume;
@@ -1659,7 +1660,12 @@ mod tests {
         {
             let volumes_directory = fixture.volumes_directory();
             let volume = volumes_directory
-                .create_and_mount_volume(TEST_VOLUME, Some(crypt.clone()), false, None)
+                .create_and_mount_volume(
+                    TEST_VOLUME,
+                    Some(crypt.clone()),
+                    false,
+                    CreateOptions::default(),
+                )
                 .await
                 .unwrap();
 
@@ -1707,7 +1713,7 @@ mod tests {
             .unwrap();
 
             let volume_and_root = volumes_directory
-                .create_and_mount_volume(VOLUME_NAME, None, false, None)
+                .create_and_mount_volume(VOLUME_NAME, None, false, CreateOptions::default())
                 .await
                 .expect("create unencrypted volume failed");
             volume_store_id = volume_and_root.volume().store().store_object_id();
@@ -1961,7 +1967,7 @@ mod tests {
                     VOLUME_NAME,
                     Some(Arc::new(new_insecure_crypt())),
                     false,
-                    None,
+                    CreateOptions::default(),
                 )
                 .await
                 .expect("create unencrypted volume failed");
@@ -2259,7 +2265,7 @@ mod tests {
                     VOLUME_NAME,
                     Some(Arc::new(new_insecure_crypt())),
                     false,
-                    None,
+                    CreateOptions::default(),
                 )
                 .await
                 .expect("create unencrypted volume failed");
@@ -2432,7 +2438,7 @@ mod tests {
             .await
             .unwrap();
             let volume_and_root = volumes_directory
-                .create_and_mount_volume(VOLUME_NAME, None, false, None)
+                .create_and_mount_volume(VOLUME_NAME, None, false, CreateOptions::default())
                 .await
                 .expect("create unencrypted volume failed");
             volume_store_id = volume_and_root.volume().store().store_object_id();

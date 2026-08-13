@@ -8,6 +8,7 @@
 
 use anyhow::{Context, Error, anyhow};
 use fidl::endpoints::{ClientEnd, DiscoverableProtocolMarker, Proxy, ServerEnd, create_proxy};
+use fidl_fuchsia_fs_startup::CreateOptions;
 use fidl_fuchsia_fshost::{
     StarnixVolumeProviderMarker, StarnixVolumeProviderRequest, StarnixVolumeProviderRequestStream,
 };
@@ -74,7 +75,10 @@ async fn mount_user_volume(
                     USER_VOLUME_NAME,
                     Some(remote_crypt as Arc<dyn Crypt>),
                     false,
-                    None,
+                    CreateOptions {
+                        restrict_inode_ids_to_32_bit: Some(true),
+                        ..Default::default()
+                    },
                 )
                 .await?
         }
@@ -145,7 +149,7 @@ async fn create_user_volume(
             USER_VOLUME_NAME,
             Some(remote_crypt.clone() as Arc<dyn Crypt>),
             false,
-            None,
+            CreateOptions { restrict_inode_ids_to_32_bit: Some(true), ..Default::default() },
         )
         .await
     {
@@ -157,7 +161,10 @@ async fn create_user_volume(
                     USER_VOLUME_NAME,
                     Some(remote_crypt as Arc<dyn Crypt>),
                     false,
-                    None,
+                    CreateOptions {
+                        restrict_inode_ids_to_32_bit: Some(true),
+                        ..Default::default()
+                    },
                 )
                 .await?
         }
@@ -342,7 +349,7 @@ async fn main() -> Result<(), Error> {
     .context("failed to create the VolumesDirectory")?;
 
     let vol = volumes_directory
-        .create_and_mount_volume("vol", Some(crypt.clone()), false, None)
+        .create_and_mount_volume("vol", Some(crypt.clone()), false, CreateOptions::default())
         .await
         .context("create and mount volume failed on vol")?;
 
