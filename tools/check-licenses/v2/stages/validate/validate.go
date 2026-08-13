@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"go.fuchsia.dev/fuchsia/tools/check-licenses/metrics"
@@ -47,7 +48,7 @@ func NewValidator(fuchsiaDir string, config Config) *Validator {
 
 // Run cross-references ClassifiedFiles against allowed policies and emits ComplianceErrors.
 func (v *Validator) Run(ctx context.Context, in <-chan pipeline.ClassifiedFile) (<-chan pipeline.ComplianceError, error) {
-	out := make(chan pipeline.ComplianceError)
+	out := make(chan pipeline.ComplianceError, 100)
 
 	go func() {
 		defer close(out)
@@ -180,7 +181,13 @@ func (v *Validator) Run(ctx context.Context, in <-chan pipeline.ClassifiedFile) 
 			}
 		}
 
-		for proj, hasLicense := range projectHasLicense {
+		var projs []string
+		for proj := range projectHasLicense {
+			projs = append(projs, proj)
+		}
+		sort.Strings(projs)
+		for _, proj := range projs {
+			hasLicense := projectHasLicense[proj]
 			if proj == v.FuchsiaDir || proj == "." || proj == "" {
 				continue
 			}
