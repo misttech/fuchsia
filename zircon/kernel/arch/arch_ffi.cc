@@ -8,10 +8,13 @@
 #include <sys/types.h>
 #include <zircon/types.h>
 
+#include <arch/arch_ops.h>
+#include <arch/debugger.h>
 #include <arch/interrupt.h>
 #include <arch/ops.h>
 #include <arch/user_copy.h>
 #include <kernel/ffi.h>
+#include <kernel/thread.h>
 
 namespace {
 
@@ -47,6 +50,11 @@ zx_status_t cpp_arch_copy_from_user_capture_faults(void* dst, const void* src, s
                                                    vaddr_t* fault_va, uint* fault_flags);
 zx_status_t cpp_arch_copy_to_user_capture_faults(void* dst, const void* src, size_t len,
                                                  vaddr_t* fault_va, uint* fault_flags);
+void* cpp_arch_get_current_thread();
+void cpp_arch_set_current_thread(void* thread);
+void cpp_arch_set_restricted_flag(bool in_restricted);
+void cpp_dump_common_exception_context(const arch_exception_context_t* context);
+bool cpp_with_frame_pointers();
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE bool cpp_arch_blocking_disallowed() { return arch_blocking_disallowed(); }
@@ -79,5 +87,16 @@ FFI_ALWAYS_INLINE zx_status_t cpp_arch_copy_to_user_capture_faults(void* dst, co
   return capture_faults_result(arch_copy_to_user_capture_faults(dst, src, len), fault_va,
                                fault_flags);
 }
+FFI_ALWAYS_INLINE void* cpp_arch_get_current_thread() { return arch_get_current_thread(); }
+FFI_ALWAYS_INLINE void cpp_arch_set_current_thread(void* thread) {
+  arch_set_current_thread(static_cast<Thread*>(thread));
+}
+FFI_ALWAYS_INLINE void cpp_arch_set_restricted_flag(bool in_restricted) {
+  arch_set_restricted_flag(in_restricted);
+}
+FFI_ALWAYS_INLINE void cpp_dump_common_exception_context(const arch_exception_context_t* context) {
+  dump_common_exception_context(context);
+}
+FFI_ALWAYS_INLINE bool cpp_with_frame_pointers() { return WITH_FRAME_POINTERS != 0; }
 
 }  // extern "C"
