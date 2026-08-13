@@ -92,6 +92,12 @@ pub struct PlatformNetworkConfig {
     /// Whether to include network-tun.
     #[serde(skip_serializing_if = "crate::common::is_default")]
     pub include_tun: bool,
+
+    /// Whether to enable multi-VMO data path for network device sessions in
+    /// Netstack3.
+    // TODO(https://fxbug.dev/545307151): Remove this flag.
+    #[serde(skip_serializing_if = "crate::common::is_default")]
+    pub netstack_multi_vmo: bool,
 }
 
 #[derive(Debug, Serialize, Copy, Clone, Deserialize, JsonSchema, PartialEq)]
