@@ -1345,7 +1345,7 @@ impl<D: LinkDevice, BC: NudBindingsTypes<D>> DynamicNeighborState<D, BC> {
         timers: &mut TimerHeap<I, BC>,
         device_id: &CC::DeviceId,
         neighbor: SpecifiedAddr<I::Addr>,
-        link_address: UnicastAddr<D::Address>,
+        incoming_link_address: UnicastAddr<D::Address>,
         num_entries: usize,
         gc_state: &mut GarbageCollectionState<BC::Instant>,
     ) where
@@ -1371,7 +1371,7 @@ impl<D: LinkDevice, BC: NudBindingsTypes<D>> DynamicNeighborState<D, BC> {
             | DynamicNeighborState::Delay(Delay { link_address: current })
             | DynamicNeighborState::Probe(Probe { link_address: current, transmit_counter: _ })
             | DynamicNeighborState::Unreachable(Unreachable { link_address: current, mode: _ }) => {
-                current != &link_address
+                current != &incoming_link_address
             }
         };
         if transition_to_stale {
@@ -1381,7 +1381,7 @@ impl<D: LinkDevice, BC: NudBindingsTypes<D>> DynamicNeighborState<D, BC> {
                 timers,
                 device_id,
                 neighbor,
-                link_address,
+                incoming_link_address,
                 num_entries,
                 gc_state,
             );
@@ -1395,7 +1395,7 @@ impl<D: LinkDevice, BC: NudBindingsTypes<D>> DynamicNeighborState<D, BC> {
         timers: &mut TimerHeap<I, BC>,
         device_id: &CC::DeviceId,
         neighbor: SpecifiedAddr<I::Addr>,
-        link_address: Option<UnicastAddr<D::Address>>,
+        incoming_link_address: Option<UnicastAddr<D::Address>>,
         flags: ConfirmationFlags,
         num_entries: usize,
         gc_state: &mut GarbageCollectionState<BC::Instant>,
@@ -1428,7 +1428,7 @@ impl<D: LinkDevice, BC: NudBindingsTypes<D>> DynamicNeighborState<D, BC> {
                 // Also note that if the target link-layer address was not specified in this
                 // neighbor confirmation, we ignore the confirmation: there is nothing we can do
                 // since we don't have a cached link-layer address.
-                link_address.map(|link_address| {
+                incoming_link_address.map(|link_address| {
                     if solicited_flag {
                         NewState::Reachable { link_address }
                     } else {
@@ -1453,17 +1453,17 @@ impl<D: LinkDevice, BC: NudBindingsTypes<D>> DynamicNeighborState<D, BC> {
                 // this is a harmless duplicate confirmation and is logged at debug level.
                 // If the link address differs, it may indicate a conflict or spoofing attempt,
                 // so log at warn level.
-                if link_address.as_ref().is_some_and(|addr| addr != current) {
+                if incoming_link_address.as_ref().is_some_and(|addr| addr != current) {
                     warn!(
                         "Ignoring duplicate neighbor confirmation for {:?}. Current address {:?}. \
                         New address {:?}",
-                        neighbor, current, link_address
+                        neighbor, current, incoming_link_address
                     );
                 } else {
                     debug!(
                         "Ignoring duplicate neighbor confirmation for {:?}. Current address {:?}. \
                         New address {:?}",
-                        neighbor, current, link_address
+                        neighbor, current, incoming_link_address
                     );
                 }
                 None
@@ -1495,7 +1495,7 @@ impl<D: LinkDevice, BC: NudBindingsTypes<D>> DynamicNeighborState<D, BC> {
                 // Because neighbors may choose to omit the target link-layer address option
                 // from neighbor confirmations, we must be tolerant of its absence. In the case
                 // of absence, we use the cached link-layer address if one is available.
-                let updated_link_address = link_address
+                let updated_link_address = incoming_link_address
                     .and_then(|link_address| (*current != link_address).then_some(link_address));
 
                 match (solicited_flag, updated_link_address, override_flag) {
@@ -1504,9 +1504,9 @@ impl<D: LinkDevice, BC: NudBindingsTypes<D>> DynamicNeighborState<D, BC> {
                     //   If [either] the Override flag is set, or the supplied link-layer address is
                     //   the same as that in the cache, [and] ... the Solicited flag is set, the
                     //   entry MUST be set to REACHABLE.
-                    (true, _, true) | (true, None, _) => {
-                        Some(NewState::Reachable { link_address: link_address.unwrap_or(*current) })
-                    }
+                    (true, _, true) | (true, None, _) => Some(NewState::Reachable {
+                        link_address: incoming_link_address.unwrap_or(*current),
+                    }),
                     // Per RFC 4861 section 7.2.5:
                     //
                     //   If the Override flag is clear and the supplied link-layer address differs
@@ -1519,9 +1519,9 @@ impl<D: LinkDevice, BC: NudBindingsTypes<D>> DynamicNeighborState<D, BC> {
                     (_, Some(_), false) => match self {
                         // NB: do not update the link address.
                         DynamicNeighborState::Reachable(Reachable {
-                            link_address,
+                            link_address: current,
                             last_confirmed_at: _,
-                        }) => Some(NewState::Stale { link_address: *link_address }),
+                        }) => Some(NewState::Stale { link_address: *current }),
                         // Ignore the advertisement and do not update the cache.
                         DynamicNeighborState::Stale(_)
                         | DynamicNeighborState::Delay(_)
