@@ -20,6 +20,7 @@ use crate::task::{
     SessionDisassociation, Task, TaskMutableState, TaskPersistentInfo, TypedWaitQueue,
 };
 use crate::time::{IntervalTimerHandle, TimerTable};
+use fuchsia_rcu::RcuDroppable;
 use itertools::Itertools;
 use macro_rules_attribute::apply;
 use starnix_lifecycle::{AtomicCounter, DropNotifier};
@@ -76,7 +77,7 @@ impl std::ops::Deref for ZirconProcess {
 }
 
 /// A weak reference to a thread group that can be used in set and maps.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, RcuDroppable)]
 pub struct ThreadGroupKey {
     pid: pid_t,
     thread_group: WeakKey<ThreadGroup>,

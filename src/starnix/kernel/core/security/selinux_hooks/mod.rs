@@ -610,7 +610,7 @@ impl FsNodeState {
 }
 
 /// Describes the security label for a [`crate::vfs::FsNode`].
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, RcuDroppable)]
 pub(super) enum FsNodeLabel {
     Uninitialized,
     SecurityId { sid: SecurityId },
@@ -630,14 +630,11 @@ impl FsNodeLabel {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, RcuDroppable)]
 pub(super) struct FsNodeLabelAndClass {
     pub label: FsNodeLabel,
     pub class: Option<FsNodeClass>,
 }
-
-// SAFETY: FsNodeLabelAndClass does not have Drop side effects requiring task context.
-unsafe impl RcuDroppable for FsNodeLabelAndClass {}
 
 impl FsNodeLabelAndClass {
     pub fn class(&self) -> FsNodeClass {

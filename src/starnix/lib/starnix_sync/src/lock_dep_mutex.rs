@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use crate::{MutexLike, RwLockLike};
+use fuchsia_rcu::RcuDroppable;
 use fuchsia_sync::{
     MappedMutexGuard, MappedRwLockReadGuard, MappedRwLockWriteGuard, MutexGuard, RwLockReadGuard,
     RwLockWriteGuard,
@@ -13,6 +14,7 @@ pub use tracking::LockLevelToken;
 
 #[cfg(feature = "detect_lock_dep_cycles")]
 mod tracking {
+    use fuchsia_rcu::RcuDroppable;
     use std::cell::RefCell;
     use std::rc::Rc;
 
@@ -281,6 +283,7 @@ mod tracking {
     }
 
     /// Tracking information for dynamic locks.
+    #[derive(RcuDroppable)]
     pub struct DynamicLockTracking {
         lock_id: usize,
         name: &'static str,
@@ -402,6 +405,8 @@ mod tracking {
 
 #[cfg(not(feature = "detect_lock_dep_cycles"))]
 mod tracking {
+    use fuchsia_rcu::RcuDroppable;
+
     /// A token that represents a lock level being held for lockdep purposes.
     /// This does not actually hold a lock, but updates the lockdep state as if it did.
     #[derive(Clone)]
@@ -427,6 +432,7 @@ mod tracking {
     pub struct UnlockedGuard {}
 
     /// Tracking information for dynamic locks.
+    #[derive(RcuDroppable)]
     pub struct DynamicLockTracking {}
 
     impl DynamicLockTracking {
@@ -477,6 +483,7 @@ mod tracking {
 }
 
 /// A Mutex that dynamically enforces lock ordering at runtime, without using types for levels.
+#[derive(RcuDroppable)]
 pub struct DynamicLockDepMutex<T> {
     inner: fuchsia_sync::Mutex<T>,
     tracking: tracking::DynamicLockTracking,
@@ -688,6 +695,7 @@ impl<'a, T> LockDepGuard<'a, T> {
 }
 
 /// An RwLock that dynamically enforces lock ordering at runtime, without using types for levels.
+#[derive(RcuDroppable)]
 pub struct DynamicLockDepRwLock<T> {
     inner: fuchsia_sync::RwLock<T>,
     tracking: tracking::DynamicLockTracking,
@@ -1403,4 +1411,18 @@ where
             None => Err("could not get exclusive access to LockDepMutex".into()),
         }
     }
+}
+
+// SAFETY: LockDepMutex contains DynamicLockDepMutex<T> and PhantomData<L>, safe to drop on RCU if
+// T is RcuDroppable.
+unsafe impl<T: fuchsia_rcu::RcuDroppable, L: Send + 'static> fuchsia_rcu::RcuDroppable
+    for LockDepMutex<T, L>
+{
+}
+
+// SAFETY: LockDepRwLock contains DynamicLockDepRwLock<T> and PhantomData<L>, safe to drop on RCU
+// if T is RcuDroppable.
+unsafe impl<T: fuchsia_rcu::RcuDroppable, L: Send + 'static> fuchsia_rcu::RcuDroppable
+    for LockDepRwLock<T, L>
+{
 }

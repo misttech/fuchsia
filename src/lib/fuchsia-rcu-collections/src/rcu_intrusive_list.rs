@@ -4,13 +4,13 @@
 
 #![warn(unsafe_op_in_unsafe_fn)]
 
-use fuchsia_rcu::RcuReadScope;
 use fuchsia_rcu::subtle::{RcuPtr, RcuPtrRef};
+use fuchsia_rcu::{RcuDroppable, RcuReadScope};
 
 /// `Link` is an intrusive structure in a doubly-linked list.
 ///
 /// Links are address-sensitive and cannot be moved once inserted into a list.
-#[derive(Debug)]
+#[derive(Debug, RcuDroppable)]
 pub struct Link {
     /// The next node in the list.
     ///
@@ -74,7 +74,9 @@ macro_rules! rcu_list_adapter {
     };
 }
 
-pub use {container_of, field_of, rcu_list_adapter};
+pub use container_of;
+pub use field_of;
+pub use rcu_list_adapter;
 
 pub trait RcuListAdapter<T> {
     /// Returns a pointer to the Link embedded in a Node.
@@ -84,7 +86,7 @@ pub trait RcuListAdapter<T> {
     fn from_link(link: RcuPtrRef<'_, Link>) -> RcuPtrRef<'_, T>;
 }
 
-#[derive(Debug)]
+#[derive(Debug, RcuDroppable)]
 pub struct RcuIntrusiveList<T, A: RcuListAdapter<T>> {
     /// The first element of the list, if any.
     ///

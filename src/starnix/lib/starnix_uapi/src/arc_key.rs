@@ -11,7 +11,7 @@ use std::ops::Deref;
 use std::sync::{Arc, Weak};
 
 /// A wrapper around Arc with Hash implemented based on Arc::as_ptr.
-#[derive(RefCast)]
+#[derive(RefCast, RcuDroppable)]
 #[repr(transparent)]
 pub struct ArcKey<T>(pub Arc<T>);
 impl<T> PartialEq for ArcKey<T> {
@@ -136,8 +136,6 @@ impl<T: std::fmt::Debug> std::fmt::Debug for PtrKey<T> {
     }
 }
 
-// SAFETY: ArcKey wraps Arc<T> and is safe to drop on RCU if T is RcuDroppable + Sync.
-unsafe impl<T: RcuDroppable + Sync> RcuDroppable for ArcKey<T> {}
 // SAFETY: WeakKey wraps Weak<T>, which only decrements the weak refcount on drop without dropping T.
 unsafe impl<T: Send + Sync + 'static> RcuDroppable for WeakKey<T> {}
 // SAFETY: PtrKey contains a raw pointer and has no drop side effects.

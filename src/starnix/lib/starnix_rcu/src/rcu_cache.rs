@@ -32,7 +32,7 @@ pub enum RcuCacheInsertionResult<V> {
 /// By default, this map uses `rapidhash::RapidBuildHasher`, which provides high performance.
 /// However, if this map holds keys which may be attacker-controlled, consider using
 /// `std::collections::hash_map::RandomState` instead.
-#[derive(Debug)]
+#[derive(Debug, RcuDroppable)]
 pub struct RcuCache<K, V, S = rapidhash::RapidBuildHasher>
 where
     K: Eq + Hash + Clone + RcuDroppable + Sync,

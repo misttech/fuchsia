@@ -183,8 +183,6 @@ pub struct Mount {
 // TODO(b/525158773): Temporary impl to allow incremental RCU safety refactoring.
 // SAFETY: We wait for an RCU grace period before returning from syscalls so side effects are guaranteed to be visible.
 unsafe impl RcuDroppable for Mount {}
-// SAFETY: We wait for an RCU grace period before returning from syscalls so side effects are guaranteed to be visible.
-unsafe impl RcuDroppable for PeerGroup {}
 type MountHandle = Arc<Mount>;
 
 /// Public representation of the mount options.
@@ -354,7 +352,7 @@ impl MountRelations {
 /// A group of mounts. Setting MS_SHARED on a mount puts it in its own peer group. Any bind mounts
 /// of a mount in the group are also added to the group. A mount created in any mount in a peer
 /// group will be automatically propagated (recreated) in every other mount in the group.
-#[derive(Default)]
+#[derive(Default, RcuDroppable)]
 struct PeerGroup {
     id: u64,
     mounts: RcuRawHashMap<WeakKey<Mount>, ()>,

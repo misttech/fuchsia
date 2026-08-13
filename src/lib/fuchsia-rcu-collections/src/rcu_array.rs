@@ -10,7 +10,7 @@ use fuchsia_rcu::{RcuBox, RcuDroppable, RcuReadScope};
 /// Writers create a new copy of the array when it needs to be grown, and readers
 /// are guaranteed to see a consistent snapshot of the array without blocking
 /// writers.
-#[derive(Default, Debug)]
+#[derive(Default, Debug, RcuDroppable)]
 pub struct RcuArray<T: RcuDroppable + Sync> {
     inner: RcuBox<Box<[T]>>,
 }

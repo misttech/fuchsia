@@ -18,7 +18,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 const INITIAL_CAPACITY: usize = 16;
 
 /// An entry in the hash table.
-#[derive(Debug)]
+#[derive(Debug, RcuDroppable)]
 struct Entry<K, V> {
     /// The key for this entry.
     key: K,
@@ -33,9 +33,6 @@ struct Entry<K, V> {
     insertion_chain: Link,
 }
 
-// SAFETY: Entry contains K and V and link fields; it is safe to drop on RCU when K and V implement RcuDroppable.
-unsafe impl<K: RcuDroppable, V: RcuDroppable> RcuDroppable for Entry<K, V> {}
-
 impl<K, V> Entry<K, V> {
     /// Create a new hash table entry.
     fn new(key: K, value: V) -> Self {
@@ -49,7 +46,7 @@ impl<K, V> Entry<K, V> {
 }
 
 /// An RcuListAdapter for the collision chain.
-#[derive(Debug)]
+#[derive(Debug, RcuDroppable)]
 struct CollisionAdapter;
 
 impl<K, V> RcuListAdapter<Entry<K, V>> for CollisionAdapter {
@@ -57,7 +54,7 @@ impl<K, V> RcuListAdapter<Entry<K, V>> for CollisionAdapter {
 }
 
 /// An RcuListAdapter for the insertion chain.
-#[derive(Debug)]
+#[derive(Debug, RcuDroppable)]
 struct InsertionAdapter;
 
 impl<K, V> RcuListAdapter<Entry<K, V>> for InsertionAdapter {
@@ -87,6 +84,7 @@ type Bucket<K, V> = RcuList<Entry<K, V>, CollisionAdapter>;
 /// By default, this map uses `rapidhash::RapidBuildHasher`, which provides high performance.
 /// However, if this map holds keys which may be attacker-controlled, consider using
 /// `std::collections::hash_map::RandomState` instead.
+#[derive(RcuDroppable)]
 pub struct RcuRawHashMap<K, V, S = rapidhash::RapidBuildHasher>
 where
     K: Eq + Hash + Clone + RcuDroppable + Sync,

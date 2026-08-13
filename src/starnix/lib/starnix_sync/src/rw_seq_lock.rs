@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use crate::{LockDepGuard, LockDepMutex, LockLevel, ThreadAffinity, ThreadAffinityGuard};
+use fuchsia_rcu::RcuDroppable;
 use std::fmt;
 use std::ops::{Deref, DerefMut};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -14,6 +15,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 /// This lock is used to synchronize threads within the same address space.
 /// For synchronizing data across address spaces (e.g. sharing data with
 /// userspace via a VMO), see `//src/starnix/lib/seq_lock/`.
+#[derive(RcuDroppable)]
 pub struct RwSeqLock<L> {
     /// The sequence number. An even value indicates the lock is not currently held
     /// for writing, while an odd value indicates a write is in progress.

@@ -101,6 +101,7 @@ rustc_library("selinux") {
   ]
   deps = [
     "src/new_policy/derive_macros",
+    "//src/lib/fuchsia-rcu",
     "//src/lib/trace/rust:trace",
     "//src/starnix/lib/starnix_logging",
     "//src/starnix/lib/starnix_uapi",

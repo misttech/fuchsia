@@ -4,6 +4,7 @@
 
 ///! Kernel classes and permissions are added here when the relevant hook and enforcement is added.
 use crate::policy::AccessVector;
+use fuchsia_rcu::RcuDroppable;
 use paste::paste;
 use strum_macros::VariantArray;
 
@@ -268,7 +269,7 @@ subset_enum! {
 subset_enum! {
     /// A well-known file-like class in SELinux policy that has a particular meaning in policy
     /// enforcement hooks.
-    #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
+    #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq, RcuDroppable)]
     FileClass from KernelClass {
         // keep-sorted start
         /// The SELinux "anon_inode" object class.
@@ -295,7 +296,7 @@ subset_enum! {
 
 subset_enum! {
     /// Distinguishes socket-like kernel object classes defined in SELinux policy.
-    #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
+    #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq, RcuDroppable)]
     SocketClass from KernelClass {
         // keep-sorted start
         IcmpSocket,
@@ -338,7 +339,7 @@ subset_enum! {
 
 /// Container for a security class that could be associated with a [`crate::vfs::FsNode`], to allow
 /// permissions common to both file-like and socket-like classes to be generated easily by hooks.
-#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq, RcuDroppable)]
 pub enum FsNodeClass {
     File(FileClass),
     Socket(SocketClass),

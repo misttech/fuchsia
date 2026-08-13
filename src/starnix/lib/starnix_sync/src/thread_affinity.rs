@@ -2,8 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use fuchsia_rcu::RcuDroppable;
+
 #[cfg(feature = "detect_lock_dep_cycles")]
 mod tracking {
+    use fuchsia_rcu::RcuDroppable;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     static NEXT_THREAD_ID: AtomicUsize = AtomicUsize::new(1);
@@ -16,6 +19,7 @@ mod tracking {
         THREAD_ID.with(|id| *id)
     }
 
+    #[derive(RcuDroppable)]
     pub struct ThreadAffinityState {
         owner: AtomicUsize,
     }
@@ -67,6 +71,9 @@ mod tracking {
 
 #[cfg(not(feature = "detect_lock_dep_cycles"))]
 mod tracking {
+    use fuchsia_rcu::RcuDroppable;
+
+    #[derive(RcuDroppable)]
     pub struct ThreadAffinityState {}
 
     impl ThreadAffinityState {
@@ -97,6 +104,7 @@ mod tracking {
 /// It provides mechanisms to attach an object to a thread and assert that
 /// the object is or is not attached to the current thread. When the feature
 /// `detect_lock_dep_cycles` is disabled, this struct and its methods are zero-cost.
+#[derive(RcuDroppable)]
 pub struct ThreadAffinity {
     state: tracking::ThreadAffinityState,
 }

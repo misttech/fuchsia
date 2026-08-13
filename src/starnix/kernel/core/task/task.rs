@@ -20,7 +20,7 @@ use crate::task::{
 };
 use crate::vfs::{FdTable, FsContext, FsString, SharedFdTable};
 use atomic_bitflags::atomic_bitflags;
-use fuchsia_rcu::{RcuArc, RcuOptionArc, RcuReadGuard, RcuReadScope};
+use fuchsia_rcu::{RcuArc, RcuDroppable, RcuOptionArc, RcuReadGuard, RcuReadScope};
 use macro_rules_attribute::apply;
 use starnix_logging::{log_warn, set_zx_name};
 use starnix_registers::HeapRegs;
@@ -741,7 +741,7 @@ impl TaskStateCode {
 /// which process a wait can target. It is necessary to shared this data with the `ThreadGroup` so
 /// that it is available while the task is being dropped and so is not accessible from a weak
 /// pointer.
-#[derive(Debug)]
+#[derive(Debug, RcuDroppable)]
 pub struct TaskPersistentInfoState {
     /// Immutable information about the task
     tid: tid_t,
