@@ -29,7 +29,6 @@ source_set("common") {
     "//sdk/lib/async:async-cpp",
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/async-loop:async-loop-default",
-    "//zircon/system/ulib/fbl",
   ]
 }
 
@@ -171,9 +170,21 @@ foreach(board_info, _boards) {
   }
 }
 
+test("device-enumeration-lib-test-bin") {
+  sources = [ "common-test.cc" ]
+  deps = [
+    ":common",
+    "//zircon/system/ulib/zxtest",
+  ]
+}
+
+fuchsia_unittest_package("device-enumeration-lib-tests") {
+  deps = [ ":device-enumeration-lib-test-bin" ]
+}
+
 group("device-enumeration-tests") {
   testonly = true
-  deps = []
+  deps = [ ":device-enumeration-lib-tests" ]
   foreach(board_info, _boards) {
     board = board_info[0]
     deps += [ ":device-enumeration-test-${board}" ]

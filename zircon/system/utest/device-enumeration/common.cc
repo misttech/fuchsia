@@ -9,8 +9,10 @@
 #include <lib/async/cpp/task.h>
 #include <lib/component/incoming/cpp/protocol.h>
 
+#include <algorithm>
 #include <iostream>
 #include <map>
+#include <set>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -21,7 +23,7 @@ namespace device_enumeration {
 void WaitForClassDeviceCount(const std::string& path_in_devfs, size_t count) {
   async::Loop loop = async::Loop(&kAsyncLoopConfigNeverAttachToThread);
 
-  async::TaskClosure task([path_in_devfs, &count]() {
+  async::TaskClosure task([path_in_devfs, count] {
     // stdout doesn't show up in test logs.
     std::cerr << "still waiting for " << count << " devices in " << path_in_devfs << '\n';
   });
@@ -77,42 +79,33 @@ DeviceEnumerationTest::MatchResult DeviceEnumerationTest::GetMatchedNodes(
   switch (req.type) {
     case Requirement::Type::kNode:
       if (node_info_.contains(req.node)) {
-        return fit::ok(std::vector<std::string>{req.node});
+        return {.matched_nodes = {req.node}, .errors = {}};
       }
-      return fit::error("node '" + req.node + "' not found");
+      return {.matched_nodes = {}, .errors = {"node '" + req.node + "' not found"}};
     case Requirement::Type::kAllOf: {
-      std::vector<std::string> all_matches;
-      std::string errors;
+      MatchResult result;
       for (const auto& child : req.children) {
         MatchResult child_result = GetMatchedNodes(child);
-        if (child_result.is_error()) {
-          if (!errors.empty()) {
-            errors += ", ";
-          }
-          errors += child_result.error_value();
-        } else if (child_result.is_ok()) {
-          all_matches.insert(all_matches.end(), child_result.value().begin(),
-                             child_result.value().end());
-        }
+        std::ranges::move(child_result.matched_nodes, std::back_inserter(result.matched_nodes));
+        std::ranges::move(child_result.errors, std::back_inserter(result.errors));
       }
-      if (!errors.empty()) {
-        return fit::error("AllOf failed: [" + errors + "]");
-      }
-      return fit::ok(std::move(all_matches));
+      return result;
     }
     case Requirement::Type::kOneOf: {
-      std::string errors;
+      if (req.children.empty()) {
+        return {.matched_nodes = {}, .errors = {"empty OneOf requirement"}};
+      }
+      MatchResult aggregated_result;
       for (const auto& child : req.children) {
         MatchResult child_result = GetMatchedNodes(child);
         if (child_result.is_ok()) {
           return child_result;
         }
-        if (!errors.empty()) {
-          errors += ", ";
-        }
-        errors += child_result.error_value();
+        std::ranges::move(child_result.matched_nodes,
+                          std::back_inserter(aggregated_result.matched_nodes));
+        std::ranges::move(child_result.errors, std::back_inserter(aggregated_result.errors));
       }
-      return fit::error("OneOf failed: [" + errors + "]");
+      return aggregated_result;
     }
   }
 }
@@ -121,24 +114,24 @@ void DeviceEnumerationTest::Verify(const Requirement& requirement, bool fail_on_
   MatchResult result = GetMatchedNodes(requirement);
 
   if (result.is_error()) {
-    std::cerr << "Requirement not satisfied: " << result.error_value() << '\n';
+    for (const auto& err : result.errors) {
+      std::cerr << "Requirement not satisfied: " << err << '\n';
+    }
   }
 
-  std::unordered_set<std::string> matched_nodes;
-  if (result.is_ok()) {
-    matched_nodes.insert(result.value().begin(), result.value().end());
-  }
+  std::unordered_set<std::string> matched_nodes(result.matched_nodes.begin(),
+                                                result.matched_nodes.end());
 
-  std::unordered_map<std::string, fuchsia_driver_development::NodeInfo> leftover_nodes;
+  std::set<std::string_view> leftover_nodes;
   for (auto& [moniker, node] : node_info_) {
     if (!matched_nodes.contains(moniker)) {
-      leftover_nodes[moniker] = node;
+      leftover_nodes.insert(moniker);
     }
   }
 
   if (!leftover_nodes.empty()) {
     std::cerr << "Found " << leftover_nodes.size() << " unexpected node(s):\n";
-    for (auto& [moniker, node] : leftover_nodes) {
+    for (const auto& moniker : leftover_nodes) {
       std::cerr << "     " << moniker << ":\n";
     }
   }

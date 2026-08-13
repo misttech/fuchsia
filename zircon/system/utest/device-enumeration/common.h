@@ -6,10 +6,10 @@
 #define ZIRCON_SYSTEM_UTEST_DEVICE_ENUMERATION_COMMON_H_
 
 #include <fidl/fuchsia.driver.development/cpp/fidl.h>
-#include <lib/fit/result.h>
 
 #include <span>
 #include <string>
+#include <type_traits>
 #include <unordered_map>
 #include <vector>
 
@@ -22,7 +22,27 @@ void WaitForClassDeviceCount(const std::string& path_in_devfs, size_t count);
 }  // namespace device_enumeration
 
 class DeviceEnumerationTest : public zxtest::Test {
-  void SetUp() override { ASSERT_NO_FATAL_FAILURE(RetrieveNodeInfo()); }
+ public:
+  void SetUp() override {
+    if (!skip_node_retrieval_) {
+      ASSERT_NO_FATAL_FAILURE(RetrieveNodeInfo());
+    }
+  }
+
+  // Helper to combine collections and string types for cleaner test organization.
+  template <typename... Args>
+  static std::vector<const char*> Combine(const Args&... args) {
+    std::vector<const char*> result;
+    auto append = [&result](const auto& arg) {
+      if constexpr (std::is_convertible_v<decltype(arg), const char*>) {
+        result.push_back(arg);
+      } else {
+        result.append_range(arg);
+      }
+    };
+    (append(args), ...);
+    return result;
+  }
 
  protected:
   struct Requirement {
@@ -43,12 +63,31 @@ class DeviceEnumerationTest : public zxtest::Test {
   void VerifyOneOf(std::span<const char* const> node_monikers);
   bool HasNode(const std::string& node) const { return node_info_.contains(node); }
 
- private:
-  using MatchResult = fit::result<std::string, std::vector<std::string>>;
+  void SetNodeMonikers(std::vector<std::string> monikers) {
+    node_info_.clear();
+    for (auto& m : monikers) {
+      fuchsia_driver_development::NodeInfo info{};
+      info.moniker() = m;
+      node_info_.emplace(std::move(m), std::move(info));
+    }
+  }
 
-  void RetrieveNodeInfo();
+  void SetSkipNodeRetrieval(bool skip) { skip_node_retrieval_ = skip; }
+
+  struct MatchResult {
+    std::vector<std::string> matched_nodes;
+    std::vector<std::string> errors;
+
+    bool is_ok() const { return errors.empty(); }
+    bool is_error() const { return !errors.empty(); }
+  };
+
   MatchResult GetMatchedNodes(const Requirement& req) const;
 
+ private:
+  void RetrieveNodeInfo();
+
+  bool skip_node_retrieval_ = false;
   std::unordered_map<std::string, fuchsia_driver_development::NodeInfo> node_info_;
 };
 
