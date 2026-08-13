@@ -100,7 +100,6 @@ pub struct PropertyRule {
     pub sources: &'static [ValueSource],
     pub value_type: RuleValueType,
     pub destination: Destination,
-    pub required: bool,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -222,11 +221,7 @@ fn apply_rule(
     let val = match resolved {
         Some(v) => v,
         None => {
-            if rule.required {
-                bail!("Failed to resolve required property {}", rule.bind_key);
-            } else {
-                return Ok(());
-            }
+            bail!("Failed to resolve required property {}", rule.bind_key);
         }
     };
 

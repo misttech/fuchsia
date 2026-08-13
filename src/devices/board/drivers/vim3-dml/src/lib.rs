@@ -29,7 +29,6 @@ static VIM3_PARSER_CONFIG: DmlParserConfig = DmlParserConfig {
                 sources: &[ValueSource::ConstraintKey("pin")],
                 value_type: RuleValueType::Integer,
                 destination: Destination::BindRules,
-                required: true,
             }],
             ..DEFAULT_SERVICE_BIND_CONFIG
         },
@@ -39,7 +38,6 @@ static VIM3_PARSER_CONFIG: DmlParserConfig = DmlParserConfig {
                 sources: &[ValueSource::ResourceNode],
                 value_type: RuleValueType::String,
                 destination: Destination::BindRules,
-                required: true,
             }],
             ..DEFAULT_SERVICE_BIND_CONFIG
         },
@@ -50,35 +48,23 @@ static VIM3_PARSER_CONFIG: DmlParserConfig = DmlParserConfig {
                     sources: &[ValueSource::ProviderId],
                     value_type: RuleValueType::Integer,
                     destination: Destination::Both,
-                    required: true,
                 },
                 PropertyRule {
                     bind_key: "fuchsia.BIND_I2C_ADDRESS",
                     sources: &[ValueSource::ConstraintKey("address")],
                     value_type: RuleValueType::Integer,
                     destination: Destination::Both,
-                    required: true,
                 },
             ],
             ..DEFAULT_SERVICE_BIND_CONFIG
         },
         "fuchsia.hardware.clock.Service" => ServiceBindConfig {
-            rules: &[
-                PropertyRule {
-                    bind_key: "fuchsia.BIND_CLOCK_ID",
-                    sources: &[ValueSource::ConstraintKey("id")],
-                    value_type: RuleValueType::Integer,
-                    destination: Destination::BindRules,
-                    required: true,
-                },
-                PropertyRule {
-                    bind_key: "fuchsia.BIND_CLOCK_NODE_ID",
-                    sources: &[ValueSource::ConstraintKey("node_id")],
-                    value_type: RuleValueType::Integer,
-                    destination: Destination::BindRules,
-                    required: false,
-                },
-            ],
+            rules: &[PropertyRule {
+                bind_key: "fuchsia.BIND_CLOCK_ID",
+                sources: &[ValueSource::ConstraintKey("id")],
+                value_type: RuleValueType::Integer,
+                destination: Destination::BindRules,
+            }],
             ..DEFAULT_SERVICE_BIND_CONFIG
         },
         "fuchsia.hardware.adc.Service" => ServiceBindConfig {
@@ -87,7 +73,6 @@ static VIM3_PARSER_CONFIG: DmlParserConfig = DmlParserConfig {
                 sources: &[ValueSource::ConstraintKey("channel")],
                 value_type: RuleValueType::Integer,
                 destination: Destination::Both,
-                required: true,
             }],
             ..DEFAULT_SERVICE_BIND_CONFIG
         },
@@ -97,7 +82,6 @@ static VIM3_PARSER_CONFIG: DmlParserConfig = DmlParserConfig {
                 sources: &[ValueSource::ConstraintKey("channel")],
                 value_type: RuleValueType::Integer,
                 destination: Destination::BindRules,
-                required: true,
             }],
             ..DEFAULT_SERVICE_BIND_CONFIG
         },
@@ -107,7 +91,6 @@ static VIM3_PARSER_CONFIG: DmlParserConfig = DmlParserConfig {
                 sources: &[ValueSource::ConstraintKey("domain")],
                 value_type: RuleValueType::Integer,
                 destination: Destination::Both,
-                required: true,
             }],
             ..DEFAULT_SERVICE_BIND_CONFIG
         },
@@ -117,7 +100,6 @@ static VIM3_PARSER_CONFIG: DmlParserConfig = DmlParserConfig {
                 sources: &[ValueSource::ConstraintKey("function")],
                 value_type: RuleValueType::Integer,
                 destination: Destination::Both,
-                required: true,
             }],
             ..DEFAULT_SERVICE_BIND_CONFIG
         },
@@ -128,7 +110,6 @@ static VIM3_PARSER_CONFIG: DmlParserConfig = DmlParserConfig {
                 sources: &[ValueSource::Integer(0x494B4C43)],
                 value_type: RuleValueType::Integer,
                 destination: Destination::Both,
-                required: true,
             }],
             ..DEFAULT_SERVICE_BIND_CONFIG
         },
@@ -139,7 +120,6 @@ static VIM3_PARSER_CONFIG: DmlParserConfig = DmlParserConfig {
                 sources: &[ValueSource::Integer(0x004D5750)],
                 value_type: RuleValueType::Integer,
                 destination: Destination::Both,
-                required: true,
             }],
             ..DEFAULT_SERVICE_BIND_CONFIG
         },
@@ -149,7 +129,6 @@ static VIM3_PARSER_CONFIG: DmlParserConfig = DmlParserConfig {
                 sources: &[ValueSource::ConstraintKey("did")],
                 value_type: RuleValueType::Integer,
                 destination: Destination::Both,
-                required: true,
             }],
             ..DEFAULT_SERVICE_BIND_CONFIG
         },
