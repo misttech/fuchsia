@@ -99,6 +99,14 @@ impl FfxMain for ListTool {
 }
 
 impl ListTool {
+    pub fn new(
+        cmd: ListCommand,
+        context: EnvironmentContext,
+        fho_env: fho::FhoEnvironment,
+    ) -> Self {
+        Self { cmd, context, fho_env }
+    }
+
     async fn main_impl(self, mut writer: <Self as FfxMain>::Writer) -> Result<(), ListError> {
         let list_query = TargetInfoQuery::try_from(self.cmd.nodename.clone())
             .map_err(|e| ListError::QueryParse(e.to_string()))?;

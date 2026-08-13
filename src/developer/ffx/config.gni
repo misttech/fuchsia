@@ -43,6 +43,7 @@ included_ffx_plugins = [
   # to keep doctor with the main binary. We might re-evaluate that but for now
   # this is intended to be here.
   "//src/developer/ffx/plugins/doctor:ffx_doctor",
+  "//src/developer/ffx/plugins/devices:ffx_devices",
 ]
 
 # The list of plugins that can be built either as plugins or subtools,

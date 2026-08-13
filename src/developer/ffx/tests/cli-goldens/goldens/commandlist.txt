@@ -5,6 +5,7 @@ component
 config
 coverage
 debug
+devices
 doctor
 driver
 emu
