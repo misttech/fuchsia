@@ -17,6 +17,7 @@ enum MockEvent {
     RequestQueued,
 }
 
+#[derive(Default)]
 struct MockEndpointState {
     requests: Vec<fusb_request::Request>,
     vmos: HashMap<u64, zx::Vmo>,
@@ -233,6 +234,7 @@ async fn test_vendor_requests() {
             TEST_EP_IN_ADDR,
             ep_out_proxy,
             TEST_EP_OUT_ADDR,
+            0,
         );
         zero_function.handle_requests(iface_server.into_stream()).await;
     });
@@ -500,4 +502,55 @@ async fn test_source_sink() {
         let state = state_in.lock().unwrap();
         assert_eq!(state.requests.len(), 1);
     }
+}
+
+#[fuchsia::test]
+async fn test_set_and_get_interface() {
+    let (iface_c, iface_s) = create_endpoints::<fusb_function::UsbFunctionInterfaceMarker>();
+    let (func_c, func_s) = create_endpoints::<fusb_function::UsbFunctionMarker>();
+    let (ep_in_c, ep_in_s) = create_endpoints::<fusb_endpoint::EndpointMarker>();
+    let (ep_out_c, ep_out_s) = create_endpoints::<fusb_endpoint::EndpointMarker>();
+
+    let scope = Arc::new(fasync::Scope::new_with_name("test_set_get_iface"));
+    scope.spawn_local(run_mock_function(func_s.into_stream()));
+    scope.spawn_local(run_mock_endpoint(
+        ep_in_s.into_stream(),
+        Default::default(),
+        mpsc::unbounded().1,
+        mpsc::unbounded().0,
+        scope.clone(),
+    ));
+    scope.spawn_local(run_mock_endpoint(
+        ep_out_s.into_stream(),
+        Default::default(),
+        mpsc::unbounded().1,
+        mpsc::unbounded().0,
+        scope.clone(),
+    ));
+
+    let (f_p, ep_i, ep_o) = (func_c.into_proxy(), ep_in_c.into_proxy(), ep_out_c.into_proxy());
+    scope.spawn_local(async move {
+        UsbZeroFunctionDevice::new(f_p, ep_i, TEST_EP_IN_ADDR, ep_o, TEST_EP_OUT_ADDR, 0)
+            .handle_requests(iface_s.into_stream())
+            .await;
+    });
+
+    let proxy = iface_c.into_proxy();
+    let setup = fusb_descriptor::UsbSetup {
+        bm_request_type: 0x81,
+        b_request: USB_SETUP_REQ_GET_INTERFACE,
+        w_value: 0,
+        w_index: 0,
+        w_length: 1,
+    };
+
+    assert_eq!(proxy.set_interface(0, 1).await.unwrap(), Ok(()));
+    assert_eq!(proxy.control(&setup, &[]).await.unwrap(), Ok(vec![0x01]));
+    assert_eq!(proxy.set_configured(true, fusb_descriptor::UsbSpeed::High).await.unwrap(), Ok(()));
+    assert_eq!(proxy.set_interface(0, 0).await.unwrap(), Ok(()));
+    assert_eq!(proxy.control(&setup, &[]).await.unwrap(), Ok(vec![0x00]));
+    assert_eq!(proxy.set_interface(0, 1).await.unwrap(), Ok(()));
+    assert_eq!(proxy.control(&setup, &[]).await.unwrap(), Ok(vec![0x01]));
+    assert_eq!(proxy.set_interface(0, 2).await.unwrap(), Err(Status::NOT_SUPPORTED.into_raw()));
+    assert_eq!(proxy.set_interface(1, 0).await.unwrap(), Err(Status::NOT_SUPPORTED.into_raw()));
 }

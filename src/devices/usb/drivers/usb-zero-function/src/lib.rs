@@ -102,10 +102,12 @@ struct UsbZeroFunctionDevice {
     ep_in_addr: u8,
     ep_out: fusb_endpoint::EndpointProxy,
     ep_out_addr: u8,
+    interface_num: u8,
     is_configured: bool,
     vmos_registered: bool,
     endpoint_tasks: Option<(fasync::Task<()>, fasync::Task<()>)>,
     mode: TestMode,
+    speed: Option<fusb_descriptor::UsbSpeed>,
 }
 
 driver_register!(UsbZeroFunction);
@@ -179,7 +181,7 @@ impl Driver for UsbZeroFunction {
 
         // Construct descriptors
         let default_max_packet_size_bytes = USB_ZERO_DEFAULT_MAX_PACKET_SIZE.to_le_bytes();
-        let desc = vec![
+        let mut desc = vec![
             // Interface Descriptor
             USB_INTERFACE_DESC_SIZE, // bLength
             USB_DESC_TYPE_INTERFACE, // bDescriptorType (Interface)
@@ -207,6 +209,21 @@ impl Driver for UsbZeroFunction {
             default_max_packet_size_bytes[1], // wMaxPacketSize (little endian)
             0,                                // bInterval
         ];
+        // Alternate Setting 1 (Loopback) Interface and Endpoint Descriptors
+        let ep_desc_start = USB_INTERFACE_DESC_SIZE as usize;
+        let ep_desc_end = desc.len();
+        desc.extend_from_slice(&[
+            USB_INTERFACE_DESC_SIZE,
+            USB_DESC_TYPE_INTERFACE,
+            interface_num,
+            0x01,
+            USB_ZERO_NUM_ENDPOINTS,
+            USB_CLASS_VENDOR,
+            0,
+            0,
+            0,
+        ]);
+        desc.extend_from_within(ep_desc_start..ep_desc_end);
 
         let (iface_client, iface_server) =
             fidl::endpoints::create_endpoints::<fusb_function::UsbFunctionInterfaceMarker>();
@@ -233,6 +250,7 @@ impl Driver for UsbZeroFunction {
                 ep_in_addr,
                 ep_out_clone,
                 ep_out_addr,
+                interface_num,
             );
             device.handle_requests(iface_server.into_stream()).await;
         });
@@ -275,6 +293,7 @@ impl UsbZeroFunctionDevice {
         ep_in_addr: u8,
         ep_out: fusb_endpoint::EndpointProxy,
         ep_out_addr: u8,
+        interface_num: u8,
     ) -> Self {
         Self {
             function_client,
@@ -282,14 +301,17 @@ impl UsbZeroFunctionDevice {
             ep_in_addr,
             ep_out,
             ep_out_addr,
+            interface_num,
             is_configured: false,
             vmos_registered: false,
             endpoint_tasks: None,
             mode: TestMode::default(),
+            speed: None,
         }
     }
 
     async fn cleanup_endpoints(&mut self) {
+        self.endpoint_tasks = None;
         if self.vmos_registered {
             let _ = self.ep_in.unregister_vmos(&[USB_ZERO_IN_VMO_ID]).await;
             let _ = self.ep_out.unregister_vmos(&[USB_ZERO_OUT_VMO_ID]).await;
@@ -305,6 +327,7 @@ impl UsbZeroFunctionDevice {
         speed: fusb_descriptor::UsbSpeed,
     ) -> Result<Option<(fasync::Task<()>, fasync::Task<()>)>, Status> {
         self.cleanup_endpoints().await;
+        self.speed = if configured { Some(speed) } else { None };
         if configured {
             let w_max_packet_size = match speed {
                 fusb_descriptor::UsbSpeed::Full => USB_MAX_PACKET_SIZE_FULL_SPEED,
@@ -498,7 +521,10 @@ impl UsbZeroFunctionDevice {
                 USB_SETUP_REQ_GET_STATUS => Ok(vec![0x00, 0x00]),
                 USB_SETUP_REQ_CLEAR_FEATURE => Ok(Vec::new()),
                 USB_SETUP_REQ_SET_FEATURE => Ok(Vec::new()),
-                USB_SETUP_REQ_GET_INTERFACE => Ok(vec![0x00]),
+                USB_SETUP_REQ_GET_INTERFACE => Ok(vec![match self.mode {
+                    TestMode::SourceSink => 0,
+                    TestMode::Loopback => 1,
+                }]),
                 _ => Err(Status::NOT_SUPPORTED),
             },
         }
@@ -540,12 +566,34 @@ impl UsbZeroFunctionDevice {
                     }
                 }
                 fusb_function::UsbFunctionInterfaceRequest::SetInterface {
-                    interface: _,
+                    interface,
                     alt_setting,
                     responder,
                 } => {
-                    let response = if alt_setting == 0 {
-                        Ok(())
+                    let response = if interface == self.interface_num && alt_setting <= 1 {
+                        let new_mode = if alt_setting == 0 {
+                            TestMode::SourceSink
+                        } else {
+                            TestMode::Loopback
+                        };
+                        if self.is_configured {
+                            self.endpoint_tasks = None;
+                            self.mode = new_mode;
+                            let speed = self.speed.unwrap_or(fusb_descriptor::UsbSpeed::High);
+                            match self.handle_set_configured(true, speed).await {
+                                Ok(tasks) => {
+                                    self.endpoint_tasks = tasks;
+                                    Ok(())
+                                }
+                                Err(e) => {
+                                    self.is_configured = false;
+                                    Err(e.into_raw())
+                                }
+                            }
+                        } else {
+                            self.mode = new_mode;
+                            Ok(())
+                        }
                     } else {
                         Err(Status::NOT_SUPPORTED.into_raw())
                     };
