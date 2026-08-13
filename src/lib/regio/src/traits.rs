@@ -10,20 +10,17 @@
 //! tests.
 
 use super::{
-    Accessible, IoHandle, LayoutOver, ReadHandle, Readable, Register, SafeWrite, UnsafeWrite,
-    Writable, WriteHandle,
+    IoHandle, LayoutOver, ReadHandle, Readable, Register, SafeWrite, UnsafeWrite, Writable,
+    WriteHandle,
 };
 
-/// A trait representing a register with a given layout.
-pub trait Reg<Layout> {}
-
 /// A trait representing a readable register.
-pub trait ReadReg<Layout>: Reg<Layout> {
+pub trait ReadReg<Layout> {
     fn read(&self) -> Layout;
 }
 
 /// A trait representing a safe-writable register.
-pub trait SafeWriteReg<Layout>: Reg<Layout> {
+pub trait SafeWriteReg<Layout> {
     fn write(&self, value: Layout);
 
     fn modify<ModifyFn, Ret>(&self, cb: ModifyFn) -> Ret
@@ -39,7 +36,7 @@ pub trait SafeWriteReg<Layout>: Reg<Layout> {
 }
 
 /// A trait representing an unsafe-writable register.
-pub trait UnsafeWriteReg<Layout>: Reg<Layout> {
+pub trait UnsafeWriteReg<Layout> {
     /// # Safety
     ///
     /// The caller must guarantee that the write does not result in
@@ -75,17 +72,27 @@ impl<Layout, R> RwSafeReg<Layout> for R where R: ReadReg<Layout> + SafeWriteReg<
 pub trait RwUnsafeReg<Layout>: ReadReg<Layout> + UnsafeWriteReg<Layout> {}
 impl<Layout, R> RwUnsafeReg<Layout> for R where R: ReadReg<Layout> + UnsafeWriteReg<Layout> {}
 
+impl<Layout, R: ReadReg<Layout>> ReadReg<Layout> for &R {
+    fn read(&self) -> Layout {
+        (*self).read()
+    }
+}
+
+impl<Layout, R: UnsafeWriteReg<Layout>> UnsafeWriteReg<Layout> for &R {
+    unsafe fn write(&self, value: Layout) {
+        unsafe { (*self).write(value) }
+    }
+}
+
+impl<Layout, R: SafeWriteReg<Layout>> SafeWriteReg<Layout> for &R {
+    fn write(&self, value: Layout) {
+        (*self).write(value)
+    }
+}
+
 //
 // Register of course implements the above traits.
 //
-
-impl<Layout, Access, Io> Reg<Layout> for Register<Layout, Access, Io>
-where
-    Layout: LayoutOver<<Io as IoHandle>::Base>,
-    Access: Accessible,
-    Io: IoHandle,
-{
-}
 
 impl<Layout, Access, Io> ReadReg<Layout> for Register<Layout, Access, Io>
 where

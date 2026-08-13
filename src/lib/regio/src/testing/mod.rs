@@ -13,20 +13,18 @@ use core::cell::Cell;
 use core::fmt::Debug;
 use std::vec::Vec;
 
-use crate::traits::{ReadReg, Reg, SafeWriteReg, UnsafeWriteReg};
+use crate::traits::{ReadReg, SafeWriteReg, UnsafeWriteReg};
 
-//
-// Closures are convenient implementations when testing.
-//
+// A closure wrapper that implements [`ReadReg`], convenient for testing
+// interfaces that deal in register reading.
+pub struct FnReadReg<Layout, F: Fn() -> Layout>(pub F);
 
-impl<Layout, F> Reg<Layout> for F where F: Fn() -> Layout {}
-
-impl<Layout, F> ReadReg<Layout> for F
+impl<Layout, F> ReadReg<Layout> for FnReadReg<Layout, F>
 where
     F: Fn() -> Layout,
 {
     fn read(&self) -> Layout {
-        self()
+        self.0()
     }
 }
 
@@ -98,8 +96,6 @@ impl<Layout> Drop for ExpectationReg<Layout> {
     }
 }
 
-impl<Layout> Reg<Layout> for ExpectationReg<Layout> {}
-
 impl<Layout> ReadReg<Layout> for ExpectationReg<Layout>
 where
     Layout: Copy,
@@ -144,13 +140,13 @@ mod tests {
     use super::*;
     use crate::traits::RwSafeReg;
 
-    fn increment<R: RwSafeReg<u32>>(reg: &R) {
+    fn increment<R: RwSafeReg<u32>>(reg: R) {
         reg.modify(|value| *value += 1);
     }
 
     #[test]
     fn closures_as_read_regs() {
-        let reg = || 10u32;
+        let reg = FnReadReg(|| 10u32);
         assert_eq!(reg.read(), 10);
     }
 

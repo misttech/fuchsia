@@ -26,10 +26,7 @@ layout!({
 });
 
 impl TsxControlMsr {
-    fn is_supported<M>(cpuid: impl Cpuid, msr: &M) -> bool
-    where
-        M: ReadReg<ArchCapabilitiesMsr>,
-    {
+    fn is_supported(cpuid: impl Cpuid, msr: impl ReadReg<ArchCapabilitiesMsr>) -> bool {
         ArchCapabilitiesMsr::is_supported(cpuid) && msr.read().tsx_ctrl()
     }
 }
@@ -41,16 +38,12 @@ pub fn tsx_is_supported(cpuid: impl Cpuid) -> bool {
 }
 
 /// Attempts to disable TSX and returns whether it was successful.
-pub fn disable_tsx<M1, M2>(
+pub fn disable_tsx(
     cpuid: impl Cpuid,
-    arch_capabilities_msr: &M1,
-    tsx_control_msr: &M2,
-) -> bool
-where
-    M1: ReadReg<ArchCapabilitiesMsr>,
-    M2: RwSafeReg<TsxControlMsr>,
-{
-    if !TsxControlMsr::is_supported(cpuid, arch_capabilities_msr) {
+    arch_capabilities_msr: impl ReadReg<ArchCapabilitiesMsr>,
+    tsx_control_msr: impl RwSafeReg<TsxControlMsr>,
+) -> bool {
+    if !TsxControlMsr::is_supported(&cpuid, &arch_capabilities_msr) {
         return false;
     }
 

@@ -35,7 +35,7 @@ For simple read-only cases, a closure can serve as a stand-in register:
 # #[cfg(feature = "testing")] {
 use regio::traits::ReadReg;
 
-fn is_busy(reg: &impl ReadReg<u32>) -> bool {
+fn is_busy(reg: impl ReadReg<u32>) -> bool {
     reg.read() & 1 != 0
 }
 
@@ -52,7 +52,7 @@ expected accesses:
 use regio::testing::ExpectationReg;
 use regio::traits::RwSafeReg;
 
-fn set_enable_bit(reg: &impl RwSafeReg<u32>) {
+fn set_enable_bit(reg: impl RwSafeReg<u32>) {
     reg.modify(|value| *value |= 1);
 }
 
