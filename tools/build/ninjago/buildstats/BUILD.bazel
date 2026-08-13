@@ -5,6 +5,8 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
 load("//build/bazel/rules/host:defs.bzl", "go_binary_host_tool")
+load("//build/bazel/rules/host_tests:host_go_test.bzl", "host_go_test")
+load("//build/bazel/rules/host_tests:host_test_data.bzl", "host_test_data_files")
 
 package(default_applicable_licenses = ["//:license"])
 
@@ -29,4 +31,24 @@ go_binary_host_tool(
     embed = [":buildstats_lib"],
     target_compatible_with = HOST_CONSTRAINTS,
     visibility = ["//visibility:public"],
+)
+
+host_test_data_files(
+    name = "buildstats_testdata",
+    srcs = ["//tools/build/ninjago/test_data:ninja_trace.json.gz"],
+    dest_dir = "testdata",
+)
+
+host_go_test(
+    name = "buildstats_tests",
+    srcs = ["main_test.go"],
+    embed = [":buildstats_lib"],
+    target_compatible_with = HOST_CONSTRAINTS,
+    test_args = ["-test_data_dir=testdata"],
+    test_data = [":buildstats_testdata"],
+    visibility = ["//tools:__pkg__"],
+    deps = [
+        "//third_party/golibs:github.com/google/go-cmp/cmp",
+        "//third_party/golibs:github.com/google/go-cmp/cmp/cmpopts",
+    ],
 )

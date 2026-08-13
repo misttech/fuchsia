@@ -5,6 +5,26 @@
 # A list of Bazel root targets for host tools under //tools directory.
 tools_bazel_root_targets = [
   {
+    bazel_label = "//tools/build/ninjago/buildstats:buildstats"
+    copy_outputs = [
+      {
+        bazel = "{{BAZEL_TARGET_OUT_DIR}}/buildstats_/buildstats"
+        ninja = "buildstats"
+      },
+    ]
+    install_host_tool = true
+  },
+  {
+    bazel_label = "//tools/build/ninjago/ninjatrace:ninjatrace"
+    copy_outputs = [
+      {
+        bazel = "{{BAZEL_TARGET_OUT_DIR}}/ninjatrace_/ninjatrace"
+        ninja = "ninjatrace"
+      },
+    ]
+    install_host_tool = true
+  },
+  {
     bazel_label = "//tools/rust_test_parser:rust_test_parser"
     copy_outputs = [
       {

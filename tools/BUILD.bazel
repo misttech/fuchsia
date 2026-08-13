@@ -10,6 +10,11 @@ test_suite(
     name = "host_tests",
     target_compatible_with = HOST_CONSTRAINTS,
     tests = [
+        "//tools/build/ninjago/buildstats:buildstats_tests",
+        "//tools/build/ninjago/chrometrace:chrometrace_test",
+        "//tools/build/ninjago/clangtrace:clangtrace_test",
+        "//tools/build/ninjago/ninjacommand:ninjacommand_tests",
+        "//tools/build/ninjago/rbetrace:rbetrace_test",
         "//tools/check-licenses:tests",
         "//tools/fidl/fidlgen_rust/codegen:fidlgen_rust_lib_tests",
         "//tools/fidl/gidl/backend/golang:gidl_golang_tests",
