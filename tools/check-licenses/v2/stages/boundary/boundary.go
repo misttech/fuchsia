@@ -32,7 +32,7 @@ func NewGrouper(fuchsiaDir string, config Config) *Grouper {
 
 // Run buffers the incoming paths, determines their project boundaries, and emits the grouped projects.
 func (g *Grouper) Run(ctx context.Context, in <-chan pipeline.RawPath) (<-chan pipeline.Project, error) {
-	out := make(chan pipeline.Project)
+	out := make(chan pipeline.Project, 100)
 
 	go func() {
 		defer close(out)
@@ -209,12 +209,17 @@ func (g *Grouper) Run(ctx context.Context, in <-chan pipeline.RawPath) (<-chan p
 			})
 		}
 
-		// PHASE 4: Emit the projects downstream
-		for _, proj := range projects {
+		// PHASE 4: Emit the projects downstream in deterministic order
+		var roots []string
+		for root := range projects {
+			roots = append(roots, root)
+		}
+		sort.Strings(roots)
+		for _, root := range roots {
 			select {
 			case <-ctx.Done():
 				return
-			case out <- *proj:
+			case out <- *projects[root]:
 			}
 		}
 	}()
