@@ -13,6 +13,7 @@ mod resource_accessor;
 mod shared_memory;
 mod tests;
 mod thread;
+mod trace;
 mod user_memory_cursor;
 
 pub use fs::BinderFs;

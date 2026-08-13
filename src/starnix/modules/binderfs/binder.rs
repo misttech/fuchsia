@@ -29,6 +29,7 @@ use starnix_core::mm::{
     DesiredAddress, MappingName, MappingOptions, MemoryAccessor, MemoryAccessorExt, ProtectionFlags,
 };
 
+use crate::trace::{CATEGORY_STARNIX_BINDER, NAME_BINDER_IOCTL, NAME_HANDLE_THREAD_WRITE};
 use starnix_core::security;
 use starnix_core::task::{
     CurrentTask, EventHandler, Kernel, SimpleWaiter, Task, ThreadGroupKey, WaitCanceler, Waiter,
@@ -39,7 +40,7 @@ use starnix_core::vfs::{
     fileops_impl_nonseekable, fileops_impl_noop_sync,
 };
 use starnix_lifecycle::AtomicCounter;
-use starnix_logging::{CATEGORY_STARNIX, log_error, log_trace, log_warn, track_stub, with_zx_name};
+use starnix_logging::{log_error, log_trace, log_warn, track_stub, with_zx_name};
 use starnix_sync::{
     BinderContextManagerLevel, BinderProcsLevel, InterruptibleEvent, LockDepMutex, LockDepRwLock,
     ordered_lock_vec,
@@ -85,11 +86,6 @@ use std::vec::Vec;
 use fidl_fuchsia_starnix_binder as fbinder;
 use zerocopy::IntoBytes;
 use zx;
-
-/// The trace category used for binder command tracing.
-
-/// The name used to track the duration of a local binder ioctl.
-const NAME_BINDER_IOCTL: &'static str = "binder_ioctl";
 
 #[derive(Debug, Default, Clone)]
 pub struct BinderDevice(Arc<BinderDriver>);
@@ -558,7 +554,7 @@ impl BinderDriver {
         arg: SyscallArg,
         mut files: Vec<fbinder::FileHandle>,
     ) -> Result<SyscallResult, Errno> {
-        fuchsia_trace::duration!(CATEGORY_STARNIX, NAME_BINDER_IOCTL, "request" => request);
+        fuchsia_trace::duration!(CATEGORY_STARNIX_BINDER, NAME_BINDER_IOCTL, "request" => request);
         let user_arg = UserAddress::from(arg);
         let remote_memory_accessor =
             match (binder_proc.remote_resource_accessor.as_ref(), remote_ioctl) {
@@ -863,7 +859,11 @@ impl BinderDriver {
         cursor: &mut UserMemoryCursor,
     ) -> Result<(), Errno> {
         let command = cursor.read_object::<binder_driver_command_protocol>()?;
-        fuchsia_trace::duration!(CATEGORY_STARNIX, "handle_thread_write", "command" => command);
+        fuchsia_trace::duration!(
+            CATEGORY_STARNIX_BINDER,
+            NAME_HANDLE_THREAD_WRITE,
+            "command" => command
+        );
         let result = match command {
             binder_driver_command_protocol_BC_ENTER_LOOPER => {
                 let (mut proc_state, mut thread_state) = context.lock();

@@ -9,6 +9,7 @@ use starnix_core::mm::{MemoryAccessor, MemoryAccessorExt};
 
 use starnix_core::task::{EventHandler, Kernel, SimpleWaiter, WaitCanceler, WaitQueue, Waiter};
 
+use crate::trace::{CATEGORY_STARNIX_BINDER, NAME_BINDER_FLOW};
 use starnix_logging::{log_trace, log_warn};
 use starnix_sync::{
     BinderThreadRequeueEventLock, BinderThreadStateLock, InterruptibleEvent, LockDepGuard,
@@ -42,9 +43,6 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU8, Ordering};
 
 use zerocopy::{Immutable, IntoBytes};
-
-/// The trace category used for binder command tracing.
-const TRACE_CATEGORY: &'static str = "starnix:binder";
 
 #[derive(Default, Debug)]
 pub struct CommandQueueWithWaitQueue {
@@ -715,7 +713,9 @@ struct CommandTraceGuardInner {
 impl CommandTraceGuard {
     fn begin(command: &Command) -> Self {
         static CACHE: fuchsia_trace::trace_site_t = fuchsia_trace::trace_site_t::new(0);
-        if fuchsia_trace::TraceCategoryContext::acquire_cached(TRACE_CATEGORY, &CACHE).is_none() {
+        if fuchsia_trace::TraceCategoryContext::acquire_cached(CATEGORY_STARNIX_BINDER, &CACHE)
+            .is_none()
+        {
             return Self(None);
         }
         let kind = match command {
@@ -741,7 +741,13 @@ impl CommandTraceGuard {
         };
         let id = fuchsia_trace::Id::new();
         let f = format!("{:?}", command);
-        fuchsia_trace::instaflow_begin!(TRACE_CATEGORY, "BinderFlow", kind, id, "cmd" => &*f);
+        fuchsia_trace::instaflow_begin!(
+            CATEGORY_STARNIX_BINDER,
+            NAME_BINDER_FLOW,
+            kind,
+            id,
+            "cmd" => &*f
+        );
         Self(Some(CommandTraceGuardInner { id, kind }))
     }
 }
@@ -749,7 +755,7 @@ impl CommandTraceGuard {
 impl Drop for CommandTraceGuard {
     fn drop(&mut self) {
         if let Some(CommandTraceGuardInner { id, kind }) = self.0.take() {
-            fuchsia_trace::instaflow_end!(TRACE_CATEGORY, "BinderFlow", kind, id);
+            fuchsia_trace::instaflow_end!(CATEGORY_STARNIX_BINDER, NAME_BINDER_FLOW, kind, id);
         }
     }
 }

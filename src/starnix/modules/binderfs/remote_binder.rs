@@ -3,6 +3,10 @@
 // found in the LICENSE file.
 
 use crate::binder::{BinderDevice, BinderDriver, RemoteBinderConnection};
+use crate::trace::{
+    CATEGORY_STARNIX_BINDER, NAME_REMOTE_BINDER_IOCTL, NAME_REMOTE_BINDER_IOCTL_FIDL_REPLY,
+    NAME_REMOTE_BINDER_IOCTL_SEND_WORK, NAME_REMOTE_BINDER_IOCTL_WORKER_PROCESS,
+};
 use anyhow::{Context, Error};
 use derivative::Derivative;
 use fidl::AsHandleRef;
@@ -26,7 +30,7 @@ use starnix_core::vfs::{
     fileops_impl_noop_sync,
 };
 use starnix_lifecycle::DropWaiter;
-use starnix_logging::{CATEGORY_STARNIX, log_error, log_warn};
+use starnix_logging::{log_error, log_warn};
 use starnix_sync::{
     LockDepGuard, LockDepMutex, RemoteBinderHandleLevel, RemoteBinderResponderLock,
 };
@@ -43,12 +47,6 @@ use std::sync::{Arc, Weak};
 use zx::{self, Peered};
 
 const EXECUTOR_THREAD_ROLE: &str = "fuchsia.starnix.remote_binder.executor";
-
-// The name used to track the duration of a remote binder ioctl.
-const NAME_REMOTE_BINDER_IOCTL: &'static str = "remote_binder_ioctl";
-const NAME_REMOTE_BINDER_IOCTL_SEND_WORK: &'static str = "remote_binder_ioctl_send_work";
-const NAME_REMOTE_BINDER_IOCTL_FIDL_REPLY: &'static str = "remote_binder_ioctl_fidl_reply";
-const NAME_REMOTE_BINDER_IOCTL_WORKER_PROCESS: &'static str = "remote_binder_ioctl_worker_process";
 
 const WAKE_LOCK_ACQUIRED_SIGNAL: zx::Signals = zx::Signals::USER_0;
 
@@ -587,17 +585,29 @@ impl<F: RemoteControllerConnector> RemoteBinderHandle<F> {
                 files,
                 responder,
             } => {
-                fuchsia_trace::duration!(CATEGORY_STARNIX, NAME_REMOTE_BINDER_IOCTL_SEND_WORK, "request" => request);
-                fuchsia_trace::flow_begin!(CATEGORY_STARNIX, NAME_REMOTE_BINDER_IOCTL, tid.into(), "request" => request);
+                fuchsia_trace::duration!(
+                    CATEGORY_STARNIX_BINDER,
+                    NAME_REMOTE_BINDER_IOCTL_SEND_WORK,
+                    "request" => request
+                );
+                fuchsia_trace::flow_begin!(
+                    CATEGORY_STARNIX_BINDER,
+                    NAME_REMOTE_BINDER_IOCTL,
+                    tid.into(),
+                    "request" => request
+                );
 
                 let (responder, waiter) = Self::make_synchronous_responder::<
                     Vec<fbinder::IoctlReadWrite>,
                     _,
                     _,
                 >(responder, move |responder, e| {
-                    fuchsia_trace::duration!(CATEGORY_STARNIX, NAME_REMOTE_BINDER_IOCTL_FIDL_REPLY);
+                    fuchsia_trace::duration!(
+                        CATEGORY_STARNIX_BINDER,
+                        NAME_REMOTE_BINDER_IOCTL_FIDL_REPLY
+                    );
                     fuchsia_trace::flow_end!(
-                        CATEGORY_STARNIX,
+                        CATEGORY_STARNIX_BINDER,
                         NAME_REMOTE_BINDER_IOCTL,
                         tid.into()
                     );
@@ -1059,11 +1069,11 @@ impl<F: RemoteControllerConnector> RemoteBinderHandle<F> {
                     responder,
                 } => {
                     fuchsia_trace::duration!(
-                        CATEGORY_STARNIX,
+                        CATEGORY_STARNIX_BINDER,
                         NAME_REMOTE_BINDER_IOCTL_WORKER_PROCESS
                     );
                     fuchsia_trace::flow_step!(
-                        CATEGORY_STARNIX,
+                        CATEGORY_STARNIX_BINDER,
                         NAME_REMOTE_BINDER_IOCTL,
                         koid.into()
                     );

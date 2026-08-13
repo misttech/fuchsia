@@ -28,6 +28,7 @@ rustc_library("binderfs") {
     "shared_memory.rs",
     "tests.rs",
     "thread.rs",
+    "trace.rs",
     "user_memory_cursor.rs",
   ]
 
