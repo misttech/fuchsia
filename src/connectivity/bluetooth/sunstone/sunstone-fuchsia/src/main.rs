@@ -6,18 +6,17 @@
 //! connecting to the bt-gap component and vendor drivers and initializing and running the
 //! Bluetooth Host.
 
+mod host_server;
 mod vendor;
 
 use core::pin::pin;
-use fidl_fuchsia_bluetooth as bt;
 use fidl_fuchsia_bluetooth_host as fidl_host;
-use fidl_fuchsia_bluetooth_sys as sys;
 use fuchsia_async as _;
 use futures_util::future::FutureExt as _;
 use futures_util::select_biased;
-use futures_util::stream::StreamExt as _;
 use tracing::{info, warn};
 
+use crate::host_server::HostServer;
 use crate::vendor::Vendor;
 
 #[fuchsia::main]
@@ -50,21 +49,7 @@ async fn main() {
         return;
     }
 
-    let mut stream = host_server.into_stream();
-
-    // TODO(https://fxbug.dev/538185448): Read Bluetooth address from HCI device.
-    let host_info = sys::HostInfo {
-        id: Some(bt::HostId { value: 1 }),
-        technology: Some(sys::TechnologyType::DualMode),
-        addresses: Some(vec![bt::Address {
-            type_: bt::AddressType::Public,
-            bytes: [0, 0, 0, 0, 0, 0],
-        }]),
-        active: Some(true),
-        discoverable: Some(false),
-        discovering: Some(false),
-        ..Default::default()
-    };
+    let mut host_server = HostServer::new(host_server.into_stream());
 
     let dev_closed = async {
         vendor.on_closed().await;
@@ -72,43 +57,17 @@ async fn main() {
     .fuse();
     let mut dev_closed = pin!(dev_closed);
 
-    let mut watch_state_sent = false;
-    #[allow(clippy::collection_is_never_read)]
-    let mut _watch_state_responder: Option<fidl_host::HostWatchStateResponder> = None;
+    let host_server_fut = host_server.run().fuse();
+    let mut host_server_fut = pin!(host_server_fut);
 
-    loop {
-        let req = select_biased! {
-            _ = &mut dev_closed => {
-                info!("HCI device node closed; shutting down bt-host");
-                break;
-            }
-            req = stream.next().fuse() => req,
-        };
-
-        match req {
-            Some(Ok(fidl_host::HostRequest::WatchState { responder })) => {
-                if !watch_state_sent {
-                    let _ = responder.send(&host_info);
-                    watch_state_sent = true;
-                } else {
-                    // Hanging get: defer response until state changes.
-                    _watch_state_responder = Some(responder);
-                }
-            }
-            Some(Ok(fidl_host::HostRequest::Shutdown { .. })) => {
-                info!("Received Shutdown request; shutting down bt-host");
-                break;
-            }
-            Some(Ok(_)) => {
-                // Ignore unhandled requests for now
-            }
-            Some(Err(e)) => {
-                warn!("Host request stream error: {e:?}");
-                break;
-            }
-            None => {
-                info!("Host channel closed by client");
-                break;
+    select_biased! {
+        _ = &mut dev_closed => {
+            info!("HCI device node closed; shutting down bt-host");
+        }
+        res = &mut host_server_fut => {
+            match res {
+                Ok(()) => info!("Host server finished"),
+                Err(e) => warn!("Host request stream error: {e:?}"),
             }
         }
     }
