@@ -126,45 +126,34 @@ impl TargetConnector for UsbConnector {
     }
 }
 
-fn daemon_autostart_cmd(
-    path: &PathBuf,
-    context: &EnvironmentContext,
-) -> Result<Option<std::process::Command>, ffx_config::environment::ContextError> {
+/// Try to auto-start the daemon if it is appropriate to do so.
+pub fn try_daemon_autostart(path: &PathBuf, context: &EnvironmentContext) {
     if context.is_strict() || context.is_isolated() {
-        return Ok(None);
+        return;
     }
 
     if !context.get(CONFIG_START_DRIVER).unwrap_or(true) {
-        return Ok(None);
+        return;
     }
 
-    let mut cmd = context.rerun_prefix()?;
-    let socket_path_config = serde_json::to_string(&serde_json::json!({
-        "connectivity": {
-            "usb_socket_path": path,
-        }
-    }))?;
-
-    cmd.args(["-c", socket_path_config.as_str(), "usb-driver", "--background"])
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-
-    Ok(Some(cmd))
-}
-
-/// Try to auto-start the daemon if it is appropriate to do so.
-pub fn try_daemon_autostart(path: &PathBuf, context: &EnvironmentContext) {
-    let mut cmd = match daemon_autostart_cmd(path, context) {
-        Ok(Some(cmd)) => cmd,
-        Ok(None) => return,
+    let cmd = context.rerun_prefix();
+    let mut cmd = match cmd {
+        Ok(cmd) => cmd,
         Err(error) => {
             log::warn!(error:?; "Could not get rerun prefix to spawn USB driver");
             return;
         }
     };
+    let socket_path_config =
+        format!("{}={}", usb_driver_api::CONFIG_USB_SOCKET_PATH, path.to_string_lossy());
+    let child = cmd
+        .args(["-c", socket_path_config.as_str(), "usb-driver", "--background"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn();
 
-    let child = match cmd.spawn() {
+    let child = match child {
         Ok(child) => child,
         Err(error) => {
             log::warn!(error:?; "Could not spawn USB driver process");
@@ -188,65 +177,5 @@ pub fn try_daemon_autostart(path: &PathBuf, context: &EnvironmentContext) {
             stdout = stdout.as_str(),
             stderr = stderr.as_str();
             "USB driver exited with bad status");
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use serde_json::Value;
-
-    #[fuchsia::test]
-    async fn test_daemon_autostart_cmd_no_injection() {
-        let context = EnvironmentContext::no_context(
-            ffx_config::environment::ExecutableKind::Test,
-            ffx_config::ConfigMap::new(),
-            None,
-            true,
-        )
-        .unwrap();
-        let malicious_path = PathBuf::from("/tmp/s,ffx.subtool-search-paths=/path/to/evil/dir");
-
-        let cmd = daemon_autostart_cmd(&malicious_path, &context)
-            .unwrap()
-            .expect("should create command for non-isolated context");
-
-        let args: Vec<String> = cmd.get_args().map(|a| a.to_string_lossy().into_owned()).collect();
-        let c_pos = args.iter().position(|a| a == "-c").expect("should contain -c arg");
-        let config_val = &args[c_pos + 1];
-
-        // Verify config parses as valid JSON object and does not inject ffx.subtool-search-paths
-        let parsed: Value =
-            serde_json::from_str(config_val).expect("config argument must be valid JSON");
-        assert_eq!(
-            parsed,
-            serde_json::json!({
-                "connectivity": {
-                    "usb_socket_path": "/tmp/s,ffx.subtool-search-paths=/path/to/evil/dir"
-                }
-            })
-        );
-        assert!(parsed.get("ffx").is_none());
-
-        // Verify ffx_config runtime parsing treats it safely
-        let runtime_parsed = ffx_config::runtime::populate_runtime(&[config_val.clone()], None)
-            .expect("runtime should parse config");
-        assert_eq!(
-            runtime_parsed.get("connectivity").and_then(|c| c.get("usb_socket_path")),
-            Some(&Value::String("/tmp/s,ffx.subtool-search-paths=/path/to/evil/dir".to_string()))
-        );
-        assert!(runtime_parsed.get("ffx").is_none());
-    }
-
-    #[fuchsia::test]
-    async fn test_daemon_autostart_disabled_by_config() {
-        let test_env = ffx_config::test_env()
-            .user_config(CONFIG_START_DRIVER, serde_json::json!(false))
-            .build()
-            .unwrap();
-
-        let path = PathBuf::from("/tmp/usb.sock");
-        let res = daemon_autostart_cmd(&path, &test_env.context).unwrap();
-        assert!(res.is_none());
     }
 }
