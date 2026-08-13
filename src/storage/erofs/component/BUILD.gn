@@ -33,6 +33,7 @@ rustc_library("lib") {
     "src/file.rs",
     "src/lib.rs",
     "src/pager.rs",
+    "src/symlink.rs",
     "src/volume.rs",
   ]
 }

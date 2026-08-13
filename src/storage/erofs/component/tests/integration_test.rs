@@ -75,6 +75,7 @@ async fn test_erofs_directory_traversal() {
         DirEntry { name: "large_dir".to_string(), kind: DirentKind::Directory },
         DirEntry { name: "photosynthesis".to_string(), kind: DirentKind::File },
         DirEntry { name: "quantum".to_string(), kind: DirentKind::File },
+        DirEntry { name: "symlink_to_file1".to_string(), kind: DirentKind::Symlink },
     ];
     assert_eq!(entries, expected_entries);
 
@@ -321,7 +322,7 @@ async fn test_erofs_directory_watcher() {
     }
 
     let expected_files: std::collections::HashSet<_> =
-        [".", "file1", "large_dir", "photosynthesis", "quantum"]
+        [".", "file1", "large_dir", "photosynthesis", "quantum", "symlink_to_file1"]
             .iter()
             .map(std::path::PathBuf::from)
             .collect();
@@ -534,4 +535,39 @@ async fn test_erofs_query_filesystem() {
 
     let name_bytes: Vec<u8> = info.name.iter().map(|&b| b as u8).take_while(|&b| b != 0).collect();
     assert_eq!(name_bytes, b"erofs");
+}
+
+#[fuchsia::test]
+async fn test_erofs_symlink() {
+    let (root_client, _realm) = setup_erofs().await;
+
+    let (symlink_proxy, server_end) = fidl::endpoints::create_proxy::<fio::SymlinkMarker>();
+    root_client
+        .open(
+            "symlink_to_file1",
+            fio::Flags::PROTOCOL_SYMLINK | fio::PERM_READABLE,
+            &fio::Options::default(),
+            server_end.into_channel().into(),
+        )
+        .expect("open symlink failed");
+
+    let target_bytes = symlink_proxy.describe().await.expect("describe failed").target.unwrap();
+
+    assert_eq!(target_bytes, b"file1");
+
+    let (mut_attrs, immut_attrs) = symlink_proxy
+        .get_attributes(fio::NodeAttributesQuery::all())
+        .await
+        .expect("Failed to get attributes")
+        .map_err(zx::Status::from_raw)
+        .expect("get_attributes returned error");
+
+    assert_eq!(immut_attrs.content_size, Some(5));
+    assert_eq!(immut_attrs.abilities, Some(fio::Operations::GET_ATTRIBUTES));
+    assert!(immut_attrs.id.is_some());
+    assert!(immut_attrs.id.unwrap() > 0);
+    assert_eq!(
+        mut_attrs.selinux_context,
+        Some(fio::SelinuxContext::Data(b"u:object_r:symlink_t:s0".to_vec()))
+    );
 }

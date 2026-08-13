@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use crate::file::ErofsFile;
+use crate::symlink::ErofsSymlink;
 use crate::volume::ErofsVolume;
 use erofs::{DirectoryNode, FileType, Node};
 use fidl_fuchsia_io as fio;
@@ -178,6 +179,13 @@ impl Directory for ErofsDirectory {
                 }
                 let child_file = ErofsFile::new(self.volume.clone(), file_node)?;
                 vfs::file::serve(child_file, scope, &flags, object_request)
+            }
+            Node::Symlink(symlink_node) => {
+                if !path.is_empty() {
+                    return Err(zx::Status::NOT_DIR);
+                }
+                let child_symlink = ErofsSymlink::new(self.volume.clone(), symlink_node)?;
+                vfs::symlink::serve(child_symlink, scope, flags, object_request)
             }
         }
     }

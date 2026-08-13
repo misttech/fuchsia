@@ -10,9 +10,11 @@
 pub mod directory;
 pub mod file;
 pub mod pager;
+pub mod symlink;
 pub mod volume;
 
 pub use directory::ErofsDirectory;
 pub use file::ErofsFile;
 pub use pager::ErofsPager;
+pub use symlink::ErofsSymlink;
 pub use volume::ErofsVolume;

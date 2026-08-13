@@ -17,8 +17,9 @@ cleanup() {
   setfattr -x user.shared data/simple/file1 2>/dev/null || true
   setfattr -x user.shared data/simple/photosynthesis 2>/dev/null || true
 
-  # Clean up temporary large directory
+  # Clean up temporary large directory and symlink
   rm -rf data/simple/large_dir
+  rm -f data/simple/symlink_to_file1
 }
 trap cleanup EXIT
 
@@ -30,6 +31,8 @@ mkdir -p data/simple/large_dir
 for i in $(seq 1 50); do
   echo "file $i" > "data/simple/large_dir/file_number_$i"
 done
+
+ln -s file1 data/simple/symlink_to_file1
 
 # Set inline xattrs on file1
 setfattr -n user.flavor -v "vanilla" data/simple/file1

@@ -126,7 +126,11 @@ pub struct NodeInner {
 
 impl NodeInner {
     fn is_dir(&self) -> bool {
-        self.mode & 0x4000 != 0
+        (self.mode & 0xf000) == 0x4000
+    }
+
+    fn is_symlink(&self) -> bool {
+        (self.mode & 0xf000) == 0xa000
     }
 
     fn inode_offset(&self) -> u64 {
@@ -255,17 +259,31 @@ impl std::ops::Deref for FileNode {
     }
 }
 
+/// A symbolic link node in the EROFS image.
+#[derive(Debug, Clone)]
+pub struct SymlinkNode(NodeInner);
+
+impl std::ops::Deref for SymlinkNode {
+    type Target = NodeInner;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 /// A node in the EROFS image.
 #[derive(Debug, Clone)]
 pub enum Node {
     Directory(DirectoryNode),
     File(FileNode),
+    Symlink(SymlinkNode),
 }
 
 impl Node {
     fn new(inner: NodeInner) -> Self {
         if inner.is_dir() {
             Node::Directory(DirectoryNode(inner))
+        } else if inner.is_symlink() {
+            Node::Symlink(SymlinkNode(inner))
         } else {
             Node::File(FileNode(inner))
         }
@@ -360,6 +378,7 @@ impl std::ops::Deref for Node {
         match self {
             Node::Directory(d) => d,
             Node::File(f) => f,
+            Node::Symlink(s) => s,
         }
     }
 }
@@ -493,6 +512,14 @@ impl ErofsFilesystem {
         buf: &mut [u8],
     ) -> Result<usize, ErofsError> {
         self.read_node_range(&node.0, offset, buf)
+    }
+
+    /// Reads the target path of the given symlink node.
+    pub fn read_symlink(&self, node: &SymlinkNode) -> Result<Vec<u8>, ErofsError> {
+        let mut target = vec![0u8; node.size() as usize];
+        let read_bytes = self.read_node_range(&node.0, 0, &mut target)?;
+        target.truncate(read_bytes);
+        Ok(target)
     }
 
     /// Read bytes from the node's data at an offset. The length of the read is determined by the
@@ -988,7 +1015,10 @@ mod tests {
         let filled = fs.read_directory(&root_node, 0, &mut buf).expect("failed to read directory");
 
         let names: Vec<String> = buf[..filled].iter().map(|e| e.name.clone()).collect();
-        assert_eq!(names, vec![".", "..", "file1", "large_dir", "photosynthesis", "quantum"]);
+        assert_eq!(
+            names,
+            vec![".", "..", "file1", "large_dir", "photosynthesis", "quantum", "symlink_to_file1",]
+        );
     }
 
     #[test_case("/pkg/data/simple.erofs" ; "4096 block size")]
@@ -1055,13 +1085,39 @@ mod tests {
     #[test_case("/pkg/data/simple.erofs" ; "4096 block size")]
     #[test_case("/pkg/data/simple_512.erofs" ; "512 block size")]
     #[fuchsia::test]
+    fn test_read_symlink(path: &str) {
+        let runfiles = fs::read(path).expect("failed to read test file");
+        let reader = Arc::new(VecReader::new(runfiles));
+        let fs = ErofsFilesystem::new(reader).expect("failed to parse superblock");
+        let root_node = fs.root_node();
+
+        let node = fs
+            .lookup(&root_node, "symlink_to_file1")
+            .expect("failed to lookup")
+            .expect("symlink not found");
+        let symlink_node = match node {
+            Node::Symlink(s) => s,
+            _ => panic!("Expected symlink node"),
+        };
+
+        let target = fs.read_symlink(&symlink_node).expect("failed to read symlink");
+        assert_eq!(target, b"file1");
+
+        let selinux_val = fs.get_xattr(&symlink_node, b"security.selinux").unwrap().unwrap();
+        assert_eq!(selinux_val, b"u:object_r:symlink_t:s0");
+    }
+
+    #[test_case("/pkg/data/simple.erofs" ; "4096 block size")]
+    #[test_case("/pkg/data/simple_512.erofs" ; "512 block size")]
+    #[fuchsia::test]
     fn test_read_directory_pagination(path: &str) {
         let runfiles = fs::read(path).expect("failed to read test file");
         let reader = Arc::new(VecReader::new(runfiles));
         let fs = ErofsFilesystem::new(reader).expect("failed to parse superblock");
         let root_node = fs.root_node();
 
-        let expected_names = vec![".", "..", "file1", "large_dir", "photosynthesis", "quantum"];
+        let expected_names =
+            vec![".", "..", "file1", "large_dir", "photosynthesis", "quantum", "symlink_to_file1"];
 
         // Test reading with buffer size 2 (pagination)
         let mut buf = vec![DirectoryEntry::default(); 2];
@@ -1078,13 +1134,19 @@ mod tests {
         assert_eq!(buf[0].name, expected_names[2]);
         assert_eq!(buf[1].name, expected_names[3]);
 
-        // Page 4 (offset 5)
-        let filled = fs.read_directory(&root_node, 5, &mut buf).expect("failed to read dir");
-        assert_eq!(filled, 1);
-        assert_eq!(buf[0].name, expected_names[5]);
+        // Page 3 (offset 4)
+        let filled = fs.read_directory(&root_node, 4, &mut buf).expect("failed to read dir");
+        assert_eq!(filled, 2);
+        assert_eq!(buf[0].name, expected_names[4]);
+        assert_eq!(buf[1].name, expected_names[5]);
 
-        // Page 5 (offset 6 - EOF)
+        // Page 4 (offset 6)
         let filled = fs.read_directory(&root_node, 6, &mut buf).expect("failed to read dir");
+        assert_eq!(filled, 1);
+        assert_eq!(buf[0].name, expected_names[6]);
+
+        // Page 5 (offset 7 - EOF)
+        let filled = fs.read_directory(&root_node, 7, &mut buf).expect("failed to read dir");
         assert_eq!(filled, 0);
 
         // Test reading with buffer size 1 (extreme pagination)
