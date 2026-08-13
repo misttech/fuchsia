@@ -16,7 +16,7 @@ use fuchsia_async::{DurationExt, TimeoutExt};
 use fuchsia_component::client::connect_to_protocol;
 use futures::TryStreamExt;
 use std::cell::OnceCell;
-use std::sync::{Mutex, MutexGuard};
+use std::sync::Mutex;
 
 const EXECUTE_TIMEOUT_SECONDS: i64 = 180;
 pub struct DebianGuest {
@@ -41,13 +41,13 @@ impl DebianGuest {
         DebianGuest { instance_name, guest_proxy: OnceCell::new(), deps_pushed: OnceCell::new() }
     }
 
-    /// Gets a mutex handle on the proxy, while also lazily bootstrapping the guest if necessary.
-    async fn interactive_guest(&self) -> MutexGuard<'_, InteractiveGuestProxy> {
+    /// Gets a handle to the proxy, while also lazily bootstrapping the guest if necessary.
+    async fn interactive_guest(&self) -> InteractiveGuestProxy {
         // Note that the OnceCell::get_or_init function doesn't play nicely with async init
         // functions, and I'm too lazy for an OSRB review for the async_once_cell. So we'll do
         // some manually juggling here to initialize the "ole fashioned way.""
         match self.guest_proxy.get() {
-            Some(proxy_mutex) => proxy_mutex.lock().unwrap(),
+            Some(proxy_mutex) => proxy_mutex.lock().unwrap().clone(),
             None => {
                 log::info!(tag = self.instance_name.as_str();
                     "Interaction requested, lazily starting the guest instance."
@@ -69,11 +69,14 @@ impl DebianGuest {
                     .await
                     .expect("Debian guest failed to start!");
 
+                let return_proxy = guest_proxy.clone();
+
                 let proxy_mutex = Mutex::new(guest_proxy);
                 self.guest_proxy
                     .set(proxy_mutex)
                     .expect("Unexpected race condition while bootstrapping the guest proxy.");
-                self.guest_proxy.get().unwrap().lock().unwrap()
+
+                return_proxy
             }
         }
     }
@@ -90,9 +93,8 @@ impl DebianGuest {
     ) -> Result<(), Error> {
         log::info!(tag = self.instance_name.as_str(); "Pushing data to guest (destination: {})", destination);
 
-        let response = self
-            .interactive_guest()
-            .await
+        let guest_proxy = self.interactive_guest().await;
+        let response = guest_proxy
             .put_file(source, destination.as_str())
             .await
             .context("FIDL call to InteractiveGuest::PutFile has failed.")?;
@@ -120,9 +122,9 @@ impl DebianGuest {
         local_file_proxy: ClientEnd<fio::FileMarker>,
     ) -> Result<(), Error> {
         log::info!(tag = self.instance_name.as_str(); "Fetching file from guest (remote_path: {})", remote_path);
-        let response = self
-            .interactive_guest()
-            .await
+        let guest_proxy = self.interactive_guest().await.clone();
+
+        let response = guest_proxy
             .get_file(remote_path, local_file_proxy)
             .await
             .context("FIDL call to GetFile failed")?;
@@ -206,7 +208,8 @@ impl DebianGuest {
         match self.guest_proxy.get() {
             Some(proxy) => {
                 log::info!(tag = self.instance_name.as_str(); "Shutting down guest instance.");
-                proxy.lock().unwrap().shutdown().await.context("FIDL call to Shutdown failed")
+                let proxy_clone = proxy.lock().unwrap().clone();
+                proxy_clone.shutdown().await.context("FIDL call to Shutdown failed")
             }
             None => {
                 log::info!(tag = self.instance_name.as_str(); "Guest was never bootstrapped, shutdown is unnecessary.");
