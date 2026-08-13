@@ -28,7 +28,7 @@ func NewPruner(validFiles map[string]bool) *Pruner {
 // Run consumes a stream of Projects, checks their files against the ValidFiles map,
 // and emits FilteredProjects if they contain at least one valid file.
 func (p *Pruner) Run(ctx context.Context, in <-chan pipeline.Project) (<-chan pipeline.FilteredProject, error) {
-	out := make(chan pipeline.FilteredProject)
+	out := make(chan pipeline.FilteredProject, 100)
 
 	go func() {
 		defer close(out)
