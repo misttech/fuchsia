@@ -10,11 +10,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/google/subcommands"
 
-	v2config "go.fuchsia.dev/fuchsia/tools/check-licenses/v2/config"
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/v2/config"
 )
 
 type PolicyCommand struct {
@@ -91,11 +92,12 @@ func (p *PolicyAddCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...in
 	}
 
 	checkName := f.Arg(0)
-	if !v2config.ValidPolicyChecks[checkName] {
+	if !config.ValidPolicyChecks[checkName] {
 		var validChecks []string
-		for k := range v2config.ValidPolicyChecks {
+		for k := range config.ValidPolicyChecks {
 			validChecks = append(validChecks, k)
 		}
+		sort.Strings(validChecks)
 		fmt.Fprintf(os.Stderr, "Error: invalid check name %q. Must be one of: %s\n", checkName, strings.Join(validChecks, ", "))
 		return subcommands.ExitUsageError
 	}
@@ -111,63 +113,39 @@ func (p *PolicyAddCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...in
 
 // AddPolicyException adds a policy exception for a given project or file path.
 func AddPolicyException(fuchsiaDir, checkName, targetPath, bug, description string) (string, error) {
-	var err error
-	fuchsiaDir, targetPath, err = ResolveAndValidatePath(fuchsiaDir, targetPath)
+	ic, err := LoadInputContext(fuchsiaDir, targetPath)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to load input context: %w", err)
+	}
+
+	resolvedTarget := targetPath
+	if checkName == config.PolicyCheckAllProjectsMustHaveALicense {
+		if projectRoot, err := ic.ResolveProjectRoot(targetPath); err == nil {
+			resolvedTarget = projectRoot
+		}
+	}
+
+	relTarget, err := filepath.Rel(ic.FuchsiaDir, resolvedTarget)
+	if err != nil {
+		relTarget = resolvedTarget
 	}
 
 	// Check if this target already has an exception
-	builder := v2config.NewBuilder(fuchsiaDir)
-	if err := builder.Assemble(); err != nil {
-		return "", fmt.Errorf("failed to assemble config: %w", err)
-	}
-	if list, ok := builder.Config.Validate.PolicyExceptions[checkName]; ok {
-		if _, exists := list[targetPath]; exists {
-			fmt.Printf("Path '%s' already has a policy exception for '%s'. Nothing to do.\n", targetPath, checkName)
+	if list, ok := ic.Config.Validate.PolicyExceptions[checkName]; ok {
+		if _, exists := list[relTarget]; exists {
+			fmt.Printf("Path '%s' already has a policy exception for '%s'. Nothing to do.\n", relTarget, checkName)
 			return "", nil
 		}
 	}
 
-	// Determine if this is a private project
-	isPrivate := false
-	if builder.Config != nil {
-		isPrivate = builder.Config.IsPrivateProject(targetPath)
-	} else if strings.HasPrefix(targetPath, "vendor/") {
-		isPrivate = true
-	}
-
-	configDir := filepath.Join(fuchsiaDir, "tools", "check-licenses", "assets", "configs", "policy_exceptions", checkName)
-	if isPrivate {
-		configDir = filepath.Join(fuchsiaDir, "vendor", "google", "tools", "check-licenses", "assets", "configs", "policy_exceptions", checkName)
-	}
-
-	if err := os.MkdirAll(configDir, 0755); err != nil {
-		return "", fmt.Errorf("failed to create config directory %s: %w", configDir, err)
-	}
-
-	// Determine the config file name based on project name or top-level component
-	baseName := findProjectBasename(fuchsiaDir, targetPath, builder.Config)
-	destFile := filepath.Join(configDir, baseName+".json")
-
-	// Read, mutate and write config file
-	if err := UpdateConfigFile(destFile, func(cfg *v2config.ConfigFile) {
-		if cfg.PolicyExceptions == nil {
-			cfg.PolicyExceptions = make(map[string][]v2config.AllowlistEntry)
-		}
-		entry := v2config.AllowlistEntry{
-			Bug:         bug,
-			Description: description,
-			Paths:       []string{targetPath},
-		}
-		cfg.PolicyExceptions[checkName] = append(cfg.PolicyExceptions[checkName], entry)
-	}); err != nil {
+	destFile, err := ic.Config.AddPolicyException(checkName, relTarget, bug, description)
+	if err != nil {
 		return "", err
 	}
 
 	fmt.Printf("✅ Added Policy Exception:\n")
 	fmt.Printf("  - Check:  %s\n", checkName)
-	fmt.Printf("  - Target: %s\n", targetPath)
+	fmt.Printf("  - Target: %s\n", relTarget)
 	fmt.Printf("  - Bug:    %s\n", bug)
 	fmt.Printf("  - File:   %s\n\n", destFile)
 

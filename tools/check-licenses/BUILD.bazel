@@ -76,6 +76,7 @@ go_library(
         "v2/stages/report/fixer.go",
         "v2/stages/report/metrics_printer.go",
         "v2/stages/report/notice.go",
+        "v2/stages/report/policy_renderer.go",
         "v2/stages/report/readme_verifier.go",
         "v2/stages/report/readme_writer.go",
         "v2/stages/report/spdx.go",
@@ -139,6 +140,7 @@ go_library(
     srcs = [
         "v2/config/allowlist.go",
         "v2/config/builder.go",
+        "v2/config/policy.go",
         "v2/config/types.go",
     ],
     importpath = "go.fuchsia.dev/fuchsia/tools/check-licenses/v2/config",
@@ -214,6 +216,7 @@ host_go_test(
         "v2/stages/report/fixer_test.go",
         "v2/stages/report/metrics_printer_test.go",
         "v2/stages/report/notice_test.go",
+        "v2/stages/report/policy_renderer_test.go",
         "v2/stages/report/readme_verifier_test.go",
         "v2/stages/report/readme_writer_test.go",
         "v2/stages/report/report_test.go",

@@ -154,37 +154,10 @@ func (r *FixerRenderer) applyCopyrightFix(filePath string) error {
 }
 
 func (r *FixerRenderer) addPolicyException(checkName, targetPath, bug, description string) (string, error) {
-	relPath := targetPath
-	if filepath.IsAbs(relPath) {
-		rel, err := filepath.Rel(r.FuchsiaDir, relPath)
-		if err == nil {
-			relPath = rel
-		}
+	if r.Config == nil {
+		return "", fmt.Errorf("config is nil")
 	}
-
-	configDir := filepath.Join(r.Config.ConfigRootFor(relPath), "policy_exceptions", checkName)
-	if err := os.MkdirAll(configDir, 0755); err != nil {
-		return "", fmt.Errorf("failed to create config directory %s: %w", configDir, err)
-	}
-
-	baseName := r.Config.FindProjectBasename(relPath)
-	destFile := filepath.Join(configDir, baseName+".json")
-
-	if err := config.UpdateConfigFile(destFile, func(cfg *config.ConfigFile) {
-		if cfg.PolicyExceptions == nil {
-			cfg.PolicyExceptions = make(map[string][]config.AllowlistEntry)
-		}
-		entry := config.AllowlistEntry{
-			Bug:         bug,
-			Description: description,
-			Paths:       []string{relPath},
-		}
-		cfg.PolicyExceptions[checkName] = append(cfg.PolicyExceptions[checkName], entry)
-	}); err != nil {
-		return "", err
-	}
-
-	return destFile, nil
+	return r.Config.AddPolicyException(checkName, targetPath, bug, description)
 }
 
 func (r *FixerRenderer) addAllowlistEntry(licenseName, projectPath, bug, description string) (string, error) {
