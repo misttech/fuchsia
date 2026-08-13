@@ -251,4 +251,15 @@ Handle* cpp_handle_dup(const Handle* handle, zx_rights_t rights) {
 
 void cpp_handle_destroy(Handle* handle) { HandleOwner ho(handle); }
 
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE bool cpp_handle_has_rights(const Handle* handle, zx_rights_t rights) {
+  return handle->HasRights(rights);
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_handle_get_dispatcher(
+    const Handle* handle, ffi::Uninitialized<fbl::RefPtr<Dispatcher>>* out_dispatcher) {
+  out_dispatcher->Initialize(handle->dispatcher());
+}
+
 }  // extern "C"

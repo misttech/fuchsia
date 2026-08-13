@@ -15,8 +15,16 @@ use super::process_dispatcher_ffi::{
     cpp_process_dispatcher_start, cpp_process_dispatcher_suspend,
 };
 use super::thread_dispatcher::ThreadDispatcher;
+use pin_init::{PinInit, pin_data, pin_init};
 use zx_status::Status;
 use zx_types::{zx_info_process_t, zx_rights_t, zx_vaddr_t};
+
+/// Lock class tag for the handle table's reader-writer lock.
+pub struct HandleTableLockClass;
+
+impl ksync::LockClass for HandleTableLockClass {
+    const ID: *mut core::ffi::c_void = core::ptr::null_mut();
+}
 
 crate::object::dispatcher::impl_dispatcher_facade!(
     pub struct ProcessDispatcher,
@@ -153,6 +161,18 @@ impl ProcessDispatcher {
         }
     }
 
+    /// Returns a reference to the handle table's priority-inheriting reader-writer lock.
+    #[inline]
+    pub fn handle_table_lock(&self) -> &ksync::BrwLockPi<HandleTableLockClass> {
+        // SAFETY: `self` is a valid `ProcessDispatcher`, and its handle table lock is a valid `BrwLockPi`.
+        unsafe {
+            let lock_ptr = super::process_dispatcher_ffi::cpp_process_dispatcher_handle_table_lock(
+                self as *const _,
+            );
+            &*(lock_ptr as *const ksync::BrwLockPi<HandleTableLockClass>)
+        }
+    }
+
     /// Returns information about this process.
     pub fn get_info(&self) -> zx_info_process_t {
         // SAFETY: `self` is a valid `ProcessDispatcher` reference.
@@ -175,5 +195,38 @@ impl ProcessDispatcher {
             )
         };
         Status::ok(status)
+    }
+}
+
+/// RAII reader lock guard for a process's handle table.
+///
+/// Encapsulates the reader lock on the handle table, ensuring that handle lookups and rights
+/// checks can only occur while the lock is held.
+#[pin_data]
+pub struct HandleTableReadGuard<'a> {
+    process: &'a ProcessDispatcher,
+    #[pin]
+    guard: ksync::BrwLockPiReadGuard<'a, HandleTableLockClass>,
+}
+
+impl<'a> HandleTableReadGuard<'a> {
+    /// Creates a stack-pinned handle table reader lock guard for `process`.
+    pub fn new(process: &'a ProcessDispatcher) -> impl PinInit<Self, core::convert::Infallible> {
+        pin_init!(Self {
+            process,
+            guard <- process.handle_table_lock().read_lock(),
+        })
+    }
+
+    /// Retrieves a handle reference while holding the handle table lock.
+    pub fn get_handle(&self, handle_value: HandleValue) -> Option<super::handle::HandleRef<'_>> {
+        // SAFETY: `self.process` is valid and the handle table lock is held for the duration of `self`.
+        let ptr = unsafe {
+            super::process_dispatcher_ffi::cpp_process_dispatcher_handle_table_get_handle_locked(
+                self.process as *const _,
+                handle_value.raw_value(),
+            )
+        };
+        core::ptr::NonNull::new(ptr).map(|ptr| unsafe { super::handle::HandleRef::from_raw(ptr) })
     }
 }

@@ -449,6 +449,9 @@ zx_status_t cpp_handle_table_get_dispatcher(zx_handle_t handle,
 zx_status_t cpp_process_dispatcher_enforce_basic_policy(const ProcessDispatcher* process,
                                                         uint32_t policy);
 int64_t cpp_process_dispatcher_get_timer_slack_policy_amount(const ProcessDispatcher* process);
+void* cpp_process_dispatcher_handle_table_lock(const ProcessDispatcher* process);
+Handle* cpp_process_dispatcher_handle_table_get_handle_locked(ProcessDispatcher* process,
+                                                              zx_handle_t handle_value);
 zx_info_process_t cpp_process_dispatcher_get_info(const ProcessDispatcher* process);
 zx_status_t cpp_process_dispatcher_set_critical_to_job(ProcessDispatcher* process,
                                                        JobDispatcher* job, bool retcode_nonzero);

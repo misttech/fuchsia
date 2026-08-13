@@ -123,6 +123,25 @@ unsafe extern "C" {
         process: *const ProcessDispatcher,
     ) -> i64;
 
+    /// Returns a pointer to the handle table's BrwLockPi lock for the given process.
+    ///
+    /// # Safety
+    ///
+    /// `process` must point to a valid `ProcessDispatcher`.
+    pub(crate) fn cpp_process_dispatcher_handle_table_lock(
+        process: *const ProcessDispatcher,
+    ) -> *mut core::ffi::c_void;
+
+    /// Looks up a handle in the handle table while holding the lock.
+    ///
+    /// # Safety
+    ///
+    /// `process` must point to a valid `ProcessDispatcher` and the handle table lock must be held.
+    pub(crate) fn cpp_process_dispatcher_handle_table_get_handle_locked(
+        process: *const ProcessDispatcher,
+        handle_value: zx_types::zx_handle_t,
+    ) -> *mut core::ffi::c_void;
+
     /// Retrieves process info from C++.
     ///
     /// # Safety

@@ -15,6 +15,7 @@
 #include <fbl/macros.h>
 #include <fbl/ref_ptr.h>
 #include <kernel/event_limiter.h>
+#include <kernel/ffi.h>
 #include <ktl/atomic.h>
 #include <ktl/utility.h>
 
@@ -235,6 +236,9 @@ class KernelHandle {
 extern "C" {
 Handle* cpp_handle_dup(const Handle* handle, zx_rights_t rights);
 void cpp_handle_destroy(Handle* handle);
+bool cpp_handle_has_rights(const Handle* handle, zx_rights_t rights);
+void cpp_handle_get_dispatcher(const Handle* handle,
+                               ffi::Uninitialized<fbl::RefPtr<Dispatcher>>* out_dispatcher);
 }
 
 #endif  // ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_HANDLE_H_

@@ -137,10 +137,57 @@ impl Drop for HandleOwner {
     }
 }
 
+/// A borrowed reference to a Handle stored in a process's handle table.
+///
+/// Holding this reference guarantees that the handle table lock is held for lifetime `'a`.
+#[derive(Copy, Clone)]
+pub struct HandleRef<'a> {
+    ptr: NonNull<core::ffi::c_void>,
+    _marker: core::marker::PhantomData<&'a ()>,
+}
+
+impl<'a> HandleRef<'a> {
+    /// Creates a new `HandleRef` from a non-null raw handle pointer.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that `ptr` is a valid handle pointer and the handle table lock
+    /// is held for the lifetime `'a`.
+    pub unsafe fn from_raw(ptr: NonNull<core::ffi::c_void>) -> Self {
+        Self { ptr, _marker: core::marker::PhantomData }
+    }
+
+    /// Checks if this handle has the requested rights.
+    pub fn has_rights(&self, rights: zx_rights_t) -> bool {
+        // SAFETY: `self.ptr` is guaranteed to be a valid handle pointer protected by the handle table lock.
+        unsafe { cpp_handle_has_rights(self.ptr.as_ptr(), rights) }
+    }
+
+    /// Returns a reference-counted pointer to the handle's dispatcher.
+    pub fn dispatcher(&self) -> RefPtr<Dispatcher> {
+        let mut out = core::mem::MaybeUninit::<RefPtr<Dispatcher>>::uninit();
+        // SAFETY: `self.ptr` is guaranteed to be a valid handle pointer protected by the handle table lock.
+        unsafe {
+            cpp_handle_get_dispatcher(self.ptr.as_ptr(), &mut out);
+            out.assume_init()
+        }
+    }
+
+    /// Returns the raw pointer to the handle.
+    pub fn as_ptr(&self) -> *const core::ffi::c_void {
+        self.ptr.as_ptr()
+    }
+}
+
 unsafe extern "C" {
     fn cpp_handle_dup(
         handle: *const core::ffi::c_void,
         rights: zx_rights_t,
     ) -> *mut core::ffi::c_void;
     fn cpp_handle_destroy(handle: *mut core::ffi::c_void);
+    fn cpp_handle_has_rights(handle: *const core::ffi::c_void, rights: zx_rights_t) -> bool;
+    fn cpp_handle_get_dispatcher(
+        handle: *const core::ffi::c_void,
+        out_dispatcher: *mut core::mem::MaybeUninit<RefPtr<Dispatcher>>,
+    );
 }
