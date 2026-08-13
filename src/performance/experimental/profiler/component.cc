@@ -9,7 +9,10 @@
 #include <lib/trace/event.h>
 #include <lib/zx/result.h>
 
+#include <cctype>
+#include <charconv>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "component_watcher.h"
@@ -91,12 +94,28 @@ zx::result<zx_koid_t> ReadElfJobId(const fidl::SyncClient<fuchsia_io::Directory>
   if (read_res.is_error()) {
     return zx::error(ZX_ERR_IO);
   }
-  std::string job_id_str(reinterpret_cast<const char*>(read_res->data().data()),
-                         read_res->data().size());
+  if (read_res->data().empty()) {
+    return zx::error(ZX_ERR_NOT_FOUND);
+  }
+  std::string_view sv(reinterpret_cast<const char*>(read_res->data().data()),
+                      read_res->data().size());
+  while (!sv.empty() && std::isspace(static_cast<unsigned char>(sv.front()))) {
+    sv.remove_prefix(1);
+  }
+  if (sv.empty()) {
+    return zx::error(ZX_ERR_INVALID_ARGS);
+  }
 
-  char* end;
-  zx_koid_t job_id = std::strtoull(job_id_str.c_str(), &end, 10);
-  if (end != job_id_str.c_str() + job_id_str.size()) {
+  zx_koid_t job_id = ZX_KOID_INVALID;
+  auto [ptr, ec] = std::from_chars(sv.data(), sv.data() + sv.size(), job_id);
+  if (ec != std::errc() || job_id == ZX_KOID_INVALID) {
+    return zx::error(ZX_ERR_INVALID_ARGS);
+  }
+  while (ptr < sv.data() + sv.size() &&
+         (std::isspace(static_cast<unsigned char>(*ptr)) || *ptr == '\0')) {
+    ++ptr;
+  }
+  if (ptr != sv.data() + sv.size()) {
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
   return zx::ok(job_id);

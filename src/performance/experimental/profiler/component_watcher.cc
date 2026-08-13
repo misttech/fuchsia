@@ -39,10 +39,12 @@ void profiler::ComponentWatcher::Clear() {
 zx::result<> profiler::ComponentWatcher::WatchForMoniker(std::string moniker,
                                                          ComponentEventHandler handler) {
   TRACE_DURATION("cpu_profiler", __PRETTY_FUNCTION__, "moniker", moniker);
-  // The events api strips leading "./"s from monikers
+  // The events api strips leading "./"s or "/" from monikers
   std::string normalized = moniker;
-  if (normalized[0] == '.' && normalized[1] == '/') {
+  if (normalized.starts_with("./")) {
     normalized = normalized.substr(2);
+  } else if (normalized.starts_with("/")) {
+    normalized = normalized.substr(1);
   }
 
   if (moniker_watchers_.contains(normalized)) {
