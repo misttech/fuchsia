@@ -26,6 +26,12 @@ bool ArchRandomTest() {
   bool supported = arch::Random<Reseeded>::Supported();
   EXPECT_EQ(supported, !!supported);
 
+  // TODO(https://fxbug.dev/546179341): Re-enable on ARM once entropy starvation
+  // issues on arm64 builders are resolved.
+#if defined(__arm__) || defined(__aarch64__)
+  supported = false;
+#endif
+
   if (supported) {
     // Note that Get() has its own internal retry logic.
     ktl::optional<uint64_t> result = arch::Random<Reseeded>::Get();
