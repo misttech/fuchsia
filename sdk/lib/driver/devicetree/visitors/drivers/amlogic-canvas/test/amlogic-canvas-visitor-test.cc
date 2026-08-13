@@ -11,7 +11,6 @@
 #include <lib/driver/devicetree/visitors/registry.h>
 
 #include <bind/fuchsia/cpp/bind.h>
-#include <bind/fuchsia/hardware/amlogiccanvas/cpp/bind.h>
 #include <gtest/gtest.h>
 namespace amlogic_canvas_dt {
 
@@ -41,13 +40,15 @@ TEST(AmlogicCanvasVisitorTest, TestBindProperty) {
   ASSERT_EQ(2lu, mgr_request.parents2()->size());
 
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
-      {{fdf::MakeAcceptBindRule(bind_fuchsia_hardware_amlogiccanvas::SERVICE,
-                                bind_fuchsia_hardware_amlogiccanvas::SERVICE_ZIRCONTRANSPORT)}},
+      {{fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.amlogiccanvas.Service"),
+        fdf::MakeAcceptBindRule("fuchsia.hardware.amlogiccanvas.Service",
+                                "fuchsia.hardware.amlogiccanvas.Service.ZirconTransport")}},
       (*mgr_request.parents2())[1].bind_rules(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
       {{
-          fdf::MakeProperty2(bind_fuchsia_hardware_amlogiccanvas::SERVICE,
-                             bind_fuchsia_hardware_amlogiccanvas::SERVICE_ZIRCONTRANSPORT),
+          fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.amlogiccanvas.Service"),
+          fdf::MakeProperty2("fuchsia.hardware.amlogiccanvas.Service",
+                             "fuchsia.hardware.amlogiccanvas.Service.ZirconTransport"),
       }},
       (*mgr_request.parents2())[1].properties(), false));
 }

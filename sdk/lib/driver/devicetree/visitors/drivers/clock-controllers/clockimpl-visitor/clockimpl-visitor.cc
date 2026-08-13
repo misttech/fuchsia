@@ -19,7 +19,6 @@
 
 #include <bind/fuchsia/clock/cpp/bind.h>
 #include <bind/fuchsia/cpp/bind.h>
-#include <bind/fuchsia/hardware/clock/cpp/bind.h>
 
 namespace clock_impl_dt {
 
@@ -161,15 +160,15 @@ zx::result<> ClockImplVisitor::AddChildNodeSpec(fdf_devicetree::Node& child, uin
   auto clock_node = fuchsia_driver_framework::ParentSpec2{{
       .bind_rules =
           {
-              fdf::MakeAcceptBindRule(bind_fuchsia_hardware_clock::SERVICE,
-                                      bind_fuchsia_hardware_clock::SERVICE_ZIRCONTRANSPORT),
+              fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.clock.Service"),
               fdf::MakeAcceptBindRule(bind_fuchsia::CLOCK_ID, clock_id),
               fdf::MakeAcceptBindRule(bind_fuchsia::CLOCK_NODE_ID, node_id),
           },
       .properties =
           {
-              fdf::MakeProperty2(bind_fuchsia_hardware_clock::SERVICE,
-                                 bind_fuchsia_hardware_clock::SERVICE_ZIRCONTRANSPORT),
+              fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.clock.Service"),
+              fdf::MakeProperty2("fuchsia.hardware.clock.Service",
+                                 "fuchsia.hardware.clock.Service.ZirconTransport"),
           },
   }};
 

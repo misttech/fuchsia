@@ -350,7 +350,11 @@ zx::result<> PlatformDevice::CreateNode() {
       fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_PID, pid_),
       fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_DID, did_),
       fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_INSTANCE_ID, instance_id_),
-      fdf::MakeProperty2(bind_fuchsia::PROTOCOL, bind_fuchsia_platform::BIND_PROTOCOL_DEVICE)};
+      fdf::MakeProperty2(bind_fuchsia::PROTOCOL, bind_fuchsia_platform::BIND_PROTOCOL_DEVICE),
+      fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.platform.device.Service"),
+      fdf::MakeProperty2("fuchsia.hardware.platform.device.Service",
+                         "fuchsia.hardware.platform.device.Service.ZirconTransport"),
+  };
   if (const auto& node_props = node_.properties(); node_props.has_value()) {
     std::copy(node_props->cbegin(), node_props->cend(), std::back_inserter(props));
   }

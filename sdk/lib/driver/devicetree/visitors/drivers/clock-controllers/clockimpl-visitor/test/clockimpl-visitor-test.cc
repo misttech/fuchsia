@@ -16,7 +16,6 @@
 
 #include <bind/fuchsia/clock/cpp/bind.h>
 #include <bind/fuchsia/cpp/bind.h>
-#include <bind/fuchsia/hardware/clock/cpp/bind.h>
 #include <bind/fuchsia/platform/cpp/bind.h>
 #include <gtest/gtest.h>
 
@@ -141,26 +140,26 @@ TEST(ClockImplVisitorTest, TestClocksProperty) {
 
   // 1st parent is pdev. Skipping that.
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
-      {{fdf::MakeProperty2(bind_fuchsia_hardware_clock::SERVICE,
-                           bind_fuchsia_hardware_clock::SERVICE_ZIRCONTRANSPORT),
+      {{fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.clock.Service"),
+        fdf::MakeProperty2("fuchsia.hardware.clock.Service",
+                           "fuchsia.hardware.clock.Service.ZirconTransport"),
         fdf::MakeProperty2(bind_fuchsia::NAME, std::string(CLK1_NAME))}},
       (*mgr_request_video.parents2())[1].properties(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
-      {{fdf::MakeAcceptBindRule(bind_fuchsia_hardware_clock::SERVICE,
-                                bind_fuchsia_hardware_clock::SERVICE_ZIRCONTRANSPORT),
+      {{fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.clock.Service"),
         // Clock Node IDs are monotonically increasing integers.
         fdf::MakeAcceptBindRule(bind_fuchsia::CLOCK_NODE_ID, 0u),
         fdf::MakeAcceptBindRule(bind_fuchsia::CLOCK_ID, static_cast<uint32_t>(CLK_ID1))}},
       (*mgr_request_video.parents2())[1].bind_rules(), false));
 
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
-      {{fdf::MakeProperty2(bind_fuchsia_hardware_clock::SERVICE,
-                           bind_fuchsia_hardware_clock::SERVICE_ZIRCONTRANSPORT),
+      {{fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.clock.Service"),
+        fdf::MakeProperty2("fuchsia.hardware.clock.Service",
+                           "fuchsia.hardware.clock.Service.ZirconTransport"),
         fdf::MakeProperty2(bind_fuchsia::NAME, std::string(CLK2_NAME))}},
       (*mgr_request_video.parents2())[2].properties(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
-      {{fdf::MakeAcceptBindRule(bind_fuchsia_hardware_clock::SERVICE,
-                                bind_fuchsia_hardware_clock::SERVICE_ZIRCONTRANSPORT),
+      {{fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.clock.Service"),
         // Clock Node IDs are monotonically increasing integers.
         fdf::MakeAcceptBindRule(bind_fuchsia::CLOCK_NODE_ID, 1u),
         fdf::MakeAcceptBindRule(bind_fuchsia::CLOCK_ID, static_cast<uint32_t>(CLK_ID2))}},
@@ -177,12 +176,12 @@ TEST(ClockImplVisitorTest, TestClocksProperty) {
 
   // 2nd is the clock impl parent.
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
-      {{fdf::MakeProperty2(bind_fuchsia_hardware_clock::SERVICE,
-                           bind_fuchsia_hardware_clock::SERVICE_ZIRCONTRANSPORT)}},
+      {{fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.clock.Service"),
+        fdf::MakeProperty2("fuchsia.hardware.clock.Service",
+                           "fuchsia.hardware.clock.Service.ZirconTransport")}},
       (*mgr_request_audio.parents2())[1].properties(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
-      {{fdf::MakeAcceptBindRule(bind_fuchsia_hardware_clock::SERVICE,
-                                bind_fuchsia_hardware_clock::SERVICE_ZIRCONTRANSPORT),
+      {{fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.clock.Service"),
         // Clock Node IDs are monotonically increasing integers.
         fdf::MakeAcceptBindRule(bind_fuchsia::CLOCK_NODE_ID, 2u),
         fdf::MakeAcceptBindRule(bind_fuchsia::CLOCK_ID, static_cast<uint32_t>(CLK_ID6))}},

@@ -3,7 +3,22 @@
 // found in the LICENSE file.
 
 
-if fuchsia.hardware.usb.dci.UsbDciService == fuchsia.hardware.usb.dci.UsbDciService.ZirconTransport {
+using fuchsia;
+using fuchsia.hardware.usb.dci;
+
+if fuchsia.Service == "fuchsia.hardware.usb.dci.UsbDciService" {
+  if fuchsia.BIND_PLATFORM_DEV_VID == fuchsia.designware.platform.BIND_PLATFORM_DEV_VID.DESIGNWARE {
+    accept fuchsia.BIND_PLATFORM_DEV_DID {
+      fuchsia.designware.platform.BIND_PLATFORM_DEV_DID.DWC2,
+      fuchsia.designware.platform.BIND_PLATFORM_DEV_DID.DWC3,
+    }
+  } else if fuchsia.BIND_PLATFORM_DEV_VID == fuchsia.test.platform.BIND_PLATFORM_DEV_VID.TEST {
+    fuchsia.BIND_PLATFORM_DEV_PID == fuchsia.test.platform.BIND_PLATFORM_DEV_PID.USB;
+    fuchsia.BIND_PLATFORM_DEV_DID == fuchsia.test.platform.BIND_PLATFORM_DEV_DID.VIRTUAL_DEVICE;
+  } else {
+    false;
+  }
+} else if fuchsia.hardware.usb.dci.UsbDciService == fuchsia.hardware.usb.dci.UsbDciService.ZirconTransport {
   if fuchsia.BIND_PLATFORM_DEV_VID == fuchsia.designware.platform.BIND_PLATFORM_DEV_VID.DESIGNWARE {
     accept fuchsia.BIND_PLATFORM_DEV_DID {
       fuchsia.designware.platform.BIND_PLATFORM_DEV_DID.DWC2,

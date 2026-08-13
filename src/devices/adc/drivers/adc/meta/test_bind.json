@@ -1,7 +1,7 @@
 [
     {
         "device": {
-            "fuchsia.hardware.adcimpl.Service": "fuchsia.hardware.adcimpl.Service.DriverTransport"
+            "fuchsia.Service": "\"fuchsia.hardware.adcimpl.Service\""
         },
         "expected": "match",
         "name": "Match"

@@ -57,6 +57,9 @@ zx::result<std::unique_ptr<I2cChildServer>> I2cChildServer::CreateAndAddChild(
       fdf::MakeProperty2(bind_fuchsia::I2C_BUS_ID, bus_id),
       fdf::MakeProperty2(bind_fuchsia::I2C_ADDRESS, static_cast<uint32_t>(address)),
       fdf::MakeProperty2(bind_fuchsia::I2C_CLASS, i2c_class),
+      fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.i2c.Service"),
+      fdf::MakeProperty2("fuchsia.hardware.i2c.Service",
+                         "fuchsia.hardware.i2c.Service.ZirconTransport"),
   };
 
   if (vid || pid || did) {

@@ -63,6 +63,7 @@ driver_bind_rules("vim3-dml-bind") {
   tests = "meta/bind-tests.json"
   deps = [
     "//sdk/fidl/fuchsia.hardware.platform.bus:fuchsia.hardware.platform.bus_bindlib",
+    "//src/devices/bind/fuchsia",
     "//src/devices/bind/fuchsia.khadas.platform",
   ]
 }

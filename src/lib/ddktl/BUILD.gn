@@ -33,6 +33,9 @@ source_set("ddktl") {
   ]
   public_configs = [ ":include" ]
   public_deps = [
+    # <ddktl/composite-node-spec.h> has #include <bind/fuchsia/cpp/bind.h>
+    "//src/devices/bind/fuchsia:fuchsia_cpp",
+
     # <ddktl/fidl.h> has #include <lib/stdcompat/span.h>
     "//sdk/lib/stdcompat",
 

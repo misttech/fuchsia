@@ -20,8 +20,10 @@ driver_bind_rules("gpio_bind") {
   dml_label = ":gpio-dml"
   bind_output = "gpio.bindbc"
   tests = "meta/bind_tests.json"
-  deps =
-      [ "//sdk/fidl/fuchsia.hardware.pinimpl:fuchsia.hardware.pinimpl_bindlib" ]
+  deps = [
+    "//sdk/fidl/fuchsia.hardware.pinimpl:fuchsia.hardware.pinimpl_bindlib",
+    "//src/devices/bind/fuchsia",
+  ]
 }
 
 fuchsia_structured_config_cpp_elf_lib("gpio-config") {

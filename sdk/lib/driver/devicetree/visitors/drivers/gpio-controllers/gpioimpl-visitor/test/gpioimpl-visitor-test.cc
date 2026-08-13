@@ -17,19 +17,12 @@
 
 #include <bind/fuchsia/cpp/bind.h>
 #include <bind/fuchsia/gpio/cpp/bind.h>
-#include <bind/fuchsia/hardware/gpio/cpp/bind.h>
 #include <bind/fuchsia/pin/cpp/bind.h>
 #include <gtest/gtest.h>
 
 #include "dts/gpio.h"
 
 namespace gpio_impl_dt {
-
-namespace bind_fuchsia_hardware_pin {
-static const char PIN_STATES_SERVICE[] = "fuchsia.hardware.pin.PinStatesService";
-static const char PIN_STATES_SERVICE_ZIRCONTRANSPORT[] =
-    "fuchsia.hardware.pin.PinStatesService.ZirconTransport";
-}  // namespace bind_fuchsia_hardware_pin
 
 class GpioImplVisitorTester : public fdf_devicetree::testing::VisitorTestHelper<GpioImplVisitor> {
  public:
@@ -227,39 +220,39 @@ TEST(GpioImplVisitorTest, TestGpiosProperty) {
   // 1st parent is pdev. Skipping that.
   // 2nd parent is GPIO PIN1.
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
-      {{fdf::MakeProperty2(bind_fuchsia_hardware_gpio::SERVICE,
-                           bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
+      {{fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.gpio.Service"),
+        fdf::MakeProperty2("fuchsia.hardware.gpio.Service",
+                           "fuchsia.hardware.gpio.Service.ZirconTransport"),
         fdf::MakeProperty2(bind_fuchsia::NAME, std::string(PIN1_NAME))}},
       (*mgr_request_audio.parents2())[1].properties(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
-      {{fdf::MakeAcceptBindRule(bind_fuchsia_hardware_gpio::SERVICE,
-                                bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
+      {{fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.gpio.Service"),
         fdf::MakeAcceptBindRule(bind_fuchsia::GPIO_CONTROLLER, gpioA_id),
         fdf::MakeAcceptBindRule(bind_fuchsia::GPIO_PIN, static_cast<uint32_t>(PIN1))}},
       (*mgr_request_audio.parents2())[1].bind_rules(), false));
 
   // 3rd parent is GPIO PIN2.
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
-      {{fdf::MakeProperty2(bind_fuchsia_hardware_gpio::SERVICE,
-                           bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
+      {{fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.gpio.Service"),
+        fdf::MakeProperty2("fuchsia.hardware.gpio.Service",
+                           "fuchsia.hardware.gpio.Service.ZirconTransport"),
         fdf::MakeProperty2(bind_fuchsia::NAME, std::string(PIN2_NAME))}},
       (*mgr_request_audio.parents2())[2].properties(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
-      {{fdf::MakeAcceptBindRule(bind_fuchsia_hardware_gpio::SERVICE,
-                                bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
+      {{fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.gpio.Service"),
         fdf::MakeAcceptBindRule(bind_fuchsia::GPIO_CONTROLLER, gpioA_id),
         fdf::MakeAcceptBindRule(bind_fuchsia::GPIO_PIN, static_cast<uint32_t>(PIN2))}},
       (*mgr_request_audio.parents2())[2].bind_rules(), false));
 
   // 4th parent is PIN STATES.
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
-      {{fdf::MakeProperty2(bind_fuchsia_hardware_pin::PIN_STATES_SERVICE,
-                           bind_fuchsia_hardware_pin::PIN_STATES_SERVICE_ZIRCONTRANSPORT),
+      {{fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.pin.PinStatesService"),
+        fdf::MakeProperty2("fuchsia.hardware.pin.PinStatesService",
+                           "fuchsia.hardware.pin.PinStatesService.ZirconTransport"),
         fdf::MakeProperty2(bind_fuchsia_pin::CONTROLLER, static_cast<uint32_t>(0))}},
       (*mgr_request_audio.parents2())[3].properties(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
-      {{fdf::MakeAcceptBindRule(bind_fuchsia_hardware_pin::PIN_STATES_SERVICE,
-                                bind_fuchsia_hardware_pin::PIN_STATES_SERVICE_ZIRCONTRANSPORT),
+      {{fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.pin.PinStatesService"),
         fdf::MakeAcceptBindRule(bind_fuchsia_pin::CONTROLLER, gpioA_id),
         fdf::MakeAcceptBindRule(bind_fuchsia::NAME, std::string("audio-ffffc000"))}},
       (*mgr_request_audio.parents2())[3].bind_rules(), false));

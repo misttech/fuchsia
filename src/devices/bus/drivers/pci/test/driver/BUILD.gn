@@ -20,6 +20,7 @@ driver_bind_rules("pci_protocol_test_driver_bind") {
   tests = "meta/pci_protocol_bind_tests.json"
   deps = [
     "//sdk/fidl/fuchsia.hardware.pci:fuchsia.hardware.pci_bindlib",
+    "//src/devices/bind/fuchsia",
     "//src/devices/bind/fuchsia.pci",
   ]
 }

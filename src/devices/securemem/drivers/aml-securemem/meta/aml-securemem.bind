@@ -16,5 +16,5 @@ primary parent "pdev" {
 }
 
 parent "tee" {
-  fuchsia.hardware.tee.Service == fuchsia.hardware.tee.Service.ZirconTransport;
+  fuchsia.Service == "fuchsia.hardware.tee.Service";
 }

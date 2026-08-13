@@ -25,6 +25,8 @@
 #include <zircon/syscalls/iommu.h>
 #include <zircon/system/public/zircon/syscalls-next.h>
 
+#include <string>
+
 #include <bind/fuchsia/cpp/bind.h>
 #include <bind/fuchsia/hardware/platform/device/cpp/bind.h>
 #include <bind/fuchsia/platform/cpp/bind.h>
@@ -409,6 +411,24 @@ void PlatformBus::AddCompositeNodeSpec(AddCompositeNodeSpecRequestView request, 
   if (!composite_node_spec.parents2().has_value()) {
     composite_node_spec.parents2().emplace();
   }
+  for (auto& parent : *composite_node_spec.parents2()) {
+    bool has_service_property = false;
+    std::string service_name;
+    for (const auto& prop : parent.properties()) {
+      if (prop.key() == bind_fuchsia::SERVICE) {
+        has_service_property = true;
+        break;
+      }
+      if (prop.key().ends_with(".Service") || prop.key().ends_with(".PathService") ||
+          prop.key().ends_with(".TargetService") || prop.key().ends_with(".SubTargetService") ||
+          prop.key().ends_with(".PinStatesService")) {
+        service_name = prop.key();
+      }
+    }
+    if (!has_service_property && !service_name.empty()) {
+      parent.properties().push_back(fdf::MakeProperty2(bind_fuchsia::SERVICE, service_name));
+    }
+  }
   composite_node_spec.parents2()->push_back(fuchsia_driver_framework::ParentSpec2{{
       .bind_rules =
           {
@@ -427,6 +447,7 @@ void PlatformBus::AddCompositeNodeSpec(AddCompositeNodeSpecRequestView request, 
               fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_PID, pid),
               fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_DID, did),
               fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_INSTANCE_ID, instance_id),
+              fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.platform.device.Service"),
               fdf::MakeProperty2(bind_fuchsia_hardware_platform_device::SERVICE,
                                  bind_fuchsia_hardware_platform_device::SERVICE_ZIRCONTRANSPORT),
           },

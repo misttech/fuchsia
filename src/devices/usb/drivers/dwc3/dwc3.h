@@ -534,6 +534,7 @@ class Dwc3 : public fdf::DriverBase2,
 
   Ep0 ep0_;
   UserEndpointCollection user_endpoints_;
+  fuchsia_hardware_usb_dci::DciHardwareInfo dci_hardware_info_;
 
   std::unique_ptr<PlatformExtension> platform_extension_;
 

@@ -22,6 +22,7 @@ driver_bind_rules("clock-bind") {
   tests = "meta/bind-tests.json"
   deps = [
     "//sdk/fidl/fuchsia.hardware.clockimpl:fuchsia.hardware.clockimpl_bindlib",
+    "//src/devices/bind/fuchsia",
     "//src/devices/bind/fuchsia.clock",
   ]
 }

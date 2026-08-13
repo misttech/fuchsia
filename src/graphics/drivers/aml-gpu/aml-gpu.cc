@@ -23,6 +23,7 @@
 #include <zircon/syscalls.h>
 #include <zircon/syscalls/smc.h>
 
+#include <bind/fuchsia/cpp/bind.h>
 #include <soc/aml-common/aml-registers.h>
 
 #include "s905d2-gpu.h"
@@ -186,7 +187,7 @@ void AmlGpu::InitClock() {
                                                    aml_registers::MALI_RESET0_MASK,
                                                    aml_registers::MALI_RESET0_MASK);
     if ((result.status() != ZX_OK) || result->is_error()) {
-      fdf::error("Reset2 Level Set failed");
+      fdf::error("Reset0 Level Set failed");
     }
   }
 
@@ -417,7 +418,7 @@ zx::result<> AmlGpu::Start(fdf::DriverContext context) {
     zx::result secure_monitor = pdev.GetSmc(kTrustedOsSmcIndex);
     if (secure_monitor.is_error()) {
       fdf::error("Failed to retrieve secure monitor SMC: {}", secure_monitor);
-      secure_monitor.take_error();
+      return secure_monitor.take_error();
     }
     secure_monitor_ = std::move(secure_monitor.value());
     builder.use_protected_mode_callbacks(true);
@@ -450,8 +451,13 @@ zx::result<> AmlGpu::Start(fdf::DriverContext context) {
 
   std::vector offers = {fdf::MakeOffer2<fuchsia_hardware_gpu_mali::Service>("default")};
 
-  zx::result child =
-      AddChild("aml-gpu", std::vector<fuchsia_driver_framework::NodeProperty2>{}, offers);
+  std::vector properties = {
+      fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.gpu.mali.Service"),
+      fdf::MakeProperty2("fuchsia.hardware.gpu.mali.Service",
+                         "fuchsia.hardware.gpu.mali.Service.DriverTransport"),
+  };
+
+  zx::result child = AddChild("aml-gpu", properties, offers);
   if (child.is_error()) {
     fdf::error("Failed to add child: {}", child);
     return child.take_error();

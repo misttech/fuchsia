@@ -8,6 +8,10 @@
 #include <lib/ddk/device.h>
 #include <lib/stdcompat/span.h>
 
+#include <string_view>
+
+#include <bind/fuchsia/cpp/bind.h>
+
 namespace ddk {
 
 class BindRule {
@@ -305,15 +309,32 @@ class CompositeNodeSpec {
 
     auto prop_count = properties.size();
     auto props = std::vector<device_bind_prop_t>();
+    props.reserve(prop_count + 1);
+    bool has_service_prop = false;
+    const char* service_name = nullptr;
     for (size_t i = 0; i < prop_count; i++) {
+      if (properties[i].key.key_type == DEVICE_BIND_PROPERTY_KEY_STRING &&
+          properties[i].key.data.str_key != nullptr) {
+        std::string_view key_str(properties[i].key.data.str_key);
+        if (key_str == bind_fuchsia::SERVICE) {
+          has_service_prop = true;
+        } else if (key_str.ends_with(".Service") || key_str.ends_with(".PathService") ||
+                   key_str.ends_with(".TargetService") || key_str.ends_with(".SubTargetService") ||
+                   key_str.ends_with(".PinStatesService")) {
+          service_name = properties[i].key.data.str_key;
+        }
+      }
       props.push_back(properties[i]);
+    }
+    if (!has_service_prop && service_name != nullptr) {
+      props.push_back(MakeProperty(bind_fuchsia::SERVICE, service_name));
     }
 
     parent_specs_.push_back(parent_spec_t{
         .bind_rules = bind_rules.data(),
         .bind_rule_count = bind_rule_count,
         .properties = props.data(),
-        .property_count = prop_count,
+        .property_count = props.size(),
     });
 
     bind_rules_data_.push_back(std::move(bind_rules));
@@ -346,15 +367,32 @@ class CompositeNodeSpec {
 
     auto property_count = parent.property_count;
     auto properties = std::vector<device_bind_prop_t>();
+    properties.reserve(property_count + 1);
+    bool has_service_prop = false;
+    const char* service_name = nullptr;
     for (size_t i = 0; i < property_count; i++) {
+      if (parent.properties[i].key.key_type == DEVICE_BIND_PROPERTY_KEY_STRING &&
+          parent.properties[i].key.data.str_key != nullptr) {
+        std::string_view key_str(parent.properties[i].key.data.str_key);
+        if (key_str == bind_fuchsia::SERVICE) {
+          has_service_prop = true;
+        } else if (key_str.ends_with(".Service") || key_str.ends_with(".PathService") ||
+                   key_str.ends_with(".TargetService") || key_str.ends_with(".SubTargetService") ||
+                   key_str.ends_with(".PinStatesService")) {
+          service_name = parent.properties[i].key.data.str_key;
+        }
+      }
       properties.push_back(parent.properties[i]);
+    }
+    if (!has_service_prop && service_name != nullptr) {
+      properties.push_back(MakeProperty(bind_fuchsia::SERVICE, service_name));
     }
 
     parent_specs_.push_back(parent_spec_t{
         .bind_rules = bind_rules.data(),
         .bind_rule_count = bind_rule_count,
         .properties = properties.data(),
-        .property_count = property_count,
+        .property_count = properties.size(),
     });
     specs_.parents = parent_specs_.data();
     specs_.parent_count = std::size(parent_specs_);

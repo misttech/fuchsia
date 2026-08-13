@@ -21,6 +21,7 @@
 #include <cstdint>
 #include <memory>
 
+#include <bind/fuchsia/cpp/bind.h>
 #include <fbl/alloc_checker.h>
 
 #include "src/graphics/display/drivers/aml-canvas/aml-canvas.h"
@@ -44,6 +45,7 @@ zx::result<std::unique_ptr<AmlCanvas>> AmlCanvasDriver::CreateAndServeCanvas(
       incoming.Connect<fuchsia_hardware_platform_device::Service::Device>();
   if (pdev_result.is_error()) {
     fdf::error("Failed to connect to platform device: {}", pdev_result);
+    return pdev_result.take_error();
   }
   fidl::ClientEnd pdev(std::move(pdev_result).value());
   ZX_DEBUG_ASSERT(pdev.is_valid());
@@ -89,9 +91,16 @@ zx::result<fidl::ClientEnd<fuchsia_driver_framework::NodeController>> AmlCanvasD
   offers.push_back(
       fdf::MakeOffer2<fuchsia_hardware_amlogiccanvas::Service>(arena, component::kDefaultInstance));
 
+  std::vector properties = {
+      fdf::MakeProperty2(arena, bind_fuchsia::SERVICE, "fuchsia.hardware.amlogiccanvas.Service"),
+      fdf::MakeProperty2(arena, "fuchsia.hardware.amlogiccanvas.Service",
+                         "fuchsia.hardware.amlogiccanvas.Service.ZirconTransport"),
+  };
+
   auto args = fuchsia_driver_framework::wire::NodeAddArgs::Builder(arena)
                   .name(arena, name())
                   .offers2(arena, std::move(offers))
+                  .properties2(arena, std::move(properties))
                   .Build();
 
   zx::result<fidl::Endpoints<fuchsia_driver_framework::NodeController>>

@@ -32,7 +32,7 @@
                 "name": "MatchMicPrivacy",
                 "expected": "match",
                 "device": {
-                    "fuchsia.hardware.gpio.Service": "fuchsia.hardware.gpio.Service.ZirconTransport",
+                    "fuchsia.Service": "\"fuchsia.hardware.gpio.Service\"",
                     "fuchsia.NAME": "\"MIC_MUTE\""
                 }
             },
@@ -40,7 +40,7 @@
                 "name": "MicWrongGpioFunction",
                 "expected": "abort",
                 "device": {
-                    "fuchsia.hardware.gpio.Service": "fuchsia.hardware.gpio.Service.ZirconTransport",
+                    "fuchsia.Service": "\"fuchsia.hardware.gpio.Service\"",
                     "fuchsia.NAME": "\"NOT_A_KNOWN_FUNCTION\""
                 }
             }
@@ -53,7 +53,7 @@
                 "name": "MatchVolUp",
                 "expected": "match",
                 "device": {
-                    "fuchsia.hardware.gpio.Service": "fuchsia.hardware.gpio.Service.ZirconTransport",
+                    "fuchsia.Service": "\"fuchsia.hardware.gpio.Service\"",
                     "fuchsia.NAME": "\"VOLUME_UP\""
                 }
             },
@@ -61,7 +61,7 @@
                 "name": "VolUpWrongGpioFunction",
                 "expected": "abort",
                 "device": {
-                    "fuchsia.hardware.gpio.Service": "fuchsia.hardware.gpio.Service.ZirconTransport",
+                    "fuchsia.Service": "\"fuchsia.hardware.gpio.Service\"",
                     "fuchsia.NAME": "\"NOT_A_KNOWN_FUNCTION\""
                 }
             }
@@ -74,7 +74,7 @@
                 "name": "MatchVolDown",
                 "expected": "match",
                 "device": {
-                    "fuchsia.hardware.gpio.Service": "fuchsia.hardware.gpio.Service.ZirconTransport",
+                    "fuchsia.Service": "\"fuchsia.hardware.gpio.Service\"",
                     "fuchsia.NAME": "\"VOLUME_DOWN\""
                 }
             },
@@ -82,7 +82,7 @@
                 "name": "VolDownWrongGpioFunction",
                 "expected": "abort",
                 "device": {
-                    "fuchsia.hardware.gpio.Service": "fuchsia.hardware.gpio.Service.ZirconTransport",
+                    "fuchsia.Service": "\"fuchsia.hardware.gpio.Service\"",
                     "fuchsia.NAME": "\"NOT_A_KNOWN_FUNCTION\""
                 }
             }
@@ -95,7 +95,7 @@
                 "name": "MatchVolBoth",
                 "expected": "match",
                 "device": {
-                    "fuchsia.hardware.gpio.Service": "fuchsia.hardware.gpio.Service.ZirconTransport",
+                    "fuchsia.Service": "\"fuchsia.hardware.gpio.Service\"",
                     "fuchsia.NAME": "\"VOLUME_BOTH\""
                 }
             },
@@ -103,7 +103,7 @@
                 "name": "VolBothWrongGpioFunction",
                 "expected": "abort",
                 "device": {
-                    "fuchsia.hardware.gpio.Service": "fuchsia.hardware.gpio.Service.ZirconTransport",
+                    "fuchsia.Service": "\"fuchsia.hardware.gpio.Service\"",
                     "fuchsia.NAME": "\"NOT_A_KNOWN_FUNCTION\""
                 }
             }

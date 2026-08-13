@@ -33,6 +33,7 @@ driver_bind_rules("test-board-bind") {
   rules = "meta/test-board.bind"
   deps = [
     "//sdk/fidl/fuchsia.hardware.platform.bus:fuchsia.hardware.platform.bus_bindlib",
+    "//src/devices/bind/fuchsia",
     "//src/devices/bind/fuchsia.test.platform",
   ]
 }
@@ -318,6 +319,7 @@ driver_bind_rules("test-bti-board-bind") {
   rules = "meta/test-bti-board.bind"
   deps = [
     "//sdk/fidl/fuchsia.hardware.platform.bus:fuchsia.hardware.platform.bus_bindlib",
+    "//src/devices/bind/fuchsia",
     "//src/devices/bind/fuchsia.test.platform",
   ]
 }

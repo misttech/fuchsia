@@ -29,6 +29,7 @@ driver_bind_rules("aml_gpu_bind") {
     "//sdk/fidl/fuchsia.hardware.clock:fuchsia.hardware.clock_bindlib",
     "//sdk/fidl/fuchsia.hardware.platform.device:fuchsia.hardware.platform.device_bindlib",
     "//sdk/fidl/fuchsia.hardware.registers:fuchsia.hardware.registers_bindlib",
+    "//src/devices/bind/fuchsia",
     "//src/devices/bind/fuchsia.amlogic.platform",
     "//src/devices/bind/fuchsia.arm.platform",
     "//src/devices/bind/fuchsia.devicetree",
@@ -64,6 +65,7 @@ source_set("common") {
     "//sdk/lib/driver/mmio/cpp",
     "//sdk/lib/driver/outgoing/cpp",
     "//sdk/lib/driver/runtime:driver_runtime",
+    "//src/devices/bind/fuchsia:fuchsia_cpp",
     "//src/devices/bind/fuchsia.arm.platform:fuchsia.arm.platform_cpp",
     "//src/devices/bind/fuchsia.platform:fuchsia.platform_cpp",
     "//src/devices/lib/amlogic",
@@ -78,7 +80,10 @@ source_set("common") {
 
 fuchsia_cc_driver("aml-gpu-driver") {
   output_name = "aml-gpu"
-  deps = [ ":common" ]
+  deps = [
+    ":common",
+    "//src/devices/bind/fuchsia:fuchsia_cpp",
+  ]
 }
 
 fuchsia_driver_component("aml-gpu") {

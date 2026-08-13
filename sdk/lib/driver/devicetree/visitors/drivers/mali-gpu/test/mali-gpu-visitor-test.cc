@@ -42,11 +42,13 @@ TEST(MaliGpuVisitorTest, TestBindProperty) {
   ASSERT_EQ(2lu, mgr_request.parents2()->size());
 
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
-      {{fdf::MakeAcceptBindRule(bind_fuchsia_hardware_gpu_mali::SERVICE,
+      {{fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.gpu.mali.Service"),
+        fdf::MakeAcceptBindRule(bind_fuchsia_hardware_gpu_mali::SERVICE,
                                 bind_fuchsia_hardware_gpu_mali::SERVICE_DRIVERTRANSPORT)}},
       (*mgr_request.parents2())[1].bind_rules(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
       {{
+          fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.gpu.mali.Service"),
           fdf::MakeProperty2(bind_fuchsia_hardware_gpu_mali::SERVICE,
                              bind_fuchsia_hardware_gpu_mali::SERVICE_DRIVERTRANSPORT),
       }},

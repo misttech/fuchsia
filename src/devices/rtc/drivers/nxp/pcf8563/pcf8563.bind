@@ -4,8 +4,10 @@
 
 composite pcf8563;
 
+using fuchsia;
+
 primary parent "i2c" {
-  fuchsia.hardware.i2c.Service == fuchsia.hardware.i2c.Service.ZirconTransport;
+  fuchsia.Service == "fuchsia.hardware.i2c.Service";
 }
 
 parent "devicetree" {

@@ -12,6 +12,7 @@
         "device": {
             "fuchsia.BIND_PLATFORM_DEV_VID": "fuchsia.designware.platform.BIND_PLATFORM_DEV_VID.DESIGNWARE",
             "fuchsia.BIND_PLATFORM_DEV_DID": "fuchsia.designware.platform.BIND_PLATFORM_DEV_DID.DWC3",
+            "fuchsia.Service": "\"fuchsia.hardware.usb.dci.UsbDciService\"",
             "fuchsia.hardware.usb.dci.UsbDciService": "fuchsia.hardware.usb.dci.UsbDciService.ZirconTransport"
         }
     },
@@ -21,6 +22,7 @@
         "device": {
             "fuchsia.BIND_PLATFORM_DEV_VID": "fuchsia.designware.platform.BIND_PLATFORM_DEV_VID.DESIGNWARE",
             "fuchsia.BIND_PLATFORM_DEV_DID": "fuchsia.designware.platform.BIND_PLATFORM_DEV_DID.DWC2",
+            "fuchsia.Service": "\"fuchsia.hardware.usb.dci.UsbDciService\"",
             "fuchsia.hardware.usb.dci.UsbDciService": "fuchsia.hardware.usb.dci.UsbDciService.ZirconTransport"
         }
     },

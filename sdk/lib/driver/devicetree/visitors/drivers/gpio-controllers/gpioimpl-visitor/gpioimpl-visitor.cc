@@ -26,7 +26,6 @@
 #include <bind/fuchsia/pin/cpp/bind.h>
 
 // TODO(https://fxbug.dev/494450198): Re-add this once the Bazel dependency issue is resolved.
-// #include <bind/fuchsia/hardware/gpio/cpp/bind.h>
 
 namespace gpio_impl_dt {
 
@@ -34,16 +33,6 @@ namespace {
 
 // TODO(https://fxbug.dev/494450198): Remove this once we fix the Bazel dependency issue for FIDL
 // generated bind cpp headers
-namespace bind_fuchsia_hardware_gpio {
-static const char SERVICE[] = "fuchsia.hardware.gpio.Service";
-static const char SERVICE_ZIRCONTRANSPORT[] = "fuchsia.hardware.gpio.Service.ZirconTransport";
-}  // namespace bind_fuchsia_hardware_gpio
-
-namespace bind_fuchsia_hardware_pin {
-static const char PIN_STATES_SERVICE[] = "fuchsia.hardware.pin.PinStatesService";
-static const char PIN_STATES_SERVICE_ZIRCONTRANSPORT[] =
-    "fuchsia.hardware.pin.PinStatesService.ZirconTransport";
-}  // namespace bind_fuchsia_hardware_pin
 
 using fuchsia_hardware_gpio::BufferMode;
 using fuchsia_hardware_pin::DriveType;
@@ -308,15 +297,15 @@ zx::result<> GpioImplVisitor::AddChildNodeSpec(fdf_devicetree::Node& child, uint
   auto gpio_node = fuchsia_driver_framework::ParentSpec2{{
       .bind_rules =
           {
-              fdf::MakeAcceptBindRule(bind_fuchsia_hardware_gpio::SERVICE,
-                                      bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
+              fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.gpio.Service"),
               fdf::MakeAcceptBindRule(bind_fuchsia::GPIO_CONTROLLER, controller_id),
               fdf::MakeAcceptBindRule(bind_fuchsia::GPIO_PIN, pin),
           },
       .properties =
           {
-              fdf::MakeProperty2(bind_fuchsia_hardware_gpio::SERVICE,
-                                 bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
+              fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.gpio.Service"),
+              fdf::MakeProperty2("fuchsia.hardware.gpio.Service",
+                                 "fuchsia.hardware.gpio.Service.ZirconTransport"),
               fdf::MakeProperty2(bind_fuchsia::NAME, gpio_name),
           },
   }};
@@ -350,16 +339,16 @@ zx::result<> GpioImplVisitor::AddPinStatesNodeSpec(fdf_devicetree::Node& child,
   auto pin_states_node = fuchsia_driver_framework::ParentSpec2{{
       .bind_rules =
           {
-              fdf::MakeAcceptBindRule(
-                  bind_fuchsia_hardware_pin::PIN_STATES_SERVICE,
-                  bind_fuchsia_hardware_pin::PIN_STATES_SERVICE_ZIRCONTRANSPORT),
+              fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE,
+                                      "fuchsia.hardware.pin.PinStatesService"),
               fdf::MakeAcceptBindRule(bind_fuchsia_pin::CONTROLLER, controller_id),
               fdf::MakeAcceptBindRule(bind_fuchsia::NAME, client_name),
           },
       .properties =
           {
-              fdf::MakeProperty2(bind_fuchsia_hardware_pin::PIN_STATES_SERVICE,
-                                 bind_fuchsia_hardware_pin::PIN_STATES_SERVICE_ZIRCONTRANSPORT),
+              fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.pin.PinStatesService"),
+              fdf::MakeProperty2("fuchsia.hardware.pin.PinStatesService",
+                                 "fuchsia.hardware.pin.PinStatesService.ZirconTransport"),
               fdf::MakeProperty2(bind_fuchsia_pin::CONTROLLER, controller_index),
           },
   }};

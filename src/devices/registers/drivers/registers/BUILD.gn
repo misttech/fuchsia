@@ -22,6 +22,7 @@ driver_bind_rules("registers_bind") {
   tests = "meta/tests.json"
   deps = [
     "//sdk/fidl/fuchsia.hardware.platform.device:fuchsia.hardware.platform.device_bindlib",
+    "//src/devices/bind/fuchsia",
     "//src/devices/bind/fuchsia.devicetree",
     "//src/devices/bind/fuchsia.platform",
   ]
@@ -74,6 +75,7 @@ source_set("common") {
     "//sdk/lib/driver/devfs/cpp",
     "//sdk/lib/driver/mmio/cpp",
     "//sdk/lib/driver/platform-device/cpp",
+    "//src/devices/bind/fuchsia:fuchsia_cpp",
     "//src/devices/lib/driver:driver_runtime",
     "//zircon/system/ulib/fbl",
   ]

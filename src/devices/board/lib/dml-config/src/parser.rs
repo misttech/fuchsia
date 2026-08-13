@@ -235,22 +235,12 @@ pub fn generate_parent_spec_generic(
         config.service_configs.get(service_name).unwrap_or(&DEFAULT_SERVICE_BIND_CONFIG);
 
     match service_config.transport {
-        TransportType::Zircon => {
-            let transport_value = format!("{}.ZirconTransport", service_name);
+        TransportType::Zircon | TransportType::Driver => {
             add_rule_and_property(
                 &mut bind_rules,
                 &mut properties,
-                service_name,
-                property_string(&transport_value),
-            );
-        }
-        TransportType::Driver => {
-            let transport_value = format!("{}.DriverTransport", service_name);
-            add_rule_and_property(
-                &mut bind_rules,
-                &mut properties,
-                service_name,
-                property_string(&transport_value),
+                "fuchsia.Service",
+                property_string(service_name),
             );
         }
         TransportType::None => {}
@@ -532,8 +522,8 @@ pub async fn publish_dml_devices(
                         property_string(compatible),
                     ),
                     make_property2(
-                        "fuchsia.hardware.platform.device.Service",
-                        property_string("fuchsia.hardware.platform.device.Service.ZirconTransport"),
+                        "fuchsia.Service",
+                        property_string("fuchsia.hardware.platform.device.Service"),
                     ),
                 ],
             };

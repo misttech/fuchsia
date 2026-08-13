@@ -8,7 +8,6 @@
 
 #include <bind/fuchsia/acpi/cpp/bind.h>
 #include <bind/fuchsia/cpp/bind.h>
-#include <bind/fuchsia/hardware/pci/cpp/bind.h>
 
 namespace pci {
 
@@ -30,8 +29,7 @@ ddk::CompositeNodeSpec CreateCompositeNodeSpec(const CompositeInfo& info) {
   };
 
   const ddk::BindRule kPciRules[] = {
-      ddk::MakeAcceptBindRule(bind_fuchsia_hardware_pci::SERVICE,
-                              bind_fuchsia_hardware_pci::SERVICE_ZIRCONTRANSPORT),
+      ddk::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.pci.Service"),
       ddk::MakeAcceptBindRule(bind_fuchsia::PCI_VID, info.vendor_id),
       ddk::MakeAcceptBindRule(bind_fuchsia::PCI_DID, info.device_id),
       ddk::MakeAcceptBindRule(bind_fuchsia::PCI_CLASS, info.class_id),
@@ -43,8 +41,9 @@ ddk::CompositeNodeSpec CreateCompositeNodeSpec(const CompositeInfo& info) {
   };
 
   const device_bind_prop_t kPciProperties[] = {
-      ddk::MakeProperty(bind_fuchsia_hardware_pci::SERVICE,
-                        bind_fuchsia_hardware_pci::SERVICE_ZIRCONTRANSPORT),
+      ddk::MakeProperty("fuchsia.hardware.pci.Service",
+                        "fuchsia.hardware.pci.Service.ZirconTransport"),
+      ddk::MakeProperty(bind_fuchsia::SERVICE, "fuchsia.hardware.pci.Service"),
       ddk::MakeProperty(bind_fuchsia::PCI_VID, info.vendor_id),
       ddk::MakeProperty(bind_fuchsia::PCI_DID, info.device_id),
       ddk::MakeProperty(bind_fuchsia::PCI_CLASS, info.class_id),

@@ -16,7 +16,6 @@
 #include <vector>
 
 #include <bind/fuchsia/cpp/bind.h>
-#include <bind/fuchsia/hardware/pwm/cpp/bind.h>
 #include <bind/fuchsia/pwm/cpp/bind.h>
 #include <gtest/gtest.h>
 
@@ -95,15 +94,15 @@ TEST(PwmVisitorTest, TestMetadataAndBindProperty) {
     // Bind rules for PIN1
     EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
         {{
-            fdf::MakeAcceptBindRule(bind_fuchsia_hardware_pwm::SERVICE,
-                                    bind_fuchsia_hardware_pwm::SERVICE_ZIRCONTRANSPORT),
+            fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.pwm.Service"),
             fdf::MakeAcceptBindRule(bind_fuchsia::PWM_ID, static_cast<uint32_t>(PIN1)),
         }},
         (*mgr_request.parents2())[1].bind_rules(), false));
     EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
         {{
-            fdf::MakeProperty2(bind_fuchsia_hardware_pwm::SERVICE,
-                               bind_fuchsia_hardware_pwm::SERVICE_ZIRCONTRANSPORT),
+            fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.pwm.Service"),
+            fdf::MakeProperty2("fuchsia.hardware.pwm.Service",
+                               "fuchsia.hardware.pwm.Service.ZirconTransport"),
             fdf::MakeProperty2(bind_fuchsia::NAME, std::string(PIN1_NAME)),
         }},
         (*mgr_request.parents2())[1].properties(), false));
@@ -111,15 +110,15 @@ TEST(PwmVisitorTest, TestMetadataAndBindProperty) {
     // Bind rules for PIN2
     EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
         {{
-            fdf::MakeAcceptBindRule(bind_fuchsia_hardware_pwm::SERVICE,
-                                    bind_fuchsia_hardware_pwm::SERVICE_ZIRCONTRANSPORT),
+            fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.pwm.Service"),
             fdf::MakeAcceptBindRule(bind_fuchsia::PWM_ID, static_cast<uint32_t>(PIN2)),
         }},
         (*mgr_request.parents2())[2].bind_rules(), false));
     EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
         {{
-            fdf::MakeProperty2(bind_fuchsia_hardware_pwm::SERVICE,
-                               bind_fuchsia_hardware_pwm::SERVICE_ZIRCONTRANSPORT),
+            fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.pwm.Service"),
+            fdf::MakeProperty2("fuchsia.hardware.pwm.Service",
+                               "fuchsia.hardware.pwm.Service.ZirconTransport"),
             fdf::MakeProperty2(bind_fuchsia::NAME, std::string(PIN2_NAME)),
         }},
         (*mgr_request.parents2())[2].properties(), false));

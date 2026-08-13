@@ -54,7 +54,7 @@
         "tests": [
             {
                 "device": {
-                    "fuchsia.hardware.registers.Service": "fuchsia.hardware.registers.Service.ZirconTransport"
+                    "fuchsia.Service": "\"fuchsia.hardware.registers.Service\""
                 },
                 "expected": "match",
                 "name": "Register match"

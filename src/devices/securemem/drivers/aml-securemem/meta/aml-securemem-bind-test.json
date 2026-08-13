@@ -38,7 +38,7 @@
                 "name": "Match",
                 "expected": "match",
                 "device": {
-                    "fuchsia.hardware.tee.Service": "fuchsia.hardware.tee.Service.ZirconTransport"
+                    "fuchsia.Service": "\"fuchsia.hardware.tee.Service\""
                 }
             }
         ]

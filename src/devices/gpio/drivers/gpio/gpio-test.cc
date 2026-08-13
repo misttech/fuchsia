@@ -72,7 +72,7 @@ class MockPinImpl : public fdf::WireServer<fuchsia_hardware_pinimpl::PinImpl> {
     uint64_t alt_function = UINT64_MAX;
     uint64_t drive_strength = UINT64_MAX;
     fuchsia_hardware_gpio::InterruptMode interrupt_mode;
-    bool has_interrupt;
+    bool has_interrupt = false;
   };
 
   PinState pin_state(uint32_t index) { return pin_state_internal(index); }
@@ -146,8 +146,6 @@ class MockPinImpl : public fdf::WireServer<fuchsia_hardware_pinimpl::PinImpl> {
 
     pin_state_internal(request->pin).has_interrupt = true;
     completer.buffer(arena).ReplySuccess(std::move(ret));
-
-    pin_state_internal(request->pin).has_interrupt = true;
   }
 
   void ConfigureInterrupt(fuchsia_hardware_pinimpl::wire::PinImplConfigureInterruptRequest* request,
@@ -811,7 +809,7 @@ TEST_F(GpioTest, ControllerId) {
               .at(std::string{"gpio-"} + pin.name().value())
               .GetProperties();
 
-      ASSERT_EQ(properties.size(), 3ul);
+      ASSERT_EQ(properties.size(), 4ul);
 
       EXPECT_EQ(properties[0].key(), bind_fuchsia::GPIO_PIN);
 
@@ -827,6 +825,11 @@ TEST_F(GpioTest, ControllerId) {
       ASSERT_TRUE(properties[2].value().string_value().has_value());
       EXPECT_EQ(properties[2].value().string_value().value(), fuchsia_hardware_gpio::Service::Name);
 
+      EXPECT_EQ(properties[3].key(), fuchsia_hardware_gpio::Service::Name);
+      ASSERT_TRUE(properties[3].value().string_value().has_value());
+      EXPECT_EQ(properties[3].value().string_value().value(),
+                std::string(fuchsia_hardware_gpio::Service::Name) + ".ZirconTransport");
+
       std::vector<fuchsia_driver_framework::NodeProperty2> pin_properties =
           node.children()
               .at("gpio")
@@ -834,7 +837,7 @@ TEST_F(GpioTest, ControllerId) {
               .at(std::string{"gpio-"} + pin.name().value() + "-pin")
               .GetProperties();
 
-      ASSERT_EQ(pin_properties.size(), 3ul);
+      ASSERT_EQ(pin_properties.size(), 4ul);
       EXPECT_EQ(pin_properties[0].key(), bind_fuchsia::GPIO_PIN);
       ASSERT_TRUE(pin_properties[0].value().int_value().has_value());
       EXPECT_EQ(pin_properties[0].value().int_value().value(), pin.pin().value());
@@ -845,6 +848,11 @@ TEST_F(GpioTest, ControllerId) {
       ASSERT_TRUE(pin_properties[2].value().string_value().has_value());
       EXPECT_EQ(pin_properties[2].value().string_value().value(),
                 fuchsia_hardware_pin::Service::Name);
+
+      EXPECT_EQ(pin_properties[3].key(), fuchsia_hardware_pin::Service::Name);
+      ASSERT_TRUE(pin_properties[3].value().string_value().has_value());
+      EXPECT_EQ(pin_properties[3].value().string_value().value(),
+                std::string(fuchsia_hardware_pin::Service::Name) + ".ZirconTransport");
     });
   }
 

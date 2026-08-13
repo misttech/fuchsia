@@ -216,6 +216,7 @@ zx::result<> Node::Publish(PublisherInterface& publisher) {
         fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_DID,
                            bind_fuchsia_platform::BIND_PLATFORM_DEV_DID_DEVICETREE),
         fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_INSTANCE_ID, id_),
+        fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.platform.device.Service"),
         fdf::MakeProperty2("fuchsia.hardware.platform.device.Service",
                            "fuchsia.hardware.platform.device.Service.ZirconTransport"),
     };

@@ -6,6 +6,8 @@
 
 composite aml_uart;
 
+using fuchsia;
+
 primary parent "pdev" {
   if fuchsia.BIND_PLATFORM_DEV_DID == fuchsia.platform.BIND_PLATFORM_DEV_DID.DEVICETREE {
     fuchsia.devicetree.FIRST_COMPATIBLE == "amlogic,bt-uart";
@@ -22,7 +24,7 @@ optional parent "gpio-init" {
 }
 
 optional parent "pin-states-0" {
-  fuchsia.hardware.pin.PinStatesService == fuchsia.hardware.pin.PinStatesService.ZirconTransport;
+  fuchsia.Service == "fuchsia.hardware.pin.PinStatesService";
 }
 
 parent "pwm" {

@@ -119,7 +119,12 @@ zx::result<> PwmChannel::Init(std::shared_ptr<fdf::OutgoingDirectory>& outgoing,
       fdf::MakeOffer2<fuchsia_hardware_pwm::Service>(child_node_name),
   };
 
-  std::vector properties = {fdf::MakeProperty2(bind_fuchsia::PWM_ID, id_)};
+  std::vector properties = {
+      fdf::MakeProperty2(bind_fuchsia::PWM_ID, id_),
+      fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.pwm.Service"),
+      fdf::MakeProperty2("fuchsia.hardware.pwm.Service",
+                         "fuchsia.hardware.pwm.Service.ZirconTransport"),
+  };
 
   zx::result child = fdf::AddChild(parent, *fdf::Logger::GlobalInstance(), child_node_name,
                                    devfs_args, properties, offers);

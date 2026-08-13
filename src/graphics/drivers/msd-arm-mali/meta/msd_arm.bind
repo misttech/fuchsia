@@ -6,12 +6,14 @@
 
 composite msd_arm;
 
+using fuchsia;
+
 primary parent "mali" {
-  fuchsia.hardware.gpu.mali.Service == fuchsia.hardware.gpu.mali.Service.DriverTransport;
+  fuchsia.Service == "fuchsia.hardware.gpu.mali.Service";
 }
 
 parent "pdev" {
-  fuchsia.hardware.platform.device.Service == fuchsia.hardware.platform.device.Service.ZirconTransport;
+  fuchsia.Service == "fuchsia.hardware.platform.device.Service";
   if fuchsia.devicetree.FIRST_COMPATIBLE == "arm,mali-gpu" {
       true;
   } else if fuchsia.BIND_PROTOCOL == fuchsia.platform.BIND_PROTOCOL.DEVICE {

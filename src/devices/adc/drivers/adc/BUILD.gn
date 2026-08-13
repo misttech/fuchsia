@@ -20,8 +20,10 @@ driver_bind_rules("adc_bind") {
   dml_label = ":adc-dml"
   bind_output = "adc.bindbc"
   tests = "meta/test_bind.json"
-  deps =
-      [ "//sdk/fidl/fuchsia.hardware.adcimpl:fuchsia.hardware.adcimpl_bindlib" ]
+  deps = [
+    "//sdk/fidl/fuchsia.hardware.adcimpl:fuchsia.hardware.adcimpl_bindlib",
+    "//src/devices/bind/fuchsia",
+  ]
 }
 
 source_set("common") {
@@ -39,6 +41,7 @@ source_set("common") {
     "//sdk/lib/driver/devfs/cpp",
     "//sdk/lib/driver/logging/cpp",
     "//sdk/lib/driver/mmio/cpp",
+    "//src/devices/bind/fuchsia:fuchsia_cpp",
     "//src/devices/bind/fuchsia.adc:fuchsia.adc_cpp",
     "//src/devices/lib/amlogic",
     "//src/devices/lib/fidl-metadata",

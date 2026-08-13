@@ -12,6 +12,7 @@
 #include <lib/driver/logging/cpp/structured_logger.h>
 
 #include <bind/fuchsia/adc/cpp/bind.h>
+#include <bind/fuchsia/cpp/bind.h>
 #include <fbl/alloc_checker.h>
 #include <sdk/lib/driver/metadata/cpp/metadata.h>
 
@@ -119,6 +120,9 @@ zx::result<std::unique_ptr<AdcDevice>> AdcDevice::Create(
   auto offers = std::vector{fdf::MakeOffer2<fuchsia_hardware_adc::Service>(dev->name_)};
   auto properties = std::vector{
       fdf::MakeProperty2(bind_fuchsia_adc::CHANNEL, dev->channel_),
+      fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.adc.Service"),
+      fdf::MakeProperty2("fuchsia.hardware.adc.Service",
+                         "fuchsia.hardware.adc.Service.ZirconTransport"),
   };
 
   auto devfs_args = fuchsia_driver_framework::DevfsAddArgs{{

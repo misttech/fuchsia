@@ -16,7 +16,6 @@
 #include <vector>
 
 #include <bind/fuchsia/cpp/bind.h>
-#include <bind/fuchsia/hardware/pwm/cpp/bind.h>
 #include <bind/fuchsia/pwm/cpp/bind.h>
 
 namespace {
@@ -144,14 +143,14 @@ zx::result<> PwmVisitor::AddChildNodeSpec(fdf_devicetree::Node& child, uint32_t 
   auto pwm_node = fuchsia_driver_framework::ParentSpec2{{
       .bind_rules =
           {
-              fdf::MakeAcceptBindRule(bind_fuchsia_hardware_pwm::SERVICE,
-                                      bind_fuchsia_hardware_pwm::SERVICE_ZIRCONTRANSPORT),
+              fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.pwm.Service"),
               fdf::MakeAcceptBindRule(bind_fuchsia::PWM_ID, id),
           },
       .properties =
           {
-              fdf::MakeProperty2(bind_fuchsia_hardware_pwm::SERVICE,
-                                 bind_fuchsia_hardware_pwm::SERVICE_ZIRCONTRANSPORT),
+              fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.pwm.Service"),
+              fdf::MakeProperty2("fuchsia.hardware.pwm.Service",
+                                 "fuchsia.hardware.pwm.Service.ZirconTransport"),
           },
   }};
 

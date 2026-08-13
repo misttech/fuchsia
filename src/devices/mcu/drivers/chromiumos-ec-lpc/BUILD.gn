@@ -17,6 +17,7 @@ driver_bind_rules("bind") {
   bind_output = "chromiumos-ec-lpc.bindbc"
   deps = [
     "//sdk/fidl/fuchsia.hardware.interrupt:fuchsia.hardware.interrupt_bindlib",
+    "//src/devices/bind/fuchsia",
     "//src/devices/bind/fuchsia.acpi",
   ]
 }

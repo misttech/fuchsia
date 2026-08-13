@@ -77,6 +77,7 @@ const std::vector kGoodixI2cRules = std::vector{
 };
 
 const std::vector kGoodixI2cProperties = std::vector{
+    fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.i2c.Service"),
     fdf::MakeProperty2(bind_fuchsia_hardware_i2c::SERVICE,
                        bind_fuchsia_hardware_i2c::SERVICE_ZIRCONTRANSPORT),
     fdf::MakeProperty2(bind_fuchsia::I2C_ADDRESS,
@@ -91,7 +92,8 @@ const std::vector kInterruptRules = std::vector{
 };
 
 const std::vector kInterruptProperties =
-    std::vector{fdf::MakeProperty2(bind_fuchsia_hardware_gpio::SERVICE,
+    std::vector{fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.gpio.Service"),
+                fdf::MakeProperty2(bind_fuchsia_hardware_gpio::SERVICE,
                                    bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
                 fdf::MakeProperty2(bind_fuchsia::NAME, "TOUCH_INTERRUPT")};
 
@@ -103,6 +105,7 @@ const std::vector kResetRules = std::vector{
 };
 
 const std::vector kResetProperties = std::vector{
+    fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.gpio.Service"),
     fdf::MakeProperty2(bind_fuchsia_hardware_gpio::SERVICE,
                        bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
     fdf::MakeProperty2(bind_fuchsia::NAME, "TOUCH_RESET"),

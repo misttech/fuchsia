@@ -297,6 +297,9 @@ zx::result<> AmlUsbPhyDevice::ChildNode::Publish() {
       fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_PID,
                          bind_fuchsia_platform::BIND_PLATFORM_DEV_PID_GENERIC),
       fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_DID, property_did_),
+      fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.usb.phy.Service"),
+      fdf::MakeProperty2("fuchsia.hardware.usb.phy.Service",
+                         "fuchsia.hardware.usb.phy.Service.ZirconTransport"),
   };
   zx::result child = fdf::AddChild(parent_->node_client_.borrow(), *fdf::Logger::GlobalInstance(),
                                    name_, properties, offers);
