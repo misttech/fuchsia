@@ -281,6 +281,15 @@ pin_init!(Self {
   $N$ plus null terminator, let Rust generic parameter $N$ represent total
   backing array size.
 
+### 3.11. Check existing Rust conversions
+- Before introducing FFI shims, or copying constants, check if there is already
+  a Rust implementation. For any object, function, etc, you should
+  1.  Go to the location of the C++ definition.
+  2.  Walk up the directory structure to find a Rust module.
+  3.  See if there is a similar Rust struct / method impl, taking into account
+      common naming differences, e.g. for functions C++ tends to use
+      UpperCamelCase where as Rust uses lower_snake_case.
+
 ### 3.11. FFI Interoperability
 - Minimal Shims: FFI functions (`*_ffi.cc`/`*_ffi.rs`) should be purely
   declarative with zero logic.
@@ -372,6 +381,8 @@ Reviewers and Coders must audit code against this checklist:
      debug_assert! as matching the C++ use of ASSERT or DEBUG_ASSERT.
 24.  [ ] **Canary assertions**: Canary assertions are copied over to Rust and
      are correctly used.
+25.  [ ] **Unnecessary FFI methods**: FFI methods added, or code left in C++,
+     despite there being an existing Rust implementation / port.
 
 ---
 
