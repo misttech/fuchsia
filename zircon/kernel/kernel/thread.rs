@@ -16,25 +16,34 @@ unsafe extern "C" {
         name: *const c_char,
         entry: extern "C" fn(*mut c_void) -> i32,
         arg: *mut c_void,
-    ) -> *mut c_void;
-    fn cpp_thread_resume(thread: *mut c_void);
+    ) -> *mut Thread;
+    fn cpp_thread_resume(thread: *mut Thread);
     fn cpp_thread_join(
-        thread: *mut c_void,
+        thread: *mut Thread,
         out_retcode: *mut i32,
         deadline: zx_instant_mono_t,
     ) -> i32;
     fn cpp_thread_current_yield();
-    fn cpp_thread_kill(thread: *mut c_void);
-    fn cpp_thread_is_blocked(thread: *mut c_void) -> bool;
-    fn cpp_thread_current_get() -> *mut c_void;
-    fn cpp_thread_fxt_ref(thread: *mut c_void) -> FxtRef;
+    fn cpp_thread_kill(thread: *mut Thread);
+    fn cpp_thread_is_blocked(thread: *mut Thread) -> bool;
+    fn cpp_thread_current_get() -> *mut Thread;
+    fn cpp_thread_fxt_ref(thread: *mut Thread) -> FxtRef;
     fn cpp_thread_preempt_set_timeslice_extension(duration: DurationMono) -> bool;
     fn cpp_thread_preempt_clear_timeslice_extension();
     fn cpp_thread_preempt_disable();
     fn cpp_thread_preempt_enable();
+    fn cpp_thread_preempt();
     fn cpp_thread_current_sleep_relative(duration: DurationMono) -> zx_status_t;
     fn cpp_thread_current_soft_fault(va: usize, flags: u32) -> zx_status_t;
     fn cpp_restricted_enter(vector_table_ptr: usize, context: usize) -> zx_status_t;
+    fn cpp_thread_get_stack_top(thread: *mut Thread) -> usize;
+    fn cpp_thread_get_shadow_call_base(thread: *mut Thread) -> usize;
+    fn cpp_thread_dump_current_stack();
+    fn cpp_thread_is_user_state_saved(thread: *mut Thread) -> bool;
+    fn cpp_thread_is_running(thread: *const Thread) -> bool;
+    fn cpp_thread_name(thread: *const Thread) -> *const c_char;
+    fn cpp_thread_process_pending_signals(frame: *mut c_void);
+    fn cpp_thread_is_in_restricted_mode(thread: *mut Thread) -> bool;
 }
 
 // LINT.IfChange(FxtRef)
@@ -47,6 +56,12 @@ pub struct FxtRef {
 }
 // LINT.ThenChange(//zircon/kernel/kernel/thread_ffi.cc:FxtRef)
 
+/// An opaque type representing the C++ `Thread` class.
+#[repr(C)]
+pub struct Thread {
+    _private: [u8; 0],
+}
+
 /// Enters restricted mode using the given vector table pointer and context.
 pub fn restricted_enter(vector_table_ptr: usize, context: usize) -> Result<(), Status> {
     // SAFETY: `cpp_restricted_enter` performs validation of vector_table_ptr and context
@@ -57,7 +72,7 @@ pub fn restricted_enter(vector_table_ptr: usize, context: usize) -> Result<(), S
 
 /// Type-safe wrapper around a raw pointer to a Zircon kernel Thread.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ThreadPtr(NonNull<c_void>);
+pub struct ThreadPtr(NonNull<Thread>);
 
 // SAFETY: A ThreadPtr is just a pointer to a kernel thread, which can be safely passed
 // between threads to perform join or kill operations.
@@ -70,7 +85,7 @@ impl ThreadPtr {
     /// # Safety
     ///
     /// The caller must ensure that `ptr` is a valid pointer to a live kernel thread.
-    pub const unsafe fn from_raw(ptr: *mut c_void) -> Option<Self> {
+    pub const unsafe fn from_raw(ptr: *mut Thread) -> Option<Self> {
         match NonNull::new(ptr) {
             Some(nn) => Some(Self(nn)),
             None => None,
@@ -78,7 +93,12 @@ impl ThreadPtr {
     }
 
     /// Returns the raw pointer.
-    pub const fn as_raw(self) -> *mut c_void {
+    pub const fn as_raw(self) -> *mut Thread {
+        self.0.as_ptr()
+    }
+
+    /// Returns the raw const pointer.
+    pub const fn as_ptr(self) -> *const Thread {
         self.0.as_ptr()
     }
 
@@ -298,6 +318,84 @@ pub fn soft_fault(va: usize, flags: u32) -> Result<(), Status> {
     // SAFETY: cpp_thread_current_soft_fault is safe to call from thread context.
     let status = unsafe { cpp_thread_current_soft_fault(va, flags) };
     Status::ok(status)
+}
+
+/// Returns the raw pointer to the current thread.
+pub fn current_get() -> *mut Thread {
+    unsafe { cpp_thread_current_get() }
+}
+
+/// Triggers preemption on the current thread.
+pub fn preempt() {
+    unsafe { cpp_thread_preempt() }
+}
+
+/// Dumps the call stack of the current thread.
+pub fn dump_current_stack() {
+    unsafe { cpp_thread_dump_current_stack() }
+}
+
+/// Processes pending signals on the current thread using the given iframe.
+///
+/// # Safety
+/// Caller must ensure `frame` points to a valid architectural `iframe_t`.
+pub unsafe fn process_pending_signals(frame: *mut c_void) {
+    // SAFETY: Forwarded to C++ Thread::Current::ProcessPendingSignals with caller-verified frame.
+    unsafe { cpp_thread_process_pending_signals(frame) }
+}
+
+/// Returns the top of the stack for `thread`.
+///
+/// # Safety
+/// Caller must ensure `thread` points to a valid C++ `Thread` instance.
+pub unsafe fn get_stack_top(thread: *mut Thread) -> usize {
+    // SAFETY: Forwarded to C++ Thread::stack().top() with caller-verified pointer.
+    unsafe { cpp_thread_get_stack_top(thread) }
+}
+
+/// Returns the shadow call stack base for `thread`.
+///
+/// # Safety
+/// Caller must ensure `thread` points to a valid C++ `Thread` instance.
+pub unsafe fn get_shadow_call_base(thread: *mut Thread) -> usize {
+    // SAFETY: Forwarded to C++ Thread::stack().shadow_call_base() with caller-verified pointer.
+    unsafe { cpp_thread_get_shadow_call_base(thread) }
+}
+
+/// Checks whether user state is saved for `thread`.
+///
+/// # Safety
+/// Caller must ensure `thread` points to a valid C++ `Thread` instance whose thread lock is held.
+pub unsafe fn is_user_state_saved(thread: *mut Thread) -> bool {
+    // SAFETY: Forwarded to C++ Thread::IsUserStateSavedLocked() with caller-verified pointer.
+    unsafe { cpp_thread_is_user_state_saved(thread) }
+}
+
+/// Checks whether `thread` is currently running.
+///
+/// # Safety
+/// Caller must ensure `thread` points to a valid C++ `Thread` instance.
+pub unsafe fn is_running(thread: *const Thread) -> bool {
+    // SAFETY: Forwarded to C++ Thread::state() with caller-verified pointer.
+    unsafe { cpp_thread_is_running(thread) }
+}
+
+/// Returns the name of `thread`.
+///
+/// # Safety
+/// Caller must ensure `thread` points to a valid C++ `Thread` instance.
+pub unsafe fn name(thread: *const Thread) -> *const c_char {
+    // SAFETY: Forwarded to C++ Thread::name() with caller-verified pointer.
+    unsafe { cpp_thread_name(thread) }
+}
+
+/// Checks whether `thread` is executing in restricted mode.
+///
+/// # Safety
+/// Caller must ensure `thread` points to a valid C++ `Thread` instance.
+pub unsafe fn is_in_restricted_mode(thread: *mut Thread) -> bool {
+    // SAFETY: Forwarded to C++ Thread restricted state query with caller-verified pointer.
+    unsafe { cpp_thread_is_in_restricted_mode(thread) }
 }
 
 #[cfg(test)]

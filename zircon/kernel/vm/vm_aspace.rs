@@ -6,7 +6,7 @@
 
 use super::arch_vm_aspace::{ArchMmuFlags, ArchVmAspace, NonTerminalAction, TerminalAction};
 use super::vm_address_region::VmAddressRegion;
-use crate::kernel::thread::ThreadPtr;
+use crate::kernel::thread::{Thread, ThreadPtr};
 use crate::kernel::types::PAddr;
 use core::ffi::{CStr, c_char, c_void};
 use fbl::RefPtr;
@@ -76,7 +76,7 @@ unsafe extern "C" {
     fn cpp_vm_aspace_destroy(aspace: *mut VmAspace) -> i32;
     fn cpp_vm_aspace_rename(aspace: *mut VmAspace, name: *const c_char);
     fn cpp_vm_aspace_dump(aspace: *mut VmAspace, verbose: bool);
-    fn cpp_vm_aspace_attach_to_thread(aspace: *mut VmAspace, thread: *mut c_void);
+    fn cpp_vm_aspace_attach_to_thread(aspace: *mut VmAspace, thread: *mut Thread);
     fn cpp_vm_aspace_vdso_base_address(aspace: *mut VmAspace) -> usize;
     fn cpp_vm_aspace_vdso_code_address(aspace: *mut VmAspace) -> usize;
     fn cpp_vm_aspace_is_high_memory_priority(aspace: *mut VmAspace) -> bool;
