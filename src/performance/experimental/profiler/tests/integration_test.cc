@@ -158,6 +158,19 @@ zx::result<fidl::ClientEnd<fuchsia_component::Binder>> RunInstance(
     FX_LOGS(ERROR) << start_res.error_value();
     return zx::error(ZX_ERR_BAD_STATE);
   }
+
+  // Ensure component instance is fully registered in Component Manager before returning
+  if (zx::result query_client_end = component::Connect<fuchsia_sys2::RealmQuery>();
+      query_client_end.is_ok()) {
+    fidl::SyncClient realm_query{std::move(*query_client_end)};
+    for (int i = 0; i < 100; ++i) {
+      if (realm_query->GetInstance(moniker).is_ok()) {
+        break;
+      }
+      zx::nanosleep(zx::deadline_after(zx::msec(50)));
+    }
+  }
+
   return zx::ok(std::move(client));
 }
 
@@ -610,8 +623,8 @@ TEST(ProfilerIntegrationTest, ChildComponents) {
                   .is_ok());
 
   ASSERT_TRUE(client->Start({{.buffer_results = true}}).is_ok());
-  // Get some samples
-  sleep(1);
+  // Get some samples (use 3 seconds to ensure HWASan / QEMU multi-component startup completes)
+  sleep(3);
 
   auto stop_response = client->Stop();
   ASSERT_TRUE(stop_response.is_ok());
@@ -661,8 +674,8 @@ TEST(ProfilerIntegrationTest, ChildComponentsByMoniker) {
                   .is_ok());
 
   ASSERT_TRUE(client->Start({{.buffer_results = true}}).is_ok());
-  // Get some samples
-  sleep(1);
+  // Get some samples (use 3 seconds to ensure HWASan / QEMU multi-component startup completes)
+  sleep(3);
 
   auto stop_response = client->Stop();
   ASSERT_TRUE(stop_response.is_ok());
@@ -801,6 +814,10 @@ TEST(ProfilerIntegrationTest, ExitedProcess) {
   const std::string url = "demo_target#meta/demo_target.cm";
   const std::string moniker = "./launchpad:demo_target";
 
+  // TODO(https://fxbug.dev/476409475): Fix the profiler to handle the case where
+  // a process starts between configuring and starting without race conditions.
+  ASSERT_TRUE(RunInstance(lifecycle_client, name, url, moniker).is_ok());
+
   fprofiler::TargetConfig target_config = fprofiler::TargetConfig::WithComponent(
       fprofiler::AttachConfig::WithAttachToComponentMoniker(moniker));
 
@@ -812,11 +829,10 @@ TEST(ProfilerIntegrationTest, ExitedProcess) {
                                 }}}})
                   .is_ok());
 
-  ASSERT_TRUE(RunInstance(lifecycle_client, name, url, moniker).is_ok());
   ASSERT_TRUE(client->Start({{.buffer_results = true}}).is_ok());
 
   // Get some samples
-  sleep(1);
+  sleep(2);
 
   // Destroy the target before the profiler stops
   ASSERT_TRUE(TearDownInstance(lifecycle_client, name, moniker).is_ok());
