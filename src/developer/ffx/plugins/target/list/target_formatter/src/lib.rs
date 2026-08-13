@@ -73,9 +73,135 @@ pub fn port_str_scoped(ta: TargetAddr) -> Result<String> {
     }
 }
 
+/// Sanitizes a string from untrusted target metadata by stripping ANSI escape sequences
+/// and control characters to prevent terminal injection attacks.
+pub fn sanitize(input: &str) -> String {
+    let mut result = String::with_capacity(input.len());
+    let mut chars = input.chars().peekable();
+
+    while let Some(c) = chars.next() {
+        if c == '\x1b' {
+            match chars.peek() {
+                Some('[') => {
+                    // CSI sequence: ESC [ [0x30-0x3F]* [0x20-0x2F]* [0x40-0x7E]
+                    chars.next();
+                    while let Some(&p) = chars.peek() {
+                        if (p >= '0' && p <= '9') || (p >= ':' && p <= '?') {
+                            chars.next();
+                        } else {
+                            break;
+                        }
+                    }
+                    while let Some(&p) = chars.peek() {
+                        if p >= ' ' && p <= '/' {
+                            chars.next();
+                        } else {
+                            break;
+                        }
+                    }
+                    if let Some(&p) = chars.peek() {
+                        if p >= '@' && p <= '~' {
+                            chars.next();
+                        }
+                    }
+                }
+                Some(']') => {
+                    // OSC sequence: ESC ] ... (BEL | ESC \)
+                    chars.next();
+                    while let Some(o) = chars.next() {
+                        if o == '\x07' {
+                            break;
+                        }
+                        if o == '\x1b' && chars.peek() == Some(&'\\') {
+                            chars.next();
+                            break;
+                        }
+                    }
+                }
+                Some('P') | Some('X') | Some('^') | Some('_') => {
+                    // DCS / SOS / PM / APC: ESC (P|X|^|_) ... (BEL | ESC \)
+                    chars.next();
+                    while let Some(o) = chars.next() {
+                        if o == '\x07' {
+                            break;
+                        }
+                        if o == '\x1b' && chars.peek() == Some(&'\\') {
+                            chars.next();
+                            break;
+                        }
+                    }
+                }
+                Some(&next_c) if next_c >= ' ' && next_c <= '/' => {
+                    // Charset / 2-byte escape sequences: ESC [0x20-0x2F]+ [0x30-0x7E]
+                    while let Some(&p) = chars.peek() {
+                        if p >= ' ' && p <= '/' {
+                            chars.next();
+                        } else {
+                            break;
+                        }
+                    }
+                    if let Some(&p) = chars.peek() {
+                        if p >= '0' && p <= '~' {
+                            chars.next();
+                        }
+                    }
+                }
+                Some(&next_c) if next_c >= '@' && next_c <= '_' => {
+                    // 2-byte Fe escape sequence: ESC [@-_]
+                    chars.next();
+                }
+                _ => {
+                    // Stray ESC, skip it.
+                }
+            }
+        } else if c == '\u{009b}' {
+            // C1 CSI
+            while let Some(&p) = chars.peek() {
+                if (p >= '0' && p <= '9') || (p >= ':' && p <= '?') {
+                    chars.next();
+                } else {
+                    break;
+                }
+            }
+            while let Some(&p) = chars.peek() {
+                if p >= ' ' && p <= '/' {
+                    chars.next();
+                } else {
+                    break;
+                }
+            }
+            if let Some(&p) = chars.peek() {
+                if p >= '@' && p <= '~' {
+                    chars.next();
+                }
+            }
+        } else if c == '\u{009d}'
+            || c == '\u{0090}'
+            || c == '\u{0098}'
+            || c == '\u{009e}'
+            || c == '\u{009f}'
+        {
+            // C1 OSC / DCS / SOS / PM / APC
+            while let Some(o) = chars.next() {
+                if o == '\x07' || o == '\u{009c}' {
+                    break;
+                }
+                if o == '\x1b' && chars.peek() == Some(&'\\') {
+                    chars.next();
+                    break;
+                }
+            }
+        } else if !c.is_control() {
+            result.push(c);
+        }
+    }
+
+    result
+}
+
 fn nodename_to_string(index: Option<usize>, nodename: Option<String>) -> String {
     match nodename {
-        Some(name) => name,
+        Some(name) => sanitize(&name),
         None => match index {
             Some(index) => format!("<unknown-{}>", index),
             None => target_errors::UNKNOWN_TARGET_NAME.to_owned(),
@@ -225,7 +351,7 @@ impl TryFrom<TargetInfo> for SerialsTarget {
         let Some(serial) = t.serial_number else {
             return Err(FormatterError::MissingSerialNumber);
         };
-        Ok(Self(serial))
+        Ok(Self(sanitize(&serial)))
     }
 }
 
@@ -306,7 +432,7 @@ impl TryFrom<TargetInfo> for SimpleTarget {
     type Error = FormatterError;
 
     fn try_from(t: TargetInfo) -> Result<Self> {
-        let nodename = t.nodename.clone().unwrap_or_else(|| "".to_string());
+        let nodename = t.nodename.as_deref().map(sanitize).unwrap_or_else(|| "".to_string());
         let AddressesTarget(addr) = t.try_into()?;
 
         Ok(Self(nodename, addr))
@@ -533,7 +659,13 @@ impl StringifiedTarget {
         match (board_config, product_config) {
             (None, None) => String::from("Unknown"),
             (board, product) => {
-                format!("{}.{}", product.unwrap_or(UNKNOWN), board.unwrap_or(UNKNOWN))
+                let board = board.map(sanitize);
+                let product = product.map(sanitize);
+                format!(
+                    "{}.{}",
+                    product.as_deref().unwrap_or(UNKNOWN),
+                    board.as_deref().unwrap_or(UNKNOWN)
+                )
             }
         }
     }
@@ -562,7 +694,11 @@ impl From<(Option<usize>, TargetInfo)> for StringifiedTarget {
             __is_default: target.is_default.unwrap_or_default(),
             nodename: StringifiedField::String(nodename_to_string(index, target.nodename)),
             serial: StringifiedField::String(
-                target.serial_number.unwrap_or_else(|| UNKNOWN.to_string()),
+                target
+                    .serial_number
+                    .as_deref()
+                    .map(sanitize)
+                    .unwrap_or_else(|| UNKNOWN.to_string()),
             ),
             addresses: StringifiedTarget::field_from_addresses(target.addresses),
             rcs_state: StringifiedField::String(StringifiedTarget::from_rcs_state(
@@ -582,7 +718,11 @@ impl From<(Option<usize>, TargetInfo)> for JsonTarget {
     fn from((index, target): (Option<usize>, TargetInfo)) -> Self {
         Self {
             nodename: nodename_to_string(index, target.nodename),
-            serial: target.serial_number.unwrap_or_else(|| UNKNOWN.to_string()),
+            serial: target
+                .serial_number
+                .as_deref()
+                .map(sanitize)
+                .unwrap_or_else(|| UNKNOWN.to_string()),
             addresses: target
                 .addresses
                 .into_iter()
@@ -1445,5 +1585,135 @@ mod test {
         let res = port_str_scoped(addr);
         assert!(res.is_err());
         assert!(matches!(res.unwrap_err(), FormatterError::InvalidInterfaceId(_)));
+    }
+
+    #[test]
+    fn test_sanitize_clean_string() {
+        assert_eq!(sanitize("normal-target-name_123"), "normal-target-name_123");
+        assert_eq!(sanitize("target with spaces"), "target with spaces");
+        assert_eq!(sanitize("tårget-üñîçødé"), "tårget-üñîçødé");
+    }
+
+    #[test]
+    fn test_sanitize_csi_escape_sequences() {
+        // Colors / SGR
+        assert_eq!(sanitize("\x1b[31mred-target\x1b[0m"), "red-target");
+        assert_eq!(sanitize("\x1b[1;32;40mbold-green\x1b[0m"), "bold-green");
+        // Screen clearing & cursor movement
+        assert_eq!(sanitize("\x1b[2J\x1b[Hspoofed"), "spoofed");
+        assert_eq!(sanitize("\x1b[2K\rline-clear"), "line-clear");
+        // DEC private modes
+        assert_eq!(sanitize("\x1b[?25lhidden-cursor\x1b[?25h"), "hidden-cursor");
+    }
+
+    #[test]
+    fn test_sanitize_osc_escape_sequences() {
+        // OSC terminated with BEL (\x07)
+        assert_eq!(sanitize("\x1b]0;evil title\x07my-target"), "my-target");
+        // OSC terminated with ST (ESC \)
+        assert_eq!(sanitize("\x1b]0;evil title\x1b\\my-target"), "my-target");
+    }
+
+    #[test]
+    fn test_sanitize_other_escape_sequences() {
+        // 2-byte Fe sequences
+        assert_eq!(sanitize("\x1bNsingle-shift"), "single-shift");
+        // Character set designations
+        assert_eq!(sanitize("\x1b(Bcharset-target"), "charset-target");
+        // DCS / SOS / PM / APC sequences
+        assert_eq!(sanitize("\x1bPdevice-control\x07target"), "target");
+        assert_eq!(sanitize("\x1b_application-command\x1b\\target"), "target");
+        // Incomplete / stray escape
+        assert_eq!(sanitize("\x1b"), "");
+        assert_eq!(sanitize("\x1b[31"), "");
+    }
+
+    #[test]
+    fn test_sanitize_c1_control_codes() {
+        // C1 CSI (\u{009b})
+        assert_eq!(sanitize("\u{009b}31mred\u{009b}0m"), "red");
+        // C1 OSC (\u{009d})
+        assert_eq!(sanitize("\u{009d}0;title\x07target"), "target");
+    }
+
+    #[test]
+    fn test_sanitize_control_characters() {
+        // ASCII control characters: CR, LF, TAB, BEL, BS, NUL, DEL
+        assert_eq!(sanitize("target\r\nspoofed"), "targetspoofed");
+        assert_eq!(sanitize("target\x07bell"), "targetbell");
+        assert_eq!(sanitize("target\x08backspace"), "targetbackspace");
+        assert_eq!(sanitize("target\t\x00tab-null"), "targettab-null");
+        assert_eq!(sanitize("target\x7fdel"), "targetdel");
+    }
+
+    #[test]
+    fn test_tabular_formatter_sanitizes_metadata() {
+        let mut target = make_valid_target();
+        target.addresses = vec![make_ip_v4_addr(0)];
+        target.nodename = Some("\x1b[31mevil-nodename\x1b[0m".to_string());
+        target.serial_number = Some("\x1b[2Jevil-serial".to_string());
+        target.product_config = Some("\x1b]0;evil\x07evil-product".to_string());
+        target.board_config = Some("evil-board\r\n".to_string());
+
+        let formatter = TabularTargetFormatter::from(vec![target]);
+        let lines = formatter.lines().unwrap();
+        assert_eq!(lines.len(), 2);
+        let target_line = &lines[1];
+        assert!(target_line.contains("evil-nodename"));
+        assert!(target_line.contains("evil-serial"));
+        assert!(target_line.contains("evil-product.evil-board"));
+        assert!(!target_line.contains("\x1b"));
+        assert!(!target_line.contains('\r'));
+        assert!(!target_line.contains('\n'));
+        assert!(!target_line.contains('\x07'));
+    }
+
+    #[test]
+    fn test_simple_formatter_sanitizes_metadata() {
+        let mut target = make_valid_target();
+        target.nodename = Some("\x1b[31mevil-nodename\x1b[0m".to_string());
+
+        let formatter = SimpleTargetFormatter::try_from(vec![target]).unwrap();
+        let lines = formatter.lines().unwrap();
+        assert_eq!(lines.len(), 1);
+        assert!(lines[0].contains("evil-nodename"));
+        assert!(!lines[0].contains("\x1b"));
+    }
+
+    #[test]
+    fn test_serials_formatter_sanitizes_metadata() {
+        let mut target = make_valid_target();
+        target.serial_number = Some("\x1b[32mevil-serial\x1b[0m".to_string());
+
+        let formatter = SerialsTargetFormatter::try_from(vec![target]).unwrap();
+        let lines = formatter.lines().unwrap();
+        assert_eq!(lines.len(), 1);
+        assert_eq!(lines[0], "evil-serial");
+    }
+
+    #[test]
+    fn test_name_only_formatter_sanitizes_metadata() {
+        let mut target = make_valid_target();
+        target.nodename = Some("\x1b[33mevil-nodename\x1b[0m".to_string());
+
+        let formatter = NameOnlyTargetFormatter::from(vec![target]);
+        let lines = formatter.lines().unwrap();
+        assert_eq!(lines.len(), 1);
+        assert_eq!(lines[0], "evil-nodename");
+    }
+
+    #[test]
+    fn test_json_formatter_sanitizes_metadata() {
+        let mut target = make_valid_target();
+        target.nodename = Some("\x1b[31mevil-nodename\x1b[0m".to_string());
+        target.serial_number = Some("\x1b[2Jevil-serial".to_string());
+        target.product_config = Some("\x1b]0;evil\x07evil-product".to_string());
+        target.board_config = Some("evil-board\r\n".to_string());
+
+        let formatter = JsonTargetFormatter::from(vec![target]);
+        let json_target = &formatter.targets[0];
+        assert_eq!(json_target.nodename, "evil-nodename");
+        assert_eq!(json_target.serial, "evil-serial");
+        assert_eq!(json_target.target_type, "evil-product.evil-board");
     }
 }
