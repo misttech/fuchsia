@@ -26,7 +26,7 @@ pub async fn serve(mut stream: ResolverRequestStream) {
             ResolverRequest::Resolve { name, responder } => {
                 match resolve(&boot_resolver, &pkg_resolver, &name).await {
                     Ok((vmo, ldsvc)) => {
-                        let _ = responder.send(zx::Status::OK.into_raw(), Some(vmo), ldsvc);
+                        let _ = responder.send(zx::sys::ZX_OK, Some(vmo), ldsvc);
                     }
                     Err(s) => {
                         let _ = responder.send(s.into_raw(), None, None);

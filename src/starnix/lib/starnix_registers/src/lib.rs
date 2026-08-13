@@ -46,20 +46,20 @@ impl RestrictedState {
         fuchsia_trace::duration!(CATEGORY_STARNIX, NAME_MAP_RESTRICTED_STATE);
         let mut out_vmo_handle = 0;
         // SAFETY: `out_vmo_handle` is a valid pointer to a handle on the stack.
-        let status = zx::Status::from_raw(unsafe {
+        let status = zx::Status::ok(unsafe {
             zx::sys::zx_restricted_bind_state(
                 0,
                 &mut out_vmo_handle,
                 std::ptr::from_mut(exception_report),
             )
         });
-        match { status } {
-            zx::Status::OK => {
+        match status {
+            Ok(()) => {
                 // We've successfully attached the VMO to the current thread. This VMO will be
                 // mapped and used for the kernel to store restricted mode register state as it
                 // enters and exits restricted mode.
             }
-            _ => panic!("zx_restricted_bind_state failed with {status}!"),
+            Err(status) => panic!("zx_restricted_bind_state failed with {status}!"),
         }
         // SAFETY: `out_vmo_handle` is a valid handle as `zx_restricted_bind_state` returned OK.
         let state_vmo = unsafe { zx::Vmo::from(zx::NullableHandle::from_raw(out_vmo_handle)) };

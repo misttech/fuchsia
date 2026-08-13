@@ -161,7 +161,7 @@ impl<D: DeviceOps> crate::MlmeImpl for Ap<D> {
         Self::handle_eth_frame_tx(self, bytes, async_id);
         Ok(())
     }
-    async fn handle_scan_complete(&mut self, _status: zx::Status, _scan_id: u64) {
+    async fn handle_scan_complete(&mut self, _status: Result<(), zx::Status>, _scan_id: u64) {
         warn!("Unexpected ScanComplete for AP MLME.");
         return;
     }

@@ -502,7 +502,7 @@ impl MockDir {
     async fn serve_f(self: Rc<Self>, object: FServerEnd<fio_f::DirectoryMarker>) {
         let mut stream = object.into_stream();
         let _ = stream.control_handle().send_on_open_(
-            Status::OK.into_raw(),
+            zx_status::sys::ZX_OK,
             Some(fio_f::NodeInfoDeprecated::Directory(fio_f::DirectoryObject {})),
         );
         while let Ok(Some(request)) = stream.try_next().await {
@@ -512,7 +512,7 @@ impl MockDir {
                 }
                 fio_f::DirectoryRequest::Rewind { responder, .. } => {
                     self.at_end.store(false, Ordering::Relaxed);
-                    responder.send(Status::OK.into_raw()).unwrap();
+                    responder.send(zx_status::sys::ZX_OK).unwrap();
                 }
                 fio_f::DirectoryRequest::ReadDirents { max_bytes: _, responder, .. } => {
                     let entries = match self.at_end.compare_exchange(
@@ -525,7 +525,7 @@ impl MockDir {
                         Err(true) => Vec::new(),
                         _ => unreachable!(),
                     };
-                    responder.send(Status::OK.into_raw(), &entries).unwrap();
+                    responder.send(zx_status::sys::ZX_OK, &entries).unwrap();
                 }
                 x => panic!("unsupported request: {x:?}"),
             }
@@ -541,7 +541,7 @@ impl MockDir {
                 }
                 fio::DirectoryRequest::Rewind { responder, .. } => {
                     self.at_end.store(false, Ordering::Relaxed);
-                    responder.send(Status::OK.into_raw()).unwrap();
+                    responder.send(zx_status::sys::ZX_OK).unwrap();
                 }
                 fio::DirectoryRequest::ReadDirents { max_bytes: _, responder, .. } => {
                     let entries = match self.at_end.compare_exchange(
@@ -554,7 +554,7 @@ impl MockDir {
                         Err(true) => Vec::new(),
                         _ => unreachable!(),
                     };
-                    responder.send(Status::OK.into_raw(), &entries).unwrap();
+                    responder.send(zx_status::sys::ZX_OK, &entries).unwrap();
                 }
                 x => panic!("unsupported request: {x:?}"),
             }

@@ -259,7 +259,7 @@ impl<O: OutputSink> Controller<O> {
         let (fidl_input, input) = input_pair.as_tuple();
         let status = self.with_input("Minimize", self.proxy.minimize(fidl_input), input).await?;
         match status {
-            zx::Status::INVALID_ARGS => bail!("the provided input did not cause an error"),
+            Err(zx::Status::INVALID_ARGS) => bail!("the provided input did not cause an error"),
             status => check_status("Minimize", status),
         }
     }
@@ -279,7 +279,7 @@ impl<O: OutputSink> Controller<O> {
         let (fidl_input, input) = input_pair.as_tuple();
         let status = self.with_input("Cleanse", self.proxy.cleanse(fidl_input), input).await?;
         match status {
-            zx::Status::INVALID_ARGS => bail!("the provided input did not cause an error"),
+            Err(zx::Status::INVALID_ARGS) => bail!("the provided input did not cause an error"),
             status => check_status("Cleanse", status),
         }
     }
@@ -299,13 +299,20 @@ impl<O: OutputSink> Controller<O> {
         let response = self.proxy.merge().await;
         let status = check_response("Merge", response)?;
         match status {
-            zx::Status::INVALID_ARGS => bail!("an input in the seed corpus triggered an error"),
+            Err(zx::Status::INVALID_ARGS) => {
+                bail!("an input in the seed corpus triggered an error")
+            }
             status => check_status("Merge", status),
         }
     }
 
     // Runs the given `fidl_fut` along with a future to send an `input`.
-    async fn with_input<F>(&self, name: &str, fidl_fut: F, input: Input) -> Result<zx::Status>
+    async fn with_input<F>(
+        &self,
+        name: &str,
+        fidl_fut: F,
+        input: Input,
+    ) -> Result<Result<(), zx::Status>>
     where
         F: Future<Output = Result<Result<(), i32>, fidl::Error>>,
     {
@@ -318,10 +325,10 @@ impl<O: OutputSink> Controller<O> {
         let timer_fut = timer_fut.fuse();
         pin_mut!(fidl_fut, send_fut, timer_fut);
         let mut remaining = 2;
-        let mut status = zx::Status::OK;
+        let mut status = Ok(());
         // If `fidl_fut` completes with e.g. `Ok(zx::Status::CANCELED)`, drop
         // the `send_fut` and `forward_fut` futures.
-        while remaining > 0 && status == zx::Status::OK {
+        while remaining > 0 && status.is_ok() {
             select! {
                 response = fidl_fut => {
                     status = check_response(name, response)?;
@@ -406,25 +413,25 @@ impl<O: OutputSink> Controller<O> {
 fn check_response(
     name: &str,
     response: Result<Result<(), i32>, fidl::Error>,
-) -> Result<zx::Status> {
+) -> Result<Result<(), zx::Status>> {
     match response {
         Err(fidl::Error::ClientChannelClosed { epitaph, .. })
             if epitaph == zx::Status::PEER_CLOSED =>
         {
-            Ok(zx::Status::OK)
+            Ok(Ok(()))
         }
         Err(e) => bail!("`fuchsia.fuzzer.Controller/{}` failed: {:?}", name, e),
-        Ok(Err(raw)) => Ok(zx::Status::from_raw(raw)),
-        Ok(Ok(())) => Ok(zx::Status::OK),
+        Ok(Err(raw)) => Ok(Err(zx::Status::try_from_raw(raw).unwrap_or(zx::Status::INTERNAL))),
+        Ok(Ok(())) => Ok(Ok(())),
     }
 }
 
 // Checks the result from a FIDL response for common errors.
-fn check_status(name: &str, status: zx::Status) -> Result<()> {
+fn check_status(name: &str, status: Result<(), zx::Status>) -> Result<()> {
     match status {
-        zx::Status::OK => Ok(()),
-        zx::Status::BAD_STATE => bail!("another long-running workflow is in progress"),
-        status => bail!("`fuchsia.fuzzer.Controller/{}` returned: ZX_ERR_{}", name, status),
+        Ok(()) => Ok(()),
+        Err(zx::Status::BAD_STATE) => bail!("another long-running workflow is in progress"),
+        Err(status) => bail!("`fuchsia.fuzzer.Controller/{}` returned: ZX_ERR_{}", name, status),
     }
 }
 

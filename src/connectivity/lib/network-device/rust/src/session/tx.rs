@@ -281,12 +281,12 @@ mod tests {
                     netdev::SessionRequest::RegisterForTx { vmos, responder } => {
                         let count = u8::try_from(vmos.len()).unwrap();
                         tx_reg_sender.unbounded_send(vmos).unwrap();
-                        responder.send(count, zx::Status::OK.into_raw()).unwrap();
+                        responder.send(count, zx::sys::ZX_OK).unwrap();
                     }
                     netdev::SessionRequest::UnregisterForTx { vmos, responder } => {
                         let count = u8::try_from(vmos.len()).unwrap();
                         tx_unreg_sender.unbounded_send(vmos).unwrap();
-                        responder.send(count, zx::Status::OK.into_raw()).unwrap();
+                        responder.send(count, zx::sys::ZX_OK).unwrap();
                     }
                     req => {
                         unimplemented!("unexpected request {req:?}")

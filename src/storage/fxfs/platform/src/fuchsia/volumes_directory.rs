@@ -2095,7 +2095,7 @@ mod tests {
         let vol = VolumeInfo::new(&volumes_directory, "foo").await;
         let old_info = {
             let (status, info) = vol.file_proxy.query_filesystem().await.expect("Getting fs info");
-            assert_eq!(status, zx::Status::OK.into_raw());
+            assert_eq!(status, zx::sys::ZX_OK);
             let info = info.unwrap();
             // With no limit set, the total filesystem size should be returned.
             assert!(info.total_bytes > BYTES_LIMIT);
@@ -2105,7 +2105,7 @@ mod tests {
         vol.volume_proxy.set_limit(BYTES_LIMIT).await.unwrap().expect("To set limits");
         {
             let (status, info) = vol.file_proxy.query_filesystem().await.expect("Getting fs info");
-            assert!(status == zx::Status::OK.into_raw());
+            assert_eq!(status, zx::sys::ZX_OK);
             let new_info = info.unwrap();
             assert_eq!(new_info.total_bytes, BYTES_LIMIT);
             // Now since the limit is the volume limit, the space used should be the volume usage,

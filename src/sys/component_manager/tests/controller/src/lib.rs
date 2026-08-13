@@ -578,7 +578,7 @@ async fn wait_for_exit(spawn_child_future: BoxFuture<'static, SpawnedChild>) {
     if let Ok(Some(fcomponent::ExecutionControllerEvent::OnStop { stopped_payload })) =
         execution_controller_proxy.take_event_stream().try_next().await
     {
-        assert_eq!(stopped_payload.status, Some(zx::Status::OK.into_raw()));
+        assert_eq!(stopped_payload.status, Some(zx::sys::ZX_OK));
     } else {
         panic!("expected OnStop to be called");
     }

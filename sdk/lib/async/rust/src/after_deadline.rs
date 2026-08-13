@@ -200,7 +200,7 @@ impl Drop for AfterDeadline {
         // inside `on_dispatcher`, and we know the `state_ptr` is valid because the `Arc`
         // holding it is still held.
         let status = unsafe { async_cancel_task(async_dispatcher.as_ptr(), state_ptr) };
-        if Status::from_raw(status) == Status::OK {
+        if Status::ok(status).is_ok() {
             // SAFETY: If the cancellation was successful, we know the callback won't be called
             // so we need to deallocate the copy of the arc that was given to it.
             unsafe { SharedState::release_raw_ptr(state_ptr) };

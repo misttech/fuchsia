@@ -9,14 +9,14 @@ use futures::{FutureExt as _, StreamExt as _, future};
 use std::sync::Arc;
 
 pub trait Hook: Send + Sync {
-    fn query_health_checks(&self) -> future::BoxFuture<'static, zx::Status>;
+    fn query_health_checks(&self) -> future::BoxFuture<'static, Result<(), zx::Status>>;
 }
 
 impl<F> Hook for F
 where
-    F: Fn() -> zx::Status + Send + Sync,
+    F: Fn() -> Result<(), zx::Status> + Send + Sync,
 {
-    fn query_health_checks(&self) -> future::BoxFuture<'static, zx::Status> {
+    fn query_health_checks(&self) -> future::BoxFuture<'static, Result<(), zx::Status>> {
         future::ready(self()).boxed()
     }
 }
@@ -50,9 +50,13 @@ impl MockHealthVerificationService {
         let Self { call_hook } = &*self;
         stream
             .for_each(|request| match request.expect("received verifier request") {
-                fidl::HealthVerificationRequest::QueryHealthChecks { responder } => call_hook
-                    .query_health_checks()
-                    .map(|res| responder.send(res.into_raw()).expect("sent verifier response")),
+                fidl::HealthVerificationRequest::QueryHealthChecks { responder } => {
+                    call_hook.query_health_checks().map(|res| {
+                        responder
+                            .send(zx::Status::result_into_raw(res))
+                            .expect("sent verifier response")
+                    })
+                }
             })
             .await
     }
@@ -64,11 +68,11 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_mock_verifier() {
-        let mock = Arc::new(MockHealthVerificationService::new(|| zx::Status::OK));
+        let mock = Arc::new(MockHealthVerificationService::new(|| Ok(())));
         let (proxy, _server) = mock.spawn_health_verification_service();
 
         let verify_result = proxy.query_health_checks().await.expect("made fidl call");
 
-        assert_eq!(verify_result, 0);
+        assert_eq!(verify_result, zx::sys::ZX_OK);
     }
 }

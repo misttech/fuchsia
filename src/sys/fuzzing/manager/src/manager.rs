@@ -5,6 +5,8 @@
 use crate::fuzzer::{Fuzzer, FuzzerState};
 use anyhow::{Context as _, Error, Result};
 use fidl::endpoints::{DiscoverableProtocolMarker, ServerEnd, create_proxy};
+use fidl_fuchsia_fuzzer as fuzz;
+use fidl_fuchsia_test_manager as test_manager;
 use futures::StreamExt;
 use futures::channel::mpsc;
 use fuzz::RegistryProxy;
@@ -15,7 +17,6 @@ use test_manager::{
     RunSuiteOptions, SuiteControllerMarker, SuiteControllerProxy, SuiteRunnerMarker,
 };
 use url::Url;
-use {fidl_fuchsia_fuzzer as fuzz, fidl_fuchsia_test_manager as test_manager};
 
 // If this much time elapses from a test suite's start without it connecting to the fuzz-registry,
 // the test is assumed to not be a fuzz test.
@@ -140,7 +141,7 @@ impl<T: FidlEndpoint<SuiteRunnerMarker>> Manager<T> {
         if let Err(e) = result {
             warn!("failed to connect {}: fuzz-registry returned: {}", fuzzer_url, e);
             fuzzer.kill().await?;
-            return Err(zx::Status::from_raw(e));
+            return Err(zx::Status::try_from_raw(e).unwrap_or(zx::Status::INTERNAL));
         }
         self.put_fuzzer(&url, fuzzer)
     }
@@ -182,7 +183,7 @@ impl<T: FidlEndpoint<SuiteRunnerMarker>> Manager<T> {
             .map_err(warn_internal::<zx::Status>)?;
         if let Err(e) = result {
             warn!("failed to stop {}: fuzz-registry returned: {}", fuzzer_url, e);
-            return Err(zx::Status::from_raw(e));
+            return Err(zx::Status::try_from_raw(e).unwrap_or(zx::Status::INTERNAL));
         }
         if let Some(mut fuzzer) = fuzzer {
             let timeout = zx::MonotonicDuration::from_seconds(DEFAULT_TIMEOUT_IN_SECONDS);
@@ -422,7 +423,7 @@ mod tests {
         // Simulate a non-fuzzer test by not registering a controller provider.
         {
             let mut test_realm_mut = test_realm.borrow_mut();
-            test_realm_mut.registry_status = zx::Status::TIMED_OUT;
+            test_realm_mut.registry_status = Err(zx::Status::TIMED_OUT);
         }
         let test_fut = || async move {
             let (_, server) = create_endpoints::<fuzz::ControllerMarker>();

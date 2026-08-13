@@ -1869,9 +1869,9 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_proxy_command_succeeds() {
-        match run_proxy_command(Box::pin(async { Ok(zx_status::Status::OK) })).await {
+        match run_proxy_command(Box::pin(async { Ok(zx_status::sys::ZX_OK) })).await {
             Ok(status) => {
-                assert_eq!(status, zx_status::Status::OK)
+                assert_eq!(zx_status::Status::ok(status), Ok(()))
             }
             Err(e) => panic!("Test unexpectedly failed with {}", e),
         }

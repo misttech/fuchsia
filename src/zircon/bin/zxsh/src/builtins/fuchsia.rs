@@ -194,8 +194,7 @@ pub fn builtin_k(
         }
     };
 
-    let zx_status = zx::Status::from_raw(status);
-    if zx_status != zx::Status::OK {
+    if let Err(zx_status) = zx::Status::ok(status) {
         let hint = if zx_status == zx::Status::NOT_SUPPORTED {
             ", is kernel debugging disabled?"
         } else {

@@ -97,7 +97,7 @@ impl<I: Interface + ?Sized> BlockService for DefaultCallbackBlockService<I> {
                 vmo: Some(vmo),
             },
             Box::new(move |status| {
-                if status == zx::Status::OK {
+                if status.is_ok() {
                     on_complete(Ok(dest_buffer));
                 } else {
                     on_complete(Err(anyhow::anyhow!("Block read failed: {:?}", status)));
@@ -234,7 +234,7 @@ mod tests {
         } else {
             panic!("Expected Operation::Read");
         }
-        session_manager.complete_request(req.request_id, zx::Status::OK);
+        session_manager.complete_request(req.request_id, Ok(()));
 
         let result = recv.await.unwrap();
         assert_eq!(result, test_data);
@@ -263,7 +263,7 @@ mod tests {
         });
 
         let req = rx.recv().unwrap();
-        session_manager.complete_request(req.request_id, zx::Status::IO);
+        session_manager.complete_request(req.request_id, Err(zx::Status::IO));
 
         recv.await.unwrap();
     }

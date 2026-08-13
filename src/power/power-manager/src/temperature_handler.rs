@@ -418,8 +418,7 @@ pub mod tests {
             while let Ok(req) = stream.try_next().await {
                 match req {
                     Some(ftemperature::DeviceRequest::GetTemperatureCelsius { responder }) => {
-                        let _ =
-                            responder.send(zx::Status::OK.into_raw(), get_temperature().0 as f32);
+                        let _ = responder.send(zx::sys::ZX_OK, get_temperature().0 as f32);
                     }
                     _ => assert!(false),
                 }

@@ -58,10 +58,10 @@ pub async fn read<P: AsRef<Path>>(
                         *total_size += test_input.size;
                     }
                     let result = match save_input(test_input, out_dir.as_ref()).await {
-                        Ok(_) => zx::Status::OK,
-                        Err(_) => zx::Status::IO,
+                        Ok(_) => Ok(()),
+                        Err(_) => Err(zx::Status::IO),
                     };
-                    responder.send(result.into_raw())
+                    responder.send(zx::Status::result_into_raw(result))
                 }
             }
         })

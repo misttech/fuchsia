@@ -1163,8 +1163,8 @@ mod tests {
         assert_matches!(
             result.termination_status,
             s
-            if s == zx::Status::from_raw(fcomponent::Error::InstanceDied.into_primitive() as i32) ||
-               s == zx::Status::PEER_CLOSED
+            if s == Err(zx::Status::try_from_raw(fcomponent::Error::InstanceDied.into_primitive() as i32).unwrap()) ||
+               s == Err(zx::Status::PEER_CLOSED)
         );
     }
 }

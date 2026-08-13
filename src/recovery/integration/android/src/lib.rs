@@ -245,7 +245,7 @@ async fn test_wipe_data() {
     let mut env = TestEnvBuilder::new().recovery_args("--wipe_data\n").build().await;
     match env.wait_for_factory_reset_request().await {
         FactoryResetRequest::Reset { responder } => {
-            responder.send(zx::Status::OK.into_raw()).unwrap();
+            responder.send(zx::sys::ZX_OK).unwrap();
         }
     }
 }

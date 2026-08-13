@@ -397,7 +397,7 @@ impl Component {
             select! {
                 _ = lifecycle_close_wait => {
                     info!(component_url:%, exit_code:% = 0, is_async:%; "Component terminated");
-                    return StopInfo { termination_status: zx::Status::OK, exit_code: Some(0) };
+                    return StopInfo { termination_status: Ok(()), exit_code: Some(0) };
                 }
                 res = exit_wait => {
                     match res {
@@ -405,7 +405,7 @@ impl Component {
                             let exit_code: i64 = exit_code.into();
                             info!(component_url:%, exit_code:%, is_async:%; "Component terminated");
                             return StopInfo {
-                                termination_status: zx::Status::OK,
+                                termination_status: Ok(()),
                                 exit_code: Some(exit_code),
                             };
                         }

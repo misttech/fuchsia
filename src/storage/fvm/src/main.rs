@@ -4095,7 +4095,7 @@ mod tests {
         assert_eq!(partition_metadata.flags, Some(0));
 
         let (status, _, volume_info) = proxy.get_volume_info().await.expect("FIDL error");
-        assert_eq!(zx::Status::from_raw(status), zx::Status::OK);
+        assert_eq!(status, zx::sys::ZX_OK);
         let volume_info = volume_info.unwrap();
         assert_eq!(volume_info.partition_slice_count, 257);
         assert_eq!(volume_info.slice_limit, 0);

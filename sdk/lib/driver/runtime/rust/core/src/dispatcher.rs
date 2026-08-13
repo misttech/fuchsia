@@ -605,11 +605,11 @@ mod tests {
             let (tx, rx) = mpsc::channel();
             dispatcher
                 .post_task_sync(move |status| {
-                    assert_eq!(status, Status::from_raw(ZX_OK));
+                    assert_eq!(status, Ok(()));
                     tx.send(status).unwrap();
                 })
                 .unwrap();
-            assert_eq!(rx.recv().unwrap(), Status::from_raw(ZX_OK));
+            assert_eq!(rx.recv().unwrap(), Ok(()));
         });
     }
 
@@ -621,7 +621,7 @@ mod tests {
             let (inner_tx, inner_rx) = mpsc::channel();
             dispatcher
                 .post_task_sync(move |status| {
-                    assert_eq!(status, Status::from_raw(ZX_OK));
+                    assert_eq!(status, Ok(()));
                     let inner = DispatcherBuilder::new()
                         .name("testing task second level")
                         .scheduler_role("")
@@ -634,7 +634,7 @@ mod tests {
                         .unwrap();
                     inner
                         .post_task_sync(move |status| {
-                            assert_eq!(status, Status::from_raw(ZX_OK));
+                            assert_eq!(status, Ok(()));
                             tx.send(status).unwrap();
                         })
                         .unwrap();
@@ -644,7 +644,7 @@ mod tests {
                     inner_tx.send(inner).unwrap();
                 })
                 .unwrap();
-            assert_eq!(rx.recv().unwrap(), Status::from_raw(ZX_OK));
+            assert_eq!(rx.recv().unwrap(), Ok(()));
             inner_rx.recv().unwrap();
         });
         assert_eq!(shutdown_rx.recv().unwrap(), 1);

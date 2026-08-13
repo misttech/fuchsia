@@ -2,16 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use fidl_fuchsia_hardware_temperature as ftemperature;
+use fidl_fuchsia_thermal as fthermal;
+use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
 use futures::{StreamExt, TryStreamExt};
 use log::info;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
-use {
-    fidl_fuchsia_hardware_temperature as ftemperature, fidl_fuchsia_thermal as fthermal,
-    fuchsia_async as fasync,
-};
 
 const SENSOR_NAME: &'static str = "fake-trippoint";
 const DEFAULT_SENSOR_TEMPERATURE: f32 = 25.0;
@@ -36,7 +35,7 @@ fn spawn_sensor_server(server: fthermal::SensorServer_, props: Rc<SensorProps>) 
                                 Some(temp_c) => temp_c,
                                 None => props.temperature,
                             };
-                            responder.send(zx::Status::OK.into_raw(), temp_c as f32).unwrap();
+                            responder.send(zx::sys::ZX_OK, temp_c as f32).unwrap();
                         }
                         ftemperature::DeviceRequest::GetSensorName { responder } => {
                             match &props.info.name {

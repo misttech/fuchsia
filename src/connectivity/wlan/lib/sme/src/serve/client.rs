@@ -293,7 +293,6 @@ async fn serve_sched_scan_session(
                 } else {
                     // Stream closed naturally (SME dropped sender because firmware stopped it).
                     txn_handle.shutdown_with_epitaph(Ok(()));
-
                     break;
                 }
             },

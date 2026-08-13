@@ -767,7 +767,7 @@ impl Kernel {
             log_info!("Notifying CF that the container has stopped.");
             control_handle
                 .send_on_stop(ComponentStopInfo {
-                    termination_status: Some(zx::Status::OK.into_raw()),
+                    termination_status: Some(zx::sys::ZX_OK),
                     exit_code: Some(0),
                     ..ComponentStopInfo::default()
                 })

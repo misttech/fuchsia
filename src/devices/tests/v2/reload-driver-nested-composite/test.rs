@@ -3,16 +3,16 @@
 // found in the LICENSE file.
 
 use anyhow::{Context, Error, Result, anyhow};
+use fidl_fuchsia_driver_development as fdd;
+use fidl_fuchsia_driver_test as fdt;
+use fidl_fuchsia_reloaddriver_test as ft;
+use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_component_test::{ChildOptions, LocalComponentHandles, RealmBuilder};
 use fuchsia_driver_test::{DriverTestRealmBuilder2, DriverTestRealmInstance2, Options2};
 use futures::channel::mpsc;
 use futures::{StreamExt, TryStreamExt};
 use std::collections::HashMap;
-use {
-    fidl_fuchsia_driver_development as fdd, fidl_fuchsia_driver_test as fdt,
-    fidl_fuchsia_reloaddriver_test as ft, fuchsia_async as fasync,
-};
 
 const WAITER_NAME: &'static str = "waiter";
 
@@ -23,7 +23,7 @@ async fn waiter_serve(
     while let Some(ft::WaiterRequest::Ack { from_node, from_name, status, .. }) =
         stream.try_next().await.expect("Stream failed")
     {
-        assert_eq!(status, zx::Status::OK.into_raw());
+        assert_eq!(status, zx::sys::ZX_OK);
         sender.try_send((from_node, from_name)).expect("Sender failed")
     }
 }

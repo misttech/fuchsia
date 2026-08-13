@@ -448,7 +448,7 @@ impl<I: Interface + ?Sized> Session<I> {
                         }
                         responses.extend(
                             active_requests
-                                .complete_and_take_response(request_id, zx::Status::OK)
+                                .complete_and_take_response(request_id, Ok(()))
                                 .map(|(_, response)| response),
                         );
                     }
@@ -475,7 +475,7 @@ impl<I: Interface + ?Sized> Session<I> {
             self.helper
                 .orchestrator
                 .active_requests
-                .complete_and_take_response(request_id, status)
+                .complete_and_take_response(request_id, Err(status))
                 .map(|(_, r)| r)
         })
     }
@@ -721,11 +721,11 @@ impl<I: Interface + ?Sized> Session<I> {
             .helper
             .orchestrator
             .active_requests
-            .complete_and_take_response(request_id, result.into())
+            .complete_and_take_response(request_id, result)
             .map(|(_, r)| r);
         if let Some(mut response) = response {
             // Only do the post-flush on the very last request, and only if successful.
-            if zx::Status::from_raw(response.status) == zx::Status::OK && needs_postflush {
+            if zx::Status::ok(response.status).is_ok() && needs_postflush {
                 if let Some(id) = trace_flow_id {
                     fuchsia_trace::async_instant!(
                         fuchsia_trace::Id::from(id.get()),
@@ -735,7 +735,7 @@ impl<I: Interface + ?Sized> Session<I> {
                     );
                 }
                 response.status =
-                    zx::Status::from(self.interface.flush(trace_flow_id).await).into_raw();
+                    zx::Status::result_into_raw(self.interface.flush(trace_flow_id).await);
             }
             Some(response)
         } else {

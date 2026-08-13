@@ -449,8 +449,5 @@ pub unsafe extern "C" fn block_server_send_reply(
     request_id: RequestId,
     status: zx_status_t,
 ) {
-    block_server
-        .orchestrator
-        .session_manager
-        .complete_request(request_id, zx::Status::from_raw(status));
+    block_server.orchestrator.session_manager.complete_request(request_id, zx::Status::ok(status));
 }

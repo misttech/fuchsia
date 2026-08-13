@@ -624,7 +624,7 @@ unsafe extern "C" fn service_connector<S: ServiceConnector>(
     service_name: *const c_char,
     provider_handle: *mut zx_handle_t,
 ) -> zx_status_t {
-    let status: zx::Status = (|| {
+    zx::Status::result_into_raw((|| {
         #[allow(clippy::undocumented_unsafe_blocks, reason = "2024 edition migration")]
         let service_name = unsafe { CStr::from_ptr(service_name) }
             .to_str()
@@ -636,9 +636,7 @@ unsafe extern "C" fn service_connector<S: ServiceConnector>(
                 *provider_handle = channel.raw_handle()
             };
         })
-    })()
-    .into();
-    status.into_raw()
+    })())
 }
 
 /// Sets `out_storage` as the zxio_storage of `out_context`.
@@ -652,7 +650,7 @@ unsafe extern "C" fn storage_allocator(
     out_context: *mut *mut c_void,
 ) -> zx_status_t {
     let zxio_ptr_ptr = out_context as *mut *mut zxio_storage_t;
-    let status: zx::Status = (|| {
+    zx::Status::result_into_raw((|| {
         #[allow(clippy::undocumented_unsafe_blocks, reason = "2024 edition migration")]
         if let Some(zxio_ptr) = unsafe { zxio_ptr_ptr.as_mut() } {
             #[allow(clippy::undocumented_unsafe_blocks, reason = "2024 edition migration")]
@@ -665,9 +663,7 @@ unsafe extern "C" fn storage_allocator(
             }
         }
         Err(zx::Status::NO_MEMORY)
-    })()
-    .into();
-    status.into_raw()
+    })())
 }
 
 /// Ensures that no pointer fields have been set. Used to enforce usage of code paths that can
@@ -1747,7 +1743,7 @@ impl Zxio {
                     unsafe { std::slice::from_raw_parts(data.data as *mut u8, data.len) };
                 out_value.extend_from_slice(value_slice);
             }
-            zx::Status::OK.into_raw()
+            zx::sys::ZX_OK
         }
         let mut out_value = Vec::new();
         #[allow(

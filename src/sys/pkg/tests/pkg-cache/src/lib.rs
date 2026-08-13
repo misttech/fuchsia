@@ -136,7 +136,7 @@ async fn get_and_verify_package(
     let (dir, dir_server_end) = fidl::endpoints::create_proxy::<fio::DirectoryMarker>();
     let get_fut = package_cache
         .get(&meta_blob_info, gc_protection, needed_blobs_server_end, dir_server_end)
-        .map_ok(|res| res.map_err(zx::Status::from_raw));
+        .map_ok(|res| res.map_err(|s| zx::Status::try_from_raw(s).unwrap_or(zx::Status::INTERNAL)));
 
     let (meta_far, _) = pkg.contents();
     let available_blobs = pkg.content_and_subpackage_blobs().unwrap();
@@ -241,7 +241,7 @@ async fn verify_package_cached(
             needed_blobs_server_end,
             dir_server_end,
         )
-        .map_ok(|res| res.map_err(Status::from_raw));
+        .map_ok(|res| res.map_err(|s| Status::try_from_raw(s).unwrap_or(Status::INTERNAL)));
 
     // If the package is in base, cache, or currently open, the server will send a `ZX_OK` epitaph
     // and then close the channel.
@@ -539,7 +539,7 @@ where
 
         // Set up verifier service so we can verify that we reject GC until after the verifier
         // commits this boot/slot as successful, lest we break rollbacks.
-        let verifier_service = Arc::new(MockHealthVerificationService::new(|| zx::Status::OK));
+        let verifier_service = Arc::new(MockHealthVerificationService::new(|| Ok(())));
         {
             let verifier_service = Arc::clone(&verifier_service);
             local_child_svc_dir

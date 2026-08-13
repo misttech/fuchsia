@@ -139,7 +139,7 @@ async fn handle_runner_request(
                     let _: &mut ServiceFsDir<'_, _> =
                         fs.dir("svc").add_proxy_service_to::<ftest::SuiteMarker, ()>(svc_dir);
 
-                    (Some(env), Some(test_stopped_fut), zx::Status::OK)
+                    (Some(env), Some(test_stopped_fut), Ok(()))
                 }
                 Err(e) => {
                     error!("failed to set up test {}: {:?}", resolved_url, e);
@@ -162,7 +162,7 @@ async fn handle_runner_request(
                     (
                         None,
                         None,
-                        zx::Status::from_raw(
+                        zx::Status::ok(
                             fcomponent::Error::InstanceCannotStart
                                 .into_primitive()
                                 .try_into()

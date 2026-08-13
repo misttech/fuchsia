@@ -219,10 +219,7 @@ async fn launch_process_impl(
 
     let (status, process) = launcher.launch(launch_info).await.map_err(LaunchError::LaunchCall)?;
 
-    let status = zx::Status::from_raw(status);
-    if status != zx::Status::OK {
-        return Err(LaunchError::ProcessLaunch(status));
-    }
+    zx::Status::ok(status).map_err(LaunchError::ProcessLaunch)?;
 
     let process = process.ok_or_else(|| LaunchError::UnExpectedError)?;
 
@@ -395,7 +392,7 @@ mod tests {
                     fproc::LauncherRequest::Launch { responder, .. } => {
                         responder
                             .send(
-                                zx::Status::OK.into_raw(),
+                                zx::sys::ZX_OK,
                                 Some(
                                     process_self()
                                         .duplicate_handle(zx::Rights::SAME_RIGHTS)

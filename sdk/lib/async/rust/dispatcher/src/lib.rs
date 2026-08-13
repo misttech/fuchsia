@@ -301,8 +301,8 @@ impl<D: GetAsyncDispatcher + Clone + Send + Sync> OnDispatcher for D {
 }
 
 /// A marker trait for a callback that can be used with [`Dispatcher::post_task_sync`].
-pub trait TaskCallback: FnOnce(Status) + 'static + Send {}
-impl<T> TaskCallback for T where T: FnOnce(Status) + 'static + Send {}
+pub trait TaskCallback: FnOnce(Result<(), Status>) + 'static + Send {}
+impl<T> TaskCallback for T where T: FnOnce(Result<(), Status>) + 'static + Send {}
 
 #[repr(C)]
 struct TaskFunc {
@@ -323,7 +323,7 @@ impl TaskFunc {
         // being cancelled, so we don't want to call it.
         if let Ok(task) = Arc::try_unwrap(task) {
             CurrentDispatcher::with(&dispatcher, move || {
-                (task.into_inner().func)(Status::from_raw(status));
+                (task.into_inner().func)(Status::ok(status));
             });
         }
     }

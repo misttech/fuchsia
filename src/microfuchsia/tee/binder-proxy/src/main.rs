@@ -37,9 +37,8 @@ fn get_pmem_buffer() -> Result<zx::Vmo, Error> {
 fn main() -> Result<(), Error> {
     log::info!("binder-proxy main");
     // Call register_dev_urandom_compat
-    let register_status = zx::Status::from_raw(unsafe { register_dev_urandom_compat() });
-    if register_status != zx::Status::OK {
-        anyhow::bail!("Could not register /dev/urandom compatibility device: {register_status}");
+    if let Err(status) = zx::Status::ok(unsafe { register_dev_urandom_compat() }) {
+        anyhow::bail!("Could not register /dev/urandom compatibility device: {status}");
     }
 
     let config = binder_proxy_config::Config::take_from_startup_handle();

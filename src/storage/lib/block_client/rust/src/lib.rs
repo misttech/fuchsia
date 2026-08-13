@@ -1447,7 +1447,7 @@ mod tests {
                         *flow_id.lock() = Some(request.trace_flow_id);
                     }
                     BlockFifoResponse {
-                        status: zx::Status::OK.into_raw(),
+                        status: zx::sys::ZX_OK,
                         reqid: request.reqid,
                         ..Default::default()
                     }

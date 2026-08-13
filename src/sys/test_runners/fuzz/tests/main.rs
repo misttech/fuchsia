@@ -124,11 +124,11 @@ async fn serve_corpus_reader(stream: fuzz::CorpusReaderRequestStream) -> Result<
                                 let mut corpus_mut = corpus.borrow_mut();
                                 corpus_mut.push(as_str);
                             }
-                            zx::Status::OK
+                            zx::sys::ZX_OK
                         }
-                        Err(_) => zx::Status::INTERNAL,
+                        Err(_) => zx::Status::INTERNAL.into_raw(),
                     };
-                    responder.send(status.into_raw())
+                    responder.send(status)
                 }
             }
         })
@@ -194,7 +194,9 @@ async fn teardown(
 // Stops the fuzzer.
 async fn stop(fuzz_manager: &fuzz::ManagerProxy) -> Result<(), zx::Status> {
     match fuzz_manager.stop(FUZZER_URL).await {
-        Ok(result) => result.map_err(|e| zx::Status::from_raw(e)),
+        Ok(result) => {
+            result.map_err(|e| zx::Status::try_from_raw(e).unwrap_or(zx::Status::INTERNAL))
+        }
         Err(e) => {
             eprintln!("fuchsia.fuzzer/Manager.Stop: {}", e);
             Err(zx::Status::INTERNAL)

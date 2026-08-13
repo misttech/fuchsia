@@ -4,7 +4,9 @@
 
 use anyhow::Error;
 use fidl::endpoints::ServerEnd;
+use fidl_fuchsia_io as fio;
 use fidl_fuchsia_pkg::{FontResolverRequest, FontResolverRequestStream};
+use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_url::fuchsia_pkg::AbsolutePackageUrl;
 use futures::{StreamExt, TryStreamExt};
@@ -13,7 +15,6 @@ use vfs::execution_scope::ExecutionScope;
 use vfs::file::vmo::read_only;
 use vfs::pseudo_directory;
 use zx::Status;
-use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
 #[fuchsia::main(logging_tags = ["mock_font_resolver"])]
 async fn main() -> Result<(), Error> {
@@ -45,7 +46,7 @@ async fn resolve(
     package_url: String,
     directory_request: ServerEnd<fio::DirectoryMarker>,
 ) -> Result<(), Status> {
-    AbsolutePackageUrl::parse(&package_url).map_err(|_| Err(Status::INVALID_ARGS))?;
+    AbsolutePackageUrl::parse(&package_url).map_err(|_| Status::INVALID_ARGS)?;
 
     // Serve fake directories with single font files, with the selection depending on the package
     // URL. These correspond to the fake fonts declared in ../tests/*.font_manifest.json.

@@ -173,7 +173,7 @@ async fn watch_dir_rename() {
     );
 
     let (status, token) = dir.get_token().await.unwrap();
-    assert_eq!(zx::Status::from_raw(status), zx::Status::OK);
+    assert_eq!(status, zx::sys::ZX_OK);
     let token = token.unwrap();
     dir.rename("foo", token.into(), "bar").await.expect("fidl error").expect("rename error");
     assert_eq!(

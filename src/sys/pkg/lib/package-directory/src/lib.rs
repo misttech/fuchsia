@@ -200,7 +200,11 @@ impl NonMetaStorage for fio::DirectoryProxy {
             .get_backing_memory(fio::VmoFlags::PRIVATE_CLONE | fio::VmoFlags::READ)
             .await
             .map_err(NonMetaStorageError::Fidl)?
-            .map_err(|e| NonMetaStorageError::GetVmo(zx::Status::from_raw(e)))
+            .map_err(|e| {
+                NonMetaStorageError::GetVmo(
+                    zx::Status::try_from_raw(e).unwrap_or(zx::Status::INTERNAL),
+                )
+            })
     }
 
     async fn read_blob(&self, hash: &fuchsia_hash::Hash) -> Result<Vec<u8>, NonMetaStorageError> {
@@ -467,8 +471,8 @@ mod tests {
         // sent, determined by the open() API used.
         let mut events = node.take_event_stream();
         match events.next().await? {
-            Ok(fio::NodeEvent::OnOpen_ { s: status, .. }) => Some(zx::Status::from_raw(status)),
-            Ok(fio::NodeEvent::OnRepresentation { .. }) => Some(zx::Status::OK),
+            Ok(fio::NodeEvent::OnOpen_ { s: status, .. }) => zx::Status::try_from_raw(status),
+            Ok(fio::NodeEvent::OnRepresentation { .. }) => None,
             Err(fidl::Error::ClientChannelClosed { epitaph, .. }) => match epitaph.into() {
                 Err(s) => Some(s),
                 Ok(()) => Some(zx::Status::PEER_CLOSED),

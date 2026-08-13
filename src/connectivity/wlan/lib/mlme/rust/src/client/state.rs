@@ -831,8 +831,7 @@ impl Associated {
                 .install_key(&softmac_key_configuration_from_mlme(key_descriptor))
                 .await
             {
-                Ok(()) => results
-                    .push(fidl_mlme::SetKeyResult { key_id, status: zx::Status::OK.into_raw() }),
+                Ok(()) => results.push(fidl_mlme::SetKeyResult { key_id, status: zx::sys::ZX_OK }),
                 Err(e) => {
                     error!("failed to set key: {}", e);
                     results.push(fidl_mlme::SetKeyResult { key_id, status: e.into_raw() })
@@ -3573,10 +3572,7 @@ mod tests {
         assert_eq!(m.fake_device_state.lock().keys.len(), 1);
         let conf = assert_matches!(m.fake_device_state.lock().next_mlme_msg::<fidl_mlme::SetKeysConfirm>(), Ok(conf) => conf);
         assert_eq!(conf.results.len(), 1);
-        assert_eq!(
-            conf.results[0],
-            fidl_mlme::SetKeyResult { key_id: 6, status: zx::Status::OK.into_raw() }
-        );
+        assert_eq!(conf.results[0], fidl_mlme::SetKeyResult { key_id: 6, status: zx::sys::ZX_OK });
 
         assert_eq!(
             m.fake_device_state.lock().keys,
@@ -3622,10 +3618,7 @@ mod tests {
             conf.results[0],
             fidl_mlme::SetKeyResult { key_id: 6, status: zx::Status::BAD_STATE.into_raw() }
         );
-        assert_eq!(
-            conf.results[1],
-            fidl_mlme::SetKeyResult { key_id: 4, status: zx::Status::OK.into_raw() }
-        );
+        assert_eq!(conf.results[1], fidl_mlme::SetKeyResult { key_id: 4, status: zx::sys::ZX_OK });
     }
 
     fn fake_set_ctrl_port_open(open: bool) -> wlan_sme::MlmeRequest {

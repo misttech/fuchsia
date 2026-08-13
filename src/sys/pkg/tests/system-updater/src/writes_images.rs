@@ -60,8 +60,8 @@ async fn fails_on_image_write_error() {
     let env = TestEnv::builder()
         .paver_service(|builder| {
             builder.insert_hook(mphooks::return_error(|event| match event {
-                PaverEvent::WriteAsset { .. } => Status::INTERNAL,
-                _ => Status::OK,
+                PaverEvent::WriteAsset { .. } => Err(Status::INTERNAL),
+                _ => Ok(()),
             }))
         })
         .build()
@@ -130,8 +130,8 @@ async fn fails_on_image_write_error_packageless() {
     let env = TestEnv::builder()
         .paver_service(|builder| {
             builder.insert_hook(mphooks::return_error(|event| match event {
-                PaverEvent::WriteAsset { .. } => Status::INTERNAL,
-                _ => Status::OK,
+                PaverEvent::WriteAsset { .. } => Err(Status::INTERNAL),
+                _ => Ok(()),
             }))
         })
         .ota_manifest(manifest)
@@ -362,8 +362,8 @@ async fn does_not_update_if_alternate_cant_be_marked_unbootable(update_url: &str
         .paver_service(|builder| {
             builder
                 .insert_hook(mphooks::return_error(|event| match event {
-                    PaverEvent::SetConfigurationUnbootable { .. } => Status::INTERNAL,
-                    _ => Status::OK,
+                    PaverEvent::SetConfigurationUnbootable { .. } => Err(Status::INTERNAL),
+                    _ => Ok(()),
                 }))
                 .current_config(current_config)
         })

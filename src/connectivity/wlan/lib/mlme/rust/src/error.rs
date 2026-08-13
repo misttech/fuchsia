@@ -55,7 +55,7 @@ pub trait ResultExt {
 impl ResultExt for Result<(), Error> {
     fn into_raw_zx_status(self) -> zx::sys::zx_status_t {
         match self {
-            Ok(()) | Err(Error::Status(_, zx::Status::OK)) => zx::sys::ZX_OK,
+            Ok(()) => zx::sys::ZX_OK,
             Err(e) => {
                 eprintln!("{}", e);
                 Into::<zx::Status>::into(e).into_raw()
@@ -113,8 +113,8 @@ mod tests {
 
     #[test]
     fn test_error_into_status() {
-        let status = zx::Status::from(Error::Status("foo".to_string(), zx::Status::OK));
-        assert_eq!(status, zx::Status::OK);
+        let status = zx::Status::from(Error::Status("foo".to_string(), zx::Status::INVALID_ARGS));
+        assert_eq!(status, zx::Status::INVALID_ARGS);
 
         let status = zx::Status::from(Error::Status("foo".to_string(), zx::Status::NOT_SUPPORTED));
         assert_eq!(status, zx::Status::NOT_SUPPORTED);

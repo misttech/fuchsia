@@ -362,13 +362,18 @@ async fn serve_component_controller(
             },
             Event::Completion(result) => match result {
                 Ok(Ok(ExitStatus::Exit(0))) => controller_handle.shutdown_with_epitaph(Ok(())),
-
-                Ok(Ok(ExitStatus::Exit(n))) => controller_handle.shutdown_with_epitaph(
-                    zx::Status::from_raw(COMPONENT_EXIT_CODE_BASE + n as i32),
-                ),
-                _ => controller_handle.shutdown_with_epitaph(zx::Status::from_raw(
-                    fcomponent::Error::InstanceDied.into_primitive() as i32,
-                )),
+                Ok(Ok(ExitStatus::Exit(n))) => {
+                    let epitaph =
+                        zx::Status::try_from_raw(COMPONENT_EXIT_CODE_BASE + n as i32).unwrap();
+                    controller_handle.shutdown_with_epitaph(Err(epitaph));
+                }
+                _ => {
+                    let epitaph = zx::Status::try_from_raw(
+                        fcomponent::Error::InstanceDied.into_primitive() as i32,
+                    )
+                    .unwrap();
+                    controller_handle.shutdown_with_epitaph(Err(epitaph));
+                }
             },
         }
     }

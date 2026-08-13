@@ -57,12 +57,12 @@ pub trait GuestEthernetInterface {
         Self: Sized;
     fn initialize(&self, mac_address: MacAddress, enable_bridge: bool) -> Result<(), zx::Status>;
     fn send(&self, data: *const u8, len: u16) -> Result<(), zx::Status>;
-    fn complete(&self, packet: RxPacket, status: zx::Status);
+    fn complete(&self, packet: RxPacket, status: Result<(), zx::Status>);
 }
 
 pub struct GuestEthernetNewResult<T: GuestEthernetInterface> {
     pub guest_ethernet: Pin<Box<T>>,
-    pub status_rx: UnboundedReceiver<zx::Status>,
+    pub status_rx: UnboundedReceiver<Result<(), zx::Status>>,
     pub notify_rx: UnboundedReceiver<()>,
     pub receive_packet_rx: UnboundedReceiver<RxPacket>,
 }
@@ -71,7 +71,7 @@ pub struct GuestEthernet {
     raw_ptr: *mut interface::guest_ethernet_t,
 
     // Used by the `interface::guest_ethernet_set_status` callback.
-    status_tx: UnboundedSender<zx::Status>,
+    status_tx: UnboundedSender<Result<(), zx::Status>>,
 
     // Used by the `interface::guest_ethernet_ready_for_tx` callback.
     notify_tx: UnboundedSender<()>,
@@ -94,7 +94,7 @@ impl GuestEthernetInterface for GuestEthernet {
         // On error no cleanup or additional action is needed.
         zx::Status::ok(unsafe { interface::guest_ethernet_create(context.context, &mut raw_ptr) })?;
 
-        let (status_tx, status_rx) = mpsc::unbounded::<zx::Status>();
+        let (status_tx, status_rx) = mpsc::unbounded::<Result<(), zx::Status>>();
         let (notify_tx, notify_rx) = mpsc::unbounded::<()>();
         let (receive_packet_tx, receive_packet_rx) = mpsc::unbounded::<RxPacket>();
         let guest_ethernet = Box::pin(Self {
@@ -125,10 +125,12 @@ impl GuestEthernetInterface for GuestEthernet {
         zx::Status::ok(unsafe { interface::guest_ethernet_send(self.raw_ptr, data, len) })
     }
 
-    fn complete(&self, packet: RxPacket, status: zx::Status) {
-        unsafe {
-            interface::guest_ethernet_complete(self.raw_ptr, packet.buffer_id, status.into_raw())
-        }
+    fn complete(&self, packet: RxPacket, status: Result<(), zx::Status>) {
+        let status = match status {
+            Ok(()) => zx::sys::ZX_OK,
+            Err(s) => s.into_raw(),
+        };
+        unsafe { interface::guest_ethernet_complete(self.raw_ptr, packet.buffer_id, status) }
     }
 }
 
@@ -138,7 +140,6 @@ impl GuestEthernet {
         guest_ethernet: *const libc::c_void,
         status: zx::sys::zx_status_t,
     ) {
-        let status = zx::Status::from_raw(status);
         let guest_ethernet = unsafe {
             (guest_ethernet as *const GuestEthernet)
                 .as_ref()
@@ -148,7 +149,7 @@ impl GuestEthernet {
         log::info!("C++ guest ethernet object sent status: {}", status);
         guest_ethernet
             .status_tx
-            .unbounded_send(status)
+            .unbounded_send(zx::Status::ok(status))
             .expect("status tx end should never be closed");
     }
 

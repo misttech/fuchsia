@@ -23,7 +23,7 @@ async fn waiter_serve(
     while let Some(ft::WaiterRequest::Ack { from_node, from_name, status, .. }) =
         stream.try_next().await.expect("Stream failed")
     {
-        assert_eq!(status, zx::Status::OK.into_raw());
+        assert_eq!(status, zx::sys::ZX_OK);
         sender.try_send((from_node, from_name)).expect("Sender failed")
     }
 }

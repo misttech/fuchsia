@@ -6,11 +6,11 @@ use crate::guest_ethernet::{
     GuestEthernetContext, GuestEthernetInterface, GuestEthernetNewResult, RxPacket,
 };
 use crate::wire;
-use anyhow::{anyhow, Error};
+use anyhow::{Error, anyhow};
 use fidl_fuchsia_net::MacAddress;
 
-use futures::channel::mpsc::UnboundedReceiver;
 use futures::StreamExt;
+use futures::channel::mpsc::UnboundedReceiver;
 use machina_virtio_device::{GuestMem, WrappedDescChainStream};
 use std::cell::RefCell;
 use std::io::Write;
@@ -25,7 +25,7 @@ pub struct NetDevice<T: GuestEthernetInterface> {
     ethernet: Pin<Box<T>>,
 
     // Contains any status value sent by the C++ guest ethernet device.
-    status_rx: RefCell<UnboundedReceiver<zx::Status>>,
+    status_rx: RefCell<UnboundedReceiver<Result<(), zx::Status>>>,
 
     // Contains a notify that the netstack is ready to receive more TX packets. When resuming
     // sending packets to the netstack, this mpsc should be fully drained.
@@ -199,9 +199,9 @@ impl<T: GuestEthernetInterface> NetDevice<T> {
 
         let result = NetDevice::<T>::handle_packet(&packet, bytes, chain);
         if result.is_err() {
-            self.ethernet.complete(packet, zx::Status::INTERNAL);
+            self.ethernet.complete(packet, Err(zx::Status::INTERNAL));
         } else {
-            self.ethernet.complete(packet, zx::Status::OK);
+            self.ethernet.complete(packet, Ok(()));
         }
 
         result
@@ -266,15 +266,16 @@ impl<T: GuestEthernetInterface> NetDevice<T> {
     }
 
     async fn ready(&mut self) -> Result<(), zx::Status> {
-        self.status_rx.get_mut().next().await.expect("unexpected end of status stream").into()
+        self.status_rx.get_mut().next().await.expect("unexpected end of status stream")
     }
 
     // Surfaces any unrecoverable errors encountered by the C++ GuestEthernet object. After the
     // first ZX_OK (consumed by ready), only errors should be pushed to this channel.
     pub async fn get_error_from_guest_ethernet(&self) -> Result<(), Error> {
-        let status =
+        let res =
             self.status_rx.borrow_mut().next().await.expect("unexpected end of status stream");
-        assert!(status != zx::Status::OK, "GuestEthernet shouldn't send ZX_OK once its ready");
+        assert_eq!(res.is_err(), true, "GuestEthernet shouldn't send ZX_OK once its ready");
+        let Err(status) = res else { unreachable!() };
 
         Err(anyhow!("GuestEthernet encountered an unrecoverable error: {}", status))
     }
@@ -286,28 +287,28 @@ mod tests {
     use async_utils::PollExt;
     use fuchsia_async as fasync;
     use futures::channel::mpsc::{self, UnboundedSender};
-    use rand::distr::StandardUniform;
     use rand::Rng;
+    use rand::distr::StandardUniform;
     use std::collections::VecDeque;
     use virtio_device::fake_queue::{ChainBuilder, IdentityDriverMem, TestQueue};
     use zerocopy::FromBytes;
 
     struct TestGuestEthernet {
-        status_tx: UnboundedSender<zx::Status>,
+        status_tx: UnboundedSender<Result<(), zx::Status>>,
         notify_tx: UnboundedSender<()>,
         receive_packet_tx: UnboundedSender<RxPacket>,
 
         sends: RefCell<Vec<(*const u8, u16)>>,
-        send_status: RefCell<VecDeque<zx::Status>>,
+        send_status: RefCell<VecDeque<Result<(), zx::Status>>>,
 
-        completes: RefCell<Vec<(u32, zx::Status)>>,
+        completes: RefCell<Vec<(u32, Result<(), zx::Status>)>>,
     }
 
     impl GuestEthernetInterface for TestGuestEthernet {
         fn new(
             _context: &GuestEthernetContext,
         ) -> Result<GuestEthernetNewResult<TestGuestEthernet>, zx::Status> {
-            let (status_tx, status_rx) = mpsc::unbounded::<zx::Status>();
+            let (status_tx, status_rx) = mpsc::unbounded::<Result<(), zx::Status>>();
             let (notify_tx, notify_rx) = mpsc::unbounded::<()>();
             let (receive_packet_tx, receive_packet_rx) = mpsc::unbounded::<RxPacket>();
             let guest_ethernet = Box::pin(Self {
@@ -331,15 +332,15 @@ mod tests {
         }
 
         fn send(&self, data: *const u8, len: u16) -> Result<(), zx::Status> {
-            let status = self.send_status.borrow_mut().pop_front().unwrap();
-            if status == zx::Status::OK {
+            let res = self.send_status.borrow_mut().pop_front().unwrap();
+            if res.is_ok() {
                 self.sends.borrow_mut().push((data, len));
             }
 
-            status.into()
+            res
         }
 
-        fn complete(&self, packet: RxPacket, status: zx::Status) {
+        fn complete(&self, packet: RxPacket, status: Result<(), zx::Status>) {
             self.completes.borrow_mut().push((packet.buffer_id, status));
         }
     }
@@ -349,13 +350,13 @@ mod tests {
         let context = GuestEthernetContext { context: std::ptr::null_mut() };
         let mut device = NetDevice::<TestGuestEthernet>::new(&context).unwrap();
 
-        device.ethernet.status_tx.unbounded_send(zx::Status::OK).unwrap();
+        device.ethernet.status_tx.unbounded_send(Ok(())).unwrap();
         assert!(device.ready().await.is_ok());
 
-        device.ethernet.status_tx.unbounded_send(zx::Status::INTERNAL).unwrap();
+        device.ethernet.status_tx.unbounded_send(Err(zx::Status::INTERNAL)).unwrap();
         assert!(device.ready().await.is_err());
 
-        device.ethernet.status_tx.unbounded_send(zx::Status::INTERNAL).unwrap();
+        device.ethernet.status_tx.unbounded_send(Err(zx::Status::INTERNAL)).unwrap();
         assert!(device.get_error_from_guest_ethernet().await.is_err());
     }
 
@@ -368,7 +369,7 @@ mod tests {
 
         // The C++ device should never send ZX_OK after its ready (which is when this channel
         // will be polled with get_error_from_guest_ethernet).
-        device.ethernet.status_tx.unbounded_send(zx::Status::OK).unwrap();
+        device.ethernet.status_tx.unbounded_send(Ok(())).unwrap();
         device.get_error_from_guest_ethernet().await.unwrap();
     }
 
@@ -535,7 +536,7 @@ mod tests {
             .publish(ChainBuilder::new().readable(&random_bytes, &mem).build())
             .expect("failed to publish readable chain");
 
-        device.ethernet.send_status.borrow_mut().push_back(zx::Status::OK);
+        device.ethernet.send_status.borrow_mut().push_back(Ok(()));
 
         device
             .handle_readable_chain(ReadableChain::new(
@@ -571,14 +572,14 @@ mod tests {
             rand::rng().sample_iter(StandardUniform).take(packet_length).collect();
 
         // First packet is accepted by the netstack.
-        device.ethernet.send_status.borrow_mut().push_back(zx::Status::OK);
+        device.ethernet.send_status.borrow_mut().push_back(Ok(()));
 
         // Second packet is asked to wait once, and is then accepted by the netstack.
-        device.ethernet.send_status.borrow_mut().push_back(zx::Status::SHOULD_WAIT);
-        device.ethernet.send_status.borrow_mut().push_back(zx::Status::OK);
+        device.ethernet.send_status.borrow_mut().push_back(Err(zx::Status::SHOULD_WAIT));
+        device.ethernet.send_status.borrow_mut().push_back(Ok(()));
 
         // Third packet is accepted by the netstack.
-        device.ethernet.send_status.borrow_mut().push_back(zx::Status::OK);
+        device.ethernet.send_status.borrow_mut().push_back(Ok(()));
 
         let mem = IdentityDriverMem::new();
         let mut queue_state = TestQueue::new(32, &mem);
@@ -687,7 +688,7 @@ mod tests {
         assert_eq!(device.ethernet.completes.borrow().len(), 1);
         let (id, status) = device.ethernet.completes.borrow()[0];
         assert_eq!(id, buffer_id);
-        assert_eq!(status, zx::Status::INTERNAL);
+        assert_eq!(status, Err(zx::Status::INTERNAL));
     }
 
     #[fuchsia::test]
@@ -741,6 +742,6 @@ mod tests {
         assert_eq!(device.ethernet.completes.borrow().len(), 1);
         let (id, status) = device.ethernet.completes.borrow()[0];
         assert_eq!(id, buffer_id);
-        assert_eq!(status, zx::Status::OK);
+        assert_eq!(status, Ok(()));
     }
 }

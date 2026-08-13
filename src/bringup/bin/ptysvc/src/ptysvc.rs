@@ -482,7 +482,7 @@ async fn run_server_internal(
                 let mut pty_guard = pty.borrow_mut();
                 match pty_guard.create_client(id) {
                     Ok(()) => {
-                        responder.send(zx::Status::OK.into_raw()).or_else(ignore_peer_closed)?;
+                        responder.send(zx::sys::ZX_OK).or_else(ignore_peer_closed)?;
                         let client_stream = client.into_stream();
                         let pty_clone = pty.clone();
                         fasync::Task::local(async move {
@@ -540,7 +540,7 @@ async fn run_server_internal(
                 {
                     let _ = control.assert_signal(DeviceSignal::OOB);
                 }
-                responder.send(zx::Status::OK.into_raw()).or_else(ignore_peer_closed)?;
+                responder.send(zx::sys::ZX_OK).or_else(ignore_peer_closed)?;
             }
             DeviceRequest::Clone { request, .. } => {
                 let client_stream = request.into_stream();
@@ -663,9 +663,7 @@ async fn run_client_internal(
                 } else {
                     match pty_guard.create_client(new_id) {
                         Ok(()) => {
-                            responder
-                                .send(zx::Status::OK.into_raw())
-                                .or_else(ignore_peer_closed)?;
+                            responder.send(zx::sys::ZX_OK).or_else(ignore_peer_closed)?;
                             let client_stream = client.into_stream();
                             let pty_clone = pty.clone();
                             fasync::Task::local(async move {
@@ -682,9 +680,7 @@ async fn run_client_internal(
             DeviceRequest::ClrSetFeature { clr, set, responder } => {
                 match pty.borrow_mut().clr_set_feature(id, clr, set) {
                     Ok(features) => {
-                        responder
-                            .send(zx::Status::OK.into_raw(), features)
-                            .or_else(ignore_peer_closed)?;
+                        responder.send(zx::sys::ZX_OK, features).or_else(ignore_peer_closed)?;
                     }
                     Err(s) => {
                         responder.send(s.into_raw(), 0).or_else(ignore_peer_closed)?;
@@ -693,7 +689,7 @@ async fn run_client_internal(
             }
             DeviceRequest::GetWindowSize { responder } => {
                 responder
-                    .send(zx::Status::OK.into_raw(), &pty.borrow().window_size)
+                    .send(zx::sys::ZX_OK, &pty.borrow().window_size)
                     .or_else(ignore_peer_closed)?;
             }
             DeviceRequest::MakeActive { client_pty_id, responder } => {
@@ -705,9 +701,7 @@ async fn run_client_internal(
                 } else {
                     match pty.make_active(client_pty_id) {
                         Ok(()) => {
-                            responder
-                                .send(zx::Status::OK.into_raw())
-                                .or_else(ignore_peer_closed)?;
+                            responder.send(zx::sys::ZX_OK).or_else(ignore_peer_closed)?;
                         }
                         Err(s) => {
                             responder.send(s.into_raw()).or_else(ignore_peer_closed)?;
@@ -736,9 +730,7 @@ async fn run_client_internal(
                         ret_events |= fpty::EVENT_HANGUP;
                     }
 
-                    responder
-                        .send(zx::Status::OK.into_raw(), ret_events)
-                        .or_else(ignore_peer_closed)?;
+                    responder.send(zx::sys::ZX_OK, ret_events).or_else(ignore_peer_closed)?;
                 }
             }
             DeviceRequest::SetWindowSize { size, responder } => {
@@ -750,7 +742,7 @@ async fn run_client_internal(
                 {
                     let _ = control.assert_signal(DeviceSignal::OOB);
                 }
-                responder.send(zx::Status::OK.into_raw()).or_else(ignore_peer_closed)?;
+                responder.send(zx::sys::ZX_OK).or_else(ignore_peer_closed)?;
             }
             DeviceRequest::Clone { request, .. } => {
                 let client_stream = request.into_stream();

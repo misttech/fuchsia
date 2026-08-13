@@ -417,7 +417,7 @@ pub mod tests {
             Ok(StopConclusion {
                 disposition:
                     StopDisposition::Stopped(StopInfo {
-                        termination_status: zx::Status::OK,
+                        termination_status: Ok(()),
                         exit_code: Some(MOCK_EXIT_CODE),
                     }),
                 ..
@@ -461,7 +461,7 @@ pub mod tests {
             Ok(StopConclusion {
                 disposition:
                     StopDisposition::Stopped(StopInfo {
-                        termination_status: zx::Status::PEER_CLOSED,
+                        termination_status: Err(zx::Status::PEER_CLOSED),
                         exit_code: None,
                     }),
                 ..
@@ -502,13 +502,13 @@ pub mod tests {
             ControllerActionResponse {
                 close_channel: true,
                 delay: Some(component_stop_delay),
-                termination_status: Some(zx::Status::OK),
+                termination_status: Some(Ok(())),
                 exit_code: Some(MOCK_EXIT_CODE),
             },
             ControllerActionResponse {
                 close_channel: true,
                 delay: Some(component_stop_delay),
-                termination_status: Some(zx::Status::OK),
+                termination_status: Some(Ok(())),
                 exit_code: Some(MOCK_EXIT_CODE),
             },
         );
@@ -545,7 +545,7 @@ pub mod tests {
             Poll::Ready(Ok(StopConclusion {
                 disposition:
                     StopDisposition::Stopped(StopInfo {
-                        termination_status: zx::Status::OK,
+                        termination_status: Ok(()),
                         exit_code: Some(MOCK_EXIT_CODE),
                     }),
                 ..
@@ -604,13 +604,13 @@ pub mod tests {
             ControllerActionResponse {
                 close_channel: false,
                 delay: Some(stop_resp_delay),
-                termination_status: Some(zx::Status::OK),
+                termination_status: Some(Ok(())),
                 exit_code: Some(MOCK_EXIT_CODE),
             },
             ControllerActionResponse {
                 close_channel: true,
                 delay: Some(kill_resp_delay),
-                termination_status: Some(zx::Status::OK),
+                termination_status: Some(Ok(())),
                 exit_code: Some(MOCK_EXIT_CODE),
             },
         );
@@ -713,13 +713,13 @@ pub mod tests {
             ControllerActionResponse {
                 close_channel: false,
                 delay: None,
-                termination_status: Some(zx::Status::OK),
+                termination_status: Some(Ok(())),
                 exit_code: Some(MOCK_EXIT_CODE),
             },
             ControllerActionResponse {
                 close_channel: true,
                 delay: Some(kill_resp_delay),
-                termination_status: Some(zx::Status::OK),
+                termination_status: Some(Ok(())),
                 exit_code: Some(MOCK_EXIT_CODE),
             },
         );
@@ -761,7 +761,7 @@ pub mod tests {
             exec.run_until_stalled(&mut stop_fut),
             Poll::Ready(Ok(StopConclusion {
                 disposition: StopDisposition::Killed(StopInfo {
-                    termination_status: zx::Status::OK,
+                    termination_status: Ok(()),
                     exit_code: Some(MOCK_EXIT_CODE)
                 }),
                 escrow_request: None,
@@ -800,7 +800,7 @@ pub mod tests {
             ControllerActionResponse {
                 close_channel: true,
                 delay: Some(resp_delay),
-                termination_status: Some(zx::Status::OK),
+                termination_status: Some(Ok(())),
                 exit_code: Some(MOCK_EXIT_CODE),
             },
             // This is irrelevant because the controller should never receive
@@ -808,7 +808,7 @@ pub mod tests {
             ControllerActionResponse {
                 close_channel: true,
                 delay: Some(resp_delay),
-                termination_status: Some(zx::Status::OK),
+                termination_status: Some(Ok(())),
                 exit_code: Some(MOCK_EXIT_CODE),
             },
         );
@@ -861,7 +861,7 @@ pub mod tests {
             exec.run_until_stalled(&mut stop_fut),
             Poll::Ready(Ok(StopConclusion {
                 disposition: StopDisposition::Killed(StopInfo {
-                    termination_status: zx::Status::OK,
+                    termination_status: Ok(()),
                     exit_code: Some(MOCK_EXIT_CODE)
                 }),
                 escrow_request: None,

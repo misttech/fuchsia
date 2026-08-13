@@ -96,7 +96,7 @@ impl<'a, D: Driver> DriverUnderTest<'a, D> {
         let initialize_fn = registration.v1.initialize.unwrap();
         dispatcher
             .post_task_sync(move |status| {
-                assert_eq!(status, Status::OK);
+                assert_eq!(status, Ok(()));
                 // SAFETY: We know it's safe to call initialize from the initial dispatcher and we
                 // know channel_handle is non-zero.
                 token_tx.send(unsafe { initialize_fn(channel_handle) }.addr()).unwrap();

@@ -5,7 +5,7 @@
 use core::ffi::c_void;
 use pin_init::{PinInit, pin_data};
 use zx_status::Status;
-use zx_types::{ZX_TIME_INFINITE, zx_instant_mono_t};
+use zx_types::{ZX_OK, ZX_TIME_INFINITE, zx_instant_mono_t};
 
 unsafe extern "C" {
     fn cpp_event_init(event: *mut c_void, initial: bool);
@@ -63,7 +63,7 @@ impl KEvent {
     ///
     /// Wakes up all waiting threads.
     pub fn signal(&self) {
-        unsafe { cpp_event_signal(self.raw.as_mut_ptr(), Status::OK.into_raw()) }
+        unsafe { cpp_event_signal(self.raw.as_mut_ptr(), ZX_OK) }
     }
 
     /// Signals the event with a specific status.

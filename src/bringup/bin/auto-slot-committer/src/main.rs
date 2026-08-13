@@ -109,11 +109,11 @@ mod tests {
                     }
                     BootManagerRequest::SetConfigurationHealthy { configuration, responder } => {
                         calls.push(BootManagerCall::SetConfigurationHealthy(configuration));
-                        responder.send(Status::OK.into_raw()).unwrap();
+                        responder.send(zx::sys::ZX_OK).unwrap();
                     }
                     BootManagerRequest::Flush { responder } => {
                         calls.push(BootManagerCall::Flush);
-                        responder.send(Status::OK.into_raw()).unwrap();
+                        responder.send(zx::sys::ZX_OK).unwrap();
                     }
                     _ => panic!("unexpected request"),
                 }

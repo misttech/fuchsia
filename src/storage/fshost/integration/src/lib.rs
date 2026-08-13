@@ -417,7 +417,7 @@ impl TestFixture {
         )
         .await
         .expect("query failed");
-        assert_eq!(zx::Status::from_raw(status), zx::Status::OK);
+        assert_eq!(status, zx::sys::ZX_OK);
         assert!(info.is_some());
         let info_type = info.unwrap().fs_type;
         assert_eq!(info_type, fs_type, "{:#08x} != {:#08x}", info_type, fs_type);

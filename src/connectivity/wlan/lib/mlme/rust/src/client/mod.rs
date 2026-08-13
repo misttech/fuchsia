@@ -276,7 +276,7 @@ impl<D: DeviceOps> crate::MlmeImpl for ClientMlme<D> {
                 .map_err(From::from),
         }
     }
-    async fn handle_scan_complete(&mut self, status: zx::Status, scan_id: u64) {
+    async fn handle_scan_complete(&mut self, status: Result<(), zx::Status>, scan_id: u64) {
         self.scanner.bind(&mut self.ctx).handle_scan_complete(status, scan_id).await;
     }
     async fn handle_timeout(&mut self, event: TimedEvent) {

@@ -918,8 +918,15 @@ async fn get_hash(
         eager_package_manager,
     )
     .await;
-    ftrace::duration_end!(c"app", c"get-hash",
-        "status" => hash_or_status.err().unwrap_or(Status::OK).to_string().as_str());
+    let err_str;
+    let status_str = match &hash_or_status {
+        Ok(_) => "OK",
+        Err(s) => {
+            err_str = s.to_string();
+            err_str.as_str()
+        }
+    };
+    ftrace::duration_end!(c"app", c"get-hash", "status" => status_str);
     hash_or_status
 }
 

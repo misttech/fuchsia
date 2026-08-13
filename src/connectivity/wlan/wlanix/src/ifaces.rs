@@ -2118,7 +2118,7 @@ mod tests {
         let responder = assert_matches!(
             test_values.exec.run_until_stalled(&mut test_values.monitor_stream.select_next_some()),
             Poll::Ready(Ok(fidl_device_service::DeviceMonitorRequest::DestroyIface { responder, .. })) => responder);
-        responder.send(0).expect("Failed to send DestroyIface response");
+        responder.send(zx::sys::ZX_OK).expect("Failed to send DestroyIface response");
         assert_matches!(test_values.exec.run_until_stalled(&mut fut), Poll::Ready(Ok(())));
 
         assert!(test_values.manager.ifaces.lock().is_empty());
@@ -2212,7 +2212,7 @@ mod tests {
             test_values.exec.run_until_stalled(&mut test_values.monitor_stream.next()),
             Poll::Ready(Some(Ok(fidl_device_service::DeviceMonitorRequest::SetCountry { req, responder }))) => (req, responder));
         assert_eq!(req, fidl_device_service::SetCountryRequest { phy_id: 123, alpha2: *b"WW" });
-        responder.send(0).expect("Failed to send result");
+        responder.send(zx::sys::ZX_OK).expect("Failed to send result");
         assert_matches!(
             test_values.exec.run_until_stalled(&mut set_country_fut),
             Poll::Ready(Ok(()))
@@ -2234,7 +2234,7 @@ mod tests {
                 alpha2: *b"WW"
             }
         );
-        responder.send(0).expect("Failed to send result");
+        responder.send(zx::sys::ZX_OK).expect("Failed to send result");
         assert_matches!(
             test_values.exec.run_until_stalled(&mut set_country_fut),
             Poll::Ready(Ok(()))
@@ -3466,7 +3466,7 @@ mod tests {
                 exec.run_until_stalled(&mut monitor_stream.next()),
                 Poll::Ready(Some(Ok(fidl_device_service::DeviceMonitorRequest::SetPowerSaveMode { req, responder }))) => {
                     assert_eq!(req.phy_id, phy_id);
-                    assert_matches!(responder.send(zx::Status::OK.into_raw()), Ok(()));
+                    assert_matches!(responder.send(zx::sys::ZX_OK), Ok(()));
                     assert_eq!(req.ps_mode, expected_driver_val);
             });
 
@@ -3525,7 +3525,7 @@ mod tests {
         assert_matches!(
             exec.run_until_stalled(&mut monitor_stream.next()),
             Poll::Ready(Some(Ok(fidl_device_service::DeviceMonitorRequest::SetPowerSaveMode { req: _, responder }))) => {
-                responder.send(zx::Status::OK.into_raw()).expect("failed to send SetPowerSaveMode response");
+                responder.send(zx::sys::ZX_OK).expect("failed to send SetPowerSaveMode response");
             }
         );
 
@@ -3597,7 +3597,7 @@ mod tests {
         assert_matches!(
             exec.run_until_stalled(&mut monitor_stream.next()),
             Poll::Ready(Some(Ok(fidl_device_service::DeviceMonitorRequest::SetPowerSaveMode { req: _, responder }))) => {
-                responder.send(zx::Status::OK.into_raw()).expect("failed to send SetPowerSaveMode response");
+                responder.send(zx::sys::ZX_OK).expect("failed to send SetPowerSaveMode response");
             }
         );
         // Future completes
@@ -3629,7 +3629,7 @@ mod tests {
         assert_matches!(
             exec.run_until_stalled(&mut monitor_stream.next()),
             Poll::Ready(Some(Ok(fidl_device_service::DeviceMonitorRequest::SetPowerSaveMode { req: _, responder }))) => {
-                responder.send(zx::Status::OK.into_raw()).expect("failed to send SetPowerSaveMode response");
+                responder.send(zx::sys::ZX_OK).expect("failed to send SetPowerSaveMode response");
             }
         );
         // Future completes
@@ -3692,7 +3692,7 @@ mod tests {
         assert_matches!(
             exec.run_until_stalled(&mut monitor_stream.next()),
             Poll::Ready(Some(Ok(fidl_device_service::DeviceMonitorRequest::SetPowerSaveMode { req: _, responder }))) => {
-                responder.send(zx::Status::OK.into_raw()).expect("failed to send SetPowerSaveMode response");
+                responder.send(zx::sys::ZX_OK).expect("failed to send SetPowerSaveMode response");
             }
         );
 
@@ -3726,7 +3726,7 @@ mod tests {
         assert_matches!(
             exec.run_until_stalled(&mut monitor_stream.next()),
             Poll::Ready(Some(Ok(fidl_device_service::DeviceMonitorRequest::SetPowerSaveMode { req: _, responder }))) => {
-                responder.send(zx::Status::OK.into_raw()).expect("failed to send SetPowerSaveMode response");
+                responder.send(zx::sys::ZX_OK).expect("failed to send SetPowerSaveMode response");
             }
         );
 

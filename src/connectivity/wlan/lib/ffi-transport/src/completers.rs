@@ -35,7 +35,7 @@ where
             None => unreachable!(),
             Some(completer) => completer,
         };
-        completer(zx::Status::from(status).into_raw())
+        completer(zx::Status::result_into_raw(status))
     }
 }
 
@@ -71,7 +71,7 @@ mod tests {
             sender.send(status).expect("Failed to send result.");
         });
         completer.reply(Ok(()));
-        assert_eq!(Ok(Some(zx::Status::OK.into_raw())), receiver.try_recv());
+        assert_eq!(Ok(Some(zx::sys::ZX_OK)), receiver.try_recv());
     }
 
     #[test]

@@ -6,11 +6,12 @@ use crate::ptysvc::{Pty, run_server};
 use assert_matches::assert_matches;
 use fidl::endpoints::Proxy;
 use fidl_fuchsia_device::DeviceSignal;
+use fidl_fuchsia_hardware_pty as fpty;
 use fidl_fuchsia_hardware_pty::{DeviceMarker, DeviceProxy, WindowSize};
+use fuchsia_async as fasync;
 use std::cell::RefCell;
 use std::rc::Rc;
 use test_util::assert_gt;
-use {fidl_fuchsia_hardware_pty as fpty, fuchsia_async as fasync};
 
 fn setup() -> DeviceProxy {
     let pty = Rc::new(RefCell::new(Pty::new()));
@@ -46,7 +47,7 @@ async fn server_set_window_size() {
     let server = setup();
     let status =
         server.set_window_size(&WindowSize { width: 80, height: 24 }).await.expect("fidl failed");
-    assert_eq!(zx::Status::from_raw(status), zx::Status::OK);
+    assert_eq!(zx::Status::ok(status), Ok(()));
 }
 
 #[fuchsia::test]
@@ -162,7 +163,7 @@ async fn server_with_client_initial_conditions() {
     assert_eq!(result, Err(zx::Status::SHOULD_WAIT.into_raw()));
 
     let (status, features) = client.clr_set_feature(0, 0).await.unwrap();
-    assert_eq!(zx::Status::from_raw(status), zx::Status::OK);
+    assert_eq!(zx::Status::ok(status), Ok(()));
     assert_eq!(features, 0);
 }
 
@@ -225,21 +226,21 @@ async fn client_window_size() {
     let window_size = WindowSize { width: 80, height: 24 };
     {
         let status = server.set_window_size(&window_size).await.expect("fidl failed");
-        assert_eq!(zx::Status::from_raw(status), zx::Status::OK);
+        assert_eq!(zx::Status::ok(status), Ok(()));
     }
     {
         let (status, size) = client.get_window_size().await.expect("fidl failed");
-        assert_eq!(zx::Status::from_raw(status), zx::Status::OK);
+        assert_eq!(zx::Status::ok(status), Ok(()));
         assert_eq!(size, window_size);
     }
     let window_size = WindowSize { width: 5, height: 32 };
     {
         let status = client.set_window_size(&window_size).await.expect("fidl failed");
-        assert_eq!(zx::Status::from_raw(status), zx::Status::OK);
+        assert_eq!(zx::Status::ok(status), Ok(()));
     }
     {
         let (status, size) = client.get_window_size().await.expect("fidl failed");
-        assert_eq!(zx::Status::from_raw(status), zx::Status::OK);
+        assert_eq!(zx::Status::ok(status), Ok(()));
         assert_eq!(size, window_size);
     }
 }
@@ -251,7 +252,7 @@ async fn client_clr_set_feature() {
 
     {
         let (status, features) = client.clr_set_feature(0, 0).await.expect("fidl failed");
-        assert_eq!(zx::Status::from_raw(status), zx::Status::OK);
+        assert_eq!(zx::Status::ok(status), Ok(()));
         assert_eq!(features, 0);
     }
 
@@ -259,14 +260,14 @@ async fn client_clr_set_feature() {
     {
         let (status, features) =
             client.clr_set_feature(0, fpty::FEATURE_RAW).await.expect("fidl failed");
-        assert_eq!(zx::Status::from_raw(status), zx::Status::OK);
+        assert_eq!(zx::Status::ok(status), Ok(()));
         assert_eq!(features, fpty::FEATURE_RAW);
     }
 
     // If we don't change any bits, we should see the new settings.
     {
         let (status, features) = client.clr_set_feature(0, 0).await.expect("fidl failed");
-        assert_eq!(zx::Status::from_raw(status), zx::Status::OK);
+        assert_eq!(zx::Status::ok(status), Ok(()));
         assert_eq!(features, fpty::FEATURE_RAW);
     }
 
@@ -274,7 +275,7 @@ async fn client_clr_set_feature() {
     {
         let (status, features) =
             client.clr_set_feature(fpty::FEATURE_RAW, 0).await.expect("fidl failed");
-        assert_eq!(zx::Status::from_raw(status), zx::Status::OK);
+        assert_eq!(zx::Status::ok(status), Ok(()));
         assert_eq!(features, 0);
     }
 }
@@ -303,7 +304,7 @@ async fn client_get_window_size_server_never_set() {
     let client = open_client(&server, 0).await.unwrap();
 
     let (status, size) = client.get_window_size().await.expect("fidl failed");
-    assert_eq!(zx::Status::from_raw(status), zx::Status::OK);
+    assert_eq!(zx::Status::ok(status), Ok(()));
     assert_eq!(size, WindowSize { width: 0, height: 0 });
 }
 
@@ -316,14 +317,14 @@ async fn client_independent_feature_flags() {
     {
         let (status, features) =
             client.clr_set_feature(0, fpty::FEATURE_RAW).await.expect("fidl failed");
-        assert_eq!(zx::Status::from_raw(status), zx::Status::OK);
+        assert_eq!(zx::Status::ok(status), Ok(()));
         assert_eq!(features, fpty::FEATURE_RAW);
     }
 
     {
         // Client 2 shouldn't see the changes.
         let (status, features) = client2.clr_set_feature(0, 0).await.expect("fidl failed");
-        assert_eq!(zx::Status::from_raw(status), zx::Status::OK);
+        assert_eq!(zx::Status::ok(status), Ok(()));
         assert_eq!(features, 0);
     }
 }
@@ -340,15 +341,15 @@ async fn client_make_active() {
     }
     {
         let status = client2.make_active(1).await.expect("fidl failed");
-        assert_eq!(zx::Status::from_raw(status), zx::Status::OK);
+        assert_eq!(zx::Status::ok(status), Ok(()));
     }
     {
         let status = client2.make_active(1).await.expect("fidl failed");
-        assert_eq!(zx::Status::from_raw(status), zx::Status::OK);
+        assert_eq!(zx::Status::ok(status), Ok(()));
     }
     {
         let status = client2.make_active(0).await.expect("fidl failed");
-        assert_eq!(zx::Status::from_raw(status), zx::Status::OK);
+        assert_eq!(zx::Status::ok(status), Ok(()));
     }
     {
         let status = client2.make_active(2).await.expect("fidl failed");
@@ -369,7 +370,7 @@ async fn client_read_events() {
 
     {
         let (status, events) = client2.read_events().await.expect("fidl failed");
-        assert_eq!(zx::Status::from_raw(status), zx::Status::OK);
+        assert_eq!(zx::Status::ok(status), Ok(()));
         assert_eq!(events, 0);
     }
 }
@@ -406,7 +407,7 @@ async fn client_read_events_clears() {
 
     {
         let (status, events) = control_client.read_events().await.expect("fidl failed");
-        assert_eq!(zx::Status::from_raw(status), zx::Status::OK);
+        assert_eq!(zx::Status::ok(status), Ok(()));
         assert_eq!(events, fpty::EVENT_INTERRUPT);
     }
 
@@ -420,7 +421,7 @@ async fn client_read_events_clears() {
     // Event should have cleared.
     {
         let (status, events) = control_client.read_events().await.expect("fidl failed");
-        assert_eq!(zx::Status::from_raw(status), zx::Status::OK);
+        assert_eq!(zx::Status::ok(status), Ok(()));
         assert_eq!(events, 0);
     }
 }
@@ -444,7 +445,7 @@ async fn events_sent_with_no_controlling_client() {
 
     {
         let (status, events) = control_client.read_events().await.expect("fidl failed");
-        assert_eq!(zx::Status::from_raw(status), zx::Status::OK);
+        assert_eq!(zx::Status::ok(status), Ok(()));
         assert_eq!(events, fpty::EVENT_INTERRUPT);
     }
 }
@@ -464,7 +465,7 @@ async fn set_window_size_sends_event() {
 
     {
         let (status, events) = control_client.read_events().await.expect("fidl failed");
-        assert_eq!(zx::Status::from_raw(status), zx::Status::OK);
+        assert_eq!(zx::Status::ok(status), Ok(()));
         assert_eq!(events, 0);
     }
 
@@ -473,7 +474,7 @@ async fn set_window_size_sends_event() {
             .set_window_size(&WindowSize { width: 123, height: 45 })
             .await
             .expect("fidl failed");
-        assert_eq!(zx::Status::from_raw(status), zx::Status::OK);
+        assert_eq!(zx::Status::ok(status), Ok(()));
     }
 
     let _ = fasync::OnSignals::new(
@@ -485,7 +486,7 @@ async fn set_window_size_sends_event() {
 
     {
         let (status, events) = control_client.read_events().await.expect("fidl failed");
-        assert_eq!(zx::Status::from_raw(status), zx::Status::OK);
+        assert_eq!(zx::Status::ok(status), Ok(()));
         assert_eq!(events, fpty::EVENT_WINDOW_SIZE);
     }
 }
@@ -513,7 +514,7 @@ async fn active_client_closes() {
     {
         let _active_client = open_client(&server, 1).await.unwrap();
         let status = control_client.make_active(1).await.expect("fidl failed");
-        assert_eq!(zx::Status::from_raw(status), zx::Status::OK);
+        assert_eq!(zx::Status::ok(status), Ok(()));
     }
 
     let control_event = get_event(&control_client).await.unwrap();
@@ -534,7 +535,7 @@ async fn active_client_closes() {
     assert!(signals.contains(zx::Signals::from_bits_truncate(DeviceSignal::HANGUP.bits())));
 
     let (status, events) = control_client.read_events().await.expect("fidl failed");
-    assert_eq!(zx::Status::from_raw(status), zx::Status::OK);
+    assert_eq!(zx::Status::ok(status), Ok(()));
     assert_eq!(events, fpty::EVENT_HANGUP);
 }
 
@@ -584,7 +585,7 @@ async fn server_closes_when_client_present() {
 
     {
         let (status, events) = client.read_events().await.expect("fidl failed");
-        assert_eq!(zx::Status::from_raw(status), zx::Status::OK);
+        assert_eq!(zx::Status::ok(status), Ok(()));
         assert_eq!(events, fpty::EVENT_HANGUP);
     }
 
@@ -678,7 +679,7 @@ async fn server_read_client_raw() {
 
     {
         let (status, _) = client.clr_set_feature(0, fpty::FEATURE_RAW).await.expect("fidl failed");
-        assert_eq!(zx::Status::from_raw(status), zx::Status::OK);
+        assert_eq!(zx::Status::ok(status), Ok(()));
     }
 
     let test_data = Vec::from(b"hello\x03 world\ntest message\n");
@@ -716,7 +717,7 @@ async fn server_write_client_raw() {
 
     {
         let (status, _) = client.clr_set_feature(0, fpty::FEATURE_RAW).await.expect("fidl failed");
-        assert_eq!(zx::Status::from_raw(status), zx::Status::OK);
+        assert_eq!(zx::Status::ok(status), Ok(()));
     }
 
     let test_data = Vec::from(b"hello world\ntest\x03 message\n");
@@ -747,7 +748,7 @@ async fn server_write_client_raw() {
 
     {
         let (status, events) = control_client.read_events().await.expect("fidl failed");
-        assert_eq!(zx::Status::from_raw(status), zx::Status::OK);
+        assert_eq!(zx::Status::ok(status), Ok(()));
         assert_eq!(events, 0);
     }
 }
@@ -892,7 +893,7 @@ async fn clients_have_independent_fifos() {
 
     {
         let status = control_client.make_active(1).await.expect("fidl failed");
-        assert_eq!(zx::Status::from_raw(status), zx::Status::OK);
+        assert_eq!(zx::Status::ok(status), Ok(()));
     }
 
     {

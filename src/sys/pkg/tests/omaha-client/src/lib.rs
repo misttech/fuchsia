@@ -293,7 +293,7 @@ impl TestEnvBuilder {
         });
 
         // Set up verifier service.
-        let verifier = Arc::new(MockHealthVerificationService::new(|| zx::Status::OK));
+        let verifier = Arc::new(MockHealthVerificationService::new(|| Ok(())));
         {
             let verifier = Arc::clone(&verifier);
             svc.add_fidl_service(move |stream| {

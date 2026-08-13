@@ -37,7 +37,7 @@ pub extern "C" fn stop_rust_affordances() -> i32 {
         eprintln!("stop_rust_affordances encountered error: {err}");
         return zx::Status::INTERNAL.into_raw();
     }
-    zx::Status::OK.into_raw()
+    zx::sys::ZX_OK
 }
 
 #[repr(C)]
@@ -90,7 +90,7 @@ pub unsafe extern "C" fn uuid_to_string(uuid: UuidBytes, out_str: *mut core::ffi
     unsafe {
         std::ptr::copy_nonoverlapping(bytes.as_ptr(), out_str as *mut u8, bytes.len());
     }
-    zx::Status::OK.into_raw()
+    zx::sys::ZX_OK
 }
 
 // Copied from SL4F `GattServerFacade`.
@@ -246,7 +246,7 @@ pub unsafe extern "C" fn publish_service(
         return zx::Status::INTERNAL.into_raw();
     }
 
-    zx::Status::OK.into_raw()
+    zx::sys::ZX_OK
 }
 
 #[repr(C)]
@@ -286,7 +286,7 @@ pub unsafe extern "C" fn read_characteristic(
             return zx::Status::INTERNAL.into_raw();
         }
     }
-    zx::Status::OK.into_raw()
+    zx::sys::ZX_OK
 }
 
 /// Enable notifications/indications on the GATT characteristic with the given handles.
@@ -306,5 +306,5 @@ pub extern "C" fn register_characteristic_notifier(
         eprintln!("register_characteristic_notifier encountered error: {err}");
         return zx::Status::INTERNAL.into_raw();
     }
-    zx::Status::OK.into_raw()
+    zx::sys::ZX_OK
 }

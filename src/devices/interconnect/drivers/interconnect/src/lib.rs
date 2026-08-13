@@ -84,12 +84,9 @@ impl Child {
         })?;
 
         let response = match result {
-            Ok(response) => Ok(response),
-            Err(err) => {
-                error!("Failed to set bandwidth with {err:?}");
-                Err(err)
-            }
-        }?;
+            Ok(response) => response,
+            Err(err) => return Err(err.into()),
+        };
 
         graph.borrow_mut().update_stats(response.aggregated_bandwidth);
 

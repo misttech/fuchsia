@@ -231,7 +231,7 @@ pub enum EventPayload {
         runtime: Box<RuntimeInfo>,
     },
     Stopped {
-        status: zx::Status,
+        status: Result<(), zx::Status>,
         exit_code: Option<i64>,
         stop_time: zx::BootInstant,
         stop_time_monotonic: zx::MonotonicInstant,
@@ -356,7 +356,7 @@ impl fmt::Display for Event {
                 format!("requested '{}' from '{}'", name, source_moniker)
             }
             EventPayload::Stopped { status, .. } => {
-                format!("with status: {}", status)
+                format!("with status: {status:?}")
             }
             EventPayload::Destroyed { .. }
             | EventPayload::Resolved { .. }

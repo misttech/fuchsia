@@ -4,6 +4,8 @@
 
 use crate::attribution_client::AttributionState;
 use attribution_processing::{PrincipalDescription, ZXName};
+use fidl_fuchsia_memory_attribution as fattribution;
+use fidl_fuchsia_memory_attribution_plugin as fplugin;
 use fuchsia_trace::duration;
 use index_table_builder::IndexTableBuilder;
 use log::warn;
@@ -11,10 +13,6 @@ use std::collections::{HashMap, HashSet};
 use std::mem::MaybeUninit;
 use traces::CATEGORY_MEMORY_CAPTURE;
 use zerocopy::{FromBytes, IntoBytes};
-use {
-    fidl_fuchsia_memory_attribution as fattribution,
-    fidl_fuchsia_memory_attribution_plugin as fplugin,
-};
 const ZX_INFO_CACHE_INITIAL_SIZE: usize = 64;
 const ZX_INFO_CACHE_GROWTH_FACTOR: usize = 2;
 
@@ -735,9 +733,7 @@ pub mod tests {
         ) -> Result<Box<dyn Job>, zx::Status> {
             match self.status {
                 Some(status) => Err(status),
-                None => {
-                    Ok(Box::new(self.children.get(koid).ok_or(Err(zx::Status::NOT_FOUND))?.clone()))
-                }
+                None => Ok(Box::new(self.children.get(koid).ok_or(zx::Status::NOT_FOUND)?.clone())),
             }
         }
 
@@ -748,9 +744,9 @@ pub mod tests {
         ) -> Result<Box<dyn Process>, zx::Status> {
             match self.status {
                 Some(status) => Err(status),
-                None => Ok(Box::new(
-                    self.processes.get(koid).ok_or(Err(zx::Status::NOT_FOUND))?.clone(),
-                )),
+                None => {
+                    Ok(Box::new(self.processes.get(koid).ok_or(zx::Status::NOT_FOUND)?.clone()))
+                }
             }
         }
     }

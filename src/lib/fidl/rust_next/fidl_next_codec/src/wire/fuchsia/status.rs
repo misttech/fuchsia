@@ -179,7 +179,12 @@ mod tests {
         // SAFETY: `slot` was successfully decoded and initialized.
         let wire_result = unsafe { slot.as_ptr().cast::<StatusResult>().read() };
         assert_eq!(wire_result.to_result(), Ok(()));
-        assert_eq!(<zx::Status as FromWire<StatusResult>>::from_wire(wire_result), zx::Status::OK);
+        assert_eq!(
+            zx::Status::ok(
+                <zx::Status as FromWire<StatusResult>>::from_wire(wire_result).into_raw()
+            ),
+            Ok(())
+        );
     }
 
     #[test]
@@ -210,7 +215,7 @@ mod tests {
     fn test_status_result_encode() {
         let mut out = MaybeUninit::<StatusResult>::uninit();
         let mut encoder = ();
-        zx::Status::OK.encode(&mut encoder, &mut out, ()).unwrap();
+        Ok::<(), zx::Status>(()).encode(&mut encoder, &mut out, ()).unwrap();
         // SAFETY: `encode` succeeded, so `out` is initialized.
         let encoded = unsafe { out.assume_init() };
         assert_eq!(encoded.into_raw(), 0);

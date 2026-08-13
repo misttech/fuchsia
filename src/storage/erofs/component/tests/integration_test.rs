@@ -422,7 +422,7 @@ async fn test_erofs_query_filesystem() {
     let (status, info) =
         root_client.query_filesystem().await.expect("query_filesystem FIDL call failed");
 
-    assert_eq!(zx::Status::from_raw(status), zx::Status::OK);
+    assert_eq!(zx::Status::ok(status), Ok(()));
     assert!(info.is_some());
     let info = info.unwrap();
 

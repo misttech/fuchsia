@@ -19,6 +19,8 @@ use core::ffi::c_char;
 
 #[doc(hidden)]
 pub use zx_status::Status as __Status;
+#[doc(hidden)]
+pub use zx_status::sys as __sys;
 
 /// Attribute macro defining suite of unit tests defined as module. The
 /// attribute may only be used in a cfg(ktest) context.
@@ -442,15 +444,16 @@ macro_rules! expect_ok {
         $crate::expect_ok!($actual, "")
     };
     ($actual:expr, $msg:expr) => {
-        let a: ::unittest::__Status = $actual.into();
+        let a: Result<(), ::unittest::__Status> = $actual.into();
+        let raw = ::unittest::__Status::result_into_raw(a);
         $crate::check_comparison!(
-            a == ::unittest::__Status::OK,
+            a.is_ok(),
             false,
             "==",
-            ::unittest::__Status::OK,
-            ::unittest::__Status::OK.into_raw(),
+            "Ok(())",
+            ::unittest::__sys::ZX_OK,
             a,
-            a.into_raw(),
+            raw,
             $msg
         );
     };
@@ -463,15 +466,16 @@ macro_rules! assert_ok {
         $crate::assert_ok!($actual, "")
     };
     ($actual:expr, $msg:expr) => {
-        let a: ::unittest::__Status = $actual.into();
+        let a: Result<(), ::unittest::__Status> = $actual.into();
+        let raw = ::unittest::__Status::result_into_raw(a);
         $crate::check_comparison!(
-            a == ::unittest::__Status::OK,
+            a.is_ok(),
             true,
             "==",
-            ::unittest::__Status::OK,
-            ::unittest::__Status::OK.into_raw(),
+            "Ok(())",
+            ::unittest::__sys::ZX_OK,
             a,
-            a.into_raw(),
+            raw,
             $msg
         );
     };
@@ -490,11 +494,11 @@ macro_rules! unwrap_ok {
             Err(err) => {
                 let err: ::unittest::__Status = err.into();
                 $crate::check_comparison!(
-                    err == ::unittest::__Status::OK,
+                    false,
                     true,
                     "==",
-                    ::unittest::__Status::OK,
-                    ::unittest::__Status::OK.into_raw(),
+                    "Ok(())",
+                    ::unittest::__sys::ZX_OK,
                     err,
                     err.into_raw(),
                     $msg
@@ -631,7 +635,7 @@ mod tests {
             assert_null!(null_ptr);
             assert_nonnull!(nonnull_ptr);
 
-            assert_ok!(zx_status::Status::OK);
+            assert_ok!(Ok::<(), zx_status::Status>(()));
 
             let _ = unwrap_ok!(Ok::<(), zx_status::Status>(()));
 
@@ -711,7 +715,7 @@ mod tests {
         /// Test that assert_ok fails when value is non-zero.
         #[test]
         fn fail_assert_ok() {
-            assert_ok!(zx_status::Status::INTERNAL);
+            assert_ok!(Err::<(), _>(zx_status::Status::INTERNAL));
             mark_end_as_reached();
         }
 
@@ -752,8 +756,8 @@ mod tests {
             expect_nonnull!(nonnull_ptr);
             expect_nonnull!(nonnull_ptr, "should be non-null");
 
-            expect_ok!(zx_status::Status::OK);
-            expect_ok!(zx_status::Status::OK, "should be OK");
+            expect_ok!(Ok::<(), zx_status::Status>(()));
+            expect_ok!(Ok::<(), zx_status::Status>(()), "should be OK");
 
             mark_end_as_reached();
         }

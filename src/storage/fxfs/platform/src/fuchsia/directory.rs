@@ -493,7 +493,7 @@ impl FxDirectory {
         }
         let (src, dst) = (src_name.peek().unwrap(), dst_name.peek().unwrap());
         let src_dir =
-            src_dir.into_any().downcast::<FxDirectory>().map_err(|_| Err(zx::Status::NOT_DIR))?;
+            src_dir.into_any().downcast::<FxDirectory>().map_err(|_| zx::Status::NOT_DIR)?;
 
         // Acquire the transaction that locks |src_dir|, |src_name|, |self|, and |dst_name| if they
         // exist, and also the ID and type of dst and src.
@@ -3079,7 +3079,7 @@ mod tests {
                 .link(&encrypted_name, parent_2_token.unwrap().into(), "file_2")
                 .await
                 .expect("FIDL transport error"),
-            zx::Status::OK.into_raw()
+            zx::sys::ZX_OK
         );
 
         let file =
@@ -4078,7 +4078,7 @@ mod tests {
                     // should either link in the old file or the new.
                     assert_eq!(
                         inner2.link("foo", root_token, "baz").await.expect("Fidl call"),
-                        zx::Status::OK.into_raw()
+                        zx::sys::ZX_OK
                     );
                 }
             );

@@ -44,8 +44,8 @@ pub async fn serve_manager(
                 };
                 if fuzzer_url == running {
                     let response = match fake.set_output(output, socket) {
-                        zx::Status::OK => Ok(()),
-                        status => Err(status.into_raw()),
+                        Ok(()) => Ok(()),
+                        Err(status) => Err(status.into_raw()),
                     };
                     responder.send(response)?;
                 } else {

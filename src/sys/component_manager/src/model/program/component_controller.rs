@@ -85,7 +85,7 @@ impl<'a> ComponentController {
         let val = self.termination_value_recv.clone();
         async move {
             val.await.unwrap_or(StopInfo {
-                termination_status: zx::Status::PEER_CLOSED,
+                termination_status: Err(zx::Status::PEER_CLOSED),
                 exit_code: None,
             })
         }
@@ -104,13 +104,7 @@ impl<'a> ComponentController {
                 Err(fidl::Error::ClientChannelClosed { epitaph, .. }) => {
                     termination_sender.take().and_then(|sender| {
                         sender
-                            .send(StopInfo {
-                                termination_status: match epitaph.into() {
-                                    Err(s) => s,
-                                    Ok(()) => zx::Status::OK,
-                                },
-                                exit_code: None,
-                            })
+                            .send(StopInfo { termination_status: epitaph.into(), exit_code: None })
                             .ok()
                     });
                 }
@@ -118,7 +112,7 @@ impl<'a> ComponentController {
                     termination_sender.take().and_then(|sender| {
                         sender
                             .send(StopInfo {
-                                termination_status: zx::Status::PEER_CLOSED,
+                                termination_status: Err(zx::Status::PEER_CLOSED),
                                 exit_code: None,
                             })
                             .ok()
@@ -143,7 +137,10 @@ impl<'a> ComponentController {
         }
         termination_sender.take().map(|sender| {
             sender
-                .send(StopInfo { termination_status: zx::Status::PEER_CLOSED, exit_code: None })
+                .send(StopInfo {
+                    termination_status: Err(zx::Status::PEER_CLOSED),
+                    exit_code: None,
+                })
                 .unwrap_or(())
         });
     }
@@ -191,8 +188,8 @@ mod tests {
             fidl::endpoints::create_proxy_and_stream::<fcrunner::ComponentControllerMarker>();
         let controller = ComponentController::new(proxy, None);
         let epitaph_fut = controller.wait_for_termination();
-        stream.control_handle().shutdown_with_epitaph(zx::Status::UNAVAILABLE);
-        assert_eq!(epitaph_fut.await.termination_status, zx::Status::UNAVAILABLE);
+        stream.control_handle().shutdown_with_epitaph(Err(zx::Status::UNAVAILABLE));
+        assert_eq!(epitaph_fut.await.termination_status, Err(zx::Status::UNAVAILABLE));
     }
 
     #[fuchsia::test]
@@ -202,7 +199,7 @@ mod tests {
         let controller = ComponentController::new(proxy, None);
         let epitaph_fut = controller.wait_for_termination();
         drop(stream);
-        assert_eq!(epitaph_fut.await.termination_status, zx::Status::PEER_CLOSED);
+        assert_eq!(epitaph_fut.await.termination_status, Err(zx::Status::PEER_CLOSED));
     }
 
     #[fuchsia::test]
@@ -211,6 +208,6 @@ mod tests {
         let controller = ComponentController::new(proxy, None);
         let epitaph_fut = controller.wait_for_termination();
         drop(controller);
-        assert_eq!(epitaph_fut.await.termination_status, zx::Status::PEER_CLOSED);
+        assert_eq!(epitaph_fut.await.termination_status, Err(zx::Status::PEER_CLOSED));
     }
 }

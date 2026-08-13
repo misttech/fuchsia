@@ -914,7 +914,7 @@ async fn read_dirents_rewind() {
     assert_read_dirents!(root, 39, expected.into_vec());
 
     let status = root.rewind().await.expect("rewind fidl error");
-    assert_eq!(Status::from_raw(status), Status::OK);
+    assert_eq!(status, zx_status::sys::ZX_OK);
 
     let mut expected = DirentsSameInodeBuilder::new(fio::INO_UNKNOWN);
     // Entry header is 10 bytes + length of the name in bytes.

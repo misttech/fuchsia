@@ -327,18 +327,18 @@ impl LocalComponentRunner {
                         loop {
                             select! {
                                 res = local_component_implementation_fut => {
-                                    let epitaph = match res {
+                                    match res {
                                         Err(e) => {
                                             error!(
                                                 "the local component {:?} returned an error: {:?}",
                                                 local_component_name,
                                                 e,
                                             );
-                                            zx::Status::from_raw(fcomponent::Error::InstanceDied.into_primitive() as i32)
+                                            let epitaph = zx::Status::try_from_raw(fcomponent::Error::InstanceDied.into_primitive() as i32).unwrap();
+                                            controller_control_handle.shutdown_with_epitaph(Err(epitaph));
                                         }
-                                        Ok(()) => zx::Status::OK,
+                                        Ok(()) => controller_control_handle.shutdown_with_epitaph(Ok(())),
                                     };
-                                    controller_control_handle.shutdown_with_epitaph(epitaph);
                                     return;
                                 }
                                 req_res = controller_request_fut => {
@@ -359,14 +359,14 @@ impl LocalComponentRunner {
                                                 controller_request_fut = controller_request_stream.try_next().fuse();
                                             } else {
                                                 controller_control_handle.shutdown_with_epitaph(
-                                                    zx::Status::from_raw(fcomponent::Error::InstanceDied.into_primitive() as i32),
+                                                    Err(zx::Status::try_from_raw(fcomponent::Error::InstanceDied.into_primitive() as i32).unwrap()),
                                                 );
                                                 return;
                                             }
                                         }
                                         Some(fcrunner::ComponentControllerRequest::Kill { .. }) => {
                                             controller_control_handle.shutdown_with_epitaph(
-                                                zx::Status::from_raw(fcomponent::Error::InstanceDied.into_primitive() as i32),
+                                                Err(zx::Status::try_from_raw(fcomponent::Error::InstanceDied.into_primitive() as i32).unwrap()),
                                             );
                                             return;
                                         }

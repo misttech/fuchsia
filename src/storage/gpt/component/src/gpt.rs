@@ -1248,7 +1248,7 @@ mod tests {
             connect_to_named_protocol_at_dir_root::<fblock::BlockMarker>(&part_0_dir, "volume")
                 .expect("Failed to open Volume service");
         let (status, guid) = part_0_block.get_type_guid().await.expect("FIDL error");
-        assert_eq!(zx::Status::from_raw(status), zx::Status::OK);
+        assert_eq!(status, zx::sys::ZX_OK);
         assert_eq!(guid.unwrap().value, [0xffu8; 16]);
         let part_1_block =
             connect_to_named_protocol_at_dir_root::<fblock::BlockMarker>(&part_1_dir, "volume")
@@ -1366,7 +1366,7 @@ mod tests {
             connect_to_named_protocol_at_dir_root::<fblock::BlockMarker>(&part_0_dir, "volume")
                 .expect("Failed to open Volume service");
         let (status, guid) = part_0_block.get_type_guid().await.expect("FIDL error");
-        assert_eq!(zx::Status::from_raw(status), zx::Status::OK);
+        assert_eq!(status, zx::sys::ZX_OK);
         assert_eq!(guid.unwrap().value, [2u8; 16]);
         let part_1_block =
             connect_to_named_protocol_at_dir_root::<fblock::BlockMarker>(&part_1_dir, "volume")
@@ -1456,7 +1456,7 @@ mod tests {
         let block = connect_to_named_protocol_at_dir_root::<fblock::BlockMarker>(&proxy, "volume")
             .expect("Failed to open block service");
         let (status, name) = block.get_name().await.expect("FIDL error");
-        assert_eq!(zx::Status::from_raw(status), zx::Status::OK);
+        assert_eq!(status, zx::sys::ZX_OK);
         assert_eq!(name.unwrap(), PART_3_NAME);
 
         runner.shutdown().await;

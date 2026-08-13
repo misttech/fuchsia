@@ -311,7 +311,7 @@ impl Usercopy {
             as *const () as usize
             ..atomic_compare_exchange_weak_u32_acq_rel_end as *const () as usize;
 
-        let (tx, rx) = std::sync::mpsc::channel::<zx::Status>();
+        let (tx, rx) = std::sync::mpsc::channel::<Result<(), zx::Status>>();
 
         let shutdown_event = zx::Event::create();
         let shutdown_event_clone =
@@ -325,13 +325,13 @@ impl Usercopy {
             let exception_channel = match exception_channel_result {
                 Ok(c) => c,
                 Err(e) => {
-                    let _ = tx.send(e);
+                    let _ = tx.send(Err(e));
                     return;
                 }
             };
 
             // register exception handler
-            let _ = tx.send(zx::Status::OK);
+            let _ = tx.send(Ok(()));
 
             // loop on exceptions
             loop {
@@ -398,12 +398,7 @@ impl Usercopy {
             }
         });
 
-        match rx.recv().unwrap() {
-            zx::Status::OK => {}
-            s => {
-                return Err(s);
-            }
-        };
+        rx.recv().unwrap()?;
 
         Ok(Self { shutdown_event, join_handle: Some(join_handle), restricted_address_range })
     }

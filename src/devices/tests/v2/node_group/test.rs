@@ -4,6 +4,11 @@
 
 use anyhow::{Error, Result};
 use fidl::endpoints::create_endpoints;
+use fidl_fuchsia_driver_test as fdt;
+use fidl_fuchsia_driver_testing as ftest;
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_nodegroup_test as ft;
+use fuchsia_async as fasync;
 use fuchsia_component::client::connect_to_protocol;
 use fuchsia_component::server::ServiceFs;
 use futures::channel::mpsc;
@@ -11,16 +16,12 @@ use futures::prelude::*;
 use futures::{StreamExt, TryStreamExt};
 use log::info;
 use realm_client::{InstalledNamespace, extend_namespace};
-use {
-    fidl_fuchsia_driver_test as fdt, fidl_fuchsia_driver_testing as ftest, fidl_fuchsia_io as fio,
-    fidl_fuchsia_nodegroup_test as ft, fuchsia_async as fasync,
-};
 
 async fn run_waiter_server(mut stream: ft::WaiterRequestStream, mut sender: mpsc::Sender<()>) {
     while let Some(ft::WaiterRequest::Ack { status, .. }) =
         stream.try_next().await.expect("Stream failed")
     {
-        assert_eq!(status, zx::Status::OK.into_raw());
+        assert_eq!(status, zx::sys::ZX_OK);
         info!("Received Ack request");
         sender.try_send(()).expect("Sender failed")
     }

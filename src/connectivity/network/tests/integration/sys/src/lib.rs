@@ -156,7 +156,7 @@ async fn ns_sets_thread_profiles<N: Netstack>(name: &str) {
                 thread.basic_info().expect("failed to get basic info").rights,
                 zx::Rights::TRANSFER | zx::Rights::MANAGE_THREAD
             );
-            responder.send(zx::Status::OK.into_raw()).expect("failed to respond");
+            responder.send(zx::sys::ZX_OK).expect("failed to respond");
 
             futures::future::ready(if expect.all_done() {
                 async_utils::fold::FoldWhile::Done(())

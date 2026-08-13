@@ -211,12 +211,14 @@ pub fn start_test_component(
 /// Reads the epitaph from the provided `event_stream`.
 pub async fn read_component_epitaph(
     mut event_stream: frunner::ComponentControllerEventStream,
-) -> zx::Status {
+) -> zx::sys::zx_status_t {
     match event_stream.next().await {
-        Some(Err(fidl::Error::ClientChannelClosed { epitaph, .. })) => match epitaph.into() {
-            Err(s) => s,
-            Ok(()) => zx::Status::OK,
-        },
+        Some(Err(fidl::Error::ClientChannelClosed { epitaph, .. })) => {
+            match Result::<(), zx::Status>::from(epitaph) {
+                Err(s) => s.into_raw(),
+                Ok(()) => zx::sys::ZX_OK,
+            }
+        }
         result => {
             log::error!(
                 "Didn't get epitaph from the component controller, instead got: {:?}",
@@ -224,7 +226,7 @@ pub async fn read_component_epitaph(
             );
             // Fail the test case here, since the component controller's epitaph couldn't be
             // read.
-            zx::Status::INTERNAL
+            zx::Status::INTERNAL.into_raw()
         }
     }
 }
@@ -234,7 +236,7 @@ pub async fn read_component_epitaph(
 /// The result is determined by reading the epitaph from the provided `event_stream`.
 pub async fn read_result(event_stream: frunner::ComponentControllerEventStream) -> ftest::Result_ {
     match read_component_epitaph(event_stream).await {
-        zx::Status::OK => {
+        zx::sys::ZX_OK => {
             ftest::Result_ { status: Some(ftest::Status::Passed), ..Default::default() }
         }
         _ => ftest::Result_ { status: Some(ftest::Status::Failed), ..Default::default() },

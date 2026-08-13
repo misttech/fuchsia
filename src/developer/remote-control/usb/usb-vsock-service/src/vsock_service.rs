@@ -143,7 +143,7 @@ impl<B: PacketBuffer> VsockService<B> {
         };
         connection.accept(request, Socket::from_socket(data)).await.map_err(|err| {
             error!("Failed to accept connection for {address:?}: {err:?}");
-            Err(Status::ADDRESS_UNREACHABLE)
+            Status::ADDRESS_UNREACHABLE
         })?;
 
         Ok(())

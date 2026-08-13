@@ -89,7 +89,7 @@ pub extern "C" fn install_from_usb(source: *const c_char, destination: *const c_
     log::trace!("install_from_usb() result = {thread_result:?}");
 
     match thread_result {
-        Ok(result) => Status::from(result).into_raw(),
+        Ok(result) => Status::result_into_raw(result),
         Err(thread_panic) => {
             log::error!("install_from_usb thread panic: {thread_panic:?}");
             Status::INTERNAL.into_raw()
@@ -174,7 +174,7 @@ async fn get_installation_paths(
         Some(device_path) => block_devices
             .iter()
             .find(|d| d.is_disk() && d.topo_path == device_path)
-            .ok_or(Err(Status::NOT_FOUND))?,
+            .ok_or(Status::NOT_FOUND)?,
         // Otherwise, try to auto-detect the removable disk (e.g. USB).
         None => (dependencies.find_install_source)(&block_devices, bootloader_type)
             .await
@@ -191,7 +191,7 @@ async fn get_installation_paths(
             }
     };
     let mut install_iter = block_devices.iter().filter(install_filter);
-    let install_target = install_iter.next().ok_or(Err(Status::NOT_FOUND))?;
+    let install_target = install_iter.next().ok_or(Status::NOT_FOUND)?;
     // Don't install if there could have been multiple targets, since it's ambiguous which one
     // the caller wants. They must provide a `requested_destination` in this case.
     if install_iter.next().is_some() {
@@ -434,7 +434,7 @@ mod tests {
         // We expect it to fail, this is primarily to ensure our async calls work.
         let source = CString::new("foo").unwrap();
         let dest = CString::new("bar").unwrap();
-        assert!(install_from_usb(source.as_ptr(), dest.as_ptr()) != Status::OK.into_raw());
+        assert!(Status::ok(install_from_usb(source.as_ptr(), dest.as_ptr())).is_err());
     }
 
     #[fuchsia::test]
@@ -443,6 +443,6 @@ mod tests {
         // We expect it to fail, this is primarily to ensure our async calls work.
         let source = CString::new("foo").unwrap();
         let dest = CString::new("bar").unwrap();
-        assert!(install_from_usb(source.as_ptr(), dest.as_ptr()) != Status::OK.into_raw());
+        assert!(Status::ok(install_from_usb(source.as_ptr(), dest.as_ptr())).is_err());
     }
 }

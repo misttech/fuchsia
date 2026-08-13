@@ -30,12 +30,14 @@ enum State {
     Stopped,
 }
 
+type ShutdownSender = oneshot::Sender<Result<(), zx::Status>>;
+
 struct LifecycleServer {
-    on_stop: RefCell<Option<oneshot::Sender<oneshot::Sender<zx::Status>>>>,
+    on_stop: RefCell<Option<oneshot::Sender<ShutdownSender>>>,
 }
 
 impl LifecycleServer {
-    fn new(on_stop: oneshot::Sender<oneshot::Sender<zx::Status>>) -> Self {
+    fn new(on_stop: oneshot::Sender<ShutdownSender>) -> Self {
         Self { on_stop: RefCell::new(Some(on_stop)) }
     }
 
@@ -50,8 +52,8 @@ impl LifecycleServer {
                     let on_stop = self.on_stop.borrow_mut().take();
                     if let Some(on_stop) = on_stop {
                         let _ = on_stop.send(tx);
-                        if let Ok(status) = rx.await {
-                            control_handle.shutdown_with_epitaph(status);
+                        if let Ok(result) = rx.await {
+                            control_handle.shutdown_with_epitaph(result);
                         } else {
                             control_handle.shutdown_with_epitaph(zx::Status::INTERNAL);
                         }
@@ -66,8 +68,8 @@ impl LifecycleServer {
 struct ShutdownManagerState {
     state: State,
     received_boot_shutdown_signal: bool,
-    package_shutdown_complete_callbacks: Vec<oneshot::Sender<zx::Status>>,
-    boot_shutdown_complete_callbacks: Vec<oneshot::Sender<zx::Status>>,
+    package_shutdown_complete_callbacks: Vec<ShutdownSender>,
+    boot_shutdown_complete_callbacks: Vec<ShutdownSender>,
     lifecycle_stop: bool,
 }
 
@@ -157,7 +159,7 @@ impl ShutdownManager {
 
     pub fn publish<'a>(self: &Rc<Self>, fs: &mut ServiceFs<ServiceObjLocal<'a, ()>>) {
         let self_clone = self.clone();
-        let (tx, rx) = oneshot::channel::<oneshot::Sender<zx::Status>>();
+        let (tx, rx) = oneshot::channel::<ShutdownSender>();
         self.scope.spawn_local(async move {
             if let Ok(sender) = rx.await {
                 let status = self_clone.signal_package_shutdown().await;
@@ -180,7 +182,7 @@ impl ShutdownManager {
         );
 
         let self_clone = self.clone();
-        let (tx, rx) = oneshot::channel::<oneshot::Sender<zx::Status>>();
+        let (tx, rx) = oneshot::channel::<ShutdownSender>();
         self.scope.spawn_local(async move {
             if let Ok(sender) = rx.await {
                 let status = self_clone.signal_boot_shutdown().await;
@@ -205,7 +207,7 @@ impl ShutdownManager {
 
         // Bind to process lifecycle
         let self_clone = self.clone();
-        let (tx, rx) = oneshot::channel::<oneshot::Sender<zx::Status>>();
+        let (tx, rx) = oneshot::channel::<ShutdownSender>();
         self.scope.spawn_local(async move {
             if let Ok(sender) = rx.await {
                 self_clone.internal_state.borrow_mut().lifecycle_stop = true;
@@ -247,7 +249,7 @@ impl ShutdownManager {
             internal_state.state = State::PackageStopped;
 
             for sender in internal_state.package_shutdown_complete_callbacks.drain(..) {
-                let _ = sender.send(zx::Status::OK);
+                let _ = sender.send(Ok(()));
             }
 
             if internal_state.received_boot_shutdown_signal {
@@ -273,11 +275,11 @@ impl ShutdownManager {
         self.system_execute().await;
         let mut internal_state = self.internal_state.borrow_mut();
         for sender in internal_state.boot_shutdown_complete_callbacks.drain(..) {
-            let _ = sender.send(zx::Status::OK);
+            let _ = sender.send(Ok(()));
         }
     }
 
-    async fn signal_package_shutdown(&self) -> zx::Status {
+    async fn signal_package_shutdown(&self) -> Result<(), zx::Status> {
         // TODO: switch logs to debuglog
 
         // We explicitly drop this before going into the await.
@@ -296,19 +298,19 @@ impl ShutdownManager {
                 } else {
                     drop(internal_state);
                 }
-                rx.await.unwrap_or(zx::Status::INTERNAL)
+                rx.await.unwrap_or(Err(zx::Status::INTERNAL))
             }
-            _ => zx::Status::OK,
+            _ => Ok(()),
         }
     }
 
-    async fn signal_boot_shutdown(&self) -> zx::Status {
+    async fn signal_boot_shutdown(&self) -> Result<(), zx::Status> {
         // We explicitly drop this before going into the await.
         #![allow(clippy::await_holding_refcell_ref)]
         let mut internal_state = self.internal_state.borrow_mut();
 
         if internal_state.state == State::Stopped {
-            return zx::Status::OK;
+            return Ok(());
         }
 
         let (tx, rx) = oneshot::channel();
@@ -329,7 +331,7 @@ impl ShutdownManager {
             }
             _ => {}
         }
-        rx.await.unwrap_or(zx::Status::INTERNAL)
+        rx.await.unwrap_or(Err(zx::Status::INTERNAL))
     }
 
     async fn system_execute(&self) {
@@ -358,21 +360,21 @@ impl ShutdownManager {
 
         info!("Executing powerctl.");
         let status = match shutdown_system_state {
-            fsystem_state::SystemPowerState::Reboot => zx::Status::from_raw(unsafe {
+            fsystem_state::SystemPowerState::Reboot => zx::Status::ok(unsafe {
                 zx::sys::zx_system_powerctl(
                     power_resource.raw_handle(),
                     ZX_SYSTEM_POWERCTL_REBOOT,
                     std::ptr::null(),
                 )
             }),
-            fsystem_state::SystemPowerState::RebootBootloader => zx::Status::from_raw(unsafe {
+            fsystem_state::SystemPowerState::RebootBootloader => zx::Status::ok(unsafe {
                 zx::sys::zx_system_powerctl(
                     power_resource.raw_handle(),
                     ZX_SYSTEM_POWERCTL_REBOOT_BOOTLOADER,
                     std::ptr::null(),
                 )
             }),
-            fsystem_state::SystemPowerState::RebootRecovery => zx::Status::from_raw(unsafe {
+            fsystem_state::SystemPowerState::RebootRecovery => zx::Status::ok(unsafe {
                 zx::sys::zx_system_powerctl(
                     power_resource.raw_handle(),
                     ZX_SYSTEM_POWERCTL_REBOOT_RECOVERY,
@@ -380,14 +382,14 @@ impl ShutdownManager {
                 )
             }),
             fsystem_state::SystemPowerState::RebootKernelInitiated => {
-                let status = zx::Status::from_raw(unsafe {
+                let status = zx::Status::ok(unsafe {
                     zx::sys::zx_system_powerctl(
                         power_resource.raw_handle(),
                         ZX_SYSTEM_POWERCTL_ACK_KERNEL_INITIATED_REBOOT,
                         std::ptr::null(),
                     )
                 });
-                if status == zx::Status::OK {
+                if status.is_ok() {
                     // sleep indefinitely
                     loop {
                         fasync::Timer::new(std::time::Duration::from_secs(5 * 60)).await;
@@ -398,7 +400,7 @@ impl ShutdownManager {
                 }
                 status
             }
-            fsystem_state::SystemPowerState::Poweroff => zx::Status::from_raw(unsafe {
+            fsystem_state::SystemPowerState::Poweroff => zx::Status::ok(unsafe {
                 zx::sys::zx_system_powerctl(
                     power_resource.raw_handle(),
                     ZX_SYSTEM_POWERCTL_SHUTDOWN,
@@ -409,18 +411,18 @@ impl ShutdownManager {
             fsystem_state::SystemPowerState::Mexec => {
                 info!("About to mexec...");
                 match mexec_boot::mexec_boot(zx::Unowned::new(mexec_resource)) {
-                    Ok(()) => zx::Status::OK,
+                    Ok(()) => Ok(()),
                     Err(e) => {
                         error!("mexec_boot failed: {}", e);
                         what = "zx_system_mexec";
-                        zx::Status::INTERNAL
+                        Err(zx::Status::INTERNAL)
                     }
                 }
             }
             fsystem_state::SystemPowerState::FullyOn
             | fsystem_state::SystemPowerState::SuspendRam => {
                 error!("Unexpected shutdown state requested: {:?}", shutdown_system_state);
-                zx::Status::INVALID_ARGS
+                Err(zx::Status::INVALID_ARGS)
             }
         };
 
@@ -430,6 +432,6 @@ impl ShutdownManager {
             std::process::exit(0);
         }
 
-        warn!("{}: {}", what, status);
+        warn!("{}: {status:?}", what);
     }
 }

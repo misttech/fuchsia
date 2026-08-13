@@ -4,8 +4,6 @@
 
 //! Safe bindings for the C libasync async dispatcher library
 
-use zx_types::ZX_OK;
-
 use core::task::Context;
 use fuchsia_sync::Mutex;
 use std::pin::Pin;
@@ -203,7 +201,7 @@ impl<T: Send + 'static> TaskWakerState<T> {
                 let mut future_slot = arc_self.future.lock();
                 // if the executor is shutting down, drop the future we're waiting on and pass
                 // on the error.
-                if status != Status::from_raw(ZX_OK) {
+                if let Err(status) = status {
                     drop(future_slot.take());
                     arc_self.send_result(Err(status));
                     return;

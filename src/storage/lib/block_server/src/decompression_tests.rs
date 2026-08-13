@@ -270,7 +270,7 @@ async fn test_decompression() {
         }])
         .await;
 
-    assert_eq!(zx::Status::from_raw(fixture.read_response().await.status), zx::Status::OK);
+    assert_eq!(fixture.read_response().await.status, zx::sys::ZX_OK);
 
     let mut buf = vec![0; BLOCK_SIZE as usize];
     fixture.vmo.read(&mut buf, 0).unwrap();
@@ -349,7 +349,7 @@ async fn test_fragmented_fifo_requests() {
         ])
         .await;
 
-    assert_eq!(zx::Status::from_raw(fixture.read_response().await.status), zx::Status::OK);
+    assert_eq!(fixture.read_response().await.status, zx::sys::ZX_OK);
 
     let mut buf = vec![0; 2 * BLOCK_SIZE as usize];
     fixture.vmo.read(&mut buf, 0).unwrap();
@@ -423,7 +423,7 @@ async fn test_fragmented_device_reads() {
         }])
         .await;
 
-    assert_eq!(zx::Status::from_raw(fixture.read_response().await.status), zx::Status::OK);
+    assert_eq!(fixture.read_response().await.status, zx::sys::ZX_OK);
 
     let mut buf = vec![0; 2 * BLOCK_SIZE as usize];
     fixture.vmo.read(&mut buf, 0).unwrap();
@@ -742,7 +742,7 @@ async fn test_decompression_buffer_exhaustion() {
     // Read all the responses.
     for _ in 0..NUM_REQUESTS {
         let response = fixture.read_response().await;
-        assert_eq!(zx::Status::from_raw(response.status), zx::Status::OK);
+        assert_eq!(response.status, zx::sys::ZX_OK);
     }
 
     let mut buf = vec![0; UNCOMPRESSED_SIZE];

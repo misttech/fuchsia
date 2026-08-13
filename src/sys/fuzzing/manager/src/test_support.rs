@@ -35,7 +35,7 @@ const BUF_SIZE: u64 = 4096;
 pub struct TestRealm {
     fuzzers: Rc<FakeFuzzerMap>,
     manager_streams: Vec<fuzz::ManagerRequestStream>,
-    pub registry_status: zx::Status,
+    pub registry_status: Result<(), zx::Status>,
     pub launch_error: Option<LaunchError>,
 }
 
@@ -44,7 +44,7 @@ impl TestRealm {
         Self {
             fuzzers: Rc::new(FakeFuzzerMap::new()),
             manager_streams: Vec::new(),
-            registry_status: zx::Status::OK,
+            registry_status: Ok(()),
             launch_error: None,
         }
     }
@@ -177,21 +177,21 @@ async fn serve_registry(
                     responder,
                 } => {
                     let response = match status {
-                        zx::Status::OK => {
+                        Ok(()) => {
                             fuzzers.connect(&fuzzer_url, controller);
                             Ok(())
                         }
-                        _ => {
-                            fuzzers.remove(&fuzzer_url);
-                            Err(status.into_raw())
+                        Err(err) => {
+                            let _ = fuzzers.remove(&fuzzer_url);
+                            Err(err.into_raw())
                         }
                     };
                     responder.send(response)
                 }
                 fuzz::RegistryRequest::Disconnect { fuzzer_url, responder } => {
                     let response = match fuzzers.remove(&fuzzer_url) {
-                        zx::Status::OK => Ok(()),
-                        status => Err(status.into_raw()),
+                        Ok(()) => Ok(()),
+                        Err(status) => Err(status.into_raw()),
                     };
                     responder.send(response)
                 }
@@ -631,14 +631,14 @@ impl FakeFuzzerMap {
         self.fuzzers.borrow_mut().get_mut(url).and_then(|fuzzer| fuzzer.syslog.take())
     }
 
-    fn remove(&self, url: &str) -> zx::Status {
+    fn remove(&self, url: &str) -> Result<(), zx::Status> {
         let mut fuzzers = self.fuzzers.borrow_mut();
         match fuzzers.remove(url) {
             Some(mut fuzzer) => {
                 let _ = fuzzer.send_suite_stopped();
-                zx::Status::OK
+                Ok(())
             }
-            None => zx::Status::NOT_FOUND,
+            None => Err(zx::Status::NOT_FOUND),
         }
     }
 }

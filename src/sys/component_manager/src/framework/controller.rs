@@ -268,7 +268,7 @@ impl Drop for ExecutionControllerTask {
             Some(payload) => {
                 // There's not much we can do if the other end has closed their channel
                 let _ = self.control_handle.send_on_stop(&fcomponent::StoppedPayload {
-                    status: Some(payload.termination_status.into_raw()),
+                    status: Some(zx::Status::result_into_raw(payload.termination_status)),
                     exit_code: payload.exit_code,
                     ..Default::default()
                 });

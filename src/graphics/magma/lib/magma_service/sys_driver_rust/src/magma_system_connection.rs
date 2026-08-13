@@ -74,16 +74,16 @@ impl TryFrom<i32> for MagmaStatus {
     }
 }
 
-impl From<MagmaStatus> for zx::Status {
-    fn from(status: MagmaStatus) -> zx::Status {
+impl From<MagmaStatus> for Result<(), zx::Status> {
+    fn from(status: MagmaStatus) -> Result<(), zx::Status> {
         match status {
-            MagmaStatus::Ok => zx::Status::OK,
-            MagmaStatus::InternalError => zx::Status::INTERNAL,
-            MagmaStatus::InvalidArgs => zx::Status::INVALID_ARGS,
-            MagmaStatus::AccessDenied => zx::Status::ACCESS_DENIED,
-            MagmaStatus::MemoryError => zx::Status::NO_MEMORY,
-            MagmaStatus::Unimplemented => zx::Status::NOT_SUPPORTED,
-            MagmaStatus::BadState => zx::Status::BAD_STATE,
+            MagmaStatus::Ok => Ok(()),
+            MagmaStatus::InternalError => Err(zx::Status::INTERNAL),
+            MagmaStatus::InvalidArgs => Err(zx::Status::INVALID_ARGS),
+            MagmaStatus::AccessDenied => Err(zx::Status::ACCESS_DENIED),
+            MagmaStatus::MemoryError => Err(zx::Status::NO_MEMORY),
+            MagmaStatus::Unimplemented => Err(zx::Status::NOT_SUPPORTED),
+            MagmaStatus::BadState => Err(zx::Status::BAD_STATE),
         }
     }
 }

@@ -78,11 +78,10 @@ async fn main() -> Result<()> {
                 .get_temperature_celsius()
                 .await
                 .context("Failed to call GetTemperatureCelsius")?;
-            let status = zx::Status::from_raw(status);
-            if status == zx::Status::OK {
-                println!("Sensor '{}' temperature: {:.2}°C", name, temp);
+            if let Err(status) = zx::Status::ok(status) {
+                bail!("Sensor '{}' returned error status: {status:?}", name);
             } else {
-                bail!("Sensor '{}' returned error status: {:?}", name, status);
+                println!("Sensor '{}' temperature: {:.2}°C", name, temp);
             }
         }
         "override" => {

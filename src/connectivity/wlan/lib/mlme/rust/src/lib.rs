@@ -89,7 +89,7 @@ pub trait MlmeImpl {
     fn handle_eth_frame_tx(&mut self, bytes: &[u8], async_id: trace::Id) -> Result<(), Error>;
     fn handle_scan_complete(
         &mut self,
-        status: zx::Status,
+        status: Result<(), zx::Status>,
         scan_id: u64,
     ) -> impl Future<Output = ()>;
     fn handle_timeout(&mut self, event: Self::TimerEvent) -> impl Future<Output = ()>;
@@ -191,7 +191,7 @@ pub enum DriverEvent {
     // Indicates that the device is being removed and our main loop should exit.
     Stop { responder: fidl_softmac::WlanSoftmacIfcBridgeStopBridgedDriverResponder },
     // Reports a scan is complete.
-    ScanComplete { status: zx::Status, scan_id: u64 },
+    ScanComplete { status: Result<(), zx::Status>, scan_id: u64 },
     // Reports the result of an attempted frame transmission.
     TxResultReport { tx_result: fidl_softmac::WlanTxResult },
     EthernetTxEvent(EthernetTxEvent),
@@ -431,7 +431,7 @@ pub mod test_utils {
             unimplemented!()
         }
 
-        async fn handle_scan_complete(&mut self, _status: zx::Status, _scan_id: u64) {
+        async fn handle_scan_complete(&mut self, _status: Result<(), zx::Status>, _scan_id: u64) {
             unimplemented!()
         }
 
@@ -573,7 +573,7 @@ mod tests {
         if let Request::Ax { responder } = (Request::Ax { responder: RequestAxResponder {} }) {
             let _responder: RequestAxResponder = driver_event_sink
                 .unbounded_send_or_respond(
-                    DriverEvent::ScanComplete { status: zx::Status::OK, scan_id: 3 },
+                    DriverEvent::ScanComplete { status: Ok(()), scan_id: 3 },
                     responder,
                     (),
                 )
@@ -587,7 +587,7 @@ mod tests {
         if let Request::Cx { responder } = (Request::Cx { responder: RequestCxResponder {} }) {
             let _responder: RequestCxResponder = driver_event_sink
                 .unbounded_send_or_respond(
-                    DriverEvent::ScanComplete { status: zx::Status::IO_REFUSED, scan_id: 0 },
+                    DriverEvent::ScanComplete { status: Err(zx::Status::IO_REFUSED), scan_id: 0 },
                     responder,
                     Err(10),
                 )

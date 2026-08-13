@@ -83,7 +83,9 @@ impl<T: Driver> DriverServer<T> {
         rust_async_dispatcher
             .post_task_sync(move |status| {
                 // bail immediately if we were somehow cancelled before we started
-                let Status::OK = status else { return };
+                if status.is_err() {
+                    return;
+                }
                 fdf_core::override_current_dispatcher(root_dispatcher.clone(), || {
                     // create and run a fuchsia-async executor, giving it the "root" dispatcher to
                     // actually execute driver tasks on, as this thread will be effectively blocked

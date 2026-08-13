@@ -62,12 +62,18 @@ pub async fn read_image(
             .read_asset(configuration, asset)
             .await
             .context("DataSink.ReadAsset FIDL error")?
-            .map_err(|s| anyhow!("DataSink.ReadAsset error {}", zx::Status::from_raw(s))),
+            .map_err(|s| {
+                let status = zx::Status::try_from_raw(s).unwrap_or(zx::Status::INTERNAL);
+                anyhow!("DataSink.ReadAsset error {status:?}")
+            }),
         Firmware { type_ } => data_sink
             .read_firmware(configuration, type_)
             .await
             .context("DataSink.ReadFirmware FIDL error")?
-            .map_err(|s| anyhow!("DataSink.ReadFirmware error {}", zx::Status::from_raw(s))),
+            .map_err(|s| {
+                let status = zx::Status::try_from_raw(s).unwrap_or(zx::Status::INTERNAL);
+                anyhow!("DataSink.ReadFirmware error {status:?}")
+            }),
     }
 }
 
@@ -195,10 +201,10 @@ pub async fn query_current_configuration(
         Ok(Ok(fpaver::Configuration::A)) => Ok(CurrentConfiguration::A),
         Ok(Ok(fpaver::Configuration::B)) => Ok(CurrentConfiguration::B),
         Ok(Ok(fpaver::Configuration::Recovery)) => Ok(CurrentConfiguration::Recovery),
-        Ok(Err(status)) => Err(anyhow!(
-            "query_current_configuration responded with {}",
-            zx::Status::from_raw(status)
-        )),
+        Ok(Err(status)) => {
+            let status = zx::Status::try_from_raw(status).unwrap_or(zx::Status::INTERNAL);
+            Err(anyhow!("query_current_configuration responded with {status:?}"))
+        }
         Err(fidl::Error::ClientChannelClosed { epitaph, .. })
             if epitaph == zx::Status::NOT_SUPPORTED =>
         {
@@ -215,10 +221,10 @@ async fn paver_query_configuration_status(
 ) -> anyhow::Result<fpaver::ConfigurationStatus> {
     match boot_manager.query_configuration_status(configuration).await {
         Ok(Ok(configuration_status)) => Ok(configuration_status),
-        Ok(Err(status)) => Err(anyhow!(
-            "query_configuration_status responded with {}",
-            zx::Status::from_raw(status)
-        )),
+        Ok(Err(status)) => {
+            let status = zx::Status::try_from_raw(status).unwrap_or(zx::Status::INTERNAL);
+            Err(anyhow!("query_configuration_status responded with {status:?}"))
+        }
         Err(err) => Err(anyhow!(err).context("while performing query_configuration_status call")),
     }
 }
@@ -806,7 +812,7 @@ mod tests {
         let paver = Arc::new(
             MockPaverServiceBuilder::new()
                 .insert_hook(mphooks::return_error(|event| match event {
-                    PaverEvent::WriteAsset { .. } => zx::Status::INTERNAL,
+                    PaverEvent::WriteAsset { .. } => Err(zx::Status::INTERNAL),
                     _ => panic!("Unexpected event: {event:?}"),
                 }))
                 .build(),
@@ -1014,8 +1020,8 @@ mod abr_not_supported_tests {
                         configuration: fpaver::Configuration::A,
                         asset: fpaver::Asset::Kernel,
                         payload: _,
-                    } => zx::Status::INTERNAL,
-                    _ => zx::Status::OK,
+                    } => Err(zx::Status::INTERNAL),
+                    _ => Ok(()),
                 }))
                 .build(),
         );
@@ -1051,8 +1057,8 @@ mod abr_not_supported_tests {
                         configuration: fpaver::Configuration::B,
                         asset: fpaver::Asset::Kernel,
                         payload: _,
-                    } => zx::Status::NOT_SUPPORTED,
-                    _ => zx::Status::OK,
+                    } => Err(zx::Status::NOT_SUPPORTED),
+                    _ => Ok(()),
                 }))
                 .build(),
         );
@@ -1090,7 +1096,7 @@ mod abr_not_supported_tests {
             MockPaverServiceBuilder::new()
                 .insert_hook(mphooks::write_firmware(|configuration, _, _| match configuration {
                     fpaver::Configuration::B => fpaver::WriteFirmwareResult::Unsupported(true),
-                    _ => fpaver::WriteFirmwareResult::Status(zx::Status::OK.into_raw()),
+                    _ => fpaver::WriteFirmwareResult::Status(zx::sys::ZX_OK),
                 }))
                 .build(),
         );
@@ -1131,8 +1137,8 @@ mod abr_not_supported_tests {
                         configuration: fpaver::Configuration::B,
                         asset: fpaver::Asset::Kernel,
                         ..
-                    } => zx::Status::INTERNAL,
-                    _ => zx::Status::OK,
+                    } => Err(zx::Status::INTERNAL),
+                    _ => Ok(()),
                 }))
                 .build(),
         );

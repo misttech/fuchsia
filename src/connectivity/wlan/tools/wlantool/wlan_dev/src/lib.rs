@@ -806,8 +806,10 @@ fn error_from_sme_raw_status(
     station_mode: WlanMacRole,
     iface_id: u16,
 ) -> Error {
+    if zx_status::Status::ok(raw_status).is_ok() {
+        return Error::msg("Unexpected OK error");
+    }
     match zx_status::Status::from_raw(raw_status) {
-        zx_status::Status::OK => Error::msg("Unexpected OK error"),
         zx_status::Status::NOT_FOUND => Error::msg("invalid interface id"),
         zx_status::Status::NOT_SUPPORTED => Error::msg("operation not supported on SME interface"),
         zx_status::Status::INTERNAL => {
@@ -959,7 +961,7 @@ mod tests {
                 req, responder
             }))) => {
                 assert_eq!(req.iface_id, 5);
-                responder.send(zx_status::Status::OK.into_raw()).expect("failed to send response");
+                responder.send(zx_sys::ZX_OK).expect("failed to send response");
             }
         );
     }
@@ -1018,7 +1020,7 @@ mod tests {
             }))) => {
                 assert_eq!(req.phy_id, 45);
                 assert_eq!(req.alpha2, "RS".as_bytes());
-                responder.send(zx_status::Status::OK.into_raw()).expect("failed to send response");
+                responder.send(zx_sys::ZX_OK).expect("failed to send response");
             }
         );
     }
@@ -1038,7 +1040,7 @@ mod tests {
                 req, responder,
             }))) => {
                 assert_eq!(req.phy_id, 45);
-                responder.send(zx_status::Status::OK.into_raw()).expect("failed to send response");
+                responder.send(zx_sys::ZX_OK).expect("failed to send response");
             }
         );
     }
@@ -1059,7 +1061,7 @@ mod tests {
                 phy_id, responder,
             }))) => {
                 assert_eq!(phy_id, 45);
-                responder.send(Err(zx_status::Status::OK.into_raw())).expect("failed to send response");
+                responder.send(Err(zx_sys::ZX_OK)).expect("failed to send response");
             }
         );
     }
@@ -1080,7 +1082,7 @@ mod tests {
                 phy_id, responder,
             }))) => {
                 assert_eq!(phy_id, 45);
-                responder.send(Err(zx_status::Status::OK.into_raw())).expect("failed to send response");
+                responder.send(Err(zx_sys::ZX_OK)).expect("failed to send response");
             }
         );
     }
@@ -1100,7 +1102,7 @@ mod tests {
                 phy_id, responder,
             }))) => {
                 assert_eq!(phy_id, 45);
-                responder.send(Err(zx_status::Status::OK.into_raw())).expect("failed to send response");
+                responder.send(Err(zx_sys::ZX_OK)).expect("failed to send response");
             }
         );
     }
@@ -1149,7 +1151,7 @@ mod tests {
                     req.ps_mode,
                     fidl_fuchsia_wlan_common::PowerSaveType::PsModeBalanced
                 );
-                responder.send(zx_status::Status::OK.into_raw()).expect("failed to send response");
+                responder.send(zx_sys::ZX_OK).expect("failed to send response");
             }
         );
     }

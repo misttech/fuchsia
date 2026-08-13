@@ -36,8 +36,7 @@ impl StatusExt for Status {
                 InvalidInput
             }
 
-            Status::OK
-            | Status::NEXT
+            Status::NEXT
             | Status::STOP
             | Status::NO_SPACE
             | Status::FILE_BIG

@@ -34,7 +34,7 @@ async fn link_with_sufficient_rights() {
 
         // Link src/old.txt -> dest/new.txt.
         let status = src_dir.link("old.txt", dest_token, "new.txt").await.expect("link failed");
-        assert_eq!(zx::Status::from_raw(status), zx::Status::OK, "flags={flags:?}");
+        assert_eq!(status, zx::sys::ZX_OK, "flags={flags:?}");
 
         // Check dest/new.txt was created and has correct contents.
         assert_eq!(read_file(&dir, "dest/new.txt").await, contents);

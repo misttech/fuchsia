@@ -499,7 +499,7 @@ async fn serve_wlan_softmac_ifc_bridge(
                     payload.status.with_name("status"),
                     payload.scan_id.with_name("scan_id"),
                 ))?;
-                let status = zx::Status::from_raw(status);
+                let status = zx::Status::ok(status);
                 let responder = driver_event_sink.unbounded_send_or_respond(
                     DriverEvent::ScanComplete { status, scan_id },
                     responder,
@@ -899,7 +899,7 @@ mod tests {
                 ..Default::default()
     })]
     #[test_case(fidl_softmac::WlanSoftmacIfcBaseNotifyScanCompleteRequest {
-                status: Some(zx::Status::OK.into_raw()),
+                status: Some(zx::sys::ZX_OK),
                 scan_id: None,
                 ..Default::default()
             })]
@@ -940,7 +940,7 @@ mod tests {
 
         let resp_fut = softmac_ifc_bridge_proxy.notify_scan_complete(
             &fidl_softmac::WlanSoftmacIfcBaseNotifyScanCompleteRequest {
-                status: Some(zx::Status::OK.into_raw()),
+                status: Some(zx::sys::ZX_OK),
                 scan_id: Some(754),
                 ..Default::default()
             },
@@ -952,7 +952,7 @@ mod tests {
 
         assert!(matches!(
             driver_event_stream.try_next(),
-            Ok(Some(DriverEvent::ScanComplete { status: zx::Status::OK, scan_id: 754 }))
+            Ok(Some(DriverEvent::ScanComplete { status: Ok(()), scan_id: 754 }))
         ));
     }
 
@@ -1259,7 +1259,7 @@ mod tests {
                 Poll::Ready(result) => {
                     assert_matches!(
                         TestExecutor::poll_until_stalled(&mut start_complete_receiver).await,
-                        Poll::Ready(Ok(status)) => assert_ne!(status, zx::Status::OK.into_raw())
+                        Poll::Ready(Ok(status)) => assert_ne!(status, zx::sys::ZX_OK)
                     );
                     return Err(result.unwrap_err());
                 }
@@ -1269,21 +1269,18 @@ mod tests {
             Some(usme_bootstrap_client_end) => {
                 let (generic_sme_proxy, inspect_vmo_fut) =
                     bootstrap_generic_sme_proxy_and_inspect_vmo(usme_bootstrap_client_end);
-                let start_and_serve_fut = match TestExecutor::poll_until_stalled(
-                    &mut start_and_serve_fut,
-                )
-                .await
-                {
-                    Poll::Pending => start_and_serve_fut,
-                    Poll::Ready(result) => {
-                        assert_matches!(
-                            TestExecutor::poll_until_stalled(&mut start_complete_receiver)
-                                .await,
-                            Poll::Ready(Ok(status)) => assert_ne!(status, zx::Status::OK.into_raw())
-                        );
-                        return Err(result.unwrap_err());
-                    }
-                };
+                let start_and_serve_fut =
+                    match TestExecutor::poll_until_stalled(&mut start_and_serve_fut).await {
+                        Poll::Pending => start_and_serve_fut,
+                        Poll::Ready(result) => {
+                            assert_matches!(
+                                TestExecutor::poll_until_stalled(&mut start_complete_receiver)
+                                    .await,
+                                Poll::Ready(Ok(status)) => assert_ne!(status, zx::sys::ZX_OK)
+                            );
+                            return Err(result.unwrap_err());
+                        }
+                    };
 
                 inspect_vmo_fut.await.expect("Failed to bootstrap USME.");
 
@@ -1333,7 +1330,7 @@ mod tests {
             .expect("Failed to initiate wlansoftmac setup.");
         assert_matches!(
             TestExecutor::poll_until_stalled(&mut start_complete_receiver).await,
-            Poll::Ready(Ok(status)) => assert_eq!(zx::Status::OK.into_raw(), status)
+            Poll::Ready(Ok(status)) => assert_eq!(zx::sys::ZX_OK, status)
         );
         assert_eq!(TestExecutor::poll_until_stalled(&mut start_and_serve_fut).await, Poll::Pending);
 
@@ -1358,7 +1355,7 @@ mod tests {
         assert_eq!(TestExecutor::poll_until_stalled(&mut start_and_serve_fut).await, Poll::Pending);
         assert_matches!(
             TestExecutor::poll_until_stalled(&mut start_complete_receiver).await,
-            Poll::Ready(Ok(status)) => assert_eq!(zx::Status::OK.into_raw(), status)
+            Poll::Ready(Ok(status)) => assert_eq!(zx::sys::ZX_OK, status)
         );
 
         let wlan_softmac_ifc_bridge_proxy =
@@ -1379,7 +1376,7 @@ mod tests {
             .expect("Failed to initiate wlansoftmac setup.");
         assert_matches!(
             TestExecutor::poll_until_stalled(&mut start_complete_receiver).await,
-            Poll::Ready(Ok(status)) => assert_eq!(zx::Status::OK.into_raw(), status)
+            Poll::Ready(Ok(status)) => assert_eq!(zx::sys::ZX_OK, status)
         );
 
         let (sme_telemetry_proxy, sme_telemetry_server) = fidl::endpoints::create_proxy();
@@ -1433,7 +1430,7 @@ mod tests {
             .expect("Failed to initiate wlansoftmac setup.");
         assert_matches!(
             TestExecutor::poll_until_stalled(&mut start_complete_receiver).await,
-            Poll::Ready(Ok(status)) => assert_eq!(zx::Status::OK.into_raw(), status)
+            Poll::Ready(Ok(status)) => assert_eq!(zx::sys::ZX_OK, status)
         );
 
         let (client_sme_proxy, client_sme_server) = fidl::endpoints::create_proxy();
@@ -1465,7 +1462,7 @@ mod tests {
             fake_device_state.lock().wlan_softmac_ifc_bridge_proxy.take().unwrap();
         let notify_scan_complete_fut = wlan_softmac_ifc_bridge_proxy.notify_scan_complete(
             &fidl_softmac::WlanSoftmacIfcBaseNotifyScanCompleteRequest {
-                status: Some(zx::Status::OK.into_raw()),
+                status: Some(zx::sys::ZX_OK),
                 scan_id: Some(0),
                 ..Default::default()
             },

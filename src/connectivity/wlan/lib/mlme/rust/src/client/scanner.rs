@@ -327,7 +327,7 @@ impl<'a, D: DeviceOps> BoundScanner<'a, D> {
         send_scan_result(mlme_txn_id, bss_description, &mut self.ctx.device);
     }
 
-    pub async fn handle_scan_complete(&mut self, status: zx::Status, scan_id: u64) {
+    pub async fn handle_scan_complete(&mut self, status: Result<(), zx::Status>, scan_id: u64) {
         macro_rules! send_on_scan_end {
             ($mlme_txn_id: ident, $code:expr) => {
                 self.ctx
@@ -350,11 +350,11 @@ impl<'a, D: DeviceOps> BoundScanner<'a, D> {
             {
                 send_on_scan_end!(
                     mlme_txn_id,
-                    if status == zx::Status::OK {
-                        fidl_mlme::ScanResultCode::Success
-                    } else {
-                        error!("passive offload scan failed: {}", status);
+                    if let Err(error) = &status {
+                        error!(error:?; "passive offload scan failed");
                         fidl_mlme::ScanResultCode::InternalError
+                    } else {
+                        fidl_mlme::ScanResultCode::Success
                     }
                 );
             }
@@ -363,8 +363,8 @@ impl<'a, D: DeviceOps> BoundScanner<'a, D> {
                 in_progress_device_scan_id,
                 mut remaining_active_scan_requests,
             }) if in_progress_device_scan_id == scan_id => {
-                if status != zx::Status::OK {
-                    error!("active offload scan failed: {}", status);
+                if let Err(error) = status {
+                    error!(error:?; "active offload scan failed");
                     send_on_scan_end!(mlme_txn_id, fidl_mlme::ScanResultCode::InternalError);
                     return;
                 }
@@ -770,7 +770,7 @@ mod tests {
         assert_eq!(scan_result.bss, *BSS_DESCRIPTION_FOO);
 
         // Verify ScanEnd sent after handle_scan_complete
-        scanner.bind(&mut ctx).handle_scan_complete(zx::Status::OK, expected_scan_id).await;
+        scanner.bind(&mut ctx).handle_scan_complete(Ok(()), expected_scan_id).await;
         let scan_end = m
             .fake_device_state
             .lock()
@@ -907,10 +907,7 @@ mod tests {
                     assert_eq!(scan_result.bss, *BSS_DESCRIPTION_BAR);
 
                     // Verify ScanEnd sent after handle_scan_complete
-                    scanner
-                        .bind(&mut ctx)
-                        .handle_scan_complete(zx::Status::OK, expected_scan_id)
-                        .await;
+                    scanner.bind(&mut ctx).handle_scan_complete(Ok(()), expected_scan_id).await;
                 }
             }
         }
@@ -997,7 +994,10 @@ mod tests {
         assert_eq!(scan_result.bss, *BSS_DESCRIPTION_FOO);
 
         // Verify ScanEnd sent after handle_scan_complete
-        scanner.bind(&mut ctx).handle_scan_complete(zx::Status::CANCELED, expected_scan_id).await;
+        scanner
+            .bind(&mut ctx)
+            .handle_scan_complete(Err(zx::Status::CANCELED), expected_scan_id)
+            .await;
         let scan_end = m
             .fake_device_state
             .lock()
@@ -1041,7 +1041,10 @@ mod tests {
         assert_eq!(scan_result.bss, *BSS_DESCRIPTION_FOO);
 
         // Verify ScanEnd sent after handle_scan_complete
-        scanner.bind(&mut ctx).handle_scan_complete(zx::Status::CANCELED, expected_scan_id).await;
+        scanner
+            .bind(&mut ctx)
+            .handle_scan_complete(Err(zx::Status::CANCELED), expected_scan_id)
+            .await;
         let scan_end = m
             .fake_device_state
             .lock()
@@ -1067,7 +1070,7 @@ mod tests {
             .expect("expect scan req accepted");
         handle_beacon_foo(&mut scanner, &mut ctx);
         let ongoing_scan_id = scanner.ongoing_scan.as_ref().unwrap().scan_id();
-        scanner.bind(&mut ctx).handle_scan_complete(zx::Status::OK, ongoing_scan_id).await;
+        scanner.bind(&mut ctx).handle_scan_complete(Ok(()), ongoing_scan_id).await;
 
         let scan_result = m
             .fake_device_state
@@ -1105,7 +1108,7 @@ mod tests {
         handle_beacon_foo(&mut scanner, &mut ctx);
         handle_beacon_bar(&mut scanner, &mut ctx);
         let ongoing_scan_id = scanner.ongoing_scan.as_ref().unwrap().scan_id();
-        scanner.bind(&mut ctx).handle_scan_complete(zx::Status::OK, ongoing_scan_id).await;
+        scanner.bind(&mut ctx).handle_scan_complete(Ok(()), ongoing_scan_id).await;
 
         // Verify that one scan result is sent for each beacon
         let foo_scan_result = m

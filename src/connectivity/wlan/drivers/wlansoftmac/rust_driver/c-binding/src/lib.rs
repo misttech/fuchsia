@@ -162,5 +162,5 @@ pub unsafe extern "C" fn start_bridged_wlansoftmac(
         shutdown_completer.reply(result);
     });
 
-    zx::Status::from(task).into_raw()
+    zx::Status::result_into_raw(task)
 }

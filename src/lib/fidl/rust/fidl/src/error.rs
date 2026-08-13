@@ -77,7 +77,7 @@ impl Epitaph {
 impl PartialEq<zx_status::Status> for Epitaph {
     fn eq(&self, other: &zx_status::Status) -> bool {
         match self {
-            Epitaph::Explicit(Ok(())) => *other == zx_status::Status::OK,
+            Epitaph::Explicit(Ok(())) => zx_status::Status::ok(other.into_raw()).is_ok(),
             Epitaph::Explicit(Err(s)) => s == other,
             Epitaph::PeerClosed => *other == zx_status::Status::PEER_CLOSED,
         }
@@ -120,7 +120,7 @@ impl From<&Epitaph> for std::result::Result<(), zx_status::Status> {
 
 impl From<zx_status::Status> for Epitaph {
     fn from(status: zx_status::Status) -> Self {
-        if status == zx_status::Status::OK {
+        if zx_status::Status::ok(status.into_raw()).is_ok() {
             Epitaph::Explicit(Ok(()))
         } else {
             Epitaph::Explicit(Err(status))

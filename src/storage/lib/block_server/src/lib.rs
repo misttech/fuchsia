@@ -149,7 +149,7 @@ struct ActiveRequest<S> {
     group_or_request: GroupOrRequest,
     trace_flow_id: TraceFlowId,
     _epoch_guard: EpochGuard<'static>,
-    status: zx::Status,
+    status: Result<(), zx::Status>,
     count: u32,
     req_id: Option<u32>,
     decompression_info: Option<DecompressionInfo>,
@@ -189,7 +189,7 @@ impl<S> ActiveRequests<S> {
     fn complete_and_take_response(
         &self,
         request_id: RequestId,
-        status: zx::Status,
+        status: Result<(), zx::Status>,
     ) -> Option<(S, BlockFifoResponse)> {
         self.0.lock().complete_and_take_response(request_id, status)
     }
@@ -206,11 +206,11 @@ struct ActiveRequestsInner<S> {
 // Keeps track of all the requests that are currently being processed
 impl<S> ActiveRequestsInner<S> {
     /// Completes a request.
-    fn complete(&mut self, request_id: RequestId, status: zx::Status) {
+    fn complete(&mut self, request_id: RequestId, status: Result<(), zx::Status>) {
         let group = &mut self.requests[request_id.0];
 
         group.count = group.count.checked_sub(1).unwrap();
-        if status != zx::Status::OK && group.status == zx::Status::OK {
+        if status.is_err() && group.status.is_ok() {
             group.status = status
         }
 
@@ -219,7 +219,7 @@ impl<S> ActiveRequestsInner<S> {
             "block_server::finish_transaction",
             "request_id" => request_id.0,
             "group_completed" => group.count == 0,
-            "status" => status.into_raw());
+            "status" => zx::Status::result_into_raw(status));
         if let Some(trace_flow_id) = group.trace_flow_id {
             fuchsia_trace::flow_step!(
                 "storage",
@@ -229,7 +229,7 @@ impl<S> ActiveRequestsInner<S> {
         }
 
         if group.count == 0
-            && group.status == zx::Status::OK
+            && group.status.is_ok()
             && let Some(info) = &mut group.decompression_info
         {
             struct RawDCtx(std::ptr::NonNull<zstd::zstd_safe::zstd_sys::ZSTD_DCtx>);
@@ -272,7 +272,7 @@ impl<S> ActiveRequestsInner<S> {
                     if zstd::zstd_safe::zstd_sys::ZSTD_isError(result) != 0 {
                         let error = zstd::zstd_safe::get_error_name(result);
                         log::warn!(error:?; "Decompression error");
-                        group.status = zx::Status::IO_DATA_INTEGRITY;
+                        group.status = Err(zx::Status::IO_DATA_INTEGRITY);
                     }
                 }
             });
@@ -288,7 +288,7 @@ impl<S> ActiveRequestsInner<S> {
                 Some((
                     group.session,
                     BlockFifoResponse {
-                        status: group.status.into_raw(),
+                        status: zx::Status::result_into_raw(group.status),
                         reqid,
                         group: group.group_or_request.group_id().unwrap_or(0),
                         ..Default::default()
@@ -303,7 +303,7 @@ impl<S> ActiveRequestsInner<S> {
     fn complete_and_take_response(
         &mut self,
         request_id: RequestId,
-        status: zx::Status,
+        status: Result<(), zx::Status>,
     ) -> Option<(S, BlockFifoResponse)> {
         self.complete(request_id, status);
         self.take_response(request_id)
@@ -855,16 +855,14 @@ impl<SM: SessionManager> BlockServer<SM> {
                 }
             }
             fblock::BlockRequest::Extend { responder, start_slice, slice_count } => {
-                responder.send(
-                    zx::Status::from(self.session_manager().extend(start_slice, slice_count).await)
-                        .into_raw(),
-                )?;
+                responder.send(zx::Status::result_into_raw(
+                    self.session_manager().extend(start_slice, slice_count).await,
+                ))?;
             }
             fblock::BlockRequest::Shrink { responder, start_slice, slice_count } => {
-                responder.send(
-                    zx::Status::from(self.session_manager().shrink(start_slice, slice_count).await)
-                        .into_raw(),
-                )?;
+                responder.send(zx::Status::result_into_raw(
+                    self.session_manager().shrink(start_slice, slice_count).await,
+                ))?;
             }
             fblock::BlockRequest::Destroy { responder, .. } => {
                 responder.send(zx::sys::ZX_ERR_NOT_SUPPORTED)?;
@@ -1166,14 +1164,14 @@ impl<SM: SessionManager> SessionHelper<SM> {
                 {
                     if group.req_id.is_some() {
                         // We have already received a request tagged as last.
-                        if group.status == zx::Status::OK {
-                            group.status = zx::Status::INVALID_ARGS;
+                        if group.status.is_ok() {
+                            group.status = Err(zx::Status::INVALID_ARGS);
                         }
                         // Ignore this request.
                         return Err(None);
                     }
                     // See if this is a continuation of a decompressed read.
-                    if group.status == zx::Status::OK
+                    if group.status.is_ok()
                         && let Some(info) = &mut group.decompression_info
                     {
                         if let Ok(Operation::Read {
@@ -1200,7 +1198,7 @@ impl<SM: SessionManager> SessionHelper<SM> {
                                 || (!flags.contains(BlockIoFlag::GROUP_LAST)
                                     && request_bytes >= remaining_bytes)
                             {
-                                group.status = zx::Status::INVALID_ARGS;
+                                group.status = Err(zx::Status::INVALID_ARGS);
                             } else {
                                 // We are tolerant of `block_count` being more than we actually
                                 // need.  This can happen if the client is working with a larger
@@ -1224,17 +1222,17 @@ impl<SM: SessionManager> SessionHelper<SM> {
                                 info.bytes_so_far += block_count as u64 * self.block_size as u64;
                             }
                         } else {
-                            group.status = zx::Status::INVALID_ARGS;
+                            group.status = Err(zx::Status::INVALID_ARGS);
                         }
                     }
                     if flags.contains(BlockIoFlag::GROUP_LAST) {
                         group.req_id = Some(request.reqid);
                         // If the group has had an error, there is no point trying to issue this
                         // request.
-                        if group.status != zx::Status::OK {
-                            operation = Err(group.status);
+                        if let Err(s) = group.status {
+                            operation = Err(s);
                         }
-                    } else if group.status != zx::Status::OK {
+                    } else if group.status.is_err() {
                         // The group has already encountered an error, so there is no point trying
                         // to issue this request.
                         return Err(None);
@@ -1368,7 +1366,7 @@ impl<SM: SessionManager> SessionHelper<SM> {
                 group_or_request,
                 trace_flow_id,
                 _epoch_guard: Epoch::global().guard(),
-                status: zx::Status::OK,
+                status: Ok(()),
                 count: 1,
                 req_id: is_single_request.then_some(request.reqid),
                 decompression_info,
@@ -1379,7 +1377,7 @@ impl<SM: SessionManager> SessionHelper<SM> {
             request_id,
             trace_flow_id,
             operation: operation.map_err(|status| {
-                active_requests.complete_and_take_response(request_id, status).map(|(_, r)| r)
+                active_requests.complete_and_take_response(request_id, Err(status)).map(|(_, r)| r)
             })?,
             vmo,
         })
@@ -1395,7 +1393,7 @@ impl<SM: SessionManager> SessionHelper<SM> {
         mut request: DecodedRequest,
         active_request: &mut ActiveRequest<SM::Session>,
     ) -> Result<(DecodedRequest, Option<DecodedRequest>), zx::Status> {
-        if active_request.status != zx::Status::OK {
+        if active_request.status.is_err() {
             return Err(zx::Status::BAD_STATE);
         }
         if let Some(blocks) = request.operation.blocks() {
@@ -3981,8 +3979,8 @@ mod tests {
                     reader_a.read_entries(&mut response).await.unwrap();
                     assert_eq!(response.reqid, 0xAAAA);
                     assert_eq!(
-                        zx::Status::from_raw(response.status),
-                        zx::Status::OK,
+                        response.status,
+                        zx::sys::ZX_OK,
                         "control: A's valid Flush group must succeed"
                     );
                 }
@@ -4075,7 +4073,7 @@ mod tests {
                     reader_a.read_entries(&mut response_a).await.unwrap();
                     assert_eq!(response_a.reqid, 100);
                     assert_eq!(response_a.group, 7);
-                    assert_eq!(zx::Status::from_raw(response_a.status), zx::Status::OK);
+                    assert_eq!(response_a.status, zx::sys::ZX_OK);
                 }
 
                 // Verify Session B's response.
@@ -4085,7 +4083,7 @@ mod tests {
                     reader_b.read_entries(&mut response_b).await.unwrap();
                     assert_eq!(response_b.reqid, 200);
                     assert_eq!(response_b.group, 7);
-                    assert_eq!(zx::Status::from_raw(response_b.status), zx::Status::OK);
+                    assert_eq!(response_b.status, zx::sys::ZX_OK);
                 }
 
                 std::mem::drop(session_a);
@@ -4374,7 +4372,7 @@ mod tests {
         let sm_completer = session_manager.clone();
         std::thread::spawn(move || {
             while let Ok(req) = rx.recv() {
-                sm_completer.complete_request(req.request_id, zx::Status::OK);
+                sm_completer.complete_request(req.request_id, Ok(()));
             }
         });
 

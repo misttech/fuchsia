@@ -16,17 +16,20 @@ use zx::Status;
 /// * `out` must be a valid pointer to write to. The pointer written there must be freed with
 ///   `rust_url_free`.
 #[unsafe(no_mangle)]
-unsafe extern "C" fn rust_url_parse(input: *const c_char, out: *mut *mut c_void) -> Status {
+unsafe extern "C" fn rust_url_parse(
+    input: *const c_char,
+    out: *mut *mut c_void,
+) -> zx::sys::zx_status_t {
     if let Ok(raw_url) = unsafe { CStr::from_ptr(input) }.to_str() {
         match Url::parse(raw_url) {
             Ok(url) => {
                 unsafe { *out = Box::into_raw(Box::new(url)) as *mut c_void };
-                Status::OK
+                zx::sys::ZX_OK
             }
-            Err(_) => Status::INVALID_ARGS,
+            Err(_) => Status::INVALID_ARGS.into_raw(),
         }
     } else {
-        Status::INVALID_ARGS
+        Status::INVALID_ARGS.into_raw()
     }
 }
 

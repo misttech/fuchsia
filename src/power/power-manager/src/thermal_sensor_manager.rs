@@ -8,16 +8,16 @@ use crate::ok_or_default_err;
 use crate::types::Celsius;
 use anyhow::{Error, Result};
 use async_trait::async_trait;
+use fidl_fuchsia_hardware_temperature as ftemperature;
+use fidl_fuchsia_thermal as fthermal;
+use fuchsia_async as fasync;
 use fuchsia_component::server::{ServiceFs, ServiceFsDir, ServiceObjLocal};
 use futures::{TryFutureExt, TryStreamExt};
 use log::*;
 use serde_derive::Deserialize;
+use serde_json as json;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
-use {
-    fidl_fuchsia_hardware_temperature as ftemperature, fidl_fuchsia_thermal as fthermal,
-    fuchsia_async as fasync, serde_json as json,
-};
 
 pub struct ThermalSensorManagerBuilder<'a, 'b> {
     outgoing_svc_dir: Option<ServiceFsDir<'a, ServiceObjLocal<'b, ()>>>,
@@ -124,9 +124,7 @@ async fn run_sensor_proxy_server(
                             }
                         };
 
-                        if let Err(e) =
-                            responder.send(zx::Status::OK.into_raw(), temperature_c as f32)
-                        {
+                        if let Err(e) = responder.send(zx::sys::ZX_OK, temperature_c as f32) {
                             warn!(
                                 "Failed to send temperature to client from sensor {}: {:?}",
                                 sensor_name, e

@@ -828,9 +828,10 @@ async fn start(
 
     let Some(proc_copy) = elf_component.copy_process() else {
         runner::component::report_start_error(
-            zx::Status::from_raw(
+            zx::Status::try_from_raw(
                 i32::try_from(fcomp::Error::InstanceCannotStart.into_primitive()).unwrap(),
-            ),
+            )
+            .unwrap(),
             "Component unexpectedly had no process".to_string(),
             &resolved_url,
             server_end,
@@ -1488,10 +1489,16 @@ mod tests {
         let mut event_stream = controller.take_event_stream();
         expect_diagnostics_event(&mut event_stream).await;
 
-        let s = zx::Status::from_raw(
+        let s = zx::Status::try_from_raw(
             i32::try_from(fcomp::Error::InstanceDied.into_primitive()).unwrap(),
-        );
-        expect_on_stop(&mut event_stream, s, Some(zx::sys::ZX_TASK_RETCODE_SYSCALL_KILL)).await;
+        )
+        .unwrap();
+        expect_on_stop(
+            &mut event_stream,
+            s.into_raw(),
+            Some(zx::sys::ZX_TASK_RETCODE_SYSCALL_KILL),
+        )
+        .await;
         expect_channel_closed(&mut event_stream).await;
         Ok(())
     }
@@ -1610,7 +1617,7 @@ mod tests {
             runner.start(start_info, server_controller).await;
             let mut event_stream = client_controller.take_event_stream();
             expect_diagnostics_event(&mut event_stream).await;
-            expect_on_stop(&mut event_stream, zx::Status::OK, Some(0)).await;
+            expect_on_stop(&mut event_stream, zx::sys::ZX_OK, Some(0)).await;
             expect_channel_closed(&mut event_stream).await;
         };
 
@@ -1689,7 +1696,7 @@ mod tests {
 
     async fn expect_on_stop(
         event_stream: &mut fcrunner::ComponentControllerEventStream,
-        expected_status: zx::Status,
+        expected_status: zx::sys::zx_status_t,
         expected_exit_code: Option<i64>,
     ) {
         let event = event_stream.try_next().await;
@@ -1698,7 +1705,7 @@ mod tests {
             Ok(Some(fcrunner::ComponentControllerEvent::OnStop {
                 payload: fcrunner::ComponentStopInfo { termination_status: Some(s), exit_code, .. },
             }))
-            if s == expected_status.into_raw() &&
+            if s == expected_status &&
                 exit_code == expected_exit_code
         );
     }
@@ -1744,7 +1751,7 @@ mod tests {
                     match launcher_request {
                         fproc::LauncherRequest::Launch { info, responder } => {
                             let process = create_child_process(&info.job, "test_process");
-                            responder.send(zx::Status::OK.into_raw(), Some(process)).unwrap();
+                            responder.send(zx::sys::ZX_OK, Some(process)).unwrap();
 
                             let mut payload =
                                 std::mem::replace(&mut *payload, LaunchPayload::default());
@@ -1969,7 +1976,7 @@ mod tests {
             other => panic!("unexpected event result: {:?}", other),
         }
 
-        expect_on_stop(&mut event_stream, zx::Status::OK, Some(0)).await;
+        expect_on_stop(&mut event_stream, zx::sys::ZX_OK, Some(0)).await;
         expect_channel_closed(&mut event_stream).await;
     }
 
@@ -2056,7 +2063,7 @@ mod tests {
 
         let mut event_stream = controller.take_event_stream();
         expect_diagnostics_event(&mut event_stream).await;
-        expect_on_stop(&mut event_stream, zx::Status::OK, Some(0)).await;
+        expect_on_stop(&mut event_stream, zx::sys::ZX_OK, Some(0)).await;
         expect_channel_closed(&mut event_stream).await;
     }
 
@@ -2085,10 +2092,11 @@ mod tests {
 
         let mut event_stream = controller.take_event_stream();
         expect_diagnostics_event(&mut event_stream).await;
-        let s = zx::Status::from_raw(
+        let s = zx::Status::try_from_raw(
             i32::try_from(fcomp::Error::InstanceDied.into_primitive()).unwrap(),
-        );
-        expect_on_stop(&mut event_stream, s, Some(123)).await;
+        )
+        .unwrap();
+        expect_on_stop(&mut event_stream, s.into_raw(), Some(123)).await;
         expect_channel_closed(&mut event_stream).await;
     }
 

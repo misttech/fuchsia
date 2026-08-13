@@ -21,7 +21,6 @@ use log::*;
 use namespace::Namespace;
 use std::sync::LazyLock;
 use thiserror::Error;
-use zx::Status;
 
 pub static PKG_PATH: LazyLock<NamespacePath> = LazyLock::new(|| "/pkg".parse().unwrap());
 
@@ -72,18 +71,18 @@ pub struct Controller<C: Controllable> {
 /// Information about a component's termination (fuchsia.component.runner/ComponentStopInfo)
 #[derive(Debug, Clone, PartialEq)]
 pub struct StopInfo {
-    pub termination_status: zx::Status,
+    pub termination_status: Result<(), zx::Status>,
     pub exit_code: Option<i64>,
 }
 
 impl StopInfo {
     pub fn from_status(s: zx::Status, c: Option<i64>) -> Self {
-        Self { termination_status: s, exit_code: c }
+        Self { termination_status: zx::Status::ok(s.into_raw()), exit_code: c }
     }
 
     pub fn from_u32(s: u32, c: Option<i64>) -> Self {
         Self {
-            termination_status: Status::from_raw(i32::try_from(s).unwrap_or(i32::MAX)),
+            termination_status: zx::Status::ok(i32::try_from(s).unwrap_or(i32::MAX)),
             exit_code: c,
         }
     }
@@ -93,7 +92,7 @@ impl StopInfo {
     }
 
     pub fn from_ok(c: Option<i64>) -> Self {
-        Self { termination_status: Status::OK, exit_code: c }
+        Self { termination_status: Ok(()), exit_code: c }
     }
 }
 
@@ -101,7 +100,7 @@ impl StopInfo {
 impl From<StopInfo> for fcrunner::ComponentStopInfo {
     fn from(info: StopInfo) -> Self {
         Self {
-            termination_status: Some(info.termination_status.into_raw()),
+            termination_status: Some(zx::Status::result_into_raw(info.termination_status)),
             exit_code: info.exit_code,
             ..Default::default()
         }
@@ -112,7 +111,7 @@ impl From<StopInfo> for fcrunner::ComponentStopInfo {
 impl From<fcrunner::ComponentStopInfo> for StopInfo {
     fn from(value: fcrunner::ComponentStopInfo) -> Self {
         Self {
-            termination_status: zx::Status::from_raw(value.termination_status.unwrap_or(0)),
+            termination_status: zx::Status::ok(value.termination_status.unwrap_or(0)),
             exit_code: value.exit_code,
         }
     }

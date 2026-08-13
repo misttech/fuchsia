@@ -138,7 +138,7 @@ impl HookObserver {
             }
             EventPayload::Stopped { status, exit_code, .. } => {
                 fcomponent::EventPayload::Stopped(fcomponent::StoppedPayload {
-                    status: Some(status.into_raw()),
+                    status: Some(zx::Status::result_into_raw(*status)),
                     exit_code: *exit_code,
                     ..Default::default()
                 })

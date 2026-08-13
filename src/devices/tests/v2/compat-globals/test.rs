@@ -35,7 +35,7 @@ async fn test_adding_children() -> Result<()> {
 
     // Make sure we can add a child.
     let response = driver.add_child("child").await.unwrap();
-    assert_eq!(response, zx::Status::OK.into_raw());
+    assert_eq!(response, zx::sys::ZX_OK);
 
     // Connect to our root-b/leaf driver.
     let dev = instance.driver_test_realm_connect_to_dev()?;
@@ -49,7 +49,7 @@ async fn test_adding_children() -> Result<()> {
     // Make sure we can add a child with the *same name* that we added
     // to root-a/leaf.
     let response = driver.add_child("child").await.unwrap();
-    assert_eq!(response, zx::Status::OK.into_raw());
+    assert_eq!(response, zx::sys::ZX_OK);
 
     // Check that both children are in /dev/.
     device_watcher::recursive_wait(&dev, "sys/test/root-a/leaf/child").await?;

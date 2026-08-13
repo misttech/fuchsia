@@ -59,7 +59,7 @@ async fn mock_server(
 }
 
 async fn test_builder(
-    expected_verify_result: zx::Status,
+    expected_verify_result: zx::sys::zx_status_t,
     verify_success_sender: mpsc::Sender<()>,
 ) -> Result<RealmBuilder, Error> {
     let builder = RealmBuilder::new().await?;
@@ -68,11 +68,7 @@ async fn test_builder(
         .add_local_child(
             "verifier",
             move |mh| {
-                Box::pin(verifier_client(
-                    mh,
-                    expected_verify_result.into_raw().clone(),
-                    verify_success_sender.clone(),
-                ))
+                Box::pin(verifier_client(mh, expected_verify_result, verify_success_sender.clone()))
             },
             ChildOptions::new().eager(),
         )
@@ -133,7 +129,7 @@ async fn healthy_components_returns_healthy() -> Result<(), Error> {
     let (verify_success_sender, mut verify_success_receiver) = mpsc::channel(1);
     let (success_sender_1, mut success_receiver_1) = mpsc::channel(1);
     let (success_sender_2, mut success_receiver_2) = mpsc::channel(1);
-    let expected_verify_result = zx::Status::OK;
+    let expected_verify_result = zx::sys::ZX_OK;
 
     let builder = test_builder(expected_verify_result, verify_success_sender.clone()).await?;
     let healthy_component_one = builder
@@ -175,7 +171,7 @@ async fn healthy_components_returns_healthy() -> Result<(), Error> {
 async fn missing_component_fails_to_verify() -> Result<(), Error> {
     let (verify_success_sender, mut verify_success_receiver) = mpsc::channel(1);
     let (success_sender_1, mut success_receiver_1) = mpsc::channel(1);
-    let expected_verify_result = zx::Status::BAD_STATE;
+    let expected_verify_result = zx::Status::BAD_STATE.into_raw();
     let builder = test_builder(expected_verify_result, verify_success_sender.clone()).await?;
 
     let healthy_component_one = builder
@@ -206,7 +202,7 @@ async fn unhealthy_components_short_circuits_verifier() -> Result<(), Error> {
     let (success_sender_1, mut success_receiver_1) = mpsc::channel(1);
     let (success_sender_2, mut success_receiver_2) = mpsc::channel(1);
 
-    let expected_verify_result = zx::Status::BAD_STATE;
+    let expected_verify_result = zx::Status::BAD_STATE.into_raw();
 
     let builder = test_builder(expected_verify_result, verify_success_sender.clone()).await?;
 
@@ -254,7 +250,7 @@ async fn extra_component_doesnt_affect_result() -> Result<(), Error> {
     let (success_sender_1, mut success_receiver_1) = mpsc::channel(1);
     let (success_sender_2, mut success_receiver_2) = mpsc::channel(1);
     let (success_sender_3, mut success_receiver_3) = mpsc::channel(1);
-    let expected_verify_result = zx::Status::OK;
+    let expected_verify_result = zx::sys::ZX_OK;
 
     let builder = test_builder(expected_verify_result, verify_success_sender.clone()).await?;
     let healthy_component_one = builder

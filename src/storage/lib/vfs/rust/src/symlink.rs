@@ -120,7 +120,7 @@ impl<T: Symlink> Connection<T> {
                     fio::Rights::GET_ATTRIBUTES,
                 )
                 .await;
-                responder.send(status.into_raw(), &attrs)?;
+                responder.send(status, &attrs)?;
             }
             #[cfg(not(fuchsia_api_level_at_least = "28"))]
             fio::SymlinkRequest::GetAttr { responder } => {
@@ -130,7 +130,7 @@ impl<T: Symlink> Connection<T> {
                     fio::Rights::GET_ATTRIBUTES,
                 )
                 .await;
-                responder.send(status.into_raw(), &attrs)?;
+                responder.send(status, &attrs)?;
             }
             #[cfg(fuchsia_api_level_at_least = "28")]
             fio::SymlinkRequest::DeprecatedSetAttr { responder, .. } => {
@@ -225,7 +225,7 @@ impl<T: Symlink> Connection<T> {
                 trace::duration!("storage", "Symlink::QueryFilesystem");
                 match self.symlink.query_filesystem() {
                     Err(status) => responder.send(status.into_raw(), None)?,
-                    Ok(info) => responder.send(0, Some(&info))?,
+                    Ok(info) => responder.send(zx_status::sys::ZX_OK, Some(&info))?,
                 }
             }
             #[cfg(fuchsia_api_level_at_least = "HEAD")]
@@ -274,7 +274,7 @@ impl<T: Symlink> Connection<T> {
             .scope
             .token_registry()
             .get_owner_and_rights(target_parent_token.into())?
-            .ok_or(Err(Status::NOT_FOUND))?;
+            .ok_or(Status::NOT_FOUND)?;
 
         if !target_rights.contains(fio::Rights::MODIFY_DIRECTORY) {
             return Err(Status::ACCESS_DENIED);

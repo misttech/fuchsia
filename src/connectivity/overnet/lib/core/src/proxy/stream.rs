@@ -10,9 +10,9 @@ use crate::peer::{
     PeerConnRef,
 };
 use crate::router::Router;
-use anyhow::{format_err, Context as _, Error};
+use anyhow::{Context as _, Error, format_err};
 use fidl_fuchsia_overnet_protocol::{BeginTransfer, Empty, SignalUpdate, StreamControl};
-use futures::future::{poll_fn, BoxFuture};
+use futures::future::{BoxFuture, poll_fn};
 use futures::prelude::*;
 use futures::ready;
 use std::pin::Pin;
@@ -104,17 +104,8 @@ impl<Msg: Message> StreamWriter<Msg> {
     }
 
     pub async fn send_shutdown(mut self, r: Result<(), zx_status::Status>) -> Result<(), Error> {
-        self.send_control(
-            StreamControl::Shutdown(
-                match r {
-                    Ok(()) => zx_status::Status::OK,
-                    Err(s) => s,
-                }
-                .into_raw(),
-            ),
-            true,
-        )
-        .await
+        self.send_control(StreamControl::Shutdown(zx_status::Status::result_into_raw(r)), true)
+            .await
     }
 }
 
@@ -208,18 +199,18 @@ impl<'a, Msg: Message> ReadNext<'a, Msg> {
         loop {
             return Poll::Ready(Ok(match *self.state {
                 ReadNextState::Reading => {
-                    let (frame_type, mut bytes) = match ready!(self
-                        .read_next_frame_or_peer_conn_ref
-                        .as_read_next_frame_mut()
-                        .unwrap()
-                        .poll_unpin(ctx))?
-                    {
+                    let (frame_type, mut bytes) = match ready!(
+                        self.read_next_frame_or_peer_conn_ref
+                            .as_read_next_frame_mut()
+                            .unwrap()
+                            .poll_unpin(ctx)
+                    )? {
                         FramedStreamReadResult::Frame(frame_type, bytes) => (frame_type, bytes),
                         FramedStreamReadResult::Closed(Some(e)) => {
-                            return Poll::Ready(Err(format_err!("unexpected end of stream ({e})")))
+                            return Poll::Ready(Err(format_err!("unexpected end of stream ({e})")));
                         }
                         FramedStreamReadResult::Closed(None) => {
-                            return Poll::Ready(Err(format_err!("unexpected end of stream")))
+                            return Poll::Ready(Err(format_err!("unexpected end of stream")));
                         }
                     };
 

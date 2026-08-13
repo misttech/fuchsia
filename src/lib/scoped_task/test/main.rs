@@ -114,25 +114,25 @@ fn check_all_processes_terminated(job: &zx::Job) {
             &mut avail as *mut usize,
         )
     };
-    assert_eq!(zx::Status::OK, zx::Status::from_raw(status));
+    assert_eq!(zx::sys::ZX_OK, status);
     assert_eq!(actual, avail, "too many child processes");
 
     println!("process_koids={:?}", &koids[0..actual]);
     for koid in &koids[0..actual] {
         let process: zx::Process = unsafe {
             let mut handle: zx_handle_t = Default::default();
-            let status = zx::Status::from_raw(zx_object_get_child(
+            let status = zx_object_get_child(
                 job.raw_handle(),
                 *koid,
                 ZX_RIGHT_SAME_RIGHTS,
                 &mut handle as *mut zx_handle_t,
-            ));
-            if status == zx::Status::NOT_FOUND {
+            );
+            if status == zx::Status::NOT_FOUND.into_raw() {
                 // The process object can get cleaned up before we create a handle to it.
                 println!("object for process koid {} not found, continuing", koid);
                 continue;
             }
-            assert_eq!(zx::Status::OK, status);
+            assert_eq!(zx::sys::ZX_OK, status);
             zx::NullableHandle::from(zx::NullableHandle::from_raw(handle))
         }
         .into();
@@ -158,25 +158,25 @@ fn check_all_processes_terminated(job: &zx::Job) {
             &mut avail as *mut usize,
         )
     };
-    assert_eq!(zx::Status::OK, zx::Status::from_raw(status));
+    assert_eq!(zx::sys::ZX_OK, status);
     assert_eq!(actual, avail, "too many child jobs");
 
     println!("job_koids={:?}", &koids[0..actual]);
     for koid in &koids[0..actual] {
         let job: zx::Job = unsafe {
             let mut handle: zx_handle_t = Default::default();
-            let status = zx::Status::from_raw(zx_object_get_child(
+            let status = zx_object_get_child(
                 job.raw_handle(),
                 *koid,
                 ZX_RIGHT_SAME_RIGHTS,
                 &mut handle as *mut zx_handle_t,
-            ));
-            if status == zx::Status::NOT_FOUND {
+            );
+            if status == zx::Status::NOT_FOUND.into_raw() {
                 // The job object can get cleaned up before we create a handle to it.
                 println!("object for job koid {} not found, continuing", koid);
                 continue;
             }
-            assert_eq!(zx::Status::OK, status);
+            assert_eq!(zx::sys::ZX_OK, status);
             zx::NullableHandle::from(zx::NullableHandle::from_raw(handle))
         }
         .into();

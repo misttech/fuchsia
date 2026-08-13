@@ -10,8 +10,8 @@ async fn fails_setting_configuration_active() {
     let env = TestEnv::builder()
         .paver_service(|builder| {
             builder.insert_hook(mphooks::return_error(|event| match event {
-                PaverEvent::SetConfigurationActive { .. } => Status::INTERNAL,
-                _ => Status::OK,
+                PaverEvent::SetConfigurationActive { .. } => Err(Status::INTERNAL),
+                _ => Ok(()),
             }))
         })
         .build()
@@ -56,8 +56,8 @@ async fn fails_setting_configuration_active_packageless() {
     let env = TestEnv::builder()
         .paver_service(|builder| {
             builder.insert_hook(mphooks::return_error(|event| match event {
-                PaverEvent::SetConfigurationActive { .. } => Status::INTERNAL,
-                _ => Status::OK,
+                PaverEvent::SetConfigurationActive { .. } => Err(Status::INTERNAL),
+                _ => Ok(()),
             }))
         })
         .ota_manifest(make_manifest([]))
@@ -100,8 +100,8 @@ async fn fails_commit_recovery() {
             builder.insert_hook(mphooks::return_error(|event| match event {
                 PaverEvent::SetConfigurationUnbootable {
                     configuration: paver::Configuration::A,
-                } => Status::INTERNAL,
-                _ => Status::OK,
+                } => Err(Status::INTERNAL),
+                _ => Ok(()),
             }))
         })
         .build()
@@ -148,8 +148,8 @@ async fn fails_commit_recovery_packageless() {
             builder.insert_hook(mphooks::return_error(|event| match event {
                 PaverEvent::SetConfigurationUnbootable {
                     configuration: paver::Configuration::A,
-                } => Status::INTERNAL,
-                _ => Status::OK,
+                } => Err(Status::INTERNAL),
+                _ => Ok(()),
             }))
         })
         .ota_manifest(make_forced_recovery_manifest())

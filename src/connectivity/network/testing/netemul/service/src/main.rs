@@ -1038,7 +1038,7 @@ impl ManagedRealm {
                             >(realm.root.get_exposed_dir())
                             .map_err(|e: anyhow::Error| {
                                 error!("failed to open proxy to lifecycle controller: {}", e);
-                                Err(zx::Status::INTERNAL)
+                                zx::Status::INTERNAL
                             })?;
                         let (_client, server) = fidl::endpoints::create_endpoints();
                         lifecycle
@@ -1046,18 +1046,16 @@ impl ManagedRealm {
                             .await
                             .map_err(|e: fidl::Error| {
                                 error!("failed to call LifecycleController/StartInstance: {}", e);
-                                Err(zx::Status::INTERNAL)
+                                zx::Status::INTERNAL
                             })?
                             .map_err(|e| {
                                 warn!("failed to start child component '{}': {:?}", child_name, e);
                                 match e {
                                     fsys2::StartError::InstanceNotFound
                                     | fsys2::StartError::PackageNotFound
-                                    | fsys2::StartError::ManifestNotFound => {
-                                        Err(zx::Status::NOT_FOUND)
-                                    }
-                                    fsys2::StartError::BadMoniker => Err(zx::Status::INVALID_ARGS),
-                                    fsys2::StartError::Internal => Err(zx::Status::INTERNAL),
+                                    | fsys2::StartError::ManifestNotFound => zx::Status::NOT_FOUND,
+                                    fsys2::StartError::BadMoniker => zx::Status::INVALID_ARGS,
+                                    fsys2::StartError::Internal => zx::Status::INTERNAL,
                                     other => unreachable!(
                                         "unrecognized fuchsia.sys2/StartError variant: {:?}",
                                         other,
@@ -1079,23 +1077,21 @@ impl ManagedRealm {
                             >(realm.root.get_exposed_dir())
                             .map_err(|e: anyhow::Error| {
                                 error!("failed to open proxy to lifecycle controller: {}", e);
-                                Err(zx::Status::INTERNAL)
+                                zx::Status::INTERNAL
                             })?;
                         lifecycle
                             .stop_instance(&format!("./{}", child_name))
                             .await
                             .map_err(|e: fidl::Error| {
                                 error!("failed to call LifecycleController/StopInstance: {}", e);
-                                Err(zx::Status::INTERNAL)
+                                zx::Status::INTERNAL
                             })?
                             .map_err(|e| {
                                 warn!("failed to stop child component '{}': {:?}", child_name, e);
                                 match e {
-                                    fsys2::StopError::InstanceNotFound => {
-                                        Err(zx::Status::NOT_FOUND)
-                                    }
-                                    fsys2::StopError::BadMoniker => Err(zx::Status::INVALID_ARGS),
-                                    fsys2::StopError::Internal => Err(zx::Status::INTERNAL),
+                                    fsys2::StopError::InstanceNotFound => zx::Status::NOT_FOUND,
+                                    fsys2::StopError::BadMoniker => zx::Status::INVALID_ARGS,
+                                    fsys2::StopError::Internal => zx::Status::INTERNAL,
                                     other => unreachable!(
                                         "unrecognized fuchsia.sys2/StopError variant: {:?}",
                                         other,

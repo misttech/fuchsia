@@ -97,10 +97,10 @@ pub(crate) async fn serve(
                     )
                     .await;
                     if let Some(o) = guard {
-                        o.end(&[ftrace::ArgValue::of(
-                            "status",
-                            Status::from(response).to_string().as_str(),
-                        )])
+                        match &response {
+                            Ok(()) => o.end(&[ftrace::ArgValue::of("status", "OK")]),
+                            Err(s) => o.end(&[ftrace::ArgValue::of("status", s.to_string().as_str())]),
+                        }
                     }
                     drop(node);
                     responder.send(response.map_err(|status| status.into_raw()))?;
@@ -577,8 +577,8 @@ async fn serve_needed_blobs(
     // with a custom epitaph without copy/pasting something to every return site.
 
     let epitaph = match res {
-        Ok(_) => Status::OK,
-        Err(_) => Status::BAD_STATE,
+        Ok(_) => Ok(()),
+        Err(_) => Err(Status::BAD_STATE),
     };
     stream.control_handle().shutdown_with_epitaph(epitaph);
 

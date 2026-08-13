@@ -164,12 +164,12 @@ pub mod hooks {
 
     /// A Hook for the specific case where you want to return an error.
     ///
-    /// If the callback returns Status::OK, the Hook will pass the request
+    /// If the callback returns ZX_OK, the Hook will pass the request
     /// off to the next Hook. Responds to both BootManagerRequests and
     /// DataSinkRequests.
     pub fn return_error<F>(callback: F) -> ReturnError<F>
     where
-        F: Fn(&PaverEvent) -> Status,
+        F: Fn(&PaverEvent) -> Result<(), zx::Status>,
     {
         ReturnError(callback)
     }
@@ -179,52 +179,51 @@ pub mod hooks {
     #[async_trait]
     impl<F> Hook for ReturnError<F>
     where
-        F: Fn(&PaverEvent) -> Status + Sync,
+        F: Fn(&PaverEvent) -> Result<(), zx::Status> + Sync,
     {
         async fn boot_manager(
             &self,
             request: paver::BootManagerRequest,
         ) -> Option<paver::BootManagerRequest> {
-            let status = (self.0)(&PaverEvent::from_boot_manager_request(&request));
-            if status == Status::OK {
-                Some(request)
-            } else {
+            let res = (self.0)(&PaverEvent::from_boot_manager_request(&request));
+            if let Err(status) = res {
+                let status = status.into_raw();
                 // Ignore errors from peers closing the channel early
                 let _ = match request {
                     paver::BootManagerRequest::QueryActiveConfiguration { responder, .. } => {
-                        responder.send(Err(status.into_raw()))
+                        responder.send(Err(status))
                     }
                     paver::BootManagerRequest::QueryConfigurationLastSetActive {
                         responder,
                         ..
-                    } => responder.send(Err(status.into_raw())),
+                    } => responder.send(Err(status)),
                     paver::BootManagerRequest::QueryCurrentConfiguration { responder, .. } => {
-                        responder.send(Err(status.into_raw()))
+                        responder.send(Err(status))
                     }
                     paver::BootManagerRequest::QueryConfigurationStatus { responder, .. } => {
-                        responder.send(Err(status.into_raw()))
+                        responder.send(Err(status))
                     }
                     paver::BootManagerRequest::QueryConfigurationStatusAndBootAttempts {
                         responder,
                         ..
-                    } => responder.send(Err(status.into_raw())),
+                    } => responder.send(Err(status)),
                     paver::BootManagerRequest::SetConfigurationHealthy { responder, .. } => {
-                        responder.send(status.into_raw())
+                        responder.send(status)
                     }
                     paver::BootManagerRequest::SetConfigurationActive { responder, .. } => {
-                        responder.send(status.into_raw())
+                        responder.send(status)
                     }
                     paver::BootManagerRequest::SetConfigurationUnbootable { responder, .. } => {
-                        responder.send(status.into_raw())
+                        responder.send(status)
                     }
                     paver::BootManagerRequest::SetOneShotRecovery { responder, .. } => {
                         responder.send(Ok(()))
                     }
-                    paver::BootManagerRequest::Flush { responder } => {
-                        responder.send(status.into_raw())
-                    }
+                    paver::BootManagerRequest::Flush { responder } => responder.send(status),
                 };
                 None
+            } else {
+                Some(request)
             }
         }
 
@@ -232,27 +231,24 @@ pub mod hooks {
             &self,
             request: paver::DataSinkRequest,
         ) -> Option<paver::DataSinkRequest> {
-            let status = (self.0)(&PaverEvent::from_data_sink_request(&request));
-            if status == Status::OK {
-                Some(request)
-            } else {
+            let res = (self.0)(&PaverEvent::from_data_sink_request(&request));
+            if let Err(status) = res {
+                let status = status.into_raw();
                 // Ignore errors from peers closing the channel early
                 let _ = match request {
                     paver::DataSinkRequest::WriteFirmware { responder, .. } => {
-                        responder.send(&paver::WriteFirmwareResult::Status(status.into_raw()))
+                        responder.send(&paver::WriteFirmwareResult::Status(status))
                     }
                     paver::DataSinkRequest::ReadAsset { responder, .. } => {
-                        responder.send(Err(status.into_raw()))
+                        responder.send(Err(status))
                     }
-                    paver::DataSinkRequest::WriteAsset { responder, .. } => {
-                        responder.send(status.into_raw())
-                    }
-                    paver::DataSinkRequest::Flush { responder, .. } => {
-                        responder.send(status.into_raw())
-                    }
+                    paver::DataSinkRequest::WriteAsset { responder, .. } => responder.send(status),
+                    paver::DataSinkRequest::Flush { responder, .. } => responder.send(status),
                     request => panic!("Unhandled method Paver::{}", request.method_name()),
                 };
                 None
+            } else {
+                Some(request)
             }
         }
     }
@@ -717,15 +713,13 @@ impl MockPaverService {
             let _ = match request {
                 paver::DataSinkRequest::WriteAsset { mut payload, responder, .. } => {
                     verify_buffer(&mut payload);
-                    responder.send(Status::OK.into_raw())
+                    responder.send(zx::sys::ZX_OK)
                 }
                 paver::DataSinkRequest::WriteFirmware { mut payload, responder, .. } => {
                     verify_buffer(&mut payload);
-                    responder.send(&paver::WriteFirmwareResult::Status(Status::OK.into_raw()))
+                    responder.send(&paver::WriteFirmwareResult::Status(zx::sys::ZX_OK))
                 }
-                paver::DataSinkRequest::Flush { responder } => {
-                    responder.send(Status::OK.into_raw())
-                }
+                paver::DataSinkRequest::Flush { responder } => responder.send(zx::sys::ZX_OK),
                 paver::DataSinkRequest::ReadAsset { responder, .. } => {
                     // In normal operation the paver will return a VMO large enough to contain
                     // whatever image we happen to be looking for (the "images" used in tests are
@@ -802,24 +796,22 @@ impl MockPaverService {
                 } => {
                     // Return an error if the given configuration is `Recovery`.
                     let status = if configuration == paver::Configuration::Recovery {
-                        Status::INVALID_ARGS
+                        zx::sys::ZX_ERR_INVALID_ARGS
                     } else {
-                        Status::OK
+                        zx::sys::ZX_OK
                     };
-                    responder.send(status.into_raw())
+                    responder.send(status)
                 }
                 paver::BootManagerRequest::SetConfigurationActive { responder, .. } => {
-                    responder.send(Status::OK.into_raw())
+                    responder.send(zx::sys::ZX_OK)
                 }
                 paver::BootManagerRequest::SetConfigurationUnbootable { responder, .. } => {
-                    responder.send(Status::OK.into_raw())
+                    responder.send(zx::sys::ZX_OK)
                 }
                 paver::BootManagerRequest::SetOneShotRecovery { responder, .. } => {
                     responder.send(Ok(()))
                 }
-                paver::BootManagerRequest::Flush { responder } => {
-                    responder.send(Status::OK.into_raw())
-                }
+                paver::BootManagerRequest::Flush { responder } => responder.send(zx::sys::ZX_OK),
             };
         }
 
@@ -946,7 +938,7 @@ pub mod tests {
 
     #[fuchsia::test]
     pub async fn test_hook() -> Result<(), Error> {
-        let hook = |_: &PaverEvent| zx::Status::NOT_SUPPORTED;
+        let hook = |_: &PaverEvent| Err(zx::Status::NOT_SUPPORTED);
         let paver = MockPaverForTest::new(|p| p.insert_hook(hooks::return_error(hook)));
 
         assert_eq!(
@@ -1008,7 +1000,7 @@ pub mod tests {
         let () = throttler.emit_next_paver_event(&PaverEvent::DataSinkFlush);
         assert_eq!(
             executor.run_until_stalled(&mut fut1).map(|fidl| fidl.unwrap()),
-            Poll::Ready(Status::OK.into_raw())
+            Poll::Ready(zx::sys::ZX_OK)
         );
 
         // Detach the throttler and observe subsequent requests are unblocked.
@@ -1071,7 +1063,7 @@ pub mod tests {
     pub async fn test_set_config_a_healthy() -> Result<(), Error> {
         let paver = MockPaverForTest::new(|p| p);
         assert_eq!(
-            Status::OK.into_raw(),
+            zx::sys::ZX_OK,
             paver.boot_manager.set_configuration_healthy(paver::Configuration::A).await?
         );
         assert_eq!(

@@ -114,7 +114,7 @@ impl PartitionServer {
 }
 
 impl TaskStatusReceiver for PartitionServer {
-    fn complete(&self, request_id: RequestId, status: zx::Status) {
+    fn complete(&self, request_id: RequestId, status: Result<(), zx::Status>) {
         self.server.session_manager().complete_request(request_id, status);
     }
 }

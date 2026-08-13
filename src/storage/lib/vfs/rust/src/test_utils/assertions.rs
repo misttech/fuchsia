@@ -124,11 +124,9 @@ macro_rules! assert_truncate_err {
 #[macro_export]
 macro_rules! assert_get_attr {
     ($proxy:expr, $expected:expr) => {{
-        use $crate::test_utils::assertions::reexport::Status;
-
         let (status, attrs) = $proxy.deprecated_get_attr().await.expect("get_attr failed");
 
-        assert_eq!(Status::from_raw(status), Status::OK);
+        assert_eq!(status, zx_status::sys::ZX_OK);
         assert_eq!(attrs, $expected);
     }};
 }
@@ -158,13 +156,11 @@ macro_rules! assert_close {
 #[macro_export]
 macro_rules! assert_read_dirents {
     ($proxy:expr, $max_bytes:expr, $expected:expr) => {{
-        use $crate::test_utils::assertions::reexport::Status;
-
         let expected = $expected as Vec<u8>;
 
         let (status, entries) = $proxy.read_dirents($max_bytes).await.expect("read_dirents failed");
 
-        assert_eq!(Status::from_raw(status), Status::OK);
+        assert_eq!(status, zx_status::sys::ZX_OK);
         assert!(
             &entries[..] == &expected[..],
             "Read entries do not match the expectation.\n\

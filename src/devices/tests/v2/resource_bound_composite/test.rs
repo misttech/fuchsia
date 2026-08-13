@@ -16,7 +16,7 @@ async fn run_waiter_server(mut stream: ft::WaiterRequestStream, mut sender: mpsc
     while let Some(ft::WaiterRequest::Ack { status, .. }) =
         stream.try_next().await.expect("Stream failed")
     {
-        assert_eq!(status, zx::Status::OK.into_raw());
+        assert_eq!(zx::Status::ok(status), Ok(()));
         info!("Received Ack request");
         sender.try_send(()).expect("Sender failed")
     }

@@ -23,6 +23,13 @@ use cm_rust::{ComponentDecl, RegistrationSource, RunnerRegistration};
 use cm_rust_testing::*;
 use errors::{ActionErrorKind, ModelError, StartActionError};
 use fidl::endpoints::{ProtocolMarker, ServerEnd, create_endpoints};
+use fidl_fuchsia_component as fcomponent;
+use fidl_fuchsia_component_decl as fdecl;
+use fidl_fuchsia_component_runner as fcrunner;
+use fidl_fuchsia_hardware_power_statecontrol as fstatecontrol;
+use fidl_fuchsia_io as fio;
+use fuchsia_async as fasync;
+use fuchsia_sync as fsync;
 use futures::channel::mpsc;
 use futures::future::pending;
 use futures::join;
@@ -37,12 +44,6 @@ use vfs::ToObjectRequest;
 use vfs::directory::entry::OpenRequest;
 use vfs::execution_scope::ExecutionScope;
 use zx::AsHandleRef;
-use {
-    fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_decl as fdecl,
-    fidl_fuchsia_component_runner as fcrunner,
-    fidl_fuchsia_hardware_power_statecontrol as fstatecontrol, fidl_fuchsia_io as fio,
-    fuchsia_async as fasync, fuchsia_sync as fsync,
-};
 
 async fn new_model(
     components: Vec<(&'static str, ComponentDecl)>,
@@ -511,7 +512,7 @@ async fn on_terminate_stop_triggers_reboot() {
         Box::new(|| ControllerActionResponse {
             close_channel: true,
             delay: None,
-            termination_status: Some(zx::Status::OK),
+            termination_status: Some(Ok(())),
             exit_code: Some(0),
         }),
     );
@@ -526,7 +527,7 @@ async fn on_terminate_stop_triggers_reboot() {
         Box::new(|| ControllerActionResponse {
             close_channel: true,
             delay: None,
-            termination_status: Some(zx::Status::OK),
+            termination_status: Some(Ok(())),
             exit_code: Some(1),
         }),
     );
@@ -860,6 +861,6 @@ async fn stop_with_exit_code(expected_code: i64) {
         Some(fcomponent::EventPayload::Stopped(fcomponent::StoppedPayload {
             status: Some(status), exit_code: Some(exit_code), ..
         }))
-        if status == zx::Status::OK.into_raw() && exit_code == expected_code
+        if zx::Status::ok(status).is_ok() && exit_code == expected_code
     );
 }

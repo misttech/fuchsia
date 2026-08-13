@@ -453,7 +453,7 @@ async fn handle_wifi_chip_request<I: IfaceManager, P: PowerManager>(
                     |callback_proxy| {
                         callback_proxy.on_subsystem_restart(
                             fidl_wlanix::WifiEventCallbackOnSubsystemRestartRequest {
-                                status: Some(zx::Status::OK.into_raw()),
+                                status: Some(zx::sys::ZX_OK),
                                 ..Default::default()
                             },
                         )

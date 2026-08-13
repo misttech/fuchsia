@@ -149,7 +149,7 @@ pub fn wait_for_process_with_interrupt(
                     if items[1].pending().contains(zx::Signals::USER_1) {
                         match pty.proxy.read_events(zx::MonotonicInstant::INFINITE) {
                             Ok((status, events)) => {
-                                if status == zx::Status::OK.into_raw() {
+                                if zx::Status::ok(status).is_ok() {
                                     if (events & fpty::EVENT_INTERRUPT) != 0 {
                                         signal_state.set(ShellSignals::INT);
                                         return kill_and_wait(proc, signal_state);

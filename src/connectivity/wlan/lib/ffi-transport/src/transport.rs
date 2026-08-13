@@ -326,7 +326,7 @@ impl EthernetTx {
                 error!("Failed to queue EthernetTx.Transfer request: {}", error);
                 zx::Status::INTERNAL.into_raw()
             }
-            Ok(()) => zx::Status::OK.into_raw(),
+            Ok(()) => zx::sys::ZX_OK,
         }
     }
 }

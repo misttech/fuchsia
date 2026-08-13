@@ -99,7 +99,7 @@ unsafe impl<T: 'static> Encode<DriverEndpoint<T>, DefaultFuchsiaResourceDialect>
             HandleOp::Move(handle),
             ObjectType::NONE,
             Rights::empty(),
-            Status::OK,
+            Ok(()),
         ));
         Ok(())
     }
@@ -188,7 +188,7 @@ mod tests {
             }),
             ObjectType::NONE,
             Rights::empty(),
-            Status::OK,
+            Ok(()),
         );
         mixed_from_handle_disposition(handle_disposition).unwrap();
     }
@@ -212,7 +212,7 @@ mod tests {
             HandleOp::Move(Port::create().into()),
             ObjectType::PORT,
             Rights::DUPLICATE | Rights::TRANSFER | Rights::READ | Rights::WRITE | Rights::INSPECT,
-            Status::OK,
+            Ok(()),
         );
         mixed_from_handle_disposition(handle_disposition).unwrap();
     }

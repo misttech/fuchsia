@@ -101,7 +101,7 @@ impl TestEnvBuilder {
 
         let health_verification_service = Arc::new(
             self.health_verification_service
-                .unwrap_or_else(|| MockHealthVerificationService::new(|| zx::Status::OK)),
+                .unwrap_or_else(|| MockHealthVerificationService::new(|| Ok(()))),
         );
         {
             let hv_service = Arc::clone(&health_verification_service);
@@ -506,7 +506,9 @@ async fn inspect_multiple_failures(idle_timeout_millis: i64) {
                 Ok((ConfigurationStatus::Pending, Some(1)))
             }),
         ))
-        .health_verification_service(MockHealthVerificationService::new(|| zx::Status::INTERNAL))
+        .health_verification_service(MockHealthVerificationService::new(|| {
+            Err(zx::Status::INTERNAL)
+        }))
         .reboot_service(MockRebootService::new(Box::new(move |options: ShutdownOptions| {
             reboot_sender.lock().take().unwrap().send(options).unwrap();
             Ok(())
@@ -561,9 +563,9 @@ async fn paver_failure_causes_reboot(idle_timeout_millis: i64) {
         .paver_service_builder(MockPaverServiceBuilder::new().insert_hook(mphooks::return_error(
             |e: &PaverEvent| {
                 if e == &PaverEvent::QueryCurrentConfiguration {
-                    zx::Status::NOT_FOUND
+                    Err(zx::Status::NOT_FOUND)
                 } else {
-                    zx::Status::OK
+                    Ok(())
                 }
             },
         )))
@@ -673,7 +675,9 @@ async fn health_verification_failure_causes_reboot(idle_timeout_millis: i64) {
             }),
         ))
         // Make the health verifications fail.
-        .health_verification_service(MockHealthVerificationService::new(|| zx::Status::INTERNAL))
+        .health_verification_service(MockHealthVerificationService::new(|| {
+            Err(zx::Status::INTERNAL)
+        }))
         // Handle the reboot requests.
         .reboot_service(MockRebootService::new(Box::new(move |options: ShutdownOptions| {
             reboot_sender.lock().take().unwrap().send(options).unwrap();
@@ -731,7 +735,9 @@ async fn recovery_mode_does_not_verify_health(idle_timeout_millis: i64) {
                 .current_config(Configuration::Recovery),
         )
         // Make the health verifications fail which in other modes triggers a reboot.
-        .health_verification_service(MockHealthVerificationService::new(|| zx::Status::INTERNAL))
+        .health_verification_service(MockHealthVerificationService::new(|| {
+            Err(zx::Status::INTERNAL)
+        }))
         // Handle the reboot requests.
         .reboot_service(MockRebootService::new(Box::new(move |options: ShutdownOptions| {
             reboot_sender.lock().take().unwrap().send(options).unwrap();

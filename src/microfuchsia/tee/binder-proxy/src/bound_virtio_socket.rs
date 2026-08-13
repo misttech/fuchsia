@@ -10,8 +10,7 @@ use vsock_sys::{create_virtio_stream_socket, sockaddr_vm};
 pub fn create_bound_virtio_socket(config: &Config, port: u32) -> Result<OwnedFd> {
     // Make a virtio stream socket.
     let mut socket_fd = 0;
-    let status = zx::Status::from_raw(unsafe { create_virtio_stream_socket(&mut socket_fd) });
-    if status != zx::Status::OK {
+    if let Err(status) = zx::Status::ok(unsafe { create_virtio_stream_socket(&mut socket_fd) }) {
         anyhow::bail!("Could not create virtio stream socket: {status:?}");
     }
     let socket_fd = unsafe { OwnedFd::from_raw_fd(socket_fd) };

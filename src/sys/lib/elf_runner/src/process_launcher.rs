@@ -98,7 +98,7 @@ impl ProcessLauncher {
 
                     match Self::launch_process(info, state).await {
                         Ok(process) => {
-                            responder.send(zx::Status::OK.into_raw(), Some(process))?;
+                            responder.send(zx::sys::ZX_OK, Some(process))?;
                         }
                         Err(err) => {
                             log_launcher_error(&err, "launch", job, name);
@@ -126,7 +126,7 @@ impl ProcessLauncher {
                                 vdso_base: built.vdso_base as u64,
                                 base: built.elf_base as u64,
                             };
-                            responder.send(zx::Status::OK.into_raw(), Some(process_data))?;
+                            responder.send(zx::sys::ZX_OK, Some(process_data))?;
                         }
                         Err(err) => {
                             log_launcher_error(&err, "create", job, name);

@@ -161,7 +161,7 @@ mod tests {
     use zx::Status;
 
     fn health_verification_and_call_count(
-        status: zx::Status,
+        status: Result<(), zx::Status>,
     ) -> (HealthVerificationProxy, Arc<AtomicU32>) {
         let call_count = Arc::new(AtomicU32::new(0));
         let call_count_clone = Arc::clone(&call_count);
@@ -188,7 +188,7 @@ mod tests {
         let (p_internal, p_external) = EventPair::create();
         let (unblocker, unblocker_recv) = oneshot::channel();
         let (health_verification, health_verification_call_count) =
-            health_verification_and_call_count(zx::Status::OK);
+            health_verification_and_call_count(Ok(()));
 
         put_metadata_in_happy_state_impl(
             &paver.spawn_boot_manager_service(),
@@ -224,7 +224,7 @@ mod tests {
         let (p_internal, p_external) = EventPair::create();
         let (unblocker, unblocker_recv) = oneshot::channel();
         let (health_verification, health_verification_call_count) =
-            health_verification_and_call_count(zx::Status::OK);
+            health_verification_and_call_count(Ok(()));
 
         put_metadata_in_happy_state_impl(
             &paver.spawn_boot_manager_service(),
@@ -263,7 +263,7 @@ mod tests {
         let (p_internal, p_external) = EventPair::create();
         let (unblocker, unblocker_recv) = oneshot::channel();
         let (health_verification, health_verification_call_count) =
-            health_verification_and_call_count(zx::Status::OK);
+            health_verification_and_call_count(Ok(()));
 
         put_metadata_in_happy_state_impl(
             &paver.spawn_boot_manager_service(),
@@ -321,7 +321,7 @@ mod tests {
         let (p_internal, p_external) = EventPair::create();
         let (unblocker, unblocker_recv) = oneshot::channel();
         let (health_verification, health_verification_call_count) =
-            health_verification_and_call_count(zx::Status::OK);
+            health_verification_and_call_count(Ok(()));
 
         put_metadata_in_happy_state_impl(
             &paver.spawn_boot_manager_service(),
@@ -376,7 +376,7 @@ mod tests {
         let (p_internal, p_external) = EventPair::create();
         let (unblocker, unblocker_recv) = oneshot::channel();
         let (health_verification, health_verification_call_count) =
-            health_verification_and_call_count(zx::Status::INTERNAL);
+            health_verification_and_call_count(Err(zx::Status::INTERNAL));
 
         put_metadata_in_happy_state_impl(
             &paver.spawn_boot_manager_service(),
@@ -409,7 +409,7 @@ mod tests {
         let (p_internal, p_external) = EventPair::create();
         let (unblocker, unblocker_recv) = oneshot::channel();
         let (health_verification, health_verification_call_count) =
-            health_verification_and_call_count(zx::Status::INTERNAL);
+            health_verification_and_call_count(Err(zx::Status::INTERNAL));
 
         let result = put_metadata_in_happy_state_impl(
             &paver.spawn_boot_manager_service(),

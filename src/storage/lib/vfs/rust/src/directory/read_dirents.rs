@@ -28,7 +28,7 @@ pub struct Sink {
 /// more values.
 pub struct Done {
     pub(super) buf: Vec<u8>,
-    pub(super) status: Status,
+    pub(super) status: Result<(), Status>,
 }
 
 #[derive(PartialEq, Eq)]
@@ -64,8 +64,8 @@ impl dirents_sink::Sink for Sink {
         Box::new(Done {
             buf: self.buf,
             status: match self.state {
-                SinkState::NotCalled | SinkState::FitOne => Status::OK,
-                SinkState::DidNotFit => Status::BUFFER_TOO_SMALL,
+                SinkState::NotCalled | SinkState::FitOne => Ok(()),
+                SinkState::DidNotFit => Err(Status::BUFFER_TOO_SMALL),
             },
         })
     }

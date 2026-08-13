@@ -476,18 +476,15 @@ mod tests {
         proxy
     }
 
-    fn setup_fake_sysinfo_service(status: zx::Status) -> sysinfo::SysInfoProxy {
+    fn setup_fake_sysinfo_service(status: Result<(), zx::Status>) -> sysinfo::SysInfoProxy {
         let (proxy, mut stream) =
             fidl::endpoints::create_proxy_and_stream::<sysinfo::SysInfoMarker>();
         fasync::Task::spawn(async move {
             while let Ok(Some(req)) = stream.try_next().await {
                 match req {
                     sysinfo::SysInfoRequest::GetSerialNumber { responder } => {
-                        let _ = responder.send(
-                            Result::from(status)
-                                .map(|_| SYSINFO_SERIAL)
-                                .map_err(zx::Status::into_raw),
-                        );
+                        let _ = responder
+                            .send(status.map(|_| SYSINFO_SERIAL).map_err(zx::Status::into_raw));
                     }
                     _ => panic!("unexpected request: {req:?}"),
                 }
@@ -642,9 +639,9 @@ mod tests {
                         interface_state_proxy: setup_fake_interface_state_service(),
                         name_provider_proxy: setup_fake_name_provider_service(),
                         device_info_proxy: setup_fake_device_service(),
-                        system_info_proxy: system_info_proxy
-                            .clone()
-                            .unwrap_or_else(|| setup_fake_sysinfo_service(zx::Status::INTERNAL)),
+                        system_info_proxy: system_info_proxy.clone().unwrap_or_else(|| {
+                            setup_fake_sysinfo_service(Err(zx::Status::INTERNAL))
+                        }),
                         build_info_proxy: setup_fake_build_info_service(),
                         boot_timestamp_nanos: BOOT_TIME,
                         boot_id: 0,
@@ -858,7 +855,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_identify_host_sysinfo_serial() -> Result<()> {
         let (rcs_proxy, _) = setup_rcs_proxy_from_env(RcsEnv {
-            system_info_proxy: Some(setup_fake_sysinfo_service(zx::Status::OK)),
+            system_info_proxy: Some(setup_fake_sysinfo_service(Ok(()))),
             ..Default::default()
         });
 

@@ -72,81 +72,69 @@ const ALLOC_BY_SIZE_REGIONS: &[RegionSpan] = &[
     RegionSpan { base: ALLOC_BY_SIZE_SMALL_REGION_BASE, size: ALLOC_BY_SIZE_SMALL_REGION_SIZE },
     RegionSpan { base: ALLOC_BY_SIZE_LARGE_REGION_BASE, size: ALLOC_BY_SIZE_LARGE_REGION_SIZE },
 ];
+const OK: Result<(), Status> = Ok(());
+const NOT_FOUND: Result<(), Status> = Err(Status::NOT_FOUND);
+const INVALID_ARGS: Result<(), Status> = Err(Status::INVALID_ARGS);
 
 struct AllocBySizeAllocTest {
     size: u64,
     align: u64,
-    res: Status,
+    res: Result<(), Status>,
     region: usize,
 }
 
 const ALLOC_BY_SIZE_TESTS: &[AllocBySizeAllocTest] = &[
     // Invalid parameter failures
-    AllocBySizeAllocTest {
-        size: 0x00000000,
-        align: 0x00000001,
-        res: Status::INVALID_ARGS,
-        region: 0,
-    },
-    AllocBySizeAllocTest {
-        size: 0x00000001,
-        align: 0x00000000,
-        res: Status::INVALID_ARGS,
-        region: 0,
-    },
-    AllocBySizeAllocTest {
-        size: 0x00000001,
-        align: 0x00001001,
-        res: Status::INVALID_ARGS,
-        region: 0,
-    },
+    AllocBySizeAllocTest { size: 0x00000000, align: 0x00000001, res: INVALID_ARGS, region: 0 },
+    AllocBySizeAllocTest { size: 0x00000001, align: 0x00000000, res: INVALID_ARGS, region: 0 },
+    AllocBySizeAllocTest { size: 0x00000001, align: 0x00001001, res: INVALID_ARGS, region: 0 },
     // Initially unsatisfiable
-    AllocBySizeAllocTest { size: 0x10000000, align: 0x00000001, res: Status::NOT_FOUND, region: 0 },
-    AllocBySizeAllocTest { size: 0x00005000, align: 0x10000000, res: Status::NOT_FOUND, region: 0 },
+    AllocBySizeAllocTest { size: 0x10000000, align: 0x00000001, res: NOT_FOUND, region: 0 },
+    AllocBySizeAllocTest { size: 0x00005000, align: 0x10000000, res: NOT_FOUND, region: 0 },
     // Should succeed, all pulled from first chunk
-    AllocBySizeAllocTest { size: 1 << 0, align: 1 << 1, res: Status::OK, region: 0 },
-    AllocBySizeAllocTest { size: 1 << 1, align: 1 << 2, res: Status::OK, region: 0 },
-    AllocBySizeAllocTest { size: 1 << 2, align: 1 << 3, res: Status::OK, region: 0 },
-    AllocBySizeAllocTest { size: 1 << 3, align: 1 << 4, res: Status::OK, region: 0 },
-    AllocBySizeAllocTest { size: 1 << 4, align: 1 << 5, res: Status::OK, region: 0 },
-    AllocBySizeAllocTest { size: 1 << 5, align: 1 << 6, res: Status::OK, region: 0 },
-    AllocBySizeAllocTest { size: 1 << 6, align: 1 << 7, res: Status::OK, region: 0 },
-    AllocBySizeAllocTest { size: 1 << 7, align: 1 << 8, res: Status::OK, region: 0 },
-    AllocBySizeAllocTest { size: 1 << 8, align: 1 << 9, res: Status::OK, region: 0 },
-    AllocBySizeAllocTest { size: 1 << 9, align: 1 << 10, res: Status::OK, region: 0 },
-    AllocBySizeAllocTest { size: 1 << 10, align: 1 << 11, res: Status::OK, region: 0 },
+    AllocBySizeAllocTest { size: 1 << 0, align: 1 << 1, res: OK, region: 0 },
+    AllocBySizeAllocTest { size: 1 << 1, align: 1 << 2, res: OK, region: 0 },
+    AllocBySizeAllocTest { size: 1 << 2, align: 1 << 3, res: OK, region: 0 },
+    AllocBySizeAllocTest { size: 1 << 3, align: 1 << 4, res: OK, region: 0 },
+    AllocBySizeAllocTest { size: 1 << 4, align: 1 << 5, res: OK, region: 0 },
+    AllocBySizeAllocTest { size: 1 << 5, align: 1 << 6, res: OK, region: 0 },
+    AllocBySizeAllocTest { size: 1 << 6, align: 1 << 7, res: OK, region: 0 },
+    AllocBySizeAllocTest { size: 1 << 7, align: 1 << 8, res: OK, region: 0 },
+    AllocBySizeAllocTest { size: 1 << 8, align: 1 << 9, res: OK, region: 0 },
+    AllocBySizeAllocTest { size: 1 << 9, align: 1 << 10, res: OK, region: 0 },
+    AllocBySizeAllocTest { size: 1 << 10, align: 1 << 11, res: OK, region: 0 },
     // Perform some allocations which are large enough that they can only be
     // satisfied with results from region 1.  Exercise the various range
     // splitting cases.
-    AllocBySizeAllocTest { size: 4 << 10, align: 4 << 10, res: Status::OK, region: 1 },
-    AllocBySizeAllocTest { size: 4 << 10, align: 4 << 11, res: Status::OK, region: 1 },
-    AllocBySizeAllocTest { size: 0xfc000, align: 4 << 12, res: Status::OK, region: 1 },
+    AllocBySizeAllocTest { size: 4 << 10, align: 4 << 10, res: OK, region: 1 },
+    AllocBySizeAllocTest { size: 4 << 10, align: 4 << 11, res: OK, region: 1 },
+    AllocBySizeAllocTest { size: 0xfc000, align: 4 << 12, res: OK, region: 1 },
     // Repeat the small allocation pass again.  Because of the alignment
     // restrictions, the first pass should have fragmented the first region.
     // This pass should soak up those fragments.
-    AllocBySizeAllocTest { size: 3, align: 1 << 0, res: Status::OK, region: 0 },
-    AllocBySizeAllocTest { size: 1 << 1, align: 1 << 1, res: Status::OK, region: 0 },
-    AllocBySizeAllocTest { size: 1 << 2, align: 1 << 2, res: Status::OK, region: 0 },
-    AllocBySizeAllocTest { size: 1 << 3, align: 1 << 3, res: Status::OK, region: 0 },
-    AllocBySizeAllocTest { size: 1 << 4, align: 1 << 4, res: Status::OK, region: 0 },
-    AllocBySizeAllocTest { size: 1 << 5, align: 1 << 5, res: Status::OK, region: 0 },
-    AllocBySizeAllocTest { size: 1 << 6, align: 1 << 6, res: Status::OK, region: 0 },
-    AllocBySizeAllocTest { size: 1 << 7, align: 1 << 7, res: Status::OK, region: 0 },
-    AllocBySizeAllocTest { size: 1 << 8, align: 1 << 8, res: Status::OK, region: 0 },
-    AllocBySizeAllocTest { size: 1 << 9, align: 1 << 9, res: Status::OK, region: 0 },
-    AllocBySizeAllocTest { size: 1 << 10, align: 1 << 10, res: Status::OK, region: 0 },
+    AllocBySizeAllocTest { size: 3, align: 1 << 0, res: OK, region: 0 },
+    AllocBySizeAllocTest { size: 1 << 1, align: 1 << 1, res: OK, region: 0 },
+    AllocBySizeAllocTest { size: 1 << 2, align: 1 << 2, res: OK, region: 0 },
+    AllocBySizeAllocTest { size: 1 << 3, align: 1 << 3, res: OK, region: 0 },
+    AllocBySizeAllocTest { size: 1 << 4, align: 1 << 4, res: OK, region: 0 },
+    AllocBySizeAllocTest { size: 1 << 5, align: 1 << 5, res: OK, region: 0 },
+    AllocBySizeAllocTest { size: 1 << 6, align: 1 << 6, res: OK, region: 0 },
+    AllocBySizeAllocTest { size: 1 << 7, align: 1 << 7, res: OK, region: 0 },
+    AllocBySizeAllocTest { size: 1 << 8, align: 1 << 8, res: OK, region: 0 },
+    AllocBySizeAllocTest { size: 1 << 9, align: 1 << 9, res: OK, region: 0 },
+    AllocBySizeAllocTest { size: 1 << 10, align: 1 << 10, res: OK, region: 0 },
     // Region 0 should be exhausted at this point.  Asking for even one more
     // byte should give us an allocation from from region 1.
-    AllocBySizeAllocTest { size: 1, align: 1, res: Status::OK, region: 1 },
+    AllocBySizeAllocTest { size: 1, align: 1, res: OK, region: 1 },
     // All that should be left in the pool is a 4k region and a 4k - 1 byte
     // region.  Ask for two 4k regions with arbitrary alignment.  The first
     // request should succeed while the second request should fail.
-    AllocBySizeAllocTest { size: 4 << 10, align: 1, res: Status::OK, region: 1 },
-    AllocBySizeAllocTest { size: 4 << 10, align: 1, res: Status::NOT_FOUND, region: 0 },
+    AllocBySizeAllocTest { size: 4 << 10, align: 1, res: OK, region: 1 },
+    AllocBySizeAllocTest { size: 4 << 10, align: 1, res: NOT_FOUND, region: 0 },
     // Finally, soak up the last of the space with a 0xFFF byte allocation.
     // Afterwards, we should be unable to allocate even a single byte
-    AllocBySizeAllocTest { size: 0xFFF, align: 1, res: Status::OK, region: 1 },
-    AllocBySizeAllocTest { size: 1, align: 1, res: Status::NOT_FOUND, region: 0 },
+    AllocBySizeAllocTest { size: 0xFFF, align: 1, res: OK, region: 1 },
+    AllocBySizeAllocTest { size: 1, align: 1, res: NOT_FOUND, region: 0 },
 ];
 
 const ALLOC_SPECIFIC_REGION_BASE: u64 = 0x1000;
@@ -157,81 +145,54 @@ const ALLOC_SPECIFIC_REGIONS: &[RegionSpan] =
 
 struct AllocSpecificAllocTest {
     req: RegionSpan,
-    res: Status,
+    res: Result<(), Status>,
 }
 
 const ALLOC_SPECIFIC_TESTS: &[AllocSpecificAllocTest] = &[
     // Invalid parameter failures
     AllocSpecificAllocTest {
         req: RegionSpan { base: 0x0000000000000000, size: 0x00 },
-        res: Status::INVALID_ARGS,
+        res: INVALID_ARGS,
     },
     AllocSpecificAllocTest {
         req: RegionSpan { base: 0xffffffffffffffff, size: 0x01 },
-        res: Status::INVALID_ARGS,
+        res: INVALID_ARGS,
     },
     AllocSpecificAllocTest {
         req: RegionSpan { base: 0xfffffffffffffff0, size: 0x20 },
-        res: Status::INVALID_ARGS,
+        res: INVALID_ARGS,
     },
     // Bad requests
-    AllocSpecificAllocTest { req: RegionSpan { base: 0x0800, size: 0x1 }, res: Status::NOT_FOUND },
-    AllocSpecificAllocTest {
-        req: RegionSpan { base: 0x0fff, size: 0x100 },
-        res: Status::NOT_FOUND,
-    },
-    AllocSpecificAllocTest {
-        req: RegionSpan { base: 0x1f01, size: 0x100 },
-        res: Status::NOT_FOUND,
-    },
-    AllocSpecificAllocTest { req: RegionSpan { base: 0x2000, size: 0x1 }, res: Status::NOT_FOUND },
+    AllocSpecificAllocTest { req: RegionSpan { base: 0x0800, size: 0x1 }, res: NOT_FOUND },
+    AllocSpecificAllocTest { req: RegionSpan { base: 0x0fff, size: 0x100 }, res: NOT_FOUND },
+    AllocSpecificAllocTest { req: RegionSpan { base: 0x1f01, size: 0x100 }, res: NOT_FOUND },
+    AllocSpecificAllocTest { req: RegionSpan { base: 0x2000, size: 0x1 }, res: NOT_FOUND },
     // Good requests
-    AllocSpecificAllocTest { req: RegionSpan { base: 0x1000, size: 0x100 }, res: Status::OK },
-    AllocSpecificAllocTest { req: RegionSpan { base: 0x1f00, size: 0x100 }, res: Status::OK },
-    AllocSpecificAllocTest { req: RegionSpan { base: 0x1700, size: 0x200 }, res: Status::OK },
+    AllocSpecificAllocTest { req: RegionSpan { base: 0x1000, size: 0x100 }, res: OK },
+    AllocSpecificAllocTest { req: RegionSpan { base: 0x1f00, size: 0x100 }, res: OK },
+    AllocSpecificAllocTest { req: RegionSpan { base: 0x1700, size: 0x200 }, res: OK },
     // Requests which would have been good initially, but are bad now.
-    AllocSpecificAllocTest {
-        req: RegionSpan { base: 0x1000, size: 0x100 },
-        res: Status::NOT_FOUND,
-    },
-    AllocSpecificAllocTest { req: RegionSpan { base: 0x1080, size: 0x80 }, res: Status::NOT_FOUND },
-    AllocSpecificAllocTest { req: RegionSpan { base: 0x10ff, size: 0x1 }, res: Status::NOT_FOUND },
-    AllocSpecificAllocTest {
-        req: RegionSpan { base: 0x10ff, size: 0x100 },
-        res: Status::NOT_FOUND,
-    },
-    AllocSpecificAllocTest {
-        req: RegionSpan { base: 0x1f00, size: 0x100 },
-        res: Status::NOT_FOUND,
-    },
-    AllocSpecificAllocTest {
-        req: RegionSpan { base: 0x1e01, size: 0x100 },
-        res: Status::NOT_FOUND,
-    },
-    AllocSpecificAllocTest { req: RegionSpan { base: 0x1e81, size: 0x80 }, res: Status::NOT_FOUND },
-    AllocSpecificAllocTest { req: RegionSpan { base: 0x1eff, size: 0x2 }, res: Status::NOT_FOUND },
-    AllocSpecificAllocTest {
-        req: RegionSpan { base: 0x1800, size: 0x100 },
-        res: Status::NOT_FOUND,
-    },
-    AllocSpecificAllocTest {
-        req: RegionSpan { base: 0x1880, size: 0x100 },
-        res: Status::NOT_FOUND,
-    },
-    AllocSpecificAllocTest {
-        req: RegionSpan { base: 0x1780, size: 0x100 },
-        res: Status::NOT_FOUND,
-    },
+    AllocSpecificAllocTest { req: RegionSpan { base: 0x1000, size: 0x100 }, res: NOT_FOUND },
+    AllocSpecificAllocTest { req: RegionSpan { base: 0x1080, size: 0x80 }, res: NOT_FOUND },
+    AllocSpecificAllocTest { req: RegionSpan { base: 0x10ff, size: 0x1 }, res: NOT_FOUND },
+    AllocSpecificAllocTest { req: RegionSpan { base: 0x10ff, size: 0x100 }, res: NOT_FOUND },
+    AllocSpecificAllocTest { req: RegionSpan { base: 0x1f00, size: 0x100 }, res: NOT_FOUND },
+    AllocSpecificAllocTest { req: RegionSpan { base: 0x1e01, size: 0x100 }, res: NOT_FOUND },
+    AllocSpecificAllocTest { req: RegionSpan { base: 0x1e81, size: 0x80 }, res: NOT_FOUND },
+    AllocSpecificAllocTest { req: RegionSpan { base: 0x1eff, size: 0x2 }, res: NOT_FOUND },
+    AllocSpecificAllocTest { req: RegionSpan { base: 0x1800, size: 0x100 }, res: NOT_FOUND },
+    AllocSpecificAllocTest { req: RegionSpan { base: 0x1880, size: 0x100 }, res: NOT_FOUND },
+    AllocSpecificAllocTest { req: RegionSpan { base: 0x1780, size: 0x100 }, res: NOT_FOUND },
     // Soak up the remaining regions.  There should be 2 left.
-    AllocSpecificAllocTest { req: RegionSpan { base: 0x1100, size: 0x600 }, res: Status::OK },
-    AllocSpecificAllocTest { req: RegionSpan { base: 0x1900, size: 0x600 }, res: Status::OK },
+    AllocSpecificAllocTest { req: RegionSpan { base: 0x1100, size: 0x600 }, res: OK },
+    AllocSpecificAllocTest { req: RegionSpan { base: 0x1900, size: 0x600 }, res: OK },
 ];
 
 struct AllocAddOverlapTest {
     reg: RegionSpan,
     ovl: bool,
     cnt: usize,
-    res: Status,
+    res: Result<(), Status>,
 }
 
 const ADD_OVERLAP_TESTS: &[AllocAddOverlapTest] = &[
@@ -239,157 +200,157 @@ const ADD_OVERLAP_TESTS: &[AllocAddOverlapTest] = &[
         reg: RegionSpan { base: 0x10000, size: 0x1000 },
         ovl: false,
         cnt: 1,
-        res: Status::OK,
+        res: OK,
     },
     AllocAddOverlapTest {
         reg: RegionSpan { base: 0x10000, size: 0x1000 },
         ovl: false,
         cnt: 1,
-        res: Status::INVALID_ARGS,
+        res: INVALID_ARGS,
     },
     AllocAddOverlapTest {
         reg: RegionSpan { base: 0x10000, size: 0x1000 },
         ovl: true,
         cnt: 1,
-        res: Status::OK,
+        res: OK,
     },
     AllocAddOverlapTest {
         reg: RegionSpan { base: 0xF800, size: 0x800 },
         ovl: false,
         cnt: 1,
-        res: Status::OK,
+        res: OK,
     },
     AllocAddOverlapTest {
         reg: RegionSpan { base: 0xF800, size: 0x800 },
         ovl: true,
         cnt: 1,
-        res: Status::OK,
+        res: OK,
     },
     AllocAddOverlapTest {
         reg: RegionSpan { base: 0x11000, size: 0x800 },
         ovl: false,
         cnt: 1,
-        res: Status::OK,
+        res: OK,
     },
     AllocAddOverlapTest {
         reg: RegionSpan { base: 0x11000, size: 0x800 },
         ovl: true,
         cnt: 1,
-        res: Status::OK,
+        res: OK,
     },
     AllocAddOverlapTest {
         reg: RegionSpan { base: 0xF000, size: 0x801 },
         ovl: false,
         cnt: 1,
-        res: Status::INVALID_ARGS,
+        res: INVALID_ARGS,
     },
     AllocAddOverlapTest {
         reg: RegionSpan { base: 0xF000, size: 0x801 },
         ovl: true,
         cnt: 1,
-        res: Status::OK,
+        res: OK,
     },
     AllocAddOverlapTest {
         reg: RegionSpan { base: 0x117FF, size: 0x801 },
         ovl: false,
         cnt: 1,
-        res: Status::INVALID_ARGS,
+        res: INVALID_ARGS,
     },
     AllocAddOverlapTest {
         reg: RegionSpan { base: 0x117FF, size: 0x801 },
         ovl: true,
         cnt: 1,
-        res: Status::OK,
+        res: OK,
     },
     AllocAddOverlapTest {
         reg: RegionSpan { base: 0xE000, size: 0x5000 },
         ovl: false,
         cnt: 1,
-        res: Status::INVALID_ARGS,
+        res: INVALID_ARGS,
     },
     AllocAddOverlapTest {
         reg: RegionSpan { base: 0xE000, size: 0x5000 },
         ovl: true,
         cnt: 1,
-        res: Status::OK,
+        res: OK,
     },
     AllocAddOverlapTest {
         reg: RegionSpan { base: 0x14000, size: 0x1000 },
         ovl: false,
         cnt: 2,
-        res: Status::OK,
+        res: OK,
     },
     AllocAddOverlapTest {
         reg: RegionSpan { base: 0x16000, size: 0x1000 },
         ovl: false,
         cnt: 3,
-        res: Status::OK,
+        res: OK,
     },
     AllocAddOverlapTest {
         reg: RegionSpan { base: 0x18000, size: 0x1000 },
         ovl: false,
         cnt: 4,
-        res: Status::OK,
+        res: OK,
     },
     AllocAddOverlapTest {
         reg: RegionSpan { base: 0x1A000, size: 0x1000 },
         ovl: false,
         cnt: 5,
-        res: Status::OK,
+        res: OK,
     },
     AllocAddOverlapTest {
         reg: RegionSpan { base: 0x1C000, size: 0x1000 },
         ovl: false,
         cnt: 6,
-        res: Status::OK,
+        res: OK,
     },
     AllocAddOverlapTest {
         reg: RegionSpan { base: 0x12FFF, size: 0x1002 },
         ovl: false,
         cnt: 6,
-        res: Status::INVALID_ARGS,
+        res: INVALID_ARGS,
     },
     AllocAddOverlapTest {
         reg: RegionSpan { base: 0x12FFF, size: 0x1002 },
         ovl: true,
         cnt: 5,
-        res: Status::OK,
+        res: OK,
     },
     AllocAddOverlapTest {
         reg: RegionSpan { base: 0x15800, size: 0x3000 },
         ovl: false,
         cnt: 5,
-        res: Status::INVALID_ARGS,
+        res: INVALID_ARGS,
     },
     AllocAddOverlapTest {
         reg: RegionSpan { base: 0x15800, size: 0x3000 },
         ovl: true,
         cnt: 4,
-        res: Status::OK,
+        res: OK,
     },
     AllocAddOverlapTest {
         reg: RegionSpan { base: 0x18800, size: 0x3000 },
         ovl: false,
         cnt: 4,
-        res: Status::INVALID_ARGS,
+        res: INVALID_ARGS,
     },
     AllocAddOverlapTest {
         reg: RegionSpan { base: 0x18800, size: 0x3000 },
         ovl: true,
         cnt: 3,
-        res: Status::OK,
+        res: OK,
     },
     AllocAddOverlapTest {
         reg: RegionSpan { base: 0xD000, size: 0x11000 },
         ovl: false,
         cnt: 3,
-        res: Status::INVALID_ARGS,
+        res: INVALID_ARGS,
     },
     AllocAddOverlapTest {
         reg: RegionSpan { base: 0xD000, size: 0x11000 },
         ovl: true,
         cnt: 1,
-        res: Status::OK,
+        res: OK,
     },
 ];
 
@@ -1123,14 +1084,14 @@ fn alloc_by_size_helper(flavor: TestFlavor) {
     for (i, test) in ALLOC_BY_SIZE_TESTS.iter().enumerate() {
         let res = alloc.get_region(test.size, test.align);
 
-        if test.res == Status::OK {
+        if test.res == OK {
             assert!(res.is_ok());
             let r = res.unwrap();
             assert!(region_contains_region(&ALLOC_BY_SIZE_REGIONS[test.region], &r));
             assert_eq!(r.base() & (test.align - 1), 0);
             regions[i] = Some(r);
         } else {
-            assert_eq!(res.err(), Some(test.res));
+            assert_eq!(res.err(), test.res.err());
             assert!(regions[i].is_none());
         }
     }
@@ -1163,14 +1124,14 @@ fn alloc_specific_helper(flavor: TestFlavor) {
     for (i, test) in ALLOC_SPECIFIC_TESTS.iter().enumerate() {
         let res = alloc.get_region_specific(test.req);
 
-        if test.res == Status::OK {
+        if test.res == OK {
             assert!(res.is_ok());
             let r = res.unwrap();
             assert_eq!(r.base(), test.req.base);
             assert_eq!(r.size(), test.req.size);
             regions[i] = Some(r);
         } else {
-            assert_eq!(res.err(), Some(test.res));
+            assert_eq!(res.err(), test.res.err());
             assert!(regions[i].is_none());
         }
     }
@@ -1196,11 +1157,7 @@ fn add_overlap_helper(flavor: TestFlavor) {
     for test in ADD_OVERLAP_TESTS {
         let res =
             alloc.add_region(test.reg, if test.ovl { AllowOverlap::Yes } else { AllowOverlap::No });
-        if test.res == Status::OK {
-            assert_eq!(res, Ok(()));
-        } else {
-            assert_eq!(res, Err(test.res));
-        }
+        assert_eq!(res, test.res);
         assert_eq!(alloc.available_region_count(), test.cnt);
     }
 }

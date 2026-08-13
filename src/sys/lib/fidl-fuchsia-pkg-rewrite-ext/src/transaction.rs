@@ -50,10 +50,11 @@ impl EditTransaction {
     /// Adds a rewrite rule with highest priority. If `rule` already exists, this
     /// API will prioritize it over other rules.
     pub async fn add(&self, rule: Rule) -> Result<(), EditTransactionError> {
-        self.transaction
-            .add(&rule.into())
-            .await?
-            .map_err(|err| EditTransactionError::AddError(zx::Status::from_raw(err)))
+        self.transaction.add(&rule.into()).await?.map_err(|err| {
+            EditTransactionError::AddError(
+                zx::Status::try_from_raw(err).unwrap_or(zx::Status::INTERNAL),
+            )
+        })
     }
 }
 
@@ -83,7 +84,9 @@ where
             transaction.transaction.commit().await.map_err(EditTransactionError::from)?;
 
         // Retry edit transaction on concurrent edit
-        return match response.map_err(zx::Status::from_raw) {
+        return match response
+            .map_err(|err| zx::Status::try_from_raw(err).unwrap_or(zx::Status::INTERNAL))
+        {
             Ok(()) => Ok(()),
             Err(zx::Status::UNAVAILABLE) => {
                 continue;
@@ -134,7 +137,7 @@ mod tests {
 
     impl Engine {
         fn new() -> Self {
-            Self::with_fail_attempts(0, zx::Status::OK)
+            Self::with_fail_attempts(0, zx::Status::INTERNAL)
         }
 
         fn with_fail_attempts(mut fail_attempts: usize, fail_status: zx::Status) -> Self {

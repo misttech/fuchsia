@@ -5,11 +5,10 @@
 use crate::helpers::*;
 use anyhow::{Error, anyhow};
 use fidl::endpoints::create_proxy;
+use fidl_fuchsia_component_runner as frunner;
+use fidl_fuchsia_data as fdata;
+use fidl_fuchsia_test as ftest;
 use std::collections::HashMap;
-use {
-    fidl_fuchsia_component_runner as frunner, fidl_fuchsia_data as fdata,
-    fidl_fuchsia_test as ftest,
-};
 
 pub async fn get_cases_list_for_vts_binary(
     mut start_info: frunner::ComponentStartInfo,
@@ -134,10 +133,10 @@ async fn read_vts_binary_test_result(
     const VTS_RESULT_TCONF: i32 = COMPONENT_EXIT_CODE_BASE + 32;
 
     match read_component_epitaph(event_stream).await {
-        zx::Status::OK => {
+        zx::sys::ZX_OK => {
             ftest::Result_ { status: Some(ftest::Status::Passed), ..Default::default() }
         }
-        status if status.into_raw() == VTS_RESULT_TCONF && allow_skipped => {
+        VTS_RESULT_TCONF if allow_skipped => {
             ftest::Result_ { status: Some(ftest::Status::Skipped), ..Default::default() }
         }
         _ => ftest::Result_ { status: Some(ftest::Status::Failed), ..Default::default() },

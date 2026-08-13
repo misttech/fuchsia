@@ -46,7 +46,7 @@ pub fn convert_node_proxy<T: Proxy>(proxy: fio::NodeProxy) -> T {
 /// other than the `get_token` call directly.
 pub async fn get_token(dir: &fio::DirectoryProxy) -> fidl::NullableHandle {
     let (status, token) = dir.get_token().await.expect("get_token failed");
-    assert_eq!(zx::Status::from_raw(status), zx::Status::OK);
+    assert_eq!(status, zx::sys::ZX_OK);
     token.expect("handle missing")
 }
 

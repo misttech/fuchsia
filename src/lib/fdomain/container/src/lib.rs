@@ -302,7 +302,7 @@ impl HandlesToWrite {
                                 fidl::HandleOp::Move(handle.into()),
                                 fidl::ObjectType::NONE,
                                 rights,
-                                fidl::Status::OK,
+                                Ok(()),
                             )
                         })
                         .collect(),

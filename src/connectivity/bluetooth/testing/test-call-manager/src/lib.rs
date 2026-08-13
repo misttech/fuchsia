@@ -36,7 +36,7 @@ struct Dialer {
     /// A map of Memory locations to Numbers.
     address_book: HashMap<Memory, Number>,
     /// The result that should be returned from a request to dial a Number.
-    dial_result: HashMap<Number, zx::Status>,
+    dial_result: HashMap<Number, Result<(), zx::Status>>,
 }
 
 impl Dialer {
@@ -58,13 +58,14 @@ impl Dialer {
         }?
         .to_owned();
 
-        let result = self.dial_result.get(&number).cloned().unwrap_or(zx::Status::NOT_FOUND);
+        let result = self.dial_result.get(&number).cloned().unwrap_or(Err(zx::Status::NOT_FOUND));
         info!("Dial action result: {:?} - {:?}", action, result);
-        if result == zx::Status::OK {
-            self.last_dialed = Some(number.clone());
-            Ok(number)
-        } else {
-            Err(result)
+        match result {
+            Ok(()) => {
+                self.last_dialed = Some(number.clone());
+                Ok(number)
+            }
+            Err(e) => Err(e),
         }
     }
 }
@@ -1016,7 +1017,7 @@ impl TestCallManager {
     /// Arguments:
     ///     `number`: Number that maps to a simulated result.
     ///     `status`: The simulated result value for `number`.
-    pub async fn set_dial_result(&self, number: Number, status: zx::Status) {
+    pub async fn set_dial_result(&self, number: Number, status: Result<(), zx::Status>) {
         let _ = self.inner.lock().await.manager.dialer.dial_result.insert(number, status);
     }
 
@@ -1054,7 +1055,7 @@ mod tests {
         let manager = TestCallManager::new();
 
         // set up the dial result so that an outgoing call request will be a success.
-        manager.set_dial_result("123".to_string(), zx::Status::OK).await;
+        manager.set_dial_result("123".to_string(), Ok(())).await;
 
         let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<PeerHandlerMarker>();
 

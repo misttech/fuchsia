@@ -471,9 +471,9 @@ pub async fn test_pave_fails() -> Result<(), Error> {
         if let PaverEvent::WriteAsset { payload, .. } = p
             && payload.as_slice() == b"zbi-contents"
         {
-            return zx::Status::IO;
+            return Err(zx::Status::IO);
         }
-        zx::Status::OK
+        Ok(())
     };
 
     let env = TestEnvBuilder::new()

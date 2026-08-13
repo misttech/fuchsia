@@ -1287,7 +1287,7 @@ mod tests {
     fn send_destroy_iface_response(
         exec: &mut TestExecutor,
         server: &mut StreamFuture<wlan_service::DeviceMonitorRequestStream>,
-        status: zx::Status,
+        status: zx::sys::zx_status_t,
     ) {
         let responder = match poll_device_monitor_req(exec, server) {
             Poll::Ready(DeviceMonitorRequest::DestroyIface { responder, .. }) => responder,
@@ -1296,7 +1296,7 @@ mod tests {
         };
 
         // now send the response back
-        let _result = responder.send(status.into_raw());
+        let _result = responder.send(status);
     }
 
     #[test]
@@ -1309,7 +1309,7 @@ mod tests {
         let mut fut = pin!(fut);
         assert!(exec.run_until_stalled(&mut fut).is_pending());
 
-        send_destroy_iface_response(&mut exec, &mut next_device_service_req, zx::Status::OK);
+        send_destroy_iface_response(&mut exec, &mut next_device_service_req, zx::sys::ZX_OK);
 
         match exec.run_until_stalled(&mut fut) {
             Poll::Ready(Ok(_)) => (),

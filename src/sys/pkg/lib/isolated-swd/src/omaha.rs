@@ -267,9 +267,9 @@ mod tests {
         let data = "hello world!".as_bytes();
         let hook = |p: &PaverEvent| {
             if let PaverEvent::QueryActiveConfiguration = p {
-                return zx::Status::NOT_SUPPORTED;
+                return Err(zx::Status::NOT_SUPPORTED);
             }
-            zx::Status::OK
+            Ok(())
         };
         let test_package = PackageBuilder::new("test_package")
             .add_resource_at("bin/hello", "this is a test".as_bytes())
@@ -318,7 +318,7 @@ mod tests {
 
     async fn build_updater_with_broken_paver() -> UpdaterForTest {
         // Simulate the paver being completely broken, which means that installation should fail.
-        let hook = |_p: &PaverEvent| zx::Status::INTERNAL;
+        let hook = |_p: &PaverEvent| Err(zx::Status::INTERNAL);
 
         let updater = UpdaterBuilder::new()
             .await

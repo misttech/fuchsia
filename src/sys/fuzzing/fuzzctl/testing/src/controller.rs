@@ -55,7 +55,11 @@ impl FakeController {
     }
 
     /// Simulates a call to `fuchsia.fuzzer.Manager/GetOutput` without a `fuzz-manager`.
-    pub fn set_output(&self, output: fuzz::TestOutput, socket: flex_client::Socket) -> zx::Status {
+    pub fn set_output(
+        &self,
+        output: fuzz::TestOutput,
+        socket: flex_client::Socket,
+    ) -> Result<(), zx::Status> {
         let socket = flex_client::socket_to_async(socket);
         match output {
             fuzz::TestOutput::Stdout => {
@@ -72,7 +76,7 @@ impl FakeController {
             }
             _ => todo!("not supported"),
         }
-        zx::Status::OK
+        Ok(())
     }
 
     /// Returns the type of corpus received via FIDL requests.

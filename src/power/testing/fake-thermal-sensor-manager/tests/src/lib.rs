@@ -78,7 +78,7 @@ async fn connect_returns_fake_data() {
         .unwrap();
 
     let (status, temp_c) = sensor.get_temperature_celsius().await.unwrap();
-    assert_eq!(zx::Status::OK.into_raw(), status);
+    assert_eq!(zx::sys::ZX_OK, status);
     assert_eq!(25.0, temp_c);
 
     let sensor_name = sensor.get_sensor_name().await.unwrap();
@@ -109,12 +109,12 @@ async fn setting_and_clearing_temperature_override_works() {
         .unwrap();
 
     let (status, temp_c) = sensor.get_temperature_celsius().await.unwrap();
-    assert_eq!(zx::Status::OK.into_raw(), status);
+    assert_eq!(zx::sys::ZX_OK, status);
     assert_eq!(override_temperature, temp_c);
 
     sensor_manager.clear_temperature_override(SENSOR_NAME).await.unwrap().unwrap();
 
     let (status, temp_c) = sensor.get_temperature_celsius().await.unwrap();
-    assert_eq!(zx::Status::OK.into_raw(), status);
+    assert_eq!(zx::sys::ZX_OK, status);
     assert_eq!(25.0, temp_c);
 }

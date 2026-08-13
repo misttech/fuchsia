@@ -19,9 +19,8 @@ static INIT_DEV_URANDOM_COMPAT: Once = Once::new();
 
 fn init_dev_urandom_compat_once() {
     INIT_DEV_URANDOM_COMPAT.call_once(|| {
-        let register_status = zx::Status::from_raw(unsafe { register_dev_urandom_compat() });
-        if register_status != zx::Status::OK {
-            panic!("Could not register /dev/urandom compatibility device {register_status}");
+        if let Err(status) = zx::Status::ok(unsafe { register_dev_urandom_compat() }) {
+            panic!("Could not register /dev/urandom compatibility device {status}");
         }
     });
 }
@@ -39,9 +38,9 @@ async fn main() -> Result<(), Error> {
             std::thread::sleep(std::time::Duration::from_secs(2));
             // Make a virtio stream socket.
             let mut socket_fd = 0;
-            let status =
-                zx::Status::from_raw(unsafe { create_virtio_stream_socket(&mut socket_fd) });
-            if status != zx::Status::OK {
+            if let Err(status) =
+                zx::Status::ok(unsafe { create_virtio_stream_socket(&mut socket_fd) })
+            {
                 log::error!("Could not create virtio stream socket: {status:?}");
                 return None;
             }

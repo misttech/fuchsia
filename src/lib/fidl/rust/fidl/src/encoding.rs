@@ -9,9 +9,7 @@
 pub use static_assertions::const_assert_eq;
 
 use crate::endpoints::ProtocolMarker;
-use crate::handle::{
-    HandleDisposition, HandleInfo, HandleOp, NullableHandle, ObjectType, Rights, Status,
-};
+use crate::handle::{HandleDisposition, HandleInfo, HandleOp, NullableHandle, ObjectType, Rights};
 use crate::time::{Instant, Ticks, Timeline};
 use crate::{Error, MethodType, Result};
 use bitflags::bitflags;
@@ -429,7 +427,7 @@ impl ProxyChannelFor<DefaultFuchsiaResourceDialect> for crate::AsyncChannel {
 
 impl HandleDispositionFor<DefaultFuchsiaResourceDialect> for HandleDisposition<'static> {
     fn from_handle(handle: NullableHandle, object_type: ObjectType, rights: Rights) -> Self {
-        HandleDisposition::new(HandleOp::Move(handle), object_type, rights, Status::OK)
+        HandleDisposition::new(HandleOp::Move(handle), object_type, rights, Ok(()))
     }
 }
 

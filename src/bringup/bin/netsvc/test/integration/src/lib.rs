@@ -128,13 +128,13 @@ where
                         futures::future::ready(
                             match req.expect("request stream error") {
                                 fidl_fuchsia_sysinfo::SysInfoRequest::GetBoardName { responder } => {
-                                    responder.send(zx::Status::OK.into_raw(), Some(MOCK_BOARD_NAME))
+                                    responder.send(zx::sys::ZX_OK, Some(MOCK_BOARD_NAME))
                                 }
                                 fidl_fuchsia_sysinfo::SysInfoRequest::GetBoardRevision { responder } => {
-                                    responder.send(zx::Status::OK.into_raw(), MOCK_BOARD_REVISION)
+                                    responder.send(zx::sys::ZX_OK, MOCK_BOARD_REVISION)
                                 }
                                 fidl_fuchsia_sysinfo::SysInfoRequest::GetBootloaderVendor { responder } => {
-                                    responder.send(zx::Status::OK.into_raw(), Some(MOCK_BOOTLOADER_VENDOR))
+                                    responder.send(zx::sys::ZX_OK, Some(MOCK_BOOTLOADER_VENDOR))
                                 }
                                 r @ fidl_fuchsia_sysinfo::SysInfoRequest::GetInterruptControllerInfo {
                                     ..

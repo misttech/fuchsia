@@ -456,7 +456,7 @@ pub enum ControlMessage {
 pub struct ControllerActionResponse {
     pub close_channel: bool,
     pub delay: Option<zx::MonotonicDuration>,
-    pub termination_status: Option<zx::Status>,
+    pub termination_status: Option<Result<(), zx::Status>>,
     pub exit_code: Option<i64>,
 }
 
@@ -487,13 +487,13 @@ impl MockController {
             ControllerActionResponse {
                 close_channel: true,
                 delay: None,
-                termination_status: Some(zx::Status::OK),
+                termination_status: Some(Ok(())),
                 exit_code: Some(MOCK_EXIT_CODE),
             },
             ControllerActionResponse {
                 close_channel: true,
                 delay: None,
-                termination_status: Some(zx::Status::OK),
+                termination_status: Some(Ok(())),
                 exit_code: Some(MOCK_EXIT_CODE),
             },
         )
@@ -523,7 +523,10 @@ impl MockController {
 
     fn on_stop_info_for_stop(&self) -> fcrunner::ComponentStopInfo {
         fcrunner::ComponentStopInfo {
-            termination_status: self.stop_resp.termination_status.map(|s| s.into_raw()),
+            termination_status: self
+                .stop_resp
+                .termination_status
+                .map(|s| zx::Status::result_into_raw(s)),
             exit_code: self.stop_resp.exit_code,
             ..Default::default()
         }
@@ -531,7 +534,10 @@ impl MockController {
 
     fn on_stop_info_for_kill(&self) -> fcrunner::ComponentStopInfo {
         fcrunner::ComponentStopInfo {
-            termination_status: self.kill_resp.termination_status.map(|s| s.into_raw()),
+            termination_status: self
+                .kill_resp
+                .termination_status
+                .map(|s| zx::Status::result_into_raw(s)),
             exit_code: self.kill_resp.exit_code,
             ..Default::default()
         }

@@ -97,9 +97,8 @@ impl DebianGuest {
             .await
             .context("FIDL call to InteractiveGuest::PutFile has failed.")?;
 
-        let push_result = zx::Status::from_raw(response);
-        if push_result != zx::Status::OK {
-            bail!("PutFile operation failed with status: {:?}", push_result);
+        if let Err(status) = zx::Status::ok(response) {
+            bail!("PutFile operation failed with status: {:?}", status);
         }
 
         log::info!(tag = self.instance_name.as_str();
@@ -128,9 +127,8 @@ impl DebianGuest {
             .await
             .context("FIDL call to GetFile failed")?;
 
-        let result_status = zx::Status::from_raw(response);
-        if result_status != zx::Status::OK {
-            bail!("GetFile operation failed with status: {:?}", result_status);
+        if let Err(status) = zx::Status::ok(response) {
+            bail!("GetFile operation failed with status: {:?}", status);
         }
         Ok(())
     }
@@ -166,21 +164,17 @@ impl DebianGuest {
         let execution_future = async move {
             while let Some(event) = event_stream.try_next().await? {
                 match event {
-                    CommandListenerEvent::OnStarted { status } => {
-                        let start_status = zx::Status::from_raw(status);
-                        match start_status {
-                            zx::Status::OK => {
-                                log::info!(tag = self.instance_name.as_str(); "Command '{}'\n...started with status: {:?}", command, start_status)
-                            }
-                            _ => bail!(
-                                "Command '{}'\n...failed to start: {:?}",
-                                command,
-                                start_status
-                            ),
+                    CommandListenerEvent::OnStarted { status } => match zx::Status::ok(status) {
+                        Ok(()) => {
+                            log::info!(tag = self.instance_name.as_str(); "Command '{}'\n...started successfully", command)
                         }
-                    }
+                        Err(status) => {
+                            bail!("Command '{}'\n...failed to start: {:?}", command, status)
+                        }
+                    },
                     CommandListenerEvent::OnTerminated { status, return_code } => {
-                        let term_status = zx::Status::from_raw(status);
+                        let term_status =
+                            zx::Status::try_from_raw(status).unwrap_or(zx::Status::INTERNAL);
                         log::info!(tag = self.instance_name.as_str();
                             "Command '{}'\n...terminated with status {:?}, return code {}",
                             command,

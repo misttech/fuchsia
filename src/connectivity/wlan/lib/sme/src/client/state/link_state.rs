@@ -2,23 +2,24 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use super::{now, Protection, StateChangeContext, StateChangeContextExt};
+use super::{Protection, StateChangeContext, StateChangeContextExt, now};
+use crate::client::EstablishRsnaFailureReason;
 use crate::client::event::{self, Event, RsnaCompletionTimeout, RsnaResponseTimeout};
 use crate::client::internal::Context;
 use crate::client::rsn::Rsna;
-use crate::client::EstablishRsnaFailureReason;
 use crate::{MlmeRequest, MlmeSink};
+use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
+use fidl_fuchsia_wlan_mlme as fidl_mlme;
 use fuchsia_inspect_contrib::inspect_log;
 use fuchsia_inspect_contrib::log::InspectBytes;
 use ieee80211::{Bssid, MacAddr, MacAddrBytes, WILDCARD_BSSID};
 use log::{error, warn};
 use wlan_common::bss::BssDescription;
 use wlan_common::timer::EventHandle;
-use wlan_rsn::key::exchange::Key;
 use wlan_rsn::key::Tk;
+use wlan_rsn::key::exchange::Key;
 use wlan_rsn::rsna::{self, SecAssocStatus, SecAssocUpdate};
 use wlan_statemachine::*;
-use {fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211, fidl_fuchsia_wlan_mlme as fidl_mlme};
 
 #[derive(Debug)]
 pub struct Init;
@@ -318,7 +319,7 @@ impl LinkState {
         context: &mut Context,
     ) -> Result<Self, EstablishRsnaFailureReason> {
         for key_result in &set_keys_conf.results {
-            if key_result.status != zx::Status::OK.into_raw() {
+            if zx::Status::ok(key_result.status).is_err() {
                 state_change_msg.set_msg("Failed to set key in driver".to_string());
                 return Err(EstablishRsnaFailureReason::InternalError);
             }

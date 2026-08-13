@@ -2979,7 +2979,7 @@ mod tests {
             MlmeEvent::SetKeysConf {
                 conf: fidl_mlme::SetKeysConfirm {
                     results: vec![
-                        fidl_mlme::SetKeyResult { key_id: 0, status: zx::Status::OK.into_raw() },
+                        fidl_mlme::SetKeyResult { key_id: 0, status: zx::sys::ZX_OK },
                         fidl_mlme::SetKeyResult {
                             key_id: 2,
                             status: zx::Status::INTERNAL.into_raw(),
@@ -5733,10 +5733,7 @@ mod tests {
                 conf: fidl_mlme::SetKeysConfirm {
                     results: key_ids
                         .into_iter()
-                        .map(|key_id| fidl_mlme::SetKeyResult {
-                            key_id,
-                            status: zx::Status::OK.into_raw(),
-                        })
+                        .map(|key_id| fidl_mlme::SetKeyResult { key_id, status: zx::sys::ZX_OK })
                         .collect(),
                 },
             },

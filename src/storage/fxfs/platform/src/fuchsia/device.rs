@@ -184,8 +184,7 @@ impl BlockServer {
 
     async fn process_fifo_request(&self, request: &BlockFifoRequest) -> zx::sys::zx_status_t {
         fn into_raw_status(result: Result<(), Error>) -> zx::sys::zx_status_t {
-            let status: zx::Status = result.map_err(|e| map_to_status(e)).into();
-            status.into_raw()
+            zx::Status::result_into_raw(result.map_err(map_to_status))
         }
 
         match block_client::BlockOpcode::from_primitive(request.command.opcode) {

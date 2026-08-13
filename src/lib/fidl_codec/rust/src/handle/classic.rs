@@ -66,7 +66,7 @@ impl<'a> Into<fidl::HandleDisposition<'a>> for super::HandleDisposition {
             fidl::HandleOp::Move(self.handle.into()),
             self.object_type.as_platform(),
             self.rights.as_platform(),
-            fidl::Status::OK,
+            Ok(()),
         )
     }
 }

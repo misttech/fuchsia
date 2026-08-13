@@ -162,14 +162,14 @@ pub struct CommandQueueResources {
 
 pub trait TaskStatusReceiver: Send + Sync + 'static {
     /// A callback to invoke upon task completion.
-    fn complete(&self, request_id: RequestId, status: zx::Status);
+    fn complete(&self, request_id: RequestId, status: Result<(), zx::Status>);
 }
 
 /// Helper to complete a request if the receiver is still running.
 fn complete_request(
     receiver: Arc<dyn TaskStatusReceiver>,
     request_id: RequestId,
-    status: zx::Status,
+    status: Result<(), zx::Status>,
 ) {
     debug!("Complete {request_id:?}: {status:?}");
     receiver.complete(request_id, status);
@@ -192,7 +192,11 @@ impl PendingTask {
     ///
     /// This MUST be called when the hardware will no longer access the memory pointed to by
     /// `transfer` (either before it was submitted, or after it completes).
-    unsafe fn complete(self, status_receiver: Arc<dyn TaskStatusReceiver>, status: zx::Status) {
+    unsafe fn complete(
+        self,
+        status_receiver: Arc<dyn TaskStatusReceiver>,
+        status: Result<(), zx::Status>,
+    ) {
         // Order is important.  We have to:
         // 1. Invalidate CPU caches (so the transferred data is visible to the client),
         // 2. Call [`Transfer::unpin`], which unpins the pages, then
@@ -201,7 +205,7 @@ impl PendingTask {
         fuchsia_trace::duration!("sdmmc", "cqhci::complete_transfer",
             "slot" => transfer.tdl_slot() as u64,
             "op" => transfer.opcode(),
-            "status" => status.into_raw());
+            "status" => zx::Status::result_into_raw(status));
         if let Some(trace_flow_id) = trace_flow_id {
             fuchsia_trace::flow_step!(
                 "storage",
@@ -243,7 +247,7 @@ struct CommandQueueSlots {
     /// Number of InFlight tasks.
     num_tasks: usize,
     /// Status of the completed DCMD task, if any.
-    dcmd_status: Option<zx::Status>,
+    dcmd_status: Option<Result<(), zx::Status>>,
 }
 
 impl CommandQueueSlots {
@@ -604,7 +608,7 @@ impl Inner {
         this: &mut ConditionGuard<'_, Self>,
         partitions: &PartitionMap,
         mut completed_mask: u32,
-        status: zx::Status,
+        status: Result<(), zx::Status>,
         output: &mut CompletedTasks,
     ) {
         let mut dcmd_completed = false;
@@ -654,7 +658,7 @@ impl Inner {
 /// memory.
 #[derive(Default)]
 struct CompletedTasks {
-    tasks: [Option<(PendingTask, Arc<dyn TaskStatusReceiver>, zx::Status)>;
+    tasks: [Option<(PendingTask, Arc<dyn TaskStatusReceiver>, Result<(), zx::Status>)>;
         CQHCI_TASK_DESCRIPTOR_LIST_NUM_SLOTS - 1],
     count: usize,
 }
@@ -664,7 +668,7 @@ impl CompletedTasks {
         &mut self,
         task: PendingTask,
         receiver: Arc<dyn TaskStatusReceiver>,
-        status: zx::Status,
+        status: Result<(), zx::Status>,
     ) {
         self.tasks[self.count] = Some((task, receiver, status));
         self.count += 1;
@@ -751,7 +755,7 @@ impl Drop for SwitchAndSubmitTask {
     fn drop(&mut self) {
         if let Some(task) = self.task.take() {
             // SAFETY: We never submitted the transfer.
-            unsafe { task.complete(self.receiver.clone(), zx::Status::CANCELED) };
+            unsafe { task.complete(self.receiver.clone(), Err(zx::Status::CANCELED)) };
         }
     }
 }
@@ -1065,7 +1069,7 @@ impl CommandQueueExcl {
                 &mut inner,
                 &self.partitions,
                 u32::MAX,
-                zx::Status::CANCELED,
+                Err(zx::Status::CANCELED),
                 &mut completed_tasks,
             );
             for waker in inner.drain_wakers() {
@@ -1157,7 +1161,7 @@ impl CommandQueueExcl {
                 &mut inner,
                 &self.partitions,
                 u32::MAX,
-                zx::Status::IO,
+                Err(zx::Status::IO),
                 &mut completed_tasks,
             );
             for waker in inner.drain_wakers() {
@@ -1634,7 +1638,7 @@ impl CommandQueue {
             TransferOptions { queue_barrier: false, inline_crypto: options.inline_crypto },
             trace_flow_id,
         ) {
-            complete_request(self.get_request_completer(partition), request_id, status);
+            complete_request(self.get_request_completer(partition), request_id, Err(status));
         }
     }
 
@@ -1661,7 +1665,7 @@ impl CommandQueue {
             TransferOptions::from(options),
             trace_flow_id,
         ) {
-            complete_request(self.get_request_completer(partition), request_id, status);
+            complete_request(self.get_request_completer(partition), request_id, Err(status));
         }
     }
 
@@ -1677,7 +1681,7 @@ impl CommandQueue {
         }
         debug!("submit_flush");
         if !self.ext_csd.cache_enabled() {
-            complete_request(self.get_request_completer(partition), request_id, zx::Status::OK);
+            complete_request(self.get_request_completer(partition), request_id, Ok(()));
             return;
         }
         let (_, receiver) = self.partitions.get(&partition).unwrap();
@@ -1690,7 +1694,7 @@ impl CommandQueue {
                     let result = cq.do_switch(EXT_CSD_FLUSH_CACHE, EXT_CSD_FLUSH_CACHE_FLUSH).await;
                     fuchsia_trace::duration!(
                         "sdmmc", "cqhci::complete_flush", "status"
-                            => zx::Status::from(result).into_raw()
+                            => zx::Status::result_into_raw(result)
                     );
                     if let Some(trace_flow_id) = trace_flow_id {
                         fuchsia_trace::flow_step!(
@@ -1701,7 +1705,7 @@ impl CommandQueue {
                     }
                     result
                 },
-                move |result| receiver.complete(request_id, zx::Status::from(result)),
+                move |result| receiver.complete(request_id, result),
             ),
         );
     }
@@ -1720,11 +1724,11 @@ impl CommandQueue {
         }
         let receiver = self.get_request_completer(partition);
         let Ok(block_offset) = u32::try_from(block_offset) else {
-            complete_request(receiver.clone(), request_id, zx::Status::INVALID_ARGS);
+            complete_request(receiver.clone(), request_id, Err(zx::Status::INVALID_ARGS));
             return;
         };
         if let Err(status) = self.ensure_request_is_in_range(partition, block_offset, block_count) {
-            complete_request(receiver.clone(), request_id, status);
+            complete_request(receiver.clone(), request_id, Err(status));
             return;
         }
         debug!("submit_trim");
@@ -1737,7 +1741,7 @@ impl CommandQueue {
                     let result = cq.trim(partition, block_offset, block_count).await;
                     fuchsia_trace::duration!(
                         "sdmmc", "cqhci::complete_trim", "status"
-                            => zx::Status::from(result).into_raw()
+                            => zx::Status::result_into_raw(result)
                     );
                     if let Some(trace_flow_id) = trace_flow_id {
                         fuchsia_trace::flow_step!(
@@ -1748,7 +1752,7 @@ impl CommandQueue {
                     }
                     result
                 },
-                move |result| receiver.complete(request_id, zx::Status::from(result)),
+                move |result| receiver.complete(request_id, result),
             ),
         );
     }
@@ -1910,7 +1914,7 @@ impl CommandQueue {
                         &mut inner,
                         &self.partitions,
                         finished,
-                        zx::Status::OK,
+                        Ok(()),
                         &mut completed_tasks,
                     );
                 };
@@ -1940,7 +1944,7 @@ impl CommandQueue {
                         &mut inner,
                         &self.partitions,
                         mask,
-                        zx::Status::IO,
+                        Err(zx::Status::IO),
                         &mut completed_tasks,
                     );
 

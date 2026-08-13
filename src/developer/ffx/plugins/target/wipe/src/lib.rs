@@ -97,7 +97,7 @@ mod tests {
         let client = fdomain_local::local_client_empty();
         let factory_reset = fake_proxy(client, |req| match req {
             FactoryResetRequest::Reset { responder } => {
-                responder.send(Status::OK.into_raw()).unwrap();
+                responder.send(zx_status::sys::ZX_OK).unwrap();
             }
         });
         wipe_target(factory_reset).await

@@ -317,7 +317,9 @@ mod tests {
     /// # Returns
     /// A `ComponentRunnerProxy` that serves each run request by closing the component with the
     /// provided epitaph.
-    fn spawn_runner(component_controller_epitaph: zx::Status) -> frunner::ComponentRunnerProxy {
+    fn spawn_runner(
+        component_controller_epitaph: Result<(), zx::Status>,
+    ) -> frunner::ComponentRunnerProxy {
         let (proxy, mut request_stream) =
             fidl::endpoints::create_proxy_and_stream::<frunner::ComponentRunnerMarker>();
         fasync::Task::local(async move {
@@ -419,7 +421,7 @@ mod tests {
     /// passes.
     #[fuchsia::test]
     async fn test_component_controller_epitaph_ok() {
-        let component_runner = spawn_runner(zx::Status::OK);
+        let component_runner = spawn_runner(Ok(()));
         let (run_listener, run_listener_stream) =
             create_request_stream::<ftest::RunListenerMarker>();
         spawn_run_test_cases(run_listener, component_runner);
@@ -430,7 +432,7 @@ mod tests {
     /// fails.
     #[fuchsia::test]
     async fn test_component_controller_epitaph_not_ok() {
-        let component_runner = spawn_runner(zx::Status::INTERNAL);
+        let component_runner = spawn_runner(Err(zx::Status::INTERNAL));
         let (run_listener, run_listener_stream) =
             create_request_stream::<ftest::RunListenerMarker>();
         spawn_run_test_cases(run_listener, component_runner);

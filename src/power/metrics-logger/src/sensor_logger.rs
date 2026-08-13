@@ -776,7 +776,7 @@ pub mod tests {
             while let Ok(Some(req)) = stream.try_next().await {
                 match req {
                     ftemperature::DeviceRequest::GetTemperatureCelsius { responder } => {
-                        let _ = responder.send(zx::Status::OK.into_raw(), get_temperature());
+                        let _ = responder.send(zx::sys::ZX_OK, get_temperature());
                     }
                     _ => panic!("Unexpected request"),
                 }

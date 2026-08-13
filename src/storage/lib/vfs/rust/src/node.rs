@@ -238,7 +238,7 @@ impl<N: Node> Connection<N> {
                     let (status, attrs) =
                         crate::common::io2_to_io1_attrs(self.node.as_ref(), self.options.rights)
                             .await;
-                    responder.send(status.into_raw(), &attrs)
+                    responder.send(status, &attrs)
                 }
                 .trace(trace::trace_future_args!("storage", "Node::GetAttr"))
                 .await?;
@@ -249,7 +249,7 @@ impl<N: Node> Connection<N> {
                     let (status, attrs) =
                         crate::common::io2_to_io1_attrs(self.node.as_ref(), self.options.rights)
                             .await;
-                    responder.send(status.into_raw(), &attrs)
+                    responder.send(status, &attrs)
                 }
                 .trace(trace::trace_future_args!("storage", "Node::GetAttr"))
                 .await?;
@@ -313,7 +313,7 @@ impl<N: Node> Connection<N> {
             }
             fio::NodeRequest::DeprecatedGetFlags { responder } => {
                 trace::duration!("storage", "Node::GetFlags");
-                responder.send(Status::OK.into_raw(), fio::OpenFlags::NODE_REFERENCE)?;
+                responder.send(zx_status::sys::ZX_OK, fio::OpenFlags::NODE_REFERENCE)?;
             }
             fio::NodeRequest::DeprecatedSetFlags { flags: _, responder } => {
                 trace::duration!("storage", "Node::SetFlags");

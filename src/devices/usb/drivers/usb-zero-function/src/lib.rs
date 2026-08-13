@@ -613,7 +613,7 @@ async fn handle_read_completion(
     ack_rx: &mut mpsc::UnboundedReceiver<Vec<u8>>,
     ep_out_clone: &fusb_endpoint::EndpointProxy,
 ) -> bool {
-    if c.status == Some(Status::OK.into_raw()) {
+    if c.status.is_some_and(|s| Status::ok(s).is_ok()) {
         let size = std::cmp::min(c.transfer_size.unwrap_or(0), vmo_size) as usize;
         let mut buf = recycled_buf.take().unwrap_or_default();
         buf.resize(size, 0);
@@ -647,7 +647,7 @@ fn handle_write_completion(
 ) {
     let mut ok = false;
     for c in completion {
-        if c.status == Some(Status::OK.into_raw()) {
+        if c.status.is_some_and(|s| Status::ok(s).is_ok()) {
             ok = true;
         } else {
             warn!("Write error status: {:?}", c.status);
@@ -669,7 +669,8 @@ fn spawn_endpoint_pump(
         while let Ok(Some(event)) = event_stream.try_next().await {
             match event {
                 fusb_endpoint::EndpointEvent::OnCompletion { completion } => {
-                    let ok = completion.iter().all(|c| c.status == Some(Status::OK.into_raw()));
+                    let ok =
+                        completion.iter().all(|c| c.status.is_some_and(|s| Status::ok(s).is_ok()));
                     if !ok {
                         warn!("Endpoint transfer completed with non-OK status");
                     }

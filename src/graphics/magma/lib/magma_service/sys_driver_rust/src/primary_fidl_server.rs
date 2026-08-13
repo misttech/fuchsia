@@ -207,7 +207,8 @@ impl PrimaryFidlServer {
             fidl_fuchsia_gpu_magma::PrimaryRequest::ExecuteInlineCommands { .. } => {
                 fuchsia_trace::duration!("magma", "PrimaryFidlServer::ExecuteInlineCommand");
                 self.flow_control(0, &control_handle);
-                control_handle.shutdown_with_epitaph(zx::Status::from(MagmaStatus::InvalidArgs));
+                let res: Result<(), zx::Status> = MagmaStatus::InvalidArgs.into();
+                control_handle.shutdown_with_epitaph(res);
                 return Err(anyhow::anyhow!("ExecuteInlineCommands unimplmented"));
             }
             fidl_fuchsia_gpu_magma::PrimaryRequest::Flush { responder } => {
@@ -381,7 +382,10 @@ impl CloseOnError for Result<(), MagmaStatus> {
     fn close_on_error(self, control_handle: &fidl_fuchsia_gpu_magma::PrimaryControlHandle) -> Self {
         match &self {
             Ok(_) => (),
-            Err(e) => control_handle.shutdown_with_epitaph(zx::Status::from(*e)),
+            Err(e) => {
+                let res: Result<(), zx::Status> = (*e).into();
+                control_handle.shutdown_with_epitaph(res);
+            }
         }
         self
     }

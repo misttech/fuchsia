@@ -69,11 +69,11 @@ impl<DirectoryType: MutableDirectory> MutableConnection<DirectoryType> {
             }
             fio::DirectoryRequest::GetToken { responder } => {
                 trace::duration!("storage", "Directory::GetToken");
-                let (status, token) = match Self::handle_get_token(this.into_ref()) {
-                    Ok(token) => (Status::OK, Some(token)),
-                    Err(status) => (status, None),
+                let (raw_status, token) = match Self::handle_get_token(this.into_ref()) {
+                    Ok(token) => (0, Some(token)),
+                    Err(status) => (status.into_raw(), None),
                 };
-                responder.send(status.into_raw(), token)?;
+                responder.send(raw_status, token)?;
             }
             fio::DirectoryRequest::Rename { src, dst_parent_token, dst, responder } => {
                 async move {
@@ -86,25 +86,17 @@ impl<DirectoryType: MutableDirectory> MutableConnection<DirectoryType> {
             }
             #[cfg(fuchsia_api_level_at_least = "28")]
             fio::DirectoryRequest::DeprecatedSetAttr { flags, attributes, responder } => {
-                let status = match this
-                    .handle_update_attributes(io1_to_io2_attrs(flags, attributes))
-                    .await
-                {
-                    Ok(()) => Status::OK,
-                    Err(status) => status,
-                };
-                responder.send(status.into_raw())?;
+                let raw_status = Status::result_into_raw(
+                    this.handle_update_attributes(io1_to_io2_attrs(flags, attributes)).await,
+                );
+                responder.send(raw_status)?;
             }
             #[cfg(not(fuchsia_api_level_at_least = "28"))]
             fio::DirectoryRequest::SetAttr { flags, attributes, responder } => {
-                let status = match this
-                    .handle_update_attributes(io1_to_io2_attrs(flags, attributes))
-                    .await
-                {
-                    Ok(()) => Status::OK,
-                    Err(status) => status,
-                };
-                responder.send(status.into_raw())?;
+                let raw_status = Status::result_into_raw(
+                    this.handle_update_attributes(io1_to_io2_attrs(flags, attributes)).await,
+                );
+                responder.send(raw_status)?;
             }
             fio::DirectoryRequest::Sync { responder } => {
                 async move {
@@ -491,7 +483,7 @@ mod tests {
         let (dir2, proxy2) = fs.clone().make_connection(fio::PERM_READABLE | fio::PERM_WRITABLE);
 
         let (status, token) = proxy2.get_token().await.unwrap();
-        assert_eq!(Status::from_raw(status), Status::OK);
+        assert_eq!(status, zx_status::sys::ZX_OK);
 
         let status = proxy.rename("src", token.unwrap().into(), "dest").await.unwrap();
         assert!(status.is_ok());
@@ -539,10 +531,10 @@ mod tests {
         let (_dir2, proxy2) = fs.clone().make_connection(fio::PERM_READABLE | fio::PERM_WRITABLE);
 
         let (status, token) = proxy2.get_token().await.unwrap();
-        assert_eq!(Status::from_raw(status), Status::OK);
+        assert_eq!(status, zx_status::sys::ZX_OK);
 
         let status = proxy.link("src", token.unwrap(), "dest").await.unwrap();
-        assert_eq!(Status::from_raw(status), Status::OK);
+        assert_eq!(status, zx_status::sys::ZX_OK);
         let events = events.0.lock();
         assert_eq!(*events, vec![MutableDirectoryAction::Link { id: 1, path: "dest".to_owned() },]);
     }

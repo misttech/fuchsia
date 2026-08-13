@@ -46,8 +46,8 @@ fn write_board_name_info<W: Write>(
     w: &mut W,
     board_name_info: (i32, Option<String>),
 ) -> Result<(), Error> {
-    if zx::Status::from_raw(board_name_info.0) != zx::Status::OK {
-        writeln!(w, "zx_status: {}", zx::Status::from_raw(board_name_info.0))?;
+    if let Err(status) = zx::Status::ok(board_name_info.0) {
+        writeln!(w, "zx_status: {}", status)?;
     }
     writeln!(w, "board_name: {}", unwrap_option(board_name_info.1))?;
     Ok(())
@@ -65,8 +65,8 @@ fn write_board_revision_info<W: Write>(
     w: &mut W,
     board_revision_info: (i32, u32),
 ) -> Result<(), Error> {
-    if zx::Status::from_raw(board_revision_info.0) != zx::Status::OK {
-        writeln!(w, "zx_status: {}", zx::Status::from_raw(board_revision_info.0))?;
+    if let Err(status) = zx::Status::ok(board_revision_info.0) {
+        writeln!(w, "zx_status: {}", status)?;
     }
     writeln!(w, "board_revision: {}", board_revision_info.1)?;
     Ok(())
@@ -84,8 +84,8 @@ fn write_bootloader_vendor_info<W: Write>(
     w: &mut W,
     bootloader_vendor_info: (i32, Option<String>),
 ) -> Result<(), Error> {
-    if zx::Status::from_raw(bootloader_vendor_info.0) != zx::Status::OK {
-        writeln!(w, "zx_status: {}", zx::Status::from_raw(bootloader_vendor_info.0))?;
+    if let Err(status) = zx::Status::ok(bootloader_vendor_info.0) {
+        writeln!(w, "zx_status: {}", status)?;
     }
     writeln!(w, "bootloader_vendor: {}", unwrap_option(bootloader_vendor_info.1))?;
     Ok(())
@@ -103,8 +103,8 @@ fn write_interrupt_controller_info<W: Write>(
     w: &mut W,
     interrupt_controller_info: (i32, Option<Box<InterruptControllerInfo>>),
 ) -> Result<(), Error> {
-    if zx::Status::from_raw(interrupt_controller_info.0) != zx::Status::OK {
-        writeln!(w, "zx_status: {}", zx::Status::from_raw(interrupt_controller_info.0))?;
+    if let Err(status) = zx::Status::ok(interrupt_controller_info.0) {
+        writeln!(w, "zx_status: {}", status)?;
     }
     writeln!(
         w,

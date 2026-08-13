@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::server::Facade;
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 use async_trait::async_trait;
 use bt_rfcomm::ServerChannel;
 use fidl_fuchsia_bluetooth::PeerId;
@@ -11,7 +11,7 @@ use fidl_fuchsia_bluetooth_a2dp::Role;
 use fidl_fuchsia_bluetooth_hfp::{CallDirection, CallState, NetworkInformation, SignalStrength};
 use fidl_fuchsia_bluetooth_le::Filter;
 use fidl_fuchsia_bluetooth_sys::{LeSecurityMode, Settings};
-use serde_json::{from_value, to_value, Value};
+use serde_json::{Value, from_value, to_value};
 use test_call_manager::TestCallManager as HfpFacade;
 use test_rfcomm_client::RfcommManager as RfcommFacade;
 
@@ -880,7 +880,7 @@ impl Facade for HfpFacade {
             "SetDialResult" => {
                 let number = parse_arg!(args, as_str, "number")?.to_string();
                 let status = parse_arg!(args, as_i64, "status")?.try_into()?;
-                let status = zx::Status::from_raw(status);
+                let status = zx::Status::ok(status);
                 self.set_dial_result(number, status).await;
                 Ok(to_value(())?)
             }

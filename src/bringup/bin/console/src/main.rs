@@ -186,14 +186,14 @@ impl ConsoleService {
                     features |= set;
                     features &= !clr;
                     self.features.store(features, Ordering::Relaxed);
-                    responder.send(zx::Status::OK.into_raw(), features)?;
+                    responder.send(zx::sys::ZX_OK, features)?;
                 }
                 pty::DeviceRequest::ReadEvents { responder } => {
                     let mask = self.event_mask.swap(0, Ordering::Relaxed);
                     self.rx_event
                         .signal(zx::Signals::USER_1, zx::Signals::NONE)
                         .expect("event should be signalable");
-                    responder.send(zx::Status::OK.into_raw(), mask)?;
+                    responder.send(zx::sys::ZX_OK, mask)?;
                 }
                 pty::DeviceRequest::GetWindowSize { responder } => {
                     let window_size = WindowSize { width: 0, height: 0 };

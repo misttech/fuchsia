@@ -42,10 +42,6 @@ pub fn send_on_open_with_error(
     server_end: ServerEnd<fio::NodeMarker>,
     status: Status,
 ) {
-    if status == Status::OK {
-        panic!("send_on_open_with_error() should not be used to respond with Status::OK");
-    }
-
     if !describe {
         // There is no reasonable way to report this error.  Assuming the `server_end` has just
         // disconnected or failed in some other way why we are trying to send OnOpen.
@@ -321,9 +317,9 @@ const fn approximate_posix_mode(
 pub async fn io2_to_io1_attrs<T: Node>(
     node: &T,
     rights: fio::Rights,
-) -> (Status, fio::NodeAttributes) {
+) -> (zx_status::sys::zx_status_t, fio::NodeAttributes) {
     if !rights.contains(fio::Rights::GET_ATTRIBUTES) {
-        return (Status::BAD_HANDLE, DEFAULT_IO1_ATTRIBUTES);
+        return (Status::BAD_HANDLE.into_raw(), DEFAULT_IO1_ATTRIBUTES);
     }
 
     let attributes = node.get_attributes(ALL_IO1_ATTRIBUTES).await;
@@ -332,11 +328,11 @@ pub async fn io2_to_io1_attrs<T: Node>(
         immutable_attributes: immut_attrs,
     }) = attributes
     else {
-        return (attributes.unwrap_err(), DEFAULT_IO1_ATTRIBUTES);
+        return (attributes.unwrap_err().into_raw(), DEFAULT_IO1_ATTRIBUTES);
     };
 
     (
-        Status::OK,
+        zx_status::sys::ZX_OK,
         fio::NodeAttributes {
             // If the node has POSIX mode bits, use those directly, otherwise synthesize a set based
             // on the node's protocols/abilities if available.

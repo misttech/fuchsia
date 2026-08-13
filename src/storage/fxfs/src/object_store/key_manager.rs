@@ -133,7 +133,7 @@ impl Inner {
 
 struct UnwrapResult {
     event: Event,
-    error: UnsafeCell<zx::Status>,
+    error: UnsafeCell<Result<(), zx::Status>>,
     // Protected by the mutex on Inner.
     cancelled: UnsafeCell<bool>,
 }
@@ -142,7 +142,7 @@ impl UnwrapResult {
     fn new() -> Arc<Self> {
         Arc::new(UnwrapResult {
             event: Event::new(),
-            error: UnsafeCell::new(zx::Status::OK),
+            error: UnsafeCell::new(Ok(())),
             cancelled: UnsafeCell::new(false),
         })
     }
@@ -165,10 +165,10 @@ impl UnwrapResult {
             }
         };
         if cancelled {
-            set_error(zx::Status::CANCELED);
+            set_error(Err(zx::Status::CANCELED));
         } else if let Err(error) = &result {
             error!(error:?, oid = object_id; "Failed to unwrap keys");
-            set_error(*error);
+            set_error(Err(*error));
         }
         if let Entry::Occupied(o) = guard.unwrapping.entry(object_id) {
             if std::ptr::eq(Arc::as_ptr(o.get()), self) {
@@ -226,11 +226,8 @@ impl KeyManager {
             };
             listener.await;
             // SAFETY: This is safe because there can be no mutations happening at this point.
-            let error = unsafe { *unwrap_result.error.get().clone() };
-            match error {
-                zx::Status::OK => {}
-                _ => return Err(error.into()),
-            }
+            let error = unsafe { *unwrap_result.error.get() };
+            error?;
         }
     }
 
@@ -277,11 +274,8 @@ impl KeyManager {
             listener.await;
             // SAFETY: This is safe because there can be no mutations happening at this
             // point.
-            let error = unsafe { *unwrap_result.error.get().clone() };
-            match error {
-                zx::Status::OK => {}
-                _ => return Err(error.into()),
-            }
+            let error = unsafe { *unwrap_result.error.get() };
+            error?;
         }
 
         // Use a guard in case we're dropped.

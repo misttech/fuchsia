@@ -186,7 +186,7 @@ async fn test_loopback() {
     comp_out_tx
         .unbounded_send(vec![fusb_endpoint::Completion {
             request: Some(read_req),
-            status: Some(Status::OK.into_raw()),
+            status: Some(zx::sys::ZX_OK),
             transfer_size: Some(test_data.len() as u64),
             ..Default::default()
         }])
@@ -471,7 +471,7 @@ async fn test_source_sink() {
     comp_out_tx
         .unbounded_send(vec![fusb_endpoint::Completion {
             request: Some(read_req),
-            status: Some(Status::OK.into_raw()),
+            status: Some(zx::sys::ZX_OK),
             transfer_size: Some(0),
             ..Default::default()
         }])
@@ -488,7 +488,7 @@ async fn test_source_sink() {
     comp_in_tx
         .unbounded_send(vec![fusb_endpoint::Completion {
             request: Some(write_req),
-            status: Some(Status::OK.into_raw()),
+            status: Some(zx::sys::ZX_OK),
             transfer_size: Some(512),
             ..Default::default()
         }])

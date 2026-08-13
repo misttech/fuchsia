@@ -18,7 +18,7 @@ async fn waiter_serve(mut stream: fcdt::WaiterRequestStream, mut sender: mpsc::S
     while let Some(fcdt::WaiterRequest::Ack { status, .. }) =
         stream.try_next().await.expect("Stream failed")
     {
-        assert_eq!(status, zx::Status::OK.into_raw());
+        assert_eq!(status, zx::sys::ZX_OK);
         sender.try_send(()).expect("Sender failed")
     }
 }

@@ -741,7 +741,7 @@ impl ComponentInstance {
                 let cleanly_stopped = matches!(
                     ret.disposition,
                     StopDisposition::Stopped(StopInfo{ termination_status, exit_code })
-                        if termination_status == zx::Status::OK && exit_code.unwrap_or(0) == 0
+                        if termination_status.is_ok() && exit_code.unwrap_or(0) == 0
                 );
                 if !shut_down && !cleanly_stopped && self.on_terminate == fdecl::OnTerminate::Reboot
                 {
@@ -2821,7 +2821,7 @@ pub mod tests {
             Box::new(move || ControllerActionResponse {
                 close_channel: true,
                 delay: Some(response_delay),
-                termination_status: Some(zx::Status::OK),
+                termination_status: Some(Ok(())),
                 exit_code: Some(1),
             }),
         );

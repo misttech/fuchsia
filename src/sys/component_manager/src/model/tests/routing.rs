@@ -3296,7 +3296,7 @@ async fn source_component_stopping_when_routing() {
         Box::new(move || ControllerActionResponse {
             close_channel: true,
             delay: Some(response_delay),
-            termination_status: Some(zx::Status::OK),
+            termination_status: Some(Ok(())),
             exit_code: Some(1),
         }),
     );

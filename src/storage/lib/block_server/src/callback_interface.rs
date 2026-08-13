@@ -89,7 +89,7 @@ struct InflightRequests {
     /// Total number of in-flight requests submitted to `Interface::on_requests`.
     count: usize,
     /// Completion callbacks for internal requests (e.g. from `DefaultCallbackBlockService`).
-    callbacks: HashMap<RequestId, Box<dyn FnOnce(zx::Status) + Send>>,
+    callbacks: HashMap<RequestId, Box<dyn FnOnce(Result<(), zx::Status>) + Send>>,
     /// Monotonically increasing counter for allocating internal request IDs.
     next_internal_id: usize,
 }
@@ -253,7 +253,7 @@ impl<I: Interface + ?Sized> SessionManager<I> {
     }
 
     /// Reports the given task as complete with a given status.
-    pub fn complete_request(&self, request_id: RequestId, status: zx::Status) {
+    pub fn complete_request(&self, request_id: RequestId, status: Result<(), zx::Status>) {
         let (callback, notify) = {
             let mut inflight = self.inflight_requests.lock();
             let callback = if request_id.0 & INTERNAL_REQUEST_FLAG != 0 {
@@ -278,7 +278,7 @@ impl<I: Interface + ?Sized> SessionManager<I> {
     fn submit_internal_request(
         &self,
         make_request: impl FnOnce(RequestId) -> Request,
-        callback: Box<dyn FnOnce(zx::Status) + Send>,
+        callback: Box<dyn FnOnce(Result<(), zx::Status>) + Send>,
     ) {
         let req = {
             let mut inflight = self.inflight_requests.lock();
@@ -307,7 +307,7 @@ impl<I: Interface + ?Sized> SessionManager<I> {
 
     /// Called instead of `[Self::complete_request]` when a request is completed before it was
     /// actually submitted.
-    fn complete_unsubmitted_request(&self, request_id: RequestId, status: zx::Status) {
+    fn complete_unsubmitted_request(&self, request_id: RequestId, status: Result<(), zx::Status>) {
         if let Some((session, response)) =
             self.active_requests.complete_and_take_response(request_id, status)
         {
@@ -495,10 +495,10 @@ impl<I: Interface + ?Sized> Session<I> {
         self.helper.session_manager().wait_for_no_inflight_requests();
         let status = self.helper.session_manager().active_requests.request(request_id).status;
         match status {
-            zx::Status::OK => Ok(()),
-            status => {
+            Ok(()) => Ok(()),
+            Err(status) => {
                 // Respond for the unsubmitted request too.
-                self.helper.session_manager().complete_unsubmitted_request(request_id, status);
+                self.helper.session_manager().complete_unsubmitted_request(request_id, Err(status));
                 Err(status)
             }
         }
@@ -514,15 +514,15 @@ impl<I: Interface + ?Sized> Session<I> {
         self.helper.session_manager().wait_for_no_inflight_requests();
         let request = self.helper.session_manager().active_requests.request(request_id);
         match request.status {
-            zx::Status::OK => decoded_requests.push(Request {
+            Ok(()) => decoded_requests.push(Request {
                 request_id,
                 operation: Operation::Flush,
                 trace_flow_id: request.trace_flow_id,
                 vmo: None,
             }),
-            status => {
+            Err(status) => {
                 drop(request);
-                self.helper.session_manager().complete_unsubmitted_request(request_id, status)
+                self.helper.session_manager().complete_unsubmitted_request(request_id, Err(status))
             }
         }
     }
@@ -537,7 +537,7 @@ impl<I: Interface + ?Sized> Session<I> {
         for request in requests {
             match self.helper.decode_fifo_request(self.clone(), request) {
                 Ok(DecodedRequest { operation: Operation::CloseVmo, request_id, .. }) => {
-                    manager.complete_unsubmitted_request(request_id, zx::Status::OK);
+                    manager.complete_unsubmitted_request(request_id, Ok(()));
                 }
                 Ok(mut request) => {
                     let request_id = request.request_id;
@@ -596,7 +596,7 @@ impl<I: Interface + ?Sized> Session<I> {
                                 }
                             }
                             Err(status) => {
-                                manager.complete_unsubmitted_request(request_id, status);
+                                manager.complete_unsubmitted_request(request_id, Err(status));
                                 break;
                             }
                         }
@@ -730,7 +730,7 @@ mod tests {
         assert_eq!(r.request_id.0, 0);
         assert!(matches!(r.operation, Operation::Read { .. }));
 
-        session_manager.complete_request(r.request_id, zx::Status::OK);
+        session_manager.complete_request(r.request_id, Ok(()));
 
         let signals =
             fifo.wait_one(zx::Signals::FIFO_READABLE, zx::MonotonicInstant::INFINITE).unwrap();
@@ -791,7 +791,7 @@ mod tests {
         assert_eq!(r.request_id.0, 0);
         assert!(matches!(r.operation, Operation::Write { .. }));
 
-        session_manager.complete_request(r.request_id, zx::Status::OK);
+        session_manager.complete_request(r.request_id, Ok(()));
 
         let signals =
             fifo.wait_one(zx::Signals::FIFO_READABLE, zx::MonotonicInstant::INFINITE).unwrap();
@@ -844,7 +844,7 @@ mod tests {
         assert_eq!(r.request_id.0, 0);
         assert!(matches!(r.operation, Operation::Flush { .. }));
 
-        session_manager.complete_request(r.request_id, zx::Status::OK);
+        session_manager.complete_request(r.request_id, Ok(()));
 
         let signals =
             fifo.wait_one(zx::Signals::FIFO_READABLE, zx::MonotonicInstant::INFINITE).unwrap();
@@ -897,7 +897,7 @@ mod tests {
         assert_eq!(r.request_id.0, 0);
         assert!(matches!(r.operation, Operation::Trim { .. }));
 
-        session_manager.complete_request(r.request_id, zx::Status::OK);
+        session_manager.complete_request(r.request_id, Ok(()));
 
         let signals =
             fifo.wait_one(zx::Signals::FIFO_READABLE, zx::MonotonicInstant::INFINITE).unwrap();
@@ -1004,7 +1004,7 @@ mod tests {
         fifo.write(&[req]).unwrap();
 
         let r = rx.recv().unwrap();
-        session_manager.complete_request(r.request_id, zx::Status::IO);
+        session_manager.complete_request(r.request_id, Err(zx::Status::IO));
 
         let signals =
             fifo.wait_one(zx::Signals::FIFO_READABLE, zx::MonotonicInstant::INFINITE).unwrap();
@@ -1066,7 +1066,7 @@ mod tests {
         fasync::Timer::new(std::time::Duration::from_millis(50)).await;
 
         // Complete the request, simulating a completion after the FIFO loop has exited.
-        session_manager.complete_request(r.request_id, zx::Status::OK);
+        session_manager.complete_request(r.request_id, Ok(()));
 
         drop(proxy);
         fasync::unblock(move || session_manager.terminate()).await;
@@ -1132,8 +1132,8 @@ mod tests {
         // - Group 1: 0 active requests, still waiting for END
         // - Group 2: 1 active request, still waiting for END
         // Neither group will be able to complete yet.
-        session_manager.complete_request(r1.request_id, zx::Status::OK);
-        session_manager.complete_request(r2.request_id, zx::Status::OK);
+        session_manager.complete_request(r1.request_id, Ok(()));
+        session_manager.complete_request(r2.request_id, Ok(()));
 
         // Close the client, which will eventually cause the FIFO loop to exit.
         // Group 1 should complete now.  Group 2 can't yet.
@@ -1141,7 +1141,7 @@ mod tests {
         fasync::Timer::new(std::time::Duration::from_millis(50)).await;
 
         // At some later time, complete request 3, which should complete group 2.
-        session_manager.complete_request(r3.request_id, zx::Status::OK);
+        session_manager.complete_request(r3.request_id, Ok(()));
 
         drop(proxy);
 
@@ -1205,7 +1205,7 @@ mod tests {
             _ = timer_fut => {}
         }
 
-        session_manager.complete_request(r.request_id, zx::Status::OK);
+        session_manager.complete_request(r.request_id, Ok(()));
 
         // Verify that close() now completes.
         close_fut.await.unwrap().unwrap();

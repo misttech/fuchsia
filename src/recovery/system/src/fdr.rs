@@ -269,7 +269,7 @@ mod tests {
                     }
                     BootManagerRequest::SetConfigurationActive { configuration, responder } => {
                         set_active_sender.start_send(configuration.clone()).unwrap();
-                        responder.send(zx::Status::OK.into_raw()).unwrap();
+                        responder.send(zx::sys::ZX_OK).unwrap();
                     }
                     _ => {
                         panic!("Unexpected request sent to mock boot manager");

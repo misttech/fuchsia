@@ -67,15 +67,15 @@ pub(crate) async fn handle_monitor_request(
         }
         DeviceMonitorRequest::SetCountry { req, responder } => {
             let status = set_country(phys, req).await;
-            responder.send(status.into_raw())?;
+            responder.send(zx::Status::result_into_raw(status))?;
         }
         DeviceMonitorRequest::ClearCountry { req, responder } => {
             let status = clear_country(phys, req).await;
-            responder.send(status.into_raw())?;
+            responder.send(zx::Status::result_into_raw(status))?;
         }
         DeviceMonitorRequest::SetPowerSaveMode { req, responder } => {
             let status = set_power_save_mode(phys, req).await;
-            responder.send(status.into_raw())?;
+            responder.send(zx::Status::result_into_raw(status))?;
         }
         DeviceMonitorRequest::GetPowerSaveMode { phy_id, responder } => responder
             .send(get_power_save_mode(phys, phy_id).await.as_ref().map_err(|s| s.into_raw()))?,
@@ -143,19 +143,19 @@ pub(crate) async fn handle_monitor_request(
         DeviceMonitorRequest::DestroyIface { req, responder } => {
             let result = destroy_iface(phys, iface_wrapper, req.iface_id).await;
             let status = into_status_and_opt(result).0;
-            responder.send(status.into_raw())?;
+            responder.send(zx::Status::result_into_raw(status))?;
         }
         DeviceMonitorRequest::PowerDown { phy_id, responder } => {
             let status = power_down(phys, phy_id).await;
-            responder.send(zx::Status::ok(status.into_raw()).map_err(|e| e.into_raw()))?;
+            responder.send(status.map_err(|e| e.into_raw()))?;
         }
         DeviceMonitorRequest::PowerUp { phy_id, responder } => {
             let status = power_up(phys, phy_id).await;
-            responder.send(zx::Status::ok(status.into_raw()).map_err(|e| e.into_raw()))?;
+            responder.send(status.map_err(|e| e.into_raw()))?;
         }
         DeviceMonitorRequest::Reset { phy_id, responder } => {
             let status = reset(phys, phy_id).await;
-            responder.send(zx::Status::ok(status.into_raw()).map_err(|e| e.into_raw()))?;
+            responder.send(status.map_err(|e| e.into_raw()))?;
         }
         DeviceMonitorRequest::GetPowerState { phy_id, responder } => {
             responder.send(
@@ -283,10 +283,10 @@ async fn get_country(
     Ok(fidl_svc::GetCountryResponse { alpha2 })
 }
 
-async fn set_country(phys: &PhyMap, req: fidl_svc::SetCountryRequest) -> zx::Status {
+async fn set_country(phys: &PhyMap, req: fidl_svc::SetCountryRequest) -> Result<(), zx::Status> {
     let phy_id = req.phy_id;
     let phy = match phys.get(&req.phy_id) {
-        None => return zx::Status::NOT_FOUND,
+        None => return Err(zx::Status::NOT_FOUND),
         Some(p) => p,
     };
 
@@ -294,35 +294,38 @@ async fn set_country(phys: &PhyMap, req: fidl_svc::SetCountryRequest) -> zx::Sta
     phy.proxy.set_country(&phy_req).await.map_phy_status(phy_id, "SetCountry")
 }
 
-async fn clear_country(phys: &PhyMap, req: fidl_svc::ClearCountryRequest) -> zx::Status {
+async fn clear_country(
+    phys: &PhyMap,
+    req: fidl_svc::ClearCountryRequest,
+) -> Result<(), zx::Status> {
     let phy = match phys.get(&req.phy_id) {
-        None => return zx::Status::NOT_FOUND,
+        None => return Err(zx::Status::NOT_FOUND),
         Some(p) => p,
     };
 
     phy.proxy.clear_country().await.map_phy_status(req.phy_id, "ClearCountry")
 }
 
-async fn power_down(phys: &PhyMap, phy_id: u16) -> zx::Status {
+async fn power_down(phys: &PhyMap, phy_id: u16) -> Result<(), zx::Status> {
     let phy = match phys.get(&phy_id) {
-        None => return zx::Status::NOT_FOUND,
+        None => return Err(zx::Status::NOT_FOUND),
         Some(p) => p,
     };
 
     phy.proxy.power_down().await.map_phy_status(phy_id, "PowerDown")
 }
 
-async fn power_up(phys: &PhyMap, phy_id: u16) -> zx::Status {
+async fn power_up(phys: &PhyMap, phy_id: u16) -> Result<(), zx::Status> {
     let phy = match phys.get(&phy_id) {
-        None => return zx::Status::NOT_FOUND,
+        None => return Err(zx::Status::NOT_FOUND),
         Some(p) => p,
     };
     phy.proxy.power_up().await.map_phy_status(phy_id, "PowerUp")
 }
 
-async fn reset(phys: &PhyMap, phy_id: u16) -> zx::Status {
+async fn reset(phys: &PhyMap, phy_id: u16) -> Result<(), zx::Status> {
     let phy = match phys.get(&phy_id) {
-        None => return zx::Status::NOT_FOUND,
+        None => return Err(zx::Status::NOT_FOUND),
         Some(p) => p,
     };
     phy.proxy.reset().await.map_phy_status(phy_id, "Reset")
@@ -334,10 +337,13 @@ async fn get_power_state(phys: &PhyMap, phy_id: u16) -> Result<bool, zx::Status>
     resp.power_on.with_name("power_on").try_unpack().map_err(|_| zx::Status::INTERNAL)
 }
 
-async fn set_power_save_mode(phys: &PhyMap, req: fidl_svc::SetPowerSaveModeRequest) -> zx::Status {
+async fn set_power_save_mode(
+    phys: &PhyMap,
+    req: fidl_svc::SetPowerSaveModeRequest,
+) -> Result<(), zx::Status> {
     let phy_id = req.phy_id;
     let phy = match phys.get(&req.phy_id) {
-        None => return zx::Status::NOT_FOUND,
+        None => return Err(zx::Status::NOT_FOUND),
         Some(p) => p,
     };
     let phy_req = fidl_fuchsia_wlan_phy::WlanPhySetPowerSaveModeRequest {
@@ -663,26 +669,23 @@ async fn get_sme_telemetry(
         info!("Failed to request SME telemetry: {}", e);
         zx::Status::INTERNAL
     })?;
-    result.map_err(zx::Status::from_raw)
+    result.map_err(|s| zx::Status::try_from_raw(s).unwrap_or(zx::Status::INTERNAL))
 }
 
-fn into_status_and_opt<T>(r: Result<T, zx::Status>) -> (zx::Status, Option<T>) {
+fn into_status_and_opt<T>(r: Result<T, zx::Status>) -> (Result<(), zx::Status>, Option<T>) {
     match r {
-        Ok(x) => (zx::Status::OK, Some(x)),
-        Err(status) => (status, None),
+        Ok(x) => (Ok(()), Some(x)),
+        Err(status) => (Err(status), None),
     }
 }
 
 trait PhyResultExt<T> {
     fn map_phy_result(self, phy_id: u16, context: &str) -> Result<T, zx::Status>;
-    fn map_phy_status(self, phy_id: u16, context: &str) -> zx::Status
+    fn map_phy_status(self, phy_id: u16, context: &str) -> Result<(), zx::Status>
     where
         Self: Sized,
     {
-        match self.map_phy_result(phy_id, context) {
-            Ok(_) => zx::Status::OK,
-            Err(s) => s,
-        }
+        self.map_phy_result(phy_id, context).map(|_| ())
     }
 }
 
@@ -1512,7 +1515,7 @@ mod tests {
 
         expect_set_country(&mut exec, &mut phy_stream, alpha2, Ok(()));
 
-        assert_eq!(exec.run_until_stalled(&mut req_fut), Poll::Ready(zx::Status::OK));
+        assert_eq!(exec.run_until_stalled(&mut req_fut), Poll::Ready(Ok(())));
     }
     #[fuchsia::test]
     fn test_set_country_fails() {
@@ -1530,7 +1533,10 @@ mod tests {
 
         expect_set_country(&mut exec, &mut phy_stream, alpha2, Err(zx::Status::NOT_SUPPORTED));
 
-        assert_eq!(Poll::Ready(zx::Status::NOT_SUPPORTED), exec.run_until_stalled(&mut req_fut));
+        assert_eq!(
+            Poll::Ready(Err(zx::Status::NOT_SUPPORTED)),
+            exec.run_until_stalled(&mut req_fut)
+        );
     }
     #[fuchsia::test]
     fn test_get_country_succeeds() {
@@ -1583,7 +1589,7 @@ mod tests {
 
         expect_clear_country(&mut exec, &mut phy_stream, Ok(()));
 
-        assert_eq!(exec.run_until_stalled(&mut req_fut), Poll::Ready(zx::Status::OK));
+        assert_eq!(exec.run_until_stalled(&mut req_fut), Poll::Ready(Ok(())));
     }
     #[fuchsia::test]
     fn test_clear_country_fails() {
@@ -1600,7 +1606,10 @@ mod tests {
 
         expect_clear_country(&mut exec, &mut phy_stream, Err(zx::Status::NOT_SUPPORTED));
 
-        assert_eq!(Poll::Ready(zx::Status::NOT_SUPPORTED), exec.run_until_stalled(&mut req_fut));
+        assert_eq!(
+            Poll::Ready(Err(zx::Status::NOT_SUPPORTED)),
+            exec.run_until_stalled(&mut req_fut)
+        );
     }
     #[fuchsia::test]
     fn test_set_power_save_mode_succeeds() {
@@ -1625,7 +1634,7 @@ mod tests {
             Ok(()),
         );
 
-        assert_eq!(exec.run_until_stalled(&mut req_fut), Poll::Ready(zx::Status::OK));
+        assert_eq!(exec.run_until_stalled(&mut req_fut), Poll::Ready(Ok(())));
     }
     #[fuchsia::test]
     fn test_set_power_save_mode_fails() {
@@ -1650,7 +1659,10 @@ mod tests {
             Err(zx::Status::NOT_SUPPORTED),
         );
 
-        assert_eq!(Poll::Ready(zx::Status::NOT_SUPPORTED), exec.run_until_stalled(&mut req_fut));
+        assert_eq!(
+            Poll::Ready(Err(zx::Status::NOT_SUPPORTED)),
+            exec.run_until_stalled(&mut req_fut)
+        );
     }
     #[fuchsia::test]
     fn test_get_power_save_mode_succeeds() {
@@ -1707,7 +1719,7 @@ mod tests {
 
         expect_power_down(&mut exec, &mut phy_stream, Ok(()));
 
-        assert_eq!(exec.run_until_stalled(&mut req_fut), Poll::Ready(zx::Status::OK));
+        assert_eq!(exec.run_until_stalled(&mut req_fut), Poll::Ready(Ok(())));
     }
     #[fuchsia::test]
     fn test_power_down_fails() {
@@ -1723,7 +1735,10 @@ mod tests {
 
         expect_power_down(&mut exec, &mut phy_stream, Err(zx::Status::NOT_SUPPORTED));
 
-        assert_eq!(Poll::Ready(zx::Status::NOT_SUPPORTED), exec.run_until_stalled(&mut req_fut));
+        assert_eq!(
+            Poll::Ready(Err(zx::Status::NOT_SUPPORTED)),
+            exec.run_until_stalled(&mut req_fut)
+        );
     }
     #[fuchsia::test]
     fn test_power_down_request_fails() {
@@ -1740,7 +1755,7 @@ mod tests {
         // Drop stream to cause peer closed error
         drop(phy_stream);
 
-        assert_eq!(Poll::Ready(zx::Status::INTERNAL), exec.run_until_stalled(&mut req_fut));
+        assert_eq!(Poll::Ready(Err(zx::Status::INTERNAL)), exec.run_until_stalled(&mut req_fut));
     }
     #[fuchsia::test]
     fn test_power_down_no_phy_fails() {
@@ -1751,7 +1766,7 @@ mod tests {
 
         let req_fut = super::power_down(&test_values.phys, phy_id);
         let mut req_fut = pin!(req_fut);
-        assert_eq!(Poll::Ready(zx::Status::NOT_FOUND), exec.run_until_stalled(&mut req_fut));
+        assert_eq!(Poll::Ready(Err(zx::Status::NOT_FOUND)), exec.run_until_stalled(&mut req_fut));
     }
     #[fuchsia::test]
     fn test_power_up_succeeds() {
@@ -1767,7 +1782,7 @@ mod tests {
 
         expect_power_up(&mut exec, &mut phy_stream, Ok(()));
 
-        assert_eq!(exec.run_until_stalled(&mut req_fut), Poll::Ready(zx::Status::OK));
+        assert_eq!(exec.run_until_stalled(&mut req_fut), Poll::Ready(Ok(())));
     }
     #[fuchsia::test]
     fn test_power_up_fails() {
@@ -1783,7 +1798,10 @@ mod tests {
 
         expect_power_up(&mut exec, &mut phy_stream, Err(zx::Status::NOT_SUPPORTED));
 
-        assert_eq!(Poll::Ready(zx::Status::NOT_SUPPORTED), exec.run_until_stalled(&mut req_fut));
+        assert_eq!(
+            Poll::Ready(Err(zx::Status::NOT_SUPPORTED)),
+            exec.run_until_stalled(&mut req_fut)
+        );
     }
     #[fuchsia::test]
     fn test_power_up_request_fails() {
@@ -1800,7 +1818,7 @@ mod tests {
         // Drop stream to cause peer closed error
         drop(phy_stream);
 
-        assert_eq!(Poll::Ready(zx::Status::INTERNAL), exec.run_until_stalled(&mut req_fut));
+        assert_eq!(Poll::Ready(Err(zx::Status::INTERNAL)), exec.run_until_stalled(&mut req_fut));
     }
     #[fuchsia::test]
     fn test_power_up_no_phy_fails() {
@@ -1811,7 +1829,7 @@ mod tests {
 
         let req_fut = super::power_up(&test_values.phys, phy_id);
         let mut req_fut = pin!(req_fut);
-        assert_eq!(Poll::Ready(zx::Status::NOT_FOUND), exec.run_until_stalled(&mut req_fut));
+        assert_eq!(Poll::Ready(Err(zx::Status::NOT_FOUND)), exec.run_until_stalled(&mut req_fut));
     }
     #[fuchsia::test]
     fn test_reset_succeeds() {
@@ -1827,7 +1845,7 @@ mod tests {
 
         expect_reset(&mut exec, &mut phy_stream, Ok(()));
 
-        assert_eq!(exec.run_until_stalled(&mut req_fut), Poll::Ready(zx::Status::OK));
+        assert_eq!(exec.run_until_stalled(&mut req_fut), Poll::Ready(Ok(())));
     }
     #[fuchsia::test]
     fn test_reset_fails() {
@@ -1843,7 +1861,10 @@ mod tests {
 
         expect_reset(&mut exec, &mut phy_stream, Err(zx::Status::NOT_SUPPORTED));
 
-        assert_eq!(Poll::Ready(zx::Status::NOT_SUPPORTED), exec.run_until_stalled(&mut req_fut));
+        assert_eq!(
+            Poll::Ready(Err(zx::Status::NOT_SUPPORTED)),
+            exec.run_until_stalled(&mut req_fut)
+        );
     }
     #[fuchsia::test]
     fn test_reset_request_fails() {
@@ -1860,7 +1881,7 @@ mod tests {
         // Drop stream to cause peer closed error
         drop(phy_stream);
 
-        assert_eq!(Poll::Ready(zx::Status::INTERNAL), exec.run_until_stalled(&mut req_fut));
+        assert_eq!(Poll::Ready(Err(zx::Status::INTERNAL)), exec.run_until_stalled(&mut req_fut));
     }
     #[fuchsia::test]
     fn test_reset_no_phy_fails() {
@@ -1871,7 +1892,7 @@ mod tests {
 
         let req_fut = super::reset(&test_values.phys, phy_id);
         let mut req_fut = pin!(req_fut);
-        assert_eq!(Poll::Ready(zx::Status::NOT_FOUND), exec.run_until_stalled(&mut req_fut));
+        assert_eq!(Poll::Ready(Err(zx::Status::NOT_FOUND)), exec.run_until_stalled(&mut req_fut));
     }
     #[fuchsia::test]
     fn test_get_power_state_succeeds() {
@@ -3504,9 +3525,9 @@ mod tests {
         let resp = assert_matches!(exec.run_until_stalled(&mut query_fut), Poll::Ready(Ok(Ok(resp))) => resp);
         assert_eq!(resp, apf_support);
     }
-    #[test_case(zx::Status::OK, false; "New PHY - Generic SME with OK epitaph shuts down cleanly")]
-    #[test_case(zx::Status::INTERNAL, true; "New PHY - Generic SME with error epitaph initiates iface removal")]
-    fn new_iface_stream_epitaph(epitaph: zx::Status, should_destroy_iface: bool) {
+    #[test_case(Ok(()), false; "New PHY - Generic SME with OK epitaph shuts down cleanly")]
+    #[test_case(Err(zx::Status::INTERNAL), true; "New PHY - Generic SME with error epitaph initiates iface removal")]
+    fn new_iface_stream_epitaph(epitaph: Result<(), zx::Status>, should_destroy_iface: bool) {
         let mut exec = fasync::TestExecutor::new();
         let test_values = test_setup();
         let iface_wrapper = IfaceWrapper::new(&test_values.ifaces, &test_values.ifaces_tree);

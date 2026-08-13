@@ -402,7 +402,7 @@ fn send_on_open(
     node_info: fio::NodeInfoDeprecated,
 ) -> Result<(), Status> {
     control_handle
-        .send_on_open_(Status::OK.into_raw(), Some(node_info))
+        .send_on_open_(zx_status::sys::ZX_OK, Some(node_info))
         .map_err(|_| Status::PEER_CLOSED)
 }
 

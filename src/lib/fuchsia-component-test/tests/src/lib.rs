@@ -1888,7 +1888,7 @@ async fn start_and_stop() -> Result<(), Error> {
         assert!(handles.numbered_handles().is_empty());
         stop_sender.send(()).await?;
         let stopped_payload = execution.wait_for_stop().await?;
-        assert_eq!(stopped_payload.status, Some(zx::Status::OK.into_raw()));
+        assert_eq!(stopped_payload.status, Some(zx::sys::ZX_OK));
     }
 
     // We can start a component without arguments and stop it ourselves.

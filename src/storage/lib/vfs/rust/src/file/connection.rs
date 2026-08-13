@@ -604,7 +604,7 @@ impl<T: 'static + File, U: Deref<Target = OpenNode<T>> + DerefMut + IoOpHandler 
                     let (status, attrs) =
                         crate::common::io2_to_io1_attrs(self.file.as_ref(), self.options.rights)
                             .await;
-                    responder.send(status.into_raw(), &attrs)
+                    responder.send(status, &attrs)
                 }
                 .trace(trace::trace_future_args!("storage", "File::GetAttr"))
                 .await?;
@@ -615,7 +615,7 @@ impl<T: 'static + File, U: Deref<Target = OpenNode<T>> + DerefMut + IoOpHandler 
                     let (status, attrs) =
                         crate::common::io2_to_io1_attrs(self.file.as_ref(), self.options.rights)
                             .await;
-                    responder.send(status.into_raw(), &attrs)
+                    responder.send(status, &attrs)
                 }
                 .trace(trace::trace_future_args!("storage", "File::GetAttr"))
                 .await?;
@@ -625,7 +625,7 @@ impl<T: 'static + File, U: Deref<Target = OpenNode<T>> + DerefMut + IoOpHandler 
                 async move {
                     let result =
                         self.handle_update_attributes(io1_to_io2_attrs(flags, attributes)).await;
-                    responder.send(Status::from_result(result).into_raw())
+                    responder.send(Status::result_into_raw(result))
                 }
                 .trace(trace::trace_future_args!("storage", "File::SetAttr"))
                 .await?;
@@ -635,7 +635,7 @@ impl<T: 'static + File, U: Deref<Target = OpenNode<T>> + DerefMut + IoOpHandler 
                 async move {
                     let result =
                         self.handle_update_attributes(io1_to_io2_attrs(flags, attributes)).await;
-                    responder.send(Status::from_result(result).into_raw())
+                    responder.send(Status::result_into_raw(result))
                 }
                 .trace(trace::trace_future_args!("storage", "File::SetAttr"))
                 .await?;
@@ -783,7 +783,7 @@ impl<T: 'static + File, U: Deref<Target = OpenNode<T>> + DerefMut + IoOpHandler 
             }
             fio::FileRequest::DeprecatedGetFlags { responder } => {
                 trace::duration!("storage", "File::DeprecatedGetFlags");
-                responder.send(Status::OK.into_raw(), self.options.to_io1())?;
+                responder.send(zx_status::sys::ZX_OK, self.options.to_io1())?;
             }
             fio::FileRequest::DeprecatedSetFlags { flags, responder } => {
                 trace::duration!("storage", "File::DeprecatedSetFlags");
@@ -791,7 +791,7 @@ impl<T: 'static + File, U: Deref<Target = OpenNode<T>> + DerefMut + IoOpHandler 
                 let is_append = flags.contains(fio::OpenFlags::APPEND);
                 self.options.is_append = is_append;
                 let flags = if is_append { fio::Flags::FILE_APPEND } else { fio::Flags::empty() };
-                responder.send(Status::from_result(self.file.set_flags(flags)).into_raw())?;
+                responder.send(Status::result_into_raw(self.file.set_flags(flags)))?;
             }
             #[cfg(target_os = "fuchsia")]
             fio::FileRequest::GetBackingMemory { flags, responder } => {
@@ -819,7 +819,7 @@ impl<T: 'static + File, U: Deref<Target = OpenNode<T>> + DerefMut + IoOpHandler 
                 trace::duration!("storage", "File::QueryFilesystem");
                 match self.file.query_filesystem() {
                     Err(status) => responder.send(status.into_raw(), None)?,
-                    Ok(info) => responder.send(0, Some(&info))?,
+                    Ok(info) => responder.send(zx_status::sys::ZX_OK, Some(&info))?,
                 }
             }
             #[cfg(fuchsia_api_level_at_least = "HEAD")]
@@ -1205,7 +1205,7 @@ mod tests {
         Sync,
     }
 
-    type MockCallbackType = Box<dyn Fn(&FileOperation) -> Status + Sync + Send>;
+    type MockCallbackType = Box<dyn Fn(&FileOperation) -> Result<(), Status> + Sync + Send>;
     /// A fake file that just tracks what calls `FileConnection` makes on it.
     struct MockFile {
         /// The list of operations that have been called.
@@ -1248,10 +1248,7 @@ mod tests {
         fn handle_operation(&self, operation: FileOperation) -> Result<(), Status> {
             let result = (self.callback)(&operation);
             self.operations.lock().push(operation);
-            match result {
-                Status::OK => Ok(()),
-                err => Err(err),
-            }
+            result
         }
     }
 
@@ -1361,16 +1358,16 @@ mod tests {
     }
 
     /// Only the init operation will succeed, all others fail.
-    fn only_allow_init(op: &FileOperation) -> Status {
+    fn only_allow_init(op: &FileOperation) -> Result<(), Status> {
         match op {
-            FileOperation::Init { .. } => Status::OK,
-            _ => Status::IO,
+            FileOperation::Init { .. } => Ok(()),
+            _ => Err(Status::IO),
         }
     }
 
     /// All operations succeed.
-    fn always_succeed_callback(_op: &FileOperation) -> Status {
-        Status::OK
+    fn always_succeed_callback(_op: &FileOperation) -> Result<(), Status> {
+        Ok(())
     }
 
     struct TestEnv {

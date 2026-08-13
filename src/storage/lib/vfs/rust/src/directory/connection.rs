@@ -114,7 +114,7 @@ impl<DirectoryType: Directory> BaseConnection<DirectoryType> {
                         self.options.rights,
                     )
                     .await;
-                    responder.send(status.into_raw(), &attrs)
+                    responder.send(status, &attrs)
                 }
                 .trace(trace::trace_future_args!("storage", "Directory::GetAttr"))
                 .await?;
@@ -127,7 +127,7 @@ impl<DirectoryType: Directory> BaseConnection<DirectoryType> {
                         self.options.rights,
                     )
                     .await;
-                    responder.send(status.into_raw(), &attrs)
+                    responder.send(status, &attrs)
                 }
                 .trace(trace::trace_future_args!("storage", "Directory::GetAttr"))
                 .await?;
@@ -195,7 +195,7 @@ impl<DirectoryType: Directory> BaseConnection<DirectoryType> {
             }
             fio::DirectoryRequest::DeprecatedGetFlags { responder } => {
                 trace::duration!("storage", "Directory::DeprecatedGetFlags");
-                responder.send(Status::OK.into_raw(), self.options.to_io1())?;
+                responder.send(zx_status::sys::ZX_OK, self.options.to_io1())?;
             }
             fio::DirectoryRequest::DeprecatedSetFlags { flags: _, responder } => {
                 trace::duration!("storage", "Directory::DeprecatedSetFlags");
@@ -227,7 +227,7 @@ impl<DirectoryType: Directory> BaseConnection<DirectoryType> {
             fio::DirectoryRequest::ReadDirents { max_bytes, responder } => {
                 async move {
                     let (status, entries) = self.handle_read_dirents(max_bytes).await;
-                    responder.send(status.into_raw(), entries.as_slice())
+                    responder.send(Status::result_into_raw(status), entries.as_slice())
                 }
                 .trace(trace::trace_future_args!("storage", "Directory::ReadDirents"))
                 .await?;
@@ -235,24 +235,25 @@ impl<DirectoryType: Directory> BaseConnection<DirectoryType> {
             fio::DirectoryRequest::Rewind { responder } => {
                 trace::duration!("storage", "Directory::Rewind");
                 self.seek = Default::default();
-                responder.send(Status::OK.into_raw())?;
+                responder.send(zx_status::sys::ZX_OK)?;
             }
             fio::DirectoryRequest::Link { src, dst_parent_token, dst, responder } => {
                 async move {
-                    let status: Status = self.handle_link(&src, dst_parent_token, dst).await.into();
-                    responder.send(status.into_raw())
+                    responder.send(Status::result_into_raw(
+                        self.handle_link(&src, dst_parent_token, dst).await,
+                    ))
                 }
                 .trace(trace::trace_future_args!("storage", "Directory::Link"))
                 .await?;
             }
             fio::DirectoryRequest::Watch { mask, options, watcher, responder } => {
                 trace::duration!("storage", "Directory::Watch");
-                let status = if options != 0 {
-                    Status::INVALID_ARGS
+                let raw_status = if options != 0 {
+                    Status::INVALID_ARGS.into_raw()
                 } else {
-                    self.handle_watch(mask, watcher.into()).into()
+                    Status::result_into_raw(self.handle_watch(mask, watcher.into()))
                 };
-                responder.send(status.into_raw())?;
+                responder.send(raw_status)?;
             }
             fio::DirectoryRequest::Query { responder } => {
                 trace::duration!("storage", "Directory::Query");
@@ -262,7 +263,7 @@ impl<DirectoryType: Directory> BaseConnection<DirectoryType> {
                 trace::duration!("storage", "Directory::QueryFilesystem");
                 match self.directory.query_filesystem() {
                     Err(status) => responder.send(status.into_raw(), None)?,
-                    Ok(info) => responder.send(0, Some(&info))?,
+                    Ok(info) => responder.send(zx_status::sys::ZX_OK, Some(&info))?,
                 }
             }
             fio::DirectoryRequest::Unlink { name: _, options: _, responder } => {
@@ -454,7 +455,7 @@ impl<DirectoryType: Directory> BaseConnection<DirectoryType> {
         self.directory.clone().open_async(self.scope.clone(), path, flags, object_request).await
     }
 
-    async fn handle_read_dirents(&mut self, max_bytes: u64) -> (Status, Vec<u8>) {
+    async fn handle_read_dirents(&mut self, max_bytes: u64) -> (Result<(), Status>, Vec<u8>) {
         async {
             let (new_pos, sealed) =
                 self.directory.read_dirents(&self.seek, read_dirents::Sink::new(max_bytes)).await?;
@@ -475,7 +476,7 @@ impl<DirectoryType: Directory> BaseConnection<DirectoryType> {
             Ok((status, buf))
         }
         .await
-        .unwrap_or_else(|status| (status, Vec::new()))
+        .unwrap_or_else(|status| (Err(status), Vec::new()))
     }
 
     async fn handle_link(

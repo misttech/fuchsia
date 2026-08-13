@@ -180,7 +180,7 @@ impl HandleType for fidl::Channel {
             Ok(()) => Some(Ok(())),
             Err(fidl::Status::SHOULD_WAIT) => None,
             Err(other) => {
-                if handles.iter().any(|x| x.result != fidl::Status::OK) {
+                if handles.iter().any(|x| fidl::Status::ok(x.result.into_raw()).is_err()) {
                     Some(Err(proto::WriteChannelError::OpErrors(
                         handles
                             .iter_mut()

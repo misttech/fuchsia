@@ -26,7 +26,6 @@ pub fn io_err_str(e: io::Error) -> String {
 #[cfg(target_os = "fuchsia")]
 pub fn zx_status_str(status: zx::Status) -> String {
     let msg = match status {
-        zx::Status::OK => "OK",
         zx::Status::INTERNAL => "INTERNAL_ERROR",
         zx::Status::NOT_SUPPORTED => "NOT_SUPPORTED",
         zx::Status::NO_RESOURCES => "NO_RESOURCES",
