@@ -4,6 +4,7 @@
 
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
+load("//build/bazel/rules/host_tests:host_go_test.bzl", "host_go_test")
 
 go_library(
     name = "parser",
@@ -21,4 +22,13 @@ go_library(
         "//tools/fidl/gidl/lib/ir",
         "//tools/fidl/lib/fidlgen",
     ],
+)
+
+host_go_test(
+    name = "gidl_parser_tests",
+    srcs = ["parser_test.go"],
+    embed = [":parser"],
+    target_compatible_with = HOST_CONSTRAINTS,
+    visibility = ["//tools:__pkg__"],
+    deps = ["//third_party/golibs:github.com/google/go-cmp/cmp"],
 )

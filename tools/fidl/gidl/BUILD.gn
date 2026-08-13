@@ -79,9 +79,7 @@ group("tests") {
 
   deps = [
     ":gidl_golden_tests",
-    "backend/golang:gidl_golang_tests($host_toolchain)",
     "empty_test:tests",
     "lib/mixer:gidl_mixer_tests($host_toolchain)",
-    "lib/parser:gidl_parser_tests($host_toolchain)",
   ]
 }

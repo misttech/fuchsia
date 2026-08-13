@@ -4,6 +4,7 @@
 
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
+load("//build/bazel/rules/host_tests:host_go_test.bzl", "host_go_test")
 
 go_library(
     name = "golang",
@@ -28,4 +29,12 @@ go_library(
         "//tools/fidl/gidl/lib/mixer",
         "//tools/fidl/lib/fidlgen",
     ],
+)
+
+host_go_test(
+    name = "gidl_golang_tests",
+    srcs = ["golang_test.go"],
+    embed = [":golang"],
+    target_compatible_with = HOST_CONSTRAINTS,
+    visibility = ["//tools:__pkg__"],
 )

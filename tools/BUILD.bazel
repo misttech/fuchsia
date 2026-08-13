@@ -12,6 +12,8 @@ test_suite(
     tests = [
         "//tools/check-licenses:tests",
         "//tools/fidl/fidlgen_rust/codegen:fidlgen_rust_lib_tests",
+        "//tools/fidl/gidl/backend/golang:gidl_golang_tests",
+        "//tools/fidl/gidl/lib/parser:gidl_parser_tests",
         "//tools/lib/subprocess:tests",
         "//tools/orchestrate:tests",
         "//tools/whereiscl:host_tests",
