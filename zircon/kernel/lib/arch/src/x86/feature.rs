@@ -3,11 +3,11 @@
 // found in the LICENSE file.
 
 use bitrs::layout;
-use regio::x86::Msr;
+use regio::x86::{Cpuid, Msr};
 use regio::{Ro, RwSafe};
 
 use super::Vendor;
-use super::cpuid::ExtendedFeatureFlagsD;
+use super::cpuid::EXTENDED_FEATURES_D;
 
 /// [intel/vol4]: Table 2-2.  IA-32 Architectural MSRs (Contd.).
 ///
@@ -32,8 +32,8 @@ layout!({
 });
 
 impl ArchCapabilitiesMsr {
-    pub fn is_supported(edx: ExtendedFeatureFlagsD) -> bool {
-        edx.ia32_arch_capabilities()
+    pub fn is_supported(cpuid: impl Cpuid) -> bool {
+        cpuid.read(EXTENDED_FEATURES_D).ia32_arch_capabilities()
     }
 }
 
@@ -78,7 +78,7 @@ layout!({
 
 impl MiscFeaturesMsr {
     pub fn is_supported(vendor: Vendor) -> bool {
-        matches!(vendor, Vendor::Intel)
+        vendor == Vendor::Intel
     }
 }
 

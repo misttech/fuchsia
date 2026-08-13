@@ -6,6 +6,18 @@ mod cpuid;
 mod cr;
 mod msr;
 
-pub use cpuid::{Cpuid, CpuidIo, CpuidRawResult, CpuidResult};
+pub use cpuid::{Cpuid, CpuidRawResult, CpuidValue, DirectCpuid};
 pub use cr::{Cr, CrIo, Xcr, XcrIo};
 pub use msr::{Msr, MsrIo};
+
+/// Represents the EAX register.
+pub const EAX: u8 = 0;
+
+/// Represents the EBX register.
+pub const EBX: u8 = 1;
+
+/// Represents the ECX register.
+pub const ECX: u8 = 2;
+
+/// Represents the EDX register.
+pub const EDX: u8 = 3;

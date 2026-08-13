@@ -177,17 +177,40 @@ const XCR0: Xcr<0, u64> = Cr::new();
 
 ## x86 CPUID
 
-The core CPUID type is `Cpuid` for defining the layouts of a particular
-(sub)leaf.
-
-Example usage:
+`CpuidValue` defines a CPUID value marker associated with a particular leaf,
+subleaf, output register (`EAX`, `EBX`, `ECX`, or `EDX`), and layout type:
 
 ```rust
+use regio::x86::{CpuidValue, EAX};
+
+const CPUID_MAX_LEAF: CpuidValue<0x0, 0x0, EAX, u32> = CpuidValue::new();
+```
+
+CPUID access is abstracted via the [`Cpuid`] trait, providing methods to read
+values, check leaf support, and conditionally read supported leaves:
+
+- `DirectCpuid` issues actual `cpuid` instructions on x86 hardware:
+
+```rust
+use regio::x86::{Cpuid, DirectCpuid};
+
+# #[cfg(any(target_arch = "x86", target_arch = "x86_64"))] {
+println!("Maximum CPUID leaf number: {:#x}", DirectCpuid {}.read(CPUID_MAX_LEAF));
+# }
+```
+
+- [`FakeCpuid`] (under [`regio::testing::x86`], available with the `testing`
+  feature) provides a mock CPUID reader for testing and non-x86 environments:
+
+```rust
+# #[cfg(feature = "testing")] {
+use regio::testing::x86::FakeCpuid;
 use regio::x86::Cpuid;
 
-const CPUID_MAX_LEAF_AND_VENDOR_STRING: Cpuid<0x0, 0x0, u32, u32, u32, u32> = Cpuid::new();
-
-println!("Maximum CPUID leaf number: {:#x}", CPUID_MAX_LEAF_AND_VENDOR_STRING.read().eax);
+let mut cpuid = FakeCpuid::new();
+cpuid.populate(CPUID_MAX_LEAF, 0x7);
+assert_eq!(cpuid.read(CPUID_MAX_LEAF), 0x7);
+# }
 ```
 
 ## x86 MSRs

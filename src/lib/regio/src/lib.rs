@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#![cfg_attr(not(test), no_std)]
+#![cfg_attr(not(any(test, feature = "testing")), no_std)]
 
 pub mod arm64;
 mod mmio;

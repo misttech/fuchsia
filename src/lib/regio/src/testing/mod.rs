@@ -7,11 +7,11 @@
 //!
 //! This module is only available with the `testing` crate feature.
 
-extern crate alloc;
+pub mod x86;
 
-use alloc::vec::Vec;
 use core::cell::Cell;
 use core::fmt::Debug;
+use std::vec::Vec;
 
 use crate::traits::{ReadReg, Reg, SafeWriteReg, UnsafeWriteReg};
 

@@ -5,20 +5,33 @@
 use core::str::Utf8Error;
 
 use bitrs::layout;
-use regio::x86::{Cpuid, CpuidResult};
+use regio::x86::{Cpuid, CpuidValue, EAX, EBX, ECX, EDX};
 
 use super::Vendor;
 
-/// CPUID Leaf 0x0, Subleaf 0x0: Maximum Basic Leaf Number and Vendor ID String.
+/// Leaf/Function 0x0, EAX
 ///
-/// - EAX: Maximum Basic Leaf Number.
-/// - EBX, EDX, ECX: Vendor ID String.
-pub const MAX_LEAF_AND_VENDOR_STRING: Cpuid<0x0, 0x0, u32, u32, u32, u32> = Cpuid::new();
+/// [intel/vol2]: Table 3-8.  Information Returned by CPUID Instruction.
+/// [amd/vol3]: E.3.1, CPUID Fn0000_0000_EAX Largest Standard Function Number.
+pub const MAX_LEAF: CpuidValue<0x0, 0x0, EAX, u32> = CpuidValue::new();
 
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-pub fn max_leaf() -> u32 {
-    MAX_LEAF_AND_VENDOR_STRING.read().eax
-}
+/// Leaf/Function 0x0, EBX
+///
+/// [intel/vol2]: Table 3-8.  Information Returned by CPUID Instruction.
+/// [amd/vol3]: E.3.1, CPUID Fn0000_0000_E[D,C,B]X Processor Vendor.
+pub const VENDOR_STRING_B: CpuidValue<0x0, 0x0, EBX, u32> = CpuidValue::new();
+
+/// Leaf/Function 0x0, ECX
+///
+/// [intel/vol2]: Table 3-8.  Information Returned by CPUID Instruction.
+/// [amd/vol3]: E.3.1, CPUID Fn0000_0000_E[D,C,B]X Processor Vendor.
+pub const VENDOR_STRING_C: CpuidValue<0x0, 0x0, ECX, u32> = CpuidValue::new();
+
+/// Leaf/Function 0x0, EDX
+///
+/// [intel/vol2]: Table 3-8.  Information Returned by CPUID Instruction.
+/// [amd/vol3]: E.3.1, CPUID Fn0000_0000_E[D,C,B]X Processor Vendor.
+pub const VENDOR_STRING_D: CpuidValue<0x0, 0x0, EDX, u32> = CpuidValue::new();
 
 /// A vendor string derived from CPUID.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -31,18 +44,11 @@ impl VendorString {
     /// AMD's vendor string.
     pub const AMD: Self = Self(*b"AuthenticAMD");
 
-    /// Returns the processor's vendor string.
-    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-    pub fn get() -> Self {
-        Self::from_cpuid(MAX_LEAF_AND_VENDOR_STRING.read())
-    }
-
-    /// Returns the vendor string from leaf 0.
-    pub fn from_cpuid(leaf0: CpuidResult<u32, u32, u32, u32>) -> Self {
-        let CpuidResult { ebx, ecx, edx, .. } = leaf0;
-        let ebx = ebx.to_le_bytes();
-        let ecx = ecx.to_le_bytes();
-        let edx = edx.to_le_bytes();
+    /// Returns the CPUID-based vendor string.
+    pub fn from_cpuid(cpuid: impl Cpuid) -> Self {
+        let ebx = cpuid.read(VENDOR_STRING_B).to_le_bytes();
+        let ecx = cpuid.read(VENDOR_STRING_C).to_le_bytes();
+        let edx = cpuid.read(VENDOR_STRING_D).to_le_bytes();
         Self([
             ebx[0], ebx[1], ebx[2], ebx[3], //
             edx[0], edx[1], edx[2], edx[3], //
@@ -67,26 +73,15 @@ impl VendorString {
     }
 }
 
-///---------------------------------------------------------------------------//
-/// Leaf/Function 0x7.
+/// Leaf/Function 0x7, EBX
 ///
 /// [intel/vol2]: Table 3-8.  Information Returned by CPUID Instruction.
-/// [amd/vol3]: E.3.6  Function 7h-Structured Extended Feature Identifier
-///---------------------------------------------------------------------------//
-pub const EXT_FEATURES: Cpuid<
-    0x7,
-    0x0,
-    u32,
-    ExtendedFeatureFlagsB,
-    ExtendedFeatureFlagsC,
-    ExtendedFeatureFlagsD,
-> = Cpuid::new();
+/// [amd/vol3]: E.3.6, CPUID Fn0000_0007_EBX_x0 Structured Extended Feature
+/// Identifiers (ECX=0).
+pub const EXTENDED_FEATURES_B: CpuidValue<0x7, 0x0, EBX, ExtendedFeatureFlagsB> = CpuidValue::new();
 
 layout!({
-    /// The layout of EBX in [`EXT_FEATURES`].
-    ///
-    /// [amd/vol3]: E.3.6, CPUID Fn0000_0007_EBX_x0 Structured Extended Feature
-    /// Identifiers (ECX=0).
+    /// The layout of EBX in [`EXTENDED_FEATURES_B`].
     pub struct ExtendedFeatureFlagsB(u32);
     {
         let avx512vl @ 31;
@@ -124,11 +119,15 @@ layout!({
     }
 });
 
+/// Leaf/Function 0x7, ECX
+///
+/// [intel/vol2]: Table 3-8.  Information Returned by CPUID Instruction.
+/// [amd/vol3]: E.3.6, CPUID Fn0000_0007_ECX_x0 Structured Extended Feature
+/// Identifiers (ECX=0).
+pub const EXTENDED_FEATURES_C: CpuidValue<0x7, 0x0, ECX, ExtendedFeatureFlagsC> = CpuidValue::new();
+
 layout!({
-    /// The layout of ECX in [`EXT_FEATURES`].
-    ///
-    /// [amd/vol3]: E.3.6, CPUID Fn0000_0007_ECX_x0 Structured Extended Feature
-    /// Identifiers (ECX=0).
+    /// The layout of ECX in [`EXTENDED_FEATURES_C`].
     pub struct ExtendedFeatureFlagsC(u32);
     {
         let pks @ 31;
@@ -164,11 +163,15 @@ layout!({
     }
 });
 
+/// Leaf/Function 0x7, EDX
+///
+/// [intel/vol2]: Table 3-8.  Information Returned by CPUID Instruction.
+/// [amd/vol3]: E.3.6, CPUID Fn0000_0007_EDX_x0 Structured Extended Feature
+/// Identifiers (ECX=0).
+pub const EXTENDED_FEATURES_D: CpuidValue<0x7, 0x0, EDX, ExtendedFeatureFlagsD> = CpuidValue::new();
+
 layout!({
-    /// The layout of EDX in [`EXT_FEATURES`].
-    ///
-    /// [amd/vol3]: E.3.6, CPUID Fn0000_0007_EDX_x0 Structured Extended Feature
-    /// Identifiers (ECX=0).
+    /// The layout of EDX in [`EXTENDED_FEATURES_D`].
     pub struct ExtendedFeatureFlagsD(u32);
     {
         let ssbd @ 31;
@@ -204,15 +207,23 @@ mod tests {
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     #[test]
     fn feature_detection() {
-        let vendor = VendorString::get();
+        use regio::x86::DirectCpuid;
+
+        let vendor = VendorString::from_cpuid(DirectCpuid {});
         println!("Vendor string: {}", vendor.as_str().unwrap_or("invalid vendor string"));
     }
 
     #[test]
     fn amd_vendor_string() {
+        use regio::testing::x86::FakeCpuid;
+
         // EBX, ECX, EDX copied verbatim from the manual.
-        let leaf0 = CpuidResult { eax: 0x7, ebx: 0x6874_7541, ecx: 0x444d_4163, edx: 0x6974_6e65 };
-        let vendor_str = VendorString::from_cpuid(leaf0);
+        let mut cpuid = FakeCpuid::new();
+        cpuid
+            .set(VENDOR_STRING_B, 0x6874_7541)
+            .set(VENDOR_STRING_C, 0x444d_4163)
+            .set(VENDOR_STRING_D, 0x6974_6e65);
+        let vendor_str = VendorString::from_cpuid(&cpuid);
         assert_eq!(vendor_str, VendorString::AMD);
     }
 }

@@ -5,10 +5,10 @@
 use bitrs::layout;
 use regio::RwSafe;
 use regio::traits::{ReadReg, RwSafeReg};
-use regio::x86::Msr;
+use regio::x86::{Cpuid, Msr};
 
-use super::cpuid::{ExtendedFeatureFlagsB, ExtendedFeatureFlagsD};
-use super::feature::ArchCapabilitiesMsr;
+use super::ArchCapabilitiesMsr;
+use super::cpuid::EXTENDED_FEATURES_B;
 
 /// [intel/vol4]: Table 2-2.  IA-32 Architectural MSRs (Contd.).
 ///
@@ -26,22 +26,23 @@ layout!({
 });
 
 impl TsxControlMsr {
-    fn is_supported<M>(ext_features: ExtendedFeatureFlagsD, msr: &M) -> bool
+    fn is_supported<M>(cpuid: impl Cpuid, msr: &M) -> bool
     where
         M: ReadReg<ArchCapabilitiesMsr>,
     {
-        ArchCapabilitiesMsr::is_supported(ext_features) && msr.read().tsx_ctrl()
+        ArchCapabilitiesMsr::is_supported(cpuid) && msr.read().tsx_ctrl()
     }
 }
 
-pub fn tsx_is_supported(ext_features: ExtendedFeatureFlagsB) -> bool {
+pub fn tsx_is_supported(cpuid: impl Cpuid) -> bool {
     // [intel/vol3]: 18.3.6.5     Performance Monitoring and Intel® TSX.
-    ext_features.hle() || ext_features.rtm()
+    let features = cpuid.read(EXTENDED_FEATURES_B);
+    features.hle() || features.rtm()
 }
 
 /// Attempts to disable TSX and returns whether it was successful.
 pub fn disable_tsx<M1, M2>(
-    ext_features: ExtendedFeatureFlagsD,
+    cpuid: impl Cpuid,
     arch_capabilities_msr: &M1,
     tsx_control_msr: &M2,
 ) -> bool
@@ -49,7 +50,7 @@ where
     M1: ReadReg<ArchCapabilitiesMsr>,
     M2: RwSafeReg<TsxControlMsr>,
 {
-    if !TsxControlMsr::is_supported(ext_features, arch_capabilities_msr) {
+    if !TsxControlMsr::is_supported(cpuid, arch_capabilities_msr) {
         return false;
     }
 
