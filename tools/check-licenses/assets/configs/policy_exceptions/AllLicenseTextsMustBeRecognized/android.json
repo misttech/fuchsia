@@ -6,7 +6,10 @@
                 "description": "Migrated from legacy _config.json",
                 "paths": [
                     "third_party/android/device/generic/vulkan-cereal/third-party/stb/include/stb/LICENSE",
-                    "third_party/android/platform/external/aac/NOTICE"
+                    "third_party/android/platform/external/aac/NOTICE",
+                    "prebuilt/third_party/android/aemu/release-gfxstream/linux-x64/LICENSE",
+                    "prebuilt/third_party/android/aemu/release/linux-x64/LICENSE",
+                    "third_party/android/platform/bionic/tools/NOTICE"
                 ]
             }
         ]
