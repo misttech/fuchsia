@@ -134,10 +134,6 @@ impl DefineSubsystemConfiguration<PlatformUiConfig> for UiSubsystem {
             "fuchsia.scenic.UseSeparateInputThread",
             Config::new(ConfigValueType::Bool, ui_config.use_separate_input_thread.into()),
         )?;
-        builder.set_config_capability(
-            "fuchsia.scenic.InputNoncritical",
-            Config::new(ConfigValueType::Bool, ui_config.input_noncritical.into()),
-        )?;
         if ui_config.display_composition_enable_heuristics {
             ensure!(
                 ui_config.display_composition,

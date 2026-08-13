@@ -101,7 +101,6 @@ impl FlatlandEnvironment {
                         "fuchsia.scenic.MaxDisplayRefreshRateMillihertz",
                     ))
                     .capability(Capability::configuration("fuchsia.scenic.FrameCounterOverlay"))
-                    .capability(Capability::configuration("fuchsia.scenic.InputNoncritical"))
                     .capability(Capability::configuration(
                         "fuchsia.scenic.UseFlatland2UberstructSchema",
                     ))
