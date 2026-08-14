@@ -32,6 +32,7 @@ libs = [
   "port_picker",
   "protocols",
   "rcs",
+  "safe_string",
   "sdk",
   "ssh",
   "stream_util",
