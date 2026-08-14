@@ -111,6 +111,7 @@ syscall_tests = [
   "sysctl_test",
   "sysfs_kernel_test",
   "sysfs_power_test",
+  "sysinfo_test",
   "syslog_test",
   "task_test",
   "terminal_test",

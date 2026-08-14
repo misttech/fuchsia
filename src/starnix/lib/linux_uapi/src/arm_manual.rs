@@ -349,13 +349,26 @@ impl From<crate::arch32::sysinfo> for crate::sysinfo {
 
 impl TryFrom<crate::sysinfo> for crate::arch32::sysinfo {
     type Error = ();
-    fn try_from(sysinfo: crate::sysinfo) -> Result<Self, ()> {
+    fn try_from(mut sysinfo: crate::sysinfo) -> Result<Self, ()> {
         let [v1, v2, v3] = sysinfo.loads;
         let loads = [
             u32::try_from(v1).map_err(|_| ())?,
             u32::try_from(v2).map_err(|_| ())?,
             u32::try_from(v3).map_err(|_| ())?,
         ];
+
+        while sysinfo.totalram > u32::MAX as u64 {
+            sysinfo.totalram >>= 1;
+            sysinfo.freeram >>= 1;
+            sysinfo.sharedram >>= 1;
+            sysinfo.bufferram >>= 1;
+            sysinfo.totalswap >>= 1;
+            sysinfo.freeswap >>= 1;
+            sysinfo.totalhigh >>= 1;
+            sysinfo.freehigh >>= 1;
+            sysinfo.mem_unit <<= 1;
+        }
+
         Ok(Self {
             uptime: sysinfo.uptime.try_into().map_err(|_| ())?,
             loads,
