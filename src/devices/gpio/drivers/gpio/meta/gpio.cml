@@ -19,6 +19,7 @@
     capabilities: [
         { service: "fuchsia.hardware.gpio.Service" },
         { service: "fuchsia.hardware.pin.Service" },
+        { service: "fuchsia.hardware.pin.PinStatesService" },
         { service: "fuchsia.hardware.power.PowerTokenService" },
     ],
     use: [
@@ -48,6 +49,10 @@
         },
         {
             service: "fuchsia.hardware.pin.Service",
+            from: "self",
+        },
+        {
+            service: "fuchsia.hardware.pin.PinStatesService",
             from: "self",
         },
         {

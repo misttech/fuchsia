@@ -181,6 +181,9 @@
       service: "fuchsia.hardware.pin.Service"
     },
     {
+      service: "fuchsia.hardware.pin.PinStatesService"
+    },
+    {
       service: "fuchsia.hardware.power.PowerTokenService"
     }
   ],
@@ -220,6 +223,10 @@
     },
     {
       service: "fuchsia.hardware.pin.Service",
+      from: "self"
+    },
+    {
+      service: "fuchsia.hardware.pin.PinStatesService",
       from: "self"
     },
     {
