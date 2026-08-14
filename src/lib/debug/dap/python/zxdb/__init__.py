@@ -5,6 +5,9 @@
 from pydap.client import DapClient
 from pydap.models import ThreadEvent, ThreadEventBody
 from zxdb_dap.models import (
+    ZxdbPauseArguments,
+    ZxdbProcessStoppedEvent,
+    ZxdbProcessStoppedEventBody,
     ZxdbThread,
     ZxdbThreadEvent,
     ZxdbThreadEventBody,
@@ -30,10 +33,13 @@ __all__ = [
     "ZxdbDapClient",
     "ZxdbDapMixin",
     "ZxdbDetachArguments",
+    "ZxdbPauseArguments",
     "ZxdbProcessArguments",
     "ZxdbProcessInfo",
     "ZxdbProcessResponse",
     "ZxdbProcessResponseBody",
+    "ZxdbProcessStoppedEvent",
+    "ZxdbProcessStoppedEventBody",
     "ZxdbStackTraceArguments",
     "ThreadEvent",
     "ZxdbThread",

@@ -7,7 +7,10 @@ from typing import Any, Protocol
 from pydantic import Field, model_validator
 from pydap.dap_types import DapBaseModel, Thread
 from pydap.models import Response, StackTraceArguments, StackTraceResponse
-from zxdb_dap.models import ZxdbThreadsResponse
+from zxdb_dap.models import (
+    ZxdbPauseArguments,
+    ZxdbThreadsResponse,
+)
 
 
 class ZxdbStackTraceArguments(StackTraceArguments):
@@ -126,3 +129,11 @@ class ZxdbDapMixin:
         """
         resp = await self._send_request("threads")
         return ZxdbThreadsResponse.model_validate(resp)
+
+    async def zxdb_pause_process(
+        self: SupportsSendRequest,
+        args: ZxdbPauseArguments,
+    ) -> Response:
+        """Sends a pause request with process scope."""
+        resp = await self._send_request("pause", args)
+        return Response.model_validate(resp)

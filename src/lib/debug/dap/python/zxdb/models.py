@@ -2,13 +2,54 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-from pydap.dap_types import Thread
+from typing import Literal
+
+from pydantic import Field
+from pydap.dap_types import DapBaseModel, Thread
 from pydap.models import (
+    Event,
+    PauseArguments,
     ThreadEvent,
     ThreadEventBody,
     ThreadsResponse,
     ThreadsResponseBody,
 )
+
+
+class ZxdbPauseArguments(PauseArguments):
+    """Arguments for `pause` request with zxdb extensions.
+
+    Attributes:
+        process_id: Optional process ID to pause.
+    """
+
+    # We have to explicitly override thread_id: int = Field(default=0) on
+    # ZxdbPauseArguments because Pydantic v2 inherits field requiredness
+    # from the parent class when not overridden.
+    thread_id: int = Field(default=0)
+    process_id: int
+
+
+class ZxdbProcessStoppedEventBody(DapBaseModel):
+    """Body of the `processStopped` event.
+
+    Attributes:
+        process_id: Process ID (KOID).
+        name: Process name.
+        threads: List of thread IDs (KOIDs) stopped in the process.
+    """
+
+    process_id: int
+    name: str | None = None
+    threads: list[int] = Field(default_factory=list)
+
+
+class ZxdbProcessStoppedEvent(Event):
+    """Zxdb-specific processStopped event."""
+
+    type: Literal["event"] = "event"
+    event: Literal["processStopped"] = "processStopped"
+    body: ZxdbProcessStoppedEventBody
 
 
 class ZxdbThread(Thread):

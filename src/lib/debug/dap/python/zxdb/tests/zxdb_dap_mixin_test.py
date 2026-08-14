@@ -14,7 +14,9 @@ from zxdb_dap import (
     ThreadEvent,
     ZxdbDapClient,
     ZxdbDetachArguments,
+    ZxdbPauseArguments,
     ZxdbProcessArguments,
+    ZxdbProcessStoppedEvent,
     ZxdbStackTraceArguments,
     ZxdbThread,
     ZxdbThreadEvent,
@@ -419,6 +421,56 @@ class TestZxdbDapMixin(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(event.body.reason, "custom_reason")
         self.assertEqual(event.body.thread_id, 1234)
         self.assertEqual(event.body.process_id, 5678)
+
+    async def test_zxdb_pause_process(self) -> None:
+        client = ZxdbDapClient()
+        reader, writer = self._start_client(client)
+        args = ZxdbPauseArguments(process_id=12345)
+
+        send_task = asyncio.create_task(client.zxdb_pause_process(args))
+
+        await asyncio.wait_for(writer.drained.wait(), timeout=2.0)
+
+        buffer_val = writer.buffer.getvalue()
+        headers, body = buffer_val.split(b"\r\n\r\n", 1)
+        req_val = json.loads(body.decode("utf-8"))
+        seq = req_val["seq"]
+
+        response = {
+            "seq": 10,
+            "type": "response",
+            "request_seq": seq,
+            "success": True,
+            "command": "pause",
+        }
+
+        feed_dap_response(reader, response)
+
+        resp = await send_task
+        self.assertTrue(resp.success)
+        self.assertEqual(req_val["command"], "pause")
+        self.assertEqual(req_val["arguments"]["processId"], 12345)
+
+    def test_zxdb_pause_invalid_args(self) -> None:
+        with self.assertRaises(ValueError):
+            ZxdbPauseArguments(process_id=None)
+
+    def test_zxdb_process_stopped_event(self) -> None:
+        event_dict = {
+            "seq": 1,
+            "type": "event",
+            "event": "processStopped",
+            "body": {
+                "processId": 999,
+                "name": "my_process",
+                "threads": [1234, 5678],
+            },
+        }
+        event = ZxdbProcessStoppedEvent.model_validate(event_dict)
+        self.assertEqual(event.event, "processStopped")
+        self.assertEqual(event.body.process_id, 999)
+        self.assertEqual(event.body.name, "my_process")
+        self.assertEqual(event.body.threads, [1234, 5678])
 
 
 if __name__ == "__main__":
