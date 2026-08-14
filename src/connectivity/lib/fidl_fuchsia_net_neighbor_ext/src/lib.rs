@@ -418,7 +418,7 @@ mod tests {
         let view_request_stream = view_server_end.into_stream();
         let entry_iters_fut = view_request_stream
             .zip(futures::stream::iter(test_data.clone()))
-            .for_each_concurrent(std::usize::MAX, |(request, event_data)| {
+            .for_each_concurrent(usize::MAX, |(request, event_data)| {
                 testutil::serve_view_request(
                     request.expect("failed to receive `OpenEntryIterator` request"),
                     futures::stream::iter(event_data),
