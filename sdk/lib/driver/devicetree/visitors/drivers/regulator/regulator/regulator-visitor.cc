@@ -14,6 +14,8 @@
 
 #include <memory>
 #include <regex>
+#include <string>
+#include <vector>
 
 #include <bind/fuchsia/cpp/bind.h>
 #include <bind/fuchsia/hardware/vreg/cpp/bind.h>
@@ -24,6 +26,8 @@ RegulatorVisitor::RegulatorVisitor() {
   fdf_devicetree::Properties reference_properties = {};
   reference_properties.emplace_back(std::make_unique<fdf_devicetree::ReferenceProperty>(
       kRegulatorReference, kRegulatorCells, /* required */ false));
+  reference_properties.emplace_back(std::make_unique<fdf_devicetree::StringListProperty>(
+      kRegulatorFunctions, /* required */ false));
   reference_parser_ =
       std::make_unique<fdf_devicetree::PropertyParser>(std::move(reference_properties));
 
@@ -74,10 +78,25 @@ zx::result<> RegulatorVisitor::Visit(fdf_devicetree::Node& node,
     return zx::ok();
   }
 
-  for (auto& reference : *references) {
-    auto reference_node = reference.reference_node();
+  std::optional<std::vector<std::string>> functions =
+      reference_output->Get<std::vector<std::string>>(kRegulatorFunctions);
+  if (functions.has_value() && functions.value().size() != references.value().size()) {
+    fdf::error(
+        "Regulator reference '{}' has mismatched number of regulator-functions"
+        " ({}) vs regulators ({}).",
+        node.name(), functions.value().size(), references.value().size());
+    return zx::error(ZX_ERR_INVALID_ARGS);
+  }
 
-    auto status = AddChildNodeSpec(node, reference_node);
+  for (size_t index = 0; index < references.value().size(); ++index) {
+    auto& reference = references.value()[index];
+    auto reference_node = reference.reference_node();
+    std::optional<std::string_view> function;
+    if (functions.has_value()) {
+      function = functions.value()[index];
+    }
+
+    auto status = AddChildNodeSpec(node, reference_node, function);
     if (status.is_error()) {
       fdf::error("Failed to add regulator '{}' node spec to '{}' : {}",
                  reference.reference_node().name(), node.name(), status);
@@ -151,13 +170,17 @@ zx::result<> RegulatorVisitor::AddRegulatorMetadata(fdf_devicetree::Node& node,
 }
 
 zx::result<> RegulatorVisitor::AddChildNodeSpec(fdf_devicetree::Node& child,
-                                                fdf_devicetree::ReferenceNode& parent) {
+                                                fdf_devicetree::ReferenceNode& parent,
+                                                std::optional<std::string_view> function) {
   auto regulator_name = parent.GetProperty<std::string>(kRegulatorName);
   if (regulator_name.is_error()) {
     fdf::error("Regulator node '{}' does not have a name: {}.", parent.name(), regulator_name);
 
     return regulator_name.take_error();
   }
+
+  std::string property_name =
+      function.has_value() ? std::string(function.value()) : *regulator_name;
 
   auto regulator_node = fuchsia_driver_framework::ParentSpec2{{
       .bind_rules =
@@ -170,7 +193,7 @@ zx::result<> RegulatorVisitor::AddChildNodeSpec(fdf_devicetree::Node& child,
           {
               fdf::MakeProperty2(bind_fuchsia_hardware_vreg::SERVICE,
                                  bind_fuchsia_hardware_vreg::SERVICE_ZIRCONTRANSPORT),
-              fdf::MakeProperty2(bind_fuchsia::NAME, *regulator_name),
+              fdf::MakeProperty2(bind_fuchsia::NAME, property_name),
           },
   }};
 

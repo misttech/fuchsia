@@ -1,4 +1,5 @@
-// Copyright 2024 The Fuchsia Authors. All rights reserved.
+		// Invalid: 2 functions for 1 regulator.
+// Copyright 2026 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 #include "regulator-test.h"
@@ -23,6 +24,6 @@
 	cpu-ctrl {
 		compatible = "cpu-ctrl";
 		regulators = <&vreg>;
-		regulator-functions = REGULATOR_FUNCTION;
+		regulator-functions = "func1", "func2";
 	};
 };

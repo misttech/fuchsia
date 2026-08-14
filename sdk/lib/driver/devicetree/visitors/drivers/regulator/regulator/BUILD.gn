@@ -71,11 +71,27 @@ resource("multiclient-regulator-visitor-dtb-file") {
   deps = [ ":multiclient-regulator-dtb" ]
 }
 
+dtb("invalid-regulator-dtb") {
+  sources = [ "test/dts/invalid-regulator.dts.S" ]
+}
+
+resource("invalid-regulator-visitor-dtb-file") {
+  sources = get_target_outputs(":invalid-regulator-dtb")
+  outputs = [ "test-data/invalid-regulator.dtb" ]
+  deps = [ ":invalid-regulator-dtb" ]
+}
+
 fuchsia_unittest_package("regulator-visitor-test") {
   component_name = "regulator-visitor-test"
   deps = [
+    ":invalid-regulator-visitor-dtb-file",
     ":multiclient-regulator-visitor-dtb-file",
     ":regulator-visitor-dtb-file",
     ":regulator-visitor-test-bin",
   ]
+  test_specs = {
+    log_settings = {
+      max_severity = "ERROR"
+    }
+  }
 }

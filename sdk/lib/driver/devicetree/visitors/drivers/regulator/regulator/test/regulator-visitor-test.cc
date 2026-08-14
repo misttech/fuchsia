@@ -74,7 +74,7 @@ TEST(RegulatorVisitorTest, TestMetadataAndBindProperty) {
       {
           {fdf::MakeProperty2(bind_fuchsia_hardware_vreg::SERVICE,
                               bind_fuchsia_hardware_vreg::SERVICE_ZIRCONTRANSPORT),
-           fdf::MakeProperty2(bind_fuchsia::NAME, REGULATOR_NAME)},
+           fdf::MakeProperty2(bind_fuchsia::NAME, REGULATOR_FUNCTION)},
       },
       (*mgr_request.parents2())[1].properties(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
@@ -114,13 +114,15 @@ TEST(RegulatorVisitorTest, TestSharedRegulatorInstanceIds) {
       ASSERT_EQ(2lu, mgr_request.parents2()->size());
 
       // Check for regulator parent node specs. Skip the 1st one as it is either pdev/board device.
+      // When regulator-functions is omitted, FUNCTION property must not be generated.
+      EXPECT_EQ(2lu, (*mgr_request.parents2())[1].properties().size());
       EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
           {
               {fdf::MakeProperty2(bind_fuchsia_hardware_vreg::SERVICE,
                                   bind_fuchsia_hardware_vreg::SERVICE_ZIRCONTRANSPORT),
                fdf::MakeProperty2(bind_fuchsia::NAME, REGULATOR_NAME)},
           },
-          (*mgr_request.parents2())[1].properties(), false));
+          (*mgr_request.parents2())[1].properties(), true));
       EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
           {{fdf::MakeAcceptBindRule(bind_fuchsia_hardware_vreg::SERVICE,
                                     bind_fuchsia_hardware_vreg::SERVICE_ZIRCONTRANSPORT),
@@ -130,6 +132,18 @@ TEST(RegulatorVisitorTest, TestSharedRegulatorInstanceIds) {
   }
 
   ASSERT_EQ(node_tested_count, 2u);
+}
+
+TEST(RegulatorVisitorTest, TestMismatchedRegulatorFunctions) {
+  fdf_devicetree::VisitorRegistry visitors;
+  ASSERT_TRUE(
+      visitors.RegisterVisitor(std::make_unique<fdf_devicetree::BindPropertyVisitor>()).is_ok());
+
+  auto tester = std::make_unique<RegulatorVisitorTester>("/pkg/test-data/invalid-regulator.dtb");
+  RegulatorVisitorTester* regulator_visitor_tester = tester.get();
+  ASSERT_TRUE(visitors.RegisterVisitor(std::move(tester)).is_ok());
+
+  EXPECT_EQ(ZX_ERR_INTERNAL, regulator_visitor_tester->manager()->Walk(visitors).status_value());
 }
 
 }  // namespace regulator_visitor_dt

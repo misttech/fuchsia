@@ -18,6 +18,12 @@ properties:
     $ref: /schemas/types.yaml#/definitions/phandle-array
     description: List of phandles of regulators.
 
+  regulator-functions:
+    $ref: /schemas/types.yaml#/definitions/string-array
+    description: |
+      Optional list of functional names for the regulators. If present, the number of
+      elements must match the number of entries in `regulators`.
+
 additionalProperties: true
 
 examples:

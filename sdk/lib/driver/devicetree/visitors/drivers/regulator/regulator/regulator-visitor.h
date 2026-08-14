@@ -9,11 +9,15 @@
 #include <lib/driver/devicetree/manager/visitor.h>
 #include <lib/driver/devicetree/visitors/property-parser.h>
 
+#include <optional>
+#include <string_view>
+
 namespace regulator_visitor_dt {
 
 class RegulatorVisitor : public fdf_devicetree::Visitor {
  public:
   static constexpr char kRegulatorReference[] = "regulators";
+  static constexpr char kRegulatorFunctions[] = "regulator-functions";
   static constexpr char kRegulatorCells[] = "#regulator-cells";
   static constexpr char kRegulatorName[] = "regulator-name";
   static constexpr char kRegulatorMinMicrovolt[] = "regulator-min-microvolt";
@@ -28,7 +32,8 @@ class RegulatorVisitor : public fdf_devicetree::Visitor {
   bool is_match(const std::string& name);
   zx::result<> AddRegulatorMetadata(fdf_devicetree::Node& node,
                                     fdf_devicetree::ParsedProperties& values);
-  zx::result<> AddChildNodeSpec(fdf_devicetree::Node& child, fdf_devicetree::ReferenceNode& parent);
+  zx::result<> AddChildNodeSpec(fdf_devicetree::Node& child, fdf_devicetree::ReferenceNode& parent,
+                                std::optional<std::string_view> function);
 
   std::unique_ptr<fdf_devicetree::PropertyParser> parser_;
   std::unique_ptr<fdf_devicetree::PropertyParser> reference_parser_;
