@@ -8,7 +8,9 @@ use fidl_fuchsia_hardware_spi as fspi;
 use fuchsia_component::client::{connect_to_service_instance, open_service_at};
 use fuchsia_fs::directory::{WatchEvent, Watcher};
 use futures::StreamExt;
+use rand::Rng;
 use spi_system_test_config::Config;
+use zx::Status;
 
 /// Discovers all available SPI devices using TestService.
 async fn discover_devices(expected_count: usize) -> Result<Vec<fspi::DeviceProxy>> {
@@ -108,8 +110,69 @@ macro_rules! spi_test {
     };
 }
 
-spi_test!(test_can_assert_cs, device, {
-    let can = device.can_assert_cs().await.context("CanAssertCs FIDL call failed")?;
-    println!("CanAssertCs returned: {:?}", can);
+spi_test!(test_transmit_vector, device, {
+    const BUFFER_SIZE: usize = 512;
+
+    let mut txdata = vec![0u8; BUFFER_SIZE];
+    rand::rng().fill(&mut txdata[..]);
+
+    let status =
+        device.transmit_vector(&txdata).await.context("TransmitVector FIDL call failed")?;
+
+    assert_eq!(Status::from_raw(status), Status::OK);
+    Ok(())
+});
+
+spi_test!(test_receive_vector, device, {
+    const BUFFER_SIZE: usize = 512;
+
+    let (status, rxdata) = device
+        .receive_vector(BUFFER_SIZE as u32)
+        .await
+        .context("ReceiveVector FIDL call failed")?;
+
+    assert_eq!(Status::from_raw(status), Status::OK);
+    assert_eq!(rxdata.len(), BUFFER_SIZE);
+    Ok(())
+});
+
+spi_test!(test_exchange_vector, device, {
+    const BUFFER_SIZE: usize = 512;
+
+    let mut txdata = vec![0u8; BUFFER_SIZE];
+    rand::rng().fill(&mut txdata[..]);
+
+    let (status, rxdata) =
+        device.exchange_vector(&txdata).await.context("ExchangeVector FIDL call failed")?;
+
+    assert_eq!(Status::from_raw(status), Status::OK);
+    assert_eq!(txdata, rxdata);
+    Ok(())
+});
+
+spi_test!(test_exchange_vector_multiple, device, {
+    const BUFFER_SIZE: usize = 512;
+    const CONCURRENT_REQUESTS: usize = 10;
+
+    let mut futures = Vec::new();
+    for _ in 0..CONCURRENT_REQUESTS {
+        let mut txdata = vec![0u8; BUFFER_SIZE];
+        rand::rng().fill(&mut txdata[..]);
+        let device_clone = device.clone();
+
+        futures.push(async move {
+            let (status, rxdata) = device_clone
+                .exchange_vector(&txdata)
+                .await
+                .context("ExchangeVector FIDL call failed")?;
+            Ok::<_, anyhow::Error>((txdata, rxdata, status))
+        });
+    }
+
+    let results = futures::future::try_join_all(futures).await?;
+    for (txdata, rxdata, status) in results {
+        assert_eq!(Status::from_raw(status), Status::OK);
+        assert_eq!(txdata, rxdata);
+    }
     Ok(())
 });
