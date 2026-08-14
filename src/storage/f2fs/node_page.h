@@ -5,6 +5,8 @@
 #ifndef SRC_STORAGE_F2FS_NODE_PAGE_H_
 #define SRC_STORAGE_F2FS_NODE_PAGE_H_
 
+#include <span>
+
 #include <fbl/recycler.h>
 
 #include "src/storage/f2fs/file_cache.h"
@@ -43,7 +45,6 @@ class NodePage : public Page, public fbl::Recyclable<NodePage> {
 
   bool IsInode() const;
   block_t GetBlockAddr(const size_t offset) const;
-  void SetBlockAddr(const size_t offset, const block_t addr) const;
 
   // It returns the starting file offset that |node_page| indicates.
   // The file offset can be calcuated by using the node offset that |node_page| has.
@@ -55,7 +56,11 @@ class NodePage : public Page, public fbl::Recyclable<NodePage> {
 
  private:
   Node &node() const { return *GetAddress<Node>(); }
-  block_t *addrs_array() const;
+  // Returns the block address array this node carries, bounded to the part of it that stays
+  // within the node block. On-disk fields decide where an inode's array starts, so a
+  // corrupted image can push the start past the end; the span is empty in that case.
+  std::span<const block_t> addrs_array() const;
+  std::span<block_t> addrs_array();
 
   static constexpr uint32_t kOfsInode = 0;
   static constexpr uint32_t kOfsDirectNode1 = 1;

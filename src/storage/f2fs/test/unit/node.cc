@@ -1427,6 +1427,57 @@ TEST_F(NodeManagerTest, DnodeCacheKeyedOnRequestedOffset) TA_NO_THREAD_SAFETY_AN
   vnode.reset();
 }
 
+TEST_F(NodeManagerTest, BlockAddrArrayStaysWithinTheNodeBlock) TA_NO_THREAD_SAFETY_ANALYSIS {
+  // An inode's block address array starts at an offset |i_extra_isize| names, so an image can
+  // place that start beyond the array. Recovery and GC index node pages directly, without a
+  // vnode to reject the inode first, so the page itself must not hand out addresses it does
+  // not hold.
+  fbl::RefPtr<VnodeF2fs> vnode;
+  FileTester::VnodeWithoutParent(fs_.get(), S_IFREG, vnode);
+  ASSERT_TRUE(vnode->NewInodePage().is_ok());
+
+  LockedPage ipage;
+  ASSERT_EQ(fs_->GetNodeManager().GetNodePage(vnode->Ino(), &ipage), ZX_OK);
+  ipage.WaitOnWriteback();
+  NodePage &node_page = ipage.GetPage<NodePage>();
+  Inode &inode = ipage->GetAddress<Node>()->i;
+
+  // i_nid[] follows i_addr[], so the first entry past the array is i_nid[0]. Put a value there
+  // that no bounded access can report, otherwise an unbounded one reads the zero that slot
+  // holds and is indistinguishable from the hole a bounded one reports.
+  constexpr block_t kPastTheArray = 0x5a5a5a5a;
+  inode.i_nid[0] = CpuToLe(kPastTheArray);
+
+  // A start past the end of i_addr[] leaves nothing to read or write.
+  inode.i_inline |= kExtraAttr;
+  inode.i_extra_isize = CpuToLe(uint16_t{kAddrsPerInode * sizeof(uint32_t)});
+  EXPECT_EQ(node_page.GetBlockAddr(0), kNullAddr);
+  node_page.SetDataBlkaddr(0, kNewAddr);
+  EXPECT_EQ(node_page.GetBlockAddr(0), kNullAddr);
+  EXPECT_EQ(LeToCpu(inode.i_nid[0]), kPastTheArray);
+
+  // A start within the array leaves only the entries after it.
+  constexpr size_t kStart = kMaxExtraAttrSize / sizeof(uint32_t);
+  inode.i_extra_isize = CpuToLe(uint16_t{kMaxExtraAttrSize});
+  const size_t remaining = kAddrsPerInode - kStart;
+  EXPECT_EQ(node_page.GetBlockAddr(remaining), kNullAddr);
+  node_page.SetDataBlkaddr(remaining, kNewAddr);
+  EXPECT_EQ(node_page.GetBlockAddr(remaining), kNullAddr);
+  EXPECT_EQ(LeToCpu(inode.i_nid[0]), kPastTheArray);
+
+  // The last entry the array does hold is still reachable.
+  node_page.SetDataBlkaddr(remaining - 1, kNewAddr);
+  EXPECT_EQ(node_page.GetBlockAddr(remaining - 1), kNewAddr);
+  EXPECT_EQ(LeToCpu(inode.i_addr[kAddrsPerInode - 1]), kNewAddr);
+
+  inode.i_inline &= ~kExtraAttr;
+  inode.i_addr[kAddrsPerInode - 1] = 0;
+  inode.i_nid[0] = 0;
+  ipage.reset();
+  ASSERT_EQ(vnode->Close(), ZX_OK);
+  vnode.reset();
+}
+
 TEST_F(NodeManagerTest, IsDnodeDoubleIndirectSubtree) TA_NO_THREAD_SAFETY_ANALYSIS {
   // Test node classification in double-indirect subtrees (files > ~8MB).
   // In double-indirect subtrees, nodes appear in repeating groups of (kNidsPerBlock + 1):

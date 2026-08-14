@@ -177,29 +177,67 @@ bool NodePage::IsInode() const {
   return raw_footer.nid == raw_footer.ino;
 }
 
-block_t *NodePage::addrs_array() const {
-  Node &raw_node = node();
-  if (IsInode()) {
-    Inode &inode = raw_node.i;
-    if (inode.i_inline & kExtraAttr) {
-      return inode.i_addr + (inode.i_extra_isize / sizeof(uint32_t));
-    }
-    return inode.i_addr;
+// Linux f2fs indexes an inode's addresses through the vnode's already-validated i_extra_isize
+// and reads the on-disk field only where no vnode exists. This method has no vnode to consult
+// -- recovery and GC reach it straight from a page -- so it bounds the start it reads rather
+// than trusting it.
+std::span<const block_t> NodePage::addrs_array() const {
+  const Node &raw_node = node();
+  if (!IsInode()) {
+    return {raw_node.dn.addr, kAddrsPerBlock};
   }
-  return raw_node.dn.addr;
+  const Inode &inode = raw_node.i;
+  size_t start = 0;
+  if (inode.i_inline & kExtraAttr) {
+    // Read straight from the page, which recovery and GC reach without a vnode to reject a
+    // corrupted layout first, so the start can name an entry the array does not have.
+    start = LeToCpu(inode.i_extra_isize) / sizeof(uint32_t);
+    if (start >= kAddrsPerInode) {
+      return {};
+    }
+  }
+  return std::span<const block_t>(inode.i_addr, kAddrsPerInode).subspan(start);
 }
 
-block_t NodePage::GetBlockAddr(const size_t offset) const { return LeToCpu(addrs_array()[offset]); }
+std::span<block_t> NodePage::addrs_array() {
+  // This overload is chosen only for a NodePage that is not const, so the array it names is
+  // not const either and both overloads can share the one bounds calculation.
+  const std::span<const block_t> addrs = static_cast<const NodePage *>(this)->addrs_array();
+  return {const_cast<block_t *>(addrs.data()), addrs.size()};
+}
 
-void NodePage::SetBlockAddr(const size_t offset, const block_t new_addr) const {
-  addrs_array()[offset] = CpuToLe(new_addr);
+block_t NodePage::GetBlockAddr(const size_t offset) const {
+  std::span<const block_t> addrs = addrs_array();
+  if (offset >= addrs.size()) {
+    FX_LOGS(WARNING) << "node " << NidOfNode() << " holds " << addrs.size()
+                     << " block addresses, but offset " << offset << " was requested";
+    return kNullAddr;
+  }
+  return LeToCpu(addrs[offset]);
 }
 
 void NodePage::SetDataBlkaddr(size_t ofs_in_node, block_t new_addr) {
-  ZX_DEBUG_ASSERT((new_addr == kNewAddr && GetBlockAddr(ofs_in_node) == kNullAddr) ||
-                  (new_addr != kNewAddr && GetBlockAddr(ofs_in_node) != kNullAddr));
+  std::span<block_t> addrs = addrs_array();
+  if (ofs_in_node >= addrs.size()) {
+    // The array bounds come from the image, so this is a corrupted node rather than a caller
+    // that got its arithmetic wrong. Drop the update instead of writing outside the block.
+    FX_LOGS(WARNING) << "node " << NidOfNode() << " holds " << addrs.size()
+                     << " block addresses, so " << new_addr << " cannot be recorded at "
+                     << ofs_in_node;
+    return;
+  }
 
-  SetBlockAddr(ofs_in_node, new_addr);
+  // A newly reserved block may only take the place of a hole, and any other address may only
+  // replace one that is already there. Violating that is a caller bug, not a corrupted image.
+  const block_t old_addr = LeToCpu(addrs[ofs_in_node]);
+  const bool replaces_hole_iff_new = (new_addr == kNewAddr) == (old_addr == kNullAddr);
+  if (!replaces_hole_iff_new) {
+    FX_LOGS(WARNING) << "node " << NidOfNode() << " records " << new_addr << " at " << ofs_in_node
+                     << " over " << old_addr;
+    ZX_DEBUG_ASSERT(replaces_hole_iff_new);
+  }
+
+  addrs[ofs_in_node] = CpuToLe(new_addr);
 }
 
 }  // namespace f2fs

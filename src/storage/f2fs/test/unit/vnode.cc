@@ -194,6 +194,55 @@ TEST_F(VnodeTest, GetVnodeExceptionCase) {
   VgetFaultInjetionAndTest(*fs_, *root_dir_, "nlink_dir", nlink_fault_inject, ZX_ERR_NOT_FOUND);
 }
 
+TEST_F(VnodeTest, InconsistentInlineLayout) {
+  DisableFsck();
+
+  // |i_extra_isize| shifts the start of the inode's block address array and shrinks the count
+  // GetAddrsPerInode() reports, so a size beyond the extra attribute fields would move that
+  // start into entries the array needs, or past it entirely.
+  auto beyond_extra_attrs = [](Node *node) {
+    node->i.i_inline |= kExtraAttr;
+    node->i.i_extra_isize = CpuToLe(uint16_t{kMaxExtraAttrSize + sizeof(uint32_t)});
+  };
+  VgetFaultInjetionAndTest(*fs_, *root_dir_, "extra_isize_too_large", beyond_extra_attrs,
+                           ZX_ERR_IO_DATA_INTEGRITY);
+
+  // The fields start with |i_extra_isize| itself, so a size that cannot hold it describes
+  // nothing.
+  auto below_first_field = [](Node *node) {
+    node->i.i_inline |= kExtraAttr;
+    node->i.i_extra_isize = 0;
+  };
+  VgetFaultInjetionAndTest(*fs_, *root_dir_, "extra_isize_too_small", below_first_field,
+                           ZX_ERR_IO_DATA_INTEGRITY);
+
+  // The array is indexed in units of uint32_t, so a size that is not a multiple of that does
+  // not describe a boundary the array can start at.
+  auto misaligned = [](Node *node) {
+    node->i.i_inline |= kExtraAttr;
+    node->i.i_extra_isize = CpuToLe(uint16_t{kMinExtraAttrSize + 1});
+  };
+  VgetFaultInjetionAndTest(*fs_, *root_dir_, "extra_isize_misaligned", misaligned,
+                           ZX_ERR_IO_DATA_INTEGRITY);
+
+  // This implementation always reserves kInlineXattrAddrs entries for an inline xattr, so an
+  // image that records a different size describes a layout it cannot honor.
+  auto foreign_inline_xattr_size = [](Node *node) {
+    node->i.i_inline |= kExtraAttr | kInlineXattr;
+    node->i.i_extra_isize = CpuToLe(uint16_t{kMaxExtraAttrSize});
+    node->i.i_inline_xattr_size = CpuToLe(uint16_t{kInlineXattrAddrs + 1});
+  };
+  VgetFaultInjetionAndTest(*fs_, *root_dir_, "inline_xattr_size_foreign",
+                           foreign_inline_xattr_size, ZX_ERR_IO_DATA_INTEGRITY);
+
+  // A layout that stays within the extra attribute fields remains loadable.
+  auto valid = [](Node *node) {
+    node->i.i_inline |= kExtraAttr;
+    node->i.i_extra_isize = CpuToLe(uint16_t{kMaxExtraAttrSize});
+  };
+  VgetFaultInjetionAndTest(*fs_, *root_dir_, "extra_isize_valid", valid, ZX_OK);
+}
+
 TEST_F(VnodeTest, SetAttributes) {
   zx::result dir_fs_vnode = root_dir_->Create("test_dir", fs::CreationType::kDirectory);
   ASSERT_TRUE(dir_fs_vnode.is_ok()) << dir_fs_vnode.status_string();

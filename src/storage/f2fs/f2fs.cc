@@ -549,6 +549,11 @@ zx::result<fbl::RefPtr<VnodeF2fs>> F2fs::GetVnode(ino_t ino, LockedPage* inode_p
     return zx::error(ZX_ERR_NOT_FOUND);
   }
 
+  if (!IsValidInlineLayout(node_page->GetAddress<Node>()->i)) {
+    FX_LOGS(WARNING) << "inode " << ino << " has an inconsistent inline layout";
+    return zx::error(ZX_ERR_IO_DATA_INTEGRITY);
+  }
+
   // When multiple threads attempt to make reference ptrs for the same inode number, those that come
   // after the winner can retrieve |vnode| from the cache.
   if (vnode_cache_->Lookup(ino, &vnode) == ZX_OK) {

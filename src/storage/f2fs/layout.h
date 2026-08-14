@@ -229,6 +229,46 @@ struct Inode {
   uint32_t i_nid[kNidsPerInode];  // direct(2), indirect(2), double_indirect(1) node id
 } __attribute__((packed));
 
+// Span of the extra attribute fields Linux f2fs defines, from i_extra_isize through
+// i_extra_end: i_extra_isize(2) + i_inline_xattr_size(2) + i_projid(4) + i_inode_checksum(4)
+// + i_crtime(8) + i_crtime_nsec(4) + i_compr_blocks(8) + i_compress_algorithm(1) +
+// i_log_cluster_size(1) + i_compress_flag(2). Keep in sync with upstream
+// F2FS_TOTAL_EXTRA_ATTR_SIZE, which grows whenever a field is added there.
+constexpr uint16_t kMaxExtraAttrSize = 36;
+constexpr uint16_t kMinExtraAttrSize = sizeof(uint32_t);
+
+// |i_extra_isize| shifts the start of the block address array an inode carries and
+// |i_inline_xattr_size| shrinks its end, so together they decide how many entries
+// VnodeF2fs::GetAddrsPerInode() reports. This mirrors the checks Linux f2fs runs on both
+// fields when it loads an inode, before any later code trusts them.
+inline bool IsValidInlineLayout(const Inode &inode) {
+  if (!(inode.i_inline & kExtraAttr)) {
+    return true;
+  }
+  const uint16_t extra_isize = LeToCpu(inode.i_extra_isize);
+  if (extra_isize < kMinExtraAttrSize || extra_isize > kMaxExtraAttrSize ||
+      extra_isize % sizeof(uint32_t)) {
+    FX_LOGS(WARNING) << "inode reserves " << extra_isize
+                     << " bytes for its extra attributes, outside [" << kMinExtraAttrSize << ", "
+                     << kMaxExtraAttrSize << "] or not a multiple of " << sizeof(uint32_t);
+    return false;
+  }
+  // Linux lets an image choose this size (its flexible inline xattr feature); this
+  // implementation always reserves kInlineXattrAddrs entries, so any other size describes a
+  // layout it cannot honor.
+  if (inode.i_inline & kInlineXattr) {
+    const uint16_t inline_xattr_size = LeToCpu(inode.i_inline_xattr_size);
+    if (inline_xattr_size != kInlineXattrAddrs) {
+      FX_LOGS(WARNING) << "inode reserves " << inline_xattr_size
+                       << " address entries for its inline xattr, and this implementation "
+                          "reserves "
+                       << kInlineXattrAddrs;
+      return false;
+    }
+  }
+  return true;
+}
+
 struct DirectNode {
   uint32_t addr[kAddrsPerBlock];  // aray of data block address
 } __attribute__((packed));
