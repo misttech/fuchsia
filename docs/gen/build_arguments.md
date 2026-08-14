@@ -867,7 +867,7 @@ This should never be set as a build argument.
 }
   aarch64_unknown_linux_gnu = {
   libclang_rt_profile_a = "lib/clang/24/lib/aarch64-unknown-linux-gnu/libclang_rt.profile.a"
-  libunwind_so = ""
+  libunwind_so = "../../../../out/not-default/libunwind.so"
   resource_dir = "lib/clang/24"
   variants = {
   asan = {
@@ -936,7 +936,7 @@ This should never be set as a build argument.
   clang_rt = "../../../../out/not-default/libclang_rt.hwasan.so"
 }
   static = {
-  clang_rt = "../../../../out/not-default/libclang_rt.hwasan.a"
+  clang_rt = ""
   clang_rt_cxx = "../../../../out/not-default/libclang_rt.hwasan_cxx.a"
 }
 }
@@ -4187,7 +4187,7 @@ The RSEQ backend is not yet implemented.
 
 **Current value (from the default):** `false`
 
-From //src/lib/fuchsia-rcu/BUILD.gn:10
+From //src/lib/fuchsia-rcu/BUILD.gn:11
 
 ### enable_sestarnix_userspace_tests_on_linux
 
@@ -4302,16 +4302,7 @@ enabled.
 
 **Current value (from the default):** `false`
 
-From //build/assembly/tools/assembly/BUILD.gn:25
-
-### experimental_sched_enabled
-
-If true, experimental scheduler changes will be enabled. Currently this
-just includes non-critical thread profiles for input.
-
-**Current value (from the default):** `false`
-
-From //build/assembly/tools/assembly/BUILD.gn:20
+From //build/assembly/tools/assembly/BUILD.gn:21
 
 ### experimental_thread_sampler_enabled
 
