@@ -42,9 +42,9 @@ the port and **Reviewer agents** evaluating the port.
     to pointers.
 7.  **Documentation & Comment Parity**: Port architectural notes, safety
     rationale, and doc comments. All public traits, structs, enums, methods, and
-    functions MUST have Rustdoc (`///`) comments. `unsafe` functions must
-    include a `# Safety` section. All `unsafe` blocks must have `// SAFETY:`
-    comments.
+    functions (except for #[syscall] definitions) MUST have Rustdoc (`///`)
+    comments.  `unsafe` functions must include a `# Safety` section. All
+    `unsafe` blocks must have `// SAFETY:` comments.
 8.  **Ergonomic Design & DRY**: Apply idiomatic Rust practices (derive macros,
     `Deref`/`DerefMut`, `Default`, `Option`/`Result`, `?` operator) without
     breaking layout or safety requirements. Keep visibility as tight as possible
