@@ -332,6 +332,47 @@ impl UsbZeroFunctionDevice {
         let _ = self.function_client.disable_endpoint(self.ep_out_addr).await;
     }
 
+    fn max_packet_size_for_speed(speed: fusb_descriptor::UsbSpeed) -> u16 {
+        match speed {
+            fusb_descriptor::UsbSpeed::Full => USB_MAX_PACKET_SIZE_FULL_SPEED,
+            fusb_descriptor::UsbSpeed::High => USB_MAX_PACKET_SIZE_HIGH_SPEED,
+            fusb_descriptor::UsbSpeed::Super | fusb_descriptor::UsbSpeed::EnhancedSuper => {
+                USB_MAX_PACKET_SIZE_SUPER_SPEED
+            }
+            _ => USB_MAX_PACKET_SIZE_HIGH_SPEED,
+        }
+    }
+
+    /// Configures and activates the IN and OUT bulk endpoints.
+    async fn activate_endpoints(&self, speed: fusb_descriptor::UsbSpeed) -> Result<(), Status> {
+        let w_max_packet_size = Self::max_packet_size_for_speed(speed);
+        let super_speed_companion = match speed {
+            fusb_descriptor::UsbSpeed::Super | fusb_descriptor::UsbSpeed::EnhancedSuper => {
+                Some(fusb_function::SuperSpeedEndpointCompanionDescriptor {
+                    b_max_burst: 0,
+                    bm_attributes: 0,
+                    w_bytes_per_interval: 0,
+                })
+            }
+            _ => None,
+        };
+        let ep_config = fusb_function::EndpointConfiguration {
+            descriptor: Some(fusb_function::EndpointDescriptor {
+                bm_attributes: fusb_descriptor::EndpointType::Bulk.into_primitive(),
+                w_max_packet_size,
+                b_interval: 0,
+            }),
+            super_speed_companion,
+            ..Default::default()
+        };
+        configure_ep(&self.function_client, self.ep_in_addr, &ep_config).await?;
+        if let Err(e) = configure_ep(&self.function_client, self.ep_out_addr, &ep_config).await {
+            let _ = self.function_client.disable_endpoint(self.ep_in_addr).await;
+            return Err(e);
+        }
+        Ok(())
+    }
+
     async fn handle_set_configured(
         &mut self,
         configured: bool,
@@ -340,41 +381,8 @@ impl UsbZeroFunctionDevice {
         self.cleanup_endpoints().await;
         self.speed = if configured { Some(speed) } else { None };
         if configured {
-            let w_max_packet_size = match speed {
-                fusb_descriptor::UsbSpeed::Full => USB_MAX_PACKET_SIZE_FULL_SPEED,
-                fusb_descriptor::UsbSpeed::High => USB_MAX_PACKET_SIZE_HIGH_SPEED,
-                fusb_descriptor::UsbSpeed::Super | fusb_descriptor::UsbSpeed::EnhancedSuper => {
-                    USB_MAX_PACKET_SIZE_SUPER_SPEED
-                }
-                _ => USB_MAX_PACKET_SIZE_HIGH_SPEED,
-            };
-            let super_speed_companion = match speed {
-                fusb_descriptor::UsbSpeed::Super | fusb_descriptor::UsbSpeed::EnhancedSuper => {
-                    Some(fusb_function::SuperSpeedEndpointCompanionDescriptor {
-                        b_max_burst: 0,
-                        bm_attributes: 0,
-                        w_bytes_per_interval: 0,
-                    })
-                }
-                _ => None,
-            };
-            let ep_config = fusb_function::EndpointConfiguration {
-                descriptor: Some(fusb_function::EndpointDescriptor {
-                    bm_attributes: fusb_descriptor::EndpointType::Bulk.into_primitive(),
-                    w_max_packet_size,
-                    b_interval: 0,
-                }),
-                super_speed_companion,
-                ..Default::default()
-            };
-            configure_ep(&self.function_client, self.ep_in_addr, &ep_config).await?;
-            if let Err(e) = configure_ep(&self.function_client, self.ep_out_addr, &ep_config).await
-            {
-                let _ = self.function_client.disable_endpoint(self.ep_in_addr).await;
-                return Err(e);
-            }
-
-            let transfer_size = w_max_packet_size as u64;
+            self.activate_endpoints(speed).await?;
+            let transfer_size = Self::max_packet_size_for_speed(speed).into();
             let res = match self.mode {
                 TestMode::SourceSink => {
                     run_source_sink(
