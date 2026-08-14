@@ -45,7 +45,11 @@ from shared.protocol import (
     serialize,
 )
 from shared.protocol.start import StartRequest
-from zxdb_dap import ZxdbDapClient, ZxdbDetachArguments
+from zxdb_dap import (
+    ZxdbDapClient,
+    ZxdbDetachArguments,
+    ZxdbPauseArguments,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -123,6 +127,45 @@ class DapEventWaiter:
             yield fut
         finally:
             self.unregister_thread_stop(thread_id, fut)
+
+    def register_process_stop(
+        self, process_id: int
+    ) -> asyncio.Future[dict[str, Any]]:
+        fut = asyncio.get_running_loop().create_future()
+        key = ("processStopped", process_id)
+        self._waiters.setdefault(key, []).append(fut)
+        return fut
+
+    def unregister_process_stop(
+        self, process_id: int, fut: asyncio.Future[dict[str, Any]]
+    ) -> None:
+        key = ("processStopped", process_id)
+        if key in self._waiters:
+            if fut in self._waiters[key]:
+                self._waiters[key].remove(fut)
+            if not self._waiters[key]:
+                del self._waiters[key]
+
+    def notify_process_stop(
+        self, process_id: int, event: dict[str, Any]
+    ) -> None:
+        key = ("processStopped", process_id)
+        if key in self._waiters:
+            for fut in self._waiters[key]:
+                if not fut.done():
+                    fut.set_result(event)
+            del self._waiters[key]
+
+    @contextlib.contextmanager
+    def wait_for_process_stop(
+        self, process_id: int
+    ) -> Generator[asyncio.Future[dict[str, Any]], None, None]:
+        """Context manager to automatically register and unregister a process stop waiter."""
+        fut = self.register_process_stop(process_id)
+        try:
+            yield fut
+        finally:
+            self.unregister_process_stop(process_id, fut)
 
 
 @final
@@ -212,6 +255,30 @@ class Daemon:
                 raise Exception(
                     f"Timed out waiting for thread {thread_id} to stop"
                 )
+
+    async def ensure_process_stopped(self, pid: int) -> None:
+        """Ensures the process is stopped. Returns immediately if it is,
+        otherwise pauses it and waits for the processStopped event.
+        """
+        if (proc := self.processes.get(pid)) and proc.all_threads_stopped:
+            return
+
+        if not self.zxdb_writer:
+            raise Exception("Not connected to zxdb DAP server")
+
+        with self.event_waiter.wait_for_process_stop(pid) as fut:
+            resp = await self.dap_client.zxdb_pause_process(
+                ZxdbPauseArguments(process_id=pid)
+            )
+            if not resp.success:
+                raise Exception(
+                    resp.message or f"Failed to pause process {pid}"
+                )
+            try:
+                await asyncio.wait_for(fut, timeout=10.0)
+                return
+            except asyncio.TimeoutError:
+                raise Exception(f"Timed out waiting for process {pid} to stop")
 
     def _check_already_running(self, req: StartRequest) -> Response | None:
         if not self.dap_ready_event.is_set():
@@ -549,9 +616,11 @@ class Daemon:
         self.processes.clear()
         self.threads.clear()
 
+    # TODO(https://fxbug.dev/545555364): Support event validation in this _process_events function.
     async def _process_events(self) -> None:
         allowed_events = {
             "stopped",
+            "processStopped",
             "continued",
             "exited",
             "terminated",
@@ -582,6 +651,17 @@ class Daemon:
                         thread = self.get_or_create_thread(thread_id)
                         thread.is_stopped = True
                         self.event_waiter.notify_thread_stop(thread_id, event)
+                case "processStopped":
+                    pid = body.get("processId")
+                    if pid is not None:
+                        self.get_or_create_process(pid)
+                        if threads := body.get("threads"):
+                            for tid in threads:
+                                thread = self.get_or_create_thread(
+                                    tid, process_id=pid
+                                )
+                                thread.is_stopped = True
+                        self.event_waiter.notify_process_stop(pid, event)
                 case "continued":
                     if body.get("allThreadsContinued"):
                         for thread in self.threads.values():
@@ -590,9 +670,6 @@ class Daemon:
                         target_thread = self.threads.get(thread_id)
                         if target_thread is not None:
                             target_thread.is_stopped = False
-                    else:
-                        for thread in self.threads.values():
-                            thread.is_stopped = False
                 case "thread":
                     thread_id = body.get("threadId")
                     reason = body.get("reason")

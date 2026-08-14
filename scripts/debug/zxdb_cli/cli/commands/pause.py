@@ -13,6 +13,18 @@ class Command(BaseCommand):
         pause_parser = subparsers.add_parser(
             "pause", help="Interrupt execution"
         )
-        pause_parser.add_argument(
-            "thread_id", type=int, help="Thread ID to pause"
+        group = pause_parser.add_mutually_exclusive_group(required=True)
+        group.add_argument(
+            "-t",
+            "--thread-id",
+            type=int,
+            default=None,
+            help="Thread ID to pause",
+        )
+        group.add_argument(
+            "-p",
+            "--pid",
+            type=int,
+            default=None,
+            help="Process ID to pause. All threads in the process will be paused.",
         )

@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import contextlib
 import json
 import unittest
 from io import StringIO
@@ -194,6 +195,34 @@ class TestCLI(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(exit_code, 0)
         mock_send.assert_called_once_with(PauseRequest(thread_id=1))
+
+    @patch("cli.cli.send_command")
+    async def test_pause_command_thread_id(self, mock_send: Mock) -> None:
+        mock_send.return_value = 0
+        exit_code = await main(["pause", "-t", "1"])
+        self.assertEqual(exit_code, 0)
+        mock_send.assert_called_once_with(PauseRequest(thread_id=1))
+
+        mock_send.reset_mock()
+        exit_code = await main(["pause", "--thread-id", "1"])
+        self.assertEqual(exit_code, 0)
+        mock_send.assert_called_once_with(PauseRequest(thread_id=1))
+
+    @patch("cli.cli.send_command")
+    async def test_pause_command_pid(self, mock_send: Mock) -> None:
+        mock_send.return_value = 0
+        exit_code = await main(["pause", "-p", "12345"])
+        self.assertEqual(exit_code, 0)
+        mock_send.assert_called_once_with(PauseRequest(pid=12345))
+
+    @patch("cli.cli.send_command")
+    async def test_pause_command_both_thread_id_and_pid_fails(
+        self, mock_send: Mock
+    ) -> None:
+        with contextlib.redirect_stderr(StringIO()):
+            with self.assertRaises(SystemExit):
+                await main(["pause", "-t", "1", "-p", "12345"])
+        mock_send.assert_not_called()
 
     @patch("cli.cli.send_command")
     async def test_json_option_stack_trace(self, mock_send: Mock) -> None:

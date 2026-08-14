@@ -259,6 +259,34 @@ class TestDaemonEvents(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(daemon.threads[1].is_stopped)
         self.assertFalse(daemon.threads[2].is_stopped)
 
+    async def test_process_stopped_event(self) -> None:
+        daemon = Daemon(port=None)
+        proc = daemon.get_or_create_process(1234, name="p1")
+        daemon.get_or_create_thread(1, process_id=1234)
+        daemon.get_or_create_thread(2, process_id=1234)
+        self.assertFalse(proc.all_threads_stopped)
+        self.assertFalse(daemon.threads[1].is_stopped)
+        self.assertFalse(daemon.threads[2].is_stopped)
+
+        with daemon.event_waiter.wait_for_process_stop(1234) as fut:
+            await daemon.event_queue.put(
+                {
+                    "event": "processStopped",
+                    "body": {
+                        "processId": 1234,
+                        "name": "p1",
+                        "threads": [1, 2],
+                    },
+                }
+            )
+            await daemon.event_queue.put({"type": READER_STOPPED_EVENT})
+            await daemon._process_events()
+            self.assertTrue(fut.done())
+
+        self.assertTrue(proc.all_threads_stopped)
+        self.assertTrue(daemon.threads[1].is_stopped)
+        self.assertTrue(daemon.threads[2].is_stopped)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -10,6 +10,8 @@ from unittest.mock import AsyncMock, Mock, patch
 from daemon.daemon import CommandHandlerRegistry, Daemon
 from daemon.state import Process, Thread
 from pydap.client import DapError
+from pydap.models import PauseArguments
+from pydap.models import Response as DapResponse
 from shared.protocol import (
     BaseRequest,
     BreakRequest,
@@ -22,11 +24,11 @@ from shared.protocol.evaluate import EvaluateRequest, EvaluateResponse
 from shared.protocol.finish import FinishRequest
 from shared.protocol.get_state import GetStateRequest
 from shared.protocol.next_request import NextRequest
-from shared.protocol.pause import PauseRequest
 from shared.protocol.stack_trace import StackTraceRequest
 from shared.protocol.step_in import StepInRequest
 from shared.protocol.threads import ThreadsRequest
 from shared.protocol.variables import VariablesRequest
+from zxdb_dap import ZxdbPauseArguments
 
 
 class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
@@ -220,32 +222,176 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Thread not stopped", resp.message or "")
 
     @patch("daemon.daemon.ZxdbDapClient")
-    async def test_handle_pause_sync(self, mock_dap_client_class: Mock) -> None:
+    async def test_ensure_process_stopped_already_stopped(
+        self, mock_dap_client_class: Mock
+    ) -> None:
+        mock_dap_client = mock_dap_client_class.return_value
+        daemon = Daemon(port=15678)
+        daemon.get_or_create_process(12345)
+        daemon.get_or_create_thread(1, process_id=12345).is_stopped = True
+
+        await daemon.ensure_process_stopped(12345)
+        mock_dap_client.zxdb_pause_process.assert_not_called()
+
+    @patch("daemon.daemon.ZxdbDapClient")
+    async def test_ensure_process_stopped_failure(
+        self, mock_dap_client_class: Mock
+    ) -> None:
         mock_dap_client = mock_dap_client_class.return_value
 
-        mock_dap_client.pause_thread = AsyncMock(return_value={"success": True})
+        mock_dap_client.zxdb_pause_process = AsyncMock(
+            return_value=DapResponse(
+                seq=1,
+                type="response",
+                request_seq=1,
+                success=False,
+                message="Process not found",
+            )
+        )
 
         daemon = Daemon(port=15678)
         daemon.zxdb_writer = Mock()
 
-        async def trigger_stopped() -> None:
-            await asyncio.sleep(0.05)
+        with self.assertRaises(Exception) as ctx:
+            await daemon.ensure_process_stopped(12345)
+        self.assertIn("Process not found", str(ctx.exception))
+
+    @patch("daemon.daemon.ZxdbDapClient")
+    async def test_ensure_process_stopped_when_not_stopped(
+        self, mock_dap_client_class: Mock
+    ) -> None:
+        mock_dap_client = mock_dap_client_class.return_value
+
+        daemon = Daemon(port=15678)
+        daemon.zxdb_writer = Mock()
+        proc = daemon.get_or_create_process(12345)
+        thread = daemon.get_or_create_thread(1, process_id=12345)
+        self.assertFalse(proc.all_threads_stopped)
+
+        async def mock_pause_side_effect(
+            args: ZxdbPauseArguments,
+        ) -> DapResponse:
+            assert args.process_id is not None
+            thread.is_stopped = True
+            daemon.event_waiter.notify_process_stop(
+                args.process_id,
+                {
+                    "type": "event",
+                    "event": "processStopped",
+                    "body": {"processId": args.process_id, "name": "p1"},
+                },
+            )
+            return DapResponse(
+                seq=1, type="response", request_seq=1, success=True
+            )
+
+        mock_dap_client.zxdb_pause_process = AsyncMock(
+            side_effect=mock_pause_side_effect
+        )
+
+        await daemon.ensure_process_stopped(12345)
+        mock_dap_client.zxdb_pause_process.assert_called_once_with(
+            ZxdbPauseArguments(process_id=12345)
+        )
+        self.assertTrue(proc.all_threads_stopped)
+
+    async def test_ensure_process_stopped_not_connected(self) -> None:
+        daemon = Daemon(port=15678)
+        daemon.zxdb_writer = None
+        with self.assertRaises(Exception) as ctx:
+            await daemon.ensure_process_stopped(12345)
+        self.assertIn("Not connected to zxdb DAP server", str(ctx.exception))
+
+    @patch("daemon.daemon.ZxdbDapClient")
+    @patch("daemon.daemon.asyncio.wait_for", side_effect=asyncio.TimeoutError)
+    async def test_ensure_process_stopped_timeout(
+        self, mock_wait_for: Mock, mock_dap_client_class: Mock
+    ) -> None:
+        mock_dap_client = mock_dap_client_class.return_value
+
+        mock_dap_client.zxdb_pause_process = AsyncMock(
+            return_value=DapResponse(
+                seq=1, type="response", request_seq=1, success=True
+            )
+        )
+        daemon = Daemon(port=15678)
+        daemon.zxdb_writer = Mock()
+
+        with self.assertRaises(Exception) as ctx:
+            await daemon.ensure_process_stopped(12345)
+        self.assertIn(
+            "Timed out waiting for process 12345 to stop", str(ctx.exception)
+        )
+
+    @patch("daemon.daemon.ZxdbDapClient")
+    async def test_ensure_stopped_already_stopped(
+        self, mock_dap_client_class: Mock
+    ) -> None:
+        mock_dap_client = mock_dap_client_class.return_value
+        daemon = Daemon(port=15678)
+        daemon.get_or_create_thread(1).is_stopped = True
+
+        await daemon.ensure_stopped(1)
+        mock_dap_client.pause_thread.assert_not_called()
+
+    @patch("daemon.daemon.ZxdbDapClient")
+    async def test_ensure_stopped_when_not_stopped(
+        self, mock_dap_client_class: Mock
+    ) -> None:
+        mock_dap_client = mock_dap_client_class.return_value
+
+        daemon = Daemon(port=15678)
+        daemon.zxdb_writer = Mock()
+        thread = daemon.get_or_create_thread(1)
+        self.assertFalse(thread.is_stopped)
+
+        async def mock_pause_thread_side_effect(
+            args: PauseArguments,
+        ) -> dict[str, Any]:
+            assert args.thread_id is not None
+            thread.is_stopped = True
             daemon.event_waiter.notify_thread_stop(
-                1,
+                args.thread_id,
                 {
                     "type": "event",
                     "event": "stopped",
-                    "body": {"reason": "pause"},
+                    "body": {"reason": "pause", "threadId": args.thread_id},
                 },
             )
+            return {"success": True}
 
-        loop = asyncio.get_event_loop()
-        loop.create_task(trigger_stopped())
+        mock_dap_client.pause_thread = AsyncMock(
+            side_effect=mock_pause_thread_side_effect
+        )
 
-        resp = await daemon.registry.handle("pause", PauseRequest(thread_id=1))
+        await daemon.ensure_stopped(1)
+        mock_dap_client.pause_thread.assert_called_once_with(
+            PauseArguments(threadId=1)
+        )
+        self.assertTrue(thread.is_stopped)
 
-        self.assertTrue(resp.success)
-        mock_dap_client.pause_thread.assert_called_once()
+    async def test_ensure_stopped_not_connected(self) -> None:
+        daemon = Daemon(port=15678)
+        daemon.zxdb_writer = None
+        with self.assertRaises(Exception) as ctx:
+            await daemon.ensure_stopped(1)
+        self.assertIn("Not connected to zxdb DAP server", str(ctx.exception))
+
+    @patch("daemon.daemon.ZxdbDapClient")
+    @patch("daemon.daemon.asyncio.wait_for", side_effect=asyncio.TimeoutError)
+    async def test_ensure_stopped_timeout(
+        self, mock_wait_for: Mock, mock_dap_client_class: Mock
+    ) -> None:
+        mock_dap_client = mock_dap_client_class.return_value
+        mock_dap_client.pause_thread = AsyncMock(return_value={"success": True})
+        daemon = Daemon(port=15678)
+        daemon.zxdb_writer = Mock()
+
+        with self.assertRaises(Exception) as ctx:
+            await daemon.ensure_stopped(1)
+        self.assertIn(
+            "Timed out waiting for thread 1 to stop", str(ctx.exception)
+        )
 
     def test_threads_registration(self) -> None:
         daemon = Daemon(port=15678)

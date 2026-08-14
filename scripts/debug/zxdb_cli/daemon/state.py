@@ -24,3 +24,9 @@ class Process:
     threads: dict[int, Thread] = field(
         default_factory=dict, repr=False, compare=False
     )
+
+    @property
+    def all_threads_stopped(self) -> bool:
+        return bool(self.threads) and all(
+            t.is_stopped for t in self.threads.values()
+        )

@@ -22,7 +22,10 @@ async def handle(daemon: Daemon, req: PauseRequest) -> Response:
         )
 
     try:
-        await daemon.ensure_stopped(req.thread_id)
+        if req.pid is not None:
+            await daemon.ensure_process_stopped(req.pid)
+        elif req.thread_id is not None:
+            await daemon.ensure_stopped(req.thread_id)
         return Response(success=True)
     except Exception as e:
         return Response(success=False, message=f"Failed to pause: {e}")

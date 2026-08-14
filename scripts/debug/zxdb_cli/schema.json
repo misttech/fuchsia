@@ -2,7 +2,7 @@
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "title": "zxdb-cli Protocol Schema",
     "description": "JSON schema for requests and responses in the zxdb-cli UDS protocol",
-    "version": 10,
+    "version": 11,
     "requests": {
         "$defs": {
             "AttachRequest": {
@@ -485,7 +485,7 @@
                 "type": "object"
             },
             "PauseRequest": {
-                "description": "Request to pause execution of a thread.",
+                "description": "Request to pause execution of a thread or process.",
                 "properties": {
                     "command": {
                         "const": "pause",
@@ -518,13 +518,30 @@
                         "title": "Ack Seq"
                     },
                     "thread_id": {
-                        "title": "Thread Id",
-                        "type": "integer"
+                        "anyOf": [
+                            {
+                                "type": "integer"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Thread Id"
+                    },
+                    "pid": {
+                        "anyOf": [
+                            {
+                                "type": "integer"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Pid"
                     }
                 },
-                "required": [
-                    "thread_id"
-                ],
                 "title": "PauseRequest",
                 "type": "object"
             },

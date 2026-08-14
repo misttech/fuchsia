@@ -619,7 +619,7 @@ class TestCLIIntegration(unittest.IsolatedAsyncioTestCase):
 
         try:
             # Test Pause
-            exit_code = await main(["pause", "1"])
+            exit_code = await main(["pause", "-t", "1"])
             self.assertEqual(exit_code, 0)
 
             # Test Continue
@@ -666,7 +666,7 @@ class TestCLIIntegration(unittest.IsolatedAsyncioTestCase):
 
         try:
             # Trigger an event by sending pause command
-            exit_code = await main(["pause", "1"])
+            exit_code = await main(["pause", "-t", "1"])
             self.assertEqual(exit_code, 0)
 
             # Capture stdout to read the JSON response from wait-for-event
@@ -930,7 +930,7 @@ class TestCLIIntegration(unittest.IsolatedAsyncioTestCase):
         proc, port = await self._setup_daemon_and_server()
 
         try:
-            exit_code = await main(["pause", "1"])
+            exit_code = await main(["pause", "-t", "1"])
             self.assertEqual(exit_code, 0)
 
             f = StringIO()
