@@ -121,6 +121,11 @@ class FtDevice : public fdf::DriverBase2,
   // fdf::DriverBase2 implementation.
   zx::result<> Start(fdf::DriverContext context) override;
 
+  // Max unacknowledged report count allowed for 1/2 second.
+  // FocalTech touchscreens are interrupt-driven.
+  // Assuming a standard max event rate of 120 Hz yields 60 reports per 1/2 second (120 Hz / 2).
+  static constexpr uint16_t kHalfSecondReportCount = 60;
+
   // fidl::WireServer<fuchsia_input_report::InputDevice> implementation.
   void GetInputReportsReader(GetInputReportsReaderRequestView request,
                              GetInputReportsReaderCompleter::Sync& completer) override;

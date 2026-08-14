@@ -100,6 +100,11 @@ class Gt92xxDevice : public DeviceType, public ddk::EmptyProtocol<ZX_PROTOCOL_IN
   void DdkRelease();
   void DdkUnbind(ddk::UnbindTxn txn);
 
+  // Max unacknowledged report count allowed for 1/2 second.
+  // GT92xx touchscreens are interrupt-driven.
+  // Assuming a standard max event rate of 120 Hz yields 60 reports per 1/2 second (120 Hz / 2).
+  static constexpr uint16_t kHalfSecondReportCount = 60;
+
   // fuchsia_input_report::InputDevice required methods
   void GetInputReportsReader(GetInputReportsReaderRequestView request,
                              GetInputReportsReaderCompleter::Sync& completer) override;
