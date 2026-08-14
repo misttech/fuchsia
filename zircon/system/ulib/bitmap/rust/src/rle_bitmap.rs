@@ -165,7 +165,7 @@ where
         new_elem.bitoff = bitoff;
         new_elem.bitlen = bitlen;
 
-        let mut cursor = self.elems.cursor_mut();
+        let mut cursor = self.elems.cursor_front_mut();
         loop {
             let (e_bitoff, e_bitlen) = match cursor.get() {
                 Some(e) => (e.bitoff, e.bitlen),
@@ -240,7 +240,7 @@ where
             return Ok(());
         }
 
-        let mut cursor = self.elems.cursor_mut();
+        let mut cursor = self.elems.cursor_front_mut();
         loop {
             let (elem_bitoff, elem_bitlen) = match cursor.get() {
                 Some(e) => (e.bitoff, e.bitlen),

@@ -466,7 +466,7 @@ where
             return None;
         }
 
-        let mut cursor = self.cursor_mut();
+        let mut cursor = self.cursor_front_mut();
         cursor.current = ptr;
         cursor.erase()
     }
@@ -485,7 +485,7 @@ where
             return None;
         }
 
-        let mut cursor = self.cursor_mut();
+        let mut cursor = self.cursor_front_mut();
         cursor.current = ptr;
         // SAFETY: `replacement` is not in any list, and cursor is positioned at a valid element.
         unsafe { cursor.replace_raw(replacement) }
@@ -497,7 +497,7 @@ where
     where
         F: FnMut(&P::Target) -> bool,
     {
-        let mut cursor = self.cursor_mut();
+        let mut cursor = self.cursor_front_mut();
         while let Some(item) = cursor.get() {
             if f(item) {
                 return cursor.erase();
@@ -517,9 +517,15 @@ where
     }
 
     /// Returns a cursor positioned at the front of the list.
-    pub fn cursor_mut(&mut self) -> CursorMut<'_, P, Tag, S> {
+    pub fn cursor_front_mut(&mut self) -> CursorMut<'_, P, Tag, S> {
         let head = self.head;
         CursorMut { list: self, current: head }
+    }
+
+    /// Returns a cursor positioned at the back (end sentinel) of the list.
+    pub fn cursor_back_mut(&mut self) -> CursorMut<'_, P, Tag, S> {
+        let sentinel = self.get_sentinel();
+        CursorMut { list: self, current: sentinel }
     }
 
     /// Returns a cursor positioned at the given element.
@@ -532,6 +538,15 @@ where
     pub unsafe fn cursor_at(&mut self, obj: &P::Target) -> CursorMut<'_, P, Tag, S> {
         assert!(obj.get_node().in_container(), "Object must be in a container");
         CursorMut { list: self, current: obj as *const P::Target as *mut P::Target }
+    }
+
+    /// Splices all elements from `other` onto the end of `self`.
+    ///
+    /// Upon completion, `other` is left empty.
+    ///
+    /// This operation is O(1).
+    pub fn splice(&mut self, other: &mut DoublyLinkedList<P, Tag, S>) {
+        self.cursor_back_mut().splice(other);
     }
 
     pub fn iter(&self) -> Iterator<'_, P, Tag> {
@@ -1328,7 +1343,7 @@ mod tests {
                         )
                     };
 
-                    let mut cursor = list.cursor_mut();
+                    let mut cursor = list.cursor_front_mut();
                     assert_eq!($get_val(cursor.get().unwrap()), a);
 
                     cursor.move_prev();
@@ -1357,7 +1372,7 @@ mod tests {
 
                     $push(list, obj1);
 
-                    let mut cursor = list.cursor_mut();
+                    let mut cursor = list.cursor_front_mut();
                     unsafe {
                         cursor.insert_after_raw(obj3);
                         cursor.insert_after_raw(obj2);
@@ -1403,7 +1418,7 @@ mod tests {
                     $push(list, obj2);
                     $push(list, obj3);
 
-                    let mut cursor = list.cursor_mut();
+                    let mut cursor = list.cursor_front_mut();
                     cursor.move_next();
                     let erased = cursor.erase();
                     assert!(erased.is_some());
@@ -1546,22 +1561,22 @@ mod tests {
             DoublyLinkedList::<UniquePtr<UniqueTestObject>, DefaultObjectTag, TrackingSize>::new());
         let list = unsafe { list.get_unchecked_mut() };
 
-        let mut cursor = list.cursor_mut();
+        let mut cursor = list.cursor_front_mut();
         cursor.insert_before(UniquePtr::try_new(UniqueTestObject::new(1)).unwrap());
         assert_eq!(list.len(), 1);
         assert_eq!(list.front().unwrap().value, 1);
 
-        let mut cursor = list.cursor_mut();
+        let mut cursor = list.cursor_front_mut();
         cursor.insert_before(UniquePtr::try_new(UniqueTestObject::new(2)).unwrap());
         assert_eq!(list.len(), 2);
         assert_eq!(list.front().unwrap().value, 2);
 
-        let mut cursor = list.cursor_mut();
+        let mut cursor = list.cursor_front_mut();
         cursor.move_next(); // point to obj1
         cursor.insert_before(UniquePtr::try_new(UniqueTestObject::new(3)).unwrap());
         assert_eq!(list.len(), 3);
 
-        let mut cursor = list.cursor_mut();
+        let mut cursor = list.cursor_front_mut();
         while cursor.get().unwrap().value != 1 {
             cursor.move_next();
         }
@@ -1604,6 +1619,36 @@ mod tests {
     }
 
     #[test]
+    fn test_cursor_front_and_back_mut() {
+        stack_pin_init!(let list =
+            DoublyLinkedList::<UniquePtr<UniqueTestObject>, DefaultObjectTag, TrackingSize>::new());
+        let list = unsafe { list.get_unchecked_mut() };
+
+        assert!(list.cursor_front_mut().get().is_none());
+        assert!(list.cursor_back_mut().get().is_none());
+
+        list.push_back(UniquePtr::try_new(UniqueTestObject::new(10)).unwrap());
+        list.push_back(UniquePtr::try_new(UniqueTestObject::new(20)).unwrap());
+
+        let mut front_cursor = list.cursor_front_mut();
+        assert_eq!(front_cursor.get().unwrap().value, 10);
+        front_cursor.move_next();
+        assert_eq!(front_cursor.get().unwrap().value, 20);
+
+        let mut back_cursor = list.cursor_back_mut();
+        assert!(back_cursor.get().is_none());
+        back_cursor.move_prev();
+        assert_eq!(back_cursor.get().unwrap().value, 20);
+
+        let mut back_cursor = list.cursor_back_mut();
+        back_cursor.insert_before(UniquePtr::try_new(UniqueTestObject::new(30)).unwrap());
+        assert_eq!(list.len(), 3);
+        assert_eq!(list.back().unwrap().value, 30);
+
+        list.clear();
+    }
+
+    #[test]
     fn test_splice_middle() {
         stack_pin_init!(let list1 =
             DoublyLinkedList::<UniquePtr<UniqueTestObject>, DefaultObjectTag, TrackingSize>::new());
@@ -1617,7 +1662,7 @@ mod tests {
         list2.push_back(UniquePtr::try_new(UniqueTestObject::new(3)).unwrap());
         list2.push_back(UniquePtr::try_new(UniqueTestObject::new(4)).unwrap());
 
-        let mut cursor = list1.cursor_mut();
+        let mut cursor = list1.cursor_front_mut();
         cursor.move_next(); // point to obj2
 
         cursor.splice(list2);
@@ -1649,7 +1694,7 @@ mod tests {
         list2.push_back(UniquePtr::try_new(UniqueTestObject::new(3)).unwrap());
         list2.push_back(UniquePtr::try_new(UniqueTestObject::new(4)).unwrap());
 
-        let mut cursor = list1.cursor_mut();
+        let mut cursor = list1.cursor_front_mut();
 
         cursor.splice(list2);
 
@@ -1680,7 +1725,7 @@ mod tests {
         list2.push_back(UniquePtr::try_new(UniqueTestObject::new(3)).unwrap());
         list2.push_back(UniquePtr::try_new(UniqueTestObject::new(4)).unwrap());
 
-        let mut cursor = list1.cursor_mut();
+        let mut cursor = list1.cursor_front_mut();
         cursor.move_next();
         cursor.move_next(); // point to sentinel
 
@@ -1711,7 +1756,7 @@ mod tests {
         list2.push_back(UniquePtr::try_new(UniqueTestObject::new(1)).unwrap());
         list2.push_back(UniquePtr::try_new(UniqueTestObject::new(2)).unwrap());
 
-        let mut cursor = list1.cursor_mut();
+        let mut cursor = list1.cursor_front_mut();
         cursor.splice(list2);
 
         assert!(list2.is_empty());
@@ -1739,7 +1784,7 @@ mod tests {
         list2.push_back(UniquePtr::try_new(UniqueTestObject::new(3)).unwrap());
         list2.push_back(UniquePtr::try_new(UniqueTestObject::new(4)).unwrap());
 
-        let mut cursor = list1.cursor_mut();
+        let mut cursor = list1.cursor_front_mut();
         cursor.move_next(); // point to obj2
 
         cursor.splice(list2);
@@ -1754,6 +1799,60 @@ mod tests {
         assert!(iter.next().is_none());
 
         list1.clear();
+    }
+
+    #[test]
+    fn test_list_splice() {
+        // Test splicing non-empty other into non-empty self.
+        stack_pin_init!(let list1 =
+            DoublyLinkedList::<UniquePtr<UniqueTestObject>, DefaultObjectTag, TrackingSize>::new());
+        let list1 = unsafe { list1.get_unchecked_mut() };
+        stack_pin_init!(let list2 =
+            DoublyLinkedList::<UniquePtr<UniqueTestObject>, DefaultObjectTag, TrackingSize>::new());
+        let list2 = unsafe { list2.get_unchecked_mut() };
+
+        list1.push_back(UniquePtr::try_new(UniqueTestObject::new(1)).unwrap());
+        list1.push_back(UniquePtr::try_new(UniqueTestObject::new(2)).unwrap());
+        list2.push_back(UniquePtr::try_new(UniqueTestObject::new(3)).unwrap());
+        list2.push_back(UniquePtr::try_new(UniqueTestObject::new(4)).unwrap());
+
+        list1.splice(list2);
+
+        assert!(list2.is_empty());
+        assert_eq!(list2.len(), 0);
+        assert_eq!(list1.len(), 4);
+
+        let mut iter = list1.iter();
+        assert_eq!(iter.next().unwrap().value, 1);
+        assert_eq!(iter.next().unwrap().value, 2);
+        assert_eq!(iter.next().unwrap().value, 3);
+        assert_eq!(iter.next().unwrap().value, 4);
+        assert!(iter.next().is_none());
+
+        // Test splicing into empty self.
+        stack_pin_init!(let list3 =
+            DoublyLinkedList::<UniquePtr<UniqueTestObject>, DefaultObjectTag, TrackingSize>::new());
+        let list3 = unsafe { list3.get_unchecked_mut() };
+
+        list3.splice(list1);
+
+        assert!(list1.is_empty());
+        assert_eq!(list1.len(), 0);
+        assert_eq!(list3.len(), 4);
+
+        let mut iter = list3.iter();
+        assert_eq!(iter.next().unwrap().value, 1);
+        assert_eq!(iter.next().unwrap().value, 2);
+        assert_eq!(iter.next().unwrap().value, 3);
+        assert_eq!(iter.next().unwrap().value, 4);
+        assert!(iter.next().is_none());
+
+        // Test splicing empty list into non-empty self (no-op).
+        list3.splice(list1);
+        assert_eq!(list3.len(), 4);
+        assert!(list1.is_empty());
+
+        list3.clear();
     }
 
     #[test]
@@ -1792,7 +1891,7 @@ mod tests {
         assert_eq!(list.len(), 3);
 
         // 1. Erase middle (obj2)
-        let mut cursor = list.cursor_mut();
+        let mut cursor = list.cursor_front_mut();
         cursor.move_next(); // point to obj2
         let erased = cursor.erase();
         assert!(erased.is_some());
@@ -1805,7 +1904,7 @@ mod tests {
         assert!(iter.next().is_none());
 
         // 2. Erase head (obj1)
-        let mut cursor = list.cursor_mut();
+        let mut cursor = list.cursor_front_mut();
         let erased = cursor.erase(); // current is head (obj1)
         assert!(erased.is_some());
         assert_eq!(erased.unwrap().value, 1);
@@ -1813,7 +1912,7 @@ mod tests {
         assert_eq!(list.front().unwrap().value, 3); // obj3 is now head!
 
         // 3. Erase last element (obj3)
-        let mut cursor = list.cursor_mut();
+        let mut cursor = list.cursor_front_mut();
         let erased = cursor.erase(); // current is head/tail (obj3)
         assert!(erased.is_some());
         assert_eq!(erased.unwrap().value, 3);
@@ -1972,7 +2071,7 @@ mod tests {
         list.push_back(obj1);
         list.push_back(obj2);
 
-        let mut cursor = list.cursor_mut();
+        let mut cursor = list.cursor_front_mut();
         cursor.move_next(); // point to obj2
 
         let old = cursor.replace(obj3);
