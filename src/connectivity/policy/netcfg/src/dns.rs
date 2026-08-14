@@ -54,7 +54,7 @@ pub(super) async fn update_servers(
 
     dns_server_watch_responders.send(dns_servers.consolidated_dns_servers());
 
-    networks_service.update(network::PropertyUpdate::dns(dns_servers)).await;
+    networks_service.update(network::NetworkRegistryUpdate::dns(dns_servers)).await;
 }
 
 /// Creates a stream of RDNSS DNS updates. Returns None if the protocol

@@ -622,7 +622,7 @@ impl InterfaceState {
                 state.handle_interface_new_candidate(properties).await;
 
                 netpol_networks_service
-                    .update(network::PropertyUpdate::ChangeNetwork(
+                    .update(network::NetworkRegistryUpdate::ChangeNetwork(
                         network::NetworkId::fuchsia(properties.id),
                         network::NetworkUpdate::Properties(network::NetworkPropertiesChange {
                             added: true,
@@ -2267,7 +2267,7 @@ impl<'a> NetCfg<'a> {
                                     state.handle_interface_new_candidate(&current_properties).await;
 
                                     netpol_networks_service
-                                        .update(network::PropertyUpdate::ChangeNetwork(
+                                        .update(network::NetworkRegistryUpdate::ChangeNetwork(
                                             network::NetworkId::fuchsia(InterfaceId(*id)),
                                             network::NetworkUpdate::Properties(
                                                 network::NetworkPropertiesChange {
@@ -2305,7 +2305,7 @@ impl<'a> NetCfg<'a> {
                                         .await;
 
                                     netpol_networks_service
-                                        .update(network::PropertyUpdate::ChangeNetwork(
+                                        .update(network::NetworkRegistryUpdate::ChangeNetwork(
                                             network::NetworkId::fuchsia(InterfaceId(*id)),
                                             network::NetworkUpdate::Remove,
                                         ))
@@ -2489,12 +2489,11 @@ impl<'a> NetCfg<'a> {
                             if provisioning.track_in_network_registry() {
                                 let network_id = network::NetworkId::fuchsia(*id);
                                 netpol_networks_service
-                                    .update(network::PropertyUpdate::ChangeNetwork(
+                                    .update(network::NetworkRegistryUpdate::ChangeNetwork(
                                         network_id,
                                         network::NetworkUpdate::Remove,
                                     ))
                                     .await;
-                                netpol_networks_service.remove_network(network_id).await;
                             }
 
                             // TODO(https://fxbug.dev/475916525): Stop sharing Fuchsia networks
@@ -6310,7 +6309,7 @@ mod tests {
             if *provisioning_action == Local {
                 netcfg
                     .netpol_networks_service
-                    .update(network::PropertyUpdate::ChangeNetwork(
+                    .update(network::NetworkRegistryUpdate::ChangeNetwork(
                         network::NetworkId::fuchsia(*id),
                         network::NetworkUpdate::Properties(network::NetworkPropertiesChange {
                             added: true,

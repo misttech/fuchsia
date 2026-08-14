@@ -15,7 +15,6 @@ rustc_binary("fake_netcfg_svc") {
     "//sdk/fidl/fuchsia.net.policy.properties:fuchsia.net.policy.properties_rust",
     "//sdk/fidl/fuchsia.net.policy.socketproxy:fuchsia.net.policy.socketproxy_rust",
     "//src/connectivity/policy/netcfg:lib",
-    "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-component",
     "//third_party/rust_crates:futures",

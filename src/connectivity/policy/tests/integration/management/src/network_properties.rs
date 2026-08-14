@@ -5,7 +5,9 @@
 #![cfg(test)]
 
 use assert_matches::assert_matches;
+use fidl::endpoints::create_proxy;
 use fidl_fuchsia_net as fnet;
+use fidl_fuchsia_net_name as fnet_name;
 use fidl_fuchsia_net_policy_properties as fnp_properties;
 use fidl_fuchsia_net_policy_socketproxy as fnp_socketproxy;
 use fidl_fuchsia_net_root as fnet_root;
@@ -13,8 +15,10 @@ use fidl_fuchsia_net_routes as fnet_routes;
 use fidl_fuchsia_net_routes_admin as fnet_routes_admin;
 use fidl_fuchsia_net_routes_ext as fnet_routes_ext;
 use fidl_fuchsia_posix_socket as fposix_socket;
+use fnp_properties::{PropertyInterest, PropertyUpdate};
 use fuchsia_async::{self as fasync, DurationExt as _, TimeoutExt as _};
 use futures::channel::mpsc;
+use futures::future::OptionFuture;
 use futures::lock::Mutex;
 use futures::{FutureExt as _, SinkExt as _, StreamExt as _};
 use log::info;
@@ -69,10 +73,7 @@ fn marks(mark_1: Option<u32>, mark_2: Option<u32>) -> fnet::Marks {
     fnet::Marks { mark_1, mark_2, ..Default::default() }
 }
 
-fn expect_sequence(
-    actual: &[Option<Vec<fnp_properties::PropertyUpdate>>],
-    expected: &[Option<fnp_properties::PropertyUpdate>],
-) {
+fn expect_sequence(actual: &[Option<PropertyUpdate>], expected: &[Option<PropertyUpdate>]) {
     let mut actual = actual.iter().peekable();
     let expected = expected.iter();
 
@@ -82,7 +83,7 @@ fn expect_sequence(
             None => panic!("Missing property. Next expected property is: {expect:?}"),
             Some(value) => match (value, expect) {
                 (Some(v), Some(e)) => {
-                    if !v.contains(e) {
+                    if v != e {
                         panic!("Found out of sequence entry (expected: {e:?}, found: {v:?}");
                     }
                 }
@@ -97,7 +98,7 @@ fn expect_sequence(
                 None => break,
                 Some(value) => match (value, expect) {
                     (Some(v), Some(e)) => {
-                        if !v.contains(e) {
+                        if v != e {
                             break;
                         }
                     }
@@ -110,11 +111,95 @@ fn expect_sequence(
     }
 }
 
+async fn watch_default_and_record_properties<F>(
+    networks: fnp_properties::NetworksProxy,
+    properties: PropertyInterest,
+    last_updates: Arc<Mutex<Vec<Option<PropertyUpdate>>>>,
+    mut tx: mpsc::Sender<()>,
+    mut shutdown_rx: mpsc::Receiver<()>,
+    mut is_new_update: F,
+) where
+    F: FnMut(&PropertyUpdate) -> bool,
+{
+    let mut network = None;
+    let mut watcher_opt: Option<fnp_properties::PropertyWatcherProxy> = None;
+    let watch_default = |networks: &fnp_properties::NetworksProxy| networks.watch_default().fuse();
+    let watch_update = |watcher: &fnp_properties::PropertyWatcherProxy| watcher.watch().fuse();
+    let mut next_network = watch_default(&networks);
+    let mut watch_for_updates: OptionFuture<_> = None.into();
+    loop {
+        futures::select! {
+            new_network = next_network => {
+                match new_network
+                    .expect("failed to fetch default network")
+                    .take_network()
+                {
+                    Some(net) => {
+                        info!("Observed new network");
+                        let net_dup = net.duplicate().expect("couldn't duplicate");
+                        let (watcher, server_end) =
+                            fidl::endpoints::create_proxy::<fnp_properties::PropertyWatcherMarker>();
+                        networks
+                            .watch_properties(
+                                fnp_properties::NetworksWatchPropertiesRequest {
+                                    network: Some(net_dup),
+                                    properties: Some(properties.clone()),
+                                    watcher: Some(server_end),
+                                    ..Default::default()
+                                },
+                            )
+                            .await
+                            .expect("fidl error")
+                            .expect("protocol error");
+                        watcher_opt = Some(watcher);
+                        network = Some(net);
+                        watch_for_updates = watcher_opt.as_ref().map(watch_update).into();
+                    }
+                    None => {
+                        info!("Default network was lost via Watch");
+                        let mut updates = last_updates.lock().await;
+                        if network.is_some() && updates.last() != Some(&None) {
+                            updates.push(None);
+                            tx.send(()).await.expect("Can't send update");
+                        }
+                        network = None;
+                        watch_for_updates = None.into();
+                    }
+                }
+                next_network = watch_default(&networks);
+            }
+            property_update = watch_for_updates => {
+                if let Some(property_update) = property_update {
+                    match property_update {
+                        Ok(Ok(update)) => {
+                            if is_new_update(&update) {
+                                info!("Updating last_updates: {:?}", update);
+                                last_updates.lock().await.push(Some(update.clone()));
+                                tx.send(()).await.expect("Can't send update");
+                            }
+                            watch_for_updates =
+                                watcher_opt.as_ref().map(watch_update).into();
+                        }
+                        Ok(Err(fnp_properties::PropertyWatcherError::NetworkGone)) => {
+                            info!("Default network was lost via Watch");
+                            watch_for_updates = None.into();
+                        }
+                        other => panic!("Unexpected result from property watch: {:?}", other),
+                    }
+                }
+            }
+            _ = shutdown_rx.next() => {
+                return;
+            }
+        }
+    }
+}
+
 #[netstack_test]
 #[variant(N, Netstack)]
 #[variant(M, Manager)]
 async fn test_track_socket_marks<N: Netstack, M: Manager>(name: &str) {
-    use fnp_properties::PropertyUpdate;
+    use fnp_properties::{PropertyInterest, PropertyUpdate};
 
     let _if_name = with_netcfg_owned_device::<M, N, _>(
         name,
@@ -126,114 +211,29 @@ async fn test_track_socket_marks<N: Netstack, M: Manager>(name: &str) {
         },
         |_if_id, _network, _interface_state, realm, _sandbox| {
             async move {
-                let (mut tx, mut rx) = mpsc::channel::<()>(1);
-                let (mut shutdown_tx, mut shutdown_rx) = mpsc::channel::<()>(1);
+                let (tx, mut rx) = mpsc::channel::<()>(1);
+                let (mut shutdown_tx, shutdown_rx) = mpsc::channel::<()>(1);
 
                 let last_updates = Arc::new(Mutex::new(Vec::new()));
-                let background = {
-                    let networks = realm
+                let mut last_marks = marks(None, None);
+                let background = watch_default_and_record_properties(
+                    realm
                         .connect_to_protocol::<fnp_properties::NetworksMarker>()
-                        .expect("couldn't connect to fuchsia.net.policy.properties/Networks");
-                    let last_updates = last_updates.clone();
-                    async move {
-                        let mut network = networks
-                            .watch_default()
-                            .await
-                            .expect("failed to fetch default network")
-                            .take_network()
-                            .expect("the first return from watch default should never fail");
-                        let watch_default = |networks: &fnp_properties::NetworksProxy| {
-                            networks.watch_default().fuse()
-                        };
-                        let watch_update =
-                            |networks: &fnp_properties::NetworksProxy,
-                             network: &fnp_properties::NetworkToken| {
-                                networks
-                                    .watch_properties(
-                                        fnp_properties::NetworksWatchPropertiesRequest {
-                                            network: Some(
-                                                network.duplicate().expect("couldn't duplicate"),
-                                            ),
-                                            properties: Some(vec![
-                                                fnp_properties::Property::SocketMarks,
-                                                fnp_properties::Property::DnsConfiguration,
-                                            ]),
-                                            ..Default::default()
-                                        },
-                                    )
-                                    .fuse()
-                            };
-                        let mut next_network = watch_default(&networks);
-                        let mut watch_for_updates = watch_update(&networks, &network);
-                        let mut last_marks = marks(None, None);
-                        loop {
-                            futures::select! {
-                                new_network = next_network => {
-                                    match new_network
-                                            .expect("failed to fetch default network")
-                                            .take_network() {
-                                        Some(net) => {
-                                            info!("Observed new network");
-                                            network = net;
-                                        },
-                                        None => {
-                                            info!(
-                                                "Default network was lost via WatchDefault."
-                                            );
-                                            {
-                                                let mut updates = last_updates.lock().await;
-                                                if updates.last() != Some(&None) {
-                                                    updates.push(None);
-                                                    tx.send(()).await.expect("Can't send update");
-                                                }
-                                            }
-                                        }
-                                    }
-                                    next_network = watch_default(&networks);
-                                }
-                                property_update = watch_for_updates => {
-                                    match property_update {
-                                        Ok(Ok(update)) => {
-                                            for part in &update.clone() {
-                                                if let PropertyUpdate::SocketMarks(marks) = part {
-                                                    if *marks != last_marks {
-                                                        info!(
-                                                            "Updating last_updates: {:?}", update
-                                                        );
-                                                        last_marks = marks.clone();
-                                                        last_updates
-                                                            .lock()
-                                                            .await
-                                                            .push(Some(update.clone()));
-                                                        tx
-                                                            .send(())
-                                                            .await
-                                                            .expect("Can't send update");
-                                                    }
-                                                }
-                                            }
-                                        }
-                                        Ok(Err(fnp_properties::WatchError::NetworkGone)) => {
-                                            info!("Default network was lost via WatchUpdate");
-                                            {
-                                                let mut updates = last_updates.lock().await;
-                                                if updates.last() != Some(&None) {
-                                                    updates.push(None);
-                                                    tx.send(()).await.expect("Can't send update");
-                                                }
-                                            }
-                                        }
-                                        _ => {}
-                                    }
-                                    watch_for_updates = watch_update(&networks, &network);
-                                }
-                                _ = shutdown_rx.next() => {
-                                    return;
-                                }
+                        .expect("couldn't connect to fuchsia.net.policy.properties/Networks"),
+                    PropertyInterest::SOCKET_MARKS,
+                    last_updates.clone(),
+                    tx,
+                    shutdown_rx,
+                    move |update| {
+                        if let Some(marks) = &update.socket_marks {
+                            if marks != &last_marks {
+                                last_marks = marks.clone();
+                                return true;
                             }
                         }
-                    }
-                };
+                        false
+                    },
+                );
 
                 let test = async move {
                     let socket_proxy = realm
@@ -252,28 +252,28 @@ async fn test_track_socket_marks<N: Netstack, M: Manager>(name: &str) {
                         .await
                         .expect("fidl error")
                         .expect("protocol error");
-                    let _ = rx.next().await;
+                    rx.next().await.expect("channel closed");
 
                     socket_proxy
                         .update(&network(1, Some(2)))
                         .await
                         .expect("fidl error")
                         .expect("protocol error");
-                    let _ = rx.next().await;
+                    rx.next().await.expect("channel closed");
 
                     socket_proxy
                         .update(&network(1, Some(4)))
                         .await
                         .expect("fidl error")
                         .expect("protocol error");
-                    let _ = rx.next().await;
+                    rx.next().await.expect("channel closed");
 
                     socket_proxy
                         .set_default(&fposix_socket::OptionalUint32::Unset(fposix_socket::Empty))
                         .await
                         .expect("fidl error")
                         .expect("protocol error");
-                    let _ = rx.next().await;
+                    rx.next().await.expect("channel closed");
 
                     socket_proxy
                         .update(&network(1, Some(8)))
@@ -285,18 +285,34 @@ async fn test_track_socket_marks<N: Netstack, M: Manager>(name: &str) {
                         .await
                         .expect("fidl error")
                         .expect("protocol error");
-                    let _ = rx.next().await;
+                    rx.next().await.expect("channel closed");
 
                     let updates = last_updates.lock().await.clone();
                     expect_sequence(
                         &updates,
                         &vec![
-                            Some(PropertyUpdate::SocketMarks(marks(Some(1), None))),
-                            Some(PropertyUpdate::SocketMarks(marks(Some(2), None))),
-                            Some(PropertyUpdate::SocketMarks(marks(Some(4), None))),
+                            Some(PropertyUpdate {
+                                socket_marks: Some(marks(Some(1), None)),
+                                dns_configuration: None,
+                                ..Default::default()
+                            }),
+                            Some(PropertyUpdate {
+                                socket_marks: Some(marks(Some(2), None)),
+                                dns_configuration: None,
+                                ..Default::default()
+                            }),
+                            Some(PropertyUpdate {
+                                socket_marks: Some(marks(Some(4), None)),
+                                dns_configuration: None,
+                                ..Default::default()
+                            }),
                             // None update represents the empty default_network.update call
                             None,
-                            Some(PropertyUpdate::SocketMarks(marks(Some(8), None))),
+                            Some(PropertyUpdate {
+                                socket_marks: Some(marks(Some(8), None)),
+                                dns_configuration: None,
+                                ..Default::default()
+                            }),
                         ],
                     );
 
@@ -312,21 +328,6 @@ async fn test_track_socket_marks<N: Netstack, M: Manager>(name: &str) {
         },
     )
     .await;
-}
-
-trait PropertyUpdateExt {
-    fn dns_configuration(&self) -> Option<&fnp_properties::DnsConfiguration>;
-}
-
-impl PropertyUpdateExt for fnp_properties::PropertyUpdate {
-    fn dns_configuration(&self) -> Option<&fidl_fuchsia_net_policy_properties::DnsConfiguration> {
-        match self {
-            fidl_fuchsia_net_policy_properties::PropertyUpdate::DnsConfiguration(
-                dns_configuration,
-            ) => Some(dns_configuration),
-            fidl_fuchsia_net_policy_properties::PropertyUpdate::SocketMarks(_) | _ => None,
-        }
-    }
 }
 
 #[netstack_test]
@@ -409,18 +410,20 @@ async fn test_track_dns_changes<N: Netstack, M: Manager>(name: &str) -> Result<(
                     .expect("failed to fetch default network")
                     .take_network()
                     .expect("the first return from watch default should never fail");
+                let (watcher, server_end) = create_proxy();
+                networks
+                    .watch_properties(fnp_properties::NetworksWatchPropertiesRequest {
+                        network: Some(network.duplicate().expect("couldn't duplicate")),
+                        properties: Some(fnp_properties::PropertyInterest::DNS_CONFIGURATION),
+                        watcher: Some(server_end),
+                        ..Default::default()
+                    })
+                    .await
+                    .expect("failed to create watcher")
+                    .expect("could not watch properties");
                 let watch_update =
-                    |networks: &fnp_properties::NetworksProxy,
-                     network: &fnp_properties::NetworkToken| {
-                        networks
-                            .watch_properties(fnp_properties::NetworksWatchPropertiesRequest {
-                                network: Some(network.duplicate().expect("couldn't duplicate")),
-                                properties: Some(vec![fnp_properties::Property::DnsConfiguration]),
-                                ..Default::default()
-                            })
-                            .fuse()
-                    };
-                let mut watch = watch_update(&networks, &network);
+                    |watcher: &fnp_properties::PropertyWatcherProxy| watcher.watch().fuse();
+                let mut watch = watch_update(&watcher);
                 let mut dns_sequence = std::collections::VecDeque::from([
                     vec![DNS_SERVER_LIST[0]],
                     DNS_SERVER_LIST[0..2].to_vec(),
@@ -432,9 +435,9 @@ async fn test_track_dns_changes<N: Netstack, M: Manager>(name: &str) -> Result<(
                 'main: loop {
                     let () = futures::select! {
                         update = watch => {
-                            watch = watch_update(&networks, &network);
+                            watch = watch_update(&watcher);
                             let update = update.expect("fidl error").expect("protocol error");
-                            let dns_config = update[0].dns_configuration().unwrap();
+                            let dns_config = update.dns_configuration.unwrap();
                             let servers = dns_config.servers.as_ref();
                             let server_count = servers.map_or(0, |s| s.len());
 
@@ -745,32 +748,32 @@ async fn test_network_registry_dns_propagation<N: Netstack, M: Manager>(
                     .take_network()
                     .expect("no default network token");
 
-                let watch_update =
-                    |networks: &fnp_properties::NetworksProxy,
-                     network: &fnp_properties::NetworkToken| {
-                        networks
-                            .watch_properties(fnp_properties::NetworksWatchPropertiesRequest {
-                                network: Some(network.duplicate().expect("couldn't duplicate")),
-                                properties: Some(vec![fnp_properties::Property::DnsConfiguration]),
-                                ..Default::default()
-                            })
-                            .fuse()
-                    };
-                let update = watch_update(&networks, &network_token)
+                let (watcher, server_end) = create_proxy();
+                networks
+                    .watch_properties(fnp_properties::NetworksWatchPropertiesRequest {
+                        network: Some(network_token.duplicate().expect("couldn't duplicate")),
+                        properties: Some(fnp_properties::PropertyInterest::DNS_CONFIGURATION),
+                        watcher: Some(server_end),
+                        ..Default::default()
+                    })
                     .await
-                    .expect("fidl error")
-                    .expect("protocol error");
+                    .expect("failed to create watcher")
+                    .expect("could not watch properties");
+                let watch_update =
+                    |watcher: &fnp_properties::PropertyWatcherProxy| watcher.watch().fuse();
+                let update =
+                    watch_update(&watcher).await.expect("fidl error").expect("protocol error");
 
-                let actual_servers: HashSet<_> = match update.as_slice() {
-                    [fnp_properties::PropertyUpdate::DnsConfiguration(dns_config)] => dns_config
-                        .servers
-                        .as_ref()
-                        .expect("DNS servers must be set")
-                        .iter()
-                        .map(|server| server.address.expect("server address must be present"))
-                        .collect(),
-                    u => panic!("unexpected property update {u:?}"),
-                };
+                let actual_servers: HashSet<_> = update
+                    .dns_configuration
+                    .as_ref()
+                    .unwrap()
+                    .servers
+                    .as_ref()
+                    .expect("DNS servers must be set")
+                    .iter()
+                    .map(|server| server.address.expect("server address must be present"))
+                    .collect();
 
                 // Per-network properties must ONLY return DNS servers belonging to that network.
                 let expected_isolated_servers =
@@ -782,7 +785,7 @@ async fn test_network_registry_dns_propagation<N: Netstack, M: Manager>(
                 assert_eq!(actual_servers, expected_isolated_servers);
 
                 // Ensure that watch_properties does not return again with additional DNS updates.
-                assert!(watch_update(&networks, &network_token).now_or_never().is_none());
+                assert!(watch_update(&watcher).now_or_never().is_none());
             }
             .boxed_local()
         },
@@ -840,30 +843,38 @@ async fn test_network_registry_socket_marks_propagation<N: Netstack, M: Manager>
                     .take_network()
                     .expect("no default network token");
 
-                let watch_update =
+                let watch_properties =
                     |networks: &fnp_properties::NetworksProxy,
-                     network: &fnp_properties::NetworkToken| {
-                        networks
-                            .watch_properties(fnp_properties::NetworksWatchPropertiesRequest {
-                                network: Some(network.duplicate().expect("couldn't duplicate")),
-                                properties: Some(vec![fnp_properties::Property::SocketMarks]),
-                                __source_breaking: fidl::marker::SourceBreaking,
-                            })
-                            .fuse()
+                     token: &fnp_properties::NetworkToken| {
+                        let (watcher, server_end) = create_proxy();
+                        let res = networks.watch_properties(
+                            fnp_properties::NetworksWatchPropertiesRequest {
+                                network: Some(token.duplicate().expect("couldn't duplicate")),
+                                properties: Some(PropertyInterest::SOCKET_MARKS),
+                                watcher: Some(server_end),
+                                ..Default::default()
+                            },
+                        );
+                        async move { res.await.map(|res| res.map(|()| watcher)) }
                     };
 
                 // WatchProperties and verify socket mark is propagated.
-                let update = watch_update(&networks, &network_token)
+                let watcher = watch_properties(&networks, &network_token)
                     .await
                     .expect("fidl error")
                     .expect("protocol error");
+                let update = watcher.watch().await.expect("fidl error").expect("protocol error");
 
-                assert_matches!(
-                    update.as_slice(),
-                    [fnp_properties::PropertyUpdate::SocketMarks(fnet::Marks {
-                        mark_1: Some(TEST_MARK),
-                        ..
-                    })]
+                assert_eq!(
+                    update,
+                    PropertyUpdate {
+                        socket_marks: Some(fnet::Marks {
+                            mark_1: Some(TEST_MARK),
+                            ..Default::default()
+                        }),
+                        dns_configuration: None,
+                        ..Default::default()
+                    }
                 );
 
                 // Update the network mark.
@@ -874,17 +885,18 @@ async fn test_network_registry_socket_marks_propagation<N: Netstack, M: Manager>
                     .expect("failed to update network");
 
                 // Verify the mark update is propagated.
-                let update2 = watch_update(&networks, &network_token)
-                    .await
-                    .expect("fidl error")
-                    .expect("protocol error");
+                let update2 = watcher.watch().await.expect("fidl error").expect("protocol error");
 
-                assert_matches!(
-                    update2.as_slice(),
-                    [fnp_properties::PropertyUpdate::SocketMarks(fnet::Marks {
-                        mark_1: Some(TEST_MARK_2),
-                        ..
-                    })]
+                assert_eq!(
+                    update2,
+                    PropertyUpdate {
+                        socket_marks: Some(fnet::Marks {
+                            mark_1: Some(TEST_MARK_2),
+                            ..Default::default()
+                        }),
+                        dns_configuration: None,
+                        ..Default::default()
+                    }
                 );
 
                 // Add a second network and set it as default.
@@ -910,22 +922,27 @@ async fn test_network_registry_socket_marks_propagation<N: Netstack, M: Manager>
                     .expect("no default network token 2");
 
                 // Verify the properties of the new default network token.
-                let update3 = watch_update(&networks, &network_token_2)
+                let watcher_2 = watch_properties(&networks, &network_token_2)
                     .await
                     .expect("fidl error")
                     .expect("protocol error");
+                let update3 = watcher_2.watch().await.expect("fidl error").expect("protocol error");
 
-                assert_matches!(
-                    update3.as_slice(),
-                    [fnp_properties::PropertyUpdate::SocketMarks(fnet::Marks {
-                        mark_1: Some(TEST_MARK_2),
-                        ..
-                    })]
+                assert_eq!(
+                    update3,
+                    PropertyUpdate {
+                        socket_marks: Some(fnet::Marks {
+                            mark_1: Some(TEST_MARK_2),
+                            ..Default::default()
+                        }),
+                        dns_configuration: None,
+                        ..Default::default()
+                    }
                 );
 
                 // WatchProperties on the old default token should return InvalidNetworkToken
                 // since the token was invalidated and dropped when the default network changed.
-                let properties_gone = watch_update(&networks, &network_token).await;
+                let properties_gone = watch_properties(&networks, &network_token).await;
                 assert_matches!(
                     properties_gone,
                     Ok(Err(fnp_properties::WatchError::InvalidNetworkToken))
@@ -1004,22 +1021,31 @@ async fn test_network_registry_fuchsia_priority<N: Netstack, M: Manager>(
 
                 // Verify that only DnsConfiguration is returned and no SocketMarks property
                 // is present since Fuchsia networks have no socket marks.
-                let update = networks
+                let (watcher, server_end) = create_proxy();
+                networks
                     .watch_properties(fnp_properties::NetworksWatchPropertiesRequest {
                         network: Some(default_fuchsia_token.duplicate().expect("dup failed")),
-                        properties: Some(vec![
-                            fnp_properties::Property::SocketMarks,
-                            fnp_properties::Property::DnsConfiguration,
-                        ]),
-                        __source_breaking: fidl::marker::SourceBreaking,
+                        properties: Some(
+                            PropertyInterest::SOCKET_MARKS | PropertyInterest::DNS_CONFIGURATION,
+                        ),
+                        watcher: Some(server_end),
+                        ..Default::default()
                     })
                     .await
                     .expect("fidl error")
                     .expect("protocol error");
+                let update = watcher.watch().await.expect("fidl error").expect("protocol error");
 
-                assert_matches!(
-                    update.as_slice(),
-                    [fnp_properties::PropertyUpdate::DnsConfiguration(_)]
+                assert_eq!(
+                    update,
+                    PropertyUpdate {
+                        dns_configuration: Some(fnp_properties::DnsConfiguration {
+                            servers: Some(vec![]),
+                            ..Default::default()
+                        }),
+                        socket_marks: None,
+                        ..Default::default()
+                    }
                 );
 
                 // Add a delegated network and set it as default.
@@ -1207,4 +1233,349 @@ async fn test_network_token_peer_closed_on_removal<N: Netstack, M: Manager>(
     .await;
 
     Ok(())
+}
+
+/// Tests that `PropertyWatcher` tracks DNS configuration changes when the default network switches.
+#[netstack_test]
+#[variant(N, Netstack)]
+#[variant(M, Manager)]
+async fn test_track_dns_changes_default_switch<N: Netstack, M: Manager>(name: &str) {
+    use fnp_properties::{PropertyInterest, PropertyUpdate};
+
+    let _if_name = with_netcfg_owned_device::<M, N, _>(
+        name,
+        ManagerConfig::EnableSocketProxy,
+        NetcfgOwnedDeviceArgs {
+            use_out_of_stack_dhcp_client: N::USE_OUT_OF_STACK_DHCP_CLIENT,
+            socket_proxy_type: SocketProxyType::None,
+            ..Default::default()
+        },
+        |_if_id, _network, _interface_state, realm, _sandbox| {
+            async move {
+                let (tx, mut rx) = mpsc::channel::<()>(1);
+                let (mut shutdown_tx, shutdown_rx) = mpsc::channel::<()>(1);
+
+                let last_updates = Arc::new(Mutex::new(Vec::new()));
+                // Listen for `WatchDefault` changes. For each new default network token, register a
+                // `PropertyWatcher` and record observed updates.
+                let mut last_dns_servers = None;
+                let background = watch_default_and_record_properties(
+                    realm
+                        .connect_to_protocol_from_child::<fnp_properties::NetworksMarker>(
+                            realms::constants::netcfg::COMPONENT_NAME,
+                        )
+                        .expect("couldn't connect to fuchsia.net.policy.properties/Networks"),
+                    PropertyInterest::DNS_CONFIGURATION,
+                    last_updates.clone(),
+                    tx,
+                    shutdown_rx,
+                    move |update| {
+                        if let Some(dns_config) = &update.dns_configuration {
+                            let servers = dns_config.servers.clone();
+                            if servers != last_dns_servers {
+                                last_dns_servers = servers;
+                                return true;
+                            }
+                        }
+                        false
+                    },
+                );
+
+                let test = async move {
+                    let delegated_networks = realm
+                        .connect_to_protocol_from_child::<fnp_socketproxy::NetworkRegistryMarker>(
+                            realms::constants::netcfg::COMPONENT_NAME,
+                        )
+                        .expect("failed to connect to Netcfg NetworkRegistry");
+
+                    const DNS_1: fnet::Ipv6Address = fidl_ip_v6!("2001:db8::1");
+                    const DNS_2: fnet::Ipv6Address = fidl_ip_v6!("2001:db8::2");
+
+                    // Add a network with DNS_1 and set it as default. The watcher should
+                    // emit DNS_1.
+                    delegated_networks
+                        .add(&fnp_socketproxy::Network {
+                            network_id: Some(1),
+                            info: Some(fnp_socketproxy::NetworkInfo::Starnix(
+                                fnp_socketproxy::StarnixNetworkInfo {
+                                    mark: Some(123),
+                                    ..Default::default()
+                                },
+                            )),
+                            dns_servers: Some(fnp_socketproxy::NetworkDnsServers {
+                                v6: Some(vec![DNS_1]),
+                                v4: Some(vec![]),
+                                ..Default::default()
+                            }),
+                            ..Default::default()
+                        })
+                        .await
+                        .expect("fidl error")
+                        .expect("protocol error");
+                    delegated_networks
+                        .set_default(&fposix_socket::OptionalUint32::Value(1))
+                        .await
+                        .expect("fidl error")
+                        .expect("protocol error");
+                    let _ = rx.next().await;
+
+                    // Add a network with DNS_2 and set it as default. The watcher should
+                    // emit DNS_2.
+                    delegated_networks
+                        .add(&fnp_socketproxy::Network {
+                            network_id: Some(2),
+                            info: Some(fnp_socketproxy::NetworkInfo::Starnix(
+                                fnp_socketproxy::StarnixNetworkInfo {
+                                    mark: Some(456),
+                                    ..Default::default()
+                                },
+                            )),
+                            dns_servers: Some(fnp_socketproxy::NetworkDnsServers {
+                                v6: Some(vec![DNS_2]),
+                                v4: Some(vec![]),
+                                ..Default::default()
+                            }),
+                            ..Default::default()
+                        })
+                        .await
+                        .expect("fidl error")
+                        .expect("protocol error");
+                    delegated_networks
+                        .set_default(&fposix_socket::OptionalUint32::Value(2))
+                        .await
+                        .expect("fidl error")
+                        .expect("protocol error");
+                    let _ = rx.next().await;
+
+                    // Change default network from 2 -> 1. The watcher should emit DNS_1.
+                    delegated_networks
+                        .set_default(&fposix_socket::OptionalUint32::Value(1))
+                        .await
+                        .expect("fidl error")
+                        .expect("protocol error");
+                    let _ = rx.next().await;
+
+                    // Unset the default network. The watcher should emit None.
+                    delegated_networks
+                        .set_default(&fposix_socket::OptionalUint32::Unset(fposix_socket::Empty))
+                        .await
+                        .expect("fidl error")
+                        .expect("protocol error");
+                    let _ = rx.next().await;
+
+                    let updates = last_updates.lock().await.clone();
+
+                    let dns_config_1 = fnp_properties::DnsConfiguration {
+                        servers: Some(vec![fnet_name::DnsServer_ {
+                            address: Some(fnet::SocketAddress::Ipv6(fnet::Ipv6SocketAddress {
+                                address: DNS_1,
+                                port: DEFAULT_DNS_PORT,
+                                zone_index: 0,
+                            })),
+                            source: Some(fnet_name::DnsServerSource::SocketProxy(
+                                fnet_name::SocketProxyDnsServerSource {
+                                    source_interface: Some(1),
+                                    ..Default::default()
+                                },
+                            )),
+                            ..Default::default()
+                        }]),
+                        ..Default::default()
+                    };
+                    let dns_config_2 = fnp_properties::DnsConfiguration {
+                        servers: Some(vec![fnet_name::DnsServer_ {
+                            address: Some(fnet::SocketAddress::Ipv6(fnet::Ipv6SocketAddress {
+                                address: DNS_2,
+                                port: DEFAULT_DNS_PORT,
+                                zone_index: 0,
+                            })),
+                            source: Some(fnet_name::DnsServerSource::SocketProxy(
+                                fnet_name::SocketProxyDnsServerSource {
+                                    source_interface: Some(2),
+                                    ..Default::default()
+                                },
+                            )),
+                            ..Default::default()
+                        }]),
+                        ..Default::default()
+                    };
+
+                    // Verify that the PropertyWatcher sequence across default network switches
+                    // matches [DNS_1, DNS_2, DNS_1, None].
+                    expect_sequence(
+                        &updates,
+                        &vec![
+                            Some(PropertyUpdate {
+                                dns_configuration: Some(dns_config_1.clone()),
+                                ..Default::default()
+                            }),
+                            Some(PropertyUpdate {
+                                dns_configuration: Some(dns_config_2),
+                                ..Default::default()
+                            }),
+                            Some(PropertyUpdate {
+                                dns_configuration: Some(dns_config_1),
+                                ..Default::default()
+                            }),
+                            None,
+                        ],
+                    );
+
+                    shutdown_tx.send(()).await.expect("couldn't trigger clean shutdown");
+                };
+
+                futures::future::join(background, test).await;
+            }
+            .boxed_local()
+        },
+    )
+    .await;
+}
+
+/// Tests that removing a network while a client is watching properties emits `NETWORK_GONE`.
+#[netstack_test]
+#[variant(N, Netstack)]
+#[variant(M, Manager)]
+async fn test_network_removal_reports_network_gone<N: Netstack, M: Manager>(name: &str) {
+    let _if_name = with_netcfg_owned_device::<M, N, _>(
+        name,
+        ManagerConfig::EnableSocketProxy,
+        NetcfgOwnedDeviceArgs {
+            use_out_of_stack_dhcp_client: N::USE_OUT_OF_STACK_DHCP_CLIENT,
+            socket_proxy_type: SocketProxyType::Fake,
+            ..Default::default()
+        },
+        |_if_id, _network, _interface_state, realm, _sandbox| {
+            async move {
+                let delegated_networks = realm
+                    .connect_to_protocol_from_child::<fnp_socketproxy::NetworkRegistryMarker>(
+                        realms::constants::fake_socket_proxy::COMPONENT_NAME,
+                    )
+                    .expect("failed to connect to FakeSocketProxy NetworkRegistry");
+
+                let networks = realm
+                    .connect_to_protocol_from_child::<fnp_properties::NetworksMarker>(
+                        realms::constants::netcfg::COMPONENT_NAME,
+                    )
+                    .expect("failed to connect to Networks");
+
+                let token_resolver = realm
+                    .connect_to_protocol_from_child::<fnp_properties::NetworkTokenResolverMarker>(
+                        realms::constants::netcfg::COMPONENT_NAME,
+                    )
+                    .expect("failed to connect to NetworkTokenResolver");
+
+                // Add a network with a mark and set it as the default.
+                delegated_networks
+                    .add(&network(TEST_NETWORK_ID, Some(TEST_MARK)))
+                    .await
+                    .expect("fidl error")
+                    .expect("failed to add network");
+
+                delegated_networks
+                    .set_default(&fposix_socket::OptionalUint32::Value(TEST_NETWORK_ID))
+                    .await
+                    .expect("fidl error")
+                    .expect("failed to set default");
+
+                let default_token = networks
+                    .watch_default()
+                    .await
+                    .expect("failed to watch default network")
+                    .take_network()
+                    .expect("no default network token");
+
+                // We must resolve the default token to get a non-default token because
+                // the non-default token is closed by network removal, while the default
+                // network token is closed by default network switching.
+                let token = token_resolver
+                    .resolve_token(default_token)
+                    .await
+                    .expect("fidl error")
+                    .expect("failed to resolve token");
+
+                delegated_networks
+                    .set_default(&fposix_socket::OptionalUint32::Unset(fposix_socket::Empty))
+                    .await
+                    .expect("fidl error")
+                    .expect("failed to unset default");
+
+                // Register two PropertyWatchers. One will have an active in-flight Watch(), and the
+                // other will remain idle until after the network is removed.
+                let (active_watcher, active_server_end) = create_proxy();
+                networks
+                    .watch_properties(fnp_properties::NetworksWatchPropertiesRequest {
+                        network: Some(token.duplicate().expect("duplicate token")),
+                        properties: Some(PropertyInterest::SOCKET_MARKS),
+                        watcher: Some(active_server_end),
+                        ..Default::default()
+                    })
+                    .await
+                    .expect("fidl error")
+                    .expect("protocol error");
+
+                let (idle_watcher, idle_server_end) = create_proxy();
+                networks
+                    .watch_properties(fnp_properties::NetworksWatchPropertiesRequest {
+                        network: Some(token),
+                        properties: Some(PropertyInterest::SOCKET_MARKS),
+                        watcher: Some(idle_server_end),
+                        ..Default::default()
+                    })
+                    .await
+                    .expect("fidl error")
+                    .expect("protocol error");
+
+                for watcher in [&active_watcher, &idle_watcher] {
+                    let initial =
+                        watcher.watch().await.expect("fidl error").expect("protocol error");
+                    assert_eq!(
+                        initial,
+                        PropertyUpdate {
+                            socket_marks: Some(fnet::Marks {
+                                mark_1: Some(TEST_MARK),
+                                ..Default::default()
+                            }),
+                            ..Default::default()
+                        }
+                    );
+                }
+
+                // Register a pending call to Watch() on the active watcher, verify it is pending,
+                // then remove the network.
+                let mut active_watch_fut = active_watcher.watch();
+                assert_matches!((&mut active_watch_fut).now_or_never(), None);
+
+                delegated_networks
+                    .remove(TEST_NETWORK_ID)
+                    .await
+                    .expect("fidl error")
+                    .expect("failed to remove network");
+
+                assert_matches!(
+                    active_watch_fut.await,
+                    Ok(Err(fnp_properties::PropertyWatcherError::NetworkGone))
+                );
+
+                // Verify that the idle watcher calling Watch() after removal also receives NetworkGone.
+                assert_matches!(
+                    idle_watcher.watch().await,
+                    Ok(Err(fnp_properties::PropertyWatcherError::NetworkGone))
+                );
+
+                // Verify that any subsequent Watch() calls encounter a closed channel.
+                for watcher in [&active_watcher, &idle_watcher] {
+                    assert_matches!(
+                        watcher.watch().await,
+                        Err(fidl::Error::ClientChannelClosed {
+                            epitaph: fidl::Epitaph::PeerClosed,
+                            ..
+                        })
+                    );
+                }
+            }
+            .boxed_local()
+        },
+    )
+    .await;
 }

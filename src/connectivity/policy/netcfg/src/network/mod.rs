@@ -6,11 +6,12 @@ use crate::InterfaceId;
 use crate::dns::DNS_PORT;
 use crate::telemetry::{NetworkEventMetadata, TelemetryEvent, TelemetrySender};
 use anyhow::Context as _;
+use assert_matches::assert_matches;
 use async_utils::stream::{Tagged, WithTag as _};
 use dns_server_watcher::DnsServers;
-use fidl::endpoints::Responder as _;
+use fidl::endpoints::{ControlHandle as _, Responder as _};
 use futures::StreamExt as _;
-use log::{error, info, warn};
+use log::{debug, error, info, warn};
 use policy_properties::NetworkTokenExt as _;
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
@@ -73,6 +74,7 @@ pub(crate) struct NetworkTokenContents {
     is_default: bool,
 }
 
+/// A unique identifier for a `fuchsia.net.policy.properties.WatchDefault` client connection.
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ConnectionId(usize);
 
@@ -81,6 +83,10 @@ impl ConnectionId {
         self.0 += 1;
     }
 }
+
+/// A unique identifier for a `fuchsia.net.policy.properties.PropertyWatcher` client connection.
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct PropertyWatcherConnectionId(usize);
 
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct UpdateGeneration {
@@ -94,27 +100,30 @@ pub struct UpdateGeneration {
 }
 
 #[derive(Clone, Debug, Default)]
-pub struct UpdateGenerations(HashMap<ConnectionId, UpdateGeneration>);
+pub struct UpdateGenerations {
+    default_network: HashMap<ConnectionId, usize>,
+    properties: HashMap<PropertyWatcherConnectionId, usize>,
+}
 
 impl UpdateGenerations {
     fn default_network(&self, id: &ConnectionId) -> Option<usize> {
-        self.0.get(id).map(|g| g.default_network)
+        self.default_network.get(id).copied()
     }
 
     fn set_default_network(&mut self, id: ConnectionId, generation: UpdateGeneration) {
-        self.0.entry(id).or_default().default_network = generation.default_network;
+        *self.default_network.entry(id).or_default() = generation.default_network;
     }
 
-    fn properties(&self, id: &ConnectionId) -> Option<usize> {
-        self.0.get(id).map(|g| g.properties)
+    fn properties(&self, id: &PropertyWatcherConnectionId) -> Option<usize> {
+        self.properties.get(id).copied()
     }
 
-    fn set_properties(&mut self, id: ConnectionId, generation: UpdateGeneration) {
-        self.0.entry(id).or_default().properties = generation.properties;
+    fn set_properties(&mut self, id: PropertyWatcherConnectionId, generation: UpdateGeneration) {
+        *self.properties.entry(id).or_default() = generation.properties;
     }
 
-    fn remove(&mut self, id: &ConnectionId) -> Option<UpdateGeneration> {
-        self.0.remove(id)
+    fn remove_properties(&mut self, id: &PropertyWatcherConnectionId) -> Option<usize> {
+        self.properties.remove(id)
     }
 }
 
@@ -131,20 +140,13 @@ impl SetMark for fnet::Marks {
     }
 }
 
+/// State for a registered `fuchsia.net.policy.properties.PropertyWatcher` client,
+/// including the network token, properties being watched, and any pending `Watch` responder.
 #[derive(Debug)]
-pub(crate) struct NetworkPropertyResponder {
+struct Registration {
     token: fnp_properties::NetworkToken,
-    watched_properties: Vec<fnp_properties::Property>,
-    responder: fnp_properties::NetworksWatchPropertiesResponder,
-}
-
-impl NetworkPropertyResponder {
-    fn respond(
-        self,
-        response: Result<&[fnp_properties::PropertyUpdate], fnp_properties::WatchError>,
-    ) -> Result<(), fidl::Error> {
-        self.responder.send(response)
-    }
+    properties: fnp_properties::PropertyInterest,
+    responder: Option<fnp_properties::PropertyWatcherWatchResponder>,
 }
 
 #[derive(Debug, PartialEq, Default, Clone)]
@@ -211,9 +213,9 @@ impl RegisteredNetworks {
         }
     }
 
-    fn apply(&mut self, update: PropertyUpdate) -> RegistryUpdateResult {
+    fn apply(&mut self, update: NetworkRegistryUpdate) -> RegistryUpdateResult {
         match update {
-            PropertyUpdate::LoseDefaultNetwork => {
+            NetworkRegistryUpdate::LoseDefaultNetwork => {
                 // Handle Starnix unsetting its default network.
                 self.starnix_default = None;
                 RegistryUpdateResult {
@@ -221,38 +223,46 @@ impl RegisteredNetworks {
                     default_changed: self.handle_default_network_update(),
                 }
             }
-            PropertyUpdate::ChangeNetwork(network_id, network_change) => match network_change {
-                NetworkUpdate::Properties(event) => RegistryUpdateResult {
-                    event: self.handle_changed_network(network_id, event),
-                    default_changed: self.handle_default_network_update(),
-                },
-                NetworkUpdate::Remove => {
-                    if self.starnix_default == Some(network_id) {
-                        error!("Cannot remove the default delegated network. Update ignored.");
-                        RegistryUpdateResult { event: UpdateApplied::None, default_changed: None }
-                    } else if self.networks.remove(&network_id).is_some() {
-                        // Elect fallback default network internally.
-                        RegistryUpdateResult {
-                            event: UpdateApplied::NetworkRemoved(network_id),
-                            default_changed: self.handle_default_network_update(),
+            NetworkRegistryUpdate::ChangeNetwork(network_id, network_change) => {
+                match network_change {
+                    NetworkUpdate::Properties(event) => RegistryUpdateResult {
+                        event: self.handle_changed_network(network_id, event),
+                        default_changed: self.handle_default_network_update(),
+                    },
+                    NetworkUpdate::Remove => {
+                        if self.starnix_default == Some(network_id) {
+                            error!("Cannot remove the default delegated network. Update ignored.");
+                            RegistryUpdateResult {
+                                event: UpdateApplied::None,
+                                default_changed: None,
+                            }
+                        } else if self.networks.remove(&network_id).is_some() {
+                            // Elect fallback default network internally.
+                            RegistryUpdateResult {
+                                event: UpdateApplied::NetworkRemoved(network_id),
+                                default_changed: self.handle_default_network_update(),
+                            }
+                        } else {
+                            error!("Cannot remove a non-existent network. Update ignored.");
+                            RegistryUpdateResult {
+                                event: UpdateApplied::None,
+                                default_changed: None,
+                            }
                         }
-                    } else {
-                        error!("Cannot remove a non-existent network. Update ignored.");
-                        RegistryUpdateResult { event: UpdateApplied::None, default_changed: None }
+                    }
+                    NetworkUpdate::MakeDefault => {
+                        match network_id {
+                            // Fuchsia networks are always the default network when present. Netcfg
+                            // does not use this API to set a Fuchsia network as the default.
+                            NetworkId::Fuchsia(_) => {}
+                            NetworkId::Delegated(_) => self.starnix_default = Some(network_id),
+                        }
+                        let default_changed = self.handle_default_network_update();
+                        RegistryUpdateResult { event: UpdateApplied::None, default_changed }
                     }
                 }
-                NetworkUpdate::MakeDefault => {
-                    match network_id {
-                        // Fuchsia networks are always the default network when present. Netcfg
-                        // does not use this API to set a Fuchsia network as the default.
-                        NetworkId::Fuchsia(_) => {}
-                        NetworkId::Delegated(_) => self.starnix_default = Some(network_id),
-                    }
-                    let default_changed = self.handle_default_network_update();
-                    RegistryUpdateResult { event: UpdateApplied::None, default_changed }
-                }
-            },
-            PropertyUpdate::UpdateDns(dns_servers) => {
+            }
+            NetworkRegistryUpdate::UpdateDns(dns_servers) => {
                 let event = if self.dns_servers != dns_servers {
                     self.dns_servers = dns_servers;
                     UpdateApplied::DnsChanged
@@ -264,7 +274,7 @@ impl RegisteredNetworks {
         }
     }
 
-    // Handle the `NetworkPropertiesChange` in a `PropertyUpdate`, determining
+    // Handle the `NetworkPropertiesChange` in a `NetworkRegistryUpdate`, determining
     // whether network properties changed as a result of the update.
     //
     // Returns an `UpdateApplied::NetworkChanged` event if this is a valid change.
@@ -364,57 +374,39 @@ impl RegisteredNetworks {
                 .collect()
         }
     }
-
-    fn maybe_respond(
-        &self,
-        network: &NetworkTokenContents,
-        responder: NetworkPropertyResponder,
-    ) -> Option<NetworkPropertyResponder> {
-        let mut updates = Vec::new();
-        updates.add_socket_marks(self, network, &responder);
-        updates.add_dns(self, network, &responder);
-
-        if updates.is_empty() {
-            Some(responder)
-        } else {
-            if let Err(e) = responder.respond(Ok(&updates)) {
-                warn!("Could not send to responder: {e}");
-            }
-            None
-        }
-    }
 }
 
+/// Helper trait for building property update lists based on a client's registration.
 trait PropertyUpdates {
     fn add_socket_marks(
         &mut self,
         network_registry: &RegisteredNetworks,
         network: &NetworkTokenContents,
-        responder: &NetworkPropertyResponder,
+        registration: &Registration,
     );
     fn add_dns(
         &mut self,
         network_registry: &RegisteredNetworks,
         network: &NetworkTokenContents,
-        responder: &NetworkPropertyResponder,
+        registration: &Registration,
     );
 }
 
-impl PropertyUpdates for Vec<fnp_properties::PropertyUpdate> {
+impl PropertyUpdates for fnp_properties::PropertyUpdate {
     fn add_socket_marks(
         &mut self,
         network_registry: &RegisteredNetworks,
         network: &NetworkTokenContents,
-        responder: &NetworkPropertyResponder,
+        registration: &Registration,
     ) {
-        if !responder.watched_properties.contains(&fnp_properties::Property::SocketMarks) {
+        if !registration.properties.contains(fnp_properties::PropertyInterest::SOCKET_MARKS) {
             return;
         }
 
         match network_registry.networks.get(&network.network_id) {
             Some(network) => {
                 if let Some(socket_marks) = network.get_marks() {
-                    self.push(fnp_properties::PropertyUpdate::SocketMarks(socket_marks.clone()));
+                    self.socket_marks = Some(socket_marks.clone());
                 }
                 return;
             }
@@ -432,74 +424,69 @@ impl PropertyUpdates for Vec<fnp_properties::PropertyUpdate> {
         &mut self,
         network_registry: &RegisteredNetworks,
         network: &NetworkTokenContents,
-        responder: &NetworkPropertyResponder,
+        registration: &Registration,
     ) {
-        if !responder.watched_properties.contains(&fnp_properties::Property::DnsConfiguration) {
+        if !registration.properties.contains(fnp_properties::PropertyInterest::DNS_CONFIGURATION) {
             return;
         }
 
         let interface_id = network.network_id;
-        self.push(fnp_properties::PropertyUpdate::DnsConfiguration(
-            fnp_properties::DnsConfiguration {
-                servers: Some(
-                    network_registry
-                        .dns_servers
-                        .iter()
-                        .filter(|d| {
-                            match &d.source {
-                                Some(source) => match source {
-                                    fnet_name::DnsServerSource::StaticSource(_) => true,
-                                    // `extract_dns_servers` prefers IPv4 DNS
-                                    // over IPv6 DNS when DNS servers are
-                                    // provided by the SocketProxy.
-                                    fnet_name::DnsServerSource::SocketProxy(
-                                        fnet_name::SocketProxyDnsServerSource {
-                                            source_interface,
-                                            ..
-                                        },
-                                    ) => match (interface_id, source_interface) {
-                                        (_, None) => true,
-                                        (id1, Some(id2)) => {
-                                            Ok(id1)
-                                                == InterfaceId::try_from(*id2)
-                                                    .map(|id| NetworkId::delegated(id))
-                                        }
+        self.dns_configuration = Some(fnp_properties::DnsConfiguration {
+            servers: Some(
+                network_registry
+                    .dns_servers
+                    .iter()
+                    .filter(|d| {
+                        match &d.source {
+                            Some(source) => match source {
+                                fnet_name::DnsServerSource::StaticSource(_) => true,
+                                // `extract_dns_servers` prefers IPv4 DNS
+                                // over IPv6 DNS when DNS servers are
+                                // provided by the SocketProxy.
+                                fnet_name::DnsServerSource::SocketProxy(
+                                    fnet_name::SocketProxyDnsServerSource {
+                                        source_interface, ..
                                     },
-                                    fnet_name::DnsServerSource::Dhcp(
-                                        fnet_name::DhcpDnsServerSource { source_interface, .. },
-                                    )
-                                    | fnet_name::DnsServerSource::Ndp(
-                                        fnet_name::NdpDnsServerSource { source_interface, .. },
-                                    )
-                                    | fnet_name::DnsServerSource::Dhcpv6(
-                                        fnet_name::Dhcpv6DnsServerSource {
-                                            source_interface, ..
-                                        },
-                                    ) => match (interface_id, source_interface) {
-                                        (_, None) => true,
-                                        (id1, Some(id2)) => {
-                                            Ok(id1)
-                                                == InterfaceId::try_from(*id2)
-                                                    .map(|id| NetworkId::fuchsia(id))
-                                        }
-                                    },
-
-                                    _ => {
-                                        error!("unhandled DnsServerSource: {source:?}");
-                                        false
+                                ) => match (interface_id, source_interface) {
+                                    (_, None) => true,
+                                    (id1, Some(id2)) => {
+                                        Ok(id1)
+                                            == InterfaceId::try_from(*id2)
+                                                .map(|id| NetworkId::delegated(id))
+                                    }
+                                },
+                                fnet_name::DnsServerSource::Dhcp(
+                                    fnet_name::DhcpDnsServerSource { source_interface, .. },
+                                )
+                                | fnet_name::DnsServerSource::Ndp(
+                                    fnet_name::NdpDnsServerSource { source_interface, .. },
+                                )
+                                | fnet_name::DnsServerSource::Dhcpv6(
+                                    fnet_name::Dhcpv6DnsServerSource { source_interface, .. },
+                                ) => match (interface_id, source_interface) {
+                                    (_, None) => true,
+                                    (id1, Some(id2)) => {
+                                        Ok(id1)
+                                            == InterfaceId::try_from(*id2)
+                                                .map(|id| NetworkId::fuchsia(id))
                                     }
                                 },
 
-                                // No source, assume static source, so include it.
-                                None => true,
-                            }
-                        })
-                        .cloned()
-                        .collect::<Vec<_>>(),
-                ),
-                ..Default::default()
-            },
-        ));
+                                _ => {
+                                    error!("unhandled DnsServerSource: {source:?}");
+                                    false
+                                }
+                            },
+
+                            // No source, assume static source, so include it.
+                            None => true,
+                        }
+                    })
+                    .cloned()
+                    .collect::<Vec<_>>(),
+            ),
+            ..Default::default()
+        });
     }
 }
 
@@ -565,21 +552,21 @@ enum UpdateApplied {
 }
 
 #[derive(Debug, Clone)]
-pub enum PropertyUpdate {
+pub enum NetworkRegistryUpdate {
     LoseDefaultNetwork,
     ChangeNetwork(NetworkId, NetworkUpdate),
     UpdateDns(Vec<fnet_name::DnsServer_>),
 }
 
-impl PropertyUpdate {
+impl NetworkRegistryUpdate {
     pub fn default_network_lost() -> Self {
-        PropertyUpdate::LoseDefaultNetwork
+        NetworkRegistryUpdate::LoseDefaultNetwork
     }
 
     pub fn dns(dns_servers: &DnsServers) -> Self {
         // TODO(https://fxbug.dev/477980011): Switch to deriving dns servers from
         // NetworkRegistry updates.
-        PropertyUpdate::UpdateDns(dns_servers.consolidated_dns_servers())
+        NetworkRegistryUpdate::UpdateDns(dns_servers.consolidated_dns_servers())
     }
 }
 
@@ -587,16 +574,24 @@ impl PropertyUpdate {
 ///
 /// Returned to the main event loop to propagate system-wide configuration
 /// changes (such as DNS server updates) and notify active watchers.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Default, PartialEq)]
 pub struct DelegatedNetworkUpdateResult {
     /// If present, contains the new consolidated DNS servers known by the
     /// network registry.
     pub dns_servers: Option<Vec<fnet_name::DnsServer_>>,
 }
 
+/// A public wrapper enum for FIDL request streams accepted by
+/// [`NetpolNetworksService::add_stream`].
+///
+/// This type represents incoming streams before they are attached to the service's event loop.
 pub enum NetworkRequestStream {
     Networks(fnp_properties::NetworksRequestStream),
     NetworkTokenResolver(fnp_properties::NetworkTokenResolverRequestStream),
+    PropertyWatcher {
+        connection_id: PropertyWatcherConnectionId,
+        stream: fnp_properties::PropertyWatcherRequestStream,
+    },
     DelegatedNetworks(fnp_socketproxy::NetworkRegistryRequestStream),
 }
 
@@ -610,34 +605,32 @@ impl From<fnp_properties::NetworkTokenResolverRequestStream> for NetworkRequestS
         Self::NetworkTokenResolver(s)
     }
 }
+
 impl From<fnp_socketproxy::NetworkRegistryRequestStream> for NetworkRequestStream {
     fn from(s: fnp_socketproxy::NetworkRegistryRequestStream) -> Self {
         Self::DelegatedNetworks(s)
     }
 }
 
-pub struct NetworkAttributesRequest {
-    pub id: ConnectionId,
-    pub request: Result<fnp_properties::NetworksRequest, fidl::Error>,
+impl From<(PropertyWatcherConnectionId, fnp_properties::PropertyWatcherRequestStream)>
+    for NetworkRequestStream
+{
+    fn from(
+        s: (PropertyWatcherConnectionId, fnp_properties::PropertyWatcherRequestStream),
+    ) -> Self {
+        let (connection_id, stream) = s;
+        Self::PropertyWatcher { connection_id, stream }
+    }
 }
 
-pub struct NetworkTokenResolverRequest {
-    pub request: Result<fnp_properties::NetworkTokenResolverRequest, fidl::Error>,
-}
-
-pub struct DelegatedNetworksRequest {
-    pub request: Result<fnp_socketproxy::NetworkRegistryRequest, fidl::Error>,
-}
-
-pub enum NetworkRequest {
-    NetworkAttributes(NetworkAttributesRequest),
-    NetworkTokenResolver(NetworkTokenResolverRequest),
-    DelegatedNetworks(DelegatedNetworksRequest),
-}
-
+/// An internal wrapper enum for active FIDL request streams stored in
+/// [`NetpolNetworksService::streams`].
 enum NetworkRequestStreamInner {
     Networks(Tagged<ConnectionId, fnp_properties::NetworksRequestStream>),
     NetworkTokenResolver(fnp_properties::NetworkTokenResolverRequestStream),
+    PropertyWatcher(
+        Tagged<PropertyWatcherConnectionId, fnp_properties::PropertyWatcherRequestStream>,
+    ),
     DelegatedNetworks(fnp_socketproxy::NetworkRegistryRequestStream),
 }
 
@@ -661,6 +654,12 @@ impl futures::Stream for NetworkRequestStreamInner {
                         .map(NetworkRequest::NetworkTokenResolver)
                 })
             }
+            NetworkRequestStreamInner::PropertyWatcher(ref mut stream) => {
+                stream.poll_next_unpin(cx).map(|o| {
+                    o.map(|(id, request)| PropertyWatcherRequest { id, request })
+                        .map(NetworkRequest::PropertyWatcher)
+                })
+            }
             NetworkRequestStreamInner::DelegatedNetworks(ref mut stream) => {
                 stream.poll_next_unpin(cx).map(|o| {
                     o.map(|request| DelegatedNetworksRequest { request })
@@ -669,6 +668,39 @@ impl futures::Stream for NetworkRequestStreamInner {
             }
         }
     }
+}
+
+/// A wrapper for [`fnp_properties::NetworksRequest`] that includes the [`ConnectionId`] of the
+/// connection that sent the request.
+pub struct NetworkAttributesRequest {
+    pub id: ConnectionId,
+    pub request: Result<fnp_properties::NetworksRequest, fidl::Error>,
+}
+
+/// A wrapper for [`fnp_properties::NetworkTokenResolverRequest`].
+pub struct NetworkTokenResolverRequest {
+    pub request: Result<fnp_properties::NetworkTokenResolverRequest, fidl::Error>,
+}
+
+/// A wrapper for [`fnp_properties::PropertyWatcherRequest`] that includes the [`ConnectionId`] of
+/// the connection that sent the request.
+pub struct PropertyWatcherRequest {
+    pub id: PropertyWatcherConnectionId,
+    pub request: Result<fnp_properties::PropertyWatcherRequest, fidl::Error>,
+}
+
+/// A wrapper for [`fnp_socketproxy::NetworkRegistryRequest`].
+pub struct DelegatedNetworksRequest {
+    pub request: Result<fnp_socketproxy::NetworkRegistryRequest, fidl::Error>,
+}
+
+/// An enum representing all possible events that can be received by the NetpolNetworksService
+/// event loop.
+pub enum NetworkRequest {
+    NetworkAttributes(NetworkAttributesRequest),
+    NetworkTokenResolver(NetworkTokenResolverRequest),
+    PropertyWatcher(PropertyWatcherRequest),
+    DelegatedNetworks(DelegatedNetworksRequest),
 }
 
 impl futures::Stream for NetpolNetworksService {
@@ -699,11 +731,15 @@ pub struct NetpolNetworksService {
         HashMap<ConnectionId, fnp_properties::NetworksWatchDefaultResponder>,
     tokens: token_registry::TokenRegistry<NetworkTokenContents>,
     // NetworkProperty Watchers
-    property_responders: HashMap<ConnectionId, NetworkPropertyResponder>,
+    property_watchers: HashMap<PropertyWatcherConnectionId, Registration>,
     // The networks known to the system
     network_registry: RegisteredNetworks,
     telemetry: Option<TelemetrySender>,
+    // The next id to use for a networks connection
     next_networks_id: ConnectionId,
+    // The next id to use for a property watcher connection
+    next_watcher_id: PropertyWatcherConnectionId,
+    // The multiplexed stream of events handled by the eventloop
     streams: futures::stream::SelectAll<NetworkRequestStreamInner>,
 }
 
@@ -726,6 +762,10 @@ impl NetpolNetworksService {
             NetworkRequestStream::DelegatedNetworks(stream) => {
                 self.streams.push(NetworkRequestStreamInner::DelegatedNetworks(stream));
             }
+            NetworkRequestStream::PropertyWatcher { connection_id, stream } => {
+                self.streams
+                    .push(NetworkRequestStreamInner::PropertyWatcher(stream.tagged(connection_id)));
+            }
         }
     }
 
@@ -744,6 +784,10 @@ impl NetpolNetworksService {
             }
             NetworkRequest::DelegatedNetworks(DelegatedNetworksRequest { request }) => {
                 self.handle_delegated_networks_update(request).await
+            }
+            NetworkRequest::PropertyWatcher(PropertyWatcherRequest { id, request }) => {
+                self.handle_property_watcher_request(id, request).await?;
+                Ok(DelegatedNetworkUpdateResult { dns_servers: None })
             }
         }
     }
@@ -767,9 +811,7 @@ impl NetpolNetworksService {
                             "Only one call to fuchsia.net.policy.properties/Networks.WatchDefault \
                              may be active per connection"
                         );
-                        responder
-                            .control_handle()
-                            .shutdown_with_epitaph(zx::Status::CONNECTION_ABORTED)
+                        responder.control_handle().shutdown_with_epitaph(zx::Status::ALREADY_EXISTS)
                     }
                     std::collections::hash_map::Entry::Vacant(vacant_entry) => {
                         let network_id = if self
@@ -794,12 +836,6 @@ impl NetpolNetworksService {
                             responder.send(
                                 fnp_properties::NetworksWatchDefaultResponse::Network(token),
                             )?;
-
-                            if let Some(responder) = self.property_responders.remove(&id) {
-                                let _: Option<_> = self.generations_by_connection.remove(&id);
-                                let _: Result<(), fidl::Error> =
-                                    responder.respond(Err(fnp_properties::WatchError::NetworkGone));
-                            }
                         } else {
                             let _: &mut _ = vacant_entry.insert(responder);
                         }
@@ -807,69 +843,147 @@ impl NetpolNetworksService {
                 }
             }
             fnp_properties::NetworksRequest::WatchProperties {
-                payload: fnp_properties::NetworksWatchPropertiesRequest { network, properties, .. },
+                payload:
+                    fnp_properties::NetworksWatchPropertiesRequest {
+                        network, properties, watcher, ..
+                    },
                 responder,
-            } => match (network, properties) {
-                (None, _) | (_, None) => {
+            } => match (network, properties, watcher) {
+                (None, _, _) | (_, None, _) | (_, _, None) => {
                     responder.send(Err(fnp_properties::WatchError::MissingRequiredArgument))?
                 }
-                (Some(network), Some(properties)) => {
-                    if properties.is_empty() {
-                        responder.send(Err(fnp_properties::WatchError::NoProperties))?;
+                (Some(network), Some(properties), Some(watcher)) => {
+                    if properties == fnp_properties::PropertyInterest::default() {
+                        responder.send(Err(fnp_properties::WatchError::NoProperties))?
                     } else {
-                        match self.property_responders.entry(id) {
-                            std::collections::hash_map::Entry::Occupied(_) => {
-                                warn!(
-                                    "Only one call to \
-                                    fuchsia.net.policy.properties/Networks.WatchProperties may be \
-                                    active per connection"
-                                );
+                        match self.tokens.get_contents(&network) {
+                            Err(e) => {
+                                warn!("Unknown network token. ({network:?}: {e})");
                                 responder
-                                    .control_handle()
-                                    .shutdown_with_epitaph(zx::Status::CONNECTION_ABORTED)
+                                    .send(Err(fnp_properties::WatchError::InvalidNetworkToken))?
                             }
-                            std::collections::hash_map::Entry::Vacant(vacant_entry) => {
-                                match self.tokens.get_contents(&network) {
-                                    Err(e) => {
-                                        warn!("Unknown network token. ({network:?}: {e})");
-                                        responder.send(Err(
-                                            fnp_properties::WatchError::InvalidNetworkToken,
-                                        ))?;
-                                    }
-                                    Ok(network_contents) => {
-                                        let responder = NetworkPropertyResponder {
-                                            token: network,
-                                            watched_properties: properties,
-                                            responder,
-                                        };
-                                        if self
-                                            .generations_by_connection
-                                            .properties(&id)
-                                            .unwrap_or_default()
-                                            < self.current_generation.properties
-                                        {
-                                            self.generations_by_connection
-                                                .set_properties(id, self.current_generation);
-                                            if let Some(responder) = self
-                                                .network_registry
-                                                .maybe_respond(&network_contents, responder)
-                                            {
-                                                let _: &mut NetworkPropertyResponder =
-                                                    vacant_entry.insert(responder);
+                            Ok(_network_contents) => {
+                                // Bind the stateful PropertyWatcher session: cache the token and
+                                // requested properties, register the watcher's event stream, and
+                                // reply immediately.
+                                let watcher_stream = watcher.into_stream();
+                                let watcher_id = self.next_watcher_id;
+                                self.next_watcher_id.0 += 1;
+                                let registration =
+                                    Registration { token: network, properties, responder: None };
+                                assert_matches!(
+                                    self.property_watchers.insert(watcher_id, registration),
+                                    None
+                                );
+                                self.add_stream((watcher_id, watcher_stream));
+                                responder.send(Ok(()))?;
+                            }
+                        }
+                    }
+                }
+            },
+            fnp_properties::NetworksRequest::_UnknownMethod { ordinal, .. } => {
+                warn!("Received unexpected request {ordinal}")
+            }
+        }
+
+        Ok(())
+    }
+
+    pub async fn handle_property_watcher_request(
+        &mut self,
+        id: PropertyWatcherConnectionId,
+        req: Result<fnp_properties::PropertyWatcherRequest, fidl::Error>,
+    ) -> Result<(), anyhow::Error> {
+        match req {
+            Err(e) => {
+                info!("Property watcher request stream ended: {e:?}");
+                // The id may no longer be present in either of the HashMaps depending
+                // on whether the network was removed before the client disconnected.
+                let _: Option<_> = self.property_watchers.remove(&id);
+                let _: Option<_> = self.generations_by_connection.remove_properties(&id);
+            }
+            Ok(fnp_properties::PropertyWatcherRequest::Watch { responder }) => {
+                match self.property_watchers.get_mut(&id) {
+                    None => {
+                        warn!("Received PropertyWatcher request for non-existent registration");
+                        responder.control_handle().shutdown_with_epitaph(zx::Status::INTERNAL);
+                    }
+                    Some(registration) => {
+                        if registration.responder.is_some() {
+                            warn!(
+                                "Only one call to \
+                                fuchsia.net.policy.properties/PropertyWatcher.Watch may be \
+                                active per connection"
+                            );
+                            responder
+                                .control_handle()
+                                .shutdown_with_epitaph(zx::Status::ALREADY_EXISTS);
+                        } else {
+                            registration.responder = Some(responder);
+                            match self.tokens.get_contents(&registration.token) {
+                                Ok(network_contents) => {
+                                    // Determine whether a new update is available
+                                    // (last_sent_generation < current_generation)
+                                    if self
+                                        .generations_by_connection
+                                        .properties(&id)
+                                        .unwrap_or_default()
+                                        < self.current_generation.properties
+                                    {
+                                        self.generations_by_connection
+                                            .set_properties(id, self.current_generation);
+                                        let mut updates = fnp_properties::PropertyUpdate::default();
+                                        updates.add_socket_marks(
+                                            &self.network_registry,
+                                            &network_contents,
+                                            registration,
+                                        );
+                                        updates.add_dns(
+                                            &self.network_registry,
+                                            &network_contents,
+                                            registration,
+                                        );
+                                        if updates != fnp_properties::PropertyUpdate::default() {
+                                            if let Some(responder) = registration.responder.take() {
+                                                responder.send(Ok(&updates))?;
                                             }
-                                        } else {
-                                            let _: &mut NetworkPropertyResponder =
-                                                vacant_entry.insert(responder);
                                         }
+                                    }
+                                }
+                                // The network was already removed (and its token dropped) prior to
+                                // this `Watch` call.
+                                Err(zx::Status::NOT_FOUND) => {
+                                    let _: Option<_> =
+                                        self.generations_by_connection.remove_properties(&id);
+                                    if let Some(responder) = registration.responder.take() {
+                                        let control_handle = responder.control_handle().clone();
+                                        if let Err(e) = responder.send(Err(
+                                            fnp_properties::PropertyWatcherError::NetworkGone,
+                                        )) {
+                                            warn!("Could not send to responder: {e}");
+                                        }
+                                        control_handle.shutdown();
+                                    }
+                                }
+                                Err(e) => {
+                                    warn!("Unexpected error fetching token contents: {e}");
+                                    let _: Option<_> =
+                                        self.generations_by_connection.remove_properties(&id);
+                                    if let Some(responder) = registration.responder.take() {
+                                        let control_handle = responder.control_handle().clone();
+                                        if let Err(e) = responder.send(Err(
+                                            fnp_properties::PropertyWatcherError::NetworkGone,
+                                        )) {
+                                            warn!("Could not send to responder: {e}");
+                                        }
+                                        control_handle.shutdown();
                                     }
                                 }
                             }
                         }
                     }
                 }
-            },
-            _ => {
-                warn!("Received unexpected request {req:?}");
             }
         }
 
@@ -907,7 +1021,7 @@ impl NetpolNetworksService {
                         match InterfaceId::try_from(interface_id) {
                             Ok(id) => {
                                 let delegated_id = NetworkId::delegated(id);
-                                self.update(PropertyUpdate::ChangeNetwork(
+                                self.update(NetworkRegistryUpdate::ChangeNetwork(
                                     delegated_id,
                                     NetworkUpdate::MakeDefault,
                                 ))
@@ -918,7 +1032,7 @@ impl NetpolNetworksService {
                         }
                     }
                     fposix_socket::OptionalUint32::Unset(_) => {
-                        self.update(PropertyUpdate::default_network_lost()).await;
+                        self.update(NetworkRegistryUpdate::default_network_lost()).await;
                         Ok(())
                     }
                 };
@@ -953,7 +1067,7 @@ impl NetpolNetworksService {
 
                 let update_result = match extracted_properties {
                     Ok((network_id, marks, dns_servers)) => {
-                        self.update(PropertyUpdate::ChangeNetwork(
+                        self.update(NetworkRegistryUpdate::ChangeNetwork(
                             network_id,
                             NetworkUpdate::Properties(NetworkPropertiesChange {
                                 added: true,
@@ -1000,7 +1114,7 @@ impl NetpolNetworksService {
 
                 let update_result = match extracted_properties {
                     Ok((network_id, marks, dns_servers)) => {
-                        self.update(PropertyUpdate::ChangeNetwork(
+                        self.update(NetworkRegistryUpdate::ChangeNetwork(
                             network_id,
                             NetworkUpdate::Properties(NetworkPropertiesChange {
                                 added: false,
@@ -1027,7 +1141,7 @@ impl NetpolNetworksService {
                 let update_result = match InterfaceId::try_from(network_id) {
                     Ok(id) => {
                         let delegated_id = NetworkId::delegated(id);
-                        self.update(PropertyUpdate::ChangeNetwork(
+                        self.update(NetworkRegistryUpdate::ChangeNetwork(
                             delegated_id,
                             NetworkUpdate::Remove,
                         ))
@@ -1174,66 +1288,30 @@ impl NetpolNetworksService {
     async fn changed_default_network(
         &mut self,
         previous_default_network: Option<NetworkId>,
-        responders: &mut HashMap<ConnectionId, NetworkPropertyResponder>,
+        property_watchers: &mut HashMap<PropertyWatcherConnectionId, Registration>,
     ) {
-        let mut r = HashMap::new();
-        std::mem::swap(&mut r, responders);
-        r = r
-            .into_iter()
-            .filter_map(|(id, responder)| {
-                match self.tokens.get_contents(&responder.token) {
-                    Ok(contents) => {
-                        // We only want to remove when watching a default token.
-                        if contents.is_default {
-                            let _: Option<_> = self.generations_by_connection.remove(&id);
-                            let _: Result<(), fidl::Error> =
-                                responder.respond(Err(fnp_properties::WatchError::NetworkGone));
-                            return None;
+        for (id, registration) in property_watchers.iter_mut() {
+            if let Ok(contents) = self.tokens.get_contents(&registration.token) {
+                if contents.is_default {
+                    let _: Option<_> = self.generations_by_connection.remove_properties(id);
+                    if let Some(responder) = registration.responder.take() {
+                        let control_handle = responder.control_handle().clone();
+                        if let Err(e) =
+                            responder.send(Err(fnp_properties::PropertyWatcherError::NetworkGone))
+                        {
+                            warn!("Could not send to responder: {e}");
                         }
-                    }
-                    Err(zx::Status::NOT_FOUND) => {
-                        warn!("Token provided to get_contents is not valid.");
-                    }
-                    Err(e) => {
-                        warn!("Encountered unknown issue while getting contents: {e}");
+                        control_handle.shutdown();
                     }
                 }
-                Some((id, responder))
-            })
-            .collect::<HashMap<_, _>>();
-        std::mem::swap(&mut r, responders);
+            }
+        }
         self.tokens.drop_if(|&c| {
             c.is_default && previous_default_network.is_some_and(|i| i == c.network_id)
         });
     }
 
-    pub(crate) async fn remove_network(&mut self, network_id: NetworkId) {
-        info!("Removing interface {network_id}. Reporting NETWORK_GONE to all clients.");
-        let mut responders = HashMap::new();
-        std::mem::swap(&mut self.property_responders, &mut responders);
-        for (id, responder) in responders {
-            let network = match self.tokens.get_contents(&responder.token) {
-                Ok(network) => network,
-                Err(e) => {
-                    warn!("Could not fetch network data for responder: {e}");
-                    continue;
-                }
-            };
-            if network.network_id == network_id {
-                // Report that this interface was removed
-                if let Err(e) = responder.respond(Err(fnp_properties::WatchError::NetworkGone)) {
-                    warn!("Could not send to responder: {e}");
-                }
-            } else {
-                if self.property_responders.insert(id, responder).is_some() {
-                    error!("Re-inserted in an existing responder slot. This should be impossible.");
-                }
-            }
-        }
-    }
-
-    pub async fn update(&mut self, update: PropertyUpdate) {
-        self.current_generation.properties += 1;
+    pub async fn update(&mut self, update: NetworkRegistryUpdate) {
         let RegistryUpdateResult { event, default_changed } = self.network_registry.apply(update);
 
         if let UpdateApplied::None = event {
@@ -1243,8 +1321,12 @@ impl NetpolNetworksService {
             }
         }
 
-        let mut property_responders = HashMap::new();
-        std::mem::swap(&mut self.property_responders, &mut property_responders);
+        if event != UpdateApplied::None {
+            self.current_generation.properties += 1;
+        }
+
+        let mut property_watchers = HashMap::new();
+        std::mem::swap(&mut self.property_watchers, &mut property_watchers);
 
         // Clean up or register tokens based on whether the network was added or removed.
         match event {
@@ -1254,6 +1336,26 @@ impl NetpolNetworksService {
                     .ensure_token(NetworkTokenContents { network_id, is_default: false });
             }
             UpdateApplied::NetworkRemoved(network_id) => {
+                info!("Removing network {network_id}. Reporting NETWORK_GONE to watchers.");
+                // Notify all property watchers bound to the removed network. The watcher is
+                // kept in the `property_watchers` map so that idle clients
+                // can receive NETWORK_GONE.
+                for (id, registration) in property_watchers.iter_mut() {
+                    if let Ok(network) = self.tokens.get_contents(&registration.token) {
+                        if network.network_id == network_id {
+                            let _: Option<_> = self.generations_by_connection.remove_properties(id);
+                            if let Some(responder) = registration.responder.take() {
+                                let control_handle = responder.control_handle().clone();
+                                if let Err(e) = responder
+                                    .send(Err(fnp_properties::PropertyWatcherError::NetworkGone))
+                                {
+                                    warn!("Could not send to responder: {e}");
+                                }
+                                control_handle.shutdown();
+                            }
+                        }
+                    }
+                }
                 self.tokens.drop_if(|c| !c.is_default && c.network_id == network_id);
             }
             UpdateApplied::NetworkChanged { added: false, .. }
@@ -1263,7 +1365,8 @@ impl NetpolNetworksService {
 
         // Notify watchers of default network changes if one occurred.
         if let Some(DefaultChangedEvent { previous_default }) = default_changed {
-            self.notify_default_network_changed(previous_default, &mut property_responders).await;
+            self.notify_default_network_changed(previous_default, &mut property_watchers).await;
+            std::mem::swap(&mut self.property_watchers, &mut property_watchers);
             return;
         }
 
@@ -1283,52 +1386,83 @@ impl NetpolNetworksService {
             }
         }
 
-        for (id, responder) in property_responders {
-            let mut updates = Vec::new();
-            let network = match self.tokens.get_contents(&responder.token) {
-                Ok(network) => network,
+        for (id, mut registration) in property_watchers {
+            let mut updates = fnp_properties::PropertyUpdate::default();
+            match self.tokens.get_contents(&registration.token) {
+                Ok(network) => match event {
+                    UpdateApplied::NetworkChanged {
+                        network_id,
+                        changed_marks,
+                        changed_dns,
+                        ..
+                    } => {
+                        if network.network_id == network_id {
+                            if changed_marks {
+                                updates.add_socket_marks(
+                                    &self.network_registry,
+                                    &network,
+                                    &registration,
+                                );
+                            }
+                            if changed_dns {
+                                updates.add_dns(&self.network_registry, &network, &registration);
+                            }
+                        }
+                    }
+                    UpdateApplied::DnsChanged => {
+                        updates.add_dns(&self.network_registry, &network, &registration);
+                    }
+                    UpdateApplied::NetworkRemoved(_id) => {}
+                    UpdateApplied::None => {}
+                },
                 Err(e) => {
-                    warn!("Could not fetch network data for responder: {e}");
-                    continue;
+                    debug!(
+                        "Token {:?} not found for watcher {:?};
+                    network was likely removed while idle ({})",
+                        registration.token, id, e
+                    );
                 }
-            };
-
-            if let UpdateApplied::NetworkChanged {
-                network_id, changed_marks, changed_dns, ..
-            } = event
-            {
-                if network.network_id == network_id {
-                    if changed_marks {
-                        updates.add_socket_marks(&self.network_registry, &network, &responder);
-                    }
-                    if changed_dns {
-                        updates.add_dns(&self.network_registry, &network, &responder);
-                    }
-                }
-            }
-            if let UpdateApplied::DnsChanged = event {
-                updates.add_dns(&self.network_registry, &network, &responder);
             }
 
-            self.generations_by_connection.set_properties(id, self.current_generation);
-            if updates.is_empty() {
-                if self.property_responders.insert(id, responder).is_some() {
-                    warn!("Re-inserted in an existing responder slot. This should be impossible.");
-                }
-            } else {
-                if let Err(e) = responder.respond(Ok(&updates)) {
-                    warn!("Could not send to responder: {e}");
+            // Update the client's generation state to keep them in sync with the global
+            // properties generation.
+            let has_updates = updates != fnp_properties::PropertyUpdate::default();
+            if self.generations_by_connection.properties(&id).is_some() {
+                match (has_updates, registration.responder.take()) {
+                    (true, Some(responder)) => {
+                        // Sync generation and send update.
+                        self.generations_by_connection.set_properties(id, self.current_generation);
+                        if let Err(e) = responder.send(Ok(&updates)) {
+                            warn!("Failed to send watch updates: {}", e);
+                        }
+                    }
+                    (false, maybe_responder) => {
+                        // Sync generation to catch up and restore responder.
+                        self.generations_by_connection.set_properties(id, self.current_generation);
+                        registration.responder = maybe_responder;
+                    }
+                    (true, None) => {
+                        // If a relevant change occurs while the client is idle, we leave the client
+                        // on the old generation so they receive the update immediately upon the next
+                        // `Watch()` call.
+                    }
                 }
             }
+
+            assert_matches!(
+                self.property_watchers.insert(id, registration),
+                None,
+                "Re-inserted in an existing registration slot."
+            );
         }
     }
 
     async fn notify_default_network_changed(
         &mut self,
         old_default: Option<NetworkId>,
-        property_responders: &mut HashMap<ConnectionId, NetworkPropertyResponder>,
+        property_watchers: &mut HashMap<PropertyWatcherConnectionId, Registration>,
     ) {
-        self.changed_default_network(old_default, property_responders).await;
+        self.changed_default_network(old_default, property_watchers).await;
         match self.network_registry.default_network {
             Some(default_network) => {
                 if let Some(telemetry) = &self.telemetry {
@@ -1435,6 +1569,7 @@ impl<Stream: futures::Stream + Unpin> futures::stream::FusedStream for Connectio
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
+    use futures::FutureExt as _;
     use std::num::NonZeroU64;
     use test_case::test_case;
 
@@ -1763,7 +1898,7 @@ mod tests {
 
         // Unset the default delegated network prior to removal.
         assert_eq!(
-            networks.apply(PropertyUpdate::LoseDefaultNetwork),
+            networks.apply(NetworkRegistryUpdate::LoseDefaultNetwork),
             RegistryUpdateResult {
                 event: UpdateApplied::None,
                 default_changed: Some(DefaultChangedEvent {
@@ -1775,7 +1910,8 @@ mod tests {
 
         // Remove the delegated network.
         assert_eq!(
-            networks.apply(PropertyUpdate::ChangeNetwork(DELEGATED_ID_1, NetworkUpdate::Remove)),
+            networks
+                .apply(NetworkRegistryUpdate::ChangeNetwork(DELEGATED_ID_1, NetworkUpdate::Remove)),
             RegistryUpdateResult {
                 event: UpdateApplied::NetworkRemoved(DELEGATED_ID_1),
                 default_changed: None
@@ -1793,7 +1929,7 @@ mod tests {
         let fuchsia_added = NetworkPropertiesChange { added: true, ..Default::default() };
 
         // Add a Fuchsia network. This should become the default network.
-        let result = networks.apply(PropertyUpdate::ChangeNetwork(
+        let result = networks.apply(NetworkRegistryUpdate::ChangeNetwork(
             FUCHSIA_ID_1,
             NetworkUpdate::Properties(fuchsia_added.clone()),
         ));
@@ -1805,7 +1941,7 @@ mod tests {
         assert_eq!(result.default_changed, Some(DefaultChangedEvent { previous_default: None }));
 
         // Add a second Fuchsia network. This should not change the default network.
-        let result = networks.apply(PropertyUpdate::ChangeNetwork(
+        let result = networks.apply(NetworkRegistryUpdate::ChangeNetwork(
             FUCHSIA_ID_2,
             NetworkUpdate::Properties(fuchsia_added),
         ));
@@ -1817,7 +1953,7 @@ mod tests {
         assert_eq!(result.default_changed, None);
 
         // Add a delegated network. This should not change the default network.
-        let result = networks.apply(PropertyUpdate::ChangeNetwork(
+        let result = networks.apply(NetworkRegistryUpdate::ChangeNetwork(
             DELEGATED_ID_1,
             NetworkUpdate::Properties(NetworkPropertiesChange {
                 added: true,
@@ -1834,8 +1970,10 @@ mod tests {
 
         // Make the delegated network default (ignored because a Fuchsia
         // network is present).
-        let result = networks
-            .apply(PropertyUpdate::ChangeNetwork(DELEGATED_ID_1, NetworkUpdate::MakeDefault));
+        let result = networks.apply(NetworkRegistryUpdate::ChangeNetwork(
+            DELEGATED_ID_1,
+            NetworkUpdate::MakeDefault,
+        ));
         assert_eq!(
             result,
             RegistryUpdateResult { event: UpdateApplied::None, default_changed: None }
@@ -1844,8 +1982,8 @@ mod tests {
 
         // Remove the first Fuchsia network (fallback to the second Fuchsia
         // network).
-        let result =
-            networks.apply(PropertyUpdate::ChangeNetwork(FUCHSIA_ID_1, NetworkUpdate::Remove));
+        let result = networks
+            .apply(NetworkRegistryUpdate::ChangeNetwork(FUCHSIA_ID_1, NetworkUpdate::Remove));
         assert_eq!(result.event, UpdateApplied::NetworkRemoved(FUCHSIA_ID_1));
         assert_eq!(
             result.default_changed,
@@ -1855,8 +1993,8 @@ mod tests {
 
         // Remove the second Fuchsia network (fallback to the
         // delegated network since it is default).
-        let result =
-            networks.apply(PropertyUpdate::ChangeNetwork(FUCHSIA_ID_2, NetworkUpdate::Remove));
+        let result = networks
+            .apply(NetworkRegistryUpdate::ChangeNetwork(FUCHSIA_ID_2, NetworkUpdate::Remove));
         assert_eq!(result.event, UpdateApplied::NetworkRemoved(FUCHSIA_ID_2));
         assert_eq!(
             result.default_changed,
@@ -1865,8 +2003,8 @@ mod tests {
         assert_eq!(networks.default_network, Some(DELEGATED_ID_1));
 
         // Remove the delegated network (rejected because it is default).
-        let result =
-            networks.apply(PropertyUpdate::ChangeNetwork(DELEGATED_ID_1, NetworkUpdate::Remove));
+        let result = networks
+            .apply(NetworkRegistryUpdate::ChangeNetwork(DELEGATED_ID_1, NetworkUpdate::Remove));
         assert_eq!(
             result,
             RegistryUpdateResult { event: UpdateApplied::None, default_changed: None }
@@ -1892,7 +2030,8 @@ mod tests {
 
         // Remove the non-default network.
         assert_eq!(
-            networks.apply(PropertyUpdate::ChangeNetwork(FUCHSIA_ID_2, NetworkUpdate::Remove)),
+            networks
+                .apply(NetworkRegistryUpdate::ChangeNetwork(FUCHSIA_ID_2, NetworkUpdate::Remove)),
             RegistryUpdateResult {
                 event: UpdateApplied::NetworkRemoved(FUCHSIA_ID_2),
                 default_changed: None
@@ -1909,14 +2048,14 @@ mod tests {
 
         // Add two Fuchsia networks via ChangeNetwork updates.
         service
-            .update(PropertyUpdate::ChangeNetwork(
+            .update(NetworkRegistryUpdate::ChangeNetwork(
                 FUCHSIA_ID_1,
                 NetworkUpdate::Properties(added_properties(NAME_1)),
             ))
             .await;
 
         service
-            .update(PropertyUpdate::ChangeNetwork(
+            .update(NetworkRegistryUpdate::ChangeNetwork(
                 FUCHSIA_ID_2,
                 NetworkUpdate::Properties(added_properties(NAME_2)),
             ))
@@ -1935,7 +2074,9 @@ mod tests {
 
         // Remove FUCHSIA_ID_1 (the default network). This should trigger fallback to FUCHSIA_ID_2
         // and clean up FUCHSIA_ID_1's tokens.
-        service.update(PropertyUpdate::ChangeNetwork(FUCHSIA_ID_1, NetworkUpdate::Remove)).await;
+        service
+            .update(NetworkRegistryUpdate::ChangeNetwork(FUCHSIA_ID_1, NetworkUpdate::Remove))
+            .await;
 
         // Verify fallback happened.
         assert_eq!(service.default_network(), Some(FUCHSIA_ID_2));
@@ -1946,5 +2087,375 @@ mod tests {
 
         // Verify FUCHSIA_ID_2 tokens still exist.
         assert!(service.has_token(FUCHSIA_ID_2, false /* is_default */));
+    }
+
+    #[fuchsia::test]
+    async fn test_property_watcher_generation_increment_on_unpolled_update() {
+        let mut service = NetpolNetworksService::default();
+
+        // Set up initial network state and register a PropertyWatcher connection.
+        service
+            .update(NetworkRegistryUpdate::ChangeNetwork(
+                DELEGATED_ID_1,
+                NetworkUpdate::Properties(DELEGATED_NET_1.change_with(
+                    true,
+                    Some(test_marks()),
+                    None,
+                    None,
+                )),
+            ))
+            .await;
+
+        let token = service
+            .tokens
+            .ensure_token(NetworkTokenContents { network_id: DELEGATED_ID_1, is_default: false })
+            .get()
+            .duplicate()
+            .unwrap();
+
+        let (watcher, server_end) =
+            fidl::endpoints::create_proxy::<fnp_properties::PropertyWatcherMarker>();
+        let (networks_proxy, networks_stream) =
+            fidl::endpoints::create_proxy_and_stream::<fnp_properties::NetworksMarker>();
+
+        service.add_stream(networks_stream);
+
+        // Watch for socket marks changes on `DELEGATED_ID_1` and expect the initial state.
+        let request = fnp_properties::NetworksWatchPropertiesRequest {
+            network: Some(token),
+            properties: Some(fnp_properties::PropertyInterest::SOCKET_MARKS),
+            watcher: Some(server_end),
+            ..Default::default()
+        };
+
+        let watch_req = networks_proxy.watch_properties(request);
+        let req_event = service.select_next_some().await;
+        assert_eq!(
+            service.handle_event(req_event).await.expect("Failed to handle event"),
+            DelegatedNetworkUpdateResult::default()
+        );
+        assert_matches!(watch_req.await, Ok(Ok(())));
+
+        // First watch call should return the initial state.
+        let watch_fut1 = watcher.watch();
+        let pw_event1 = service.select_next_some().await;
+        assert_eq!(
+            service.handle_event(pw_event1).await.expect("Failed to handle event"),
+            DelegatedNetworkUpdateResult::default()
+        );
+        let initial_updates = watch_fut1.await.unwrap().unwrap();
+        assert_eq!(
+            initial_updates,
+            fnp_properties::PropertyUpdate {
+                socket_marks: Some(test_marks()),
+                dns_configuration: None,
+                ..Default::default()
+            }
+        );
+
+        // Update the network properties while the client is idle, ensuring the server increments
+        // its generation without bumping the unpolled client's generation.
+        service
+            .update(NetworkRegistryUpdate::ChangeNetwork(
+                DELEGATED_ID_1,
+                NetworkUpdate::Properties(DELEGATED_NET_1.change_with(
+                    false,
+                    Some(test_marks_updated()),
+                    None,
+                    None,
+                )),
+            ))
+            .await;
+
+        // Verify the pending change is immediately available to the client.
+        let watch_fut2 = watcher.watch();
+        let pw_event2 = service.select_next_some().await;
+        assert_eq!(
+            service.handle_event(pw_event2).await.expect("Failed to handle event"),
+            DelegatedNetworkUpdateResult::default()
+        );
+        let updates = watch_fut2.await.unwrap().unwrap();
+        assert_eq!(
+            updates,
+            fnp_properties::PropertyUpdate {
+                socket_marks: Some(test_marks_updated()),
+                dns_configuration: None,
+                ..Default::default()
+            }
+        );
+    }
+
+    #[fuchsia::test]
+    async fn test_watch_should_return_error_on_concurrent_call() {
+        let mut service = NetpolNetworksService::default();
+
+        let token = service
+            .tokens
+            .ensure_token(NetworkTokenContents { network_id: DELEGATED_ID_1, is_default: false })
+            .get()
+            .duplicate()
+            .unwrap();
+
+        let (watcher, server_end) =
+            fidl::endpoints::create_proxy::<fnp_properties::PropertyWatcherMarker>();
+        let (networks_proxy, networks_stream) =
+            fidl::endpoints::create_proxy_and_stream::<fnp_properties::NetworksMarker>();
+
+        service.add_stream(networks_stream);
+
+        let watch_req =
+            networks_proxy.watch_properties(fnp_properties::NetworksWatchPropertiesRequest {
+                network: Some(token),
+                properties: Some(fnp_properties::PropertyInterest::SOCKET_MARKS),
+                watcher: Some(server_end),
+                ..Default::default()
+            });
+        let req_event = service.select_next_some().await;
+        assert_eq!(
+            service.handle_event(req_event).await.expect("Failed to handle event"),
+            DelegatedNetworkUpdateResult::default()
+        );
+        assert_matches!(watch_req.await, Ok(Ok(())));
+
+        // Call `watch()` twice concurrently on the same connection.
+        let watch_fut1 = watcher.watch();
+        let pw_event1 = service.select_next_some().await;
+        assert_eq!(
+            service.handle_event(pw_event1).await.expect("Failed to handle event"),
+            DelegatedNetworkUpdateResult::default()
+        );
+
+        let watch_fut2 = watcher.watch();
+        let pw_event2 = service.select_next_some().await;
+        assert_eq!(
+            service.handle_event(pw_event2).await.expect("Failed to handle event"),
+            DelegatedNetworkUpdateResult::default()
+        );
+
+        for res in [watch_fut1.await, watch_fut2.await] {
+            assert_matches!(
+                res,
+                Err(fidl::Error::ClientChannelClosed { epitaph, .. })
+                    if epitaph == zx::Status::ALREADY_EXISTS
+            );
+        }
+    }
+
+    #[fuchsia::test]
+    async fn test_watch_default_should_return_error_on_concurrent_call() {
+        let mut service = NetpolNetworksService::default();
+
+        let (networks_proxy, networks_stream) =
+            fidl::endpoints::create_proxy_and_stream::<fnp_properties::NetworksMarker>();
+
+        service.add_stream(networks_stream);
+
+        // Call `watch_default` twice concurrently on the same connection.
+        let watch_fut1 = networks_proxy.watch_default();
+        let req_event1 = service.select_next_some().await;
+        assert_eq!(
+            service.handle_event(req_event1).await.expect("Failed to handle event"),
+            DelegatedNetworkUpdateResult::default()
+        );
+
+        let watch_fut2 = networks_proxy.watch_default();
+        let req_event2 = service.select_next_some().await;
+        assert_eq!(
+            service.handle_event(req_event2).await.expect("Failed to handle event"),
+            DelegatedNetworkUpdateResult::default()
+        );
+
+        for res in [watch_fut1.await, watch_fut2.await] {
+            assert_matches!(
+                res,
+                Err(fidl::Error::ClientChannelClosed { epitaph, .. })
+                    if epitaph == zx::Status::ALREADY_EXISTS
+            );
+        }
+    }
+
+    #[fuchsia::test]
+    async fn test_network_removal_reports_network_gone() {
+        let mut service = NetpolNetworksService::default();
+
+        service
+            .update(NetworkRegistryUpdate::ChangeNetwork(
+                DELEGATED_ID_1,
+                NetworkUpdate::Properties(DELEGATED_NET_1.change_with(
+                    true,
+                    Some(test_marks()),
+                    None,
+                    None,
+                )),
+            ))
+            .await;
+
+        let token1 = service
+            .tokens
+            .ensure_token(NetworkTokenContents { network_id: DELEGATED_ID_1, is_default: false })
+            .get()
+            .duplicate()
+            .unwrap();
+        let token2 = service
+            .tokens
+            .ensure_token(NetworkTokenContents { network_id: DELEGATED_ID_1, is_default: false })
+            .get()
+            .duplicate()
+            .unwrap();
+
+        let (active_watcher, active_server_end) =
+            fidl::endpoints::create_proxy::<fnp_properties::PropertyWatcherMarker>();
+        let (idle_watcher, idle_server_end) =
+            fidl::endpoints::create_proxy::<fnp_properties::PropertyWatcherMarker>();
+        let (networks_proxy, networks_stream) =
+            fidl::endpoints::create_proxy_and_stream::<fnp_properties::NetworksMarker>();
+
+        service.add_stream(networks_stream);
+
+        for (token, server_end) in [(token1, active_server_end), (token2, idle_server_end)] {
+            let watch_req =
+                networks_proxy.watch_properties(fnp_properties::NetworksWatchPropertiesRequest {
+                    network: Some(token),
+                    properties: Some(fnp_properties::PropertyInterest::SOCKET_MARKS),
+                    watcher: Some(server_end),
+                    ..Default::default()
+                });
+            let req_event = service.select_next_some().await;
+            assert_eq!(
+                service.handle_event(req_event).await.expect("Failed to handle event"),
+                DelegatedNetworkUpdateResult::default()
+            );
+            assert_matches!(watch_req.await, Ok(Ok(())));
+        }
+
+        // Active watcher's first watch call returns the initial snapshot.
+        let active_watch_fut1 = active_watcher.watch();
+        let active_pw_event1 = service.select_next_some().await;
+        assert_eq!(
+            service.handle_event(active_pw_event1).await.expect("Failed to handle event"),
+            DelegatedNetworkUpdateResult::default()
+        );
+        let initial_updates = active_watch_fut1.await.unwrap().unwrap();
+        assert_eq!(
+            initial_updates,
+            fnp_properties::PropertyUpdate {
+                socket_marks: Some(test_marks()),
+                dns_configuration: None,
+                ..Default::default()
+            }
+        );
+
+        // Active watcher starts an in-flight watch call before network removal.
+        let mut active_watch_fut2 = active_watcher.watch();
+        let active_pw_event2 = service.select_next_some().await;
+        assert_eq!(
+            service.handle_event(active_pw_event2).await.expect("Failed to handle event"),
+            DelegatedNetworkUpdateResult::default()
+        );
+        assert_matches!((&mut active_watch_fut2).now_or_never(), None);
+
+        // Remove the network.
+        service
+            .update(NetworkRegistryUpdate::ChangeNetwork(DELEGATED_ID_1, NetworkUpdate::Remove))
+            .await;
+
+        // Active watcher immediately observes NetworkGone on its in-flight call.
+        assert_matches!(
+            active_watch_fut2.await,
+            Ok(Err(fnp_properties::PropertyWatcherError::NetworkGone))
+        );
+
+        // Idle watcher calls watch() after network removal and also observes NetworkGone.
+        let idle_watch_fut = idle_watcher.watch();
+        let idle_pw_event = service.select_next_some().await;
+        assert_eq!(
+            service.handle_event(idle_pw_event).await.expect("Failed to handle event"),
+            DelegatedNetworkUpdateResult::default()
+        );
+        assert_matches!(
+            idle_watch_fut.await,
+            Ok(Err(fnp_properties::PropertyWatcherError::NetworkGone))
+        );
+    }
+
+    #[fuchsia::test]
+    async fn test_idle_default_watcher_reports_network_gone_on_default_change() {
+        let mut service = NetpolNetworksService::default();
+
+        // Add network and set it as the default network.
+        service
+            .update(NetworkRegistryUpdate::ChangeNetwork(
+                DELEGATED_ID_1,
+                NetworkUpdate::Properties(DELEGATED_NET_1.change_with(
+                    true,
+                    Some(test_marks()),
+                    None,
+                    None,
+                )),
+            ))
+            .await;
+        service
+            .update(NetworkRegistryUpdate::ChangeNetwork(
+                DELEGATED_ID_1,
+                NetworkUpdate::MakeDefault,
+            ))
+            .await;
+
+        let (networks_proxy, networks_stream) =
+            fidl::endpoints::create_proxy_and_stream::<fnp_properties::NetworksMarker>();
+        service.add_stream(networks_stream);
+
+        // Client calls watch_default() to get default token.
+        let default_fut = networks_proxy.watch_default();
+        let req_event = service.select_next_some().await;
+        assert_eq!(
+            service.handle_event(req_event).await.expect("Failed to handle event"),
+            DelegatedNetworkUpdateResult::default()
+        );
+        let default_token = match default_fut.await.unwrap() {
+            fnp_properties::NetworksWatchDefaultResponse::Network(token) => token,
+            res => panic!("Expected Network token, got {res:?}"),
+        };
+
+        // Client registers PropertyWatcher for the default token.
+        let (watcher, server_end) =
+            fidl::endpoints::create_proxy::<fnp_properties::PropertyWatcherMarker>();
+        let watch_req =
+            networks_proxy.watch_properties(fnp_properties::NetworksWatchPropertiesRequest {
+                network: Some(default_token),
+                properties: Some(fnp_properties::PropertyInterest::SOCKET_MARKS),
+                watcher: Some(server_end),
+                ..Default::default()
+            });
+        let req_event = service.select_next_some().await;
+        assert_eq!(
+            service.handle_event(req_event).await.expect("Failed to handle event"),
+            DelegatedNetworkUpdateResult::default()
+        );
+        assert_matches!(watch_req.await, Ok(Ok(())));
+
+        // Client fetches initial property snapshot.
+        let initial_fut = watcher.watch();
+        let pw_event = service.select_next_some().await;
+        assert_eq!(
+            service.handle_event(pw_event).await.expect("Failed to handle event"),
+            DelegatedNetworkUpdateResult::default()
+        );
+        assert_matches!(initial_fut.await, Ok(Ok(_)));
+
+        // Client has no pending watch calls. Unset the default network.
+        service.update(NetworkRegistryUpdate::default_network_lost()).await;
+
+        // Idle watcher calls watch() after default network change and receives NetworkGone.
+        let idle_watch_fut = watcher.watch();
+        let idle_pw_event = service.select_next_some().await;
+        assert_eq!(
+            service.handle_event(idle_pw_event).await.expect("Failed to handle event"),
+            DelegatedNetworkUpdateResult::default()
+        );
+        assert_matches!(
+            idle_watch_fut.await,
+            Ok(Err(fnp_properties::PropertyWatcherError::NetworkGone))
+        );
     }
 }
