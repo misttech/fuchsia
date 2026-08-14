@@ -129,15 +129,10 @@ func assignStmtToGN(stmt *syntax.AssignStmt) ([]string, error) {
 		return nil, errors.New("lhs of assignment statement is unexpectedly empty")
 	}
 
-	// Apply the visibility transformation to assignments, enabling the use of
-	// file-level variables for visibility.
-	var transformers = []transformer{bazelVisibilityToGN}
-
-	statement_transformers, err := transformersFromComments(stmt.Comments())
+	transformers, err := transformersFromComments(stmt.Comments())
 	if err != nil {
 		return nil, err
 	}
-	transformers = append(transformers, statement_transformers...)
 
 	var ret []string
 	if hasBranching(stmt.RHS) {

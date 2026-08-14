@@ -493,11 +493,12 @@ if (is_host) {
 }`,
 		},
 		{
-			name: "file_level_visibility variable assignment",
-			bazel: `_foo_visibility = [
-				"//bar:__pkg__",
-				"//baz:__subpackages__",
-			]`,
+			name: "visibility transform of file variable",
+			bazel: `# @bazel2gn:transformer=visibility
+_foo_visibility = [
+		"//bar:__pkg__",
+		"//baz:__subpackages__",
+	]`,
 			wantGN: `_foo_visibility = [
 	"//bar:*",
 	"//baz/*",
