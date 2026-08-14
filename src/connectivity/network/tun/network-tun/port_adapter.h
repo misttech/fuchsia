@@ -32,6 +32,7 @@ class PortAdapterParent : public MacAdapterParent {
   // `new_status` must be reported to the device containing the port.
   virtual void OnPortStatusChanged(PortAdapter& port, const PortStatus& new_status) = 0;
   // Called when the port is destroyed and completely removed from the device.
+  // May destroy the `port`.
   virtual void OnPortDestroyed(PortAdapter& port) = 0;
 };
 

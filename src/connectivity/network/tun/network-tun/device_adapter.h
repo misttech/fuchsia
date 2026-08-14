@@ -21,6 +21,10 @@
 namespace network {
 namespace tun {
 
+namespace testing {
+class TunTest;
+}  // namespace testing
+
 class DeviceAdapter;
 
 // An abstract DeviceAdapter parent.
@@ -142,6 +146,8 @@ class DeviceAdapter : public fdf::WireServer<fuchsia_hardware_network_driver::Ne
   }
 
  private:
+  friend class network::tun::testing::TunTest;
+
   static constexpr uint16_t kFifoDepth = fuchsia_net_tun::wire::kFifoDepth;
   explicit DeviceAdapter(DeviceAdapterParent* parent, const DeviceInterfaceDispatchers& dispatchers,
                          fdf::UnownedUnsynchronizedDispatcher&& netdev_dispatcher);
@@ -164,6 +170,9 @@ class DeviceAdapter : public fdf::WireServer<fuchsia_hardware_network_driver::Ne
   void ReclaimRxSpace(RxBuffer buffer) __TA_REQUIRES(rx_lock_);
   // Requests |kFifoDepth| rx space buffers from the interface.
   void RequestRxSpace() __TA_REQUIRES(rx_lock_);
+
+  // Used in tests to destroy `device_`, which will make `AddPort()` fail.
+  void DropNetworkDeviceInterfaceForTests();
 
   std::unique_ptr<NetworkDeviceInterface> device_;
   DeviceAdapterParent* const parent_;  // pointer to parent, not owned.

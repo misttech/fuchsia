@@ -7,6 +7,9 @@
 
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
+#include <lib/sync/cpp/completion.h>
+
+#include <optional>
 
 #include <fbl/intrusive_double_list.h>
 
@@ -15,6 +18,11 @@
 
 namespace network {
 namespace tun {
+
+// Forward declaration for test-only friend class used below.
+namespace testing {
+class TunTest;
+}
 
 // Implements `fuchsia.net.tun.DevicePair`.
 //
@@ -53,9 +61,12 @@ class TunPair : public fbl::DoublyLinkedListable<std::unique_ptr<TunPair>>,
                     GetRightPortCompleter::Sync& _completer) override;
 
  private:
+  friend class network::tun::testing::TunTest;
+
   class Port : public PortAdapterParent {
    public:
     Port(Port&&) = delete;
+    ~Port() override;
     static zx::result<std::unique_ptr<Port>> Create(
         TunPair* parent, bool left, const BasePortConfig& config,
         std::optional<fuchsia_net::wire::MacAddress> mac);

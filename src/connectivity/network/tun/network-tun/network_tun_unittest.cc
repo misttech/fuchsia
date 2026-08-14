@@ -6,6 +6,7 @@
 #include <fidl/fuchsia.hardware.network/cpp/markers.h>
 #include <fidl/fuchsia.hardware.network/cpp/natural_types.h>
 #include <lib/async-loop/cpp/loop.h>
+#include <lib/async/cpp/task.h>
 #include <lib/driver/testing/cpp/driver_runtime.h>
 #include <lib/fidl/cpp/channel.h>
 #include <lib/fidl/cpp/wire/channel.h>
@@ -17,6 +18,7 @@
 
 #include <optional>
 
+#include <fbl/auto_lock.h>
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include <sdk/lib/syslog/cpp/log_settings.h>
@@ -657,6 +659,9 @@ class TunTest : public gtest::RealLoopFixture {
   }
 
   DeviceAdapter& first_adapter() { return *tun_ctl_->devices().front().adapter(); }
+  void DropRightDeviceAdapter() {
+    tun_ctl_->device_pairs_.front().right_->DropNetworkDeviceInterfaceForTests();
+  }
 
   async::Loop tun_ctl_loop_{&kAsyncLoopConfigNoAttachToCurrentThread};
   fdf_testing::DriverRuntime runtime_;
@@ -2211,6 +2216,45 @@ TEST_F(TunTest, DelegateRxLease) {
   ASSERT_EQ(received_lease.hold_until_frame(), 1u);
   EXPECT_EQ(fsl::GetKoid(lease_self.get()),
             fsl::GetRelatedKoid(received_lease.handle().channel().get()));
+}
+
+TEST_F(TunTest, PairAddPortPartialFailureRollback) {
+  zx::result pair_result = CreatePair(DefaultDevicePairConfig());
+  ASSERT_OK(pair_result);
+  fidl::WireSyncClient tun{std::move(*pair_result)};
+
+  fidl::ClientEnd<fuchsia_hardware_network::Device> left_device;
+  zx::result left_server_end = fidl::CreateEndpoints(&left_device);
+  ASSERT_OK(left_server_end);
+  ASSERT_OK(tun->GetLeft(std::move(*left_server_end)).status());
+  zx::result left_watcher_result = GetPortWatcher(left_device);
+  ASSERT_OK(left_watcher_result);
+  fidl::WireSyncClient left_watcher(std::move(*left_watcher_result));
+  zx::result left_event = WatchPorts(left_watcher);
+  ASSERT_OK(left_event);
+  ASSERT_THAT(left_event.value(), IsIdlePortEvent());
+
+  // Tear down the right device to cause right_->AddPort to fail.
+  DropRightDeviceAdapter();
+
+  // Now attempt to add port through the DevicePair FIDL interface.
+  fuchsia_net_tun::wire::DevicePairPortConfig port_config = DefaultDevicePairPortConfig();
+  port_config.base().set_id(kDefaultTestPort);
+  fidl::WireResult result = tun->AddPort(std::move(port_config));
+  ASSERT_OK(result.status());
+  ASSERT_TRUE(result.value().is_error());
+  ASSERT_STATUS(result.value().error_value(), ZX_ERR_PEER_CLOSED);
+
+  // Verify that the left port was added and then rolled back (removed).
+  zx::result added_event = WatchPorts(left_watcher);
+  ASSERT_OK(added_event);
+  ASSERT_TRUE(added_event.value().port_id.has_value());
+  ASSERT_EQ(added_event.value().port_id->base, kDefaultTestPort);
+  ASSERT_THAT(added_event.value(), IsAddedPortEvent(added_event.value().port_id.value()));
+
+  zx::result removed_event = WatchPorts(left_watcher);
+  ASSERT_OK(removed_event);
+  ASSERT_THAT(removed_event.value(), IsRemovedPortEvent(added_event.value().port_id.value()));
 }
 
 }  // namespace testing

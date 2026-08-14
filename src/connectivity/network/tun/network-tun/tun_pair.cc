@@ -121,14 +121,20 @@ void TunPair::AddPort(AddPortRequestView request, AddPortCompleter::Sync& comple
       FX_PLOGST(ERROR, "tun", status) << "failed to add left port";
       return status;
     }
+    // At this point the left `PortAdapter` is already bound to a `NetworkPort` channel. We can't
+    // drop it synchronously in case the second `AddPort()` call fails, so it has to be
+    // preserved in `ports_`. In case `AddPort()` does fail, the `PortAdapter` is destroyed
+    // asynchronously by calling `left_->RemovePort()`.
+    ports.left = std::move(*left);
+
     status = right_->AddPort(right->adapter());
     if (status != ZX_OK) {
       FX_PLOGST(ERROR, "tun", status) << "failed to add right port";
+      left_->RemovePort(config.port_id);
       return status;
     }
-
-    ports.left = std::move(*left);
     ports.right = std::move(*right);
+
     return ZX_OK;
   }();
 
@@ -273,13 +279,17 @@ void TunPair::Port::OnPortStatusChanged(PortAdapter& port, const PortStatus& new
   device.OnPortStatusChanged(port.id(), new_status);
 }
 
+TunPair::Port::~Port() = default;
+
 void TunPair::Port::OnPortDestroyed(PortAdapter& port) {
   TunPair& parent = *parent_;
   fbl::AutoLock lock(&parent.power_lock_);
   Ports& ports = parent.ports_[port.id()];
   if (left_) {
+    ZX_ASSERT(ports.left);
     ports.left = nullptr;
   } else {
+    ZX_ASSERT(ports.right);
     ports.right = nullptr;
   }
 }

@@ -398,6 +398,11 @@ void DeviceAdapter::CopyTo(DeviceAdapter* other, bool return_failed_buffers) {
 }
 
 void DeviceAdapter::Teardown(fit::function<void()> callback) {
+  // `device_` may be dropped in DropNetworkDeviceInterfaceForTests().
+  if (!device_) {
+    callback();
+    return;
+  }
   device_->Teardown([cb = std::move(callback)]() mutable { cb(); });
 }
 
@@ -592,6 +597,11 @@ void DeviceAdapter::RequestRxSpace() {
   if (!status.ok()) {
     FX_PLOGST(ERROR, "tun", status.status()) << "failed to request rx space";
   }
+}
+
+void DeviceAdapter::DropNetworkDeviceInterfaceForTests() {
+  TeardownSync();
+  device_.reset();
 }
 
 }  // namespace tun
