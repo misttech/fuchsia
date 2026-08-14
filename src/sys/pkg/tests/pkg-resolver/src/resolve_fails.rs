@@ -8,6 +8,7 @@ use fuchsia_pkg_testing::{PackageBuilder, RepositoryBuilder};
 use lib::{EMPTY_REPO_PATH, TestEnvBuilder, make_pkg_with_extra_blobs};
 use std::sync::Arc;
 
+// TODO(https://fxbug.dev/542690944): Strip to just PkgAuthority.
 #[fuchsia::test]
 async fn create_tuf_client_metadata_timeout() {
     let repo =
@@ -37,6 +38,7 @@ async fn create_tuf_client_metadata_timeout() {
     env.stop().await;
 }
 
+// TODO(https://fxbug.dev/542690944): Strip to just PkgAuthority.
 #[fuchsia::test]
 async fn create_tuf_client_network_header_timeout() {
     let repo =
@@ -66,6 +68,7 @@ async fn create_tuf_client_network_header_timeout() {
     env.stop().await;
 }
 
+// TODO(https://fxbug.dev/542690944): Strip to just PkgAuthority.
 #[fuchsia::test]
 async fn update_tuf_client_timeout() {
     let repo =
@@ -107,6 +110,7 @@ async fn update_tuf_client_timeout() {
     env.stop().await;
 }
 
+// TODO(https://fxbug.dev/542690944): Already migrated.
 #[fuchsia::test]
 async fn download_blob_header_timeout() {
     let pkg = PackageBuilder::new("test").build().await.unwrap();
@@ -134,6 +138,7 @@ async fn download_blob_header_timeout() {
     env.stop().await;
 }
 
+// TODO(https://fxbug.dev/542690944): Already migrated.
 #[fuchsia::test]
 async fn download_blob_body_timeout() {
     let pkg = PackageBuilder::new("test").build().await.unwrap();
@@ -159,6 +164,7 @@ async fn download_blob_body_timeout() {
     assert_eq!(result.unwrap_err(), fpkg::ResolveError::UnavailableBlob);
 }
 
+// TODO(https://fxbug.dev/543563954): Add this feature to pkg-cache then copy the test.
 // Verify that the pkg-resolver stops downloading content blobs when a package fails to resolve.
 // Steps:
 //  1.  Resolve a package that has at least 3*MAX_CONCURRENT_BLOB_FETCHES + 1 unique content blobs.
@@ -265,6 +271,7 @@ async fn failed_resolve_stops_fetching_blobs() {
     );
 }
 
+// TODO(https://fxbug.dev/542690944): Do not need, this was testing PackageCache.Get.
 #[fuchsia::test]
 async fn missing_subpackage_meta_far_does_not_hang() {
     let env = TestEnvBuilder::new().build().await;
@@ -297,6 +304,7 @@ async fn missing_subpackage_meta_far_does_not_hang() {
     env.stop().await;
 }
 
+// TODO(https://fxbug.dev/542690944): Do not need, blob fetch error covered by timeout test.
 #[fuchsia::test]
 async fn delivery_blob_not_available() {
     let env = TestEnvBuilder::new().build().await;
@@ -325,6 +333,7 @@ async fn delivery_blob_not_available() {
     env.stop().await;
 }
 
+// TODO(https://fxbug.dev/542690944): Already migrated.
 #[fuchsia::test]
 #[ignore] // TODO(https://fxbug.dev/519687989): Re-enable this test after
 // Fuchsia system releases are managed in the repo.

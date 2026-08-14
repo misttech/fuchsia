@@ -812,7 +812,7 @@ async fn hash_from_repo_or_cache(
     // statement, so the following two lines should not be combined.
     let fut = repo_manager.read().await.get_package_hash(rewritten_url);
     match fut.await {
-        Ok(b) => Ok(HashSource::Tuf(b)),
+        Ok((b, _)) => Ok(HashSource::Tuf(b)),
         Err(e @ GetPackageHashError::MerkleFor(MerkleForError::TargetNotFound(_))) => {
             // If we can get metadata but the repo doesn't know about the package,
             // it shouldn't be in the cache, BUT some SDK customers currently rely on this behavior.

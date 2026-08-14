@@ -438,6 +438,68 @@ impl HttpResponder for BlockResponseHeaders {
     }
 }
 
+/// A response Body that is waiting to be sent.
+pub struct BlockedBody {
+    path: PathBuf,
+    unblocker: Box<dyn FnOnce() + Send>,
+}
+
+impl BlockedBody {
+    /// The path of the request.
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    /// Send the Body.
+    pub fn unblock(self) {
+        (self.unblocker)()
+    }
+}
+
+/// Responder that blocks sending response bodies until unblocked by a test.
+pub struct BlockResponseBodies {
+    blocked_responses: mpsc::UnboundedSender<BlockedBody>,
+}
+
+impl BlockResponseBodies {
+    /// Creates a new responder and the receiver it notifies on request receipt.
+    pub fn new() -> (Self, mpsc::UnboundedReceiver<BlockedBody>) {
+        let (sender, receiver) = mpsc::unbounded();
+        (Self { blocked_responses: sender }, receiver)
+    }
+}
+
+impl HttpResponder for BlockResponseBodies {
+    fn respond(
+        &self,
+        request: &Request<Body>,
+        mut response: Response<Body>,
+    ) -> BoxFuture<'_, Response<Body>> {
+        let path = request.path().to_owned();
+        let mut blocked_responses = self.blocked_responses.clone();
+        async move {
+            // Replace the response's body with a stream that will yield data when the test
+            // unblocks the response body.
+            let (mut sender, new_body) = Body::channel();
+            let old_body = std::mem::replace(response.body_mut(), new_body);
+            let contents = body_to_bytes(old_body).await;
+
+            // Notify the test.
+            let unblocker =
+                Box::new(move || sender.try_send_data(contents.into()).expect("sending body"));
+            let () = blocked_responses
+                .send(BlockedBody { path, unblocker })
+                .await
+                .expect("receiver to still exist");
+
+            // Yield the modified response so hyper will send the headers and wait for the body to
+            // be unblocked.
+            response
+        }
+        .boxed()
+    }
+}
+
 /// Responder that blocks sending response body until unblocked by a test.
 /// Panics if requested more than once.
 pub struct BlockResponseBodyOnce {

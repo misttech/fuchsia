@@ -18,6 +18,8 @@ use fidl_fuchsia_io as fio;
 use fidl_fuchsia_metrics::{
     MetricEvent, MetricEventLoggerFactoryMarker, MetricEventLoggerProxy, ProjectSpec,
 };
+use fidl_fuchsia_pkg as fpkg;
+use fidl_fuchsia_pkg_http as fpkg_http;
 use fidl_fuchsia_update::CommitStatusProviderMarker;
 use fuchsia_async as fasync;
 use fuchsia_async::Task;
@@ -35,10 +37,13 @@ use vfs::remote::remote_dir;
 
 mod base_packages;
 mod base_resolver;
+mod blob_fetcher;
 mod cache_service;
 mod compat;
 mod gc_service;
 mod index;
+mod ota_resolver;
+mod queued_resolver;
 mod required_blobs;
 mod retained_packages_service;
 mod root_dir;
@@ -50,6 +55,7 @@ use root_dir::{RootDir, RootDirCache, RootDirFactory};
 mod test_utils;
 
 const COBALT_CONNECTOR_BUFFER_SIZE: usize = 1000;
+const MAX_CONCURRENT_TUF_RESOLVES: usize = 5;
 
 struct CobaltConnectedService;
 impl ConnectedProtocol for CobaltConnectedService {
@@ -123,6 +129,10 @@ async fn main_inner() -> Result<(), Error> {
         require_system_image,
         enable_upgradable_packages,
         system_image_hash,
+        blob_fetch_concurrency_limit,
+        blob_network_header_timeout_seconds,
+        blob_network_body_timeout_seconds,
+        blob_download_resumption_attempts_limit,
     } = config;
     let blobfs = blobfs::Client::builder()
         .readable()
@@ -312,6 +322,7 @@ async fn main_inner() -> Result<(), Error> {
         let blobfs = blobfs.clone();
         let base_packages = Arc::clone(&base_packages);
         let upgradable_packages = upgradable_packages.clone();
+        let package_index = Arc::clone(&package_index);
         let open_packages = open_packages.clone();
         let commit_status_provider =
             fuchsia_component::client::connect_to_protocol::<CommitStatusProviderMarker>()
@@ -331,8 +342,8 @@ async fn main_inner() -> Result<(), Error> {
                         commit_status_provider.clone(),
                         stream,
                     )
-                    .unwrap_or_else(|e| {
-                        error!("error handling fuchsia.pkg.garbagecollector/Manager connection: {:#}", anyhow!(e))
+                    .unwrap_or_else(|e: anyhow::Error| {
+                        error!("error handling fuchsia.pkg.garbagecollector/Manager connection: {e:#}")
                     })
                 }),
             )
@@ -357,13 +368,13 @@ async fn main_inner() -> Result<(), Error> {
                             scope.clone(),
                             upgradable_packages.clone(),
                         )
-                        .unwrap_or_else(|e| {
-                            error!("failed to serve package resolver request: {:#}", e)
+                        .unwrap_or_else(|e: anyhow::Error| {
+                            error!("failed to serve package resolver request: {e:#}")
                         })
                     },
                 ),
             )
-            .context("adding fuchsia.pkg.garbagecollector/Manager to /svc")?;
+            .context("adding fuchsia.pkg/PackageResolver to /svc")?;
     }
     {
         let base_resolver_base_packages = Arc::clone(&base_resolver_base_packages);
@@ -384,13 +395,64 @@ async fn main_inner() -> Result<(), Error> {
                             scope.clone(),
                             upgradable_packages.clone(),
                         )
-                        .unwrap_or_else(|e| {
-                            error!("failed to serve component resolver request: {:#}", e)
+                        .unwrap_or_else(|e: anyhow::Error| {
+                            error!("failed to serve component resolver request: {e:#}")
                         })
                     },
                 ),
             )
-            .context("adding fuchsia.pkg.garbagecollector/Manager to /svc")?;
+            .context("adding fuchsia.component.resolution/Resolver to /svc")?;
+    }
+    let (fetch_queue_fut, blob_fetcher) = blob_fetcher::BlobFetcher::new(
+        blob_fetch_concurrency_limit.into(),
+        blob_fetcher::Params::builder()
+            .header_network_timeout(zx::BootDuration::from_seconds(
+                blob_network_header_timeout_seconds.into(),
+            ))
+            .body_network_timeout(zx::BootDuration::from_seconds(
+                blob_network_body_timeout_seconds.into(),
+            ))
+            .download_resumption_attempts_limit(blob_download_resumption_attempts_limit)
+            .build(),
+        blobfs.clone(),
+        fuchsia_component::client::connect_to_protocol::<fpkg_http::ClientMarker>()
+            .context("error connecting to fuchsia.pkg.http/Client")?,
+    );
+    let fetch_queue_fut = Task::spawn(fetch_queue_fut);
+    let (resolve_queue_fut, queued_tuf_resolver) = queued_resolver::QueuedResolver::new(
+        MAX_CONCURRENT_TUF_RESOLVES,
+        fuchsia_component::client::connect_to_protocol::<fpkg::AuthorityMarker>()
+            .context("error connecting to fuchsia.pkg/Authority")?,
+        package_index.clone(),
+        blobfs.clone(),
+        blob_fetcher,
+        root_dir_factory.clone(),
+    );
+    let resolve_queue_fut = Task::spawn(resolve_queue_fut);
+    {
+        let queued_tuf_resolver = queued_tuf_resolver.clone();
+        let authenticator = authenticator.clone();
+        let root_dir_factory = root_dir_factory.clone();
+        let scope = scope.clone();
+        let () = svc_dir
+            .add_entry(
+                format!("{}-ota", fidl_fuchsia_pkg::PackageResolverMarker::PROTOCOL_NAME),
+                vfs::service::host(
+                    move |stream: fidl_fuchsia_pkg::PackageResolverRequestStream| {
+                        ota_resolver::serve_request_stream(
+                            stream,
+                            queued_tuf_resolver.clone(),
+                            authenticator.clone(),
+                            root_dir_factory.clone(),
+                            scope.clone(),
+                        )
+                        .unwrap_or_else(|e: anyhow::Error| {
+                            error!("failed to serve OTA package resolver request: {e:#}")
+                        })
+                    },
+                ),
+            )
+            .context("adding fuchsia.pkg/PackageResolver-ota to /svc")?;
     }
 
     let base_package_entry = |name: &'static str| {
@@ -435,7 +497,9 @@ async fn main_inner() -> Result<(), Error> {
         ServerEnd::new(handle.into()),
     );
     let () = scope.wait().await;
-    cobalt_fut.await;
+    let () = fetch_queue_fut.await;
+    let () = resolve_queue_fut.await;
+    let () = cobalt_fut.await;
 
     Ok(())
 }

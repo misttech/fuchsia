@@ -26,6 +26,7 @@ fn for_not_range_requests<T: fuchsia_pkg_testing::serve::HttpResponder>(
     )
 }
 
+// TODO(https://fxbug.dev/542690944): Blob resumption is implemented and tested by http-client.
 #[fuchsia::test]
 async fn single_blob_resume_success() {
     let pkg = PackageBuilder::new("large_meta_far")

@@ -708,6 +708,26 @@ where
             )
             .await
             .unwrap();
+        builder
+            .add_route(
+                Route::new()
+                    .capability(Capability::configuration(
+                        "fuchsia.pkgcache.BlobFetchConcurrencyLimit",
+                    ))
+                    .capability(Capability::configuration(
+                        "fuchsia.pkgcache.BlobNetworkHeaderTimeoutSeconds",
+                    ))
+                    .capability(Capability::configuration(
+                        "fuchsia.pkgcache.BlobNetworkBodyTimeoutSeconds",
+                    ))
+                    .capability(Capability::configuration(
+                        "fuchsia.pkgcache.BlobDownloadResumptionAttemptsLimit",
+                    ))
+                    .from(Ref::void())
+                    .to(&pkg_cache),
+            )
+            .await
+            .unwrap();
 
         builder
             .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
@@ -806,6 +826,7 @@ where
                     .capability(Capability::protocol::<fpkg_rewrite::EngineMarker>())
                     .capability(Capability::protocol::<fpkg::CupMarker>())
                     .capability(Capability::protocol::<fpkg_internal::OtaDownloaderMarker>())
+                    .capability(Capability::protocol::<fpkg::AuthorityMarker>())
                     .from(&pkg_resolver)
                     .to(Ref::parent()),
             )
@@ -916,6 +937,7 @@ pub struct Proxies {
     pub cup: CupProxy,
     pub space_manager: fpkg_gc::ManagerProxy,
     pub ota_downloader: fpkg_internal::OtaDownloaderProxy,
+    pub authority: fpkg::AuthorityProxy,
 }
 
 impl Proxies {
@@ -943,6 +965,7 @@ impl Proxies {
             ota_downloader: realm
                 .connect_to_protocol_at_exposed_dir()
                 .expect("connect to ota downloader"),
+            authority: realm.connect_to_protocol_at_exposed_dir().expect("connect to authority"),
         }
     }
 }
@@ -1051,6 +1074,15 @@ impl<B: Blobfs> TestEnv<B> {
     ) -> impl Future<Output = Result<pkg::BlobId, zx::Status>> {
         let fut = self.proxies.resolver.get_hash(&fpkg::PackageUrl { url: url.into() });
         async move { fut.await.unwrap().map(|blob_id| blob_id.into()).map_err(zx::Status::from_raw) }
+    }
+
+    pub fn lookup(
+        &self,
+        url: impl Into<String>,
+    ) -> impl Future<Output = Result<(pkg::BlobId, http::uri::Uri), fpkg::AuthorityLookupError>>
+    {
+        let fut = self.proxies.authority.lookup(&fpkg::PackageUrl { url: url.into() });
+        async move { fut.await.unwrap().map(|(blob_id, url)| (blob_id.into(), url.parse().unwrap())) }
     }
 
     pub async fn get_already_cached(

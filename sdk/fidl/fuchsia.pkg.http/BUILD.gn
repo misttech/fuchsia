@@ -38,8 +38,10 @@ fidl("fuchsia.pkg.http") {
   visibility = [
     "//src/connectivity/policy/http-client:*",
     "//src/connectivity/policy/http-client/integration:*",
+    "//src/sys/pkg/bin/pkg-cache:*",
     "//src/sys/pkg/bin/pkg-resolver:*",
     "//src/sys/pkg/tests/isolated-ota:*",
+    "//src/sys/pkg/tests/pkg-cache:*",
     "//src/sys/pkg/tests/pkg-resolver:*",
   ]
   public_deps = [

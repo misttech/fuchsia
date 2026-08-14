@@ -9,6 +9,7 @@ package(default_applicable_licenses = ["//:license"])
 fidl_library(
     name = "fuchsia.pkg",
     srcs = [
+        "authority.fidl",
         "cache.fidl",
         "common.fidl",
         "cup.fidl",

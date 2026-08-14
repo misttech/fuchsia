@@ -17,6 +17,7 @@
                 "fuchsia.pkg.garbagecollector.Manager",
                 "fuchsia.pkg.PackageCache",
                 "fuchsia.pkg.PackageResolver",
+                "fuchsia.pkg.PackageResolver-ota",
                 "fuchsia.pkg.RetainedBlobs",
                 "fuchsia.pkg.RetainedPackages",
             ],
@@ -84,17 +85,27 @@
                 "fuchsia.update.CommitStatusProvider",
             ],
         },
+
+        // TODO(https://fxbug.dev/542865121): Make these capabilties required when pkg-cache
+        //     replaces pkg-resolver as the provider of the full and OTA resolvers.
+        {
+            protocol: [
+                "fuchsia.pkg.Authority",
+                "fuchsia.pkg.http.Client",
+            ],
+            availability: "optional",
+        },
         {
             protocol: "fuchsia.tracing.provider.Registry",
             availability: "optional",
         },
         {
-            // TODO(https://fxbug.dev/331302451) Use this config value instead of the presence of file
-            // data/pkgfs_disable_executability_restrictions in the system_image package to determine
-            // whether executability should be enforced.
+            // TODO(https://fxbug.dev/331302451) Use this config value instead of the presence of
+            // file data/pkgfs_disable_executability_restrictions in the system_image package to
+            // determine whether executability should be enforced.
             //
-            // If true, then all package directories will be executable. Otherwise, only base packages
-            // will be executable.
+            // If true, then all package directories will be executable. Otherwise, only base
+            // packages will be executable.
             config: "fuchsia.pkgcache.AllPackagesExecutable",
             key: "all_packages_executable",
             type: "bool",
@@ -116,6 +127,39 @@
             type: "bool",
         },
         {
+            // The maximum number of blobs that can be fetched concurrently.
+            config: "fuchsia.pkgcache.BlobFetchConcurrencyLimit",
+            key: "blob_fetch_concurrency_limit",
+            type: "uint16",
+            availability: "optional",
+            default: 2,
+        },
+        {
+            // The timeout, in seconds, to use when GET'ing a blob HTTP Header.
+            config: "fuchsia.pkgcache.BlobNetworkHeaderTimeoutSeconds",
+            key: "blob_network_header_timeout_seconds",
+            type: "uint32",
+            availability: "optional",
+            default: 30,
+        },
+        {
+            // The timeout, in seconds, to use when waiting for a chunk of a blob's HTTP Body bytes.
+            // Any amount of Body bytes received from the remote blob server will reset the timeout.
+            config: "fuchsia.pkgcache.BlobNetworkBodyTimeoutSeconds",
+            key: "blob_network_body_timeout_seconds",
+            type: "uint32",
+            availability: "optional",
+            default: 30,
+        },
+        {
+            // The maximum number of times to try resuming a blob download with HTTP range requests.
+            config: "fuchsia.pkgcache.BlobDownloadResumptionAttemptsLimit",
+            key: "blob_download_resumption_attempts_limit",
+            type: "uint32",
+            availability: "optional",
+            default: 50,
+        },
+        {
             config: "fuchsia.zircon.system.pkgfs.cmd",
             key: "system_image_hash",
             type: "string",
@@ -133,6 +177,7 @@
                 "fuchsia.pkg.garbagecollector.Manager",
                 "fuchsia.pkg.PackageCache",
                 "fuchsia.pkg.PackageResolver",
+                "fuchsia.pkg.PackageResolver-ota",
                 "fuchsia.pkg.RetainedBlobs",
                 "fuchsia.pkg.RetainedPackages",
             ],

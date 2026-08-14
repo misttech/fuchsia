@@ -32,6 +32,17 @@
             to: "#pkg-cache",
         },
         {
+            config: [
+                "fuchsia.pkgcache.BlobDownloadResumptionAttemptsLimit",
+                "fuchsia.pkgcache.BlobFetchConcurrencyLimit",
+                "fuchsia.pkgcache.BlobNetworkBodyTimeoutSeconds",
+                "fuchsia.pkgcache.BlobNetworkHeaderTimeoutSeconds",
+            ],
+            from: "void",
+            to: "#pkg-cache",
+            availability: "optional",
+        },
+        {
             config: "fuchsia.zircon.system.pkgfs.cmd",
             from: "#fake_dependencies/boot_args",
             to: "#pkg-cache",

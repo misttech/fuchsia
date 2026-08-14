@@ -48,6 +48,7 @@ rustc_library("lib") {
     "//third_party/cobalt/src/lib/client/rust:cobalt-client",
     "//third_party/rust_crates:assert_matches",
     "//third_party/rust_crates:futures",
+    "//third_party/rust_crates:http",
     "//third_party/rust_crates:log",
     "//third_party/rust_crates:serde",
     "//third_party/rust_crates:serde_json",
@@ -354,6 +355,20 @@ rustc_test("resolve_overwrites_blobs") {
   sources = [ "src/resolve_overwrites_blobs.rs" ]
 }
 
+rustc_test("pkg_authority") {
+  edition = "2024"
+  source_root = "src/pkg_authority.rs"
+  deps = [
+    ":lib",
+    "//sdk/fidl/fuchsia.pkg:fuchsia.pkg_rust",
+    "//src/lib/fuchsia",
+    "//src/lib/http-uri-ext",
+    "//src/sys/lib/fidl-fuchsia-pkg-rewrite-ext",
+    "//src/sys/pkg/lib/fuchsia-pkg-testing",
+  ]
+  sources = [ "src/pkg_authority.rs" ]
+}
+
 fuchsia_test_component("dynamic_repositories_disabled-component") {
   component_name = "dynamic-repositories-disabled"
   manifest = "meta/dynamic-repositories-disabled.cml"
@@ -468,6 +483,15 @@ fuchsia_test_component("resolve_overwrites_blobs-component") {
   ]
 }
 
+fuchsia_test_component("pkg_authority-component") {
+  component_name = "pkg-authority"
+  manifest = "meta/pkg-authority.cml"
+  deps = [
+    ":pkg_authority",
+    "//src/storage/fxfs:fxfs_component",
+  ]
+}
+
 fuchsia_component_manifest("pkg-resolver-manifest") {
   component_name = "pkg-resolver"
   manifest = "meta/pkg-resolver-for-test.cml"
@@ -526,6 +550,7 @@ fuchsia_test_package("pkg-resolver-integration-tests") {
     ":resolve_succeeds_with_broken_minfs-component",
     ":system_cache_fallback-component",
     ":resolve_overwrites_blobs-component",
+    ":pkg_authority-component",
   ]
   deps = [
     ":ca.cert-resource",

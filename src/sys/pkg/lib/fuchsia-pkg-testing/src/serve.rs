@@ -13,6 +13,7 @@ use fidl_fuchsia_pkg_ext::{
 use fuchsia_async::net::TcpListener;
 use fuchsia_async::{self as fasync, Task};
 use fuchsia_repo::body::Body;
+use fuchsia_sync::Mutex;
 use fuchsia_url::RepositoryUrl;
 use futures::future::BoxFuture;
 use futures::prelude::*;
@@ -61,6 +62,17 @@ pub trait HttpResponder: 'static + Send + Sync {
         request: &'a Request<Body>,
         response: Response<Body>,
     ) -> BoxFuture<'a, Response<Body>>;
+}
+
+/// An entry in the server's log of requests.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HistoryEntry {
+    /// The request's method.
+    pub method: http::Method,
+    /// The request's path.
+    pub path: String,
+    /// The response's status code.
+    pub status: http::StatusCode,
 }
 
 impl ServedRepositoryBuilder {
@@ -180,6 +192,9 @@ impl ServedRepositoryBuilder {
             SseResponseCreator::with_additional_buffer_size(10);
         let auto_response_creator = Arc::new(auto_response_creator);
 
+        let history = Arc::new(Mutex::new(vec![]));
+        let history_clone = Arc::clone(&history);
+
         let (stop, rx_stop) = futures::channel::oneshot::channel();
         let rx_stop = rx_stop.map(|res| res.unwrap_or(())).shared();
 
@@ -194,14 +209,17 @@ impl ServedRepositoryBuilder {
                                 let root = root.clone();
                                 let response_overriders = Arc::clone(&response_overriders);
                                 let auto_response_creator = Arc::clone(&auto_response_creator);
+                                let history = Arc::clone(&history_clone);
                                 let rx_stop = rx_stop.clone();
                                 tasks.push(fuchsia_async::Task::spawn(async move {
                                     let service = service_fn(move |req: Request<hyper::body::Incoming>| {
                                         let (parts, _body) = req.into_parts();
                                         let req = Request::from_parts(parts, Body::empty());
+                                        let version = req.version();
                                         let method = req.method().to_owned();
                                         let path = req.uri().path().to_owned();
                                         let headers = req.headers().clone();
+                                        let history = Arc::clone(&history);
                                         ServedRepository::handle_tuf_repo_request_infallible(
                                             root.clone(),
                                             Arc::clone(&response_overriders),
@@ -209,9 +227,15 @@ impl ServedRepositoryBuilder {
                                             req,
                                         )
                                         .inspect(move |x| {
+                                            history.lock().push(HistoryEntry {
+                                                    method: method.clone(),
+                                                    path: path.clone(),
+                                                    status: x.status(),
+                                                });
                                             println!(
-                                                "{} [http repo] {} {} {:?} => {}",
+                                                "{} [http repo] {:?} {} {} {:?} => {}",
                                                 Utc::now().format("%T.%6f"),
+                                                version,
                                                 method,
                                                 path,
                                                 headers,
@@ -257,6 +281,7 @@ impl ServedRepositoryBuilder {
             https_domain: self.https_domain,
             auto_event_sender,
             connection_attempts,
+            history,
         })
     }
 }
@@ -280,6 +305,7 @@ pub struct ServedRepository {
     auto_event_sender: EventSender,
     connection_attempts: Arc<AtomicU64>,
     https_domain: Option<Domain>,
+    history: Arc<Mutex<Vec<HistoryEntry>>>,
 }
 
 impl ServedRepository {
@@ -382,6 +408,11 @@ impl ServedRepository {
     /// Number of connection attempts.
     pub fn connection_attempts(&self) -> u64 {
         self.connection_attempts.load(Ordering::SeqCst)
+    }
+
+    /// The log of requests.
+    pub fn history(&self) -> Arc<Mutex<Vec<HistoryEntry>>> {
+        self.history.clone()
     }
 
     async fn handle_tuf_repo_request_infallible(

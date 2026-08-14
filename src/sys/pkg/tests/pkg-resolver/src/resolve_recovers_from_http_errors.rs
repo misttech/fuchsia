@@ -197,6 +197,7 @@ async fn second_resolve_succeeds_when_blob_corrupted() {
     .await
 }
 
+// TODO(https://fxbug.dev/542690944): Strip this PkgAuthority, the rest of the tests are migrated.
 #[fuchsia::test]
 async fn second_resolve_succeeds_when_tuf_metadata_update_fails() {
     // pkg-resolver uses tuf::client::Client::with_trusted_root_keys to create its TUF client.

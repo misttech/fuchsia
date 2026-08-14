@@ -9,6 +9,7 @@ use {
     std::sync::Arc,
 };
 
+// TODO(https://fxbug.dev/542690944): Already migrated.
 #[fuchsia::test]
 async fn resolve_overwrites_all_blobs() {
     // fuchsia.storage.blobfs/OverwriteConfiguration is only implemented by c++blobfs.

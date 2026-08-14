@@ -161,6 +161,26 @@ pub(crate) mod for_tests {
                     .await
                     .unwrap();
             }
+            realm_builder
+                .add_route(
+                    Route::new()
+                        .capability(Capability::configuration(
+                            "fuchsia.pkgcache.BlobFetchConcurrencyLimit",
+                        ))
+                        .capability(Capability::configuration(
+                            "fuchsia.pkgcache.BlobNetworkHeaderTimeoutSeconds",
+                        ))
+                        .capability(Capability::configuration(
+                            "fuchsia.pkgcache.BlobNetworkBodyTimeoutSeconds",
+                        ))
+                        .capability(Capability::configuration(
+                            "fuchsia.pkgcache.BlobDownloadResumptionAttemptsLimit",
+                        ))
+                        .from(Ref::void())
+                        .to(&pkg_cache),
+                )
+                .await
+                .unwrap();
             let system_update_committer = realm_builder
                 .add_child(
                     "system-update-committer",

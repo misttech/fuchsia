@@ -19,7 +19,6 @@ use {
     rand::TryRngCore as _,
     rand::prelude::*,
     std::{
-        collections::HashSet,
         io::{self, Read},
         sync::Arc,
         time::Duration,
@@ -33,6 +32,7 @@ use {
     std::net::{IpAddr, Ipv4Addr, Ipv6Addr},
 };
 
+// TODO(https://fxbug.dev/542690944): Covered by PkgAuthority happy-path.
 #[fuchsia::test]
 async fn package_resolution() {
     let env = TestEnvBuilder::new().build().await;
@@ -81,6 +81,7 @@ async fn package_resolution() {
     env.stop().await;
 }
 
+// TODO(https://fxbug.dev/542690944): Covered by PkgAuthority with blob mirror URL.
 #[fuchsia::test]
 async fn separate_blobs_url() {
     let env = TestEnvBuilder::new().build().await;
@@ -194,11 +195,13 @@ fn verify_resolve(pkg: Package) -> impl Future<Output = ()> {
     verify_resolve_with_altered_env(pkg, async |_, _| {})
 }
 
+// TODO(https://fxbug.dev/542690944): Covered by PkgAuthority happy-path.
 #[fuchsia::test]
 async fn meta_far_only() {
     verify_resolve(PackageBuilder::new("uniblob").build().await.unwrap()).await
 }
 
+// TODO(https://fxbug.dev/542690944): Covered by PkgAuthority happy-path.
 #[fuchsia::test]
 async fn meta_far_and_empty_blob() {
     verify_resolve(
@@ -211,6 +214,7 @@ async fn meta_far_and_empty_blob() {
     .await
 }
 
+// TODO(https://fxbug.dev/542690944): Covered by PkgAuthority happy-path.
 #[fuchsia::test]
 async fn large_compressible_blobs() {
     let s = "large-compressible-blobs";
@@ -227,6 +231,7 @@ async fn large_compressible_blobs() {
     .await
 }
 
+// TODO(https://fxbug.dev/542690944): Covered by PkgAuthority happy-path.
 #[fuchsia::test]
 async fn large_uncompressible_blobs() {
     let s = "large-uncompressible-blobs";
@@ -247,11 +252,13 @@ async fn large_uncompressible_blobs() {
     .await
 }
 
+// TODO(https://fxbug.dev/542690944): Covered by PkgAuthority happy-path.
 #[fuchsia::test]
 async fn many_blobs() {
     verify_resolve(make_pkg_with_extra_blobs("many_blobs", 200).await).await
 }
 
+// TODO(https://fxbug.dev/542690944): Covered by pinned URLs forbidden.
 #[fuchsia::test]
 async fn pinned_merkle_resolution() {
     let env = TestEnvBuilder::new().build().await;
@@ -295,6 +302,9 @@ async fn pinned_merkle_resolution() {
     env.stop().await;
 }
 
+// TODO(https://fxbug.dev/542690944): Covered by PkgAuthority variant.
+// TODO(https://fxbug.dev/542381507): Test that the full resolver handles variant when falling back
+//     to base or cache.
 #[fuchsia::test]
 async fn variant_resolution() {
     let env = TestEnvBuilder::new().build().await;
@@ -323,6 +333,7 @@ async fn variant_resolution() {
     env.stop().await;
 }
 
+// TODO(https://fxbug.dev/542690944): Migrate this to PkgAuthority.
 #[fuchsia::test(logging_tags = ["RESOLVE_TEST"])]
 async fn error_codes() {
     let env = TestEnvBuilder::new().build().await;
@@ -364,6 +375,7 @@ async fn error_codes() {
     env.stop().await;
 }
 
+// TODO(https://fxbug.dev/542690944): Covered by PkgAuthority happy-path.
 #[fuchsia::test]
 async fn retries() {
     let env = TestEnvBuilder::new().build().await;
@@ -415,6 +427,7 @@ async fn retries() {
     env.stop().await;
 }
 
+// TODO(https://fxbug.dev/542690944): Covered by PkgAuthority happy-path.
 #[fuchsia::test]
 async fn handles_429_responses() {
     let env = TestEnvBuilder::new().build().await;
@@ -489,6 +502,8 @@ async fn handles_429_responses() {
     env.stop().await;
 }
 
+// TODO(https://fxbug.dev/542690944): Covered by PkgAuthority happy-path.
+// TODO(https://fxbug.dev/542381507): Test that the full resolver uses cache fallback.
 #[fuchsia::test]
 async fn use_cached_package() {
     let env = TestEnvBuilder::new().build().await;
@@ -545,6 +560,7 @@ async fn use_cached_package() {
     served_repository.stop().await;
 }
 
+// TODO(https://fxbug.dev/542690944): Covered by PkgAuthority happy-path.
 #[fuchsia::test]
 async fn meta_far_already_in_blobfs() {
     verify_resolve_with_altered_env(
@@ -556,6 +572,7 @@ async fn meta_far_already_in_blobfs() {
     .await
 }
 
+// TODO(https://fxbug.dev/542690944): Covered by PkgAuthority happy-path.
 #[fuchsia::test]
 async fn all_blobs_already_in_blobfs() {
     let s = "all_blobs_already_in_blobfs";
@@ -569,6 +586,7 @@ async fn all_blobs_already_in_blobfs() {
     .await
 }
 
+// TODO(https://fxbug.dev/542690944): Covered by PkgAuthority happy-path.
 #[fuchsia::test]
 async fn meta_far_and_one_content_blob_already_in_blobfs() {
     let s = "meta_far_and_one_content_blob_in_blobfs";
@@ -579,6 +597,7 @@ async fn meta_far_and_one_content_blob_already_in_blobfs() {
     .await
 }
 
+// TODO(https://fxbug.dev/542690944): Covered by PkgAuthority happy-path.
 #[fuchsia::test]
 async fn test_concurrent_blob_writes() {
     // Create our test packages and find out the merkle of the duplicate blob
@@ -666,100 +685,6 @@ async fn test_concurrent_blob_writes() {
     env.stop().await;
 }
 
-#[fuchsia::test]
-#[ignore] // TODO(65855): Fix to support lower concurrency limit.
-async fn dedup_concurrent_content_blob_fetches() {
-    let env = TestEnvBuilder::new().build().await;
-
-    // Make a few test packages with no more than 6 blobs.  There is no guarantee what order the
-    // package resolver will fetch blobs in other than it will fetch one of the meta FARs first and
-    // it will fetch a meta FAR before fetching any unique content blobs for that package.
-    //
-    // Note that this test depends on the fact that the global queue has a concurrency limit of 5.
-    // A concurrency limit less than 4 would cause this test to hang as it needs to be able to wait
-    // for a unique blob request to come in for each package, and ordering of blob requests is not
-    // guaranteed.
-    let pkg1 = PackageBuilder::new("package1")
-        .add_resource_at("data/unique1", "package1unique1".as_bytes())
-        .add_resource_at("data/shared1", "shared1".as_bytes())
-        .add_resource_at("data/shared2", "shared2".as_bytes())
-        .build()
-        .await
-        .unwrap();
-    let pkg2 = PackageBuilder::new("package2")
-        .add_resource_at("data/unique1", "package2unique1".as_bytes())
-        .add_resource_at("data/shared1", "shared1".as_bytes())
-        .add_resource_at("data/shared2", "shared2".as_bytes())
-        .build()
-        .await
-        .unwrap();
-
-    // Create the request responder to block all content blobs until we are ready to unblock them.
-    let content_blob_paths = {
-        let pkg1_meta_contents = pkg1.meta_contents().expect("meta/contents to parse");
-        let pkg2_meta_contents = pkg2.meta_contents().expect("meta/contents to parse");
-
-        pkg1_meta_contents
-            .contents()
-            .values()
-            .chain(pkg2_meta_contents.contents().values())
-            .map(|blob| format!("/blobs/1/{}", blob).into())
-            .collect::<HashSet<_>>()
-    };
-    let (request_responder, mut incoming_requests) = responder::BlockResponseHeaders::new();
-    let request_responder =
-        responder::ForPaths::new(content_blob_paths.iter().cloned().collect(), request_responder);
-
-    // Serve and register the repo with our request responder that blocks headers for content blobs.
-    let repo = Arc::new(
-        RepositoryBuilder::from_template_dir(EMPTY_REPO_PATH)
-            .add_package(&pkg1)
-            .add_package(&pkg2)
-            .build()
-            .await
-            .expect("repo to build"),
-    );
-    let served_repository =
-        repo.server().response_overrider(request_responder).start().expect("repo to serve");
-
-    env.register_repo(&served_repository).await;
-
-    // Start resolving both packages using distinct proxies, which should block waiting for the
-    // meta FAR responses.
-    let pkg1_fut = {
-        let proxy = env.connect_to_resolver();
-        resolve_package(&proxy, "fuchsia-pkg://test/package1")
-    };
-    let pkg2_fut = {
-        let proxy = env.connect_to_resolver();
-        resolve_package(&proxy, "fuchsia-pkg://test/package2")
-    };
-
-    // Wait for all content blob requests to come in to make sure they are maximally de-duped.
-    let mut expected_requests = content_blob_paths.clone();
-    let mut blocked_requests = vec![];
-    while !expected_requests.is_empty() {
-        let req = incoming_requests.next().await.expect("more incoming requests");
-        // Panic if the blob request wasn't expected or has already happened and was not de-duped
-        // as expected.
-        assert!(expected_requests.remove(req.path()));
-        blocked_requests.push(req);
-    }
-
-    // Unblock all content blobs, and verify both packages resolve without error.
-    for req in blocked_requests {
-        req.unblock();
-    }
-
-    let (pkg1_dir, _resolved_context) = pkg1_fut.await.expect("package 1 to resolve");
-    let (pkg2_dir, _resolved_context) = pkg2_fut.await.expect("package 2 to resolve");
-
-    pkg1.verify_contents(&pkg1_dir).await.unwrap();
-    pkg2.verify_contents(&pkg2_dir).await.unwrap();
-
-    env.stop().await;
-}
-
 // TODO(b/308158482): re-enable when ring works on riscv64
 #[cfg(not(target_arch = "riscv64"))]
 async fn test_https_endpoint(pkg_name: &str, bind_addr: impl Into<IpAddr>) {
@@ -796,6 +721,7 @@ async fn test_https_endpoint(pkg_name: &str, bind_addr: impl Into<IpAddr>) {
     env.stop().await;
 }
 
+// TODO(https://fxbug.dev/542690944): Covered by PkgAuthority happy-path.
 // TODO(b/308158482): re-enable when ring works on riscv64
 #[cfg(not(target_arch = "riscv64"))]
 #[fuchsia::test]
@@ -803,6 +729,7 @@ async fn https_endpoint_ipv6_only() {
     test_https_endpoint("https_endpoint_ipv6", Ipv6Addr::LOCALHOST).await
 }
 
+// TODO(https://fxbug.dev/542690944): Covered by PkgAuthority happy-path.
 // TODO(b/308158482): re-enable when ring works on riscv64
 #[cfg(not(target_arch = "riscv64"))]
 #[fuchsia::test]
@@ -810,6 +737,7 @@ async fn https_endpoint_ipv4_only() {
     test_https_endpoint("https_endpoint_ipv4", Ipv4Addr::LOCALHOST).await
 }
 
+// TODO(https://fxbug.dev/542690944): Covered by PkgAuthority happy-path.
 #[fuchsia::test]
 async fn verify_concurrent_resolve() {
     let env = TestEnvBuilder::new().build().await;
@@ -854,6 +782,7 @@ async fn verify_concurrent_resolve() {
     env.stop().await;
 }
 
+// TODO(https://fxbug.dev/542690944): Covered by PkgAuthority happy-path.
 // Merkle-pinned resolves verify that there is a package of that name in TUF, but then
 // download the meta.far directly from the blob url. This test verifies that the resolver
 // does not use the size of the meta.far found in TUF, since the pinned meta.far could
@@ -896,6 +825,7 @@ async fn merkle_pinned_meta_far_size_different_than_tuf_metadata() {
     env.stop().await;
 }
 
+// TODO(https://fxbug.dev/542690944): Covered by PkgAuthority happy-path.
 #[fuchsia::test]
 async fn superpackage() {
     let env = TestEnvBuilder::new().build().await;
@@ -935,6 +865,7 @@ async fn superpackage() {
     env.stop().await;
 }
 
+// TODO(https://fxbug.dev/542690944): Covered by PkgAuthority happy-path.
 #[fuchsia::test]
 async fn fxblob() {
     let env = TestEnvBuilder::new().fxblob().build().await;
@@ -959,6 +890,7 @@ async fn fxblob() {
     env.stop().await;
 }
 
+// TODO(https://fxbug.dev/542690944): Covered by PkgAuthority happy-path.
 #[fuchsia::test]
 async fn ota_resolver_does_not_protect_blobs_from_gc() {
     let env = TestEnvBuilder::new().build().await;
@@ -995,6 +927,7 @@ async fn ota_resolver_does_not_protect_blobs_from_gc() {
     env.stop().await;
 }
 
+// TODO(https://fxbug.dev/542690944): Covered by PkgAuthority happy-path.
 #[fuchsia::test]
 async fn resolve_of_already_cached_package_is_not_blocked_by_in_progress_blob_fetches() {
     let env = TestEnvBuilder::new().blob_download_concurrency_limit(1).build().await;
@@ -1075,6 +1008,7 @@ async fn resolve_of_already_cached_package_is_not_blocked_by_in_progress_blob_fe
 //
 // This test makes sure that resolves succeed even if the meta.far peek optimization is performed
 // when the meta.far is not in blobfs but a request to fetch the meta.far is already in the queue.
+// TODO(https://fxbug.dev/542690944): Covered by PkgAuthority happy-path.
 #[fuchsia::test]
 async fn already_cached_package_blob_queue_bypass_with_concurrent_meta_far_write() {
     let sub_pkg = PackageBuilder::new("subpackage").build().await.unwrap();

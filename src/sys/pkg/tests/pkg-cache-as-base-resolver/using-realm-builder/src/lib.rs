@@ -118,6 +118,26 @@ impl TestEnvBuilder {
             )
             .await
             .unwrap();
+        builder
+            .add_route(
+                Route::new()
+                    .capability(Capability::configuration(
+                        "fuchsia.pkgcache.BlobFetchConcurrencyLimit",
+                    ))
+                    .capability(Capability::configuration(
+                        "fuchsia.pkgcache.BlobNetworkHeaderTimeoutSeconds",
+                    ))
+                    .capability(Capability::configuration(
+                        "fuchsia.pkgcache.BlobNetworkBodyTimeoutSeconds",
+                    ))
+                    .capability(Capability::configuration(
+                        "fuchsia.pkgcache.BlobDownloadResumptionAttemptsLimit",
+                    ))
+                    .from(Ref::void())
+                    .to(&pkg_cache),
+            )
+            .await
+            .unwrap();
 
         if let Some(enable_upgradable_packages) = self.enable_upgradable_packages {
             builder

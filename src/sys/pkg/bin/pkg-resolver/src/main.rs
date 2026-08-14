@@ -29,6 +29,7 @@ use log::{error, info, warn};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+mod authority_service;
 mod cache;
 mod cache_package_index;
 mod clock;
@@ -299,6 +300,22 @@ async fn main_inner_async(startup_time: Instant) -> Result<(), Error> {
         }
     };
 
+    let authority_cb = {
+        let rewrite_manager = Arc::clone(&rewrite_manager);
+        let repo_manager = Arc::clone(&repo_manager);
+        move |stream| {
+            fasync::Task::local(
+                authority_service::serve(
+                    stream,
+                    Arc::clone(&rewrite_manager),
+                    Arc::clone(&repo_manager),
+                )
+                .unwrap_or_else(|e: anyhow::Error| error!("serving authority service: {e:#}")),
+            )
+            .detach()
+        }
+    };
+
     let repo_cb = move |stream| {
         let repo_manager = Arc::clone(&repo_manager);
 
@@ -361,6 +378,7 @@ async fn main_inner_async(startup_time: Instant) -> Result<(), Error> {
             make_resolver_cb(fpkg::GcProtection::Retained),
         )
         .add_fidl_service(resolver_toolbox_cb)
+        .add_fidl_service(authority_cb)
         .add_fidl_service(repo_cb)
         .add_fidl_service(rewrite_cb)
         .add_fidl_service(cup_cb)

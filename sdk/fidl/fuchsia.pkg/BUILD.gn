@@ -35,6 +35,7 @@ if (is_host) {
 
 fidl("fuchsia.pkg") {
   sources = [
+    "authority.fidl",
     "cache.fidl",
     "common.fidl",
     "cup.fidl",

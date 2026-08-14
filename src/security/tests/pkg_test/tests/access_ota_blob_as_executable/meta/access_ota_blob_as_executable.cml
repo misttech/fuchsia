@@ -163,6 +163,17 @@
         },
         {
             config: [
+                "fuchsia.pkgcache.BlobDownloadResumptionAttemptsLimit",
+                "fuchsia.pkgcache.BlobFetchConcurrencyLimit",
+                "fuchsia.pkgcache.BlobNetworkBodyTimeoutSeconds",
+                "fuchsia.pkgcache.BlobNetworkHeaderTimeoutSeconds",
+            ],
+            from: "void",
+            to: "#pkg-cache",
+            availability: "optional",
+        },
+        {
+            config: [
                 "fuchsia.pkgresolver.BlobNetworkBodyTimeoutSeconds",
                 "fuchsia.pkgresolver.BlobNetworkHeaderTimeoutSeconds",
                 "fuchsia.pkgresolver.TufNetworkHeaderTimeoutSeconds",

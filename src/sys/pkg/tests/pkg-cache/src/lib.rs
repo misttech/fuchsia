@@ -19,6 +19,7 @@ use fidl_fuchsia_metrics as fmetrics;
 use fidl_fuchsia_pkg as fpkg;
 use fidl_fuchsia_pkg_ext as fpkg_ext;
 use fidl_fuchsia_pkg_garbagecollector as fpkg_gc;
+use fidl_fuchsia_pkg_http as fpkg_http;
 use fidl_fuchsia_update as fupdate;
 use fidl_fuchsia_update_verify as fupdate_verify;
 use fuchsia_async as fasync;
@@ -43,7 +44,11 @@ mod cobalt;
 mod executability_enforcement;
 mod get;
 mod inspect;
+mod ota_resolver;
 mod pkgfs;
+mod remote_resolver;
+mod remote_resolver_blobfs_errors;
+mod remote_resolver_recovers_from_http_errors;
 mod retained_blobs;
 mod retained_packages;
 mod space;
@@ -52,11 +57,21 @@ mod write_blobs;
 
 static SHELL_COMMANDS_BIN_PATH: &str = "shell-commands-bin";
 // Sleep duration while waiting for pkg-cache to update inspect state. Chosen arbitrarily.
-// Do not just sleep once and assume good, loop until expected state occurs.
 const INSPECT_WAIT: std::time::Duration = std::time::Duration::from_millis(10);
 
 const OUT_DIR_FLAGS: fio::Flags =
     fio::PERM_READABLE.union(fio::PERM_WRITABLE).union(fio::PERM_EXECUTABLE);
+
+// TODO(https://fxbug.dev/540501441): Serve the test package blobs without the rest of the TUF repo.
+const EMPTY_REPO_PATH: &str = "/pkg/empty-repo";
+
+// If the body of an https response is not large enough, hyper will download the body along with the
+// header in the initial fuchsia_hyper::HttpsClient.request(). This means that even if the body is
+// implemented with a stream that sends some bytes and then fails before the transfer is complete,
+// the error will occur on the initial request instead of when looping over the Response body bytes.
+// This value probably just needs to be larger than the Hyper buffer, which defaults to 400 kB
+// https://docs.rs/hyper/0.13.10/hyper/client/struct.Builder.html#method.http1_max_buf_size
+const FILE_SIZE_LARGE_ENOUGH_TO_TRIGGER_HYPER_BATCHING: usize = 600_000;
 
 trait WriteErrorExt {
     fn assert_out_of_space(&self);
@@ -373,10 +388,14 @@ impl Blobfs for BlobfsRamdisk {
 
 struct TestEnvBuilder<BlobfsAndSystemImageFut> {
     paver_service_builder: Option<MockPaverServiceBuilder>,
+    pkg_authority: Option<MockPkgAuthority>,
     blobfs_and_system_image:
         Box<dyn FnOnce(blobfs_ramdisk::Implementation) -> BlobfsAndSystemImageFut>,
     require_system_image: bool,
     enable_upgradable_packages: bool,
+    blob_fetch_concurrency_limit: Option<u16>,
+    blob_network_header_timeout_seconds: Option<u32>,
+    blob_network_body_timeout_seconds: Option<u32>,
     blob_implementation: Option<blobfs_ramdisk::Implementation>,
     bootfs_blobs: HashMap<Hash, Vec<u8>>,
 }
@@ -396,8 +415,12 @@ impl TestEnvBuilder<BoxFuture<'static, (BlobfsRamdisk, Option<Hash>)>> {
                 .boxed()
             }),
             paver_service_builder: None,
+            pkg_authority: None,
             require_system_image: true,
             enable_upgradable_packages: false,
+            blob_fetch_concurrency_limit: None,
+            blob_network_header_timeout_seconds: None,
+            blob_network_body_timeout_seconds: None,
             blob_implementation: None,
             bootfs_blobs: HashMap::new(),
         }
@@ -410,7 +433,13 @@ where
     ConcreteBlobfs: Blobfs,
 {
     fn paver_service_builder(self, paver_service_builder: MockPaverServiceBuilder) -> Self {
+        assert!(self.paver_service_builder.is_none());
         Self { paver_service_builder: Some(paver_service_builder), ..self }
+    }
+
+    fn pkg_authority(self, pkg_authority: MockPkgAuthority) -> Self {
+        assert_matches!(self.pkg_authority, None);
+        Self { pkg_authority: Some(pkg_authority), ..self }
     }
 
     fn blobfs_and_system_image_hash<OtherBlobfs>(
@@ -424,8 +453,12 @@ where
         TestEnvBuilder {
             blobfs_and_system_image: Box::new(move |_| future::ready((blobfs, system_image))),
             paver_service_builder: self.paver_service_builder,
+            pkg_authority: self.pkg_authority,
             require_system_image: self.require_system_image,
             enable_upgradable_packages: self.enable_upgradable_packages,
+            blob_fetch_concurrency_limit: self.blob_fetch_concurrency_limit,
+            blob_network_header_timeout_seconds: self.blob_network_header_timeout_seconds,
+            blob_network_body_timeout_seconds: self.blob_network_body_timeout_seconds,
             blob_implementation: self.blob_implementation,
             bootfs_blobs: self.bootfs_blobs,
         }
@@ -460,8 +493,12 @@ where
                 future::ready((blobfs, Some(system_image_hash)))
             }),
             paver_service_builder: self.paver_service_builder,
+            pkg_authority: self.pkg_authority,
             require_system_image: self.require_system_image,
             enable_upgradable_packages: self.enable_upgradable_packages,
+            blob_fetch_concurrency_limit: self.blob_fetch_concurrency_limit,
+            blob_network_header_timeout_seconds: self.blob_network_header_timeout_seconds,
+            blob_network_body_timeout_seconds: self.blob_network_body_timeout_seconds,
             blob_implementation: Some(blobfs_ramdisk::Implementation::from_env()),
             bootfs_blobs: self.bootfs_blobs,
         }
@@ -474,6 +511,21 @@ where
     fn enable_upgradable_packages(self) -> Self {
         assert_eq!(self.enable_upgradable_packages, false);
         Self { enable_upgradable_packages: true, ..self }
+    }
+
+    fn blob_fetch_concurrency_limit(self, limit: u16) -> Self {
+        assert_eq!(self.blob_fetch_concurrency_limit, None);
+        Self { blob_fetch_concurrency_limit: Some(limit), ..self }
+    }
+
+    fn blob_network_header_timeout_seconds(self, timeout: u32) -> Self {
+        assert_eq!(self.blob_network_header_timeout_seconds, None);
+        Self { blob_network_header_timeout_seconds: Some(timeout), ..self }
+    }
+
+    fn blob_network_body_timeout_seconds(self, timeout: u32) -> Self {
+        assert_eq!(self.blob_network_body_timeout_seconds, None);
+        Self { blob_network_body_timeout_seconds: Some(timeout), ..self }
     }
 
     fn fxblob(self) -> Self {
@@ -552,6 +604,20 @@ where
                 .unwrap();
         }
 
+        let pkg_authority =
+            Arc::new(self.pkg_authority.unwrap_or_else(|| MockPkgAuthority::new(HashMap::new())));
+        {
+            let pkg_authority = Arc::clone(&pkg_authority);
+            local_child_svc_dir
+                .add_entry(
+                    fpkg::AuthorityMarker::PROTOCOL_NAME,
+                    vfs::service::host(move |stream| {
+                        Arc::clone(&pkg_authority).serve_stream(stream)
+                    }),
+                )
+                .unwrap();
+        }
+
         let bootfs_blobs = {
             // The capability is optional, so if there are no bootfs blobs give pkg-cache a broken
             // proxy.
@@ -571,6 +637,14 @@ where
             "blob" => vfs::remote::remote_dir(blobfs.root_proxy()),
             "bootfs-blobs" => bootfs_blobs,
             "svc" => local_child_svc_dir,
+            "config" => vfs::pseudo_directory! {
+                "ssl" => vfs::remote::remote_dir(
+                    fuchsia_fs::directory::open_in_namespace(
+                        "/pkg/data/ssl",
+                        fio::PERM_READABLE
+                    ).unwrap()
+                ),
+            },
         };
         local_child_out_dir
             .add_entry("blob-svc", vfs::remote::remote_dir(blobfs.svc_dir()))
@@ -594,6 +668,19 @@ where
             ("fuchsia.pkgcache.AllPackagesExecutable", false.into()),
             ("fuchsia.pkgcache.RequireSystemImage", self.require_system_image.into()),
             ("fuchsia.pkgcache.EnableUpgradablePackages", self.enable_upgradable_packages.into()),
+            (
+                "fuchsia.pkgcache.BlobFetchConcurrencyLimit",
+                self.blob_fetch_concurrency_limit.unwrap_or(2).into(),
+            ),
+            (
+                "fuchsia.pkgcache.BlobNetworkHeaderTimeoutSeconds",
+                self.blob_network_header_timeout_seconds.unwrap_or(30).into(),
+            ),
+            (
+                "fuchsia.pkgcache.BlobNetworkBodyTimeoutSeconds",
+                self.blob_network_body_timeout_seconds.unwrap_or(30).into(),
+            ),
+            ("fuchsia.pkgcache.BlobDownloadResumptionAttemptsLimit", 50u32.into()),
         ] {
             builder
                 .add_capability(
@@ -619,6 +706,11 @@ where
             )
             .await
             .unwrap();
+        let http_client = builder
+            .add_child("http_client", "#meta/http-client.cm", ChildOptions::new())
+            .await
+            .unwrap();
+
         let service_reflector = builder
             .add_local_child(
                 "service_reflector",
@@ -652,7 +744,8 @@ where
                     .from(Ref::parent())
                     .to(&pkg_cache)
                     .to(&service_reflector)
-                    .to(&system_update_committer),
+                    .to(&system_update_committer)
+                    .to(&http_client),
             )
             .await
             .unwrap();
@@ -690,7 +783,17 @@ where
                         Capability::protocol::<ffxfs::BlobReaderMarker>()
                             .path(format!("/blob-svc/{}", ffxfs::BlobReaderMarker::PROTOCOL_NAME)),
                     )
+                    .capability(Capability::protocol::<fpkg::AuthorityMarker>())
                     .from(&service_reflector)
+                    .to(&pkg_cache),
+            )
+            .await
+            .unwrap();
+        builder
+            .add_route(
+                Route::new()
+                    .capability(Capability::protocol::<fpkg_http::ClientMarker>())
+                    .from(&http_client)
                     .to(&pkg_cache),
             )
             .await
@@ -752,6 +855,43 @@ where
         builder
             .add_route(
                 Route::new()
+                    .capability(Capability::protocol::<fidl_fuchsia_posix_socket::ProviderMarker>())
+                    .capability(Capability::protocol::<fidl_fuchsia_net_name::LookupMarker>())
+                    .from(Ref::parent())
+                    .to(&http_client),
+            )
+            .await
+            .unwrap();
+        builder
+            .add_route(
+                Route::new()
+                    .capability(
+                        Capability::directory("root-ssl-certificates")
+                            .path("/config/ssl")
+                            .rights(fio::R_STAR_DIR),
+                    )
+                    .from(&service_reflector)
+                    .to(&http_client),
+            )
+            .await
+            .unwrap();
+        builder
+            .add_route(
+                Route::new()
+                    .capability(Capability::configuration(
+                        "fuchsia.http-client.StopOnIdleTimeoutMillis",
+                    ))
+                    .capability(Capability::configuration(
+                        "fuchsia.http-client.TcpReceiveBufferSizeBytes",
+                    ))
+                    .from(Ref::void())
+                    .to(&http_client),
+            )
+            .await
+            .unwrap();
+        builder
+            .add_route(
+                Route::new()
                     .capability(Capability::protocol::<fupdate::CommitStatusProviderMarker>())
                     .from(&system_update_committer)
                     .to(&pkg_cache) // offer
@@ -763,6 +903,10 @@ where
         builder
             .add_route(
                 Route::new()
+                    .capability(Capability::protocol_by_name(format!(
+                        "{}-ota",
+                        fpkg::PackageResolverMarker::PROTOCOL_NAME
+                    )))
                     .capability(Capability::protocol::<fpkg::PackageCacheMarker>())
                     .capability(Capability::protocol::<fpkg::RetainedPackagesMarker>())
                     .capability(Capability::protocol::<fpkg::RetainedBlobsMarker>())
@@ -801,6 +945,13 @@ where
                 .root
                 .connect_to_protocol_at_exposed_dir()
                 .expect("connect to retained blobs"),
+            ota_package_resolver: realm_instance
+                .root
+                .connect_to_named_protocol_at_exposed_dir::<fpkg::PackageResolverMarker>(&format!(
+                    "{}-ota",
+                    fpkg::PackageResolverMarker::PROTOCOL_NAME
+                ))
+                .expect("connect to OTA package resolver"),
             pkgfs: fuchsia_fs::directory::open_directory_async(
                 realm_instance.root.get_exposed_dir(),
                 "pkgfs",
@@ -818,6 +969,7 @@ where
                 logger_factory,
                 _paver_service: paver_service,
                 _verifier_service: verifier_service,
+                _pkg_authority: pkg_authority,
             },
         }
     }
@@ -829,6 +981,7 @@ struct Proxies {
     package_cache: fpkg::PackageCacheProxy,
     retained_packages: fpkg::RetainedPackagesProxy,
     retained_blobs: fpkg::RetainedBlobsProxy,
+    ota_package_resolver: fpkg::PackageResolverProxy,
     pkgfs: fio::DirectoryProxy,
 }
 
@@ -836,6 +989,7 @@ pub struct Mocks {
     pub logger_factory: Arc<MockMetricEventLoggerFactory>,
     _paver_service: Arc<MockPaverService>,
     _verifier_service: Arc<MockHealthVerificationService>,
+    _pkg_authority: Arc<MockPkgAuthority>,
 }
 
 struct Apps {
@@ -966,5 +1120,87 @@ impl<B: Blobfs> TestEnv<B> {
         )
         .await
         .unwrap();
+    }
+
+    pub async fn resolve_ota(
+        &self,
+        url: &str,
+    ) -> Result<(fio::DirectoryProxy, fpkg::ResolutionContext), fpkg::ResolveError> {
+        let (package, package_server_end) = fidl::endpoints::create_proxy();
+        self.proxies
+            .ota_package_resolver
+            .resolve(url, package_server_end)
+            .await
+            .unwrap()
+            .map(|context| (package, context))
+    }
+
+    pub async fn resolve_with_context_ota(
+        &self,
+        url: &str,
+        context: &fpkg::ResolutionContext,
+    ) -> Result<(fio::DirectoryProxy, fpkg::ResolutionContext), fpkg::ResolveError> {
+        let (package, package_server_end) = fidl::endpoints::create_proxy();
+        self.proxies
+            .ota_package_resolver
+            .resolve_with_context(url, context, package_server_end)
+            .await
+            .unwrap()
+            .map(|context| (package, context))
+    }
+}
+
+#[derive(Debug)]
+struct MockPkgAuthority {
+    index: HashMap<String, Result<(fuchsia_hash::Hash, String), fpkg::AuthorityLookupError>>,
+}
+
+impl MockPkgAuthority {
+    /// `index` is a map from package URL to
+    /// Result<(package ID, HTTP directory of blobs), lookup fidl error)>.
+    fn new(
+        index: HashMap<String, Result<(fuchsia_hash::Hash, String), fpkg::AuthorityLookupError>>,
+    ) -> Self {
+        Self { index }
+    }
+
+    fn from_repo_config_and_packages(
+        config: &fpkg_ext::RepositoryConfig,
+        pkgs: &[&fuchsia_pkg_testing::Package],
+    ) -> Self {
+        let index = pkgs
+            .iter()
+            .map(|p| {
+                (
+                    format!("{}/{}", config.repo_url(), p.name()),
+                    Ok((*p.hash(), format!("{}/1", config.mirrors()[0].blob_mirror_url()))),
+                )
+            })
+            .collect();
+        Self::new(index)
+    }
+
+    async fn serve_stream(self: Arc<Self>, stream: fpkg::AuthorityRequestStream) {
+        let () = stream
+            .for_each(|request| async {
+                match request.unwrap() {
+                    fpkg::AuthorityRequest::Lookup { package_url, responder } => {
+                        match self.index.get(&package_url.url).unwrap() {
+                            Ok((merkle_root, url)) => {
+                                let () = responder
+                                    .send(Ok((
+                                        &fpkg::BlobId { merkle_root: (*merkle_root).into() },
+                                        url,
+                                    )))
+                                    .unwrap();
+                            }
+                            Err(e) => {
+                                let () = responder.send(Err(*e)).unwrap();
+                            }
+                        }
+                    }
+                }
+            })
+            .await;
     }
 }

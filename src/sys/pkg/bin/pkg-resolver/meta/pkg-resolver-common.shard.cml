@@ -14,6 +14,7 @@
         {
             protocol: [
                 "fuchsia.component.resolution.Resolver",
+                "fuchsia.pkg.Authority",
                 "fuchsia.pkg.Cup",
                 "fuchsia.pkg.internal.OtaDownloader",
                 "fuchsia.pkg.PackageResolver",
@@ -90,6 +91,7 @@
         {
             protocol: [
                 "fuchsia.component.resolution.Resolver",
+                "fuchsia.pkg.Authority",
                 "fuchsia.pkg.Cup",
                 "fuchsia.pkg.internal.OtaDownloader",
                 "fuchsia.pkg.PackageResolver",

@@ -308,7 +308,7 @@ impl RepositoryManager {
     pub fn get_package_hash<'a>(
         &self,
         url: &'a AbsolutePackageUrl,
-    ) -> LocalBoxFuture<'a, Result<BlobId, GetPackageHashError>> {
+    ) -> LocalBoxFuture<'a, Result<(BlobId, http::Uri), GetPackageHashError>> {
         let config = if let Some(config) = self.get(url.repository()) {
             Arc::clone(config)
         } else {
@@ -330,10 +330,25 @@ impl RepositoryManager {
         );
 
         let cobalt_sender = self.cobalt_sender.clone();
+        let delivery_blob_type = self.delivery_blob_type;
 
         async move {
             let repo = repo.await?;
-            crate::cache::merkle_for_url(repo, url, cobalt_sender).await.map_err(Into::into)
+            let blob_mirror_url = config
+                .mirrors()
+                .first()
+                .ok_or(GetPackageHashError::NoMirrors(url.repository().clone()))?
+                .blob_mirror_url()
+                .to_owned();
+            let blob_base_url = blob_mirror_url
+                .extend_dir_with_path(&u32::from(delivery_blob_type).to_string())
+                .map_err(GetPackageHashError::BlobUrl)?;
+            Ok((
+                crate::cache::merkle_for_url(repo, url, cobalt_sender)
+                    .await
+                    .map_err(GetPackageHashError::MerkleFor)?,
+                blob_base_url,
+            ))
         }
         .boxed_local()
     }
@@ -894,6 +909,12 @@ pub enum GetPackageHashError {
 
     #[error("while getting the merkle")]
     MerkleFor(#[from] MerkleForError),
+
+    #[error("repository has no configured mirrors: {0}")]
+    NoMirrors(RepositoryUrl),
+
+    #[error("blob url error")]
+    BlobUrl(#[source] http_uri_ext::Error),
 }
 
 impl ToResolveError for GetPackageError {
@@ -916,6 +937,8 @@ impl ToResolveStatus for GetPackageHashError {
             GetPackageHashError::RepoNotFound(_) => Status::BAD_STATE,
             GetPackageHashError::OpenRepo(err) => err.to_resolve_status(),
             GetPackageHashError::MerkleFor(err) => err.to_resolve_status(),
+            GetPackageHashError::NoMirrors(_) => Status::BAD_STATE,
+            GetPackageHashError::BlobUrl(_) => Status::BAD_STATE,
         }
     }
 }

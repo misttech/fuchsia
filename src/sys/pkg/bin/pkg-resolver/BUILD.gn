@@ -89,6 +89,7 @@ rustc_library("lib") {
 
   source_root = "src/main.rs"
   sources = [
+    "src/authority_service.rs",
     "src/cache.rs",
     "src/cache/inspect.rs",
     "src/cache/retry.rs",

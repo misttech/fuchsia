@@ -604,6 +604,7 @@ async fn verify_pkg_resolution_succeeds_during_minfs_repo_config_and_rewrite_rul
     env.stop().await;
 }
 
+// TODO(https://fxbug.dev/542690944): Strip to just PkgAuthority.
 // Test that when pkg-resolver can't open the file for dynamic repo configs, the resolver
 // still works.
 #[fuchsia::test]

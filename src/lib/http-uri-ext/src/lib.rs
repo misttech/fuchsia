@@ -108,9 +108,10 @@ impl HttpUriExt for Uri {
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("invalid uri: {0}")]
+    #[error("invalid uri")]
     InvalidUri(#[from] uri::InvalidUri),
-    #[error("invalid uri parts: {0}")]
+
+    #[error("invalid uri parts")]
     InvalidUriParts(#[from] uri::InvalidUriParts),
 }
 

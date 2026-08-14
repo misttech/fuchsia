@@ -14,8 +14,10 @@ fidl_library(
     visibility = [
         "//src/connectivity/policy/http-client:__pkg__",
         "//src/connectivity/policy/http-client/integration:__pkg__",
+        "//src/sys/pkg/bin/pkg-cache:__pkg__",
         "//src/sys/pkg/bin/pkg-resolver:__pkg__",
         "//src/sys/pkg/tests/isolated-ota:__pkg__",
+        "//src/sys/pkg/tests/pkg-cache:__pkg__",
         "//src/sys/pkg/tests/pkg-resolver:__pkg__",
     ],
     deps = [
