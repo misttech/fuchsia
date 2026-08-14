@@ -420,70 +420,106 @@ async fn page_in_blob_benchmark(
 }
 
 #[derive(Clone)]
+enum BlobDataSource {
+    Compressed { resource_path: &'static str, algo: CompressionAlgorithm },
+    Uncompressed { size: usize },
+}
+
+#[derive(Clone)]
 pub struct ColdPageFaultBenchmark {
-    name: &'static str,
-    resource_path: &'static str,
-    algo: CompressionAlgorithm,
+    name: String,
+    data_source: BlobDataSource,
 }
 
 impl ColdPageFaultBenchmark {
-    pub fn new(
-        name: &'static str,
-        resource_path: &'static str,
-        algo: CompressionAlgorithm,
-    ) -> Self {
-        Self { name, resource_path, algo }
-    }
-
     pub fn new_lz4_40() -> Self {
-        Self::new("ColdPageFault/LZ4/40p", "/pkg/data/blobs/lz4_40.bin", CompressionAlgorithm::Lz4)
+        Self {
+            name: "ColdPageFault/LZ4/40p".to_string(),
+            data_source: BlobDataSource::Compressed {
+                resource_path: "/pkg/data/blobs/lz4_40.bin",
+                algo: CompressionAlgorithm::Lz4,
+            },
+        }
     }
     pub fn new_lz4_55() -> Self {
-        Self::new("ColdPageFault/LZ4/55p", "/pkg/data/blobs/lz4_55.bin", CompressionAlgorithm::Lz4)
+        Self {
+            name: "ColdPageFault/LZ4/55p".to_string(),
+            data_source: BlobDataSource::Compressed {
+                resource_path: "/pkg/data/blobs/lz4_55.bin",
+                algo: CompressionAlgorithm::Lz4,
+            },
+        }
     }
     pub fn new_lz4_70() -> Self {
-        Self::new("ColdPageFault/LZ4/70p", "/pkg/data/blobs/lz4_70.bin", CompressionAlgorithm::Lz4)
+        Self {
+            name: "ColdPageFault/LZ4/70p".to_string(),
+            data_source: BlobDataSource::Compressed {
+                resource_path: "/pkg/data/blobs/lz4_70.bin",
+                algo: CompressionAlgorithm::Lz4,
+            },
+        }
     }
     pub fn new_zstd_40() -> Self {
-        Self::new(
-            "ColdPageFault/ZSTD/40p",
-            "/pkg/data/blobs/zstd_40.bin",
-            CompressionAlgorithm::Zstd,
-        )
+        Self {
+            name: "ColdPageFault/ZSTD/40p".to_string(),
+            data_source: BlobDataSource::Compressed {
+                resource_path: "/pkg/data/blobs/zstd_40.bin",
+                algo: CompressionAlgorithm::Zstd,
+            },
+        }
     }
     pub fn new_zstd_55() -> Self {
-        Self::new(
-            "ColdPageFault/ZSTD/55p",
-            "/pkg/data/blobs/zstd_55.bin",
-            CompressionAlgorithm::Zstd,
-        )
+        Self {
+            name: "ColdPageFault/ZSTD/55p".to_string(),
+            data_source: BlobDataSource::Compressed {
+                resource_path: "/pkg/data/blobs/zstd_55.bin",
+                algo: CompressionAlgorithm::Zstd,
+            },
+        }
     }
     pub fn new_zstd_70() -> Self {
-        Self::new(
-            "ColdPageFault/ZSTD/70p",
-            "/pkg/data/blobs/zstd_70.bin",
-            CompressionAlgorithm::Zstd,
-        )
+        Self {
+            name: "ColdPageFault/ZSTD/70p".to_string(),
+            data_source: BlobDataSource::Compressed {
+                resource_path: "/pkg/data/blobs/zstd_70.bin",
+                algo: CompressionAlgorithm::Zstd,
+            },
+        }
+    }
+
+    pub fn new_uncompressed(size: usize) -> Self {
+        Self {
+            name: format!("ColdPageFault/Uncompressed/{}", size),
+            data_source: BlobDataSource::Uncompressed { size },
+        }
     }
 }
 
 #[async_trait]
 impl Benchmark<FxblobInstance> for ColdPageFaultBenchmark {
     async fn run(&self, fs: &mut FxblobInstance) -> Vec<OperationDuration> {
-        storage_trace::duration!("benchmark", self.name);
+        storage_trace::duration!("benchmark", "ColdPageFault", "name" => self.name.as_str());
 
-        let raw_data = std::fs::read(self.resource_path)
-            .unwrap_or_else(|e| panic!("failed to read resource {}: {:?}", self.resource_path, e));
-
-        let delivery_blob = match self.algo {
-            CompressionAlgorithm::Zstd => {
-                DeliveryBlob::new(raw_data, delivery_blob::CompressionMode::Always)
+        let delivery_blob = match &self.data_source {
+            BlobDataSource::Compressed { resource_path, algo } => {
+                let raw_data = std::fs::read(resource_path).unwrap_or_else(|e| {
+                    panic!("failed to read resource {}: {:?}", resource_path, e)
+                });
+                match algo {
+                    CompressionAlgorithm::Zstd => {
+                        DeliveryBlob::new(raw_data, delivery_blob::CompressionMode::Always)
+                    }
+                    CompressionAlgorithm::Lz4 => DeliveryBlob::new_with_type(
+                        delivery_blob::DeliveryBlobType::Type3,
+                        raw_data,
+                        delivery_blob::CompressionMode::Always,
+                    ),
+                }
             }
-            CompressionAlgorithm::Lz4 => DeliveryBlob::new_with_type(
-                delivery_blob::DeliveryBlobType::Type3,
-                raw_data,
-                delivery_blob::CompressionMode::Always,
-            ),
+            BlobDataSource::Uncompressed { size } => {
+                let mut rng = XorShiftRng::seed_from_u64(RNG_SEED);
+                create_incompressible_data(*size, &mut rng)
+            }
         };
         let blob_hash = delivery_blob.name;
 
@@ -528,7 +564,7 @@ impl Benchmark<FxblobInstance> for ColdPageFaultBenchmark {
     }
 
     fn name(&self) -> String {
-        self.name.to_owned()
+        self.name.clone()
     }
 }
 

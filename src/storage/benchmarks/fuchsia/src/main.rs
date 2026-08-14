@@ -152,6 +152,9 @@ fn add_blob_benchmarks(benchmark_set: &mut BenchmarkSet) {
             ColdPageFaultBenchmark::new_zstd_40(),
             ColdPageFaultBenchmark::new_zstd_55(),
             ColdPageFaultBenchmark::new_zstd_70(),
+            ColdPageFaultBenchmark::new_uncompressed(1024),
+            ColdPageFaultBenchmark::new_uncompressed(4096),
+            ColdPageFaultBenchmark::new_uncompressed(131072),
         ],
         [Fxblob]
     );

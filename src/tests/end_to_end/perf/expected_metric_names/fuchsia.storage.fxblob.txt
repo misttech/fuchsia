@@ -15,3 +15,7 @@ fuchsia.storage: ColdPageFault/LZ4/70p/fxblob
 fuchsia.storage: ColdPageFault/ZSTD/40p/fxblob
 fuchsia.storage: ColdPageFault/ZSTD/55p/fxblob
 fuchsia.storage: ColdPageFault/ZSTD/70p/fxblob
+fuchsia.storage: ColdPageFault/Uncompressed/1024/fxblob
+fuchsia.storage: ColdPageFault/Uncompressed/4096/fxblob
+fuchsia.storage: ColdPageFault/Uncompressed/131072/fxblob
+
