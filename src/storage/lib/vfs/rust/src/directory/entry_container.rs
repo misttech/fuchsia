@@ -24,25 +24,32 @@ use zx_status::Status;
 mod private {
     use flex_fuchsia_io as fio;
 
-    /// A type-preserving wrapper around [`fuchsia_async::Channel`].
+    /// A type-preserving wrapper around a channel.
     #[derive(Debug)]
     pub struct DirectoryWatcher {
+        #[cfg(not(feature = "fdomain"))]
+        channel: zx::Channel,
+        #[cfg(feature = "fdomain")]
         channel: flex_client::AsyncChannel,
     }
 
     impl DirectoryWatcher {
         /// Provides access to the underlying channel.
+        #[cfg(not(feature = "fdomain"))]
+        pub fn channel(&self) -> &zx::Channel {
+            &self.channel
+        }
+
+        /// Provides access to the underlying channel.
+        #[cfg(feature = "fdomain")]
         pub fn channel(&self) -> &flex_client::AsyncChannel {
-            let Self { channel } = self;
-            channel
+            &self.channel
         }
     }
 
     impl From<flex_client::fidl::ServerEnd<fio::DirectoryWatcherMarker>> for DirectoryWatcher {
         fn from(server_end: flex_client::fidl::ServerEnd<fio::DirectoryWatcherMarker>) -> Self {
-            use crate::object_request::IntoAsyncChannel;
-            let channel = server_end.into_channel().into_async_channel();
-            Self { channel }
+            Self { channel: server_end.into_channel() }
         }
     }
 }

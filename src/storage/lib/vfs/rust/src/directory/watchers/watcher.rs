@@ -12,11 +12,6 @@ use flex_fuchsia_io as fio;
 use futures::channel::mpsc::{self, UnboundedSender};
 use futures::{FutureExt, select};
 
-#[cfg(all(not(target_os = "fuchsia"), not(feature = "fdomain")))]
-use fuchsia_async::emulated_handle::MessageBuf;
-#[cfg(all(target_os = "fuchsia", not(feature = "fdomain")))]
-use zx::MessageBuf;
-
 #[derive(Clone)]
 pub struct Controller {
     mask: fio::WatchMask,
@@ -37,13 +32,16 @@ impl Controller {
         use futures::StreamExt as _;
 
         let (sender, mut receiver) = mpsc::unbounded::<Vec<u8>>();
-
+        let done = CallOnDrop(Some(done));
         let task = async move {
-            let _done = CallOnDrop(Some(done));
             #[cfg(not(feature = "fdomain"))]
-            let mut buf = MessageBuf::new();
-            #[cfg(not(feature = "fdomain"))]
-            let mut recv_msg = watcher.channel().recv_msg(&mut buf).fuse();
+            let mut recv_msg = std::pin::pin!(
+                fuchsia_async::OnSignals::new(
+                    watcher.channel(),
+                    fidl::Signals::CHANNEL_READABLE | fidl::Signals::CHANNEL_PEER_CLOSED,
+                )
+                .fuse()
+            );
             #[cfg(feature = "fdomain")]
             let mut recv_msg = watcher.channel().recv_msg().fuse();
             loop {
@@ -69,6 +67,10 @@ impl Controller {
                     },
                 }
             }
+            // The purpose of this line is to reference `done` within the async closure so the async
+            // closure will take ownership of it. Doing `let done = done;` causes `done` to take up
+            // twice the space in the generated Future.
+            std::mem::drop(done);
         };
 
         scope.spawn(task);
