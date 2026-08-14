@@ -46,7 +46,7 @@ async fn off(admin_proxy: AdminProxy, _cmd: OffCommand) -> fho::Result<()> {
             fidl::Error::ClientChannelClosed { epitaph: fidl::Epitaph::PeerClosed, .. } => Ok(()),
             _ => res
                 .bug()?
-                .map_err(fidl::Status::from_raw)
+                .map_err(fidl::Status::err_from_raw)
                 .user_message("Unexpected error from poweroff"),
         },
     }

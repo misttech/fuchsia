@@ -38,7 +38,7 @@ impl MetadataServer {
             .get_metadata(&self.name)
             .await
             .map_err(|_| zx::Status::INTERNAL)?
-            .map_err(zx::Status::from_raw)?;
+            .map_err(zx::Status::err_from_raw)?;
         Ok(Self { data: Some(Arc::new(data)), name: self.name })
     }
 

@@ -386,7 +386,7 @@ impl Get {
     /// pending `Get()` request, returning the cached [`PackageDirectory`].
     pub async fn finish(self) -> Result<PackageDirectory, GetError> {
         drop(self.needed_blobs);
-        let () = self.get_fut.await?.map_err(Status::from_raw)?;
+        let () = self.get_fut.await?.map_err(Status::err_from_raw)?;
         Ok(self.pkg_dir)
     }
 

@@ -416,7 +416,7 @@ mod tests {
             .read(expected_content.len() as u64)
             .await
             .expect("read FIDL error")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("read error");
         assert_eq!(content.as_slice(), expected_content);
 
@@ -424,7 +424,7 @@ mod tests {
             .close()
             .await
             .expect("close FIDL error")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("close error");
     }
 
@@ -451,7 +451,7 @@ mod tests {
             .get_attributes(attributes_query)
             .await
             .expect("get_attributes FIDL error")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("get_attributes error");
         assert_eq!(immutable_attributes.id.expect("missing id attribute"), u64::from(file_ino));
         assert_eq!(mutable_attributes.mode.expect("missing mode attribute"), 0x8124);
@@ -462,7 +462,7 @@ mod tests {
             .close()
             .await
             .expect("close FIDL error")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("close error");
     }
 
@@ -482,7 +482,7 @@ mod tests {
             .get_extended_attribute(b"attr2")
             .await
             .expect("get_extended_attribute FIDL error")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("get_extended_attribute error");
         assert_eq!(value, ExtendedAttributeValue::Bytes(b"value2".into()));
 
@@ -490,7 +490,7 @@ mod tests {
             .close()
             .await
             .expect("close FIDL error")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("close error");
     }
 
@@ -510,7 +510,7 @@ mod tests {
                 .get_backing_memory(flags)
                 .await
                 .expect("get_backing_memory FIDL error")
-                .map_err(zx::Status::from_raw)
+                .map_err(zx::Status::err_from_raw)
         }
 
         fn assert_vmo_content(vmo: &zx::Vmo, expected: &[u8]) {
@@ -561,7 +561,7 @@ mod tests {
             .close()
             .await
             .expect("close FIDL error")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("close error");
     }
 
@@ -585,7 +585,7 @@ mod tests {
             .read(expected_content.len() as u64)
             .await
             .expect("read FIDL error")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("read error");
         assert_eq!(content.as_slice(), expected_content.as_bytes());
 
@@ -593,7 +593,7 @@ mod tests {
             .close()
             .await
             .expect("close FIDL error")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("close error");
     }
 
@@ -613,7 +613,7 @@ mod tests {
             .read(1024)
             .await
             .expect("read FIDL error")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("read error");
         assert_eq!(content.as_slice(), expected_content.as_bytes());
 
@@ -623,7 +623,7 @@ mod tests {
             .read_at(count, content.len() as u64)
             .await
             .expect("read_at FIDL error")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("read_at error");
         assert_eq!(read_buf.len(), 0);
 
@@ -632,7 +632,7 @@ mod tests {
             .read_at(count, content.len() as u64 + 1)
             .await
             .expect("read_at FIDL error")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("read_at error");
         assert_eq!(read_buf.len(), 0);
 
@@ -642,7 +642,7 @@ mod tests {
             .read_at(count, offset)
             .await
             .expect("read_at FIDL error")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("read_at error");
         assert_eq!(read_buf.len(), content.len() - offset as usize);
 
@@ -650,7 +650,7 @@ mod tests {
             .close()
             .await
             .expect("close FIDL error")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("close error");
     }
 
@@ -667,7 +667,7 @@ mod tests {
             .read(1024)
             .await
             .expect("read FIDL error")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("read error");
 
         // Append to the file (should still be within allocated region, but the implementation
@@ -677,7 +677,7 @@ mod tests {
             .write(write_content)
             .await
             .expect("write FIDL error")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect_err("write past EOF should fail");
         assert_eq!(error, Status::NOT_SUPPORTED);
 
@@ -690,7 +690,7 @@ mod tests {
             .close()
             .await
             .expect("close FIDL error")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("close error");
 
         // Make sure no data was written
@@ -702,7 +702,7 @@ mod tests {
             .read(1024)
             .await
             .expect("read FIDL error")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("read error");
         assert_eq!(verify_content, original_content);
     }
@@ -727,7 +727,7 @@ mod tests {
             .read(1024)
             .await
             .expect("read FIDL error")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("read error");
 
         assert!(file.is_vmo_loaded(), "VMO should be loaded on demand after read");
@@ -736,7 +736,7 @@ mod tests {
             .close()
             .await
             .expect("close FIDL error")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("close error");
     }
 
@@ -755,7 +755,7 @@ mod tests {
             .read(1024)
             .await
             .expect("read FIDL error")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("read error");
 
         assert!(file.is_vmo_loaded(), "VMO should be loaded while proxy is active");
@@ -764,7 +764,7 @@ mod tests {
             .close()
             .await
             .expect("close FIDL error")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("close error");
 
         assert!(

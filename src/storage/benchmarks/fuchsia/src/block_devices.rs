@@ -76,14 +76,14 @@ pub async fn create_fvm_volume(
             )
             .await
             .expect("FIDL error")
-            .map_err(zx::Status::from_raw);
+            .map_err(zx::Status::err_from_raw);
 
         // If the FVM already exists, remove it and try again.
         if res == Err(zx::Status::ALREADY_EXISTS) {
             fvm.remove(BENCHMARK_VOLUME_NAME)
                 .await
                 .expect("FIDL error")
-                .map_err(zx::Status::from_raw)
+                .map_err(zx::Status::err_from_raw)
                 .expect("Failed to remove volume");
             continue;
         }
@@ -212,7 +212,7 @@ impl BenchmarkVolumeFactory {
                 .create_transaction()
                 .await
                 .expect("FIDL error")
-                .map_err(zx::Status::from_raw)
+                .map_err(zx::Status::err_from_raw)
                 .expect("create_transaction failed");
             let request = fpartitions::PartitionsManagerAddPartitionRequest {
                 transaction: Some(transaction.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap()),
@@ -227,13 +227,13 @@ impl BenchmarkVolumeFactory {
                 .add_partition(request)
                 .await
                 .expect("FIDL error")
-                .map_err(zx::Status::from_raw)
+                .map_err(zx::Status::err_from_raw)
                 .expect("add_partition failed");
             manager
                 .commit_transaction(transaction)
                 .await
                 .expect("FIDL error")
-                .map_err(zx::Status::from_raw)
+                .map_err(zx::Status::err_from_raw)
                 .expect("add_partition failed");
             let service_instances =
                 service.enumerate().await.expect("Failed to enumerate partitions");
@@ -277,7 +277,7 @@ impl BenchmarkVolumeFactory {
                 volumes
                     .remove(BENCHMARK_VOLUME_NAME, zx::MonotonicInstant::INFINITE)
                     .unwrap()
-                    .map_err(zx::Status::from_raw)
+                    .map_err(zx::Status::err_from_raw)
             })),
             volume_dir: Some(volume_dir),
             fvm_instance: None,

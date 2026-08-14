@@ -18,7 +18,7 @@ async fn file_write_with_sufficient_rights() {
             .write("".as_bytes())
             .await
             .expect("write failed")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("write error");
     }
 }
@@ -31,8 +31,11 @@ async fn file_write_with_insufficient_rights() {
 
     for flags in harness.file_rights.combinations_without(fio::Rights::WRITE_BYTES) {
         let file = dir.open_node::<fio::FileMarker>(TEST_FILE, flags, None).await.unwrap();
-        let result =
-            file.write("".as_bytes()).await.expect("write failed").map_err(zx::Status::from_raw);
+        let result = file
+            .write("".as_bytes())
+            .await
+            .expect("write failed")
+            .map_err(zx::Status::err_from_raw);
         assert_eq!(result, Err(zx::Status::BAD_HANDLE))
     }
 }
@@ -49,7 +52,7 @@ async fn file_write_at_with_sufficient_rights() {
             .write_at("".as_bytes(), 0)
             .await
             .expect("write_at failed")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("write_at error");
     }
 }
@@ -66,7 +69,7 @@ async fn file_write_at_with_insufficient_rights() {
             .write_at("".as_bytes(), 0)
             .await
             .expect("write_at failed")
-            .map_err(zx::Status::from_raw);
+            .map_err(zx::Status::err_from_raw);
         assert_eq!(result, Err(zx::Status::BAD_HANDLE));
     }
 }

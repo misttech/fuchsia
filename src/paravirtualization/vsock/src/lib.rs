@@ -218,7 +218,7 @@ mod tests {
             unwrap_msg!(DeviceRequest::SendRequest{addr, data, responder} from driver.client);
         responder.send(Ok(()))?;
         driver.callbacks.response(&addr)?;
-        let _ = request.await?.map_err(zx::Status::from_raw)?;
+        let _ = request.await?.map_err(zx::Status::err_from_raw)?;
 
         // Start a listener
         let (acceptor_remote, acceptor_client) = endpoints::create_endpoints::<AcceptorMarker>();

@@ -194,9 +194,7 @@ async fn teardown(
 // Stops the fuzzer.
 async fn stop(fuzz_manager: &fuzz::ManagerProxy) -> Result<(), zx::Status> {
     match fuzz_manager.stop(FUZZER_URL).await {
-        Ok(result) => {
-            result.map_err(|e| zx::Status::try_from_raw(e).unwrap_or(zx::Status::INTERNAL))
-        }
+        Ok(result) => result.map_err(zx::Status::err_from_raw),
         Err(e) => {
             eprintln!("fuchsia.fuzzer/Manager.Stop: {}", e);
             Err(zx::Status::INTERNAL)

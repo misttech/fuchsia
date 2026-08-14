@@ -343,7 +343,7 @@ mod tests {
             .get_attributes(attributes_query)
             .await
             .expect("get_attributes FIDL error")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("get_attributes error");
         assert_eq!(immutable_attributes.id.expect("missing id attribute"), 123);
         assert_eq!(mutable_attributes.mode.expect("missing mode attribute"), 0x8124);
@@ -354,7 +354,7 @@ mod tests {
             .close()
             .await
             .expect("close FIDL error")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("close error");
     }
 
@@ -369,7 +369,7 @@ mod tests {
             .get_extended_attribute(b"attr2")
             .await
             .expect("get_extended_attribute FIDL error")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("get_extended_attribute error");
         assert_eq!(value, ExtendedAttributeValue::Bytes(b"value2".into()));
 
@@ -377,7 +377,7 @@ mod tests {
             .close()
             .await
             .expect("close FIDL error")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("close error");
     }
 }

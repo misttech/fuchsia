@@ -43,7 +43,7 @@ impl Manager {
             return Err(anyhow!(
                 "{}/Connect returned ZX_ERR_{}",
                 fuzz::ManagerMarker::DEBUG_NAME,
-                zx::Status::from_raw(e)
+                zx::Status::err_from_raw(e)
             ));
         }
         Ok(proxy)
@@ -63,7 +63,10 @@ impl Manager {
             .await
             .context("failed to get output")?;
         if let Err(e) = result {
-            bail!("fuchsia.fuzzer/Manager.GetOutput returned ZX_ERR_{}", zx::Status::from_raw(e));
+            bail!(
+                "fuchsia.fuzzer/Manager.GetOutput returned ZX_ERR_{}",
+                zx::Status::err_from_raw(e)
+            );
         }
         Ok(rx)
     }
@@ -79,7 +82,7 @@ impl Manager {
             Ok(()) => Ok(true),
             Err(e) if e == zx::Status::NOT_FOUND.into_raw() => Ok(false),
             Err(e) => {
-                bail!("fuchsia.fuzzer/Manager.Stop returned ZX_ERR_{}", zx::Status::from_raw(e))
+                bail!("fuchsia.fuzzer/Manager.Stop returned ZX_ERR_{}", zx::Status::err_from_raw(e))
             }
         }
     }

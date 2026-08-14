@@ -1420,7 +1420,7 @@ mod tests {
             fio::PERM_WRITABLE | fio::Flags::FILE_TRUNCATE,
         );
         // Do a no-op sync() to make sure that the open has finished.
-        let () = env.proxy.sync().await.unwrap().map_err(Status::from_raw).unwrap();
+        let () = env.proxy.sync().await.unwrap().map_err(Status::err_from_raw).unwrap();
         let events = env.file.operations.lock();
         assert_eq!(
             *events,
@@ -1437,7 +1437,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_close_succeeds() {
         let env = init_mock_file(Box::new(always_succeed_callback), fio::PERM_READABLE);
-        let () = env.proxy.close().await.unwrap().map_err(Status::from_raw).unwrap();
+        let () = env.proxy.close().await.unwrap().map_err(Status::err_from_raw).unwrap();
 
         let events = env.file.operations.lock();
         assert_eq!(
@@ -1455,7 +1455,7 @@ mod tests {
     async fn test_close_fails() {
         let env =
             init_mock_file(Box::new(only_allow_init), fio::PERM_READABLE | fio::PERM_WRITABLE);
-        let status = env.proxy.close().await.unwrap().map_err(Status::from_raw);
+        let status = env.proxy.close().await.unwrap().map_err(Status::err_from_raw);
         assert_eq!(status, Err(Status::IO));
 
         let events = env.file.operations.lock();
@@ -1506,7 +1506,7 @@ mod tests {
             .get_attributes(fio::NodeAttributesQuery::all())
             .await
             .unwrap()
-            .map_err(Status::from_raw)
+            .map_err(Status::err_from_raw)
             .unwrap();
         let expected = attributes!(
             fio::NodeAttributesQuery::all(),
@@ -1549,7 +1549,7 @@ mod tests {
             .get_backing_memory(fio::VmoFlags::READ)
             .await
             .unwrap()
-            .map_err(Status::from_raw);
+            .map_err(Status::err_from_raw);
         assert_eq!(result, Err(Status::NOT_SUPPORTED));
         let events = env.file.operations.lock();
         assert_eq!(
@@ -1572,7 +1572,7 @@ mod tests {
             .get_backing_memory(fio::VmoFlags::READ)
             .await
             .unwrap()
-            .map_err(Status::from_raw);
+            .map_err(Status::err_from_raw);
         // On Target this is ACCESS_DENIED, on host this is NOT_SUPPORTED
         #[cfg(target_os = "fuchsia")]
         assert_eq!(result, Err(Status::ACCESS_DENIED));
@@ -1599,7 +1599,7 @@ mod tests {
             .get_backing_memory(fio::VmoFlags::EXECUTE)
             .await
             .unwrap()
-            .map_err(Status::from_raw);
+            .map_err(Status::err_from_raw);
         // On Target this is ACCESS_DENIED, on host this is NOT_SUPPORTED
         #[cfg(target_os = "fuchsia")]
         assert_eq!(result, Err(Status::ACCESS_DENIED));
@@ -1620,7 +1620,7 @@ mod tests {
             Box::new(always_succeed_callback),
             fio::PERM_READABLE | fio::PERM_WRITABLE | fio::Flags::FILE_TRUNCATE,
         );
-        let flags = env.proxy.get_flags().await.unwrap().map_err(Status::from_raw).unwrap();
+        let flags = env.proxy.get_flags().await.unwrap().map_err(Status::err_from_raw).unwrap();
         // Flags::FILE_TRUNCATE should get stripped because it only applies at open time.
         assert_eq!(flags, FLAGS_RW | fio::Flags::PROTOCOL_FILE);
         let events = env.file.operations.lock();
@@ -1669,7 +1669,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_read_succeeds() {
         let env = init_mock_file(Box::new(always_succeed_callback), fio::PERM_READABLE);
-        let data = env.proxy.read(10).await.unwrap().map_err(Status::from_raw).unwrap();
+        let data = env.proxy.read(10).await.unwrap().map_err(Status::err_from_raw).unwrap();
         assert_eq!(data, vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
 
         let events = env.file.operations.lock();
@@ -1687,7 +1687,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_read_not_readable() {
         let env = init_mock_file(Box::new(only_allow_init), fio::PERM_WRITABLE);
-        let result = env.proxy.read(10).await.unwrap().map_err(Status::from_raw);
+        let result = env.proxy.read(10).await.unwrap().map_err(Status::err_from_raw);
         assert_eq!(result, Err(Status::BAD_HANDLE));
     }
 
@@ -1695,14 +1695,14 @@ mod tests {
     async fn test_read_validates_count() {
         let env = init_mock_file(Box::new(only_allow_init), fio::PERM_READABLE);
         let result =
-            env.proxy.read(fio::MAX_TRANSFER_SIZE + 1).await.unwrap().map_err(Status::from_raw);
+            env.proxy.read(fio::MAX_TRANSFER_SIZE + 1).await.unwrap().map_err(Status::err_from_raw);
         assert_eq!(result, Err(Status::OUT_OF_RANGE));
     }
 
     #[fuchsia::test]
     async fn test_read_at_succeeds() {
         let env = init_mock_file(Box::new(always_succeed_callback), fio::PERM_READABLE);
-        let data = env.proxy.read_at(5, 10).await.unwrap().map_err(Status::from_raw).unwrap();
+        let data = env.proxy.read_at(5, 10).await.unwrap().map_err(Status::err_from_raw).unwrap();
         assert_eq!(data, vec![10, 11, 12, 13, 14]);
 
         let events = env.file.operations.lock();
@@ -1725,7 +1725,7 @@ mod tests {
             .read_at(fio::MAX_TRANSFER_SIZE + 1, 0)
             .await
             .unwrap()
-            .map_err(Status::from_raw);
+            .map_err(Status::err_from_raw);
         assert_eq!(result, Err(Status::OUT_OF_RANGE));
     }
 
@@ -1737,11 +1737,11 @@ mod tests {
             .seek(fio::SeekOrigin::Start, 10)
             .await
             .unwrap()
-            .map_err(Status::from_raw)
+            .map_err(Status::err_from_raw)
             .unwrap();
         assert_eq!(offset, 10);
 
-        let data = env.proxy.read(1).await.unwrap().map_err(Status::from_raw).unwrap();
+        let data = env.proxy.read(1).await.unwrap().map_err(Status::err_from_raw).unwrap();
         assert_eq!(data, vec![10]);
         let events = env.file.operations.lock();
         assert_eq!(
@@ -1763,7 +1763,7 @@ mod tests {
             .seek(fio::SeekOrigin::Start, 10)
             .await
             .unwrap()
-            .map_err(Status::from_raw)
+            .map_err(Status::err_from_raw)
             .unwrap();
         assert_eq!(offset, 10);
 
@@ -1772,11 +1772,11 @@ mod tests {
             .seek(fio::SeekOrigin::Current, -2)
             .await
             .unwrap()
-            .map_err(Status::from_raw)
+            .map_err(Status::err_from_raw)
             .unwrap();
         assert_eq!(offset, 8);
 
-        let data = env.proxy.read(1).await.unwrap().map_err(Status::from_raw).unwrap();
+        let data = env.proxy.read(1).await.unwrap().map_err(Status::err_from_raw).unwrap();
         assert_eq!(data, vec![8]);
         let events = env.file.operations.lock();
         assert_eq!(
@@ -1793,8 +1793,12 @@ mod tests {
     #[fuchsia::test]
     async fn test_seek_before_start() {
         let env = init_mock_file(Box::new(always_succeed_callback), fio::PERM_READABLE);
-        let result =
-            env.proxy.seek(fio::SeekOrigin::Current, -4).await.unwrap().map_err(Status::from_raw);
+        let result = env
+            .proxy
+            .seek(fio::SeekOrigin::Current, -4)
+            .await
+            .unwrap()
+            .map_err(Status::err_from_raw);
         assert_eq!(result, Err(Status::OUT_OF_RANGE));
     }
 
@@ -1806,11 +1810,11 @@ mod tests {
             .seek(fio::SeekOrigin::End, -4)
             .await
             .unwrap()
-            .map_err(Status::from_raw)
+            .map_err(Status::err_from_raw)
             .unwrap();
         assert_eq!(offset, MOCK_FILE_SIZE - 4);
 
-        let data = env.proxy.read(1).await.unwrap().map_err(Status::from_raw).unwrap();
+        let data = env.proxy.read(1).await.unwrap().map_err(Status::err_from_raw).unwrap();
         assert_eq!(data, vec![(offset % 256) as u8]);
         let events = env.file.operations.lock();
         assert_eq!(
@@ -1839,7 +1843,7 @@ mod tests {
             .update_attributes(&attributes)
             .await
             .unwrap()
-            .map_err(Status::from_raw)
+            .map_err(Status::err_from_raw)
             .unwrap();
 
         let events = env.file.operations.lock();
@@ -1861,16 +1865,16 @@ mod tests {
             .set_flags(fio::Flags::FILE_APPEND)
             .await
             .unwrap()
-            .map_err(Status::from_raw)
+            .map_err(Status::err_from_raw)
             .unwrap();
-        let flags = env.proxy.get_flags().await.unwrap().map_err(Status::from_raw).unwrap();
+        let flags = env.proxy.get_flags().await.unwrap().map_err(Status::err_from_raw).unwrap();
         assert_eq!(flags, FLAGS_W | fio::Flags::FILE_APPEND | fio::Flags::PROTOCOL_FILE);
     }
 
     #[fuchsia::test]
     async fn test_sync() {
         let env = init_mock_file(Box::new(always_succeed_callback), fio::Flags::empty());
-        let () = env.proxy.sync().await.unwrap().map_err(Status::from_raw).unwrap();
+        let () = env.proxy.sync().await.unwrap().map_err(Status::err_from_raw).unwrap();
         let events = env.file.operations.lock();
         assert_eq!(
             *events,
@@ -1890,7 +1894,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_resize() {
         let env = init_mock_file(Box::new(always_succeed_callback), fio::PERM_WRITABLE);
-        let () = env.proxy.resize(10).await.unwrap().map_err(Status::from_raw).unwrap();
+        let () = env.proxy.resize(10).await.unwrap().map_err(Status::err_from_raw).unwrap();
         let events = env.file.operations.lock();
         assert_matches!(
             &events[..],
@@ -1906,7 +1910,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_resize_no_perms() {
         let env = init_mock_file(Box::new(always_succeed_callback), fio::PERM_READABLE);
-        let result = env.proxy.resize(10).await.unwrap().map_err(Status::from_raw);
+        let result = env.proxy.resize(10).await.unwrap().map_err(Status::err_from_raw);
         assert_eq!(result, Err(Status::BAD_HANDLE));
         let events = env.file.operations.lock();
         assert_eq!(
@@ -1964,7 +1968,7 @@ mod tests {
     async fn test_write() {
         let env = init_mock_file(Box::new(always_succeed_callback), fio::PERM_WRITABLE);
         let data = "Hello, world!".as_bytes();
-        let count = env.proxy.write(data).await.unwrap().map_err(Status::from_raw).unwrap();
+        let count = env.proxy.write(data).await.unwrap().map_err(Status::err_from_raw).unwrap();
         assert_eq!(count, data.len() as u64);
         let events = env.file.operations.lock();
         assert_matches!(
@@ -1987,7 +1991,7 @@ mod tests {
     async fn test_write_no_perms() {
         let env = init_mock_file(Box::new(always_succeed_callback), fio::PERM_READABLE);
         let data = "Hello, world!".as_bytes();
-        let result = env.proxy.write(data).await.unwrap().map_err(Status::from_raw);
+        let result = env.proxy.write(data).await.unwrap().map_err(Status::err_from_raw);
         assert_eq!(result, Err(Status::BAD_HANDLE));
         let events = env.file.operations.lock();
         assert_eq!(
@@ -2002,7 +2006,8 @@ mod tests {
     async fn test_write_at() {
         let env = init_mock_file(Box::new(always_succeed_callback), fio::PERM_WRITABLE);
         let data = "Hello, world!".as_bytes();
-        let count = env.proxy.write_at(data, 10).await.unwrap().map_err(Status::from_raw).unwrap();
+        let count =
+            env.proxy.write_at(data, 10).await.unwrap().map_err(Status::err_from_raw).unwrap();
         assert_eq!(count, data.len() as u64);
         let events = env.file.operations.lock();
         assert_matches!(
@@ -2028,14 +2033,14 @@ mod tests {
             fio::PERM_WRITABLE | fio::Flags::FILE_APPEND,
         );
         let data = "Hello, world!".as_bytes();
-        let count = env.proxy.write(data).await.unwrap().map_err(Status::from_raw).unwrap();
+        let count = env.proxy.write(data).await.unwrap().map_err(Status::err_from_raw).unwrap();
         assert_eq!(count, data.len() as u64);
         let offset = env
             .proxy
             .seek(fio::SeekOrigin::Current, 0)
             .await
             .unwrap()
-            .map_err(Status::from_raw)
+            .map_err(Status::err_from_raw)
             .unwrap();
         assert_eq!(offset, MOCK_FILE_SIZE + data.len() as u64);
         let events = env.file.operations.lock();
@@ -2111,7 +2116,7 @@ mod tests {
                 .read(vmo_contents.len() as u64)
                 .await
                 .unwrap()
-                .map_err(Status::from_raw)
+                .map_err(Status::err_from_raw)
                 .unwrap();
             assert_eq!(data, vmo_contents);
 
@@ -2138,7 +2143,7 @@ mod tests {
                 .read_at((vmo_contents.len() as u64) - OFFSET, OFFSET)
                 .await
                 .unwrap()
-                .map_err(Status::from_raw)
+                .map_err(Status::err_from_raw)
                 .unwrap();
             assert_eq!(data, vmo_contents[OFFSET as usize..]);
 
@@ -2162,7 +2167,8 @@ mod tests {
             );
 
             let data: [u8; DATA_SIZE as usize] = [9, 8, 7, 6, 5, 4, 3, 2, 1, 0];
-            let written = env.proxy.write(&data).await.unwrap().map_err(Status::from_raw).unwrap();
+            let written =
+                env.proxy.write(&data).await.unwrap().map_err(Status::err_from_raw).unwrap();
             assert_eq!(written, DATA_SIZE);
             let mut vmo_contents = [0; DATA_SIZE as usize];
             vmo.read(&mut vmo_contents, 0).unwrap();
@@ -2189,8 +2195,13 @@ mod tests {
             );
 
             let data: [u8; DATA_SIZE as usize] = [9, 8, 7, 6, 5, 4, 3, 2, 1, 0];
-            let written =
-                env.proxy.write_at(&data, OFFSET).await.unwrap().map_err(Status::from_raw).unwrap();
+            let written = env
+                .proxy
+                .write_at(&data, OFFSET)
+                .await
+                .unwrap()
+                .map_err(Status::err_from_raw)
+                .unwrap();
             assert_eq!(written, DATA_SIZE);
             let mut vmo_contents = [0; DATA_SIZE as usize];
             vmo.read(&mut vmo_contents, OFFSET).unwrap();
@@ -2218,10 +2229,10 @@ mod tests {
                 .seek(fio::SeekOrigin::Start, 8)
                 .await
                 .unwrap()
-                .map_err(Status::from_raw)
+                .map_err(Status::err_from_raw)
                 .unwrap();
             assert_eq!(position, 8);
-            let data = env.proxy.read(2).await.unwrap().map_err(Status::from_raw).unwrap();
+            let data = env.proxy.read(2).await.unwrap().map_err(Status::err_from_raw).unwrap();
             assert_eq!(data, [1, 0]);
 
             let position = env
@@ -2229,11 +2240,11 @@ mod tests {
                 .seek(fio::SeekOrigin::Current, -4)
                 .await
                 .unwrap()
-                .map_err(Status::from_raw)
+                .map_err(Status::err_from_raw)
                 .unwrap();
             // Seeked to 8, read 2, seeked backwards 4. 8 + 2 - 4 = 6.
             assert_eq!(position, 6);
-            let data = env.proxy.read(2).await.unwrap().map_err(Status::from_raw).unwrap();
+            let data = env.proxy.read(2).await.unwrap().map_err(Status::err_from_raw).unwrap();
             assert_eq!(data, [3, 2]);
 
             let position = env
@@ -2241,10 +2252,10 @@ mod tests {
                 .seek(fio::SeekOrigin::End, -6)
                 .await
                 .unwrap()
-                .map_err(Status::from_raw)
+                .map_err(Status::err_from_raw)
                 .unwrap();
             assert_eq!(position, 4);
-            let data = env.proxy.read(2).await.unwrap().map_err(Status::from_raw).unwrap();
+            let data = env.proxy.read(2).await.unwrap().map_err(Status::err_from_raw).unwrap();
             assert_eq!(data, [5, 4]);
 
             let e = env
@@ -2252,7 +2263,7 @@ mod tests {
                 .seek(fio::SeekOrigin::Start, -1)
                 .await
                 .unwrap()
-                .map_err(Status::from_raw)
+                .map_err(Status::err_from_raw)
                 .expect_err("Seeking before the start of a file should be an error");
             assert_eq!(e, Status::INVALID_ARGS);
         }
@@ -2267,7 +2278,8 @@ mod tests {
                 flags,
             );
 
-            let written = env.proxy.write(&data).await.unwrap().map_err(Status::from_raw).unwrap();
+            let written =
+                env.proxy.write(&data).await.unwrap().map_err(Status::err_from_raw).unwrap();
             assert_eq!(written, data.len() as u64);
             // Data was not appended.
             assert_eq!(vmo.get_content_size().unwrap(), 100);
@@ -2277,15 +2289,16 @@ mod tests {
                 .set_flags(fio::Flags::FILE_APPEND)
                 .await
                 .unwrap()
-                .map_err(Status::from_raw)
+                .map_err(Status::err_from_raw)
                 .unwrap();
             env.proxy
                 .seek(fio::SeekOrigin::Start, 0)
                 .await
                 .unwrap()
-                .map_err(Status::from_raw)
+                .map_err(Status::err_from_raw)
                 .unwrap();
-            let written = env.proxy.write(&data).await.unwrap().map_err(Status::from_raw).unwrap();
+            let written =
+                env.proxy.write(&data).await.unwrap().map_err(Status::err_from_raw).unwrap();
             assert_eq!(written, data.len() as u64);
             // Data was appended.
             assert_eq!(vmo.get_content_size().unwrap(), 105);
@@ -2295,15 +2308,16 @@ mod tests {
                 .set_flags(fio::Flags::empty())
                 .await
                 .unwrap()
-                .map_err(Status::from_raw)
+                .map_err(Status::err_from_raw)
                 .unwrap();
             env.proxy
                 .seek(fio::SeekOrigin::Start, 0)
                 .await
                 .unwrap()
-                .map_err(Status::from_raw)
+                .map_err(Status::err_from_raw)
                 .unwrap();
-            let written = env.proxy.write(&data).await.unwrap().map_err(Status::from_raw).unwrap();
+            let written =
+                env.proxy.write(&data).await.unwrap().map_err(Status::err_from_raw).unwrap();
             assert_eq!(written, data.len() as u64);
             // Data was not appended.
             assert_eq!(vmo.get_content_size().unwrap(), 105);
@@ -2314,8 +2328,12 @@ mod tests {
             let vmo = zx::Vmo::create(10).unwrap();
             let flags = fio::PERM_READABLE;
             let env = init_mock_stream_file(vmo, flags);
-            let result =
-                env.proxy.read(fio::MAX_TRANSFER_SIZE + 1).await.unwrap().map_err(Status::from_raw);
+            let result = env
+                .proxy
+                .read(fio::MAX_TRANSFER_SIZE + 1)
+                .await
+                .unwrap()
+                .map_err(Status::err_from_raw);
             assert_eq!(result, Err(Status::OUT_OF_RANGE));
         }
 
@@ -2329,7 +2347,7 @@ mod tests {
                 .read_at(fio::MAX_TRANSFER_SIZE + 1, 0)
                 .await
                 .unwrap()
-                .map_err(Status::from_raw);
+                .map_err(Status::err_from_raw);
             assert_eq!(result, Err(Status::OUT_OF_RANGE));
         }
     }

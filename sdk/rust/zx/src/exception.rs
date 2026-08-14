@@ -205,7 +205,7 @@ impl ExceptionType {
         match raw {
             sys::ZX_EXCP_GENERAL => Self::General,
             sys::ZX_EXCP_FATAL_PAGE_FAULT => {
-                Self::FatalPageFault { status: Status::from_raw(code as i32) }
+                Self::FatalPageFault { status: Status::err_from_raw(code as i32) }
             }
             sys::ZX_EXCP_UNDEFINED_INSTRUCTION => Self::UndefinedInstruction,
             sys::ZX_EXCP_SW_BREAKPOINT => Self::SoftwareBreakpoint,

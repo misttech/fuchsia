@@ -99,7 +99,7 @@ impl Program {
                 fio::VmoFlags::READ | fio::VmoFlags::EXECUTE | fio::VmoFlags::PRIVATE_CLONE,
             )
             .await?
-            .map_err(|e| ProgramError::GettingVmo(zx::Status::from_raw(e)))?;
+            .map_err(|e| ProgramError::GettingVmo(zx::Status::err_from_raw(e)))?;
 
         Ok(ProgramInfo { vmo, loader })
     }

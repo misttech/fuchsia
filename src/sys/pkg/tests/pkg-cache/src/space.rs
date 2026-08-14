@@ -181,7 +181,7 @@ async fn gc_frees_space_so_write_can_succeed(blob_implementation: blobfs_ramdisk
             needed_blobs_server_end,
             dir_server_end,
         )
-        .map_ok(|res| res.map_err(Status::from_raw));
+        .map_ok(|res| res.map_err(Status::err_from_raw));
 
     // Writing the meta.far should fail with NO_SPACE.
     let (meta_far, _contents) = pkg.contents();
@@ -277,7 +277,7 @@ async fn blobs_protected_from_gc_during_get(gc_protection: fpkg::GcProtection) {
         .proxies
         .package_cache
         .get(&meta_blob_info, gc_protection, needed_blobs_server, dir_server)
-        .map_ok(|res| res.map_err(Status::from_raw));
+        .map_ok(|res| res.map_err(Status::err_from_raw));
 
     let blob_is_present_and_protected = |i: usize| {
         let (i, env, to_be_fetched) = (i, &env, &to_be_fetched);
@@ -453,7 +453,7 @@ async fn writing_index_clears_on_get_error() {
             needed_blobs_server_end,
             fidl::endpoints::create_endpoints().1,
         )
-        .map_ok(|res| res.map_err(Status::from_raw));
+        .map_ok(|res| res.map_err(Status::err_from_raw));
     let (meta_far, content_blobs) = pkg.contents();
     let meta_blob = needed_blobs.open_meta_blob().await.unwrap().unwrap().unwrap().into_proxy();
     let () = compress_and_write_blob(&meta_far.contents, meta_blob).await.unwrap();

@@ -119,7 +119,7 @@ async fn create_client_state_machine(
     // take the event stream from the SME proxy.  A subsequent attempt to take the event stream
     // would cause wlancfg to panic.
     let (sme_proxy, remote) = create_proxy();
-    dev_monitor_proxy.get_client_sme(iface_id, remote).await?.map_err(zx::Status::from_raw)?;
+    dev_monitor_proxy.get_client_sme(iface_id, remote).await?.map_err(zx::Status::err_from_raw)?;
     let event_stream = sme_proxy.take_event_stream();
     let sme_proxy = SmeForClientStateMachine::new(sme_proxy, iface_id, defect_sender.clone());
 
@@ -285,7 +285,7 @@ impl IfaceManagerService {
         self.dev_monitor_proxy
             .get_client_sme(iface_id, sme_server)
             .await?
-            .map_err(zx::Status::from_raw)?;
+            .map_err(zx::Status::err_from_raw)?;
         let sme_proxy =
             SmeForClientStateMachine::new(sme_proxy, iface_id, self.defect_sender.clone());
 
@@ -339,7 +339,7 @@ impl IfaceManagerService {
         self.dev_monitor_proxy
             .get_ap_sme(iface_id, sme_server)
             .await?
-            .map_err(zx::Status::from_raw)?;
+            .map_err(zx::Status::err_from_raw)?;
         let sme_proxy = SmeForApStateMachine::new(sme_proxy, iface_id, self.defect_sender.clone());
 
         // Spawn the AP state machine.
@@ -732,8 +732,11 @@ impl IfaceManagerService {
     }
 
     async fn configure_new_iface(&mut self, iface_id: u16) -> Result<(), Error> {
-        let iface_info =
-            self.dev_monitor_proxy.query_iface(iface_id).await?.map_err(zx::Status::from_raw)?;
+        let iface_info = self
+            .dev_monitor_proxy
+            .query_iface(iface_id)
+            .await?
+            .map_err(zx::Status::err_from_raw)?;
 
         match iface_info.role {
             fidl_fuchsia_wlan_common::WlanMacRole::Client => {

@@ -833,7 +833,7 @@ async fn start_stub_with_existing_stub(name: &str, sub_name: &str, netstack: fnt
         match raw_status.try_into().ok().and_then(fcomponent::Error::from_primitive) {
             None => panic!(
                 "expected {:?} to match a fuchsia.component.Error value",
-                zx::Status::from_raw(raw_status)
+                zx::Status::err_from_raw(raw_status)
             ),
             Some(e) => e,
         };

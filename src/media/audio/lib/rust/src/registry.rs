@@ -274,7 +274,7 @@ impl SignalProcessing {
             .get_elements()
             .await
             .context("failed to call GetElements")?
-            .map_err(Status::from_raw);
+            .map_err(Status::err_from_raw);
 
         if let Err(Status::NOT_SUPPORTED) = response {
             return Ok(None);
@@ -298,7 +298,7 @@ impl SignalProcessing {
             .get_topologies()
             .await
             .context("failed to call GetTopologies")?
-            .map_err(Status::from_raw);
+            .map_err(Status::err_from_raw);
 
         if let Err(Status::NOT_SUPPORTED) = response {
             return Ok(None);
@@ -359,7 +359,7 @@ async fn watch_element_states(
             .get_elements()
             .await
             .context("failed to call GetElements")?
-            .map_err(Status::from_raw);
+            .map_err(Status::err_from_raw);
 
         if let Err(Status::NOT_SUPPORTED) = get_elements_response {
             element_states_initialized.take().unwrap().signal();

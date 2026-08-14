@@ -30,7 +30,7 @@ async fn commit_slot(boot_manager: &BootManagerProxy) -> Result<(), Error> {
         .query_current_configuration()
         .await
         .context("querying current configuration")?
-        .map_err(Status::from_raw)
+        .map_err(Status::err_from_raw)
         .context("failed to query current slot configuration")?;
 
     if current != Configuration::Recovery {

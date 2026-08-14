@@ -82,7 +82,7 @@ impl AsyncRead for AsyncReader {
                                 Err(s) => {
                                     self.state = State::Empty;
                                     return Poll::Ready(Err(
-                                        zx_status::Status::from_raw(s).into_io_error()
+                                        zx_status::Status::err_from_raw(s).into_io_error()
                                     ));
                                 }
                                 Ok(bytes) => {

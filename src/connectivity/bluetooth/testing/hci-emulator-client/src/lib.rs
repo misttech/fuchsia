@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Context as _, Error};
+use anyhow::{Context as _, Error, format_err};
 use fidl::endpoints::Proxy as _;
 use fidl_fuchsia_device::{ControllerMarker, ControllerProxy};
 use fidl_fuchsia_hardware_bluetooth::{
@@ -162,7 +162,7 @@ impl TestDevice {
                 Err(format_err!("timed out waiting for emulator to create test device"))
             })
             .await?
-            .map_err(zx::Status::from_raw)?
+            .map_err(zx::Status::err_from_raw)?
             .ok_or_else(|| {
                 format_err!("name absent from EmulatorController::Create FIDL response")
             })?;
@@ -206,7 +206,7 @@ impl TestDevice {
     /// Sends the test device a destroy message which will unbind the driver.
     /// This will wait for the test device to be unpublished from devfs.
     pub async fn destroy_and_wait(&mut self) -> Result<(), Error> {
-        let () = self.controller.schedule_unbind().await?.map_err(zx::Status::from_raw)?;
+        let () = self.controller.schedule_unbind().await?.map_err(zx::Status::err_from_raw)?;
         let _: (zx::Signals, zx::Signals) = futures::future::try_join(
             self.controller.as_channel().on_closed(),
             self.emulator.as_channel().on_closed(),
@@ -220,7 +220,7 @@ impl TestDevice {
             .get_topological_path()
             .await
             .context("get topological path transport")?
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .context("get topological path")
     }
 }

@@ -82,11 +82,11 @@ async fn deregister_standalone(
     match repo_proxy.remove(&repo_url).await {
         Ok(Ok(())) => (),
         Ok(Err(err)) => {
-            let status = Status::from_raw(err);
+            let status = Status::err_from_raw(err);
             if status != Status::NOT_FOUND {
                 let message = format!(
                     "failed to remove registration for {repo_url}: {:#?}",
-                    Status::from_raw(err)
+                    Status::err_from_raw(err)
                 );
                 log::error!("{message}");
                 return_bug!("{message}");

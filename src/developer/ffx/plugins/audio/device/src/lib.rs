@@ -334,7 +334,7 @@ async fn device_set_gain_state(
         })
         .await
         .bug_context("Failed to call DeviceControl.DeviceSetGainState")?
-        .map_err(|status| Status::from_raw(status))
+        .map_err(Status::err_from_raw)
         .bug_context("Failed to set gain state")
 }
 

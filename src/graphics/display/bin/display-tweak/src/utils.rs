@@ -10,7 +10,7 @@ pub fn flatten_zx_error<T>(
     fidl_result: Result<Result<T, zx::sys::zx_status_t>, fidl::Error>,
 ) -> Result<T, Error> {
     fidl_result?
-        .map_err(|zx_status| anyhow!("Server response: {}", zx::Status::from_raw(zx_status)))
+        .map_err(|zx_status| anyhow!("Server response: {}", zx::Status::err_from_raw(zx_status)))
 }
 
 /// Helper for accepting boolean values as "off" / "on" strings.

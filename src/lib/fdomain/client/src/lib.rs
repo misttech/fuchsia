@@ -76,7 +76,7 @@ use proto::f_domain_ordinals as ordinals;
 fn write_fdomain_error(error: &FDomainError, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match error {
         FDomainError::TargetError(e) => {
-            let e = zx_status::Status::from_raw(*e);
+            let e = zx_status::Status::err_from_raw(*e);
             write!(f, "Target-side error {e}")
         }
         FDomainError::BadHandleId(proto::BadHandleId { id }) => {

@@ -1148,7 +1148,7 @@ pub mod capability_util {
             ExpectedResult::Ok => {
                 let _: u64 = res
                     .expect("failed to write file")
-                    .map_err(zx::Status::from_raw)
+                    .map_err(zx::Status::err_from_raw)
                     .expect("write error");
             }
             ExpectedResult::Err(s) => {

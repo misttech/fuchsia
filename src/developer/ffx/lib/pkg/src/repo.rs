@@ -167,7 +167,7 @@ pub async fn register_target_with_repo_instance(
     match repo_proxy.add(&config.build().into()).await {
         Ok(Ok(())) => {}
         Ok(Err(err)) => {
-            log::error!("failed to add config: {:#?}", Status::from_raw(err));
+            log::error!("failed to add config: {:#?}", Status::err_from_raw(err));
             return Err(RepositoryError::RepositoryManagerError);
         }
         Err(err) => {
@@ -280,7 +280,7 @@ pub async fn register_target_with_fidl_proxies(
     match repo_proxy.add(&config.into()).await {
         Ok(Ok(())) => {}
         Ok(Err(err)) => {
-            log::error!("failed to add config: {:#?}", Status::from_raw(err));
+            log::error!("failed to add config: {:#?}", Status::err_from_raw(err));
             return Err(RepositoryError::RepositoryManagerError);
         }
         Err(err) => {

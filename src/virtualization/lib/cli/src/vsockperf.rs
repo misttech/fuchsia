@@ -585,7 +585,7 @@ async fn run_micro_benchmark(guest_manager: GuestManagerProxy) -> Result<Measure
         .listen(HOST_PORT, acceptor)
         .await
         .map_err(|err| anyhow!("failed to get a listen response: {}", err))?
-        .map_err(|err| anyhow!("listen failed with: {}", zx_status::Status::from_raw(err)))?;
+        .map_err(|err| anyhow!("listen failed with: {}", zx_status::Status::err_from_raw(err)))?;
 
     let socket = guest_endpoint
         .get_console()

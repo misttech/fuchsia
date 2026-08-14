@@ -66,6 +66,6 @@ impl From<&StartError> for zx::Status {
             StartError::Execute { .. } => fcomponent::Error::InstanceCannotStart,
             StartError::CreateDispatcher { .. } => fcomponent::Error::InstanceCannotStart,
         };
-        zx::Status::from_raw(err.into_primitive() as i32)
+        zx::Status::err_from_raw(err.into_primitive() as i32)
     }
 }

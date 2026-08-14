@@ -163,7 +163,7 @@ pub async fn find_dev(dev: &str) -> Result<String> {
     for entry in readdir(&dev_class_block).await? {
         let path = format!("/dev/class/block/{}", entry.name);
         let proxy = connect_to_protocol_at_path::<ControllerMarker>(&path)?;
-        let topo_path = proxy.get_topological_path().await?.map_err(|s| zx::Status::from_raw(s))?;
+        let topo_path = proxy.get_topological_path().await?.map_err(zx::Status::err_from_raw)?;
         log::info!("{} => {}", path, topo_path);
         if dev == topo_path {
             return Ok(path);
@@ -210,7 +210,7 @@ pub async fn set_up_partition(device_label: String) -> Result<Box<dyn BlockConne
             .create_transaction()
             .await
             .expect("FIDL error")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("create_transaction failed");
         let request = fpartitions::PartitionsManagerAddPartitionRequest {
             transaction: Some(transaction.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap()),
@@ -224,13 +224,13 @@ pub async fn set_up_partition(device_label: String) -> Result<Box<dyn BlockConne
             .add_partition(request)
             .await
             .expect("FIDL error")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("add_partition failed");
         manager
             .commit_transaction(transaction)
             .await
             .expect("FIDL error")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("add_partition failed");
         let service_instances =
             partitions.enumerate().await.expect("Failed to enumerate partitions");

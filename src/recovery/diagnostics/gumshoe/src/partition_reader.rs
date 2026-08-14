@@ -40,7 +40,7 @@ impl PartitionReader {
             let block_path = entry_path.to_str().ok_or(anyhow!("Invalid path"))?;
 
             let block_proxy = block_proxy_provider(block_path)?;
-            let info = block_proxy.get_info().await?.map_err(zx::Status::from_raw)?;
+            let info = block_proxy.get_info().await?.map_err(zx::Status::err_from_raw)?;
             sizes.insert(name, (info.block_count, info.block_size));
         }
         Ok(sizes)

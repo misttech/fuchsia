@@ -964,7 +964,7 @@ mod everything {
                 )
                 .await
                 .expect("failed to use fuchsia.component.runtime.Capabilities");
-            match res.map_err(|s| zx::Status::from_raw(s))? {
+            match res.map_err(zx::Status::err_from_raw)? {
                 fruntime::RouterResponse::Success => Ok(Some(Connector {
                     handle: connector,
                     capabilities_proxy: self.capabilities_proxy.clone(),
@@ -1135,7 +1135,7 @@ mod everything {
                 )
                 .await
                 .expect("failed to use fuchsia.component.runtime.Capabilities");
-            match res.map_err(|s| zx::Status::from_raw(s))? {
+            match res.map_err(zx::Status::err_from_raw)? {
                 fruntime::RouterResponse::Success => Ok(Some(DirConnector {
                     handle: connector,
                     capabilities_proxy: self.capabilities_proxy.clone(),
@@ -1305,7 +1305,7 @@ mod everything {
                 )
                 .await
                 .expect("failed to use fuchsia.component.runtime.Capabilities");
-            match res.map_err(|s| zx::Status::from_raw(s))? {
+            match res.map_err(zx::Status::err_from_raw)? {
                 fruntime::RouterResponse::Success => Ok(Some(Dictionary {
                     handle: connector,
                     capabilities_proxy: self.capabilities_proxy.clone(),
@@ -1475,7 +1475,7 @@ mod everything {
                 )
                 .await
                 .expect("failed to use fuchsia.component.runtime.Capabilities");
-            match res.map_err(|s| zx::Status::from_raw(s))? {
+            match res.map_err(zx::Status::err_from_raw)? {
                 fruntime::RouterResponse::Success => Ok(Some(Data {
                     handle: connector,
                     capabilities_proxy: self.capabilities_proxy.clone(),

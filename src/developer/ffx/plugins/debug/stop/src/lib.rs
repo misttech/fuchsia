@@ -33,6 +33,6 @@ impl FfxMain for StopTool {
 }
 
 async fn stop_tool_impl(_cmd: StopCommand, debugger_proxy: DebugAgentProxy) -> Result<()> {
-    debugger_proxy.shutdown().await?.map_err(Status::from_raw)?;
+    debugger_proxy.shutdown().await?.map_err(Status::err_from_raw)?;
     Ok(())
 }

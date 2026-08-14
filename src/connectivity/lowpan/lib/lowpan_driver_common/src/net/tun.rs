@@ -232,7 +232,7 @@ impl NetworkInterface for TunNetworkInterface {
             .read_frame()
             .await
             .context("FIDL error on read_frame")?
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .context("Error calling read_frame")?;
 
         if let Some(packet) = frame.data.as_ref() {
@@ -260,7 +260,7 @@ impl NetworkInterface for TunNetworkInterface {
                 ..Default::default()
             })
             .await?
-            .map_err(zx::Status::from_raw)?)
+            .map_err(zx::Status::err_from_raw)?)
     }
 
     async fn set_online(&self, online: bool) -> Result<(), Error> {

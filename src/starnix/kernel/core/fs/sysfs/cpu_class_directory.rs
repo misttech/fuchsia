@@ -240,7 +240,8 @@ fn create_scaling_cur_freq_file() -> impl FsNodeOps {
             .get_operating_point_info(opp, zx::Instant::INFINITE)
             .map_err(|_| errno!(EINVAL))?;
         let freq_khz = hz_to_khz(
-            info.map_err(|e| from_status_like_fdio!(zx::Status::from_raw(e)))?.frequency_hz as u64,
+            info.map_err(|e| from_status_like_fdio!(zx::Status::err_from_raw(e)))?.frequency_hz
+                as u64,
         );
         Ok(BytesFile::new(format!("{}\n", freq_khz).into_bytes()))
     })

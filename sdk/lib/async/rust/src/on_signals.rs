@@ -181,7 +181,7 @@ impl<H: zx::AsHandleRef + Unpin> Future for OnSignals<H> {
                     let observed = state.observed.load(Ordering::Relaxed);
                     return Poll::Ready(Ok(zx::Signals::from_bits_truncate(observed)));
                 } else {
-                    return Poll::Ready(Err(Status::from_raw(status)));
+                    return Poll::Ready(Err(Status::err_from_raw(status)));
                 }
             } else {
                 // Optimization: use a non-blocking wait to check if its ready. Alternatively we

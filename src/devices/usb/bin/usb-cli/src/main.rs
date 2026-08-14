@@ -48,7 +48,10 @@ async fn get_health_report() -> Result<usb_policy::HealthReport, Error> {
         .await
         .map_err(|e| anyhow::format_err!("Failed to communicate (get_report): {:?}", e))?
         .map_err(|e| {
-            anyhow::format_err!("Failed to get report (zx status): {:?}", zx::Status::from_raw(e))
+            anyhow::format_err!(
+                "Failed to get report (zx status): {:?}",
+                zx::Status::err_from_raw(e)
+            )
         })
 }
 

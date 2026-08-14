@@ -282,7 +282,7 @@ impl GptService {
                         log::error!(err:?; "get_block_info: failed to query block info");
                         zx::Status::IO
                     })?
-                    .map_err(zx::Status::from_raw)?;
+                    .map_err(zx::Status::err_from_raw)?;
                 Ok((info.block_count, info.block_size))
             }
             State::Running(gpt) => Ok((gpt.block_count(), gpt.block_size())),

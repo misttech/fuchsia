@@ -189,7 +189,7 @@ impl Inner {
             let memory = Arc::new(MemoryObject::from(
                 file.get_backing_memory(fio::VmoFlags::READ, zx::MonotonicInstant::INFINITE)
                     .map_err(|err| errno!(EIO, format!("Error {err} on GetBackingMemory")))?
-                    .map_err(|s| from_status_like_fdio!(zx::Status::from_raw(s)))?,
+                    .map_err(|s| from_status_like_fdio!(zx::Status::err_from_raw(s)))?,
             ));
             *self = Inner::Memory(memory);
         }

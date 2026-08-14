@@ -271,7 +271,7 @@ impl FileSystemOps for RemoteFs {
         self.root_proxy
             .sync(zx::MonotonicInstant::INFINITE)
             .map_err(|_| errno!(EIO))?
-            .map_err(|status| map_sync_error(zx::Status::from_raw(status)))
+            .map_err(|status| map_sync_error(zx::Status::err_from_raw(status)))
     }
 
     fn manages_timestamps(&self) -> bool {

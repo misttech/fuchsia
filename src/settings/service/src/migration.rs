@@ -225,7 +225,7 @@ impl MigrationManager {
                 .await
                 .context("failed to remove old file from file system")
                 .map_err(|e| (Some(new_last_migration), e.into()))?
-                .map_err(zx::Status::from_raw)
+                .map_err(zx::Status::err_from_raw)
                 .context("another error")
                 .map_err(|e| (Some(new_last_migration), e.into()))?;
         }
@@ -260,7 +260,7 @@ impl MigrationManager {
                 .await
                 .map_err(Error::from)
                 .context("failed to close")?
-                .map_err(zx::Status::from_raw)
+                .map_err(zx::Status::err_from_raw)
             {
                 return Err(match e {
                     zx::Status::NO_SPACE => MigrationError::DiskFull,
@@ -284,7 +284,7 @@ impl MigrationManager {
             .await
             .map_err(Error::from)
             .context("failed to sync dir")?
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
         {
             match e {
                 // This is only returned when the directory is backed by a VFS, so this is fine to

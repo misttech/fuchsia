@@ -124,14 +124,14 @@ pub async fn handle_cmd(
                 )
                 .await
                 .map_err(|e| Error::User(e.into()))?
-                .map_err(|e| Error::User(Status::from_raw(e).into()))?;
+                .map_err(|e| Error::User(Status::err_from_raw(e).into()))?;
         }
         FxfsSubCommand::ReplayXorRecordProfile(args) => {
             fxfs_proxy
                 .replay_xor_record_profile(&args.volume, &args.profile, args.duration_secs)
                 .await
                 .map_err(|e| Error::User(e.into()))?
-                .map_err(|e| Error::User(Status::from_raw(e).into()))?;
+                .map_err(|e| Error::User(Status::err_from_raw(e).into()))?;
         }
         FxfsSubCommand::StopProfile(_) => {
             fxfs_proxy

@@ -1961,7 +1961,7 @@ pub fn directory_open_vmo(
     let vmo = file
         .get_backing_memory(vmo_flags, deadline)
         .map_err(map_fidl_error)?
-        .map_err(zx::Status::from_raw)?;
+        .map_err(zx::Status::err_from_raw)?;
     Ok(vmo)
 }
 
@@ -1985,7 +1985,7 @@ pub fn directory_read_file(
         let mut data = file
             .read(fio::MAX_TRANSFER_SIZE, deadline)
             .map_err(map_fidl_error)?
-            .map_err(zx::Status::from_raw)?;
+            .map_err(zx::Status::err_from_raw)?;
         let finished = (data.len() as u64) < fio::MAX_TRANSFER_SIZE;
         result.append(&mut data);
         if finished {

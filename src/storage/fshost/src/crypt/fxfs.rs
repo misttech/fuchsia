@@ -89,7 +89,7 @@ impl KeyManager {
             .sync()
             .await
             .context("FIDL sync failed")?
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .context("Sync failed")?;
         Ok(())
     }
@@ -424,19 +424,19 @@ impl CryptService {
         crypt_management
             .add_wrapping_key(&wrapping_key_id_0, data_key.deref())
             .await?
-            .map_err(zx::Status::from_raw)?;
+            .map_err(zx::Status::err_from_raw)?;
         crypt_management
             .add_wrapping_key(&wrapping_key_id_1, metadata_key.deref())
             .await?
-            .map_err(zx::Status::from_raw)?;
+            .map_err(zx::Status::err_from_raw)?;
         crypt_management
             .set_active_key(KeyPurpose::Data, &wrapping_key_id_0)
             .await?
-            .map_err(zx::Status::from_raw)?;
+            .map_err(zx::Status::err_from_raw)?;
         crypt_management
             .set_active_key(KeyPurpose::Metadata, &wrapping_key_id_1)
             .await?
-            .map_err(zx::Status::from_raw)?;
+            .map_err(zx::Status::err_from_raw)?;
 
         Ok(CryptService { component_name, exposed_dir })
     }

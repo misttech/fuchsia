@@ -6,9 +6,10 @@ pub mod args;
 
 use anyhow::{Result, format_err};
 use args::RegisterCommand;
+use flex_fuchsia_driver_development as fdd;
+use flex_fuchsia_driver_registrar as fdr;
 use std::io::Write;
 use zx_status::Status;
-use {flex_fuchsia_driver_development as fdd, flex_fuchsia_driver_registrar as fdr};
 
 pub async fn register(
     cmd: RegisterCommand,
@@ -44,7 +45,7 @@ pub async fn register(
         Err(err) => {
             return Err(format_err!(
                 "Failed to restart existing drivers: {:?}",
-                Status::from_raw(err)
+                Status::err_from_raw(err)
             ));
         }
     }
@@ -76,7 +77,7 @@ pub async fn register(
             }
         }
         Err(err) => {
-            return Err(format_err!("Failed to bind nodes: {:?}", Status::from_raw(err)));
+            return Err(format_err!("Failed to bind nodes: {:?}", Status::err_from_raw(err)));
         }
     };
     Ok(())

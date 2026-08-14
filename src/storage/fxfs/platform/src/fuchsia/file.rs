@@ -871,7 +871,7 @@ mod tests {
             .read(fio::MAX_BUF)
             .await
             .expect("FIDL call failed")
-            .map_err(Status::from_raw)
+            .map_err(Status::err_from_raw)
             .expect("read failed");
         assert!(buf.is_empty());
 
@@ -915,7 +915,7 @@ mod tests {
                 .write(input.as_bytes())
                 .await
                 .expect("write failed")
-                .map_err(Status::from_raw)
+                .map_err(Status::err_from_raw)
                 .expect("File write was successful");
             assert_eq!(bytes_written as usize, input.as_bytes().len());
         }
@@ -924,7 +924,7 @@ mod tests {
             .read_at(fio::MAX_BUF, 0)
             .await
             .expect("read_at failed")
-            .map_err(Status::from_raw)
+            .map_err(Status::err_from_raw)
             .expect("File read was successful");
         assert_eq!(buf.len(), expected_output.as_bytes().len());
         assert!(buf.iter().eq(expected_output.as_bytes().iter()));
@@ -947,7 +947,7 @@ mod tests {
             .sync()
             .await
             .expect("FIDL call failed")
-            .map_err(Status::from_raw)
+            .map_err(Status::err_from_raw)
             .expect("sync failed");
 
         let (_, immutable_attributes) = file
@@ -990,7 +990,7 @@ mod tests {
                 .write(input.as_bytes())
                 .await
                 .expect("write failed")
-                .map_err(Status::from_raw)
+                .map_err(Status::err_from_raw)
                 .expect("File write was successful");
             assert_eq!(bytes_written as usize, input.as_bytes().len());
             assert!(file.sync().await.expect("Sync failed").is_ok());
@@ -1061,7 +1061,7 @@ mod tests {
                 .write(input.as_bytes())
                 .await
                 .expect("write failed")
-                .map_err(Status::from_raw)
+                .map_err(Status::err_from_raw)
                 .expect("File write was successful");
             assert_eq!(bytes_written as usize, input.as_bytes().len());
 
@@ -1124,14 +1124,14 @@ mod tests {
                     .write(&vec![0xaa as u8; 8192])
                     .await
                     .expect("FIDL call failed")
-                    .map_err(Status::from_raw)
+                    .map_err(Status::err_from_raw)
                     .expect("File write was successful");
             } else {
                 let buf = file
                     .read(8192)
                     .await
                     .expect("FIDL call failed")
-                    .map_err(Status::from_raw)
+                    .map_err(Status::err_from_raw)
                     .expect("File read was successful");
                 assert_eq!(buf, vec![0xaa as u8; 8192]);
             }
@@ -1176,7 +1176,7 @@ mod tests {
                 .write(input.as_bytes())
                 .await
                 .expect("FIDL call failed")
-                .map_err(Status::from_raw)
+                .map_err(Status::err_from_raw)
                 .expect("File write was successful");
             assert_eq!(bytes_written as usize, input.as_bytes().len());
             close_file_checked(file).await;
@@ -1193,7 +1193,7 @@ mod tests {
             .read_at(fio::MAX_BUF, 0)
             .await
             .expect("FIDL call failed")
-            .map_err(Status::from_raw)
+            .map_err(Status::err_from_raw)
             .expect("File read was successful");
         assert_eq!(buf.len(), expected_output.as_bytes().len());
         assert_eq!(&buf[..], expected_output.as_bytes());
@@ -1237,7 +1237,7 @@ mod tests {
             .write(input.as_bytes())
             .await
             .expect("FIDL call failed")
-            .map_err(Status::from_raw)
+            .map_err(Status::err_from_raw)
             .expect("File write was successful");
 
         {
@@ -1245,14 +1245,14 @@ mod tests {
                 .seek(fio::SeekOrigin::Start, 0)
                 .await
                 .expect("FIDL call failed")
-                .map_err(Status::from_raw)
+                .map_err(Status::err_from_raw)
                 .expect("seek was successful");
             assert_eq!(offset, 0);
             let buf = file
                 .read(5)
                 .await
                 .expect("FIDL call failed")
-                .map_err(Status::from_raw)
+                .map_err(Status::err_from_raw)
                 .expect("File read was successful");
             assert!(buf.iter().eq("hello".as_bytes().iter()));
         }
@@ -1261,14 +1261,14 @@ mod tests {
                 .seek(fio::SeekOrigin::Current, 2)
                 .await
                 .expect("FIDL call failed")
-                .map_err(Status::from_raw)
+                .map_err(Status::err_from_raw)
                 .expect("seek was successful");
             assert_eq!(offset, 7);
             let buf = file
                 .read(5)
                 .await
                 .expect("FIDL call failed")
-                .map_err(Status::from_raw)
+                .map_err(Status::err_from_raw)
                 .expect("File read was successful");
             assert!(buf.iter().eq("world".as_bytes().iter()));
         }
@@ -1277,14 +1277,14 @@ mod tests {
                 .seek(fio::SeekOrigin::Current, -5)
                 .await
                 .expect("FIDL call failed")
-                .map_err(Status::from_raw)
+                .map_err(Status::err_from_raw)
                 .expect("seek was successful");
             assert_eq!(offset, 7);
             let buf = file
                 .read(5)
                 .await
                 .expect("FIDL call failed")
-                .map_err(Status::from_raw)
+                .map_err(Status::err_from_raw)
                 .expect("File read was successful");
             assert!(buf.iter().eq("world".as_bytes().iter()));
         }
@@ -1293,14 +1293,14 @@ mod tests {
                 .seek(fio::SeekOrigin::End, -1)
                 .await
                 .expect("FIDL call failed")
-                .map_err(Status::from_raw)
+                .map_err(Status::err_from_raw)
                 .expect("seek was successful");
             assert_eq!(offset, 12);
             let buf = file
                 .read(1)
                 .await
                 .expect("FIDL call failed")
-                .map_err(Status::from_raw)
+                .map_err(Status::err_from_raw)
                 .expect("File read was successful");
             assert!(buf.iter().eq("!".as_bytes().iter()));
         }
@@ -1332,14 +1332,14 @@ mod tests {
             .write(input.as_bytes())
             .await
             .expect("FIDL call failed")
-            .map_err(Status::from_raw)
+            .map_err(Status::err_from_raw)
             .expect("File write was successful");
 
         let offset = file
             .seek(fio::SeekOrigin::Start, 0)
             .await
             .expect("FIDL call failed")
-            .map_err(Status::from_raw)
+            .map_err(Status::err_from_raw)
             .expect("Seek was successful");
         assert_eq!(offset, 0);
 
@@ -1347,7 +1347,7 @@ mod tests {
             .resize(len as u64)
             .await
             .expect("resize failed")
-            .map_err(Status::from_raw)
+            .map_err(Status::err_from_raw)
             .expect("resize error");
 
         let mut expected_buf = vec![0 as u8; len];
@@ -1364,14 +1364,14 @@ mod tests {
             .write_at("a".as_bytes(), (len - 1) as u64)
             .await
             .expect("FIDL call failed")
-            .map_err(Status::from_raw)
+            .map_err(Status::err_from_raw)
             .expect("File write was successful");
 
         let offset = file
             .seek(fio::SeekOrigin::Start, 0)
             .await
             .expect("FIDL call failed")
-            .map_err(Status::from_raw)
+            .map_err(Status::err_from_raw)
             .expect("Seek was successful");
         assert_eq!(offset, 0);
 
@@ -1415,14 +1415,14 @@ mod tests {
             .resize(short_len as u64)
             .await
             .expect("resize failed")
-            .map_err(Status::from_raw)
+            .map_err(Status::err_from_raw)
             .expect("resize error");
 
         let offset = file
             .seek(fio::SeekOrigin::Start, 0)
             .await
             .expect("FIDL call failed")
-            .map_err(Status::from_raw)
+            .map_err(Status::err_from_raw)
             .expect("Seek was successful");
         assert_eq!(offset, 0);
 
@@ -1435,7 +1435,7 @@ mod tests {
             .resize(len as u64)
             .await
             .expect("resize failed")
-            .map_err(Status::from_raw)
+            .map_err(Status::err_from_raw)
             .expect("resize error");
 
         let expected_buf = {
@@ -1448,7 +1448,7 @@ mod tests {
             .seek(fio::SeekOrigin::Start, 0)
             .await
             .expect("seek failed")
-            .map_err(Status::from_raw)
+            .map_err(Status::err_from_raw)
             .expect("Seek was successful");
         assert_eq!(offset, 0);
 
@@ -1495,7 +1495,7 @@ mod tests {
                 .resize(len as u64)
                 .await
                 .expect("resize failed")
-                .map_err(Status::from_raw)
+                .map_err(Status::err_from_raw)
                 .expect("resize error");
         }
 
@@ -1503,7 +1503,7 @@ mod tests {
             .seek(fio::SeekOrigin::Start, 0)
             .await
             .expect("Seek failed")
-            .map_err(Status::from_raw)
+            .map_err(Status::err_from_raw)
             .expect("Seek was successful");
         assert_eq!(offset, 0);
 
@@ -1516,7 +1516,7 @@ mod tests {
             .resize(orig_len as u64)
             .await
             .expect("resize failed")
-            .map_err(Status::from_raw)
+            .map_err(Status::err_from_raw)
             .expect("resize error");
 
         let expected_buf = {
@@ -1529,7 +1529,7 @@ mod tests {
             .seek(fio::SeekOrigin::Start, 0)
             .await
             .expect("seek failed")
-            .map_err(Status::from_raw)
+            .map_err(Status::err_from_raw)
             .expect("Seek was successful");
         assert_eq!(offset, 0);
 
@@ -1568,7 +1568,7 @@ mod tests {
                         .write(b"hello")
                         .await
                         .expect("write failed")
-                        .map_err(Status::from_raw)
+                        .map_err(Status::err_from_raw)
                         .expect("write error");
                 }
             }),
@@ -1589,7 +1589,7 @@ mod tests {
                         .write(b"hello")
                         .await
                         .expect("write failed")
-                        .map_err(Status::from_raw)
+                        .map_err(Status::err_from_raw)
                         .expect("write error");
                 }
             }),
@@ -1607,7 +1607,7 @@ mod tests {
                     )
                     .await;
                     assert_eq!(
-                        file.close().await.expect("FIDL call failed").map_err(Status::from_raw),
+                        file.close().await.expect("FIDL call failed").map_err(Status::err_from_raw),
                         Ok(())
                     );
                     root.unlink("foo", &fio::UnlinkOptions::default())
@@ -1641,14 +1641,14 @@ mod tests {
         file.resize(4096)
             .await
             .expect("resize failed")
-            .map_err(Status::from_raw)
+            .map_err(Status::err_from_raw)
             .expect("resize error");
 
         let vmo = file
             .get_backing_memory(fio::VmoFlags::SHARED_BUFFER | fio::VmoFlags::READ)
             .await
             .expect("Failed to make FIDL call")
-            .map_err(Status::from_raw)
+            .map_err(Status::err_from_raw)
             .expect("Failed to get VMO");
         let err = vmo.write(&[0, 1, 2, 3], 0).expect_err("VMO should not be writable");
         assert_eq!(Status::ACCESS_DENIED, err);
@@ -1659,7 +1659,7 @@ mod tests {
             )
             .await
             .expect("Failed to make FIDL call")
-            .map_err(Status::from_raw)
+            .map_err(Status::err_from_raw)
             .expect("Failed to get VMO");
         vmo.write(&[0, 1, 2, 3], 0).expect("VMO should be writable");
 
@@ -1686,7 +1686,7 @@ mod tests {
         file.resize(4096)
             .await
             .expect("resize failed")
-            .map_err(Status::from_raw)
+            .map_err(Status::err_from_raw)
             .expect("resize error");
 
         let mut data = [0u8; 4];
@@ -1694,7 +1694,7 @@ mod tests {
             .get_backing_memory(fio::VmoFlags::SHARED_BUFFER)
             .await
             .expect("Failed to make FIDL call")
-            .map_err(Status::from_raw)
+            .map_err(Status::err_from_raw)
             .expect("Failed to get VMO");
         let err = vmo.read(&mut data, 0).expect_err("VMO should not be readable");
         assert_eq!(Status::ACCESS_DENIED, err);
@@ -1703,7 +1703,7 @@ mod tests {
             .get_backing_memory(fio::VmoFlags::SHARED_BUFFER | fio::VmoFlags::READ)
             .await
             .expect("Failed to make FIDL call")
-            .map_err(Status::from_raw)
+            .map_err(Status::err_from_raw)
             .expect("Failed to get VMO");
         vmo.read(&mut data, 0).expect("VMO should be readable");
 
@@ -1733,7 +1733,7 @@ mod tests {
             )
             .await
             .expect("Failed to make FIDL call")
-            .map_err(Status::from_raw)
+            .map_err(Status::err_from_raw)
             .expect("Failed to get VMO");
 
         // No RESIZE right.
@@ -1770,7 +1770,7 @@ mod tests {
             )
             .await
             .expect("Failed to make FIDL call")
-            .map_err(Status::from_raw)
+            .map_err(Status::err_from_raw)
             .expect("Failed to get VMO");
         vmo.set_size(10).expect("VMO should be resizable");
         vmo.set_content_size(&20).expect("content size should be modifiable");
@@ -1780,7 +1780,7 @@ mod tests {
             .get_backing_memory(fio::VmoFlags::PRIVATE_CLONE | fio::VmoFlags::READ)
             .await
             .expect("Failed to make FIDL call")
-            .map_err(Status::from_raw)
+            .map_err(Status::err_from_raw)
             .expect("Failed to get VMO");
         let err = vmo.set_size(10).expect_err("VMO should not be resizable");
         assert_eq!(err, Status::ACCESS_DENIED);
@@ -1912,7 +1912,7 @@ mod tests {
                 .get_backing_memory(fio::VmoFlags::READ | fio::VmoFlags::WRITE)
                 .await
                 .expect("get_backing_memory (FIDL) failed")
-                .map_err(Status::from_raw)
+                .map_err(Status::err_from_raw)
                 .expect("get_backing_memory failed");
 
             std::mem::drop(file);
@@ -2027,7 +2027,7 @@ mod tests {
             file.write(chunk)
                 .await
                 .expect("FIDL call failed")
-                .map_err(Status::from_raw)
+                .map_err(Status::err_from_raw)
                 .expect("write failed");
         }
 
@@ -2052,7 +2052,7 @@ mod tests {
             .get_attributes(fio::NodeAttributesQuery::ROOT_HASH | fio::NodeAttributesQuery::OPTIONS)
             .await
             .expect("FIDL call failed")
-            .map_err(Status::from_raw)
+            .map_err(Status::err_from_raw)
             .expect("get_attributes failed");
 
         assert_eq!(
@@ -2090,7 +2090,7 @@ mod tests {
         file.write(&[8; 8192])
             .await
             .expect("FIDL call failed")
-            .map_err(Status::from_raw)
+            .map_err(Status::err_from_raw)
             .expect("write failed");
 
         let descriptor = fio::VerificationOptions {
@@ -2109,14 +2109,14 @@ mod tests {
             file.write(&[2; 8192])
                 .await
                 .expect("FIDL transport error")
-                .map_err(Status::from_raw)
+                .map_err(Status::err_from_raw)
                 .expect_err("write succeeded on fsverity-enabled file");
             // Writes via the pager should fail
             let vmo = file
                 .get_backing_memory(fio::VmoFlags::READ | fio::VmoFlags::WRITE)
                 .await
                 .expect("FIDL transport error")
-                .map_err(Status::from_raw)
+                .map_err(Status::err_from_raw)
                 .expect("get_backing_memory failed");
             fasync::unblock(move || {
                 vmo.write(&[2; 8192], 0)
@@ -2127,7 +2127,7 @@ mod tests {
             file.resize(1)
                 .await
                 .expect("FIDL transport error")
-                .map_err(Status::from_raw)
+                .map_err(Status::err_from_raw)
                 .expect_err("resize succeeded on fsverity-enabled file");
         }
 
@@ -2237,7 +2237,7 @@ mod tests {
                 file.write(chunk)
                     .await
                     .expect("FIDL call failed")
-                    .map_err(Status::from_raw)
+                    .map_err(Status::err_from_raw)
                     .expect("write failed");
                 num_chunks += 1;
             }
@@ -2306,7 +2306,7 @@ mod tests {
             file.write(&[1; 8192])
                 .await
                 .expect("FIDL call failed")
-                .map_err(Status::from_raw)
+                .map_err(Status::err_from_raw)
                 .expect("write failed");
 
             let descriptor = fio::VerificationOptions {
@@ -2382,21 +2382,21 @@ mod tests {
         file.write(&data)
             .await
             .expect("FIDL call failed")
-            .map_err(Status::from_raw)
+            .map_err(Status::err_from_raw)
             .expect("write failed");
 
         let () = file
             .sync()
             .await
             .expect("FIDL call failed")
-            .map_err(Status::from_raw)
+            .map_err(Status::err_from_raw)
             .expect("sync failed");
 
         let (_, immutable_attributes) = file
             .get_attributes(fio::NodeAttributesQuery::ROOT_HASH | fio::NodeAttributesQuery::OPTIONS)
             .await
             .expect("FIDL call failed")
-            .map_err(Status::from_raw)
+            .map_err(Status::err_from_raw)
             .expect("get_attributes failed");
 
         assert_eq!(immutable_attributes.options, None);
@@ -2425,13 +2425,13 @@ mod tests {
         file.write("hello, world!".as_bytes())
             .await
             .expect("FIDL call failed")
-            .map_err(Status::from_raw)
+            .map_err(Status::err_from_raw)
             .expect("write failed");
         let (_mutable_attributes, immutable_attributes) = file
             .get_attributes(fio::NodeAttributesQuery::CHANGE_TIME)
             .await
             .expect("FIDL call failed")
-            .map_err(Status::from_raw)
+            .map_err(Status::err_from_raw)
             .expect("get_attributes failed");
         let ctime_after_write = immutable_attributes.change_time;
 
@@ -2443,13 +2443,13 @@ mod tests {
         })
         .await
         .expect("FIDL call failed")
-        .map_err(Status::from_raw)
+        .map_err(Status::err_from_raw)
         .expect("update_attributes failed");
         let (_mutable_attributes, immutable_attributes) = file
             .get_attributes(fio::NodeAttributesQuery::CHANGE_TIME)
             .await
             .expect("FIDL call failed")
-            .map_err(Status::from_raw)
+            .map_err(Status::err_from_raw)
             .expect("get_attributes failed");
         let ctime_after_update = immutable_attributes.change_time;
         assert!(ctime_after_update > ctime_after_write);
@@ -2458,13 +2458,13 @@ mod tests {
         file.sync()
             .await
             .expect("FIDL call failed")
-            .map_err(Status::from_raw)
+            .map_err(Status::err_from_raw)
             .expect("sync failed");
         let (_mutable_attributes, immutable_attributes) = file
             .get_attributes(fio::NodeAttributesQuery::CHANGE_TIME)
             .await
             .expect("FIDL call failed")
-            .map_err(Status::from_raw)
+            .map_err(Status::err_from_raw)
             .expect("get_attributes failed");
         let ctime_after_sync = immutable_attributes.change_time;
         assert_eq!(ctime_after_sync, ctime_after_update);
@@ -2494,7 +2494,7 @@ mod tests {
             .seek(fio::SeekOrigin::Start, 0)
             .await
             .expect("seek failed")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("seek error");
         let read_buf = file::read(&tmpfile).await.expect("read failed");
         assert_eq!(read_buf, buf);
@@ -2633,7 +2633,7 @@ mod tests {
                 .link_into(zx::Event::from(dst_token.unwrap()), FILE1)
                 .await
                 .expect("link_into wire message failed")
-                .map_err(zx::Status::from_raw)
+                .map_err(zx::Status::err_from_raw)
                 .expect("link_into failed");
 
             // We should be able to link the temporary file proxy multiple times.
@@ -2643,7 +2643,7 @@ mod tests {
                 .link_into(zx::Event::from(dst_token.unwrap()), FILE2)
                 .await
                 .expect("link_into wire message failed")
-                .map_err(zx::Status::from_raw)
+                .map_err(zx::Status::err_from_raw)
                 .expect("link_into failed");
 
             // Write to tmpfile, we should see the contents of it when reading from FILE1 or FILE2.
@@ -2652,7 +2652,7 @@ mod tests {
             root.unlink(FILE1, &fio::UnlinkOptions::default())
                 .await
                 .expect("unlink wire call failed")
-                .map_err(zx::Status::from_raw)
+                .map_err(zx::Status::err_from_raw)
                 .expect("unlink failed");
             fixture.close().await
         };
@@ -2693,7 +2693,7 @@ mod tests {
             .seek(fio::SeekOrigin::Start, 0)
             .await
             .expect("seek wire message failed")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("seek error");
         let read_buf = file::read(&permanent_file).await.expect("read failed");
         assert!(read_buf == buf);
@@ -2746,7 +2746,7 @@ mod tests {
             .get_attributes(fio::NodeAttributesQuery::WRAPPING_KEY_ID)
             .await
             .expect("get_attributes wire call failed")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("get_attributes failed");
         assert_eq!(mutable_attributes.wrapping_key_id, Some(WRAPPING_KEY_ID));
 
@@ -2774,7 +2774,7 @@ mod tests {
             .get_attributes(fio::NodeAttributesQuery::WRAPPING_KEY_ID)
             .await
             .expect("get_attributes wire call failed")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("get_attributes failed");
         assert_eq!(mutable_attributes.wrapping_key_id, None);
         let (status, dst_token) = encrypted_directory.get_token().await.expect("FIDL call failed");
@@ -2784,7 +2784,7 @@ mod tests {
                 .link_into(zx::Event::from(dst_token.unwrap()), "bar")
                 .await
                 .expect("link_into wire message failed")
-                .map_err(zx::Status::from_raw)
+                .map_err(zx::Status::err_from_raw)
                 .expect_err("link_into passed unexpectedly"),
             zx::Status::BAD_STATE,
         );
@@ -3093,7 +3093,7 @@ mod tests {
         file.resize(4096)
             .await
             .expect("resize failed")
-            .map_err(Status::from_raw)
+            .map_err(Status::err_from_raw)
             .expect("resize error");
 
         let vmo = file
@@ -3102,7 +3102,7 @@ mod tests {
             )
             .await
             .expect("Failed to make FIDL call")
-            .map_err(Status::from_raw)
+            .map_err(Status::err_from_raw)
             .expect("Failed to get VMO");
 
         // Flush the file so that the file isn't dirty.
@@ -3128,7 +3128,7 @@ mod tests {
         root.unlink("foo", &fio::UnlinkOptions::default())
             .await
             .expect("unlink failed")
-            .map_err(Status::from_raw)
+            .map_err(Status::err_from_raw)
             .expect("unlink error");
 
         fixture.close().await;
@@ -3205,7 +3205,7 @@ mod tests {
         file.resize(8 * page_size)
             .await
             .expect("resize failed")
-            .map_err(Status::from_raw)
+            .map_err(Status::err_from_raw)
             .expect("resize error");
 
         let stream1 = file.describe().await.unwrap().stream.unwrap();
@@ -3315,7 +3315,7 @@ mod tests {
             .get_attributes(fio::NodeAttributesQuery::ID)
             .await
             .expect("get_attributes wire call failed")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("get_attributes failed");
         let file_id = immutable_attributes.id.unwrap();
 
@@ -3341,7 +3341,7 @@ mod tests {
             .get_attributes(fio::NodeAttributesQuery::WRAPPING_KEY_ID)
             .await
             .expect("get_attributes wire call failed")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("get_attributes failed");
 
         assert_eq!(mutable_attributes.wrapping_key_id, Some(WRAPPING_KEY_ID));

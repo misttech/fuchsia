@@ -71,7 +71,7 @@ impl DigitalAudioInterface {
         };
         Either::Right(proxy.clone().get_dai_formats().map(|o| match o {
             Err(e) => Err(e.into()),
-            Ok(Err(e)) => Err(zx::Status::from_raw(e).into()),
+            Ok(Err(e)) => Err(zx::Status::err_from_raw(e).into()),
             Ok(Ok(o)) => Ok(o),
         }))
     }
@@ -85,7 +85,7 @@ impl DigitalAudioInterface {
         };
         Either::Right(proxy.clone().get_ring_buffer_formats().map(|o| match o {
             Err(e) => Err(e.into()),
-            Ok(Err(e)) => Err(zx::Status::from_raw(e).into()),
+            Ok(Err(e)) => Err(zx::Status::err_from_raw(e).into()),
             Ok(Ok(o)) => Ok(o),
         }))
     }

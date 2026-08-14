@@ -102,7 +102,7 @@ impl From<BuiltinRunnerError> for zx::Status {
             | BuiltinRunnerError::MissingNamespace
             | BuiltinRunnerError::NamespaceError(_)
             | BuiltinRunnerError::IllegalProgram => {
-                zx::Status::from_raw(fcomponent::Error::InvalidArguments.into_primitive() as i32)
+                zx::Status::err_from_raw(fcomponent::Error::InvalidArguments.into_primitive() as i32)
             }
             BuiltinRunnerError::JobCreation(status) => status,
         }

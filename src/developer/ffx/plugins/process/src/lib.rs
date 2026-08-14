@@ -253,7 +253,7 @@ async fn kill_subcommand(
         Task::Koid(koid) => ProcessExplorerKillTaskRequest::Koid(koid),
         Task::ProcessName(name) => ProcessExplorerKillTaskRequest::ProcessName(name),
     };
-    match explorer_proxy.kill_task(&arg).await?.map_err(Status::from_raw) {
+    match explorer_proxy.kill_task(&arg).await?.map_err(Status::err_from_raw) {
         Ok(koid) => {
             writeln!(w, "Successfully killed task: {}", koid)?;
             Ok(())
@@ -279,7 +279,7 @@ async fn stack_trace_subcommand(
         Task::Koid(koid) => ProcessExplorerGetStackTraceRequest::Koid(koid),
         Task::ProcessName(name) => ProcessExplorerGetStackTraceRequest::ProcessName(name),
     };
-    match explorer_proxy.get_stack_trace(&arg).await?.map_err(Status::from_raw) {
+    match explorer_proxy.get_stack_trace(&arg).await?.map_err(Status::err_from_raw) {
         Ok(stack_trace) => {
             write_symbolized_stack_traces(w, ctx, stack_trace)?;
             Ok(())

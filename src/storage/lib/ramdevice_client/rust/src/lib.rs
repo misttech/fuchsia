@@ -140,7 +140,7 @@ impl RamdiskClientBuilder {
         };
 
         let (outgoing, event) =
-            ramdisk_controller.create(options).await?.map_err(|s| zx::Status::from_raw(s))?;
+            ramdisk_controller.create(options).await?.map_err(zx::Status::err_from_raw)?;
 
         let outgoing = outgoing.into_proxy();
 

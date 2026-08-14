@@ -7,14 +7,15 @@ use crate::message::Message;
 use crate::node::Node;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
+use fidl_fuchsia_hardware_trippoint as ftrippoint;
 use fuchsia_component::client as fclient;
 use futures::FutureExt;
 use futures::future::LocalBoxFuture;
 use futures::stream::FuturesUnordered;
 use serde_derive::Deserialize;
+use serde_json as json;
 use std::collections::HashMap;
 use std::rc::Rc;
-use {fidl_fuchsia_hardware_trippoint as ftrippoint, serde_json as json};
 
 /// Node: TrippointWatcher
 ///
@@ -127,7 +128,7 @@ impl TrippointWatcher {
                     }
                 }
                 Ok(Err(e)) => {
-                    log::error!("Trippoint wait returned error: {}", zx::Status::from_raw(e));
+                    log::error!("Trippoint wait returned error: {}", zx::Status::err_from_raw(e));
                 }
                 Err(e) => {
                     log::error!("Error while waiting for trippoint updates: {:?}", e);

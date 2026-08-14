@@ -355,7 +355,7 @@ async fn copy_image_to_file(image: &zx::Vmo, file: &fio::FileProxy) {
         .get_backing_memory(fio::VmoFlags::WRITE | fio::VmoFlags::SHARED_BUFFER)
         .await
         .expect("transport error")
-        .map_err(zx::Status::from_raw)
+        .map_err(zx::Status::err_from_raw)
         .unwrap();
 
     let mut buffer = vec![0u8; TRANSFER_BUFFER_SIZE];
@@ -392,7 +392,7 @@ async fn verify_installed_fxblob_system(disk: Disk) {
             .get_vmo(&test_blob_hash().into())
             .await
             .unwrap()
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect_err("old blob should be gone"),
         zx::Status::NOT_FOUND
     );
@@ -404,7 +404,7 @@ async fn verify_installed_fxblob_system(disk: Disk) {
             .get_vmo(&hash.as_bytes().try_into().unwrap())
             .await
             .unwrap()
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("GetVmo failed");
         let mut buf = vec![0; data.len()];
         vmo.read(&mut buf, 0).unwrap();
@@ -440,7 +440,7 @@ async fn write_and_install_blob_image() {
         .install_blob_image()
         .await
         .unwrap()
-        .map_err(zx::Status::from_raw)
+        .map_err(zx::Status::err_from_raw)
         .expect("volume installation failed");
 
     // Tear down the fixture, mount the system image as normal, and verify the blobs.
@@ -476,7 +476,7 @@ async fn write_and_install_blob_image_can_reattempt() {
         .install_blob_image()
         .await
         .unwrap()
-        .map_err(zx::Status::from_raw)
+        .map_err(zx::Status::err_from_raw)
         .expect_err("installation should fail if the image is incomplete");
 
     // Now write the image file in full.
@@ -494,7 +494,7 @@ async fn write_and_install_blob_image_can_reattempt() {
         .install_blob_image()
         .await
         .unwrap()
-        .map_err(zx::Status::from_raw)
+        .map_err(zx::Status::err_from_raw)
         .expect("volume installation failed");
 
     // Tear down the fixture, mount the system image as normal, and verify the blobs.

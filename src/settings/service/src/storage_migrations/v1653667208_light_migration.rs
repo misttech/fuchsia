@@ -62,7 +62,7 @@ impl Migration for V1653667208LightMigration {
             })?;
         let encoded = persist(&light_groups).context("failed to serialize new fidl format")?;
         let _ = file.write(&encoded).await.context("file to call write")?.map_err(|e| {
-            let status = zx::Status::from_raw(e);
+            let status = zx::Status::err_from_raw(e);
             if status == zx::Status::NO_SPACE {
                 MigrationError::DiskFull
             } else {

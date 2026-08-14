@@ -38,16 +38,16 @@ async fn test_rebind() -> Result<()> {
     let parent =
         device_watcher::recursive_wait_and_open::<frt::RebindParentMarker>(&dev, PARENT_DEV_PATH)
             .await?;
-    parent.add_child().await?.map_err(|e| zx::Status::from_raw(e))?;
+    parent.add_child().await?.map_err(zx::Status::err_from_raw)?;
     let child_controller =
         device_watcher::recursive_wait_and_open::<fidl_fuchsia_device::ControllerMarker>(
             &dev,
             &format!("{}/{}", CHILD_DEV_PATH, fidl_fuchsia_device_fs::DEVICE_CONTROLLER_NAME),
         )
         .await?;
-    parent.remove_child().await?.map_err(|e| zx::Status::from_raw(e))?;
+    parent.remove_child().await?.map_err(zx::Status::err_from_raw)?;
     child_controller.on_closed().await?;
-    parent.add_child().await?.map_err(|e| zx::Status::from_raw(e))?;
+    parent.add_child().await?.map_err(zx::Status::err_from_raw)?;
     device_watcher::recursive_wait(&dev, CHILD_DEV_PATH).await?;
     instance.destroy().await?;
     Ok(())

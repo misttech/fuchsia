@@ -8,9 +8,10 @@ use async_lock::Semaphore;
 use async_trait::async_trait;
 use fidl::endpoints::ClientEnd;
 use fidl_fuchsia_io::{self as fio, FileMarker, FileProxy, MAX_BUF};
+use fuchsia_trace as ftrace;
 use futures::future::try_join_all;
 use virtio_device::mem::DeviceRange;
-use {fuchsia_trace as ftrace, zx_status};
+use zx_status;
 
 const MAX_INFLIGHT_REQUESTS: usize = 64;
 
@@ -47,7 +48,7 @@ impl FileBackend {
             self.file
                 .read_at(range.len() as u64, offset)
                 .await?
-                .map_err(zx_status::Status::from_raw)?
+                .map_err(zx_status::Status::err_from_raw)?
         };
         if bytes.len() != range.len() {
             return Err(anyhow!(
@@ -78,7 +79,7 @@ impl FileBackend {
         let slice = unsafe { std::slice::from_raw_parts(range.try_ptr().unwrap(), range.len()) };
         let bytes_written = {
             let _ticket = self.semaphore.acquire().await;
-            self.file.write_at(slice, offset).await?.map_err(zx_status::Status::from_raw)?
+            self.file.write_at(slice, offset).await?.map_err(zx_status::Status::err_from_raw)?
         };
         if bytes_written < range.len() as u64 {
             return Err(anyhow!(
@@ -99,7 +100,7 @@ impl BlockBackend for FileBackend {
             .file
             .get_attributes(fio::NodeAttributesQuery::CONTENT_SIZE)
             .await?
-            .map_err(zx::Status::from_raw)?;
+            .map_err(zx::Status::err_from_raw)?;
         return Ok(DeviceAttrs {
             capacity: Sector::from_bytes_round_down(
                 immutable_attributes.content_size.ok_or_else(|| anyhow!("content size not set"))?,
@@ -141,7 +142,7 @@ impl BlockBackend for FileBackend {
     async fn flush(&self, trace_id: ftrace::Id) -> Result<(), Error> {
         let _trace = ftrace::async_enter!(trace_id, "machina", "FileBackend::flush");
         let _ticket = self.semaphore.acquire().await;
-        self.file.sync().await?.map_err(zx_status::Status::from_raw)?;
+        self.file.sync().await?.map_err(zx_status::Status::err_from_raw)?;
         Ok(())
     }
 }

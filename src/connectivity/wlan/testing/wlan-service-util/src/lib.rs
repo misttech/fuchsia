@@ -91,11 +91,9 @@ async fn query_iface(
     monitor_proxy: &DeviceMonitorProxy,
     iface_id: u16,
 ) -> Result<QueryIfaceResponse, Error> {
-    monitor_proxy
-        .query_iface(iface_id)
-        .await
-        .context("Error querying iface")?
-        .map_err(|e| format_err!("query_iface {} failed: {}", iface_id, zx::Status::from_raw(e)))
+    monitor_proxy.query_iface(iface_id).await.context("Error querying iface")?.map_err(|e| {
+        format_err!("query_iface {} failed: {}", iface_id, zx::Status::err_from_raw(e))
+    })
 }
 
 pub async fn get_wlan_sta_addr(

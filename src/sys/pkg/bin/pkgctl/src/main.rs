@@ -13,18 +13,18 @@ use crate::args::{
 };
 use anyhow::{Context as _, bail, format_err};
 use fetch_url::fetch_url;
+use fidl_fuchsia_pkg as fpkg;
+use fidl_fuchsia_pkg_ext as pkg;
+use fidl_fuchsia_pkg_garbagecollector as fpkg_gc;
 use fidl_fuchsia_pkg_rewrite::EngineMarker;
 use fidl_fuchsia_pkg_rewrite_ext::{Rule as RewriteRule, RuleConfig, do_transaction};
+use fuchsia_async as fasync;
 use fuchsia_component::client::connect_to_protocol;
 use fuchsia_url::RepositoryUrl;
 use futures::stream::TryStreamExt;
 use std::fs::File;
 use std::io;
 use std::process::exit;
-use {
-    fidl_fuchsia_pkg as fpkg, fidl_fuchsia_pkg_ext as pkg,
-    fidl_fuchsia_pkg_garbagecollector as fpkg_gc, fuchsia_async as fasync,
-};
 
 mod args;
 
@@ -67,7 +67,7 @@ async fn main_helper(command: Command) -> Result<i32, anyhow::Error> {
                 resolver.get_hash(&fpkg::PackageUrl { url: pkg_url }).await?.map_err(|i| {
                     format_err!(
                         "Failed to get package hash with error: {}",
-                        zx::Status::from_raw(i)
+                        zx::Status::err_from_raw(i)
                     )
                 })?;
             println!("{}", pkg::BlobId::from(blob_id));
@@ -78,7 +78,7 @@ async fn main_helper(command: Command) -> Result<i32, anyhow::Error> {
                 .context("Failed to connect to resolver service")?;
             let blob_id = match resolver.get_hash(&fpkg::PackageUrl { url: pkg_url }).await? {
                 Ok(blob_id) => pkg::BlobId::from(blob_id),
-                Err(status) => match zx::Status::from_raw(status) {
+                Err(status) => match zx::Status::err_from_raw(status) {
                     zx::Status::NOT_FOUND => {
                         println!("Package in registered TUF repo: no");
                         println!("Package on disk: unknown (did not check since not in tuf repo)");
@@ -176,7 +176,7 @@ async fn main_helper(command: Command) -> Result<i32, anyhow::Error> {
                             }
 
                             let res = repo_manager.add(&repo.into()).await?;
-                            let () = res.map_err(zx::Status::from_raw)?;
+                            let () = res.map_err(zx::Status::err_from_raw)?;
                         }
                         RepoAddSubCommand::Url(RepoAddUrlCommand { persist, name, repo_url }) => {
                             let res = fetch_url(repo_url, None).await?;
@@ -197,7 +197,7 @@ async fn main_helper(command: Command) -> Result<i32, anyhow::Error> {
                             }
 
                             let res = repo_manager.add(&repo.into()).await?;
-                            let () = res.map_err(zx::Status::from_raw)?;
+                            let () = res.map_err(zx::Status::err_from_raw)?;
                         }
                     }
 
@@ -206,7 +206,7 @@ async fn main_helper(command: Command) -> Result<i32, anyhow::Error> {
 
                 Some(RepoSubCommand::Remove(RepoRemoveCommand { repo_url })) => {
                     let res = repo_manager.remove(&repo_url).await?;
-                    let () = res.map_err(zx::Status::from_raw)?;
+                    let () = res.map_err(zx::Status::err_from_raw)?;
 
                     Ok(0)
                 }

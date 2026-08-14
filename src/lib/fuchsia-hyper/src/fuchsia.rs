@@ -239,7 +239,7 @@ async fn parse_ip_addr_with_provider(
                 ))
             })?
             .map_err(|status| {
-                let status = zx::Status::from_raw(status);
+                let status = zx::Status::err_from_raw(status);
                 io::Error::new(
                     status.into_io_error_kind(),
                     format!("failed to get interface index from socket provider: {status}"),

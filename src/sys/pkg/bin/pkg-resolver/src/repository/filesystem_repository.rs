@@ -105,7 +105,7 @@ where
             .await
             .context("sending sync request")
             .map_err(make_opaque_error)?
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .context("syncing file")
             .map_err(make_opaque_error)?;
         fuchsia_fs::file::close(temp_proxy)

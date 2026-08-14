@@ -76,7 +76,7 @@ async fn main() -> Result<(), Error> {
         .mount(client_end, filename_str, mount_options)
         .await
         .context("Transport error on mount")?
-        .map_err(zx::Status::from_raw)
+        .map_err(zx::Status::err_from_raw)
         .context("Failed to mount block device")?;
     Ok(())
 }

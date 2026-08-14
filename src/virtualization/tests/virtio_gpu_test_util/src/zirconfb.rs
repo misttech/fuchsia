@@ -49,7 +49,7 @@ async fn read_info() -> Result<DetectResult, Error> {
         };
         provider
             .open_coordinator(payload, zx::MonotonicInstant::INFINITE)?
-            .map_err(zx::Status::from_raw)?;
+            .map_err(zx::Status::err_from_raw)?;
         (dc_proxy, listener_requests)
     };
 

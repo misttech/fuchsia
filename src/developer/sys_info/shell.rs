@@ -127,7 +127,7 @@ fn write_serial_number<W: Write>(
 ) -> Result<(), Error> {
     match serial_number {
         Ok(s) => writeln!(w, "serial_number: {}", s)?,
-        Err(e) => writeln!(w, "zx_status: {}", zx::Status::from_raw(e))?,
+        Err(e) => writeln!(w, "zx_status: {}", zx::Status::err_from_raw(e))?,
     }
     Ok(())
 }

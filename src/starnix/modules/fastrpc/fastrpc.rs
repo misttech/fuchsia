@@ -135,7 +135,7 @@ fn fidl_error_to_errno(info: &str, error: fidl::Error) -> starnix_uapi::errors::
 
 // zx.Status errors from fidl domain errors can be converted into fdio-like errnos.
 fn zx_i32_to_errno(info: &str, error: i32) -> starnix_uapi::errors::Errno {
-    starnix_uapi::from_status_like_fdio!(zx::Status::from_raw(error), info)
+    starnix_uapi::from_status_like_fdio!(zx::Status::err_from_raw(error), info)
 }
 
 // zx.Status errors from syscalls can be converted into fdio-like errnos.

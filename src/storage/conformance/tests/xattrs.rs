@@ -62,7 +62,7 @@ async fn test_xattr_read_permissions() {
             file.get_extended_attribute(b"user.test")
                 .await
                 .expect("FIDL call failed")
-                .map_err(zx::Status::from_raw),
+                .map_err(zx::Status::err_from_raw),
             Err(zx::Status::BAD_HANDLE)
         );
 
@@ -118,7 +118,7 @@ async fn test_xattr_write_permissions() {
             )
             .await
             .expect("FIDL call failed")
-            .map_err(zx::Status::from_raw),
+            .map_err(zx::Status::err_from_raw),
             Err(zx::Status::BAD_HANDLE)
         );
 
@@ -126,7 +126,7 @@ async fn test_xattr_write_permissions() {
             file.remove_extended_attribute(b"user.test")
                 .await
                 .expect("FIDL call failed")
-                .map_err(zx::Status::from_raw),
+                .map_err(zx::Status::err_from_raw),
             Err(zx::Status::BAD_HANDLE)
         );
     }
@@ -158,7 +158,7 @@ async fn test_xattr_node_reference() {
             .get_extended_attribute(b"user.test")
             .await
             .expect("FIDL call failed")
-            .map_err(zx::Status::from_raw),
+            .map_err(zx::Status::err_from_raw),
         Err(zx::Status::NOT_SUPPORTED)
     );
 
@@ -171,7 +171,7 @@ async fn test_xattr_node_reference() {
             )
             .await
             .expect("FIDL call failed")
-            .map_err(zx::Status::from_raw),
+            .map_err(zx::Status::err_from_raw),
         Err(zx::Status::NOT_SUPPORTED)
     );
 
@@ -180,7 +180,7 @@ async fn test_xattr_node_reference() {
             .remove_extended_attribute(b"user.test")
             .await
             .expect("FIDL call failed")
-            .map_err(zx::Status::from_raw),
+            .map_err(zx::Status::err_from_raw),
         Err(zx::Status::NOT_SUPPORTED)
     );
 
@@ -209,7 +209,7 @@ async fn test_xattr_symlink_permissions() {
         .create_symlink("symlink", b"target", symlink_server)
         .await
         .expect("FIDL call failed")
-        .map_err(zx::Status::from_raw);
+        .map_err(zx::Status::err_from_raw);
 
     if let Err(status) = create_result {
         if status == zx::Status::NOT_SUPPORTED {
@@ -267,7 +267,7 @@ async fn test_xattr_symlink_permissions() {
                 .get_extended_attribute(b"user.test")
                 .await
                 .expect("FIDL call failed")
-                .map_err(zx::Status::from_raw),
+                .map_err(zx::Status::err_from_raw),
             Err(zx::Status::BAD_HANDLE)
         );
 
@@ -321,7 +321,7 @@ async fn test_xattr_symlink_permissions() {
                 )
                 .await
                 .expect("FIDL call failed")
-                .map_err(zx::Status::from_raw),
+                .map_err(zx::Status::err_from_raw),
             Err(zx::Status::BAD_HANDLE)
         );
 
@@ -330,7 +330,7 @@ async fn test_xattr_symlink_permissions() {
                 .remove_extended_attribute(b"user.test")
                 .await
                 .expect("FIDL call failed")
-                .map_err(zx::Status::from_raw),
+                .map_err(zx::Status::err_from_raw),
             Err(zx::Status::BAD_HANDLE)
         );
     }
@@ -356,7 +356,7 @@ async fn test_xattr_unsupported() {
         file.get_extended_attribute(b"user.test")
             .await
             .expect("FIDL call failed")
-            .map_err(zx::Status::from_raw),
+            .map_err(zx::Status::err_from_raw),
         Err(zx::Status::NOT_SUPPORTED)
     );
 
@@ -368,7 +368,7 @@ async fn test_xattr_unsupported() {
         )
         .await
         .expect("FIDL call failed")
-        .map_err(zx::Status::from_raw),
+        .map_err(zx::Status::err_from_raw),
         Err(zx::Status::NOT_SUPPORTED)
     );
 
@@ -376,7 +376,7 @@ async fn test_xattr_unsupported() {
         file.remove_extended_attribute(b"user.test")
             .await
             .expect("FIDL call failed")
-            .map_err(zx::Status::from_raw),
+            .map_err(zx::Status::err_from_raw),
         Err(zx::Status::NOT_SUPPORTED)
     );
 
@@ -396,7 +396,7 @@ async fn test_xattr_unsupported() {
             file.get_extended_attribute(b"user.test")
                 .await
                 .expect("FIDL call failed")
-                .map_err(zx::Status::from_raw),
+                .map_err(zx::Status::err_from_raw),
             Err(zx::Status::BAD_HANDLE)
         );
     }
@@ -411,7 +411,7 @@ async fn test_xattr_unsupported() {
             )
             .await
             .expect("FIDL call failed")
-            .map_err(zx::Status::from_raw),
+            .map_err(zx::Status::err_from_raw),
             Err(zx::Status::BAD_HANDLE)
         );
     }

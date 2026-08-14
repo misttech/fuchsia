@@ -47,7 +47,7 @@ pub(crate) async fn open_from_path(
         .get_backing_memory(fio::VmoFlags::READ)
         .await
         .map_err(|err| OpenImageError::FidlGetBackingMemory { path: path.to_string(), err })?
-        .map_err(Status::from_raw)
+        .map_err(Status::err_from_raw)
         .map_err(|status| OpenImageError::GetBackingMemory { path: path.to_string(), status })?;
 
     let size = vmo

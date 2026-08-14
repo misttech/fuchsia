@@ -43,7 +43,12 @@ async fn sync_returns_errs() {
         .await;
 
     assert_eq!(
-        env.proxies.package_cache.sync().map_ok(|res| res.map_err(Status::from_raw)).await.unwrap(),
+        env.proxies
+            .package_cache
+            .sync()
+            .map_ok(|res| res.map_err(Status::err_from_raw))
+            .await
+            .unwrap(),
         Err(Status::INTERNAL)
     );
 }

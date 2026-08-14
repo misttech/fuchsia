@@ -43,7 +43,7 @@ async fn assert_read_max_buffer_success(
     expected_contents: &str,
 ) {
     let file = open_file(root_dir, path, fuchsia_fs::PERM_READABLE).await.unwrap();
-    let bytes = file.read(fio::MAX_BUF).await.unwrap().map_err(zx::Status::from_raw).unwrap();
+    let bytes = file.read(fio::MAX_BUF).await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
     assert_eq!(std::str::from_utf8(&bytes).unwrap(), expected_contents);
 }
 
@@ -60,7 +60,7 @@ async fn assert_read_buffer_success(
             .read(buffer_size.try_into().unwrap())
             .await
             .unwrap()
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .unwrap_or_else(|_| {
                 panic!(
                     "path: {path}, expected_contents: {expected_contents}, buffer size: {buffer_size}"
@@ -72,10 +72,10 @@ async fn assert_read_buffer_success(
 
 async fn assert_read_past_end(root_dir: &fio::DirectoryProxy, path: &str, expected_contents: &str) {
     let file = open_file(root_dir, path, fuchsia_fs::PERM_READABLE).await.unwrap();
-    let bytes = file.read(fio::MAX_BUF).await.unwrap().map_err(zx::Status::from_raw).unwrap();
+    let bytes = file.read(fio::MAX_BUF).await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
     assert_eq!(std::str::from_utf8(&bytes).unwrap(), expected_contents);
 
-    let bytes = file.read(fio::MAX_BUF).await.unwrap().map_err(zx::Status::from_raw).unwrap();
+    let bytes = file.read(fio::MAX_BUF).await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
     assert_eq!(bytes, &[] as &[u8]);
 }
 
@@ -83,18 +83,18 @@ async fn assert_read_exceeds_buffer_success(root_dir: &fio::DirectoryProxy, path
     let file = open_file(root_dir, path, fuchsia_fs::PERM_READABLE).await.unwrap();
 
     // Read the first MAX_BUF contents.
-    let bytes = file.read(fio::MAX_BUF).await.unwrap().map_err(zx::Status::from_raw).unwrap();
+    let bytes = file.read(fio::MAX_BUF).await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
     assert_eq!(
         std::str::from_utf8(&bytes).unwrap(),
         &repeat_by_n('a', fio::MAX_BUF.try_into().unwrap())
     );
 
     // There should be one remaining "a".
-    let bytes = file.read(fio::MAX_BUF).await.unwrap().map_err(zx::Status::from_raw).unwrap();
+    let bytes = file.read(fio::MAX_BUF).await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
     assert_eq!(std::str::from_utf8(&bytes).unwrap(), "a");
 
     // Since we are now at the end of the file, bytes should be empty.
-    let bytes = file.read(fio::MAX_BUF).await.unwrap().map_err(zx::Status::from_raw).unwrap();
+    let bytes = file.read(fio::MAX_BUF).await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
     assert_eq!(bytes, &[] as &[u8]);
 }
 
@@ -122,7 +122,8 @@ async fn assert_read_at_max_buffer_success(
     expected_contents: &str,
 ) {
     let file = open_file(root_dir, path, fuchsia_fs::PERM_READABLE).await.unwrap();
-    let bytes = file.read_at(fio::MAX_BUF, 0).await.unwrap().map_err(zx::Status::from_raw).unwrap();
+    let bytes =
+        file.read_at(fio::MAX_BUF, 0).await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
     assert_eq!(std::str::from_utf8(&bytes).unwrap(), expected_contents);
 }
 
@@ -141,7 +142,7 @@ async fn assert_read_at_success(
                 .read_at(count.try_into().unwrap(), offset.try_into().unwrap())
                 .await
                 .unwrap()
-                .map_err(zx::Status::from_raw)
+                .map_err(zx::Status::err_from_raw)
                 .unwrap_or_else(|_| {
                     panic!(
                         "path: {path}, offset: {offset}, count: {count}, expected_contents: {expected_contents}"
@@ -160,7 +161,7 @@ async fn assert_read_at_does_not_affect_seek_offset(root_dir: &fio::DirectoryPro
             .seek(fio::SeekOrigin::Start, seek_offset)
             .await
             .unwrap()
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .unwrap_or_else(|_| panic!("path: {path}, seek_offset: {seek_offset}"));
         assert_eq!(position, seek_offset as u64);
 
@@ -168,7 +169,7 @@ async fn assert_read_at_does_not_affect_seek_offset(root_dir: &fio::DirectoryPro
             .read_at(fio::MAX_BUF, 0)
             .await
             .unwrap()
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .unwrap_or_else(|_| panic!("path: {path}, seek_offset: {seek_offset}"));
 
         // get seek offset
@@ -176,7 +177,7 @@ async fn assert_read_at_does_not_affect_seek_offset(root_dir: &fio::DirectoryPro
             .seek(fio::SeekOrigin::Current, 0)
             .await
             .unwrap()
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .unwrap_or_else(|_| panic!("path: {path}, seek_offset: {seek_offset}"));
         assert_eq!(position, seek_offset as u64)
     }
@@ -190,14 +191,14 @@ async fn assert_read_at_is_unaffected_by_seek(root_dir: &fio::DirectoryProxy, pa
             .read_at(fio::MAX_BUF, 0)
             .await
             .unwrap()
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .unwrap_or_else(|_| panic!("path: {path}, seek_offset: {seek_offset}"));
 
         let position = file
             .seek(fio::SeekOrigin::Start, seek_offset)
             .await
             .unwrap()
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .unwrap_or_else(|_| panic!("path: {path}, seek_offset: {seek_offset}"));
         assert_eq!(position, seek_offset as u64);
 
@@ -205,7 +206,7 @@ async fn assert_read_at_is_unaffected_by_seek(root_dir: &fio::DirectoryProxy, pa
             .read_at(fio::MAX_BUF, 0)
             .await
             .unwrap()
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .unwrap_or_else(|_| panic!("path: {path}, seek_offset: {seek_offset}"));
         assert_eq!(
             std::str::from_utf8(&first_read_bytes).unwrap(),
@@ -248,7 +249,7 @@ async fn assert_seek_success(
             .seek(seek_origin, expected_position.try_into().unwrap())
             .await
             .unwrap()
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .unwrap_or_else(|_| {
                 panic!(
                     "path: {path}, seek_origin: {seek_origin:?}, expected_position: {expected_position}"
@@ -265,7 +266,7 @@ async fn assert_seek_affects_read(root_dir: &fio::DirectoryProxy, path: &str, ex
             .read(fio::MAX_BUF)
             .await
             .unwrap()
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .unwrap_or_else(|_| panic!("path: {path}, seek_offset: {seek_offset}"));
         assert_eq!(std::str::from_utf8(&bytes).unwrap(), expected);
 
@@ -273,7 +274,7 @@ async fn assert_seek_affects_read(root_dir: &fio::DirectoryProxy, path: &str, ex
             .read(fio::MAX_BUF)
             .await
             .unwrap()
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .unwrap_or_else(|_| panic!("path: {path}, seek_offset: {seek_offset}"));
         assert_eq!(bytes, &[] as &[u8]);
 
@@ -282,7 +283,7 @@ async fn assert_seek_affects_read(root_dir: &fio::DirectoryProxy, path: &str, ex
             .seek(fio::SeekOrigin::End, -(seek_offset as i64))
             .await
             .unwrap()
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .unwrap_or_else(|_| panic!("path: {path}, seek_offset: {seek_offset}"));
 
         assert_eq!(position, (expected.len() - seek_offset) as u64);
@@ -291,7 +292,7 @@ async fn assert_seek_affects_read(root_dir: &fio::DirectoryProxy, path: &str, ex
             .read(fio::MAX_BUF)
             .await
             .unwrap()
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .unwrap_or_else(|_| panic!("path: {path}, seek_offset: {seek_offset}"));
         assert_eq!(std::str::from_utf8(&bytes).unwrap(), expected_contents);
     }
@@ -308,11 +309,11 @@ async fn assert_seek_past_end(
         .seek(seek_origin, expected.len() as i64 + 1)
         .await
         .unwrap()
-        .map_err(zx::Status::from_raw)
+        .map_err(zx::Status::err_from_raw)
         .unwrap();
     assert_eq!(expected.len() as u64 + 1, position);
 
-    let bytes = file.read(fio::MAX_BUF).await.unwrap().map_err(zx::Status::from_raw).unwrap();
+    let bytes = file.read(fio::MAX_BUF).await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
     assert_eq!(bytes, &[] as &[u8]);
 }
 
@@ -324,11 +325,15 @@ async fn assert_seek_past_end_end_origin(
     expected: &str,
 ) {
     let file = open_file(root_dir, path, fuchsia_fs::PERM_READABLE).await.unwrap();
-    let position =
-        file.seek(fio::SeekOrigin::End, 1).await.unwrap().map_err(zx::Status::from_raw).unwrap();
+    let position = file
+        .seek(fio::SeekOrigin::End, 1)
+        .await
+        .unwrap()
+        .map_err(zx::Status::err_from_raw)
+        .unwrap();
     assert_eq!(expected.len() as u64 + 1, position);
 
-    let bytes = file.read(fio::MAX_BUF).await.unwrap().map_err(zx::Status::from_raw).unwrap();
+    let bytes = file.read(fio::MAX_BUF).await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
     assert_eq!(bytes, &[] as &[u8]);
 }
 
@@ -372,8 +377,11 @@ async fn get_backing_memory_per_package_source(source: PackageSource) {
     }
 
     let file = open_file(root_dir, "meta", fuchsia_fs::PERM_READABLE).await.unwrap();
-    let result =
-        file.get_backing_memory(fio::VmoFlags::READ).await.unwrap().map_err(zx::Status::from_raw);
+    let result = file
+        .get_backing_memory(fio::VmoFlags::READ)
+        .await
+        .unwrap()
+        .map_err(zx::Status::err_from_raw);
     assert_matches!(result, Ok(_));
 
     // For files NOT under meta, calls with unsupported flags should successfully return the FIDL
@@ -383,16 +391,19 @@ async fn get_backing_memory_per_package_source(source: PackageSource) {
         .get_backing_memory(fio::VmoFlags::EXECUTE)
         .await
         .unwrap()
-        .map_err(zx::Status::from_raw);
+        .map_err(zx::Status::err_from_raw);
     assert_eq!(result, Err(zx::Status::ACCESS_DENIED));
     let result = file
         .get_backing_memory(fio::VmoFlags::PRIVATE_CLONE | fio::VmoFlags::SHARED_BUFFER)
         .await
         .unwrap()
-        .map_err(zx::Status::from_raw);
+        .map_err(zx::Status::err_from_raw);
     assert_eq!(result, Err(zx::Status::INVALID_ARGS));
-    let result =
-        file.get_backing_memory(fio::VmoFlags::WRITE).await.unwrap().map_err(zx::Status::from_raw);
+    let result = file
+        .get_backing_memory(fio::VmoFlags::WRITE)
+        .await
+        .unwrap()
+        .map_err(zx::Status::err_from_raw);
     assert_eq!(result, Err(zx::Status::ACCESS_DENIED));
 
     let file = open_file(root_dir, "meta/file", fuchsia_fs::PERM_READABLE).await.unwrap();
@@ -400,16 +411,19 @@ async fn get_backing_memory_per_package_source(source: PackageSource) {
         .get_backing_memory(fio::VmoFlags::EXECUTE)
         .await
         .unwrap()
-        .map_err(zx::Status::from_raw);
+        .map_err(zx::Status::err_from_raw);
     assert_eq!(result, Err(zx::Status::ACCESS_DENIED));
     let result = file
         .get_backing_memory(fio::VmoFlags::PRIVATE_CLONE | fio::VmoFlags::SHARED_BUFFER)
         .await
         .unwrap()
-        .map_err(zx::Status::from_raw);
+        .map_err(zx::Status::err_from_raw);
     assert_eq!(result, Err(zx::Status::INVALID_ARGS));
-    let result =
-        file.get_backing_memory(fio::VmoFlags::WRITE).await.unwrap().map_err(zx::Status::from_raw);
+    let result = file
+        .get_backing_memory(fio::VmoFlags::WRITE)
+        .await
+        .unwrap()
+        .map_err(zx::Status::err_from_raw);
     assert_eq!(result, Err(zx::Status::ACCESS_DENIED));
 }
 
@@ -422,7 +436,8 @@ async fn test_get_backing_memory_success(
     flags: fio::VmoFlags,
     size: usize,
 ) -> zx::Vmo {
-    let vmo = file.get_backing_memory(flags).await.unwrap().map_err(zx::Status::from_raw).unwrap();
+    let vmo =
+        file.get_backing_memory(flags).await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
 
     let vmo_size = vmo.get_size().unwrap().try_into().unwrap();
     assert_eq!(vmo.get_content_size().unwrap(), u64::try_from(size).unwrap());
@@ -472,7 +487,7 @@ async fn assert_clone_success(
     let (clone, server_end) = create_proxy::<fio::FileMarker>();
     let node_request = fidl::endpoints::ServerEnd::new(server_end.into_channel());
     parent.clone(node_request).expect("cloned node");
-    let bytes = clone.read(fio::MAX_BUF).await.unwrap().map_err(zx::Status::from_raw).unwrap();
+    let bytes = clone.read(fio::MAX_BUF).await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
     assert_eq!(std::str::from_utf8(&bytes).unwrap(), expected_contents);
 }
 
@@ -493,16 +508,16 @@ async fn unsupported_per_package_source(source: PackageSource) {
         let file = open_file(root_dir, path, fuchsia_fs::PERM_READABLE).await.unwrap();
 
         // Verify write() fails.
-        let result = file.write(b"potato").await.unwrap().map_err(zx::Status::from_raw);
+        let result = file.write(b"potato").await.unwrap().map_err(zx::Status::err_from_raw);
         assert_eq!(result, Err(expected_status));
 
         // Verify writeAt() fails.
-        let status = file.write_at(b"potato", 0).await.unwrap().map_err(zx::Status::from_raw);
+        let status = file.write_at(b"potato", 0).await.unwrap().map_err(zx::Status::err_from_raw);
         assert_eq!(status, Err(expected_status));
 
         // Verify resize() fails.
         assert_eq!(
-            file.resize(0).await.unwrap().map_err(zx::Status::from_raw),
+            file.resize(0).await.unwrap().map_err(zx::Status::err_from_raw),
             Err(expected_status)
         );
     }

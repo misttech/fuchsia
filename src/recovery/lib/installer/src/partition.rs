@@ -78,7 +78,7 @@ impl Partition {
     ) -> Result<Option<Self>, Error> {
         let (status, guid) = part.get_type_guid().await.context("Get type guid failed")?;
         if let None = guid {
-            return Err(Error::new(zx::Status::from_raw(status)));
+            return Err(Error::new(zx::Status::err_from_raw(status)));
         }
 
         let (_status, name) = part.get_name().await.context("Get name failed")?;
@@ -105,8 +105,11 @@ impl Partition {
         }
 
         if let Some(pave_type) = pave_type {
-            let info =
-                part.get_info().await.context("Get info failed")?.map_err(zx::Status::from_raw)?;
+            let info = part
+                .get_info()
+                .await
+                .context("Get info failed")?
+                .map_err(zx::Status::err_from_raw)?;
             let block_size = info.block_size.into();
             let size = info.block_count * block_size;
 

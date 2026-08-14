@@ -185,8 +185,8 @@ mod tests {
 
         let file = open_file(&root, "file1", fio::PERM_READABLE).await.unwrap();
         assert_eq!(read_to_string(&file).await.unwrap(), "file1 contents.\n");
-        file.close().await.unwrap().map_err(zx::Status::from_raw).unwrap();
-        root.close().await.unwrap().map_err(zx::Status::from_raw).unwrap();
+        file.close().await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
+        root.close().await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
     }
 
     #[fuchsia::test]
@@ -239,7 +239,7 @@ mod tests {
                 .get_attributes(attributes_query)
                 .await
                 .expect("node get_attributes() failed")
-                .map_err(Status::from_raw)
+                .map_err(Status::err_from_raw)
                 .expect("node get_attributes() error");
 
             let node = Node {
@@ -253,13 +253,13 @@ mod tests {
                 .close()
                 .await
                 .expect("node close failed")
-                .map_err(Status::from_raw)
+                .map_err(Status::err_from_raw)
                 .expect("node close error");
 
             assert_eq!(node, *expected_node);
         }
 
-        root.close().await.unwrap().map_err(Status::from_raw).unwrap();
+        root.close().await.unwrap().map_err(Status::err_from_raw).unwrap();
     }
 
     #[fuchsia::test]
@@ -298,18 +298,18 @@ mod tests {
         file.seek(fio::SeekOrigin::Start, offset)
             .await
             .expect("failed FIDL seek")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("failed to seek file");
         write(&file, new_contents).await.expect("failed to write to file");
         file.close()
             .await
             .expect("failed FIDL file close")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("failed to close file");
         root.close()
             .await
             .expect("failed FIDL dir close")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("failed to close root");
 
         // Construct Ext4 fs again, and verify that the written data is still there.
@@ -344,12 +344,12 @@ mod tests {
         file.close()
             .await
             .expect("failed FIDL file close")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("failed to close file");
         root.close()
             .await
             .expect("failed FIDL dir close")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("failed to close root");
     }
 
@@ -388,7 +388,7 @@ mod tests {
         file.seek(fio::SeekOrigin::Start, 0)
             .await
             .expect("failed FIDL seek")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("failed to seek file");
         let error = write(&file, &new_contents)
             .await
@@ -401,12 +401,12 @@ mod tests {
         file.close()
             .await
             .expect("failed FIDL file close")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("failed to close file");
         root.close()
             .await
             .expect("failed FIDL dir close")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("failed to close root");
 
         // Construct Ext4 fs again, and verify that the written data is still there.
@@ -435,12 +435,12 @@ mod tests {
         file.close()
             .await
             .expect("failed FIDL file close")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("failed to close file");
         root.close()
             .await
             .expect("failed FIDL dir close")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("failed to close root");
     }
 
@@ -486,7 +486,7 @@ mod tests {
         file.seek(fio::SeekOrigin::Start, 0)
             .await
             .expect("failed FIDL seek")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("failed to seek file");
         write(&file, new_contents).await.expect("failed to write to file");
 
@@ -504,7 +504,7 @@ mod tests {
         file.close()
             .await
             .expect("sync check failed")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("sync error");
 
         let mut vmo_contents_after_sync = vec![0u8; data.len()];
@@ -519,7 +519,7 @@ mod tests {
         root.close()
             .await
             .expect("failed FIDL dir close")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("failed to close root");
     }
 
@@ -571,14 +571,14 @@ mod tests {
             .seek(fio::SeekOrigin::Start, 0)
             .await
             .expect("failed to seek")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("seek error");
         write(&file1, "FILE1 CONTENTS!\n").await.expect("failed to write to file");
         file1
             .seek(fio::SeekOrigin::Start, 0)
             .await
             .expect("failed to seek")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("seek error");
         // `read_to_string` loops read until no bytes are read back. So for non-empty strings, we
         // expect to see two more read requests.
@@ -618,7 +618,7 @@ mod tests {
         root.close()
             .await
             .expect("failed FIDL dir close")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("failed to close root");
     }
 
@@ -650,7 +650,7 @@ mod tests {
         let file = open_file(&root, "file1", fio::PERM_READABLE).await.expect("open failed");
         let original_contents = read_to_string(&file).await.expect("read failed");
         assert_eq!(original_contents, "file1 contents.\n");
-        file.close().await.unwrap().map_err(zx::Status::from_raw).unwrap();
+        file.close().await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
 
         // Open with TRUNCATE, reading from this should return empty string.
         let file = open_file(
@@ -668,7 +668,7 @@ mod tests {
         file.seek(fio::SeekOrigin::Start, 0)
             .await
             .expect("seek failed")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("seek error");
         assert_eq!(read_to_string(&file).await.expect("read failed"), new_content);
 
@@ -695,12 +695,12 @@ mod tests {
         file.seek(fio::SeekOrigin::Start, 0)
             .await
             .expect("seek failed")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("seek error");
         assert_eq!(read_to_string(&file).await.expect("read failed"), new_content);
 
-        file.close().await.unwrap().map_err(zx::Status::from_raw).unwrap();
-        root.close().await.unwrap().map_err(zx::Status::from_raw).unwrap();
+        file.close().await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
+        root.close().await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
     }
 
     #[fuchsia::test]
@@ -760,8 +760,8 @@ mod tests {
             other => panic!("Unexpected event error: {:?}", other),
         }
 
-        symlink_proxy.close().await.unwrap().map_err(zx::Status::from_raw).unwrap();
-        root.close().await.unwrap().map_err(zx::Status::from_raw).unwrap();
+        symlink_proxy.close().await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
+        root.close().await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
     }
 
     #[fuchsia::test]
@@ -800,7 +800,7 @@ mod tests {
         let target_bytes = symlink_proxy.describe().await.expect("describe failed").target.unwrap();
         assert_eq!(target_bytes, b"file1");
 
-        symlink_proxy.close().await.unwrap().map_err(zx::Status::from_raw).unwrap();
-        root.close().await.unwrap().map_err(zx::Status::from_raw).unwrap();
+        symlink_proxy.close().await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
+        root.close().await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
     }
 }

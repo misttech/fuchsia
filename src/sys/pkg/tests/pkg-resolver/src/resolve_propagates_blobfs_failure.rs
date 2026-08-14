@@ -287,7 +287,7 @@ async fn assert_resolve_package_with_failing_blobfs_fails(
         .add(&repo_config.into())
         .await
         .unwrap()
-        .map_err(Status::from_raw)
+        .map_err(Status::err_from_raw)
         .unwrap();
     let res = env.resolve_package(format!("fuchsia-pkg://test/{}", pkg.name()).as_str()).await;
 

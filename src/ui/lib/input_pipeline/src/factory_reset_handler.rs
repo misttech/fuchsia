@@ -372,7 +372,7 @@ impl FactoryResetHandler {
             .add_sound_from_file(sound_id, sound_endpoint.into_client_end().unwrap())
             .await
             .context("AddSoundFromFile error")?
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .context("AddSoundFromFile failed")?;
         log::debug!("Added sound from file");
 

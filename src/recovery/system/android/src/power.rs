@@ -16,6 +16,6 @@ pub async fn shutdown(action: fpower_statecontrol::ShutdownAction) -> Result<(),
             ..Default::default()
         })
         .await?
-        .map_err(zx::Status::from_raw)?;
+        .map_err(zx::Status::err_from_raw)?;
     Ok(())
 }

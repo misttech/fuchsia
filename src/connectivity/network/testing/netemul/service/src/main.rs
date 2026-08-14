@@ -2653,7 +2653,7 @@ mod tests {
             .add_device(TEST_DEVICE_NAME, get_device_proxy(&endpoint))
             .await
             .expect("calling add device")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("error adding device");
         wait_for_event_on_path(
             &mut watcher,
@@ -2666,7 +2666,7 @@ mod tests {
                 .add_device(TEST_DEVICE_NAME, get_device_proxy(&endpoint))
                 .await
                 .expect("calling add device")
-                .map_err(zx::Status::from_raw)
+                .map_err(zx::Status::err_from_raw)
                 .expect_err("adding a duplicate device should fail"),
             zx::Status::ALREADY_EXISTS,
         );
@@ -2681,7 +2681,7 @@ mod tests {
             .get_topological_path()
             .await
             .expect("calling get topological path")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("failed to get topological path");
         assert!(path.contains(TEST_DEVICE_NAME));
 
@@ -2689,7 +2689,7 @@ mod tests {
             .remove_device(TEST_DEVICE_NAME)
             .await
             .expect("calling remove device")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("error removing device");
         wait_for_event_on_path(
             &mut watcher,
@@ -2702,7 +2702,7 @@ mod tests {
                 .remove_device(TEST_DEVICE_NAME)
                 .await
                 .expect("calling remove device")
-                .map_err(zx::Status::from_raw)
+                .map_err(zx::Status::err_from_raw)
                 .expect_err("removing a nonexistent device should fail"),
             zx::Status::NOT_FOUND,
         );
@@ -2731,7 +2731,7 @@ mod tests {
             .add_device(TEST_DEVICE_NAME, get_device_proxy(&endpoint))
             .await
             .expect("calling add device")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("error adding device");
 
         let service = realm.connect_to_service(fhwnet::ServiceMarker);
@@ -2765,7 +2765,7 @@ mod tests {
             .await
             .expect("calling add device again");
         assert_eq!(
-            result.map_err(zx::Status::from_raw),
+            result.map_err(zx::Status::err_from_raw),
             Err(zx::Status::ALREADY_EXISTS),
             "Expected ALREADY_EXISTS when adding duplicate device"
         );
@@ -2776,7 +2776,7 @@ mod tests {
             .remove_device(TEST_DEVICE_NAME)
             .await
             .expect("calling remove device")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("error removing device");
 
         // Reuse the service proxy to check that it reflects the removal.
@@ -2788,7 +2788,7 @@ mod tests {
         let result =
             realm.realm.remove_device(TEST_DEVICE_NAME).await.expect("calling remove device again");
         assert_eq!(
-            result.map_err(zx::Status::from_raw),
+            result.map_err(zx::Status::err_from_raw),
             Err(zx::Status::NOT_FOUND),
             "Expected NOT_FOUND when removing non-existent device"
         );
@@ -2823,7 +2823,7 @@ mod tests {
             .add_device(TEST_DEVICE_NAME, get_device_proxy(&endpoint))
             .await
             .expect("calling add device")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("error adding device");
 
         // Wait for the event.
@@ -2857,7 +2857,7 @@ mod tests {
             .add_device(TEST_DEVICE_NAME, get_device_proxy(&endpoint))
             .await
             .expect("calling add device")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("error adding device");
 
         // Connect to service directory in realm_a.
@@ -2918,7 +2918,7 @@ mod tests {
             .add_device(TEST_DEVICE_NAME, get_device_proxy(&endpoint))
             .await
             .expect("FIDL error")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("error adding device");
 
         // Connect to the service directory through the child.
@@ -2974,7 +2974,7 @@ mod tests {
             .add_device(TEST_DEVICE_NAME, get_device_proxy(&endpoint))
             .await
             .expect("calling add device")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("error adding device");
         wait_for_event_on_path(
             &mut watcher_a,
@@ -3051,7 +3051,7 @@ mod tests {
             .add_device(TEST_DEVICE_NAME, get_device_proxy(&endpoint))
             .await
             .expect("FIDL error")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("error adding device");
 
         // Expect the device to implement `fuchsia.device/Controller.GetTopologicalPath`.
@@ -3067,7 +3067,7 @@ mod tests {
             .get_topological_path()
             .await
             .expect("FIDL error")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("failed to get topological path");
         assert!(path.contains(TEST_DEVICE_NAME));
     }
@@ -3133,13 +3133,13 @@ mod tests {
                 .try_open_directory(dir)
                 .await
                 .unwrap_or_else(|e| panic!("calling open {}: {:?}", dir, e))
-                .map_err(zx::Status::from_raw)
+                .map_err(zx::Status::err_from_raw)
                 .unwrap_or_else(|e| panic!("failed to open {}: {:?}", dir, e));
             let result = counter_without_storage
                 .try_open_directory(dir)
                 .await
                 .unwrap_or_else(|e| panic!("calling open {}: {:?}", dir, e))
-                .map_err(zx::Status::from_raw);
+                .map_err(zx::Status::err_from_raw);
             assert_eq!(result, Err(zx::Status::NOT_FOUND), "opening {}", dir);
         }
     }
@@ -3159,7 +3159,7 @@ mod tests {
             .start_child_component(COUNTER_COMPONENT_NAME)
             .await
             .expect("calling start child component")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("start child component failed");
 
         // Without connecting to a protocol exposed by the child, and without
@@ -3196,7 +3196,7 @@ mod tests {
             .stop_child_component(COUNTER_COMPONENT_NAME)
             .await
             .expect("calling stop child component")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("stop child component failed");
         let err =
             counter.increment().await.expect_err("increment call on stopped child should fail");
@@ -3239,7 +3239,7 @@ mod tests {
                 }
                 .await
                 .unwrap_or_else(|e| panic!("failed to {:?} child component: {:?}", action, e))
-                .map_err(zx::Status::from_raw);
+                .map_err(zx::Status::err_from_raw);
                 assert_eq!(err, Err(expected_status));
             },
         )
@@ -3280,7 +3280,7 @@ mod tests {
             .add_device(&test_device_path, get_device_proxy(&endpoint))
             .await
             .expect("calling add device")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("error adding device");
         wait_for_event_on_path(
             &mut dev_watcher,
@@ -3309,7 +3309,7 @@ mod tests {
             .remove_device(&test_device_path)
             .await
             .expect("calling remove device")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("error removing device");
         wait_for_event_on_path(
             &mut watcher,
@@ -3330,14 +3330,14 @@ mod tests {
             .add_device(INVALID_FILE_PATH, device_proxy)
             .await
             .expect("calling add device")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect_err("add device with invalid path should fail");
         assert_eq!(err, zx::Status::INVALID_ARGS);
         let err = realm
             .remove_device(INVALID_FILE_PATH)
             .await
             .expect("calling remove device")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect_err("remove device with invalid path should fail");
         assert_eq!(err, zx::Status::INVALID_ARGS);
     }

@@ -5,12 +5,13 @@
 use super::RecoveryMessages;
 use anyhow::{Context as _, Error};
 use fidl::endpoints::{DiscoverableProtocolMarker as _, create_proxy};
+use fidl_fuchsia_fxfs as ffxfs;
+use fidl_fuchsia_io as fio;
 use fuchsia_component::client::connect_to_protocol;
 use futures::TryStreamExt as _;
 use isolated_swd::updater::Updater;
 use std::sync::Arc;
 use vfs::directory::helper::DirectlyMutable as _;
-use {fidl_fuchsia_fxfs as ffxfs, fidl_fuchsia_io as fio};
 
 pub async fn apply_update(
     url: &str,
@@ -27,7 +28,7 @@ pub async fn apply_update(
         .mount_system_blob_volume(blob_exposed_dir_server)
         .await
         .context("calling MountSystemBlobVolume")?
-        .map_err(zx::Status::from_raw)
+        .map_err(zx::Status::err_from_raw)
         .context("mounting system blob volume")?;
 
     let blob_root = fuchsia_fs::directory::open_directory(
@@ -77,7 +78,7 @@ pub async fn apply_update(
         .close()
         .await
         .context("calling close")?
-        .map_err(zx::Status::from_raw)
+        .map_err(zx::Status::err_from_raw)
         .context("closing blob exposed dir")?;
     if let Err(e) = stop_pkg_recovery().await {
         log::error!("Failed to stop pkg-recovery: {e:#}");

@@ -83,6 +83,15 @@ impl Status {
         if raw == zx_types::ZX_OK { None } else { Some(Status(raw)) }
     }
 
+    /// Returns a `Status` for `raw`. If `raw` is `ZX_OK` (`0`), returns `Status::INTERNAL`.
+    #[inline]
+    pub const fn err_from_raw(raw: zx_types::zx_status_t) -> Self {
+        match Self::try_from_raw(raw) {
+            Some(status) => status,
+            None => Self::INTERNAL,
+        }
+    }
+
     /// Creates a `Status` from a raw `zx_status_t`.
     ///
     /// # Deprecated
@@ -403,5 +412,11 @@ mod test {
     fn error_status_conversions() {
         let err_res: Result<(), super::ErrorStatus> = Err(Status::BAD_SYSCALL.into());
         assert_eq!(err_res, Err(Status::BAD_SYSCALL.into()));
+    }
+
+    #[test]
+    fn test_err_from_raw() {
+        assert_eq!(Status::err_from_raw(zx_types::ZX_OK), Status::INTERNAL);
+        assert_eq!(Status::err_from_raw(zx_types::ZX_ERR_NOT_FOUND), Status::NOT_FOUND);
     }
 }

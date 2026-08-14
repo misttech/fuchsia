@@ -3228,7 +3228,7 @@ impl<'a> NetCfg<'a> {
             .await
             .context("error sending clear DHCP leases request")
             .map_err(errors::Error::NonFatal)?
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .context("error clearing DHCP leases request")
             .map_err(errors::Error::NonFatal)?;
 
@@ -3240,7 +3240,7 @@ impl<'a> NetCfg<'a> {
             .await
             .context("error sending set DHCP IpAddrs parameter request")
             .map_err(errors::Error::NonFatal)?
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .context("error setting DHCP IpAddrs parameter")
             .map_err(errors::Error::NonFatal)?;
 
@@ -3251,7 +3251,7 @@ impl<'a> NetCfg<'a> {
             .await
             .context("error sending set DHCP BoundDeviceName parameter request")
             .map_err(errors::Error::NonFatal)?
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .context("error setting DHCP BoundDeviceNames parameter")
             .map_err(errors::Error::NonFatal)?;
 
@@ -3266,7 +3266,7 @@ impl<'a> NetCfg<'a> {
             .await
             .context("error sending set DHCP LeaseLength parameter request")
             .map_err(errors::Error::NonFatal)?
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .context("error setting DHCP LeaseLength parameter")
             .map_err(errors::Error::NonFatal)?;
 
@@ -3295,7 +3295,7 @@ impl<'a> NetCfg<'a> {
             .await
             .context("error sending set DHCP AddressPool parameter request")
             .map_err(errors::Error::NonFatal)?
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .context("error setting DHCP AddressPool parameter")
             .map_err(errors::Error::NonFatal)
     }

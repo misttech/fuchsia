@@ -3776,7 +3776,7 @@ mod tests {
                     .close()
                     .await
                     .expect("FIDL error")
-                    .map_err(zx::Status::from_raw)
+                    .map_err(zx::Status::err_from_raw)
                     .expect("close failed");
 
                 assert_eq!(
@@ -3797,7 +3797,7 @@ mod tests {
                     .close()
                     .await
                     .expect("FIDL error")
-                    .map_err(zx::Status::from_raw)
+                    .map_err(zx::Status::err_from_raw)
                     .expect("close failed");
                 assert_eq!(
                     fasync::OnSignals::new(&alice_events, ZXSIO_SIGNAL_INCOMING).await,
@@ -3827,13 +3827,13 @@ mod tests {
                     .close()
                     .await
                     .expect("FIDL error")
-                    .map_err(zx::Status::from_raw)
+                    .map_err(zx::Status::err_from_raw)
                     .expect("close failed");
                 bob_cloned
                     .close()
                     .await
                     .expect("FIDL error")
-                    .map_err(zx::Status::from_raw)
+                    .map_err(zx::Status::err_from_raw)
                     .expect("close failed");
 
                 // But the sockets should have gone here.
@@ -3878,7 +3878,7 @@ mod tests {
             .close()
             .await
             .expect("FIDL error")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("close failed");
         let _: fidl::Error = socket
             .close()
@@ -3897,7 +3897,7 @@ mod tests {
             .close()
             .await
             .expect("FIDL error")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("close failed");
         // Now it should become empty
         test_stack.with_ctx(|ctx| {
@@ -3928,7 +3928,7 @@ mod tests {
             .close()
             .await
             .expect("FIDL error")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("close failed");
         // No socket should be there now.
         test_stack.with_ctx(|ctx| {
@@ -3954,7 +3954,7 @@ mod tests {
             .close()
             .await
             .expect("FIDL error")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("close failed");
 
         // make sure we don't leak anything.

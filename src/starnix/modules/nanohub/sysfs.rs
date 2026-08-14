@@ -63,7 +63,7 @@ impl From<i32> for SysfsError {
     ///
     /// This allows you to handle the error case simply by using the ? operator.
     fn from(value: i32) -> Self {
-        let status = zx::Status::from_raw(value);
+        let status = zx::Status::err_from_raw(value);
         log_error!("Service method responded with an error: {status:?}");
         sysfs_errno!(EINVAL)
     }

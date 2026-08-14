@@ -173,7 +173,7 @@ impl Driver for UsbZeroFunction {
                 warn!("FIDL error: {:?}", e);
                 Status::INTERNAL
             })?
-            .map_err(Status::from_raw)?;
+            .map_err(Status::err_from_raw)?;
 
         let (interfaces, endpoints, _) = alloc_result;
         if interfaces.len() != 1 || endpoints.len() != 2 {
@@ -245,7 +245,7 @@ impl Driver for UsbZeroFunction {
                 warn!("FIDL error: {:?}", e);
                 Status::INTERNAL
             })?
-            .map_err(Status::from_raw)?;
+            .map_err(Status::err_from_raw)?;
 
         let ep_in = ep_in_client.into_proxy();
         let ep_out = ep_out_client.into_proxy();
@@ -293,7 +293,7 @@ async fn configure_ep(
             warn!("FIDL error: {:?}", e);
             Status::INTERNAL
         })?
-        .map_err(Status::from_raw)
+        .map_err(Status::err_from_raw)
 }
 
 impl UsbZeroFunctionDevice {
@@ -429,7 +429,7 @@ impl UsbZeroFunctionDevice {
                         warn!("FIDL error setting stall: {:?}", e);
                         Status::INTERNAL
                     })?
-                    .map_err(Status::from_raw)?;
+                    .map_err(Status::err_from_raw)?;
                 Ok(Vec::new())
             }
             VendorRequest::ClearStall => {
@@ -441,7 +441,7 @@ impl UsbZeroFunctionDevice {
                         warn!("FIDL error clearing stall: {:?}", e);
                         Status::INTERNAL
                     })?
-                    .map_err(Status::from_raw)?;
+                    .map_err(Status::err_from_raw)?;
                 Ok(Vec::new())
             }
             VendorRequest::ConfigureEndpoint => {
@@ -466,7 +466,7 @@ impl UsbZeroFunctionDevice {
                         warn!("FIDL error disabling endpoint: {:?}", e);
                         Status::INTERNAL
                     })?
-                    .map_err(Status::from_raw)?;
+                    .map_err(Status::err_from_raw)?;
                 Ok(Vec::new())
             }
             VendorRequest::ConnectEndpoint => {
@@ -481,7 +481,7 @@ impl UsbZeroFunctionDevice {
                         warn!("FIDL error connecting to endpoint: {:?}", e);
                         Status::INTERNAL
                     })?
-                    .map_err(Status::from_raw)?;
+                    .map_err(Status::err_from_raw)?;
                 Ok(Vec::new())
             }
             VendorRequest::Deconfigure => {
@@ -498,7 +498,7 @@ impl UsbZeroFunctionDevice {
                         warn!("FIDL error deconfiguring: {:?}", e);
                         Status::INTERNAL
                     })?
-                    .map_err(Status::from_raw)?;
+                    .map_err(Status::err_from_raw)?;
                 Ok(Vec::new())
             }
             VendorRequest::WritePayload => {

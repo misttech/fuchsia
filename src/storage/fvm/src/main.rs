@@ -1225,7 +1225,7 @@ impl Component {
         options: FormatOptions,
     ) -> Result<(), Error> {
         let block_proxy = device.into_proxy();
-        let info = block_proxy.get_info().await?.map_err(zx::Status::from_raw)?;
+        let info = block_proxy.get_info().await?.map_err(zx::Status::err_from_raw)?;
         let disk_size = info.block_count * info.block_size as u64;
 
         let slice_size = options.fvm_slice_size.unwrap_or(DEFAULT_SLICE_SIZE);

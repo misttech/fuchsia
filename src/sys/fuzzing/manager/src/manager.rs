@@ -141,7 +141,7 @@ impl<T: FidlEndpoint<SuiteRunnerMarker>> Manager<T> {
         if let Err(e) = result {
             warn!("failed to connect {}: fuzz-registry returned: {}", fuzzer_url, e);
             fuzzer.kill().await?;
-            return Err(zx::Status::try_from_raw(e).unwrap_or(zx::Status::INTERNAL));
+            return Err(zx::Status::err_from_raw(e));
         }
         self.put_fuzzer(&url, fuzzer)
     }
@@ -183,7 +183,7 @@ impl<T: FidlEndpoint<SuiteRunnerMarker>> Manager<T> {
             .map_err(warn_internal::<zx::Status>)?;
         if let Err(e) = result {
             warn!("failed to stop {}: fuzz-registry returned: {}", fuzzer_url, e);
-            return Err(zx::Status::try_from_raw(e).unwrap_or(zx::Status::INTERNAL));
+            return Err(zx::Status::err_from_raw(e));
         }
         if let Some(mut fuzzer) = fuzzer {
             let timeout = zx::MonotonicDuration::from_seconds(DEFAULT_TIMEOUT_IN_SECONDS);

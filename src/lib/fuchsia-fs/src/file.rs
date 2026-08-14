@@ -351,7 +351,7 @@ pub enum WriteError {
 /// Gracefully closes the file proxy from the remote end.
 pub async fn close(file: fio::FileProxy) -> Result<(), CloseError> {
     let result = file.close().await.map_err(CloseError::SendCloseRequest)?;
-    result.map_err(|s| CloseError::CloseError(zx_status::Status::from_raw(s)))
+    result.map_err(|s| CloseError::CloseError(zx_status::Status::err_from_raw(s)))
 }
 
 /// Writes the given data into the given file.
@@ -365,7 +365,7 @@ where
         let bytes_written = file
             .write(&data[..std::cmp::min(fio::MAX_BUF as usize, data.len())])
             .await?
-            .map_err(|s| WriteError::WriteError(zx_status::Status::from_raw(s)))?;
+            .map_err(|s| WriteError::WriteError(zx_status::Status::err_from_raw(s)))?;
 
         if bytes_written > data.len() as u64 {
             return Err(WriteError::Overwrite);
@@ -393,7 +393,7 @@ pub async fn read(file: &fio::FileProxy) -> Result<Vec<u8>, ReadError> {
         let mut bytes = file
             .read(fio::MAX_BUF)
             .await?
-            .map_err(|s| ReadError::ReadError(zx_status::Status::from_raw(s)))?;
+            .map_err(|s| ReadError::ReadError(zx_status::Status::err_from_raw(s)))?;
         if bytes.is_empty() {
             break;
         }
@@ -415,7 +415,7 @@ pub async fn read_num_bytes(file: &fio::FileProxy, num_bytes: u64) -> Result<Vec
         let mut bytes = file
             .read(bytes_to_read)
             .await?
-            .map_err(|s| ReadError::ReadError(zx_status::Status::from_raw(s)))?;
+            .map_err(|s| ReadError::ReadError(zx_status::Status::err_from_raw(s)))?;
 
         if bytes.is_empty() {
             break;

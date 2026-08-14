@@ -134,7 +134,7 @@ impl Error {
 fn map_driver_result(result: Result<Result<(), i32>, fidl::Error>) -> Result<(), Error> {
     result
         .map_err(|x| Error::DriverCommunication(x.into()))?
-        .map_err(|e| Error::Driver(zx::Status::from_raw(e)))
+        .map_err(|e| Error::Driver(zx::Status::err_from_raw(e)))
 }
 
 struct SocketContextState {

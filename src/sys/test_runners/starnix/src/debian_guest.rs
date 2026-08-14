@@ -175,8 +175,7 @@ impl DebianGuest {
                         }
                     },
                     CommandListenerEvent::OnTerminated { status, return_code } => {
-                        let term_status =
-                            zx::Status::try_from_raw(status).unwrap_or(zx::Status::INTERNAL);
+                        let term_status = zx::Status::err_from_raw(status);
                         log::info!(tag = self.instance_name.as_str();
                             "Command '{}'\n...terminated with status {:?}, return code {}",
                             command,

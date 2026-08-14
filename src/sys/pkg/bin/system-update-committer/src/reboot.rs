@@ -22,7 +22,7 @@ pub(super) async fn wait_and_reboot(timer: fasync::Timer, proxy: &PowerStateCont
             })
             .await
             .context("while performing reboot call")?
-            .map_err(Status::from_raw)
+            .map_err(Status::err_from_raw)
             .context("reboot responded with")
     }
     .await

@@ -217,7 +217,7 @@ async fn package_cache_get() {
             needed_blobs_server_end,
             dir_server_end,
         )
-        .map_ok(|res| res.map_err(zx::Status::from_raw));
+        .map_ok(|res| res.map_err(zx::Status::err_from_raw));
 
     // Request received, expect client requesting meta far.
     expect_and_return_inspect(&env, "need-meta-far").await;
@@ -311,7 +311,7 @@ async fn package_cache_concurrent_gets() {
             needed_blobs_server_end,
             dir_server_end,
         )
-        .map_ok(|res| res.map_err(zx::Status::from_raw));
+        .map_ok(|res| res.map_err(zx::Status::err_from_raw));
 
     // Initiate concurrent connection to `PackageCache`.
     let package_cache_proxy2: fpkg::PackageCacheProxy = env
@@ -333,7 +333,7 @@ async fn package_cache_concurrent_gets() {
             needed_blobs_server_end2,
             dir_server_end2,
         )
-        .map_ok(|res| res.map_err(zx::Status::from_raw));
+        .map_ok(|res| res.map_err(zx::Status::err_from_raw));
 
     let hierarchy = env
         .wait_for_and_return_inspect_state(tree_assertion!(
@@ -449,7 +449,7 @@ async fn retained_index_updated_and_persisted() {
             needed_blobs_server_end,
             dir_server_end,
         )
-        .map_ok(|res| res.map_err(zx::Status::from_raw));
+        .map_ok(|res| res.map_err(zx::Status::err_from_raw));
 
     let hierarchy = env.inspect_hierarchy().await;
     assert_data_tree!(
@@ -506,7 +506,7 @@ async fn retained_index_updated_and_persisted() {
             needed_blobs_server_end2,
             dir_server_end2,
         )
-        .map_ok(|res| res.map_err(zx::Status::from_raw));
+        .map_ok(|res| res.map_err(zx::Status::err_from_raw));
 
     let (meta_far2, _contents2) = packages[1].contents();
     write_meta_far(&needed_blobs2, meta_far2).await;
@@ -582,7 +582,7 @@ async fn index_updated_mid_package_write() {
             needed_blobs_server_end,
             dir_server_end,
         )
-        .map_ok(|res| res.map_err(zx::Status::from_raw));
+        .map_ok(|res| res.map_err(zx::Status::err_from_raw));
 
     let (meta_far, contents) = package.contents();
     write_meta_far(&needed_blobs, meta_far).await;

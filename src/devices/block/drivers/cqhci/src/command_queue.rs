@@ -107,7 +107,7 @@ impl CommandQueueHost for fidl_next::Client<cqhci::Cqhci> {
             })?
             .map_err(|err| {
                 error!(err:?; "Failed to initialize CQHCI");
-                zx::Status::from_raw(err)
+                zx::Status::err_from_raw(err)
             })?;
         let cqhci_mmio = {
             let vmo_len = cqhci_mmio.get_size()?;
@@ -137,7 +137,7 @@ impl CommandQueueHost for fidl_next::Client<cqhci::Cqhci> {
                 error!(err:?; "FIDL error");
                 zx::Status::INTERNAL
             })?
-            .map_err(zx::Status::from_raw)?;
+            .map_err(zx::Status::err_from_raw)?;
         Ok(())
     }
 
@@ -148,7 +148,7 @@ impl CommandQueueHost for fidl_next::Client<cqhci::Cqhci> {
                 error!(err:?; "FIDL error");
                 zx::Status::INTERNAL
             })?
-            .map_err(zx::Status::from_raw)?;
+            .map_err(zx::Status::err_from_raw)?;
         Ok(())
     }
 }

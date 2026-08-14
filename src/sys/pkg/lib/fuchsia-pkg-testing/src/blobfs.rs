@@ -4,10 +4,12 @@
 
 //! Fake implementation of blobfs for blobfs::Client.
 
+use fidl_fuchsia_fxfs as ffxfs;
+use fidl_fuchsia_io as fio;
+use fuchsia_async as fasync;
 use fuchsia_hash::Hash;
 use futures::stream::TryStreamExt as _;
 use tempfile::TempDir;
-use {fidl_fuchsia_fxfs as ffxfs, fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
 /// A fake blobfs backed by temporary storage.
 ///
@@ -78,7 +80,7 @@ async fn serve_reader(blobs: fio::DirectoryProxy, mut stream: ffxfs::BlobReaderR
                             .get_backing_memory(fio::VmoFlags::READ)
                             .await
                             .unwrap()
-                            .map_err(zx::Status::from_raw)
+                            .map_err(zx::Status::err_from_raw)
                             .unwrap();
                         let () = responder.send(Ok(vmo)).unwrap();
                     }

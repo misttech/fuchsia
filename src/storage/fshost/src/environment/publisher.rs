@@ -241,10 +241,10 @@ impl BlockDirectoryInfo {
         let token_client = fuchsia_component::client::connect_to_named_protocol_at_dir_root::<
             ftoken::NodeTokenMarker,
         >(&service_dir.dir(), "token")?;
-        let token = token_client.get().await?.map_err(zx::Status::from_raw)?;
+        let token = token_client.get().await?.map_err(zx::Status::err_from_raw)?;
         let bus_topo_client =
             fuchsia_component::client::connect_to_protocol::<ftoken::NodeBusTopologyMarker>()?;
-        let path = bus_topo_client.get(token).await?.map_err(zx::Status::from_raw)?;
+        let path = bus_topo_client.get(token).await?.map_err(zx::Status::err_from_raw)?;
         Ok(BusPath(path))
     }
 }

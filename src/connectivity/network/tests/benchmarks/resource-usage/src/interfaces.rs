@@ -212,7 +212,7 @@ async fn stress_interface(
                 })
                 .await
                 .expect("call write_frame")
-                .map_err(zx::Status::from_raw)
+                .map_err(zx::Status::err_from_raw)
             {
                 Ok(()) => break,
                 Err(zx::Status::SHOULD_WAIT) => continue,

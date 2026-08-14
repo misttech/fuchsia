@@ -292,7 +292,7 @@ async fn set_volume_limit() {
     )
     .unwrap();
     let blobfs_limit =
-        blob_volume_proxy.get_limit().await.unwrap().map_err(zx::Status::from_raw).unwrap();
+        blob_volume_proxy.get_limit().await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
     let expected_blobfs_limit = if cfg!(feature = "fxblob") {
         BLOBFS_MAX_BYTES
     } else {
@@ -304,7 +304,7 @@ async fn set_volume_limit() {
         connect_to_named_protocol_at_dir_root::<FsStartupVolumeMarker>(&volumes_dir, "data")
             .unwrap();
     let data_limit =
-        data_volume_proxy.get_limit().await.unwrap().map_err(zx::Status::from_raw).unwrap();
+        data_volume_proxy.get_limit().await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
     let expected_data_limit = if cfg!(feature = "fxblob") {
         data_max_bytes()
     } else if data_fs_zxcrypt() {
@@ -854,7 +854,7 @@ async fn debug_block_directory() {
     )
     .unwrap();
     assert_eq!(
-        volume.get_info().await.unwrap().map_err(zx::Status::from_raw).unwrap().block_size,
+        volume.get_info().await.unwrap().map_err(zx::Status::err_from_raw).unwrap().block_size,
         512,
     );
 
@@ -1076,7 +1076,7 @@ async fn expose_system_gpt() {
     )
     .unwrap();
     assert_eq!(
-        volume.get_info().await.unwrap().map_err(zx::Status::from_raw).unwrap().block_size,
+        volume.get_info().await.unwrap().map_err(zx::Status::err_from_raw).unwrap().block_size,
         512,
     );
 

@@ -38,7 +38,7 @@ async fn clone_file() {
         .read(0)
         .await
         .expect("read failed")
-        .map_err(zx::Status::from_raw)
+        .map_err(zx::Status::err_from_raw)
         .expect("read error");
 }
 

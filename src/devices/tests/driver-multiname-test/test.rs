@@ -34,5 +34,5 @@ async fn test_sample_driver() {
 
     // Call it again to add a second device with the same name, which should fail.
     let response = parent.add_device().await.unwrap();
-    assert_eq!(response.map_err(zx::Status::from_raw), Err(zx::Status::BAD_STATE));
+    assert_eq!(response.map_err(zx::Status::err_from_raw), Err(zx::Status::BAD_STATE));
 }

@@ -38,7 +38,7 @@ impl DeviceControl for HardwareCodec {
             .set_dai_format(&dai_format.into())
             .await
             .bug_context("Failed to call SetDaiFormat")?
-            .map_err(|status| Status::from_raw(status))
+            .map_err(Status::err_from_raw)
             .user_message("failed to set DAI format")?;
         Ok(())
     }

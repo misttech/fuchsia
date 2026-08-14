@@ -147,7 +147,7 @@ pub fn sys_reboot(
                         current_task.kernel(),
                         errno!(
                             EINVAL,
-                            format!("Failed to reboot, status: {}", zx::Status::from_raw(e))
+                            format!("Failed to reboot, status: {}", zx::Status::err_from_raw(e))
                         ),
                     );
                 }

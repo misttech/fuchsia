@@ -123,14 +123,14 @@ mod fuchsia {
             tmp.sync()
                 .await
                 .map_err(WriteError::Fidl)?
-                .map_err(|s| WriteError::WriteError(zx::Status::from_raw(s)))?;
+                .map_err(|s| WriteError::WriteError(zx::Status::err_from_raw(s)))?;
             let (status, token) = dir.get_token().await.map_err(WriteError::Fidl)?;
             zx::ok(status).map_err(WriteError::Link)?;
             let token = zx::Event::from(token.unwrap());
             tmp.link_into(token, &tmp_filename)
                 .await
                 .map_err(WriteError::Fidl)?
-                .map_err(|s| WriteError::Link(zx::Status::from_raw(s)))?;
+                .map_err(|s| WriteError::Link(zx::Status::err_from_raw(s)))?;
         }
         rename(dir, &tmp_filename, filename).await.map_err(|err| WriteError::Rename(err))
     }
@@ -413,7 +413,7 @@ pub fn clone_onto(
 /// Gracefully closes the directory proxy from the remote end.
 pub async fn close(dir: fio::DirectoryProxy) -> Result<(), CloseError> {
     let result = dir.close().await.map_err(CloseError::SendCloseRequest)?;
-    result.map_err(|s| CloseError::CloseError(zx_status::Status::from_raw(s)))
+    result.map_err(|s| CloseError::CloseError(zx_status::Status::err_from_raw(s)))
 }
 
 /// Create a randomly named file in the given directory with the given prefix, and return its path
@@ -477,7 +477,7 @@ pub async fn rename(dir: &fio::DirectoryProxy, src: &str, dst: &str) -> Result<(
         .rename(src_filename, event, dst_filename)
         .await
         .map_err(RenameError::SendRenameRequest)?
-        .map_err(|s| RenameError::RenameError(zx_status::Status::from_raw(s)))
+        .map_err(|s| RenameError::RenameError(zx_status::Status::err_from_raw(s)))
 }
 
 pub use fio::DirentType as DirentKind;
@@ -785,7 +785,7 @@ pub async fn remove_dir_recursive(
         )
         .await
         .map_err(|e| EnumerateError::Fidl("unlink", e))?
-        .map_err(|s| EnumerateError::Unlink(zx_status::Status::from_raw(s)))
+        .map_err(|s| EnumerateError::Unlink(zx_status::Status::err_from_raw(s)))
 }
 
 // Returns a `BoxFuture` instead of being async because async doesn't support recursion.
@@ -819,7 +819,7 @@ fn remove_dir_contents(dir: fio::DirectoryProxy) -> BoxFuture<'static, Result<()
             dir.unlink(&dirent.name, &fio::UnlinkOptions::default())
                 .await
                 .map_err(|e| EnumerateError::Fidl("unlink", e))?
-                .map_err(|s| EnumerateError::Unlink(zx_status::Status::from_raw(s)))?;
+                .map_err(|s| EnumerateError::Unlink(zx_status::Status::err_from_raw(s)))?;
         }
         Ok(())
     };
@@ -1104,7 +1104,7 @@ mod tests {
                     .write(file_name.as_bytes())
                     .await
                     .unwrap()
-                    .map_err(zx_status::Status::from_raw)
+                    .map_err(zx_status::Status::err_from_raw)
                     .unwrap();
             }
             crate::file::close(file).await.unwrap();
@@ -1122,7 +1122,7 @@ mod tests {
                             .write(file_name.as_bytes())
                             .await
                             .unwrap()
-                            .map_err(zx_status::Status::from_raw)
+                            .map_err(zx_status::Status::err_from_raw)
                             .unwrap();
                     }
                     crate::file::close(file).await.unwrap();

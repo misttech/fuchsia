@@ -2,14 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 use fidl::endpoints::ClientEnd;
 use fidl_fuchsia_dash::LauncherError;
+use fidl_fuchsia_hardware_pty as pty;
+use fidl_fuchsia_io as fio;
+use fuchsia_async as fasync;
 use fuchsia_component::client::connect_to_protocol;
 use futures::future::{AbortHandle, Abortable};
 use futures::io::{ReadHalf, WriteHalf};
 use futures::prelude::*;
-use {fidl_fuchsia_hardware_pty as pty, fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
 async fn dash_to_client_loop(
     server: pty::DeviceProxy,
@@ -23,10 +25,9 @@ async fn dash_to_client_loop(
     loop {
         let signals = fasync::OnSignals::new(&epair, readable | hangup).await?;
         if signals.contains(readable) {
-            let bytes = server
-                .read(fio::MAX_BUF)
-                .await?
-                .map_err(|e| format_err!("cannot read from PTY: {}", zx::Status::from_raw(e)))?;
+            let bytes = server.read(fio::MAX_BUF).await?.map_err(|e| {
+                format_err!("cannot read from PTY: {}", zx::Status::err_from_raw(e))
+            })?;
             write_to_client.write_all(&bytes).await?;
             write_to_client.flush().await?;
         }
@@ -47,7 +48,7 @@ async fn client_to_dash_loop(
             server
                 .write(&buf[..bytes_read])
                 .await?
-                .map_err(|e| format_err!("cannot write to PTY: {}", zx::Status::from_raw(e)))?;
+                .map_err(|e| format_err!("cannot write to PTY: {}", zx::Status::err_from_raw(e)))?;
         } else {
             // The client has closed their side of the socket.
             break Ok(());
@@ -138,7 +139,7 @@ mod tests {
 
         stdio.write_all("ls".as_bytes()).await.unwrap();
         fasync::OnSignals::new(&epair, readable).await.unwrap();
-        let buf = pty.read(2).await.unwrap().map_err(|e| zx::Status::from_raw(e)).unwrap();
+        let buf = pty.read(2).await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
         assert_eq!(buf, "ls".as_bytes());
     }
 }

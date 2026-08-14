@@ -46,7 +46,7 @@ async fn unlink_file_with_sufficient_rights() {
             .read(contents.len() as u64)
             .await
             .expect("read failed")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("read error");
 
         assert_eq!(read_result, contents);

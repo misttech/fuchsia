@@ -51,7 +51,7 @@ impl BlobWriter {
             .get_vmo(size)
             .await
             .map_err(CreateError::Fidl)?
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .map_err(CreateError::GetVmo)?;
         let vmo_len = vmo.get_size().map_err(CreateError::GetSize)?;
         Ok(BlobWriter {
@@ -120,7 +120,7 @@ impl BlobWriter {
             self.outstanding_writes.push_back(Box::pin(async move {
                 write_fut
                     .await
-                    .map(|res| res.map(|()| bytes_to_send_len).map_err(zx::Status::from_raw))
+                    .map(|res| res.map(|()| bytes_to_send_len).map_err(zx::Status::err_from_raw))
             }));
             self.available -= bytes_to_send_len;
             self.bytes_sent += bytes_to_send_len;

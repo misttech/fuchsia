@@ -46,7 +46,7 @@ impl CachedProcessInfo {
                             dispatchers,
                         })
                     }
-                    Ok(Err(e)) => Err(zx::Status::from_raw(e)),
+                    Ok(Err(e)) => Err(zx::Status::err_from_raw(e)),
                     Err(e) => {
                         log::error!("FIDL error GetProcessInfo: {:?}", e);
                         Err(zx::Status::INTERNAL)

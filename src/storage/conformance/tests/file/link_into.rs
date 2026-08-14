@@ -227,7 +227,7 @@ async fn unlinkable_unnamed_temporary_should_fail_link_into() {
             .link_into(token, "foo")
             .await
             .expect("link_into (FIDL) failed")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect_err("link_into passed unexpectedly for unlinkable file"),
         zx::Status::NOT_FOUND
     );

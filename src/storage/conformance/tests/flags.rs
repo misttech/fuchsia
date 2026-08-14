@@ -149,7 +149,7 @@ async fn file_set_flags_invalid_flags() {
         .set_flags(fio::Flags::FILE_APPEND | fio::Flags::PERM_GET_ATTRIBUTES)
         .await
         .expect("set_flags failed")
-        .map_err(zx::Status::from_raw)
+        .map_err(zx::Status::err_from_raw)
         .expect_err("set_flags only supports setting Flags.FILE_APPEND");
     assert_eq!(err, zx::Status::INVALID_ARGS);
 }
@@ -164,7 +164,7 @@ async fn dir_set_flags_not_supported() {
         .set_flags(fio::Flags::empty())
         .await
         .expect("set_flags failed")
-        .map_err(zx::Status::from_raw)
+        .map_err(zx::Status::err_from_raw)
         .expect_err("set_flags should be unsupported for directory nodes");
     assert_eq!(err, zx::Status::NOT_SUPPORTED);
 }
@@ -185,7 +185,7 @@ async fn node_reference_set_flags_not_supported() {
         .set_flags(fio::Flags::empty())
         .await
         .expect("set_flags failed")
-        .map_err(zx::Status::from_raw)
+        .map_err(zx::Status::err_from_raw)
         .expect_err("set_flags should be unsupported for directory nodes");
     assert_eq!(err, zx::Status::NOT_SUPPORTED);
 }

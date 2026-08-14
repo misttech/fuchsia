@@ -180,7 +180,7 @@ impl RemoteIo {
         self.proxy
             .get_attributes(query, zx::MonotonicInstant::INFINITE)
             .map_err(|_| zx::Status::IO)?
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
     }
 
     /// Returns attributes mapped to `zxio_node_attributes_t`
@@ -199,7 +199,7 @@ impl RemoteIo {
         self.proxy
             .update_attributes(&attributes, zx::MonotonicInstant::INFINITE)
             .map_err(|_| zx::Status::IO)?
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
     }
 
     /// Wraps fuchsia.io/Directory's Open.
@@ -306,7 +306,7 @@ impl RemoteIo {
             let data = file_proxy
                 .read_at(max, offset, zx::MonotonicInstant::INFINITE)
                 .map_err(|_| zx::Status::IO)?
-                .map_err(zx::Status::from_raw)?;
+                .map_err(zx::Status::err_from_raw)?;
             let eof = (data.len() as u64) < max;
             Ok((data, eof))
         } else {
@@ -362,7 +362,7 @@ impl RemoteIo {
             let result = file_proxy
                 .write_at(chunk, offset + total_written as u64, zx::MonotonicInstant::INFINITE)
                 .map_err(|_| zx::Status::IO)
-                .and_then(|res| res.map_err(zx::Status::from_raw));
+                .and_then(|res| res.map_err(zx::Status::err_from_raw));
             match result {
                 Ok(actual) => {
                     let actual = actual as usize;
@@ -420,7 +420,7 @@ impl RemoteIo {
         self.cast_proxy::<fio::FileSynchronousProxy>()
             .resize(length, zx::MonotonicInstant::INFINITE)
             .map_err(|_| zx::Status::IO)?
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
     }
 
     /// Returns a VMO backing the file.
@@ -439,7 +439,7 @@ impl RemoteIo {
         let vmo = file_proxy
             .get_backing_memory(fio_flags, zx::MonotonicInstant::INFINITE)
             .map_err(|_| zx::Status::IO)?
-            .map_err(zx::Status::from_raw)?;
+            .map_err(zx::Status::err_from_raw)?;
         Ok(vmo)
     }
 
@@ -448,7 +448,7 @@ impl RemoteIo {
         self.proxy
             .sync(zx::MonotonicInstant::INFINITE)
             .map_err(|_| zx::Status::IO)?
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
     }
 
     /// Closes and updates access time asynchronously.
@@ -481,7 +481,7 @@ impl RemoteIo {
         linkable_proxy
             .link_into(token.into(), name, zx::MonotonicInstant::INFINITE)
             .map_err(|_| zx::Status::IO)?
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
     }
 
     /// Wraps fuchsia.io/Directory's Unlink.
@@ -491,7 +491,7 @@ impl RemoteIo {
         dir_proxy
             .unlink(name, &options, zx::MonotonicInstant::INFINITE)
             .map_err(|_| zx::Status::IO)?
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
     }
 
     /// Wraps fuchsia.io/Directory's Rename.
@@ -510,7 +510,7 @@ impl RemoteIo {
         dir_proxy
             .rename(old_path, token.into(), new_path, zx::MonotonicInstant::INFINITE)
             .map_err(|_| zx::Status::IO)?
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
     }
 
     /// Wraps fuchsia.io/Directory's CreateSymlink.
@@ -520,7 +520,7 @@ impl RemoteIo {
         dir_proxy
             .create_symlink(name, target, Some(server_end.into()), zx::MonotonicInstant::INFINITE)
             .map_err(|_| zx::Status::IO)?
-            .map_err(zx::Status::from_raw)?;
+            .map_err(zx::Status::err_from_raw)?;
         Ok(RemoteIo::new(client_end.into()))
     }
 
@@ -539,7 +539,7 @@ impl RemoteIo {
         file_proxy
             .enable_verity(&options, zx::MonotonicInstant::INFINITE)
             .map_err(|_| zx::Status::IO)?
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
     }
 
     /// Wraps fuchsia.io/File's Allocate.
@@ -567,7 +567,7 @@ impl RemoteIo {
         file_proxy
             .allocate(offset, len, fio_mode, zx::MonotonicInstant::INFINITE)
             .map_err(|_| zx::Status::IO)?
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
     }
 
     /// Wraps fuchsia.io/Node's GetExtendedAttribute.
@@ -577,7 +577,7 @@ impl RemoteIo {
             .proxy
             .get_extended_attribute(name_str.as_bytes(), zx::MonotonicInstant::INFINITE)
             .map_err(|_| zx::Status::IO)?
-            .map_err(zx::Status::from_raw)?;
+            .map_err(zx::Status::err_from_raw)?;
         match result {
             fio::ExtendedAttributeValue::Bytes(bytes) => Ok(bytes),
             fio::ExtendedAttributeValue::Buffer(vmo) => {
@@ -606,7 +606,7 @@ impl RemoteIo {
         self.proxy
             .set_extended_attribute(name, val, fidl_mode, zx::MonotonicInstant::INFINITE)
             .map_err(|_| zx::Status::IO)?
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
     }
 
     /// Wraps fuchsia.io/Node's RenoveExtendedAttribute.
@@ -615,7 +615,7 @@ impl RemoteIo {
         self.proxy
             .remove_extended_attribute(name_str.as_bytes(), zx::MonotonicInstant::INFINITE)
             .map_err(|_| zx::Status::IO)?
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
     }
 
     /// Wraps fuchsia.io/Node's ListExtendedAttributes.
@@ -628,7 +628,7 @@ impl RemoteIo {
             let (attributes, last) = iterator
                 .get_next(zx::MonotonicInstant::INFINITE)
                 .map_err(|_| zx::Status::IO)?
-                .map_err(zx::Status::from_raw)?;
+                .map_err(zx::Status::err_from_raw)?;
             all_attrs.extend(attributes);
             if last {
                 break;
@@ -834,7 +834,7 @@ impl RemoteDirectory {
         self.proxy
             .sync(zx::MonotonicInstant::INFINITE)
             .map_err(|_| zx::Status::IO)?
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
     }
 
     /// Clones (in the fuchsia.unknown.Clonable sense) the underlying proxy.

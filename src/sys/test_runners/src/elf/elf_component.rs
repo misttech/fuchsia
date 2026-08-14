@@ -117,7 +117,7 @@ impl ComponentError {
             Self::InvalidUrl => fcomponent::Error::InvalidArguments,
             Self::ConfigVmo(_) => fcomponent::Error::Internal,
         };
-        zx::Status::from_raw(status.into_primitive().try_into().unwrap())
+        zx::Status::err_from_raw(status.into_primitive().try_into().unwrap())
     }
 }
 

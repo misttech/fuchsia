@@ -48,7 +48,7 @@ pub(super) async fn update_servers(
 
     match lookup_admin.set_dns_servers(&servers).await {
         Ok(Ok(())) => {}
-        Ok(Err(e)) => warn!("error setting DNS servers: {:?}", zx::Status::from_raw(e)),
+        Ok(Err(e)) => warn!("error setting DNS servers: {:?}", zx::Status::err_from_raw(e)),
         Err(e) => warn!("error sending set DNS servers request: {:?}", e),
     }
 

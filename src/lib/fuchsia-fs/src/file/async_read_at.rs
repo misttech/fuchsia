@@ -158,7 +158,7 @@ impl AsyncReadAt for AsyncFile {
                                 Err(s) => {
                                     self.read_at_state = ReadAtState::Empty;
                                     return Poll::Ready(Err(
-                                        zx_status::Status::from_raw(s).into_io_error()
+                                        zx_status::Status::err_from_raw(s).into_io_error()
                                     ));
                                 }
                                 Ok(bytes) => {
@@ -228,7 +228,9 @@ impl AsyncGetSize for AsyncFile {
                     return Poll::Ready(Err(zx_status::Status::NOT_SUPPORTED.into_io_error()));
                 }
                 Err(status) => {
-                    return Poll::Ready(Err(zx_status::Status::from_raw(status).into_io_error()));
+                    return Poll::Ready(Err(
+                        zx_status::Status::err_from_raw(status).into_io_error()
+                    ));
                 }
             },
             Err(e) => {

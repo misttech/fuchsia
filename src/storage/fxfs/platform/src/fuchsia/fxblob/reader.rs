@@ -46,7 +46,7 @@ mod tests {
             .get_vmo(&hash.into())
             .await
             .expect("transport error on blobreader")
-            .map_err(zx::Status::from_raw)?;
+            .map_err(zx::Status::err_from_raw)?;
         let vmo_size = vmo.get_stream_size().expect("failed to get vmo size") as usize;
         let mut buf = vec![0; vmo_size];
         vmo.read(&mut buf[..], 0)?;

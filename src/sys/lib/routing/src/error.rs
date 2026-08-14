@@ -462,7 +462,9 @@ impl Explain for RoutingError {
             | RoutingError::MissingPorcelainType { .. }
             | RoutingError::UnexpectedError => zx::Status::INTERNAL,
             RoutingError::RemoteFIDLError { .. } => zx::Status::PEER_CLOSED,
-            RoutingError::RemoteRouterError { error_code, .. } => zx::Status::from_raw(*error_code),
+            RoutingError::RemoteRouterError { error_code, .. } => {
+                zx::Status::err_from_raw(*error_code)
+            }
         }
     }
 }

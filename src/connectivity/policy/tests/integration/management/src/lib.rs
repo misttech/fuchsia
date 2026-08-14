@@ -1083,7 +1083,7 @@ async fn test_wlan_ap_dhcp_server<M: Manager, N: Netstack>(name: &str) {
                         panic!(
                             "error getting {:?} parameter: {}",
                             param_name,
-                            zx::Status::from_raw(e)
+                            zx::Status::err_from_raw(e)
                         )
                     })
                     == *param_value)

@@ -84,7 +84,7 @@ impl Pager {
         ) {
             Ok(Ok(PagerRegisterFileResponse { vmo: Some(vmo), .. })) => Ok(vmo),
             Ok(Ok(_)) => Err(zx::Status::INTERNAL),
-            Ok(Err(e)) => Err(zx::Status::from_raw(e)),
+            Ok(Err(e)) => Err(zx::Status::err_from_raw(e)),
             Err(_) => Err(zx::Status::INTERNAL),
         }
     }

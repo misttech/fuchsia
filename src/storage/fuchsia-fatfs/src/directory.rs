@@ -1216,7 +1216,7 @@ mod tests {
             .close()
             .await
             .expect("Send request OK")
-            .map_err(Status::from_raw)
+            .map_err(Status::err_from_raw)
             .expect("First close OK");
 
         let proxy = vfs::directory::serve_read_only(dir.clone(), ExecutionScope::new());
@@ -1224,7 +1224,7 @@ mod tests {
             .close()
             .await
             .expect("Send request OK")
-            .map_err(Status::from_raw)
+            .map_err(Status::err_from_raw)
             .expect("Second close OK");
         dir.close();
     }
@@ -1244,7 +1244,7 @@ mod tests {
             .close()
             .await
             .expect("FIDL call failed")
-            .map_err(Status::from_raw)
+            .map_err(Status::err_from_raw)
             .expect("First close failed");
 
         // Re-open and close root at "test".
@@ -1258,7 +1258,7 @@ mod tests {
             .close()
             .await
             .expect("FIDL call failed")
-            .map_err(Status::from_raw)
+            .map_err(Status::err_from_raw)
             .expect("Second close failed");
 
         root.close();
@@ -1327,7 +1327,7 @@ mod tests {
             .update_attributes(&new_attrs)
             .await
             .expect("FIDL call failed")
-            .map_err(Status::from_raw)
+            .map_err(Status::err_from_raw)
             .expect("update attributes failed");
 
         new_attrs.mode = Some(123);
@@ -1335,7 +1335,7 @@ mod tests {
             .update_attributes(&new_attrs)
             .await
             .expect("FIDL call failed")
-            .map_err(Status::from_raw)
+            .map_err(Status::err_from_raw)
             .expect_err("update unsupported attributes passed unexpectedly");
         assert_eq!(status, Status::NOT_SUPPORTED);
         root.close();
@@ -1371,7 +1371,7 @@ mod tests {
             .update_attributes(&new_attrs)
             .await
             .expect("FIDL call failed")
-            .map_err(Status::from_raw)
+            .map_err(Status::err_from_raw)
             .expect("update attributes failed");
 
         new_attrs.mode = Some(123);
@@ -1379,7 +1379,7 @@ mod tests {
             .update_attributes(&new_attrs)
             .await
             .expect("FIDL call failed")
-            .map_err(Status::from_raw)
+            .map_err(Status::err_from_raw)
             .expect_err("update unsupported attributes passed unexpectedly");
         assert_eq!(status, Status::NOT_SUPPORTED);
         root.close();

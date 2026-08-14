@@ -39,7 +39,7 @@ impl InterruptHandlingDriver {
             .context("Failed to call get_interrupt")?;
 
         let handle =
-            response.map_err(|e| Status::from_raw(e)).context("GPIO returned error status")?;
+            response.map_err(Status::err_from_raw).context("GPIO returned error status")?;
 
         Ok(Interrupt::from(handle))
     }

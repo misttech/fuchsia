@@ -25,7 +25,7 @@ pub(super) async fn get_pkg_file_vmo(ns: &Namespace, path: &str) -> Result<zx::V
     )
     .await
     .map_err(|err| StartError::OpenDsoFidl { path: path.into(), err: err.into() })?
-    .map_err(|err| StartError::OpenDso { path: path.into(), err: fidl::Status::from_raw(err) })
+    .map_err(|err| StartError::OpenDso { path: path.into(), err: fidl::Status::err_from_raw(err) })
 }
 
 pub(super) fn basename(path: &str) -> &str {

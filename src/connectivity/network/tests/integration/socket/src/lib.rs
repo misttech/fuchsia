@@ -442,7 +442,7 @@ async fn ip_endpoint_packets<N: Netstack>(name: &str) {
             .read_frame()
             .await
             .context("read_frame_failed")?
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .context("read_frame returned error")?;
         Ok(Some((frame, tun_dev)))
     })
@@ -477,7 +477,7 @@ async fn ip_endpoint_packets<N: Netstack>(name: &str) {
             .write_frame(&frame)
             .await
             .context("write_frame failed")?
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .context("write_frame returned error")?;
         Ok(read_frame
             .try_next()
@@ -523,7 +523,7 @@ async fn ip_endpoint_packets<N: Netstack>(name: &str) {
         })
         .await
         .expect("write_frame failed")
-        .map_err(zx::Status::from_raw)
+        .map_err(zx::Status::err_from_raw)
         .expect("write_frame returned error");
 
     // Read ping response.
@@ -598,7 +598,7 @@ async fn ip_endpoint_packets<N: Netstack>(name: &str) {
         })
         .await
         .expect("write_frame failed")
-        .map_err(zx::Status::from_raw)
+        .map_err(zx::Status::err_from_raw)
         .expect("write_frame returned error");
 
     // Read ping response.

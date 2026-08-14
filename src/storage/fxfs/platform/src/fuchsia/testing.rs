@@ -262,14 +262,14 @@ impl TestFixture {
             .close()
             .await
             .expect("FIDL call failed")
-            .map_err(Status::from_raw)
+            .map_err(Status::err_from_raw)
             .expect("close out_dir failed");
         // Close the root node and ensure that there's no remaining references to |vol|, which would
         // indicate a reference cycle or other leak.
         root.close()
             .await
             .expect("FIDL call failed")
-            .map_err(Status::from_raw)
+            .map_err(Status::err_from_raw)
             .expect("close root failed");
 
         // This should terminate all volumes.  This should ensure that there are no other references
@@ -391,12 +391,24 @@ impl Drop for TestFixture {
 }
 
 pub async fn close_file_checked(file: fio::FileProxy) {
-    file.sync().await.expect("FIDL call failed").map_err(Status::from_raw).expect("sync failed");
-    file.close().await.expect("FIDL call failed").map_err(Status::from_raw).expect("close failed");
+    file.sync()
+        .await
+        .expect("FIDL call failed")
+        .map_err(Status::err_from_raw)
+        .expect("sync failed");
+    file.close()
+        .await
+        .expect("FIDL call failed")
+        .map_err(Status::err_from_raw)
+        .expect("close failed");
 }
 
 pub async fn close_dir_checked(dir: fio::DirectoryProxy) {
-    dir.close().await.expect("FIDL call failed").map_err(Status::from_raw).expect("close failed");
+    dir.close()
+        .await
+        .expect("FIDL call failed")
+        .map_err(Status::err_from_raw)
+        .expect("close failed");
 }
 
 // Utility function to open a new node connection under |dir| using open.

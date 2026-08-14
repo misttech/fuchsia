@@ -307,7 +307,7 @@ pub(super) async fn start_server(
         .await
         .context("error sending start DHCP server request")
         .map_err(errors::Error::NonFatal)?
-        .map_err(zx::Status::from_raw)
+        .map_err(zx::Status::err_from_raw)
         .context("error starting DHCP server")
         .map_err(errors::Error::NonFatal)
 }

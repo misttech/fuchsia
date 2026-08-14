@@ -274,7 +274,7 @@ impl DriverTestRealmInstance for RealmInstance {
             .start(args)
             .await
             .context("DriverTestRealm Start failed")?
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .context("DriverTestRealm Start failed")?;
         Ok(())
     }

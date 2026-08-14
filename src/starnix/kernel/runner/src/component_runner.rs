@@ -347,7 +347,7 @@ async fn serve_component_controller(
                     if let Some(task) = task.upgrade() {
                         signals::send_standard_signal(&task, signals::SignalInfo::kernel(SIGKILL));
                         log_info!("Sent SIGKILL to program {}", task.command());
-                        controller_handle.shutdown_with_epitaph(zx::Status::from_raw(
+                        controller_handle.shutdown_with_epitaph(zx::Status::err_from_raw(
                             fcomponent::Error::InstanceDied.into_primitive() as i32,
                         ));
                     }
@@ -499,7 +499,7 @@ impl MountRecord {
         let flags = directory
             .get_flags(zx::MonotonicInstant::INFINITE)
             .context("transport error")?
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .context("get_flags")?;
         let rights = flags.intersection(fio::MASK_KNOWN_PERMISSIONS);
 

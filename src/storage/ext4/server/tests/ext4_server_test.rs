@@ -211,7 +211,7 @@ async fn ext4_server_overwrites_persist(
             file.seek(fio::SeekOrigin::Start, 0)
                 .await
                 .expect("failed FIDL seek")
-                .map_err(zx::Status::from_raw)
+                .map_err(zx::Status::err_from_raw)
                 .expect("failed to seek file");
             let mut expected = content;
             expected[0] = 1;
@@ -220,7 +220,7 @@ async fn ext4_server_overwrites_persist(
             file.seek(fio::SeekOrigin::Start, 0)
                 .await
                 .expect("failed FIDL seek")
-                .map_err(zx::Status::from_raw)
+                .map_err(zx::Status::err_from_raw)
                 .expect("failed to seek file");
             let updated_content = fuchsia_fs::file::read(&file).await?;
             assert_eq!(updated_content, expected);
@@ -228,12 +228,12 @@ async fn ext4_server_overwrites_persist(
             file.sync()
                 .await
                 .expect("file sync check failed")
-                .map_err(zx::Status::from_raw)
+                .map_err(zx::Status::err_from_raw)
                 .expect("file sync error");
             file.close()
                 .await
                 .expect("file close check failed")
-                .map_err(zx::Status::from_raw)
+                .map_err(zx::Status::err_from_raw)
                 .expect("file close error");
         }
 
@@ -241,7 +241,7 @@ async fn ext4_server_overwrites_persist(
             .close()
             .await
             .expect("dir close check failed")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("dir close error");
         realm.destroy().await.expect("realm destroy failed");
     }
@@ -268,7 +268,7 @@ async fn ext4_server_overwrites_persist(
             file.seek(fio::SeekOrigin::Start, 0)
                 .await
                 .expect("failed FIDL seek")
-                .map_err(zx::Status::from_raw)
+                .map_err(zx::Status::err_from_raw)
                 .expect("failed to seek file");
             let content = fuchsia_fs::file::read(&file).await?;
             assert_eq!(content[0], 1, "Change not persisted for {}", file_path);
@@ -315,7 +315,7 @@ async fn test_truncate_does_not_persist() -> Result<(), Error> {
             .seek(fio::SeekOrigin::Start, 0)
             .await
             .expect("seek failed")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("seek error");
         let new_content = fuchsia_fs::file::read(&file_trunc).await?;
         assert_eq!(new_content, b"");
@@ -324,12 +324,12 @@ async fn test_truncate_does_not_persist() -> Result<(), Error> {
         file.sync()
             .await
             .expect("file sync check failed")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("file sync error");
         file.close()
             .await
             .expect("file close check failed")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("file close error");
         realm.destroy().await.expect("realm destroy failed");
     }

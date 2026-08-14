@@ -58,7 +58,7 @@ async fn get_single_package_with_no_content_blobs(env: TestEnv) {
             needed_blobs_server_end,
             dir_server_end,
         )
-        .map_ok(|res| res.map_err(Status::from_raw));
+        .map_ok(|res| res.map_err(Status::err_from_raw));
 
     let (meta_far, _) = pkg.contents();
 
@@ -162,7 +162,7 @@ async fn get_and_hold_directory() {
             needed_blobs_server_end,
             dir_server_end,
         )
-        .map_ok(|res| res.map_err(Status::from_raw));
+        .map_ok(|res| res.map_err(Status::err_from_raw));
 
     // `OpenMetaBlob()` for already cached package closes the channel with with a `ZX_OK` epitaph.
     assert_matches!(
@@ -197,7 +197,7 @@ async fn unavailable_when_client_drops_needed_blobs_channel() {
             needed_blobs_server_end,
             dir_server_end,
         )
-        .map_ok(|res| res.map_err(Status::from_raw));
+        .map_ok(|res| res.map_err(Status::err_from_raw));
 
     drop(needed_blobs);
 
@@ -300,7 +300,7 @@ async fn get_package_already_present_on_fs() {
             needed_blobs_server_end,
             dir_server_end,
         )
-        .map_ok(|res| res.map_err(Status::from_raw));
+        .map_ok(|res| res.map_err(Status::err_from_raw));
 
     // `OpenMetaBlob()` for already cached package closes the channel with with a `ZX_OK` epitaph.
     assert_matches!(
@@ -348,7 +348,7 @@ async fn get_package_already_present_on_fs_with_pre_closed_needed_blobs() {
             needed_blobs_server_end,
             pkgdir_server_end,
         )
-        .map_ok(|res| res.map_err(Status::from_raw));
+        .map_ok(|res| res.map_err(Status::err_from_raw));
 
     let () = get_fut.await.unwrap().unwrap();
 
@@ -591,7 +591,7 @@ async fn get_with_specific_blobfs_implementation(blob_impl: blobfs_ramdisk::Impl
             needed_blobs_server_end,
             dir_server_end,
         )
-        .map_ok(|res| res.map_err(Status::from_raw));
+        .map_ok(|res| res.map_err(Status::err_from_raw));
 
     let (meta_far, _) = pkg.contents();
     let meta_blob = needed_blobs.open_meta_blob().await.unwrap().unwrap().unwrap().into_proxy();
@@ -656,7 +656,7 @@ async fn get_with_retained_protection_refetches_blobs() {
             fidl::endpoints::create_proxy::<NeededBlobsMarker>().1,
             dir_server_end,
         )
-        .map_ok(|res| res.map_err(Status::from_raw));
+        .map_ok(|res| res.map_err(Status::err_from_raw));
     let () = get_fut.await.unwrap().unwrap();
     assert_matches!(
         pkg.verify_contents(&dir).await,
@@ -674,7 +674,7 @@ async fn get_with_retained_protection_refetches_blobs() {
         .proxies
         .package_cache
         .get(&meta_blob_info, fpkg::GcProtection::Retained, needed_blobs_server_end, dir_server_end)
-        .map_ok(|res| res.map_err(Status::from_raw));
+        .map_ok(|res| res.map_err(Status::err_from_raw));
     assert_matches!(needed_blobs.open_meta_blob().await.unwrap().unwrap(), None);
     assert_eq!(
         get_missing_blobs(&needed_blobs).await,
@@ -759,7 +759,7 @@ async fn get_uses_open_packages_to_short_circuit() {
                 needed_blobs_server_end,
                 fidl::endpoints::create_endpoints().1,
             )
-            .map_ok(|res| res.map_err(Status::from_raw));
+            .map_ok(|res| res.map_err(Status::err_from_raw));
         // NeededBlobs closed with OK because no blobs are needed.
         assert_matches!(
             needed_blobs.open_meta_blob().await,
@@ -785,7 +785,7 @@ async fn get_uses_open_packages_to_short_circuit() {
             needed_blobs_server_end,
             fidl::endpoints::create_endpoints().1,
         )
-        .map_ok(|res| res.map_err(Status::from_raw));
+        .map_ok(|res| res.map_err(Status::err_from_raw));
     // meta.far not needed because we didn't delete it.
     assert_matches!(needed_blobs.open_meta_blob().await, Ok(Ok(None)));
     // pkg-cache is now requesting the deleted content blob.

@@ -170,7 +170,7 @@ mod tests {
         let vmo = executable_file_proxy
             .get_backing_memory(fio::VmoFlags::READ | fio::VmoFlags::EXECUTE)
             .await?
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .context("failed to get VMO of executable")?;
 
         // Launch the process

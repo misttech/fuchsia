@@ -1073,7 +1073,7 @@ impl<B: Blobfs> TestEnv<B> {
         url: impl Into<String>,
     ) -> impl Future<Output = Result<pkg::BlobId, zx::Status>> {
         let fut = self.proxies.resolver.get_hash(&fpkg::PackageUrl { url: url.into() });
-        async move { fut.await.unwrap().map(|blob_id| blob_id.into()).map_err(zx::Status::from_raw) }
+        async move { fut.await.unwrap().map(|blob_id| blob_id.into()).map_err(zx::Status::err_from_raw) }
     }
 
     pub fn lookup(

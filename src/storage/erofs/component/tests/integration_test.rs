@@ -116,7 +116,7 @@ async fn test_erofs_file_get_backing_memory() {
         .get_attributes(fio::NodeAttributesQuery::all())
         .await
         .expect("Failed to get attributes")
-        .map_err(zx::Status::from_raw)
+        .map_err(zx::Status::err_from_raw)
         .expect("get_attributes returned error");
 
     assert_eq!(immut_attrs.content_size, Some(expected.len() as u64));
@@ -131,7 +131,7 @@ async fn test_erofs_file_get_backing_memory() {
         .get_backing_memory(fio::VmoFlags::READ)
         .await
         .expect("get_backing_memory FIDL call failed")
-        .map_err(zx::Status::from_raw)
+        .map_err(zx::Status::err_from_raw)
         .expect("get_backing_memory returned error");
 
     let info = paged_vmo.info().expect("Failed to query VMO info");
@@ -192,7 +192,7 @@ async fn test_erofs_xattrs() {
             .get_next()
             .await
             .expect("Failed to call get_next")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("get_next returned error");
         attributes.extend(chunk);
         if last {
@@ -227,7 +227,7 @@ async fn test_erofs_xattrs() {
         .get_extended_attribute(b"user.flavor")
         .await
         .expect("Failed to call get_extended_attribute")
-        .map_err(zx::Status::from_raw)
+        .map_err(zx::Status::err_from_raw)
         .expect("get_extended_attribute returned error");
     let flavor_val_bytes = match flavor_val {
         fio::ExtendedAttributeValue::Bytes(b) => b,
@@ -239,7 +239,7 @@ async fn test_erofs_xattrs() {
         .get_extended_attribute(b"user.security")
         .await
         .expect("Failed to call get_extended_attribute")
-        .map_err(zx::Status::from_raw)
+        .map_err(zx::Status::err_from_raw)
         .expect("get_extended_attribute returned error");
     let security_val_bytes = match security_val {
         fio::ExtendedAttributeValue::Bytes(b) => b,
@@ -251,7 +251,7 @@ async fn test_erofs_xattrs() {
         .get_extended_attribute(b"user.shared")
         .await
         .expect("Failed to call get_extended_attribute")
-        .map_err(zx::Status::from_raw)
+        .map_err(zx::Status::err_from_raw)
         .expect("get_extended_attribute returned error");
     let shared_val_bytes = match shared_val {
         fio::ExtendedAttributeValue::Bytes(b) => b,
@@ -281,7 +281,7 @@ async fn test_erofs_file_paging_after_close() {
         .get_backing_memory(fio::VmoFlags::READ)
         .await
         .expect("get_backing_memory FIDL call failed")
-        .map_err(zx::Status::from_raw)
+        .map_err(zx::Status::err_from_raw)
         .expect("get_backing_memory returned error");
 
     // Verify no pages are committed initially.
@@ -344,7 +344,7 @@ async fn test_erofs_file_readahead() {
         .get_backing_memory(fio::VmoFlags::READ)
         .await
         .expect("get_backing_memory FIDL call failed")
-        .map_err(zx::Status::from_raw)
+        .map_err(zx::Status::err_from_raw)
         .expect("get_backing_memory returned error");
 
     // Verify no pages are committed initially.
@@ -379,7 +379,7 @@ async fn test_erofs_file_attributes() {
         .get_attributes(fio::NodeAttributesQuery::all())
         .await
         .expect("Failed to get attributes")
-        .map_err(zx::Status::from_raw)
+        .map_err(zx::Status::err_from_raw)
         .expect("get_attributes returned error");
 
     assert_eq!(immut_attrs.protocols, Some(fio::NodeProtocolKinds::FILE));
@@ -458,7 +458,7 @@ async fn test_erofs_directory_attributes() {
         .get_attributes(fio::NodeAttributesQuery::all())
         .await
         .expect("Failed to get attributes")
-        .map_err(zx::Status::from_raw)
+        .map_err(zx::Status::err_from_raw)
         .expect("get_attributes returned error");
 
     assert_eq!(immut_attrs.protocols, Some(fio::NodeProtocolKinds::DIRECTORY));

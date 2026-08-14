@@ -103,7 +103,7 @@ mod tests {
             let (_, reports_result) = future::join(reader_fut, reports_fut).await;
             let reports = reports_result
                 .expect("fidl error")
-                .map_err(zx::Status::from_raw)
+                .map_err(zx::Status::err_from_raw)
                 .expect("service error");
             assert_eq!(reports.len(), 1, "incorrect reports length");
             Ok(())
@@ -130,7 +130,7 @@ mod tests {
             let (_, reports_result) = future::join(reader_fut, reports_fut).await;
             let reports = reports_result
                 .expect("fidl error")
-                .map_err(zx::Status::from_raw)
+                .map_err(zx::Status::err_from_raw)
                 .expect("service error");
             assert_eq!(reports.len(), max_reports, "incorrect reports length");
             Ok(())
@@ -163,7 +163,7 @@ mod tests {
                 Poll::Ready(res) => {
                     let reports = res
                         .expect("fidl error")
-                        .map_err(zx::Status::from_raw)
+                        .map_err(zx::Status::err_from_raw)
                         .expect("service error");
                     assert_eq!(reports.len(), max_reports, "incorrect reports length (1st query)");
                 }
@@ -178,7 +178,7 @@ mod tests {
                 Poll::Ready(res) => {
                     let reports = res
                         .expect("fidl error")
-                        .map_err(zx::Status::from_raw)
+                        .map_err(zx::Status::err_from_raw)
                         .expect("service error");
                     assert_eq!(reports.len(), 1, "incorrect reports length (2nd query)");
                 }
@@ -330,11 +330,11 @@ mod tests {
                 futures::join!(reader_fut, first_reports_fut, second_reports_fut);
             let first_reports = first_reports_result
                 .expect("fidl error")
-                .map_err(zx::Status::from_raw)
+                .map_err(zx::Status::err_from_raw)
                 .expect("service error");
             let second_reports = second_reports_result
                 .expect("fidl error")
-                .map_err(zx::Status::from_raw)
+                .map_err(zx::Status::err_from_raw)
                 .expect("service error");
             assert_eq!(first_reports.len(), max_reports, "incorrect reports length (1st query)");
             assert_eq!(second_reports.len(), 1, "incorrect reports length (2nd query)");
@@ -363,7 +363,7 @@ mod tests {
                 .await
                 .1
                 .expect("fidl error")
-                .map_err(zx::Status::from_raw)
+                .map_err(zx::Status::err_from_raw)
                 .expect("service error")
                 .iter()
                 .map(|report| report.event_time)

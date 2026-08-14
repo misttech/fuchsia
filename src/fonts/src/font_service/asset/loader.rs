@@ -6,12 +6,14 @@ use super::collection::AssetCollectionError;
 use anyhow::Error;
 use async_trait::async_trait;
 use fidl::endpoints::create_proxy;
+use fidl_fuchsia_io as io;
+use fidl_fuchsia_mem as mem;
 use fidl_fuchsia_pkg::FontResolverMarker;
 use fuchsia_component::client::connect_to_protocol;
+use fuchsia_trace as trace;
 use manifest::v2;
 use std::fs::File;
 use std::path::Path;
-use {fidl_fuchsia_io as io, fidl_fuchsia_mem as mem, fuchsia_trace as trace};
 
 /// A trait that covers the interactions of the font service with `fuchsia.pkg.FontResolver` and
 /// font asset VMOs. Intended for easier testing.
@@ -72,7 +74,7 @@ impl AssetLoader for AssetLoaderImpl {
         let () = response.map_err(|i| {
             AssetCollectionError::PackageResolverError(
                 package_locator.clone(),
-                zx::Status::from_raw(i).into(),
+                zx::Status::err_from_raw(i).into(),
             )
         })?;
 
@@ -122,7 +124,7 @@ impl AssetLoader for AssetLoaderImpl {
             .get_backing_memory(io::VmoFlags::READ)
             .await
             .map_err(|e| packaged_file_error(e.into()))?
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .map_err(|e| packaged_file_error(e.into()))?;
 
         let size = vmo.get_content_size().map_err(|e| packaged_file_error(e.into()))?;

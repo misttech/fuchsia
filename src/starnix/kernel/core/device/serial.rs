@@ -51,7 +51,7 @@ impl ForwardTask {
                         let _waiting_guard = ThreadLockupDetector::pause_tracking();
                         serial_proxy
                             .read(zx::MonotonicInstant::INFINITE)?
-                            .map_err(|e: i32| from_status_like_fdio!(zx::Status::from_raw(e)))?
+                            .map_err(|e: i32| from_status_like_fdio!(zx::Status::err_from_raw(e)))?
                     };
                     terminal.main_write(&mut VecInputBuffer::from(data))?;
                 }
@@ -85,7 +85,7 @@ impl ForwardTask {
                     terminal.main_read(&mut buffer)?;
                     serial_proxy
                         .write(buffer.data(), zx::MonotonicInstant::INFINITE)?
-                        .map_err(|e: i32| from_status_like_fdio!(zx::Status::from_raw(e)))?;
+                        .map_err(|e: i32| from_status_like_fdio!(zx::Status::err_from_raw(e)))?;
                 }
             }();
         };

@@ -190,7 +190,7 @@ async fn close_per_package_source(source: PackageSource) {
                 .await
                 .unwrap();
 
-        let () = node.close().await.unwrap().map_err(zx::Status::from_raw).unwrap();
+        let () = node.close().await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
 
         assert_matches::assert_matches!(
             node.close().await,
@@ -340,7 +340,7 @@ async fn assert_sync(package_root: &fio::DirectoryProxy, path: &str, flags: fio:
 
 async fn verify_sync(node: fio::NodeProxy) -> Result<(), Error> {
     let result = node.sync().await.context("failed to call sync")?;
-    let result = result.map_err(zx::Status::from_raw);
+    let result = result.map_err(zx::Status::err_from_raw);
     // All of the files and directories are immutable so it's valid to return either success or
     // NOT_SUPPORTED.
     match result {

@@ -162,7 +162,7 @@ pub async fn partition_matches_with_proxy(
         .get_topological_path()
         .await
         .context("get_topological_path failed")?
-        .map_err(zx::Status::from_raw)?;
+        .map_err(zx::Status::err_from_raw)?;
 
     if let Some(matcher_parent_device) = &matcher.parent_device {
         if !topological_path.starts_with(matcher_parent_device) {

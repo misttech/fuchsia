@@ -134,7 +134,7 @@ impl DisplayCoordinator {
                 .await
         }
         .context("failed to perform FIDL call")?
-        .map_err(Status::from_raw)
+        .map_err(Status::err_from_raw)
         .context("failed to open display coordinator")?;
 
         let app_sender = app_sender.clone();

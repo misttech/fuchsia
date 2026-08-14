@@ -106,10 +106,9 @@ fn do_fsync(file_proxy: &fio::FileSynchronousProxy, metrics: &mut Metrics) -> an
     let timer = Timer::start();
     trace::duration!("benchmark", "fsync");
     let deadline = zx::MonotonicInstant::after(zx::MonotonicDuration::from_seconds(30));
-    file_proxy
-        .sync(deadline)
-        .context("FIDL error on fsync")?
-        .map_err(|status| anyhow::anyhow!("fsync status: {:?}", zx::Status::from_raw(status)))?;
+    file_proxy.sync(deadline).context("FIDL error on fsync")?.map_err(|status| {
+        anyhow::anyhow!("fsync status: {:?}", zx::Status::err_from_raw(status))
+    })?;
     metrics.record_fsync(timer.elapsed_ns());
     Ok(())
 }
@@ -594,7 +593,7 @@ pub fn setup_backing_vmo(
         .get_backing_memory(vmo_flags, deadline)
         .context("Failed to get backing memory via FIDL")?
         .map_err(|status| {
-            anyhow::anyhow!("get_backing_memory status: {:?}", zx::Status::from_raw(status))
+            anyhow::anyhow!("get_backing_memory status: {:?}", zx::Status::err_from_raw(status))
         })?;
     Ok((file_proxy, zx::Vmo::from(vmo_handle)))
 }

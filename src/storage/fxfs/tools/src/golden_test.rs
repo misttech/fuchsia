@@ -57,7 +57,7 @@ async fn check_data_volume(dir: fio::DirectoryProxy, check_fscrypt: bool) -> Res
         .get_attributes(all_attributes)
         .await
         .context("get_attributes FIDL call on volume root dir")?
-        .map_err(Status::from_raw)
+        .map_err(Status::err_from_raw)
         .context("get_attributes on volume root dir")?;
     ensure!(dir_imm_attrs.id.is_some(), "Expected ID for volume root dir");
     ensure!(
@@ -102,7 +102,7 @@ async fn check_data_volume(dir: fio::DirectoryProxy, check_fscrypt: bool) -> Res
             .get_extended_attribute(b"security.selinux")
             .await
             .context("FIDL call get_extended_attribute on directory")?
-            .map_err(Status::from_raw)
+            .map_err(Status::err_from_raw)
             .context("get_extended_attribute on directory")?
             == fio::ExtendedAttributeValue::Bytes(b"test value".to_vec()),
         "Expected security.selinux xattr on some directory"
@@ -116,7 +116,7 @@ async fn check_data_volume(dir: fio::DirectoryProxy, check_fscrypt: bool) -> Res
         .get_next()
         .await
         .context("get_next FIDL call on dir xattrs")?
-        .map_err(Status::from_raw)
+        .map_err(Status::err_from_raw)
         .context("get_next on dir xattrs")?;
     ensure!(
         entries.contains(&b"security.selinux".to_vec()),
@@ -128,7 +128,7 @@ async fn check_data_volume(dir: fio::DirectoryProxy, check_fscrypt: bool) -> Res
         .get_attributes(all_attributes)
         .await
         .context("get_attributes FIDL call on regular file")?
-        .map_err(Status::from_raw)
+        .map_err(Status::err_from_raw)
         .context("get_attributes wrapping_key_id on regular file")?;
     ensure!(
         mut_attrs.wrapping_key_id == None,
@@ -152,7 +152,7 @@ async fn check_data_volume(dir: fio::DirectoryProxy, check_fscrypt: bool) -> Res
             .get_extended_attribute(b"user.hash")
             .await
             .context("FIDL call get_extended_attribute on file")?
-            .map_err(Status::from_raw)
+            .map_err(Status::err_from_raw)
             .context("get_extended_attribute on file")?
             == fio::ExtendedAttributeValue::Bytes(b"different value".to_vec()),
         "Expected user.hash xattr on regular file"
@@ -166,7 +166,7 @@ async fn check_data_volume(dir: fio::DirectoryProxy, check_fscrypt: bool) -> Res
         .get_next()
         .await
         .context("get_next FIDL call on file xattrs")?
-        .map_err(Status::from_raw)
+        .map_err(Status::err_from_raw)
         .context("get_next on file xattrs")?;
     ensure!(entries.contains(&b"user.hash".to_vec()), "Expected user.hash in file xattrs list");
 
@@ -175,7 +175,7 @@ async fn check_data_volume(dir: fio::DirectoryProxy, check_fscrypt: bool) -> Res
         .get_attributes(all_attributes)
         .await
         .context("get_attributes FIDL call on verity file")?
-        .map_err(Status::from_raw)
+        .map_err(Status::err_from_raw)
         .context("get_attributes on verity file")?;
     ensure!(verity_imm_attrs.id.is_some(), "Expected ID for verity file");
     ensure!(
@@ -200,7 +200,7 @@ async fn check_data_volume(dir: fio::DirectoryProxy, check_fscrypt: bool) -> Res
             .get_attributes(all_attributes)
             .await
             .context("get_attributes FIDL call on fscrypt file")?
-            .map_err(Status::from_raw)
+            .map_err(Status::err_from_raw)
             .context("get_attributes wrapping_key_id on fscrypt file")?;
         ensure!(
             mut_attrs.wrapping_key_id == Some(WRAPPING_KEY_ID),
@@ -252,7 +252,7 @@ async fn check_data_volume(dir: fio::DirectoryProxy, check_fscrypt: bool) -> Res
     )
     .await?;
     ensure!(
-        file.write(ADDED_FILE_CONTENT).await.unwrap().map_err(Status::from_raw)?
+        file.write(ADDED_FILE_CONTENT).await.unwrap().map_err(Status::err_from_raw)?
             == ADDED_FILE_CONTENT.len() as u64,
         "Writing file"
     );
@@ -263,20 +263,20 @@ async fn check_data_volume(dir: fio::DirectoryProxy, check_fscrypt: bool) -> Res
     )
     .await
     .context("FIDL set_extended_attribute")?
-    .map_err(Status::from_raw)
+    .map_err(Status::err_from_raw)
     .context("set_extended_attribute on test file")?;
     ensure!(
         file.get_extended_attribute(b"user.new_attr")
             .await
             .context("FIDL get_extended_attribute on test file")?
-            .map_err(Status::from_raw)?
+            .map_err(Status::err_from_raw)?
             == fio::ExtendedAttributeValue::Bytes(b"new value".to_vec()),
         "Expected new xattr value"
     );
     file.remove_extended_attribute(b"user.new_attr")
         .await
         .context("FIDL remove_extended_attribute")?
-        .map_err(Status::from_raw)
+        .map_err(Status::err_from_raw)
         .context("remove_extended_attribute on test file")?;
     ensure!(
         file.get_extended_attribute(b"user.new_attr")
@@ -312,7 +312,7 @@ async fn check_data_volume(dir: fio::DirectoryProxy, check_fscrypt: bool) -> Res
         .rename("linked_test_file.txt", token.into(), "renamed_test_file.txt")
         .await
         .context("FIDL rename")?;
-    res.map_err(Status::from_raw).context("rename on directory")?;
+    res.map_err(Status::err_from_raw).context("rename on directory")?;
     ensure!(
         &read_file(&some_dir_rw, "renamed_test_file.txt").await? == ADDED_FILE_CONTENT,
         "Renamed file contents"
@@ -329,7 +329,7 @@ async fn check_data_volume(dir: fio::DirectoryProxy, check_fscrypt: bool) -> Res
         .unlink("renamed_test_file.txt", &fio::UnlinkOptions::default())
         .await
         .context("FIDL unlink renamed file")?;
-    res.map_err(Status::from_raw).context("unlink renamed file")?;
+    res.map_err(Status::err_from_raw).context("unlink renamed file")?;
 
     Ok(())
 }

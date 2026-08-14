@@ -73,7 +73,7 @@ impl DebugLog {
         };
         // On error, zx_debuglog_read returns a negative value. All other values indicate success.
         if bytes_written < 0 {
-            Err(Status::from_raw(bytes_written))
+            Err(Status::err_from_raw(bytes_written))
         } else {
             DebugLogRecord::from_raw(&record)
         }

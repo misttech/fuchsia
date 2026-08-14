@@ -2022,7 +2022,7 @@ mod tests {
                     .write(&vec![0xff as u8; 8192])
                     .await
                     .expect("FIDL call failed")
-                    .map_err(Status::from_raw)
+                    .map_err(Status::err_from_raw)
                     .expect("File write was successful")
             );
             file_proxy.sync().await.expect("FIDL call failed").expect("Sync failed.");
@@ -2060,7 +2060,7 @@ mod tests {
                     .write(&vec![0xff as u8; 8192])
                     .await
                     .expect("FIDL call failed")
-                    .map_err(Status::from_raw)
+                    .map_err(Status::err_from_raw)
                     .expect("File write was successful")
             );
             file_proxy.sync().await.expect("FIDL call failed").expect("Sync failed.");
@@ -2186,7 +2186,7 @@ mod tests {
                     .write(&vec![0xff as u8; 8192])
                     .await
                     .expect("FIDL call failed")
-                    .map_err(Status::from_raw)
+                    .map_err(Status::err_from_raw)
                     .expect("File write was successful")
             );
             file_proxy.sync().await.expect("FIDL call failed").expect("Sync failed.");

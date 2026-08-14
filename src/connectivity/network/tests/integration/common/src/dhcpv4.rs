@@ -125,7 +125,7 @@ pub async fn set_server_settings(
                 .set_parameter(&parameter)
                 .await
                 .expect("failed to call dhcp/Server.SetParameter")
-                .map_err(zx::Status::from_raw)
+                .map_err(zx::Status::err_from_raw)
                 .unwrap_or_else(|e| {
                     panic!("dhcp/Server.SetParameter({:?}) returned error: {:?}", parameter, e)
                 })
@@ -137,7 +137,7 @@ pub async fn set_server_settings(
                 .set_option(&option)
                 .await
                 .expect("failed to call dhcp/Server.SetOption")
-                .map_err(zx::Status::from_raw)
+                .map_err(zx::Status::err_from_raw)
                 .unwrap_or_else(|e| {
                     panic!("dhcp/Server.SetOption({:?}) returned error: {:?}", option, e)
                 })

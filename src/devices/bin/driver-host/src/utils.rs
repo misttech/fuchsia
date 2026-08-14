@@ -2,9 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use fidl_fuchsia_data as fdata;
+use fidl_fuchsia_io as fio;
 use fuchsia_component::directory::open_file_async;
 use zx::Status;
-use {fidl_fuchsia_data as fdata, fidl_fuchsia_io as fio};
 
 pub(crate) fn basename(path: &str) -> &str {
     match path.rsplit_once('/') {
@@ -26,7 +27,7 @@ pub(crate) async fn get_file_vmo(
         )
         .await
         .map_err(|_| Status::PEER_CLOSED)?
-        .map_err(Status::from_raw)
+        .map_err(Status::err_from_raw)
 }
 
 #[derive(Debug, PartialEq)]

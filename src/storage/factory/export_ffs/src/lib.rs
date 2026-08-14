@@ -284,7 +284,7 @@ async fn get_entries(dir: &fio::DirectoryProxy) -> Result<Vec<DirectoryEntry>, E
                     .with_context(|| {
                         format!("failed to read contents of file {}: (fidl failure)", ent.name)
                     })?
-                    .map_err(zx::Status::from_raw)
+                    .map_err(zx::Status::err_from_raw)
                     .with_context(|| format!("failed to read contents of file {}", ent.name))?;
 
                 entries.push(DirectoryEntry { name: ent.name.as_bytes().to_vec(), data });

@@ -170,7 +170,7 @@ impl IfaceManager for DeviceMonitorIfaceManager {
         self.monitor_svc
             .query_iface(iface_id)
             .await?
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .context("Could not query iface info")
     }
 
@@ -181,7 +181,7 @@ impl IfaceManager for DeviceMonitorIfaceManager {
         self.monitor_svc
             .query_iface_capabilities(iface_id)
             .await?
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .context("Could not query iface device capabilities")
     }
 
@@ -224,12 +224,15 @@ impl IfaceManager for DeviceMonitorIfaceManager {
         };
 
         let (sme_proxy, server) = create_proxy::<fidl_sme::ClientSmeMarker>();
-        self.monitor_svc.get_client_sme(iface_id, server).await?.map_err(zx::Status::from_raw)?;
+        self.monitor_svc
+            .get_client_sme(iface_id, server)
+            .await?
+            .map_err(zx::Status::err_from_raw)?;
         let (telemetry_proxy, server) = create_proxy::<fidl_sme::TelemetryMarker>();
         self.monitor_svc
             .get_sme_telemetry(iface_id, server)
             .await?
-            .map_err(zx::Status::from_raw)?;
+            .map_err(zx::Status::err_from_raw)?;
         let mut iface = SmeClientIface::new(
             phy_id,
             iface_id,
@@ -637,7 +640,7 @@ impl ClientIface for SmeClientIface {
         self.monitor_svc
             .query_iface(self.iface_id)
             .await?
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .context("Could not query iface info")
     }
 
@@ -957,7 +960,7 @@ impl ClientIface for SmeClientIface {
                 error!("FIDL error calling set_mac_address: {:?}", e);
                 zx::Status::INTERNAL
             })?
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
     }
 
     async fn install_apf_packet_filter(&self, program: Vec<u8>) -> Result<(), zx::Status> {
@@ -969,7 +972,7 @@ impl ClientIface for SmeClientIface {
                 error!("FIDL error calling install_apf_packet_filter: {:?}", e);
                 zx::Status::INTERNAL
             })?
-            .map_err(zx::Status::from_raw);
+            .map_err(zx::Status::err_from_raw);
 
         if result.is_ok() {
             let mut power_state = self.power_state.lock().await;
@@ -986,7 +989,7 @@ impl ClientIface for SmeClientIface {
                 error!("FIDL error calling read_apf_packet_filter_data: {:?}", e);
                 zx::Status::INTERNAL
             })?
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
     }
 
     async fn start_sched_scan(
@@ -1002,7 +1005,7 @@ impl ClientIface for SmeClientIface {
                 error!("FIDL error calling start_sched_scan: {:?}", e);
                 zx::Status::INTERNAL
             })?
-            .map_err(zx::Status::from_raw)?;
+            .map_err(zx::Status::err_from_raw)?;
         Ok(client_end)
     }
 

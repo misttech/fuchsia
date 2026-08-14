@@ -188,7 +188,7 @@ mod tests {
         );
         assert!(fs.filesystem().dirty_task.borrow().is_none());
         let file = fio::FileProxy::new(proxy.into_channel().unwrap());
-        file.write("hello there".as_bytes()).await.unwrap().map_err(Status::from_raw).unwrap();
+        file.write("hello there".as_bytes()).await.unwrap().map_err(Status::err_from_raw).unwrap();
         {
             let fs_inner = fs.filesystem();
             // fs should be dirty until the timer expires.

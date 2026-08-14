@@ -373,7 +373,7 @@ async fn get_supported_mac_roles(
         error!("get_supported_mac_roles(id = {}): error sending 'GetSupportedMacRoles' request to phy: {}", id, fidl_error);
         zx::sys::ZX_ERR_INTERNAL
     })?.map_err(move |e| {
-        let status = zx::Status::from_raw(e);
+        let status = zx::Status::err_from_raw(e);
         error!("get_supported_mac_roles(id = {}): returned an error: {}", id, status);
         status.into_raw()
     })?;
@@ -534,7 +534,7 @@ async fn query_device_capability(
     let iface = ifaces.get(&id).ok_or(zx::Status::NOT_FOUND)?;
     let info =
         iface.generic_sme.query_iface_capabilities().await.map_err(|_| zx::Status::INTERNAL)?;
-    info.map_err(zx::Status::from_raw)
+    info.map_err(zx::Status::err_from_raw)
 }
 
 async fn destroy_iface(
@@ -641,7 +641,7 @@ async fn get_client_sme(
         error!("Failed to request client SME: {}", e);
         zx::Status::INTERNAL
     })?;
-    result.map_err(zx::Status::from_raw)
+    result.map_err(zx::Status::err_from_raw)
 }
 
 async fn get_ap_sme(
@@ -655,7 +655,7 @@ async fn get_ap_sme(
         error!("Failed to request AP SME: {}", e);
         zx::Status::INTERNAL
     })?;
-    result.map_err(zx::Status::from_raw)
+    result.map_err(zx::Status::err_from_raw)
 }
 
 async fn get_sme_telemetry(
@@ -669,7 +669,7 @@ async fn get_sme_telemetry(
         info!("Failed to request SME telemetry: {}", e);
         zx::Status::INTERNAL
     })?;
-    result.map_err(|s| zx::Status::try_from_raw(s).unwrap_or(zx::Status::INTERNAL))
+    result.map_err(zx::Status::err_from_raw)
 }
 
 fn into_status_and_opt<T>(r: Result<T, zx::Status>) -> (Result<(), zx::Status>, Option<T>) {
@@ -692,7 +692,7 @@ trait PhyResultExt<T> {
 impl<T> PhyResultExt<T> for Result<Result<T, zx::sys::zx_status_t>, fidl::Error> {
     fn map_phy_result(self, phy_id: u16, context: &str) -> Result<T, zx::Status> {
         match self {
-            Ok(result) => result.map_err(zx::Status::from_raw),
+            Ok(result) => result.map_err(zx::Status::err_from_raw),
             Err(e) => {
                 error!("Error sending '{}' request to phy #{}: {}", context, phy_id, e);
                 Err(zx::Status::INTERNAL)

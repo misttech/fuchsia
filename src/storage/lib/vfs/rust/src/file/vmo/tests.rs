@@ -274,7 +274,7 @@ async fn get_vmo_read_only() {
             .get_backing_memory(flags)
             .await
             .expect("get_backing_memory fidl error")
-            .map_err(Status::from_raw)
+            .map_err(Status::err_from_raw)
     }
 
     fn assert_vmo_content(vmo: &fidl::Vmo, expected: &[u8]) {

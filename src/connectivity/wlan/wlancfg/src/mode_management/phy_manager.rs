@@ -978,7 +978,7 @@ async fn disconnect(
     iface_id: u16,
 ) -> Result<(), Error> {
     let (sme_proxy, remote) = create_proxy();
-    dev_monitor_proxy.get_client_sme(iface_id, remote).await?.map_err(zx::Status::from_raw)?;
+    dev_monitor_proxy.get_client_sme(iface_id, remote).await?.map_err(zx::Status::err_from_raw)?;
 
     sme_proxy
         .disconnect(fidl_sme::UserDisconnectReason::Recovery)
@@ -991,7 +991,7 @@ async fn stop_ap(
     iface_id: u16,
 ) -> Result<(), Error> {
     let (sme_proxy, remote) = create_proxy();
-    dev_monitor_proxy.get_ap_sme(iface_id, remote).await?.map_err(zx::Status::from_raw)?;
+    dev_monitor_proxy.get_ap_sme(iface_id, remote).await?.map_err(zx::Status::err_from_raw)?;
 
     match sme_proxy.stop().await {
         Ok(result) => match result {

@@ -35,7 +35,7 @@ pub async fn get_block_device(class_path: &str) -> Result<Option<BlockDevice>, E
         .get_topological_path()
         .await
         .context("FIDL: get_topological_path()")?
-        .map_err(zx::Status::from_raw)
+        .map_err(zx::Status::err_from_raw)
         .context("response: get_topological_path()")?;
     if topo_path.contains("/ramdisk-") {
         // This is probably ram, skip it
@@ -47,7 +47,7 @@ pub async fn get_block_device(class_path: &str) -> Result<Option<BlockDevice>, E
             .get_info()
             .await
             .context("FIDL: get_info()")?
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .context("response: get_info()")?;
         let block_count = info.block_count;
         let block_size = info.block_size;

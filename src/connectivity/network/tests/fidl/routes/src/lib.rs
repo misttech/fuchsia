@@ -47,7 +47,7 @@ async fn resolve(
         .resolve(&remote)
         .await
         .expect("routes/State.Resolve FIDL error")
-        .map_err(zx::Status::from_raw)
+        .map_err(zx::Status::err_from_raw)
         .context("routes/State.Resolve error")
         .expect("failed to resolve remote")
 }
@@ -146,7 +146,7 @@ async fn resolve_route<N: Netstack>(name: &str) {
                 .resolve(&remote)
                 .await
                 .expect("resolve FIDL error")
-                .map_err(zx::Status::from_raw),
+                .map_err(zx::Status::err_from_raw),
             Err(zx::Status::ADDRESS_UNREACHABLE)
         )
     };
@@ -223,7 +223,7 @@ async fn resolve_default_route_while_dhcp_is_running<N: NetstackAndDhcpClient>(n
         .resolve(&fidl_ip!("0.0.0.0"))
         .await
         .expect("routes/State.Resolve FIDL error")
-        .map_err(zx::Status::from_raw);
+        .map_err(zx::Status::err_from_raw);
 
     assert_eq!(resolved, Err(zx::Status::ADDRESS_UNREACHABLE));
 
@@ -261,7 +261,7 @@ async fn resolve_default_route_while_dhcp_is_running<N: NetstackAndDhcpClient>(n
         .resolve(&UNSPECIFIED_IP)
         .await
         .expect("routes/State.Resolve FIDL error")
-        .map_err(zx::Status::from_raw);
+        .map_err(zx::Status::err_from_raw);
 
     assert_eq!(
         resolved,
@@ -330,7 +330,11 @@ async fn resolve_fails_with_no_src_address<N: Netstack, I: Ip>(name: &str) {
 
     // Verify that resolving the route fails.
     assert_eq!(
-        routes.resolve(&remote).await.expect("resolve FIDL error").map_err(zx::Status::from_raw),
+        routes
+            .resolve(&remote)
+            .await
+            .expect("resolve FIDL error")
+            .map_err(zx::Status::err_from_raw),
         Err(zx::Status::ADDRESS_UNREACHABLE)
     );
 
@@ -346,7 +350,7 @@ async fn resolve_fails_with_no_src_address<N: Netstack, I: Ip>(name: &str) {
             .resolve(&remote)
             .await
             .expect("resolve FIDL error")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("resolve failed"),
         fidl_fuchsia_net_routes::Resolved::Direct(fidl_fuchsia_net_routes::Destination {
             address: Some(remote),

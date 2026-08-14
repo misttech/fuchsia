@@ -153,7 +153,7 @@ async fn main() -> Result<(), Error> {
             )
             .await
             .context("call get_backing_memory")?
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .context("get_backing_memory")?;
         let size = vmo.get_size().context("get executable vmo size")?;
         vmo.op_range(zx::VmoOp::ALWAYS_NEED, 0, size).context("pin executable vmo")?;

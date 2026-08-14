@@ -464,7 +464,7 @@ async fn server_component_controller(
             }
             Event::Controller(Ok(frunner::ComponentControllerRequest::Kill { control_handle })) => {
                 log_info!("Killing the container's job.");
-                control_handle.shutdown_with_epitaph(zx::Status::from_raw(
+                control_handle.shutdown_with_epitaph(zx::Status::err_from_raw(
                     fcomponent::Error::InstanceDied.into_primitive() as i32,
                 ));
                 fruntime::job_default().kill().expect("Failed to kill job");

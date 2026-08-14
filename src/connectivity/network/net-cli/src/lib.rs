@@ -1923,7 +1923,11 @@ fn write_neigh_entry(
 }
 
 async fn do_dhcpd_start(server: fdhcp::Server_Proxy) -> Result<(), Error> {
-    server.start_serving().await?.map_err(zx::Status::from_raw).context("failed to start server")
+    server
+        .start_serving()
+        .await?
+        .map_err(zx::Status::err_from_raw)
+        .context("failed to start server")
 }
 
 async fn do_dhcpd_stop(server: fdhcp::Server_Proxy) -> Result<(), Error> {
@@ -1936,7 +1940,7 @@ async fn do_dhcpd_get(get_arg: opts::dhcpd::Get, server: fdhcp::Server_Proxy) ->
             let res = server
                 .get_option(name.clone().into())
                 .await?
-                .map_err(zx::Status::from_raw)
+                .map_err(zx::Status::err_from_raw)
                 .with_context(|| format!("get_option({:?}) failed", name))?;
             println!("{:#?}", res);
         }
@@ -1944,7 +1948,7 @@ async fn do_dhcpd_get(get_arg: opts::dhcpd::Get, server: fdhcp::Server_Proxy) ->
             let res = server
                 .get_parameter(name.clone().into())
                 .await?
-                .map_err(zx::Status::from_raw)
+                .map_err(zx::Status::err_from_raw)
                 .with_context(|| format!("get_parameter({:?}) failed", name))?;
             println!("{:#?}", res);
         }
@@ -1958,14 +1962,14 @@ async fn do_dhcpd_set(set_arg: opts::dhcpd::Set, server: fdhcp::Server_Proxy) ->
             server
                 .set_option(&name.clone().into())
                 .await?
-                .map_err(zx::Status::from_raw)
+                .map_err(zx::Status::err_from_raw)
                 .with_context(|| format!("set_option({:?}) failed", name))?;
         }
         opts::dhcpd::SetArg::Parameter(opts::dhcpd::ParameterArg { name }) => {
             server
                 .set_parameter(&name.clone().into())
                 .await?
-                .map_err(zx::Status::from_raw)
+                .map_err(zx::Status::err_from_raw)
                 .with_context(|| format!("set_parameter({:?}) failed", name))?;
         }
     };
@@ -1981,7 +1985,7 @@ async fn do_dhcpd_list(
             let res = server
                 .list_options()
                 .await?
-                .map_err(zx::Status::from_raw)
+                .map_err(zx::Status::err_from_raw)
                 .context("list_options() failed")?;
 
             println!("{:#?}", res);
@@ -1990,7 +1994,7 @@ async fn do_dhcpd_list(
             let res = server
                 .list_parameters()
                 .await?
-                .map_err(zx::Status::from_raw)
+                .map_err(zx::Status::err_from_raw)
                 .context("list_parameters() failed")?;
             println!("{:#?}", res);
         }
@@ -2007,14 +2011,14 @@ async fn do_dhcpd_reset(
             server
                 .reset_options()
                 .await?
-                .map_err(zx::Status::from_raw)
+                .map_err(zx::Status::err_from_raw)
                 .context("reset_options() failed")?;
         }
         opts::dhcpd::ResetArg::Parameter(opts::dhcpd::ParameterToken {}) => {
             server
                 .reset_parameters()
                 .await?
-                .map_err(zx::Status::from_raw)
+                .map_err(zx::Status::err_from_raw)
                 .context("reset_parameters() failed")?;
         }
     };
@@ -2022,7 +2026,7 @@ async fn do_dhcpd_reset(
 }
 
 async fn do_dhcpd_clear_leases(server: fdhcp::Server_Proxy) -> Result<(), Error> {
-    server.clear_leases().await?.map_err(zx::Status::from_raw).context("clear_leases() failed")
+    server.clear_leases().await?.map_err(zx::Status::err_from_raw).context("clear_leases() failed")
 }
 
 async fn do_dns<W: std::io::Write, C: NetCliDepsConnector>(

@@ -258,7 +258,7 @@ impl Filesystem {
         proxy
             .format(channel, &self.config().options().format_options)
             .await?
-            .map_err(Status::from_raw)?;
+            .map_err(Status::err_from_raw)?;
 
         Ok(())
     }
@@ -279,7 +279,7 @@ impl Filesystem {
         let channel = self.block_connector.connect_block()?;
         let exposed_dir = self.get_component_exposed_dir().await?;
         let proxy = connect_to_protocol_at_dir_root::<StartupMarker>(&exposed_dir)?;
-        proxy.check(channel, CheckOptions::default()).await?.map_err(Status::from_raw)?;
+        proxy.check(channel, CheckOptions::default()).await?.map_err(Status::err_from_raw)?;
         Ok(())
     }
 
@@ -300,7 +300,7 @@ impl Filesystem {
         proxy
             .start(self.block_connector.connect_block()?, &start_options)
             .await?
-            .map_err(Status::from_raw)?;
+            .map_err(Status::err_from_raw)?;
 
         let (root_dir, server_end) = create_endpoints::<fio::NodeMarker>();
         exposed_dir.open(
@@ -338,7 +338,7 @@ impl Filesystem {
         proxy
             .start(self.block_connector.connect_block()?, &self.config.options().start_options)
             .await?
-            .map_err(Status::from_raw)?;
+            .map_err(Status::err_from_raw)?;
 
         Ok(ServingMultiVolumeFilesystem {
             component: self.component,
@@ -624,7 +624,7 @@ impl ServingMultiVolumeFilesystem {
         connect_to_protocol_at_dir_root::<VolumesMarker>(self.exposed_dir())?
             .create(volume, server, create_options, options)
             .await?
-            .map_err(|e| anyhow!(zx::Status::from_raw(e)))?;
+            .map_err(|e| anyhow!(zx::Status::err_from_raw(e)))?;
         ServingVolume::new(exposed_dir)
     }
 
@@ -633,7 +633,7 @@ impl ServingMultiVolumeFilesystem {
         connect_to_protocol_at_dir_root::<VolumesMarker>(self.exposed_dir())?
             .remove(volume)
             .await?
-            .map_err(|e| anyhow!(zx::Status::from_raw(e)))
+            .map_err(|e| anyhow!(zx::Status::err_from_raw(e)))
     }
 
     /// Mounts an existing volume.  Fails if the volume is already mounted or doesn't exist.
@@ -651,7 +651,7 @@ impl ServingMultiVolumeFilesystem {
         )?
         .mount(server, options)
         .await?
-        .map_err(|e| anyhow!(zx::Status::from_raw(e)))?;
+        .map_err(|e| anyhow!(zx::Status::err_from_raw(e)))?;
 
         ServingVolume::new(exposed_dir)
     }
@@ -668,7 +668,7 @@ impl ServingMultiVolumeFilesystem {
         )?
         .get_info()
         .await?
-        .map_err(|e| anyhow!(zx::Status::from_raw(e)))
+        .map_err(|e| anyhow!(zx::Status::err_from_raw(e)))
     }
 
     /// Sets the max byte limit for a volume. Fails if the volume is not mounted.
@@ -683,7 +683,7 @@ impl ServingMultiVolumeFilesystem {
         )?
         .set_limit(byte_limit)
         .await?
-        .map_err(|e| anyhow!(zx::Status::from_raw(e)))
+        .map_err(|e| anyhow!(zx::Status::err_from_raw(e)))
     }
 
     pub async fn check_volume(&self, volume: &str, options: CheckOptions) -> Result<(), Error> {
@@ -694,7 +694,7 @@ impl ServingMultiVolumeFilesystem {
         )?
         .check(options)
         .await?
-        .map_err(|e| anyhow!(zx::Status::from_raw(e)))?;
+        .map_err(|e| anyhow!(zx::Status::err_from_raw(e)))?;
         Ok(())
     }
 
@@ -747,7 +747,7 @@ impl ServingMultiVolumeFilesystem {
         Ok(*connect_to_protocol_at_dir_root::<VolumesMarker>(self.exposed_dir())?
             .get_info()
             .await?
-            .map_err(|e| anyhow!(zx::Status::from_raw(e)))?
+            .map_err(|e| anyhow!(zx::Status::err_from_raw(e)))?
             .ok_or_else(|| anyhow!("Missing info"))?)
     }
 }
@@ -960,7 +960,7 @@ mod tests {
                 .write(&content)
                 .await
                 .expect("failed to write to test file")
-                .map_err(Status::from_raw)
+                .map_err(Status::err_from_raw)
                 .expect("write error");
         }
 
@@ -1099,7 +1099,7 @@ mod tests {
                 .write(&content)
                 .await
                 .expect("failed to write to test file")
-                .map_err(Status::from_raw)
+                .map_err(Status::err_from_raw)
                 .expect("write error");
         }
 

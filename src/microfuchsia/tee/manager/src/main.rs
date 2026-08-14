@@ -161,7 +161,7 @@ async fn main() -> Result<(), Error> {
     let vmo = system_props_file
         .get_backing_memory(fio::VmoFlags::READ | fio::VmoFlags::PRIVATE_CLONE)
         .await?
-        .map_err(fidl::Status::from_raw)
+        .map_err(fidl::Status::err_from_raw)
         .context("Failed to get system properties vmo")?;
 
     let mut data_dir = fs.dir("data");

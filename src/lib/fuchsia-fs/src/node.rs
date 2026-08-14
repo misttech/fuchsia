@@ -206,7 +206,7 @@ impl Kind {
 /// Gracefully closes the node proxy from the remote end.
 pub async fn close(node: fio::NodeProxy) -> Result<(), CloseError> {
     let result = node.close().await.map_err(CloseError::SendCloseRequest)?;
-    result.map_err(|s| CloseError::CloseError(zx_status::Status::from_raw(s)))
+    result.map_err(|s| CloseError::CloseError(zx_status::Status::err_from_raw(s)))
 }
 
 /// Consume the first event from this NodeProxy's event stream, returning the proxy if it is

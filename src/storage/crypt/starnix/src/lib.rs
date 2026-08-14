@@ -101,7 +101,7 @@ impl CryptService {
                         errno!(EPIPE)
                     })?
                     .map_err(|status| {
-                        let status = zx::Status::from_raw(status);
+                        let status = zx::Status::err_from_raw(status);
                         log::error!(status:?; "derive_raw_secret failed");
                         from_status_like_fdio!(status)
                     })?,
@@ -113,7 +113,7 @@ impl CryptService {
                     errno!(EPIPE)
                 })?
                 .map_err(|status| {
-                    let status = zx::Status::from_raw(status);
+                    let status = zx::Status::err_from_raw(status);
                     log::error!(status:?; "program_key failed");
                     from_status_like_fdio!(status)
                 })?;

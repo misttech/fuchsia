@@ -583,7 +583,7 @@ impl Environment for FshostEnvironment {
                     .get_info()
                     .await
                     .context("getting volume info failed (fidl error)")?
-                    .map_err(|s| zx::Status::from_raw(s))
+                    .map_err(zx::Status::err_from_raw)
                     .context("getting volume info failed (returned error)")?
                     .ok_or_else(|| anyhow!("getting volume info returned nothing"))?
                     .slice_size
@@ -712,7 +712,9 @@ impl Environment for FshostEnvironment {
             .provision(partition_service.into_client_end().unwrap())
             .await
             .map_err(|err| panic!("Failed FIDL request to provision Fxfs: {err:?}."))?
-            .map_err(|err| panic!("Failed to provision Fxfs: {:?}.", zx::Status::from_raw(err)))?;
+            .map_err(|err| {
+                panic!("Failed to provision Fxfs: {:?}.", zx::Status::err_from_raw(err))
+            })?;
 
         Ok(())
     }
@@ -852,7 +854,7 @@ pub async fn install_blob_image(fs: &ServingMultiVolumeFilesystem) -> Result<(),
         .install(BLOB_IMAGE_VOLUME_LABEL, IMAGE_FILE_NAME, BLOB_VOLUME_LABEL)
         .await
         .context("FIDL call to fuchsia.fxfs/VolumeInstaller.Install")?
-        .map_err(zx::Status::from_raw)
+        .map_err(zx::Status::err_from_raw)
     {
         log::error!(error:?; "failed to install blob volume, cleaning up...");
         if let Err(error) = fs.remove_volume(BLOB_IMAGE_VOLUME_LABEL).await {

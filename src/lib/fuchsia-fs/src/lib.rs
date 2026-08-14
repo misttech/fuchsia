@@ -145,7 +145,7 @@ mod tests {
                     .write(b"write_only")
                     .await
                     .expect("write failed")
-                    .map_err(zx_status::Status::from_raw)
+                    .map_err(zx_status::Status::err_from_raw)
                     .expect("write error");
             }
             assert_eq!(file_proxy.close().await.unwrap(), Ok(()));

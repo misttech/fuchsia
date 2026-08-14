@@ -55,7 +55,11 @@ pub async fn get_token(dir: &fio::DirectoryProxy) -> fidl::NullableHandle {
 pub async fn read_file(dir: &fio::DirectoryProxy, path: &str) -> Vec<u8> {
     let file =
         dir.open_node::<fio::FileMarker>(path, fio::Flags::PERM_READ_BYTES, None).await.unwrap();
-    file.read(100).await.expect("read failed").map_err(zx::Status::from_raw).expect("read error")
+    file.read(100)
+        .await
+        .expect("read failed")
+        .map_err(zx::Status::err_from_raw)
+        .expect("read error")
 }
 
 /// Returns the .name field from a given DirectoryEntry, otherwise panics.
@@ -117,7 +121,7 @@ pub async fn create_file_and_get_backing_memory(
         .get_backing_memory(vmo_flags)
         .await
         .expect("get_backing_memory failed")
-        .map_err(zx::Status::from_raw)?;
+        .map_err(zx::Status::err_from_raw)?;
     Ok((vmo, (dir_proxy, file_proxy)))
 }
 

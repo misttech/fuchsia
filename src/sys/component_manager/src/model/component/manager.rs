@@ -173,7 +173,7 @@ impl ComponentManagerInstance {
                         ..Default::default()
                     })
                     .await?
-                    .map_err(|s| RebootError::AdminError(zx::Status::from_raw(s)))
+                    .map_err(|s| RebootError::AdminError(zx::Status::err_from_raw(s)))
             }
             .await;
             if let Err(RebootError::AdminError(zx::Status::ALREADY_EXISTS)) = res {

@@ -31,7 +31,7 @@ impl FactoryResetAction {
             Ok(status) if status != ZX_OK => {
                 event_sender.send(Event::Error(format!(
                     "Factory Reset failed: {:?}",
-                    zx_status::Status::from_raw(status)
+                    zx_status::Status::err_from_raw(status)
                 )));
             }
             Ok(_) => { /* ignore success */ }

@@ -204,7 +204,7 @@ async fn handle_adb(
                         error!(EINVAL)
                     }
                     Ok(Err(err)) => {
-                        let status = zx::Status::from_raw(err);
+                        let status = zx::Status::err_from_raw(err);
                         if matches!(
                             status,
                             zx::Status::BAD_STATE | zx::Status::CANCELED | zx::Status::PEER_CLOSED

@@ -215,7 +215,7 @@ mod tests {
                                 .read(content.len() as u64)
                                 .await
                                 .context("Read failed")?
-                                .map_err(Status::from_raw)
+                                .map_err(Status::err_from_raw)
                                 .context("Read error")?;
                             if vec.len() == 0 {
                                 break;

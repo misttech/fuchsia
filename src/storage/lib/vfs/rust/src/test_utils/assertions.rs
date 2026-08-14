@@ -24,7 +24,7 @@ macro_rules! assert_read {
             .read($expected.len() as u64)
             .await
             .expect("read failed")
-            .map_err(Status::from_raw)
+            .map_err(Status::err_from_raw)
             .expect("read error");
 
         assert_eq!(content.as_slice(), $expected.as_bytes());
@@ -40,7 +40,7 @@ macro_rules! assert_read_at {
             .read_at($expected.len() as u64, $offset)
             .await
             .expect("read failed")
-            .map_err(Status::from_raw)
+            .map_err(Status::err_from_raw)
             .expect("read error");
 
         assert_eq!(content.as_slice(), $expected.as_bytes());
@@ -56,7 +56,7 @@ macro_rules! assert_write {
             .write($content.as_bytes())
             .await
             .expect("write failed")
-            .map_err(Status::from_raw)
+            .map_err(Status::err_from_raw)
             .expect("write error");
 
         assert_eq!(len_written, $content.len() as u64);
@@ -72,7 +72,7 @@ macro_rules! assert_write_err {
             .write($content.as_bytes())
             .await
             .expect("write failed")
-            .map_err(Status::from_raw);
+            .map_err(Status::err_from_raw);
 
         assert_eq!(result, Err($expected_status));
     }};
@@ -87,7 +87,7 @@ macro_rules! assert_seek {
             .seek(fio::SeekOrigin::$start, $pos)
             .await
             .expect("seek failed")
-            .map_err(Status::from_raw);
+            .map_err(Status::err_from_raw);
 
         assert_eq!(actual, $expected);
     }};
@@ -105,7 +105,7 @@ macro_rules! assert_truncate {
             .resize($length)
             .await
             .expect("resize failed")
-            .map_err(Status::from_raw)
+            .map_err(Status::err_from_raw)
             .expect("resize error");
     }};
 }
@@ -115,7 +115,8 @@ macro_rules! assert_truncate_err {
     ($proxy:expr, $length:expr, $expected_status:expr) => {{
         use $crate::test_utils::assertions::reexport::Status;
 
-        let result = $proxy.resize($length).await.expect("resize failed").map_err(Status::from_raw);
+        let result =
+            $proxy.resize($length).await.expect("resize failed").map_err(Status::err_from_raw);
 
         assert_eq!(result, Err($expected_status));
     }};
@@ -148,7 +149,7 @@ macro_rules! assert_close {
             .close()
             .await
             .expect("close failed")
-            .map_err(Status::from_raw)
+            .map_err(Status::err_from_raw)
             .expect("close error");
     }};
 }
@@ -185,7 +186,7 @@ macro_rules! assert_get_attributes {
             .get_attributes($requested_attributes)
             .await
             .expect("get_attributes failed")
-            .map_err(Status::from_raw)
+            .map_err(Status::err_from_raw)
             .expect("get_attributes error");
 
         assert_eq!(mutable_attributes, $expected.mutable_attributes);

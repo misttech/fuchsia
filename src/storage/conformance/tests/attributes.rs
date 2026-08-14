@@ -269,7 +269,7 @@ async fn update_attributes_file_with_insufficient_rights() {
         })
         .await
         .expect("FIDL call failed")
-        .map_err(zx::Status::from_raw);
+        .map_err(zx::Status::err_from_raw);
     assert_eq!(status, Err(zx::Status::BAD_HANDLE));
 }
 
@@ -312,14 +312,14 @@ async fn update_attributes_file_with_sufficient_rights() {
         .update_attributes(&new_attrs)
         .await
         .expect("FIDL call failed")
-        .map_err(zx::Status::from_raw)
+        .map_err(zx::Status::err_from_raw)
         .expect("update_attributes failed");
 
     let (mutable_attrs, _) = file_proxy
         .get_attributes(supported_attrs)
         .await
         .expect("FIDL call failed")
-        .map_err(zx::Status::from_raw)
+        .map_err(zx::Status::err_from_raw)
         .expect("get_attributes failed");
     assert_eq!(mutable_attrs, new_attrs);
 
@@ -342,7 +342,7 @@ async fn update_attributes_file_with_sufficient_rights() {
             .update_attributes(&unsupported_new_attrs)
             .await
             .expect("FIDL call failed")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect_err("update unsupported attributes passed");
         assert_eq!(status, zx::Status::NOT_SUPPORTED);
     }
@@ -447,7 +447,7 @@ async fn update_attributes_directory_with_insufficient_rights() {
         })
         .await
         .expect("FIDL call failed")
-        .map_err(zx::Status::from_raw);
+        .map_err(zx::Status::err_from_raw);
     assert_eq!(status, Err(zx::Status::BAD_HANDLE));
 }
 
@@ -489,7 +489,7 @@ async fn update_attributes_directory_with_sufficient_rights() {
         .update_attributes(&new_attrs)
         .await
         .expect("FIDL call failed")
-        .map_err(zx::Status::from_raw)
+        .map_err(zx::Status::err_from_raw)
         .expect("update_attributes failed");
 
     let (mutable_attrs, _) = dir_proxy
@@ -498,7 +498,7 @@ async fn update_attributes_directory_with_sufficient_rights() {
         )
         .await
         .expect("FIDL call failed")
-        .map_err(zx::Status::from_raw)
+        .map_err(zx::Status::err_from_raw)
         .expect("get_attributes failed");
     assert_eq!(mutable_attrs, new_attrs);
 
@@ -521,7 +521,7 @@ async fn update_attributes_directory_with_sufficient_rights() {
             .update_attributes(&unsupported_new_attrs)
             .await
             .expect("FIDL call failed")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect_err("update unsupported attributes passed");
         assert_eq!(status, zx::Status::NOT_SUPPORTED);
     }
@@ -589,7 +589,7 @@ async fn get_attributes_file_with_insufficient_rights() {
                 .get_attributes(fio::NodeAttributesQuery::empty())
                 .await
                 .expect("FIDL call failed")
-                .map_err(zx::Status::from_raw),
+                .map_err(zx::Status::err_from_raw),
             Err(zx::Status::ACCESS_DENIED)
         );
     }
@@ -606,7 +606,7 @@ async fn get_attributes_file_with_insufficient_rights() {
                 .get_attributes(fio::NodeAttributesQuery::empty())
                 .await
                 .expect("FIDL call failed")
-                .map_err(zx::Status::from_raw),
+                .map_err(zx::Status::err_from_raw),
             Err(zx::Status::ACCESS_DENIED)
         );
     }
@@ -628,7 +628,7 @@ async fn get_attributes_directory_with_insufficient_rights() {
                 .get_attributes(fio::NodeAttributesQuery::empty())
                 .await
                 .expect("FIDL call failed")
-                .map_err(zx::Status::from_raw),
+                .map_err(zx::Status::err_from_raw),
             Err(zx::Status::ACCESS_DENIED)
         );
     }
@@ -645,7 +645,7 @@ async fn get_attributes_directory_with_insufficient_rights() {
                 .get_attributes(fio::NodeAttributesQuery::empty())
                 .await
                 .expect("FIDL call failed")
-                .map_err(zx::Status::from_raw),
+                .map_err(zx::Status::err_from_raw),
             Err(zx::Status::ACCESS_DENIED)
         );
     }
@@ -662,7 +662,7 @@ async fn open_symlink_without_get_attributes_fails() {
         .create_symlink("symlink", b"target", Some(symlink_server))
         .await
         .expect("FIDL call failed")
-        .map_err(zx::Status::from_raw);
+        .map_err(zx::Status::err_from_raw);
 
     if let Err(status) = create_result {
         if status == zx::Status::NOT_SUPPORTED {

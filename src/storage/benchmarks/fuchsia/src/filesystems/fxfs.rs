@@ -72,7 +72,7 @@ fn get_crypt_client() -> ClientEnd<CryptMarker> {
         match crypt_management_service
             .add_wrapping_key(&wrapping_key_id_0, &key, zx::MonotonicInstant::INFINITE)
             .expect("FIDL failed")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
         {
             Ok(()) => {}
             Err(zx::Status::ALREADY_EXISTS) => {
@@ -88,12 +88,12 @@ fn get_crypt_client() -> ClientEnd<CryptMarker> {
         crypt_management_service
             .add_wrapping_key(&wrapping_key_id_1, &key, zx::MonotonicInstant::INFINITE)
             .expect("FIDL failed")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("add_wrapping_key failed");
         crypt_management_service
             .set_active_key(KeyPurpose::Data, &wrapping_key_id_0, zx::MonotonicInstant::INFINITE)
             .expect("FIDL failed")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("set_active_key failed");
         crypt_management_service
             .set_active_key(
@@ -102,7 +102,7 @@ fn get_crypt_client() -> ClientEnd<CryptMarker> {
                 zx::MonotonicInstant::INFINITE,
             )
             .expect("FIDL failed")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("set_active_key failed");
     });
     let (client_end, server_end) = fidl::endpoints::create_endpoints();
@@ -124,7 +124,7 @@ impl FxfsInstance {
         .compact()
         .await
         .expect("Sending journal flush message")
-        .map_err(zx::Status::from_raw)
+        .map_err(zx::Status::err_from_raw)
         .expect("Journal flush");
     }
 }

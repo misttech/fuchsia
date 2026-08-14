@@ -329,7 +329,7 @@ impl CpuDeviceHandler {
                 format_err!(
                     "{}: set_maximum_operating_point_limit driver returned error: {}",
                     self.name(),
-                    zx::Status::from_raw(e)
+                    zx::Status::err_from_raw(e)
                 )
             })?;
         Ok(())
@@ -351,7 +351,7 @@ impl CpuDeviceHandler {
                 format_err!(
                     "{}: set_minimum_operating_point_limit driver returned error: {}",
                     self.name(),
-                    zx::Status::from_raw(e)
+                    zx::Status::err_from_raw(e)
                 )
             })?;
         Ok(())

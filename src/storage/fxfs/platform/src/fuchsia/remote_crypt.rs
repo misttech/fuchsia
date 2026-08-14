@@ -46,7 +46,7 @@ impl Crypt for RemoteCrypt {
             .create_key(owner, purpose.into_fidl())
             .await
             .map_err(|e| map_to_status(e.into()))?
-            .map_err(|e| zx::Status::from_raw(e))?;
+            .map_err(zx::Status::err_from_raw)?;
         Ok((
             FxfsKey {
                 wrapping_key_id,
@@ -67,7 +67,7 @@ impl Crypt for RemoteCrypt {
             .create_key_with_id(owner, &wrapping_key_id, object_type)
             .await
             .map_err(|e| map_to_status(e.into()))?
-            .map_err(|e| zx::Status::from_raw(e))?;
+            .map_err(zx::Status::err_from_raw)?;
         Ok((key.try_into()?, UnwrappedKey::new(unwrapped_key)))
     }
 
@@ -81,7 +81,7 @@ impl Crypt for RemoteCrypt {
             .unwrap_key(owner, &wrapped_key)
             .await
             .map_err(|e| map_to_status(e.into()))?
-            .map_err(|e| zx::Status::from_raw(e))?;
+            .map_err(zx::Status::err_from_raw)?;
         Ok(UnwrappedKey::new(unwrapped))
     }
 }

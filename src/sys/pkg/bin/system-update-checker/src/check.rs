@@ -217,7 +217,9 @@ async fn get_asset_reader(
     let (boot_manager, server_end) = fidl::endpoints::create_proxy::<BootManagerMarker>();
     let () = paver.find_boot_manager(server_end).context("connect to fuchsia.paver.BootManager")?;
     let configuration = match boot_manager.query_current_configuration().await {
-        Ok(res) => res.map_err(zx::Status::from_raw).context("querying current configuration")?,
+        Ok(res) => {
+            res.map_err(zx::Status::err_from_raw).context("querying current configuration")?
+        }
         Err(fidl::Error::ClientChannelClosed { epitaph, .. })
             if epitaph == zx::Status::NOT_SUPPORTED =>
         {
@@ -242,7 +244,7 @@ async fn is_image_up_to_date(
         .read_asset(current_config, asset)
         .await
         .context("read_asset fidl error")?
-        .map_err(|s| anyhow!("read_asset responded with {}", zx::Status::from_raw(s)))?;
+        .map_err(|s| anyhow!("read_asset responded with {}", zx::Status::err_from_raw(s)))?;
     // The size field of the buffer returned by DataSink.ReadAsset will be either the size of the
     // entire partition or just the image itself.
     if current_image.size < latest.size() {

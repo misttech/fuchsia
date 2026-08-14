@@ -31,7 +31,7 @@ async fn handle_revert_impl(
         .query_current_configuration()
         .await
         .context("while calling query_current_configuration")?
-        .map_err(Status::from_raw)
+        .map_err(Status::err_from_raw)
         .context("query_current_configuration responded with")?;
 
     let () = Status::ok(
@@ -53,6 +53,6 @@ async fn handle_revert_impl(
         })
         .await
         .context("while performing shutdown")?
-        .map_err(Status::from_raw)
+        .map_err(Status::err_from_raw)
         .context("shutdown responded with")
 }

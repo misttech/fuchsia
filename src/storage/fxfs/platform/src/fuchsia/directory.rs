@@ -1522,7 +1522,7 @@ mod tests {
         file.seek(fio::SeekOrigin::Start, 0)
             .await
             .expect("seek failed")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("seek error");
         let rbuf = file::read(&file).await.expect("read failed");
         assert_eq!(rbuf, buf);
@@ -1676,7 +1676,7 @@ mod tests {
                     .unlink(CHILD, &fio::UnlinkOptions::default())
                     .await
                     .expect("FIDL call failed")
-                    .map_err(zx::Status::from_raw)
+                    .map_err(zx::Status::err_from_raw)
                 {
                     Ok(()) => {}
                     Err(zx::Status::NOT_EMPTY) => {}
@@ -3017,7 +3017,7 @@ mod tests {
             .write(&[8; 8192])
             .await
             .expect("FIDL call failed")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("write failed");
 
         close_file_checked(file).await;
@@ -3096,7 +3096,7 @@ mod tests {
             )
             .await
             .expect("FIDL call failed")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("get_attributes failed");
         assert_eq!(mutable_attributes.wrapping_key_id, Some(WRAPPING_KEY_ID));
         assert_eq!(
@@ -3284,7 +3284,7 @@ mod tests {
             )
             .await
             .expect("FIDL call failed")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("get_attributes failed");
         close_file_checked(file).await;
         new_fixture.close().await;

@@ -42,7 +42,7 @@ impl RemoteUnixDomainSocket {
                 zx::MonotonicInstant::INFINITE,
             )
             .map_err(|_| errno!(ECONNREFUSED))?
-            .map_err(|e: i32| from_status_like_fdio!(zx::Status::from_raw(e)))?;
+            .map_err(|e: i32| from_status_like_fdio!(zx::Status::err_from_raw(e)))?;
         let event = response.event.ok_or_else(|| errno!(ECONNREFUSED))?;
         Ok(Self { client, event, remote_creds })
     }
@@ -136,7 +136,7 @@ impl SocketOps for RemoteUnixDomainSocket {
             )
             .map_err(|_| errno!(ECONNREFUSED))?
             .map_err(|e: i32| {
-                let status = zx::Status::from_raw(e);
+                let status = zx::Status::err_from_raw(e);
                 if status == zx::Status::PEER_CLOSED {
                     errno!(ECONNRESET)
                 } else {
@@ -209,7 +209,7 @@ impl SocketOps for RemoteUnixDomainSocket {
                 zx::MonotonicInstant::INFINITE,
             )
             .map_err(|_| errno!(ECONNREFUSED))?
-            .map_err(|e: i32| from_status_like_fdio!(zx::Status::from_raw(e)))?;
+            .map_err(|e: i32| from_status_like_fdio!(zx::Status::err_from_raw(e)))?;
 
         let written = response.actual_count.unwrap_or(0);
         Ok(written as usize)

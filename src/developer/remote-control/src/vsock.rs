@@ -5,12 +5,13 @@
 use crate::fdomain::serve_fdomain_connection;
 use anyhow::Result;
 use circuit::multi_stream::multi_stream_node_connection_to_async;
+use fidl_fuchsia_vsock as vsock;
+use fuchsia_async as fasync;
 use futures::{AsyncReadExt, AsyncWriteExt, StreamExt};
 use overnet_core::Router;
 use remote_control::RemoteControlService;
 use std::rc::{Rc, Weak as WeakRc};
 use std::sync::Weak;
-use {fidl_fuchsia_vsock as vsock, fuchsia_async as fasync};
 
 const FDOMAIN_VSOCK_PORT: u32 = 203;
 const OVERNET_VSOCK_PORT: u32 = 202;
@@ -19,10 +20,10 @@ const IDENTIFY_VSOCK_PORT: u32 = 201;
 pub async fn run_vsocks(router: Weak<Router>, service: WeakRc<RemoteControlService>) -> Result<()> {
     let connector = fuchsia_component::client::connect_to_protocol::<vsock::ConnectorMarker>()?;
     let (client, overnet_requests) = fidl::endpoints::create_request_stream();
-    connector.listen(OVERNET_VSOCK_PORT, client).await?.map_err(fidl::Status::from_raw)?;
+    connector.listen(OVERNET_VSOCK_PORT, client).await?.map_err(fidl::Status::err_from_raw)?;
 
     let (client, fdomain_requests) = fidl::endpoints::create_request_stream();
-    connector.listen(FDOMAIN_VSOCK_PORT, client).await?.map_err(fidl::Status::from_raw)?;
+    connector.listen(FDOMAIN_VSOCK_PORT, client).await?.map_err(fidl::Status::err_from_raw)?;
 
     let mut requests = futures::stream::select(overnet_requests, fdomain_requests);
 
@@ -99,7 +100,7 @@ pub async fn run_vsocks(router: Weak<Router>, service: WeakRc<RemoteControlServi
 pub async fn run_identify_vsock(service: Rc<RemoteControlService>) -> Result<()> {
     let connector = fuchsia_component::client::connect_to_protocol::<vsock::ConnectorMarker>()?;
     let (client, mut requests) = fidl::endpoints::create_request_stream();
-    connector.listen(IDENTIFY_VSOCK_PORT, client).await?.map_err(fidl::Status::from_raw)?;
+    connector.listen(IDENTIFY_VSOCK_PORT, client).await?.map_err(fidl::Status::err_from_raw)?;
 
     while let Some(request) = requests.next().await {
         let vsock::AcceptorRequest::Accept { addr, responder } = request?;

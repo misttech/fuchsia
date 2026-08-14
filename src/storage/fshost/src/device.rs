@@ -208,7 +208,7 @@ impl BlockDevice {
         path: impl ToString,
     ) -> Result<Self, Error> {
         let topological_path =
-            controller_proxy.get_topological_path().await?.map_err(zx::Status::from_raw)?;
+            controller_proxy.get_topological_path().await?.map_err(zx::Status::err_from_raw)?;
         Ok(Self {
             path: path.to_string(),
             topological_path: topological_path,
@@ -234,7 +234,7 @@ impl BlockDevice {
 impl Device for BlockDevice {
     async fn get_block_info(&self) -> Result<fidl_fuchsia_storage_block::BlockInfo, Error> {
         let block_proxy = self.block_proxy()?;
-        let info = block_proxy.get_info().await?.map_err(zx::Status::from_raw)?;
+        let info = block_proxy.get_info().await?.map_err(zx::Status::err_from_raw)?;
         Ok(info)
     }
 
@@ -360,7 +360,7 @@ impl VolumeServiceDevice {
 impl Device for VolumeServiceDevice {
     async fn get_block_info(&self) -> Result<fidl_fuchsia_storage_block::BlockInfo, Error> {
         let block_proxy = self.block_proxy()?;
-        let info = block_proxy.get_info().await?.map_err(zx::Status::from_raw)?;
+        let info = block_proxy.get_info().await?.map_err(zx::Status::err_from_raw)?;
         Ok(info)
     }
 
@@ -491,7 +491,7 @@ impl LocalBlockDevice {
 #[async_trait]
 impl Device for LocalBlockDevice {
     async fn get_block_info(&self) -> Result<fidl_fuchsia_storage_block::BlockInfo, Error> {
-        let info = self.block_proxy.get_info().await?.map_err(zx::Status::from_raw)?;
+        let info = self.block_proxy.get_info().await?.map_err(zx::Status::err_from_raw)?;
         Ok(info)
     }
 

@@ -94,10 +94,10 @@ impl Config {
         spinel_device_setup_proxy
             .set_channel(server_side)
             .await?
-            .map_err(ZxStatus::from_raw)
+            .map_err(ZxStatus::err_from_raw)
             .context(
-                "Unable to set server-side FIDL channel via spinel_device_setup_proxy.set_channel()",
-            )?;
+            "Unable to set server-side FIDL channel via spinel_device_setup_proxy.set_channel()",
+        )?;
 
         Ok(client_side.into_proxy())
     }

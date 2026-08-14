@@ -78,7 +78,7 @@ impl File {
         let (_, attrs) = file
             .get_attributes(fio::NodeAttributesQuery::ID)
             .await?
-            .map_err(zx::Status::from_raw)?;
+            .map_err(zx::Status::err_from_raw)?;
         self.oid = attrs.id;
         self.proxy = Some(file);
         Ok(())
@@ -90,7 +90,7 @@ impl File {
             .close()
             .await
             .context("reopen close fidl error")?
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .context("reopen close returned error")?;
         self.proxy = Some(
             fuchsia_fs::directory::open_file(
@@ -149,7 +149,7 @@ pub async fn generate_load<S: OpSampler>(
                     .seek(fio::SeekOrigin::Start, 0)
                     .await
                     .context("scan seek fidl error")?
-                    .map_err(zx::Status::from_raw)
+                    .map_err(zx::Status::err_from_raw)
                     .context("scan seek returned error")?;
                 assert_eq!(offset, 0);
                 let data = fuchsia_fs::file::read(file.proxy()).await.context("scan read error")?;
@@ -179,7 +179,7 @@ pub async fn generate_load<S: OpSampler>(
                     .allocate(offset as u64, len as u64, fio::AllocateMode::empty())
                     .await
                     .context("allocate fidl error")?
-                    .map_err(zx::Status::from_raw)
+                    .map_err(zx::Status::err_from_raw)
                     .context("allocate returned error")?;
                 if file.contents.len() < offset + len {
                     file.contents.resize(offset + len, 0);
@@ -202,7 +202,7 @@ pub async fn generate_load<S: OpSampler>(
                     .write_at(&data, offset as u64)
                     .await
                     .context("write fidl error")?
-                    .map_err(zx::Status::from_raw)
+                    .map_err(zx::Status::err_from_raw)
                     .context("write returned error")?;
                 // It's possible we are extending the file with this call, so deal with that
                 // here by filling it with zeros and then replacing that with the new content,
@@ -220,7 +220,7 @@ pub async fn generate_load<S: OpSampler>(
                     .resize(offset as u64)
                     .await
                     .context("truncate fidl error")?
-                    .map_err(zx::Status::from_raw)
+                    .map_err(zx::Status::err_from_raw)
                     .context("truncate returned error")?;
                 file.contents.resize(offset, 0);
             }
@@ -234,12 +234,12 @@ pub async fn generate_load<S: OpSampler>(
                     .close()
                     .await
                     .context("replace close fidl error")?
-                    .map_err(zx::Status::from_raw)
+                    .map_err(zx::Status::err_from_raw)
                     .context("replace close returned error")?;
                 root.unlink(&file.name, &fio::UnlinkOptions::default())
                     .await
                     .context("replace unlink fidl error")?
-                    .map_err(zx::Status::from_raw)
+                    .map_err(zx::Status::err_from_raw)
                     .context("replace unlink returned error")?;
                 *file = rng.random();
                 log::debug!("    {} is replacement", file);

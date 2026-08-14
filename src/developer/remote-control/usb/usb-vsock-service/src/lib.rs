@@ -633,7 +633,7 @@ mod tests {
                     .connect(CID_HOST, 200, vsock_api::ConnectionTransport { data, con })
                     .await
                     .unwrap()
-                    .map_err(Status::from_raw)
+                    .map_err(Status::err_from_raw)
                     .unwrap();
                 let mut buf = [0; 4];
                 socket.read_exact(&mut buf).await.unwrap();

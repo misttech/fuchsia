@@ -104,7 +104,11 @@ async fn list<W: std::io::Write>(limbo_proxy: ProcessLimboProxy, mut writer: W) 
             if e == ZX_ERR_UNAVAILABLE {
                 writeln!(writer, "Process limbo is not active.")?;
             } else {
-                writeln!(writer, "Could not list the process limbo: {:?}", Status::from_raw(e))?;
+                writeln!(
+                    writer,
+                    "Could not list the process limbo: {:?}",
+                    Status::err_from_raw(e)
+                )?;
             }
         }
     }
@@ -125,7 +129,7 @@ async fn release<W: std::io::Write>(
                 writer,
                 "Could not release process {} from limbo: {:?}",
                 pid,
-                Status::from_raw(e)
+                Status::err_from_raw(e)
             )?,
         },
     }

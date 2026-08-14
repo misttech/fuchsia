@@ -358,7 +358,7 @@ impl Rtc for RtcImpl {
                 Err(anyhow!("FIDL timeout on Rtc::set"))
             })
             .await?
-            .map_err(zx::Status::from_raw);
+            .map_err(zx::Status::err_from_raw);
         result.map_err(|stat| anyhow!("Bad status on Rtc::set: {:?}", stat))
     }
 }

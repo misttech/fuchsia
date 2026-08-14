@@ -515,7 +515,7 @@ mod tests {
             .update_attributes(&attributes)
             .await
             .expect("FIDL call failed")
-            .map_err(Status::from_raw)
+            .map_err(Status::err_from_raw)
             .expect("update attributes failed");
 
         let events = events.0.lock();
@@ -561,7 +561,7 @@ mod tests {
         let events = Events::new();
         let fs = Arc::new(MockFilesystem::new(&events));
         let (_dir, proxy) = fs.clone().make_connection(fio::PERM_READABLE | fio::PERM_WRITABLE);
-        let () = proxy.sync().await.unwrap().map_err(Status::from_raw).unwrap();
+        let () = proxy.sync().await.unwrap().map_err(Status::err_from_raw).unwrap();
         let events = events.0.lock();
         assert_eq!(*events, vec![MutableDirectoryAction::Sync]);
     }
@@ -571,7 +571,7 @@ mod tests {
         let events = Events::new();
         let fs = Arc::new(MockFilesystem::new(&events));
         let (_dir, proxy) = fs.clone().make_connection(fio::PERM_READABLE | fio::PERM_WRITABLE);
-        let () = proxy.close().await.unwrap().map_err(Status::from_raw).unwrap();
+        let () = proxy.close().await.unwrap().map_err(Status::err_from_raw).unwrap();
         let events = events.0.lock();
         assert_eq!(*events, vec![MutableDirectoryAction::Close]);
     }

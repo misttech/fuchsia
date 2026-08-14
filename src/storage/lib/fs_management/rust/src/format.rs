@@ -88,7 +88,7 @@ async fn detect_disk_format_res(block_proxy: &BlockProxy) -> Result<DiskFormat, 
         .get_info()
         .await
         .context("transport error on get_info call")?
-        .map_err(zx::Status::from_raw)
+        .map_err(zx::Status::err_from_raw)
         .context("get_info call failed")?;
     ensure!(block_info.block_size > 0, "block size expected to be non-zero");
 

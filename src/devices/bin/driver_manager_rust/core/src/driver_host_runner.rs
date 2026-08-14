@@ -234,7 +234,7 @@ impl DriverHostRunner {
                 error!("Failed to start driver host: {}", e);
                 zx::Status::INTERNAL
             })?
-            .map_err(zx::Status::from_raw)?;
+            .map_err(zx::Status::err_from_raw)?;
 
         Ok(client_end)
     }

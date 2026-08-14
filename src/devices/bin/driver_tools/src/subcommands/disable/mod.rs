@@ -67,7 +67,7 @@ pub async fn disable(
         Err(err) => {
             return Err(format_err!(
                 "Failed to restart existing drivers: {:?}",
-                Status::from_raw(err)
+                Status::err_from_raw(err)
             ));
         }
     }

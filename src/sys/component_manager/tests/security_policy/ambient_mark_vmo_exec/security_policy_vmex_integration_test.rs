@@ -27,7 +27,7 @@ async fn verify_ambient_vmex_default_denied() -> Result<(), Error> {
 
     let vmo = zx::Vmo::create(1).unwrap();
     let result = ops.ambient_replace_as_executable(vmo).await.context("fidl call failed")?;
-    assert_matches!(result.map_err(zx::Status::from_raw), Err(zx::Status::ACCESS_DENIED));
+    assert_matches!(result.map_err(zx::Status::err_from_raw), Err(zx::Status::ACCESS_DENIED));
 
     Ok(())
 }
@@ -43,7 +43,7 @@ async fn verify_ambient_vmex_allowed() -> Result<(), Error> {
 
     let vmo = zx::Vmo::create(1).unwrap();
     let result = ops.ambient_replace_as_executable(vmo).await.context("fidl call failed")?;
-    match result.map_err(zx::Status::from_raw) {
+    match result.map_err(zx::Status::err_from_raw) {
         Ok(exec_vmo) => {
             assert!(exec_vmo.basic_info().unwrap().rights.contains(zx::Rights::EXECUTE));
         }

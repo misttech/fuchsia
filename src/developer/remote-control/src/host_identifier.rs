@@ -2,14 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 use anyhow::{Context as _, Result};
+use fidl_fuchsia_buildinfo as buildinfo;
+use fidl_fuchsia_developer_remotecontrol as rcs;
+use fidl_fuchsia_device as fdevice;
+use fidl_fuchsia_hwinfo as hwinfo;
+use fidl_fuchsia_net_interfaces as fnet_interfaces;
+use fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext;
+use fidl_fuchsia_sysinfo as sysinfo;
 use log::*;
 use std::collections::HashMap;
-use {
-    fidl_fuchsia_buildinfo as buildinfo, fidl_fuchsia_developer_remotecontrol as rcs,
-    fidl_fuchsia_device as fdevice, fidl_fuchsia_hwinfo as hwinfo,
-    fidl_fuchsia_net_interfaces as fnet_interfaces,
-    fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext, fidl_fuchsia_sysinfo as sysinfo,
-};
 
 #[async_trait::async_trait]
 pub trait Identifier {
@@ -99,7 +100,7 @@ impl Identifier for HostIdentifier {
             match self.system_info_proxy.get_serial_number().await {
                 Ok(Ok(serial)) => break 'serial Some(serial),
                 Ok(Err(status)) => {
-                    let status = zx::Status::from_raw(status);
+                    let status = zx::Status::err_from_raw(status);
                     warn!(status:%; "Failed to get serial from SysInfo")
                 }
                 Err(err) => error!(err:%; "SysInfoProxy internal err"),

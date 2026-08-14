@@ -63,7 +63,7 @@ pub async fn read_image(
             .await
             .context("DataSink.ReadAsset FIDL error")?
             .map_err(|s| {
-                let status = zx::Status::try_from_raw(s).unwrap_or(zx::Status::INTERNAL);
+                let status = zx::Status::err_from_raw(s);
                 anyhow!("DataSink.ReadAsset error {status:?}")
             }),
         Firmware { type_ } => data_sink
@@ -71,7 +71,7 @@ pub async fn read_image(
             .await
             .context("DataSink.ReadFirmware FIDL error")?
             .map_err(|s| {
-                let status = zx::Status::try_from_raw(s).unwrap_or(zx::Status::INTERNAL);
+                let status = zx::Status::err_from_raw(s);
                 anyhow!("DataSink.ReadFirmware error {status:?}")
             }),
     }
@@ -202,7 +202,7 @@ pub async fn query_current_configuration(
         Ok(Ok(fpaver::Configuration::B)) => Ok(CurrentConfiguration::B),
         Ok(Ok(fpaver::Configuration::Recovery)) => Ok(CurrentConfiguration::Recovery),
         Ok(Err(status)) => {
-            let status = zx::Status::try_from_raw(status).unwrap_or(zx::Status::INTERNAL);
+            let status = zx::Status::err_from_raw(status);
             Err(anyhow!("query_current_configuration responded with {status:?}"))
         }
         Err(fidl::Error::ClientChannelClosed { epitaph, .. })
@@ -222,7 +222,7 @@ async fn paver_query_configuration_status(
     match boot_manager.query_configuration_status(configuration).await {
         Ok(Ok(configuration_status)) => Ok(configuration_status),
         Ok(Err(status)) => {
-            let status = zx::Status::try_from_raw(status).unwrap_or(zx::Status::INTERNAL);
+            let status = zx::Status::err_from_raw(status);
             Err(anyhow!("query_configuration_status responded with {status:?}"))
         }
         Err(err) => Err(anyhow!(err).context("while performing query_configuration_status call")),

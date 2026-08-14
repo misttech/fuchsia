@@ -265,7 +265,7 @@ impl AccessCheckRequest {
             .get_backing_memory(fio::VmoFlags::READ | fio::VmoFlags::EXECUTE)
             .await
             .unwrap()
-            .map_err(Status::from_raw)?;
+            .map_err(Status::err_from_raw)?;
         let bin_info = vmo.basic_info().unwrap();
         assert_eq!(bin_info.rights & Rights::READ, Rights::READ);
         assert_eq!(bin_info.rights & Rights::EXECUTE, Rights::EXECUTE);

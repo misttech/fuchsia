@@ -55,7 +55,7 @@ async fn main() -> Result<(), Error> {
         .unmount(filename_str)
         .await
         .context("Transport error on format")?
-        .map_err(zx::Status::from_raw)
+        .map_err(zx::Status::err_from_raw)
         .context("Failed to format block device")?;
     Ok(())
 }

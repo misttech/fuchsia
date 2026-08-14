@@ -80,7 +80,7 @@ fn record_tree_size(
                                 | fio::NodeAttributesQuery::STORAGE_SIZE,
                         )
                         .await?
-                        .map_err(zx::Status::from_raw)?;
+                        .map_err(zx::Status::err_from_raw)?;
                     let size: TreeSize = immutable_attributes.into();
                     size.record(&child);
                     node.record(child);

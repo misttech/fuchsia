@@ -33,7 +33,7 @@ async fn write_blob(rng: &mut impl Rng, root: &fio::DirectoryProxy, i: u64) -> R
         fio::OpenFlags::CREATE | fio::OpenFlags::RIGHT_WRITABLE,
     )
     .await?;
-    blob.resize(data.len() as u64).await?.map_err(zx::Status::from_raw)?;
+    blob.resize(data.len() as u64).await?.map_err(zx::Status::err_from_raw)?;
     fuchsia_fs::file::write(&blob, &data).await?;
 
     Ok(path)
@@ -215,7 +215,7 @@ impl Test for BlobfsCheckerboard {
                             .root()
                             .unlink(path, &fio::UnlinkOptions::default())
                             .await?
-                            .map_err(zx::Status::from_raw)?;
+                            .map_err(zx::Status::err_from_raw)?;
                         Some(Slot::Empty)
                     }
                 }

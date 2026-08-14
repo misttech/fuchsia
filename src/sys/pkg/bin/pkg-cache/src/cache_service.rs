@@ -1157,7 +1157,7 @@ mod serve_needed_blobs_tests {
                     .get_vmo(4)
                     .await
                     .expect("get_vmo failed")
-                    .map_err(Status::from_raw)
+                    .map_err(Status::err_from_raw)
                     .expect("get_vmo error");
                 let () = vmo.write(b"test", 0).unwrap();
                 let () = blob.bytes_ready(4).await.unwrap().unwrap();
@@ -1218,14 +1218,14 @@ mod serve_needed_blobs_tests {
                     .get_vmo(4)
                     .await
                     .expect("get_vmo failed")
-                    .map_err(Status::from_raw)
+                    .map_err(Status::err_from_raw)
                     .expect("get_vmo error");
                 let () = vmo.write(b"test", 0).unwrap();
                 let () = blob
                     .bytes_ready(4)
                     .await
                     .expect("bytes_ready failed")
-                    .map_err(Status::from_raw)
+                    .map_err(Status::err_from_raw)
                     .expect("bytes_ready error");
 
                 assert_matches!(
@@ -1399,13 +1399,13 @@ mod serve_needed_blobs_tests {
                     .get_vmo(1)
                     .await
                     .expect("get_vmo fidl error")
-                    .map_err(Status::from_raw)
+                    .map_err(Status::err_from_raw)
                     .expect("get_vmo error");
                 let result = blob
                     .bytes_ready(1)
                     .await
                     .expect("bytes_ready failed")
-                    .map_err(Status::from_raw);
+                    .map_err(Status::err_from_raw);
                 assert_eq!(result, Err(Status::IO_DATA_INTEGRITY));
             },
         )
@@ -1448,7 +1448,7 @@ mod serve_needed_blobs_tests {
                     .get_vmo(1)
                     .await
                     .expect("get_vmo failed")
-                    .map_err(Status::from_raw)
+                    .map_err(Status::err_from_raw)
                     .expect("get_vmo error");
                 let () = vmo.write(&[0], 0).unwrap();
                 let () = blob.bytes_ready(1).await.unwrap().unwrap();
@@ -1803,14 +1803,14 @@ mod serve_needed_blobs_tests {
                     .get_vmo(payload.len().try_into().unwrap())
                     .await
                     .expect("get_vmo failed")
-                    .map_err(Status::from_raw)
+                    .map_err(Status::err_from_raw)
                     .expect("get_vmo error");
                 let () = vmo.write(payload, 0).unwrap();
                 let () = blob
                     .bytes_ready(payload.len().try_into().unwrap())
                     .await
                     .unwrap()
-                    .map_err(Status::from_raw)
+                    .map_err(Status::err_from_raw)
                     .expect("bytes_ready error");
 
                 drop(blob);
@@ -1947,7 +1947,7 @@ mod serve_needed_blobs_tests {
                                 .get_vmo(payload.len().try_into().unwrap())
                                 .await
                                 .expect("get_vmo failed")
-                                .map_err(Status::from_raw)
+                                .map_err(Status::err_from_raw)
                                 .expect("get_vmo error");
                             let () = vmo.write(&payload, 0).unwrap();
                             let () = blob
@@ -2062,7 +2062,7 @@ mod serve_needed_blobs_tests {
                     .get_vmo(1)
                     .await
                     .expect("get_vmo failed")
-                    .map_err(Status::from_raw)
+                    .map_err(Status::err_from_raw)
                     .expect("get_vmo error");
                 vmo.write(&[0], 0).unwrap();
                 blob.bytes_ready(1).await.unwrap().unwrap();
@@ -2136,7 +2136,7 @@ mod serve_needed_blobs_tests {
                     .get_vmo(1)
                     .await
                     .expect("get_vmo failed")
-                    .map_err(Status::from_raw)
+                    .map_err(Status::err_from_raw)
                     .expect("get_vmo error");
                 vmo.write(&[0], 0).unwrap();
                 blob.bytes_ready(1).await.unwrap().unwrap();
@@ -2303,10 +2303,10 @@ mod serve_needed_blobs_tests {
                     .get_vmo(1)
                     .await
                     .expect("get_vmo failed")
-                    .map_err(Status::from_raw)
+                    .map_err(Status::err_from_raw)
                     .expect("get_vmo error");
                 let result =
-                    blob.bytes_ready(1).await.expect("write failed").map_err(Status::from_raw);
+                    blob.bytes_ready(1).await.expect("write failed").map_err(Status::err_from_raw);
                 assert_eq!(result, Err(Status::IO_DATA_INTEGRITY));
             },
         )
@@ -2350,7 +2350,7 @@ mod serve_needed_blobs_tests {
                     .get_vmo(1)
                     .await
                     .expect("get_vmo failed")
-                    .map_err(Status::from_raw)
+                    .map_err(Status::err_from_raw)
                     .expect("get_vmo error");
                 let () = vmo.write(&[0], 0).unwrap();
                 let () = blob.bytes_ready(1).await.unwrap().unwrap();

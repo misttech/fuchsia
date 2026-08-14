@@ -275,7 +275,7 @@ impl Transport for Channel {
                         return Poll::Pending;
                     }
                 }
-                raw => return Poll::Ready(Err(Some(Status::from_raw(raw)))),
+                raw => return Poll::Ready(Err(Some(Status::err_from_raw(raw)))),
             }
         }
     }
@@ -306,7 +306,7 @@ impl NonBlockingTransport for Channel {
                 Ok(())
             }
             ZX_ERR_PEER_CLOSED => Err(None),
-            _ => Err(Some(Status::from_raw(result))),
+            _ => Err(Some(Status::err_from_raw(result))),
         }
     }
 }

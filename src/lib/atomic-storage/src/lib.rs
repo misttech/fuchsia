@@ -71,7 +71,7 @@ impl CachedStorage {
                 .close()
                 .await
                 .context("failed to call close on temp file")?
-                .map_err(zx::Status::from_raw)?;
+                .map_err(zx::Status::err_from_raw)?;
         }
 
         fuchsia_fs::directory::rename(storage_dir, &self.temp_file_path, &self.file_path)
@@ -82,7 +82,7 @@ impl CachedStorage {
             .sync()
             .await
             .context("failed to call sync on directory after rename")?
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .or_else(|e| if let zx::Status::NOT_SUPPORTED = e { Ok(()) } else { Err(e) })
             .context("failed to sync rename to directory")
     }

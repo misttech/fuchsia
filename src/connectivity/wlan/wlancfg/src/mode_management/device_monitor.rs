@@ -88,7 +88,7 @@ async fn on_iface_added_legacy(listener: &Listener, iface_id: u16) -> Result<(),
                 .await
                 .map_err(|e| format_err!("Failed to get client SME: {}", e))?;
             result.map_err(|e| {
-                format_err!("GetClientSme returned an error: {}", zx::Status::from_raw(e))
+                format_err!("GetClientSme returned an error: {}", zx::Status::err_from_raw(e))
             })?;
 
             let lc = Iface { sme: sme.clone(), iface_id };
@@ -135,16 +135,15 @@ mod tests {
     use anyhow::Error;
     use assert_matches::assert_matches;
     use async_trait::async_trait;
+    use fidl_fuchsia_wlan_device_service as fidl_service;
+    use fidl_fuchsia_wlan_sme as fidl_sme;
+    use fuchsia_async as fasync;
     use futures::StreamExt;
     use futures::channel::oneshot;
     use futures::task::Poll;
     use ieee80211::MacAddr;
     use std::collections::HashMap;
     use std::pin::pin;
-    use {
-        fidl_fuchsia_wlan_device_service as fidl_service, fidl_fuchsia_wlan_sme as fidl_sme,
-        fuchsia_async as fasync,
-    };
 
     struct TestValues {
         phy_manager: Arc<Mutex<FakePhyManager>>,

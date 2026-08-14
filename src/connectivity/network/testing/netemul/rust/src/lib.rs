@@ -498,7 +498,7 @@ impl<'a> TestRealm<'a> {
         self.realm()
             .start_child_component(child_name)
             .await?
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .with_context(|| format!("failed to start child component '{}'", child_name))
     }
 
@@ -507,7 +507,7 @@ impl<'a> TestRealm<'a> {
         self.realm()
             .stop_child_component(child_name)
             .await?
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .with_context(|| format!("failed to stop child component '{}'", child_name))
     }
 
@@ -702,7 +702,7 @@ impl<'a> TestRealm<'a> {
             .add_device(path, device)
             .await
             .context("add device")?
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .context("add device error")
     }
 
@@ -722,7 +722,7 @@ impl<'a> TestRealm<'a> {
             .remove_device(path)
             .await
             .context("remove device")?
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .context("remove device error")
     }
 

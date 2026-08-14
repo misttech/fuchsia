@@ -1864,7 +1864,7 @@ mod tests {
                     .await
                     .expect("mount (fidl) failed")
                 {
-                    let status = Status::from_raw(status);
+                    let status = Status::err_from_raw(status);
                     if status != Status::NOT_FOUND && status != Status::ALREADY_BOUND {
                         assert!(false, "Unexpected status {:}", status);
                     }
@@ -1881,7 +1881,7 @@ mod tests {
                     .await
                     .expect("mount (fidl) failed")
                 {
-                    let status = Status::from_raw(status);
+                    let status = Status::err_from_raw(status);
                     if status != Status::NOT_FOUND && status != Status::ALREADY_BOUND {
                         assert!(false, "Unexpected status {:}", status);
                     }

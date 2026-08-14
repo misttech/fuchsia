@@ -73,7 +73,7 @@ async fn reboot(
     .await
     .map_err(|e| reboot_err(format!("{e:?}")))
     .and_then(|r| {
-        r.map_err(|zx_status| reboot_err(format!("{:?}", zx::Status::from_raw(zx_status))))
+        r.map_err(|zx_status| reboot_err(format!("{:?}", zx::Status::err_from_raw(zx_status))))
     })
 }
 

@@ -18,7 +18,7 @@ async fn file_read_with_sufficient_rights() {
             .read(0)
             .await
             .expect("read failed")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("read error");
     }
 }
@@ -31,7 +31,7 @@ async fn file_read_with_insufficient_rights() {
 
     for flags in harness.file_rights.combinations_without(fio::Rights::READ_BYTES) {
         let file = dir.open_node::<fio::FileMarker>(TEST_FILE, flags, None).await.unwrap();
-        let result = file.read(0).await.expect("read failed").map_err(zx::Status::from_raw);
+        let result = file.read(0).await.expect("read failed").map_err(zx::Status::err_from_raw);
         assert_eq!(result, Err(zx::Status::BAD_HANDLE))
     }
 }
@@ -49,7 +49,7 @@ async fn file_read_with_max_transfer() {
             .read(fio::MAX_TRANSFER_SIZE)
             .await
             .expect("read failed")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("read error")
             .len();
         assert_eq!(len, fio::MAX_TRANSFER_SIZE as usize);
@@ -69,7 +69,7 @@ async fn file_read_over_max_transfer() {
             .read(fio::MAX_TRANSFER_SIZE + 1)
             .await
             .expect("read failed")
-            .map_err(zx::Status::from_raw);
+            .map_err(zx::Status::err_from_raw);
         assert_eq!(result, Err(zx::Status::OUT_OF_RANGE))
     }
 }
@@ -86,7 +86,7 @@ async fn file_read_at_with_sufficient_rights() {
             .read_at(0, 0)
             .await
             .expect("read_at failed")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("read_at error");
     }
 }
@@ -100,7 +100,7 @@ async fn file_read_at_with_insufficient_rights() {
     for flags in harness.file_rights.combinations_without(fio::Rights::READ_BYTES) {
         let file = dir.open_node::<fio::FileMarker>(TEST_FILE, flags, None).await.unwrap();
         let result =
-            file.read_at(0, 0).await.expect("read_at failed").map_err(zx::Status::from_raw);
+            file.read_at(0, 0).await.expect("read_at failed").map_err(zx::Status::err_from_raw);
         assert_eq!(result, Err(zx::Status::BAD_HANDLE))
     }
 }
@@ -118,7 +118,7 @@ async fn file_read_at_with_max_transfer() {
             .read_at(fio::MAX_TRANSFER_SIZE, 0)
             .await
             .expect("read_at failed")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("read_at error")
             .len();
         assert_eq!(len, fio::MAX_TRANSFER_SIZE as usize)
@@ -138,7 +138,7 @@ async fn file_read_at_over_max_transfer() {
             .read_at(fio::MAX_TRANSFER_SIZE + 1, 0)
             .await
             .expect("read_at failed")
-            .map_err(zx::Status::from_raw);
+            .map_err(zx::Status::err_from_raw);
         assert_eq!(result, Err(zx::Status::OUT_OF_RANGE))
     }
 }
@@ -156,7 +156,7 @@ async fn file_read_in_subdirectory() {
             .read(0)
             .await
             .expect("read failed")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("read error");
     }
 }

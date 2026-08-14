@@ -72,7 +72,7 @@ fn fidl_message_to_netlink(
             let mut error = ErrorMessage::default();
             let error_code = match e.error_code {
                 0 => bail!("Dropping nl80211 error message with error code 0"),
-                code => zx::Status::from_raw(code),
+                code => zx::Status::err_from_raw(code),
             };
             error.code = std::num::NonZeroI32::new(
                 errors::from_status_like_fdio!(error_code).code.error_code() as i32,

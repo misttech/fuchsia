@@ -435,7 +435,7 @@ impl TestFixture {
                     .get_vmo(&expected_blob_hash.into())
                     .await
                     .expect("blob get_vmo fidl error")
-                    .unwrap_or_else(|e| match zx::Status::from_raw(e) {
+                    .unwrap_or_else(|e| match zx::Status::err_from_raw(e) {
                         zx::Status::NOT_FOUND => panic!("Test blob not found - blobfs lost data!"),
                         s => panic!("Error while opening test blob vmo: {s}"),
                     });

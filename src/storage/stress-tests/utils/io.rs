@@ -201,7 +201,7 @@ impl File {
     // Set the length of the file
     pub async fn truncate(&self, length: u64) -> Result<(), Status> {
         match self.proxy.resize(length).await {
-            Ok(result) => result.map_err(Status::from_raw),
+            Ok(result) => result.map_err(Status::err_from_raw),
             Err(e) => {
                 if e.is_closed() {
                     Err(Status::PEER_CLOSED)
@@ -232,7 +232,7 @@ impl File {
     pub async fn size_on_disk(&self) -> Result<u64, Status> {
         match self.proxy.get_attributes(fio::NodeAttributesQuery::STORAGE_SIZE).await {
             Ok(res) => {
-                let (_, immutable_attributes) = res.map_err(Status::from_raw)?;
+                let (_, immutable_attributes) = res.map_err(Status::err_from_raw)?;
                 Ok(immutable_attributes.storage_size.unwrap_or_default())
             }
             Err(e) => {
@@ -249,7 +249,7 @@ impl File {
     pub async fn uncompressed_size(&self) -> Result<u64, Status> {
         match self.proxy.get_attributes(fio::NodeAttributesQuery::CONTENT_SIZE).await {
             Ok(res) => {
-                let (_, immutable_attributes) = res.map_err(Status::from_raw)?;
+                let (_, immutable_attributes) = res.map_err(Status::err_from_raw)?;
                 Ok(immutable_attributes.content_size.unwrap_or_default())
             }
             Err(e) => {
@@ -298,7 +298,7 @@ impl File {
     // Set the offset of the file
     pub async fn seek(&self, origin: fio::SeekOrigin, offset: u64) -> Result<(), Status> {
         match self.proxy.seek(origin, offset as i64).await {
-            Ok(result) => result.map_err(Status::from_raw).map(|_: u64| ()),
+            Ok(result) => result.map_err(Status::err_from_raw).map(|_: u64| ()),
             Err(e) => {
                 if e.is_closed() {
                     Err(Status::PEER_CLOSED)
@@ -312,7 +312,7 @@ impl File {
     // Gracefully close the file by informing the filesystem
     pub async fn close(self) -> Result<(), Status> {
         match self.proxy.close().await {
-            Ok(result) => result.map_err(Status::from_raw),
+            Ok(result) => result.map_err(Status::err_from_raw),
             Err(e) => {
                 if e.is_closed() {
                     Err(Status::PEER_CLOSED)

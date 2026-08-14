@@ -1747,7 +1747,7 @@ async fn sync_package_cache(pkg_cache: &fpkg::PackageCacheProxy) -> Result<(), E
             .sync()
             .await
             .context("while performing sync call")?
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .context("sync responded with")
     }
     .await

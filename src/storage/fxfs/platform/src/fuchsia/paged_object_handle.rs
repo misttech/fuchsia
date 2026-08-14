@@ -1970,7 +1970,7 @@ mod tests {
         file.write(&[1, 2, 3, 4])
             .await
             .expect("FIDL call failed")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("write failed");
 
         let node_attrs =
@@ -2622,7 +2622,7 @@ mod tests {
                         .write("foo".as_bytes())
                         .await
                         .expect("FIDL call failed")
-                        .map_err(zx::Status::from_raw)
+                        .map_err(zx::Status::err_from_raw)
                         .expect("write failed");
                     let write_modification_time =
                         get_attributes_checked(&file1, fio::NodeAttributesQuery::MODIFICATION_TIME)
@@ -2986,7 +2986,7 @@ mod tests {
         let page_size = zx::system_get_page_size() as u64;
         let file_size = page_size * 3;
         fuchsia_fs::file::write(&file, &vec![1u8; file_size as usize]).await.unwrap();
-        file.sync().await.unwrap().map_err(zx::Status::from_raw).unwrap();
+        file.sync().await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
 
         // Get the backing memory for the file. Confirm the length of the vmo and the reported
         // stream size.
@@ -2994,14 +2994,14 @@ mod tests {
             .get_backing_memory(fio::VmoFlags::READ | fio::VmoFlags::WRITE)
             .await
             .unwrap()
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .unwrap();
         assert_eq!(vmo.get_stream_size().unwrap(), file_size);
 
         // Resize the file down to one page. Confirm the stream size is updated, but the vmo size
         // stays the same.
-        file.resize(page_size).await.unwrap().map_err(zx::Status::from_raw).unwrap();
-        file.sync().await.unwrap().map_err(zx::Status::from_raw).unwrap();
+        file.resize(page_size).await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
+        file.sync().await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
         assert_eq!(vmo.get_stream_size().unwrap(), page_size);
 
         // Write some data to the vmo, beyond the current stream size. This does _not_ update the
@@ -3900,11 +3900,11 @@ mod tests {
             assert_eq!(file_obj.handle().inner.lock().dirty_pages.total(), 0);
             let page_size = zx::system_get_page_size() as u64;
             file.resize(page_size * 2).await.unwrap().expect("Grow file");
-            file.sync().await.unwrap().map_err(zx::Status::from_raw).unwrap();
+            file.sync().await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
             file.write_at(&[1, 2, 3, 4], page_size).await.unwrap().expect("Writing");
             assert_eq!(file_obj.handle().inner.lock().dirty_pages.total(), 1);
             file.resize(page_size).await.unwrap().expect("Shrink file");
-            file.sync().await.unwrap().map_err(zx::Status::from_raw).unwrap();
+            file.sync().await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
             assert_eq!(file_obj.handle().inner.lock().dirty_pages.total(), 0);
             file.write_at(&[1, 2, 3, 4], page_size).await.unwrap().expect("Writing");
             assert_eq!(file_obj.handle().inner.lock().dirty_pages.total(), 1);
@@ -3954,11 +3954,11 @@ mod tests {
                 .await
                 .unwrap()
                 .expect("Allocate file");
-            file.sync().await.unwrap().map_err(zx::Status::from_raw).unwrap();
+            file.sync().await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
             file.write_at(&[1, 2, 3, 4], page_size).await.unwrap().expect("Writing");
             assert_eq!(file_obj.handle().inner.lock().dirty_pages.total(), 1);
             file.resize(page_size).await.unwrap().expect("Shrink file");
-            file.sync().await.unwrap().map_err(zx::Status::from_raw).unwrap();
+            file.sync().await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
             assert_eq!(file_obj.handle().inner.lock().dirty_pages.total(), 0);
             file.write_at(&[1, 2, 3, 4], page_size).await.unwrap().expect("Writing");
             assert_eq!(file_obj.handle().inner.lock().dirty_pages.total(), 1);
@@ -3984,13 +3984,13 @@ mod tests {
 
         let page_size = zx::system_get_page_size() as u64;
         file::write(&file, &vec![1, 2, 3, 4]).await.unwrap();
-        file.sync().await.unwrap().map_err(zx::Status::from_raw).unwrap();
+        file.sync().await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
         file.allocate(0, page_size, fio::AllocateMode::empty())
             .await
             .unwrap()
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .unwrap();
-        let data = file.read_at(4, 0).await.unwrap().map_err(zx::Status::from_raw).unwrap();
+        let data = file.read_at(4, 0).await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
         assert_eq!(data, vec![1, 2, 3, 4]);
 
         fixture.close().await;
@@ -4026,9 +4026,10 @@ mod tests {
         file.allocate(0, page_size, fio::AllocateMode::empty())
             .await
             .unwrap()
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .unwrap();
-        let data = file.read_at(page_size, 0).await.unwrap().map_err(zx::Status::from_raw).unwrap();
+        let data =
+            file.read_at(page_size, 0).await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
         assert_eq!(data, vec![0; page_size as usize]);
 
         assert_eq!(
@@ -4064,11 +4065,11 @@ mod tests {
         file.allocate(0, page_size, fio::AllocateMode::empty())
             .await
             .unwrap()
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .unwrap();
         file::write(&file, &vec![1, 2, 3, 4]).await.unwrap();
-        file.sync().await.unwrap().map_err(zx::Status::from_raw).unwrap();
-        let data = file.read_at(4, 0).await.unwrap().map_err(zx::Status::from_raw).unwrap();
+        file.sync().await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
+        let data = file.read_at(4, 0).await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
         assert_eq!(data, vec![1, 2, 3, 4]);
 
         fixture.close().await;
@@ -4093,16 +4094,24 @@ mod tests {
         file.allocate(page_size, page_size, fio::AllocateMode::empty())
             .await
             .unwrap()
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .unwrap();
         let write_data = (0..20).cycle().take(page_size as usize * 2).collect::<Vec<_>>();
         assert_eq!(
-            file.write_at(&write_data, 2048).await.unwrap().map_err(zx::Status::from_raw).unwrap(),
+            file.write_at(&write_data, 2048)
+                .await
+                .unwrap()
+                .map_err(zx::Status::err_from_raw)
+                .unwrap(),
             page_size * 2
         );
-        file.sync().await.unwrap().map_err(zx::Status::from_raw).unwrap();
-        let data =
-            file.read_at(page_size * 2, 2048).await.unwrap().map_err(zx::Status::from_raw).unwrap();
+        file.sync().await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
+        let data = file
+            .read_at(page_size * 2, 2048)
+            .await
+            .unwrap()
+            .map_err(zx::Status::err_from_raw)
+            .unwrap();
         assert_eq!(data, write_data);
 
         fixture.close().await;
@@ -4127,34 +4136,38 @@ mod tests {
         file.allocate(0, page_size, fio::AllocateMode::empty())
             .await
             .unwrap()
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .unwrap();
         let write_data = (0..20).cycle().take(page_size as usize).collect::<Vec<_>>();
         // Fill up the disk with data.
         loop {
-            match file.write(&write_data).await.unwrap().map_err(zx::Status::from_raw) {
+            match file.write(&write_data).await.unwrap().map_err(zx::Status::err_from_raw) {
                 Ok(len) => assert_eq!(len, page_size),
                 Err(status) => {
                     assert_eq!(status, zx::Status::NO_SPACE);
                     break;
                 }
             }
-            file.sync().await.unwrap().map_err(zx::Status::from_raw).unwrap();
+            file.sync().await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
         }
 
         // Writing outside the allocated range fails (because not overwrite mode.)
         assert_eq!(
-            file.write_at(&write_data, page_size).await.unwrap().map_err(zx::Status::from_raw),
+            file.write_at(&write_data, page_size).await.unwrap().map_err(zx::Status::err_from_raw),
             Err(zx::Status::NO_SPACE)
         );
 
         for _ in 0..100 {
             // Writing inside the allocated range succeeds indefinitely (because overwrite mode).
             assert_eq!(
-                file.write_at(&write_data, 0).await.unwrap().map_err(zx::Status::from_raw).unwrap(),
+                file.write_at(&write_data, 0)
+                    .await
+                    .unwrap()
+                    .map_err(zx::Status::err_from_raw)
+                    .unwrap(),
                 page_size
             );
-            file.sync().await.unwrap().map_err(zx::Status::from_raw).unwrap();
+            file.sync().await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
         }
 
         // Note that it is possible now that writing outside the range may work again because
@@ -4188,9 +4201,9 @@ mod tests {
                 file.allocate(0, page_size * 4, fio::AllocateMode::empty())
                     .await
                     .unwrap()
-                    .map_err(zx::Status::from_raw)
+                    .map_err(zx::Status::err_from_raw)
                     .unwrap();
-                file.close().await.unwrap().map_err(zx::Status::from_raw).unwrap();
+                file.close().await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
             }
 
             fixture.close().await
@@ -4214,7 +4227,7 @@ mod tests {
         )
         .await;
         loop {
-            match filler_file.write(&write_data).await.unwrap().map_err(zx::Status::from_raw) {
+            match filler_file.write(&write_data).await.unwrap().map_err(zx::Status::err_from_raw) {
                 Ok(len) => assert_eq!(len, page_size),
                 Err(status) => {
                     assert_eq!(status, zx::Status::NO_SPACE);
@@ -4233,21 +4246,28 @@ mod tests {
 
         // Writing outside the allocated range fails.
         assert_eq!(
-            file.write_at(&write_data, page_size * 4).await.unwrap().map_err(zx::Status::from_raw),
+            file.write_at(&write_data, page_size * 4)
+                .await
+                .unwrap()
+                .map_err(zx::Status::err_from_raw),
             Err(zx::Status::NO_SPACE)
         );
 
         for _ in 0..100 {
             // Writing inside the allocated range succeeds indefinitely.
             assert_eq!(
-                file.write_at(&write_data, 0).await.unwrap().map_err(zx::Status::from_raw).unwrap(),
+                file.write_at(&write_data, 0)
+                    .await
+                    .unwrap()
+                    .map_err(zx::Status::err_from_raw)
+                    .unwrap(),
                 page_size
             );
             assert_eq!(
                 file.write_at(&write_data, page_size)
                     .await
                     .unwrap()
-                    .map_err(zx::Status::from_raw)
+                    .map_err(zx::Status::err_from_raw)
                     .unwrap(),
                 page_size
             );
@@ -4255,7 +4275,7 @@ mod tests {
                 file.write_at(&write_data, page_size * 2)
                     .await
                     .unwrap()
-                    .map_err(zx::Status::from_raw)
+                    .map_err(zx::Status::err_from_raw)
                     .unwrap(),
                 page_size
             );
@@ -4263,11 +4283,11 @@ mod tests {
                 file.write_at(&write_data, page_size * 3)
                     .await
                     .unwrap()
-                    .map_err(zx::Status::from_raw)
+                    .map_err(zx::Status::err_from_raw)
                     .unwrap(),
                 page_size
             );
-            file.sync().await.unwrap().map_err(zx::Status::from_raw).unwrap();
+            file.sync().await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
         }
 
         fixture.close().await;
@@ -4292,7 +4312,7 @@ mod tests {
         file.allocate(0, page_size * 4, fio::AllocateMode::empty())
             .await
             .unwrap()
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .unwrap();
         let write_data = (0..20).cycle().take(page_size as usize).collect::<Vec<_>>();
         let write_data_alternate = (0..15).cycle().take(page_size as usize).collect::<Vec<_>>();
@@ -4300,7 +4320,7 @@ mod tests {
             file.write_at(&write_data, page_size)
                 .await
                 .unwrap()
-                .map_err(zx::Status::from_raw)
+                .map_err(zx::Status::err_from_raw)
                 .unwrap(),
             page_size
         );
@@ -4308,18 +4328,18 @@ mod tests {
             file.write_at(&write_data, page_size * 2)
                 .await
                 .unwrap()
-                .map_err(zx::Status::from_raw)
+                .map_err(zx::Status::err_from_raw)
                 .unwrap(),
             page_size
         );
-        file.sync().await.unwrap().map_err(zx::Status::from_raw).unwrap();
+        file.sync().await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
         // Sync will make a transaction with whatever we have written. Make sure that there are
         // multiple transactions hitting the same blocks, to try and trip up the replay.
         assert_eq!(
             file.write_at(&write_data_alternate, 0)
                 .await
                 .unwrap()
-                .map_err(zx::Status::from_raw)
+                .map_err(zx::Status::err_from_raw)
                 .unwrap(),
             page_size
         );
@@ -4327,21 +4347,21 @@ mod tests {
             file.write_at(&write_data_alternate, page_size)
                 .await
                 .unwrap()
-                .map_err(zx::Status::from_raw)
+                .map_err(zx::Status::err_from_raw)
                 .unwrap(),
             page_size
         );
-        file.sync().await.unwrap().map_err(zx::Status::from_raw).unwrap();
+        file.sync().await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
 
         assert_eq!(
-            file.read_at(page_size, 0).await.unwrap().map_err(zx::Status::from_raw).unwrap(),
+            file.read_at(page_size, 0).await.unwrap().map_err(zx::Status::err_from_raw).unwrap(),
             write_data_alternate,
         );
         assert_eq!(
             file.read_at(page_size, page_size)
                 .await
                 .unwrap()
-                .map_err(zx::Status::from_raw)
+                .map_err(zx::Status::err_from_raw)
                 .unwrap(),
             write_data_alternate,
         );
@@ -4349,7 +4369,7 @@ mod tests {
             file.read_at(page_size, page_size * 2)
                 .await
                 .unwrap()
-                .map_err(zx::Status::from_raw)
+                .map_err(zx::Status::err_from_raw)
                 .unwrap(),
             write_data,
         );
@@ -4357,7 +4377,7 @@ mod tests {
             file.read_at(page_size, page_size * 3)
                 .await
                 .unwrap()
-                .map_err(zx::Status::from_raw)
+                .map_err(zx::Status::err_from_raw)
                 .unwrap(),
             vec![0; page_size as usize],
         );
@@ -4375,14 +4395,14 @@ mod tests {
         .await;
 
         assert_eq!(
-            file.read_at(page_size, 0).await.unwrap().map_err(zx::Status::from_raw).unwrap(),
+            file.read_at(page_size, 0).await.unwrap().map_err(zx::Status::err_from_raw).unwrap(),
             write_data_alternate,
         );
         assert_eq!(
             file.read_at(page_size, page_size)
                 .await
                 .unwrap()
-                .map_err(zx::Status::from_raw)
+                .map_err(zx::Status::err_from_raw)
                 .unwrap(),
             write_data_alternate,
         );
@@ -4390,7 +4410,7 @@ mod tests {
             file.read_at(page_size, page_size * 2)
                 .await
                 .unwrap()
-                .map_err(zx::Status::from_raw)
+                .map_err(zx::Status::err_from_raw)
                 .unwrap(),
             write_data,
         );
@@ -4398,7 +4418,7 @@ mod tests {
             file.read_at(page_size, page_size * 3)
                 .await
                 .unwrap()
-                .map_err(zx::Status::from_raw)
+                .map_err(zx::Status::err_from_raw)
                 .unwrap(),
             vec![0; page_size as usize],
         );
@@ -4445,39 +4465,39 @@ mod tests {
         file.allocate(0, page_size * 2, fio::AllocateMode::empty())
             .await
             .unwrap()
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .unwrap();
         let write_data = (0..20).cycle().take(page_size as usize).collect::<Vec<_>>();
         assert_eq!(
             file.write_at(&write_data, page_size)
                 .await
                 .unwrap()
-                .map_err(zx::Status::from_raw)
+                .map_err(zx::Status::err_from_raw)
                 .unwrap(),
             page_size
         );
-        file.sync().await.unwrap().map_err(zx::Status::from_raw).unwrap();
+        file.sync().await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
 
-        file.resize(page_size).await.unwrap().map_err(zx::Status::from_raw).unwrap();
-        file.sync().await.unwrap().map_err(zx::Status::from_raw).unwrap();
+        file.resize(page_size).await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
+        file.sync().await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
         assert_eq!(file_obj.handle().inner.lock().dirty_pages.total(), 0);
 
         assert_eq!(
             file.write_at(&write_data, page_size)
                 .await
                 .unwrap()
-                .map_err(zx::Status::from_raw)
+                .map_err(zx::Status::err_from_raw)
                 .unwrap(),
             page_size
         );
         // Should be a COW dirty range now.
         assert_eq!(file_obj.handle().inner.lock().dirty_pages.reserved, 1);
-        file.sync().await.unwrap().map_err(zx::Status::from_raw).unwrap();
+        file.sync().await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
         assert_eq!(
             file.read_at(page_size, page_size)
                 .await
                 .unwrap()
-                .map_err(zx::Status::from_raw)
+                .map_err(zx::Status::err_from_raw)
                 .unwrap(),
             write_data,
         );
@@ -4504,30 +4524,30 @@ mod tests {
         file.allocate(20, 100, fio::AllocateMode::empty())
             .await
             .unwrap()
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .unwrap();
 
         let (_, attrs) = file
             .get_attributes(fio::NodeAttributesQuery::CONTENT_SIZE)
             .await
             .unwrap()
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .unwrap();
         assert_eq!(attrs.content_size, Some(120));
 
         let page_size = zx::system_get_page_size() as u64;
         let write_data = (0..20).cycle().take(page_size as usize).collect::<Vec<_>>();
         assert_eq!(
-            file.write_at(&write_data, 0).await.unwrap().map_err(zx::Status::from_raw).unwrap(),
+            file.write_at(&write_data, 0).await.unwrap().map_err(zx::Status::err_from_raw).unwrap(),
             page_size
         );
-        file.sync().await.unwrap().map_err(zx::Status::from_raw).unwrap();
+        file.sync().await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
 
         let (_, attrs) = file
             .get_attributes(fio::NodeAttributesQuery::CONTENT_SIZE)
             .await
             .unwrap()
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .unwrap();
         assert_eq!(attrs.content_size, Some(page_size));
 
@@ -4553,43 +4573,47 @@ mod tests {
 
         let write_data = (0..20).cycle().take(100).collect::<Vec<_>>();
         assert_eq!(
-            file.write_at(&write_data, 0).await.unwrap().map_err(zx::Status::from_raw).unwrap(),
+            file.write_at(&write_data, 0).await.unwrap().map_err(zx::Status::err_from_raw).unwrap(),
             100,
         );
         assert_eq!(
-            file.write_at(&write_data, 100).await.unwrap().map_err(zx::Status::from_raw).unwrap(),
+            file.write_at(&write_data, 100)
+                .await
+                .unwrap()
+                .map_err(zx::Status::err_from_raw)
+                .unwrap(),
             100,
         );
-        file.sync().await.unwrap().map_err(zx::Status::from_raw).unwrap();
-        file.resize(100).await.unwrap().map_err(zx::Status::from_raw).unwrap();
-        file.sync().await.unwrap().map_err(zx::Status::from_raw).unwrap();
+        file.sync().await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
+        file.resize(100).await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
+        file.sync().await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
         let (_, attrs) = file
             .get_attributes(fio::NodeAttributesQuery::CONTENT_SIZE)
             .await
             .unwrap()
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .unwrap();
         assert_eq!(attrs.content_size, Some(100));
 
         file.allocate(0, 150, fio::AllocateMode::empty())
             .await
             .unwrap()
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .unwrap();
         let (_, attrs) = file
             .get_attributes(fio::NodeAttributesQuery::CONTENT_SIZE)
             .await
             .unwrap()
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .unwrap();
         assert_eq!(attrs.content_size, Some(150));
 
         assert_eq!(
-            file.read_at(100, 0).await.unwrap().map_err(zx::Status::from_raw).unwrap(),
+            file.read_at(100, 0).await.unwrap().map_err(zx::Status::err_from_raw).unwrap(),
             write_data,
         );
         assert_eq!(
-            file.read_at(50, 100).await.unwrap().map_err(zx::Status::from_raw).unwrap(),
+            file.read_at(50, 100).await.unwrap().map_err(zx::Status::err_from_raw).unwrap(),
             vec![0; 50],
         );
 
@@ -4615,36 +4639,36 @@ mod tests {
         file.allocate(0, page_size * 2, fio::AllocateMode::empty())
             .await
             .unwrap()
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .unwrap();
         let write_data = (0..20).cycle().take(page_size as usize).collect::<Vec<_>>();
         assert_eq!(
             file.write_at(&write_data, page_size)
                 .await
                 .unwrap()
-                .map_err(zx::Status::from_raw)
+                .map_err(zx::Status::err_from_raw)
                 .unwrap(),
             page_size
         );
-        file.sync().await.unwrap().map_err(zx::Status::from_raw).unwrap();
+        file.sync().await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
 
-        file.resize(page_size + 100).await.unwrap().map_err(zx::Status::from_raw).unwrap();
-        file.sync().await.unwrap().map_err(zx::Status::from_raw).unwrap();
+        file.resize(page_size + 100).await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
+        file.sync().await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
 
         assert_eq!(
             file.write_at(&write_data, page_size)
                 .await
                 .unwrap()
-                .map_err(zx::Status::from_raw)
+                .map_err(zx::Status::err_from_raw)
                 .unwrap(),
             page_size
         );
-        file.sync().await.unwrap().map_err(zx::Status::from_raw).unwrap();
+        file.sync().await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
         assert_eq!(
             file.read_at(page_size, page_size)
                 .await
                 .unwrap()
-                .map_err(zx::Status::from_raw)
+                .map_err(zx::Status::err_from_raw)
                 .unwrap(),
             write_data,
         );
@@ -4671,36 +4695,36 @@ mod tests {
         file.allocate(0, page_size * 2, fio::AllocateMode::empty())
             .await
             .unwrap()
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .unwrap();
         let write_data = (0..20).cycle().take(page_size as usize).collect::<Vec<_>>();
         assert_eq!(
             file.write_at(&write_data, page_size)
                 .await
                 .unwrap()
-                .map_err(zx::Status::from_raw)
+                .map_err(zx::Status::err_from_raw)
                 .unwrap(),
             page_size
         );
-        file.sync().await.unwrap().map_err(zx::Status::from_raw).unwrap();
+        file.sync().await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
 
-        file.resize(0).await.unwrap().map_err(zx::Status::from_raw).unwrap();
-        file.sync().await.unwrap().map_err(zx::Status::from_raw).unwrap();
+        file.resize(0).await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
+        file.sync().await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
 
         assert_eq!(
             file.write_at(&write_data, page_size)
                 .await
                 .unwrap()
-                .map_err(zx::Status::from_raw)
+                .map_err(zx::Status::err_from_raw)
                 .unwrap(),
             page_size
         );
-        file.sync().await.unwrap().map_err(zx::Status::from_raw).unwrap();
+        file.sync().await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
         assert_eq!(
             file.read_at(page_size, page_size)
                 .await
                 .unwrap()
-                .map_err(zx::Status::from_raw)
+                .map_err(zx::Status::err_from_raw)
                 .unwrap(),
             write_data,
         );
@@ -4728,16 +4752,16 @@ mod tests {
         file.allocate(0, 6000, fio::AllocateMode::empty())
             .await
             .unwrap()
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .unwrap();
-        file.resize(2000).await.unwrap().map_err(zx::Status::from_raw).unwrap();
-        file.sync().await.unwrap().map_err(zx::Status::from_raw).unwrap();
+        file.resize(2000).await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
+        file.sync().await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
         file.allocate(14000, 4000, fio::AllocateMode::empty())
             .await
             .unwrap()
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .unwrap();
-        file.sync().await.unwrap().map_err(zx::Status::from_raw).unwrap();
+        file.sync().await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
 
         fixture.close().await;
     }
@@ -4764,7 +4788,7 @@ mod tests {
                 file.seek(fio::SeekOrigin::Start, 0)
                     .await
                     .unwrap()
-                    .map_err(zx::Status::from_raw)
+                    .map_err(zx::Status::err_from_raw)
                     .unwrap(),
                 0
             );
@@ -4775,14 +4799,14 @@ mod tests {
         file.allocate(1000, 5000, fio::AllocateMode::empty())
             .await
             .unwrap()
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .unwrap();
         {
             assert_eq!(
                 file.seek(fio::SeekOrigin::Start, 0)
                     .await
                     .unwrap()
-                    .map_err(zx::Status::from_raw)
+                    .map_err(zx::Status::err_from_raw)
                     .unwrap(),
                 0
             );
@@ -4811,18 +4835,18 @@ mod tests {
 
         let contents = vec![1; 42007];
         fuchsia_fs::file::write(&file, &contents).await.unwrap();
-        file.sync().await.unwrap().map_err(zx::Status::from_raw).unwrap();
+        file.sync().await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
         file.allocate(4125, 29053, fio::AllocateMode::empty())
             .await
             .unwrap()
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .unwrap();
-        file.resize(22932).await.unwrap().map_err(zx::Status::from_raw).unwrap();
+        file.resize(22932).await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
         let contents = vec![1; 7963];
-        file.write_at(&contents, 22066).await.unwrap().map_err(zx::Status::from_raw).unwrap();
+        file.write_at(&contents, 22066).await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
         let contents = vec![1; 2697];
-        file.write_at(&contents, 61919).await.unwrap().map_err(zx::Status::from_raw).unwrap();
-        file.sync().await.unwrap().map_err(zx::Status::from_raw).unwrap();
+        file.write_at(&contents, 61919).await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
+        file.sync().await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
 
         fixture.close().await;
     }
@@ -4844,14 +4868,14 @@ mod tests {
 
         let contents = vec![1; 4096];
         fuchsia_fs::file::write(&file, &contents).await.unwrap();
-        file.sync().await.unwrap().map_err(zx::Status::from_raw).unwrap();
-        file.resize(0).await.unwrap().map_err(zx::Status::from_raw).unwrap();
+        file.sync().await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
+        file.resize(0).await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
         file.allocate(0, 4096, fio::AllocateMode::empty())
             .await
             .unwrap()
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .unwrap();
-        file.sync().await.unwrap().map_err(zx::Status::from_raw).unwrap();
+        file.sync().await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
 
         fixture.close().await;
     }

@@ -50,11 +50,10 @@ impl EditTransaction {
     /// Adds a rewrite rule with highest priority. If `rule` already exists, this
     /// API will prioritize it over other rules.
     pub async fn add(&self, rule: Rule) -> Result<(), EditTransactionError> {
-        self.transaction.add(&rule.into()).await?.map_err(|err| {
-            EditTransactionError::AddError(
-                zx::Status::try_from_raw(err).unwrap_or(zx::Status::INTERNAL),
-            )
-        })
+        self.transaction
+            .add(&rule.into())
+            .await?
+            .map_err(|err| EditTransactionError::AddError(zx::Status::err_from_raw(err)))
     }
 }
 
@@ -84,9 +83,7 @@ where
             transaction.transaction.commit().await.map_err(EditTransactionError::from)?;
 
         // Retry edit transaction on concurrent edit
-        return match response
-            .map_err(|err| zx::Status::try_from_raw(err).unwrap_or(zx::Status::INTERNAL))
-        {
+        return match response.map_err(zx::Status::err_from_raw) {
             Ok(()) => Ok(()),
             Err(zx::Status::UNAVAILABLE) => {
                 continue;

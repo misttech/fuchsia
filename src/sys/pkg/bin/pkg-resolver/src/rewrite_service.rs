@@ -200,7 +200,7 @@ mod tests {
     /// successfully returns the given Result<(),[`zx::Status`]>.
     macro_rules! assert_yields_result {
         ($expr:expr, $result:expr) => {
-            assert_eq!($expr.await.unwrap().map_err(Status::from_raw), $result);
+            assert_eq!($expr.await.unwrap().map_err(Status::err_from_raw), $result);
         };
     }
 

@@ -968,7 +968,7 @@ fn test_dhcp<'a, D: DhcpClient>(
                             .start_serving()
                             .await
                             .expect("failed to call dhcp/Server.StartServing")
-                            .map_err(zx::Status::from_raw)
+                            .map_err(zx::Status::err_from_raw)
                             .expect("dhcp/Server.StartServing returned error");
                         (dhcp_server, ifaces)
                     })
@@ -1317,7 +1317,7 @@ async fn acquire_dhcp_server_after_restart<SERVER: Netstack, CLIENT: NetstackAnd
             .start_serving()
             .await
             .expect("failed to call dhcp/Server.StartServing")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("dhcp/Server.StartServing returned error");
         assert_client_acquires_addr::<CLIENT::DhcpClient>(
             &client_realm,
@@ -1353,7 +1353,7 @@ async fn acquire_dhcp_server_after_restart<SERVER: Netstack, CLIENT: NetstackAnd
                     .start_serving()
                     .await
                     .expect("failed to call dhcp/Server.StartServing")
-                    .map_err(zx::Status::from_raw)
+                    .map_err(zx::Status::err_from_raw)
                     .expect("dhcp/Server.StartServing returned error");
                 dhcp_server.stop_serving().await.expect("failed to call dhcp/Server.StopServing")
             }
@@ -1363,7 +1363,7 @@ async fn acquire_dhcp_server_after_restart<SERVER: Netstack, CLIENT: NetstackAnd
                         .start_serving()
                         .await
                         .expect("failed to call dhcp/Server.StartServing")
-                        .map_err(zx::Status::from_raw),
+                        .map_err(zx::Status::err_from_raw),
                     Err(zx::Status::INVALID_ARGS)
                 );
             }
@@ -1394,14 +1394,14 @@ async fn acquire_dhcp_server_after_restart<SERVER: Netstack, CLIENT: NetstackAnd
                     .start_serving()
                     .await
                     .expect("failed to call dhcp/Server.StartServing")
-                    .map_err(zx::Status::from_raw)
+                    .map_err(zx::Status::err_from_raw)
                     .expect("dhcp/Server.StartServing returned error");
                 dhcp_server.stop_serving().await.expect("failed to call dhcp/Server.StopServing");
                 dhcp_server
                     .clear_leases()
                     .await
                     .expect("failed to call dhcp/Server.ClearLeases")
-                    .map_err(zx::Status::from_raw)
+                    .map_err(zx::Status::err_from_raw)
                     .expect("dhcp/Server.ClearLeases returned error");
             }
             PersistenceMode::Ephemeral => {
@@ -1410,7 +1410,7 @@ async fn acquire_dhcp_server_after_restart<SERVER: Netstack, CLIENT: NetstackAnd
                         .start_serving()
                         .await
                         .expect("failed to call dhcp/Server.StartServing")
-                        .map_err(zx::Status::from_raw),
+                        .map_err(zx::Status::err_from_raw),
                     Err(zx::Status::INVALID_ARGS)
                 );
             }
@@ -1508,7 +1508,7 @@ async fn test_dhcp_server_persistence_mode<N: Netstack>(name: &str, mode: Persis
                         .unwrap_or_else(|e| {
                             panic!("dhcp/Server.GetParameter({:?}): {:?}", name, e)
                         })
-                        .map_err(zx::Status::from_raw)
+                        .map_err(zx::Status::err_from_raw)
                         .unwrap_or_else(|e| {
                             panic!("dhcp/Server.GetParameter({:?}): {:?}", name, e)
                         }),

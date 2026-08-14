@@ -180,7 +180,7 @@ impl<D: OnDispatcher> Transport for AsyncChannel<D> {
                     exclusive.wait_readable(cx)?;
                     return Poll::Pending;
                 }
-                raw => return Poll::Ready(Err(Some(Status::from_raw(raw)))),
+                raw => return Poll::Ready(Err(Some(Status::err_from_raw(raw)))),
             }
         }
     }
@@ -211,7 +211,7 @@ impl<D: OnDispatcher> NonBlockingTransport for AsyncChannel<D> {
                 Ok(())
             }
             ZX_ERR_PEER_CLOSED => Err(None),
-            _ => Err(Some(Status::from_raw(result))),
+            _ => Err(Some(Status::err_from_raw(result))),
         }
     }
 }

@@ -734,7 +734,7 @@ impl RemoteBlockClient {
     pub async fn new(remote: impl Borrow<block::BlockProxy>) -> Result<Self, zx::Status> {
         let remote = remote.borrow();
         let info =
-            remote.get_info().await.map_err(fidl_to_status)?.map_err(zx::Status::from_raw)?;
+            remote.get_info().await.map_err(fidl_to_status)?.map_err(zx::Status::err_from_raw)?;
         let (session, server) = fidl::endpoints::create_proxy();
         let () = remote.open_session(server).map_err(fidl_to_status)?;
         Self::from_session(info, session).await
@@ -746,13 +746,16 @@ impl RemoteBlockClient {
     ) -> Result<Self, zx::Status> {
         const SCRATCH_VMO_NAME: zx::Name = zx::Name::new_lossy("block-client-scratch-vmo");
         let fifo =
-            session.get_fifo().await.map_err(fidl_to_status)?.map_err(zx::Status::from_raw)?;
+            session.get_fifo().await.map_err(fidl_to_status)?.map_err(zx::Status::err_from_raw)?;
         let fifo = fasync::Fifo::from_fifo(fifo);
         let temp_vmo = zx::Vmo::create(TEMP_VMO_SIZE as u64)?;
         temp_vmo.set_name(&SCRATCH_VMO_NAME)?;
         let dup = temp_vmo.duplicate_handle(zx::Rights::SAME_RIGHTS)?;
-        let vmo_id =
-            session.attach_vmo(dup).await.map_err(fidl_to_status)?.map_err(zx::Status::from_raw)?;
+        let vmo_id = session
+            .attach_vmo(dup)
+            .await
+            .map_err(fidl_to_status)?
+            .map_err(zx::Status::err_from_raw)?;
         let vmo_id = VmoId::new(vmo_id.id);
         Ok(RemoteBlockClient { session, common: Common::new(fifo, &info, temp_vmo, vmo_id) })
     }
@@ -766,7 +769,7 @@ impl BlockClient for RemoteBlockClient {
             .attach_vmo(dup)
             .await
             .map_err(fidl_to_status)?
-            .map_err(zx::Status::from_raw)?;
+            .map_err(zx::Status::err_from_raw)?;
         Ok(VmoId::new(vmo_id.id))
     }
 
@@ -807,8 +810,12 @@ impl BlockClient for RemoteBlockClient {
     }
 
     async fn close(&self) -> Result<(), zx::Status> {
-        let () =
-            self.session.close().await.map_err(fidl_to_status)?.map_err(zx::Status::from_raw)?;
+        let () = self
+            .session
+            .close()
+            .await
+            .map_err(fidl_to_status)?
+            .map_err(zx::Status::err_from_raw)?;
         Ok(())
     }
 
@@ -849,20 +856,20 @@ impl RemoteBlockClientSync {
         let info = remote
             .get_info(zx::MonotonicInstant::INFINITE)
             .map_err(fidl_to_status)?
-            .map_err(zx::Status::from_raw)?;
+            .map_err(zx::Status::err_from_raw)?;
         let (client, server) = fidl::endpoints::create_endpoints();
         let () = remote.open_session(server).map_err(fidl_to_status)?;
         let session = block::SessionSynchronousProxy::new(client.into_channel());
         let fifo = session
             .get_fifo(zx::MonotonicInstant::INFINITE)
             .map_err(fidl_to_status)?
-            .map_err(zx::Status::from_raw)?;
+            .map_err(zx::Status::err_from_raw)?;
         let temp_vmo = zx::Vmo::create(TEMP_VMO_SIZE as u64)?;
         let dup = temp_vmo.duplicate_handle(zx::Rights::SAME_RIGHTS)?;
         let vmo_id = session
             .attach_vmo(dup, zx::MonotonicInstant::INFINITE)
             .map_err(fidl_to_status)?
-            .map_err(zx::Status::from_raw)?;
+            .map_err(zx::Status::err_from_raw)?;
         let vmo_id = VmoId::new(vmo_id.id);
 
         // The fifo needs to be instantiated from the thread that has the executor as that's where
@@ -890,7 +897,7 @@ impl RemoteBlockClientSync {
             .session
             .attach_vmo(dup, zx::MonotonicInstant::INFINITE)
             .map_err(fidl_to_status)?
-            .map_err(zx::Status::from_raw)?;
+            .map_err(zx::Status::err_from_raw)?;
         Ok(VmoId::new(vmo_id.id))
     }
 
@@ -933,7 +940,7 @@ impl RemoteBlockClientSync {
             .session
             .close(zx::MonotonicInstant::INFINITE)
             .map_err(fidl_to_status)?
-            .map_err(zx::Status::from_raw)?;
+            .map_err(zx::Status::err_from_raw)?;
         Ok(())
     }
 

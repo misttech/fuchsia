@@ -105,7 +105,7 @@ impl<T> BootManagerResultExt for Result<Result<T, i32>, fidl::Error> {
         match self {
             Ok(Ok(value)) => Ok(value),
             Ok(Err(raw)) => {
-                Err(BootManagerError::Status { status: Status::from_raw(raw), method_name })
+                Err(BootManagerError::Status { status: Status::err_from_raw(raw), method_name })
             }
             Err(error) => Err(BootManagerError::Fidl { error, method_name }),
         }

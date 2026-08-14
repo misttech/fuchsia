@@ -7,20 +7,20 @@
 use crate::modern_backend::input_reports_reader::InputReportsReader;
 use crate::synthesizer;
 use crate::usages::hid_usage_to_input3_key;
-use anyhow::{format_err, Context as _, Error};
+use anyhow::{Context as _, Error, format_err};
 use async_trait::async_trait;
-use fidl::endpoints::ServerEnd;
 use fidl::Error as FidlError;
+use fidl::endpoints::ServerEnd;
 use fidl_fuchsia_input::Key;
 use fidl_fuchsia_input_report::{
     ConsumerControlButton, ConsumerControlInputReport, ContactInputReport, DeviceDescriptor,
     FeatureReport, InputDeviceRequest, InputDeviceRequestStream, InputReport,
-    InputReportsReaderMarker, KeyboardInputReport, MouseInputReport, TouchInputReport,
-    TOUCH_MAX_CONTACTS,
+    InputReportsReaderMarker, KeyboardInputReport, MouseInputReport, TOUCH_MAX_CONTACTS,
+    TouchInputReport,
 };
 use fidl_fuchsia_ui_input::{KeyboardReport, Touch};
 use fuchsia_async as fasync;
-use futures::{future, pin_mut, StreamExt, TryFutureExt};
+use futures::{StreamExt, TryFutureExt, future, pin_mut};
 use std::convert::TryFrom as _;
 
 /// Implements the `synthesizer::InputDevice` trait, and the server side of the
@@ -542,8 +542,8 @@ mod tests {
         }
 
         #[fasync::run_until_stalled(test)]
-        async fn media_buttons_generates_partial_consumer_controls_input_report(
-        ) -> Result<(), Error> {
+        async fn media_buttons_generates_partial_consumer_controls_input_report()
+        -> Result<(), Error> {
             let (input_device_proxy, mut input_device) = make_input_device_proxy_and_struct();
             input_device.media_buttons(
                 vec![
@@ -603,8 +603,8 @@ mod tests {
         }
 
         #[fasync::run_until_stalled(test)]
-        async fn key_press_usage_generates_expected_keyboard_input_report_for_some(
-        ) -> Result<(), Error> {
+        async fn key_press_usage_generates_expected_keyboard_input_report_for_some()
+        -> Result<(), Error> {
             let (input_device_proxy, mut input_device) = make_input_device_proxy_and_struct();
             input_device
                 .key_press_usage(Some(Usages::HidUsageKeyA as u32), DEFAULT_REPORT_TIMESTAMP)?;
@@ -627,8 +627,8 @@ mod tests {
         }
 
         #[fasync::run_until_stalled(test)]
-        async fn key_press_usage_generates_expected_keyboard_input_report_for_none(
-        ) -> Result<(), Error> {
+        async fn key_press_usage_generates_expected_keyboard_input_report_for_none()
+        -> Result<(), Error> {
             let (input_device_proxy, mut input_device) = make_input_device_proxy_and_struct();
             input_device.key_press_usage(None, DEFAULT_REPORT_TIMESTAMP)?;
 
@@ -1304,7 +1304,7 @@ mod tests {
                 .await
                 .1
                 .expect("fidl error")
-                .map_err(zx::Status::from_raw)
+                .map_err(zx::Status::err_from_raw)
                 .expect("service error")
         }
     }

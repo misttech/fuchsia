@@ -648,7 +648,7 @@ async fn sort_preferred_addresses(
                         debug!(
                             "fuchsia.net.routes/State.resolve({}) failed {}",
                             net_ext::IpAddress::from(addr),
-                            zx::Status::from_raw(e)
+                            zx::Status::err_from_raw(e)
                         );
                         None
                     }

@@ -200,11 +200,7 @@ impl NonMetaStorage for fio::DirectoryProxy {
             .get_backing_memory(fio::VmoFlags::PRIVATE_CLONE | fio::VmoFlags::READ)
             .await
             .map_err(NonMetaStorageError::Fidl)?
-            .map_err(|e| {
-                NonMetaStorageError::GetVmo(
-                    zx::Status::try_from_raw(e).unwrap_or(zx::Status::INTERNAL),
-                )
-            })
+            .map_err(|e| NonMetaStorageError::GetVmo(zx::Status::err_from_raw(e)))
     }
 
     async fn read_blob(&self, hash: &fuchsia_hash::Hash) -> Result<Vec<u8>, NonMetaStorageError> {

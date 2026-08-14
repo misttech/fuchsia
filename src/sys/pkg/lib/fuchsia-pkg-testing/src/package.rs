@@ -430,7 +430,8 @@ async fn read_file(dir: &fio::DirectoryProxy, path: &str) -> Result<Vec<u8>, Ver
     };
 
     let read = async {
-        let result = file.get_backing_memory(fio::VmoFlags::READ).await?.map_err(Status::from_raw);
+        let result =
+            file.get_backing_memory(fio::VmoFlags::READ).await?.map_err(Status::err_from_raw);
 
         let mut expect_empty_blob = false;
 
@@ -465,7 +466,7 @@ async fn read_file(dir: &fio::DirectoryProxy, path: &str) -> Result<Vec<u8>, Ver
                 .read(fio::MAX_BUF)
                 .await
                 .context("file read to respond")?
-                .map_err(Status::from_raw)
+                .map_err(Status::err_from_raw)
                 .map_err(|status| VerificationError::FileReadError { path: path.into(), status })?;
 
             if chunk.is_empty() {
@@ -485,7 +486,7 @@ async fn read_file(dir: &fio::DirectoryProxy, path: &str) -> Result<Vec<u8>, Ver
     // Only check close_result if everything that came before it looks good.
     let close_result = close_result.context("file close to respond")?;
     close_result.map_err(|status| {
-        format_err!("unable to close {:?}: {:?}", path, zx::Status::from_raw(status))
+        format_err!("unable to close {:?}: {:?}", path, zx::Status::err_from_raw(status))
     })?;
     Ok(result)
 }

@@ -28,7 +28,7 @@ pub async fn open_file_data(
             log::debug!("error for path={}: {}:", path, e);
             FileError::GetBufferError(e)
         })?
-        .map_err(zxs::Status::from_raw)
+        .map_err(zxs::Status::err_from_raw)
     {
         Ok(vmo) => {
             let size = vmo.get_content_size().expect("failed to get VMO size");

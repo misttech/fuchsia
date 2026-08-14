@@ -63,7 +63,7 @@ async fn handle_subcommands<'a>(proxies: &'a Vec<BusProxy>, args: Args) -> Resul
                 .read_bar(&bdf, options.bar_id, options.offset, options.size)
                 .await
                 .context("failed to call read")?
-                .map_err(Status::from_raw)
+                .map_err(Status::err_from_raw)
                 .with_context(|| {
                     format!("Couldn't read device {} bar {}", options.device, options.bar_id)
                 })?;

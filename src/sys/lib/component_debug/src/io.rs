@@ -431,7 +431,7 @@ impl Directory for RemoteDirectory {
             .map_err(|e| {
                 format_err!("could not truncate file `{}`: {}", path.as_path().display(), e)
             })?
-            .map_err(Status::from_raw)
+            .map_err(Status::err_from_raw)
             .map_err(|status| {
                 format_err!("could not truncate file `{}`: {}", path.as_path().display(), status)
             })?;

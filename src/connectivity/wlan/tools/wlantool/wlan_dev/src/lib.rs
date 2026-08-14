@@ -214,7 +214,7 @@ async fn do_phy(cmd: opts::PhyCmd, monitor_proxy: DeviceMonitor) -> Result<(), E
                 Err(status) => {
                     println!(
                         "response: Failed with status {:?}",
-                        zx_status::Status::from_raw(status)
+                        zx_status::Status::err_from_raw(status)
                     );
                 }
             }
@@ -247,7 +247,7 @@ async fn do_phy(cmd: opts::PhyCmd, monitor_proxy: DeviceMonitor) -> Result<(), E
                     println!("response: OK");
                 }
                 Err(status) => {
-                    println!("response: Failed {:?}", zx_status::Status::from_raw(status));
+                    println!("response: Failed {:?}", zx_status::Status::err_from_raw(status));
                 }
             }
         }
@@ -260,7 +260,7 @@ async fn do_phy(cmd: opts::PhyCmd, monitor_proxy: DeviceMonitor) -> Result<(), E
                     false => println!("Powered OFF"),
                 },
                 Err(status) => {
-                    println!("response: Failed {:?}", zx_status::Status::from_raw(status));
+                    println!("response: Failed {:?}", zx_status::Status::err_from_raw(status));
                 }
             }
         }
@@ -278,7 +278,7 @@ async fn do_phy(cmd: opts::PhyCmd, monitor_proxy: DeviceMonitor) -> Result<(), E
                     println!("response: OK");
                 }
                 Err(status) => {
-                    println!("response: Failed {:?}", zx_status::Status::from_raw(status));
+                    println!("response: Failed {:?}", zx_status::Status::err_from_raw(status));
                 }
             }
         }
@@ -292,7 +292,7 @@ async fn do_phy(cmd: opts::PhyCmd, monitor_proxy: DeviceMonitor) -> Result<(), E
                     println!("response: {:?}", ps_mode);
                 }
                 Err(status) => {
-                    println!("response: Failed {:?}", zx_status::Status::from_raw(status));
+                    println!("response: Failed {:?}", zx_status::Status::err_from_raw(status));
                 }
             }
         }
@@ -316,7 +316,7 @@ async fn do_phy(cmd: opts::PhyCmd, monitor_proxy: DeviceMonitor) -> Result<(), E
                     println!("response: OK");
                 }
                 Err(status) => {
-                    println!("response: Failed {:?}", zx_status::Status::from_raw(status));
+                    println!("response: Failed {:?}", zx_status::Status::err_from_raw(status));
                 }
             }
         }
@@ -330,7 +330,7 @@ async fn do_phy(cmd: opts::PhyCmd, monitor_proxy: DeviceMonitor) -> Result<(), E
                     println!("response: {:?}", scenario);
                 }
                 Err(status) => {
-                    println!("response: Failed {:?}", zx_status::Status::from_raw(status));
+                    println!("response: Failed {:?}", zx_status::Status::err_from_raw(status));
                 }
             }
         }
@@ -344,7 +344,7 @@ async fn do_phy(cmd: opts::PhyCmd, monitor_proxy: DeviceMonitor) -> Result<(), E
                     println!("response: OK");
                 }
                 Err(status) => {
-                    println!("response: Failed {:?}", zx_status::Status::from_raw(status));
+                    println!("response: Failed {:?}", zx_status::Status::err_from_raw(status));
                 }
             }
         }
@@ -543,7 +543,7 @@ async fn print_iface_status(iface_id: u16, monitor_proxy: DeviceMonitor) -> Resu
         .query_iface(iface_id)
         .await
         .context("querying iface info")?
-        .map_err(|e| zx_status::Status::from_raw(e))?;
+        .map_err(zx_status::Status::err_from_raw)?;
 
     match result.role {
         WlanMacRole::Client => {
@@ -809,7 +809,7 @@ fn error_from_sme_raw_status(
     if zx_status::Status::ok(raw_status).is_ok() {
         return Error::msg("Unexpected OK error");
     }
-    match zx_status::Status::from_raw(raw_status) {
+    match zx_status::Status::err_from_raw(raw_status) {
         zx_status::Status::NOT_FOUND => Error::msg("invalid interface id"),
         zx_status::Status::NOT_SUPPORTED => Error::msg("operation not supported on SME interface"),
         zx_status::Status::INTERNAL => {

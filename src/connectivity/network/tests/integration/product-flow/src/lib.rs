@@ -210,7 +210,7 @@ async fn interface_disruption<N: Netstack>(name: &str, ip_supported: IpSupported
                 .start_serving()
                 .await
                 .expect("failed to call dhcp/Server.StartServing")
-                .map_err(zx::Status::from_raw)
+                .map_err(zx::Status::err_from_raw)
                 .expect("dhcp/Server.StartServing returned error");
         }
     }

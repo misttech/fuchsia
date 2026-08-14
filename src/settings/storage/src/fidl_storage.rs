@@ -112,7 +112,7 @@ impl CachedStorage {
                 .close()
                 .await
                 .context("failed to call close on temp file")?
-                .map_err(zx::Status::from_raw)?;
+                .map_err(zx::Status::err_from_raw)?;
         }
         fuchsia_fs::directory::rename(storage_dir, &self.temp_file_path, &self.file_path)
             .await
@@ -121,7 +121,7 @@ impl CachedStorage {
             .sync()
             .await
             .context("failed to call sync on directory after rename")?
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             // This is only returned when the directory is backed by a VFS, so this is fine to
             // ignore.
             .or_else(|e| if let zx::Status::NOT_SUPPORTED = e { Ok(()) } else { Err(e) })
@@ -445,12 +445,13 @@ mod tests {
     use assert_matches::assert_matches;
     use fasync::TestExecutor;
     use fidl::epitaph::ChannelEpitaphExt;
+    use fidl_fuchsia_io as fio;
     use fidl_test_storage::{TestStruct, WrongStruct};
+    use fuchsia_async as fasync;
     use futures::TryStreamExt;
     use std::sync::Arc;
     use std::task::Poll;
     use test_case::test_case;
-    use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
     const VALUE0: i32 = 3;
     const VALUE1: i32 = 33;

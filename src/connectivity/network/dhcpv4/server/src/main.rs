@@ -934,7 +934,7 @@ mod tests {
                     .start_serving()
                     .await
                     .expect("start_serving failed")
-                    .map_err(zx::Status::from_raw)
+                    .map_err(zx::Status::err_from_raw)
                     .expect("start_serving returned an error");
 
                 let ServerSocketCollection { sockets, abort_registration } =
@@ -999,7 +999,7 @@ mod tests {
                 unreachable!("server finished before request: {:?}", res)
             },
         }
-        .map_err(zx::Status::from_raw);
+        .map_err(zx::Status::err_from_raw);
 
         // Must have failed to start the server.
         assert_eq!(res, Err(zx::Status::INVALID_ARGS));
@@ -1025,7 +1025,7 @@ mod tests {
                 unreachable!("server finished before request: {:?}", res)
             },
         }
-        .map_err(zx::Status::from_raw);
+        .map_err(zx::Status::err_from_raw);
 
         // Must have failed to start the server.
         assert_eq!(res, Err(zx::Status::INVALID_ARGS));
@@ -1049,7 +1049,7 @@ mod tests {
                 .start_serving()
                 .await
                 .expect("start_serving failed")
-                .map_err(zx::Status::from_raw)
+                .map_err(zx::Status::err_from_raw)
                 .expect("start_serving returned an error");
 
             // SetParameter disallowed when the server is enabled.
@@ -1064,7 +1064,7 @@ mod tests {
                     ))
                     .await
                     .expect("set_parameter FIDL failure")
-                    .map_err(zx::Status::from_raw),
+                    .map_err(zx::Status::err_from_raw),
                 Err(zx::Status::BAD_STATE)
             );
 
@@ -1074,7 +1074,7 @@ mod tests {
                     .reset_parameters()
                     .await
                     .expect("reset_parameters FIDL failure")
-                    .map_err(zx::Status::from_raw),
+                    .map_err(zx::Status::err_from_raw),
                 Err(zx::Status::BAD_STATE)
             );
         };

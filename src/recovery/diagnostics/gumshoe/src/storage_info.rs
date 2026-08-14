@@ -72,7 +72,7 @@ impl StorageInfo {
     pub async fn get_capacity(
         partition_proxy: &fidl_fuchsia_storage_block::BlockProxy,
     ) -> Result<(u32, u64), Error> {
-        let info = partition_proxy.get_info().await?.map_err(zx::Status::from_raw)?;
+        let info = partition_proxy.get_info().await?.map_err(zx::Status::err_from_raw)?;
         Ok((info.block_size, info.block_count))
     }
 

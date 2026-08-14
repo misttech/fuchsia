@@ -288,7 +288,7 @@ async fn copy_file_to_writer<T: Write>(
     }
     let mut len = 0;
     loop {
-        let buf = vector.pop_front().unwrap().await?.map_err(zx_status::Status::from_raw)?;
+        let buf = vector.pop_front().unwrap().await?.map_err(zx_status::Status::err_from_raw)?;
         if buf.is_empty() {
             break;
         }

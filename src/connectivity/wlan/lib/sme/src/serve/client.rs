@@ -327,7 +327,7 @@ async fn start_scheduled_scan(
         }
         Err(status) => {
             responder.send(Err(status))?;
-            txn_sender_handle.shutdown_with_epitaph(zx::Status::from_raw(status));
+            txn_sender_handle.shutdown_with_epitaph(zx::Status::err_from_raw(status));
         }
     }
     Ok(())

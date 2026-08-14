@@ -151,7 +151,7 @@ impl Display {
                 Ok(())
             }
             Err(status) => {
-                bail!("Display::new(): failed to create layer {}", Status::from_raw(status))
+                bail!("Display::new(): failed to create layer {}", Status::err_from_raw(status))
             }
         }
     }
@@ -342,7 +342,7 @@ impl DisplayDirectViewStrategy {
             .coordinator
             .import_buffer_collection(&collection_id.into(), coordinator_token)
             .await?
-            .map_err(zx::Status::from_raw)?;
+            .map_err(zx::Status::err_from_raw)?;
         display
             .coordinator
             .set_buffer_collection_constraints(
@@ -352,7 +352,7 @@ impl DisplayDirectViewStrategy {
                 },
             )
             .await?
-            .map_err(zx::Status::from_raw)?;
+            .map_err(zx::Status::err_from_raw)?;
 
         let buffers = buffer_allocator
             .allocate_buffers(true)
@@ -419,7 +419,7 @@ impl DisplayDirectViewStrategy {
                 )
                 .await
                 .context("FIDL coordinator import_image")?
-                .map_err(zx::Status::from_raw)
+                .map_err(zx::Status::err_from_raw)
                 .context("import image error")?;
 
             image_ids.insert(image_id as u64);

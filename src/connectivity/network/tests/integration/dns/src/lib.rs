@@ -419,7 +419,7 @@ async fn discovered_dhcpv4_dns<M: Manager, N: Netstack>(name: &str, check_type: 
                         .set_parameter(parameter)
                         .await
                         .expect("failed to call dhcp/Server.SetParameter")
-                        .map_err(zx::Status::from_raw)
+                        .map_err(zx::Status::err_from_raw)
                         .unwrap_or_else(|e| {
                             panic!(
                                 "dhcp/Server.SetParameter({:?}) returned error: {:?}",
@@ -433,14 +433,14 @@ async fn discovered_dhcpv4_dns<M: Manager, N: Netstack>(name: &str, check_type: 
                     .set_option(&net_dhcp::Option_::DomainNameServer(vec![DHCP_DNS_SERVER]))
                     .await
                     .expect("Failed to set DNS option")
-                    .map_err(zx::Status::from_raw)
+                    .map_err(zx::Status::err_from_raw)
                     .expect("dhcp/Server.SetOption returned error");
 
                 dhcp_server
                     .start_serving()
                     .await
                     .expect("failed to call dhcp/Server.StartServing")
-                    .map_err(zx::Status::from_raw)
+                    .map_err(zx::Status::err_from_raw)
                     .expect("dhcp/Server.StartServing returned error");
 
                 // The list of servers we expect to retrieve from `fuchsia.net.name/LookupAdmin`.

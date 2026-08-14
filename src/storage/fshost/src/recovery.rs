@@ -270,7 +270,7 @@ impl RecoveryOps {
                 log::error!(err:?; "init_system_partition_table: FIDL error");
                 zx::Status::PEER_CLOSED
             })?
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
     }
 
     pub async fn format_system_blob_volume(&self) -> Result<(), Error> {

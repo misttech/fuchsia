@@ -64,12 +64,12 @@ impl DebugAgentSocket {
                 launcher
                     .launch(server_end, &fdebugger::LaunchOptions::default())
                     .await?
-                    .map_err(Status::from_raw)?;
+                    .map_err(Status::err_from_raw)?;
                 client_proxy
             }
         };
 
-        agent.connect(fidl_right).await?.map_err(Status::from_raw)?;
+        agent.connect(fidl_right).await?.map_err(Status::err_from_raw)?;
 
         // Forward from UNIX socket to FIDL socket.
         let unix_to_fidl = async {

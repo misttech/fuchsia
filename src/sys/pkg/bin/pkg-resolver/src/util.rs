@@ -31,7 +31,7 @@ where
         .sync()
         .await
         .context("sending sync request")?
-        .map_err(zx::Status::from_raw)
+        .map_err(zx::Status::err_from_raw)
         .with_context(|| format!("syncing file: {temp_filename}"))?;
     fuchsia_fs::file::close(file).await.context("closing temp file")?;
     fuchsia_fs::directory::rename(dir_proxy, temp_filename, permanent_filename)
@@ -41,7 +41,7 @@ where
         .sync()
         .await
         .context("sending post-rename sync request")?
-        .map_err(zx::Status::from_raw)
+        .map_err(zx::Status::err_from_raw)
         .context("syncing directory")?;
     Ok(())
 }

@@ -207,7 +207,7 @@ pub async fn write_file<'a>(root_proxy: &'a fio::DirectoryProxy, path: &'a str, 
         .write(contents.as_bytes())
         .await
         .expect("Unable to write file.")
-        .map_err(zx::Status::from_raw)
+        .map_err(zx::Status::err_from_raw)
         .expect("Write failed");
 }
 

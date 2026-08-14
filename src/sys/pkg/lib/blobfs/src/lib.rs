@@ -276,7 +276,7 @@ impl Client {
             .get_vmo(hash)
             .await
             .map_err(GetBlobVmoError::Fidl)?
-            .map_err(|s| GetBlobVmoError::GetVmo(Status::from_raw(s)))
+            .map_err(|s| GetBlobVmoError::GetVmo(Status::err_from_raw(s)))
     }
 
     /// Open a blob for read using open3. `scope` will only be used if the client was configured to
@@ -323,7 +323,7 @@ impl Client {
         let dir = self.dir.as_ref().ok_or(BlobfsError::DirectoryNotConfigured)?;
         dir.unlink(&blob.to_string(), &fio::UnlinkOptions::default())
             .await?
-            .map_err(|s| BlobfsError::Unlink(Status::from_raw(s)))
+            .map_err(|s| BlobfsError::Unlink(Status::err_from_raw(s)))
     }
 
     /// Open a new blob for write.
@@ -357,9 +357,9 @@ impl Client {
             Ok(true) => Ok(BlobStatus::NeedsOverwrite),
             Ok(false) => Ok(BlobStatus::UpToDate),
             Err(status) if status == Status::NOT_FOUND.into_raw() => Ok(BlobStatus::Absent),
-            Err(s) => {
-                Err(BlobfsError::BlobStatus(BlobStatusError::NeedsOverwrite(Status::from_raw(s))))
-            }
+            Err(s) => Err(BlobfsError::BlobStatus(BlobStatusError::NeedsOverwrite(
+                Status::err_from_raw(s),
+            ))),
         }
     }
 
@@ -399,7 +399,7 @@ impl Client {
     /// Call fuchsia.io/Node.Sync on the blobfs directory.
     pub async fn sync(&self) -> Result<(), BlobfsError> {
         let dir = self.dir.as_ref().ok_or(BlobfsError::DirectoryNotConfigured)?;
-        dir.sync().await?.map_err(zx::Status::from_raw).map_err(BlobfsError::Sync)
+        dir.sync().await?.map_err(zx::Status::err_from_raw).map_err(BlobfsError::Sync)
     }
 }
 
@@ -425,7 +425,7 @@ fn open_blob_with_reader<P: ProtocolsExt + Send>(
                 zx::Status::INTERNAL
             }
         })?;
-        let vmo = get_vmo_result.map_err(zx::Status::from_raw)?;
+        let vmo = get_vmo_result.map_err(zx::Status::err_from_raw)?;
         let vmo_blob = vmo_blob::VmoBlob::new(vmo);
         object_request
             .create_connection::<StreamIoConnection<_>, _>(scope, vmo_blob, protocols)
@@ -624,7 +624,7 @@ mod tests {
             .get_vmo(delivery_content.len().try_into().unwrap())
             .await
             .expect("a")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("b");
         let () = vmo.write(&delivery_content, 0).unwrap();
         let () =

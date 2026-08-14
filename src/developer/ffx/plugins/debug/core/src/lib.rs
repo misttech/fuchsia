@@ -168,7 +168,7 @@ async fn list_minidumps(rcs: &RemoteControlProxy, capability: &str) -> Result<Ve
                     .await
                     .context("FIDL error in get_attr")?;
                 match result {
-                    Err(e) => bail!("Failed to get_attr: {}", Status::from_raw(e)),
+                    Err(e) => bail!("Failed to get_attr: {}", Status::err_from_raw(e)),
                     Ok((mutable_attributes, _)) => Ok(File {
                         filename: entry.name,
                         modification_time: mutable_attributes.modification_time.unwrap_or_default(),
@@ -188,7 +188,7 @@ async fn copy_as_temp_file(file: &fio::FileProxy) -> Result<TempPath> {
         let bytes = file
             .read(fio::MAX_BUF)
             .await?
-            .map_err(|s| anyhow!("Failed to read: {}", Status::from_raw(s)))?;
+            .map_err(|s| anyhow!("Failed to read: {}", Status::err_from_raw(s)))?;
         if bytes.is_empty() {
             break;
         }

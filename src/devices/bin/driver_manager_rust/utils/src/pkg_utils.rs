@@ -103,7 +103,7 @@ mod tests {
             .get_attributes(fio::NodeAttributesQuery::empty())
             .await
             .expect("FIDL error")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("Failed to get attributes");
     }
 }

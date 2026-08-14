@@ -52,19 +52,19 @@ impl FsTree {
         crypt_management
             .add_wrapping_key(&wrapping_key_id_0, &DATA_KEY)
             .await?
-            .map_err(zx::Status::from_raw)?;
+            .map_err(zx::Status::err_from_raw)?;
         crypt_management
             .add_wrapping_key(&wrapping_key_id_1, &METADATA_KEY)
             .await?
-            .map_err(zx::Status::from_raw)?;
+            .map_err(zx::Status::err_from_raw)?;
         crypt_management
             .set_active_key(KeyPurpose::Data, &wrapping_key_id_0)
             .await?
-            .map_err(zx::Status::from_raw)?;
+            .map_err(zx::Status::err_from_raw)?;
         crypt_management
             .set_active_key(KeyPurpose::Metadata, &wrapping_key_id_1)
             .await?
-            .map_err(zx::Status::from_raw)?;
+            .map_err(zx::Status::err_from_raw)?;
         INITIALIZED.store(true, Ordering::SeqCst);
         self.connect_to_crypt_service()
     }

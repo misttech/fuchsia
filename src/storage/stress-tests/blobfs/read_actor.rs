@@ -44,7 +44,7 @@ impl ReadActor {
         let merkle: Hash = blob.parse().map_err(|_| Status::IO)?;
         let vmo = match self.reader.get_vmo(&merkle.into()).await {
             Ok(Ok(vmo)) => vmo,
-            Ok(Err(e)) => return Err(Status::from_raw(e)),
+            Ok(Err(e)) => return Err(Status::err_from_raw(e)),
             // Blobfs was shut down.
             Err(e) if e.is_closed() => return Err(Status::PEER_CLOSED),
             Err(e) => panic!("Unexpected FIDL error: {:?}", e),

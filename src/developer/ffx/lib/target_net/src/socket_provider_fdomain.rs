@@ -49,7 +49,7 @@ impl TargetTcpStream {
             .close()
             .await
             .map_err(|_| Error::Close(fidl::Status::PEER_CLOSED))?
-            .map_err(|s| Error::Close(fidl::Status::from_raw(s)))
+            .map_err(|s| Error::Close(fidl::Status::err_from_raw(s)))
     }
 
     /// Returns the local address of the connected TCP socket (from the target's
@@ -114,7 +114,7 @@ impl TargetTcpListener {
             .close()
             .await
             .map_err(|_| Error::Close(fidl::Status::PEER_CLOSED))?
-            .map_err(|s| Error::Close(fidl::Status::from_raw(s)))
+            .map_err(|s| Error::Close(fidl::Status::err_from_raw(s)))
     }
 
     /// Blocks until a new incoming connection is available on this listening

@@ -770,7 +770,7 @@ mod tests {
                     .get_vmo(delivery_data.len() as u64 - 1)
                     .await
                     .expect("transport error on get_vmo")
-                    .map_err(Status::from_raw)
+                    .map_err(Status::err_from_raw)
                     .expect_err("get_vmo unexpectedly succeeded"),
                 zx::Status::INVALID_ARGS
             );
@@ -804,7 +804,7 @@ mod tests {
                     .bytes_ready(delivery_data.len() as u64)
                     .await
                     .expect("transport error on bytes_ready")
-                    .map_err(Status::from_raw)
+                    .map_err(Status::err_from_raw)
                     .expect_err("write unexpectedly succeeded"),
                 zx::Status::IO_DATA_INTEGRITY
             );
@@ -839,7 +839,7 @@ mod tests {
                     .bytes_ready(compressed_data.len() as u64)
                     .await
                     .expect("transport error on bytes_ready")
-                    .map_err(Status::from_raw)
+                    .map_err(Status::err_from_raw)
                     .expect_err("write unexpectedly succeeded"),
                 zx::Status::IO_DATA_INTEGRITY
             );

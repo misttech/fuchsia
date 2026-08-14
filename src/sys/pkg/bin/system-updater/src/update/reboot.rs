@@ -69,7 +69,7 @@ pub(super) async fn reboot(proxy: &PowerStateControlProxy) {
             })
             .await
             .context("while performing shutdown call")?
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .context("shutdown responded with")
     }
     .await

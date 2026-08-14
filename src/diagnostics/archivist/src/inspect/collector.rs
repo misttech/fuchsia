@@ -146,7 +146,7 @@ async fn populate_data_map_from_dir(inspect_proxy: &fio::DirectoryProxy) -> Insp
             }
         };
 
-        let data = match vmo.map_err(zx::Status::from_raw) {
+        let data = match vmo.map_err(zx::Status::err_from_raw) {
             Ok(vmo) => InspectData::Vmo { data: Arc::new(vmo), escrowed: false },
             Err(err) => {
                 match err {

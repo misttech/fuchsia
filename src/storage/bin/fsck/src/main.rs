@@ -49,7 +49,7 @@ async fn main() -> Result<(), Error> {
         .check(client_end, &filesystem)
         .await
         .context("Transport error on fsck")?
-        .map_err(zx::Status::from_raw)
+        .map_err(zx::Status::err_from_raw)
         .context("Failed to fsck block device")?;
     Ok(())
 }

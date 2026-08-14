@@ -41,7 +41,7 @@ async fn corrupt_create_fails_on_last_byte_write(implementation: Implementation)
     assert_eq!(blobfs.list_blobs().unwrap(), BTreeSet::new());
 
     assert_matches!(
-        writer.bytes_ready(1).await.unwrap().map_err(zx::Status::from_raw),
+        writer.bytes_ready(1).await.unwrap().map_err(zx::Status::err_from_raw),
         Err(zx::Status::IO_DATA_INTEGRITY)
     );
 

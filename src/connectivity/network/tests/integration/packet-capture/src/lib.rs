@@ -553,7 +553,7 @@ async fn rolling_packet_capture_detach_reconnect_test(name: &str) {
         .sync()
         .await
         .expect("sync FIDL error")
-        .map_err(zx::Status::from_raw)
+        .map_err(zx::Status::err_from_raw)
         .expect("sync error");
     // Assert that the OnEnded event was sent.
     let mut event_stream = rolling_proxy.take_event_stream();

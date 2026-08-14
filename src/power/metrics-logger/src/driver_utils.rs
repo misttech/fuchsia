@@ -39,7 +39,7 @@ pub async fn get_driver_topological_path(path: &str) -> Result<String> {
     proxy
         .get_topological_path()
         .await?
-        .map_err(|raw| format_err!("zx error: {}", zx::Status::from_raw(raw)))
+        .map_err(|raw| format_err!("zx error: {}", zx::Status::err_from_raw(raw)))
 }
 
 pub async fn list_directory_entries(path: &str) -> Vec<String> {

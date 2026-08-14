@@ -118,7 +118,7 @@ impl DeviceOps for FullmacDevice {
                 log::error!("FIDL error on Start: {}", e);
                 zx::Status::INTERNAL
             })?
-            .map_err(|e| zx::Status::from_raw(e))?;
+            .map_err(zx::Status::err_from_raw)?;
 
         resp.sme_channel.ok_or(zx::Status::INVALID_ARGS)
     }
@@ -608,7 +608,7 @@ pub mod test_utils {
 
             mocks.fullmac_ifc_client_end = Some(fullmac_ifc_client_end);
             match mocks.start_fn_status_mock {
-                Some(status) => Err(zx::Status::from_raw(status)),
+                Some(status) => Err(zx::Status::err_from_raw(status)),
 
                 // Start can only be called once since this moves usme_bootstrap_server_end.
                 None => Ok(self.usme_bootstrap_server_end.take().unwrap().into_channel()),

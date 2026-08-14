@@ -86,7 +86,7 @@ async fn test_tx() {
                 .read_frame()
                 .await
                 .unwrap()
-                .map_err(zx::Status::from_raw)
+                .map_err(zx::Status::err_from_raw)
                 .expect("failed to read frame from the tun device");
             assert_eq!(frame.data, Some(vec![DATA_BYTE; DATA_LEN]));
             assert_eq!(frame.frame_type, Some(netdev::FrameType::Ethernet));
@@ -146,13 +146,13 @@ async fn test_echo_tun() {
                         .write_frame(&frame)
                         .await
                         .unwrap()
-                        .map_err(zx::Status::from_raw)
+                        .map_err(zx::Status::err_from_raw)
                         .expect("cannot write frame");
                     let frame = tun
                         .read_frame()
                         .await
                         .unwrap()
-                        .map_err(zx::Status::from_raw)
+                        .map_err(zx::Status::err_from_raw)
                         .expect("failed to read frame");
                     let data = frame.data.unwrap();
                     assert_eq!(data.len(), DATA_LEN);
@@ -361,7 +361,7 @@ fn tx_wait_idle() {
             .read_frame()
             .await
             .unwrap()
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("failed to read frame from the tun device");
     });
 
@@ -374,7 +374,7 @@ fn tx_wait_idle() {
             .read_frame()
             .await
             .unwrap()
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("failed to read frame from the tun device");
     }));
 }

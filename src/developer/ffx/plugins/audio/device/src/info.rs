@@ -1635,7 +1635,7 @@ async fn get_hw_codec_info(codec: &fhaudio::CodecProxy) -> Result<HardwareCodecI
         .get_dai_formats()
         .await
         .bug_context("Failed to call Codec.GetDaiFormats")?
-        .map_err(|status| Status::from_raw(status))
+        .map_err(Status::err_from_raw)
         .bug_context("Failed to get DAI formats")?;
 
     let plug_state =
@@ -1668,14 +1668,14 @@ async fn get_hw_dai_info(dai: &fhaudio::DaiProxy) -> Result<HardwareDaiInfo> {
         .get_dai_formats()
         .await
         .bug_context("Failed to call Dai.GetDaiFormats")?
-        .map_err(|status| Status::from_raw(status))
+        .map_err(Status::err_from_raw)
         .bug_context("Failed to get DAI formats")?;
 
     let ring_buffer_formats = dai
         .get_ring_buffer_formats()
         .await
         .bug_context("Failed to call Dai.GetRingBufferFormats")?
-        .map_err(|status| Status::from_raw(status))
+        .map_err(Status::err_from_raw)
         .bug_context("Failed to get ring buffer formats")?;
 
     Ok(HardwareDaiInfo { properties, dai_formats, ring_buffer_formats })

@@ -96,7 +96,7 @@ impl NetworkDeviceInstance {
             .await
             .context("error sending get topological path request")
             .map_err(errors::Error::NonFatal)?
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .context("error getting topological path")
             .map_err(errors::Error::NonFatal)?;
 

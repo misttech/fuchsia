@@ -284,7 +284,7 @@ impl DriverHost for DriverHostComponent {
                 error!("Failed to start driver in driver host: {}", e);
                 zx::Status::INTERNAL
             })?
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
     }
 
     async fn start_with_dynamic_linker(
@@ -311,7 +311,7 @@ impl DriverHost for DriverHostComponent {
                 error!("Failed to load driver '{}' with dynamic linker: {}", driver_soname, e);
                 if e.is_closed() { zx::Status::PEER_CLOSED } else { zx::Status::INTERNAL }
             })?
-            .map_err(zx::Status::from_raw)?;
+            .map_err(zx::Status::err_from_raw)?;
 
         self.start(start_args, driver).await
     }
@@ -358,7 +358,7 @@ impl DriverHost for DriverHostComponent {
                 error!("Failed to get crash info from driver host: {}", e);
                 zx::Status::INTERNAL
             })?
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
     }
 
     fn name_for_colocation(&self) -> &str {

@@ -33,6 +33,6 @@ impl From<fsandbox::RouterError> for UtilsError {
 
 impl From<i32> for UtilsError {
     fn from(err: i32) -> Self {
-        UtilsError::ZxStatus(zx::Status::from_raw(err))
+        UtilsError::ZxStatus(zx::Status::err_from_raw(err))
     }
 }

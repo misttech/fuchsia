@@ -85,7 +85,7 @@ impl Device {
             })?
             .map_err(|status| {
                 error!("{} failed: {:?}", method_name, status);
-                zx::Status::from_raw(status)
+                zx::Status::err_from_raw(status)
             })
     }
 }
@@ -348,7 +348,7 @@ impl DeviceOps for Device {
                 error!("Start failed with FIDL error: {:?}", error);
                 zx::Status::INTERNAL
             })?
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
     }
 
     fn deliver_eth_frame(&mut self, packet: &[u8]) -> Result<(), zx::Status> {
@@ -450,7 +450,7 @@ impl DeviceOps for Device {
                 error!("SetChannel failed with FIDL error: {:?}", error);
                 zx::Status::INTERNAL
             })?
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
     }
 
     /// Setting the MAC address is currently unavailable in the softmac.fidl, due to stable
@@ -514,7 +514,7 @@ impl DeviceOps for Device {
                 error!("FIDL error during EnableBeaconing: {:?}", error);
                 zx::Status::INTERNAL
             })?
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
     }
 
     async fn disable_beaconing(&mut self) -> Result<(), zx::Status> {
@@ -525,7 +525,7 @@ impl DeviceOps for Device {
                 error!("DisableBeaconing failed with FIDL error: {:?}", error);
                 zx::Status::INTERNAL
             })?
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
     }
 
     async fn install_key(
@@ -539,7 +539,7 @@ impl DeviceOps for Device {
                 error!("FIDL error during InstallKey: {:?}", error);
                 zx::Status::INTERNAL
             })?
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
     }
 
     async fn notify_association_complete(

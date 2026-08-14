@@ -5,6 +5,9 @@
 //! Test to ensure that we can use frame pointers to unwind a starnix Fuchsia stack into Linux
 //! userspace.
 
+use fidl_fuchsia_buildinfo as fbuildinfo;
+use fidl_fuchsia_component_runner as frunner;
+use fidl_fuchsia_sys2 as fsys;
 use fuchsia_component::client::{connect_to_protocol, connect_to_protocol_at_dir_root};
 use fuchsia_component::server::ServiceFs;
 use fuchsia_component_test::{
@@ -13,10 +16,6 @@ use fuchsia_component_test::{
 use futures::StreamExt;
 use log::{info, warn};
 use zx::Task;
-use {
-    fidl_fuchsia_buildinfo as fbuildinfo, fidl_fuchsia_component_runner as frunner,
-    fidl_fuchsia_sys2 as fsys,
-};
 
 #[fuchsia::test]
 async fn frame_pointers_connect_from_fuchsia_to_linux() {
@@ -84,7 +83,7 @@ async fn frame_pointers_connect_from_fuchsia_to_linux() {
     let job_provider =
         connect_to_protocol_at_dir_root::<frunner::TaskProviderMarker>(&runtime_dir).unwrap();
     let container_job =
-        job_provider.get_job().await.unwrap().map_err(|s| zx::Status::from_raw(s)).unwrap();
+        job_provider.get_job().await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
 
     info!("have job handle for starnix container, finding uname-blocked process and thread");
     let mut print_uname_process = None;

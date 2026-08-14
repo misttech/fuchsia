@@ -125,7 +125,7 @@ impl GuestInitiated {
         self.listener_response.take();
 
         let get_socket = || -> Result<fasync::Socket, Error> {
-            let socket = response?.map_err(zx::Status::from_raw)?;
+            let socket = response?.map_err(zx::Status::err_from_raw)?;
             let local_async = fasync::Socket::from_socket(socket);
             Ok(local_async)
         };

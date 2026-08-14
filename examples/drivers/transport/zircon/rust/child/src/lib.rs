@@ -29,7 +29,7 @@ impl Driver for ZirconChildDriver {
         let node = context.take_node()?;
 
         let device = get_i2c_device(&context)?;
-        let device_name = device.get_name().await?.map_err(zx::Status::from_raw)?;
+        let device_name = device.get_name().await?.map_err(zx::Status::err_from_raw)?;
         info!("i2c device name: {device_name}");
 
         info!("Adding child node with i2c device name as a property value");

@@ -41,7 +41,7 @@ impl TargetTcpStream {
     /// Dropping the stream has the same effect, but closing happens
     /// asynchronously.
     pub async fn close(self) -> Result<()> {
-        self.fidl.close().await?.map_err(|s| Error::Close(fidl::Status::from_raw(s)))
+        self.fidl.close().await?.map_err(|s| Error::Close(fidl::Status::err_from_raw(s)))
     }
 
     /// Returns the local address of the connected TCP socket (from the target's
@@ -102,7 +102,7 @@ impl TargetTcpListener {
     /// Dropping the listener has the same effect, but closing happens
     /// asynchronously.
     pub async fn close(self) -> Result<()> {
-        self.fidl.close().await?.map_err(|s| Error::Close(fidl::Status::from_raw(s)))
+        self.fidl.close().await?.map_err(|s| Error::Close(fidl::Status::err_from_raw(s)))
     }
 
     /// Blocks until a new incoming connection is available on this listening

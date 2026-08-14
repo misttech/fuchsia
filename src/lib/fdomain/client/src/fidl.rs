@@ -163,14 +163,14 @@ impl Into<::fidl::TransportError> for Error {
     fn into(self) -> ::fidl::TransportError {
         match self {
             Error::FDomain(proto::Error::TargetError(i)) => {
-                ::fidl::TransportError::Status(fidl::Status::from_raw(i))
+                ::fidl::TransportError::Status(fidl::Status::err_from_raw(i))
             }
             Error::SocketWrite(proto::WriteSocketError {
                 error: proto::Error::TargetError(i),
                 ..
-            }) => ::fidl::TransportError::Status(fidl::Status::from_raw(i)),
+            }) => ::fidl::TransportError::Status(fidl::Status::err_from_raw(i)),
             Error::ChannelWrite(proto::WriteChannelError::Error(proto::Error::TargetError(i))) => {
-                ::fidl::TransportError::Status(fidl::Status::from_raw(i))
+                ::fidl::TransportError::Status(fidl::Status::err_from_raw(i))
             }
             Error::ChannelWrite(proto::WriteChannelError::OpErrors(ops)) => {
                 let Some(op) = ops.into_iter().find_map(|x| x) else {

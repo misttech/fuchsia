@@ -107,7 +107,8 @@ impl Coordinator {
             priority: Some(client_priority.into()),
             __source_breaking: fidl::marker::SourceBreaking,
         };
-        let () = provider_proxy.open_coordinator(payload).await?.map_err(zx::Status::from_raw)?;
+        let () =
+            provider_proxy.open_coordinator(payload).await?.map_err(zx::Status::err_from_raw)?;
 
         Self::init_with_proxy_and_listener_requests(
             coordinator_proxy,
@@ -214,7 +215,7 @@ impl Coordinator {
     /// configuration.
     pub async fn create_layer(&self) -> Result<LayerId> {
         let layer_id = self.inner.write().next_free_layer_id()?;
-        self.proxy().create_layer(&layer_id.into()).await?.map_err(zx::Status::from_raw)?;
+        self.proxy().create_layer(&layer_id.into()).await?.map_err(zx::Status::err_from_raw)?;
         Ok(layer_id)
     }
 
@@ -304,7 +305,10 @@ impl Coordinator {
         let proxy = self.proxy();
 
         // First import the token.
-        proxy.import_buffer_collection(&id.into(), token).await?.map_err(zx::Status::from_raw)?;
+        proxy
+            .import_buffer_collection(&id.into(), token)
+            .await?
+            .map_err(zx::Status::err_from_raw)?;
 
         // Tell the driver to assign any device-specific constraints.
         // TODO(https://fxbug.dev/42166207): These fields are effectively unused except for `type` in the case
@@ -315,7 +319,7 @@ impl Coordinator {
                 &display_types::ImageBufferUsage { tiling_type: IMAGE_TILING_TYPE_LINEAR },
             )
             .await?
-            .map_err(zx::Status::from_raw)?;
+            .map_err(zx::Status::err_from_raw)?;
         Ok(id)
     }
 
@@ -339,7 +343,7 @@ impl Coordinator {
                 &image_id.into(),
             )
             .await?
-            .map_err(zx::Status::from_raw)?;
+            .map_err(zx::Status::err_from_raw)?;
         Ok(())
     }
 }

@@ -107,7 +107,7 @@ async fn socket_to_pty_worker(
         }
         let mut to_pty = &buf[..bytes_read];
         loop {
-            match pty.write(to_pty).await?.map_err(zx::Status::from_raw) {
+            match pty.write(to_pty).await?.map_err(zx::Status::err_from_raw) {
                 Ok(wr) => {
                     let wr = usize::try_from(wr).unwrap();
                     if wr < to_pty.len() {
@@ -146,7 +146,7 @@ async fn pty_to_socket_worker(
     // scope is cancelled.
     let mut on_cancel = pin!(guard.on_cancel().fuse());
     loop {
-        match pty.read(fio::MAX_BUF).await?.map_err(zx::Status::from_raw) {
+        match pty.read(fio::MAX_BUF).await?.map_err(zx::Status::err_from_raw) {
             Ok(bytes) => {
                 if bytes.is_empty() {
                     return Ok(());

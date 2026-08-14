@@ -121,7 +121,7 @@ impl Container for FvmContainer {
             .shred_encrypted_volumes()
             .await
             .context("shred encrypted volumes fidl failure")?
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .context("shred encrypted volumes returned error")?;
         Ok(())
     }

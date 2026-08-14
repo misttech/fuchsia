@@ -139,7 +139,7 @@ impl Backlight {
             .await
             .context("Didn't connect correctly")?;
         let max_brightness: f64 = connection
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .context("Failed to get_max_absolute_brightness")?;
         Ok(max_brightness)
     }
@@ -343,7 +343,7 @@ impl Backlight {
         self.backlight_proxy
             .set_state_normalized(&BacklightCommand { backlight_on, brightness: regulated_value })
             .await?
-            .map_err(|e| zx::Status::from_raw(e))
+            .map_err(zx::Status::err_from_raw)
             .context("Failed to set backlight state")
     }
 }
@@ -391,7 +391,7 @@ impl DisplayPower {
             .with_context(|| format!("Failed to connect to {}", DisplayPowerMarker::DEBUG_NAME))
             .and_then(|inner| {
                 inner.map_err(|e| {
-                    let status = zx::Status::from_raw(e);
+                    let status = zx::Status::err_from_raw(e);
                     Error::from(status)
                 })
             })
@@ -409,7 +409,7 @@ async fn get_state_normalized(backlight_proxy: &BacklightProxy) -> Result<Backli
     backlight_proxy
         .get_state_normalized()
         .await?
-        .map_err(|e| zx::Status::from_raw(e))
+        .map_err(zx::Status::err_from_raw)
         .context("Failed to get_state_normalized")
 }
 

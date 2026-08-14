@@ -35,7 +35,7 @@ impl Vendor {
         let client_end = vendor_proxy
             .open_hci_transport()
             .await?
-            .map_err(|status| Error::OpenHciTransport(zx::Status::from_raw(status)))?;
+            .map_err(|status| Error::OpenHciTransport(zx::Status::err_from_raw(status)))?;
 
         let hci_transport = client_end.into_proxy();
 

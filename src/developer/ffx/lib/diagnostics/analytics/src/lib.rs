@@ -321,7 +321,7 @@ mod tests {
     #[test]
     fn test_unable_to_get_info_conversion() {
         let error = fidl::Error::ClientChannelClosed {
-            epitaph: fidl::Epitaph::Explicit(Err(fidl::Status::from_raw(23))),
+            epitaph: fidl::Epitaph::Explicit(Err(fidl::Status::err_from_raw(23))),
             protocol_name: "something-made-up",
             reason: None,
         };

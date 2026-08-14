@@ -191,7 +191,7 @@ pub async fn create_tun_pair_with(
         .add_port(&dev_pair_port_config)
         .await
         .expect("add port FIDL call")
-        .map_err(zx::Status::from_raw)
+        .map_err(zx::Status::err_from_raw)
         .expect("add port");
 
     let (left_port, left_port_server_end) =

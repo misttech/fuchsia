@@ -465,7 +465,7 @@ impl DriverDevelopmentService {
             Ok(Err(status)) => {
                 error!(
                     "DriverIndex::RebindCompositesWithDriver failed: {}",
-                    zx::Status::from_raw(status)
+                    zx::Status::err_from_raw(status)
                 );
                 let _ = responder.send(Err(status));
             }

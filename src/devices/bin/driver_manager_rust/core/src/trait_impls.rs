@@ -180,7 +180,7 @@ impl BindManagerBridge for DriverRunnerBridge {
             match runner.driver_index.match_driver(&args).await {
                 Ok(Ok(result)) => Ok(result),
                 Ok(Err(e)) => Err(fidl::Error::ClientChannelClosed {
-                    epitaph: fidl::Epitaph::Explicit(Err(zx::Status::from_raw(e))),
+                    epitaph: fidl::Epitaph::Explicit(Err(zx::Status::err_from_raw(e))),
                     protocol_name: fdi::DriverIndexMarker::PROTOCOL_NAME,
                 }),
                 Err(e) => Err(e),
@@ -254,7 +254,7 @@ impl CompositeManagerBridge for DriverRunnerBridge {
                 .add_composite_node_spec(&spec)
                 .await
                 .map_err(|_| zx::Status::INTERNAL)?
-                .map_err(zx::Status::from_raw)
+                .map_err(zx::Status::err_from_raw)
         } else {
             Err(zx::Status::INTERNAL)
         }
@@ -271,7 +271,7 @@ impl CompositeManagerBridge for DriverRunnerBridge {
                 .rebind_composite_node_spec(&spec, driver_url_suffix.as_deref())
                 .await
                 .map_err(|_| zx::Status::INTERNAL)?
-                .map_err(zx::Status::from_raw)
+                .map_err(zx::Status::err_from_raw)
         } else {
             Err(zx::Status::INTERNAL)
         }

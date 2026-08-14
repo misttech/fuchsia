@@ -54,7 +54,7 @@ impl ProxyServer {
         let (acceptor_remote, acceptor_client) = endpoints::create_endpoints::<AcceptorMarker>();
         let mut acceptor_client = acceptor_client.into_stream();
 
-        app_client.listen(port, acceptor_remote).await?.map_err(zx::Status::from_raw)?;
+        app_client.listen(port, acceptor_remote).await?.map_err(zx::Status::err_from_raw)?;
 
         log::info!("Listening for VSOCK connections.");
 

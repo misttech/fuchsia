@@ -705,7 +705,7 @@ mod tests {
                     .get_info()
                     .await
                     .expect("get_info failed")
-                    .map_err(zx::Status::from_raw)
+                    .map_err(zx::Status::err_from_raw)
                     .expect("block get_info failed");
                 assert_eq!(info.block_count * u64::from(info.block_size), TEST_DEVICE_FILE_SIZE);
             },

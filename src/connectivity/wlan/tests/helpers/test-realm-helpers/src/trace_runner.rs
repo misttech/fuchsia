@@ -275,7 +275,7 @@ impl TraceRunner {
                         break;
                     }
                     Ok(Err(raw_status)) => {
-                        error!("Failed writing to file: {}", zx::Status::from_raw(raw_status));
+                        error!("Failed writing to file: {}", zx::Status::err_from_raw(raw_status));
                         break;
                     }
                     Ok(Ok(bytes_written)) => {
@@ -296,7 +296,7 @@ impl TraceRunner {
             fxt_file.sync().await?.map_err(|raw_status| {
                 format_err!(
                     "Failed to write to {output_trace_path:#?}: {}.",
-                    zx::Status::from_raw(raw_status)
+                    zx::Status::err_from_raw(raw_status)
                 )
             })?;
             info!("Trace written to file: {output_trace_path:#?} ({trace_file_size} bytes)");

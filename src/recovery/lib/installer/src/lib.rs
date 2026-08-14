@@ -102,7 +102,7 @@ pub async fn get_bootloader_type() -> Result<BootloaderType, Error> {
             Ok(BootloaderType::Efi)
         }
     } else {
-        Err(Error::new(zx::Status::from_raw(status)))
+        Err(Error::new(zx::Status::err_from_raw(status)))
     }
 }
 

@@ -110,7 +110,7 @@ pub async fn load_vmo<'a>(
         .await
         .map_err(|e| format_err!("reading object at {:?} failed: {}", object_name, e))?
         .map_err(|status| {
-            let status = zx::Status::from_raw(status);
+            let status = zx::Status::err_from_raw(status);
             format_err!("reading object at {:?} failed: {}", object_name, status)
         })?;
     Ok(vmo)

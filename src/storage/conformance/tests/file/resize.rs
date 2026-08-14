@@ -20,7 +20,7 @@ async fn file_resize_with_sufficient_rights() {
         file.resize(0)
             .await
             .expect("resize failed")
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::err_from_raw)
             .expect("resize error")
     }
 }
@@ -36,7 +36,7 @@ async fn file_resize_with_insufficient_rights() {
 
     for flags in harness.file_rights.combinations_without(fio::Rights::WRITE_BYTES) {
         let file = dir.open_node::<fio::FileMarker>(TEST_FILE, flags, None).await.unwrap();
-        let result = file.resize(0).await.expect("resize failed").map_err(zx::Status::from_raw);
+        let result = file.resize(0).await.expect("resize failed").map_err(zx::Status::err_from_raw);
         assert_eq!(result, Err(zx::Status::BAD_HANDLE));
     }
 }

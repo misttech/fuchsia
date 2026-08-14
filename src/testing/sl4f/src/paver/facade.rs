@@ -133,7 +133,7 @@ impl PaverFacade {
         let buffer = data_sink
             .read_asset(args.configuration.into(), args.asset.into())
             .await?
-            .map_err(Status::from_raw)?;
+            .map_err(Status::err_from_raw)?;
 
         let mut res = vec![0; buffer.size as usize];
         buffer.vmo.read(&mut res[..], 0)?;

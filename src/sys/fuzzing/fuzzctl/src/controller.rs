@@ -421,7 +421,7 @@ fn check_response(
             Ok(Ok(()))
         }
         Err(e) => bail!("`fuchsia.fuzzer.Controller/{}` failed: {:?}", name, e),
-        Ok(Err(raw)) => Ok(Err(zx::Status::try_from_raw(raw).unwrap_or(zx::Status::INTERNAL))),
+        Ok(Err(raw)) => Ok(Err(zx::Status::err_from_raw(raw))),
         Ok(Ok(())) => Ok(Ok(())),
     }
 }

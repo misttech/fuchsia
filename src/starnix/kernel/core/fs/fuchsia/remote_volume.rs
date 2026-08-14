@@ -197,7 +197,7 @@ impl VolumeKeys {
                 errno!(ENOENT)
             })?
             .map_err(|e| {
-                let err = from_status_like_fdio!(zx::Status::from_raw(e));
+                let err = from_status_like_fdio!(zx::Status::err_from_raw(e));
                 log_error!("File.Write failed with {:?}", err);
                 err
             })?;
@@ -208,7 +208,7 @@ impl VolumeKeys {
                 errno!(ENOENT)
             })?
             .map_err(|e| {
-                let err = from_status_like_fdio!(zx::Status::from_raw(e));
+                let err = from_status_like_fdio!(zx::Status::err_from_raw(e));
                 log_error!("File.Sync failed with {:?}", err);
                 err
             })?;
@@ -233,7 +233,7 @@ impl VolumeKeys {
                 errno!(EIO)
             })?
             .map_err(|e| {
-                let err = from_status_like_fdio!(zx::Status::from_raw(e));
+                let err = from_status_like_fdio!(zx::Status::err_from_raw(e));
                 log_error!("File.LinkInto failed with {:?}", err);
                 err
             })?;
@@ -338,7 +338,7 @@ pub fn new_remote_vol(
                 errno!(ENOENT)
             })?
             .map_err(|e| {
-                let error = from_status_like_fdio!(zx::Status::from_raw(e));
+                let error = from_status_like_fdio!(zx::Status::err_from_raw(e));
                 log_error!(
                     error:?;
                     "Volume check failed. The filesystem might be corrupt!");
@@ -353,7 +353,7 @@ pub fn new_remote_vol(
             errno!(ENOENT)
         })?
         .map_err(|e| {
-            let error = from_status_like_fdio!(zx::Status::from_raw(e));
+            let error = from_status_like_fdio!(zx::Status::err_from_raw(e));
             log_error!(error:?; "StarnixVolumeProvider.Mount failed");
             error
         })?;

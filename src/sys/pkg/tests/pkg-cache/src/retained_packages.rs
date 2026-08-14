@@ -94,7 +94,7 @@ async fn packages_are_retained_gc_mid_process() {
             needed_blobs_server_end,
             dir_server_end,
         )
-        .map_ok(|res| res.map_err(zx::Status::from_raw));
+        .map_ok(|res| res.map_err(zx::Status::err_from_raw));
 
     let (meta_far, contents) = package.contents();
     write_meta_far(&needed_blobs, meta_far).await;
