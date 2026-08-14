@@ -199,7 +199,9 @@ impl DwSpiDevice {
             let rx_words = self.mmio.rxflr().read().rxtfl() as usize;
 
             assert!(tx_words <= FIFO_SIZE);
-            let tx_free = FIFO_SIZE - tx_words;
+            // Fill the TX FIFO up to FIFO_SIZE - 1. If a byte is already in the TX shift register,
+            // filling up to the maximum could cause an RX FIFO overflow.
+            let tx_free = (FIFO_SIZE - tx_words).saturating_sub(1);
 
             debug!("  RX words {rx_words}, TX words {tx_words} (free {tx_free})");
 
