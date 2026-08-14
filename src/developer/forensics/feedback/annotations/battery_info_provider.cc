@@ -5,11 +5,9 @@
 #include "src/developer/forensics/feedback/annotations/battery_info_provider.h"
 
 #include <fidl/fuchsia.power.battery/cpp/fidl.h>
-#include <lib/async/cpp/task.h>
-#include <lib/sys/cpp/service_directory.h>
 #include <lib/syslog/cpp/macros.h>
 
-#include <utility>
+#include <string>
 
 #include "src/developer/forensics/feedback/annotations/constants.h"
 
@@ -25,8 +23,12 @@ Annotations BuildAnnotations(const Error error) {
   return annotations;
 }
 
-Annotations BatteryInfoToAnnotations(const fuchsia_power_battery::BatteryInfo& info) {
+}  // namespace
+
+Annotations BatteryInfoToAnnotations::operator()(
+    const fuchsia_power_battery::BatteryInfoProviderGetBatteryInfoResponse& response) {
   Annotations annotations = BuildAnnotations(Error::kMissingValue);
+  const fuchsia_power_battery::BatteryInfo& info = response.info();
 
   if (!info.status().has_value()) {
     FX_LOGS(WARNING) << "GetBatteryInfo returned no status";
@@ -79,60 +81,8 @@ Annotations BatteryInfoToAnnotations(const fuchsia_power_battery::BatteryInfo& i
   return annotations;
 }
 
-}  // namespace
-
-BatteryInfoProvider::BatteryInfoProvider(async_dispatcher_t* dispatcher,
-                                         std::shared_ptr<sys::ServiceDirectory> services,
-                                         std::unique_ptr<backoff::Backoff> backoff)
-    : dispatcher_(dispatcher), services_(std::move(services)), backoff_(std::move(backoff)) {
-  Connect();
-}
-
-void BatteryInfoProvider::Connect() {
-  zx::result endpoints = fidl::CreateEndpoints<fuchsia_power_battery::BatteryManager>();
-  if (endpoints.is_error()) {
-    FX_LOGS(ERROR) << "Failed to create endpoints: " << endpoints.status_string();
-    return;
-  }
-
-  services_->Connect(fuchsia_power_battery::BatteryManager::kDiscoverableName,
-                     endpoints->server.TakeChannel());
-
-  client_ = fidl::Client(std::move(endpoints->client), dispatcher_, this);
-}
-
-void BatteryInfoProvider::on_fidl_error(const fidl::UnbindInfo error) {
-  if (error.status() == ZX_ERR_NOT_FOUND) {
-    // Invalidate the client so that future requests aren't made.
-    client_ = fidl::Client<fuchsia_power_battery::BatteryManager>();
-    FX_LOGS(ERROR) << "BatteryManager not found, will not attempt to reconnect";
-    return;
-  }
-
-  FX_LOGS(WARNING) << "Lost connection to BatteryManager: " << error;
-
-  reconnect_task_.PostDelayed(dispatcher_, backoff_->GetNext());
-}
-
-void BatteryInfoProvider::Get(::fit::callback<void(Annotations)> callback) {
-  if (!client_.is_valid()) {
-    callback(BuildAnnotations(Error::kNotAvailableInProduct));
-    return;
-  }
-
-  client_->GetBatteryInfo().Then(
-      [this, callback = std::move(callback)](
-          fidl::Result<fuchsia_power_battery::BatteryManager::GetBatteryInfo>& result) mutable {
-        if (result.is_error()) {
-          FX_LOGS(ERROR) << "GetBatteryInfo failed: " << result.error_value();
-          const Error error = FidlErrorToForensicsError(result.error_value());
-          callback(BuildAnnotations(error));
-          return;
-        }
-
-        backoff_->Reset();
-        callback(BatteryInfoToAnnotations(result.value().info()));
-      });
+Annotations BatteryInfoToAnnotations::operator()(const Error error) {
+  return BuildAnnotations(error);
 }
 
 std::set<std::string> BatteryInfoProvider::GetAnnotationKeys() {
