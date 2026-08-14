@@ -162,7 +162,7 @@ H264Decoder::~H264Decoder() = default;
 
 void H264Decoder::Reset() {
   curr_pic_ = nullptr;
-  curr_nalu_ = nullptr;
+  curr_nalu_.reset();
   curr_slice_hdr_ = nullptr;
   FX_LOGS(DEBUG) << "curr_sps_id_ = -1";
   curr_sps_id_ = -1;
@@ -1822,8 +1822,8 @@ H264Decoder::DecodeResult H264Decoder::Decode() {
 
     if (!curr_nalu_) {
       if (nalu_injection_mode_ == NaluInjectionMode::kOff) {
-        curr_nalu_ = std::make_unique<H264NALU>();
-        par_res = parser_.AdvanceToNextNALU(curr_nalu_.get());
+        curr_nalu_.emplace();
+        par_res = parser_.AdvanceToNextNALU(&*curr_nalu_);
         if (par_res == H264Parser::kEOStream) {
           CHECK_ACCELERATOR_RESULT(FinishPrevFrameIfPresent());
           return kRanOutOfStreamData;
@@ -2111,7 +2111,7 @@ H264Decoder::DecodeResult H264Decoder::Decode() {
     }
 
     FX_LOGS(DEBUG) << "NALU done";
-    curr_nalu_ = nullptr;
+    curr_nalu_.reset();
   }
 }
 
@@ -2122,7 +2122,7 @@ void H264Decoder::SetStreamId(int32_t id) {
   stream_id_ = id;
 }
 
-void H264Decoder::QueuePreparsedNalu(std::unique_ptr<H264NALU> nalu) {
+void H264Decoder::QueuePreparsedNalu(H264NALU nalu) {
   ZX_DEBUG_ASSERT(nalu_injection_mode_ != NaluInjectionMode::kOff);
   nalu_injection_mode_ = NaluInjectionMode::kOn;
 

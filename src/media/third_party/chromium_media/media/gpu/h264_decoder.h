@@ -8,8 +8,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <list>
+#include <deque>
 #include <memory>
+#include <optional>
 #include <vector>
 
 // Fuchsia change: Remove libraries in favor of "chromium_utils.h"
@@ -235,7 +236,7 @@ class MEDIA_GPU_EXPORT H264Decoder : public AcceleratedVideoDecoder {
   // alternative to queueing a kAUD, the caller may trigger SubmitDecode() by
   // instead queuing and Decode()ing a new SPS, new PPS, or a slice of a new
   // picture.
-  void QueuePreparsedNalu(std::unique_ptr<H264NALU> nalu);
+  void QueuePreparsedNalu(H264NALU nalu);
 
   // Return true if we need to start a new picture.
   static bool IsNewPrimaryCodedPicture(const H264Picture* curr_pic,
@@ -383,7 +384,7 @@ class MEDIA_GPU_EXPORT H264Decoder : public AcceleratedVideoDecoder {
   H264Parser parser_;
 
   // Populated via calls to QueuePreparsedNalu().
-  std::list<std::unique_ptr<H264NALU>> preparsed_nalus_;
+  std::deque<H264NALU> preparsed_nalus_;
   // Decrypting config for the most recent data passed to SetStream().
   std::unique_ptr<DecryptConfig> current_decrypt_config_;
 
@@ -443,7 +444,7 @@ class MEDIA_GPU_EXPORT H264Decoder : public AcceleratedVideoDecoder {
   int last_parsed_pps_id_;
 
   // Current NALU and slice header being processed.
-  std::unique_ptr<H264NALU> curr_nalu_;
+  std::optional<H264NALU> curr_nalu_;
   std::unique_ptr<H264SliceHeader> curr_slice_hdr_;
 
   // Encrypted NALUs preceding a fully encrypted (CENCv1) slice NALU. We need to

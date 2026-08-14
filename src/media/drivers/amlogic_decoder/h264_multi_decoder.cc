@@ -397,7 +397,7 @@ H264MultiDecoder::H264MultiDecoder(Owner* owner, Client* client, FrameDataProvid
   power_ref_ = std::make_unique<PowerReference>(owner_->vdec1_core());
 
   if (internal_buffers.has_value()) {
-    GiveInternalBuffers(std::move(internal_buffers.value()));
+    GiveInternalBuffers(TakeOptional(internal_buffers));
   }
 }
 
@@ -1258,12 +1258,13 @@ void H264MultiDecoder::HandleSliceHeadDone() {
   // This set of fields is not necessarily the minimum necessary set for this driver to work.  Nor
   // is this set of fields complete, as not all fields are available from the FW.
 
-  auto sps_nalu = std::make_unique<media::H264NALU>();
+  std::optional<media::H264NALU> sps_nalu;
   {  // scope sps
-    ZX_DEBUG_ASSERT(sps_nalu->data.empty());
+    media::H264NALU local_sps_nalu;
+    ZX_DEBUG_ASSERT(local_sps_nalu.data.empty());
     // Just needs to be non-zero for SPS; not available from FW but doesn't matter.
-    sps_nalu->nal_ref_idc = 1;
-    sps_nalu->nal_unit_type = media::H264NALU::kSPS;
+    local_sps_nalu.nal_ref_idc = 1;
+    local_sps_nalu.nal_unit_type = media::H264NALU::kSPS;
     auto sps = std::make_unique<media::H264SPS>();
 
     // These are what's known to be available from FW:
@@ -1453,9 +1454,8 @@ void H264MultiDecoder::HandleSliceHeadDone() {
       }
       ZX_DEBUG_ASSERT(sizeof(current_sps_.value()) == sizeof(*sps.get()));
       memcpy(&current_sps_.value(), sps.get(), sizeof(current_sps_.value()));
-      sps_nalu->preparsed_header.emplace<std::unique_ptr<media::H264SPS>>(std::move(sps));
-    } else {
-      sps_nalu = nullptr;
+      local_sps_nalu.preparsed_header.emplace<std::unique_ptr<media::H264SPS>>(std::move(sps));
+      sps_nalu = std::move(local_sps_nalu);
     }
   }  // ~sps
 
@@ -1464,12 +1464,13 @@ void H264MultiDecoder::HandleSliceHeadDone() {
   // This set of fields is not necessarily the minimum necessary set for this driver to work.  Nor
   // is this set of fields complete, as not all fields are available from the FW.
 
-  auto pps_nalu = std::make_unique<media::H264NALU>();
+  std::optional<media::H264NALU> pps_nalu;
   {  // scope pps
-    ZX_DEBUG_ASSERT(pps_nalu->data.empty());
+    media::H264NALU local_pps_nalu;
+    ZX_DEBUG_ASSERT(local_pps_nalu.data.empty());
     // Just needs to be on-zero for PPS; not available from FW but doesn't matter.
-    pps_nalu->nal_ref_idc = 1;
-    pps_nalu->nal_unit_type = media::H264NALU::kPPS;
+    local_pps_nalu.nal_ref_idc = 1;
+    local_pps_nalu.nal_unit_type = media::H264NALU::kPPS;
     auto pps = std::make_unique<media::H264PPS>();
 
     pps->pic_parameter_set_id = params_.data[HardwareRenderParams::kCurrentPpsId];
@@ -1555,21 +1556,20 @@ void H264MultiDecoder::HandleSliceHeadDone() {
       }
       ZX_DEBUG_ASSERT(sizeof(current_pps_.value()) == sizeof(*pps.get()));
       memcpy(&current_pps_.value(), pps.get(), sizeof(current_pps_.value()));
-      pps_nalu->preparsed_header.emplace<std::unique_ptr<media::H264PPS>>(std::move(pps));
-    } else {
-      pps_nalu = nullptr;
+      local_pps_nalu.preparsed_header.emplace<std::unique_ptr<media::H264PPS>>(std::move(pps));
+      pps_nalu = std::move(local_pps_nalu);
     }
   }  // ~pps
 
   // SliceHeader
-  auto slice_nalu = std::make_unique<media::H264NALU>();
+  media::H264NALU slice_nalu;
   int frame_num = -1;
   int first_mb_in_slice = -1;
   {  // scope slice
-    ZX_DEBUG_ASSERT(slice_nalu->data.empty());
-    slice_nalu->nal_ref_idc = params_.data[HardwareRenderParams::kNalRefIdc];
-    slice_nalu->nal_unit_type = params_.data[HardwareRenderParams::kNalUnitType];
-    if (slice_nalu->nal_unit_type == media::H264NALU::kCodedSliceExtension) {
+    ZX_DEBUG_ASSERT(slice_nalu.data.empty());
+    slice_nalu.nal_ref_idc = params_.data[HardwareRenderParams::kNalRefIdc];
+    slice_nalu.nal_unit_type = params_.data[HardwareRenderParams::kNalUnitType];
+    if (slice_nalu.nal_unit_type == media::H264NALU::kCodedSliceExtension) {
       LogEvent(
           media_metrics::
               StreamProcessorEvents2MigratedMetricDimensionEvent_SliceExtensionUnsupportedError);
@@ -1578,8 +1578,8 @@ void H264MultiDecoder::HandleSliceHeadDone() {
       return;
     }
     auto slice = std::make_unique<media::H264SliceHeader>();
-    slice->idr_pic_flag = (slice_nalu->nal_unit_type == 5);
-    slice->nal_ref_idc = slice_nalu->nal_ref_idc;
+    slice->idr_pic_flag = (slice_nalu.nal_unit_type == 5);
+    slice->nal_ref_idc = slice_nalu.nal_ref_idc;
     ZX_DEBUG_ASSERT(!slice->nalu_data);
     ZX_DEBUG_ASSERT(!slice->nalu_size);
     ZX_DEBUG_ASSERT(!slice->header_bit_size);
@@ -1633,7 +1633,7 @@ void H264MultiDecoder::HandleSliceHeadDone() {
     slice->num_ref_idx_l1_active_minus1 =
         params_.data[HardwareRenderParams::kNumRefIdxL1ActiveMinus1];
     // checked above
-    ZX_DEBUG_ASSERT(slice_nalu->nal_unit_type != media::H264NALU::kCodedSliceExtension);
+    ZX_DEBUG_ASSERT(slice_nalu.nal_unit_type != media::H264NALU::kCodedSliceExtension);
     // Each cmd is 2 uint16_t in src, and src has room for 33 commands so that the list of commands
     // can always be terminated by a 3.  In contrast, dst only has room for 32, and when all are
     // used there's no terminating 3.
@@ -1724,7 +1724,7 @@ void H264MultiDecoder::HandleSliceHeadDone() {
           !!(params_.data[HardwareRenderParams::kMmcoCmd + 0] & 0x2);
       slice->long_term_reference_flag = !!(params_.data[HardwareRenderParams::kMmcoCmd + 0] & 0x1);
     }
-    if (slice_nalu->nal_ref_idc) {
+    if (slice_nalu.nal_ref_idc) {
       uint32_t src_index = 0;
       uint32_t dst_index = 0;
       uint16_t* mmco_cmds = &params_.data[HardwareRenderParams::kMmcoCmd];
@@ -1814,7 +1814,7 @@ void H264MultiDecoder::HandleSliceHeadDone() {
     // These are set but never read in H264Decoder, so don't need to set them:
     // dec_ref_pic_marking_bit_size
     // pic_order_cnt_bit_size
-    slice_nalu->preparsed_header.emplace<std::unique_ptr<media::H264SliceHeader>>(std::move(slice));
+    slice_nalu.preparsed_header.emplace<std::unique_ptr<media::H264SliceHeader>>(std::move(slice));
   }  // ~slice
 
   ZX_DEBUG_ASSERT(frame_num != -1);
@@ -1892,9 +1892,8 @@ void H264MultiDecoder::HandleSliceHeadDone() {
       OnFatalError();
       return;
     }
-    if (memcmp(
-            std::get<std::unique_ptr<media::H264SliceHeader>>(slice_nalu->preparsed_header).get(),
-            &stashed_latest_slice_header_, sizeof(stashed_latest_slice_header_))) {
+    if (memcmp(std::get<std::unique_ptr<media::H264SliceHeader>>(slice_nalu.preparsed_header).get(),
+               &stashed_latest_slice_header_, sizeof(stashed_latest_slice_header_))) {
       LogEvent(
           media_metrics::StreamProcessorEvents2MigratedMetricDimensionEvent_FirstMbInSliceError);
       LOG(ERROR, "inconsistent slice data for same first_mb_in_slice - broken input data");
@@ -1906,13 +1905,13 @@ void H264MultiDecoder::HandleSliceHeadDone() {
   if (first_mb_in_slice > per_frame_seen_first_mb_in_slice_) {
     DLOG("first_mb_in_slice > per_frame_seen_first_mb_in_slice_");
     memcpy(&stashed_latest_slice_header_,
-           std::get<std::unique_ptr<media::H264SliceHeader>>(slice_nalu->preparsed_header).get(),
+           std::get<std::unique_ptr<media::H264SliceHeader>>(slice_nalu.preparsed_header).get(),
            sizeof(stashed_latest_slice_header_));
     if (sps_nalu) {
-      media_decoder_->QueuePreparsedNalu(std::move(sps_nalu));
+      media_decoder_->QueuePreparsedNalu(TakeOptional(sps_nalu));
     }
     if (pps_nalu) {
-      media_decoder_->QueuePreparsedNalu(std::move(pps_nalu));
+      media_decoder_->QueuePreparsedNalu(TakeOptional(pps_nalu));
     }
     media_decoder_->QueuePreparsedNalu(std::move(slice_nalu));
     per_frame_seen_first_mb_in_slice_ = first_mb_in_slice;
@@ -2217,10 +2216,10 @@ void H264MultiDecoder::HandlePicDataDone() {
   // Bring the decoder into sync that the frame is done decoding.  This way media_decoder_ can
   // output frames and do post-decode DPB or MMCO updates.  This pushes media_decoder_ from
   // searching for NAL end (pre-frame-decode) to post-frame-decode and post-any-frames-output.
-  auto aud_nalu = std::make_unique<media::H264NALU>();
-  ZX_DEBUG_ASSERT(aud_nalu->data.empty());
-  aud_nalu->nal_ref_idc = 0;
-  aud_nalu->nal_unit_type = media::H264NALU::kAUD;
+  media::H264NALU aud_nalu;
+  ZX_DEBUG_ASSERT(aud_nalu.data.empty());
+  aud_nalu.nal_ref_idc = 0;
+  aud_nalu.nal_unit_type = media::H264NALU::kAUD;
   media_decoder_->QueuePreparsedNalu(std::move(aud_nalu));
   media::AcceleratedVideoDecoder::DecodeResult decode_result = media_decoder_->Decode();
   switch (decode_result) {
@@ -2546,8 +2545,7 @@ void H264MultiDecoder::InitializedFrames(std::vector<CodecFrame> frames, uint32_
       ZX_DEBUG_ASSERT(on_deck_mv_buffer->is_secure() == is_secure_);
       ZX_DEBUG_ASSERT(on_deck_mv_buffer->is_writable() == kMvBufferIsWritable);
       ZX_DEBUG_ASSERT(on_deck_mv_buffer->is_mapping_needed() == kMvBufferIsMappingNeeded);
-      mv_buffer = std::move(on_deck_mv_buffer);
-      on_deck_mv_buffer.reset();
+      mv_buffer = TakeOptional(on_deck_mv_buffer);
     } else {
       auto create_result = InternalBuffer::Create(
           "H264ReferenceMvs", &owner_->SysmemAllocatorSync(), owner_->bti(), colocated_buffer_size,
@@ -2562,9 +2560,9 @@ void H264MultiDecoder::InitializedFrames(std::vector<CodecFrame> frames, uint32_
       mv_buffer.emplace(create_result.take_value());
     }
 
-    video_frames_.push_back(std::shared_ptr<ReferenceFrame>(new ReferenceFrame{
-        !!frames[i].initial_usage_count(), false, false, i, std::move(frame), std::move(y_canvas),
-        std::move(uv_canvas), std::move(mv_buffer.value())}));
+    video_frames_.push_back(std::shared_ptr<ReferenceFrame>(
+        new ReferenceFrame{!!frames[i].initial_usage_count(), false, false, i, std::move(frame),
+                           std::move(y_canvas), std::move(uv_canvas), TakeOptional(mv_buffer)}));
   }
   // Intentionally leave any on-deck mv buffers we don't need for now in
   // on_deck_reference_mv_buffers_, to avoid deallocating and re-allocating if an app is switching
