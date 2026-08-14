@@ -245,8 +245,8 @@ async fn main_inner() -> Result<(), Error> {
 
         let () = svc_dir
             .add_entry(
-                fidl_fuchsia_pkg::PackageCacheMarker::PROTOCOL_NAME,
-                vfs::service::host(move |stream: fidl_fuchsia_pkg::PackageCacheRequestStream| {
+                fpkg::PackageCacheMarker::PROTOCOL_NAME,
+                vfs::service::host(move |stream: fpkg::PackageCacheRequestStream| {
                     cache_service::serve(
                         Arc::clone(&package_index),
                         blobfs.clone(),
@@ -262,11 +262,8 @@ async fn main_inner() -> Result<(), Error> {
                         Arc::clone(&cache_inspect_id),
                         Arc::clone(&cache_get_node),
                     )
-                    .unwrap_or_else(|e| {
-                        error!(
-                            "error handling fuchsia.pkg.PackageCache connection: {:#}",
-                            anyhow!(e)
-                        )
+                    .unwrap_or_else(|e: anyhow::Error| {
+                        error!("serving fuchsia.pkg/PackageCache: {e:#}")
                     })
                 }),
             )
@@ -278,22 +275,17 @@ async fn main_inner() -> Result<(), Error> {
 
         let () = svc_dir
             .add_entry(
-                fidl_fuchsia_pkg::RetainedPackagesMarker::PROTOCOL_NAME,
-                vfs::service::host(
-                    move |stream: fidl_fuchsia_pkg::RetainedPackagesRequestStream| {
-                        retained_packages_service::serve(
-                            Arc::clone(&package_index),
-                            blobfs.clone(),
-                            stream,
-                        )
-                        .unwrap_or_else(|e| {
-                            error!(
-                                "error handling fuchsia.pkg/RetainedPackages connection: {:#}",
-                                anyhow!(e)
-                            )
-                        })
-                    },
-                ),
+                fpkg::RetainedPackagesMarker::PROTOCOL_NAME,
+                vfs::service::host(move |stream: fpkg::RetainedPackagesRequestStream| {
+                    retained_packages_service::serve(
+                        Arc::clone(&package_index),
+                        blobfs.clone(),
+                        stream,
+                    )
+                    .unwrap_or_else(|e: anyhow::Error| {
+                        error!("serving fuchsia.pkg/RetainedPackages: {e:#}")
+                    })
+                }),
             )
             .context("adding fuchsia.pkg/RetainedPackages to /svc")?;
     }
@@ -302,17 +294,14 @@ async fn main_inner() -> Result<(), Error> {
 
         let () = svc_dir
             .add_entry(
-                fidl_fuchsia_pkg::RetainedBlobsMarker::PROTOCOL_NAME,
+                fpkg::RetainedBlobsMarker::PROTOCOL_NAME,
                 vfs::service::host(move |stream| {
                     retained_packages_service::serve_retained_blobs(
                         Arc::clone(&package_index),
                         stream,
                     )
-                    .unwrap_or_else(|e| {
-                        error!(
-                            "error handling fuchsia.pkg/RetainedBlobs connection: {:#}",
-                            anyhow!(e)
-                        )
+                    .unwrap_or_else(|e: anyhow::Error| {
+                        error!("serving fuchsia.pkg/RetainedBlobs: {e:#}")
                     })
                 }),
             )
@@ -331,21 +320,23 @@ async fn main_inner() -> Result<(), Error> {
         let () = svc_dir
             .add_entry(
                 fidl_fuchsia_pkg_garbagecollector::ManagerMarker::PROTOCOL_NAME,
-                vfs::service::host(move |stream: fidl_fuchsia_pkg_garbagecollector::ManagerRequestStream| {
-                    gc_service::serve(
-                        blobfs.clone(),
-                        Arc::clone(&base_packages),
-                        Arc::clone(&cache_packages),
-                        upgradable_packages.clone(),
-                        Arc::clone(&package_index),
-                        open_packages.clone(),
-                        commit_status_provider.clone(),
-                        stream,
-                    )
-                    .unwrap_or_else(|e: anyhow::Error| {
-                        error!("error handling fuchsia.pkg.garbagecollector/Manager connection: {e:#}")
-                    })
-                }),
+                vfs::service::host(
+                    move |stream: fidl_fuchsia_pkg_garbagecollector::ManagerRequestStream| {
+                        gc_service::serve(
+                            blobfs.clone(),
+                            Arc::clone(&base_packages),
+                            Arc::clone(&cache_packages),
+                            upgradable_packages.clone(),
+                            Arc::clone(&package_index),
+                            open_packages.clone(),
+                            commit_status_provider.clone(),
+                            stream,
+                        )
+                        .unwrap_or_else(|e: anyhow::Error| {
+                            error!("serving fuchsia.pkg.garbagecollector/Manager: {e:#}")
+                        })
+                    },
+                ),
             )
             .context("adding fuchsia.pkg.garbagecollector/Manager to /svc")?;
     }
@@ -357,22 +348,20 @@ async fn main_inner() -> Result<(), Error> {
         let upgradable_packages = upgradable_packages.clone();
         let () = svc_dir
             .add_entry(
-                fidl_fuchsia_pkg::PackageResolverMarker::PROTOCOL_NAME,
-                vfs::service::host(
-                    move |stream: fidl_fuchsia_pkg::PackageResolverRequestStream| {
-                        base_resolver::package::serve_request_stream(
-                            stream,
-                            Arc::clone(&base_resolver_base_packages),
-                            authenticator.clone(),
-                            open_packages.clone(),
-                            scope.clone(),
-                            upgradable_packages.clone(),
-                        )
-                        .unwrap_or_else(|e: anyhow::Error| {
-                            error!("failed to serve package resolver request: {e:#}")
-                        })
-                    },
-                ),
+                fpkg::PackageResolverMarker::PROTOCOL_NAME,
+                vfs::service::host(move |stream: fpkg::PackageResolverRequestStream| {
+                    base_resolver::package::serve_request_stream(
+                        stream,
+                        Arc::clone(&base_resolver_base_packages),
+                        authenticator.clone(),
+                        open_packages.clone(),
+                        scope.clone(),
+                        upgradable_packages.clone(),
+                    )
+                    .unwrap_or_else(|e: anyhow::Error| {
+                        error!("serving fuchsia.pkg/PackageResolver: {e:#}")
+                    })
+                }),
             )
             .context("adding fuchsia.pkg/PackageResolver to /svc")?;
     }
@@ -396,7 +385,7 @@ async fn main_inner() -> Result<(), Error> {
                             upgradable_packages.clone(),
                         )
                         .unwrap_or_else(|e: anyhow::Error| {
-                            error!("failed to serve component resolver request: {e:#}")
+                            error!("serving fuchsia.component.resolution/Resolver: {e:#}")
                         })
                     },
                 ),
@@ -436,21 +425,19 @@ async fn main_inner() -> Result<(), Error> {
         let scope = scope.clone();
         let () = svc_dir
             .add_entry(
-                format!("{}-ota", fidl_fuchsia_pkg::PackageResolverMarker::PROTOCOL_NAME),
-                vfs::service::host(
-                    move |stream: fidl_fuchsia_pkg::PackageResolverRequestStream| {
-                        ota_resolver::serve_request_stream(
-                            stream,
-                            queued_tuf_resolver.clone(),
-                            authenticator.clone(),
-                            root_dir_factory.clone(),
-                            scope.clone(),
-                        )
-                        .unwrap_or_else(|e: anyhow::Error| {
-                            error!("failed to serve OTA package resolver request: {e:#}")
-                        })
-                    },
-                ),
+                format!("{}-ota", fpkg::PackageResolverMarker::PROTOCOL_NAME),
+                vfs::service::host(move |stream: fpkg::PackageResolverRequestStream| {
+                    ota_resolver::serve_request_stream(
+                        stream,
+                        queued_tuf_resolver.clone(),
+                        authenticator.clone(),
+                        root_dir_factory.clone(),
+                        scope.clone(),
+                    )
+                    .unwrap_or_else(|e: anyhow::Error| {
+                        error!("serving fuchsia.pkg/PackageResolver-ota: {e:#}")
+                    })
+                }),
             )
             .context("adding fuchsia.pkg/PackageResolver-ota to /svc")?;
     }
