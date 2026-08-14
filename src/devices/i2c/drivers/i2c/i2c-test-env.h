@@ -85,8 +85,8 @@ class TestEnvironment : public fdf_testing::Environment {
     std::vector<fuchsia_driver_metadata::DictionaryEntry> entries;
     if (metadata.bus_id().has_value()) {
       entries.push_back(fuchsia_driver_metadata::DictionaryEntry(
-          "controller_id", fuchsia_driver_metadata::DictionaryValue::WithInt64(
-                               static_cast<int64_t>(metadata.bus_id().value()))));
+          "provider", fuchsia_driver_metadata::DictionaryValue::WithInt64(
+                          static_cast<int64_t>(metadata.bus_id().value()))));
     }
     if (metadata.channels().has_value()) {
       entries.push_back(fuchsia_driver_metadata::DictionaryEntry(

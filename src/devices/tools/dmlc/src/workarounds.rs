@@ -10,12 +10,12 @@ use std::collections::{HashMap, HashSet};
 /// TODO(https://fxbug.dev/536123161): Remove this workaround when schema-defined
 /// keys are supported for provider IDs.
 pub fn provider_id_key() -> &'static str {
-    "controller_id"
+    "provider"
 }
 
 /// Returns the C++ expression (as a string literal) for the provider ID key.
 pub fn provider_id_key_cpp_expr() -> &'static str {
-    "\"controller_id\""
+    "\"provider\""
 }
 
 /// Deduplicates resources for specific metadata types that require unique entries.
