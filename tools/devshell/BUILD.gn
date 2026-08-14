@@ -173,6 +173,7 @@ host_script_test_data("fx_bash_tests") {
         "//build/force_clean/force_clean_if_needed.py",
         "//build/scripts/top_build_wrap.sh",
         "//build/profile/profile_wrap.sh",
+        "//build/profile/hardware_profiler.py",
         "//build/rbe/fuchsia-reproxy-wrap.sh",
         "//build/resultstore/fuchsia-rsproxy-wrap.sh",
         "//build/tui/build-tui-wrap.sh",

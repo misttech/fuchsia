@@ -23,6 +23,7 @@ readonly FUCHSIA_DIR="$(readlink -f "$SCRIPT_DIR/../..")"
 source "${FUCHSIA_DIR}/tools/devshell/lib/platform.sh"
 
 readonly profile_wrapper="${FUCHSIA_DIR}/build/profile/profile_wrap.sh"
+readonly hardware_profiler="${FUCHSIA_DIR}/build/profile/hardware_profiler.py"
 readonly reproxy_wrapper="${FUCHSIA_DIR}/build/rbe/fuchsia-reproxy-wrap.sh"
 readonly rsproxy_wrapper="${FUCHSIA_DIR}/build/resultstore/fuchsia-rsproxy-wrap.sh"
 readonly tui_wrapper="${FUCHSIA_DIR}/build/tui/build-tui-wrap.sh"
@@ -282,14 +283,30 @@ then
   readonly profile_log_dir="$log_dir/build_profile"
   mkdir -p "$profile_log_dir"
   readonly system_profile_log="${profile_log_dir}/system_profile.json"
+  readonly hardware_profile_log="${profile_log_dir}/hardware_profile.json"
+
+  # Determine workspace cache file path (under the parsed build_dir)
+  readonly cache_file="${build_dir}/hardware_profile.cache.json"
+
+  if [[ ! -f "$cache_file" ]]; then
+    debug "Host hardware profile cache missing. Scanning host topology..."
+    "${PREBUILT_PYTHON3:-python3}" -S "${hardware_profiler}" --output "$cache_file"
+  fi
+
+  # Copy the cached profile to the current build's profile folder synchronously in <1ms.
+  if [[ -f "$cache_file" ]]; then
+    cp "$cache_file" "$hardware_profile_log"
+  fi
+
   maybe_profile_wrap=(
     "$profile_wrapper"
     --system-log "$system_profile_log"
     --
   )
   post_build_uploads+=(
-    # trace files
+    # trace and capability logs
     "$system_profile_log"
+    "$hardware_profile_log"
   )
 fi
 

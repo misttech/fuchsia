@@ -14,6 +14,7 @@ BT_FILE_DEPS=(
     "build/scripts/signal_utils.py"
     "build/force_clean/force_clean_if_needed.py"
     "build/scripts/top_build_wrap.sh"
+    "build/profile/hardware_profiler.py"
     "tools/devshell/lib/vars.sh"
     "tools/devshell/lib/is_invoked_by_agent.sh"
     "tools/devshell/lib/agents.txt"
