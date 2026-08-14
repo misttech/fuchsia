@@ -57,7 +57,7 @@ TEST(ChannelConversion, ChannelToChanspec) {
     fuchsia_wlan_ieee80211::wire::ChannelNumber in_ch = {
         .band = fuchsia_wlan_ieee80211::wire::WlanBand::kFiveGhz, .number = 44};
     out_ch = {
-        .chnum = 44, .band = BRCMU_CHAN_BAND_5G, .bw = BRCMU_CHAN_BW_40, .sb = BRCMU_CHAN_SB_U};
+        .chnum = 44, .band = BRCMU_CHAN_BAND_5G, .bw = BRCMU_CHAN_BW_40, .sb = BRCMU_CHAN_SB_L};
     verify_channel_to_chanspec(in_ch, ChannelBandwidth::kCbw40, out_ch);
   }
 
@@ -66,7 +66,7 @@ TEST(ChannelConversion, ChannelToChanspec) {
     fuchsia_wlan_ieee80211::wire::ChannelNumber in_ch = {
         .band = fuchsia_wlan_ieee80211::wire::WlanBand::kFiveGhz, .number = 112};
     out_ch = {
-        .chnum = 112, .band = BRCMU_CHAN_BAND_5G, .bw = BRCMU_CHAN_BW_40, .sb = BRCMU_CHAN_SB_L};
+        .chnum = 112, .band = BRCMU_CHAN_BAND_5G, .bw = BRCMU_CHAN_BW_40, .sb = BRCMU_CHAN_SB_U};
     verify_channel_to_chanspec(in_ch, ChannelBandwidth::kCbw40Below, out_ch);
   }
 }
@@ -121,18 +121,34 @@ TEST(ChannelConversion, ChanspecToOperatingChannel) {
   }
 
   {
-    // Try a 40+ MHz channel in the 5 GHz band
+    // Try a 40+ MHz channel in the 2.4 GHz band (SB_L => secondary above)
+    in_ch = {.chnum = 3, .band = BRCMU_CHAN_BAND_2G, .bw = BRCMU_CHAN_BW_40, .sb = BRCMU_CHAN_SB_L};
+    fuchsia_wlan_ieee80211::wire::ChannelNumber out_ch = {.band = WlanBand::kTwoGhz, .number = 3};
+    verify_chanspec_to_operating_channel(in_ch, out_ch, ChannelBandwidth::kCbw40,
+                                         {.band = out_ch.band, .number = 0});
+  }
+
+  {
+    // Try a 40- MHz channel in the 2.4 GHz band (SB_U => secondary below)
+    in_ch = {.chnum = 9, .band = BRCMU_CHAN_BAND_2G, .bw = BRCMU_CHAN_BW_40, .sb = BRCMU_CHAN_SB_U};
+    fuchsia_wlan_ieee80211::wire::ChannelNumber out_ch = {.band = WlanBand::kTwoGhz, .number = 9};
+    verify_chanspec_to_operating_channel(in_ch, out_ch, ChannelBandwidth::kCbw40Below,
+                                         {.band = out_ch.band, .number = 0});
+  }
+
+  {
+    // Try a 40+ MHz channel in the 5 GHz band (SB_L => secondary above)
     in_ch = {
-        .chnum = 46, .band = BRCMU_CHAN_BAND_5G, .bw = BRCMU_CHAN_BW_40, .sb = BRCMU_CHAN_SB_U};
+        .chnum = 46, .band = BRCMU_CHAN_BAND_5G, .bw = BRCMU_CHAN_BW_40, .sb = BRCMU_CHAN_SB_L};
     fuchsia_wlan_ieee80211::wire::ChannelNumber out_ch = {.band = WlanBand::kFiveGhz, .number = 46};
     verify_chanspec_to_operating_channel(in_ch, out_ch, ChannelBandwidth::kCbw40,
                                          {.band = out_ch.band, .number = 0});
   }
 
   {
-    // Try a 40- MHz channel in the 5 GHz band
+    // Try a 40- MHz channel in the 5 GHz band (SB_U => secondary below)
     in_ch = {
-        .chnum = 112, .band = BRCMU_CHAN_BAND_5G, .bw = BRCMU_CHAN_BW_40, .sb = BRCMU_CHAN_SB_L};
+        .chnum = 112, .band = BRCMU_CHAN_BAND_5G, .bw = BRCMU_CHAN_BW_40, .sb = BRCMU_CHAN_SB_U};
     fuchsia_wlan_ieee80211::wire::ChannelNumber out_ch = {.band = WlanBand::kFiveGhz,
                                                           .number = 112};
     verify_chanspec_to_operating_channel(in_ch, out_ch, ChannelBandwidth::kCbw40Below,
@@ -215,5 +231,55 @@ TEST(ChannelConversion, OverrideWideBandwidthForChannel173) {
           .band = fuchsia_wlan_ieee80211::wire::WlanBand::kFiveGhz, .number = 173},
       ChannelBandwidth::kCbw40);
   EXPECT_EQ(out_cbw, ChannelBandwidth::kCbw20);
+}
+
+static void verify_round_trip(const fuchsia_wlan_ieee80211::wire::ChannelNumber& in_channel,
+                              fuchsia_wlan_ieee80211::wire::ChannelBandwidth in_cbw) {
+  brcmu_d11inf d11_inf = {.io_type = BRCMU_D11AC_IOTYPE};
+  brcmu_d11_attach(&d11_inf);
+
+  uint16_t chanspec = channel_to_chanspec(&d11_inf, in_channel, in_cbw);
+  auto actual_channel = chanspec_to_operating_channel_number(&d11_inf, chanspec);
+  auto actual_cbw = chanspec_to_channel_bandwidth(&d11_inf, chanspec);
+
+  EXPECT_EQ(actual_channel.number, in_channel.number)
+      << "Channel number mismatch for channel " << static_cast<int>(in_channel.number);
+  EXPECT_EQ(actual_channel.band, in_channel.band)
+      << "Band mismatch for channel " << static_cast<int>(in_channel.number);
+  EXPECT_EQ(actual_cbw, in_cbw) << "Bandwidth mismatch for channel "
+                                << static_cast<int>(in_channel.number);
+}
+
+TEST(ChannelConversion, RoundTrip40MHz) {
+  using fuchsia_wlan_ieee80211::wire::ChannelBandwidth;
+  using fuchsia_wlan_ieee80211::wire::WlanBand;
+
+  // 2.4 GHz 40+ MHz (Cbw40)
+  // IEEE Std 802.11-2024 Table E-4 Operating Class 83
+  for (uint8_t ch = 1; ch <= 9; ++ch) {
+    verify_round_trip({.band = WlanBand::kTwoGhz, .number = ch}, ChannelBandwidth::kCbw40);
+  }
+
+  // 2.4 GHz 40- MHz (Cbw40Below)
+  // IEEE Std 802.11-2024 Table E-4 Operating Class 84
+  for (uint8_t ch = 5; ch <= 13; ++ch) {
+    verify_round_trip({.band = WlanBand::kTwoGhz, .number = ch}, ChannelBandwidth::kCbw40Below);
+  }
+
+  // 5 GHz 40+ MHz (Cbw40)
+  // IEEE Std 802.11-2024 Table E-4 Operating Class 116, 119, 122, 126
+  const std::array<uint8_t, 14> five_ghz_40m_plus_channels = {36,  44,  52,  60,  100, 108, 116,
+                                                              124, 132, 140, 149, 157, 165, 173};
+  for (uint8_t ch : five_ghz_40m_plus_channels) {
+    verify_round_trip({.band = WlanBand::kFiveGhz, .number = ch}, ChannelBandwidth::kCbw40);
+  }
+
+  // 5 GHz 40- MHz (Cbw40Below)
+  // IEEE Std 802.11-2024 Table E-4 Operating Class 117, 120, 123, 127
+  const std::array<uint8_t, 14> five_ghz_40m_minus_channels = {40,  48,  56,  64,  104, 112, 120,
+                                                               128, 136, 144, 153, 161, 169, 177};
+  for (uint8_t ch : five_ghz_40m_minus_channels) {
+    verify_round_trip({.band = WlanBand::kFiveGhz, .number = ch}, ChannelBandwidth::kCbw40Below);
+  }
 }
 }  // namespace

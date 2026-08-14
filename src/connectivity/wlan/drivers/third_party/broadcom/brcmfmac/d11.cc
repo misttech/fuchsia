@@ -220,11 +220,11 @@ uint16_t channel_to_chanspec(const brcmu_d11inf* d11inf,
       break;
     case fuchsia_wlan_ieee80211::ChannelBandwidth::kCbw40:
       ch_inf.bw = BRCMU_CHAN_BW_40;
-      ch_inf.sb = BRCMU_CHAN_SB_U;
+      ch_inf.sb = BRCMU_CHAN_SB_L;
       break;
     case fuchsia_wlan_ieee80211::ChannelBandwidth::kCbw40Below:
       ch_inf.bw = BRCMU_CHAN_BW_40;
-      ch_inf.sb = BRCMU_CHAN_SB_L;
+      ch_inf.sb = BRCMU_CHAN_SB_U;
       break;
     case fuchsia_wlan_ieee80211::ChannelBandwidth::kCbw80:
     case fuchsia_wlan_ieee80211::ChannelBandwidth::kCbw160:
@@ -252,11 +252,11 @@ uint16_t channel_to_chanspec(const brcmu_d11inf* d11inf,
       break;
     case fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw40:
       ch_inf.bw = BRCMU_CHAN_BW_40;
-      ch_inf.sb = BRCMU_CHAN_SB_U;
+      ch_inf.sb = BRCMU_CHAN_SB_L;
       break;
     case fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw40Below:
       ch_inf.bw = BRCMU_CHAN_BW_40;
-      ch_inf.sb = BRCMU_CHAN_SB_L;
+      ch_inf.sb = BRCMU_CHAN_SB_U;
       break;
     case fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw80:
     case fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw160:
@@ -307,10 +307,14 @@ fuchsia_wlan_ieee80211::wire::ChannelBandwidth chanspec_to_channel_bandwidth(
       return fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20;
     case BRCMU_CHAN_BW_40:
       switch (ch_inf.sb) {
+        // These macros describe whether the PRIMARY (or in brcmfmac parlance "control") channel is
+        // above or below the side band.  If the primary channel is the upper, then the side band is
+        // lower (eg: 40-).  And if the primary channel is the lower, then the side band is upper
+        // (eg: 36+).
         case BRCMU_CHAN_SB_U:
-          return fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw40;
-        case BRCMU_CHAN_SB_L:
           return fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw40Below;
+        case BRCMU_CHAN_SB_L:
+          return fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw40;
         default:
           BRCMF_ERR("unsupported channel side band: %hhu", static_cast<uint8_t>(ch_inf.sb));
           return fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20;
