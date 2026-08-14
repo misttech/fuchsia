@@ -385,23 +385,10 @@ func attrAssignmentToGN(expr *syntax.BinaryExpr, bazelRule string) ([]string, er
 	}
 	attrName := convertAttrName(lhs.Name, bazelRule)
 
-	// Intercept genrule cmd assignment and convert it directly.
+	// First, handle overwrite annotations for the entire right hand side.
 	//
-	// NOTE: This means bazel2gn does NOT support select calls in `cmd` currently.
-	if bazelRule == "genrule" && attrName == "cmd" {
-		return genruleCmdToGN(expr.Y)
-	}
-
-	// Intercept tags attribute to sync assert_no_deps.
-	if attrName == "tags" {
-		return tagsToGN(expr.Y)
-	}
-
-	// Intercept rustenv attribute to convert dict to list of strings.
-	if attrName == "rustenv" {
-		return rustenvToGN(expr.Y)
-	}
-
+	// This requires determining which assignment operator to use now even though
+	// we may not end up using it.
 	op, ok := attrGNAssignmentOps[attrName]
 	if !ok {
 		op = "="
@@ -418,6 +405,30 @@ func attrAssignmentToGN(expr *syntax.BinaryExpr, bazelRule string) ([]string, er
 	// TODO(https://fxbug.dev/430953918): Figure out a better way to handle configs and public_configs conversion.
 	if attrName == "configs" && hasClearAnnotation(expr) {
 		op = "="
+	}
+
+	// Now handle the overwrite annotation. The right hand side will be exactly what is in the
+	// annotation. No transformations, special handling of select() or conditional expressions,
+	// or wrapping (implemented below) will be performed.
+	if raw, ok := overwrittenRaw(expr); ok {
+		return []string{fmt.Sprintf("%s %s %s", attrName, op, raw)}, nil
+	}
+
+	// Intercept genrule cmd assignment and convert it directly.
+	//
+	// NOTE: This means bazel2gn does NOT support select calls in `cmd` currently.
+	if bazelRule == "genrule" && attrName == "cmd" {
+		return genruleCmdToGN(expr.Y)
+	}
+
+	// Intercept tags attribute to sync assert_no_deps.
+	if attrName == "tags" {
+		return tagsToGN(expr.Y)
+	}
+
+	// Intercept rustenv attribute to convert dict to list of strings.
+	if attrName == "rustenv" {
+		return rustenvToGN(expr.Y)
 	}
 
 	transformers, err := transformersFromComments(expr.Comments())

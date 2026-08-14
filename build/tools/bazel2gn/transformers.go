@@ -147,8 +147,8 @@ func overwrittenPath(lit *syntax.Literal) (string, bool) {
 //
 // It returns the raw expression and true if it is overwritten, otherwise it returns
 // an empty string and false.
-func overwrittenRaw(lit *syntax.Literal) (string, bool) {
-	comments := lit.Comments()
+func overwrittenRaw(node syntax.Node) (string, bool) {
+	comments := node.Comments()
 	if comments != nil {
 		for _, c := range comments.Suffix {
 			if strings.HasPrefix(c.Text, rawOverwriteAnnotationPrefix) {

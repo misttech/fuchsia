@@ -142,10 +142,7 @@ func TestVisibilityConversion(t *testing.T) {
 }`,
 		},
 		{
-			// The `raw_overwrite` annotation on the attribute is also ignored. Instead, individual
-			// items are overwritten and skipped. `path_overwrite` is ignored.
-			// TODO(https://fxbug.dev/543568916): This should fail or generate 'visibility = [ "//*" ]'.
-			name: "unexpected success converting: overwrite the list",
+			name: "overwrite the entire list",
 			bazel: `go_library(
 	name = "test",
 	visibility = [
@@ -155,10 +152,7 @@ func TestVisibilityConversion(t *testing.T) {
 	],  # @bazel2gn:raw_overwrite:[ "//*" ]
 )`,
 			wantGN: `go_library("test") {
-	visibility = [
-		"//path/that/should_be_ignored/*",
-		"//redundant/path/in/gn:*",
-	]
+	visibility = [ "//*" ]
 }`,
 		},
 	} {

@@ -1543,8 +1543,7 @@ func TestRawOverwriteAnnotations(t *testing.T) {
 		"./*",
 		"//path/to/dir/*",
 	]
-}`,
-		},
+}`},
 		{
 			// `raw_overwrite` is ignored because `attrAssignmentToGN()` does not check for
 			// `raw_overwrite` annotations on the right hand side.
@@ -1552,7 +1551,8 @@ func TestRawOverwriteAnnotations(t *testing.T) {
 			name: "unexpected success converting: raw_overwrite on cc attributes",
 			bazel: `cc_library(
 	name = "foo",  # @bazel2gn:path_overwrite:ignored_name
-	# The overwrite value would demonstrate whether escape characters are converted.
+	# The overwrite value demonstrates that escape characters are not converted but results
+	# in invalid GN because these characters are present in the converted target.
 	srcs = [
 		"path/to/bar.cc",
 		"path/to/bar.h",
@@ -1581,30 +1581,12 @@ func TestRawOverwriteAnnotations(t *testing.T) {
 )
 `,
 			wantGN: `static_library("foo") {
-	sources = [
-		"path/to/bar.cc",
-		"path/to/bar.h",
-		"path/to/baz.cc",
-		"yet/another/path/to/foo.cc",
-	]
-	public = [
-		"path/to/baz.h",
-		"path/to/foo.h",
-	]
-	public_deps = [
-		"//path/to:foo",
-		"//yet/another/path/to:bar",
-	]
-	deps = [
-		"//path/to:bar",
-	]
-	configs += [
-		"//build/config:Wno-implicit-fallthrough",
-	]
-	visibility = [
-		":*",
-		"//path/to/dir/*",
-	]
+	sources = [\n  "path/to/overwritten_bar.cc",\n  "path/to/overwritten_baz.cc"\n]
+	public = [ "path/to/overwritten.h" ]
+	public_deps = [ "//yet/another/path/to:overwritten" ]
+	deps = [ "//path/to_gn_lib:bar" ]
+	configs += []
+	visibility = [ "*" ]
 }`,
 		},
 		{
@@ -1636,10 +1618,6 @@ fidl("zbi") {
 }`,
 		},
 		{
-			// `raw_overwrite` is ignored because `attrAssignmentToGN()` does not check for
-			// `raw_overwrite` annotations on the statement.
-			// TODO(https://fxbug.dev/543568916): This should fail or generate
-			// `rustenv = [ "FOO=overwritten" ]`.
 			name: "raw_overwrite on entire rustc_env dictionary attribute",
 			bazel: `rustc_library(
 	name = "lib",
@@ -1649,9 +1627,7 @@ fidl("zbi") {
 )
 `,
 			wantGN: `rustc_library("lib") {
-	rustenv = [
-		"FOO=bar",
-	]
+	rustenv = [ "FOO=overwritten" ]
 }`,
 		},
 		{
@@ -1702,10 +1678,6 @@ fidl("zbi") {
 }`,
 		},
 		{
-			// `raw_overwrite` is ignored because `attrAssignmentToGN()` does not check for
-			// `raw_overwrite` annotations on the statement.
-			// TODO(https://fxbug.dev/543568916): This should fail or generate
-			// `rustenv = [ "FOO=overwritten" ]`.
 			name: "raw_overwrite at the end of select() statement",
 			bazel: `go_library(
 	name = "test",
@@ -1716,14 +1688,7 @@ fidl("zbi") {
 )
 `,
 			wantGN: `go_library("test") {
-	if (is_fuchsia) {
-		deps = [
-			"//src:foo",
-		]
-	} else {
-		deps = [
-		]
-	}
+	deps = [ "//src:overwritten" ]
 }`,
 		},
 		{
@@ -1838,7 +1803,9 @@ func TestInvalidAnnotations(t *testing.T) {
 		wantGN string
 	}{
 		{
-			// Neither the `clear` nor `raw_overwrite` annotations are processed.
+			// The skip annotation is ignored in all cases. When `raw_overwrite` comes first, the
+			// generated output includes the skip annotation. When that skip annotation does not begin
+			// with a second `#`, the generated GN is invalid.
 			// TODO(https://fxbug.dev/543568916): This should fail.
 			name: "unexpected success converting: multiple annotations on the same list item line",
 			bazel: `go_library(
@@ -1862,7 +1829,9 @@ func TestInvalidAnnotations(t *testing.T) {
 }`,
 		},
 		{
-			// Neither the `clear` nor `raw_overwrite` annotations are processed.
+			// The skip annotation is ignored in all cases. When `raw_overwrite` comes first, the
+			// generated output includes the skip annotation. When that skip annotation does not begin
+			// with a second `#`, the generated GN is invalid.
 			// TODO(https://fxbug.dev/543568916): This should fail.
 			name: "unexpected success converting: multiple annotations on the same attribute",
 			bazel: `cc_library(
@@ -1878,19 +1847,16 @@ func TestInvalidAnnotations(t *testing.T) {
 	],  # @bazel2gn:skip @bazel2gn:raw_overwrite:[ "//gn/path:*" ]
 )`,
 			wantGN: `static_library("test") {
-	sources = [
-		"bazel.cc",
-	]
-	public = [
-		"bazel.h",
-	]
+	sources = [ "gn.cc" ] @bazel2gn:skip
+	public = [ "gn.h" ] # @bazel2gn:skip
 	visibility = [
 		"//path/to/foo2:*",
 	]
 }`,
 		},
 		{
-			// Neither annotation is processed.
+			// Only the `raw_overwrite` annotation is processed. Because the clear annotation does not
+			// begin with a second `#`, the generated GN is invalid.
 			// TODO(https://fxbug.dev/543568916): This should fail.
 			name: "unexpected success converting: raw_overwrite and configs clearing annotations",
 			bazel: `cc_library(
@@ -1901,9 +1867,7 @@ func TestInvalidAnnotations(t *testing.T) {
 )
 `,
 			wantGN: `static_library("test") {
-	configs += [
-		"//build/config:Wno-implicit-fallthrough",
-	]
+	configs += [ "//build/config:overwritten" ] @bazel2gn:clear
 }`,
 		},
 		{
