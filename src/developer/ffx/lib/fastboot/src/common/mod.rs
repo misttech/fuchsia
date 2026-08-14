@@ -353,26 +353,35 @@ async fn streaming_flash_impl<T: FastbootInterface>(
     partition_size_bytes: u64,
     timeout: Duration,
 ) -> Result<bool> {
-    let max_download_size_bytes: u64 =
-        get_hex_int::<u32>(MAX_DOWNLOAD_SIZE_VAR, fastboot_interface).await?.into();
-    let max_download_words =
-        NonZeroU64::new(max_download_size_bytes / U32_SIZE).ok_or_else(|| {
-            streaming_err_helper(format!("Bad max download size: {max_download_size_bytes}"))
-        })?;
+    let max_download_bytes: u64 = NonZeroU64::new(
+        get_hex_int::<u32>(MAX_DOWNLOAD_SIZE_VAR, fastboot_interface).await?.into(),
+    )
+    .ok_or_else(|| streaming_err_helper(format!("Max download size of 0")))?
+    .into();
 
-    let segment_size_words = NonZeroU64::new(segment_size_bytes / U32_SIZE)
-        .ok_or_else(|| streaming_err_helper(format!("Bad segment size: {segment_size_bytes}")))?;
+    if max_download_bytes % U32_SIZE != 0 {
+        return Err(streaming_err_helper(format!("Bad max download size: {max_download_bytes}")));
+    }
 
-    if segment_size_words > max_download_words {
+    let segment_size_bytes: u64 = NonZeroU64::new(segment_size_bytes)
+        .ok_or_else(|| streaming_err_helper(format!("Bad segment size: {segment_size_bytes}")))?
+        .into();
+
+    if segment_size_bytes % U32_SIZE != 0 {
         return Err(streaming_err_helper(format!(
-            "Max download < segment size: {max_download_size_bytes} < {segment_size_bytes}"
+            "Bad streaming segment size: {segment_size_bytes}"
+        )));
+    }
+
+    if segment_size_bytes > max_download_bytes {
+        return Err(streaming_err_helper(format!(
+            "Max download < segment size: {max_download_bytes} < {segment_size_bytes}"
         )));
     }
 
     if partition_start_byte % U32_SIZE != 0 {
         return Err(streaming_err_helper(format!("Bad partition start: {partition_start_byte}")));
     }
-    let partition_start_word = partition_start_byte / U32_SIZE;
 
     let mut file_handle = File::open(&filepath)
         .map_err(|e| FfxFastbootError::FileOpen { path: PathBuf::from(&filepath), source: e })?;
@@ -413,14 +422,14 @@ async fn streaming_flash_impl<T: FastbootInterface>(
     }
 
     let start_time = Utc::now();
-    let command_list = generate_command_list(
-        file_contents.as_slice(),
-        max_download_words.into(),
-        segment_size_words.into(),
-        partition_start_word.into(),
+    let commands = generate_command_list(
+        file_contents.into_boxed_slice(),
+        max_download_bytes.into(),
+        segment_size_bytes.into(),
+        partition_start_byte.into(),
     );
 
-    let (prog_client, prog_server) = mpsc::channel(command_list.commands.len());
+    let (prog_client, prog_server) = mpsc::channel(commands.len());
 
     let server_task = async |mut prog_server: Receiver<UploadProgress>| -> Result<()> {
         while let Some(upload) = prog_server.recv().await {
@@ -432,7 +441,7 @@ async fn streaming_flash_impl<T: FastbootInterface>(
     let stream_task = async |prog_client: Sender<UploadProgress>| -> Result<()> {
         // TODO: map the damn error
         let _ = prog_client.send(UploadProgress::OnStarted { size: expected }).await;
-        for command in command_list.commands {
+        for command in commands {
             fastboot_interface.stream(name, command, &prog_client, timeout).await?;
         }
         // TODO: map the damn error

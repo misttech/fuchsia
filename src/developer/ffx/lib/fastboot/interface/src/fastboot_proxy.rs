@@ -601,7 +601,7 @@ impl<T: AsyncRead + AsyncWrite + Unpin + Debug + Send> Fastboot for FastbootProx
     async fn stream<'a>(
         &mut self,
         name: &str,
-        stream_command: StreamCommand<'a>,
+        stream_command: StreamCommand,
         listener: &Sender<UploadProgress>,
         timeout: Duration,
     ) -> Result<(), FastbootError> {
@@ -629,7 +629,7 @@ impl<T: AsyncRead + AsyncWrite + Unpin + Debug + Send> Fastboot for FastbootProx
                 )
             }
             StreamOp::Flash { data, crc32 } => {
-                upload_data(&ctx, data, interface, &progress_listener, timeout, offset_bytes)
+                upload_data(&ctx, &data, interface, &progress_listener, timeout, offset_bytes)
                     .await?;
                 (
                     Command::StreamFlash { partition: name.to_owned(), offset_bytes, crc32 },

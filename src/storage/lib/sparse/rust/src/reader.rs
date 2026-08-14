@@ -89,6 +89,12 @@ impl<R: Read + Seek> SparseReader<R> {
     pub fn block_size(&self) -> u32 {
         self.block_size
     }
+
+    /// Destroy the sparse reader and return all its fields.
+    pub fn destruct(self) -> (R, u64, u64, Vec<(Chunk, Option<u64>)>, u32) {
+        let Self { reader, offset, size, chunks, block_size } = self;
+        (reader, offset, size, chunks, block_size)
+    }
 }
 
 // It's assumed that `reader` already points at the right offset to read from the chunk, and `buf`

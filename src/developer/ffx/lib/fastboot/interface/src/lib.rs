@@ -185,7 +185,7 @@ pub mod test {
         async fn stream<'a>(
             &mut self,
             _partition_name: &str,
-            _stream_command: StreamCommand<'a>,
+            _stream_command: StreamCommand,
             listener: &Sender<UploadProgress>,
             _timeout: Duration,
         ) -> Result<(), FastbootError> {

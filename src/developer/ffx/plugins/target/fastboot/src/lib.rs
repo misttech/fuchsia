@@ -386,7 +386,7 @@ mod test {
         async fn stream<'a>(
             &mut self,
             _partition_name: &str,
-            _stream_command: StreamCommand<'a>,
+            _stream_command: StreamCommand,
             _listener: &Sender<UploadProgress>,
             _timeout: chrono::TimeDelta,
         ) -> Result<(), FastbootError> {

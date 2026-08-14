@@ -54,7 +54,7 @@ pub trait Fastboot: Send {
     async fn stream<'a>(
         &mut self,
         partition_name: &str,
-        stream_command: StreamCommand<'a>,
+        stream_command: StreamCommand,
         listener: &Sender<UploadProgress>,
         timeout: Duration,
     ) -> Result<(), FastbootError>;
@@ -128,7 +128,7 @@ impl<F: Fastboot + ?Sized> Fastboot for Box<F> {
     async fn stream<'a>(
         &mut self,
         partition_name: &str,
-        stream_command: StreamCommand<'a>,
+        stream_command: StreamCommand,
         listener: &Sender<UploadProgress>,
         timeout: Duration,
     ) -> Result<(), FastbootError> {
