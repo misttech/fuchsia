@@ -648,11 +648,6 @@
 	url = https://fuchsia.googlesource.com/third_party/ogg
 	name = third_party/ogg
 	ignore = all
-[submodule "third_party/pylibs/coverage/src"]
-	path = third_party/pylibs/coverage/src
-	url = https://fuchsia.googlesource.com/third_party/github.com/nedbat/coveragepy
-	name = third_party/pylibs/coverage
-	ignore = all
 [submodule "third_party/github.com/ridiculousfish/libdivide/src"]
 	path = third_party/github.com/ridiculousfish/libdivide/src
 	url = https://fuchsia.googlesource.com/third_party/github.com/ridiculousfish/libdivide
@@ -737,4 +732,9 @@
 	path = third_party/github.com/google/experimental-emboss-rust/src
 	url = https://fuchsia.googlesource.com/third_party/github.com/google/emboss
 	name = third_party/github.com/google/experimental-emboss-rust
+	ignore = all
+[submodule "third_party/pylibs/coverage/src"]
+	path = third_party/pylibs/coverage/src
+	url = https://fuchsia.googlesource.com/third_party/github.com/coveragepy/coveragepy
+	name = third_party/pylibs/coverage
 	ignore = all
