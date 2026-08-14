@@ -84,7 +84,7 @@ class ResponseMessageConverter {
 //
 // |message| is always consumed.
 template <typename Body = std::nullopt_t>
-static auto DecodeTransactionalMessage(::fidl::IncomingHeaderAndMessage&& message)
+inline auto DecodeTransactionalMessage(::fidl::IncomingHeaderAndMessage&& message)
     -> std::conditional_t<std::is_same_v<Body, std::nullopt_t>, ::fit::result<::fidl::Error>,
                           ::fit::result<::fidl::Error, Body>> {
   constexpr bool kHasBody = !std::is_same_v<Body, std::nullopt_t>;

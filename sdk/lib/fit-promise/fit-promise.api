@@ -8,5 +8,5 @@
   "pkg/fit-promise/include/lib/fpromise/scheduler.h": "9dbe6a9c3546b7ca9cd0d4ec276f5ff1",
   "pkg/fit-promise/include/lib/fpromise/scope.h": "4adcfb195aa8a737463981182febd550",
   "pkg/fit-promise/include/lib/fpromise/sequencer.h": "b5f6856ca0fbd5d78e3971f12f1257cf",
-  "pkg/fit-promise/include/lib/fpromise/single_threaded_executor.h": "a6f3ee82d26588a8622fb7b2861aee95"
+  "pkg/fit-promise/include/lib/fpromise/single_threaded_executor.h": "25af14710706a353ea02e841813a0d41"
 }

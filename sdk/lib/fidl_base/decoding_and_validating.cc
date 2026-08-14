@@ -74,9 +74,10 @@ zx_status_t DecodeProcessHandle(fidl_handle_t* handle, zx_obj_type_t obj_type, z
 }
 
 template <Mode mode>
-zx_status_t DecodeProcessHandle(const fidl_handle_t* handle, zx_obj_type_t obj_type,
-                                zx_rights_t rights, uint32_t metadata_index,
-                                const void* metadata_array, const char** error) {
+[[maybe_unused]] zx_status_t DecodeProcessHandle(const fidl_handle_t* handle,
+                                                 zx_obj_type_t obj_type, zx_rights_t rights,
+                                                 uint32_t metadata_index,
+                                                 const void* metadata_array, const char** error) {
   static_assert(mode == Mode::Validate, "never used during validate");
   __builtin_unreachable();
 }

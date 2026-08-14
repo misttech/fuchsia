@@ -68,7 +68,7 @@ class single_threaded_executor final : public executor {
 // runs all of the executor's scheduled tasks until none remain, then returns
 // the promise's result.
 template <typename Continuation>
-static typename promise_impl<Continuation>::result_type run_single_threaded(
+inline typename promise_impl<Continuation>::result_type run_single_threaded(
     promise_impl<Continuation> promise) {
   using result_type = typename promise_impl<Continuation>::result_type;
   single_threaded_executor exec;
