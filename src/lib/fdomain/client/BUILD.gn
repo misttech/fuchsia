@@ -108,7 +108,7 @@ rustc_library("client") {
   ]
   crate_name = "fdomain_client"
   edition = "2024"
-  visibility = [ "*" ]
+  visibility = [ "//*" ]
   with_unit_tests = false
   deps = [
     "//sdk/fidl/fuchsia.fdomain:fuchsia.fdomain_rust",
@@ -132,7 +132,7 @@ rustc_library("flex_fdomain") {
   crate_name = "flex_client"
   source_root = "src/flex.rs"
   edition = "2024"
-  visibility = [ "*" ]
+  visibility = [ "//src/*" ]
   with_unit_tests = false
   deps = [
     ":client",
@@ -144,7 +144,7 @@ rustc_library("flex_fidl") {
   crate_name = "flex_client"
   source_root = "src/flex.rs"
   edition = "2024"
-  visibility = [ "*" ]
+  visibility = [ "//src/*" ]
   with_unit_tests = true
   deps = []
   deps += [

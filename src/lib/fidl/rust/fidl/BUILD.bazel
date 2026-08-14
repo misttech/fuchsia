@@ -25,7 +25,19 @@ rustc_library(
     name = "fidl",
     srcs = SRCS,
     edition = "2024",
-    visibility = ["//visibility:public"],
+    # In Bazel, the library must be visible to the package containing the symbolic macro.
+    # In GN, the library must be visible to any path that defines a `fidl()` target.
+    # In both, it is used outside the FIDL bindings in other places.
+    visibility = [
+        "//build/bazel/rules/fidl:__subpackages__",
+        "//build/components:__subpackages__",
+        "//examples:__subpackages__",
+        "//sdk/ctf/tests:__subpackages__",
+        "//sdk/lib:__subpackages__",
+        "//src:__subpackages__",
+        "//third_party/tcpdump/tests:__subpackages__",
+        "//tools:__subpackages__",
+    ],  # @bazel2gn:raw_overwrite:[ "//*" ]
     deps = [
         "//sdk/rust/zx-status",
         "//sdk/rust/zx-types",

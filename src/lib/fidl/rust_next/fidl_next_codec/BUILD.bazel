@@ -61,7 +61,10 @@ rustc_library(
         "//conditions:default": [],
     }),
     edition = "2024",
-    visibility = ["//visibility:public"],
+    visibility = [
+        "//src/lib/fdomain/client:__subpackages__",
+        "//src/lib/fidl/rust_next:__subpackages__",
+    ],
     with_unit_tests = True,
     deps = [
         "//src/lib/fidl/rust_constants",

@@ -50,7 +50,11 @@ rustc_library(
         "//src/lib/fuchsia-async",
         "//third_party/rust_crates:futures",
     ],
-    visibility = ["//visibility:public"],
+    visibility = [
+        "//sdk/lib/driver/component/rust:__subpackages__",
+        "//src/lib/fdomain/client:__subpackages__",
+        "//src/lib/fidl/rust_next:__subpackages__",
+    ],
     with_unit_tests = True,
     deps = [
         "//sdk/lib/fuchsia-loom",

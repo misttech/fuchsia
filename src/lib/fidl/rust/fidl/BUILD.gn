@@ -71,7 +71,7 @@ not_needed([ "SRCS" ])
 rustc_library("fidl") {
   sources = SRCS
   edition = "2024"
-  visibility = [ "*" ]
+  visibility = [ "//*" ]
   deps = []
   deps += [
     "//sdk/rust/zx-status",
