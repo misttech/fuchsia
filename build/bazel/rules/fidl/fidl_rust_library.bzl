@@ -105,6 +105,9 @@ def _fidl_rust_library_flavor(flavor, name, fidl_library_name, fidl_ir_json, dep
         "//third_party/rust_crates/vendor:futures",
     ]
 
+    if flavor == "fdomain":
+        library_deps.append("//src/lib/fdomain/client")
+
     for dep in deps:
         if Label(dep) == Label("//zircon/vdso/zx"):
             continue
