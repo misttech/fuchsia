@@ -4,11 +4,29 @@
 
 #include "src/lib/unwinder/memory.h"
 
+#ifdef __Fuchsia__
+#include <zircon/sanitizer.h>
+#endif
+
 #include <cstdint>
 
 #include "src/lib/unwinder/error.h"
 
 namespace unwinder {
+
+Error LocalMemory::ReadBytes(uint64_t addr, uint64_t size, void* dst) {
+  const void* ptr = reinterpret_cast<const void*>(addr);  // NOLINT(performance-no-int-to-ptr)
+  // Avoid sanitizer checks on the memory access, so the unwinder doesn't run
+  // afoul of things like red zones in pieces of the stack.  There should not
+  // really be sanitizer poisoning of the places the unwinder should need to
+  // look, but if there is, don't let it interfere with the unwinder working.
+#ifdef __Fuchsia__
+  __unsanitized_memcpy(dst, ptr, size);
+#else
+  memcpy(dst, ptr, size);
+#endif
+  return Success();
+}
 
 Error Memory::ReadULEB128AndAdvance(uint64_t& addr, uint64_t& res) {
   res = 0;

@@ -109,10 +109,7 @@ class AsyncMemory : public Memory {
 
 class LocalMemory : public Memory {
  public:
-  Error ReadBytes(uint64_t addr, uint64_t size, void* dst) override {
-    memcpy(dst, reinterpret_cast<void*>(addr), size);  // NOLINT(performance-no-int-to-ptr)
-    return Success();
-  }
+  Error ReadBytes(uint64_t addr, uint64_t size, void* dst) override;
 };
 
 class FileMemory : public Memory {
