@@ -19,6 +19,7 @@ rustc_library("lib") {
     "//src/developer/ffx/config:lib",
     "//src/developer/ffx/lib/fho:lib",
     "//src/developer/ffx/lib/pbms:lib",
+    "//src/developer/ffx/lib/safe_string:lib",
     "//src/developer/ffx/lib/writer:lib",
     "//src/developer/ffx/plugins/product/common:lib",
     "//src/developer/ffx/plugins/product/list:lib",

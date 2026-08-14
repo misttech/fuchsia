@@ -15,6 +15,7 @@ use gcs::gs_url::split_gs_url;
 use maplit::hashmap;
 use omaha_client::version::Version;
 use pbms::{AuthFlowChoice, list_from_gcs, string_from_url};
+use safe_string::TermSafe;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -104,8 +105,10 @@ impl FfxMain for ProductListTool {
         if writer.is_machine() {
             writer.machine(&pbs)?;
         } else {
-            let pb_names =
-                pbs.iter().map(|x| x.name.escape_default().to_string()).collect::<Vec<_>>();
+            let pb_names = pbs
+                .iter()
+                .map(|x| TermSafe::from_str_escaped(&x.name).to_string())
+                .collect::<Vec<_>>();
             let pb_string = pb_names.join("\n");
             writeln!(writer, "{}", pb_string).map_err(|e| bug!(e))?;
         }

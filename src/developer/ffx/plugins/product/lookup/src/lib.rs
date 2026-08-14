@@ -11,6 +11,7 @@ use ffx_product_list::{ProductBundle, pb_list_impl};
 use ffx_writer::{ToolIO as _, VerifiedMachineWriter};
 use fho::{FfxMain, FfxTool, Result, bug, return_user_error};
 use pbms::AuthFlowChoice;
+use safe_string::TermSafe;
 use std::io::{Write, stdin, stdout};
 
 mod args;
@@ -82,7 +83,8 @@ impl PbLookupTool {
         )
         .await?;
 
-        writeln!(writer, "{}", product.transfer_manifest_url).map_err(|e| bug!("{e}"))?;
+        writeln!(writer, "{}", TermSafe::from_str_escaped(&product.transfer_manifest_url))
+            .map_err(|e| bug!("{e}"))?;
         Ok(())
     }
 }
@@ -223,5 +225,71 @@ mod test {
         }))
         .expect("serialize data");
         assert_eq!(buffers.into_stdout_str(), format!("{expected}\n"));
+    }
+
+    #[fuchsia::test]
+    async fn test_pb_lookup_text_mode() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join(PB_MANIFEST_NAME);
+        let env = setup_test_env(&path).await;
+        let mut f = File::create(&path).expect("file create");
+        f.write_all(
+            r#"[{
+            "name": "fake_name",
+            "product_version": "fake_version",
+            "transfer_manifest_url": "fake_url"
+            }]"#
+            .as_bytes(),
+        )
+        .expect("write_all");
+
+        let buffers = TestBuffers::default();
+        let writer = VerifiedMachineWriter::new_test(None, &buffers);
+        let tool = PbLookupTool {
+            cmd: LookupCommand {
+                auth: AuthFlowChoice::Default,
+                base_url: Some(format!("file:{}", tmp.path().display())),
+                name: "fake_name".into(),
+                version: "fake_version".into(),
+            },
+            context: env.context.clone(),
+        };
+
+        tool.main(writer).await.expect("testing lookup");
+        assert_eq!(buffers.into_stdout_str(), "fake_url\n");
+    }
+
+    #[fuchsia::test]
+    async fn test_pb_lookup_text_mode_sanitizes_escape_sequences() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join(PB_MANIFEST_NAME);
+        let env = setup_test_env(&path).await;
+        let mut f = File::create(&path).expect("file create");
+        f.write_all(
+            r#"[{
+            "name": "fake_name",
+            "product_version": "fake_version",
+            "transfer_manifest_url": "https://example.com/\u001b[31mmalicious\u001b[0m\r\n"
+            }]"#
+            .as_bytes(),
+        )
+        .expect("write_all");
+
+        let buffers = TestBuffers::default();
+        let writer = VerifiedMachineWriter::new_test(None, &buffers);
+        let tool = PbLookupTool {
+            cmd: LookupCommand {
+                auth: AuthFlowChoice::Default,
+                base_url: Some(format!("file:{}", tmp.path().display())),
+                name: "fake_name".into(),
+                version: "fake_version".into(),
+            },
+            context: env.context.clone(),
+        };
+
+        tool.main(writer).await.expect("testing lookup");
+        let output = buffers.into_stdout_str();
+        assert!(!output.contains('\x1b'), "output should not contain raw escape characters");
+        assert_eq!(output, "https://example.com/\\u{1b}[31mmalicious\\u{1b}[0m\\r\\n\n");
     }
 }
