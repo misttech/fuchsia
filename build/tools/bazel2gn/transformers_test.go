@@ -84,6 +84,83 @@ func TestVisibilityConversion(t *testing.T) {
 	]
 }`,
 		},
+		{
+			name: "skip list elements",
+			bazel: `go_library(
+	name = "test",
+	visibility = [
+		# Ensure handling of special Bazel identifiers does not interfere with the annotation.
+		":__pkg__",  # @bazel2gn:skip
+		":__subpackages__",  # @bazel2gn:skip
+		"//:__pkg__",  # @bazel2gn:skip
+		"//:__subpackages__",  # @bazel2gn:skip
+		# Normal labels.
+		"//path/to/foo:__pkg__",
+		"//path/to/bar:bar",  # @bazel2gn:skip
+		"//path/to/baz:baz",
+	],
+)`,
+			wantGN: `go_library("test") {
+	visibility = [
+		"//path/to/foo:*",
+		"//path/to/baz:baz",
+	]
+}`,
+		},
+		{
+			name: "skip the entire 'visibility' attribute",
+			bazel: `go_library(
+	name = "test",
+	visibility = [
+		# Ensure handling of special Bazel identifiers does not interfere with the annotation.
+		":__pkg__",
+		":__subpackages__",
+		"//:__pkg__",
+		"//:__subpackages__",
+		# Normal label.
+		"//path/to/bar:bar",
+	],  # @bazel2gn:skip
+)`,
+			wantGN: `go_library("test") {
+}`,
+		},
+		{
+			// `path_overwrite` is not supported for `visibility`.
+			// TODO(https://fxbug.dev/543568916): This should fail or overwrite the list element.
+			name: "unexpected success converting: overwrite a list item",
+			bazel: `go_library(
+	name = "test",
+	visibility = [
+		"//path/to/foo:__pkg__",  # @bazel2gn:raw_overwrite:"//*"
+		"//path/to/bar:bar",  # @bazel2gn:skip
+		"//redundant/path/in/gn:__pkg__",
+	],
+)`,
+			wantGN: `go_library("test") {
+	visibility = [
+		"//path/to/foo:*",
+		"//redundant/path/in/gn:*",
+	]
+}`,
+		},
+		{
+			// TODO(https://fxbug.dev/543568916): This should fail or generate 'visibility = [ "//*" ]'.
+			name: "unexpected success converting: overwrite the list",
+			bazel: `go_library(
+	name = "test",
+	visibility = [
+		"//path/to/foo:__pkg__",  # @bazel2gn:raw_overwrite:"//path/that/should_be_ignored/*"
+		"//path/to/bar:bar",  # @bazel2gn:skip
+		"//redundant/path/in/gn:__pkg__",  # @bazel2gn:path_overwrite://another/path/that/should_be_ignored/*
+	],  # @bazel2gn:raw_overwrite:[ "//*" ]
+)`,
+			wantGN: `go_library("test") {
+	visibility = [
+		"//path/to/foo:*",
+		"//redundant/path/in/gn:*",
+	]
+}`,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := toSyntaxFile(t, tc.bazel)

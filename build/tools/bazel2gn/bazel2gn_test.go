@@ -831,9 +831,9 @@ func TestCCConversion(t *testing.T) {
 			bazel: `cc_library(
 	name = "foo",
 	srcs = [
-	"path/to/bar.cc",
-	"path/to/bar.h",
-	"path/to/baz.cc",
+		"path/to/bar.cc",
+		"path/to/bar.h",
+		"path/to/baz.cc",
 		"path/to/foo.cc",
 		"yet/another/path/to/foo.cc",
 	],
@@ -890,7 +890,7 @@ func TestCCConversion(t *testing.T) {
 			bazel: `cc_library(
 	name = "fdio",
 	ldflags = [
-		"-Wl,--version-script=sdk/lib/fdio/fdio.ld", # @bazel2gn:raw_overwrite:"-Wl,--version-script=" + rebase_path("fdio.ld", root_build_dir)
+		"-Wl,--version-script=sdk/lib/fdio/fdio.ld",  # @bazel2gn:raw_overwrite:"-Wl,--version-script=" + rebase_path("fdio.ld", root_build_dir)
 	],
 )
 `,
@@ -931,7 +931,7 @@ func TestCCConversion(t *testing.T) {
 }`,
 		},
 		{
-			name: "explicit config clearing with annotation",
+			name: "configs clearing annotation",
 			bazel: `cc_library(
 	name = "empty_configs",
 	copts = [], # @bazel2gn:clear
@@ -939,6 +939,24 @@ func TestCCConversion(t *testing.T) {
 `,
 			wantGN: `static_library("empty_configs") {
 	configs = [
+	]
+}`,
+		},
+		{
+			// The generated GN could be invalid because `configs` usually is not empty.
+			// TODO(https://fxbug.dev/543568916): This should probably fail since `configs` is
+			// never/rarely empty in Fuchsia GN builds.
+			name: "configs clearing annotation with non-empty copts",
+			bazel: `cc_library(
+	name = "clear_configs_with_non_empty_copts",
+	copts = [
+		"-Wno-implicit-fallthrough",
+	], # @bazel2gn:clear
+)
+`,
+			wantGN: `static_library("clear_configs_with_non_empty_copts") {
+	configs = [
+		"//build/config:Wno-implicit-fallthrough",
 	]
 }`,
 		},
@@ -1116,7 +1134,7 @@ go_library(
     # @bazel2gn:skip
     pure = "off",
     deps = ["//foo/bar"],
-    cgo = "on", # @bazel2gn:skip
+    cgo = "skipped",  # @bazel2gn:skip
 )
 `,
 			wantGN: `go_library("foo") {
@@ -1206,7 +1224,8 @@ cc_library(
 cc_library(
 	name = "foo",
 	copt = [
-		"-ffuchsia-api-level=4293918720", # @bazel2gn:skip
+		# The API level number below is meant to stand out and look somewhat like "SKIPPED".
+		"-ffuchsia-api-level=5718830",  # @bazel2gn:skip
 		"-Wno-vla-cxx-extension",
 	],
 )
@@ -1214,6 +1233,773 @@ cc_library(
 			wantGN: `static_library("foo") {
 	copt = [
 		"-Wno-vla-cxx-extension",
+	]
+}`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := toSyntaxFile(t, tc.bazel)
+			gotGN, err := bazelToGN(f)
+			if err != nil {
+				t.Fatalf("Unexpected failure converting Bazel build targets: %v", err)
+			}
+			if diff := cmp.Diff(gotGN, tc.wantGN); diff != "" {
+				t.Errorf("Diff found after GN conversion (-got +want):\n%s\nBazel source:\n%s", diff, tc.bazel)
+			}
+		})
+	}
+}
+
+func TestPathOverwriteAnnotations(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		bazel  string
+		wantGN string
+	}{
+		{
+			// Some instances of `path_overwrite` are ignored because it is only handled for
+			// specific attributes. Specifically, `copts` and `visibility` list items are not overwritten.
+			// TODO(https://fxbug.dev/543568916): This should fail or overwrite all of the list elements.
+			// If it is made to fail, break out the test of the supported attributes into a passing
+			// test and break out all the unsupported attributes into separate failing tests.
+			name: "unexpected success converting: path_overwrite on cc attribute list items",
+			bazel: `cc_library(
+	name = "foo",
+	srcs = [
+		"path/to/bar.cc",
+		"path/to/bar.h",  # @bazel2gn:path_overwrite:path/to/overwritten_internal.h
+		"path/to/baz.cc",
+		"path/to/skipped.cc",  # @bazel2gn:skip
+		"yet/another/path/to/foo.cc",
+	],
+	hdrs = [
+		"path/to/baz.h",  # @bazel2gn:path_overwrite:path/overwritten.h
+		"path/to/foo.h",
+	],  # @bazel2gn:skip
+	deps = [
+		"//path/to:foo",
+		"//yet/another/path/to:bar",  # @bazel2gn:path_overwrite://yet/another/path/to:overwritten
+	],
+	# The overwrite value demonstrates that quotes are added even when the path is already quoted
+	# but results in invalid GN.
+	implementation_deps = [
+		"//path/to:bar",  # @bazel2gn:path_overwrite:"//path/to_gn_lib:bar"
+	],
+	copts = [
+		"-Wno-implicit-fallthrough",  # @bazel2gn:path_overwrite://build/config:ignored
+	],
+	visibility = [
+		":__pkg__",  # @bazel2gn:path_overwrite://path/to/ignored/*
+		"//path/to/dir:__subpackages__",
+	],
+)
+`,
+			wantGN: `static_library("foo") {
+	sources = [
+		"path/to/bar.cc",
+		"path/to/overwritten_internal.h",
+		"path/to/baz.cc",
+		"yet/another/path/to/foo.cc",
+	]
+	public_deps = [
+		"//path/to:foo",
+		"//yet/another/path/to:overwritten",
+	]
+	deps = [
+		""//path/to_gn_lib:bar"",
+	]
+	configs += [
+		"//build/config:Wno-implicit-fallthrough",
+	]
+	visibility = [
+		":*",
+		"//path/to/dir/*",
+	]
+}`,
+		},
+		{
+			// `path_overwrite` is ignored because `attrAssignmentToGN()` does not check for
+			// `path_overwrite` annotations on the right hand side.
+			// TODO(https://fxbug.dev/543568916): This should fail.
+			name: "unexpected success converting: path_overwrite on cc attributes",
+			bazel: `cc_library(
+	name = "foo",  # @bazel2gn:path_overwrite:ignored_name
+	# The overwrite value would demonstrate whether escape characters are converted.
+	srcs = [
+		"path/to/bar.cc",
+		"path/to/bar.h",
+		"path/to/baz.cc",
+		"path/to/skipped.cc",  # @bazel2gn:skip
+		"yet/another/path/to/foo.cc",
+	],  # @bazel2gn:path_overwrite:[\n  "path/to/overwritten_bar.cc",\n  "path/to/overwritten_baz.cc"\n]
+	hdrs = [
+		"path/to/baz.h",  # @bazel2gn:path_overwrite:should_be_ignored.h
+		"path/to/foo.h",
+	],  # @bazel2gn:path_overwrite:[ "path/to/overwritten.h" ]
+	deps = [
+		"//path/to:foo",
+		"//yet/another/path/to:bar",
+	],  # @bazel2gn:path_overwrite:[ "//yet/another/path/to:overwritten" ]
+	implementation_deps = [
+		"//path/to:bar",
+	],  # @bazel2gn:path_overwrite:[ "//path/to_gn_lib:bar" ]
+	copts = [
+		"-Wno-implicit-fallthrough",
+	],  # @bazel2gn:path_overwrite:[ "//build/config:ignored" ]
+	visibility = [
+		":__pkg__",
+		"//path/to/dir:__subpackages__",
+	],  # @bazel2gn:path_overwrite:[ "//path/to/ignored/*" ]
+)
+`,
+			wantGN: `static_library("foo") {
+	sources = [
+		"path/to/bar.cc",
+		"path/to/bar.h",
+		"path/to/baz.cc",
+		"yet/another/path/to/foo.cc",
+	]
+	public = [
+		"path/to/baz.h",
+		"path/to/foo.h",
+	]
+	public_deps = [
+		"//path/to:foo",
+		"//yet/another/path/to:bar",
+	]
+	deps = [
+		"//path/to:bar",
+	]
+	configs += [
+		"//build/config:Wno-implicit-fallthrough",
+	]
+	visibility = [
+		":*",
+		"//path/to/dir/*",
+	]
+}`,
+		},
+		{
+			// `path_overwrite` is ignored because `assignStmtToGN()`, which handles file-level variable
+			// assignments, converts `stmt.LHS` and `stmt.RHS` separately and does not check for
+			// `path_overwrite` annotations on the statement level.
+			// TODO(https://fxbug.dev/543568916): This should fail or generate
+			// `zbi_source_file = "overwritten.fidl"`.
+			name: "unexpected success converting: path_overwrite on file-level variable assignment",
+			bazel: `zbi_source_file = "board.fidl"  # @bazel2gn:path_overwrite:overwritten.fidl
+
+fidl_library(
+	name = "zbi",
+	srcs = [zbi_source_file],
+)
+`,
+			wantGN: `zbi_source_file = "board.fidl"
+
+# To avoid "Assignment had no effect" from GN.
+# It's possible this variable is only used in if conditions (e.g. is_host).
+not_needed([ "zbi_source_file" ])
+
+fidl("zbi") {
+	sources = [
+		zbi_source_file,
+	]
+}`,
+		},
+		{
+			// `path_overwrite` is ignored because `rustenvToGN()`, which handles the `rustc_env`
+			// attribute, only converts keys and values and does not check for `path_overwrite`
+			// annotations on dictionary entries.
+			// TODO(https://fxbug.dev/543568916): This should fail.
+			name: "unexpected success converting: path_overwrite on rustc_env dictionary entry",
+			bazel: `rustc_library(
+	name = "lib",
+	rustc_env = {
+		"FOO": "bar",  # @bazel2gn:path_overwrite:FOO=overwritten
+	}
+)
+`,
+			wantGN: `rustc_library("lib") {
+	rustenv = [
+		"FOO=bar",
+	]
+}`,
+		},
+		{
+			// `path_overwrite` is ignored because target name extraction only converts `binaryExpr.Y`
+			// (the RHS literal) and does not check for `path_overwrite` annotations on the
+			// `name = "..."` assignment statement.
+			// TODO(https://fxbug.dev/543568916): This should fail.
+			name: "unexpected success converting: path_overwrite on name attribute",
+			bazel: `go_library(
+	name = "test",  # @bazel2gn:path_overwrite:overwritten_name
+)
+`,
+			wantGN: `go_library("test") {
+}`,
+		},
+		{
+			name: "path_overwrite inside select() statement - on list item",
+			bazel: `go_library(
+	name = "test",
+	deps = select({
+		"@platforms//os:fuchsia": [
+			"//src:foo"  # @bazel2gn:path_overwrite://src/overwritten/fuchsia
+		],
+		"//conditions:default": [
+			"//src:host",  # @bazel2gn:path_overwrite://src/overwritten/host
+		],
+	}),
+)
+`,
+			wantGN: `go_library("test") {
+	if (is_fuchsia) {
+		deps = [
+			"//src/overwritten/fuchsia",
+		]
+	} else {
+		deps = [
+			"//src/overwritten/host",
+		]
+	}
+}`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := toSyntaxFile(t, tc.bazel)
+			gotGN, err := bazelToGN(f)
+			if err != nil {
+				t.Fatalf("Unexpected failure converting Bazel build targets: %v", err)
+			}
+			if diff := cmp.Diff(gotGN, tc.wantGN); diff != "" {
+				t.Errorf("Diff found after GN conversion (-got +want):\n%s\nBazel source:\n%s", diff, tc.bazel)
+			}
+		})
+	}
+}
+
+// Tests use of `raw_overwrite` annotations.
+// See `TestVisibilityConversion` for tests of `raw_overwrite` use in and on `visibility`.
+func TestRawOverwriteAnnotations(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		bazel  string
+		wantGN string
+	}{
+		{
+			// `raw_overwrite` is ignored because `bazelFilePathsToGN()` and `bazelDepToGN()` only handle
+			// `path_overwrite`, and some attribute lists are not checked for annotations at all.
+			// TODO(https://fxbug.dev/543568916): This should fail or overwrite all of the list elements.
+			// If it is made to fail, break out the test of the supported attributes into a passing
+			// test and break out all the unsupported attributes into separate failing tests.
+			name: "unexpected success converting: raw_overwrite on cc attribute list items",
+			bazel: `cc_library(
+	name = "foo",
+	srcs = [
+		"path/to/bar.cc",
+		"path/to/bar.h",  # @bazel2gn:raw_overwrite:"path/to/ignored.h"
+		"path/to/baz.cc",
+		"path/to/skipped.cc",  # @bazel2gn:skip
+		"yet/another/path/to/foo.cc",
+	],
+	hdrs = [
+		"path/to/baz.h",  # @bazel2gn:raw_overwrite:"path/ignored.h"
+		"path/to/foo.h",
+	],  # @bazel2gn:skip
+	deps = [
+		"//path/to:foo",
+		"//yet/another/path/to:bar",  # @bazel2gn:raw_overwrite:"//yet/another/path/to:ignored"
+	],
+	implementation_deps = [
+		"//path/to:bar",  # @bazel2gn:raw_overwrite:"//path/to/ignored:bar"
+	],
+	copts = [
+		"-Wno-implicit-fallthrough",  # @bazel2gn:raw_overwrite://build/config:ignored
+	],
+	visibility = [
+		":__pkg__",  # @bazel2gn:raw_overwrite:"./*"
+		"//path/to/dir:__subpackages__",
+	],
+)
+`,
+			wantGN: `static_library("foo") {
+	sources = [
+		"path/to/bar.cc",
+		"path/to/bar.h",
+		"path/to/baz.cc",
+		"yet/another/path/to/foo.cc",
+	]
+	public_deps = [
+		"//path/to:foo",
+		"//yet/another/path/to:bar",
+	]
+	deps = [
+		"//path/to:bar",
+	]
+	configs += [
+		"//build/config:Wno-implicit-fallthrough",
+	]
+	visibility = [
+		":*",
+		"//path/to/dir/*",
+	]
+}`,
+		},
+		{
+			// `raw_overwrite` is ignored because `attrAssignmentToGN()` does not check for
+			// `raw_overwrite` annotations on the right hand side.
+			// TODO(https://fxbug.dev/543568916): This should fail or overwrite the list elements.
+			name: "unexpected success converting: raw_overwrite on cc attributes",
+			bazel: `cc_library(
+	name = "foo",  # @bazel2gn:path_overwrite:ignored_name
+	# The overwrite value would demonstrate whether escape characters are converted.
+	srcs = [
+		"path/to/bar.cc",
+		"path/to/bar.h",
+		"path/to/baz.cc",
+		"path/to/skipped.cc",  # @bazel2gn:skip
+		"yet/another/path/to/foo.cc",
+	],  # @bazel2gn:raw_overwrite:[\n  "path/to/overwritten_bar.cc",\n  "path/to/overwritten_baz.cc"\n]
+	hdrs = [
+		"path/to/baz.h",  # @bazel2gn:raw_overwrite:"should_be_ignored.h"
+		"path/to/foo.h",
+	],  # @bazel2gn:raw_overwrite:[ "path/to/overwritten.h" ]
+	deps = [
+		"//path/to:foo",
+		"//yet/another/path/to:bar",
+	],  # @bazel2gn:raw_overwrite:[ "//yet/another/path/to:overwritten" ]
+	implementation_deps = [
+		"//path/to:bar",
+	],  # @bazel2gn:raw_overwrite:[ "//path/to_gn_lib:bar" ]
+	copts = [
+		"-Wno-implicit-fallthrough",
+	],  # @bazel2gn:raw_overwrite:[]
+	visibility = [
+		":__pkg__",
+		"//path/to/dir:__subpackages__",
+	],  # @bazel2gn:raw_overwrite:[ "*" ]
+)
+`,
+			wantGN: `static_library("foo") {
+	sources = [
+		"path/to/bar.cc",
+		"path/to/bar.h",
+		"path/to/baz.cc",
+		"yet/another/path/to/foo.cc",
+	]
+	public = [
+		"path/to/baz.h",
+		"path/to/foo.h",
+	]
+	public_deps = [
+		"//path/to:foo",
+		"//yet/another/path/to:bar",
+	]
+	deps = [
+		"//path/to:bar",
+	]
+	configs += [
+		"//build/config:Wno-implicit-fallthrough",
+	]
+	visibility = [
+		":*",
+		"//path/to/dir/*",
+	]
+}`,
+		},
+		{
+			// `raw_overwrite` is ignored because `assignStmtToGN()`, which handles file-level variable
+			// assignments, converts `stmt.LHS` and `stmt.RHS` separately and does not check for
+			// `raw_overwrite` annotations on the statement level.
+			// TODO(https://fxbug.dev/543568916): This should fail or generate
+			// `zbi_sources = [ "overwritten.fidl" ]`.
+			name: "unexpected success converting: raw_overwrite on file-level variable assignment",
+			bazel: `zbi_sources = [
+	"board.fidl",
+]  # @bazel2gn:raw_overwrite:[ "overwritten.fidl" ]
+
+fidl_library(
+	name = "zbi",
+	srcs = zbi_sources,
+)
+`,
+			wantGN: `zbi_sources = [
+	"board.fidl",
+]
+
+# To avoid "Assignment had no effect" from GN.
+# It's possible this variable is only used in if conditions (e.g. is_host).
+not_needed([ "zbi_sources" ])
+
+fidl("zbi") {
+	sources = zbi_sources
+}`,
+		},
+		{
+			// `raw_overwrite` is ignored because `attrAssignmentToGN()` does not check for
+			// `raw_overwrite` annotations on the statement.
+			// TODO(https://fxbug.dev/543568916): This should fail or generate
+			// `rustenv = [ "FOO=overwritten" ]`.
+			name: "raw_overwrite on entire rustc_env dictionary attribute",
+			bazel: `rustc_library(
+	name = "lib",
+	rustc_env = {
+		"FOO": "bar",
+	},  # @bazel2gn:raw_overwrite:[ "FOO=overwritten" ]
+)
+`,
+			wantGN: `rustc_library("lib") {
+	rustenv = [
+		"FOO=bar",
+	]
+}`,
+		},
+		{
+			// `raw_overwrite` is ignored because `rustenvToGN()`, which handles the `rustc_env`
+			// attribute, only converts keys and values and does not check for `raw_overwrite`
+			// annotations on dictionary entries.
+			// TODO(https://fxbug.dev/543568916): This should fail or generate
+			// `rustenv = [ "FOO=overwritten" ]`.
+			name: "unexpected success converting: raw_overwrite on rustc_env dictionary entry",
+			bazel: `rustc_library(
+	name = "lib",
+	rustc_env = {
+		"FOO": "bar",  # @bazel2gn:raw_overwrite:"FOO=overwritten"
+	}
+)
+`,
+			wantGN: `rustc_library("lib") {
+	rustenv = [
+		"FOO=bar",
+	]
+}`,
+		},
+		{
+			// `raw_overwrite` is ignored because target name extraction only converts `binaryExpr.Y`
+			// (the RHS literal) and does not check for `raw_overwrite` annotations on the
+			// `name = "..."` assignment statement.
+			// TODO(https://fxbug.dev/543568916): This should fail or generate
+			// `go_library("overwritten_name") { }`.
+			name: "unexpected success converting: raw_overwrite on name attribute",
+			bazel: `go_library(
+	name = "test",  # @bazel2gn:raw_overwrite:"overwritten_name"
+)
+`,
+			wantGN: `go_library("test") {
+}`,
+		},
+		{
+			// `raw_overwrite` is ignored because `StmtToGN()`, which converts top-level statements, only
+			// checks for `skip` annotations and does not check for `raw_overwrite` annotations.
+			// TODO(https://fxbug.dev/543568916): This should fail or generate
+			// `group("test_group") { deps = [ ":bar"] }`.
+			name: "unexpected success converting: raw_overwrite on target statement",
+			bazel: `go_library(
+	name = "test",
+) # @bazel2gn:raw_overwrite:group("test_group") { deps = [ ":bar"] }
+`,
+			wantGN: `go_library("test") {
+}`,
+		},
+		{
+			// `raw_overwrite` is ignored because `attrAssignmentToGN()` does not check for
+			// `raw_overwrite` annotations on the statement.
+			// TODO(https://fxbug.dev/543568916): This should fail or generate
+			// `rustenv = [ "FOO=overwritten" ]`.
+			name: "raw_overwrite at the end of select() statement",
+			bazel: `go_library(
+	name = "test",
+	deps = select({
+		"@platforms//os:fuchsia": [ "//src:foo" ],
+		"//conditions:default": [],
+	}),  # @bazel2gn:raw_overwrite:[ "//src:overwritten" ]
+)
+`,
+			wantGN: `go_library("test") {
+	if (is_fuchsia) {
+		deps = [
+			"//src:foo",
+		]
+	} else {
+		deps = [
+		]
+	}
+}`,
+		},
+		{
+			// TODO(https://fxbug.dev/543568916): This should fail or overwrite the list elements.
+			name: "raw_overwrite inside select() statement - on list item",
+			bazel: `go_library(
+	name = "test",
+	deps = select({
+		"@platforms//os:fuchsia": [
+			"//src:foo"  # @bazel2gn:raw_overwrite:"//src/overwritten/fuchsia"
+		],
+		"//conditions:default": [
+			"//src:host",  # @bazel2gn:raw_overwrite:"//src/overwritten/host"
+		],
+	}),
+)
+`,
+			wantGN: `go_library("test") {
+	if (is_fuchsia) {
+		deps = [
+			"//src:foo",
+		]
+	} else {
+		deps = [
+			"//src:host",
+		]
+	}
+}`,
+		},
+		{
+			// TODO(https://fxbug.dev/543568916): This should fail or overwrite the list.
+			name: "raw_overwrite inside select() statement - on condition value",
+			bazel: `go_library(
+	name = "test",
+	deps = select({
+		"@platforms//os:fuchsia": [
+			"//src:foo"
+		],  # @bazel2gn:raw_overwrite:[ "//src/overwritten/fuchsia" ]
+		"//conditions:default": [
+			"//src:host",
+		],  # @bazel2gn:raw_overwrite:[ "//src/overwritten/host" ]
+	}),
+)
+`,
+			wantGN: `go_library("test") {
+	if (is_fuchsia) {
+		deps = [
+			"//src:foo",
+		]
+	} else {
+		deps = [
+			"//src:host",
+		]
+	}
+}`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := toSyntaxFile(t, tc.bazel)
+			gotGN, err := bazelToGN(f)
+			if err != nil {
+				t.Fatalf("Unexpected failure converting Bazel build targets: %v", err)
+			}
+			if diff := cmp.Diff(gotGN, tc.wantGN); diff != "" {
+				t.Errorf("Diff found after GN conversion (-got +want):\n%s\nBazel source:\n%s", diff, tc.bazel)
+			}
+		})
+	}
+}
+
+// Tests valid annotation scenarios not covered by other tests.
+func TestAnnotations(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		bazel  string
+		wantGN string
+	}{
+		{
+			name: "skipped attribute ignores unknown annotation on list item",
+			bazel: `go_library(
+	name = "test",
+	visibility = [
+		"//path/to/foo:__pkg__",  # @bazel2gn:unknown_annotation
+		"//path/to/bar:__subpackages__",
+	],  # @bazel2gn:skip
+)`,
+			wantGN: `go_library("test") {
+}`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := toSyntaxFile(t, tc.bazel)
+			gotGN, err := bazelToGN(f)
+			if err != nil {
+				t.Fatalf("Unexpected failure converting Bazel build targets: %v", err)
+			}
+			if diff := cmp.Diff(gotGN, tc.wantGN); diff != "" {
+				t.Errorf("Diff found after GN conversion (-got +want):\n%s\nBazel source:\n%s", diff, tc.bazel)
+			}
+		})
+	}
+}
+
+// Tests invalid annotations that should be caught and fail the conversion. However, they are
+// currently ignored or processed in unexpected ways.
+// TODO(https://fxbug.dev/543568916): Make conversion fail in these cases and change the tests to
+// expect errors.
+func TestInvalidAnnotations(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		bazel  string
+		wantGN string
+	}{
+		{
+			// Neither the `clear` nor `raw_overwrite` annotations are processed.
+			// TODO(https://fxbug.dev/543568916): This should fail.
+			name: "unexpected success converting: multiple annotations on the same list item line",
+			bazel: `go_library(
+	name = "test",
+	visibility = [
+		"//path/to/foo:__pkg__",  # @bazel2gn:raw_overwrite:"//foo/*" # @bazel2gn:skip
+		"//path/to/bar:bar",  # @bazel2gn:skip # @bazel2gn:raw_overwrite:"//bar/*"
+		"//path/to/foo2:__pkg__",  # @bazel2gn:raw_overwrite:"//foo2:*" @bazel2gn:skip
+		"//path/to/bar2:bar2",  # @bazel2gn:skip @bazel2gn:raw_overwrite:"//bar2:*"
+		"//redundant/path/in/gn:__pkg__",
+	],
+)`,
+			wantGN: `go_library("test") {
+	visibility = [
+		"//path/to/foo:*",
+		"//path/to/bar:bar",
+		"//path/to/foo2:*",
+		"//path/to/bar2:bar2",
+		"//redundant/path/in/gn:*",
+	]
+}`,
+		},
+		{
+			// Neither the `clear` nor `raw_overwrite` annotations are processed.
+			// TODO(https://fxbug.dev/543568916): This should fail.
+			name: "unexpected success converting: multiple annotations on the same attribute",
+			bazel: `cc_library(
+	name = "test",
+	srcs = [
+		"bazel.cc",
+	],  # @bazel2gn:raw_overwrite:[ "gn.cc" ] @bazel2gn:skip
+	hdrs = [
+		"bazel.h",
+	],  # @bazel2gn:raw_overwrite:[ "gn.h" ] # @bazel2gn:skip
+	visibility = [
+		"//path/to/foo2:__pkg__",
+	],  # @bazel2gn:skip @bazel2gn:raw_overwrite:[ "//gn/path:*" ]
+)`,
+			wantGN: `static_library("test") {
+	sources = [
+		"bazel.cc",
+	]
+	public = [
+		"bazel.h",
+	]
+	visibility = [
+		"//path/to/foo2:*",
+	]
+}`,
+		},
+		{
+			// Neither annotation is processed.
+			// TODO(https://fxbug.dev/543568916): This should fail.
+			name: "unexpected success converting: raw_overwrite and configs clearing annotations",
+			bazel: `cc_library(
+	name = "test",
+	copts = [
+		"-Wno-implicit-fallthrough",
+	],  # @bazel2gn:raw_overwrite:[ "//build/config:overwritten" ] @bazel2gn:clear
+)
+`,
+			wantGN: `static_library("test") {
+	configs += [
+		"//build/config:Wno-implicit-fallthrough",
+	]
+}`,
+		},
+		{
+			// Neither the `clear` nor `raw_overwrite` annotations are processed.
+			// TODO(https://fxbug.dev/543568916): This should fail.
+			name: "unexpected success converting: config clearing and raw_overwrite annotations",
+			bazel: `cc_library(
+	name = "test",
+	copts = [
+		"-Wno-implicit-fallthrough",
+	],  # @bazel2gn:clear @bazel2gn:raw_overwrite:[ "//build/config:overwritten" ]
+)
+`,
+			wantGN: `static_library("test") {
+	configs += [
+		"//build/config:Wno-implicit-fallthrough",
+	]
+}`,
+		},
+		{
+			// TODO(https://fxbug.dev/543568916): This should fail because `path_overwrite` is not
+			// supported for `visibility`.
+			name: "unexpected success converting: unknown annotation on list item",
+			bazel: `go_library(
+	name = "test",
+	visibility = [
+		"//path/to/foo:__pkg__",  # @bazel2gn:path_overwrite:"//*"
+		"//path/to/bar:skipped",  # @bazel2gn:skip
+		"//redundant/path/in/gn:__pkg__",
+	],
+)`,
+			wantGN: `go_library("test") {
+	visibility = [
+		"//path/to/foo:*",
+		"//redundant/path/in/gn:*",
+	]
+}`,
+		},
+		{
+			// TODO(https://fxbug.dev/543568916): This should fail.
+			name: "unexpected success converting: unknown annotation on list item",
+			bazel: `go_library(
+	name = "test",
+	visibility = [
+		"//path/to/foo:__pkg__",  # @bazel2gn:unknown_annotation
+		"//path/to/bar:__subpackages__",
+	],
+)`,
+			wantGN: `go_library("test") {
+	visibility = [
+		"//path/to/foo:*",
+		"//path/to/bar/*",
+	]
+}`,
+		},
+		{
+			// TODO(https://fxbug.dev/543568916): This should fail.
+			name: "unexpected success converting: unknown annotation on the list",
+			bazel: `go_library(
+	name = "test",
+	visibility = [
+		"//path/to/foo:__pkg__",
+	],  # @bazel2gn:unknown_annotation
+)`,
+			wantGN: `go_library("test") {
+	visibility = [
+		"//path/to/foo:*",
+	]
+}`,
+		},
+		{
+			// TODO(https://fxbug.dev/543568916): This should probably fail.
+			name: "unexpected success converting: incorrect bazel2gn prefix",
+			bazel: `go_library(
+	name = "test",
+	visibility = [
+		"//path/to/bar:bar",  # @bzl2gn:skip
+	],
+)`,
+			wantGN: `go_library("test") {
+	visibility = [
+		"//path/to/bar:bar",
+	]
+}`,
+		},
+		{
+			// TODO(https://fxbug.dev/543568916): This should fail.
+			name: "unexpected success converting: space instead of colon",
+			bazel: `go_library(
+	name = "test",
+	visibility = [
+		"//path/to/baz:*",  # @bazel2gn skip
+	],
+)`,
+			wantGN: `go_library("test") {
+	visibility = [
+		"//path/to/baz:*",
 	]
 }`,
 		},
