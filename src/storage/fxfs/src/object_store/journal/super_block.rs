@@ -85,7 +85,7 @@ const SUPER_BLOCK_MAGIC: &[u8; 8] = b"FxfsSupr";
 ///
 /// This provides hard-coded constants related to the location and properties of the super-blocks
 /// that are required to bootstrap the filesystem.
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum SuperBlockInstance {
     A,
     B,
@@ -487,21 +487,17 @@ impl SuperBlockManager {
         root_parent: LayerSet<ObjectKey, ObjectValue>,
     ) -> Result<(), Error> {
         let root_store = filesystem.root_store();
-        let object_id = {
-            let mut next_instance = self.next_instance.lock();
-            let object_id = next_instance.object_id();
-            *next_instance = next_instance.next();
-            object_id
-        };
+        let instance = *self.next_instance.lock();
         let handle = ObjectStore::open_object(
             &root_store,
-            object_id,
+            instance.object_id(),
             HandleOptions { skip_journal_checks: true, ..Default::default() },
             None,
         )
         .await
         .context("Failed to open superblock object")?;
         write(&super_block_header, root_parent, handle).await?;
+        *self.next_instance.lock() = instance.next();
         self.metrics
             .last_super_block_offset
             .set(super_block_header.super_block_journal_file_offset);
@@ -787,9 +783,12 @@ mod tests {
         DataObjectHandle, HandleOptions, ObjectHandle, ObjectKey, ObjectStore,
     };
     use crate::serialized_types::{LATEST_VERSION, Versioned, VersionedLatest};
+    use anyhow::bail;
     use std::io::Write;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
     use storage_device::DeviceHolder;
-    use storage_device::fake_device::FakeDevice;
+    use storage_device::fake_device::{FakeDevice, Op};
 
     // We require 512kiB each for A/B super-blocks, 256kiB for the journal (128kiB before flush)
     // and compactions require double the layer size to complete.
@@ -1433,5 +1432,57 @@ mod tests {
         write_sb(SuperBlockInstance::A, 3, 4, 5, 6, 7).await;
         write_sb(SuperBlockInstance::B, 3, 4, 5, 6, 7).await;
         assert!(manager.load((*device).clone(), MIN_SUPER_BLOCK_SIZE as u64).await.is_ok());
+    }
+
+    #[fuchsia::test]
+    async fn test_save_failure_does_not_advance_next_instance() {
+        let block_size = 4096;
+        let fail_writes = Arc::new(AtomicBool::new(false));
+        let fail_writes_clone = fail_writes.clone();
+        let mut fake_device = FakeDevice::new(TEST_DEVICE_BLOCK_COUNT, block_size as u32);
+        fake_device.set_op_callback(move |op| match op {
+            Op::Write if fail_writes_clone.load(Ordering::Relaxed) => {
+                bail!("Injected write error");
+            }
+            _ => Ok(()),
+        });
+
+        let device = DeviceHolder::new(fake_device);
+        let fs = FxFilesystem::new_empty(device).await.expect("new_empty failed");
+        fs.close().await.expect("close failed");
+        let device = fs.take_device().await;
+        device.reopen(false);
+
+        let manager = SuperBlockManager::new();
+        let (header, _) =
+            manager.load((*device).clone(), block_size as u64).await.expect("load failed");
+        let fs = FxFilesystem::open(device).await.expect("open failed");
+
+        // The loaded superblock is B (highest generation), so next_instance should be A.
+        assert_eq!(*manager.next_instance.lock(), SuperBlockInstance::A);
+
+        // Make write operations fail on the device.
+        fail_writes.store(true, Ordering::Relaxed);
+
+        // Attempting to save should fail.
+        assert!(
+            manager
+                .save(header.clone(), (*fs).clone(), fs.root_parent_store().tree().layer_set())
+                .await
+                .is_err()
+        );
+
+        // next_instance must not have been advanced to B because the write failed.
+        assert_eq!(*manager.next_instance.lock(), SuperBlockInstance::A);
+
+        // Clear the error condition so writes succeed.
+        fail_writes.store(false, Ordering::Relaxed);
+
+        // Saving should now succeed and write to A, advancing next_instance to B.
+        manager
+            .save(header, (*fs).clone(), fs.root_parent_store().tree().layer_set())
+            .await
+            .expect("save failed");
+        assert_eq!(*manager.next_instance.lock(), SuperBlockInstance::B);
     }
 }
