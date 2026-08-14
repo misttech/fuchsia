@@ -208,7 +208,7 @@
              path="prebuilt/tools/buildstats/{{.OS}}-{{.Arch}}"
              platforms="linux-amd64"/>
     <package name="fuchsia/tools/ninjatrace/${platform}"
-             version="git_revision:f81450147e05d39b1bd616e61a56d9b06a81b647"
+             version="git_revision:fc76ac2674b7a93d2297afa6c129a8a9d3b3a309"
              path="prebuilt/tools/ninjatrace/{{.OS}}-{{.Arch}}"
              platforms="linux-amd64"/>
 
