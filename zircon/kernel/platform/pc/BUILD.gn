@@ -97,16 +97,20 @@ kernel_rust_mod("platform_pc") {
     "keyboard.rs",
     "mod.rs",
     "pic.rs",
+    "smbios.rs",
   ]
   deps = [
     "//sdk/rust/zx-status",
     "//sdk/rust/zx-types",
     "//src/lib/ksync",
+    "//src/lib/zr",
+    "//third_party/rust_crates:zerocopy",
     "//zircon/kernel/lib/acpi_lite/rust:acpi_lite",
     "//zircon/kernel/lib/debug",
     "//zircon/kernel/lib/unittest:unittest-rs",
     "//zircon/system/ulib/affine/rust:affine",
     "//zircon/system/ulib/bitmap/rust:bitmap",
     "//zircon/system/ulib/fbl/rust:fbl",
+    "//zircon/system/ulib/smbios/rust:smbios",
   ]
 }

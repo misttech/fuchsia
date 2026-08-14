@@ -56,7 +56,7 @@ pub const ALWAYS: u32 = 0;
 pub const INFO: u32 = 1;
 pub const SPEW: u32 = 2;
 
-struct KernelConsoleWriter;
+pub struct KernelConsoleWriter;
 
 impl core::fmt::Write for KernelConsoleWriter {
     #[cfg(not(test))]

@@ -9,7 +9,7 @@
 
 #include <lib/smbios/smbios.h>
 
-void pc_init_smbios();
+extern "C" void pc_init_smbios();
 
 // Walk the known SMBIOS structures.  The callback will be called once for each
 // structure found.

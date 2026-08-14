@@ -11,3 +11,4 @@ pub mod interrupt_manager;
 pub mod interrupts;
 pub mod keyboard;
 pub mod pic;
+pub mod smbios;
