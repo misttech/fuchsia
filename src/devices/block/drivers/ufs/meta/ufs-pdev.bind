@@ -11,10 +11,10 @@ primary parent "pdev" {
 }
 
 parent "phy" {
-  fuchsia.hardware.ufs.phy.Service == fuchsia.hardware.ufs.phy.Service.ZirconTransport;
+  fuchsia.Service == "fuchsia.hardware.ufs.phy.Service";
 }
 
 optional parent "ufs-interconnect" {
-  fuchsia.hardware.interconnect.PathService == fuchsia.hardware.interconnect.PathService.ZirconTransport;
+  fuchsia.Service == "fuchsia.hardware.interconnect.PathService";
   fuchsia.NAME == "ufs-interconnect";
 }

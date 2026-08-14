@@ -6,7 +6,7 @@ composite nvme;
 
 
 primary parent "pci" {
-  fuchsia.hardware.pci.Service == fuchsia.hardware.pci.Service.ZirconTransport;
+  fuchsia.Service == "fuchsia.hardware.pci.Service";
   fuchsia.BIND_PCI_CLASS == fuchsia.pci.BIND_PCI_CLASS.MASS_STORAGE;
   fuchsia.BIND_PCI_SUBCLASS == fuchsia.pci.massstorage.BIND_PCI_SUBCLASS.NVMEM;
   fuchsia.BIND_PCI_INTERFACE == 2;

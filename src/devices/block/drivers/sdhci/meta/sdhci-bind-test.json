@@ -1,7 +1,7 @@
 [
     {
         "device": {
-            "fuchsia.hardware.sdhci.Service": "fuchsia.hardware.sdhci.Service.DriverTransport"
+            "fuchsia.Service": "\"fuchsia.hardware.sdhci.Service\""
         },
         "expected": "match",
         "name": "Match"

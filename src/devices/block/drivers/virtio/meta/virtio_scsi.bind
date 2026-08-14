@@ -6,7 +6,7 @@ composite virtio_scsi;
 
 
 primary parent "pci" {
-  fuchsia.hardware.pci.Service == fuchsia.hardware.pci.Service.ZirconTransport;
+  fuchsia.Service == "fuchsia.hardware.pci.Service";
   fuchsia.BIND_PCI_VID == fuchsia.pci.BIND_PCI_VID.VIRTIO;
   accept fuchsia.BIND_PCI_DID {
     fuchsia.pci.BIND_PCI_DID.VIRTIO_DEV_TYPE_SCSI,

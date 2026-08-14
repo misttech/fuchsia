@@ -3,4 +3,4 @@
 // found in the LICENSE file.
 
 
-fuchsia.hardware.sdhci.Service == fuchsia.hardware.sdhci.Service.DriverTransport;
+fuchsia.Service == "fuchsia.hardware.sdhci.Service";

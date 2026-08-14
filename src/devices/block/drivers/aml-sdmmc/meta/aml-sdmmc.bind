@@ -30,7 +30,7 @@ primary parent "pdev" {
 }
 
 optional parent "gpio-reset" {
-  fuchsia.hardware.gpio.Service == fuchsia.hardware.gpio.Service.ZirconTransport;
+  fuchsia.Service == "fuchsia.hardware.gpio.Service";
   fuchsia.NAME == "SDMMC_RESET";
 }
 
@@ -39,7 +39,7 @@ optional parent "pwm" {
 }
 
 optional parent "clock-gate" {
-  fuchsia.hardware.clock.Service == fuchsia.hardware.clock.Service.ZirconTransport;
+  fuchsia.Service == "fuchsia.hardware.clock.Service";
 }
 
 optional parent "gpio-init" {
@@ -47,5 +47,5 @@ optional parent "gpio-init" {
 }
 
 optional parent "pin-states-0" {
-  fuchsia.hardware.pin.PinStatesService == fuchsia.hardware.pin.PinStatesService.ZirconTransport;
+  fuchsia.Service == "fuchsia.hardware.pin.PinStatesService";
 }

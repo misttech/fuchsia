@@ -199,6 +199,8 @@ zx::result<> InterconnectVisitor::AddChildNodeSpec(fdf_devicetree::Node& child, 
   auto interconnect_node = fuchsia_driver_framework::ParentSpec2{{
       .bind_rules =
           {
+              fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE,
+                                      "fuchsia.hardware.interconnect.PathService"),
               fdf::MakeAcceptBindRule(
                   bind_fuchsia_hardware_interconnect::PATHSERVICE,
                   bind_fuchsia_hardware_interconnect::PATHSERVICE_ZIRCONTRANSPORT),
@@ -206,6 +208,8 @@ zx::result<> InterconnectVisitor::AddChildNodeSpec(fdf_devicetree::Node& child, 
           },
       .properties =
           {
+              fdf::MakeProperty2(bind_fuchsia::SERVICE,
+                                 "fuchsia.hardware.interconnect.PathService"),
               fdf::MakeProperty2(bind_fuchsia::NAME, std::string(path_name)),
               fdf::MakeProperty2(bind_fuchsia_hardware_interconnect::PATHSERVICE,
                                  bind_fuchsia_hardware_interconnect::PATHSERVICE_ZIRCONTRANSPORT),

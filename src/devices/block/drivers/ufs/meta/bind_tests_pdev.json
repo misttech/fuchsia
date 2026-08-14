@@ -18,7 +18,7 @@
                 "name": "Match phy",
                 "expected": "match",
                 "device": {
-                    "fuchsia.hardware.ufs.phy.Service": "fuchsia.hardware.ufs.phy.Service.ZirconTransport"
+                    "fuchsia.Service": "\"fuchsia.hardware.ufs.phy.Service\""
                 }
             }
         ]

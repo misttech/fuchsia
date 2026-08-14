@@ -24,5 +24,6 @@ devicetree_visitor("ufs-phy-visitor") {
   ]
   non_sdk_deps = [
     "//sdk/fidl/fuchsia.hardware.ufs.phy:fuchsia.hardware.ufs.phy_bindlib_cpp",
+    "//src/devices/bind/fuchsia:fuchsia_cpp",
   ]
 }

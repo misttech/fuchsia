@@ -50,7 +50,7 @@
                 "name": "Match",
                 "expected": "match",
                 "device": {
-                    "fuchsia.hardware.gpio.Service": "fuchsia.hardware.gpio.Service.ZirconTransport",
+                    "fuchsia.Service": "\"fuchsia.hardware.gpio.Service\"",
                     "fuchsia.NAME": "\"SDMMC_RESET\""
                 }
             }
@@ -87,7 +87,7 @@
                 "name": "Match",
                 "expected": "match",
                 "device": {
-                    "fuchsia.hardware.clock.Service": "fuchsia.hardware.clock.Service.ZirconTransport"
+                    "fuchsia.Service": "\"fuchsia.hardware.clock.Service\""
                 }
             }
         ]

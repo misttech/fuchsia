@@ -4,4 +4,4 @@
 
 
 // Whether to use the FIDL or Banjo protocol is determined by metadata.
-fuchsia.hardware.sdmmc.SdmmcService == fuchsia.hardware.sdmmc.SdmmcService.DriverTransport;
+fuchsia.Service == "fuchsia.hardware.sdmmc.SdmmcService";

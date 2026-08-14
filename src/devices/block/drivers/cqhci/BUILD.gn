@@ -11,6 +11,7 @@ driver_bind_rules("bind") {
   bind_output = "cqhci.bindbc"
   deps = [
     "//sdk/fidl/fuchsia.hardware.cqhci:fuchsia.hardware.cqhci_bindlib",
+    "//src/devices/bind/fuchsia",
     "//src/devices/bind/fuchsia.sdmmc",
   ]
 }

@@ -9,6 +9,7 @@
 #include <lib/driver/devicetree/visitors/registration.h>
 #include <lib/driver/logging/cpp/logger.h>
 
+#include <bind/fuchsia/cpp/bind.h>
 #include <bind/fuchsia/hardware/ufs/phy/cpp/bind.h>
 
 namespace ufs_phy_visitor_dt {
@@ -81,10 +82,12 @@ zx::result<> UfsPhyVisitor::Visit(fdf_devicetree::Node& node,
 zx::result<> UfsPhyVisitor::AddChildNodeSpec(fdf_devicetree::Node& child,
                                              std::string_view phy_name) {
   std::vector bind_rules = {
+      fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.ufs.phy.Service"),
       fdf::MakeAcceptBindRule(bind_fuchsia_hardware_ufs_phy::SERVICE,
                               bind_fuchsia_hardware_ufs_phy::SERVICE_ZIRCONTRANSPORT),
   };
   std::vector bind_properties = {
+      fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.ufs.phy.Service"),
       fdf::MakeProperty2(bind_fuchsia_hardware_ufs_phy::SERVICE,
                          bind_fuchsia_hardware_ufs_phy::SERVICE_ZIRCONTRANSPORT),
   };

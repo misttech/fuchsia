@@ -15,7 +15,7 @@
 #include <unistd.h>
 #include <zircon/status.h>
 
-#include <bind/fuchsia/hardware/sdhci/cpp/bind.h>
+#include <bind/fuchsia/cpp/bind.h>
 
 #define HOST_CONTROL1_OFFSET 0x28
 #define SDHCI_EMMC_HW_RESET (1 << 12)
@@ -56,8 +56,7 @@ zx::result<> PciSdhci::Start(fdf::DriverContext context) {
 
   // Add the child node using `NodeProperty2` and `MakeProperty2`.
   std::vector<fuchsia_driver_framework::NodeProperty2> properties = {
-      fdf::MakeProperty2(bind_fuchsia_hardware_sdhci::SERVICE,
-                         bind_fuchsia_hardware_sdhci::SERVICE_DRIVERTRANSPORT),
+      fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.sdhci.Service"),
   };
   zx::result<fidl::ClientEnd<fuchsia_driver_framework::NodeController>> child_result =
       AddChild("pci-sdhci", properties, offers);
