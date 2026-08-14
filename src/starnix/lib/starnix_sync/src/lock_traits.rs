@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 /// A trait for types that represent a lock level in the lock dependency tracker.
-pub trait LockLevel {
+pub trait LockLevel: fuchsia_rcu::RcuDroppable {
     /// The unique identifier for this lock level.
     const LOCK_ID: usize;
     /// The name of the lock level.

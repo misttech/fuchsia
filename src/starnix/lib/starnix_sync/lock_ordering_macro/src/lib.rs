@@ -151,6 +151,8 @@ pub fn lock_ordering(input: TokenStream) -> TokenStream {
         let name = level.to_string();
         result.extend(quote::quote! {
             pub enum #level {}
+            // SAFETY: Lock level types are empty enums with no fields or Drop side-effects.
+            unsafe impl fuchsia_rcu::RcuDroppable for #level {}
             impl starnix_sync::LockLevel for #level {
                 const LOCK_ID: usize = #id;
                 const NAME: &'static str = #name;

@@ -591,6 +591,7 @@ impl<'a, T> crate::condvar::WaitableMutexGuard<'a, T> for LockDepGuard<'a, T> {
 }
 
 /// A Mutex that dynamically enforces lock ordering at runtime using types for levels.
+#[derive(RcuDroppable)]
 pub struct LockDepMutex<T, L> {
     inner: DynamicLockDepMutex<T>,
     _level: PhantomData<L>,
@@ -825,6 +826,7 @@ impl<'a, T> LockDepWriteGuard<'a, T> {
 }
 
 /// An RwLock that dynamically enforces lock ordering at runtime using types for levels.
+#[derive(RcuDroppable)]
 pub struct LockDepRwLock<T, L> {
     inner: DynamicLockDepRwLock<T>,
     _level: PhantomData<L>,
@@ -1363,6 +1365,18 @@ mod tests {
             let _guard_a2 = lock_a.lock();
         });
     }
+
+    fn assert_rcu_droppable<T: fuchsia_rcu::RcuDroppable>() {}
+
+    #[test]
+    fn test_rcu_droppable() {
+        assert_rcu_droppable::<LevelA>();
+        assert_rcu_droppable::<TerminalC>();
+        assert_rcu_droppable::<DynamicLockDepMutex<i32>>();
+        assert_rcu_droppable::<DynamicLockDepRwLock<i32>>();
+        assert_rcu_droppable::<LockDepMutex<i32, LevelA>>();
+        assert_rcu_droppable::<LockDepRwLock<i32, LevelA>>();
+    }
 }
 
 impl<T> fuchsia_sync::ResetDependencies for DynamicLockDepMutex<T> {
@@ -1411,18 +1425,4 @@ where
             None => Err("could not get exclusive access to LockDepMutex".into()),
         }
     }
-}
-
-// SAFETY: LockDepMutex contains DynamicLockDepMutex<T> and PhantomData<L>, safe to drop on RCU if
-// T is RcuDroppable.
-unsafe impl<T: fuchsia_rcu::RcuDroppable, L: Send + 'static> fuchsia_rcu::RcuDroppable
-    for LockDepMutex<T, L>
-{
-}
-
-// SAFETY: LockDepRwLock contains DynamicLockDepRwLock<T> and PhantomData<L>, safe to drop on RCU
-// if T is RcuDroppable.
-unsafe impl<T: fuchsia_rcu::RcuDroppable, L: Send + 'static> fuchsia_rcu::RcuDroppable
-    for LockDepRwLock<T, L>
-{
 }
