@@ -156,6 +156,8 @@ class DebugAdapterContext : public ThreadObserver,
     async_backtrace_subscription_.reset();
   }
 
+  fxl::WeakPtr<DebugAdapterContext> GetWeakPtr() { return weak_factory_.GetWeakPtr(); }
+
  private:
   Console* const console_;
   const std::shared_ptr<dap::Session> dap_;
@@ -210,6 +212,8 @@ class DebugAdapterContext : public ThreadObserver,
   debug::StreamBuffer* stream_ = nullptr;
 
   void Init();
+
+  fxl::WeakPtrFactory<DebugAdapterContext> weak_factory_{this};
 };
 
 class DebugAdapterReader : public dap::Reader {

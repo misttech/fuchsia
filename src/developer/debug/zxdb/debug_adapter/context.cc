@@ -188,8 +188,8 @@ void DebugAdapterContext::Init() {
       });
 
   dap_->registerHandler(
-      [this](const dap::PauseRequest& req,
-             std::function<void(dap::ResponseOrError<dap::PauseResponse>)> callback) {
+      [this](const dap::PauseRequestZxdb& req,
+             std::function<void(dap::ResponseOrError<dap::PauseResponseZxdb>)> callback) {
         DEBUG_LOG(DebugAdapter) << "PauseRequest received";
         OnRequestPause(this, req, callback);
       });
