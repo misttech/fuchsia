@@ -244,6 +244,11 @@ class GpioTestEnvironment : public fdf_testing::Environment {
             std::format("pins.{}.name", i),
             fuchsia_driver_metadata::DictionaryValue::WithStr(pin.name().value())));
       }
+      if (pin.id().has_value()) {
+        entries.push_back(fuchsia_driver_metadata::DictionaryEntry(
+            std::format("pins.{}.id", i), fuchsia_driver_metadata::DictionaryValue::WithInt64(
+                                              static_cast<int64_t>(pin.id().value()))));
+      }
     }
     generic_metadata_ = fuchsia_driver_metadata::Dictionary{{.entries = std::move(entries)}};
   }
@@ -1479,7 +1484,7 @@ TEST_F(GpioTest, TestPinStates) {
 
 TEST_F(GpioTest, GenericMetadataTest) {
   SetGenericPinMetadata({{
-      {{.pin = 1, .name = "pin-1"}},
+      {{.pin = 1, .name = "pin-1", .id = 42}},
       {{.pin = 2, .name = "pin-2"}},
   }});
 
@@ -1492,6 +1497,26 @@ TEST_F(GpioTest, GenericMetadataTest) {
 
   zx::result client_end = driver_test().Connect<fuchsia_hardware_gpio::Service::Device>("gpio-1");
   EXPECT_TRUE(client_end.is_ok());
+
+  driver_test().RunInNodeContext([](fdf_testing::TestNode& node) {
+    std::vector<fuchsia_driver_framework::NodeProperty2> properties =
+        node.children().at("gpio").children().at("gpio-1").GetProperties();
+    ASSERT_EQ(properties.size(), 5ul);
+    EXPECT_EQ(properties[4].key(), bind_fuchsia::ID);
+    ASSERT_TRUE(properties[4].value().int_value().has_value());
+    EXPECT_EQ(properties[4].value().int_value().value(), 42ul);
+
+    std::vector<fuchsia_driver_framework::NodeProperty2> pin_properties =
+        node.children().at("gpio").children().at("gpio-1-pin").GetProperties();
+    ASSERT_EQ(pin_properties.size(), 5ul);
+    EXPECT_EQ(pin_properties[4].key(), bind_fuchsia::ID);
+    ASSERT_TRUE(pin_properties[4].value().int_value().has_value());
+    EXPECT_EQ(pin_properties[4].value().int_value().value(), 42ul);
+
+    std::vector<fuchsia_driver_framework::NodeProperty2> pin2_properties =
+        node.children().at("gpio").children().at("gpio-2").GetProperties();
+    ASSERT_EQ(pin2_properties.size(), 4ul);
+  });
 
   EXPECT_TRUE(driver_test().StopDriver().is_ok());
 }

@@ -344,6 +344,11 @@ zx::result<> GpioDevice::AddDevice(fidl::UnownedClientEnd<fuchsia_driver_framewo
                          "fuchsia.hardware.pin.Service.ZirconTransport"),
   };
 
+  if (id_.has_value()) {
+    gpio_props.push_back(fdf::MakeProperty2(bind_fuchsia::ID, *id_));
+    pin_props.push_back(fdf::MakeProperty2(bind_fuchsia::ID, *id_));
+  }
+
   zx::result<fidl::ClientEnd<fuchsia_driver_framework::NodeController>> result;
   if (config.expose_debug_capabilities()) {
     zx::result connector = devfs_connector_.Bind(fidl_dispatcher_);
@@ -614,6 +619,9 @@ std::optional<fuchsia_hardware_pinimpl::Metadata> ConvertMetadata(
     if (p.name) {
       pin.name(std::move(*p.name));
     }
+    if (p.id) {
+      pin.id(*p.id);
+    }
     pins.push_back(std::move(pin));
 
     // Generate InitSteps
@@ -883,7 +891,7 @@ void GpioRootDevice::CreatePinDevices(
   for (const auto& pin : pins) {
     fbl::AllocChecker ac;
     children_.emplace_back(new (&ac) GpioDevice(pinimpl_.Clone(), pin.pin().value(), controller_id,
-                                                pin.name().value(), logger()));
+                                                pin.name().value(), pin.id(), logger()));
     if (!ac.check()) {
       logger().log(fdf::ERROR, "Failed to allocate memory for pin");
       completer(zx::error(ZX_ERR_NO_MEMORY));
