@@ -204,7 +204,7 @@
              path="prebuilt/tools/futility/{{.OS}}-{{.Arch}}"
              platforms="linux-amd64"/>
     <package name="fuchsia/tools/buildstats/${platform}"
-             version="git_revision:7ca22c44fa2bd62630ebe2734db14628436d6560"
+             version="git_revision:fc76ac2674b7a93d2297afa6c129a8a9d3b3a309"
              path="prebuilt/tools/buildstats/{{.OS}}-{{.Arch}}"
              platforms="linux-amd64"/>
     <package name="fuchsia/tools/ninjatrace/${platform}"
