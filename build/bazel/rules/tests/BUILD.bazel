@@ -139,10 +139,6 @@ filegroup(
         "//tools/fidl/fidlgen_rust",
 
         # Miscellaneous libraries.
-        "//sdk/lib/fidl",
-        "//sdk/lib/fidl/cpp:cpp_base",
-        "//sdk/lib/fidl/cpp/wire",
-        "//sdk/lib/fidl_base",
         "//sdk/lib/stdcompat",
         "//sdk/lib/utf-utils",
         "//src/zircon/lib/zircon",
