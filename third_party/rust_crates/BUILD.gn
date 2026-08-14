@@ -2293,13 +2293,13 @@ if (!(current_os == "fuchsia")) {
 
 if (!(current_os == "fuchsia")) {
   group("synstructure") {
-    public_deps = [ ":synstructure-v0_13_2" ]
+    public_deps = [ ":synstructure-v0_14_0" ]
   }
 }
 
 if (!(current_os == "fuchsia")) {
-  group("synstructure-0.13.2") {
-    public_deps = [ ":synstructure-v0_13_2" ]
+  group("synstructure-0.14.0") {
+    public_deps = [ ":synstructure-v0_14_0" ]
   }
 }
 
@@ -21600,10 +21600,12 @@ rustc_library("syn-v3_0_3") {
     "--cfg=feature=\"clone-impls\"",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"derive\"",
+    "--cfg=feature=\"extra-traits\"",
     "--cfg=feature=\"full\"",
     "--cfg=feature=\"parsing\"",
     "--cfg=feature=\"printing\"",
     "--cfg=feature=\"proc-macro\"",
+    "--cfg=feature=\"visit\"",
     "--cfg=feature=\"visit-mut\"",
   ]
 
@@ -21612,17 +21614,17 @@ rustc_library("syn-v3_0_3") {
   applicable_licenses = [ ":syn-v3_0_3.license" ]
 }
 
-license("synstructure-v0_13_2.license") {
+license("synstructure-v0_14_0.license") {
   public_package_name = "synstructure"
   license_files =
-      [ "//third_party/rust_crates/vendor/synstructure-0.13.2/LICENSE" ]
+      [ "//third_party/rust_crates/vendor/synstructure-0.14.0/LICENSE" ]
 }
 
-rustc_library("synstructure-v0_13_2") {
+rustc_library("synstructure-v0_14_0") {
   crate_name = "synstructure"
   source_root =
-      "//third_party/rust_crates/vendor/synstructure-0.13.2/src/lib.rs"
-  output_name = "synstructure-1e1e433f12110f5f"
+      "//third_party/rust_crates/vendor/synstructure-0.14.0/src/lib.rs"
+  output_name = "synstructure-7a450c08b7150d1c"
   edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
@@ -21631,21 +21633,21 @@ rustc_library("synstructure-v0_13_2") {
   deps = []
   deps += [ ":proc-macro2-v1_0_106" ]
   deps += [ ":quote-v1_0_45" ]
-  deps += [ ":syn-v2_0_119" ]
+  deps += [ ":syn-v3_0_3" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=1e1e433f12110f5f",
-    "-Cextra-filename=-1e1e433f12110f5f",
+    "-Cmetadata=7a450c08b7150d1c",
+    "-Cextra-filename=-7a450c08b7150d1c",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"proc-macro\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":synstructure-v0_13_2.license" ]
+  applicable_licenses = [ ":synstructure-v0_14_0.license" ]
 }
 
 license("redox_syscall-v0_2_13.license") {

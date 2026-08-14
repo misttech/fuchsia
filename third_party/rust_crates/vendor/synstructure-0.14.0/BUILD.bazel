@@ -22,7 +22,7 @@ package_info(
     name = "package_info",
     package_name = "synstructure",
     package_url = "https://github.com/mystor/synstructure",
-    package_version = "0.13.2",
+    package_version = "0.14.0",
 )
 
 license(
@@ -72,10 +72,10 @@ rust_library(
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    version = "0.13.2",
+    version = "0.14.0",
     deps = [
         "//third_party/rust_crates/vendor/proc-macro2-1.0.106:proc_macro2",
         "//third_party/rust_crates/vendor/quote-1.0.45:quote",
-        "//third_party/rust_crates/vendor/syn-2.0.119:syn",
+        "//third_party/rust_crates/vendor/syn-3.0.3:syn",
     ],
 )
