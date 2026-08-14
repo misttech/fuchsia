@@ -22,6 +22,7 @@ mod job_dispatcher;
 mod job_dispatcher_ffi;
 mod log_dispatcher;
 mod log_dispatcher_ffi;
+mod mbuf;
 mod msi_allocation;
 mod msi_dispatcher;
 mod msi_dispatcher_ffi;

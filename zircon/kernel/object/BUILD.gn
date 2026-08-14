@@ -214,6 +214,7 @@ kernel_rust_mod("object-rs") {
     "job_dispatcher_ffi.rs",
     "log_dispatcher.rs",
     "log_dispatcher_ffi.rs",
+    "mbuf.rs",
     "msi_allocation.rs",
     "msi_dispatcher.rs",
     "msi_dispatcher_ffi.rs",
@@ -256,4 +257,5 @@ kernel_rust_mod("object-rs") {
     "//zircon/kernel/platform:platform-rs",
     "//zircon/system/ulib/fbl/rust:fbl",
   ]
+  test_deps = [ "//zircon/kernel/lib/unittest:unittest-rs" ]
 }
