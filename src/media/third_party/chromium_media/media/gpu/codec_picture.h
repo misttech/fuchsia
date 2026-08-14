@@ -1,18 +1,25 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef MEDIA_GPU_CODEC_PICTURE_H_
-#define MEDIA_GPU_CODEC_PICTURE_H_
+#ifndef SRC_MEDIA_THIRD_PARTY_CHROMIUM_MEDIA_MEDIA_GPU_CODEC_PICTURE_H_
+#define SRC_MEDIA_THIRD_PARTY_CHROMIUM_MEDIA_MEDIA_GPU_CODEC_PICTURE_H_
 
 #include <vector>
 
+// Fuchsia change: Remove libraries in favor of "chromium_utils.h"
 #include "chromium_utils.h"
 #include "geometry.h"
 #include "media/base/decrypt_config.h"
 #include "media/base/video_color_space.h"
 
+#if BUILDFLAG(ENABLE_PLATFORM_DOLBY_VISION)
+#include "media/gpu/dolby_vision_metadata.h"
+#endif  // BUILDFLAG(ENABLE_PLATFORM_DOLBY_VISION)
+
 namespace media {
+
+class DecoderBuffer;
 
 // Represents a picture encoded (or to be encoded) with a video codec, such as
 // VP8. Users of this class do not require knowledge of the codec format, or any
@@ -45,13 +52,42 @@ class MEDIA_GPU_EXPORT CodecPicture {
     colorspace_ = colorspace;
   }
 
+  // The dynamic HDR metadata, which comes from timed metadata tracks and
+  // the codec bitstream. This is later merged on top of static HDR metadata.
+  const gfx::HDRMetadata& dynamic_hdr_metadata() const { return hdr_metadata_; }
+
+  // Populate the dynamic HDR metadata. If `decoder_buffer` is non-nullptr and
+  // contains HDR metadata in its side data, then that takes highest precedence
+  // (since it comes from a timed metadata track). After that prefer
+  // `hdr_metadata_bitstream`, which comes from the codec bitstream.
+  void SetDynamicHdrMetadata(const gfx::HDRMetadata& hdr_metadata_bitstream,
+                             const DecoderBuffer* decoder_buffer) {
+    hdr_metadata_ = hdr_metadata_bitstream;
+  }
+  void SetDynamicHdrMetadata(const DecoderBuffer* decoder_buffer) {
+    hdr_metadata_ = {};
+  }
+
+#if BUILDFLAG(ENABLE_PLATFORM_DOLBY_VISION)
+  const std::vector<DolbyVisionMetadata>& dolby_vision_metadata() const {
+    return dolby_vision_metadata_;
+  }
+  void set_dolby_vision_metadata(std::vector<DolbyVisionMetadata> metadata) {
+    dolby_vision_metadata_ = std::move(metadata);
+  }
+#endif  // BUILDFLAG(ENABLE_PLATFORM_DOLBY_VISION)
+
  private:
   int32_t bitstream_id_ = -1;
   gfx::Rect visible_rect_;
   std::unique_ptr<DecryptConfig> decrypt_config_;
   VideoColorSpace colorspace_;
+  gfx::HDRMetadata hdr_metadata_;
+#if BUILDFLAG(ENABLE_PLATFORM_DOLBY_VISION)
+  std::vector<DolbyVisionMetadata> dolby_vision_metadata_;
+#endif  // BUILDFLAG(ENABLE_PLATFORM_DOLBY_VISION)
 };
 
 }  // namespace media
 
-#endif  // MEDIA_GPU_CODEC_PICTURE_H_
+#endif  // SRC_MEDIA_THIRD_PARTY_CHROMIUM_MEDIA_MEDIA_GPU_CODEC_PICTURE_H_

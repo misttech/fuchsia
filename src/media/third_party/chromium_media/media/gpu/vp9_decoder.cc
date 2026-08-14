@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,13 +7,6 @@
 #include <memory>
 
 // Fuchsia change: Remove libraries in favor of "chromium_utils.h"
-// #include "base/bind.h"
-// #include "base/feature_list.h"
-// #include "base/logging.h"
-// #include "build/build_config.h"
-// #include "build/chromeos_buildflags.h"
-// #include "media/base/media_switches.h"
-// #include "media/base/limits.h"
 #include "chromium_utils.h"
 
 namespace media {
@@ -31,14 +24,19 @@ bool GetSpatialLayerFrameSize(const DecoderBuffer& decoder_buffer,
 // On windows, currently only d3d11 supports decoding VP9 kSVC stream, we
 // shouldn't combine the switch kD3D11Vp9kSVCHWDecoding to kVp9kSVCHWDecoding
 // due to we want keep returning false to MediaCapability.
-// Fuchsia change: Don't support windows
+// Fuchsia change: Don't support windows or chromeos
 #if 0
-  if (!base::FeatureList::IsEnabled(media::kD3D11Vp9kSVCHWDecoding)) {
-    DLOG(ERROR) << "Vp9 k-SVC hardware decoding is disabled";
-    return false;
-  }
-#elif 0
-  if (!base::FeatureList::IsEnabled(media::kVp9kSVCHWDecoding)) {
+  const bool enable_vp9_ksvc =
+#if BUILDFLAG(IS_WIN)
+      base::FeatureList::IsEnabled(media::kD3D11Vp9kSVCHWDecoding);
+#elif BUILDFLAG(IS_CHROMEOS) && defined(ARCH_CPU_ARM_FAMILY)
+      // V4L2 stateless API decoder is not capable of decoding VP9 k-SVC stream.
+      false;
+#else
+      base::FeatureList::IsEnabled(media::kVp9kSVCHWDecoding);
+#endif
+
+  if (!enable_vp9_ksvc) {
     DLOG(ERROR) << "Vp9 k-SVC hardware decoding is disabled";
     return false;
   }
@@ -80,13 +78,23 @@ bool IsValidBitDepth(uint8_t bit_depth, VideoCodecProfile profile) {
       return bit_depth == 10u || bit_depth == 12u;
     default:
       NOTREACHED();
-      return false;
   }
 }
 
-bool IsYUV420Sequence(const Vp9FrameHeader& frame_header) {
-  // Spec 7.2.2
-  return frame_header.subsampling_x == 1u && frame_header.subsampling_y == 1u;
+VideoChromaSampling GetVP9ChromaSampling(const Vp9FrameHeader& frame_header) {
+  // Spec section 7.2.2
+  uint8_t subsampling_x = frame_header.subsampling_x;
+  uint8_t subsampling_y = frame_header.subsampling_y;
+  if (subsampling_x == 0 && subsampling_y == 0) {
+    return VideoChromaSampling::k444;
+  } else if (subsampling_x == 1u && subsampling_y == 0u) {
+    return VideoChromaSampling::k422;
+  } else if (subsampling_x == 1u && subsampling_y == 1u) {
+    return VideoChromaSampling::k420;
+  } else {
+    FX_LOGS(DEBUG) << "Unknown chroma sampling format.";
+    return VideoChromaSampling::kUnknown;
+  }
 }
 }  // namespace
 
@@ -94,8 +102,9 @@ VP9Decoder::VP9Accelerator::VP9Accelerator() {}
 
 VP9Decoder::VP9Accelerator::~VP9Accelerator() {}
 
-bool VP9Decoder::VP9Accelerator::SupportsContextProbabilityReadback() const {
-  return false;
+scoped_refptr<VP9Picture> VP9Decoder::VP9Accelerator::CreateVP9PictureSecure(
+    uint64_t secure_handle) {
+  return nullptr;
 }
 
 VP9Decoder::VP9Decoder(std::unique_ptr<VP9Accelerator> accelerator,
@@ -105,29 +114,31 @@ VP9Decoder::VP9Decoder(std::unique_ptr<VP9Accelerator> accelerator,
       container_color_space_(container_color_space),
       // TODO(hiroh): Set profile to UNKNOWN.
       profile_(profile),
-      accelerator_(std::move(accelerator)),
-      parser_(accelerator_->NeedsCompressedHeaderParsed(),
-              accelerator_->SupportsContextProbabilityReadback()) {}
+      accelerator_(std::move(accelerator)) {}
 
 VP9Decoder::~VP9Decoder() = default;
 
-void VP9Decoder::SetStream(int32_t id, const DecoderBuffer& decoder_buffer) {
-  const uint8_t* ptr = decoder_buffer.data();
-  const size_t size = decoder_buffer.data_size();
-  const DecryptConfig* decrypt_config = decoder_buffer.decrypt_config();
+void VP9Decoder::SetStream(int32_t id,
+                           scoped_refptr<DecoderBuffer> decoder_buffer) {
+  CHECK(decoder_buffer);
+  // Keep the old buffer alive until the end of this function to ensure
+  // that any active spans in the parser are cleared before the memory is freed.
+  auto outgoing_decoder_buffer = std::move(decoder_buffer_);
+  decoder_buffer_ = std::move(decoder_buffer);
+  const DecryptConfig* decrypt_config = decoder_buffer_->decrypt_config();
 
-  DCHECK(ptr);
-  DCHECK(size);
-  FX_LOGS(DEBUG) << "New input stream id: " << id << " at: " << (void*)ptr
-                 << " size: " << size;
+  FX_LOGS(DEBUG) << "New input stream id: " << id
+                 << " size: " << decoder_buffer_->size();
   stream_id_ = id;
   std::vector<uint32_t> frame_sizes;
-  if (!GetSpatialLayerFrameSize(decoder_buffer, frame_sizes)) {
+  if (!GetSpatialLayerFrameSize(*decoder_buffer_, frame_sizes)) {
     SetError();
     return;
   }
+  // Fuchsia change: Fuchsia does not use secure_handle_ for DRM playback.
+  secure_handle_ = 0;
 
-  parser_.SetStream(ptr, size, frame_sizes,
+  parser_.SetStream(*decoder_buffer_, frame_sizes,
                     decrypt_config ? decrypt_config->Clone() : nullptr);
 }
 
@@ -145,6 +156,9 @@ void VP9Decoder::Reset() {
   ref_frames_.Clear();
 
   parser_.Reset();
+  decoder_buffer_.reset();
+
+  secure_handle_ = 0;
 
   if (state_ == kDecoding) {
     state_ = kAfterReset;
@@ -181,16 +195,20 @@ VP9Decoder::DecodeResult VP9Decoder::Decode() {
           break;
 
         case Vp9Parser::kEOStream:
+          // Fuchsia change: Release the decoder buffer as soon as all frames in
+          // the current bitstream buffer have been parsed and submitted. Note
+          // that parser_.Reset() must not be called here so that reference
+          // slots and segmentation context persist across frames.
+          ZX_DEBUG_ASSERT(parser_.is_stream_empty());
+          if (!pending_pic_) {
+            decoder_buffer_.reset();
+          }
           return kRanOutOfStreamData;
 
         case Vp9Parser::kInvalidStream:
           FX_LOGS(DEBUG) << "Error parsing stream";
           SetError();
           return kDecodeError;
-
-        case Vp9Parser::kAwaitingRefresh:
-          FX_LOGS(DEBUG) << "Awaiting context update";
-          return kNeedContextUpdate;
       }
     }
 
@@ -232,12 +250,12 @@ VP9Decoder::DecodeResult VP9Decoder::Decode() {
         return kDecodeError;
       }
       pic->set_bitstream_id(stream_id_);
+      pic->frame_hdr = std::move(curr_frame_hdr_);
       if (!accelerator_->OutputPicture(std::move(pic))) {
         SetError();
         return kDecodeError;
       }
 
-      curr_frame_hdr_.reset();
       decrypt_config_.reset();
       continue;
     }
@@ -245,12 +263,18 @@ VP9Decoder::DecodeResult VP9Decoder::Decode() {
     gfx::Size new_pic_size = curr_frame_size_;
     gfx::Rect new_render_rect(curr_frame_hdr_->render_width,
                               curr_frame_hdr_->render_height);
-    // For safety, check the validity of render size or leave it as pic size.
-    if (!gfx::Rect(new_pic_size).Contains(new_render_rect)) {
-      FX_LOGS(DEBUG) << "Render size exceeds picture size. render size: "
+    const gfx::Rect frame_size(curr_frame_hdr_->frame_width,
+                               curr_frame_hdr_->frame_height);
+    if (!frame_size.Contains(new_render_rect)) {
+      // For safety, check the validity of render size or leave it as the actual
+      // per-frame decoded size. In the k-SVC path |curr_frame_size_| is the
+      // *maximum* layer size (Vp9Parser::ParseSVCFrame stamps allocate_size
+      // onto every layer), so clamping against it would allow render_rect to
+      // extend into the undecoded region of the surface (b/149727823).
+      FX_LOGS(DEBUG) << "Render size exceeds frame size. render size: "
                      << new_render_rect.ToString()
-                     << ", picture size: " << new_pic_size.ToString();
-      new_render_rect = gfx::Rect(new_pic_size);
+                     << ", frame size: " << frame_size.ToString();
+      new_render_rect = frame_size;
     }
     VideoCodecProfile new_profile =
         VP9ProfileToVideoCodecProfile(curr_frame_hdr_->profile);
@@ -264,14 +288,36 @@ VP9Decoder::DecodeResult VP9Decoder::Decode() {
                      << ", profile=" << GetProfileName(new_profile);
       return kDecodeError;
     }
-    if (!IsYUV420Sequence(*curr_frame_hdr_)) {
+    VideoChromaSampling new_chroma_sampling =
+        GetVP9ChromaSampling(*curr_frame_hdr_);
+    if (new_chroma_sampling != chroma_sampling_) {
+      chroma_sampling_ = new_chroma_sampling;
+    }
+
+    if (chroma_sampling_ != VideoChromaSampling::k420) {
       FX_LOGS(DEBUG) << "Only YUV 4:2:0 is supported";
       return kDecodeError;
     }
 
+    VideoColorSpace new_color_space;
+    // For VP9, container color spaces override video stream color spaces.
+    if (container_color_space_.IsSpecified()) {
+      new_color_space = container_color_space_;
+    } else if (curr_frame_hdr_->GetColorSpace().IsSpecified()) {
+      new_color_space = curr_frame_hdr_->GetColorSpace();
+    }
+
     DCHECK(!new_pic_size.IsEmpty());
-    if (new_pic_size != pic_size_ || new_profile != profile_ ||
-        curr_frame_hdr_->bit_depth != bit_depth_) {
+    const bool is_pic_size_different = new_pic_size != pic_size_;
+    const bool is_pic_size_larger = new_pic_size.width() > pic_size_.width() ||
+                                    new_pic_size.height() > pic_size_.height();
+    const bool is_new_configuration_different_enough =
+        (ignore_resolution_changes_to_smaller_for_testing_
+             ? is_pic_size_larger
+             : is_pic_size_different) ||
+        new_profile != profile_ || curr_frame_hdr_->bit_depth != bit_depth_;
+
+    if (is_new_configuration_different_enough) {
       FX_LOGS(DEBUG) << "New profile: " << GetProfileName(new_profile)
                      << ", New resolution: " << new_pic_size.ToString()
                      << ", New bit depth: "
@@ -287,11 +333,17 @@ VP9Decoder::DecodeResult VP9Decoder::Decode() {
       visible_rect_ = new_render_rect;
       profile_ = new_profile;
       bit_depth_ = curr_frame_hdr_->bit_depth;
+      picture_color_space_ = new_color_space;
       size_change_failure_counter_ = 0;
       return kConfigChange;
     }
 
-    scoped_refptr<VP9Picture> pic = accelerator_->CreateVP9Picture();
+    scoped_refptr<VP9Picture> pic;
+    if (secure_handle_) {
+      pic = accelerator_->CreateVP9PictureSecure(secure_handle_);
+    } else {
+      pic = accelerator_->CreateVP9Picture();
+    }
     if (!pic) {
       return kRanOutOfSurfaces;
     }
@@ -308,6 +360,12 @@ VP9Decoder::DecodeResult VP9Decoder::Decode() {
     else if (curr_frame_hdr_)
       pic->set_colorspace(curr_frame_hdr_->GetColorSpace());
 
+    // VP9 only supports HDR metadata from the container.
+    pic->SetDynamicHdrMetadata(decoder_buffer_.get());
+
+    // VP9 only supports HDR metadata from the container.
+    pic->SetDynamicHdrMetadata(decoder_buffer_.get());
+
     pic->frame_hdr = std::move(curr_frame_hdr_);
 
     VP9Accelerator::Status status = DecodeAndOutputPicture(std::move(pic));
@@ -320,42 +378,14 @@ VP9Decoder::DecodeResult VP9Decoder::Decode() {
   }
 }
 
-void VP9Decoder::UpdateFrameContext(
-    scoped_refptr<VP9Picture> pic,
-    Vp9Parser::ContextRefreshCallback context_refresh_cb) {
-  DCHECK(context_refresh_cb);
-  Vp9FrameContext frame_ctx;
-  memset(&frame_ctx, 0, sizeof(frame_ctx));
-
-  if (!accelerator_->GetFrameContext(std::move(pic), &frame_ctx)) {
-    SetError();
-    return;
-  }
-
-  // Fuchsia changes: Swap .Run for operator()
-  context_refresh_cb(frame_ctx);
-}
-
 VP9Decoder::VP9Accelerator::Status VP9Decoder::DecodeAndOutputPicture(
     scoped_refptr<VP9Picture> pic) {
   DCHECK(!pic_size_.IsEmpty());
   DCHECK(pic->frame_hdr);
 
-  base::OnceClosure done_cb;
-  Vp9Parser::ContextRefreshCallback context_refresh_cb =
-      parser_.GetContextRefreshCb(pic->frame_hdr->frame_context_idx);
-  if (context_refresh_cb) {
-    // Fuchsia changes: swap base::BindOnce with lambda
-    done_cb = [this, pic,
-               context_refresh_cb = std::move(context_refresh_cb)]() mutable {
-      this->UpdateFrameContext(pic, std::move(context_refresh_cb));
-    };
-  }
-
   const Vp9Parser::Context& context = parser_.context();
   VP9Accelerator::Status status = accelerator_->SubmitDecode(
-      pic, context.segmentation(), context.loop_filter(), ref_frames_,
-      std::move(done_cb));
+      pic, context.segmentation(), context.loop_filter(), ref_frames_);
   if (status != VP9Accelerator::Status::kOk) {
     if (status == VP9Accelerator::Status::kTryAgain)
       pending_pic_ = std::move(pic);
@@ -390,6 +420,14 @@ VideoCodecProfile VP9Decoder::GetProfile() const {
 
 uint8_t VP9Decoder::GetBitDepth() const {
   return bit_depth_;
+}
+
+VideoChromaSampling VP9Decoder::GetChromaSampling() const {
+  return chroma_sampling_;
+}
+
+VideoColorSpace VP9Decoder::GetVideoColorSpace() const {
+  return picture_color_space_;
 }
 
 size_t VP9Decoder::GetRequiredNumOfPictures() const {

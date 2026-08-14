@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,9 +8,9 @@
 #include <memory>
 #include <optional>  // Fuchsia change: include optional library
 
-#include "media/filters/vp9_parser.h"
 #include "media/gpu/codec_picture.h"
-// Fuchsia change: Remove libraries in favor of "chromium_utils.h"/"geometry.h"
+#include "media/parsers/vp9_parser.h"
+// Fuchsia change: Remove libraries in favor of "chromium_utils.h"
 #include "chromium_utils.h"
 #include "geometry.h"
 #include "media/video/video_encode_accelerator.h"
@@ -34,9 +34,7 @@ class MEDIA_GPU_EXPORT VP9Picture : public CodecPicture {
   virtual VaapiVP9Picture* AsVaapiVP9Picture();
 #endif
 
-  // Create a duplicate instance and copy the data to it. It is used to support
-  // VP9 show_existing_frame feature. Return the scoped_refptr pointing to the
-  // duplicate instance, or nullptr on failure.
+  // Create a copy of this picture (used to implement show_existing_frame).
   scoped_refptr<VP9Picture> Duplicate();
 
   std::unique_ptr<Vp9FrameHeader> frame_hdr;
@@ -47,8 +45,11 @@ class MEDIA_GPU_EXPORT VP9Picture : public CodecPicture {
  protected:
   ~VP9Picture() override;
 
- private:
-  // Create a duplicate instance.
+  // Create an instance of the same class, and copy any accelerator-specific
+  // fields. Used by Duplicate() which handles copying CodecPicture and
+  // VP9Picture fields.
+  //
+  // All subclasses should override this method.
   virtual scoped_refptr<VP9Picture> CreateDuplicate();
 };
 

@@ -1,17 +1,19 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef MEDIA_GPU_ACCELERATED_VIDEO_DECODER_H_
-#define MEDIA_GPU_ACCELERATED_VIDEO_DECODER_H_
+#ifndef SRC_MEDIA_THIRD_PARTY_CHROMIUM_MEDIA_MEDIA_GPU_ACCELERATED_VIDEO_DECODER_H_
+#define SRC_MEDIA_THIRD_PARTY_CHROMIUM_MEDIA_MEDIA_GPU_ACCELERATED_VIDEO_DECODER_H_
 
 #include <stddef.h>
 #include <stdint.h>
 
+// Fuchsia change: Remove libraries in favor of "chromium_utils.h"
 #include "chromium_utils.h"
 #include "geometry.h"
 #include "media/base/decoder_buffer.h"
 #include "media/base/video_codecs.h"
+#include "media/base/video_color_space.h"
 
 namespace media {
 
@@ -21,19 +23,17 @@ namespace media {
 // frame and state management.
 class MEDIA_GPU_EXPORT AcceleratedVideoDecoder {
  public:
-  AcceleratedVideoDecoder() {}
+  AcceleratedVideoDecoder() = default;
+  virtual ~AcceleratedVideoDecoder() = default;
 
   AcceleratedVideoDecoder(const AcceleratedVideoDecoder&) = delete;
   AcceleratedVideoDecoder& operator=(const AcceleratedVideoDecoder&) = delete;
 
-  virtual ~AcceleratedVideoDecoder() {}
-
   // Set the buffer owned by |decoder_buffer| as the current source of encoded
-  // stream data. AcceleratedVideoDecoder doesn't have an ownership of the
-  // buffer. |decoder_buffer| must be kept alive until Decode() returns
-  // kRanOutOfStreamData. Pictures produced as a result of this call should be
-  // assigned the passed stream |id|.
-  virtual void SetStream(int32_t id, const DecoderBuffer& decoder_buffer) = 0;
+  // stream data. Pictures produced as a result of this call should be assigned
+  // the passed stream |id|.
+  virtual void SetStream(int32_t id,
+                         scoped_refptr<DecoderBuffer> decoder_buffer) = 0;
 
   // Have the decoder flush its state and trigger output of all previously
   // decoded surfaces. Return false on failure.
@@ -51,15 +51,20 @@ class MEDIA_GPU_EXPORT AcceleratedVideoDecoder {
     // in decoding; in future it could perhaps be possible to fall back
     // to software decoding instead.
     // kStreamError,  // Error in stream.
-    kConfigChange,        // This is returned when some configuration (e.g.
-                          // profile or picture size) is changed. A client may
-                          // need to apply the client side the configuration
-                          // properly (e.g. allocate buffers with the new
-                          // resolution).
+    kConfigChange,      // This is returned when some configuration (e.g.
+                        // profile or picture size) is changed. A client may
+                        // need to apply the client side the configuration
+                        // properly (e.g. allocate buffers with the new
+                        // resolution).
+    kColorSpaceChange,  // This is returned if the video color space is changed.
+                        // Color space changes off of key frames are discarded
+                        // only for VP9 decoder. When both ConfigChange and
+                        // ColorSpaceChange occur together, ConfigChange is
+                        // preferred over ColorSpaceChange. When triggered, it
+                        // is used for creating new shared images for the
+                        // D3D11VideoDecoder.
     kRanOutOfStreamData,  // Need more stream data to proceed.
     kRanOutOfSurfaces,    // Waiting for the client to free up output surfaces.
-    kNeedContextUpdate,   // Waiting for the client to update decoding context
-                          // with data acquired from the accelerator.
     kTryAgain,  // The accelerator needs additional data (independently
     // provided) in order to proceed. This may be a new key in order to decrypt
     // encrypted data, or existing hardware resources freed so that they can be
@@ -79,10 +84,17 @@ class MEDIA_GPU_EXPORT AcceleratedVideoDecoder {
   virtual gfx::Rect GetVisibleRect() const = 0;
   virtual VideoCodecProfile GetProfile() const = 0;
   virtual uint8_t GetBitDepth() const = 0;
+  virtual VideoChromaSampling GetChromaSampling() const = 0;
+  // Returns the video color space for the in-band metadata / stream
+  // configuration. The returned color space may vary between in-band metadata
+  // and stream config based on video decoder's internal
+  // preferences.
+  virtual VideoColorSpace GetVideoColorSpace() const = 0;
   virtual size_t GetRequiredNumOfPictures() const = 0;
   virtual size_t GetNumReferenceFrames() const = 0;
 
-  // TODO(https://fxbug.dev/42060469): Exposes if kConfigChange was caused by a keyframe
+  // TODO(https://fxbug.dev/42060469): Exposes if kConfigChange was caused by a
+  // keyframe
   virtual bool IsCurrentFrameKeyframe() const = 0;
 
   // About 3 secs for 30 fps video. When the new sized keyframe is missed, the
@@ -96,4 +108,4 @@ class MEDIA_GPU_EXPORT AcceleratedVideoDecoder {
 
 }  //  namespace media
 
-#endif  // MEDIA_GPU_ACCELERATED_VIDEO_DECODER_H_
+#endif  // SRC_MEDIA_THIRD_PARTY_CHROMIUM_MEDIA_MEDIA_GPU_ACCELERATED_VIDEO_DECODER_H_

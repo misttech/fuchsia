@@ -26,7 +26,7 @@
 #include "src/media/lib/metrics/metrics.cb.h"
 #include "src/media/third_party/chromium_media/media/base/decoder_buffer.h"
 #include "src/media/third_party/chromium_media/media/gpu/h264_decoder.h"
-#include "src/media/third_party/chromium_media/media/video/h264_level_limits.h"
+#include "src/media/third_party/chromium_media/media/parsers/h264_level_limits.h"
 #include "util.h"
 #include "watchdog.h"
 
@@ -1260,8 +1260,7 @@ void H264MultiDecoder::HandleSliceHeadDone() {
 
   auto sps_nalu = std::make_unique<media::H264NALU>();
   {  // scope sps
-    ZX_DEBUG_ASSERT(!sps_nalu->data);
-    ZX_DEBUG_ASSERT(!sps_nalu->size);
+    ZX_DEBUG_ASSERT(sps_nalu->data.empty());
     // Just needs to be non-zero for SPS; not available from FW but doesn't matter.
     sps_nalu->nal_ref_idc = 1;
     sps_nalu->nal_unit_type = media::H264NALU::kSPS;
@@ -1467,8 +1466,7 @@ void H264MultiDecoder::HandleSliceHeadDone() {
 
   auto pps_nalu = std::make_unique<media::H264NALU>();
   {  // scope pps
-    ZX_DEBUG_ASSERT(!pps_nalu->data);
-    ZX_DEBUG_ASSERT(!pps_nalu->size);
+    ZX_DEBUG_ASSERT(pps_nalu->data.empty());
     // Just needs to be on-zero for PPS; not available from FW but doesn't matter.
     pps_nalu->nal_ref_idc = 1;
     pps_nalu->nal_unit_type = media::H264NALU::kPPS;
@@ -1568,8 +1566,7 @@ void H264MultiDecoder::HandleSliceHeadDone() {
   int frame_num = -1;
   int first_mb_in_slice = -1;
   {  // scope slice
-    ZX_DEBUG_ASSERT(!slice_nalu->data);
-    ZX_DEBUG_ASSERT(!slice_nalu->size);
+    ZX_DEBUG_ASSERT(slice_nalu->data.empty());
     slice_nalu->nal_ref_idc = params_.data[HardwareRenderParams::kNalRefIdc];
     slice_nalu->nal_unit_type = params_.data[HardwareRenderParams::kNalUnitType];
     if (slice_nalu->nal_unit_type == media::H264NALU::kCodedSliceExtension) {
@@ -1934,6 +1931,7 @@ void H264MultiDecoder::HandleSliceHeadDone() {
           OnFatalError();
           return;
         case media::AcceleratedVideoDecoder::kConfigChange:
+        case media::AcceleratedVideoDecoder::kColorSpaceChange:
           // TODO: verify that the config change is a NOP vs. the previous ConfigureDpb().
           continue;
         case media::AcceleratedVideoDecoder::kRanOutOfStreamData:
@@ -1969,12 +1967,6 @@ void H264MultiDecoder::HandleSliceHeadDone() {
           ZX_DEBUG_ASSERT(!should_save_input_context_);
           force_swap_out_ = false;
           UpdateDiagnostics();
-          return;
-        case media::AcceleratedVideoDecoder::kNeedContextUpdate:
-          LogEvent(
-              media_metrics::StreamProcessorEvents2MigratedMetricDimensionEvent_UnreachableError);
-          LOG(ERROR, "kNeedContextUpdate is impossible");
-          OnFatalError();
           return;
         default:
           LogEvent(media_metrics::
@@ -2226,8 +2218,7 @@ void H264MultiDecoder::HandlePicDataDone() {
   // output frames and do post-decode DPB or MMCO updates.  This pushes media_decoder_ from
   // searching for NAL end (pre-frame-decode) to post-frame-decode and post-any-frames-output.
   auto aud_nalu = std::make_unique<media::H264NALU>();
-  ZX_DEBUG_ASSERT(!aud_nalu->data);
-  ZX_DEBUG_ASSERT(!aud_nalu->size);
+  ZX_DEBUG_ASSERT(aud_nalu->data.empty());
   aud_nalu->nal_ref_idc = 0;
   aud_nalu->nal_unit_type = media::H264NALU::kAUD;
   media_decoder_->QueuePreparsedNalu(std::move(aud_nalu));
@@ -2240,8 +2231,9 @@ void H264MultiDecoder::HandlePicDataDone() {
       OnFatalError();
       return;
     case media::AcceleratedVideoDecoder::kConfigChange:
+    case media::AcceleratedVideoDecoder::kColorSpaceChange:
       LogEvent(media_metrics::StreamProcessorEvents2MigratedMetricDimensionEvent_UnreachableError);
-      LOG(ERROR, "kConfigChange unexpected here");
+      LOG(ERROR, "kConfigChange / kColorSpaceChange unexpected here");
       OnFatalError();
       return;
     case media::AcceleratedVideoDecoder::kRanOutOfStreamData:
@@ -2250,11 +2242,6 @@ void H264MultiDecoder::HandlePicDataDone() {
     case media::AcceleratedVideoDecoder::kRanOutOfSurfaces:
       LogEvent(media_metrics::StreamProcessorEvents2MigratedMetricDimensionEvent_SwHwSyncError);
       LOG(ERROR, "kRanOutOfSurfaces desipte checking in advance of starting frame decode");
-      OnFatalError();
-      return;
-    case media::AcceleratedVideoDecoder::kNeedContextUpdate:
-      LogEvent(media_metrics::StreamProcessorEvents2MigratedMetricDimensionEvent_UnreachableError);
-      LOG(ERROR, "kNeedContextUpdate is impossible");
       OnFatalError();
       return;
     case media::AcceleratedVideoDecoder::kTryAgain:

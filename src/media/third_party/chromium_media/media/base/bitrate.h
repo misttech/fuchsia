@@ -1,22 +1,26 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef MEDIA_BASE_BITRATE_H_
-#define MEDIA_BASE_BITRATE_H_
+#ifndef SRC_MEDIA_THIRD_PARTY_CHROMIUM_MEDIA_MEDIA_BASE_BITRATE_H_
+#define SRC_MEDIA_THIRD_PARTY_CHROMIUM_MEDIA_MEDIA_BASE_BITRATE_H_
 
 #include <stdint.h>
 #include <string>
 
+// Fuchsia change: Remove libraries in favor of "chromium_utils.h"
 #include "chromium_utils.h"
 
 namespace media {
 
 class MEDIA_EXPORT Bitrate {
  public:
-  // Indicates whether constant bitrate (CBR) or variable bitrate (VBR) should
-  // be used for encoding.
-  enum class Mode { kConstant, kVariable };
+  // Indicates whether
+  // - constant bitrate (CBR)
+  // - variable bitrate (VBR)
+  // - or external rate control
+  // should be used for encoding.
+  enum class Mode { kConstant, kVariable, kExternal };
 
   // Required by Mojo for serialization and de-serialization. Creates an
   // invalid constant bitrate with |target_| and |peak_| set to 0u. Prefer
@@ -34,6 +38,7 @@ class MEDIA_EXPORT Bitrate {
     return Bitrate(Mode::kConstant, target_bps, 0);
   }
   static Bitrate VariableBitrate(uint32_t target_bps, uint32_t peak_bps);
+  static Bitrate ExternalRateControl();
 
   // Deleted variants: you must SAFELY convert to uint32_t before calling.
   // See base/numerics/safe_conversions.h for functions to safely convert
@@ -86,4 +91,4 @@ class MEDIA_EXPORT Bitrate {
 
 }  // namespace media
 
-#endif  // MEDIA_BASE_BITRATE_H_
+#endif  // SRC_MEDIA_THIRD_PARTY_CHROMIUM_MEDIA_MEDIA_BASE_BITRATE_H_

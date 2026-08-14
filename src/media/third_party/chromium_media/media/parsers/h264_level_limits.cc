@@ -1,11 +1,12 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "media/video/h264_level_limits.h"
+#include "media/parsers/h264_level_limits.h"
 
+// Fuchsia change: Remove libraries in favor of "chromium_utils.h"
 #include "chromium_utils.h"
-#include "media/video/h264_parser.h"
+#include "media/parsers/h264_parser.h"
 
 namespace media {
 namespace {

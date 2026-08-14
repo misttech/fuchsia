@@ -31,12 +31,7 @@ scoped_refptr<media::VP9Picture> VP9Accelerator::CreateVP9Picture() {
 
 VP9Accelerator::Status VP9Accelerator::SubmitDecode(
     scoped_refptr<media::VP9Picture> pic, const media::Vp9SegmentationParams& seg,
-    const media::Vp9LoopFilterParams& lf, const media::Vp9ReferenceFrameVector& reference_frames,
-    base::OnceClosure done_cb) {
-  // |done_cb| should be null as we return false from
-  // NeedsCompressedHeaderParsed().
-  DCHECK(!done_cb);
-
+    const media::Vp9LoopFilterParams& lf, const media::Vp9ReferenceFrameVector& reference_frames) {
   const media::Vp9FrameHeader* frame_hdr = pic->frame_hdr.get();
   DCHECK(frame_hdr);
 
@@ -214,11 +209,4 @@ VP9Accelerator::Status VP9Accelerator::SubmitDecode(
 bool VP9Accelerator::OutputPicture(scoped_refptr<media::VP9Picture> pic) {
   scoped_refptr<VASurface> va_surface = static_cast<VaapiVP9Picture*>(pic.get())->va_surface();
   return adapter_->ProcessOutput(va_surface, pic->bitstream_id());
-}
-
-bool VP9Accelerator::NeedsCompressedHeaderParsed() const { return false; }
-
-bool VP9Accelerator::GetFrameContext(scoped_refptr<media::VP9Picture> pic,
-                                     media::Vp9FrameContext* frame_ctx) {
-  return false;
 }

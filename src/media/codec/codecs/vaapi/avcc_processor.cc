@@ -131,8 +131,8 @@ void AvccProcessor::ProcessOobBytes(const fuchsia::media::FormatDetails& format_
       bool returned_buffer = false;
       auto return_input_packet =
           fit::defer_callback(fit::closure([&returned_buffer] { returned_buffer = true; }));
-      decode_annex_b_(
-          media::DecoderBuffer(accumulation, nullptr, 0u, std::move(return_input_packet)));
+      decode_annex_b_(media::DecoderBuffer(std::move(accumulation), nullptr, 0u,
+                                           std::move(return_input_packet)));
       ZX_ASSERT(returned_buffer);
       return;
     }

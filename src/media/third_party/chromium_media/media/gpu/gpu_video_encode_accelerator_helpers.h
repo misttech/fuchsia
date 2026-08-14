@@ -1,18 +1,22 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef MEDIA_GPU_GPU_VIDEO_ENCODE_ACCELERATOR_HELPERS_H_
-#define MEDIA_GPU_GPU_VIDEO_ENCODE_ACCELERATOR_HELPERS_H_
+#ifndef SRC_MEDIA_THIRD_PARTY_CHROMIUM_MEDIA_MEDIA_GPU_GPU_VIDEO_ENCODE_ACCELERATOR_HELPERS_H_
+#define SRC_MEDIA_THIRD_PARTY_CHROMIUM_MEDIA_MEDIA_GPU_GPU_VIDEO_ENCODE_ACCELERATOR_HELPERS_H_
 
 #include <vector>
 
+// Fuchsia change: Remove libraries in favor of "chromium_utils.h"
 #include "chromium_utils.h"
 #include "geometry.h"
+#include "media/base/bitrate.h"
 #include "media/base/video_bitrate_allocation.h"
 #include "media/video/video_encode_accelerator.h"
 
 namespace media {
+
+class Bitrate;
 
 // Helper functions for VideoEncodeAccelerator implementations in GPU process.
 
@@ -43,17 +47,48 @@ MEDIA_GPU_EXPORT VideoBitrateAllocation
 AllocateBitrateForDefaultEncoding(const VideoEncodeAccelerator::Config& config);
 
 // Create VideoBitrateAllocation with |num_spatial_layers|,
-// |num_temporal_layers| and |bitrate|. |bitrate| is the bitrate of the entire
-// stream. |num_temporal_layers| is the number of temporal layers in each
-// spatial layer.
-// First, |bitrate| is distributed to spatial layers based on libwebrtc bitrate
-// division. Then the bitrate of each spatial layer is distributed to temporal
-// layers in the spatial layer based on the same bitrate division ratio as a
-// software encoder.
+// |num_temporal_layers| and |bitrate|. |bitrate.target_bps()| is the bitrate of
+// the entire stream. |num_temporal_layers| is the number of temporal layers in
+// each spatial layer.
+// First, |bitrate.target_bps()| is distributed to spatial layers based on
+// libwebrtc bitrate division. Then the bitrate of each spatial layer is
+// distributed to temporal layers in the spatial layer based on the same bitrate
+// division ratio as a software encoder. If a variable bitrate is requested,
+// that is, |bitrate.mode()| is Bitrate::Mode::Variable, the peak will be set
+// equal to the |bitrate.peak_bps()|.
 MEDIA_GPU_EXPORT VideoBitrateAllocation
 AllocateDefaultBitrateForTesting(const size_t num_spatial_layers,
                                  const size_t num_temporal_layers,
-                                 const uint32_t bitrate);
+                                 const Bitrate& bitrate);
+
+// Create VideoBitrateAllocation with the bitrate for each spatial layer and
+// |num_temporal_layers|.
+VideoBitrateAllocation MEDIA_GPU_EXPORT
+AllocateBitrateForDefaultEncodingWithBitrates(
+    const std::vector<uint32_t>& spatial_layer_bitrates,
+    const size_t num_temporal_layers,
+    const bool uses_vbr);
+
+VideoBitrateAllocation MEDIA_GPU_EXPORT
+BitrateToBitrateAllocation(const Bitrate& bitrate);
+
+#if CHROMIUM_CODE
+class MEDIA_GPU_EXPORT VEAEncodingLatencyMetricsHelper {
+ public:
+  explicit VEAEncodingLatencyMetricsHelper(const std::string& uma_prefix,
+                                           VideoCodec codec);
+  VEAEncodingLatencyMetricsHelper() = delete;
+  ~VEAEncodingLatencyMetricsHelper();
+
+  void EncodeOneFrame(bool is_key_frame, base::TimeDelta start_time);
+
+ private:
+  const std::string uma_name_;
+  uint32_t frame_count_ = 0;
+  int64_t total_encode_time_ms_ = 0;
+};
+#endif
+
 }  // namespace media
 
-#endif  // MEDIA_GPU_GPU_VIDEO_ENCODE_ACCELERATOR_HELPERS_H_
+#endif  // SRC_MEDIA_THIRD_PARTY_CHROMIUM_MEDIA_MEDIA_GPU_GPU_VIDEO_ENCODE_ACCELERATOR_HELPERS_H_

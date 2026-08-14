@@ -1,14 +1,17 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef MEDIA_BASE_VIDEO_BITRATE_ALLOCATION_H_
-#define MEDIA_BASE_VIDEO_BITRATE_ALLOCATION_H_
+#ifndef SRC_MEDIA_THIRD_PARTY_CHROMIUM_MEDIA_MEDIA_BASE_VIDEO_BITRATE_ALLOCATION_H_
+#define SRC_MEDIA_THIRD_PARTY_CHROMIUM_MEDIA_MEDIA_BASE_VIDEO_BITRATE_ALLOCATION_H_
 
 #include <stddef.h>
 #include <stdint.h>
+
+#include <array>
 #include <string>
 
+// Fuchsia change: Remove libraries in favor of "chromium_utils.h"
 #include "chromium_utils.h"
 #include "media/base/bitrate.h"
 
@@ -60,9 +63,14 @@ class MEDIA_EXPORT VideoBitrateAllocation {
   // Sum of all bitrates.
   uint32_t GetSumBps() const;
 
+  // Returns peak bitrate.
+  uint32_t GetPeakBps() const;
   // Non-layered bitrate allocation. If there are layers, this bitrate's target
   // bps equals the sum of the layers' bitrates.
   const Bitrate GetSumBitrate() const;
+
+  // Returns the encoding rate control mode of this allocation.
+  Bitrate::Mode GetMode() const;
 
   std::string ToString() const;
 
@@ -75,9 +83,10 @@ class MEDIA_EXPORT VideoBitrateAllocation {
   // A bitrate representing a cached sum of the elements of |bitrates_|, for
   // performance.
   Bitrate sum_bitrate_;
-  uint32_t bitrates_[kMaxSpatialLayers][kMaxTemporalLayers] = {};
+  std::array<std::array<uint32_t, kMaxTemporalLayers>, kMaxSpatialLayers>
+      bitrates_ = {};
 };
 
 }  // namespace media
 
-#endif  // MEDIA_BASE_VIDEO_BITRATE_ALLOCATION_H_
+#endif  // SRC_MEDIA_THIRD_PARTY_CHROMIUM_MEDIA_MEDIA_BASE_VIDEO_BITRATE_ALLOCATION_H_

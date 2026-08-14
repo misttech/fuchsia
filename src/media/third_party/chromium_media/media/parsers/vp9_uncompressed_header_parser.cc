@@ -1,13 +1,13 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "media/filters/vp9_uncompressed_header_parser.h"
+#include "media/parsers/vp9_uncompressed_header_parser.h"
 
+#include <array>
 #include <type_traits>
-
 // Fuchsia change: Remove libraries in favor of "chromium_utils.h"
-// #include "base/logging.h"
+#include "chromium_utils.h"
 
 namespace media {
 
@@ -762,18 +762,20 @@ Vp9InterpolationFilter Vp9UncompressedHeaderParser::ReadInterpolationFilter() {
     return Vp9InterpolationFilter::SWITCHABLE;
 
   // The mapping table for next two bits.
-  const Vp9InterpolationFilter table[] = {
+  const auto table = std::to_array<Vp9InterpolationFilter>({
       Vp9InterpolationFilter::EIGHTTAP_SMOOTH,
       Vp9InterpolationFilter::EIGHTTAP,
       Vp9InterpolationFilter::EIGHTTAP_SHARP,
       Vp9InterpolationFilter::BILINEAR,
-  };
+  });
   return table[reader_.ReadLiteral(2)];
 }
 
 void Vp9UncompressedHeaderParser::SetupPastIndependence(Vp9FrameHeader* fhdr) {
-  memset(&context_->segmentation_, 0, sizeof(context_->segmentation_));
-  memset(fhdr->ref_frame_sign_bias, 0, sizeof(fhdr->ref_frame_sign_bias));
+  UNSAFE_TODO(
+      memset(&context_->segmentation_, 0, sizeof(context_->segmentation_)));
+  UNSAFE_TODO(
+      memset(fhdr->ref_frame_sign_bias, 0, sizeof(fhdr->ref_frame_sign_bias)));
 
   ResetLoopfilter();
   fhdr->frame_context = kVp9DefaultFrameContext;
@@ -857,8 +859,9 @@ bool Vp9UncompressedHeaderParser::ReadSegmentationParams() {
   if (segmentation.update_data) {
     segmentation.abs_or_delta_update = reader_.ReadBool();
 
-    const int kFeatureDataBits[] = {8, 6, 2, 0};
-    const bool kFeatureDataSigned[] = {true, true, false, false};
+    const auto kFeatureDataBits = std::to_array<int>({8, 6, 2, 0});
+    const auto kFeatureDataSigned =
+        std::to_array<bool>({true, true, false, false});
 
     for (size_t i = 0; i < Vp9SegmentationParams::kNumSegments; i++) {
       for (size_t j = 0; j < Vp9SegmentationParams::SEG_LVL_MAX; j++) {
@@ -878,7 +881,7 @@ bool Vp9UncompressedHeaderParser::ReadSegmentationParams() {
               data = static_cast<int16_t>(-data);
             }
         }
-        segmentation.feature_data[i][j] = data;
+        UNSAFE_TODO(segmentation.feature_data[i][j]) = data;
       }
     }
   }
@@ -929,7 +932,8 @@ void Vp9UncompressedHeaderParser::ResetLoopfilter() {
   loop_filter.ref_deltas[VP9_FRAME_GOLDEN] = -1;
   loop_filter.ref_deltas[VP9_FRAME_ALTREF] = -1;
 
-  memset(loop_filter.mode_deltas, 0, sizeof(loop_filter.mode_deltas));
+  UNSAFE_TODO(
+      memset(loop_filter.mode_deltas, 0, sizeof(loop_filter.mode_deltas)));
 }
 
 // 6.2 Uncompressed header syntax
@@ -1030,7 +1034,7 @@ bool Vp9UncompressedHeaderParser::Parse(const uint8_t* stream,
         // 8.2 Frame order constraints
         // ref_frame_idx[i] refers to an earlier decoded frame.
         const Vp9Parser::ReferenceSlot& ref =
-            context_->GetRefSlot(fhdr->ref_frame_idx[i]);
+            context_->GetRefSlot(UNSAFE_TODO(fhdr->ref_frame_idx[i]));
         if (!ref.initialized) {
           FX_LOGS(DEBUG) << "ref_frame_idx[" << i
                          << "]=" << static_cast<int>(fhdr->ref_frame_idx[i])
@@ -1099,14 +1103,6 @@ bool Vp9UncompressedHeaderParser::Parse(const uint8_t* stream,
 
   if (fhdr->IsIntra() || fhdr->error_resilient_mode) {
     SetupPastIndependence(fhdr);
-    if (fhdr->IsKeyframe() || fhdr->error_resilient_mode ||
-        fhdr->reset_frame_context == 3) {
-      for (size_t i = 0; i < kVp9NumFrameContexts; ++i)
-        context_->UpdateFrameContext(i, fhdr->frame_context);
-    } else if (fhdr->reset_frame_context == 2) {
-      context_->UpdateFrameContext(fhdr->frame_context_idx,
-                                   fhdr->frame_context);
-    }
     fhdr->frame_context_idx = 0;
   }
 

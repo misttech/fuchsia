@@ -50,13 +50,9 @@ class VP9Accelerator : public media::VP9Decoder::VP9Accelerator {
   scoped_refptr<media::VP9Picture> CreateVP9Picture() override;
   Status SubmitDecode(scoped_refptr<media::VP9Picture> pic, const media::Vp9SegmentationParams& seg,
                       const media::Vp9LoopFilterParams& lf,
-                      const media::Vp9ReferenceFrameVector& reference_frames,
-                      base::OnceClosure done_cb) override;
+                      const media::Vp9ReferenceFrameVector& reference_frames) override;
 
   bool OutputPicture(scoped_refptr<media::VP9Picture> pic) override;
-  bool NeedsCompressedHeaderParsed() const override;
-  bool GetFrameContext(scoped_refptr<media::VP9Picture> pic,
-                       media::Vp9FrameContext* frame_ctx) override;
 
  private:
   CodecAdapterVaApiDecoder* adapter_;

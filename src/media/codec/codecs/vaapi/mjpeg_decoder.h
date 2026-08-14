@@ -5,6 +5,8 @@
 #ifndef SRC_MEDIA_CODEC_CODECS_VAAPI_MJPEG_DECODER_H_
 #define SRC_MEDIA_CODEC_CODECS_VAAPI_MJPEG_DECODER_H_
 
+#include <lib/stdcompat/span.h>
+
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -70,7 +72,7 @@ class MJPEGDecoder : public media::AcceleratedVideoDecoder {
   MJPEGDecoder& operator=(const MJPEGDecoder&) = delete;
 
   // AcceleratedVideoDecoder implementation.
-  void SetStream(int32_t id, const DecoderBuffer& decoder_buffer) override;
+  void SetStream(int32_t id, scoped_refptr<DecoderBuffer> decoder_buffer) override;
   [[nodiscard]] bool Flush() override;
   void Reset() override;
   [[nodiscard]] DecodeResult Decode() override;
@@ -78,6 +80,8 @@ class MJPEGDecoder : public media::AcceleratedVideoDecoder {
   gfx::Rect GetVisibleRect() const override;
   VideoCodecProfile GetProfile() const override;
   uint8_t GetBitDepth() const override;
+  VideoChromaSampling GetChromaSampling() const override;
+  VideoColorSpace GetVideoColorSpace() const override;
   size_t GetRequiredNumOfPictures() const override;
   size_t GetNumReferenceFrames() const override;
   bool IsCurrentFrameKeyframe() const override;
@@ -88,8 +92,8 @@ class MJPEGDecoder : public media::AcceleratedVideoDecoder {
 
   // Stream settings
   int32_t stream_id_;
-  const uint8_t* stream_data_;
-  size_t stream_bytes_left_;
+  scoped_refptr<DecoderBuffer> decoder_buffer_;
+  cpp20::span<const uint8_t> stream_;
 
   // Saved parse result when returning |kConfigChange| signaling a resolution change
   std::optional<JpegParseResult> pending_parse_result_;

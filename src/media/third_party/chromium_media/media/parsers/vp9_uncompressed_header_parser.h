@@ -1,16 +1,14 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef MEDIA_FILTERS_VP9_UNCOMPRESSED_HEADER_PARSER_H_
-#define MEDIA_FILTERS_VP9_UNCOMPRESSED_HEADER_PARSER_H_
+#ifndef SRC_MEDIA_THIRD_PARTY_CHROMIUM_MEDIA_MEDIA_PARSERS_VP9_UNCOMPRESSED_HEADER_PARSER_H_
+#define SRC_MEDIA_THIRD_PARTY_CHROMIUM_MEDIA_MEDIA_PARSERS_VP9_UNCOMPRESSED_HEADER_PARSER_H_
 
 // Fuchsia change: Remove libraries in favor of "chromium_utils.h"
-// #include "base/memory/raw_ptr.h"
-// #include "media/base/media_export.h"
 #include "chromium_utils.h"
-#include "media/filters/vp9_parser.h"
-#include "media/filters/vp9_raw_bits_reader.h"
+#include "media/parsers/vp9_parser.h"
+#include "media/parsers/vp9_raw_bits_reader.h"
 
 namespace media {
 
@@ -56,4 +54,4 @@ class MEDIA_EXPORT Vp9UncompressedHeaderParser {
 
 }  // namespace media
 
-#endif  // MEDIA_FILTERS_VP9_UNCOMPRESSED_HEADER_PARSER_H_
+#endif  // SRC_MEDIA_THIRD_PARTY_CHROMIUM_MEDIA_MEDIA_PARSERS_VP9_UNCOMPRESSED_HEADER_PARSER_H_

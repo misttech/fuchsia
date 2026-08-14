@@ -1,14 +1,16 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "media/gpu/gpu_video_encode_accelerator_helpers.h"
 
 #include <algorithm>
+#include <array>
+#include <ostream>
 
-// #include "base/check_op.h"
-// #include "base/notreached.h"
-// #include "base/numerics/safe_conversions.h"
+#include "media/base/bitrate.h"
+// Fuchsia change: Remove libraries in favor of "chromium_utils.h"
+#include "chromium_utils.h"
 
 namespace media {
 namespace {
@@ -39,10 +41,8 @@ struct BitstreamBufferSizeInfo {
 // increasing order by the resolution. The value is decided by measuring the
 // biggest buffer size, and then double the size as margin. (crbug.com/889739)
 constexpr BitstreamBufferSizeInfo kBitstreamBufferSizeTable[] = {
-    {320 * 180, 100000, 30, 15000},
-    {640 * 360, 500000, 30, 52000},
-    {1280 * 720, 1200000, 30, 110000},
-    {1920 * 1080, 4000000, 30, 380000},
+    {320 * 180, 100000, 30, 15000},      {640 * 360, 500000, 30, 52000},
+    {1280 * 720, 1200000, 30, 110000},   {1920 * 1080, 4000000, 30, 380000},
     {3840 * 2160, 20000000, 30, 970000},
 };
 
@@ -57,26 +57,33 @@ size_t GetMaxEncodeBitstreamBufferSize(const gfx::Size& size) {
     return kMaxBitstreamBufferSizeInBytes * 2;
   return kMaxBitstreamBufferSizeInBytes;
 }
+}  // namespace
 
+// This function sets the peak equal to the target. The peak can then be
+// updated by callers.
 VideoBitrateAllocation AllocateBitrateForDefaultEncodingWithBitrates(
     const std::vector<uint32_t>& sl_bitrates,
-    const size_t num_temporal_layers) {
+    const size_t num_temporal_layers,
+    const bool uses_vbr) {
   CHECK(!sl_bitrates.empty());
   CHECK_LE(sl_bitrates.size(), kMaxSpatialLayers);
 
   // The same bitrate factors as the software encoder.
   // https://source.chromium.org/chromium/chromium/src/+/main:media/video/vpx_video_encoder.cc;l=131;drc=d383d0b3e4f76789a6de2a221c61d3531f4c59da
-  constexpr double kTemporalLayersBitrateScaleFactors[][kMaxTemporalLayers] = {
-      {1.00, 0.00, 0.00},  // For one temporal layer.
-      {0.60, 0.40, 0.00},  // For two temporal layers.
-      {0.50, 0.20, 0.30},  // For three temporal layers.
-  };
+  constexpr auto kTemporalLayersBitrateScaleFactors =
+      std::to_array<std::array<double, kMaxTemporalLayers>>({
+          {1.00, 0.00, 0.00},  // For one temporal layer.
+          {0.60, 0.40, 0.00},  // For two temporal layers.
+          {0.50, 0.20, 0.30},  // For three temporal layers.
+      });
 
   CHECK_GT(num_temporal_layers, 0u);
   CHECK_LE(num_temporal_layers, std::size(kTemporalLayersBitrateScaleFactors));
   DCHECK_EQ(std::size(kTemporalLayersBitrateScaleFactors), kMaxTemporalLayers);
 
   VideoBitrateAllocation bitrate_allocation;
+  bitrate_allocation = VideoBitrateAllocation(
+      uses_vbr ? Bitrate::Mode::kVariable : Bitrate::Mode::kConstant);
   for (size_t spatial_id = 0; spatial_id < sl_bitrates.size(); ++spatial_id) {
     const uint32_t bitrate_bps = sl_bitrates[spatial_id];
     for (size_t temporal_id = 0; temporal_id < num_temporal_layers;
@@ -92,7 +99,6 @@ VideoBitrateAllocation AllocateBitrateForDefaultEncodingWithBitrates(
 
   return bitrate_allocation;
 }
-}  // namespace
 
 size_t GetEncodeBitstreamBufferSize(const gfx::Size& size,
                                     uint32_t bitrate,
@@ -136,7 +142,7 @@ std::vector<uint8_t> GetFpsAllocation(size_t num_temporal_layers) {
   // TL0 then gets an allocation of 7.5/30 = 1/4. TL1 adds another 7.5fps to end
   // up at (7.5 + 7.5)/30 = 15/30 = 1/2 of the total allocation. TL2 adds the
   // final 15fps to end up at (15 + 15)/30, which is the full allocation.
-  // Therefor, fps_allocation values are as follows,
+  // Therefore, fps_allocation values are as follows,
   // fps_allocation[0][0] = kFullAllocation / 4;
   // fps_allocation[0][1] = kFullAllocation / 2;
   // fps_allocation[0][2] = kFullAllocation;
@@ -151,16 +157,25 @@ std::vector<uint8_t> GetFpsAllocation(size_t num_temporal_layers) {
       return {kFullAllocation / 4, kFullAllocation / 2, kFullAllocation};
     default:
       NOTREACHED() << "Unsupported temporal layers";
-      return {};
   }
 }
 
 VideoBitrateAllocation AllocateBitrateForDefaultEncoding(
     const VideoEncodeAccelerator::Config& config) {
+  if (config.bitrate.mode() == Bitrate::Mode::kExternal) {
+    return VideoBitrateAllocation(Bitrate::Mode::kExternal);
+  }
+
+  VideoBitrateAllocation allocation;
+  const bool use_vbr = config.bitrate.mode() == Bitrate::Mode::kVariable;
   if (config.spatial_layers.empty()) {
-    return AllocateBitrateForDefaultEncodingWithBitrates(
+    allocation = AllocateBitrateForDefaultEncodingWithBitrates(
         {config.bitrate.target_bps()},
-        /*num_temporal_layers=*/1u);
+        /*num_temporal_layers=*/1u, use_vbr);
+    if (use_vbr) {
+      allocation.SetPeakBps(config.bitrate.peak_bps());
+    }
+    return allocation;
   }
 
   const size_t num_temporal_layers =
@@ -172,20 +187,25 @@ VideoBitrateAllocation AllocateBitrateForDefaultEncoding(
     bitrates.push_back(spatial_layer.bitrate_bps);
   }
 
-  return AllocateBitrateForDefaultEncodingWithBitrates(bitrates,
-                                                       num_temporal_layers);
+  allocation = AllocateBitrateForDefaultEncodingWithBitrates(
+      bitrates, num_temporal_layers, use_vbr);
+  if (use_vbr) {
+    allocation.SetPeakBps(config.bitrate.peak_bps());
+  }
+  return allocation;
 }
 
 VideoBitrateAllocation AllocateDefaultBitrateForTesting(
     const size_t num_spatial_layers,
     const size_t num_temporal_layers,
-    const uint32_t bitrate) {
+    const Bitrate& bitrate) {
   // Higher spatial layers (those to the right) get more bitrate.
-  constexpr double kSpatialLayersBitrateScaleFactors[][kMaxSpatialLayers] = {
-      {1.00, 0.00, 0.00},  // For one spatial layer.
-      {0.30, 0.70, 0.00},  // For two spatial layers.
-      {0.07, 0.23, 0.70},  // For three spatial layers.
-  };
+  constexpr auto kSpatialLayersBitrateScaleFactors =
+      std::to_array<std::array<double, kMaxSpatialLayers>>({
+          {1.00, 0.00, 0.00},  // For one spatial layer.
+          {0.30, 0.70, 0.00},  // For two spatial layers.
+          {0.07, 0.23, 0.70},  // For three spatial layers.
+      });
 
   CHECK_GT(num_spatial_layers, 0u);
   CHECK_LE(num_spatial_layers, std::size(kSpatialLayersBitrateScaleFactors));
@@ -195,11 +215,75 @@ VideoBitrateAllocation AllocateDefaultBitrateForTesting(
   for (size_t sid = 0; sid < num_spatial_layers; ++sid) {
     const double bitrate_factor =
         kSpatialLayersBitrateScaleFactors[num_spatial_layers - 1][sid];
-    bitrates[sid] = static_cast<uint32_t>(bitrate * bitrate_factor);
+    bitrates[sid] =
+        static_cast<uint32_t>(bitrate.target_bps() * bitrate_factor);
   }
 
-  return AllocateBitrateForDefaultEncodingWithBitrates(bitrates,
-                                                       num_temporal_layers);
+  const bool use_vbr = bitrate.mode() == Bitrate::Mode::kVariable;
+  auto allocation = AllocateBitrateForDefaultEncodingWithBitrates(
+      bitrates, num_temporal_layers, use_vbr);
+  if (use_vbr)
+    allocation.SetPeakBps(bitrate.peak_bps());
+  return allocation;
 }
+
+VideoBitrateAllocation BitrateToBitrateAllocation(const Bitrate& bitrate) {
+  VideoBitrateAllocation allocation(bitrate.mode());
+  switch (bitrate.mode()) {
+    case Bitrate::Mode::kVariable:
+      allocation.SetBitrate(0, 0, bitrate.target_bps());
+      allocation.SetPeakBps(bitrate.peak_bps());
+      break;
+    case Bitrate::Mode::kConstant:
+      allocation.SetBitrate(0, 0, bitrate.target_bps());
+      break;
+    case Bitrate::Mode::kExternal:
+      break;
+  }
+  return allocation;
+}
+
+#if CHROMIUM_CODE
+VEAEncodingLatencyMetricsHelper::VEAEncodingLatencyMetricsHelper(
+    const std::string& uma_prefix,
+    VideoCodec codec)
+    : uma_name_(uma_prefix + GetCodecNameForUMA(codec)) {}
+
+VEAEncodingLatencyMetricsHelper::~VEAEncodingLatencyMetricsHelper() {
+  if (frame_count_ == 0) {
+    return;
+  }
+
+  base::UmaHistogramCounts1000(uma_name_, total_encode_time_ms_ / frame_count_);
+}
+
+void VEAEncodingLatencyMetricsHelper::EncodeOneFrame(
+    bool is_key_frame,
+    base::TimeDelta time_delta) {
+  const uint64_t delta_ms = time_delta.InMilliseconds();
+
+  if (!base::CheckAdd(total_encode_time_ms_, delta_ms).IsValid()) {
+    // If overflow happens, report the metrics and reset the counters.
+    // Use checked math to detect overflow when adding delta_ms to
+    // total_encode_time_ms_. This avoids manual limit arithmetic and is
+    // clearer about intent.
+    if (frame_count_ > 0) {
+      base::UmaHistogramCounts1000(uma_name_,
+                                   total_encode_time_ms_ / frame_count_);
+    }
+    frame_count_ = 0;
+    total_encode_time_ms_ = 0;
+  }
+
+  frame_count_++;
+  total_encode_time_ms_ += delta_ms;
+  if (is_key_frame) {
+    base::UmaHistogramCounts1000(uma_name_,
+                                 total_encode_time_ms_ / frame_count_);
+    frame_count_ = 0;
+    total_encode_time_ms_ = 0;
+  }
+}
+#endif
 
 }  // namespace media

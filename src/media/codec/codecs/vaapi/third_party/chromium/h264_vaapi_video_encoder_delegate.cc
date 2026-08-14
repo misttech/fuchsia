@@ -18,7 +18,7 @@
 // #include "media/gpu/macros.h"
 // #include "media/gpu/vaapi/vaapi_common.h"
 // #include "media/gpu/vaapi/vaapi_wrapper.h"
-#include "src/media/third_party/chromium_media/media/video/h264_level_limits.h"
+#include "src/media/third_party/chromium_media/media/parsers/h264_level_limits.h"
 #include "vaapi_picture.h"
 #include "vaapi_wrapper.h"
 
@@ -227,8 +227,7 @@ bool H264VaapiVideoEncoderDelegate::Initialize(
 
   profile_ = config.output_profile;
   level_ = config.h264_output_level.value_or(H264SPS::kLevelIDC4p0);
-  uint32_t initial_framerate =
-      config.initial_framerate.value_or(VideoEncodeAccelerator::kDefaultFramerate);
+  uint32_t initial_framerate = config.framerate;
   // Checks if |level_| is valid. If it is invalid, set |level_| to a minimum
   // level that comforts Table A-1 in H.264 spec with specified bitrate,
   // framerate and dimension.

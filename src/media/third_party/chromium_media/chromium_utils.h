@@ -6,9 +6,15 @@
 #define SRC_MEDIA_THIRD_PARTY_CHROMIUM_MEDIA_CHROMIUM_UTILS_H_
 
 #include <algorithm>
+#include <array>
+#include <concepts>
+#include <cstring>
 #include <deque>
 #include <memory>
 #include <optional>
+#include <ranges>
+#include <sstream>
+#include <type_traits>
 
 #include <fbl/algorithm.h>
 #include <lib/fit/function.h>
@@ -40,22 +46,34 @@
 #define CHECK_GT(a, b) FX_CHECK((a) > (b))
 #define CHECK_GE(a, b) FX_CHECK((a) >= (b))
 #define CHECK_EQ(a, b) FX_CHECK((a) == (b))
+#define CHECK_NE(a, b) FX_CHECK((a) != (b))
+
+#ifndef BUILDFLAG
+#define BUILDFLAG(flag) (flag)
+#endif
+
+#ifndef UNSAFE_BUFFERS
+#define UNSAFE_BUFFERS(...) __VA_ARGS__
+#endif
+
+#ifndef UNSAFE_TODO
+#define UNSAFE_TODO(...) __VA_ARGS__
+#endif
 
 #ifndef DLOG
 #define DLOG FX_DLOGS
 #endif
 
 #ifndef VLOG
-#define VLOG FX_VLOGS
+#define VLOG(verbose_level) FX_LOGS(DEBUG)
 #endif
 
 #define FORCE_ALL_LOGS 0
 #if !FORCE_ALL_LOGS
-#define DVLOG FX_DVLOGS
-#define DVLOG_IF(verbose_level, condition)               \
-  FX_LAZY_STREAM(FX_VLOG_STREAM(verbose_level, nullptr), \
-                 FX_VLOG_IS_ON(verbose_level) && (condition))
-#define DVLOGF(verbosity) FX_DVLOGS(verbosity)
+#define DVLOG(verbose_level) FX_DLOGS(DEBUG)
+#define DVLOG_IF(verbose_level, condition) \
+  FX_LAZY_STREAM(FX_LOG_STREAM(DEBUG, nullptr), (condition))
+#define DVLOGF(verbosity) FX_DLOGS(DEBUG)
 #else
 // These force logging to be enabled:
 #define DVLOG(verbosity) \
@@ -65,21 +83,53 @@
 #define DVLOGF(verbosity) FX_LOGS(ERROR)
 #endif
 
-#define VLOGF(verbosity) FX_VLOGS(verbosity)
+#include <cstdlib>
 
-#define NOTREACHED FX_NOTREACHED
+#define VLOGF(verbosity) FX_LOGS(DEBUG)
+
+class NotReachedLogger {
+ public:
+  NotReachedLogger() = default;
+  [[noreturn]] ~NotReachedLogger() {
+    FX_LOGS(FATAL) << "NOTREACHED hit: " << stream_.str();
+    std::abort();
+  }
+  template <typename T>
+  NotReachedLogger& operator<<(const T& val) {
+    stream_ << val;
+    return *this;
+  }
+
+ private:
+  std::ostringstream stream_;
+};
+
+#undef NOTREACHED
+#undef NOTREACHED_IN_MIGRATION
+#undef NOTREACHED_NORETURN
+#define NOTREACHED() NotReachedLogger()
+#define NOTREACHED_IN_MIGRATION() NotReachedLogger()
+#define NOTREACHED_NORETURN() NotReachedLogger()
 #define NOTIMPLEMENTED FX_NOTIMPLEMENTED
 
 #define WARN_UNUSED_RESULT __WARN_UNUSED_RESULT
 #define FALLTHROUGH __FALLTHROUGH
 
+#ifndef SEQUENCE_CHECKER
 #define SEQUENCE_CHECKER(name) static_assert(true, "")
+#endif
+#ifndef DCHECK_CALLED_ON_VALID_SEQUENCE
 #define DCHECK_CALLED_ON_VALID_SEQUENCE(name, ...)
+#endif
+#ifndef DETACH_FROM_SEQUENCE
 #define DETACH_FROM_SEQUENCE(name)
+#endif
 
+#ifndef DISALLOW_COPY_AND_ASSIGN
 #define DISALLOW_COPY_AND_ASSIGN(TypeName) \
   TypeName(const TypeName&) = delete;      \
   TypeName& operator=(const TypeName&) = delete
+#endif
 
 // The main difference between scoped_refptr and shared_ptr is that
 // scoped_refptr is intrusive, so you can make a new refptr from a raw pointer.
@@ -99,11 +149,174 @@ constexpr size_t size(const T (&array)[N]) noexcept {
 }
 
 template <typename T, typename... Args>
-inline auto MakeRefCounted = std::make_shared<T, Args...>;
+inline scoped_refptr<T> MakeRefCounted(Args&&... args) {
+  return std::make_shared<T>(std::forward<Args>(args)...);
+}
 
 // base/span.h
+template <typename T, size_t Extent = cpp20::dynamic_extent>
+class span : public cpp20::span<T, Extent> {
+ public:
+  using Base = cpp20::span<T, Extent>;
+  using Base::Base;
+  constexpr span() : Base() {}
+  template <typename Container>
+  constexpr span(Container&& c) : Base(std::forward<Container>(c)) {}
+  template <typename OtherT, size_t OtherExtent>
+  constexpr span(const cpp20::span<OtherT, OtherExtent>& other) : Base(other) {}
+
+  template <typename OtherSpan>
+  void copy_from(const OtherSpan& other) const {
+    const uint8_t* src_ptr = reinterpret_cast<const uint8_t*>(std::data(other));
+    size_t src_size = std::size(other) * sizeof(*std::data(other));
+    FX_CHECK(this->size_bytes() == src_size);
+    std::memcpy(this->data(), src_ptr, this->size_bytes());
+  }
+
+  template <typename OtherSpan>
+  void copy_prefix_from(const OtherSpan& other) const {
+    const uint8_t* src_ptr = reinterpret_cast<const uint8_t*>(std::data(other));
+    size_t src_size = std::size(other) * sizeof(*std::data(other));
+    size_t copy_size = std::min(this->size_bytes(), src_size);
+    std::memcpy(this->data(), src_ptr, copy_size);
+  }
+
+  template <size_t Count>
+  constexpr span<T, Count> first() const {
+    return span<T, Count>(Base::template first<Count>());
+  }
+  constexpr span<T, cpp20::dynamic_extent> first(size_t count) const {
+    return span<T, cpp20::dynamic_extent>(Base::first(count));
+  }
+
+  constexpr span<T, cpp20::dynamic_extent> take_first(size_t count) {
+    span<T, cpp20::dynamic_extent> result = first(count);
+    *this = this->subspan(count);
+    return result;
+  }
+  template <size_t Count>
+  constexpr span<T, Count> take_first() {
+    span<T, Count> result = first<Count>();
+    *this = this->subspan(Count);
+    return result;
+  }
+
+  template <size_t Count>
+  constexpr span<T, Count> last() const {
+    return span<T, Count>(Base::template last<Count>());
+  }
+  constexpr span<T, cpp20::dynamic_extent> last(size_t count) const {
+    return span<T, cpp20::dynamic_extent>(Base::last(count));
+  }
+};
+
+template <typename T, size_t Extent = cpp20::dynamic_extent>
+using raw_span = span<T, Extent>;
+
+template <typename T, size_t N>
+span(T (&)[N]) -> span<T, N>;
+
+template <typename T, size_t N>
+span(std::array<T, N>&) -> span<T, N>;
+
+template <typename T, size_t N>
+span(const std::array<T, N>&) -> span<const T, N>;
+
+template <typename Container>
+span(Container&)
+    -> span<std::remove_reference_t<std::ranges::range_reference_t<Container>>>;
+
+template <typename T, typename Integral>
+span(T*, Integral) -> span<T>;
+
 template <typename T>
-using span = cpp20::span<T>;
+span(T*, T*) -> span<T>;
+
+template <typename T, size_t X>
+inline span<const uint8_t> as_bytes(span<T, X> s) {
+  return span<const uint8_t>(reinterpret_cast<const uint8_t*>(s.data()),
+                             s.size_bytes());
+}
+
+template <typename T>
+inline span<T> make_span(T* ptr, size_t size) {
+  return span<T>(ptr, size);
+}
+
+template <typename C>
+inline auto make_span(C&& container) {
+  return span(container);
+}
+
+template <typename Container>
+inline span<const uint8_t> as_byte_span(const Container& arg) {
+  auto s = make_span(arg);
+  return span<const uint8_t>(reinterpret_cast<const uint8_t*>(s.data()),
+                             s.size_bytes());
+}
+
+template <typename Container>
+inline span<uint8_t> as_writable_byte_span(Container& arg) {
+  auto s = make_span(arg);
+  return span<uint8_t>(reinterpret_cast<uint8_t*>(s.data()), s.size_bytes());
+}
+
+template <typename T>
+class HeapArray {
+ public:
+  HeapArray() : ptr_(nullptr), size_(0) {}
+  explicit HeapArray(size_t size)
+      : ptr_(size ? new T[size] : nullptr), size_(size) {}
+
+  HeapArray(const HeapArray&) = delete;
+  HeapArray& operator=(const HeapArray&) = delete;
+
+  HeapArray(HeapArray&& other) noexcept
+      : ptr_(std::move(other.ptr_)), size_(other.size_) {
+    other.size_ = 0;
+  }
+  HeapArray& operator=(HeapArray&& other) noexcept {
+    if (this != &other) {
+      ptr_ = std::move(other.ptr_);
+      size_ = other.size_;
+      other.size_ = 0;
+    }
+    return *this;
+  }
+
+  static HeapArray Uninit(size_t size) { return HeapArray(size); }
+
+  size_t size() const { return size_; }
+  bool empty() const { return size_ == 0; }
+  T* data() { return ptr_.get(); }
+  const T* data() const { return ptr_.get(); }
+
+  T& operator[](size_t idx) { return ptr_[idx]; }
+  const T& operator[](size_t idx) const { return ptr_[idx]; }
+
+  span<T> as_span() { return span<T>(ptr_.get(), size_); }
+  span<const T> as_span() const { return span<const T>(ptr_.get(), size_); }
+
+  span<T> first(size_t n) { return as_span().first(n); }
+  span<const T> first(size_t n) const { return as_span().first(n); }
+
+  span<T> subspan(size_t offset, size_t count = cpp20::dynamic_extent) {
+    return as_span().subspan(offset, count);
+  }
+  span<const T> subspan(size_t offset,
+                        size_t count = cpp20::dynamic_extent) const {
+    return as_span().subspan(offset, count);
+  }
+
+  T* begin() { return ptr_.get(); }
+  const T* begin() const { return ptr_.get(); }
+  T* end() { return ptr_.get() + size_; }
+  const T* end() const { return ptr_.get() + size_; }
+
+ private:
+  std::unique_ptr<T[]> ptr_;
+  size_t size_;
+};
 
 // base/numerics/checked_math.h
 template <typename T>
@@ -156,6 +369,55 @@ inline uint64_t HostToNet64(uint64_t x) {
   return __builtin_bswap64(x);
 }
 
+namespace numerics {
+
+template <typename SpanT>
+inline uint16_t U16FromBigEndian(SpanT bytes) {
+  uint16_t val = 0;
+  FX_DCHECK(base::make_span(bytes).size_bytes() >= sizeof(val));
+  std::memcpy(&val, std::data(bytes), sizeof(val));
+  return NetToHost16(val);
+}
+
+template <typename SpanT>
+inline uint32_t U32FromBigEndian(SpanT bytes) {
+  uint32_t val = 0;
+  FX_DCHECK(base::make_span(bytes).size_bytes() >= sizeof(val));
+  std::memcpy(&val, std::data(bytes), sizeof(val));
+  return NetToHost32(val);
+}
+
+template <typename SpanT>
+inline uint64_t U64FromBigEndian(SpanT bytes) {
+  uint64_t val = 0;
+  FX_DCHECK(base::make_span(bytes).size_bytes() >= sizeof(val));
+  std::memcpy(&val, std::data(bytes), sizeof(val));
+  return NetToHost64(val);
+}
+
+inline std::array<uint8_t, 2> U16ToBigEndian(uint16_t val) {
+  val = HostToNet16(val);
+  std::array<uint8_t, 2> bytes;
+  std::memcpy(bytes.data(), &val, sizeof(val));
+  return bytes;
+}
+
+inline std::array<uint8_t, 4> U32ToBigEndian(uint32_t val) {
+  val = HostToNet32(val);
+  std::array<uint8_t, 4> bytes;
+  std::memcpy(bytes.data(), &val, sizeof(val));
+  return bytes;
+}
+
+inline std::array<uint8_t, 8> U64ToBigEndian(uint64_t val) {
+  val = HostToNet64(val);
+  std::array<uint8_t, 8> bytes;
+  std::memcpy(bytes.data(), &val, sizeof(val));
+  return bytes;
+}
+
+}  // namespace numerics
+
 // base/big_endian.h
 // Fuchsia is little endian
 // (https://fuchsia.dev/fuchsia-src/contribute/governance/rfcs/0030_fidl_is_little_endian)
@@ -169,6 +431,9 @@ class BigEndianReader {
 
   const uint8_t* ptr() const { return ptr_; }
   size_t remaining() const { return static_cast<size_t>(end_ - ptr_); }
+  span<const uint8_t> remaining_bytes() const {
+    return span<const uint8_t>(ptr_, remaining());
+  }
 
   bool Skip(size_t len) {
     if (len > remaining())
@@ -183,6 +448,17 @@ class BigEndianReader {
     std::memcpy(out, ptr_, len);
     ptr_ += len;
     return true;
+  }
+
+  template <typename T, size_t N>
+  bool ReadBytes(T (&out)[N]) {
+    return ReadBytes(out, N * sizeof(T));
+  }
+
+  template <typename Span>
+  auto ReadBytes(Span&& out)
+      -> decltype(ReadBytes(out.data(), out.size_bytes())) {
+    return ReadBytes(out.data(), out.size_bytes());
   }
 
   bool ReadU8(uint8_t* value) {
@@ -239,11 +515,204 @@ class BigEndianReader {
   const uint8_t* end_;
 };
 
+using numerics::U16FromBigEndian;
+using numerics::U16ToBigEndian;
+using numerics::U32FromBigEndian;
+using numerics::U32ToBigEndian;
+using numerics::U64FromBigEndian;
+using numerics::U64ToBigEndian;
+
+template <typename T>
+cpp20::span<uint8_t> byte_span_from_ref(T& ref) {
+  return cpp20::span<uint8_t>(reinterpret_cast<uint8_t*>(&ref), sizeof(T));
+}
+
+template <typename T>
+cpp20::span<const uint8_t> byte_span_from_ref(const T& ref) {
+  return cpp20::span<const uint8_t>(reinterpret_cast<const uint8_t*>(&ref),
+                                    sizeof(T));
+}
+
+template <typename T, size_t E>
+auto as_chars(cpp20::span<T, E> s) {
+  if constexpr (std::is_const_v<T>) {
+    return cpp20::span<const char>(reinterpret_cast<const char*>(s.data()),
+                                   s.size() * sizeof(T));
+  } else {
+    return cpp20::span<char>(reinterpret_cast<char*>(s.data()),
+                             s.size() * sizeof(T));
+  }
+}
+
+template <typename T, size_t E>
+auto as_bytes(cpp20::span<T, E> s) {
+  return cpp20::span<const uint8_t>(reinterpret_cast<const uint8_t*>(s.data()),
+                                    s.size() * sizeof(T));
+}
+
+template <typename T, size_t E>
+auto as_writable_bytes(cpp20::span<T, E> s) {
+  return cpp20::span<uint8_t>(reinterpret_cast<uint8_t*>(s.data()),
+                              s.size() * sizeof(T));
+}
+
+class SpanReader {
+ public:
+  explicit SpanReader(cpp20::span<const uint8_t> buf)
+      : buf_(buf), remaining_(buf) {}
+  explicit SpanReader(cpp20::span<uint8_t> buf) : buf_(buf), remaining_(buf) {}
+
+  size_t remaining() const { return remaining_.size(); }
+  size_t num_read() const { return buf_.size() - remaining_.size(); }
+  cpp20::span<const uint8_t> remaining_span() const { return remaining_; }
+
+  bool Skip(size_t n) {
+    if (n > remaining_.size()) {
+      return false;
+    }
+    remaining_ = remaining_.subspan(n);
+    return true;
+  }
+
+  template <typename Range>
+  bool ReadCopy(Range&& out_range) {
+    auto span = cpp20::span(out_range);
+    size_t bytes_needed =
+        span.size() * sizeof(typename decltype(span)::element_type);
+    if (bytes_needed > remaining_.size()) {
+      return false;
+    }
+    std::memcpy(span.data(), remaining_.data(), bytes_needed);
+    remaining_ = remaining_.subspan(bytes_needed);
+    return true;
+  }
+
+  template <typename T>
+  bool ReadU8BigEndian(T& out) {
+    if (remaining_.size() < 1) {
+      return false;
+    }
+    out = static_cast<T>(remaining_[0]);
+    remaining_ = remaining_.subspan(1);
+    return true;
+  }
+
+  template <typename T>
+  bool ReadU16BigEndian(T& out) {
+    if (remaining_.size() < 2) {
+      return false;
+    }
+    out = static_cast<T>(numerics::U16FromBigEndian(remaining_.first(2)));
+    remaining_ = remaining_.subspan(2);
+    return true;
+  }
+
+  template <typename T>
+  bool ReadU32BigEndian(T& out) {
+    if (remaining_.size() < 4) {
+      return false;
+    }
+    out = static_cast<T>(numerics::U32FromBigEndian(remaining_.first(4)));
+    remaining_ = remaining_.subspan(4);
+    return true;
+  }
+
+  template <typename T>
+  bool ReadU64BigEndian(T& out) {
+    if (remaining_.size() < 8) {
+      return false;
+    }
+    out = static_cast<T>(numerics::U64FromBigEndian(remaining_.first(8)));
+    remaining_ = remaining_.subspan(8);
+    return true;
+  }
+
+ private:
+  cpp20::span<const uint8_t> buf_;
+  cpp20::span<const uint8_t> remaining_;
+};
+
+class SpanWriter {
+ public:
+  explicit SpanWriter(cpp20::span<uint8_t> buf) : buf_(buf), remaining_(buf) {}
+
+  size_t remaining() const { return remaining_.size(); }
+  size_t num_written() const { return buf_.size() - remaining_.size(); }
+  cpp20::span<uint8_t> remaining_span() const { return remaining_; }
+
+  bool Skip(size_t n) {
+    if (n > remaining_.size()) {
+      return false;
+    }
+    remaining_ = remaining_.subspan(n);
+    return true;
+  }
+
+  template <typename Range>
+  bool WriteCopy(const Range& in_range) {
+    auto span = cpp20::span(in_range);
+    size_t bytes_needed =
+        span.size() * sizeof(typename decltype(span)::element_type);
+    if (bytes_needed > remaining_.size()) {
+      return false;
+    }
+    std::memcpy(remaining_.data(), span.data(), bytes_needed);
+    remaining_ = remaining_.subspan(bytes_needed);
+    return true;
+  }
+
+  bool WriteU8BigEndian(uint8_t val) {
+    if (remaining_.size() < 1) {
+      return false;
+    }
+    remaining_[0] = val;
+    remaining_ = remaining_.subspan(1);
+    return true;
+  }
+
+  bool WriteU16BigEndian(uint16_t val) {
+    if (remaining_.size() < 2) {
+      return false;
+    }
+    auto arr = numerics::U16ToBigEndian(val);
+    std::memcpy(remaining_.data(), arr.data(), 2);
+    remaining_ = remaining_.subspan(2);
+    return true;
+  }
+
+  bool WriteU32BigEndian(uint32_t val) {
+    if (remaining_.size() < 4) {
+      return false;
+    }
+    auto arr = numerics::U32ToBigEndian(val);
+    std::memcpy(remaining_.data(), arr.data(), 4);
+    remaining_ = remaining_.subspan(4);
+    return true;
+  }
+
+  bool WriteU64BigEndian(uint64_t val) {
+    if (remaining_.size() < 8) {
+      return false;
+    }
+    auto arr = numerics::U64ToBigEndian(val);
+    std::memcpy(remaining_.data(), arr.data(), 8);
+    remaining_ = remaining_.subspan(8);
+    return true;
+  }
+
+ private:
+  cpp20::span<uint8_t> buf_;
+  cpp20::span<uint8_t> remaining_;
+};
+
 // base/strings/stringprintf.h
 inline auto StringPrintf = fxl::StringPrintf;
 
 // base/bits.h
 namespace bits {
+template <typename T>
+concept UnsignedInteger = std::unsigned_integral<T> && !std::same_as<T, bool>;
+
 template <class T,
           class U,
           class L = std::conditional_t<sizeof(T) >= sizeof(U), T, U>,
@@ -273,6 +742,12 @@ constexpr int Log2Ceiling(uint32_t n) {
   // When n == 0, (n - 1) will underflow to 0xFFFFFFFF, which is
   // why the statement below starts with (n ? 32 : -1).
   return (n ? 32 : -1) - CountLeadingZeroBits(n - 1);
+}
+
+template <typename T>
+constexpr T LeftmostBit() {
+  static_assert(std::is_unsigned_v<T>, "T must be unsigned");
+  return T(1) << (sizeof(T) * 8 - 1);
 }
 }  // namespace bits
 }  // namespace base

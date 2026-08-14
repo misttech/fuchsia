@@ -16,8 +16,8 @@
 #include "macros.h"
 #include "magic.h"
 #include "registers.h"
-#include "src/media/third_party/chromium_media/media/video/h264_parser.h"
-#include "src/media/third_party/chromium_media/media/video/h264_poc.h"
+#include "src/media/third_party/chromium_media/media/parsers/h264_parser.h"
+#include "src/media/third_party/chromium_media/media/parsers/h264_poc.h"
 #include "video_decoder.h"
 
 class MultiAccelerator;

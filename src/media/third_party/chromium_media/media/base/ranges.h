@@ -1,9 +1,9 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef MEDIA_BASE_RANGES_H_
-#define MEDIA_BASE_RANGES_H_
+#ifndef SRC_MEDIA_THIRD_PARTY_CHROMIUM_MEDIA_MEDIA_BASE_RANGES_H_
+#define SRC_MEDIA_THIRD_PARTY_CHROMIUM_MEDIA_MEDIA_BASE_RANGES_H_
 
 #include <stddef.h>
 #include <stdint.h>
@@ -12,6 +12,7 @@
 #include <ostream>
 #include <vector>
 
+// Fuchsia change: Remove libraries in favor of "chromium_utils.h"
 #include "chromium_utils.h"
 
 namespace media {
@@ -24,8 +25,8 @@ class Ranges {
  public:
   // Allow copy & assign.
 
-  // Add (start,end) to this object, coallescing overlaps as appropriate.
-  // Returns the number of stored ranges, post coallescing.
+  // Add (start,end) to this object, coalescing overlaps as appropriate.
+  // Returns the number of stored ranges, post coalescing.
   size_t Add(T start, T end);
 
   // Return the number of disjoint ranges.
@@ -34,6 +35,15 @@ class Ranges {
   // Return the "i"'th range's start & end (0-based).
   T start(size_t i) const;
   T end(size_t i) const;
+
+  // Return the last range.
+  const std::pair<T, T>& back() const;
+
+  // check to see that `entry` is within [start, end) for the given range.
+  bool contains(size_t i, const T& entry) const;
+
+  // Shorthand for size() == 0.
+  bool empty() const;
 
   // Clear all ranges.
   void clear();
@@ -129,6 +139,21 @@ T Ranges<T>::end(size_t i) const {
 }
 
 template <class T>
+const std::pair<T, T>& Ranges<T>::back() const {
+  return ranges_[size() - 1];
+}
+
+template <class T>
+bool Ranges<T>::contains(size_t i, const T& entry) const {
+  return start(i) <= entry && end(i) > entry;
+}
+
+template <class T>
+bool Ranges<T>::empty() const {
+  return size() == 0;
+}
+
+template <class T>
 void Ranges<T>::clear() {
   ranges_.clear();
 }
@@ -159,4 +184,4 @@ Ranges<T> Ranges<T>::IntersectionWith(const Ranges<T>& other) const {
 
 }  // namespace media
 
-#endif  // MEDIA_BASE_RANGES_H_
+#endif  // SRC_MEDIA_THIRD_PARTY_CHROMIUM_MEDIA_MEDIA_BASE_RANGES_H_

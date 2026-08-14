@@ -1,15 +1,14 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "media/filters/vp9_raw_bits_reader.h"
+#include "media/parsers/vp9_raw_bits_reader.h"
 
 #include <limits.h>
 
 #include <memory>
 
 // Fuchsia change: Remove libraries in favor of "chromium_utils.h"
-// #include "base/check_op.h"
 #include "chromium_utils.h"
 #include "media/base/bit_reader.h"
 
@@ -30,9 +29,9 @@ bool Vp9RawBitsReader::ReadBool() {
   if (!valid_)
     return false;
 
-  int value = 0;
-  valid_ = reader_->ReadBits(1, &value);
-  return valid_ ? value == 1 : false;
+  bool value = false;
+  valid_ = reader_->ReadFlag(&value);
+  return valid_ && value;
 }
 
 int Vp9RawBitsReader::ReadLiteral(int bits) {
@@ -40,7 +39,7 @@ int Vp9RawBitsReader::ReadLiteral(int bits) {
   if (!valid_)
     return 0;
 
-  int value = 0;
+  uint32_t value = 0;
   DCHECK_LT(static_cast<size_t>(bits), sizeof(value) * 8);
   valid_ = reader_->ReadBits(bits, &value);
   return valid_ ? value : 0;

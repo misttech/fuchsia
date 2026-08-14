@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef MEDIA_BASE_DECRYPT_CONFIG_H_
-#define MEDIA_BASE_DECRYPT_CONFIG_H_
+#ifndef SRC_MEDIA_THIRD_PARTY_CHROMIUM_MEDIA_MEDIA_BASE_DECRYPT_CONFIG_H_
+#define SRC_MEDIA_THIRD_PARTY_CHROMIUM_MEDIA_MEDIA_BASE_DECRYPT_CONFIG_H_
 
 #include <memory>
 #include <string>
@@ -32,11 +32,11 @@ class DecryptConfig {
 
   std::unique_ptr<DecryptConfig> CopyNewSubsamplesIV(
       const std::vector<SubsampleEntry>&,
-      const std::string&) {
+      const std::string&) const {
     return std::unique_ptr<DecryptConfig>();
   }
 };
 
 }  // namespace media
 
-#endif  // MEDIA_BASE_DECRYPT_CONFIG_H_
+#endif  // SRC_MEDIA_THIRD_PARTY_CHROMIUM_MEDIA_MEDIA_BASE_DECRYPT_CONFIG_H_

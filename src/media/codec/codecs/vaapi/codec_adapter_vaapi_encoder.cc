@@ -155,7 +155,7 @@ bool CodecAdapterVaApiEncoder::HandleInputFormatChange(
   ave_config.max_num_ref_frames = attrib.value;
 
   // Defaults taken from fuchsia::media fidl.
-  accelerator_config.initial_framerate = 30;
+  accelerator_config.framerate = 30;
   accelerator_config.bitrate = media::Bitrate::ConstantBitrate(200000u);
   accelerator_config.gop_length = 8 + 1;
   if (input_format_details.has_encoder_settings()) {
@@ -163,7 +163,7 @@ bool CodecAdapterVaApiEncoder::HandleInputFormatChange(
     if (encoder_settings.is_h264()) {
       auto& h264 = encoder_settings.h264();
       if (h264.has_frame_rate()) {
-        accelerator_config.initial_framerate = h264.frame_rate();
+        accelerator_config.framerate = h264.frame_rate();
       }
       if (h264.has_bit_rate()) {
         accelerator_config.bitrate = media::Bitrate::ConstantBitrate(h264.bit_rate());
@@ -220,7 +220,7 @@ bool CodecAdapterVaApiEncoder::HandleInputFormatChange(
     config_.emplace(config_id);
   } else {
     if (!encoder_->UpdateRates(media::AllocateBitrateForDefaultEncoding(accelerator_config_),
-                               *accelerator_config.initial_framerate)) {
+                               accelerator_config.framerate)) {
       events_->onCoreCodecFailCodec("Failed to update bitrate");
       return false;
     }

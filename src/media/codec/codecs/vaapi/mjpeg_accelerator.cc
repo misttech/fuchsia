@@ -90,9 +90,8 @@ MJPEGAccelerator::Status MJPEGAccelerator::SubmitDecode(
 
   VABufferID jpeg_data_buffer_id;
   status = vaCreateBuffer(display, adapter_->context_id(), VASliceDataBufferType,
-                          static_cast<unsigned int>(parse_result.data_size), 1,
-                          reinterpret_cast<uint8_t*>(const_cast<char*>(parse_result.data)),
-                          &jpeg_data_buffer_id);
+                          static_cast<unsigned int>(parse_result.data.size()), 1,
+                          const_cast<uint8_t*>(parse_result.data.data()), &jpeg_data_buffer_id);
 
   if (status != VA_STATUS_SUCCESS) {
     FX_LOG_KV(ERROR, "vaCreateBuffer for jpeg_data_buffer_id failed",
@@ -182,8 +181,8 @@ void MJPEGAccelerator::PopulateHuffmanTable(
   }
 
   if (!has_huffman_table) {
-    dc_table = media::kDefaultDcTable;
-    ac_table = media::kDefaultAcTable;
+    dc_table = media::kDefaultDcTable.data();
+    ac_table = media::kDefaultAcTable.data();
   }
 
   static_assert(media::kJpegMaxHuffmanTableNumBaseline ==
@@ -201,20 +200,20 @@ void MJPEGAccelerator::PopulateHuffmanTable(
     }
 
     huffman_table.load_huffman_table[i] = 1;
-    std::memcpy(huffman_table.huffman_table[i].num_dc_codes, dc_table[i].code_length,
+    std::memcpy(huffman_table.huffman_table[i].num_dc_codes, dc_table[i].code_length.data(),
                 sizeof(huffman_table.huffman_table[i].num_dc_codes));
-    std::memcpy(huffman_table.huffman_table[i].dc_values, dc_table[i].code_value,
+    std::memcpy(huffman_table.huffman_table[i].dc_values, dc_table[i].code_value.data(),
                 sizeof(huffman_table.huffman_table[i].dc_values));
-    std::memcpy(huffman_table.huffman_table[i].num_ac_codes, ac_table[i].code_length,
+    std::memcpy(huffman_table.huffman_table[i].num_ac_codes, ac_table[i].code_length.data(),
                 sizeof(huffman_table.huffman_table[i].num_ac_codes));
-    std::memcpy(huffman_table.huffman_table[i].ac_values, ac_table[i].code_value,
+    std::memcpy(huffman_table.huffman_table[i].ac_values, ac_table[i].code_value.data(),
                 sizeof(huffman_table.huffman_table[i].ac_values));
   }
 }
 
 void MJPEGAccelerator::PopulateSliceParameters(const media::JpegParseResult& parse_result,
                                                VASliceParameterBufferJPEGBaseline& slice_param) {
-  slice_param.slice_data_size = safemath::checked_cast<uint32_t>(parse_result.data_size);
+  slice_param.slice_data_size = safemath::checked_cast<uint32_t>(parse_result.data.size());
   slice_param.slice_data_offset = 0;
   slice_param.slice_data_flag = VA_SLICE_DATA_FLAG_ALL;
   slice_param.slice_horizontal_position = 0;

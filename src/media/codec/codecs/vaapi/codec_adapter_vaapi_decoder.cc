@@ -934,7 +934,8 @@ void CodecAdapterVaApiDecoder::CoreCodecResetStreamAfterCurrentFrame() {
 }
 
 void CodecAdapterVaApiDecoder::DecodeAnnexBBuffer(media::DecoderBuffer buffer) {
-  media_decoder_->SetStream(next_stream_id_++, buffer);
+  media_decoder_->SetStream(next_stream_id_++,
+                            base::MakeRefCounted<media::DecoderBuffer>(std::move(buffer)));
 
   while (true) {
     state_ = DecoderState::kDecoding;
@@ -1142,6 +1143,9 @@ void CodecAdapterVaApiDecoder::SetCodecFailure(const char* format, Args&&... arg
   // enqueuing of new data, the call to |CoreCodecStopStream()| will happen in the near future,
   // which will clear out any operations that were enqueued in that time.
   input_queue_.StopAllWaits();
+  if (media_decoder_) {
+    media_decoder_->Reset();
+  }
 }
 
 void CodecAdapterVaApiDecoder::ConstructDecoder() {
@@ -1332,9 +1336,11 @@ fit::result<std::string, bool> CodecAdapterVaApiDecoder::IsBufferReconfiguration
 void CodecAdapterVaApiDecoder::ProcessInputLoop() {
   std::optional<CodecInputItem> maybe_input_item;
   while ((maybe_input_item = input_queue_.WaitForElement())) {
+    if (!media_codec_.has_value()) {
+      return;
+    }
     CodecInputItem input_item = std::move(maybe_input_item.value());
     if (input_item.is_format_details()) {
-      ZX_ASSERT(media_codec_.has_value());
       const std::string& mime_type = input_item.format_details().mime_type();
       const auto allow_mime_type = CodecMimeFromType(media_codec_.value());
       if (!allow_mime_type.has_value() || (allow_mime_type.value() != mime_type)) {
@@ -1349,14 +1355,19 @@ void CodecAdapterVaApiDecoder::ProcessInputLoop() {
         avcc_processor_.ProcessOobBytes(input_item.format_details());
       }
     } else if (input_item.is_end_of_stream()) {
-      ZX_ASSERT(media_codec_.has_value());
       if (media_codec_.value() == CodecType::kH264) {
         constexpr uint8_t kEndOfStreamNalUnitType = 11;
         // Force frames to be processed.
-        std::vector<uint8_t> end_of_stream_delimiter{0, 0, 1, kEndOfStreamNalUnitType};
+        static constexpr std::array<uint8_t, 4> kEndOfStreamDelimiter{0, 0, 1,
+                                                                      kEndOfStreamNalUnitType};
+        // Intentionally leak a raw pointer to a scoped_refptr (which is a std::shared_ptr) holding
+        // a DecoderBuffer to avoid registering exit-time destructors (~shared_ptr) via atexit
+        // (-Wexit-time-destructors) during driver unload or process exit, while reusing the
+        // refcounted buffer across decoder calls without per-frame heap allocations.
+        static const auto* const kEosBuffer = new scoped_refptr<media::DecoderBuffer>(
+            base::MakeRefCounted<media::DecoderBuffer>(kEndOfStreamDelimiter));
 
-        media::DecoderBuffer buffer(end_of_stream_delimiter);
-        media_decoder_->SetStream(next_stream_id_++, buffer);
+        media_decoder_->SetStream(next_stream_id_++, *kEosBuffer);
         state_ = DecoderState::kDecoding;
         auto result = media_decoder_->Decode();
         state_ = DecoderState::kIdle;
@@ -1384,19 +1395,14 @@ void CodecAdapterVaApiDecoder::ProcessInputLoop() {
       const uint8_t* buffer_start = packet->buffer()->base() + packet->start_offset();
       size_t buffer_size = packet->valid_length_bytes();
 
-      bool returned_buffer = false;
-      auto return_input_packet =
-          fit::defer_callback(fit::closure([this, &input_item, &returned_buffer] {
-            events_->onCoreCodecInputPacketDone(input_item.packet());
-            returned_buffer = true;
-          }));
+      auto return_input_packet = fit::defer_callback(fit::closure(
+          [this, packet = input_item.packet()] { events_->onCoreCodecInputPacketDone(packet); }));
 
-      ZX_ASSERT(media_codec_.has_value());
       if ((media_codec_.value() == CodecType::kH264) && avcc_processor_.is_avcc()) {
         // TODO(https://fxbug.dev/42176001): Remove this copy.
         auto output_avcc_vec = avcc_processor_.ParseVideoAvcc(buffer_start, buffer_size);
-        media::DecoderBuffer buffer(output_avcc_vec, packet->buffer(), packet->start_offset(),
-                                    std::move(return_input_packet));
+        media::DecoderBuffer buffer(std::move(output_avcc_vec), packet->buffer(),
+                                    packet->start_offset(), std::move(return_input_packet));
         DecodeAnnexBBuffer(std::move(buffer));
       } else {
         media::DecoderBuffer buffer({buffer_start, buffer_size}, packet->buffer(),
@@ -1404,19 +1410,21 @@ void CodecAdapterVaApiDecoder::ProcessInputLoop() {
         DecodeAnnexBBuffer(std::move(buffer));
       }
 
-      // Ensure that the decode buffer has been destroyed and the input packet has been returned
-      ZX_ASSERT(returned_buffer);
-
       if (media_codec_.value() == CodecType::kH264) {
         constexpr uint8_t kAccessUnitDelimiterNalUnitType = 9;
         constexpr uint8_t kPrimaryPicType = 1 << (7 - 3);
         // Force frames to be processed. TODO(https://fxbug.dev/42073233): Key on
         // known_end_access_unit.
-        std::vector<uint8_t> access_unit_delimiter{0, 0, 1, kAccessUnitDelimiterNalUnitType,
-                                                   kPrimaryPicType};
+        static constexpr std::array<uint8_t, 5> kAccessUnitDelimiter{
+            0, 0, 1, kAccessUnitDelimiterNalUnitType, kPrimaryPicType};
+        // Intentionally leak a raw pointer to a scoped_refptr (which is a std::shared_ptr) holding
+        // a DecoderBuffer to avoid registering exit-time destructors (~shared_ptr) via atexit
+        // (-Wexit-time-destructors) during driver unload or process exit, while reusing the
+        // refcounted buffer across decoder calls without per-frame heap allocations.
+        static const auto* const kAudBuffer = new scoped_refptr<media::DecoderBuffer>(
+            base::MakeRefCounted<media::DecoderBuffer>(kAccessUnitDelimiter));
 
-        media::DecoderBuffer buffer(access_unit_delimiter);
-        media_decoder_->SetStream(next_stream_id_++, buffer);
+        media_decoder_->SetStream(next_stream_id_++, *kAudBuffer);
         state_ = DecoderState::kDecoding;
         auto result = media_decoder_->Decode();
         state_ = DecoderState::kIdle;
@@ -1430,13 +1438,21 @@ void CodecAdapterVaApiDecoder::ProcessInputLoop() {
 }
 
 void CodecAdapterVaApiDecoder::CleanUpAfterStream() {
-  ZX_ASSERT(media_codec_.has_value());
+  if (!media_codec_.has_value()) {
+    return;
+  }
+
   if (media_codec_.value() == CodecType::kH264) {
     // Force frames to be processed.
-    std::vector<uint8_t> end_of_stream_delimiter{0, 0, 1, 11};
+    static constexpr std::array<uint8_t, 4> kEndOfStreamDelimiter{0, 0, 1, 11};
+    // Intentionally leak a raw pointer to a scoped_refptr (which is a std::shared_ptr) holding
+    // a DecoderBuffer to avoid registering exit-time destructors (~shared_ptr) via atexit
+    // (-Wexit-time-destructors) during driver unload or process exit, while reusing the
+    // refcounted buffer across decoder calls without per-frame heap allocations.
+    static const auto* const kEosBuffer = new scoped_refptr<media::DecoderBuffer>(
+        base::MakeRefCounted<media::DecoderBuffer>(kEndOfStreamDelimiter));
 
-    media::DecoderBuffer buffer(end_of_stream_delimiter);
-    media_decoder_->SetStream(next_stream_id_++, buffer);
+    media_decoder_->SetStream(next_stream_id_++, *kEosBuffer);
     auto result = media_decoder_->Decode();
     if (result != media::AcceleratedVideoDecoder::kRanOutOfStreamData) {
       SetCodecFailure("Unexpected media_decoder::Decode result for end of stream: %d", result);

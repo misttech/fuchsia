@@ -1,9 +1,9 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef MEDIA_FILTERS_VP9_RAW_BITS_READER_H_
-#define MEDIA_FILTERS_VP9_RAW_BITS_READER_H_
+#ifndef SRC_MEDIA_THIRD_PARTY_CHROMIUM_MEDIA_MEDIA_PARSERS_VP9_RAW_BITS_READER_H_
+#define SRC_MEDIA_THIRD_PARTY_CHROMIUM_MEDIA_MEDIA_PARSERS_VP9_RAW_BITS_READER_H_
 
 #include <stddef.h>
 #include <stdint.h>
@@ -11,7 +11,6 @@
 #include <memory>
 
 // Fuchsia change: Remove libraries in favor of "chromium_utils.h"
-// #include "media/base/media_export.h"
 #include "chromium_utils.h"
 
 namespace media {
@@ -67,4 +66,4 @@ class MEDIA_EXPORT Vp9RawBitsReader {
 
 }  // namespace media
 
-#endif  // MEDIA_FILTERS_VP9_RAW_BITS_READER_H_
+#endif  // SRC_MEDIA_THIRD_PARTY_CHROMIUM_MEDIA_MEDIA_PARSERS_VP9_RAW_BITS_READER_H_

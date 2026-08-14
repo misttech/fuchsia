@@ -1,18 +1,15 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef MEDIA_GPU_VP9_REFERENCE_FRAME_VECTOR_H_
-#define MEDIA_GPU_VP9_REFERENCE_FRAME_VECTOR_H_
+#ifndef SRC_MEDIA_THIRD_PARTY_CHROMIUM_MEDIA_MEDIA_GPU_VP9_REFERENCE_FRAME_VECTOR_H_
+#define SRC_MEDIA_THIRD_PARTY_CHROMIUM_MEDIA_MEDIA_GPU_VP9_REFERENCE_FRAME_VECTOR_H_
 
 #include <array>
 
 // Fuchsia change: Remove libraries in favor of "chromium_utils.h"
-// #include "base/memory/scoped_refptr.h"
-// #include "media/gpu/media_gpu_export.h"
-// #include "base/sequence_checker.h"
 #include "chromium_utils.h"
-#include "media/filters/vp9_parser.h"
+#include "media/parsers/vp9_parser.h"
 
 namespace media {
 
@@ -42,4 +39,4 @@ class MEDIA_GPU_EXPORT Vp9ReferenceFrameVector {
 
 }  // namespace media
 
-#endif  // MEDIA_GPU_VP9_REFERENCE_FRAME_VECTOR_H_
+#endif  // SRC_MEDIA_THIRD_PARTY_CHROMIUM_MEDIA_MEDIA_GPU_VP9_REFERENCE_FRAME_VECTOR_H_

@@ -8,9 +8,33 @@
 #include <stdint.h>
 
 #include <zircon/assert.h>
+#include <array>
+#include <optional>
 #include <string>
 
 namespace gfx {
+
+struct HdrMetadataCta861_3 {
+  uint16_t max_content_light_level = 0;
+  uint16_t max_frame_average_light_level = 0;
+  bool operator==(const HdrMetadataCta861_3& rhs) const = default;
+};
+
+struct HdrMetadataSmpteSt2086 {
+  std::array<std::array<uint16_t, 2>, 3> display_primaries = {};
+  std::array<uint16_t, 2> white_point = {};
+  uint32_t max_luminance = 0;
+  uint32_t min_luminance = 0;
+  bool operator==(const HdrMetadataSmpteSt2086& rhs) const = default;
+};
+
+struct HDRMetadata {
+  std::optional<HdrMetadataCta861_3> cta_861_3;
+  std::optional<HdrMetadataSmpteSt2086> smpte_st_2086;
+
+  bool IsEmpty() const { return !cta_861_3 && !smpte_st_2086; }
+  bool operator==(const HDRMetadata& rhs) const = default;
+};
 class Size {
  public:
   constexpr Size() : width_(0), height_(0) {}

@@ -1,15 +1,21 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "media/video/h264_poc.h"
+#ifdef UNSAFE_BUFFERS_BUILD
+// TODO(crbug.com/40285824): Remove this and convert code to safer constructs.
+#pragma allow_unsafe_buffers
+#endif
+
+#include "media/parsers/h264_poc.h"
 
 #include <stddef.h>
 
 #include <algorithm>
 
+// Fuchsia change: Remove libraries in favor of "chromium_utils.h"
 #include "chromium_utils.h"
-#include "media/video/h264_parser.h"
+#include "media/parsers/h264_parser.h"
 
 namespace media {
 
@@ -21,26 +27,20 @@ bool HasMMCO5(const media::H264SliceHeader& slice_hdr) {
   // Require that the frame actually has memory management control operations.
   if (slice_hdr.nal_ref_idc == 0 || slice_hdr.idr_pic_flag ||
       !slice_hdr.adaptive_ref_pic_marking_mode_flag) {
-    FX_LOGS(DEBUG) << "return false (1)";
     return false;
   }
 
   for (size_t i = 0; i < std::size(slice_hdr.ref_pic_marking); i++) {
     int32_t op = slice_hdr.ref_pic_marking[i].memory_mgmnt_control_operation;
-    if (op == 5) {
-      FX_LOGS(DEBUG) << "op == 5 - return true";
+    if (op == 5)
       return true;
-    }
 
     // Stop at the end of the list.
-    if (op == 0) {
-      FX_LOGS(DEBUG) << "return false (2)";
+    if (op == 0)
       return false;
-    }
   }
 
   // Should not get here, the list is always zero terminated.
-  FX_LOGS(DEBUG) << "return false (3)";
   return false;
 }
 

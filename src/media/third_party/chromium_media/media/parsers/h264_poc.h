@@ -1,14 +1,15 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef MEDIA_VIDEO_H264_POC_H_
-#define MEDIA_VIDEO_H264_POC_H_
+#ifndef SRC_MEDIA_THIRD_PARTY_CHROMIUM_MEDIA_MEDIA_PARSERS_H264_POC_H_
+#define SRC_MEDIA_THIRD_PARTY_CHROMIUM_MEDIA_MEDIA_PARSERS_H264_POC_H_
 
 #include <stdint.h>
 
 #include <optional>
 
+// Fuchsia change: Remove libraries in favor of "chromium_utils.h"
 #include "chromium_utils.h"
 
 namespace media {
@@ -52,4 +53,4 @@ class MEDIA_EXPORT H264POC {
 
 }  // namespace media
 
-#endif  // MEDIA_VIDEO_H264_POC_H_
+#endif  // SRC_MEDIA_THIRD_PARTY_CHROMIUM_MEDIA_MEDIA_PARSERS_H264_POC_H_

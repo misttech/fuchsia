@@ -24,13 +24,13 @@ MJPEGDecoder::MJPEGDecoder(std::unique_ptr<MJPEGAccelerator> accelerator)
 
 MJPEGDecoder::~MJPEGDecoder() = default;
 
-void MJPEGDecoder::SetStream(int32_t id, const DecoderBuffer& decoder_buffer) {
+void MJPEGDecoder::SetStream(int32_t id, scoped_refptr<DecoderBuffer> decoder_buffer) {
   stream_id_ = id;
-  stream_data_ = decoder_buffer.data();
-  stream_bytes_left_ = decoder_buffer.data_size();
+  decoder_buffer_ = std::move(decoder_buffer);
+  FX_DCHECK(decoder_buffer_);
+  stream_ = decoder_buffer_->as_span();
 
-  FX_DCHECK(stream_data_);
-  FX_DCHECK(stream_bytes_left_);
+  FX_DCHECK(!stream_.empty());
 }
 
 bool MJPEGDecoder::Flush() {
@@ -38,12 +38,16 @@ bool MJPEGDecoder::Flush() {
   return true;
 }
 
-void MJPEGDecoder::Reset() { pending_parse_result_.reset(); }
+void MJPEGDecoder::Reset() {
+  pending_parse_result_.reset();
+  decoder_buffer_.reset();
+  stream_ = {};
+}
 
 MJPEGDecoder::DecodeResult MJPEGDecoder::Decode() {
   if (!pending_parse_result_.has_value()) {
     JpegParseResult parse_result;
-    if (!ParseJpegPicture(stream_data_, stream_bytes_left_, &parse_result)) {
+    if (!ParseJpegPicture(stream_, &parse_result)) {
       FX_LOG_KV(WARNING, "ParseJpegPicture failed");
       return kDecodeError;
     }
@@ -113,6 +117,10 @@ VideoCodecProfile MJPEGDecoder::GetProfile() const {
 }
 
 uint8_t MJPEGDecoder::GetBitDepth() const { return 8; }
+
+VideoChromaSampling MJPEGDecoder::GetChromaSampling() const { return VideoChromaSampling::k420; }
+
+VideoColorSpace MJPEGDecoder::GetVideoColorSpace() const { return VideoColorSpace(); }
 
 size_t MJPEGDecoder::GetRequiredNumOfPictures() const { return 1; }
 

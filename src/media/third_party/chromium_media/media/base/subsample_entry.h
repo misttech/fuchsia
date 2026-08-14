@@ -1,16 +1,18 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef MEDIA_BASE_SUBSAMPLE_ENTRY_H_
-#define MEDIA_BASE_SUBSAMPLE_ENTRY_H_
+#ifndef SRC_MEDIA_THIRD_PARTY_CHROMIUM_MEDIA_MEDIA_BASE_SUBSAMPLE_ENTRY_H_
+#define SRC_MEDIA_THIRD_PARTY_CHROMIUM_MEDIA_MEDIA_BASE_SUBSAMPLE_ENTRY_H_
 
 #include <stddef.h>
 #include <stdint.h>
 
 #include <vector>
 
+// Fuchsia change: Remove libraries in favor of "chromium_utils.h"
 #include "chromium_utils.h"
+#include "media/base/ranges.h"
 
 namespace media {
 
@@ -27,6 +29,10 @@ struct SubsampleEntry {
   SubsampleEntry() : clear_bytes(0), cypher_bytes(0) {}
   SubsampleEntry(uint32_t clear_bytes, uint32_t cypher_bytes)
       : clear_bytes(clear_bytes), cypher_bytes(cypher_bytes) {}
+  bool operator==(const SubsampleEntry& right) const {
+    return clear_bytes == right.clear_bytes &&
+           cypher_bytes == right.cypher_bytes;
+  }
   uint32_t clear_bytes;
   uint32_t cypher_bytes;
 };
@@ -38,6 +44,16 @@ MEDIA_EXPORT bool VerifySubsamplesMatchSize(
     const std::vector<SubsampleEntry>& subsamples,
     size_t input_size);
 
+// Converts [|start|, |end|) range with |encrypted_ranges| into a vector of
+// SubsampleEntry. |encrypted_ranges| must be within the range defined by
+// |start| and |end|.
+// It is OK to pass in empty |encrypted_ranges|; this will return a vector
+// with single SubsampleEntry with clear_bytes set to the size of the buffer.
+MEDIA_EXPORT std::vector<SubsampleEntry> EncryptedRangesToSubsampleEntry(
+    const uint8_t* start,
+    const uint8_t* end,
+    const Ranges<const uint8_t*>& encrypted_ranges);
+
 }  // namespace media
 
-#endif  // MEDIA_BASE_SUBSAMPLE_ENTRY_H_
+#endif  // SRC_MEDIA_THIRD_PARTY_CHROMIUM_MEDIA_MEDIA_BASE_SUBSAMPLE_ENTRY_H_

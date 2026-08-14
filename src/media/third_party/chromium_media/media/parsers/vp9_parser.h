@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -9,22 +9,23 @@
 //
 // See media::VP9Decoder for example usage.
 //
-#ifndef MEDIA_FILTERS_VP9_PARSER_H_
-#define MEDIA_FILTERS_VP9_PARSER_H_
+
+#ifdef UNSAFE_BUFFERS_BUILD
+// TODO(crbug.com/40285824): Remove this and convert code to safer constructs.
+#pragma allow_unsafe_buffers
+#endif
+#ifndef SRC_MEDIA_THIRD_PARTY_CHROMIUM_MEDIA_MEDIA_PARSERS_VP9_PARSER_H_
+#define SRC_MEDIA_THIRD_PARTY_CHROMIUM_MEDIA_MEDIA_PARSERS_VP9_PARSER_H_
 
 #include <stddef.h>
 #include <stdint.h>
 #include <sys/types.h>
 
+#include <array>
 #include <memory>
 
-// Fuchsia change: Remove libraries in favor of "chromium_utils.h"
-// #include "base/callback.h"
-// #include "base/containers/circular_deque.h"
-// #include "base/memory/weak_ptr.h"
-// #include "media/base/media_export.h"
-// #include "ui/gfx/geometry/size.h"
 #include <lib/fit/function.h>
+// Fuchsia change: Remove libraries in favor of "chromium_utils.h"
 #include "chromium_utils.h"
 #include "geometry.h"
 #include "media/base/decrypt_config.h"
@@ -97,10 +98,10 @@ struct MEDIA_EXPORT Vp9SegmentationParams {
   bool update_data;
   bool abs_or_delta_update;
   bool feature_enabled[kNumSegments][SEG_LVL_MAX];
-  int16_t feature_data[kNumSegments][SEG_LVL_MAX];
+  std::array<std::array<int16_t, SEG_LVL_MAX>, kNumSegments> feature_data;
 
-  int16_t y_dequant[kNumSegments][2];
-  int16_t uv_dequant[kNumSegments][2];
+  std::array<std::array<int16_t, 2>, kNumSegments> y_dequant;
+  std::array<std::array<int16_t, 2>, kNumSegments> uv_dequant;
 
   bool FeatureEnabled(size_t seg_id, SegmentLevelFeature feature) const {
     return feature_enabled[seg_id][feature];
@@ -119,9 +120,9 @@ struct MEDIA_EXPORT Vp9LoopFilterParams {
 
   bool delta_enabled;
   bool delta_update;
-  bool update_ref_deltas[VP9_FRAME_MAX];
-  int8_t ref_deltas[VP9_FRAME_MAX];
-  bool update_mode_deltas[kNumModeDeltas];
+  std::array<bool, VP9_FRAME_MAX> update_ref_deltas;
+  std::array<int8_t, VP9_FRAME_MAX> ref_deltas;
+  std::array<bool, kNumModeDeltas> update_mode_deltas;
   int8_t mode_deltas[kNumModeDeltas];
 
   // Calculated from above fields.
@@ -175,20 +176,6 @@ struct MEDIA_EXPORT Vp9FrameContext {
   Vp9Prob mv_hp_prob[2];
 };
 
-struct MEDIA_EXPORT Vp9CompressedHeader {
-  enum Vp9TxMode {
-    ONLY_4X4 = 0,
-    ALLOW_8X8 = 1,
-    ALLOW_16X16 = 2,
-    ALLOW_32X32 = 3,
-    TX_MODE_SELECT = 4,
-    TX_MODES = 5,
-  };
-
-  Vp9TxMode tx_mode;
-  Vp9ReferenceMode reference_mode;
-};
-
 // VP9 frame header.
 struct MEDIA_EXPORT Vp9FrameHeader {
   enum FrameType {
@@ -220,22 +207,22 @@ struct MEDIA_EXPORT Vp9FrameHeader {
   uint8_t subsampling_y;
 
   // The range of frame_width and frame_height is 1..2^16.
-  uint32_t frame_width;
-  uint32_t frame_height;
-  uint32_t render_width;
-  uint32_t render_height;
+  uint32_t frame_width = 0;
+  uint32_t frame_height = 0;
+  uint32_t render_width = 0;
+  uint32_t render_height = 0;
 
-  bool intra_only;
-  uint8_t reset_frame_context;
-  uint8_t refresh_frame_flags;
-  uint8_t ref_frame_idx[kVp9NumRefsPerFrame];
-  bool ref_frame_sign_bias[Vp9RefType::VP9_FRAME_MAX];
-  bool allow_high_precision_mv;
-  Vp9InterpolationFilter interpolation_filter;
+  bool intra_only = false;
+  uint8_t reset_frame_context = 0;
+  uint8_t refresh_frame_flags = 0;
+  std::array<uint8_t, kVp9NumRefsPerFrame> ref_frame_idx = {};
+  bool ref_frame_sign_bias[Vp9RefType::VP9_FRAME_MAX] = {false};
+  bool allow_high_precision_mv = false;
+  Vp9InterpolationFilter interpolation_filter{Vp9InterpolationFilter::EIGHTTAP};
 
-  bool refresh_frame_context;
-  bool frame_parallel_decoding_mode;
-  uint8_t frame_context_idx;
+  bool refresh_frame_context = false;
+  bool frame_parallel_decoding_mode = false;
+  uint8_t frame_context_idx = 0;
   // |frame_context_idx_to_save_probs| is to be used by save_probs() only, and
   // |frame_context_idx| otherwise.
   uint8_t frame_context_idx_to_save_probs;
@@ -259,9 +246,6 @@ struct MEDIA_EXPORT Vp9FrameHeader {
   // Size of uncompressed header in bytes.
   size_t uncompressed_header_size;
 
-  Vp9CompressedHeader compressed_header;
-  // Initial frame entropy context after load_probs2(frame_context_idx).
-  Vp9FrameContext initial_frame_context;
   // Current frame entropy context after header parsing.
   Vp9FrameContext frame_context;
 
@@ -273,17 +257,11 @@ struct MEDIA_EXPORT Vp9FrameHeader {
 // A parser for VP9 bitstream.
 class MEDIA_EXPORT Vp9Parser {
  public:
-  // If context update is needed after decoding a frame, the client must
-  // execute this callback, passing the updated context state.
-  // Fuchsia change: use fit::function instead of base::OnceCallback
-  using ContextRefreshCallback = fit::function<void(const Vp9FrameContext&)>;
-
   // ParseNextFrame() return values. See documentation for ParseNextFrame().
   enum Result {
     kOk,
     kInvalidStream,
     kEOStream,
-    kAwaitingRefresh,
   };
 
   // The parsing context to keep track of references.
@@ -303,46 +281,7 @@ class MEDIA_EXPORT Vp9Parser {
   // The parsing context that persists across frames.
   class Context {
    public:
-    class MEDIA_EXPORT Vp9FrameContextManager {
-     public:
-      Vp9FrameContextManager();
-      ~Vp9FrameContextManager();
-      bool initialized() const { return initialized_; }
-      bool needs_client_update() const { return needs_client_update_; }
-      const Vp9FrameContext& frame_context() const;
-
-      // Resets to uninitialized state.
-      void Reset();
-
-      // Marks this context as requiring an update from parser's client.
-      void SetNeedsClientUpdate();
-
-      // Updates frame context.
-      void Update(const Vp9FrameContext& frame_context);
-
-      // Returns a callback to update frame context at a later time with.
-      ContextRefreshCallback GetUpdateCb();
-
-     private:
-      // Updates frame context from parser's client.
-      void UpdateFromClient(const Vp9FrameContext& frame_context);
-
-      bool initialized_ = false;
-      bool needs_client_update_ = false;
-      Vp9FrameContext frame_context_;
-
-      base::WeakPtrFactory<Vp9FrameContextManager> weak_ptr_factory_{this};
-    };
-
     void Reset();
-
-    // Mark |frame_context_idx| as requiring update from the client.
-    void MarkFrameContextForUpdate(size_t frame_context_idx);
-
-    // Update frame context at |frame_context_idx| with the contents of
-    // |frame_context|.
-    void UpdateFrameContext(size_t frame_context_idx,
-                            const Vp9FrameContext& frame_context);
 
     // Return ReferenceSlot for frame at |ref_idx|.
     const ReferenceSlot& GetRefSlot(size_t ref_idx) const;
@@ -366,69 +305,8 @@ class MEDIA_EXPORT Vp9Parser {
 
     // Frame references.
     ReferenceSlot ref_slots_[kVp9NumRefFrames];
-
-    Vp9FrameContextManager frame_context_managers_[kVp9NumFrameContexts];
   };
 
-  // See homonymous member variables for information on the parameters.
-  explicit Vp9Parser(bool parsing_compressed_header);
-  Vp9Parser(bool parsing_compressed_header, bool needs_external_context_update);
-
-  Vp9Parser(const Vp9Parser&) = delete;
-  Vp9Parser& operator=(const Vp9Parser&) = delete;
-
-  ~Vp9Parser();
-
-  // Set a new stream buffer to read from, starting at |stream| and of size
-  // |stream_size| in bytes. |stream| must point to the beginning of a single
-  // frame or a single superframe, is owned by caller and must remain valid
-  // until the next call to SetStream(). |spatial_layer_frame_size| may be
-  // filled if the parsed stream is VP9 SVC. It stands for frame sizes of
-  // spatial layers. SVC frame might have multiple frames without superframe
-  // index. The info helps Vp9Parser detecting the beginning of each frame.
-  void SetStream(const uint8_t* stream,
-                 off_t stream_size,
-                 const std::vector<uint32_t>& spatial_layer_frame_size,
-                 std::unique_ptr<DecryptConfig> stream_config);
-
-  void SetStream(const uint8_t* stream,
-                 off_t stream_size,
-                 std::unique_ptr<DecryptConfig> stream_config);
-
-  // Parse the next frame in the current stream buffer, filling |fhdr| with
-  // the parsed frame header and updating current segmentation and loop filter
-  // state. The necessary frame size to decode |fhdr| fills in |allocate_size|.
-  // The size can be larger than frame size of |fhdr| in the case of SVC stream.
-  // Also fills |frame_decrypt_config| _if_ the parser was set to use a super
-  // frame decrypt config.
-  // Return kOk if a frame has successfully been parsed,
-  //        kEOStream if there is no more data in the current stream buffer,
-  //        kAwaitingRefresh if this frame awaiting frame context update, or
-  //        kInvalidStream on error.
-  Result ParseNextFrame(Vp9FrameHeader* fhdr,
-                        gfx::Size* allocate_size,
-                        std::unique_ptr<DecryptConfig>* frame_decrypt_config);
-
-  // Perform the same superframe parsing logic, but don't attempt to parse
-  // the normal frame headers afterwards, and then only return the decrypt
-  // config, since the frame itself isn't useful for the testing.
-  // Returns |true| if a frame would have been sent to |ParseUncompressedHeader|
-  //         |false| if there was an error parsing the superframe.
-  std::unique_ptr<DecryptConfig> NextFrameDecryptContextForTesting();
-  std::string IncrementIVForTesting(const std::string& iv, uint32_t by);
-
-  // Return current parsing context.
-  const Context& context() const { return context_; }
-
-  // Return a ContextRefreshCallback, which, if not null, has to be called with
-  // the new context state after the frame associated with |frame_context_idx|
-  // is decoded.
-  ContextRefreshCallback GetContextRefreshCb(size_t frame_context_idx);
-
-  // Clear parser state and return to an initialized state.
-  void Reset();
-
- private:
   // Stores start pointer and size of each frame within the current superframe.
   struct FrameInfo {
     FrameInfo();
@@ -453,23 +331,81 @@ class MEDIA_EXPORT Vp9Parser {
     std::unique_ptr<DecryptConfig> decrypt_config;
   };
 
+  Vp9Parser();
+
+  Vp9Parser(const Vp9Parser&) = delete;
+  Vp9Parser& operator=(const Vp9Parser&) = delete;
+
+  ~Vp9Parser();
+
+  // Set a new stream buffer to read from, starting at |stream| and of size
+  // |stream_size| in bytes. |stream| must point to the beginning of a single
+  // frame or a single superframe, is owned by caller and must remain valid
+  // until the next call to SetStream(). |spatial_layer_frame_size| may be
+  // filled if the parsed stream is VP9 SVC. It stands for frame sizes of
+  // spatial layers. SVC frame might have multiple frames without superframe
+  // index. The info helps Vp9Parser detecting the beginning of each frame.
+  void SetStream(base::span<const uint8_t> stream,
+                 const std::vector<uint32_t>& spatial_layer_frame_size,
+                 std::unique_ptr<DecryptConfig> stream_config);
+
+  void SetStream(base::span<const uint8_t> stream,
+                 std::unique_ptr<DecryptConfig> stream_config);
+
+  // Parse the next frame in the current stream buffer, filling |fhdr| with
+  // the parsed frame header and updating current segmentation and loop filter
+  // state. The necessary frame size to decode |fhdr| fills in |allocate_size|.
+  // The size can be larger than frame size of |fhdr| in the case of SVC stream.
+  // Also fills |frame_decrypt_config| _if_ the parser was set to use a super
+  // frame decrypt config.
+  // Return kOk if a frame has successfully been parsed,
+  //        kEOStream if there is no more data in the current stream buffer,
+  //        kInvalidStream on error.
+  Result ParseNextFrame(Vp9FrameHeader* fhdr,
+                        gfx::Size* allocate_size,
+                        std::unique_ptr<DecryptConfig>* frame_decrypt_config);
+
+  // Perform the same superframe parsing logic, but don't attempt to parse
+  // the normal frame headers afterwards, and then only return the decrypt
+  // config, since the frame itself isn't useful for the testing.
+  // Returns |true| if a frame would have been sent to |ParseUncompressedHeader|
+  //         |false| if there was an error parsing the superframe.
+  std::unique_ptr<DecryptConfig> NextFrameDecryptContextForTesting();
+  std::string IncrementIVForTesting(const std::string& iv, uint32_t by);
+
+  // Return current parsing context.
+  const Context& context() const { return context_; }
+
+  // Fuchsia change: Allow checking that the parser has consumed all frames and
+  // spans.
+  bool is_stream_empty() const { return stream_.empty() && frames_.empty(); }
+
+  // Clear parser state and return to an initialized state.
+  void Reset();
+
+  // Determines if the passed in VP9 frame data contains a superframe or not.
+  static bool IsSuperframe(base::span<const uint8_t> stream,
+                           const DecryptConfig* decrypt_config);
+
+  // Extracts the frame information for a frame, if this is a superframe then
+  // the returned list will contain each of the frames in decode order. An empty
+  // list will be returned in the error case.
+  static base::circular_deque<FrameInfo> ExtractFrames(
+      base::span<const uint8_t> stream,
+      const DecryptConfig* decrypt_config);
+
+ private:
   base::circular_deque<FrameInfo> ParseSuperframe();
   // Parses a frame in SVC stream with |spatial_layer_frame_size_|.
   base::circular_deque<FrameInfo> ParseSVCFrame();
 
   // Returns true and populates |result| with the parsing result if parsing of
   // current frame is finished (possibly unsuccessfully). |fhdr| will only be
-  // populated and valid if |result| is kOk. Otherwise return false, indicating
-  // that the compressed header must be parsed next.
+  // populated and valid if |result| is kOk.
   bool ParseUncompressedHeader(const FrameInfo& frame_info,
                                Vp9FrameHeader* fhdr,
                                Result* result,
                                Vp9Parser::Context* context);
-
-  // Returns true if parsing of current frame is finished and |result| will be
-  // populated with value of parsing result. Otherwise, needs to continue setup
-  // current frame.
-  bool ParseCompressedHeader(const FrameInfo& frame_info, Result* result);
 
   int64_t GetQIndex(const Vp9QuantizationParams& quant, size_t segid) const;
   // Returns true if the setup to |context_| succeeded.
@@ -479,20 +415,7 @@ class MEDIA_EXPORT Vp9Parser {
   void UpdateSlots(Vp9Parser::Context* context);
 
   // Current address in the bitstream buffer.
-  const uint8_t* stream_;
-
-  // Remaining bytes in stream_.
-  off_t bytes_left_;
-
-  // Set on ctor if the client needs VP9Parser to also parse compressed headers,
-  // otherwise they'll be skipped.
-  const bool parsing_compressed_header_;
-
-  // Set on ctor if the client needs to call the ContextRefreshCallback obtained
-  // via GetContextRefreshCb() with the updated Vp9FrameContext; otherwise
-  // VP9Parser will update it internally.
-  const bool needs_external_context_update_
-      __attribute__((unused));  // Fuchsia change: unused variable
+  base::span<const uint8_t> stream_;
 
   // FrameInfo for the remaining frames in the current superframe to be parsed.
   base::circular_deque<FrameInfo> frames_;
@@ -505,10 +428,9 @@ class MEDIA_EXPORT Vp9Parser {
   // The frame size of each spatial layer.
   std::vector<uint32_t> spatial_layer_frame_size_;
 
-  FrameInfo curr_frame_info_;
   Vp9FrameHeader curr_frame_header_;
 };
 
 }  // namespace media
 
-#endif  // MEDIA_FILTERS_VP9_PARSER_H_
+#endif  // SRC_MEDIA_THIRD_PARTY_CHROMIUM_MEDIA_MEDIA_PARSERS_VP9_PARSER_H_

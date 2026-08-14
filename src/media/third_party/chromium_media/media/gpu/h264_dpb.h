@@ -1,21 +1,23 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
 // This file contains an implementation of an H.264 Decoded Picture Buffer
 // used in H264 decoders.
 
-#ifndef MEDIA_GPU_H264_DPB_H_
-#define MEDIA_GPU_H264_DPB_H_
+#ifndef SRC_MEDIA_THIRD_PARTY_CHROMIUM_MEDIA_MEDIA_GPU_H264_DPB_H_
+#define SRC_MEDIA_THIRD_PARTY_CHROMIUM_MEDIA_MEDIA_GPU_H264_DPB_H_
 
 #include <stddef.h>
 
 #include <vector>
 
+// Fuchsia change: Remove libraries in favor of "chromium_utils.h"
 #include "chromium_utils.h"
 #include "geometry.h"
 #include "media/gpu/codec_picture.h"
-#include "media/video/h264_parser.h"
+#include "media/parsers/h264_parser.h"
+
 #include "media/video/video_encode_accelerator.h"
 
 namespace media {
@@ -50,50 +52,51 @@ class MEDIA_GPU_EXPORT H264Picture : public CodecPicture {
   // Values calculated per H.264 specification or taken from slice header.
   // See spec for more details on each (some names have been converted from
   // CamelCase in spec to Chromium-style names).
-  int pic_order_cnt_type;
-  int top_field_order_cnt;
-  int bottom_field_order_cnt;
-  int pic_order_cnt;
-  int pic_order_cnt_msb;
-  int pic_order_cnt_lsb;
-  int delta_pic_order_cnt_bottom;
-  int delta_pic_order_cnt0;
-  int delta_pic_order_cnt1;
+  int pic_order_cnt_type = 0;
+  int top_field_order_cnt = 0;
+  int bottom_field_order_cnt = 0;
+  int pic_order_cnt = 0;
+  int pic_order_cnt_msb = 0;
+  int pic_order_cnt_lsb = 0;
+  int delta_pic_order_cnt_bottom = 0;
+  int delta_pic_order_cnt0 = 0;
+  int delta_pic_order_cnt1 = 0;
 
-  int pic_num;
-  int long_term_pic_num;
-  int frame_num;  // from slice header
-  int frame_num_offset;
-  int frame_num_wrap;
-  int long_term_frame_idx;
+  int pic_num = 0;
+  int long_term_pic_num = 0;
+  int frame_num = 0;  // from slice header
+  int frame_num_offset = 0;
+  int frame_num_wrap = 0;
+  int long_term_frame_idx = 0;
 
-  H264SliceHeader::Type type;
-  int nal_ref_idc;
-  bool idr;        // IDR picture?
-  int idr_pic_id;  // Valid only if idr == true.
-  bool ref;        // reference picture?
-  int ref_pic_list_modification_flag_l0;
-  int abs_diff_pic_num_minus1;
-  bool long_term;  // long term reference picture?
-  bool outputted;
+  H264SliceHeader::Type type = H264SliceHeader::kPSlice;
+  int nal_ref_idc = 0;
+  bool idr = false;    // IDR picture?
+  int idr_pic_id = 0;  // Valid only if idr == true.
+  bool ref = false;    // reference picture?
+  int ref_pic_list_modification_flag_l0 = 0;
+  int abs_diff_pic_num_minus1 = 0;
+  bool long_term = false;  // long term reference picture?
+  bool outputted = false;
   // Does memory management op 5 needs to be executed after this
   // picture has finished decoding?
-  bool mem_mgmt_5;
+  bool mem_mgmt_5 = false;
 
   // Created by the decoding process for gaps in frame_num.
   // Not for decode or output.
-  bool nonexisting;
+  bool nonexisting = false;
 
-  Field field;
+  Field field = FIELD_NONE;
 
   // Values from slice_hdr to be used during reference marking and
   // memory management after finishing this picture.
-  bool long_term_reference_flag;
-  bool adaptive_ref_pic_marking_mode_flag;
-  H264DecRefPicMarking ref_pic_marking[H264SliceHeader::kRefListSize];
+  bool long_term_reference_flag = false;
+  bool adaptive_ref_pic_marking_mode_flag = false;
+  std::array<H264DecRefPicMarking, H264SliceHeader::kRefListSize>
+      ref_pic_marking = {};
 
   // Position in DPB (i.e. index in DPB).
-  int dpb_position;
+  int dpb_position = 0;
 
   std::optional<H264Metadata> metadata_for_encoding;
 
@@ -103,7 +106,7 @@ class MEDIA_GPU_EXPORT H264Picture : public CodecPicture {
 // DPB - Decoded Picture Buffer.
 // Stores decoded pictures that will be used for future display
 // and/or reference.
-class H264DPB {
+class MEDIA_GPU_EXPORT H264DPB {
  public:
   H264DPB();
 
@@ -139,6 +142,9 @@ class H264DPB {
 
   // Return a long-term reference picture by its long_term_pic_num.
   scoped_refptr<H264Picture> GetLongRefPicByLongTermPicNum(int pic_num);
+
+  // Return a long-term reference picture by its long term reference index.
+  scoped_refptr<H264Picture> GetLongRefPicByLongTermIdx(int idx);
 
   // Return the short reference picture with lowest frame_num. Used for sliding
   // window memory management.
@@ -184,4 +190,4 @@ class H264DPB {
 
 }  // namespace media
 
-#endif  // MEDIA_GPU_H264_DPB_H_
+#endif  // SRC_MEDIA_THIRD_PARTY_CHROMIUM_MEDIA_MEDIA_GPU_H264_DPB_H_

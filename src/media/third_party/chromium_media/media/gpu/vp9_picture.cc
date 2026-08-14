@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,8 +8,7 @@
 
 namespace media {
 
-
-VP9Picture::VP9Picture() : frame_hdr(new Vp9FrameHeader()) {}
+VP9Picture::VP9Picture() : frame_hdr(std::make_unique<Vp9FrameHeader>()) {}
 
 VP9Picture::~VP9Picture() = default;
 
@@ -38,6 +37,7 @@ scoped_refptr<VP9Picture> VP9Picture::Duplicate() {
   ret->set_bitstream_id(bitstream_id());
   ret->set_visible_rect(visible_rect());
   ret->set_colorspace(get_colorspace());
+  ret->SetDynamicHdrMetadata(dynamic_hdr_metadata(), nullptr);
 
   return ret;
 }
