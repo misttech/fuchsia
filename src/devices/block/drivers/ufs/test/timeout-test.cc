@@ -21,7 +21,7 @@ using TimeoutTest = UfsTest;
 TEST_F(TimeoutTest, GetEarliestTimeoutDeadline) {
   constexpr uint8_t kTestLun = 0;
   const uint8_t kMaxSlotCount =
-      dut_->GetTransferRequestProcessor().GetRequestList().GetSlotCount() - kAdminCommandSlotCount;
+      dut_->GetTransferRequestProcessor().GetSlotCount() - kAdminCommandSlotCount;
 
   // Disable IoLoop completion
   dut_->GetTransferRequestProcessor().DisableCompletion();
@@ -51,11 +51,16 @@ TEST_F(TimeoutTest, GetEarliestTimeoutDeadline) {
     }
 
     // Request in slot 0 is the earliest issued request.
-    zx_time_t slot_0_deadline =
-        dut_->GetTransferRequestProcessor().GetRequestList().GetSlot(0).deadline;
-    for (uint8_t slot_num = 0; slot_num < kMaxSlotCount; ++slot_num) {
-      EXPECT_LE(slot_0_deadline,
-                dut_->GetTransferRequestProcessor().GetRequestList().GetSlot(slot_num).deadline);
+    zx_time_t slot_0_deadline;
+    {
+      std::lock_guard<std::mutex> lock(dut_->GetTransferRequestProcessor().GetSlotLock());
+      slot_0_deadline =
+          dut_->GetTransferRequestProcessor().GetRequestListLocked().GetSlot(0).deadline;
+      for (uint8_t slot_num = 0; slot_num < kMaxSlotCount; ++slot_num) {
+        EXPECT_LE(
+            slot_0_deadline,
+            dut_->GetTransferRequestProcessor().GetRequestListLocked().GetSlot(slot_num).deadline);
+      }
     }
 
     // Wait 100 ms for outstanding send requests to complete.
@@ -113,20 +118,29 @@ TEST_F(TimeoutTest, AsyncCommandTimeout) {
                             {nullptr, 0});
 
   auto wait_for = [&]() -> bool {
-    return dut_->GetTransferRequestProcessor().IsSlotTimedOut(target_task_tag);
+    std::lock_guard<std::mutex> lock(dut_->GetTransferRequestProcessor().GetSlotLock());
+    return dut_->GetTransferRequestProcessor()
+               .GetRequestListLocked()
+               .GetSlot(target_task_tag)
+               .state == SlotState::kTimeout;
   };
   fbl::String timeout_message = "Timeout waiting for SCSI command timeout";
   ASSERT_OK(dut_->WaitWithTimeout(wait_for, kWaitLimit, timeout_message, zx::msec(100)));
 
   // Check that the timed out command is aborted and not in the request list
-  ASSERT_TRUE(dut_->GetTransferRequestProcessor().IsSlotTimedOut(target_task_tag));
+  {
+    std::lock_guard<std::mutex> lock(dut_->GetTransferRequestProcessor().GetSlotLock());
+    ASSERT_EQ(
+        dut_->GetTransferRequestProcessor().GetRequestListLocked().GetSlot(target_task_tag).state,
+        SlotState::kTimeout);
+  }
   mock_device_.GetScsiCommandProcessor().Reset();
 }
 
 TEST_F(TimeoutTest, AllAsyncCommandsTimeout) {
   constexpr uint8_t kTestLun = 0;
   const uint8_t kMaxSlotCount =
-      dut_->GetTransferRequestProcessor().GetRequestList().GetSlotCount() - kAdminCommandSlotCount;
+      dut_->GetTransferRequestProcessor().GetSlotCount() - kAdminCommandSlotCount;
 
   auto lun_id = Ufs::TranslateScsiLunToUfsLun(kTestLun);
   ASSERT_OK(lun_id);
@@ -171,9 +185,11 @@ TEST_F(TimeoutTest, AllAsyncCommandsTimeout) {
   }
 
   auto wait_for = [&]() -> bool {
+    std::lock_guard<std::mutex> lock(dut_->GetTransferRequestProcessor().GetSlotLock());
     bool all_timed_out = true;
     for (uint8_t slot_num = 0; slot_num < kMaxSlotCount; ++slot_num) {
-      if (!dut_->GetTransferRequestProcessor().IsSlotTimedOut(slot_num)) {
+      if (dut_->GetTransferRequestProcessor().GetRequestListLocked().GetSlot(slot_num).state !=
+          SlotState::kTimeout) {
         all_timed_out = false;
       }
     }
@@ -183,10 +199,14 @@ TEST_F(TimeoutTest, AllAsyncCommandsTimeout) {
   ASSERT_OK(dut_->WaitWithTimeout(wait_for, kWaitLimit, timeout_message, zx::msec(100)));
 
   // Check that the timed out command.
-  for (uint8_t slot_num = 0; slot_num < kMaxSlotCount; ++slot_num) {
-    EXPECT_TRUE(dut_->GetTransferRequestProcessor().IsSlotTimedOut(slot_num));
-    EXPECT_EQ(dut_->GetTransferRequestProcessor().GetRequestList().GetSlot(slot_num).result,
-              ZX_ERR_TIMED_OUT);
+  {
+    std::lock_guard<std::mutex> lock(dut_->GetTransferRequestProcessor().GetSlotLock());
+    for (uint8_t slot_num = 0; slot_num < kMaxSlotCount; ++slot_num) {
+      EXPECT_EQ(dut_->GetTransferRequestProcessor().GetRequestListLocked().GetSlot(slot_num).state,
+                SlotState::kTimeout);
+      EXPECT_EQ(dut_->GetTransferRequestProcessor().GetRequestListLocked().GetSlot(slot_num).result,
+                ZX_ERR_TIMED_OUT);
+    }
   }
   mock_device_.GetScsiCommandProcessor().Reset();
 }
@@ -194,7 +214,7 @@ TEST_F(TimeoutTest, AllAsyncCommandsTimeout) {
 TEST_F(TimeoutTest, PartialAsyncCommandsTimeout) {
   constexpr uint8_t kTestLun = 0;
   const uint8_t kMaxSlotCount =
-      dut_->GetTransferRequestProcessor().GetRequestList().GetSlotCount() - kAdminCommandSlotCount;
+      dut_->GetTransferRequestProcessor().GetSlotCount() - kAdminCommandSlotCount;
   const uint8_t kTimeoutCount = kMaxSlotCount / 2;
 
   auto lun_id = Ufs::TranslateScsiLunToUfsLun(kTestLun);
@@ -264,14 +284,16 @@ TEST_F(TimeoutTest, PartialAsyncCommandsTimeout) {
   }
 
   auto wait_for = [&]() -> bool {
+    std::lock_guard<std::mutex> lock(dut_->GetTransferRequestProcessor().GetSlotLock());
     bool all_done = true;
     for (uint8_t slot_num = 0; slot_num < kTimeoutCount; ++slot_num) {
-      if (!dut_->GetTransferRequestProcessor().IsSlotTimedOut(slot_num)) {
+      if (dut_->GetTransferRequestProcessor().GetRequestListLocked().GetSlot(slot_num).state !=
+          SlotState::kTimeout) {
         all_done = false;
       }
     }
     for (uint8_t slot_num = kTimeoutCount; slot_num < kMaxSlotCount; ++slot_num) {
-      if (dut_->GetTransferRequestProcessor().GetRequestList().GetSlot(slot_num).state !=
+      if (dut_->GetTransferRequestProcessor().GetRequestListLocked().GetSlot(slot_num).state !=
           SlotState::kFree) {
         all_done = false;
       }
@@ -282,17 +304,22 @@ TEST_F(TimeoutTest, PartialAsyncCommandsTimeout) {
   ASSERT_OK(dut_->WaitWithTimeout(wait_for, kWaitLimit, timeout_message, zx::msec(100)));
 
   // Check that the timed out command.
-  for (uint8_t slot_num = 0; slot_num < kTimeoutCount; ++slot_num) {
-    EXPECT_TRUE(dut_->GetTransferRequestProcessor().IsSlotTimedOut(slot_num));
-    EXPECT_EQ(dut_->GetTransferRequestProcessor().GetRequestList().GetSlot(slot_num).result,
-              ZX_ERR_TIMED_OUT);
-  }
+  {
+    std::lock_guard<std::mutex> lock(dut_->GetTransferRequestProcessor().GetSlotLock());
+    for (uint8_t slot_num = 0; slot_num < kTimeoutCount; ++slot_num) {
+      EXPECT_EQ(dut_->GetTransferRequestProcessor().GetRequestListLocked().GetSlot(slot_num).state,
+                SlotState::kTimeout);
+      EXPECT_EQ(dut_->GetTransferRequestProcessor().GetRequestListLocked().GetSlot(slot_num).result,
+                ZX_ERR_TIMED_OUT);
+    }
 
-  // Check that the completed command.
-  for (uint8_t slot_num = kTimeoutCount; slot_num < kMaxSlotCount; ++slot_num) {
-    EXPECT_EQ(dut_->GetTransferRequestProcessor().GetRequestList().GetSlot(slot_num).state,
-              SlotState::kFree);
-    EXPECT_EQ(dut_->GetTransferRequestProcessor().GetRequestList().GetSlot(slot_num).result, ZX_OK);
+    // Check that the completed command.
+    for (uint8_t slot_num = kTimeoutCount; slot_num < kMaxSlotCount; ++slot_num) {
+      EXPECT_EQ(dut_->GetTransferRequestProcessor().GetRequestListLocked().GetSlot(slot_num).state,
+                SlotState::kFree);
+      EXPECT_EQ(dut_->GetTransferRequestProcessor().GetRequestListLocked().GetSlot(slot_num).result,
+                ZX_OK);
+    }
   }
   mock_device_.GetScsiCommandProcessor().Reset();
 }

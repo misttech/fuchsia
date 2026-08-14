@@ -4,7 +4,6 @@
 
 #include "request_list.h"
 
-#include <lib/ddk/debug.h>
 #include <lib/driver/logging/cpp/logger.h>
 
 namespace ufs {
@@ -37,7 +36,7 @@ zx::result<> RequestList::Init(zx::unowned_bti bti, size_t entry_size, uint8_t e
   // Allocate slots.
   for (size_t i = 0; i < entry_count; ++i) {
     auto &slot = request_slots_[i];
-    slot.state = SlotState::kFree;
+    slot.Reset(SlotState::kFree);
     zx::result<> result = IoBufferInit(bti, &slot.command_descriptor_io, kUtpCommandDescriptorSize);
     if (result.is_error()) {
       fdf::error("Failed to allocate memory for the Command Descriptor: {}", result);

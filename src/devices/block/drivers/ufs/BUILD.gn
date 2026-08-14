@@ -6,6 +6,7 @@ import("//build/bind/bind.gni")
 import("//build/components.gni")
 import("//build/drivers.gni")
 import("//build/test.gni")
+import("//build/testing/environments.gni")
 
 driver_bind_rules("ufs-pci-bind") {
   rules = "meta/ufs-pci.bind"
@@ -232,16 +233,18 @@ test("ufs-unit-tests-bin") {
          ] + _test_deps
 }
 
-fuchsia_unittest_component("ufs-unit-tests") {
+fuchsia_unittest_package("ufs-tests") {
+  package_name = "ufs-tests"
+  component_name = "ufs-unit-tests"
   manifest = "test/meta/unit_tests.cml"
   deps = [ ":ufs-unit-tests-bin" ]
-}
-
-fuchsia_test_package("ufs-tests") {
   test_specs = {
     log_settings = {
       max_severity = "FATAL"
     }
+    environments = [
+      emu_env,
+      iris_env,
+    ]
   }
-  test_components = [ ":ufs-unit-tests" ]
 }

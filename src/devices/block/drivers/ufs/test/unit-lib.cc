@@ -69,12 +69,14 @@ zx::result<> UfsTest::TransferFillDescriptorAndSendRequest(uint8_t slot, DataDir
                                                            uint16_t resp_offset, uint16_t resp_len,
                                                            uint16_t prdt_offset,
                                                            uint16_t prdt_entry_count) {
+  std::lock_guard<std::mutex> lock(dut_->GetTransferRequestProcessor().slot_lock_);
   return dut_->GetTransferRequestProcessor().FillDescriptorAndSendRequest(
       slot, ddir, resp_offset, resp_len, prdt_offset, prdt_entry_count);
 }
 
 zx::result<> UfsTest::TaskManagementFillDescriptorAndSendRequest(
     uint8_t slot, TaskManagementRequestUpiu &request) {
+  std::lock_guard<std::mutex> lock(dut_->GetTaskManagementRequestProcessor().slot_lock_);
   return dut_->GetTaskManagementRequestProcessor().FillDescriptorAndSendRequest(slot, request);
 }
 
@@ -88,11 +90,12 @@ zx::result<> UfsTest::MapVmo(zx::unowned_vmo &vmo, fzl::VmoMapper &mapper, uint6
 }
 
 uint8_t UfsTest::GetSlotStateCount(SlotState slot_state) {
+  std::lock_guard<std::mutex> lock(dut_->GetTransferRequestProcessor().GetSlotLock());
   uint8_t count = 0;
-  for (uint8_t slot_num = 0;
-       slot_num < dut_->GetTransferRequestProcessor().request_list_.GetSlotCount(); ++slot_num) {
-    auto &slot = dut_->GetTransferRequestProcessor().request_list_.GetSlot(slot_num);
-    if (slot.state == slot_state) {
+  for (uint8_t slot_num = 0; slot_num < dut_->GetTransferRequestProcessor().GetSlotCount();
+       ++slot_num) {
+    if (dut_->GetTransferRequestProcessor().GetRequestListLocked().GetSlot(slot_num).state ==
+        slot_state) {
       ++count;
     }
   }

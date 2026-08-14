@@ -39,15 +39,32 @@ TEST_F(RequestProcessorTest, RingRequestDoorbell) {
   auto slot_num = ReserveAdminSlot();
   ASSERT_TRUE(slot_num.is_ok());
 
-  auto &slot = dut_->GetTransferRequestProcessor().GetRequestList().GetSlot(slot_num.value());
-  ASSERT_EQ(slot.state, SlotState::kReserved);
+  {
+    std::lock_guard<std::mutex> lock(dut_->GetTransferRequestProcessor().GetSlotLock());
+    auto &slot =
+        dut_->GetTransferRequestProcessor().GetRequestListLocked().GetSlot(slot_num.value());
+    ASSERT_EQ(slot.state, SlotState::kReserved);
+  }
 
   RingRequestDoorbell<ufs::TransferRequestProcessor>(slot_num.value());
-  ASSERT_EQ(slot.state, SlotState::kScheduled);
+  {
+    std::lock_guard<std::mutex> lock(dut_->GetTransferRequestProcessor().GetSlotLock());
+    auto &slot =
+        dut_->GetTransferRequestProcessor().GetRequestListLocked().GetSlot(slot_num.value());
+    ASSERT_EQ(slot.state, SlotState::kScheduled);
+  }
 
   dut_->GetTransferRequestProcessor().EnableCompletion();
-  ASSERT_EQ(dut_->GetTransferRequestProcessor().ProcessCompletionOfAdminRequests(), 1U);
-  ASSERT_EQ(slot.state, SlotState::kFree);
+  auto wait_for_slot_freed = [&]() -> bool {
+    dut_->GetTransferRequestProcessor().ProcessCompletionOfAdminRequests();
+    std::lock_guard<std::mutex> lock(dut_->GetTransferRequestProcessor().GetSlotLock());
+    return dut_->GetTransferRequestProcessor()
+               .GetRequestListLocked()
+               .GetSlot(slot_num.value())
+               .state == SlotState::kFree;
+  };
+  ASSERT_OK(dut_->WaitWithTimeout(wait_for_slot_freed, zx::sec(10),
+                                  "Timeout waiting for slot to be freed", zx::msec(100)));
 }
 
 TEST_F(RequestProcessorTest, FillDescriptorAndSendRequest) {
@@ -56,8 +73,12 @@ TEST_F(RequestProcessorTest, FillDescriptorAndSendRequest) {
   auto slot_num = ReserveSlot<ufs::TransferRequestProcessor>();
   ASSERT_TRUE(slot_num.is_ok());
 
-  auto &slot = dut_->GetTransferRequestProcessor().GetRequestList().GetSlot(slot_num.value());
-  ASSERT_EQ(slot.state, SlotState::kReserved);
+  {
+    std::lock_guard<std::mutex> lock(dut_->GetTransferRequestProcessor().GetSlotLock());
+    auto &slot =
+        dut_->GetTransferRequestProcessor().GetRequestListLocked().GetSlot(slot_num.value());
+    ASSERT_EQ(slot.state, SlotState::kReserved);
+  }
 
   DataDirection data_dir = DataDirection::kHostToDevice;
   constexpr uint16_t response_offset = 0x12;
@@ -69,41 +90,54 @@ TEST_F(RequestProcessorTest, FillDescriptorAndSendRequest) {
                 .status_value(),
             ZX_OK);
 
+  {
+    std::lock_guard<std::mutex> lock(dut_->GetTransferRequestProcessor().GetSlotLock());
+    auto &slot =
+        dut_->GetTransferRequestProcessor().GetRequestListLocked().GetSlot(slot_num.value());
+    ASSERT_EQ(slot.state, SlotState::kScheduled);
+  }
+
   dut_->GetTransferRequestProcessor().EnableCompletion();
-  ASSERT_EQ(slot.state, SlotState::kScheduled);
 
   // Wait for request slot to be freed.
   auto wait_for_slot_freed = [&]() -> bool {
     dut_->GetTransferRequestProcessor().ProcessCompletionOfAdminRequests();
-    return slot.state == SlotState::kFree;
+    std::lock_guard<std::mutex> lock(dut_->GetTransferRequestProcessor().GetSlotLock());
+    return dut_->GetTransferRequestProcessor()
+               .GetRequestListLocked()
+               .GetSlot(slot_num.value())
+               .state == SlotState::kFree;
   };
   ASSERT_OK(dut_->WaitWithTimeout(wait_for_slot_freed, zx::sec(10),
                                   "Timeout waiting for slot to be freed", zx::msec(100)));
 
   // Check Utp Transfer Request Descriptor
-  auto descriptor = dut_->GetTransferRequestProcessor()
-                        .GetRequestList()
-                        .GetRequestDescriptor<TransferRequestDescriptor>(slot_num.value());
-  EXPECT_EQ(descriptor->command_type(), kCommandTypeUfsStorage);
-  EXPECT_EQ(descriptor->data_direction(), data_dir);
-  EXPECT_EQ(descriptor->interrupt(), 1U);
-  EXPECT_EQ(descriptor->ce(), 0U);                      // Crypto is not supported
-  EXPECT_EQ(descriptor->cci(), 0U);                     // Crypto is not supported
-  EXPECT_EQ(descriptor->data_unit_number_lower(), 0U);  // Crypto is not supported
-  EXPECT_EQ(descriptor->data_unit_number_upper(), 0U);  // Crypto is not supported
+  {
+    std::lock_guard<std::mutex> lock(dut_->GetTransferRequestProcessor().GetSlotLock());
+    auto descriptor = dut_->GetTransferRequestProcessor()
+                          .GetRequestListLocked()
+                          .GetRequestDescriptor<TransferRequestDescriptor>(slot_num.value());
+    EXPECT_EQ(descriptor->command_type(), kCommandTypeUfsStorage);
+    EXPECT_EQ(descriptor->data_direction(), data_dir);
+    EXPECT_EQ(descriptor->interrupt(), 1U);
+    EXPECT_EQ(descriptor->ce(), 0U);                      // Crypto is not supported
+    EXPECT_EQ(descriptor->cci(), 0U);                     // Crypto is not supported
+    EXPECT_EQ(descriptor->data_unit_number_lower(), 0U);  // Crypto is not supported
+    EXPECT_EQ(descriptor->data_unit_number_upper(), 0U);  // Crypto is not supported
 
-  zx_paddr_t paddr = dut_->GetTransferRequestProcessor()
-                         .GetRequestList()
-                         .GetSlot(slot_num.value())
-                         .command_descriptor_io->phys();
-  EXPECT_EQ(descriptor->utp_command_descriptor_base_address(), paddr & UINT32_MAX);
-  EXPECT_EQ(descriptor->utp_command_descriptor_base_address_upper(),
-            static_cast<uint32_t>(paddr >> 32));
-  constexpr uint16_t kDwordSize = 4;
-  EXPECT_EQ(descriptor->response_upiu_offset(), uint32_t{response_offset / kDwordSize});
-  EXPECT_EQ(descriptor->response_upiu_length(), uint32_t{response_length / kDwordSize});
-  EXPECT_EQ(descriptor->prdt_offset(), uint32_t{prdt_offset / kDwordSize});
-  EXPECT_EQ(descriptor->prdt_length(), uint32_t{prdt_entry_count});
+    zx_paddr_t paddr = dut_->GetTransferRequestProcessor()
+                           .GetRequestListLocked()
+                           .GetSlot(slot_num.value())
+                           .command_descriptor_io->phys();
+    EXPECT_EQ(descriptor->utp_command_descriptor_base_address(), paddr & UINT32_MAX);
+    EXPECT_EQ(descriptor->utp_command_descriptor_base_address_upper(),
+              static_cast<uint32_t>(paddr >> 32));
+    constexpr uint16_t kDwordSize = 4;
+    EXPECT_EQ(descriptor->response_upiu_offset(), uint32_t{response_offset / kDwordSize});
+    EXPECT_EQ(descriptor->response_upiu_length(), uint32_t{response_length / kDwordSize});
+    EXPECT_EQ(descriptor->prdt_offset(), uint32_t{prdt_offset / kDwordSize});
+    EXPECT_EQ(descriptor->prdt_length(), uint32_t{prdt_entry_count});
+  }
 }
 
 TEST_F(RequestProcessorTest, SendQueryUpiu) {
@@ -113,8 +147,10 @@ TEST_F(RequestProcessorTest, SendQueryUpiu) {
 
   // Check that the Request UPIU is copied into the command descriptor.
   constexpr uint8_t slot_num = kAdminCommandSlotNumber;
-  AbstractUpiu command_descriptor(
-      dut_->GetTransferRequestProcessor().GetRequestList().GetDescriptorBuffer(slot_num));
+  AbstractUpiu command_descriptor([&]() {
+    std::lock_guard<std::mutex> lock(dut_->GetTransferRequestProcessor().GetSlotLock());
+    return dut_->GetTransferRequestProcessor().GetRequestListLocked().GetDescriptorBuffer(slot_num);
+  }());
   ASSERT_EQ(memcmp(request.GetData(), command_descriptor.GetData(), sizeof(QueryRequestUpiuData)),
             0);
 
@@ -176,8 +212,10 @@ TEST_F(RequestProcessorTest, SendNopUpiu) {
 
   // Check that the nop out UPIU is copied into the command descriptor.
   constexpr uint8_t slot_num = kAdminCommandSlotNumber;
-  AbstractUpiu command_descriptor(
-      dut_->GetTransferRequestProcessor().GetRequestList().GetDescriptorBuffer(slot_num));
+  AbstractUpiu command_descriptor([&]() {
+    std::lock_guard<std::mutex> lock(dut_->GetTransferRequestProcessor().GetSlotLock());
+    return dut_->GetTransferRequestProcessor().GetRequestListLocked().GetDescriptorBuffer(slot_num);
+  }());
   ASSERT_EQ(memcmp(nop_out_upiu.GetData(), command_descriptor.GetData(), sizeof(NopOutUpiuData)),
             0);
 
@@ -222,6 +260,11 @@ TEST_F(RequestProcessorTest, SendNopUpiuException) {
   dut_->GetTransferRequestProcessor().SetTimeout(kCommandTimeout);
   nop_in = dut_->GetTransferRequestProcessor().SendRequestUpiu<NopOutUpiu, NopInUpiu>(nop_out_upiu);
   ASSERT_EQ(nop_in.status_value(), ZX_ERR_BAD_STATE);
+
+  // Send Nop-out UPIU when the admin slot is full.
+  ASSERT_OK(ReserveAdminSlot());
+  nop_in = dut_->GetTransferRequestProcessor().SendRequestUpiu<NopOutUpiu, NopInUpiu>(nop_out_upiu);
+  ASSERT_EQ(nop_in.status_value(), ZX_ERR_NO_RESOURCES);
 }
 
 TEST_F(RequestProcessorTest, SendRequestUpiuWithAdminSlotIsFull) {
@@ -252,8 +295,11 @@ TEST_F(RequestProcessorTest, SendRequestUsingSlot) {
   ASSERT_OK(response_or);
 
   // Check that the SCSI UPIU is copied into the command descriptor.
-  AbstractUpiu command_descriptor(
-      dut_->GetTransferRequestProcessor().GetRequestList().GetDescriptorBuffer(slot.value()));
+  AbstractUpiu command_descriptor([&]() {
+    std::lock_guard<std::mutex> lock(dut_->GetTransferRequestProcessor().GetSlotLock());
+    return dut_->GetTransferRequestProcessor().GetRequestListLocked().GetDescriptorBuffer(
+        slot.value());
+  }());
 
   ASSERT_EQ(memcmp(upiu.GetData(), command_descriptor.GetData(), sizeof(CommandUpiuData)), 0);
 
@@ -301,9 +347,11 @@ TEST_F(RequestProcessorTest, SendScsiUpiu) {
   ASSERT_OK(response_or);
 
   // Check that the SCSI UPIU is copied into the command descriptor.
-  AbstractUpiu command_descriptor(
-      dut_->GetTransferRequestProcessor().GetRequestList().GetDescriptorBuffer(
-          kAdminCommandSlotNumber));
+  AbstractUpiu command_descriptor([&]() {
+    std::lock_guard<std::mutex> lock(dut_->GetTransferRequestProcessor().GetSlotLock());
+    return dut_->GetTransferRequestProcessor().GetRequestListLocked().GetDescriptorBuffer(
+        kAdminCommandSlotNumber);
+  }());
   ASSERT_EQ(memcmp(upiu.GetData(), command_descriptor.GetData(), sizeof(CommandUpiuData)), 0);
 
   // Check response
@@ -346,7 +394,7 @@ TEST_F(RequestProcessorTest, SendScsiUpiuWithAdminSlotIsFull) {
 TEST_F(RequestProcessorTest, SendScsiUpiuWithSlotIsFull) {
   constexpr uint8_t kTestLun = 0;
   const uint8_t kMaxSlotCount =
-      dut_->GetTransferRequestProcessor().GetRequestList().GetSlotCount() - kAdminCommandSlotCount;
+      dut_->GetTransferRequestProcessor().GetSlotCount() - kAdminCommandSlotCount;
 
   // Reserve all slots.
   for (uint8_t slot_num = 0; slot_num < kMaxSlotCount; ++slot_num) {
@@ -367,7 +415,7 @@ TEST_F(RequestProcessorTest, SendScsiUpiuWithSlotIsFull) {
 TEST_F(RequestProcessorTest, SendAdminScsiCmdWithSlotIsFull) {
   constexpr uint8_t kTestLun = 0;
   const uint8_t kMaxSlotCount =
-      dut_->GetTransferRequestProcessor().GetRequestList().GetSlotCount() - kAdminCommandSlotCount;
+      dut_->GetTransferRequestProcessor().GetSlotCount() - kAdminCommandSlotCount;
 
   // Reserve all I/O slots.
   for (uint8_t slot_num = 0; slot_num < kMaxSlotCount; ++slot_num) {

@@ -156,9 +156,12 @@ TEST_F(BlockOpTest, FuaWriteTest) {
   sync_completion_wait(&done, ZX_TIME_INFINITE);
 
   // Check that the FUA bit is set.
-  ScsiCommandUpiu scsi_upiu(
-      *dut_->GetTransferRequestProcessor().GetRequestList().GetDescriptorBuffer<CommandUpiuData>(
-          0));
+  ScsiCommandUpiu scsi_upiu([&]() {
+    std::lock_guard<std::mutex> lock(dut_->GetTransferRequestProcessor().GetSlotLock());
+    return *dut_->GetTransferRequestProcessor()
+                .GetRequestListLocked()
+                .GetDescriptorBuffer<CommandUpiuData>(0);
+  }());
   scsi::Write10CDB* scsi_cdb =
       reinterpret_cast<scsi::Write10CDB*>(scsi_upiu.GetData<CommandUpiuData>()->cdb);
   ASSERT_EQ(scsi_cdb->force_unit_access(), true);
@@ -184,9 +187,12 @@ TEST_F(BlockOpTest, FlushTest) {
   sync_completion_wait(&done, ZX_TIME_INFINITE);
 
   // Check that the FLUSH operation is correctly converted to a SYNCHRONIZE CACHE 10 command.
-  ScsiCommandUpiu scsi_upiu(
-      *dut_->GetTransferRequestProcessor().GetRequestList().GetDescriptorBuffer<CommandUpiuData>(
-          0));
+  ScsiCommandUpiu scsi_upiu([&]() {
+    std::lock_guard<std::mutex> lock(dut_->GetTransferRequestProcessor().GetSlotLock());
+    return *dut_->GetTransferRequestProcessor()
+                .GetRequestListLocked()
+                .GetDescriptorBuffer<CommandUpiuData>(0);
+  }());
   ASSERT_EQ(scsi_upiu.GetOpcode(), scsi::Opcode::SYNCHRONIZE_CACHE_10);
 }
 
@@ -489,7 +495,7 @@ TEST_F(BlockOpTest, MultiQueueDepthWriteTest) {
     // Wait for request slots to be freed.
     auto wait_for_slots_freed = [&]() -> bool {
       return GetSlotStateCount(SlotState::kFree) ==
-             dut_->GetTransferRequestProcessor().GetRequestList().GetSlotCount();
+             dut_->GetTransferRequestProcessor().GetSlotCount();
     };
     fbl::String slots_freed_timeout_message = "Timeout waiting for slots to be freed";
     ASSERT_OK(dut_->WaitWithTimeout(wait_for_slots_freed, kMultiQueueTimeout,

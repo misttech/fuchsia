@@ -52,10 +52,16 @@ class TransferRequestProcessor : public RequestProcessor {
 
   zx::result<> Init() override;
   // Allocate a slot to submit an Admin command. Use slot 31 to avoid conflicts with I/O commands.
-  zx::result<uint8_t> ReserveAdminSlot() TA_REQ(admin_slot_lock_) TA_EXCL(slot_allocation_lock_);
+  zx::result<uint8_t> ReserveAdminSlot() TA_REQ(admin_slot_lock_) TA_EXCL(slot_lock_);
 
   uint32_t ProcessCompletionOfAdminRequests();
   uint32_t ProcessCompletionOfIoRequests() override;
+
+  bool CheckAdminCommandCompleted(uint32_t doorbell) TA_EXCL(slot_lock_) {
+    std::lock_guard<std::mutex> lock(slot_lock_);
+    return slots_.GetSlot(kAdminCommandSlotNumber).state == SlotState::kScheduled &&
+           !(doorbell & (1u << kAdminCommandSlotNumber));
+  }
 
   // Find the earliest timeout deadline of the in-flight I/O.
   zx_time_t GetEarliestTimeoutDeadline();
@@ -95,7 +101,8 @@ class TransferRequestProcessor : public RequestProcessor {
   template <class RequestType>
   std::tuple<uint16_t, uint32_t> PreparePrdt(RequestType &request, uint8_t lun, uint8_t slot,
                                              const std::vector<zx_paddr_t> &buffer_phys,
-                                             uint16_t response_offset, uint16_t response_length) {
+                                             uint16_t response_offset, uint16_t response_length)
+      TA_REQ(slot_lock_) {
     return {0, 0};
   }
 
@@ -103,7 +110,7 @@ class TransferRequestProcessor : public RequestProcessor {
   std::tuple<uint16_t, uint32_t> PreparePrdt<ScsiCommandUpiu>(
       ScsiCommandUpiu &request, uint8_t lun, uint8_t slot,
       const std::vector<zx_paddr_t> &buffer_phys, uint16_t response_offset,
-      uint16_t response_length);
+      uint16_t response_length) TA_REQ(slot_lock_);
 
   template <class RequestType>
   zx::result<void *> SendRequestUsingSlot(RequestType &request, uint8_t lun, uint8_t slot,
@@ -111,9 +118,9 @@ class TransferRequestProcessor : public RequestProcessor {
                                           uint64_t dma_length, IoCommand *io_cmd, bool synchronous);
 
   uint32_t GetInflightIoCount() const {
+    std::lock_guard<std::mutex> lock(slot_lock_);
     constexpr uint32_t kIoSlotsMask = (1u << kAdminCommandSlotNumber) - 1;
-    return static_cast<uint32_t>(
-        std::popcount(active_slots_mask_.load(std::memory_order_acquire) & kIoSlotsMask));
+    return static_cast<uint32_t>(std::popcount(allocated_slots_mask_ & kIoSlotsMask));
   }
 
  private:
@@ -128,22 +135,24 @@ class TransferRequestProcessor : public RequestProcessor {
   zx::result<> FillDescriptorAndSendRequest(uint8_t slot, DataDirection data_dir,
                                             uint16_t response_offset, uint16_t response_length,
                                             uint16_t prdt_offset, uint32_t prdt_entry_count,
-                                            bool reliable_write = false);
+                                            bool reliable_write = false) TA_REQ(slot_lock_);
 
-  zx::result<> CheckResponse(uint8_t slot_num, AbstractResponseUpiu &response);
+  zx::result<> CheckResponse(uint8_t slot_num, AbstractResponseUpiu &response) TA_REQ(slot_lock_);
   // Check for errors in the following order: OCS -> header_response -> scsi_status
-  scsi::StatusMessage CheckScsiAndGetStatusMessage(uint8_t slot_num,
-                                                   AbstractResponseUpiu &response);
+  scsi::StatusMessage CheckScsiAndGetStatusMessage(uint8_t slot_num, AbstractResponseUpiu &response)
+      TA_REQ(slot_lock_);
   scsi::HostStatusCode GetScsiCommandHostStatus(OverallCommandStatus ocs,
                                                 UpiuHeaderResponseCode header_response,
                                                 scsi::StatusCode response_status);
   scsi::HostStatusCode ScsiStatusToHostStatus(scsi::StatusCode command_status);
 
-  void RequestCompletion(uint8_t slot_num, RequestSlot &request_slot, bool is_timeout);
-  zx_status_t UpiuCompletion(uint8_t slot_num, RequestSlot &request_slot, bool is_timeout);
+  void RequestCompletion(uint8_t slot_num, RequestSlot &request_slot, bool is_timeout)
+      TA_REQ(slot_lock_);
+  zx_status_t UpiuCompletion(uint8_t slot_num, RequestSlot &request_slot, bool is_timeout)
+      TA_REQ(slot_lock_);
 
-  zx::result<uint8_t> GetAdminCommandSlotNumber() override {
-    return zx::ok(kAdminCommandSlotNumber);
+  std::optional<uint8_t> GetAdminCommandSlotNumber() const override {
+    return kAdminCommandSlotNumber;
   }
 
   void SetDoorBellRegister(uint8_t slot_num) override {
@@ -152,14 +161,12 @@ class TransferRequestProcessor : public RequestProcessor {
   uint32_t ReadDoorBellRegister() override {
     return UtrListDoorBellReg::Get().ReadFrom(&register_).door_bell();
   }
-  bool ProcessSlotCompletion(uint8_t slot_num);
+  bool ProcessSlotCompletion(uint8_t slot_num, uint32_t doorbell) TA_REQ(slot_lock_);
 
   // TODO(b/42075643): Background Operation uses the admin slot, causing a race condition for admin
   // commands running on the main thread. To fix this, per-slot locking is required, but I added
   // admin_slot_lock_ as a temporary solution.
   std::mutex admin_slot_lock_;
-
-  std::atomic<uint32_t> active_slots_mask_{0};
 };
 
 }  // namespace ufs

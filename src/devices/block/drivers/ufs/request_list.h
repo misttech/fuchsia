@@ -9,6 +9,7 @@
 #include <lib/zx/bti.h>
 #include <lib/zx/result.h>
 
+#include <bit>
 #include <cstdint>
 #include <vector>
 
@@ -22,16 +23,34 @@ namespace ufs {
 constexpr uint8_t kMaxRequestListSize = 32;
 
 struct IoCommand;
+class RequestProcessor;
 
 enum class SlotState {
   kFree = 0,
   kReserved,
   kScheduled,
-  kNeedErrorHandling,
+  kTimeout,
 };
 
-struct RequestSlot {
+class RequestSlot {
+ public:
   SlotState state = SlotState::kFree;
+
+  void Reset(SlotState new_state = SlotState::kFree) {
+    sync_completion_reset(&complete);
+    io_cmd = nullptr;
+    data_vmo = {};
+    dma_offset = 0;
+    dma_length = 0;
+    is_read = false;
+    is_scsi_command = false;
+    is_sync = false;
+    response_upiu_offset = 0;
+    result = ZX_OK;
+    deadline = ZX_TIME_INFINITE;
+    state = new_state;
+  }
+
   std::unique_ptr<dma_buffer::ContiguousBuffer> command_descriptor_io;
   sync_completion_t complete{};
   zx::pmt pmt;
@@ -70,9 +89,10 @@ class RequestList {
     return static_cast<T *>(io_buffer_->virt()) + slot;
   }
 
-  RequestSlot &GetSlot(uint8_t entry_num) {
-    ZX_ASSERT_MSG(entry_num < request_slots_.size(), "Invalid entry_num");
-    return request_slots_[entry_num];
+  template <typename Self>
+  auto &GetSlot(this Self &&self, uint8_t entry_num) {
+    ZX_ASSERT_MSG(entry_num < self.request_slots_.size(), "Invalid entry_num");
+    return self.request_slots_[entry_num];
   }
   uint8_t GetSlotCount() const { return safemath::checked_cast<uint8_t>(request_slots_.size()); }
   uint32_t GetSlotMask() const {

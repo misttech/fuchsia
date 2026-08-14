@@ -53,7 +53,8 @@ class TaskManagementRequestProcessor : public RequestProcessor {
  private:
   friend class UfsTest;
 
-  zx::result<> FillDescriptorAndSendRequest(uint8_t slot, TaskManagementRequestUpiu &request);
+  zx::result<> FillDescriptorAndSendRequest(uint8_t slot, TaskManagementRequestUpiu &request)
+      TA_REQ(slot_lock_);
 
   void SetDoorBellRegister(uint8_t slot_num) override {
     UtmrListDoorBellReg::Get().FromValue(1u << slot_num).WriteTo(&register_);

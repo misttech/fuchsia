@@ -21,15 +21,39 @@ TEST_F(TaskManagementRequestProcessorTest, RingRequestDoorbell) {
   auto slot_num = ReserveSlot<ufs::TaskManagementRequestProcessor>();
   ASSERT_TRUE(slot_num.is_ok());
 
-  auto &slot = dut_->GetTaskManagementRequestProcessor().GetRequestList().GetSlot(slot_num.value());
-  ASSERT_EQ(slot.state, SlotState::kReserved);
+  {
+    std::lock_guard<std::mutex> lock(dut_->GetTaskManagementRequestProcessor().GetSlotLock());
+    auto &slot =
+        dut_->GetTaskManagementRequestProcessor().GetRequestListLocked().GetSlot(slot_num.value());
+    ASSERT_EQ(slot.state, SlotState::kReserved);
+  }
 
   RingRequestDoorbell<ufs::TaskManagementRequestProcessor>(slot_num.value());
-  ASSERT_EQ(slot.state, SlotState::kScheduled);
+  {
+    std::lock_guard<std::mutex> lock(dut_->GetTaskManagementRequestProcessor().GetSlotLock());
+    auto &slot =
+        dut_->GetTaskManagementRequestProcessor().GetRequestListLocked().GetSlot(slot_num.value());
+    ASSERT_EQ(slot.state, SlotState::kScheduled);
+  }
 
   dut_->GetTaskManagementRequestProcessor().EnableCompletion();
-  ASSERT_EQ(dut_->GetTaskManagementRequestProcessor().ProcessCompletionOfIoRequests(), 1U);
-  ASSERT_OK(slot.result);
+  auto wait_for_completion = [&]() -> bool {
+    dut_->GetTaskManagementRequestProcessor().ProcessCompletionOfIoRequests();
+    std::lock_guard<std::mutex> lock(dut_->GetTaskManagementRequestProcessor().GetSlotLock());
+    return dut_->GetTaskManagementRequestProcessor()
+               .GetRequestListLocked()
+               .GetSlot(slot_num.value())
+               .result == ZX_OK;
+  };
+  ASSERT_OK(dut_->WaitWithTimeout(wait_for_completion, zx::sec(10),
+                                  "Timeout waiting for completion", zx::msec(100)));
+  {
+    std::lock_guard<std::mutex> lock(dut_->GetTaskManagementRequestProcessor().GetSlotLock());
+    ASSERT_OK(dut_->GetTaskManagementRequestProcessor()
+                  .GetRequestListLocked()
+                  .GetSlot(slot_num.value())
+                  .result);
+  }
 }
 
 TEST_F(TaskManagementRequestProcessorTest, FillDescriptorAndSendRequest) {
@@ -38,25 +62,40 @@ TEST_F(TaskManagementRequestProcessorTest, FillDescriptorAndSendRequest) {
   auto slot_num = ReserveSlot<ufs::TaskManagementRequestProcessor>();
   ASSERT_TRUE(slot_num.is_ok());
 
-  auto &slot = dut_->GetTaskManagementRequestProcessor().GetRequestList().GetSlot(slot_num.value());
-  ASSERT_EQ(slot.state, SlotState::kReserved);
+  {
+    std::lock_guard<std::mutex> lock(dut_->GetTaskManagementRequestProcessor().GetSlotLock());
+    auto &slot =
+        dut_->GetTaskManagementRequestProcessor().GetRequestListLocked().GetSlot(slot_num.value());
+    ASSERT_EQ(slot.state, SlotState::kReserved);
+  }
 
   TaskManagementRequestUpiu request(TaskManagementFunction::kQueryTask, 0, slot_num.value());
   ASSERT_EQ(TaskManagementFillDescriptorAndSendRequest(slot_num.value(), request).status_value(),
             ZX_OK);
 
-  ASSERT_EQ(slot.state, SlotState::kScheduled);
+  {
+    std::lock_guard<std::mutex> lock(dut_->GetTaskManagementRequestProcessor().GetSlotLock());
+    auto &slot =
+        dut_->GetTaskManagementRequestProcessor().GetRequestListLocked().GetSlot(slot_num.value());
+    ASSERT_EQ(slot.state, SlotState::kScheduled);
+  }
 
   dut_->GetTaskManagementRequestProcessor().EnableCompletion();
   ASSERT_EQ(dut_->GetTaskManagementRequestProcessor().ProcessCompletionOfIoRequests(), 1U);
-  ASSERT_OK(slot.result);
+  {
+    std::lock_guard<std::mutex> lock(dut_->GetTaskManagementRequestProcessor().GetSlotLock());
+    ASSERT_OK(dut_->GetTaskManagementRequestProcessor()
+                  .GetRequestListLocked()
+                  .GetSlot(slot_num.value())
+                  .result);
 
-  // Check UTP Task Management Request Descriptor
-  auto descriptor = dut_->GetTaskManagementRequestProcessor()
-                        .GetRequestList()
-                        .GetRequestDescriptor<TaskManagementRequestDescriptor>(slot_num.value());
-  EXPECT_EQ(descriptor->interrupt(), 1U);
-  EXPECT_EQ(descriptor->overall_command_status(), OverallCommandStatus::kSuccess);
+    // Check UTP Task Management Request Descriptor
+    auto descriptor = dut_->GetTaskManagementRequestProcessor()
+                          .GetRequestListLocked()
+                          .GetRequestDescriptor<TaskManagementRequestDescriptor>(slot_num.value());
+    EXPECT_EQ(descriptor->interrupt(), 1U);
+    EXPECT_EQ(descriptor->overall_command_status(), OverallCommandStatus::kSuccess);
+  }
 }
 
 TEST_F(TaskManagementRequestProcessorTest, SendAbortTaskManagementRequest) {
@@ -75,12 +114,15 @@ TEST_F(TaskManagementRequestProcessorTest, SendAbortTaskManagementRequest) {
 
   // Check that the Request UPIU is copied into the request descriptor.
   constexpr uint8_t slot_num = 0;
-  auto descriptor = dut_->GetTaskManagementRequestProcessor()
-                        .GetRequestList()
-                        .GetRequestDescriptor<TaskManagementRequestDescriptor>(slot_num);
-  ASSERT_EQ(memcmp(response->GetData(), descriptor->GetResponseData(),
-                   sizeof(TaskManagementResponseUpiuData)),
-            0);
+  {
+    std::lock_guard<std::mutex> lock(dut_->GetTaskManagementRequestProcessor().GetSlotLock());
+    auto descriptor = dut_->GetTaskManagementRequestProcessor()
+                          .GetRequestListLocked()
+                          .GetRequestDescriptor<TaskManagementRequestDescriptor>(slot_num);
+    ASSERT_EQ(memcmp(response->GetData(), descriptor->GetResponseData(),
+                     sizeof(TaskManagementResponseUpiuData)),
+              0);
+  }
 
   // Check response
   ASSERT_EQ(response->GetHeader().trans_code(),
@@ -112,12 +154,15 @@ TEST_F(TaskManagementRequestProcessorTest, SendQueryTaskManagementRequest) {
 
   // Check that the Request UPIU is copied into the request descriptor.
   constexpr uint8_t slot_num = 0;
-  auto descriptor = dut_->GetTaskManagementRequestProcessor()
-                        .GetRequestList()
-                        .GetRequestDescriptor<TaskManagementRequestDescriptor>(slot_num);
-  ASSERT_EQ(memcmp(response->GetData(), descriptor->GetResponseData(),
-                   sizeof(TaskManagementResponseUpiuData)),
-            0);
+  {
+    std::lock_guard<std::mutex> lock(dut_->GetTaskManagementRequestProcessor().GetSlotLock());
+    auto descriptor = dut_->GetTaskManagementRequestProcessor()
+                          .GetRequestListLocked()
+                          .GetRequestDescriptor<TaskManagementRequestDescriptor>(slot_num);
+    ASSERT_EQ(memcmp(response->GetData(), descriptor->GetResponseData(),
+                     sizeof(TaskManagementResponseUpiuData)),
+              0);
+  }
 
   // Check response
   ASSERT_EQ(response->GetHeader().trans_code(),
@@ -149,12 +194,15 @@ TEST_F(TaskManagementRequestProcessorTest, SendLogicalUnitResetTaskManagementReq
 
   // Check that the Request UPIU is copied into the request descriptor.
   constexpr uint8_t slot_num = 0;
-  auto descriptor = dut_->GetTaskManagementRequestProcessor()
-                        .GetRequestList()
-                        .GetRequestDescriptor<TaskManagementRequestDescriptor>(slot_num);
-  ASSERT_EQ(memcmp(response->GetData(), descriptor->GetResponseData(),
-                   sizeof(TaskManagementResponseUpiuData)),
-            0);
+  {
+    std::lock_guard<std::mutex> lock(dut_->GetTaskManagementRequestProcessor().GetSlotLock());
+    auto descriptor = dut_->GetTaskManagementRequestProcessor()
+                          .GetRequestListLocked()
+                          .GetRequestDescriptor<TaskManagementRequestDescriptor>(slot_num);
+    ASSERT_EQ(memcmp(response->GetData(), descriptor->GetResponseData(),
+                     sizeof(TaskManagementResponseUpiuData)),
+              0);
+  }
 
   // Check response
   ASSERT_EQ(response->GetHeader().trans_code(),
@@ -211,8 +259,7 @@ TEST_F(TaskManagementRequestProcessorTest, SendTaskManagementRequestException) {
 
 TEST_F(TaskManagementRequestProcessorTest, SendTaskManagementRequestWithSlotIsFull) {
   constexpr uint8_t kTestLun = 0;
-  const uint8_t kMaxSlotCount =
-      dut_->GetTaskManagementRequestProcessor().GetRequestList().GetSlotCount();
+  const uint8_t kMaxSlotCount = dut_->GetTaskManagementRequestProcessor().GetSlotCount();
 
   // Reserve all slots.
   for (uint8_t slot_num = 0; slot_num < kMaxSlotCount; ++slot_num) {

@@ -340,13 +340,9 @@ zx::result<> Ufs::Isr() {
   }
 
   // Check admin command completion if an admin command is active.
-  auto& request_list = transfer_request_processor_->GetRequestList();
-  SlotState admin_slot_state = request_list.GetSlot(kAdminCommandSlotNumber).state;
-  if (admin_slot_state == SlotState::kScheduled) {
-    uint32_t door_bell = UtrListDoorBellReg::Get().ReadFrom(&mmio).door_bell();
-    if (!(door_bell & (1u << kAdminCommandSlotNumber))) {
-      TriggerAdminWork();
-    }
+  uint32_t door_bell = UtrListDoorBellReg::Get().ReadFrom(&mmio).door_bell();
+  if (transfer_request_processor_->CheckAdminCommandCompleted(door_bell)) {
+    TriggerAdminWork();
   }
   if (interrupt_status.utp_task_management_request_completion_status()) {
     InterruptStatusReg::Get()

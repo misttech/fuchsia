@@ -9,8 +9,6 @@
 #include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/zircon-internal/thread_annotations.h>
 
-#include <ddktl/device.h>
-
 #include "request_list.h"
 
 namespace ufs {
@@ -23,10 +21,11 @@ class RequestProcessor {
  public:
   explicit RequestProcessor(RequestList request_list, Ufs &ufs, zx::unowned_bti bti,
                             const fdf::MmioView mmio, uint32_t slot_count)
-      : request_list_(std::move(request_list)),
+      : slots_(std::move(request_list)),
         controller_(ufs),
         register_(mmio),
-        bti_(std::move(bti)) {}
+        bti_(std::move(bti)),
+        slot_count_(safemath::checked_cast<uint8_t>(slot_count)) {}
   virtual ~RequestProcessor() = default;
 
   template <typename Processor, typename Descriptor>
@@ -41,57 +40,65 @@ class RequestProcessor {
   // requests. This function is called by the ISR.
   virtual uint32_t ProcessCompletionOfIoRequests() = 0;
 
-  RequestList &GetRequestList() { return request_list_; }
+  uint8_t GetSlotCount() const { return slot_count_; }
 
   // For testing
+  RequestList &GetRequestListLocked() TA_REQ(slot_lock_) { return slots_; }
+  const RequestList &GetRequestListLocked() const TA_REQ(slot_lock_) { return slots_; }
+  std::mutex &GetSlotLock() const TA_RET_CAP(slot_lock_) { return slot_lock_; }
   void SetTimeout(zx::duration timeout) { timeout_ = timeout; }
   zx::duration GetTimeout() const { return timeout_; }
-  void DisableCompletion() { disable_completion_ = true; }
-  void EnableCompletion() { disable_completion_ = false; }
-  bool IsSlotTimedOut(uint8_t slot_num) TA_EXCL(slot_allocation_lock_);
+  void DisableCompletion() { disable_completion_.store(true, std::memory_order_release); }
+  void EnableCompletion() { disable_completion_.store(false, std::memory_order_release); }
 
  protected:
   zx::unowned_bti &GetBti() { return bti_; }
 
+  void SetSlotStateLocked(uint8_t slot_num, SlotState state) TA_REQ(slot_lock_) {
+    slots_.GetSlot(slot_num).state = state;
+  }
+
   // Get the number of the free slot and mark it as |SlotState::kReserved|.
-  zx::result<uint8_t> ReserveSlot() TA_EXCL(slot_allocation_lock_);
-  zx::result<> ClearSlot(RequestSlot &request_slot) TA_EXCL(slot_allocation_lock_);
-  zx::result<> ClearSlotLocked(RequestSlot &request_slot) TA_REQ(slot_allocation_lock_);
-  void MarkSlotTimedOut(uint8_t slot_num) TA_EXCL(slot_allocation_lock_);
+  zx::result<uint8_t> ReserveSlot() TA_EXCL(slot_lock_);
+  zx::result<> ClearSlot(RequestSlot &request_slot) TA_EXCL(slot_lock_);
+  zx::result<> ClearSlotLocked(RequestSlot &request_slot) TA_REQ(slot_lock_);
+  void ReclaimTimedOutSlotsLocked() TA_REQ(slot_lock_);
+
+  template <typename Callback>
+  void ForEachAllocatedSlotLocked(Callback &&callback, uint32_t excluded_mask = 0)
+      TA_REQ(slot_lock_) {
+    uint32_t mask = allocated_slots_mask_ & ~excluded_mask;
+    while (mask != 0) {
+      const uint8_t slot_num = static_cast<uint8_t>(std::countr_zero(mask));
+      mask &= mask - 1;
+      callback(slot_num, slots_.GetSlot(slot_num));
+    }
+  }
 
   // Ring the door bell.
-  void RingRequestDoorbell(uint8_t slot_num);
+  void RingRequestDoorbell(uint8_t slot_num) TA_EXCL(slot_lock_);
+  void RingRequestDoorbellLocked(uint8_t slot_num) TA_REQ(slot_lock_);
 
-  // |request_list| is not thread safe.
-  // A slot in |request_list| should only be accessed by one thread at a time.
-  // Currently, the main thread(InitDeviceInterface()) and the I/O threads are accessing
-  // |request_list_| at the same time. To solve this problem, we changed the admin commands to use a
-  // dedicated slot in |request_list_| using the ReserveAdminSlot() function. Therefore, the main
-  // thread can only use the admin slot, the I/O thread cannot use the admin slot and can only use
-  // the remaining slots. Therefore, the main thread and the I/O thread will never access the same
-  // slot.
-  RequestList request_list_;
+  // Protects slots, slot allocation, and state transitions.
+  mutable std::mutex slot_lock_;
+  uint32_t allocated_slots_mask_ TA_GUARDED(slot_lock_) = 0;
+  RequestList slots_ TA_GUARDED(slot_lock_);
 
   Ufs &controller_;
   const fdf::MmioView register_;
 
   zx::duration timeout_ = kCommandTimeout;
 
-  std::mutex slot_allocation_lock_;
-  uint32_t allocated_slots_mask_ TA_GUARDED(slot_allocation_lock_) = 0;
-  uint32_t timed_out_slots_mask_ TA_GUARDED(slot_allocation_lock_) = 0;
-
-  bool disable_completion_ = false;
+  std::atomic<bool> disable_completion_{false};
 
  private:
-  virtual zx::result<uint8_t> GetAdminCommandSlotNumber() {
-    return zx::error(ZX_ERR_NOT_SUPPORTED);
-  }
+  virtual std::optional<uint8_t> GetAdminCommandSlotNumber() const { return std::nullopt; }
 
   virtual void SetDoorBellRegister(uint8_t slot_num) = 0;
   virtual uint32_t ReadDoorBellRegister() = 0;
 
   zx::unowned_bti bti_;
+  const uint8_t slot_count_;
 };
 
 }  // namespace ufs
