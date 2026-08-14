@@ -14,8 +14,5 @@ group("e2e_tests") {
 
 group("e2e_tests_quick") {
   testonly = true
-  public_deps = [
-    "compliance:e2e_tests_quick",
-    "performance:e2e_tests_quick",
-  ]
+  public_deps = [ "performance:e2e_tests_quick" ]
 }

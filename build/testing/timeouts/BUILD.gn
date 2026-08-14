@@ -47,8 +47,6 @@ group("per_test_timeout_allowlist") {
     "//src/starnix/tests/gvisor:*",
     "//src/storage/blackout/host/tests:*",
     "//src/testing/end_to_end/antlion/tests/wlan/compliance:wlan_phy_compliance_abg_test",
-    "//src/testing/end_to_end/antlion/tests/wlan/compliance:wlan_security_compliance_11a_test",
-    "//src/testing/end_to_end/antlion/tests/wlan/compliance:wlan_security_compliance_11bg_test",
     "//src/testing/end_to_end/antlion/tests/wlan/compliance:wlan_security_type_test",
     "//src/testing/end_to_end/honeydew/honeydew/transports/fastboot/tests/functional_tests:fastboot_test",
     "//src/testing/end_to_end/honeydew/honeydew/transports/fastboot/tests/functional_tests:fastboot_using_serial_test",

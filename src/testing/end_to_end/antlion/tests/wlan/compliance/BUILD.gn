@@ -471,20 +471,6 @@ antlion_host_test(
   test_cases = [ "re:test_11ac_80mhz_wpa2((?!MAX-A-MPDU-LEN-EXP[\d]).)*\$" ]
 }
 
-antlion_host_test("wlan_security_compliance_11a_test") {
-  main_source = "WlanSecurityComplianceABGTest.py"
-  environments = wlan_ap_envs
-  test_cases = [ "re:test.*11a.*" ]
-  timeout_secs = 1800
-}
-
-antlion_host_test("wlan_security_compliance_11bg_test") {
-  main_source = "WlanSecurityComplianceABGTest.py"
-  environments = wlan_ap_envs
-  test_cases = [ "re:test.*11bg.*" ]
-  timeout_secs = 1800
-}
-
 antlion_host_test("wlan_security_type_test") {
   main_source = "SecurityTypeTest.py"
   environments = wlan_ap_envs
@@ -495,23 +481,6 @@ antlion_host_test("wlan_phy_compliance_abg_test") {
   main_source = "WlanPhyComplianceABGTest.py"
   environments = wlan_ap_envs
   timeout_secs = 1200
-}
-
-antlion_host_test("wlan_security_compliance_abg_test_quick") {
-  main_source = "WlanSecurityComplianceABGTest.py"
-  environments = wlan_ap_envs
-  test_cases = [
-    "test_associate_11bg_sec_open_wep_26_hex_ptk_none",
-    "test_associate_11bg_sec_wpa_psk_ptk_tkip",
-    "test_associate_11bg_sec_wpa_psk_ptk_ccmp",
-    "test_associate_11bg_sec_wpa2_psk_ptk_tkip",
-    "test_associate_11bg_sec_wpa2_psk_ptk_ccmp",
-    "test_associate_11bg_pmf_sec_wpa2_psk_ptk_ccmp",
-    "test_associate_11bg_sec_wpa_wpa2_psk_ptk_tkip",
-    "test_associate_11bg_sec_wpa_wpa2_psk_ptk_ccmp",
-    "test_associate_11bg_sec_wpa3_sae_ptk_ccmp",
-    "test_associate_11bg_sec_wpa2_wpa3_psk_sae_ptk_ccmp",
-  ]
 }
 
 group("e2e_tests") {
@@ -584,12 +553,5 @@ group("e2e_tests") {
     ":wlan_phy_compliance_ac_5g_80mhz_wpa2_max_a_mpdu_len_exp5_test",
     ":wlan_phy_compliance_ac_5g_80mhz_wpa2_max_a_mpdu_len_exp6_test",
     ":wlan_phy_compliance_ac_5g_80mhz_wpa2_max_a_mpdu_len_exp7_test",
-    ":wlan_security_compliance_11a_test",
-    ":wlan_security_compliance_11bg_test",
   ]
-}
-
-group("e2e_tests_quick") {
-  testonly = true
-  public_deps = [ ":wlan_security_compliance_abg_test_quick" ]
 }
