@@ -553,14 +553,29 @@ where
         Iterator::new(self)
     }
 
+    /// Returns a mutable bidirectional iterator over the elements of the list.
+    pub fn iter_mut(&mut self) -> IteratorMut<'_, P, Tag> {
+        IteratorMut::new(self)
+    }
+
     /// Returns a unidirectional forward iterator over the elements of the list.
     pub fn forward_iter(&self) -> ForwardIterator<'_, P, Tag> {
         ForwardIterator::new(self.head)
     }
 
+    /// Returns a unidirectional forward mutable iterator over the elements of the list.
+    pub fn forward_iter_mut(&mut self) -> ForwardIteratorMut<'_, P, Tag> {
+        ForwardIteratorMut::new(self.head)
+    }
+
     /// Returns a unidirectional reverse iterator over the elements of the list.
     pub fn reverse_iter(&self) -> ReverseIterator<'_, P, Tag> {
         ReverseIterator::new(self.get_tail())
+    }
+
+    /// Returns a unidirectional reverse mutable iterator over the elements of the list.
+    pub fn reverse_iter_mut(&mut self) -> ReverseIteratorMut<'_, P, Tag> {
+        ReverseIteratorMut::new(self.get_tail())
     }
 }
 
@@ -1095,6 +1110,179 @@ where
             if is_sentinel_ptr(prev_node.get_next()) {
                 // We have looped around the head and landed on the tail.
                 // Set current to the sentinel to terminate iteration.
+                self.current = prev_node.get_next();
+            } else {
+                self.current = prev;
+            }
+            Some(current)
+        }
+    }
+}
+
+/// A mutable bidirectional iterator over the elements of a `DoublyLinkedList`.
+pub struct IteratorMut<'a, P, Tag = DefaultObjectTag>
+where
+    P: PtrTraits,
+    P::Target: DoublyLinkedListContainable<P::Target, Tag>,
+{
+    front: ForwardIteratorMut<'a, P, Tag>,
+    back: ReverseIteratorMut<'a, P, Tag>,
+}
+
+impl<'a, P, Tag> IteratorMut<'a, P, Tag>
+where
+    P: PtrTraits,
+    P::Target: DoublyLinkedListContainable<P::Target, Tag>,
+{
+    fn new<S: SizeTracker>(list: &'a mut DoublyLinkedList<P, Tag, S>) -> Self {
+        if list.is_empty() {
+            Self {
+                front: ForwardIteratorMut::new(crate::make_sentinel_null()),
+                back: ReverseIteratorMut::new(crate::make_sentinel_null()),
+            }
+        } else {
+            let tail = list.get_tail();
+            Self { front: ForwardIteratorMut::new(list.head), back: ReverseIteratorMut::new(tail) }
+        }
+    }
+}
+
+impl<'a, P, Tag> core::iter::Iterator for IteratorMut<'a, P, Tag>
+where
+    P: PtrTraits,
+    P::Target: DoublyLinkedListContainable<P::Target, Tag>,
+{
+    type Item = &'a mut P::Target;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let met = self.front.current == self.back.current;
+        let item = self.front.next();
+        if item.is_some() && met {
+            self.front.current = crate::make_sentinel_null();
+            self.back.current = crate::make_sentinel_null();
+        }
+        item
+    }
+}
+
+impl<'a, P, Tag> core::iter::DoubleEndedIterator for IteratorMut<'a, P, Tag>
+where
+    P: PtrTraits,
+    P::Target: DoublyLinkedListContainable<P::Target, Tag>,
+{
+    fn next_back(&mut self) -> Option<Self::Item> {
+        let met = self.front.current == self.back.current;
+        let item = self.back.next();
+        if item.is_some() && met {
+            self.front.current = crate::make_sentinel_null();
+            self.back.current = crate::make_sentinel_null();
+        }
+        item
+    }
+}
+
+/// A unidirectional forward mutable iterator over the elements of a `DoublyLinkedList`.
+pub struct ForwardIteratorMut<'a, P, Tag = DefaultObjectTag>
+where
+    P: PtrTraits,
+    P::Target: DoublyLinkedListContainable<P::Target, Tag>,
+{
+    current: *mut P::Target,
+    _phantom: core::marker::PhantomData<&'a mut (P, Tag)>,
+}
+
+impl<'a, P, Tag> ForwardIteratorMut<'a, P, Tag>
+where
+    P: PtrTraits,
+    P::Target: DoublyLinkedListContainable<P::Target, Tag>,
+{
+    fn new(current: *mut P::Target) -> Self {
+        Self { current, _phantom: core::marker::PhantomData }
+    }
+
+    /// Creates an iterator starting from a specific element.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the object is not in a container.
+    pub fn from_element(obj: &'a mut P::Target) -> Self {
+        assert!(obj.get_node().in_container(), "Object must be in a container");
+        Self { current: obj as *mut _, _phantom: core::marker::PhantomData }
+    }
+}
+
+impl<'a, P, Tag> core::iter::Iterator for ForwardIteratorMut<'a, P, Tag>
+where
+    P: PtrTraits,
+    P::Target: DoublyLinkedListContainable<P::Target, Tag>,
+{
+    type Item = &'a mut P::Target;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if is_sentinel_ptr(self.current) {
+            None
+        } else {
+            // SAFETY: `self.current` is not a sentinel, so it is a valid, aligned pointer to an
+            // element. The list is exclusively borrowed for lifetime `'a`, and each element in the
+            // intrusive list is distinct, so yielding `&'a mut P::Target` one-by-one is sound.
+            let current = unsafe { &mut *self.current };
+            self.current = current.get_node().get_next();
+            Some(current)
+        }
+    }
+}
+
+/// A unidirectional reverse mutable iterator over the elements of a `DoublyLinkedList`.
+pub struct ReverseIteratorMut<'a, P, Tag = DefaultObjectTag>
+where
+    P: PtrTraits,
+    P::Target: DoublyLinkedListContainable<P::Target, Tag>,
+{
+    current: *mut P::Target,
+    _phantom: core::marker::PhantomData<&'a mut (P, Tag)>,
+}
+
+impl<'a, P, Tag> ReverseIteratorMut<'a, P, Tag>
+where
+    P: PtrTraits,
+    P::Target: DoublyLinkedListContainable<P::Target, Tag>,
+{
+    fn new(current: *mut P::Target) -> Self {
+        Self { current, _phantom: core::marker::PhantomData }
+    }
+
+    /// Creates a reverse iterator starting from a specific element.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the object is not in a container.
+    pub fn from_element(obj: &'a mut P::Target) -> Self {
+        assert!(obj.get_node().in_container(), "Object must be in a container");
+        Self { current: obj as *mut _, _phantom: core::marker::PhantomData }
+    }
+}
+
+impl<'a, P, Tag> core::iter::Iterator for ReverseIteratorMut<'a, P, Tag>
+where
+    P: PtrTraits,
+    P::Target: DoublyLinkedListContainable<P::Target, Tag>,
+{
+    type Item = &'a mut P::Target;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if is_sentinel_ptr(self.current) {
+            None
+        } else {
+            // SAFETY: `self.current` is not a sentinel, so it is a valid, aligned pointer to an
+            // element. The list is exclusively borrowed for lifetime `'a`, and each element in the
+            // intrusive list is distinct, so yielding `&'a mut P::Target` one-by-one is sound.
+            let current = unsafe { &mut *self.current };
+            let prev = current.get_node().get_prev();
+
+            // SAFETY: `prev` must be a valid pointer because `current` is in the list. In a
+            // circular doubly linked list, prev is never null.
+            let prev_node = unsafe { &*prev }.get_node();
+            if is_sentinel_ptr(prev_node.get_next()) {
                 self.current = prev_node.get_next();
             } else {
                 self.current = prev;
