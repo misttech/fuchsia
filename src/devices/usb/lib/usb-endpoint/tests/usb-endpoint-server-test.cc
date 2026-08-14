@@ -49,7 +49,11 @@ class UsbEndpointServerTest : public zxtest::Test {
  public:
   void SetUp() override {
     client_loop_.StartThread("client-loop");
-    ASSERT_OK(fake_bti_create(fake_bti_.reset_and_get_address()));
+    for (size_t i = 0; i < std::size(fake_bti_paddrs_); i++) {
+      fake_bti_paddrs_[i] = FAKE_BTI_PHYS_ADDR * (i + 1);
+    }
+    ASSERT_OK(fake_bti_create_with_paddrs(fake_bti_paddrs_, std::size(fake_bti_paddrs_),
+                                          fake_bti_.reset_and_get_address()));
 
     auto endpoints = fidl::Endpoints<fuchsia_hardware_usb_endpoint::Endpoint>::Create();
     ep_ = std::make_unique<FakeEndpoint>(fake_bti_, 0, std::move(endpoints.server));
@@ -65,6 +69,7 @@ class UsbEndpointServerTest : public zxtest::Test {
 
  protected:
   async::Loop client_loop_{&kAsyncLoopConfigNeverAttachToThread};
+  zx_paddr_t fake_bti_paddrs_[64];
   zx::bti fake_bti_;
   std::unique_ptr<FakeEndpoint> ep_;
   fidl::SharedClient<fuchsia_hardware_usb_endpoint::Endpoint> client_;
@@ -148,6 +153,208 @@ TEST_F(UsbEndpointServerTest, RegisterMultipleVmosTest) {
   EXPECT_EQ(iters->size(), 2);
   EXPECT_EQ((*iters->at(0).begin()).second, 32);
   EXPECT_EQ((*iters->at(1).begin()).second, 16);
+}
+
+TEST_F(UsbEndpointServerTest, RegisterVmoWithOffsetTest) {
+  const size_t page_size = zx_system_get_page_size();
+  std::vector<fuchsia_hardware_usb_endpoint::VmoInfo> vmo_info;
+  vmo_info.emplace_back(
+      std::move(fuchsia_hardware_usb_endpoint::VmoInfo().id(8).size(page_size * 4)));
+  vmo_info.emplace_back(
+      std::move(fuchsia_hardware_usb_endpoint::VmoInfo().id(9).size(page_size / 2)));
+  sync_completion_t wait;
+  client_->RegisterVmos({std::move(vmo_info)})
+      .Then([&](const fidl::Result<fuchsia_hardware_usb_endpoint::Endpoint::RegisterVmos>& result) {
+        ASSERT_TRUE(result.is_ok());
+        EXPECT_EQ(result->vmos().size(), 2);
+        sync_completion_signal(&wait);
+      });
+  sync_completion_wait(&wait, zx::time::infinite().get());
+
+  VerifyRegisteredVmos(2);
+
+  // Request with offset 0
+  auto req0 = fuchsia_hardware_usb_request::Request();
+  req0.data()
+      .emplace()
+      .emplace_back()
+      .buffer(fuchsia_hardware_usb_request::Buffer::WithVmoId(8))
+      .offset(0)
+      .size(64);
+  auto req0_var = usb::RequestVariant(usb::FidlRequest(std::move(req0)));
+  auto iters0 = ep_->get_iter(req0_var, page_size);
+  ASSERT_TRUE(iters0.is_ok());
+  auto [phys0, size0] = *iters0->at(0).begin();
+  EXPECT_EQ(size0, 64);
+
+  // Request with non-zero page-aligned offset
+  auto req1 = fuchsia_hardware_usb_request::Request();
+  req1.data()
+      .emplace()
+      .emplace_back()
+      .buffer(fuchsia_hardware_usb_request::Buffer::WithVmoId(8))
+      .offset(page_size)
+      .size(128);
+  auto req1_var = usb::RequestVariant(usb::FidlRequest(std::move(req1)));
+  auto iters1 = ep_->get_iter(req1_var, page_size);
+  ASSERT_TRUE(iters1.is_ok());
+  auto [phys1, size1] = *iters1->at(0).begin();
+  EXPECT_EQ(size1, 128);
+  EXPECT_NE(phys0, phys1);
+
+  // Request with non-page-aligned offset
+  auto req2 = fuchsia_hardware_usb_request::Request();
+  req2.data()
+      .emplace()
+      .emplace_back()
+      .buffer(fuchsia_hardware_usb_request::Buffer::WithVmoId(8))
+      .offset(page_size + 64)
+      .size(128);
+  auto req2_var = usb::RequestVariant(usb::FidlRequest(std::move(req2)));
+  auto iters2 = ep_->get_iter(req2_var, page_size);
+  ASSERT_TRUE(iters2.is_ok());
+  auto [phys2, size2] = *iters2->at(0).begin();
+  EXPECT_EQ(size2, 128);
+  EXPECT_EQ(phys2, phys1 + 64);
+
+  // Request spanning page boundary (64 bytes in page 0, 64 bytes in page 1)
+  auto req3 = fuchsia_hardware_usb_request::Request();
+  req3.data()
+      .emplace()
+      .emplace_back()
+      .buffer(fuchsia_hardware_usb_request::Buffer::WithVmoId(8))
+      .offset(page_size - 64)
+      .size(128);
+  auto req3_var = usb::RequestVariant(usb::FidlRequest(std::move(req3)));
+  auto iters3 = ep_->get_iter(req3_var, page_size);
+  ASSERT_TRUE(iters3.is_ok());
+  auto it3 = iters3->at(0).begin();
+  auto [phys3_0, size3_0] = *it3;
+  EXPECT_EQ(size3_0, 64);
+  ++it3;
+  auto [phys3_1, size3_1] = *it3;
+  EXPECT_EQ(size3_1, 64);
+  EXPECT_EQ(phys3_1, phys1);
+
+  // Request on single-page VMO (id 9) with non-zero offset
+  auto req4 = fuchsia_hardware_usb_request::Request();
+  req4.data()
+      .emplace()
+      .emplace_back()
+      .buffer(fuchsia_hardware_usb_request::Buffer::WithVmoId(9))
+      .offset(32)
+      .size(64);
+  auto req4_var = usb::RequestVariant(usb::FidlRequest(std::move(req4)));
+  auto iters4 = ep_->get_iter(req4_var, page_size);
+  ASSERT_TRUE(iters4.is_ok());
+  auto [phys4, size4] = *iters4->at(0).begin();
+  EXPECT_EQ(size4, 64);
+}
+
+TEST_F(UsbEndpointServerTest, GetIterInvalidVmoIdTest) {
+  const size_t page_size = zx_system_get_page_size();
+  auto req = fuchsia_hardware_usb_request::Request();
+  req.data()
+      .emplace()
+      .emplace_back()
+      .buffer(fuchsia_hardware_usb_request::Buffer::WithVmoId(999))
+      .offset(0)
+      .size(64);
+  auto req_var = usb::RequestVariant(usb::FidlRequest(std::move(req)));
+  auto iters = ep_->get_iter(req_var, page_size);
+  ASSERT_TRUE(iters.is_error());
+  EXPECT_EQ(iters.status_value(), ZX_ERR_NOT_FOUND);
+}
+
+TEST_F(UsbEndpointServerTest, GetIterOutOfBoundsOffsetTest) {
+  const size_t page_size = zx_system_get_page_size();
+  std::vector<fuchsia_hardware_usb_endpoint::VmoInfo> vmo_info;
+  vmo_info.emplace_back(std::move(fuchsia_hardware_usb_endpoint::VmoInfo().id(8).size(page_size)));
+  sync_completion_t wait;
+  client_->RegisterVmos({std::move(vmo_info)})
+      .Then([&](const fidl::Result<fuchsia_hardware_usb_endpoint::Endpoint::RegisterVmos>& result) {
+        ASSERT_TRUE(result.is_ok());
+        sync_completion_signal(&wait);
+      });
+  sync_completion_wait(&wait, zx::time::infinite().get());
+
+  // Offset equal to VMO size
+  auto req0 = fuchsia_hardware_usb_request::Request();
+  req0.data()
+      .emplace()
+      .emplace_back()
+      .buffer(fuchsia_hardware_usb_request::Buffer::WithVmoId(8))
+      .offset(page_size)
+      .size(64);
+  auto req0_var = usb::RequestVariant(usb::FidlRequest(std::move(req0)));
+  auto iters0 = ep_->get_iter(req0_var, page_size);
+  ASSERT_TRUE(iters0.is_error());
+  EXPECT_EQ(iters0.status_value(), ZX_ERR_OUT_OF_RANGE);
+
+  // Offset exceeding VMO size
+  auto req1 = fuchsia_hardware_usb_request::Request();
+  req1.data()
+      .emplace()
+      .emplace_back()
+      .buffer(fuchsia_hardware_usb_request::Buffer::WithVmoId(8))
+      .offset(page_size * 2)
+      .size(64);
+  auto req1_var = usb::RequestVariant(usb::FidlRequest(std::move(req1)));
+  auto iters1 = ep_->get_iter(req1_var, page_size);
+  ASSERT_TRUE(iters1.is_error());
+  EXPECT_EQ(iters1.status_value(), ZX_ERR_OUT_OF_RANGE);
+}
+
+TEST_F(UsbEndpointServerTest, GetIterOutOfBoundsRangeTest) {
+  const size_t page_size = zx_system_get_page_size();
+  std::vector<fuchsia_hardware_usb_endpoint::VmoInfo> vmo_info;
+  vmo_info.emplace_back(std::move(fuchsia_hardware_usb_endpoint::VmoInfo().id(8).size(page_size)));
+  sync_completion_t wait;
+  client_->RegisterVmos({std::move(vmo_info)})
+      .Then([&](const fidl::Result<fuchsia_hardware_usb_endpoint::Endpoint::RegisterVmos>& result) {
+        ASSERT_TRUE(result.is_ok());
+        sync_completion_signal(&wait);
+      });
+  sync_completion_wait(&wait, zx::time::infinite().get());
+
+  // Offset + size > VMO size
+  auto req = fuchsia_hardware_usb_request::Request();
+  req.data()
+      .emplace()
+      .emplace_back()
+      .buffer(fuchsia_hardware_usb_request::Buffer::WithVmoId(8))
+      .offset(page_size - 32)
+      .size(64);
+  auto req_var = usb::RequestVariant(usb::FidlRequest(std::move(req)));
+  auto iters = ep_->get_iter(req_var, page_size);
+  ASSERT_TRUE(iters.is_error());
+  EXPECT_EQ(iters.status_value(), ZX_ERR_OUT_OF_RANGE);
+}
+
+TEST_F(UsbEndpointServerTest, GetIterInvalidSizeTest) {
+  const size_t page_size = zx_system_get_page_size();
+  std::vector<fuchsia_hardware_usb_endpoint::VmoInfo> vmo_info;
+  vmo_info.emplace_back(std::move(fuchsia_hardware_usb_endpoint::VmoInfo().id(8).size(page_size)));
+  sync_completion_t wait;
+  client_->RegisterVmos({std::move(vmo_info)})
+      .Then([&](const fidl::Result<fuchsia_hardware_usb_endpoint::Endpoint::RegisterVmos>& result) {
+        ASSERT_TRUE(result.is_ok());
+        sync_completion_signal(&wait);
+      });
+  sync_completion_wait(&wait, zx::time::infinite().get());
+
+  // Size 0
+  auto req = fuchsia_hardware_usb_request::Request();
+  req.data()
+      .emplace()
+      .emplace_back()
+      .buffer(fuchsia_hardware_usb_request::Buffer::WithVmoId(8))
+      .offset(0)
+      .size(0);
+  auto req_var = usb::RequestVariant(usb::FidlRequest(std::move(req)));
+  auto iters = ep_->get_iter(req_var, page_size);
+  ASSERT_TRUE(iters.is_error());
+  EXPECT_EQ(iters.status_value(), ZX_ERR_INVALID_ARGS);
 }
 
 TEST_F(UsbEndpointServerTest, UnregisterVmosTest) {

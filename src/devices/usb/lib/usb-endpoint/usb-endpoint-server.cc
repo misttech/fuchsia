@@ -16,17 +16,24 @@ namespace frequest = fuchsia_hardware_usb_request;
 
 namespace {
 
+static const size_t kPageSize = zx_system_get_page_size();
+
 io_buffer::PhysIter phys_iter(uint64_t* phys_list, size_t phys_count, zx_off_t length,
-                              size_t max_length) {
+                              zx_off_t vmo_offset, size_t max_length) {
   static_assert(sizeof(phys_iter_sg_entry_t) == sizeof(sg_entry_t) &&
                 offsetof(phys_iter_sg_entry_t, length) == offsetof(sg_entry_t, length) &&
                 offsetof(phys_iter_sg_entry_t, offset) == offsetof(sg_entry_t, offset));
-  phys_iter_buffer_t buf = {.phys = phys_list,
-                            .phys_count = phys_count,
-                            .length = length,
-                            .vmo_offset = 0,
-                            .sg_list = nullptr,
-                            .sg_count = 0};
+  const size_t page_idx = vmo_offset / kPageSize;
+  const size_t remaining_count = phys_count - page_idx;
+  const zx_off_t sub_offset = vmo_offset & (kPageSize - 1);
+  phys_iter_buffer_t buf = {
+      .phys = phys_list + page_idx,
+      .phys_count = remaining_count,
+      .length = length,
+      .vmo_offset = sub_offset,
+      .sg_list = nullptr,
+      .sg_count = 0,
+  };
   return io_buffer::PhysIter(buf, max_length);
 }
 
@@ -39,15 +46,34 @@ zx::result<std::vector<io_buffer::PhysIter>> EndpointServer::get_iter(RequestVar
     iters.push_back(std::get<usb::BorrowedRequest<void>>(req).phys_iter(max_length));
   } else {
     const auto& fidl_request = std::get<usb::FidlRequest>(req);
+    if (!fidl_request->data().has_value()) {
+      return zx::ok(std::move(iters));
+    }
     size_t i = 0;
     std::lock_guard<std::mutex> lock(lock_);
     for (const auto& d : *fidl_request->data()) {
+      if (!d.buffer().has_value() || !d.size().has_value() || *d.size() == 0) {
+        return zx::error(ZX_ERR_INVALID_ARGS);
+      }
       switch (d.buffer()->Which()) {
-        case fuchsia_hardware_usb_request::Buffer::Tag::kVmoId:
-          iters.push_back(phys_iter(registered_vmos_.at(d.buffer()->vmo_id().value()).phys_list,
-                                    registered_vmos_.at(d.buffer()->vmo_id().value()).phys_count,
-                                    *d.size(), max_length));
+        case fuchsia_hardware_usb_request::Buffer::Tag::kVmoId: {
+          if (!d.buffer()->vmo_id().has_value()) {
+            return zx::error(ZX_ERR_INVALID_ARGS);
+          }
+          auto it = registered_vmos_.find(d.buffer()->vmo_id().value());
+          if (it == registered_vmos_.end()) {
+            return zx::error(ZX_ERR_NOT_FOUND);
+          }
+          const auto& registered_vmo = it->second;
+          const zx_off_t vmo_offset = d.offset().value_or(0);
+          const uint64_t req_size = *d.size();
+          if (vmo_offset >= registered_vmo.size || req_size > registered_vmo.size - vmo_offset) {
+            return zx::error(ZX_ERR_OUT_OF_RANGE);
+          }
+          iters.push_back(phys_iter(registered_vmo.phys_list, registered_vmo.phys_count, req_size,
+                                    vmo_offset, max_length));
           break;
+        }
         case fuchsia_hardware_usb_request::Buffer::Tag::kData:
           iters.push_back(fidl_request.phys_iter(i, max_length));
           break;

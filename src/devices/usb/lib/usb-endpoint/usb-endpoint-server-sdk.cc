@@ -27,16 +27,37 @@ zx::result<std::vector<dma_buffer::PhysIter>> EndpointServer::get_iter(RequestVa
                                                                        size_t max_length) const {
   std::vector<dma_buffer::PhysIter> iters;
   const auto& fidl_request = std::get<usb::FidlRequest>(req);
+  if (!fidl_request->data().has_value()) {
+    return zx::ok(std::move(iters));
+  }
   size_t i = 0;
   std::lock_guard<std::mutex> lock(lock_);
   for (const auto& d : *fidl_request->data()) {
+    if (!d.buffer().has_value() || !d.size().has_value() || *d.size() == 0) {
+      return zx::error(ZX_ERR_INVALID_ARGS);
+    }
     switch (d.buffer()->Which()) {
-      case fuchsia_hardware_usb_request::Buffer::Tag::kVmoId:
-        iters.push_back(
-            dma_buffer::PhysIter{registered_vmos_.at(d.buffer()->vmo_id().value()).phys_list,
-                                 registered_vmos_.at(d.buffer()->vmo_id().value()).phys_count, 0,
-                                 *d.size(), max_length});
+      case fuchsia_hardware_usb_request::Buffer::Tag::kVmoId: {
+        if (!d.buffer()->vmo_id().has_value()) {
+          return zx::error(ZX_ERR_INVALID_ARGS);
+        }
+        auto it = registered_vmos_.find(d.buffer()->vmo_id().value());
+        if (it == registered_vmos_.end()) {
+          return zx::error(ZX_ERR_NOT_FOUND);
+        }
+        const auto& registered_vmo = it->second;
+        const zx_off_t vmo_offset = d.offset().value_or(0);
+        const uint64_t req_size = *d.size();
+        if (vmo_offset >= registered_vmo.size || req_size > registered_vmo.size - vmo_offset) {
+          return zx::error(ZX_ERR_OUT_OF_RANGE);
+        }
+        const size_t page_idx = vmo_offset / kPageSize;
+        const size_t remaining_count = registered_vmo.phys_count - page_idx;
+        const zx_off_t sub_offset = vmo_offset & (kPageSize - 1);
+        iters.push_back(dma_buffer::PhysIter{registered_vmo.phys_list + page_idx, remaining_count,
+                                             kPageSize, sub_offset, req_size, max_length});
         break;
+      }
       case fuchsia_hardware_usb_request::Buffer::Tag::kData:
         iters.push_back(fidl_request.phys_iter(i, max_length));
         break;
