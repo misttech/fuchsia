@@ -433,12 +433,6 @@ pub extern "C" fn rust_pveoi_enable_real_msr() {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn rust_pveoi_disable_real_msr() {
-    let mut msr_access = RealMsrAccess {};
-    PvEoi::get().disable(&mut msr_access);
-}
-
-#[unsafe(no_mangle)]
 pub extern "C" fn rust_pveoi_eoi() -> bool {
     PvEoi::get().eoi()
 }

@@ -75,10 +75,6 @@ void rust_pveoi_init_all();
 //
 // It is an error to enable a PvEoi object more than once over its lifetime.
 void rust_pveoi_enable_real_msr();
-// Disable PV_EOI for the current CPU.
-//
-// Explicitly uses real msr accesses and is not suitable for unit testing.
-void rust_pveoi_disable_real_msr();
 // Attempt to acknowledge and signal an end-of-interrupt (EOI) for the current CPU via a
 // paravirtual interface. If a fast acknowledge was not available, the function returns
 // false and the caller must signal an EOI via the legacy mechanism.

@@ -15,7 +15,6 @@ source_set("pc") {
     "acpi.cc",
     "dev-init.cc",
     "efi_expected.cc",
-    "interrupts.cc",
     "memory.cc",
     "platform.cc",
     "power.cc",

@@ -79,7 +79,7 @@ void shutdown_interrupts();
 // Shutdown interrupts for the calling CPU.
 //
 // Should be called before powering off the calling CPU.
-void shutdown_interrupts_curr_cpu();
+extern "C" void shutdown_interrupts_curr_cpu();
 
 // Suspend interrupts for the calling CPU.
 //

@@ -421,4 +421,17 @@ pub extern "C" fn msi_free_block(block: &mut MsiBlock) {
     get_interrupt_manager().msi_free_block(block);
 }
 
+/// Shutdown interrupts for the calling CPU.
+///
+/// Should be called before powering off the calling CPU.
+#[unsafe(no_mangle)]
+pub extern "C" fn shutdown_interrupts_curr_cpu() {
+    if crate::arch_rs::x86::feature::x86_hypervisor_has_pv_eoi() {
+        let mut msr_access = crate::arch_rs::x86::platform_access::RealMsrAccess {};
+        crate::arch_rs::x86::pv::PvEoi::get().disable(&mut msr_access);
+    }
+
+    // TODO(maniscalco): Walk interrupt redirection entries and make sure nothing targets this CPU.
+}
+
 init::lk_init_hook!(apic, platform_init_apic, init::LkInitLevel(init::LK_INIT_LEVEL_VM.0 + 2));
