@@ -32,6 +32,10 @@ func bazelVisibilityToGN(expr syntax.Expr) (syntax.Expr, error) {
 	if !ok {
 		return expr, nil
 	}
+	if raw, ok := overwrittenRaw(lit); ok {
+		lit.Raw = raw
+		return lit, nil
+	}
 	switch {
 	case lit.Raw == `"//visibility:public"`:
 		lit.Raw = `"*"`

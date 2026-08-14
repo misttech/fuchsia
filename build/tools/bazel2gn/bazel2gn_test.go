@@ -1486,8 +1486,9 @@ func TestRawOverwriteAnnotations(t *testing.T) {
 		wantGN string
 	}{
 		{
-			// `raw_overwrite` is ignored because `bazelFilePathsToGN()` and `bazelDepToGN()` only handle
-			// `path_overwrite`, and some attribute lists are not checked for annotations at all.
+			// Except for `visibility`, `raw_overwrite` is ignored because `bazelFilePathsToGN()` and
+			// `bazelDepToGN()` only handle `path_overwrite`, and some attribute lists are not checked
+			// for annotations at all.
 			// TODO(https://fxbug.dev/543568916): This should fail or overwrite all of the list elements.
 			// If it is made to fail, break out the test of the supported attributes into a passing
 			// test and break out all the unsupported attributes into separate failing tests.
@@ -1539,7 +1540,7 @@ func TestRawOverwriteAnnotations(t *testing.T) {
 		"//build/config:Wno-implicit-fallthrough",
 	]
 	visibility = [
-		":*",
+		"./*",
 		"//path/to/dir/*",
 	]
 }`,
@@ -1852,9 +1853,9 @@ func TestInvalidAnnotations(t *testing.T) {
 )`,
 			wantGN: `go_library("test") {
 	visibility = [
-		"//path/to/foo:*",
+		"//foo/*" # @bazel2gn:skip,
 		"//path/to/bar:bar",
-		"//path/to/foo2:*",
+		"//foo2:*" @bazel2gn:skip,
 		"//path/to/bar2:bar2",
 		"//redundant/path/in/gn:*",
 	]

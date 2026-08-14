@@ -125,9 +125,7 @@ func TestVisibilityConversion(t *testing.T) {
 }`,
 		},
 		{
-			// `path_overwrite` is not supported for `visibility`.
-			// TODO(https://fxbug.dev/543568916): This should fail or overwrite the list element.
-			name: "unexpected success converting: overwrite a list item",
+			name: "overwrite a list item",
 			bazel: `go_library(
 	name = "test",
 	visibility = [
@@ -138,12 +136,14 @@ func TestVisibilityConversion(t *testing.T) {
 )`,
 			wantGN: `go_library("test") {
 	visibility = [
-		"//path/to/foo:*",
+		"//*",
 		"//redundant/path/in/gn:*",
 	]
 }`,
 		},
 		{
+			// The `raw_overwrite` annotation on the attribute is also ignored. Instead, individual
+			// items are overwritten and skipped. `path_overwrite` is ignored.
 			// TODO(https://fxbug.dev/543568916): This should fail or generate 'visibility = [ "//*" ]'.
 			name: "unexpected success converting: overwrite the list",
 			bazel: `go_library(
@@ -156,7 +156,7 @@ func TestVisibilityConversion(t *testing.T) {
 )`,
 			wantGN: `go_library("test") {
 	visibility = [
-		"//path/to/foo:*",
+		"//path/that/should_be_ignored/*",
 		"//redundant/path/in/gn:*",
 	]
 }`,
