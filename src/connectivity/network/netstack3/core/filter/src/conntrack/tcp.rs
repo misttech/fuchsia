@@ -149,9 +149,12 @@ impl State {
             State::Closed => Duration::ZERO,
             State::SynSent(_) | State::WaitingOnOpeningAcks(_) => MAXIMUM_SEGMENT_LIFETIME,
             State::Established(PeerPair { original, reply }) => {
-                // If there is no data outstanding, make the timeout large, and
-                // otherwise small so we can purge the connection quickly if one
-                // of the endpoints disappears.
+                // If there is data outstanding, make the timeout small so we
+                // can purge the connection quickly if one of the endpoints
+                // disappears. If we believe the connection may have been reset,
+                // use the small timeout as well because we can't be sure if
+                // that segment was valid.  See the comment on
+                // `Peer::unreplied_rst` for the nitty gritty.
                 //
                 // We treat a connection that's ever had a valid FIN the same
                 // way. This pessimizes things for half-closed connections, but
@@ -160,6 +163,8 @@ impl State {
                     || reply.unacked_data
                     || original.fin_state.sent()
                     || reply.fin_state.sent()
+                    || original.unreplied_rst
+                    || reply.unreplied_rst
                 {
                     MAXIMUM_SEGMENT_LIFETIME
                 } else {
@@ -254,15 +259,26 @@ struct Peer {
 
     /// The state of the first FIN segment sent by this peer.
     fin_state: FinState,
+
+    /// Whether this peer has sent an RST that has not been responded to.
+    ///
+    /// We can never be sure whether the receiver will consider an RST segment
+    /// valid. Instead, we use "this peer has sent an RST but the other peer
+    /// hasn't sent anything in response" as a signal that the connection might
+    /// be dead. If the receiver side sends a segment in response, it'll provoke
+    /// another RST if the connection should truly be reset.
+    ///
+    /// This should only be reset on receiving a segment, never sending one. If
+    /// it was cleared in that case, a valid RST could be reordered with a data
+    /// segment, which would leave a stale conntrack entry.
+    unreplied_rst: bool,
 }
 
 impl Peer {
-    /// Checks that an ACK segment is within the windows defined in the comment on [`Peer`].
-    fn ack_segment_valid(peers: UpdatePeers<&Self>, seq: SeqNum, len: u32, ack: SeqNum) -> bool {
+    /// Checks that the sequence numbers of a segment are within the windows
+    /// defined in the comment on [`Peer`].
+    fn seq_valid(peers: UpdatePeers<&Self>, seq: SeqNum, len: u32) -> bool {
         let UpdatePeers { sender, receiver, dir: _ } = peers;
-
-        // All checks below are for the negation of the equation referenced in
-        // the associated comment.
 
         // I: Segment sequence numbers upper bound.
         if seq.after(receiver.max_wnd_seq) {
@@ -274,6 +290,13 @@ impl Peer {
             return false;
         }
 
+        true
+    }
+
+    /// Checks that an ACK sequence number of a segment is within the windows
+    /// defined in the comment on [`Peer`].
+    fn ack_valid(peers: UpdatePeers<&Self>, ack: SeqNum) -> bool {
+        let UpdatePeers { sender: _, receiver, dir: _ } = peers;
         // III: ACK upper bound.
         if ack.after(receiver.max_next_seq) {
             return false;
@@ -297,8 +320,15 @@ impl Peer {
         wnd: UnscaledWindowSize,
         control: Option<Control>,
     ) -> Self {
-        let Self { window_scale, max_wnd, max_wnd_seq, max_next_seq, unacked_data, fin_state } =
-            self;
+        let Self {
+            window_scale,
+            max_wnd,
+            max_wnd_seq,
+            max_next_seq,
+            unacked_data,
+            fin_state,
+            unreplied_rst,
+        } = self;
 
         // The minimum window size is assumed to be 1. From the paper:
         //   On BSD systems, a window probing is always done with a packet
@@ -333,14 +363,22 @@ impl Peer {
             } else {
                 fin_state
             },
+            unreplied_rst,
         }
     }
 
     /// Returns a new `Peer` updated using the provided information from a
     /// segment which it received.
     fn update_receiver(self, ack: SeqNum) -> Self {
-        let Self { window_scale, max_wnd, max_wnd_seq, max_next_seq, unacked_data, fin_state } =
-            self;
+        let Self {
+            window_scale,
+            max_wnd,
+            max_wnd_seq,
+            max_next_seq,
+            unacked_data,
+            fin_state,
+            unreplied_rst: _,
+        } = self;
 
         Peer {
             window_scale,
@@ -351,6 +389,8 @@ impl Peer {
             // equation III, which is checked on every segment.
             unacked_data: if ack == max_next_seq { false } else { unacked_data },
             fin_state: fin_state.update_ack_received(ack),
+            // See the comment on this field's definition.
+            unreplied_rst: false,
         }
     }
 
@@ -443,8 +483,12 @@ struct WaitingOnOpeningAcksPeer {
 }
 
 impl WaitingOnOpeningAcksPeer {
-    fn ack_segment_valid(peers: UpdatePeers<&Self>, seq: SeqNum, len: u32, ack: SeqNum) -> bool {
-        Peer::ack_segment_valid(peers.map_both(|peer| &peer.peer), seq, len, ack)
+    fn seq_valid(peers: UpdatePeers<&Self>, seq: SeqNum, len: u32) -> bool {
+        Peer::seq_valid(peers.map_both(|peer| &peer.peer), seq, len)
+    }
+
+    fn ack_valid(peers: UpdatePeers<&Self>, ack: SeqNum) -> bool {
+        Peer::ack_valid(peers.map_both(|peer| &peer.peer), ack)
     }
 
     /// Returns a new [`WaitingOnOpeningAcksPeer`] updated using the provided information
@@ -680,6 +724,7 @@ fn update_for_syn_sent(
                             // be acked.
                             unacked_data: true,
                             fin_state: FinState::NotSent,
+                            unreplied_rst: false,
                         },
                         iss: segment.seq,
                         saw_ack: false,
@@ -698,6 +743,7 @@ fn update_for_syn_sent(
                             max_next_seq: receiver_max_next_seq,
                             unacked_data: receiver_unacked_data,
                             fin_state: FinState::NotSent,
+                            unreplied_rst: false,
                         },
                         iss,
                         saw_ack: receiver_saw_ack,
@@ -731,6 +777,46 @@ fn update_for_waiting_on_opening_acks(
         return (State::WaitingOnOpeningAcks(peers.into_peer_pair()), false);
     }
 
+    let seq_valid = WaitingOnOpeningAcksPeer::seq_valid(peers.as_ref(), seq, logical_len);
+
+    // From RFC 9293 section 3.5.3:
+    //   In all states except SYN-SENT, all reset (RST) segments are validated
+    //   by checking their SEQ fields. A reset is valid if its sequence number
+    //   is in the window. In the SYN-SENT state (a RST received in response to
+    //   an initial SYN), the RST is acceptable if the ACK field acknowledges
+    //   the SYN.
+    //
+    // And for SYN-SENT, from RFC 9293 section 3.10.7.3:
+    //   If the RST bit is set, if the ACK was acceptable, then signal to the
+    //   user "error: connection reset", drop the segment, enter CLOSED state,
+    //   delete TCB, and return. Otherwise (no ACK), drop the segment and
+    //   return.
+    if control == Some(Control::RST) {
+        // This is not backwards: the sender having received an ACK means that
+        // the receiver must have previously sent a SYN/ACK, and so can't be in
+        // SYN-SENT.
+        let receiver_maybe_in_syn_sent = !peers.sender.saw_ack;
+        let ack_valid_for_syn_sent_rst = ack
+            .map(|ack| {
+                ack.after(peers.receiver.iss) && ack.before(peers.receiver.peer.max_next_seq + 1)
+            })
+            .unwrap_or(false);
+
+        // If we don't know whether the receiver is in SYN-SENT, we have to be
+        // lenient and count the segment as valid if it works for either
+        // SYN-SENT or the synchronized case.
+        let rst_valid = seq_valid || (receiver_maybe_in_syn_sent && ack_valid_for_syn_sent_rst);
+
+        if rst_valid {
+            peers.sender.peer.unreplied_rst = true;
+        }
+        return (State::WaitingOnOpeningAcks(peers.into_peer_pair()), rst_valid);
+    }
+
+    if !seq_valid {
+        return (State::WaitingOnOpeningAcks(peers.into_peer_pair()), false);
+    }
+
     let ack = match ack {
         Some(ack) => ack,
         None => {
@@ -747,15 +833,8 @@ fn update_for_waiting_on_opening_acks(
         }
     };
 
-    if !WaitingOnOpeningAcksPeer::ack_segment_valid(peers.as_ref(), seq, logical_len, ack) {
+    if !WaitingOnOpeningAcksPeer::ack_valid(peers.as_ref(), ack) {
         return (State::WaitingOnOpeningAcks(peers.into_peer_pair()), false);
-    }
-
-    // TODO(https://fxbug.dev/546018652): RSTs in non-synchronized states are
-    // validated based on the sequence number only, not the ACK. Note that the
-    // receiver could be SYN-SENT here, so we'll have to be lenient.
-    if control == Some(Control::RST) {
-        return (State::Closed, true);
     }
 
     peers.sender = peers.sender.update_sender(seq, logical_len, ack, wnd, control);
@@ -778,7 +857,7 @@ fn update_for_waiting_on_opening_acks(
 
 /// State transitions for in-range segments regardless of direction:
 /// - SYN: Invalid
-/// - RST: Delete connection
+/// - RST: Established (Unreplied RST)
 /// - FIN: Established (Closing)
 /// - ACK: Established
 ///
@@ -806,6 +885,16 @@ fn update_for_established(
     let logical_len = segment.len(payload_len);
     let &SegmentHeader { seq, ack, wnd, control, options: _, push: _ } = segment;
 
+    if control == Some(Control::SYN) || !Peer::seq_valid(peers.as_ref(), seq, logical_len) {
+        return (State::Established(peers.into_peer_pair()), false);
+    }
+
+    // RST segments are valid if the sequence number is valid.
+    if control == Some(Control::RST) {
+        peers.sender.unreplied_rst = true;
+        return (State::Established(peers.into_peer_pair()), true);
+    }
+
     // From RFC 9293:
     //   If the ACK control bit is set, this field contains the value of the
     //   next sequence number the sender of the segment is expecting to receive.
@@ -817,19 +906,9 @@ fn update_for_established(
         }
     };
 
-    if !Peer::ack_segment_valid(peers.as_ref(), seq, logical_len, ack) {
+    if !Peer::ack_valid(peers.as_ref(), ack) {
         return (State::Established(peers.into_peer_pair()), false);
     }
-
-    match control {
-        Some(Control::SYN) => {
-            return (State::Established(peers.into_peer_pair()), false);
-        }
-        // TODO(https://fxbug.dev/546018652): RSTs in synchronized states are
-        // validated based on the sequence number only, not the ACK.
-        Some(Control::RST) => return (State::Closed, true),
-        Some(Control::FIN) | None => {}
-    };
 
     peers.sender = peers.sender.update_sender(seq, logical_len, ack, wnd, control);
     peers.receiver = peers.receiver.update_receiver(ack);
@@ -898,6 +977,7 @@ mod tests {
             max_next_seq: ORIGINAL_ISS + 1,
             unacked_data: false,
             fin_state: FinState::NotSent,
+            unreplied_rst: false,
         }
     }
 
@@ -918,6 +998,7 @@ mod tests {
             max_next_seq: REPLY_ISS + 1,
             unacked_data: true,
             fin_state: FinState::NotSent,
+            unreplied_rst: false,
         }
     }
 
@@ -938,6 +1019,7 @@ mod tests {
             max_next_seq: ORIGINAL_ISS + 1,
             unacked_data: false,
             fin_state: FinState::NotSent,
+            unreplied_rst: false,
         }
     }
 
@@ -952,6 +1034,7 @@ mod tests {
             max_next_seq: REPLY_ISS + 1,
             unacked_data: false,
             fin_state: FinState::NotSent,
+            unreplied_rst: false,
         }
     }
 
@@ -1007,6 +1090,7 @@ mod tests {
                 unacked_data: false,
                 max_wnd: WindowSize::new(0).unwrap(),
                 fin_state: FinState::NotSent,
+                unreplied_rst: false,
             }
         }
     }
@@ -1407,29 +1491,6 @@ mod tests {
             })),
         }; "reply syn retransmission without ack"
     )]
-    // TODO(https://fxbug.dev/546018652): Fix along with proper RSTs handling.
-    #[test_case(
-        StateUpdateTestArgs {
-            segment: SegmentHeader {
-                control: Some(Control::RST),
-                ..valid_original_established_segment()
-            },
-            payload_len: 0,
-            dir: ConnectionDirection::Original,
-            expected: Some(State::Closed),
-        }; "original rst with ack"
-    )]
-    #[test_case(
-        StateUpdateTestArgs {
-            segment: SegmentHeader {
-                control: Some(Control::RST),
-                ..valid_reply_established_segment()
-            },
-            payload_len: 0,
-            dir: ConnectionDirection::Reply,
-            expected: Some(State::Closed),
-        }; "reply rst with ack"
-    )]
     #[test_case(
         StateUpdateTestArgs {
             segment: SegmentHeader {
@@ -1556,19 +1617,6 @@ mod tests {
             expected: None,
         }; "fin missing ack"
     )]
-    // TODO(https://fxbug.dev/546018652): Fix along with proper RSTs handling.
-    #[test_case(
-        StateUpdateTestArgs {
-            segment: SegmentHeader {
-                control: Some(Control::RST),
-                ack: None,
-                ..valid_original_established_segment()
-            },
-            payload_len: 0,
-            dir: ConnectionDirection::Original,
-            expected: None,
-        }; "rst missing ack"
-    )]
     #[test_case(
         StateUpdateTestArgs {
             segment: SegmentHeader {
@@ -1614,18 +1662,133 @@ mod tests {
             expected: None,
         }; "ack too low (eq IV)"
     )]
-    // TODO(https://fxbug.dev/546018652): Fix along with proper RSTs handling.
     #[test_case(
         StateUpdateTestArgs {
             segment: SegmentHeader {
-                ack: Some(valid_original_established_segment().ack.unwrap() + 10_000),
                 control: Some(Control::RST),
                 ..valid_original_established_segment()
             },
             payload_len: 0,
             dir: ConnectionDirection::Original,
+            expected: Some(State::WaitingOnOpeningAcks(PeerPair {
+                original: WaitingOnOpeningAcksPeer {
+                    peer: Peer {
+                        unreplied_rst: true,
+                        ..default_original_waiting_on_opening_acks_inner_peer()
+                    },
+                    ..default_original_waiting_on_opening_acks_peer()
+                },
+                reply: default_reply_waiting_on_opening_acks_peer(),
+            })),
+        }; "original rst with ack"
+    )]
+    #[test_case(
+        StateUpdateTestArgs {
+            segment: SegmentHeader {
+                control: Some(Control::RST),
+                ack: None,
+                ..valid_original_established_segment()
+            },
+            payload_len: 0,
+            dir: ConnectionDirection::Original,
+            expected: Some(State::WaitingOnOpeningAcks(PeerPair {
+                original: WaitingOnOpeningAcksPeer {
+                    peer: Peer {
+                        unreplied_rst: true,
+                        ..default_original_waiting_on_opening_acks_inner_peer()
+                    },
+                    ..default_original_waiting_on_opening_acks_peer()
+                },
+                reply: default_reply_waiting_on_opening_acks_peer(),
+            })),
+        }; "original rst without ack"
+    )]
+    #[test_case(
+        StateUpdateTestArgs {
+            segment: SegmentHeader {
+                control: Some(Control::RST),
+                ack: Some(valid_original_established_segment().ack.unwrap() + 10_000),
+                ..valid_original_established_segment()
+            },
+            payload_len: 0,
+            dir: ConnectionDirection::Original,
+            expected: Some(State::WaitingOnOpeningAcks(PeerPair {
+                original: WaitingOnOpeningAcksPeer {
+                    peer: Peer {
+                        unreplied_rst: true,
+                        ..default_original_waiting_on_opening_acks_inner_peer()
+                    },
+                    ..default_original_waiting_on_opening_acks_peer()
+                },
+                reply: default_reply_waiting_on_opening_acks_peer(),
+            })),
+        }; "original rst with invalid ack"
+    )]
+    #[test_case(
+        StateUpdateTestArgs {
+            segment: SegmentHeader {
+                control: Some(Control::RST),
+                seq: valid_original_established_segment().seq + 100,
+                ..valid_original_established_segment()
+            },
+            payload_len: 0,
+            dir: ConnectionDirection::Original,
             expected: None,
-        }; "rst with invalid ack"
+        }; "original rst with invalid seq"
+    )]
+    #[test_case(
+        StateUpdateTestArgs {
+            segment: SegmentHeader {
+                control: Some(Control::RST),
+                ..valid_reply_established_segment()
+            },
+            payload_len: 0,
+            dir: ConnectionDirection::Reply,
+            expected: Some(State::WaitingOnOpeningAcks(PeerPair {
+                original: default_original_waiting_on_opening_acks_peer(),
+                reply: WaitingOnOpeningAcksPeer {
+                    peer: Peer {
+                        unreplied_rst: true,
+                        ..default_reply_waiting_on_opening_acks_inner_peer()
+                    },
+                    ..default_reply_waiting_on_opening_acks_peer()
+                },
+            })),
+        }; "reply rst with ack"
+    )]
+    #[test_case(
+        StateUpdateTestArgs {
+            segment: SegmentHeader {
+                control: Some(Control::RST),
+                ack: None,
+                ..valid_reply_established_segment()
+            },
+            payload_len: 0,
+            dir: ConnectionDirection::Reply,
+            expected: Some(State::WaitingOnOpeningAcks(PeerPair {
+                original: default_original_waiting_on_opening_acks_peer(),
+                reply: WaitingOnOpeningAcksPeer {
+                    peer: Peer {
+                        unreplied_rst: true,
+                        ..default_reply_waiting_on_opening_acks_inner_peer()
+                    },
+                    ..default_reply_waiting_on_opening_acks_peer()
+                },
+            })),
+        }; "reply rst without ack"
+    )]
+    #[test_case(
+        StateUpdateTestArgs {
+            segment: SegmentHeader {
+                control: Some(Control::RST),
+                seq: valid_reply_established_segment().seq + 100,
+                ack: None,
+                ..valid_reply_established_segment()
+            },
+            payload_len: 0,
+            dir: ConnectionDirection::Reply,
+            expected: None,
+        }; "reply rst with invalid seq"
     )]
     fn waiting_on_opening_acks_test(args: StateUpdateTestArgs) {
         let state = State::WaitingOnOpeningAcks(PeerPair {
@@ -2030,6 +2193,122 @@ mod tests {
             })),
         }; "reply plain ack"
     )]
+    #[test_case(
+        StateUpdateTestArgs {
+            segment: SegmentHeader {
+                control: Some(Control::RST),
+                seq: valid_original_established_segment().seq + 100,
+                ack: Some(REPLY_ISS + 1),
+                ..valid_original_established_segment()
+            },
+            payload_len: 0,
+            dir: ConnectionDirection::Original,
+            expected: Some(State::WaitingOnOpeningAcks(PeerPair {
+                original: WaitingOnOpeningAcksPeer {
+                    peer: Peer {
+                        unreplied_rst: true,
+                        max_next_seq: ORIGINAL_ISS + ORIGINAL_PAYLOAD_LEN + 1,
+                        unacked_data: true,
+                        ..default_original_waiting_on_opening_acks_inner_peer()
+                    },
+                    saw_ack: false,
+                    ..default_original_waiting_on_opening_acks_peer()
+                },
+                reply: WaitingOnOpeningAcksPeer {
+                    peer: Peer {
+                        max_wnd_seq: ORIGINAL_ISS + (REPLY_WND << WindowScale::ZERO),
+                        max_next_seq: REPLY_ISS + REPLY_PAYLOAD_LEN + 1,
+                        ..default_reply_waiting_on_opening_acks_inner_peer()
+                    },
+                    ..default_reply_waiting_on_opening_acks_peer()
+                },
+            })),
+        }; "original rst with invalid seq and valid ack for syn sent"
+    )]
+    #[test_case(
+        StateUpdateTestArgs {
+            segment: SegmentHeader {
+                control: Some(Control::RST),
+                seq: valid_original_established_segment().seq + 100,
+                ack: Some(REPLY_ISS),
+                ..valid_original_established_segment()
+            },
+            payload_len: 0,
+            dir: ConnectionDirection::Original,
+            expected: None,
+        }; "original rst with invalid seq and invalid ack for syn sent"
+    )]
+    #[test_case(
+        StateUpdateTestArgs {
+            segment: SegmentHeader {
+                control: Some(Control::RST),
+                seq: valid_original_established_segment().seq + 100,
+                ack: None,
+                ..valid_original_established_segment()
+            },
+            payload_len: 0,
+            dir: ConnectionDirection::Original,
+            expected: None,
+        }; "original rst with invalid seq and no ack"
+    )]
+    #[test_case(
+        StateUpdateTestArgs {
+            segment: SegmentHeader {
+                control: Some(Control::RST),
+                seq: valid_reply_established_segment().seq + 100,
+                ack: Some(ORIGINAL_ISS + 1),
+                ..valid_reply_established_segment()
+            },
+            payload_len: 0,
+            dir: ConnectionDirection::Reply,
+            expected: Some(State::WaitingOnOpeningAcks(PeerPair {
+                original: WaitingOnOpeningAcksPeer {
+                    peer: Peer {
+                        max_next_seq: ORIGINAL_ISS + ORIGINAL_PAYLOAD_LEN + 1,
+                        unacked_data: true,
+                        ..default_original_waiting_on_opening_acks_inner_peer()
+                    },
+                    saw_ack: false,
+                    ..default_original_waiting_on_opening_acks_peer()
+                },
+                reply: WaitingOnOpeningAcksPeer {
+                    peer: Peer {
+                        unreplied_rst: true,
+                        max_wnd_seq: ORIGINAL_ISS + (REPLY_WND << WindowScale::ZERO),
+                        max_next_seq: REPLY_ISS + REPLY_PAYLOAD_LEN + 1,
+                        ..default_reply_waiting_on_opening_acks_inner_peer()
+                    },
+                    ..default_reply_waiting_on_opening_acks_peer()
+                },
+            })),
+        }; "reply rst with invalid seq and valid ack for syn sent"
+    )]
+    #[test_case(
+        StateUpdateTestArgs {
+            segment: SegmentHeader {
+                control: Some(Control::RST),
+                seq: valid_reply_established_segment().seq + 100,
+                ack: Some(ORIGINAL_ISS),
+                ..valid_reply_established_segment()
+            },
+            payload_len: 0,
+            dir: ConnectionDirection::Reply,
+            expected: None,
+        }; "reply rst with invalid seq and invalid ack for syn sent"
+    )]
+    #[test_case(
+        StateUpdateTestArgs {
+            segment: SegmentHeader {
+                control: Some(Control::RST),
+                seq: valid_reply_established_segment().seq + 100,
+                ack: None,
+                ..valid_reply_established_segment()
+            },
+            payload_len: 0,
+            dir: ConnectionDirection::Reply,
+            expected: None,
+        }; "reply rst with invalid seq and no ack"
+    )]
     fn waiting_on_opening_acks_simultaneous_open(args: StateUpdateTestArgs) {
         let state = State::WaitingOnOpeningAcks(PeerPair {
             original: WaitingOnOpeningAcksPeer {
@@ -2138,13 +2417,11 @@ mod tests {
     const RECV_MAX_NEXT_SEQ: SeqNum = SeqNum::new(66_001);
     const RECV_MAX_WND_SEQ: SeqNum = SeqNum::new(1424);
 
-    #[test_case(SeqNum::new(424), 200, SeqNum::new(1) => true; "success low seq/ack")]
-    #[test_case(RECV_MAX_WND_SEQ, 0, RECV_MAX_NEXT_SEQ => true; "success high seq/ack")]
-    #[test_case(RECV_MAX_WND_SEQ + 1, 0, SeqNum::new(1) => false; "bad equation I")]
-    #[test_case(SeqNum::new(424), 199, SeqNum::new(1) => false; "bad equation II")]
-    #[test_case(SeqNum::new(424), 200, RECV_MAX_NEXT_SEQ + 1 => false; "bad equation III")]
-    #[test_case(SeqNum::new(424), 200, SeqNum::new(0) => false; "bad equation IV")]
-    fn ack_segment_valid_test(seq: SeqNum, len: u32, ack: SeqNum) -> bool {
+    #[test_case(SeqNum::new(1) => true; "success low")]
+    #[test_case(RECV_MAX_NEXT_SEQ => true; "success high")]
+    #[test_case(RECV_MAX_NEXT_SEQ + 1 => false; "bad equation III")]
+    #[test_case(SeqNum::new(0) => false; "bad equation IV")]
+    fn ack_valid_test(ack: SeqNum) -> bool {
         let peers = UpdatePeers {
             sender: Peer { max_next_seq: SeqNum::new(1024), ..Peer::arbitrary() },
 
@@ -2160,7 +2437,29 @@ mod tests {
             dir: ConnectionDirection::Original,
         };
 
-        Peer::ack_segment_valid(peers.as_ref(), seq, len, ack)
+        Peer::ack_valid(peers.as_ref(), ack)
+    }
+
+    #[test_case(SeqNum::new(424), 200 => true; "success low")]
+    #[test_case(RECV_MAX_WND_SEQ, 0 => true; "success high")]
+    #[test_case(RECV_MAX_WND_SEQ + 1, 0 => false; "bad equation I")]
+    #[test_case(SeqNum::new(424), 199 => false; "bad equation II")]
+    fn seq_valid_test(seq: SeqNum, len: u32) -> bool {
+        let peers = UpdatePeers {
+            sender: Peer { max_next_seq: SeqNum::new(1024), ..Peer::arbitrary() },
+
+            receiver: Peer {
+                window_scale: WindowScale::new(0).unwrap(),
+                max_wnd: WindowSize::new(400).unwrap(),
+                max_next_seq: RECV_MAX_NEXT_SEQ,
+                max_wnd_seq: RECV_MAX_WND_SEQ,
+                ..Peer::arbitrary()
+            },
+            // The direction doesn't matter.
+            dir: ConnectionDirection::Original,
+        };
+
+        Peer::seq_valid(peers.as_ref(), seq, len)
     }
 
     struct PeerUpdateSenderArgs {
@@ -2179,6 +2478,7 @@ mod tests {
             max_next_seq: SeqNum::new(1024),
             unacked_data: false,
             fin_state: FinState::NotSent,
+            unreplied_rst: false,
         },
         PeerUpdateSenderArgs {
             seq: SeqNum::new(1025),
@@ -2193,6 +2493,7 @@ mod tests {
             max_next_seq: SeqNum::new(1035),
             unacked_data: true,
             fin_state: FinState::NotSent,
+            unreplied_rst: false,
         }; "packet larger"
     )]
     #[test_case(
@@ -2203,6 +2504,7 @@ mod tests {
             max_next_seq: SeqNum::new(1024),
             unacked_data: false,
             fin_state: FinState::NotSent,
+            unreplied_rst: false,
         },
         PeerUpdateSenderArgs {
             seq: SeqNum::new(1000),
@@ -2217,6 +2519,7 @@ mod tests {
             max_next_seq: SeqNum::new(1024),
             unacked_data: false,
             fin_state: FinState::NotSent,
+            unreplied_rst: false,
         }; "packet smaller"
     )]
     #[test_case(
@@ -2227,6 +2530,7 @@ mod tests {
             max_next_seq: SeqNum::new(1024),
             unacked_data: false,
             fin_state: FinState::NotSent,
+            unreplied_rst: false,
         },
         PeerUpdateSenderArgs {
             seq: SeqNum::new(1000),
@@ -2241,6 +2545,7 @@ mod tests {
             max_next_seq: SeqNum::new(1024),
             unacked_data: false,
             fin_state: FinState::Sent(SeqNum::new(1000 + 9)),
+            unreplied_rst: false,
         }; "fin sent"
     )]
     #[test_case(
@@ -2251,6 +2556,7 @@ mod tests {
             max_next_seq: SeqNum::new(1024),
             unacked_data: false,
             fin_state: FinState::NotSent,
+            unreplied_rst: false,
         },
         PeerUpdateSenderArgs {
             seq: SeqNum::new(1000),
@@ -2265,7 +2571,34 @@ mod tests {
             max_next_seq: SeqNum::new(1024),
             unacked_data: false,
             fin_state: FinState::NotSent,
+            unreplied_rst: false,
         }; "syn ack ignores window_scale"
+    )]
+    #[test_case(
+        Peer {
+            window_scale: WindowScale::new(3).unwrap(),
+            max_wnd: WindowSize::new(16).unwrap(),
+            max_wnd_seq: SeqNum::new(127),
+            max_next_seq: SeqNum::new(1024),
+            unacked_data: false,
+            fin_state: FinState::NotSent,
+            unreplied_rst: true,
+        },
+        PeerUpdateSenderArgs {
+            seq: SeqNum::new(1000),
+            len: 10,
+            ack: SeqNum::new(0),
+            wnd: UnscaledWindowSize::from_u32(0),
+            control: None,
+        } => Peer {
+            window_scale: WindowScale::new(3).unwrap(),
+            max_wnd: WindowSize::new(16).unwrap(),
+            max_wnd_seq: SeqNum::new(127),
+            max_next_seq: SeqNum::new(1024),
+            unacked_data: false,
+            fin_state: FinState::NotSent,
+            unreplied_rst: true,
+        }; "preserves unreplied rst"
     )]
     fn peer_update_sender_test(peer: Peer, args: PeerUpdateSenderArgs) -> Peer {
         peer.update_sender(args.seq, args.len, args.ack, args.wnd, args.control)
@@ -2285,6 +2618,11 @@ mod tests {
         Peer { fin_state: FinState::Sent(SeqNum::new(9)), ..Peer::arbitrary() },
         SeqNum::new(10) => Peer { fin_state: FinState::Acked, ..Peer::arbitrary() };
         "update fin state"
+    )]
+    #[test_case(
+        Peer { unreplied_rst: true, ..Peer::arbitrary() },
+        SeqNum::new(0) => Peer { unreplied_rst: false, ..Peer::arbitrary() };
+        "reset unreplied rst"
     )]
     fn peer_update_receiver_test(peer: Peer, ack: SeqNum) -> Peer {
         peer.update_receiver(ack)
@@ -2412,10 +2750,111 @@ mod tests {
                 control: Some(Control::RST),
                 ..valid_original_established_segment()
             },
-            payload_len: ORIGINAL_PAYLOAD_LEN,
+            payload_len: 0,
             dir: ConnectionDirection::Original,
-            expected: Some(State::Closed),
-        }; "rst"
+            expected: Some(State::Established(PeerPair {
+                original: Peer {
+                    unreplied_rst: true,
+                    ..default_original_established_peer()
+                },
+                reply: default_reply_established_peer(),
+            })),
+        }; "original rst with ack"
+    )]
+    #[test_case(
+        StateUpdateTestArgs {
+            segment: SegmentHeader {
+                control: Some(Control::RST),
+                ack: None,
+                ..valid_original_established_segment()
+            },
+            payload_len: 0,
+            dir: ConnectionDirection::Original,
+            expected: Some(State::Established(PeerPair {
+                original: Peer {
+                    unreplied_rst: true,
+                    ..default_original_established_peer()
+                },
+                reply: default_reply_established_peer(),
+            })),
+        }; "original rst without ack"
+    )]
+    #[test_case(
+        StateUpdateTestArgs {
+            segment: SegmentHeader {
+                control: Some(Control::RST),
+                ack: Some(valid_original_established_segment().ack.unwrap() + 10_000),
+                ..valid_original_established_segment()
+            },
+            payload_len: 0,
+            dir: ConnectionDirection::Original,
+            expected: Some(State::Established(PeerPair {
+                original: Peer {
+                    unreplied_rst: true,
+                    ..default_original_established_peer()
+                },
+                reply: default_reply_established_peer(),
+            })),
+        }; "original rst with invalid ack"
+    )]
+    #[test_case(
+        StateUpdateTestArgs {
+            segment: SegmentHeader {
+                control: Some(Control::RST),
+                seq: valid_original_established_segment().seq - 100,
+                ..valid_original_established_segment()
+            },
+            payload_len: 0,
+            dir: ConnectionDirection::Original,
+            expected: None,
+        }; "original rst with invalid seq"
+    )]
+    #[test_case(
+        StateUpdateTestArgs {
+            segment: SegmentHeader {
+                control: Some(Control::RST),
+                ..valid_reply_established_segment()
+            },
+            payload_len: 0,
+            dir: ConnectionDirection::Reply,
+            expected: Some(State::Established(PeerPair {
+                original: default_original_established_peer(),
+                reply: Peer {
+                    unreplied_rst: true,
+                    ..default_reply_established_peer()
+                },
+            })),
+        }; "reply rst with ack"
+    )]
+    #[test_case(
+        StateUpdateTestArgs {
+            segment: SegmentHeader {
+                control: Some(Control::RST),
+                ack: None,
+                ..valid_reply_established_segment()
+            },
+            payload_len: 0,
+            dir: ConnectionDirection::Reply,
+            expected: Some(State::Established(PeerPair {
+                original: default_original_established_peer(),
+                reply: Peer {
+                    unreplied_rst: true,
+                    ..default_reply_established_peer()
+                },
+            })),
+        }; "reply rst without ack"
+    )]
+    #[test_case(
+        StateUpdateTestArgs {
+            segment: SegmentHeader {
+                control: Some(Control::RST),
+                seq: valid_reply_established_segment().seq - 200,
+                ..valid_reply_established_segment()
+            },
+            payload_len: 0,
+            dir: ConnectionDirection::Reply,
+            expected: None,
+        }; "reply rst with invalid seq"
     )]
     fn established_test(args: StateUpdateTestArgs) {
         let state = State::Established(PeerPair {
@@ -2441,6 +2880,7 @@ mod tests {
                 max_next_seq: SeqNum::new(1024),
                 unacked_data: true,
                 fin_state: FinState::Sent(SeqNum::new(1023)),
+                unreplied_rst: false,
             },
             reply: Peer {
                 window_scale: WindowScale::new(0).unwrap(),
@@ -2449,6 +2889,7 @@ mod tests {
                 max_next_seq: SeqNum::new(66_001),
                 unacked_data: false,
                 fin_state: FinState::Acked,
+                unreplied_rst: false,
             },
         });
 
