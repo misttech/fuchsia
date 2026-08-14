@@ -63,7 +63,7 @@
              path="prebuilt/third_party/android/aemu/release/{{.OS}}-arm64"/>
 
      <package name="fuchsia/third_party/android/aemu/release-gfxstream/${platform}"
-             version="bid:13279406"
+             version="bid:14103599"
              platforms="linux-amd64,linux-arm64"
              path="prebuilt/third_party/android/aemu/release-gfxstream/{{.OS}}-{{.Arch}}"/>
 
@@ -73,7 +73,7 @@
           sufficient.
      -->
      <package name="fuchsia/third_party/android/aemu/release-gfxstream/${os=linux}-arm64"
-             version="bid:13279406"
+             version="bid:14103599"
              platforms="linux-amd64"
              attributes="arm-sdk-tools"
              path="prebuilt/third_party/android/aemu/release-gfxstream/{{.OS}}-arm64"/>
