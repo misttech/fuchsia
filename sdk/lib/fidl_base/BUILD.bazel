@@ -18,6 +18,8 @@ fx_cc_library(
     hdrs = ["include/lib/fidl/txn_header.h"],
     includes = ["include"],
     public_configs = [":fidl_base.config"],  # For bazel2gn.
+    # This is only used in GN (by Zircon).
+    visibility = [],  # @bazel2gn:raw_overwrite:[ "//zircon/system/ulib/ldmsg/*" ]
     deps = ["//src/zircon/lib/zircon"],
     alwayslink = True,
 )
@@ -70,7 +72,13 @@ idk_cc_source_library(
         "//sdk/lib/zircon-assert",
     ],
     stable = True,
-    visibility = ["//visibility:public"],
+    # In Bazel, the library must be visible to the package containing the symbolic macro.
+    # In GN, the library must be visible to any path that defines a `fidl()` target.
+    visibility = [
+        "//build/bazel/rules/fidl:__subpackages__",
+        "//sdk/lib/fidl:__subpackages__",
+        "//tools/fidlcat:__subpackages__",
+    ],  # @bazel2gn:raw_overwrite:[ "//*" ]
     deps = ["//src/zircon/lib/zircon"],
     non_fuchsia_deps = ["//zircon/system/public"],
     public_configs = [":fidl_base.config"],  # For bazel2gn.

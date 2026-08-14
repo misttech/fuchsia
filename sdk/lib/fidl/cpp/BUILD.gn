@@ -63,7 +63,7 @@ sdk_source_set("cpp_base") {
   deps = [ "//sdk/lib/fidl_base" ]
   public_configs = [ ":cpp_base.headers" ]
   stable = true
-  visibility = [ "*" ]
+  visibility = [ "//*" ]
   public_deps = [
     "//sdk/lib/fidl/cpp/wire",
     "//sdk/lib/stdcompat",
@@ -94,7 +94,7 @@ if (is_fuchsia) {
     category = "partner"
     sdk_name = "fidl_cpp_v2"
     stable = true
-    visibility = [ "*" ]
+    visibility = [ "//*" ]
     public_deps = [
       ":cpp_base",
       "//sdk/lib/async",
@@ -109,7 +109,7 @@ sdk_source_set("hlcpp_conversion") {
   sdk_name = "fidl_cpp_hlcpp_conversion"
   public_configs = [ ":cpp_base.headers" ]
   stable = true
-  visibility = [ "*" ]
+  visibility = [ "//*" ]
   public_deps = [ ":cpp_base" ]
 }
 sdk_source_set("natural_ostream") {
@@ -119,6 +119,6 @@ sdk_source_set("natural_ostream") {
   sdk_name = "fidl_cpp_natural_ostream"
   public_configs = [ ":cpp_base.headers" ]
   stable = true
-  visibility = [ "*" ]
+  visibility = [ "//*" ]
   public_deps = [ ":cpp_base" ]
 }

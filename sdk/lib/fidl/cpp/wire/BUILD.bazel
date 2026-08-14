@@ -149,7 +149,12 @@ idk_cc_source_library(
     non_fuchsia_deps = ["//zircon/system/public"],
     idk_name = "fidl_cpp_wire",
     stable = True,
-    visibility = ["//visibility:public"],
+    # In Bazel, the library must be visible to the package containing the symbolic macro.
+    # In GN, the library must be visible to any path that defines a `fidl()` target.
+    visibility = [
+        "//build/bazel/rules/fidl:__subpackages__",
+        "//sdk/lib/fidl/cpp:__subpackages__",
+    ],  # @bazel2gn:raw_overwrite:[ "//*" ]
     public_configs = [":include"],  # For bazel2gn.
 )
 

@@ -35,7 +35,11 @@ idk_cc_source_library(
     implementation_deps = ["//sdk/lib/fidl_base"],
     public_configs = [":cpp_base.headers"],
     stable = True,
-    visibility = ["//visibility:public"],
+    # In Bazel, the library must be visible to the package containing the symbolic macro.
+    # In GN, the library must be visible to any path that defines a `fidl()` target.
+    visibility = [
+        "//build/bazel/rules/fidl:__subpackages__",
+    ],  # @bazel2gn:raw_overwrite:[ "//*" ]
     deps = [
         "//sdk/lib/fidl/cpp/wire",
         "//sdk/lib/stdcompat",
@@ -72,7 +76,11 @@ idk_cc_source_library(
     idk_name = "fidl_cpp_v2",
     stable = True,
     target_compatible_with = ["@platforms//os:fuchsia"],
-    visibility = ["//visibility:public"],
+    # In Bazel, the library must be visible to the package containing the symbolic macro.
+    # In GN, the library must be visible to any path that defines a `fidl()` target.
+    visibility = [
+        "//build/bazel/rules/fidl:__subpackages__",
+    ],  # @bazel2gn:raw_overwrite:[ "//*" ]
     deps = [
         ":cpp_base",
         "//sdk/lib/async",
@@ -89,7 +97,11 @@ idk_cc_source_library(
     idk_name = "fidl_cpp_hlcpp_conversion",
     public_configs = [":cpp_base.headers"],
     stable = True,
-    visibility = ["//visibility:public"],
+    # In Bazel, the library must be visible to the package containing the symbolic macro.
+    # In GN, the library must be visible to any path that defines a `fidl()` target.
+    visibility = [
+        "//build/bazel/rules/fidl:__subpackages__",
+    ],  # @bazel2gn:raw_overwrite:[ "//*" ]
     deps = [":cpp_base"],
 )
 
@@ -102,6 +114,10 @@ idk_cc_source_library(
     idk_name = "fidl_cpp_natural_ostream",
     public_configs = [":cpp_base.headers"],
     stable = True,
-    visibility = ["//visibility:public"],
+    # In Bazel, the library must be visible to the package containing the symbolic macro.
+    # In GN, the library must be visible to any path that defines a `fidl()` target.
+    visibility = [
+        "//build/bazel/rules/fidl:__subpackages__",
+    ],  # @bazel2gn:raw_overwrite:[ "//*" ]
     deps = [":cpp_base"],
 )

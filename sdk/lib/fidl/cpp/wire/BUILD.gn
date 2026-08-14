@@ -193,6 +193,6 @@ sdk_source_set("wire") {
   }
   sdk_name = "fidl_cpp_wire"
   stable = true
-  visibility = [ "*" ]
+  visibility = [ "//*" ]
   public_configs = [ ":include" ]
 }

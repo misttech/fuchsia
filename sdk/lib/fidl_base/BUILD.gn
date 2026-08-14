@@ -42,6 +42,7 @@ if (is_host) {
 source_set("fidl_txn_header") {
   public = [ "include/lib/fidl/txn_header.h" ]
   public_configs = [ ":fidl_base.config" ]
+  visibility = [ "//zircon/system/ulib/ldmsg/*" ]
   public_deps = [ "//src/zircon/lib/zircon" ]
 }
 sdk_source_set("fidl_base") {
@@ -81,7 +82,7 @@ sdk_source_set("fidl_base") {
     "//sdk/lib/zircon-assert",
   ]
   stable = true
-  visibility = [ "*" ]
+  visibility = [ "//*" ]
   public_deps = [ "//src/zircon/lib/zircon" ]
   if (!is_fuchsia) {
     public_deps += [ "//zircon/system/public" ]

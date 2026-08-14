@@ -153,9 +153,12 @@ idk_cc_source_library(
     stable = True,
     target_compatible_with = ["@platforms//os:fuchsia"],
     visibility = [
-        ":__pkg__",
-        "//build/sdk:__pkg__",
         "//src/tests/fidl/dynsuite/client_suite:__subpackages__",
+        # In Bazel, targets are always visible in the current directory. In GN,
+        # this must be specified. Also, in Bazel, the IDK paths are automatically
+        # added to the atom sub-target's visibility, but they are not in GN.
+        # Overwrite a superfluous private visibility with the paths necessary in GN.
+        "//visibility:private",  # @bazel2gn:raw_overwrite:":*", "//build/sdk:*"
     ],
     deps = [
         ":hlcpp_base",

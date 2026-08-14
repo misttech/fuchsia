@@ -48,7 +48,7 @@ sdk_source_set("fidl") {
   sdk_name = "fidl"
   public_configs = [ ":fidl.headers" ]
   stable = true
-  visibility = [ "*" ]
+  visibility = [ "//*" ]
   public_deps = [
     "//sdk/lib/fidl_base",
     "//src/zircon/lib/zircon",
