@@ -36,9 +36,9 @@ class BazelTestsUtilsTest(unittest.TestCase):
         self.bazel_paths.launcher.parent.mkdir(parents=True, exist_ok=True)
         self.bazel_paths.launcher.write_text("#!/bin/bash\nexit 0")
         self.bazel_paths.execroot.mkdir(parents=True, exist_ok=True)
-        (
-            self.bazel_paths.ninja_build_dir / "bazel_host_test_suites.txt"
-        ).write_text("//fake/test1\n//fake/test2")
+        (self.bazel_paths.ninja_build_dir / "bazel_test_suites.txt").write_text(
+            "//fake/test1\n//fake/test2"
+        )
 
     def tearDown(self) -> None:
         self._td.cleanup()
@@ -188,7 +188,7 @@ class BazelTestsUtilsTest(unittest.TestCase):
 
         with self.assertRaisesRegex(
             RuntimeError,
-            r"Target '//tools/check-licenses:v2_config_test' included in the bazel_host_test_suites GN group is a test target but does not provide FuchsiaHostTestInfo",
+            r"Target '//tools/check-licenses:v2_config_test' included in the bazel_test_suites GN group is a test target but does not provide FuchsiaHostTestInfo",
         ):
             bazel_tests_utils.generate_tests_json(
                 self.bazel_paths, command_runner=mock_runner
@@ -212,7 +212,7 @@ class BazelTestsUtilsTest(unittest.TestCase):
 
         with self.assertRaisesRegex(
             RuntimeError,
-            r"The following targets included in the bazel_host_test_suites GN group are test targets but do not provide FuchsiaHostTestInfo:\n  - //tools/check-licenses:v2_config_test\n  - //tools/whereiscl:whereiscl_test",
+            r"The following targets included in the bazel_test_suites GN group are test targets but do not provide FuchsiaHostTestInfo:\n  - //tools/check-licenses:v2_config_test\n  - //tools/whereiscl:whereiscl_test",
         ):
             bazel_tests_utils.generate_tests_json(
                 self.bazel_paths, command_runner=mock_runner

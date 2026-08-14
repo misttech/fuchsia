@@ -932,7 +932,7 @@ func (r *mockSubprocessRunner) Run(ctx context.Context, cmd []string, options su
 	return nil
 }
 
-func TestBuildBazelHostTests(t *testing.T) {
+func TestBuildBazelTests(t *testing.T) {
 	checkoutDir := t.TempDir()
 	buildDir := t.TempDir()
 
@@ -979,7 +979,7 @@ func TestBuildBazelHostTests(t *testing.T) {
 
 	ctx := context.Background()
 	runner := &mockSubprocessRunner{}
-	if _, err := buildBazelHostTests(ctx, runner, checkoutDir, buildDir, testSpecs); err != nil {
+	if _, err := buildBazelTests(ctx, runner, checkoutDir, buildDir, testSpecs); err != nil {
 		t.Fatal(err)
 	}
 

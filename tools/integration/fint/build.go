@@ -563,7 +563,7 @@ func buildImpl(
 			return artifacts, err
 		}
 	}
-	if summary, err := buildBazelHostTests(ctx, runner, contextSpec.CheckoutDir, contextSpec.BuildDir, modules.TestSpecs()); err != nil {
+	if summary, err := buildBazelTests(ctx, runner, contextSpec.CheckoutDir, contextSpec.BuildDir, modules.TestSpecs()); err != nil {
 		if summary != "" {
 			artifacts.FailureSummary = summary
 		}
@@ -1035,7 +1035,7 @@ func exportDebugSymbols(ctx context.Context, buildAPIClient buildAPIClient, cont
 	return string(b), nil
 }
 
-func buildBazelHostTests(ctx context.Context, runner subprocessRunner, checkoutDir, buildDir string, testSpecs []build.TestSpec) (string, error) {
+func buildBazelTests(ctx context.Context, runner subprocessRunner, checkoutDir, buildDir string, testSpecs []build.TestSpec) (string, error) {
 	var bazelLabels []string
 	for _, spec := range testSpecs {
 		// Bazel tests are differentiated from GN tests by having a "@" prefix
@@ -1065,6 +1065,8 @@ func buildBazelHostTests(ctx context.Context, runner subprocessRunner, checkoutD
 	cmd := append([]string{
 		bazelLauncher,
 		"build",
+		// For now we only support building Bazel host tests.
+		// TODO(https://fxbug.dev/546173288): Support Bazel target tests.
 		"--config=host",
 		// Bazel prefers to wait until the latest possible moment (e.g. `bazel
 		// test`) to generate runfiles. Forcing runfile link generation during
@@ -1079,7 +1081,7 @@ func buildBazelHostTests(ctx context.Context, runner subprocessRunner, checkoutD
 		Stdout: os.Stdout,
 		Stderr: io.MultiWriter(os.Stderr, &stderrBuf),
 	}); err != nil {
-		return parseBazelError(stderrBuf.String()), fmt.Errorf("failed to build Bazel host tests: %w", err)
+		return parseBazelError(stderrBuf.String()), fmt.Errorf("failed to build Bazel tests: %w", err)
 	}
 	return "", nil
 }

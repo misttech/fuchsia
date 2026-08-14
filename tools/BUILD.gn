@@ -2,7 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/bazel/bazel_host_test_suite.gni")
+import("//build/bazel/bazel_test_suite.gni")
 
 if (is_host) {
   group("tools") {
@@ -85,7 +85,7 @@ group("tests_no_e2e") {
   assert_no_deps = e2e_test_libs
 
   deps = [
-    ":bazel_host_tests",
+    ":bazel_tests",
     "//tools/artifactory:tests",
     "//tools/auto_owners:tests($host_toolchain)",
     "//tools/bindc:tests",
@@ -143,8 +143,8 @@ group("tests_no_e2e") {
   ]
 }
 
-bazel_host_test_suite("bazel_host_tests") {
-  bazel_tests = [ "//tools:host_tests" ]
+bazel_test_suite("bazel_tests") {
+  host_tests = [ "//tools:host_tests" ]
 }
 
 group("tests") {

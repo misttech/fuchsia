@@ -402,10 +402,8 @@ absolute_fizz = "/path/to/prebuilt/third_party/fuzz"
             )
         )
 
-        bazel_host_test_suites_path = (
-            self._build_root / "bazel_host_test_suites.txt"
-        )
-        bazel_host_test_suites_path.write_text(
+        bazel_test_suites_path = self._build_root / "bazel_test_suites.txt"
+        bazel_test_suites_path.write_text(
             "\n".join(
                 [
                     "//fake/test_suite:1",

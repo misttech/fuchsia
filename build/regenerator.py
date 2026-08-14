@@ -651,11 +651,11 @@ def main() -> int:
         try:
             extra_ninja_build_inputs |= build_tests_json.build_tests_json(
                 build_dir,
-                with_bazel_host_tests=args_json.get(
-                    # LINT.IfChange(export_bazel_host_tests)
-                    "export_bazel_host_tests",
+                with_bazel_tests=args_json.get(
+                    # LINT.IfChange(export_bazel_tests)
+                    "export_bazel_tests",
                     True,
-                    # LINT.ThenChange(//build/config/export_bazel_host_tests.gni)
+                    # LINT.ThenChange(//build/config/export_bazel_tests.gni)
                 ),
                 quiet=args.quiet,
             )

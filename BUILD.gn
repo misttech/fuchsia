@@ -3,7 +3,7 @@
 # found in the LICENSE file.
 
 import("//build/bazel/bazel_build_action_labels.gni")
-import("//build/bazel/bazel_host_test_suite.gni")
+import("//build/bazel/bazel_test_suite.gni")
 import("//build/board.gni")
 import("//build/compiled_action.gni")
 import("//build/config/build_api_module.gni")
@@ -1362,14 +1362,14 @@ build_api_module("test_durations") {
   }
 }
 
-# Collect labels of Bazel host test_suite() and host_xxx_test()
-# and write them to a text file, one per line. This is __NOT__ a build
-# API module and is only used by //build/regenerator.
-generated_file("bazel_host_test_suites") {
+# Collect labels of Bazel test_suite() and host_xxx_test() and write them to a
+# text file, one per line. This is __NOT__ a build API module and is only used
+# by //build/regenerator.
+generated_file("bazel_test_suites") {
   testonly = true
-  data_keys = [ "bazel_host_test_suite" ]
-  walk_keys = [ "bazel_host_test_suite_barrier" ]
-  outputs = [ "${root_build_dir}/bazel_host_test_suites.txt" ]
+  data_keys = [ "bazel_test_suite" ]
+  walk_keys = [ "bazel_test_suite_barrier" ]
+  outputs = [ "${root_build_dir}/bazel_test_suites.txt" ]
   output_conversion = "list lines"
   deps = [
     # Pull in tests from host_labels.
@@ -2352,7 +2352,7 @@ group("developer_specified_tests") {
 group("discoverable_packages") {
   testonly = true
   visibility = [
-    "//:bazel_host_test_suites",
+    "//:bazel_test_suites",
     "//:test_components",
     "//:tests_from_metadata",
     "//build/images/updates:*",

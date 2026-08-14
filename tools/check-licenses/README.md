@@ -26,6 +26,6 @@ $ fx check-licenses
 Test:
 
 ```
-$ fx set <PRODUCT>.<BOARD> --args export_bazel_host_tests=true --with-test //tools:tests
+$ fx set <PRODUCT>.<BOARD> --with-test //tools:tests
 $ fx test check-licenses
 ```

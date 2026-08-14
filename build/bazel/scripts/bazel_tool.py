@@ -318,8 +318,8 @@ up-to-date artifacts in the Ninja build directory.
         return 0
 
 
-class ListBazelHostTestsCommand(ScriptCommandBase):
-    """Generate tests.json file listing all Bazel host tests."""
+class ListBazelTestsCommand(ScriptCommandBase):
+    """Generate tests.json file listing all Bazel tests."""
 
     @staticmethod
     def run(args: argparse.Namespace) -> int:
@@ -526,7 +526,7 @@ def main() -> int:
     commands.add_command(TargetDumpCommand())
     commands.add_command(ActionsCommand())
     commands.add_command(SetGnTargetsCommand())
-    commands.add_command(ListBazelHostTestsCommand())
+    commands.add_command(ListBazelTestsCommand())
     commands.add_command(ExpandCommand())
 
     args = parser.parse_args()

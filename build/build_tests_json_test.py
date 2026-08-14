@@ -50,7 +50,7 @@ class BuildTestsJsonTest(unittest.TestCase):
         tests_from_metadata: list[T.Any],
         test_groups: list[T.Any],
         product_bundles: list[T.Any],
-        with_bazel_host_tests: bool = False,
+        with_bazel_tests: bool = False,
         command_runner: T.Optional[CommandRunner] = None,
     ) -> tuple[set[Path], list[T.Any]]:
         tests_from_metadata_str = json.dumps(tests_from_metadata)
@@ -67,12 +67,12 @@ class BuildTestsJsonTest(unittest.TestCase):
         product_bundles_path = self.build_dir / "product_bundles.json"
         product_bundles_path.write_text(product_bundles_str)
 
-        if with_bazel_host_tests:
-            (self.build_dir / "bazel_host_test_suites.txt").write_text(
+        if with_bazel_tests:
+            (self.build_dir / "bazel_test_suites.txt").write_text(
                 "//fake/test1\n//fake/test2"
             )
         inputs = build_tests_json.build_tests_json(
-            self.build_dir, with_bazel_host_tests, command_runner
+            self.build_dir, with_bazel_tests, command_runner
         )
 
         tests_string = (self.build_dir / "tests.json").read_text()
@@ -166,7 +166,7 @@ class BuildTestsJsonTest(unittest.TestCase):
         ]
         self.assertEqual(expected_tests_json, tests)
 
-    def test_bazel_host_tests(self) -> None:
+    def test_bazel_tests(self) -> None:
         # Prepare mock runner for bazel cquery
         mock_runner = MockCommandRunner()
         test1 = {
@@ -210,7 +210,7 @@ class BuildTestsJsonTest(unittest.TestCase):
             [dummy_host_test],
             [],
             [],
-            with_bazel_host_tests=True,
+            with_bazel_tests=True,
             command_runner=mock_runner,
         )
 
@@ -302,7 +302,7 @@ class BuildTestsJsonTest(unittest.TestCase):
             tests_from_metadata,
             test_groups,
             product_bundles,
-            with_bazel_host_tests=True,
+            with_bazel_tests=True,
             command_runner=mock_runner,
         )
 

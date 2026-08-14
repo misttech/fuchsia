@@ -19,7 +19,7 @@ from build_utils import CommandRunner
 
 def build_tests_json(
     build_dir: Path,
-    with_bazel_host_tests: bool = False,
+    with_bazel_tests: bool = False,
     command_runner: T.Optional[CommandRunner] = None,
     quiet: bool = True,
 ) -> T.Set[Path]:
@@ -39,7 +39,7 @@ def build_tests_json(
 
     Args:
         build_dir: Fuchsia build directory.
-        with_bazel_host_tests: Whether to export Bazel host tests.
+        with_bazel_tests: Whether to export Bazel tests.
         command_runner: Optional command runner to use for running bazel commands.
         quiet: Whether to print status updates.
 
@@ -102,9 +102,10 @@ def build_tests_json(
                 test["environments"] = environments
         tests += product_bundle_tests
 
-    if with_bazel_host_tests:
-        # Now get the list of all Bazel host tests.
-        # TODO(digit): Get the list of Fuchsia Bazel tests
+    if with_bazel_tests:
+        # Now get the list of all Bazel tests.
+        # TODO(digit): This is just host tests for now, also get the list of
+        # Fuchsia Bazel tests.
         fuchsia_dir = Path(__file__).parent.parent
         assert (
             fuchsia_dir / ".jiri_manifest"

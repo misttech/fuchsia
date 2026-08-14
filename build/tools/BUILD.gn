@@ -2,13 +2,13 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/bazel/bazel_host_test_suite.gni")
+import("//build/bazel/bazel_test_suite.gni")
 
 group("tests") {
   testonly = true
 
   deps = [
-    ":bazel_host_tests",
+    ":bazel_tests",
     "bazel2gn:bazel2gn_tests($host_toolchain)",
     "json_merge:json_merge_test($host_toolchain)",
 
@@ -17,6 +17,6 @@ group("tests") {
   ]
 }
 
-bazel_host_test_suite("bazel_host_tests") {
-  bazel_tests = [ "//build/tools:host_tests" ]
+bazel_test_suite("bazel_tests") {
+  host_tests = [ "//build/tools:host_tests" ]
 }

@@ -85,7 +85,7 @@ Defining the `host_xxx_test()` target alone will **NOT** make it visible to
 `fx test` and, more importantly, to infra builders.
 
 To make a Bazel host test visible to `fx test` and infra builders, write a
-`bazel_host_test_suite("bazel_tests")` target in GN that lists the Bazel labels
+`bazel_test_suite("bazel_tests")` target in GN that lists the Bazel labels
 of one or more Bazel host tests or suites, and add that target to a "tests"
 group in GN.
 
@@ -93,8 +93,8 @@ This will cause an entry for the test to appear in `out/default/tests.json`.
 When in doubt, examine the content of this file after `fx set` or `fx gen`. The
 `label` field for Bazel tests begins with `@`.
 
-NOTE: Bazel tests will only show up in `tests.json` if the
-`export_bazel_host_tests` GN argument is `true` (the default).
+NOTE: Bazel tests will only show up in `tests.json` if the `export_bazel_tests`
+GN argument is `true` (the default).
 
 During development, it is possible to build and run test targets once they are
 defined, before they are exported as described above. See the
