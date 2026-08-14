@@ -232,12 +232,12 @@
     },
     {
         "drivers": [
-            "fuchsia-pkg://fuchsia.com/virtual-audio#meta/virtual-audio-driver.cm"
+            "?fuchsia-pkg://fuchsia.com/virtual-audio#meta/virtual-audio-driver.cm"
         ]
     },
     {
         "drivers": [
-            "fuchsia-pkg://fuchsia.com/virtual-audio-legacy#meta/virtual-audio-legacy-driver.cm"
+            "?fuchsia-pkg://fuchsia.com/virtual-audio-legacy#meta/virtual-audio-legacy-driver.cm"
         ]
     }
 ]
