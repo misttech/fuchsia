@@ -1,5 +1,6 @@
 Name: netlink-packet-route
 URL: https://github.com/rust-netlink/netlink-packet-route
+Revision: 570c4f2d8fabdd103666db9e02e1db3d04fd04fb
 Version: 0.20.1
 Security Critical: yes
 

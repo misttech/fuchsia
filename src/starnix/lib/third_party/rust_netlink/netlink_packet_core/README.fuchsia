@@ -1,5 +1,6 @@
 Name: netlink-packet-core
 URL: https://github.com/rust-netlink/netlink-packet-core
+Revision: 91e71b69fe8d94a8ae7e2748b0443272c6c3307c
 Version: 0.7.0
 Security Critical: yes
 

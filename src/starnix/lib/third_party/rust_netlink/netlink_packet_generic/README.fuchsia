@@ -1,5 +1,6 @@
 Name: netlink-packet-generic
 URL: https://github.com/rust-netlink/netlink-packet-generic
+Revision: 865fe7cab27c9f1855e7cc577e03858f96dab344
 Version: 0.3.3
 Security Critical: yes
 
