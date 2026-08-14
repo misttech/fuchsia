@@ -18,7 +18,6 @@ if (is_host) {
     source_root = "fuchsia_wlan_base_test"
     sources = [
       "__init__.py",
-      "deprecated/dhcp/base_test.py",
       "deprecated/wifi/base_test.py",
     ]
     library_deps =

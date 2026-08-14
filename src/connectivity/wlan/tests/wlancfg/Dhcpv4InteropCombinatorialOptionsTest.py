@@ -7,7 +7,7 @@
 import random
 from dataclasses import dataclass
 
-from fuchsia_wlan_base_test.deprecated.dhcp import base_test
+import dhcp_testing
 from mobly import asserts, test_runner
 
 OPT_NUM_DOMAIN_SEARCH = 119
@@ -21,7 +21,7 @@ class Test:
     dhcp_parameters: dict[str, str]
 
 
-class Dhcpv4InteropCombinatorialOptionsTest(base_test.Dhcpv4InteropFixture):
+class Dhcpv4InteropCombinatorialOptionsTest(dhcp_testing.Dhcpv4InteropFixture):
     """DhcpV4 tests which validate combinations of DHCP options."""
 
     def pre_run(self) -> None:

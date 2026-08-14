@@ -7,13 +7,13 @@
 import re
 import time
 
+import dhcp_testing
 from antlion.controllers.ap_lib import dhcp_config
-from fuchsia_wlan_base_test.deprecated.dhcp import base_test
 from mobly import asserts, test_runner
 from openwrt_access_point.lib.dhcp_config import DhcpConfig, Lan
 
 
-class Dhcpv4InteropBasicTest(base_test.Dhcpv4InteropFixture):
+class Dhcpv4InteropBasicTest(dhcp_testing.Dhcpv4InteropFixture):
     """DhcpV4 tests which validate basic DHCP client/server interactions."""
 
     def test_basic_dhcp_assignment(self) -> None:

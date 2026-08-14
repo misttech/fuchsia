@@ -45,6 +45,10 @@ wlancfg_tests_for_postsubmit =
 wlancfg_tests_for_fyi = [
   "//src/connectivity/wlan/tests/wlancfg:beacon_loss_test",
   "//src/connectivity/wlan/tests/wlancfg:hidden_networks_test",
+  "//src/connectivity/wlan/tests/wlancfg:dhcpv4_duplicate_address_test",
+  "//src/connectivity/wlan/tests/wlancfg:dhcpv4_interop_basic_test",
+  "//src/connectivity/wlan/tests/wlancfg:dhcpv4_interop_combinatorial_options_test",
+  "//src/connectivity/wlan/tests/wlancfg:dhcpv4_interop_fixture_test",
   "//src/connectivity/wlan/tests/wlancfg:ping_test",
   "//src/connectivity/wlan/tests/wlancfg:policy_scan_test",
   "//src/connectivity/wlan/tests/wlancfg:saved_networks_test",

@@ -5,12 +5,12 @@
 # found in the LICENSE file.
 
 
+import dhcp_testing
 from antlion.controllers.ap_lib import dhcp_config
-from fuchsia_wlan_base_test.deprecated.dhcp import base_test
 from mobly import asserts, signals, test_runner
 
 
-class Dhcpv4InteropFixtureTest(base_test.Dhcpv4InteropFixture):
+class Dhcpv4InteropFixtureTest(dhcp_testing.Dhcpv4InteropFixture):
     """Tests which validate the behavior of the Dhcpv4InteropFixture.
 
     In theory, these are more similar to unit tests than ACTS tests, but
