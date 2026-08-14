@@ -185,7 +185,7 @@ impl<I: BroadcastIpExt, D: Clone + Debug + PartialEq> RoutingTable<I, D> {
         local_device: Option<&'a D>,
         address: I::Addr,
         mut f: impl FnMut(&mut CC, &D) -> Option<R> + 'a,
-    ) -> impl Iterator<Item = (Destination<I::Addr, &D>, R)> + 'a {
+    ) -> impl Iterator<Item = (Destination<I::Addr, &'a D>, R)> + 'a {
         let Self { table } = self;
 
         #[derive(GenericOverIp)]

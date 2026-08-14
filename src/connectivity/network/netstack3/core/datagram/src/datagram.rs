@@ -690,7 +690,7 @@ impl<I: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec> IpOptions<I, D, S
     >(
         &'a self,
         ctx: &CC,
-    ) -> IpOptionsRef<'_, I::OtherVersion, D> {
+    ) -> IpOptionsRef<'a, I::OtherVersion, D> {
         IpOptionsRef { ip_specific: ctx.to_other_socket_options(self), agnostic: &self.common }
     }
 }

@@ -405,7 +405,7 @@ mod testutil {
             &'a self,
             timer: &K,
             range: R,
-        ) -> (BC::Instant, &V) {
+        ) -> (BC::Instant, &'a V) {
             let (time, value) =
                 self.get(timer).unwrap_or_else(|| panic!("timer {timer:?} not present"));
             assert!(range.contains(&time), "timer {timer:?} is at {time:?} not in {range:?}");

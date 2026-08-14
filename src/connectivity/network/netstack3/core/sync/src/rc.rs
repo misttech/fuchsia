@@ -1051,7 +1051,7 @@ mod tests {
 
     #[cfg(feature = "rc-debug-names")]
     #[test]
-    #[should_panic(expected = "core/sync/src/rc.rs")]
+    #[should_panic(expected = "sync/src/rc.rs")]
     fn callers_in_panic() {
         let primary = Primary::new(10);
         let _strong = Primary::clone_strong(&primary);
