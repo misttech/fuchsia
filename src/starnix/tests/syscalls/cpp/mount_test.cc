@@ -297,24 +297,17 @@ TEST_F(MountTest, Ext4ReadOnlySmokeTest) {
   std::string expected_contents;
   EXPECT_TRUE(files::ReadFileToString("data/tests/deps/hello_world.txt", &expected_contents));
 
-  fbl::unique_fd loop_control(open("/dev/loop-control", O_RDWR, 0777));
-  ASSERT_TRUE(loop_control.is_valid());
-
-  int free_loop_device_num(ioctl(loop_control.get(), LOOP_CTL_GET_FREE, nullptr));
-  ASSERT_TRUE(free_loop_device_num >= 0);
-
-  std::string loop_device_path = "/dev/loop" + std::to_string(free_loop_device_num);
-  fbl::unique_fd free_loop_device(open(loop_device_path.c_str(), O_RDONLY, 0644));
-  ASSERT_TRUE(free_loop_device.is_valid());
-
-  fbl::unique_fd ext_image(open("data/tests/deps/simple_ext4.img", O_RDONLY, 0644));
+  fbl::unique_fd ext_image(open("data/tests/deps/simple_ext4.img", O_RDONLY));
   ASSERT_TRUE(ext_image.is_valid());
-
-  ASSERT_SUCCESS(ioctl(free_loop_device.get(), LOOP_SET_FD, ext_image.get()));
+  auto loop_res = test_helper::ScopedLoopDevice::Create(ext_image.get());
+  ASSERT_TRUE(loop_res.is_ok());
+  auto scoped_loop_device = std::move(loop_res.value());
 
   ASSERT_SUCCESS(MakeDir("basic_ext4"));
-  ASSERT_SUCCESS(
-      mount(loop_device_path.c_str(), TestPath("basic_ext4").c_str(), "ext4", MS_RDONLY, nullptr));
+  auto mount_res = test_helper::ScopedMount::Mount(
+      scoped_loop_device.path(), TestPath("basic_ext4"), "ext4", MS_RDONLY, nullptr);
+  ASSERT_TRUE(mount_res.is_ok());
+  auto scoped_mount = std::move(mount_res.value());
 
   std::string observed_contents;
   EXPECT_TRUE(files::ReadFileToString(TestPath("basic_ext4/hello_world.txt"), &observed_contents));
@@ -530,16 +523,6 @@ TEST_F(MountTest, Ext4ReadOnlyInMutableStorageSmokeTest) {
   std::string expected_contents;
   ASSERT_TRUE(files::ReadFileToString("data/tests/deps/hello_world.txt", &expected_contents));
 
-  fbl::unique_fd loop_control(open("/dev/loop-control", O_RDWR, 0777));
-  ASSERT_TRUE(loop_control.is_valid());
-
-  int free_loop_device_num(ioctl(loop_control.get(), LOOP_CTL_GET_FREE, nullptr));
-  ASSERT_TRUE(free_loop_device_num >= 0);
-
-  std::string loop_device_path = "/dev/loop" + std::to_string(free_loop_device_num);
-  fbl::unique_fd free_loop_device(open(loop_device_path.c_str(), O_RDONLY, 0644));
-  ASSERT_TRUE(free_loop_device.is_valid());
-
   // Copy the original ext4 image to a location in mutable storage.
   std::ifstream orig_image("data/tests/deps/simple_ext4.img", std::ios_base::in | std::ios::binary);
   std::string image_in_mut_storage_path =
@@ -556,14 +539,17 @@ TEST_F(MountTest, Ext4ReadOnlyInMutableStorageSmokeTest) {
   orig_image.close();
   image_in_mut_storage.close();
 
-  fbl::unique_fd ext_image(open(image_in_mut_storage_path.c_str(), O_RDONLY, 0644));
+  fbl::unique_fd ext_image(open(image_in_mut_storage_path.c_str(), O_RDONLY));
   ASSERT_TRUE(ext_image.is_valid());
-
-  ASSERT_SUCCESS(ioctl(free_loop_device.get(), LOOP_SET_FD, ext_image.get()));
+  auto loop_res = test_helper::ScopedLoopDevice::Create(ext_image.get());
+  ASSERT_TRUE(loop_res.is_ok());
+  auto scoped_loop_device = std::move(loop_res.value());
 
   ASSERT_SUCCESS(MakeDir("basic_ext4"));
-  ASSERT_SUCCESS(
-      mount(loop_device_path.c_str(), TestPath("basic_ext4").c_str(), "ext4", MS_RDONLY, nullptr));
+  auto mount_res = test_helper::ScopedMount::Mount(
+      scoped_loop_device.path(), TestPath("basic_ext4"), "ext4", MS_RDONLY, nullptr);
+  ASSERT_TRUE(mount_res.is_ok());
+  auto scoped_mount = std::move(mount_res.value());
 
   std::string observed_contents;
   ASSERT_TRUE(files::ReadFileToString(TestPath("basic_ext4/hello_world.txt"), &observed_contents));

@@ -32,6 +32,7 @@
 
 #include <gtest/gtest.h>
 #include <linux/capability.h>
+#include <linux/loop.h>
 
 #include "src/lib/files/file.h"
 #include "src/lib/fxl/strings/split_string.h"
@@ -694,6 +695,50 @@ testing::AssertionResult TestThatAccessSegfaults(void *test_address, AccessType 
   return helper.WaitForChildren();
 }
 
+ScopedLoopDevice::ScopedLoopDevice(fbl::unique_fd dev_fd, std::string device_path)
+    : dev_fd_(std::move(dev_fd)), device_path_(std::move(device_path)) {}
+
+fit::result<int, ScopedLoopDevice> ScopedLoopDevice::Create(int image_fd) {
+  fbl::unique_fd loop_control(open("/dev/loop-control", O_RDWR | O_CLOEXEC));
+  if (!loop_control.is_valid()) {
+    return fit::error(errno);
+  }
+  int num = ioctl(loop_control.get(), LOOP_CTL_GET_FREE, nullptr);
+  if (num < 0) {
+    return fit::error(errno);
+  }
+  std::string device_path = "/dev/loop" + std::to_string(num);
+  int mode = fcntl(image_fd, F_GETFL) & O_ACCMODE;
+  int dev_flags = (mode == O_RDONLY) ? O_RDONLY : O_RDWR;
+  fbl::unique_fd dev_fd(open(device_path.c_str(), dev_flags | O_CLOEXEC));
+  if (!dev_fd.is_valid()) {
+    return fit::error(errno);
+  }
+  if (ioctl(dev_fd.get(), LOOP_SET_FD, image_fd) < 0) {
+    return fit::error(errno);
+  }
+  return fit::ok(ScopedLoopDevice(std::move(dev_fd), std::move(device_path)));
+}
+
+ScopedLoopDevice &ScopedLoopDevice::operator=(ScopedLoopDevice &&other) noexcept {
+  if (this == &other) {
+    return *this;
+  }
+  Detach();
+  dev_fd_ = std::move(other.dev_fd_);
+  device_path_ = std::move(other.device_path_);
+  return *this;
+}
+
+ScopedLoopDevice::~ScopedLoopDevice() { Detach(); }
+
+void ScopedLoopDevice::Detach() {
+  if (dev_fd_.is_valid()) {
+    ioctl(dev_fd_.get(), LOOP_CLR_FD, 0);
+    dev_fd_.reset();
+  }
+}
+
 ScopedMount::ScopedMount(std::string target_path)
     : target_path_(std::move(target_path)), is_mounted_(true) {}
 
@@ -706,6 +751,17 @@ fit::result<int, ScopedMount> ScopedMount::Mount(const std::string &source,
     return fit::error(error);
   }
   return fit::ok(ScopedMount(target));
+}
+
+fit::result<int, ScopedMount> ScopedMount::CreateDirAndMount(const std::string &source,
+                                                             const std::string &target,
+                                                             const std::string &filesystemtype,
+                                                             unsigned long mountflags,
+                                                             const void *data) {
+  if (mkdir(target.c_str(), 0777) != 0 && errno != EEXIST) {
+    return fit::error(errno);
+  }
+  return Mount(source, target, filesystemtype, mountflags, data);
 }
 
 ScopedMount &ScopedMount::operator=(ScopedMount &&other) noexcept {

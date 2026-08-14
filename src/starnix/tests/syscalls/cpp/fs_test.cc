@@ -32,6 +32,7 @@
 #include <string>
 #include <vector>
 
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include <linux/capability.h>
 
@@ -47,10 +48,12 @@ namespace {
 std::vector<std::string> GetEntries(DIR *d) {
   std::vector<std::string> entries;
 
+  errno = 0;
   struct dirent *entry;
   while ((entry = readdir(d)) != nullptr) {
     entries.push_back(entry->d_name);
   }
+  EXPECT_EQ(errno, 0) << "readdir failed: " << strerror(errno);
   return entries;
 }
 
@@ -1606,49 +1609,140 @@ TEST(FsTest, DeepPathLookup) {
   EXPECT_EQ(errno, ENOENT);
 }
 
-TEST(FsTest, Casefold) {
-  if (!test_helper::HasSysAdmin()) {
-    GTEST_SKIP() << "Not running with sysadmin capabilities, skipping.";
+fit::result<int, test_helper::ScopedLoopDevice> CreateLoopDeviceForImage(
+    const std::string &img_path, std::string_view fs_type) {
+  constexpr size_t kDefaultImageSizeBytes = 64 * 1024 * 1024;
+
+  fbl::unique_fd img_fd(open(img_path.c_str(), O_RDWR | O_CREAT | O_TRUNC, 0666));
+  if (!img_fd.is_valid() || ftruncate(img_fd.get(), kDefaultImageSizeBytes) != 0) {
+    return fit::error(errno);
+  }
+  img_fd.reset();
+
+  std::string mkfs_cmd;
+  if (fs_type == "ext4") {
+    mkfs_cmd =
+        "/sbin/mkfs.ext4 -F -O casefold -E encoding=utf8 \"" + img_path + "\" >/dev/null 2>&1";
+  } else if (fs_type == "f2fs") {
+    mkfs_cmd = "/sbin/mkfs.f2fs \"" + img_path + "\" -O casefold -C utf8 >/dev/null 2>&1";
+  } else {
+    return fit::error(EINVAL);
   }
 
-  test_helper::ScopedTempDir test_folder;
-  std::string test_dir = test_folder.path();
+  if (system(mkfs_cmd.c_str()) != 0) {
+    return fit::error(ENOENT);
+  }
 
-  fbl::unique_fd dir_fd(open(test_dir.c_str(), O_RDONLY | O_DIRECTORY));
-  ASSERT_TRUE(dir_fd.is_valid()) << "Failed to open test dir: " << strerror(errno);
+  img_fd = fbl::unique_fd(open(img_path.c_str(), O_RDWR));
+  if (!img_fd.is_valid()) {
+    return fit::error(errno);
+  }
+  return test_helper::ScopedLoopDevice::Create(img_fd.get());
+}
 
+fit::result<int, std::string> CreateCasefoldDir(const std::string &path) {
+  if (mkdir(path.c_str(), 0777) != 0) {
+    return fit::error(errno);
+  }
+  fbl::unique_fd dir_fd(open(path.c_str(), O_RDONLY | O_DIRECTORY));
+  if (!dir_fd.is_valid()) {
+    return fit::error(errno);
+  }
   int flags = 0;
   if (ioctl(dir_fd.get(), FS_IOC_GETFLAGS, &flags) < 0) {
-    GTEST_SKIP() << "FS_IOC_GETFLAGS failed: " << strerror(errno);
+    return fit::error(errno);
   }
-
   flags |= FS_CASEFOLD_FL;
   if (ioctl(dir_fd.get(), FS_IOC_SETFLAGS, &flags) < 0) {
-    if (errno == ENOTTY || errno == EOPNOTSUPP || errno == ENOSYS || errno == EINVAL) {
-      GTEST_SKIP() << "Casefold not supported by filesystem";
+    return fit::error(errno);
+  }
+  return fit::ok(path);
+}
+
+class FsCasefoldTest : public ::testing::TestWithParam<std::string_view> {
+ protected:
+  void SetUp() override {
+    if (!test_helper::HasSysAdmin()) {
+      GTEST_SKIP() << "Not running with sysadmin capabilities";
     }
-    FAIL() << "FS_IOC_SETFLAGS failed: " << strerror(errno);
+
+    std::string_view fs_type = GetParam();
+    std::string base_dir;
+
+    if (fs_type == "fxfs") {
+      if (!test_helper::IsStarnix()) {
+        GTEST_SKIP() << "Fxfs is only available on Starnix";
+      }
+      const char *dir = getenv("MUTABLE_STORAGE");
+      if (dir == nullptr) {
+        GTEST_SKIP() << "MUTABLE_STORAGE environment variable is not set";
+      }
+      temp_dir_.emplace(dir);
+      base_dir = temp_dir_->path();
+    } else {
+      temp_dir_.emplace();
+      base_dir = temp_dir_->path() + "/mount";
+
+      std::string source = "none";
+      if (fs_type == "ext4" || fs_type == "f2fs") {
+        auto loop = CreateLoopDeviceForImage(temp_dir_->path() + "/fs.img", fs_type);
+        if (loop.is_error()) {
+          GTEST_SKIP() << "mkfs." << fs_type << " not available";
+        }
+        loop_device_ = std::move(loop.value());
+        source = loop_device_->path();
+      }
+
+      auto mount =
+          test_helper::ScopedMount::CreateDirAndMount(source, base_dir, std::string(fs_type));
+      ASSERT_TRUE(mount.is_ok()) << "Mount " << fs_type
+                                 << " failed: " << strerror(mount.error_value());
+      scoped_mount_ = std::move(mount.value());
+    }
+
+    auto casefold_dir = CreateCasefoldDir(base_dir + "/casefold_dir");
+    if (casefold_dir.is_error()) {
+      int err = casefold_dir.error_value();
+      if (err == ENOTTY || err == EOPNOTSUPP || err == ENOSYS || err == EINVAL) {
+        GTEST_SKIP() << "Casefold not supported by filesystem";
+      }
+      FAIL() << "Failed to enable casefold: " << strerror(err);
+    }
+    casefold_dir_ = std::move(casefold_dir.value());
   }
 
-  // Verify casefold flag is set
-  int new_flags = 0;
-  ASSERT_EQ(ioctl(dir_fd.get(), FS_IOC_GETFLAGS, &new_flags), 0);
-  ASSERT_TRUE(new_flags & FS_CASEFOLD_FL);
+  const std::string &casefold_dir() const { return casefold_dir_; }
 
-  std::string foo_path = test_dir + "/Foo";
+ private:
+  std::optional<test_helper::ScopedTempDir> temp_dir_;
+  std::optional<test_helper::ScopedLoopDevice> loop_device_;
+  std::optional<test_helper::ScopedMount> scoped_mount_;
+  std::string casefold_dir_;
+};
 
-  // Create "Foo"
-  fbl::unique_fd file_fd(open(foo_path.c_str(), O_WRONLY | O_CREAT | O_EXCL, 0666));
-  ASSERT_TRUE(file_fd.is_valid()) << "Failed to create Foo: " << strerror(errno);
-  file_fd.reset();
+INSTANTIATE_TEST_SUITE_P(FsCasefold, FsCasefoldTest,
+                         ::testing::Values("fxfs", "tmpfs", "ext4", "f2fs"),
+                         [](const testing::TestParamInfo<std::string_view> &info) {
+                           return std::string(info.param);
+                         });
 
-  // Verify we can access it via "foo" and "FOO"
+TEST_P(FsCasefoldTest, CasefoldDirectoryAccessAndReaddir) {
+  std::string test_dir = casefold_dir();
+
+  std::string foo_mixed = test_dir + "/Foo";
   std::string foo_lower = test_dir + "/foo";
   std::string foo_upper = test_dir + "/FOO";
-  EXPECT_EQ(access(foo_lower.c_str(), F_OK), 0) << "Failed to access foo";
-  EXPECT_EQ(access(foo_upper.c_str(), F_OK), 0) << "Failed to access FOO";
 
-  // Try to create "foo" with O_EXCL, should fail with EEXIST
+  // Create "Foo"
+  fbl::unique_fd file_fd(open(foo_mixed.c_str(), O_WRONLY | O_CREAT | O_EXCL, 0666));
+  ASSERT_THAT(file_fd.get(), SyscallSucceeds());
+  file_fd.reset();
+
+  // Verify access via "foo" and "FOO"
+  EXPECT_THAT(access(foo_lower.c_str(), F_OK), SyscallSucceeds());
+  EXPECT_THAT(access(foo_upper.c_str(), F_OK), SyscallSucceeds());
+
+  // Creating "foo" with O_EXCL should fail with EEXIST
   fbl::unique_fd file_fd2(open(foo_lower.c_str(), O_WRONLY | O_CREAT | O_EXCL, 0666));
   EXPECT_FALSE(file_fd2.is_valid());
   EXPECT_EQ(errno, EEXIST);
@@ -1661,25 +1755,113 @@ TEST(FsTest, Casefold) {
 
   std::sort(entries.begin(), entries.end());
   EXPECT_EQ(entries, std::vector<std::string>({".", "..", "Foo"}));
+}
 
-  // Rename "Foo" to "FOO" (case-only rename)
-  EXPECT_EQ(rename(foo_path.c_str(), foo_upper.c_str()), 0) << "Rename failed: " << strerror(errno);
+TEST_P(FsCasefoldTest, OpenCaseVariantTargetAfterUnlink) {
+  std::string test_dir = casefold_dir();
 
-  // Readdir should now return "FOO"
-  dir = opendir(test_dir.c_str());
+  std::string foo_mixed = test_dir + "/Foo";
+  std::string foo_lower = test_dir + "/foo";
+  std::string foo_upper = test_dir + "/FOO";
+
+  fbl::unique_fd fd_create(open(foo_mixed.c_str(), O_WRONLY | O_CREAT | O_EXCL, 0666));
+  ASSERT_THAT(fd_create.get(), SyscallSucceeds());
+  ASSERT_THAT(write(fd_create.get(), "hello", 5), SyscallSucceedsWithValue(5));
+  fd_create.reset();
+
+  fbl::unique_fd fd1(open(foo_lower.c_str(), O_RDWR));
+  ASSERT_THAT(fd1.get(), SyscallSucceeds());
+  fbl::unique_fd fd2(open(foo_upper.c_str(), O_RDWR));
+  ASSERT_THAT(fd2.get(), SyscallSucceeds());
+
+  ASSERT_THAT(unlink(foo_lower.c_str()), SyscallSucceeds());
+  fd1.reset();
+
+  // After unlinking "foo", attempting to open any case variant must fail with ENOENT.
+  // In an incorrect/case-insensitive-unaware dentry cache, "FOO" or "Foo" would remain cached
+  // and erroneously succeed.
+  EXPECT_THAT(open(foo_upper.c_str(), O_RDONLY), SyscallFailsWithErrno(ENOENT));
+  EXPECT_THAT(open(foo_mixed.c_str(), O_RDONLY), SyscallFailsWithErrno(ENOENT));
+  EXPECT_THAT(access(foo_upper.c_str(), F_OK), SyscallFailsWithErrno(ENOENT));
+
+  char buf[5];
+  ASSERT_THAT(lseek(fd2.get(), 0, SEEK_SET), SyscallSucceedsWithValue(0));
+  ASSERT_THAT(read(fd2.get(), buf, 5), SyscallSucceedsWithValue(5));
+  EXPECT_EQ(std::string(buf, 5), "hello");
+
+  fbl::unique_fd fd_new(open(foo_lower.c_str(), O_WRONLY | O_CREAT | O_EXCL, 0666));
+  ASSERT_THAT(fd_new.get(), SyscallSucceeds());
+  ASSERT_THAT(write(fd_new.get(), "world", 5), SyscallSucceedsWithValue(5));
+  fd_new.reset();
+
+  // The existing open fd2 should still see "hello".
+  ASSERT_THAT(lseek(fd2.get(), 0, SEEK_SET), SyscallSucceedsWithValue(0));
+  ASSERT_THAT(read(fd2.get(), buf, 5), SyscallSucceedsWithValue(5));
+  EXPECT_EQ(std::string(buf, 5), "hello");
+
+  // Opening "FOO" now should see the newly created file "world".
+  fbl::unique_fd fd_reopen(open(foo_upper.c_str(), O_RDONLY));
+  ASSERT_THAT(fd_reopen.get(), SyscallSucceeds());
+  ASSERT_THAT(read(fd_reopen.get(), buf, 5), SyscallSucceedsWithValue(5));
+  EXPECT_EQ(std::string(buf, 5), "world");
+}
+
+TEST_P(FsCasefoldTest, CaseOnlyRenameUpdatesOnDiskCasing) {
+  std::string test_dir = casefold_dir();
+
+  std::string apple_lower = test_dir + "/apple";
+  std::string apple_upper = test_dir + "/APPLE";
+  std::string banana = test_dir + "/banana";
+
+  fbl::unique_fd fd_create(open(apple_lower.c_str(), O_WRONLY | O_CREAT | O_EXCL, 0666));
+  ASSERT_THAT(fd_create.get(), SyscallSucceeds());
+  ASSERT_THAT(write(fd_create.get(), "fruit", 5), SyscallSucceedsWithValue(5));
+  fd_create.reset();
+
+  // Case-only rename
+  ASSERT_THAT(rename(apple_lower.c_str(), apple_upper.c_str()), SyscallSucceeds());
+
+  // Check readdir output to verify updated casing on disk
+  DIR *dir = opendir(test_dir.c_str());
   ASSERT_NE(dir, nullptr);
-  entries = GetEntries(dir);
+  std::vector<std::string> entries = GetEntries(dir);
   closedir(dir);
 
   std::sort(entries.begin(), entries.end());
-  EXPECT_EQ(entries, std::vector<std::string>({".", "..", "FOO"}));
+  // Linux ext4 casefold does not guarantee case-only rename updates directory entries.
+  EXPECT_THAT(entries, testing::AnyOf(testing::ElementsAre(".", "..", "apple"),
+                                      testing::ElementsAre(".", "..", "APPLE")));
 
-  // Unlink "foo" (different case) should succeed and remove "FOO"
-  EXPECT_EQ(unlink(foo_lower.c_str()), 0) << "Unlink failed: " << strerror(errno);
+  // Access using lowercase to populate/exercise cache with "apple"
+  EXPECT_THAT(access(apple_lower.c_str(), F_OK), SyscallSucceeds());
 
-  // Verify it is gone
-  EXPECT_EQ(access(foo_upper.c_str(), F_OK), -1);
-  EXPECT_EQ(errno, ENOENT);
+  // Rename "APPLE" -> "banana"
+  ASSERT_THAT(rename(apple_upper.c_str(), banana.c_str()), SyscallSucceeds());
+
+  // "apple" and "APPLE" must no longer exist in cache or on disk
+  EXPECT_THAT(open(apple_lower.c_str(), O_RDONLY), SyscallFailsWithErrno(ENOENT));
+  EXPECT_THAT(open(apple_upper.c_str(), O_RDONLY), SyscallFailsWithErrno(ENOENT));
+  EXPECT_THAT(access(apple_lower.c_str(), F_OK), SyscallFailsWithErrno(ENOENT));
+
+  // "banana" should be accessible and contain the original data
+  fbl::unique_fd fd_banana(open(banana.c_str(), O_RDONLY));
+  ASSERT_THAT(fd_banana.get(), SyscallSucceeds());
+  char buf[5];
+  ASSERT_THAT(read(fd_banana.get(), buf, 5), SyscallSucceedsWithValue(5));
+  EXPECT_EQ(std::string(buf, 5), "fruit");
+}
+
+TEST_P(FsCasefoldTest, NonUtf8OpaqueFallback) {
+  std::string test_dir = casefold_dir();
+
+  // Non-UTF-8 byte sequence
+  std::string non_utf8_name = test_dir + "/\xFF\xFE\xFD";
+
+  fbl::unique_fd fd(open(non_utf8_name.c_str(), O_WRONLY | O_CREAT | O_EXCL, 0666));
+  ASSERT_THAT(fd.get(), SyscallSucceeds());
+  fd.reset();
+
+  EXPECT_THAT(access(non_utf8_name.c_str(), F_OK), SyscallSucceeds());
 }
 
 }  // namespace

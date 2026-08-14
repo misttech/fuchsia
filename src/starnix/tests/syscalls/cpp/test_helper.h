@@ -427,7 +427,13 @@ class ScopedMount {
  public:
   static fit::result<int, ScopedMount> Mount(const std::string &source, const std::string &target,
                                              const std::string &filesystemtype,
-                                             unsigned long mountflags, const void *data);
+                                             unsigned long mountflags = 0,
+                                             const void *data = nullptr);
+  static fit::result<int, ScopedMount> CreateDirAndMount(const std::string &source,
+                                                         const std::string &target,
+                                                         const std::string &filesystemtype,
+                                                         unsigned long mountflags = 0,
+                                                         const void *data = nullptr);
   ScopedMount() = default;
   ScopedMount(const ScopedMount &) = delete;
   ScopedMount &operator=(const ScopedMount &) = delete;
@@ -529,6 +535,27 @@ enum AccessType { Read, Write };
 
 // Checks whether the provided access segfaults.
 testing::AssertionResult TestThatAccessSegfaults(void *test_address, AccessType type);
+
+// An RAII class that handles loop device allocation and attachment.
+// Automatically detaches the loop device (LOOP_CLR_FD) on destruction.
+class ScopedLoopDevice {
+ public:
+  static fit::result<int, ScopedLoopDevice> Create(int image_fd);
+
+  ScopedLoopDevice() = default;
+  ScopedLoopDevice(ScopedLoopDevice &&other) = default;
+  ScopedLoopDevice &operator=(ScopedLoopDevice &&other) noexcept;
+  ~ScopedLoopDevice();
+
+  const std::string &path() const { return device_path_; }
+
+ private:
+  ScopedLoopDevice(fbl::unique_fd dev_fd, std::string device_path);
+  void Detach();
+
+  fbl::unique_fd dev_fd_;
+  std::string device_path_;
+};
 
 // A RAII container for a pair of file descriptors representing a pipe.
 class ScopedPipe {
