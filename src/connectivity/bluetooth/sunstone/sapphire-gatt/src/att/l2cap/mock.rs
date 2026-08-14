@@ -310,8 +310,6 @@ pub fn setup_mock_channel() -> (L2CapChannel<MockTx, MockRx>, MockTx, MockRx) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sapphire_async::executor::BoundedExecutor;
-    use sapphire_async::testing::TestExecutor;
 
     #[test]
     fn test_mock_l2cap_rendezvous_claim_first() {

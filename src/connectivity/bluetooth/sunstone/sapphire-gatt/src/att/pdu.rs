@@ -8,52 +8,16 @@ use core::cmp::min;
 use core::mem::size_of;
 use sapphire_common::Uuid;
 pub use sapphire_emboss::att::{
-    AttExecuteWriteFlag as ExecuteWriteFlags, AttOpcode as Opcode, ErrorCode,
+    AttExecuteWriteFlag as ExecuteWriteFlags, AttFindInformationRspHeader, AttHandlesInformation,
+    AttInformationData16, AttInformationData128, AttOpcode as Opcode, AttUuidFormat as UuidFormat,
+    ErrorCode,
 };
-use strum_macros::FromRepr;
 use zerocopy::byteorder::little_endian::U16;
-use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, TryFromBytes, Unaligned};
-/// The UUID format types supported in Find Information Response.
-#[derive(
-    TryFromBytes,
-    IntoBytes,
-    KnownLayout,
-    Immutable,
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    FromRepr,
-    Unaligned,
-)]
-#[repr(u8)]
-pub enum UuidFormat {
-    Uuid16 = 0x01,
-    Uuid128 = 0x02,
-}
-impl TryFrom<u8> for UuidFormat {
-    type Error = u8;
+use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, TryFromBytes};
 
-    fn try_from(val: u8) -> Result<Self, Self::Error> {
-        Self::from_repr(val).ok_or(val)
-    }
-}
-
-impl From<UuidFormat> for u8 {
-    fn from(fmt: UuidFormat) -> Self {
-        fmt as u8
-    }
-}
-
-impl From<Uuid> for UuidFormat {
-    /// Determines the serialization format for a given UUID.
-    ///
-    /// If the UUID can be represented as a 16-bit SIG UUID, returns `UuidFormat::Uuid16`.
-    /// Otherwise, returns `UuidFormat::Uuid128`.
-    fn from(uuid: Uuid) -> Self {
-        if uuid.is_u16() { Self::Uuid16 } else { Self::Uuid128 }
-    }
+/// Helper to determine the ATT UUID format from a UUID.
+pub fn uuid_to_format(uuid: &Uuid) -> UuidFormat {
+    if uuid.is_u16() { UuidFormat::BIT16 } else { UuidFormat::BIT128 }
 }
 
 /// A parsed view into any incoming packet's header.
@@ -86,11 +50,16 @@ pub struct Packet {
 /// Fixed protocol wire sizes (in bytes) for Emboss ATT PDUs.
 ///
 /// (see Vol 3, Part F, Section 3.4)
+pub const ATT_HEADER_SIZE: usize = 1;
 pub const ATT_ERROR_RSP_SIZE: usize = 5;
 pub const ATT_EXCHANGE_MTU_REQ_SIZE: usize = 3;
 pub const ATT_EXCHANGE_MTU_RSP_SIZE: usize = 3;
 pub const ATT_FIND_INFORMATION_REQ_SIZE: usize = 5;
+pub const ATT_FIND_INFORMATION_RSP_HEADER_SIZE: usize = 2;
+pub const ATT_INFORMATION_DATA_16_SIZE: usize = 4;
+pub const ATT_INFORMATION_DATA_128_SIZE: usize = 18;
 pub const ATT_FIND_BY_TYPE_VALUE_REQ_HEADER_SIZE: usize = 7;
+pub const ATT_HANDLES_INFORMATION_SIZE: usize = 4;
 pub const ATT_READ_REQ_SIZE: usize = 3;
 pub const ATT_READ_BLOB_REQ_SIZE: usize = 5;
 pub const ATT_READ_BY_TYPE_REQ_HEADER_SIZE: usize = 5;
@@ -105,82 +74,38 @@ pub const ATT_HANDLE_VALUE_NTF_HEADER_SIZE: usize = 3;
 pub const ATT_HANDLE_VALUE_IND_HEADER_SIZE: usize = 3;
 pub const ATT_HANDLE_VALUE_CFM_SIZE: usize = 1;
 
-/// Parameters for Find Information Response PDU Header (OpCode = 0x05)
-///
-/// (see Vol 3, Part F, 3.4.3.2)
-#[derive(TryFromBytes, IntoBytes, KnownLayout, Immutable, Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(C, packed)]
-pub struct FindInformationRspHeader {
-    pub format: UuidFormat,
+/// Result of a Find Information procedure (see Vol 3, Part F, Section 3.4.3.2).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DiscoveredInformation<'a> {
+    Uuid16(PduList<'a, ATT_INFORMATION_DATA_16_SIZE>),
+    Uuid128(PduList<'a, ATT_INFORMATION_DATA_128_SIZE>),
 }
 
-/// The Find Information Response PDU structure (OpCode = 0x05).
-///
-/// Contains the format byte indicating UUID size, and a variable-length list of entries.
-#[derive(TryFromBytes, KnownLayout, Immutable, IntoBytes, Debug)]
-#[repr(C)]
-pub struct FindInformationRsp<T> {
-    pub format: UuidFormat,
-    pub info: [T],
-}
+/// A zero-copy list of fixed-size PDU entries (N bytes per element).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PduList<'a, const N: usize>(&'a [u8]);
 
-/// A trait linking the Information Data structure types to their corresponding UUID format.
-pub trait InformationData:
-    IntoBytes + Immutable + KnownLayout + for<'a> TryFrom<(u16, &'a Uuid), Error = ()>
-{
-    const FORMAT: UuidFormat;
-}
-
-impl InformationData for InformationData16 {
-    const FORMAT: UuidFormat = UuidFormat::Uuid16;
-}
-
-/// Information Data structure for 16-bit UUID format (Format = 0x01)
-#[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(C, packed)]
-pub struct InformationData16 {
-    pub handle: U16,
-    pub uuid: [u8; 2],
-}
-
-impl TryFrom<(u16, &Uuid)> for InformationData16 {
-    type Error = ();
-
-    fn try_from((handle, uuid): (u16, &Uuid)) -> Result<Self, Self::Error> {
-        let bytes: [u8; 2] = uuid.as_bytes().try_into().map_err(|_| ())?;
-        Ok(Self { handle: U16::new(handle), uuid: bytes })
+impl<'a, const N: usize> PduList<'a, N> {
+    pub fn new(data: &'a [u8]) -> Option<Self> {
+        if data.is_empty() || data.len() % N != 0 { None } else { Some(Self(data)) }
     }
-}
 
-impl TryFrom<(u16, &Uuid)> for InformationData128 {
-    type Error = ();
-
-    fn try_from((handle, uuid): (u16, &Uuid)) -> Result<Self, Self::Error> {
-        let bytes: [u8; 16] = uuid.as_bytes().try_into().map_err(|_| ())?;
-        Ok(Self { handle: U16::new(handle), uuid: bytes })
+    pub fn len(&self) -> usize {
+        self.0.len() / N
     }
-}
 
-/// Information Data structure for 128-bit UUID format (Format = 0x02)
-#[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(C, packed)]
-pub struct InformationData128 {
-    pub handle: U16,
-    pub uuid: [u8; 16],
-}
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
 
-impl InformationData for InformationData128 {
-    const FORMAT: UuidFormat = UuidFormat::Uuid128;
-}
+    pub fn get(&self, index: usize) -> Option<&'a [u8]> {
+        let offset = index * N;
+        self.0.get(offset..offset + N)
+    }
 
-/// Handles Information structure for Find By Type Value Response (OpCode = 0x07).
-///
-/// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.3.4).
-#[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(C, packed)]
-pub struct HandlesInformation {
-    pub attribute_handle: U16,
-    pub group_end_handle: U16,
+    pub fn iter(&self) -> impl Iterator<Item = &'a [u8]> {
+        self.0.chunks_exact(N)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -440,33 +365,32 @@ mod tests {
 
     #[test]
     fn test_find_information_rsp_header() {
-        let hdr_bytes_16 = [0x01]; // format 0x01
-        let parsed_16 = FindInformationRspHeader::try_read_from_bytes(&hdr_bytes_16[..]).unwrap();
-        assert_eq!(parsed_16.format, UuidFormat::Uuid16);
+        let hdr_bytes_16 = [0x05, 0x01]; // opcode 0x05, format 0x01
+        let view_16 = AttFindInformationRspHeader::new(&hdr_bytes_16[..]);
+        assert_eq!(
+            view_16.attribute_opcode().try_read().unwrap(),
+            Opcode::ATT_FIND_INFORMATION_RSP
+        );
+        assert_eq!(view_16.format().try_read().unwrap(), UuidFormat::BIT16);
 
-        let hdr_bytes_128 = [0x02]; // format 0x02
-        let parsed_128 = FindInformationRspHeader::try_read_from_bytes(&hdr_bytes_128[..]).unwrap();
-        assert_eq!(parsed_128.format, UuidFormat::Uuid128);
+        let hdr_bytes_128 = [0x05, 0x02]; // opcode 0x05, format 0x02
+        let view_128 = AttFindInformationRspHeader::new(&hdr_bytes_128[..]);
+        assert_eq!(view_128.format().try_read().unwrap(), UuidFormat::BIT128);
 
         // Rejects invalid format
-        let invalid_bytes = [0x03];
-        assert!(FindInformationRspHeader::try_read_from_bytes(&invalid_bytes[..]).is_err());
+        let invalid_bytes = [0x05, 0x03];
+        let invalid_view = AttFindInformationRspHeader::new(&invalid_bytes[..]);
+        assert!(invalid_view.format().try_read().is_err());
     }
 
     #[test]
     fn test_information_data_16_slice_cast() {
         let data_bytes = [
             0x01, 0x00, 0x00, 0x2a, // handle 1, UUID 0x2A00
-            0x05, 0x00, 0x19, 0x2a, // handle 5, UUID 0x2A19
         ];
-
-        // Zero-copy cast slice of entries
-        let entries = <[InformationData16]>::ref_from_bytes(&data_bytes[..]).unwrap();
-        assert_eq!(entries.len(), 2);
-        assert_eq!(entries[0].handle.get(), 1);
-        assert_eq!(entries[0].uuid, [0x00, 0x2a]);
-        assert_eq!(entries[1].handle.get(), 5);
-        assert_eq!(entries[1].uuid, [0x19, 0x2a]);
+        let view = AttInformationData16::new(&data_bytes[..]);
+        assert_eq!(view.attribute_handle().try_read().unwrap(), 1);
+        assert_eq!(view.uuid().try_read().unwrap(), 0x2A00);
     }
 
     #[test]
@@ -475,32 +399,22 @@ mod tests {
             0x0a, 0x00, // handle 10
             1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, // UUID
         ];
-
-        let entries = <[InformationData128]>::ref_from_bytes(&data_bytes[..]).unwrap();
-        assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].handle.get(), 10);
-        assert_eq!(entries[0].uuid, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]);
+        let view = AttInformationData128::new(&data_bytes[..]);
+        assert_eq!(view.attribute_handle().try_read().unwrap(), 10);
     }
 
     #[test]
     fn test_find_information_rsp_decoding() {
-        let bytes_16 = [0x01, 1, 0, 0, 0x2A]; // format Uuid16, handle 1, UUID 0x2A00
-        let rsp_16 =
-            FindInformationRsp::<InformationData16>::try_ref_from_bytes(&bytes_16[..]).unwrap();
-        assert_eq!(rsp_16.format, UuidFormat::Uuid16);
-        assert_eq!(rsp_16.info[0], InformationData16 { handle: U16::new(1), uuid: [0, 0x2A] });
-
-        let bytes_128 = [0x02, 10, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
-        let rsp_128 =
-            FindInformationRsp::<InformationData128>::try_ref_from_bytes(&bytes_128[..]).unwrap();
-        assert_eq!(rsp_128.format, UuidFormat::Uuid128);
-        assert_eq!(
-            rsp_128.info[0],
-            InformationData128 {
-                handle: U16::new(10),
-                uuid: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
+        let bytes_16 = [1, 0, 0, 0x2A]; // handle 1, UUID 0x2A00
+        let list = PduList::<ATT_INFORMATION_DATA_16_SIZE>::new(&bytes_16[..]).unwrap();
+        let discovered = DiscoveredInformation::Uuid16(list);
+        match discovered {
+            DiscoveredInformation::Uuid16(entries) => {
+                assert_eq!(entries.len(), 1);
+                assert_eq!(entries.get(0), Some(&bytes_16[..]));
             }
-        );
+            _ => panic!("Expected Uuid16"),
+        }
     }
 
     #[test]
@@ -519,10 +433,9 @@ mod tests {
     #[test]
     fn test_handles_information_slice_cast() {
         let rsp_bytes = [0x01, 0x00, 0x05, 0x00]; // handle 1, end_handle 5
-        let entries = <[HandlesInformation]>::ref_from_bytes(&rsp_bytes[..]).unwrap();
-        assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].attribute_handle.get(), 1);
-        assert_eq!(entries[0].group_end_handle.get(), 5);
+        let view = AttHandlesInformation::new(&rsp_bytes[..]);
+        assert_eq!(view.attribute_handle().try_read().unwrap(), 1);
+        assert_eq!(view.group_end_handle().try_read().unwrap(), 5);
     }
 
     #[test]

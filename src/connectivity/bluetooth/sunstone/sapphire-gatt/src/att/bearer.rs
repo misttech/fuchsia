@@ -280,9 +280,6 @@ impl<Rx: L2CapChannelRx> AttReceiver for BearerRx<Rx> {
 mod tests {
     use super::*;
     use crate::att::l2cap::mock::setup_mock_channel;
-    use crate::att::l2cap::{L2CapChannelRx, L2CapChannelTx};
-    use crate::att::pdu::Opcode;
-    use core::mem::MaybeUninit;
     use sapphire_async::executor::BoundedExecutor;
     use sapphire_async::testing::TestExecutor;
 

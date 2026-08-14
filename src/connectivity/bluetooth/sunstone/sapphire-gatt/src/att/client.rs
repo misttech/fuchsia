@@ -11,19 +11,20 @@ use crate::att::l2cap::{L2CapChannelRx, L2CapChannelTx};
 use crate::att::pdu::{
     ATT_ERROR_RSP_SIZE, ATT_EXCHANGE_MTU_REQ_SIZE, ATT_EXCHANGE_MTU_RSP_SIZE,
     ATT_EXECUTE_WRITE_REQ_SIZE, ATT_FIND_BY_TYPE_VALUE_REQ_HEADER_SIZE,
-    ATT_FIND_INFORMATION_REQ_SIZE, ATT_HANDLE_VALUE_CFM_SIZE, ATT_PREPARE_WRITE_HEADER_SIZE,
-    ATT_READ_BLOB_REQ_SIZE, ATT_READ_BY_GROUP_TYPE_REQ_HEADER_SIZE,
-    ATT_READ_BY_TYPE_REQ_HEADER_SIZE, ATT_READ_REQ_SIZE, ATT_WRITE_CMD_HEADER_SIZE,
-    ATT_WRITE_REQ_HEADER_SIZE, DynamicPacketBuilder, ErrorCode, ExecuteWriteFlags,
-    FindInformationRsp, HandlesInformation, InformationData16, InformationData128, Opcode, Packet,
-    ReadByGroupTypeRsp, ReadByGroupTypeRspEntryHeader, ReadByTypeRsp, UuidFormat,
+    ATT_FIND_INFORMATION_REQ_SIZE, ATT_FIND_INFORMATION_RSP_HEADER_SIZE, ATT_HANDLE_VALUE_CFM_SIZE,
+    ATT_HANDLES_INFORMATION_SIZE, ATT_PREPARE_WRITE_HEADER_SIZE, ATT_READ_BLOB_REQ_SIZE,
+    ATT_READ_BY_GROUP_TYPE_REQ_HEADER_SIZE, ATT_READ_BY_TYPE_REQ_HEADER_SIZE, ATT_READ_REQ_SIZE,
+    ATT_WRITE_CMD_HEADER_SIZE, ATT_WRITE_REQ_HEADER_SIZE, DynamicPacketBuilder, ErrorCode,
+    ExecuteWriteFlags, Opcode, Packet, PduList, ReadByGroupTypeRsp, ReadByGroupTypeRspEntryHeader,
+    ReadByTypeRsp, UuidFormat,
 };
 use crate::att::router::{BearerRouter, BearerRxHandle, RouteFilter};
 use sapphire_emboss::att::{
     AttErrorRsp, AttExchangeMtuReqMut, AttExchangeMtuRsp, AttExecuteWriteReqMut,
-    AttFindByTypeValueReqHeaderMut, AttFindInformationReqMut, AttHeader, AttHeaderMut,
-    AttPrepareWriteHeaderMut, AttReadBlobReqMut, AttReadByGroupTypeReqHeaderMut,
-    AttReadByTypeReqHeaderMut, AttReadReqMut, AttWriteCmdMut,
+    AttFindByTypeValueReqHeaderMut, AttFindInformationReqMut, AttFindInformationRspHeader,
+    AttHandlesInformation, AttHeader, AttHeaderMut, AttInformationData16, AttPrepareWriteHeaderMut,
+    AttReadBlobReqMut, AttReadByGroupTypeReqHeaderMut, AttReadByTypeReqHeaderMut, AttReadReqMut,
+    AttWriteCmdMut,
 };
 
 use core::cmp::{max, min};
@@ -32,7 +33,9 @@ use sapphire_common::Uuid;
 use sapphire_sync::mutex::raw::RawMutex;
 use thiserror::Error;
 use zerocopy::byteorder::little_endian::U16;
-use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, TryFromBytes};
+use zerocopy::{Immutable, IntoBytes, KnownLayout, TryFromBytes};
+
+pub use crate::att::pdu::DiscoveredInformation;
 
 #[derive(Error, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ClientError {
@@ -44,12 +47,6 @@ pub enum ClientError {
     ErrorResponse(ErrorCode),
     #[error("Invalid incoming data from server")]
     InvalidIncomingData,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum DiscoveredInformation<'a> {
-    Uuid16(&'a [InformationData16]),
-    Uuid128(&'a [InformationData128]),
 }
 
 /// A single handle-value pair returned by a Read By Type Response.
@@ -387,28 +384,22 @@ where
             )
             .await?;
 
-        // Parse the UUID format byte from the response header.
-        if rx_packet.data.is_empty() {
+        if rx_packet.as_bytes().len() < ATT_FIND_INFORMATION_RSP_HEADER_SIZE {
             return Err(ClientError::InvalidIncomingData);
         }
-        let format_byte = rx_packet.data[0];
+        let header_view = AttFindInformationRspHeader::new(rx_packet.as_bytes());
         let format =
-            UuidFormat::try_from(format_byte).map_err(|_| ClientError::InvalidIncomingData)?;
+            header_view.format().try_read().map_err(|_| ClientError::InvalidIncomingData)?;
+        let data_list = &rx_packet.data[1..];
 
         match format {
-            UuidFormat::Uuid16 => {
-                let rsp = FindInformationRsp::<InformationData16>::try_ref_from_bytes(
-                    &rx_packet.data[..],
-                )
-                .map_err(|_| ClientError::InvalidIncomingData)?;
-                Ok(DiscoveredInformation::Uuid16(&rsp.info))
+            UuidFormat::BIT16 => {
+                let list = PduList::new(data_list).ok_or(ClientError::InvalidIncomingData)?;
+                Ok(DiscoveredInformation::Uuid16(list))
             }
-            UuidFormat::Uuid128 => {
-                let rsp = FindInformationRsp::<InformationData128>::try_ref_from_bytes(
-                    &rx_packet.data[..],
-                )
-                .map_err(|_| ClientError::InvalidIncomingData)?;
-                Ok(DiscoveredInformation::Uuid128(&rsp.info))
+            UuidFormat::BIT128 => {
+                let list = PduList::new(data_list).ok_or(ClientError::InvalidIncomingData)?;
+                Ok(DiscoveredInformation::Uuid128(list))
             }
         }
     }
@@ -425,7 +416,7 @@ where
         attribute_type: u16, // 16-bit UUID only
         attribute_value: &[u8],
         rx_buf: &'a mut [MaybeUninit<u8>],
-    ) -> Result<&'a [HandlesInformation], ClientError> {
+    ) -> Result<PduList<'a, ATT_HANDLES_INFORMATION_SIZE>, ClientError> {
         let total_size = ATT_FIND_BY_TYPE_VALUE_REQ_HEADER_SIZE + attribute_value.len();
         assert!(
             total_size <= self.effective_mtu(),
@@ -453,9 +444,7 @@ where
             )
             .await?;
 
-        let entries = <[HandlesInformation]>::ref_from_bytes(&rx_packet.data[..])
-            .map_err(|_| ClientError::InvalidIncomingData)?;
-        Ok(entries)
+        PduList::new(&rx_packet.data).ok_or(ClientError::InvalidIncomingData)
     }
 
     /// Sends a Read Request and awaits a Read Response.
@@ -849,18 +838,14 @@ mod tests {
     use super::*;
     use crate::att::bearer::BearerRx;
     use crate::att::l2cap::mock::setup_mock_channel;
-    use crate::att::pdu::{
-        ATT_ERROR_RSP_SIZE, ATT_EXCHANGE_MTU_RSP_SIZE, ATT_EXECUTE_WRITE_RSP_SIZE,
-        ATT_FIND_BY_TYPE_VALUE_REQ_HEADER_SIZE, ATT_HANDLE_VALUE_IND_HEADER_SIZE,
-        ATT_PREPARE_WRITE_HEADER_SIZE, DynamicPacketBuilder, Header,
-    };
+    use crate::att::pdu::{ATT_EXECUTE_WRITE_RSP_SIZE, ATT_HANDLE_VALUE_IND_HEADER_SIZE, Header};
     use sapphire_async::executor::BoundedExecutor;
     use sapphire_async::testing::TestExecutor;
     use sapphire_emboss::att::{
         AttErrorRspMut, AttExchangeMtuReq, AttExchangeMtuRspMut, AttExecuteWriteReq,
-        AttFindByTypeValueReqHeader, AttFindInformationReq, AttHandleValueIndHeaderMut,
-        AttHeaderMut, AttPrepareWriteHeader, AttPrepareWriteHeaderMut, AttReadBlobReq, AttReadReq,
-        AttWriteCmd,
+        AttFindByTypeValueReqHeader, AttFindInformationReq, AttFindInformationRspHeaderMut,
+        AttHandleValueIndHeaderMut, AttHandlesInformationMut, AttInformationData16Mut,
+        AttPrepareWriteHeader, AttReadBlobReq, AttReadReq, AttWriteCmd,
     };
 
     const CLIENT_PREFERRED_MTU: u16 = 512;
@@ -1044,19 +1029,19 @@ mod tests {
                 // Handle 1: UUID 0x2A00
                 // Handle 2: UUID 0x2A24
                 let mut tx_buf = [0u8; 64];
-                let header = [Opcode::ATT_FIND_INFORMATION_RSP as u8, UuidFormat::Uuid16 as u8];
-                let mut builder = DynamicPacketBuilder::<_, InformationData16>::new(
-                    &mut tx_buf,
-                    header,
-                    CLIENT_PREFERRED_MTU as usize,
+                let mut header = AttFindInformationRspHeaderMut::new(
+                    &mut tx_buf[..ATT_FIND_INFORMATION_RSP_HEADER_SIZE],
                 );
+                header.attribute_opcode().try_write(Opcode::ATT_FIND_INFORMATION_RSP).unwrap();
+                header.format().try_write(UuidFormat::BIT16).unwrap();
+                let mut e1 = AttInformationData16Mut::new(&mut tx_buf[2..6]);
+                e1.attribute_handle().try_write(1).unwrap();
+                e1.uuid().try_write(0x2A00).unwrap();
+                let mut e2 = AttInformationData16Mut::new(&mut tx_buf[6..10]);
+                e2.attribute_handle().try_write(2).unwrap();
+                e2.uuid().try_write(0x2A24).unwrap();
 
-                let entry1 = InformationData16 { handle: U16::new(1), uuid: [0x00, 0x2a] };
-                let entry2 = InformationData16 { handle: U16::new(2), uuid: [0x24, 0x2a] };
-                builder.push(entry1).unwrap();
-                builder.push(entry2).unwrap();
-
-                let tx_packet = builder.as_packet();
+                let tx_packet = Packet::try_ref_from_bytes(&tx_buf[..10]).unwrap();
                 let mut server_tx_bearer = BearerTx::new(server_tx);
                 server_tx_bearer.send(tx_packet).await.unwrap();
             });
@@ -1072,10 +1057,12 @@ mod tests {
                 match info {
                     DiscoveredInformation::Uuid16(entries) => {
                         assert_eq!(entries.len(), 2);
-                        assert_eq!(entries[0].handle.get(), 1);
-                        assert_eq!(entries[0].uuid, [0x00, 0x2a]);
-                        assert_eq!(entries[1].handle.get(), 2);
-                        assert_eq!(entries[1].uuid, [0x24, 0x2a]);
+                        let e1 = AttInformationData16::new(entries.get(0).unwrap());
+                        assert_eq!(e1.attribute_handle().try_read().unwrap(), 1);
+                        assert_eq!(e1.uuid().try_read().unwrap(), 0x2A00);
+                        let e2 = AttInformationData16::new(entries.get(1).unwrap());
+                        assert_eq!(e2.attribute_handle().try_read().unwrap(), 2);
+                        assert_eq!(e2.uuid().try_read().unwrap(), 0x2A24);
                     }
                     _ => panic!("Expected Uuid16 discovered info"),
                 }
@@ -1153,18 +1140,11 @@ mod tests {
                 );
 
                 let mut tx_buf = [0u8; 64];
-                let header = [Opcode::ATT_FIND_BY_TYPE_VALUE_RSP as u8];
-                let mut builder = DynamicPacketBuilder::<_, HandlesInformation>::new(
-                    &mut tx_buf,
-                    header,
-                    CLIENT_PREFERRED_MTU as usize,
-                );
-                let entry = HandlesInformation {
-                    attribute_handle: U16::new(1),
-                    group_end_handle: U16::new(5),
-                };
-                builder.push(entry).unwrap();
-                let tx_packet = builder.as_packet();
+                tx_buf[0] = Opcode::ATT_FIND_BY_TYPE_VALUE_RSP as u8;
+                let mut entry = AttHandlesInformationMut::new(&mut tx_buf[1..5]);
+                entry.attribute_handle().try_write(1).unwrap();
+                entry.group_end_handle().try_write(5).unwrap();
+                let tx_packet = Packet::try_ref_from_bytes(&tx_buf[..5]).unwrap();
                 let mut server_tx_bearer = BearerTx::new(server_tx);
                 server_tx_bearer.send(tx_packet).await.unwrap();
             });
@@ -1177,8 +1157,9 @@ mod tests {
                     .expect("find_by_type_value succeeds");
 
                 assert_eq!(results.len(), 1);
-                assert_eq!(results[0].attribute_handle.get(), 1);
-                assert_eq!(results[0].group_end_handle.get(), 5);
+                let e = AttHandlesInformation::new(results.get(0).unwrap());
+                assert_eq!(e.attribute_handle().try_read().unwrap(), 1);
+                assert_eq!(e.group_end_handle().try_read().unwrap(), 5);
             });
 
             executor.run_until_stalled();

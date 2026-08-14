@@ -72,6 +72,9 @@ mod tests {
     use sapphire_async::testing::TestExecutor;
     use sapphire_collections::storage::ArrayStorage;
     use sapphire_common::Uuid;
+    use sapphire_emboss::att::{
+        AttHandlesInformation, AttInformationData16, AttInformationData128,
+    };
     use sapphire_peer_cache::PeerId;
 
     const CLIENT_PREFERRED_MTU: u16 = 512;
@@ -215,8 +218,9 @@ mod tests {
                 match info1 {
                     DiscoveredInformation::Uuid16(entries) => {
                         assert_eq!(entries.len(), 1);
-                        assert_eq!(entries[0].handle.get(), 1);
-                        assert_eq!(entries[0].uuid, [0x00, 0x2a]);
+                        let entry = AttInformationData16::new(entries.get(0).unwrap());
+                        assert_eq!(entry.attribute_handle().try_read().unwrap(), 1);
+                        assert_eq!(entry.uuid().try_read().unwrap(), 0x2A00);
                     }
                     _ => panic!("Expected Uuid16 discovered info"),
                 }
@@ -227,9 +231,10 @@ mod tests {
                 match info2 {
                     DiscoveredInformation::Uuid128(entries) => {
                         assert_eq!(entries.len(), 1);
-                        assert_eq!(entries[0].handle.get(), 2);
+                        let entry = AttInformationData128::new(entries.get(0).unwrap());
+                        assert_eq!(entry.attribute_handle().try_read().unwrap(), 2);
                         assert_eq!(
-                            entries[0].uuid,
+                            &entries.get(0).unwrap()[2..18],
                             [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
                         );
                     }
@@ -293,8 +298,9 @@ mod tests {
                     .await
                     .unwrap();
                 assert_eq!(results1.len(), 1);
-                assert_eq!(results1[0].attribute_handle.get(), 1);
-                assert_eq!(results1[0].group_end_handle.get(), 5);
+                let e1 = AttHandlesInformation::new(results1.get(0).unwrap());
+                assert_eq!(e1.attribute_handle().try_read().unwrap(), 1);
+                assert_eq!(e1.group_end_handle().try_read().unwrap(), 5);
 
                 let mut rx_buf2 = [MaybeUninit::uninit(); 256];
                 let results2 = client
@@ -302,8 +308,9 @@ mod tests {
                     .await
                     .unwrap();
                 assert_eq!(results2.len(), 1);
-                assert_eq!(results2[0].attribute_handle.get(), 6);
-                assert_eq!(results2[0].group_end_handle.get(), 10);
+                let e2 = AttHandlesInformation::new(results2.get(0).unwrap());
+                assert_eq!(e2.attribute_handle().try_read().unwrap(), 6);
+                assert_eq!(e2.group_end_handle().try_read().unwrap(), 10);
             });
 
             executor.run_until_stalled();
@@ -973,12 +980,15 @@ mod tests {
         use crate::att::database::Database;
         use crate::att::pdu::{
             ATT_FIND_INFORMATION_REQ_SIZE, ATT_PREPARE_WRITE_HEADER_SIZE, ErrorCode, Opcode,
-            Packet, UuidFormat,
+            Packet, UuidFormat, uuid_to_format,
         };
         use core::mem::MaybeUninit;
         use proptest::prelude::*;
         use sapphire_common::Uuid;
-        use sapphire_emboss::att::{AttErrorRsp, AttFindInformationReqMut};
+        use sapphire_emboss::att::{
+            AttErrorRsp, AttFindInformationReqMut, AttHandlesInformation, AttInformationData16,
+            AttInformationData128,
+        };
         use sapphire_peer_cache::PeerId;
         use zerocopy::{IntoBytes, TryFromBytes};
 
@@ -1165,23 +1175,25 @@ mod tests {
 
                         match result {
                             Ok(DiscoveredInformation::Uuid16(entries)) => {
-                                assert!(!entries.is_empty());
-                                for entry in entries {
-                                    let h = entry.handle.get();
+                                assert_ne!(entries.len(), 0);
+                                for chunk in entries.iter() {
+                                    let entry = AttInformationData16::new(chunk);
+                                    let h = entry.attribute_handle().try_read().unwrap();
                                     assert!(h >= start.value() && h <= end.value());
                                     let handle = AttributeHandle::try_from(h).unwrap();
                                     let attr = db.find_attribute(handle).expect("attribute must exist in db");
-                                    assert_eq!(UuidFormat::from(*attr.uuid()), UuidFormat::Uuid16);
+                                    assert_eq!(uuid_to_format(attr.uuid()), UuidFormat::BIT16);
                                 }
                             }
                             Ok(DiscoveredInformation::Uuid128(entries)) => {
-                                assert!(!entries.is_empty());
-                                for entry in entries {
-                                    let h = entry.handle.get();
+                                assert_ne!(entries.len(), 0);
+                                for chunk in entries.iter() {
+                                    let entry = AttInformationData128::new(chunk);
+                                    let h = entry.attribute_handle().try_read().unwrap();
                                     assert!(h >= start.value() && h <= end.value());
                                     let handle = AttributeHandle::try_from(h).unwrap();
                                     let attr = db.find_attribute(handle).expect("attribute must exist in db");
-                                    assert_eq!(UuidFormat::from(*attr.uuid()), UuidFormat::Uuid128);
+                                    assert_eq!(uuid_to_format(attr.uuid()), UuidFormat::BIT128);
                                 }
                             }
                             Err(ClientError::ErrorResponse(ErrorCode::ATTRIBUTE_NOT_FOUND)) => {
@@ -1313,10 +1325,11 @@ mod tests {
 
                         match result {
                             Ok(entries) => {
-                                assert!(!entries.is_empty());
-                                for entry in entries {
-                                    let h = entry.attribute_handle.get();
-                                    let group_end = entry.group_end_handle.get();
+                                assert_ne!(entries.len(), 0);
+                                for chunk in entries.iter() {
+                                    let entry = AttHandlesInformation::new(chunk);
+                                    let h = entry.attribute_handle().try_read().unwrap();
+                                    let group_end = entry.group_end_handle().try_read().unwrap();
                                     assert!(h >= start.value() && h <= end.value());
                                     assert!(group_end >= h && group_end <= end.value());
 

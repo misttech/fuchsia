@@ -198,8 +198,7 @@ mod tests {
     use crate::att::bearer::{BearerTx, MAX_SUPPORTED_MTU};
     use crate::att::client::ServerEventStream;
     use crate::att::l2cap::mock::setup_mock_channel;
-    use crate::att::pdu::{ATT_HANDLE_VALUE_NTF_HEADER_SIZE, ATT_READ_REQ_SIZE, Opcode};
-    use core::mem::MaybeUninit;
+    use crate::att::pdu::{ATT_HANDLE_VALUE_NTF_HEADER_SIZE, ATT_READ_REQ_SIZE};
     use sapphire_async::executor::BoundedExecutor;
     use sapphire_async::testing::TestExecutor;
     use sapphire_emboss::att::{AttHandleValueNtfHeaderMut, AttReadReq, AttReadReqMut};
