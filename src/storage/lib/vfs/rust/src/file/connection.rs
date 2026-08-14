@@ -1032,6 +1032,9 @@ impl<T: 'static + File, U: Deref<Target = OpenNode<T>> + DerefMut + IoOpHandler 
         length: u64,
         mode: fio::AllocateMode,
     ) -> Result<(), Status> {
+        if !self.options.rights.intersects(fio::Operations::WRITE_BYTES) {
+            return Err(Status::BAD_HANDLE);
+        }
         self.file.allocate(offset, length, mode).await
     }
 
@@ -1190,6 +1193,12 @@ mod tests {
         Truncate {
             length: u64,
         },
+        #[cfg(fuchsia_api_level_at_least = "HEAD")]
+        Allocate {
+            offset: u64,
+            length: u64,
+            mode: fio::AllocateMode,
+        },
         #[cfg(target_os = "fuchsia")]
         GetBackingMemory {
             flags: fio::VmoFlags,
@@ -1301,6 +1310,16 @@ mod tests {
 
         async fn truncate(&self, length: u64) -> Result<(), Status> {
             self.handle_operation(FileOperation::Truncate { length })
+        }
+
+        #[cfg(fuchsia_api_level_at_least = "HEAD")]
+        async fn allocate(
+            &self,
+            offset: u64,
+            length: u64,
+            mode: fio::AllocateMode,
+        ) -> Result<(), Status> {
+            self.handle_operation(FileOperation::Allocate { offset, length, mode })
         }
 
         #[cfg(target_os = "fuchsia")]
@@ -1888,6 +1907,49 @@ mod tests {
     async fn test_resize_no_perms() {
         let env = init_mock_file(Box::new(always_succeed_callback), fio::PERM_READABLE);
         let result = env.proxy.resize(10).await.unwrap().map_err(Status::from_raw);
+        assert_eq!(result, Err(Status::BAD_HANDLE));
+        let events = env.file.operations.lock();
+        assert_eq!(
+            *events,
+            vec![FileOperation::Init {
+                options: FileOptions { rights: RIGHTS_R, is_append: false, is_linkable: true }
+            },]
+        );
+    }
+
+    #[cfg(fuchsia_api_level_at_least = "HEAD")]
+    #[fuchsia::test]
+    async fn test_allocate() {
+        let env = init_mock_file(Box::new(always_succeed_callback), fio::PERM_WRITABLE);
+        let () = env
+            .proxy
+            .allocate(0, 10, fio::AllocateMode::empty())
+            .await
+            .unwrap()
+            .map_err(Status::from_raw)
+            .unwrap();
+        let events = env.file.operations.lock();
+        assert_eq!(
+            *events,
+            vec![
+                FileOperation::Init {
+                    options: FileOptions { rights: RIGHTS_W, is_append: false, is_linkable: true }
+                },
+                FileOperation::Allocate { offset: 0, length: 10, mode: fio::AllocateMode::empty() },
+            ]
+        );
+    }
+
+    #[cfg(fuchsia_api_level_at_least = "HEAD")]
+    #[fuchsia::test]
+    async fn test_allocate_no_perms() {
+        let env = init_mock_file(Box::new(always_succeed_callback), fio::PERM_READABLE);
+        let result = env
+            .proxy
+            .allocate(0, 10, fio::AllocateMode::empty())
+            .await
+            .unwrap()
+            .map_err(Status::from_raw);
         assert_eq!(result, Err(Status::BAD_HANDLE));
         let events = env.file.operations.lock();
         assert_eq!(
