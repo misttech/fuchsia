@@ -180,3 +180,45 @@ TEST_F(ProtocolTest, ConnectBadFdfHandle) {
   fdf::Channel invalid_;
   ASSERT_EQ(ZX_ERR_BAD_HANDLE, fdf::ProtocolConnect(std::move(token_local_), std::move(invalid_)));
 }
+
+TEST_F(ProtocolTest, RegisterFailureDoesNotCallHandlerOnShutdown) {
+  fdf::Dispatcher temp_dispatcher;
+  libsync::Completion shutdown_completion;
+  {
+    thread_context::PushDriver(CreateFakeDriver());
+    auto pop_driver = fit::defer([]() { thread_context::PopDriver(); });
+
+    auto dispatcher_result = fdf::SynchronizedDispatcher::Create(
+        {}, "temp_dispatcher", [&](fdf_dispatcher_t* dispatcher) { shutdown_completion.Signal(); });
+    ASSERT_FALSE(dispatcher_result.is_error());
+    temp_dispatcher = std::move(*dispatcher_result);
+  }
+
+  bool handler_called = false;
+  struct TestToken : public fdf_token_t {
+    bool* handler_called;
+  };
+  TestToken token;
+  token.handler_called = &handler_called;
+  token.handler = [](fdf_dispatcher_t* dispatcher, fdf_token_t* token, zx_status_t status,
+                     fdf_handle_t handle) {
+    auto self = static_cast<TestToken*>(token);
+    *(self->handler_called) = true;
+  };
+
+  // Replace the token handle with one lacking ZX_RIGHT_WAIT.
+  zx_handle_t reduced_handle;
+  ASSERT_OK(zx_handle_replace(token_local_.release(), ZX_DEFAULT_CHANNEL_RIGHTS & ~ZX_RIGHT_WAIT,
+                              &reduced_handle));
+
+  // Registering should fail because of missing rights.
+  ASSERT_EQ(ZX_ERR_ACCESS_DENIED, driver_runtime::DispatcherCoordinator::TokenRegister(
+                                      reduced_handle, temp_dispatcher.get(), &token));
+
+  // Shutdown the dispatcher.
+  temp_dispatcher.ShutdownAsync();
+  shutdown_completion.Wait();
+
+  // The handler should NOT have been called.
+  ASSERT_FALSE(handler_called);
+}

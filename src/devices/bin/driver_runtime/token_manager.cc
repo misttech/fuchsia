@@ -62,7 +62,11 @@ zx_status_t TokenManager::Register(zx_handle_t token, fdf_dispatcher_t* dispatch
     auto pending_token_info = pending_tokens_.erase(request);
     ZX_ASSERT(pending_token_info);
     ZX_ASSERT(pending_token_info->state() == PendingTokenInfo::State::kTransferRequested);
-    return pending_token_info->OnCallbackRegister(dispatcher, fdf_token);
+    status = pending_token_info->OnCallbackRegister(dispatcher, fdf_token);
+    if (status != ZX_OK) {
+      dispatcher->GetDispatcher()->UnregisterPendingToken(fdf_token);
+    }
+    return status;
   }
 
   // No transfer has been requested for this |token_id| yet.
@@ -73,6 +77,7 @@ zx_status_t TokenManager::Register(zx_handle_t token, fdf_dispatcher_t* dispatch
   // |lock_|.
   status = WaitOnPeerClosedLocked(pending_token_info.get());
   if (status != ZX_OK) {
+    dispatcher->GetDispatcher()->UnregisterPendingToken(fdf_token);
     return status;
   }
   pending_tokens_.insert(std::move(pending_token_info));

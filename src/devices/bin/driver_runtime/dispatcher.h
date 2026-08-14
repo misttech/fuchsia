@@ -219,6 +219,8 @@ class Dispatcher : public DispatcherInterface,
   // transfer is completed. This is as the token manager would not be able to queue a
   // cancellation callback once the dispatcher is in a shutdown state.
   zx_status_t RegisterPendingToken(fdf_token_t* token);
+  // Unregisters |token| as waiting for an fdf handle to be transferred.
+  void UnregisterPendingToken(fdf_token_t* token);
   // Queues a |CallbackRequest| for the token transfer callback and removes |token|
   // from the pending list. This is called when |fdf_token_register| and |fdf_token_transfer|
   // have been called for the same token.

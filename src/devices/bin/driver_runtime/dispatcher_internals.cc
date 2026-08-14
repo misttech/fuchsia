@@ -188,8 +188,8 @@ zx_status_t AsyncWait::BeginWait(std::unique_ptr<AsyncWait> wait, Dispatcher& di
   zx_status_t status = async_begin_wait(
       const_cast<async_dispatcher_t*>(dispatcher.process_shared_dispatcher()), wait_ref);
   if (status != ZX_OK) {
-    dispatcher.RemoveWaitLocked(wait_ref);
     fbl::ImportFromRawPtr(wait_ref->dispatcher_ref_.exchange(nullptr));
+    dispatcher.RemoveWaitLocked(wait_ref);
     return status;
   }
   return ZX_OK;

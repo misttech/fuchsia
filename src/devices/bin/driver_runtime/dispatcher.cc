@@ -1562,6 +1562,11 @@ zx_status_t Dispatcher::RegisterPendingToken(fdf_token_t* token) {
   return ZX_OK;
 }
 
+void Dispatcher::UnregisterPendingToken(fdf_token_t* token) {
+  fbl::AutoLock lock(&callback_lock_);
+  registered_tokens_.erase(token);
+}
+
 zx_status_t Dispatcher::ScheduleTokenCallback(fdf_token_t* token, zx_status_t status,
                                               fdf::Channel channel) {
   CallbackRequest* callback_request_ptr = nullptr;
