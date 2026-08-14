@@ -179,7 +179,12 @@ case "${FX_INTERNAL_RESULTSTORE_BAZEL:-0}" in
     # Disabled or empty, do nothing
     ;;
   resultstore | resultstore_infra)
-    _BAZEL_EXTRA_ARGS+=( --config="${FX_INTERNAL_RESULTSTORE_BAZEL}" )
+    # The resultstore configs (build:resultstore, build:resultstore_infra) are only
+    # defined for commands that use build configuration. Subcommands like query do not
+    # recognize build: configs.
+    if [[ -n "${bazel_command_does_configuration}" ]]; then
+      _BAZEL_EXTRA_ARGS+=( --config="${FX_INTERNAL_RESULTSTORE_BAZEL}" )
+    fi
     ;;
   *)
     die "Invalid FX_INTERNAL_RESULTSTORE_BAZEL value: ${FX_INTERNAL_RESULTSTORE_BAZEL:-}. Expected 'resultstore' or 'resultstore_infra'."
