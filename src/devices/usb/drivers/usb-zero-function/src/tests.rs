@@ -605,3 +605,56 @@ async fn test_set_and_get_interface() {
     assert_eq!(proxy.set_interface(0, 2).await.unwrap(), Err(Status::NOT_SUPPORTED.into_raw()));
     assert_eq!(proxy.set_interface(1, 0).await.unwrap(), Err(Status::NOT_SUPPORTED.into_raw()));
 }
+
+#[fuchsia::test]
+async fn test_endpoint_stall_state() {
+    let (func_client, func_server) = create_endpoints::<fusb_function::UsbFunctionMarker>();
+    let (ep_in_client, _ep_in_server) = create_endpoints::<fusb_endpoint::EndpointMarker>();
+    let (ep_out_client, _ep_out_server) = create_endpoints::<fusb_endpoint::EndpointMarker>();
+
+    let scope = Arc::new(fasync::Scope::new_with_name("test_stall"));
+    scope.spawn_local(run_mock_function(func_server.into_stream()));
+
+    let mut device = UsbZeroFunctionDevice::new(
+        func_client.into_proxy(),
+        ep_in_client.into_proxy(),
+        TEST_EP_IN_ADDR,
+        ep_out_client.into_proxy(),
+        TEST_EP_OUT_ADDR,
+        0,
+    );
+
+    // Initial state: no stalled endpoints
+    assert!(device.stalled_endpoints.is_empty());
+
+    // Stall IN endpoint
+    device.set_endpoint_stall(TEST_EP_IN_ADDR).await.unwrap();
+    assert!(device.stalled_endpoints.contains(&TEST_EP_IN_ADDR));
+    assert_eq!(device.stalled_endpoints.len(), 1);
+
+    // Stall OUT endpoint
+    device.set_endpoint_stall(TEST_EP_OUT_ADDR).await.unwrap();
+    assert!(device.stalled_endpoints.contains(&TEST_EP_IN_ADDR));
+    assert!(device.stalled_endpoints.contains(&TEST_EP_OUT_ADDR));
+    assert_eq!(device.stalled_endpoints.len(), 2);
+
+    // Stall EP0 (invalid)
+    assert_eq!(device.set_endpoint_stall(0).await, Err(Status::INVALID_ARGS));
+    assert_eq!(device.set_endpoint_stall(0x80).await, Err(Status::INVALID_ARGS));
+
+    // Clear IN endpoint stall
+    device.clear_endpoint_stall(TEST_EP_IN_ADDR).await.unwrap();
+    assert!(!device.stalled_endpoints.contains(&TEST_EP_IN_ADDR));
+    assert!(device.stalled_endpoints.contains(&TEST_EP_OUT_ADDR));
+    assert_eq!(device.stalled_endpoints.len(), 1);
+
+    // Clear EP0 stall (should be no-op and succeed)
+    device.clear_endpoint_stall(0).await.unwrap();
+    device.clear_endpoint_stall(0x80).await.unwrap();
+    assert!(device.stalled_endpoints.contains(&TEST_EP_OUT_ADDR));
+    assert_eq!(device.stalled_endpoints.len(), 1);
+
+    // Clear OUT endpoint stall
+    device.clear_endpoint_stall(TEST_EP_OUT_ADDR).await.unwrap();
+    assert!(device.stalled_endpoints.is_empty());
+}

@@ -27,6 +27,8 @@ const USB_TYPE_VENDOR: u8 = 0x40;
 
 const USB_INTERFACE_DESC_SIZE: u8 = 9;
 const USB_ENDPOINT_DESC_SIZE: u8 = 7;
+const USB_ENDPOINT_NUM_MASK: u8 = 0x7f;
+const USB_ENDPOINT_DIR_MASK: u8 = 0x80;
 
 const DEFAULT_VMO_SIZE: u64 = 4096;
 
@@ -99,6 +101,7 @@ impl TryFrom<u8> for TestMode {
         TestMode::n(value).ok_or(Status::INVALID_ARGS)
     }
 }
+
 struct UsbZeroFunction {
     // Stored to keep the driver node handle alive per Fuchsia component driver lifecycle rules.
     _node: Node,
@@ -118,6 +121,7 @@ struct UsbZeroFunctionDevice {
     endpoint_tasks: Option<(fasync::Task<()>, fasync::Task<()>)>,
     mode: TestMode,
     speed: Option<fusb_descriptor::UsbSpeed>,
+    stalled_endpoints: Vec<u8>,
 }
 
 driver_register!(UsbZeroFunction);
@@ -184,7 +188,7 @@ impl Driver for UsbZeroFunction {
         let ep_in_addr = endpoints[0];
         let ep_out_addr = endpoints[1];
 
-        if (ep_in_addr & 0x80) == 0 || (ep_out_addr & 0x80) != 0 {
+        if (ep_in_addr & USB_ENDPOINT_DIR_MASK) == 0 || (ep_out_addr & USB_ENDPOINT_DIR_MASK) != 0 {
             error!("Invalid endpoint direction bits assigned");
             return Err(Status::NO_RESOURCES.into());
         }
@@ -317,6 +321,7 @@ impl UsbZeroFunctionDevice {
             endpoint_tasks: None,
             mode: TestMode::default(),
             speed: None,
+            stalled_endpoints: Vec::new(),
         }
     }
 
@@ -330,6 +335,44 @@ impl UsbZeroFunctionDevice {
         self.is_configured.store(false, Ordering::Relaxed);
         let _ = self.function_client.disable_endpoint(self.ep_in_addr).await;
         let _ = self.function_client.disable_endpoint(self.ep_out_addr).await;
+        self.stalled_endpoints.clear();
+    }
+
+    async fn set_endpoint_stall(&mut self, ep_addr: u8) -> Result<(), Status> {
+        // EP0 (Control Endpoint) stall management is handled by hardware / driver stack
+        // and cannot be stalled via this vendor request. Return INVALID_ARGS for EP0.
+        if (ep_addr & USB_ENDPOINT_NUM_MASK) == 0 {
+            return Err(Status::INVALID_ARGS);
+        }
+        self.function_client
+            .endpoint_set_stall(ep_addr)
+            .await
+            .map_err(|e| {
+                warn!("FIDL error setting stall: {:?}", e);
+                Status::INTERNAL
+            })?
+            .map_err(Status::err_from_raw)?;
+        if !self.stalled_endpoints.contains(&ep_addr) {
+            self.stalled_endpoints.push(ep_addr);
+        }
+        Ok(())
+    }
+
+    async fn clear_endpoint_stall(&mut self, ep_addr: u8) -> Result<(), Status> {
+        // Clearing stall on EP0 is a no-op because EP0 stall status automatically resets upon the next setup packet.
+        if (ep_addr & USB_ENDPOINT_NUM_MASK) == 0 {
+            return Ok(());
+        }
+        self.function_client
+            .endpoint_clear_stall(ep_addr)
+            .await
+            .map_err(|e| {
+                warn!("FIDL error clearing stall: {:?}", e);
+                Status::INTERNAL
+            })?
+            .map_err(Status::err_from_raw)?;
+        self.stalled_endpoints.retain(|&addr| addr != ep_addr);
+        Ok(())
     }
 
     fn max_packet_size_for_speed(speed: fusb_descriptor::UsbSpeed) -> u16 {
@@ -422,26 +465,12 @@ impl UsbZeroFunctionDevice {
         match vendor_req {
             VendorRequest::SetStall => {
                 let ep_addr = validate_vendor_out_request(setup, write)?;
-                self.function_client
-                    .endpoint_set_stall(ep_addr)
-                    .await
-                    .map_err(|e| {
-                        warn!("FIDL error setting stall: {:?}", e);
-                        Status::INTERNAL
-                    })?
-                    .map_err(Status::err_from_raw)?;
+                self.set_endpoint_stall(ep_addr).await?;
                 Ok(Vec::new())
             }
             VendorRequest::ClearStall => {
                 let ep_addr = validate_vendor_out_request(setup, write)?;
-                self.function_client
-                    .endpoint_clear_stall(ep_addr)
-                    .await
-                    .map_err(|e| {
-                        warn!("FIDL error clearing stall: {:?}", e);
-                        Status::INTERNAL
-                    })?
-                    .map_err(Status::err_from_raw)?;
+                self.clear_endpoint_stall(ep_addr).await?;
                 Ok(Vec::new())
             }
             VendorRequest::ConfigureEndpoint => {
