@@ -4,9 +4,6 @@
 
 import("//build/sdk/sdk_host_tool.gni")
 
-# Used for distributing the Orchestrate tool to private IDKs. Not to be included
-# in the Fuchsia IDK.
-# See http://goto.google.com/orchestrate-distribution-testing.
 # TODO(https://fxbug.dev/438572714): Remove once IDK uses Bazel atom metadata.
 sdk_host_tool("orchestrate_sdk") {
   category = "partner"
