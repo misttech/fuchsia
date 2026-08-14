@@ -4,41 +4,42 @@
 # found in the LICENSE file.
 #
 # This script streamlines Python dependency management and project setup. It
-# efficiently downloads all dependencies and their transitive requirements using
-# pip, automatically extracts their contents, and populates a pylibs config file
+# efficiently resolves all dependencies and their transitive requirements,
+# determines the appropriate commit IDs in Googlesource mirrors, and populates
+# the pylibs manifest file.
 
 set -eu -o pipefail
 
-RED="$(tput setaf 1)"
-NORM="$(tput sgr0)"
+RED="$(tput setaf 1 2>/dev/null || true)"
+NORM="$(tput sgr0 2>/dev/null || true)"
 
 src_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly src_dir
 
-download_dir="$(mktemp -d)"
-readonly download_dir
-trap 'rm -rf "${download_dir}"' EXIT
-
-pkgs_dir="$(mktemp -d)"
-readonly pkgs_dir
-trap 'rm -rf "${pkgs_dir}"' EXIT
+# Load FUCHSIA_DIR or find it relative to this script.
+# Note that this line is sensitive to the script location, and will need to be updated if this
+# script is ever moved.
+FUCHSIA_DIR="${FUCHSIA_DIR:-$(cd "${src_dir}/../../.." && pwd)}"
+readonly FUCHSIA_DIR
 
 # TODO(maheshsr): don't hardcode linux-x64
 python_dir="${FUCHSIA_DIR}/prebuilt/third_party/python3/linux-x64/bin"
 readonly python_dir
 
 # Make sure pip and pip-tools are up-to-date
-"${python_dir}/python3" -m pip install --quiet --upgrade pip
-"${python_dir}/python3" -m pip install --upgrade setuptools
-"${python_dir}/python3" -m pip install --upgrade pip-tools
+# Note: pip-tools <= 7.6.0 is incompatible with pip >= 26.2 due to removal of stdlib_pkgs in pip._internal.utils.compat
+"${python_dir}/python3" -m pip install -i https://pypi.org/simple --upgrade "pip<26.2"
+"${python_dir}/python3" -m pip install -i https://pypi.org/simple --upgrade setuptools
+"${python_dir}/python3" -m pip install -i https://pypi.org/simple --upgrade pip-tools
 
 # Generate requirements.txt from requirements.in
-(cd "${src_dir}" && "${python_dir}/python3" -m piptools compile requirements.in -o requirements.txt)
-
-"${python_dir}/python3" -m pip download \
-  -r "${src_dir}/requirements.txt" \
-  --no-binary ":all:" \
-  --dest "${download_dir}"
+# Override workstation pip index to default to pypi for proper resolution.
+echo "Compiling requirements.in into requirements.txt..."
+(cd "${src_dir}" && "${python_dir}/python3" -P -m piptools compile \
+  --strip-extras \
+  --pip-args "--index-url https://pypi.org/simple" \
+  requirements.in \
+  -o requirements.txt)
 
 configfile="${src_dir}/pylibs"
 readonly configfile
@@ -58,49 +59,48 @@ cat >>"${configfile}" <<-EOF
   <projects>
 EOF
 
-shopt -s nullglob
+# Parse packages and versions from requirements.txt in sorted order
+declare -A pkg_versions
+while read -r line; do
+  line="$(echo "${line}" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+  if [[ -n "${line}" && ! "${line}" =~ ^# && "${line}" == *"=="* ]]; then
+    raw_pkg="${line%%==*}"
+    raw_pkg="$(echo "${raw_pkg}" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+    clean_pkg="${raw_pkg//-/_}"
+    clean_pkg="${clean_pkg,,}" # lowercase
+    ver="${line##*==}"
+    ver="${ver%% *}" # remove any trailing whitespace / comments
+    pkg_versions["${clean_pkg}"]="${ver}"
+  fi
+done <"${src_dir}/requirements.txt"
 
-# Store filenames in array in sorted order
-sorted_archives=($(ls -1 "${download_dir}"/*.tar.gz | sort))
-readonly sorted_archives
+# Sort package names
+sorted_pkgs=($(for p in "${!pkg_versions[@]}"; do echo "$p"; done | sort))
 
-for archive in "${sorted_archives[@]}"; do
-  echo " Adding package to config file: $(basename "${archive}")"
-  base="$(basename "${archive}")"
-  noext="${base%.tar.gz}"
-
-  # Extracts the package name from a base directory, removing trailing version number i.e mypy-1.6.0.
-  pkg="$(sed -r 's/-[0-9]+(\.[0-9]+)+//g' <<<"${noext}")"
-
-  # Extracts the version number (major.minor(.patch)) from the base directory,
-  # handling both "major.minor.patch" and "major.minor" patterns i.e mypy-1.6.0, mypy-0.1
-  version="$(sed -r 's/^.*-([0-9]+(\.[0-9]+)+).*/\1/g' <<<"${noext}")"
-
-  unzip_dir="$(mktemp -d)"
-  tar -xzf "${archive}" -C "${unzip_dir}"
-
-  dest_dir="${pkgs_dir}/${pkg}"
-  rm -rf "${dest_dir}"
-  mv "${unzip_dir}/${noext}" "${dest_dir}"
-
-  echo "${pkg}==${version}" >> "${pkgs_dir}/versions.txt"
+for pkg in "${sorted_pkgs[@]}"; do
+  version="${pkg_versions[${pkg}]}"
+  echo "Adding package to config file: ${pkg}-${version}"
 
   package_exists=false
   is_ignore=false
-  # verifies the py package presence in a requirements.in file and fetch the package url
-  while read -r line; do
-    # Checks whether line is empty or comment line
-    if [[ ! "$line" =~ "^[[:space:]]*#" && -n "$line" ]]; then
-      pkg_name="${line%% *}"     # Extract package name
-      pkg_name="${pkg_name%%=*}" # Remove any trailing '==' and version
+  sub_path=""
 
-      if [[ "${pkg_name}" == "${pkg}" ]]; then
+  # Verify presence in requirements.in and fetch package url
+  while read -r line; do
+    line="$(echo "${line}" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+    if [[ -n "${line}" && ! "${line}" =~ ^# ]]; then
+      line_pkg="${line%% *}"
+      line_pkg="${line_pkg%%=*}"
+      line_pkg="${line_pkg//-/_}"
+      line_pkg="${line_pkg,,}"
+
+      if [[ "${line_pkg}" == "${pkg}" ]]; then
         package_exists=true
         sub_path="${line#*# }"
         path="third_party/${sub_path}"
 
-        if [[ ${sub_path^^}  == "IGNORE" ]] ; then
-            is_ignore=true
+        if [[ "${sub_path^^}" == "IGNORE" ]]; then
+          is_ignore=true
         fi
         break
       fi
@@ -109,29 +109,56 @@ for archive in "${sorted_archives[@]}"; do
 
   if ! "${package_exists}"; then
     echo -e "${RED}Error: Add ${pkg} package name and path in the requirements.in.${NORM}"
-    exit
+    exit 1
   fi
 
-  # Ignore packages with ignore tag in the requirements.in file
   if "${is_ignore}"; then
     echo "Ignoring ${pkg} package in the config file."
     continue
   fi
 
-  all_tags=$(git ls-remote --tags "https://fuchsia-review.googlesource.com/${path}")
-  if [[ -z "$all_tags" ]]; then
-    echo -e "${RED}Error: No tags found for $noext.${NORM}"
-    exit
+  revision=""
+  # 1. Try to find the matching tag in the googlesource mirror
+  all_tags=$(git ls-remote --tags "https://fuchsia-review.googlesource.com/${path}" 2>/dev/null || true)
+  if [[ -n "${all_tags}" ]]; then
+    # Check unpeeled tag first (tag object SHA for annotated tags, commit SHA for lightweight tags), then peeled tag
+    matching_tag=$(echo "${all_tags}" | grep -P "refs/tags/[-_a-zA-Z]*${version}$" | head -n 1 || true)
+    if [[ -z "${matching_tag}" ]]; then
+      matching_tag=$(echo "${all_tags}" | grep -P "refs/tags/[-_a-zA-Z]*${version}\^\{\}$" | head -n 1 || true)
+    fi
+    if [[ -n "${matching_tag}" ]]; then
+      revision="$(echo "${matching_tag}" | awk '{print $1}')"
+    fi
   fi
 
-  # Extracts the commit ID from the version tag at HEAD (if present)
-  # Matches "refs/tags/" followed by optional letters, hyphens, or underscores,
-  # and then the version number at the end of the line.
-  if ! matching_tag=$(echo "$all_tags" |
-      grep -P "refs/tags/[-_a-zA-Z]*${version}$" |
-      head -n 1); then
-    echo -e "${RED}Error: No matching tag found for $noext.${NORM}"
-    exit
+  # 2. If tag not found on googlesource (e.g. newly mirrored or upstream org changed),
+  # check upstream git repo (e.g. github) and match GitOrigin-RevId on googlesource.
+  if [[ -z "${revision}" ]]; then
+    upstream_tags=$(git ls-remote --tags "https://${sub_path}" 2>/dev/null || true)
+    if [[ -n "${upstream_tags}" ]]; then
+      upstream_tag=$(echo "${upstream_tags}" | grep -P "refs/tags/[-_a-zA-Z]*${version}\^\{\}$" | head -n 1 || true)
+      if [[ -z "${upstream_tag}" ]]; then
+        upstream_tag=$(echo "${upstream_tags}" | grep -P "refs/tags/[-_a-zA-Z]*${version}$" | head -n 1 || true)
+      fi
+      if [[ -n "${upstream_tag}" ]]; then
+        upstream_commit="$(echo "${upstream_tag}" | awk '{print $1}')"
+        for branch in refs/heads/upstream/main refs/heads/main refs/heads/master; do
+          log_json=$(curl -s "https://fuchsia.googlesource.com/${path}/+log/${branch}?format=JSON&n=100" 2>/dev/null || true)
+          if [[ "${log_json}" == *")]}'"* ]]; then
+            rev=$(echo "${log_json}" | sed '1d' | jq -r --arg commit "${upstream_commit}" '.log[] | select(.message | contains($commit)) | .commit' | head -n 1 || true)
+            if [[ -n "${rev}" && "${rev}" != "null" ]]; then
+              revision="${rev}"
+              break
+            fi
+          fi
+        done
+      fi
+    fi
+  fi
+
+  if [[ -z "${revision}" ]]; then
+    echo -e "${RED}Error: No matching tag or commit found for ${pkg}-${version}.${NORM}"
+    exit 1
   fi
 
   cat >>"${configfile}" <<-EOF
@@ -139,10 +166,9 @@ for archive in "${sorted_archives[@]}"; do
     <project name="third_party/pylibs/${pkg}"
         path="third_party/pylibs/${pkg}/src"
         remote="https://fuchsia.googlesource.com/${path}"
-        revision="$(echo "$matching_tag" | awk '{print $1}')"
+        revision="${revision}"
         gerrithost="https://fuchsia-review.googlesource.com"/>
 EOF
-  rm -rf "${unzip_dir}"
 done
 
 cat >>"${configfile}" <<-EOF
@@ -150,4 +176,5 @@ cat >>"${configfile}" <<-EOF
 </manifest>
 EOF
 
-shopt -u nullglob
+echo "Successfully updated ${configfile}"
+
