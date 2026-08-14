@@ -3,11 +3,13 @@
 // found in the LICENSE file.
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use std::borrow::Borrow;
+use std::borrow::{Borrow, Cow};
 use std::convert::AsRef;
 use std::error::Error;
+use std::ffi::OsStr;
 use std::fmt::{self, Debug, Display, Formatter};
 use std::ops::Deref;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 /// Returns `true` if `c` is a control character that could affect terminal state.
@@ -84,6 +86,23 @@ impl TermSafe {
         Self(redacted)
     }
 
+    /// Constructs a `TermSafe` by escaping all control characters with [`char::escape_default`].
+    pub fn from_str_escaped(s: impl AsRef<str>) -> Self {
+        let s = s.as_ref();
+        if !contains_control_characters(s) {
+            return Self(s.to_owned());
+        }
+        let mut out = String::with_capacity(s.len());
+        for c in s.chars() {
+            if is_control_character(c) {
+                out.extend(c.escape_default());
+            } else {
+                out.push(c);
+            }
+        }
+        Self(out)
+    }
+
     /// Returns a slice referencing the contained string.
     pub fn as_str(&self) -> &str {
         &self.0
@@ -109,6 +128,24 @@ impl AsRef<str> for TermSafe {
     }
 }
 
+impl AsRef<Path> for TermSafe {
+    fn as_ref(&self) -> &Path {
+        Path::new(&self.0)
+    }
+}
+
+impl AsRef<OsStr> for TermSafe {
+    fn as_ref(&self) -> &OsStr {
+        OsStr::new(&self.0)
+    }
+}
+
+impl AsRef<[u8]> for TermSafe {
+    fn as_ref(&self) -> &[u8] {
+        self.0.as_bytes()
+    }
+}
+
 impl Borrow<str> for TermSafe {
     fn borrow(&self) -> &str {
         &self.0
@@ -130,6 +167,24 @@ impl Debug for TermSafe {
 impl From<TermSafe> for String {
     fn from(safe_string: TermSafe) -> Self {
         safe_string.0
+    }
+}
+
+impl From<TermSafe> for PathBuf {
+    fn from(safe_string: TermSafe) -> Self {
+        PathBuf::from(safe_string.0)
+    }
+}
+
+impl<'a> From<TermSafe> for Cow<'a, str> {
+    fn from(safe_string: TermSafe) -> Self {
+        Cow::Owned(safe_string.0)
+    }
+}
+
+impl<'a> From<&'a TermSafe> for Cow<'a, str> {
+    fn from(safe_string: &'a TermSafe) -> Self {
+        Cow::Borrowed(safe_string.as_str())
     }
 }
 
@@ -196,6 +251,18 @@ impl PartialEq<TermSafe> for &str {
 impl PartialEq<TermSafe> for String {
     fn eq(&self, other: &TermSafe) -> bool {
         self == &other.0
+    }
+}
+
+impl<'a> PartialEq<Cow<'a, str>> for TermSafe {
+    fn eq(&self, other: &Cow<'a, str>) -> bool {
+        self.0 == **other
+    }
+}
+
+impl<'a> PartialEq<TermSafe> for Cow<'a, str> {
+    fn eq(&self, other: &TermSafe) -> bool {
+        **self == other.0
     }
 }
 
@@ -371,7 +438,7 @@ mod tests {
         // From / Into String
         let owned: String = safe.clone().into();
         assert_eq!(owned, "test string");
-        assert_eq!(safe.into_inner(), "test string");
+        assert_eq!(safe.clone().into_inner(), "test string");
 
         // FromStr
         let parsed = "parsed_str".parse::<TermSafe>().unwrap();
@@ -396,6 +463,35 @@ mod tests {
         // Default
         let default_safe = TermSafe::default();
         assert_eq!(default_safe, "");
+
+        // Path and OsStr
+        let path: &Path = safe.as_ref();
+        assert_eq!(path, Path::new("test string"));
+        let os_str: &OsStr = safe.as_ref();
+        assert_eq!(os_str, OsStr::new("test string"));
+        let bytes: &[u8] = safe.as_ref();
+        assert_eq!(bytes, b"test string");
+        let path_buf: PathBuf = safe.clone().into();
+        assert_eq!(path_buf, PathBuf::from("test string"));
+
+        // Cow
+        let cow_owned: Cow<'_, str> = safe.clone().into();
+        assert_eq!(cow_owned, Cow::Borrowed("test string"));
+        let cow_borrowed: Cow<'_, str> = (&safe).into();
+        assert_eq!(cow_borrowed, Cow::Borrowed("test string"));
+        assert_eq!(safe, Cow::Borrowed("test string"));
+        assert_eq!(Cow::Borrowed("test string"), safe);
+    }
+
+    #[test]
+    fn test_from_str_escaped() {
+        let s = "hello\x1b[31mworld\x07!\r\n";
+        let safe = TermSafe::from_str_escaped(s);
+        assert_eq!(safe.as_str(), "hello\\u{1b}[31mworld\\u{7}!\\r\\n");
+
+        // String without control characters is unmodified
+        let clean = "clean_string";
+        assert_eq!(TermSafe::from_str_escaped(clean).as_str(), clean);
     }
 
     #[test]
