@@ -3,9 +3,9 @@
 // found in the LICENSE file.
 
 use crate::att::l2cap::{L2CapChannelRx, L2CapChannelTx, L2CapRecvError, L2CapSendError};
-use crate::att::pdu::{Header, Opcode, Packet};
+use crate::att::pdu::{ATT_HEADER_SIZE, Opcode, Packet};
 use core::fmt;
-use core::mem::{self, MaybeUninit};
+use core::mem::MaybeUninit;
 use thiserror::Error;
 use zerocopy::{IntoBytes, TryFromBytes};
 
@@ -192,7 +192,7 @@ where
             }
         };
 
-        if sdu_len < mem::size_of::<Header>() {
+        if sdu_len < ATT_HEADER_SIZE {
             self.staged_buf.clear();
             return Err(BearerRecvError::HeaderTooShort);
         }
@@ -317,7 +317,7 @@ mod tests {
                 let mut bearer_rx = BearerRx::new(app_channel.receiver);
                 let mut buf = [MaybeUninit::uninit(); 32];
                 let recv_packet = bearer_rx.next_packet(&mut buf).await.expect("recv succeeds");
-                assert_eq!(recv_packet.header.opcode, Opcode::ATT_EXCHANGE_MTU_RSP.into());
+                assert_eq!(recv_packet.opcode, Opcode::ATT_EXCHANGE_MTU_RSP.into());
                 assert_eq!(&recv_packet.data, &[0x04, 0x05]);
             });
 

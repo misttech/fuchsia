@@ -4,47 +4,18 @@
 
 //! Attribute Protocol (ATT) Packet Data Unit (PDU) definitions and parsing utilities.
 
-use core::cmp::min;
-use core::mem::size_of;
+use crate::att::AttributeHandle;
 use sapphire_common::Uuid;
 pub use sapphire_emboss::att::{
     AttExecuteWriteFlag as ExecuteWriteFlags, AttFindInformationRspHeader, AttHandlesInformation,
-    AttInformationData16, AttInformationData128, AttOpcode as Opcode, AttUuidFormat as UuidFormat,
-    ErrorCode,
+    AttInformationData16, AttInformationData128, AttOpcode as Opcode,
+    AttReadByGroupTypeRspEntryHeader, AttUuidFormat as UuidFormat, ErrorCode,
 };
-use zerocopy::byteorder::little_endian::U16;
-use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, TryFromBytes};
+use zerocopy::{Immutable, IntoBytes, KnownLayout, TryFromBytes};
 
 /// Helper to determine the ATT UUID format from a UUID.
 pub fn uuid_to_format(uuid: &Uuid) -> UuidFormat {
     if uuid.is_u16() { UuidFormat::BIT16 } else { UuidFormat::BIT128 }
-}
-
-/// A parsed view into any incoming packet's header.
-#[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(C, packed)]
-pub struct Header {
-    pub opcode: u8,
-}
-
-impl Header {
-    pub fn new(opcode: Opcode) -> Self {
-        Self { opcode: opcode as u8 }
-    }
-}
-
-impl From<Opcode> for Header {
-    fn from(opcode: Opcode) -> Self {
-        Self::new(opcode)
-    }
-}
-
-/// A generic unsized ATT packet containing a verified header and variable payload data.
-#[derive(TryFromBytes, KnownLayout, Immutable, IntoBytes, Debug)]
-#[repr(C)]
-pub struct Packet {
-    pub header: Header,
-    pub data: [u8],
 }
 
 /// Fixed protocol wire sizes (in bytes) for Emboss ATT PDUs.
@@ -63,7 +34,10 @@ pub const ATT_HANDLES_INFORMATION_SIZE: usize = 4;
 pub const ATT_READ_REQ_SIZE: usize = 3;
 pub const ATT_READ_BLOB_REQ_SIZE: usize = 5;
 pub const ATT_READ_BY_TYPE_REQ_HEADER_SIZE: usize = 5;
+pub const ATT_READ_BY_TYPE_RSP_HEADER_SIZE: usize = 2;
 pub const ATT_READ_BY_GROUP_TYPE_REQ_HEADER_SIZE: usize = 5;
+pub const ATT_READ_BY_GROUP_TYPE_RSP_HEADER_SIZE: usize = 2;
+pub const ATT_READ_BY_GROUP_TYPE_RSP_ENTRY_HEADER_SIZE: usize = 4;
 pub const ATT_WRITE_REQ_HEADER_SIZE: usize = 3;
 pub const ATT_WRITE_RSP_SIZE: usize = 1;
 pub const ATT_WRITE_CMD_HEADER_SIZE: usize = 3;
@@ -73,6 +47,14 @@ pub const ATT_EXECUTE_WRITE_RSP_SIZE: usize = 1;
 pub const ATT_HANDLE_VALUE_NTF_HEADER_SIZE: usize = 3;
 pub const ATT_HANDLE_VALUE_IND_HEADER_SIZE: usize = 3;
 pub const ATT_HANDLE_VALUE_CFM_SIZE: usize = 1;
+
+/// A generic unsized ATT packet containing an opcode and variable payload data.
+#[derive(TryFromBytes, KnownLayout, Immutable, IntoBytes, Debug)]
+#[repr(C)]
+pub struct Packet {
+    pub opcode: u8,
+    pub data: [u8],
+}
 
 /// Result of a Find Information procedure (see Vol 3, Part F, Section 3.4.3.2).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -108,155 +90,108 @@ impl<'a, const N: usize> PduList<'a, N> {
     }
 }
 
+/// A zero-copy list of handle-value pairs from a Read By Type Response.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PushError {
-    BufferFull,
+pub struct ReadByTypeResults<'a> {
+    length: usize,
+    data: &'a [u8],
 }
 
-/// A generic, stateful builder for serializing dynamically sized ATT response PDUs (DSTs)
-/// containing a variable-length list of entries of type `T` directly into a byte buffer.
-///
-/// The caller must serialize any PDU-specific headers into the buffer *before* initializing
-/// the builder, specifying the `header_len`. The builder will write entries starting after
-/// the header, ensuring that entries do not exceed the buffer capacity or the negotiated MTU.
-pub struct DynamicPacketBuilder<'a, H, T> {
-    buf: &'a mut [u8],
-    offset: usize,
-    limit: usize,
-    _phantom: core::marker::PhantomData<(H, T)>,
-}
-
-impl<'a, H: IntoBytes + Immutable, T: IntoBytes + Immutable + KnownLayout>
-    DynamicPacketBuilder<'a, H, T>
-{
-    /// Creates a new builder for serializing entries of type `T` into the buffer.
-    ///
-    /// Writes the `header` directly into the start of the buffer.
-    /// Asserts that the buffer and MTU limit are large enough to contain the header.
-    pub fn new(buf: &'a mut [u8], header: H, mtu: usize) -> Self {
-        let header_len = size_of::<H>();
-        assert!(buf.len() >= header_len, "buffer too small for header");
-        assert!(mtu >= header_len, "MTU too small for header");
-
-        buf[..header_len].copy_from_slice(header.as_bytes());
-
-        let limit = min(buf.len(), mtu);
-        Self { buf, offset: header_len, limit, _phantom: core::marker::PhantomData }
+impl<'a> ReadByTypeResults<'a> {
+    pub fn new(length: usize, data: &'a [u8]) -> Option<Self> {
+        if length < core::mem::size_of::<AttributeHandle>()
+            || data.is_empty()
+            || data.len() % length != 0
+        {
+            None
+        } else {
+            Some(Self { length, data })
+        }
     }
 
-    /// Returns the current serialized length of the packet.
+    pub fn entry_size(&self) -> usize {
+        self.length
+    }
+
     pub fn len(&self) -> usize {
-        self.offset
+        self.data.len() / self.length
     }
 
-    /// Attempts to serialize a single entry into the buffer.
-    ///
-    /// Returns `Err(PushError::BufferFull)` if adding the entry would exceed the negotiated
-    /// MTU limit or the buffer capacity.
-    pub fn push(&mut self, entry: T) -> Result<(), PushError> {
-        let entry_size = size_of::<T>();
-        if self.offset + entry_size > self.limit {
-            return Err(PushError::BufferFull);
+    pub fn is_empty(&self) -> bool {
+        self.data.is_empty()
+    }
+
+    pub fn get(&self, index: usize) -> Option<(AttributeHandle, &'a [u8])> {
+        let offset = index * self.length;
+        let chunk = self.data.get(offset..offset + self.length)?;
+        let handle_val = u16::from_le_bytes([chunk[0], chunk[1]]);
+        let handle = AttributeHandle::try_from(handle_val).ok()?;
+        Some((handle, &chunk[core::mem::size_of::<AttributeHandle>()..]))
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (AttributeHandle, &'a [u8])> {
+        self.data.chunks_exact(self.length).filter_map(|chunk| {
+            let handle_val = u16::from_le_bytes([chunk[0], chunk[1]]);
+            AttributeHandle::try_from(handle_val)
+                .ok()
+                .map(|h| (h, &chunk[core::mem::size_of::<AttributeHandle>()..]))
+        })
+    }
+}
+
+/// A zero-copy list of group entries from a Read By Group Type Response.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ReadByGroupTypeResults<'a> {
+    length: usize,
+    data: &'a [u8],
+}
+
+impl<'a> ReadByGroupTypeResults<'a> {
+    pub fn new(length: usize, data: &'a [u8]) -> Option<Self> {
+        if length < ATT_READ_BY_GROUP_TYPE_RSP_ENTRY_HEADER_SIZE
+            || data.is_empty()
+            || data.len() % length != 0
+        {
+            None
+        } else {
+            Some(Self { length, data })
         }
-        self.buf[self.offset..self.offset + entry_size].copy_from_slice(entry.as_bytes());
-        self.offset += entry_size;
-        Ok(())
     }
 
-    /// Attempts to serialize a slice of entries into the buffer.
-    ///
-    /// Returns `Err(PushError::BufferFull)` if adding the entries would exceed the negotiated
-    /// MTU limit or the buffer capacity.
-    pub fn extend_from_slice(&mut self, entries: &[T]) -> Result<(), PushError> {
-        let entries_size = entries.len() * size_of::<T>();
-        if self.offset + entries_size > self.limit {
-            return Err(PushError::BufferFull);
-        }
-        self.buf[self.offset..self.offset + entries_size].copy_from_slice(entries.as_bytes());
-        self.offset += entries_size;
-        Ok(())
+    pub fn entry_size(&self) -> usize {
+        self.length
     }
 
-    /// Consumes the builder and returns the serialized packet view of the written data.
-    pub fn as_packet(self) -> &'a Packet {
-        Packet::try_ref_from_bytes(&self.buf[..self.offset]).expect(
-            "Programming error: serialized DynamicPacketBuilder violates Packet layout constraints.",
-        )
+    pub fn len(&self) -> usize {
+        self.data.len() / self.length
     }
-}
 
-/// Parameters for Read By Type Request PDU Header (OpCode = 0x08)
-///
-/// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.4.7).
-#[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(C, packed)]
-pub struct ReadByTypeReqHeader {
-    pub starting_handle: U16,
-    pub ending_handle: U16,
-}
+    pub fn is_empty(&self) -> bool {
+        self.data.is_empty()
+    }
 
-/// The complete Read By Type Request PDU (OpCode = 0x08).
-///
-/// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.4.7).
-#[derive(TryFromBytes, KnownLayout, Immutable, IntoBytes, Debug)]
-#[repr(C)]
-pub struct ReadByTypeReq {
-    pub header: ReadByTypeReqHeader,
-    pub attribute_type: [u8], // 2 bytes (16-bit UUID) or 16 bytes (128-bit UUID)
-}
+    pub fn get(
+        &self,
+        index: usize,
+    ) -> Option<(AttReadByGroupTypeRspEntryHeader<&'a [u8]>, &'a [u8])> {
+        let offset = index * self.length;
+        let chunk = self.data.get(offset..offset + self.length)?;
+        let header = AttReadByGroupTypeRspEntryHeader::new(
+            &chunk[..ATT_READ_BY_GROUP_TYPE_RSP_ENTRY_HEADER_SIZE],
+        );
+        Some((header, &chunk[ATT_READ_BY_GROUP_TYPE_RSP_ENTRY_HEADER_SIZE..]))
+    }
 
-/// The complete Read By Type Response PDU (OpCode = 0x09).
-///
-/// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.4.8).
-///
-/// NOTE: The individual elements inside `attribute_data_list` are not represented
-/// as static structs because they contain variable-length attribute values. Instead,
-/// the server packs them dynamically, and the client parses them using an iterator.
-#[derive(TryFromBytes, KnownLayout, Immutable, IntoBytes, Debug)]
-#[repr(C)]
-pub struct ReadByTypeRsp {
-    pub length: u8,
-    pub attribute_data_list: [u8],
-}
-
-/// Parameters for Read By Group Type Request PDU Header (OpCode = 0x10)
-///
-/// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.4.9).
-#[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(C, packed)]
-pub struct ReadByGroupTypeReqHeader {
-    pub starting_handle: U16,
-    pub ending_handle: U16,
-}
-
-/// The complete Read By Group Type Request PDU (OpCode = 0x10).
-///
-/// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.4.9).
-#[derive(TryFromBytes, KnownLayout, Immutable, IntoBytes, Debug)]
-#[repr(C)]
-pub struct ReadByGroupTypeReq {
-    pub header: ReadByGroupTypeReqHeader,
-    pub attribute_type: [u8], // 2 bytes (16-bit UUID) or 16 bytes (128-bit UUID)
-}
-
-/// The header format for each entry inside the Read By Group Type Response's attribute data list.
-///
-/// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.4.10).
-#[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(C, packed)]
-pub struct ReadByGroupTypeRspEntryHeader {
-    pub attribute_handle: U16,
-    pub end_group_handle: U16,
-}
-
-/// The complete Read By Group Type Response PDU (OpCode = 0x11).
-///
-/// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.4.10).
-#[derive(TryFromBytes, KnownLayout, Immutable, IntoBytes, Debug)]
-#[repr(C)]
-pub struct ReadByGroupTypeRsp {
-    pub length: u8,
-    pub attribute_data_list: [u8],
+    pub fn iter(
+        &self,
+    ) -> impl Iterator<Item = (AttReadByGroupTypeRspEntryHeader<&'a [u8]>, &'a [u8])> {
+        self.data.chunks_exact(self.length).map(|chunk| {
+            let header = AttReadByGroupTypeRspEntryHeader::new(
+                &chunk[..ATT_READ_BY_GROUP_TYPE_RSP_ENTRY_HEADER_SIZE],
+            );
+            (header, &chunk[ATT_READ_BY_GROUP_TYPE_RSP_ENTRY_HEADER_SIZE..])
+        })
+    }
 }
 
 #[cfg(test)]
@@ -264,8 +199,9 @@ mod tests {
     use super::*;
     use sapphire_emboss::att::{
         AttErrorRsp, AttExchangeMtuReq, AttExchangeMtuRsp, AttExecuteWriteReq,
-        AttFindByTypeValueReqHeader, AttFindInformationReq, AttHandleValueIndHeader,
-        AttHandleValueNtfHeader, AttPrepareWriteHeader, AttReadBlobReq,
+        AttFindByTypeValueReqHeader, AttFindInformationReq, AttFindInformationRspHeader,
+        AttHandleValueIndHeader, AttHandleValueNtfHeader, AttHandlesInformation, AttHeader,
+        AttInformationData16, AttInformationData128, AttPrepareWriteHeader, AttReadBlobReq,
         AttReadByGroupTypeReqHeader, AttReadByTypeReqHeader, AttReadReq, AttWriteCmd,
     };
 
@@ -325,10 +261,15 @@ mod tests {
 
     #[test]
     fn test_read_by_type_rsp_layout() {
-        let rsp_bytes = [0x0A, 0x01, 0x02, 0x03]; // length = 10, data = [1, 2, 3]
-        let parsed = ReadByTypeRsp::try_ref_from_bytes(&rsp_bytes[..]).unwrap();
-        assert_eq!(parsed.length, 10);
-        assert_eq!(parsed.attribute_data_list, [0x01, 0x02, 0x03]);
+        let rsp_bytes = [0x01, 0x00, 0x02, 0x03]; // handle = 1, data = [2, 3]
+        let results = ReadByTypeResults::new(4, &rsp_bytes[..]).unwrap();
+        assert_eq!(results.entry_size(), 4);
+        assert_eq!(results.len(), 1);
+        let mut iter = results.iter();
+        let (handle, data) = iter.next().unwrap();
+        assert_eq!(handle.get(), 1);
+        assert_eq!(data, &[0x02, 0x03]);
+        assert!(iter.next().is_none());
     }
 
     #[test]
@@ -345,10 +286,14 @@ mod tests {
 
     #[test]
     fn test_read_by_group_type_rsp_layout() {
-        let rsp_bytes = [0x0A, 0x01, 0x02, 0x03, 0x04, 0x05]; // length = 10, data = [1, 2, 3, 4, 5]
-        let parsed = ReadByGroupTypeRsp::try_ref_from_bytes(&rsp_bytes[..]).unwrap();
-        assert_eq!(parsed.length, 10);
-        assert_eq!(parsed.attribute_data_list, [0x01, 0x02, 0x03, 0x04, 0x05]);
+        let rsp_bytes = [0x01, 0x00, 0x02, 0x00, 0x03, 0x04]; // handle = 1, end_handle = 2, data = [3, 4]
+        let results = ReadByGroupTypeResults::new(6, &rsp_bytes[..]).unwrap();
+        assert_eq!(results.entry_size(), 6);
+        assert_eq!(results.len(), 1);
+        let (header, val) = results.get(0).unwrap();
+        assert_eq!(header.attribute_handle().try_read().unwrap(), 1);
+        assert_eq!(header.end_group_handle().try_read().unwrap(), 2);
+        assert_eq!(val, &[0x03, 0x04]);
     }
 
     #[test]
@@ -458,11 +403,8 @@ mod tests {
     #[test]
     fn test_header() {
         let hdr_bytes = [0x02];
-        let parsed = Header::read_from_bytes(&hdr_bytes).unwrap();
-        assert_eq!(parsed.opcode, u8::from(Opcode::ATT_EXCHANGE_MTU_REQ));
-
-        let new_hdr = Header::new(Opcode::ATT_EXCHANGE_MTU_REQ);
-        assert_eq!(new_hdr.as_bytes(), &hdr_bytes);
+        let view = AttHeader::new(&hdr_bytes[..]);
+        assert_eq!(view.attribute_opcode().try_read().unwrap(), Opcode::ATT_EXCHANGE_MTU_REQ);
     }
 
     #[test]

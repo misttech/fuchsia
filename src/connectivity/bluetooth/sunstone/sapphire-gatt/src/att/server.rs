@@ -17,9 +17,10 @@ use crate::att::pdu::{
     ATT_HANDLE_VALUE_IND_HEADER_SIZE, ATT_HANDLE_VALUE_NTF_HEADER_SIZE,
     ATT_HANDLES_INFORMATION_SIZE, ATT_HEADER_SIZE, ATT_INFORMATION_DATA_16_SIZE,
     ATT_INFORMATION_DATA_128_SIZE, ATT_PREPARE_WRITE_HEADER_SIZE, ATT_READ_BLOB_REQ_SIZE,
-    ATT_READ_REQ_SIZE, ATT_WRITE_CMD_HEADER_SIZE, ATT_WRITE_REQ_HEADER_SIZE, ATT_WRITE_RSP_SIZE,
-    DynamicPacketBuilder, ErrorCode, ExecuteWriteFlags, Header, Opcode, Packet, ReadByGroupTypeReq,
-    ReadByGroupTypeRspEntryHeader, ReadByTypeReq, UuidFormat, uuid_to_format,
+    ATT_READ_BY_GROUP_TYPE_REQ_HEADER_SIZE, ATT_READ_BY_GROUP_TYPE_RSP_ENTRY_HEADER_SIZE,
+    ATT_READ_BY_TYPE_REQ_HEADER_SIZE, ATT_READ_REQ_SIZE, ATT_WRITE_CMD_HEADER_SIZE,
+    ATT_WRITE_REQ_HEADER_SIZE, ATT_WRITE_RSP_SIZE, ErrorCode, ExecuteWriteFlags, Opcode, Packet,
+    UuidFormat, uuid_to_format,
 };
 use crate::att::router::BearerRxHandle;
 use core::cmp::{max, min};
@@ -35,13 +36,13 @@ use sapphire_emboss::att::{
     AttFindByTypeValueReqHeader, AttFindInformationReq, AttFindInformationRspHeaderMut,
     AttHandleValueIndHeaderMut, AttHandleValueNtfHeaderMut, AttHandlesInformationMut, AttHeader,
     AttHeaderMut, AttInformationData16Mut, AttInformationData128Mut, AttPrepareWriteHeader,
-    AttReadBlobReq, AttReadReq, AttWriteCmd,
+    AttReadBlobReq, AttReadByGroupTypeReqHeader, AttReadByGroupTypeRspEntryHeaderMut,
+    AttReadByTypeReqHeader, AttReadReq, AttWriteCmd,
 };
 use sapphire_peer_cache::PeerId;
 use sapphire_sync::mutex::raw::{RawMutex, SingleThreadMutex};
 use thiserror::Error;
-use zerocopy::byteorder::little_endian::U16;
-use zerocopy::{Immutable, IntoBytes, KnownLayout, TryFromBytes};
+use zerocopy::{IntoBytes, TryFromBytes};
 
 #[derive(Error, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ServerError {
@@ -70,37 +71,6 @@ enum TransactionError {
         "Error response {error_code:?} for request {request_opcode:?} on handle {attribute_handle:#06X}"
     )]
     ErrorResponse { request_opcode: Opcode, attribute_handle: u16, error_code: ErrorCode },
-}
-
-/// A trait for common fields in ATT range request PDUs (Read By Type and Read By Group Type).
-trait RangeRequest: TryFromBytes + Immutable + KnownLayout {
-    fn starting_handle(&self) -> u16;
-    fn ending_handle(&self) -> u16;
-    fn attribute_type(&self) -> &[u8];
-}
-
-impl RangeRequest for ReadByTypeReq {
-    fn starting_handle(&self) -> u16 {
-        self.header.starting_handle.get()
-    }
-    fn ending_handle(&self) -> u16 {
-        self.header.ending_handle.get()
-    }
-    fn attribute_type(&self) -> &[u8] {
-        &self.attribute_type
-    }
-}
-
-impl RangeRequest for ReadByGroupTypeReq {
-    fn starting_handle(&self) -> u16 {
-        self.header.starting_handle.get()
-    }
-    fn ending_handle(&self) -> u16 {
-        self.header.ending_handle.get()
-    }
-    fn attribute_type(&self) -> &[u8] {
-        &self.attribute_type
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -354,9 +324,9 @@ where
             }
             Opcode::ATT_READ_REQ => self.handle_read(rx_packet.as_bytes()).await,
             Opcode::ATT_READ_BLOB_REQ => self.handle_read_blob(rx_packet.as_bytes()).await,
-            Opcode::ATT_READ_BY_TYPE_REQ => self.handle_read_by_type(&rx_packet.data).await,
+            Opcode::ATT_READ_BY_TYPE_REQ => self.handle_read_by_type(rx_packet.as_bytes()).await,
             Opcode::ATT_READ_BY_GROUP_TYPE_REQ => {
-                self.handle_read_by_group_type(&rx_packet.data).await
+                self.handle_read_by_group_type(rx_packet.as_bytes()).await
             }
             Opcode::ATT_WRITE_REQ => self.handle_write_req(rx_packet.as_bytes()).await,
             Opcode::ATT_WRITE_CMD => self.handle_write_cmd(rx_packet.as_bytes()).await,
@@ -614,26 +584,22 @@ where
             .map_err(|_| TransactionError::InvalidPdu { request_opcode: Opcode::ATT_READ_REQ })?;
 
         // Read the attribute value from the database, capped to the maximum possible response size.
-        let mut val_buf = [0u8; MAX_ATTRIBUTE_SIZE];
-        let response_capacity = self.effective_mtu() - size_of::<Header>();
+        let mut tx_buf = [0u8; MAX_SUPPORTED_MTU];
+        let mut view = AttHeaderMut::new(&mut tx_buf[..ATT_HEADER_SIZE]);
+        view.attribute_opcode().try_write(Opcode::ATT_READ_RSP).expect("valid opcode");
+        let response_capacity = self.effective_mtu() - ATT_HEADER_SIZE;
         let read_len = self
             .read_attribute_at(
                 handle_val,
                 0,
                 Opcode::ATT_READ_REQ,
-                &mut val_buf[..response_capacity],
+                &mut tx_buf[ATT_HEADER_SIZE..ATT_HEADER_SIZE + response_capacity],
             )
             .await?;
 
-        // Format and send the Read Response.
-        let mut tx_buf = [0u8; MAX_SUPPORTED_MTU];
-        let mut builder = DynamicPacketBuilder::<_, u8>::new(
-            &mut tx_buf,
-            Header::new(Opcode::ATT_READ_RSP),
-            self.effective_mtu(),
-        );
-        builder.extend_from_slice(&val_buf[..read_len]).expect("read response fits within MTU");
-        self.send_packet(builder.as_packet()).await?;
+        let tx_packet = Packet::try_ref_from_bytes(&tx_buf[..ATT_HEADER_SIZE + read_len])
+            .expect("valid packet");
+        self.send_packet(tx_packet).await?;
 
         Ok(())
     }
@@ -655,28 +621,22 @@ where
         })?;
 
         // Read the attribute chunk starting from the requested offset, capped to the response size.
-        let mut val_buf = [0u8; MAX_ATTRIBUTE_SIZE];
-        let response_capacity = self.effective_mtu() - size_of::<Header>();
+        let mut tx_buf = [0u8; MAX_SUPPORTED_MTU];
+        let mut view = AttHeaderMut::new(&mut tx_buf[..ATT_HEADER_SIZE]);
+        view.attribute_opcode().try_write(Opcode::ATT_READ_BLOB_RSP).expect("valid opcode");
+        let response_capacity = self.effective_mtu() - ATT_HEADER_SIZE;
         let read_len = self
             .read_attribute_at(
                 handle_val,
                 offset,
                 Opcode::ATT_READ_BLOB_REQ,
-                &mut val_buf[..response_capacity],
+                &mut tx_buf[ATT_HEADER_SIZE..ATT_HEADER_SIZE + response_capacity],
             )
             .await?;
 
-        // Format and send the Read Blob Response.
-        let mut tx_buf = [0u8; MAX_SUPPORTED_MTU];
-        let mut builder = DynamicPacketBuilder::<_, u8>::new(
-            &mut tx_buf,
-            Header::new(Opcode::ATT_READ_BLOB_RSP),
-            self.effective_mtu(),
-        );
-        builder
-            .extend_from_slice(&val_buf[..read_len])
-            .expect("read blob response fits within MTU");
-        self.send_packet(builder.as_packet()).await?;
+        let tx_packet = Packet::try_ref_from_bytes(&tx_buf[..ATT_HEADER_SIZE + read_len])
+            .expect("valid packet");
+        self.send_packet(tx_packet).await?;
 
         Ok(())
     }
@@ -685,12 +645,14 @@ where
     ///
     /// Senders format entry headers into a buffer using `write_entry_header` (returning Err on
     /// failure), which determines the first entry's header size
-    /// before the output packet builder is initialized.
+    /// before the output packet is assembled.
     ///
     /// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Sections 3.4.4.7 to 3.4.4.10).
-    async fn handle_read_by_type_generic<Req>(
+    async fn handle_read_by_type_generic(
         &mut self,
-        payload: &[u8],
+        start_handle_val: u16,
+        end_handle_val: u16,
+        type_bytes: &[u8],
         req_opcode: Opcode,
         rsp_opcode: Opcode,
         mut write_entry_header: impl FnMut(
@@ -698,17 +660,7 @@ where
             AttributeHandle,
             &DB::Attr,
         ) -> Result<usize, ErrorCode>,
-    ) -> Result<(), TransactionError>
-    where
-        Req: RangeRequest + ?Sized,
-    {
-        // Extract common request parameters (starting handle, ending handle, and search UUID).
-        let req = Req::try_ref_from_bytes(payload)
-            .map_err(|_| TransactionError::InvalidPdu { request_opcode: req_opcode })?;
-
-        let start_handle_val = req.starting_handle();
-        let end_handle_val = req.ending_handle();
-
+    ) -> Result<(), TransactionError> {
         let start_handle = to_handle(start_handle_val, req_opcode)?;
         let end_handle = to_handle(end_handle_val, req_opcode)?;
 
@@ -720,10 +672,10 @@ where
             });
         }
 
-        let uuid = Uuid::try_from(req.attribute_type())
+        let uuid = Uuid::try_from(type_bytes)
             .map_err(|_| TransactionError::InvalidPdu { request_opcode: req_opcode })?;
 
-        const MAX_ENTRY_HEADER_SIZE: usize = size_of::<ReadByGroupTypeRspEntryHeader>();
+        const MAX_ENTRY_HEADER_SIZE: usize = ATT_READ_BY_GROUP_TYPE_RSP_ENTRY_HEADER_SIZE;
 
         // Query range for matching attributes.
         let mut attributes = self
@@ -741,7 +693,7 @@ where
         }
 
         // We must read the first attribute to establish the element length
-        // before initializing the builder, so that the header is populated correctly.
+        // before serializing entries, so that the header length is populated correctly.
         let (first_handle, first_attr) =
             attributes.next().expect("peek verified at least one attribute present");
 
@@ -759,22 +711,9 @@ where
                 }
             };
 
-        // The Length field is 1 byte, so the maximum size of an entry is u8::MAX (255).
         let limit = self.effective_mtu();
-
-        // Since each entry must contain the entry header,
-        // the maximum value length is u8::MAX - entry header size.
         let max_value_len = u8::MAX as usize - first_entry_header_len;
-        let min_payload_size = size_of::<Header>() + size_of::<u8>() + first_entry_header_len;
-
-        // If the attribute value is longer than the remaining MTU space
-        // or the max possible entry size, only the first chunk is read in this response
-        //
-        // (see Bluetooth Core Spec v6.0, Vol 3, Part F, Section 3.4.4.8 for Read By Type,
-        // and Section 3.4.4.10 for Read By Group Type).
-        //
-        // Note: since the minimum ATT MTU is 23, `limit` is guaranteed to be larger than
-        // `min_payload_size` (at most 6), so `first_read_limit` is always > 0.
+        let min_payload_size = ATT_HEADER_SIZE + 1 + first_entry_header_len;
         let first_read_limit = min(limit.saturating_sub(min_payload_size), max_value_len);
         debug_assert_ne!(first_read_limit, 0);
 
@@ -788,67 +727,72 @@ where
                 error_code,
             })?;
 
-        // Initialize the output packet builder with the correct header length.
-        let header = [
-            u8::from(rsp_opcode),
-            u8::try_from(first_entry_header_len + first_read_len)
-                .expect("Range response payload length fits in u8"),
-        ];
+        let entry_size = first_entry_header_len + first_read_len;
         let mut tx_buf = [0u8; MAX_SUPPORTED_MTU];
-        let mut builder = DynamicPacketBuilder::<_, u8>::new(&mut tx_buf, header, limit);
+        let mut view = AttHeaderMut::new(&mut tx_buf[..ATT_HEADER_SIZE]);
+        view.attribute_opcode().try_write(rsp_opcode).expect("valid opcode");
+        tx_buf[ATT_HEADER_SIZE] =
+            u8::try_from(entry_size).expect("Range response payload length fits in u8");
 
-        builder
-            .extend_from_slice(&first_entry_header_buf[..first_entry_header_len])
-            .expect("First entry header should fit within allocated buffer");
-        builder
-            .extend_from_slice(&first_val_buf[..first_read_len])
-            .expect("First entry value should fit within allocated buffer");
+        let mut offset = ATT_HEADER_SIZE + 1;
+        tx_buf[offset..offset + first_entry_header_len]
+            .copy_from_slice(&first_entry_header_buf[..first_entry_header_len]);
+        offset += first_entry_header_len;
+        tx_buf[offset..offset + first_read_len].copy_from_slice(&first_val_buf[..first_read_len]);
+        offset += first_read_len;
 
         // Pack matching attributes into response.
         for (handle, attr) in attributes {
             let mut entry_header_buf = [0u8; MAX_ENTRY_HEADER_SIZE];
             let entry_header_len = match write_entry_header(&mut entry_header_buf, handle, attr) {
-                // Formatting succeeded; return the formatted header length.
                 Ok(len) => len,
-                // Formatting failed (e.g., unsupported group type); stop packing and
-                // return the response accumulated so far.
                 Err(_) => break,
             };
 
-            if builder.len() + entry_header_len + first_read_len > limit {
+            if offset + entry_header_len + first_read_len > limit {
                 break;
             }
 
             let mut val_buf = [0u8; MAX_ATTRIBUTE_SIZE];
-            // Read first_read_len + 1 to detect if the value is actually longer.
-            // Slicing to exactly first_read_len would hide length mismatches.
             let Ok(read_len) =
                 attr.read_chunk(self.peer_id, 0, &mut val_buf[..first_read_len + 1]).await
             else {
-                // If reading a subsequent attribute fails, gracefully stop packing and
-                // return the successful entries.
                 break;
             };
             if read_len != first_read_len {
-                // All entries in the response list must have the same length. If a subsequent
-                // value's size differs, stop packing.
                 break;
             }
-            builder
-                .extend_from_slice(&entry_header_buf[..entry_header_len])
-                .expect("Subsequent entry header should fit based on length check");
-            builder
-                .extend_from_slice(&val_buf[..read_len])
-                .expect("Subsequent entry value should fit based on length check");
+            tx_buf[offset..offset + entry_header_len]
+                .copy_from_slice(&entry_header_buf[..entry_header_len]);
+            offset += entry_header_len;
+            tx_buf[offset..offset + read_len].copy_from_slice(&val_buf[..read_len]);
+            offset += read_len;
         }
 
-        self.send_packet(builder.as_packet()).await?;
+        let tx_packet = Packet::try_ref_from_bytes(&tx_buf[..offset]).expect("valid packet");
+        self.send_packet(tx_packet).await?;
         Ok(())
     }
 
     async fn handle_read_by_type(&mut self, payload: &[u8]) -> Result<(), TransactionError> {
-        self.handle_read_by_type_generic::<ReadByTypeReq>(
-            payload,
+        if payload.len() < ATT_READ_BY_TYPE_REQ_HEADER_SIZE {
+            return Err(TransactionError::InvalidPdu {
+                request_opcode: Opcode::ATT_READ_BY_TYPE_REQ,
+            });
+        }
+        let req = AttReadByTypeReqHeader::new(payload);
+        let start_handle_val = req.starting_handle().try_read().map_err(|_| {
+            TransactionError::InvalidPdu { request_opcode: Opcode::ATT_READ_BY_TYPE_REQ }
+        })?;
+        let end_handle_val = req.ending_handle().try_read().map_err(|_| {
+            TransactionError::InvalidPdu { request_opcode: Opcode::ATT_READ_BY_TYPE_REQ }
+        })?;
+        let type_bytes = &payload[ATT_READ_BY_TYPE_REQ_HEADER_SIZE..];
+
+        self.handle_read_by_type_generic(
+            start_handle_val,
+            end_handle_val,
+            type_bytes,
             Opcode::ATT_READ_BY_TYPE_REQ,
             Opcode::ATT_READ_BY_TYPE_RSP,
             |buf, handle, _attr| {
@@ -866,19 +810,37 @@ where
     ///
     /// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Sections 3.4.4.9 & 3.4.4.10).
     async fn handle_read_by_group_type(&mut self, payload: &[u8]) -> Result<(), TransactionError> {
-        self.handle_read_by_type_generic::<ReadByGroupTypeReq>(
-            payload,
+        if payload.len() < ATT_READ_BY_GROUP_TYPE_REQ_HEADER_SIZE {
+            return Err(TransactionError::InvalidPdu {
+                request_opcode: Opcode::ATT_READ_BY_GROUP_TYPE_REQ,
+            });
+        }
+        let req = AttReadByGroupTypeReqHeader::new(payload);
+        let start_handle_val = req.starting_handle().try_read().map_err(|_| {
+            TransactionError::InvalidPdu { request_opcode: Opcode::ATT_READ_BY_GROUP_TYPE_REQ }
+        })?;
+        let end_handle_val = req.ending_handle().try_read().map_err(|_| {
+            TransactionError::InvalidPdu { request_opcode: Opcode::ATT_READ_BY_GROUP_TYPE_REQ }
+        })?;
+        let type_bytes = &payload[ATT_READ_BY_GROUP_TYPE_REQ_HEADER_SIZE..];
+
+        self.handle_read_by_type_generic(
+            start_handle_val,
+            end_handle_val,
+            type_bytes,
             Opcode::ATT_READ_BY_GROUP_TYPE_REQ,
             Opcode::ATT_READ_BY_GROUP_TYPE_RSP,
             |buf, handle, attr| {
-                let group_end = attr.group_end_handle().ok_or(ErrorCode::UNSUPPORTED_GROUP_TYPE)?;
-                let header = ReadByGroupTypeRspEntryHeader {
-                    attribute_handle: U16::new(handle.value()),
-                    end_group_handle: U16::new(group_end),
+                let end_group_handle = match attr.group_end_handle() {
+                    Some(end_group) => end_group,
+                    None => return Err(ErrorCode::UNSUPPORTED_GROUP_TYPE),
                 };
-                let header_size = size_of::<ReadByGroupTypeRspEntryHeader>();
-                buf[..header_size].copy_from_slice(header.as_bytes());
-                Ok(header_size)
+                let mut view = AttReadByGroupTypeRspEntryHeaderMut::new(
+                    &mut buf[..ATT_READ_BY_GROUP_TYPE_RSP_ENTRY_HEADER_SIZE],
+                );
+                view.attribute_handle().try_write(handle.value()).expect("valid handle");
+                view.end_group_handle().try_write(end_group_handle).expect("valid end handle");
+                Ok(ATT_READ_BY_GROUP_TYPE_RSP_ENTRY_HEADER_SIZE)
             },
         )
         .await
@@ -1013,7 +975,7 @@ where
 
         let mut rsp_buf = [0u8; MAX_SUPPORTED_MTU];
         rsp_buf[..payload.len()].copy_from_slice(payload);
-        let mut rsp_view = AttHeaderMut::new(&mut rsp_buf[..size_of::<Header>()]);
+        let mut rsp_view = AttHeaderMut::new(&mut rsp_buf[..ATT_HEADER_SIZE]);
         rsp_view.attribute_opcode().try_write(Opcode::ATT_PREPARE_WRITE_RSP).expect("valid opcode");
         let tx_packet =
             Packet::try_ref_from_bytes(&rsp_buf[..payload.len()]).expect("valid packet");
@@ -1310,9 +1272,9 @@ mod tests {
     use super::*;
     use crate::att::attribute::testing::MockAttribute;
     use crate::att::bearer::BearerRx;
-    use crate::att::client::ReadByGroupTypeResults;
     use crate::att::database::testing::MockDb;
     use crate::att::l2cap::mock::setup_mock_channel;
+    use crate::att::pdu::ReadByGroupTypeResults;
     use crate::att::router::{BearerRouter, RouteFilter};
     use sapphire_async::executor::BoundedExecutor;
     use sapphire_async::testing::TestExecutor;
@@ -1321,8 +1283,8 @@ mod tests {
         AttErrorRsp, AttExchangeMtuReqMut, AttExchangeMtuRsp, AttExecuteWriteReqMut,
         AttFindByTypeValueReqHeaderMut, AttFindInformationReqMut, AttFindInformationRspHeader,
         AttHandleValueIndHeader, AttHandleValueNtfHeader, AttHandlesInformation,
-        AttInformationData16, AttPrepareWriteHeaderMut, AttReadBlobReqMut, AttReadReqMut,
-        AttWriteCmdMut,
+        AttInformationData16, AttPrepareWriteHeaderMut, AttReadBlobReqMut,
+        AttReadByGroupTypeReqHeaderMut, AttReadByTypeReqHeaderMut, AttReadReqMut, AttWriteCmdMut,
     };
 
     fn h(val: u16) -> AttributeHandle {
@@ -1692,7 +1654,7 @@ mod tests {
 
                 // Expect FindInformationRsp with only handle 1 (since handle 2 has a different format)
                 let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ATT_FIND_INFORMATION_RSP.into());
+                assert_eq!(packet.opcode, Opcode::ATT_FIND_INFORMATION_RSP.into());
 
                 let header = AttFindInformationRspHeader::new(packet.as_bytes());
                 assert_eq!(header.format().try_read().unwrap(), UuidFormat::BIT16);
@@ -1711,7 +1673,7 @@ mod tests {
 
                 // Expect the same FindInformationRsp containing only handle 1
                 let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ATT_FIND_INFORMATION_RSP.into());
+                assert_eq!(packet.opcode, Opcode::ATT_FIND_INFORMATION_RSP.into());
 
                 let header = AttFindInformationRspHeader::new(packet.as_bytes());
                 assert_eq!(header.format().try_read().unwrap(), UuidFormat::BIT16);
@@ -1866,7 +1828,7 @@ mod tests {
 
                 // Expect FindByTypeValueRsp with entry [1, 5]
                 let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ATT_FIND_BY_TYPE_VALUE_RSP.into());
+                assert_eq!(packet.opcode, Opcode::ATT_FIND_BY_TYPE_VALUE_RSP.into());
                 let entry = AttHandlesInformation::new(&packet.data[..]);
                 assert_eq!(entry.attribute_handle().try_read().unwrap(), 1);
                 assert_eq!(entry.group_end_handle().try_read().unwrap(), 5);
@@ -1972,7 +1934,7 @@ mod tests {
 
                 // Expect ReadRsp containing "Sunstone"
                 let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ATT_READ_RSP.into());
+                assert_eq!(packet.opcode, Opcode::ATT_READ_RSP.into());
                 let expected: &[u8] = b"Sunstone";
                 assert_eq!(packet.data, *expected);
             });
@@ -2129,7 +2091,7 @@ mod tests {
 
                 // Expect ReadRsp containing first 22 bytes of long_val (MTU - 1)
                 let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ATT_READ_RSP.into());
+                assert_eq!(packet.opcode, Opcode::ATT_READ_RSP.into());
                 let expected: &[u8] = b"0123456789012345678901";
                 assert_eq!(packet.data, *expected);
             });
@@ -2178,7 +2140,7 @@ mod tests {
 
                 // Expect ReadBlobRsp containing "stone"
                 let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ATT_READ_BLOB_RSP.into());
+                assert_eq!(packet.opcode, Opcode::ATT_READ_BLOB_RSP.into());
                 let expected: &[u8] = b"stone";
                 assert_eq!(packet.data, *expected);
             });
@@ -2286,7 +2248,7 @@ mod tests {
                 // long_val[5..] is "5678901234567890123456789"
                 // 22 bytes from offset 5: "5678901234567890123456"
                 let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ATT_READ_BLOB_RSP.into());
+                assert_eq!(packet.opcode, Opcode::ATT_READ_BLOB_RSP.into());
                 let expected: &[u8] = b"5678901234567890123456";
                 assert_eq!(packet.data, *expected);
             });
@@ -2326,21 +2288,23 @@ mod tests {
                 let mut client_tx_bearer = BearerTx::new(app_channel.sender);
 
                 let uuid = Uuid::from_u16(0x2A00);
-                let header = [
-                    Opcode::ATT_READ_BY_TYPE_REQ as u8,
-                    1,
-                    0, // start = 1
-                    10,
-                    0, // end = 10
-                ];
                 let mut tx_buf = [0u8; 64];
-                let mut builder =
-                    DynamicPacketBuilder::<_, u8>::new(&mut tx_buf, header, SERVER_MTU as usize);
-                builder.extend_from_slice(uuid.as_bytes()).unwrap();
-                client_tx_bearer.send(builder.as_packet()).await.unwrap();
+                let mut view =
+                    AttReadByTypeReqHeaderMut::new(&mut tx_buf[..ATT_READ_BY_TYPE_REQ_HEADER_SIZE]);
+                view.attribute_opcode().try_write(Opcode::ATT_READ_BY_TYPE_REQ).unwrap();
+                view.starting_handle().try_write(1).unwrap();
+                view.ending_handle().try_write(10).unwrap();
+                tx_buf[ATT_READ_BY_TYPE_REQ_HEADER_SIZE
+                    ..ATT_READ_BY_TYPE_REQ_HEADER_SIZE + uuid.as_bytes().len()]
+                    .copy_from_slice(uuid.as_bytes());
+                let tx_packet = Packet::try_ref_from_bytes(
+                    &tx_buf[..ATT_READ_BY_TYPE_REQ_HEADER_SIZE + uuid.as_bytes().len()],
+                )
+                .unwrap();
+                client_tx_bearer.send(tx_packet).await.unwrap();
 
                 let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ATT_READ_BY_TYPE_RSP.into());
+                assert_eq!(packet.opcode, Opcode::ATT_READ_BY_TYPE_RSP.into());
 
                 const VALUE_SIZE: usize = 8;
                 const ENTRY_SIZE: u8 = (size_of::<AttributeHandle>() + VALUE_SIZE) as u8;
@@ -2394,18 +2358,20 @@ mod tests {
 
                 // 1. Query for non-existent UUID 0x2A01
                 let uuid = Uuid::from_u16(0x2A01);
-                let header = [
-                    Opcode::ATT_READ_BY_TYPE_REQ as u8,
-                    1,
-                    0, // start = 1
-                    10,
-                    0, // end = 10
-                ];
                 let mut tx_buf = [0u8; 64];
-                let mut builder =
-                    DynamicPacketBuilder::<_, u8>::new(&mut tx_buf, header, SERVER_MTU as usize);
-                builder.extend_from_slice(uuid.as_bytes()).unwrap();
-                client_tx_bearer.send(builder.as_packet()).await.unwrap();
+                let mut view =
+                    AttReadByTypeReqHeaderMut::new(&mut tx_buf[..ATT_READ_BY_TYPE_REQ_HEADER_SIZE]);
+                view.attribute_opcode().try_write(Opcode::ATT_READ_BY_TYPE_REQ).unwrap();
+                view.starting_handle().try_write(1).unwrap();
+                view.ending_handle().try_write(10).unwrap();
+                tx_buf[ATT_READ_BY_TYPE_REQ_HEADER_SIZE
+                    ..ATT_READ_BY_TYPE_REQ_HEADER_SIZE + uuid.as_bytes().len()]
+                    .copy_from_slice(uuid.as_bytes());
+                let tx_packet = Packet::try_ref_from_bytes(
+                    &tx_buf[..ATT_READ_BY_TYPE_REQ_HEADER_SIZE + uuid.as_bytes().len()],
+                )
+                .unwrap();
+                client_tx_bearer.send(tx_packet).await.unwrap();
 
                 let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
                 let err = AttErrorRsp::new(packet.as_bytes());
@@ -2418,18 +2384,20 @@ mod tests {
 
                 // 2. Query with invalid range (start > end)
                 let uuid = Uuid::from_u16(0x2A00);
-                let header2 = [
-                    Opcode::ATT_READ_BY_TYPE_REQ as u8,
-                    10,
-                    0, // start = 10
-                    5,
-                    0, // end = 5
-                ];
                 let mut tx_buf = [0u8; 64];
-                let mut builder =
-                    DynamicPacketBuilder::<_, u8>::new(&mut tx_buf, header2, SERVER_MTU as usize);
-                builder.extend_from_slice(uuid.as_bytes()).unwrap();
-                client_tx_bearer.send(builder.as_packet()).await.unwrap();
+                let mut view2 =
+                    AttReadByTypeReqHeaderMut::new(&mut tx_buf[..ATT_READ_BY_TYPE_REQ_HEADER_SIZE]);
+                view2.attribute_opcode().try_write(Opcode::ATT_READ_BY_TYPE_REQ).unwrap();
+                view2.starting_handle().try_write(10).unwrap();
+                view2.ending_handle().try_write(5).unwrap();
+                tx_buf[ATT_READ_BY_TYPE_REQ_HEADER_SIZE
+                    ..ATT_READ_BY_TYPE_REQ_HEADER_SIZE + uuid.as_bytes().len()]
+                    .copy_from_slice(uuid.as_bytes());
+                let tx_packet2 = Packet::try_ref_from_bytes(
+                    &tx_buf[..ATT_READ_BY_TYPE_REQ_HEADER_SIZE + uuid.as_bytes().len()],
+                )
+                .unwrap();
+                client_tx_bearer.send(tx_packet2).await.unwrap();
 
                 let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
                 let err = AttErrorRsp::new(packet.as_bytes());
@@ -2494,41 +2462,39 @@ mod tests {
 
                 // 2. Read By Group Type Request
                 let uuid = Uuid::from_u16(0x2800);
-                let header = [
-                    Opcode::ATT_READ_BY_GROUP_TYPE_REQ as u8,
-                    1,
-                    0, // start = 1
-                    10,
-                    0, // end = 10
-                ];
                 let mut tx_buf = [0u8; NEGOTIATED_MTU as usize];
-                let mut builder = DynamicPacketBuilder::<_, u8>::new(
-                    &mut tx_buf,
-                    header,
-                    NEGOTIATED_MTU as usize,
+                let mut view = AttReadByGroupTypeReqHeaderMut::new(
+                    &mut tx_buf[..ATT_READ_BY_GROUP_TYPE_REQ_HEADER_SIZE],
                 );
-                builder.extend_from_slice(uuid.as_bytes()).unwrap();
-                client_tx_bearer.send(builder.as_packet()).await.unwrap();
+                view.attribute_opcode().try_write(Opcode::ATT_READ_BY_GROUP_TYPE_REQ).unwrap();
+                view.starting_handle().try_write(1).unwrap();
+                view.ending_handle().try_write(10).unwrap();
+                tx_buf[ATT_READ_BY_GROUP_TYPE_REQ_HEADER_SIZE
+                    ..ATT_READ_BY_GROUP_TYPE_REQ_HEADER_SIZE + uuid.as_bytes().len()]
+                    .copy_from_slice(uuid.as_bytes());
+                let tx_packet = Packet::try_ref_from_bytes(
+                    &tx_buf[..ATT_READ_BY_GROUP_TYPE_REQ_HEADER_SIZE + uuid.as_bytes().len()],
+                )
+                .unwrap();
+                client_tx_bearer.send(tx_packet).await.unwrap();
 
                 let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ATT_READ_BY_GROUP_TYPE_RSP.into());
+                assert_eq!(packet.opcode, Opcode::ATT_READ_BY_GROUP_TYPE_RSP.into());
 
                 // Parse the response using the client results parser and verify the returned
                 // attribute group data list entries.
-                let results = ReadByGroupTypeResults::try_from(&packet.data[..])
+                let length = usize::from(packet.data[0]);
+                let results = ReadByGroupTypeResults::new(length, &packet.data[1..])
                     .expect("Server response should be a valid Read By Group Type response packet");
                 let mut iter = results.iter();
-
-                let e1 = iter.next().unwrap().unwrap();
-                assert_eq!(e1.handle, h(2));
-                assert_eq!(e1.end_group_handle, h(5));
-                assert_eq!(e1.value, b"Service1");
-
-                let e2 = iter.next().unwrap().unwrap();
-                assert_eq!(e2.handle, h(6));
-                assert_eq!(e2.end_group_handle, h(10));
-                assert_eq!(e2.value, b"Service2");
-
+                let (e1, val1) = iter.next().unwrap();
+                assert_eq!(e1.attribute_handle().try_read().unwrap(), 2);
+                assert_eq!(e1.end_group_handle().try_read().unwrap(), 5);
+                assert_eq!(val1, b"Service1");
+                let (e2, val2) = iter.next().unwrap();
+                assert_eq!(e2.attribute_handle().try_read().unwrap(), 6);
+                assert_eq!(e2.end_group_handle().try_read().unwrap(), 10);
+                assert_eq!(val2, b"Service2");
                 assert!(iter.next().is_none());
             });
 
@@ -2567,18 +2533,21 @@ mod tests {
 
                 // 1. Query for grouping type 0x2A00 which contains a non-grouping attribute
                 let uuid = Uuid::from_u16(0x2A00);
-                let header = [
-                    Opcode::ATT_READ_BY_GROUP_TYPE_REQ as u8,
-                    1,
-                    0, // start = 1
-                    10,
-                    0, // end = 10
-                ];
                 let mut tx_buf = [0u8; 64];
-                let mut builder =
-                    DynamicPacketBuilder::<_, u8>::new(&mut tx_buf, header, SERVER_MTU as usize);
-                builder.extend_from_slice(uuid.as_bytes()).unwrap();
-                client_tx_bearer.send(builder.as_packet()).await.unwrap();
+                let mut view = AttReadByGroupTypeReqHeaderMut::new(
+                    &mut tx_buf[..ATT_READ_BY_GROUP_TYPE_REQ_HEADER_SIZE],
+                );
+                view.attribute_opcode().try_write(Opcode::ATT_READ_BY_GROUP_TYPE_REQ).unwrap();
+                view.starting_handle().try_write(1).unwrap();
+                view.ending_handle().try_write(10).unwrap();
+                tx_buf[ATT_READ_BY_GROUP_TYPE_REQ_HEADER_SIZE
+                    ..ATT_READ_BY_GROUP_TYPE_REQ_HEADER_SIZE + uuid.as_bytes().len()]
+                    .copy_from_slice(uuid.as_bytes());
+                let tx_packet = Packet::try_ref_from_bytes(
+                    &tx_buf[..ATT_READ_BY_GROUP_TYPE_REQ_HEADER_SIZE + uuid.as_bytes().len()],
+                )
+                .unwrap();
+                client_tx_bearer.send(tx_packet).await.unwrap();
 
                 let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
                 let err = AttErrorRsp::new(packet.as_bytes());
@@ -2645,35 +2614,34 @@ mod tests {
 
                 // 2. Read By Group Type Request
                 let uuid = Uuid::from_u16(0x2800);
-                let header = [
-                    Opcode::ATT_READ_BY_GROUP_TYPE_REQ as u8,
-                    1,
-                    0, // start = 1
-                    10,
-                    0, // end = 10
-                ];
                 let mut tx_buf = [0u8; NEGOTIATED_MTU as usize];
-                let mut builder = DynamicPacketBuilder::<_, u8>::new(
-                    &mut tx_buf,
-                    header,
-                    NEGOTIATED_MTU as usize,
+                let mut view = AttReadByGroupTypeReqHeaderMut::new(
+                    &mut tx_buf[..ATT_READ_BY_GROUP_TYPE_REQ_HEADER_SIZE],
                 );
-                builder.extend_from_slice(uuid.as_bytes()).unwrap();
-                client_tx_bearer.send(builder.as_packet()).await.unwrap();
+                view.attribute_opcode().try_write(Opcode::ATT_READ_BY_GROUP_TYPE_REQ).unwrap();
+                view.starting_handle().try_write(1).unwrap();
+                view.ending_handle().try_write(10).unwrap();
+                tx_buf[ATT_READ_BY_GROUP_TYPE_REQ_HEADER_SIZE
+                    ..ATT_READ_BY_GROUP_TYPE_REQ_HEADER_SIZE + uuid.as_bytes().len()]
+                    .copy_from_slice(uuid.as_bytes());
+                let tx_packet = Packet::try_ref_from_bytes(
+                    &tx_buf[..ATT_READ_BY_GROUP_TYPE_REQ_HEADER_SIZE + uuid.as_bytes().len()],
+                )
+                .unwrap();
+                client_tx_bearer.send(tx_packet).await.unwrap();
 
                 let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ATT_READ_BY_GROUP_TYPE_RSP.into());
+                assert_eq!(packet.opcode, Opcode::ATT_READ_BY_GROUP_TYPE_RSP.into());
 
-                // Parse the response and verify that only the first entry was packed
-                // due to subsequent entries having different lengths.
-                let results = ReadByGroupTypeResults::try_from(&packet.data[..])
+                let length = usize::from(packet.data[0]);
+                let results = ReadByGroupTypeResults::new(length, &packet.data[1..])
                     .expect("Server response should be a valid Read By Group Type response packet");
                 let mut iter = results.iter();
 
-                let e1 = iter.next().unwrap().unwrap();
-                assert_eq!(e1.handle, h(2));
-                assert_eq!(e1.end_group_handle, h(5));
-                assert_eq!(e1.value, b"Service1");
+                let (e1, val1) = iter.next().unwrap();
+                assert_eq!(e1.attribute_handle().try_read().unwrap(), 2);
+                assert_eq!(e1.end_group_handle().try_read().unwrap(), 5);
+                assert_eq!(val1, b"Service1");
 
                 assert!(iter.next().is_none());
             });
@@ -2723,7 +2691,7 @@ mod tests {
 
                 // Expect WriteRsp
                 let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ATT_WRITE_RSP.into());
+                assert_eq!(packet.opcode, Opcode::ATT_WRITE_RSP.into());
                 assert!(packet.data.is_empty());
             });
 
@@ -2960,7 +2928,7 @@ mod tests {
                 // Read response
                 let mut rx_buf = [MaybeUninit::uninit(); 128];
                 let packet = app_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ATT_PREPARE_WRITE_RSP.into());
+                assert_eq!(packet.opcode, Opcode::ATT_PREPARE_WRITE_RSP.into());
                 let rsp = AttPrepareWriteHeader::new(packet.as_bytes());
                 assert_eq!(rsp.attribute_handle().try_read().unwrap(), 10);
                 assert_eq!(rsp.value_offset().try_read().unwrap(), 0);
@@ -3122,7 +3090,7 @@ mod tests {
                 // Expect ExecuteWriteRsp
                 let mut rx_buf = [MaybeUninit::uninit(); 128];
                 let packet = app_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ATT_EXECUTE_WRITE_RSP.into());
+                assert_eq!(packet.opcode, Opcode::ATT_EXECUTE_WRITE_RSP.into());
             });
 
             let server_handle = executor.spawn(async move {
@@ -3174,7 +3142,7 @@ mod tests {
 
                 let mut rx_buf = [MaybeUninit::uninit(); 128];
                 let packet = app_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ATT_EXECUTE_WRITE_RSP.into());
+                assert_eq!(packet.opcode, Opcode::ATT_EXECUTE_WRITE_RSP.into());
             });
 
             let server_handle = executor.spawn(async move {
@@ -3262,7 +3230,7 @@ mod tests {
                 let mut rx_buf = [MaybeUninit::uninit(); MAX_SUPPORTED_MTU];
                 let sdu = test_rx.recv(&mut rx_buf).await.unwrap();
                 let packet = Packet::try_ref_from_bytes(sdu).unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ATT_HANDLE_VALUE_NTF.into());
+                assert_eq!(packet.opcode, Opcode::ATT_HANDLE_VALUE_NTF.into());
                 let ntf = AttHandleValueNtfHeader::new(packet.as_bytes());
                 assert_eq!(
                     ntf.attribute_opcode().try_read().unwrap(),
@@ -3307,7 +3275,7 @@ mod tests {
             let client_handle = executor.spawn(async move {
                 let mut rx_buf = [MaybeUninit::uninit(); MAX_SUPPORTED_MTU];
                 let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ATT_HANDLE_VALUE_IND.into());
+                assert_eq!(packet.opcode, Opcode::ATT_HANDLE_VALUE_IND.into());
                 let ind = AttHandleValueIndHeader::new(packet.as_bytes());
                 assert_eq!(
                     ind.attribute_opcode().try_read().unwrap(),

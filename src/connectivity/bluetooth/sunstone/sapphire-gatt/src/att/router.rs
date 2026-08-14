@@ -288,7 +288,7 @@ mod tests {
                 assert!(matches!(res, Err(BearerRecvError::BufferTooSmall)));
 
                 let p = notification_rx_handle.next_packet(&mut large_rx_buf).await.unwrap();
-                assert_eq!(p.header.opcode, Opcode::ATT_HANDLE_VALUE_NTF.into());
+                assert_eq!(p.opcode, Opcode::ATT_HANDLE_VALUE_NTF.into());
             });
 
             executor.run_until_stalled();
@@ -317,7 +317,7 @@ mod tests {
             let test_server_listener = executor.spawn(async move {
                 let mut rx_buf = [MaybeUninit::uninit(); MAX_SUPPORTED_MTU];
                 let p = server_rx_handle.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(p.header.opcode, Opcode::ATT_READ_REQ.into());
+                assert_eq!(p.opcode, Opcode::ATT_READ_REQ.into());
                 let req = AttReadReq::new(p.as_bytes());
                 assert_eq!(req.attribute_handle().try_read().unwrap(), 0x0001);
             });

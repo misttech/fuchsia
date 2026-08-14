@@ -218,9 +218,9 @@ mod tests {
                 match info1 {
                     DiscoveredInformation::Uuid16(entries) => {
                         assert_eq!(entries.len(), 1);
-                        let entry = AttInformationData16::new(entries.get(0).unwrap());
-                        assert_eq!(entry.attribute_handle().try_read().unwrap(), 1);
-                        assert_eq!(entry.uuid().try_read().unwrap(), 0x2A00);
+                        let e = AttInformationData16::new(entries.get(0).unwrap());
+                        assert_eq!(e.attribute_handle().try_read().unwrap(), 1);
+                        assert_eq!(e.uuid().try_read().unwrap(), 0x2A00);
                     }
                     _ => panic!("Expected Uuid16 discovered info"),
                 }
@@ -231,12 +231,16 @@ mod tests {
                 match info2 {
                     DiscoveredInformation::Uuid128(entries) => {
                         assert_eq!(entries.len(), 1);
-                        let entry = AttInformationData128::new(entries.get(0).unwrap());
-                        assert_eq!(entry.attribute_handle().try_read().unwrap(), 2);
-                        assert_eq!(
-                            &entries.get(0).unwrap()[2..18],
-                            [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
-                        );
+                        let e = AttInformationData128::new(entries.get(0).unwrap());
+                        assert_eq!(e.attribute_handle().try_read().unwrap(), 2);
+                        let uuid_view = e.uuid().unwrap();
+                        assert_eq!(uuid_view.element_count(), 16);
+                        for i in 0..16 {
+                            assert_eq!(
+                                uuid_view.get(i).unwrap().try_read().unwrap(),
+                                (i + 1) as u8
+                            );
+                        }
                     }
                     _ => panic!("Expected Uuid128 discovered info"),
                 }
@@ -575,13 +579,13 @@ mod tests {
                 let results = client.read_by_type(h(1), h(10), &uuid, &mut rx_buf).await.unwrap();
 
                 let mut iter = results.iter();
-                let e1 = iter.next().unwrap().unwrap();
-                assert_eq!(e1.handle, h(2));
-                assert_eq!(e1.value, b"Sunstone");
+                let (h1, val1) = iter.next().unwrap();
+                assert_eq!(h1, h(2));
+                assert_eq!(val1, b"Sunstone");
 
-                let e2 = iter.next().unwrap().unwrap();
-                assert_eq!(e2.handle, h(4));
-                assert_eq!(e2.value, b"Sapphire");
+                let (h2, val2) = iter.next().unwrap();
+                assert_eq!(h2, h(4));
+                assert_eq!(val2, b"Sapphire");
 
                 assert!(iter.next().is_none());
             });
@@ -637,15 +641,15 @@ mod tests {
                     client.read_by_group_type(h(1), h(20), &group_uuid, &mut rx_buf).await.unwrap();
 
                 let mut iter = results.iter();
-                let e1 = iter.next().unwrap().unwrap();
-                assert_eq!(e1.handle, h(1));
-                assert_eq!(e1.end_group_handle, h(5));
-                assert_eq!(e1.value, b"\x01\x18");
+                let (e1, val1) = iter.next().unwrap();
+                assert_eq!(e1.attribute_handle().try_read().unwrap(), 1);
+                assert_eq!(e1.end_group_handle().try_read().unwrap(), 5);
+                assert_eq!(val1, b"\x01\x18");
 
-                let e2 = iter.next().unwrap().unwrap();
-                assert_eq!(e2.handle, h(6));
-                assert_eq!(e2.end_group_handle, h(10));
-                assert_eq!(e2.value, b"\x00\x18");
+                let (e2, val2) = iter.next().unwrap();
+                assert_eq!(e2.attribute_handle().try_read().unwrap(), 6);
+                assert_eq!(e2.end_group_handle().try_read().unwrap(), 10);
+                assert_eq!(val2, b"\x00\x18");
 
                 assert!(iter.next().is_none());
             });
@@ -1056,7 +1060,7 @@ mod tests {
                         let tx_packet = Packet::try_ref_from_bytes(&req_buf[..]).unwrap();
                         client_tx_bearer.send(tx_packet).await.unwrap();
                         let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                        assert_eq!(packet.header.opcode, Opcode::ATT_ERROR_RSP.into());
+                        assert_eq!(packet.opcode, Opcode::ATT_ERROR_RSP.into());
                         let err = AttErrorRsp::new(packet.as_bytes());
                         assert_eq!(err.error_code().try_read().unwrap(), ErrorCode::INVALID_HANDLE);
 
@@ -1070,7 +1074,7 @@ mod tests {
                         let tx_packet2 = Packet::try_ref_from_bytes(&req_buf2[..]).unwrap();
                         client_tx_bearer.send(tx_packet2).await.unwrap();
                         let packet2 = client_rx_bearer.next_packet(&mut rx_buf2).await.unwrap();
-                        assert_eq!(packet2.header.opcode, Opcode::ATT_ERROR_RSP.into());
+                        assert_eq!(packet2.opcode, Opcode::ATT_ERROR_RSP.into());
                         let err2 = AttErrorRsp::new(packet2.as_bytes());
                         assert_eq!(err2.error_code().try_read().unwrap(), ErrorCode::INVALID_HANDLE);
                     });
@@ -1325,7 +1329,7 @@ mod tests {
 
                         match result {
                             Ok(entries) => {
-                                assert_ne!(entries.len(), 0);
+                                assert!(!entries.is_empty());
                                 for chunk in entries.iter() {
                                     let entry = AttHandlesInformation::new(chunk);
                                     let h = entry.attribute_handle().try_read().unwrap();
@@ -1477,22 +1481,19 @@ mod tests {
 
                         match result {
                             Ok(results) => {
-                                let mut entries = results.iter();
                                 let mut count = 0;
-                                while let Some(entry_res) = entries.next() {
-                                    let entry = entry_res.unwrap();
+                                for (handle, value) in results.iter() {
                                     count += 1;
-                                    let h = entry.handle.value();
+                                    let h = handle.value();
                                     assert!(h >= start.value() && h <= end.value());
 
-                                    let handle = AttributeHandle::try_from(h).unwrap();
                                     let attr = db.find_attribute(handle).expect("attribute must exist in db");
                                     assert_eq!(attr.uuid(), &target_uuid);
 
                                     // Verify value matches DB
                                     let mut db_val = [0u8; 64];
                                     let db_val_len = attr.read_chunk(PeerId::new(1).unwrap(), 0, &mut db_val).await.unwrap();
-                                    assert_eq!(entry.value, &db_val[..db_val_len]);
+                                    assert_eq!(value, &db_val[..db_val_len]);
                                 }
                                 assert!(count > 0);
                             }
@@ -1580,13 +1581,11 @@ mod tests {
                         let mut rx_buf2 = [MaybeUninit::uninit(); 512];
                         let result2 = client.read_by_group_type(start, end, &uuid, &mut rx_buf2).await;
 
-                        let r1 = result1.map(|res| res.iter().map(|e| {
-                            let e = e.unwrap();
-                            (e.handle.value(), e.end_group_handle.value(), e.value.to_vec())
+                        let r1 = result1.map(|res| res.iter().map(|(e, val)| {
+                            (e.attribute_handle().try_read().unwrap(), e.end_group_handle().try_read().unwrap(), val.to_vec())
                         }).collect::<Vec<_>>());
-                        let r2 = result2.map(|res| res.iter().map(|e| {
-                            let e = e.unwrap();
-                            (e.handle.value(), e.end_group_handle.value(), e.value.to_vec())
+                        let r2 = result2.map(|res| res.iter().map(|(e, val)| {
+                            (e.attribute_handle().try_read().unwrap(), e.end_group_handle().try_read().unwrap(), val.to_vec())
                         }).collect::<Vec<_>>());
                         assert_eq!(r1, r2);
                     });
@@ -1636,22 +1635,21 @@ mod tests {
 
                         match result {
                             Ok(results) => {
-                                let mut entries = results.iter();
                                 let mut count = 0;
-                                while let Some(entry) = entries.next() {
-                                    let entry = entry.unwrap();
+                                for (entry, value) in results.iter() {
                                     count += 1;
-                                    let h = entry.handle.value();
+                                    let h = entry.attribute_handle().try_read().unwrap();
+                                    let end_h = entry.end_group_handle().try_read().unwrap();
                                     assert!(h >= start.value() && h <= end.value());
 
                                     let handle = AttributeHandle::try_from(h).unwrap();
                                     let attr = db.find_attribute(handle).expect("attribute must exist in db");
                                     assert_eq!(attr.uuid(), &target_uuid);
-                                    assert_eq!(entry.end_group_handle.value(), attr.group_end_handle().unwrap());
+                                    assert_eq!(end_h, attr.group_end_handle().unwrap());
 
                                     let mut db_val = [0u8; 64];
                                     let db_val_len = attr.read_chunk(PeerId::new(1).unwrap(), 0, &mut db_val).await.unwrap();
-                                    assert_eq!(entry.value, &db_val[..db_val_len]);
+                                    assert_eq!(value, &db_val[..db_val_len]);
                                 }
                                 assert!(count > 0);
                             }

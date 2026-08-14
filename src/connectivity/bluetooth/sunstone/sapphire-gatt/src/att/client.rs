@@ -12,19 +12,18 @@ use crate::att::pdu::{
     ATT_ERROR_RSP_SIZE, ATT_EXCHANGE_MTU_REQ_SIZE, ATT_EXCHANGE_MTU_RSP_SIZE,
     ATT_EXECUTE_WRITE_REQ_SIZE, ATT_FIND_BY_TYPE_VALUE_REQ_HEADER_SIZE,
     ATT_FIND_INFORMATION_REQ_SIZE, ATT_FIND_INFORMATION_RSP_HEADER_SIZE, ATT_HANDLE_VALUE_CFM_SIZE,
-    ATT_HANDLES_INFORMATION_SIZE, ATT_PREPARE_WRITE_HEADER_SIZE, ATT_READ_BLOB_REQ_SIZE,
-    ATT_READ_BY_GROUP_TYPE_REQ_HEADER_SIZE, ATT_READ_BY_TYPE_REQ_HEADER_SIZE, ATT_READ_REQ_SIZE,
-    ATT_WRITE_CMD_HEADER_SIZE, ATT_WRITE_REQ_HEADER_SIZE, DynamicPacketBuilder, ErrorCode,
-    ExecuteWriteFlags, Opcode, Packet, PduList, ReadByGroupTypeRsp, ReadByGroupTypeRspEntryHeader,
-    ReadByTypeRsp, UuidFormat,
+    ATT_HANDLES_INFORMATION_SIZE, ATT_HEADER_SIZE, ATT_PREPARE_WRITE_HEADER_SIZE,
+    ATT_READ_BLOB_REQ_SIZE, ATT_READ_BY_GROUP_TYPE_REQ_HEADER_SIZE,
+    ATT_READ_BY_GROUP_TYPE_RSP_ENTRY_HEADER_SIZE, ATT_READ_BY_TYPE_REQ_HEADER_SIZE,
+    ATT_READ_REQ_SIZE, ATT_WRITE_CMD_HEADER_SIZE, ATT_WRITE_REQ_HEADER_SIZE, ErrorCode,
+    ExecuteWriteFlags, Opcode, Packet, PduList, UuidFormat,
 };
 use crate::att::router::{BearerRouter, BearerRxHandle, RouteFilter};
 use sapphire_emboss::att::{
     AttErrorRsp, AttExchangeMtuReqMut, AttExchangeMtuRsp, AttExecuteWriteReqMut,
     AttFindByTypeValueReqHeaderMut, AttFindInformationReqMut, AttFindInformationRspHeader,
-    AttHandlesInformation, AttHeader, AttHeaderMut, AttInformationData16, AttPrepareWriteHeaderMut,
-    AttReadBlobReqMut, AttReadByGroupTypeReqHeaderMut, AttReadByTypeReqHeaderMut, AttReadReqMut,
-    AttWriteCmdMut,
+    AttHeader, AttHeaderMut, AttPrepareWriteHeaderMut, AttReadBlobReqMut,
+    AttReadByGroupTypeReqHeaderMut, AttReadByTypeReqHeaderMut, AttReadReqMut, AttWriteCmdMut,
 };
 
 use core::cmp::{max, min};
@@ -35,7 +34,7 @@ use thiserror::Error;
 use zerocopy::byteorder::little_endian::U16;
 use zerocopy::{Immutable, IntoBytes, KnownLayout, TryFromBytes};
 
-pub use crate::att::pdu::DiscoveredInformation;
+pub use crate::att::pdu::{DiscoveredInformation, ReadByGroupTypeResults, ReadByTypeResults};
 
 #[derive(Error, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ClientError {
@@ -47,179 +46,6 @@ pub enum ClientError {
     ErrorResponse(ErrorCode),
     #[error("Invalid incoming data from server")]
     InvalidIncomingData,
-}
-
-/// A single handle-value pair returned by a Read By Type Response.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct AttributeData<'a> {
-    pub handle: AttributeHandle,
-    pub value: &'a [u8],
-}
-
-/// A structured view over a Read By Type Response's handle-value pairs.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ReadByTypeResults<'a> {
-    length: usize,
-    data: &'a [u8],
-}
-
-impl<'a> ReadByTypeResults<'a> {
-    pub fn iter(&self) -> ReadByTypeIter<'a> {
-        ReadByTypeIter { length: self.length, data: self.data }
-    }
-}
-
-impl<'a> IntoIterator for ReadByTypeResults<'a> {
-    type Item = Result<AttributeData<'a>, ClientError>;
-    type IntoIter = ReadByTypeIter<'a>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.iter()
-    }
-}
-
-impl<'a, 'b> IntoIterator for &'a ReadByTypeResults<'a> {
-    type Item = Result<AttributeData<'a>, ClientError>;
-    type IntoIter = ReadByTypeIter<'a>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.iter()
-    }
-}
-
-pub struct ReadByTypeIter<'a> {
-    length: usize,
-    data: &'a [u8],
-}
-
-impl<'a> ReadByTypeIter<'a> {
-    fn next_chunk(&mut self) -> Result<AttributeData<'a>, ClientError> {
-        let (chunk, rest) =
-            self.data.split_at_checked(self.length).ok_or(ClientError::InvalidIncomingData)?;
-        self.data = rest;
-
-        let (handle_bytes, value) = chunk
-            .split_at_checked(size_of::<AttributeHandle>())
-            .ok_or(ClientError::InvalidIncomingData)?;
-        let handle_u16 =
-            U16::try_ref_from_bytes(handle_bytes).map_err(|_| ClientError::InvalidIncomingData)?;
-        let handle = AttributeHandle::try_from(handle_u16.get())
-            .map_err(|_| ClientError::InvalidIncomingData)?;
-
-        Ok(AttributeData { handle, value })
-    }
-}
-
-impl<'a> Iterator for ReadByTypeIter<'a> {
-    type Item = Result<AttributeData<'a>, ClientError>;
-
-    /// Parses and returns the next attribute handle-value entry from the response buffer.
-    fn next(&mut self) -> Option<Self::Item> {
-        // Check if the end of the data list has been reached.
-        if self.data.is_empty() {
-            return None;
-        }
-        Some(self.next_chunk())
-    }
-}
-
-/// A single group handle-value entry returned by a Read By Group Type Response.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct AttributeGroupData<'a> {
-    pub handle: AttributeHandle,
-    pub end_group_handle: AttributeHandle,
-    pub value: &'a [u8],
-}
-
-/// A structured view over a Read By Group Type Response's group handle-value entries.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ReadByGroupTypeResults<'a> {
-    length: usize,
-    data: &'a [u8],
-}
-
-impl<'a> TryFrom<&'a [u8]> for ReadByGroupTypeResults<'a> {
-    type Error = ClientError;
-
-    /// Parses and validates a raw ATT Read By Group Type Response PDU payload
-    /// into a structured results view.
-    fn try_from(pdu_data: &'a [u8]) -> Result<Self, Self::Error> {
-        let rsp = ReadByGroupTypeRsp::try_ref_from_bytes(pdu_data)
-            .map_err(|_| ClientError::InvalidIncomingData)?;
-        let length = usize::from(rsp.length);
-        if length < size_of::<ReadByGroupTypeRspEntryHeader>() {
-            return Err(ClientError::InvalidIncomingData);
-        }
-        if rsp.attribute_data_list.is_empty() || rsp.attribute_data_list.len() % length != 0 {
-            return Err(ClientError::InvalidIncomingData);
-        }
-        Ok(Self { length, data: &rsp.attribute_data_list })
-    }
-}
-
-impl<'a> IntoIterator for ReadByGroupTypeResults<'a> {
-    type Item = Result<AttributeGroupData<'a>, ClientError>;
-    type IntoIter = ReadByGroupTypeIter<'a>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.iter()
-    }
-}
-
-impl<'a, 'b> IntoIterator for &'a ReadByGroupTypeResults<'a> {
-    type Item = Result<AttributeGroupData<'a>, ClientError>;
-    type IntoIter = ReadByGroupTypeIter<'a>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.iter()
-    }
-}
-
-impl<'a> ReadByGroupTypeResults<'a> {
-    pub fn iter(&self) -> ReadByGroupTypeIter<'a> {
-        ReadByGroupTypeIter { length: self.length, data: self.data }
-    }
-}
-
-pub struct ReadByGroupTypeIter<'a> {
-    length: usize,
-    data: &'a [u8],
-}
-
-impl<'a> ReadByGroupTypeIter<'a> {
-    fn next_chunk(&mut self) -> Result<AttributeGroupData<'a>, ClientError> {
-        let (chunk, rest) =
-            self.data.split_at_checked(self.length).ok_or(ClientError::InvalidIncomingData)?;
-        self.data = rest;
-
-        let (header_bytes, value) = chunk
-            .split_at_checked(size_of::<ReadByGroupTypeRspEntryHeader>())
-            .ok_or(ClientError::InvalidIncomingData)?;
-
-        let header = ReadByGroupTypeRspEntryHeader::try_ref_from_bytes(header_bytes)
-            .map_err(|_| ClientError::InvalidIncomingData)?;
-
-        let handle = AttributeHandle::try_from(header.attribute_handle.get())
-            .map_err(|_| ClientError::InvalidIncomingData)?;
-        let end_group_handle = AttributeHandle::try_from(header.end_group_handle.get())
-            .map_err(|_| ClientError::InvalidIncomingData)?;
-
-        Ok(AttributeGroupData { handle, end_group_handle, value })
-    }
-}
-
-impl<'a> Iterator for ReadByGroupTypeIter<'a> {
-    type Item = Result<AttributeGroupData<'a>, ClientError>;
-
-    /// Parses and returns the next attribute group handle-value entry from the response buffer.
-    fn next(&mut self) -> Option<Self::Item> {
-        // Check if the end of the data list has been reached.
-        if self.data.is_empty() {
-            return None;
-        }
-
-        Some(self.next_chunk())
-    }
 }
 
 /// ATT Client protocol wrapper.
@@ -513,20 +339,20 @@ where
         attribute_type: &Uuid,
         rx_buf: &'a mut [MaybeUninit<u8>],
     ) -> Result<ReadByTypeResults<'a>, ClientError> {
-        // Serialize the variable-length UUID parameter onto the end of the request header.
         let type_bytes = attribute_type.as_bytes();
-        let mut header = [0u8; ATT_READ_BY_TYPE_REQ_HEADER_SIZE];
-        let mut view = AttReadByTypeReqHeaderMut::new(&mut header);
+        let total_size = ATT_READ_BY_TYPE_REQ_HEADER_SIZE + type_bytes.len();
+        assert!(
+            total_size <= self.effective_mtu(),
+            "Programming error: request packet size exceeds negotiated MTU."
+        );
+        let mut tx_buf = [0u8; MAX_SUPPORTED_MTU];
+        let mut view =
+            AttReadByTypeReqHeaderMut::new(&mut tx_buf[..ATT_READ_BY_TYPE_REQ_HEADER_SIZE]);
         view.attribute_opcode().try_write(Opcode::ATT_READ_BY_TYPE_REQ).expect("valid opcode");
         view.starting_handle().try_write(starting_handle.value()).expect("valid handle");
         view.ending_handle().try_write(ending_handle.value()).expect("valid handle");
-        let mut tx_buf = [0u8; MAX_SUPPORTED_MTU];
-        let mut builder =
-            DynamicPacketBuilder::<_, u8>::new(&mut tx_buf, header, self.effective_mtu());
-        builder
-            .extend_from_slice(type_bytes)
-            .expect("Programming error: request packet size exceeds negotiated MTU.");
-        let tx_packet = builder.as_packet();
+        tx_buf[ATT_READ_BY_TYPE_REQ_HEADER_SIZE..total_size].copy_from_slice(type_bytes);
+        let tx_packet = Packet::try_ref_from_bytes(&tx_buf[..total_size]).expect("valid packet");
 
         // Perform the transaction and await the response.
         let rx_packet = self
@@ -538,23 +364,12 @@ where
             )
             .await?;
 
-        // Parse the response PDU.
-        let rsp = ReadByTypeRsp::try_ref_from_bytes(&rx_packet.data)
-            .map_err(|_| ClientError::InvalidIncomingData)?;
-        let length = usize::from(rsp.length);
-
-        // Each returned attribute-value pair must contain at least a handle.
-        if length < size_of::<AttributeHandle>() {
+        if rx_packet.data.is_empty() {
             return Err(ClientError::InvalidIncomingData);
         }
-
-        // The data list must not be empty and must partition cleanly into fixed-size entries.
-        let data_list = &rsp.attribute_data_list;
-        if data_list.is_empty() || data_list.len() % length != 0 {
-            return Err(ClientError::InvalidIncomingData);
-        }
-
-        Ok(ReadByTypeResults { length, data: data_list })
+        let length = usize::from(rx_packet.data[0]);
+        let data = &rx_packet.data[1..];
+        ReadByTypeResults::new(length, data).ok_or(ClientError::InvalidIncomingData)
     }
 
     /// Initiates a Read By Group Type procedure to obtain the values of attributes with a specific
@@ -568,22 +383,23 @@ where
         attribute_group_type: &Uuid,
         rx_buf: &'a mut [MaybeUninit<u8>],
     ) -> Result<ReadByGroupTypeResults<'a>, ClientError> {
-        // Serialize the variable-length UUID parameter onto the end of the request header.
         let type_bytes = attribute_group_type.as_bytes();
-        let mut header = [0u8; ATT_READ_BY_GROUP_TYPE_REQ_HEADER_SIZE];
-        let mut view = AttReadByGroupTypeReqHeaderMut::new(&mut header);
+        let total_size = ATT_READ_BY_GROUP_TYPE_REQ_HEADER_SIZE + type_bytes.len();
+        assert!(
+            total_size <= self.effective_mtu(),
+            "Programming error: request packet size exceeds negotiated MTU."
+        );
+        let mut tx_buf = [0u8; MAX_SUPPORTED_MTU];
+        let mut view = AttReadByGroupTypeReqHeaderMut::new(
+            &mut tx_buf[..ATT_READ_BY_GROUP_TYPE_REQ_HEADER_SIZE],
+        );
         view.attribute_opcode()
             .try_write(Opcode::ATT_READ_BY_GROUP_TYPE_REQ)
             .expect("valid opcode");
         view.starting_handle().try_write(starting_handle.value()).expect("valid handle");
         view.ending_handle().try_write(ending_handle.value()).expect("valid handle");
-        let mut tx_buf = [0u8; MAX_SUPPORTED_MTU];
-        let mut builder =
-            DynamicPacketBuilder::<_, u8>::new(&mut tx_buf, header, self.effective_mtu());
-        builder
-            .extend_from_slice(type_bytes)
-            .expect("Programming error: request packet size exceeds negotiated MTU.");
-        let tx_packet = builder.as_packet();
+        tx_buf[ATT_READ_BY_GROUP_TYPE_REQ_HEADER_SIZE..total_size].copy_from_slice(type_bytes);
+        let tx_packet = Packet::try_ref_from_bytes(&tx_buf[..total_size]).expect("valid packet");
 
         // Perform the transaction and await the response.
         let rx_packet = self
@@ -595,8 +411,12 @@ where
             )
             .await?;
 
-        // Parse and validate the response PDU.
-        ReadByGroupTypeResults::try_from(&rx_packet.data[..])
+        if rx_packet.data.is_empty() {
+            return Err(ClientError::InvalidIncomingData);
+        }
+        let length = usize::from(rx_packet.data[0]);
+        let data = &rx_packet.data[1..];
+        ReadByGroupTypeResults::new(length, data).ok_or(ClientError::InvalidIncomingData)
     }
 
     /// Initiates a Write Request procedure to write the value of an attribute.
@@ -627,7 +447,6 @@ where
         let _rx_packet = self
             .transaction(Opcode::ATT_WRITE_REQ, tx_packet, rx_buf, Opcode::ATT_WRITE_RSP)
             .await?;
-
         Ok(())
     }
 
@@ -838,14 +657,16 @@ mod tests {
     use super::*;
     use crate::att::bearer::BearerRx;
     use crate::att::l2cap::mock::setup_mock_channel;
-    use crate::att::pdu::{ATT_EXECUTE_WRITE_RSP_SIZE, ATT_HANDLE_VALUE_IND_HEADER_SIZE, Header};
+    use crate::att::pdu::{ATT_EXECUTE_WRITE_RSP_SIZE, ATT_HANDLE_VALUE_IND_HEADER_SIZE};
     use sapphire_async::executor::BoundedExecutor;
     use sapphire_async::testing::TestExecutor;
     use sapphire_emboss::att::{
         AttErrorRspMut, AttExchangeMtuReq, AttExchangeMtuRspMut, AttExecuteWriteReq,
         AttFindByTypeValueReqHeader, AttFindInformationReq, AttFindInformationRspHeaderMut,
-        AttHandleValueIndHeaderMut, AttHandlesInformationMut, AttInformationData16Mut,
-        AttPrepareWriteHeader, AttReadBlobReq, AttReadReq, AttWriteCmd,
+        AttHandleValueIndHeaderMut, AttHandlesInformation, AttHandlesInformationMut,
+        AttInformationData16, AttInformationData16Mut, AttPrepareWriteHeader, AttReadBlobReq,
+        AttReadByGroupTypeReqHeader, AttReadByGroupTypeRspEntryHeaderMut, AttReadByTypeReqHeader,
+        AttReadReq, AttWriteCmd,
     };
 
     const CLIENT_PREFERRED_MTU: u16 = 512;
@@ -932,7 +753,7 @@ mod tests {
                 let mut rx_buf = [MaybeUninit::uninit(); 32];
                 let mut server_rx_bearer = BearerRx::new(test_rx);
                 let packet = server_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ATT_EXCHANGE_MTU_REQ.into());
+                assert_eq!(packet.opcode, Opcode::ATT_EXCHANGE_MTU_REQ.into());
 
                 let mut server_tx_bearer = BearerTx::new(test_tx);
                 let err_buf = make_error_rsp(
@@ -973,7 +794,7 @@ mod tests {
                 let mut rx_buf = [MaybeUninit::uninit(); 32];
                 let mut server_rx_bearer = BearerRx::new(test_rx);
                 let packet = server_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ATT_EXCHANGE_MTU_REQ.into());
+                assert_eq!(packet.opcode, Opcode::ATT_EXCHANGE_MTU_REQ.into());
 
                 let mut server_tx_bearer = BearerTx::new(test_tx);
                 let err_buf = make_error_rsp(
@@ -1017,7 +838,7 @@ mod tests {
                 let mut rx_buf = [MaybeUninit::uninit(); 32];
                 let mut server_rx_bearer = BearerRx::new(server_rx);
                 let packet = server_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ATT_FIND_INFORMATION_REQ.into());
+                assert_eq!(packet.opcode, Opcode::ATT_FIND_INFORMATION_REQ.into());
 
                 let req = AttFindInformationReq::new(packet.as_bytes());
                 assert_eq!(req.starting_handle().try_read().unwrap(), 1);
@@ -1090,7 +911,7 @@ mod tests {
                 let mut rx_buf = [MaybeUninit::uninit(); 32];
                 let mut server_rx_bearer = BearerRx::new(server_rx);
                 let packet = server_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ATT_FIND_INFORMATION_REQ.into());
+                assert_eq!(packet.opcode, Opcode::ATT_FIND_INFORMATION_REQ.into());
 
                 // Respond with ErrorRsp (InvalidHandle)
                 let mut server_tx_bearer = BearerTx::new(server_tx);
@@ -1128,7 +949,7 @@ mod tests {
                 let mut rx_buf = [MaybeUninit::uninit(); 32];
                 let mut server_rx_bearer = BearerRx::new(server_rx);
                 let packet = server_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ATT_FIND_BY_TYPE_VALUE_REQ.into());
+                assert_eq!(packet.opcode, Opcode::ATT_FIND_BY_TYPE_VALUE_REQ.into());
 
                 let req_header = AttFindByTypeValueReqHeader::new(packet.as_bytes());
                 assert_eq!(req_header.starting_handle().try_read().unwrap(), 1);
@@ -1183,7 +1004,7 @@ mod tests {
                 let mut rx_buf = [MaybeUninit::uninit(); 32];
                 let mut server_rx_bearer = BearerRx::new(server_rx);
                 let packet = server_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ATT_FIND_BY_TYPE_VALUE_REQ.into());
+                assert_eq!(packet.opcode, Opcode::ATT_FIND_BY_TYPE_VALUE_REQ.into());
 
                 let mut server_tx_bearer = BearerTx::new(server_tx);
                 let err_buf = make_error_rsp(
@@ -1224,20 +1045,17 @@ mod tests {
                 let mut rx_buf = [MaybeUninit::uninit(); 32];
                 let mut server_rx_bearer = BearerRx::new(server_rx);
                 let packet = server_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ATT_READ_REQ.into());
+                assert_eq!(packet.opcode, Opcode::ATT_READ_REQ.into());
 
                 let req = AttReadReq::new(packet.as_bytes());
                 assert_eq!(req.attribute_handle().try_read().unwrap(), 1);
 
                 let val = b"Sunstone";
                 let mut tx_buf = [0u8; 64];
-                let mut builder = DynamicPacketBuilder::<_, u8>::new(
-                    &mut tx_buf,
-                    Header::new(Opcode::ATT_READ_RSP),
-                    CLIENT_PREFERRED_MTU as usize,
-                );
-                builder.extend_from_slice(val).unwrap();
-                let tx_packet = builder.as_packet();
+                let mut view = AttHeaderMut::new(&mut tx_buf[..1]);
+                view.attribute_opcode().try_write(Opcode::ATT_READ_RSP).unwrap();
+                tx_buf[1..1 + val.len()].copy_from_slice(val);
+                let tx_packet = Packet::try_ref_from_bytes(&tx_buf[..1 + val.len()]).unwrap();
                 let mut server_tx_bearer = BearerTx::new(server_tx);
                 server_tx_bearer.send(tx_packet).await.unwrap();
             });
@@ -1270,7 +1088,7 @@ mod tests {
                 let mut rx_buf = [MaybeUninit::uninit(); 32];
                 let mut server_rx_bearer = BearerRx::new(server_rx);
                 let packet = server_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ATT_READ_REQ.into());
+                assert_eq!(packet.opcode, Opcode::ATT_READ_REQ.into());
 
                 let mut server_tx_bearer = BearerTx::new(server_tx);
                 let err_buf = make_error_rsp(Opcode::ATT_READ_REQ, 1, ErrorCode::INVALID_HANDLE);
@@ -1305,7 +1123,7 @@ mod tests {
                 let mut rx_buf = [MaybeUninit::uninit(); 32];
                 let mut server_rx_bearer = BearerRx::new(server_rx);
                 let packet = server_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ATT_READ_BLOB_REQ.into());
+                assert_eq!(packet.opcode, Opcode::ATT_READ_BLOB_REQ.into());
 
                 let req = AttReadBlobReq::new(packet.as_bytes());
                 assert_eq!(req.attribute_handle().try_read().unwrap(), 1);
@@ -1313,13 +1131,10 @@ mod tests {
 
                 let val = b"nstone"; // Part of "Sunstone" starting at offset 2
                 let mut tx_buf = [0u8; 64];
-                let mut builder = DynamicPacketBuilder::<_, u8>::new(
-                    &mut tx_buf,
-                    Header::new(Opcode::ATT_READ_BLOB_RSP),
-                    CLIENT_PREFERRED_MTU as usize,
-                );
-                builder.extend_from_slice(val).unwrap();
-                let tx_packet = builder.as_packet();
+                let mut view = AttHeaderMut::new(&mut tx_buf[..1]);
+                view.attribute_opcode().try_write(Opcode::ATT_READ_BLOB_RSP).unwrap();
+                tx_buf[1..1 + val.len()].copy_from_slice(val);
+                let tx_packet = Packet::try_ref_from_bytes(&tx_buf[..1 + val.len()]).unwrap();
                 let mut server_tx_bearer = BearerTx::new(server_tx);
                 server_tx_bearer.send(tx_packet).await.unwrap();
             });
@@ -1352,7 +1167,7 @@ mod tests {
                 let mut rx_buf = [MaybeUninit::uninit(); 32];
                 let mut server_rx_bearer = BearerRx::new(server_rx);
                 let packet = server_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ATT_READ_BLOB_REQ.into());
+                assert_eq!(packet.opcode, Opcode::ATT_READ_BLOB_REQ.into());
 
                 let mut server_tx_bearer = BearerTx::new(server_tx);
                 let err_buf =
@@ -1375,7 +1190,6 @@ mod tests {
 
     #[test]
     fn test_client_read_by_type_success() {
-        use crate::att::pdu::ReadByTypeReq;
         let (app_channel, server_tx, server_rx) = setup_mock_channel();
         let router = BearerRouter::<_>::new(app_channel.receiver);
         BoundedExecutor::new(TestExecutor::new(), |executor| {
@@ -1393,31 +1207,25 @@ mod tests {
                 let mut rx_buf = [MaybeUninit::uninit(); 32];
                 let mut server_rx_bearer = BearerRx::new(server_rx);
                 let packet = server_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ATT_READ_BY_TYPE_REQ.into());
+                assert_eq!(packet.opcode, Opcode::ATT_READ_BY_TYPE_REQ.into());
 
-                let req = ReadByTypeReq::try_ref_from_bytes(&packet.data[..]).unwrap();
-                assert_eq!(req.header.starting_handle.get(), 1);
-                assert_eq!(req.header.ending_handle.get(), 10);
-                assert_eq!(&req.attribute_type, uuid.as_bytes());
+                let req = AttReadByTypeReqHeader::new(packet.as_bytes());
+                assert_eq!(req.starting_handle().try_read().unwrap(), 1);
+                assert_eq!(req.ending_handle().try_read().unwrap(), 10);
+                assert_eq!(&packet.as_bytes()[ATT_READ_BY_TYPE_REQ_HEADER_SIZE..], uuid.as_bytes());
 
                 let mut tx_buf = [0u8; 64];
-                let header = Header::new(Opcode::ATT_READ_BY_TYPE_RSP);
-                let mut builder = DynamicPacketBuilder::<_, u8>::new(
-                    &mut tx_buf,
-                    header,
-                    CLIENT_PREFERRED_MTU as usize,
-                );
-                builder.push(ENTRY_SIZE).unwrap();
+                let mut view = AttHeaderMut::new(&mut tx_buf[..1]);
+                view.attribute_opcode().try_write(Opcode::ATT_READ_BY_TYPE_RSP).unwrap();
+                tx_buf[1] = ENTRY_SIZE;
                 // Push entry 1: handle = 2, value = b"PrimaryS"
-                builder.push(0x02).unwrap();
-                builder.push(0x00).unwrap();
-                builder.extend_from_slice(b"PrimaryS").unwrap();
+                tx_buf[2..4].copy_from_slice(&2u16.to_le_bytes());
+                tx_buf[4..12].copy_from_slice(b"PrimaryS");
                 // Push entry 2: handle = 6, value = b"PrimaryS"
-                builder.push(0x06).unwrap();
-                builder.push(0x00).unwrap();
-                builder.extend_from_slice(b"PrimaryS").unwrap();
+                tx_buf[12..14].copy_from_slice(&6u16.to_le_bytes());
+                tx_buf[14..22].copy_from_slice(b"PrimaryS");
 
-                let tx_packet = builder.as_packet();
+                let tx_packet = Packet::try_ref_from_bytes(&tx_buf[..22]).unwrap();
                 let mut server_tx_bearer = BearerTx::new(server_tx);
                 server_tx_bearer.send(tx_packet).await.unwrap();
             });
@@ -1426,35 +1234,18 @@ mod tests {
                 let mut rx_buf = [MaybeUninit::uninit(); 64];
                 let results = client.read_by_type(h(1), h(10), &uuid, &mut rx_buf).await.unwrap();
 
-                // Verify IntoIterator for &results
                 let mut count = 0;
-                for entry in &results {
-                    let entry = entry.unwrap();
+                for (handle, value) in results.iter() {
                     if count == 0 {
-                        assert_eq!(entry.handle, h(2));
-                        assert_eq!(entry.value, b"PrimaryS");
+                        assert_eq!(handle.value(), 2);
+                        assert_eq!(value, b"PrimaryS");
                     } else if count == 1 {
-                        assert_eq!(entry.handle, h(6));
-                        assert_eq!(entry.value, b"PrimaryS");
+                        assert_eq!(handle.value(), 6);
+                        assert_eq!(value, b"PrimaryS");
                     }
                     count += 1;
                 }
                 assert_eq!(count, 2);
-
-                // Verify IntoIterator for owned results
-                let mut count_owned = 0;
-                for entry in results {
-                    let entry = entry.unwrap();
-                    if count_owned == 0 {
-                        assert_eq!(entry.handle, h(2));
-                        assert_eq!(entry.value, b"PrimaryS");
-                    } else if count_owned == 1 {
-                        assert_eq!(entry.handle, h(6));
-                        assert_eq!(entry.value, b"PrimaryS");
-                    }
-                    count_owned += 1;
-                }
-                assert_eq!(count_owned, 2);
             });
 
             executor.run_until_stalled();
@@ -1478,7 +1269,7 @@ mod tests {
                 let mut rx_buf = [MaybeUninit::uninit(); 32];
                 let mut server_rx_bearer = BearerRx::new(server_rx);
                 let packet = server_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ATT_READ_BY_TYPE_REQ.into());
+                assert_eq!(packet.opcode, Opcode::ATT_READ_BY_TYPE_REQ.into());
 
                 let mut server_tx_bearer = BearerTx::new(server_tx);
                 let err_buf =
@@ -1502,7 +1293,6 @@ mod tests {
 
     #[test]
     fn test_client_read_by_group_type_success() {
-        use crate::att::pdu::ReadByGroupTypeReq;
         let (app_channel, server_tx, server_rx) = setup_mock_channel();
         let router = BearerRouter::<_>::new(app_channel.receiver);
         BoundedExecutor::new(TestExecutor::new(), |executor| {
@@ -1514,42 +1304,39 @@ mod tests {
 
             let uuid = Uuid::from_u16(0x2800); // Primary Service 16-bit UUID
             const VALUE_SIZE: usize = 2; // service UUID (0x1800/0x1801 is 2 bytes)
-            let group_header_size = size_of::<ReadByGroupTypeRspEntryHeader>();
+            let group_header_size = ATT_READ_BY_GROUP_TYPE_RSP_ENTRY_HEADER_SIZE;
             let entry_size = (group_header_size + VALUE_SIZE) as u8;
 
             let server_handle = executor.spawn(async move {
                 let mut rx_buf = [MaybeUninit::uninit(); 32];
                 let mut server_rx_bearer = BearerRx::new(server_rx);
                 let packet = server_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ATT_READ_BY_GROUP_TYPE_REQ.into());
+                assert_eq!(packet.opcode, Opcode::ATT_READ_BY_GROUP_TYPE_REQ.into());
 
-                let req = ReadByGroupTypeReq::try_ref_from_bytes(&packet.data[..]).unwrap();
-                assert_eq!(req.header.starting_handle.get(), 1);
-                assert_eq!(req.header.ending_handle.get(), 10);
-                assert_eq!(&req.attribute_type, uuid.as_bytes());
+                let req = AttReadByGroupTypeReqHeader::new(packet.as_bytes());
+                assert_eq!(req.starting_handle().try_read().unwrap(), 1);
+                assert_eq!(req.ending_handle().try_read().unwrap(), 10);
+                assert_eq!(
+                    &packet.as_bytes()[ATT_READ_BY_GROUP_TYPE_REQ_HEADER_SIZE..],
+                    uuid.as_bytes()
+                );
 
                 let mut tx_buf = [0u8; 64];
-                let header = Header::new(Opcode::ATT_READ_BY_GROUP_TYPE_RSP);
-                let mut builder = DynamicPacketBuilder::<_, u8>::new(
-                    &mut tx_buf,
-                    header,
-                    CLIENT_PREFERRED_MTU as usize,
-                );
-                builder.push(entry_size).unwrap();
+                let mut view = AttHeaderMut::new(&mut tx_buf[..1]);
+                view.attribute_opcode().try_write(Opcode::ATT_READ_BY_GROUP_TYPE_RSP).unwrap();
+                tx_buf[1] = entry_size;
                 // Push entry 1: handle = 2, group end = 5, value = 0x1801 (\x01\x18)
-                builder.push(0x02).unwrap();
-                builder.push(0x00).unwrap();
-                builder.push(0x05).unwrap();
-                builder.push(0x00).unwrap();
-                builder.extend_from_slice(b"\x01\x18").unwrap();
+                let mut e1 = AttReadByGroupTypeRspEntryHeaderMut::new(&mut tx_buf[2..6]);
+                e1.attribute_handle().try_write(2).unwrap();
+                e1.end_group_handle().try_write(5).unwrap();
+                tx_buf[6..8].copy_from_slice(b"\x01\x18");
                 // Push entry 2: handle = 6, group end = 10, value = 0x1800 (\x00\x18)
-                builder.push(0x06).unwrap();
-                builder.push(0x00).unwrap();
-                builder.push(0x0a).unwrap();
-                builder.push(0x00).unwrap();
-                builder.extend_from_slice(b"\x00\x18").unwrap();
+                let mut e2 = AttReadByGroupTypeRspEntryHeaderMut::new(&mut tx_buf[8..12]);
+                e2.attribute_handle().try_write(6).unwrap();
+                e2.end_group_handle().try_write(10).unwrap();
+                tx_buf[12..14].copy_from_slice(b"\x00\x18");
 
-                let tx_packet = builder.as_packet();
+                let tx_packet = Packet::try_ref_from_bytes(&tx_buf[..14]).unwrap();
                 let mut server_tx_bearer = BearerTx::new(server_tx);
                 server_tx_bearer.send(tx_packet).await.unwrap();
             });
@@ -1560,15 +1347,15 @@ mod tests {
                     client.read_by_group_type(h(1), h(10), &uuid, &mut rx_buf).await.unwrap();
 
                 let mut iter = results.iter();
-                let e1 = iter.next().unwrap().unwrap();
-                assert_eq!(e1.handle, h(2));
-                assert_eq!(e1.end_group_handle, h(5));
-                assert_eq!(e1.value, b"\x01\x18");
+                let (e1_hdr, e1_val) = iter.next().unwrap();
+                assert_eq!(e1_hdr.attribute_handle().try_read().unwrap(), 2);
+                assert_eq!(e1_hdr.end_group_handle().try_read().unwrap(), 5);
+                assert_eq!(e1_val, b"\x01\x18");
 
-                let e2 = iter.next().unwrap().unwrap();
-                assert_eq!(e2.handle, h(6));
-                assert_eq!(e2.end_group_handle, h(10));
-                assert_eq!(e2.value, b"\x00\x18");
+                let (e2_hdr, e2_val) = iter.next().unwrap();
+                assert_eq!(e2_hdr.attribute_handle().try_read().unwrap(), 6);
+                assert_eq!(e2_hdr.end_group_handle().try_read().unwrap(), 10);
+                assert_eq!(e2_val, b"\x00\x18");
 
                 assert!(iter.next().is_none());
             });
@@ -1594,7 +1381,7 @@ mod tests {
                 let mut rx_buf = [MaybeUninit::uninit(); 32];
                 let mut server_rx_bearer = BearerRx::new(server_rx);
                 let packet = server_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ATT_READ_BY_GROUP_TYPE_REQ.into());
+                assert_eq!(packet.opcode, Opcode::ATT_READ_BY_GROUP_TYPE_REQ.into());
 
                 // Respond with ErrorRsp (UnsupportedGroupType)
                 let mut server_tx_bearer = BearerTx::new(server_tx);
@@ -1639,7 +1426,7 @@ mod tests {
 
                 // 1. Await write request
                 let packet = server_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ATT_WRITE_REQ.into());
+                assert_eq!(packet.opcode, Opcode::ATT_WRITE_REQ.into());
                 let req = AttWriteCmd::new(packet.as_bytes());
                 assert_eq!(req.attribute_handle().try_read().unwrap(), 10);
                 assert_eq!(&packet.as_bytes()[ATT_WRITE_REQ_HEADER_SIZE..], b"Sunstone");
@@ -1683,7 +1470,7 @@ mod tests {
 
                 // 1. Await write request
                 let packet = server_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ATT_WRITE_REQ.into());
+                assert_eq!(packet.opcode, Opcode::ATT_WRITE_REQ.into());
                 let req = AttWriteCmd::new(packet.as_bytes());
                 assert_eq!(req.attribute_handle().try_read().unwrap(), 10);
 
@@ -1726,7 +1513,7 @@ mod tests {
                 let mut rx_buf = [MaybeUninit::uninit(); 128];
                 let mut server_rx_bearer = BearerRx::new(test_rx);
                 let packet = server_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ATT_WRITE_CMD.into());
+                assert_eq!(packet.opcode, Opcode::ATT_WRITE_CMD.into());
                 let req = AttWriteCmd::new(packet.as_bytes());
                 assert_eq!(req.attribute_handle().try_read().unwrap(), 12);
                 assert_eq!(&packet.as_bytes()[ATT_WRITE_CMD_HEADER_SIZE..], b"SunstoneCmd");
@@ -1786,7 +1573,7 @@ mod tests {
 
                 // Receive PrepareWriteReq
                 let packet = server_rx.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ATT_PREPARE_WRITE_REQ.into());
+                assert_eq!(packet.opcode, Opcode::ATT_PREPARE_WRITE_REQ.into());
                 let req = AttPrepareWriteHeader::new(packet.as_bytes());
                 assert_eq!(req.attribute_handle().try_read().unwrap(), 10);
                 assert_eq!(req.value_offset().try_read().unwrap(), 0);
@@ -1795,7 +1582,7 @@ mod tests {
                 // Echo back PrepareWriteRsp
                 let mut rsp_buf = [0u8; 128];
                 rsp_buf[..packet.as_bytes().len()].copy_from_slice(packet.as_bytes());
-                let mut rsp_view = AttHeaderMut::new(&mut rsp_buf[..size_of::<Header>()]);
+                let mut rsp_view = AttHeaderMut::new(&mut rsp_buf[..ATT_HEADER_SIZE]);
                 rsp_view.attribute_opcode().try_write(Opcode::ATT_PREPARE_WRITE_RSP).unwrap();
                 let tx_packet =
                     Packet::try_ref_from_bytes(&rsp_buf[..packet.as_bytes().len()]).unwrap();
@@ -1913,7 +1700,7 @@ mod tests {
                 let mut server_tx = BearerTx::new(test_tx);
 
                 let packet = server_rx.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ATT_EXECUTE_WRITE_REQ.into());
+                assert_eq!(packet.opcode, Opcode::ATT_EXECUTE_WRITE_REQ.into());
                 let req = AttExecuteWriteReq::new(packet.as_bytes());
                 assert_eq!(req.flags().try_read().unwrap(), ExecuteWriteFlags::WRITE);
 
@@ -1980,7 +1767,7 @@ mod tests {
                 let mut rx_buf = [MaybeUninit::uninit(); 32];
                 let mut server_rx_bearer = BearerRx::new(test_rx);
                 let packet = server_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
-                assert_eq!(packet.header.opcode, Opcode::ATT_HANDLE_VALUE_CFM.into());
+                assert_eq!(packet.opcode, Opcode::ATT_HANDLE_VALUE_CFM.into());
             });
 
             let client_handle = executor.spawn(async move {
