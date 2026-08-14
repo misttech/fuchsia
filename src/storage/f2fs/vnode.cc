@@ -1102,7 +1102,11 @@ zx_status_t VnodeF2fs::TruncateInodeBlocks(pgoff_t from) {
   Inode& inode = locked_ipage->GetAddress<Node>()->i;
   switch (level) {
     case 0:
+      // |from| is held in the inode itself, so every node below it goes. The loop walks the
+      // i_nid[] slots, which start at kNodeDir1Block rather than at a file offset.
       node_offset = 1;
+      offsets_in_node[0] = kNodeDir1Block;
+      offsets_in_node[1] = 0;
       break;
     case 1:
       node_offset = node_offsets[1];

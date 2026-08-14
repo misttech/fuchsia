@@ -1427,6 +1427,72 @@ TEST_F(NodeManagerTest, DnodeCacheKeyedOnRequestedOffset) TA_NO_THREAD_SAFETY_AN
   vnode.reset();
 }
 
+TEST_F(NodeManagerTest, NodeFooterMustMatchHowTheNodeWasFound) TA_NO_THREAD_SAFETY_ANALYSIS {
+  // NodePage reads a block through its footer: IsInode() compares the recorded nid and ino,
+  // and the accessors pick which arm of the union to use from that answer. A block whose
+  // footer disagrees with the NAT entry it was found through therefore describes a layout
+  // that is not its own, so it must not reach any of that.
+  fbl::RefPtr<VnodeF2fs> vnode;
+  FileTester::VnodeWithoutParent(fs_.get(), S_IFREG, vnode);
+  ASSERT_TRUE(vnode->NewInodePage().is_ok());
+
+  constexpr pgoff_t kLevel1Index = kAddrsPerInode;
+  zx::result allocated = vnode->GetAddresses({0, kLevel1Index});
+  ASSERT_TRUE(allocated.is_ok());
+
+  NodeManager &node_manager = fs_->GetNodeManager();
+  const nid_t ino = vnode->Ino();
+
+  // A footer naming a different node than the one that was asked for.
+  {
+    LockedPage ipage;
+    ASSERT_EQ(node_manager.GetNodePage(ino, &ipage), ZX_OK);
+    ipage.WaitOnWriteback();
+    ipage->GetAddress<Node>()->footer.nid = CpuToLe(ino + 1);
+    ipage.SetDirty();
+  }
+  {
+    LockedPage ipage;
+    EXPECT_EQ(node_manager.GetNodePage(ino, &ipage), ZX_ERR_IO_DATA_INTEGRITY);
+  }
+
+  // A footer naming an owner the NAT entry does not agree with.
+  {
+    LockedPage ipage;
+    ASSERT_EQ(fs_->GetNodeVnode().GrabLockedPage(ino, &ipage), ZX_OK);
+    ipage.WaitOnWriteback();
+    Node &node = *ipage->GetAddress<Node>();
+    node.footer.nid = CpuToLe(ino);
+    node.footer.ino = CpuToLe(ino + 1);
+    ipage.SetDirty();
+  }
+  {
+    LockedPage ipage;
+    EXPECT_EQ(node_manager.GetNodePage(ino, &ipage), ZX_ERR_IO_DATA_INTEGRITY);
+  }
+
+  // Restored, the inode is reachable again.
+  {
+    LockedPage ipage;
+    ASSERT_EQ(fs_->GetNodeVnode().GrabLockedPage(ino, &ipage), ZX_OK);
+    ipage.WaitOnWriteback();
+    Node &node = *ipage->GetAddress<Node>();
+    node.footer.nid = CpuToLe(ino);
+    node.footer.ino = CpuToLe(ino);
+    ipage.SetDirty();
+  }
+  {
+    LockedPage ipage;
+    EXPECT_EQ(node_manager.GetNodePage(ino, &ipage), ZX_OK);
+  }
+
+  ASSERT_EQ(vnode->TruncateInodeBlocks(kLevel1Index), ZX_OK);
+  vnode->SetBlockCount(0);
+  fs_->SyncFs();
+  ASSERT_EQ(vnode->Close(), ZX_OK);
+  vnode.reset();
+}
+
 TEST_F(NodeManagerTest, BlockAddrArrayStaysWithinTheNodeBlock) TA_NO_THREAD_SAFETY_ANALYSIS {
   // An inode's block address array starts at an offset |i_extra_isize| names, so an image can
   // place that start beyond the array. Recovery and GC index node pages directly, without a

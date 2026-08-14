@@ -446,9 +446,25 @@ zx::result<LockedPage> NodeManager::NewNodePage(nid_t ino, nid_t nid, bool is_di
   return zx::ok(std::move(page));
 }
 
+// A node block records in its footer which node it is and which inode owns it. Nothing else
+// checks those against the NAT entry the block was found through, yet NodePage decides how to
+// read the block from them: IsInode() compares the two, and the address and nid accessors pick
+// which arm of the union to use from that answer. Comparing them here keeps a block whose
+// footer disagrees with how it was reached away from all of it. FsckWorker applies the same
+// rule offline.
+static zx::result<> VerifyNodeFooter(const NodeInfo &ni, NodePage &page) {
+  if (ni.nid != page.NidOfNode() || ni.ino != page.InoOfNode()) {
+    FX_LOGS(WARNING) << "node " << ni.nid << " owned by inode " << ni.ino << " carries footer nid "
+                     << page.NidOfNode() << " ino " << page.InoOfNode();
+    return zx::error(ZX_ERR_IO_DATA_INTEGRITY);
+  }
+  return zx::ok();
+}
+
 zx::result<std::vector<LockedPage>> NodeManager::GetNodePages(const std::vector<nid_t> &nids) {
   std::vector<LockedPage> pages;
   std::vector<block_t> addrs;
+  std::vector<NodeInfo> infos;
   bool need_io = false;
   for (auto nid : nids) {
     NodeInfo ni;
@@ -464,6 +480,7 @@ zx::result<std::vector<LockedPage>> NodeManager::GetNodePages(const std::vector<
     }
     pages.push_back(std::move(page));
     addrs.push_back(ni.blk_addr);
+    infos.push_back(ni);
     if (!need_io && (pages[0]->IsUptodate() || ni.blk_addr == kNullAddr)) {
       break;
     }
@@ -475,6 +492,16 @@ zx::result<std::vector<LockedPage>> NodeManager::GetNodePages(const std::vector<
     if (status.is_error()) {
       FX_LOGS(ERROR) << "failed to read node pages. " << status.status_string();
       return status.take_error();
+    }
+  }
+
+  for (size_t i = 0; i < pages.size(); ++i) {
+    // A page without contents carries no footer to compare against.
+    if (!pages[i]->IsUptodate()) {
+      continue;
+    }
+    if (auto ret = VerifyNodeFooter(infos[i], pages[i].GetPage<NodePage>()); ret.is_error()) {
+      return ret.take_error();
     }
   }
 
@@ -493,16 +520,16 @@ zx_status_t NodeManager::GetNodePage(nid_t nid, LockedPage *out) {
   }
   if (page->IsUptodate() || ni.blk_addr == kNewAddr) {
     page->SetUptodate();
-    *out = std::move(page);
-    return ZX_OK;
+  } else {
+    auto status = fs_->MakeReadOperation(page, ni.blk_addr, PageType::kNode);
+    if (status.is_error()) {
+      return status.error_value();
+    }
   }
 
-  auto status = fs_->MakeReadOperation(page, ni.blk_addr, PageType::kNode);
-  if (status.is_error()) {
-    return status.error_value();
+  if (auto ret = VerifyNodeFooter(ni, page.GetPage<NodePage>()); ret.is_error()) {
+    return ret.error_value();
   }
-
-  ZX_DEBUG_ASSERT(nid == page.GetPage<NodePage>().NidOfNode());
 #if 0  // porting needed
   // mark_page_accessed(page);
 #endif
