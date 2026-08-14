@@ -112,9 +112,8 @@ impl State {
         //
         // a) This shouldn't happen, since we run from boot
         // b) Window scale is only negotiated during the initial handshake.
-        match segment.control {
-            Some(Control::SYN) => {}
-            None | Some(Control::FIN) | Some(Control::RST) => return None,
+        if segment.control != Some(Control::SYN) || segment.ack.is_some() {
+            return None;
         }
 
         Some(Self::SynSent(SynSent {
@@ -1010,6 +1009,38 @@ mod tests {
                 fin_state: FinState::NotSent,
             }
         }
+    }
+
+    #[test]
+    fn new_state_valid() {
+        assert_eq!(
+            State::new(&valid_original_syn_segment(), 0),
+            Some(State::SynSent(default_syn_sent_state()))
+        );
+
+        assert_eq!(
+            State::new(&valid_original_syn_segment(), 10),
+            Some(State::SynSent(SynSent {
+                // 10 plus the SYN.
+                logical_len: 11,
+                ..default_syn_sent_state()
+            }))
+        );
+    }
+
+    #[test]
+    fn new_state_invalid() {
+        assert_eq!(
+            State::new(
+                &SegmentHeader {
+                    // We don't allow picking up connections already in progress.
+                    ack: Some(SeqNum::new(0)),
+                    ..valid_original_syn_segment()
+                },
+                ORIGINAL_PAYLOAD_LEN
+            ),
+            None
+        );
     }
 
     #[test_case(None)]
