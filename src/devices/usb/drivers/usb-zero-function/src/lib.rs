@@ -32,6 +32,12 @@ const USB_ENDPOINT_DIR_MASK: u8 = 0x80;
 
 const DEFAULT_VMO_SIZE: u64 = 4096;
 
+const USB_RECIP_MASK: u8 = 0x1f;
+const USB_RECIP_DEVICE: u8 = 0x00;
+const USB_RECIP_INTERFACE: u8 = 0x01;
+const USB_RECIP_ENDPOINT: u8 = 0x02;
+const USB_FEATURE_ENDPOINT_HALT: u16 = 0x0000;
+
 const USB_SETUP_REQ_GET_STATUS: u8 = 0x00;
 const USB_SETUP_REQ_CLEAR_FEATURE: u8 = 0x01;
 const USB_SETUP_REQ_SET_FEATURE: u8 = 0x03;
@@ -559,23 +565,87 @@ impl UsbZeroFunctionDevice {
         }
     }
 
+    fn validate_endpoint_feature_request(
+        &self,
+        setup: &fusb_descriptor::UsbSetup,
+        write: &[u8],
+    ) -> Result<u8, Status> {
+        if (setup.bm_request_type & 0x80) != 0
+            || (setup.bm_request_type & USB_RECIP_MASK) != USB_RECIP_ENDPOINT
+            || setup.w_value != USB_FEATURE_ENDPOINT_HALT
+            || setup.w_length != 0
+            || setup.w_index > 0xff
+            || !write.is_empty()
+        {
+            return Err(Status::NOT_SUPPORTED);
+        }
+        let ep_addr = (setup.w_index & 0xff) as u8;
+        if ep_addr != self.ep_in_addr && ep_addr != self.ep_out_addr {
+            return Err(Status::NOT_SUPPORTED);
+        }
+        Ok(ep_addr)
+    }
+
     async fn handle_control_request(
         &mut self,
         setup: &fusb_descriptor::UsbSetup,
         write: &[u8],
     ) -> Result<Vec<u8>, Status> {
+        let recipient = setup.bm_request_type & USB_RECIP_MASK;
+        let is_in = (setup.bm_request_type & 0x80) != 0;
         match ControlRequest::parse(setup.bm_request_type, setup.b_request) {
             ControlRequest::Vendor(vendor_req) => {
                 self.handle_vendor_request(vendor_req, setup, write).await
             }
             ControlRequest::Standard(req) => match req {
-                USB_SETUP_REQ_GET_STATUS => Ok(vec![0x00, 0x00]),
-                USB_SETUP_REQ_CLEAR_FEATURE => Ok(Vec::new()),
-                USB_SETUP_REQ_SET_FEATURE => Ok(Vec::new()),
-                USB_SETUP_REQ_GET_INTERFACE => Ok(vec![match self.mode {
-                    TestMode::SourceSink => 0,
-                    TestMode::Loopback => 1,
-                }]),
+                USB_SETUP_REQ_GET_STATUS => {
+                    if !is_in || setup.w_value != 0 || setup.w_length != 2 || !write.is_empty() {
+                        return Err(Status::NOT_SUPPORTED);
+                    }
+                    if recipient == USB_RECIP_ENDPOINT && setup.w_index <= 0xff {
+                        let ep_addr = (setup.w_index & 0xff) as u8;
+                        if ep_addr == self.ep_in_addr
+                            || ep_addr == self.ep_out_addr
+                            || (ep_addr & USB_ENDPOINT_NUM_MASK) == 0
+                        {
+                            let is_stalled = self.stalled_endpoints.contains(&ep_addr);
+                            let status_word = u16::from(is_stalled);
+                            Ok(status_word.to_le_bytes().to_vec())
+                        } else {
+                            Err(Status::NOT_SUPPORTED)
+                        }
+                    } else if (recipient == USB_RECIP_DEVICE && setup.w_index == 0)
+                        || (recipient == USB_RECIP_INTERFACE
+                            && setup.w_index == u16::from(self.interface_num))
+                    {
+                        Ok(vec![0x00, 0x00])
+                    } else {
+                        Err(Status::NOT_SUPPORTED)
+                    }
+                }
+                USB_SETUP_REQ_CLEAR_FEATURE => {
+                    let ep_addr = self.validate_endpoint_feature_request(setup, write)?;
+                    self.clear_endpoint_stall(ep_addr).await?;
+                    Ok(Vec::new())
+                }
+                USB_SETUP_REQ_SET_FEATURE => {
+                    let ep_addr = self.validate_endpoint_feature_request(setup, write)?;
+                    self.set_endpoint_stall(ep_addr).await?;
+                    Ok(Vec::new())
+                }
+                USB_SETUP_REQ_GET_INTERFACE => {
+                    if is_in
+                        && recipient == USB_RECIP_INTERFACE
+                        && setup.w_value == 0
+                        && setup.w_index == u16::from(self.interface_num)
+                        && setup.w_length == 1
+                        && write.is_empty()
+                    {
+                        Ok(vec![self.mode as u8])
+                    } else {
+                        Err(Status::NOT_SUPPORTED)
+                    }
+                }
                 _ => Err(Status::NOT_SUPPORTED),
             },
             ControlRequest::Unsupported => Err(Status::NOT_SUPPORTED),

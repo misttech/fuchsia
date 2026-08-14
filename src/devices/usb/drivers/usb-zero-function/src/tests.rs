@@ -658,3 +658,104 @@ async fn test_endpoint_stall_state() {
     device.clear_endpoint_stall(TEST_EP_OUT_ADDR).await.unwrap();
     assert!(device.stalled_endpoints.is_empty());
 }
+
+#[fuchsia::test]
+async fn test_standard_chapter_9_halt_requests() {
+    let (func_client, func_server) = create_endpoints::<fusb_function::UsbFunctionMarker>();
+    let (ep_in_client, _ep_in_server) = create_endpoints::<fusb_endpoint::EndpointMarker>();
+    let (ep_out_client, _ep_out_server) = create_endpoints::<fusb_endpoint::EndpointMarker>();
+
+    let scope = Arc::new(fasync::Scope::new_with_name("test_standard_halt"));
+    scope.spawn_local(run_mock_function(func_server.into_stream()));
+
+    let mut device = UsbZeroFunctionDevice::new(
+        func_client.into_proxy(),
+        ep_in_client.into_proxy(),
+        TEST_EP_IN_ADDR,
+        ep_out_client.into_proxy(),
+        TEST_EP_OUT_ADDR,
+        0, // interface_num
+    );
+
+    // Test GET_STATUS (Device) -> should succeed and return 0
+    let setup = fusb_descriptor::UsbSetup {
+        bm_request_type: 0x80, // IN, Standard, Device
+        b_request: USB_SETUP_REQ_GET_STATUS,
+        w_value: 0,
+        w_index: 0,
+        w_length: 2,
+    };
+    assert_eq!(device.handle_control_request(&setup, &[]).await.unwrap(), vec![0x00, 0x00]);
+
+    // Test GET_STATUS (Interface) with correct interface index -> should succeed and return 0
+    let setup = fusb_descriptor::UsbSetup {
+        bm_request_type: 0x81, // IN, Standard, Interface
+        b_request: USB_SETUP_REQ_GET_STATUS,
+        w_value: 0,
+        w_index: 0, // interface_num is 0
+        w_length: 2,
+    };
+    assert_eq!(device.handle_control_request(&setup, &[]).await.unwrap(), vec![0x00, 0x00]);
+
+    // Test GET_STATUS (Interface) with incorrect interface index -> should fail
+    let setup = fusb_descriptor::UsbSetup {
+        bm_request_type: 0x81, // IN, Standard, Interface
+        b_request: USB_SETUP_REQ_GET_STATUS,
+        w_value: 0,
+        w_index: 1, // incorrect
+        w_length: 2,
+    };
+    assert_eq!(device.handle_control_request(&setup, &[]).await, Err(Status::NOT_SUPPORTED));
+
+    // Test GET_STATUS (Endpoint) IN endpoint (not stalled)
+    let setup = fusb_descriptor::UsbSetup {
+        bm_request_type: 0x82, // IN, Standard, Endpoint
+        b_request: USB_SETUP_REQ_GET_STATUS,
+        w_value: 0,
+        w_index: TEST_EP_IN_ADDR as u16,
+        w_length: 2,
+    };
+    assert_eq!(device.handle_control_request(&setup, &[]).await.unwrap(), vec![0x00, 0x00]);
+
+    // Test SET_FEATURE (ENDPOINT_HALT) on IN endpoint
+    let setup = fusb_descriptor::UsbSetup {
+        bm_request_type: 0x02, // OUT, Standard, Endpoint
+        b_request: USB_SETUP_REQ_SET_FEATURE,
+        w_value: USB_FEATURE_ENDPOINT_HALT,
+        w_index: TEST_EP_IN_ADDR as u16,
+        w_length: 0,
+    };
+    assert_eq!(device.handle_control_request(&setup, &[]).await.unwrap(), Vec::<u8>::new());
+    assert!(device.stalled_endpoints.contains(&TEST_EP_IN_ADDR));
+
+    // Test GET_STATUS (Endpoint) IN endpoint (now stalled)
+    let setup = fusb_descriptor::UsbSetup {
+        bm_request_type: 0x82, // IN, Standard, Endpoint
+        b_request: USB_SETUP_REQ_GET_STATUS,
+        w_value: 0,
+        w_index: TEST_EP_IN_ADDR as u16,
+        w_length: 2,
+    };
+    assert_eq!(device.handle_control_request(&setup, &[]).await.unwrap(), vec![0x01, 0x00]);
+
+    // Test CLEAR_FEATURE (ENDPOINT_HALT) on IN endpoint
+    let setup = fusb_descriptor::UsbSetup {
+        bm_request_type: 0x02, // OUT, Standard, Endpoint
+        b_request: USB_SETUP_REQ_CLEAR_FEATURE,
+        w_value: USB_FEATURE_ENDPOINT_HALT,
+        w_index: TEST_EP_IN_ADDR as u16,
+        w_length: 0,
+    };
+    assert_eq!(device.handle_control_request(&setup, &[]).await.unwrap(), Vec::<u8>::new());
+    assert!(!device.stalled_endpoints.contains(&TEST_EP_IN_ADDR));
+
+    // Test GET_STATUS (Endpoint) IN endpoint (now cleared)
+    let setup = fusb_descriptor::UsbSetup {
+        bm_request_type: 0x82, // IN, Standard, Endpoint
+        b_request: USB_SETUP_REQ_GET_STATUS,
+        w_value: 0,
+        w_index: TEST_EP_IN_ADDR as u16,
+        w_length: 2,
+    };
+    assert_eq!(device.handle_control_request(&setup, &[]).await.unwrap(), vec![0x00, 0x00]);
+}
