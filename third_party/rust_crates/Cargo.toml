@@ -280,6 +280,17 @@ zstd = "0.13.3"
 zstd-safe = "7.2.4"
 # keep-sorted end
 
+# Kernel dependencies
+[target.'cfg(kernel)'.dependencies]
+# keep-sorted start
+bitflags = { version = "2.13.0", default-features = false }
+lock_api = { version = "0.4.14", default-features = false }
+num-traits = { version = "0.2.19", default-features = false }
+paste = "1.0.15"
+pin-init = { version = "0.3.0", default-features = false }
+zerocopy = { version = "0.8.48", features = ["derive"] }
+# keep-sorted end
+
 # Target-side only dependencies
 [target.'cfg(target_os = "fuchsia")'.dependencies]
 # keep-sorted start
@@ -584,6 +595,9 @@ reviewed_features = ["default"]
 
 [gn.package.bitflags."2.13.0"]
 reviewed_features = [ "serde", "serde_core", "std" ]
+
+[gn.package.bitflags."2.13.0".platform."cfg(kernel)"]
+remove_features = [ "std" ]
 
 [gn.package.bssl-macros."0.1.0"]
 existing_gn_target = "//third_party/boringssl/rust:bssl-macros"
@@ -1173,6 +1187,9 @@ env_vars = [
   "OUT_DIR=../../../compat/serde_core",
 ]
 
+[gn.package.serde_core."1.0.229".platform."cfg(kernel)"]
+remove_features = [ "alloc", "std" ]
+
 [gn.package.serde_derive."1.0.229"]
 rustflags = []
 env_vars = [
@@ -1388,7 +1405,7 @@ configs = [
   "//third_party/rust_crates/configs/balanced:optimize_moderate"
 ]
 [gn.package.zerocopy."0.8.48".platform."cfg(not(kernel))"]
-rustflags = [ "--cfg=feature=\\\"alloc\\\"", "--cfg=feature=\\\"std\\\"" ]
+features = [ "alloc", "std" ]
 
 [gn.package.zerocopy-derive."0.8.48"]
 # See https://github.com/google/zerocopy/issues/1792

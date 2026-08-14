@@ -96,9 +96,13 @@ Basic configuration for a package's library target is specified as
 target unconditionally (for all platforms) and can include the following arrays:
 
 * `configs` - native GN config
+* `remove_configs` - native GN configs to exclude
 * `deps` - native GN dependency
 * `env_vars` - environment variables, usually used for pretending to be Cargo
+* `features` - extra crate features to enable (converted to `--cfg=feature="..."` flags)
+* `remove_features` - crate features to exclude (converted to `--cfg=feature="..."` flags removed via `-=` in GN)
 * `rustflags` - flags to pass through to rustc
+* `remove_rustflags` - flags to remove from rustc (via `-=` in GN)
 
 #### Example
 ```toml
@@ -107,15 +111,22 @@ rustflags = [ "--cfg=backtrace" ]
 ```
 
 ### Platform-specific configuration
-Configuration can also be applied to only specific platforms, for example only when building for
-Fuchsia or only when building for a specific host platform.
+You can also apply configuration to specific platforms only, such as when
+building for Fuchsia, when building for the Zircon kernel (`cfg(kernel)` or
+`cfg(not(kernel))`), or when targeting specific architectures.
 
-Platforms are specified in the Rust cfg format (e.g. `cfg(unix)`). The same four configuration fields (`configs`, `deps`, `env_vars`, `rustflags`) documented above are supported.
+Specify platforms in the Rust cfg format (for example, `cfg(unix)`, `cfg(kernel)`,
+`cfg(all(kernel, target_arch = "x86_64"))`). You can use any of the configuration fields
+documented above (`configs`, `remove_configs`, `deps`, `env_vars`, `features`,
+`remove_features`, `rustflags`, `remove_rustflags`).
 
 #### Example
 ```toml
 [gn.package.foo."1.2.3".platform."cfg(target_os = \"fuchsia\")"]
 configs = [ "//some:fuchsia_specific_config" ]
+
+[gn.package.bitflags."2.13.0".platform."cfg(kernel)"]
+remove_features = [ "std" ]
 ```
 
 ### Generating executables for binary targets

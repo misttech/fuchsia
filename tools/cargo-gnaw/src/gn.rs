@@ -546,6 +546,27 @@ pub fn write_rule<W: io::Write>(
                     rustflags.add_platform_cfg(platform.cloned(), flag.to_string());
                 }
             }
+            if let Some(ref remove_flags) = cfg.remove_rustflags {
+                for flag in remove_flags {
+                    rustflags.remove_platform_cfg(platform.cloned(), flag.to_string());
+                }
+            }
+            if let Some(ref feats) = cfg.features {
+                for feat in feats {
+                    rustflags.add_platform_cfg(
+                        platform.cloned(),
+                        format!("--cfg=feature=\\\"{}\\\"", feat),
+                    );
+                }
+            }
+            if let Some(ref remove_feats) = cfg.remove_features {
+                for feat in remove_feats {
+                    rustflags.remove_platform_cfg(
+                        platform.cloned(),
+                        format!("--cfg=feature=\\\"{}\\\"", feat),
+                    );
+                }
+            }
             if let Some(ref env_vars) = cfg.env_vars {
                 for flag in env_vars {
                     rustenv.add_platform_cfg(platform.cloned(), flag.to_string());
@@ -799,6 +820,7 @@ uses_fuchsia_license = true
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::TargetCfg;
     use camino::Utf8Path;
     use cargo_metadata::Edition;
     use semver::Version;
@@ -1476,6 +1498,161 @@ group("foo-v1_2.test") {
   public_deps = [":foo-v1_2_3"]
   
   visibility = foo_visibility
+}
+
+"#
+        );
+    }
+
+    #[test]
+    fn target_with_remove_rustflags() {
+        let pkg_id = cargo_metadata::PackageId { repr: String::from("42") };
+        let version = Version::new(0, 1, 0);
+
+        let mut project_root = std::env::temp_dir();
+        project_root.push(Path::new("remove_rustflags_target"));
+        std::fs::write(&project_root, "").expect("write to temp file");
+
+        let target = GnTarget::new(
+            &pkg_id,
+            "test_target",
+            "test_package",
+            Edition::E2024,
+            Utf8Path::from_path(project_root.as_path()).unwrap(),
+            &version,
+            GnRustType::Library,
+            &[],
+            false,
+            HashMap::new(),
+            HashMap::new(),
+        );
+
+        let cfg = TargetCfg {
+            rustflags: Some(vec!["--cfg=foo".to_string()]),
+            remove_rustflags: Some(vec!["--cfg=foo".to_string()]),
+            ..Default::default()
+        };
+        let mut custom_build = CombinedTargetCfg::new();
+        custom_build.insert(None, &cfg);
+
+        let mut output = vec![];
+        write_rule(
+            &mut output,
+            &target,
+            std::env::temp_dir().as_path(),
+            None,
+            Some(&custom_build),
+            None,
+            false,
+            false,
+            None,
+            false,
+        )
+        .unwrap();
+
+        let output_str = String::from_utf8(output).unwrap();
+        assert_eq!(
+            output_str,
+            r#"rustc_library("test_package-v0_1_0") {
+  crate_name = "test_target"
+  source_root = "//remove_rustflags_target"
+  output_name = "test_target-c5bf97c44457465a"
+  edition = "2024"
+  disable_clippy = true
+  enforce_source_listing = false
+  
+  deps = []
+
+  rustenv = []
+
+  rustflags = ["--cap-lints=allow","-Cmetadata=c5bf97c44457465a","-Cextra-filename=-c5bf97c44457465a","--cfg=foo"]
+rustflags -= ["--cfg=foo"]
+
+  
+  visibility = [":*"]
+
+  
+  applicable_licenses = []
+
+  
+}
+
+"#
+        );
+    }
+
+    #[test]
+    fn target_with_platform_remove_rustflags() {
+        let pkg_id = cargo_metadata::PackageId { repr: String::from("42") };
+        let version = Version::new(0, 1, 0);
+
+        let mut project_root = std::env::temp_dir();
+        project_root.push(Path::new("platform_remove_rustflags_target"));
+        std::fs::write(&project_root, "").expect("write to temp file");
+
+        let target = GnTarget::new(
+            &pkg_id,
+            "test_target",
+            "test_package",
+            Edition::E2024,
+            Utf8Path::from_path(project_root.as_path()).unwrap(),
+            &version,
+            GnRustType::Library,
+            &[],
+            false,
+            HashMap::new(),
+            HashMap::new(),
+        );
+
+        let cfg = TargetCfg {
+            remove_rustflags: Some(vec!["--cfg=foo".to_string()]),
+            ..Default::default()
+        };
+        let platform = "cfg(target_os = \"fuchsia\")".to_string();
+        let mut custom_build = CombinedTargetCfg::new();
+        custom_build.insert(Some(&platform), &cfg);
+
+        let mut output = vec![];
+        write_rule(
+            &mut output,
+            &target,
+            std::env::temp_dir().as_path(),
+            None,
+            Some(&custom_build),
+            None,
+            false,
+            false,
+            None,
+            false,
+        )
+        .unwrap();
+
+        let output_str = String::from_utf8(output).unwrap();
+        assert_eq!(
+            output_str,
+            r#"rustc_library("test_package-v0_1_0") {
+  crate_name = "test_target"
+  source_root = "//platform_remove_rustflags_target"
+  output_name = "test_target-c5bf97c44457465a"
+  edition = "2024"
+  disable_clippy = true
+  enforce_source_listing = false
+  
+  deps = []
+
+  rustenv = []
+
+  rustflags = ["--cap-lints=allow","-Cmetadata=c5bf97c44457465a","-Cextra-filename=-c5bf97c44457465a"]
+if (current_os == "fuchsia") {
+rustflags -= ["--cfg=foo"]}
+
+  
+  visibility = [":*"]
+
+  
+  applicable_licenses = []
+
+  
 }
 
 "#

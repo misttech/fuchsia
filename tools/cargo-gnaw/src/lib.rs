@@ -11,7 +11,7 @@ use argh::FromArgs;
 use camino::Utf8PathBuf;
 use cargo_metadata::{CargoOpt, DependencyKind, Package, PackageName};
 use serde_derive::{Deserialize, Serialize};
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fs::File;
 use std::io::{self, Read, Write};
 use std::path::PathBuf;
@@ -89,6 +89,12 @@ type Version = String;
 pub struct TargetCfg {
     /// Config flags for rustc. Ex: --cfg=std
     rustflags: Option<Vec<String>>,
+    /// Config flags to remove for rustc.
+    remove_rustflags: Option<Vec<String>>,
+    /// Feature flags for rustc. Ex: ["alloc", "std"]
+    features: Option<Vec<String>>,
+    /// Feature flags to remove for rustc. Ex: ["std"]
+    remove_features: Option<Vec<String>>,
     /// Environment variables. These are usually from Cargo or the
     /// build.rs file in the crate.
     env_vars: Option<Vec<String>>,
@@ -410,77 +416,90 @@ pub fn generate_from_manifest<W: io::Write>(mut output: &mut W, opt: &Opt) -> Re
                     build_graph
                         .add_cargo_package(dep.pkg.clone())
                         .context("adding cargo package")?;
+                    let mut platforms = BTreeSet::new();
+                    let mut has_unconditional = false;
                     for kinds in dep.dep_kinds.iter() {
                         if kinds.kind == DependencyKind::Normal {
-                            let platform = kinds.target.as_ref().map(|t| format!("{}", t));
-                            let package = &metadata[&dep.pkg];
-                            let _ = top_level_metadata.insert(package.name.to_owned());
-                            let cfg = metadata_configs
-                                .gn
-                                .as_ref()
-                                .and_then(|cfg| cfg.find_package(package));
-
-                            let group_name = cfg.and_then(|cfg| cfg.group_name.as_deref());
-                            let visibility = cfg.and_then(|cfg| cfg.group_visibility.as_ref());
-                            let groups = cfg.and_then(|cfg| cfg.groups.as_deref());
-                            if let Some(visibility) = visibility {
-                                write_import_once(
-                                    &mut output,
-                                    &mut imported_files,
-                                    &visibility.import,
-                                )?;
+                            if let Some(target) = &kinds.target {
+                                platforms.insert(Some(format!("{}", target)));
+                            } else {
+                                has_unconditional = true;
                             }
+                        }
+                    }
 
-                            let target_renaming = cfg.and_then(|cfg| cfg.target_renaming.as_ref());
-                            if let Some(target_renaming) = target_renaming {
-                                write_import_once(
-                                    &mut output,
-                                    &mut imported_files,
-                                    &target_renaming.import,
-                                )?;
-                            }
+                    let platforms_to_emit: Vec<Option<String>> = if has_unconditional {
+                        vec![None]
+                    } else {
+                        platforms.into_iter().collect()
+                    };
 
-                            gn::write_top_level_rule(
+                    for platform in platforms_to_emit {
+                        let package = &metadata[&dep.pkg];
+                        let _ = top_level_metadata.insert(package.name.to_owned());
+                        let cfg =
+                            metadata_configs.gn.as_ref().and_then(|cfg| cfg.find_package(package));
+
+                        let group_name = cfg.and_then(|cfg| cfg.group_name.as_deref());
+                        let visibility = cfg.and_then(|cfg| cfg.group_visibility.as_ref());
+                        let groups = cfg.and_then(|cfg| cfg.groups.as_deref());
+                        if let Some(visibility) = visibility {
+                            write_import_once(
+                                &mut output,
+                                &mut imported_files,
+                                &visibility.import,
+                            )?;
+                        }
+
+                        let target_renaming = cfg.and_then(|cfg| cfg.target_renaming.as_ref());
+                        if let Some(target_renaming) = target_renaming {
+                            write_import_once(
+                                &mut output,
+                                &mut imported_files,
+                                &target_renaming.import,
+                            )?;
+                        }
+
+                        gn::write_top_level_rule(
+                            &mut output,
+                            platform.as_deref(),
+                            package,
+                            group_name,
+                            visibility,
+                            groups,
+                            target_renaming,
+                            cfg.and_then(|cfg| cfg.testonly).unwrap_or(false),
+                            cfg.map(|c| c.tests).unwrap_or(false),
+                        )
+                        .with_context(|| {
+                            format!("while writing top level rule for package: {}", dep.pkg)
+                        })
+                        .context("writing top level rule")?;
+
+                        // Write an alias for easier compatibility with Bazel naming.
+                        gn::write_alias_rule(
+                            &mut output,
+                            platform.as_deref(),
+                            package,
+                            visibility,
+                            groups,
+                            cfg.and_then(|cfg| cfg.testonly).unwrap_or(false),
+                        )
+                        .with_context(|| {
+                            format!("while writing alias rule for package: {}", dep.pkg)
+                        })
+                        .context("writing alias rule")?;
+
+                        if opt.output_fuchsia_sdk_metadata {
+                            gn::write_fuchsia_sdk_metadata(
                                 &mut output,
                                 platform.as_deref(),
                                 package,
-                                group_name,
-                                visibility,
-                                groups,
-                                target_renaming,
-                                cfg.and_then(|cfg| cfg.testonly).unwrap_or(false),
-                                cfg.map(|c| c.tests).unwrap_or(false),
                             )
                             .with_context(|| {
                                 format!("while writing top level rule for package: {}", dep.pkg)
                             })
-                            .context("writing top level rule")?;
-
-                            // Write an alias for easier compatibility with Bazel naming.
-                            gn::write_alias_rule(
-                                &mut output,
-                                platform.as_deref(),
-                                package,
-                                visibility,
-                                groups,
-                                cfg.and_then(|cfg| cfg.testonly).unwrap_or(false),
-                            )
-                            .with_context(|| {
-                                format!("while writing alias rule for package: {}", dep.pkg)
-                            })
-                            .context("writing alias rule")?;
-
-                            if opt.output_fuchsia_sdk_metadata {
-                                gn::write_fuchsia_sdk_metadata(
-                                    &mut output,
-                                    platform.as_deref(),
-                                    package,
-                                )
-                                .with_context(|| {
-                                    format!("while writing top level rule for package: {}", dep.pkg)
-                                })
-                                .context("writing Fuchsia SDK metadata for top level rule")?;
-                            }
+                            .context("writing Fuchsia SDK metadata for top level rule")?;
                         }
                     }
                 }
@@ -1019,5 +1038,21 @@ mod tests {
         "#;
         let cfg_legacy: PackageCfg = toml::from_str(toml_legacy).expect("deserialize PackageCfg");
         assert!(cfg_legacy.validate().is_ok());
+    }
+
+    #[test]
+    fn deserialize_target_cfg_with_remove_features() {
+        let toml_str = r#"
+            features = [ "alloc" ]
+            remove_features = [ "std" ]
+            rustflags = [ "--cfg=foo" ]
+            remove_rustflags = [ "--cfg=bar" ]
+        "#;
+
+        let cfg: TargetCfg = toml::from_str(toml_str).expect("deserialize TargetCfg");
+        assert_eq!(cfg.features, Some(vec!["alloc".to_string()]));
+        assert_eq!(cfg.remove_features, Some(vec!["std".to_string()]));
+        assert_eq!(cfg.rustflags, Some(vec!["--cfg=foo".to_string()]));
+        assert_eq!(cfg.remove_rustflags, Some(vec!["--cfg=bar".to_string()]));
     }
 }

@@ -254,6 +254,13 @@ fn target_cfg() {
 }
 
 #[test]
+fn kernel_x64() {
+    let cfg_str = r#"cfg(all(kernel, target_arch = "x86_64"))"#;
+    let output = target_to_gn_conditional(cfg_str).unwrap();
+    assert_eq!(output, "(is_kernel && current_cpu == \"x64\")");
+}
+
+#[test]
 fn target_full() {
     let target_str = r#"aarch64-apple-darwin"#;
     let output = target_to_gn_conditional(target_str).unwrap();

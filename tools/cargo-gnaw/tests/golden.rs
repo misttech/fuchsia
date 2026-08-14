@@ -206,6 +206,11 @@ fn main() {
             golden_expected_filename: vec!["structured_groups", "BUILD.gn"],
             options: Options { extra_args: vec!["--skip-root"], ..Default::default() },
         },
+        TestCase {
+            manifest_path: vec!["remove_rustflags", "Cargo.toml"],
+            golden_expected_filename: vec!["remove_rustflags", "BUILD.gn"],
+            options: Options { extra_args: vec!["--skip-root"], ..Default::default() },
+        },
     ];
 
     let run_gnaw = |manifest_path: &[&str], extra_args: &[&str], output_sdk_metadata: bool| {
