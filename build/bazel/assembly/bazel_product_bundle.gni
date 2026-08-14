@@ -403,7 +403,7 @@ template("bazel_product_bundle") {
         deps = _common_deps
 
         metadata = {
-          images = [
+          elf_sizes = [
             {
               name = "elf_sizes.json"
               label = get_label_info(":${_elf_sizes_bazel_action_target}",
