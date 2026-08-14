@@ -3,105 +3,48 @@
 # found in the LICENSE file.
 
 import("//build/components.gni")
-import("//build/rust/rustc_library.gni")
+import("//build/rust/rustc_test.gni")
 
-# Integration test binary for Diagnostics Persistence service.
-rustc_test("integration-bin") {
+rustc_test("diagnostics_persistence_integration_test") {
   edition = "2024"
-  testonly = true
-  name = "persistence_integration_test"
+  source_root = "integration_test.rs"
+  sources = [ "integration_test.rs" ]
+
   deps = [
-    "//sdk/fidl/fuchsia.component:fuchsia.component_rust",
-    "//sdk/fidl/fuchsia.component.sandbox:fuchsia.component.sandbox_rust",
     "//sdk/fidl/fuchsia.diagnostics:fuchsia.diagnostics_rust",
+    "//sdk/fidl/fuchsia.diagnostics.persistence:fuchsia.diagnostics.persistence_rust",
     "//sdk/fidl/fuchsia.inspect:fuchsia.inspect_rust",
-    "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
     "//sdk/fidl/fuchsia.logger:fuchsia.logger_rust",
-    "//sdk/fidl/fuchsia.update:fuchsia.update_rust",
+    "//sdk/fidl/fuchsia.sys2:fuchsia.sys2_rust",
     "//sdk/rust/zx",
-    "//src/diagnostics/archivist:archivist-for-embedding-bundle",
-    "//src/diagnostics/persistence/tests/fidl/test.persistence:fidl_rust",
-    "//src/diagnostics/sampler/tests/fidl:fuchsia.samplertestcontroller_rust",
-    "//src/lib/diagnostics/reader/rust",
+    "//src/lib/diagnostics/data/rust",
+    "//src/lib/diagnostics/hierarchy/rust",
+    "//src/lib/diagnostics/inspect/runtime/rust",
+    "//src/lib/diagnostics/inspect/rust",
+    "//src/lib/diagnostics/selectors",
+    "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
     "//src/lib/fuchsia-component-test",
     "//src/lib/fuchsia-fs",
-    "//src/lib/fuchsia-sync",
-    "//src/storage/lib/vfs/rust:vfs",
     "//src/sys/lib/cm_rust",
-    "//src/sys/lib/component-events",
     "//third_party/rust_crates:anyhow",
-    "//third_party/rust_crates:assert_matches",
     "//third_party/rust_crates:futures",
-    "//third_party/rust_crates:log",
-    "//third_party/rust_crates:pretty_assertions",
-    "//third_party/rust_crates:rand",
-    "//third_party/rust_crates:regex",
     "//third_party/rust_crates:serde_json",
-    "//third_party/rust_crates:tempfile",
-  ]
-
-  source_root = "lib.rs"
-
-  sources = [
-    "lib.rs",
-    "mock_fidl.rs",
-    "mock_filesystems.rs",
-    "test_topology.rs",
-  ]
-
-  inputs = [
-    "test_data/config/empty.persist",
-    "test_data/config/never_fetch.persist",
-    "test_data/config/persist_across_boot.persist",
-    "test_data/config/single_tag.persist",
-    "test_data/config/too_big.persist",
-    "test_data/config/two_tags.persist",
-  ]
-
-  configs += [ "//build/config/rust/lints:clippy_warn_all" ]
-}
-
-fuchsia_unittest_component("persistence-integration-test") {
-  manifest = "meta/integration-test.cml"
-  deps = [ ":integration-bin" ]
-}
-
-# Rules defining the Persistence component.
-fuchsia_component_manifest("persistence-manifest-for-test") {
-  component_name = "persistence"
-  manifest = "meta/persistence-for-test.cml"
-  restricted_features = [
-    "delivery_type",
-    "dynamic_dictionaries",
   ]
 }
 
-fuchsia_component("persistence-component-for-test") {
-  cm_label = ":persistence-manifest-for-test"
-  deps = [ "//src/diagnostics/launcher:bin" ]
-}
-
-fuchsia_test_package("persistence-integration-tests") {
-  test_components = [
-    # TODO before submitting: ":config-validation-test",
-    ":persistence-integration-test",
-  ]
-  test_specs = {
-    # TODO(https://fxbug.dev/476485362): Re-enable when flakes are resolved.
-    environments = []
-  }
+fuchsia_unittest_package("diagnostics-persistence-integration-tests") {
+  manifest = "meta/integration_test.cml"
   deps = [
-    ":persistence-component-for-test",
-    "//src/diagnostics/sampler/tests/test_component:single_counter_test_component",
-    "//src/sys/component_manager:component-manager-realm-builder-debug-cmp",
+    ":diagnostics_persistence_integration_test",
+    "//src/diagnostics/archivist:archivist-for-embedding-bundle",
+    "//src/diagnostics/persistence:diagnostics-persistence-component",
   ]
-  subpackages = [ "//src/diagnostics/archivist:archivist-for-embedding" ]
 }
 
 group("tests") {
   testonly = true
-  deps = [ ":persistence-integration-tests" ]
+  deps = [ ":diagnostics-persistence-integration-tests" ]
 }

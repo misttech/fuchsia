@@ -20,15 +20,9 @@
             to: "#persistence",
         },
         {
-            protocol: [ "fuchsia.diagnostics.Sample" ],
+            protocol: [ "fuchsia.diagnostics.ArchiveAccessor.previous_boot" ],
             from: "parent/diagnostics-accessors",
             to: [ "#persistence" ],
-        },
-        {
-            directory: "diagnostics-persistence-config-data",
-            from: "parent",
-            as: "config-data",
-            to: "#persistence",
         },
         {
             storage: "cache",
@@ -46,12 +40,22 @@
             to: "#persistence",
             availability: "same_as_target",
         },
+        {
+            config: "fuchsia.diagnostics.persist.PersistencePeriodSeconds",
+            from: "parent",
+            to: "#persistence",
+            availability: "same_as_target",
+        },
     ],
     expose: [
         {
             protocol: "fuchsia.component.Binder",
             from: "#persistence",
             as: "fuchsia.component.PersistenceBinder",
+        },
+        {
+            protocol: "fuchsia.diagnostics.persistence.PreviousBootDataProvider",
+            from: "#persistence",
         },
         {
             protocol: "fuchsia.component.Binder",

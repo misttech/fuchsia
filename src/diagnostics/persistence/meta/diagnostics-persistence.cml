@@ -1,4 +1,4 @@
-// Copyright 2022 The Fuchsia Authors. All rights reserved.
+// Copyright 2026 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 {
@@ -10,49 +10,28 @@
         runner: "elf",
         binary: "bin/launcher",
         args: [ "persistence" ],
-        lifecycle: { stop_event: "notify" },
         environ: [
             // TODO(https://fxbug.dev/382623426): revisit this.
             "SCUDO_OPTIONS=release_to_os_interval_ms=0",
         ],
     },
     capabilities: [
-        {
-            protocol: "fuchsia.diagnostics.SampleSink",
-            delivery: "on_readable",
-        },
-        {
-            protocol: "fuchsia.update.Notifier",
-            delivery: "on_readable",
-        },
+        { protocol: "fuchsia.diagnostics.persistence.PreviousBootDataProvider" },
     ],
     use: [
         {
             protocol: [
-                "fuchsia.diagnostics.Sample",
+                "fuchsia.diagnostics.ArchiveAccessor.previous_boot",
                 "fuchsia.update.Listener",
             ],
             from: "parent",
         },
         {
-            directory: "config-data",
-            rights: [ "r*" ],
-            path: "/config/data",
+            storage: "cache",
+            path: "/cache",
         },
-        {
-            protocol: [ "fuchsia.component.sandbox.CapabilityStore" ],
-            from: "framework",
-        },
-        {
-            protocol: "fuchsia.update.Notifier",
-            from: "self",
-            path: "/escrow/fuchsia.update.Notifier",
-        },
-        {
-            protocol: "fuchsia.diagnostics.SampleSink",
-            from: "self",
-            path: "/escrow/fuchsia.diagnostics.SampleSink",
-        },
+
+        // LINT.IfChange
         {
             config: "fuchsia.diagnostics.persist.SkipUpdateCheck",
             key: "skip_update_check",
@@ -67,16 +46,24 @@
             availability: "optional",
             default: -1,
         },
+        {
+            config: "fuchsia.diagnostics.persist.PersistencePeriodSeconds",
+            key: "persistence_period_seconds",
+            type: "int64",
+            availability: "optional",
+            default: 300,
+        },
 
-        // Persistence also uses /cache but needs it declared differently in production and test.
-        // TODO(https://fxbug.dev/42051341): Put /cache here when possible.
+        // LINT.ThenChange(//src/lib/assembly/platform_configuration/src/subsystems/diagnostics.rs)
     ],
     expose: [
         {
             protocol: "fuchsia.component.Binder",
             from: "framework",
         },
-
-        // Persistence exposes services declared in "-for-production" and "-for-test" CML files.
+        {
+            protocol: "fuchsia.diagnostics.persistence.PreviousBootDataProvider",
+            from: "self",
+        },
     ],
 }

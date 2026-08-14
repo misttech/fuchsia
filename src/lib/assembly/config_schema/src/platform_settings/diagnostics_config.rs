@@ -160,6 +160,11 @@ pub struct PersistenceConfig {
     /// By default, persistence runs indefinitely and does not escrow on idle.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stop_on_idle_timeout_millis: Option<i64>,
+
+    /// Controls the duration in between snapshots on
+    /// fuchsia.diagnostics.ArchiveAccessor.previous_boot that get recorded to disk.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub persistence_period_seconds: Option<i64>,
 }
 
 /// Diagnostics configuration options for the sampler configuration area.

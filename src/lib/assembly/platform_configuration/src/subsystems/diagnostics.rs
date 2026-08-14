@@ -326,7 +326,11 @@ impl<'a> DefineSubsystemConfiguration<DiagnosticsSubsystemConfig<'a>> for Diagno
         )?;
 
         // LINT.IfChange
-        let PersistenceConfig { skip_update_check, stop_on_idle_timeout_millis } = persistence;
+        let PersistenceConfig {
+            skip_update_check,
+            stop_on_idle_timeout_millis,
+            persistence_period_seconds,
+        } = persistence;
 
         builder.set_config_capability(
             "fuchsia.diagnostics.persist.SkipUpdateCheck",
@@ -353,7 +357,14 @@ impl<'a> DefineSubsystemConfiguration<DiagnosticsSubsystemConfig<'a>> for Diagno
                 None => Config::new_void(),
             },
         )?;
-        // LINT.ThenChange(//src/diagnostics/persistence/meta/diagnostics-persistence.shard.cml)
+        builder.set_config_capability(
+            "fuchsia.diagnostics.persist.PersistencePeriodSeconds",
+            match persistence_period_seconds {
+                Some(period) => Config::new(ConfigValueType::Int64, (*period).into()),
+                None => Config::new_void(),
+            },
+        )?;
+        // LINT.ThenChange(//src/diagnostics/persistence/meta/diagnostics-persistence.cml)
 
         Ok(())
     }
@@ -626,6 +637,11 @@ mod tests {
                 .value(),
             Value::Null
         );
+        assert_eq!(
+            config.configuration_capabilities["fuchsia.diagnostics.persist.PersistencePeriodSeconds"]
+                .value(),
+            Value::Null
+        );
     }
 
     #[test]
@@ -676,6 +692,7 @@ mod tests {
             persistence: PersistenceConfig {
                 skip_update_check: true,
                 stop_on_idle_timeout_millis: Some(5),
+                persistence_period_seconds: Some(10),
             },
             ..Default::default()
         };
@@ -701,6 +718,11 @@ mod tests {
             config.configuration_capabilities["fuchsia.diagnostics.persist.StopOnIdleTimeoutMillis"]
                 .value(),
             Value::Number(5.into())
+        );
+        assert_eq!(
+            config.configuration_capabilities["fuchsia.diagnostics.persist.PersistencePeriodSeconds"]
+                .value(),
+            Value::Number(10.into())
         );
     }
 

@@ -47,6 +47,7 @@
                 "fuchsia.bluetooth.OverrideVendorCapabilitiesVersion",
                 "fuchsia.bluetooth.Rfcomm",
                 "fuchsia.bluetooth.ScoOffloadPathIndex",
+                "fuchsia.diagnostics.persist.PersistencePeriodSeconds",
                 "fuchsia.diagnostics.persist.SkipUpdateCheck",
                 "fuchsia.diagnostics.persist.StopOnIdleTimeoutMillis",
                 "fuchsia.diagnostics.sampler.ProjectConfigs",

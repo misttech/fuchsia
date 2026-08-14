@@ -83,6 +83,7 @@ fidl_bazel2gn_verification_targets = [
   "//sdk/fidl/fuchsia.device.test:verify_bazel2gn",
   "//sdk/fidl/fuchsia.device:verify_bazel2gn",
   "//sdk/fidl/fuchsia.diagnostics.host:verify_bazel2gn",
+  "//sdk/fidl/fuchsia.diagnostics.persistence:verify_bazel2gn",
   "//sdk/fidl/fuchsia.diagnostics.system:verify_bazel2gn",
   "//sdk/fidl/fuchsia.diagnostics.types:verify_bazel2gn",
   "//sdk/fidl/fuchsia.diagnostics:verify_bazel2gn",

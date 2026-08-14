@@ -22,13 +22,6 @@
             to: "#diagnostics",
         },
         {
-            directory: "config-data",
-            from: "parent",
-            as: "diagnostics-persistence-config-data",
-            to: "#diagnostics",
-            subdir: "diagnostics-persistence",
-        },
-        {
             config: "fuchsia.diagnostics.persist.SkipUpdateCheck",
             from: "parent",
             to: "#diagnostics",
@@ -39,10 +32,20 @@
             to: "#diagnostics",
             availability: "same_as_target",
         },
+        {
+            config: "fuchsia.diagnostics.persist.PersistencePeriodSeconds",
+            from: "parent",
+            to: "#diagnostics",
+            availability: "same_as_target",
+        },
     ],
     expose: [
         {
             protocol: "fuchsia.component.PersistenceBinder",
+            from: "#diagnostics",
+        },
+        {
+            protocol: "fuchsia.diagnostics.persistence.PreviousBootDataProvider",
             from: "#diagnostics",
         },
     ],
