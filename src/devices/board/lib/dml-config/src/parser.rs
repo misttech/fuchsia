@@ -260,6 +260,12 @@ pub fn generate_parent_spec_generic(
         }
     }
 
+    if !bind_rules.iter().any(|r| r.key == "fuchsia.ID") {
+        if let Some(id) = crate::get_int64(constraint, "id") {
+            bind_rules.push(make_accept_bind_rule("fuchsia.ID", property_int(id as u32)));
+        }
+    }
+
     let resolved_key = service_config.parent_key_sources.iter().find_map(|source| {
         match resolve_value(provider, provider_id, source, res, constraint) {
             Some(ResolvedValue::String(k)) => Some(k),

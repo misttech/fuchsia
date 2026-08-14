@@ -17,6 +17,8 @@ const MAX_DEVICE_NAME_LEN uint32 = 64;
 type Pin = table {
     1: pin uint32;
     2: name string:fuchsia.hardware.pin.MAX_PIN_NAME_LEN;
+    @available(added=HEAD)
+    3: id uint32;
 };
 
 /// Arguments to a fuchsia.hardware.pinimpl.PinImpl call to make as part of an `InitStep`.

@@ -29,6 +29,15 @@ fn strip_hash(s: &str) -> String {
     if s.starts_with('#') { s[1..].to_string() } else { s.to_string() }
 }
 
+pub fn compute_global_id(provider: &str, name: &str) -> u32 {
+    let mut hash: u32 = 0x811c9dc5;
+    for b in format!("{}:{}", provider, name).bytes() {
+        hash ^= b as u32;
+        hash = hash.wrapping_mul(0x01000193);
+    }
+    if hash == 0 { 1 } else { hash }
+}
+
 /// Returns the index of the device with the given name in the `devices` vector,
 /// creating a new entry if it doesn't exist.
 ///
@@ -297,6 +306,13 @@ pub fn compile_board(args: &CompileBoardArgs, year: &str) -> Result<(), anyhow::
                 offer.constraints.clone().unwrap_or_else(|| Value::Object(serde_json::Map::new()));
 
             auto_incrementer.apply(service_name, &provider, &mut constraint_val)?;
+
+            let global_id = compute_global_id(&provider, offer.name.as_deref().unwrap_or(&to_name));
+            if let Some(obj) = constraint_val.as_object_mut() {
+                if !obj.contains_key("id") {
+                    obj.insert("id".to_string(), Value::Number(global_id.into()));
+                }
+            }
 
             let entry = LocalResourceEntry {
                 node: to_name.clone(),
@@ -726,5 +742,15 @@ mod tests {
 
         let retrieved = fbdc::get_uint64(&dict, "large_uint").unwrap();
         assert_eq!(retrieved, 18446744073709551615u64);
+    }
+
+    #[test]
+    fn test_compute_global_id() {
+        let id1 = compute_global_id("pdev", "gpio-pin-1");
+        let id2 = compute_global_id("pdev", "gpio-pin-1");
+        let id3 = compute_global_id("pdev", "gpio-pin-2");
+        assert_eq!(id1, id2);
+        assert_ne!(id1, id3);
+        assert_ne!(id1, 0);
     }
 }

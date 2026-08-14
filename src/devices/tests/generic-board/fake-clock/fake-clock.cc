@@ -99,7 +99,9 @@ class FakeClockDriver : public fdf::DriverBase2 {
     }
 
     std::vector<fuchsia_driver_framework::NodeProperty2> props{
-        fdf::MakeProperty2("fuchsia.NAME", clock_name)};
+        fdf::MakeProperty2("fuchsia.NAME", clock_name),
+        fdf::MakeProperty2("fuchsia.ID", clock_id),
+    };
 
     auto offers = std::vector{fdf::MakeOffer2<fuchsia_hardware_clock::Service>(clock_name)};
 
