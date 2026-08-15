@@ -99,9 +99,10 @@ where
         let state_str = ffx_diagnostics_formatting::format_target_state(&input.state);
         if let Some(name) = &input.node_name {
             let colors = Colors::current();
+            let safe_name = safe_string::TermSafe::from_str_escaped(name);
             notifier.info(format!(
                 "Attempting to connect ssh to device node: \"{}{}{}\" {state_str}",
-                colors.green, name, colors.reset
+                colors.green, safe_name, colors.reset
             ))
         } else {
             notifier.info(format!("Attempting to connect ssh to device {state_str}"))
@@ -269,5 +270,27 @@ mod test {
         };
         let res = check.check(handle, &mut notifier).await;
         assert!(res.is_ok());
+    }
+
+    #[fuchsia::test]
+    async fn test_connect_ssh_escapes_control_characters() {
+        let env = ffx_config::test_env().build().unwrap();
+        let m = MockSshConnectorProvider::with_res(Ok(MockConnector::with_results([Ok(
+            TargetConnection::FDomain(FDomainConnection::invalid()),
+        )])));
+        let mut notifier = ffx_diagnostics::StringNotifier::new();
+        let check = ConnectSsh::new(&env.context, &m);
+        let handle = TargetHandle {
+            node_name: Some("evil\x1b[31m_ssh_node\r\n".to_string()),
+            state: TargetState::Unknown,
+            manual: false,
+        };
+        let res = check.check_with_notifier(handle, &mut notifier).await;
+        assert!(res.is_ok());
+
+        let output: String = notifier.into();
+        assert!(!output.contains('\x1b'));
+        assert!(!output.contains('\r'));
+        assert!(output.contains("evil\\u{1b}[31m_ssh_node\\r\\n"));
     }
 }

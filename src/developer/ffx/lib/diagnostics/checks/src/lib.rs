@@ -117,9 +117,13 @@ where
         .await
         .map_err(|e: anyhow::Error| fho::Error::User(e.into()))?;
     let info_bits = [
-        info.name.as_ref().map(|n| format!("name: {n}")),
-        info.model.as_ref().map(|m| format!("model: {m}")),
-        info.manufacturer.as_ref().map(|m| format!("manufacturer: {m}")),
+        info.name.as_ref().map(|n| format!("name: {}", safe_string::TermSafe::from_str_escaped(n))),
+        info.model
+            .as_ref()
+            .map(|m| format!("model: {}", safe_string::TermSafe::from_str_escaped(m))),
+        info.manufacturer
+            .as_ref()
+            .map(|m| format!("manufacturer: {}", safe_string::TermSafe::from_str_escaped(m))),
     ]
     .into_iter()
     .flatten()

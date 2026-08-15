@@ -19,12 +19,25 @@ where
     N: Notifier + std::marker::Unpin,
 {
     let factory = ConnectionFactory::new(context);
-    let (info, notifier) = FastbootDeviceStatus::new(&factory)
+    check_fastboot_device_impl(&factory, notifier, device).await
+}
+
+pub(crate) async fn check_fastboot_device_impl<N, F>(
+    factory: &F,
+    notifier: &mut N,
+    device: TargetHandle,
+) -> fho::Result<()>
+where
+    N: Notifier + std::marker::Unpin,
+    F: FastbootConnectionFactory,
+{
+    let (info, notifier) = FastbootDeviceStatus::new(factory)
         .check_with_notifier(device, notifier)
         .await
         .map_err(|e| fho::Error::User(e.into()))?;
     let colors = Colors::current();
-    notifier.on_success(format!("Got device info: {}{info}{}", colors.green, colors.reset))?;
+    let safe_info = safe_string::TermSafe::from_str_escaped(&info);
+    notifier.on_success(format!("Got device info: {}{safe_info}{}", colors.green, colors.reset))?;
     Ok(())
 }
 
@@ -179,17 +192,37 @@ mod test {
 
     #[fuchsia::test]
     async fn test_fastboot_check_failure() {
-        let (state, factory) = setup_connection_factory();
+        let (_state, factory) = setup_connection_factory();
         let handle = TargetHandle {
             node_name: Some("test-node".to_string()),
             state: TargetState::Unknown,
             manual: false,
         };
         let mut notifier = ffx_diagnostics::StringNotifier::new();
-        let fake_serial = "fake-serial-number".to_string();
-        state.lock().unwrap().set_var("serialno".to_string(), fake_serial);
         let mut check = FastbootDeviceStatus::new(&factory);
         let res = check.check(handle, &mut notifier).await;
         assert!(res.is_err());
+    }
+
+    #[fuchsia::test]
+    async fn test_check_fastboot_device_escapes_control_characters() {
+        let (state, factory) = setup_connection_factory();
+        let handle = TargetHandle {
+            node_name: Some("test-node".to_string()),
+            state: TargetState::Fastboot(discovery::FastbootTargetState {
+                serial_number: "test-serial".to_string(),
+                connection_state: FastbootConnectionState::Usb,
+            }),
+            manual: false,
+        };
+        let mut notifier = ffx_diagnostics::StringNotifier::new();
+        let malicious_serial = "serial\x1b[31m_evil\n\0".to_string();
+        state.lock().unwrap().set_var("serialno".to_string(), malicious_serial);
+        check_fastboot_device_impl(&factory, &mut notifier, handle).await.unwrap();
+
+        let output: String = notifier.into();
+        assert!(!output.contains('\x1b'));
+        assert!(!output.contains('\0'));
+        assert!(output.contains("serial\\u{1b}[31m_evil\\n\\u{0}"));
     }
 }

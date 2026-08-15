@@ -43,9 +43,10 @@ where
             notifier.on_success(format!("The target specifier is {kind}"))
         } else {
             let colors = Colors::current();
+            let safe_value = safe_string::TermSafe::from_str_escaped(&value);
             notifier.on_success(format!(
                 "The target specifier is {kind} and is \"{}{}{}\"",
-                colors.green, value, colors.reset
+                colors.green, safe_value, colors.reset
             ))
         }
     }
@@ -93,5 +94,29 @@ mod test {
             .await
             .expect("running checks");
         assert!(matches!(target, TargetInfoQuery::First));
+    }
+
+    #[fuchsia::test]
+    async fn test_target_identifier_escapes_control_characters() {
+        let env = ffx_config::test_env()
+            .runtime_config(ffx_config::keys::TARGET_DEFAULT_KEY, "target\x1b[31m_evil\t\0")
+            .build()
+            .expect("initializing config");
+        let mut notifier = ffx_diagnostics::StringNotifier::new();
+        let (target, _) = GetTargetSpecifier::new(&env.context)
+            .check_with_notifier((), &mut notifier)
+            .await
+            .expect("running checks");
+        if let TargetInfoQuery::NodenameOrId(n) = target {
+            assert_eq!(n, "target\x1b[31m_evil\t\0");
+        } else {
+            panic!("Unexpected target: {target:?}")
+        };
+
+        let output: String = notifier.into();
+        assert!(!output.contains('\x1b'));
+        assert!(!output.contains('\t'));
+        assert!(!output.contains('\0'));
+        assert!(output.contains("target\\u{1b}[31m_evil\\t\\u{0}"));
     }
 }

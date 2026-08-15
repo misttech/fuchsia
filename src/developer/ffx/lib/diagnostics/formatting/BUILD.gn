@@ -13,6 +13,7 @@ rustc_library("lib") {
     "//src/developer/ffx/fidl:fuchsia.developer.ffx_rust",
     "//src/developer/ffx/lib/discovery:lib",
     "//src/developer/ffx/lib/errors:lib",
+    "//src/developer/ffx/lib/safe_string:lib",
   ]
 
   sources = [ "src/lib.rs" ]

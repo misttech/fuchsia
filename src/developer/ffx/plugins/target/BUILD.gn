@@ -64,6 +64,7 @@ if (is_host) {
       "package:tests",
       "remove:tests",
       "ssh:tests",
+      "wait:tests",
       "wipe:tests",
     ]
   }

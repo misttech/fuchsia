@@ -97,8 +97,10 @@ where
             _ => None,
         };
         if let Some(nodename) = nodename {
-            notifier
-                .info(format!("Attempting to find device \"{nodename}\" via {sources_string}..."))
+            let safe_nodename = safe_string::TermSafe::from_str_escaped(nodename);
+            notifier.info(format!(
+                "Attempting to find device \"{safe_nodename}\" via {sources_string}..."
+            ))
         } else {
             notifier.info(format!("Attempting to find device via {sources_string}..."))
         }
@@ -112,9 +114,10 @@ where
         let colors = Colors::current();
         let state_str = ffx_diagnostics_formatting::format_target_state(&output.state);
         if let Some(name) = &output.node_name {
+            let safe_name = safe_string::TermSafe::from_str_escaped(name);
             notifier.on_success(format!(
                 "Device resolved to node: \"{}{}{}\" {state_str}",
-                colors.green, name, colors.reset
+                colors.green, safe_name, colors.reset
             ))
         } else {
             notifier.on_success(format!("Device resolved to be {state_str}"))
@@ -359,5 +362,31 @@ mod test {
         notify_for_discovery_sources(&env.context, sources, &mut notifier).unwrap();
         let output: String = notifier.into();
         assert!(output.is_empty());
+    }
+
+    #[fuchsia::test]
+    async fn test_resolve_target_escapes_control_characters() {
+        let _guard = MOCK_HANDLES_LOCK.lock().unwrap();
+        let env = ffx_config::test_env().build().unwrap();
+        let mut notifier = ffx_diagnostics::StringNotifier::new();
+        let handle = TargetHandle {
+            node_name: Some("malicious\x1b[31m_node\n\r\0".to_string()),
+            state: TargetState::Unknown,
+            manual: false,
+        };
+        {
+            *MOCK_HANDLES.lock().unwrap() = vec![handle.clone()];
+        }
+        let check = ResolveTarget::<_, MockResolver>::new(&env.context);
+        let query = TargetInfoQuery::NodenameOrId("target\x1b[2J_query".to_string());
+        let res = check.check_with_notifier(query, &mut notifier).await.unwrap();
+        assert_eq!(res.0, handle);
+
+        let output: String = notifier.into();
+        assert!(!output.contains('\x1b'));
+        assert!(!output.contains('\0'));
+        assert!(!output.contains('\r'));
+        assert!(output.contains("target\\u{1b}[2J_query"));
+        assert!(output.contains("malicious\\u{1b}[31m_node\\n\\r\\u{0}"));
     }
 }

@@ -272,4 +272,19 @@ mod test {
             );
         }
     }
+
+    #[fuchsia::test]
+    async fn test_get_diagnostics_string_escapes_control_characters() {
+        let env = ffx_config::test_env()
+            .runtime_config(ffx_config::keys::TARGET_DEFAULT_KEY, "target\x1b[31m_malicious\r\0")
+            .build()
+            .unwrap();
+        let diag_str = get_diagnostics_string(&env.context, 1, fho::bug!("wait failed")).await;
+        assert!(diag_str.contains("wait failed"));
+        assert!(diag_str.contains("Diagnostics:"));
+        assert!(!diag_str.contains('\x1b'));
+        assert!(!diag_str.contains('\0'));
+        assert!(!diag_str.contains('\r'));
+        assert!(diag_str.contains("target\\u{1b}[31m_malicious\\r\\u{0}"));
+    }
 }

@@ -6,6 +6,7 @@ use discovery::query::TargetInfoQuery;
 use discovery::{DiscoverySources, TargetState};
 use fidl_fuchsia_developer_ffx as ffx;
 use fidl_fuchsia_net as fnet;
+use safe_string::TermSafe;
 
 pub trait AsDiagnosticMessage {
     fn as_diagnostic_message(&self) -> String;
@@ -105,10 +106,10 @@ fn format_fidl_target_state(state: &ffx::TargetState) -> &'static str {
 pub fn format_target_info(info: &ffx::TargetInfo) -> String {
     let mut parts = Vec::new();
     if let Some(nodename) = &info.nodename {
-        parts.push(format!("nodename: \"{nodename}\""));
+        parts.push(format!("nodename: \"{}\"", TermSafe::from_str_escaped(nodename)));
     }
     if let Some(serial) = &info.serial_number {
-        parts.push(format!("serial: \"{serial}\""));
+        parts.push(format!("serial: \"{}\"", TermSafe::from_str_escaped(serial)));
     }
     if let Some(addresses) = &info.addresses {
         if !addresses.is_empty() {
@@ -127,10 +128,10 @@ pub fn format_target_info(info: &ffx::TargetInfo) -> String {
         parts.push(format!("rcs: {}", format_rcs_state(rcs_state)));
     }
     if let Some(product) = &info.product_config {
-        parts.push(format!("product: \"{product}\""));
+        parts.push(format!("product: \"{}\"", TermSafe::from_str_escaped(product)));
     }
     if let Some(board) = &info.board_config {
-        parts.push(format!("board: \"{board}\""));
+        parts.push(format!("board: \"{}\"", TermSafe::from_str_escaped(board)));
     }
     if info.is_manual.unwrap_or(false) {
         parts.push("manual".to_string());
@@ -145,10 +146,17 @@ pub fn format_target_state(state: &TargetState) -> String {
             format!(
                 "in product state (addrs: [{}]{})",
                 addrs.iter().map(|a| a.optional_port_str()).collect::<Vec<_>>().join(", "),
-                serial.as_deref().map(|s| format!(", serial: \"{s}\"")).unwrap_or_default()
+                serial
+                    .as_deref()
+                    .map(|s| format!(", serial: \"{}\"", TermSafe::from_str_escaped(s)))
+                    .unwrap_or_default()
             )
         }
-        TargetState::Fastboot(state) => format!("in fastboot ({state})"),
+        TargetState::Fastboot(state) => format!(
+            "in fastboot ({}: {})",
+            TermSafe::from_str_escaped(&state.serial_number),
+            state.connection_state
+        ),
         TargetState::Unknown => "in an unknown state".to_owned(),
         TargetState::Zedboot => "in zedboot".to_owned(),
     }
@@ -157,12 +165,14 @@ pub fn format_target_state(state: &TargetState) -> String {
 /// Formats the query into a human-readable struct.
 pub fn format_query(query: &TargetInfoQuery) -> ReadableQuery {
     let (kind, value) = match query {
-        TargetInfoQuery::NodenameOrId(v) => ("nodename or id (serial number)", v.to_string()),
+        TargetInfoQuery::NodenameOrId(v) => {
+            ("nodename or id (serial number)", TermSafe::from_str_escaped(v).to_string())
+        }
         TargetInfoQuery::First => {
             ("not set. We will search for any device on the network", "".to_string())
         }
         TargetInfoQuery::Addr(a) => ("address", a.to_string()),
-        TargetInfoQuery::Id(s) => ("id (serial number)", s.to_string()),
+        TargetInfoQuery::Id(s) => ("id (serial number)", TermSafe::from_str_escaped(s).to_string()),
         TargetInfoQuery::Usb(u) => ("usb", u.to_string()),
         TargetInfoQuery::VSock(v) => ("vsock", v.to_string()),
     };
@@ -323,5 +333,53 @@ mod tests {
             format_mdns_event(&event),
             "mDNS bind event to unspecified socket (this is highly unexpected)"
         );
+    }
+
+    #[test]
+    fn test_formatting_escapes_control_characters() {
+        let info = ffx::TargetInfo {
+            nodename: Some("node\x1b[31m_evil\n".to_string()),
+            serial_number: Some("serial\x1b]0;hack\x07".to_string()),
+            product_config: Some("prod\x1b[2J_clear".to_string()),
+            board_config: Some("board\r\0".to_string()),
+            ..Default::default()
+        };
+        let formatted_info = format_target_info(&info);
+        assert!(!formatted_info.contains('\x1b'));
+        assert!(!formatted_info.contains('\n'));
+        assert!(!formatted_info.contains('\x07'));
+        assert!(!formatted_info.contains('\r'));
+        assert!(!formatted_info.contains('\0'));
+        assert_eq!(
+            formatted_info,
+            "nodename: \"node\\u{1b}[31m_evil\\n\", serial: \"serial\\u{1b}]0;hack\\u{7}\", product: \"prod\\u{1b}[2J_clear\", board: \"board\\r\\u{0}\""
+        );
+
+        let state_product =
+            TargetState::Product { addrs: vec![], serial: Some("evil\x1b[32m_serial".to_string()) };
+        let formatted_state = format_target_state(&state_product);
+        assert!(!formatted_state.contains('\x1b'));
+        assert_eq!(
+            formatted_state,
+            "in product state (addrs: [], serial: \"evil\\u{1b}[32m_serial\")"
+        );
+
+        let state_fastboot = TargetState::Fastboot(discovery::FastbootTargetState {
+            serial_number: "fastboot\x1b[33m_serial".to_string(),
+            connection_state: FastbootConnectionState::Usb,
+        });
+        let formatted_fastboot = format_target_state(&state_fastboot);
+        assert!(!formatted_fastboot.contains('\x1b'));
+        assert_eq!(formatted_fastboot, "in fastboot (fastboot\\u{1b}[33m_serial: Usb)");
+
+        let query = TargetInfoQuery::NodenameOrId("query\x1b[34m_target".to_string());
+        let formatted_query = format_query(&query);
+        assert!(!formatted_query.value.contains('\x1b'));
+        assert_eq!(formatted_query.value, "query\\u{1b}[34m_target");
+
+        let query_id = TargetInfoQuery::Id("query\x1b[35m_id".to_string());
+        let formatted_query_id = format_query(&query_id);
+        assert!(!formatted_query_id.value.contains('\x1b'));
+        assert_eq!(formatted_query_id.value, "query\\u{1b}[35m_id");
     }
 }
