@@ -326,8 +326,6 @@ closed protocol Task {
     /// `ZX_ERR_ACCESS_DENIED`  *handle* does not have the `ZX_RIGHT_DESTROY`
     /// right.
     ///
-    /// `ZX_ERR_NOT_SUPPORTED`  *handle* is a thread handle.
-    ///
     /// ## See also
     ///
     ///  - [`zx_job_create()`]
