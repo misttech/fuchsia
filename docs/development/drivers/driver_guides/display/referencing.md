@@ -1,22 +1,27 @@
 # Referencing information sources in Fuchsia display drivers
 
-This document recommends formats for **references** (a per-project list binding
-short tags to external information sources) and **citations** (one-line comments
-binding code to a precise location inside a referenced document).
+This document recommends formats for:
+
+* **references**: a per-project list binding short tags to external information
+  sources
+* **citations**: one-line comments binding code to a precise location inside a
+  referenced document
+* **aliases**: one-line records binding the names code uses to the names its
+  references use
 
 The formats are optimized for processing by AI agents and scripts, both directly
 and through tooling. Human readability matters; human authoring convenience is
 explicitly deprioritized.
 
-## Formats for citations and references
+## Formats for citations, references, and aliases
 
 Summary:
 
 * One record per line behind a distinctive sigil.
-    * Citations use `@cite`, references use `@ref`.
+    * Citations use `@cite`, references use `@ref`, aliases use `@alias`.
     * One grammar for all records.
 * The tag is in parentheses.
-* All remaining data is order-insensitive `key=value` fields.
+* All remaining data is order-insensitive `key=value` fields separated by ` `.
 
 ### Grammar
 
@@ -24,7 +29,7 @@ Records:
 
 ```abnf
 record      = sigil "(" tag ")" ":" 1*( SP field )   ; exactly one SP before each field
-sigil       = %s"@cite" / %s"@ref"
+sigil       = %s"@cite" / %s"@ref" / %s"@alias"
 tag         = lower-alnum *( lower-alnum / "_" / "-" )
 field       = key "=" value
 key         = lower-alpha *( lower-alnum / "-" )     ; "x-" prefix reserved for experimental keys
@@ -43,10 +48,10 @@ lower-alnum = lower-alpha / DIGIT
 Source code embedding records:
 
 ```abnf
-source-line    = *WSP "//" *WSP record               ; normative in-source form (citations,
-                                                     ; and @ref blocks in non-owned projects)
-reference-line = "* " backtick record backtick       ; README bullet form
-backtick       = %x60
+source-line = *WSP "//" *WSP record          ; normative in-source form (citations, aliases,
+                                             ; and @ref blocks in foreign files)
+readme-line = "* " backtick record backtick  ; README bullet form
+backtick    = %x60
 ```
 
 Grammar details:
@@ -196,23 +201,76 @@ support and bind to the statement or block that follows.
 Citations must not appear in doc comments (`///`, `//!`, `/**`). Linters reject
 citations in doc comment blocks.
 
+### Aliases
+
+#### Examples
+
+Identifier:
+
+```rust
+struct Timings {
+  // @cite(e-edid): sec=2.2 title="EDID Extension Blocks" page=33
+  // @alias(e-edid): theirs="vertical addressable line count"
+  // @cite(socdb): key=/root/mipi_dsi0/VACTIVE
+  height: u16,
+}
+```
+
+Project-wide concept:
+
+```md
+## Aliases
+
+* `@alias(virtio): theirs="used ring" ours="device-owned ring"`
+```
+
+#### Keys
+
+`theirs` is the name used by the information source - verbatim. Required.
+Unquoted where possible, so a reverse grep lands on the record.
+
+`ours` is the name used in our project. Required by project-wide concepts.
+Implicit for identifiers, bound to the identifier name immediately following the
+record group.
+
+`note` carries free-form text. (Intended for agent-to-agent handoffs.)
+
+#### Placement
+
+Identifiers, such as register names:
+
+* Same as `@cite`, preceding the identifier declaration.
+* Immediately follows a `@cite` with the same tag.
+
+Project-wide concepts:
+
+* Same as `@ref`.
+* README: in `## Aliases` section.
+* Non-owned project file: same comment block, follows `@ref` with the same tag.
+
+Entries may be whole names or name fragments; tooling translates by
+longest-match substitution, and an attached record wins over a fragment rule
+where both apply.
+
 ### Canonical match patterns
 
-```
-# Humans, casual:
-grep -rn '@cite('              # every citation
-grep -rn '@cite(virtio)'     # citations of one document
-grep -rn '@ref('               # every reference record
+Humans, casual:
 
-# Tooling, anchored - source scanner (trailing space required; fields follow):
-^[ \t]*(//[/!]?|\*)[ \t]*@(cite|ref)\(([a-z0-9][a-z0-9_-]*)\):
-
-# Tooling, anchored - README scanner:
-^\* `@ref\(([a-z0-9][a-z0-9_-]*)\):
 ```
+grep -rn '@cite('         # every citation
+grep -rn '@cite(virtio)'  # citations of one document
+grep -rn '@ref('          # every reference record
+grep -rn '@alias('        # every alias record
+```
+
+Tooling, anchored - source scanner:
+`^[ \t]*(//[/!]?|\*)[ \t]*@(cite|ref|alias)\(([a-z0-9][a-z0-9_-]*)\): `
+
+Tooling, anchored - README scanner:
+``^\* `@(ref|alias)\(([a-z0-9][a-z0-9_-]*)\): ``
 
 The source scanner deliberately also matches `///`, `//!`, and block-comment `*`
-lines so the lint can detect misplaced records and reject them rather than
+lines so a linter can detect misplaced records and reject them rather than
 silently skip them.
 
 ### Interactions with formatters
@@ -231,7 +289,7 @@ the unstable nightly-only `wrap_comments` option, which defaults to `false`.
 
 `clang-format` reflows long `//` comments under the default styles.
 
-Owned project: Add `CommentPragmas: '^ @(cite|ref)\('` to `.clang-format`.
+Owned project: Add `CommentPragmas: '^ @(cite|ref|alias)\('` to `.clang-format`.
 Do not use the much broader `ReflowComments: Never`.
 
 Not owned project: Wrap each block of references and citations in
@@ -245,6 +303,9 @@ A *reference* binds a short lowercase *tag* to one external document at one
 pinned version. A *citation* names a tag plus a *locator* into that document.
 The *kind* of the referenced document determines which locator vocabulary
 applies.
+
+An *alias* is a record binding a local name to the name one specific referenced
+document uses.
 
 ### Information sources
 
@@ -274,6 +335,17 @@ Web pages and other formats are deferred for future consideration.
    A citation must be self-contained enough to hand to another agent.
 3. **Topic search** (secondary) - Human and AI researchers survey all available
    information sources and produce a set of citations relevant to a topic.
+
+### Name aliases
+
+Code regularly names things differently from its references:
+* vendor terms get inclusive replacements
+* acronyms get expanded for clarity
+* the references disagree among themselves
+
+Both fact-checking (translating code identifiers into a document's vocabulary
+before matching) and reverse lookup (grepping the codebase for a vendor name)
+depend on the mapping being explicit.
 
 [abnf]: https://datatracker.ietf.org/doc/html/rfc5234
 [abnf-case]: https://datatracker.ietf.org/doc/html/rfc7405
