@@ -936,7 +936,7 @@ This should never be set as a build argument.
   clang_rt = "../../../../out/not-default/libclang_rt.hwasan.so"
 }
   static = {
-  clang_rt = ""
+  clang_rt = "../../../../out/not-default/libclang_rt.hwasan.a"
   clang_rt_cxx = "../../../../out/not-default/libclang_rt.hwasan_cxx.a"
 }
 }
@@ -954,7 +954,7 @@ This should never be set as a build argument.
   clang_rt = "../../../../out/not-default/libclang_rt.tsan.so"
 }
   static = {
-  clang_rt = "../../../../out/not-default/libclang_rt.tsan.a"
+  clang_rt = ""
   clang_rt_cxx = "../../../../out/not-default/libclang_rt.tsan_cxx.a"
 }
 }
@@ -4313,15 +4313,15 @@ to a buffer
 
 From //zircon/kernel/params.gni:112
 
-### export_bazel_host_tests
+### export_bazel_tests
 
-Configures whether Bazel host tests show up in tests.json so they're visible
-to Fuchsia test runners, i.e. `fx test` and `botanist`.
+Configures whether Bazel tests show up in tests.json so they're visible to
+Fuchsia test runners, i.e. `fx test` and `botanist`.
 LINT.IfChange
 
 **Current value (from the default):** `true`
 
-From //build/config/export_bazel_host_tests.gni:9
+From //build/config/export_bazel_tests.gni:9
 
 ### exported_package_labels
 
@@ -8903,7 +8903,7 @@ toolchain, so that recompilations with the new compiler can be triggered.
 When using the prebuilt, this is ignored and the CIPD instance ID of the
 prebuilt is used.
 
-**Current value (from the default):** `"VHEBNbMH1vsUQIa-2G8jnpOPisWFJ4IsFmavfdv0kiQC"`
+**Current value (from the default):** `"udpyXnwDrqzro91Z7B9jUwoPS_0ELvVZAxPoAg55wFwC"`
 
 From //build/rust/config.gni:47
 
