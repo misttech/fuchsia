@@ -58,7 +58,7 @@ impl Cbuf {
             tail: 0.into(),
             len_pow2: 0.into(),
             buf: None.into(),
-            event <- ksync::KEvent::init(false),
+            event <- ksync::KEvent::init_unsignaled(),
             lock <- ksync::KMutex::init(),
         })
     }

@@ -77,7 +77,7 @@ pub use raw_userspace_mutex::RawMutex;
 pub type LockEntryStorage = ();
 
 #[cfg(feature = "kernel")]
-pub use raw_kernel_event::{KEvent, RawEvent};
+pub use raw_kernel_event::{Deadline, KEvent, RawEvent, SlackMode, TimerSlack};
 #[cfg(feature = "kernel")]
 pub use raw_spin_lock::{InterruptSavedState, IrqSavePolicy, NoIrqSavePolicy, RawSpinlock};
 #[cfg(feature = "kernel")]

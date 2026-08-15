@@ -293,3 +293,53 @@ impl ThreadDispatcher {
         Status::ok(status)
     }
 }
+
+/// The reason a thread is currently blocked, matching C++ `ThreadDispatcher::Blocked`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[repr(transparent)]
+pub struct Blocked(pub u32);
+
+impl Blocked {
+    pub const NONE: Self = Self(0);
+    pub const EXCEPTION: Self = Self(1);
+    pub const SLEEPING: Self = Self(2);
+    pub const FUTEX: Self = Self(3);
+    pub const PORT: Self = Self(4);
+    pub const CHANNEL: Self = Self(5);
+    pub const WAIT_ONE: Self = Self(6);
+    pub const WAIT_MANY: Self = Self(7);
+    pub const INTERRUPT: Self = Self(8);
+    pub const PAGER: Self = Self(9);
+}
+
+/// RAII helper that sets the current thread's `blocked_reason_` and restores it on drop.
+pub struct AutoBlocked {
+    prev_reason: Blocked,
+}
+
+impl AutoBlocked {
+    /// Sets the blocked reason on the current thread.
+    pub fn new(reason: Blocked) -> Self {
+        // SAFETY: `cpp_thread_dispatcher_set_blocked_reason` transitions the current thread's
+        // blocked state on the current CPU and returns the previous blocked reason.
+        let prev_reason = unsafe {
+            super::thread_dispatcher_ffi::cpp_thread_dispatcher_set_blocked_reason(reason)
+        };
+        Self { prev_reason }
+    }
+}
+
+impl Drop for AutoBlocked {
+    fn drop(&mut self) {
+        // SAFETY: Restoring the previous blocked reason on the current thread upon exiting
+        // the blocking scope is always safe and restores previous thread state.
+        unsafe {
+            super::thread_dispatcher_ffi::cpp_thread_dispatcher_set_blocked_reason(
+                self.prev_reason,
+            );
+        }
+    }
+}
+
+zr::static_assert!(core::mem::size_of::<Blocked>() == 4);
+zr::static_assert!(core::mem::align_of::<Blocked>() == 4);

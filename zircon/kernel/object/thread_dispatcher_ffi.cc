@@ -153,4 +153,10 @@ FFI_ALWAYS_INLINE zx_status_t cpp_sys_thread_legacy_yield(uint32_t options) {
   return ZX_OK;
 }
 
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE ThreadDispatcher::Blocked cpp_thread_dispatcher_set_blocked_reason(
+    ThreadDispatcher::Blocked reason) {
+  return ThreadDispatcher::SetBlockedReason(reason);
+}
+
 }  // extern "C"

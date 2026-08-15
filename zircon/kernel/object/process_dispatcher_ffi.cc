@@ -84,6 +84,12 @@ cpp_process_dispatcher_get_timer_slack_policy_amount(const ProcessDispatcher* pr
 }
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_process_dispatcher_get_timer_slack_policy(
+    const ProcessDispatcher* process, TimerSlack* out_slack) {
+  *out_slack = process->GetTimerSlackPolicy();
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE void* cpp_process_dispatcher_handle_table_lock(const ProcessDispatcher* process) {
   return process->handle_table().get_lock();
 }

@@ -16,7 +16,8 @@ use zx_types::{
     zx_rights_t, zx_time_t,
 };
 
-use crate::kernel::timer::{Deadline, SlackMode, Timer, TimerSlack};
+use crate::kernel::timer::Timer;
+use crate::kernel::types::{Deadline, SlackMode, TimerSlack};
 use crate::platform_rs::timer::{current_boot_time, current_mono_time};
 
 use super::timer_dispatcher_ffi::{

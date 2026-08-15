@@ -81,4 +81,13 @@ constexpr size_t kTimerDispatcherStateOffset = 48;
 constexpr size_t kDpcStorageSize = 32;
 constexpr size_t kDpcStorageAlign = 8;
 
+// Size and alignment for WaitSignalObserver.
+constexpr size_t kWaitSignalObserverSize = 72;
+constexpr size_t kWaitSignalObserverAlign = 8;
+
+// Size, alignment, and offset for WaitSignalObserverState (WaitSignalObserver).
+constexpr size_t kWaitSignalObserverStorageSize = 32;
+constexpr size_t kWaitSignalObserverStorageAlign = 8;
+constexpr size_t kWaitSignalObserverStorageOffset = 40;
+
 #endif  // ZIRCON_KERNEL_LIB_OBJECT_CONSTANTS_INCLUDE_LIB_OBJECT_CONSTANTS_H_

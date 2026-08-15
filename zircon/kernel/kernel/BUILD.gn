@@ -127,6 +127,7 @@ kernel_rust_mod("kernel-rs") {
     "//sdk/rust/zx-status",
     "//sdk/rust/zx-types",
     "//src/lib/kalloc",
+    "//src/lib/ksync",
     "//src/lib/zr",
     "//third_party/rust_crates:paste",
     "//third_party/rust_crates:pin-init",

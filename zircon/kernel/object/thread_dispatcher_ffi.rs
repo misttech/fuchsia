@@ -201,4 +201,8 @@ unsafe extern "C" {
     ///
     /// Yields execution of the current thread to the scheduler.
     pub(crate) fn cpp_sys_thread_legacy_yield(options: u32) -> zx_status_t;
+    /// Sets the thread blocked reason and returns the previous blocked reason.
+    pub(crate) fn cpp_thread_dispatcher_set_blocked_reason(
+        reason: super::thread_dispatcher::Blocked,
+    ) -> super::thread_dispatcher::Blocked;
 }

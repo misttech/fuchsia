@@ -238,6 +238,7 @@ kernel_rust_mod("object-rs") {
     "vm_address_region_dispatcher_ffi.rs",
     "vm_object_dispatcher.rs",
     "vm_object_dispatcher_ffi.rs",
+    "wait_signal_observer.rs",
   ]
 
   deps = [

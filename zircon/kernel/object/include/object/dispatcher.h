@@ -35,13 +35,14 @@ class Dispatcher;
 
 extern "C" {
 void cpp_dispatcher_on_zero_handles(Dispatcher* disp);
-void cpp_dispatcher_update_state(Dispatcher* disp, zx_signals_t clear_mask, zx_signals_t set_mask);
-void cpp_dispatcher_update_state_locked(Dispatcher* disp, zx_signals_t clear_mask,
-                                        zx_signals_t set_mask);
 void* cpp_dispatcher_get_ref_counted(const Dispatcher* disp);
 zx_obj_type_t cpp_dispatcher_get_type(const Dispatcher* disp);
 zx_koid_t cpp_dispatcher_get_koid(const Dispatcher* disp);
 void cpp_dispatcher_recycle(Dispatcher* disp);
+zx_status_t cpp_dispatcher_add_observer(Dispatcher* dispatcher, SignalObserver* observer,
+                                        const void* handle, zx_signals_t signals);
+bool cpp_dispatcher_remove_observer(Dispatcher* dispatcher, SignalObserver* observer,
+                                    zx_signals_t* out_signals);
 }
 
 template <typename T>

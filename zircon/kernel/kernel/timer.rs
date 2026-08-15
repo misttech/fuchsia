@@ -23,39 +23,7 @@ unsafe extern "C" {
 pub const ZX_CLOCK_MONOTONIC: u32 = 0;
 pub const ZX_CLOCK_BOOT: u32 = 1;
 
-#[repr(u32)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SlackMode {
-    Center = 0,
-    Early = 1,
-    Late = 2,
-}
-
-#[repr(C)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct TimerSlack {
-    pub amount: i64,
-    pub mode: SlackMode,
-}
-
-impl TimerSlack {
-    pub const fn none() -> Self {
-        Self { amount: 0, mode: SlackMode::Center }
-    }
-}
-
-#[repr(C)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Deadline {
-    pub when: i64,
-    pub slack: TimerSlack,
-}
-
-impl Deadline {
-    pub const fn no_slack(when: i64) -> Self {
-        Self { when, slack: TimerSlack::none() }
-    }
-}
+use super::types::Deadline;
 
 pub type Callback = unsafe extern "C" fn(timer: *mut Timer, now: i64, arg: *mut core::ffi::c_void);
 
@@ -127,10 +95,6 @@ zr::unsafe_pinned_drop_ffi!(Timer, cpp_timer_destroy);
 // (protected by TimerLock internally).
 unsafe impl Send for Timer {}
 
-zr::static_assert!(core::mem::size_of::<TimerSlack>() == 16);
-zr::static_assert!(core::mem::align_of::<TimerSlack>() == 8);
-zr::static_assert!(core::mem::size_of::<Deadline>() == 24);
-zr::static_assert!(core::mem::align_of::<Deadline>() == 8);
 zr::static_assert!(core::mem::size_of::<Timer>() == 72);
 zr::static_assert!(core::mem::align_of::<Timer>() == 8);
 

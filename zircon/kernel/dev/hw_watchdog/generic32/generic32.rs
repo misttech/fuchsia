@@ -6,7 +6,8 @@
 //
 // Ported from zircon/kernel/dev/hw_watchdog/generic32/hw_watchdog.cc
 
-use crate::kernel::timer::{Deadline, SlackMode, Timer, TimerSlack, ZX_CLOCK_BOOT};
+use crate::kernel::timer::{Timer, ZX_CLOCK_BOOT};
+use crate::kernel::types::{Deadline, SlackMode, TimerSlack};
 use crate::platform_rs::timer::{DurationBoot, InstantBoot, current_boot_time};
 use core::ptr::with_exposed_provenance_mut;
 use debug::dprintf;

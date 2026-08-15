@@ -6,7 +6,7 @@
 
 //! MP (multiprocessor) subsystem interface.
 
-use super::timer::Deadline;
+use super::types::Deadline;
 
 pub use super::types::{cpu_mask_t, cpu_num_t};
 use zx_status::Status;

@@ -161,6 +161,19 @@ impl ProcessDispatcher {
         }
     }
 
+    /// Returns the timer slack policy for this process.
+    pub fn get_timer_slack_policy(&self) -> crate::kernel::types::TimerSlack {
+        let mut slack = crate::kernel::types::TimerSlack::none();
+        // SAFETY: `self` is a valid `ProcessDispatcher` reference and `slack` points to valid memory.
+        unsafe {
+            super::process_dispatcher_ffi::cpp_process_dispatcher_get_timer_slack_policy(
+                self as *const _,
+                &mut slack,
+            );
+        }
+        slack
+    }
+
     /// Returns a reference to the handle table's priority-inheriting reader-writer lock.
     #[inline]
     pub fn handle_table_lock(&self) -> &ksync::BrwLockPi<HandleTableLockClass> {

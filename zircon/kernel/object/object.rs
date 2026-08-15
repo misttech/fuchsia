@@ -45,20 +45,21 @@ mod vm_address_region_dispatcher;
 mod vm_address_region_dispatcher_ffi;
 mod vm_object_dispatcher;
 mod vm_object_dispatcher_ffi;
+mod wait_signal_observer;
 
 pub use counter_dispatcher::CounterDispatcher;
 pub use dispatcher::{Dispatcher, DispatcherOps};
 pub use event_dispatcher::EventDispatcher;
 pub use event_pair_dispatcher::EventPairDispatcher;
 pub use fifo_dispatcher::FifoDispatcher;
-pub use handle::{HandleValue, KernelHandle};
+pub use handle::{HandleRef, HandleValue, KernelHandle};
 pub use iommu_dispatcher::IommuDispatcher;
 pub use job_dispatcher::*;
 pub use log_dispatcher::*;
 pub use msi_allocation::MsiAllocation;
 pub use msi_dispatcher::MsiDispatcher;
 pub use msi_interrupt_dispatcher::MsiInterruptDispatcher;
-pub use process_dispatcher::ProcessDispatcher;
+pub use process_dispatcher::{HandleTableReadGuard, ProcessDispatcher};
 pub use profile_dispatcher::ProfileDispatcher;
 pub use resource_ffi::{
     validate_ranged_resource, validate_resource_kind_base, validate_system_resource,
@@ -66,7 +67,8 @@ pub use resource_ffi::{
 pub use sampler_dispatcher::SamplerDispatcher;
 pub use sampler_dispatcher_ffi::*;
 pub use suspend_token_dispatcher::SuspendTokenDispatcher;
-pub use thread_dispatcher::ThreadDispatcher;
+pub use thread_dispatcher::{AutoBlocked, Blocked, ThreadDispatcher};
 pub use timer_dispatcher::TimerDispatcher;
 pub use vm_address_region_dispatcher::VmAddressRegionDispatcher;
 pub use vm_object_dispatcher::VmObjectDispatcher;
+pub use wait_signal_observer::WaitSignalObserver;

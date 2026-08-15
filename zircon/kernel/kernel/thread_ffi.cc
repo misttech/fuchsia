@@ -10,6 +10,7 @@
 #include <zircon/types.h>
 
 #include <arch/regs.h>
+#include <kernel/deadline.h>
 #include <kernel/restricted.h>
 #include <kernel/restricted_state.h>
 #include <kernel/thread.h>
@@ -38,6 +39,8 @@ void cpp_thread_preempt_disable();
 void cpp_thread_preempt_enable();
 void cpp_thread_preempt();
 zx_status_t cpp_thread_current_sleep_relative(zx_duration_mono_t duration);
+zx_status_t cpp_thread_current_sleep_etc(const Deadline* deadline, Interruptible interruptible,
+                                         zx_instant_mono_t now);
 zx_status_t cpp_thread_current_soft_fault(vaddr_t va, uint flags);
 zx_status_t cpp_restricted_enter(uintptr_t vector_table_ptr, uintptr_t context);
 
@@ -101,6 +104,12 @@ void cpp_thread_preempt() { Thread::Current::Preempt(); }
 
 zx_status_t cpp_thread_current_sleep_relative(zx_duration_mono_t duration) {
   return Thread::Current::SleepRelative(duration);
+}
+
+zx_status_t cpp_thread_current_sleep_etc(const Deadline* deadline, Interruptible interruptible,
+                                         zx_instant_mono_t now) {
+  DEBUG_ASSERT(deadline != nullptr);
+  return Thread::Current::SleepEtc(*deadline, interruptible, now);
 }
 
 zx_status_t cpp_thread_current_soft_fault(vaddr_t va, uint flags) {

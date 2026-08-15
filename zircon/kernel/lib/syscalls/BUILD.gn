@@ -142,6 +142,7 @@ kernel_rust_mod("syscalls-rs") {
     "lib.rs",
     "membarrier.rs",
     "msi.rs",
+    "object_wait.rs",
     "profile.rs",
     "restricted.rs",
     "sampler.rs",
@@ -163,6 +164,7 @@ kernel_rust_mod("syscalls-rs") {
     "//zircon/kernel/lib/debug",
     "//zircon/kernel/lib/page:page-rs",
     "//zircon/kernel/lib/user_copy:user-copy-rs",
+    "//zircon/system/ulib/fbl/rust:fbl",
     "//zircon/vdso:private",
     "//zircon/vdso:syscall-signatures",
   ]

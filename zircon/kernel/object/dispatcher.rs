@@ -5,8 +5,9 @@
 // https://opensource.org/licenses/MIT
 
 use super::dispatcher_ffi::{
-    cpp_dispatcher_get_ref_counted, cpp_dispatcher_get_related_koid, cpp_dispatcher_get_type,
-    cpp_dispatcher_on_zero_handles, cpp_dispatcher_recycle, cpp_dispatcher_signals_state_locked,
+    cpp_dispatcher_add_observer, cpp_dispatcher_get_ref_counted, cpp_dispatcher_get_related_koid,
+    cpp_dispatcher_get_type, cpp_dispatcher_on_zero_handles, cpp_dispatcher_recycle,
+    cpp_dispatcher_remove_observer, cpp_dispatcher_signals_state_locked,
     cpp_dispatcher_update_state, cpp_dispatcher_update_state_locked,
 };
 use super::handle::HandleValue;
@@ -365,6 +366,34 @@ impl Dispatcher {
     pub fn get_related_koid(&self) -> zx_types::zx_koid_t {
         // SAFETY: self is a valid reference to an initialized Dispatcher.
         unsafe { cpp_dispatcher_get_related_koid(self) }
+    }
+
+    /// Adds an observer to this dispatcher.
+    ///
+    /// # Safety
+    ///
+    /// `observer` must point to a valid `SignalObserver`. `handle` must be a valid handle pointer.
+    pub unsafe fn add_observer(
+        &self,
+        observer: *mut core::ffi::c_void,
+        handle: *const core::ffi::c_void,
+        signals: zx_types::zx_signals_t,
+    ) -> Result<(), Status> {
+        let status = unsafe { cpp_dispatcher_add_observer(self, observer, handle, signals) };
+        Status::ok(status)
+    }
+
+    /// Removes an observer from this dispatcher.
+    ///
+    /// # Safety
+    ///
+    /// `observer` must point to a valid `SignalObserver`.
+    pub unsafe fn remove_observer(
+        &self,
+        observer: *mut core::ffi::c_void,
+        out_signals: &mut zx_types::zx_signals_t,
+    ) -> bool {
+        unsafe { cpp_dispatcher_remove_observer(self, observer, out_signals) }
     }
 
     /// Safely downcasts a `&Dispatcher` reference to a specific facade reference `&T` if the

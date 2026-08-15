@@ -288,12 +288,15 @@ mod ksync_tests {
     /// test Rust KEvent
     #[test]
     fn event() {
-        stack_pin_init!(let event = ksync::KEvent::init(false));
-        expect_false!(event.wait_deadline(0).is_ok());
+        stack_pin_init!(let event = ksync::KEvent::init_unsignaled());
+        expect_false!(event.wait_deadline(&ksync::Deadline::no_slack(0)).is_ok());
         event.signal();
-        expect_ok!(event.wait_deadline(0));
+        expect_ok!(event.wait_deadline(&ksync::Deadline::no_slack(0)));
         event.unsignal();
-        expect_false!(event.wait_deadline(0).is_ok());
+        expect_false!(event.wait_deadline(&ksync::Deadline::no_slack(0)).is_ok());
+
+        stack_pin_init!(let signaled_event = ksync::KEvent::init_signaled());
+        expect_ok!(signaled_event.wait_deadline(&ksync::Deadline::no_slack(0)));
     }
 
     /// test Rust BrwLockPi

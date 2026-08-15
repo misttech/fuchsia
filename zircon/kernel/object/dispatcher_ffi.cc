@@ -42,4 +42,19 @@ FFI_ALWAYS_INLINE zx_koid_t cpp_dispatcher_get_related_koid(const Dispatcher* di
   return disp->get_related_koid();
 }
 
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE zx_status_t cpp_dispatcher_add_observer(Dispatcher* dispatcher,
+                                                          SignalObserver* observer,
+                                                          const void* handle,
+                                                          zx_signals_t signals) {
+  return dispatcher->AddObserver(observer, handle, signals);
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE bool cpp_dispatcher_remove_observer(Dispatcher* dispatcher,
+                                                      SignalObserver* observer,
+                                                      zx_signals_t* out_signals) {
+  return dispatcher->RemoveObserver(observer, out_signals);
+}
+
 }  // extern "C"

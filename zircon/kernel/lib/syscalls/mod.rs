@@ -13,6 +13,7 @@ mod iommu;
 mod job;
 mod membarrier;
 mod msi;
+mod object_wait;
 mod profile;
 mod restricted;
 mod sampler;

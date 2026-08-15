@@ -885,6 +885,9 @@ pub const ZX_CHANNEL_MAX_MSG_HANDLES: u32 = 64;
 pub const ZX_CHANNEL_MAX_MSG_BYTES: u32 = 65536;
 pub const ZX_CHANNEL_MAX_MSG_IOVEC: u32 = 8192;
 
+// wait_many constants
+pub const ZX_WAIT_MANY_MAX_ITEMS: usize = 64;
+
 // fifo write size constants
 pub const ZX_FIFO_MAX_SIZE_BYTES: u32 = 4096;
 
@@ -947,7 +950,9 @@ multiconst!(u32, [
 ]);
 
 #[repr(C)]
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(
+    Default, Debug, Copy, Clone, Eq, PartialEq, KnownLayout, FromBytes, Immutable, IntoBytes,
+)]
 pub struct zx_wait_item_t {
     pub handle: zx_handle_t,
     pub waitfor: zx_signals_t,

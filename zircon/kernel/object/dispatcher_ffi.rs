@@ -31,4 +31,15 @@ unsafe extern "C" {
     pub(crate) fn cpp_dispatcher_get_related_koid(
         dispatcher: *const Dispatcher,
     ) -> zx_types::zx_koid_t;
+    pub(crate) fn cpp_dispatcher_add_observer(
+        dispatcher: *const Dispatcher,
+        observer: *mut core::ffi::c_void,
+        handle: *const core::ffi::c_void,
+        signals: zx_types::zx_signals_t,
+    ) -> zx_types::zx_status_t;
+    pub(crate) fn cpp_dispatcher_remove_observer(
+        dispatcher: *const Dispatcher,
+        observer: *mut core::ffi::c_void,
+        out_signals: *mut zx_types::zx_signals_t,
+    ) -> bool;
 }

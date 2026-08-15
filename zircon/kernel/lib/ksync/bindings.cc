@@ -15,6 +15,8 @@
 #include <kernel/spinlock.h>
 #include <lockdep/lockdep.h>
 
+class OwnedWaitQueue;
+
 #ifdef WITH_LOCK_DEP
 constexpr bool kWithLockDep = true;
 #else
@@ -53,6 +55,10 @@ static_assert(alignof(SystemSpinlockType) == kExpectedSpinlockAlign,
 
 static_assert(sizeof(Event) == 72, "Rust KEvent size mismatch with C++ size");
 static_assert(alignof(Event) == 8, "Rust KEvent alignment mismatch with C++ alignment");
+static_assert(sizeof(Deadline) == 24, "Rust Deadline size mismatch with C++ size");
+static_assert(alignof(Deadline) == 8, "Rust Deadline alignment mismatch with C++ alignment");
+static_assert(sizeof(TimerSlack) == 16, "Rust TimerSlack size mismatch with C++ size");
+static_assert(alignof(TimerSlack) == 8, "Rust TimerSlack alignment mismatch with C++ alignment");
 
 static_assert(sizeof(lockdep::AcquiredLockEntry) == 40, "AcquiredLockEntry size mismatch");
 static_assert(alignof(lockdep::AcquiredLockEntry) == 8,
@@ -122,8 +128,10 @@ void cpp_spinlock_release_no_irqrestore(LockPtr<SpinLock> lock, void* entry_stor
 void cpp_event_init(Event* event, bool initial);
 void cpp_event_destroy(Event* event);
 void cpp_event_signal(Event* event, zx_status_t wait_result);
+void cpp_event_signal_etc(Event* event, zx_status_t wait_result, OwnedWaitQueue* queue_to_own);
 void cpp_event_unsignal(Event* event);
 zx_status_t cpp_event_wait(Event* event, zx_instant_mono_t deadline);
+zx_status_t cpp_event_wait_deadline(Event* event, const Deadline* deadline);
 void cpp_brwlock_pi_init(LockPtr<BrwLockPi> lock, const void* class_id);
 void cpp_brwlock_pi_destroy(LockPtr<BrwLockPi> lock);
 void cpp_brwlock_pi_acquire_read(LockPtr<BrwLockPi> lock, void* entry_storage);
@@ -303,10 +311,19 @@ FFI_ALWAYS_INLINE void cpp_event_signal(Event* event, zx_status_t wait_result) {
   event->Signal(wait_result);
 }
 
+FFI_ALWAYS_INLINE void cpp_event_signal_etc(Event* event, zx_status_t wait_result,
+                                            OwnedWaitQueue* queue_to_own) {
+  event->Signal(wait_result, queue_to_own);
+}
+
 FFI_ALWAYS_INLINE void cpp_event_unsignal(Event* event) { event->Unsignal(); }
 
 FFI_ALWAYS_INLINE zx_status_t cpp_event_wait(Event* event, zx_instant_mono_t deadline) {
   return event->Wait(Deadline::no_slack(deadline));
+}
+
+FFI_ALWAYS_INLINE zx_status_t cpp_event_wait_deadline(Event* event, const Deadline* deadline) {
+  return event->Wait(*deadline);
 }
 
 FFI_ALWAYS_INLINE void cpp_brwlock_pi_init(LockPtr<BrwLockPi> lock, const void* class_id) {

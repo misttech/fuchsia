@@ -34,6 +34,11 @@ unsafe extern "C" {
     fn cpp_thread_preempt_enable();
     fn cpp_thread_preempt();
     fn cpp_thread_current_sleep_relative(duration: DurationMono) -> zx_status_t;
+    fn cpp_thread_current_sleep_etc(
+        deadline: *const crate::kernel::types::Deadline,
+        interruptible: Interruptible,
+        now: zx_instant_mono_t,
+    ) -> zx_status_t;
     fn cpp_thread_current_soft_fault(va: usize, flags: u32) -> zx_status_t;
     fn cpp_restricted_enter(vector_table_ptr: usize, context: usize) -> zx_status_t;
     fn cpp_thread_get_stack_top(thread: *mut Thread) -> usize;
@@ -306,10 +311,51 @@ impl Drop for AutoExpiringPreemptDisabler {
     }
 }
 
+/// Whether a block or sleep operation can be interrupted, matching C++ `Interruptible`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[repr(transparent)]
+pub struct Interruptible(pub bool);
+
+impl Interruptible {
+    pub const NO: Self = Self(false);
+    pub const YES: Self = Self(true);
+
+    /// Converts the `Interruptible` setting to a boolean value (`Interruptible::YES` is `true`).
+    #[inline]
+    pub const fn as_bool(self) -> bool {
+        self.0
+    }
+}
+
+impl From<Interruptible> for bool {
+    #[inline]
+    fn from(i: Interruptible) -> bool {
+        i.0
+    }
+}
+
+impl From<bool> for Interruptible {
+    #[inline]
+    fn from(b: bool) -> Interruptible {
+        Interruptible(b)
+    }
+}
+
 /// Sleeps the current thread for the specified relative duration.
 pub fn sleep_relative(duration: DurationMono) -> Result<(), Status> {
     // SAFETY: cpp_thread_current_sleep_relative is safe to call at any time in thread context.
     let status = unsafe { cpp_thread_current_sleep_relative(duration) };
+    Status::ok(status)
+}
+
+/// Sleeps the current thread until the specified deadline with timer slack.
+pub fn sleep_etc(
+    deadline: &crate::kernel::types::Deadline,
+    interruptible: Interruptible,
+    now: zx_instant_mono_t,
+) -> Result<(), Status> {
+    // SAFETY: `deadline` points to a valid `Deadline`.
+    let status = unsafe { cpp_thread_current_sleep_etc(deadline as *const _, interruptible, now) };
     Status::ok(status)
 }
 
@@ -424,8 +470,19 @@ mod tests {
     }
 
     #[test]
+    fn test_interruptible() {
+        assert_eq!(Interruptible::NO.as_bool(), false);
+        assert_eq!(Interruptible::YES.as_bool(), true);
+        assert_eq!(bool::from(Interruptible::NO), false);
+        assert_eq!(bool::from(Interruptible::YES), true);
+    }
+
+    #[test]
     fn test_auto_expiring_preempt_disabler() {
         let guard = AutoExpiringPreemptDisabler::new(DurationMono(10_000_000));
         drop(guard);
     }
 }
+
+zr::static_assert!(core::mem::size_of::<Interruptible>() == 1);
+zr::static_assert!(core::mem::align_of::<Interruptible>() == 1);

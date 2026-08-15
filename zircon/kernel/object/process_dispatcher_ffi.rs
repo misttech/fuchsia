@@ -123,6 +123,16 @@ unsafe extern "C" {
         process: *const ProcessDispatcher,
     ) -> i64;
 
+    /// Returns the timer slack policy for the given process.
+    ///
+    /// # Safety
+    ///
+    /// `process` must point to a valid `ProcessDispatcher` and `out_slack` must point to valid memory.
+    pub(crate) fn cpp_process_dispatcher_get_timer_slack_policy(
+        process: *const ProcessDispatcher,
+        out_slack: *mut crate::kernel::types::TimerSlack,
+    );
+
     /// Returns a pointer to the handle table's BrwLockPi lock for the given process.
     ///
     /// # Safety

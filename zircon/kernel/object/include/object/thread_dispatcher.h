@@ -43,7 +43,7 @@ class ThreadDispatcher final : public SoloDispatcher<ThreadDispatcher, ZX_DEFAUL
   // When in a blocking syscall, or blocked in an exception, the blocking reason.
   // There is one of these for each syscall marked "blocking".
   // See //zircon/vdso.
-  enum class Blocked {
+  enum class Blocked : uint32_t {
     // Not blocked.
     NONE,
     // The thread is blocked in an exception.
@@ -205,6 +205,13 @@ class ThreadDispatcher final : public SoloDispatcher<ThreadDispatcher, ZX_DEFAUL
     ThreadDispatcher* const thread_;
     const Blocked prev_reason;
   };
+
+  static Blocked SetBlockedReason(Blocked reason) {
+    ThreadDispatcher* thread = ThreadDispatcher::GetCurrent();
+    Blocked prev = thread->blocked_reason_.load(ktl::memory_order_acquire);
+    thread->blocked_reason_.store(reason, ktl::memory_order_release);
+    return prev;
+  }
 
   // This is called from Thread as it is exiting, just before it stops for good.
   // It is an error to call this on anything other than the current thread.
@@ -432,6 +439,8 @@ void cpp_thread_dispatcher_get_runtime_stats(const ThreadDispatcher* thread,
 zx_status_t cpp_sys_thread_raise_exception(uint32_t options, zx_excp_type_t type,
                                            const zx_exception_context_t* user_context);
 zx_status_t cpp_sys_thread_legacy_yield(uint32_t options);
+ThreadDispatcher::Blocked cpp_thread_dispatcher_set_blocked_reason(
+    ThreadDispatcher::Blocked reason);
 }
 
 #endif  // ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_THREAD_DISPATCHER_H_

@@ -6,68 +6,52 @@
 
 #include "object/wait_signal_observer.h"
 
-#include <assert.h>
+#include <stddef.h>
 
-#include <kernel/event.h>
-#include <ktl/atomic.h>
-#include <object/dispatcher.h>
-#include <object/handle.h>
+#include <kernel/ffi.h>
 
 #include <ktl/enforce.h>
 
-WaitSignalObserver::~WaitSignalObserver() { DEBUG_ASSERT(!dispatcher_); }
+static_assert(sizeof(WaitSignalObserver) == kWaitSignalObserverSize);
+static_assert(alignof(WaitSignalObserver) == kWaitSignalObserverAlign);
 
-zx_status_t WaitSignalObserver::Begin(Event* event, Handle* handle, zx_signals_t watched_signals) {
-  canary_.Assert();
-  DEBUG_ASSERT(!dispatcher_);
+#define OBSERVER_VERIFY_OFFSET(Class, offset_const)                           \
+  _Pragma("GCC diagnostic push")                                              \
+      _Pragma("GCC diagnostic ignored \"-Winvalid-offsetof\"") static_assert( \
+          offsetof(Class, opaque_storage_) == (offset_const),                 \
+          #Class " opaque_storage_ offset mismatch");                         \
+  _Pragma("GCC diagnostic pop")
 
-  event_ = event;
-  dispatcher_ = handle->dispatcher();
-
-  // Wait for one of |watched_signals| to become active.
-  //
-  // Note that |watched_signals| may be 0, in which case we won't receive
-  // a callback, but will remain queued until |End| is called.
-  zx_status_t status = handle->dispatcher()->AddObserver(this, handle, watched_signals);
-  if (status != ZX_OK) {
-    dispatcher_.reset();
-    return status;
-  }
-
-  return ZX_OK;
+extern "C" {
+void rust_wait_signal_observer_init(void* storage);
+void rust_wait_signal_observer_destroy(void* storage);
+void rust_wait_signal_observer_on_match(void* storage, zx_signals_t signals,
+                                        OwnedWaitQueue* queue_to_own);
+void rust_wait_signal_observer_on_cancel(void* storage, zx_signals_t signals);
 }
 
-zx_signals_t WaitSignalObserver::End() {
-  canary_.Assert();
-  DEBUG_ASSERT(dispatcher_);
-
-  // Otherwise, remove this observer from the dispatcher's observer list.
-  zx_signals_t signals;
-  bool was_removed = dispatcher_->RemoveObserver(this, &signals);
-  dispatcher_.reset();
-
-  // If |was_removed| is false, it means a callback was fired and |final_signal_state| has
-  // a value.
-  if (!was_removed) {
-    return final_signal_state_.load(ktl::memory_order_acquire);
-  }
-
-  // Otherwise, return the set of signals at the point of removal.
-  return signals;
+WaitSignalObserver::WaitSignalObserver() {
+  OBSERVER_VERIFY_OFFSET(WaitSignalObserver, kWaitSignalObserverStorageOffset);
+  rust_wait_signal_observer_init(&opaque_storage_);
 }
+
+WaitSignalObserver::~WaitSignalObserver() { rust_wait_signal_observer_destroy(&opaque_storage_); }
 
 void WaitSignalObserver::OnMatch(zx_signals_t signals, OwnedWaitQueue* queue_to_own) {
-  canary_.Assert();
-
-  // Save the signal state, and wake our waiter.
-  final_signal_state_.store(signals, ktl::memory_order_release);
-  event_->Signal(ZX_OK, queue_to_own);
+  rust_wait_signal_observer_on_match(&opaque_storage_, signals, queue_to_own);
 }
 
 void WaitSignalObserver::OnCancel(zx_signals_t signals) {
-  canary_.Assert();
+  rust_wait_signal_observer_on_cancel(&opaque_storage_, signals);
+}
 
-  // Save the signal state, and wake our waiter.
-  final_signal_state_.store(signals | ZX_SIGNAL_HANDLE_CLOSED, ktl::memory_order_release);
-  event_->Signal(ZX_ERR_CANCELED);
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+extern "C" FFI_ALWAYS_INLINE void cpp_wait_signal_observer_init(
+    ffi::Uninitialized<WaitSignalObserver>* observer) {
+  observer->Initialize();
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+extern "C" FFI_ALWAYS_INLINE void cpp_wait_signal_observer_destroy(WaitSignalObserver* observer) {
+  observer->~WaitSignalObserver();
 }
