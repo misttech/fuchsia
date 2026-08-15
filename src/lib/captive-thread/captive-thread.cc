@@ -186,16 +186,13 @@ uint64_t Checkpoint(zx_thread_state_general_regs_t& exit_regs) {
 #endif
 
 // The atomic state starts as 0, then goes to 1 while running the routine, then
-// -1 while on the exit path.
-void RunThread(std::optional<CaptiveThread::Routine> routine, zx::thread& thread_handle,
+// -1 while on the exit path.  The routine is owned by the CaptiveThread only
+// so that there is no destructor work or deallocation that this thread might
+// fail to do, e.g. resulting in a memory leak.
+void RunThread(CaptiveThread::Routine& routine, zx::thread& thread_handle,
                zx_thread_state_general_regs_t& exit_regs, zx::channel& exception_channel,
                std::atomic_int& state) {
   if (Checkpoint(exit_regs) == 0) {
-    // Move out of the argument so it won't have any destructor work to do
-    // after this block.  The real destructor will only run if the function
-    // returns normally.
-    auto f = *std::exchange(routine, std::nullopt);
-
     // Duplicate the thread handle so it can be used safely after exit.
     zx_status_t status = zx::thread::self()->duplicate(ZX_RIGHT_SAME_RIGHTS, &thread_handle);
     ZX_ASSERT_MSG(status == ZX_OK, "duplicate: %s", zx_status_get_string(status));
@@ -212,7 +209,7 @@ void RunThread(std::optional<CaptiveThread::Routine> routine, zx::thread& thread
 
     // Run the user function.  If an exception is caught, ForceThread() will
     // restore the registers so Checkpoint() returns a second time, nonzero.
-    f();
+    routine();
   }
 
   // Record that we're not "running": don't get reset to the exit path twice.
@@ -242,8 +239,9 @@ CaptiveThread::~CaptiveThread() { ForceJoin(); }
 
 // Start the thread and wait for it to get ready.  Until it's ready,
 // it has exclusive access to exit_regs_ and channel_.
-CaptiveThread::CaptiveThread(fit::callback<void()> f)
-    : thread_(RunThread, std::move(f), std::ref(thread_handle_), std::ref(exit_regs_),
+CaptiveThread::CaptiveThread(Routine f)
+    : routine_{std::move(f)},
+      thread_(RunThread, std::ref(routine_), std::ref(thread_handle_), std::ref(exit_regs_),
               std::ref(channel_), std::ref(state_)) {
   // This synchronizes with the thread filling in thread_handle_, channel_, and
   // exit_regs_; and constitutes reacquiring the lock on those.
@@ -302,6 +300,11 @@ void CaptiveThread::ForceJoin() {
 
   // Do the normal thread join.
   std::exchange(thread_, {}).join();
+
+  // Clear out any allocations or other destructor work for the routine_ object
+  // itself.  The routine_ object was kept alive in the CaptiveThread object so
+  // that the thread itself wouldn't be responsible for any cleanup.
+  routine_ = nullptr;
 }
 
 template <RegistersType Regs>

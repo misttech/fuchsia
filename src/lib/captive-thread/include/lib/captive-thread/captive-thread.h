@@ -71,7 +71,9 @@ concept RegistersType = OnRegisterTypes<IsRegistersType>::value<T>;
 // while it's stopped for an exception or suspension.
 class CaptiveThread {
  public:
-  using Routine = fit::callback<void()>;
+  // The routine is guaranteed to be called only once, but we don't use
+  // fit::callback so as not to complicate allocation issues.
+  using Routine = fit::function<void()>;
 
   CaptiveThread() noexcept = delete;
   CaptiveThread(const CaptiveThread&) = delete;
@@ -183,6 +185,7 @@ class CaptiveThread {
   zx::result<> StepInternal();
   zx::result<CaptiveThread*> Wait(zx::time deadline, bool suspend_ok);
 
+  Routine routine_;
   std::atomic_int state_;
   zx::thread thread_handle_;
   zx::channel channel_;
