@@ -14,10 +14,7 @@ use fidl_fuchsia_io as fio;
 use anyhow::Context;
 use fidl::Status;
 
-use dml_config::parser::{
-    Destination, DmlParserConfig, PropertyRule, RuleValueType, ServiceBindConfig, TransportType,
-    ValueSource, publish_dml_devices,
-};
+use dml_config::parser::{DmlParserConfig, publish_dml_devices};
 
 struct GenericBoardDriver {
     _node: Node,
@@ -89,17 +86,5 @@ impl Driver for GenericBoardDriver {
     async fn stop(&self) {}
 }
 
-static GENERIC_BOARD_PARSER_CONFIG: DmlParserConfig = DmlParserConfig {
-    service_configs: phf::phf_map! {
-        "fuchsia.hardware.clock.Service" => ServiceBindConfig {
-            transport: TransportType::Zircon,
-            rules: &[PropertyRule {
-                bind_key: "fuchsia.NAME",
-                sources: &[ValueSource::ResourceName],
-                value_type: RuleValueType::String,
-                destination: Destination::Both,
-            }],
-            parent_key_sources: &[ValueSource::ResourceName],
-        },
-    },
-};
+static GENERIC_BOARD_PARSER_CONFIG: DmlParserConfig =
+    DmlParserConfig { service_configs: phf::phf_map! {} };

@@ -49,15 +49,6 @@ static VIM3_PARSER_CONFIG: DmlParserConfig = DmlParserConfig {
             ],
             ..DEFAULT_SERVICE_BIND_CONFIG
         },
-        "fuchsia.hardware.clock.Service" => ServiceBindConfig {
-            rules: &[PropertyRule {
-                bind_key: "fuchsia.BIND_CLOCK_ID",
-                sources: &[ValueSource::ConstraintKey("id")],
-                value_type: RuleValueType::Integer,
-                destination: Destination::BindRules,
-            }],
-            ..DEFAULT_SERVICE_BIND_CONFIG
-        },
         "fuchsia.hardware.adc.Service" => ServiceBindConfig {
             rules: &[PropertyRule {
                 bind_key: "fuchsia.adc.CHANNEL",
