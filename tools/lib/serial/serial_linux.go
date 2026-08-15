@@ -99,11 +99,15 @@ func open(name string, baudRate int) (io.ReadWriteCloser, error) {
 	// return 1 or more characters as soon as they are ready
 	t.Cc[unix.VMIN] = 1
 
-	// set baud rate
-	t.Ispeed = rate
-	t.Ospeed = rate
+	// set baud rate. On Linux the rate lives in the CBAUD bits of c_cflag;
+	// the c_ispeed/c_ospeed fields are ignored by TCSETS (only TCSETS2 with
+	// BOTHER consults them), so setting only those leaves the line at B0.
+	t.Cflag = (t.Cflag &^ unix.CBAUD) | rate
 
-	if err := unix.IoctlSetTermios(int(f.Fd()), unix.TCSETA, &t); err != nil {
+	// TCSETS is the ioctl that takes a struct termios. TCSETA takes the older,
+	// smaller struct termio, so passing a Termios to it makes the kernel
+	// misread every field.
+	if err := unix.IoctlSetTermios(int(f.Fd()), unix.TCSETS, &t); err != nil {
 		f.Close()
 		return nil, err
 	}
