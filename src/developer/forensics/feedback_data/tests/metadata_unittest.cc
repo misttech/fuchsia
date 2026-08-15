@@ -461,11 +461,8 @@ TEST_F(MetadataTest, Check_UtcBootDifference) {
   };
 
   const feedback::AttachmentKeys attachment_allowlist = {
-      kAttachmentInspect,
-      kAttachmentLogKernel,
-      kAttachmentLogKernelPrevious,
-      kAttachmentLogSystem,
-      feedback::kPreviousLogsFilePath,
+      kAttachmentInspect,           kAttachmentInspectPreviousBoot, kAttachmentLogKernel,
+      kAttachmentLogKernelPrevious, kAttachmentLogSystem,           feedback::kPreviousLogsFilePath,
   };
 
   const feedback::Annotations annotations = {
@@ -474,6 +471,8 @@ TEST_F(MetadataTest, Check_UtcBootDifference) {
 
   feedback::Attachments attachments;
   attachments.insert({kAttachmentInspect, feedback::AttachmentValue("", zx::duration(0))});
+  attachments.insert(
+      {kAttachmentInspectPreviousBoot, feedback::AttachmentValue("", zx::duration(0))});
   attachments.insert({kAttachmentLogKernel, feedback::AttachmentValue("", zx::duration(0))});
   attachments.insert(
       {kAttachmentLogKernelPrevious, feedback::AttachmentValue("", zx::duration(0))});
@@ -499,6 +498,8 @@ TEST_F(MetadataTest, Check_UtcBootDifference) {
       MakeJsonReport(std::move(annotations), std::move(attachments));
 
   UTC_BOOT_DIFFERENCE_IS(metadata_json, kAttachmentInspect, utc_boot_difference);
+  UTC_BOOT_DIFFERENCE_IS(metadata_json, kAttachmentInspectPreviousBoot,
+                         kPreviousBootUtcBootDifference);
   UTC_BOOT_DIFFERENCE_IS(metadata_json, kAttachmentLogKernel, utc_boot_difference);
   UTC_BOOT_DIFFERENCE_IS(metadata_json, kAttachmentLogKernelPrevious,
                          kPreviousBootUtcBootDifference);

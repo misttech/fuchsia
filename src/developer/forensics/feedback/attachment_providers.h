@@ -16,6 +16,7 @@
 #include "src/developer/forensics/feedback/attachments/file_backed_provider.h"
 #include "src/developer/forensics/feedback/attachments/inspect.h"
 #include "src/developer/forensics/feedback/attachments/kernel_log.h"
+#include "src/developer/forensics/feedback/attachments/previous_boot_inspect.h"
 #include "src/developer/forensics/feedback/attachments/previous_boot_log.h"
 #include "src/developer/forensics/feedback/attachments/system_log.h"
 #include "src/developer/forensics/feedback_data/inspect_data_budget.h"
@@ -45,6 +46,7 @@ class AttachmentProviders {
   KernelLog kernel_log_;
   SystemLog system_log_;
   Inspect inspect_;
+  PreviousBootInspect previous_boot_inspect_;
   PreviousBootLog previous_boot_log_;
   FileBackedProvider previous_boot_kernel_log_;
   FileBackedProvider kernel_boot_options_;

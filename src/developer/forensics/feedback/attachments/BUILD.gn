@@ -104,6 +104,32 @@ source_set("previous_boot_log") {
   ]
 }
 
+source_set("previous_boot_inspect") {
+  sources = [
+    "previous_boot_inspect.cc",
+    "previous_boot_inspect.h",
+  ]
+
+  public_deps = [
+    ":attachments",
+    "//sdk/fidl/fuchsia.diagnostics.persistence:fuchsia.diagnostics.persistence_hlcpp",
+    "//sdk/lib/async",
+    "//sdk/lib/fit-promise",
+    "//sdk/lib/sys/cpp",
+    "//src/developer/forensics/utils/redact",
+    "//src/lib/backoff",
+    "//src/lib/fxl",
+  ]
+
+  deps = [
+    "//sdk/lib/async:async-cpp",
+    "//sdk/lib/fdio",
+    "//sdk/lib/syslog/cpp",
+    "//src/developer/forensics/utils:errors",
+    "//src/lib/files",
+  ]
+}
+
 source_set("file_backed_provider") {
   sources = [
     "file_backed_provider.cc",

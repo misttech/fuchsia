@@ -78,6 +78,7 @@ TEST_F(ProdConfigTest, DefaultSnapshot) {
   EXPECT_THAT(config->attachment_allowlist, UnorderedElementsAreArray({
                                                 "build.kernel-boot-options.txt",
                                                 "inspect.json",
+                                                "inspect.previous_boot.json",
                                                 "log.kernel.previous_boot.txt",
                                                 "log.kernel.txt",
                                                 "log.system.previous_boot.txt",

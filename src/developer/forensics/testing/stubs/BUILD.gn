@@ -207,6 +207,16 @@ source_set("loader") {
   ]
 }
 
+source_set("previous_boot_data_provider") {
+  testonly = true
+
+  sources = [ "previous_boot_data_provider.h" ]
+
+  public_deps = [
+    ":fidl_server_hlcpp",
+    "//sdk/fidl/fuchsia.diagnostics.persistence:fuchsia.diagnostics.persistence_hlcpp",
+  ]
+}
 source_set("system_activity_governor") {
   testonly = true
 

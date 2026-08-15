@@ -40,6 +40,7 @@
         },
         {
             protocol: [
+                "fuchsia.diagnostics.persistence.PreviousBootDataProvider",
                 "fuchsia.feedback.DeviceIdProvider",
                 "fuchsia.intl.PropertyProvider",
                 "fuchsia.power.battery.BatteryManager",

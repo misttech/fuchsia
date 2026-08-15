@@ -43,6 +43,17 @@
             to: "#feedback",
         },
         {
+            protocol: "fuchsia.diagnostics.persistence.PreviousBootDataProvider",
+            from: "#diagnostics",
+            to: "#feedback",
+
+            // #diagnostics is only included in common_standard, so in configurations where
+            // it is not present (such as minimal or scrutiny test assemblies), the source
+            // and capability availability must be optional.
+            source_availability: "unknown",
+            availability: "optional",
+        },
+        {
             protocol: [
                 "fuchsia.ui.activity.control.Control",
                 "fuchsia.ui.activity.Provider",
