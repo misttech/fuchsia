@@ -87,6 +87,17 @@ void Dwc3::EpStartTransfer(Endpoint& ep, TrbFifo& fifo, uint32_t type, zx_paddr_
   CmdEpStartTransfer(ep, trb_phys);
 }
 
+void Dwc3::EpServer::FlushCancelCompleters(zx_status_t status) {
+  auto completers = std::move(cancel_completers);
+  for (auto& completer : completers) {
+    if (status == ZX_OK) {
+      completer.Reply(zx::ok());
+    } else {
+      completer.Reply(zx::error(status));
+    }
+  }
+}
+
 void Dwc3::EpServer::CancelAll(zx_status_t reason) {
   TRACE_DURATION("dwc3", "Dwc3::EpServer::CancelAll", "ep_num", uep_->ep.ep_num, "reason", reason);
   fdf::debug("Dwc3::EpServer::CancelAll ep {} reason {} reqs = ({}, {}), controller={}",
@@ -106,6 +117,7 @@ void Dwc3::EpServer::CancelAll(zx_status_t reason) {
     }
     uep_->ep.transfer_state = Endpoint::TransferState::kIdle;
     uep_->ep.rsrc_id = Endpoint::kInvalidResourceId;
+    FlushCancelCompleters(reason);
     return;
   }
 
@@ -460,6 +472,8 @@ void Dwc3::HandleEpTransferEndedEvent(uint8_t ep_num) {
     }
     size_t active_count = uep->fifo.GetActiveCount();
     ZX_ASSERT_MSG(active_count == pending_trbs, "%ld == %ld", active_count, pending_trbs);
+
+    uep->server->FlushCancelCompleters(ZX_OK);
   }
   uep->fifo.Clear();
   uep->ep.transfer_state = Endpoint::TransferState::kIdle;

@@ -177,12 +177,15 @@ class Dwc3 : public fdf::DriverBase2,
     };
     std::queue<RequestState> active_reqs;  // requests currently being processed
     std::optional<zx_status_t> pending_cancel_reason;
+    std::vector<CancelAllCompleter::Async> cancel_completers;
+    void FlushCancelCompleters(zx_status_t status);
 
    private:
     // EndpointServer overrides
     void OnUnbound(fidl::UnbindInfo info,
                    fidl::ServerEnd<fuchsia_hardware_usb_endpoint::Endpoint> server_end) override {
       CancelAll(ZX_ERR_IO_NOT_PRESENT);
+      FlushCancelCompleters(ZX_ERR_CANCELED);
       usb::EndpointServer::OnUnbound(info, std::move(server_end));
     }
 

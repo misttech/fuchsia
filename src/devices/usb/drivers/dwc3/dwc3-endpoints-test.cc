@@ -440,11 +440,16 @@ TEST_P(Dwc3EndpointsTest, CancelAllRequests) {
     }
   });
 
-  // Cancel all requests via client.
-  fidl::WireResult result = ep_client_.wire_sync()->CancelAll();
-  ASSERT_OK(result.status());
-  ASSERT_TRUE(result->is_ok()) << zx_status_get_string(result->error_value());
+  // Cancel all requests via client asynchronously.
+  std::optional<fidl::Result<fendpoint::Endpoint::CancelAll>> cancel_result;
+  libsync::Completion cancel_completed;
+  ep_client_->CancelAll().Then([&](fidl::Result<fendpoint::Endpoint::CancelAll>& res) {
+    cancel_result = res;
+    cancel_completed.Signal();
+  });
+
   WaitForState(ep_num, TransferState::kCanceling);
+  EXPECT_FALSE(cancel_result.has_value());
 
   // The state should be kCanceling, and active_reqs should not be empty yet.
   dut_.RunInDriverContext([&](Dwc3& drv) {
@@ -455,6 +460,10 @@ TEST_P(Dwc3EndpointsTest, CancelAllRequests) {
   // Hardware emits Command Complete (End Transfer) to acknowledge End Transfer.
   dut_.RunInDriverContext([&](Dwc3& drv) { TriggerEpTransferEnded(drv, ep_num); });
   WaitForState(ep_num, TransferState::kIdle);
+
+  cancel_completed.Wait();
+  ASSERT_TRUE(cancel_result.has_value());
+  ASSERT_TRUE(cancel_result->is_ok());
 
   // Now, active_reqs should be empty.
   dut_.RunInDriverContext([&](Dwc3& drv) {
@@ -529,6 +538,53 @@ TEST_P(Dwc3EndpointsTest, CancelAllRequestsOnControllerStop) {
   ASSERT_EQ(completions.size(), 2UL);
   EXPECT_EQ(completions[0].status, ZX_ERR_IO_NOT_PRESENT);
   EXPECT_EQ(completions[1].status, ZX_ERR_IO_NOT_PRESENT);
+}
+
+TEST_P(Dwc3EndpointsTest, CancelAllRequestsWhenControllerStopped) {
+  TriggerConnection();
+
+  const uint8_t ep_address = 0x02;
+  const uint8_t ep_num = UsbAddressToEpNum(ep_address);
+
+  SetupEndpoint(ep_address, fdescriptor::EndpointType::kBulk, 512);
+
+  // Stop controller.
+  fidl::WireResult res = dci_->StopController();
+  ASSERT_OK(res.status());
+  WaitForState(ep_num, TransferState::kIdle);
+
+  // Cancel all requests via client. It should reply immediately because controller is stopped.
+  libsync::Completion cancel_completed;
+  std::optional<fidl::Result<fendpoint::Endpoint::CancelAll>> cancel_result;
+  ep_client_->CancelAll().Then([&](fidl::Result<fendpoint::Endpoint::CancelAll>& res) {
+    cancel_result = res;
+    cancel_completed.Signal();
+  });
+
+  cancel_completed.Wait();
+  ASSERT_TRUE(cancel_result.has_value());
+  ASSERT_TRUE(cancel_result->is_ok());
+}
+
+TEST_P(Dwc3EndpointsTest, CancelAllRequestsWhenIdle) {
+  TriggerConnection();
+
+  const uint8_t ep_address = 0x02;
+
+  SetupEndpoint(ep_address, fdescriptor::EndpointType::kBulk, 512);
+
+  // Endpoint is idle (no requests queued).
+  // Cancel all requests via client. It should reply immediately because endpoint is idle.
+  libsync::Completion cancel_completed;
+  std::optional<fidl::Result<fendpoint::Endpoint::CancelAll>> cancel_result;
+  ep_client_->CancelAll().Then([&](fidl::Result<fendpoint::Endpoint::CancelAll>& res) {
+    cancel_result = res;
+    cancel_completed.Signal();
+  });
+
+  cancel_completed.Wait();
+  ASSERT_TRUE(cancel_result.has_value());
+  ASSERT_TRUE(cancel_result->is_ok());
 }
 
 TEST_P(Dwc3EndpointsTest, InputEndpointZlpComplete) {
@@ -1397,6 +1453,127 @@ TEST_P(Dwc3EndpointsTest, DISABLED_DeferredCancelDisableAccountingLeak) {
       [&](Dwc3& drv) { Dwc3TestHelper::HandleEpTransferCompleteEvent(drv, 7); });
 
   sync_client = {};
+}
+
+TEST_P(Dwc3EndpointsTest, CancelAllRequestsOnUnbound) {
+  TriggerConnection();
+
+  const uint8_t ep_address = 0x02;
+  const uint8_t ep_num = UsbAddressToEpNum(ep_address);
+
+  SetupEndpoint(ep_address, fdescriptor::EndpointType::kBulk, 512);
+  RegisterVmo(1, 4096);
+
+  const bool enqueue_many = GetParam();
+  const TransferState starting_state =
+      enqueue_many ? TransferState::kStartingOngoing : TransferState::kStartingSingle;
+  const TransferState active_state =
+      enqueue_many ? TransferState::kActiveOngoing : TransferState::kActiveSingle;
+
+  // Host sends Not Ready event.
+  dut_.RunInDriverContext([&](Dwc3& drv) { TriggerEpTransferNotReady(drv, ep_num, 0); });
+  dut_.runtime().RunUntilIdle();
+
+  // Queue a request.
+  QueueRequest(1, 0, 512, fdescriptor::EndpointType::kBulk);
+  WaitForActiveCount(ep_num, 1);
+  WaitForState(ep_num, starting_state);
+
+  // Trigger started event.
+  dut_.RunInDriverContext([&](Dwc3& drv) { TriggerEpTransferStarted(drv, ep_num, kResourceId); });
+  WaitForState(ep_num, active_state);
+
+  // Cancel all requests via client asynchronously.
+  bool cancel_replied = false;
+  ep_client_->CancelAll().Then(
+      [&](fidl::Result<fendpoint::Endpoint::CancelAll>& res) { cancel_replied = true; });
+
+  WaitForState(ep_num, TransferState::kCanceling);
+  EXPECT_FALSE(cancel_replied);
+
+  // Verify that cancel_completers has 1 pending completer in the server.
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    auto& uep = GetUserEndpoint(drv, ep_num);
+    ASSERT_TRUE(uep.server.has_value());
+    EXPECT_EQ(uep.server->cancel_completers.size(), 1u);
+  });
+
+  // Close the client endpoint channel to unbind the endpoint server.
+  ep_client_ = {};
+
+  // Wait for the driver dispatcher to process OnUnbound and flush completers.
+  dut_.runtime().RunUntil([&]() {
+    dut_.runtime().RunUntilIdle();
+    return dut_.RunInDriverContext<bool>([&](Dwc3& drv) {
+      auto& uep = GetUserEndpoint(drv, ep_num);
+      return uep.server.has_value() && uep.server->cancel_completers.empty();
+    });
+  });
+
+  // Complete the hardware transfer.
+  dut_.RunInDriverContext([&](Dwc3& drv) { TriggerEpTransferEnded(drv, ep_num); });
+  WaitForState(ep_num, TransferState::kIdle);
+}
+
+TEST_P(Dwc3EndpointsTest, CancelAllTransferEndedBeforeUnbound) {
+  TriggerConnection();
+
+  const uint8_t ep_address = 0x02;
+  const uint8_t ep_num = UsbAddressToEpNum(ep_address);
+
+  SetupEndpoint(ep_address, fdescriptor::EndpointType::kBulk, 512);
+  RegisterVmo(1, 4096);
+
+  const bool enqueue_many = GetParam();
+  const TransferState starting_state =
+      enqueue_many ? TransferState::kStartingOngoing : TransferState::kStartingSingle;
+  const TransferState active_state =
+      enqueue_many ? TransferState::kActiveOngoing : TransferState::kActiveSingle;
+
+  // Host sends Not Ready event.
+  dut_.RunInDriverContext([&](Dwc3& drv) { TriggerEpTransferNotReady(drv, ep_num, 0); });
+  dut_.runtime().RunUntilIdle();
+
+  // Queue a request.
+  QueueRequest(1, 0, 512, fdescriptor::EndpointType::kBulk);
+  WaitForActiveCount(ep_num, 1);
+  WaitForState(ep_num, starting_state);
+
+  // Trigger started event.
+  dut_.RunInDriverContext([&](Dwc3& drv) { TriggerEpTransferStarted(drv, ep_num, kResourceId); });
+  WaitForState(ep_num, active_state);
+
+  // Cancel all requests via client asynchronously.
+  bool cancel_replied = false;
+  ep_client_->CancelAll().Then(
+      [&](fidl::Result<fendpoint::Endpoint::CancelAll>& res) { cancel_replied = true; });
+
+  WaitForState(ep_num, TransferState::kCanceling);
+  EXPECT_FALSE(cancel_replied);
+
+  // Verify that cancel_completers has 1 pending completer in the server.
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    auto& uep = GetUserEndpoint(drv, ep_num);
+    ASSERT_TRUE(uep.server.has_value());
+    EXPECT_EQ(uep.server->cancel_completers.size(), 1u);
+  });
+
+  // Close the client endpoint channel to initiate unbind.
+  ep_client_ = {};
+
+  // Fire HandleEpTransferEndedEvent BEFORE driver dispatcher processes OnUnbound.
+  dut_.RunInDriverContext([&](Dwc3& drv) { TriggerEpTransferEnded(drv, ep_num); });
+
+  // Now process queued events on driver dispatcher including OnUnbound.
+  dut_.runtime().RunUntilIdle();
+
+  // Verify state is cleanly Idle and completers vector is empty.
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    auto& uep = GetUserEndpoint(drv, ep_num);
+    ASSERT_TRUE(uep.server.has_value());
+    EXPECT_EQ(uep.server->cancel_completers.size(), 0u);
+    EXPECT_EQ(uep.ep.transfer_state, TransferState::kIdle);
+  });
 }
 
 }  // namespace dwc3

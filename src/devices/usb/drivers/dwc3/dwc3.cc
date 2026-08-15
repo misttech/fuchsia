@@ -1550,7 +1550,12 @@ void Dwc3::EpServer::QueueRequests(QueueRequestsRequest& request,
 void Dwc3::EpServer::CancelAll(CancelAllCompleter::Sync& completer) {
   TRACE_DURATION("dwc3", "Dwc3::EpServer::CancelAll");
   CancelAll(ZX_ERR_IO_NOT_PRESENT);
-  completer.Reply(zx::ok());
+  if (!dwc3_->controller_started_ ||
+      (uep_->ep.transfer_state == Endpoint::TransferState::kIdle && active_reqs.empty())) {
+    completer.Reply(zx::ok());
+  } else {
+    cancel_completers.push_back(completer.ToAsync());
+  }
 }
 
 void Dwc3::EpReset(Endpoint& ep) {
