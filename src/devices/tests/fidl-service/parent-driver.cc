@@ -47,15 +47,6 @@ class Device : public DeviceParent, public fidl::WireServer<fidl_examples_echo::
       return result.status_value();
     }
 
-    fidl_examples_echo::EchoService2::InstanceHandler handler2({.echo = std::move(echo_handler)});
-
-    result =
-        device->outgoing_dir_.AddService<fidl_examples_echo::EchoService2>(std::move(handler2));
-    if (result.is_error()) {
-      zxlogf(ERROR, "Failed to add service the outgoing directory");
-      return result.status_value();
-    }
-
     result = device->outgoing_dir_.Serve(std::move(endpoints->server));
     if (result.is_error()) {
       zxlogf(ERROR, "Failed to serve the outgoing directory");
@@ -64,7 +55,6 @@ class Device : public DeviceParent, public fidl::WireServer<fidl_examples_echo::
 
     std::array offers = {
         fidl_examples_echo::EchoService::Name,
-        fidl_examples_echo::EchoService2::Name,
     };
 
     auto status = device->DdkAdd(ddk::DeviceAddArgs("parent")
@@ -75,6 +65,47 @@ class Device : public DeviceParent, public fidl::WireServer<fidl_examples_echo::
       [[maybe_unused]] auto ptr = device.release();
     } else {
       zxlogf(ERROR, "Failed to add device");
+      return status;
+    }
+
+    // The Driver Framework strictly enforces a 1-to-1 Service-to-Node invariant.
+    // We cannot offer multiple services on the same node (e.g., EchoService and EchoService2)
+    // because the framework generates topological bind properties for each service. Adding both
+    // services to a single node would cause colliding and ambiguous bind rules. Thus, we must
+    // instantiate a separate 'device2' child node specifically to host 'EchoService2'.
+    auto endpoints2 = fidl::CreateEndpoints<fuchsia_io::Directory>();
+    if (endpoints2.is_error()) {
+      return endpoints2.status_value();
+    }
+    auto device2 = std::make_unique<Device>(parent, dispatcher);
+    auto echo_handler2 = fit::bind_member(device2.get(), &Device::EchoHandler);
+    fidl_examples_echo::EchoService2::InstanceHandler handler2({.echo = std::move(echo_handler2)});
+
+    result =
+        device2->outgoing_dir_.AddService<fidl_examples_echo::EchoService2>(std::move(handler2));
+    if (result.is_error()) {
+      zxlogf(ERROR, "Failed to add service the outgoing directory");
+      return result.status_value();
+    }
+
+    result = device2->outgoing_dir_.Serve(std::move(endpoints2->server));
+    if (result.is_error()) {
+      zxlogf(ERROR, "Failed to serve the outgoing directory");
+      return result.status_value();
+    }
+
+    std::array offers2 = {
+        fidl_examples_echo::EchoService2::Name,
+    };
+
+    status = device2->DdkAdd(ddk::DeviceAddArgs("parent2")
+                                 .set_flags(DEVICE_ADD_MUST_ISOLATE)
+                                 .set_fidl_service_offers(offers2)
+                                 .set_outgoing_dir(endpoints2->client.TakeChannel()));
+    if (status == ZX_OK) {
+      [[maybe_unused]] auto ptr = device2.release();
+    } else {
+      zxlogf(ERROR, "Failed to add device2");
     }
 
     return status;
