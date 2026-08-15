@@ -91,7 +91,7 @@ class CaptiveThread {
         })) {}
 
   // After destruction, the thread is guaranteed to be exited and joined.
-  ~CaptiveThread() { ForceJoin(); }
+  ~CaptiveThread();
 
   // If the thread is not already exiting, then force it to exit.  Then join
   // with it as in std::thread::join.  Other methods are not necessarily valid
@@ -173,11 +173,14 @@ class CaptiveThread {
   friend void PrintTo(const CaptiveThread&, std::ostream* os);
 
  private:
+  class FakeStep;
+
   template <class... T>
   using TupleOfPtrs = std::tuple<std::unique_ptr<T>...>;
   using RegsTuple = OnRegisterTypes<TupleOfPtrs>;
 
   void ResumeInternal();
+  zx::result<> StepInternal();
   zx::result<CaptiveThread*> Wait(zx::time deadline, bool suspend_ok);
 
   std::atomic_int state_;
@@ -188,6 +191,7 @@ class CaptiveThread {
   zx_thread_state_general_regs_t exit_regs_;
   std::optional<zx_exception_report_t> exception_report_;
   RegsTuple stopped_regs_;
+  std::unique_ptr<FakeStep> fake_step_;
   bool singlestep_ = false;
 
   // Note this member is declared last so others are initialized first.

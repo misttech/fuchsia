@@ -52,6 +52,10 @@ void Crash() {
   );
 }
 
+// This is called just to demonstrate actual call and return instructions,
+// since it cannot be inlined.
+[[gnu::noinline]] void CallAndReturn() {}
+
 template <uintptr_t Address = 0>
 [[clang::no_sanitize("all")]] void PageFault() {
   *LaunderAs<volatile int*>(Address) = 0;
@@ -235,6 +239,13 @@ TEST(CaptiveThreadTests, SingleStep) {
   captive_thread::CaptiveThread thread{[&started, &finished] {
     started = true;
     Crash();
+    // Do some stuff that's interesting to single-step through.
+    if (LaunderAs<bool>(true)) {  // Conditional branch, taken.
+      CallAndReturn();
+    }
+    if (LaunderAs<bool>(false)) {  // Conditional branch, not taken.
+      Crash();
+    }
     finished = true;
   }};
   ASSERT_THAT(thread.WaitForException(),
@@ -248,10 +259,7 @@ TEST(CaptiveThreadTests, SingleStep) {
   ASSERT_TRUE(result.is_ok()) << result.status_string();
 
   zx::result step = thread.ResolveExceptionSingleStep();
-  if (step.is_error()) {
-    ASSERT_EQ(step.error_value(), ZX_ERR_NOT_SUPPORTED) << step.status_string();
-    GTEST_SKIP() << "single-step not supported on this machine";
-  }
+  ASSERT_TRUE(step.is_ok()) << step.status_string();
 
   EXPECT_THAT(thread.WaitForException(), GotSingleStep());
   EXPECT_FALSE(finished);  // It needs more than one instruction to get there.

@@ -18,6 +18,25 @@ static_library("captive-thread") {
   public_deps = [ ":headers" ]
   sources = [ "captive-thread.cc" ]
   deps = [ "//sdk/lib/stdcompat" ]
+  if (current_cpu == "riscv64") {
+    deps += [ ":fake-step" ]
+  }
+}
+
+source_set("fake-step") {
+  visibility = [ ":*" ]
+  public = [ "fake-step.h" ]
+  public_deps = [
+    ":headers",
+    "//sdk/lib/stdcompat",
+  ]
+  if (current_cpu == "riscv64") {
+    sources = [ "fake-step.cc" ]
+    deps = [
+      "//zircon/system/ulib/hwreg",
+      "//zircon/system/ulib/zx",
+    ]
+  }
 }
 
 group("tests") {

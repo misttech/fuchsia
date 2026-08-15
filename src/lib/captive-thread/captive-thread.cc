@@ -4,6 +4,7 @@
 
 #include "lib/captive-thread/captive-thread.h"
 
+#include <lib/captive-thread/registers.h>
 #include <lib/stdcompat/inplace_vector.h>
 #include <zircon/assert.h>
 #include <zircon/exception.h>
@@ -12,6 +13,8 @@
 #include <zircon/tls.h>
 
 #include <atomic>
+
+#include "fake-step.h"
 
 namespace captive_thread {
 namespace {
@@ -235,6 +238,8 @@ zx::result<> SetSingleStep(zx::unowned_thread thread, bool on) {
 
 }  // namespace
 
+CaptiveThread::~CaptiveThread() { ForceJoin(); }
+
 // Start the thread and wait for it to get ready.  Until it's ready,
 // it has exclusive access to exit_regs_ and channel_.
 CaptiveThread::CaptiveThread(fit::callback<void()> f)
@@ -263,6 +268,13 @@ void CaptiveThread::ForceJoin() {
     // Wait for suspension, but it could still hit an exception first.
     zx::result result = WaitForStop();
     ZX_ASSERT_MSG(result.is_ok(), "wait: %s", result.status_string());
+  }
+
+  if constexpr (!FakeStep::kImplemented) {
+    ZX_DEBUG_ASSERT(!fake_step_);
+  } else if (fake_step_) {
+    zx::result result = std::exchange(fake_step_, {})->ClearBreakpoints();
+    ZX_ASSERT_MSG(result.is_ok(), "clearing fake-step breakpoints: %s", result.status_string());
   }
 
   // If the thread was asynchronously suspended rather than hitting an
@@ -352,10 +364,9 @@ void CaptiveThread::ResolveException() {
 
 zx::result<> CaptiveThread::ResolveExceptionSingleStep() {
   ZX_ASSERT(InException());
-  if (zx::result step = SetSingleStep(thread_handle_.borrow(), true); step.is_error()) {
+  if (zx::result step = StepInternal(); step.is_error()) {
     return step;
   }
-  singlestep_ = true;
   MarkHandled(exception_.borrow());
   ResumeInternal();
   return zx::ok();
@@ -368,12 +379,40 @@ void CaptiveThread::Resume() {
 
 zx::result<> CaptiveThread::ResumeSingleStep() {
   ZX_ASSERT(IsStopped());
-  if (zx::result step = SetSingleStep(thread_handle_.borrow(), true); step.is_error()) {
+  if (zx::result step = StepInternal(); step.is_error()) {
     return step;
   }
-  singlestep_ = true;
   ResumeInternal();
   return zx::ok();
+}
+
+zx::result<> CaptiveThread::StepInternal() {
+  ZX_DEBUG_ASSERT(!singlestep_);
+
+  auto fake = [this] -> zx::result<> {
+    if constexpr (FakeStep::kImplemented) {
+      zx::result regs = Registers();
+      if (regs.is_error()) {
+        return regs.take_error();
+      }
+      return fake_step_->SetBreakpoints(*regs);
+    }
+    return zx::error{ZX_ERR_NOT_SUPPORTED};
+  };
+
+  auto maybe_real = [this, fake] -> zx::result<> {
+    zx::result result = SetSingleStep(thread_handle_.borrow(), true);
+    if (FakeStep::kImplemented && result.status_value() == ZX_ERR_NOT_SUPPORTED) {
+      fake_step_ = std::make_unique<FakeStep>();
+      return fake();
+    }
+    return result;
+  };
+
+  zx::result result = fake_step_ ? fake() : maybe_real();
+  singlestep_ = result.is_ok();
+
+  return result;
 }
 
 void CaptiveThread::ResumeInternal() {
@@ -388,9 +427,11 @@ void CaptiveThread::ResumeInternal() {
 void CaptiveThread::BlockUntilSuccess() {
   ZX_ASSERT(!IsStopped());
   ZX_ASSERT(!Joined());
+  ZX_DEBUG_ASSERT(!singlestep_);
   channel_.reset();
   thread_handle_.reset();
   stopped_regs_ = RegsTuple{};
+  fake_step_.reset();
   std::exchange(thread_, {}).join();
 }
 
@@ -437,10 +478,20 @@ zx::result<CaptiveThread*> CaptiveThread::Wait(zx::time deadline, bool suspend_o
     ZX_DEBUG_ASSERT(info.type == exception_report_->header.type);
     if (singlestep_) {
       // Reset single-step state after any stop.
-      singlestep_ = false;
-      if (auto result = SetSingleStep(thread_handle_.borrow(), false); result.is_error()) {
+      auto clear_step = [this] -> zx::result<> {
+        if constexpr (FakeStep::kImplemented) {
+          if (fake_step_) {
+            // Normalize the report in case it was a FakeStep breakpoint.
+            fake_step_->FixupException(*this, *exception_report_);
+            return fake_step_->ClearBreakpoints();
+          }
+        }
+        return SetSingleStep(thread_handle_.borrow(), false);
+      };
+      if (auto result = clear_step(); result.is_error()) {
         return result.take_error();
       }
+      singlestep_ = false;
     }
   } else if (thread_pending & ZX_THREAD_SUSPENDED) {
     ZX_DEBUG_ASSERT(suspend_ok);
