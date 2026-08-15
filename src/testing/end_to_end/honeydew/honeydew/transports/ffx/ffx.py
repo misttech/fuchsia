@@ -342,6 +342,10 @@ class FFX:
         """
         if self._use_monitor:
             target = self._get_target_status()
+            if target.rcs_state != "Y":
+                raise errors.DeviceNotConnectedError(
+                    f"{self._log_name} is not connected to host"
+                )
             return target.target_type.split(".")[1]
 
         target_show_info: TargetInfoData = self.get_target_information()
@@ -361,6 +365,10 @@ class FFX:
         """
         if self._use_monitor:
             target = self._get_target_status()
+            if target.rcs_state != "Y":
+                raise errors.DeviceNotConnectedError(
+                    f"{self._log_name} is not connected to host"
+                )
             return target.target_type.split(".", maxsplit=1)[0]
 
         target_show_info: TargetInfoData = self.get_target_information()

@@ -510,6 +510,36 @@ class FfxTests(unittest.TestCase):
 
     @mock.patch.object(
         ffx.FFX,
+        "_get_target_status",
+        return_value=MonitorTargetInfo(**_FFX_TARGET_INFO),
+        autospec=True,
+    )
+    def test_get_target_board_with_monitor(
+        self, mock_get_target_status: mock.Mock
+    ) -> None:
+        """Verify ffx.get_target_board returns board value of fuchsia device
+        when monitor is used."""
+        result: str = self.ffx_obj_with_ip_and_monitor.get_target_board()
+        self.assertEqual(result, "x64")
+        mock_get_target_status.assert_called()
+
+    @mock.patch.object(
+        ffx.FFX,
+        "_get_target_status",
+        return_value=MonitorTargetInfo(rcs_state="N"),
+        autospec=True,
+    )
+    def test_get_target_board_with_monitor_rcs_disconnected(
+        self, mock_get_target_status: mock.Mock
+    ) -> None:
+        """Verify ffx.get_target_board raises DeviceNotConnectedError when
+        rcs_state is not Y."""
+        with self.assertRaises(errors.DeviceNotConnectedError):
+            self.ffx_obj_with_ip_and_monitor.get_target_board()
+        mock_get_target_status.assert_called()
+
+    @mock.patch.object(
+        ffx.FFX,
         "get_target_information",
         return_value=_MOCK_ARGS["ffx_target_show_object"],
         autospec=True,
@@ -525,6 +555,36 @@ class FfxTests(unittest.TestCase):
         self.assertEqual(result, expected)
 
         mock_get_target_information.assert_called()
+
+    @mock.patch.object(
+        ffx.FFX,
+        "_get_target_status",
+        return_value=MonitorTargetInfo(**_FFX_TARGET_INFO),
+        autospec=True,
+    )
+    def test_get_target_product_with_monitor(
+        self, mock_get_target_status: mock.Mock
+    ) -> None:
+        """Verify ffx.get_target_product returns product value of fuchsia
+        device when monitor is used."""
+        result: str = self.ffx_obj_with_ip_and_monitor.get_target_product()
+        self.assertEqual(result, "workstation_eng")
+        mock_get_target_status.assert_called()
+
+    @mock.patch.object(
+        ffx.FFX,
+        "_get_target_status",
+        return_value=MonitorTargetInfo(rcs_state="N"),
+        autospec=True,
+    )
+    def test_get_target_product_with_monitor_rcs_disconnected(
+        self, mock_get_target_status: mock.Mock
+    ) -> None:
+        """Verify ffx.get_target_product raises DeviceNotConnectedError when
+        rcs_state is not Y."""
+        with self.assertRaises(errors.DeviceNotConnectedError):
+            self.ffx_obj_with_ip_and_monitor.get_target_product()
+        mock_get_target_status.assert_called()
 
     @mock.patch.object(
         host_shell,
