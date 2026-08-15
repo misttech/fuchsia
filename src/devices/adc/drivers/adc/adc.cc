@@ -123,7 +123,11 @@ zx::result<std::unique_ptr<AdcDevice>> AdcDevice::Create(
       fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.adc.Service"),
       fdf::MakeProperty2("fuchsia.hardware.adc.Service",
                          "fuchsia.hardware.adc.Service.ZirconTransport"),
+      fdf::MakeProperty2(bind_fuchsia::NAME, dev->name_),
   };
+  if (channel.id().has_value()) {
+    properties.push_back(fdf::MakeProperty2(bind_fuchsia::ID, *channel.id()));
+  }
 
   auto devfs_args = fuchsia_driver_framework::DevfsAddArgs{{
       .connector = std::move(connector.value()),
@@ -146,6 +150,9 @@ fuchsia_hardware_adcimpl::Metadata ConvertMetadata(const adc_metadata::AdcMetada
   for (const auto& c : generic.channels) {
     fuchsia_hardware_adcimpl::AdcChannel channel;
     channel.idx(c.channel);
+    if (c.id) {
+      channel.id(*c.id);
+    }
     if (c.name) {
       channel.name(*c.name);
     }

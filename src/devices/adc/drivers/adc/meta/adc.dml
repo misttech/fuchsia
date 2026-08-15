@@ -39,6 +39,10 @@
                   type: "integer",
                   fuchsia_type: "uint32"
                 },
+                id: {
+                  type: "integer",
+                  fuchsia_type: "uint32"
+                },
                 name: {
                   type: "string"
                 }

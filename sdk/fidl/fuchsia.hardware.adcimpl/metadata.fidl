@@ -12,6 +12,9 @@ type AdcChannel = table {
 
     /// Channel name.
     2: name string:ADC_NAME_MAX_LENGTH;
+
+    @available(added=HEAD)
+    3: id uint32;
 };
 
 @serializable
