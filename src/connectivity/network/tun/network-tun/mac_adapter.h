@@ -9,6 +9,8 @@
 #include <fidl/fuchsia.net.tun/cpp/wire.h>
 #include <fidl/fuchsia.net/cpp/wire.h>
 
+#include <optional>
+
 #include <fbl/mutex.h>
 
 #include "state.h"
@@ -45,6 +47,8 @@ class MacAdapter : public fdf::WireServer<fuchsia_hardware_network_driver::MacAd
   static zx::result<std::unique_ptr<MacAdapter>> Create(
       MacAdapterParent* parent, fdf::UnownedUnsynchronizedDispatcher dispatcher,
       fuchsia_net::wire::MacAddress mac, bool promisc_only);
+  MacAdapter(MacAdapter&&) = delete;
+  ~MacAdapter() override;
 
   const fuchsia_net::wire::MacAddress& mac() { return mac_; }
 
@@ -55,6 +59,8 @@ class MacAdapter : public fdf::WireServer<fuchsia_hardware_network_driver::MacAd
                fdf::Arena& arena, SetModeCompleter::Sync& completer) override;
 
   MacState GetMacState();
+
+  // Binds a client to this adapter. Should be called at most once.
   fdf::ClientEnd<fuchsia_hardware_network_driver::MacAddr> BindDriver();
 
  private:
@@ -70,6 +76,9 @@ class MacAdapter : public fdf::WireServer<fuchsia_hardware_network_driver::MacAd
   fdf::UnownedUnsynchronizedDispatcher dispatcher_;
   fuchsia_net::wire::MacAddress mac_;
   const bool promisc_only_;
+
+  std::optional<fdf::ServerBindingRef<fuchsia_hardware_network_driver::MacAddr>> binding_;
+
   MacState mac_state_ __TA_GUARDED(state_lock_);
 };
 

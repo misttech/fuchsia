@@ -2257,6 +2257,79 @@ TEST_F(TunTest, PairAddPortPartialFailureRollback) {
   ASSERT_THAT(removed_event.value(), IsRemovedPortEvent(added_event.value().port_id.value()));
 }
 
+class MacDestroyPortWithActiveConnectionTest : public TunTest,
+                                               public ::testing::WithParamInterface<bool> {};
+
+TEST_P(MacDestroyPortWithActiveConnectionTest, MacDestroyPortWithActiveConnection) {
+  zx::result device_result = CreateDevice(DefaultDeviceConfig());
+  ASSERT_OK(device_result);
+  fidl::WireSyncClient tun{std::move(*device_result)};
+
+  fidl::ClientEnd<fuchsia_hardware_network::Device> device;
+
+  zx::result device_server_end = fidl::CreateEndpoints(&device);
+  ASSERT_OK(device_server_end);
+  ASSERT_OK(tun->GetDevice(std::move(*device_server_end)).status());
+
+  zx::result port_watcher_result = GetPortWatcher(device);
+  ASSERT_OK(port_watcher_result);
+  fidl::WireSyncClient port_watcher{std::move(*port_watcher_result)};
+
+  zx::result idle_event = WatchPorts(port_watcher);
+  ASSERT_OK(idle_event);
+  ASSERT_THAT(idle_event.value(), IsIdlePortEvent());
+
+  fidl::ClientEnd<fuchsia_net_tun::Port> port_client_end;
+  zx::result port_server_end = fidl::CreateEndpoints(&port_client_end);
+  ASSERT_OK(port_server_end);
+
+  fuchsia_net::wire::MacAddress mac_addr{0x01, 0x02, 0x03, 0x04, 0x05, 0x06};
+  fuchsia_net_tun::wire::DevicePortConfig port_config = DefaultDevicePortConfig();
+  port_config.base().set_id(2);
+  port_config.set_mac(alloc_, mac_addr);
+  ASSERT_OK(tun->AddPort(std::move(port_config), std::move(*port_server_end)).status());
+
+  zx::result port_id = GetPortId(port_client_end);
+  ASSERT_OK(port_id);
+  ASSERT_EQ(port_id.value().base, 2);
+
+  zx::result added_event = WatchPorts(port_watcher);
+  ASSERT_OK(added_event);
+  ASSERT_THAT(added_event.value(), IsAddedPortEvent(port_id.value()));
+
+  zx::result mac_status = GetMacAddressing(tun, port_id.value());
+  ASSERT_OK(mac_status);
+  fidl::WireSyncClient mac{std::move(mac_status.value())};
+
+  fidl::WireResult get_unicast_address_result = mac->GetUnicastAddress();
+  ASSERT_OK(get_unicast_address_result.status());
+  ASSERT_THAT(get_unicast_address_result.value().address, MacEq(mac_addr));
+
+  const bool sync_remove = GetParam();
+  if (sync_remove) {
+    ASSERT_OK(fidl::WireCall(port_client_end)->Remove().status());
+    ASSERT_OK(
+        port_client_end.channel().wait_one(ZX_CHANNEL_PEER_CLOSED, zx::time::infinite(), nullptr));
+  } else {
+    port_client_end.reset();
+  }
+
+  zx::result removed_event = WatchPorts(port_watcher);
+  ASSERT_OK(removed_event);
+  ASSERT_THAT(removed_event.value(), IsRemovedPortEvent(port_id.value()));
+
+  // Interacting with the MacAddressing connection after the port is destroyed must fail cleanly
+  // without crashing.
+  fidl::WireResult set_mode_result =
+      mac->SetMode(fuchsia_hardware_network::wire::MacFilterMode::kPromiscuous);
+  ASSERT_NE(set_mode_result.status(), ZX_OK);
+}
+
+INSTANTIATE_TEST_SUITE_P(TunTest, MacDestroyPortWithActiveConnectionTest, ::testing::Bool(),
+                         [](const ::testing::TestParamInfo<bool>& info) {
+                           return info.param ? "SyncRemove" : "ClientDrop";
+                         });
+
 }  // namespace testing
 }  // namespace tun
 }  // namespace network

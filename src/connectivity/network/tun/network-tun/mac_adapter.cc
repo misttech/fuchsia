@@ -62,9 +62,16 @@ void MacAdapter::SetMode(fuchsia_hardware_network_driver::wire::MacAddrSetModeRe
 }
 
 fdf::ClientEnd<fuchsia_hardware_network_driver::MacAddr> MacAdapter::BindDriver() {
+  ZX_ASSERT(!binding_);
   auto [client, server] = fdf::Endpoints<fuchsia_hardware_network_driver::MacAddr>::Create();
-  fdf::BindServer(dispatcher_->get(), std::move(server), this);
+  binding_ = fdf::BindServer(dispatcher_->get(), std::move(server), this);
   return std::move(client);
+}
+
+MacAdapter::~MacAdapter() {
+  if (binding_) {
+    binding_->Unbind();
+  }
 }
 
 MacState MacAdapter::GetMacState() {
