@@ -1037,6 +1037,16 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
                 }
 
                 #[inline]
+                #struct_vis fn call_untracked<R, F: FnOnce(&mut ::ksync::LockToken<'a, #class_type>) -> R>(
+                    self: ::core::pin::Pin<&mut Self>,
+                    f: F,
+                ) -> R {
+                    let me = unsafe { self.get_unchecked_mut() };
+                    let inner_pin = unsafe { ::core::pin::Pin::new_unchecked(&mut me.inner) };
+                    inner_pin.call_untracked(f)
+                }
+
+                #[inline]
                 #struct_vis fn fields<'b>(&'b self) -> #fields_ident #fields_ty_generics {
                     let me = self;
                     let token = me.inner.token();

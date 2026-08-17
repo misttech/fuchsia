@@ -138,6 +138,8 @@ void cpp_brwlock_pi_acquire_read(LockPtr<BrwLockPi> lock, void* entry_storage);
 void cpp_brwlock_pi_release_read(LockPtr<BrwLockPi> lock, void* entry_storage);
 void cpp_brwlock_pi_acquire_write(LockPtr<BrwLockPi> lock, void* entry_storage);
 void cpp_brwlock_pi_release_write(LockPtr<BrwLockPi> lock, void* entry_storage);
+void cpp_lock_validate_release(void* entry_storage);
+void cpp_lock_validate_acquire(void* entry_storage);
 
 FFI_ALWAYS_INLINE void cpp_mutex_init(LockPtr<Mutex> lock, const void* class_id) {
 #if WITH_LOCK_DEP
@@ -394,6 +396,24 @@ FFI_ALWAYS_INLINE void cpp_brwlock_pi_release_write(LockPtr<BrwLockPi> lock, voi
   lock->lock().WriteRelease();
 #else
   lock->WriteRelease();
+#endif
+}
+
+FFI_ALWAYS_INLINE void cpp_lock_validate_release(void* entry_storage) {
+#if WITH_LOCK_DEP
+  if (entry_storage != nullptr) {
+    auto* entry = static_cast<lockdep::AcquiredLockEntry*>(entry_storage);
+    lockdep::ThreadLockState::Get(lockdep::LockFlagsNone)->Release(entry);
+  }
+#endif
+}
+
+FFI_ALWAYS_INLINE void cpp_lock_validate_acquire(void* entry_storage) {
+#if WITH_LOCK_DEP
+  if (entry_storage != nullptr) {
+    auto* entry = static_cast<lockdep::AcquiredLockEntry*>(entry_storage);
+    lockdep::ThreadLockState::Get(lockdep::LockFlagsNone)->Acquire(entry);
+  }
 #endif
 }
 

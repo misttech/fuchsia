@@ -2,12 +2,17 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::{LockPolicy, LockToken, RawLock, RawMutex};
 use core::marker::PhantomData;
 use core::pin::Pin;
+use lockdep::LockClass;
 use pin_init::{PinInit, pin_data, pin_init, pin_init_from_closure, pinned_drop};
 
-use crate::{LockPolicy, LockToken, RawLock, RawMutex};
-use lockdep::LockClass;
+#[cfg(feature = "kernel")]
+unsafe extern "C" {
+    fn cpp_lock_validate_release(entry_storage: *mut core::ffi::c_void);
+    fn cpp_lock_validate_acquire(entry_storage: *mut core::ffi::c_void);
+}
 
 /// A safe, Zircon-compatible mutual exclusion lock supporting compile-time order validation.
 ///
@@ -124,6 +129,29 @@ impl<'a, Class: LockClass, M: RawLock, P: LockPolicy<M>> KMutexGuard<'a, Class, 
         // since the token has no drop logic or pointer-location sensitivity.
         let me = unsafe { self.get_unchecked_mut() };
         &mut me.token
+    }
+
+    /// Calls a closure while temporarily disabling lockdep tracking for the lock held by this guard.
+    #[inline]
+    pub fn call_untracked<R, F: FnOnce(&mut LockToken<'a, Class>) -> R>(
+        self: Pin<&mut Self>,
+        f: F,
+    ) -> R {
+        #[cfg(feature = "kernel")]
+        // SAFETY: `lock_entry` is pinned on the stack and valid.
+        unsafe {
+            let me = self.get_unchecked_mut();
+            let entry_addr = &mut me.lock_entry as *mut _ as *mut core::ffi::c_void;
+            cpp_lock_validate_release(entry_addr);
+            let result = f(&mut me.token);
+            cpp_lock_validate_acquire(entry_addr);
+            result
+        }
+        #[cfg(not(feature = "kernel"))]
+        {
+            let me = unsafe { self.get_unchecked_mut() };
+            f(&mut me.token)
+        }
     }
 }
 
