@@ -6,16 +6,18 @@
 
 use super::arch_vm_aspace::{ArchMmuFlags, ArchVmAspace, NonTerminalAction, TerminalAction};
 use super::vm_address_region::VmAddressRegion;
+use super::vm_object::VmObject;
 use crate::kernel::thread::{Thread, ThreadPtr};
 use crate::kernel::types::PAddr;
 use core::ffi::{CStr, c_char, c_void};
 use fbl::RefPtr;
+use vm_aspace_bindings as bindings;
 use zr::ToMutPtr;
 use zx_status::Status;
 
 /// For region creation routines
 pub mod vmm_flag {
-    use vm_aspace_bindings as bindings;
+    use super::bindings;
 
     /// allocate at specific address
     pub const VALLOC_SPECIFIC: u32 = bindings::VmAspace_VMM_FLAG_VALLOC_SPECIFIC;
@@ -109,6 +111,17 @@ unsafe extern "C" {
     fn cpp_vm_aspace_alloc_contiguous(
         aspace: *mut VmAspace,
         name: *const c_char,
+        size: usize,
+        ptr: *mut *mut c_void,
+        align_pow2: u8,
+        vmm_flags: u32,
+        arch_mmu_flags: ArchMmuFlags,
+    ) -> i32;
+    fn cpp_vm_aspace_map_object_internal(
+        aspace: *mut VmAspace,
+        vmo: *mut VmObject,
+        name: *const c_char,
+        offset: u64,
         size: usize,
         ptr: *mut *mut c_void,
         align_pow2: u8,
@@ -412,6 +425,40 @@ impl VmAspace {
     /// The caller must ensure that the virtual address range being freed is no longer in use.
     pub unsafe fn free_region(&self, va: usize) -> Result<(), Status> {
         Status::ok(unsafe { cpp_vm_aspace_free_region(self.to_mut_ptr(), va) })
+    }
+
+    /// Internal use function for mapping VMOs.  Do not use.  This is exposed in
+    /// the public API purely for tests.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that creating a mapping with the specified range and flags is sound.
+    #[allow(clippy::too_many_arguments)]
+    pub unsafe fn map_object_internal(
+        &self,
+        vmo: RefPtr<VmObject>,
+        name: &CStr,
+        offset: u64,
+        size: usize,
+        align_pow2: u8,
+        vmm_flags: u32,
+        arch_mmu_flags: ArchMmuFlags,
+    ) -> Result<*mut c_void, Status> {
+        let mut ptr = core::ptr::null_mut();
+        Status::ok(unsafe {
+            cpp_vm_aspace_map_object_internal(
+                self.to_mut_ptr(),
+                RefPtr::into_raw(vmo).cast_mut(),
+                name.as_ptr(),
+                offset,
+                size,
+                &mut ptr,
+                align_pow2,
+                vmm_flags,
+                arch_mmu_flags,
+            )
+        })?;
+        Ok(ptr)
     }
 
     /// Returns the vDSO base address for this address space.

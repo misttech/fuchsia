@@ -884,6 +884,10 @@ zx_status_t cpp_vm_aspace_alloc_physical(VmAspace* aspace, const char* name, siz
 zx_status_t cpp_vm_aspace_alloc_contiguous(VmAspace* aspace, const char* name, size_t size,
                                            void** ptr, uint8_t align_pow2, uint vmm_flags,
                                            arch_mmu_flags_t arch_mmu_flags);
+zx_status_t cpp_vm_aspace_map_object_internal(VmAspace* aspace, VmObject* vmo, const char* name,
+                                              uint64_t offset, size_t size, void** ptr,
+                                              uint8_t align_pow2, uint32_t vmm_flags,
+                                              arch_mmu_flags_t arch_mmu_flags);
 zx_status_t cpp_vm_aspace_free_region(VmAspace* aspace, vaddr_t va);
 void cpp_vm_aspace_free(VmAspace* aspace);
 ArchVmAspace* cpp_vm_aspace_arch_aspace(VmAspace* aspace);
@@ -954,6 +958,14 @@ zx_status_t cpp_vm_aspace_alloc_contiguous(VmAspace* aspace, const char* name, s
                                            void** ptr, uint8_t align_pow2, uint vmm_flags,
                                            arch_mmu_flags_t arch_mmu_flags) {
   return aspace->AllocContiguous(name, size, ptr, align_pow2, vmm_flags, arch_mmu_flags);
+}
+zx_status_t cpp_vm_aspace_map_object_internal(VmAspace* aspace, VmObject* vmo, const char* name,
+                                              uint64_t offset, size_t size, void** ptr,
+                                              uint8_t align_pow2, uint32_t vmm_flags,
+                                              arch_mmu_flags_t arch_mmu_flags) {
+  fbl::RefPtr<VmObject> vmo_ref = fbl::ImportFromRawPtr(vmo);
+  return aspace->MapObjectInternal(ktl::move(vmo_ref), name, offset, size, ptr, align_pow2,
+                                   vmm_flags, arch_mmu_flags);
 }
 zx_status_t cpp_vm_aspace_free_region(VmAspace* aspace, vaddr_t va) {
   return aspace->FreeRegion(va);

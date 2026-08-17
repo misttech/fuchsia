@@ -9,13 +9,16 @@
 #[unittest::suite]
 mod vmo_rs {
     use crate::kernel::types::PAddr;
-    use crate::vm::arch_vm_aspace::ARCH_MMU_FLAG_UNCACHED;
+    use crate::vm::arch_vm_aspace::{
+        ARCH_MMU_FLAG_PERM_READ, ARCH_MMU_FLAG_PERM_WRITE, ARCH_MMU_FLAG_UNCACHED,
+    };
     use crate::vm::page::VmPagePtr;
     use crate::vm::page_source::MultiPageRequest;
     use crate::vm::physical_page_borrowing_config::ScopedLoaningEnabled;
     use crate::vm::pinned_vm_object::PinnedVmObject;
     use crate::vm::pmm::{self, ALLOC_FLAG_ANY, PmmOptDelayReuse, paddr_to_vm_page};
     use crate::vm::scanner::AutoVmScannerDisable;
+    use crate::vm::vm_aspace::{VmAspace, vmm_flag};
     use crate::vm::vm_object::{EvictionHint, Resizability, SnapshotType, VmObject};
     use crate::vm::vm_object_paged::VmObjectPaged;
     use crate::vm::vm_object_physical::VmObjectPhysical;
@@ -24,7 +27,9 @@ mod vmo_rs {
         make_committed_pager_vmo, make_partially_committed_pager_vmo,
         make_private_attribution_counts, verify_continuous_attribution_bytes,
     };
+    use core::ffi::c_void;
     use core::mem::MaybeUninit;
+    use core::slice;
     use debug::dprintf;
     use fbl::Vector;
     use page::SIZE as PAGE_SIZE_USIZE;
@@ -1052,6 +1057,84 @@ mod vmo_rs {
             Status::result_into_raw(vmo.decommit_range(alloc_size - PAGE_SIZE, PAGE_SIZE)),
             Status::NOT_SUPPORTED.into_raw()
         );
+    }
+
+    /// Tests that contiguous VMOs can be decommitted when ppb is enabled.
+    #[test]
+    fn vmo_contiguous_decommit_enabled() {
+        let _loaning_enabled = ScopedLoaningEnabled::new(true);
+
+        let alloc_size: u64 = PAGE_SIZE * 16;
+        let vmo = unwrap_ok!(VmObjectPaged::create_contiguous(pmm::ALLOC_FLAG_ANY, alloc_size, 0));
+
+        // Scope the memsetting so that the kernel mapping does not keep existing to the point that
+        // the Decommits happen below. As those decommits would need to perform unmaps, and we
+        // prefer to not modify kernel mappings in this way, we just remove the kernel region.
+        {
+            let ka = VmAspace::kernel_aspace();
+            let vmo = VmObjectPaged::into_vm_object(vmo.clone());
+            // SAFETY: The flags and range are appropriate for creating this mapping.
+            let ptr = unwrap_ok!(unsafe {
+                ka.map_object_internal(
+                    vmo,
+                    c"test",
+                    0,
+                    alloc_size as usize,
+                    0,
+                    vmm_flag::COMMIT,
+                    ARCH_MMU_FLAG_PERM_READ | ARCH_MMU_FLAG_PERM_WRITE,
+                )
+            });
+
+            struct DeferCleanupMapping(*mut c_void);
+            impl Drop for DeferCleanupMapping {
+                fn drop(&mut self) {
+                    // SAFETY: self.0 was allocated via map_object_internal and is not yet freed.
+                    let res = unsafe { VmAspace::kernel_aspace().free_region(self.0 as usize) };
+                    assert!(res.is_ok());
+                }
+            }
+            let _defer_cleanup_mapping = DeferCleanupMapping(ptr);
+            let base: *mut u8 = ptr.cast();
+            // SAFETY: `base` points to a committed mapping of `alloc_size` bytes.
+            let base = unsafe { slice::from_raw_parts_mut(base, alloc_size as usize) };
+
+            for offset in (0..alloc_size as usize).step_by(PAGE_SIZE_USIZE) {
+                base[offset..offset + PAGE_SIZE_USIZE].fill(0x42);
+            }
+        }
+
+        let mut base_pa = PAddr::from(!0);
+        assert_ok!(vmo.lookup(0, PAGE_SIZE, &mut base_pa, |offset, pa, base_pa| {
+            debug_assert_eq!(offset, 0);
+            *base_pa = pa;
+            Err(Status::NEXT)
+        }));
+        assert_true!(base_pa != PAddr::from(!0));
+
+        // decommit pretends to work
+        assert_ok!(vmo.decommit_range(PAGE_SIZE, 4 * PAGE_SIZE));
+        assert_ok!(vmo.decommit_range(0, 4 * PAGE_SIZE));
+        assert_ok!(vmo.decommit_range(alloc_size - PAGE_SIZE, PAGE_SIZE));
+
+        // Make sure decommit removed pages.  Make sure pages which are present are the correct
+        // physical address.
+        for offset in (0..alloc_size).step_by(PAGE_SIZE_USIZE) {
+            let mut page_absent = true;
+            let _ = vmo.lookup(
+                offset,
+                PAGE_SIZE,
+                &mut (&mut page_absent, base_pa, offset),
+                |lookup_offset, pa, (page_absent, base_pa, offset)| {
+                    **page_absent = false;
+                    debug_assert_eq!(*offset, lookup_offset);
+                    debug_assert_eq!(base_pa.0 + *offset as usize, pa.0);
+                    Err(Status::NEXT)
+                },
+            );
+            let absent_expected = (offset < 5 * PAGE_SIZE) || (offset == alloc_size - PAGE_SIZE);
+            assert_eq!(absent_expected, page_absent);
+        }
     }
 
     /// Tests HintRange(AlwaysNeed) evicts loaned pages.
