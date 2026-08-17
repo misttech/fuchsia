@@ -71,8 +71,13 @@ FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_hint_range(VmObject* vmo, uint64_t o
   return vmo->HintRange(offset, len, hint);
 }
 
-FFI_ALWAYS_INLINE uint8_t cpp_vm_object_get_mapping_cache_policy(const VmObject* vmo) {
+FFI_ALWAYS_INLINE arch_mmu_flags_t cpp_vm_object_get_mapping_cache_policy(const VmObject* vmo) {
   return vmo->GetMappingCachePolicy();
+}
+
+FFI_ALWAYS_INLINE zx_status_t
+cpp_vm_object_set_mapping_cache_policy(VmObject* vmo, arch_mmu_flags_t cache_policy) {
+  return vmo->SetMappingCachePolicy(cache_policy);
 }
 
 FFI_ALWAYS_INLINE VmObject* cpp_vm_object_create_clone(VmObject* vmo, Resizability resizable,

@@ -588,6 +588,7 @@ kernel_bindgen_crate("vm-object-bindings") {
     "cpp_vm_object_write",
     "cpp_vm_object_hint_range",
     "cpp_vm_object_get_mapping_cache_policy",
+    "cpp_vm_object_set_mapping_cache_policy",
     "cpp_vm_object_create_clone",
     "cpp_vm_object_create_child_slice",
     "cpp_vm_object_create_child_reference",
@@ -609,6 +610,7 @@ kernel_bindgen_crate("vm-object-bindings") {
     "SupplyOptions",
     "VmObject",
     "VmObjectReadWriteOptions",
+    "arch_mmu_flags_t",
     "cpp_vm_object_lookup_fn",
   ]
   type_blocklist = [

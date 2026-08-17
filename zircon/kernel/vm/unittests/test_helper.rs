@@ -4,6 +4,9 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+use crate::vm::arch_vm_aspace::{
+    ARCH_MMU_FLAG_PERM_READ, ARCH_MMU_FLAG_PERM_USER, ARCH_MMU_FLAG_PERM_WRITE, ArchMmuFlags,
+};
 use crate::vm::attribution::AttributionCounts;
 use crate::vm::page::{VmPagePtr, vm_page_t};
 use crate::vm::vm_object::VmObject;
@@ -11,6 +14,9 @@ use crate::vm::vm_object_paged::VmObjectPaged;
 use fbl::RefPtr;
 use test_helper_bindings as bindings;
 use zx_status::Status;
+
+pub const ARCH_RW_FLAGS: ArchMmuFlags = ARCH_MMU_FLAG_PERM_READ | ARCH_MMU_FLAG_PERM_WRITE;
+pub const ARCH_RW_USER_FLAGS: ArchMmuFlags = ARCH_RW_FLAGS | ARCH_MMU_FLAG_PERM_USER;
 
 /// Creates a committed pager-backed VMO with `N` pages, returning `(vmo, initialized_pages_array)`.
 pub fn make_committed_pager_vmo<const N: usize>(

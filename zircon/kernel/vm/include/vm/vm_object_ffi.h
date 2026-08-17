@@ -44,7 +44,8 @@ FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_set_name(VmObject* vmo, const char* 
 zx_status_t cpp_vm_object_commit_range_pinned(VmObject* vmo, uint64_t offset, uint64_t len,
                                               bool write);
 void cpp_vm_object_unpin(VmObject* vmo, uint64_t offset, uint64_t len);
-uint8_t cpp_vm_object_get_mapping_cache_policy(const VmObject* vmo);
+arch_mmu_flags_t cpp_vm_object_get_mapping_cache_policy(const VmObject* vmo);
+zx_status_t cpp_vm_object_set_mapping_cache_policy(VmObject* vmo, arch_mmu_flags_t cache_policy);
 VmObject* cpp_vm_object_create_clone(VmObject* vmo, Resizability resizable,
                                      SnapshotType snapshot_type, uint64_t offset, uint64_t size,
                                      bool copy_name, zx_status_t* out_status);

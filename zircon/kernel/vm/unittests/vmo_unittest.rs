@@ -10,7 +10,8 @@
 mod vmo_rs {
     use crate::kernel::types::PAddr;
     use crate::vm::arch_vm_aspace::{
-        ARCH_MMU_FLAG_PERM_READ, ARCH_MMU_FLAG_PERM_WRITE, ARCH_MMU_FLAG_UNCACHED,
+        ARCH_MMU_FLAG_CACHE_MASK, ARCH_MMU_FLAG_PERM_READ, ARCH_MMU_FLAG_PERM_WRITE,
+        ARCH_MMU_FLAG_UNCACHED, ARCH_MMU_FLAG_UNCACHED_DEVICE,
     };
     use crate::vm::page::VmPagePtr;
     use crate::vm::page_source::MultiPageRequest;
@@ -24,7 +25,7 @@ mod vmo_rs {
     use crate::vm::vm_object_physical::VmObjectPhysical;
     use crate::vm::{attribution, fault};
     use crate::vm_unittests::test_helper::{
-        make_committed_pager_vmo, make_partially_committed_pager_vmo,
+        ARCH_RW_FLAGS, make_committed_pager_vmo, make_partially_committed_pager_vmo,
         make_private_attribution_counts, verify_continuous_attribution_bytes,
     };
     use core::ffi::c_void;
@@ -35,8 +36,8 @@ mod vmo_rs {
     use page::SIZE as PAGE_SIZE_USIZE;
     use pin_init::stack_pin_init;
     use unittest::{
-        assert_eq, assert_false, assert_ok, assert_true, expect_eq, expect_false, expect_ok,
-        expect_true, unwrap_ok,
+        assert_eq, assert_false, assert_ok, assert_true, expect_eq, expect_false, expect_ne,
+        expect_ok, expect_true, unwrap_ok,
     };
     use zx_status::Status;
     use zx_types::ZX_KOID_KERNEL;
@@ -507,6 +508,138 @@ mod vmo_rs {
                 expect_ok!(status);
             }
         }
+    }
+
+    /// Tests setting and querying mapping cache policy on physical VMOs.
+    #[test]
+    fn vmo_cache_test() {
+        let (vm_page, pa) = unwrap_ok!(pmm::alloc_page(0));
+        let ka = VmAspace::kernel_aspace();
+        let cache_policy = ARCH_MMU_FLAG_UNCACHED_DEVICE;
+
+        // Test that the flags set/get properly
+        {
+            let vmo =
+                unwrap_ok!(VmObjectPhysical::create(pa, PAGE_SIZE_USIZE), "vmobject creation\n");
+            let mut cache_policy_get = vmo.get_mapping_cache_policy();
+            expect_ne!(cache_policy, cache_policy_get, "check initial cache policy");
+            // SAFETY: `vmo` has no future mappings.
+            expect_ok!(unsafe { vmo.set_mapping_cache_policy(cache_policy) }, "try set");
+            cache_policy_get = vmo.get_mapping_cache_policy();
+            expect_eq!(cache_policy, cache_policy_get, "compare flags");
+        }
+
+        // Test valid flags
+        for i in 0..=ARCH_MMU_FLAG_CACHE_MASK {
+            let vmo =
+                unwrap_ok!(VmObjectPhysical::create(pa, PAGE_SIZE_USIZE), "vmobject creation\n");
+            // SAFETY: `vmo` has no future mappings.
+            expect_ok!(unsafe { vmo.set_mapping_cache_policy(i) }, "try setting valid flags");
+        }
+
+        // Test invalid flags
+        for i in (ARCH_MMU_FLAG_CACHE_MASK + 1)..32 {
+            let vmo =
+                unwrap_ok!(VmObjectPhysical::create(pa, PAGE_SIZE_USIZE), "vmobject creation\n");
+            // SAFETY: `vmo` has no future mappings.
+            expect_eq!(
+                Status::result_into_raw(unsafe { vmo.set_mapping_cache_policy(i) }),
+                Status::INVALID_ARGS.into_raw(),
+                "try set with invalid flags"
+            );
+        }
+
+        // Test valid flags with invalid flags
+        // SAFETY: `vmo` has no future mappings.
+        {
+            let vmo =
+                unwrap_ok!(VmObjectPhysical::create(pa, PAGE_SIZE_USIZE), "vmobject creation\n");
+            expect_eq!(
+                Status::result_into_raw(unsafe {
+                    vmo.set_mapping_cache_policy(cache_policy | 0x5)
+                }),
+                Status::INVALID_ARGS.into_raw(),
+                "bad 0x5"
+            );
+            expect_eq!(
+                Status::result_into_raw(unsafe {
+                    vmo.set_mapping_cache_policy(cache_policy | 0xa)
+                }),
+                Status::INVALID_ARGS.into_raw(),
+                "bad 0xA"
+            );
+            expect_eq!(
+                Status::result_into_raw(unsafe {
+                    vmo.set_mapping_cache_policy(cache_policy | 0x55)
+                }),
+                Status::INVALID_ARGS.into_raw(),
+                "bad 0x55"
+            );
+            expect_eq!(
+                Status::result_into_raw(unsafe {
+                    vmo.set_mapping_cache_policy(cache_policy | 0xaa)
+                }),
+                Status::INVALID_ARGS.into_raw(),
+                "bad 0xAA"
+            );
+        }
+
+        // Test that changing policy while mapped is blocked
+        {
+            let vmo =
+                unwrap_ok!(VmObjectPhysical::create(pa, PAGE_SIZE_USIZE), "vmobject creation\n");
+            // SAFETY: The flags and range are appropriate for creating this mapping.
+            let ptr = unsafe {
+                unwrap_ok!(
+                    ka.map_object_internal(
+                        VmObjectPhysical::into_vm_object(vmo.clone()),
+                        c"test",
+                        0,
+                        PAGE_SIZE_USIZE,
+                        0,
+                        vmm_flag::COMMIT,
+                        ARCH_RW_FLAGS,
+                    ),
+                    "map vmo"
+                )
+            };
+            // SAFETY: Cache policy changes are rejected while the VMO has active mappings.
+            expect_eq!(
+                Status::result_into_raw(unsafe { vmo.set_mapping_cache_policy(cache_policy) }),
+                Status::BAD_STATE.into_raw(),
+                "set flags while mapped"
+            );
+            // SAFETY: `ptr as usize` is a valid virtual address previously returned by
+            // `map_object_internal` in `ka` that has not yet been freed.
+            expect_ok!(unsafe { ka.free_region(ptr as usize) }, "unmap vmo");
+            // SAFETY: `cache_policy` is appropriate for future mappings of `vmo`.
+            expect_ok!(
+                unsafe { vmo.set_mapping_cache_policy(cache_policy) },
+                "set flags after unmapping"
+            );
+            // SAFETY: The flags and range are appropriate for creating this mapping.
+            let ptr = unsafe {
+                unwrap_ok!(
+                    ka.map_object_internal(
+                        VmObjectPhysical::into_vm_object(vmo),
+                        c"test",
+                        0,
+                        PAGE_SIZE_USIZE,
+                        0,
+                        vmm_flag::COMMIT,
+                        ARCH_RW_FLAGS,
+                    ),
+                    "map vmo again"
+                )
+            };
+            // SAFETY: `ptr as usize` is a valid virtual address previously returned by
+            // `map_object_internal` in `ka` that has not yet been freed.
+            expect_ok!(unsafe { ka.free_region(ptr as usize) }, "unmap vmo");
+        }
+
+        // SAFETY: `vm_page` is a valid allocated PMM page from `pmm::alloc_page` that has not been
+        // freed.
+        unsafe { pmm::free_page(vm_page) };
     }
 
     /// Tests that looking up pages in a child slice translates offsets relative to the slice.

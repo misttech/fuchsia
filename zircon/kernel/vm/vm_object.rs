@@ -160,6 +160,22 @@ impl VmObject {
         unsafe { bindings::cpp_vm_object_get_mapping_cache_policy(self.as_raw()) }
     }
 
+    /// Sets the mapping cache policy of the VMO.
+    ///
+    /// # Safety
+    ///
+    /// Ensure `cache_policy` is appropriate for all future mappings of this VMO.
+    pub unsafe fn set_mapping_cache_policy(
+        &self,
+        cache_policy: ArchMmuFlags,
+    ) -> Result<(), Status> {
+        // SAFETY: `self.as_raw()` returns a valid `VmObject` pointer.
+        let status = unsafe {
+            bindings::cpp_vm_object_set_mapping_cache_policy(self.as_raw(), cache_policy)
+        };
+        Status::ok(status)
+    }
+
     /// Create a copy-on-write clone VMO at the page-aligned offset and length.
     pub fn create_clone(
         &self,

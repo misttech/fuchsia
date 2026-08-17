@@ -15,6 +15,7 @@ use zx_status::Status;
 use super::arch_vm_aspace::ArchMmuFlags;
 use super::vm_object::VmObject;
 use vm_constants_rs as constants;
+use vm_object_bindings as bindings;
 
 use ::page as kernel_page;
 
@@ -179,6 +180,20 @@ impl VmObjectPhysical {
         // SAFETY: The raw pointer returned by C++ is refcounted and ownership is transferred
         // to Rust via RefPtr.
         unsafe { RefPtr::try_from_raw(raw).ok_or(Status::NO_MEMORY) }
+    }
+
+    /// Converts a `RefPtr<VmObjectPhysical>` into a base `RefPtr<VmObject>`.
+    pub fn into_vm_object(this: RefPtr<Self>) -> RefPtr<VmObject> {
+        let this: *const VmObjectPhysical = RefPtr::into_raw(this);
+        let this: *mut VmObjectPhysical = this.cast_mut();
+        // Since `this` is non-null, `cpp_vm_object_physical_as_vm_object` guarantees its output is
+        // non-null.
+        // SAFETY: `this` points to a live `VmObjectPhysical` with an active refcount.
+        let this: *mut VmObject = unsafe { cpp_vm_object_physical_as_vm_object(this) };
+        let this: *mut bindings::VmObject = this.cast();
+        // SAFETY: `this` points to a live `VmObject` with an active refcount.
+        let this = unsafe { VmObject::from_raw(this) };
+        this.expect("RefPtr guarantees this is non-null")
     }
 
     /// Cast a pointer to a VmObjectPhysical to its base VmObject.
