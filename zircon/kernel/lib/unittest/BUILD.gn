@@ -65,6 +65,7 @@ rustc_library("unittest-rs") {
   deps = [
     "unittest-macro",
     "//sdk/rust/zx-status",
+    "//src/lib/kprint",
   ]
 
   if (is_kernel) {

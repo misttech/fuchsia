@@ -71,18 +71,42 @@ pub use zx_status::sys as __sys;
 ///
 pub use unittest_macro::suite;
 
-// We leverage libc for printing for now. Once all unittests are in Rust we can
-// revisit how printing should work here.
-unsafe extern "C" {
-    pub fn printf(format: *const c_char, ...) -> core::ffi::c_int;
+use kprint::kprintln;
+
+#[doc(hidden)]
+pub fn print_comparison_failure(
+    file: &str,
+    line: u32,
+    expected: &str,
+    expected_val: isize,
+    op: &str,
+    actual: &str,
+    actual_val: isize,
+    msg: &str,
+) {
+    kprintln!(
+        "\n    [FAILED]\n    {:s}:{}:\n    expected {:s} ({}) {:s} {:s} ({})\n    {:s}",
+        file,
+        line,
+        expected,
+        expected_val,
+        op,
+        actual,
+        actual_val,
+        msg,
+    );
 }
 
-#[macro_export]
 #[doc(hidden)]
-macro_rules! c_str_lit {
-    ($s:expr) => {
-        concat!($s, "\0").as_ptr() as *const core::ffi::c_char
-    };
+pub fn print_condition_failure(file: &str, line: u32, desc: &str, actual: &str, msg: &str) {
+    kprintln!(
+        "\n    [FAILED]\n    {:s}:{}:\n    {:s} {:s}\n    {:s}",
+        file,
+        line,
+        actual,
+        desc,
+        msg,
+    );
 }
 
 #[macro_export]
@@ -91,23 +115,16 @@ macro_rules! check_comparison {
     ($cond:expr, $early_return:expr, $op:literal, $expected:expr, $expected_val:expr, $actual:expr, $actual_val:expr, $msg:expr) => {
         if !$cond {
             record_failure!();
-            let format = $crate::failed_format!(concat!("expected %s (%ld) ", $op, " %s (%ld)"));
-            let file_c_str = $crate::c_str_lit!(file!());
-            let expected_str = $crate::c_str_lit!(stringify!($expected));
-            let actual_str = $crate::c_str_lit!(stringify!($actual));
-            let msg_c_str = $crate::c_str_lit!($msg);
-            unsafe {
-                $crate::printf(
-                    format,
-                    file_c_str,
-                    line!() as core::ffi::c_int,
-                    expected_str,
-                    $expected_val as isize,
-                    actual_str,
-                    $actual_val as isize,
-                    msg_c_str,
-                );
-            }
+            $crate::print_comparison_failure(
+                file!(),
+                line!(),
+                stringify!($expected),
+                $expected_val as isize,
+                $op,
+                stringify!($actual),
+                $actual_val as isize,
+                $msg,
+            );
             if $early_return {
                 return false;
             }
@@ -121,39 +138,11 @@ macro_rules! check_condition {
     ($cond:expr, $early_return:expr, $desc:literal, $actual:expr, $msg:expr) => {
         if !$cond {
             record_failure!();
-            let format = $crate::failed_format!($desc);
-            let file_c_str = $crate::c_str_lit!(file!());
-            let actual_str = $crate::c_str_lit!(stringify!($actual));
-            let msg_c_str = $crate::c_str_lit!($msg);
-            unsafe {
-                $crate::printf(
-                    format,
-                    file_c_str,
-                    line!() as core::ffi::c_int,
-                    actual_str,
-                    msg_c_str,
-                );
-            }
+            $crate::print_condition_failure(file!(), line!(), $desc, stringify!($actual), $msg);
             if $early_return {
                 return false;
             }
         }
-    };
-}
-
-#[macro_export]
-#[doc(hidden)]
-macro_rules! failed_format {
-    ($body:expr) => {
-        $crate::c_str_lit!(concat!(
-            "\n",
-            "    [FAILED]\n",
-            "    %s:%d:\n",
-            "    ",
-            $body,
-            "\n",
-            "    %s\n"
-        ))
     };
 }
 
@@ -349,7 +338,7 @@ macro_rules! expect_true {
     };
     ($actual:expr, $msg:expr) => {
         let a = $actual;
-        $crate::check_condition!(a, false, "%s is false", $actual, $msg);
+        $crate::check_condition!(a, false, "is false", $actual, $msg);
     };
 }
 
@@ -361,7 +350,7 @@ macro_rules! assert_true {
     };
     ($actual:expr, $msg:expr) => {
         let a = $actual;
-        $crate::check_condition!(a, true, "%s is false", $actual, $msg);
+        $crate::check_condition!(a, true, "is false", $actual, $msg);
     };
 }
 
@@ -373,7 +362,7 @@ macro_rules! expect_false {
     };
     ($actual:expr, $msg:expr) => {
         let a = $actual;
-        $crate::check_condition!(!a, false, "%s is true", $actual, $msg);
+        $crate::check_condition!(!a, false, "is true", $actual, $msg);
     };
 }
 
@@ -385,7 +374,7 @@ macro_rules! assert_false {
     };
     ($actual:expr, $msg:expr) => {
         let a = $actual;
-        $crate::check_condition!(!a, true, "%s is true", $actual, $msg);
+        $crate::check_condition!(!a, true, "is true", $actual, $msg);
     };
 }
 
@@ -397,7 +386,7 @@ macro_rules! expect_null {
     };
     ($actual:expr, $msg:expr) => {
         let a = $actual;
-        $crate::check_condition!(a.is_null(), false, "%s is non-null!", $actual, $msg);
+        $crate::check_condition!(a.is_null(), false, "is non-null!", $actual, $msg);
     };
 }
 
@@ -409,7 +398,7 @@ macro_rules! assert_null {
     };
     ($actual:expr, $msg:expr) => {
         let a = $actual;
-        $crate::check_condition!(a.is_null(), true, "%s is non-null!", $actual, $msg);
+        $crate::check_condition!(a.is_null(), true, "is non-null!", $actual, $msg);
     };
 }
 
@@ -421,7 +410,7 @@ macro_rules! expect_nonnull {
     };
     ($actual:expr, $msg:expr) => {
         let a = $actual;
-        $crate::check_condition!(!a.is_null(), false, "%s is null!", $actual, $msg);
+        $crate::check_condition!(!a.is_null(), false, "is null!", $actual, $msg);
     };
 }
 
@@ -433,7 +422,7 @@ macro_rules! assert_nonnull {
     };
     ($actual:expr, $msg:expr) => {
         let a = $actual;
-        $crate::check_condition!(!a.is_null(), true, "%s is null!", $actual, $msg);
+        $crate::check_condition!(!a.is_null(), true, "is null!", $actual, $msg);
     };
 }
 
