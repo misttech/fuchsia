@@ -198,10 +198,18 @@ void Nvme::ProcessIoSubmissions() {
 
 void Nvme::ProcessIoCompletions() {
   bool ring_doorbell = false;
-  Completion* completion = nullptr;
-  IoCommand* io_cmd = nullptr;
-  while (io_queue_->CheckForNewCompletion(&completion, &io_cmd) != ZX_ERR_SHOULD_WAIT) {
+  while (true) {
+    Completion* completion = nullptr;
+    IoCommand* io_cmd = nullptr;
+    zx_status_t status = io_queue_->CheckForNewCompletion(&completion, &io_cmd);
+    if (status == ZX_ERR_SHOULD_WAIT) {
+      break;
+    }
     ring_doorbell = true;
+    if (status != ZX_OK) {
+      fdf::error("Failed to check for new IO completion: {}", zx_status_get_string(status));
+      continue;
+    }
 
     if (io_cmd == nullptr) {
       fdf::error("Completed transaction isn't associated with a command.");

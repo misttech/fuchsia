@@ -72,6 +72,9 @@ zx_status_t QueuePair::PreallocatePrpBuffers() {
 }
 
 zx_status_t QueuePair::CheckForNewCompletion(Completion** completion, IoCommand** io_cmd) {
+  if (io_cmd != nullptr) {
+    *io_cmd = nullptr;
+  }
   if (static_cast<Completion*>(completion_.Peek())->phase() != completion_ready_phase_) {
     return ZX_ERR_SHOULD_WAIT;
   }
@@ -85,7 +88,7 @@ zx_status_t QueuePair::CheckForNewCompletion(Completion** completion, IoCommand*
 
   auto txn_id = (*completion)->command_id();
   {
-    if (txn_id > txns_.size()) {
+    if (txn_id >= txns_.size()) {
       fdf::error("Completed transaction has invalid ID: {}", txn_id);
       return ZX_ERR_BAD_STATE;
     }

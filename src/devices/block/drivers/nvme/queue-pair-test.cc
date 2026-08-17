@@ -14,6 +14,7 @@
 #include <gtest/gtest.h>
 
 #include "src/devices/block/drivers/nvme/commands.h"
+#include "src/devices/block/drivers/nvme/io-command.h"
 #include "src/devices/block/drivers/nvme/registers.h"
 #include "src/lib/testing/predicates/status.h"
 
@@ -196,6 +197,74 @@ TEST_F(QueuePairTest, TestCheckCompletionsMultipleReady) {
   ASSERT_TRUE(completion->status_code_type() == StatusCodeType::kGeneric &&
               completion->status_code() == 0);
   pair->RingCompletionDb();
+}
+
+TEST_F(QueuePairTest, TestCheckCompletionsInactiveTransactionClearsIoCmd) {
+  auto pair = QueuePair::Create(fake_bti_.borrow(), 0, 100, caps_, mmio_, /*prealloc_prp=*/false);
+  ASSERT_OK(pair.status_value());
+
+  doorbell_ring_ = [](bool, size_t, uint16_t) {};
+
+  IoCommand cmd;
+  Submission s(0);
+  ASSERT_OK(pair->Submit(s, std::nullopt, 0, 0, &cmd));
+
+  Completion* completions = static_cast<Completion*>(pair->completion().head());
+  memset(completions, 0, sizeof(*completions) * pair->completion().entry_count());
+  // First completion is valid for command_id 0.
+  completions[0].set_command_id(0);
+  completions[0].set_phase(1);
+  completions[0].set_sq_head(0);
+
+  // Second completion is duplicate/inactive for command_id 0.
+  completions[1].set_command_id(0);
+  completions[1].set_phase(1);
+  completions[1].set_sq_head(0);
+
+  Completion* completion = nullptr;
+  IoCommand* io_cmd = nullptr;
+
+  // 1st completion should succeed and return &cmd.
+  ASSERT_EQ(pair->CheckForNewCompletion(&completion, &io_cmd), ZX_OK);
+  EXPECT_EQ(io_cmd, &cmd);
+
+  // 2nd completion is on an inactive transaction. It should return ZX_ERR_BAD_STATE and set
+  // io_cmd to nullptr.
+  EXPECT_EQ(pair->CheckForNewCompletion(&completion, &io_cmd), ZX_ERR_BAD_STATE);
+  EXPECT_EQ(io_cmd, nullptr);
+}
+
+TEST_F(QueuePairTest, TestCheckCompletionsInvalidCommandId) {
+  auto pair = QueuePair::Create(fake_bti_.borrow(), 0, 100, caps_, mmio_, /*prealloc_prp=*/false);
+  ASSERT_OK(pair.status_value());
+
+  doorbell_ring_ = [](bool, size_t, uint16_t) {};
+
+  Completion* completions = static_cast<Completion*>(pair->completion().head());
+  memset(completions, 0, sizeof(*completions) * pair->completion().entry_count());
+
+  // Set command_id equal to txns_.size() (the off-by-one boundary).
+  completions[0].set_command_id(static_cast<uint16_t>(pair->submission().entry_count()));
+  completions[0].set_phase(1);
+  completions[0].set_sq_head(0);
+
+  // Set command_id way out of bounds.
+  completions[1].set_command_id(0x9999);
+  completions[1].set_phase(1);
+  completions[1].set_sq_head(0);
+
+  Completion* completion = nullptr;
+  IoCommand dummy_cmd;
+  IoCommand* io_cmd = &dummy_cmd;
+
+  // Off-by-one boundary test: command_id == txns_.size()
+  EXPECT_EQ(pair->CheckForNewCompletion(&completion, &io_cmd), ZX_ERR_BAD_STATE);
+  EXPECT_EQ(io_cmd, nullptr);
+
+  io_cmd = &dummy_cmd;
+  // Way out of bounds test
+  EXPECT_EQ(pair->CheckForNewCompletion(&completion, &io_cmd), ZX_ERR_BAD_STATE);
+  EXPECT_EQ(io_cmd, nullptr);
 }
 
 TEST_F(QueuePairTest, TestSubmitWithDataOnePage) {

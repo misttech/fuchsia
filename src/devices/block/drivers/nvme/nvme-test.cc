@@ -216,6 +216,51 @@ TEST_F(NvmeTest, NamespaceReadTest) {
   ASSERT_OK(client.value()->BlockDetachVmo(std::move(vmoid)));
   client.value().reset();
 }
+
+TEST_F(NvmeTest, DuplicateIoCompletion) {
+  fake_nvme::FakeNamespace fake_ns;
+  TestNvme::controller_.AddNamespace(1, fake_ns);
+  TestNvme::controller_.AddIoCommand(
+      IoCommandOpcode::kRead,
+      [](Submission& submission, const TransactionData& data, Completion& completion) {
+        completion.set_status_code_type(StatusCodeType::kGeneric)
+            .set_status_code(GenericStatus::kSuccess);
+        // Inject a duplicate completion into the CQ right after this one.
+        Completion duplicate_completion = completion;
+        TestNvme::controller_.SubmitCompletion(duplicate_completion);
+      });
+  driver_test().runtime().StartBackgroundDispatcher();
+
+  ASSERT_NO_FATAL_FAILURE(StartDriver());
+
+  auto [volume_client, volume_server] = fidl::Endpoints<fuchsia_storage_block::Block>::Create();
+  driver_test().RunInDriverContext([&volume_server](TestNvme& driver) mutable {
+    Namespace* ns = driver.namespaces()[0].get();
+    ns->ServeRequests(std::move(volume_server));
+  });
+
+  zx::result<std::unique_ptr<block_client::RemoteBlockDevice>> client =
+      block_client::RemoteBlockDevice::Create(std::move(volume_client));
+  ASSERT_OK(client);
+
+  zx::vmo vmo;
+  ASSERT_OK(zx::vmo::create(zx_system_get_page_size(), 0, &vmo));
+  ::storage::Vmoid vmoid;
+  ASSERT_OK(client.value()->BlockAttachVmo(vmo, &vmoid));
+
+  BlockFifoRequest request = {
+      .command = {.opcode = BLOCK_OPCODE_READ, .flags = 0},
+      .vmoid = vmoid.get(),
+      .length = 1,
+      .vmo_offset = 0,
+      .dev_offset = 0,
+  };
+
+  ASSERT_OK(client.value()->FifoTransaction(&request, 1));
+  ASSERT_OK(client.value()->BlockDetachVmo(std::move(vmoid)));
+  client.value().reset();
+}
+
 TEST_F(NvmeTest, NamespaceWriteTest) {
   fake_nvme::FakeNamespace fake_ns;
   TestNvme::controller_.AddNamespace(1, fake_ns);

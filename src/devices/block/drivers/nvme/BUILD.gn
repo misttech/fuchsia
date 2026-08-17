@@ -112,6 +112,7 @@ test("nvme-queue-pair-tests-bin") {
     "//src/devices/testing/fake-bti",
     "//src/lib/fxl/test:gtest_main",
     "//src/lib/testing/predicates",
+    "//src/storage/lib/block_server:block_server_cc",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/hwreg",
     "//zircon/system/ulib/mmio-ptr",
