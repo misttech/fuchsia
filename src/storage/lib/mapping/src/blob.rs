@@ -2,9 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::Extents;
 use crate::reader::{BlockService, read_aligned_range};
-use delivery_blob::DataBuffer;
+use crate::{Extents, PageRequest};
 use delivery_blob::compression::{CompressionInfo, StreamingDecompressor};
 use fuchsia_sync::Mutex;
 use std::cmp::min;
@@ -43,7 +42,7 @@ impl Blob {
         self.compression_info.as_deref()
     }
 
-    /// Streams and decodes the specified uncompressed `range` into the provided `dest_buf`.
+    /// Streams and decodes the specified uncompressed `range` into the provided `page_request`.
     ///
     /// For uncompressed blobs, both `range.start` and `range.end` must be multiples of
     /// `BLOCK_SIZE`. For compressed blobs, `range.start` must be a multiple of the compression
@@ -53,9 +52,13 @@ impl Blob {
         &self,
         range: Range<u64>,
         service: &(impl BlockService + ?Sized),
-        mut dest_buf: impl DataBuffer,
+        mut page_request: impl PageRequest,
     ) {
         if range.is_empty() {
+            return;
+        }
+
+        if page_request.prepare(range.clone()).is_err() {
             return;
         }
 
@@ -74,11 +77,11 @@ impl Blob {
                     let valid_len =
                         min(buffer.len() as u64, uncompressed_size.saturating_sub(current_offset))
                             as usize;
-                    let dest = dest_buf.mut_ptr_slice().subslice_mut(0..buffer.len());
+                    let dest = page_request.mut_ptr_slice().subslice_mut(0..buffer.len());
                     let (mut head, mut tail) = dest.split_at_mut(valid_len);
                     head.copy_from_ptr_slice(buffer.as_ptr_slice().subslice(0..valid_len));
                     tail.fill(0);
-                    if dest_buf.commit(buffer.len()).is_err() {
+                    if page_request.commit(buffer.len()).is_err() {
                         return ControlFlow::Break(());
                     }
                     current_offset += buffer.len() as u64;
@@ -88,9 +91,9 @@ impl Blob {
             Some(info) => {
                 let info = Arc::clone(info);
                 let Ok((mut decompressor, aligned_range)) =
-                    StreamingDecompressor::new(info, range, self.uncompressed_size, dest_buf)
+                    StreamingDecompressor::new(info, self.uncompressed_size, page_request)
                 else {
-                    // The range must be out of range. This should be handled when `dest_buf`
+                    // The range must be out of range. This should be handled when `page_request`
                     // is dropped.
                     return;
                 };
@@ -178,8 +181,8 @@ mod tests {
         let extents = Extents::from_encoded(&extents).unwrap();
         let blob = Arc::new(Blob::new(extents, 8 * BLOCK_SIZE, None));
 
-        let (dest_buf, rx) = TestVecBuffer::new(expected_data.len());
-        blob.read_range(0..(8 * BLOCK_SIZE), &service, dest_buf);
+        let (page_request, rx) = TestVecBuffer::new(expected_data.len());
+        blob.read_range(0..(8 * BLOCK_SIZE), &service, page_request);
 
         assert_eq!(rx.commits(), vec![(0, (8 * BLOCK_SIZE) as usize)]);
         assert_eq!(rx.output(), expected_data);
@@ -226,8 +229,8 @@ mod tests {
         let blob = Arc::new(Blob::new(extents, uncompressed_size as u64, Some(compression_info)));
 
         let dest_alloc_size = uncompressed_size.next_multiple_of(chunk_size);
-        let (dest_buf, rx) = TestVecBuffer::new(dest_alloc_size);
-        blob.read_range(0..(uncompressed_size as u64), &service, dest_buf);
+        let (page_request, rx) = TestVecBuffer::new(dest_alloc_size);
+        blob.read_range(0..(uncompressed_size as u64), &service, page_request);
 
         assert_eq!(
             rx.commits(),
@@ -283,8 +286,8 @@ mod tests {
         .unwrap();
         let blob = Arc::new(Blob::new(extents, uncompressed_size as u64, Some(compression_info)));
 
-        let (dest_buf, rx) = TestVecBuffer::new(uncompressed_size);
-        blob.read_range(0..(uncompressed_size as u64), &service, dest_buf);
+        let (page_request, rx) = TestVecBuffer::new(uncompressed_size);
+        blob.read_range(0..(uncompressed_size as u64), &service, page_request);
 
         assert_eq!(rx.commits(), vec![(0, chunk_size), (chunk_size as u64, chunk_size)]);
         assert_eq!(rx.output(), uncompressed_data);
@@ -297,9 +300,9 @@ mod tests {
         let extents = Extents::from_encoded(&extents).unwrap();
         let blob = Arc::new(Blob::new(extents, 8192, None));
 
-        let (dest_buf, rx) = TestVecBuffer::new_with_offset(0, 4096);
+        let (page_request, rx) = TestVecBuffer::new_with_offset(0, 4096);
         // start >= end should be a no-op returning Ok(())
-        blob.read_range(4096..4096, &service, dest_buf);
+        blob.read_range(4096..4096, &service, page_request);
         assert_eq!(rx.commits().len(), 0);
     }
 
@@ -346,9 +349,9 @@ mod tests {
         let extents = Extents::from_encoded(&extents).unwrap();
         let blob = Blob::new(extents, 8192, None);
 
-        let (dest_buf, rx) = TestVecBuffer::new(8192);
+        let (page_request, rx) = TestVecBuffer::new(8192);
 
-        blob.read_range(0..8192, &FailingBlockService, dest_buf);
+        blob.read_range(0..8192, &FailingBlockService, page_request);
         assert_eq!(rx.commits().len(), 0);
     }
 
@@ -368,8 +371,8 @@ mod tests {
         let extents = Extents::from_encoded(&extents).unwrap();
         let blob = Blob::new(extents, block_count * BLOCK_SIZE, None);
 
-        let (dest_buf, rx) = TestVecBuffer::new(expected_data.len());
-        blob.read_range(0..(block_count * BLOCK_SIZE), &service, dest_buf);
+        let (page_request, rx) = TestVecBuffer::new(expected_data.len());
+        blob.read_range(0..(block_count * BLOCK_SIZE), &service, page_request);
 
         assert_eq!(rx.commits().len(), 4);
         assert_eq!(rx.output(), expected_data);
@@ -388,8 +391,8 @@ mod tests {
         let extents = Extents::from_encoded(&extents).unwrap();
         let blob = Blob::new(extents, uncompressed_size, None);
 
-        let (dest_buf, rx) = TestVecBuffer::new(8192);
-        blob.read_range(0..8192, &service, dest_buf);
+        let (page_request, rx) = TestVecBuffer::new(8192);
+        blob.read_range(0..8192, &service, page_request);
 
         assert_eq!(rx.commits(), vec![(0, 8192)]);
         assert_eq!(&rx.output()[..5000], &expected_data[..5000]);
@@ -436,8 +439,8 @@ mod tests {
         let blob = Blob::new(extents, uncompressed_size as u64, Some(compression_info));
 
         let tail_start = chunk_size as u64 * 2;
-        let (dest_buf, rx) = TestVecBuffer::new_with_offset(32768, tail_start);
-        blob.read_range(tail_start..(uncompressed_size as u64), &service, dest_buf);
+        let (page_request, rx) = TestVecBuffer::new_with_offset(32768, tail_start);
+        blob.read_range(tail_start..(uncompressed_size as u64), &service, page_request);
 
         assert_eq!(rx.commits(), vec![(tail_start, chunk_size)]);
         assert_eq!(&rx.output()[..1024], &uncompressed_data[65536..]);
@@ -484,9 +487,9 @@ mod tests {
         let blob = Blob::new(extents, uncompressed_size as u64, Some(compression_info));
 
         // Pre-fill destination buffer with 0xFF bytes to verify tail zeroing
-        let (mut dest_buf, rx) = TestVecBuffer::new(65536);
-        dest_buf.data.fill(0xFF);
-        blob.read_range(0..(uncompressed_size as u64), &service, dest_buf);
+        let (mut page_request, rx) = TestVecBuffer::new(65536);
+        page_request.data.fill(0xFF);
+        blob.read_range(0..(uncompressed_size as u64), &service, page_request);
 
         assert_eq!(rx.commits(), vec![(0, chunk_size), (chunk_size as u64, chunk_size)]);
         assert_eq!(&rx.output()[..uncompressed_size], &uncompressed_data[..]);

@@ -55,6 +55,11 @@ rustc_library("block_server") {
 
 fuchsia_unittest_package("block_server_tests") {
   deps = [ ":block_server_test" ]
+  test_specs = {
+    log_settings = {
+      max_severity = "ERROR"
+    }
+  }
 }
 
 rustc_staticlib("block_server_c") {

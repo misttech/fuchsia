@@ -202,10 +202,9 @@ impl<I: Interface + ?Sized> super::SessionManager for SessionManager<I> {
         let (blobs, verifier) =
             sm.interface.on_open_mapper_session(&mapping_vmo, &offset_map, delivery_queue)?;
 
-        let _pager_thread =
-            mapping::PagerThread::spawn(port, service, blobs, move |key, offset, len| {
-                verifier.get_buffer(key, offset, len)
-            });
+        let _pager_thread = mapping::PagerThread::spawn(port, service, blobs, move |key, range| {
+            verifier.get_page_request(key, range)
+        });
         let mut stream = session.into_stream();
         while let Some(_request) = stream.try_next().await? {
             // Future MapperSession requests

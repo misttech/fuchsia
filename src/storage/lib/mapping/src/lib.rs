@@ -4,6 +4,7 @@
 
 pub mod blob;
 pub mod extents;
+pub mod page_request;
 pub mod pager;
 pub mod protocol;
 pub mod reader;
@@ -13,6 +14,7 @@ pub mod testing;
 
 pub use blob::{Blob, Blobs};
 pub use extents::{Extent, Extents, ExtentsIterator};
+pub use page_request::PageRequest;
 pub use pager::{PagerThread, run_pager_loop};
 pub use protocol::{CLOSE_BLOB_COMMAND, MAPPINGS_COMMAND, MappingCommand, RawMappingCommand};
 

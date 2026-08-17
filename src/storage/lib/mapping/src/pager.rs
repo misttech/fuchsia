@@ -2,25 +2,25 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::Blobs;
 use crate::reader::BlockService;
-use delivery_blob::DataBuffer;
+use crate::{Blobs, PageRequest};
+use std::ops::Range;
 use std::sync::Arc;
 use zx::sys::zx_page_request_command_t::ZX_PAGER_VMO_READ;
 use zx::{Packet, PacketContents, Port, Rights, UserPacket};
 
 /// Runs a synchronous event loop that listens on `port` for pager page requests,
-/// resolves the requested blob using `blobs`, allocates a destination buffer using
-/// `buffer_factory`, and invokes `Blob::read_range`.
+/// resolves the requested blob using `blobs`, creates a page request using
+/// `request_factory`, and invokes `Blob::read_range`.
 ///
 /// Notice that buffer management and page supply (such as calling `zx::Pager::supply_pages`
-/// or transmitting over `vmo-fifo`) are entirely delegated to the `DataBuffer` implementation
-/// returned by `buffer_factory`.
-pub fn run_pager_loop<B: DataBuffer>(
+/// or transmitting over `vmo-fifo`) are entirely delegated to the `PageRequest` implementation
+/// returned by `request_factory`.
+pub fn run_pager_loop<B: PageRequest>(
     port: &Port,
     service: Arc<dyn BlockService>,
     blobs: &Blobs,
-    mut buffer_factory: impl FnMut(u64, u64, usize) -> B + Send + 'static,
+    mut request_factory: impl FnMut(u64, Range<u64>) -> B + Send + 'static,
 ) {
     loop {
         match port.wait(zx::MonotonicInstant::INFINITE) {
@@ -32,9 +32,10 @@ pub fn run_pager_loop<B: DataBuffer>(
                     if command == ZX_PAGER_VMO_READ {
                         let offset = pager_packet.range().start;
                         let length = pager_packet.range().end - offset;
+                        let range = offset..offset + length;
                         if let Some(blob) = blobs.get(key) {
-                            let dest_buf = buffer_factory(key, offset, length as usize);
-                            blob.read_range(offset..offset + length, service.as_ref(), dest_buf);
+                            let page_request = request_factory(key, range.clone());
+                            blob.read_range(range, service.as_ref(), page_request);
                         }
                     }
                 }
@@ -55,16 +56,16 @@ pub struct PagerThread {
 
 impl PagerThread {
     /// Spawns a background thread running `run_pager_loop`.
-    pub fn spawn<B: DataBuffer + 'static>(
+    pub fn spawn<B: PageRequest + 'static>(
         port: Port,
         service: Arc<dyn BlockService>,
         blobs: Arc<Blobs>,
-        buffer_factory: impl FnMut(u64, u64, usize) -> B + Send + 'static,
+        request_factory: impl FnMut(u64, Range<u64>) -> B + Send + 'static,
     ) -> Self {
         let thread_port = port.duplicate_handle(Rights::SAME_RIGHTS).expect("duplicate port");
         let thread_blobs = Arc::clone(&blobs);
         let thread = std::thread::spawn(move || {
-            run_pager_loop(&thread_port, service, &thread_blobs, buffer_factory);
+            run_pager_loop(&thread_port, service, &thread_blobs, request_factory);
         });
         Self { port, blobs, thread: Some(thread) }
     }
@@ -96,9 +97,8 @@ mod tests {
         let port = Port::create();
         let service = Arc::new(FakeBlockService::new(vec![0u8; 4096]));
         let blobs = Arc::new(Blobs::new());
-        let thread = PagerThread::spawn(port, service, blobs, |_key, _offset, _len| {
-            TestVecBuffer::new(4096).0
-        });
+        let thread =
+            PagerThread::spawn(port, service, blobs, |_key, _range| TestVecBuffer::new(4096).0);
         drop(thread);
     }
 
