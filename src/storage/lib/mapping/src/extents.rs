@@ -179,26 +179,28 @@ impl Extents {
     }
 
     /// Decodes a sequence of 64-bit mapping descriptors into a compact `Extents` container.
-    /// Returns `None` if an unknown mapping descriptor type is encountered.
-    pub fn from_encoded(encoded: &[u64]) -> Option<Self> {
-        let mut entries = Vec::with_capacity(encoded.len());
-        let mut current_logical_offset = 0;
+    /// Returns `None` if an unknown mapping descriptor type is encountered or if an arithmetic
+    /// overflow occurs while decoding.
+    pub fn from_encoded(encoded: impl IntoIterator<Item = u64>) -> Option<Self> {
+        let mut entries = Vec::new();
+        let mut current_logical_offset = 0u64;
 
-        for &val in encoded {
+        for val in encoded {
             let kind = val & TYPE_MASK;
             if kind == REGULAR {
                 let length_blocks = ((val & !TYPE_MASK) >> 32) as u64;
                 let target_block = (val & 0xffff_ffff) as u64;
-                let length_bytes = length_blocks * BLOCK_SIZE;
-                current_logical_offset += length_bytes;
+                let length_bytes = length_blocks.checked_mul(BLOCK_SIZE)?;
+                current_logical_offset = current_logical_offset.checked_add(length_bytes)?;
+                let device_offset = target_block.checked_mul(BLOCK_SIZE)?;
                 entries.push(ExtentEntry {
                     end_logical_offset: current_logical_offset,
-                    device_offset: target_block * BLOCK_SIZE,
+                    device_offset,
                 });
             } else if kind == SPARSE {
                 let length_blocks = (val & !TYPE_MASK) as u64;
-                let length_bytes = length_blocks * BLOCK_SIZE;
-                current_logical_offset += length_bytes;
+                let length_bytes = length_blocks.checked_mul(BLOCK_SIZE)?;
+                current_logical_offset = current_logical_offset.checked_add(length_bytes)?;
                 entries.push(ExtentEntry {
                     end_logical_offset: current_logical_offset,
                     device_offset: ExtentEntry::SPARSE_DEVICE_OFFSET,
@@ -238,9 +240,12 @@ impl Extents {
         let start_logical = self.entry_start_offset(idx);
         let end_logical = entry.end_logical_offset;
 
-        let offset_within = offset - start_logical;
-        let device_offset =
-            if entry.is_sparse() { None } else { Some(entry.device_offset + offset_within) };
+        let offset_within = offset.checked_sub(start_logical)?;
+        let device_offset = if entry.is_sparse() {
+            None
+        } else {
+            Some(entry.device_offset.checked_add(offset_within)?)
+        };
 
         Some(Extent { logical_range: offset..end_logical, device_offset })
     }
@@ -276,7 +281,7 @@ mod tests {
         let encoded = Extents::encode_extents(&extents);
         assert_eq!(encoded.len(), 2);
 
-        let extents_container = Extents::from_encoded(&encoded).expect("from_encoded failed");
+        let extents_container = Extents::from_encoded(encoded).expect("from_encoded failed");
 
         let decoded = extents_container.mappings();
         assert_eq!(decoded.len(), 2);
@@ -297,7 +302,7 @@ mod tests {
         ];
         let encoded = Extents::encode_extents(&extents);
 
-        let extents_container = Extents::from_encoded(&encoded).expect("from_encoded failed");
+        let extents_container = Extents::from_encoded(encoded).expect("from_encoded failed");
 
         let decoded = extents_container.mappings();
         assert_eq!(decoded.len(), 3);
@@ -320,7 +325,7 @@ mod tests {
             Extent::new((20 * BLOCK_SIZE)..(30 * BLOCK_SIZE), Some(300 * BLOCK_SIZE)),
         ];
         let encoded = Extents::encode_extents(&extents);
-        let extents_container = Extents::from_encoded(&encoded).expect("from_encoded failed");
+        let extents_container = Extents::from_encoded(encoded).expect("from_encoded failed");
 
         let mapped = extents_container.map(0).expect("should map at offset 0");
         assert_eq!(mapped.logical_range, 0..(10 * BLOCK_SIZE));
@@ -337,7 +342,7 @@ mod tests {
     fn test_map_out_of_bounds() {
         let extents = vec![Extent::new(0..(2 * BLOCK_SIZE), Some(10 * BLOCK_SIZE))];
         let encoded = Extents::encode_extents(&extents);
-        let extents_container = Extents::from_encoded(&encoded).expect("from_encoded failed");
+        let extents_container = Extents::from_encoded(encoded).expect("from_encoded failed");
 
         assert!(extents_container.map(2 * BLOCK_SIZE).is_none());
         assert!(extents_container.map(100 * BLOCK_SIZE).is_none());
@@ -351,7 +356,7 @@ mod tests {
             Extent::new((4 * BLOCK_SIZE)..(6 * BLOCK_SIZE), Some(30 * BLOCK_SIZE)),
         ];
         let encoded = Extents::encode_extents(&extents);
-        let extents_container = Extents::from_encoded(&encoded).expect("from_encoded failed");
+        let extents_container = Extents::from_encoded(encoded).expect("from_encoded failed");
 
         let results: Vec<_> = extents_container.iter_extents(3 * BLOCK_SIZE).collect();
         assert_eq!(results.len(), 2);
@@ -366,7 +371,7 @@ mod tests {
             Extent::new((10 * BLOCK_SIZE)..(20 * BLOCK_SIZE), Some(200 * BLOCK_SIZE)),
         ];
         let encoded = Extents::encode_extents(&extents);
-        let extents_container = Extents::from_encoded(&encoded).expect("from_encoded failed");
+        let extents_container = Extents::from_encoded(encoded).expect("from_encoded failed");
 
         let mapped = extents_container.map(10 * BLOCK_SIZE).expect("should map at exact boundary");
         assert_eq!(mapped.logical_range, (10 * BLOCK_SIZE)..(20 * BLOCK_SIZE));
@@ -408,7 +413,7 @@ mod tests {
             Extent::new((10 * BLOCK_SIZE)..(20 * BLOCK_SIZE), Some(200 * BLOCK_SIZE)),
         ];
         let encoded = Extents::encode_extents(&extents);
-        let extents_container = Extents::from_encoded(&encoded).expect("from_encoded failed");
+        let extents_container = Extents::from_encoded(encoded).expect("from_encoded failed");
         let results: Vec<_> = extents_container.iter_extents(500).collect();
         assert_eq!(results.len(), 2);
         assert_eq!(results[0].logical_range, 0..(10 * BLOCK_SIZE));
@@ -440,6 +445,6 @@ mod tests {
     #[test]
     fn test_from_encoded_unknown_kind_returns_none() {
         let unknown_descriptor = 0x40000000_00000000;
-        assert!(Extents::from_encoded(&[unknown_descriptor]).is_none());
+        assert!(Extents::from_encoded([unknown_descriptor]).is_none());
     }
 }

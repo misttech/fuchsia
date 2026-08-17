@@ -653,7 +653,8 @@ impl<SM: SessionManager> BlockServer<SM> {
                             > max
                         {
                             log::warn!(
-                                "Invalid mapping for mapper session: {initial_mapping:?} (max {max})"
+                                "Invalid mapping for mapper session: {initial_mapping:?} \
+                                 (max {max})"
                             );
                             responder.send(Err(zx::Status::INVALID_ARGS.into_raw()))?;
                             return Ok(None);
@@ -1290,8 +1291,8 @@ impl<SM: SessionManager> SessionHelper<SM> {
                             registered_vmo
                                 .get_or_create_mapping()
                                 .and_then(|mapping| {
-                                    // Make sure the `vmo_offset` and `uncompressed_bytes` are within
-                                    // range.
+                                    // Make sure `vmo_offset` and `uncompressed_bytes` are
+                                    // within range.
                                     if vmo_offset
                                         .checked_add(request.uncompressed_bytes as u64)
                                         .is_some_and(|end| end <= mapping.size as u64)
@@ -4390,8 +4391,33 @@ mod tests {
 
         let (_mapper_session_proxy, mapper_session_server) =
             fidl::endpoints::create_proxy::<fblock::MapperSessionMarker>();
-        let mapping_vmo = zx::Vmo::create(4096).unwrap();
+        let mapping_vmo = zx::Vmo::create(65536).unwrap();
         let delivery_queue = zx::Vmo::create(4096).unwrap();
+
+        let data_extent_words =
+            mapping::Extents::encode_extents(&[mapping::Extent::new(0..4096, Some(0))]);
+        let mut payload_bytes = Vec::new();
+        for w in &data_extent_words {
+            payload_bytes.extend_from_slice(&w.to_le_bytes());
+        }
+
+        let cmd = mapping::RawMappingCommand {
+            opcode: mapping::MAPPINGS_COMMAND,
+            offset: 0,
+            key,
+            metadata_count: 0,
+            blob_count: data_extent_words.len() as u32,
+        };
+
+        let mut sender = vmo_fifo::SyncSender::<mapping::RawMappingCommand>::new(
+            mapping_vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
+            1024,
+            256,
+        )
+        .unwrap();
+        let mut payload_buf = sender.reserve_payload(payload_bytes.len()).unwrap();
+        payload_buf.data().copy_from_slice(&payload_bytes);
+        payload_buf.commit(cmd).unwrap();
 
         let res = mapper_proxy
             .open_session(mapper_session_server, mapping_vmo, None, port, delivery_queue)
@@ -4402,10 +4428,6 @@ mod tests {
         let verifier = interface.verifier.lock().as_ref().unwrap().clone();
         verifier.set_pager(pager);
         verifier.register_vmo(key, paged_vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap());
-
-        let extents = mapping::Extents::from_encoded(&[(8u64 << 32) | 0u64]).unwrap();
-        let blob = Arc::new(mapping::Blob::new(extents, 4096, None));
-        interface.blobs.insert(key, blob);
 
         let reader_thread = std::thread::spawn(move || {
             let mut buf = [0u8; 4096];

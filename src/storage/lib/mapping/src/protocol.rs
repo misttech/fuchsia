@@ -8,6 +8,21 @@ use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 pub const MAPPINGS_COMMAND: u32 = 1;
 pub const CLOSE_BLOB_COMMAND: u32 = 2;
 
+// The `vmo-fifo` divides the VMO into two regions: a fixed-size command slots region, and a
+// dynamically allocated payload region where the actual extents are written.
+//
+// The following is the layout for a 512KB VMO with 256 capacity:
+// [ Headers (64B) | Command Slots: 256 * 24B = 6,144B | .. Padding to 8KB .. | Payload (504KB) ]
+// Note: Each command slot takes 24 bytes for `RawMappingCommand`.
+//
+// 504KB / 8-bytes per extent = 64,512 maximum extents bounded by the payload block.
+pub const MAPPING_VMO_SIZE: u64 = 512 * 1024;
+
+// With a maximum capacity of 256 pending mapping commands, this allows for an average of ~252
+// extents per blob. In the worst case of maximum fragmentation (every 4KB block maps to one
+// extent), 64,512 extents can map up to ~252MB of blob data (or ~504MB if block size is 8KB).
+pub const PENDING_COMMANDS_CAPACITY: u32 = 256;
+
 /// A command packet used to communicate extent mappings.
 #[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Copy, Clone, Debug, PartialEq)]
 #[repr(C)]

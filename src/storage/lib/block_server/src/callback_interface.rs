@@ -65,16 +65,15 @@ pub trait Interface: Send + Sync + Unpin + 'static {
     }
 
     /// Called when a new mapper session is opened.
-    /// Returns the [`mapping::Blobs`] registry and [`Verifier`] for page
-    /// delivery.
+    /// Returns the [`Verifier`] for page delivery.
     fn on_open_mapper_session(
         &self,
         _mapping_vmo: &zx::Vmo,
         _offset_map: &OffsetMap,
         delivery_queue: zx::Vmo,
-    ) -> Result<(Arc<mapping::Blobs>, Arc<Verifier>), zx::Status> {
+    ) -> Result<Arc<Verifier>, zx::Status> {
         let verifier = Arc::new(Verifier::new(delivery_queue));
-        Ok((Arc::new(mapping::Blobs::new()), verifier))
+        Ok(verifier)
     }
 }
 
@@ -199,16 +198,35 @@ impl<I: Interface + ?Sized> super::SessionManager for SessionManager<I> {
     ) -> Result<(), Error> {
         let sm: &SessionManager<I> = orchestrator.as_ref().borrow();
         let service = sm.into_block_service(&orchestrator);
-        let (blobs, verifier) =
+        let verifier =
             sm.interface.on_open_mapper_session(&mapping_vmo, &offset_map, delivery_queue)?;
 
-        let _pager_thread = mapping::PagerThread::spawn(port, service, blobs, move |key, range| {
+        let blobs = Arc::new(mapping::Blobs::new(service, move |key, range| {
             verifier.get_page_request(key, range)
+        }));
+
+        let _pager_thread = mapping::PagerThread::spawn(port, blobs.clone());
+
+        let blobs_for_vmo = blobs.clone();
+        let mapper_vmo_thread = std::thread::spawn(move || {
+            if let Ok(mapping_vmo_dup) = mapping_vmo.duplicate_handle(zx::Rights::SAME_RIGHTS) {
+                if let Ok(mut receiver) =
+                    vmo_fifo::Receiver::<mapping::RawMappingCommand>::new(mapping_vmo_dup, 256)
+                {
+                    while let Ok(msg) = receiver.peek() {
+                        let _ = mapping::process_mapping_command(&msg, &blobs_for_vmo);
+                        let _ = msg.pop();
+                    }
+                }
+            }
         });
+
         let mut stream = session.into_stream();
         while let Some(_request) = stream.try_next().await? {
             // Future MapperSession requests
         }
+
+        let _ = mapper_vmo_thread.join();
         Ok(())
     }
 

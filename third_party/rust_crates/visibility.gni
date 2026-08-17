@@ -180,6 +180,7 @@ bincode_visibility = [
   # (cd $FUCHSIA_DIR && git grep  --files-with-matches '//third_party/rust_crates:bincode' -- '*BUILD.gn' | sed 's|\(.*\)/BUILD.gn|"//\1:*",|')
   "//src/storage/ext4/lib/metadata:*",
   "//src/storage/fxfs:*",
+  "//src/storage/lib/mapping:*",
   "//src/storage/lib/sparse/rust:*",
 ]
 

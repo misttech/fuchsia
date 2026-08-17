@@ -11,13 +11,12 @@ use std::sync::Arc;
 
 pub struct MockInterface {
     pub request_sender: std::sync::mpsc::Sender<Request>,
-    pub blobs: Arc<mapping::Blobs>,
     pub verifier: Mutex<Option<Arc<Verifier>>>,
 }
 
 impl MockInterface {
     pub fn new(request_sender: std::sync::mpsc::Sender<Request>) -> Self {
-        Self { request_sender, blobs: Arc::new(mapping::Blobs::new()), verifier: Mutex::new(None) }
+        Self { request_sender, verifier: Mutex::new(None) }
     }
 }
 
@@ -45,9 +44,9 @@ impl Interface for MockInterface {
         _mapping_vmo: &zx::Vmo,
         _offset_map: &OffsetMap,
         delivery_queue: zx::Vmo,
-    ) -> Result<(Arc<mapping::Blobs>, Arc<Verifier>), zx::Status> {
+    ) -> Result<Arc<Verifier>, zx::Status> {
         let verifier = Arc::new(Verifier::new(delivery_queue));
         *self.verifier.lock() = Some(verifier.clone());
-        Ok((self.blobs.clone(), verifier))
+        Ok(verifier)
     }
 }

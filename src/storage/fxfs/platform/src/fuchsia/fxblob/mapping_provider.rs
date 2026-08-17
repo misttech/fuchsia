@@ -11,24 +11,11 @@ use fuchsia_merkle::Hash;
 use futures::TryStreamExt;
 use fxfs::errors::FxfsError;
 use log::{error, warn};
-use mapping::{Extents, MappingCommand, RawMappingCommand};
+use mapping::{
+    Extents, MAPPING_VMO_SIZE, MappingCommand, PENDING_COMMANDS_CAPACITY, RawMappingCommand,
+};
 use std::sync::Arc;
 use vmo_fifo::AsyncSender;
-
-// The `vmo-fifo` divides the VMO into two regions: a fixed-size command slots region, and a
-// dynamically allocated payload region where the actual extents are written.
-//
-// The following is the layout for a 512KB VMO with 256 capacity:
-// [ Headers (64B) | Command Slots: 256 * 24B = 6,144B | .. Padding to 8KB .. | Payload (504KB) ]
-// Note: Each command slot takes 24 bytes because `RawMappingCommand` has six 4-byte fields.
-//
-// 504KB / 8-bytes per extent = 64,512 maximum extents bounded by the payload block.
-const MAPPING_VMO_SIZE: u64 = 512 * 1024;
-
-// With a maximum capacity of 256 pending mapping commands, this allows for an average of ~252
-// extents per blob. In the worst case of maximum fragmentation (every 4KB block maps to one
-// extent), 64,512 extents can map up to ~252MB of blob data (or ~504MB if block size is 8KB).
-const PENDING_COMMANDS_CAPACITY: u32 = 256;
 
 /// BlobMappingProvider services requests to open mapping sessions over a given BlobDirectory.
 pub struct BlobMappingProvider {
@@ -177,9 +164,11 @@ impl BlobMappingSession {
                     let hash = Hash::from(<[u8; 32]>::try_from(identifier.as_slice()).unwrap());
                     match self.open_blob(hash).await {
                         Ok(opened_blob) => {
-                            responder.send(Ok((opened_blob.size, opened_blob.key as u32))).unwrap_or_else(
-                                |error| warn!(error:?; "Failed to send mapping session response"),
-                            );
+                            responder
+                                .send(Ok((opened_blob.size, opened_blob.key as u32)))
+                                .unwrap_or_else(|error| {
+                                    warn!(error:?; "Failed to send mapping session response")
+                                });
                         }
                         Err(error) => {
                             error!(error:?; "Failed to open blob");
@@ -259,8 +248,7 @@ mod tests {
 
             // First Open Command
             let cmd1_raw = receiver.peek().expect("peek failed");
-            let cmd1 =
-                MappingCommand::try_from(*cmd1_raw).expect("Failed to convert raw mapping command");
+            let cmd1 = MappingCommand::try_from(*cmd1_raw).expect("try_from failed");
 
             let (cmd1_offset, cmd1_blob_count, cmd1_metadata_count) = match cmd1 {
                 MappingCommand::Mappings { key, offset, metadata_count, blob_count } => {
@@ -286,8 +274,7 @@ mod tests {
             cmd1_raw.pop().expect("Failed pop_commit");
 
             let cmd2_raw = receiver.peek().expect("peek failed");
-            let cmd2 =
-                MappingCommand::try_from(*cmd2_raw).expect("Failed to convert raw mapping command");
+            let cmd2 = MappingCommand::try_from(*cmd2_raw).expect("try_from failed");
             match cmd2 {
                 MappingCommand::CloseBlob { key } => assert_eq!(key, 1),
                 _ => panic!("Expected CloseBlob command"),

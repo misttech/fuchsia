@@ -12,10 +12,13 @@ pub mod reader;
 #[cfg(test)]
 pub mod testing;
 
-pub use blob::{Blob, Blobs};
+pub use blob::{Blob, Blobs, process_mapping_command, read_blob_metadata};
 pub use extents::{Extent, Extents, ExtentsIterator};
 pub use page_request::PageRequest;
 pub use pager::{PagerThread, run_pager_loop};
-pub use protocol::{CLOSE_BLOB_COMMAND, MAPPINGS_COMMAND, MappingCommand, RawMappingCommand};
+pub use protocol::{
+    CLOSE_BLOB_COMMAND, MAPPING_VMO_SIZE, MAPPINGS_COMMAND, MappingCommand,
+    PENDING_COMMANDS_CAPACITY, RawMappingCommand,
+};
 
 pub const BLOCK_SIZE: u64 = 4096;

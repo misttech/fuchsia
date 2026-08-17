@@ -54,11 +54,28 @@ impl TestVecBuffer {
         (buf, receiver)
     }
 
+    pub fn new_with_range(range: Range<u64>) -> (Self, TestVecBufferReceiver) {
+        let size = (range.end - range.start) as usize;
+        let receiver = TestVecBufferReceiver(Arc::new(Mutex::new(TestVecBufferInner::default())));
+        let buf = Self {
+            data: vec![0u8; size],
+            offset: range.start,
+            range,
+            committed_len: 0,
+            receiver: receiver.clone(),
+        };
+        (buf, receiver)
+    }
+
     pub fn new_unprepared() -> (Self, TestVecBufferReceiver) {
+        Self::new_unprepared_with_range(0..0)
+    }
+
+    pub fn new_unprepared_with_range(range: Range<u64>) -> (Self, TestVecBufferReceiver) {
         let receiver = TestVecBufferReceiver(Arc::new(Mutex::new(TestVecBufferInner::default())));
         let buf = Self {
             data: Vec::new(),
-            range: 0..0,
+            range,
             committed_len: 0,
             offset: 0,
             receiver: receiver.clone(),

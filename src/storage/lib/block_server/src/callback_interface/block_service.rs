@@ -209,7 +209,7 @@ mod tests {
 
         let test_data = vec![0xaa_u8; 4096];
         let encoded = (8u64 << 32) | 0u64;
-        let extents = Extents::from_encoded(&[encoded]).unwrap();
+        let extents = Extents::from_encoded([encoded]).unwrap();
 
         let (send, recv) = futures::channel::oneshot::channel();
         let send = Mutex::new(Some(send));
@@ -248,7 +248,7 @@ mod tests {
         let service = session_manager.into_block_service(&session_manager);
 
         let encoded = (8u64 << 32) | 0u64;
-        let extents = Extents::from_encoded(&[encoded]).unwrap();
+        let extents = Extents::from_encoded([encoded]).unwrap();
 
         let (send, recv) = futures::channel::oneshot::channel();
         let send = Mutex::new(Some(send));

@@ -1001,7 +1001,7 @@ mod tests {
         );
 
         let encoded = (1u64 << 32) | 0u64;
-        let extents = Extents::from_encoded(&[encoded]).unwrap();
+        let extents = Extents::from_encoded([encoded]).unwrap();
         let service = block_service.clone();
         let (send, recv) = futures::channel::oneshot::channel();
         let send = std::sync::Mutex::new(Some(send));
@@ -1045,7 +1045,7 @@ mod tests {
         ));
 
         let encoded = (16u64 << 32) | 0u64;
-        let extents = Arc::new(Extents::from_encoded(&[encoded]).unwrap());
+        let extents = Arc::new(Extents::from_encoded([encoded]).unwrap());
 
         // Spawn 4 concurrent read requests on background threads, each requesting 16384 bytes.
         let ranges = [0..16384, 16384..32768, 32768..49152, 49152..65536];
