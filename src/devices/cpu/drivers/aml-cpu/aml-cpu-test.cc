@@ -238,17 +238,17 @@ class AmlCpuEnvironment : public fdf_testing::Environment {
 
     EXPECT_OK(to_driver_vfs
                   .AddService<fuchsia_hardware_clock::Service>(
-                      clock_pll_div16_server_.GetInstanceHandler(), "clock-pll-div16-01")
+                      clock_pll_div16_server_.GetInstanceHandler(), "sys-pll-div16")
                   .status_value());
 
     EXPECT_OK(to_driver_vfs
                   .AddService<fuchsia_hardware_clock::Service>(
-                      clock_cpu_div16_server_.GetInstanceHandler(), "clock-cpu-div16-01")
+                      clock_cpu_div16_server_.GetInstanceHandler(), "sys-cpu-div16")
                   .status_value());
 
     EXPECT_OK(to_driver_vfs
                   .AddService<fuchsia_hardware_clock::Service>(
-                      clock_cpu_scaler_server_.GetInstanceHandler(), "clock-cpu-scaler-01")
+                      clock_cpu_scaler_server_.GetInstanceHandler(), "sys-cpu-big-clk")
                   .status_value());
     return zx::ok();
   }

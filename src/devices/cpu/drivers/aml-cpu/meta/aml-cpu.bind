@@ -39,19 +39,19 @@ primary parent "power-01" {
   fuchsia.power.POWER_DOMAIN == fuchsia.amlogic.platform.POWER_DOMAIN.ARM_CORE_BIG;
 }
 
-parent "clock-pll-div16-01" {
+parent "sys-pll-div16" {
   fuchsia.hardware.clock.Service == fuchsia.hardware.clock.Service.ZirconTransport;
-  fuchsia.NAME == "SYS_PLL_DIV16";
+  fuchsia.NAME == "sys-pll-div16";
 }
 
-parent "clock-cpu-div16-01" {
+parent "sys-cpu-div16" {
   fuchsia.hardware.clock.Service == fuchsia.hardware.clock.Service.ZirconTransport;
-  fuchsia.NAME == "SYS_CPU_DIV16";
+  fuchsia.NAME == "sys-cpu-div16";
 }
 
-parent "clock-cpu-scaler-01" {
+parent "sys-cpu-big-clk" {
   fuchsia.hardware.clock.Service == fuchsia.hardware.clock.Service.ZirconTransport;
-  fuchsia.NAME == "SYS_CPU_BIG_CLK";
+  fuchsia.NAME == "sys-cpu-big-clk";
 }
 
 optional parent "power-02" {
@@ -59,19 +59,19 @@ optional parent "power-02" {
   fuchsia.power.POWER_DOMAIN == fuchsia.amlogic.platform.POWER_DOMAIN.ARM_CORE_LITTLE;
 }
 
-optional parent "clock-pll-div16-02" {
+optional parent "sys-pllb-div16" {
   fuchsia.hardware.clock.Service == fuchsia.hardware.clock.Service.ZirconTransport;
-  fuchsia.NAME == "SYS_PLLB_DIV16";
+  fuchsia.NAME == "sys-pllb-div16";
 }
 
-optional parent "clock-cpu-div16-02" {
+optional parent "sys-cpub-div16" {
   fuchsia.hardware.clock.Service == fuchsia.hardware.clock.Service.ZirconTransport;
-  fuchsia.NAME == "SYS_CPUB_DIV16";
+  fuchsia.NAME == "sys-cpub-div16";
 }
 
-optional parent "clock-cpu-scaler-02" {
+optional parent "sys-cpu-little-clk" {
   fuchsia.hardware.clock.Service == fuchsia.hardware.clock.Service.ZirconTransport;
-  fuchsia.NAME == "SYS_CPU_LITTLE_CLK";
+  fuchsia.NAME == "sys-cpu-little-clk";
 }
 
 optional parent "gpio-init" {

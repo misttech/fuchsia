@@ -34,7 +34,7 @@
       to: "#mmc-ffe03000",
       constraints: {
         pin: 62,
-        name: "SDMMC_RESET"
+        name: "gpio-reset"
       }
     },
     {
@@ -107,7 +107,7 @@
       to: "#mmc-ffe07000",
       constraints: {
         pin: 44,
-        name: "SDMMC_RESET"
+        name: "gpio-reset"
       }
     },
     {

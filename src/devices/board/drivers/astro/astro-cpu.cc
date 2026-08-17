@@ -62,9 +62,9 @@ const std::vector<fdf::NodeProperty2> kGpioInitProperties = std::vector{
 
 // Contains all the clock parent nodes for the composite. Maps the clock id to the clock function.
 const std::map<uint32_t, std::string> kClockFunctionMap = {
-    {g12a_clk::CLK_SYS_PLL_DIV16, "SYS_PLL_DIV16"},
-    {g12a_clk::CLK_SYS_CPU_CLK_DIV16, "SYS_CPU_DIV16"},
-    {g12a_clk::CLK_SYS_CPU_CLK, "SYS_CPU_BIG_CLK"},
+    {g12a_clk::CLK_SYS_PLL_DIV16, "sys-pll-div16"},
+    {g12a_clk::CLK_SYS_CPU_CLK_DIV16, "sys-cpu-div16"},
+    {g12a_clk::CLK_SYS_CPU_CLK, "sys-cpu-big-clk"},
 };
 
 }  // namespace

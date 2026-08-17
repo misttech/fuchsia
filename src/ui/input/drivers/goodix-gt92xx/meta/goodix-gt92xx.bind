@@ -13,12 +13,12 @@ primary parent "i2c" {
 
 parent "gpio-int" {
   fuchsia.hardware.gpio.Service == fuchsia.hardware.gpio.Service.ZirconTransport;
-  fuchsia.NAME == "TOUCH_INTERRUPT";
+  fuchsia.NAME == "gpio-int";
 }
 
 parent "gpio-reset" {
   fuchsia.hardware.gpio.Service == fuchsia.hardware.gpio.Service.ZirconTransport;
-  fuchsia.NAME == "TOUCH_RESET";
+  fuchsia.NAME == "gpio-reset";
 }
 
 optional parent "pdev" {

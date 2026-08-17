@@ -87,7 +87,7 @@ const ddk::BindRule kGpioBtRules[] = {
 const device_bind_prop_t kGpioBtProperties[] = {
     ddk::MakeProperty(bind_fuchsia_hardware_gpio::SERVICE,
                       bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
-    ddk::MakeProperty(bind_fuchsia::NAME, "BT_REG_ON"),
+    ddk::MakeProperty(bind_fuchsia::NAME, "gpio-bt"),
 };
 
 zx_status_t Astro::PwmInit() {

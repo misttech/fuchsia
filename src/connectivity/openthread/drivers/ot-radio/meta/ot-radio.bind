@@ -24,17 +24,17 @@ parent "pdev" {
 
 parent "gpio-int" {
   fuchsia.hardware.gpio.Service == fuchsia.hardware.gpio.Service.ZirconTransport;
-  fuchsia.NAME == "OT_RADIO_INTERRUPT";
+  fuchsia.NAME == "gpio-int";
 }
 
 parent "gpio-reset" {
   fuchsia.hardware.gpio.Service == fuchsia.hardware.gpio.Service.ZirconTransport;
-  fuchsia.NAME == "OT_RADIO_RESET";
+  fuchsia.NAME == "gpio-reset";
 }
 
 parent "gpio-bootloader" {
   fuchsia.hardware.gpio.Service == fuchsia.hardware.gpio.Service.ZirconTransport;
-  fuchsia.NAME == "OT_RADIO_BOOTLOADER";
+  fuchsia.NAME == "gpio-bootloader";
 }
 
 optional parent "gpio-init" {

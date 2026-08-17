@@ -20,7 +20,7 @@
     },
     {
       service: "fuchsia.hardware.clock.Service",
-      name: "DOS",
+      name: "clock-dos",
       from: "#clock-controller-ff63c000",
       to: "#video-decoder-ffd00000",
       constraints: {
@@ -29,7 +29,7 @@
     },
     {
       service: "fuchsia.hardware.clock.Service",
-      name: "DOS_GCLK_VDEC",
+      name: "clock-dos-vdec",
       from: "#clock-controller-ff63c000",
       to: "#video-decoder-ffd00000",
       constraints: {

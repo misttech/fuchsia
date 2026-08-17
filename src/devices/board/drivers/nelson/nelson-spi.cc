@@ -229,7 +229,7 @@ zx_status_t Nelson::Spi0Init() {
       fidl::ToWire(fidl_arena, spi_0_dev),
       MakeSpiCompositeNodeSpec(
           fidl_arena, "spi_0", /* gpio_pin */ GPIO_SOC_SPI_A_SS0,
-          /* gpio_name */ "SPICC0_SS0",
+          /* gpio_name */ "gpio-cs-0",
           /* register_id */ bind_fuchsia_amlogic_platform::NAME_REGISTER_SPICC0_RESET));
   if (!result.ok()) {
     zxlogf(ERROR, "AddCompositeNodeSpec Spi0(spi_0_dev) request failed: %s",
@@ -360,7 +360,7 @@ zx_status_t Nelson::Spi1Init() {
       fidl::ToWire(fidl_arena, spi_1_dev),
       MakeSpiCompositeNodeSpec(
           fidl_arena, "spi_1", /* gpio_pin */ GPIO_SOC_SPI_B_SS0,
-          /* gpio_name */ "SPICC1_SS0",
+          /* gpio_name */ "gpio-cs-0",
           /* register_id */ bind_fuchsia_amlogic_platform::NAME_REGISTER_SPICC1_RESET));
   if (!result.ok()) {
     zxlogf(ERROR, "AddCompositeNodeSpec Spi1(spi_1_dev) request failed: %s",

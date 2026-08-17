@@ -667,7 +667,7 @@ zx::result<> Tcs3400::Start(fdf::DriverContext context) {
       component_inspector_->inspector().GetRoot().CreateChild("feature_reports"),
       kMaxFeatureReports);
 
-  zx::result gpio = incoming->Connect<fuchsia_hardware_gpio::Service::Device>("gpio");
+  zx::result gpio = incoming->Connect<fuchsia_hardware_gpio::Service::Device>("gpio-int");
   if (gpio.is_error()) {
     fdf::error("Failed to connect to gpio protocol: {}", gpio);
     return gpio.take_error();

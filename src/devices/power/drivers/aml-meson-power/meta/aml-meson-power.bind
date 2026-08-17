@@ -26,9 +26,9 @@ primary parent "pdev" {
 }
 
 // For Astro
-optional parent "pwm-primary" {
+optional parent "pwm-big-cluster" {
   fuchsia.hardware.pwm.Service == fuchsia.hardware.pwm.Service.ZirconTransport;
-  if fuchsia.NAME == "CORE_POWER_BIG_CLUSTER" {
+  if fuchsia.NAME == "pwm-big-cluster" {
     true;
   } else {
     fuchsia.amlogic.platform.PWM_ID == fuchsia.amlogic.platform.PWM_ID.AO_D;

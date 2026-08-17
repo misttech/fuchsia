@@ -21,7 +21,7 @@
                 "expected": "match",
                 "device": {
                     "fuchsia.hardware.gpio.Service": "fuchsia.hardware.gpio.Service.ZirconTransport",
-                    "fuchsia.NAME": "\"SOC_AUDIO_FAULT\""
+                    "fuchsia.NAME": "\"gpio-fault\""
                 }
             }
         ]

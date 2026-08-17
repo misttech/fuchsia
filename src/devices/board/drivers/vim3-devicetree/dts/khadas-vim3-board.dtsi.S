@@ -154,7 +154,7 @@
 	power_button: gpio-buttons {
 		compatible = "fuchsia,gpio-buttons";
 		gpios = <&gpio A311D_GPIOAO(7) 0>;
-		gpio-names = "POWER";
+		gpio-names = "power";
 		pinctrl-0 = <&gpio_buttons_pins>;
 	};
 
@@ -224,7 +224,7 @@
 	fusb302@22 {
 		reg = <0x22>;
 		gpios = <&gpio A311D_GPIOAO(8) 0>;
-		gpio-names = "USB_POWER_DELIVERY";
+		gpio-names = "gpio-int";
 		pinctrl-0 = <&fusb302_pins>;
 	};
 

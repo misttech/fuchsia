@@ -69,9 +69,9 @@ const std::vector<fdf::NodeProperty2> kGpioInitProperties = std::vector{
 };
 
 const std::map<uint32_t, std::string> kGpioPinFunctionMap = {
-    {GPIO_TH_SOC_INT, "OT_RADIO_INTERRUPT"},
-    {GPIO_SOC_TH_RST_L, "OT_RADIO_RESET"},
-    {GPIO_SOC_TH_BOOT_MODE_L, "OT_RADIO_BOOTLOADER"},
+    {GPIO_TH_SOC_INT, "gpio-int"},
+    {GPIO_SOC_TH_RST_L, "gpio-reset"},
+    {GPIO_SOC_TH_BOOT_MODE_L, "gpio-bootloader"},
 };
 
 }  // namespace

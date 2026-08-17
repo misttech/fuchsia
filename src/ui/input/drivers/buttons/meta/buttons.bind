@@ -20,9 +20,9 @@ optional parent "gpio-init" {
   fuchsia.BIND_INIT_STEP == fuchsia.gpio.BIND_INIT_STEP.GPIO;
 }
 
-optional parent "mic-privacy" {
+optional parent "mic-mute" {
   fuchsia.Service == "fuchsia.hardware.gpio.Service";
-  fuchsia.NAME == "MIC_MUTE";
+  fuchsia.NAME == "mic-mute";
 }
 
 optional parent "pin-states-0" {
@@ -31,21 +31,21 @@ optional parent "pin-states-0" {
 
 optional parent "power" {
   fuchsia.Service == "fuchsia.hardware.gpio.Service";
-  fuchsia.NAME == "POWER";
+  fuchsia.NAME == "power";
 }
 
 optional parent "volume-both" {
   fuchsia.Service == "fuchsia.hardware.gpio.Service";
-  fuchsia.NAME == "VOLUME_BOTH";
+  fuchsia.NAME == "volume-both";
 }
 
 optional parent "volume-down" {
   fuchsia.Service == "fuchsia.hardware.gpio.Service";
-  fuchsia.NAME == "VOLUME_DOWN";
+  fuchsia.NAME == "volume-down";
 }
 
 optional parent "volume-up" {
   fuchsia.Service == "fuchsia.hardware.gpio.Service";
-  fuchsia.NAME == "VOLUME_UP";
+  fuchsia.NAME == "volume-up";
 }
 

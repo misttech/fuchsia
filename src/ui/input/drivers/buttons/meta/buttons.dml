@@ -40,11 +40,11 @@
     },
     {
       service: "fuchsia.hardware.gpio.Service",
-      name: "mic-privacy",
+      name: "mic-mute",
       availability: "optional",
       bind: {
         rules: {
-          "fuchsia.NAME": "\"MIC_MUTE\""
+          "fuchsia.NAME": "\"mic-mute\""
         }
       }
     },
@@ -54,7 +54,7 @@
       availability: "optional",
       bind: {
         rules: {
-          "fuchsia.NAME": "\"VOLUME_UP\""
+          "fuchsia.NAME": "\"volume-up\""
         }
       }
     },
@@ -64,7 +64,7 @@
       availability: "optional",
       bind: {
         rules: {
-          "fuchsia.NAME": "\"VOLUME_DOWN\""
+          "fuchsia.NAME": "\"volume-down\""
         }
       }
     },
@@ -74,7 +74,7 @@
       availability: "optional",
       bind: {
         rules: {
-          "fuchsia.NAME": "\"VOLUME_BOTH\""
+          "fuchsia.NAME": "\"volume-both\""
         }
       }
     },
@@ -84,7 +84,7 @@
       availability: "optional",
       bind: {
         rules: {
-          "fuchsia.NAME": "\"POWER\""
+          "fuchsia.NAME": "\"power\""
         }
       }
     },

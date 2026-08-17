@@ -273,7 +273,7 @@ class ButtonsTestEnvironment : public fdf_testing::Environment {
         gpios_ = std::span(kGpiosDirect);
       } break;
       case kMetadataMultiple: {
-        buttons_names_ = {"volume-up", "mic-privacy", "cam-mute"};
+        buttons_names_ = {"volume-up", "mic-mute", "cam-mute"};
         buttons = kButtonsMultiple;
         gpios_ = std::span(kGpiosMultiple);
       } break;
@@ -288,7 +288,7 @@ class ButtonsTestEnvironment : public fdf_testing::Environment {
         gpios_ = std::span(kGpiosMatrix);
       } break;
       case kMetadataPolled: {
-        buttons_names_ = {"volume-up", "mic-privacy", "cam-mute"};
+        buttons_names_ = {"volume-up", "mic-mute", "cam-mute"};
         buttons = kButtonsMultiple;
         gpios_ = std::span(kGpiosMultipleOnePolled);
       } break;

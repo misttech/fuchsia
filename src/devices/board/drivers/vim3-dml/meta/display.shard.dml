@@ -26,7 +26,7 @@
       constraints: {
         controller: "gpio-controller-ff634400",
         pin: 78,
-        name: "HDMI_HOTPLUG_DETECT",
+        name: "gpio-hdmi-hotplug-detect",
         pull: "Down",
         buffer_mode: "Input"
       }
@@ -39,7 +39,7 @@
       constraints: {
         controller: "gpio-controller-20",
         pin: 0,
-        name: "LCD_RESET"
+        name: "gpio-lcd-reset"
       }
     },
     {

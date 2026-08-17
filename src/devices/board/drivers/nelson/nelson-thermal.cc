@@ -203,7 +203,7 @@ const std::vector<fdf::BindRule2> kPwmRules = std::vector{
 const std::vector<fdf::NodeProperty2> kPwmProperties = std::vector{
     fdf::MakeProperty2(bind_fuchsia_hardware_pwm::SERVICE,
                        bind_fuchsia_hardware_pwm::SERVICE_ZIRCONTRANSPORT),
-    fdf::MakeProperty2(bind_fuchsia::NAME, "CORE_POWER_BIG_CLUSTER"),
+    fdf::MakeProperty2(bind_fuchsia::NAME, "pwm-big-cluster"),
 };
 
 const std::vector<fdf::BindRule2> kGpioInitRules = std::vector{
@@ -216,8 +216,8 @@ const std::vector<fdf::NodeProperty2> kGpioInitProperties = std::vector{
 
 // Contains all the clock parent nodes for the composite. Maps the clock id to the clock function.
 const std::map<uint32_t, std::string> kClockFunctionMap = {
-    {sm1_clk::CLK_SYS_PLL_DIV16, "SYS_PLL_DIV16"},
-    {sm1_clk::CLK_SYS_CPU_CLK_DIV16, "SYS_CPU_DIV16"},
+    {sm1_clk::CLK_SYS_PLL_DIV16, "sys-pll-div16"},
+    {sm1_clk::CLK_SYS_CPU_CLK_DIV16, "sys-cpu-div16"},
 };
 
 zx_status_t Nelson::ThermalInit() {

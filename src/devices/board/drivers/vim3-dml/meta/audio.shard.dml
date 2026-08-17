@@ -13,7 +13,7 @@
   offers: [
     {
       service: "fuchsia.hardware.clock.Service",
-      name: "AUDIO_GATE",
+      name: "clock-gate",
       from: "#clock-controller-ff63c000",
       to: "#audio-controller-ff642000",
       constraints: {
@@ -22,7 +22,7 @@
     },
     {
       service: "fuchsia.hardware.clock.Service",
-      name: "AUDIO_PLL",
+      name: "clock-pll",
       from: "#clock-controller-ff63c000",
       to: "#audio-controller-ff642000",
       constraints: {
@@ -59,7 +59,7 @@
       to: "#audio-controller-ff642000",
       constraints: {
         pin: 67,
-        name: "TDM_A_SCLK"
+        name: "gpio-tdm-a-sclk"
       }
     },
     {
@@ -69,7 +69,7 @@
       to: "#audio-controller-ff642000",
       constraints: {
         pin: 17,
-        name: "TDM_B_SCLK"
+        name: "gpio-tdm-b-sclk"
       }
     },
     {

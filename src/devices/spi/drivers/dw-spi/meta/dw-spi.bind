@@ -16,12 +16,12 @@ primary parent "pdev" {
   fuchsia.COMPATIBLE == "google,spi";
 }
 
-parent "clock-bus" {
+parent "bus" {
   fuchsia.hardware.clock.Service == fuchsia.hardware.clock.Service.ZirconTransport;
   fuchsia.NAME == "bus";
 }
 
-parent "clock-registers" {
+parent "registers" {
   fuchsia.hardware.clock.Service == fuchsia.hardware.clock.Service.ZirconTransport;
   fuchsia.NAME == "registers";
 }
@@ -34,7 +34,7 @@ parent "power-domain" {
   fuchsia.hardware.powerdomain.Service == fuchsia.hardware.powerdomain.Service.ZirconTransport;
 }
 
-optional parent "gpio-cs-0" {
+optional parent "cs-0" {
   fuchsia.hardware.gpio.Service == fuchsia.hardware.gpio.Service.ZirconTransport;
   fuchsia.NAME == "cs-0";
 }

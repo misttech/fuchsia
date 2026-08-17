@@ -31,7 +31,7 @@
                 "expected": "match",
                 "device": {
                     "fuchsia.hardware.gpio.Service": "fuchsia.hardware.gpio.Service.ZirconTransport",
-                    "fuchsia.NAME": "\"BT_REG_ON\""
+                    "fuchsia.NAME": "\"gpio-bt\""
                 }
             }
         ]

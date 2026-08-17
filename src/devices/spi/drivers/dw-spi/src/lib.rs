@@ -75,7 +75,7 @@ impl Driver for DwSpiDriver {
                 .context("Failed to enable power domain")
         })?;
 
-        let clock_bus = context.connect_to_clock("clock-bus")?;
+        let clock_bus = context.connect_to_clock("bus")?;
         clock_bus.enable().await?.map_err(|s| {
             anyhow::Error::new(s.err().unwrap_or(Status::INTERNAL))
                 .context("Failed to enable bus clock")
@@ -92,7 +92,7 @@ impl Driver for DwSpiDriver {
             .unwrap_or(ClockGetRateResponse { hz: 0 })
             .hz;
 
-        let clock_regs = context.connect_to_clock("clock-registers")?;
+        let clock_regs = context.connect_to_clock("registers")?;
         clock_regs.enable().await?.map_err(|s| {
             anyhow::Error::new(s.err().unwrap_or(Status::INTERNAL))
                 .context("Failed to enable registers clock")
@@ -105,7 +105,7 @@ impl Driver for DwSpiDriver {
         })?;
 
         let cs_gpio = {
-            let cs_gpio = context.connect_to_gpio("gpio-cs-0")?;
+            let cs_gpio = context.connect_to_gpio("cs-0")?;
 
             // The chip select GPIO is optional. Make a call on it do determine whether or not it
             // has been provided to us.

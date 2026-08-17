@@ -30,12 +30,12 @@ primary parent "pdev" {
 
 parent "gpio-lcd-reset" {
   fuchsia.hardware.gpio.Service == fuchsia.hardware.gpio.Service.ZirconTransport;
-  fuchsia.NAME == "LCD_RESET";
+  fuchsia.NAME == "gpio-lcd-reset";
 }
 
 optional parent "gpio-hdmi-hotplug-detect" {
   fuchsia.hardware.gpio.Service == fuchsia.hardware.gpio.Service.ZirconTransport;
-  fuchsia.NAME == "HDMI_HOTPLUG_DETECT";
+  fuchsia.NAME == "gpio-hdmi-hotplug-detect";
 }
 
 parent "canvas" {

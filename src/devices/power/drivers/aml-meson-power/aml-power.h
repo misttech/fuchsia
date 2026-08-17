@@ -46,7 +46,7 @@ class AmlPower : public fdf::DriverBase2, public ddk::PowerImplProtocol<AmlPower
 
   static constexpr std::string_view kDriverName = "aml-power";
   static constexpr std::string_view kChildNodeName = "power-impl";
-  static constexpr std::string_view kPwmPrimaryParentName = "pwm-primary";
+  static constexpr std::string_view kPwmPrimaryParentName = "pwm-big-cluster";
   static constexpr std::string_view kVregPwmLittleParentName = "vreg-pwm-little";
   static constexpr std::string_view kVregPwmBigParentName = "vreg-pwm-big";
 

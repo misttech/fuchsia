@@ -15,12 +15,12 @@ primary parent "pdev" {
   fuchsia.COMPATIBLE == "google,i2c";
 }
 
-parent "clock-bus" {
+parent "bus" {
   fuchsia.hardware.clock.Service == fuchsia.hardware.clock.Service.ZirconTransport;
   fuchsia.NAME == "bus";
 }
 
-parent "clock-registers" {
+parent "registers" {
   fuchsia.hardware.clock.Service == fuchsia.hardware.clock.Service.ZirconTransport;
   fuchsia.NAME == "registers";
 }

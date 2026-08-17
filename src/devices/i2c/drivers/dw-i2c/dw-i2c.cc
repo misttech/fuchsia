@@ -549,10 +549,9 @@ zx::result<> DwI2c::Start(fdf::DriverContext context) {
 
   // Connect and enable clocks.
   {
-    zx::result clock_bus_client =
-        incoming->Connect<fuchsia_hardware_clock::Service::Clock>("clock-bus");
+    zx::result clock_bus_client = incoming->Connect<fuchsia_hardware_clock::Service::Clock>("bus");
     if (clock_bus_client.is_error()) {
-      fdf::error("Failed to connect to clock-bus: {}", clock_bus_client.status_string());
+      fdf::error("Failed to connect to bus clock: {}", clock_bus_client.status_string());
       return clock_bus_client.take_error();
     }
     clock_bus_ = fidl::WireSyncClient(std::move(clock_bus_client.value()));
@@ -567,9 +566,9 @@ zx::result<> DwI2c::Start(fdf::DriverContext context) {
 
   {
     zx::result clock_regs_client =
-        incoming->Connect<fuchsia_hardware_clock::Service::Clock>("clock-registers");
+        incoming->Connect<fuchsia_hardware_clock::Service::Clock>("registers");
     if (clock_regs_client.is_error()) {
-      fdf::error("Failed to connect to clock-registers: {}", clock_regs_client.status_string());
+      fdf::error("Failed to connect to registers clock: {}", clock_regs_client.status_string());
       return clock_regs_client.take_error();
     }
     clock_regs_ = fidl::WireSyncClient(std::move(clock_regs_client.value()));

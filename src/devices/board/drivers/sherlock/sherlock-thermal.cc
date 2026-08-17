@@ -128,15 +128,15 @@ aml_thermal_info_t aml_thermal_info = {
 };
 
 const std::map<uint32_t, std::string> kPwmIdMap = {
-    {T931_PWM_A, "CORE_POWER_BIG_CLUSTER"},
-    {T931_PWM_AO_D, "CORE_POWER_LITTLE_CLUSTER"},
+    {T931_PWM_A, "pwm-big-cluster"},
+    {T931_PWM_AO_D, "pwm-little-cluster"},
 };
 
 const std::map<uint32_t, std::string> kClockFunctionMap = {
-    {g12b_clk::G12B_CLK_SYS_PLL_DIV16, "SYS_PLL_DIV16"},
-    {g12b_clk::G12B_CLK_SYS_PLLB_DIV16, "SYS_PLLB_DIV16"},
-    {g12b_clk::G12B_CLK_SYS_CPU_CLK_DIV16, "SYS_CPU_DIV16"},
-    {g12b_clk::G12B_CLK_SYS_CPUB_CLK_DIV16, "SYS_CPUB_DIV16"},
+    {g12b_clk::G12B_CLK_SYS_PLL_DIV16, "sys-pll-div16"},
+    {g12b_clk::G12B_CLK_SYS_PLLB_DIV16, "sys-pllb-div16"},
+    {g12b_clk::G12B_CLK_SYS_CPU_CLK_DIV16, "sys-cpu-div16"},
+    {g12b_clk::G12B_CLK_SYS_CPUB_CLK_DIV16, "sys-cpub-div16"},
 };
 
 zx::result<> CreateThermalPllNode(

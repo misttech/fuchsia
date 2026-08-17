@@ -70,7 +70,7 @@ zx::result<> Buttons::Start(fdf::DriverContext context) {
         break;
       case fuchsia_buttons::GpioButtonId::kMicMute:
       case fuchsia_buttons::GpioButtonId::kMicAndCamMute:
-        name = "mic-privacy";
+        name = "mic-mute";
         break;
       case fuchsia_buttons::GpioButtonId::kCamMute:
         name = "cam-mute";

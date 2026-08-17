@@ -64,9 +64,9 @@ const std::vector<fdf::NodeProperty2> kGpioInitProperties = std::vector{
 };
 
 const std::map<uint32_t, std::string> kGpioPinFunctionMap = {
-    {GPIO_OT_RADIO_INTERRUPT, "OT_RADIO_INTERRUPT"},
-    {GPIO_OT_RADIO_RESET, "OT_RADIO_RESET"},
-    {GPIO_OT_RADIO_BOOTLOADER, "OT_RADIO_BOOTLOADER"},
+    {GPIO_OT_RADIO_INTERRUPT, "gpio-int"},
+    {GPIO_OT_RADIO_RESET, "gpio-reset"},
+    {GPIO_OT_RADIO_BOOTLOADER, "gpio-bootloader"},
 };
 
 zx_status_t Sherlock::OtRadioInit() {

@@ -119,7 +119,7 @@ class Tcs3400TestEnvironment : public fdf_testing::Environment {
         i2c_.CreateInstanceHandler(dispatcher), "i2c"));
 
     EXPECT_OK(to_driver_vfs.AddService<fuchsia_hardware_gpio::Service>(
-        gpio_.CreateInstanceHandler(), "gpio"));
+        gpio_.CreateInstanceHandler(), "gpio-int"));
 
     return zx::ok();
   }

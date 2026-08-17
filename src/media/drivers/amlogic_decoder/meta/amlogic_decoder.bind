@@ -32,12 +32,12 @@ parent "canvas" {
 
 parent "clock-dos-vdec" {
   fuchsia.hardware.clock.Service == fuchsia.hardware.clock.Service.ZirconTransport;
-  fuchsia.NAME == "DOS_GCLK_VDEC";
+  fuchsia.NAME == "clock-dos-vdec";
 }
 
 parent "clock-dos" {
   fuchsia.hardware.clock.Service == fuchsia.hardware.clock.Service.ZirconTransport;
-  fuchsia.NAME == "DOS";
+  fuchsia.NAME == "clock-dos";
 }
 
 optional parent "tee" {

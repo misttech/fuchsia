@@ -46,7 +46,7 @@
                 "expected": "match",
                 "device": {
                     "fuchsia.hardware.clock.Service": "fuchsia.hardware.clock.Service.ZirconTransport",
-                    "fuchsia.NAME": "\"AUDIO_GATE\""
+                    "fuchsia.NAME": "\"clock-gate\""
                 }
             }
         ]
@@ -59,7 +59,7 @@
                 "expected": "match",
                 "device": {
                     "fuchsia.hardware.clock.Service": "fuchsia.hardware.clock.Service.ZirconTransport",
-                    "fuchsia.NAME": "\"AUDIO_PLL\""
+                    "fuchsia.NAME": "\"clock-pll\""
                 }
             }
         ]

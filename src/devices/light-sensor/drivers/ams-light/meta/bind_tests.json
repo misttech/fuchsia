@@ -12,14 +12,14 @@
         ]
     },
     {
-        "parent": "gpio",
+        "parent": "gpio-int",
         "tests": [
             {
                 "name": "Match",
                 "expected": "match",
                 "device": {
                     "fuchsia.hardware.gpio.Service": "fuchsia.hardware.gpio.Service.ZirconTransport",
-                    "fuchsia.NAME": "\"LIGHT_INTERRUPT\""
+                    "fuchsia.NAME": "\"gpio-int\""
                 }
             }
         ]

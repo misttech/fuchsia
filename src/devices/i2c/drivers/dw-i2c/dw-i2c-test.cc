@@ -69,9 +69,9 @@ class TestEnvironment : public fdf_testing::Environment {
     EXPECT_OK(to_driver_vfs.AddService<fuchsia_hardware_platform_device::Service>(
         pdev_.GetInstanceHandler(dispatcher), "pdev"));
     EXPECT_OK(to_driver_vfs.AddService<fuchsia_hardware_clock::Service>(
-        clock_bus_.CreateInstanceHandler(dispatcher), "clock-bus"));
+        clock_bus_.CreateInstanceHandler(dispatcher), "bus"));
     EXPECT_OK(to_driver_vfs.AddService<fuchsia_hardware_clock::Service>(
-        clock_regs_.CreateInstanceHandler(dispatcher), "clock-registers"));
+        clock_regs_.CreateInstanceHandler(dispatcher), "registers"));
     EXPECT_OK(to_driver_vfs.AddService<fuchsia_hardware_powerdomain::Service>(
         powerdomain_.CreateInstanceHandler(), "power-domain"));
     EXPECT_OK(to_driver_vfs.AddService<fuchsia_hardware_reset::Service>(

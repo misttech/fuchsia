@@ -21,7 +21,7 @@
                 "expected": "match",
                 "device": {
                     "fuchsia.hardware.gpio.Service": "fuchsia.hardware.gpio.Service.ZirconTransport",
-                    "fuchsia.NAME": "\"OT_RADIO_INTERRUPT\""
+                    "fuchsia.NAME": "\"gpio-int\""
                 }
             }
         ]
@@ -34,7 +34,7 @@
                 "expected": "match",
                 "device": {
                     "fuchsia.hardware.gpio.Service": "fuchsia.hardware.gpio.Service.ZirconTransport",
-                    "fuchsia.NAME": "\"OT_RADIO_RESET\""
+                    "fuchsia.NAME": "\"gpio-reset\""
                 }
             }
         ]
@@ -47,7 +47,7 @@
                 "expected": "match",
                 "device": {
                     "fuchsia.hardware.gpio.Service": "fuchsia.hardware.gpio.Service.ZirconTransport",
-                    "fuchsia.NAME": "\"OT_RADIO_BOOTLOADER\""
+                    "fuchsia.NAME": "\"gpio-bootloader\""
                 }
             }
         ]

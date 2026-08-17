@@ -78,33 +78,31 @@ zx::result<std::unique_ptr<AmlCpuPerformanceDomain>> AmlCpuDriver::BuildPerforma
   fidl::ClientEnd<fuchsia_hardware_clock::Clock> pll_div16_client;
   fidl::ClientEnd<fuchsia_hardware_clock::Clock> cpu_div16_client;
   if (config.has_div16_clients) {
-    snprintf(fragment_name, sizeof(fragment_name), "clock-pll-div16-%02d", perf_domain.id());
+    const char* pll_name = perf_domain.id() == 1 ? "sys-pll-div16" : "sys-pllb-div16";
     zx::result pll_clock_client =
-        incoming->Connect<fuchsia_hardware_clock::Service::Clock>(fragment_name);
+        incoming->Connect<fuchsia_hardware_clock::Service::Clock>(pll_name);
     if (pll_clock_client.is_error()) {
-      fdf::error("Failed to get clock protocol from fragment '{}': {}\n", fragment_name,
+      fdf::error("Failed to get clock protocol from fragment '{}': {}\n", pll_name,
                  pll_clock_client);
       return zx::error(pll_clock_client.status_value());
     }
     pll_div16_client = std::move(*pll_clock_client);
 
-    snprintf(fragment_name, sizeof(fragment_name), "clock-cpu-div16-%02d", perf_domain.id());
+    const char* cpu_div16_name = perf_domain.id() == 1 ? "sys-cpu-div16" : "sys-cpub-div16";
     zx::result cpu_clock_client =
-        incoming->Connect<fuchsia_hardware_clock::Service::Clock>(fragment_name);
+        incoming->Connect<fuchsia_hardware_clock::Service::Clock>(cpu_div16_name);
     if (cpu_clock_client.is_error()) {
-      fdf::error("Failed to get clock protocol from fragment '{}': {}\n", fragment_name,
+      fdf::error("Failed to get clock protocol from fragment '{}': {}\n", cpu_div16_name,
                  cpu_clock_client);
       return zx::error(cpu_clock_client.status_value());
     }
     cpu_div16_client = std::move(*cpu_clock_client);
   }
 
-  snprintf(fragment_name, sizeof(fragment_name), "clock-cpu-scaler-%02d", perf_domain.id());
-  zx::result clock_client =
-      incoming->Connect<fuchsia_hardware_clock::Service::Clock>(fragment_name);
+  const char* scaler_name = perf_domain.id() == 1 ? "sys-cpu-big-clk" : "sys-cpu-little-clk";
+  zx::result clock_client = incoming->Connect<fuchsia_hardware_clock::Service::Clock>(scaler_name);
   if (clock_client.is_error()) {
-    fdf::error("Failed to get clock protocol from fragment '{}': {}\n", fragment_name,
-               clock_client);
+    fdf::error("Failed to get clock protocol from fragment '{}': {}\n", scaler_name, clock_client);
     return zx::error(clock_client.status_value());
   }
   fidl::ClientEnd<fuchsia_hardware_clock::Clock> cpu_scaler_client{std::move(*clock_client)};

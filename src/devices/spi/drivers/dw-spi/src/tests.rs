@@ -82,10 +82,10 @@ async fn test_init() {
     let mut harness = TestHarness::<DwSpiDriver>::new()
         .add_offer(pdev.serve(&mut service_fs, scope.to_handle(), "pdev"))
         .add_offer(powerdomain.serve(&mut service_fs, scope.to_handle(), "power-domain"))
-        .add_offer(clock_bus.serve(&mut service_fs, scope.to_handle(), "clock-bus"))
-        .add_offer(clock_regs.serve(&mut service_fs, scope.to_handle(), "clock-registers"))
+        .add_offer(clock_bus.serve(&mut service_fs, scope.to_handle(), "bus"))
+        .add_offer(clock_regs.serve(&mut service_fs, scope.to_handle(), "registers"))
         .add_offer(reset.serve(&mut service_fs, scope.to_handle(), "reset"))
-        .add_offer(gpio.serve(&mut service_fs, scope.to_handle(), "gpio-cs-0"))
+        .add_offer(gpio.serve(&mut service_fs, scope.to_handle(), "cs-0"))
         .set_driver_incoming(service_fs);
 
     let started_driver = harness.start_driver().await.expect("Failed to start driver");
@@ -154,10 +154,10 @@ async fn test_exchange_vector() {
     let mut harness = TestHarness::<DwSpiDriver>::new()
         .add_offer(pdev.serve(&mut service_fs, scope.to_handle(), "pdev"))
         .add_offer(powerdomain.serve(&mut service_fs, scope.to_handle(), "power-domain"))
-        .add_offer(clock_bus.serve(&mut service_fs, scope.to_handle(), "clock-bus"))
-        .add_offer(clock_regs.serve(&mut service_fs, scope.to_handle(), "clock-registers"))
+        .add_offer(clock_bus.serve(&mut service_fs, scope.to_handle(), "bus"))
+        .add_offer(clock_regs.serve(&mut service_fs, scope.to_handle(), "registers"))
         .add_offer(reset.serve(&mut service_fs, scope.to_handle(), "reset"))
-        .add_offer(gpio.serve(&mut service_fs, scope.to_handle(), "gpio-cs-0"))
+        .add_offer(gpio.serve(&mut service_fs, scope.to_handle(), "cs-0"))
         .set_driver_incoming(service_fs);
 
     let dispatcher = fdf_fidl::FidlExecutor::from(harness.dispatcher().clone());
@@ -273,10 +273,10 @@ async fn test_vmo_registration() {
     let mut harness = TestHarness::<DwSpiDriver>::new()
         .add_offer(pdev.serve(&mut service_fs, scope.to_handle(), "pdev"))
         .add_offer(powerdomain.serve(&mut service_fs, scope.to_handle(), "power-domain"))
-        .add_offer(clock_bus.serve(&mut service_fs, scope.to_handle(), "clock-bus"))
-        .add_offer(clock_regs.serve(&mut service_fs, scope.to_handle(), "clock-registers"))
+        .add_offer(clock_bus.serve(&mut service_fs, scope.to_handle(), "bus"))
+        .add_offer(clock_regs.serve(&mut service_fs, scope.to_handle(), "registers"))
         .add_offer(reset.serve(&mut service_fs, scope.to_handle(), "reset"))
-        .add_offer(gpio.serve(&mut service_fs, scope.to_handle(), "gpio-cs-0"))
+        .add_offer(gpio.serve(&mut service_fs, scope.to_handle(), "cs-0"))
         .set_driver_incoming(service_fs);
 
     let dispatcher = fdf_fidl::FidlExecutor::from(harness.dispatcher().clone());
@@ -371,10 +371,10 @@ async fn test_vmo_registration_loopback() {
     let mut harness = TestHarness::<DwSpiDriver>::new()
         .add_offer(pdev.serve(&mut service_fs, scope.to_handle(), "pdev"))
         .add_offer(powerdomain.serve(&mut service_fs, scope.to_handle(), "power-domain"))
-        .add_offer(clock_bus.serve(&mut service_fs, scope.to_handle(), "clock-bus"))
-        .add_offer(clock_regs.serve(&mut service_fs, scope.to_handle(), "clock-registers"))
+        .add_offer(clock_bus.serve(&mut service_fs, scope.to_handle(), "bus"))
+        .add_offer(clock_regs.serve(&mut service_fs, scope.to_handle(), "registers"))
         .add_offer(reset.serve(&mut service_fs, scope.to_handle(), "reset"))
-        .add_offer(gpio.serve(&mut service_fs, scope.to_handle(), "gpio-cs-0"))
+        .add_offer(gpio.serve(&mut service_fs, scope.to_handle(), "cs-0"))
         .set_driver_incoming(service_fs);
 
     let dispatcher = fdf_fidl::FidlExecutor::from(harness.dispatcher().clone());
@@ -464,10 +464,10 @@ async fn test_transmit_vmo() {
     let mut harness = TestHarness::<DwSpiDriver>::new()
         .add_offer(pdev.serve(&mut service_fs, scope.to_handle(), "pdev"))
         .add_offer(powerdomain.serve(&mut service_fs, scope.to_handle(), "power-domain"))
-        .add_offer(clock_bus.serve(&mut service_fs, scope.to_handle(), "clock-bus"))
-        .add_offer(clock_regs.serve(&mut service_fs, scope.to_handle(), "clock-registers"))
+        .add_offer(clock_bus.serve(&mut service_fs, scope.to_handle(), "bus"))
+        .add_offer(clock_regs.serve(&mut service_fs, scope.to_handle(), "registers"))
         .add_offer(reset.serve(&mut service_fs, scope.to_handle(), "reset"))
-        .add_offer(gpio.serve(&mut service_fs, scope.to_handle(), "gpio-cs-0"))
+        .add_offer(gpio.serve(&mut service_fs, scope.to_handle(), "cs-0"))
         .set_driver_incoming(service_fs);
 
     let dispatcher = fdf_fidl::FidlExecutor::from(harness.dispatcher().clone());
@@ -575,10 +575,10 @@ async fn test_receive_vmo() {
     let mut harness = TestHarness::<DwSpiDriver>::new()
         .add_offer(pdev.serve(&mut service_fs, scope.to_handle(), "pdev"))
         .add_offer(powerdomain.serve(&mut service_fs, scope.to_handle(), "power-domain"))
-        .add_offer(clock_bus.serve(&mut service_fs, scope.to_handle(), "clock-bus"))
-        .add_offer(clock_regs.serve(&mut service_fs, scope.to_handle(), "clock-registers"))
+        .add_offer(clock_bus.serve(&mut service_fs, scope.to_handle(), "bus"))
+        .add_offer(clock_regs.serve(&mut service_fs, scope.to_handle(), "registers"))
         .add_offer(reset.serve(&mut service_fs, scope.to_handle(), "reset"))
-        .add_offer(gpio.serve(&mut service_fs, scope.to_handle(), "gpio-cs-0"))
+        .add_offer(gpio.serve(&mut service_fs, scope.to_handle(), "cs-0"))
         .set_driver_incoming(service_fs);
 
     let dispatcher = fdf_fidl::FidlExecutor::from(harness.dispatcher().clone());
@@ -681,10 +681,10 @@ async fn test_exchange_vmo() {
     let mut harness = TestHarness::<DwSpiDriver>::new()
         .add_offer(pdev.serve(&mut service_fs, scope.to_handle(), "pdev"))
         .add_offer(powerdomain.serve(&mut service_fs, scope.to_handle(), "power-domain"))
-        .add_offer(clock_bus.serve(&mut service_fs, scope.to_handle(), "clock-bus"))
-        .add_offer(clock_regs.serve(&mut service_fs, scope.to_handle(), "clock-registers"))
+        .add_offer(clock_bus.serve(&mut service_fs, scope.to_handle(), "bus"))
+        .add_offer(clock_regs.serve(&mut service_fs, scope.to_handle(), "registers"))
         .add_offer(reset.serve(&mut service_fs, scope.to_handle(), "reset"))
-        .add_offer(gpio.serve(&mut service_fs, scope.to_handle(), "gpio-cs-0"))
+        .add_offer(gpio.serve(&mut service_fs, scope.to_handle(), "cs-0"))
         .set_driver_incoming(service_fs);
 
     let dispatcher = fdf_fidl::FidlExecutor::from(harness.dispatcher().clone());
@@ -781,10 +781,10 @@ async fn test_vmo_validation() {
     let mut harness = TestHarness::<DwSpiDriver>::new()
         .add_offer(pdev.serve(&mut service_fs, scope.to_handle(), "pdev"))
         .add_offer(powerdomain.serve(&mut service_fs, scope.to_handle(), "power-domain"))
-        .add_offer(clock_bus.serve(&mut service_fs, scope.to_handle(), "clock-bus"))
-        .add_offer(clock_regs.serve(&mut service_fs, scope.to_handle(), "clock-registers"))
+        .add_offer(clock_bus.serve(&mut service_fs, scope.to_handle(), "bus"))
+        .add_offer(clock_regs.serve(&mut service_fs, scope.to_handle(), "registers"))
         .add_offer(reset.serve(&mut service_fs, scope.to_handle(), "reset"))
-        .add_offer(gpio.serve(&mut service_fs, scope.to_handle(), "gpio-cs-0"))
+        .add_offer(gpio.serve(&mut service_fs, scope.to_handle(), "cs-0"))
         .set_driver_incoming(service_fs);
 
     let dispatcher = fdf_fidl::FidlExecutor::from(harness.dispatcher().clone());
@@ -858,10 +858,10 @@ async fn test_loopback_mode() {
     let mut harness = TestHarness::<DwSpiDriver>::new()
         .add_offer(pdev.serve(&mut service_fs, scope.to_handle(), "pdev"))
         .add_offer(powerdomain.serve(&mut service_fs, scope.to_handle(), "power-domain"))
-        .add_offer(clock_bus.serve(&mut service_fs, scope.to_handle(), "clock-bus"))
-        .add_offer(clock_regs.serve(&mut service_fs, scope.to_handle(), "clock-registers"))
+        .add_offer(clock_bus.serve(&mut service_fs, scope.to_handle(), "bus"))
+        .add_offer(clock_regs.serve(&mut service_fs, scope.to_handle(), "registers"))
         .add_offer(reset.serve(&mut service_fs, scope.to_handle(), "reset"))
-        .add_offer(gpio.serve(&mut service_fs, scope.to_handle(), "gpio-cs-0"))
+        .add_offer(gpio.serve(&mut service_fs, scope.to_handle(), "cs-0"))
         .set_driver_incoming(service_fs);
 
     let dispatcher = fdf_fidl::FidlExecutor::from(harness.dispatcher().clone());

@@ -22,7 +22,7 @@
     },
     {
       service: "fuchsia.hardware.clock.Service",
-      name: "SYS_CPU_DIV16",
+      name: "sys-cpu-div16",
       from: "#clock-controller-ff63c000",
       to: "#cpu-controller-0",
       constraints: {
@@ -31,7 +31,7 @@
     },
     {
       service: "fuchsia.hardware.clock.Service",
-      name: "SYS_CPU_BIG_CLK",
+      name: "sys-cpu-big-clk",
       from: "#clock-controller-ff63c000",
       to: "#cpu-controller-0",
       constraints: {
@@ -40,7 +40,7 @@
     },
     {
       service: "fuchsia.hardware.clock.Service",
-      name: "SYS_CPUB_DIV16",
+      name: "sys-cpub-div16",
       from: "#clock-controller-ff63c000",
       to: "#cpu-controller-0",
       constraints: {
@@ -49,7 +49,7 @@
     },
     {
       service: "fuchsia.hardware.clock.Service",
-      name: "SYS_CPU_LITTLE_CLK",
+      name: "sys-cpu-little-clk",
       from: "#clock-controller-ff63c000",
       to: "#cpu-controller-0",
       constraints: {
@@ -58,7 +58,7 @@
     },
     {
       service: "fuchsia.hardware.clock.Service",
-      name: "SYS_PLL_DIV16",
+      name: "sys-pll-div16",
       from: "#clock-controller-ff63c000",
       to: "#cpu-controller-0",
       constraints: {
@@ -67,7 +67,7 @@
     },
     {
       service: "fuchsia.hardware.clock.Service",
-      name: "SYS_PLLB_DIV16",
+      name: "sys-pllb-div16",
       from: "#clock-controller-ff63c000",
       to: "#cpu-controller-0",
       constraints: {

@@ -24,7 +24,7 @@ parent "power-sensor" {
 
 parent "alert-gpio" {
   fuchsia.hardware.gpio.Service == fuchsia.hardware.gpio.Service.ZirconTransport;
-  fuchsia.NAME == "GPIO_ALERT_PWR_L";
+  fuchsia.NAME == "alert-gpio";
 }
 
 optional parent "gpio-init" {

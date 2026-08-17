@@ -37,12 +37,12 @@ parent "clock-init" {
 
 optional parent "clock-gate" {
   fuchsia.hardware.clock.Service == fuchsia.hardware.clock.Service.ZirconTransport;
-  fuchsia.NAME == "AUDIO_GATE";
+  fuchsia.NAME == "clock-gate";
 }
 
 optional parent "clock-pll" {
   fuchsia.hardware.clock.Service == fuchsia.hardware.clock.Service.ZirconTransport;
-  fuchsia.NAME == "AUDIO_PLL";
+  fuchsia.NAME == "clock-pll";
 }
 
 optional parent "pin-states-0" {

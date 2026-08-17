@@ -121,7 +121,7 @@
 		iommus = <&stub_iommu DISPLAY_BTI>;
 		smcs = <2 1 0>;
 		gpios = <&gpio_expander 0 0>, <&gpio A311D_GPIOH(2) 0>;
-		gpio-names = "LCD_RESET", "HDMI_HOTPLUG_DETECT";
+		gpio-names = "gpio-lcd-reset", "gpio-hdmi-hotplug-detect";
 		pinctrl-0 = <&hdmi_hotplug_detect_pins>;
 		amlogic,canvas = <&canvas>;
 	};
@@ -178,7 +178,7 @@
 		compatible = "amlogic,cpu";
 		reg = <0x0 0x0 0x0 0x1000>;
 		clocks = <&clock 0x10000 &clock 0x10001 &clock 0x100000>, <&clock 0x10003 &clock 0x10004 &clock 0x100001>;
-		clock-names = "SYS_PLL_DIV16", "SYS_CPU_DIV16", "SYS_CPU_BIG_CLK", "SYS_PLLB_DIV16", "SYS_CPUB_DIV16", "SYS_CPU_LITTLE_CLK";
+		clock-names = "sys-pll-div16", "sys-cpu-div16", "sys-cpu-big-clk", "sys-pllb-div16", "sys-cpub-div16", "sys-cpu-little-clk";
 		power-domains = <&pwrc 0 &pwrc 1>;
 
 		performance-domains {

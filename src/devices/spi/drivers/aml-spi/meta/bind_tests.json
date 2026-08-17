@@ -36,7 +36,7 @@
                 "expected": "match",
                 "device": {
                     "fuchsia.hardware.gpio.Service": "fuchsia.hardware.gpio.Service.ZirconTransport",
-                    "fuchsia.NAME": "\"SPICC0_SS0\""
+                    "fuchsia.NAME": "\"gpio-cs-0\""
                 }
             }
         ]

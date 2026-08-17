@@ -539,7 +539,7 @@ zx_status_t tas27xx_bind(void* ctx, zx_device_t* parent) {
 
   zx::result gpio =
       ddk::Device<void>::DdkConnectFragmentFidlProtocol<fuchsia_hardware_gpio::Service::Device>(
-          parent, "gpio");
+          parent, "gpio-fault");
   if (gpio.is_error()) {
     zxlogf(ERROR, "tas27xx: Failed to get gpio protocol: %s", gpio.status_string());
     return ZX_ERR_NOT_SUPPORTED;

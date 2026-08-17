@@ -53,7 +53,7 @@
                 "expected": "match",
                 "device": {
                     "fuchsia.hardware.gpio.Service": "fuchsia.hardware.gpio.Service.ZirconTransport",
-                    "fuchsia.NAME": "\"CAM_RESET\""
+                    "fuchsia.NAME": "\"gpio-reset\""
                 }
             }
         ]
@@ -66,7 +66,7 @@
                 "expected": "match",
                 "device": {
                     "fuchsia.hardware.gpio.Service": "fuchsia.hardware.gpio.Service.ZirconTransport",
-                    "fuchsia.NAME": "\"VANA_ENABLE\""
+                    "fuchsia.NAME": "\"gpio-vana\""
                 }
             }
         ]
@@ -79,7 +79,7 @@
                 "expected": "match",
                 "device": {
                     "fuchsia.hardware.gpio.Service": "fuchsia.hardware.gpio.Service.ZirconTransport",
-                    "fuchsia.NAME": "\"VDIG_ENABLE\""
+                    "fuchsia.NAME": "\"gpio-vdig\""
                 }
             }
         ]
@@ -92,7 +92,7 @@
                 "expected": "match",
                 "device": {
                     "fuchsia.hardware.clock.Service": "fuchsia.hardware.clock.Service.ZirconTransport",
-                    "fuchsia.NAME": "\"CAMERA_SENSOR\""
+                    "fuchsia.NAME": "\"clock-sensor\""
                 }
             }
         ]

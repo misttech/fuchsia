@@ -32,7 +32,7 @@
       to: "#gpio-buttons",
       constraints: {
         pin: 92,
-        name: "POWER"
+        name: "power"
       }
     },
     {

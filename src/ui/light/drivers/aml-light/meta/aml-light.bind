@@ -26,22 +26,22 @@ primary parent "pdev" {
 
 parent "gpio-amber-led" {
   fuchsia.hardware.gpio.Service == fuchsia.hardware.gpio.Service.ZirconTransport;
-  fuchsia.NAME == "GPIO_AMBER_LED";
+  fuchsia.NAME == "gpio-amber-led";
 }
 
 parent "pwm-amber-led" {
   fuchsia.hardware.pwm.Service == fuchsia.hardware.pwm.Service.ZirconTransport;
-  fuchsia.NAME == "AMBER_LED";
+  fuchsia.NAME == "pwm-amber-led";
 }
 
 optional parent "gpio-green-led" {
   fuchsia.hardware.gpio.Service == fuchsia.hardware.gpio.Service.ZirconTransport;
-  fuchsia.NAME == "GPIO_GREEN_LED";
+  fuchsia.NAME == "gpio-green-led";
 }
 
 optional parent "pwm-green-led" {
   fuchsia.hardware.pwm.Service == fuchsia.hardware.pwm.Service.ZirconTransport;
-  fuchsia.NAME == "GREEN_LED";
+  fuchsia.NAME == "pwm-green-led";
 }
 
 optional parent "gpio-init" {

@@ -43,7 +43,7 @@
       to: "#pwm-init",
       constraints: {
         pin: 73,
-        name: "BT_REG_ON"
+        name: "gpio-bt"
       }
     },
     {

@@ -101,7 +101,7 @@ const std::vector<fdf::BindRule2> kGpioResetRules = std::vector{
 const std::vector<fdf::NodeProperty2> kGpioResetProperties = std::vector{
     fdf::MakeProperty2(bind_fuchsia_hardware_gpio::SERVICE,
                        bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
-    fdf::MakeProperty2(bind_fuchsia::NAME, "SDMMC_RESET"),
+    fdf::MakeProperty2(bind_fuchsia::NAME, "gpio-reset"),
 };
 
 const std::vector<fdf::BindRule2> kGpioInitRules = std::vector{

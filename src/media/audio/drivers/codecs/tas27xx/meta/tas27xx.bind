@@ -16,9 +16,9 @@ primary parent "i2c" {
   }
 }
 
-parent "gpio" {
+parent "gpio-fault" {
   fuchsia.hardware.gpio.Service == fuchsia.hardware.gpio.Service.ZirconTransport;
-  fuchsia.NAME == "SOC_AUDIO_FAULT";
+  fuchsia.NAME == "gpio-fault";
 }
 
 optional parent "gpio-init" {

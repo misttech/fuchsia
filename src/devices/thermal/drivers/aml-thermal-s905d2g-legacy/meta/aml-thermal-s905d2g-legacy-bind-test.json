@@ -27,79 +27,79 @@
         ]
     },
     {
-        "parent": "pwm-a",
+        "parent": "pwm-big-cluster",
         "tests": [
             {
                 "name": "Match",
                 "expected": "match",
                 "device": {
                     "fuchsia.hardware.pwm.Service": "fuchsia.hardware.pwm.Service.ZirconTransport",
-                    "fuchsia.NAME": "\"CORE_POWER_BIG_CLUSTER\""
+                    "fuchsia.NAME": "\"pwm-big-cluster\""
                 }
             }
         ]
     },
     {
-        "parent": "pwm-ao-d",
+        "parent": "pwm-little-cluster",
         "tests": [
             {
                 "name": "Match",
                 "expected": "match",
                 "device": {
                     "fuchsia.hardware.pwm.Service": "fuchsia.hardware.pwm.Service.ZirconTransport",
-                    "fuchsia.NAME": "\"CORE_POWER_LITTLE_CLUSTER\""
+                    "fuchsia.NAME": "\"pwm-little-cluster\""
                 }
             }
         ]
     },
     {
-        "parent": "clock-1",
+        "parent": "sys-pll-div16",
         "tests": [
             {
                 "name": "Match",
                 "expected": "match",
                 "device": {
                     "fuchsia.hardware.clock.Service": "fuchsia.hardware.clock.Service.ZirconTransport",
-                    "fuchsia.NAME": "\"SYS_PLL_DIV16\""
+                    "fuchsia.NAME": "\"sys-pll-div16\""
                 }
             }
         ]
     },
     {
-        "parent": "clock-2",
+        "parent": "sys-cpu-div16",
         "tests": [
             {
                 "name": "Match",
                 "expected": "match",
                 "device": {
                     "fuchsia.hardware.clock.Service": "fuchsia.hardware.clock.Service.ZirconTransport",
-                    "fuchsia.NAME": "\"SYS_CPU_DIV16\""
+                    "fuchsia.NAME": "\"sys-cpu-div16\""
                 }
             }
         ]
     },
     {
-        "parent": "clock-3",
+        "parent": "sys-pllb-div16",
         "tests": [
             {
                 "name": "Match",
                 "expected": "match",
                 "device": {
                     "fuchsia.hardware.clock.Service": "fuchsia.hardware.clock.Service.ZirconTransport",
-                    "fuchsia.NAME": "\"SYS_PLLB_DIV16\""
+                    "fuchsia.NAME": "\"sys-pllb-div16\""
                 }
             }
         ]
     },
     {
-        "parent": "clock-4",
+        "parent": "sys-cpub-div16",
         "tests": [
             {
                 "name": "Match",
                 "expected": "match",
                 "device": {
                     "fuchsia.hardware.clock.Service": "fuchsia.hardware.clock.Service.ZirconTransport",
-                    "fuchsia.NAME": "\"SYS_CPUB_DIV16\""
+                    "fuchsia.NAME": "\"sys-cpub-div16\""
                 }
             }
         ]

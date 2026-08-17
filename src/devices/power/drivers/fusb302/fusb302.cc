@@ -143,7 +143,7 @@ zx::result<> Fusb302Device::Start(fdf::DriverContext context) {
     i2c = std::move(result.value());
   }
   {
-    zx::result result = incoming->Connect<fuchsia_hardware_gpio::Service::Device>("gpio");
+    zx::result result = incoming->Connect<fuchsia_hardware_gpio::Service::Device>("gpio-int");
     if (result.is_error()) {
       fdf::error("Failed to open gpio service: {}", result);
       return result.take_error();

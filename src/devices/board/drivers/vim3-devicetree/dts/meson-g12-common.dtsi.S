@@ -34,7 +34,7 @@
 			interrupts = <GIC_SPI 23 GIC_IRQ_MODE_EDGE_RISING>, <GIC_SPI 32 GIC_IRQ_MODE_EDGE_RISING>, <GIC_SPI 43 GIC_IRQ_MODE_EDGE_RISING>, <GIC_SPI 44 GIC_IRQ_MODE_EDGE_RISING>;
 			amlogic,canvas = <&canvas>;
 			clocks = <&clock 0x10005>, <&clock 0x10007>;
-			clock-names = "DOS_GCLK_VDEC", "DOS";
+			clock-names = "clock-dos-vdec", "clock-dos";
 		};
 
 		ethmac: ethernet-phy@ff634000 {
@@ -176,11 +176,11 @@
 			reg = <0x0 0xff642000 0x0 0x2000>;
 			iommus = <&stub_iommu AUDIO_BTI>;
 			clocks = <&clock 0x1000b &clock 0x20002>;
-			clock-names = "AUDIO_GATE", "AUDIO_PLL";
+			clock-names = "clock-gate", "clock-pll";
 			assigned-clocks = <&clock 0x20002>;
 			assigned-clock-rates = <768000000>;
 			gpios = <&gpio A311D_GPIOX(11) 0 &gpio A311D_GPIOA(1) 0>;
-			gpio-names = "TDM_A_SCLK", "TDM_B_SCLK";
+			gpio-names = "gpio-tdm-a-sclk", "gpio-tdm-b-sclk";
 			pinctrl-0 = <&audio_tdm_a_cfg1 &audio_tdm_a_cfg2>, <&audio_tdm_b_cfg1 &audio_tdm_b_cfg2>;
 		};
 
@@ -279,7 +279,7 @@
 		pwm_init: pwm-init {
 			pwms = <&pwm 4 0 0>;
 			gpios = <&gpio A311D_GPIOX(17) 0>;
-			gpio-names = "BT_REG_ON";
+			gpio-names = "gpio-bt";
 			pinctrl-0 = <&wifi_lpo_pwm>;
 		};
 
@@ -337,7 +337,7 @@
 			interrupts = <GIC_SPI 189 GIC_IRQ_MODE_EDGE_RISING>;
 			iommus = <&stub_iommu EMMC_A_BTI>;
 			gpios = <&gpio A311D_GPIOX(6) 0>;
-			gpio-names = "SDMMC_RESET";
+			gpio-names = "gpio-reset";
 			pinctrl-0 = <&sdio_d0_d3_cfg &sdio_clk_cfg &sdio_cmd_cfg>;
 			max-frequency = <100000000>;
 			pwm-init = <&pwm_init>;
@@ -360,7 +360,7 @@
 			boot-metadata = <0x5452506D 0>;
 			clocks = <&clock 0x1000C>;
 			gpios = <&gpio A311D_GPIOBOOT(12) 0>;
-			gpio-names = "SDMMC_RESET";
+			gpio-names = "gpio-reset";
 			pinctrl-0 = <&emmc_d0_d7_cfg &emmc_clk_cfg &emmc_cmd_cfg>, <&emmc_ds_cfg &emmc_cs_cfg>;
 			max-frequency = <120000000>;
 			non-removable;

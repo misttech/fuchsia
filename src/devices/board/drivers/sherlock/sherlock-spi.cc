@@ -74,7 +74,7 @@ const std::vector kGpioSpiRules = {
 const std::vector kGpioSpiProperties = {
     fdf::MakeProperty2(bind_fuchsia_hardware_gpio::SERVICE,
                        bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
-    fdf::MakeProperty2(bind_fuchsia::NAME, "SPICC0_SS0"),
+    fdf::MakeProperty2(bind_fuchsia::NAME, "gpio-cs-0"),
 };
 
 const std::vector kResetRegisterRules = {

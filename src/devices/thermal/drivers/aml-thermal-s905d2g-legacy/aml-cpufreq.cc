@@ -78,11 +78,11 @@ zx_status_t AmlCpuFrequency::Create(
   // and calculate what the actual CPU freq is set to at
   // any given point.
   std::vector<const char*> fragments;
-  fragments.emplace_back("clock-1");
-  fragments.emplace_back("clock-2");
+  fragments.emplace_back("sys-pll-div16");
+  fragments.emplace_back("sys-cpu-div16");
   if (big_little_) {
-    fragments.emplace_back("clock-3");
-    fragments.emplace_back("clock-4");
+    fragments.emplace_back("sys-pllb-div16");
+    fragments.emplace_back("sys-cpub-div16");
   }
 
   for (const auto& fragment : fragments) {

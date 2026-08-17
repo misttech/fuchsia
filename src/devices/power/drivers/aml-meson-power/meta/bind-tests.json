@@ -34,7 +34,7 @@
         ]
     },
     {
-        "parent": "pwm-primary",
+        "parent": "pwm-big-cluster",
         "tests": [
             {
                 "name": "Match",
@@ -49,7 +49,7 @@
                 "expected": "match",
                 "device": {
                     "fuchsia.hardware.pwm.Service": "fuchsia.hardware.pwm.Service.ZirconTransport",
-                    "fuchsia.NAME": "\"CORE_POWER_BIG_CLUSTER\""
+                    "fuchsia.NAME": "\"pwm-big-cluster\""
                 }
             }
         ]

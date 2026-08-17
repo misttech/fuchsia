@@ -28,17 +28,17 @@ optional parent "dwc3-phy" {
   fuchsia.BIND_PLATFORM_DEV_DID == fuchsia.designware.platform.BIND_PLATFORM_DEV_DID.DWC3;
 }
 
-optional parent "interconnect-usb-ddr" {
+optional parent "usb-ddr" {
   fuchsia.hardware.interconnect.PathService == fuchsia.hardware.interconnect.PathService.ZirconTransport;
   fuchsia.NAME == "usb-ddr";
 }
 
-optional parent "interconnect-usb-ipa" {
+optional parent "usb-ipa" {
   fuchsia.hardware.interconnect.PathService == fuchsia.hardware.interconnect.PathService.ZirconTransport;
   fuchsia.NAME == "usb-ipa";
 }
 
-optional parent "interconnect-ddr-usb" {
+optional parent "ddr-usb" {
   fuchsia.hardware.interconnect.PathService == fuchsia.hardware.interconnect.PathService.ZirconTransport;
   fuchsia.NAME == "ddr-usb";
 }
@@ -72,10 +72,10 @@ optional parent "utmi-clk" {
   fuchsia.NAME == "utmi-clk";
 }
 
-optional parent "reset" {
+optional parent "core_reset" {
   fuchsia.NAME == "core_reset";
 }
 
-optional parent "regulator" {
+optional parent "dwc3-regulator" {
   fuchsia.NAME == "dwc3-regulator";
 }

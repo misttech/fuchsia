@@ -435,16 +435,16 @@ class Environment : public fdf_testing::Environment {
         directory.AddService<fpdev::Service>(pdev_.GetInstanceHandler(dispatcher), "pdev");
     EXPECT_TRUE(result.is_ok());
 
-    result = directory.AddService<fhi::PathService>(path_.GetInstanceHandler(dispatcher),
-                                                    "interconnect-usb-ddr");
+    result =
+        directory.AddService<fhi::PathService>(path_.GetInstanceHandler(dispatcher), "usb-ddr");
     EXPECT_TRUE(result.is_ok());
 
-    result = directory.AddService<fhi::PathService>(path_.GetInstanceHandler(dispatcher),
-                                                    "interconnect-usb-ipa");
+    result =
+        directory.AddService<fhi::PathService>(path_.GetInstanceHandler(dispatcher), "usb-ipa");
     EXPECT_TRUE(result.is_ok());
 
-    result = directory.AddService<fhi::PathService>(path_.GetInstanceHandler(dispatcher),
-                                                    "interconnect-ddr-usb");
+    result =
+        directory.AddService<fhi::PathService>(path_.GetInstanceHandler(dispatcher), "ddr-usb");
     EXPECT_TRUE(result.is_ok());
 
     result = directory.AddService<fphy::Service>(usb_phy_.GetUsbPhyInstanceHandler(dispatcher),
@@ -480,10 +480,11 @@ class Environment : public fdf_testing::Environment {
     EXPECT_TRUE(result.is_ok());
 
     if (serve_platform_mocks_) {
-      result = directory.AddService<freset::Service>(reset_.CreateInstanceHandler(), "reset");
+      result = directory.AddService<freset::Service>(reset_.CreateInstanceHandler(), "core_reset");
       EXPECT_TRUE(result.is_ok());
 
-      result = directory.AddService<fvreg::Service>(vreg_.CreateInstanceHandler(), "regulator");
+      result =
+          directory.AddService<fvreg::Service>(vreg_.CreateInstanceHandler(), "dwc3-regulator");
       EXPECT_TRUE(result.is_ok());
     }
 

@@ -31,12 +31,12 @@ primary parent "pdev" {
 
 optional parent "clock-gate" {
   fuchsia.hardware.clock.Service == fuchsia.hardware.clock.Service.ZirconTransport;
-  fuchsia.NAME == "AUDIO_GATE";
+  fuchsia.NAME == "clock-gate";
 }
 
 optional parent "clock-pll" {
   fuchsia.hardware.clock.Service == fuchsia.hardware.clock.Service.ZirconTransport;
-  fuchsia.NAME == "AUDIO_PLL";
+  fuchsia.NAME == "clock-pll";
 }
 
 optional parent "gpio-init" {
@@ -45,7 +45,7 @@ optional parent "gpio-init" {
 
 optional parent "gpio-enable" {
   fuchsia.hardware.gpio.Service == fuchsia.hardware.gpio.Service.ZirconTransport;
-  fuchsia.NAME == "SOC_AUDIO_ENABLE";
+  fuchsia.NAME == "gpio-enable";
 }
 
 optional parent "codec-01" {

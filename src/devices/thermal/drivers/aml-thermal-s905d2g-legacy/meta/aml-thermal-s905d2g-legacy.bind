@@ -28,34 +28,34 @@ optional parent "gpio-init" {
   fuchsia.BIND_INIT_STEP == fuchsia.gpio.BIND_INIT_STEP.GPIO;
 }
 
-parent "pwm-a" {
+parent "pwm-big-cluster" {
   fuchsia.hardware.pwm.Service == fuchsia.hardware.pwm.Service.ZirconTransport;
-  fuchsia.NAME == "CORE_POWER_BIG_CLUSTER";
+  fuchsia.NAME == "pwm-big-cluster";
 }
 
-optional parent "pwm-ao-d" {
+optional parent "pwm-little-cluster" {
   fuchsia.hardware.pwm.Service == fuchsia.hardware.pwm.Service.ZirconTransport;
-  fuchsia.NAME == "CORE_POWER_LITTLE_CLUSTER";
+  fuchsia.NAME == "pwm-little-cluster";
 }
 
-parent "clock-1" {
+parent "sys-pll-div16" {
   fuchsia.hardware.clock.Service == fuchsia.hardware.clock.Service.ZirconTransport;
-  fuchsia.NAME == "SYS_PLL_DIV16";
+  fuchsia.NAME == "sys-pll-div16";
 }
 
-parent "clock-2" {
+parent "sys-cpu-div16" {
   fuchsia.hardware.clock.Service == fuchsia.hardware.clock.Service.ZirconTransport;
-  fuchsia.NAME == "SYS_CPU_DIV16";
+  fuchsia.NAME == "sys-cpu-div16";
 }
 
-optional parent "clock-3" {
+optional parent "sys-pllb-div16" {
   fuchsia.hardware.clock.Service == fuchsia.hardware.clock.Service.ZirconTransport;
-  fuchsia.NAME == "SYS_PLLB_DIV16";
+  fuchsia.NAME == "sys-pllb-div16";
 }
 
-optional parent "clock-4" {
+optional parent "sys-cpub-div16" {
   fuchsia.hardware.clock.Service == fuchsia.hardware.clock.Service.ZirconTransport;
-  fuchsia.NAME == "SYS_CPUB_DIV16";
+  fuchsia.NAME == "sys-cpub-div16";
 }
 
 optional parent "pin-states-0" {

@@ -26,14 +26,14 @@
         ]
     },
     {
-        "parent": "mic-privacy",
+        "parent": "mic-mute",
         "tests": [
             {
                 "name": "MatchMicPrivacy",
                 "expected": "match",
                 "device": {
                     "fuchsia.Service": "\"fuchsia.hardware.gpio.Service\"",
-                    "fuchsia.NAME": "\"MIC_MUTE\""
+                    "fuchsia.NAME": "\"mic-mute\""
                 }
             },
             {
@@ -54,7 +54,7 @@
                 "expected": "match",
                 "device": {
                     "fuchsia.Service": "\"fuchsia.hardware.gpio.Service\"",
-                    "fuchsia.NAME": "\"VOLUME_UP\""
+                    "fuchsia.NAME": "\"volume-up\""
                 }
             },
             {
@@ -75,7 +75,7 @@
                 "expected": "match",
                 "device": {
                     "fuchsia.Service": "\"fuchsia.hardware.gpio.Service\"",
-                    "fuchsia.NAME": "\"VOLUME_DOWN\""
+                    "fuchsia.NAME": "\"volume-down\""
                 }
             },
             {
@@ -96,7 +96,7 @@
                 "expected": "match",
                 "device": {
                     "fuchsia.Service": "\"fuchsia.hardware.gpio.Service\"",
-                    "fuchsia.NAME": "\"VOLUME_BOTH\""
+                    "fuchsia.NAME": "\"volume-both\""
                 }
             },
             {

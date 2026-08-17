@@ -74,7 +74,7 @@ zx_status_t AmlVoltageRegulator::Create(
   }
   fdf::PDev::DeviceInfo device_info = std::move(device_info_result.value());
 
-  auto pwm_client = CreateAndEnablePwm(parent, "pwm-a");
+  auto pwm_client = CreateAndEnablePwm(parent, "pwm-big-cluster");
   if (pwm_client.is_error()) {
     return pwm_client.status_value();
   }
@@ -82,7 +82,7 @@ zx_status_t AmlVoltageRegulator::Create(
 
   big_little_ = thermal_config.big_little;
   if (big_little_) {
-    auto pwm_client = CreateAndEnablePwm(parent, "pwm-ao-d");
+    auto pwm_client = CreateAndEnablePwm(parent, "pwm-little-cluster");
     if (pwm_client.is_error()) {
       return pwm_client.status_value();
     }

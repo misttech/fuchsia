@@ -28,7 +28,7 @@
                 "name": "Match",
                 "expected": "match",
                 "device": {
-                    "fuchsia.NAME": "\"GPIO_AMBER_LED\"",
+                    "fuchsia.NAME": "\"gpio-amber-led\"",
                     "fuchsia.hardware.gpio.Service": "fuchsia.hardware.gpio.Service.ZirconTransport"
                 }
             }
@@ -42,7 +42,7 @@
                 "expected": "match",
                 "device": {
                     "fuchsia.hardware.pwm.Service": "fuchsia.hardware.pwm.Service.ZirconTransport",
-                    "fuchsia.NAME": "\"AMBER_LED\""
+                    "fuchsia.NAME": "\"pwm-amber-led\""
                 }
             }
         ]
@@ -54,7 +54,7 @@
                 "name": "Match",
                 "expected": "match",
                 "device": {
-                    "fuchsia.NAME": "\"GPIO_GREEN_LED\"",
+                    "fuchsia.NAME": "\"gpio-green-led\"",
                     "fuchsia.hardware.gpio.Service": "fuchsia.hardware.gpio.Service.ZirconTransport"
                 }
             }
@@ -68,7 +68,7 @@
                 "expected": "match",
                 "device": {
                     "fuchsia.hardware.pwm.Service": "fuchsia.hardware.pwm.Service.ZirconTransport",
-                    "fuchsia.NAME": "\"GREEN_LED\""
+                    "fuchsia.NAME": "\"pwm-green-led\""
                 }
             }
         ]

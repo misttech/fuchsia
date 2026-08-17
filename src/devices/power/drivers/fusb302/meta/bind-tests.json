@@ -12,14 +12,14 @@
         ]
     },
     {
-        "parent": "gpio",
+        "parent": "gpio-int",
         "tests": [
             {
                 "name": "Match",
                 "expected": "match",
                 "device": {
                     "fuchsia.hardware.gpio.Service": "fuchsia.hardware.gpio.Service.ZirconTransport",
-                    "fuchsia.NAME": "\"USB_POWER_DELIVERY\""
+                    "fuchsia.NAME": "\"gpio-int\""
                 }
             }
         ]

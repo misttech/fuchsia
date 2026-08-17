@@ -214,9 +214,7 @@ std::unique_ptr<QualcommExtension> QualcommExtension::Create(Dwc3* parent,
   TRACE_DURATION("dwc3", "QualcommExtension::Create");
   // Get all resources.
   static const std::unordered_map<BusPath, const std::string> kBusPathNames{
-      {BusPath::kUsbDdr, "interconnect-usb-ddr"},
-      {BusPath::kUsbIpa, "interconnect-usb-ipa"},
-      {BusPath::kDdrUsb, "interconnect-ddr-usb"}};
+      {BusPath::kUsbDdr, "usb-ddr"}, {BusPath::kUsbIpa, "usb-ipa"}, {BusPath::kDdrUsb, "ddr-usb"}};
 
   static const std::vector<std::string> kClockNames{"core-clk", "iface-clk", "bus-aggr-clk",
                                                     "xo",       "sleep-clk", "utmi-clk"};
@@ -256,7 +254,7 @@ std::unique_ptr<QualcommExtension> QualcommExtension::Create(Dwc3* parent,
     clock_clients[name] = std::move(*clock_client);
   }
 
-  auto reset_result = parent->incoming()->OpenService<freset::Service>("reset");
+  auto reset_result = parent->incoming()->OpenService<freset::Service>("core_reset");
   if (reset_result.is_error()) {
     fdf::info("Failed to open reset service, assuming not qualcomm chipset");
     return nullptr;
@@ -267,7 +265,7 @@ std::unique_ptr<QualcommExtension> QualcommExtension::Create(Dwc3* parent,
     return nullptr;
   }
 
-  auto regulator_result = parent->incoming()->OpenService<fvreg::Service>("regulator");
+  auto regulator_result = parent->incoming()->OpenService<fvreg::Service>("dwc3-regulator");
   if (regulator_result.is_error()) {
     fdf::info("Failed to open regulator service, assuming not qualcomm chipset");
     return nullptr;
