@@ -27,7 +27,7 @@ macro_rules! assoc_values {
                 pub const $name: $typename = $typename($value);
             )*
 
-            fn assoc_const_name(&self) -> Option<&'static str> {
+            const fn assoc_const_name(&self) -> Option<&'static str> {
                 match self.0 {
                     $(
                         $value => Some(stringify!($name)),
@@ -60,6 +60,16 @@ macro_rules! assoc_values {
 #[repr(transparent)]
 pub struct Status(zx_types::zx_status_t);
 impl Status {
+    /// Returns the symbolic name of the status (e.g. `"INVALID_ARGS"`), or `"UNKNOWN"` if
+    /// unrecognized.
+    #[inline]
+    pub const fn as_str(&self) -> &'static str {
+        match self.assoc_const_name() {
+            Some(name) => name,
+            None => "UNKNOWN",
+        }
+    }
+
     /// Returns `Ok(())` if the status was `OK`,
     /// otherwise returns `Err(status)`.
     pub fn ok(raw: zx_types::zx_status_t) -> Result<(), Status> {
@@ -418,5 +428,12 @@ mod test {
     fn test_err_from_raw() {
         assert_eq!(Status::err_from_raw(zx_types::ZX_OK), Status::INTERNAL);
         assert_eq!(Status::err_from_raw(zx_types::ZX_ERR_NOT_FOUND), Status::NOT_FOUND);
+    }
+
+    #[test]
+    fn test_as_str() {
+        assert_eq!(Status::OK.as_str(), "OK");
+        assert_eq!(Status::INVALID_ARGS.as_str(), "INVALID_ARGS");
+        assert_eq!(Status::from_raw(-9999).as_str(), "UNKNOWN");
     }
 }
