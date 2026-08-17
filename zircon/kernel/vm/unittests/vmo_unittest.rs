@@ -473,6 +473,37 @@ mod vmo_rs {
         }
     }
 
+    /// Tests that looking up pages in a child slice translates offsets relative to the slice.
+    #[test]
+    fn vmo_lookup_slice_test() {
+        let _scanner_disable = AutoVmScannerDisable::new();
+
+        let alloc_size = PAGE_SIZE * 16;
+        let commit_offset = PAGE_SIZE * 4;
+        let slice_offset = PAGE_SIZE;
+        let slice_size = alloc_size - slice_offset;
+        let vmo = unwrap_ok!(VmObjectPaged::create(pmm::ALLOC_FLAG_ANY, 0, alloc_size));
+
+        // Commit a page in the vmo.
+        assert_ok!(vmo.commit_range(commit_offset, PAGE_SIZE));
+
+        // Create a slice that is offset slightly.
+        let slice = unwrap_ok!(vmo.create_child_slice(slice_offset, slice_size, false));
+
+        // Query the slice and validate we see one page at the offset relative to us, not the parent
+        // it is committed in.
+        let mut offset_seen = u64::MAX;
+
+        let lookup_fn = |offset, _pa: PAddr, offset_seen: &mut u64| {
+            assert!(*offset_seen == u64::MAX);
+            *offset_seen = offset;
+            Err(Status::NEXT)
+        };
+        expect_ok!(slice.lookup(0, slice_size, &mut offset_seen, lookup_fn));
+
+        expect_eq!(offset_seen, commit_offset - slice_offset);
+    }
+
     /// Tests lookup physical address isolation on COW snapshot clone hierarchies.
     #[test]
     fn vmo_lookup_clone_test() {

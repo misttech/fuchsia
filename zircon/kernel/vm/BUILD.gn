@@ -589,6 +589,7 @@ kernel_bindgen_crate("vm-object-bindings") {
     "cpp_vm_object_hint_range",
     "cpp_vm_object_get_mapping_cache_policy",
     "cpp_vm_object_create_clone",
+    "cpp_vm_object_create_child_slice",
     "cpp_vm_object_get_page_blocking",
     "cpp_vm_object_set_user_id",
     "cpp_vm_object_user_id",

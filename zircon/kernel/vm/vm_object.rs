@@ -188,6 +188,30 @@ impl VmObject {
         Ok(clone.expect("clone returned ZX_OK; must be non-null"))
     }
 
+    /// Creates a child slice of this VMO.
+    pub fn create_child_slice(
+        &self,
+        offset: u64,
+        size: u64,
+        copy_name: bool,
+    ) -> Result<RefPtr<VmObject>, Status> {
+        let mut status = 0;
+        // SAFETY: `self.as_raw()` returns a valid `VmObject` pointer.
+        let raw = unsafe {
+            bindings::cpp_vm_object_create_child_slice(
+                self.as_raw(),
+                offset,
+                size,
+                copy_name,
+                &mut status,
+            )
+        };
+        Status::ok(status)?;
+        // SAFETY: cpp_vm_object_create_child_slice returns a valid VmObject pointer on ZX_OK.
+        let slice = unsafe { VmObject::from_raw(raw) };
+        Ok(slice.expect("create_child_slice returned ZX_OK; must be non-null"))
+    }
+
     /// Helper variant of get_page that will retry the operation after waiting on a PageRequest if
     /// required.
     ///

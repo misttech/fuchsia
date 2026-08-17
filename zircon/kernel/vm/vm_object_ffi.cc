@@ -85,6 +85,14 @@ FFI_ALWAYS_INLINE VmObject* cpp_vm_object_create_clone(VmObject* vmo, Resizabili
   return fbl::ExportToRawPtr(&child);
 }
 
+FFI_ALWAYS_INLINE VmObject* cpp_vm_object_create_child_slice(VmObject* vmo, uint64_t offset,
+                                                             uint64_t size, bool copy_name,
+                                                             zx_status_t* out_status) {
+  fbl::RefPtr<VmObject> child;
+  *out_status = vmo->CreateChildSlice(offset, size, copy_name, &child);
+  return fbl::ExportToRawPtr(&child);
+}
+
 FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_get_page_blocking(VmObject* vmo, uint64_t offset,
                                                               uint32_t pf_flags,
                                                               vm_page_t** out_page,
