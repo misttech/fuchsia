@@ -534,6 +534,10 @@ impl PagedObjectHandle {
         self.inner.lock().read_only = true
     }
 
+    pub fn is_read_only(&self) -> bool {
+        self.inner.lock().read_only
+    }
+
     pub fn get_size(&self) -> u64 {
         self.vmo.get_stream_size().unwrap()
     }

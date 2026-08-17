@@ -504,6 +504,13 @@ impl vfs::node::Node for FxFile {
             (None, None)
         };
 
+        let mut abilities = fio::Operations::GET_ATTRIBUTES
+            | fio::Operations::UPDATE_ATTRIBUTES
+            | fio::Operations::READ_BYTES;
+        if !self.is_verified_file() && !self.handle.is_read_only() {
+            abilities |= fio::Operations::WRITE_BYTES;
+        }
+
         Ok(attributes!(
             requested_attributes,
             Mutable {
@@ -524,10 +531,7 @@ impl vfs::node::Node for FxFile {
             },
             Immutable {
                 protocols: fio::NodeProtocolKinds::FILE,
-                abilities: fio::Operations::GET_ATTRIBUTES
-                    | fio::Operations::UPDATE_ATTRIBUTES
-                    | fio::Operations::READ_BYTES
-                    | fio::Operations::WRITE_BYTES,
+                abilities: abilities,
                 content_size: self.handle.get_size(),
                 storage_size: props.as_ref().map(|p| p.allocated_size),
                 link_count: link_count,
@@ -647,6 +651,17 @@ impl File for FxFile {
         if flags.contains(fio::VmoFlags::EXECUTE) {
             error!("get_backing_memory does not support execute rights!");
             return Err(Status::NOT_SUPPORTED);
+        }
+
+        // If a file is verity-enabled (or read-only), disallow requests for writable reference
+        // VMOs. Note that we have no way of revoking access to VMO handles that were already
+        // exposed prior to `enable_verity()` being called; we must ensure that any subsequent
+        // writes to such VMOs fail via pager `mark_dirty()` checks.
+        if flags.contains(fio::VmoFlags::WRITE)
+            && !flags.contains(fio::VmoFlags::PRIVATE_CLONE)
+            && (self.is_verified_file() || self.handle.is_read_only())
+        {
+            return Err(Status::ACCESS_DENIED);
         }
 
         let vmo = self.handle.vmo();
@@ -2049,7 +2064,11 @@ mod tests {
             .expect("enable verity failed");
 
         let (_, immutable_attributes) = file
-            .get_attributes(fio::NodeAttributesQuery::ROOT_HASH | fio::NodeAttributesQuery::OPTIONS)
+            .get_attributes(
+                fio::NodeAttributesQuery::ROOT_HASH
+                    | fio::NodeAttributesQuery::OPTIONS
+                    | fio::NodeAttributesQuery::ABILITIES,
+            )
             .await
             .expect("FIDL call failed")
             .map_err(Status::err_from_raw)
@@ -2064,6 +2083,12 @@ mod tests {
         assert_eq!(
             immutable_attributes.root_hash.expect("root hash not present in immutable attributes"),
             expected_root
+        );
+        assert_eq!(
+            immutable_attributes.abilities.expect("abilities not present"),
+            fio::Operations::GET_ATTRIBUTES
+                | fio::Operations::UPDATE_ATTRIBUTES
+                | fio::Operations::READ_BYTES
         );
 
         fixture.close().await;
@@ -2093,6 +2118,14 @@ mod tests {
             .map_err(Status::err_from_raw)
             .expect("write failed");
 
+        // Obtain a writable VMO before enabling verity.
+        let existing_vmo = file
+            .get_backing_memory(fio::VmoFlags::READ | fio::VmoFlags::WRITE)
+            .await
+            .expect("FIDL transport error")
+            .map_err(Status::err_from_raw)
+            .expect("get_backing_memory failed");
+
         let descriptor = fio::VerificationOptions {
             hash_algorithm: Some(fio::HashAlgorithm::Sha256),
             salt: Some(vec![0xFF; 8]),
@@ -2104,6 +2137,15 @@ mod tests {
             .expect("FIDL transport error")
             .expect("enable verity failed");
 
+        // Writes via an existing writable VMO obtained before enabling verity should fail at
+        // the pager level.
+        fasync::unblock(move || {
+            existing_vmo
+                .write(&[2; 8192], 0)
+                .expect_err("write via existing VMO succeeded on fsverity-enabled file");
+        })
+        .await;
+
         async fn assert_file_is_not_writable(file: &fio::FileProxy) {
             // Writes via FIDL should fail
             file.write(&[2; 8192])
@@ -2111,16 +2153,23 @@ mod tests {
                 .expect("FIDL transport error")
                 .map_err(Status::err_from_raw)
                 .expect_err("write succeeded on fsverity-enabled file");
-            // Writes via the pager should fail
-            let vmo = file
-                .get_backing_memory(fio::VmoFlags::READ | fio::VmoFlags::WRITE)
+            // Getting a writable VMO without PRIVATE_CLONE should fail
+            file.get_backing_memory(fio::VmoFlags::READ | fio::VmoFlags::WRITE)
                 .await
                 .expect("FIDL transport error")
                 .map_err(Status::err_from_raw)
-                .expect("get_backing_memory failed");
+                .expect_err("get_backing_memory with WRITE succeeded on fsverity-enabled file");
+            // Getting a private clone with WRITE should succeed and not modify the file
+            let vmo = file
+                .get_backing_memory(
+                    fio::VmoFlags::READ | fio::VmoFlags::WRITE | fio::VmoFlags::PRIVATE_CLONE,
+                )
+                .await
+                .expect("FIDL transport error")
+                .map_err(Status::err_from_raw)
+                .expect("get_backing_memory with PRIVATE_CLONE failed");
             fasync::unblock(move || {
-                vmo.write(&[2; 8192], 0)
-                    .expect_err("write via VMO succeeded on fsverity-enabled file");
+                vmo.write(&[2; 8192], 0).expect("write via private clone VMO failed");
             })
             .await;
             // Truncation should fail
