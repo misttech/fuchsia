@@ -5,7 +5,7 @@
 //! its reexports via the [`mockall`](https://docs.rs/mockall/latest/mockall)
 //! crate.
 
-#![cfg_attr(feature = "nightly_derive", feature(proc_macro_diagnostic))]
+#![cfg_attr(all(feature = "nightly_derive", not(test)), feature(proc_macro_diagnostic))]
 #![cfg_attr(test, deny(warnings))]
 // This lint is unhelpful.  See
 // https://github.com/rust-lang/rust-clippy/discussions/14256
@@ -878,6 +878,10 @@ impl<'a> AttrFormatter<'a> {
                     // Ignore auto_enum, because we transform the return value
                     // into a trait object.
                     false
+                } else if *i.as_ref().unwrap() == "auto_impl" {
+                    // Ignore auto_impl, because it only applies to trait
+                    // definitions, not the generated mock struct or impl.
+                    false
                 } else {
                     true
                 }
@@ -1413,19 +1417,18 @@ mod t {
 
 fn assert_contains(output: &str, tokens: TokenStream) {
     let s = tokens.to_string();
-    assert!(output.contains(&s), "output does not contain {:?}", &s);
+    assert!(output.contains(&s), "output does not contain {:?}", s);
 }
 
 fn assert_not_contains(output: &str, tokens: TokenStream) {
     let s = tokens.to_string();
-    assert!(!output.contains(&s), "output contains {:?}", &s);
+    assert!(!output.contains(&s), "output contains {:?}", s);
 }
 
 /// Various tests for overall code generation that are hard or impossible to
 /// write as integration tests
 mod mock {
     use std::str::FromStr;
-    use super::super::*;
     use super::*;
 
     #[test]
@@ -1502,7 +1505,6 @@ mod mock {
 /// write as integration tests
 mod automock {
     use std::str::FromStr;
-    use super::super::*;
     use super::*;
 
     #[test]

@@ -12,7 +12,7 @@
 [package]
 edition = "2021"
 name = "mockall_derive"
-version = "0.14.0"
+version = "0.15.0"
 authors = ["Alan Somers <asomers@gmail.com>"]
 build = "build.rs"
 autolib = false

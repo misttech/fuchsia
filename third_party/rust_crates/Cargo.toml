@@ -159,7 +159,7 @@ maybe-owned = "0.3.4"
 md-5 = "0.11.0"
 memchr = "2.8.0"
 memoffset = "0.9.1"
-mockall = "0.14"
+mockall = "0.15"
 munge = "0.4.4"
 nix = { version = "0.31.3", features = ["feature", "fs", "hostname", "net", "process", "signal", "user"] }
 nom = { version = "8.0.0", default-features = false, features = ["std"] }
@@ -808,10 +808,10 @@ output_name = "mock-omaha-server"
 [gn.package.inotify-sys."0.1.8"]
 # Has build script but no config needed.
 
-[gn.package.mockall."0.14.0"]
+[gn.package.mockall."0.15.0"]
 deps = ["//build/validate:non_production_tag"]
 
-[gn.package.mockall_derive."0.14.0"]
+[gn.package.mockall_derive."0.15.0"]
 # Has build script but no config needed.
 
 [gn.package.nix."0.29.0"]

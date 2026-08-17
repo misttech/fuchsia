@@ -403,7 +403,7 @@ _NORMAL_DEPENDENCIES = {
             "md-5": Label("//third_party/rust_crates/vendor/md-5-0.11.0:md5"),
             "memchr": Label("//third_party/rust_crates/vendor/memchr-2.8.0:memchr"),
             "memoffset": Label("//third_party/rust_crates/vendor/memoffset-0.9.1:memoffset"),
-            "mockall": Label("//third_party/rust_crates/vendor/mockall-0.14.0:mockall"),
+            "mockall": Label("//third_party/rust_crates/vendor/mockall-0.15.0:mockall"),
             "munge": Label("//third_party/rust_crates/vendor/munge-0.4.4:munge"),
             "nix": Label("//third_party/rust_crates/vendor/nix-0.31.3:nix"),
             "nom": Label("//third_party/rust_crates/vendor/nom-8.0.0:nom"),

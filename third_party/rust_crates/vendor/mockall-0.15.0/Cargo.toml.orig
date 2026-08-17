@@ -1,6 +1,6 @@
 [package]
 name = "mockall"
-version = "0.14.0"
+version = "0.15.0"
 authors = ["Alan Somers <asomers@gmail.com>"]
 license = "MIT OR Apache-2.0"
 readme = "README.md"
@@ -43,12 +43,13 @@ downcast = "0.11"
 fragile = "2.0"
 predicates = { version = "3.0.0", default-features = false }
 predicates-tree = "1.0"
-mockall_derive = { version = "=0.14.0", path = "../mockall_derive" }
+mockall_derive = { version = "=0.15.0", path = "../mockall_derive" }
 
 [dev-dependencies]
 trait-variant = "0.1.2"
 async-trait = "0.1.38"
 auto_enums = "0.8.5"
+auto_impl = "1.3.0"
 futures = "0.3.7"
 mockall_double = { version = "^0.3.1", path = "../mockall_double" }
 serde = "1.0.113"

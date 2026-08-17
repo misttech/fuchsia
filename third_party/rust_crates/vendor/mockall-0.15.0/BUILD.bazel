@@ -23,7 +23,7 @@ package_info(
     name = "package_info",
     package_name = "mockall",
     package_url = "https://github.com/asomers/mockall",
-    package_version = "0.14.0",
+    package_version = "0.15.0",
 )
 
 license(
@@ -56,7 +56,7 @@ rust_library(
     crate_root = "src/lib.rs",
     edition = "2021",
     proc_macro_deps = [
-        "//third_party/rust_crates/vendor/mockall_derive-0.14.0:mockall_derive",
+        "//third_party/rust_crates/vendor/mockall_derive-0.15.0:mockall_derive",
     ],
     rustc_flags = [
         "--cap-lints=allow",
@@ -75,12 +75,12 @@ rust_library(
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    version = "0.14.0",
+    version = "0.15.0",
     deps = [
         "//third_party/rust_crates/vendor/cfg-if-1.0.4:cfg_if",
         "//third_party/rust_crates/vendor/downcast-0.11.0:downcast",
         "//third_party/rust_crates/vendor/fragile-2.0.1:fragile",
-        "//third_party/rust_crates/vendor/mockall-0.14.0:build_script_build",
+        "//third_party/rust_crates/vendor/mockall-0.15.0:build_script_build",
         "//third_party/rust_crates/vendor/predicates-3.1.3:predicates",
         "//third_party/rust_crates/vendor/predicates-tree-1.0.12:predicates_tree",
     ],
@@ -131,7 +131,7 @@ cargo_build_script(
         "noclippy",
         "norustfmt",
     ],
-    version = "0.14.0",
+    version = "0.15.0",
     visibility = ["//visibility:private"],
 )
 

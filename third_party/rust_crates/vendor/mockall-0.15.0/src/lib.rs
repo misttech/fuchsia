@@ -1142,7 +1142,6 @@
 // incomplete; that's why it's guarded by the "nightly" feature.
 #![cfg_attr(feature = "nightly", allow(incomplete_features))]
 
-#![cfg_attr(feature = "nightly", feature(doc_cfg))]
 #![cfg_attr(test, deny(warnings))]
 #![warn(missing_docs)]
 
@@ -1855,9 +1854,9 @@ impl SeqInner {
         let max_seq = seq + if has_called_state { 1 } else { 0 };
         
         assert!(current_level >= min_seq,
-            "{}: Method sequence violation", &desc());
+            "{}: Method sequence violation", desc());
         assert!(current_level <= max_seq,
-            "{}: Method sequence violation", &desc());
+            "{}: Method sequence violation", desc());
     }
 
     fn is_history(&self, seq: usize, has_called_state: bool) -> bool {

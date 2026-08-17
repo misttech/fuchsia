@@ -1190,11 +1190,11 @@ if (current_os == "fuchsia") {
 }
 
 group("mockall") {
-  public_deps = [ ":mockall-v0_14_0" ]
+  public_deps = [ ":mockall-v0_15_0" ]
 }
 
-group("mockall-0.14.0") {
-  public_deps = [ ":mockall-v0_14_0" ]
+group("mockall-0.15.0") {
+  public_deps = [ ":mockall-v0_15_0" ]
 }
 
 group("munge") {
@@ -13291,18 +13291,18 @@ rustc_test("mock-omaha-server-v0_5_0.test") {
   applicable_licenses = [ ":mock-omaha-server-v0_5_0.test.license" ]
 }
 
-license("mockall-v0_14_0.license") {
+license("mockall-v0_15_0.license") {
   public_package_name = "mockall"
   license_files = [
-    "//third_party/rust_crates/vendor/mockall-0.14.0/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/mockall-0.14.0/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/mockall-0.15.0/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/mockall-0.15.0/LICENSE-MIT",
   ]
 }
 
-rustc_library("mockall-v0_14_0") {
+rustc_library("mockall-v0_15_0") {
   crate_name = "mockall"
-  source_root = "//third_party/rust_crates/vendor/mockall-0.14.0/src/lib.rs"
-  output_name = "mockall-b368ef338c33f60e"
+  source_root = "//third_party/rust_crates/vendor/mockall-0.15.0/src/lib.rs"
+  output_name = "mockall-d4b4cca3a25c1506"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -13312,7 +13312,7 @@ rustc_library("mockall-v0_14_0") {
   deps += [ ":cfg-if-v1_0_4" ]
   deps += [ ":downcast-v0_11_0" ]
   deps += [ ":fragile-v2_0_1" ]
-  deps += [ ":mockall_derive-v0_14_0($host_toolchain)" ]
+  deps += [ ":mockall_derive-v0_15_0($host_toolchain)" ]
   deps += [ ":predicates-tree-v1_0_12" ]
   deps += [ ":predicates-v3_1_3" ]
   deps += [ "//build/validate:non_production_tag" ]
@@ -13320,28 +13320,28 @@ rustc_library("mockall-v0_14_0") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=b368ef338c33f60e",
-    "-Cextra-filename=-b368ef338c33f60e",
+    "-Cmetadata=d4b4cca3a25c1506",
+    "-Cextra-filename=-d4b4cca3a25c1506",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":mockall-v0_14_0.license" ]
+  applicable_licenses = [ ":mockall-v0_15_0.license" ]
 }
 
-license("mockall_derive-v0_14_0.license") {
+license("mockall_derive-v0_15_0.license") {
   public_package_name = "mockall_derive"
   license_files = [
-    "//third_party/rust_crates/vendor/mockall_derive-0.14.0/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/mockall_derive-0.14.0/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/mockall_derive-0.15.0/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/mockall_derive-0.15.0/LICENSE-MIT",
   ]
 }
 
-rustc_macro("mockall_derive-v0_14_0") {
+rustc_macro("mockall_derive-v0_15_0") {
   crate_name = "mockall_derive"
   source_root =
-      "//third_party/rust_crates/vendor/mockall_derive-0.14.0/src/lib.rs"
-  output_name = "mockall_derive-fc905da1df8fdf68"
+      "//third_party/rust_crates/vendor/mockall_derive-0.15.0/src/lib.rs"
+  output_name = "mockall_derive-46e3a3c79454d736"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -13357,13 +13357,13 @@ rustc_macro("mockall_derive-v0_14_0") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=fc905da1df8fdf68",
-    "-Cextra-filename=-fc905da1df8fdf68",
+    "-Cmetadata=46e3a3c79454d736",
+    "-Cextra-filename=-46e3a3c79454d736",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":mockall_derive-v0_14_0.license" ]
+  applicable_licenses = [ ":mockall_derive-v0_15_0.license" ]
 }
 
 license("multimap-v0_10_1.license") {
@@ -19346,8 +19346,6 @@ rustc_library("sapphire-gatt-v0_1_0") {
   deps += [ ":sapphire-peer-cache-v0_1_0" ]
   deps += [ ":sapphire-sync-v0_1_0" ]
   deps += [ ":futures-v0_3_31" ]
-  deps += [ ":strum-v0_28_0" ]
-  deps += [ ":strum_macros-v0_28_0($host_toolchain)" ]
   deps += [ ":thiserror-v2_0_20" ]
   deps += [ ":zerocopy-v0_8_48" ]
 
