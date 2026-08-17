@@ -23,6 +23,7 @@ use page;
 use regio::{MmioBank, MmioPtr, Offset, RwSafe};
 #[cfg(ktest)]
 use unittest as _;
+use zbi::DcfgRiscvPlicDriver;
 use zx_status::Status;
 
 const LOCAL_TRACE: u32 = 0;
@@ -299,23 +300,6 @@ static PLIC_OPS: PdevInterruptOps = PdevInterruptOps {
     get_status: None,
 };
 
-// TODO(https://fxbug.dev/42062786): Switch to //sdk/rust/zbi (or //sdk/fidl/zbi) once Zither
-// supports bare-metal kernel_rust_mod dependencies without serde_core.
-/// Driver configuration item (`ZBI_KERNEL_DRIVER_RISCV_PLIC`) passed from bootloader.
-#[repr(C)]
-#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
-pub struct ZbiDcfgRiscvPlicDriver {
-    /// Physical address of the PLIC MMIO region.
-    pub mmio_phys: u64,
-    /// Size in bytes of the PLIC MMIO region.
-    pub size_bytes: u32,
-    /// Number of supported IRQs.
-    pub num_irqs: u32,
-}
-
-const _: () = assert!(core::mem::size_of::<ZbiDcfgRiscvPlicDriver>() == 16);
-const _: () = assert!(core::mem::align_of::<ZbiDcfgRiscvPlicDriver>() == 8);
-
 unsafe extern "C" {
     fn root_resource_filter_add_deny_region(base: usize, size: usize, kind: u32);
 }
@@ -324,18 +308,18 @@ unsafe extern "C" {
 ///
 /// # Safety
 ///
-/// The caller must ensure that `_config` is a reference to a valid `ZbiDcfgRiscvPlicDriver`.
+/// The caller must ensure that `_config` is a reference to a valid `DcfgRiscvPlicDriver`.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn plic_init_early(_config: &ZbiDcfgRiscvPlicDriver) {}
+pub unsafe extern "C" fn plic_init_early(_config: &DcfgRiscvPlicDriver) {}
 
 /// Performs post-VM initialization for the PLIC driver, mapping the MMIO registers.
 ///
 /// # Safety
 ///
-/// The caller must ensure that `config` is a reference to a valid `ZbiDcfgRiscvPlicDriver`,
+/// The caller must ensure that `config` is a reference to a valid `DcfgRiscvPlicDriver`,
 /// and that this function is only called once during boot when the VM system is ready.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn plic_init_post_vm(config: &ZbiDcfgRiscvPlicDriver) {
+pub unsafe extern "C" fn plic_init_post_vm(config: &DcfgRiscvPlicDriver) {
     ltrace_entry!();
     assert!(config.num_irqs > 0);
 
@@ -386,10 +370,10 @@ pub unsafe extern "C" fn plic_init_post_vm(config: &ZbiDcfgRiscvPlicDriver) {
 ///
 /// # Safety
 ///
-/// The caller must ensure that `config` is a reference to a valid `ZbiDcfgRiscvPlicDriver`,
+/// The caller must ensure that `config` is a reference to a valid `DcfgRiscvPlicDriver`,
 /// and that the driver has been initialized successfully in the post-VM phase.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn plic_init_late(config: &ZbiDcfgRiscvPlicDriver) {
+pub unsafe extern "C" fn plic_init_late(config: &DcfgRiscvPlicDriver) {
     // Register the MMIO region we have already mapped after the fact to allow the resource
     // manager to initialize after the PostVM hook.
     unsafe {

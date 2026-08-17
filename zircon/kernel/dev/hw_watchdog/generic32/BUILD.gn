@@ -29,6 +29,7 @@ kernel_rust_mod("generic32-rs") {
   source_root = "generic32.rs"
   sources = [ "generic32.rs" ]
   deps = [
+    "//sdk/rust/zbi",
     "//sdk/rust/zx-status",
     "//src/lib/ksync",
     "//src/lib/regio",

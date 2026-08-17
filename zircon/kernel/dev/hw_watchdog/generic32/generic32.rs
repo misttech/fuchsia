@@ -14,6 +14,10 @@ use debug::dprintf;
 use regio::{Mmio, MmioPtr, RwSafe};
 #[cfg(ktest)]
 use unittest as _;
+use zbi::{
+    DcfgGeneric32Watchdog, DcfgGeneric32WatchdogAction,
+    KERNEL_DRIVER_GENERIC32_WATCHDOG_MIN_PERIOD, KernelDriverGeneric32WatchdogFlags,
+};
 use zx_status::Status;
 
 const FORCE_WATCHDOG_DISABLED_NAME: &str = "kernel.force-watchdog-disabled";
@@ -26,47 +30,6 @@ unsafe extern "C" fn watchdog_timer_cb(_timer: *mut Timer, _now: i64, arg: *mut 
     }
 }
 
-// TODO(https://fxbug.dev/42062786): Switch to //sdk/rust/zbi (or //sdk/fidl/zbi) once Zither
-// supports bare-metal kernel_rust_mod dependencies without serde_core.
-
-/// Defines a register write action for a generic 32-bit kernel watchdog driver.
-#[repr(C)]
-#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
-pub struct ZbiDcfgGeneric32WatchdogAction {
-    /// Physical or virtual MMIO register address.
-    pub addr: u64,
-    /// Bitmask of bits to clear in the register before setting new bits.
-    pub clr_mask: u32,
-    /// Bitmask of bits to set in the register.
-    pub set_mask: u32,
-}
-
-/// Driver configuration item (`ZBI_KERNEL_DRIVER_GENERIC32_WATCHDOG`) passed from bootloader.
-#[repr(C)]
-#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
-pub struct ZbiDcfgGeneric32Watchdog {
-    /// The register action needed to pet (dismiss) the hardware watchdog.
-    pub pet_action: ZbiDcfgGeneric32WatchdogAction,
-    /// The register action needed to enable the hardware watchdog.
-    pub enable_action: ZbiDcfgGeneric32WatchdogAction,
-    /// The register action needed to disable the hardware watchdog.
-    pub disable_action: ZbiDcfgGeneric32WatchdogAction,
-    /// Nominal watchdog timeout period in nanoseconds (`zx_duration_boot_t`).
-    pub watchdog_period_nsec: i64,
-    /// Configuration flags (e.g., `ZBI_KERNEL_DRIVER_GENERIC32_WATCHDOG_FLAGS_ENABLED`).
-    pub flags: u32,
-    /// Reserved padding field, must be zero.
-    pub reserved: u32,
-}
-
-pub const ZBI_KERNEL_DRIVER_GENERIC32_WATCHDOG_FLAGS_ENABLED: u32 = 1 << 0;
-pub const ZBI_KERNEL_DRIVER_GENERIC32_WATCHDOG_MIN_PERIOD: i64 = 1_000_000;
-
-zr::static_assert!(core::mem::size_of::<ZbiDcfgGeneric32WatchdogAction>() == 16);
-zr::static_assert!(core::mem::align_of::<ZbiDcfgGeneric32WatchdogAction>() == 8);
-zr::static_assert!(core::mem::size_of::<ZbiDcfgGeneric32Watchdog>() == 64);
-zr::static_assert!(core::mem::align_of::<ZbiDcfgGeneric32Watchdog>() == 8);
-
 unsafe extern "C" {
     /// Translates a physical MMIO address in-place to a virtual address. Returns `true` if valid.
     fn cpp_watchdog_translate_paddr(paddr: *mut u64) -> bool;
@@ -77,7 +40,7 @@ unsafe extern "C" {
 /// Inner state of the generic 32-bit watchdog driver, protected by a spinlock.
 pub struct GenericWatchdog32Inner {
     /// Driver configuration received during early boot.
-    pub cfg: ZbiDcfgGeneric32Watchdog,
+    pub cfg: DcfgGeneric32Watchdog,
     /// Result code (`zx_status_t`) of the early initialization phase.
     pub early_init_result: Status,
     /// Timestamp (`zx_instant_boot_t`) when the watchdog was last pet.
@@ -94,16 +57,12 @@ pub struct GenericWatchdog32Inner {
 impl GenericWatchdog32Inner {
     const fn new() -> Self {
         Self {
-            cfg: ZbiDcfgGeneric32Watchdog {
-                pet_action: ZbiDcfgGeneric32WatchdogAction { addr: 0, clr_mask: 0, set_mask: 0 },
-                enable_action: ZbiDcfgGeneric32WatchdogAction { addr: 0, clr_mask: 0, set_mask: 0 },
-                disable_action: ZbiDcfgGeneric32WatchdogAction {
-                    addr: 0,
-                    clr_mask: 0,
-                    set_mask: 0,
-                },
+            cfg: DcfgGeneric32Watchdog {
+                pet_action: DcfgGeneric32WatchdogAction { addr: 0, clr_mask: 0, set_mask: 0 },
+                enable_action: DcfgGeneric32WatchdogAction { addr: 0, clr_mask: 0, set_mask: 0 },
+                disable_action: DcfgGeneric32WatchdogAction { addr: 0, clr_mask: 0, set_mask: 0 },
                 watchdog_period_nsec: 0,
-                flags: 0,
+                flags: KernelDriverGeneric32WatchdogFlags::empty(),
                 reserved: 0,
             },
             early_init_result: Status::INTERNAL,
@@ -120,7 +79,7 @@ impl GenericWatchdog32Inner {
     /// # Safety
     ///
     /// `action.addr` must be a valid, mapped virtual address pointing to a 32-bit MMIO register.
-    unsafe fn take_action(&self, action: &ZbiDcfgGeneric32WatchdogAction) {
+    unsafe fn take_action(&self, action: &DcfgGeneric32WatchdogAction) {
         if action.addr == 0 {
             return;
         }
@@ -170,7 +129,7 @@ impl GenericWatchdog32Inner {
         }
     }
 
-    fn init_early(&mut self, config: &ZbiDcfgGeneric32Watchdog) {
+    fn init_early(&mut self, config: &DcfgGeneric32Watchdog) {
         // SAFETY: We initialize pet_timer in place using its pin initializer.
         unsafe {
             let slot = self.pet_timer.as_mut_ptr();
@@ -183,7 +142,7 @@ impl GenericWatchdog32Inner {
             self.early_init_result = Status::INVALID_ARGS;
             return;
         }
-        if config.watchdog_period_nsec < ZBI_KERNEL_DRIVER_GENERIC32_WATCHDOG_MIN_PERIOD {
+        if config.watchdog_period_nsec < KERNEL_DRIVER_GENERIC32_WATCHDOG_MIN_PERIOD {
             self.early_init_result = Status::INVALID_ARGS;
             return;
         }
@@ -200,8 +159,7 @@ impl GenericWatchdog32Inner {
             cpp_watchdog_translate_paddr(&mut self.cfg.disable_action.addr);
         }
 
-        self.is_enabled =
-            (self.cfg.flags & ZBI_KERNEL_DRIVER_GENERIC32_WATCHDOG_FLAGS_ENABLED) != 0;
+        self.is_enabled = self.cfg.flags.contains(KernelDriverGeneric32WatchdogFlags::ENABLED);
 
         self.pet_locked();
         // SAFETY: Calling C++ helper to read kernel boot options requires no parameters and has no side effects.
@@ -391,12 +349,10 @@ impl crate::pdev_watchdog::WatchdogOps for GenericWatchdog32 {
 ///
 /// # Safety
 ///
-/// `config` must be a valid pointer to a `ZbiDcfgGeneric32Watchdog` structure.
+/// `config` must be a valid pointer to a `DcfgGeneric32Watchdog` structure.
 /// This must only be called once during early single-threaded boot before multiple CPUs or threads are active.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn generic_32bit_watchdog_early_init(
-    config: *const ZbiDcfgGeneric32Watchdog,
-) {
+pub unsafe extern "C" fn generic_32bit_watchdog_early_init(config: *const DcfgGeneric32Watchdog) {
     if config.is_null() {
         return;
     }
@@ -404,7 +360,7 @@ pub unsafe extern "C" fn generic_32bit_watchdog_early_init(
     unsafe { G_WATCHDOG.init_in_place() };
     let is_ok = {
         ksync::lock!(let mut guard = G_WATCHDOG.lock_lock());
-        // SAFETY: `config` is checked to be non-null and guaranteed by caller to point to a valid `ZbiDcfgGeneric32Watchdog`.
+        // SAFETY: `config` is checked to be non-null and guaranteed by caller to point to a valid `DcfgGeneric32Watchdog`.
         let inner = guard.as_mut().fields_mut().inner;
         inner.init_early(unsafe { &*config });
         inner.early_init_result == Status::OK
@@ -419,10 +375,10 @@ pub unsafe extern "C" fn generic_32bit_watchdog_early_init(
 ///
 /// # Safety
 ///
-/// `config` must be a valid pointer to a `ZbiDcfgGeneric32Watchdog` structure if accessed.
+/// `config` must be a valid pointer to a `DcfgGeneric32Watchdog` structure if accessed.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn generic_32bit_watchdog_init_post_vm(
-    _config: *const ZbiDcfgGeneric32Watchdog,
+    _config: *const DcfgGeneric32Watchdog,
 ) {
 }
 
@@ -443,16 +399,13 @@ mod tests {
     #[test]
     fn test_generic32_take_action_mock_mmio() {
         let mut mock_mmio: u32 = 0x1234_5678;
-        let action = ZbiDcfgGeneric32WatchdogAction {
+        let action = DcfgGeneric32WatchdogAction {
             addr: core::ptr::addr_of_mut!(mock_mmio) as u64,
             clr_mask: 0x0000_FF00,
             set_mask: 0x0000_00AB,
         };
-        let zero_action = ZbiDcfgGeneric32WatchdogAction {
-            addr: 0,
-            clr_mask: 0xFFFF_FFFF,
-            set_mask: 0xFFFF_FFFF,
-        };
+        let zero_action =
+            DcfgGeneric32WatchdogAction { addr: 0, clr_mask: 0xFFFF_FFFF, set_mask: 0xFFFF_FFFF };
         let inner = GenericWatchdog32Inner::new();
         // SAFETY: `action` points to valid stack u32, and `zero_action` has addr 0 which safely returns early.
         unsafe {
@@ -472,12 +425,12 @@ mod tests {
     #[test]
     fn test_generic32_config_parsing() {
         let mut inner = GenericWatchdog32Inner::new();
-        let mut bad_config = ZbiDcfgGeneric32Watchdog {
-            pet_action: ZbiDcfgGeneric32WatchdogAction { addr: 0, clr_mask: 0, set_mask: 0 },
-            enable_action: ZbiDcfgGeneric32WatchdogAction { addr: 0, clr_mask: 0, set_mask: 0 },
-            disable_action: ZbiDcfgGeneric32WatchdogAction { addr: 0, clr_mask: 0, set_mask: 0 },
-            watchdog_period_nsec: ZBI_KERNEL_DRIVER_GENERIC32_WATCHDOG_MIN_PERIOD,
-            flags: 0,
+        let mut bad_config = DcfgGeneric32Watchdog {
+            pet_action: DcfgGeneric32WatchdogAction { addr: 0, clr_mask: 0, set_mask: 0 },
+            enable_action: DcfgGeneric32WatchdogAction { addr: 0, clr_mask: 0, set_mask: 0 },
+            disable_action: DcfgGeneric32WatchdogAction { addr: 0, clr_mask: 0, set_mask: 0 },
+            watchdog_period_nsec: KERNEL_DRIVER_GENERIC32_WATCHDOG_MIN_PERIOD,
+            flags: KernelDriverGeneric32WatchdogFlags::empty(),
             reserved: 0,
         };
         inner.init_early(&bad_config);
@@ -485,11 +438,11 @@ mod tests {
 
         let mut mock_mmio: u32 = 0;
         bad_config.pet_action.addr = core::ptr::addr_of_mut!(mock_mmio) as u64;
-        bad_config.watchdog_period_nsec = ZBI_KERNEL_DRIVER_GENERIC32_WATCHDOG_MIN_PERIOD - 1;
+        bad_config.watchdog_period_nsec = KERNEL_DRIVER_GENERIC32_WATCHDOG_MIN_PERIOD - 1;
         inner.init_early(&bad_config);
         assert_eq!(inner.early_init_result.into_raw(), Status::INVALID_ARGS.into_raw());
 
-        bad_config.watchdog_period_nsec = ZBI_KERNEL_DRIVER_GENERIC32_WATCHDOG_MIN_PERIOD;
+        bad_config.watchdog_period_nsec = KERNEL_DRIVER_GENERIC32_WATCHDOG_MIN_PERIOD;
         inner.init_early(&bad_config);
         assert_eq!(inner.early_init_result.into_raw(), Status::OK.into_raw());
     }
@@ -501,24 +454,24 @@ mod tests {
         let mut mock_enb: u32 = 0;
         let mut mock_dis: u32 = 0;
 
-        let config = ZbiDcfgGeneric32Watchdog {
-            pet_action: ZbiDcfgGeneric32WatchdogAction {
+        let config = DcfgGeneric32Watchdog {
+            pet_action: DcfgGeneric32WatchdogAction {
                 addr: core::ptr::addr_of_mut!(mock_pet) as u64,
                 clr_mask: 0,
                 set_mask: 1,
             },
-            enable_action: ZbiDcfgGeneric32WatchdogAction {
+            enable_action: DcfgGeneric32WatchdogAction {
                 addr: core::ptr::addr_of_mut!(mock_enb) as u64,
                 clr_mask: 0,
                 set_mask: 2,
             },
-            disable_action: ZbiDcfgGeneric32WatchdogAction {
+            disable_action: DcfgGeneric32WatchdogAction {
                 addr: core::ptr::addr_of_mut!(mock_dis) as u64,
                 clr_mask: 0,
                 set_mask: 4,
             },
-            watchdog_period_nsec: ZBI_KERNEL_DRIVER_GENERIC32_WATCHDOG_MIN_PERIOD,
-            flags: 0,
+            watchdog_period_nsec: KERNEL_DRIVER_GENERIC32_WATCHDOG_MIN_PERIOD,
+            flags: KernelDriverGeneric32WatchdogFlags::empty(),
             reserved: 0,
         };
 
