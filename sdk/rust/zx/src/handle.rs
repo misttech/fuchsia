@@ -1161,7 +1161,7 @@ mod tests {
             HandleOp::Move(unsafe { NullableHandle::from_raw(RAW_HANDLE) }),
             ObjectType::VMO,
             Rights::EXECUTE,
-            Status::OK,
+            Ok(()),
         );
         let raw_hd = hd.into_raw();
         assert_eq!(raw_hd.operation, sys::ZX_HANDLE_OP_MOVE);

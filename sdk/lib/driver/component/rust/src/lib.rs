@@ -37,7 +37,7 @@ pub trait Driver: Sized + Send + 'static {
     /// driver's incoming and outgoing namespaces, add child nodes in the driver topology, and
     /// manage dispatchers.
     ///
-    /// In order for the driver to be properly considered started, it must return [`Status::OK`]
+    /// In order for the driver to be properly considered started, it must return `Ok`
     /// and bind the client end for the [`DriverStartArgs::node`] given in
     /// [`DriverContext::start_args`].
     fn start(context: DriverContext) -> impl Future<Output = Result<Self, DriverError>> + Send;

@@ -1509,7 +1509,7 @@ mod tests {
             HandleOp::Move(Port::create().into()),
             ObjectType::PORT,
             Rights::TRANSFER,
-            Status::OK,
+            Ok(()),
         )];
         match p1.write_etc(b"", &mut handles) {
             Err(err) => {
@@ -1537,7 +1537,7 @@ mod tests {
             HandleOp::Move(Port::create().into()),
             ObjectType::PORT,
             Rights::TRANSFER,
-            Status::OK,
+            Ok(()),
         )];
         match p1.writev_etc(&[], &mut handles) {
             Err(err) => {
@@ -1566,7 +1566,7 @@ mod tests {
             HandleOp::Duplicate(port.as_handle_ref()),
             ObjectType::NONE,
             Rights::SAME_RIGHTS,
-            Status::OK,
+            Ok(()),
         )];
         p1.write_etc(b"", &mut handles).unwrap();
 
@@ -1592,7 +1592,7 @@ mod tests {
             HandleOp::Duplicate(port.as_handle_ref()),
             ObjectType::NONE,
             Rights::SAME_RIGHTS,
-            Status::OK,
+            Ok(()),
         )];
         p1.writev_etc(&[], &mut handles).unwrap();
 
@@ -1669,7 +1669,7 @@ mod tests {
                 HandleOp::Move(crate::Event::create().into()),
                 ObjectType::EVENT,
                 Rights::TRANSFER,
-                Status::OK,
+                Ok(()),
             ));
         }
         handles
@@ -1761,7 +1761,7 @@ mod tests {
             HandleOp::Move(crate::Event::create().into()),
             ObjectType::EVENT,
             Rights::NONE,
-            Status::OK,
+            Ok(()),
         )];
         send.write_etc(&[], &mut handles).unwrap_err();
         assert_eq!(handles[0].raw_handle(), sys::ZX_HANDLE_INVALID);
@@ -1776,7 +1776,7 @@ mod tests {
             HandleOp::Move(crate::Event::create().into()),
             ObjectType::EVENT,
             Rights::NONE,
-            Status::OK,
+            Ok(()),
         )];
         send.writev_etc(&[], &mut handles).unwrap_err();
         assert_eq!(handles[0].raw_handle(), sys::ZX_HANDLE_INVALID);
@@ -1795,13 +1795,13 @@ mod tests {
                 HandleOp::Move(event.into()),
                 ObjectType::EVENT,
                 Rights::SAME_RIGHTS,
-                Status::OK,
+                Ok(()),
             ),
             HandleDisposition::new(
                 HandleOp::Move(event_no_rights.into()),
                 ObjectType::EVENT,
                 Rights::SAME_RIGHTS,
-                Status::OK,
+                Ok(()),
             ),
         ];
 
@@ -1828,13 +1828,13 @@ mod tests {
                 HandleOp::Move(event.into()),
                 ObjectType::EVENT,
                 Rights::SAME_RIGHTS,
-                Status::OK,
+                Ok(()),
             ),
             HandleDisposition::new(
                 HandleOp::Move(event_no_rights.into()),
                 ObjectType::EVENT,
                 Rights::SAME_RIGHTS,
-                Status::OK,
+                Ok(()),
             ),
         ];
 
@@ -2300,7 +2300,7 @@ mod tests {
             HandleOp::Move(Port::create().into()),
             ObjectType::PORT,
             Rights::TRANSFER,
-            Status::OK,
+            Ok(()),
         )];
         // NOTE(raggi): CQ has been seeing some long stalls from channel call,
         // and it's as yet unclear why. The timeout here has been made much
@@ -2364,7 +2364,7 @@ mod tests {
             HandleOp::Move(Port::create().into()),
             ObjectType::PORT,
             Rights::TRANSFER,
-            Status::OK,
+            Ok(()),
         )];
         // NOTE(raggi): CQ has been seeing some long stalls from channel call,
         // and it's as yet unclear why. The timeout here has been made much
@@ -2402,13 +2402,13 @@ mod tests {
                 HandleOp::Move(event.into()),
                 ObjectType::EVENT,
                 Rights::SAME_RIGHTS,
-                Status::OK,
+                Ok(()),
             ),
             HandleDisposition::new(
                 HandleOp::Move(event_no_rights.into()),
                 ObjectType::EVENT,
                 Rights::SAME_RIGHTS,
-                Status::OK,
+                Ok(()),
             ),
         ];
 
@@ -2441,13 +2441,13 @@ mod tests {
                 HandleOp::Move(event.into()),
                 ObjectType::EVENT,
                 Rights::SAME_RIGHTS,
-                Status::OK,
+                Ok(()),
             ),
             HandleDisposition::new(
                 HandleOp::Move(event_no_rights.into()),
                 ObjectType::EVENT,
                 Rights::SAME_RIGHTS,
-                Status::OK,
+                Ok(()),
             ),
         ];
 

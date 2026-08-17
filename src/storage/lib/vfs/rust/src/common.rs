@@ -34,7 +34,7 @@ pub(crate) fn stricter_or_same_rights(parent_flags: fio::OpenFlags, flags: fio::
 /// issue.
 ///
 /// # Panics
-/// If `status` is `Status::OK`.  In this case `OnOpen` may need to contain a description of the
+/// If `status` is not an error.  In this case `OnOpen` may need to contain a description of the
 /// object, and server_end should not be dropped.
 #[cfg(any(fuchsia_api_level_at_least = "PLATFORM", not(fuchsia_api_level_at_least = "32")))]
 pub fn send_on_open_with_error(

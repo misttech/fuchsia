@@ -177,10 +177,10 @@ mod tests {
         client_end.into_proxy()
     }
 
-    fn is_closed_with_status(error: Error, status: Status) -> bool {
+    fn assert_closed_with_status(error: Error, expected: Result<(), Status>) {
         match error {
-            Error::ClientChannelClosed { epitaph: s, .. } => s == status,
-            _ => false,
+            Error::ClientChannelClosed { epitaph: s, .. } => assert_eq!(s, expected),
+            other => panic!("expected ClientChannelClosed, got {other:?}"),
         }
     }
 
@@ -239,7 +239,7 @@ mod tests {
             .expect("Unable to send Application Request");
 
         let (result, _) = app_proxy.take_event_stream().into_future().await;
-        assert!(is_closed_with_status(result.unwrap().unwrap_err(), Status::OK));
+        assert_closed_with_status(result.unwrap().unwrap_err(), Ok(()));
     }
 
     #[fuchsia::test]
@@ -279,7 +279,7 @@ mod tests {
             .expect("Unable to send DeviceInfo Request");
 
         let (result, _) = device_info_proxy.take_event_stream().into_future().await;
-        assert!(is_closed_with_status(result.unwrap().unwrap_err(), Status::OK));
+        assert_closed_with_status(result.unwrap().unwrap_err(), Ok(()));
     }
 
     #[fuchsia::test]

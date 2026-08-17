@@ -216,7 +216,7 @@ impl<'a> futures::Future for RecvEtcMsg<'a> {
 
 #[cfg(test)]
 mod test {
-    use super::super::{Channel, Handle, HandleDisposition, HandleOp, ObjectType, Rights, Status};
+    use super::super::{Channel, Handle, HandleDisposition, HandleOp, ObjectType, Rights};
     use super::{Channel as AsyncChannel, MessageBuf, MessageBufEtc};
     use futures::executor::block_on;
     use std::future::Future;
@@ -266,12 +266,12 @@ mod test {
             let (c, _) = Channel::create();
             b.write_etc(
                 &[1, 2, 3],
-                &mut [HandleDisposition {
-                    handle_op: HandleOp::Move(c.into()),
-                    object_type: ObjectType::CHANNEL,
-                    rights: Rights::TRANSFER | Rights::WRITE,
-                    result: Status::OK,
-                }],
+                &mut [HandleDisposition::new(
+                    HandleOp::Move(c.into()),
+                    ObjectType::CHANNEL,
+                    Rights::TRANSFER | Rights::WRITE,
+                    Ok(()),
+                )],
             )
             .unwrap();
             rx.await.unwrap();

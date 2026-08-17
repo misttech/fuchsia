@@ -83,7 +83,7 @@ impl PacketReceiver for PendingWait {
         }
         // we have now de-registered the wait and taken ownership of the wait object itself so
         // we can safely call the callback.
-        self.wait.run(dispatcher, signal.raw_packet(), Status::OK);
+        self.wait.run(dispatcher, signal.raw_packet(), Ok(()));
     }
 }
 
@@ -104,14 +104,19 @@ impl Wait {
         &self,
         dispatcher: Arc<ScopeDispatcher>,
         signal: *const zx_packet_signal_t,
-        status: Status,
+        status: Result<(), Status>,
     ) {
         // SAFETY: The caller provided a valid non-null wait to `begin_wait`, and is expected to
         // keep it alive until either it is successfully canceled or its callback is called.
         let Some(callback) = unsafe { self.0.as_ref() }.handler else { return };
         // SAFETY: The caller is expected to provide a valid function with the correct signature.
         unsafe {
-            callback(dispatcher.as_ptr() as *mut _, self.0.as_ptr(), status.into_raw(), signal)
+            callback(
+                dispatcher.as_ptr() as *mut _,
+                self.0.as_ptr(),
+                Status::result_into_raw(status),
+                signal,
+            )
         };
     }
 

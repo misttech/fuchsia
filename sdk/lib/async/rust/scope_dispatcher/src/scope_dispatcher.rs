@@ -159,7 +159,7 @@ impl ScopeDispatcher {
 
     async fn service_loop(self: Arc<Self>) {
         while let Some(next_task) = NextTaskFuture::new(&self).await {
-            next_task.run(self.clone(), Status::OK);
+            next_task.run(self.clone(), Ok(()));
         }
         // we're shutting down, so drain the queues of all outstanding tasks with
         // a status of CANCELED. Note that we don't really care about fanning these out to all
@@ -168,10 +168,10 @@ impl ScopeDispatcher {
         // shutdown flag has been set, so we don't have to worry about new things being added at
         // this point.
         for next_wait in self.pending_waits.lock().get_all_waits() {
-            next_wait.run(self.clone(), null(), Status::CANCELED);
+            next_wait.run(self.clone(), null(), Err(Status::CANCELED));
         }
         while let Some(next_task) = self.task_queue.lock().next_task(MonotonicInstant::INFINITE) {
-            next_task.run(self.clone(), Status::CANCELED);
+            next_task.run(self.clone(), Err(Status::CANCELED));
         }
         self.shutdown_guard.store(true, atomic::Ordering::Release);
         self.shutdown_complete_waker.wake();

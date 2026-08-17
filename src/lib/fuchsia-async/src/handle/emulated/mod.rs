@@ -2403,18 +2403,18 @@ mod test {
         assert_eq!(b.read_etc(&mut incoming).err().unwrap(), Status::SHOULD_WAIT);
         d.write(&[4, 5, 6], &mut []).unwrap();
         let mut hds = vec![
-            HandleDisposition {
-                handle_op: HandleOp::Move(c.into()),
-                object_type: ObjectType::CHANNEL,
-                rights: Rights::SAME_RIGHTS,
-                result: Status::OK,
-            },
-            HandleDisposition {
-                handle_op: HandleOp::Move(d.into()),
-                object_type: ObjectType::CHANNEL,
-                rights: Rights::TRANSFER | Rights::READ,
-                result: Status::OK,
-            },
+            HandleDisposition::new(
+                HandleOp::Move(c.into()),
+                ObjectType::CHANNEL,
+                Rights::SAME_RIGHTS,
+                Ok(()),
+            ),
+            HandleDisposition::new(
+                HandleOp::Move(d.into()),
+                ObjectType::CHANNEL,
+                Rights::TRANSFER | Rights::READ,
+                Ok(()),
+            ),
         ];
         a.write_etc(&[1, 2, 3], &mut hds).unwrap();
 
@@ -2455,12 +2455,12 @@ mod test {
     fn mixed_channel_write_etc_read() {
         let (a, b) = Channel::create();
         let (c, _) = Channel::create();
-        let hd = HandleDisposition {
-            handle_op: HandleOp::Move(c.into()),
-            object_type: ObjectType::NONE,
-            rights: Rights::SAME_RIGHTS,
-            result: Status::OK,
-        };
+        let hd = HandleDisposition::new(
+            HandleOp::Move(c.into()),
+            ObjectType::NONE,
+            Rights::SAME_RIGHTS,
+            Ok(()),
+        );
         a.write_etc(&[1, 2, 3], &mut [hd]).unwrap();
         let mut buf = MessageBuf::new();
         b.read(&mut buf).unwrap();
