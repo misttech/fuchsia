@@ -30,9 +30,10 @@ use object_constants_rs::{
 use pin_init::{PinInit, pin_data, pin_init, pinned_drop};
 use zx_status::Status;
 use zx_types::{
-    ZX_FIFO_MAX_SIZE_BYTES, ZX_FIFO_READABLE, ZX_FIFO_WRITABLE, ZX_OBJ_TYPE_FIFO,
-    ZX_RIGHT_DUPLICATE, ZX_RIGHT_INSPECT, ZX_RIGHT_READ, ZX_RIGHT_SIGNAL, ZX_RIGHT_SIGNAL_PEER,
-    ZX_RIGHT_TRANSFER, ZX_RIGHT_WAIT, ZX_RIGHT_WRITE, ZX_USER_SIGNAL_ALL, zx_rights_t,
+    ZX_FIFO_MAX_SIZE_BYTES, ZX_FIFO_PEER_CLOSED, ZX_FIFO_READABLE, ZX_FIFO_WRITABLE,
+    ZX_OBJ_TYPE_FIFO, ZX_RIGHT_DUPLICATE, ZX_RIGHT_INSPECT, ZX_RIGHT_READ, ZX_RIGHT_SIGNAL,
+    ZX_RIGHT_SIGNAL_PEER, ZX_RIGHT_TRANSFER, ZX_RIGHT_WAIT, ZX_RIGHT_WRITE, ZX_USER_SIGNAL_ALL,
+    zx_rights_t,
 };
 
 pub const DEFAULT_RIGHTS: zx_rights_t = ZX_RIGHT_TRANSFER
@@ -173,16 +174,13 @@ impl FifoDispatcher {
         Ok((handle0, handle1, DEFAULT_RIGHTS))
     }
 
-    /// Handles zero handles condition by clearing the peer reference and asserting peer
-    /// closed on peer, and clearing the writable signal on peer.
-    pub fn on_zero_handles(&self) {
+    fn on_zero_handles_locked(&self, _token: &ksync::LockToken<'_, PeerHolderMuClass<Self>>) {
         self.state().canary.assert();
+    }
 
-        ksync::lock!(let mut guard = self.state().peered.lock());
-        if let Some(p) = guard.as_mut().peer_mut().take() {
-            *p.state().peered.guard_mu_mut(guard.as_mut().token_mut()).peer_mut() = None;
-            p.update_state_locked(guard.token(), ZX_FIFO_WRITABLE, zx_types::ZX_OBJECT_PEER_CLOSED);
-        }
+    fn on_peer_zero_handles_locked(&self, token: &ksync::LockToken<'_, PeerHolderMuClass<Self>>) {
+        self.state().canary.assert();
+        self.update_state_locked(token, ZX_FIFO_WRITABLE, ZX_FIFO_PEER_CLOSED);
     }
 
     /// Writes data from userspace into the peer endpoint of this FIFO.

@@ -5,7 +5,8 @@
 // https://opensource.org/licenses/MIT
 
 use super::dispatcher::{
-    DispatcherOps, PeerHolder, PeeredState, impl_peered_dispatcher_facade_with_state,
+    DispatcherOps, PeerHolder, PeerHolderMuClass, PeeredState,
+    impl_peered_dispatcher_facade_with_state,
 };
 use super::event_pair_dispatcher_ffi::cpp_event_pair_dispatcher_create;
 use super::handle::KernelHandle;
@@ -21,7 +22,7 @@ use object_constants_rs::{
 use pin_init::{PinInit, pin_data, pin_init, pinned_drop};
 use zx_status::Status;
 use zx_types::{
-    ZX_EVENT_SIGNALED, ZX_OBJ_TYPE_EVENTPAIR, ZX_OBJECT_PEER_CLOSED, ZX_RIGHT_DUPLICATE,
+    ZX_EVENT_SIGNALED, ZX_EVENTPAIR_PEER_CLOSED, ZX_OBJ_TYPE_EVENTPAIR, ZX_RIGHT_DUPLICATE,
     ZX_RIGHT_INSPECT, ZX_RIGHT_SIGNAL, ZX_RIGHT_SIGNAL_PEER, ZX_RIGHT_TRANSFER, ZX_RIGHT_WAIT,
     ZX_USER_SIGNAL_ALL, zx_rights_t,
 };
@@ -111,15 +112,12 @@ impl EventPairDispatcher {
         Ok((handle0, handle1, DEFAULT_RIGHTS))
     }
 
-    /// Handles zero handles condition by clearing the peer reference and asserting peer
-    /// closed on peer.
-    pub fn on_zero_handles(&self) {
+    fn on_zero_handles_locked(&self, _token: &ksync::LockToken<'_, PeerHolderMuClass<Self>>) {
         self.state().canary.assert();
+    }
 
-        ksync::lock!(let mut guard = self.state().peered.lock());
-        if let Some(p) = guard.as_mut().peer_mut().take() {
-            *p.state().peered.guard_mu_mut(guard.as_mut().token_mut()).peer_mut() = None;
-            p.update_state_locked(guard.token(), 0, ZX_OBJECT_PEER_CLOSED);
-        }
+    fn on_peer_zero_handles_locked(&self, token: &ksync::LockToken<'_, PeerHolderMuClass<Self>>) {
+        self.state().canary.assert();
+        self.update_state_locked(token, 0, ZX_EVENTPAIR_PEER_CLOSED);
     }
 }
