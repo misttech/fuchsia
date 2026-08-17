@@ -590,6 +590,7 @@ kernel_bindgen_crate("vm-object-bindings") {
     "cpp_vm_object_get_mapping_cache_policy",
     "cpp_vm_object_create_clone",
     "cpp_vm_object_create_child_slice",
+    "cpp_vm_object_create_child_reference",
     "cpp_vm_object_get_page_blocking",
     "cpp_vm_object_set_user_id",
     "cpp_vm_object_user_id",
@@ -597,6 +598,7 @@ kernel_bindgen_crate("vm-object-bindings") {
     "cpp_vm_object_lookup",
     "cpp_vm_object_get_page",
     "cpp_vm_object_get_attributed_memory",
+    "cpp_vm_object_get_attributed_memory_in_reference_owner",
     "cpp_vm_object_read",
     "cpp_vm_object_zero_range",
   ]

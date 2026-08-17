@@ -52,6 +52,9 @@ zx_status_t cpp_vm_object_get_page_blocking(VmObject* vmo, uint64_t offset, uint
                                             vm_page_t** out_page, paddr_t* out_pa);
 VmObject* cpp_vm_object_create_child_slice(VmObject* vmo, uint64_t offset, uint64_t size,
                                            bool copy_name, zx_status_t* out_status);
+VmObject* cpp_vm_object_create_child_reference(VmObject* vmo, Resizability resizable,
+                                               uint64_t offset, uint64_t size, bool copy_name,
+                                               bool* out_first_child, zx_status_t* out_status);
 void cpp_vm_object_set_user_id(VmObject* vmo, uint64_t user_id);
 uint64_t cpp_vm_object_user_id(const VmObject* vmo);
 uint64_t cpp_vm_object_parent_user_id(const VmObject* vmo);
@@ -61,6 +64,8 @@ zx_status_t cpp_vm_object_get_page(VmObject* vmo, uint64_t offset, uint32_t pf_f
                                    MultiPageRequest* page_request, vm_page_t** out_page,
                                    paddr_t* out_pa);
 void cpp_vm_object_get_attributed_memory(const VmObject* vmo, vm::AttributionCounts* out_counts);
+void cpp_vm_object_get_attributed_memory_in_reference_owner(const VmObject* vmo,
+                                                            vm::AttributionCounts* out_counts);
 zx_status_t cpp_vm_object_read(VmObject* vmo, void* ptr, uint64_t offset, size_t len);
 zx_status_t cpp_vm_object_zero_range(VmObject* vmo, uint64_t offset, uint64_t len);
 

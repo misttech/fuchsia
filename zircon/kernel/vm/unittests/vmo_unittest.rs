@@ -144,6 +144,42 @@ mod vmo_rs {
         assert_eq!(Status::result_into_raw(result.map(|_| ())), Status::INVALID_ARGS.into_raw());
     }
 
+    /// Checks that attribution via reference doesn't attribute pages unless specifically requested.
+    #[test]
+    fn vmo_reference_attribution_commit_test() {
+        // Creates a vm object, checks that attribution via reference doesn't attribute pages
+        // unless we specifically request it.
+        let _scanner_disable = AutoVmScannerDisable::new();
+
+        let alloc_size = 8 * PAGE_SIZE;
+        let vmo = unwrap_ok!(
+            VmObjectPaged::create(pmm::ALLOC_FLAG_ANY, 0, alloc_size),
+            "vmobject creation\n"
+        );
+
+        let (vmo_reference, _first_child) = unwrap_ok!(
+            vmo.create_child_reference(Resizability::NonResizable, 0, 0, true),
+            "vmobject reference creation\n"
+        );
+
+        let ret = vmo.commit_range(0, alloc_size);
+        expect_ok!(ret, "committing vm object\n");
+        expect_true!(make_private_attribution_counts(alloc_size, 0) == vmo.get_attributed_memory());
+        expect_true!(verify_continuous_attribution_bytes(&vmo, alloc_size));
+
+        expect_true!(
+            attribution::zero() == vmo_reference.get_attributed_memory(),
+            "vmo_reference attribution\n"
+        );
+        expect_true!(verify_continuous_attribution_bytes(&vmo_reference, alloc_size));
+
+        expect_true!(
+            make_private_attribution_counts(alloc_size, 0)
+                == vmo_reference.get_attributed_memory_in_reference_owner(),
+            "vmo_reference explicit reference attribution\n"
+        );
+    }
+
     /// Tests creating a physical VMO and checking its initial properties.
     #[test]
     fn vmo_create_physical_test() {

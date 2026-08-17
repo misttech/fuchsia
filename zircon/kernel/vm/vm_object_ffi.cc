@@ -93,6 +93,15 @@ FFI_ALWAYS_INLINE VmObject* cpp_vm_object_create_child_slice(VmObject* vmo, uint
   return fbl::ExportToRawPtr(&child);
 }
 
+FFI_ALWAYS_INLINE VmObject* cpp_vm_object_create_child_reference(
+    VmObject* vmo, Resizability resizable, uint64_t offset, uint64_t size, bool copy_name,
+    bool* out_first_child, zx_status_t* out_status) {
+  fbl::RefPtr<VmObject> child;
+  *out_status =
+      vmo->CreateChildReference(resizable, offset, size, copy_name, out_first_child, &child);
+  return fbl::ExportToRawPtr(&child);
+}
+
 FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_get_page_blocking(VmObject* vmo, uint64_t offset,
                                                               uint32_t pf_flags,
                                                               vm_page_t** out_page,
@@ -127,6 +136,11 @@ FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_get_page(VmObject* vmo, uint64_t off
 FFI_ALWAYS_INLINE void cpp_vm_object_get_attributed_memory(const VmObject* vmo,
                                                            vm::AttributionCounts* out_counts) {
   *out_counts = vmo->GetAttributedMemory();
+}
+
+FFI_ALWAYS_INLINE void cpp_vm_object_get_attributed_memory_in_reference_owner(
+    const VmObject* vmo, vm::AttributionCounts* out_counts) {
+  *out_counts = vmo->GetAttributedMemoryInReferenceOwner();
 }
 
 FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_read(VmObject* vmo, void* ptr, uint64_t offset,

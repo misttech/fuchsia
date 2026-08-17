@@ -212,6 +212,37 @@ impl VmObject {
         Ok(slice.expect("create_child_slice returned ZX_OK; must be non-null"))
     }
 
+    /// Creates a child reference to this VMO, returning the child and whether it is
+    /// the first child.
+    pub fn create_child_reference(
+        &self,
+        resizable: Resizability,
+        offset: u64,
+        size: u64,
+        copy_name: bool,
+    ) -> Result<(RefPtr<VmObject>, bool), Status> {
+        let mut status = 0;
+        let mut first_child = false;
+        // SAFETY: `self.as_raw()` points to a live `VmObject`, and `first_child` and `status` are
+        // valid pointers to local stack memory for writing.
+        let raw = unsafe {
+            bindings::cpp_vm_object_create_child_reference(
+                self.as_raw(),
+                resizable,
+                offset,
+                size,
+                copy_name,
+                &mut first_child,
+                &mut status,
+            )
+        };
+        Status::ok(status)?;
+        // SAFETY: `raw` points to a live `VmObject` returned by
+        // `cpp_vm_object_create_child_reference` on `ZX_OK`.
+        let child = unsafe { VmObject::from_raw(raw) };
+        Ok((child.expect("create_child_reference returned ZX_OK; must be non-null"), first_child))
+    }
+
     /// Helper variant of get_page that will retry the operation after waiting on a PageRequest if
     /// required.
     ///
@@ -381,6 +412,21 @@ impl VmObject {
             bindings::cpp_vm_object_get_attributed_memory(self.as_raw(), counts.as_mut_ptr());
         }
         // SAFETY: `cpp_vm_object_get_attributed_memory` certainly wrote out the attribution counts.
+        unsafe { counts.assume_init() }
+    }
+
+    /// Returns the memory attributed to the reference owner.
+    pub fn get_attributed_memory_in_reference_owner(&self) -> AttributionCounts {
+        let mut counts = core::mem::MaybeUninit::uninit();
+        // SAFETY: `self.as_raw()` points to a live `VmObject`, and `counts` is valid for writing.
+        unsafe {
+            bindings::cpp_vm_object_get_attributed_memory_in_reference_owner(
+                self.as_raw(),
+                counts.as_mut_ptr(),
+            );
+        }
+        // SAFETY: `cpp_vm_object_get_attributed_memory_in_reference_owner` certainly wrote out the
+        // attribution counts.
         unsafe { counts.assume_init() }
     }
 
