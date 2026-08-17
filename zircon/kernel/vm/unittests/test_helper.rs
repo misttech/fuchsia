@@ -139,3 +139,10 @@ pub fn test_region(seed: usize, buf: &[u8]) -> bool {
     // SAFETY: `ptr` points to `buf.len()` bytes of valid memory.
     unsafe { bindings::cpp_test_region(seed, ptr, buf.len()) }
 }
+
+pub fn fill_and_test(buf: &mut [MaybeUninit<u8>]) -> (&mut [u8], bool) {
+    let seed = buf.as_ptr().addr();
+    let buf = fill_region(seed, buf);
+    let result = test_region(seed, buf);
+    (buf, result)
+}

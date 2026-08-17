@@ -25,8 +25,9 @@ mod vmo_rs {
     use crate::vm::vm_object_physical::VmObjectPhysical;
     use crate::vm::{attribution, fault};
     use crate::vm_unittests::test_helper::{
-        ARCH_RW_FLAGS, fill_region, make_committed_pager_vmo, make_partially_committed_pager_vmo,
-        make_private_attribution_counts, test_region, verify_continuous_attribution_bytes,
+        ARCH_RW_FLAGS, fill_and_test, fill_region, make_committed_pager_vmo,
+        make_partially_committed_pager_vmo, make_private_attribution_counts, test_region,
+        verify_continuous_attribution_bytes,
     };
     use core::ffi::c_void;
     use core::mem::MaybeUninit;
@@ -508,6 +509,79 @@ mod vmo_rs {
                 expect_ok!(status);
             }
         }
+    }
+
+    /// Creates a vm object, maps it, fills it with data, unmaps, maps again somewhere else.
+    #[test]
+    fn vmo_remap_test() {
+        let alloc_size = 16 * PAGE_SIZE_USIZE;
+        let vmo = unwrap_ok!(
+            VmObjectPaged::create(pmm::ALLOC_FLAG_ANY, 0, alloc_size as u64),
+            "vmobject creation\n"
+        );
+
+        let ka = VmAspace::kernel_aspace();
+        // SAFETY: The flags and range are appropriate for creating this mapping.
+        let ptr = unsafe {
+            unwrap_ok!(
+                ka.map_object_internal(
+                    VmObjectPaged::into_vm_object(vmo.clone()),
+                    c"test",
+                    0,
+                    alloc_size,
+                    0,
+                    vmm_flag::COMMIT,
+                    ARCH_RW_FLAGS,
+                ),
+                "mapping object"
+            )
+        };
+        let ptr: *mut MaybeUninit<u8> = ptr.cast();
+        // SAFETY: `ptr` points to `alloc_size` bytes of memory mapped into `ka`.
+        let ptr = unsafe { slice::from_raw_parts_mut(ptr, alloc_size) };
+
+        // fill with known pattern and test.  The initial virtual address will be used
+        // to generate the seed which is used to generate the fill pattern.  Make sure
+        // we save it off right now to use when we test the fill pattern later on
+        // after re-mapping.
+        let fill_seed = ptr.as_ptr().addr();
+        let (ptr, result) = fill_and_test(ptr);
+        expect_true!(result);
+
+        // SAFETY: `ptr.as_ptr() as usize` is a valid virtual address previously returned by
+        // `map_object_internal` in `ka` that has not yet been freed.
+        let err = unsafe { ka.free_region(ptr.as_ptr() as usize) };
+        expect_ok!(err, "unmapping object");
+
+        // map it again
+        // SAFETY: The flags and range are appropriate for creating this mapping.
+        let ptr = unsafe {
+            unwrap_ok!(
+                ka.map_object_internal(
+                    VmObjectPaged::into_vm_object(vmo),
+                    c"test",
+                    0,
+                    alloc_size,
+                    0,
+                    vmm_flag::COMMIT,
+                    ARCH_RW_FLAGS,
+                ),
+                "mapping object"
+            )
+        };
+        let ptr: *mut u8 = ptr.cast();
+        // SAFETY: `ptr` points to `alloc_size` bytes of memory mapped into `ka`.
+        let ptr = unsafe { slice::from_raw_parts(ptr, alloc_size) };
+
+        // test that the pattern is still valid.  Be sure to use the original seed we
+        // saved off earlier when verifying.
+        let result = test_region(fill_seed, ptr);
+        expect_true!(result, "testing region for corruption");
+
+        // SAFETY: `ptr.as_ptr() as usize` is a valid virtual address previously returned by
+        // `map_object_internal` in `ka` that has not yet been freed.
+        let err = unsafe { ka.free_region(ptr.as_ptr() as usize) };
+        expect_ok!(err, "unmapping object");
     }
 
     /// Tests basic read, write, and kernel mapping operations on a paged VMO.
