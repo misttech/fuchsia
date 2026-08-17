@@ -15,6 +15,7 @@ use super::registers::{X86_MSR_KVM_PV_EOI_EN, X86_MSR_KVM_PV_EOI_EN_ENABLE};
 use crate::arch_rs as arch;
 use crate::vm::{page_state, physmap, pmm, vm};
 use core::sync::atomic::{AtomicBool, AtomicPtr, AtomicU32, AtomicU64, AtomicUsize, Ordering};
+use kprint::kprintln;
 use zx_status::Status;
 use zx_types::zx_status_t;
 
@@ -74,10 +75,6 @@ pub struct pv_clock_system_time {
 
 zr::static_assert!(core::mem::size_of::<pv_clock_system_time>() == 32);
 zr::static_assert!(core::mem::align_of::<pv_clock_system_time>() == 8);
-
-unsafe extern "C" {
-    fn printf(format: *const core::ffi::c_char, ...) -> core::ffi::c_int;
-}
 
 static BOOT_TIME: AtomicPtr<pv_clock_boot_time> = AtomicPtr::new(core::ptr::null_mut());
 static SYSTEM_TIME: AtomicPtr<pv_clock_system_time> = AtomicPtr::new(core::ptr::null_mut());
@@ -290,14 +287,10 @@ pub extern "C" fn pv_clock_is_stable() -> bool {
     let is_stable =
         (flags & KVM_SYSTEM_TIME_STABLE) != 0 || x86_feature_test(X86_FEATURE_KVM_PV_CLOCK_STABLE);
 
-    let msg = if is_stable {
-        c"pv_clock: Clocksource is stable\n"
+    if is_stable {
+        kprintln!("pv_clock: Clocksource is stable");
     } else {
-        c"pv_clock: Clocksource is not stable\n"
-    };
-    // SAFETY: printf format string is a null-terminated C string literal.
-    unsafe {
-        printf(msg.as_ptr());
+        kprintln!("pv_clock: Clocksource is not stable");
     }
 
     is_stable
@@ -318,10 +311,7 @@ pub fn calculate_tsc_freq(tsc_mul: u32, tsc_shift: i8) -> u64 {
 /// Fetches the TSC frequency via the para-virtualized clock interface.
 #[unsafe(no_mangle)]
 pub extern "C" fn pv_clock_get_tsc_freq() -> u64 {
-    // SAFETY: printf format string is a null-terminated C string literal.
-    unsafe {
-        printf(c"pv_clock: Fetching TSC frequency\n".as_ptr());
-    }
+    kprintln!("pv_clock: Fetching TSC frequency");
 
     let system_time_ptr = SYSTEM_TIME.load(Ordering::Acquire);
     assert!(!system_time_ptr.is_null(), "system_time must be initialized");

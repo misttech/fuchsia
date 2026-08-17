@@ -514,31 +514,19 @@ pub unsafe extern "C" fn rust_vm_object_physical_dump(
     cpp_vmo_addr: usize,
     ref_count: i32,
 ) {
-    unsafe extern "C" {
-        fn printf(format: *const core::ffi::c_char, ...) -> core::ffi::c_int;
-    }
-
     // SAFETY: The caller guarantees `state_ptr` is valid.
     let state = unsafe { &*state_ptr };
     ksync::lock!(let _guard = state.lock_lock());
 
-    let fmt_indent = c"  ".as_ptr();
     for _ in 0..depth {
-        // SAFETY: calling printf with static string is safe.
-        unsafe {
-            printf(fmt_indent);
-        }
+        kprint::kprint!("  ");
     }
 
-    let fmt_str = c"object %p base 0x%lx size 0x%lx ref %d\n".as_ptr();
-    // SAFETY: calling printf with valid arguments matching format specifiers.
-    unsafe {
-        printf(
-            fmt_str,
-            cpp_vmo_addr as *const core::ffi::c_void,
-            state.base.0 as core::ffi::c_ulong,
-            state.size as core::ffi::c_ulong,
-            ref_count as core::ffi::c_int,
-        );
-    }
+    kprint::kprintln!(
+        "object {:p} base {:#x} size {:#x} ref {}",
+        cpp_vmo_addr,
+        state.base.0,
+        state.size,
+        ref_count,
+    );
 }

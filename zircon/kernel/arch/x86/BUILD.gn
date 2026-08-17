@@ -321,6 +321,7 @@ kernel_rust_mod("arch-x86-rs") {
     "//sdk/rust/zx-status",
     "//sdk/rust/zx-types",
     "//src/lib/kalloc",
+    "//src/lib/kprint",
     "//src/lib/ksync",
     "//src/lib/regio",
     "//third_party/rust_crates:pin-init",

@@ -47,6 +47,7 @@ kernel_rust_mod("console_rust") {
     ":console_env",
     "//sdk/rust/zx-status",
     "//src/lib/kalloc",
+    "//src/lib/kprint",
     "//src/lib/zr",
   ]
 }

@@ -78,21 +78,7 @@ pub struct KernelConsoleWriter;
 impl core::fmt::Write for KernelConsoleWriter {
     #[cfg(not(test))]
     fn write_str(&mut self, s: &str) -> core::fmt::Result {
-        // TODO(https://fxbug.dev/518017761): Update this to use the Rust libc
-        // crate when it is available.
-        unsafe extern "C" {
-            fn printf(format: *const core::ffi::c_char, ...) -> core::ffi::c_int;
-        }
-        // SAFETY: `"%.*s\0"` is a valid C format string requiring an integer length
-        // and a character buffer pointer. `s.len()` and `s.as_ptr()` provide a valid slice.
-        unsafe {
-            const FORMAT: &[u8; 5] = b"%.*s\0";
-            printf(
-                FORMAT.as_ptr() as *const core::ffi::c_char,
-                s.len() as core::ffi::c_int,
-                s.as_ptr() as *const core::ffi::c_char,
-            );
-        }
+        kprint::kprint!("{:s}", s);
         Ok(())
     }
 

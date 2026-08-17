@@ -11,6 +11,7 @@ pub mod console {
     use console_env::BOOT_TEST_SUCCESS_STRING;
     use core::ffi::{c_char, c_int, c_void};
     use core::sync::atomic::{AtomicBool, Ordering};
+    use kprint::{kprint, kprintln};
     use zx_status::Status;
 
     // Converts a Status to its raw FFI representation for the C boundary.
@@ -87,8 +88,6 @@ pub mod console {
 
     // FFI imports.
     unsafe extern "C" {
-        // Used to print directly to the kernel console without stack-allocated formatting buffers.
-        fn printf(format: *const c_char, ...) -> c_int;
         fn cpp_console_get_lastresult() -> c_int;
     }
 
@@ -161,19 +160,17 @@ pub mod console {
 
     unsafe extern "C" fn cmd_test(argc: c_int, argv: *const CmdArgs, _flags: u32) -> c_int {
         let args = unsafe { core::slice::from_raw_parts(argv, argc as usize) };
-        unsafe { printf(c"argc %d, argv %p\n".as_ptr(), argc, argv) };
+        kprintln!("argc {}, argv {:p}", argc, argv);
         for (i, arg) in args.iter().enumerate() {
-            unsafe {
-                printf(
-                    c"\t%d: str '%s', int %ld, uint %#lx, ptr %p, bool %d\n".as_ptr(),
-                    i as c_int,
-                    arg.arg_str,
-                    arg.arg_int,
-                    arg.arg_uint,
-                    arg.arg_ptr,
-                    arg.arg_bool as c_int,
-                )
-            };
+            kprintln!(
+                "\t{}: str '{:cs}', int {}, uint {:#x}, ptr {:p}, bool {}",
+                i,
+                arg.arg_str,
+                arg.arg_int,
+                arg.arg_uint,
+                arg.arg_ptr,
+                arg.arg_bool,
+            );
         }
         zx_status!(Status::OK)
     }
@@ -183,18 +180,11 @@ pub mod console {
         _argv: *const CmdArgs,
         _flags: u32,
     ) -> c_int {
-        // We use %c and format arguments here to prevent the compiler from optimizing the printf call
-        // into puts or putchar, which are not defined in the kernel.
-        unsafe {
-            printf(
-                c"%c** Performing graceful shutdown from kernel shell... ***\n".as_ptr(),
-                b'*' as c_int,
-            )
-        };
+        kprintln!("*** Performing graceful shutdown from kernel shell... ***");
         const ZX_SEC_10: i64 = 10 * 1_000_000_000;
         let dlog_deadline = crate::platform_rs::timer::current_mono_time() + ZX_SEC_10;
         if let Err(status) = crate::debuglog_rs::dlog_shutdown(dlog_deadline) {
-            unsafe { printf(c"debuglog shutdown failed: %d\n".as_ptr(), status.into_raw()) };
+            kprintln!("debuglog shutdown failed: {}", status.into_raw());
             // Proceed to platform_halt() even if debuglog_rs::dlog_shutdown() fails.
         }
         // Does not return.
@@ -210,9 +200,9 @@ pub mod console {
         _flags: u32,
     ) -> c_int {
         let last = unsafe { cpp_console_get_lastresult() };
-        unsafe { printf(c"*** Last script command result: %d ***\n".as_ptr(), last) };
+        kprintln!("*** Last script command result: {} ***", last);
         if last == 0 {
-            unsafe { printf(c"%s%c".as_ptr(), BOOT_TEST_SUCCESS_STRING.as_ptr(), b'\n' as c_int) };
+            kprintln!("{:s}", BOOT_TEST_SUCCESS_STRING);
         }
         last
     }
@@ -246,7 +236,7 @@ pub mod console {
 
     unsafe extern "C" fn cmd_and(argc: c_int, argv: *const CmdArgs, flags: u32) -> c_int {
         if argc < 2 {
-            unsafe { printf(c"Usage: and COMMAND...%c".as_ptr(), b'\n' as c_int) };
+            kprintln!("Usage: and COMMAND...");
             return zx_status!(Status::INVALID_ARGS);
         }
 
@@ -259,9 +249,7 @@ pub mod console {
         let cmd = match unsafe { match_command(args[1].arg_str, CMD_AVAIL_NORMAL) } {
             Some(cmd) => cmd,
             None => {
-                unsafe {
-                    printf(c"command \"%s\" not found%c".as_ptr(), args[1].arg_str, b'\n' as c_int)
-                };
+                kprintln!("command \"{:cs}\" not found", args[1].arg_str);
                 return zx_status!(Status::NOT_FOUND);
             }
         };
@@ -272,9 +260,7 @@ pub mod console {
     unsafe extern "C" fn cmd_repeat(argc: c_int, argv: *const CmdArgs, flags: u32) -> c_int {
         const MIN_ARGS: c_int = 3;
         if argc < MIN_ARGS {
-            unsafe {
-                printf(c"Usage: repeat <iterations | -1> COMMAND...%c".as_ptr(), b'\n' as c_int)
-            };
+            kprintln!("Usage: repeat <iterations | -1> COMMAND...");
             return zx_status!(Status::INVALID_ARGS);
         }
 
@@ -282,9 +268,7 @@ pub mod console {
         let cmd = match unsafe { match_command(args[2].arg_str, CMD_AVAIL_NORMAL) } {
             Some(cmd) => cmd,
             None => {
-                unsafe {
-                    printf(c"command \"%s\" not found%c".as_ptr(), args[2].arg_str, b'\n' as c_int)
-                };
+                kprintln!("command \"{:cs}\" not found", args[2].arg_str);
                 return zx_status!(Status::NOT_FOUND);
             }
         };
@@ -293,28 +277,18 @@ pub mod console {
         let iterations = if args[1].arg_int >= 0 { args[1].arg_uint as usize } else { usize::MAX };
         for i in 0..iterations {
             if iterations == usize::MAX {
-                unsafe { printf(c"repeat (%zu): %s".as_ptr(), i + 1, args[2].arg_str) };
+                kprint!("repeat ({}): {:cs}", i + 1, args[2].arg_str);
             } else {
-                unsafe {
-                    printf(c"repeat (%zu/%zu): %s".as_ptr(), i + 1, iterations, args[2].arg_str)
-                };
+                kprint!("repeat ({}/{}): {:cs}", i + 1, iterations, args[2].arg_str);
             }
             for arg in MIN_ARGS..argc {
-                unsafe { printf(c" %s".as_ptr(), args[arg as usize].arg_str) };
+                kprint!(" {:cs}", args[arg as usize].arg_str);
             }
-            // We use %c and format arguments here to prevent the compiler from optimizing the printf
-            // call into puts or putchar, which are not defined in the kernel.
-            unsafe { printf(c"%c%s".as_ptr(), b'\n' as c_int, c"".as_ptr()) };
+            kprintln!("");
 
             let err = unsafe { (cmd.cmd_callback)(argc - 2, argv.add(2), flags) };
             if err != zx_status!(Status::OK) {
-                unsafe {
-                    printf(
-                        c"stopping repeat due to nonzero status %d%c".as_ptr(),
-                        err,
-                        b'\n' as c_int,
-                    )
-                };
+                kprintln!("stopping repeat due to nonzero status {}", err);
                 return err;
             }
         }
@@ -330,23 +304,14 @@ pub mod console {
         let availability_mask =
             if (flags & CMD_FLAG_PANIC) != 0 { CMD_AVAIL_PANIC } else { CMD_AVAIL_NORMAL };
 
-        unsafe {
-            printf(c"command list:%c".as_ptr(), b'\n' as c_int);
-        }
+        kprintln!("command list:");
 
         // If we're not panicking (and are free to allocate memory), sort the
         // commands alphabetically before printing.
         if (flags & CMD_FLAG_PANIC) != 0 {
             for cmd in commands {
                 if (availability_mask & cmd.availability_mask) != 0 && !cmd.help_str.is_null() {
-                    unsafe {
-                        printf(
-                            c"\t%-16s: %s%c".as_ptr(),
-                            cmd.cmd_str,
-                            cmd.help_str,
-                            b'\n' as c_int,
-                        );
-                    }
+                    kprintln!("\t{:<16cs}: {:cs}", cmd.cmd_str, cmd.help_str);
                 }
             }
         } else {
@@ -367,14 +332,7 @@ pub mod console {
             for &cmd_ptr in ptrs_slice.iter() {
                 let cmd = unsafe { &*cmd_ptr };
                 if (availability_mask & cmd.availability_mask) != 0 && !cmd.help_str.is_null() {
-                    unsafe {
-                        printf(
-                            c"\t%-16s: %s%c".as_ptr(),
-                            cmd.cmd_str,
-                            cmd.help_str,
-                            b'\n' as c_int,
-                        );
-                    }
+                    kprintln!("\t{:<16cs}: {:cs}", cmd.cmd_str, cmd.help_str);
                 }
             }
         }

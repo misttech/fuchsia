@@ -14,6 +14,7 @@ rustc_library("acpi_lite") {
 
   deps = [
     "//sdk/rust/zx-status",
+    "//src/lib/kprint",
     "//third_party/rust_crates:zerocopy",
     "//zircon/system/ulib/pretty/rust:pretty",
   ]
@@ -61,6 +62,7 @@ fuzzer_sources = [
 fuzzer_deps = [
   "//sdk/rust/zx-status",
   "//src/lib/fuzzing/rust:fuzz",
+  "//src/lib/kprint",
   "//third_party/rust_crates:zerocopy",
   "//zircon/system/ulib/pretty/rust:pretty",
 ]

@@ -8,14 +8,11 @@ use crate::structures::{
     AcpiDbg2Table, AcpiFacs, AcpiFadt, AcpiHpetTable, AcpiMadtTable, AcpiRsdp, AcpiRsdpV2,
     AcpiRsdt, AcpiSdtHeader, AcpiSignature, AcpiSratTable, AcpiXsdt, VariableSized,
 };
+use kprint::{kprint, kprintln};
 use zx_status::Status;
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 use crate::structures::{K_BIOS_READ_ONLY_AREA_LENGTH, K_BIOS_READ_ONLY_AREA_START};
-
-unsafe extern "C" {
-    pub fn printf(format: *const core::ffi::c_char, ...) -> core::ffi::c_int;
-}
 
 // A PhysMemReader translates physical addresses (such as those in the ACPI tables and the RSDT
 // itself) into pointers directly readable by the acpi_lite library.
@@ -248,19 +245,10 @@ fn find_root_tables(
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
         if let Ok(addr) = find_rsdp_pc(physmem_reader) {
-            unsafe {
-                printf(
-                    b"ACPI LITE: Found RSDP at physical address 0x%zx.\n\0".as_ptr()
-                        as *const core::ffi::c_char,
-                    addr,
-                );
-            }
+            kprintln!("ACPI LITE: Found RSDP at physical address 0x{:x}.", addr);
             return parse_rsdp(physmem_reader, addr);
         }
-        unsafe {
-            printf(b"ACPI LITE: Couldn't find ACPI RSDP in BIOS area\n\0".as_ptr()
-                as *const core::ffi::c_char);
-        }
+        kprintln!("ACPI LITE: Couldn't find ACPI RSDP in BIOS area");
     }
 
     Err(Status::NOT_FOUND)
@@ -338,13 +326,10 @@ impl<'a> AcpiParser<'a> {
         if root_tables.xsdt_address != 0 {
             match validate_xsdt(physmem_reader, root_tables.xsdt_address as usize) {
                 Ok((xsdt, count)) => {
-                    unsafe {
-                        printf(
-                            b"ACPI LITE: Found valid XSDT table at physical address 0x%llx\n\0"
-                                .as_ptr() as *const core::ffi::c_char,
-                            root_tables.xsdt_address,
-                        );
-                    }
+                    kprintln!(
+                        "ACPI LITE: Found valid XSDT table at physical address 0x{:x}",
+                        root_tables.xsdt_address,
+                    );
                     return Ok(AcpiParser {
                         reader: physmem_reader,
                         rsdt: None,
@@ -354,13 +339,12 @@ impl<'a> AcpiParser<'a> {
                         rsdp_addr: root_tables.rsdp_address,
                     });
                 }
-                Err(_) => unsafe {
-                    printf(
-                        b"ACPI LITE: Invalid XSDT table at physical address 0x%llx\n\0".as_ptr()
-                            as *const core::ffi::c_char,
+                Err(_) => {
+                    kprintln!(
+                        "ACPI LITE: Invalid XSDT table at physical address 0x{:x}",
                         root_tables.xsdt_address,
                     );
-                },
+                }
             }
         }
 
@@ -368,13 +352,10 @@ impl<'a> AcpiParser<'a> {
         if root_tables.rsdt_address != 0 {
             match validate_rsdt(physmem_reader, root_tables.rsdt_address as usize) {
                 Ok((rsdt, count)) => {
-                    unsafe {
-                        printf(
-                            b"ACPI LITE: Found valid RSDT table at physical address 0x%x\n\0"
-                                .as_ptr() as *const core::ffi::c_char,
-                            root_tables.rsdt_address,
-                        );
-                    }
+                    kprintln!(
+                        "ACPI LITE: Found valid RSDT table at physical address 0x{:x}",
+                        root_tables.rsdt_address,
+                    );
                     return Ok(AcpiParser {
                         reader: physmem_reader,
                         rsdt: Some(rsdt),
@@ -384,13 +365,12 @@ impl<'a> AcpiParser<'a> {
                         rsdp_addr: root_tables.rsdp_address,
                     });
                 }
-                Err(_) => unsafe {
-                    printf(
-                        b"ACPI LITE: Invalid RSDT table at physical address 0x%x\n\0".as_ptr()
-                            as *const core::ffi::c_char,
+                Err(_) => {
+                    kprintln!(
+                        "ACPI LITE: Invalid RSDT table at physical address 0x{:x}",
                         root_tables.rsdt_address,
                     );
-                },
+                }
             }
         }
 
@@ -423,23 +403,12 @@ impl<'a> AcpiParser<'a> {
 
         impl core::fmt::Write for StdoutWriter {
             fn write_str(&mut self, s: &str) -> core::fmt::Result {
-                unsafe {
-                    printf(
-                        b"%.*s\0".as_ptr() as *const core::ffi::c_char,
-                        s.len() as core::ffi::c_int,
-                        s.as_ptr() as *const core::ffi::c_char,
-                    );
-                }
+                kprint!("{:s}", s);
                 Ok(())
             }
         }
         let mut writer = StdoutWriter;
-        unsafe {
-            printf(
-                b"root table at paddr 0x%zx:\n\0".as_ptr() as *const core::ffi::c_char,
-                self.root_table_addr,
-            );
-        }
+        kprintln!("root table at paddr 0x{:x}:", self.root_table_addr);
         if let Some(xsdt) = self.xsdt {
             // SAFETY: xsdt is a valid reference. xsdt.size() returns the size of the table.
             let slice = unsafe {
@@ -459,17 +428,13 @@ impl<'a> AcpiParser<'a> {
                 let mut name = [0u8; 5];
                 header.sig.write_to_buffer(&mut name);
                 let name_str = core::str::from_utf8(&name[..4]).unwrap_or("????");
-                unsafe {
-                    printf(
-                        b"table %zx: '%.*s' at paddr 0x%zx, len %zx\n\0".as_ptr()
-                            as *const core::ffi::c_char,
-                        i,
-                        name_str.len() as core::ffi::c_int,
-                        name_str.as_ptr() as *const core::ffi::c_char,
-                        self.get_table_phys_addr(i),
-                        header.size(),
-                    );
-                }
+                kprintln!(
+                    "table {:x}: '{:s}' at paddr 0x{:x}, len {:x}",
+                    i,
+                    name_str,
+                    self.get_table_phys_addr(i),
+                    header.size(),
+                );
                 // SAFETY: header is a valid reference. header.size() returns the size of the table.
                 let slice = unsafe {
                     core::slice::from_raw_parts(

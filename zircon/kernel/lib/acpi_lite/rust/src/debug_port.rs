@@ -4,13 +4,13 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-use crate::acpi_lite::printf;
 use crate::binary_reader::{BinaryReader, Unaligned};
 use crate::structures::{
     ACPI_ADDR_SPACE_IO, ACPI_ADDR_SPACE_MEMORY, ACPI_DBG2_SUBTYPE_16550_COMPATIBLE,
     ACPI_DBG2_TYPE_SERIAL_PORT, AcpiDbg2Device, AcpiDbg2Table, AcpiGenericAddress,
 };
 use crate::{AcpiParserInterface, get_table_by_type};
+use kprint::kprintln;
 use zx_status::Status;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -39,10 +39,7 @@ pub fn parse_acpi_dbg2_table(
 ) -> Result<AcpiDebugPortDescriptor, Status> {
     let num_entries = debug_table.num_entries;
     if num_entries < 1 {
-        unsafe {
-            printf(b"acpi_lite: DBG2 table contains no debug ports.\n\0".as_ptr()
-                as *const core::ffi::c_char);
-        }
+        kprintln!("acpi_lite: DBG2 table contains no debug ports.");
         return Err(Status::NOT_FOUND);
     }
 
@@ -58,22 +55,16 @@ pub fn parse_acpi_dbg2_table(
     let port_subtype = device.port_subtype;
     if port_type != ACPI_DBG2_TYPE_SERIAL_PORT || port_subtype != ACPI_DBG2_SUBTYPE_16550_COMPATIBLE
     {
-        unsafe {
-            printf(
-                b"acpi_lite: DBG2 debug port unsupported. (type=%x, subtype=%x)\n\0".as_ptr()
-                    as *const core::ffi::c_char,
-                port_type as core::ffi::c_uint,
-                port_subtype as core::ffi::c_uint,
-            );
-        }
+        kprintln!(
+            "acpi_lite: DBG2 debug port unsupported. (type={:x}, subtype={:x})",
+            port_type,
+            port_subtype,
+        );
         return Err(Status::NOT_SUPPORTED);
     }
 
     if device.register_count < 1 {
-        unsafe {
-            printf(b"acpi_lite: DBG2 debug port doesn't have any registers defined.\n\0".as_ptr()
-                as *const core::ffi::c_char);
-        }
+        kprintln!("acpi_lite: DBG2 debug port doesn't have any registers defined.");
         return Err(Status::NOT_SUPPORTED);
     }
 
@@ -106,13 +97,10 @@ pub fn parse_acpi_dbg2_table(
             result.r#type = AcpiDebugPortType::Pio;
         }
         _ => {
-            unsafe {
-                printf(
-                    b"acpi_lite: Address space unsupported (space_id=%x)\n\0".as_ptr()
-                        as *const core::ffi::c_char,
-                    address.address_space_id as core::ffi::c_uint,
-                );
-            }
+            kprintln!(
+                "acpi_lite: Address space unsupported (space_id={:x})",
+                address.address_space_id,
+            );
             return Err(Status::NOT_SUPPORTED);
         }
     }
@@ -123,10 +111,7 @@ pub fn parse_acpi_dbg2_table(
 // Lookup low-level debug port information.
 pub fn get_debug_port(parser: &dyn AcpiParserInterface) -> Result<AcpiDebugPortDescriptor, Status> {
     let debug_table = get_table_by_type::<AcpiDbg2Table>(parser).ok_or_else(|| {
-        unsafe {
-            printf(b"acpi_lite: could not find debug port (v2) ACPI entry\n\0".as_ptr()
-                as *const core::ffi::c_char);
-        }
+        kprintln!("acpi_lite: could not find debug port (v2) ACPI entry");
         Status::NOT_FOUND
     })?;
 

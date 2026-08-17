@@ -226,15 +226,9 @@ mod acpi_lite_zircon_tests {
         #[allow(static_mut_refs)]
         let res = unsafe { AcpiParser::init(READER.assume_init_mut(), 0) };
         if let Ok(_parser) = res {
-            unsafe {
-                unittest::printf(c"Successfully parsed the current system's tables.\n".as_ptr()
-                    as *const core::ffi::c_char);
-            }
+            kprint::kprintln!("Successfully parsed the current system's tables.");
         } else {
-            unsafe {
-                unittest::printf(c"Could not parse the current system's tables.\n".as_ptr()
-                    as *const core::ffi::c_char);
-            }
+            kprint::kprintln!("Could not parse the current system's tables.");
         }
     }
 }

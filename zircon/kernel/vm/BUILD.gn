@@ -829,6 +829,7 @@ kernel_rust_mod("vm-rs") {
     ":vm-object-paged-bindings",
     "//sdk/rust/zx-status",
     "//src/lib/kalloc",
+    "//src/lib/kprint",
     "//src/lib/ksync",
     "//src/lib/zr",
     "//third_party/rust_crates:pin-init",

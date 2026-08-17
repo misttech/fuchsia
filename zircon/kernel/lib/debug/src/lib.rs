@@ -6,5 +6,8 @@
 
 #![cfg_attr(not(test), no_std)]
 
+#[cfg(test)]
+use kprint as _;
+
 pub mod dprintf;
 pub mod ltrace;
