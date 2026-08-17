@@ -71,7 +71,7 @@ async fn link_with_insufficient_rights() {
 
         // Link src/old.txt -> dest/new.txt.
         let status = src_dir.link("old.txt", dest_token, "new.txt").await.expect("link failed");
-        assert_eq!(zx::Status::from_raw(status), zx::Status::BAD_HANDLE);
+        assert_eq!(zx::Status::ok(status), Err(zx::Status::BAD_HANDLE));
 
         // Check dest/new.txt was not created.
         assert_eq!(

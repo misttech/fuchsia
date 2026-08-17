@@ -731,9 +731,10 @@ mod tests {
         let get_test_server = || DummyServer {};
         let err = start_component(start_info, server_controller, get_test_server, |_| Ok(())).await;
         assert_matches!(err, Err(ComponentError::MissingResolvedUrl));
-        let expected_status = zx::Status::from_raw(
+        let expected_status = zx::Status::try_from_raw(
             fcomponent::Error::InvalidArguments.into_primitive().try_into().unwrap(),
-        );
+        )
+        .unwrap();
         let s = assert_matches!(
             client_controller.take_event_stream().next().await,
             Some(Err(fidl::Error::ClientChannelClosed { epitaph: s, .. })) => {

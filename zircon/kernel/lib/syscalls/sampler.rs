@@ -105,10 +105,10 @@ pub fn sys_sampler_read(
     check_sampler_supported()?;
 
     let sampler = Dispatcher::get_with_rights::<SamplerDispatcher>(sampler_handle, 0)?;
-    let (status, bytes_copied) = sampler.read_user(data, len);
+    let (res, bytes_copied) = sampler.read_user(data, len);
 
     // We may have a partial read: some bytes were copied, but we received an error later on.
     // We provide the caller with how many bytes we copied, but also the error we ran into.
     actual.copy_to_user(&bytes_copied)?;
-    ErrorStatus::ok(status.into_raw())
+    res.map_err(Into::into)
 }

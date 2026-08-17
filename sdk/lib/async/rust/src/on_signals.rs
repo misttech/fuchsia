@@ -149,7 +149,7 @@ impl<H: zx::AsHandleRef> OnSignals<H> {
         let state_ptr = SharedState::as_raw_ptr(&state);
         // SAFETY: async_cancel_wait is thread-safe per the C API doc.
         let status = unsafe { async_cancel_wait(state.async_dispatcher.as_ptr(), state_ptr) };
-        if Status::from_raw(status) == Status::OK {
+        if Status::ok(status).is_ok() {
             // SAFETY: Cancellation succeeded. The callback will not run, so we have to release the
             // raw pointer here.
             unsafe { SharedState::release_raw_ptr(state_ptr) };

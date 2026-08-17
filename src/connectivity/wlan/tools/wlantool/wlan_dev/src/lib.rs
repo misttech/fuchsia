@@ -232,13 +232,13 @@ async fn do_phy(cmd: opts::PhyCmd, monitor_proxy: DeviceMonitor) -> Result<(), E
             let req = wlan_service::SetCountryRequest { phy_id, alpha2 };
             let response =
                 monitor_proxy.set_country(&req).await.context("error setting country")?;
-            println!("response: {:?}", zx_status::Status::from_raw(response));
+            println!("response: {:?}", zx_status::Status::ok(response));
         }
         opts::PhyCmd::ClearCountry { phy_id } => {
             let req = wlan_service::ClearCountryRequest { phy_id };
             let response =
                 monitor_proxy.clear_country(&req).await.context("error clearing country")?;
-            println!("response: {:?}", zx_status::Status::from_raw(response));
+            println!("response: {:?}", zx_status::Status::ok(response));
         }
         opts::PhyCmd::Reset { phy_id } => {
             let response = monitor_proxy.reset(phy_id).await.context("error resetting")?;
@@ -304,7 +304,7 @@ async fn do_phy(cmd: opts::PhyCmd, monitor_proxy: DeviceMonitor) -> Result<(), E
                 })
                 .await
                 .context("error setting power save mode")?;
-            println!("response: {:?}", zx_status::Status::from_raw(response));
+            println!("response: {:?}", zx_status::Status::ok(response));
         }
         opts::PhyCmd::SetTxPowerScenario { phy_id, mode } => {
             let response = monitor_proxy
@@ -792,10 +792,10 @@ async fn handle_connect_transaction(
 
 /// Constructs a `Result<(), Error>` from a `zx::sys::zx_status_t` returned
 /// from one of the `get_client_sme` or `get_ap_sme`
-/// functions. In particular, when `zx_status::Status::from_raw(raw_status)` does
-/// not match `zx_status::Status::OK`, this function will attach the appropriate
-/// error message to the returned `Result`. When `zx_status::Status::from_raw(raw_status)`
-/// does match `zx_status::Status::OK`, this function returns `Ok()`.
+/// functions. In particular, when `zx_status::Status::ok(raw_status)` is an
+/// error, this function will attach the appropriate error message to the
+/// returned `Result`. When `zx_status::Status::ok(raw_status)` is `Ok(())`,
+/// this function returns `Ok(())`.
 ///
 /// If this function returns an `Err`, it includes both a cause and a context.
 /// The cause is a readable conversion of `raw_status` based on `station_mode`

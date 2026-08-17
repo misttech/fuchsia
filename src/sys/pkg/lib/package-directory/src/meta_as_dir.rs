@@ -223,10 +223,10 @@ mod tests {
     async fn meta_as_dir_watch_not_supported() {
         let (_env, meta_as_dir) = TestEnv::new().await;
         let (_client, server) = fidl::endpoints::create_endpoints();
-        let status = zx::Status::from_raw(
-            meta_as_dir.watch(fio::WatchMask::empty(), 0, server).await.unwrap(),
+        assert_eq!(
+            zx::Status::ok(meta_as_dir.watch(fio::WatchMask::empty(), 0, server).await.unwrap()),
+            Err(zx::Status::NOT_SUPPORTED)
         );
-        assert_eq!(status, zx::Status::NOT_SUPPORTED);
     }
 
     #[fuchsia::test]

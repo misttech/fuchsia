@@ -266,7 +266,7 @@ mod tests {
             // Wait for reader thread to complete.
             let ret = unwrap_ok!(thread.join(ZX_TIME_INFINITE));
 
-            assert_ok!(Status::from_raw(ret));
+            assert_ok!(Status::ok(ret));
             assert_eq!(state.load(Ordering::SeqCst), 2);
             assert_eq!(read_char, b'X');
         }

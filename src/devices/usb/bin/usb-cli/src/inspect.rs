@@ -157,7 +157,7 @@ fn decode_b_request(req_type: u64, req: u64) -> String {
 }
 
 fn decode_zx_status(status: i64) -> String {
-    format!("{:?}", zx::Status::from_raw(status as i32))
+    format!("{:?}", zx::Status::ok(status as i32))
 }
 
 fn get_utc_string(m_event_ns: i64) -> String {

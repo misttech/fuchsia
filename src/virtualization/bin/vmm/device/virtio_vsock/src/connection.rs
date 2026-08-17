@@ -6,7 +6,7 @@ use crate::connection_states::{
     ClientInitiated, GuestInitiated, ShutdownForced, StateAction, VsockConnectionState,
 };
 use crate::wire::{OpType, VirtioVsockFlags, VirtioVsockHeader};
-use anyhow::{anyhow, Error};
+use anyhow::{Error, anyhow};
 use async_lock::{Mutex, RwLock};
 use fidl::client::QueryResponseFut;
 use fidl_fuchsia_virtualization::HostVsockEndpointConnectResponder;
@@ -351,10 +351,10 @@ mod tests {
     use async_utils::PollExt;
     use fidl::endpoints::create_proxy_and_stream;
     use fidl_fuchsia_virtualization::{
-        HostVsockAcceptorMarker, HostVsockEndpointMarker, DEFAULT_GUEST_CID, HOST_CID,
+        DEFAULT_GUEST_CID, HOST_CID, HostVsockAcceptorMarker, HostVsockEndpointMarker,
     };
-    use futures::channel::mpsc;
     use futures::TryStreamExt;
+    use futures::channel::mpsc;
     use std::io::Read;
     use std::task::Poll;
     use virtio_device::fake_queue::{ChainBuilder, IdentityDriverMem, TestQueue};
@@ -409,7 +409,7 @@ mod tests {
         .detach();
 
         let result = proxy.connect(12345).await.expect("failed to respond to connect FIDL call");
-        assert_eq!(zx::Status::from_raw(result.unwrap_err()), zx::Status::CONNECTION_REFUSED);
+        assert_eq!(zx::Status::ok(result.unwrap_err()), Err(zx::Status::CONNECTION_REFUSED));
     }
 
     #[fuchsia::test]

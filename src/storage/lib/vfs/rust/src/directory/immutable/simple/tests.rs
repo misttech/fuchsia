@@ -875,7 +875,7 @@ async fn read_dirents_very_small_buffer() {
     let scope = crate::execution_scope::ExecutionScope::new();
     let root = serve(dir, scope.clone(), fio::PERM_READABLE);
     let (status, entries) = root.read_dirents(8).await.expect("read_dirents fidl error");
-    assert_eq!(Status::from_raw(status), Status::BUFFER_TOO_SMALL);
+    assert_eq!(Status::ok(status), Err(Status::BUFFER_TOO_SMALL));
     assert_eq!(entries.len(), 0);
     let _ = &client;
     assert_close!(root);

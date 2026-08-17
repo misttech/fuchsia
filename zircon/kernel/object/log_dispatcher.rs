@@ -149,10 +149,10 @@ impl LogDispatcher {
 
         ksync::lock!(let mut guard = self.state().lock_lock());
         let mut fields = guard.as_mut().fields_mut();
-        let status = fields.reader.as_mut().read(flags, record, actual);
-        if status == Status::SHOULD_WAIT {
+        let res = fields.reader.as_mut().read(flags, record, actual);
+        if res == Err(Status::SHOULD_WAIT) {
             self.update_state_locked(guard.token(), ZX_LOG_READABLE, 0);
         }
-        Status::ok(status.into_raw())
+        res
     }
 }

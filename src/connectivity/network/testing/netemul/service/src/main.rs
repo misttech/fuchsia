@@ -2139,7 +2139,7 @@ mod tests {
                 .create_network("network", &fnetemul_network::NetworkConfig::default())
                 .await
                 .expect("calling create network");
-            assert_eq!(zx::Status::from_raw(status), zx::Status::ALREADY_EXISTS);
+            assert_eq!(zx::Status::ok(status), Err(zx::Status::ALREADY_EXISTS));
             // Try re-connecting to the network manager for sandbox1 to ensure
             // it connects us to the same network manager instead of spawning a
             // new one.
@@ -2148,7 +2148,7 @@ mod tests {
                 .create_network("network", &fnetemul_network::NetworkConfig::default())
                 .await
                 .expect("calling create network");
-            assert_eq!(zx::Status::from_raw(status), zx::Status::ALREADY_EXISTS);
+            assert_eq!(zx::Status::ok(status), Err(zx::Status::ALREADY_EXISTS));
 
             let (status, _network) = net_mgr2
                 .create_network("network", &fnetemul_network::NetworkConfig::default())

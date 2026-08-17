@@ -1461,8 +1461,8 @@ mod tests {
         // Device forwarded the guest rejection to the client.
         if let Poll::Ready(result) = executor.run_until_stalled(&mut fut) {
             assert_eq!(
-                zx::Status::from_raw(result.expect("failed to get any response").unwrap_err()),
-                zx::Status::CONNECTION_REFUSED
+                zx::Status::ok(result.expect("failed to get any response").unwrap_err()),
+                Err(zx::Status::CONNECTION_REFUSED)
             );
         } else {
             panic!("Expected future to be ready");

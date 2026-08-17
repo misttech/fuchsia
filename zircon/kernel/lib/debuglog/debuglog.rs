@@ -111,10 +111,8 @@ impl DlogReaderStorage {
         flags: u32,
         record: &mut dlog_record_t,
         actual: &mut usize,
-    ) -> Status {
+    ) -> Result<(), Status> {
         // SAFETY: `self` is pinned and initialized, `record` and `actual` are valid.
-        Status::from_raw(unsafe {
-            cpp_dlog_reader_read(self.get_unchecked_mut(), flags, record, actual)
-        })
+        Status::ok(unsafe { cpp_dlog_reader_read(self.get_unchecked_mut(), flags, record, actual) })
     }
 }

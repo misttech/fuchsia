@@ -450,10 +450,7 @@ async fn test_invalid_decompression_on_write() {
         }])
         .await;
 
-    assert_eq!(
-        zx::Status::from_raw(fixture.read_response().await.status),
-        zx::Status::INVALID_ARGS
-    );
+    assert_eq!(zx::Status::ok(fixture.read_response().await.status), Err(zx::Status::INVALID_ARGS));
 }
 
 #[fuchsia::test]
@@ -494,10 +491,7 @@ async fn test_invalid_parameters_in_subsequent_request() {
         .await;
 
     // The first request is processed, but the group fails on the second.
-    assert_eq!(
-        zx::Status::from_raw(fixture.read_response().await.status),
-        zx::Status::INVALID_ARGS
-    );
+    assert_eq!(zx::Status::ok(fixture.read_response().await.status), Err(zx::Status::INVALID_ARGS));
 }
 
 #[fuchsia::test]
@@ -522,10 +516,7 @@ async fn test_invalid_compressed_size() {
         }])
         .await;
 
-    assert_eq!(
-        zx::Status::from_raw(fixture.read_response().await.status),
-        zx::Status::INVALID_ARGS
-    );
+    assert_eq!(zx::Status::ok(fixture.read_response().await.status), Err(zx::Status::INVALID_ARGS));
 }
 
 #[fuchsia::test]
@@ -563,10 +554,7 @@ async fn test_length_greater_than_compressed_blocks() {
         ])
         .await;
 
-    assert_eq!(
-        zx::Status::from_raw(fixture.read_response().await.status),
-        zx::Status::INVALID_ARGS
-    );
+    assert_eq!(zx::Status::ok(fixture.read_response().await.status), Err(zx::Status::INVALID_ARGS));
 }
 
 #[fuchsia::test]
@@ -589,10 +577,7 @@ async fn test_group_length_less_than_compressed_blocks() {
         }])
         .await;
 
-    assert_eq!(
-        zx::Status::from_raw(fixture.read_response().await.status),
-        zx::Status::INVALID_ARGS
-    );
+    assert_eq!(zx::Status::ok(fixture.read_response().await.status), Err(zx::Status::INVALID_ARGS));
 }
 
 #[fuchsia::test]
@@ -617,10 +602,7 @@ async fn test_too_much_decompression() {
         }])
         .await;
 
-    assert_eq!(
-        zx::Status::from_raw(fixture.read_response().await.status),
-        zx::Status::OUT_OF_RANGE
-    );
+    assert_eq!(zx::Status::ok(fixture.read_response().await.status), Err(zx::Status::OUT_OF_RANGE));
 }
 
 #[fuchsia::test]
@@ -775,10 +757,7 @@ async fn test_invalid_vmo_offset() {
         }])
         .await;
 
-    assert_eq!(
-        zx::Status::from_raw(fixture.read_response().await.status),
-        zx::Status::OUT_OF_RANGE
-    );
+    assert_eq!(zx::Status::ok(fixture.read_response().await.status), Err(zx::Status::OUT_OF_RANGE));
 }
 
 #[fuchsia::test]
@@ -802,10 +781,7 @@ async fn test_invalid_uncompressed_bytes() {
         }])
         .await;
 
-    assert_eq!(
-        zx::Status::from_raw(fixture.read_response().await.status),
-        zx::Status::OUT_OF_RANGE
-    );
+    assert_eq!(zx::Status::ok(fixture.read_response().await.status), Err(zx::Status::OUT_OF_RANGE));
 }
 
 #[fuchsia::test]

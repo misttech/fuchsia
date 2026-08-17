@@ -155,8 +155,11 @@ impl TcpState {
             else {
                 panic!("unexpected error: {e:?}");
             };
-            let e = fidl::Status::from_raw(e);
-            assert_eq!(e, fidl::Status::PEER_CLOSED, "failed to signal peer");
+            assert_eq!(
+                fidl::Status::ok(e),
+                Err(fidl::Status::PEER_CLOSED),
+                "failed to signal peer"
+            );
         });
         Ok((client, abort_registration))
     }

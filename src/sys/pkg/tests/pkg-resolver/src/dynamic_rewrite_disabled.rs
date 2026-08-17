@@ -88,8 +88,8 @@ async fn commit_transaction_fails_if_disabled() {
     let () = edit_transaction.add(&make_rule().into()).await.unwrap().unwrap();
 
     assert_eq!(
-        Status::from_raw(edit_transaction.commit().await.unwrap().unwrap_err()),
-        Status::ACCESS_DENIED
+        Status::ok(edit_transaction.commit().await.unwrap().unwrap_err()),
+        Err(Status::ACCESS_DENIED)
     );
     assert_eq!(get_rules(&env.proxies.rewrite_engine).await, vec![]);
 
@@ -147,8 +147,8 @@ async fn dynamic_rewrites_disabled_if_missing_config() {
     let () = edit_transaction.add(&make_rule().into()).await.unwrap().unwrap();
 
     assert_eq!(
-        Status::from_raw(edit_transaction.commit().await.unwrap().unwrap_err()),
-        Status::ACCESS_DENIED
+        Status::ok(edit_transaction.commit().await.unwrap().unwrap_err()),
+        Err(Status::ACCESS_DENIED)
     );
     assert_eq!(get_rules(&env.proxies.rewrite_engine).await, vec![]);
 

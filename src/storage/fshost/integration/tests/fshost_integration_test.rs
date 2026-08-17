@@ -414,7 +414,7 @@ async fn shred_data_volume_not_supported() {
         .await
         .expect("shred_data_volume FIDL failed")
         .expect_err("shred_data_volume should fail");
-    assert_eq!(zx::Status::from_raw(status), zx::Status::NOT_SUPPORTED);
+    assert_eq!(zx::Status::ok(status), Err(zx::Status::NOT_SUPPORTED));
 
     fixture.tear_down().await;
 }

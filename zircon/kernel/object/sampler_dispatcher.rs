@@ -114,7 +114,7 @@ impl SamplerDispatcher {
     /// `len` _must_ be at least equal to the total size of the sampler buffers, which can be
     /// queried by passing a null `ptr`. In this case, no data will be written and the return value
     /// will be the required minimum size of the buffer to write to.
-    pub fn read_user(&self, ptr: UserOutPtr<u8>, len: usize) -> (Status, usize) {
+    pub fn read_user(&self, ptr: UserOutPtr<u8>, len: usize) -> (Result<(), Status>, usize) {
         let mut actual = 0;
         // SAFETY: `self` is valid, `ptr` is a valid UserOutPtr buffer of `len` bytes, and
         // `actual` is a local out pointer.
@@ -126,6 +126,6 @@ impl SamplerDispatcher {
                 &mut actual,
             )
         };
-        (Status::from_raw(status), actual)
+        (Status::ok(status), actual)
     }
 }

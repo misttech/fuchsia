@@ -1095,7 +1095,7 @@ mod tests {
             .listen(12345, client_end2)
             .await
             .expect("failed to respond to listen request");
-        assert_eq!(zx::Status::from_raw(result.unwrap_err()), zx::Status::ALREADY_BOUND);
+        assert_eq!(zx::Status::ok(result.unwrap_err()), Err(zx::Status::ALREADY_BOUND));
 
         // Closing the HostVsockAcceptor server should remove the original listener from the device.
         drop(client_stream1);

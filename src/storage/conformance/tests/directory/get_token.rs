@@ -38,6 +38,6 @@ async fn get_token_with_insufficient_rights() {
     {
         let dir = harness.get_directory(vec![], dir_flags);
         let (status, _handle) = dir.get_token().await.expect("get_token failed");
-        assert_eq!(zx::Status::from_raw(status), zx::Status::BAD_HANDLE);
+        assert_eq!(zx::Status::ok(status), Err(zx::Status::BAD_HANDLE));
     }
 }

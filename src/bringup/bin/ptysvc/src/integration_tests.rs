@@ -54,28 +54,28 @@ async fn server_set_window_size() {
 async fn server_clr_set_feature() {
     let server = setup();
     let (status, _) = server.clr_set_feature(0, 0).await.expect("fidl failed");
-    assert_eq!(zx::Status::from_raw(status), zx::Status::NOT_SUPPORTED);
+    assert_eq!(zx::Status::ok(status), Err(zx::Status::NOT_SUPPORTED));
 }
 
 #[fuchsia::test]
 async fn server_get_window_size() {
     let server = setup();
     let (status, _) = server.get_window_size().await.expect("fidl failed");
-    assert_eq!(zx::Status::from_raw(status), zx::Status::NOT_SUPPORTED);
+    assert_eq!(zx::Status::ok(status), Err(zx::Status::NOT_SUPPORTED));
 }
 
 #[fuchsia::test]
 async fn server_make_active() {
     let server = setup();
     let status = server.make_active(0).await.expect("fidl failed");
-    assert_eq!(zx::Status::from_raw(status), zx::Status::NOT_SUPPORTED);
+    assert_eq!(zx::Status::ok(status), Err(zx::Status::NOT_SUPPORTED));
 }
 
 #[fuchsia::test]
 async fn server_read_events() {
     let server = setup();
     let (status, _) = server.read_events().await.expect("fidl failed");
-    assert_eq!(zx::Status::from_raw(status), zx::Status::NOT_SUPPORTED);
+    assert_eq!(zx::Status::ok(status), Err(zx::Status::NOT_SUPPORTED));
 }
 
 #[fuchsia::test]
@@ -287,13 +287,13 @@ async fn client_clr_set_feature_invalid_bit() {
 
     {
         let (status, features) = client.clr_set_feature(0, 0x2).await.expect("fidl failed");
-        assert_eq!(zx::Status::from_raw(status), zx::Status::NOT_SUPPORTED);
+        assert_eq!(zx::Status::ok(status), Err(zx::Status::NOT_SUPPORTED));
         assert_eq!(features, 0);
     }
 
     {
         let (status, features) = client.clr_set_feature(0x2, 0).await.expect("fidl failed");
-        assert_eq!(zx::Status::from_raw(status), zx::Status::NOT_SUPPORTED);
+        assert_eq!(zx::Status::ok(status), Err(zx::Status::NOT_SUPPORTED));
         assert_eq!(features, 0);
     }
 }
@@ -337,7 +337,7 @@ async fn client_make_active() {
 
     {
         let status = client.make_active(0).await.expect("fidl failed");
-        assert_eq!(zx::Status::from_raw(status), zx::Status::ACCESS_DENIED);
+        assert_eq!(zx::Status::ok(status), Err(zx::Status::ACCESS_DENIED));
     }
     {
         let status = client2.make_active(1).await.expect("fidl failed");
@@ -353,7 +353,7 @@ async fn client_make_active() {
     }
     {
         let status = client2.make_active(2).await.expect("fidl failed");
-        assert_eq!(zx::Status::from_raw(status), zx::Status::NOT_FOUND);
+        assert_eq!(zx::Status::ok(status), Err(zx::Status::NOT_FOUND));
     }
 }
 
@@ -365,7 +365,7 @@ async fn client_read_events() {
 
     {
         let (status, _) = client.read_events().await.expect("fidl failed");
-        assert_eq!(zx::Status::from_raw(status), zx::Status::ACCESS_DENIED);
+        assert_eq!(zx::Status::ok(status), Err(zx::Status::ACCESS_DENIED));
     }
 
     {

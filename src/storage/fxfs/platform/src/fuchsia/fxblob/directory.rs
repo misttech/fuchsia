@@ -699,7 +699,7 @@ mod tests {
             .link(&format!("{}", hash), token.unwrap().into(), "foo")
             .await
             .expect("FIDL failed");
-        assert_eq!(Status::from_raw(status), Status::NOT_SUPPORTED);
+        assert_eq!(Status::ok(status), Err(Status::NOT_SUPPORTED));
 
         fixture.close().await;
     }

@@ -135,18 +135,6 @@ unsafe impl<E: ?Sized> Encode<StatusResult, E> for &Result<(), zx::Status> {
     }
 }
 
-impl FromWire<StatusResult> for zx::Status {
-    fn from_wire(wire: StatusResult) -> Self {
-        Self::from_wire_ref(&wire)
-    }
-}
-
-impl FromWireRef<StatusResult> for zx::Status {
-    fn from_wire_ref(wire: &StatusResult) -> Self {
-        zx::Status::from_raw(*wire.inner)
-    }
-}
-
 impl FromWire<StatusResult> for Result<(), zx::Status> {
     fn from_wire(wire: StatusResult) -> Self {
         Self::from_wire_ref(&wire)
@@ -180,9 +168,7 @@ mod tests {
         let wire_result = unsafe { slot.as_ptr().cast::<StatusResult>().read() };
         assert_eq!(wire_result.to_result(), Ok(()));
         assert_eq!(
-            zx::Status::ok(
-                <zx::Status as FromWire<StatusResult>>::from_wire(wire_result).into_raw()
-            ),
+            <Result<(), zx::Status> as FromWire<StatusResult>>::from_wire(wire_result),
             Ok(())
         );
     }
@@ -204,10 +190,6 @@ mod tests {
         assert_eq!(
             <Result<(), zx::Status> as FromWire<StatusResult>>::from_wire(wire_result),
             Err(zx::Status::NOT_SUPPORTED)
-        );
-        assert_eq!(
-            <zx::Status as FromWire<StatusResult>>::from_wire(wire_result),
-            zx::Status::NOT_SUPPORTED
         );
     }
 

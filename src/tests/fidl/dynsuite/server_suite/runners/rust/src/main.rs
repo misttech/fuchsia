@@ -383,7 +383,7 @@ impl RunnerServer {
                 responder.send(Ok(())).unwrap();
             }
             RunnerRequest::ShutdownWithEpitaph { epitaph_status, responder } => {
-                let status = Status::from_raw(epitaph_status);
+                let status = Status::ok(epitaph_status);
                 self.target_ctrl().as_trait().shutdown_with_epitaph(status.into());
                 responder.send().unwrap();
             }

@@ -220,9 +220,10 @@ mod tests {
     async fn meta_subdir_watch_not_supported() {
         let (_env, sub_dir) = TestEnv::new().await;
         let (_client, server) = fidl::endpoints::create_endpoints();
-        let status =
-            zx::Status::from_raw(sub_dir.watch(fio::WatchMask::empty(), 0, server).await.unwrap());
-        assert_eq!(status, zx::Status::NOT_SUPPORTED);
+        assert_eq!(
+            zx::Status::ok(sub_dir.watch(fio::WatchMask::empty(), 0, server).await.unwrap()),
+            Err(zx::Status::NOT_SUPPORTED)
+        );
     }
 
     #[fuchsia::test]

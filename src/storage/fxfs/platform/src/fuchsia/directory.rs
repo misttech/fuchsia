@@ -1556,13 +1556,13 @@ mod tests {
         close_file_checked(f).await;
 
         assert_eq!(
-            zx::Status::from_raw(
+            zx::Status::ok(
                 root.unlink("foo", &fio::UnlinkOptions::default())
                     .await
                     .expect("FIDL call failed")
                     .expect_err("unlink succeeded")
             ),
-            zx::Status::NOT_EMPTY
+            Err(zx::Status::NOT_EMPTY)
         );
 
         dir.unlink("bar", &fio::UnlinkOptions::default())

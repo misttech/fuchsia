@@ -4133,7 +4133,7 @@ mod tests {
 
         let mut response = BlockFifoResponse::default();
         reader.read_entries(&mut response).await.unwrap();
-        assert_eq!(zx::Status::from_raw(response.status), zx::Status::OUT_OF_RANGE);
+        assert_eq!(zx::Status::ok(response.status), Err(zx::Status::OUT_OF_RANGE));
     }
 
     #[test]

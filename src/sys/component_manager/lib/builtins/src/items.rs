@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Error};
+use anyhow::{Error, anyhow};
 use core::mem::size_of;
 use fidl_fuchsia_boot as fboot;
 use fuchsia_zbi::ZbiType::BootloaderFile;
@@ -144,11 +144,11 @@ mod tests {
     use super::*;
     use fuchsia_async as fasync;
     use fuchsia_zbi::{
-        zbi_header_t, ZbiType, ZBI_CONTAINER_MAGIC, ZBI_FLAGS_VERSION, ZBI_ITEM_MAGIC,
-        ZBI_ITEM_NO_CRC32,
+        ZBI_CONTAINER_MAGIC, ZBI_FLAGS_VERSION, ZBI_ITEM_MAGIC, ZBI_ITEM_NO_CRC32, ZbiType,
+        zbi_header_t,
     };
-    use zerocopy::byteorder::little_endian::U32;
     use zerocopy::IntoBytes;
+    use zerocopy::byteorder::little_endian::U32;
 
     const ZBI_HEADER_SIZE: usize = size_of::<zbi_header_t>();
 
@@ -261,7 +261,7 @@ mod tests {
             .get2(zbi_type.into_raw(), None)
             .await
             .expect("failed to query item service");
-        assert_eq!(zx::Status::from_raw(result.unwrap_err()), zx::Status::NOT_SUPPORTED);
+        assert_eq!(zx::Status::ok(result.unwrap_err()), Err(zx::Status::NOT_SUPPORTED));
     }
 
     #[fuchsia::test]

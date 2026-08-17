@@ -607,8 +607,9 @@ mod tests {
         let (client, request_stream) = create_proxy_and_stream::<EditTransactionMarker>();
         service.serve_edit_transaction(request_stream).await;
 
-        let status = Status::from_raw(client.commit().await.unwrap().unwrap_err());
-
-        assert_eq!(status, Status::ACCESS_DENIED);
+        assert_eq!(
+            Status::ok(client.commit().await.unwrap().unwrap_err()),
+            Err(Status::ACCESS_DENIED)
+        );
     }
 }

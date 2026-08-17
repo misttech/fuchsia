@@ -2070,7 +2070,7 @@ mod tests {
                 .await
                 .expect("Failed to call SetDnsServers")
                 .expect_err("SetDnsServers should fail for multicast address");
-            assert_eq!(zx::Status::from_raw(status), zx::Status::INVALID_ARGS);
+            assert_eq!(zx::Status::ok(status), Err(zx::Status::INVALID_ARGS));
 
             // Unspecified not allowed.
             let status = proxy
@@ -2082,7 +2082,7 @@ mod tests {
                 .await
                 .expect("Failed to call SetDnsServers")
                 .expect_err("SetDnsServers should fail for unspecified address");
-            assert_eq!(zx::Status::from_raw(status), zx::Status::INVALID_ARGS);
+            assert_eq!(zx::Status::ok(status), Err(zx::Status::INVALID_ARGS));
         })
         .await;
 

@@ -67,10 +67,9 @@ impl EthernetRx {
                 let payload = payload.as_slice();
                 // Safety: The `self.ffi.transfer` call is safe because the payload is a persisted
                 // `EthernetRx.Transfer` request.
-                zx::Status::from_raw(unsafe {
+                zx::Status::ok(unsafe {
                     (self.ffi.transfer)(self.ffi.ctx, payload.as_ptr(), payload.len())
                 })
-                .into()
             }
         }
     }
@@ -128,10 +127,9 @@ impl WlanTx {
             Ok(payload) => {
                 // Safety: The `self.ffi.transfer` call is safe because the payload is a persisted
                 // `EthernetRx.Transfer` request.
-                zx::Status::from_raw(unsafe {
+                zx::Status::ok(unsafe {
                     (self.ffi.transfer)(self.ffi.ctx, payload.as_slice().as_ptr(), payload.len())
                 })
-                .into()
             }
         }
     }

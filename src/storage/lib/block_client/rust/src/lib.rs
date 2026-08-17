@@ -109,7 +109,7 @@ impl<'a> From<&'a mut [u8]> for MutableBufferSlice<'a> {
 
 #[derive(Default)]
 struct RequestState {
-    result: Option<zx::Status>,
+    result: Option<Result<(), zx::Status>>,
     waker: Option<Waker>,
 }
 
@@ -138,7 +138,7 @@ impl FifoState {
     fn terminate(&mut self) {
         self.fifo.take();
         for (_, request_state) in self.map.iter_mut() {
-            request_state.result.get_or_insert(zx::Status::CANCELED);
+            request_state.result.get_or_insert(Err(zx::Status::CANCELED));
             if let Some(waker) = request_state.waker.take() {
                 waker.wake();
             }
@@ -198,7 +198,7 @@ impl Future for ResponseFuture {
         let mut state = self.fifo_state.lock();
         let request_state = state.map.get_mut(&self.request_id).unwrap();
         if let Some(result) = request_state.result {
-            Poll::Ready(result.into())
+            Poll::Ready(result)
         } else {
             request_state.waker.replace(context.waker().clone());
             Poll::Pending
@@ -995,7 +995,7 @@ impl Future for FifoPoller {
                     let request_id = response.reqid;
                     // If the request isn't in the map, assume that it's a cancelled read.
                     if let Some(request_state) = state.map.get_mut(&request_id) {
-                        request_state.result.replace(zx::Status::from_raw(response.status));
+                        request_state.result.replace(zx::Status::ok(response.status));
                         if let Some(waker) = request_state.waker.take() {
                             waker.wake();
                         }

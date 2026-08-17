@@ -1744,7 +1744,7 @@ mod tests {
                     fidl::endpoints::create_proxy::<fio::DirectoryMarker>();
 
                 assert_eq!(
-                    Status::from_raw(
+                    Status::ok(
                         volume_proxy
                             .mount(
                                 dir_server_end,
@@ -1754,7 +1754,7 @@ mod tests {
                             .expect("mount (fidl) failed")
                             .expect_err("mount succeeded")
                     ),
-                    Status::ALREADY_BOUND
+                    Err(Status::ALREADY_BOUND)
                 );
 
                 std::mem::drop(dir_proxy);

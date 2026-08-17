@@ -261,7 +261,7 @@ mod test {
         else {
             panic!()
         };
-        assert_eq!(zx_status::Status::ACCESS_DENIED, zx_status::Status::from_raw(status));
+        assert_eq!(Err(zx_status::Status::ACCESS_DENIED), zx_status::Status::ok(status));
     }
 
     #[test]
