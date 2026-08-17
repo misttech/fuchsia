@@ -361,10 +361,13 @@ void inspector_print_debug_info_impl(FILE* out, zx_handle_t process_handle,
 
 #if defined(__x86_64__)
       inspector_excp_data_t* excp_data = &report.context.arch.u.x86_64;
+      zx_vaddr_t tp_dump = regs.fs_base;
 #elif defined(__aarch64__)
       inspector_excp_data_t* excp_data = &report.context.arch.u.arm_64;
+      zx_vaddr_t tp_dump = regs.tpidr;
 #elif defined(__riscv)
       inspector_excp_data_t* excp_data = &report.context.arch.u.riscv_64;
+      zx_vaddr_t tp_dump = regs.tp;
 #else
 #error unsupported architecture
 #endif
@@ -388,6 +391,13 @@ void inspector_print_debug_info_impl(FILE* out, zx_handle_t process_handle,
       constexpr size_t kPcDumpSize = 64;
       inspector_print_memory(out, process->get(), dumpAddr, kPcDumpSize,
                              inspector_print_memory_format::Hex8);
+
+      fprintf(out, "memory dump near thread pointer:\n");
+      tp_dump &= -zx_vaddr_t{8};
+      tp_dump = std::max<zx_vaddr_t>(tp_dump, 32) - 32;
+      constexpr size_t kTpDumpSize = 64;
+      inspector_print_memory(out, process->get(), tp_dump, kTpDumpSize,
+                             inspector_print_memory_format::Hex32);
 
       fprintf(out, "arch: %s\n", kArch);
     }
