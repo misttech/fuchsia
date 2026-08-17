@@ -48,7 +48,8 @@ uint8_t cpp_vm_object_get_mapping_cache_policy(const VmObject* vmo);
 VmObject* cpp_vm_object_create_clone(VmObject* vmo, Resizability resizable,
                                      SnapshotType snapshot_type, uint64_t offset, uint64_t size,
                                      bool copy_name, zx_status_t* out_status);
-zx_status_t cpp_vm_object_get_page_blocking(VmObject* vmo, uint64_t offset, uint32_t pf_flags);
+zx_status_t cpp_vm_object_get_page_blocking(VmObject* vmo, uint64_t offset, uint32_t pf_flags,
+                                            vm_page_t** out_page, paddr_t* out_pa);
 void cpp_vm_object_set_user_id(VmObject* vmo, uint64_t user_id);
 uint64_t cpp_vm_object_user_id(const VmObject* vmo);
 uint64_t cpp_vm_object_parent_user_id(const VmObject* vmo);

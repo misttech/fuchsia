@@ -188,12 +188,32 @@ impl VmObject {
         Ok(clone.expect("clone returned ZX_OK; must be non-null"))
     }
 
-    /// Helper variant of get_page that will retry the operation after waiting on a PageRequest if required.
-    pub fn get_page_blocking(&self, offset: u64, pf_flags: u32) -> Result<(), Status> {
-        // SAFETY: `self.as_raw()` returns a valid `VmObject` pointer.
-        let status =
-            unsafe { bindings::cpp_vm_object_get_page_blocking(self.as_raw(), offset, pf_flags) };
-        Status::ok(status)
+    /// Helper variant of get_page that will retry the operation after waiting on a PageRequest if
+    /// required.
+    ///
+    /// Must not be called with any locks held.
+    pub fn get_page_blocking(
+        &self,
+        offset: u64,
+        pf_flags: u32,
+    ) -> Result<(VmPagePtr, PAddr), Status> {
+        let mut page_ptr = core::ptr::null_mut();
+        let mut paddr = 0;
+        // SAFETY: `self.as_raw()` points to a live `VmObject`, and `page_ptr` and `paddr` point to
+        // stack storage valid for writing.
+        let status = unsafe {
+            bindings::cpp_vm_object_get_page_blocking(
+                self.as_raw(),
+                offset,
+                pf_flags,
+                &mut page_ptr,
+                &mut paddr,
+            )
+        };
+        Status::ok(status)?;
+        // SAFETY: `page_ptr` points to a live `vm_page_t` returned by `GetPageBlocking` on `ZX_OK`.
+        let page = unsafe { VmPagePtr::from_raw(page_ptr) }.expect("page pointer is non-null");
+        Ok((page, PAddr(paddr)))
     }
 
     /// Downcasts a `RefPtr<VmObject>` by value into a `RefPtr<VmObjectPaged>` if it is a paged VMO.

@@ -123,6 +123,13 @@ impl VmCowPages {
         // or null if there is no parent.
         unsafe { Self::from_raw(raw) }
     }
+
+    /// Deduplicates a committed zero page at `offset`.
+    pub fn dedup_zero_page(&self, page: VmPagePtr, offset: u64) -> bool {
+        // SAFETY: `self.as_raw()` returns a valid `VmCowPages` pointer, and `page.as_raw()` is a
+        // valid `vm_page_t` pointer.
+        unsafe { bindings::cpp_vm_cow_pages_dedup_zero_page(self.as_raw(), page.as_raw(), offset) }
+    }
 }
 
 fn initialize_page_cache(level: init::LkInitLevel) {

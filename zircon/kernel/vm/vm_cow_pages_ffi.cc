@@ -42,4 +42,9 @@ FFI_ALWAYS_INLINE VmCowPages* cpp_vm_cow_pages_debug_get_parent(VmCowPages* cow)
   return fbl::ExportToRawPtr(&parent);
 }
 
+FFI_ALWAYS_INLINE bool cpp_vm_cow_pages_dedup_zero_page(VmCowPages* cow, vm_page_t* page,
+                                                        uint64_t offset) {
+  return cow->DedupZeroPage(page, offset);
+}
+
 }  // extern "C"

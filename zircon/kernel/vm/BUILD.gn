@@ -728,6 +728,7 @@ kernel_bindgen_crate("vm-cow-pages-bindings") {
     "cpp_vm_cow_pages_replace_page_with_loaned",
     "cpp_vm_cow_pages_should_delay_reuse_on_free",
     "cpp_vm_cow_pages_debug_get_parent",
+    "cpp_vm_cow_pages_dedup_zero_page",
   ]
   type_allowlist = [
     "DirtyState",

@@ -544,8 +544,7 @@ mod vmo_rs {
         expect_true!(unsafe { pmm::page_queues().debug_page_is_reclaim(page) }.is_some());
 
         // If we lookup the page then it should be moved to specifically the first page queue.
-        let status = vmo.get_page_blocking(0, fault::flag::SW_FAULT);
-        expect_ok!(status);
+        unwrap_ok!(vmo.get_page_blocking(0, fault::flag::SW_FAULT));
         // SAFETY: `page` is attached to `vmo`.
         let queue = unsafe { pmm::page_queues().debug_page_is_reclaim(page) }
             .expect("page is in reclaim queue");
@@ -559,8 +558,7 @@ mod vmo_rs {
         expect_eq!(1, queue.0);
 
         // Touching the page should move it back to the first queue.
-        let status = vmo.get_page_blocking(0, fault::flag::SW_FAULT);
-        expect_ok!(status);
+        unwrap_ok!(vmo.get_page_blocking(0, fault::flag::SW_FAULT));
         // SAFETY: `page` is attached to `vmo`.
         let queue = unsafe { pmm::page_queues().debug_page_is_reclaim(page) }
             .expect("page is in reclaim queue");
@@ -575,8 +573,7 @@ mod vmo_rs {
             true
         ));
 
-        let status = child.get_page_blocking(0, fault::flag::SW_FAULT);
-        expect_ok!(status);
+        unwrap_ok!(child.get_page_blocking(0, fault::flag::SW_FAULT));
         // SAFETY: `page` is attached to `vmo`.
         let queue = unsafe { pmm::page_queues().debug_page_is_reclaim(page) }
             .expect("page is in reclaim queue");
@@ -586,8 +583,7 @@ mod vmo_rs {
         let queue = unsafe { pmm::page_queues().debug_page_is_reclaim(page) }
             .expect("page is in reclaim queue");
         expect_eq!(1, queue.0);
-        let status = child.get_page_blocking(0, fault::flag::SW_FAULT);
-        expect_ok!(status);
+        unwrap_ok!(child.get_page_blocking(0, fault::flag::SW_FAULT));
         // SAFETY: `page` is attached to `vmo`.
         let queue = unsafe { pmm::page_queues().debug_page_is_reclaim(page) }
             .expect("page is in reclaim queue");
@@ -863,6 +859,46 @@ mod vmo_rs {
         }
     }
 
+    /// Tests that memory attribution behaves as expected when zero pages are deduped.
+    #[test]
+    fn vmo_attribution_dedup_test() {
+        // Tests that memory attribution behaves as expected when zero pages are deduped, changing
+        // the no. of committed pages in the vmo.
+        let _scanner_disable = AutoVmScannerDisable::new();
+
+        let vmo = unwrap_ok!(VmObjectPaged::create(pmm::ALLOC_FLAG_ANY, 0, 2 * PAGE_SIZE));
+
+        expect_true!(vmo.get_attributed_memory() == attribution::zero());
+        expect_true!(verify_continuous_attribution_bytes(&vmo, 0));
+
+        assert_ok!(vmo.commit_range(0, 2 * PAGE_SIZE));
+        expect_true!(
+            vmo.get_attributed_memory() == make_private_attribution_counts(2 * PAGE_SIZE, 0)
+        );
+        expect_true!(verify_continuous_attribution_bytes(&vmo, 2 * PAGE_SIZE));
+
+        let (page, _pa) = unwrap_ok!(vmo.get_page_blocking(0, 0));
+
+        // Dedupe the first page.
+        let cow = vmo.debug_get_cow_pages().unwrap();
+        assert_true!(cow.dedup_zero_page(page, 0));
+        expect_true!(vmo.get_attributed_memory() == make_private_attribution_counts(PAGE_SIZE, 0));
+        expect_true!(verify_continuous_attribution_bytes(&vmo, PAGE_SIZE));
+
+        // Dedupe the second page.
+        let (page, _pa) = unwrap_ok!(vmo.get_page_blocking(PAGE_SIZE, 0));
+        assert_true!(cow.dedup_zero_page(page, PAGE_SIZE));
+        expect_true!(vmo.get_attributed_memory() == attribution::zero());
+        expect_true!(verify_continuous_attribution_bytes(&vmo, 0));
+
+        // Commit the range again.
+        assert_ok!(vmo.commit_range(0, 2 * PAGE_SIZE));
+        expect_true!(
+            vmo.get_attributed_memory() == make_private_attribution_counts(2 * PAGE_SIZE, 0)
+        );
+        expect_true!(verify_continuous_attribution_bytes(&vmo, 2 * PAGE_SIZE));
+    }
+
     /// Tests parent merging and user ID updates when VMO hierarchies collapse.
     #[test]
     fn vmo_parent_merge_test() {
@@ -1017,17 +1053,17 @@ mod vmo_rs {
         ));
 
         // Querying the page for read in the clone should return it.
-        expect_ok!(clone.get_page_blocking(0, 0));
+        unwrap_ok!(clone.get_page_blocking(0, 0));
 
         // Querying for write, without any fault flags, should not work as the page is not committed in
         // the clone.
         expect_eq!(
-            Status::result_into_raw(clone.get_page_blocking(0, fault::flag::WRITE)),
+            Status::result_into_raw(clone.get_page_blocking(0, fault::flag::WRITE).map(|_| ())),
             Status::NOT_FOUND.into_raw()
         );
 
         // Adding a fault flag should cause the lookup to succeed.
-        expect_ok!(clone.get_page_blocking(0, fault::flag::WRITE | fault::flag::SW_FAULT));
+        unwrap_ok!(clone.get_page_blocking(0, fault::flag::WRITE | fault::flag::SW_FAULT));
     }
 
     /// Tests that decommitting from a contiguous VMO fails when loaning is disabled.
