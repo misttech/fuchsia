@@ -276,9 +276,7 @@ pin_init!(Self {
   When `LOCAL_TRACE` is `0`, dead-branch elimination eliminates all CPU and
   string footprint in production builds.
 - Preserve `dprintf` using the `dprintf!` macro from `//zircon/kernel/lib/debug`
-- Preserve `printf` by calling out to the libc `printf` from Rust by defining,
-  and using, an `extern "C" unsafe fn printf(format: *const core::ffi::c_char,
-  ...) -> core::ffi::c_int;`
+- Use `kprint` and `kprintln!` from `//src/lib/kprint` to replace `printf`.
 
 ### 3.10. Code Organization, Ergonomics, & Visibility
 - **File Structure Parity**: Organize Rust modules matching C++ header/source
