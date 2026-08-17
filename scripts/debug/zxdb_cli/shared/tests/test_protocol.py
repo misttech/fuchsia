@@ -11,10 +11,33 @@ from shared.protocol.detach import DetachRequest
 from shared.protocol.finish import FinishRequest
 from shared.protocol.hello import HelloRequest
 from shared.protocol.next_request import NextRequest
+from shared.protocol.stack_trace import StackTraceRequest
 from shared.protocol.start import StartRequest
 from shared.protocol.step_in import StepInRequest
 from shared.protocol.stop import StopRequest
 from shared.protocol.wait_for_event import WaitForEventRequest
+
+
+class TestStackTraceRequestSchema(unittest.TestCase):
+    def test_valid_request_thread_id(self) -> None:
+        req = StackTraceRequest(thread_id=1)
+        self.assertEqual(req.thread_id, 1)
+        self.assertIsNone(req.pid)
+        self.assertFalse(req.raw)
+
+    def test_valid_request_pid(self) -> None:
+        req = StackTraceRequest(pid=1234, raw=True)
+        self.assertIsNone(req.thread_id)
+        self.assertEqual(req.pid, 1234)
+        self.assertTrue(req.raw)
+
+    def test_malformed_request_both(self) -> None:
+        with self.assertRaises(ValidationError):
+            StackTraceRequest(thread_id=1, pid=1234)
+
+    def test_malformed_request_neither(self) -> None:
+        with self.assertRaises(ValidationError):
+            StackTraceRequest()
 
 
 class TestDetachRequestSchema(unittest.TestCase):

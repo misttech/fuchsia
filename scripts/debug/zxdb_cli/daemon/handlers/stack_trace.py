@@ -4,11 +4,16 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
+from pydap.dap_types import StackFrame
 from pydap.models import StackTraceArguments
 from shared.protocol import Response
-from shared.protocol.stack_trace import StackTraceRequest
+from shared.protocol.stack_trace import (
+    ProcessStackTraceResponse,
+    StackTraceRequest,
+    ThreadStackTraceResponse,
+)
 
 if TYPE_CHECKING:
     from daemon.daemon import Daemon
@@ -16,22 +21,25 @@ if TYPE_CHECKING:
 COMMAND_NAME = "stackTrace"
 
 
+def _get_frame_origin(frame: StackFrame) -> str | None:
+    return frame.source.origin if frame.source is not None else None
+
+
 def collapse_elided_frames(
-    frames: list[dict[str, Any]],
-) -> list[dict[str, Any]]:
+    frames: list[StackFrame],
+) -> list[StackFrame]:
     result = []
     i = 0
     n = len(frames)
     while i < n:
         frame = frames[i]
-        if frame.get("presentationHint") == "subtle":
+        if frame.presentation_hint == "subtle":
             start_i = i
-            group_origin = (frame.get("source") or {}).get("origin")
+            group_origin = _get_frame_origin(frame)
             while (
                 i + 1 < n
-                and frames[i + 1].get("presentationHint") == "subtle"
-                and (frames[i + 1].get("source") or {}).get("origin")
-                == group_origin
+                and frames[i + 1].presentation_hint == "subtle"
+                and _get_frame_origin(frames[i + 1]) == group_origin
             ):
                 i += 1
             end_i = i
@@ -39,15 +47,43 @@ def collapse_elided_frames(
                 result.append(frame)
             else:
                 desc = group_origin or "subtle frames"
-                collapsed_frame = dict(frames[start_i])
-                collapsed_frame[
-                    "name"
-                ] = f"{start_i}…{end_i} «{desc}» (-r expands)"
+                collapsed_frame = frame.model_copy(
+                    update={"name": f"{start_i}…{end_i} «{desc}» (-r expands)"}
+                )
                 result.append(collapsed_frame)
         else:
             result.append(frame)
         i += 1
     return result
+
+
+async def _fetch_thread_stack_trace(
+    daemon: Daemon,
+    thread_id: int,
+    raw: bool = False,
+) -> ThreadStackTraceResponse:
+    await daemon.ensure_stopped(thread_id)
+    stack_resp = await daemon.dap_client.stack_trace(
+        StackTraceArguments(
+            thread_id=thread_id,
+        ),
+    )
+    frames: list[StackFrame] = []
+    total_frames = 0
+    if stack_resp.body:
+        frames = list(stack_resp.body.stack_frames)
+        total_frames = (
+            stack_resp.body.total_frames
+            if stack_resp.body.total_frames is not None
+            else len(frames)
+        )
+    if not raw:
+        frames = collapse_elided_frames(frames)
+    return ThreadStackTraceResponse(
+        id=thread_id,
+        stack_frames=frames,
+        total_frames=total_frames,
+    )
 
 
 async def handle(daemon: Daemon, req: StackTraceRequest) -> Response:
@@ -57,20 +93,51 @@ async def handle(daemon: Daemon, req: StackTraceRequest) -> Response:
         )
 
     try:
-        await daemon.ensure_stopped(req.thread_id)
+        if req.thread_id is not None:
+            thread_trace = await _fetch_thread_stack_trace(
+                daemon, req.thread_id, raw=req.raw
+            )
+            return Response(
+                success=True,
+                body=thread_trace,
+            )
 
-        stack_resp = await daemon.dap_client.stack_trace(
-            StackTraceArguments(
-                threadId=req.thread_id,
-            ),
-        )
+        if req.pid is None:
+            return Response(
+                success=False,
+                message="Must specify either thread_id or pid",
+            )
 
-        body = stack_resp.body.model_dump(by_alias=True)
-        if not req.raw:
-            body["stackFrames"] = collapse_elided_frames(body["stackFrames"])
+        await daemon.ensure_process_stopped(req.pid)
+        process = daemon.processes.get(req.pid)
+        if not process or not process.threads:
+            return Response(
+                success=False,
+                message=f"No threads found for process {req.pid}",
+            )
+
+        threads_traces: list[ThreadStackTraceResponse] = []
+        for t in process.threads.values():
+            try:
+                t_trace = await _fetch_thread_stack_trace(
+                    daemon, t.id, raw=req.raw
+                )
+                threads_traces.append(t_trace)
+            except Exception:
+                threads_traces.append(
+                    ThreadStackTraceResponse(
+                        id=t.id,
+                        stack_frames=[],
+                        total_frames=0,
+                    )
+                )
+
         return Response(
             success=True,
-            body=body,
+            body=ProcessStackTraceResponse(
+                process_id=req.pid,
+                stacks=threads_traces,
+            ),
         )
     except Exception as e:
         return Response(

@@ -28,7 +28,11 @@ from shared.protocol.get_state import GetStateRequest
 from shared.protocol.hello import HelloRequest
 from shared.protocol.next_request import NextRequest
 from shared.protocol.pause import PauseRequest
-from shared.protocol.stack_trace import StackTraceRequest
+from shared.protocol.stack_trace import (
+    ProcessStackTraceResponse,
+    StackTraceRequest,
+    ThreadStackTraceResponse,
+)
 from shared.protocol.start import StartRequest
 from shared.protocol.step_in import StepInRequest
 from shared.protocol.stop import StopRequest
@@ -62,6 +66,8 @@ __all__ = [
     "Response",
     "ThreadInfo",
     "GetStateResponse",
+    "ProcessStackTraceResponse",
+    "ThreadStackTraceResponse",
     "PROTOCOL_VERSION",
     "serialize",
     "make_request",

@@ -236,13 +236,58 @@ class TestCLI(unittest.IsolatedAsyncioTestCase):
         )
 
     @patch("cli.cli.send_command")
-    async def test_stack_trace_command_raw_flag(self, mock_send: Mock) -> None:
+    async def test_stack_trace_command_thread_id(self, mock_send: Mock) -> None:
         mock_send.return_value = 0
-        exit_code = await main(["stackTrace", "1", "-r"])
+        exit_code = await main(["stackTrace", "-t", "1"])
+        self.assertEqual(exit_code, 0)
+        mock_send.assert_called_once_with(
+            StackTraceRequest(thread_id=1, raw=False)
+        )
+
+        mock_send.reset_mock()
+        exit_code = await main(["stackTrace", "--thread-id", "1", "-r"])
         self.assertEqual(exit_code, 0)
         mock_send.assert_called_once_with(
             StackTraceRequest(thread_id=1, raw=True)
         )
+
+    @patch("cli.cli.send_command")
+    async def test_stack_trace_command_pid_flag(self, mock_send: Mock) -> None:
+        mock_send.return_value = 0
+        exit_code = await main(["stackTrace", "-p", "12345"])
+        self.assertEqual(exit_code, 0)
+        mock_send.assert_called_once_with(
+            StackTraceRequest(pid=12345, raw=False)
+        )
+
+    @patch("cli.cli.send_command")
+    async def test_stack_trace_command_pid_and_raw_flag(
+        self, mock_send: Mock
+    ) -> None:
+        mock_send.return_value = 0
+        exit_code = await main(["stackTrace", "--pid", "12345", "-r"])
+        self.assertEqual(exit_code, 0)
+        mock_send.assert_called_once_with(
+            StackTraceRequest(pid=12345, raw=True)
+        )
+
+    @patch("cli.cli.send_command")
+    async def test_json_option_stack_trace_pid(self, mock_send: Mock) -> None:
+        mock_send.return_value = 0
+        exit_code = await main(
+            ["--json", '{"command": "stackTrace", "pid": 12345}']
+        )
+        self.assertEqual(exit_code, 0)
+        mock_send.assert_called_once_with(
+            StackTraceRequest(pid=12345, raw=False)
+        )
+
+    @patch("cli.cli.send_command")
+    async def test_stack_trace_missing_args(self, mock_send: Mock) -> None:
+        with contextlib.redirect_stderr(StringIO()):
+            with self.assertRaises(SystemExit):
+                await main(["stackTrace"])
+        mock_send.assert_not_called()
 
     @patch("cli.cli.send_command")
     async def test_json_option_attach(self, mock_send: Mock) -> None:

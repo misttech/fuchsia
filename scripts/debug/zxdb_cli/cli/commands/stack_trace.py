@@ -12,10 +12,22 @@ class Command(BaseCommand):
     def register_cli(subparsers: Any) -> None:
         stack_trace_parser = subparsers.add_parser(
             "stackTrace",
-            help="Get stack trace of a thread. This will automatically pause the given thread when called.",
+            help="Get stack trace of a thread or all threads in a process. This will automatically pause threads when called.",
         )
-        stack_trace_parser.add_argument(
-            "thread_id", type=int, help="Thread ID to get stack trace for"
+        group = stack_trace_parser.add_mutually_exclusive_group(required=True)
+        group.add_argument(
+            "-t",
+            "--thread-id",
+            type=int,
+            default=None,
+            help="Thread ID to get stack trace for",
+        )
+        group.add_argument(
+            "-p",
+            "--pid",
+            type=int,
+            default=None,
+            help="Process ID to get stack traces for all threads in the process",
         )
         stack_trace_parser.add_argument(
             "-r",

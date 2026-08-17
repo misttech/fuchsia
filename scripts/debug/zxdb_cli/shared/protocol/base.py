@@ -6,7 +6,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
-PROTOCOL_VERSION = 11
+PROTOCOL_VERSION = 12
 
 
 class BaseRequest(BaseModel):
@@ -37,6 +37,10 @@ class GetStateResponse(BaseModel):
 
 
 from shared.protocol.evaluate import EvaluateResponse
+from shared.protocol.stack_trace import (
+    ProcessStackTraceResponse,
+    ThreadStackTraceResponse,
+)
 
 
 class Response(BaseModel):
@@ -46,7 +50,14 @@ class Response(BaseModel):
     message: str | None = None
     # TODO(https://fxbug.dev/531840329): Decouple command response models from base.py
     # using dynamic registration in ProtocolRegistry.
-    body: GetStateResponse | EvaluateResponse | dict[str, Any] | None = None
+    body: (
+        GetStateResponse
+        | EvaluateResponse
+        | ThreadStackTraceResponse
+        | ProcessStackTraceResponse
+        | dict[str, Any]
+        | None
+    ) = None
     events: list[dict[str, Any]] | None = None
 
 
@@ -55,7 +66,7 @@ class ProtocolRegistry:
 
 
 def serialize(obj: BaseModel) -> str:
-    return obj.model_dump_json() + "\n"
+    return obj.model_dump_json(by_alias=True) + "\n"
 
 
 def make_request(data: dict[str, Any]) -> BaseRequest:

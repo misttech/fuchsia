@@ -2,7 +2,7 @@
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "title": "zxdb-cli Protocol Schema",
     "description": "JSON schema for requests and responses in the zxdb-cli UDS protocol",
-    "version": 11,
+    "version": 12,
     "requests": {
         "$defs": {
             "AttachRequest": {
@@ -546,7 +546,7 @@
                 "type": "object"
             },
             "StackTraceRequest": {
-                "description": "Request stack trace for a thread.",
+                "description": "Request stack trace for a thread or all threads in a process.",
                 "properties": {
                     "command": {
                         "const": "stackTrace",
@@ -579,8 +579,28 @@
                         "title": "Ack Seq"
                     },
                     "thread_id": {
-                        "title": "Thread Id",
-                        "type": "integer"
+                        "anyOf": [
+                            {
+                                "type": "integer"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Thread Id"
+                    },
+                    "pid": {
+                        "anyOf": [
+                            {
+                                "type": "integer"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Pid"
                     },
                     "raw": {
                         "default": false,
@@ -588,9 +608,6 @@
                         "type": "boolean"
                     }
                 },
-                "required": [
-                    "thread_id"
-                ],
                 "title": "StackTraceRequest",
                 "type": "object"
             },
@@ -1061,6 +1078,135 @@
                 "title": "GetStateResponse",
                 "type": "object"
             },
+            "ProcessStackTraceResponse": {
+                "description": "Response containing stack traces for all threads in a process.",
+                "properties": {
+                    "processId": {
+                        "title": "ProcessId",
+                        "type": "integer"
+                    },
+                    "stacks": {
+                        "items": {
+                            "$ref": "#/$defs/ThreadStackTraceResponse"
+                        },
+                        "title": "Stacks",
+                        "type": "array"
+                    }
+                },
+                "required": [
+                    "processId",
+                    "stacks"
+                ],
+                "title": "ProcessStackTraceResponse",
+                "type": "object"
+            },
+            "Source": {
+                "description": "A Source is a descriptor for source code.\n\nAttributes:\n    name: The short name of the source.\n    path: The path of the source to be shown in the UI.\n    source_reference: If the value > 0 the contents of the source must be\n        retrieved through the `source` request.\n    origin: The origin of this source (e.g., 'internal module', 'inlined content\n        from source map').",
+                "properties": {
+                    "name": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Name"
+                    },
+                    "path": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Path"
+                    },
+                    "sourceReference": {
+                        "anyOf": [
+                            {
+                                "type": "integer"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Sourcereference"
+                    },
+                    "origin": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Origin"
+                    }
+                },
+                "title": "Source",
+                "type": "object"
+            },
+            "StackFrame": {
+                "description": "A StackFrame.\n\nAttributes:\n    id: An identifier for the stack frame. It must be unique across all threads.\n        This id can be used to retrieve the scopes of the frame with the `scopes`\n        request or to restart the execution of a stack frame.\n    name: The name of the stack frame, typically a method name.\n    line: The line within the source of the frame. If the source attribute is missing\n          or doesn't exist, `line` is 0 and should be ignored by the client.\n    column: Start position of the range covered by the stack frame. It is measured in\n            UTF-16 code units and the client capability `columnsStartAt1` determines\n            whether it is 0- or 1-based. If attribute `source` is missing or doesn't\n            exist, `column` is 0 and should be ignored by the client.\n    source: The source of the frame.\n    presentation_hint: A hint for how to present this frame in the UI. A value of\n        'label' indicates an artificial frame used as a visual separator; 'subtle'\n        indicates a subtle UI appearance. Values: 'normal', 'label', 'subtle'.",
+                "properties": {
+                    "id": {
+                        "title": "Id",
+                        "type": "integer"
+                    },
+                    "name": {
+                        "title": "Name",
+                        "type": "string"
+                    },
+                    "line": {
+                        "title": "Line",
+                        "type": "integer"
+                    },
+                    "column": {
+                        "title": "Column",
+                        "type": "integer"
+                    },
+                    "source": {
+                        "anyOf": [
+                            {
+                                "$ref": "#/$defs/Source"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null
+                    },
+                    "presentationHint": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Presentationhint"
+                    }
+                },
+                "required": [
+                    "id",
+                    "name",
+                    "line",
+                    "column"
+                ],
+                "title": "StackFrame",
+                "type": "object"
+            },
             "ThreadInfo": {
                 "description": "Information about a single thread.",
                 "properties": {
@@ -1078,6 +1224,33 @@
                     "name"
                 ],
                 "title": "ThreadInfo",
+                "type": "object"
+            },
+            "ThreadStackTraceResponse": {
+                "description": "Stack trace for a single thread in a process.",
+                "properties": {
+                    "id": {
+                        "title": "Id",
+                        "type": "integer"
+                    },
+                    "stackFrames": {
+                        "items": {
+                            "$ref": "#/$defs/StackFrame"
+                        },
+                        "title": "Stackframes",
+                        "type": "array"
+                    },
+                    "totalFrames": {
+                        "title": "Totalframes",
+                        "type": "integer"
+                    }
+                },
+                "required": [
+                    "id",
+                    "stackFrames",
+                    "totalFrames"
+                ],
+                "title": "ThreadStackTraceResponse",
                 "type": "object"
             }
         },
@@ -1106,6 +1279,12 @@
                     },
                     {
                         "$ref": "#/$defs/EvaluateResponse"
+                    },
+                    {
+                        "$ref": "#/$defs/ThreadStackTraceResponse"
+                    },
+                    {
+                        "$ref": "#/$defs/ProcessStackTraceResponse"
                     },
                     {
                         "additionalProperties": true,

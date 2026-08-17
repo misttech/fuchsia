@@ -639,7 +639,7 @@ class TestCLIIntegration(unittest.IsolatedAsyncioTestCase):
         try:
             f = StringIO()
             with contextlib.redirect_stdout(f):
-                exit_code = await main(["stackTrace", "1"])
+                exit_code = await main(["stackTrace", "-t", "1"])
             self.assertEqual(exit_code, 0)
 
             output = f.getvalue()

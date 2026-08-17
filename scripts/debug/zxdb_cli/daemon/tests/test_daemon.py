@@ -9,7 +9,8 @@ from unittest.mock import AsyncMock, Mock, patch
 
 from daemon.daemon import CommandHandlerRegistry, Daemon
 from daemon.state import Process, Thread
-from pydap.client import DapError
+from pydap.client import DapClient, DapError
+from pydap.dap_types import Source, StackFrame
 from pydap.models import PauseArguments
 from pydap.models import Response as DapResponse
 from shared.protocol import (
@@ -24,7 +25,11 @@ from shared.protocol.evaluate import EvaluateRequest, EvaluateResponse
 from shared.protocol.finish import FinishRequest
 from shared.protocol.get_state import GetStateRequest
 from shared.protocol.next_request import NextRequest
-from shared.protocol.stack_trace import StackTraceRequest
+from shared.protocol.stack_trace import (
+    ProcessStackTraceResponse,
+    StackTraceRequest,
+    ThreadStackTraceResponse,
+)
 from shared.protocol.step_in import StepInRequest
 from shared.protocol.threads import ThreadsRequest
 from shared.protocol.variables import VariablesRequest
@@ -963,26 +968,25 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
         mock_dap_client = mock_dap_client_class.return_value
 
         mock_stack_resp = Mock()
-
-        def make_dump(*args: Any, **kwargs: Any) -> dict[str, Any]:
-            return {
-                "stackFrames": [
-                    {
-                        "id": 1,
-                        "name": "f1",
-                        "presentationHint": "subtle",
-                        "source": {"origin": "Rust panic"},
-                    },
-                    {
-                        "id": 2,
-                        "name": "f2",
-                        "presentationHint": "subtle",
-                        "source": {"origin": "Rust panic"},
-                    },
-                ]
-            }
-
-        mock_stack_resp.body.model_dump.side_effect = make_dump
+        mock_stack_resp.body.stack_frames = [
+            StackFrame(
+                id=1,
+                name="f1",
+                line=1,
+                column=1,
+                presentation_hint="subtle",
+                source=Source(origin="Rust panic"),
+            ),
+            StackFrame(
+                id=2,
+                name="f2",
+                line=2,
+                column=1,
+                presentation_hint="subtle",
+                source=Source(origin="Rust panic"),
+            ),
+        ]
+        mock_stack_resp.body.total_frames = 2
         mock_dap_client.stack_trace = AsyncMock(return_value=mock_stack_resp)
 
         daemon = Daemon(port=15678)
@@ -997,18 +1001,19 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
 
             self.assertTrue(resp.success)
             self.assertIsNotNone(resp.body)
-            assert isinstance(resp.body, dict)
-            frames = resp.body["stackFrames"]
+            assert isinstance(resp.body, ThreadStackTraceResponse)
+            self.assertEqual(resp.body.id, 1)
+            frames = resp.body.stack_frames
             self.assertEqual(len(frames), 1)
-            self.assertIn("0…1 «Rust panic»", frames[0]["name"])
+            self.assertIn("0…1 «Rust panic»", frames[0].name)
 
             # Raw flag returns uncollapsing frames
             resp_raw = await daemon.registry.handle(
                 "stackTrace", StackTraceRequest(thread_id=1, raw=True)
             )
             self.assertTrue(resp_raw.success)
-            assert isinstance(resp_raw.body, dict)
-            self.assertEqual(len(resp_raw.body["stackFrames"]), 2)
+            assert isinstance(resp_raw.body, ThreadStackTraceResponse)
+            self.assertEqual(len(resp_raw.body.stack_frames), 2)
 
     @patch("daemon.daemon.ZxdbDapClient")
     async def test_handle_stack_trace_subtle_non_subtle_subtle(
@@ -1017,44 +1022,49 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
         mock_dap_client = mock_dap_client_class.return_value
 
         mock_stack_resp = Mock()
-
-        def make_dump(*args: Any, **kwargs: Any) -> dict[str, Any]:
-            return {
-                "stackFrames": [
-                    {
-                        "id": 1,
-                        "name": "f1",
-                        "presentationHint": "subtle",
-                        "source": {"origin": "Rust panic"},
-                    },
-                    {
-                        "id": 2,
-                        "name": "f2",
-                        "presentationHint": "subtle",
-                        "source": {"origin": "Rust panic"},
-                    },
-                    {
-                        "id": 3,
-                        "name": "f3",
-                        "presentationHint": "normal",
-                        "source": {},
-                    },
-                    {
-                        "id": 4,
-                        "name": "f4",
-                        "presentationHint": "subtle",
-                        "source": {"origin": "C++ stdlib"},
-                    },
-                    {
-                        "id": 5,
-                        "name": "f5",
-                        "presentationHint": "subtle",
-                        "source": {"origin": "C++ stdlib"},
-                    },
-                ]
-            }
-
-        mock_stack_resp.body.model_dump.side_effect = make_dump
+        mock_stack_resp.body.stack_frames = [
+            StackFrame(
+                id=1,
+                name="f1",
+                line=1,
+                column=1,
+                presentation_hint="subtle",
+                source=Source(origin="Rust panic"),
+            ),
+            StackFrame(
+                id=2,
+                name="f2",
+                line=2,
+                column=1,
+                presentation_hint="subtle",
+                source=Source(origin="Rust panic"),
+            ),
+            StackFrame(
+                id=3,
+                name="f3",
+                line=3,
+                column=1,
+                presentation_hint="normal",
+                source=None,
+            ),
+            StackFrame(
+                id=4,
+                name="f4",
+                line=4,
+                column=1,
+                presentation_hint="subtle",
+                source=Source(origin="C++ stdlib"),
+            ),
+            StackFrame(
+                id=5,
+                name="f5",
+                line=5,
+                column=1,
+                presentation_hint="subtle",
+                source=Source(origin="C++ stdlib"),
+            ),
+        ]
+        mock_stack_resp.body.total_frames = 5
         mock_dap_client.stack_trace = AsyncMock(return_value=mock_stack_resp)
 
         daemon = Daemon(port=15678)
@@ -1067,12 +1077,12 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
 
             self.assertTrue(resp.success)
             self.assertIsNotNone(resp.body)
-            assert isinstance(resp.body, dict)
-            frames = resp.body["stackFrames"]
+            assert isinstance(resp.body, ThreadStackTraceResponse)
+            frames = resp.body.stack_frames
             self.assertEqual(len(frames), 3)
-            self.assertIn("0…1 «Rust panic»", frames[0]["name"])
-            self.assertEqual(frames[1]["name"], "f3")
-            self.assertIn("3…4 «C++ stdlib»", frames[2]["name"])
+            self.assertIn("0…1 «Rust panic»", frames[0].name)
+            self.assertEqual(frames[1].name, "f3")
+            self.assertIn("3…4 «C++ stdlib»", frames[2].name)
 
     @patch("daemon.daemon.ZxdbDapClient")
     async def test_handle_stack_trace_non_subtle_subtle_non_subtle(
@@ -1081,44 +1091,49 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
         mock_dap_client = mock_dap_client_class.return_value
 
         mock_stack_resp = Mock()
-
-        def make_dump(*args: Any, **kwargs: Any) -> dict[str, Any]:
-            return {
-                "stackFrames": [
-                    {
-                        "id": 1,
-                        "name": "f1",
-                        "presentationHint": "normal",
-                        "source": {},
-                    },
-                    {
-                        "id": 2,
-                        "name": "f2",
-                        "presentationHint": "normal",
-                        "source": {},
-                    },
-                    {
-                        "id": 3,
-                        "name": "f3",
-                        "presentationHint": "subtle",
-                        "source": {"origin": "Rust panic"},
-                    },
-                    {
-                        "id": 4,
-                        "name": "f4",
-                        "presentationHint": "subtle",
-                        "source": {"origin": "Rust panic"},
-                    },
-                    {
-                        "id": 5,
-                        "name": "f5",
-                        "presentationHint": "normal",
-                        "source": {},
-                    },
-                ]
-            }
-
-        mock_stack_resp.body.model_dump.side_effect = make_dump
+        mock_stack_resp.body.stack_frames = [
+            StackFrame(
+                id=1,
+                name="f1",
+                line=1,
+                column=1,
+                presentation_hint="normal",
+                source=None,
+            ),
+            StackFrame(
+                id=2,
+                name="f2",
+                line=2,
+                column=1,
+                presentation_hint="normal",
+                source=None,
+            ),
+            StackFrame(
+                id=3,
+                name="f3",
+                line=3,
+                column=1,
+                presentation_hint="subtle",
+                source=Source(origin="Rust panic"),
+            ),
+            StackFrame(
+                id=4,
+                name="f4",
+                line=4,
+                column=1,
+                presentation_hint="subtle",
+                source=Source(origin="Rust panic"),
+            ),
+            StackFrame(
+                id=5,
+                name="f5",
+                line=5,
+                column=1,
+                presentation_hint="normal",
+                source=None,
+            ),
+        ]
+        mock_stack_resp.body.total_frames = 5
         mock_dap_client.stack_trace = AsyncMock(return_value=mock_stack_resp)
 
         daemon = Daemon(port=15678)
@@ -1131,13 +1146,13 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
 
             self.assertTrue(resp.success)
             self.assertIsNotNone(resp.body)
-            assert isinstance(resp.body, dict)
-            frames = resp.body["stackFrames"]
+            assert isinstance(resp.body, ThreadStackTraceResponse)
+            frames = resp.body.stack_frames
             self.assertEqual(len(frames), 4)
-            self.assertEqual(frames[0]["name"], "f1")
-            self.assertEqual(frames[1]["name"], "f2")
-            self.assertIn("2…3 «Rust panic»", frames[2]["name"])
-            self.assertEqual(frames[3]["name"], "f5")
+            self.assertEqual(frames[0].name, "f1")
+            self.assertEqual(frames[1].name, "f2")
+            self.assertIn("2…3 «Rust panic»", frames[2].name)
+            self.assertEqual(frames[3].name, "f5")
 
     @patch("daemon.daemon.ZxdbDapClient")
     async def test_handle_stack_trace_exception(
@@ -1149,8 +1164,6 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
             return_value={"invalid": "response_structure"}
         )
         # Real stack_trace calls _send_request and model_validate
-        from pydap.client import DapClient
-
         mock_dap_client.stack_trace = lambda args: DapClient.stack_trace(
             mock_dap_client, args
         )
@@ -1166,6 +1179,164 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(resp.success)
             self.assertIsNotNone(resp.message)
             self.assertIn("Failed to get stack trace", resp.message or "")
+
+    @patch("daemon.daemon.ZxdbDapClient")
+    async def test_handle_stack_trace_pid_success(
+        self, mock_dap_client_class: Mock
+    ) -> None:
+        mock_dap_client = mock_dap_client_class.return_value
+
+        mock_stack_resp_1 = Mock()
+        mock_stack_resp_1.body.stack_frames = [
+            StackFrame(
+                id=1,
+                name="f1",
+                line=1,
+                column=1,
+                presentation_hint="subtle",
+                source=Source(origin="Rust panic"),
+            ),
+            StackFrame(
+                id=2,
+                name="f2",
+                line=2,
+                column=1,
+                presentation_hint="subtle",
+                source=Source(origin="Rust panic"),
+            ),
+        ]
+        mock_stack_resp_1.body.total_frames = 2
+
+        mock_stack_resp_2 = Mock()
+        mock_stack_resp_2.body.stack_frames = [
+            StackFrame(
+                id=3,
+                name="worker_func",
+                line=3,
+                column=1,
+                presentation_hint="normal",
+                source=None,
+            ),
+        ]
+        mock_stack_resp_2.body.total_frames = 1
+
+        mock_dap_client.stack_trace = AsyncMock(
+            side_effect=[mock_stack_resp_1, mock_stack_resp_2]
+        )
+
+        daemon = Daemon(port=15678)
+        daemon.zxdb_writer = Mock()
+        daemon.get_or_create_process(12345, name="test_proc")
+        daemon.get_or_create_thread(
+            101, name="initial-thread", process_id=12345
+        ).is_stopped = True
+        daemon.get_or_create_thread(
+            102, name="worker-thread", process_id=12345
+        ).is_stopped = True
+
+        resp = await daemon.registry.handle(
+            "stackTrace", StackTraceRequest(pid=12345, raw=False)
+        )
+
+        self.assertTrue(resp.success)
+        self.assertIsNotNone(resp.body)
+
+        assert isinstance(resp.body, ProcessStackTraceResponse)
+        self.assertEqual(resp.body.process_id, 12345)
+        threads = resp.body.stacks
+        self.assertEqual(len(threads), 2)
+        self.assertEqual(threads[0].id, 101)
+        self.assertEqual(len(threads[0].stack_frames), 1)
+        self.assertIn("0…1 «Rust panic»", threads[0].stack_frames[0].name)
+        self.assertEqual(threads[1].id, 102)
+        self.assertEqual(len(threads[1].stack_frames), 1)
+        self.assertEqual(threads[1].stack_frames[0].name, "worker_func")
+
+    @patch("daemon.daemon.ZxdbDapClient")
+    async def test_handle_stack_trace_pid_not_found(
+        self, mock_dap_client_class: Mock
+    ) -> None:
+        daemon = Daemon(port=15678)
+        daemon.zxdb_writer = Mock()
+
+        with patch.object(
+            daemon, "ensure_process_stopped", new_callable=AsyncMock
+        ) as mock_ensure_stopped:
+            resp = await daemon.registry.handle(
+                "stackTrace", StackTraceRequest(pid=99999, raw=False)
+            )
+            self.assertFalse(resp.success)
+            self.assertIn(
+                "No threads found for process 99999", resp.message or ""
+            )
+            mock_ensure_stopped.assert_called_once_with(99999)
+
+    @patch("daemon.daemon.ZxdbDapClient")
+    async def test_handle_stack_trace_pid_no_threads(
+        self, mock_dap_client_class: Mock
+    ) -> None:
+        daemon = Daemon(port=15678)
+        daemon.zxdb_writer = Mock()
+        daemon.get_or_create_process(12345, name="test_proc")
+
+        with patch.object(
+            daemon, "ensure_process_stopped", new_callable=AsyncMock
+        ):
+            resp = await daemon.registry.handle(
+                "stackTrace", StackTraceRequest(pid=12345)
+            )
+            self.assertFalse(resp.success)
+            self.assertIn(
+                "No threads found for process 12345", resp.message or ""
+            )
+
+    @patch("daemon.daemon.ZxdbDapClient")
+    async def test_handle_stack_trace_pid_partial_thread_failure(
+        self, mock_dap_client_class: Mock
+    ) -> None:
+        mock_dap_client = mock_dap_client_class.return_value
+
+        mock_stack_resp_1 = Mock()
+        mock_stack_resp_1.body.stack_frames = [
+            StackFrame(
+                id=1,
+                name="func_ok",
+                line=1,
+                column=1,
+                presentation_hint="normal",
+                source=None,
+            ),
+        ]
+        mock_stack_resp_1.body.total_frames = 1
+
+        mock_dap_client.stack_trace = AsyncMock(
+            side_effect=[mock_stack_resp_1, Exception("Thread exited")]
+        )
+
+        daemon = Daemon(port=15678)
+        daemon.zxdb_writer = Mock()
+        daemon.get_or_create_process(12345, name="test_proc")
+        daemon.get_or_create_thread(
+            101, name="thread-ok", process_id=12345
+        ).is_stopped = True
+        daemon.get_or_create_thread(
+            102, name="thread-exited", process_id=12345
+        ).is_stopped = True
+
+        resp = await daemon.registry.handle(
+            "stackTrace", StackTraceRequest(pid=12345, raw=False)
+        )
+
+        self.assertTrue(resp.success)
+        self.assertIsNotNone(resp.body)
+
+        assert isinstance(resp.body, ProcessStackTraceResponse)
+        self.assertEqual(len(resp.body.stacks), 2)
+        self.assertEqual(resp.body.stacks[0].id, 101)
+        self.assertEqual(len(resp.body.stacks[0].stack_frames), 1)
+        self.assertEqual(resp.body.stacks[1].id, 102)
+        self.assertEqual(len(resp.body.stacks[1].stack_frames), 0)
+        self.assertEqual(resp.body.stacks[1].total_frames, 0)
 
 
 if __name__ == "__main__":
