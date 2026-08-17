@@ -96,7 +96,7 @@ library fuchsia.animals;
 @discoverable
 protocol Duck {
   Quack();
-}
+};
 ```
 
 To implement this protocol, a component would include the following
@@ -131,6 +131,7 @@ In various OOP languages, you would write this as follows:
   // Duck is an abstract class with a pure virtual method "Quack".
   class Duck {
     public:
+      virtual ~Duck() = default;
       virtual void Quack() = 0;
   };
 
@@ -138,7 +139,7 @@ In various OOP languages, you would write this as follows:
   class MallardDuck : public Duck {
     public:
       void Quack() override { /* ... */ }
-  }
+  };
   ```
 
 
@@ -148,12 +149,12 @@ In various OOP languages, you would write this as follows:
   // All classes in Dart define an interface.
   // Omitting the definition of Quack means it can be overridden in a child.
   abstract class Duck {
-    Quack();
+    void Quack();
   }
 
-  MallardDuck implements Duck {
+  class MallardDuck implements Duck {
     @override
-    Quack() { /* ... */ }
+    void Quack() { /* ... */ }
   }
   ```
 
@@ -221,9 +222,9 @@ protocol Roller {
 
   // Method "Roll" takes no arguments, and it returns an "outcome" that is a 64-bit unsigned integer.
   Roll() -> (struct {
-    outcome uint64
+    outcome uint64;
   });
-}
+};
 ```
 
 The manifest for your component is as follows:
@@ -244,7 +245,7 @@ The manifest for your component is as follows:
   program: {
     runner: "elf",
     binary: "bin/dice_roller",
-    args = [
+    args: [
       "--sides",
       "6",
     ],
@@ -486,14 +487,14 @@ the "apps" collection, so long as its dependencies are satisfied
 
   ```dart
 
-  interface User {
+  abstract class User {
     String GetName();
   }
 
   class Session {
       final User user;
       final List<Object> apps = [];
-      Session() :  user = /* initialize user */;
+      Session() : user = /* initialize user */;
 
       // Similar to how all components share a "base type", Dart's Object
       // type can be dynamically cast to a desired interface.
@@ -511,7 +512,7 @@ the "apps" collection, so long as its dependencies are satisfied
 
   ```rust
   pub trait User {
-      fn get_name() -> String;
+      fn get_name(&self) -> String;
   }
 
   pub trait App {
@@ -519,16 +520,16 @@ the "apps" collection, so long as its dependencies are satisfied
   }
 
   pub struct Session {
-    user: User,
+    user: Box<dyn User>,
 
     // Note that in Rust the collection needs to be typed, while in component
     // terms all components share a base type.
-    apps: Vec<Box<dyn App>>;
+    apps: Vec<Box<dyn App>>,
   }
 
   impl Session {
-    pub fn new() -> Self {
-      Self{ user: /* initialize user */, apps: Vec::new() }
+    pub fn new(user: Box<dyn User>) -> Self {
+      Self { user, apps: Vec::new() }
     }
 
     pub fn add_app(&mut self, app: Box<dyn App>) {
@@ -601,8 +602,8 @@ type Item = table {
   1: id uint64;
   2: name string;
   3: price_in_cents uint32;
-  4: quantity_in_stock: uint32;
-}
+  4: quantity_in_stock uint32;
+};
 
 type StoreError = strict enum {
   ITEM_NOT_FOUND = 1;
@@ -613,29 +614,29 @@ protocol Store {
   // Add new items to the store.
   // No return code, so this operation is asynchronous and can fail silently.
   AddItem(struct {
-    item: Item;
+    item Item;
   });
 
   // Set the price on an existing item, by id.
   // Fails if the item is not found.
   SetPrice(struct {
-    item_id: uint64;
-    new_price: uint32;
-  }) error StoreError;
+    item_id uint64;
+    new_price uint32;
+  }) -> () error StoreError;
 
   // Add (or subtract) additional stock of an item.
   // Fails if the item is not found or if you would be left with an
   // invalid quantity of the item.
   AddStock(struct {
-    item_id: uint64;
-    additional_quantity: int32;
-  }) error StoreError;
+    item_id uint64;
+    additional_quantity int32;
+  }) -> () error StoreError;
 
   // Create a new Cart interface to shop at the store.
   // Note that this takes a "resource" struct, because request is a
   // Zircon handle.
   CreateCart(resource struct {
-    request: server_end:Cart;
+    request server_end:Cart;
   });
 };
 
@@ -648,19 +649,19 @@ type CartError = strict enum {
 protocol Cart {
   // Add a specific quantity of an item by id to the cart.
   AddItem(struct {
-    item_id: uint64;
-    quantity: uint32;
+    item_id uint64;
+    quantity uint32;
   });
 
   // Add a coupon code to the cart.
   AddCouponCode(struct {
-    code: string;
+    code string;
   });
 
   // Checkout all previously added items atomically.
   // Fails if payment fails or if there are not enough items in stock
   // to satisfy the request.
-  Checkout() error CartError;
+  Checkout() -> () error CartError;
 };
 ```
 
@@ -748,7 +749,7 @@ maintaining the set of items according to the protocol's contract.
       // Carts are owned by a store, and must be deleted before the Store is.
       Cart* CreateCart() {
         carts_.emplace_back(Cart(this));
-        return &cards_.back();
+        return &carts_.back();
       }
     private:
       std::vector<Item> items_;
@@ -800,7 +801,7 @@ maintaining the set of items according to the protocol's contract.
     Cart({required this.store});
 
     void AddItem(int itemId, int quantity) {
-      _items.add(ItemQuantity(itemId: itemId, quantity: quantity);
+      _items.add(ItemQuantity(itemId: itemId, quantity: quantity));
     }
 
     void AddCouponCode(String code) {
@@ -827,7 +828,7 @@ maintaining the set of items according to the protocol's contract.
 
     // Create a cart that refers back to this owning store.
     Cart CreateCart() {
-      var ret = Cart(this);
+      var ret = Cart(store: this);
       _carts.add(ret);
       return ret;
     }
@@ -888,16 +889,15 @@ maintaining the set of items according to the protocol's contract.
     pub fn new() -> Arc<Mutex<Self>> {
       Arc::new(Mutex::new(Self {
         items: vec![],
-        carts: vec![],
-      }));
+      }))
     }
 
-    pub fn add_item(&mut self, item: Item) { items.push(item); }
+    pub fn add_item(&mut self, item: Item) { self.items.push(item); }
     pub fn set_price(&mut self, item_id: u64, new_price: u32) -> Result<(), Error> { /* ... */ }
     pub fn add_stock(&mut self, item_id: u64, additional_quantity: i32) -> Result<(), Error> { /* ... */ }
 
     pub fn create_cart(self_: Arc<Mutex<Self>>) -> Cart {
-      Cart::new(self_.downgrade())
+      Cart::new(Arc::downgrade(&self_))
     }
   }
   ```
@@ -953,23 +953,22 @@ maintaining the set of items according to the protocol's contract.
     }
 
     // Inner classes in Java can refer to their containing class.
-    // This is needed to Checkout can act upon Store.this.
+    // This is needed so Checkout can act upon Store.this.
     public class Cart {
       private final List<ItemQuantity> items = new ArrayList<ItemQuantity>();
       private final List<String> couponCodes = new ArrayList<String>();
 
       void AddItem(int item_id, int quantity) {
-        _items.add(ItemQuantity(item_id, quantity));
+        items.add(new ItemQuantity(item_id, quantity));
       }
 
       void AddCouponCode(String code) {
-        _couponCodes.add(code);
+        couponCodes.add(code);
       }
 
       CartResult Checkout() { /* ... */ }
     }
   }
-
   ```
 
 ## Capability routing as dependency injection
@@ -1021,7 +1020,7 @@ cause some expensive bugs.
 ```fidl
 // fuchsia.store.fidl
 
-type PurchaseError = enum {
+type PurchaseError = strict enum {
   CREDIT_CARD_FAILURE = 1;
   ITEM_NOT_FOUND = 2;
 };
@@ -1030,18 +1029,20 @@ protocol Purchaser {
   // Purchase an item by name with a specific credit card.
   // Fails if the item is not found or if the credit card failed to charge.
   Purchase(struct {
-    item_name: string,
-    credit_card: string,
-  }) error PurchaseError;
+    item_name string;
+    credit_card string;
+  }) -> () error PurchaseError;
 };
 
 protocol CreditCardCharger {
   // Charge a specific credit card a specific amount.
   // Returns whether the charge is successful.
   Charge(struct {
-    credit_card: string,
-    amount: int,
-  }) -> (struct { success: bool });
+    credit_card string;
+    amount int32;
+  }) -> (struct {
+    success bool;
+  });
 };
 ```
 
@@ -1127,15 +1128,15 @@ protocol CreditCardCharger {
     // ...
     {
       name: "purchaser",
-      url: "fuchsia-pkg://fuchsia.com/purchaser#meta/purchaser.cml",
+      url: "fuchsia-pkg://fuchsia.com/purchaser#meta/purchaser.cm",
     },
     {
       // We want to use the real credit card charger so that we actually charge customers.
-      name: "credit_card_charger"
-      url: "fuchsia-pkg://fuchsia.com/real_credit_card_charger#meta/real_credit_card_charger.cml",
+      name: "credit_card_charger",
+      url: "fuchsia-pkg://fuchsia.com/real_credit_card_charger#meta/real_credit_card_charger.cm",
     },
     {
-      name: "real_graphical_purchase_flow"
+      name: "real_graphical_purchase_flow",
       url: /* ... */,
     },
   ],
@@ -1162,12 +1163,12 @@ protocol CreditCardCharger {
     {
       // We're going to test the real purchaser component, which is safe since we are mocking its dependency.
       name: "purchaser",
-      url: "fuchsia-pkg://fuchsia.com/purchaser#meta/purchaser.cml",
+      url: "fuchsia-pkg://fuchsia.com/purchaser#meta/purchaser.cm",
     },
     {
       // We want to use the fake credit card charger so that we don't actually charge cards in tests.
-      name: "credit_card_charger"
-      url: "fuchsia-pkg://fuchsia.com/fake_credit_card_charger#meta/fake_credit_card_charger.cml",
+      name: "credit_card_charger",
+      url: "fuchsia-pkg://fuchsia.com/fake_credit_card_charger#meta/fake_credit_card_charger.cm",
     },
   ],
   offer: [
@@ -1219,31 +1220,40 @@ The above system would be implemented in an OOP language as follows:
 * {C++}
 
   ```cpp
+  // Abstract base class for concrete credit card chargers.
+  class CreditCardCharger {
+    public:
+      virtual ~CreditCardCharger() = default;
+      virtual bool Charge(std::string credit_card, int amount) = 0;
+  };
+
+  enum class PurchaseResult {
+    OK,
+    ITEM_NOT_FOUND,
+    CREDIT_CARD_FAILURE,
+  };
+
   class Purchaser final {
     public:
       // Purchaser takes as input the credit card charger to use.
       Purchaser(CreditCardCharger* credit_card_charger) :
         credit_card_charger_(credit_card_charger) {}
-      PurchaseError Purchase(std::string item_name, std::string credit_card) {
+      PurchaseResult Purchase(std::string item_name, std::string credit_card) {
         /* ... */
         // Use the injected credit card charger when needed.
-        credit_card_charger_->Charge(std::move(credit_card), /* amount */);
+        credit_card_charger_->Charge(std::move(credit_card), /* amount */ 100);
         /* ... */
+        return PurchaseResult::OK;
       }
     private:
       CreditCardCharger* credit_card_charger_;
-  };
-
-  // Abstract base class for concrete credit card chargers.
-  class CreditCardCharger {
-    public:
-      virtual bool Charge(std::string credit_card, int amount) = 0;
   };
 
   class RealCreditCardCharger : public CreditCardCharger {
     public:
       bool Charge(std::string credit_card, int amount) override {
         /* actually charge credit cards somehow */
+        return true;
       }
   };
 
@@ -1321,30 +1331,38 @@ The above system would be implemented in an OOP language as follows:
 * {Dart}
 
   ```dart
+  enum PurchaseResult {
+    ok,
+    itemNotFound,
+    creditCardFailure,
+  }
+
   class Purchaser {
     final CreditCardCharger creditCardCharger;
 
     // Purchaser takes as input the credit card charger to use.
     Purchaser({required this.creditCardCharger});
-    PurchaseError Purchase(String itemName, String creditCard) {
+    PurchaseResult Purchase(String itemName, String creditCard) {
       /* ... */
       // Use the injected credit card charger when needed.
-      creditCardCharger.Charge(creditCard, /* amount */);
+      creditCardCharger.Charge(creditCard, /* amount */ 100);
       /* ... */
+      return PurchaseResult.ok;
     }
-  };
+  }
 
   // Abstract base class for concrete credit card chargers.
   abstract class CreditCardCharger {
     bool Charge(String creditCard, int amount);
-  };
+  }
 
   class RealCreditCardCharger implements CreditCardCharger {
     @override
     bool Charge(String creditCard, int amount) {
       /* actually charge credit cards somehow */
+      return true;
     }
-  };
+  }
 
   class MockCreditCardCharger implements CreditCardCharger {
     bool _returnValue = true;
@@ -1364,7 +1382,7 @@ The above system would be implemented in an OOP language as follows:
     }
 
     // Set the value that will be returned when calling Charge
-    void set returnValue(int v) {
+    void set returnValue(bool v) {
       _returnValue = v;
     }
 
@@ -1372,13 +1390,13 @@ The above system would be implemented in an OOP language as follows:
     int get calls => _calls;
     String get lastCreditCard => _lastCreditCard;
     int get lastAmount => _lastAmount;
-  };
+  }
 
 
   // Production code
   void main() {
     final charger = RealCreditCardCharger();
-    Purchaser purchaser(creditCardCharger: charger);
+    final purchaser = Purchaser(creditCardCharger: charger);
     // use purchaser in the program flow
 
     /* ... */
@@ -1399,7 +1417,7 @@ The above system would be implemented in an OOP language as follows:
         expect(purchaser.Purchase("Item costing $100", "1234567890"), PurchaseResult.ok);
         expect(charger.calls, 1);
         expect(charger.lastCreditCard, "1234567890");
-        expect(charger.amount, 100);
+        expect(charger.lastAmount, 100);
       });
 
       test('fails when item is not found', () {
@@ -1420,7 +1438,7 @@ The above system would be implemented in an OOP language as follows:
         expect(purchaser.Purchase("Item costing $100", "1234567890"), PurchaseResult.creditCardFailure);
         expect(charger.calls, 1);
         expect(charger.lastCreditCard, "1234567890");
-        expect(charger.amount, 100);
+        expect(charger.lastAmount, 100);
       });
     });
   }
@@ -1429,45 +1447,51 @@ The above system would be implemented in an OOP language as follows:
 * {Rust}
 
   ```rust
-  pub struct Purchaser {
-    credit_card_charger: Box<dyn CreditCardCharger>,
-  }
-
-  impl Purchaser {
-    // Purchaser takes as input the credit card charger to use.
-    pub fn new(credit_card_charger: Box<dyn CreditCardCharger>) -> Self {
-      Self { credit_card_charger }
-    }
-
-    pub fn purchase(&mut self, item_name: String, credit_card: String) {
-      /* ... */
-      // Use the injected credit card charger when needed.
-      self.credit_card_charger.charge(creditCard, /* amount */);
-      /* ... */
-    }
-
-    // For testing only, allow a Purchaser to be destroyed and converted
-    // back to it CreditCardCharger.
-    //
-    // Alternatively, we could take a non-owning reference to the dependency.
-    #[cfg(test)]
-    pub fn to_charger(mut self) -> Box<dyn CreditCardCharger> {
-      self.credit_card_charger
-    }
+  #[derive(Debug, PartialEq, Eq)]
+  pub enum PurchaseResult {
+    OK,
+    ITEM_NOT_FOUND,
+    CREDIT_CARD_FAILURE,
   }
 
   // Trait implemented by concrete credit card chargers.
-  trait CreditCardCharger {
-    fn charge(credit_card: String, amount: i32) -> bool;
+  pub trait CreditCardCharger {
+    fn charge(&mut self, credit_card: String, amount: i32) -> bool;
   }
 
-  struct RealCreditCardCharger {}
+  pub struct Purchaser<'a> {
+    credit_card_charger: &'a mut dyn CreditCardCharger,
+  }
+
+  impl<'a> Purchaser<'a> {
+    // Purchaser takes as input the credit card charger to use.
+    pub fn new(credit_card_charger: &'a mut dyn CreditCardCharger) -> Self {
+      Self { credit_card_charger }
+    }
+
+    pub fn purchase(&mut self, item_name: String, credit_card: String) -> PurchaseResult {
+      /* ... */
+      // Use the injected credit card charger when needed.
+      self.credit_card_charger.charge(credit_card, /* amount */ 100);
+      /* ... */
+      PurchaseResult::OK
+    }
+  }
+
+  pub struct RealCreditCardCharger;
+
+  impl RealCreditCardCharger {
+    pub fn new() -> Self {
+      Self
+    }
+  }
 
   impl CreditCardCharger for RealCreditCardCharger {
     fn charge(&mut self, credit_card: String, amount: i32) -> bool {
       /* actually charge credit cards somehow */
+      true
     }
-  };
+  }
 
   // Mock implementation of CreditCardCharger that returns
   // a configurable error value and records the arguments of its
@@ -1495,13 +1519,12 @@ The above system would be implemented in an OOP language as follows:
     }
 
     // Get the parameters of the last call to charge.
-
-    pub fn get_last_credit_card<'a>(&'a self) -> Option<&'a str> {
+    pub fn get_last_credit_card(&self) -> Option<&str> {
       self.last_credit_card.as_deref()
     }
 
     pub fn get_last_amount(&self) -> Option<i32> {
-      self.last_amount.clone()
+      self.last_amount
     }
 
     pub fn get_calls(&self) -> usize {
@@ -1520,7 +1543,8 @@ The above system would be implemented in an OOP language as follows:
 
   // Production code
   fn main() {
-    let mut purchaser = Purchaser::new(Box::new(RealCreditCardCharger::new()));
+    let mut charger = RealCreditCardCharger::new();
+    let mut purchaser = Purchaser::new(&mut charger);
     // use purchaser in the program flow
     /* ... */
   }
@@ -1529,44 +1553,40 @@ The above system would be implemented in an OOP language as follows:
 
   #[cfg(test)]
   mod tests {
+    use super::*;
+
     #[test]
     fn success() {
       // Test that a purchase can succeed.
       // We expect that when a purchase is completed for an item costing
       // $100 that the CreditCardCharger is called with amount = 100.
-      let mut purchaser = Purchaser::new(Box::new(MockCreditCardCharger::new()));
-      assert_eq!(purchaser.purchase("Item costing $100", "1234567890"), PurchaseResult::OK);
-      let charger = purchaser.to_charger();
+      let mut charger = MockCreditCardCharger::new();
+      let mut purchaser = Purchaser::new(&mut charger);
+      assert_eq!(purchaser.purchase("Item costing $100".to_string(), "1234567890".to_string()), PurchaseResult::OK);
       assert_eq!(charger.get_calls(), 1);
       assert_eq!(charger.get_last_credit_card(), Some("1234567890"));
-      assert_eq!(charger.get_last_amount, Some(100i32));
+      assert_eq!(charger.get_last_amount(), Some(100i32));
     }
 
     #[test]
     fn item_not_found() {
       // Test that we do not actually try to charge a credit card if the item is not found.
-      let mut purchaser = Purchaser::new(Box::new(MockCreditCardCharger::new()));
-      assert_eq!(purchaser.purchase("Item costing $100", "1234567890"), PurchaseResult.ok);
-      let charger = purchaser.to_charger();
-
-      assert_eq!(purchaser.purchase("Not found item", "1234567890"), PurchaseResult::ITEM_NOT_FOUND);
-      let charger = purchaser.to_charger();
+      let mut charger = MockCreditCardCharger::new();
+      let mut purchaser = Purchaser::new(&mut charger);
+      assert_eq!(purchaser.purchase("Not found item".to_string(), "1234567890".to_string()), PurchaseResult::ITEM_NOT_FOUND);
       assert_eq!(charger.get_calls(), 0);
     }
 
     #[test]
     fn card_charge_fails() {
       // Test that a purchase can fail.
-
-      let mut charger = Box::new(MockCreditCardCharger::new());
+      let mut charger = MockCreditCardCharger::new();
       charger.set_return_value(false);
-      let mut purchaser = Purchaser::new(charger);
-      assert_eq!(purchaser.purchase("Item costing $100", "1234567890"), PurchaseResult::CREDIT_CARD_FAILURE);
-      let charger = purchaser.to_charger();
-
+      let mut purchaser = Purchaser::new(&mut charger);
+      assert_eq!(purchaser.purchase("Item costing $100".to_string(), "1234567890".to_string()), PurchaseResult::CREDIT_CARD_FAILURE);
       assert_eq!(charger.get_calls(), 1);
       assert_eq!(charger.get_last_credit_card(), Some("1234567890"));
-      assert_eq!(charger.get_last_amount, Some(100i32));
+      assert_eq!(charger.get_last_amount(), Some(100i32));
     }
   }
   ```
@@ -1574,6 +1594,17 @@ The above system would be implemented in an OOP language as follows:
 * {Java}
 
   ```java
+  public enum PurchaseResult {
+    OK,
+    ITEM_NOT_FOUND,
+    CREDIT_CARD_FAILURE,
+  }
+
+  // Interface for concrete credit card chargers.
+  interface CreditCardCharger {
+    public boolean Charge(String creditCard, int amount);
+  }
+
   class Purchaser {
     private CreditCardCharger creditCardCharger;
 
@@ -1582,36 +1613,33 @@ The above system would be implemented in an OOP language as follows:
       this.creditCardCharger = creditCardCharger;
     }
 
-    public PurchaseError Purchase(String itemName, String creditCard) {
+    public PurchaseResult Purchase(String itemName, String creditCard) {
       /* ... */
       // Use the injected credit card charger when needed.
-      creditCardCharger.Charge(creditCard, /* amount */);
+      creditCardCharger.Charge(creditCard, /* amount */ 100);
       /* ... */
+      return PurchaseResult.OK;
     }
-  };
-
-  // Interface for concrete credit card chargers.
-  interface CreditCardCharger {
-    public boolean Charge(String creditCard, int amount);
-  };
+  }
 
   class RealCreditCardCharger implements CreditCardCharger {
     @Override
-    boolean Charge(String creditCard, int amount) {
+    public boolean Charge(String creditCard, int amount) {
       /* actually charge credit cards somehow */
+      return true;
     }
-  };
+  }
 
   class MockCreditCardCharger implements CreditCardCharger {
     private boolean returnValue = true;
     private int calls = 0;
-    private String lastCreditCard = '';
+    private String lastCreditCard = "";
     private int lastAmount = 0;
 
     // Mock implementation of CreditCardCharger::Charge that returns
     // a configurable error value and records the arguments of its
     // previous call.
-    @override
+    @Override
     public boolean Charge(String creditCard, int amount) {
       calls++;
       lastCreditCard = creditCard;
@@ -1620,7 +1648,7 @@ The above system would be implemented in an OOP language as follows:
     }
 
     // Set the value that will be returned when calling Charge
-    public void setReturnValue(int v) {
+    public void setReturnValue(boolean v) {
       returnValue = v;
     }
 
@@ -1628,7 +1656,7 @@ The above system would be implemented in an OOP language as follows:
     public int getCalls() { return calls; }
     public String getLastCreditCard() { return lastCreditCard; }
     public int getLastAmount() { return lastAmount; }
-  };
+  }
 
 
   // Production code
@@ -1671,7 +1699,7 @@ The above system would be implemented in an OOP language as follows:
     public void testCardChargeFailure() {
       // Test that a purchase can fail.
 
-      charger.returnValue = false;
+      charger.setReturnValue(false);
       assertEquals(purchaser.Purchase("Item costing $100", "1234567890"), PurchaseResult.CREDIT_CARD_FAILURE);
       assertEquals(charger.getCalls(), 1);
       assertEquals(charger.getLastCreditCard(), "1234567890");
@@ -1700,6 +1728,6 @@ the functionality of those frameworks is implemented.
 [lifecycle]: /docs/concepts/components/v2/lifecycle.md
 [oop]: https://en.wikipedia.org/wiki/Object-oriented_programming
 [plain-data]: https://en.wikipedia.org/wiki/Passive_data_structure
-[realm-open]: https://fuchsia.dev/reference/fidl/fuchsia.sys2#Realm.OpenExposedDir
-[realm-create]: https://fuchsia.dev/reference/fidl/fuchsia.sys2#Realm.CreateChild
-[realm-destroy]: https://fuchsia.dev/reference/fidl/fuchsia.sys2#Realm.DestroyChild
+[realm-open]: https://fuchsia.dev/reference/fidl/fuchsia.component#Realm.OpenExposedDir
+[realm-create]: https://fuchsia.dev/reference/fidl/fuchsia.component#Realm.CreateChild
+[realm-destroy]: https://fuchsia.dev/reference/fidl/fuchsia.component#Realm.DestroyChild
