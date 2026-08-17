@@ -30,6 +30,9 @@ zx_status_t cpp_make_partially_committed_pager_vmo(size_t num_pages, size_t comm
 bool cpp_verify_continuous_attribution_bytes(VmObject* vmo, uint64_t expected_bytes);
 void cpp_make_private_attribution_counts(uint64_t uncompressed, uint64_t compressed,
                                          vm::AttributionCounts* out_counts);
+
+void cpp_fill_region(uintptr_t seed, void* ptr, size_t len);
+bool cpp_test_region(uintptr_t seed, void* ptr, size_t len);
 __END_CDECLS
 
 #endif  // ZIRCON_KERNEL_VM_UNITTESTS_TEST_HELPER_FFI_H_

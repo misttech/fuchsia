@@ -25,8 +25,8 @@ mod vmo_rs {
     use crate::vm::vm_object_physical::VmObjectPhysical;
     use crate::vm::{attribution, fault};
     use crate::vm_unittests::test_helper::{
-        ARCH_RW_FLAGS, make_committed_pager_vmo, make_partially_committed_pager_vmo,
-        make_private_attribution_counts, verify_continuous_attribution_bytes,
+        ARCH_RW_FLAGS, fill_region, make_committed_pager_vmo, make_partially_committed_pager_vmo,
+        make_private_attribution_counts, test_region, verify_continuous_attribution_bytes,
     };
     use core::ffi::c_void;
     use core::mem::MaybeUninit;
@@ -508,6 +508,109 @@ mod vmo_rs {
                 expect_ok!(status);
             }
         }
+    }
+
+    /// Tests basic read, write, and kernel mapping operations on a paged VMO.
+    #[test]
+    fn vmo_read_write_smoke_test() {
+        let alloc_size = 16 * PAGE_SIZE_USIZE;
+
+        // create object
+        let vmo = unwrap_ok!(
+            VmObjectPaged::create(pmm::ALLOC_FLAG_ANY, 0, alloc_size as u64),
+            "vmobject creation\n"
+        );
+
+        // create test buffer
+        let mut a = Vector::<MaybeUninit<u8>>::new();
+        assert_true!(a.resize_with(alloc_size + 47, MaybeUninit::uninit).is_ok());
+        let a = fill_region(99, &mut a);
+
+        // write to it, make sure it seems to work with valid args
+        let err = vmo.write(0, &a[..0]);
+        expect_ok!(err, "writing to object");
+
+        let err = vmo.write(0, &a[..37]);
+        expect_ok!(err, "writing to object");
+
+        let err = vmo.write(99, &a[..37]);
+        expect_ok!(err, "writing to object");
+
+        // can't write past end
+        let err = vmo.write(0, &a[..alloc_size + 47]);
+        expect_eq!(
+            Status::result_into_raw(err),
+            Status::OUT_OF_RANGE.into_raw(),
+            "writing to object"
+        );
+
+        // can't write past end
+        let err = vmo.write(31, &a[..alloc_size + 47]);
+        expect_eq!(
+            Status::result_into_raw(err),
+            Status::OUT_OF_RANGE.into_raw(),
+            "writing to object"
+        );
+
+        // should return an error because out of range
+        let err = vmo.write((alloc_size + 99) as u64, &a[..42]);
+        expect_eq!(
+            Status::result_into_raw(err),
+            Status::OUT_OF_RANGE.into_raw(),
+            "writing to object"
+        );
+
+        // map the object
+        let ka = VmAspace::kernel_aspace();
+        // SAFETY: The flags and range are appropriate for creating this mapping.
+        let ptr = unsafe {
+            unwrap_ok!(
+                ka.map_object_internal(
+                    VmObjectPaged::into_vm_object(vmo.clone()),
+                    c"test",
+                    0,
+                    alloc_size,
+                    0,
+                    vmm_flag::COMMIT,
+                    ARCH_RW_FLAGS,
+                ),
+                "mapping object"
+            )
+        };
+        let ptr: *mut u8 = ptr.cast();
+        // SAFETY: `ptr` points to `alloc_size` bytes of memory mapped into `ka`.
+        let ptr = unsafe { slice::from_raw_parts(ptr, alloc_size) };
+
+        // write to it at odd offsets
+        let err = vmo.write(31, &a[..4197]);
+        expect_ok!(err, "writing to object");
+        expect_true!(ptr[31..31 + 4197] == a[..4197], "reading from object");
+
+        // write to it, filling the object completely
+        let err = vmo.write(0, &a[..alloc_size]);
+        expect_ok!(err, "writing to object");
+
+        // test that the data was actually written to it
+        let result = test_region(99, ptr);
+        expect_true!(result, "writing to object");
+
+        // unmap it
+        // SAFETY: `ptr.as_ptr() as usize` is a valid virtual address previously returned by
+        // `map_object_internal` in `ka` that has not yet been freed.
+        expect_ok!(unsafe { ka.free_region(ptr.as_ptr() as usize) });
+
+        // test that we can read from it
+        let mut b = Vector::<MaybeUninit<u8>>::new();
+        assert_true!(b.resize_with(alloc_size, MaybeUninit::uninit).is_ok());
+
+        let b_init = unwrap_ok!(vmo.read(0, &mut b), "reading from object");
+
+        // validate the buffer is valid
+        expect_true!(b_init == &a[..alloc_size], "reading from object");
+
+        // read from it at an offset
+        let b_init = unwrap_ok!(vmo.read(31, &mut b[..4197]), "reading from object");
+        expect_true!(b_init == &a[31..31 + 4197], "reading from object");
     }
 
     /// Tests setting and querying mapping cache policy on physical VMOs.

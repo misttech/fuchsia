@@ -11,6 +11,8 @@ use crate::vm::attribution::AttributionCounts;
 use crate::vm::page::{VmPagePtr, vm_page_t};
 use crate::vm::vm_object::VmObject;
 use crate::vm::vm_object_paged::VmObjectPaged;
+use core::ffi::c_void;
+use core::mem::MaybeUninit;
 use fbl::RefPtr;
 use test_helper_bindings as bindings;
 use zx_status::Status;
@@ -115,4 +117,25 @@ pub fn make_private_attribution_counts(uncompressed: u64, compressed: u64) -> At
     }
     // SAFETY: `cpp_make_private_attribution_counts` certainly wrote out the attribution counts.
     unsafe { counts.assume_init() }
+}
+
+/// fill a region of memory with a pattern based on the address of the region
+pub fn fill_region(seed: usize, buf: &mut [MaybeUninit<u8>]) -> &mut [u8] {
+    let ptr: *mut MaybeUninit<u8> = buf.as_mut_ptr();
+    let ptr: *mut c_void = ptr.cast();
+
+    // SAFETY: `ptr` points to `buf.len()` bytes of valid memory allocated for writing.
+    unsafe { bindings::cpp_fill_region(seed, ptr, buf.len()) };
+    // SAFETY: `cpp_fill_region` initializes all `buf.len()` bytes of `buf`.
+    unsafe { buf.assume_init_mut() }
+}
+
+/// test a region of memory against a known pattern
+pub fn test_region(seed: usize, buf: &[u8]) -> bool {
+    let ptr: *const u8 = buf.as_ptr();
+    let ptr: *mut u8 = ptr.cast_mut();
+    let ptr: *mut c_void = ptr.cast();
+
+    // SAFETY: `ptr` points to `buf.len()` bytes of valid memory.
+    unsafe { bindings::cpp_test_region(seed, ptr, buf.len()) }
 }

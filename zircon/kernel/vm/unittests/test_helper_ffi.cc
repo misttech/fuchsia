@@ -46,4 +46,12 @@ FFI_ALWAYS_INLINE void cpp_make_private_attribution_counts(uint64_t uncompressed
   *out_counts = vm_unittest::make_private_attribution_counts(uncompressed, compressed);
 }
 
+FFI_ALWAYS_INLINE void cpp_fill_region(uintptr_t seed, void* ptr, size_t len) {
+  vm_unittest::fill_region(seed, ptr, len);
+}
+
+FFI_ALWAYS_INLINE bool cpp_test_region(uintptr_t seed, void* ptr, size_t len) {
+  return vm_unittest::test_region(seed, ptr, len);
+}
+
 }  // extern "C"
