@@ -11,3 +11,4 @@ These files describe the audio driver interfaces in Fuchsia.
 * [Audio Codec Interface](codec.md)
 * [Audio Composite Interface](composite.md)
 * [Audio Signal Processing](signal-processing.md)
+* [Virtual Audio Drivers](virtual-audio.md)

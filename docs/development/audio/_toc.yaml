@@ -22,4 +22,6 @@ toc:
     path: /docs/development/audio/drivers/codec.md
   - title: "Audio composite"
     path: /docs/development/audio/drivers/composite.md
+  - title: "Virtual audio drivers"
+    path: /docs/development/audio/drivers/virtual-audio.md
 

@@ -9,9 +9,13 @@ included in Fuchsia as part of the "media/tests" component group.
 
 ## Legacy Version
 
-This driver is the legacy version of the virtual-audio driver. It only supports the creation of
-legacy virtual audio the creation of legacy virtual audio Codec, Dai, and StreamConfig devices. The
-non-legacy virtual-audio driver supports the creation of virtual audio Composite
+This driver is the legacy version of the virtual-audio driver. It only supports
+the creation of legacy virtual audio Codec, Dai, and StreamConfig devices. The
+modern virtual-audio driver supports the creation of virtual audio Composite
+devices.
+
+For detailed platform documentation and a comparison with the modern driver, see
+[Virtual audio drivers](/docs/development/audio/drivers/virtual-audio.md).
 
 ## Driver Entities
 

@@ -4,6 +4,9 @@ The intention of the Virtual Audio Device is to provide a flexibly-configurable 
 Fuchsia systems (even in the absence of audio hardware) for end-to-end testing of the audio
 subsystem.
 
+For detailed platform documentation and a comparison with the legacy driver, see
+[Virtual audio drivers](/docs/development/audio/drivers/virtual-audio.md).
+
 The Virtual Audio Device and its drivers are provided by virtual_audio_driver.so and are only
 included in "eng" builds as part of the "Audio Development Support" assembly input bundle.
 

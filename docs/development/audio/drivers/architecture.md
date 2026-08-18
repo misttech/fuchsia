@@ -82,4 +82,14 @@ hardware with one Ring Buffer and one DAI. Drivers that previously would use the
 DAI API can be implemented using
 [Audio Composite](composite.md) with one DAI and one Ring Buffer.
 
+# Virtual audio drivers
+
+For automated testing and subsystem development, virtual audio drivers emulate
+audio hardware in software:
+* The modern **[`virtual-audio`](virtual-audio.md)** driver implements the
+  `Composite` API.
+* The legacy **[`virtual-audio-legacy`](virtual-audio.md#legacy-virtual-audio-driver-virtual-audio-legacy)**
+  driver implements deprecated `StreamConfig`, `Dai`, and `Codec` APIs.
+
+
 
