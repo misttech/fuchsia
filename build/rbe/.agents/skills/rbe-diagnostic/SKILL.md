@@ -151,6 +151,10 @@ Some useful event timing keys include:
 * `DownloadResults` (under `remote_metadata`):
   * Time spent downloading output file blobs from the cloud CAS over the
     network.
+* `ServerQueue` (under `remote_metadata.event_times`):
+  * Measures server-side queuing duration (in ms) before a backend worker
+    became available. Also summarized as `ServerQueuedMillis` in
+    `rbe_metrics.txt`.
 
 Should any of these event intervals stand out as unexpectedly slow, look for
 possible explanations in `reproxy.INFO` and the system-wide profile from build
