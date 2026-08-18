@@ -2507,9 +2507,6 @@ mod tests {
             async fn close(&self) -> Result<(), Error> {
                 self.inner.close().await
             }
-            fn barrier(&self) {
-                self.inner.barrier()
-            }
             fn supports_trim(&self) -> bool {
                 true
             }

@@ -86,10 +86,6 @@ impl<H: ReadObjectHandle> Device for ReadOnlyDevice<H> {
     async fn trim(&self, _range: Range<u64>) -> Result<(), Error> {
         unreachable!()
     }
-
-    fn barrier(&self) {
-        unreachable!()
-    }
 }
 
 #[cfg(test)]

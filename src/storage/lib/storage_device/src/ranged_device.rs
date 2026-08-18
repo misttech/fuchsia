@@ -100,10 +100,6 @@ impl Device for RangedDevice {
         self.source.flush().await
     }
 
-    fn barrier(&self) {
-        self.source.barrier()
-    }
-
     fn is_read_only(&self) -> bool {
         self.source.is_read_only()
     }

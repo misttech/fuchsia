@@ -155,9 +155,6 @@ impl BlockClient for FakeBlockClient {
         Ok(())
     }
 
-    // A NO-OP is safe for barriers because FakeBlockClient uses FIFO for writes.
-    fn barrier(&self) {}
-
     async fn close(&self) -> Result<(), zx::Status> {
         Ok(())
     }

@@ -15,7 +15,7 @@ use crate::buffer::{BufferFuture, BufferRef, MutableBufferRef};
 use anyhow::{Error, bail};
 use async_trait::async_trait;
 // pub so `Device` trait implementations don't need to depend on the `block_protocol` crate
-pub use block_protocol::{InlineCryptoOptions, ReadOptions, WriteOptions};
+pub use block_protocol::{InlineCryptoOptions, ReadOptions, WriteFlags, WriteOptions};
 use futures::channel::oneshot::{Sender, channel};
 use std::future::Future;
 use std::mem::ManuallyDrop;
@@ -104,9 +104,6 @@ pub trait Device: Send + Sync {
 
     /// Flush the device.
     async fn flush(&self) -> Result<(), Error>;
-
-    /// Attach a barrier to the next write made to the device.
-    fn barrier(&self);
 
     /// Reopens the device, making it usable again. (Only implemented for testing devices.)
     fn reopen(&self, _read_only: bool) {

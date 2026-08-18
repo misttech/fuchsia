@@ -35,12 +35,13 @@ use fsverity_merkle::{
 };
 use fuchsia_sync::Mutex;
 use futures::TryStreamExt;
-use futures::stream::FuturesUnordered;
+use futures::stream::FuturesOrdered;
 use fxfs_trace::trace;
 use std::cmp::min;
 use std::ops::{Deref, Range};
 use std::sync::Arc;
 use std::sync::atomic::{self, AtomicU64, Ordering};
+use storage_device::WriteFlags;
 use storage_device::buffer::{Buffer, BufferFuture, BufferRef, MutableBufferRef};
 use storage_ptr_slice::PtrByteSlice;
 use zerocopy::FromBytes;
@@ -434,13 +435,17 @@ impl<S: HandleOwner> DataObjectHandle<S> {
     // data will be encrypted if necessary.
     // `buf` is mutable as an optimization, since the write may require encryption, we can encrypt
     // the buffer in-place rather than copying to another buffer if the write is already aligned.
+    // `flags` are forwarded to the underlying device write.
     async fn write_at(
         &self,
         offset: u64,
         buf: MutableBufferRef<'_>,
         device_offset: u64,
+        flags: WriteFlags,
     ) -> Result<MaybeChecksums, Error> {
-        self.handle.write_at(self.attribute_id(), offset, buf, None, device_offset).await
+        self.handle
+            .write_at_with_flags(self.attribute_id(), offset, buf, None, device_offset, flags)
+            .await
     }
 
     /// Verifies that the entire range in the file is zeroes, as either uninitialized overwrite
@@ -1092,11 +1097,8 @@ impl<S: HandleOwner> DataObjectHandle<S> {
             if options.allow_allocations { Some(self.new_transaction().await?) } else { None };
 
         // We build up a list of writes to perform later
-        let writes = FuturesUnordered::new();
-
-        if options.barrier_on_first_write {
-            self.store().device.barrier();
-        }
+        let mut writes = FuturesOrdered::new();
+        let mut first_write = options.barrier_on_first_write;
 
         // We create a new scope here, so that the merger iterator will get dropped before we try to
         // commit our transaction. Otherwise the transaction commit would block.
@@ -1258,7 +1260,13 @@ impl<S: HandleOwner> DataObjectHandle<S> {
                     }
                 };
                 let (current_buf, remaining_buf) = buf.split_at_mut(bytes_to_write);
-                writes.push(self.write_at(offset, current_buf, device_offset));
+                let flags = if first_write {
+                    first_write = false;
+                    WriteFlags::PRE_BARRIER
+                } else {
+                    WriteFlags::empty()
+                };
+                writes.push_back(self.write_at(offset, current_buf, device_offset, flags));
                 if remaining_buf.len() == 0 {
                     break;
                 } else {

@@ -295,10 +295,6 @@ impl Device for SuperPartitionDevice {
     async fn trim(&self, _range: Range<u64>) -> Result<(), Error> {
         Err(anyhow!("read-only partition"))
     }
-
-    fn barrier(&self) {
-        unreachable!()
-    }
 }
 
 #[cfg(test)]

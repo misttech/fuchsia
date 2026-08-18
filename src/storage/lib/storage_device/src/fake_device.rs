@@ -7,7 +7,7 @@ use crate::buffer_allocator::{BufferAllocator, BufferSource};
 use crate::{Device, DeviceHolder};
 use anyhow::{Error, ensure};
 use async_trait::async_trait;
-use block_protocol::{ReadOptions, WriteOptions};
+use block_protocol::{ReadOptions, WriteFlags, WriteOptions};
 use fuchsia_sync::Mutex;
 use rand::Rng;
 use std::ops::Range;
@@ -27,7 +27,6 @@ pub trait Observer: Send + Sync {
 struct Inner {
     data: Vec<u8>,
     blocks_written_since_last_barrier: Vec<usize>,
-    attach_barrier: bool,
 }
 
 /// A Device backed by a memory buffer.
@@ -52,7 +51,6 @@ impl FakeDevice {
             inner: Mutex::new(Inner {
                 data: vec![0 as u8; block_count as usize * block_size as usize],
                 blocks_written_since_last_barrier: Vec::new(),
-                attach_barrier: false,
             }),
             closed: AtomicBool::new(false),
             operation_closure: Box::new(|_: Op| Ok(())),
@@ -87,11 +85,7 @@ impl FakeDevice {
         reader.read_to_end(&mut data)?;
         Ok(Self {
             allocator,
-            inner: Mutex::new(Inner {
-                data: data,
-                blocks_written_since_last_barrier: Vec::new(),
-                attach_barrier: false,
-            }),
+            inner: Mutex::new(Inner { data: data, blocks_written_since_last_barrier: Vec::new() }),
             closed: AtomicBool::new(false),
             operation_closure: Box::new(|_| Ok(())),
             read_only: AtomicBool::new(false),
@@ -143,15 +137,17 @@ impl Device for FakeDevice {
         &self,
         offset: u64,
         buffer: BufferRef<'_>,
-        _write_opts: WriteOptions,
+        write_opts: WriteOptions,
     ) -> Result<(), Error> {
         ensure!(!self.closed.load(Ordering::Relaxed));
         ensure!(!self.read_only.load(Ordering::Relaxed));
         let mut inner = self.inner.lock();
 
-        if inner.attach_barrier {
+        if write_opts.flags.contains(WriteFlags::PRE_BARRIER) {
+            if let Some(observer) = &self.observer {
+                observer.barrier();
+            }
             inner.blocks_written_since_last_barrier.clear();
-            inner.attach_barrier = false;
         }
 
         (self.operation_closure)(Op::Write)?;
@@ -193,13 +189,6 @@ impl Device for FakeDevice {
     async fn flush(&self) -> Result<(), Error> {
         self.inner.lock().blocks_written_since_last_barrier.clear();
         (self.operation_closure)(Op::Flush)
-    }
-
-    fn barrier(&self) {
-        if let Some(observer) = &self.observer {
-            observer.barrier();
-        }
-        self.inner.lock().attach_barrier = true;
     }
 
     fn reopen(&self, read_only: bool) {
@@ -266,7 +255,7 @@ impl Drop for FakeDevice {
 mod tests {
     use super::FakeDevice;
     use crate::Device;
-    use block_protocol::WriteOptions;
+    use block_protocol::{WriteFlags, WriteOptions};
 
     const TEST_DEVICE_BLOCK_SIZE: usize = 512;
 
@@ -286,9 +275,12 @@ mod tests {
                         &data[indices[i] * TEST_DEVICE_BLOCK_SIZE
                             ..indices[i] * TEST_DEVICE_BLOCK_SIZE + TEST_DEVICE_BLOCK_SIZE],
                     );
-                    device.barrier();
                     device
-                        .write(i as u64 * TEST_DEVICE_BLOCK_SIZE as u64, buffer.as_ref())
+                        .write_with_opts(
+                            i as u64 * TEST_DEVICE_BLOCK_SIZE as u64,
+                            buffer.as_ref(),
+                            WriteOptions { flags: WriteFlags::PRE_BARRIER, ..Default::default() },
+                        )
                         .await
                         .expect("Failed to write to FakeDevice");
                 } else {

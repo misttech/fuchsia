@@ -133,8 +133,6 @@ impl Device for FileBackedDevice {
         self.file.sync_data().map_err(Into::into)
     }
 
-    fn barrier(&self) {}
-
     fn is_read_only(&self) -> bool {
         false
     }

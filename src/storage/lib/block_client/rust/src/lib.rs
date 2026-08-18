@@ -129,9 +129,6 @@ struct FifoState {
 
     // The waker for the FifoPoller.
     poller_waker: Option<Waker>,
-
-    // If set, attach a barrier to the next write request
-    attach_barrier: bool,
 }
 
 impl FifoState {
@@ -372,12 +369,6 @@ pub trait BlockClient: Send + Sync {
         trace_flow_id: u64,
     ) -> impl Future<Output = Result<(), zx::Status>> + Send;
 
-    /// Attaches a barrier to the next write sent to the underlying block device. This barrier
-    /// method is an alternative to setting the WriteOption::PRE_BARRIER on `write_at_with_opts`.
-    /// This method makes it easier to guarantee that the barrier is attached to the correct
-    /// write operation when subsequent write operations can get reordered.
-    fn barrier(&self);
-
     fn flush(&self) -> impl Future<Output = Result<(), zx::Status>> + Send {
         self.flush_traced(NO_TRACE_ID)
     }
@@ -453,15 +444,6 @@ impl Common {
     async fn send(&self, mut request: BlockFifoRequest) -> Result<(), zx::Status> {
         let (request_id, trace_flow_id) = {
             let mut state = self.fifo_state.lock();
-
-            let mut flags = BlockIoFlag::from_bits_retain(request.command.flags);
-            if BlockOpcode::from_primitive(request.command.opcode) == Some(BlockOpcode::Write)
-                && state.attach_barrier
-            {
-                flags |= BlockIoFlag::PRE_BARRIER;
-                request.command.flags = flags.bits();
-                state.attach_barrier = false;
-            }
 
             if state.fifo.is_none() {
                 // Fifo has been closed.
@@ -689,10 +671,6 @@ impl Common {
         .await
     }
 
-    fn barrier(&self) {
-        self.fifo_state.lock().attach_barrier = true;
-    }
-
     fn block_size(&self) -> u32 {
         self.block_size
     }
@@ -803,10 +781,6 @@ impl BlockClient for RemoteBlockClient {
 
     async fn flush_traced(&self, trace_flow_id: u64) -> Result<(), zx::Status> {
         self.common.flush(trace_flow_id).await
-    }
-
-    fn barrier(&self) {
-        self.common.barrier()
     }
 
     async fn close(&self) -> Result<(), zx::Status> {

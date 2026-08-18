@@ -77,8 +77,6 @@ impl Device for VmoBackedDevice {
         Ok(())
     }
 
-    fn barrier(&self) {}
-
     fn is_read_only(&self) -> bool {
         false
     }

@@ -42,7 +42,7 @@ use std::ops::Range;
 use std::sync::Arc;
 use std::sync::atomic::{self, AtomicBool, Ordering};
 use storage_device::buffer::{Buffer, BufferFuture, BufferRef, MutableBufferRef};
-use storage_device::{InlineCryptoOptions, ReadOptions, WriteOptions};
+use storage_device::{InlineCryptoOptions, ReadOptions, WriteFlags, WriteOptions};
 
 use fidl_fuchsia_io as fio;
 use fuchsia_async as fasync;
@@ -487,11 +487,15 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
 
     // Writes aligned data (that should already be encrypted) to the given offset and computes
     // checksums if requested. The aligned data must be from a single logical file range.
+    //
+    // `flags` are forwarded to the underlying device as `WriteOptions::flags` (e.g.
+    // `WriteFlags::PRE_BARRIER`).
     async fn write_aligned(
         &self,
         buf: BufferRef<'_>,
         device_offset: u64,
         crypt_ctx: Option<(u32, u8)>,
+        flags: WriteFlags,
     ) -> Result<MaybeChecksums, Error> {
         if self.trace() {
             info!(
@@ -504,48 +508,37 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
         }
         let store = self.store();
         store.device_write_ops.fetch_add(1, Ordering::Relaxed);
-        let mut checksums = Vec::new();
         let _watchdog = Watchdog::new(10, |count| {
             warn!("Write has been stalled for {} seconds", count * 10);
         });
 
-        match crypt_ctx {
+        let (opts, compute_checksums) = match crypt_ctx {
             Some((dun, slot)) => {
                 if !store.filesystem().options().barriers_enabled {
                     return Err(anyhow!(FxfsError::InvalidArgs)
                         .context("Barriers must be enabled for inline encrypted writes."));
                 }
-                store
-                    .device
-                    .write_with_opts(
-                        device_offset as u64,
-                        buf,
-                        WriteOptions {
-                            inline_crypto: InlineCryptoOptions::enabled(slot, dun),
-                            ..Default::default()
-                        },
-                    )
-                    .await?;
-                Ok(MaybeChecksums::None)
+                (
+                    WriteOptions { inline_crypto: InlineCryptoOptions::enabled(slot, dun), flags },
+                    false,
+                )
             }
-            None => {
-                if self.options.skip_checksums {
-                    store
-                        .device
-                        .write_with_opts(device_offset as u64, buf, WriteOptions::default())
-                        .await?;
-                    Ok(MaybeChecksums::None)
-                } else {
-                    try_join!(store.device.write(device_offset, buf), async {
-                        let block_size = self.block_size() as usize;
-                        for chunk in buf.as_ptr_slice().chunks(block_size) {
-                            checksums.push(crate::checksum::fletcher64_ptr(chunk, 0));
-                        }
-                        Ok(())
-                    })?;
-                    Ok(MaybeChecksums::Fletcher(checksums))
+            None => (WriteOptions { flags, ..Default::default() }, !self.options.skip_checksums),
+        };
+
+        if compute_checksums {
+            let mut checksums = Vec::new();
+            try_join!(store.device.write_with_opts(device_offset, buf, opts), async {
+                let block_size = self.block_size() as usize;
+                for chunk in buf.as_ptr_slice().chunks(block_size) {
+                    checksums.push(crate::checksum::fletcher64_ptr(chunk, 0));
                 }
-            }
+                Ok(())
+            })?;
+            Ok(MaybeChecksums::Fletcher(checksums))
+        } else {
+            store.device.write_with_opts(device_offset, buf, opts).await?;
+            Ok(MaybeChecksums::None)
         }
     }
 
@@ -1323,7 +1316,29 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
         offset: u64,
         buf: MutableBufferRef<'_>,
         key_id: Option<u64>,
+        device_offset: u64,
+    ) -> Result<MaybeChecksums, Error> {
+        self.write_at_with_flags(
+            attribute_id,
+            offset,
+            buf,
+            key_id,
+            device_offset,
+            WriteFlags::empty(),
+        )
+        .await
+    }
+
+    /// Same as `write_at`, but allows passing `WriteFlags` (such as `WriteFlags::PRE_BARRIER`) to
+    /// the underlying device write.
+    pub async fn write_at_with_flags(
+        &self,
+        attribute_id: AttributeId,
+        offset: u64,
+        buf: MutableBufferRef<'_>,
+        key_id: Option<u64>,
         mut device_offset: u64,
+        flags: WriteFlags,
     ) -> Result<MaybeChecksums, Error> {
         let mut transfer_buf;
         let block_size = self.block_size();
@@ -1351,7 +1366,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
                 )?;
             }
         }
-        self.write_aligned(transfer_buf_ref.as_ref(), device_offset, crypt_ctx).await
+        self.write_aligned(transfer_buf_ref.as_ref(), device_offset, crypt_ctx, flags).await
     }
 
     /// Writes to multiple ranges with data provided in `buf`. This function is specifically
@@ -1479,7 +1494,13 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
                     Result::<_, Error>::Ok((
                         device_range.start,
                         len,
-                        self.write_aligned(head.as_ref(), device_range.start, crypt_ctx).await?,
+                        self.write_aligned(
+                            head.as_ref(),
+                            device_range.start,
+                            crypt_ctx,
+                            WriteFlags::empty(),
+                        )
+                        .await?,
                     ))
                 });
                 device_range.start += split;
@@ -1710,7 +1731,12 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
 
                         writes.push(async move {
                             let maybe_checksums = self
-                                .write_aligned(current_buf.as_ref(), write_device_offset, crypt_ctx)
+                                .write_aligned(
+                                    current_buf.as_ref(),
+                                    write_device_offset,
+                                    crypt_ctx,
+                                    WriteFlags::empty(),
+                                )
                                 .await?;
                             Ok::<_, Error>(match maybe_checksums {
                                 MaybeChecksums::None => Vec::new(),

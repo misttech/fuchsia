@@ -1158,8 +1158,14 @@ mod tests {
         client.write_at(BufferSlice::Memory(&buffer), 0).await.unwrap();
 
         expect_barrier.store(true, Ordering::Relaxed);
-        client.barrier();
-        client.write_at(BufferSlice::Memory(&buffer), 0).await.unwrap();
+        client
+            .write_at_with_opts(
+                BufferSlice::Memory(&buffer),
+                0,
+                WriteOptions { flags: WriteFlags::PRE_BARRIER, ..Default::default() },
+            )
+            .await
+            .unwrap();
 
         manager.shutdown().await;
     }
