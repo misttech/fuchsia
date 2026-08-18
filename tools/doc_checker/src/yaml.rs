@@ -20,8 +20,6 @@ use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use serde_yaml::{Mapping, Value};
 use std::collections::{HashMap, HashSet};
-#[allow(unused_imports)]
-use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 
 mod toc_checker;
@@ -604,6 +602,8 @@ fn is_external_path(p: &str) -> bool {
 }
 
 /// Checks the path property from a yaml file.
+/// Returns `Some(DocCheckError)` if validation fails, or `None` if the path is valid.
+// TODO: Convert check_path to return Result<(), DocCheckError> for consistency with other checker helpers.
 fn check_path(
     doc_line: &DocLine,
     root_path: &Path,
@@ -661,7 +661,7 @@ fn check_path(
                     ))
                 }
             } else {
-                do_in_tree_check(doc_line, root_path, docs_folder, path, &in_tree_path)
+                do_in_tree_check(doc_line, root_path, docs_folder, path, &in_tree_path).err()
             }
         }
         // Accept external links.
@@ -1176,7 +1176,7 @@ fn check_metadata(
                         let root_dir_str = root_dir.display().to_string();
                         match is_intree_link(project, &root_dir_str, docs_folder, &guide.url) {
                             Ok(Some(in_tree_path)) => {
-                                if let Some(err) = do_in_tree_check(
+                                if let Err(err) = do_in_tree_check(
                                     &doc_line,
                                     root_dir,
                                     docs_folder,
@@ -1445,7 +1445,7 @@ fn check_roadmap(
                         let root_dir_str = root_dir.display().to_string();
                         match is_intree_link(project, &root_dir_str, docs_folder, link) {
                             Ok(Some(in_tree_path)) => {
-                                if let Some(err) = do_in_tree_check(
+                                if let Err(err) = do_in_tree_check(
                                     &doc_line,
                                     root_dir,
                                     docs_folder,

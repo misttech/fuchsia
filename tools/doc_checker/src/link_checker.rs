@@ -6,6 +6,7 @@
 //! found in markdown documentation in the Fuchsia project.
 
 use crate::md_element::{CowStr, Element, LinkType};
+use crate::path_ext::normalize_path;
 use crate::{DocCheck, DocCheckError, DocCheckerArgs, DocLine};
 use anyhow::{Result, bail};
 use async_trait::async_trait;
@@ -339,7 +340,7 @@ impl DocCheck for LinkChecker {
                 let root_dir = self.root_dir.display().to_string();
                 match is_intree_link(&self.project, &root_dir, &self.docs_folder, &link_to_check) {
                     Ok(Some(in_tree_path)) => {
-                        if let Some(link_error) = do_in_tree_check(
+                        if let Err(link_error) = do_in_tree_check(
                             &element.doc_line(),
                             &self.root_dir,
                             &self.docs_folder,
@@ -388,7 +389,7 @@ pub(crate) fn do_in_tree_check(
     docs_folder: &Path,
     link_to_check: &str,
     in_tree_path: &Path,
-) -> Option<DocCheckError> {
+) -> Result<PathBuf, DocCheckError> {
     let filepath = root_dir.join(in_tree_path.strip_prefix("/").unwrap_or(in_tree_path));
     if !path_helper::exists(&filepath) {
         // Look for missing the file extension.
@@ -396,46 +397,33 @@ pub(crate) fn do_in_tree_check(
             let mut md_path = filepath.clone();
             md_path.set_extension("md");
             if path_helper::exists(&md_path) {
-                return Some(DocCheckError::new_error_helpful(
+                let file_name = md_path.file_name().ok_or_else(|| {
+                    DocCheckError::new_error(
+                        doc_line.line_num,
+                        doc_line.file_name.clone(),
+                        &format!("invalid file name for markdown path {:?}", md_path),
+                    )
+                })?;
+                return Err(DocCheckError::new_error_helpful(
                     doc_line.line_num,
                     doc_line.file_name.clone(),
                     &format!(
                         "in-tree link to {} could not be found at {:?}",
                         link_to_check, filepath
                     ),
-                    &format!("{:#?}", md_path.file_name()?),
+                    &format!("{:#?}", file_name),
                 ));
             }
         }
-        return Some(DocCheckError::new_error(
+        return Err(DocCheckError::new_error(
             doc_line.line_num,
             doc_line.file_name.clone(),
             &format!("in-tree link to {} could not be found at {:?}", link_to_check, filepath),
         ));
-    } else if filepath.components().any(|c| c == path::Component::ParentDir) {
-        let cannonical_path = match filepath.canonicalize() {
-            Ok(p) => p,
-            Err(e) => {
-                return Some(DocCheckError::new_error(
-                    doc_line.line_num,
-                    doc_line.file_name.clone(),
-                    &format!("Error canonicalizing path: {:?}: {}", filepath, e),
-                ));
-            }
-        };
-        if !cannonical_path.starts_with(root_dir) {
-            return Some(DocCheckError::new_error(
-                doc_line.line_num,
-                doc_line.file_name.clone(),
-                &format!(
-                    "relative path {:?} points outside root directory {:?}",
-                    in_tree_path, root_dir
-                ),
-            ));
-        }
-    } else if path_helper::is_dir(&filepath) {
-        // If it is a directory to the /docs directory, that directory needs
-        // to have a README.md file.
+    }
+
+    let is_dir = path_helper::is_dir(&filepath);
+    let target_file = if is_dir {
         if in_tree_path
             .components()
             .position(|c| c == path::Component::Normal(OsStr::new(&docs_folder)))
@@ -443,7 +431,7 @@ pub(crate) fn do_in_tree_check(
         {
             let readme_path = filepath.join("README.md");
             if !path_helper::exists(&readme_path) {
-                return Some(DocCheckError::new_error(
+                return Err(DocCheckError::new_error(
                     doc_line.line_num,
                     doc_line.file_name.clone(),
                     &format!(
@@ -453,9 +441,32 @@ pub(crate) fn do_in_tree_check(
                 ));
             }
         }
-        // Non-docs paths are OK.
+        filepath.join("README.md")
+    } else {
+        filepath.clone()
+    };
+
+    let normalized_target = normalize_path(&target_file).map_err(|e| {
+        DocCheckError::new_error(
+            doc_line.line_num,
+            doc_line.file_name.clone(),
+            &format!("Error normalizing path: {:?}: {}", target_file, e),
+        )
+    })?;
+
+    let normalized_root = normalize_path(root_dir).unwrap_or_else(|_| root_dir.to_path_buf());
+    if !normalized_target.starts_with(&normalized_root) {
+        return Err(DocCheckError::new_error(
+            doc_line.line_num,
+            doc_line.file_name.clone(),
+            &format!(
+                "relative path {:?} points outside root directory {:?}",
+                in_tree_path, root_dir
+            ),
+        ));
     }
-    None
+
+    Ok(normalized_target)
 }
 
 /// Parse the link into a Uri, and check that it is either a path or that the http/https
@@ -1043,7 +1054,7 @@ mod tests {
                 [DocCheckError::new_error(1, PathBuf::from("/docs/README.md"),
                     "Invalid image alt text: \"\", cannot  be one of [\"\"]"),
                  DocCheckError::new_error(1,PathBuf::from("/docs/README.md"),
-                   "in-tree link to /docs/something.png could not be found at \"/path/to/fuchsia/docs/something.png\"")].to_vec()),
+                    "in-tree link to /docs/something.png could not be found at \"/path/to/fuchsia/docs/something.png\"")].to_vec()),
         ),
         (
 
@@ -1159,6 +1170,16 @@ mod tests {
                     "in-tree link to /docs/no_readme could not be found at \"/path/to/fuchsia/docs/no_readme\" or  \"/path/to/fuchsia/docs/no_readme/README.md\"",
                 )),
             ),
+            (
+                "/docs/no-extension",
+                "/docs/no-extension",
+                Some(DocCheckError::new_error_helpful(
+                    1,
+                    PathBuf::from("some/file.md"),
+                    "in-tree link to /docs/no-extension could not be found at \"/path/to/fuchsia/docs/no-extension\"",
+                    "\"no-extension.md\"",
+                )),
+            ),
         ];
 
         for (link_to_check, in_tree_path, expected_error) in test_data {
@@ -1169,7 +1190,7 @@ mod tests {
                 link_to_check,
                 &PathBuf::from(in_tree_path),
             );
-            assert_eq!(result, expected_error);
+            assert_eq!(result.err(), expected_error);
         }
         Ok(())
     }
