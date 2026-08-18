@@ -188,13 +188,18 @@ def _scrutiny_validation(
         ))
     if not is_recovery:
         if SCRUTINY_VERIFIERS.ROUTE_SOURCES not in scrutiny_config.excluded_verifiers:
-            deps += _verify_route_sources(
-                ctx,
-                ffx_invocation,
-                ffx_scrutiny_inputs,
-                pb_out_dir,
-                platform_scrutiny_config.routes_config_golden,
+            routes_config_golden = (
+                scrutiny_config.routes_config_golden or
+                platform_scrutiny_config.routes_config_golden
             )
+            if routes_config_golden:
+                deps += _verify_route_sources(
+                    ctx,
+                    ffx_invocation,
+                    ffx_scrutiny_inputs,
+                    pb_out_dir,
+                    routes_config_golden,
+                )
         if SCRUTINY_VERIFIERS.COMPONENT_RESOLVERS not in scrutiny_config.excluded_verifiers:
             deps += _verify_component_resolver_allowlist(
                 ctx,
