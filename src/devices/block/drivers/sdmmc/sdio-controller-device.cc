@@ -934,10 +934,11 @@ zx::result<SdioControllerDevice::SdioTxnPosition<T>> SdioControllerDevice::DoOne
     // We know the entire buffers list is being used because the max transfer size is always at
     // least the block size. The first buffer may have had the size adjusted, so use the local
     // buffers array.
-    cpp20::span txn_buffers(buffers, current_position.buffers.size());
+    const size_t num_buffers = std::min(current_position.buffers.size(), std::size(buffers));
+    cpp20::span txn_buffers(buffers, num_buffers);
     status = sdmmc_->SdioIoRwExtended(hw_info_.caps, txn.write, fn_idx, current_position.address,
                                       txn.incr, 1, static_cast<uint32_t>(total_size), txn_buffers);
-    last_block_buffer_index = current_position.buffers.size();
+    last_block_buffer_index = num_buffers;
   } else {
     txn_size = static_cast<uint32_t>(block_count * func_blk_size);
 

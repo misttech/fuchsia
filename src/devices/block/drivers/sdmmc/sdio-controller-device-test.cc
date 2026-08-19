@@ -865,6 +865,90 @@ TEST_F(SdioControllerDeviceTest, SdioDoRwTxn) {
   EXPECT_EQ(0, memcmp(buffer + 16, kTestData, 36));
 }
 
+TEST_F(SdioControllerDeviceTest, SdioDoRwTxnBuffersGreaterThan511) {
+  // Report five IO functions.
+  sdmmc_.set_command_callback(SDIO_SEND_OP_COND, [](uint32_t out_response[4]) -> void {
+    out_response[0] = OpCondFunctions(5);
+  });
+  sdmmc_.Write(SDIO_CIA_CCCR_CARD_CAPS_ADDR, std::vector<uint8_t>{0x00}, 0);
+
+  // Set the maximum block size for function three to 2048 bytes (0x0800 in little-endian).
+  sdmmc_.Write(0x0309, std::vector<uint8_t>{0x00, 0x30, 0x00}, 0);
+  sdmmc_.Write(0x3000, std::vector<uint8_t>{0x22, 0x2a, 0x01}, 0);
+  sdmmc_.Write(0x300e, std::vector<uint8_t>{0x00, 0x08}, 0);
+
+  sdmmc_.set_host_info({
+      .caps = 0,
+      .max_transfer_size = 2048,
+  });
+
+  ASSERT_OK(StartDriver());
+
+  fidl::WireClient client = ConnectDeviceClient(3);
+  ASSERT_TRUE(client.is_valid());
+
+  client->UpdateBlockSize(0, true).ThenExactlyOnce([](auto& result) {
+    ASSERT_TRUE(result.ok());
+    EXPECT_TRUE(result->is_ok());
+  });
+  driver_test().runtime().RunUntilIdle();
+
+  // Create a transaction with 600 buffers of 1 byte each (total 600 bytes < block size 2048).
+  constexpr size_t kNumBuffers = 600;
+  std::vector<uint8_t> test_data(kNumBuffers);
+  for (size_t i = 0; i < kNumBuffers; ++i) {
+    test_data[i] = static_cast<uint8_t>(i & 0xff);
+  }
+
+  zx::vmo vmo;
+  ASSERT_OK(zx::vmo::create(kNumBuffers, 0, &vmo));
+  ASSERT_OK(vmo.write(test_data.data(), 0, kNumBuffers));
+
+  zx::vmo vmo_dup;
+  ASSERT_OK(vmo.duplicate(ZX_RIGHT_SAME_RIGHTS, &vmo_dup));
+
+  const uint32_t vmo_rights{fuchsia_hardware_sdmmc::SdmmcVmoRight::kRead |
+                            fuchsia_hardware_sdmmc::SdmmcVmoRight::kWrite};
+  client->RegisterVmo(1, std::move(vmo_dup), 0, kNumBuffers, vmo_rights)
+      .ThenExactlyOnce([](auto& result) {
+        ASSERT_TRUE(result.ok());
+        EXPECT_TRUE(result->is_ok());
+      });
+  driver_test().runtime().RunUntilIdle();
+
+  std::vector<SdmmcBufferRegion> regions;
+  regions.reserve(kNumBuffers);
+  for (size_t i = 0; i < kNumBuffers; ++i) {
+    regions.push_back(SdmmcBufferRegion{
+        .buffer = SdmmcBuffer::WithVmoId(1),
+        .offset = i,
+        .size = 1,
+    });
+  }
+
+  sdmmc_.requests().clear();
+
+  SdioRwTxn txn = {
+      .addr = 0x1000,
+      .incr = true,
+      .write = true,
+      .buffers = fidl::VectorView<SdmmcBufferRegion>::FromExternal(regions.data(), regions.size()),
+  };
+
+  client->DoRwTxn(std::move(txn)).ThenExactlyOnce([](auto& result) {
+    ASSERT_TRUE(result.ok());
+    EXPECT_TRUE(result->is_ok());
+  });
+  driver_test().runtime().RunUntilIdle();
+
+  // Since max buffers per command is 511, this transfer must be split into 2 requests (511 + 89).
+  EXPECT_EQ(sdmmc_.requests().size(), size_t{2});
+
+  // Verify all 600 bytes were written to the device.
+  const std::vector<uint8_t> read_data = sdmmc_.Read(0x1000, kNumBuffers, 3);
+  EXPECT_EQ(read_data, test_data);
+}
+
 TEST_F(SdioControllerDeviceTest, SdioDoRwTxnMultiBlock) {
   sdmmc_.set_command_callback(SDIO_SEND_OP_COND, [](uint32_t out_response[4]) -> void {
     out_response[0] = OpCondFunctions(7);
