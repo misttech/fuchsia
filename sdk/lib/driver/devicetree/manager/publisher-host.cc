@@ -61,7 +61,7 @@ class PublisherHostWrapper : public PublisherHost {
  public:
   PublisherHostWrapper() {
     // Initialize host logger
-    logger_ = std::make_unique<fdf::Logger>("manager-test", FUCHSIA_LOG_INFO);
+    logger_ = std::make_unique<fdf::Logger>("manager-test", FUCHSIA_LOG_ERROR);
     fdf::Logger::SetGlobalInstance(logger_.get());
   }
   ~PublisherHostWrapper() override { fdf::Logger::SetGlobalInstance(nullptr); }
