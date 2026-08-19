@@ -74,21 +74,16 @@ struct ChargeTimeEstimator {
 }
 
 impl ChargeTimeEstimator {
-    // (duration, threshold) stores number of seconds to gain 1% charge, at level <= corresponding
-    // threshold. For 0-78%, the duration = 32 seconds. For 79-86, it's 56 seconds.
-    const PERCENT_CHARGE_DURATION: [(i32, u32); 4] = [(32, 78), (56, 86), (84, 96), (92, 100)];
-
-    // Battery capacity: 420 mAh = 420,000 uAh
-    // TODO(https://fxbug.dev/442619993): Use actual capacity instead of the design capacity.
-    const DESIGN_CAPACITY_UAH: i64 = 420_000;
-
-    fn get_delta_cc_uah(&self) -> i64 {
+    // TODO(https://fxbug.dev/442619993): evaluate the use of actual capacity instead.
+    fn get_delta_cc_uah(&self) -> Result<i64, TimeEstimatorError> {
         if self.use_actual_capacity {
             if let Some(cap) = self.actual_capacity_uah {
-                return cap as i64 / 100;
+                return Ok(cap as i64 / 100);
             }
         }
-        Self::DESIGN_CAPACITY_UAH / 100
+        let design_cap =
+            self.config.design_capacity_uah.ok_or(TimeEstimatorError::MissingConfig)?;
+        Ok(design_cap / 100)
     }
 
     fn get_reference_current_ua(
@@ -140,15 +135,17 @@ impl ChargeTimeEstimator {
     ) -> ChargeTimeEstimator {
         let mut table = [0i32; LOOKUP_TABLE_SIZE];
         let mut percent_start = 0;
-        for (duration, threshold) in Self::PERCENT_CHARGE_DURATION.iter() {
-            let end = (*threshold).min((LOOKUP_TABLE_SIZE - 1).try_into().unwrap());
-            for percent in percent_start..=end {
-                table[percent as usize] = *duration;
-            }
+        if let Some(ref steps) = config.percent_charge_duration {
+            for step in steps {
+                let end = step.soc_threshold.min((LOOKUP_TABLE_SIZE - 1).try_into().unwrap());
+                for percent in percent_start..=end {
+                    table[percent as usize] = step.duration_sec;
+                }
 
-            percent_start = end + 1;
-            if percent_start >= LOOKUP_TABLE_SIZE as u32 {
-                break;
+                percent_start = end + 1;
+                if percent_start >= LOOKUP_TABLE_SIZE as u32 {
+                    break;
+                }
             }
         }
 
@@ -243,7 +240,7 @@ impl ChargeTimeEstimator {
             return Ok(0);
         }
 
-        let delta_cc = self.get_delta_cc_uah();
+        let delta_cc = self.get_delta_cc_uah()?;
         Ok(((delta_cc * 3600) / (base_elap as i64)) as i32)
     }
 
@@ -309,6 +306,9 @@ impl ChargeTimeEstimator {
         let level = level as usize;
         if level >= LOOKUP_TABLE_SIZE {
             return Err(TimeEstimatorError::InvalidRange);
+        }
+        if self.config.percent_charge_duration.is_none() {
+            return Err(TimeEstimatorError::MissingConfig);
         }
         Ok(self.baseline_duration_lookup[level])
     }
@@ -422,15 +422,13 @@ struct CurveMapper {
 impl CurveMapper {
     const UICURVE_MAX: usize = 3;
 
-    // Constants for battery level spoofing to remap real SOC.
-    // TODO(https://fxbug.dev/422755268): Make these constants configurable.
     // SSOC_TRUE: the point below which all "spoofing" is disabled.
     // SSOC_SPOOF: default threshold where real SOC starts mapping towards 100% UI.
-    // SSOC_DELTA: offset distance to overwrite spoofing threshold when unplugged.
     const SSOC_TRUE: f32 = 15.0;
     const SSOC_SPOOF: f32 = 95.0;
     const SSOC_FULL: f32 = 100.0;
-    const SSOC_DELTA: f32 = 2.0;
+    // This is now the default value of ssoc_delta if not provided by the config.
+    const SSOC_DELTA_DEFAULT: f32 = 3.0;
 
     const CHG_CURVE_DEFAULT: [CurvePoint; Self::UICURVE_MAX] = [
         CurvePoint { real: Self::SSOC_TRUE, ui: Self::SSOC_TRUE },
@@ -496,7 +494,9 @@ impl CurveMapper {
         transition: PlugTransition,
         scaled_real_soc: f32,
         current_ui_soc: f32,
+        ssoc_delta_config: Option<f32>,
     ) {
+        let ssoc_delta = ssoc_delta_config.unwrap_or(Self::SSOC_DELTA_DEFAULT);
         let mut curve_changed = false;
         let mut new_curve = self.current_curve;
 
@@ -507,7 +507,7 @@ impl CurveMapper {
 
                 let (new_midpoint, ui) = if current_ui_soc >= Self::SSOC_FULL {
                     let new_midpoint =
-                        (scaled_real_soc.max(Self::SSOC_SPOOF) - Self::SSOC_DELTA).max(0.0);
+                        (scaled_real_soc.max(Self::SSOC_SPOOF) - ssoc_delta).max(0.0);
                     info!(
                         "CurveMapper: Splicing discharge curve at real={:.2} due to disconnect while FULL",
                         new_midpoint
@@ -549,15 +549,21 @@ struct RateLimiter {
 
 impl Default for RateLimiter {
     fn default() -> Self {
-        Self::new(RateLimiter::RL_MAX_DELTA_SOC / RateLimiter::RL_MAX_TIME_S)
+        Self::new_with_config(&crate::BatteryManagerConfig::default())
     }
 }
 
 impl RateLimiter {
-    // TODO(https://fxbug.dev/442619993): Read this table from a device tree or a configuration.
-    const RL_MAX_DELTA_SOC: f32 = 2.0;
-    const RL_MAX_TIME_S: f32 = 15.0;
     const NANO_SECOND_TO_SECONDS: f32 = 0.000000001;
+
+    fn new_with_config(config: &crate::BatteryManagerConfig) -> RateLimiter {
+        if let (Some(max_delta), Some(max_time)) = (config.rl_max_delta_soc, config.rl_max_time_s) {
+            if max_time > 0.0 {
+                return RateLimiter::new(max_delta / max_time);
+            }
+        }
+        RateLimiter::new(f32::MAX)
+    }
 
     fn new(rate: f32) -> RateLimiter {
         RateLimiter {
@@ -645,15 +651,18 @@ impl Polisher {
     }
 
     pub fn new_with_battery_manager_config(config: crate::BatteryManagerConfig) -> Polisher {
+        let rate_limiter = RateLimiter::new_with_config(&config);
+        let estimator = ChargeTimeEstimator::new_with_config(
+            /*use_actual_capacity*/ false,
+            config.clone(),
+        );
         Polisher {
-            config: config.clone(),
+            config,
             curve_mapper: CurveMapper::new(),
             last_rate_limited_level: None,
             last_post_curve: None,
-            estimator: ChargeTimeEstimator::new_with_config(
-                /*use_actual_capacity*/ false, config,
-            ),
-            rate_limiter: RateLimiter::default(),
+            estimator,
+            rate_limiter,
             last_is_plugged_in: None,
             last_original_level: None,
         }
@@ -823,7 +832,12 @@ impl Polisher {
                 _ => PlugTransition::None,
             };
 
-            self.curve_mapper.update_curve_state(transition, level, prev_rate_limited_level);
+            self.curve_mapper.update_curve_state(
+                transition,
+                level,
+                prev_rate_limited_level,
+                self.config.ssoc_delta,
+            );
 
             // Handle Full state spoofing
             if info.charge_status == Some(fpower::ChargeStatus::Full) {
@@ -1534,25 +1548,32 @@ mod tests {
         assert_eq!(mapper.current_curve, CurveMapper::CHG_CURVE_DEFAULT);
 
         // No state change when transition is None
-        mapper.update_curve_state(PlugTransition::None, 50.0, 50.0);
+        mapper.update_curve_state(PlugTransition::None, 50.0, 50.0, None);
         assert_eq!(mapper.current_curve, CurveMapper::CHG_CURVE_DEFAULT);
 
         // Connect (PluggedIn)
         // It should set the midpoint of the curve at real=50.0, ui=50.0
-        mapper.update_curve_state(PlugTransition::PluggedIn, 50.0, 50.0);
+        mapper.update_curve_state(PlugTransition::PluggedIn, 50.0, 50.0, None);
         assert_eq!(mapper.current_curve[1].real, 50.0);
         assert_eq!(mapper.current_curve[1].ui, 50.0);
 
         // Disconnect when not full (Unplugged)
-        mapper.update_curve_state(PlugTransition::Unplugged, 60.0, 60.0);
+        mapper.update_curve_state(PlugTransition::Unplugged, 60.0, 60.0, None);
         assert_eq!(mapper.current_curve[1].real, 60.0);
         assert_eq!(mapper.current_curve[1].ui, 60.0);
 
         // Disconnect when full (Unplugged)
         // scaled_real_soc = 95.0, current_ui_soc = 100.0
         // new_midpoint = (95.0.max(95.0) - 2.0) = 93.0
-        mapper.update_curve_state(PlugTransition::Unplugged, 95.0, 100.0);
+        mapper.update_curve_state(PlugTransition::Unplugged, 95.0, 100.0, Some(2.0));
         assert_eq!(mapper.current_curve[1].real, 93.0);
+        assert_eq!(mapper.current_curve[1].ui, 100.0);
+
+        // Disconnect when full (Unplugged) with default ssoc_delta (3.0)
+        // scaled_real_soc = 95.0, current_ui_soc = 100.0
+        // new_midpoint = (95.0.max(95.0) - 3.0) = 92.0
+        mapper.update_curve_state(PlugTransition::Unplugged, 95.0, 100.0, None);
+        assert_eq!(mapper.current_curve[1].real, 92.0);
         assert_eq!(mapper.current_curve[1].ui, 100.0);
     }
 
@@ -1731,7 +1752,8 @@ mod tests {
 
         let info = polisher.polish_info(incoming_info);
         let expected_level2 = initial_scaled_level
-            + t0_s as f32 * RateLimiter::RL_MAX_DELTA_SOC / RateLimiter::RL_MAX_TIME_S;
+            + t0_s as f32 * polisher.config.rl_max_delta_soc.unwrap()
+                / polisher.config.rl_max_time_s.unwrap();
         assert_matches!(info.level_percent, Some(level) if expected_level2 == level);
     }
 
@@ -1832,6 +1854,16 @@ mod tests {
             Some(fpower::TimeRemaining::FullCharge(0)),
             "When level is 100%, time_remaining must be set to FullCharge(0)."
         );
+    }
+
+    #[fuchsia::test]
+    fn test_missing_config_returns_indeterminate_ttf() {
+        let mut polisher =
+            Polisher::new_with_battery_manager_config(crate::BatteryManagerConfig::default());
+        let mut info = new_info(50.0, fpower::ChargeStatus::Charging);
+        info.average_charging_current_ua = Some(500_000);
+        polisher.calculate_time_to_full(info.level_percent, info.level_percent, &mut info);
+        assert_eq!(info.time_remaining, Some(fpower::TimeRemaining::Indeterminate(0)));
     }
 
     #[fuchsia::test]

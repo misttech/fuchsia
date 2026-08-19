@@ -3,38 +3,101 @@
 // found in the LICENSE file.
 
 use anyhow::Error;
-use log::error;
+use fuchsia_inspect as inspect;
+use log::{error, info};
 
-#[derive(Clone, Debug, Default, PartialEq, serde::Deserialize)]
+/// Step configuration defining charging duration per 1% SOC up to a given threshold.
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+pub(crate) struct PercentChargeDurationStep {
+    /// Duration in seconds needed to gain 1% battery charge in this interval.
+    pub duration_sec: i32,
+    /// Upper bound State of Charge (SOC, 0-100%) for this charging duration step.
+    pub soc_threshold: u32,
+}
+
+/// Structured battery manager configuration loaded from JSON5 config files.
+#[derive(Clone, Debug, Default, PartialEq, serde::Deserialize, serde::Serialize)]
 pub(crate) struct BatteryManagerConfig {
+    /// Offset percentage (0.0 to 100.0) below which the raw battery level is scaled
+    /// to 0% to trigger shutdown before hardware power-off.
     #[serde(default)]
     pub shutdown_offset_percent: f32,
+
+    /// Nominal design capacity of the battery in microampere-hours (uAh).
+    #[serde(default)]
+    pub design_capacity_uah: Option<i64>,
+
+    /// State of Charge (SOC, 0-100%) thresholds defining Time-To-Full (TTF) charging tiers
+    /// (e.g. `[0.0, 51.0, 76.0]`).
     #[serde(default)]
     pub ttf_tier_thresholds: Option<Vec<f32>>,
+
+    /// Temperature boundaries in millicelsius (m°C) defining Time-To-Full (TTF) thermal tiers
+    /// (e.g. `[0, 10000, 20000, 42000, 46000, 48000, 55000]`).
     #[serde(default)]
     pub ttf_charge_temp_limits: Option<Vec<i32>>,
+
+    /// Ideal baseline charging duration (seconds per 1% SOC step) up to specified SOC thresholds
+    /// used for Time-To-Full (TTF) baseline estimation.
+    #[serde(default)]
+    pub percent_charge_duration: Option<Vec<PercentChargeDurationStep>>,
+
+    /// 2D matrix of maximum Constant Current (CC) charging limits in microamperes (uA),
+    /// indexed by temperature tier (rows) and voltage/SOC tier (columns).
     #[serde(default)]
     pub chg_cc_limits_ua: Option<Vec<Vec<i32>>>,
+
+    /// State of Charge (SOC) offset distance subtracted from the real SOC threshold to
+    /// splice the discharge curve when unplugged while full (SSOC = Smoothed/Spoofed SOC).
+    #[serde(default)]
+    pub ssoc_delta: Option<f32>,
+
+    /// Rate Limiter (RL) maximum allowed SOC change (in percentage points) over the time
+    /// window defined by `rl_max_time_s`.
+    #[serde(default)]
+    pub rl_max_delta_soc: Option<f32>,
+
+    /// Rate Limiter (RL) time window in seconds used in conjunction with `rl_max_delta_soc`
+    /// to enforce the maximum rate of SOC change.
+    #[serde(default)]
+    pub rl_max_time_s: Option<f32>,
 }
 
 impl BatteryManagerConfig {
+    pub(crate) fn record_inspect(&self, node: &inspect::Node) {
+        if let Ok(json) = serde_json5::to_string(self) {
+            node.record_string("config", json);
+        }
+    }
+
     #[cfg(test)]
     pub(crate) fn default_for_test() -> Self {
         BatteryManagerConfig {
             shutdown_offset_percent: 3.0,
+            design_capacity_uah: Some(420_000),
             ttf_tier_thresholds: Some(vec![0.0, 84.0, 90.0]),
             ttf_charge_temp_limits: Some(vec![0, 10_000, 20_000, 42_000, 46_000]),
+            percent_charge_duration: Some(vec![
+                PercentChargeDurationStep { duration_sec: 32, soc_threshold: 78 },
+                PercentChargeDurationStep { duration_sec: 56, soc_threshold: 86 },
+                PercentChargeDurationStep { duration_sec: 84, soc_threshold: 96 },
+                PercentChargeDurationStep { duration_sec: 92, soc_threshold: 100 },
+            ]),
             chg_cc_limits_ua: Some(vec![
                 vec![200_000, 100_000, 100_000],
                 vec![275_000, 100_000, 100_000],
                 vec![500_000, 500_000, 200_000],
                 vec![400_000, 400_000, 200_000],
             ]),
+            ssoc_delta: Some(2.0),
+            rl_max_delta_soc: Some(2.0),
+            rl_max_time_s: Some(15.0),
         }
     }
 }
 
 pub(crate) fn read_battery_manager_config(path: &str) -> Result<BatteryManagerConfig, Error> {
+    info!("Loading battery manager config from {path}");
     let contents = std::fs::read_to_string(path).map_err(|e| {
         let err = anyhow::format_err!(
             "Failed to read battery manager config at '{path}': {e}. \
@@ -68,6 +131,50 @@ fn parse_battery_manager_config(contents: &str, path: &str) -> Result<BatteryMan
         );
         error!("{err}");
         return Err(err);
+    }
+
+    if let Some(cap) = config.design_capacity_uah {
+        if cap <= 0 {
+            let err = anyhow::format_err!(
+                "Invalid battery manager config at '{path}': design_capacity_uah ({cap}) \
+                must be positive.",
+            );
+            error!("{err}");
+            return Err(err);
+        }
+    }
+
+    if let Some(delta) = config.ssoc_delta {
+        if delta < 0.0 || delta >= 100.0 {
+            let err = anyhow::format_err!(
+                "Invalid battery manager config at '{path}': ssoc_delta ({delta}) \
+                must be in range [0.0, 100.0).",
+            );
+            error!("{err}");
+            return Err(err);
+        }
+    }
+
+    if let Some(max_delta) = config.rl_max_delta_soc {
+        if max_delta <= 0.0 {
+            let err = anyhow::format_err!(
+                "Invalid battery manager config at '{path}': rl_max_delta_soc ({max_delta}) \
+                must be positive.",
+            );
+            error!("{err}");
+            return Err(err);
+        }
+    }
+
+    if let Some(max_time) = config.rl_max_time_s {
+        if max_time <= 0.0 {
+            let err = anyhow::format_err!(
+                "Invalid battery manager config at '{path}': rl_max_time_s ({max_time}) \
+                must be positive.",
+            );
+            error!("{err}");
+            return Err(err);
+        }
     }
 
     let has_temp_limits = config.ttf_charge_temp_limits.is_some();
@@ -124,6 +231,58 @@ fn parse_battery_manager_config(contents: &str, path: &str) -> Result<BatteryMan
                     chg_cc_limits_ua row {i} length ({}) must match \
                     row 0 length ({num_cols}).",
                     row.len()
+                );
+                error!("{err}");
+                return Err(err);
+            }
+        }
+    }
+
+    if let Some(ref steps) = config.percent_charge_duration {
+        if steps.is_empty() {
+            let err = anyhow::format_err!(
+                "Invalid battery manager config at '{path}': \
+                percent_charge_duration cannot be empty.",
+            );
+            error!("{err}");
+            return Err(err);
+        }
+
+        let mut prev_threshold = None;
+        for (i, step) in steps.iter().enumerate() {
+            if step.duration_sec < 0 {
+                let err = anyhow::format_err!(
+                    "Invalid battery manager config at '{path}': \
+                    percent_charge_duration step {i} duration_sec ({}) \
+                    must be non-negative.",
+                    step.duration_sec
+                );
+                error!("{err}");
+                return Err(err);
+            }
+
+            if let Some(prev) = prev_threshold {
+                if step.soc_threshold <= prev {
+                    let err = anyhow::format_err!(
+                        "Invalid battery manager config at '{path}': \
+                        percent_charge_duration step {i} soc_threshold ({}) \
+                        must be strictly greater than previous threshold ({prev}).",
+                        step.soc_threshold
+                    );
+                    error!("{err}");
+                    return Err(err);
+                }
+            }
+            prev_threshold = Some(step.soc_threshold);
+        }
+
+        if let Some(last_step) = steps.last() {
+            if last_step.soc_threshold < 100 {
+                let err = anyhow::format_err!(
+                    "Invalid battery manager config at '{path}': \
+                    percent_charge_duration last soc_threshold ({}) \
+                    must be at least 100.",
+                    last_step.soc_threshold
                 );
                 error!("{err}");
                 return Err(err);
@@ -268,5 +427,83 @@ mod tests {
         }"#;
         let err = parse_battery_manager_config(json_ragged_cols, "test_path").unwrap_err();
         assert!(err.to_string().contains("row 1 length"));
+    }
+
+    #[test]
+    fn test_parse_battery_manager_config_design_capacity() {
+        let json = r#"{"design_capacity_uah": 420000}"#;
+        let config = parse_battery_manager_config(json, "test_path").unwrap();
+        assert_eq!(config.design_capacity_uah, Some(420000));
+
+        let json = r#"{"design_capacity_uah": -100}"#;
+        let err = parse_battery_manager_config(json, "test_path").unwrap_err();
+        assert!(err.to_string().contains("must be positive"));
+    }
+
+    #[test]
+    fn test_parse_battery_manager_config_percent_charge_duration_valid() {
+        let json = r#"{
+            "percent_charge_duration": [
+                {"duration_sec": 32, "soc_threshold": 78},
+                {"duration_sec": 56, "soc_threshold": 86},
+                {"duration_sec": 84, "soc_threshold": 96},
+                {"duration_sec": 92, "soc_threshold": 100}
+            ]
+        }"#;
+        let config = parse_battery_manager_config(json, "test_path").unwrap();
+        assert_eq!(config.percent_charge_duration.unwrap().len(), 4);
+    }
+
+    #[test]
+    fn test_parse_battery_manager_config_percent_charge_duration_invalid() {
+        let json_empty = r#"{"percent_charge_duration": []}"#;
+        let err = parse_battery_manager_config(json_empty, "test_path").unwrap_err();
+        assert!(err.to_string().contains("cannot be empty"));
+
+        let json_neg_dur = r#"{
+            "percent_charge_duration": [
+                {"duration_sec": -10, "soc_threshold": 100}
+            ]
+        }"#;
+        let err = parse_battery_manager_config(json_neg_dur, "test_path").unwrap_err();
+        assert!(err.to_string().contains("must be non-negative"));
+
+        let json_not_increasing = r#"{
+            "percent_charge_duration": [
+                {"duration_sec": 30, "soc_threshold": 80},
+                {"duration_sec": 40, "soc_threshold": 75},
+                {"duration_sec": 50, "soc_threshold": 100}
+            ]
+        }"#;
+        let err = parse_battery_manager_config(json_not_increasing, "test_path").unwrap_err();
+        assert!(err.to_string().contains("strictly greater than"));
+
+        let json_incomplete = r#"{
+            "percent_charge_duration": [
+                {"duration_sec": 30, "soc_threshold": 80},
+                {"duration_sec": 40, "soc_threshold": 99}
+            ]
+        }"#;
+        let err = parse_battery_manager_config(json_incomplete, "test_path").unwrap_err();
+        assert!(err.to_string().contains("must be at least 100"));
+    }
+
+    #[fuchsia::test]
+    async fn test_record_inspect() {
+        use diagnostics_assertions::assert_data_tree;
+        use fuchsia_inspect::Inspector;
+
+        let inspector = Inspector::default();
+        let config = BatteryManagerConfig::default_for_test();
+        inspector.root().record_child("battery_manager_config", |node| {
+            config.record_inspect(node);
+        });
+
+        let expected_json = serde_json5::to_string(&config).unwrap();
+        assert_data_tree!(inspector, root: {
+            battery_manager_config: {
+                config: expected_json,
+            }
+        });
     }
 }

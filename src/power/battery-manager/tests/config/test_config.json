@@ -33,5 +33,27 @@
             400000,
             200000
         ]
-    ]
+    ],
+    "design_capacity_uah": 420000,
+    "percent_charge_duration": [
+        {
+            "duration_sec": 32,
+            "soc_threshold": 78
+        },
+        {
+            "duration_sec": 56,
+            "soc_threshold": 86
+        },
+        {
+            "duration_sec": 84,
+            "soc_threshold": 96
+        },
+        {
+            "duration_sec": 92,
+            "soc_threshold": 100
+        }
+    ],
+    "ssoc_delta": 2.0,
+    "rl_max_delta_soc": 2.0,
+    "rl_max_time_s": 15.0
 }

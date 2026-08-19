@@ -159,6 +159,9 @@ async fn main() -> Result<(), Error> {
 
     let battery_manager_config = load_battery_manager_config()?;
     info!("Loaded battery manager config: {:?}", battery_manager_config);
+    inspector
+        .root()
+        .record_child("battery_manager_config", |node| battery_manager_config.record_inspect(node));
 
     let recorder_config = RecorderConfig::default();
     let battery_manager = Arc::new(BatteryManager::new_with_battery_manager_config(
