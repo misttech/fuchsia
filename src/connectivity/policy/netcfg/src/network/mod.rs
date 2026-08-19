@@ -382,13 +382,13 @@ trait PropertyUpdates {
         &mut self,
         network_registry: &RegisteredNetworks,
         network: &NetworkTokenContents,
-        registration: &Registration,
+        watched_properties: fnp_properties::PropertyInterest,
     );
     fn add_dns(
         &mut self,
         network_registry: &RegisteredNetworks,
         network: &NetworkTokenContents,
-        registration: &Registration,
+        watched_properties: fnp_properties::PropertyInterest,
     );
 }
 
@@ -397,9 +397,9 @@ impl PropertyUpdates for fnp_properties::PropertyUpdate {
         &mut self,
         network_registry: &RegisteredNetworks,
         network: &NetworkTokenContents,
-        registration: &Registration,
+        watched_properties: fnp_properties::PropertyInterest,
     ) {
-        if !registration.properties.contains(fnp_properties::PropertyInterest::SOCKET_MARKS) {
+        if !watched_properties.contains(fnp_properties::PropertyInterest::SOCKET_MARKS) {
             return;
         }
 
@@ -424,9 +424,9 @@ impl PropertyUpdates for fnp_properties::PropertyUpdate {
         &mut self,
         network_registry: &RegisteredNetworks,
         network: &NetworkTokenContents,
-        registration: &Registration,
+        watched_properties: fnp_properties::PropertyInterest,
     ) {
-        if !registration.properties.contains(fnp_properties::PropertyInterest::DNS_CONFIGURATION) {
+        if !watched_properties.contains(fnp_properties::PropertyInterest::DNS_CONFIGURATION) {
             return;
         }
 
@@ -937,12 +937,12 @@ impl NetpolNetworksService {
                                         updates.add_socket_marks(
                                             &self.network_registry,
                                             &network_contents,
-                                            registration,
+                                            registration.properties,
                                         );
                                         updates.add_dns(
                                             &self.network_registry,
                                             &network_contents,
-                                            registration,
+                                            registration.properties,
                                         );
                                         if updates != fnp_properties::PropertyUpdate::default() {
                                             if let Some(responder) = registration.responder.take() {
@@ -1401,16 +1401,20 @@ impl NetpolNetworksService {
                                 updates.add_socket_marks(
                                     &self.network_registry,
                                     &network,
-                                    &registration,
+                                    registration.properties,
                                 );
                             }
                             if changed_dns {
-                                updates.add_dns(&self.network_registry, &network, &registration);
+                                updates.add_dns(
+                                    &self.network_registry,
+                                    &network,
+                                    registration.properties,
+                                );
                             }
                         }
                     }
                     UpdateApplied::DnsChanged => {
-                        updates.add_dns(&self.network_registry, &network, &registration);
+                        updates.add_dns(&self.network_registry, &network, registration.properties);
                     }
                     UpdateApplied::NetworkRemoved(_id) => {}
                     UpdateApplied::None => {}
