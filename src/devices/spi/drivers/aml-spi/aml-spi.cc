@@ -24,6 +24,7 @@
 #include <bind/fuchsia/hardware/spiimpl/cpp/bind.h>
 #include <fbl/algorithm.h>
 #include <fbl/alloc_checker.h>
+#include <safemath/checked_math.h>
 
 #include "registers.h"
 
@@ -119,7 +120,8 @@ zx::result<cpp20::span<uint8_t>> SpiRequest::GetBuffer(
       return zx::error(ZX_ERR_ACCESS_DENIED);
     }
 
-    if (vmo_buffer.offset + vmo_buffer.size > vmo_info->meta().size) {
+    if (safemath::CheckedNumeric result = safemath::CheckAdd(vmo_buffer.offset, vmo_buffer.size);
+        result.IsInvalidOr([&](uint64_t x) { return x > vmo_info->meta().size; })) {
       return zx::error(ZX_ERR_OUT_OF_RANGE);
     }
 
@@ -523,6 +525,19 @@ void AmlSpi::RegisterVmo(fuchsia_hardware_spiimpl::wire::SpiImplRegisterVmoReque
 
   if (request->rights.has_unknown_bits()) {
     return completer.buffer(arena).ReplyError(ZX_ERR_INVALID_ARGS);
+  }
+
+  uint64_t vmo_size{};
+  if (zx_status_t status = request->vmo.vmo.get_size(&vmo_size); status != ZX_OK) {
+    fdf::error("Failed to get VMO size: {}", zx_status_get_string(status));
+    completer.buffer(arena).ReplyError(status);
+    return;
+  }
+
+  if (safemath::CheckedNumeric result = safemath::CheckAdd(request->vmo.offset, request->vmo.size);
+      result.IsInvalidOr([&](uint64_t x) { return x > vmo_size; })) {
+    completer.buffer(arena).ReplyError(ZX_ERR_OUT_OF_RANGE);
+    return;
   }
 
   const bool vmo_right_read = (request->rights & SharedVmoRight::kRead) == SharedVmoRight::kRead;

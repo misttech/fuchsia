@@ -55,6 +55,7 @@ source_set("common") {
     "//zircon/system/ulib/hwreg",
     "//zircon/system/ulib/sync",
     "//zircon/system/ulib/zx",
+    "//zircon/third_party/ulib/safemath",
   ]
 }
 

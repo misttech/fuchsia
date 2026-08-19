@@ -200,6 +200,57 @@ TEST_F(AmlSpiTest, RegisterVmo) {
   driver_test().runtime().Run();
 }
 
+TEST_F(AmlSpiTest, RegisterVmoOverflow) {
+  using fuchsia_hardware_sharedmemory::SharedVmoRight;
+
+  auto spiimpl_client = driver_test().Connect<fuchsia_hardware_spiimpl::Service::Device>();
+  ASSERT_TRUE(spiimpl_client.is_ok());
+
+  fdf::WireClient<fuchsia_hardware_spiimpl::SpiImpl> spiimpl(*std::move(spiimpl_client),
+                                                             fdf::Dispatcher::GetCurrent()->get());
+
+  zx::vmo test_vmo;
+  EXPECT_OK(zx::vmo::create(kPageSize, 0, &test_vmo));
+
+  fdf::Arena arena('TEST');
+
+  spiimpl.buffer(arena)
+      ->RegisterVmo(0, 1, {std::move(test_vmo), UINT64_MAX - 7, 16}, SharedVmoRight::kRead)
+      .Then([&](auto& result) {
+        ASSERT_TRUE(result.ok());
+        ASSERT_TRUE(result->is_error());
+        EXPECT_EQ(result->error_value(), ZX_ERR_OUT_OF_RANGE);
+        driver_test().runtime().Quit();
+      });
+  driver_test().runtime().Run();
+}
+
+TEST_F(AmlSpiTest, RegisterVmoOutOfBounds) {
+  using fuchsia_hardware_sharedmemory::SharedVmoRight;
+
+  auto spiimpl_client = driver_test().Connect<fuchsia_hardware_spiimpl::Service::Device>();
+  ASSERT_TRUE(spiimpl_client.is_ok());
+
+  fdf::WireClient<fuchsia_hardware_spiimpl::SpiImpl> spiimpl(*std::move(spiimpl_client),
+                                                             fdf::Dispatcher::GetCurrent()->get());
+
+  zx::vmo test_vmo;
+  EXPECT_OK(zx::vmo::create(kPageSize, 0, &test_vmo));
+
+  fdf::Arena arena('TEST');
+
+  // Offset + size exceeds VMO size but doesn't overflow.
+  spiimpl.buffer(arena)
+      ->RegisterVmo(0, 1, {std::move(test_vmo), 1, kPageSize}, SharedVmoRight::kRead)
+      .Then([&](auto& result) {
+        ASSERT_TRUE(result.ok());
+        ASSERT_TRUE(result->is_error());
+        EXPECT_EQ(result->error_value(), ZX_ERR_OUT_OF_RANGE);
+        driver_test().runtime().Quit();
+      });
+  driver_test().runtime().Run();
+}
+
 TEST_F(AmlSpiTest, TransmitVmo) {
   using fuchsia_hardware_sharedmemory::SharedVmoRight;
 
@@ -245,6 +296,35 @@ TEST_F(AmlSpiTest, TransmitVmo) {
     EXPECT_FALSE(env.ControllerReset());
     EXPECT_EQ(env.cs_toggle_count(), 2u);
   });
+}
+
+TEST_F(AmlSpiTest, TransmitVmoOverflow) {
+  using fuchsia_hardware_sharedmemory::SharedVmoRight;
+
+  auto spiimpl_client = driver_test().Connect<fuchsia_hardware_spiimpl::Service::Device>();
+  ASSERT_TRUE(spiimpl_client.is_ok());
+  fdf::WireClient<fuchsia_hardware_spiimpl::SpiImpl> spiimpl(*std::move(spiimpl_client),
+                                                             fdf::Dispatcher::GetCurrent()->get());
+
+  zx::vmo test_vmo;
+  EXPECT_OK(zx::vmo::create(kPageSize, 0, &test_vmo));
+
+  fdf::Arena arena('TEST');
+
+  spiimpl.buffer(arena)
+      ->RegisterVmo(0, 1, {std::move(test_vmo), 0, kPageSize}, SharedVmoRight::kRead)
+      .Then([&](auto& result) {
+        ASSERT_TRUE(result.ok());
+        EXPECT_TRUE(result->is_ok());
+      });
+
+  spiimpl.buffer(arena)->TransmitVmo(0, {1, UINT64_MAX - 7, 16}).Then([&](auto& result) {
+    ASSERT_TRUE(result.ok());
+    ASSERT_TRUE(result->is_error());
+    EXPECT_EQ(result->error_value(), ZX_ERR_OUT_OF_RANGE);
+    driver_test().runtime().Quit();
+  });
+  driver_test().runtime().Run();
 }
 
 TEST_F(AmlSpiTest, ReceiveVmo) {
