@@ -50,19 +50,19 @@ class FeedbackData {
   void ShutdownImminent(::fit::deferred_callback stop_respond);
 
  private:
-  void SpawnSystemLogRecorder();
+  std::shared_ptr<sys::ServiceDirectory> SpawnSystemLogRecorder();
 
   async_dispatcher_t* dispatcher_;
   std::shared_ptr<sys::ServiceDirectory> services_;
   timekeeper::Clock* clock_;
   cobalt::Logger* cobalt_;
 
+  fuchsia::process::lifecycle::LifecyclePtr system_log_recorder_lifecycle_;
+
   InspectNodeManager inspect_node_manager_;
   feedback_data::InspectDataBudget inspect_data_budget_;
   AttachmentProviders attachment_providers_;
   feedback_data::DataProvider data_provider_;
-
-  fuchsia::process::lifecycle::LifecyclePtr system_log_recorder_lifecycle_;
 };
 
 }  // namespace forensics::feedback

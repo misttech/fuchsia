@@ -35,6 +35,30 @@ source_set("attachments") {
   ]
 }
 
+source_set("disk_backed_system_log") {
+  sources = [
+    "disk_backed_system_log.cc",
+    "disk_backed_system_log.h",
+  ]
+
+  public_deps = [
+    ":attachments",
+    "//sdk/lib/async:async-cpp",
+    "//sdk/lib/fit-promise",
+    "//sdk/lib/sys/cpp",
+    "//src/developer/forensics/feedback_data/system_log_recorder/fidl:fuchsia.feedback.internal_cpp",
+    "//src/developer/forensics/utils/redact",
+    "//src/lib/backoff",
+    "//src/lib/fxl",
+    "//zircon/system/ulib/zx",
+  ]
+
+  deps = [
+    "//sdk/lib/syslog/cpp",
+    "//src/developer/forensics/utils:errors",
+  ]
+}
+
 source_set("inspect") {
   sources = [
     "inspect.cc",

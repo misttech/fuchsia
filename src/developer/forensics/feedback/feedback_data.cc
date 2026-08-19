@@ -4,7 +4,9 @@
 
 #include "src/developer/forensics/feedback/feedback_data.h"
 
+#include <fidl/fuchsia.io/cpp/fidl.h>
 #include <lib/async/cpp/task.h>
+#include <lib/component/incoming/cpp/directory.h>
 #include <lib/fdio/spawn.h>
 #include <lib/syslog/cpp/macros.h>
 #include <lib/zx/channel.h>
@@ -28,16 +30,14 @@ FeedbackData::FeedbackData(async_dispatcher_t* dispatcher,
       cobalt_(cobalt),
       inspect_node_manager_(inspect_root),
       inspect_data_budget_(options.limit_inspect_data, &inspect_node_manager_, cobalt_),
-      attachment_providers_(dispatcher, services, options.delete_previous_boot_logs_time, clock,
-                            redactor, &inspect_data_budget_,
-                            options.snapshot_config.attachment_allowlist, cobalt,
-                            std::move(options.root_job)),
+      attachment_providers_(dispatcher, services, SpawnSystemLogRecorder(),
+                            options.delete_previous_boot_logs_time, clock, redactor,
+                            &inspect_data_budget_, options.snapshot_config.attachment_allowlist,
+                            cobalt_, std::move(options.root_job)),
       data_provider_(dispatcher_, services_, clock_, redactor, options.is_first_instance,
                      options.snapshot_config.default_annotations,
                      options.snapshot_config.attachment_allowlist, cobalt_, annotation_manager,
-                     attachment_providers_.GetAttachmentManager(), &inspect_data_budget_) {
-  SpawnSystemLogRecorder();
-}
+                     attachment_providers_.GetAttachmentManager(), &inspect_data_budget_) {}
 
 feedback_data::DataProvider* FeedbackData::DataProvider() { return &data_provider_; }
 
@@ -55,13 +55,22 @@ void FeedbackData::ShutdownImminent(::fit::deferred_callback stop_respond) {
   system_log_recorder_lifecycle_->Stop();
 }
 
-void FeedbackData::SpawnSystemLogRecorder() {
+std::shared_ptr<sys::ServiceDirectory> FeedbackData::SpawnSystemLogRecorder() {
   zx::channel lifecycle_client, lifecycle_server;
   if (const zx_status_t status = zx::channel::create(0, &lifecycle_client, &lifecycle_server);
       status != ZX_OK) {
     FX_PLOGS(ERROR, status)
         << "Failed to create system log recorder lifecycle channel, logs will not be persisted";
-    return;
+    return nullptr;
+  }
+
+  zx::channel directory_client, directory_server;
+  if (const zx_status_t status =
+          zx::channel::create(/*flags=*/0, &directory_client, &directory_server);
+      status != ZX_OK) {
+    FX_PLOGS(ERROR, status)
+        << "Failed to create system log recorder directory channel, logs will not be persisted";
+    return nullptr;
   }
 
   const std::array<const char*, 2> argv = {
@@ -77,6 +86,14 @@ void FeedbackData::SpawnSystemLogRecorder() {
                   .handle = lifecycle_server.release(),
               },
       },
+      fdio_spawn_action_t{
+          .action = FDIO_SPAWN_ACTION_ADD_HANDLE,
+          .h =
+              {
+                  .id = PA_HND(PA_DIRECTORY_REQUEST, 0),
+                  .handle = directory_server.release(),
+              },
+      },
   };
 
   zx_handle_t process;
@@ -87,10 +104,20 @@ void FeedbackData::SpawnSystemLogRecorder() {
       status != ZX_OK) {
     FX_PLOGS(ERROR, status) << "Failed to spawn system log recorder, logs will not be persisted: "
                             << err_msg;
-    return;
+    return nullptr;
   }
 
   system_log_recorder_lifecycle_.Bind(std::move(lifecycle_client), dispatcher_);
+
+  zx::result svc_client = component::OpenDirectoryAt(
+      fidl::UnownedClientEnd<fuchsia_io::Directory>(directory_client.get()), "svc");
+  if (svc_client.is_error()) {
+    FX_PLOGS(ERROR, svc_client.status_value())
+        << "Failed to open /svc in system log recorder outgoing directory";
+    return nullptr;
+  }
+
+  return std::make_shared<sys::ServiceDirectory>(svc_client->TakeChannel());
 }
 
 }  // namespace forensics::feedback

@@ -15,6 +15,8 @@ namespace forensics::feedback {
 // Abstract base class for collecting attachments asynchronously.
 class AttachmentProvider {
  public:
+  virtual ~AttachmentProvider() = default;
+
   // Returns a promise to the data collection, where collection can be terminated early with
   // |ticket|
   virtual ::fpromise::promise<AttachmentData> Get(uint64_t ticket) = 0;

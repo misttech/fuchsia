@@ -33,6 +33,7 @@ class AttachmentProviders {
  public:
   AttachmentProviders(async_dispatcher_t* dispatcher,
                       std::shared_ptr<sys::ServiceDirectory> services,
+                      std::shared_ptr<sys::ServiceDirectory> system_log_recorder_services,
                       std::optional<zx::duration> delete_previous_boot_log_at,
                       timekeeper::Clock* clock, RedactorBase* redactor,
                       feedback_data::InspectDataBudget* inspect_data_budget,
@@ -45,7 +46,7 @@ class AttachmentProviders {
  private:
   LogBuffer log_buffer_;
   KernelLog kernel_log_;
-  SystemLog system_log_;
+  std::unique_ptr<AttachmentProvider> system_log_;
   Inspect inspect_;
   PreviousBootInspect previous_boot_inspect_;
   PreviousBootLog previous_boot_log_;
