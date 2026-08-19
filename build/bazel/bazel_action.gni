@@ -982,6 +982,10 @@ template("bazel_action") {
                   rebase_path(_gn_targets_repository_path, root_build_dir)
               gn_targets_manifest =
                   rebase_path(_gn_targets_repository_manifest, root_build_dir)
+
+              # Mark as to whether or not this target being built should trigger
+              # the updating of rust_project.json or not.
+              update_rust_project = _update_rust_project
             },
           ]
           # LINT.ThenChange(//BUILD.gn:bazel_target_infos,

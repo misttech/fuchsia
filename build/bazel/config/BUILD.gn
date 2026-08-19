@@ -4,6 +4,7 @@
 
 import("//build/bazel/bazel_action.gni")
 import("//build/bazel/config/bazel_args.gni")
+import("//build/rust/config.gni")
 
 # Generate a JSON file that describes the Bazel arguments computed
 # from bazel_args.gni. The content is parsed by regenerator to populate
@@ -27,6 +28,7 @@ generated_file("global_args.json") {
   contents = {
     upload_build_events = bazel_upload_build_events
     auto_refresh_compdb = bazel_auto_refresh_compdb
+    rust_sysroot = rebased_rustc_prefix
   }
   output_conversion = "json"
 }

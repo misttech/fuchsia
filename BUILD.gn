@@ -2286,6 +2286,10 @@ generated_file("bazel_build_action_targets") {
 #     - Required: Path to a "stamp file" that is to be touched when 'bazel_target' has been built.
 #     - Type: string
 #
+#   update_rust_project:
+#     - Optional: Whether this target should trigger updating rust-project.json
+#     - Type: bool
+#
 #  The other fields depend on the 'type':
 #
 #     "file":

@@ -78,6 +78,7 @@ class BazelTargetInfo(object):
     gn_targets_dir: str
     gn_targets_manifest: str
     stamp_path: str
+    update_rust_project: bool = False
     copy_outputs: list[FileOutput] = dataclasses.field(default_factory=list)
     directory_outputs: list[DirectoryOutput] = dataclasses.field(
         default_factory=list
@@ -110,6 +111,7 @@ class BazelTargetInfosMap(object):
             gn_targets_dir = entry["gn_targets_dir"]
             gn_targets_manifest = entry["gn_targets_manifest"]
             stamp_path = entry["stamp_path"]
+            update_rust_project = entry["update_rust_project"]
             target_info = self._targets.setdefault(
                 (bazel_target, bazel_platform_label),
                 BazelTargetInfo(
@@ -120,6 +122,7 @@ class BazelTargetInfosMap(object):
                     gn_targets_dir=gn_targets_dir,
                     gn_targets_manifest=gn_targets_manifest,
                     stamp_path=stamp_path,
+                    update_rust_project=update_rust_project,
                 ),
             )
 
@@ -300,6 +303,7 @@ class BazelGlobalArguments(object):
     quiet: bool
     sandbox_debug: bool
     auto_refresh_compdb: bool
+    rust_sysroot: Path
 
     @staticmethod
     def create_from_build_dir(build_dir: Path) -> "BazelGlobalArguments":
@@ -318,6 +322,7 @@ class BazelGlobalArguments(object):
             content = json.load(f)
             upload_build_events = content["upload_build_events"]
             auto_refresh_compdb = content["auto_refresh_compdb"]
+            rust_sysroot = (build_dir / content["rust_sysroot"]).resolve()
 
         # Get settings from the build environment.
         quiet = os.environ.get("FX_BUILD_QUIET") == "1"
@@ -330,6 +335,7 @@ class BazelGlobalArguments(object):
             quiet=quiet,
             sandbox_debug=sandbox_debug,
             auto_refresh_compdb=auto_refresh_compdb,
+            rust_sysroot=rust_sysroot,
         )
 
 

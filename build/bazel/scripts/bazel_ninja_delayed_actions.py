@@ -18,6 +18,7 @@ _SCRIPT_DIR = os.path.dirname(__file__)
 sys.path.insert(0, _SCRIPT_DIR)
 import bazel_action_impl
 import bazel_compdb_utils
+import bazel_rust_analyzer_utils
 import build_utils
 from bazel_action_file_copy_utils import write_file_if_changed
 from bazel_action_utils import (
@@ -266,7 +267,60 @@ def main() -> int:
                     ),
                 )
 
+            # If any of the targets that were built are flagged as requiring the updating of the
+            # the rust_project.json file, then do so now.
+            if any(
+                target_info.update_rust_project
+                for target_info in bazel_target_infos
+            ):
+                rust_project_file = (
+                    bazel_paths.ninja_build_dir / "rust-project.json"
+                )
+                time_profile.start(
+                    "generate_rust_project_json",
+                    "Generate {}".format(rust_project_file),
+                )
+                _sysroot_src_subdir = Path("lib/rustlib/src/rust/library")
+                rust_sysroot = global_bazel_args.rust_sysroot
+
+                base_rust_project: dict[str, T.Any] = {}
+                if (
+                    rust_project_file.exists()
+                    and rust_project_file.stat().st_size > 0
+                ):
+                    with open(rust_project_file, "r") as f:
+                        base_rust_project = json.load(f)
+
+                if "sysroot" not in base_rust_project:
+                    base_rust_project["sysroot"] = str(
+                        rust_sysroot.resolve().absolute()
+                    )
+                if "sysroot_src" not in base_rust_project:
+                    base_rust_project["sysroot_src"] = str(
+                        rust_sysroot.resolve().absolute() / _sysroot_src_subdir
+                    )
+                if "crates" not in base_rust_project:
+                    base_rust_project["crates"] = []
+
+                new_rust_project = {
+                    "sysroot": str(rust_sysroot.resolve().absolute()),
+                    "sysroot_src": str(
+                        rust_sysroot.resolve().absolute() / _sysroot_src_subdir
+                    ),
+                    "crates": action_result.rust_crates,
+                }
+                merged_rust_project = (
+                    bazel_rust_analyzer_utils.merge_rust_project_jsons(
+                        base_rust_project, [new_rust_project]
+                    )
+                )
+                write_file_if_changed(
+                    rust_project_file,
+                    json.dumps(merged_rust_project, indent=2),
+                )
+
             # Update the depfiles data and the stamp file
+            time_profile.start("update_depfile_and_stampfiles")
             for target, sources in action_result.source_files.items():
                 # Locate the action request and stamp path for this target.
                 target_with_platform = TargetWithPlatform(

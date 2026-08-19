@@ -5,6 +5,7 @@
 
 import os
 import sys
+import typing as T
 import unittest
 
 sys.path.insert(0, os.path.dirname(__file__))
@@ -187,6 +188,54 @@ class BazelStderrDebugLineRecorderTest(unittest.TestCase):
                 "second": ["value 2"],
             },
         )
+
+
+class BazelTargetInfosMapTest(unittest.TestCase):
+    def test_update_rust_project(self) -> None:
+        from bazel_action_utils import BazelTargetInfosMap
+
+        sample_content: list[dict[str, T.Any]] = [
+            {
+                "type": "file",
+                "bazel_target": "//src:foo",
+                "bazel_platform_label": "//build/bazel/platforms:host",
+                "bazel_platform_config": "host",
+                "ninja_depfile": "obj/src/foo.d",
+                "gn_targets_dir": "gen/gn_targets",
+                "gn_targets_manifest": "gen/gn_targets.manifest",
+                "stamp_path": "obj/src/foo.stamp",
+                "bazel_file": "foo",
+                "ninja_file": "foo",
+                "update_rust_project": True,
+            },
+            {
+                "type": "file",
+                "bazel_target": "//src:bar",
+                "bazel_platform_label": "//build/bazel/platforms:host",
+                "bazel_platform_config": "host",
+                "ninja_depfile": "obj/src/bar.d",
+                "gn_targets_dir": "gen/gn_targets",
+                "gn_targets_manifest": "gen/gn_targets.manifest",
+                "stamp_path": "obj/src/bar.stamp",
+                "bazel_file": "bar",
+                "ninja_file": "bar",
+                "update_rust_project": False,
+            },
+        ]
+        target_map = BazelTargetInfosMap(sample_content)
+        foo_info = target_map.get_info(
+            "//src:foo", "//build/bazel/platforms:host"
+        )
+        self.assertIsNotNone(foo_info)
+        assert foo_info is not None
+        self.assertTrue(foo_info.update_rust_project)
+
+        bar_info = target_map.get_info(
+            "//src:bar", "//build/bazel/platforms:host"
+        )
+        self.assertIsNotNone(bar_info)
+        assert bar_info is not None
+        self.assertFalse(bar_info.update_rust_project)
 
 
 if __name__ == "__main__":
