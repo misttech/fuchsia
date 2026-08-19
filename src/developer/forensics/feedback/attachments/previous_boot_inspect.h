@@ -50,6 +50,8 @@ class PreviousBootInspect : public AttachmentProvider {
 
   fuchsia::diagnostics::persistence::PreviousBootDataProviderPtr data_provider_;
 
+  // TODO(https://fxbug.dev/547843423): store the cached value on disk to avoid
+  // putting pressure on memory and requiring a new fetch on component restart.
   std::optional<AttachmentData> cached_value_;
   std::map<uint64_t, ::fit::callback<void(AttachmentData)>> completers_;
 
