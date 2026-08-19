@@ -92,13 +92,15 @@ type Union struct {
 	Name         string
 	Members      []UnionMember
 	Serializable fidlgen.Serializable
+	Sensitive    bool
 }
 
 type UnionMember struct {
 	fidlgen.UnionMember
-	Type    Type
-	Name    string
-	Ordinal int
+	Type      Type
+	Name      string
+	Ordinal   int
+	Sensitive bool
 }
 
 type Struct struct {
@@ -115,13 +117,15 @@ type Struct struct {
 	// True if the struct should be encoded and decoded by memcpy.
 	UseFidlStructCopy bool
 	Serializable      fidlgen.Serializable
+	Sensitive         bool
 }
 
 type StructMember struct {
 	fidlgen.StructMember
-	Type     Type
-	Name     string
-	OffsetV2 int
+	Type      Type
+	Name      string
+	OffsetV2  int
+	Sensitive bool
 }
 
 type Table struct {
@@ -131,6 +135,7 @@ type Table struct {
 	Name         string
 	Members      []TableMember
 	Serializable fidlgen.Serializable
+	Sensitive    bool
 }
 
 func (t *Table) ReversedMembers() []TableMember {
@@ -143,9 +148,10 @@ func (t *Table) ReversedMembers() []TableMember {
 
 type TableMember struct {
 	fidlgen.TableMember
-	Type    Type
-	Name    string
-	Ordinal int
+	Type      Type
+	Name      string
+	Ordinal   int
+	Sensitive bool
 }
 
 // Protocol is the definition of a protocol in the library being compiled.
@@ -1523,6 +1529,7 @@ func (c *compiler) compileStructMember(val fidlgen.StructMember) StructMember {
 		Type:         c.compileType(val.Type, val.MaybeFromAlias),
 		Name:         compileSnakeIdentifier(val.Name),
 		OffsetV2:     val.FieldShapeV2.Offset,
+		Sensitive:    val.HasAttribute("sensitive"),
 	}
 }
 
@@ -1608,6 +1615,7 @@ func (c *compiler) compileStruct(val fidlgen.Struct) Struct {
 			ResolveStruct:  c.resolveStruct,
 		}),
 		Serializable: val.GetSerializable(),
+		Sensitive:    val.HasAttribute("sensitive"),
 	}
 
 	for _, v := range val.Members {
@@ -1627,6 +1635,7 @@ func (c *compiler) compileUnion(val fidlgen.Union) Union {
 		ECI:          val.Name,
 		Name:         c.compileDeclIdentifier(val.Name),
 		Serializable: val.GetSerializable(),
+		Sensitive:    val.HasAttribute("sensitive"),
 	}
 	for _, v := range val.Members {
 		r.Members = append(r.Members, UnionMember{
@@ -1634,6 +1643,7 @@ func (c *compiler) compileUnion(val fidlgen.Union) Union {
 			Type:        c.compileType(v.Type, v.MaybeFromAlias),
 			Name:        compileCamelIdentifier(v.Name),
 			Ordinal:     v.Ordinal,
+			Sensitive:   v.HasAttribute("sensitive"),
 		})
 	}
 	return r
@@ -1645,6 +1655,7 @@ func (c *compiler) compileTable(table fidlgen.Table) Table {
 		ECI:          table.Name,
 		Name:         c.compileDeclIdentifier(table.Name),
 		Serializable: table.GetSerializable(),
+		Sensitive:    table.HasAttribute("sensitive"),
 	}
 	for _, member := range table.Members {
 		r.Members = append(r.Members, TableMember{
@@ -1652,6 +1663,7 @@ func (c *compiler) compileTable(table fidlgen.Table) Table {
 			Type:        c.compileType(member.Type, member.MaybeFromAlias),
 			Name:        compileSnakeIdentifier(member.Name),
 			Ordinal:     member.Ordinal,
+			Sensitive:   member.HasAttribute("sensitive"),
 		})
 	}
 	return r
@@ -2046,4 +2058,40 @@ func Compile(r fidlgen.Root, includeDrivers bool, fdomain bool, isCommon bool) R
 	}
 
 	return root
+}
+
+func (s Struct) HasSensitive() bool {
+	if s.Sensitive {
+		return true
+	}
+	for _, member := range s.Members {
+		if member.Sensitive {
+			return true
+		}
+	}
+	return false
+}
+
+func (t Table) HasSensitive() bool {
+	if t.Sensitive {
+		return true
+	}
+	for _, member := range t.Members {
+		if member.Sensitive {
+			return true
+		}
+	}
+	return false
+}
+
+func (u Union) HasSensitive() bool {
+	if u.Sensitive {
+		return true
+	}
+	for _, member := range u.Members {
+		if member.Sensitive {
+			return true
+		}
+	}
+	return false
 }

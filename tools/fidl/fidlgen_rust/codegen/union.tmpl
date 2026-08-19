@@ -9,10 +9,18 @@
 {{- range .DocComments }}
 ///{{ . }}
 {{- end }}
-{{- if .IsFlexible }}
+{{- if .HasSensitive }}
+  {{- if .IsFlexible }}
+{{ .Derives.RemoveCustom "PartialEq" "Debug" }}
+  {{- else }}
+{{ .Derives.RemoveCustom "Debug" }}
+  {{- end }}
+{{ else }}
+  {{- if .IsFlexible }}
 {{ .Derives.RemoveCustom "PartialEq" }}
-{{- else }}
+  {{- else }}
 {{ .Derives }}
+  {{- end }}
 {{- end }}
 pub enum {{ .Name }} {
     {{- range .Members }}
@@ -86,6 +94,33 @@ impl fidl::{{ if .IsValueType }}Persistable{{ else }}Standalone<{{ ResourceDiale
 {{- if .Serializable.IsSerializable }}
 impl fidl::Serializable for {{ .Name }} {
       const SERIALIZABLE_NAME: &'static str = "{{ .Serializable.Name }}";
+}
+{{- end }}
+
+{{ if .HasSensitive }}
+impl std::fmt::Debug for {{ .Name }} {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        {{- if .Sensitive }}
+        write!(f, "<REDACTED>")
+        {{- else }}
+        match self {
+            {{- range .Members }}
+            {{- if .Sensitive }}
+            Self::{{ .Name }}(_) => f.debug_tuple("{{ .Name }}").field(&fidl::marker::RedactedDebug).finish(),
+            {{- else }}
+            Self::{{ .Name }}(x) => f.debug_tuple("{{ .Name }}").field(x).finish(),
+            {{- end }}
+            {{- end }}
+            {{- if .IsFlexible }}
+            Self::__SourceBreaking { unknown_ordinal } => {
+                f.debug_struct("__SourceBreaking")
+                    .field("unknown_ordinal", unknown_ordinal)
+                    .finish()
+            }
+            {{- end }}
+        }
+        {{- end }}
+    }
 }
 {{- end }}
 

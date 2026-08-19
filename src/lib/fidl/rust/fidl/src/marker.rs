@@ -13,3 +13,26 @@
 /// bindings.
 #[derive(Clone, Default, Debug, PartialEq, Eq)]
 pub struct SourceBreaking;
+
+/// A marker type whose [`Debug`](std::fmt::Debug) implementation prints `"<REDACTED>"`.
+///
+/// Generated FIDL bindings use this type to redact fields marked with the
+/// `@sensitive` attribute in their [`Debug`](std::fmt::Debug) implementations.
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct RedactedDebug;
+
+impl std::fmt::Debug for RedactedDebug {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "<REDACTED>")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_redacted_debug() {
+        assert_eq!(format!("{:?}", RedactedDebug), "<REDACTED>");
+    }
+}

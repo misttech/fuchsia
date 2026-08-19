@@ -25,22 +25,38 @@ pub struct Empty;
 
 impl fidl::Persistable for Empty {}
 
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Eq, Hash, Ord, PartialEq, PartialOrd)]
+
 pub struct NonSensitiveStruct {
     pub sensitive_field: String,
     pub sensitive_struct_field: SensitiveStruct,
 }
 
 impl fidl::Persistable for NonSensitiveStruct {}
+impl std::fmt::Debug for NonSensitiveStruct {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NonSensitiveStruct")
+            .field("sensitive_field", &fidl::marker::RedactedDebug)
+            .field("sensitive_struct_field", &self.sensitive_struct_field)
+            .finish()
+    }
+}
 
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Eq, Hash, Ord, PartialEq, PartialOrd)]
+
 pub struct SensitiveStruct {
     pub field: String,
 }
 
 impl fidl::Persistable for SensitiveStruct {}
+impl std::fmt::Debug for SensitiveStruct {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "<REDACTED>")
+    }
+}
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Default, PartialEq)]
+
 pub struct NonSensitiveTable {
     pub sensitive_field: Option<String>,
     pub sensitive_struct_field: Option<SensitiveStruct>,
@@ -50,7 +66,21 @@ pub struct NonSensitiveTable {
 
 impl fidl::Persistable for NonSensitiveTable {}
 
-#[derive(Clone, Debug, Default, PartialEq)]
+impl std::fmt::Debug for NonSensitiveTable {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NonSensitiveTable")
+            .field(
+                "sensitive_field",
+                &self.sensitive_field.as_ref().map(|_| fidl::marker::RedactedDebug),
+            )
+            .field("sensitive_struct_field", &self.sensitive_struct_field)
+            .field("__source_breaking", &self.__source_breaking)
+            .finish()
+    }
+}
+
+#[derive(Clone, Default, PartialEq)]
+
 pub struct SensitiveTable {
     pub field: Option<String>,
     #[doc(hidden)]
@@ -59,7 +89,14 @@ pub struct SensitiveTable {
 
 impl fidl::Persistable for SensitiveTable {}
 
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+impl std::fmt::Debug for SensitiveTable {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "<REDACTED>")
+    }
+}
+
+#[derive(Clone, Eq, Hash, Ord, PartialEq, PartialOrd)]
+
 pub enum NonSensitiveUnion {
     SensitiveField(String),
     SensitiveStructField(SensitiveStruct),
@@ -77,7 +114,21 @@ impl NonSensitiveUnion {
 
 impl fidl::Persistable for NonSensitiveUnion {}
 
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+impl std::fmt::Debug for NonSensitiveUnion {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::SensitiveField(_) => {
+                f.debug_tuple("SensitiveField").field(&fidl::marker::RedactedDebug).finish()
+            }
+            Self::SensitiveStructField(x) => {
+                f.debug_tuple("SensitiveStructField").field(x).finish()
+            }
+        }
+    }
+}
+
+#[derive(Clone, Eq, Hash, Ord, PartialEq, PartialOrd)]
+
 pub enum SensitiveUnion {
     Field(String),
 }
@@ -92,6 +143,12 @@ impl SensitiveUnion {
 }
 
 impl fidl::Persistable for SensitiveUnion {}
+
+impl std::fmt::Debug for SensitiveUnion {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "<REDACTED>")
+    }
+}
 
 mod internal {
     use super::*;

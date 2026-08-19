@@ -9,7 +9,11 @@
 {{- range .DocComments }}
 ///{{ . }}
 {{- end }}
+{{- if .HasSensitive }}
+{{ .Derives.RemoveCustom "Debug" }}
+{{ else }}
 {{ .Derives }}
+{{- end }}
 {{- if .UseFidlStructCopy }}
 #[repr(C)]
 {{- end }}
@@ -28,6 +32,30 @@ impl fidl::{{ if .IsValueType }}Persistable{{ else }}Standalone<{{ ResourceDiale
 {{- if .Serializable.IsSerializable }}
 impl fidl::Serializable for {{ .Name }} {
       const SERIALIZABLE_NAME: &'static str = "{{ .Serializable.Name }}";
+}
+{{- end }}
+
+{{- if .HasSensitive }}
+impl std::fmt::Debug for {{ .Name }} {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        {{- if .Sensitive }}
+        write!(f, "<REDACTED>")
+        {{- else }}
+        f.debug_struct("{{ .Name }}")
+        {{- range .Members }}
+        {{- if .Sensitive }}
+            {{- if .Type.Nullable }}
+            .field("{{ .Name }}", &self.{{ .Name }}.as_ref().map(|_| fidl::marker::RedactedDebug))
+            {{- else }}
+            .field("{{ .Name }}", &fidl::marker::RedactedDebug)
+            {{- end }}
+        {{- else }}
+            .field("{{ .Name }}", &self.{{ .Name }})
+        {{- end }}
+        {{- end }}
+            .finish()
+        {{- end }}
+    }
 }
 {{- end }}
 
