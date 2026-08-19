@@ -80,6 +80,7 @@ zx_status_t AddPowerImpl(fdf::WireSyncClient<fuchsia_hardware_platform_bus::Plat
                               bind_fuchsia_hardware_pwm::SERVICE_ZIRCONTRANSPORT),
       fdf::MakeAcceptBindRule(bind_fuchsia::PWM_ID, static_cast<uint32_t>(S905D2_PWM_AO_D))};
   const std::vector<fuchsia_driver_framework::NodeProperty2> kPwmProps = {
+      fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.pwm.Service"),
       fdf::MakeProperty2(bind_fuchsia_hardware_pwm::SERVICE,
                          bind_fuchsia_hardware_pwm::SERVICE_ZIRCONTRANSPORT),
       fdf::MakeProperty2(bind_fuchsia_amlogic_platform::PWM_ID,

@@ -112,17 +112,19 @@ zx_status_t Nelson::ThermistorInit() {
   };
   const std::vector<fuchsia_driver_framework::NodeProperty2> kThreadThermistorCompositeProperties =
       {
+          fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.adc.Service"),
           fdf::MakeProperty2(bind_fuchsia_hardware_adc::SERVICE,
                              bind_fuchsia_hardware_adc::SERVICE_ZIRCONTRANSPORT),
           fdf::MakeProperty2(bind_fuchsia_adc::FUNCTION, bind_fuchsia_adc::FUNCTION_THERMISTOR),
           fdf::MakeProperty2(bind_fuchsia_adc::CHANNEL, NELSON_THERMISTOR_THREAD),
-      };
+  };
   const std::vector<fuchsia_driver_framework::BindRule2> kAudioThermistorCompositeRules = {
       fdf::MakeAcceptBindRule(bind_fuchsia_hardware_adc::SERVICE,
                               bind_fuchsia_hardware_adc::SERVICE_ZIRCONTRANSPORT),
       fdf::MakeAcceptBindRule(bind_fuchsia_adc::CHANNEL, NELSON_THERMISTOR_AUDIO),
   };
   const std::vector<fuchsia_driver_framework::NodeProperty2> kAudioThermistorCompositeProperties = {
+      fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.adc.Service"),
       fdf::MakeProperty2(bind_fuchsia_hardware_adc::SERVICE,
                          bind_fuchsia_hardware_adc::SERVICE_ZIRCONTRANSPORT),
       fdf::MakeProperty2(bind_fuchsia_adc::FUNCTION, bind_fuchsia_adc::FUNCTION_THERMISTOR),

@@ -113,6 +113,7 @@ zx::result<> PostInit::InitBacklight() {
   };
 
   auto properties = std::vector{
+      fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.i2c.Service"),
       fdf::MakeProperty2(bind_fuchsia_hardware_i2c::SERVICE,
                          bind_fuchsia_hardware_i2c::SERVICE_ZIRCONTRANSPORT),
   };

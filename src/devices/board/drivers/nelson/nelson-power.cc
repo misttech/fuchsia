@@ -86,6 +86,7 @@ zx_status_t AddMlbComposite(fdf::WireSyncClient<fpbus::PlatformBus>& pbus,
                               bind_fuchsia_ti_platform::BIND_I2C_ADDRESS_INA231_MLB),
   };
   const auto kI2cProperties = std::vector{
+      fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.i2c.Service"),
       fdf::MakeProperty2(bind_fuchsia_hardware_i2c::SERVICE,
                          bind_fuchsia_hardware_i2c::SERVICE_ZIRCONTRANSPORT),
       fdf::MakeProperty2(bind_fuchsia::I2C_ADDRESS,
@@ -154,6 +155,7 @@ zx_status_t AddSpeakerComposite(fdf::WireSyncClient<fpbus::PlatformBus>& pbus,
                               bind_fuchsia_ti_platform::BIND_I2C_ADDRESS_INA231_SPEAKERS),
   };
   const auto kI2cProperties = std::vector{
+      fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.i2c.Service"),
       fdf::MakeProperty2(bind_fuchsia_hardware_i2c::SERVICE,
                          bind_fuchsia_hardware_i2c::SERVICE_ZIRCONTRANSPORT),
       fdf::MakeProperty2(bind_fuchsia::I2C_ADDRESS,
@@ -225,17 +227,20 @@ zx_status_t Nelson::BrownoutProtectionInit() {
   };
 
   const device_bind_prop_t kGpioProperties[] = {
+      ddk::MakeProperty(bind_fuchsia::SERVICE, "fuchsia.hardware.gpio.Service"),
       ddk::MakeProperty(bind_fuchsia_hardware_gpio::SERVICE,
                         bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
       ddk::MakeProperty(bind_fuchsia::NAME, "alert-gpio"),
   };
 
   const device_bind_prop_t kCodecProperties[] = {
+      ddk::MakeProperty(bind_fuchsia::SERVICE, "fuchsia.hardware.audio.CodecService"),
       ddk::MakeProperty(bind_fuchsia_hardware_audio::CODECSERVICE,
                         bind_fuchsia_hardware_audio::CODECSERVICE_ZIRCONTRANSPORT),
   };
 
   const device_bind_prop_t kPowerSensorProperties[] = {
+      ddk::MakeProperty(bind_fuchsia::SERVICE, "fuchsia.hardware.power.sensor.Service"),
       ddk::MakeProperty(bind_fuchsia_hardware_power_sensor::SERVICE,
                         bind_fuchsia_hardware_power_sensor::SERVICE_ZIRCONTRANSPORT),
       ddk::MakeProperty(bind_fuchsia::POWER_SENSOR_DOMAIN,

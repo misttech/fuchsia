@@ -62,6 +62,7 @@ const std::vector kFocaltechI2cRules = std::vector{
 };
 
 const std::vector kFocaltechI2cProperties = std::vector{
+    fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.i2c.Service"),
     fdf::MakeProperty2(bind_fuchsia_hardware_i2c::SERVICE,
                        bind_fuchsia_hardware_i2c::SERVICE_ZIRCONTRANSPORT),
     fdf::MakeProperty2(bind_fuchsia::I2C_ADDRESS,

@@ -114,6 +114,7 @@ zx_status_t Nelson::ButtonsInit() {
       fdf::MakeAcceptBindRule(bind_fuchsia::GPIO_PIN,
                               bind_fuchsia_amlogic_platform_s905d3::GPIOZ_PIN_ID_PIN_5)};
   const std::vector<fuchsia_driver_framework::NodeProperty2> kVolUpProps = {
+      fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.gpio.Service"),
       fdf::MakeProperty2(bind_fuchsia_hardware_gpio::SERVICE,
                          bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
       fdf::MakeProperty2(bind_fuchsia::NAME, "volume-up"),
@@ -125,6 +126,7 @@ zx_status_t Nelson::ButtonsInit() {
       fdf::MakeAcceptBindRule(bind_fuchsia::GPIO_PIN,
                               bind_fuchsia_amlogic_platform_s905d3::GPIOZ_PIN_ID_PIN_6)};
   const std::vector<fuchsia_driver_framework::NodeProperty2> kVolDownProps = {
+      fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.gpio.Service"),
       fdf::MakeProperty2(bind_fuchsia_hardware_gpio::SERVICE,
                          bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
       fdf::MakeProperty2(bind_fuchsia::NAME, "volume-down"),
@@ -136,6 +138,7 @@ zx_status_t Nelson::ButtonsInit() {
       fdf::MakeAcceptBindRule(bind_fuchsia::GPIO_PIN,
                               bind_fuchsia_amlogic_platform_s905d3::GPIOAO_PIN_ID_PIN_10)};
   const std::vector<fuchsia_driver_framework::NodeProperty2> kVolBothProps = {
+      fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.gpio.Service"),
       fdf::MakeProperty2(bind_fuchsia_hardware_gpio::SERVICE,
                          bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
       fdf::MakeProperty2(bind_fuchsia::NAME, "volume-both"),
@@ -147,6 +150,7 @@ zx_status_t Nelson::ButtonsInit() {
       fdf::MakeAcceptBindRule(bind_fuchsia::GPIO_PIN,
                               bind_fuchsia_amlogic_platform_s905d3::GPIOZ_PIN_ID_PIN_2)};
   const std::vector<fuchsia_driver_framework::NodeProperty2> kMicPrivacyProps = {
+      fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.gpio.Service"),
       fdf::MakeProperty2(bind_fuchsia_hardware_gpio::SERVICE,
                          bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
       fdf::MakeProperty2(bind_fuchsia::NAME, "mic-mute"),

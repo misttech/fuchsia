@@ -3,6 +3,8 @@
 // found in the LICENSE file.
 
 
-fuchsia.hardware.i2c.Service == fuchsia.hardware.i2c.Service.ZirconTransport;
+using fuchsia;
+
+fuchsia.Service == "fuchsia.hardware.i2c.Service";
 fuchsia.BIND_PLATFORM_DEV_VID == fuchsia.sensirion.platform.BIND_PLATFORM_DEV_VID.SENSIRION;
 fuchsia.BIND_PLATFORM_DEV_DID == fuchsia.sensirion.platform.BIND_PLATFORM_DEV_DID.SHTV3;

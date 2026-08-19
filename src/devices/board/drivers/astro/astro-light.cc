@@ -164,6 +164,7 @@ zx_status_t Astro::LightInit() {
   };
 
   auto amber_led_gpio_properties = std::vector{
+      fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.gpio.Service"),
       fdf::MakeProperty2(bind_fuchsia_hardware_gpio::SERVICE,
                          bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
       fdf::MakeProperty2(bind_fuchsia::NAME, "gpio-amber-led"),
@@ -177,6 +178,7 @@ zx_status_t Astro::LightInit() {
   };
 
   auto amber_led_pwm_properties = std::vector{
+      fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.pwm.Service"),
       fdf::MakeProperty2(bind_fuchsia_hardware_pwm::SERVICE,
                          bind_fuchsia_hardware_pwm::SERVICE_ZIRCONTRANSPORT),
       fdf::MakeProperty2(bind_fuchsia::NAME, "pwm-amber-led"),

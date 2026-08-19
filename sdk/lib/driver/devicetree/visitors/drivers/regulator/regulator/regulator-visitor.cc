@@ -193,6 +193,7 @@ zx::result<> RegulatorVisitor::AddChildNodeSpec(fdf_devicetree::Node& child,
           {
               fdf::MakeProperty2(bind_fuchsia_hardware_vreg::SERVICE,
                                  bind_fuchsia_hardware_vreg::SERVICE_ZIRCONTRANSPORT),
+              fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.vreg.Service"),
               fdf::MakeProperty2(bind_fuchsia::NAME, property_name),
           },
   }};

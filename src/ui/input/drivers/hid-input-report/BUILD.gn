@@ -13,6 +13,7 @@ driver_bind_rules("hid_input_report_bind") {
   tests = "meta/bind_tests.json"
   deps = [
     "//sdk/fidl/fuchsia.hardware.input:fuchsia.hardware.input_bindlib",
+    "//src/devices/bind/fuchsia",
     "//src/devices/bind/fuchsia.hid",
   ]
 }

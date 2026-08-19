@@ -8,9 +8,17 @@
     },
     {
         "device": {
-            "fuchsia.hardware.serialimpl.Service": "fuchsia.hardware.serialimpl.Service.DriverTransport"
+            "fuchsia.Service": "\"fuchsia.hardware.serialimpl.Service\""
         },
         "expected": "match",
         "name": "serial"
+    },
+    {
+        "device": {
+            "fuchsia.Service": "\"fuchsia.hardware.serialimpl.Service\"",
+            "fuchsia.hardware.serial.Service": "fuchsia.hardware.serial.Service.ZirconTransport"
+        },
+        "expected": "abort",
+        "name": "own node"
     }
 ]

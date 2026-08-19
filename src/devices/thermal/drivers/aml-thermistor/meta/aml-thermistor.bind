@@ -8,7 +8,6 @@ using fuchsia;
 using fuchsia.adc;
 using fuchsia.amlogic.platform;
 using fuchsia.google.platform;
-using fuchsia.hardware.adc;
 using fuchsia.platform;
 
 primary parent "pdev" {
@@ -32,7 +31,7 @@ primary parent "pdev" {
 }
 
 optional parent "adc-0" {
-  fuchsia.hardware.adc.Service == fuchsia.hardware.adc.Service.ZirconTransport;
+  fuchsia.Service == "fuchsia.hardware.adc.Service";
   if fuchsia.NAME == "adc-0" {
     true;
   } else {
@@ -41,7 +40,7 @@ optional parent "adc-0" {
 }
 
 optional parent "adc-1" {
-  fuchsia.hardware.adc.Service == fuchsia.hardware.adc.Service.ZirconTransport;
+  fuchsia.Service == "fuchsia.hardware.adc.Service";
   if fuchsia.NAME == "adc-1" {
     true;
   } else {
@@ -50,7 +49,7 @@ optional parent "adc-1" {
 }
 
 optional parent "adc-2" {
-  fuchsia.hardware.adc.Service == fuchsia.hardware.adc.Service.ZirconTransport;
+  fuchsia.Service == "fuchsia.hardware.adc.Service";
   if fuchsia.NAME == "adc-2" {
     true;
   } else {
@@ -59,7 +58,7 @@ optional parent "adc-2" {
 }
 
 optional parent "adc-3" {
-  fuchsia.hardware.adc.Service == fuchsia.hardware.adc.Service.ZirconTransport;
+  fuchsia.Service == "fuchsia.hardware.adc.Service";
   if fuchsia.NAME == "adc-3" {
     true;
   } else {

@@ -37,6 +37,7 @@ driver_bind_rules("bind") {
   tests = "meta/ti-ina231-bind-test.json"
   deps = [
     "//sdk/fidl/fuchsia.hardware.i2c:fuchsia.hardware.i2c_bindlib",
+    "//src/devices/bind/fuchsia",
     "//src/devices/bind/fuchsia.platform",
     "//src/devices/bind/fuchsia.ti.platform",
   ]

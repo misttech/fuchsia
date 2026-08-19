@@ -7,7 +7,7 @@
                 "expected": "match",
                 "device": {
                     "fuchsia.BIND_I2C_ADDRESS": "fuchsia.ti.platform.BIND_I2C_ADDRESS.INA231_MLB",
-                    "fuchsia.hardware.i2c.Service": "fuchsia.hardware.i2c.Service.ZirconTransport"
+                    "fuchsia.Service": "\"fuchsia.hardware.i2c.Service\""
                 }
             },
             {
@@ -15,7 +15,7 @@
                 "expected": "match",
                 "device": {
                     "fuchsia.BIND_I2C_ADDRESS": "fuchsia.ti.platform.BIND_I2C_ADDRESS.INA231_SPEAKERS",
-                    "fuchsia.hardware.i2c.Service": "fuchsia.hardware.i2c.Service.ZirconTransport"
+                    "fuchsia.Service": "\"fuchsia.hardware.i2c.Service\""
                 }
             }
         ]

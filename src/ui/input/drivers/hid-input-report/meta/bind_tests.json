@@ -1,15 +1,7 @@
 [
     {
         "device": {
-            "fuchsia.hardware.input.Service": "fuchsia.hardware.input.Service.DriverTransport",
-            "fuchsia.hid.DIGITIZER__TOUCH_SCREEN": "true"
-        },
-        "expected": "abort",
-        "name": "Incorrect_Transport_Type"
-    },
-    {
-        "device": {
-            "fuchsia.hardware.input.Service": "fuchsia.hardware.input.Service.ZirconTransport",
+            "fuchsia.Service": "\"fuchsia.hardware.input.Service\"",
             "fuchsia.hid.FIDO_ALLIANCE": "true"
         },
         "expected": "abort",
@@ -17,7 +9,7 @@
     },
     {
         "device": {
-            "fuchsia.hardware.input.Service": "fuchsia.hardware.input.Service.ZirconTransport",
+            "fuchsia.Service": "\"fuchsia.hardware.input.Service\"",
             "fuchsia.hid.CONSUMER__CONSUMER_CONTROL": "true"
         },
         "expected": "match",
@@ -25,7 +17,7 @@
     },
     {
         "device": {
-            "fuchsia.hardware.input.Service": "fuchsia.hardware.input.Service.ZirconTransport",
+            "fuchsia.Service": "\"fuchsia.hardware.input.Service\"",
             "fuchsia.hid.DIGITIZER__TOUCH_PAD": "true"
         },
         "expected": "match",
@@ -33,7 +25,7 @@
     },
     {
         "device": {
-            "fuchsia.hardware.input.Service": "fuchsia.hardware.input.Service.ZirconTransport",
+            "fuchsia.Service": "\"fuchsia.hardware.input.Service\"",
             "fuchsia.hid.DIGITIZER__TOUCH_SCREEN": "true"
         },
         "expected": "match",
@@ -41,7 +33,7 @@
     },
     {
         "device": {
-            "fuchsia.hardware.input.Service": "fuchsia.hardware.input.Service.ZirconTransport",
+            "fuchsia.Service": "\"fuchsia.hardware.input.Service\"",
             "fuchsia.hid.DIGITIZER__TOUCH_SCREEN_CONFIGURATION": "true"
         },
         "expected": "match",
@@ -49,7 +41,7 @@
     },
     {
         "device": {
-            "fuchsia.hardware.input.Service": "fuchsia.hardware.input.Service.ZirconTransport",
+            "fuchsia.Service": "\"fuchsia.hardware.input.Service\"",
             "fuchsia.hid.GENERIC_DESKTOP__KEYBOARD": "true"
         },
         "expected": "match",
@@ -57,7 +49,7 @@
     },
     {
         "device": {
-            "fuchsia.hardware.input.Service": "fuchsia.hardware.input.Service.ZirconTransport",
+            "fuchsia.Service": "\"fuchsia.hardware.input.Service\"",
             "fuchsia.hid.GENERIC_DESKTOP__MOUSE": "true"
         },
         "expected": "match",
@@ -65,7 +57,7 @@
     },
     {
         "device": {
-            "fuchsia.hardware.input.Service": "fuchsia.hardware.input.Service.ZirconTransport",
+            "fuchsia.Service": "\"fuchsia.hardware.input.Service\"",
             "fuchsia.hid.SENSOR": "true"
         },
         "expected": "match",
@@ -73,7 +65,7 @@
     },
     {
         "device": {
-            "fuchsia.hardware.input.Service": "fuchsia.hardware.input.Service.ZirconTransport",
+            "fuchsia.Service": "\"fuchsia.hardware.input.Service\"",
             "fuchsia.hid.GENERIC_DESKTOP__MOUSE": "true",
             "fuchsia.hid.SENSOR": "true"
         },
@@ -82,7 +74,7 @@
     },
     {
         "device": {
-            "fuchsia.hardware.input.Service": "fuchsia.hardware.input.Service.ZirconTransport",
+            "fuchsia.Service": "\"fuchsia.hardware.input.Service\"",
             "fuchsia.hid.GENERIC_DESKTOP__MOUSE": "false"
         },
         "expected": "abort",
@@ -90,7 +82,7 @@
     },
     {
         "device": {
-            "fuchsia.hardware.input.Service": "fuchsia.hardware.input.Service.ZirconTransport",
+            "fuchsia.Service": "\"fuchsia.hardware.input.Service\"",
             "fuchsia.hid.FIDO_ALLIANCE": "true",
             "fuchsia.hid.SENSOR": "true"
         },

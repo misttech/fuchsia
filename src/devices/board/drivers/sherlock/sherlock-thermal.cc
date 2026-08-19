@@ -295,6 +295,7 @@ zx::result<> CreateThermalPllNode(
         fdf::MakeAcceptBindRule(bind_fuchsia::PWM_ID, pwm_id),
     };
     auto properties = std::vector{
+        fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.pwm.Service"),
         fdf::MakeProperty2(bind_fuchsia_hardware_pwm::SERVICE,
                            bind_fuchsia_hardware_pwm::SERVICE_ZIRCONTRANSPORT),
         fdf::MakeProperty2(bind_fuchsia::NAME, function),
@@ -309,6 +310,7 @@ zx::result<> CreateThermalPllNode(
         fdf::MakeAcceptBindRule(bind_fuchsia::CLOCK_ID, clock_id),
     };
     auto properties = std::vector{
+        fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.clock.Service"),
         fdf::MakeProperty2(bind_fuchsia_hardware_clock::SERVICE,
                            bind_fuchsia_hardware_clock::SERVICE_ZIRCONTRANSPORT),
         fdf::MakeProperty2(bind_fuchsia::NAME, function),

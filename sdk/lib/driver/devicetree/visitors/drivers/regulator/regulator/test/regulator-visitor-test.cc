@@ -72,9 +72,10 @@ TEST(RegulatorVisitorTest, TestMetadataAndBindProperty) {
   // Check for regulator parent node specs. Skip the 1st one as it is either pdev/board device.
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
       {
-          {fdf::MakeProperty2(bind_fuchsia_hardware_vreg::SERVICE,
-                              bind_fuchsia_hardware_vreg::SERVICE_ZIRCONTRANSPORT),
-           fdf::MakeProperty2(bind_fuchsia::NAME, REGULATOR_FUNCTION)},
+          fdf::MakeProperty2(bind_fuchsia_hardware_vreg::SERVICE,
+                             bind_fuchsia_hardware_vreg::SERVICE_ZIRCONTRANSPORT),
+          fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.vreg.Service"),
+          fdf::MakeProperty2(bind_fuchsia::NAME, REGULATOR_FUNCTION),
       },
       (*mgr_request.parents2())[1].properties(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
@@ -115,12 +116,13 @@ TEST(RegulatorVisitorTest, TestSharedRegulatorInstanceIds) {
 
       // Check for regulator parent node specs. Skip the 1st one as it is either pdev/board device.
       // When regulator-functions is omitted, FUNCTION property must not be generated.
-      EXPECT_EQ(2lu, (*mgr_request.parents2())[1].properties().size());
+      EXPECT_EQ(3lu, (*mgr_request.parents2())[1].properties().size());
       EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
           {
-              {fdf::MakeProperty2(bind_fuchsia_hardware_vreg::SERVICE,
-                                  bind_fuchsia_hardware_vreg::SERVICE_ZIRCONTRANSPORT),
-               fdf::MakeProperty2(bind_fuchsia::NAME, REGULATOR_NAME)},
+              fdf::MakeProperty2(bind_fuchsia_hardware_vreg::SERVICE,
+                                 bind_fuchsia_hardware_vreg::SERVICE_ZIRCONTRANSPORT),
+              fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.vreg.Service"),
+              fdf::MakeProperty2(bind_fuchsia::NAME, REGULATOR_NAME),
           },
           (*mgr_request.parents2())[1].properties(), true));
       EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(

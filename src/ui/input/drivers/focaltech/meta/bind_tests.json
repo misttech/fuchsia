@@ -6,7 +6,7 @@
                 "name": "Match",
                 "expected": "match",
                 "device": {
-                    "fuchsia.hardware.i2c.Service": "fuchsia.hardware.i2c.Service.ZirconTransport"
+                    "fuchsia.Service": "\"fuchsia.hardware.i2c.Service\""
                 }
             }
         ]
@@ -18,7 +18,7 @@
                 "name": "Match",
                 "expected": "match",
                 "device": {
-                    "fuchsia.hardware.gpio.Service": "fuchsia.hardware.gpio.Service.ZirconTransport",
+                    "fuchsia.Service": "\"fuchsia.hardware.gpio.Service\"",
                     "fuchsia.NAME": "\"gpio-int\""
                 }
             }
@@ -31,7 +31,7 @@
                 "name": "Match",
                 "expected": "match",
                 "device": {
-                    "fuchsia.hardware.gpio.Service": "fuchsia.hardware.gpio.Service.ZirconTransport",
+                    "fuchsia.Service": "\"fuchsia.hardware.gpio.Service\"",
                     "fuchsia.NAME": "\"gpio-reset\""
                 }
             }

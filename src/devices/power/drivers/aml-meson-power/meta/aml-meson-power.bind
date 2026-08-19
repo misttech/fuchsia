@@ -27,7 +27,7 @@ primary parent "pdev" {
 
 // For Astro
 optional parent "pwm-big-cluster" {
-  fuchsia.hardware.pwm.Service == fuchsia.hardware.pwm.Service.ZirconTransport;
+  fuchsia.Service == "fuchsia.hardware.pwm.Service";
   if fuchsia.NAME == "pwm-big-cluster" {
     true;
   } else {
@@ -37,16 +37,16 @@ optional parent "pwm-big-cluster" {
 
 // For Vim3
 optional parent "vreg-pwm-little" {
-  fuchsia.hardware.vreg.Service == fuchsia.hardware.vreg.Service.ZirconTransport;
+  fuchsia.Service == "fuchsia.hardware.vreg.Service";
   fuchsia.NAME == "vreg-pwm-little";
 }
 
 optional parent "vreg-pwm-big" {
-  fuchsia.hardware.vreg.Service == fuchsia.hardware.vreg.Service.ZirconTransport;
+  fuchsia.Service == "fuchsia.hardware.vreg.Service";
   fuchsia.NAME == "vreg-pwm-big";
 }
 
 optional parent "pin-control" {
-  fuchsia.hardware.pin.PinStatesService == fuchsia.hardware.pin.PinStatesService.ZirconTransport;
+  fuchsia.Service == "fuchsia.hardware.pin.PinStatesService";
 }
 

@@ -3,7 +3,9 @@
 // found in the LICENSE file.
 
 
-fuchsia.hardware.input.Service == fuchsia.hardware.input.Service.ZirconTransport;
+using fuchsia;
+
+fuchsia.Service == "fuchsia.hardware.input.Service";
 if fuchsia.hid.CONSUMER__CONSUMER_CONTROL == true {
     true;
 } else if fuchsia.hid.DIGITIZER__TOUCH_PAD == true {

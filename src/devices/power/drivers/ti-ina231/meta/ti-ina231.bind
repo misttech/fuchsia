@@ -4,9 +4,10 @@
 
 composite ti_ina231;
 
+using fuchsia;
 
 primary parent "i2c" {
-  fuchsia.hardware.i2c.Service == fuchsia.hardware.i2c.Service.ZirconTransport;
+  fuchsia.Service == "fuchsia.hardware.i2c.Service";
   accept fuchsia.BIND_I2C_ADDRESS {
     fuchsia.ti.platform.BIND_I2C_ADDRESS.INA231_MLB,
     fuchsia.ti.platform.BIND_I2C_ADDRESS.INA231_SPEAKERS

@@ -28,7 +28,7 @@
                 "name": "MatchName",
                 "expected": "match",
                 "device": {
-                    "fuchsia.hardware.adc.Service": "fuchsia.hardware.adc.Service.ZirconTransport",
+                    "fuchsia.Service": "\"fuchsia.hardware.adc.Service\"",
                     "fuchsia.NAME": "\"adc-0\""
                 }
             },
@@ -36,7 +36,7 @@
                 "name": "MatchChannel",
                 "expected": "match",
                 "device": {
-                    "fuchsia.hardware.adc.Service": "fuchsia.hardware.adc.Service.ZirconTransport",
+                    "fuchsia.Service": "\"fuchsia.hardware.adc.Service\"",
                     "fuchsia.adc.CHANNEL": "0"
                 }
             }
