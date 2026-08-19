@@ -205,12 +205,12 @@ func (t *SubprocessTester) getTestRun(test testsharder.Test) string {
 func (t *SubprocessTester) Test(ctx context.Context, test testsharder.Test, stdout io.Writer, stderr io.Writer, outDir string) (*runtests.TestDetails, error) {
 	testResult := BaseTestResultFromTest(test)
 	if test.Path == "" {
-		testResult.FailureReason = fmt.Sprintf("test %q has no `path` set", test.Name)
+		testResult.FailureReason = runtests.FailureReasonFromMessage(fmt.Sprintf("test %q has no `path` set", test.Name))
 		return testResult, nil
 	}
 	// Some tests read TestOutDirEnvKey so ensure they get their own output dir.
 	if err := os.MkdirAll(outDir, 0o770); err != nil {
-		testResult.FailureReason = err.Error()
+		testResult.FailureReason = runtests.FailureReasonFromMessage(err.Error())
 		return testResult, nil
 	}
 
@@ -225,7 +225,7 @@ func (t *SubprocessTester) Test(ctx context.Context, test testsharder.Test, stdo
 
 	testOutputSummaryDir := filepath.Join(t.localOutputDir, "test_output_summary", test.Path)
 	if err := os.MkdirAll(testOutputSummaryDir, os.ModePerm); err != nil {
-		testResult.FailureReason = err.Error()
+		testResult.FailureReason = runtests.FailureReasonFromMessage(err.Error())
 		return testResult, nil
 	}
 	defer os.RemoveAll(filepath.Join(t.localOutputDir, "test_output_summary"))
@@ -353,12 +353,12 @@ func (t *SubprocessTester) Test(ctx context.Context, test testsharder.Test, stdo
 		if t.sProps.mountUserHome {
 			currentUser, err := user.Current()
 			if err != nil {
-				testResult.FailureReason = err.Error()
+				testResult.FailureReason = runtests.FailureReasonFromMessage(err.Error())
 				return testResult, nil
 			}
 			pwdFile, err := os.Open("/etc/passwd")
 			if err != nil {
-				testResult.FailureReason = err.Error()
+				testResult.FailureReason = runtests.FailureReasonFromMessage(err.Error())
 				return testResult, nil
 			}
 			defer pwdFile.Close()
@@ -377,7 +377,7 @@ func (t *SubprocessTester) Test(ctx context.Context, test testsharder.Test, stdo
 				}
 			}
 			if pwdScanner.Err() != nil {
-				testResult.FailureReason = pwdScanner.Err().Error()
+				testResult.FailureReason = runtests.FailureReasonFromMessage(pwdScanner.Err().Error())
 				return testResult, nil
 			}
 		}
@@ -387,7 +387,7 @@ func (t *SubprocessTester) Test(ctx context.Context, test testsharder.Test, stdo
 		// instead.
 		tmpDir, err := newTempDir("", "")
 		if err != nil {
-			testResult.FailureReason = err.Error()
+			testResult.FailureReason = runtests.FailureReasonFromMessage(err.Error())
 			return testResult, nil
 		}
 		defer os.RemoveAll(tmpDir)
@@ -413,7 +413,7 @@ func (t *SubprocessTester) Test(ctx context.Context, test testsharder.Test, stdo
 		if t.sProps.nsjailRoot != "" {
 			absRoot, err := filepath.Abs(t.sProps.nsjailRoot)
 			if err != nil {
-				testResult.FailureReason = err.Error()
+				testResult.FailureReason = runtests.FailureReasonFromMessage(err.Error())
 				return testResult, nil
 			}
 			testCmdBuilder.MountPoints = append(
@@ -436,12 +436,12 @@ func (t *SubprocessTester) Test(ctx context.Context, test testsharder.Test, stdo
 			}
 			b, err := os.ReadFile(testbedConfigPath)
 			if err != nil {
-				testResult.FailureReason = err.Error()
+				testResult.FailureReason = runtests.FailureReasonFromMessage(err.Error())
 				return testResult, nil
 			}
 			var testbedConfig []targetInfo
 			if err := json.Unmarshal(b, &testbedConfig); err != nil {
-				testResult.FailureReason = err.Error()
+				testResult.FailureReason = runtests.FailureReasonFromMessage(err.Error())
 				return testResult, nil
 			}
 			serialSockets := make(map[string]struct{})
@@ -457,7 +457,7 @@ func (t *SubprocessTester) Test(ctx context.Context, test testsharder.Test, stdo
 			for socket := range serialSockets {
 				absSocketPath, err := filepath.Abs(socket)
 				if err != nil {
-					testResult.FailureReason = err.Error()
+					testResult.FailureReason = runtests.FailureReasonFromMessage(err.Error())
 					return testResult, nil
 				}
 				testCmdBuilder.MountPoints = append(testCmdBuilder.MountPoints, &MountPt{
@@ -468,7 +468,7 @@ func (t *SubprocessTester) Test(ctx context.Context, test testsharder.Test, stdo
 			for key := range sshKeys {
 				absKeyPath, err := filepath.Abs(key)
 				if err != nil {
-					testResult.FailureReason = err.Error()
+					testResult.FailureReason = runtests.FailureReasonFromMessage(err.Error())
 					return testResult, nil
 				}
 				testCmdBuilder.MountPoints = append(testCmdBuilder.MountPoints, &MountPt{
@@ -481,7 +481,7 @@ func (t *SubprocessTester) Test(ctx context.Context, test testsharder.Test, stdo
 		if luciCtx := os.Getenv("LUCI_CONTEXT"); luciCtx != "" {
 			absPath, err := filepath.Abs(luciCtx)
 			if err != nil {
-				testResult.FailureReason = err.Error()
+				testResult.FailureReason = runtests.FailureReasonFromMessage(err.Error())
 				return testResult, nil
 			}
 			testCmdBuilder.MountPoints = append(testCmdBuilder.MountPoints, &MountPt{
@@ -491,7 +491,7 @@ func (t *SubprocessTester) Test(ctx context.Context, test testsharder.Test, stdo
 		testCmdBuilder.AddDefaultMounts()
 		testCmd, err = testCmdBuilder.Build(testCmd)
 		if err != nil {
-			testResult.FailureReason = err.Error()
+			testResult.FailureReason = runtests.FailureReasonFromMessage(err.Error())
 			return testResult, nil
 		}
 	}
@@ -514,9 +514,9 @@ func (t *SubprocessTester) Test(ctx context.Context, test testsharder.Test, stdo
 				return testResult, fmt.Errorf("failed to power cycle target: %w", err)
 			}
 		}
-		testResult.FailureReason = err.Error()
+		testResult.FailureReason = runtests.FailureReasonFromMessage(err.Error())
 	} else {
-		testResult.FailureReason = err.Error()
+		testResult.FailureReason = runtests.FailureReasonFromMessage(err.Error())
 	}
 
 	if bytes, err := os.ReadFile(testOutputSummaryPath); !os.IsNotExist(err) {
@@ -527,7 +527,7 @@ func (t *SubprocessTester) Test(ctx context.Context, test testsharder.Test, stdo
 			if err := json.Unmarshal(bytes, &resultDetails); err != nil {
 				return testResult, fmt.Errorf("failed to unmarshal case results: %s", err)
 			} else {
-				if resultDetails.FailureReason == "" {
+				if resultDetails.FailureReason == nil {
 					resultDetails.FailureReason = testResult.FailureReason
 				}
 				testResult.TestResult = resultDetails
@@ -894,9 +894,9 @@ func (t *FFXTester) ProcessResult(ctx context.Context, test testsharder.Test, ou
 		}
 	}
 	if err != nil {
-		finalTestResult.FailureReason = err.Error()
+		finalTestResult.FailureReason = runtests.FailureReasonFromMessage(err.Error())
 	} else if testResult == nil {
-		finalTestResult.FailureReason = "expected 1 test result, got none"
+		finalTestResult.FailureReason = runtests.FailureReasonFromMessage("expected 1 test result, got none")
 	} else {
 		finalTestResult = testResult
 	}
@@ -999,15 +999,19 @@ func processTestResult(runResult *ffxutil.TestRunResult, test testsharder.Test, 
 			}
 			artifacts = append(artifacts, artifact)
 		}
+		var failureReason *runtests.FailureReason
+		if runtests.IsFailure(status) {
+			failureReason = runtests.FailureReasonFromMessage(failReason)
+		}
 		cases = append(cases, runtests.TestCaseResult{
-			DisplayName: testCase.Name,
-			CaseName:    testCase.Name,
-			Status:      status,
-			FailReason:  failReason,
-			Format:      "FTF",
-			OutputFiles: artifacts,
-			OutputDir:   testCaseArtifactDir,
-			Tags:        []build.TestTag{{Key: "test_outcome", Value: testCase.Outcome}},
+			DisplayName:   testCase.Name,
+			CaseName:      testCase.Name,
+			Status:        status,
+			FailureReason: failureReason,
+			Format:        "FTF",
+			OutputFiles:   artifacts,
+			OutputDir:     testCaseArtifactDir,
+			Tags:          []build.TestTag{{Key: "test_outcome", Value: testCase.Outcome}},
 		})
 	}
 	testResult.Cases = cases
@@ -1525,7 +1529,7 @@ func (t *FuchsiaSerialTester) Test(ctx context.Context, test testsharder.Test, s
 	testResult := BaseTestResultFromTest(test)
 	command, err := commandForTest(&test, true, test.Timeout)
 	if err != nil {
-		testResult.FailureReason = err.Error()
+		testResult.FailureReason = runtests.FailureReasonFromMessage(err.Error())
 		return testResult, nil
 	}
 	logger.Debugf(ctx, "starting: %s", command)
@@ -1595,7 +1599,7 @@ func (t *FuchsiaSerialTester) Test(ctx context.Context, test testsharder.Test, s
 		match, err := iomisc.ReadUntilMatchString(ctx, testOutputReader, res_success, res_failed, res_inconclusive, res_timed_out, res_errored, res_skipped, res_canceled, res_dnf)
 		if err != nil {
 			err = fmt.Errorf("unable to derive test result from run-test-suite output: %w", err)
-			testResult.FailureReason = err.Error()
+			testResult.FailureReason = runtests.FailureReasonFromMessage(err.Error())
 			return testResult, nil
 		}
 
@@ -1605,25 +1609,24 @@ func (t *FuchsiaSerialTester) Test(ctx context.Context, test testsharder.Test, s
 		}
 
 		if match == res_timed_out || match == res_canceled {
-			testResult.FailureReason = "test timed out or canceled"
+			testResult.FailureReason = runtests.FailureReasonFromMessage("test timed out or canceled")
 			testResult.Status = runtests.TestAborted
 			return testResult, nil
 		}
 
 		if match == res_skipped {
-			testResult.FailureReason = "test skipped"
 			testResult.Status = runtests.TestSkipped
 			return testResult, nil
 		}
 
 		logger.Errorf(ctx, "%s", match)
-		testResult.FailureReason = "test failed"
+		testResult.FailureReason = runtests.FailureReasonFromMessage("test failed")
 		testResult.Status = runtests.TestFailure
 		return testResult, nil
 	}
 
 	if success, err := runtests.TestPassed(ctx, testOutputReader, test.Name); err != nil {
-		testResult.FailureReason = err.Error()
+		testResult.FailureReason = runtests.FailureReasonFromMessage(err.Error())
 		return testResult, nil
 	} else if !success {
 		if errors.Is(err, io.EOF) {
@@ -1632,7 +1635,7 @@ func (t *FuchsiaSerialTester) Test(ctx context.Context, test testsharder.Test, s
 			// to keep running tests.
 			return nil, err
 		}
-		testResult.FailureReason = "test failed"
+		testResult.FailureReason = runtests.FailureReasonFromMessage("test failed")
 		return testResult, nil
 	}
 	testResult.Status = runtests.TestSuccess

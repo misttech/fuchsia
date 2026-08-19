@@ -258,6 +258,21 @@ pub enum SummaryOutcomeResult {
     Error = 0x60,
 }
 
+impl SummaryOutcomeResult {
+    /// Determines whether this outcome represents a failure state.
+    /// Returns true for outcomes that indicate a failed or incomplete run,
+    /// specifically `Failed`, `TimedOut`, `Canceled`, or `Error`, false otherwise.
+    pub fn is_failure(&self) -> bool {
+        matches!(
+            self,
+            SummaryOutcomeResult::Failed
+                | SummaryOutcomeResult::TimedOut
+                | SummaryOutcomeResult::Canceled
+                | SummaryOutcomeResult::Error
+        )
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq)]
 pub struct SummaryArtifact {
     #[serde(rename = "type")]
@@ -850,5 +865,16 @@ mod tests {
         );
 
         temp_dir.close().expect("to close temporary directory");
+    }
+
+    #[test]
+    fn test_is_failure() {
+        assert!(!SummaryOutcomeResult::NotSpecified.is_failure());
+        assert!(!SummaryOutcomeResult::Skipped.is_failure());
+        assert!(!SummaryOutcomeResult::Passed.is_failure());
+        assert!(SummaryOutcomeResult::Canceled.is_failure());
+        assert!(SummaryOutcomeResult::TimedOut.is_failure());
+        assert!(SummaryOutcomeResult::Failed.is_failure());
+        assert!(SummaryOutcomeResult::Error.is_failure());
     }
 }

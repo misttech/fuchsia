@@ -33,17 +33,25 @@ func (c *testSuiteFailureReasonCheck) Check(to *TestingOutputs) bool {
 			continue
 		}
 
-		if strings.Contains(test.FailureReason, c.String) {
-			c.testName = test.Name
-			c.failureReason = test.FailureReason
-			return true
+		if test.FailureReason != nil {
+			for _, err := range test.FailureReason.Errors {
+				if err != nil && strings.Contains(err.Message, c.String) {
+					c.testName = test.Name
+					c.failureReason = err.Message
+					return true
+				}
+			}
 		}
 
 		for _, tc := range test.Cases {
-			if strings.Contains(tc.FailReason, c.String) {
-				c.testName = test.Name
-				c.failureReason = tc.FailReason
-				return true
+			if tc.FailureReason != nil {
+				for _, err := range tc.FailureReason.Errors {
+					if err != nil && strings.Contains(err.Message, c.String) {
+						c.testName = test.Name
+						c.failureReason = err.Message
+						return true
+					}
+				}
 			}
 		}
 	}

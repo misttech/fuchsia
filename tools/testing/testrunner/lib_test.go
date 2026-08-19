@@ -532,7 +532,7 @@ func TestRunAndOutputTests(t *testing.T) {
 			expectedResults: []runtests.TestDetails{
 				func() runtests.TestDetails {
 					d := failedTest("foo", 0, 60*time.Second)
-					d.FailureReason = "failed to setup test: package resolution failed"
+					d.FailureReason = runtests.FailureReasonFromMessage("failed to setup test: package resolution failed")
 					return d
 				}(),
 			},

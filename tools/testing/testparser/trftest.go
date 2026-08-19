@@ -94,8 +94,8 @@ func parseTrfTest(lines [][]byte) []runtests.TestCaseResult {
 
 	for testName, testCase := range testCases {
 		if msg, ok := errorMessages[testName]; ok {
-			if testCase.Status == runtests.TestFailure {
-				testCase.FailReason = msg.String()
+			if runtests.IsFailure(testCase.Status) {
+				testCase.FailureReason = runtests.FailureReasonFromMessage(msg.String())
 			}
 		}
 		if expectation, ok := expectations[testName]; ok {

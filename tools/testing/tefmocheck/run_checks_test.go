@@ -308,9 +308,9 @@ func TestRunChecks_GlobalSyntheticTestCase(t *testing.T) {
 				TestResult: runtests.TestResult{
 					Cases: []runtests.TestCaseResult{
 						{
-							CaseName:   "failing_test_2_test-case-name",
-							Status:     runtests.TestFailure,
-							FailReason: "failing_test_2_test-case-failure-reason",
+							CaseName:      "failing_test_2_test-case-name",
+							Status:        runtests.TestFailure,
+							FailureReason: runtests.FailureReasonFromMessage("failing_test_2_test-case-failure-reason"),
 						},
 					},
 				},
@@ -344,8 +344,8 @@ func TestRunChecks_GlobalSyntheticTestCase(t *testing.T) {
 		if tc.CaseName != check.Name() {
 			t.Errorf("TestCase.CaseName = %q, want %q", tc.CaseName, check.Name())
 		}
-		if tc.FailReason != check.FailureReason() {
-			t.Errorf("TestCase.FailReason = %q, want %q", tc.FailReason, check.FailureReason())
+		if tc.FailureReason == nil || len(tc.FailureReason.Errors) == 0 || tc.FailureReason.Errors[0].Message != check.FailureReason() {
+			t.Errorf("TestCase.FailureReason = %v, want error message %q", tc.FailureReason, check.FailureReason())
 		}
 	}
 
@@ -360,8 +360,8 @@ func TestRunChecks_GlobalSyntheticTestCase(t *testing.T) {
 		if tc.CaseName != check.Name() {
 			t.Errorf("TestCase.CaseName = %q, want %q", tc.CaseName, check.Name())
 		}
-		if tc.FailReason != check.FailureReason() {
-			t.Errorf("TestCase.FailReason = %q, want %q", tc.FailReason, check.FailureReason())
+		if tc.FailureReason == nil || len(tc.FailureReason.Errors) == 0 || tc.FailureReason.Errors[0].Message != check.FailureReason() {
+			t.Errorf("TestCase.FailureReason = %v, want error message %q", tc.FailureReason, check.FailureReason())
 		}
 	}
 }

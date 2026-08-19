@@ -17,6 +17,7 @@ import (
 
 	resultpb "go.chromium.org/luci/resultdb/proto/v1"
 	sinkpb "go.chromium.org/luci/resultdb/sink/proto/v1"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -30,6 +31,8 @@ const (
 	// Failure reason is limited to 1024 bytes.
 	// https://source.chromium.org/chromium/infra/infra_superproject/+/main:infra/go/src/go.chromium.org/luci/resultdb/pbutil/test_result.go;l=44;drc=bfb50731e1b97d7ca771fb2d31dc7338c3db40f5
 	MaxFailureReasonLength = 1024
+	// MaxFailureReasonTotalSize is the maximum total protobuf size of a failure reason (16384 bytes).
+	MaxFailureReasonTotalSize = 16384
 	// MaxBatchSize is the maximum number of items (results or exonerations) reported in a single request.
 	MaxBatchSize = 250
 )
@@ -210,10 +213,7 @@ func testCaseToResultSink(testCases []runtests.TestCaseResult, tags []*resultpb.
 			continue
 		}
 		if testStatus != resultpb.TestResult_PASSED && testCaseStatus == resultpb.TestResult_FAILED {
-			r.FailureReason = &resultpb.FailureReason{Kind: testCaseFailureReasonKind}
-			if testCase.FailReason != "" {
-				r.FailureReason.Errors = []*resultpb.FailureReason_Error{{Message: truncateString(testCase.FailReason, MaxFailureReasonLength)}}
-			}
+			r.FailureReason = toResultDBFailureReason(testCase.FailureReason, testCaseFailureReasonKind)
 		} else if testCaseStatus == resultpb.TestResult_SKIPPED {
 			r.SkippedReason = &resultpb.SkippedReason{Kind: resultpb.SkippedReason_DISABLED_AT_DECLARATION}
 		} else if testStatus == resultpb.TestResult_PASSED {
@@ -284,10 +284,7 @@ func testDetailsToResultSink(tags []*resultpb.StringPair, testDetail *runtests.T
 	}
 	r.StatusV2 = testStatus
 	if testStatus == resultpb.TestResult_FAILED {
-		r.FailureReason = &resultpb.FailureReason{Kind: failureReasonKind}
-		if testDetail.FailureReason != "" {
-			r.FailureReason.Errors = []*resultpb.FailureReason_Error{{Message: truncateString(testDetail.FailureReason, MaxFailureReasonLength)}}
-		}
+		r.FailureReason = toResultDBFailureReason(testDetail.FailureReason, failureReasonKind)
 	} else if testStatus == resultpb.TestResult_SKIPPED {
 		r.SkippedReason = &resultpb.SkippedReason{Kind: resultpb.SkippedReason_OTHER, ReasonMessage: "skipped because unaffected"}
 	}
@@ -337,6 +334,30 @@ func resultDBStatus(result runtests.TestStatus) (resultpb.TestResult_Status, res
 		return resultpb.TestResult_FAILED, resultpb.FailureReason_ORDINARY, nil
 	}
 	return resultpb.TestResult_STATUS_UNSPECIFIED, resultpb.FailureReason_KIND_UNSPECIFIED, fmt.Errorf("cannot map Result: %s to result_sink test_result status", result)
+}
+
+func toResultDBFailureReason(fr *runtests.FailureReason, defaultKind resultpb.FailureReason_Kind) *resultpb.FailureReason {
+	res := &resultpb.FailureReason{
+		Kind: defaultKind,
+	}
+	if fr == nil || len(fr.Errors) == 0 {
+		return res
+	}
+
+	// Copy over errors to the resultpb.FailureReason.
+	res.Errors = make([]*resultpb.FailureReason_Error, 0, len(fr.Errors))
+	for i, e := range fr.Errors {
+		pbErr := &resultpb.FailureReason_Error{
+			Message: truncateString(e.Message, MaxFailureReasonLength),
+		}
+		res.Errors = append(res.Errors, pbErr)
+		if proto.Size(res) > MaxFailureReasonTotalSize {
+			res.Errors = res.Errors[:len(res.Errors)-1]
+			res.TruncatedErrorsCount = int32(len(fr.Errors) - i)
+			break
+		}
+	}
+	return res
 }
 
 func isReadable(p string) bool {

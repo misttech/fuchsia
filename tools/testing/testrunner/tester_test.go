@@ -7,6 +7,7 @@ package testrunner
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -1177,5 +1178,121 @@ func TestBaseTestResultFromTest(t *testing.T) {
 	testResult := *BaseTestResultFromTest(test)
 	if diff := cmp.Diff(expected, testResult); diff != "" {
 		t.Errorf("BaseTestResultFromTest() failed: (-want +got): \n%s", diff)
+	}
+}
+
+func TestProcessTestResult(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create a mock stderr file.
+	stderrContent := "test case failed with some error"
+	stderrFile := "stderr.txt"
+	caseArtifactDir := filepath.Join(tmpDir, "case_artifacts")
+	if err := os.MkdirAll(caseArtifactDir, 0755); err != nil {
+		t.Fatalf("failed to create case artifact dir: %s", err)
+	}
+	if err := os.WriteFile(filepath.Join(caseArtifactDir, stderrFile), []byte(stderrContent), 0644); err != nil {
+		t.Fatalf("failed to write stderr file: %s", err)
+	}
+
+	runResultData := ffxutil.TestRunResult{
+		Suites: []ffxutil.SuiteResult{
+			{
+				Outcome:     ffxutil.TestFailed,
+				Name:        "fuchsia-pkg://foo#meta/bar.cm",
+				ArtifactDir: "suite_artifacts",
+				Cases: []ffxutil.CaseResult{
+					{
+						Outcome:     ffxutil.TestFailed,
+						Name:        "case1",
+						ArtifactDir: "case_artifacts",
+						Artifacts: map[string]ffxutil.ArtifactMetadata{
+							stderrFile: {
+								ArtifactType: ffxutil.StderrType,
+							},
+						},
+					},
+					{
+						Outcome:     ffxutil.TestPassed,
+						Name:        "case_passed",
+						ArtifactDir: "case_artifacts",
+						Artifacts: map[string]ffxutil.ArtifactMetadata{
+							stderrFile: {
+								ArtifactType: ffxutil.StderrType,
+							},
+						},
+					},
+					{
+						Outcome:     ffxutil.TestSkipped,
+						Name:        "case_skipped",
+						ArtifactDir: "case_artifacts",
+						Artifacts: map[string]ffxutil.ArtifactMetadata{
+							stderrFile: {
+								ArtifactType: ffxutil.StderrType,
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	envelope := ffxutil.TestRunResultEnvelope{
+		Data:     runResultData,
+		SchemaID: "https://fuchsia.dev/schema/ffx_test/run_summary-8d1dd964.json",
+	}
+
+	envelopeBytes, err := json.Marshal(envelope)
+	if err != nil {
+		t.Fatalf("failed to marshal envelope: %s", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(tmpDir, "run_summary.json"), envelopeBytes, 0644); err != nil {
+		t.Fatalf("failed to write run_summary.json: %s", err)
+	}
+
+	runResult, err := ffxutil.GetRunResult(tmpDir)
+	if err != nil {
+		t.Fatalf("ffxutil.GetRunResult failed: %s", err)
+	}
+
+	test := testsharder.Test{
+		Test: build.Test{
+			PackageURL: "fuchsia-pkg://foo#meta/bar.cm",
+		},
+	}
+
+	testDetails, err := processTestResult(runResult, test, 5*time.Second, false)
+	if err != nil {
+		t.Fatalf("processTestResult failed: %s", err)
+	}
+
+	if testDetails.Status != runtests.TestFailure {
+		t.Errorf("got test status %v, want %v", testDetails.Status, runtests.TestFailure)
+	}
+
+	if len(testDetails.Cases) != 3 {
+		t.Fatalf("got %d test cases, want 3", len(testDetails.Cases))
+	}
+
+	tcFailed := testDetails.Cases[0]
+	expectedFailureReason := &runtests.FailureReason{
+		Errors: []*runtests.FailureReasonError{
+			{Message: stderrContent},
+		},
+	}
+
+	if diff := cmp.Diff(expectedFailureReason, tcFailed.FailureReason); diff != "" {
+		t.Errorf("unexpected FailureReason (-want +got):\n%s", diff)
+	}
+
+	tcPassed := testDetails.Cases[1]
+	if tcPassed.FailureReason != nil {
+		t.Errorf("passed case got FailureReason %v, want nil", tcPassed.FailureReason)
+	}
+
+	tcSkipped := testDetails.Cases[2]
+	if tcSkipped.FailureReason != nil {
+		t.Errorf("skipped case got FailureReason %v, want nil", tcSkipped.FailureReason)
 	}
 }

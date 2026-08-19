@@ -15,7 +15,13 @@
             "gn_label": "label_case_exonerated",
             "output_file": "path/to/output.txt",
             "result": "FAIL",
-            "error_line": "CaseExonerated: Flaky run instance",
+            "failure_reason": {
+                "errors": [
+                    {
+                        "message": "CaseExonerated: Flaky run instance"
+                    }
+                ]
+            },
             "cases": [
                 {
                     "display_name": "SuiteX.CaseExonerated",
@@ -24,7 +30,13 @@
                     "status": "EXONERATED",
                     "duration_nanos": 0,
                     "format": "GoogleTest",
-                    "fail_reason": "Flaky run instance"
+                    "failure_reason": {
+                        "errors": [
+                            {
+                                "message": "Flaky run instance"
+                            }
+                        ]
+                    }
                 },
                 {
                     "display_name": "SuiteX.CasePassed",

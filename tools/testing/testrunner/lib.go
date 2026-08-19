@@ -728,8 +728,8 @@ func runTestOnce(
 	if err := t.SetupTest(ctx, test); err != nil {
 		result := BaseTestResultFromTest(test)
 		result.Status = runtests.TestFailure
-		result.FailureReason = fmt.Sprintf("failed to setup test: %s", err)
-		logger.Errorf(ctx, "Test %s failed: %s", test.Name, result.FailureReason)
+		result.FailureReason = runtests.FailureReasonFromMessage(fmt.Sprintf("failed to setup test: %s", err))
+		logger.Errorf(ctx, "Test %s failed: %s", test.Name, err)
 		result.StartTime = startTime
 		result.EndTime = clock.Now(ctx)
 		result.Affected = test.Affected
@@ -802,7 +802,7 @@ func runTestOnce(
 
 	switch result.Status {
 	case runtests.TestFailure:
-		logger.Errorf(ctx, "Test %s failed: %s", test.Name, result.FailureReason)
+		logger.Errorf(ctx, "Test %s failed: %v", test.Name, result.FailureReason)
 	case runtests.TestAborted:
 		logger.Errorf(ctx, "Test %s timed out after %s", test.Name, timeout)
 	}
@@ -840,7 +840,7 @@ func runTestOnce(
 		if err != nil {
 			result.Status = runtests.TestFailure
 			logger.Errorf(ctx, "Failed to parse test cases: %s", err)
-			result.FailureReason = fmt.Sprintf("failed to parse test cases: %s", err)
+			result.FailureReason = runtests.FailureReasonFromMessage(fmt.Sprintf("failed to parse test cases: %s", err))
 		} else {
 			result.Cases = cases
 		}
@@ -851,7 +851,7 @@ func runTestOnce(
 		if err != nil && len(result.Cases) == 0 {
 			result.Status = runtests.TestFailure
 			logger.Errorf(ctx, "Failed to parse test cases: %s", err)
-			result.FailureReason = fmt.Sprintf("failed to parse test cases: %s", err)
+			result.FailureReason = runtests.FailureReasonFromMessage(fmt.Sprintf("failed to parse test cases: %s", err))
 		} else if err == nil {
 			caseToTags := make(map[string][]build.TestTag)
 			for _, tc := range cases {

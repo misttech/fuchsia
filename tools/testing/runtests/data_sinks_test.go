@@ -116,3 +116,18 @@ func TestCopyDataSinks(t *testing.T) {
 		}
 	}
 }
+
+func TestFailureReasonFromMessage(t *testing.T) {
+	if fr := FailureReasonFromMessage(""); fr != nil {
+		t.Errorf("FailureReasonFromMessage(\"\") = %v, want nil", fr)
+	}
+
+	errMsg := "something failed"
+	fr := FailureReasonFromMessage(errMsg)
+	if fr == nil {
+		t.Fatalf("FailureReasonFromMessage(%q) = nil, want non-nil struct", errMsg)
+	}
+	if len(fr.Errors) != 1 || fr.Errors[0] == nil || fr.Errors[0].Message != errMsg {
+		t.Errorf("fr.Errors = %v, want 1 error item with message %q", fr.Errors, errMsg)
+	}
+}

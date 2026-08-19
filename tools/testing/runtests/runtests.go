@@ -6,6 +6,7 @@
 package runtests
 
 import (
+	"strings"
 	"time"
 
 	"go.fuchsia.dev/fuchsia/tools/build"
@@ -152,10 +153,45 @@ type TestResult struct {
 	// Cases is individual test case results.
 	Cases []TestCaseResult `json:"cases"`
 
-	// FailureReason is an optional human-readable error message or explanation of the failure.
+	// FailureReason is an optional structured error message or explanation of the failure.
 	// This will be ignored if the test status is a success. Host tests must exit with
 	// a non-zero exit code to be considered a failure.
-	FailureReason string `json:"error_line,omitempty"`
+	FailureReason *FailureReason `json:"failure_reason,omitempty"`
+}
+
+// FailureReasonError represents a problem that caused a test to fail, such as a crash
+// or expectation failure.
+// Mirrors third_party/luci-go/resultdb/proto/v1/FailureReason_Error.
+type FailureReasonError struct {
+	Message string `json:"message,omitempty"`
+	Trace   string `json:"trace,omitempty"`
+}
+
+// Provides structured information about why a test failed. This information is helpful
+// for developers debugging failures and is also used by systems like LUCI Analysis
+// to cluster similar failures together.
+// It typically contains one or more error messages and potentially stack traces.
+// Note: The total combined size of all errors within this message (as measured
+// by proto.Size()) must not exceed 16,384 bytes.
+// Mirrors third_party/luci-go/resultdb/proto/v1/FailureReason.
+type FailureReason struct {
+	Errors               []*FailureReasonError `json:"errors,omitempty"`
+	TruncatedErrorsCount int32                 `json:"truncated_errors_count,omitempty"`
+}
+
+// FailureReasonFromMessage does not truncate message length so that full diagnostic output
+// is preserved in summary.json for debugging. Downstream consumers and uploaders (such as resultdb/lib.go)
+// are responsible for truncating error messages to meet specific RPC payload constraints.
+func FailureReasonFromMessage(message string) *FailureReason {
+	msg := strings.TrimSpace(message)
+	if msg == "" {
+		return nil
+	}
+	return &FailureReason{
+		Errors: []*FailureReasonError{
+			{Message: msg},
+		},
+	}
 }
 
 // TestCaseResult contains the details of a single test case, nested within a
@@ -168,10 +204,9 @@ type TestCaseResult struct {
 	Duration    time.Duration `json:"duration_nanos"`
 	// Format is the test runner used to execute the test.
 	Format string `json:"format"`
-	// FailReason is a concise and distinctive error message captured from stdout when the test case fails.
-	// The message is used to group similar failures and shouldn't contain stacktrace or line numbers.
-	FailReason  string   `json:"fail_reason"`
-	OutputFiles []string `json:"output_files,omitempty"`
+	// FailureReason is structured information about why a test case failed, including repeatable errors.
+	FailureReason *FailureReason `json:"failure_reason,omitempty"`
+	OutputFiles   []string       `json:"output_files,omitempty"`
 	// The directory where the OutputFiles live if given as relative paths.
 	OutputDir string `json:"output_dir,omitempty"`
 	// Tags contain test case metadata.

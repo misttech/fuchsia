@@ -141,15 +141,15 @@ One or more test runs failed.
 			CaseName:    "NodeManagerTest.TruncateExceptionCase",
 			Status:      runtests.TestFailure,
 			Format:      "FTF",
-			FailReason: "Error reading test result:File(read call failed: A FIDL client's channel to the service fuchsia.io.File was closed: PEER_CLOSED\n" +
+			FailureReason: runtests.FailureReasonFromMessage("Error reading test result:File(read call failed: A FIDL client's channel to the service fuchsia.io.File was closed: PEER_CLOSED\n" +
 				"Caused by:\n" +
-				"    0: A FIDL client's channel to the service fuchsia.io.File was closed: PEER_CLOSED",
+				"    0: A FIDL client's channel to the service fuchsia.io.File was closed: PEER_CLOSED"),
 		}, {
-			DisplayName: "VnodeTest.TruncateExceptionCase",
-			CaseName:    "VnodeTest.TruncateExceptionCase",
-			Status:      runtests.TestFailure,
-			Format:      "FTF",
-			FailReason:  "Test exited abnormally",
+			DisplayName:   "VnodeTest.TruncateExceptionCase",
+			CaseName:      "VnodeTest.TruncateExceptionCase",
+			Status:        runtests.TestFailure,
+			Format:        "FTF",
+			FailureReason: runtests.FailureReasonFromMessage("Test exited abnormally"),
 		}, {
 			DisplayName: "virtualization::virtualization_netdevice::remove_network",
 			CaseName:    "virtualization::virtualization_netdevice::remove_network",

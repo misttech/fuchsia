@@ -91,8 +91,9 @@ func parseGoTest(lines [][]byte) []runtests.TestCaseResult {
 				Duration:    duration,
 				Format:      "Go",
 			}
-			if caseResult.Status != runtests.TestSuccess {
-				caseResult.FailReason = strings.TrimSpace(strings.Join(stdoutForCase, "\n"))
+			if runtests.IsFailure(caseResult.Status) {
+				caseResult.FailureReason = runtests.FailureReasonFromMessage(
+					strings.TrimSpace(strings.Join(stdoutForCase, "\n")))
 			}
 			res = append(res, caseResult)
 			stdoutForCase = []string{}

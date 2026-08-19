@@ -94,11 +94,11 @@ func RunChecks(checks []FailureModeCheck, to *TestingOutputs, outputsDir string)
 							foundMatch = true
 						}
 						test.Cases = append(test.Cases, runtests.TestCaseResult{
-							DisplayName: "tefmocheck: " + check.Name(),
-							SuiteName:   "tefmocheck",
-							CaseName:    check.Name(),
-							Status:      runtests.TestFailure,
-							FailReason:  check.FailureReason(),
+							DisplayName:   "tefmocheck: " + check.Name(),
+							SuiteName:     "tefmocheck",
+							CaseName:      check.Name(),
+							Status:        runtests.TestFailure,
+							FailureReason: runtests.FailureReasonFromMessage(check.FailureReason()),
 						})
 					}
 				}
@@ -116,7 +116,7 @@ func RunChecks(checks []FailureModeCheck, to *TestingOutputs, outputsDir string)
 				// Specify an empty slice so it gets serialized to an empty JSON
 				// array instead of null.
 				Cases:         []runtests.TestCaseResult{},
-				FailureReason: check.FailureReason(),
+				FailureReason: runtests.FailureReasonFromMessage(check.FailureReason()),
 			},
 			StartTime: time.Now(), // needed by ResultDB
 			Tags:      check.Tags(),

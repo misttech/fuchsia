@@ -83,8 +83,10 @@ func parseRustTest(lines [][]byte) []runtests.TestCaseResult {
 
 	for testName, testCase := range testCases {
 		if msg, ok := errorMessages[testName]; ok {
-			if testCase.Status == runtests.TestFailure {
-				testCase.FailReason = strings.TrimSuffix(msg.String(), "\n")
+			if runtests.IsFailure(testCase.Status) {
+				testCase.FailureReason = runtests.FailureReasonFromMessage(
+					strings.TrimSuffix(msg.String(), "\n"),
+				)
 			}
 		}
 		res = append(res, testCase)

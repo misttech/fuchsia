@@ -42,7 +42,7 @@ func TestTestSuiteFailureReasonCheck(t *testing.T) {
 				Name:   targetTest,
 				Status: runtests.TestFailure,
 				TestResult: runtests.TestResult{
-					FailureReason: "some error: KILLER STRING",
+					FailureReason: runtests.FailureReasonFromMessage("some error: KILLER STRING"),
 				},
 			},
 		}, true)
@@ -57,7 +57,7 @@ func TestTestSuiteFailureReasonCheck(t *testing.T) {
 		}
 	})
 
-	t.Run("should match if string is in target test case FailReason", func(t *testing.T) {
+	t.Run("should match if string is in target test case FailureReason", func(t *testing.T) {
 		to := createOutputs([]runtests.TestDetails{
 			{
 				Name:   targetTest,
@@ -65,9 +65,9 @@ func TestTestSuiteFailureReasonCheck(t *testing.T) {
 				TestResult: runtests.TestResult{
 					Cases: []runtests.TestCaseResult{
 						{
-							DisplayName: "case1",
-							Status:      runtests.TestFailure,
-							FailReason:  "case error: KILLER STRING",
+							DisplayName:   "case1",
+							Status:        runtests.TestFailure,
+							FailureReason: runtests.FailureReasonFromMessage("case error: KILLER STRING"),
 						},
 					},
 				},
@@ -90,7 +90,7 @@ func TestTestSuiteFailureReasonCheck(t *testing.T) {
 				Name:   targetTest,
 				Status: runtests.TestFailure,
 				TestResult: runtests.TestResult{
-					FailureReason: "some error: KILLER STRING",
+					FailureReason: runtests.FailureReasonFromMessage("some error: KILLER STRING"),
 				},
 			},
 		}, false) // taskFailed = false
@@ -105,7 +105,7 @@ func TestTestSuiteFailureReasonCheck(t *testing.T) {
 				Name:   otherTest,
 				Status: runtests.TestFailure,
 				TestResult: runtests.TestResult{
-					FailureReason: "some error: KILLER STRING",
+					FailureReason: runtests.FailureReasonFromMessage("some error: KILLER STRING"),
 				},
 			},
 			{
@@ -124,7 +124,7 @@ func TestTestSuiteFailureReasonCheck(t *testing.T) {
 				Name:   "host_x64/obj/my-target-test.sh",
 				Status: runtests.TestFailure,
 				TestResult: runtests.TestResult{
-					FailureReason: "some error: KILLER STRING",
+					FailureReason: runtests.FailureReasonFromMessage("some error: KILLER STRING"),
 				},
 			},
 		}, true)

@@ -15,6 +15,7 @@ import (
 
 	resultpb "go.chromium.org/luci/resultdb/proto/v1"
 	sinkpb "go.chromium.org/luci/resultdb/sink/proto/v1"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/google/go-cmp/cmp"
 
@@ -52,7 +53,7 @@ func TestSetTestDetailsToResultSink(t *testing.T) {
 	outputRoot := t.TempDir()
 	detail := createTestDetailWithPassedAndFailedTestCase(5, 2, outputRoot)
 	expectedFailureReason := "some failure reason reported by test runner"
-	detail.FailureReason = expectedFailureReason
+	detail.FailureReason = runtests.FailureReasonFromMessage(expectedFailureReason)
 	// include 7 owners to test truncation of owner list
 	detail.Metadata = metadata.TestMetadata{
 		Owners: []string{
@@ -131,7 +132,7 @@ func TestSetTestDetailsToResultSink(t *testing.T) {
 func TestSetTestDetailsToResultSink_FailureReason_ExceedsMaxSize(t *testing.T) {
 	outputRoot := t.TempDir()
 	detail := createTestDetailWithPassedAndFailedTestCase(5, 200, outputRoot)
-	detail.FailureReason = strings.Repeat("a", 2000)
+	detail.FailureReason = runtests.FailureReasonFromMessage(strings.Repeat("a", 2000))
 	expectedFailureReason := strings.Repeat("a", MaxFailureReasonLength-3) + "..."
 	extraTags := []*resultpb.StringPair{
 		{Key: "key1", Value: "value1"},
@@ -196,10 +197,10 @@ func TestSetTestDetailsToResultSink_NonSuccessCases(t *testing.T) {
 				Status:      runtests.TestFailure,
 				TestResult: runtests.TestResult{
 					OutputDir:     "foo",
-					FailureReason: "some failure reason reported by test runner",
+					FailureReason: runtests.FailureReasonFromMessage("some failure reason reported by test runner"),
 					Cases: []runtests.TestCaseResult{
 						{CaseName: "failed_case", Status: runtests.TestFailure},
-						{CaseName: "skipped_with_reason", Status: runtests.TestSkipped, FailReason: "skipped for some reason"},
+						{CaseName: "skipped_with_reason", Status: runtests.TestSkipped},
 						{CaseName: "skipped_without_reason", Status: runtests.TestSkipped},
 					},
 				},
@@ -216,7 +217,7 @@ func TestSetTestDetailsToResultSink_NonSuccessCases(t *testing.T) {
 				TestResult: runtests.TestResult{
 					OutputDir: "foo",
 					Cases: []runtests.TestCaseResult{
-						{CaseName: "skipped_1", Status: runtests.TestSkipped, FailReason: "skipped reason 1"},
+						{CaseName: "skipped_1", Status: runtests.TestSkipped},
 						{CaseName: "skipped_2", Status: runtests.TestSkipped},
 					},
 				},
@@ -313,6 +314,189 @@ func TestSetTestCaseToResultSink(t *testing.T) {
 		if diff := cmp.Diff(result.TestMetadata.BugComponent.GetIssueTracker().ComponentId, expectedMetadata.BugComponent.GetIssueTracker().ComponentId); diff != "" {
 			t.Errorf("Diff in the bug component's component id (-got +want):\n%s", diff)
 		}
+	}
+}
+
+func TestSetTestCaseToResultSink_WithFailureReason(t *testing.T) {
+	outputRoot := t.TempDir()
+	detail := &runtests.TestDetails{
+		Name:      "foo",
+		Status:    runtests.TestFailure,
+		StartTime: time.Now(),
+		TestResult: runtests.TestResult{
+			Cases: []runtests.TestCaseResult{
+				{
+					DisplayName: "foo/bar_failed",
+					SuiteName:   "foo",
+					CaseName:    "bar_failed",
+					Status:      runtests.TestFailure,
+					Format:      "Rust",
+					FailureReason: &runtests.FailureReason{
+						Errors: []*runtests.FailureReasonError{
+							{Message: "error message 1"},
+							{Message: "error message 2"},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	results, _, _ := testCaseToResultSink(detail.Cases, []*resultpb.StringPair{}, detail, outputRoot)
+	if len(results) != 1 {
+		t.Fatalf("Got %d test case results, want 1", len(results))
+	}
+
+	res := results[0]
+	if res.FailureReason == nil {
+		t.Fatalf("Expected FailureReason to be non-nil")
+	}
+	if len(res.FailureReason.Errors) != 2 {
+		t.Fatalf("got %d Errors, want 2", len(res.FailureReason.Errors))
+	}
+	if res.FailureReason.Errors[0].Message != "error message 1" || res.FailureReason.Errors[1].Message != "error message 2" {
+		t.Errorf("unexpected error messages: %v", res.FailureReason.Errors)
+	}
+}
+
+func TestSetTestCaseToResultSink_WithFailureReason_DefaultKind(t *testing.T) {
+	outputRoot := t.TempDir()
+	detail := &runtests.TestDetails{
+		Name:      "foo",
+		Status:    runtests.TestFailure,
+		StartTime: time.Now(),
+		TestResult: runtests.TestResult{
+			Cases: []runtests.TestCaseResult{
+				{
+					DisplayName: "foo/bar_failed",
+					SuiteName:   "foo",
+					CaseName:    "bar_failed",
+					Status:      runtests.TestAborted, // Should default kind to TIMEOUT
+					Format:      "Rust",
+					FailureReason: &runtests.FailureReason{
+						Errors: []*runtests.FailureReasonError{
+							{Message: "timeout error message"},
+						},
+					},
+				},
+				{
+					DisplayName:   "foo/bar_crash",
+					SuiteName:     "foo",
+					CaseName:      "bar_crash",
+					Status:        runtests.TestInfraFailure, // Should default kind to CRASH
+					Format:        "Rust",
+					FailureReason: runtests.FailureReasonFromMessage("infra failure message"),
+				},
+			},
+		},
+	}
+
+	results, _, _ := testCaseToResultSink(detail.Cases, []*resultpb.StringPair{}, detail, outputRoot)
+	if len(results) != 2 {
+		t.Fatalf("Got %d test case results, want 2", len(results))
+	}
+
+	res0 := results[0]
+	if res0.FailureReason == nil {
+		t.Fatalf("Expected res0 FailureReason to be non-nil")
+	}
+	if res0.FailureReason.Kind != resultpb.FailureReason_TIMEOUT {
+		t.Errorf("got Kind = %v, want %v", res0.FailureReason.Kind, resultpb.FailureReason_TIMEOUT)
+	}
+	if len(res0.FailureReason.Errors) != 1 || res0.FailureReason.Errors[0].Message != "timeout error message" {
+		t.Errorf("unexpected res0 errors: %v", res0.FailureReason.Errors)
+	}
+
+	res1 := results[1]
+	if res1.FailureReason == nil {
+		t.Fatalf("Expected res1 FailureReason to be non-nil")
+	}
+	if res1.FailureReason.Kind != resultpb.FailureReason_CRASH {
+		t.Errorf("got Kind = %v, want %v", res1.FailureReason.Kind, resultpb.FailureReason_CRASH)
+	}
+	if len(res1.FailureReason.Errors) != 1 || res1.FailureReason.Errors[0].Message != "infra failure message" {
+		t.Errorf("unexpected res1 errors: %v", res1.FailureReason.Errors)
+	}
+}
+
+func TestTestDetailsToResultSink_PanicsOnNilErrorsInCases(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Errorf("expected panic when error in slice is nil")
+		}
+	}()
+
+	outputRoot := t.TempDir()
+	detail := &runtests.TestDetails{
+		Name:      "foo",
+		Status:    runtests.TestFailure,
+		StartTime: time.Now(),
+		TestResult: runtests.TestResult{
+			FailureReason: &runtests.FailureReason{
+				Errors: []*runtests.FailureReasonError{
+					nil,
+					{Message: "first valid error"},
+				},
+			},
+		},
+	}
+
+	_, _, _, _ = testDetailsToResultSink([]*resultpb.StringPair{}, detail, outputRoot)
+}
+
+func TestToResultDBFailureReason_PanicsOnNilError(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Errorf("expected panic when error in slice is nil")
+		}
+	}()
+
+	fr := &runtests.FailureReason{
+		Errors: []*runtests.FailureReasonError{
+			{Message: "valid error 1"},
+			nil,
+		},
+	}
+
+	_ = toResultDBFailureReason(fr, resultpb.FailureReason_ORDINARY)
+}
+
+func TestToResultDBFailureReason_Truncation(t *testing.T) {
+	// 1. Test message (>1024B) truncation
+	fr := &runtests.FailureReason{
+		Errors: []*runtests.FailureReasonError{
+			{
+				Message: strings.Repeat("m", 1500),
+			},
+		},
+	}
+	res := toResultDBFailureReason(fr, resultpb.FailureReason_ORDINARY)
+	if len(res.Errors) != 1 {
+		t.Fatalf("got %d errors, want 1", len(res.Errors))
+	}
+	if len(res.Errors[0].Message) != MaxFailureReasonLength {
+		t.Errorf("got message len %d, want %d", len(res.Errors[0].Message), MaxFailureReasonLength)
+	}
+	if !strings.HasSuffix(res.Errors[0].Message, "...") {
+		t.Errorf("expected message to end with '...'")
+	}
+
+	// 2. Test total error list size (>16KB) truncation
+	frList := &runtests.FailureReason{}
+	for i := 0; i < 20; i++ {
+		frList.Errors = append(frList.Errors, &runtests.FailureReasonError{
+			Message: strings.Repeat("e", 1000),
+		})
+	}
+	resList := toResultDBFailureReason(frList, resultpb.FailureReason_ORDINARY)
+	if proto.Size(resList) > MaxFailureReasonTotalSize {
+		t.Errorf("got proto size %d, want <= %d", proto.Size(resList), MaxFailureReasonTotalSize)
+	}
+	if resList.TruncatedErrorsCount == 0 {
+		t.Errorf("expected TruncatedErrorsCount > 0 when exceeding 16KB limit")
+	}
+	if len(resList.Errors)+int(resList.TruncatedErrorsCount) != 20 {
+		t.Errorf("got %d kept errors + %d truncated errors, want 20 total", len(resList.Errors), resList.TruncatedErrorsCount)
 	}
 }
 
@@ -529,12 +713,12 @@ func TestExoneratedTestCase(t *testing.T) {
 		TestResult: runtests.TestResult{
 			Cases: []runtests.TestCaseResult{
 				{
-					DisplayName: "foo/bar_exonerated",
-					SuiteName:   "foo",
-					CaseName:    "bar_exonerated",
-					Status:      runtests.TestExonerated,
-					Format:      "Rust",
-					FailReason:  "Flaky test instance",
+					DisplayName:   "foo/bar_exonerated",
+					SuiteName:     "foo",
+					CaseName:      "bar_exonerated",
+					Status:        runtests.TestExonerated,
+					Format:        "Rust",
+					FailureReason: runtests.FailureReasonFromMessage("Flaky test instance"),
 				},
 				{
 					DisplayName: "foo/bar_passed",

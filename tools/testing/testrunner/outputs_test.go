@@ -84,6 +84,40 @@ func TestRecordingOfOutputs(t *testing.T) {
 						OutputFiles: []string{filepath.Base(caseOutputFile)},
 						OutputDir:   filepath.Join(outDir, testAOutDir, "case1"),
 					},
+					{
+						DisplayName:   "case_fallback",
+						CaseName:      "case_fallback",
+						Status:        runtests.TestFailure,
+						FailureReason: runtests.FailureReasonFromMessage("case_fallback failed"),
+						Format:        "FTF",
+						OutputDir:     filepath.Join(outDir, testAOutDir, "case_fallback"),
+					},
+					{
+						DisplayName: "case_explicit",
+						CaseName:    "case_explicit",
+						Status:      runtests.TestFailure,
+						FailureReason: &runtests.FailureReason{
+							Errors: []*runtests.FailureReasonError{
+								{Message: "case_explicit failed structured"},
+							},
+						},
+						Format:    "FTF",
+						OutputDir: filepath.Join(outDir, testAOutDir, "case_explicit"),
+					},
+					{
+						DisplayName: "case_pass_info",
+						CaseName:    "case_pass_info",
+						Status:      runtests.TestSuccess,
+						Format:      "FTF",
+						OutputDir:   filepath.Join(outDir, testAOutDir, "case_pass_info"),
+					},
+					{
+						DisplayName: "case_skip_info",
+						CaseName:    "case_skip_info",
+						Status:      runtests.TestSkipped,
+						Format:      "FTF",
+						OutputDir:   filepath.Join(outDir, testAOutDir, "case_skip_info"),
+					},
 				},
 				// Test having the OutputFile be a directory name.
 				OutputFiles: []string{suiteOutputDir},
@@ -130,6 +164,36 @@ func TestRecordingOfOutputs(t *testing.T) {
 						Status:      runtests.TestFailure,
 						Format:      "FTF",
 						OutputFiles: []string{caseOutputFile},
+					},
+					{
+						DisplayName:   "case_fallback",
+						CaseName:      "case_fallback",
+						Status:        runtests.TestFailure,
+						FailureReason: runtests.FailureReasonFromMessage("case_fallback failed"),
+						Format:        "FTF",
+					},
+					{
+						DisplayName: "case_explicit",
+						CaseName:    "case_explicit",
+						Status:      runtests.TestFailure,
+						FailureReason: &runtests.FailureReason{
+							Errors: []*runtests.FailureReasonError{
+								{Message: "case_explicit failed structured"},
+							},
+						},
+						Format: "FTF",
+					},
+					{
+						DisplayName: "case_pass_info",
+						CaseName:    "case_pass_info",
+						Status:      runtests.TestSuccess,
+						Format:      "FTF",
+					},
+					{
+						DisplayName: "case_skip_info",
+						CaseName:    "case_skip_info",
+						Status:      runtests.TestSkipped,
+						Format:      "FTF",
 					},
 				},
 			},

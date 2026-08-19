@@ -131,14 +131,19 @@ func parseMoblyTest(lines [][]byte) []runtests.TestCaseResult {
 			failureReason = fmt.Sprintf("[%s] %s", tc.TerminationSignal, failureReason)
 		}
 
+		var failureReasonStruct *runtests.FailureReason
+		if runtests.IsFailure(status) {
+			failureReasonStruct = runtests.FailureReasonFromMessage(failureReason)
+		}
+
 		res = append(res, runtests.TestCaseResult{
-			DisplayName: fmt.Sprintf("%s.%s", tc.TestClass, tc.TestName),
-			FailReason:  failureReason,
-			SuiteName:   tc.TestClass,
-			CaseName:    tc.TestName,
-			Status:      status,
-			Duration:    time.Duration(tc.EndTimeMillis-tc.BeginTimeMillis) * time.Millisecond,
-			Format:      "Mobly",
+			DisplayName:   fmt.Sprintf("%s.%s", tc.TestClass, tc.TestName),
+			FailureReason: failureReasonStruct,
+			SuiteName:     tc.TestClass,
+			CaseName:      tc.TestName,
+			Status:        status,
+			Duration:      time.Duration(tc.EndTimeMillis-tc.BeginTimeMillis) * time.Millisecond,
+			Format:        "Mobly",
 		})
 	}
 
@@ -147,11 +152,13 @@ func parseMoblyTest(lines [][]byte) []runtests.TestCaseResult {
 		// is indicative of an infra test timeout.
 		res = append(res, runtests.TestCaseResult{
 			DisplayName: "TestparserError",
-			FailReason:  fmt.Sprintf("[TestparserError] Missing Mobly summary record - potental infra timeout."),
-			SuiteName:   "Synthetic",
-			CaseName:    "Synthetic",
-			Status:      runtests.TestAborted,
-			Format:      "Mobly",
+			FailureReason: runtests.FailureReasonFromMessage(
+				"[TestparserError] Missing Mobly summary record - potental infra timeout.",
+			),
+			SuiteName: "Synthetic",
+			CaseName:  "Synthetic",
+			Status:    runtests.TestAborted,
+			Format:    "Mobly",
 		})
 	}
 	return res

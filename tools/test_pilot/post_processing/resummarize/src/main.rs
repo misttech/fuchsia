@@ -124,11 +124,20 @@ fn convert(pilot_summary: Summary, test_config: TestConfig) -> TestResult {
             .into_iter()
             .map(|(name, case)| convert_case(name, case, &test_config.output_directory))
             .collect(),
-        error_line: pilot_summary.common.outcome.detail.unwrap_or_default(),
+        failure_reason: if pilot_summary.common.outcome.result.is_failure() {
+            FailureReason::from_message(pilot_summary.common.outcome.detail.unwrap_or_default())
+        } else {
+            None
+        },
     }
 }
 
 fn convert_case(name: String, case: SummaryCase, output_directory: &str) -> TestCaseResult {
+    let failure_reason = if case.common.outcome.result.is_failure() {
+        FailureReason::from_message(case.common.outcome.detail.unwrap_or_default())
+    } else {
+        None
+    };
     TestCaseResult {
         display_name: name.clone(),
         suite_name: "".to_string(),
@@ -136,7 +145,7 @@ fn convert_case(name: String, case: SummaryCase, output_directory: &str) -> Test
         status: convert_result(case.common.outcome.result),
         duration_nanos: case.common.duration * 1000000,
         format: TEST_CASE_RESULT_FORMAT.to_string(),
-        fail_reason: case.common.outcome.detail.unwrap_or_default(),
+        failure_reason,
         output_files: case
             .common
             .artifacts
@@ -192,8 +201,33 @@ struct TestResult {
 
     pub cases: Vec<TestCaseResult>,
 
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub failure_reason: Option<FailureReason>,
+}
+
+#[derive(Serialize, Debug, Clone, PartialEq)]
+struct FailureReason {
+    pub errors: Vec<FailureReasonError>,
+}
+
+impl FailureReason {
+    /// Constructs a FailureReason from a string message if non-empty after trimming,
+    /// containing a single error message.
+    pub fn from_message(message: String) -> Option<Self> {
+        if message.trim().is_empty() {
+            None
+        } else {
+            Some(Self { errors: vec![FailureReasonError { message, trace: String::new() }] })
+        }
+    }
+}
+
+#[derive(Serialize, Debug, Clone, PartialEq)]
+struct FailureReasonError {
+    pub message: String,
     #[serde(default)]
-    pub error_line: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub trace: String,
 }
 
 /// Case summary in the format used by botanist.
@@ -211,7 +245,8 @@ struct TestCaseResult {
 
     pub format: String,
 
-    pub fail_reason: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub failure_reason: Option<FailureReason>,
 
     #[serde(default)]
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -280,6 +315,19 @@ mod tests {
                         },
                     },
                 ),
+                (
+                    "case3".to_string(),
+                    SummaryCase {
+                        common: SummaryCommonProperties {
+                            duration: 10, // milliseconds
+                            outcome: SummaryOutcome {
+                                result: SummaryOutcomeResult::Passed,
+                                detail: Some("info message".to_string()),
+                            },
+                            ..Default::default()
+                        },
+                    },
+                ),
             ]),
         };
 
@@ -289,8 +337,11 @@ mod tests {
 
         assert_eq!(botanist_summary.output_files, vec!["path/to/artifact1.txt"]);
         assert_eq!(botanist_summary.output_dir, "/path/to/output/directory".to_string());
-        assert_eq!(botanist_summary.cases.len(), 2);
-        assert_eq!(botanist_summary.error_line, "Overall test failed");
+        assert_eq!(botanist_summary.cases.len(), 3);
+        assert_eq!(
+            botanist_summary.failure_reason,
+            FailureReason::from_message("Overall test failed".to_string())
+        );
 
         // The order of cases from a HashMap is not guaranteed, so we find them.
         let case1 = botanist_summary.cases.iter().find(|c| c.case_name == "case1").unwrap();
@@ -299,7 +350,7 @@ mod tests {
         assert_eq!(case1.status, "PASS");
         assert_eq!(case1.duration_nanos, 50_000_000);
         assert_eq!(case1.format, "FTF");
-        assert_eq!(case1.fail_reason, "");
+        assert_eq!(case1.failure_reason, None);
         assert!(case1.output_files.is_empty());
         assert_eq!(case1.output_dir, "/path/to/output/directory");
 
@@ -309,9 +360,24 @@ mod tests {
         assert_eq!(case2.status, "FAIL");
         assert_eq!(case2.duration_nanos, 73_000_000);
         assert_eq!(case2.format, "FTF");
-        assert_eq!(case2.fail_reason, "assertion failed");
+        assert_eq!(
+            case2.failure_reason,
+            FailureReason::from_message("assertion failed".to_string())
+        );
         assert_eq!(case2.output_files, vec!["case2/log.txt"]);
         assert_eq!(case2.output_dir, "/path/to/output/directory");
+
+        let case3 = botanist_summary.cases.iter().find(|c| c.case_name == "case3").unwrap();
+        assert_eq!(case3.display_name, "case3");
+        assert_eq!(case3.status, "PASS");
+        assert_eq!(case3.failure_reason, None);
+    }
+
+    #[test]
+    fn test_failure_reason_from_message() {
+        assert_eq!(FailureReason::from_message("".to_string()), None);
+        assert_eq!(FailureReason::from_message("   \n".to_string()), None);
+        assert!(FailureReason::from_message("test failure".to_string()).is_some());
     }
 
     #[test]

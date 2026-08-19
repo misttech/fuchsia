@@ -24,12 +24,12 @@ func testCaseCmp(t *testing.T, stdout string, want []runtests.TestCaseResult) {
 func TestParseEmpty(t *testing.T) {
 	testCaseCmp(t, "", []runtests.TestCaseResult{
 		{
-			DisplayName: "TestparserError",
-			FailReason:  "[TestparserError] Missing Mobly summary record - potental infra timeout.",
-			SuiteName:   "Synthetic",
-			CaseName:    "Synthetic",
-			Status:      runtests.TestAborted,
-			Format:      "Mobly",
+			DisplayName:   "TestparserError",
+			FailureReason: runtests.FailureReasonFromMessage("[TestparserError] Missing Mobly summary record - potental infra timeout."),
+			SuiteName:     "Synthetic",
+			CaseName:      "Synthetic",
+			Status:        runtests.TestAborted,
+			Format:        "Mobly",
 		},
 	})
 }
@@ -132,7 +132,6 @@ Type: Summary
 	want := []runtests.TestCaseResult{
 		{
 			DisplayName: "GreetingsTest.test_goodbye",
-			FailReason:  "",
 			SuiteName:   "GreetingsTest",
 			CaseName:    "test_goodbye",
 			Status:      runtests.TestSuccess,
@@ -140,17 +139,16 @@ Type: Summary
 			Format:      "Mobly",
 		},
 		{
-			DisplayName: "GreetingsTest.test_hello",
-			FailReason:  "[TestFailure] Real test failure",
-			SuiteName:   "GreetingsTest",
-			CaseName:    "test_hello",
-			Status:      runtests.TestFailure,
-			Duration:    6 * time.Millisecond,
-			Format:      "Mobly",
+			DisplayName:   "GreetingsTest.test_hello",
+			FailureReason: runtests.FailureReasonFromMessage("[TestFailure] Real test failure"),
+			SuiteName:     "GreetingsTest",
+			CaseName:      "test_hello",
+			Status:        runtests.TestFailure,
+			Duration:      6 * time.Millisecond,
+			Format:        "Mobly",
 		},
 		{
 			DisplayName: "GreetingsTest.test_skipped",
-			FailReason:  "",
 			SuiteName:   "GreetingsTest",
 			CaseName:    "test_skipped",
 			Status:      runtests.TestSkipped,
@@ -158,13 +156,13 @@ Type: Summary
 			Format:      "Mobly",
 		},
 		{
-			DisplayName: "GreetingsTest.test_error",
-			FailReason:  "[FuchsiaDeviceError] Some multi-line error: line-1, line-2",
-			SuiteName:   "GreetingsTest",
-			CaseName:    "test_error",
-			Status:      runtests.TestFailure,
-			Duration:    6 * time.Millisecond,
-			Format:      "Mobly",
+			DisplayName:   "GreetingsTest.test_error",
+			FailureReason: runtests.FailureReasonFromMessage("[FuchsiaDeviceError] Some multi-line error: line-1, line-2"),
+			SuiteName:     "GreetingsTest",
+			CaseName:      "test_error",
+			Status:        runtests.TestFailure,
+			Duration:      6 * time.Millisecond,
+			Format:        "Mobly",
 		},
 	}
 
@@ -220,13 +218,13 @@ Type: Summary
 
 	want := []runtests.TestCaseResult{
 		{
-			DisplayName: "GreetingsTest.test_skip_with_sig",
-			FailReason:  "[TestAbortAll] Earlier test failed",
-			SuiteName:   "GreetingsTest",
-			CaseName:    "test_skip_with_sig",
-			Status:      runtests.TestFailure,
-			Duration:    1 * time.Millisecond,
-			Format:      "Mobly",
+			DisplayName:   "GreetingsTest.test_skip_with_sig",
+			FailureReason: runtests.FailureReasonFromMessage("[TestAbortAll] Earlier test failed"),
+			SuiteName:     "GreetingsTest",
+			CaseName:      "test_skip_with_sig",
+			Status:        runtests.TestFailure,
+			Duration:      1 * time.Millisecond,
+			Format:        "Mobly",
 		},
 	}
 
@@ -278,7 +276,6 @@ UID: null
 	want := []runtests.TestCaseResult{
 		{
 			DisplayName: "GreetingsTest.test_goodbye",
-			FailReason:  "",
 			SuiteName:   "GreetingsTest",
 			CaseName:    "test_goodbye",
 			Status:      runtests.TestSuccess,
@@ -286,12 +283,12 @@ UID: null
 			Format:      "Mobly",
 		},
 		{
-			DisplayName: "TestparserError",
-			FailReason:  "[TestparserError] Missing Mobly summary record - potental infra timeout.",
-			SuiteName:   "Synthetic",
-			CaseName:    "Synthetic",
-			Status:      runtests.TestAborted,
-			Format:      "Mobly",
+			DisplayName:   "TestparserError",
+			FailureReason: runtests.FailureReasonFromMessage("[TestparserError] Missing Mobly summary record - potental infra timeout."),
+			SuiteName:     "Synthetic",
+			CaseName:      "Synthetic",
+			Status:        runtests.TestAborted,
+			Format:        "Mobly",
 		},
 	}
 
@@ -318,12 +315,12 @@ TestBeds:
 
 	want := []runtests.TestCaseResult{
 		{
-			DisplayName: "TestparserError",
-			FailReason:  "[TestparserError] Missing Mobly summary record - potental infra timeout.",
-			SuiteName:   "Synthetic",
-			CaseName:    "Synthetic",
-			Status:      runtests.TestAborted,
-			Format:      "Mobly",
+			DisplayName:   "TestparserError",
+			FailureReason: runtests.FailureReasonFromMessage("[TestparserError] Missing Mobly summary record - potental infra timeout."),
+			SuiteName:     "Synthetic",
+			CaseName:      "Synthetic",
+			Status:        runtests.TestAborted,
+			Format:        "Mobly",
 		},
 	}
 
@@ -357,12 +354,12 @@ Requested Tests:
 
 	want := []runtests.TestCaseResult{
 		{
-			DisplayName: "TestparserError",
-			FailReason:  "[TestparserError] Missing Mobly summary record - potental infra timeout.",
-			SuiteName:   "Synthetic",
-			CaseName:    "Synthetic",
-			Status:      runtests.TestAborted,
-			Format:      "Mobly",
+			DisplayName:   "TestparserError",
+			FailureReason: runtests.FailureReasonFromMessage("[TestparserError] Missing Mobly summary record - potental infra timeout."),
+			SuiteName:     "Synthetic",
+			CaseName:      "Synthetic",
+			Status:        runtests.TestAborted,
+			Format:        "Mobly",
 		},
 	}
 
