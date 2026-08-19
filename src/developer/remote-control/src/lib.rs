@@ -6,6 +6,7 @@ use crate::host_identifier::{DefaultIdentifier, HostIdentifier, Identifier};
 use anyhow::{Context as _, Result};
 use component_debug::dirs::*;
 use component_debug::lifecycle::*;
+use fidl::endpoints::Proxy;
 use fidl_fuchsia_developer_remotecontrol as rcs;
 use fidl_fuchsia_developer_remotecontrol_connector as connector;
 use fidl_fuchsia_diagnostics_types as diagnostics;
@@ -28,6 +29,7 @@ pub struct RemoteControlService {
     ids: RefCell<Vec<Weak<RefCell<Vec<u64>>>>>,
     id_allocator: Box<dyn Fn() -> Result<Box<dyn Identifier + 'static>>>,
     connector: Box<dyn Fn(ConnectionRequest, Weak<RemoteControlService>)>,
+    toolbox_dir: RefCell<Option<fio::DirectoryProxy>>,
 }
 
 struct Client {
@@ -75,6 +77,7 @@ impl RemoteControlService {
             id_allocator: Box::new(id_allocator),
             ids: Default::default(),
             connector: Box::new(connector),
+            toolbox_dir: RefCell::new(None),
         }
     }
 
@@ -288,10 +291,46 @@ impl RemoteControlService {
         .await
     }
 
-    pub async fn open_toolbox(
+    /// Returns a directory proxy to `/core/toolbox` by opening it freshly from a cached
+    /// namespace handle if still open and valid, or resolves and opens it via Component
+    /// Manager if not yet cached or if the previous channel was closed.
+    ///
+    /// Caching the root namespace handle avoids repeated synchronous `LifecycleController.root`
+    /// and `RealmQuery.root` IPC resolution overhead on every short-lived FDomain connection,
+    /// while reopening the directory for every call ensures each caller operates on an
+    /// independent channel connection.
+    async fn get_or_open_toolbox_dir(
         self: &Rc<Self>,
-        server_end: zx::Channel,
-    ) -> Result<(), rcs::ConnectCapabilityError> {
+    ) -> Result<fio::DirectoryProxy, rcs::ConnectCapabilityError> {
+        {
+            // Scope the immutable borrow so that `borrowed` is dropped before any
+            // subsequent `borrow_mut()` can occur on cache invalidation.
+            let borrowed = self.toolbox_dir.borrow();
+            if let Some(dir) = borrowed.as_ref() {
+                // Perform a non-blocking check on the kernel channel to immediately detect
+                // if PEER_CLOSED is already asserted, without waiting or pumping async reads.
+                let is_alive = match dir
+                    .as_channel()
+                    .as_ref()
+                    .wait_one(zx::Signals::CHANNEL_PEER_CLOSED, zx::MonotonicInstant::from_nanos(0))
+                    .to_result()
+                {
+                    Ok(_) => false,
+                    Err(zx::Status::TIMED_OUT) => true,
+                    Err(_) => false,
+                };
+
+                if is_alive {
+                    if let Ok(reopened) =
+                        fuchsia_fs::directory::open_directory_async(dir, ".", fio::PERM_READABLE)
+                    {
+                        return Ok(reopened);
+                    }
+                }
+            }
+        }
+        *self.toolbox_dir.borrow_mut() = None;
+
         // Connect to the root LifecycleController protocol
         let controller = connect_to_protocol_at_path::<fsys::LifecycleControllerMarker>(
             "/svc/fuchsia.sys2.LifecycleController.root",
@@ -341,8 +380,23 @@ impl RemoteControlService {
         })
         .await?;
 
+        let reopened = fuchsia_fs::directory::open_directory_async(&dir, ".", fio::PERM_READABLE)
+            .map_err(|err| {
+            error!(err:?; "error reopening toolbox dir");
+            rcs::ConnectCapabilityError::CapabilityConnectFailed
+        })?;
+        *self.toolbox_dir.borrow_mut() = Some(dir);
+        Ok(reopened)
+    }
+
+    pub async fn open_toolbox(
+        self: &Rc<Self>,
+        server_end: zx::Channel,
+    ) -> Result<(), rcs::ConnectCapabilityError> {
+        let dir = self.get_or_open_toolbox_dir().await?;
         dir.open("svc", io::PERM_READABLE, &Default::default(), server_end).map_err(|err| {
             error!(err:?; "error opening svc dir in toolbox");
+            *self.toolbox_dir.borrow_mut() = None;
             rcs::ConnectCapabilityError::CapabilityConnectFailed
         })?;
         Ok(())
