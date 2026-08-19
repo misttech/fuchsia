@@ -14,6 +14,8 @@
 #include <lib/driver/devfs/cpp/connector.h>
 
 #include <mutex>
+#include <optional>
+#include <string>
 
 namespace pwm {
 
@@ -21,9 +23,14 @@ class PwmChannel : public fidl::WireServer<fuchsia_hardware_pwm::Pwm> {
  public:
   static constexpr std::string_view kClassName = "pwm";
 
-  explicit PwmChannel(uint32_t id, async_dispatcher_t* dispatcher,
+  explicit PwmChannel(uint32_t id, std::optional<uint32_t> global_id,
+                      std::optional<std::string> name, async_dispatcher_t* dispatcher,
                       ddk::PwmImplProtocolClient pwm_impl)
-      : id_(id), pwm_impl_(pwm_impl), dispatcher_(dispatcher) {}
+      : id_(id),
+        global_id_(global_id),
+        name_(std::move(name)),
+        pwm_impl_(pwm_impl),
+        dispatcher_(dispatcher) {}
 
   zx::result<> Init(std::shared_ptr<fdf::OutgoingDirectory>& outgoing,
                     fidl::UnownedClientEnd<fuchsia_driver_framework::Node> parent);
@@ -39,6 +46,8 @@ class PwmChannel : public fidl::WireServer<fuchsia_hardware_pwm::Pwm> {
 
   // ID of the pwm channel.
   const uint32_t id_;
+  const std::optional<uint32_t> global_id_;
+  const std::optional<std::string> name_;
 
   ddk::PwmImplProtocolClient pwm_impl_;
 

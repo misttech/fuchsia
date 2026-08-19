@@ -17,6 +17,12 @@ type PwmChannelInfo = table {
 
     /// PWM period in nanoseconds.
     4: period_ns uint32;
+
+    @available(added=HEAD)
+    5: name string:64;
+
+    @available(added=HEAD)
+    6: global_id uint32;
 };
 
 /// Metadata to configure PWM channels.

@@ -21,6 +21,12 @@ fuchsia_hardware_pwm::PwmChannelsMetadata ConvertMetadata(pwm_metadata::PwmMetad
   for (const auto& c : generic.channels) {
     fuchsia_hardware_pwm::PwmChannelInfo info;
     info.id(c.channel);
+    if (c.id) {
+      info.global_id(*c.id);
+    }
+    if (c.name) {
+      info.name(*c.name);
+    }
     info.period_ns(c.period_ns);
     channels.push_back(std::move(info));
   }
@@ -78,7 +84,8 @@ zx::result<> Pwm::Start(fdf::DriverContext context) {
     auto pwm_channel_id = pwm_channel_info.id().value();
 
     auto& pwm_channel = *pwm_channels_.emplace_back(
-        std::make_unique<PwmChannel>(pwm_channel_id, dispatcher(), pwm_impl.value()));
+        std::make_unique<PwmChannel>(pwm_channel_id, pwm_channel_info.global_id(),
+                                     pwm_channel_info.name(), dispatcher(), pwm_impl.value()));
     zx::result result = pwm_channel.Init(outgoing(), node());
     if (result.is_error()) {
       fdf::error("Failed to initialize pwm channel {}: {}", i, result);
@@ -125,6 +132,12 @@ zx::result<> PwmChannel::Init(std::shared_ptr<fdf::OutgoingDirectory>& outgoing,
       fdf::MakeProperty2("fuchsia.hardware.pwm.Service",
                          "fuchsia.hardware.pwm.Service.ZirconTransport"),
   };
+  if (global_id_.has_value()) {
+    properties.push_back(fdf::MakeProperty2(bind_fuchsia::ID, *global_id_));
+  }
+  if (name_.has_value()) {
+    properties.push_back(fdf::MakeProperty2(bind_fuchsia::NAME, *name_));
+  }
 
   zx::result child = fdf::AddChild(parent, *fdf::Logger::GlobalInstance(), child_node_name,
                                    devfs_args, properties, offers);
