@@ -1969,7 +1969,7 @@ dependencies = [
  "quote",
  "rand 0.8.4",
  "rand 0.9.4",
- "rand_core 0.9.5",
+ "rand_core 0.10.1",
  "rand_xorshift",
  "range-alloc",
  "rapidhash",

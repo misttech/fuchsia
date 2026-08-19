@@ -1646,11 +1646,11 @@ group("rand-0.9.4") {
 }
 
 group("rand_core") {
-  public_deps = [ ":rand_core-v0_9_5" ]
+  public_deps = [ ":rand_core-v0_10_1" ]
 }
 
-group("rand_core-0.9.5") {
-  public_deps = [ ":rand_core-v0_9_5" ]
+group("rand_core-0.10.1") {
+  public_deps = [ ":rand_core-v0_10_1" ]
 }
 
 group("rand_xorshift") {

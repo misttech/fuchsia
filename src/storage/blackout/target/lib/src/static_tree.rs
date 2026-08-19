@@ -189,7 +189,10 @@ mod tests {
         }
 
         fn fill_bytes(&mut self, dst: &mut [u8]) {
-            rand_core::impls::fill_bytes_via_next(self, dst)
+            rand_core::utils::fill_bytes_via_next_word(dst, || {
+                Ok::<_, core::convert::Infallible>(self.next_u64())
+            })
+            .unwrap()
         }
     }
 

@@ -193,7 +193,7 @@ prost = "0.14.4"
 prost-build = "0.14.4"
 rand = { version = "0.9.4", features = ["small_rng"] }
 rand-0_8 = { package = "rand", version = "0.8.4" }
-rand_core = "0.9.5"
+rand_core = "0.10.1"
 rand_xorshift = "0.4"
 range-alloc = "0.1.5"
 # NOTE: Use caution when updating to a new major version of `rapidhash` as this may cause hash

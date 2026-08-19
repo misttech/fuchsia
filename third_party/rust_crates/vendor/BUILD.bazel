@@ -2185,14 +2185,14 @@ alias(
 )
 
 alias(
-    name = "rand_core-0.9.5",
-    actual = "//third_party/rust_crates/vendor/rand_core-0.9.5:rand_core",
+    name = "rand_core-0.10.1",
+    actual = "//third_party/rust_crates/vendor/rand_core-0.10.1:rand_core",
     tags = ["manual"],
 )
 
 alias(
     name = "rand_core",
-    actual = "//third_party/rust_crates/vendor/rand_core-0.9.5:rand_core",
+    actual = "//third_party/rust_crates/vendor/rand_core-0.10.1:rand_core",
     tags = ["manual"],
 )
 
