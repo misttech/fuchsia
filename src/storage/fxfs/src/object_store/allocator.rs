@@ -815,11 +815,11 @@ impl Allocator {
     /// owner_object_id that have been marked as deleted.  If `committed_marked_for_deletion` is
     /// true, then filter using the committed volumes marked for deletion rather than the in-memory
     /// copy which excludes volumes that have been deleted but there hasn't been a sync yet.
-    pub async fn filter(
+    pub async fn filter<'a>(
         &self,
-        iter: impl LayerIterator<AllocatorKey, AllocatorValue>,
+        iter: impl LayerIterator<AllocatorKey, AllocatorValue> + 'a,
         committed_marked_for_deletion: bool,
-    ) -> Result<impl LayerIterator<AllocatorKey, AllocatorValue>, Error> {
+    ) -> Result<impl LayerIterator<AllocatorKey, AllocatorValue> + 'a, Error> {
         let marked_for_deletion = {
             let inner = self.inner.lock();
             if committed_marked_for_deletion {

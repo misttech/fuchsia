@@ -480,7 +480,7 @@ impl Common {
         Ok(())
     }
 
-    async fn detach_vmo(&self, vmo_id: VmoId) -> Result<(), zx::Status> {
+    fn detach_vmo(&self, vmo_id: VmoId) -> impl Future<Output = Result<(), zx::Status>> {
         self.send(BlockFifoRequest {
             command: BlockFifoCommand {
                 opcode: BlockOpcode::CloseVmo.into_primitive(),
@@ -490,7 +490,6 @@ impl Common {
             vmoid: vmo_id.into_id(),
             ..Default::default()
         })
-        .await
     }
 
     async fn read_at(
@@ -657,7 +656,7 @@ impl Common {
         .await
     }
 
-    async fn flush(&self, trace_flow_id: u64) -> Result<(), zx::Status> {
+    fn flush(&self, trace_flow_id: u64) -> impl Future<Output = Result<(), zx::Status>> {
         self.send(BlockFifoRequest {
             command: BlockFifoCommand {
                 opcode: BlockOpcode::Flush.into_primitive(),
@@ -668,7 +667,6 @@ impl Common {
             trace_flow_id,
             ..Default::default()
         })
-        .await
     }
 
     fn block_size(&self) -> u32 {
@@ -751,36 +749,40 @@ impl BlockClient for RemoteBlockClient {
         Ok(VmoId::new(vmo_id.id))
     }
 
-    async fn detach_vmo(&self, vmo_id: VmoId) -> Result<(), zx::Status> {
-        self.common.detach_vmo(vmo_id).await
+    fn detach_vmo(&self, vmo_id: VmoId) -> impl Future<Output = Result<(), zx::Status>> {
+        self.common.detach_vmo(vmo_id)
     }
 
-    async fn read_at_with_opts_traced(
+    fn read_at_with_opts_traced(
         &self,
         buffer_slice: MutableBufferSlice<'_>,
         device_offset: u64,
         opts: ReadOptions,
         trace_flow_id: u64,
-    ) -> Result<(), zx::Status> {
-        self.common.read_at(buffer_slice, device_offset, opts, trace_flow_id).await
+    ) -> impl Future<Output = Result<(), zx::Status>> {
+        self.common.read_at(buffer_slice, device_offset, opts, trace_flow_id)
     }
 
-    async fn write_at_with_opts_traced(
+    fn write_at_with_opts_traced(
         &self,
         buffer_slice: BufferSlice<'_>,
         device_offset: u64,
         opts: WriteOptions,
         trace_flow_id: u64,
-    ) -> Result<(), zx::Status> {
-        self.common.write_at(buffer_slice, device_offset, opts, trace_flow_id).await
+    ) -> impl Future<Output = Result<(), zx::Status>> {
+        self.common.write_at(buffer_slice, device_offset, opts, trace_flow_id)
     }
 
-    async fn trim_traced(&self, range: Range<u64>, trace_flow_id: u64) -> Result<(), zx::Status> {
-        self.common.trim(range, trace_flow_id).await
+    fn trim_traced(
+        &self,
+        range: Range<u64>,
+        trace_flow_id: u64,
+    ) -> impl Future<Output = Result<(), zx::Status>> {
+        self.common.trim(range, trace_flow_id)
     }
 
-    async fn flush_traced(&self, trace_flow_id: u64) -> Result<(), zx::Status> {
-        self.common.flush(trace_flow_id).await
+    fn flush_traced(&self, trace_flow_id: u64) -> impl Future<Output = Result<(), zx::Status>> {
+        self.common.flush(trace_flow_id)
     }
 
     async fn close(&self) -> Result<(), zx::Status> {

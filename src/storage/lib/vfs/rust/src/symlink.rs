@@ -388,13 +388,13 @@ impl<T: Symlink> Representation for Connection<T> {
 }
 
 impl<T: Symlink> ConnectionCreator<T> for Connection<T> {
-    async fn create<'a>(
+    fn create<'a>(
         scope: ExecutionScope,
         node: Arc<T>,
         protocols: impl ProtocolsExt,
         object_request: ObjectRequestRef<'a>,
-    ) -> Result<(), Status> {
-        Self::create(scope, node, protocols, object_request).await
+    ) -> impl Future<Output = Result<(), Status>> + 'a {
+        Self::create(scope, node, protocols, object_request)
     }
 }
 

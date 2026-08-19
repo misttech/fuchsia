@@ -182,13 +182,13 @@ impl<T: 'static + File + FileIo> FidlIoConnection<T> {
 }
 
 impl<T: 'static + File + FileIo> ConnectionCreator<T> for FidlIoConnection<T> {
-    async fn create<'a>(
+    fn create<'a>(
         scope: ExecutionScope,
         node: Arc<T>,
         protocols: impl ProtocolsExt,
         object_request: ObjectRequestRef<'a>,
-    ) -> Result<(), Status> {
-        Self::create(scope, node, protocols, object_request).await
+    ) -> impl Future<Output = Result<(), Status>> + 'a {
+        Self::create(scope, node, protocols, object_request)
     }
 }
 
@@ -288,13 +288,13 @@ impl<T: 'static + File + RawFileIoConnection> RawIoConnection<T> {
 }
 
 impl<T: 'static + File + RawFileIoConnection> ConnectionCreator<T> for RawIoConnection<T> {
-    async fn create<'a>(
+    fn create<'a>(
         scope: ExecutionScope,
         node: Arc<T>,
         protocols: impl crate::ProtocolsExt,
         object_request: ObjectRequestRef<'a>,
-    ) -> Result<(), Status> {
-        Self::create(scope, node, protocols, object_request).await
+    ) -> impl Future<Output = Result<(), Status>> + 'a {
+        Self::create(scope, node, protocols, object_request)
     }
 }
 
@@ -440,13 +440,13 @@ mod stream_io {
     }
 
     impl<T: 'static + File + GetVmo> ConnectionCreator<T> for StreamIoConnection<T> {
-        async fn create<'a>(
+        fn create<'a>(
             scope: ExecutionScope,
             node: Arc<T>,
             protocols: impl crate::ProtocolsExt,
             object_request: ObjectRequestRef<'a>,
-        ) -> Result<(), Status> {
-            Self::create(scope, node, protocols, object_request).await
+        ) -> impl Future<Output = Result<(), Status>> + 'a {
+            Self::create(scope, node, protocols, object_request)
         }
     }
 

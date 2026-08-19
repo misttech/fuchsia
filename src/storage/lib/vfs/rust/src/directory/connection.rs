@@ -456,27 +456,26 @@ impl<DirectoryType: Directory> BaseConnection<DirectoryType> {
     }
 
     async fn handle_read_dirents(&mut self, max_bytes: u64) -> (Result<(), Status>, Vec<u8>) {
-        async {
-            let (new_pos, sealed) =
-                self.directory.read_dirents(&self.seek, read_dirents::Sink::new(max_bytes)).await?;
-            self.seek = new_pos;
-            let read_dirents::Done { buf, status } = *sealed
-                .open()
-                .downcast::<read_dirents::Done>()
-                .map_err(|_: Box<dyn std::any::Any>| {
-                    #[cfg(debug)]
-                    panic!(
-                        "`read_dirents()` returned a `dirents_sink::Sealed`
-                        instance that is not an instance of the \
-                        `read_dirents::Done`. This is a bug in the \
-                        `read_dirents()` implementation."
-                    );
-                    Status::NOT_SUPPORTED
-                })?;
-            Ok((status, buf))
+        let (new_pos, sealed) =
+            match self.directory.read_dirents(&self.seek, read_dirents::Sink::new(max_bytes)).await
+            {
+                Ok(res) => res,
+                Err(e) => return (Err(e), Vec::new()),
+            };
+        self.seek = new_pos;
+        match sealed.open().downcast::<read_dirents::Done>() {
+            Ok(done) => (done.status, done.buf),
+            Err(_) => {
+                debug_assert!(
+                    false,
+                    "`read_dirents()` returned a `dirents_sink::Sealed` \
+                    instance that is not an instance of the \
+                    `read_dirents::Done`. This is a bug in the \
+                    `read_dirents()` implementation."
+                );
+                (Err(Status::NOT_SUPPORTED), Vec::new())
+            }
         }
-        .await
-        .unwrap_or_else(|status| (Err(status), Vec::new()))
     }
 
     async fn handle_link(

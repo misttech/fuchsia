@@ -149,25 +149,23 @@ pub fn merge(
     }
 }
 
-pub async fn filter_tombstones(
-    iter: impl LayerIterator<AllocatorKey, AllocatorValue>,
-) -> Result<impl LayerIterator<AllocatorKey, AllocatorValue>, Error> {
-    Ok(iter.filter(|i| *i.value != AllocatorValue::None).await?)
+pub fn filter_tombstones<'a>(
+    iter: impl LayerIterator<AllocatorKey, AllocatorValue> + 'a,
+) -> impl Future<Output = Result<impl LayerIterator<AllocatorKey, AllocatorValue> + 'a, Error>> {
+    iter.filter(|i| *i.value != AllocatorValue::None)
 }
 
-pub async fn filter_marked_for_deletion(
-    iter: impl LayerIterator<AllocatorKey, AllocatorValue>,
+pub fn filter_marked_for_deletion<'a>(
+    iter: impl LayerIterator<AllocatorKey, AllocatorValue> + 'a,
     marked_for_deletion: HashSet<u64>,
-) -> Result<impl LayerIterator<AllocatorKey, AllocatorValue>, Error> {
-    Ok(iter
-        .filter(move |i| {
-            if let AllocatorValue::Abs { owner_object_id, .. } = i.value {
-                !marked_for_deletion.contains(owner_object_id)
-            } else {
-                true
-            }
-        })
-        .await?)
+) -> impl Future<Output = Result<impl LayerIterator<AllocatorKey, AllocatorValue> + 'a, Error>> {
+    iter.filter(move |i| {
+        if let AllocatorValue::Abs { owner_object_id, .. } = i.value {
+            !marked_for_deletion.contains(owner_object_id)
+        } else {
+            true
+        }
+    })
 }
 
 #[cfg(test)]

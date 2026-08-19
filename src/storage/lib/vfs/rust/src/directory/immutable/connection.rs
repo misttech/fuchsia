@@ -15,6 +15,7 @@ use crate::{ObjectRequestRef, ProtocolsExt};
 
 use fio::DirectoryRequest;
 use flex_fuchsia_io as fio;
+use std::future::Future;
 use std::ops::ControlFlow;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -30,12 +31,12 @@ impl<DirectoryType: Directory> ImmutableConnection<DirectoryType> {
     /// guaranteed to be returned, they may be sent directly to the client end of the connection.
     /// This method should be called from within an `ObjectRequest` handler to ensure that errors
     /// are sent to the client end of the connection.
-    pub async fn create(
+    pub fn create<'a>(
         scope: ExecutionScope,
         directory: Arc<DirectoryType>,
         protocols: impl ProtocolsExt,
-        object_request: ObjectRequestRef<'_>,
-    ) -> Result<(), Status> {
+        object_request: ObjectRequestRef<'a>,
+    ) -> impl Future<Output = Result<(), Status>> + 'a {
         Self::create_transform_stream(
             scope,
             directory,
@@ -43,7 +44,6 @@ impl<DirectoryType: Directory> ImmutableConnection<DirectoryType> {
             object_request,
             std::convert::identity,
         )
-        .await
     }
 
     /// TODO(https://fxbug.dev/326626515): this is an experimental method to run a FIDL
@@ -101,12 +101,12 @@ impl<DirectoryType: Directory> RequestHandler for ImmutableConnection<DirectoryT
 impl<DirectoryType: Directory> ConnectionCreator<DirectoryType>
     for ImmutableConnection<DirectoryType>
 {
-    async fn create<'a>(
+    fn create<'a>(
         scope: ExecutionScope,
         node: Arc<DirectoryType>,
         protocols: impl ProtocolsExt,
         object_request: ObjectRequestRef<'a>,
-    ) -> Result<(), Status> {
-        Self::create(scope, node, protocols, object_request).await
+    ) -> impl Future<Output = Result<(), Status>> + 'a {
+        Self::create(scope, node, protocols, object_request)
     }
 }

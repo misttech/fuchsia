@@ -380,14 +380,17 @@ pub trait LayerIterator<K, V>: Send + Sync {
 
     /// Creates an iterator that only yields items from the underlying iterator for which
     /// `predicate` returns `true`.
-    async fn filter<P>(self, predicate: P) -> Result<FilterLayerIterator<Self, P, K, V>, Error>
+    fn filter<P>(
+        self,
+        predicate: P,
+    ) -> impl Future<Output = Result<FilterLayerIterator<Self, P, K, V>, Error>> + Send
     where
         P: for<'b> Fn(ItemRef<'b, K, V>) -> bool + Send + Sync,
         Self: Sized,
         K: Send + Sync,
         V: Send + Sync,
     {
-        FilterLayerIterator::new(self, predicate).await
+        FilterLayerIterator::new(self, predicate)
     }
 }
 

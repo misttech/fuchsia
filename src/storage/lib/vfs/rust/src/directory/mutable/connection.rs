@@ -229,13 +229,13 @@ impl<DirectoryType: MutableDirectory> MutableConnection<DirectoryType> {
 impl<DirectoryType: MutableDirectory> ConnectionCreator<DirectoryType>
     for MutableConnection<DirectoryType>
 {
-    async fn create<'a>(
+    fn create<'a>(
         scope: ExecutionScope,
         node: Arc<DirectoryType>,
         protocols: impl ProtocolsExt,
         object_request: ObjectRequestRef<'a>,
-    ) -> Result<(), Status> {
-        Self::create(scope, node, protocols, object_request).await
+    ) -> impl Future<Output = Result<(), Status>> + 'a {
+        Self::create(scope, node, protocols, object_request)
     }
 }
 

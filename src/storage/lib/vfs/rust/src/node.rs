@@ -386,13 +386,13 @@ impl<N: Node> Representation for Connection<N> {
 }
 
 impl<N: Node> ConnectionCreator<N> for Connection<N> {
-    async fn create<'a>(
+    fn create<'a>(
         scope: ExecutionScope,
         node: Arc<N>,
         protocols: impl crate::ProtocolsExt,
         object_request: ObjectRequestRef<'a>,
-    ) -> Result<(), Status> {
-        Self::create(scope, node, protocols, object_request).await
+    ) -> impl Future<Output = Result<(), Status>> + 'a {
+        Self::create(scope, node, protocols, object_request)
     }
 }
 
