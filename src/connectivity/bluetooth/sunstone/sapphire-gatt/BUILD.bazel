@@ -10,7 +10,6 @@ load("@rules_license//rules:package_info.bzl", "package_info")
 load("@rules_rust//rust:defs.bzl", "rust_library")
 
 package(
-    default_applicable_licenses = ["//:license"],
     default_package_metadata = [":package_info"],
     default_visibility = ["//visibility:public"],
 )
@@ -42,9 +41,6 @@ rust_library(
     ),
     crate_root = "src/lib.rs",
     edition = "2024",
-    proc_macro_deps = [
-        "//third_party/rust_crates/vendor/strum_macros-0.28.0:strum_macros",
-    ],
     rustc_flags = [
         "--cap-lints=allow",
     ],
@@ -71,7 +67,6 @@ rust_library(
         "//third_party/rust_crates/intree/sunstone/sapphire-peer-cache:sapphire_peer_cache",
         "//third_party/rust_crates/intree/sunstone/sapphire-sync:sapphire_sync",
         "//third_party/rust_crates/vendor/futures-0.3.31:futures",
-        "//third_party/rust_crates/vendor/strum-0.28.0:strum",
         "//third_party/rust_crates/vendor/thiserror-2.0.20:thiserror",
         "//third_party/rust_crates/vendor/zerocopy-0.8.48:zerocopy",
     ],
