@@ -102,13 +102,20 @@
         "parent": "adc-0",
         "tests": [
             {
+                "name": "MatchName",
+                "expected": "match",
                 "device": {
                     "fuchsia.hardware.adc.Service": "fuchsia.hardware.adc.Service.ZirconTransport",
-                    "fuchsia.adc.FUNCTION": "fuchsia.adc.FUNCTION.THERMISTOR",
-                    "fuchsia.adc.CHANNEL": "0"
-                },
+                    "fuchsia.NAME": "\"adc-0\""
+                }
+            },
+            {
+                "name": "MatchChannel",
                 "expected": "match",
-                "name": "SuccessAdc"
+                "device": {
+                    "fuchsia.hardware.adc.Service": "fuchsia.hardware.adc.Service.ZirconTransport",
+                    "fuchsia.adc.CHANNEL": "0"
+                }
             }
         ]
     }

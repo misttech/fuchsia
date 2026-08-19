@@ -25,11 +25,18 @@
         "parent": "adc-0",
         "tests": [
             {
-                "name": "Match",
+                "name": "MatchName",
                 "expected": "match",
                 "device": {
                     "fuchsia.hardware.adc.Service": "fuchsia.hardware.adc.Service.ZirconTransport",
-                    "fuchsia.adc.FUNCTION": "fuchsia.adc.FUNCTION.BUTTON",
+                    "fuchsia.NAME": "\"adc-0\""
+                }
+            },
+            {
+                "name": "MatchChannel",
+                "expected": "match",
+                "device": {
+                    "fuchsia.hardware.adc.Service": "fuchsia.hardware.adc.Service.ZirconTransport",
                     "fuchsia.adc.CHANNEL": "0"
                 }
             }

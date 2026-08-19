@@ -4,6 +4,10 @@
 
 composite adc_buttons;
 
+using fuchsia;
+using fuchsia.adc;
+using fuchsia.hardware.adc;
+using fuchsia.platform;
 
 primary parent "pdev" {
   if fuchsia.COMPATIBLE == "fuchsia,adc-buttons" {
@@ -18,21 +22,36 @@ primary parent "pdev" {
 
 optional parent "adc-0" {
   fuchsia.hardware.adc.Service == fuchsia.hardware.adc.Service.ZirconTransport;
-  fuchsia.adc.CHANNEL == 0;
+  if fuchsia.NAME == "adc-0" {
+    true;
+  } else {
+    fuchsia.adc.CHANNEL == 0;
+  }
 }
 
 optional parent "adc-1" {
   fuchsia.hardware.adc.Service == fuchsia.hardware.adc.Service.ZirconTransport;
-  fuchsia.adc.CHANNEL == 1;
+  if fuchsia.NAME == "adc-1" {
+    true;
+  } else {
+    fuchsia.adc.CHANNEL == 1;
+  }
 }
 
 optional parent "adc-2" {
   fuchsia.hardware.adc.Service == fuchsia.hardware.adc.Service.ZirconTransport;
-  fuchsia.adc.CHANNEL == 2;
+  if fuchsia.NAME == "adc-2" {
+    true;
+  } else {
+    fuchsia.adc.CHANNEL == 2;
+  }
 }
 
 optional parent "adc-3" {
   fuchsia.hardware.adc.Service == fuchsia.hardware.adc.Service.ZirconTransport;
-  fuchsia.adc.CHANNEL == 3;
+  if fuchsia.NAME == "adc-3" {
+    true;
+  } else {
+    fuchsia.adc.CHANNEL == 3;
+  }
 }
-
