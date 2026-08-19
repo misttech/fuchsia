@@ -287,7 +287,6 @@ Flatland::~Flatland() {
   // all the images in `images_to_release_`, which potentially includes some added by
   // `ProcessDeadTransforms()`.
   ProcessDeadTransforms(data);
-  FX_DCHECK(flatland1_content_.image_metadatas.empty());
 
   // If there are any images to release, set up a waiter, and pass the event-to-be-signaled to
   // `FlatlandPresenter::RemoveSession`.  This will schedule another frame and signal the event
@@ -513,53 +512,39 @@ void Flatland::Present(fuchsia_ui_composition::PresentArgs args) {
       uber_struct->local_hit_regions_map[root_transform_] = {{flatland::HitRegion::Infinite()}};
     }
 
-    if (config_.use_flatland2_uberstruct_schema) {
-      for (const auto& transform : uber_struct->local_topology) {
-        if (auto it = layer_stacks_.find(transform.handle); it != layer_stacks_.end()) {
-          std::pmr::vector<LayerHandle> handles(it->second.layers.begin(), it->second.layers.end(),
-                                                uber_struct->resource());
-          uber_struct->layer_stacks.emplace(transform.handle, std::move(handles));
+    for (const auto& transform : uber_struct->local_topology) {
+      if (auto it = layer_stacks_.find(transform.handle); it != layer_stacks_.end()) {
+        std::pmr::vector<LayerHandle> handles(it->second.layers.begin(), it->second.layers.end(),
+                                              uber_struct->resource());
+        uber_struct->layer_stacks.emplace(transform.handle, std::move(handles));
 
-          for (auto layer_handle : it->second.layers) {
-            auto obj_it = layer_objects_.find(layer_handle);
-            FX_DCHECK(obj_it != layer_objects_.end());
+        for (auto layer_handle : it->second.layers) {
+          auto obj_it = layer_objects_.find(layer_handle);
+          FX_DCHECK(obj_it != layer_objects_.end());
 
-            // The UberStruct contains only those layers which are currently in a layer stack.
-            auto [us_layer_it, inserted] = uber_struct->layers.try_emplace(layer_handle);
-            if (inserted) {
-              // Must copy properties for the newly-inserted layer.  Common properties are always
-              // copied, and only the mode-specific properties which match the composition mode
-              // are copied.
-              auto& us_layer = us_layer_it->second;
-              const auto& obj = obj_it->second;
-              us_layer.common = obj.common;
-              switch (obj.mode) {
-                case LayerObject::Mode::kInvisible:
-                  // The variant defaults to std::monostate, so nothing to do.
-                  break;
-                case LayerObject::Mode::kImage:
-                  us_layer.content = obj.image_mode;
-                  break;
-                case LayerObject::Mode::kSolidColor:
-                  us_layer.content = obj.solid_color_mode;
-                  break;
-              }
+          // The UberStruct contains only those layers which are currently in a layer stack.
+          auto [us_layer_it, inserted] = uber_struct->layers.try_emplace(layer_handle);
+          if (inserted) {
+            // Must copy properties for the newly-inserted layer.  Common properties are always
+            // copied, and only the mode-specific properties which match the composition mode
+            // are copied.
+            auto& us_layer = us_layer_it->second;
+            const auto& obj = obj_it->second;
+            us_layer.common = obj.common;
+            switch (obj.mode) {
+              case LayerObject::Mode::kInvisible:
+                // The variant defaults to std::monostate, so nothing to do.
+                break;
+              case LayerObject::Mode::kImage:
+                us_layer.content = obj.image_mode;
+                break;
+              case LayerObject::Mode::kSolidColor:
+                us_layer.content = obj.solid_color_mode;
+                break;
             }
           }
         }
       }
-    }
-    // !config_.use_flatland2_uberstruct_schema
-    else {
-      uber_struct->images.reserve(flatland1_content_.image_metadatas.size());
-      uber_struct->images.insert(flatland1_content_.image_metadatas.begin(),
-                                 flatland1_content_.image_metadatas.end());
-
-      uber_struct->local_image_sample_regions.reserve(
-          flatland1_content_.image_sample_regions.size());
-      uber_struct->local_image_sample_regions.insert(
-          flatland1_content_.image_sample_regions.begin(),
-          flatland1_content_.image_sample_regions.end());
     }
 
     if (link_to_parent_.has_value()) {
@@ -1090,36 +1075,16 @@ std::vector<allocation::GlobalImageId> Flatland::ProcessDeadTransforms(
   for (const auto& dead_handle : data.dead_transforms) {
     matrices_.erase(dead_handle);
 
-    if (config_.use_flatland2_uberstruct_schema) {
-      auto it = layer_stacks_.find(dead_handle);
-      if (it != layer_stacks_.end()) {
-        for (const auto& layer_handle : it->second.layers) {
-          auto released = ReleaseLayerObject(layer_handle);
-          if (released != allocation::kInvalidImageId) {
-            images_to_release_->insert(released);
-            images_to_release.push_back(released);
-          }
-        }
-        layer_stacks_.erase(it);
-      }
-    }
-    // !config_.use_flatland2_uberstruct_schema
-    else {
-      // Gather all images corresponding to dead transforms.
-      auto image_kv = flatland1_content_.image_metadatas.find(dead_handle);
-      if (image_kv != flatland1_content_.image_metadatas.end()) {
-        const auto image_id = image_kv->second.identifier;
-        flatland1_content_.image_metadatas.erase(image_kv);
-
-        // FilledRects do not need to be released.
-        if (image_id != allocation::kInvalidImageId) {
-          // Remember all dead images so that we can release them in the destructor if necessary.
-          // Typically this won't be necessary: we'll release them as soon as it is safe (roughly,
-          // when the next present takes effect).
-          images_to_release_->insert(image_id);
-          images_to_release.push_back(image_id);
+    auto it = layer_stacks_.find(dead_handle);
+    if (it != layer_stacks_.end()) {
+      for (const auto& layer_handle : it->second.layers) {
+        auto released = ReleaseLayerObject(layer_handle);
+        if (released != allocation::kInvalidImageId) {
+          images_to_release_->insert(released);
+          images_to_release.push_back(released);
         }
       }
+      layer_stacks_.erase(it);
     }
   }
 
@@ -1506,50 +1471,30 @@ void Flatland::CreateImage(ContentId image_id,
 
   TransformHandle handle;  // Lifted from if/else branches to be used in FLATLAND_VERBOSE_LOG below.
 
-  if (config_.use_flatland2_uberstruct_schema) {
-    LayerHandle layer_handle = CreateLayerObject();
-    UberStructLayer::ImageModeProperties content{
-        .sample_rect = {{
-            .x = 0.f,
-            .y = 0.f,
-            .width = static_cast<float>(properties.size()->width()),
-            .height = static_cast<float>(properties.size()->height()),
-        }},
-        .image_id = metadata.identifier,
-        .image_width = properties.size()->width(),
-        .image_height = properties.size()->height(),
-    };
-    auto& layer_object = layer_objects_[layer_handle];
-    layer_object.mode = LayerObject::Mode::kImage;
-    layer_object.image_mode = content;
-    layer_object.common.display_rect = {{
-        .x = 0,
-        .y = 0,
-        .width = static_cast<int32_t>(properties.size()->width()),
-        .height = static_cast<int32_t>(properties.size()->height()),
-    }};
+  LayerHandle layer_handle = CreateLayerObject();
+  UberStructLayer::ImageModeProperties content{
+      .sample_rect = {{
+          .x = 0.f,
+          .y = 0.f,
+          .width = static_cast<float>(properties.size()->width()),
+          .height = static_cast<float>(properties.size()->height()),
+      }},
+      .image_id = metadata.identifier,
+      .image_width = properties.size()->width(),
+      .image_height = properties.size()->height(),
+  };
+  auto& layer_object = layer_objects_[layer_handle];
+  layer_object.mode = LayerObject::Mode::kImage;
+  layer_object.image_mode = content;
+  layer_object.common.display_rect = {{
+      .x = 0,
+      .y = 0,
+      .width = static_cast<int32_t>(properties.size()->width()),
+      .height = static_cast<int32_t>(properties.size()->height()),
+  }};
 
-    handle = CreateLayerStackData({layer_handle});
-    content_handles_[image_id] = handle;
-  }
-  // !config_.use_flatland2_uberstruct_schema
-  else {
-    // As this is a one-way call, we can create the handle for the image in the transform graph
-    // immediately. If we fail to import the image, we will release the handle.
-    handle = transform_graph_.CreateTransform();
-    content_handles_[image_id] = handle;
-    flatland1_content_.image_metadatas[handle] = metadata;
-
-    // Set the default sample region of the image to be the full image.
-    SetImageSampleRegion(
-        image_id, types::RectangleF({.x = 0,
-                                     .y = 0,
-                                     .width = static_cast<float>(properties.size()->width()),
-                                     .height = static_cast<float>(properties.size()->height())}));
-
-    // Set the default destination region of the image to be the full image.
-    SetImageDestinationSize(image_id, properties.size().value());
-  }
+  handle = CreateLayerStackData({layer_handle});
+  content_handles_[image_id] = handle;
 
   FLATLAND_VERBOSE_LOG << "Flatland::CreateImage() session_id=" << session_id_
                        << "  image_id=" << image_id << "  size=" << properties.size()->width()
@@ -1620,25 +1565,14 @@ void Flatland::SetImageSampleRegion(ContentId image_id, types::RectangleF rect) 
   float image_width = 0.f;
   float image_height = 0.f;
 
-  if (config_.use_flatland2_uberstruct_schema) {
-    auto* image_content = GetFacadeLayerImageContent(content_kv->second);
-    if (!image_content) {
-      error_reporter_->ERROR() << "SetImageSampleRegion called on non-image content.";
-      CloseConnection(FlatlandError::kBadOperation);
-      return;
-    }
-    image_width = static_cast<float>(image_content->image_width);
-    image_height = static_cast<float>(image_content->image_height);
-  } else {
-    const auto* image = flatland1_content_.FindImage(content_kv->second);
-    if (!image || image->identifier == allocation::kInvalidImageId) {
-      error_reporter_->ERROR() << "SetImageSampleRegion called on non-image content.";
-      CloseConnection(FlatlandError::kBadOperation);
-      return;
-    }
-    image_width = static_cast<float>(image->width);
-    image_height = static_cast<float>(image->height);
+  auto* image_content = GetFacadeLayerImageContent(content_kv->second);
+  if (!image_content) {
+    error_reporter_->ERROR() << "SetImageSampleRegion called on non-image content.";
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
   }
+  image_width = static_cast<float>(image_content->image_width);
+  image_height = static_cast<float>(image_content->image_height);
 
   // The provided sample region needs to be within the bounds of the image.
   {
@@ -1666,13 +1600,7 @@ void Flatland::SetImageSampleRegion(ContentId image_id, types::RectangleF rect) 
         {.x = rect.x(), .y = rect.y(), .width = clamped_width, .height = clamped_height});
   }
 
-  if (config_.use_flatland2_uberstruct_schema) {
-    auto* image_content = GetFacadeLayerImageContent(content_kv->second);
-    FX_DCHECK(image_content);  // existed above, so should still exist now
-    image_content->sample_rect = rect;
-  } else {
-    flatland1_content_.image_sample_regions[content_kv->second] = rect;
-  }
+  image_content->sample_rect = rect;
 }
 
 void Flatland::SetImageDestinationSize(SetImageDestinationSizeRequest& request,
@@ -1696,30 +1624,17 @@ void Flatland::SetImageDestinationSize(ContentId image_id, fuchsia_math::SizeU s
     return;
   }
 
-  if (config_.use_flatland2_uberstruct_schema) {
-    auto* layer = GetFacadeLayerObject(content_kv->second);
-    if (!layer || layer->mode != LayerObject::Mode::kImage) {
-      error_reporter_->ERROR() << "SetImageDestinationSize called on non-image content  "
-                               << image_id.value();
-      CloseConnection(FlatlandError::kBadOperation);
-      return;
-    }
-    layer->common.display_rect = types::Rectangle({.x = 0,
-                                                   .y = 0,
-                                                   .width = static_cast<int32_t>(size.width()),
-                                                   .height = static_cast<int32_t>(size.height())});
-  } else {
-    auto* image = flatland1_content_.FindImage(content_kv->second);
-    if (!image || image->identifier == allocation::kInvalidImageId) {
-      error_reporter_->ERROR() << "SetImageDestinationSize called on non-image content  "
-                               << image_id.value();
-      CloseConnection(FlatlandError::kBadOperation);
-      return;
-    }
-
-    matrices_[content_kv->second].SetScale(
-        {static_cast<float>(size.width()), static_cast<float>(size.height())});
+  auto* layer = GetFacadeLayerObject(content_kv->second);
+  if (!layer || layer->mode != LayerObject::Mode::kImage) {
+    error_reporter_->ERROR() << "SetImageDestinationSize called on non-image content  "
+                             << image_id.value();
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
   }
+  layer->common.display_rect = types::Rectangle({.x = 0,
+                                                 .y = 0,
+                                                 .width = static_cast<int32_t>(size.width()),
+                                                 .height = static_cast<int32_t>(size.height())});
 }
 
 void Flatland::SetImageBlendingFunction(SetImageBlendingFunctionRequest& request,
@@ -1746,24 +1661,14 @@ void Flatland::SetImageBlendMode(ContentId image_id, BlendMode blend_mode) {
     return;
   }
 
-  if (config_.use_flatland2_uberstruct_schema) {
-    auto* layer = GetFacadeLayerObject(content_kv->second);
-    if (!layer) {
-      error_reporter_->ERROR() << "SetImageBlendMode called on non-existent content.";
-      CloseConnection(FlatlandError::kBadOperation);
-      return;
-    }
-    FX_CHECK(layer->mode != LayerObject::Mode::kInvisible);
-    layer->common.blend_mode = blend_mode;
-  } else {
-    auto* image = flatland1_content_.FindImage(content_kv->second);
-    if (!image) {
-      error_reporter_->ERROR() << "SetImageBlendMode called on non-image content.";
-      CloseConnection(FlatlandError::kBadOperation);
-      return;
-    }
-    image->blend_mode = blend_mode;
+  auto* layer = GetFacadeLayerObject(content_kv->second);
+  if (!layer) {
+    error_reporter_->ERROR() << "SetImageBlendMode called on non-existent content.";
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
   }
+  FX_CHECK(layer->mode != LayerObject::Mode::kInvisible);
+  layer->common.blend_mode = blend_mode;
 }
 
 void Flatland::SetImageFlip(SetImageFlipRequest& request, SetImageFlipCompleter::Sync& completer) {
@@ -1784,27 +1689,16 @@ void Flatland::SetImageFlip(ContentId image_id, fuchsia_ui_composition::ImageFli
     return;
   }
 
-  if (config_.use_flatland2_uberstruct_schema) {
-    auto* image_content = GetFacadeLayerImageContent(content_kv->second);
-    if (!image_content) {
-      error_reporter_->ERROR() << "SetImageFlip called on non-image content.";
-      CloseConnection(FlatlandError::kBadOperation);
-      return;
-    }
-    // In Flatland1 there is no per-image orientation,
-    // so we compose the flip with a 0-degree rotation.
-    image_content->transform =
-        types::RotateFlip::From(fuchsia_ui_composition::Orientation::kCcw0Degrees, flip);
-  } else {
-    auto* image = flatland1_content_.FindImage(content_kv->second);
-    if (!image || image->identifier == allocation::kInvalidImageId) {
-      error_reporter_->ERROR() << "SetImageFlip called on non-image content.";
-      CloseConnection(FlatlandError::kBadOperation);
-      return;
-    }
-
-    image->flip = flip;
+  auto* image_content = GetFacadeLayerImageContent(content_kv->second);
+  if (!image_content) {
+    error_reporter_->ERROR() << "SetImageFlip called on non-image content.";
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
   }
+  // In Flatland1 there is no per-image orientation,
+  // so we compose the flip with a 0-degree rotation.
+  image_content->transform =
+      types::RotateFlip::From(fuchsia_ui_composition::Orientation::kCcw0Degrees, flip);
 }
 
 void Flatland::CreateFilledRect(CreateFilledRectRequest& request,
@@ -1833,30 +1727,19 @@ void Flatland::CreateFilledRect(ContentId rect_id) {
 
   TransformHandle handle;  // Lifted from if/else for FLATLAND_VERBOSE_LOG below.
 
-  if (config_.use_flatland2_uberstruct_schema) {
-    LayerHandle layer_handle = CreateLayerObject();
-    UberStructLayer::SolidColorModeProperties content{
-        // Set default color to opaque white (matches Flatland1 default multiply_color behavior
-        // before SetSolidFill is called, though it's typically set immediately after).
-        .color = {1.f, 1.f, 1.f, 1.f},
-    };
-    auto& layer_object = layer_objects_[layer_handle];
-    layer_object.mode = LayerObject::Mode::kSolidColor;
-    layer_object.solid_color_mode = content;
-    layer_object.common.display_rect = {{.x = 0, .y = 0, .width = 0, .height = 0}};
+  LayerHandle layer_handle = CreateLayerObject();
+  UberStructLayer::SolidColorModeProperties content{
+      // Set default color to opaque white (matches Flatland1 default multiply_color behavior
+      // before SetSolidFill is called, though it's typically set immediately after).
+      .color = {1.f, 1.f, 1.f, 1.f},
+  };
+  auto& layer_object = layer_objects_[layer_handle];
+  layer_object.mode = LayerObject::Mode::kSolidColor;
+  layer_object.solid_color_mode = content;
+  layer_object.common.display_rect = {{.x = 0, .y = 0, .width = 0, .height = 0}};
 
-    handle = CreateLayerStackData({layer_handle});
-    content_handles_[rect_id] = handle;
-  }
-  // !config_.use_flatland2_uberstruct_schema
-  else {
-    // Now that we've successfully been able to import the image into the importers,
-    // we can now create a handle for it in the transform graph, and add the metadata
-    // to our map.
-    handle = transform_graph_.CreateTransform();
-    content_handles_[rect_id] = handle;
-    flatland1_content_.image_metadatas[handle] = metadata;
-  }
+  handle = CreateLayerStackData({layer_handle});
+  content_handles_[rect_id] = handle;
 
   FLATLAND_VERBOSE_LOG << "Flatland::CreateFilledRect() session_id=" << session_id_
                        << "  rect_id=" << rect_id << "  handle=" << handle;
@@ -1897,45 +1780,28 @@ void Flatland::SetSolidFill(ContentId rect_id, fuchsia_ui_composition::ColorRgba
                        << "  rgba=" << color.red() << "," << color.green() << "," << color.blue()
                        << "," << color.alpha() << "  size=" << size.width() << "x" << size.height();
 
-  if (config_.use_flatland2_uberstruct_schema) {
-    auto* layer = GetFacadeLayerObject(content_kv->second);
-    if (!layer || layer->mode != LayerObject::Mode::kSolidColor) {
-      error_reporter_->ERROR() << "Missing metadata for rect with id  " << rect_id;
-      CloseConnection(FlatlandError::kBadOperation);
-      return;
-    }
-    auto& solid_color = layer->solid_color_mode;
-    solid_color.color =
-        std::array<float, 4>{color.red(), color.green(), color.blue(), color.alpha()};
-    layer->common.display_rect = types::Rectangle({
-        .x = 0,
-        .y = 0,
-        .width = static_cast<int32_t>(size.width()),
-        .height = static_cast<int32_t>(size.height()),
-    });
-    // Derive the blend mode from the fill alpha: opaque fills get REPLACE,
-    // translucent fills get PREMULTIPLIED_ALPHA. The derivation runs on
-    // every SetSolidFill call, so it overwrites any blend mode set earlier;
-    // in the other order, a later SetImageBlendMode overwrites the derived
-    // value. Last call wins, matching classic Flatland1 (the CTF pixel tests
-    // rely on the fill-then-blend order).
-    layer->common.blend_mode = color.alpha() < 1.f ? types::BlendMode::kPremultipliedAlpha()
-                                                   : types::BlendMode::kReplace();
-  } else {
-    auto* image = flatland1_content_.FindImage(content_kv->second);
-    if (!image || image->identifier != allocation::kInvalidImageId) {
-      error_reporter_->ERROR() << "Missing metadata for rect with id  " << rect_id;
-      CloseConnection(FlatlandError::kBadOperation);
-      return;
-    }
-    image->blend_mode =
-        color.alpha() < 1.f ? BlendMode::kPremultipliedAlpha() : BlendMode::kReplace();
-    image->collection_id = allocation::kInvalidId;
-    image->identifier = allocation::kInvalidImageId;
-    image->multiply_color = {color.red(), color.green(), color.blue(), color.alpha()};
-    matrices_[content_kv->second].SetScale(
-        {static_cast<float>(size.width()), static_cast<float>(size.height())});
+  auto* layer = GetFacadeLayerObject(content_kv->second);
+  if (!layer || layer->mode != LayerObject::Mode::kSolidColor) {
+    error_reporter_->ERROR() << "Missing metadata for rect with id  " << rect_id;
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
   }
+  auto& solid_color = layer->solid_color_mode;
+  solid_color.color = std::array<float, 4>{color.red(), color.green(), color.blue(), color.alpha()};
+  layer->common.display_rect = types::Rectangle({
+      .x = 0,
+      .y = 0,
+      .width = static_cast<int32_t>(size.width()),
+      .height = static_cast<int32_t>(size.height()),
+  });
+  // Derive the blend mode from the fill alpha: opaque fills get REPLACE,
+  // translucent fills get PREMULTIPLIED_ALPHA. The derivation runs on
+  // every SetSolidFill call, so it overwrites any blend mode set earlier;
+  // in the other order, a later SetImageBlendMode overwrites the derived
+  // value. Last call wins, matching classic Flatland1 (the CTF pixel tests
+  // rely on the fill-then-blend order).
+  layer->common.blend_mode =
+      color.alpha() < 1.f ? types::BlendMode::kPremultipliedAlpha() : types::BlendMode::kReplace();
 }
 
 void Flatland::ReleaseFilledRect(ReleaseFilledRectRequest& request,
@@ -1958,29 +1824,19 @@ void Flatland::ReleaseFilledRect(ContentId rect_id) {
     return;
   }
 
-  if (config_.use_flatland2_uberstruct_schema) {
-    auto* solid_color = GetFacadeLayerSolidColorContent(content_kv->second);
-    if (!solid_color) {
-      error_reporter_->ERROR() << "ReleaseFilledRect failed, content_id " << rect_id
-                               << " has no metadata.";
-      CloseConnection(FlatlandError::kBadOperation);
-      return;
-    }
-  } else {
-    auto* image = flatland1_content_.FindImage(content_kv->second);
-    if (!image) {
-      error_reporter_->ERROR() << "ReleaseFilledRect failed, content_id " << rect_id
-                               << " has no metadata.";
-      CloseConnection(FlatlandError::kBadOperation);
-      return;
-    }
+  auto* solid_color = GetFacadeLayerSolidColorContent(content_kv->second);
+  if (!solid_color) {
+    error_reporter_->ERROR() << "ReleaseFilledRect failed, content_id " << rect_id
+                             << " has no metadata.";
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
   }
 
   bool erased_from_graph = transform_graph_.ReleaseTransform(content_kv->second);
   FX_DCHECK(erased_from_graph);
 
   // Even though the handle is released, it may still be referenced by client Transforms. The
-  // flatland1_content_.image_metadatas map preserves the entry until it shows up in the
+  // layer_stacks_ and layer_objects_ maps preserve the entry until it shows up in the
   // dead_transforms list.
   content_handles_.erase(rect_id);
 }
@@ -2010,32 +1866,13 @@ void Flatland::SetImageOpacity(ContentId image_id, float opacity) {
     return;
   }
 
-  if (config_.use_flatland2_uberstruct_schema) {
-    auto* layer = GetFacadeLayerObject(content_kv->second);
-    if (!layer || layer->mode != LayerObject::Mode::kImage) {
-      error_reporter_->ERROR() << "SetImageOpacity called on non-image content.";
-      CloseConnection(FlatlandError::kBadOperation);
-      return;
-    }
-    layer->common.opacity = opacity;
-  } else {
-    auto* image = flatland1_content_.FindImage(content_kv->second);
-    if (!image) {
-      error_reporter_->ERROR() << "SetImageOpacity called on non-image content.";
-      CloseConnection(FlatlandError::kBadOperation);
-      return;
-    }
-
-    auto& metadata = *image;
-    if (metadata.identifier == allocation::kInvalidImageId) {
-      error_reporter_->ERROR() << "SetImageOpacity called on solid color content.";
-      CloseConnection(FlatlandError::kBadOperation);
-      return;
-    }
-
-    // Opacity is stored as the alpha channel of the multiply color.
-    metadata.multiply_color[3] = opacity;
+  auto* layer = GetFacadeLayerObject(content_kv->second);
+  if (!layer || layer->mode != LayerObject::Mode::kImage) {
+    error_reporter_->ERROR() << "SetImageOpacity called on non-image content.";
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
   }
+  layer->common.opacity = opacity;
 }
 
 void Flatland::SetHitRegions(SetHitRegionsRequest& request,
@@ -2330,22 +2167,12 @@ void Flatland::ReleaseImage(ContentId image_id) {
     return;
   }
 
-  if (config_.use_flatland2_uberstruct_schema) {
-    auto* image_content = GetFacadeLayerImageContent(content_kv->second);
-    if (!image_content) {
-      error_reporter_->ERROR() << "ReleaseImage failed, content_id " << image_id
-                               << " is not an Image";
-      CloseConnection(FlatlandError::kBadOperation);
-      return;
-    }
-  } else {
-    auto* image = flatland1_content_.FindImage(content_kv->second);
-    if (!image) {
-      error_reporter_->ERROR() << "ReleaseImage failed, content_id " << image_id
-                               << " is not an Image";
-      CloseConnection(FlatlandError::kBadOperation);
-      return;
-    }
+  auto* image_content = GetFacadeLayerImageContent(content_kv->second);
+  if (!image_content) {
+    error_reporter_->ERROR() << "ReleaseImage failed, content_id " << image_id
+                             << " is not an Image";
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
   }
 
   FLATLAND_VERBOSE_LOG << "Flatland::ReleaseImage() session_id=" << session_id_
@@ -2356,7 +2183,7 @@ void Flatland::ReleaseImage(ContentId image_id) {
   FX_DCHECK(erased_from_graph);
 
   // Even though the handle is released, it may still be referenced by client Transforms. The
-  // flatland1_content_.image_metadatas map preserves the entry until it shows up in the
+  // layer_stacks_ and layer_objects_ maps preserve the entry until it shows up in the
   // dead_transforms list.
   content_handles_.erase(image_id);
 }
@@ -2412,27 +2239,15 @@ void Flatland::ReleaseImageImmediately(ContentId image_id) {
 
   allocation::GlobalImageId identifier = allocation::kInvalidImageId;
 
-  if (config_.use_flatland2_uberstruct_schema) {
-    auto* image_content = GetFacadeLayerImageContent(content_kv->second);
-    if (!image_content) {
-      error_reporter_->ERROR() << "ReleaseImageImmediately failed, content_id " << image_id
-                               << " is not an Image";
-      CloseConnection(FlatlandError::kBadOperation);
-      return;
-    }
-    identifier = image_content->image_id;
-    image_content->image_id = allocation::kInvalidImageId;  // revert to invisible
-  } else {
-    auto* image = flatland1_content_.FindImage(content_kv->second);
-
-    if (!image) {
-      error_reporter_->ERROR() << "ReleaseImageImmediately failed, content_id " << image_id
-                               << " is not an Image";
-      CloseConnection(FlatlandError::kBadOperation);
-      return;
-    }
-    identifier = image->identifier;
+  auto* image_content = GetFacadeLayerImageContent(content_kv->second);
+  if (!image_content) {
+    error_reporter_->ERROR() << "ReleaseImageImmediately failed, content_id " << image_id
+                             << " is not an Image";
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
   }
+  identifier = image_content->image_id;
+  image_content->image_id = allocation::kInvalidImageId;  // revert to invisible
 
   FLATLAND_VERBOSE_LOG << "Flatland::ReleaseImageImmediately() session_id=" << session_id_
                        << "  client_image_id=" << image_id

@@ -17,7 +17,6 @@ cc_test_executable("unittests") {
   output_name = "flatland_unittests"
   testonly = true
   sources = [
-    "flatland_differential_unittest.cc",
     "flatland_manager_unittest.cc",
     "flatland_presenter_unittest.cc",
     "flatland_unittest.cc",

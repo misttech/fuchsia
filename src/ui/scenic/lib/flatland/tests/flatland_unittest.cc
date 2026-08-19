@@ -111,18 +111,6 @@ using ParentViewportWatcher_GetStatusResult =
 
 namespace {
 
-// TEMPORARY: Parameterized test fixture to run tests against both Flatland1 and Flatland2
-// UberStruct schemas. This should be removed once use_flatland2_uberstruct_schema is made
-// the default and the flag is removed.
-class FlatlandFacadeParameterizedTest : public FlatlandTest,
-                                        public ::testing::WithParamInterface<bool> {
- public:
-  std::shared_ptr<Flatland> CreateFlatland(FlatlandConfig config = FlatlandConfig{}) {
-    config.use_flatland2_uberstruct_schema = GetParam();
-    return FlatlandTest::CreateFlatland(config);
-  }
-};
-
 // Adds FlatlandDisplay-specific helpers to FlatlandTest.  We can't easily put them into standalone
 // helper functions because they use the `PRESENT()` macro, which expect to have access to protected
 // members of FlatlandTest.
@@ -1168,7 +1156,7 @@ TEST_F(FlatlandTest, SetScaleErrorCases) {
   }
 }
 
-TEST_P(FlatlandFacadeParameterizedTest, SetImageDestinationSizeErrorCases) {
+TEST_F(FlatlandTest, SetImageDestinationSizeErrorCases) {
   const ContentId kIdNotCreated(1);
 
   // Zero is not a valid content ID.
@@ -1186,7 +1174,7 @@ TEST_P(FlatlandFacadeParameterizedTest, SetImageDestinationSizeErrorCases) {
   }
 }
 
-TEST_P(FlatlandFacadeParameterizedTest, SetImageBlendFunctionErrorCases) {
+TEST_F(FlatlandTest, SetImageBlendFunctionErrorCases) {
   const ContentId kIdNotCreated(1);
 
   // Zero is not a valid content ID.
@@ -1204,97 +1192,7 @@ TEST_P(FlatlandFacadeParameterizedTest, SetImageBlendFunctionErrorCases) {
   }
 }
 
-class FlatlandParameterizedTest : public FlatlandTest,
-                                  public ::testing::WithParamInterface<BlendMode> {};
-
-// TODO(https://fxbug.dev/523371761): LEGACY-REPRESENTATION: delete in facade step 130
-// Make sure that the data for setting the blend mode gets passed to
-// the uberstruct correctly.
-TEST_P(FlatlandParameterizedTest, SetImageBlendModeUberstructTest) {
-  const BlendMode blend_mode_param = GetParam();
-  const ContentId kImageId1(1);
-  const ContentId kImageId2(2);
-  const TransformId kTransformId1(3);
-  const TransformId kTransformId2(4);
-
-  std::shared_ptr<Flatland> flatland = CreateFlatland();
-  std::shared_ptr<Allocator> allocator = CreateAllocator();
-
-  // Create constants.
-  const uint32_t kImageWidth = 50;
-  const uint32_t kImageHeight = 100;
-
-  // Setup first image to be opaque.
-  {
-    auto ref_pair_1 = BufferCollectionImportExportTokens::New();
-
-    ImageProperties properties1;
-    properties1.size(fuchsia_math::SizeU{kImageWidth, kImageHeight});
-
-    auto import_token_dup = ref_pair_1.DuplicateImportToken();
-    const allocation::GlobalBufferCollectionId global_collection_id1 =
-        CreateImage(flatland.get(), allocator.get(), kImageId1, std::move(ref_pair_1),
-                    std::move(properties1))
-            .collection_id;
-
-    flatland->CreateTransform(kTransformId1);
-    flatland->SetRootTransform(kTransformId1);
-    flatland->SetContent(kTransformId1, kImageId1);
-    flatland->SetImageBlendMode(kImageId1, BlendMode::kReplace());
-    PRESENT(flatland, true);
-  }
-
-  // Create a second image to be transparent.
-  {
-    auto ref_pair_1 = BufferCollectionImportExportTokens::New();
-
-    ImageProperties properties1;
-    properties1.size(fuchsia_math::SizeU{kImageWidth, kImageHeight});
-
-    auto import_token_dup = ref_pair_1.DuplicateImportToken();
-    const allocation::GlobalBufferCollectionId global_collection_id1 =
-        CreateImage(flatland.get(), allocator.get(), kImageId2, std::move(ref_pair_1),
-                    std::move(properties1))
-            .collection_id;
-
-    flatland->CreateTransform(kTransformId2);
-    flatland->AddChild(kTransformId1, kTransformId2);
-    flatland->SetContent(kTransformId2, kImageId2);
-    flatland->SetImageBlendMode(kImageId2, blend_mode_param);
-    PRESENT(flatland, true);
-  }
-
-  // Get the first image content handle
-  const auto maybe_image_1_handle = flatland->GetContentHandle(kImageId1);
-  ASSERT_TRUE(maybe_image_1_handle.has_value());
-  const auto image_1_handle = maybe_image_1_handle.value();
-
-  // Get the second image content handle
-  const auto maybe_image_2_handle = flatland->GetContentHandle(kImageId2);
-  ASSERT_TRUE(maybe_image_2_handle.has_value());
-  const auto image_2_handle = maybe_image_2_handle.value();
-
-  // Now find the data in the uber struct.
-  auto uber_struct = GetUberStruct(flatland.get());
-  EXPECT_EQ(uber_struct->local_topology.back().handle, image_2_handle);
-
-  // Grab the metadatas for each handle.
-  auto image_1_kv = uber_struct->images.find(image_1_handle);
-  EXPECT_NE(image_1_kv, uber_struct->images.end());
-
-  auto image_2_kv = uber_struct->images.find(image_2_handle);
-  EXPECT_NE(image_2_kv, uber_struct->images.end());
-
-  // Make sure the opacity fields are set properly.
-  EXPECT_TRUE(image_1_kv->second.blend_mode == BlendMode::kReplace());
-  EXPECT_TRUE(image_2_kv->second.blend_mode == blend_mode_param);
-}
-
-INSTANTIATE_TEST_SUITE_P(SetBlendModes, FlatlandParameterizedTest,
-                         ::testing::Values(BlendMode::kPremultipliedAlpha(),
-                                           BlendMode::kStraightAlpha()));
-
-TEST_P(FlatlandFacadeParameterizedTest, SetImageFlipErrorCases) {
+TEST_F(FlatlandTest, SetImageFlipErrorCases) {
   const ContentId kIdNotCreated(1);
 
   // Zero is not a valid content ID.
@@ -1310,86 +1208,6 @@ TEST_P(FlatlandFacadeParameterizedTest, SetImageFlipErrorCases) {
     flatland->SetImageFlip(kIdNotCreated, fuchsia_ui_composition::ImageFlip::kLeftRight);
     PRESENT(flatland, false);
   }
-}
-
-// TODO(https://fxbug.dev/523371761): LEGACY-REPRESENTATION: delete in facade step 130
-// Make sure that the data for setting the image flip gets passed to the uberstruct correctly.
-TEST_F(FlatlandTest, SetImageFlipUberstructTest) {
-  const ContentId kImageId1(1);
-  const ContentId kImageId2(2);
-  const TransformId kTransformId1(3);
-  const TransformId kTransformId2(4);
-
-  std::shared_ptr<Flatland> flatland = CreateFlatland();
-  std::shared_ptr<Allocator> allocator = CreateAllocator();
-
-  // Create constants.
-  const uint32_t kImageWidth = 50;
-  const uint32_t kImageHeight = 100;
-
-  // Setup first image to have default NONE flip property.
-  {
-    auto ref_pair_1 = BufferCollectionImportExportTokens::New();
-
-    ImageProperties properties1;
-    properties1.size(fuchsia_math::SizeU{kImageWidth, kImageHeight});
-
-    auto import_token_dup = ref_pair_1.DuplicateImportToken();
-    const allocation::GlobalBufferCollectionId global_collection_id1 =
-        CreateImage(flatland.get(), allocator.get(), kImageId1, std::move(ref_pair_1),
-                    std::move(properties1))
-            .collection_id;
-
-    flatland->CreateTransform(kTransformId1);
-    flatland->SetRootTransform(kTransformId1);
-    flatland->SetContent(kTransformId1, kImageId1);
-    PRESENT(flatland, true);
-  }
-
-  // Create a second image to be flipped up-down.
-  {
-    auto ref_pair_1 = BufferCollectionImportExportTokens::New();
-
-    ImageProperties properties1;
-    properties1.size(fuchsia_math::SizeU{kImageWidth, kImageHeight});
-
-    auto import_token_dup = ref_pair_1.DuplicateImportToken();
-    const allocation::GlobalBufferCollectionId global_collection_id1 =
-        CreateImage(flatland.get(), allocator.get(), kImageId2, std::move(ref_pair_1),
-                    std::move(properties1))
-            .collection_id;
-
-    flatland->CreateTransform(kTransformId2);
-    flatland->AddChild(kTransformId1, kTransformId2);
-    flatland->SetContent(kTransformId2, kImageId2);
-    flatland->SetImageFlip(kImageId2, fuchsia_ui_composition::ImageFlip::kUpDown);
-    PRESENT(flatland, true);
-  }
-
-  // Get the first image content handle
-  const auto maybe_image_1_handle = flatland->GetContentHandle(kImageId1);
-  ASSERT_TRUE(maybe_image_1_handle.has_value());
-  const auto image_1_handle = maybe_image_1_handle.value();
-
-  // Get the second image content handle
-  const auto maybe_image_2_handle = flatland->GetContentHandle(kImageId2);
-  ASSERT_TRUE(maybe_image_2_handle.has_value());
-  const auto image_2_handle = maybe_image_2_handle.value();
-
-  // Now find the data in the uber struct.
-  auto uber_struct = GetUberStruct(flatland.get());
-  EXPECT_EQ(uber_struct->local_topology.back().handle, image_2_handle);
-
-  // Grab the metadatas for each handle.
-  auto image_1_kv = uber_struct->images.find(image_1_handle);
-  EXPECT_NE(image_1_kv, uber_struct->images.end());
-
-  auto image_2_kv = uber_struct->images.find(image_2_handle);
-  EXPECT_NE(image_2_kv, uber_struct->images.end());
-
-  // Make sure the flip fields are set properly.
-  EXPECT_TRUE(image_1_kv->second.flip == fuchsia_ui_composition::ImageFlip::kNone);
-  EXPECT_TRUE(image_2_kv->second.flip == fuchsia_ui_composition::ImageFlip::kUpDown);
 }
 
 // Test that changing geometric transform properties affects the local matrix of Transforms.
@@ -3804,7 +3622,7 @@ TEST_F(FlatlandTest, RecreateReleasedLinkSameToken) {
   EXPECT_TRUE(parent_viewport_watcher_updated);
 }
 
-TEST_P(FlatlandFacadeParameterizedTest, CreateImageValidCase) {
+TEST_F(FlatlandTest, CreateImageValidCase) {
   std::shared_ptr<Allocator> allocator = CreateAllocator();
   std::shared_ptr<Flatland> flatland = CreateFlatland();
 
@@ -3818,42 +3636,7 @@ TEST_P(FlatlandFacadeParameterizedTest, CreateImageValidCase) {
               std::move(properties));
 }
 
-// TODO(https://fxbug.dev/523371761): LEGACY-REPRESENTATION: delete in facade step 130
-TEST_F(FlatlandTest, CreateImageSetsDefaults) {
-  std::shared_ptr<Allocator> allocator = CreateAllocator();
-  std::shared_ptr<Flatland> flatland = CreateFlatland();
-
-  // Setup a valid image.
-  const ContentId kImageId(1);
-  const uint32_t kWidth = 100;
-  const uint32_t kHeight = 200;
-  auto ref_pair = BufferCollectionImportExportTokens::New();
-  ImageProperties properties;
-  properties.size(SizeU{kWidth, kHeight});
-
-  CreateImage(flatland.get(), allocator.get(), kImageId, std::move(ref_pair),
-              std::move(properties));
-
-  const auto maybe_image_handle = flatland->GetContentHandle(kImageId);
-  ASSERT_TRUE(maybe_image_handle.has_value());
-  const auto image_handle = maybe_image_handle.value();
-  auto uber_struct = GetUberStruct(flatland.get());
-
-  // Default sample region should be same as size.
-  auto sample_region_kv = uber_struct->local_image_sample_regions.find(image_handle);
-  EXPECT_NE(sample_region_kv, uber_struct->local_image_sample_regions.end());
-  fuchsia::math::RectF rect = {0, 0, kWidth, kHeight};
-  EXPECT_EQ(sample_region_kv->second,
-            types::RectangleF({.x = 0, .y = 0, .width = kWidth, .height = kHeight}));
-
-  // Default destination rect should be same as size.
-  auto matrix_kv = uber_struct->local_matrices.find(image_handle);
-  ASSERT_NE(matrix_kv, uber_struct->local_matrices.end());
-  EXPECT_EQ(matrix_kv->second[0][0], static_cast<float>(kWidth));
-  EXPECT_EQ(matrix_kv->second[1][1], static_cast<float>(kHeight));
-}
-
-TEST_P(FlatlandFacadeParameterizedTest, SetImageOpacityTestCases) {
+TEST_F(FlatlandTest, SetImageOpacityTestCases) {
   std::shared_ptr<Allocator> allocator = CreateAllocator();
   const TransformId kTransformId(3);
   const ContentId kId(1);
@@ -3995,7 +3778,7 @@ TEST_F(FlatlandTest, SetTransformOpacityTestCases) {
   }
 }
 
-TEST_P(FlatlandFacadeParameterizedTest, CreateFilledRectErrorTest) {
+TEST_F(FlatlandTest, CreateFilledRectErrorTest) {
   // Zero is not a valid content ID.
   {
     std::shared_ptr<Flatland> flatland = CreateFlatland();
@@ -4081,101 +3864,7 @@ TEST_P(FlatlandFacadeParameterizedTest, CreateFilledRectErrorTest) {
   }
 }
 
-// TODO(https://fxbug.dev/523371761): LEGACY-REPRESENTATION: delete in facade step 130
-// Make sure that the data for filled rects gets passed along
-// correctly to the uberstructs.
-TEST_F(FlatlandTest, FilledRectUberstructTest) {
-  const ContentId kFilledRectId(1);
-  const ContentId kChildRectId(3);
-  std::shared_ptr<Flatland> flatland = CreateFlatland();
-
-  // Create constants.
-  const uint32_t kFilledWidth = 50;
-  const uint32_t kFilledHeight = 100;
-
-  const uint32_t kFilledChildWidth = 75;
-  const uint32_t kFilledChildHeight = 220;
-
-  // Create a filled rect and set its color to magenta with a size
-  // of (50, 100);
-  fuchsia_ui_composition::ColorRgba rect_color = {0.75, 0.5, 0.25, 1.0};
-  flatland->CreateFilledRect(kFilledRectId);
-  flatland->SetSolidFill(kFilledRectId, rect_color, {kFilledWidth, kFilledHeight});
-  PRESENT(flatland, true);
-
-  // Create a second filled rect, set its color to blue, with a size of 75, 220;
-  fuchsia_ui_composition::ColorRgba child_color = {0.50, 0.75, 1.0, 0.25};
-  flatland->CreateFilledRect(kChildRectId);
-  flatland->SetSolidFill(kChildRectId, child_color, {kFilledChildWidth, kFilledChildHeight});
-  PRESENT(flatland, true);
-
-  // Create the transform graph. We will have a root node with one rectangle as content,
-  // a child node, and a second rectangle as content on the child node.
-  const TransformId kTransformId(2);
-  const TransformId kChildTransformId(4);
-
-  // Create both transforms.
-  flatland->CreateTransform(kTransformId);
-  flatland->CreateTransform(kChildTransformId);
-
-  // Set the root of the tree, and set the content on that root.
-  flatland->SetRootTransform(kTransformId);
-  flatland->SetContent(kTransformId, kFilledRectId);
-
-  // Add the child transform to the parent transform, and set the child rectangle as
-  // content on the child transform.
-  flatland->AddChild(kTransformId, kChildTransformId);
-  flatland->SetContent(kChildTransformId, kChildRectId);
-
-  PRESENT(flatland, true);
-
-  // Get the filled rect content handle.
-  const auto maybe_rect_handle = flatland->GetContentHandle(kFilledRectId);
-  ASSERT_TRUE(maybe_rect_handle.has_value());
-  const auto rect_handle = maybe_rect_handle.value();
-
-  // Get the filled child rect handle.
-  const auto maybe_child_rect_handle = flatland->GetContentHandle(kChildRectId);
-  ASSERT_TRUE(maybe_child_rect_handle.has_value());
-  const auto child_rect_handle = maybe_child_rect_handle.value();
-
-  // Now find the data for both rectangles in the uber struct. The last handle
-  // should be that of the child rectangle.
-  auto uber_struct = GetUberStruct(flatland.get());
-  EXPECT_EQ(uber_struct->local_topology.back().handle, child_rect_handle);
-
-  // Grab the metadata for each handle.
-  auto image_kv = uber_struct->images.find(rect_handle);
-  EXPECT_NE(image_kv, uber_struct->images.end());
-  auto child_image_kv = uber_struct->images.find(child_rect_handle);
-  EXPECT_NE(child_image_kv, uber_struct->images.end());
-
-  // Make sure the color for each rectangle matches the above colors.
-  EXPECT_EQ(image_kv->second.multiply_color[0], rect_color.red());
-  EXPECT_EQ(image_kv->second.multiply_color[1], rect_color.green());
-  EXPECT_EQ(image_kv->second.multiply_color[2], rect_color.blue());
-  EXPECT_EQ(image_kv->second.multiply_color[3], rect_color.alpha());
-
-  EXPECT_EQ(child_image_kv->second.multiply_color[0], child_color.red());
-  EXPECT_EQ(child_image_kv->second.multiply_color[1], child_color.green());
-  EXPECT_EQ(child_image_kv->second.multiply_color[2], child_color.blue());
-  EXPECT_EQ(child_image_kv->second.multiply_color[3], child_color.alpha());
-
-  // Grab the data for the matrices.
-  auto matrix_kv = uber_struct->local_matrices.find(rect_handle);
-  EXPECT_NE(matrix_kv, uber_struct->local_matrices.end());
-
-  auto child_matrix_kv = uber_struct->local_matrices.find(child_rect_handle);
-  EXPECT_NE(child_matrix_kv, uber_struct->local_matrices.end());
-
-  // Make sure the values match.
-  EXPECT_EQ(static_cast<uint32_t>(matrix_kv->second[0][0]), kFilledWidth);
-  EXPECT_EQ(static_cast<uint32_t>(matrix_kv->second[1][1]), kFilledHeight);
-  EXPECT_EQ(static_cast<uint32_t>(child_matrix_kv->second[0][0]), kFilledChildWidth);
-  EXPECT_EQ(static_cast<uint32_t>(child_matrix_kv->second[1][1]), kFilledChildHeight);
-}
-
-TEST_P(FlatlandFacadeParameterizedTest, SetImageSampleRegionTestCases) {
+TEST_F(FlatlandTest, SetImageSampleRegionTestCases) {
   std::shared_ptr<Allocator> allocator = CreateAllocator();
   const TransformId kTransformId(1);
   const ContentId kId(3);
@@ -4355,7 +4044,7 @@ TEST_F(FlatlandTest, SetClipBoundaryErrorCases) {
   }
 }
 
-TEST_P(FlatlandFacadeParameterizedTest, CreateImageErrorCases) {
+TEST_F(FlatlandTest, CreateImageErrorCases) {
   std::shared_ptr<Allocator> allocator = CreateAllocator();
 
   // Default image properties.
@@ -4491,7 +4180,7 @@ TEST_P(FlatlandFacadeParameterizedTest, CreateImageErrorCases) {
   }
 }
 
-TEST_P(FlatlandFacadeParameterizedTest, CreateImageWithDuplicatedImportTokens) {
+TEST_F(FlatlandTest, CreateImageWithDuplicatedImportTokens) {
   std::shared_ptr<Allocator> allocator = CreateAllocator();
   std::shared_ptr<Flatland> flatland = CreateFlatland();
 
@@ -4638,7 +4327,7 @@ TEST_F(FlatlandTest, ReleaseImageBeforeAsyncCreateImageCompletes) {
   RunLoopUntilIdle();
 }
 
-TEST_P(FlatlandFacadeParameterizedTest, CreateImageInMultipleFlatlands) {
+TEST_F(FlatlandTest, CreateImageInMultipleFlatlands) {
   std::shared_ptr<Allocator> allocator = CreateAllocator();
   std::shared_ptr<Flatland> flatland1 = CreateFlatland();
   std::shared_ptr<Flatland> flatland2 = CreateFlatland();
@@ -4758,10 +4447,10 @@ TEST_F(FlatlandTest, ClearContentOnTransform) {
   for (const auto& entry : uber_struct->local_topology) {
     EXPECT_NE(entry.handle, image_handle);
   }
-  EXPECT_TRUE(uber_struct->HasLayerContentForTest(image_handle));
+  EXPECT_FALSE(uber_struct->HasLayerContentForTest(image_handle));
 }
 
-TEST_P(FlatlandFacadeParameterizedTest, SetTheSameContentOnMultipleTransforms) {
+TEST_F(FlatlandTest, SetTheSameContentOnMultipleTransforms) {
   std::shared_ptr<Allocator> allocator = CreateAllocator();
   std::shared_ptr<Flatland> flatland = CreateFlatland();
 
@@ -4793,7 +4482,7 @@ TEST_P(FlatlandFacadeParameterizedTest, SetTheSameContentOnMultipleTransforms) {
   PRESENT(flatland, true);
 }
 
-TEST_P(FlatlandFacadeParameterizedTest, TopologyVisitsContentBeforeChildren) {
+TEST_F(FlatlandTest, TopologyVisitsContentBeforeChildren) {
   std::shared_ptr<Allocator> allocator = CreateAllocator();
   std::shared_ptr<Flatland> flatland = CreateFlatland();
 
@@ -4878,7 +4567,7 @@ TEST_P(FlatlandFacadeParameterizedTest, TopologyVisitsContentBeforeChildren) {
 
 // Tests that a buffer collection is released after CreateImage() if there are no more import
 // tokens.
-TEST_P(FlatlandFacadeParameterizedTest, ReleaseBufferCollectionHappensAfterCreateImage) {
+TEST_F(FlatlandTest, ReleaseBufferCollectionHappensAfterCreateImage) {
   std::shared_ptr<Allocator> allocator = CreateAllocator();
   std::shared_ptr<Flatland> flatland = CreateFlatland();
 
@@ -4904,7 +4593,7 @@ TEST_P(FlatlandFacadeParameterizedTest, ReleaseBufferCollectionHappensAfterCreat
 // In this variation, the image is explicitly released, and the internally-generated release fence
 // is signaled after because we don't set `args.skip_session_update_and_release_fences` as we do
 // in the other variations.
-TEST_P(FlatlandFacadeParameterizedTest, ReleaseBufferCollectionCompletesAfterFlatlandDestruction1) {
+TEST_F(FlatlandTest, ReleaseBufferCollectionCompletesAfterFlatlandDestruction1) {
   allocation::GlobalBufferCollectionId global_collection_id;
   display::ImageId global_image_id;
   {
@@ -4947,7 +4636,7 @@ TEST_P(FlatlandFacadeParameterizedTest, ReleaseBufferCollectionCompletesAfterFla
 // In this variation, the image is explicitly released, but the BufferCollectionImporter isn't
 // notified until the Flatland session is destroyed.  This exercises the logic in ~Flatland(), and
 // verifies that we don't call ReleaseBufferImage() twice for the same image.
-TEST_P(FlatlandFacadeParameterizedTest, ReleaseBufferCollectionCompletesAfterFlatlandDestruction2) {
+TEST_F(FlatlandTest, ReleaseBufferCollectionCompletesAfterFlatlandDestruction2) {
   allocation::GlobalBufferCollectionId global_collection_id;
   display::ImageId global_image_id;
   {
@@ -4990,7 +4679,7 @@ TEST_P(FlatlandFacadeParameterizedTest, ReleaseBufferCollectionCompletesAfterFla
 // This variation is similar to ReleaseBufferCollectionCompletesAfterFlatlandDestruction1, except
 // that the image has not been released by the client by the time that the Flatland session is
 // destroyed.
-TEST_P(FlatlandFacadeParameterizedTest, ReleaseBufferCollectionCompletesAfterFlatlandDestruction3) {
+TEST_F(FlatlandTest, ReleaseBufferCollectionCompletesAfterFlatlandDestruction3) {
   allocation::GlobalBufferCollectionId global_collection_id;
   display::ImageId global_image_id;
   {
@@ -5029,7 +4718,7 @@ TEST_P(FlatlandFacadeParameterizedTest, ReleaseBufferCollectionCompletesAfterFla
 
 // Tests that an Image is not released from the importer until it is not referenced and the
 // release fence is signaled.
-TEST_P(FlatlandFacadeParameterizedTest, ReleaseImageWaitsForReleaseFence) {
+TEST_F(FlatlandTest, ReleaseImageWaitsForReleaseFence) {
   std::shared_ptr<Allocator> allocator = CreateAllocator();
   std::shared_ptr<Flatland> flatland = CreateFlatland();
 
@@ -5082,7 +4771,7 @@ TEST_P(FlatlandFacadeParameterizedTest, ReleaseImageWaitsForReleaseFence) {
   RunLoopUntilIdle();
 }
 
-TEST_P(FlatlandFacadeParameterizedTest, ReleaseImageErrorCases) {
+TEST_F(FlatlandTest, ReleaseImageErrorCases) {
   // Zero is not a valid image ID.
   {
     std::shared_ptr<Flatland> flatland = CreateFlatland();
@@ -5122,7 +4811,7 @@ TEST_P(FlatlandFacadeParameterizedTest, ReleaseImageErrorCases) {
 // an image while others do not. We have to therefore make sure that if importer A
 // properly imports an image and then importer B fails, that Flatland automatically
 // releases the image from importer A.
-TEST_P(FlatlandFacadeParameterizedTest, ImageImportPassesAndFailsOnDifferentImportersTest) {
+TEST_F(FlatlandTest, ImageImportPassesAndFailsOnDifferentImportersTest) {
   // Create a second buffer collection importer.
   auto local_mock_buffer_collection_importer = new MockBufferCollectionImporter();
   auto local_buffer_collection_importer =
@@ -5172,7 +4861,7 @@ TEST_P(FlatlandFacadeParameterizedTest, ImageImportPassesAndFailsOnDifferentImpo
 
 // Test to make sure that if a buffer collection importer returns |false|
 // on |ImportBufferImage()| that this is caught when we try to present.
-TEST_P(FlatlandFacadeParameterizedTest, BufferImporterImportImageReturnsFalseTest) {
+TEST_F(FlatlandTest, BufferImporterImportImageReturnsFalseTest) {
   std::shared_ptr<Allocator> allocator = CreateAllocator();
   std::shared_ptr<Flatland> flatland = CreateFlatland();
 
@@ -5209,7 +4898,7 @@ TEST_P(FlatlandFacadeParameterizedTest, BufferImporterImportImageReturnsFalseTes
 
 // Test to make sure that the release fences signal to the buffer importer
 // to release the image.
-TEST_P(FlatlandFacadeParameterizedTest, BufferImporterImageReleaseTest) {
+TEST_F(FlatlandTest, BufferImporterImageReleaseTest) {
   std::shared_ptr<Allocator> allocator = CreateAllocator();
   std::shared_ptr<Flatland> flatland = CreateFlatland();
 
@@ -5423,7 +5112,7 @@ TEST_F(FlatlandTest, ReleasedImagePersistsOutsideGlobalTopology) {
   testing::Mock::VerifyAndClearExpectations(mock_buffer_collection_importer_);
 
   auto uber_struct = GetUberStruct(flatland.get());
-  EXPECT_TRUE(uber_struct->HasLayerContentForTest(image_handle));
+  EXPECT_FALSE(uber_struct->HasLayerContentForTest(image_handle));
 
   // Reintroduce the hierarchy and confirm the Image is still present, even though it was
   // temporarily not reachable from the root transform.
@@ -5435,7 +5124,7 @@ TEST_F(FlatlandTest, ReleasedImagePersistsOutsideGlobalTopology) {
   EXPECT_TRUE(uber_struct->HasLayerContentForTest(image_handle));
 }
 
-TEST_P(FlatlandFacadeParameterizedTest, ClearReleasesImagesAndBufferCollections) {
+TEST_F(FlatlandTest, ClearReleasesImagesAndBufferCollections) {
   std::shared_ptr<Allocator> allocator = CreateAllocator();
   std::shared_ptr<Flatland> flatland = CreateFlatland();
 
@@ -5532,7 +5221,7 @@ TEST_F(FlatlandTest, BufferSwapReleasesPreviousImage) {
 
   auto uber_struct = GetUberStruct(flatland.get());
   EXPECT_TRUE(uber_struct->HasLayerContentForTest(image_handle1));
-  EXPECT_TRUE(uber_struct->HasLayerContentForTest(image_handle2));
+  EXPECT_FALSE(uber_struct->HasLayerContentForTest(image_handle2));
 
   // Releasing image 1 succeeds, but since it is still attached to the transform,
   // it is not yet released from the importer.
@@ -5544,7 +5233,7 @@ TEST_F(FlatlandTest, BufferSwapReleasesPreviousImage) {
 
   uber_struct = GetUberStruct(flatland.get());
   EXPECT_TRUE(uber_struct->HasLayerContentForTest(image_handle1));
-  EXPECT_TRUE(uber_struct->HasLayerContentForTest(image_handle2));
+  EXPECT_FALSE(uber_struct->HasLayerContentForTest(image_handle2));
 
   // Now swap the content on the transform to image 2. This detaches image 1,
   // which should trigger its release.
@@ -5788,7 +5477,7 @@ TEST_F(FlatlandDisplayTest, SimpleSetContent) {
   ConnectChildViewToDisplayThenValidate(display, child, kWidth, kHeight);
 }
 
-TEST_P(FlatlandFacadeParameterizedTest, ReleaseImageImmediatelyUntrusted) {
+TEST_F(FlatlandTest, ReleaseImageImmediatelyUntrusted) {
   // Default CreateFlatland() creates an untrusted session.
   std::shared_ptr<Flatland> flatland = CreateFlatland();
 
@@ -5802,7 +5491,7 @@ TEST_P(FlatlandFacadeParameterizedTest, ReleaseImageImmediatelyUntrusted) {
   EXPECT_EQ(GetFlatlandError(flatland->GetSessionId()), FlatlandError::kBadOperation);
 }
 
-TEST_P(FlatlandFacadeParameterizedTest, ReleaseImageImmediatelyTrusted) {
+TEST_F(FlatlandTest, ReleaseImageImmediatelyTrusted) {
   // Create a trusted session.
   FlatlandConfig config{.use_trusted_flatland_api = true};
   std::shared_ptr<Flatland> flatland = CreateFlatland(std::move(config));
@@ -5983,6 +5672,26 @@ TEST_F(FlatlandTest, ImageReleaseRidesExistingMachinery) {
   RunLoopUntilIdle();
 }
 
+TEST_F(FlatlandTest, EpochIncrementsOnTypeTransition) {
+  std::shared_ptr<Flatland> flatland = CreateFlatland();
+
+  LayerHandle layer = flatland->CreateLayerObject();
+  const auto* obj = flatland->GetLayerObjectForTest(layer);
+  ASSERT_NE(obj, nullptr);
+  EXPECT_TRUE(obj->mode == LayerObject::Mode::kInvisible);
+
+  // Transition to Image.
+  flatland->SetLayerImageForTest(layer, allocation::kInvalidImageId);
+  EXPECT_TRUE(obj->mode == LayerObject::Mode::kImage);
+
+  // Transition to same kind: epoch should not increment.
+  flatland->SetLayerImageForTest(layer, allocation::kInvalidImageId);
+
+  // Transition to SolidColor.
+  flatland->SetLayerSolidColorForTest(layer);
+  EXPECT_TRUE(obj->mode == LayerObject::Mode::kSolidColor);
+}
+
 TEST_F(FlatlandTest, PresentStampsFlatlandVersion) {
   // Classic session Present -> snapshot flatland_version == 1
   {
@@ -6001,9 +5710,6 @@ TEST_F(FlatlandTest, PresentStampsFlatlandVersion) {
 
 // TODO(https://fxbug.dev/42156567): other FlatlandDisplayTests that should be written:
 // - version of SimpleSetContent where the child presents before SetDisplayContent() is called.
-
-INSTANTIATE_TEST_SUITE_P(ClassicAndFacade, FlatlandFacadeParameterizedTest,
-                         ::testing::Values(false, true));
 
 // These tests exercise the legacy bridging logic where Flatland1 mutator calls
 // are converted into Flatland2 UberStructLayer properties. They will be removed
@@ -6177,52 +5883,40 @@ TEST_F(Flatland1FacadeTest, OpacityBlendFlipResolveIntoSnapshot) {
 
 // Flatland1FacadeTest.ClampIfNearMatchesLegacy
 TEST_F(Flatland1FacadeTest, ClampIfNearMatchesLegacy) {
-  // Test both with flag ON and OFF
-  for (bool flag : {true, false}) {
-    FlatlandConfig config{.use_flatland2_uberstruct_schema = flag};
-    auto flatland = CreateFlatland(config);
-    auto allocator = CreateAllocator();
+  FlatlandConfig config{.use_flatland2_uberstruct_schema = true};
+  auto flatland = CreateFlatland(config);
+  auto allocator = CreateAllocator();
 
-    const TransformId kRootId{1};
-    const ContentId kImageId{2};
-    flatland->CreateTransform(kRootId);
-    flatland->SetRootTransform(kRootId);
+  const TransformId kRootId{1};
+  const ContentId kImageId{2};
+  flatland->CreateTransform(kRootId);
+  flatland->SetRootTransform(kRootId);
 
-    ImageProperties properties;
-    properties.size(SizeU{100, 200});
-    auto ref_pair = BufferCollectionImportExportTokens::New();
-    CreateImage(flatland.get(), allocator.get(), kImageId, std::move(ref_pair),
-                std::move(properties));
-    flatland->SetContent(kRootId, kImageId);
+  ImageProperties properties;
+  properties.size(SizeU{100, 200});
+  auto ref_pair = BufferCollectionImportExportTokens::New();
+  CreateImage(flatland.get(), allocator.get(), kImageId, std::move(ref_pair),
+              std::move(properties));
+  flatland->SetContent(kRootId, kImageId);
 
-    // Set sample region inside epsilon of 0 and 1, but keep x,y >= 0 since Flatland only clamps
-    // right/bottom edges
-    const float kEpsilon = 0.0001f;
-    fuchsia_math::RectF sample_region = {0.f, 0.f, 100.f + kEpsilon / 2.f, 200.f + kEpsilon / 2.f};
-    flatland->SetImageSampleRegion(kImageId, types::RectangleF::From(sample_region));
+  // Set sample region inside epsilon of 0 and 1, but keep x,y >= 0 since Flatland only clamps
+  // right/bottom edges
+  const float kEpsilon = 0.0001f;
+  fuchsia_math::RectF sample_region = {0.f, 0.f, 100.f + kEpsilon / 2.f, 200.f + kEpsilon / 2.f};
+  flatland->SetImageSampleRegion(kImageId, types::RectangleF::From(sample_region));
 
-    PRESENT(flatland, true);
+  PRESENT(flatland, true);
 
-    auto snapshot = uber_struct_system_->Snapshot();
-    ASSERT_TRUE(snapshot.map.contains(flatland->GetSessionId()));
-    auto uber_struct = snapshot.map.find(flatland->GetSessionId())->second;
-    auto content_handle = flatland->GetContentHandle(kImageId).value();
+  auto snapshot = uber_struct_system_->Snapshot();
+  ASSERT_TRUE(snapshot.map.contains(flatland->GetSessionId()));
+  auto uber_struct = snapshot.map.find(flatland->GetSessionId())->second;
+  auto content_handle = flatland->GetContentHandle(kImageId).value();
 
-    if (flag) {
-      auto layer_handle = uber_struct->layer_stacks.find(content_handle)->second[0];
-      const auto& layer = uber_struct->layers.find(layer_handle)->second;
-      const auto& content = std::get<UberStructLayer::ImageModeProperties>(layer.content);
-      // It should be clamped to 0,0,100,200
-      EXPECT_TRUE(content.sample_rect == types::RectangleF({0.f, 0.f, 100.f, 200.f}));
-    } else {
-      auto it = uber_struct->local_image_sample_regions.find(content_handle);
-      ASSERT_NE(it, uber_struct->local_image_sample_regions.end());
-      EXPECT_EQ(it->second.x(), 0.f);
-      EXPECT_EQ(it->second.y(), 0.f);
-      EXPECT_EQ(it->second.width(), 100.f);
-      EXPECT_EQ(it->second.height(), 200.f);
-    }
-  }
+  auto layer_handle = uber_struct->layer_stacks.find(content_handle)->second[0];
+  const auto& layer = uber_struct->layers.find(layer_handle)->second;
+  const auto& content = std::get<UberStructLayer::ImageModeProperties>(layer.content);
+  // It should be clamped to 0,0,100,200
+  EXPECT_TRUE(content.sample_rect == types::RectangleF({0.f, 0.f, 100.f, 200.f}));
 }
 
 // Flatland1FacadeTest.ReleaseImageKeepsDisplayingWhileAttached
@@ -6355,62 +6049,6 @@ TEST_F(Flatland1FacadeTest, MultiAttachSameContentId) {
 
   // The layers map should contain exactly one layer
   ASSERT_EQ(uber_struct->layers.size(), 1u);
-}
-
-// Flatland1FacadeTest.LegacyMapsUntouchedWhenFlagOn
-TEST_F(Flatland1FacadeTest, LegacyMapsUntouchedWhenFlagOn) {
-  FlatlandConfig config{.use_flatland2_uberstruct_schema = true};
-  auto flatland = CreateFlatland(config);
-  auto allocator = CreateAllocator();
-
-  const TransformId kRootId{1};
-  const ContentId kImageId{2};
-  flatland->CreateTransform(kRootId);
-  flatland->SetRootTransform(kRootId);
-
-  ImageProperties properties;
-  properties.size(SizeU{100, 200});
-  auto ref_pair = BufferCollectionImportExportTokens::New();
-  CreateImage(flatland.get(), allocator.get(), kImageId, std::move(ref_pair),
-              std::move(properties));
-  flatland->SetContent(kRootId, kImageId);
-
-  PRESENT(flatland, true);
-
-  auto snapshot = uber_struct_system_->Snapshot();
-  ASSERT_TRUE(snapshot.map.contains(flatland->GetSessionId()));
-  auto uber_struct = snapshot.map.find(flatland->GetSessionId())->second;
-
-  EXPECT_TRUE(uber_struct->images.empty());
-  EXPECT_TRUE(uber_struct->local_image_sample_regions.empty());
-}
-
-// Flatland1FacadeTest.Flatland2MapsEmptyWhenFlagOff
-TEST_F(Flatland1FacadeTest, Flatland2MapsEmptyWhenFlagOff) {
-  FlatlandConfig config{.use_flatland2_uberstruct_schema = false};
-  auto flatland = CreateFlatland(config);
-  auto allocator = CreateAllocator();
-
-  const TransformId kRootId{1};
-  const ContentId kImageId{2};
-  flatland->CreateTransform(kRootId);
-  flatland->SetRootTransform(kRootId);
-
-  ImageProperties properties;
-  properties.size(SizeU{100, 200});
-  auto ref_pair = BufferCollectionImportExportTokens::New();
-  CreateImage(flatland.get(), allocator.get(), kImageId, std::move(ref_pair),
-              std::move(properties));
-  flatland->SetContent(kRootId, kImageId);
-
-  PRESENT(flatland, true);
-
-  auto snapshot = uber_struct_system_->Snapshot();
-  ASSERT_TRUE(snapshot.map.contains(flatland->GetSessionId()));
-  auto uber_struct = snapshot.map.find(flatland->GetSessionId())->second;
-
-  EXPECT_TRUE(uber_struct->layer_stacks.empty());
-  EXPECT_TRUE(uber_struct->layers.empty());
 }
 
 // Flatland1FacadeTest.FilledRectPopulatesSolidColorSnapshot
@@ -6762,7 +6400,7 @@ TEST_F(Flatland1FacadeTest, TranslucentFillResultsInPremultiplied) {
 // The session snapshots the blend mode the client set, including STRAIGHT_ALPHA on a
 // solid fill.  Normalization happens downstream, at emission, in
 // `ComputeGlobalResolvedLayers()`.
-TEST_P(FlatlandFacadeParameterizedTest, StraightAlphaSolidLeftUnchanged) {
+TEST_F(FlatlandTest, StraightAlphaSolidLeftUnchanged) {
   std::shared_ptr<Flatland> flatland = CreateFlatland();
   const TransformId kRootId{1};
   const ContentId kRectId{2};
@@ -6779,20 +6417,15 @@ TEST_P(FlatlandFacadeParameterizedTest, StraightAlphaSolidLeftUnchanged) {
   ASSERT_TRUE(snapshot.map.contains(flatland->GetSessionId()));
   auto uber_struct = snapshot.map.find(flatland->GetSessionId())->second;
   auto content_handle = flatland->GetContentHandle(kRectId).value();
-  if (GetParam()) {
-    auto layer_handle = uber_struct->layer_stacks.find(content_handle)->second[0];
-    const auto& layer = uber_struct->layers.find(layer_handle)->second;
-    EXPECT_EQ(layer.common.blend_mode, types::BlendMode::kStraightAlpha());
-  } else {
-    const auto& image = uber_struct->images.find(content_handle)->second;
-    EXPECT_EQ(image.blend_mode, BlendMode::kStraightAlpha());
-  }
+  auto layer_handle = uber_struct->layer_stacks.find(content_handle)->second[0];
+  const auto& layer = uber_struct->layers.find(layer_handle)->second;
+  EXPECT_EQ(layer.common.blend_mode, types::BlendMode::kStraightAlpha());
 }
 
 // When `SetSolidFill()` is called after `SetImageBlendMode()`, it replaces the explicitly-set
 // blend mode with whatever is derived from the solid fill color, in this case PREMULTIPLIED_ALPHA
 // because alpha < 1.
-TEST_P(FlatlandFacadeParameterizedTest, SolidFillRederivesBlendMode) {
+TEST_F(FlatlandTest, SolidFillRederivesBlendMode) {
   std::shared_ptr<Flatland> flatland = CreateFlatland();
   const TransformId kRootId{1};
   const ContentId kRectId{2};
@@ -6809,19 +6442,14 @@ TEST_P(FlatlandFacadeParameterizedTest, SolidFillRederivesBlendMode) {
   ASSERT_TRUE(snapshot.map.contains(flatland->GetSessionId()));
   auto uber_struct = snapshot.map.find(flatland->GetSessionId())->second;
   auto content_handle = flatland->GetContentHandle(kRectId).value();
-  if (GetParam()) {
-    auto layer_handle = uber_struct->layer_stacks.find(content_handle)->second[0];
-    const auto& layer = uber_struct->layers.find(layer_handle)->second;
-    EXPECT_EQ(layer.common.blend_mode, types::BlendMode::kPremultipliedAlpha());
-  } else {
-    const auto& image = uber_struct->images.find(content_handle)->second;
-    EXPECT_EQ(image.blend_mode, BlendMode::kPremultipliedAlpha());
-  }
+  auto layer_handle = uber_struct->layer_stacks.find(content_handle)->second[0];
+  const auto& layer = uber_struct->layers.find(layer_handle)->second;
+  EXPECT_EQ(layer.common.blend_mode, types::BlendMode::kPremultipliedAlpha());
 }
 
 // `SetSolidFill()` derives PREMULTIPLIED_ALPHA blend mode due to content alpha < 1,
 // but this is overridden by the REPLACE specified by `SetImageBlendMode()`.
-TEST_P(FlatlandFacadeParameterizedTest, SolidFillThenBlendModeOverrides) {
+TEST_F(FlatlandTest, SolidFillThenBlendModeOverrides) {
   std::shared_ptr<Flatland> flatland = CreateFlatland();
   const TransformId kRootId{1};
   const ContentId kRectId{2};
@@ -6838,17 +6466,12 @@ TEST_P(FlatlandFacadeParameterizedTest, SolidFillThenBlendModeOverrides) {
   ASSERT_TRUE(snapshot.map.contains(flatland->GetSessionId()));
   auto uber_struct = snapshot.map.find(flatland->GetSessionId())->second;
   auto content_handle = flatland->GetContentHandle(kRectId).value();
-  if (GetParam()) {
-    auto layer_handle = uber_struct->layer_stacks.find(content_handle)->second[0];
-    const auto& layer = uber_struct->layers.find(layer_handle)->second;
-    EXPECT_EQ(layer.common.blend_mode, types::BlendMode::kReplace());
-  } else {
-    const auto& image = uber_struct->images.find(content_handle)->second;
-    EXPECT_EQ(image.blend_mode, BlendMode::kReplace());
-  }
+  auto layer_handle = uber_struct->layer_stacks.find(content_handle)->second[0];
+  const auto& layer = uber_struct->layers.find(layer_handle)->second;
+  EXPECT_EQ(layer.common.blend_mode, types::BlendMode::kReplace());
 }
 
-TEST_P(FlatlandFacadeParameterizedTest, ImageMutatorsRejectSolidContent) {
+TEST_F(FlatlandTest, ImageMutatorsRejectSolidContent) {
   const ContentId kRectId{1};
 
   // SetImageFlip rejects solid content.
@@ -6876,7 +6499,7 @@ TEST_P(FlatlandFacadeParameterizedTest, ImageMutatorsRejectSolidContent) {
   }
 }
 
-TEST_P(FlatlandFacadeParameterizedTest, SetSolidFillOnImageRejected) {
+TEST_F(FlatlandTest, SetSolidFillOnImageRejected) {
   std::shared_ptr<Flatland> flatland = CreateFlatland();
   std::shared_ptr<Allocator> allocator = CreateAllocator();
 
