@@ -1341,4 +1341,88 @@ TEST(SocketTest, NonAllowedSignals) {
   EXPECT_EQ(GetSignals(local), ZX_SOCKET_WRITABLE);
 }
 
+TEST(SocketTest, SetDispositionNoneSucceeds) {
+  zx::socket local, remote;
+  ASSERT_OK(zx::socket::create(0, &local, &remote));
+
+  // Setting no disposition flags for either self or peer returns ZX_OK as a no-op.
+  EXPECT_OK(local.set_disposition(0, 0));
+}
+
+TEST(SocketTest, ReadWriteLengthOverflowReturnsInvalidArgs) {
+  zx::socket local, remote;
+  ASSERT_OK(zx::socket::create(0, &local, &remote));
+
+  constexpr size_t kOverflowLen = static_cast<size_t>(UINT32_MAX) + 1;
+  const char write_byte = 'a';
+  char read_byte = 0;
+  size_t actual = 0;
+
+  EXPECT_STATUS(zx_socket_write(local.get(), 0, &write_byte, kOverflowLen, &actual),
+                ZX_ERR_INVALID_ARGS);
+  EXPECT_STATUS(zx_socket_read(remote.get(), 0, &read_byte, kOverflowLen, &actual),
+                ZX_ERR_INVALID_ARGS);
+}
+
+TEST(SocketTest, DatagramReadBufferLargerThanPacketReadsFullPacket) {
+  zx::socket local, remote;
+  ASSERT_OK(zx::socket::create(ZX_SOCKET_DATAGRAM, &local, &remote));
+
+  constexpr char kMsg[] = "hello";
+  size_t written = 0;
+  ASSERT_OK(local.write(0, kMsg, sizeof(kMsg), &written));
+  ASSERT_EQ(written, sizeof(kMsg));
+
+  char read_buf[64] = {};
+  size_t read_bytes = 0;
+  ASSERT_OK(remote.read(0, read_buf, sizeof(read_buf), &read_bytes));
+  EXPECT_EQ(read_bytes, sizeof(kMsg));
+  EXPECT_BYTES_EQ(read_buf, kMsg, sizeof(kMsg));
+}
+
+TEST(SocketTest, DatagramWriteExceedingCapacityReturnsShouldWait) {
+  zx::socket local, remote;
+  ASSERT_OK(zx::socket::create(ZX_SOCKET_DATAGRAM, &local, &remote));
+
+  // kSizeMax for MBufChain is 256 KB (rounded up to MBuf payload size).
+  constexpr size_t kFirstChunk = 200 * 1024;
+  constexpr size_t kSecondChunk = 100 * 1024;
+
+  fbl::Array<char> buffer(new char[kFirstChunk], kFirstChunk);
+  memset(buffer.data(), 'x', kFirstChunk);
+
+  size_t written = 0;
+  ASSERT_OK(local.write(0, buffer.data(), kFirstChunk, &written));
+  ASSERT_EQ(written, kFirstChunk);
+
+  // Second write (100 KB) causes total socket payload (300 KB) to exceed 256 KB and returns
+  // ZX_ERR_SHOULD_WAIT.
+  EXPECT_STATUS(local.write(0, buffer.data(), kSecondChunk, &written), ZX_ERR_SHOULD_WAIT);
+}
+
+TEST(SocketTest, DatagramWriteBadBufferReturnsInvalidArgs) {
+  zx::socket local, remote;
+  ASSERT_OK(zx::socket::create(ZX_SOCKET_DATAGRAM, &local, &remote));
+
+  void* bad_ptr = reinterpret_cast<void*>(1);
+  size_t written = 0;
+  EXPECT_STATUS(local.write(0, bad_ptr, 64, &written), ZX_ERR_INVALID_ARGS);
+}
+
+TEST(SocketTest, StreamWriteBadBufferIntoExistingBufferReturnsInvalidArgs) {
+  zx::socket local, remote;
+  ASSERT_OK(zx::socket::create(0, &local, &remote));
+
+  // Write a few bytes so that the tail MBuf has remaining space.
+  constexpr char kInitialData[] = "test";
+  size_t written = 0;
+  ASSERT_OK(local.write(0, kInitialData, sizeof(kInitialData), &written));
+  ASSERT_EQ(written, sizeof(kInitialData));
+
+  // Subsequent write with an invalid pointer into the existing tail buffer returns
+  // ZX_ERR_INVALID_ARGS.
+  void* bad_ptr = reinterpret_cast<void*>(1);
+  EXPECT_STATUS(local.write(0, bad_ptr, 64, &written), ZX_ERR_INVALID_ARGS);
+}
+
 }  // namespace
