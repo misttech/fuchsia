@@ -122,6 +122,8 @@ struct UsbZeroFunctionDevice {
     ep_out: fusb_endpoint::EndpointProxy,
     ep_out_addr: u8,
     interface_num: u8,
+    ep_intr_in_addr: u8,
+    ep_intr_out_addr: u8,
     is_configured: Arc<AtomicBool>,
     vmos_registered: bool,
     endpoint_tasks: Option<(fasync::Task<()>, fasync::Task<()>)>,
@@ -271,6 +273,8 @@ impl Driver for UsbZeroFunction {
                 ep_out_clone,
                 ep_out_addr,
                 interface_num,
+                0x82,
+                0x02,
             );
             device.handle_requests(iface_server.into_stream()).await;
         });
@@ -314,6 +318,8 @@ impl UsbZeroFunctionDevice {
         ep_out: fusb_endpoint::EndpointProxy,
         ep_out_addr: u8,
         interface_num: u8,
+        ep_intr_in_addr: u8,
+        ep_intr_out_addr: u8,
     ) -> Self {
         Self {
             function_client,
@@ -322,6 +328,8 @@ impl UsbZeroFunctionDevice {
             ep_out,
             ep_out_addr,
             interface_num,
+            ep_intr_in_addr,
+            ep_intr_out_addr,
             is_configured: Arc::new(AtomicBool::new(false)),
             vmos_registered: false,
             endpoint_tasks: None,
@@ -580,7 +588,9 @@ impl UsbZeroFunctionDevice {
             return Err(Status::NOT_SUPPORTED);
         }
         let ep_addr = (setup.w_index & 0xff) as u8;
-        if ep_addr != self.ep_in_addr && ep_addr != self.ep_out_addr {
+        if ![self.ep_in_addr, self.ep_out_addr, self.ep_intr_in_addr, self.ep_intr_out_addr]
+            .contains(&ep_addr)
+        {
             return Err(Status::NOT_SUPPORTED);
         }
         Ok(ep_addr)
@@ -604,8 +614,13 @@ impl UsbZeroFunctionDevice {
                     }
                     if recipient == USB_RECIP_ENDPOINT && setup.w_index <= 0xff {
                         let ep_addr = (setup.w_index & 0xff) as u8;
-                        if ep_addr == self.ep_in_addr
-                            || ep_addr == self.ep_out_addr
+                        if [
+                            self.ep_in_addr,
+                            self.ep_out_addr,
+                            self.ep_intr_in_addr,
+                            self.ep_intr_out_addr,
+                        ]
+                        .contains(&ep_addr)
                             || (ep_addr & USB_ENDPOINT_NUM_MASK) == 0
                         {
                             let is_stalled = self.stalled_endpoints.contains(&ep_addr);

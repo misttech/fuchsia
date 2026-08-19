@@ -5,8 +5,10 @@
 use super::*;
 use fidl::endpoints::{RequestStream, create_endpoints};
 
-const TEST_EP_IN_ADDR: u8 = 1;
-const TEST_EP_OUT_ADDR: u8 = 2;
+const TEST_EP_IN_ADDR: u8 = 0x81;
+const TEST_EP_OUT_ADDR: u8 = 0x01;
+const TEST_EP_INTR_IN_ADDR: u8 = 0x82;
+const TEST_EP_INTR_OUT_ADDR: u8 = 0x02;
 
 const USB_DIR_OUT: u8 = 0x00;
 const USB_DIR_IN: u8 = 0x80;
@@ -249,6 +251,8 @@ async fn test_vendor_requests() {
             ep_out_proxy,
             TEST_EP_OUT_ADDR,
             0,
+            TEST_EP_INTR_IN_ADDR,
+            TEST_EP_INTR_OUT_ADDR,
         );
         zero_function.handle_requests(iface_server.into_stream()).await;
     });
@@ -587,9 +591,18 @@ async fn test_set_and_get_interface() {
 
     let (f_p, ep_i, ep_o) = (func_c.into_proxy(), ep_in_c.into_proxy(), ep_out_c.into_proxy());
     scope.spawn_local(async move {
-        UsbZeroFunctionDevice::new(f_p, ep_i, TEST_EP_IN_ADDR, ep_o, TEST_EP_OUT_ADDR, 0)
-            .handle_requests(iface_s.into_stream())
-            .await;
+        UsbZeroFunctionDevice::new(
+            f_p,
+            ep_i,
+            TEST_EP_IN_ADDR,
+            ep_o,
+            TEST_EP_OUT_ADDR,
+            0,
+            TEST_EP_INTR_IN_ADDR,
+            TEST_EP_INTR_OUT_ADDR,
+        )
+        .handle_requests(iface_s.into_stream())
+        .await;
     });
 
     let proxy = iface_c.into_proxy();
@@ -628,6 +641,8 @@ async fn test_endpoint_stall_state() {
         ep_out_client.into_proxy(),
         TEST_EP_OUT_ADDR,
         0,
+        TEST_EP_INTR_IN_ADDR,
+        TEST_EP_INTR_OUT_ADDR,
     );
 
     // Initial state: no stalled endpoints
@@ -681,6 +696,8 @@ async fn test_standard_chapter_9_halt_requests() {
         ep_out_client.into_proxy(),
         TEST_EP_OUT_ADDR,
         0, // interface_num
+        TEST_EP_INTR_IN_ADDR,
+        TEST_EP_INTR_OUT_ADDR,
     );
 
     // Test GET_STATUS (Device) -> should succeed and return 0
@@ -782,7 +799,9 @@ async fn test_standard_endpoint_halt() {
         TEST_EP_IN_ADDR,
         ep_out_c.into_proxy(),
         TEST_EP_OUT_ADDR,
-        0,
+        0, // interface_num
+        TEST_EP_INTR_IN_ADDR,
+        TEST_EP_INTR_OUT_ADDR,
     );
 
     // EP0 (Control Endpoint) stall management is handled by hardware / driver stack
