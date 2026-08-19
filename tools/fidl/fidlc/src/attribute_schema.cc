@@ -472,6 +472,17 @@ AttributeSchemaMap AttributeSchema::OfficialAttributes() {
                                          AttributeArgSchema::Optionality::kOptional))
       .CompileEarly();
   map["no_resource"].RestrictTo({Element::Kind::kProtocol}).Constrain(NoResourceConstraint);
+  map["sensitive"].RestrictTo({
+      Element::Kind::kStruct,
+      Element::Kind::kTable,
+      Element::Kind::kUnion,
+      Element::Kind::kStructMember,
+      Element::Kind::kTableMember,
+      Element::Kind::kUnionMember,
+      Element::Kind::kOverlay,
+      Element::Kind::kOverlayMember,
+      Element::Kind::kNewType,
+  });
   return map;
 }
 

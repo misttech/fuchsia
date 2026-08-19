@@ -2042,5 +2042,82 @@ protocol Q{};
   ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
+TEST(AttributeTests, GoodSensitivePlacement) {
+  TestLibrary library(R"FIDL(
+library example;
+
+@sensitive
+type MyStruct = struct {
+    @sensitive
+    s string;
+};
+
+@sensitive
+type MyTable = table {
+    @sensitive
+    1: s string;
+};
+
+@sensitive
+type MyUnion = strict union {
+    @sensitive
+    1: s string;
+};
+)FIDL");
+  ASSERT_COMPILED(library);
+}
+
+TEST(AttributeTests, BadSensitivePlacementOnProtocol) {
+  TestLibrary library(R"FIDL(
+library example;
+
+@sensitive
+protocol MyProtocol {
+    Method();
+};
+)FIDL");
+  library.ExpectFail(ErrInvalidAttributePlacement, "sensitive");
+  ASSERT_COMPILER_DIAGNOSTICS(library);
+}
+
+TEST(AttributeTests, BadSensitivePlacementOnMethod) {
+  TestLibrary library(R"FIDL(
+library example;
+
+protocol MyProtocol {
+    @sensitive
+    Method();
+};
+)FIDL");
+  library.ExpectFail(ErrInvalidAttributePlacement, "sensitive");
+  ASSERT_COMPILER_DIAGNOSTICS(library);
+}
+
+TEST(AttributeTests, BadSensitivePlacementOnEnum) {
+  TestLibrary library(R"FIDL(
+library example;
+
+@sensitive
+type MyEnum = strict enum {
+    VALUE = 1;
+};
+)FIDL");
+  library.ExpectFail(ErrInvalidAttributePlacement, "sensitive");
+  ASSERT_COMPILER_DIAGNOSTICS(library);
+}
+
+TEST(AttributeTests, BadSensitivePlacementOnEnumMember) {
+  TestLibrary library(R"FIDL(
+library example;
+
+type MyEnum = strict enum {
+    @sensitive
+    VALUE = 1;
+};
+)FIDL");
+  library.ExpectFail(ErrInvalidAttributePlacement, "sensitive");
+  ASSERT_COMPILER_DIAGNOSTICS(library);
+}
+
 }  // namespace
 }  // namespace fidlc
