@@ -110,6 +110,7 @@ impl BlobMappingSession {
 
         let extents = node.get_mapping_extents().await?;
         let size = node.as_ref().byte_size();
+        let stored_size = node.as_ref().stored_size().await?;
         let blob_count = extents.data.len() as u32;
         let metadata_count = extents.merkle.len() as u32;
 
@@ -125,12 +126,13 @@ impl BlobMappingSession {
                 Extents::encode_extents_iter(&extents.data)
                     .chain(Extents::encode_extents_iter(&extents.merkle)),
             ) {
-                chunk.write(val_res.to_le());
+                chunk.copy_from_slice(&val_res.to_le_bytes());
             }
 
             let command = MappingCommand::Mappings {
                 key: key as u64,
                 offset: offset_in_vmo as u32,
+                stored_size,
                 metadata_count,
                 blob_count,
             };
@@ -201,9 +203,16 @@ impl BlobMappingSession {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fuchsia::fxblob::testing::{BlobFixture, new_blob_fixture};
-    use delivery_blob::CompressionMode;
+    use crate::fuchsia::fxblob::testing::{BlobFixture, new_blob_fixture, open_blob_fixture};
+    use crate::fuchsia::testing::TestFixture;
+    use blob_writer::BlobWriter;
+    use delivery_blob::{CompressionMode, Type1Blob};
+    use fidl_fuchsia_io::UnlinkOptions;
     use fuchsia_async as fasync;
+    use futures::channel::oneshot;
+    use storage_device::Device;
+    use storage_device::buffer::OwnedBuffer;
+    use storage_device::buffer_allocator::{BufferAllocator, BufferSource};
     use vmo_fifo::Receiver;
 
     #[fuchsia::test]
@@ -251,7 +260,13 @@ mod tests {
             let cmd1 = MappingCommand::try_from(*cmd1_raw).expect("try_from failed");
 
             let (cmd1_offset, cmd1_blob_count, cmd1_metadata_count) = match cmd1 {
-                MappingCommand::Mappings { key, offset, metadata_count, blob_count } => {
+                MappingCommand::Mappings {
+                    key,
+                    offset,
+                    stored_size: _,
+                    metadata_count,
+                    blob_count,
+                } => {
                     assert_eq!(key, 1);
                     assert_eq!(blob_count, data_extents.len() as u32);
                     assert_eq!(metadata_count, merkle_extents.len() as u32);
@@ -414,6 +429,285 @@ mod tests {
         // unconditionally passes the command down the FIFO queue to the block driver and doesn't
         // explicitly track active connections.
         session_proxy.close(123).await.expect("close wire call failed").expect("close failed");
+
+        fixture.close().await;
+    }
+
+    struct DeviceBlockService {
+        device: Arc<dyn Device>,
+    }
+
+    impl mapping::reader::BlockService for DeviceBlockService {
+        fn allocate_buffer(&self, max_len: usize) -> OwnedBuffer {
+            let block_size = self.device.block_size() as usize;
+            let nblocks = (std::cmp::max(max_len, block_size) + block_size - 1) / block_size;
+            let aligned_len = nblocks * block_size;
+            let pool_size = nblocks.next_power_of_two() * block_size;
+            let buffer_source = BufferSource::new(pool_size);
+            let allocator = BufferAllocator::new(block_size, buffer_source);
+            Arc::new(allocator).allocate_buffer_sync_owned(aligned_len)
+        }
+
+        fn read_blocks(
+            &self,
+            device_offset: u64,
+            mut dest_buffer: OwnedBuffer,
+            on_complete: Box<dyn FnOnce(Result<OwnedBuffer, anyhow::Error>) + Send>,
+        ) -> Result<(), anyhow::Error> {
+            let device = self.device.clone();
+            futures::executor::block_on(async move {
+                let res = device.read(device_offset, dest_buffer.as_mut()).await;
+                on_complete(res.map(|_| dest_buffer));
+            });
+            Ok(())
+        }
+    }
+
+    async fn run_blob_mapping_test(
+        fixture: &TestFixture,
+        test_data: &[u8],
+        mode: CompressionMode,
+        min_data_extents: usize,
+        min_merkle_extents: usize,
+    ) {
+        let hash = fixture.write_blob(test_data, mode).await;
+        run_blob_mapping_test_with_hash(
+            fixture,
+            hash,
+            test_data,
+            min_data_extents,
+            min_merkle_extents,
+        )
+        .await;
+    }
+
+    async fn write_blob_chunked(fx: &TestFixture, data: &[u8], mode: CompressionMode) -> Hash {
+        let hash = fuchsia_merkle::root_from_slice(data);
+        let compressed_data = Type1Blob::generate(data, mode);
+        let writer = fx.create_blob(&hash.into(), false).await.expect("create blob failed");
+        let vmo = writer
+            .get_vmo(compressed_data.len() as u64)
+            .await
+            .expect("transport error on get_vmo")
+            .expect("failed to get vmo");
+        let vmo_size = vmo.get_size().expect("failed to get vmo size");
+
+        // Write in small chunks (512 B) to allocate extents across transactions.
+        let chunk_size = 512;
+        let mut write_offset = 0u64;
+        let mut bytes_left = compressed_data.len() as u64;
+        while bytes_left > 0 {
+            let chunk_len = std::cmp::min(bytes_left, chunk_size);
+            vmo.write(
+                &compressed_data[write_offset as usize..(write_offset + chunk_len) as usize],
+                write_offset % vmo_size,
+            )
+            .expect("failed to write to vmo");
+            let _ = writer
+                .bytes_ready(chunk_len)
+                .await
+                .expect("transport error on bytes_ready")
+                .expect("failed to write data to vmo");
+            write_offset += chunk_len;
+            bytes_left -= chunk_len;
+        }
+        hash
+    }
+
+    async fn run_blob_mapping_test_with_hash(
+        fixture: &TestFixture,
+        hash: Hash,
+        uncompressed_data: &[u8],
+        min_data_extents: usize,
+        min_merkle_extents: usize,
+    ) {
+        let blob_dir = fixture
+            .volume()
+            .root()
+            .clone()
+            .as_node()
+            .into_any()
+            .downcast::<BlobDirectory>()
+            .expect("Failed to downcast root directory to BlobDirectory");
+
+        let scope = blob_dir.volume().scope().clone();
+        let server = Arc::new(
+            BlobMappingProvider::new(blob_dir).expect("Failed to create BlobMappingProvider"),
+        );
+
+        let (provider_proxy, provider_server_end) =
+            fidl::endpoints::create_proxy::<fmapping::MappingProviderMarker>();
+        scope.spawn(async move {
+            server.handle_mapping_provider_requests(provider_server_end.into_stream()).await;
+        });
+
+        let (session_proxy, session_server_end) =
+            fidl::endpoints::create_proxy::<fmapping::MappingSessionMarker>();
+        let mapping_vmo = provider_proxy
+            .open_session(session_server_end)
+            .await
+            .expect("open_session failed")
+            .expect("vmo returned an error");
+
+        let mut receiver =
+            vmo_fifo::Receiver::<RawMappingCommand>::new(mapping_vmo, PENDING_COMMANDS_CAPACITY)
+                .expect("Failed to create receiver");
+
+        let device = fixture.fs().device().clone();
+        let service: Arc<dyn mapping::reader::BlockService> =
+            Arc::new(DeviceBlockService { device });
+
+        let port = zx::Port::create();
+        // TODO(https://fxbug.dev/384784948): The 4 KiB delivery_queue VMO size will need to be
+        // changed when we plumb it through.
+        let delivery_queue = zx::Vmo::create(4096).expect("Failed to create delivery_queue VMO");
+
+        let verifier = Arc::new(block_server::verifier::Verifier::new(delivery_queue));
+        let pager = Arc::new(zx::Pager::create(zx::PagerOptions::empty()).unwrap());
+        verifier.set_pager(pager.clone());
+
+        let verifier_clone = verifier.clone();
+        let blobs = Arc::new(mapping::Blobs::new(service, move |key, range| {
+            verifier_clone.get_page_request(key, range)
+        }));
+
+        let id: [u8; 32] = hash.into();
+        let (blob_size, blob_key) = session_proxy
+            .open(&id)
+            .await
+            .expect("open failed")
+            .expect("open explicitly returned an error");
+
+        assert_eq!(blob_size as usize, uncompressed_data.len());
+
+        let msg = receiver.peek().expect("Failed to peek message");
+        if let Ok(MappingCommand::Mappings { blob_count, metadata_count, .. }) =
+            MappingCommand::try_from(*msg)
+        {
+            if (blob_count as usize) < min_data_extents
+                || (metadata_count as usize) < min_merkle_extents
+            {
+                panic!(
+                    "EXTENTS MISMATCH: blob_count = {}, metadata_count = {}, \
+                     required min_data = {}, min_merkle = {}",
+                    blob_count, metadata_count, min_data_extents, min_merkle_extents
+                );
+            }
+        }
+        mapping::process_mapping_command(&msg, &blobs).expect("process_mapping_command failed");
+        msg.pop().expect("pop failed");
+
+        let key = blob_key as u64;
+        let paged_vmo = pager.create_vmo(zx::VmoOptions::empty(), &port, key, blob_size).unwrap();
+        verifier.register_vmo(key, paged_vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap());
+
+        let _pager_thread = mapping::PagerThread::spawn(port, blobs.clone());
+
+        let (tx, rx) = oneshot::channel();
+        let len = uncompressed_data.len();
+        std::thread::spawn(move || {
+            let mut buf = vec![0u8; len];
+            paged_vmo.read(&mut buf, 0).expect("paged vmo read failed");
+            let _ = tx.send(buf);
+        });
+
+        let read_bytes = rx.await.unwrap();
+        assert_eq!(&read_bytes[..], &uncompressed_data[..]);
+
+        session_proxy.close(blob_key).await.expect("close failed").expect("close error");
+        let msg = receiver.peek().expect("Failed to peek close message");
+        mapping::process_mapping_command(&msg, &blobs).expect("process_mapping_command failed");
+        msg.pop().expect("pop failed");
+    }
+
+    async fn fragment_free_space(
+        fixture: TestFixture,
+        block_size: usize,
+        anchor_size: Option<usize>,
+    ) -> TestFixture {
+        let mut data = vec![0u8; block_size];
+        let mut hashes = Vec::new();
+        let mut i = 0usize;
+        loop {
+            rand::fill(&mut data[..]);
+            data[..8].copy_from_slice(&(i as u64).to_le_bytes());
+            let hash = fuchsia_merkle::root_from_slice(&data);
+            let delivery_data = Type1Blob::generate(&data, CompressionMode::Never);
+            let writer = match fixture.create_blob(&hash.into(), false).await {
+                Ok(w) => w,
+                Err(_) => break,
+            };
+            if let Ok(mut blob_writer) =
+                BlobWriter::create(writer, delivery_data.len() as u64).await
+            {
+                if blob_writer.write(&delivery_data).await.is_err() {
+                    break;
+                }
+            } else {
+                break;
+            }
+            hashes.push(hash);
+            i += 1;
+        }
+
+        // Unlink every second small blob to create scattered free space holes.
+        let root = fixture.root();
+        for ix in (0..hashes.len()).step_by(2) {
+            let _ = root.unlink(&format!("{}", hashes[ix]), &UnlinkOptions::default()).await;
+        }
+
+        // Remount fixture so unlinked blobs are purged and blocks are freed to allocator.
+        let device = fixture.close().await;
+        let fixture = open_blob_fixture(device).await;
+
+        if let Some(size) = anchor_size {
+            let anchor_data = vec![0u8; size];
+            let _ = fixture.write_blob(&anchor_data, CompressionMode::Never).await;
+        }
+
+        fixture
+    }
+
+    #[fuchsia::test]
+    async fn test_fxfs_blob_mapping_uncompressed() {
+        let fixture = new_blob_fixture().await;
+        let test_data = vec![123u8; 8192];
+        run_blob_mapping_test(&fixture, &test_data, CompressionMode::Never, 1, 0).await;
+        fixture.close().await;
+    }
+
+    #[fuchsia::test]
+    async fn test_fxfs_blob_mapping_compressed() {
+        let fixture = new_blob_fixture().await;
+        // Generate pseudo-random compressible test data.
+        let mut test_data = vec![0u8; 16384];
+        for i in 0..test_data.len() {
+            test_data[i] = ((i / 64) % 256) as u8;
+        }
+        run_blob_mapping_test(&fixture, &test_data, CompressionMode::Always, 1, 0).await;
+        fixture.close().await;
+    }
+
+    #[fuchsia::test]
+    async fn test_fxfs_blob_mapping_fragmented_data() {
+        let fixture = new_blob_fixture().await;
+        let fixture = fragment_free_space(fixture, 32768, Some(1_000_000)).await;
+
+        let mut uncompressed_data = vec![0u8; 262_144];
+        rand::fill(&mut uncompressed_data[..]);
+        let hash1 = write_blob_chunked(&fixture, &uncompressed_data, CompressionMode::Never).await;
+        run_blob_mapping_test_with_hash(&fixture, hash1, &uncompressed_data, 2, 0).await;
+        fixture
+            .root()
+            .unlink(&format!("{}", hash1), &UnlinkOptions::default())
+            .await
+            .unwrap()
+            .unwrap();
+
+        let mut compressed_data = vec![0u8; 262_144];
+        rand::fill(&mut compressed_data[..]);
+        let hash2 = write_blob_chunked(&fixture, &compressed_data, CompressionMode::Always).await;
+        run_blob_mapping_test_with_hash(&fixture, hash2, &compressed_data, 2, 0).await;
 
         fixture.close().await;
     }

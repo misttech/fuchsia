@@ -4,9 +4,9 @@
 
 use crate::reader::{BlockService, read_aligned_range};
 use crate::{Extents, MappingCommand, PageRequest, RawMappingCommand};
-use anyhow::{Error, anyhow};
-use bincode::deserialize;
+use anyhow::{Error, anyhow, bail};
 use blob_metadata::{BlobFormat, BlobMetadata};
+use byteorder::{LittleEndian, ReadBytesExt};
 use delivery_blob::compression::{CompressionAlgorithm, CompressionInfo, StreamingDecompressor};
 use fuchsia_sync::Mutex;
 use std::cmp::min;
@@ -244,8 +244,28 @@ impl<S: BlockService + ?Sized, R: PageRequest, F: Fn(u64, Range<u64>) -> R + Sen
     }
 }
 
-/// Reads the blob metadata from `metadata_extents` using `service` and constructs the blob's
-/// uncompressed size and optional [`CompressionInfo`], invoking `callback` upon success.
+/// The version where `BlobMetadata` was introduced in Fxfs.
+/// Eventually, we'll need to integrate Fxfs's code for upgrading data structures.
+const BLOB_METADATA_VERSION: u32 = 53;
+
+/// Deserializes versioned `BlobMetadata` from the raw on-disk bytes.
+fn deserialize_blob_metadata(mut bytes: &[u8]) -> Result<BlobMetadata, anyhow::Error> {
+    use bincode::Options;
+    let options = bincode::DefaultOptions::new().allow_trailing_bytes();
+
+    let version = bytes.read_u32::<LittleEndian>()?;
+    if version < BLOB_METADATA_VERSION {
+        bail!("Unsupported blob metadata version: {version} (expected >= {BLOB_METADATA_VERSION})");
+    }
+
+    options
+        .deserialize::<BlobMetadata>(bytes)
+        .map_err(|e| anyhow!("Failed to deserialize BlobMetadata: {e:?}"))
+}
+
+/// Reads blob metadata asynchronously from `metadata_extents` using `service`.
+/// Once the metadata is retrieved, deserialized, and parsed, `callback` is invoked with
+/// `(uncompressed_size, Option<CompressionInfo>)`.
 ///
 /// On failure or if the operation is aborted, `callback` is dropped without being invoked.
 pub fn read_blob_metadata(
@@ -279,7 +299,7 @@ pub fn read_blob_metadata(
 
         let metadata_bytes = metadata_bytes.take().unwrap();
         let cb = callback.take().unwrap();
-        let metadata = match deserialize::<BlobMetadata>(&metadata_bytes) {
+        let metadata = match deserialize_blob_metadata(&metadata_bytes) {
             Ok(metadata) => metadata,
             Err(error) => {
                 log::error!(error:?; "Failed to deserialize BlobMetadata");
@@ -381,7 +401,7 @@ pub fn process_mapping_command<
 ) -> Result<(), Error> {
     let cmd = **msg;
     match MappingCommand::try_from(cmd)? {
-        MappingCommand::Mappings { key, offset, metadata_count, blob_count } => {
+        MappingCommand::Mappings { key, offset, stored_size, metadata_count, blob_count } => {
             let blob_bytes_len = (blob_count as usize)
                 .checked_mul(8)
                 .ok_or_else(|| anyhow!("Overflow calculating blob extent byte length"))?;
@@ -403,14 +423,13 @@ pub fn process_mapping_command<
             let metadata_extents = Extents::from_encoded(metadata_bytes.iter_as::<u64>())
                 .ok_or_else(|| anyhow!("Failed to decode metadata extents"))?;
 
-            let stored_data_size = data_extents.iter_extents(0).map(|e| e.len()).sum::<u64>();
             blobs.begin_loading(key);
             let service = blobs.service().clone();
             let guard = LoadingBlobGuard { blobs: Some(blobs.clone()), key };
             read_blob_metadata(
                 service.as_ref(),
                 &metadata_extents,
-                stored_data_size,
+                stored_size,
                 move |(uncompressed_size, compression_info)| {
                     let blob =
                         Arc::new(Blob::new(data_extents, uncompressed_size, compression_info));
@@ -434,8 +453,20 @@ mod tests {
     use crate::testing::TestVecBuffer;
     use crate::{BLOCK_SIZE, Extent};
     use anyhow::Error;
+    use bincode::Options;
+    use byteorder::WriteBytesExt;
     use delivery_blob::compression::{ChunkedArchiveOptions, CompressionAlgorithm};
     use std::sync::Arc;
+
+    fn serialize_metadata(metadata: &BlobMetadata) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        bytes.write_u32::<LittleEndian>(BLOB_METADATA_VERSION).unwrap();
+        bincode::DefaultOptions::new()
+            .allow_trailing_bytes()
+            .serialize_into(&mut bytes, metadata)
+            .unwrap();
+        bytes
+    }
 
     #[test]
     fn test_read_range_uncompressed() {
@@ -942,7 +973,7 @@ mod tests {
                 compressed_offsets: compressed_offsets.clone(),
             },
         };
-        let encoded_metadata = bincode::serialize(&metadata).unwrap();
+        let encoded_metadata = serialize_metadata(&metadata);
         let mut device_data = vec![0u8; BLOCK_SIZE as usize];
         device_data[..encoded_metadata.len()].copy_from_slice(&encoded_metadata);
 
@@ -952,7 +983,7 @@ mod tests {
                 .unwrap();
 
         let (tx, rx) = std::sync::mpsc::channel();
-        read_blob_metadata(service.as_ref(), &metadata_extents, 1200, move |res| {
+        read_blob_metadata(service.as_ref(), &metadata_extents, 2400, move |res| {
             let _ = tx.send(res);
         });
 
@@ -975,7 +1006,7 @@ mod tests {
                 compressed_offsets: vec![1000, 500],
             },
         };
-        let encoded_metadata = bincode::serialize(&metadata).unwrap();
+        let encoded_metadata = serialize_metadata(&metadata);
         let mut device_data = vec![0u8; BLOCK_SIZE as usize];
         device_data[..encoded_metadata.len()].copy_from_slice(&encoded_metadata);
 
@@ -1025,7 +1056,7 @@ mod tests {
                 compressed_offsets: vec![1000, 500],
             },
         };
-        let encoded_metadata = bincode::serialize(&metadata).unwrap();
+        let encoded_metadata = serialize_metadata(&metadata);
         let mut device_data = vec![0u8; (2 * BLOCK_SIZE) as usize];
         device_data[BLOCK_SIZE as usize..BLOCK_SIZE as usize + encoded_metadata.len()]
             .copy_from_slice(&encoded_metadata);
@@ -1054,6 +1085,7 @@ mod tests {
             opcode: crate::MAPPINGS_COMMAND,
             offset: payload_buf.offset(),
             key: 99,
+            stored_size: 4096,
             metadata_count: 1,
             blob_count: 1,
         };
@@ -1114,7 +1146,7 @@ mod tests {
                 compressed_offsets: vec![1000, 500],
             },
         };
-        let encoded_metadata = bincode::serialize(&metadata).unwrap();
+        let encoded_metadata = serialize_metadata(&metadata);
         let mut device_data = vec![0u8; (2 * BLOCK_SIZE) as usize];
         device_data[BLOCK_SIZE as usize..BLOCK_SIZE as usize + encoded_metadata.len()]
             .copy_from_slice(&encoded_metadata);
@@ -1149,6 +1181,7 @@ mod tests {
             opcode: crate::MAPPINGS_COMMAND,
             offset: payload_buf.offset(),
             key: 99,
+            stored_size: 4096,
             metadata_count: 1,
             blob_count: 1,
         };
@@ -1178,7 +1211,7 @@ mod tests {
         use zx::{Pager, PagerOptions, Port, Rights, Vmo, VmoOptions};
 
         let metadata = BlobMetadata { merkle_leaves: vec![], format: BlobFormat::Uncompressed };
-        let encoded_metadata = bincode::serialize(&metadata).unwrap();
+        let encoded_metadata = serialize_metadata(&metadata);
         let mut device_data = vec![0u8; (2 * BLOCK_SIZE) as usize];
         // Metadata stored at physical block 1
         device_data[BLOCK_SIZE as usize..BLOCK_SIZE as usize + encoded_metadata.len()]
@@ -1219,6 +1252,7 @@ mod tests {
             opcode: crate::MAPPINGS_COMMAND,
             offset: 0,
             key: 42,
+            stored_size: BLOCK_SIZE,
             metadata_count: 1,
             blob_count: 1,
         };
@@ -1272,7 +1306,7 @@ mod tests {
         use zx::{Pager, PagerOptions, Port, Rights, Vmo, VmoOptions};
 
         let metadata = BlobMetadata { merkle_leaves: vec![], format: BlobFormat::Uncompressed };
-        let encoded_metadata = bincode::serialize(&metadata).unwrap();
+        let encoded_metadata = serialize_metadata(&metadata);
         let mut device_data = vec![0u8; (2 * BLOCK_SIZE) as usize];
         // Metadata stored at physical block 1
         device_data[BLOCK_SIZE as usize..BLOCK_SIZE as usize + encoded_metadata.len()]
@@ -1313,6 +1347,7 @@ mod tests {
             opcode: crate::MAPPINGS_COMMAND,
             offset: 0,
             key: 42,
+            stored_size: BLOCK_SIZE,
             metadata_count: 1,
             blob_count: 1,
         };
@@ -1381,6 +1416,7 @@ mod tests {
             opcode: crate::MAPPINGS_COMMAND,
             offset: payload_buf.offset(),
             key: 123,
+            stored_size: 4096,
             metadata_count: 0,
             blob_count: 1,
         };
@@ -1399,6 +1435,7 @@ mod tests {
                 opcode: crate::CLOSE_BLOB_COMMAND,
                 offset: 0,
                 key: 123,
+                stored_size: 0,
                 metadata_count: 0,
                 blob_count: 0,
             })
@@ -1426,5 +1463,23 @@ mod tests {
         assert_eq!(read_ahead_size_for_chunk_size(48 * 1024, 128 * 1024), 96 * 1024);
         assert_eq!(read_ahead_size_for_chunk_size(64 * 1024, 128 * 1024), 128 * 1024);
         assert_eq!(read_ahead_size_for_chunk_size(96 * 1024, 128 * 1024), 96 * 1024);
+    }
+
+    #[test]
+    fn test_deserialize_blob_metadata() {
+        let metadata = BlobMetadata { merkle_leaves: vec![], format: BlobFormat::Uncompressed };
+
+        // Valid metadata with version 53.
+        let bytes = serialize_metadata(&metadata);
+        let deserialized = deserialize_blob_metadata(&bytes).unwrap();
+        assert_eq!(deserialized, metadata);
+
+        // Buffer too short (< 4 bytes).
+        assert!(deserialize_blob_metadata(&[1, 2, 3]).is_err());
+
+        // Unsupported version (< 53).
+        let mut old_version_bytes = bytes.clone();
+        (&mut old_version_bytes[..4]).write_u32::<LittleEndian>(52).unwrap();
+        assert!(deserialize_blob_metadata(&old_version_bytes).is_err());
     }
 }

@@ -9,7 +9,7 @@ use fidl::endpoints::{DiscoverableProtocolMarker, RequestStream};
 use fidl_fuchsia_driver_token as ftoken;
 use fidl_fuchsia_hardware_ramdisk as framdisk;
 use fidl_fuchsia_io as fio;
-use fidl_fuchsia_storage_block::BlockRequestStream;
+use fidl_fuchsia_storage_block::{BlockRequestStream, MapperRequestStream};
 use fuchsia_async as fasync;
 use fuchsia_async::condition::Condition;
 use futures::TryStreamExt;
@@ -122,7 +122,25 @@ impl Ramdisk {
             let requests = BlockRequestStream::from_channel(channel);
             let block_server = block_server.clone();
             ramdisk.scope.spawn(async move {
-                let _ = block_server.handle_requests(requests).await;
+                if let Err(error) = block_server.handle_requests(requests).await {
+                    log::error!(error:?; "handle_requests failed");
+                }
+            });
+        }
+    }
+
+    pub fn mapper_request_handler(
+        &self,
+    ) -> impl Fn(ExecutionScope, fasync::Channel) + Send + Sync + 'static {
+        let ramdisk = self.ramdisk.clone();
+        let block_server = self.block_server.clone();
+        move |_scope, channel| {
+            let requests = MapperRequestStream::from_channel(channel);
+            let block_server = block_server.clone();
+            ramdisk.scope.spawn(async move {
+                if let Err(error) = block_server.handle_mapper_requests(requests).await {
+                    log::error!(error:?; "handle_mapper_requests failed");
+                }
             });
         }
     }
@@ -153,6 +171,13 @@ impl Ramdisk {
             .add_entry(
                 fidl_fuchsia_storage_block::BlockMarker::PROTOCOL_NAME,
                 endpoint(self.block_request_handler()),
+            )
+            .unwrap();
+
+        svc_dir
+            .add_entry(
+                fidl_fuchsia_storage_block::MapperMarker::PROTOCOL_NAME,
+                endpoint(self.mapper_request_handler()),
             )
             .unwrap();
 
@@ -188,8 +213,8 @@ impl RamdiskInner {
         let length = (block_count * self.block_size as u64) as usize;
         let offset = device_block_offset * self.block_size as u64;
 
-        let result =
-            vmo.read_to_vec(vmo_offset, length as u64).and_then(|buf| self.vmo.write(&buf, offset));
+        let buf = vmo.read_to_vec(vmo_offset, length as u64)?;
+        let result = self.vmo.write(&buf, offset);
 
         let mut state = self.state.lock();
 
@@ -394,7 +419,7 @@ impl Interface for RamdiskInner {
     }
 
     async fn flush(&self, _trace_flow_id: Option<NonZeroU64>) -> Result<(), Status> {
-        if self.should_fail_requests(&mut self.state.lock()) {
+        if self.should_fail_requests(&self.state.lock()) {
             Err(zx::Status::UNAVAILABLE)
         } else {
             self.state.lock().blocks_written_since_last_barrier.clear();

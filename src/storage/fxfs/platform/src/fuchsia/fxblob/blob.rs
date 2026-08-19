@@ -212,6 +212,11 @@ impl FxBlob {
         Ok(BlobExtents { data, merkle })
     }
 
+    /// Returns the stored (on-disk) byte size of the blob data attribute.
+    pub async fn stored_size(&self) -> Result<u64, Error> {
+        self.handle.store().get_attribute_size(self.handle.object_id(), AttributeId::DATA).await
+    }
+
     fn record_page_fault_metric(&self, range: &Range<u64>) {
         let chunk_size: u64 = min_chunk_size(&self.compression_info);
 

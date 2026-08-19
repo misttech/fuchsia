@@ -220,6 +220,18 @@ impl RamdiskClient {
         Ok(client)
     }
 
+    /// Get an open channel to the Mapper protocol.
+    pub fn open_mapper(&self) -> Result<fblock::MapperProxy, Error> {
+        let (client, server) = fidl::endpoints::create_proxy::<fblock::MapperMarker>();
+        self.outgoing.open(
+            &format!("svc/{}", fblock::MapperMarker::PROTOCOL_NAME),
+            fio::Flags::empty(),
+            &fio::Options::default(),
+            server.into_channel(),
+        )?;
+        Ok(client)
+    }
+
     /// Consume the client and return the event that keeps the ramdisk alive.
     pub fn into_event(self) -> zx::EventPair {
         self._event

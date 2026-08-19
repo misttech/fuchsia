@@ -30,6 +30,7 @@ rustc_library("mapping") {
     "//src/storage/lib/vmo-fifo",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:bincode",
+    "//third_party/rust_crates:byteorder",
     "//third_party/rust_crates:log",
     "//third_party/rust_crates:zerocopy",
   ]

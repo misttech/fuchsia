@@ -4405,6 +4405,7 @@ mod tests {
             opcode: mapping::MAPPINGS_COMMAND,
             offset: 0,
             key,
+            stored_size: 4096,
             metadata_count: 0,
             blob_count: data_extent_words.len() as u32,
         };

@@ -12,15 +12,15 @@ pub const CLOSE_BLOB_COMMAND: u32 = 2;
 // dynamically allocated payload region where the actual extents are written.
 //
 // The following is the layout for a 512KB VMO with 256 capacity:
-// [ Headers (64B) | Command Slots: 256 * 24B = 6,144B | .. Padding to 8KB .. | Payload (504KB) ]
-// Note: Each command slot takes 24 bytes for `RawMappingCommand`.
+// [ Headers (64B) | Command Slots: 256 * 32B = 8,192B | .. Padding to 16KB .. | Payload (496KB) ]
+// Note: Each command slot takes 32 bytes for `RawMappingCommand`.
 //
-// 504KB / 8-bytes per extent = 64,512 maximum extents bounded by the payload block.
+// 496KB / 8-bytes per extent = 63,488 maximum extents bounded by the payload block.
 pub const MAPPING_VMO_SIZE: u64 = 512 * 1024;
 
-// With a maximum capacity of 256 pending mapping commands, this allows for an average of ~252
+// With a maximum capacity of 256 pending mapping commands, this allows for an average of ~248
 // extents per blob. In the worst case of maximum fragmentation (every 4KB block maps to one
-// extent), 64,512 extents can map up to ~252MB of blob data (or ~504MB if block size is 8KB).
+// extent), 63,488 extents can map up to ~248MB of blob data (or ~496MB if block size is 8KB).
 pub const PENDING_COMMANDS_CAPACITY: u32 = 256;
 
 /// A command packet used to communicate extent mappings.
@@ -30,6 +30,7 @@ pub struct RawMappingCommand {
     pub opcode: u32,
     pub offset: u32,
     pub key: u64,
+    pub stored_size: u64,
     pub metadata_count: u32,
     pub blob_count: u32,
 }
@@ -44,6 +45,8 @@ pub enum MappingCommand {
         key: u64,
         /// Byte offset within the shared VMO where the extent descriptors begin.
         offset: u32,
+        /// Total stored size of the blob's data (compressed size if compressed, or byte size).
+        stored_size: u64,
         /// Number of Merkle tree metadata extent mappings.
         metadata_count: u32,
         /// Number of Blob data extent mappings.
@@ -59,11 +62,12 @@ pub enum MappingCommand {
 impl From<MappingCommand> for RawMappingCommand {
     fn from(cmd: MappingCommand) -> Self {
         match cmd {
-            MappingCommand::Mappings { key, offset, metadata_count, blob_count } => {
+            MappingCommand::Mappings { key, offset, stored_size, metadata_count, blob_count } => {
                 RawMappingCommand {
                     opcode: MAPPINGS_COMMAND,
                     offset,
                     key,
+                    stored_size,
                     metadata_count,
                     blob_count,
                 }
@@ -72,6 +76,7 @@ impl From<MappingCommand> for RawMappingCommand {
                 opcode: CLOSE_BLOB_COMMAND,
                 offset: 0,
                 key,
+                stored_size: 0,
                 metadata_count: 0,
                 blob_count: 0,
             },
@@ -87,6 +92,7 @@ impl TryFrom<RawMappingCommand> for MappingCommand {
             MAPPINGS_COMMAND => Ok(MappingCommand::Mappings {
                 key: cmd.key,
                 offset: cmd.offset,
+                stored_size: cmd.stored_size,
                 metadata_count: cmd.metadata_count,
                 blob_count: cmd.blob_count,
             }),
