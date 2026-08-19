@@ -109,6 +109,7 @@ rustc_library("emboss_runtime") {
   sources = [
     "src/runtime/experimental/rust/src/lib.rs",
     "src/runtime/experimental/rust/src/prelude.rs",
+    "src/runtime/experimental/rust/src/typestate.rs",
   ]
 
   # This backend is still experimental and as such should only be used

@@ -8,10 +8,15 @@ pub use pw_bluetooth_hci_common_emb as hci_common;
 pub use pw_bluetooth_hci_h4_emb as hci_h4;
 pub use pw_bluetooth_l2cap_frames_emb as l2cap_frames;
 
+pub use emboss_runtime::{
+    CheckComplete, CompleteState, Error, InfallibleRead, InfallibleWrite, IsComplete, State,
+    UncheckedState,
+};
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use att::{AttErrorRsp, AttErrorRspMut, AttOpcode, ErrorCode};
+    use att::{AttErrorRsp, AttErrorRspWriter, AttOpcode, ErrorCode};
     use hci_commands::ResetCommand;
     use hci_common::OpCode;
 
@@ -26,19 +31,21 @@ mod tests {
     #[test]
     fn test_error_rsp() {
         let mut buffer = [0u8; 5];
-        let mut view = AttErrorRspMut::new(&mut buffer[..]);
-        view.attribute_opcode().try_write(AttOpcode::ATT_ERROR_RSP).unwrap();
-        view.request_opcode_in_error_uint().try_write(u8::from(AttOpcode::ATT_READ_REQ)).unwrap();
-        view.attribute_handle().try_write(0x1234).unwrap();
-        view.error_code().try_write(ErrorCode::READ_NOT_PERMITTED).unwrap();
+        let _ = AttErrorRspWriter::new(&mut buffer[..])
+            .check_complete()
+            .unwrap()
+            .write_attribute_opcode(AttOpcode::ATT_ERROR_RSP)
+            .write_request_opcode_in_error_uint(u8::from(AttOpcode::ATT_READ_REQ))
+            .write_attribute_handle(0x1234)
+            .write_error_code(ErrorCode::READ_NOT_PERMITTED);
 
-        let read_view = AttErrorRsp::new(&buffer[..]);
-        assert_eq!(read_view.attribute_opcode().try_read().unwrap(), AttOpcode::ATT_ERROR_RSP);
+        let read_view = AttErrorRsp::new(&buffer[..]).check_complete().unwrap();
+        assert_eq!(read_view.attribute_opcode().read(), Ok(AttOpcode::ATT_ERROR_RSP));
         assert_eq!(
-            read_view.request_opcode_in_error_uint().try_read().unwrap(),
+            read_view.request_opcode_in_error_uint().read(),
             u8::from(AttOpcode::ATT_READ_REQ)
         );
-        assert_eq!(read_view.attribute_handle().try_read().unwrap(), 0x1234);
-        assert_eq!(read_view.error_code().try_read().unwrap(), ErrorCode::READ_NOT_PERMITTED);
+        assert_eq!(read_view.attribute_handle().read(), 0x1234);
+        assert_eq!(read_view.error_code().read(), Ok(ErrorCode::READ_NOT_PERMITTED));
     }
 }
