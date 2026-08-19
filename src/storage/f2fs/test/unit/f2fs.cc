@@ -73,6 +73,16 @@ TEST(SuperblockTest, SanityCheckRawSuper) {
   corrupted->section_count = CpuToLe(4u);
   WriteSuperblock(*corrupted, *bc);
   ASSERT_EQ(LoadSuperblock(*bc).status_value(), ZX_ERR_INVALID_ARGS);
+
+  std::memcpy(&corrupted, (*superblock).get(), sizeof(Superblock));
+  corrupted->log_blocks_per_seg = CpuToLe(kDefaultLogBlocksPerSegment + 1);
+  WriteSuperblock(*corrupted, *bc);
+  ASSERT_EQ(LoadSuperblock(*bc).status_value(), ZX_ERR_INVALID_ARGS);
+
+  std::memcpy(&corrupted, (*superblock).get(), sizeof(Superblock));
+  corrupted->log_blocks_per_seg = CpuToLe(kDefaultLogBlocksPerSegment - 1);
+  WriteSuperblock(*corrupted, *bc);
+  ASSERT_EQ(LoadSuperblock(*bc).status_value(), ZX_ERR_INVALID_ARGS);
 }
 
 TEST(SuperblockTest, GetValidCheckpoint) {

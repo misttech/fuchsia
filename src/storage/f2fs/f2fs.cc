@@ -48,6 +48,8 @@ static zx_status_t CheckBlockSize(const Superblock& sb) {
     return ZX_ERR_INVALID_ARGS;
   if ((LeToCpu(sb.log_sectors_per_block) + LeToCpu(sb.log_sectorsize)) != kMaxLogSectorSize)
     return ZX_ERR_INVALID_ARGS;
+  if (LeToCpu(sb.log_blocks_per_seg) != kDefaultLogBlocksPerSegment)
+    return ZX_ERR_INVALID_ARGS;
 
   uint32_t segs_per_sec = LeToCpu(sb.segs_per_sec);
   uint32_t secs_per_zone = LeToCpu(sb.secs_per_zone);
