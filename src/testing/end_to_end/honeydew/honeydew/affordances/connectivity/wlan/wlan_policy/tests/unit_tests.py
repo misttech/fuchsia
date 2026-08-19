@@ -5,6 +5,7 @@
 import asyncio
 import types
 import unittest
+from datetime import timedelta
 from typing import TypeVar
 from unittest import mock
 
@@ -540,7 +541,7 @@ class WlanPolicyTests(unittest.IsolatedAsyncioTestCase):
             )
 
         summary = await self.wlan_policy_obj._wait_on_update(
-            condition, timeout=5
+            condition, timeout=timedelta(seconds=5)
         )
         self.assertEqual(
             summary.state, f_wlan_policy.WlanClientState.CONNECTIONS_ENABLED

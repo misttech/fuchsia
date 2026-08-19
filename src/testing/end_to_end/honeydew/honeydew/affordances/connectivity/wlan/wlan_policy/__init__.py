@@ -56,13 +56,16 @@ _DEVICE_MONITOR_PROXY = FidlEndpoint(
 
 _SET_COUNTRY_CODE_TIMEOUT = timedelta(seconds=10)
 _COUNTRY_CODE_CHECK_INTERVAL = timedelta(seconds=1)
-_DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT = 60
+_DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT_SEC: float = 60
+_DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT = timedelta(
+    seconds=_DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT_SEC
+)
 
 
 async def collect_network_config_iterator(
     iterator: f_wlan_policy.NetworkConfigIteratorClient,
     *,
-    timeout: float | None = _DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
+    timeout: float | None = _DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT_SEC,
 ) -> list[f_wlan_policy.NetworkConfigIteratorGetNextResponse]:
     """Collect all elements from a NetworkConfigIterator.
 
@@ -107,7 +110,7 @@ async def collect_network_config_iterator(
 async def collect_scan_result_iterator(
     iterator: f_wlan_policy.ScanResultIteratorClient,
     *,
-    timeout: float | None = _DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
+    timeout: float | None = _DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT_SEC,
 ) -> list[f_wlan_policy.ScanResultIteratorGetNextResponse]:
     """Collect all elements from a ScanResultIterator.
 
@@ -362,7 +365,7 @@ class WlanPolicy(AsyncLazyReady):
         target_ssid: str,
         security_type: f_wlan_policy.SecurityType,
         *,
-        timeout: float | None = _DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
+        timeout: float | None = _DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT_SEC,
     ) -> None:
         """Triggers connection to a network and blocks until connected.
 
@@ -415,7 +418,7 @@ class WlanPolicy(AsyncLazyReady):
     async def get_saved_networks(
         self,
         *,
-        timeout: float | None = _DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
+        timeout: float | None = _DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT_SEC,
     ) -> list[NetworkConfig]:
         """Gets networks saved on device.
 
@@ -456,7 +459,7 @@ class WlanPolicy(AsyncLazyReady):
     async def get_status(
         self,
         *,
-        timeout: float | None = _DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
+        timeout: float | None = _DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT_SEC,
     ) -> ClientStateSummary:
         """Gets the current client listener state immediately.
 
@@ -516,7 +519,7 @@ class WlanPolicy(AsyncLazyReady):
     async def get_update(
         self,
         *,
-        timeout: float | None = _DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
+        timeout: float | None = _DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT_SEC,
     ) -> ClientStateSummary:
         """Gets one client listener update.
 
@@ -548,7 +551,7 @@ class WlanPolicy(AsyncLazyReady):
         self,
         f: Callable[[ClientStateSummary], bool | Awaitable[bool]],
         *,
-        timeout: float | None = _DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
+        timeout: timedelta | None = _DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
     ) -> ClientStateSummary:
         """Waits for update.
 
@@ -570,27 +573,32 @@ class WlanPolicy(AsyncLazyReady):
                 client_state_summaries.append(
                     await asyncio.wait_for(
                         self._client_controller.updates.get(),
-                        timeout,
+                        None if timeout is None else timeout.total_seconds(),
                     )
                 )
-                result = f(client_state_summaries[-1])
-                if inspect.isawaitable(result):
-                    result = await result
-                if result:
-                    return client_state_summaries[-1]
             except TimeoutError as e:
+                assert (
+                    timeout is not None
+                ), "TimeoutError raised when no timeout specified."
+
                 raise wlan_errors.HoneydewWlanError(
-                    f"Timeout out waiting for next update. Waited: {timeout}s."
+                    f"Timeout out waiting for next update. Waited: {timeout.total_seconds()}s."
                     f"Updates received:\n\n"
                     f"{pprint.pformat(client_state_summaries, indent=4)}"
                 ) from e
+
+            result = f(client_state_summaries[-1])
+            if inspect.isawaitable(result):
+                result = await result
+            if result:
+                return client_state_summaries[-1]
 
     @ensure_ready
     async def wait_for_network_state(
         self,
         ssid: str,
         expected_state: f_wlan_policy.ConnectionState,
-        timeout: float | None = _DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
+        timeout: float | None = _DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT_SEC,
     ) -> f_wlan_policy.ConnectionState:
         await self.set_new_update_listener()
 
@@ -614,7 +622,10 @@ class WlanPolicy(AsyncLazyReady):
                         )
             return False
 
-        matched_update = await self._wait_on_update(check_net, timeout=timeout)
+        matched_update = await self._wait_on_update(
+            check_net,
+            timeout=None if timeout is None else timedelta(seconds=timeout),
+        )
 
         for net in matched_update.networks:
             if net.network_identifier.ssid == ssid:
@@ -628,7 +639,7 @@ class WlanPolicy(AsyncLazyReady):
     async def wait_for_client_state(
         self,
         expected_state: f_wlan_policy.WlanClientState,
-        timeout: float | None = _DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
+        timeout: float | None = _DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT_SEC,
     ) -> None:
         """Waits until the client converges to expected state."""
         await self.set_new_update_listener()
@@ -636,13 +647,16 @@ class WlanPolicy(AsyncLazyReady):
         def check_client(update: ClientStateSummary) -> bool:
             return update.state == expected_state
 
-        await self._wait_on_update(check_client, timeout=timeout)
+        await self._wait_on_update(
+            check_client,
+            timeout=None if timeout is None else timedelta(seconds=timeout),
+        )
 
     @ensure_ready
     async def remove_all_networks(
         self,
         *,
-        timeout: float | None = _DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
+        timeout: float | None = _DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT_SEC,
     ) -> None:
         """Deletes all saved networks on the device.
 
@@ -672,7 +686,7 @@ class WlanPolicy(AsyncLazyReady):
         security_type: f_wlan_policy.SecurityType,
         target_pwd: str | None = None,
         *,
-        timeout: float | None = _DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
+        timeout: float | None = _DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT_SEC,
     ) -> None:
         """Removes or "forgets" a network from saved networks.
 
@@ -720,7 +734,7 @@ class WlanPolicy(AsyncLazyReady):
         security_type: f_wlan_policy.SecurityType,
         target_pwd: str | None = None,
         *,
-        timeout: float | None = _DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
+        timeout: float | None = _DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT_SEC,
     ) -> None:
         """Saves a network to the device.
 
@@ -773,7 +787,7 @@ class WlanPolicy(AsyncLazyReady):
     async def scan_for_networks(
         self,
         *,
-        timeout: float | None = _DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
+        timeout: float | None = _DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT_SEC,
     ) -> list[str]:
         """Scans for networks.
 
@@ -883,7 +897,7 @@ class WlanPolicy(AsyncLazyReady):
     async def start_client_connections(
         self,
         *,
-        timeout: float | None = _DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
+        timeout: float | None = _DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT_SEC,
     ) -> None:
         """Enables device to initiate connections to networks.
 
@@ -924,7 +938,7 @@ class WlanPolicy(AsyncLazyReady):
         self,
         *,
         wait_for_confirmation: bool = True,
-        timeout: float | None = _DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
+        timeout: float | None = _DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT_SEC,
     ) -> None:
         """Disables device for initiating connections to networks.
 
@@ -989,7 +1003,7 @@ class WlanPolicy(AsyncLazyReady):
     async def wait_for_no_connections(
         self,
         *,
-        timeout: float | None = _DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
+        timeout: float | None = _DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT_SEC,
     ) -> None:
         await self.set_new_update_listener()
         connection_states = {
@@ -1003,7 +1017,7 @@ class WlanPolicy(AsyncLazyReady):
                     n.connection_state in connection_states
                     for n in update.networks
                 ),
-                timeout=timeout,
+                timeout=None if timeout is None else timedelta(seconds=timeout),
             )
         except wlan_errors.HoneydewWlanError as e:
             raise wlan_errors.HoneydewWlanError(
