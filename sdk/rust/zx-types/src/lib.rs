@@ -578,6 +578,7 @@ multiconst!(zx_obj_type_t, [
     ZX_OBJ_TYPE_MSI                 = 32;
     ZX_OBJ_TYPE_IOB                 = 33;
     ZX_OBJ_TYPE_COUNTER             = 34;
+    ZX_OBJ_TYPE_IOB_SHARED_REGION   = 35;
     ZX_OBJ_TYPE_SAMPLER             = 36;
 ]);
 
@@ -2093,6 +2094,23 @@ pub struct zx_info_socket_t {
     pub tx_buf_size: usize,
 }
 
+#[repr(C)]
+#[derive(Default, Debug, Copy, Clone, Eq, PartialEq)]
+#[cfg_attr(feature = "zerocopy", derive(FromBytes, Immutable, KnownLayout))]
+pub struct zx_info_iob_t {
+    pub options: u64,
+    pub region_count: u32,
+    pub padding1: [PadByte; 4],
+}
+
+#[repr(C)]
+#[derive(Copy, Clone)]
+#[cfg_attr(feature = "zerocopy", derive(FromBytes, Immutable))]
+pub struct zx_iob_region_info_t {
+    pub region: zx_iob_region_t,
+    pub koid: zx_koid_t,
+}
+
 multiconst!(u32, [
     ZX_INFO_PROCESS_FLAG_STARTED = 1 << 0;
     ZX_INFO_PROCESS_FLAG_EXITED = 1 << 1;
@@ -2978,8 +2996,11 @@ pub struct zx_iob_discipline_mediated_write_ring_buffer_t {
 
 multiconst!(zx_iob_discipline_type_t, [
     ZX_IOB_DISCIPLINE_TYPE_NONE = 0;
+    ZX_IOB_DISCIPLINE_TYPE_ID_ALLOCATOR = 1;
     ZX_IOB_DISCIPLINE_TYPE_MEDIATED_WRITE_RING_BUFFER = 2;
 ]);
+
+pub const ZX_IOB_MAX_REGIONS: usize = 64;
 
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
