@@ -47,7 +47,7 @@ class VmoStore {
     if (vmo_data.is_error()) {
       return vmo_data.status_value();
     }
-    if (offset + len > vmo_data->size()) {
+    if (offset > vmo_data->size() || len > vmo_data->size() - offset) {
       return ZX_ERR_OUT_OF_RANGE;
     }
     std::copy_n(vmo_data->begin() + offset, len, data);
@@ -63,7 +63,7 @@ class VmoStore {
     if (vmo_data.is_error()) {
       return vmo_data.status_value();
     }
-    if (offset + len > vmo_data->size()) {
+    if (offset > vmo_data->size() || len > vmo_data->size() - offset) {
       return ZX_ERR_OUT_OF_RANGE;
     }
     std::copy_n(data, len, vmo_data->begin() + offset);

@@ -40,10 +40,10 @@ zx_status_t VmoStore::Copy(VmoStore& src_store, uint8_t src_id, size_t src_offse
   if (dst.is_error()) {
     return dst.error_value();
   }
-  if (src_offset + len > src->size()) {
+  if (src_offset > src->size() || len > src->size() - src_offset) {
     return ZX_ERR_OUT_OF_RANGE;
   }
-  if (dst_offset + len > dst->size()) {
+  if (dst_offset > dst->size() || len > dst->size() - dst_offset) {
     return ZX_ERR_OUT_OF_RANGE;
   }
   std::copy_n(src->begin() + src_offset, len, dst->begin() + dst_offset);

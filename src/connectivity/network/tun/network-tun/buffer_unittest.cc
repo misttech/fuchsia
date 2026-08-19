@@ -175,6 +175,19 @@ TEST_F(BufferTest, WriteFailure) {
     ASSERT_EQ(b.Write({0x01}), ZX_ERR_OUT_OF_RANGE);
   }
   {
+    // A buffer whose offset + length wraps around is invalid.
+    RxBuffer b = vmos_.MakeRxSpaceBuffer(fuchsia_hardware_network_driver::wire::RxSpaceBuffer{
+        .id = 1,
+        .region =
+            {
+                .vmo = kVmoId,
+                .offset = std::numeric_limits<uint64_t>::max() - 1,
+                .length = 3,
+            },
+    });
+    ASSERT_EQ(b.Write({0x01, 0x02, 0x03}), ZX_ERR_OUT_OF_RANGE);
+  }
+  {
     // A buffer with an invalid vmo_id is invalid.
     RxBuffer b = vmos_.MakeRxSpaceBuffer(fuchsia_hardware_network_driver::wire::RxSpaceBuffer{
         .id = 1,
@@ -194,7 +207,27 @@ TEST_F(BufferTest, ReadFailure) {
   {
     // A buffer that doesn't fit its VMO is invalid.
     fuchsia_hardware_network_driver::wire::BufferRegion part = {
-        .vmo = kVmoId, .offset = kVmoSize, .length = 10};
+        .vmo = kVmoId,
+        .offset = kVmoSize,
+        .length = 10,
+    };
+    TxBuffer b = vmos_.MakeTxBuffer(
+        fuchsia_hardware_network_driver::wire::TxBuffer{
+            .id = 1,
+            .data =
+                fidl::VectorView<fuchsia_hardware_network_driver::wire::BufferRegion>::FromExternal(
+                    &part, 1),
+        },
+        false);
+    ASSERT_EQ(b.Read(data), ZX_ERR_OUT_OF_RANGE);
+  }
+  {
+    // A buffer whose offset + length wraps around is invalid.
+    fuchsia_hardware_network_driver::wire::BufferRegion part = {
+        .vmo = kVmoId,
+        .offset = std::numeric_limits<uint64_t>::max() - 1,
+        .length = 10,
+    };
     TxBuffer b = vmos_.MakeTxBuffer(
         fuchsia_hardware_network_driver::wire::TxBuffer{
             .id = 1,
@@ -223,8 +256,16 @@ TEST_F(BufferTest, ReadFailure) {
 TEST_F(BufferTest, CopyFailure) {
   // Source region is out of range.
   ASSERT_EQ(VmoStore::Copy(vmos_, kVmoId, kVmoSize, vmos_, kVmoId, 0, 10), ZX_ERR_OUT_OF_RANGE);
-  // Destination region is out of range,
+  // Source region offset + length wraps around.
+  ASSERT_EQ(
+      VmoStore::Copy(vmos_, kVmoId, std::numeric_limits<size_t>::max() - 1, vmos_, kVmoId, 0, 10),
+      ZX_ERR_OUT_OF_RANGE);
+  // Destination region is out of range.
   ASSERT_EQ(VmoStore::Copy(vmos_, kVmoId, 0, vmos_, kVmoId, kVmoSize, 10), ZX_ERR_OUT_OF_RANGE);
+  // Destination region offset + length wraps around.
+  ASSERT_EQ(
+      VmoStore::Copy(vmos_, kVmoId, 0, vmos_, kVmoId, std::numeric_limits<size_t>::max() - 1, 10),
+      ZX_ERR_OUT_OF_RANGE);
   // Source region is has bad id.
   ASSERT_EQ(VmoStore::Copy(vmos_, kVmoId + 1, 0, vmos_, kVmoId, 0, 10), ZX_ERR_NOT_FOUND);
   // Destination region is has bad id.
