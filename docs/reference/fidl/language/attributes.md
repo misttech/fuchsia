@@ -9,6 +9,7 @@ The following FIDL attributes are supported:
 * [`@generated_name`](#generated-name)
 * [`@no_doc`](#nodoc)
 * [`@selector`](#selector)
+* [`@sensitive`](#sensitive)
 * [`@transitional`](#transitional)
 * [`@transport`](#transport)
 * [`@unknown`](#unknown)
@@ -210,6 +211,20 @@ which was originally named `Discover` on the `Area120` protocol, in the
 ```fidl
 {% includecode gerrit_repo="fuchsia/fuchsia" gerrit_path="examples/fidl/fuchsia.examples.docs/attributes.test.fidl" region_tag="selector-fq-name" %}
 ```
+
+## `@sensitive` {#sensitive}
+
+**USAGE**: `@sensitive`
+
+**MEANING**:
+Marks a layout declaration (`struct`, `table`, `union`, `overlay`, `new_type`)
+or an individual member/field within a layout as containing sensitive or confidential
+information (such as credentials or PII).
+
+When placed on a declaration or member, language backends and auditing tools use
+this annotation to redact sensitive values in debugging and diagnostic output
+(such as `Debug` implementations and stream formatting operators) and prevent
+accidental leaks into system logs.
 
 ## `@transitional` {#transitional}
 
