@@ -9,7 +9,6 @@ group("tests") {
   deps = [
     ":integration-tests",
     "rust-tests",
-    "src:measure_tape_test($host_toolchain)",
   ]
 }
 

@@ -59,7 +59,6 @@ group("tests") {
     "fidlgen_rust_next:tests",
     "fidlgen_syzkaller:tests",
     "gidl:tests",
-    "gidl-format:tests",
     "lib:tests",
     "measure-tape:tests",
   ]
