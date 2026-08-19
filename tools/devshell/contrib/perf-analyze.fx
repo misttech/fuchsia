@@ -5,6 +5,13 @@
 #### CATEGORY=Run, inspect and debug
 #### EXECUTABLE=${HOST_TOOLS_DIR}/perf-analyze
 ### Standalone Performance Analysis Tool
-## usage: fx perf-analyze [subcommand] [args...]
+## usage: fx perf-analyze [--format <json|markdown|text>] <query|analyze> [args...]
 ##
-## standalone performance analysis tool
+## Subcommands:
+##   query    Execute SQL queries against a trace file using Perfetto TraceProcessor
+##   analyze  Execute specialized analysis plugins (e.g. binder, cpu)
+##
+## Options:
+##   --format <json|markdown|text>  Output format (default: text)
+##   --verbose                      Enable verbose debug logging
+##   --no-cache                     Disable local caching of permalink URL traces

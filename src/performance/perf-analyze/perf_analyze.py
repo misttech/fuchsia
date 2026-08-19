@@ -15,6 +15,7 @@ from typing import Sequence
 
 import result_formatter
 from binder import BinderPlugin
+from cpu import CpuPlugin
 from plugins import AnalyzePlugin, PluginArgumentError
 from query import TpShell
 
@@ -136,7 +137,7 @@ def main(
 
     elif args.command == "analyze":
         if plugins is None:
-            plugins = [BinderPlugin()]
+            plugins = [BinderPlugin(), CpuPlugin()]
 
         if args.list_plugins:
             plugin_data = [

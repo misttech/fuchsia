@@ -8,6 +8,7 @@ import("//build/python/python_host_test.gni")
 
 perf_analyze_sources = [
   "binder.py",
+  "cpu.py",
   "plugins.py",
   "query.py",
   "result_formatter.py",
@@ -57,10 +58,23 @@ if (is_host) {
     ]
     deps = [ "//src/performance/lib/tp_shell" ]
   }
+
+  python_host_test("cpu_test") {
+    main_source = "cpu_test.py"
+    sources = [
+      "cpu.py",
+      "plugins.py",
+    ]
+    deps = [ "//src/performance/lib/tp_shell" ]
+  }
 } else {
   group("binder_test") {
     testonly = true
     public_deps = [ ":binder_test($host_toolchain)" ]
+  }
+  group("cpu_test") {
+    testonly = true
+    public_deps = [ ":cpu_test($host_toolchain)" ]
   }
   group("perf_analyze_test") {
     testonly = true
@@ -76,6 +90,7 @@ group("tests") {
   testonly = true
   deps = [
     ":binder_test",
+    ":cpu_test",
     ":perf_analyze_test",
     ":result_formatter_test",
   ]
