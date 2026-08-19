@@ -96,6 +96,7 @@ func NewFFXStrictClient(ctx context.Context, ffxPath, outputsDir, repoName strin
 			"repository.default":              repoName,
 			"repository.server.enabled":       false,
 			"log.level":                       "Debug",
+			"connectivity.direct":             true,
 		},
 	}
 

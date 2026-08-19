@@ -310,6 +310,9 @@ func writeConfigFile(configPath string, opt Option, socketPath string) error {
 		ssh["pub"] = opt.PublicSSH
 	}
 	data := map[string]any{
+		"connectivity": map[string]bool{
+			"direct": true,
+		},
 		"overnet": overnet,
 		"proxy": map[string]int{
 			"timeout_secs": 60,
@@ -505,6 +508,7 @@ func (f *Ffx) SetupFfx(ctx context.Context, repoName string) error {
 		{"config", "set", "overnet.cso", "only"},
 		{"config", "set", "repository.default", repoName},
 		{"config", "set", "repository.server.enabled", "false"},
+		{"config", "set", "connectivity.direct", "true"},
 	}
 
 	for _, cmd := range cmds {

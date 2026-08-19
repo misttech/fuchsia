@@ -6,6 +6,7 @@ package orchestrate
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -77,5 +78,31 @@ func TestFfxSetDefaultTargetNotSet(t *testing.T) {
 	expected = "<FUCHSIA_NODENAME=SetDefaultTargetValue,>"
 	if actual != expected {
 		t.Errorf("Output \"%s\" doesn't equal expected \"%s\"", actual, expected)
+	}
+}
+
+func TestWriteConfigFile_ConnectivityDirect(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.json")
+	opt := Option{
+		LogDir: filepath.Join(tmpDir, "log"),
+	}
+	if err := writeConfigFile(configPath, opt, filepath.Join(tmpDir, "socket")); err != nil {
+		t.Fatalf("writeConfigFile failed: %v", err)
+	}
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("ReadFile failed: %v", err)
+	}
+	var config struct {
+		Connectivity struct {
+			Direct bool `json:"direct"`
+		} `json:"connectivity"`
+	}
+	if err := json.Unmarshal(data, &config); err != nil {
+		t.Fatalf("Unmarshal failed: %v", err)
+	}
+	if !config.Connectivity.Direct {
+		t.Errorf("Expected connectivity.direct to be true, got %v", config.Connectivity.Direct)
 	}
 }

@@ -954,3 +954,35 @@ exit 0
 		t.Errorf("Expected '--target my-target' in args, got: %s", args)
 	}
 }
+
+func TestFFXStrictClient_ConnectivityDirect(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+	argsFile := filepath.Join(tmpDir, "args.txt")
+	script := fmt.Sprintf(`#!/bin/bash
+echo "$@" >> %s
+exit 0
+`, argsFile)
+	fakeFfx := createFakeFfx(t, tmpDir, script)
+
+	ctx := context.Background()
+	client, err := NewFFXStrictClient(ctx, fakeFfx, tmpDir, "test-repo")
+	if err != nil {
+		t.Fatalf("NewFFXStrictClient failed: %v", err)
+	}
+	defer client.Close()
+
+	if err := client.TargetAdd(ctx, "192.168.1.1:8022"); err != nil {
+		t.Fatalf("TargetAdd failed: %v", err)
+	}
+
+	data, err := os.ReadFile(argsFile)
+	if err != nil {
+		t.Fatalf("Failed to read args file: %v", err)
+	}
+	args := string(data)
+
+	if !strings.Contains(args, "-c connectivity.direct=true") {
+		t.Errorf("Expected '-c connectivity.direct=true' in args, got: %s", args)
+	}
+}
