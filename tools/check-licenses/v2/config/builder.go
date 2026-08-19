@@ -168,7 +168,7 @@ func (b *Builder) parseConfigFile(path string) error {
 
 	// 1. Process Skips
 	for _, skip := range f.Skips {
-		if skip.Bug == "" && filepath.Base(path) != "default.json" && filepath.Base(path) != "hidden_dirs.json" && filepath.Base(path) != "test_dirs.json" && filepath.Base(path) != "bazel_vendor.json" {
+		if skip.Bug == "" && filepath.Base(path) != "default.json" && filepath.Base(path) != "test_dirs.json" && filepath.Base(path) != "bazel_vendor.json" {
 			return fmt.Errorf("validation error in %s: a 'bug' field is required to track this exception", path)
 		}
 		for _, p := range skip.Paths {

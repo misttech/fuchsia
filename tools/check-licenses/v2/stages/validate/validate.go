@@ -55,6 +55,7 @@ func (v *Validator) Run(ctx context.Context, in <-chan pipeline.ClassifiedFile) 
 		defer metrics.ChecksDuration.Track()()
 
 		projectHasLicense := make(map[string]bool)
+		projectHasReadme := make(map[string]bool)
 
 		for cf := range in {
 			if ctx.Err() != nil {
@@ -64,8 +65,8 @@ func (v *Validator) Run(ctx context.Context, in <-chan pipeline.ClassifiedFile) 
 			if _, exists := projectHasLicense[cf.ProjectRoot]; !exists {
 				projectHasLicense[cf.ProjectRoot] = false
 			}
-			if cf.IsLicenseFile && len(cf.Matches) > 0 {
-				projectHasLicense[cf.ProjectRoot] = true
+			if cf.HasReadme {
+				projectHasReadme[cf.ProjectRoot] = true
 			}
 
 			// We need a consistent relative path for allowlist lookups
@@ -78,6 +79,11 @@ func (v *Validator) Run(ctx context.Context, in <-chan pipeline.ClassifiedFile) 
 			// Some paths might be "."
 			if relPath == "." {
 				relPath = ""
+			}
+
+			isRecognizedOrAllowed := len(cf.Matches) > 0 || v.isPolicyExceptionAllowed(PolicyUnrecognizedLicense, relPath)
+			if cf.IsLicenseFile && isRecognizedOrAllowed {
+				projectHasLicense[cf.ProjectRoot] = true
 			}
 
 			// 1. Check: AllLicenseTextsMustBeRecognized
@@ -108,13 +114,7 @@ func (v *Validator) Run(ctx context.Context, in <-chan pipeline.ClassifiedFile) 
 			isFuchsiaProject := cf.ProjectRoot == v.FuchsiaDir || cf.ProjectRoot == "." || cf.ProjectRoot == ""
 
 			if !cf.IsLicenseFile && isFuchsiaProject {
-				hasFuchsiaCopyright := false
-				for _, match := range cf.Matches {
-					if match.SPDXID == "FuchsiaCopyright" {
-						hasFuchsiaCopyright = true
-						break
-					}
-				}
+				hasFuchsiaCopyright := CheckCopyrightText(cf.AnalyzedText)
 
 				if !hasFuchsiaCopyright {
 					if !v.isPolicyExceptionAllowed(PolicyFuchsiaCopyright, relPath) {
@@ -210,6 +210,29 @@ func (v *Validator) Run(ctx context.Context, in <-chan pipeline.ClassifiedFile) 
 					metrics.AllowlistHits.Inc(PolicyNoLicense)
 				}
 			}
+
+			// 5. Check: AllProjectsMustHaveAReadme
+			// Every third-party project must contain a README.fuchsia or package manifest.
+			hasReadme := projectHasReadme[proj]
+			if !hasReadme {
+				relProjRoot, _ := filepath.Rel(v.FuchsiaDir, proj)
+				if !v.isPolicyExceptionAllowed(PolicyNoReadme, relProjRoot) {
+					metrics.ValidationErrors.Inc(PolicyNoReadme)
+					err := pipeline.ComplianceError{
+						CheckName: PolicyNoReadme,
+						Project:   proj,
+						FilePath:  "",
+						Issue:     fmt.Sprintf("Third-party project is missing a README.fuchsia file. Every third-party project must have a README.fuchsia or package manifest. To fix this:\n    - Add a README.fuchsia to %s/README.fuchsia\n    - Or add a virtual README to tools/check-licenses/assets/readmes/%s/README.fuchsia\n    - Or allow an exception by running:\n        fx check-licenses policy add -bug <BugID> AllProjectsMustHaveAReadme %s", relProjRoot, relProjRoot, relProjRoot),
+					}
+					select {
+					case <-ctx.Done():
+						return
+					case out <- err:
+					}
+				} else {
+					metrics.AllowlistHits.Inc(PolicyNoReadme)
+				}
+			}
 		}
 	}()
 
@@ -234,9 +257,10 @@ func (v *Validator) isAllowedLicense(spdxID, relPath, relProjRoot, projectRoot s
 	return false
 }
 
-func isAllowed(targetMap map[string]map[string]RuleMetadata, key, path string) bool {
+func isAllowed(targetMap map[string]map[string]RuleMetadata, key, targetPath string) bool {
 	if list, ok := targetMap[key]; ok {
-		if _, ok := list[path]; ok {
+		slashPath := filepath.ToSlash(targetPath)
+		if _, ok := list[slashPath]; ok {
 			metrics.AllowlistHits.Inc(key)
 			return true
 		}

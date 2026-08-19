@@ -24,6 +24,12 @@ type Grouper struct {
 
 // NewGrouper creates a new stateless boundary grouper.
 func NewGrouper(fuchsiaDir string, config Config) *Grouper {
+	absFuchsiaDir, err := filepath.Abs(fuchsiaDir)
+	if err == nil {
+		fuchsiaDir = absFuchsiaDir
+	}
+	fuchsiaDir = filepath.Clean(fuchsiaDir)
+
 	return &Grouper{
 		FuchsiaDir: fuchsiaDir,
 		Config:     config,
@@ -54,9 +60,45 @@ func (g *Grouper) Run(ctx context.Context, in <-chan pipeline.RawPath) (<-chan p
 			allFiles = append(allFiles, cleanPath)
 
 			base := filepath.Base(cleanPath)
-			if base == "README.fuchsia" || base == "go.mod" || base == "Cargo.toml" || base == "pubspec.yaml" {
+			if base == "README.fuchsia" {
 				dir := filepath.Dir(cleanPath)
 				physicalReadmes[dir] = append(physicalReadmes[dir], cleanPath)
+			} else if base == "go.mod" || base == "Cargo.toml" || base == "pubspec.yaml" {
+				// Only treat package manifests as project boundaries if they reside in third_party or vendor,
+				// are not nested inside a prebuilt toolchain directory, and are not example/benchmark/test sub-packages.
+				relPath, err := filepath.Rel(g.FuchsiaDir, cleanPath)
+				if err == nil {
+					slashRel := filepath.ToSlash(relPath)
+					isThirdParty := strings.HasPrefix(slashRel, "third_party/") ||
+						strings.HasPrefix(slashRel, "vendor/") ||
+						strings.Contains(slashRel, "/third_party/") ||
+						strings.Contains(slashRel, "/vendor/")
+					isPrebuilt := strings.HasPrefix(slashRel, "prebuilt/") ||
+						strings.Contains(slashRel, "/prebuilt/")
+
+					dir := filepath.Dir(slashRel)
+					isSubPackage := strings.Contains(dir, "/example") ||
+						strings.Contains(dir, "/benchmark") ||
+						strings.Contains(dir, "/test") ||
+						strings.Contains(dir, "/interop") ||
+						strings.Contains(dir, "/debug_extension") ||
+						strings.Contains(dir, "/doc") ||
+						strings.Contains(dir, "/tools/") ||
+						strings.Contains(dir, "/misc") ||
+						strings.HasPrefix(slashRel, "third_party/go/src/") // e.g. go/src/vendor, go/src/cmd/vendor
+
+					if strings.HasPrefix(slashRel, "third_party/rust_crates/mirrors/") {
+						parts := strings.Split(slashRel, "/")
+						if len(parts) > 5 { // third_party / rust_crates / mirrors / <repo> / Cargo.toml (5 parts)
+							isSubPackage = true
+						}
+					}
+
+					if isThirdParty && !isPrebuilt && !isSubPackage {
+						absDir := filepath.Dir(cleanPath)
+						physicalReadmes[absDir] = append(physicalReadmes[absDir], cleanPath)
+					}
+				}
 			}
 		}
 
@@ -70,8 +112,49 @@ func (g *Grouper) Run(ctx context.Context, in <-chan pipeline.RawPath) (<-chan p
 		// projectRoots maps a boundary directory to its parsed Readme structs (handling DEPENDENCY DIVIDER)
 		projectRoots := make(map[string][]*readme.Readme)
 
-		// First, register every directory that has a physical/virtual README or Cargo.toml as a root
+		// First, identify all directories that have a physical or virtual README.fuchsia
+		readmeDirs := make(map[string]bool)
 		for dir, readmePaths := range physicalReadmes {
+			for _, p := range readmePaths {
+				if filepath.Base(p) == "README.fuchsia" {
+					readmeDirs[dir] = true
+					break
+				}
+			}
+		}
+
+		// Register project boundaries: README.fuchsia always registers. Package manifests (Cargo.toml,
+		// pubspec.yaml, go.mod) only register if no ancestor directory already has a README.fuchsia.
+		for dir, readmePaths := range physicalReadmes {
+			isManifestOnly := true
+			for _, p := range readmePaths {
+				if filepath.Base(p) == "README.fuchsia" {
+					isManifestOnly = false
+					break
+				}
+			}
+
+			if isManifestOnly {
+				hasReadmeAncestor := false
+				for parent := filepath.Dir(dir); parent != "." && parent != "/" && parent != dir; parent = filepath.Dir(parent) {
+					if parent == g.FuchsiaDir {
+						continue
+					}
+					relParent, _ := filepath.Rel(g.FuchsiaDir, parent)
+					// third_party/rust_crates has a container README, but crates under it are independent projects.
+					if filepath.ToSlash(relParent) == "third_party/rust_crates" {
+						continue
+					}
+					if readmeDirs[parent] {
+						hasReadmeAncestor = true
+						break
+					}
+				}
+				if hasReadmeAncestor {
+					continue
+				}
+			}
+
 			for _, readmePath := range readmePaths {
 				rootReadmes, subReadmes, err := readme.ParseAnyMetadata(readmePath)
 
@@ -156,7 +239,12 @@ func (g *Grouper) Run(ctx context.Context, in <-chan pipeline.RawPath) (<-chan p
 
 				for _, r := range readmes {
 					for _, lf := range r.LicenseFiles {
-						if filepath.Clean(lf) == relToReadme || filepath.Clean(lf) == relToFuchsia {
+						cleanLF := filepath.Clean(lf)
+						if strings.HasPrefix(cleanLF, "..") || filepath.IsAbs(lf) {
+							// External license files pointing outside the project root are disallowed.
+							continue
+						}
+						if cleanLF == relToReadme || cleanLF == relToFuchsia {
 							listedInReadme = true
 							isLicenseFile = true
 							break
@@ -228,20 +316,23 @@ func (g *Grouper) Run(ctx context.Context, in <-chan pipeline.RawPath) (<-chan p
 }
 
 // findProjectRoot walks up the directory tree from the file to find the closest
-// project boundary (either a parsed README root or a Barrier).
+// registered project boundary (from README.fuchsia or package manifests) or barrier root.
 func (g *Grouper) findProjectRoot(filePath string, projectRoots map[string][]*readme.Readme) string {
 	dir := filepath.Dir(filePath)
+	var barrierChild string
 
 	for {
-		// Rule 1: Is this directory a registered project boundary?
+		// Is this directory a registered project boundary?
 		if _, isBoundary := projectRoots[dir]; isBoundary {
+			if dir == g.FuchsiaDir && barrierChild != "" {
+				return barrierChild
+			}
 			return dir
 		}
 
-		// Rule 2: Is this directory an immediate child of a Barrier?
 		parent := filepath.Dir(dir)
-		if g.isBarrier(parent) {
-			return dir
+		if g.isBarrier(parent) && barrierChild == "" {
+			barrierChild = dir
 		}
 
 		if parent == dir || parent == "." || parent == "/" {
@@ -250,11 +341,15 @@ func (g *Grouper) findProjectRoot(filePath string, projectRoots map[string][]*re
 		dir = parent
 	}
 
+	if barrierChild != "" {
+		return barrierChild
+	}
+
 	// Fallback to the workspace root if no boundaries exist
 	return g.FuchsiaDir
 }
 
-// isBarrier checks if the given absolute directory matches a defined barrier path.
+// isBarrier checks if the given absolute directory matches a top-level defined barrier path (e.g. //third_party).
 func (g *Grouper) isBarrier(absDir string) bool {
 	relPath, err := filepath.Rel(g.FuchsiaDir, absDir)
 	if err != nil {
@@ -262,17 +357,7 @@ func (g *Grouper) isBarrier(absDir string) bool {
 	}
 
 	slashRel := filepath.ToSlash(relPath)
-	if g.Config.BarrierPaths[slashRel] || g.Config.BarrierPaths[filepath.Base(slashRel)] {
-		return true
-	}
-
-	for barrier := range g.Config.BarrierPaths {
-		if strings.HasSuffix(slashRel, "/"+barrier) {
-			return true
-		}
-	}
-
-	return false
+	return g.Config.BarrierPaths[slashRel]
 }
 
 // BelongsToProject returns true if targetPath belongs to projectRoot rather than a nested subproject.

@@ -12,6 +12,7 @@ const (
 	PolicyUnrecognizedType    = "AllLicenseTypesMustBeRecognized"
 	PolicyFuchsiaCopyright    = "AllFuchsiaAuthorSourceFilesMustHaveCopyrightHeaders"
 	PolicyNoLicense           = "AllProjectsMustHaveALicense"
+	PolicyNoReadme            = "AllProjectsMustHaveAReadme"
 )
 
 // Other check names used in the package.
@@ -58,6 +59,7 @@ var validPolicyChecks = map[string]bool{
 	PolicyUnrecognizedType:    true,
 	PolicyFuchsiaCopyright:    true,
 	PolicyNoLicense:           true,
+	PolicyNoReadme:            true,
 }
 
 // IsValidPolicy returns true if the given string is a valid policy check name.

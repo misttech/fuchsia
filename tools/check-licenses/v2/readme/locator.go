@@ -171,20 +171,16 @@ func IsProjectBoundary(dir, fuchsiaDir string, outOfTreeReadmes map[string]strin
 	}
 
 	if len(foundReadmePaths) > 0 {
-		var allReadmes []*Readme
-		var bestPath string
-		for _, path := range foundReadmePaths {
-			rootReadmes, subReadmes, parseErr := ParseAnyMetadata(path)
-			if parseErr == nil {
-				allReadmes = append(allReadmes, rootReadmes...)
-				allReadmes = append(allReadmes, subReadmes...)
-				if bestPath == "" {
-					bestPath = path
-				}
+		// Out-of-tree virtual README is added first and takes priority.
+		bestPath := foundReadmePaths[0]
+		rootReadmes, subReadmes, parseErr := ParseAnyMetadata(bestPath)
+		if parseErr == nil {
+			var allReadmes []*Readme
+			allReadmes = append(allReadmes, rootReadmes...)
+			allReadmes = append(allReadmes, subReadmes...)
+			if len(allReadmes) > 0 {
+				return true, bestPath, allReadmes, nil
 			}
-		}
-		if len(allReadmes) > 0 {
-			return true, bestPath, allReadmes, nil
 		}
 	}
 

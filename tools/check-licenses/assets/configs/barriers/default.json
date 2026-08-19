@@ -3,6 +3,7 @@
         {
             "paths": [
                 "prebuilt",
+                "prebuilt/third_party",
                 "third_party",
                 "thirdparty",
                 "vendor",

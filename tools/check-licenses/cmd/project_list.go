@@ -9,9 +9,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"path/filepath"
 	"sort"
-	"strings"
 
 	"github.com/google/subcommands"
 
@@ -46,32 +44,20 @@ func (c *ProjectListCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...
 		return subcommands.ExitFailure
 	}
 
-	// Step 2: Discover all in-tree project README boundaries under the target directory.
-	projects, err := readme.DiscoverProjects(inputCtx.AbsPath, inputCtx.FuchsiaDir, inputCtx.Config)
+	// Step 2: Discover all project boundaries under the target directory.
+	discoveredProjects, err := readme.DiscoverProjects(inputCtx.AbsPath, inputCtx.FuchsiaDir, inputCtx.Config)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to discover projects: %v\n", err)
 		return subcommands.ExitFailure
 	}
 
-	// Step 3: Include virtual out-of-tree asset README boundaries located within the target scope.
-	for logicalPath, physicalPath := range inputCtx.Config.Boundary.OutOfTreeReadmes {
-		absLogicalPath := filepath.Join(inputCtx.FuchsiaDir, logicalPath)
-		if rel, err := filepath.Rel(inputCtx.AbsPath, absLogicalPath); err == nil && !strings.HasPrefix(rel, "..") {
-			readmes, _ := readme.ParseFile(physicalPath)
-			for _, r := range readmes {
-				rel := logicalPath
-				if r.Location != "" && r.Location != "." {
-					rel = filepath.Join(rel, r.Location)
-				}
-				name := r.Name
-				if name == "" {
-					name = "Unknown Project"
-				}
-				projects = append(projects, readme.ProjectInfo{
-					Path: rel,
-					Name: name,
-				})
-			}
+	// Step 3: Deduplicate discovered projects by path
+	seen := make(map[string]bool)
+	var projects []readme.ProjectInfo
+	for _, p := range discoveredProjects {
+		if !seen[p.Path] {
+			seen[p.Path] = true
+			projects = append(projects, p)
 		}
 	}
 

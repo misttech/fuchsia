@@ -201,10 +201,19 @@ host_go_test(
     name = "v2_pipeline_test",
     size = "small",
     srcs = [
+        "v2/pipeline/golden_tree_test.go",
         "v2/pipeline/orchestrator_test.go",
     ],
     embed = [":v2_pipeline"],
     target_compatible_with = HOST_CONSTRAINTS,
+    deps = [
+        ":v2_config",
+        ":v2_stages_boundary",
+        ":v2_stages_classify",
+        ":v2_stages_discover",
+        ":v2_stages_prune",
+        ":v2_stages_validate",
+    ],
 )
 
 host_go_test(

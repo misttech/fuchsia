@@ -61,6 +61,7 @@ func TestValidator_Run(t *testing.T) {
 		Path:          filepath.Join(fuchsiaDir, "third_party", "bar", "LICENSE"),
 		ProjectRoot:   filepath.Join(fuchsiaDir, "third_party", "bar"),
 		IsLicenseFile: true,
+		HasReadme:     true,
 		Matches:       []pipeline.LicenseMatch{},
 	}
 
@@ -69,6 +70,7 @@ func TestValidator_Run(t *testing.T) {
 		Path:          filepath.Join(fuchsiaDir, "third_party", "foo", "LICENSE"),
 		ProjectRoot:   filepath.Join(fuchsiaDir, "third_party", "foo"),
 		IsLicenseFile: true,
+		HasReadme:     true,
 		Matches:       []pipeline.LicenseMatch{},
 	}
 
@@ -78,6 +80,7 @@ func TestValidator_Run(t *testing.T) {
 		ProjectRoot:   fuchsiaDir,
 		IsLicenseFile: false,
 		Matches:       []pipeline.LicenseMatch{{SPDXID: "FuchsiaCopyright", MatchType: "Copyright"}},
+		AnalyzedText:  []byte("// Copyright 2026 The Fuchsia Authors. All rights reserved.\n// Use of this source code is governed by a BSD-style license that can be\n// found in the LICENSE file.\n"),
 	}
 
 	// 5. Invalid Source File (No copyright, not allowlisted)
@@ -101,6 +104,7 @@ func TestValidator_Run(t *testing.T) {
 		Path:          filepath.Join(fuchsiaDir, "third_party", "foo", "main.cc"),
 		ProjectRoot:   filepath.Join(fuchsiaDir, "third_party", "foo"),
 		IsLicenseFile: false,
+		HasReadme:     true,
 		Matches:       []pipeline.LicenseMatch{},
 	}
 
@@ -117,6 +121,7 @@ func TestValidator_Run(t *testing.T) {
 		Path:          filepath.Join(fuchsiaDir, "third_party", "bad_gpl", "LICENSE"),
 		ProjectRoot:   filepath.Join(fuchsiaDir, "third_party", "bad_gpl"),
 		IsLicenseFile: true,
+		HasReadme:     true,
 		Matches:       []pipeline.LicenseMatch{{SPDXID: "GPL-2.0", MatchType: "Restricted"}},
 	}
 
@@ -125,6 +130,7 @@ func TestValidator_Run(t *testing.T) {
 		Path:          filepath.Join(fuchsiaDir, "third_party", "legacy_gpl", "LICENSE"),
 		ProjectRoot:   filepath.Join(fuchsiaDir, "third_party", "legacy_gpl"),
 		IsLicenseFile: true,
+		HasReadme:     true,
 		Matches:       []pipeline.LicenseMatch{{SPDXID: "GPL-2.0", MatchType: "Restricted"}},
 	}
 
@@ -209,14 +215,16 @@ func TestValidator_Run(t *testing.T) {
 }
 
 func TestValidator_RunFailure_MissingLicense(t *testing.T) {
-	validator := NewValidator(t.TempDir(), Config{})
+	fuchsiaDir := t.TempDir()
+	validator := NewValidator(fuchsiaDir, Config{})
 
 	inChan := make(chan pipeline.ClassifiedFile, 1)
 
 	inChan <- pipeline.ClassifiedFile{
-		Path:          "third_party/foo/main.cc",
-		ProjectRoot:   "third_party/foo",
+		Path:          filepath.Join(fuchsiaDir, "third_party/foo/main.cc"),
+		ProjectRoot:   filepath.Join(fuchsiaDir, "third_party/foo"),
 		IsLicenseFile: false,
+		HasReadme:     true,
 		Matches:       []pipeline.LicenseMatch{},
 	}
 	close(inChan)
@@ -243,5 +251,45 @@ func TestValidator_RunFailure_MissingLicense(t *testing.T) {
 	}
 	if !strings.Contains(errors[0].Issue, "Project has no recognized license files") {
 		t.Errorf("Expected error to contain missing license issue description, got: %v", errors[0].Issue)
+	}
+}
+
+func TestValidator_RunFailure_MissingReadme(t *testing.T) {
+	fuchsiaDir := t.TempDir()
+	validator := NewValidator(fuchsiaDir, Config{})
+
+	inChan := make(chan pipeline.ClassifiedFile, 1)
+
+	inChan <- pipeline.ClassifiedFile{
+		Path:          filepath.Join(fuchsiaDir, "third_party/foo/LICENSE"),
+		ProjectRoot:   filepath.Join(fuchsiaDir, "third_party/foo"),
+		IsLicenseFile: true,
+		HasReadme:     false,
+		Matches:       []pipeline.LicenseMatch{{SPDXID: "Apache-2.0", MatchType: "Approved"}},
+	}
+	close(inChan)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	outChan, err := validator.Run(ctx, inChan)
+	if err != nil {
+		t.Fatalf("Failed to run validator: %v", err)
+	}
+
+	var errors []pipeline.ComplianceError
+	for err := range outChan {
+		errors = append(errors, err)
+	}
+
+	if len(errors) != 1 {
+		t.Fatalf("Expected 1 error due to missing readme, got %d: %v", len(errors), errors)
+	}
+
+	if errors[0].CheckName != PolicyNoReadme {
+		t.Errorf("Expected check name %s, got: %s", PolicyNoReadme, errors[0].CheckName)
+	}
+	if !strings.Contains(errors[0].Issue, "Third-party project is missing a README.fuchsia file") {
+		t.Errorf("Expected error to contain missing readme issue description, got: %v", errors[0].Issue)
 	}
 }

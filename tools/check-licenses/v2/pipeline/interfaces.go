@@ -118,6 +118,7 @@ type ClassifiedFile struct {
 	Path          string
 	ProjectRoot   string
 	IsLicenseFile bool
+	HasReadme     bool
 	AnalyzedText  []byte
 
 	// Matches contains every discrete license or copyright block found in the file.

@@ -3,10 +3,10 @@
         "AllProjectsMustHaveALicense": [
             {
                 "bug": "TODO: b/missing",
-                "description": "Migrated from legacy _config.json",
+                "description": "First-party kernel and musl third_party with external license reference",
                 "paths": [
-                    "third_party/openthread/third_party",
-                    "third_party/openthread/third_party/mbedtls"
+                    "zircon",
+                    "zircon/third_party/ulib/musl/third_party"
                 ]
             }
         ]

@@ -7,6 +7,7 @@
                 "paths": [
                     "third_party/lz4/examples/COPYING",
                     "third_party/lz4/programs/COPYING",
+                    "third_party/lz4/src/LICENSE",
                     "third_party/lz4/tests/COPYING"
                 ]
             }

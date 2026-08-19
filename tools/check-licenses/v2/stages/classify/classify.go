@@ -87,13 +87,14 @@ func (c *Classifier) Run(ctx context.Context, in <-chan pipeline.FilteredProject
 
 						metrics.TotalFilesProcessed.Inc()
 
+						hasReadme := proj.Readme != nil
 						if fileInfo.IsNonLicense {
 							metrics.FilesProcessed.Inc("skipped_non_license")
 							// Emit an unclassified file
 							select {
 							case <-ctx.Done():
 								return
-							case out <- pipeline.ClassifiedFile{Path: path, ProjectRoot: proj.RootPath, IsLicenseFile: false}:
+							case out <- pipeline.ClassifiedFile{Path: path, ProjectRoot: proj.RootPath, IsLicenseFile: false, HasReadme: hasReadme}:
 							}
 							continue
 						}
@@ -110,7 +111,7 @@ func (c *Classifier) Run(ctx context.Context, in <-chan pipeline.FilteredProject
 								select {
 								case <-ctx.Done():
 									return
-								case out <- pipeline.ClassifiedFile{Path: path, ProjectRoot: proj.RootPath, IsLicenseFile: isLicense}:
+								case out <- pipeline.ClassifiedFile{Path: path, ProjectRoot: proj.RootPath, IsLicenseFile: isLicense, HasReadme: hasReadme}:
 								}
 								continue
 							}
@@ -121,6 +122,7 @@ func (c *Classifier) Run(ctx context.Context, in <-chan pipeline.FilteredProject
 							log.Printf("Failed to read/classify file %s: %v\n", path, err)
 							continue
 						}
+						classified.HasReadme = hasReadme
 
 						metrics.FilesProcessed.Inc("classified")
 

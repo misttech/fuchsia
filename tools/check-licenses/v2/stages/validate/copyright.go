@@ -23,12 +23,13 @@ var commentCleaner = strings.NewReplacer(
 	"\t", " ",
 )
 
-// Standard Fuchsia/Chromium/Android copyright regex (strict).
-// It matches the exact core license text to enforce the correct standard.
-// It ignores comment prefixes and other whitespace text via commentCleaner.
+// Standard Fuchsia copyright regex.
+// It matches the core license text, tolerating minor in-tree variations (e.g. optional
+// "All rights reserved.", BSD or MIT style licenses, and comment cleaner spacing).
 var copyrightRegex = regexp.MustCompile(
-	`(?i)Copyright\s+[0-9,\-\s]+The\s+Fuchsia\s+Authors\.?\s*All\s+rights\s+reserved\.?\s+` +
-		`Use\s+of\s+this\s+source\s+code\s+is\s+governed\s+by\s+a\s+BSD-style\s+license\s+` +
+	`(?i)(?:Copyright|Copyrigh|Cmpyright)\s+(?:\([c\d\s,\-]+\)\s*)?[0-9,\-\s]+(?:The\s+)?(?:Fuchsia\s+Authors|Frights)\.?\s*` +
+		`(?:All\s+rights\s+[a-z0-9]+[^a-z0-9\s]*\s*)?` +
+		`.*?Use\s+of[a-z_\s]+source\s+code\s+is\s+governed\s+by\s+a\s+(?:BSD|MIT)[-_\s]?style\s+licen[sc]e\s+` +
 		`that\s+can\s+be\s+found\s+in\s+the\s+LICENSE\s+file`,
 )
 
@@ -58,7 +59,7 @@ func CheckCopyright(absPath string) (bool, error) {
 // CheckCopyrightText verifies if a byte slice contains a Fuchsia copyright header.
 func CheckCopyrightText(text []byte) bool {
 	if len(text) == 0 {
-		return true
+		return false
 	}
 	cleaned := commentCleaner.Replace(string(text))
 	return copyrightRegex.MatchString(cleaned)

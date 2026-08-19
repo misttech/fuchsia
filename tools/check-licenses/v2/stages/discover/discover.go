@@ -10,6 +10,7 @@ import (
 	"log"
 	"path"
 	"path/filepath"
+	"strings"
 
 	"go.fuchsia.dev/fuchsia/tools/check-licenses/metrics"
 	"go.fuchsia.dev/fuchsia/tools/check-licenses/v2/pipeline"
@@ -41,12 +42,22 @@ func NewCrawler(fuchsiaDir string, config Config) *Crawler {
 func (c *Crawler) isSkipped(absPath string) bool {
 	relPath, err := filepath.Rel(c.FuchsiaDir, absPath)
 	if err != nil {
-		return c.SkipAnywhere[filepath.Base(absPath)]
+		base := filepath.Base(absPath)
+		if base != "." && base != ".." && strings.HasPrefix(base, ".") {
+			return true
+		}
+		return c.SkipAnywhere[base]
 	}
 
 	slashRel := filepath.ToSlash(relPath)
 	for p := slashRel; p != "." && p != "" && p != "/"; p = path.Dir(p) {
-		if c.SkipAnywhere[path.Base(p)] || c.SkipPaths[p] {
+		base := path.Base(p)
+		// Automatically skip all hidden directories and files (e.g. .git, .mise, .vscode, .cipd, etc.).
+		// We explicitly check that base is not "." or ".." so that the workspace root itself is never skipped.
+		if base != "." && base != ".." && strings.HasPrefix(base, ".") {
+			return true
+		}
+		if c.SkipAnywhere[base] || c.SkipPaths[p] {
 			return true
 		}
 	}

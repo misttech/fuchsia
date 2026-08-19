@@ -83,7 +83,10 @@ func Parse(data []byte) ([]*Readme, error) {
 
 	blocks := bytes.Split(data, []byte(dependencyDivider))
 
-	for _, block := range blocks {
+	for i, block := range blocks {
+		if i > 0 && len(bytes.TrimSpace(block)) == 0 {
+			continue
+		}
 		readme := &Readme{}
 		readmeVal := reflect.ValueOf(readme).Elem()
 
@@ -194,10 +197,7 @@ func Parse(data []byte) ([]*Readme, error) {
 			}
 		}
 
-		// Only append if we actually parsed something useful
-		if readme.Name != "" || len(readme.LicenseFiles) > 0 || len(readme.SourceFiles) > 0 || len(readme.NonLicenseFiles) > 0 {
-			readmes = append(readmes, readme)
-		}
+		readmes = append(readmes, readme)
 	}
 
 	return readmes, nil

@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -17,6 +16,7 @@ import (
 
 	"go.fuchsia.dev/fuchsia/tools/check-licenses/v2/config"
 	"go.fuchsia.dev/fuchsia/tools/check-licenses/v2/pipeline"
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/v2/stages/validate"
 )
 
 // Policy check names corresponding to compliance engine rules.
@@ -102,8 +102,6 @@ func (r *FixerRenderer) applyFix(e pipeline.ComplianceError) {
 	}
 }
 
-var copyrightRegex = regexp.MustCompile(`Copyright\s+\(?c\)?\s*\d{4}(?:\s*-\s*\d{4})?\s+The Fuchsia Authors`)
-
 var commentPrefixes = map[string]string{
 	".c": "//", ".cc": "//", ".cpp": "//", ".h": "//", ".hh": "//", ".hpp": "//",
 	".inc": "//", ".go": "//", ".rs": "//", ".dart": "//", ".java": "//", ".js": "//",
@@ -119,13 +117,17 @@ func (r *FixerRenderer) applyCopyrightFix(filePath string) error {
 		absPath = filepath.Join(r.FuchsiaDir, filePath)
 	}
 
-	content, err := os.ReadFile(absPath)
+	hasCopyright, err := validate.CheckCopyright(absPath)
 	if err != nil {
 		return err
 	}
-
-	if copyrightRegex.Match(content) {
+	if hasCopyright {
 		return nil
+	}
+
+	content, err := os.ReadFile(absPath)
+	if err != nil {
+		return err
 	}
 
 	ext := strings.ToLower(filepath.Ext(absPath))
