@@ -45,7 +45,6 @@ source_set("object") {
     "job_policy.cc",
     "log_dispatcher.cc",
     "log_dispatcher_ffi.cc",
-    "mbuf.cc",
     "memory_watchdog.cc",
     "message_packet.cc",
     "msi_allocation_ffi.cc",
@@ -69,6 +68,7 @@ source_set("object") {
     "sampler_dispatcher_ffi.cc",
     "singleton.cc",
     "socket_dispatcher.cc",
+    "socket_dispatcher_ffi.cc",
     "stream_dispatcher.cc",
     "suspend_token_dispatcher.cc",
     "suspend_token_dispatcher_ffi.cc",
@@ -145,7 +145,6 @@ library_headers("headers") {
 
     # <object/buffer_chain.h> has #include <lib/page/size.h>
     # <object/clock_dispatcher.> has #include <lib/page/size.h>
-    # <object/mbuf.h> has #include <lib/page/size.h>
     "//zircon/kernel/lib/page:headers",
 
     # <object/resource_dispatcher.h> has #include <region-alloc/region-alloc.h>.
@@ -169,12 +168,10 @@ source_set("tests") {
     "test/io_buffer_dispatcher_tests.cc",
     "test/job_dispatcher_tests.cc",
     "test/job_policy_tests.cc",
-    "test/mbuf_tests.cc",
     "test/message_packet_tests.cc",
     "test/msi_object_tests.cc",
     "test/root_job_observer_tests.cc",
     "test/shareable_process_state_tests.cc",
-    "test/socket_dispatcher_tests.cc",
     "test/state_tracker_tests.cc",
   ]
   deps = [
@@ -228,6 +225,8 @@ kernel_rust_mod("object-rs") {
     "resource_ffi.rs",
     "sampler_dispatcher.rs",
     "sampler_dispatcher_ffi.rs",
+    "socket_dispatcher.rs",
+    "socket_dispatcher_ffi.rs",
     "suspend_token_dispatcher.rs",
     "suspend_token_dispatcher_ffi.rs",
     "thread_dispatcher.rs",

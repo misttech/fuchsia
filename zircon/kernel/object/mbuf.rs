@@ -462,20 +462,14 @@ impl MBufChain {
     /// Same as `read_stream()`/`read_datagram()` but leaves the bytes in the chain instead of
     /// consuming them, even if an error occurs.
     ///
+    /// Peeks up to `len` bytes of stream data from the chain into `dst` without consuming them.
+    ///
     /// Returns `(res, actual)` indicating the operation status and number of bytes peeked.
-    pub fn peek(
-        &self,
-        dst: UserOutPtr<c_char>,
-        mut len: usize,
-        datagram: bool,
-    ) -> (Result<(), Status>, usize) {
+    pub fn peek_stream(&self, dst: UserOutPtr<c_char>, len: usize) -> (Result<(), Status>, usize) {
         if self.size == 0 || len == 0 {
             return (Ok(()), 0);
         }
 
-        if datagram {
-            len = min(len, self.buffers.front().unwrap().pkt_len as usize);
-        }
         let mut pos = 0usize;
         let mut read_off = self.read_cursor_off;
 
@@ -498,15 +492,30 @@ impl MBufChain {
         (res, pos)
     }
 
-    /// Returns number of bytes stored in the chain.
-    /// When `datagram` is true, return only the number of bytes in the first
-    /// datagram, or 0 if in `ZX_SOCKET_STREAM` mode.
-    pub fn size(&self, datagram: bool) -> usize {
-        if datagram && let Some(front) = self.buffers.front() {
-            front.pkt_len as usize
-        } else {
-            self.size
+    /// Peeks at most one datagram from the chain into `dst` without consuming it.
+    ///
+    /// Returns `(res, actual)` indicating the operation status and number of bytes peeked.
+    pub fn peek_datagram(
+        &self,
+        dst: UserOutPtr<c_char>,
+        len: usize,
+    ) -> (Result<(), Status>, usize) {
+        if self.size == 0 || len == 0 {
+            return (Ok(()), 0);
         }
+
+        let len = min(len, self.buffers.front().unwrap().pkt_len as usize);
+        self.peek_stream(dst, len)
+    }
+
+    /// Returns number of bytes stored in the chain.
+    pub fn stream_size(&self) -> usize {
+        self.size
+    }
+
+    /// Returns number of bytes stored in the first datagram, or 0 if empty.
+    pub fn datagram_size(&self) -> usize {
+        if let Some(front) = self.buffers.front() { front.pkt_len as usize } else { 0 }
     }
 
     /// Returns true if chain is full.
@@ -633,16 +642,11 @@ mod tests {
         actual: &mut usize,
     ) -> Result<(), Status> {
         let (mut mem, dst) = make_user_out(len).ok_or(Status::NO_MEMORY)?;
-        let datagram = msg_type == MessageType::Datagram;
-        let (res, nread) = match read_type {
-            ReadType::Read => {
-                if datagram {
-                    chain.as_mut().read_datagram(dst, len)
-                } else {
-                    chain.as_mut().read_stream(dst, len)
-                }
-            }
-            ReadType::Peek => chain.peek(dst, len, datagram),
+        let (res, nread) = match (read_type, msg_type) {
+            (ReadType::Read, MessageType::Datagram) => chain.as_mut().read_datagram(dst, len),
+            (ReadType::Read, MessageType::Stream) => chain.as_mut().read_stream(dst, len),
+            (ReadType::Peek, MessageType::Datagram) => chain.peek_datagram(dst, len),
+            (ReadType::Peek, MessageType::Stream) => chain.peek_stream(dst, len),
         };
         *actual = nread;
         if nread > 0 {
@@ -659,7 +663,7 @@ mod tests {
         let chain = chain_pin.as_ref();
         expect_true!(chain.is_empty());
         expect_false!(chain.is_full());
-        expect_eq!(chain.size(false), 0);
+        expect_eq!(chain.stream_size(), 0);
     }
 
     /// Tests reading stream when empty.
@@ -707,12 +711,12 @@ mod tests {
             expect_eq!(written, WRITE_LEN);
             expect_false!(chain.is_empty());
             expect_false!(chain.is_full());
-            expect_eq!(chain.size(false), (i + 1) * WRITE_LEN);
+            expect_eq!(chain.stream_size(), (i + 1) * WRITE_LEN);
         }
 
         // Read it all back in one call.
         const TOTAL_LEN: usize = WRITE_LEN * NUM_WRITES;
-        expect_eq!(chain.size(false), TOTAL_LEN);
+        expect_eq!(chain.stream_size(), TOTAL_LEN);
 
         let (mut mem_out, dst) = make_user_out(TOTAL_LEN).unwrap();
         let (res, actual) = chain.as_mut().read_stream(dst, TOTAL_LEN);
@@ -720,7 +724,7 @@ mod tests {
         expect_eq!(actual, TOTAL_LEN);
         expect_true!(chain.is_empty());
         expect_false!(chain.is_full());
-        expect_eq!(chain.size(false), 0);
+        expect_eq!(chain.stream_size(), 0);
 
         // Verify result.
         expect_true!(verify_user_mem(&mut mem_out, TOTAL_LEN, |offset| {
@@ -740,7 +744,7 @@ mod tests {
         expect_eq!(written, 0);
         expect_true!(chain.is_empty());
         expect_false!(chain.is_full());
-        expect_eq!(chain.size(false), 0);
+        expect_eq!(chain.stream_size(), 0);
     }
 
     /// Tests stream writing beyond capacity.
@@ -764,7 +768,7 @@ mod tests {
 
         expect_false!(chain.is_empty());
         expect_true!(chain.is_full());
-        expect_eq!(total_written, chain.size(false));
+        expect_eq!(total_written, chain.stream_size());
 
         // Read it all back out and see we get back the same number of bytes we wrote.
         let (_mem_out, dst) = make_user_out(WRITE_LEN).unwrap();
@@ -778,7 +782,7 @@ mod tests {
         }
 
         expect_true!(chain.is_empty());
-        expect_eq!(chain.size(false), 0);
+        expect_eq!(chain.stream_size(), 0);
         expect_eq!(total_written, total_read);
     }
 
@@ -833,7 +837,7 @@ mod tests {
         ));
         expect_true!(&read_buf[..actual] == b"abc123");
 
-        expect_eq!(chain.size(false), 6);
+        expect_eq!(chain.stream_size(), 6);
         expect_ok!(read_helper(
             &mut chain,
             &mut read_buf,
@@ -965,14 +969,14 @@ mod tests {
         let (res_a, written_a) = chain.as_mut().write_datagram(src_a, WRITE_LEN);
         expect_ok!(res_a);
         expect_eq!(written_a, WRITE_LEN);
-        expect_eq!(chain.size(false), WRITE_LEN);
+        expect_eq!(chain.stream_size(), WRITE_LEN);
         expect_false!(chain.is_empty());
 
         let (_mem_b, src_b) = make_user_in_byte(WRITE_LEN, b'B').unwrap();
         let (res_b, written_b) = chain.as_mut().write_datagram(src_b, WRITE_LEN);
         expect_ok!(res_b);
         expect_eq!(written_b, WRITE_LEN);
-        expect_eq!(chain.size(false), 2 * WRITE_LEN);
+        expect_eq!(chain.stream_size(), 2 * WRITE_LEN);
         expect_false!(chain.is_empty());
 
         let mut read_buf = [0u8; WRITE_LEN];
@@ -989,7 +993,7 @@ mod tests {
         expect_eq!(read_buf[0], b'A');
         expect_false!(chain.is_empty());
 
-        expect_eq!(chain.size(false), WRITE_LEN);
+        expect_eq!(chain.stream_size(), WRITE_LEN);
         expect_ok!(read_helper(
             &mut chain,
             &mut read_buf,
@@ -1000,7 +1004,7 @@ mod tests {
         ));
         expect_eq!(actual, WRITE_LEN);
         expect_true!(chain.is_empty());
-        expect_eq!(chain.size(false), 0);
+        expect_eq!(chain.stream_size(), 0);
         expect_true!(read_buf.iter().all(|&b| b == b'B'));
     }
 
@@ -1026,12 +1030,12 @@ mod tests {
         }
 
         // Verify size() returns correctly
-        expect_eq!(chain.size(true), 1);
-        expect_eq!(chain.size(false), total_written);
+        expect_eq!(chain.datagram_size(), 1);
+        expect_eq!(chain.stream_size(), total_written);
 
         // Read them back and verify their contents.
         for i in 1..=NUM_DATAGRAMS {
-            expect_eq!(chain.size(true), i);
+            expect_eq!(chain.datagram_size(), i);
             let mut read_buf = [0u8; 100];
             let mut actual = 0;
             expect_ok!(read_helper(
@@ -1047,7 +1051,7 @@ mod tests {
         }
 
         expect_true!(chain.is_empty());
-        expect_eq!(chain.size(false), 0);
+        expect_eq!(chain.stream_size(), 0);
     }
 
     /// Tests datagram writing zero length.
@@ -1061,8 +1065,8 @@ mod tests {
         expect_eq!(written, 0);
         expect_true!(chain.is_empty());
         expect_false!(chain.is_full());
-        expect_eq!(chain.size(true), 0);
-        expect_eq!(chain.size(false), 0);
+        expect_eq!(chain.datagram_size(), 0);
+        expect_eq!(chain.stream_size(), 0);
     }
 
     /// Tests datagram writing beyond capacity.
@@ -1086,7 +1090,7 @@ mod tests {
         }
 
         expect_false!(chain.is_empty());
-        expect_eq!(chain.size(false), WRITE_LEN * num_datagrams_written);
+        expect_eq!(chain.stream_size(), WRITE_LEN * num_datagrams_written);
 
         // Read it all back out and see that there's none left over.
         let (_mem_out, dst) = make_user_out(WRITE_LEN).unwrap();
@@ -1100,7 +1104,7 @@ mod tests {
         }
 
         expect_true!(chain.is_empty());
-        expect_eq!(chain.size(false), 0);
+        expect_eq!(chain.stream_size(), 0);
         expect_eq!(num_datagrams_written, num_datagrams_read);
     }
 
@@ -1225,7 +1229,7 @@ mod tests {
         expect_true!(&read_buf[..actual] == b"abc");
 
         // Make sure peeking didn't affect an actual read.
-        expect_eq!(chain.size(false), 3);
+        expect_eq!(chain.stream_size(), 3);
         expect_ok!(read_helper(
             &mut chain,
             &mut read_buf,
@@ -1329,8 +1333,8 @@ mod tests {
         let (res, written) = chain.as_mut().write_datagram(src, LARGE_PAYLOAD);
         expect_ok!(res);
         expect_eq!(written, LARGE_PAYLOAD);
-        expect_eq!(chain.size(false), LARGE_PAYLOAD);
-        expect_eq!(chain.size(true), LARGE_PAYLOAD);
+        expect_eq!(chain.stream_size(), LARGE_PAYLOAD);
+        expect_eq!(chain.datagram_size(), LARGE_PAYLOAD);
 
         // Read only enough to span into the second buffer, leaving the third buffer untouched.
         const READ_LEN: usize = MBuf::PAYLOAD_SIZE + 20;
@@ -1342,8 +1346,8 @@ mod tests {
 
         // All remaining bytes (including continuation buffer 3) should have been discarded.
         expect_true!(chain.is_empty());
-        expect_eq!(chain.size(false), 0);
-        expect_eq!(chain.size(true), 0);
+        expect_eq!(chain.stream_size(), 0);
+        expect_eq!(chain.datagram_size(), 0);
     }
 
     /// Tests interleaved partial stream reads across MBuf page boundaries.
@@ -1357,7 +1361,7 @@ mod tests {
         let (res, written) = chain.as_mut().write_stream(src, TOTAL_BYTES);
         expect_ok!(res);
         expect_eq!(written, TOTAL_BYTES);
-        expect_eq!(chain.size(false), TOTAL_BYTES);
+        expect_eq!(chain.stream_size(), TOTAL_BYTES);
 
         let mut total_read = 0usize;
         let chunk_sizes = [100, MBuf::PAYLOAD_SIZE - 50, 500, MBuf::PAYLOAD_SIZE, 1000];
@@ -1375,7 +1379,7 @@ mod tests {
                 ((total_read + i) % 251) as u8
             }));
             total_read += actual;
-            expect_eq!(chain.size(false), TOTAL_BYTES - total_read);
+            expect_eq!(chain.stream_size(), TOTAL_BYTES - total_read);
         }
 
         // Read the remaining bytes.
@@ -1391,7 +1395,7 @@ mod tests {
         }
 
         expect_true!(chain.is_empty());
-        expect_eq!(chain.size(false), 0);
+        expect_eq!(chain.stream_size(), 0);
     }
 
     /// Tests helper calculations for MBuf sizing and buffer requirements.
@@ -1420,14 +1424,14 @@ mod tests {
         let (res, written) = chain.as_mut().write_datagram(src, FILL_SIZE);
         expect_ok!(res);
         expect_eq!(written, FILL_SIZE);
-        expect_eq!(chain.size(false), FILL_SIZE);
+        expect_eq!(chain.stream_size(), FILL_SIZE);
 
         // Attempting to write a 101-byte datagram exceeds MAX_SIZE.
         let (_overflow_mem, overflow_src) = make_user_in_byte(101, b'V').unwrap();
         let (res_overflow, overflow_written) = chain.as_mut().write_datagram(overflow_src, 101);
         expect_true!(res_overflow == Err(Status::SHOULD_WAIT));
         expect_eq!(overflow_written, 0);
-        expect_eq!(chain.size(false), FILL_SIZE);
+        expect_eq!(chain.stream_size(), FILL_SIZE);
     }
 
     /// Tests that MBuf allocation, insertion, removal, and freeing preserves node state.

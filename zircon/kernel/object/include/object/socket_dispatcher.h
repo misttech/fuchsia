@@ -7,82 +7,57 @@
 #ifndef ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_SOCKET_DISPATCHER_H_
 #define ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_SOCKET_DISPATCHER_H_
 
+#include <lib/object-constants.h>
 #include <lib/user_copy/user_ptr.h>
 #include <lib/zx/result.h>
 #include <stdint.h>
 #include <zircon/rights.h>
 #include <zircon/types.h>
 
-#include <fbl/intrusive_single_list.h>
-#include <fbl/ref_counted.h>
+#include <kernel/ffi.h>
 #include <object/dispatcher.h>
 #include <object/handle.h>
-#include <object/mbuf.h>
+#include <object/opaque_storage.h>
 
-class SocketDispatcher final : public PeeredDispatcher<SocketDispatcher, ZX_DEFAULT_SOCKET_RIGHTS> {
+class SocketDispatcher;
+
+DECLARE_PEERED_DISPATCHER_RUST_PROTOS(SocketDispatcher, rust_socket_dispatcher)
+
+extern "C" {
+zx_status_t cpp_socket_dispatcher_create(
+    void* holder, uint32_t flags, ffi::Uninitialized<KernelHandle<SocketDispatcher>>* handle_out);
+
+size_t rust_socket_dispatcher_get_read_threshold(const SocketDispatcher* disp);
+zx_status_t rust_socket_dispatcher_set_read_threshold(const SocketDispatcher* disp, size_t value);
+size_t rust_socket_dispatcher_get_write_threshold(const SocketDispatcher* disp);
+zx_status_t rust_socket_dispatcher_set_write_threshold(const SocketDispatcher* disp, size_t value);
+zx_info_socket_t rust_socket_dispatcher_get_info(const SocketDispatcher* disp);
+}  // extern "C"
+
+class SocketDispatcher final : public Dispatcher {
  public:
-  class Disposition {
-   public:
-    enum Value { kNone, kWriteDisabled, kWriteEnabled };
-
-    static zx::result<Disposition> TryFrom(uint32_t disposition);
-    explicit Disposition(Value disposition);
-    operator Value() const;
-
-   private:
-    Value value_;
-  };
-
-  enum class ReadType { kConsume, kPeek };
-
-  static zx_status_t Create(uint32_t flags, KernelHandle<SocketDispatcher>* handle0,
-                            KernelHandle<SocketDispatcher>* handle1, zx_rights_t* rights);
-
+  SocketDispatcher(void* holder, uint32_t flags);
   ~SocketDispatcher() final;
 
-  // Dispatcher implementation.
-  zx_obj_type_t get_type() const final { return ZX_OBJ_TYPE_SOCKET; }
-
-  // Socket methods.
-  zx_status_t Write(user_in_ptr<const char> src, size_t len, size_t* written);
-
-  // Set the socket endpoints' dispositions.
-  zx_status_t SetDisposition(Disposition disposition, Disposition disposition_peer);
-
-  zx_status_t Read(ReadType type, user_out_ptr<char> dst, size_t len, size_t* nread);
+  DECLARE_PEERED_DISPATCHER_RUST_METHODS(rust_socket_dispatcher, ZX_OBJ_TYPE_SOCKET, true)
 
   // Property methods.
-  size_t GetReadThreshold() const;
-  zx_status_t SetReadThreshold(size_t value);
-  size_t GetWriteThreshold() const;
-  zx_status_t SetWriteThreshold(size_t value);
+  size_t GetReadThreshold() const { return rust_socket_dispatcher_get_read_threshold(this); }
+  zx_status_t SetReadThreshold(size_t value) const {
+    return rust_socket_dispatcher_set_read_threshold(this, value);
+  }
+  size_t GetWriteThreshold() const { return rust_socket_dispatcher_get_write_threshold(this); }
+  zx_status_t SetWriteThreshold(size_t value) const {
+    return rust_socket_dispatcher_set_write_threshold(this, value);
+  }
 
-  zx_info_socket_t GetInfo() const;
+  zx_info_socket_t GetInfo() const { return rust_socket_dispatcher_get_info(this); }
 
-  // PeeredDispatcher implementation.
-  void on_zero_handles_locked() TA_REQ(get_lock());
-  void OnPeerZeroHandlesLocked() TA_REQ(get_lock());
+ protected:
+  Lock<CriticalMutex>* get_lock() const final;
 
  private:
-  using PeerHolderType = PeerHolder<SocketDispatcher>;
-
-  SocketDispatcher(fbl::RefPtr<PeerHolderType> holder, zx_signals_t starting_signals,
-                   uint32_t flags);
-  zx_status_t WriteSelfLocked(user_in_ptr<const char> src, size_t len, size_t* nwritten,
-                              Guard<CriticalMutex>& guard) TA_REQ(get_lock());
-  void UpdateReadStatus(Disposition disposition_peer) TA_REQ(get_lock());
-  [[nodiscard]] bool IsDispositionStateValid(Disposition disposition_peer) const TA_REQ(get_lock());
-
-  bool is_full() const TA_REQ(get_lock()) { return data_.is_full(); }
-  bool is_empty() const TA_REQ(get_lock()) { return data_.is_empty(); }
-
-  const uint32_t flags_;
-
-  // The shared |get_lock()| protects all members below.
-  MBufChain data_ TA_GUARDED(get_lock());
-  size_t read_threshold_;
-  size_t write_threshold_;
-  bool read_disabled_ TA_GUARDED(get_lock());
+  OpaqueStorage<kSocketDispatcherStateSize, kSocketDispatcherStateAlign> opaque_storage_;
 };
 
 #endif  // ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_SOCKET_DISPATCHER_H_
