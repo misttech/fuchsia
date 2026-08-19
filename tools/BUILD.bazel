@@ -10,6 +10,7 @@ test_suite(
     name = "host_tests",
     target_compatible_with = HOST_CONSTRAINTS,
     tests = [
+        "//tools/build/fx-set:tests",
         "//tools/build/gndoc:gndoc_test",
         "//tools/build/ninjago/buildstats:buildstats_tests",
         "//tools/build/ninjago/chrometrace:chrometrace_test",
