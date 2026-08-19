@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"go.fuchsia.dev/fuchsia/tools/botanist/targets"
 	"go.fuchsia.dev/fuchsia/tools/lib/ffxutil"
 	"go.fuchsia.dev/fuchsia/tools/lib/logger"
 )
@@ -47,6 +48,23 @@ func AddImageDeps(ctx context.Context, s *Shard, buildDir string, pbPath, ffxPat
 	// Add product bundle related artifacts.
 	imageDeps := []string{productBundlesManifest}
 
+	// TODO(https://fxbug.dev/518018807): Remove once ffx can flash Iris.
+	if s.Env.Dimensions.DeviceType() == "Iris" {
+		flashImages, err := targets.GetFastbootFlashImages(filepath.Join(buildDir, pbPath))
+		if err != nil {
+			return err
+		}
+		for _, imgPath := range flashImages {
+			if imgPath == "" {
+				continue
+			}
+			rel, err := filepath.Rel(buildDir, imgPath)
+			if err != nil {
+				return fmt.Errorf("failed to get image path relative to the build dir: %w", err)
+			}
+			imageDeps = append(imageDeps, rel)
+		}
+	}
 	tmp, err := os.MkdirTemp("", "wt")
 	if err != nil {
 		return err
