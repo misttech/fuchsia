@@ -670,5 +670,44 @@ TEST(SegmentManagerExceptionTest, BuildSitEntriesDiskFail) TA_NO_THREAD_SAFETY_A
   fs->Reset();
 }
 
+TEST_F(SegmentManagerTest, StartBlock) {
+  SegmentManager &segment_manager = fs_->GetSegmentManager();
+  SuperblockInfo &superblock_info = fs_->GetSuperblockInfo();
+
+  for (uint32_t segno = 0; segno < segment_manager.TotalSegs(); ++segno) {
+    block_t expected_addr =
+        segment_manager.GetMainAreaStartBlock() + (segno << superblock_info.GetLogBlocksPerSeg());
+    ASSERT_EQ(segment_manager.StartBlock(segno), expected_addr);
+  }
+}
+
+TEST(SegmentManagerExceptionTest, InvalidCheckpointSegno) TA_NO_THREAD_SAFETY_ANALYSIS {
+  std::unique_ptr<BcacheMapper> bc;
+  FileTester::MkfsOnFakeDevWithOptions(&bc, MkfsOptions{});
+
+  async::Loop loop(&kAsyncLoopConfigAttachToCurrentThread);
+
+  auto superblock = LoadSuperblock(*bc);
+  ASSERT_TRUE(superblock.is_ok());
+
+  // Create a vfs object for unit tests.
+  auto vfs_or = Runner::CreateRunner(loop.dispatcher());
+  ASSERT_TRUE(vfs_or.is_ok());
+  std::unique_ptr<F2fs> fs =
+      std::make_unique<F2fs>(loop.dispatcher(), std::move(bc), MountOptions{}, (*vfs_or).get());
+
+  ASSERT_EQ(fs->LoadSuper(std::move(*superblock)), ZX_OK);
+
+  // Corrupt checkpoint with an invalid segment number.
+  Checkpoint &ckpt = *fs->GetSuperblockInfo().GetCheckpointBlock();
+  ckpt.cur_node_segno[0] = CpuToLe(fs->GetSegmentManager().TotalSegs() + 100);
+
+  fs->GetSegmentManager().DestroySegmentManager();
+  ASSERT_EQ(fs->GetSegmentManager().BuildSegmentManager(), ZX_ERR_INVALID_ARGS);
+
+  fs->GetVCache().Reset();
+  fs->Reset();
+}
+
 }  // namespace
 }  // namespace f2fs

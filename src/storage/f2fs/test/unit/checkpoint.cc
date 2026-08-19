@@ -630,9 +630,9 @@ TEST_F(CheckpointTest, NormalSummaries) TA_NO_THREAD_SAFETY_ANALYSIS {
       for (int i = static_cast<int>(CursegType::kCursegHotData);
            i <= static_cast<int>(CursegType::kCursegColdNode); ++i) {
         CursegInfo *curseg = segment_manager.CURSEG_I(static_cast<CursegType>(i));
-        ASSERT_EQ(curseg->next_blkoff, kEntriesInSum);
+        ASSERT_EQ(curseg->next_blkoff, kEntriesInSum - 1);
 
-        for (uint32_t j = 0; j < kEntriesInSum; ++j) {
+        for (uint32_t j = 0; j < kEntriesInSum - 1; ++j) {
           if (cp->checkpoint_ver == kFirstCheckpointVersion &&
               IsRootInode(static_cast<CursegType>(i), j)) {  // root inode
             continue;
@@ -655,7 +655,13 @@ TEST_F(CheckpointTest, NormalSummaries) TA_NO_THREAD_SAFETY_ANALYSIS {
     // Fill current active segments for normal summaries
     for (int i = static_cast<int>(CursegType::kCursegHotData);
          i <= static_cast<int>(CursegType::kCursegColdNode); ++i) {
-      for (uint16_t j = 0; j < kEntriesInSum; ++j) {
+      // Close previous segment
+      if (!after_mkfs) {
+        block_t new_blkaddr;
+        MapTester::DoWriteSit(fs_.get(), static_cast<CursegType>(i), kNullSegNo, &new_blkaddr);
+      }
+
+      for (uint16_t j = 0; j < kEntriesInSum - 1; ++j) {
         block_t new_blkaddr;
         Summary sum;
 
@@ -1116,6 +1122,26 @@ TEST_F(CheckpointTest, ReadNormalSummaryDiskFail) TA_NO_THREAD_SAFETY_ANALYSIS {
     DeviceTester::SetHook(fs_.get(), nullptr);
     fs_->GetSuperblockInfo().ClearCpFlags(CpFlag::kCpErrorFlag);
   }
+}
+
+TEST_F(CheckpointTest, InvalidAllocType) {
+  DisableFsck();
+  SuperblockInfo &sb_info = fs_->GetSuperblockInfo();
+  BlockBuffer<Checkpoint> ckpt_block = sb_info.GetCheckpointBlock();
+  ckpt_block->alloc_type[0] = static_cast<uint8_t>(AllocMode::kSSR) + 1;
+  ASSERT_EQ(sb_info.SetCheckpoint(ckpt_block), ZX_ERR_BAD_STATE);
+}
+
+TEST_F(CheckpointTest, InvalidCursegBlkoff) TA_NO_THREAD_SAFETY_ANALYSIS {
+  DisableFsck();
+  SuperblockInfo &sb_info = fs_->GetSuperblockInfo();
+  BlockBuffer<Checkpoint> ckpt_block = sb_info.GetCheckpointBlock();
+  ckpt_block->cur_data_blkoff[0] = CpuToLe(static_cast<uint16_t>(sb_info.GetBlocksPerSeg()));
+  sb_info.GetCheckpointBlock() = ckpt_block;
+  ASSERT_EQ(fs_->GetSegmentManager().ReadCompactedSummaries(), ZX_ERR_INVALID_ARGS);
+  ASSERT_EQ(
+      fs_->GetSegmentManager().ReadNormalSummaries(static_cast<int>(CursegType::kCursegHotData)),
+      ZX_ERR_INVALID_ARGS);
 }
 
 }  // namespace

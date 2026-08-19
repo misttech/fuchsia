@@ -22,11 +22,6 @@ constexpr uint32_t kNullSecNo = std::numeric_limits<uint32_t>::max();
 constexpr uint32_t kUint32Max = std::numeric_limits<uint32_t>::max();
 constexpr uint32_t kMaxSearchLimit = 4096;
 
-// In the VictimSelPolicy->alloc_mode, there are two block allocation modes.
-// LFS writes data sequentially with cleaning operations.
-// SSR (Slack Space Recycle) reuses obsolete space without cleaning operations.
-enum class AllocMode { kLFS = 0, kSSR };
-
 // In the VictimSelPolicy->gc_mode, there are two gc, aka cleaning, modes.
 // GC_CB is based on cost-benefit algorithm.
 // GC_GREEDY is based on greedy algorithm.
@@ -254,13 +249,20 @@ class SegmentManager {
     return sit_info_->sentries[CURSEG_I(type)->segno].ckpt_invalid_blocks;
   }
   block_t StartBlock(uint32_t segno) const {
-    return (seg0_blkaddr_ + (GetR2LSegNo(segno) << superblock_info_.GetLogBlocksPerSeg()));
+    ZX_ASSERT(IsValidSegmentNumber(segno));
+    return safemath::CheckAdd<block_t>(
+               seg0_blkaddr_, safemath::CheckLsh<block_t>(GetR2LSegNo(segno),
+                                                          superblock_info_.GetLogBlocksPerSeg()))
+        .ValueOrDie();
   }
   block_t NextFreeBlkAddr(CursegType type) const {
     const CursegInfo *curseg = CURSEG_I(type);
-    return (StartBlock(curseg->segno) + curseg->next_blkoff);
+    return safemath::CheckAdd<block_t>(StartBlock(curseg->segno), curseg->next_blkoff).ValueOrDie();
   }
-  block_t GetSegOffFromSeg0(block_t blk_addr) const { return blk_addr - seg0_blkaddr_; }
+  block_t GetSegOffFromSeg0(block_t blk_addr) const {
+    ZX_ASSERT(blk_addr >= seg0_blkaddr_);
+    return blk_addr - seg0_blkaddr_;
+  }
   uint32_t GetSegNoFromSeg0(block_t blk_addr) const {
     return GetSegOffFromSeg0(blk_addr) >> superblock_info_.GetLogBlocksPerSeg();
   }
@@ -273,7 +275,10 @@ class SegmentManager {
   uint32_t GetZoneNoFromSegNo(uint32_t segno) const {
     return segno / superblock_info_.GetSegsPerSec() / superblock_info_.GetSecsPerZone();
   }
-  block_t GetSumBlock(uint32_t segno) const { return ssa_blkaddr_ + segno; }
+  block_t GetSumBlock(uint32_t segno) const {
+    ZX_ASSERT(IsValidSegmentNumber(segno));
+    return safemath::CheckAdd<block_t>(ssa_blkaddr_, segno).ValueOrDie();
+  }
   uint32_t SitEntryOffset(uint32_t segno) const { return segno % kSitEntryPerBlock; }
 
   block_t TotalSegs() const { return main_segments_; }
@@ -398,8 +403,13 @@ class SegmentManager {
   }
 
   // L: Logical segment number in volume, R: Relative segment number in main area
-  uint32_t GetL2RSegNo(uint32_t segno) const { return (segno - start_segno_); }
-  uint32_t GetR2LSegNo(uint32_t segno) const { return (segno + start_segno_); }
+  uint32_t GetL2RSegNo(uint32_t segno) const {
+    ZX_ASSERT(segno >= start_segno_);
+    return segno - start_segno_;
+  }
+  uint32_t GetR2LSegNo(uint32_t segno) const {
+    return safemath::CheckAdd<uint32_t>(segno, start_segno_).ValueOrDie();
+  }
   zx::result<LockedPage> GetCurrentSitPage(uint32_t segno) __TA_REQUIRES(sentry_lock_);
   zx::result<LockedPage> GetNextSitPage(uint32_t start) __TA_REQUIRES(sentry_lock_);
 

@@ -358,6 +358,12 @@ class SuperblockInfo {
       return ZX_ERR_BAD_STATE;
     }
 
+    for (size_t i = 0; i < kNrCursegType; ++i) {
+      if (ckpt.alloc_type[i] > static_cast<uint8_t>(AllocMode::kSSR)) {
+        return ZX_ERR_BAD_STATE;
+      }
+    }
+
     return ZX_OK;
   }
 

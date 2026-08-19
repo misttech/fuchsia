@@ -1080,6 +1080,9 @@ zx_status_t SegmentManager::ReadCompactedSummaries() {
     seg_i = CURSEG_I(static_cast<CursegType>(i));
     segno = LeToCpu(ckpt.cur_data_segno[i]);
     blk_off = LeToCpu(ckpt.cur_data_blkoff[i]);
+    if (!IsValidSegmentNumber(segno) || blk_off >= superblock_info_.GetBlocksPerSeg()) {
+      return ZX_ERR_INVALID_ARGS;
+    }
     seg_i->next_segno = segno;
     ResetCurseg(static_cast<CursegType>(i), 0);
     seg_i->alloc_type = ckpt.alloc_type[i];
@@ -1116,17 +1119,25 @@ zx_status_t SegmentManager::ReadNormalSummaries(int type) {
   if (IsDataSeg(static_cast<CursegType>(type))) {
     segno = LeToCpu(ckpt.cur_data_segno[type]);
     blk_off = LeToCpu(ckpt.cur_data_blkoff[type - static_cast<int>(CursegType::kCursegHotData)]);
+    if (!IsValidSegmentNumber(segno) || blk_off >= superblock_info_.GetBlocksPerSeg()) {
+      return ZX_ERR_INVALID_ARGS;
+    }
     if (superblock_info_.TestCpFlags(CpFlag::kCpUmountFlag)) {
       blk_addr = SumBlkAddr(kNrCursegType, type);
-    } else
+    } else {
       blk_addr = SumBlkAddr(kNrCursegDataType, type);
+    }
   } else {
     segno = LeToCpu(ckpt.cur_node_segno[type - static_cast<int>(CursegType::kCursegHotNode)]);
     blk_off = LeToCpu(ckpt.cur_node_blkoff[type - static_cast<int>(CursegType::kCursegHotNode)]);
+    if (!IsValidSegmentNumber(segno) || blk_off >= superblock_info_.GetBlocksPerSeg()) {
+      return ZX_ERR_INVALID_ARGS;
+    }
     if (superblock_info_.TestCpFlags(CpFlag::kCpUmountFlag)) {
       blk_addr = SumBlkAddr(kNrCursegNodeType, type - static_cast<int>(CursegType::kCursegHotNode));
-    } else
+    } else {
       blk_addr = GetSumBlock(segno);
+    }
   }
 
   LockedPage new_page;

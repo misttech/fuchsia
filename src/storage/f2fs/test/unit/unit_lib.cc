@@ -570,6 +570,10 @@ void MapTester::DoWriteSit(F2fs *fs, CursegType type, uint32_t exp_segno,
 
   segment_manager.RefreshSitEntry(kNullSegNo, *new_blkaddr);
   segment_manager.LocateDirtySegment(old_cursegno);
+
+  if (!segment_manager.HasCursegSpace(type)) {
+    segment_manager.AllocateSegmentByDefault(type, false);
+  }
 }
 
 void MapTester::RemoveAllNatEntries(NodeManager &manager) {

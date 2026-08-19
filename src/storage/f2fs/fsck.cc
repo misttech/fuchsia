@@ -1507,6 +1507,10 @@ zx_status_t FsckWorker::ReadCompactedSummaries() {
     curseg = segment_manager_->CURSEG_I(static_cast<CursegType>(i));
     segno = LeToCpu(ckpt.cur_data_segno[i]);
     blk_off = LeToCpu(ckpt.cur_data_blkoff[i]);
+    if (!segment_manager_->IsValidSegmentNumber(segno) ||
+        blk_off >= superblock_info_->GetBlocksPerSeg()) {
+      return ZX_ERR_INVALID_ARGS;
+    }
     curseg->next_segno = segno;
     ResetCurseg(static_cast<CursegType>(i), 0);
     curseg->alloc_type = ckpt.alloc_type[i];
@@ -1553,6 +1557,10 @@ zx_status_t FsckWorker::ReadNormalSummaries(CursegType type) {
   if (IsDataSeg(type)) {
     segno = LeToCpu(ckpt.cur_data_segno[static_cast<int>(type)]);
     blk_off = LeToCpu(ckpt.cur_data_blkoff[type - CursegType::kCursegHotData]);
+    if (!segment_manager_->IsValidSegmentNumber(segno) ||
+        blk_off >= superblock_info_->GetBlocksPerSeg()) {
+      return ZX_ERR_INVALID_ARGS;
+    }
 
     if (superblock_info_->TestCpFlags(CpFlag::kCpUmountFlag)) {
       block_address = SummaryBlockAddress(kNrCursegType, static_cast<int>(type));
@@ -1562,6 +1570,10 @@ zx_status_t FsckWorker::ReadNormalSummaries(CursegType type) {
   } else {
     segno = LeToCpu(ckpt.cur_node_segno[type - CursegType::kCursegHotNode]);
     blk_off = LeToCpu(ckpt.cur_node_blkoff[type - CursegType::kCursegHotNode]);
+    if (!segment_manager_->IsValidSegmentNumber(segno) ||
+        blk_off >= superblock_info_->GetBlocksPerSeg()) {
+      return ZX_ERR_INVALID_ARGS;
+    }
 
     if (superblock_info_->TestCpFlags(CpFlag::kCpUmountFlag)) {
       block_address = SummaryBlockAddress(kNrCursegNodeType, type - CursegType::kCursegHotNode);
@@ -1636,7 +1648,6 @@ zx_status_t FsckWorker::BuildCurseg() {
   }
   return RestoreCursegSummaries();
 }
-
 
 std::unique_ptr<BlockBuffer<SitBlock>> FsckWorker::GetCurrentSitPage(uint32_t segno) {
   SitInfo &sit_i = segment_manager_->GetSitInfo();
