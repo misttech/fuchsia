@@ -2890,7 +2890,7 @@ where
                     ) => {
                         debug!("failed to forward {} packet: MTU exceeded", I::NAME);
                         core_ctx.increment_both(outbound_device, |c| &c.mtu_exceeded);
-                        let mtu = core_ctx.get_mtu(inbound_device);
+                        let mtu = core_ctx.get_mtu(outbound_device);
                         // NB: Ipv6 sends a PacketTooBig error. Ipv4 sends nothing.
                         let Some(err) = I::IcmpError::mtu_exceeded(mtu) else {
                             return;

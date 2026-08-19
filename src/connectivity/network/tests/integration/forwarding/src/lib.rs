@@ -10,6 +10,9 @@ use fidl_fuchsia_net_filter_ext as fnet_filter_ext;
 use fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin;
 use fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext;
 use fidl_fuchsia_net_matchers_ext as fnet_matchers_ext;
+use fidl_fuchsia_netemul_network as fnetemul_network;
+use fidl_fuchsia_posix_socket as fposix_socket;
+use fidl_fuchsia_posix_socket_raw as fposix_socket_raw;
 use fuchsia_async::{DurationExt, MonotonicDuration, TimeoutExt};
 use futures_util::{AsyncReadExt as _, AsyncWriteExt as _, FutureExt, SinkExt, StreamExt};
 use net_declare::{fidl_ip, fidl_subnet};
@@ -21,6 +24,12 @@ use netstack_testing_common::{
     ASYNC_EVENT_NEGATIVE_CHECK_TIMEOUT, ASYNC_EVENT_POSITIVE_CHECK_TIMEOUT,
 };
 use netstack_testing_macros::netstack_test;
+use packet::ParsablePacket as _;
+use packet_formats::ethernet::ETHERNET_HDR_LEN_NO_TAG;
+use packet_formats::icmp::{IcmpParseArgs, Icmpv6Packet};
+use packet_formats::ip::Ipv6Proto;
+use packet_formats::ipv6::IPV6_FIXED_HDR_LEN;
+use packet_formats::udp::HEADER_BYTES as UDP_HDR_LEN;
 use ping::PingError;
 use std::num::NonZeroU64;
 use test_case::test_case;
@@ -61,6 +70,8 @@ struct SetupConfig {
     router_server_ip: fnet::Subnet,
     router_client_if_config: fnet_interfaces_admin::Configuration,
     router_server_if_config: fnet_interfaces_admin::Configuration,
+    router_client_ep_config: fnetemul_network::EndpointConfig,
+    router_server_ep_config: fnetemul_network::EndpointConfig,
 }
 
 impl SetupConfig {
@@ -91,6 +102,8 @@ impl SetupConfig {
             router_server_ip: fidl_subnet!("192.168.0.1/24"),
             router_client_if_config,
             router_server_if_config,
+            router_client_ep_config: netemul::new_endpoint_config(netemul::DEFAULT_MTU, None),
+            router_server_ep_config: netemul::new_endpoint_config(netemul::DEFAULT_MTU, None),
         }
     }
 
@@ -121,6 +134,8 @@ impl SetupConfig {
             router_server_ip: fidl_subnet!("fd00:0:0:2::1/64"),
             router_client_if_config,
             router_server_if_config,
+            router_client_ep_config: netemul::new_endpoint_config(netemul::DEFAULT_MTU, None),
+            router_server_ep_config: netemul::new_endpoint_config(netemul::DEFAULT_MTU, None),
         }
     }
 
@@ -139,6 +154,8 @@ impl SetupConfig {
             router_server_ip,
             router_client_if_config,
             router_server_if_config,
+            router_client_ep_config,
+            router_server_ep_config,
         } = self;
 
         let client_net = sandbox.create_network("client").await.expect("create network");
@@ -166,7 +183,12 @@ impl SetupConfig {
         server_iface.add_address_and_subnet_route(server_subnet).await.expect("configure address");
         server_iface.apply_nud_flake_workaround().await.expect("nud flake workaround");
         let router_client_iface = router
-            .join_network(&client_net, "router-client-ep")
+            .join_network_with(
+                &client_net,
+                "router-client-ep",
+                router_client_ep_config,
+                Default::default(),
+            )
             .await
             .expect("install interface in router netstack");
         router_client_iface
@@ -175,7 +197,12 @@ impl SetupConfig {
             .expect("configure address");
         router_client_iface.apply_nud_flake_workaround().await.expect("nud flake workaround");
         let router_server_iface = router
-            .join_network(&server_net, "router-server-ep")
+            .join_network_with(
+                &server_net,
+                "router-server-ep",
+                router_server_ep_config,
+                Default::default(),
+            )
             .await
             .expect("install interface in router netstack");
         router_server_iface
@@ -696,4 +723,86 @@ async fn internal_forwarding_egress(setup_config: SetupConfig) {
         .await,
         Err(ProbeError::RecvTimedOut)
     );
+}
+
+/// The Netstack should generate an ICMPv6 PacketTooBig error when asked to
+/// forward a IPv6 packet that would exceed the egress interface's MTU.
+#[netstack_test]
+async fn forwarding_packet_too_big(name: &str) {
+    const INGRESS_MTU: u16 = 1500;
+    const EGRESS_MTU: u16 = 1400;
+
+    let setup_config = SetupConfig {
+        router_client_ep_config: netemul::new_endpoint_config(INGRESS_MTU, None),
+        router_server_ep_config: netemul::new_endpoint_config(EGRESS_MTU, None),
+        ..SetupConfig::ipv6(ForwardingConfig::BothEnabled)
+    };
+
+    let client_sockaddr = std::net::SocketAddr::from((
+        fidl_fuchsia_net_ext::IpAddress::from(setup_config.client_subnet.addr).0,
+        PORT,
+    ));
+    let server_sockaddr = std::net::SocketAddr::from((
+        fidl_fuchsia_net_ext::IpAddress::from(setup_config.server_subnet.addr).0,
+        PORT,
+    ));
+
+    let client_ipv6 = match setup_config.client_subnet.addr {
+        fnet::IpAddress::Ipv6(addr) => net_types::ip::Ipv6Addr::from_bytes(addr.addr),
+        fnet::IpAddress::Ipv4(_) => unreachable!(),
+    };
+    let router_client_ipv6 = match setup_config.router_client_ip.addr {
+        fnet::IpAddress::Ipv6(addr) => net_types::ip::Ipv6Addr::from_bytes(addr.addr),
+        fnet::IpAddress::Ipv4(_) => unreachable!(),
+    };
+
+    let sandbox = netemul::TestSandbox::new().expect("create sandbox");
+    let setup = setup_config.build::<Netstack3>(name, &sandbox).await;
+
+    let recv_socket = setup
+        .client
+        .raw_socket(
+            fposix_socket::Domain::Ipv6,
+            fposix_socket_raw::ProtocolAssociation::Associated(Ipv6Proto::Icmpv6.into()),
+        )
+        .await
+        .expect("create raw socket");
+    let recv_socket = fuchsia_async::net::DatagramSocket::new_from_socket(recv_socket)
+        .expect("create async datagram socket");
+
+    let send_socket = fuchsia_async::net::UdpSocket::bind_in_realm(&setup.client, client_sockaddr)
+        .await
+        .expect("bind send sock");
+
+    // Construct a UDP payload such that the total IPv6 packet length equals
+    // INGRESS_MTU, which exceeds the router's egress interface MTU, EGRESS_MTU.
+    const UDP_PAYLOAD_LEN: usize =
+        (INGRESS_MTU as usize) - ETHERNET_HDR_LEN_NO_TAG - IPV6_FIXED_HDR_LEN - UDP_HDR_LEN;
+    let payload = [0u8; UDP_PAYLOAD_LEN];
+
+    let sent = send_socket.send_to(&payload, server_sockaddr.into()).await.expect("send_to failed");
+    assert_eq!(sent, payload.len());
+
+    let mut buf = [0u8; 2048];
+    let mtu = async {
+        loop {
+            let (read, _from) = recv_socket.recv_from(&mut buf).await.expect("recv_from");
+            let mut bv = &buf[..read];
+            let parse_args = IcmpParseArgs::new(router_client_ipv6, client_ipv6);
+            if let Ok(icmp_packet) = Icmpv6Packet::parse(&mut bv, parse_args) {
+                match icmp_packet {
+                    Icmpv6Packet::PacketTooBig(packet_too_big) => {
+                        break packet_too_big.message().mtu();
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+    .on_timeout(ASYNC_EVENT_POSITIVE_CHECK_TIMEOUT.after_now(), || {
+        panic!("timed out waiting for PacketTooBig ICMPv6 error");
+    })
+    .await;
+
+    assert_eq!(mtu as usize, EGRESS_MTU as usize - ETHERNET_HDR_LEN_NO_TAG);
 }
