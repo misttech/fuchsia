@@ -1425,4 +1425,124 @@ TEST(SocketTest, StreamWriteBadBufferIntoExistingBufferReturnsInvalidArgs) {
   EXPECT_STATUS(local.write(0, bad_ptr, 64, &written), ZX_ERR_INVALID_ARGS);
 }
 
+TEST(SocketTest, GetPropertyRxThresholdBufferTooSmallReturnsBufferTooSmall) {
+  zx::socket local, remote;
+  ASSERT_OK(zx::socket::create(0, &local, &remote));
+
+  uint32_t val = 0;
+  EXPECT_STATUS(local.get_property(ZX_PROP_SOCKET_RX_THRESHOLD, &val, sizeof(val)),
+                ZX_ERR_BUFFER_TOO_SMALL);
+}
+
+TEST(SocketTest, GetPropertyTxThresholdBufferTooSmallReturnsBufferTooSmall) {
+  zx::socket local, remote;
+  ASSERT_OK(zx::socket::create(0, &local, &remote));
+
+  uint32_t val = 0;
+  EXPECT_STATUS(local.get_property(ZX_PROP_SOCKET_TX_THRESHOLD, &val, sizeof(val)),
+                ZX_ERR_BUFFER_TOO_SMALL);
+}
+
+TEST(SocketTest, GetPropertyRxThresholdWrongTypeReturnsWrongType) {
+  zx::vmo vmo;
+  ASSERT_OK(zx::vmo::create(1024, 0, &vmo));
+
+  size_t val = 0;
+  EXPECT_STATUS(vmo.get_property(ZX_PROP_SOCKET_RX_THRESHOLD, &val, sizeof(val)),
+                ZX_ERR_WRONG_TYPE);
+}
+
+TEST(SocketTest, GetPropertyTxThresholdWrongTypeReturnsWrongType) {
+  zx::vmo vmo;
+  ASSERT_OK(zx::vmo::create(1024, 0, &vmo));
+
+  size_t val = 0;
+  EXPECT_STATUS(vmo.get_property(ZX_PROP_SOCKET_TX_THRESHOLD, &val, sizeof(val)),
+                ZX_ERR_WRONG_TYPE);
+}
+
+TEST(SocketTest, SetPropertyRxThresholdBufferTooSmallReturnsBufferTooSmall) {
+  zx::socket local, remote;
+  ASSERT_OK(zx::socket::create(0, &local, &remote));
+
+  uint32_t val = 0;
+  EXPECT_STATUS(local.set_property(ZX_PROP_SOCKET_RX_THRESHOLD, &val, sizeof(val)),
+                ZX_ERR_BUFFER_TOO_SMALL);
+}
+
+TEST(SocketTest, SetPropertyTxThresholdBufferTooSmallReturnsBufferTooSmall) {
+  zx::socket local, remote;
+  ASSERT_OK(zx::socket::create(0, &local, &remote));
+
+  uint32_t val = 0;
+  EXPECT_STATUS(local.set_property(ZX_PROP_SOCKET_TX_THRESHOLD, &val, sizeof(val)),
+                ZX_ERR_BUFFER_TOO_SMALL);
+}
+
+TEST(SocketTest, SetPropertyRxThresholdWrongTypeReturnsWrongType) {
+  zx::vmo vmo;
+  ASSERT_OK(zx::vmo::create(1024, 0, &vmo));
+
+  size_t val = 0;
+  EXPECT_STATUS(vmo.set_property(ZX_PROP_SOCKET_RX_THRESHOLD, &val, sizeof(val)),
+                ZX_ERR_WRONG_TYPE);
+}
+
+TEST(SocketTest, SetPropertyTxThresholdWrongTypeReturnsWrongType) {
+  zx::vmo vmo;
+  ASSERT_OK(zx::vmo::create(1024, 0, &vmo));
+
+  size_t val = 0;
+  EXPECT_STATUS(vmo.set_property(ZX_PROP_SOCKET_TX_THRESHOLD, &val, sizeof(val)),
+                ZX_ERR_WRONG_TYPE);
+}
+
+TEST(SocketTest, SetPropertyRxThresholdBadBufferReturnsInvalidArgs) {
+  zx::socket local, remote;
+  ASSERT_OK(zx::socket::create(0, &local, &remote));
+
+  void* bad_ptr = reinterpret_cast<void*>(1);
+  EXPECT_STATUS(local.set_property(ZX_PROP_SOCKET_RX_THRESHOLD, bad_ptr, sizeof(size_t)),
+                ZX_ERR_INVALID_ARGS);
+}
+
+TEST(SocketTest, SetPropertyTxThresholdBadBufferReturnsInvalidArgs) {
+  zx::socket local, remote;
+  ASSERT_OK(zx::socket::create(0, &local, &remote));
+
+  void* bad_ptr = reinterpret_cast<void*>(1);
+  EXPECT_STATUS(local.set_property(ZX_PROP_SOCKET_TX_THRESHOLD, bad_ptr, sizeof(size_t)),
+                ZX_ERR_INVALID_ARGS);
+}
+
+TEST(SocketTest, GetInfoSocketWrongTypeReturnsWrongType) {
+  zx::vmo vmo;
+  ASSERT_OK(zx::vmo::create(1024, 0, &vmo));
+
+  zx_info_socket_t info{};
+  EXPECT_STATUS(vmo.get_info(ZX_INFO_SOCKET, &info, sizeof(info), nullptr, nullptr),
+                ZX_ERR_WRONG_TYPE);
+}
+
+TEST(SocketTest, GetInfoSocketBufferTooSmallReturnsBufferTooSmall) {
+  zx::socket local, remote;
+  ASSERT_OK(zx::socket::create(0, &local, &remote));
+
+  uint32_t small_buf = 0;
+  EXPECT_STATUS(local.get_info(ZX_INFO_SOCKET, &small_buf, sizeof(small_buf), nullptr, nullptr),
+                ZX_ERR_BUFFER_TOO_SMALL);
+}
+
+TEST(SocketTest, GetInfoSocketWithoutInspectRightReturnsAccessDenied) {
+  zx::socket local, remote;
+  ASSERT_OK(zx::socket::create(0, &local, &remote));
+
+  zx::socket reduced;
+  ASSERT_OK(local.replace(ZX_DEFAULT_SOCKET_RIGHTS & ~ZX_RIGHT_INSPECT, &reduced));
+
+  zx_info_socket_t info{};
+  EXPECT_STATUS(reduced.get_info(ZX_INFO_SOCKET, &info, sizeof(info), nullptr, nullptr),
+                ZX_ERR_ACCESS_DENIED);
+}
+
 }  // namespace
