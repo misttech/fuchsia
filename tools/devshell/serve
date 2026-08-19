@@ -89,6 +89,11 @@ while (($#)); do
   shift
 done
 
+# Check if running in a non-interactive environment (no TTY attached to stdin/stdout)
+if [[ ! -t 0 || ! -t 1 ]] && [[ "${server_mode}" == "--foreground" ]]; then
+  fx-info "Running fx serve in foreground mode. Use 'fx serve --background' for non-blocking execution."
+fi
+
 if fx-is-bringup; then
   fx-error "$0 is not supported in the bringup build configuration, as there are no package features in bringup."
   exit 1
