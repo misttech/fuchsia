@@ -20,7 +20,7 @@
   use: [
     {
       service: "fuchsia.hardware.platform.device.Service",
-      parent: "pdev",
+      name: "pdev",
       primary: true,
       bind: {
         one_of: [
@@ -44,11 +44,11 @@
     },
     {
       service: "fuchsia.hardware.registers.Service",
-      parent: "register-reset",
+      name: "register-reset",
     },
     {
       service: "fuchsia.hardware.clock.Service",
-      parent: "clock-gp0-pll",
+      name: "clock-gp0-pll",
       availability: "optional"
     },
     { service: "fuchsia.driver.compat.Service" },

@@ -79,10 +79,7 @@ pub fn compile_driver(args: &CompileDriverArgs, year: &str) -> Result<(), anyhow
             let primary = obj.remove("primary").and_then(|v| v.as_bool()).unwrap_or(false);
             let transport_val = obj.remove("transport");
             let bind_val = obj.remove("requirements").or_else(|| obj.remove("bind"));
-            let parent_val = obj
-                .remove("name")
-                .or_else(|| obj.remove("instance_name"))
-                .or_else(|| obj.remove("parent"));
+            let parent_val = obj.remove("name").or_else(|| obj.remove("instance_name"));
             if let Some(parent_val) = parent_val {
                 if let Some(parent_name) = parent_val.as_str() {
                     let service_name = obj
