@@ -174,7 +174,6 @@ fuchsia_product_configuration(
             },
             "ui": {
                 "display_composition": True,
-                "use_flatland2_uberstruct_schema": True,
                 "enabled": True,
                 "supported_input_devices": [
                     "button",

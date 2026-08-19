@@ -62,10 +62,8 @@ pub struct PlatformUiConfig {
     #[serde(skip_serializing_if = "crate::common::is_default")]
     pub display_composition_enable_heuristics: bool,
 
-    /// Scenic uses the Flatland2 uberstruct schema if true.
-    ///
-    /// WARNING: This is a temporary, internal platform migration knob. Do not use.
-    /// This field will be deleted when Flatland1 is removed in Step 130.
+    /// Scenic *always* uses the Flatland2 uberstruct schema.
+    /// This field is ignored. Delete ASAP.
     #[serde(skip_serializing_if = "crate::common::is_default")]
     pub use_flatland2_uberstruct_schema: bool,
 
@@ -138,7 +136,7 @@ impl Default for PlatformUiConfig {
             use_separate_input_thread: true,
             display_composition: false,
             display_composition_enable_heuristics: false,
-            use_flatland2_uberstruct_schema: true,
+            use_flatland2_uberstruct_schema: false,
             supported_input_devices: Default::default(),
             display_rotation: Default::default(),
             display_pixel_density: Default::default(),

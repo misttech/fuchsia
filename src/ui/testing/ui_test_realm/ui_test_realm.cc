@@ -350,13 +350,6 @@ void UITestRealm::ConfigureScenic() {
       component_testing::Config{.name = "fuchsia.ui.VisualDebuggingLevel"},
   };
 
-  // If the test did not specify a preference for the Flatland2 UberStruct schema,
-  // we route it from the config child so it falls back to the default in default_for_test.json5.
-  if (!config_.use_flatland2_uberstruct_schema.has_value()) {
-    config_capabilities.push_back(
-        component_testing::Config{.name = "fuchsia.scenic.UseFlatland2UberstructSchema"});
-  }
-
   realm_builder_.AddRoute({
       .capabilities = std::move(config_capabilities),
       .source = component_testing::ChildRef{"config"},
@@ -377,17 +370,6 @@ void UITestRealm::ConfigureScenic() {
       component_testing::Config{.name = "fuchsia.scenic.DisplayComposition"},
       component_testing::Config{.name = "fuchsia.scenic.DisplayRotation"},
   };
-
-  // If the test explicitly pinned the Flatland2 UberStruct schema, we route it from
-  // SelfRef to override the packaged default from default_for_test.json5.
-  if (config_.use_flatland2_uberstruct_schema.has_value()) {
-    configurations.push_back({
-        .name = "fuchsia.scenic.UseFlatland2UberstructSchema",
-        .value = ConfigValue::Bool(*config_.use_flatland2_uberstruct_schema),
-    });
-    self_capabilities.push_back(
-        component_testing::Config{.name = "fuchsia.scenic.UseFlatland2UberstructSchema"});
-  }
 
   realm_builder_.AddConfiguration(std::move(configurations));
   realm_builder_.AddRoute({

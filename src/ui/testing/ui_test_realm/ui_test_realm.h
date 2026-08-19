@@ -106,10 +106,6 @@ class UITestRealm {
 
     // Overrides the default display config.
     DisplayConfig display_config = {};
-
-    // Selects scenic's UberStruct schema. When unset, scenic uses the value baked
-    // into its structured config (default_for_test.json5).
-    std::optional<bool> use_flatland2_uberstruct_schema = std::nullopt;
   };
 
   explicit UITestRealm(Config config);

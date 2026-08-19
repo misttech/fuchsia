@@ -87,7 +87,6 @@
                 "fuchsia.scenic.MinDisplayVerticalResolutionPx",
                 "fuchsia.scenic.PointerAutoFocus",
                 "fuchsia.scenic.Renderer",
-                "fuchsia.scenic.UseFlatland2UberstructSchema",
                 "fuchsia.scenic.UseSeparateInputThread",
                 "fuchsia.session.AutoLaunch",
                 "fuchsia.session.EnableDebugShortcut",

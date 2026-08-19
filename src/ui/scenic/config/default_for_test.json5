@@ -5,7 +5,6 @@
     pointer_auto_focus: true,
     display_composition: true,
     display_composition_enable_heuristics: false,
-    use_flatland2_uberstruct_schema: true,
     i_can_haz_display_id: -1,
     i_can_haz_display_mode: -1,
     display_rotation: 270,
