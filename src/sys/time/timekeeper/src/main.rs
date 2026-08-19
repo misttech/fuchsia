@@ -363,17 +363,28 @@ async fn main() -> Result<()> {
 
     let scope = fasync::Scope::new();
 
+    let hrtimer_proxy = if config.has_always_on_counter() || serve_fuchsia_time_alarms {
+        match alarms::connect_to_hrtimer_async().await {
+            Ok(proxy) => Some(proxy),
+            Err(err) => {
+                if serve_fuchsia_time_alarms {
+                    return Err(err).context("could not connect to hrtimer for wake alarms");
+                }
+                warn!(
+                    "could not connect to fuchsia.hardware.hrtimer/Device, falling back to non-persistent RTC: {err:?}"
+                );
+                None
+            }
+        }
+    } else {
+        None
+    };
+
     if config.has_always_on_counter() {
         // A read only RTC implementation using an always-on counter.
-        let hrtimer_proxy = alarms::connect_to_hrtimer_async().await
-            .map_err(|err| {
-                warn!("could not connect to fuchsia.hardware.hrtimer/Device, falling back to non-persistent RTC: {err:?}");
-                err
-            })
-            .ok();
         let read_only_rtc = rtc::new_read_only_rtc(
             persistent_state.clone(),
-            hrtimer_proxy,
+            hrtimer_proxy.clone(),
             config.get_rtc_initialization_policy(),
         );
         scope.spawn_local(async move {
@@ -448,17 +459,9 @@ async fn main() -> Result<()> {
     let timer_loop = if serve_fuchsia_time_alarms {
         // Instantiate connections to wake alarms. Wait for hrtimer device to enumerate before
         // proceeding and exit if it is failed to be found.
-        alarms::connect_to_hrtimer_async()
-            .await
-            .inspect_err(|e| error!("could not connect to hrtimer: {}", e))
-            .map(|proxy| {
-                Rc::new(alarms::Loop::new(
-                    scope.to_handle(),
-                    proxy,
-                    loop_inspect,
-                    utc_clock_for_alarms,
-                ))
-            })?
+        let proxy = hrtimer_proxy
+            .expect("hrtimer_proxy must be present if serve_fuchsia_time_alarms is true");
+        Rc::new(alarms::Loop::new(scope.to_handle(), proxy, loop_inspect, utc_clock_for_alarms))
     } else {
         // Emulate wake alarms. This is used on platforms that do not have
         // power management, and will *not* actually sleep.
