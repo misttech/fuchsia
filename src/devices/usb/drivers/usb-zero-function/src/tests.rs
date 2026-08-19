@@ -237,12 +237,18 @@ async fn test_vendor_requests() {
     let (func_client, func_server) = create_endpoints::<fusb_function::UsbFunctionMarker>();
     let (ep_in_client, _ep_in_server) = create_endpoints::<fusb_endpoint::EndpointMarker>();
     let (ep_out_client, _ep_out_server) = create_endpoints::<fusb_endpoint::EndpointMarker>();
+    let (ep_intr_in_client, _ep_intr_in_server) =
+        create_endpoints::<fusb_endpoint::EndpointMarker>();
+    let (ep_intr_out_client, _ep_intr_out_server) =
+        create_endpoints::<fusb_endpoint::EndpointMarker>();
 
     let scope = Arc::new(fasync::Scope::new_with_name("test_vendor"));
     scope.spawn_local(run_mock_function(func_server.into_stream()));
     let func_client_proxy = func_client.into_proxy();
     let ep_in_proxy = ep_in_client.into_proxy();
     let ep_out_proxy = ep_out_client.into_proxy();
+    let ep_intr_in_proxy = ep_intr_in_client.into_proxy();
+    let ep_intr_out_proxy = ep_intr_out_client.into_proxy();
     scope.spawn_local(async move {
         let mut zero_function = UsbZeroFunctionDevice::new(
             func_client_proxy,
@@ -251,7 +257,9 @@ async fn test_vendor_requests() {
             ep_out_proxy,
             TEST_EP_OUT_ADDR,
             0,
+            ep_intr_in_proxy,
             TEST_EP_INTR_IN_ADDR,
+            ep_intr_out_proxy,
             TEST_EP_INTR_OUT_ADDR,
         );
         zero_function.handle_requests(iface_server.into_stream()).await;
@@ -571,6 +579,8 @@ async fn test_set_and_get_interface() {
     let (func_c, func_s) = create_endpoints::<fusb_function::UsbFunctionMarker>();
     let (ep_in_c, ep_in_s) = create_endpoints::<fusb_endpoint::EndpointMarker>();
     let (ep_out_c, ep_out_s) = create_endpoints::<fusb_endpoint::EndpointMarker>();
+    let (ep_intr_in_c, _) = create_endpoints::<fusb_endpoint::EndpointMarker>();
+    let (ep_intr_out_c, _) = create_endpoints::<fusb_endpoint::EndpointMarker>();
 
     let scope = Arc::new(fasync::Scope::new_with_name("test_set_get_iface"));
     scope.spawn_local(run_mock_function(func_s.into_stream()));
@@ -589,7 +599,13 @@ async fn test_set_and_get_interface() {
         scope.clone(),
     ));
 
-    let (f_p, ep_i, ep_o) = (func_c.into_proxy(), ep_in_c.into_proxy(), ep_out_c.into_proxy());
+    let (f_p, ep_i, ep_o, ep_ii, ep_io) = (
+        func_c.into_proxy(),
+        ep_in_c.into_proxy(),
+        ep_out_c.into_proxy(),
+        ep_intr_in_c.into_proxy(),
+        ep_intr_out_c.into_proxy(),
+    );
     scope.spawn_local(async move {
         UsbZeroFunctionDevice::new(
             f_p,
@@ -598,7 +614,9 @@ async fn test_set_and_get_interface() {
             ep_o,
             TEST_EP_OUT_ADDR,
             0,
+            ep_ii,
             TEST_EP_INTR_IN_ADDR,
+            ep_io,
             TEST_EP_INTR_OUT_ADDR,
         )
         .handle_requests(iface_s.into_stream())
@@ -630,6 +648,8 @@ async fn test_endpoint_stall_state() {
     let (func_client, func_server) = create_endpoints::<fusb_function::UsbFunctionMarker>();
     let (ep_in_client, _ep_in_server) = create_endpoints::<fusb_endpoint::EndpointMarker>();
     let (ep_out_client, _ep_out_server) = create_endpoints::<fusb_endpoint::EndpointMarker>();
+    let (ep_intr_in_client, _) = create_endpoints::<fusb_endpoint::EndpointMarker>();
+    let (ep_intr_out_client, _) = create_endpoints::<fusb_endpoint::EndpointMarker>();
 
     let scope = Arc::new(fasync::Scope::new_with_name("test_stall"));
     scope.spawn_local(run_mock_function(func_server.into_stream()));
@@ -641,7 +661,9 @@ async fn test_endpoint_stall_state() {
         ep_out_client.into_proxy(),
         TEST_EP_OUT_ADDR,
         0,
+        ep_intr_in_client.into_proxy(),
         TEST_EP_INTR_IN_ADDR,
+        ep_intr_out_client.into_proxy(),
         TEST_EP_INTR_OUT_ADDR,
     );
 
@@ -685,6 +707,8 @@ async fn test_standard_chapter_9_halt_requests() {
     let (func_client, func_server) = create_endpoints::<fusb_function::UsbFunctionMarker>();
     let (ep_in_client, _ep_in_server) = create_endpoints::<fusb_endpoint::EndpointMarker>();
     let (ep_out_client, _ep_out_server) = create_endpoints::<fusb_endpoint::EndpointMarker>();
+    let (ep_intr_in_client, _) = create_endpoints::<fusb_endpoint::EndpointMarker>();
+    let (ep_intr_out_client, _) = create_endpoints::<fusb_endpoint::EndpointMarker>();
 
     let scope = Arc::new(fasync::Scope::new_with_name("test_standard_halt"));
     scope.spawn_local(run_mock_function(func_server.into_stream()));
@@ -696,7 +720,9 @@ async fn test_standard_chapter_9_halt_requests() {
         ep_out_client.into_proxy(),
         TEST_EP_OUT_ADDR,
         0, // interface_num
+        ep_intr_in_client.into_proxy(),
         TEST_EP_INTR_IN_ADDR,
+        ep_intr_out_client.into_proxy(),
         TEST_EP_INTR_OUT_ADDR,
     );
 
@@ -790,6 +816,8 @@ async fn test_standard_endpoint_halt() {
     let (func_c, func_s) = create_endpoints::<fusb_function::UsbFunctionMarker>();
     let (ep_in_c, _) = create_endpoints::<fusb_endpoint::EndpointMarker>();
     let (ep_out_c, _) = create_endpoints::<fusb_endpoint::EndpointMarker>();
+    let (ep_intr_in_c, _) = create_endpoints::<fusb_endpoint::EndpointMarker>();
+    let (ep_intr_out_c, _) = create_endpoints::<fusb_endpoint::EndpointMarker>();
 
     let scope = Arc::new(fasync::Scope::new_with_name("test_halt"));
     scope.spawn_local(run_mock_function(func_s.into_stream()));
@@ -800,7 +828,9 @@ async fn test_standard_endpoint_halt() {
         ep_out_c.into_proxy(),
         TEST_EP_OUT_ADDR,
         0, // interface_num
+        ep_intr_in_c.into_proxy(),
         TEST_EP_INTR_IN_ADDR,
+        ep_intr_out_c.into_proxy(),
         TEST_EP_INTR_OUT_ADDR,
     );
 
