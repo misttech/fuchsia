@@ -8,7 +8,7 @@ use fuchsia_sync::Mutex;
 use futures::FutureExt;
 use futures::channel::oneshot::Sender as OneshotSender;
 use futures::stream::Stream as StreamTrait;
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::convert::Infallible;
 use std::future::Future;
 use std::num::NonZeroU32;
@@ -427,6 +427,7 @@ struct ClientInner {
     transactions: HashMap<NonZeroU32, responder::Responder>,
     channel_read_states: HashMap<proto::HandleId, ChannelReadState>,
     socket_read_states: HashMap<proto::HandleId, SocketReadState>,
+    handles: HashSet<proto::HandleId>,
     next_tx_id: u32,
     waiting_to_close: Vec<proto::HandleId>,
     waiting_to_close_waker: Waker,
@@ -440,6 +441,18 @@ struct ClientInner {
 }
 
 impl ClientInner {
+    /// Allocate a new HID, which should be suitable for use with the connected FDomain.
+    fn new_hid(&mut self) -> proto::NewHandleId {
+        self.process_waiting_to_close();
+        loop {
+            let id = rand::random::<u32>() >> 1;
+            let hid = proto::HandleId { id };
+            if id != 0 && self.handles.insert(hid) {
+                return proto::NewHandleId { id };
+            }
+        }
+    }
+
     /// Serialize and enqueue a new transaction, including header and transaction ID.
     fn request<S: fidl_message::Body>(&mut self, ordinal: u64, request: S, responder: Responder) {
         if ordinal != ordinals::CLOSE {
@@ -468,6 +481,7 @@ impl ClientInner {
             for handle in &handles {
                 let _ = self.channel_read_states.remove(handle);
                 let _ = self.socket_read_states.remove(handle);
+                self.handles.remove(handle);
             }
             self.request(
                 ordinals::CLOSE,
@@ -688,6 +702,7 @@ pub(crate) static DEAD_CLIENT: LazyLock<Arc<Client>> = LazyLock::new(|| {
         transactions: HashMap::new(),
         channel_read_states: HashMap::new(),
         socket_read_states: HashMap::new(),
+        handles: HashSet::new(),
         next_tx_id: 1,
         waiting_to_close: Vec::new(),
         waiting_to_close_waker: std::task::Waker::noop().clone(),
@@ -771,6 +786,7 @@ impl Client {
             transactions: HashMap::new(),
             socket_read_states: HashMap::new(),
             channel_read_states: HashMap::new(),
+            handles: HashSet::new(),
             next_tx_id: 1,
             waiting_to_close: Vec::new(),
             waiting_to_close_waker: std::task::Waker::noop().clone(),
@@ -801,13 +817,14 @@ impl Client {
     /// Get the namespace for the connected FDomain. Calling this more than once is an error.
     pub async fn namespace(self: &Arc<Self>) -> Result<Channel, Error> {
         let new_handle = self.new_hid();
+        let channel = Channel(Handle { id: new_handle.id, client: Arc::downgrade(self) });
         self.transaction(
             ordinals::GET_NAMESPACE,
             proto::FDomainGetNamespaceRequest { new_handle },
             Responder::Namespace,
         )
         .await?;
-        Ok(Channel(Handle { id: new_handle.id, client: Arc::downgrade(self) }))
+        Ok(channel)
     }
 
     /// Create a new channel in the connected FDomain.
@@ -944,11 +961,7 @@ impl Client {
 
     /// Allocate a new HID, which should be suitable for use with the connected FDomain.
     pub(crate) fn new_hid(&self) -> proto::NewHandleId {
-        // TODO: On the target side we have to keep a table of these which means
-        // we can automatically detect collisions in the random value. On the
-        // client side we'd have to add a whole data structure just for that
-        // purpose. Should we?
-        proto::NewHandleId { id: rand::random::<u32>() >> 1 }
+        self.0.lock().new_hid()
     }
 
     /// Create a future which sends a FIDL message to the connected FDomain and
@@ -1161,7 +1174,7 @@ impl Client {
     /// Check that all the given handles are safe to transfer through a channel
     /// e.g. that there's no chance of in-flight reads getting dropped.
     pub(crate) fn clear_handles_for_transfer(&self, handles: &proto::Handles) {
-        let inner = self.0.lock();
+        let mut inner = self.0.lock();
         match handles {
             proto::Handles::Handles(handles) => {
                 for handle in handles {
@@ -1170,16 +1183,20 @@ impl Client {
                             || inner.socket_read_states.contains_key(handle)),
                         "Tried to transfer handle after reading"
                     );
+                    inner.handles.remove(handle);
                 }
             }
             proto::Handles::Dispositions(dispositions) => {
                 for disposition in dispositions {
                     match &disposition.handle {
-                        proto::HandleOp::Move_(handle) => assert!(
-                            !(inner.channel_read_states.contains_key(handle)
-                                || inner.socket_read_states.contains_key(handle)),
-                            "Tried to transfer handle after reading"
-                        ),
+                        proto::HandleOp::Move_(handle) => {
+                            assert!(
+                                !(inner.channel_read_states.contains_key(handle)
+                                    || inner.socket_read_states.contains_key(handle)),
+                                "Tried to transfer handle after reading"
+                            );
+                            inner.handles.remove(handle);
+                        }
                         // Pretty sure this should be fine regardless of read state.
                         proto::HandleOp::Duplicate(_) => (),
                     }

@@ -121,13 +121,14 @@ impl HandleRef<'_> {
         let handle = self.0.proto();
         let new_handle = client.new_hid();
         let id = new_handle.id;
+        let ret = Handle { id, client: Arc::downgrade(&client) };
         client
             .transaction(
                 ordinals::DUPLICATE,
                 proto::FDomainDuplicateRequest { handle, new_handle, rights },
                 Responder::Duplicate,
             )
-            .map(move |res| res.map(|_| Handle { id, client: Arc::downgrade(&client) }))
+            .map(move |res| res.map(|_| ret))
     }
 
     /// Assert and deassert signals on this handle.
@@ -313,9 +314,16 @@ impl Handle {
     /// Close this handle. Surfaces errors that dropping the handle will not.
     pub fn close(self) -> impl Future<Output = Result<(), Error>> {
         let client = self.client();
+        let handle = self.take_proto();
+        {
+            let mut client = client.0.lock();
+            let _ = client.channel_read_states.remove(&handle);
+            let _ = client.socket_read_states.remove(&handle);
+            client.handles.remove(&handle);
+        }
         client.transaction(
             ordinals::CLOSE,
-            proto::FDomainCloseRequest { handles: vec![self.take_proto()] },
+            proto::FDomainCloseRequest { handles: vec![handle] },
             Responder::Close,
         )
     }
@@ -325,12 +333,13 @@ impl Handle {
     pub fn replace(self, rights: fidl::Rights) -> impl Future<Output = Result<Handle, Error>> {
         let client = self.client();
         let handle = self.take_proto();
-        {
+        let new_handle = {
             let mut client = client.0.lock();
             let _ = client.channel_read_states.remove(&handle);
             let _ = client.socket_read_states.remove(&handle);
-        }
-        let new_handle = client.new_hid();
+            client.handles.remove(&handle);
+            client.new_hid()
+        };
 
         let id = new_handle.id;
         let ret = Handle { id, client: Arc::downgrade(&client) };

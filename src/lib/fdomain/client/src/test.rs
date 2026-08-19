@@ -746,3 +746,69 @@ async fn failed_transport() {
     let TestError(err) = err.get_ref().unwrap().downcast_ref().unwrap();
     assert_eq!("Connection failed", err);
 }
+
+#[fuchsia::test]
+async fn handle_id_collision_avoidance() {
+    let (client, _) = TestFDomain::new_client();
+
+    let mut handles = Vec::new();
+    let mut ids = std::collections::HashSet::new();
+
+    // Allocate many handles and ensure all generated IDs are distinct, non-zero,
+    // and have bit 31 clear.
+    for _ in 0..1000 {
+        let (a, b) = client.create_channel();
+        let id_a = a.as_handle_ref().u32_id();
+        let id_b = b.as_handle_ref().u32_id();
+
+        assert_ne!(id_a, 0);
+        assert_ne!(id_b, 0);
+        assert_eq!(id_a & (1 << 31), 0);
+        assert_eq!(id_b & (1 << 31), 0);
+
+        assert!(ids.insert(id_a), "Duplicate handle ID {id_a} allocated!");
+        assert!(ids.insert(id_b), "Duplicate handle ID {id_b} allocated!");
+
+        handles.push((a, b));
+    }
+}
+
+#[fuchsia::test]
+async fn handle_lifecycle_tracking() {
+    let (client, _) = TestFDomain::new_client();
+
+    let initial_count = client.0.lock().handles.len();
+    assert_eq!(initial_count, 0);
+
+    // Create channel -> 2 handles
+    let (a, b) = client.create_channel();
+    assert_eq!(client.0.lock().handles.len(), 2);
+    assert!(client.0.lock().handles.contains(&a.as_handle_ref().proto()));
+    assert!(client.0.lock().handles.contains(&b.as_handle_ref().proto()));
+
+    // Create event -> 1 more handle
+    let event = client.create_event();
+    assert_eq!(client.0.lock().handles.len(), 3);
+    assert!(client.0.lock().handles.contains(&event.as_handle_ref().proto()));
+
+    // Duplicate event -> 1 more handle
+    let duplicated = event.duplicate_handle(fidl::Rights::SAME_RIGHTS).await.unwrap();
+    assert_eq!(client.0.lock().handles.len(), 4);
+    assert!(client.0.lock().handles.contains(&duplicated.as_handle_ref().proto()));
+
+    // Explicit close event -> removes 1 handle
+    event.close().await.unwrap();
+    assert_eq!(client.0.lock().handles.len(), 3);
+
+    // Transfer duplicated handle through channel -> removes 1 handle
+    a.fdomain_write(b"transfer", vec![duplicated.into_handle()]).await.unwrap();
+    assert_eq!(client.0.lock().handles.len(), 2);
+
+    // Explicit close b -> removes 1 handle
+    b.close().await.unwrap();
+    assert_eq!(client.0.lock().handles.len(), 1);
+
+    // Explicit close a -> removes last handle
+    a.close().await.unwrap();
+    assert_eq!(client.0.lock().handles.len(), 0);
+}
