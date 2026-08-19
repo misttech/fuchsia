@@ -28,19 +28,32 @@ Migrate GN templates to Bazel following the mapping below.
 
 
 ### Step 2: Migrate go_binary target
-1. Add `load("//build/bazel/rules/host:defs.bzl", "go_binary_host_tool")` to the BUILD.bazel file.
+Attributes mapping table for all `go_binary` targets.
+| GN field     | Bazel attribute             | Description                                                        |
+| ------------ | --------------------------- | ------------------------------------------------------------------ |
+| `sources`    | `srcs`, `embedsrcs`, `data` | GN mixes them; Bazel separates them.                               |
+| `embedsrcs`  | `embedsrcs`                 |                                                                    |
+| `source_dir` | N/A                         | Not supported in Bazel. Use full relative paths in `srcs`.         |
+| `data`       | `data`                      |                                                                    |
+| `deps`       | `deps`                      |                                                                    |
+| `embed`      | `embed`                     |                                                                    |
 
-2. Migrate attributes from `go_binary` to `go_binary_host_tool` following the mapping below.
-| GN field     | Bazel attribute             | Description                                                |
-| ------------ | --------------------------- | ---------------------------------------------------------- |
-| `sources`    | `srcs`, `embedsrcs`, `data` | GN mixes them; Bazel separates them.                       |
-| `embedsrcs`  | `embedsrcs`                 |                                                            |
-| `source_dir` | N/A                         | Not supported in Bazel. Use full relative paths in `srcs`. |
-| `data`       | `data`                      |                                                            |
-| `deps`       | `deps`                      |                                                            |
-| `embed`      | `embed`                     |                                                            |
+1. Refer to "target_compatible_with" skill to identify if the target is a tool in the IDK.
+**For tool not in the IDK, do:**
+* Add `load("//build/bazel/rules/host:defs.bzl", "go_binary_host_tool")` to the BUILD.bazel file.
+* Migrate the GN `go_binary` template to Bazel `go_binary_host_tool` macro.
 
-3. Add `# @bazel2gn:skip` on the line immediately preceding `go_binary_host_tool` in `BUILD.bazel` to instruct the synchronizer to ignore it.
+**For tool in the IDK, do:**
+* Add `load("//build/bazel/rules/idk:idk_host_tool.bzl", "idk_go_binary_host_tool")` to the BUILD.bazel file.
+* Migrate the GN `go_binary` template to Bazel `idk_go_binary_host_tool` macro and following the extra mapping below.
+| see description | `api_area`                  | `sdk_area` in corresponding `sdk_host_tool()` GN target.         |
+|                 |                             | If not provided, select an area based on the definitions within |
+|                 |                             | //docs/contribute/governance/areas/_areas.yaml.                 |
+| see description | `idk_name`                  | `sdk_name` in corresponding `sdk_host_tool()` GN target.         |
+|                 |                             | If not provided, use the same name with the GN target.          |
+| see description | `category`                  | `category` in corresponding `sdk_host_tool()` GN target.         |
+
+2. Add `# @bazel2gn:skip` on the line immediately preceding the host tool binary target in the BUILD.bazel file to instruct the synchronizer to ignore it.
 
 
 ### Step 3: Migrate go_test target
@@ -107,8 +120,8 @@ synchronized back to GN as `go_binary` rules.
 - **Pitfall**: Running `bazel2gn` blindly will generate conflicting
   `go_binary` targets in GN.
 - **Fix**: Add `# @bazel2gn:skip` on the line immediately preceding
-  `go_binary_host_tool` in `BUILD.bazel` to instruct the synchronizer to
-  ignore it.
+  the host tool binary target in the BUILD.bazel file to instruct the
+  synchronizer to ignore it.
 
 ### 4. Missing `verify_bazel2gn` Targets
 
