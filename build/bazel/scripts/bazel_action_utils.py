@@ -299,6 +299,7 @@ class BazelGlobalArguments(object):
     upload_build_events: str | None
     quiet: bool
     sandbox_debug: bool
+    auto_refresh_compdb: bool
 
     @staticmethod
     def create_from_build_dir(build_dir: Path) -> "BazelGlobalArguments":
@@ -316,6 +317,7 @@ class BazelGlobalArguments(object):
         with (build_dir / "bazel_args" / "global_args.json").open("rb") as f:
             content = json.load(f)
             upload_build_events = content["upload_build_events"]
+            auto_refresh_compdb = content["auto_refresh_compdb"]
 
         # Get settings from the build environment.
         quiet = os.environ.get("FX_BUILD_QUIET") == "1"
@@ -327,6 +329,7 @@ class BazelGlobalArguments(object):
             ),
             quiet=quiet,
             sandbox_debug=sandbox_debug,
+            auto_refresh_compdb=auto_refresh_compdb,
         )
 
 

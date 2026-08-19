@@ -17,6 +17,7 @@ from pathlib import Path
 _SCRIPT_DIR = os.path.dirname(__file__)
 sys.path.insert(0, _SCRIPT_DIR)
 import bazel_action_impl
+import bazel_compdb_utils
 import build_utils
 from bazel_action_file_copy_utils import write_file_if_changed
 from bazel_action_utils import (
@@ -234,6 +235,36 @@ def main() -> int:
                 extra_outputs=bazel_action_impl.BazelExtraOutputs(),
                 time_profile=time_profile,
             )
+
+            if global_bazel_args.auto_refresh_compdb:
+                compdb_file = (
+                    bazel_paths.ninja_build_dir / "compile_commands.json"
+                )
+                time_profile.start(
+                    "generate_compdb",
+                    "Generate {}".format(compdb_file),
+                )
+                compile_commands: list[dict[str, T.Any]] = []
+                if compdb_file.exists() and compdb_file.stat().st_size > 0:
+                    with open(compdb_file, "r") as f:
+                        compile_commands = json.load(f)
+                compile_commands.extend(
+                    bazel_compdb_utils.compdb_for_labels(
+                        bazel_paths.ninja_build_dir,
+                        str(bazel_paths.launcher),
+                        action_result.configured_args,
+                        [
+                            target_info.bazel_target
+                            for target_info in bazel_target_infos
+                        ],
+                    )
+                )
+                write_file_if_changed(
+                    compdb_file,
+                    json.dumps(
+                        bazel_compdb_utils.dedupe(compile_commands), indent=2
+                    ),
+                )
 
             # Update the depfiles data and the stamp file
             for target, sources in action_result.source_files.items():
