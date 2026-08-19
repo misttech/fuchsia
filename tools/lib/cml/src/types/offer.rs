@@ -21,7 +21,6 @@ use serde::{Deserialize, Serialize};
 
 use std::fmt;
 use std::fmt::Write;
-use std::path::PathBuf;
 #[allow(unused)] // A test-only macro is defined outside of a test builds.
 use std::str::FromStr;
 use std::sync::Arc;
@@ -407,7 +406,7 @@ pub struct OneOrManyOfferFromRefs;
 #[derive(Debug, Clone, Serialize)]
 pub struct ContextOffer {
     #[serde(skip)]
-    pub origin: Arc<PathBuf>,
+    pub origin: Arc<std::path::Path>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub service: Option<ContextSpanned<OneOrMany<Name>>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -536,7 +535,7 @@ impl ContextCapabilityClause for ContextOffer {
         self.config = o;
     }
 
-    fn origin(&self) -> &Arc<PathBuf> {
+    fn origin(&self) -> &Arc<std::path::Path> {
         &self.origin
     }
 
@@ -610,7 +609,7 @@ impl Eq for ContextOffer {}
 
 impl Default for ContextOffer {
     fn default() -> Self {
-        let synthetic_origin = Arc::new(PathBuf::from("synthetic"));
+        let synthetic_origin: Arc<std::path::Path> = Arc::from(std::path::Path::new("synthetic"));
 
         Self {
             from: ContextSpanned {
@@ -664,7 +663,7 @@ impl FromClauseContext for ContextOffer {
 impl Hydrate for Offer {
     type Output = ContextOffer;
 
-    fn hydrate(self, file: &Arc<PathBuf>) -> Result<Self::Output, Error> {
+    fn hydrate(self, file: &Arc<std::path::Path>) -> Result<Self::Output, Error> {
         Ok(ContextOffer {
             origin: file.clone(),
             service: hydrate_opt_simple(self.service, file),
@@ -772,7 +771,7 @@ pub fn offer_to_all_would_duplicate_context(
 impl ContextOffer {
     pub fn empty(from: OneOrMany<OfferFromRef>, to: OneOrMany<OfferToRef>) -> Self {
         Self {
-            origin: std::sync::Arc::new(std::path::PathBuf::from("programmatic_manifest.cml")),
+            origin: std::sync::Arc::from(std::path::Path::new("programmatic_manifest.cml")),
             from: synthetic_span(from),
             to: synthetic_span(to),
             protocol: None,

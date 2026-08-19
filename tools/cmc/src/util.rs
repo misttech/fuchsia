@@ -57,7 +57,7 @@ pub(crate) fn read_cml_tolerate_gn_metadata(
     file: &std::path::Path,
 ) -> Result<Vec<cml::types::document::DocumentContext>, Error> {
     let buffer = read_file_to_string(file)?;
-    let file_arc = Arc::new(file.to_path_buf());
+    let file_arc: Arc<std::path::Path> = Arc::from(file);
 
     let multiple_cml: Result<Vec<serde_json::Value>, _> = serde_json5::from_str(&buffer);
 

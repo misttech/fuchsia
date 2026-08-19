@@ -231,7 +231,7 @@ fn value_to_dictionary_value_without_span(
 
 fn value_to_dictionary_value(
     value: Value,
-    origin: &Arc<PathBuf>,
+    origin: &Arc<std::path::Path>,
 ) -> Result<Option<Box<fdata::DictionaryValue>>, Error> {
     match value {
         Value::Null => Ok(None),
@@ -2414,7 +2414,7 @@ pub mod test_util {
        ($($input:tt)+) => {
             {
                 let json_str = serde_json::json!($($input)+).to_string();
-                let dummy_path = std::sync::Arc::new(std::path::PathBuf::from("macro_generated.cml"));
+                let dummy_path = std::sync::Arc::from(std::path::Path::new("macro_generated.cml"));
 
                 crate::types::document::parse_and_hydrate(dummy_path, &json_str)
                     .expect("CML parsing and hydration failed")

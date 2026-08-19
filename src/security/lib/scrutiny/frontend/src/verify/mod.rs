@@ -285,7 +285,7 @@ mod tests {
         let mut manifests = vec![];
         for (uri, json) in cmls {
             let json_str = serde_json::to_string(&json)?;
-            let file_path = std::sync::Arc::new(std::path::PathBuf::from(uri));
+            let file_path = std::sync::Arc::from(std::path::Path::new(uri));
             let doc = cml::types::document::parse_and_hydrate(file_path, &json_str)?;
             let decl = cml::compile(&doc, cml::CompileOptions::default())?.fidl_into_native();
 

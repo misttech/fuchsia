@@ -11,7 +11,6 @@ use fidl_fuchsia_component_decl as fdecl;
 use fidl_fuchsia_data as fdata;
 use fidl_fuchsia_io as fio;
 use std::collections::BTreeMap;
-use std::path::PathBuf;
 use std::sync::Arc;
 
 /// Name of the test runner.
@@ -24,7 +23,8 @@ pub const TEST_RUNNER_NAME: &str = "test_runner";
 pub fn new_decl_from_json(object: serde_json::Value) -> Result<ComponentDecl, Error> {
     let json_str = serde_json::to_string(&object).context("failed to stringify json value")?;
 
-    let dummy_path = Arc::new(PathBuf::from("programmatic_manifest.cml"));
+    let dummy_path: Arc<std::path::Path> =
+        Arc::from(std::path::Path::new("programmatic_manifest.cml"));
 
     let doc = cml::types::document::parse_and_hydrate(dummy_path, &json_str)
         .context("failed to parse and hydrate manifest")?;

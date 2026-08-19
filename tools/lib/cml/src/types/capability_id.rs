@@ -13,7 +13,6 @@ pub use cm_types::{
 };
 
 use std::fmt;
-use std::path::PathBuf;
 use std::sync::Arc;
 
 /// A name/identity of a capability exposed/offered to another component.
@@ -56,10 +55,12 @@ pub enum CapabilityId<'a> {
     Configuration(&'a BorrowedName),
 }
 
-/// Generates a `Vec<ContextSpanned<&BorrowedName>>` -> `Vec<(CapabilityId, Arc<PathBuf>)>` conversion function.
+/// Generates a `Vec<ContextSpanned<&BorrowedName>>` -> `Vec<(CapabilityId, Arc<std::path::Path>)>` conversion function.
 macro_rules! capability_ids_from_context_names {
     ($name:ident, $variant:expr) => {
-        fn $name(names: Vec<ContextSpanned<&'a BorrowedName>>) -> Vec<(Self, Arc<PathBuf>)> {
+        fn $name(
+            names: Vec<ContextSpanned<&'a BorrowedName>>,
+        ) -> Vec<(Self, Arc<std::path::Path>)> {
             names
                 .into_iter()
                 .map(|spanned_name| ($variant(spanned_name.value), spanned_name.origin))
@@ -68,10 +69,10 @@ macro_rules! capability_ids_from_context_names {
     };
 }
 
-/// Generates a `Vec<ContextSpanned<Path>>` -> `Vec<(CapabilityId, Arc<PathBuf>)>` conversion function.
+/// Generates a `Vec<ContextSpanned<Path>>` -> `Vec<(CapabilityId, Arc<std::path::Path>)>` conversion function.
 macro_rules! capability_ids_from_context_paths {
     ($name:ident, $variant:expr) => {
-        fn $name(paths: Vec<ContextSpanned<Path>>) -> Vec<(Self, Arc<PathBuf>)> {
+        fn $name(paths: Vec<ContextSpanned<Path>>) -> Vec<(Self, Arc<std::path::Path>)> {
             paths
                 .into_iter()
                 .map(|spanned_path| ($variant(spanned_path.value), spanned_path.origin))
@@ -133,7 +134,7 @@ impl<'a> CapabilityId<'a> {
 
     pub fn from_context_capability(
         capability_input: &'a ContextSpanned<ContextCapability>,
-    ) -> Result<Vec<(Self, Arc<PathBuf>)>, Error> {
+    ) -> Result<Vec<(Self, Arc<std::path::Path>)>, Error> {
         let capability = &capability_input.value;
         let origin = &capability_input.origin;
 
@@ -234,7 +235,7 @@ impl<'a> CapabilityId<'a> {
 
     pub fn from_context_offer_expose<T>(
         clause_input: &'a ContextSpanned<T>,
-    ) -> Result<Vec<(Self, Arc<PathBuf>)>, Error>
+    ) -> Result<Vec<(Self, Arc<std::path::Path>)>, Error>
     where
         T: ContextCapabilityClause + AsClauseContext + fmt::Debug,
     {
@@ -322,7 +323,7 @@ impl<'a> CapabilityId<'a> {
     /// source names.
     pub fn from_context_use(
         use_input: &'a ContextSpanned<ContextUse>,
-    ) -> Result<Vec<(Self, Arc<PathBuf>)>, Error> {
+    ) -> Result<Vec<(Self, Arc<std::path::Path>)>, Error> {
         let use_ = &use_input.value;
         let origin = &use_input.origin;
 
@@ -536,7 +537,6 @@ mod tests {
     use super::*;
     use crate::types::offer::ContextOffer;
     use assert_matches::assert_matches;
-    use std::path::PathBuf;
     use std::sync::Arc;
 
     #[test]
@@ -544,7 +544,7 @@ mod tests {
         let a: Name = "a".parse().unwrap();
         let b: Name = "b".parse().unwrap();
 
-        let synthetic_origin = Arc::new(PathBuf::from("synthetic"));
+        let synthetic_origin: Arc<std::path::Path> = Arc::from(std::path::Path::new("synthetic"));
 
         assert_eq!(
             CapabilityId::from_context_offer_expose(&ContextSpanned {
@@ -604,7 +604,7 @@ mod tests {
         let a: Name = "a".parse().unwrap();
         let b: Name = "b".parse().unwrap();
 
-        let synthetic_origin = Arc::new(PathBuf::from("synthetic"));
+        let synthetic_origin: Arc<std::path::Path> = Arc::from(std::path::Path::new("synthetic"));
 
         assert_eq!(
             CapabilityId::from_context_use(&ContextSpanned {
@@ -660,7 +660,7 @@ mod tests {
 
     #[test]
     fn test_use_event_stream() -> Result<(), Error> {
-        let synthetic_origin = Arc::new(PathBuf::from("synthetic"));
+        let synthetic_origin: Arc<std::path::Path> = Arc::from(std::path::Path::new("synthetic"));
 
         assert_eq!(
             CapabilityId::from_context_use(&ContextSpanned {
@@ -710,7 +710,7 @@ mod tests {
         let a: Name = "a".parse().unwrap();
         let b: Name = "b".parse().unwrap();
 
-        let synthetic_origin = Arc::new(PathBuf::from("synthetic"));
+        let synthetic_origin: Arc<std::path::Path> = Arc::from(std::path::Path::new("synthetic"));
 
         assert_eq!(
             CapabilityId::from_context_offer_expose(&ContextSpanned {
@@ -751,7 +751,7 @@ mod tests {
         let a: Name = "a".parse().unwrap();
         let b: Name = "b".parse().unwrap();
 
-        let synthetic_origin = Arc::new(PathBuf::from("synthetic"));
+        let synthetic_origin: Arc<std::path::Path> = Arc::from(std::path::Path::new("synthetic"));
 
         assert_eq!(
             CapabilityId::from_context_use(&ContextSpanned {
@@ -810,7 +810,7 @@ mod tests {
         let a: Name = "a".parse().unwrap();
         let b: Name = "b".parse().unwrap();
 
-        let synthetic_origin = Arc::new(PathBuf::from("synthetic"));
+        let synthetic_origin: Arc<std::path::Path> = Arc::from(std::path::Path::new("synthetic"));
 
         assert_eq!(
             CapabilityId::from_context_offer_expose(&ContextSpanned {
@@ -850,7 +850,7 @@ mod tests {
     fn test_use_directory() -> Result<(), Error> {
         let a: Name = "a".parse().unwrap();
 
-        let synthetic_origin = Arc::new(PathBuf::from("synthetic"));
+        let synthetic_origin: Arc<std::path::Path> = Arc::from(std::path::Path::new("synthetic"));
 
         assert_eq!(
             CapabilityId::from_context_use(&ContextSpanned {
@@ -878,7 +878,7 @@ mod tests {
         let a: Name = "a".parse().unwrap();
         let b: Name = "b".parse().unwrap();
 
-        let synthetic_origin = Arc::new(PathBuf::from("synthetic"));
+        let synthetic_origin: Arc<std::path::Path> = Arc::from(std::path::Path::new("synthetic"));
 
         assert_eq!(
             CapabilityId::from_context_offer_expose(&ContextSpanned {
@@ -918,7 +918,7 @@ mod tests {
     fn test_use_storage() -> Result<(), Error> {
         let a: Name = "a".parse().unwrap();
 
-        let synthetic_origin = Arc::new(PathBuf::from("synthetic"));
+        let synthetic_origin: Arc<std::path::Path> = Arc::from(std::path::Path::new("synthetic"));
 
         assert_eq!(
             CapabilityId::from_context_use(&ContextSpanned {
@@ -943,7 +943,7 @@ mod tests {
 
     #[test]
     fn test_use_runner() -> Result<(), Error> {
-        let synthetic_origin = Arc::new(PathBuf::from("synthetic"));
+        let synthetic_origin: Arc<std::path::Path> = Arc::from(std::path::Path::new("synthetic"));
 
         assert_eq!(
             CapabilityId::from_context_use(&ContextSpanned {
@@ -970,7 +970,7 @@ mod tests {
         let a: Name = "a".parse().unwrap();
         let b: Name = "b".parse().unwrap();
 
-        let synthetic_origin = Arc::new(PathBuf::from("synthetic"));
+        let synthetic_origin: Arc<std::path::Path> = Arc::from(std::path::Path::new("synthetic"));
 
         assert_eq!(
             CapabilityId::from_context_offer_expose(&ContextSpanned {
@@ -1011,7 +1011,7 @@ mod tests {
         let a: Name = "a".parse().unwrap();
         let b: Name = "b".parse().unwrap();
 
-        let synthetic_origin = Arc::new(PathBuf::from("synthetic"));
+        let synthetic_origin: Arc<std::path::Path> = Arc::from(std::path::Path::new("synthetic"));
 
         assert_eq!(
             CapabilityId::from_context_use(&ContextSpanned {
@@ -1070,7 +1070,7 @@ mod tests {
 
     #[test]
     fn test_errors() -> Result<(), Error> {
-        let synthetic_origin = Arc::new(PathBuf::from("synthetic"));
+        let synthetic_origin: Arc<std::path::Path> = Arc::from(std::path::Path::new("synthetic"));
 
         assert_matches!(
             CapabilityId::from_context_offer_expose(&ContextSpanned {

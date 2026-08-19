@@ -5,7 +5,7 @@
 use cm_fidl_validator::error::ErrorList;
 use cm_types::ParseError;
 use fidl_fuchsia_component_decl as fdecl;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::str::Utf8Error;
 use std::sync::Arc;
 use std::{error, fmt, io};
@@ -29,7 +29,7 @@ pub enum Error {
     FidlEncoding(fidl::Error),
     Merge {
         err: String,
-        origin: Option<Arc<PathBuf>>,
+        origin: Option<Arc<std::path::Path>>,
     },
     MissingRights(String),
     Parse {
@@ -43,11 +43,11 @@ pub enum Error {
     },
     ValidateContext {
         err: String,
-        origin: Option<Arc<PathBuf>>,
+        origin: Option<Arc<std::path::Path>>,
     },
     ValidateContexts {
         err: String,
-        origins: Vec<Arc<PathBuf>>,
+        origins: Vec<Arc<std::path::Path>>,
     },
     FidlValidator {
         errs: ErrorList,
@@ -77,7 +77,7 @@ impl Error {
         }
     }
 
-    pub fn merge(err: impl fmt::Display, origin: Option<Arc<PathBuf>>) -> Self {
+    pub fn merge(err: impl fmt::Display, origin: Option<Arc<Path>>) -> Self {
         Self::Merge { err: err.to_string(), origin }
     }
 
@@ -85,10 +85,10 @@ impl Error {
         Self::Validate { err: err.to_string(), filename: None }
     }
 
-    pub fn validate_context(err: impl fmt::Display, origin: Option<Arc<PathBuf>>) -> Self {
+    pub fn validate_context(err: impl fmt::Display, origin: Option<Arc<std::path::Path>>) -> Self {
         Self::ValidateContext { err: err.to_string(), origin }
     }
-    pub fn validate_contexts(err: impl fmt::Display, origins: Vec<Arc<PathBuf>>) -> Self {
+    pub fn validate_contexts(err: impl fmt::Display, origins: Vec<Arc<std::path::Path>>) -> Self {
         Self::ValidateContexts { err: err.to_string(), origins }
     }
 
@@ -132,7 +132,7 @@ impl Error {
         }
     }
 
-    pub fn with_origin(self, origin: Arc<PathBuf>) -> Self {
+    pub fn with_origin(self, origin: Arc<std::path::Path>) -> Self {
         match self {
             Error::ValidateContext { err, .. } => {
                 Error::ValidateContext { err, origin: Some(origin) }

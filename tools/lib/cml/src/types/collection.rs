@@ -8,7 +8,6 @@ use crate::types::environment::EnvironmentRef;
 pub use cm_types::{AllowedOffers, Durability, Name};
 use reference_doc::ReferenceDoc;
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
 use std::sync::Arc;
 
 #[derive(Deserialize, Debug, PartialEq, ReferenceDoc, Serialize)]
@@ -97,7 +96,7 @@ impl Eq for ContextCollection {}
 impl Hydrate for Collection {
     type Output = ContextCollection;
 
-    fn hydrate(self, file: &Arc<PathBuf>) -> Result<Self::Output, Error> {
+    fn hydrate(self, file: &Arc<std::path::Path>) -> Result<Self::Output, Error> {
         Ok(ContextCollection {
             name: hydrate_simple(self.name, file),
             durability: hydrate_simple(self.durability, file),

@@ -41,7 +41,7 @@ pub(crate) fn merge(
         return Err(Error::invalid_args("no files provided".to_string()));
     }
 
-    let dummy_path = Arc::new(PathBuf::from(""));
+    let dummy_path = Arc::from(std::path::Path::new(""));
     let mut document = cml::types::document::parse_and_hydrate(dummy_path, &"{}".to_string())?;
 
     for file in &files {

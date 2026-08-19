@@ -8,7 +8,6 @@ use crate::types::environment::EnvironmentRef;
 pub use cm_types::{Name, OnTerminate, StartupMode, Url};
 use reference_doc::ReferenceDoc;
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
 use std::sync::Arc;
 
 /// Example:
@@ -97,7 +96,7 @@ impl Eq for ContextChild {}
 impl Hydrate for Child {
     type Output = ContextChild;
 
-    fn hydrate(self, file: &Arc<PathBuf>) -> Result<Self::Output, Error> {
+    fn hydrate(self, file: &Arc<std::path::Path>) -> Result<Self::Output, Error> {
         Ok(ContextChild {
             name: hydrate_simple(self.name, file),
             url: hydrate_simple(self.url, file),

@@ -26,7 +26,6 @@ use serde::{Deserialize, Serialize, de, ser};
 use std::fmt;
 use std::hash::Hash;
 use std::num::NonZeroU32;
-use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
 
@@ -66,7 +65,7 @@ pub fn load_cml_with_context(
     buffer: &String,
     file: &std::path::Path,
 ) -> Result<DocumentContext, Error> {
-    let file_arc = Arc::new(file.to_path_buf());
+    let file_arc = Arc::from(file);
     parse_and_hydrate(file_arc, buffer)
 }
 
@@ -797,7 +796,7 @@ pub trait AsClauseContext {
 pub fn alias_or_name_context<'a>(
     alias: Option<ContextSpanned<&'a BorrowedName>>,
     name: &'a BorrowedName,
-    origin: Arc<PathBuf>,
+    origin: Arc<std::path::Path>,
 ) -> ContextSpanned<&'a BorrowedName> {
     alias.unwrap_or(ContextSpanned { value: name, origin })
 }
@@ -957,7 +956,7 @@ mod tests {
 
     #[test]
     fn test_context_pipeline_denies_unknown_fields() {
-        let dummy_path = std::sync::Arc::new(std::path::PathBuf::from("test.cml"));
+        let dummy_path = std::sync::Arc::from(std::path::Path::new("test.cml"));
         let bad_json = "{ unknown : \"\" }".to_string();
 
         let result = document::parse_and_hydrate(dummy_path, &bad_json);

@@ -21,7 +21,6 @@ use serde_json::{Map, Value};
 use std::num::NonZeroU32;
 
 use std::fmt;
-use std::path::PathBuf;
 use std::sync::Arc;
 
 /// A reference in a `use from`.
@@ -271,10 +270,10 @@ pub struct Use {
     pub config_default: Option<serde_json::Value>,
 }
 
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct ContextUse {
     #[serde(skip)]
-    pub origin: Arc<PathBuf>,
+    pub origin: Arc<std::path::Path>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub service: Option<ContextSpanned<OneOrMany<Name>>>,
@@ -429,7 +428,7 @@ impl ContextCapabilityClause for ContextUse {
         self.config = always_one_context(o);
     }
 
-    fn origin(&self) -> &Arc<PathBuf> {
+    fn origin(&self) -> &Arc<std::path::Path> {
         &self.origin
     }
 
@@ -523,6 +522,39 @@ impl PartialEq for ContextUse {
 
 impl Eq for ContextUse {}
 
+impl Default for ContextUse {
+    fn default() -> Self {
+        let synthetic_origin: Arc<std::path::Path> = Arc::from(std::path::Path::new("synthetic"));
+
+        Self {
+            origin: synthetic_origin,
+            service: None,
+            protocol: None,
+            directory: None,
+            storage: None,
+            event_stream: None,
+            runner: None,
+            config: None,
+            dictionary: None,
+            from: None,
+            path: None,
+            numbered_handle: None,
+            rights: None,
+            subdir: None,
+            scope: None,
+            filter: None,
+            dependency: None,
+            availability: None,
+            key: None,
+            config_type: None,
+            config_max_size: None,
+            config_max_count: None,
+            config_element_type: None,
+            config_default: None,
+        }
+    }
+}
+
 impl ContextPathClause for ContextUse {
     fn path(&self) -> Option<&ContextSpanned<Path>> {
         self.path.as_ref()
@@ -532,7 +564,7 @@ impl ContextPathClause for ContextUse {
 impl Hydrate for Use {
     type Output = ContextUse;
 
-    fn hydrate(self, file: &Arc<PathBuf>) -> Result<Self::Output, Error> {
+    fn hydrate(self, file: &Arc<std::path::Path>) -> Result<Self::Output, Error> {
         Ok(ContextUse {
             origin: file.clone(),
             service: hydrate_opt_simple(self.service, file),

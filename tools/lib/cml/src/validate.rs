@@ -27,7 +27,6 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt;
 use std::hash::Hash;
 
-use std::path::PathBuf;
 use std::sync::Arc;
 
 #[derive(Default, Clone)]
@@ -78,7 +77,7 @@ fn offer_dependency(offer: &ContextOffer) -> DependencyType {
     }
 }
 
-type ConflictInfo<'a> = (CapabilityId<'a>, Arc<PathBuf>);
+type ConflictInfo<'a> = (CapabilityId<'a>, Arc<std::path::Path>);
 
 struct ValidationContext<'a> {
     document: &'a DocumentContext,
@@ -383,7 +382,7 @@ which is almost certainly a mistake: {}",
     fn validate_capability(
         &mut self,
         capability_wrapper: &'a ContextSpanned<ContextCapability>,
-        used_ids: &mut HashMap<String, Arc<PathBuf>>,
+        used_ids: &mut HashMap<String, Arc<std::path::Path>>,
     ) -> Result<(), Error> {
         let capability = &capability_wrapper.value;
 
@@ -495,7 +494,7 @@ which is almost certainly a mistake: {}",
     fn validate_use(
         &mut self,
         use_wrapper: &'a ContextSpanned<ContextUse>,
-        used_ids: &mut HashMap<String, (CapabilityId<'a>, Arc<PathBuf>)>,
+        used_ids: &mut HashMap<String, (CapabilityId<'a>, Arc<std::path::Path>)>,
     ) -> Result<(), Error> {
         use_wrapper.capability_type(Some(use_wrapper.origin.clone()))?;
         let use_ = &use_wrapper.value;
@@ -811,8 +810,8 @@ which is almost certainly a mistake: {}",
     fn validate_expose(
         &self,
         expose_wrapper: &'a ContextSpanned<ContextExpose>,
-        used_ids: &mut HashMap<String, Arc<PathBuf>>,
-        exposed_to_framework_ids: &mut HashMap<String, Arc<PathBuf>>,
+        used_ids: &mut HashMap<String, Arc<std::path::Path>>,
+        exposed_to_framework_ids: &mut HashMap<String, Arc<std::path::Path>>,
     ) -> Result<(), Error> {
         let expose = &expose_wrapper.value;
 
@@ -1061,7 +1060,7 @@ which is almost certainly a mistake: {}",
     fn validate_offer(
         &mut self,
         offer_wrapper: &'a ContextSpanned<ContextOffer>,
-        used_ids: &mut HashMap<Name, HashMap<String, Arc<PathBuf>>>,
+        used_ids: &mut HashMap<Name, HashMap<String, Arc<std::path::Path>>>,
         protocols_offered_to_all: &[&'a ContextSpanned<ContextOffer>],
     ) -> Result<(), Error> {
         let offer = &offer_wrapper.value;
@@ -1626,7 +1625,7 @@ which is almost certainly a mistake: {}",
     fn validate_directory_rights(
         &self,
         rights_clause: &Rights,
-        origin: Option<&Arc<PathBuf>>,
+        origin: Option<&Arc<std::path::Path>>,
     ) -> Result<(), Error> {
         let mut rights = HashSet::new();
         for right_token in rights_clause.0.iter() {
@@ -1666,7 +1665,7 @@ which is almost certainly a mistake: {}",
         cap: &T,
         source_availability: &Option<SourceAvailability>,
         availability: &Option<Availability>,
-        origin: Arc<PathBuf>,
+        origin: Arc<std::path::Path>,
     ) -> Result<(), Error>
     where
         T: ContextCapabilityClause + FromClauseContext,
@@ -1770,7 +1769,7 @@ which is almost certainly a mistake: {}",
         &self,
         reference_description: &str,
         component_ref: &AnyRef<'_>,
-        origin: Option<&Arc<PathBuf>>,
+        origin: Option<&Arc<std::path::Path>>,
     ) -> Result<(), Error> {
         match component_ref {
             AnyRef::Named(name) => {
@@ -1801,7 +1800,7 @@ which is almost certainly a mistake: {}",
         &self,
         reference_description: &str,
         component_ref: &AnyRef<'_>,
-        origin: Option<&Arc<PathBuf>>,
+        origin: Option<&Arc<std::path::Path>>,
     ) -> Result<(), Error> {
         match component_ref {
             AnyRef::Named(name) => {
@@ -1832,7 +1831,7 @@ which is almost certainly a mistake: {}",
         &self,
         reference_description: &str,
         capability_ref: &AnyRef<'_>,
-        origin: Option<&Arc<PathBuf>>,
+        origin: Option<&Arc<std::path::Path>>,
     ) -> Result<(), Error> {
         match capability_ref {
             AnyRef::Named(name) => {
@@ -1861,7 +1860,7 @@ which is almost certainly a mistake: {}",
         &self,
         reference_description: &str,
         ref_: &AnyRef<'_>,
-        origin: Option<&Arc<PathBuf>>,
+        origin: Option<&Arc<std::path::Path>>,
     ) -> Result<(), Error> {
         if self.validate_component_child_ref(reference_description, ref_, origin).is_err()
             && self.validate_component_capability_ref(reference_description, ref_, origin).is_err()

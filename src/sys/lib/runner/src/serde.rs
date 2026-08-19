@@ -539,7 +539,6 @@ mod tests {
     use serde::de::DeserializeOwned;
     use serde_json::json;
     use std::fmt::Debug;
-    use std::path::PathBuf;
     use std::sync::Arc;
 
     #[fuchsia::test]
@@ -715,7 +714,8 @@ mod tests {
 
     #[track_caller]
     fn round_trip_as_program<T: Debug + DeserializeOwned + Serialize>(t: &T) -> anyhow::Result<T> {
-        let file_path = Arc::new(PathBuf::from("/fake/path/for/roundtrip/test"));
+        let file_path: Arc<std::path::Path> =
+            Arc::from(std::path::Path::new("/fake/path/for/roundtrip/test"));
 
         let mut program_json = serde_json::to_value(&t).context("serializing T as json")?;
         program_json

@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use std::hash::{Hash, Hasher};
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::Path;
@@ -19,7 +18,7 @@ pub struct ContextSpanned<T> {
     pub value: T,
 
     #[serde(skip)]
-    pub origin: Arc<PathBuf>,
+    pub origin: Arc<std::path::Path>,
 }
 
 impl<T: PartialEq> PartialEq for ContextSpanned<T> {
@@ -44,11 +43,11 @@ impl<T> ContextSpanned<T> {
         ContextSpanned { value: f(self.value), origin: self.origin }
     }
 
-    pub fn new_synthetic(value: T, file: PathBuf) -> Self {
-        Self { value, origin: Arc::new(file) }
+    pub fn new_synthetic(value: T, file: &std::path::Path) -> Self {
+        Self { value, origin: Arc::from(file) }
     }
 
-    pub fn maybe_synthetic(val: Option<T>, file: PathBuf) -> Option<Self> {
+    pub fn maybe_synthetic(val: Option<T>, file: &std::path::Path) -> Option<Self> {
         val.map(|v| Self::new_synthetic(v, file))
     }
 }
@@ -67,7 +66,7 @@ impl<T: ContextPathClause> ContextPathClause for ContextSpanned<T> {
 
 /// Helper to wrap programmatic values in a ContextSpanned wrapper.
 pub fn synthetic_span<T>(value: T) -> ContextSpanned<T> {
-    ContextSpanned { value, origin: Arc::new(PathBuf::from("programmatic_manifest.cml")) }
+    ContextSpanned { value, origin: Arc::from(std::path::Path::new("programmatic_manifest.cml")) }
 }
 
 /// Hydrate is used to translate a type to a
@@ -78,12 +77,12 @@ pub fn synthetic_span<T>(value: T) -> ContextSpanned<T> {
 pub trait Hydrate {
     type Output;
 
-    fn hydrate(self, file: &Arc<PathBuf>) -> Result<Self::Output, Error>;
+    fn hydrate(self, file: &Arc<std::path::Path>) -> Result<Self::Output, Error>;
 }
 
 pub fn hydrate_list<P, C>(
     raw_list: Option<Vec<P>>,
-    file: &Arc<PathBuf>,
+    file: &Arc<std::path::Path>,
 ) -> Result<Option<Vec<ContextSpanned<C>>>, Error>
 where
     P: Hydrate<Output = C>,
@@ -103,7 +102,7 @@ where
 
 pub fn hydrate_required<P, C>(
     parsed_value: P,
-    file: &Arc<PathBuf>,
+    file: &Arc<std::path::Path>,
 ) -> Result<ContextSpanned<C>, Error>
 where
     P: Hydrate<Output = C>,
@@ -113,13 +112,13 @@ where
     Ok(ContextSpanned { value: context_value, origin: file.clone() })
 }
 
-pub fn hydrate_simple<T>(value: T, file: &Arc<PathBuf>) -> ContextSpanned<T> {
+pub fn hydrate_simple<T>(value: T, file: &Arc<std::path::Path>) -> ContextSpanned<T> {
     ContextSpanned { value, origin: file.clone() }
 }
 
 pub fn hydrate_opt<P, C>(
     opt: Option<P>,
-    file: &Arc<PathBuf>,
+    file: &Arc<std::path::Path>,
 ) -> Result<Option<ContextSpanned<C>>, Error>
 where
     P: Hydrate<Output = C>,
@@ -129,7 +128,7 @@ where
 
 pub fn hydrate_opt_simple<T>(
     opt_spanned: Option<T>,
-    file: &Arc<PathBuf>,
+    file: &Arc<std::path::Path>,
 ) -> Option<ContextSpanned<T>> {
     opt_spanned.map(|s| hydrate_simple(s, file))
 }
@@ -165,7 +164,7 @@ pub trait ContextCapabilityClause: Clone + PartialEq + std::fmt::Debug {
     fn dictionary(&self) -> Option<ContextSpanned<OneOrMany<&BorrowedName>>>;
     fn config(&self) -> Option<ContextSpanned<OneOrMany<&BorrowedName>>>;
     fn event_stream(&self) -> Option<ContextSpanned<OneOrMany<&BorrowedName>>>;
-    fn origin(&self) -> &Arc<PathBuf>;
+    fn origin(&self) -> &Arc<std::path::Path>;
     fn availability(&self) -> Option<ContextSpanned<Availability>>;
 
     fn set_availability(&mut self, a: Option<ContextSpanned<Availability>>);
@@ -183,7 +182,7 @@ pub trait ContextCapabilityClause: Clone + PartialEq + std::fmt::Debug {
     // /// If `service()` returns `Some`, the capability name must be "service", etc.
     // ///
     // /// Returns an error if the capability name is not set, or if there is more than one.
-    fn capability_type(&self, origin: Option<Arc<PathBuf>>) -> Result<&'static str, Error> {
+    fn capability_type(&self, origin: Option<Arc<std::path::Path>>) -> Result<&'static str, Error> {
         let mut types = Vec::new();
         if self.service().is_some() {
             types.push("service");
@@ -351,7 +350,7 @@ impl<T: ContextCapabilityClause> ContextCapabilityClause for ContextSpanned<T> {
         self.value.event_stream()
     }
 
-    fn origin(&self) -> &Arc<PathBuf> {
+    fn origin(&self) -> &Arc<std::path::Path> {
         &self.origin
     }
 

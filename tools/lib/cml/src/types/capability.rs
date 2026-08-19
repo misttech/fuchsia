@@ -19,7 +19,6 @@ use serde::{Deserialize, Serialize};
 use std::num::NonZeroU32;
 
 use std::fmt;
-use std::path::PathBuf;
 use std::sync::Arc;
 
 #[derive(Deserialize, Debug, PartialEq, Clone, ReferenceDoc, Serialize, Default)]
@@ -214,7 +213,7 @@ pub enum CapabilityFromRef {
 #[derive(Debug, Clone, Serialize)]
 pub struct ContextCapability {
     #[serde(skip)]
-    pub origin: Arc<PathBuf>,
+    pub origin: Arc<std::path::Path>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub service: Option<ContextSpanned<OneOrMany<Name>>>,
@@ -283,7 +282,7 @@ pub struct ContextCapability {
 impl Default for ContextCapability {
     fn default() -> Self {
         Self {
-            origin: Arc::new(PathBuf::new()),
+            origin: Arc::from(std::path::Path::new("")),
             service: None,
             protocol: None,
             directory: None,
@@ -424,7 +423,7 @@ impl ContextCapabilityClause for ContextCapability {
     }
 
     /// Returns the origin of this capability.
-    fn origin(&self) -> &Arc<PathBuf> {
+    fn origin(&self) -> &Arc<std::path::Path> {
         &self.origin
     }
 
@@ -487,7 +486,7 @@ impl AsClauseContext for ContextCapability {
 impl Hydrate for Capability {
     type Output = ContextCapability;
 
-    fn hydrate(self, file: &Arc<PathBuf>) -> Result<Self::Output, Error> {
+    fn hydrate(self, file: &Arc<std::path::Path>) -> Result<Self::Output, Error> {
         Ok(ContextCapability {
             origin: file.clone(),
             service: hydrate_opt_simple(self.service, file),
@@ -518,7 +517,7 @@ impl Hydrate for Capability {
 /// Converts Capability -> CS ContextCapability
 pub fn span_capability(cap: Capability) -> ContextSpanned<ContextCapability> {
     let context_cap = ContextCapability {
-        origin: Arc::new(PathBuf::from("programmatic_manifest.cml")),
+        origin: Arc::from(std::path::Path::new("programmatic_manifest.cml")),
         service: cap.service.map(synthetic_span),
         protocol: cap.protocol.map(synthetic_span),
         directory: cap.directory.map(synthetic_span),

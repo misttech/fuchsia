@@ -72,7 +72,7 @@ impl<R: FileResolver> CmlLoader<R> {
         let (root_path_rel, buffer) = self.resolver.resolve(root_path, Path::new(""))?;
 
         self.visited.insert(root_path_rel.clone());
-        let file_arc = Arc::new(root_path_rel.clone());
+        let file_arc: Arc<std::path::Path> = Arc::from(root_path_rel.as_path());
         let mut root_doc = parse_and_hydrate(file_arc, &buffer)?;
 
         let mut stack = HashSet::new();
@@ -114,7 +114,7 @@ impl<R: FileResolver> CmlLoader<R> {
                 self.visited.insert(shard_path_abs.clone());
                 stack.insert(shard_path_abs.clone());
 
-                let file_arc = Arc::new(shard_path_abs.clone());
+                let file_arc: Arc<std::path::Path> = Arc::from(shard_path_abs.as_path());
                 let mut shard_doc = parse_and_hydrate(file_arc, &buffer)
                     .map_err(|e| e.with_origin(include_span.origin.clone()))?;
 

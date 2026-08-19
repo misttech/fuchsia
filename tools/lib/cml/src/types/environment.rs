@@ -17,7 +17,6 @@ use reference_doc::ReferenceDoc;
 use serde::{Deserialize, Serialize, de};
 
 use std::fmt;
-use std::path::PathBuf;
 use std::sync::Arc;
 
 /// Example:
@@ -178,7 +177,7 @@ pub struct RunnerRegistration {
 impl Hydrate for RunnerRegistration {
     type Output = ContextRunnerRegistration;
 
-    fn hydrate(self, file: &Arc<PathBuf>) -> Result<Self::Output, Error> {
+    fn hydrate(self, file: &Arc<std::path::Path>) -> Result<Self::Output, Error> {
         let runner = hydrate_simple(self.runner, file);
 
         let r#as = hydrate_opt_simple(self.r#as, file);
@@ -229,7 +228,7 @@ pub struct ResolverRegistration {
 impl Hydrate for ResolverRegistration {
     type Output = ContextResolverRegistration;
 
-    fn hydrate(self, file: &Arc<PathBuf>) -> Result<Self::Output, Error> {
+    fn hydrate(self, file: &Arc<std::path::Path>) -> Result<Self::Output, Error> {
         let resolver = hydrate_simple(self.resolver, file);
 
         let from = hydrate_simple(self.from, file);
@@ -278,7 +277,7 @@ pub struct DebugRegistration {
 impl Hydrate for DebugRegistration {
     type Output = ContextDebugRegistration;
 
-    fn hydrate(self, file: &Arc<PathBuf>) -> Result<Self::Output, Error> {
+    fn hydrate(self, file: &Arc<std::path::Path>) -> Result<Self::Output, Error> {
         let origin = file.clone();
         let protocol = hydrate_opt_simple(self.protocol, file);
         let from = hydrate_simple(self.from, file);
@@ -291,7 +290,7 @@ impl Hydrate for DebugRegistration {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct ContextDebugRegistration {
     #[serde(skip)]
-    pub origin: Arc<PathBuf>,
+    pub origin: Arc<std::path::Path>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub protocol: Option<ContextSpanned<OneOrMany<Name>>>,
     pub from: ContextSpanned<OfferFromRef>,
@@ -374,7 +373,7 @@ impl ContextCapabilityClause for ContextDebugRegistration {
     fn set_dictionary(&mut self, _o: Option<ContextSpanned<OneOrMany<Name>>>) {}
     fn set_config(&mut self, _o: Option<ContextSpanned<OneOrMany<Name>>>) {}
 
-    fn origin(&self) -> &Arc<PathBuf> {
+    fn origin(&self) -> &Arc<std::path::Path> {
         &self.origin
     }
 
@@ -387,7 +386,7 @@ impl ContextCapabilityClause for ContextDebugRegistration {
 impl Hydrate for Environment {
     type Output = ContextEnvironment;
 
-    fn hydrate(self, file: &Arc<PathBuf>) -> Result<Self::Output, Error> {
+    fn hydrate(self, file: &Arc<std::path::Path>) -> Result<Self::Output, Error> {
         let name = hydrate_simple(self.name, file);
 
         let extends = hydrate_opt_simple(self.extends, file);

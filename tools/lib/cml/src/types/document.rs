@@ -28,7 +28,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 use std::collections::{BTreeMap, HashMap, HashSet};
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::{cmp, path};
 
@@ -982,7 +981,7 @@ impl DocumentContext {
         include_map: Source,
         outer_key: &str,
         include_path: &path::Path,
-        origin: Option<&Arc<PathBuf>>,
+        origin: Option<&Arc<path::Path>>,
         allow_array_concatenation_keys: Option<&Vec<&str>>,
     ) -> Result<(), Error>
     where
@@ -1049,13 +1048,13 @@ impl DocumentContext {
 }
 
 pub fn parse_and_hydrate(
-    file_arc: Arc<PathBuf>,
+    file_arc: Arc<std::path::Path>,
     buffer: &String,
 ) -> Result<DocumentContext, Error> {
     let parsed_doc: Document = serde_json5::from_str(buffer).map_err(|e| {
         let serde_json5::Error::Message { location, msg } = e;
         let location = location.map(|l| Location { line: l.line, column: l.column });
-        Error::parse(msg, location, Some(&(*file_arc).clone()))
+        Error::parse(msg, location, Some(&file_arc.clone()))
     })?;
 
     let include = parsed_doc.include.map(|raw_includes| {
@@ -1105,7 +1104,7 @@ mod tests {
     use test_case::test_case;
 
     fn document_context(contents: &str) -> DocumentContext {
-        let file_arc = Arc::new("test.cml".into());
+        let file_arc = Arc::from(std::path::Path::new("test.cml"));
         parse_and_hydrate(file_arc, &contents.to_string()).unwrap()
     }
 
@@ -1588,7 +1587,7 @@ mod tests {
     fn deny_unknown_config_type_fields() {
         let contents =
             json!({ "config": { "foo": { "type": "bool", "unknown": "should error" } } });
-        let file_arc = Arc::new("test.cml".into());
+        let file_arc = Arc::from(std::path::Path::new("test.cml"));
         parse_and_hydrate(file_arc, &contents.to_string())
             .expect_err("must reject unknown config field attributes");
     }
@@ -1609,7 +1608,7 @@ mod tests {
             }
         });
 
-        let file_arc = Arc::new("test.cml".into());
+        let file_arc = Arc::from(std::path::Path::new("test.cml"));
         parse_and_hydrate(file_arc, &input.to_string())
             .expect_err("must reject unknown config field attributes");
     }

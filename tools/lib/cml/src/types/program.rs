@@ -12,7 +12,6 @@ use serde::{Serialize, de};
 use serde_json::Value;
 
 use std::fmt;
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use indexmap::IndexMap;
@@ -92,7 +91,7 @@ impl<'de> de::Deserialize<'de> for Program {
 impl Hydrate for Program {
     type Output = ContextProgram;
 
-    fn hydrate(self, file: &Arc<PathBuf>) -> Result<Self::Output, Error> {
+    fn hydrate(self, file: &Arc<std::path::Path>) -> Result<Self::Output, Error> {
         let runner = self.runner.map(|raw_name| {
             let validated_name = Name::new(raw_name.clone()).map_err(|e| {
                     let msg = match e {

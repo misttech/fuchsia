@@ -19,7 +19,6 @@ use reference_doc::ReferenceDoc;
 use serde::{Deserialize, Serialize};
 
 use std::fmt;
-use std::path::PathBuf;
 use std::sync::Arc;
 
 /// Example:
@@ -220,7 +219,7 @@ pub enum ExposeToRef {
 #[derive(Debug, Clone, Serialize)]
 pub struct ContextExpose {
     #[serde(skip)]
-    pub origin: Arc<PathBuf>,
+    pub origin: Arc<std::path::Path>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub service: Option<ContextSpanned<OneOrMany<Name>>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -257,11 +256,11 @@ pub struct ContextExpose {
 impl Default for ContextExpose {
     fn default() -> Self {
         Self {
-            origin: Arc::new(PathBuf::new()),
+            origin: Arc::from(std::path::Path::new("")),
 
             from: ContextSpanned {
                 value: OneOrMany::One(ExposeFromRef::Self_),
-                origin: Arc::new(PathBuf::new()),
+                origin: Arc::from(std::path::Path::new("")),
             },
 
             service: None,
@@ -367,7 +366,7 @@ impl ContextCapabilityClause for ContextExpose {
         self.config = o;
     }
 
-    fn origin(&self) -> &Arc<PathBuf> {
+    fn origin(&self) -> &Arc<std::path::Path> {
         &self.origin
     }
 
@@ -457,7 +456,7 @@ impl FromClauseContext for ContextExpose {
 impl Hydrate for Expose {
     type Output = ContextExpose;
 
-    fn hydrate(self, file: &Arc<PathBuf>) -> Result<Self::Output, Error> {
+    fn hydrate(self, file: &Arc<std::path::Path>) -> Result<Self::Output, Error> {
         Ok(ContextExpose {
             origin: file.clone(),
             service: hydrate_opt_simple(self.service, file),
