@@ -50,7 +50,7 @@ class ModalOptionState {
     std::string to_check(line);
     if (!options_.case_sensitive) {
       for (size_t i = 0; i < to_check.size(); i++)
-        to_check[i] = std::tolower(to_check[i]);
+        to_check[i] = static_cast<char>(std::tolower(to_check[i]));
     }
 
     for (const auto& opt : options_.options) {
@@ -110,8 +110,9 @@ void ModalLineInput::SetEofCallback(EofCallback cb) { eof_callback_ = std::move(
 
 void ModalLineInput::SetMaxCols(size_t max) {
   FX_DCHECK(normal_input_) << "Need to call Init() first.";
+  FX_DCHECK(max < INT_MAX);
 
-  max_cols_ = max;
+  max_cols_ = static_cast<int>(max);
   normal_input_->SetMaxCols(max);
   if (modal_input_)
     modal_input_->SetMaxCols(max);

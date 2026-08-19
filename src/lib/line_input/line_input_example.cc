@@ -73,7 +73,7 @@ int main(int argc, char** argv) {
 
   // This example does simple blocking input.
   while (!g_should_quit)
-    input.OnInput(getc(stdin));
+    input.OnInput(static_cast<char>(getc(stdin)));
 
   return 0;
 }
