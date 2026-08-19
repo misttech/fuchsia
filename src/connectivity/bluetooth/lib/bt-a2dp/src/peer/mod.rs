@@ -8,6 +8,7 @@ use bt_avdtp::{
     StreamEndpointId,
 };
 use fidl_fuchsia_bluetooth::ChannelParameters;
+use fidl_fuchsia_bluetooth_avrcp as avrcp;
 use fidl_fuchsia_bluetooth_bredr::{
     ConnectParameters, L2capParameters, PSM_AVDTP, ProfileDescriptor, ProfileProxy,
 };
@@ -30,6 +31,8 @@ use std::sync::{Arc, Weak};
 /// For sending out-of-band commands over the A2DP peer.
 mod controller;
 pub use controller::ControllerPool;
+mod volume_relay;
+pub(crate) use volume_relay::run_avrcp_volume_relay;
 
 use crate::codec::MediaCodecConfig;
 use crate::permits::{Permit, Permits};
@@ -202,9 +205,10 @@ impl Peer {
         streams: Streams,
         permits: Option<Permits>,
         profile: ProfileProxy,
+        avrcp: Option<avrcp::PeerManagerProxy>,
         metrics: bt_metrics::MetricsLogger,
     ) -> Self {
-        let inner = Arc::new(Mutex::new(PeerInner::new(peer, id, streams, metrics.clone())));
+        let inner = Arc::new(Mutex::new(PeerInner::new(peer, id, streams, avrcp, metrics.clone())));
         let reservations_receiver = if let Some(permits) = permits {
             let (stream_permits, receiver) =
                 StreamPermits::new(Arc::downgrade(&inner), id, permits);
@@ -231,6 +235,11 @@ impl Peer {
         self.descriptor.lock().replace(descriptor)
     }
 
+    #[cfg(test)]
+    pub fn set_volume_relay_task(&self, task: fasync::Task<()>) {
+        self.inner.lock().volume_relay_task = Some(task);
+    }
+
     /// How long to wait after a non-local establishment of a stream to start the stream.
     /// Chosen to produce reasonably quick startup while allowing for peer start.
     const STREAM_DWELL: zx::MonotonicDuration = zx::MonotonicDuration::from_millis(500);
@@ -249,6 +258,8 @@ impl Peer {
                 PeerInner::start_opened(weak).await
             }));
         }
+        drop(lock);
+        PeerInner::maybe_start_volume_relay(&self.inner);
         Ok(())
     }
 
@@ -414,7 +425,9 @@ impl Peer {
                 .await
                 .context("FIDL error: {}")?
                 .or(Err(avdtp::Error::PeerDisconnected))?;
+
             trace!(peer_id:%; "Connected transport channel, converting to local Channel");
+
             let channel = match channel.try_into() {
                 Err(e) => {
                     warn!(peer_id:%, e:?; "Couldn't connect media transport: no channel");
@@ -422,8 +435,6 @@ impl Peer {
                 }
                 Ok(c) => c,
             };
-
-            trace!(peer_id:%; "Connected transport channel, passing to Peer..");
 
             {
                 let strong = PeerInner::upgrade(peer.clone())?;
@@ -504,6 +515,7 @@ impl Peer {
                                     if let Err(e) = result {
                                         warn!(peer_id:% = id, e:?; "Error handling request");
                                     }
+                                    PeerInner::maybe_start_volume_relay(&p);
                                 }
                             },
                         }
@@ -592,6 +604,10 @@ struct PeerInner {
     remote_inspect: fuchsia_inspect::Node,
     /// Cobalt logger used to report peer metrics.
     metrics: bt_metrics::MetricsLogger,
+    /// AVRCP client to control the peer's volume.
+    avrcp: Option<avrcp::PeerManagerProxy>,
+    /// Task that runs the AVRCP Absolute Volume relay loop.
+    volume_relay_task: Option<fasync::Task<()>>,
 }
 
 impl Inspect for &mut PeerInner {
@@ -609,6 +625,7 @@ impl PeerInner {
         peer: avdtp::Peer,
         peer_id: PeerId,
         local: Streams,
+        avrcp: Option<avrcp::PeerManagerProxy>,
         metrics: bt_metrics::MetricsLogger,
     ) -> Self {
         Self {
@@ -622,7 +639,55 @@ impl PeerInner {
             remote_endpoints: None,
             remote_inspect: Default::default(),
             metrics,
+            avrcp,
+            volume_relay_task: None,
         }
+    }
+
+    pub fn maybe_start_volume_relay(this: &Arc<Mutex<Self>>) {
+        let mut lock = this.lock();
+        let Some(avrcp) = lock.avrcp.clone() else {
+            if lock.volume_relay_task.take().is_some() {
+                let peer_id = lock.peer_id;
+                trace!(peer_id:%; "Stopping volume relay task (AVRCP proxy missing)");
+            }
+            return;
+        };
+
+        // Check if any of our local streams are Open or Streaming, AND they are of type Source.
+        let active_source_stream = lock
+            .local
+            .streaming()
+            .any(|s| s.endpoint().endpoint_type() == &avdtp::EndpointType::Source)
+            || lock
+                .local
+                .open()
+                .any(|s| s.endpoint().endpoint_type() == &avdtp::EndpointType::Source);
+
+        if !active_source_stream {
+            if lock.volume_relay_task.take().is_some() {
+                let peer_id = lock.peer_id;
+                trace!(peer_id:%; "Stopping volume relay task (No active local Source streams)");
+            }
+            return;
+        }
+
+        if let Some(task) = lock.volume_relay_task.as_mut() {
+            if let Some(res) = task.now_or_never() {
+                let peer_id = lock.peer_id;
+                trace!(peer_id:%; "Volume relay task completed: {res:?}");
+                lock.volume_relay_task = None;
+            }
+        }
+
+        if lock.volume_relay_task.is_some() {
+            return;
+        }
+
+        let peer_id = lock.peer_id;
+        trace!(peer_id:%; "Spawning volume relay task for A2DP sink peer");
+        let task = fasync::Task::spawn(run_avrcp_volume_relay(peer_id, avrcp));
+        lock.volume_relay_task = Some(task);
     }
 
     /// Returns an endpoint from the local set or a BadAcpSeid error if it doesn't exist.
@@ -750,6 +815,8 @@ impl PeerInner {
         if let Err(e) = start_result {
             warn!(peer_id:%, local_id:%, remote_id:%, e:?; "Failed to start local stream, suspending");
             avdtp.suspend(to_start).await?;
+        } else {
+            Self::maybe_start_volume_relay(&peer);
         }
         Ok(())
     }
@@ -1218,7 +1285,8 @@ mod tests {
             (bt_metrics::MetricsLogger::default(), None)
         };
         let (profile_proxy, requests) = create_proxy_and_stream::<ProfileMarker>();
-        let peer = Peer::create(PeerId(1), avdtp, streams, permits, profile_proxy, metrics_logger);
+        let peer =
+            Peer::create(PeerId(1), avdtp, streams, permits, profile_proxy, None, metrics_logger);
 
         (remote, requests, cobalt_receiver, peer)
     }
@@ -1284,7 +1352,6 @@ mod tests {
 
     #[test_case(Transport::Socket ; "socket")]
     #[test_case(Transport::Fidl ; "fidl")]
-    #[fuchsia::test]
     fn disconnected(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
         let (proxy, _stream) = create_proxy_and_stream::<ProfileMarker>();
@@ -1299,6 +1366,7 @@ mod tests {
             Streams::default(),
             None,
             proxy,
+            None,
             bt_metrics::MetricsLogger::default(),
         );
 
@@ -1316,7 +1384,6 @@ mod tests {
 
     #[test_case(Transport::Socket ; "socket")]
     #[test_case(Transport::Fidl ; "fidl")]
-    #[fuchsia::test]
     fn peer_collect_capabilities_success(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
 
@@ -1449,7 +1516,6 @@ mod tests {
 
     #[test_case(Transport::Socket ; "socket")]
     #[test_case(Transport::Fidl ; "fidl")]
-    #[fuchsia::test]
     fn peer_collect_all_capabilities_success(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
 
@@ -1591,7 +1657,6 @@ mod tests {
 
     #[test_case(Transport::Socket ; "socket")]
     #[test_case(Transport::Fidl ; "fidl")]
-    #[fuchsia::test]
     fn peer_collect_capabilities_discovery_fails(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
 
@@ -1634,7 +1699,6 @@ mod tests {
 
     #[test_case(Transport::Socket ; "socket")]
     #[test_case(Transport::Fidl ; "fidl")]
-    #[fuchsia::test]
     fn peer_collect_capabilities_get_capability_fails(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
 
@@ -1728,7 +1792,6 @@ mod tests {
 
     #[test_case(Transport::Socket ; "socket")]
     #[test_case(Transport::Fidl ; "fidl")]
-    #[fuchsia::test]
     fn peer_stream_start_success(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
 
@@ -1799,7 +1862,6 @@ mod tests {
 
     #[test_case(Transport::Socket ; "socket")]
     #[test_case(Transport::Fidl ; "fidl")]
-    #[fuchsia::test]
     fn peer_stream_start_picks_correct_direction(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
 
@@ -1890,7 +1952,6 @@ mod tests {
 
     #[test_case(Transport::Socket ; "socket")]
     #[test_case(Transport::Fidl ; "fidl")]
-    #[fuchsia::test]
     fn peer_stream_start_strips_unsupported_local_capabilities(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
 
@@ -1987,7 +2048,6 @@ mod tests {
 
     #[test_case(Transport::Socket ; "socket")]
     #[test_case(Transport::Fidl ; "fidl")]
-    #[fuchsia::test]
     fn peer_stream_start_orders_local_capabilities(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
 
@@ -2093,7 +2153,6 @@ mod tests {
     /// setup.
     #[test_case(Transport::Socket ; "socket")]
     #[test_case(Transport::Fidl ; "fidl")]
-    #[fuchsia::test]
     fn peer_stream_start_permit_revoked(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
 
@@ -2162,7 +2221,6 @@ mod tests {
 
     #[test_case(Transport::Socket ; "socket")]
     #[test_case(Transport::Fidl ; "fidl")]
-    #[fuchsia::test]
     fn peer_stream_start_fails_wrong_direction(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
 
@@ -2245,7 +2303,6 @@ mod tests {
 
     #[test_case(Transport::Socket ; "socket")]
     #[test_case(Transport::Fidl ; "fidl")]
-    #[fuchsia::test]
     fn peer_stream_start_fails_to_connect(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
 
@@ -2439,7 +2496,6 @@ mod tests {
     /// Test that the remote end can configure and start a stream.
     #[test_case(Transport::Socket ; "socket")]
     #[test_case(Transport::Fidl ; "fidl")]
-    #[fuchsia::test]
     fn peer_as_acceptor(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
 
@@ -2540,7 +2596,6 @@ mod tests {
 
     #[test_case(Transport::Socket ; "socket")]
     #[test_case(Transport::Fidl ; "fidl")]
-    #[fuchsia::test]
     fn peer_set_config_reject_first(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
 
@@ -2592,7 +2647,6 @@ mod tests {
 
     #[test_case(Transport::Socket ; "socket")]
     #[test_case(Transport::Fidl ; "fidl")]
-    #[fuchsia::test]
     fn peer_starts_waiting_streams(transport_mode: Transport) {
         let mut exec = fasync::TestExecutor::new_with_fake_time();
         exec.set_fake_time(fasync::MonotonicInstant::from_nanos(5_000_000_000));
@@ -2669,7 +2723,6 @@ mod tests {
 
     #[test_case(Transport::Socket ; "socket")]
     #[test_case(Transport::Fidl ; "fidl")]
-    #[fuchsia::test]
     fn needs_permit_to_start_streams(transport_mode: Transport) {
         let mut exec = fasync::TestExecutor::new();
 
@@ -2884,7 +2937,6 @@ mod tests {
 
     #[test_case(Transport::Socket ; "socket")]
     #[test_case(Transport::Fidl ; "fidl")]
-    #[fuchsia::test]
     fn permits_can_be_revoked_and_reinstated_all(transport_mode: Transport) {
         let mut exec = fasync::TestExecutor::new();
 
@@ -2982,7 +3034,6 @@ mod tests {
 
     #[test_case(Transport::Socket ; "socket")]
     #[test_case(Transport::Fidl ; "fidl")]
-    #[fuchsia::test]
     fn permits_can_be_revoked_one_at_a_time(transport_mode: Transport) {
         let mut exec = fasync::TestExecutor::new();
 
@@ -3076,7 +3127,6 @@ mod tests {
     // available, we try to start the peer (because a dwell has expired)
     #[test_case(Transport::Socket ; "socket")]
     #[test_case(Transport::Fidl ; "fidl")]
-    #[fuchsia::test]
     fn permit_suspend_start_while_suspending(transport_mode: Transport) {
         let mut exec = fasync::TestExecutor::new();
 
@@ -3215,5 +3265,290 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(true, a2dp_version_check(p1));
+    }
+
+    fn setup_test_peer_with_avrcp(
+        transport: Transport,
+        streams: Streams,
+        avrcp: Option<avrcp::PeerManagerProxy>,
+    ) -> (Channel, ProfileRequestStream, Peer) {
+        let (avdtp, remote) = setup_avdtp_peer(transport);
+        let metrics_logger = bt_metrics::MetricsLogger::default();
+        let (profile_proxy, requests) = create_proxy_and_stream::<ProfileMarker>();
+        let peer =
+            Peer::create(PeerId(1), avdtp, streams, None, profile_proxy, avrcp, metrics_logger);
+
+        (remote, requests, peer)
+    }
+
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
+    #[fuchsia::test]
+    fn test_volume_relay_starts_on_receive_channel_for_source(transport: Transport) {
+        let mut exec = fasync::TestExecutor::new();
+        let (avrcp_proxy, mut avrcp_stream) =
+            fidl::endpoints::create_proxy_and_stream::<avrcp::PeerManagerMarker>();
+
+        let mut streams = Streams::default();
+        let test_builder = TestMediaTaskBuilder::new();
+        streams.insert(Stream::build(
+            make_sbc_endpoint(1, avdtp::EndpointType::Source),
+            test_builder.builder(),
+        ));
+
+        let (remote, _requests, peer) =
+            setup_test_peer_with_avrcp(transport, streams, Some(avrcp_proxy));
+        let remote_peer = avdtp::Peer::new(remote);
+
+        let sbc_endpoint_id = 1_u8.try_into().expect("should be able to get sbc endpointid");
+        let sbc_caps = sbc_capabilities();
+
+        // 1. Remote peer configures the stream.
+        let set_config_fut =
+            remote_peer.set_configuration(&sbc_endpoint_id, &sbc_endpoint_id, &sbc_caps);
+        let mut set_config_fut = pin!(set_config_fut);
+        match exec.run_until_stalled(&mut set_config_fut) {
+            Poll::Ready(Ok(())) => {}
+            x => panic!("Set capabilities should be ready but got {:?}", x),
+        }
+
+        // 2. Remote peer opens the stream.
+        let open_fut = remote_peer.open(&sbc_endpoint_id);
+        let mut open_fut = pin!(open_fut);
+        match exec.run_until_stalled(&mut open_fut) {
+            Poll::Ready(Ok(())) => {}
+            x => panic!("Open should be ready but got {:?}", x),
+        }
+
+        // Verify that before receiving the channel, the volume relay task has not started.
+        assert!(peer.inner.lock().volume_relay_task.is_none());
+
+        // 3. Establish the media transport channel.
+        let (transport_chan, _remote_transport) = create_test_channels(transport);
+        assert_eq!(Some(()), peer.receive_channel(transport_chan).ok());
+
+        // Verify that the volume relay task starts!
+        assert!(peer.inner.lock().volume_relay_task.is_some());
+
+        // Verify that GetControllerForTarget request is sent on avrcp_stream.
+        let mut get_controller_fut = avrcp_stream.select_next_some();
+        let _controller_server = match exec.run_until_stalled(&mut get_controller_fut) {
+            Poll::Ready(Ok(avrcp::PeerManagerRequest::GetControllerForTarget {
+                peer_id: req_peer_id,
+                client,
+                responder,
+            })) => {
+                assert_eq!(req_peer_id, PeerId(1).into());
+                responder.send(Ok(())).expect("should send response");
+                client
+            }
+            x => panic!("Expected GetControllerForTarget request, got {:?}", x),
+        };
+    }
+
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
+    #[fuchsia::test]
+    fn test_volume_relay_starts_on_stream_start(transport: Transport) {
+        let mut exec = fasync::TestExecutor::new();
+        let (avrcp_proxy, mut avrcp_stream) =
+            fidl::endpoints::create_proxy_and_stream::<avrcp::PeerManagerMarker>();
+
+        let (mut remote, mut profile_request_stream, peer) =
+            setup_test_peer_with_avrcp(transport, build_test_streams(), Some(avrcp_proxy));
+
+        let remote_seid: StreamEndpointId = 2_u8.try_into().unwrap();
+        let codec_params = ServiceCapability::MediaCodec {
+            media_type: avdtp::MediaType::Audio,
+            codec_type: avdtp::MediaCodecType::AUDIO_SBC,
+            codec_extra: vec![0x11, 0x45, 51, 51],
+        };
+
+        let remote_endpoint = avdtp::StreamEndpoint::new(
+            2,
+            avdtp::MediaType::Audio,
+            avdtp::EndpointType::Sink,
+            vec![codec_params.clone()],
+        )
+        .expect("valid endpoint");
+        peer.inner.lock().set_remote_endpoints(&[remote_endpoint]);
+
+        // Before starting the stream, volume relay task should not be started.
+        assert!(peer.inner.lock().volume_relay_task.is_none());
+
+        let start_future = peer.stream_start(remote_seid, vec![codec_params]);
+        let mut start_future = pin!(start_future);
+
+        assert!(exec.run_until_stalled(&mut start_future).is_pending());
+        receive_simple_accept(&mut exec, &mut remote, 0x03); // Set Configuration
+        assert!(exec.run_until_stalled(&mut start_future).is_pending());
+        receive_simple_accept(&mut exec, &mut remote, 0x06); // Open
+        assert!(exec.run_until_stalled(&mut start_future).is_pending());
+
+        // Respond to connect request for transport channel.
+        let (transport_chan, _remote_transport) = create_test_channels(transport);
+        let request = exec.run_until_stalled(&mut profile_request_stream.next());
+        match request {
+            Poll::Ready(Some(Ok(ProfileRequest::Connect {
+                peer_id,
+                connection: _,
+                responder,
+            }))) => {
+                assert_eq!(PeerId(1), peer_id.into());
+                let channel = transport_chan.try_into().unwrap();
+                responder.send(Ok(channel)).expect("responder sends");
+            }
+            x => panic!("Expected Connect request, got {:?}", x),
+        };
+
+        assert!(exec.run_until_stalled(&mut start_future).is_pending());
+        receive_simple_accept(&mut exec, &mut remote, 0x07); // Start
+
+        match exec.run_until_stalled(&mut start_future) {
+            Poll::Ready(Ok(())) => {}
+            x => panic!("Expected start_future to succeed, got {:?}", x),
+        }
+
+        // Verify that GetControllerForTarget request is sent on avrcp_stream.
+        let mut get_controller_fut = avrcp_stream.select_next_some();
+        let request = loop {
+            match exec.run_until_stalled(&mut get_controller_fut) {
+                Poll::Ready(r) => break r,
+                Poll::Pending => {
+                    if exec.wake_next_timer().is_some() {
+                        continue;
+                    }
+                    panic!("Expected GetControllerForTarget request, but executor stalled");
+                }
+            }
+        };
+        let _controller_server = match request {
+            Ok(avrcp::PeerManagerRequest::GetControllerForTarget {
+                peer_id: req_peer_id,
+                client,
+                responder,
+            }) => {
+                assert_eq!(req_peer_id, PeerId(1).into());
+                responder.send(Ok(())).expect("should send response");
+                client
+            }
+            x => panic!("Expected GetControllerForTarget request, got {:?}", x),
+        };
+
+        // Verify that the volume relay task started.
+        assert!(peer.inner.lock().volume_relay_task.is_some());
+
+        // Abort the stream to transition it to Idle: volume relay task should be stopped.
+        peer.inner.lock().local.get_mut(&1_u8.try_into().unwrap()).unwrap().abort();
+        PeerInner::maybe_start_volume_relay(&peer.inner);
+
+        // Verify that the volume relay task is stopped.
+        assert!(peer.inner.lock().volume_relay_task.is_none());
+    }
+
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
+    #[fuchsia::test]
+    fn test_volume_relay_does_not_start_when_we_are_sink(transport: Transport) {
+        let _exec = fasync::TestExecutor::new();
+        let (avrcp_proxy, _avrcp_stream) =
+            fidl::endpoints::create_proxy_and_stream::<avrcp::PeerManagerMarker>();
+
+        // Set up streams with only a local Sink stream.
+        let mut sink_streams = build_test_streams();
+        let remote_id = 2_u8.try_into().unwrap();
+        {
+            let sink_endpoint =
+                sink_streams.get_mut(&2_u8.try_into().unwrap()).unwrap().endpoint_mut();
+            sink_endpoint
+                .configure(&remote_id, vec![avdtp::ServiceCapability::MediaTransport])
+                .unwrap();
+            sink_endpoint.establish().unwrap();
+            let (c1, _c2) = create_test_channels(transport);
+            let _ = sink_endpoint.receive_channel(c1).unwrap();
+        }
+
+        let (_remote, _profile_stream, peer_sink) =
+            setup_test_peer_with_avrcp(transport, sink_streams, Some(avrcp_proxy));
+
+        // Trigger channel reception on peer, which internally calls maybe_start_volume_relay.
+        let (c1, _c2) = create_test_channels(transport);
+        let _ = peer_sink.receive_channel(c1);
+        assert!(peer_sink.inner.lock().volume_relay_task.is_none());
+    }
+
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
+    #[fuchsia::test]
+    fn test_volume_relay_restarts_if_task_finished(transport: Transport) {
+        let mut exec = fasync::TestExecutor::new();
+        let (avrcp_proxy, mut avrcp_stream) =
+            fidl::endpoints::create_proxy_and_stream::<avrcp::PeerManagerMarker>();
+
+        let mut streams = Streams::default();
+        let test_builder = TestMediaTaskBuilder::new();
+        streams.insert(Stream::build(
+            make_sbc_endpoint(1, avdtp::EndpointType::Source),
+            test_builder.builder(),
+        ));
+
+        let (remote, _requests, peer) =
+            setup_test_peer_with_avrcp(transport, streams, Some(avrcp_proxy));
+        let remote_peer = avdtp::Peer::new(remote);
+
+        let sbc_endpoint_id = 1_u8.try_into().expect("should be able to get sbc endpointid");
+        let sbc_caps = sbc_capabilities();
+
+        // 1. Remote peer configures the stream.
+        let set_config_fut =
+            remote_peer.set_configuration(&sbc_endpoint_id, &sbc_endpoint_id, &sbc_caps);
+        let mut set_config_fut = pin!(set_config_fut);
+        assert!(exec.run_until_stalled(&mut set_config_fut).is_ready());
+
+        // 2. Remote peer opens the stream.
+        let open_fut = remote_peer.open(&sbc_endpoint_id);
+        let mut open_fut = pin!(open_fut);
+        assert!(exec.run_until_stalled(&mut open_fut).is_ready());
+
+        // 3. Establish transport channel -> starts volume relay task.
+        let (_remote_transport, transport_chan) = create_test_channels(transport);
+        assert_eq!(Some(()), peer.receive_channel(transport_chan).ok());
+        assert!(peer.inner.lock().volume_relay_task.is_some());
+
+        // 4. Handle AVRCP GetControllerForTarget and reply with Error (causing task to complete/exit).
+        let _ = exec.run_until_stalled(&mut futures::future::pending::<()>());
+        let mut get_controller_fut = avrcp_stream.select_next_some();
+        match exec.run_until_stalled(&mut get_controller_fut) {
+            Poll::Ready(Ok(avrcp::PeerManagerRequest::GetControllerForTarget {
+                peer_id: _,
+                client: _,
+                responder,
+            })) => {
+                responder.send(Err(zx::Status::INTERNAL.into_raw())).expect("should send response");
+            }
+            x => panic!("Expected GetControllerForTarget request, got {:?}", x),
+        }
+
+        // Run until volume relay task completes in the background.
+        let _ = exec.run_until_stalled(&mut futures::future::pending::<()>());
+
+        // 5. Calling maybe_start_volume_relay should detect that the task finished, clear it, and spawn a new task.
+        PeerInner::maybe_start_volume_relay(&peer.inner);
+        assert!(peer.inner.lock().volume_relay_task.is_some());
+
+        // Verify a new GetControllerForTarget request was sent.
+        let _ = exec.run_until_stalled(&mut futures::future::pending::<()>());
+        let mut get_controller_fut = avrcp_stream.select_next_some();
+        match exec.run_until_stalled(&mut get_controller_fut) {
+            Poll::Ready(Ok(avrcp::PeerManagerRequest::GetControllerForTarget {
+                peer_id: req_peer_id,
+                client: _,
+                responder,
+            })) => {
+                assert_eq!(req_peer_id, PeerId(1).into());
+                responder.send(Ok(())).expect("should send response");
+            }
+            x => panic!("Expected second GetControllerForTarget request, got {:?}", x),
+        }
     }
 }

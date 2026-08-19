@@ -5,6 +5,7 @@
 use anyhow::{Error, format_err};
 use bt_avdtp as avdtp;
 use fidl_fuchsia_bluetooth::ChannelParameters;
+use fidl_fuchsia_bluetooth_avrcp as avrcp;
 use fidl_fuchsia_bluetooth_bredr::{self as bredr, ProfileDescriptor, ProfileProxy};
 use fuchsia_async as fasync;
 use fuchsia_bluetooth::detachable_map::{DetachableMap, DetachableWeak};
@@ -180,6 +181,8 @@ pub struct ConnectedPeers {
     profile: ProfileProxy,
     /// Cobalt logger to use and hand out to peers, if we are using one.
     metrics: bt_metrics::MetricsLogger,
+    /// AVRCP client to hand out to peers for volume control.
+    avrcp: Option<avrcp::PeerManagerProxy>,
     /// The 'peers' node of the inspect tree. All connected peers own a child node of this node.
     inspect: inspect::Node,
     /// Inspect node for which is the current preferred peer direction.
@@ -199,6 +202,7 @@ impl ConnectedPeers {
         streams_builder: StreamsBuilder,
         permits: Permits,
         profile: ProfileProxy,
+        avrcp: Option<avrcp::PeerManagerProxy>,
         metrics: bt_metrics::MetricsLogger,
     ) -> Self {
         Self {
@@ -211,6 +215,7 @@ impl ConnectedPeers {
             inspect: inspect::Node::default(),
             inspect_peer_direction: inspect::StringProperty::default(),
             metrics,
+            avrcp,
             connected_peer_senders: Default::default(),
             start_stream_tasks: Default::default(),
             preferred_peer_direction: Mutex::new(avdtp::EndpointType::Sink),
@@ -344,6 +349,7 @@ impl ConnectedPeers {
             self.streams_builder.peer_streams(&id, audio_offload.clone()).await?,
             Some(self.permits.clone()),
             self.profile.clone(),
+            self.avrcp.clone(),
             self.metrics.clone(),
         );
 
@@ -517,6 +523,7 @@ mod tests {
             StreamsBuilder::default(),
             Permits::new(1),
             proxy,
+            None,
             bt_metrics::MetricsLogger::default(),
         );
 
@@ -722,6 +729,7 @@ mod tests {
             streams_builder,
             Permits::new(1),
             proxy,
+            None,
             bt_metrics::MetricsLogger::default(),
         );
 

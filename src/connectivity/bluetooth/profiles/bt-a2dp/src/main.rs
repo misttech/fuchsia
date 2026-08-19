@@ -11,8 +11,11 @@ use bt_a2dp::peer::ControllerPool;
 use bt_a2dp::permits::Permits;
 use bt_a2dp::stream;
 use bt_avdtp as avdtp;
+
 use fidl_fuchsia_bluetooth as fidl_bt;
 use fidl_fuchsia_bluetooth_a2dp::{AudioModeRequest, AudioModeRequestStream, Role};
+use fidl_fuchsia_bluetooth_avrcp as avrcp;
+
 use fidl_fuchsia_bluetooth_bredr as bredr;
 use fidl_fuchsia_component::BinderMarker;
 use fidl_fuchsia_media::SessionAudioConsumerFactoryMarker;
@@ -344,8 +347,23 @@ async fn main() -> Result<(), Error> {
 
     let permits = Permits::new(ACTIVE_STREAM_LIMIT);
 
-    let mut peers =
-        ConnectedPeers::new(stream_builder, permits.clone(), profile_svc.clone(), metrics_logger);
+    let avrcp = config
+        .source
+        .is_some()
+        .then(|| {
+            fuchsia_component::client::connect_to_protocol::<avrcp::PeerManagerMarker>()
+                .map_err(|e| warn!("Failed to connect to AVRCP: {e:?}"))
+                .ok()
+        })
+        .flatten();
+
+    let mut peers = ConnectedPeers::new(
+        stream_builder,
+        permits.clone(),
+        profile_svc.clone(),
+        avrcp,
+        metrics_logger,
+    );
     if let Err(e) = peers.iattach(&inspect.root(), "connected") {
         warn!("Failed to attach to inspect: {e:?}");
     }
@@ -455,6 +473,7 @@ mod tests {
             stream::StreamsBuilder::default(),
             Permits::new(1),
             proxy,
+            None,
             bt_metrics::MetricsLogger::default(),
         ));
         (peers, stream)

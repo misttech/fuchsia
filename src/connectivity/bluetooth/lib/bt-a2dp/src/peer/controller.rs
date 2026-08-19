@@ -481,6 +481,7 @@ mod tests {
             streams,
             None,
             profile_proxy,
+            None,
             bt_metrics::MetricsLogger::default(),
         );
         let _ = peer_map.insert(fake_peer_id, peer);
